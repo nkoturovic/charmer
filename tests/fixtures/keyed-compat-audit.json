@@ -12,7 +12,7 @@
           "client_sha256": "a967e7b1d8b4e47ee421d5433027880347952b0c0857abf880e2c942a4ec93b3",
           "errors": 0,
           "failures": 0,
-          "head": "5a3b35cdd1e3b20f75e5e3f645e57d4dcfcf9634",
+          "head": "34324d3c3584a0376f564c9e510487b2b1e6c944",
           "inventory": {
             "J1": {
               "count": 9,
@@ -79,11 +79,11 @@
           },
           "journey_tests": 9,
           "keyed_client_budget_seconds": 900,
-          "keyed_client_seconds": 11.155,
+          "keyed_client_seconds": 13.795,
           "keyed_client_tests": 10,
           "keyed_identity": {
             "client_contract_sha256": "24e69f91ccf80ec5b19194c34d879273644922d659d807ac89f7448416be6557",
-            "gateway": "/nix/store/w42kd1iwar5xihflx17rqyh1hkgampp7-cli-proxy-api-linux-amd64-7.3.15/bin/cli-proxy-api",
+            "gateway": "/nix/store/35hh91zsn1xcf0wavirrh5ajvcf57vpw-cli-proxy-api-linux-amd64-7.3.15/bin/cli-proxy-api",
             "gateway_patch_names": [
               "cli-proxy-api-loopback-oauth.patch",
               "cli-proxy-api-kimi-claude-compat.patch",
@@ -114,84 +114,84 @@
               "schemas/operator-ledger.schema.json": "19e3b4b472ea01ec4110bdcb4be3667e7c2b078dd22f09566cbe6f137aa652e2",
               "schemas/operator-provider.schema.json": "bab1eb96832c3e06789a5bf9d566749b733056a53aadceb1aefac444f0c9f972",
               "schemas/providers.schema.json": "c13f85f84a1d2de669d930b81f26815c96295d55ee19ca5339cb802dbd5e5ff4",
-              "src/claude_multi/catalog.py": "fe40d80e3bb8e839484233b4042763900a6f9172f270c3719d70e928187576f7",
-              "src/claude_multi/cli/commands/models.py": "b044d6f365d6774dc58a342baacb1fbeacb1517610af89dfcb33931504e28044",
-              "src/claude_multi/cli/commands/providers.py": "84b3b6daf5d4b013a8395b7170ac3392c4c96546bab55d40e5fa498d11b5f47c",
-              "src/claude_multi/compiler.py": "9dedefcde35083e711d412136f5e997e48a822d543e5317e28e1f26f0e6d5f8c",
-              "src/claude_multi/discovery.py": "d6c7b4b2752f20756b15e7b3b206a8cec17125d52194bd47a3c37b1d20104c2f",
-              "src/claude_multi/operator.py": "6b4d4b14a27686820823f14931c801efa956bf3c997d630740c7b660cbc1596e",
-              "src/claude_multi/profile.py": "476baaa6cabe85043bf0f9dd0a27b8b9c85b065a9e1492b49507863ebd9da147",
-              "src/claude_multi/qualify.py": "46fc23e75fbfda166c7d5ea55a6c30fe8c34f97d2bb00fe688f741b912996d84",
-              "src/claude_multi/render.py": "9f99ffb5721e872797b1aaf7c2da77a43949cdb7b5406a32b3803a094939dbfc",
-              "src/claude_multi/scope.py": "44c784dd9583b593d69df1c2e2d88cc698280ba60a529e44478c8afb0a2276ae",
-              "src/claude_multi/served_plan.py": "ca1af711690b174789b0a9426da3a57936c1972d1f613707cc7f0c394d29788f"
+              "src/charmer/catalog.py": "a6b5dcfff5634eaaa60003684dec88eb5623ab53b25762041b0b58640ca59f75",
+              "src/charmer/cli/commands/models.py": "aae44015e8424d584132b8a1514ac46df7e30be2fd866dbf4a5c08f8cd5271dd",
+              "src/charmer/cli/commands/providers.py": "d1a2611225a03586b1b68c1334638d9163dc3c5928cd36f7e0edcee13685da4b",
+              "src/charmer/compiler.py": "0ea294c2fabb14659f392fe90bec1d096f313d149173fc505e36b39636befb0f",
+              "src/charmer/discovery.py": "097f6b8897154f56a7b5eeea5836a6cde986ab4a9b9a9b69bea0fca4491c8652",
+              "src/charmer/operator.py": "b706fb1f53a218d68532e525aa5dea99aa38421a3778b09af9cbbdd52baec5e0",
+              "src/charmer/profile.py": "8e0be317eb5addd8930f59d673dc5c25bd4ea702fb7fb43ccecef975ef287f71",
+              "src/charmer/qualify.py": "65f09078f97ace0818c8d7d6057a59c827a9b0a1f983eefa04edc2b82eba4421",
+              "src/charmer/render.py": "732e41345b8af2a55df438b68509eee444f782a4dd7e84d7bf2c6ed060cc801f",
+              "src/charmer/scope.py": "2d5fddbd19aaa5172b73762741ec5af070aa436d39fbbc2a8db1b401dbe62ade",
+              "src/charmer/served_plan.py": "affcc823cb55f250d07f6252211803f33d3f3a688a4438b2a31e3a6409715c8a"
             }
           },
           "not_a_gate_receipt": true,
           "production_audit_enabled": false,
           "relevant_sources": [
             {
-              "path": "src/claude_multi/catalog.py",
-              "sha256": "fe40d80e3bb8e839484233b4042763900a6f9172f270c3719d70e928187576f7"
+              "path": "src/charmer/catalog.py",
+              "sha256": "a6b5dcfff5634eaaa60003684dec88eb5623ab53b25762041b0b58640ca59f75"
             },
             {
-              "path": "src/claude_multi/operator.py",
-              "sha256": "6b4d4b14a27686820823f14931c801efa956bf3c997d630740c7b660cbc1596e"
+              "path": "src/charmer/operator.py",
+              "sha256": "b706fb1f53a218d68532e525aa5dea99aa38421a3778b09af9cbbdd52baec5e0"
             },
             {
-              "path": "src/claude_multi/render.py",
-              "sha256": "9f99ffb5721e872797b1aaf7c2da77a43949cdb7b5406a32b3803a094939dbfc"
+              "path": "src/charmer/render.py",
+              "sha256": "732e41345b8af2a55df438b68509eee444f782a4dd7e84d7bf2c6ed060cc801f"
             },
             {
-              "path": "src/claude_multi/served_plan.py",
-              "sha256": "ca1af711690b174789b0a9426da3a57936c1972d1f613707cc7f0c394d29788f"
+              "path": "src/charmer/served_plan.py",
+              "sha256": "affcc823cb55f250d07f6252211803f33d3f3a688a4438b2a31e3a6409715c8a"
             },
             {
-              "path": "src/claude_multi/qualify.py",
-              "sha256": "46fc23e75fbfda166c7d5ea55a6c30fe8c34f97d2bb00fe688f741b912996d84"
+              "path": "src/charmer/qualify.py",
+              "sha256": "65f09078f97ace0818c8d7d6057a59c827a9b0a1f983eefa04edc2b82eba4421"
             },
             {
-              "path": "src/claude_multi/discovery.py",
-              "sha256": "d6c7b4b2752f20756b15e7b3b206a8cec17125d52194bd47a3c37b1d20104c2f"
+              "path": "src/charmer/discovery.py",
+              "sha256": "097f6b8897154f56a7b5eeea5836a6cde986ab4a9b9a9b69bea0fca4491c8652"
             },
             {
-              "path": "src/claude_multi/profile.py",
-              "sha256": "476baaa6cabe85043bf0f9dd0a27b8b9c85b065a9e1492b49507863ebd9da147"
+              "path": "src/charmer/profile.py",
+              "sha256": "8e0be317eb5addd8930f59d673dc5c25bd4ea702fb7fb43ccecef975ef287f71"
             },
             {
-              "path": "src/claude_multi/compiler.py",
-              "sha256": "9dedefcde35083e711d412136f5e997e48a822d543e5317e28e1f26f0e6d5f8c"
+              "path": "src/charmer/compiler.py",
+              "sha256": "0ea294c2fabb14659f392fe90bec1d096f313d149173fc505e36b39636befb0f"
             },
             {
-              "path": "src/claude_multi/scope.py",
-              "sha256": "44c784dd9583b593d69df1c2e2d88cc698280ba60a529e44478c8afb0a2276ae"
+              "path": "src/charmer/scope.py",
+              "sha256": "2d5fddbd19aaa5172b73762741ec5af070aa436d39fbbc2a8db1b401dbe62ade"
             },
             {
-              "path": "src/claude_multi/cli/commands/models.py",
-              "sha256": "b044d6f365d6774dc58a342baacb1fbeacb1517610af89dfcb33931504e28044"
+              "path": "src/charmer/cli/commands/models.py",
+              "sha256": "aae44015e8424d584132b8a1514ac46df7e30be2fd866dbf4a5c08f8cd5271dd"
             },
             {
-              "path": "src/claude_multi/cli/commands/providers.py",
-              "sha256": "84b3b6daf5d4b013a8395b7170ac3392c4c96546bab55d40e5fa498d11b5f47c"
+              "path": "src/charmer/cli/commands/providers.py",
+              "sha256": "d1a2611225a03586b1b68c1334638d9163dc3c5928cd36f7e0edcee13685da4b"
             },
             {
-              "path": "src/claude_multi/data/schemas/gateway.schema.json",
+              "path": "src/charmer/data/schemas/gateway.schema.json",
               "sha256": "e047fd635b3d9b351d7390f9c6d9ece244c42f50902049844cb10cd592ff8533"
             },
             {
-              "path": "src/claude_multi/data/schemas/providers.schema.json",
+              "path": "src/charmer/data/schemas/providers.schema.json",
               "sha256": "c13f85f84a1d2de669d930b81f26815c96295d55ee19ca5339cb802dbd5e5ff4"
             },
             {
-              "path": "src/claude_multi/data/schemas/operator-provider.schema.json",
+              "path": "src/charmer/data/schemas/operator-provider.schema.json",
               "sha256": "bab1eb96832c3e06789a5bf9d566749b733056a53aadceb1aefac444f0c9f972"
             },
             {
-              "path": "src/claude_multi/data/schemas/operator-ledger.schema.json",
+              "path": "src/charmer/data/schemas/operator-ledger.schema.json",
               "sha256": "19e3b4b472ea01ec4110bdcb4be3667e7c2b078dd22f09566cbe6f137aa652e2"
             },
             {
-              "path": "src/claude_multi/data/schemas/models.schema.json",
+              "path": "src/charmer/data/schemas/models.schema.json",
               "sha256": "1d6f195db3b0aec05fda7164a241c1941ed5c9ff9c53aaa957159811c83639d6"
             }
           ],
@@ -199,12 +199,12 @@
           "skipped": 0,
           "status": "passed"
         },
-        "sha256": "8ee6db0c42e92c4d5200af6285d091825a62bca6b9802c1f77d182d9833fa8ea"
+        "sha256": "d6fca7e1086961362b19e7bd0bf4ae6b89aaf2a21139ed4c749f0810ac4b893e"
       },
       "tests.keyed_journeys.json": {
         "document": {
           "binary": {
-            "realpath": "/nix/store/w42kd1iwar5xihflx17rqyh1hkgampp7-cli-proxy-api-linux-amd64-7.3.15/bin/cli-proxy-api",
+            "realpath": "/nix/store/35hh91zsn1xcf0wavirrh5ajvcf57vpw-cli-proxy-api-linux-amd64-7.3.15/bin/cli-proxy-api",
             "version": "7.3.15"
           },
           "module": "tests.keyed_journeys",
@@ -216,64 +216,64 @@
           "tables": {
             "J1": [
               {
-                "head": "5a3b35cdd1e3b20f75e5e3f645e57d4dcfcf9634",
+                "head": "34324d3c3584a0376f564c9e510487b2b1e6c944",
                 "row": "tests.test_onboarding_isolation.KeyedJourneyTests.test_keyed_cli_changes_and_failed_qualification_remain_selectable_with_warnings",
                 "status": "passed"
               },
               {
-                "head": "5a3b35cdd1e3b20f75e5e3f645e57d4dcfcf9634",
+                "head": "34324d3c3584a0376f564c9e510487b2b1e6c944",
                 "row": "tests.test_onboarding_isolation.KeyedJourneyTests.test_keyed_cli_declare_approve_apply_admit_qualify_bind",
                 "status": "passed"
               },
               {
-                "head": "5a3b35cdd1e3b20f75e5e3f645e57d4dcfcf9634",
+                "head": "34324d3c3584a0376f564c9e510487b2b1e6c944",
                 "row": "tests.test_packaging.PackageSourceTests.test_package_payload_excludes_operator_credentials_and_grants",
                 "status": "passed"
               },
               {
-                "head": "5a3b35cdd1e3b20f75e5e3f645e57d4dcfcf9634",
+                "head": "34324d3c3584a0376f564c9e510487b2b1e6c944",
                 "row": "tests.test_portability.KeyedPortabilityTests.test_keyed_import_closed_target_refuses_audit",
                 "status": "passed"
               },
               {
-                "head": "5a3b35cdd1e3b20f75e5e3f645e57d4dcfcf9634",
+                "head": "34324d3c3584a0376f564c9e510487b2b1e6c944",
                 "row": "tests.test_portability.KeyedPortabilityTests.test_keyed_import_open_target_requires_local_route_and_key_not_admission",
                 "status": "passed"
               },
               {
-                "head": "5a3b35cdd1e3b20f75e5e3f645e57d4dcfcf9634",
+                "head": "34324d3c3584a0376f564c9e510487b2b1e6c944",
                 "row": "tests.test_portability.KeyedPortabilityTests.test_keyed_import_rechecks_headers_origins_collisions",
                 "status": "passed"
               },
               {
-                "head": "5a3b35cdd1e3b20f75e5e3f645e57d4dcfcf9634",
+                "head": "34324d3c3584a0376f564c9e510487b2b1e6c944",
                 "row": "tests.test_portability.KeyedPortabilityTests.test_keyed_import_uses_existing_single_commit_barrier",
                 "status": "passed"
               },
               {
-                "head": "5a3b35cdd1e3b20f75e5e3f645e57d4dcfcf9634",
+                "head": "34324d3c3584a0376f564c9e510487b2b1e6c944",
                 "row": "tests.test_portability.KeyedPortabilityTests.test_keyed_json_export_has_logical_refs_and_no_store_reads",
                 "status": "passed"
               },
               {
-                "head": "5a3b35cdd1e3b20f75e5e3f645e57d4dcfcf9634",
+                "head": "34324d3c3584a0376f564c9e510487b2b1e6c944",
                 "row": "tests.test_tui_pty.KeyedJourneyPTYTests.test_keyed_tui_optional_admission_qualification_and_binding",
                 "status": "passed"
               }
             ]
           }
         },
-        "sha256": "6ddbfeee60e16397f8a74cbb10ae9b5f694278e48b4b5904c32221d79d1faa95"
+        "sha256": "2277cefa2659e87ba00003bf315b122be9b080de9099f6429f4a3df3a0c03791"
       },
       "tests.test_gateway_keyed_compat.json": {
         "document": {
           "binary": {
-            "realpath": "/nix/store/w42kd1iwar5xihflx17rqyh1hkgampp7-cli-proxy-api-linux-amd64-7.3.15/bin/cli-proxy-api",
+            "realpath": "/nix/store/35hh91zsn1xcf0wavirrh5ajvcf57vpw-cli-proxy-api-linux-amd64-7.3.15/bin/cli-proxy-api",
             "version": "7.3.15"
           },
           "keyed_identity": {
             "client_contract_sha256": "24e69f91ccf80ec5b19194c34d879273644922d659d807ac89f7448416be6557",
-            "gateway": "/nix/store/w42kd1iwar5xihflx17rqyh1hkgampp7-cli-proxy-api-linux-amd64-7.3.15/bin/cli-proxy-api",
+            "gateway": "/nix/store/35hh91zsn1xcf0wavirrh5ajvcf57vpw-cli-proxy-api-linux-amd64-7.3.15/bin/cli-proxy-api",
             "gateway_patch_names": [
               "cli-proxy-api-loopback-oauth.patch",
               "cli-proxy-api-kimi-claude-compat.patch",
@@ -304,17 +304,17 @@
               "schemas/operator-ledger.schema.json": "19e3b4b472ea01ec4110bdcb4be3667e7c2b078dd22f09566cbe6f137aa652e2",
               "schemas/operator-provider.schema.json": "bab1eb96832c3e06789a5bf9d566749b733056a53aadceb1aefac444f0c9f972",
               "schemas/providers.schema.json": "c13f85f84a1d2de669d930b81f26815c96295d55ee19ca5339cb802dbd5e5ff4",
-              "src/claude_multi/catalog.py": "fe40d80e3bb8e839484233b4042763900a6f9172f270c3719d70e928187576f7",
-              "src/claude_multi/cli/commands/models.py": "b044d6f365d6774dc58a342baacb1fbeacb1517610af89dfcb33931504e28044",
-              "src/claude_multi/cli/commands/providers.py": "84b3b6daf5d4b013a8395b7170ac3392c4c96546bab55d40e5fa498d11b5f47c",
-              "src/claude_multi/compiler.py": "9dedefcde35083e711d412136f5e997e48a822d543e5317e28e1f26f0e6d5f8c",
-              "src/claude_multi/discovery.py": "d6c7b4b2752f20756b15e7b3b206a8cec17125d52194bd47a3c37b1d20104c2f",
-              "src/claude_multi/operator.py": "6b4d4b14a27686820823f14931c801efa956bf3c997d630740c7b660cbc1596e",
-              "src/claude_multi/profile.py": "476baaa6cabe85043bf0f9dd0a27b8b9c85b065a9e1492b49507863ebd9da147",
-              "src/claude_multi/qualify.py": "46fc23e75fbfda166c7d5ea55a6c30fe8c34f97d2bb00fe688f741b912996d84",
-              "src/claude_multi/render.py": "9f99ffb5721e872797b1aaf7c2da77a43949cdb7b5406a32b3803a094939dbfc",
-              "src/claude_multi/scope.py": "44c784dd9583b593d69df1c2e2d88cc698280ba60a529e44478c8afb0a2276ae",
-              "src/claude_multi/served_plan.py": "ca1af711690b174789b0a9426da3a57936c1972d1f613707cc7f0c394d29788f"
+              "src/charmer/catalog.py": "a6b5dcfff5634eaaa60003684dec88eb5623ab53b25762041b0b58640ca59f75",
+              "src/charmer/cli/commands/models.py": "aae44015e8424d584132b8a1514ac46df7e30be2fd866dbf4a5c08f8cd5271dd",
+              "src/charmer/cli/commands/providers.py": "d1a2611225a03586b1b68c1334638d9163dc3c5928cd36f7e0edcee13685da4b",
+              "src/charmer/compiler.py": "0ea294c2fabb14659f392fe90bec1d096f313d149173fc505e36b39636befb0f",
+              "src/charmer/discovery.py": "097f6b8897154f56a7b5eeea5836a6cde986ab4a9b9a9b69bea0fca4491c8652",
+              "src/charmer/operator.py": "b706fb1f53a218d68532e525aa5dea99aa38421a3778b09af9cbbdd52baec5e0",
+              "src/charmer/profile.py": "8e0be317eb5addd8930f59d673dc5c25bd4ea702fb7fb43ccecef975ef287f71",
+              "src/charmer/qualify.py": "65f09078f97ace0818c8d7d6057a59c827a9b0a1f983eefa04edc2b82eba4421",
+              "src/charmer/render.py": "732e41345b8af2a55df438b68509eee444f782a4dd7e84d7bf2c6ed060cc801f",
+              "src/charmer/scope.py": "2d5fddbd19aaa5172b73762741ec5af070aa436d39fbbc2a8db1b401dbe62ade",
+              "src/charmer/served_plan.py": "affcc823cb55f250d07f6252211803f33d3f3a688a4438b2a31e3a6409715c8a"
             }
           },
           "module": "tests.test_gateway_keyed_compat",
@@ -468,17 +468,17 @@
             ]
           }
         },
-        "sha256": "12fad1d7d8225428823cb8bfc9e516f7d11e59319297edd802deb23c6b21b007"
+        "sha256": "a3d5b5e2ce12725e460a12fa79998a98ca8c6760b66201af4530d08e7654b0ef"
       },
       "tests.test_keyed_compat_client.json": {
         "document": {
           "binary": {
-            "realpath": "/nix/store/w42kd1iwar5xihflx17rqyh1hkgampp7-cli-proxy-api-linux-amd64-7.3.15/bin/cli-proxy-api",
+            "realpath": "/nix/store/35hh91zsn1xcf0wavirrh5ajvcf57vpw-cli-proxy-api-linux-amd64-7.3.15/bin/cli-proxy-api",
             "version": "7.3.15"
           },
           "keyed_identity": {
             "client_contract_sha256": "24e69f91ccf80ec5b19194c34d879273644922d659d807ac89f7448416be6557",
-            "gateway": "/nix/store/w42kd1iwar5xihflx17rqyh1hkgampp7-cli-proxy-api-linux-amd64-7.3.15/bin/cli-proxy-api",
+            "gateway": "/nix/store/35hh91zsn1xcf0wavirrh5ajvcf57vpw-cli-proxy-api-linux-amd64-7.3.15/bin/cli-proxy-api",
             "gateway_patch_names": [
               "cli-proxy-api-loopback-oauth.patch",
               "cli-proxy-api-kimi-claude-compat.patch",
@@ -509,17 +509,17 @@
               "schemas/operator-ledger.schema.json": "19e3b4b472ea01ec4110bdcb4be3667e7c2b078dd22f09566cbe6f137aa652e2",
               "schemas/operator-provider.schema.json": "bab1eb96832c3e06789a5bf9d566749b733056a53aadceb1aefac444f0c9f972",
               "schemas/providers.schema.json": "c13f85f84a1d2de669d930b81f26815c96295d55ee19ca5339cb802dbd5e5ff4",
-              "src/claude_multi/catalog.py": "fe40d80e3bb8e839484233b4042763900a6f9172f270c3719d70e928187576f7",
-              "src/claude_multi/cli/commands/models.py": "b044d6f365d6774dc58a342baacb1fbeacb1517610af89dfcb33931504e28044",
-              "src/claude_multi/cli/commands/providers.py": "84b3b6daf5d4b013a8395b7170ac3392c4c96546bab55d40e5fa498d11b5f47c",
-              "src/claude_multi/compiler.py": "9dedefcde35083e711d412136f5e997e48a822d543e5317e28e1f26f0e6d5f8c",
-              "src/claude_multi/discovery.py": "d6c7b4b2752f20756b15e7b3b206a8cec17125d52194bd47a3c37b1d20104c2f",
-              "src/claude_multi/operator.py": "6b4d4b14a27686820823f14931c801efa956bf3c997d630740c7b660cbc1596e",
-              "src/claude_multi/profile.py": "476baaa6cabe85043bf0f9dd0a27b8b9c85b065a9e1492b49507863ebd9da147",
-              "src/claude_multi/qualify.py": "46fc23e75fbfda166c7d5ea55a6c30fe8c34f97d2bb00fe688f741b912996d84",
-              "src/claude_multi/render.py": "9f99ffb5721e872797b1aaf7c2da77a43949cdb7b5406a32b3803a094939dbfc",
-              "src/claude_multi/scope.py": "44c784dd9583b593d69df1c2e2d88cc698280ba60a529e44478c8afb0a2276ae",
-              "src/claude_multi/served_plan.py": "ca1af711690b174789b0a9426da3a57936c1972d1f613707cc7f0c394d29788f"
+              "src/charmer/catalog.py": "a6b5dcfff5634eaaa60003684dec88eb5623ab53b25762041b0b58640ca59f75",
+              "src/charmer/cli/commands/models.py": "aae44015e8424d584132b8a1514ac46df7e30be2fd866dbf4a5c08f8cd5271dd",
+              "src/charmer/cli/commands/providers.py": "d1a2611225a03586b1b68c1334638d9163dc3c5928cd36f7e0edcee13685da4b",
+              "src/charmer/compiler.py": "0ea294c2fabb14659f392fe90bec1d096f313d149173fc505e36b39636befb0f",
+              "src/charmer/discovery.py": "097f6b8897154f56a7b5eeea5836a6cde986ab4a9b9a9b69bea0fca4491c8652",
+              "src/charmer/operator.py": "b706fb1f53a218d68532e525aa5dea99aa38421a3778b09af9cbbdd52baec5e0",
+              "src/charmer/profile.py": "8e0be317eb5addd8930f59d673dc5c25bd4ea702fb7fb43ccecef975ef287f71",
+              "src/charmer/qualify.py": "65f09078f97ace0818c8d7d6057a59c827a9b0a1f983eefa04edc2b82eba4421",
+              "src/charmer/render.py": "732e41345b8af2a55df438b68509eee444f782a4dd7e84d7bf2c6ed060cc801f",
+              "src/charmer/scope.py": "2d5fddbd19aaa5172b73762741ec5af070aa436d39fbbc2a8db1b401dbe62ade",
+              "src/charmer/served_plan.py": "affcc823cb55f250d07f6252211803f33d3f3a688a4438b2a31e3a6409715c8a"
             }
           },
           "module": "tests.test_keyed_compat_client",
@@ -622,7 +622,7 @@
             ]
           }
         },
-        "sha256": "3f905f581afbf4d39b84a5f60d92c70d0ac61d46ede35f5ea9be8ba1283e6b05"
+        "sha256": "1c49bc4437b8a31f83162f5673b7c146f0fc86ca1d2efcf4f31ed2e662802426"
       }
     },
     "validated_exit": 0
@@ -659,24 +659,24 @@
       "version": 7
     },
     "binary_sha256": {
-      "/nix/store/4qs6gk0136wb16azaj4zg91gmflywlpg-gwtest-startup-probe-7.3.15/bin/gwtest-executor-probe": "0427b5fc9b1fed7df57704d40c9713224b393de4004aa7f771bc97d200e292fb",
-      "/nix/store/4qs6gk0136wb16azaj4zg91gmflywlpg-gwtest-startup-probe-7.3.15/bin/gwtest-handlers-probe": "d1c59b43cc2af12b9a6dc19eb9ad362a42c012b1abf5fbf8b5b49a7a1951f9f6",
-      "/nix/store/4qs6gk0136wb16azaj4zg91gmflywlpg-gwtest-startup-probe-7.3.15/bin/gwtest-startup-probe": "2a8bd940bbbeafa83766eda996ba5dd3e81e7757773fe0aba0a55346150220ac",
-      "/nix/store/w42kd1iwar5xihflx17rqyh1hkgampp7-cli-proxy-api-linux-amd64-7.3.15/bin/cli-proxy-api": "e5ffe87601ef548388713e88ada5fd46d18029c276032c8b09a70d8bc0098b7e"
+      "/nix/store/35hh91zsn1xcf0wavirrh5ajvcf57vpw-cli-proxy-api-linux-amd64-7.3.15/bin/cli-proxy-api": "e5ffe87601ef548388713e88ada5fd46d18029c276032c8b09a70d8bc0098b7e",
+      "/nix/store/q15bgby7marl6f4md0kg0vdg65p141ml-gwtest-startup-probe-7.3.15/bin/gwtest-executor-probe": "0427b5fc9b1fed7df57704d40c9713224b393de4004aa7f771bc97d200e292fb",
+      "/nix/store/q15bgby7marl6f4md0kg0vdg65p141ml-gwtest-startup-probe-7.3.15/bin/gwtest-handlers-probe": "d1c59b43cc2af12b9a6dc19eb9ad362a42c012b1abf5fbf8b5b49a7a1951f9f6",
+      "/nix/store/q15bgby7marl6f4md0kg0vdg65p141ml-gwtest-startup-probe-7.3.15/bin/gwtest-startup-probe": "11b4e32be8c18229c2ad0b67ac64d42cf3f98a0b44125009e65ab716897c163a"
     },
-    "build_definition_sha256": "4e721a9fa02dd9859bdb34d593d719cf4b596568af0dd6f115742559adeba916",
+    "build_definition_sha256": "1560fce2d2b05a2c1598874534bd162ff827551ef243e7688f785acff8e4b5c2",
     "consumed_go_modules": "/nix/store/xkljmgxi3cwh12myims7q3m9hjgmw0yf-cli-proxy-api-7.3.15-go-modules",
-    "derivation": "/nix/store/bb5mqzglhn587pckxri180wxyff3fx50-cli-proxy-api-linux-amd64-7.3.15.drv",
-    "executor_omission": "/nix/store/4qs6gk0136wb16azaj4zg91gmflywlpg-gwtest-startup-probe-7.3.15/bin/gwtest-executor-probe",
-    "gateway": "/nix/store/w42kd1iwar5xihflx17rqyh1hkgampp7-cli-proxy-api-linux-amd64-7.3.15/bin/cli-proxy-api",
-    "handlers_omission": "/nix/store/4qs6gk0136wb16azaj4zg91gmflywlpg-gwtest-startup-probe-7.3.15/bin/gwtest-handlers-probe",
+    "derivation": "/nix/store/9gqcrv1cwma7786pi3la5rys8pmwbhal-cli-proxy-api-linux-amd64-7.3.15.drv",
+    "executor_omission": "/nix/store/q15bgby7marl6f4md0kg0vdg65p141ml-gwtest-startup-probe-7.3.15/bin/gwtest-executor-probe",
+    "gateway": "/nix/store/35hh91zsn1xcf0wavirrh5ajvcf57vpw-cli-proxy-api-linux-amd64-7.3.15/bin/cli-proxy-api",
+    "handlers_omission": "/nix/store/q15bgby7marl6f4md0kg0vdg65p141ml-gwtest-startup-probe-7.3.15/bin/gwtest-handlers-probe",
     "numbered_to_shipped": [
       {
         "identity": "cli-proxy-api-loopback-oauth.patch@2eb510b85f5204820d7a3d70c9b9a7bce283b1a7f23ead305ddfe28d500163a5",
         "number": 1
       },
       {
-        "identity": "cli-proxy-api-kimi-claude-compat.patch@d8b4be92c5fd496980c4ad02e3e973cabb5570dc19f416b6336a608a044d2d44",
+        "identity": "cli-proxy-api-kimi-claude-compat.patch@135dadb71406136dc6e2ef1c46baa548d27cbf023c19dddce2e7d9de0f7ef9ae",
         "number": 2
       },
       {
@@ -684,11 +684,11 @@
         "number": 3
       },
       {
-        "identity": "cli-proxy-api-management-readonly-allowlist.patch@c51d077d12280eee9419e7f928293c43a82b6839e279539ff9195a5fd885b59c",
+        "identity": "cli-proxy-api-management-readonly-allowlist.patch@f1320679a8dbb7254a94a9bdb6c0a2aba37d74ba9166dc3ca5caac36b76d133d",
         "number": 4
       },
       {
-        "identity": "cli-proxy-api-watcher-parentdir.patch@a31e05f009b66c6b74a4d6767073553f05edad8de362542899773955672c7b5c",
+        "identity": "cli-proxy-api-watcher-parentdir.patch@c890605c3d4627f40fa214b9f564c6680b475e70644a30e289ff5e27a02c8d5a",
         "number": 5
       },
       {
@@ -696,7 +696,7 @@
         "number": 6
       },
       {
-        "identity": "cli-proxy-api-management-env-only.patch@09e56ff25352761b2f7c3b208876e09c108daf259def78e47a260d9e9cf564cd",
+        "identity": "cli-proxy-api-management-env-only.patch@34174189f296f54022abbfffe2bd50275339e25189b0981e64013dcde8258fd8",
         "number": 7
       },
       {
@@ -704,11 +704,11 @@
         "number": 8
       },
       {
-        "identity": "cli-proxy-api-credentialed-redirects.patch@211c8157076a8a5e640796aae913853ba7719a5d9222349e58b98fe8102a40b1",
+        "identity": "cli-proxy-api-credentialed-redirects.patch@bd5bb7fd5877a078ddeeb3287378c8dab8d201f1eaf9daa1e51b36e4ae310d44",
         "number": 9
       },
       {
-        "identity": "cli-proxy-api-openai-compat-keyed-safety.patch@70878f4df3027f322aa2be2298b6f9472d9815ab3d3411578e9bcdf1cabf9f20",
+        "identity": "cli-proxy-api-openai-compat-keyed-safety.patch@3325d838983fa8d89a139ef63c4e395f81688e379fb3203be90fc39360c9e00e",
         "number": 10
       },
       {
@@ -716,19 +716,19 @@
         "number": 12
       },
       {
-        "identity": "cli-proxy-api-server-config-snapshot.patch@aa5106979d08018c80e0c3fabd7784f7b44c49bac5350ff5a760bac2e7279c0d",
+        "identity": "cli-proxy-api-server-config-snapshot.patch@dba871bd4822226c8471ce55c7a70d16aeb6c9e723feb388dcd3bf0df311dd95",
         "number": 13
       },
       {
-        "identity": "cli-proxy-api-plugin-host-locking.patch@d7ec5447735613fa64ce21269ebbd578ea70561d091120de8fc26379de756567",
+        "identity": "cli-proxy-api-plugin-host-locking.patch@be26b87f742a3667ea11c6f6cb558efbeb77ee6fcd904ad838f16da4ca3ab165",
         "number": 14
       },
       {
-        "identity": "cli-proxy-api-claude-metadata-locking.patch@35b69fdcfac2223f76a71956c82f772e3608af20dea68dd1ff393443d707e4e0",
+        "identity": "cli-proxy-api-claude-metadata-locking.patch@2ef3f4369652b6f5947facd1954674a2844e70fea7c242d0d3d63b83e4ddcadd",
         "number": 15
       },
       {
-        "identity": "cli-proxy-api-oauth-model-overlay.patch@ee11e0e82bbe81b4953b02d0c7e881e84a5d0d78425420e5cca1d76cb4228a2f",
+        "identity": "cli-proxy-api-oauth-model-overlay.patch@f3e1ff09984a5b8e3beb173a1e122e2a4ce14646ba1915df08344586cf6d6cd9",
         "number": 16
       },
       {
@@ -759,20 +759,20 @@
     "ordered_manifest": {
       "patches": [
         "cli-proxy-api-loopback-oauth.patch@2eb510b85f5204820d7a3d70c9b9a7bce283b1a7f23ead305ddfe28d500163a5",
-        "cli-proxy-api-kimi-claude-compat.patch@d8b4be92c5fd496980c4ad02e3e973cabb5570dc19f416b6336a608a044d2d44",
+        "cli-proxy-api-kimi-claude-compat.patch@135dadb71406136dc6e2ef1c46baa548d27cbf023c19dddce2e7d9de0f7ef9ae",
         "cli-proxy-api-non-claude-cache-retention.patch@6e022c54355322e5a307156ec1301710d50faff3f75dfc058506b17c6145128b",
-        "cli-proxy-api-management-readonly-allowlist.patch@c51d077d12280eee9419e7f928293c43a82b6839e279539ff9195a5fd885b59c",
-        "cli-proxy-api-watcher-parentdir.patch@a31e05f009b66c6b74a4d6767073553f05edad8de362542899773955672c7b5c",
+        "cli-proxy-api-management-readonly-allowlist.patch@f1320679a8dbb7254a94a9bdb6c0a2aba37d74ba9166dc3ca5caac36b76d133d",
+        "cli-proxy-api-watcher-parentdir.patch@c890605c3d4627f40fa214b9f564c6680b475e70644a30e289ff5e27a02c8d5a",
         "cli-proxy-api-serve-after-initial-auth-load.patch@600f4c5bc0cf90dbd11ad5a48b84c007050a948efcc754b30648856f4e8bba70",
-        "cli-proxy-api-management-env-only.patch@09e56ff25352761b2f7c3b208876e09c108daf259def78e47a260d9e9cf564cd",
+        "cli-proxy-api-management-env-only.patch@34174189f296f54022abbfffe2bd50275339e25189b0981e64013dcde8258fd8",
         "cli-proxy-api-credential-save-report.patch@c04cc0fc0af41dca57a801e87ee8cf4e4aba8377c716a8ca2ff1621d0f8d5107",
-        "cli-proxy-api-credentialed-redirects.patch@211c8157076a8a5e640796aae913853ba7719a5d9222349e58b98fe8102a40b1",
-        "cli-proxy-api-openai-compat-keyed-safety.patch@70878f4df3027f322aa2be2298b6f9472d9815ab3d3411578e9bcdf1cabf9f20",
+        "cli-proxy-api-credentialed-redirects.patch@bd5bb7fd5877a078ddeeb3287378c8dab8d201f1eaf9daa1e51b36e4ae310d44",
+        "cli-proxy-api-openai-compat-keyed-safety.patch@3325d838983fa8d89a139ef63c4e395f81688e379fb3203be90fc39360c9e00e",
         "cli-proxy-api-auth-snapshot-locking.patch@a6ecd426d45d91d74ef4c830982c1b0ad3b6f7dfcad3c0f1ff6123fbfe29dbfd",
-        "cli-proxy-api-server-config-snapshot.patch@aa5106979d08018c80e0c3fabd7784f7b44c49bac5350ff5a760bac2e7279c0d",
-        "cli-proxy-api-plugin-host-locking.patch@d7ec5447735613fa64ce21269ebbd578ea70561d091120de8fc26379de756567",
-        "cli-proxy-api-claude-metadata-locking.patch@35b69fdcfac2223f76a71956c82f772e3608af20dea68dd1ff393443d707e4e0",
-        "cli-proxy-api-oauth-model-overlay.patch@ee11e0e82bbe81b4953b02d0c7e881e84a5d0d78425420e5cca1d76cb4228a2f",
+        "cli-proxy-api-server-config-snapshot.patch@dba871bd4822226c8471ce55c7a70d16aeb6c9e723feb388dcd3bf0df311dd95",
+        "cli-proxy-api-plugin-host-locking.patch@be26b87f742a3667ea11c6f6cb558efbeb77ee6fcd904ad838f16da4ca3ab165",
+        "cli-proxy-api-claude-metadata-locking.patch@2ef3f4369652b6f5947facd1954674a2844e70fea7c242d0d3d63b83e4ddcadd",
+        "cli-proxy-api-oauth-model-overlay.patch@f3e1ff09984a5b8e3beb173a1e122e2a4ce14646ba1915df08344586cf6d6cd9",
         "cli-proxy-api-no-antigravity-egress.patch@233443d22a411ee935b4c0776c26992543a5b97d1241784db5bf726ca80464c6",
         "cli-proxy-api-codex-client-identity.patch@b4ffbda891ee82dbd0441dfa6a6b1d154fd82be33dc4c5e2edb2526eeb041c65",
         "cli-proxy-api-antigravity-loopback-callback.patch@f728ba3eb999266d30137cd7d4501d54cdb9613c2cc33579194a6d7b9a23a523",
@@ -784,12 +784,12 @@
       "version": 1
     },
     "recipe_sha256": {
-      "gateway/UPSTREAM.json": "f55de61b80a041f00dbba1997233e3ad42ee2dd39a281b2a858c7628de9734bb",
-      "tools/build.py": "c9a41cda7b5d5e39da9e6ce9b4c780c46e64d0e27762f15b59828dd8df91007c"
+      "gateway/UPSTREAM.json": "d1bb0f584dd0cca4f2125ce4c0989e567775f98043d2286c8615d83bade9f52c",
+      "tools/build.py": "ab832a21f81246f16bbf3bd015fb5ba65eb29159c4b830ac158351608a8235a6"
     },
     "source_hash": "sha256-s6Vdpcl7Hr85azsZ2DpkEQyod9eE9UQizKiYAJtguwY=",
     "source_tag": "v7.3.15",
-    "startup": "/nix/store/4qs6gk0136wb16azaj4zg91gmflywlpg-gwtest-startup-probe-7.3.15/bin/gwtest-startup-probe",
+    "startup": "/nix/store/q15bgby7marl6f4md0kg0vdg65p141ml-gwtest-startup-probe-7.3.15/bin/gwtest-startup-probe",
     "upstream_version": "7.3.15",
     "vendor_hash": "sha256-r3yWkdMcM40G9jV7MxW/qNv3E9WrHavFilW24quEf+8="
   },
@@ -826,75 +826,75 @@
   "source_report": {
     "document": {
       "evidence_dir": "tests/fixtures",
-      "head": "5a3b35cdd1e3b20f75e5e3f645e57d4dcfcf9634",
+      "head": "34324d3c3584a0376f564c9e510487b2b1e6c944",
       "relevant_sources": [
         {
-          "path": "src/claude_multi/catalog.py",
-          "sha256": "fe40d80e3bb8e839484233b4042763900a6f9172f270c3719d70e928187576f7"
+          "path": "src/charmer/catalog.py",
+          "sha256": "a6b5dcfff5634eaaa60003684dec88eb5623ab53b25762041b0b58640ca59f75"
         },
         {
-          "path": "src/claude_multi/operator.py",
-          "sha256": "6b4d4b14a27686820823f14931c801efa956bf3c997d630740c7b660cbc1596e"
+          "path": "src/charmer/operator.py",
+          "sha256": "b706fb1f53a218d68532e525aa5dea99aa38421a3778b09af9cbbdd52baec5e0"
         },
         {
-          "path": "src/claude_multi/render.py",
-          "sha256": "9f99ffb5721e872797b1aaf7c2da77a43949cdb7b5406a32b3803a094939dbfc"
+          "path": "src/charmer/render.py",
+          "sha256": "732e41345b8af2a55df438b68509eee444f782a4dd7e84d7bf2c6ed060cc801f"
         },
         {
-          "path": "src/claude_multi/served_plan.py",
-          "sha256": "ca1af711690b174789b0a9426da3a57936c1972d1f613707cc7f0c394d29788f"
+          "path": "src/charmer/served_plan.py",
+          "sha256": "affcc823cb55f250d07f6252211803f33d3f3a688a4438b2a31e3a6409715c8a"
         },
         {
-          "path": "src/claude_multi/qualify.py",
-          "sha256": "46fc23e75fbfda166c7d5ea55a6c30fe8c34f97d2bb00fe688f741b912996d84"
+          "path": "src/charmer/qualify.py",
+          "sha256": "65f09078f97ace0818c8d7d6057a59c827a9b0a1f983eefa04edc2b82eba4421"
         },
         {
-          "path": "src/claude_multi/discovery.py",
-          "sha256": "d6c7b4b2752f20756b15e7b3b206a8cec17125d52194bd47a3c37b1d20104c2f"
+          "path": "src/charmer/discovery.py",
+          "sha256": "097f6b8897154f56a7b5eeea5836a6cde986ab4a9b9a9b69bea0fca4491c8652"
         },
         {
-          "path": "src/claude_multi/profile.py",
-          "sha256": "476baaa6cabe85043bf0f9dd0a27b8b9c85b065a9e1492b49507863ebd9da147"
+          "path": "src/charmer/profile.py",
+          "sha256": "8e0be317eb5addd8930f59d673dc5c25bd4ea702fb7fb43ccecef975ef287f71"
         },
         {
-          "path": "src/claude_multi/compiler.py",
-          "sha256": "9dedefcde35083e711d412136f5e997e48a822d543e5317e28e1f26f0e6d5f8c"
+          "path": "src/charmer/compiler.py",
+          "sha256": "0ea294c2fabb14659f392fe90bec1d096f313d149173fc505e36b39636befb0f"
         },
         {
-          "path": "src/claude_multi/scope.py",
-          "sha256": "44c784dd9583b593d69df1c2e2d88cc698280ba60a529e44478c8afb0a2276ae"
+          "path": "src/charmer/scope.py",
+          "sha256": "2d5fddbd19aaa5172b73762741ec5af070aa436d39fbbc2a8db1b401dbe62ade"
         },
         {
-          "path": "src/claude_multi/cli/commands/models.py",
-          "sha256": "b044d6f365d6774dc58a342baacb1fbeacb1517610af89dfcb33931504e28044"
+          "path": "src/charmer/cli/commands/models.py",
+          "sha256": "aae44015e8424d584132b8a1514ac46df7e30be2fd866dbf4a5c08f8cd5271dd"
         },
         {
-          "path": "src/claude_multi/cli/commands/providers.py",
-          "sha256": "84b3b6daf5d4b013a8395b7170ac3392c4c96546bab55d40e5fa498d11b5f47c"
+          "path": "src/charmer/cli/commands/providers.py",
+          "sha256": "d1a2611225a03586b1b68c1334638d9163dc3c5928cd36f7e0edcee13685da4b"
         },
         {
-          "path": "src/claude_multi/data/schemas/gateway.schema.json",
+          "path": "src/charmer/data/schemas/gateway.schema.json",
           "sha256": "e047fd635b3d9b351d7390f9c6d9ece244c42f50902049844cb10cd592ff8533"
         },
         {
-          "path": "src/claude_multi/data/schemas/providers.schema.json",
+          "path": "src/charmer/data/schemas/providers.schema.json",
           "sha256": "c13f85f84a1d2de669d930b81f26815c96295d55ee19ca5339cb802dbd5e5ff4"
         },
         {
-          "path": "src/claude_multi/data/schemas/operator-provider.schema.json",
+          "path": "src/charmer/data/schemas/operator-provider.schema.json",
           "sha256": "bab1eb96832c3e06789a5bf9d566749b733056a53aadceb1aefac444f0c9f972"
         },
         {
-          "path": "src/claude_multi/data/schemas/operator-ledger.schema.json",
+          "path": "src/charmer/data/schemas/operator-ledger.schema.json",
           "sha256": "19e3b4b472ea01ec4110bdcb4be3667e7c2b078dd22f09566cbe6f137aa652e2"
         },
         {
-          "path": "src/claude_multi/data/schemas/models.schema.json",
+          "path": "src/charmer/data/schemas/models.schema.json",
           "sha256": "1d6f195db3b0aec05fda7164a241c1941ed5c9ff9c53aaa957159811c83639d6"
         }
       ]
     },
-    "sha256": "73a42bc0ff425c7333963ea50e1a438dc6ba1b2a30bbb48887f01a1380bab390"
+    "sha256": "a39cb6e172b1d61df09a7dab1edf9f8eecb2ef1f6433b8945de3921a4d999cbe"
   },
   "version": 1
 }
