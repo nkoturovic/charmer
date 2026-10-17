@@ -52,7 +52,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Iterable, Mapping, Sequence
 
 from . import catalog as catalog_mod
-from . import compiler, errors, hooks, layout, lineup_files, managed, profile, state, strict_json
+from . import compiler, errors, hooks, layout, legacy, lineup_files, managed, profile, state, strict_json
 from . import settings as settings_mod
 from .lineup_files import (
     LEAD_SET_JSON,
@@ -555,36 +555,11 @@ def skill_md_bytes() -> bytes:
 
 
 SKILL_MD_BYTES = skill_md_bytes()
-# The skill files earlier releases compiled: a live scope that still
-# carries one differs only by the skill text, which doctor reports as lazy
-# state (it applies at the next resume or repair), and a rollback repair
-# restores it. Oldest first.
-PREVIOUS_SKILL_MD_BYTES: tuple[bytes, ...] = (
-    (
-        "---\n"
-        "name: cm\n"
-        "description: Show or change this claude-multi session's agent lineup "
-        "(/cm, /cm set AGENT=MODEL[:EFFORT], /cm unset AGENT, /cm profile NAME, "
-        "/cm direct, /cm pin, /cm follow)\n"
-        "disable-model-invocation: true\n"
-        "allowed-tools: Bash(claude-multi lineup:*)\n"
-        "---\n"
-        "!`claude-multi lineup --session ${CLAUDE_SESSION_ID} '$ARGUMENTS'`\n"
-    ).encode("utf-8"),
-    (
-        "---\n"
-        "name: cm\n"
-        "description: Show or change this claude-multi session's agent lineup "
-        "(/cm, /cm profiles, /cm profile NAME, /cm set AGENT=MODEL[:EFFORT], /cm unset AGENT, "
-        "/cm direct, /cm pin, /cm follow, /cm fallback PROVIDER, /cm review, /cm quota)\n"
-        'argument-hint: "profile NAME · set AGENT=MODEL[:EFFORT] · unset AGENT · direct · pin · '
-        'follow · profiles · fallback PROVIDER · review [high-stakes] [RANGE] · quota"\n'
-        "disable-model-invocation: true\n"
-        "allowed-tools: Bash(claude-multi lineup:*)\n"
-        "---\n"
-        "!`claude-multi lineup --session ${CLAUDE_SESSION_ID} '$ARGUMENTS'`\n"
-    ).encode("utf-8"),
-)
+# The skill files earlier releases compiled (all under the earlier name,
+# in charmer.legacy): a live scope that still carries one differs only by
+# the skill text, which doctor reports as lazy state (it applies at the next
+# resume or repair), and a rollback repair restores it. Oldest first.
+PREVIOUS_SKILL_MD_BYTES: tuple[bytes, ...] = legacy.SKILL_MD_BYTES
 
 # The named inventory of the
 # pinned client's bundled skills that launch agents outside the bound cm

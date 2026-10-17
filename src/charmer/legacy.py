@@ -49,3 +49,51 @@ ENVIRONMENT = (
     "CLAUDE_MULTI_SECRET_ENV",
     "CLAUDE_MULTI_SESSION_ID",
 )
+
+# The /cm skill files the compiler wrote before the rename, oldest first;
+# the last is the one 1.1.0 compiled. A live scope that still carries one
+# differs only by the skill text, which doctor reports as lazy state (it
+# applies at the next resume or repair), and a rollback repair restores it
+# (``charmer.scope.PREVIOUS_SKILL_MD_BYTES``). Stays while scopes compiled
+# under the old name can still be resumed.
+SKILL_MD_BYTES = (
+    (
+        "---\n"
+        "name: cm\n"
+        "description: Show or change this claude-multi session's agent lineup "
+        "(/cm, /cm set AGENT=MODEL[:EFFORT], /cm unset AGENT, /cm profile NAME, "
+        "/cm direct, /cm pin, /cm follow)\n"
+        "disable-model-invocation: true\n"
+        "allowed-tools: Bash(claude-multi lineup:*)\n"
+        "---\n"
+        "!`claude-multi lineup --session ${CLAUDE_SESSION_ID} '$ARGUMENTS'`\n"
+    ).encode("utf-8"),
+    (
+        "---\n"
+        "name: cm\n"
+        "description: Show or change this claude-multi session's agent lineup "
+        "(/cm, /cm profiles, /cm profile NAME, /cm set AGENT=MODEL[:EFFORT], /cm unset AGENT, "
+        "/cm direct, /cm pin, /cm follow, /cm fallback PROVIDER, /cm review, /cm quota)\n"
+        'argument-hint: "profile NAME · set AGENT=MODEL[:EFFORT] · unset AGENT · direct · pin · '
+        'follow · profiles · fallback PROVIDER · review [high-stakes] [RANGE] · quota"\n'
+        "disable-model-invocation: true\n"
+        "allowed-tools: Bash(claude-multi lineup:*)\n"
+        "---\n"
+        "!`claude-multi lineup --session ${CLAUDE_SESSION_ID} '$ARGUMENTS'`\n"
+    ).encode("utf-8"),
+    (
+        "---\n"
+        "name: cm\n"
+        "description: Show or change this claude-multi session's agent lineup "
+        "(/cm, /cm profiles, /cm profile NAME, /cm set AGENT=MODEL[:EFFORT], /cm unset AGENT, "
+        "/cm direct [MODEL[:EFFORT]], /cm pin, /cm follow, /cm fallback PROVIDER [--preview], "
+        "/cm review [high-stakes] [RANGE], /cm quota)\n"
+        'argument-hint: "profiles · profile NAME · set AGENT=MODEL[:EFFORT] · unset AGENT · '
+        'direct [MODEL[:EFFORT]] · pin · follow · fallback PROVIDER [--preview] · '
+        'review [high-stakes] [RANGE] · quota"\n'
+        "disable-model-invocation: true\n"
+        "allowed-tools: Bash(claude-multi lineup:*)\n"
+        "---\n"
+        "!`claude-multi lineup --session ${CLAUDE_SESSION_ID} '$ARGUMENTS'`\n"
+    ).encode("utf-8"),
+)
