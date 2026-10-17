@@ -552,7 +552,7 @@ class ReadOnlyEntryProcessTests(unittest.TestCase):
                "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
                "PYTHONPATH": os.pathsep.join((str(REPO_ROOT / "src"), os.environ.get("PYTHONPATH", ""))),
                "PYTHONDONTWRITEBYTECODE": "1", "LC_ALL": "C.UTF-8",
-               "CLAUDE_MULTI_ASSETS": str(FIXTURE_ROOT), "CLAUDE_MULTI_CHANNEL": "source"}
+               "CHARMER_ASSETS": str(FIXTURE_ROOT), "CHARMER_CHANNEL": "source"}
         if "CM_ISOLATION_GUARD_LOG" in os.environ:
             env["CM_ISOLATION_GUARD_LOG"] = os.environ["CM_ISOLATION_GUARD_LOG"]
         before = self.snapshot()

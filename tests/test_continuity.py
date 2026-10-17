@@ -100,8 +100,8 @@ class ContinuityCase(unittest.TestCase):
             # Deliberately elsewhere: continuity.json is HOME-relative.
             "XDG_CONFIG_HOME": str(self.root / "xdg-config"),
             "XDG_STATE_HOME": str(self.root / "state"),
-            "CLAUDE_MULTI_SECRET_ENV": str(self.secret_file),
-            "CLAUDE_MULTI_ASSETS": str(self.assets),
+            "CHARMER_SECRET_ENV": str(self.secret_file),
+            "CHARMER_ASSETS": str(self.assets),
         }
         self.config_dir = proxy.config_dir(self.home)
         self.config = self.config_dir / "config.yaml"
@@ -109,7 +109,7 @@ class ContinuityCase(unittest.TestCase):
 
     # -- helpers ---------------------------------------------------------
     def bundle(self) -> catalog.Catalog:
-        return catalog.load_catalog(Path(self.environ["CLAUDE_MULTI_ASSETS"]))
+        return catalog.load_catalog(Path(self.environ["CHARMER_ASSETS"]))
 
     def render(self, state_root: Path | None | str = "default"):
         root = self.state_root if state_root == "default" else state_root
@@ -144,7 +144,7 @@ class ContinuityCase(unittest.TestCase):
     def copy_assets(self) -> Path:
         target = self.root / "assets"
         shutil.copytree(FIXTURE_ROOT, target)
-        self.environ["CLAUDE_MULTI_ASSETS"] = str(target)
+        self.environ["CHARMER_ASSETS"] = str(target)
         return target
 
 
@@ -467,7 +467,7 @@ class RunSurvivesCorruptionTests(ContinuityCase):
         binary.parent.mkdir()
         binary.write_bytes(b"#!/bin/fake\n")
         binary.chmod(0o755)
-        self.environ["CLAUDE_MULTI_PROXY_BIN"] = str(binary)
+        self.environ["CHARMER_PROXY_BIN"] = str(binary)
 
     def run_proxy(self, *args: str):
         calls = []
@@ -908,7 +908,7 @@ class VerifyMinorsTests(ContinuityCase):
         binary.parent.mkdir()
         binary.write_bytes(b"#!/bin/fake\n")
         binary.chmod(0o755)
-        self.environ["CLAUDE_MULTI_PROXY_BIN"] = str(binary)
+        self.environ["CHARMER_PROXY_BIN"] = str(binary)
         calls, err = [], io.StringIO()
         with redirect_stderr(err):
             code = proxy.main(["run"], environ=self.environ, execve=lambda *a: calls.append(a))

@@ -230,20 +230,20 @@ def resolve_hook_command(
 
     Every caller — launcher, transition engine, repair, cleanup — must derive
     the hook command here so all scopes share one spelling. Precedence:
-    ``CLAUDE_MULTI_HOOK_COMMAND`` (set by the installed wrapper), then the
+    ``CHARMER_HOOK_COMMAND`` (set by the installed wrapper), then the
     running installation's own ``bin/charmer`` (``installation``
     replaces it in tests). Resources are not executables: a resource
     override never moves the hook command.
     """
 
     env = os.environ if environ is None else environ
-    configured = env.get("CLAUDE_MULTI_HOOK_COMMAND")
+    configured = env.get("CHARMER_HOOK_COMMAND")
     if configured:
         return str(Path(configured).resolve())
     entry = layout.entry_point("charmer", installation)
     if entry is None:
         raise ScopeError(
-            "no hook command available: CLAUDE_MULTI_HOOK_COMMAND is unset "
+            "no hook command available: CHARMER_HOOK_COMMAND is unset "
             "and this package runs from no installation tree"
         )
     return str(entry.resolve())
@@ -1590,9 +1590,9 @@ def _lifecycle_settings_v2(
         "env": {
             "ANTHROPIC_BASE_URL": gateway_base_url,
             "CLAUDE_CODE_RETRY_WATCHDOG": "1",
-            "CLAUDE_MULTI_LAUNCH_EPOCH": str(launch_epoch),
-            "CLAUDE_MULTI_MANAGED_ID": managed_id,
-            "CLAUDE_MULTI_SESSION_ID": managed_id,
+            "CHARMER_LAUNCH_EPOCH": str(launch_epoch),
+            "CHARMER_MANAGED_ID": managed_id,
+            "CHARMER_SESSION_ID": managed_id,
         },
         "hooks": {name: entry(event) for name, event in HOOK_EVENTS_V3},
     }

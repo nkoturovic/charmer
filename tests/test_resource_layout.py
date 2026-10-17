@@ -170,8 +170,8 @@ class AuthorityTests(unittest.TestCase):
 
     def test_selected_resources_precedence(self) -> None:
         self.assertEqual(assets.root(environ={}), charmer.resources_root())
-        self.assertEqual(assets.root(environ={"CLAUDE_MULTI_ASSETS": "/env"}), Path("/env"))
-        self.assertEqual(assets.root("/explicit", environ={"CLAUDE_MULTI_ASSETS": "/env"}), Path("/explicit"))
+        self.assertEqual(assets.root(environ={"CHARMER_ASSETS": "/env"}), Path("/env"))
+        self.assertEqual(assets.root("/explicit", environ={"CHARMER_ASSETS": "/env"}), Path("/explicit"))
 
     def test_the_installation_is_the_tree_beside_the_package(self) -> None:
         self.assertEqual(layout.installation(), REPO_ROOT)

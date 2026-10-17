@@ -416,10 +416,10 @@ TEST_STALE = ("{display}: the connection changed after you agreed to the test â€
 # ------------------------------------------------------------------ key file
 KEYS_FILE_QUESTION = "Use {path} for API keys (it stays where it is; charmer never copies it)? [y/N] "
 KEYS_FILE_SET = "API keys now come from {path} ({n} key name(s) found)."
-KEYS_FILE_OVERRIDDEN = ("CLAUDE_MULTI_SECRET_ENV is set in this environment; it is used instead of the "
+KEYS_FILE_OVERRIDDEN = ("CHARMER_SECRET_ENV is set in this environment; it is used instead of the "
                         "selected file until it is unset.")
 KEYS_FILE_SERVICE = ("The gateway service reads {path} too, whenever it starts or reloads (it never reads "
-                     "CLAUDE_MULTI_SECRET_ENV).")
+                     "CHARMER_SECRET_ENV).")
 
 # ------------------------------------------------------------------ answers file
 ANSWERS_SECRET = "answers file holds what looks like a key at {path} â€” use api_key_file"

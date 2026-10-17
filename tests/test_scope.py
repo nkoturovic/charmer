@@ -306,8 +306,8 @@ class HookShimTests(unittest.TestCase):
                 token_helper_command="/state/bin/charmer-gateway-token",
             )
 
-        plan_a = compile_with({"CLAUDE_MULTI_HOOK_COMMAND": "/nix/store/gen95/bin/charmer"})
-        plan_b = compile_with({"CLAUDE_MULTI_HOOK_COMMAND": "/nix/store/gen96/bin/charmer"})
+        plan_a = compile_with({"CHARMER_HOOK_COMMAND": "/nix/store/gen95/bin/charmer"})
+        plan_b = compile_with({"CHARMER_HOOK_COMMAND": "/nix/store/gen96/bin/charmer"})
         self.assertEqual(scope.plan_hash(plan_a), scope.plan_hash(plan_b))
         shim_body = scope.hook_shim_v3_path(self.root).read_text()
         self.assertIn("/nix/store/gen96/bin/charmer", shim_body)
@@ -344,7 +344,7 @@ class HookShimTests(unittest.TestCase):
             scope.ensure_hook_shim(self.root, "")
 
     def test_resolve_hook_command_precedence(self) -> None:
-        env = {"CLAUDE_MULTI_HOOK_COMMAND": "/some/wrapper/../wrapper/charmer"}
+        env = {"CHARMER_HOOK_COMMAND": "/some/wrapper/../wrapper/charmer"}
         self.assertEqual(scope.resolve_hook_command(env), "/some/wrapper/charmer")
         # Without the wrapper's command: the running installation's own entry
         # point (here the source tree's bin/), never a resource directory.
@@ -355,10 +355,10 @@ class HookShimTests(unittest.TestCase):
             scope.resolve_hook_command({})
 
     def test_a_resource_override_never_moves_the_hook_command(self) -> None:
-        for env in ({"CLAUDE_MULTI_ASSETS": "/assets"}, {"CLAUDE_MULTI_ASSETS": str(FIXTURE_ROOT)}):
+        for env in ({"CHARMER_ASSETS": "/assets"}, {"CHARMER_ASSETS": str(FIXTURE_ROOT)}):
             with self.subTest(env=env):
                 self.assertEqual(scope.resolve_hook_command(env), scope.resolve_hook_command({}))
-                self.assertNotIn(env["CLAUDE_MULTI_ASSETS"], scope.resolve_hook_command(env))
+                self.assertNotIn(env["CHARMER_ASSETS"], scope.resolve_hook_command(env))
 
 
     def test_shim_bytes_are_the_pure_text(self) -> None:

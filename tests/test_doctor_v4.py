@@ -1025,16 +1025,16 @@ class DoctorFactsTests(_DoctorCase):
         self.assertTrue(any(line.startswith(f"session {self.m8}: scope differs") for line in problems), problems)
 
     def test_a_key_file_pair_only_the_launch_environment_selects_is_attention(self) -> None:
-        # Launched where CLAUDE_MULTI_SECRET_ENV selects a key file outside
+        # Launched where CHARMER_SECRET_ENV selects a key file outside
         # the protected folders: the real generator denies it Read and Edit.
         live = self.live(self.mid)
         denies = set(strict_json.loads((live / "settings.json").read_bytes())["permissions"]["deny"])
         pair = {rule for rule in scope.secret_path_denies(self.env) if rule not in
-                scope.secret_path_denies({k: v for k, v in self.env.items() if k != "CLAUDE_MULTI_SECRET_ENV"})}
+                scope.secret_path_denies({k: v for k, v in self.env.items() if k != "CHARMER_SECRET_ENV"})}
         self.assertEqual({rule.split("(", 1)[0] for rule in pair}, {"Read", "Edit"})
         self.assertLessEqual(pair, denies)
         # Doctor from a shell that does not select that file.
-        environ = {k: v for k, v in self.env.items() if k != "CLAUDE_MULTI_SECRET_ENV"}
+        environ = {k: v for k, v in self.env.items() if k != "CHARMER_SECRET_ENV"}
         problems, _info, attention = _doctor(self, self.make_runtime(environ=environ))
         self.assertFalse([line for line in problems if self.m8 in line and "scope differs" in line], problems)
         line = next(line for line in attention if line.startswith(f"session {self.m8}: its secret-file denies"))
@@ -1999,12 +1999,12 @@ class CustomRegistryRadarTests(_DoctorCase):
 
     def test_shell_secret_override_is_info_and_never_prints_its_value(self):
         _problems, info, _attention = _doctor(self)
-        line = next(line for line in info if line.startswith("CLAUDE_MULTI_SECRET_ENV is set"))
-        self.assertEqual(line, "CLAUDE_MULTI_SECRET_ENV is set in this shell; the gateway service ignores it "
+        line = next(line for line in info if line.startswith("CHARMER_SECRET_ENV is set"))
+        self.assertEqual(line, "CHARMER_SECRET_ENV is set in this shell; the gateway service ignores it "
                               "and reads ~/.config/charmer/secrets/provider-keys.env")
-        self.assertNotIn(self.runtime.environ["CLAUDE_MULTI_SECRET_ENV"], line)
-        self.runtime.environ.pop("CLAUDE_MULTI_SECRET_ENV")
-        self.assertFalse(any(line.startswith("CLAUDE_MULTI_SECRET_ENV is set") for line in _doctor(self)[1]))
+        self.assertNotIn(self.runtime.environ["CHARMER_SECRET_ENV"], line)
+        self.runtime.environ.pop("CHARMER_SECRET_ENV")
+        self.assertFalse(any(line.startswith("CHARMER_SECRET_ENV is set") for line in _doctor(self)[1]))
 
 
 class SubstitutionRadarTests(_DoctorCase):

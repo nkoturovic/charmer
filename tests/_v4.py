@@ -52,7 +52,7 @@ class V4Case(unittest.TestCase):
             "XDG_CONFIG_HOME": str(self.root / "config"),
             "XDG_STATE_HOME": str(self.root / "state"),
             "TERM": "dumb",
-            "CLAUDE_MULTI_SECRET_ENV": str(self.root / "secrets" / "claude.env"),
+            "CHARMER_SECRET_ENV": str(self.root / "secrets" / "claude.env"),
         }
         state.ensure_private_dir(self.root / "secrets")
         state.atomic_write(

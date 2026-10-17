@@ -45,7 +45,7 @@ def _restore_2x(
     records are listed with a y/N (yes records their end).
 
     A narrow exception: when the caller's own
-    ``CLAUDE_MULTI_MANAGED_ID`` is listed in ``--assume-dead``, that record
+    ``CHARMER_MANAGED_ID`` is listed in ``--assume-dead``, that record
     alone is checked against the ``/proc`` argvs of processes that are not
     the caller or its ancestors (its own client names it). The daemon ●
     check and ``--not-running`` are never overridden. ``proc_root`` and
@@ -87,7 +87,7 @@ def _restore_2x(
             errors.write(f"charmer: restore-2x: {value!r} is not a managed session UUID\n")
             return 2
     store = sessions.SessionStore(state_path, sessions.default_schema())
-    self_id = (os.environ if environ is None else environ).get("CLAUDE_MULTI_MANAGED_ID")
+    self_id = (os.environ if environ is None else environ).get("CHARMER_MANAGED_ID")
     override = self_id if self_id in assume_dead else None
 
     def liveness() -> Callable[[dict[str, Any]], bool]:

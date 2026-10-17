@@ -42,9 +42,9 @@ if __name__ == "__main__":
 from charmer import catalog, probe, render, state
 from _gateway import NIX_STORE, _gateway_binary, diagnostic_problem, sha256_file
 
-REQUIRE_ENV = "CLAUDE_MULTI_TEST_REQUIRE_GATEWAY"
-BINARY_ENV = "CLAUDE_MULTI_TEST_CLI_PROXY_API"
-EVIDENCE_ENV = "CLAUDE_MULTI_TEST_GATEWAY_EVIDENCE"
+REQUIRE_ENV = "CHARMER_TEST_REQUIRE_GATEWAY"
+BINARY_ENV = "CHARMER_TEST_CLI_PROXY_API"
+EVIDENCE_ENV = "CHARMER_TEST_GATEWAY_EVIDENCE"
 GATEWAY_CHECK_MODULES = (
     "tests.test_gateway_harness", "tests.test_gateway_hot_reload",
     "tests.test_proxy", "tests.test_gateway_unit", "tests.test_gateway_unit_view",
@@ -67,7 +67,7 @@ CODEX = "cliproxy-oauth-codex-v1"
 CLAUDE = "cliproxy-claude-compatible-v1"
 COMPAT = "cliproxy-openai-compat-v1"
 # Single-omission proof, not a claim that patch hunks or effects are disjoint.
-STARTUP_PROBE_ENV = "CLAUDE_MULTI_TEST_GATEWAY_STARTUP_PROBE"
+STARTUP_PROBE_ENV = "CHARMER_TEST_GATEWAY_STARTUP_PROBE"
 PATCH_ROWS = {
     "cli-proxy-api-loopback-oauth.patch": (
         "tests.test_gateway_patches.LoopbackOAuthListenerTests.test_claude_login_callback_listens_on_loopback_only",
@@ -514,8 +514,8 @@ def validate_evidence(directory: Path, *, published: bool = False) -> None:
 
 
 # The keyed lanes extend the metadata evidence, with explicit selected inventories.
-KEYED_LANE_ENV = "CLAUDE_MULTI_TEST_KEYED_LANE"
-KEYED_EVIDENCE_ENV = "CLAUDE_MULTI_TEST_KEYED_EVIDENCE"
+KEYED_LANE_ENV = "CHARMER_TEST_KEYED_LANE"
+KEYED_EVIDENCE_ENV = "CHARMER_TEST_KEYED_EVIDENCE"
 KEYED_INVENTORIES = {
     "core": {"K1-render", "K1-pairing", "K12", "S1", "A1-reload"},
     "audit": {"K1-omissions", "P1-CR1-KS1", "P1-controls", "CR1", "KS1", "M1", "F1",

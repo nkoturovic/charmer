@@ -154,7 +154,7 @@ from charmer.cli.runtime import Runtime
 from charmer.cli.entry import main
 root = Path({str(CATALOG_ROOT)!r})
 base = Path({temp!r})
-env = {{'HOME': str(base/'home'), 'XDG_CONFIG_HOME': str(base/'config'), 'XDG_STATE_HOME': str(base/'state'), 'TERM': 'dumb', 'CLAUDE_MULTI_SECRET_ENV': {str(secret_file)!r}}}
+env = {{'HOME': str(base/'home'), 'XDG_CONFIG_HOME': str(base/'config'), 'XDG_STATE_HOME': str(base/'state'), 'TERM': 'dumb', 'CHARMER_SECRET_ENV': {str(secret_file)!r}}}
 runtime = Runtime(asset_root=root, environ=env, cwd=base/'project', launch_callback=lambda prepared: 0, served_models_callback=lambda gateway, token: (None, None), health_get=lambda base, path: 200)
 raise SystemExit(main(['compose', 'edit', 'balanced'], runtime=runtime, input_stream=sys.stdin, output_stream=sys.stdout, interactive=True))
 """
@@ -187,7 +187,7 @@ from charmer.cli.runtime import Runtime
 from charmer.cli.entry import main
 root = Path({str(CATALOG_ROOT)!r})
 base = Path({temp!r})
-env = {{'HOME': str(base/'home'), 'XDG_CONFIG_HOME': str(base/'config'), 'XDG_STATE_HOME': str(base/'state'), 'CLAUDE_MULTI_SECRET_ENV': {str(secret_file)!r}}}
+env = {{'HOME': str(base/'home'), 'XDG_CONFIG_HOME': str(base/'config'), 'XDG_STATE_HOME': str(base/'state'), 'CHARMER_SECRET_ENV': {str(secret_file)!r}}}
 def fake(prepared):
     print('FAKE_LAUNCH=' + prepared.result.session_action.kind, flush=True)
     return 0
@@ -289,7 +289,7 @@ from charmer.cli.runtime import Runtime
 from charmer.cli.entry import main
 root = Path({str(CATALOG_ROOT)!r})
 base = Path({temp!r})
-env = {{'HOME': str(base/'home'), 'XDG_CONFIG_HOME': str(base/'config'), 'XDG_STATE_HOME': str(base/'state'), 'TERM': 'dumb', 'CLAUDE_MULTI_SECRET_ENV': {str(secret_file)!r}}}
+env = {{'HOME': str(base/'home'), 'XDG_CONFIG_HOME': str(base/'config'), 'XDG_STATE_HOME': str(base/'state'), 'TERM': 'dumb', 'CHARMER_SECRET_ENV': {str(secret_file)!r}}}
 def fake(prepared):
     print('FAKE_LAUNCH=' + prepared.result.session_action.kind, flush=True)
     return 0
@@ -529,7 +529,7 @@ from charmer.cli.entry import main
 from charmer.cli.session_facts import _native_project_slug
 root = Path({str(CATALOG_ROOT)!r})
 base = Path({temp!r})
-env = {{'HOME': str(base/'home'), 'XDG_CONFIG_HOME': str(base/'config'), 'XDG_STATE_HOME': str(base/'state'), 'CLAUDE_MULTI_SECRET_ENV': {str(secret_file)!r}}}
+env = {{'HOME': str(base/'home'), 'XDG_CONFIG_HOME': str(base/'config'), 'XDG_STATE_HOME': str(base/'state'), 'CHARMER_SECRET_ENV': {str(secret_file)!r}}}
 def fake(prepared):
     print('FAKE_LAUNCH=' + prepared.result.session_action.kind, flush=True)
     return 0
@@ -817,7 +817,7 @@ from charmer.cli.runtime import Runtime
 from charmer.cli.entry import main
 root = Path({str(CATALOG_ROOT)!r})
 base = Path({temp!r})
-env = {{'HOME': str(base/'home'), 'XDG_CONFIG_HOME': str(base/'config'), 'XDG_STATE_HOME': str(base/'state'), 'CLAUDE_MULTI_SECRET_ENV': {str(secret_file)!r}}}
+env = {{'HOME': str(base/'home'), 'XDG_CONFIG_HOME': str(base/'config'), 'XDG_STATE_HOME': str(base/'state'), 'CHARMER_SECRET_ENV': {str(secret_file)!r}}}
 def fake(prepared):
     print('FAKE_LAUNCH=' + prepared.result.session_action.kind, flush=True)
     return 0

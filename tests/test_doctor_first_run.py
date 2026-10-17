@@ -113,7 +113,7 @@ class KeyFileTests(FirstRunCase):
 
     def test_a_bad_pointer_is_a_files_failure(self) -> None:
         env = dict(self.runtime.environ)
-        env.pop("CLAUDE_MULTI_SECRET_ENV")
+        env.pop("CHARMER_SECRET_ENV")
         with mock.patch.dict(self.runtime.environ, env, clear=True):
             from charmer import paths
 
@@ -239,7 +239,7 @@ class GatewayStartTests(_GatewayDoctor):
         super().setUp()
         empty = self.root / "empty-path"
         empty.mkdir()
-        self.runtime.environ.pop("CLAUDE_MULTI_PROXY_BIN", None)
+        self.runtime.environ.pop("CHARMER_PROXY_BIN", None)
         self.runtime.environ["PATH"] = str(empty)
 
     def program(self, mode: int = 0o755) -> Path:
@@ -247,7 +247,7 @@ class GatewayStartTests(_GatewayDoctor):
         binary.parent.mkdir(exist_ok=True)
         binary.write_text("#!/bin/sh\nexit 1\n")
         binary.chmod(mode)
-        self.runtime.environ["CLAUDE_MULTI_PROXY_BIN"] = str(binary)
+        self.runtime.environ["CHARMER_PROXY_BIN"] = str(binary)
         return binary
 
     def gateway(self) -> firstrun.Check:

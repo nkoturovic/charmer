@@ -32,7 +32,7 @@ class GatewaySeamTests(unittest.TestCase):
             "XDG_CONFIG_HOME": str(self.root / "config"),
             "XDG_STATE_HOME": str(self.root / "state"),
             "TERM": "dumb",
-            "CLAUDE_MULTI_SECRET_ENV": str(self.root / "secrets" / "claude.env"),
+            "CHARMER_SECRET_ENV": str(self.root / "secrets" / "claude.env"),
         }
         (self.root / "project").mkdir()
         token_dir = state.ensure_private_dir(self.home / ".config" / "charmer")

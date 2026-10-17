@@ -188,7 +188,7 @@ class EntryPointTests(CLITestCase):
             self.invoke_cli(TypeError("bug"))
 
     def test_proxy_corrupt_custom_registry_is_one_line(self) -> None:
-        env = {**self.runtime.environ, "CLAUDE_MULTI_ASSETS": str(FIXTURE_ROOT)}
+        env = {**self.runtime.environ, "CHARMER_ASSETS": str(FIXTURE_ROOT)}
         state.ensure_private_dir(custom.registry_path(env).parent)
         state.atomic_write(custom.registry_path(env), b"{broken")
         out, err = io.StringIO(), io.StringIO()

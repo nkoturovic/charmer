@@ -30,7 +30,7 @@ from charmer import errors as cli_errors
 import charmer.cli.streams as streams
 
 
-SESSION_MARKERS = ("CLAUDE_MULTI_MANAGED_ID", "CLAUDECODE")
+SESSION_MARKERS = ("CHARMER_MANAGED_ID", "CLAUDECODE")
 _TTY_NAME = "/dev/tty"
 
 

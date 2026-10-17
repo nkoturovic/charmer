@@ -255,7 +255,7 @@ class _Inhibited(test_gateway_service._ServiceCase):
 
     def runtime(self, **environ: str) -> cli.Runtime:
         launcher = self.home / ".local/share/charmer/install/current/bin/charmer"
-        return cli.Runtime(asset_root=FIXTURE_ROOT, environ=self.environ(CLAUDE_MULTI_HOOK_COMMAND=str(launcher),
+        return cli.Runtime(asset_root=FIXTURE_ROOT, environ=self.environ(CHARMER_HOOK_COMMAND=str(launcher),
                                                                          **environ),
                            cwd=self.root, managed_root=self.root / "managed", gateway_seams=self.seams(),
                            gateway_service_seams=test_gateway_service.gs.ServiceSeams(
@@ -473,7 +473,7 @@ class _Entry(_Inhibited):
         execs: list = []
         out, err = io.StringIO(), io.StringIO()
         env = {"HOME": str(self.home), "XDG_STATE_HOME": str(self.home / ".local/state"),
-               "CLAUDE_MULTI_ASSETS": str(FIXTURE_ROOT), "CLAUDE_MULTI_PROXY_BIN": self.fake_binary(), **environ}
+               "CHARMER_ASSETS": str(FIXTURE_ROOT), "CHARMER_PROXY_BIN": self.fake_binary(), **environ}
         with redirect_stdout(out), redirect_stderr(err):
             code = proxy.main(list(argv), environ=env, execve=lambda *a: execs.append(a),
                               models_get=lambda *_a: (200, set()), health_get=lambda *_a: 200,
@@ -493,9 +493,9 @@ class _Entry(_Inhibited):
     def process_environ(self, launcher: str, **extra: str):
         environ = {"HOME": str(self.home), "XDG_STATE_HOME": str(self.home / ".local/state"),
                    "XDG_CONFIG_HOME": str(self.home / ".config"), "TERM": "dumb",
-                   "CLAUDE_MULTI_HOOK_COMMAND": launcher, **extra}
+                   "CHARMER_HOOK_COMMAND": launcher, **extra}
         with mock.patch.dict(os.environ, environ):
-            for name in (gi.TOKEN_ENV, "CLAUDE_MULTI_CHANNEL"):
+            for name in (gi.TOKEN_ENV, "CHARMER_CHANNEL"):
                 if name not in extra:
                     os.environ.pop(name, None)
             yield
@@ -539,10 +539,10 @@ class EntryPointFencingTests(_Entry):
         installs.write_marker(self.state_root, "nix")
         for argv in (["init"], ["run", "--prepare-and-exec"], ["claude-login"]):
             with self.subTest(argv=argv):
-                code, _out, err, execs = self.proxy(*argv, CLAUDE_MULTI_CHANNEL="bundle")
+                code, _out, err, execs = self.proxy(*argv, CHARMER_CHANNEL="bundle")
                 self.assertEqual((code, execs), (1, []))
                 self.assertIn("belongs to the nix installation, and this is the bundle one", err)
-        self.assertEqual(self.proxy("init", CLAUDE_MULTI_CHANNEL="nix")[0], 0)
+        self.assertEqual(self.proxy("init", CHARMER_CHANNEL="nix")[0], 0)
         self.assertEqual(self.proxy("init")[0], 0)  # an unknown channel neither claims nor refuses
         self.assertEqual(installs.read_marker(self.state_root), "nix")
 
@@ -582,7 +582,7 @@ class StoppedProofTests(_Inhibited):
 
         self.management = management
         self.env = {"HOME": str(self.home), "XDG_STATE_HOME": str(self.home / ".local/state"),
-                    "CLAUDE_MULTI_ASSETS": str(FIXTURE_ROOT), "CLAUDE_MULTI_PROXY_BIN": self.fake_binary(),
+                    "CHARMER_ASSETS": str(FIXTURE_ROOT), "CHARMER_PROXY_BIN": self.fake_binary(),
                     management.PATCHES_ENV: management.ALLOWLIST_PATCH,
                     management.CHANNEL_ENV: management.MANAGEMENT_CHANNEL}
 
@@ -863,7 +863,7 @@ class SerializationTests(_Inhibited):
         self.assertTrue(api_key_lock.acquire(blocking=False))
         result: list = []
         env = {"HOME": str(self.home), "XDG_STATE_HOME": str(self.home / ".local/state"),
-               "CLAUDE_MULTI_ASSETS": str(FIXTURE_ROOT), "CLAUDE_MULTI_PROXY_BIN": self.fake_binary()}
+               "CHARMER_ASSETS": str(FIXTURE_ROOT), "CHARMER_PROXY_BIN": self.fake_binary()}
 
         seams = dict(models_get=lambda *_a: (200, set()), health_get=lambda *_a: 200,
                      listener_observer=lambda _b: proxy.service.OwnerVerdict("none", "fixture"),
@@ -1179,7 +1179,7 @@ class TwoRootsTests(_Entry):
         gi.end(self.state_root, token)
         # The managed root's channel is checked too.
         installs.write_marker(self.state_root, "nix")
-        code, _out, err, _execs = self.proxy("init", "--state-root", str(other), CLAUDE_MULTI_CHANNEL="bundle")
+        code, _out, err, _execs = self.proxy("init", "--state-root", str(other), CHARMER_CHANNEL="bundle")
         self.assertEqual(code, 1)
         self.assertIn("belongs to the nix installation", err)
 
@@ -1293,7 +1293,7 @@ class ForeignChannelShimTests(_Entry):
 
         old, new = str(self.root / "old" / "charmer"), str(self.root / "new" / "charmer")
         installs.write_marker(self.state_root, "nix")
-        with self.process_environ(old, CLAUDE_MULTI_CHANNEL="nix"):
+        with self.process_environ(old, CHARMER_CHANNEL="nix"):
             self.assertIsNone(cli.Runtime(asset_root=FIXTURE_ROOT).shims_withheld)
         before = self.shims()
         self.assertEqual(len(before), 3)
@@ -1302,14 +1302,14 @@ class ForeignChannelShimTests(_Entry):
             state.atomic_write(installs.marker_path(self.state_root), marker)
             for channel in ("bundle", "nix") if marker != b"nix\n" else ("bundle",):
                 with self.subTest(marker=marker, channel=channel), \
-                        self.process_environ(new, CLAUDE_MULTI_CHANNEL=channel), redirect_stderr(io.StringIO()):
+                        self.process_environ(new, CHARMER_CHANNEL=channel), redirect_stderr(io.StringIO()):
                     cli.main(["session-event", "end", "--managed-id", runtime_id], input_stream=io.StringIO("{}"),
                              output_stream=io.StringIO(), interactive=False)
                     self.assertEqual(cli.Runtime(asset_root=FIXTURE_ROOT).shims_withheld, "channel")
                     self.assertEqual(self.shims(), before)
         # The owning channel refreshes them.
         state.atomic_write(installs.marker_path(self.state_root), b"nix\n")
-        with self.process_environ(new, CLAUDE_MULTI_CHANNEL="nix"):
+        with self.process_environ(new, CHARMER_CHANNEL="nix"):
             self.assertIsNone(cli.Runtime(asset_root=FIXTURE_ROOT).shims_withheld)
         self.assertTrue(any(new.encode() in raw for raw in self.shims().values()))
 

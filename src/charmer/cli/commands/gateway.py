@@ -19,7 +19,7 @@ While the state root's inhibition is recorded (see ``gateway_inhibition``),
 start, stop, restart, the service verbs and the setup step refuse with the
 inhibited outcome (exit 1); ``ensure`` still answers for a gateway already
 proven ours. The transaction owner's own explicit verbs pass by carrying its
-token in ``CLAUDE_MULTI_INHIBITION_TOKEN``; ``ensure`` (the token helper)
+token in ``CHARMER_INHIBITION_TOKEN``; ``ensure`` (the token helper)
 never acts for the owner.
 """
 

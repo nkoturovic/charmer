@@ -101,8 +101,8 @@ _SPAWN_PASS = frozenset({"LANG", "LANGUAGE", "TMPDIR", "SSL_CERT_FILE", "SSL_CER
 # An inherited inhibition token is never forwarded either: only the owner's
 # own Gateway object hands its token to the gateway it starts.
 _SPAWN_WITHHELD = frozenset({
-    "CLAUDE_MULTI_PROXY_PATCHES", "CLAUDE_MULTI_MANAGED_ID", "CLAUDE_MULTI_SESSION_ID",
-    "CLAUDE_MULTI_LAUNCH_EPOCH", "CLAUDE_MULTI_GATEWAY", gateway_inhibition.TOKEN_ENV,
+    "CHARMER_PROXY_PATCHES", "CHARMER_MANAGED_ID", "CHARMER_SESSION_ID",
+    "CHARMER_LAUNCH_EPOCH", "CHARMER_GATEWAY", gateway_inhibition.TOKEN_ENV,
 })
 
 OURS, STARTING, STOPPED, FOREIGN, UNKNOWN = "ours", "starting", "stopped", "foreign", "unknown"
@@ -204,7 +204,7 @@ def spawn_environment(environ: Mapping[str, str], home: Path | str, *,
     """The allowlisted environment of a spawned gateway.
 
     HOME, a minimal PATH, the locale, ``TZ=UTC`` (log timestamps), TMPDIR,
-    the TLS trust variables and the launcher's own ``CLAUDE_MULTI_*`` settings
+    the TLS trust variables and the launcher's own ``CHARMER_*`` settings
     minus the withheld ones. Proxy variables and every other credential or
     configuration variable stay behind. With ``resolve_binary`` (a source or
     script entry point, which has no wrapper to pin the gateway binary) the
@@ -215,12 +215,12 @@ def spawn_environment(environ: Mapping[str, str], home: Path | str, *,
     for name, value in environ.items():
         if name in _SPAWN_PASS or name.startswith("LC_"):
             env[name] = value
-        elif name.startswith("CLAUDE_MULTI_") and name not in _SPAWN_WITHHELD:
+        elif name.startswith("CHARMER_") and name not in _SPAWN_WITHHELD:
             env[name] = value
-    if resolve_binary and "CLAUDE_MULTI_PROXY_BIN" not in env:
+    if resolve_binary and "CHARMER_PROXY_BIN" not in env:
         found = shutil.which(service.GATEWAY_BINARY, path=environ.get("PATH") or None)
         if found:
-            env["CLAUDE_MULTI_PROXY_BIN"] = found
+            env["CHARMER_PROXY_BIN"] = found
     return env
 
 
@@ -510,7 +510,7 @@ class Gateway:
 
         if self._proxy_command is not None:
             return list(self._proxy_command), False
-        hook = self.environ.get("CLAUDE_MULTI_HOOK_COMMAND")
+        hook = self.environ.get("CHARMER_HOOK_COMMAND")
         if hook:
             sibling = Path(hook).with_name("charmer-proxy")
             if sibling.is_file() and os.access(sibling, os.X_OK):
@@ -1033,7 +1033,7 @@ class Gateway:
         (the wrapper's pin, the package's own gateway link, else the gateway on
         the launcher's PATH)."""
 
-        pinned = self.environ.get("CLAUDE_MULTI_PROXY_BIN")
+        pinned = self.environ.get("CHARMER_PROXY_BIN")
         if pinned:
             return pinned
         packaged = packaged_gateway(installs.install_root(self.environ, self.installation))

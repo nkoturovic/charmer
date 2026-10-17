@@ -235,9 +235,9 @@ class ActionRefusalOwners(JourneyFixture):
 
     def test_E19_session_guard(self):
         with self.assertRaises(consent.ConsentRefused) as raised:
-            consent.require_human("models admit", {"CLAUDE_MULTI_MANAGED_ID": ""})
+            consent.require_human("models admit", {"CHARMER_MANAGED_ID": ""})
         self.assertEqual(str(raised.exception),
-                         "models admit: needs a terminal outside Claude Code sessions (CLAUDE_MULTI_MANAGED_ID set) — run it in a separate shell")
+                         "models admit: needs a terminal outside Claude Code sessions (CHARMER_MANAGED_ID set) — run it in a separate shell")
 
 
 class ObservationAcceptance(JourneyFixture):

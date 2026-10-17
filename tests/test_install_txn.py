@@ -252,7 +252,7 @@ class CompetingChangeTests(_Competing):
         self.assert_inhibited(self.service().install(), "installer", "sh install.sh --repair")
         self.assertEqual(self.world.spawned, [])
         # The owner's own commands pass with its token (the explicit gateway
-        # verbs take it from CLAUDE_MULTI_INHIBITION_TOKEN).
+        # verbs take it from CHARMER_INHIBITION_TOKEN).
         recovered = install_txn.recover(self.state_root, "installer")
         gateway = self.gateway()
         gateway.inhibition_token = recovered.token
@@ -375,9 +375,9 @@ class CommandTests(TxnTestCase):
         self.assertEqual(self.run_main("preflight", *roots, "--recoverable", "updater")[0], 1)
         held = install_txn.recover(self.state, "installer")
         self.assertEqual(self.run_main("preflight", *roots, "--token-env",
-                                       CLAUDE_MULTI_INHIBITION_TOKEN=held.token)[0], 0)
+                                       CHARMER_INHIBITION_TOKEN=held.token)[0], 0)
         code, out, _err = self.run_main("claim", "--state-root", str(self.state),
-                                        CLAUDE_MULTI_INHIBITION_TOKEN=held.token)
+                                        CHARMER_INHIBITION_TOKEN=held.token)
         self.assertEqual((code, out), (0, ""))
         self.assertEqual(self.run_main("begin", "--state-root", str(self.state))[0], 2)  # the inhibition's own command
         held.end()

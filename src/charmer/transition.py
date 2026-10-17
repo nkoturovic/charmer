@@ -47,8 +47,8 @@ class TransitionError(errors.CharmerError, RuntimeError):
 # Environment sentinel compiled into every managed launch; the session's own
 # agents and nested CLI invocations self-identify against it (a `lineup`
 # request from inside the session is recorded as pending).
-SESSION_ENV_VAR = "CLAUDE_MULTI_MANAGED_ID"
-LEGACY_SESSION_ENV_VAR = "CLAUDE_MULTI_SESSION_ID"
+SESSION_ENV_VAR = "CHARMER_MANAGED_ID"
+LEGACY_SESSION_ENV_VAR = "CHARMER_SESSION_ID"
 
 # The exact relaunch command printed for a session.
 COMMAND_TEMPLATE = (
@@ -57,7 +57,7 @@ COMMAND_TEMPLATE = (
 
 # The env value that differs between an epoch-bumped record (sessions link,
 # resolve-fork) and the scope its launch committed.
-_EPOCH_ENV = "CLAUDE_MULTI_LAUNCH_EPOCH"
+_EPOCH_ENV = "CHARMER_LAUNCH_EPOCH"
 _EPOCH_SEARCH_LIMIT = 64
 
 

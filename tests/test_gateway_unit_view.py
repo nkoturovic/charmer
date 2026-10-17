@@ -82,7 +82,7 @@ class GatewayHomeViewTests(unittest.TestCase):
         self.gateway.write_text(json.dumps(doc))
         self.env = {'HOME': str(self.home), 'PATH': '/usr/bin:/bin',
                     'PYTHONPATH': str(REPO_ROOT/'src'), 'PYTHONDONTWRITEBYTECODE': '1',
-                    'CLAUDE_MULTI_ASSETS': str(self.assets), 'CLAUDE_MULTI_PROXY_BIN': self.binary,
+                    'CHARMER_ASSETS': str(self.assets), 'CHARMER_PROXY_BIN': self.binary,
                     management.PATCHES_ENV: management.ALLOWLIST_PATCH,
                     management.CHANNEL_ENV: management.MANAGEMENT_CHANNEL}
         self.state_root = self.home/self.spec['state_root']

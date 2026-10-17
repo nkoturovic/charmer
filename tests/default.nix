@@ -46,7 +46,7 @@ pkgs.runCommand "charmer-tests"
     env.PYTHONDONTWRITEBYTECODE = "1";
     # The release integration tests must run here: a missing ssh-keygen
     # fails them instead of skipping them.
-    env.CLAUDE_MULTI_TEST_REQUIRE_RELEASE = "1";
+    env.CHARMER_TEST_REQUIRE_RELEASE = "1";
     # The repository tree (tests/source-tree.nix): the gateway patches
     # (gateway/patches/, GatewayManifestConsistencyTests) and the package
     # description (pyproject.toml) are in it at their repository paths.
@@ -63,7 +63,7 @@ pkgs.runCommand "charmer-tests"
     chmod -R u+w "$staged/charmer"
     export PYTHONPATH="$staged/charmer/src:$staged/charmer/tests"
     # Explicit non-gateway lane: select pure keyed self-tests, never skip a required proof.
-    export CLAUDE_MULTI_TEST_KEYED_LANE=unit
+    export CHARMER_TEST_KEYED_LANE=unit
     cd "$TMPDIR"
     # Same discovery as the dev gate (-t: tests is a package), so
     # tests/__init__.py arms the live-gateway connect tripwire here too.

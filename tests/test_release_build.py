@@ -1178,10 +1178,10 @@ class BundleLauncherTests(unittest.TestCase):
 
     def hostile(self) -> dict[str, str]:
         return {"HOME": str(self.home), "PATH": os.environ.get("PATH", os.defpath), "LC_ALL": "C",
-                "CLAUDE_MULTI_CHANNEL": "nix", "CLAUDE_MULTI_PROXY_PATCHES": "cli-proxy-api-management-readonly-allowlist.patch",
-                "CLAUDE_MULTI_PROXY_BIN": str(self.tmp / "hostile-gateway"), "MANAGEMENT_PASSWORD": "INHERITED-VALUE",
-                "CLAUDE_MULTI_ASSETS": str(self.tmp / "hostile-assets"),
-                "CLAUDE_MULTI_HOOK_COMMAND": str(self.tmp / "hostile-hook"),
+                "CHARMER_CHANNEL": "nix", "CHARMER_PROXY_PATCHES": "cli-proxy-api-management-readonly-allowlist.patch",
+                "CHARMER_PROXY_BIN": str(self.tmp / "hostile-gateway"), "MANAGEMENT_PASSWORD": "INHERITED-VALUE",
+                "CHARMER_ASSETS": str(self.tmp / "hostile-assets"),
+                "CHARMER_HOOK_COMMAND": str(self.tmp / "hostile-hook"),
                 "PYTHONPATH": str(self.tmp / "hostile-path"), "PYTHONHOME": str(self.tmp / "hostile-home"),
                 "TERMINFO_DIRS": "/usr/share/terminfo", "SSL_CERT_FILE": "/etc/ssl/custom.pem",
                 "SSL_CERT_DIR": "/etc/ssl/custom", "XDG_STATE_HOME": str(self.home / "state")}
@@ -1253,9 +1253,9 @@ class BundleLauncherTests(unittest.TestCase):
             [str(self.install / "current" / "runtime" / "python" / "bin" / "python3"), "-I", "-B", "-c",
              "import sys; sys.path.insert(0, sys.argv.pop(1)); from charmer.entrypoints import main; "
              "raise SystemExit(main())", str(self.install / "current" / SITE), "charmer-proxy", "run"],
-            {"HOME": str(control_home), "PATH": os.defpath, "LC_ALL": "C", "CLAUDE_MULTI_CHANNEL": "nix",
-             "CLAUDE_MULTI_PROXY_PATCHES": "cli-proxy-api-management-readonly-allowlist.patch",
-             "CLAUDE_MULTI_PROXY_BIN": str(self.bundle / "libexec" / "charmer" / "cli-proxy-api")})
+            {"HOME": str(control_home), "PATH": os.defpath, "LC_ALL": "C", "CHARMER_CHANNEL": "nix",
+             "CHARMER_PROXY_PATCHES": "cli-proxy-api-management-readonly-allowlist.patch",
+             "CHARMER_PROXY_BIN": str(self.bundle / "libexec" / "charmer" / "cli-proxy-api")})
         self.assertEqual(control.returncode, 0, control.stderr)
         recorded = json.loads((control_home / "gateway.json").read_text())
         self.assertEqual(recorded["env"].get("MANAGEMENT_PASSWORD"), control_key)
@@ -1271,13 +1271,13 @@ class BundleLauncherTests(unittest.TestCase):
         self.assertEqual(Path(recorded["argv"][1]).resolve(),
                          (self.bundle / "libexec" / "charmer" / "cli-proxy-api").resolve())
         self.assertNotIn("MANAGEMENT_PASSWORD", {name.upper() for name in env})
-        self.assertNotIn("CLAUDE_MULTI_PROXY_PATCHES", env)
+        self.assertNotIn("CHARMER_PROXY_PATCHES", env)
         self.assertNotIn("INHERITED-VALUE", result.stdout + result.stderr + json.dumps(env))
         self.assertIn("management is unavailable in this build", result.stderr)
-        self.assertEqual(env["CLAUDE_MULTI_CHANNEL"], "bundle")
-        self.assertEqual(env["CLAUDE_MULTI_PROXY_BIN"], str(current / "libexec" / "charmer" / "cli-proxy-api"))
-        self.assertEqual(env["CLAUDE_MULTI_HOOK_COMMAND"], str(current / "bin" / "charmer"))
-        self.assertEqual(env["CLAUDE_MULTI_ASSETS"], str(current / SITE / "charmer" / "data"))
+        self.assertEqual(env["CHARMER_CHANNEL"], "bundle")
+        self.assertEqual(env["CHARMER_PROXY_BIN"], str(current / "libexec" / "charmer" / "cli-proxy-api"))
+        self.assertEqual(env["CHARMER_HOOK_COMMAND"], str(current / "bin" / "charmer"))
+        self.assertEqual(env["CHARMER_ASSETS"], str(current / SITE / "charmer" / "data"))
         self.assertEqual(self.files(), before, "running the gateway wrote into the installation")
 
     def test_launcher_environment(self) -> None:
@@ -1309,8 +1309,8 @@ class BundleLauncherTests(unittest.TestCase):
                                                                          / "terminfo").is_dir())
         self.assertEqual((env["SSL_CERT_FILE"], env["SSL_CERT_DIR"]), ("/etc/ssl/custom.pem", "/etc/ssl/custom"))
         self.assertEqual(env["XDG_STATE_HOME"], str(self.home / "state"))  # the state root the user selected
-        self.assertEqual(env["CLAUDE_MULTI_REGISTRY_DIR"], str(current / SITE / "charmer" / "data" / "registry"))
-        self.assertNotIn("CLAUDE_MULTI_PROXY_PATCHES", env)
+        self.assertEqual(env["CHARMER_REGISTRY_DIR"], str(current / SITE / "charmer" / "data" / "registry"))
+        self.assertNotIn("CHARMER_PROXY_PATCHES", env)
 
 
 if __name__ == "__main__":

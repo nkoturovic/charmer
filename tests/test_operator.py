@@ -1501,9 +1501,9 @@ class OperatorHomeCase(unittest.TestCase):
         self.secret_file = secrets / "claude.env"
         state.atomic_write(self.secret_file, (f"ACME_API_KEY={ACME_SECRET}\nBETA_API_KEY={BETA_SECRET}\n"
                                               "KIMI_CLAUDE_API_KEY=kimi-dummy-secret-value\n").encode())
-        self.environ = {"HOME": str(self.home), "CLAUDE_MULTI_SECRET_ENV": str(self.secret_file),
-                        "CLAUDE_MULTI_ASSETS": str(FIXTURE_ROOT),
-                        "CLAUDE_MULTI_REGISTRY_DIR": str(self.root / "no-registry")}
+        self.environ = {"HOME": str(self.home), "CHARMER_SECRET_ENV": str(self.secret_file),
+                        "CHARMER_ASSETS": str(FIXTURE_ROOT),
+                        "CHARMER_REGISTRY_DIR": str(self.root / "no-registry")}
         self.config = proxy.config_dir(self.home)
         self.pdir = operator.providers_dir(self.environ)
         self.ledger_file = operator.ledger_path(self.environ)
@@ -2052,7 +2052,7 @@ class PreparedStartTests(OperatorHomeCase):
         self.binary.parent.mkdir()
         self.binary.write_bytes(b"#!/bin/fake\n")
         self.binary.chmod(0o755)
-        self.environ["CLAUDE_MULTI_PROXY_BIN"] = str(self.binary)
+        self.environ["CHARMER_PROXY_BIN"] = str(self.binary)
         self.assertEqual(self.init("--prepare-start")[0], 0)
 
     def snapshot(self) -> dict:

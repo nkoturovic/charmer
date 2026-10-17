@@ -445,8 +445,8 @@ class ManagementPreparationTests(_Gateway):
         super().setUp()
         self.home = self.root / "home"
         self.home.mkdir(mode=0o700)
-        self.environ = {"HOME": str(self.home), "CLAUDE_MULTI_PROXY_BIN": str(self.binary),
-                        "CLAUDE_MULTI_PROXY_PATCHES": management.ALLOWLIST_PATCH,
+        self.environ = {"HOME": str(self.home), "CHARMER_PROXY_BIN": str(self.binary),
+                        "CHARMER_PROXY_PATCHES": management.ALLOWLIST_PATCH,
                         management.CHANNEL_ENV: management.MANAGEMENT_CHANNEL}
         self.gateway = {"gateway": {"base_url": GATEWAY_URL}}
         self.selection = management.key_dir(self.home) / management.PREPARED_FILE

@@ -689,7 +689,7 @@ GATEWAY_SECRET_ENV_KEYS = ("MANAGEMENT_PASSWORD",)
 
 # Never unset these, whatever a provider secret_ref or
 # the launch env's ``*_API_KEY`` scan names (CLAUDE_CODE_MESSAGING_TOKEN and
-# the secret-file path CLAUDE_MULTI_SECRET_ENV). Owned by secret_store's
+# the secret-file path CHARMER_SECRET_ENV). Owned by secret_store's
 # shared credential policy; the same object.
 ENV_UNSET_KEEP = secret_store.ENV_UNSET_KEEP
 _API_KEY_SUFFIX = "_API_KEY"
@@ -933,7 +933,7 @@ def compile_lineup_launch(
             raise CompilerError(f"lead environment key {key!r} is compiler-owned and reserved")
     env_set: dict[str, str] = {
         "ANTHROPIC_BASE_URL": meta.gateway_base_url,
-        "CLAUDE_MULTI_GATEWAY": "1",
+        "CHARMER_GATEWAY": "1",
         # Updater hygiene: non-load-bearing; no shared-daemon claim.
         "DISABLE_AUTOUPDATER": "1",
         # The pinned client honours it: no update of any kind (background or
@@ -955,9 +955,9 @@ def compile_lineup_launch(
     if no_subagents:
         # Belt to the scope's Agent deny (as the earlier direct launch did).
         env_set["CLAUDE_CODE_DISABLE_EXPLORE_PLAN_AGENTS"] = "1"
-    env_set["CLAUDE_MULTI_MANAGED_ID"] = session_action.managed_id
-    env_set["CLAUDE_MULTI_SESSION_ID"] = session_action.managed_id
-    env_set["CLAUDE_MULTI_LAUNCH_EPOCH"] = str(launch_epoch)
+    env_set["CHARMER_MANAGED_ID"] = session_action.managed_id
+    env_set["CHARMER_SESSION_ID"] = session_action.managed_id
+    env_set["CHARMER_LAUNCH_EPOCH"] = str(launch_epoch)
     keep_usable, keep_refused = checked_env_keep(
         env_keep, credential_names=credential_env_names(view.secret_env_names))
     env_unset = v2_env_unset(

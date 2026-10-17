@@ -20,12 +20,12 @@ in pkgs.runCommand "charmer-gateway-tests"
     chmod -R u+w "$staged"
     export PYTHONPATH="$staged/src:$staged/tests"
     python3 "$staged/tests/_gateway_harness.py" --sandbox-proof
-    export CLAUDE_MULTI_TEST_CLI_PROXY_API="$cliProxyApi/bin/cli-proxy-api"
-    export CLAUDE_MULTI_TEST_GATEWAY_STARTUP_PROBE="${startupProbe}/bin/gwtest-startup-probe"
-    export CLAUDE_MULTI_TEST_REQUIRE_GATEWAY=1
-    export CLAUDE_MULTI_TEST_GATEWAY_EVIDENCE="$out/evidence"
-    export CLAUDE_MULTI_TEST_KEYED_LANE=host
-    export CLAUDE_MULTI_TEST_KEYED_EVIDENCE="$out/evidence"
+    export CHARMER_TEST_CLI_PROXY_API="$cliProxyApi/bin/cli-proxy-api"
+    export CHARMER_TEST_GATEWAY_STARTUP_PROBE="${startupProbe}/bin/gwtest-startup-probe"
+    export CHARMER_TEST_REQUIRE_GATEWAY=1
+    export CHARMER_TEST_GATEWAY_EVIDENCE="$out/evidence"
+    export CHARMER_TEST_KEYED_LANE=host
+    export CHARMER_TEST_KEYED_EVIDENCE="$out/evidence"
     cd "$staged"
     modules=$(python3 tests/_gateway_harness.py --check-modules)
     set +e

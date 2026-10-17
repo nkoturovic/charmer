@@ -355,7 +355,7 @@ class ManagementRenderPinTests(unittest.TestCase):
     def test_runtime_render_never_reads_any_management_slot(self):
         with tempfile.TemporaryDirectory(prefix="cm-management-render-") as tmp:
             home = Path(tmp)
-            env = {"HOME": str(home), "CLAUDE_MULTI_ASSETS": str(FIXTURE_ROOT)}
+            env = {"HOME": str(home), "CHARMER_ASSETS": str(FIXTURE_ROOT)}
 
             def rendered():
                 path, result, _ = proxy.render_runtime_config(

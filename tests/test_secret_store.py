@@ -23,7 +23,7 @@ class _Home(unittest.TestCase):
         os.chmod(self.root, 0o700)
         self.addCleanup(shutil.rmtree, self.root, True)
         self.path = self.root / "secrets" / "claude.env"
-        self.environ = {"HOME": str(self.root), "CLAUDE_MULTI_SECRET_ENV": str(self.path)}
+        self.environ = {"HOME": str(self.root), "CHARMER_SECRET_ENV": str(self.path)}
 
     def _write(self, text: str) -> None:
         state.ensure_private_dir(self.path.parent)
@@ -69,7 +69,7 @@ class FileBackendTests(_Home):
     def test_default_location(self) -> None:
         self.assertEqual(secret_store.secret_env_path({"HOME": "/h"}),
                          Path("/h/.config/charmer/secrets/provider-keys.env"))
-        self.assertEqual(secret_store.secret_env_path({"HOME": "/h", "CLAUDE_MULTI_SECRET_ENV": "/x/y.env"}), Path("/x/y.env"))
+        self.assertEqual(secret_store.secret_env_path({"HOME": "/h", "CHARMER_SECRET_ENV": "/x/y.env"}), Path("/x/y.env"))
         self.assertEqual(proxy.secret_env_path({"HOME": "/h"}), secret_store.secret_env_path({"HOME": "/h"}))
 
     def test_description_names_storage_not_values(self) -> None:
@@ -163,7 +163,7 @@ class CredentialPolicyTests(unittest.TestCase):
             "9KEY", "_TOKEN", "AB", "lower", "A" * 65,
             "ANTHROPIC_EXTRA", "CLAUDE_EXTRA", "X_FILE_DESCRIPTOR",
             "GITHUB_TOKEN", "MANAGEMENT_PASSWORD", "PGSTORE_DSN", "OBJECTSTORE_KEY",
-            "CLAUDE_MULTI_SECRET_ENV", "CLAUDE_CODE_MESSAGING_TOKEN",
+            "CHARMER_SECRET_ENV", "CLAUDE_CODE_MESSAGING_TOKEN",
         )
         for name in refused:
             with self.subTest(name=name):

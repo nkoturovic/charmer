@@ -7,7 +7,7 @@ for another:
   read-only data inside the installed package (``charmer/data``). The
   running release's identity comes only from here.
 - **Selected resources** (:func:`charmer.assets.root`): what a command
-  reads — an explicit root, then ``CLAUDE_MULTI_ASSETS``, then the packaged
+  reads — an explicit root, then ``CHARMER_ASSETS``, then the packaged
   resources. A selection never moves an executable, a document or a write.
 - **Source checkout** (:func:`verify_checkout`, :func:`checkout_resources`,
   :func:`checkout_destination`): the only place developer commands write.

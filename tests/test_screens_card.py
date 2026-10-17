@@ -1218,7 +1218,7 @@ class CardKeyTests(_CardCase):
                 shown.append((title, list(lines)))
                 super().__init__(title, lines, **kwargs)
 
-        with mock.patch.dict(self.runtime.environ, {"CLAUDE_MULTI_CHANNEL": "nix"}), \
+        with mock.patch.dict(self.runtime.environ, {"CHARMER_CHANNEL": "nix"}), \
                 mock.patch.object(charmer.tui, "TextView", RecordingView):
             screen = self.card(hint_detector=None)
             self.assertEqual(screen.update_hint[1] if screen.update_hint else
@@ -1230,7 +1230,7 @@ class CardKeyTests(_CardCase):
         from charmer import release_update
 
         tty_in, tty_out = io.StringIO("n\n\n"), io.StringIO()
-        with mock.patch.dict(self.runtime.environ, {"CLAUDE_MULTI_CHANNEL": "bundle"}), \
+        with mock.patch.dict(self.runtime.environ, {"CHARMER_CHANNEL": "bundle"}), \
                 mock.patch.object(release_update, "run", side_effect=AssertionError("not checked")):
             screen = self.card(update_hint=("1.0.0", "released 2026-10-15"), tty_in=tty_in, tty_out=tty_out)
             self.run_card(screen, ["u", ESC])
@@ -1238,7 +1238,7 @@ class CardKeyTests(_CardCase):
         self.assertIn("Nothing was checked.", tty_out.getvalue())
         calls = []
         tty_in, tty_out = io.StringIO("y\n\n"), io.StringIO()
-        with mock.patch.dict(self.runtime.environ, {"CLAUDE_MULTI_CHANNEL": "bundle"}), \
+        with mock.patch.dict(self.runtime.environ, {"CHARMER_CHANNEL": "bundle"}), \
                 mock.patch.object(release_update, "run", side_effect=lambda journey, **kw: calls.append(
                     (journey.channel, kw["mode"])) or 0):
             screen = self.card(update_hint=("1.0.0", "released 2026-10-15"), tty_in=tty_in, tty_out=tty_out)

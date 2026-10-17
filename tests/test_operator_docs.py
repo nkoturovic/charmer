@@ -574,7 +574,7 @@ class CheatsheetStructureTests(unittest.TestCase):
 
     def test_placeholders_say_where_full_ids_come_from(self) -> None:
         head = _flat(self.text.split("## Commands at a glance", 1)[0])
-        for anchor in ("`<id>` is the full managed session id", "$CLAUDE_MULTI_MANAGED_ID",
+        for anchor in ("`<id>` is the full managed session id", "$CHARMER_MANAGED_ID",
                        "`Session <id>` line per session, with `→ runtime <runtime-id>` when the two differ",
                        "shows only the first 8 characters",
                        "`runtime_session_id` in `charmer sessions show <id>`"):
@@ -1033,7 +1033,7 @@ class PageAnchorTests(unittest.TestCase):
         for mark in re.findall(r"[●◐○↻⚠!]", marks):
             self.assertIn(mark, keys)
         flat = _flat(text)
-        for anchor in ("`Session <id>` line per session", "`→ runtime <runtime-id>`", "$CLAUDE_MULTI_MANAGED_ID",
+        for anchor in ("`Session <id>` line per session", "`→ runtime <runtime-id>`", "$CHARMER_MANAGED_ID",
                        "`charmer sessions resolve-fork <id> <fork-id>`", "--all-dead",
                        "charmer doctor --repair-all", "the transcript stays"):
             self.assertIn(anchor, flat)
@@ -1206,7 +1206,7 @@ class PageAnchorTests(unittest.TestCase):
         self.assertIn(_flat(lineup.MODEL_HELP_LINES[0]), flat)
         for anchor in ("own copy", "never writes `~/.claude/settings.json`", "`CLAUDE_CONFIG_DIR`",
                        "Managed sessions unset it", "does not promise that your installation is current",
-                       "`CLAUDE_MULTI_SECRET_ENV` when set (the supervised gateway service ignores it)",
+                       "`CHARMER_SECRET_ENV` when set (the supervised gateway service ignores it)",
                        "`~/.config/charmer/secret-file.json`",
                        "`~/.config/charmer/secrets/provider-keys.env`",
                        "[the client skew notes](reference/compatibility.md#client-skew)",

@@ -728,8 +728,8 @@ class SettingsIsNotACatalogDocumentTests(SettingsCase):
         )
         environ = {
             **self.environ,
-            "CLAUDE_MULTI_SECRET_ENV": str(secrets / "claude.env"),
-            "CLAUDE_MULTI_ASSETS": str(self.bundle.root),
+            "CHARMER_SECRET_ENV": str(secrets / "claude.env"),
+            "CHARMER_ASSETS": str(self.bundle.root),
         }
         config = proxy.config_dir(home) / "config.yaml"
         proxy.render_runtime_config(home, environ=environ, state_root=None)

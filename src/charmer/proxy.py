@@ -3026,13 +3026,13 @@ def resolve_proxy_binary(environ: dict[str, str] | None = None) -> Path:
     """Pinned proxy binary: explicit env override, else PATH lookup."""
 
     env = os.environ if environ is None else environ
-    configured = env.get("CLAUDE_MULTI_PROXY_BIN")
+    configured = env.get("CHARMER_PROXY_BIN")
     candidate = Path(configured) if configured else None
     if candidate is None:
         found = shutil.which("cli-proxy-api")
         candidate = Path(found) if found else None
     if candidate is None:
-        raise ProxyError("CLIProxyAPI binary not found (CLAUDE_MULTI_PROXY_BIN/PATH)")
+        raise ProxyError("CLIProxyAPI binary not found (CHARMER_PROXY_BIN/PATH)")
     resolved = Path(os.path.realpath(candidate))
     if not resolved.is_file() or not os.access(resolved, os.X_OK):
         raise ProxyError(f"CLIProxyAPI binary {resolved} is not an executable file")

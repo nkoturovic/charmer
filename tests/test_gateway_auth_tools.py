@@ -54,7 +54,7 @@ class _AuthHomeCase(unittest.TestCase):
         self.auth_dir.mkdir(parents=True, mode=0o700)
         for parent in self.auth_dir.relative_to(self.home).parents:
             os.chmod(self.home / parent, 0o700)
-        self.environ = {"HOME": str(self.home), "CLAUDE_MULTI_ASSETS": str(FIXTURE_ROOT)}
+        self.environ = {"HOME": str(self.home), "CHARMER_ASSETS": str(FIXTURE_ROOT)}
 
     def write_credential(self, name: str, document: dict, mode: int = 0o600) -> Path:
         path = self.auth_dir / name
@@ -586,7 +586,7 @@ class _DiscoverCliCase(_AuthHomeCase):
             asset_root=FIXTURE_ROOT,
             environ={**self.environ, "XDG_CONFIG_HOME": str(self.root / "config"),
                      "XDG_STATE_HOME": str(self.root / "state"), "TERM": "dumb",
-                     "CLAUDE_MULTI_SECRET_ENV": str(self.secret_file), **extra},
+                     "CHARMER_SECRET_ENV": str(self.secret_file), **extra},
             cwd=self.root,
             served_models_callback=lambda gateway, token: (set(), 200),
             health_get=lambda base_url, path: 200,
@@ -677,7 +677,7 @@ class DiscoverInClaudeSessionTests(_DiscoverCliCase):
 
     def test_markers_and_redirected_stdio_refuse_every_mode(self) -> None:
         cases = [({"CLAUDECODE": "1"}, True, "CLAUDECODE set"),
-                 ({"CLAUDE_MULTI_MANAGED_ID": ""}, True, "CLAUDE_MULTI_MANAGED_ID set"),
+                 ({"CHARMER_MANAGED_ID": ""}, True, "CHARMER_MANAGED_ID set"),
                  ({}, False, "stdin/stdout is not a terminal")]
         for extra, tty, reason in cases:
             self.runtime = self.make_runtime(extra)
@@ -753,7 +753,7 @@ class ReloadFailureVisibilityTests(V4Case):
         from charmer import launch
         self.runtime.doctor_callback = None
         self.runtime.doctor_daemon_callback = lambda: launch.DaemonStatus("absent", "fixture")
-        env = {**self.env, "CLAUDE_MULTI_ASSETS": str(FIXTURE_ROOT)}
+        env = {**self.env, "CHARMER_ASSETS": str(FIXTURE_ROOT)}
         for unwritable in (False, True):
             with self.subTest(unwritable=unwritable):
                 # The directory check fails even for root, unlike chmod-only tests.
@@ -786,7 +786,7 @@ class ReloadFailureVisibilityTests(V4Case):
         from charmer import launch
         self.runtime.doctor_callback = None
         self.runtime.doctor_daemon_callback = lambda: launch.DaemonStatus("absent", "fixture")
-        env = {**self.env, "CLAUDE_MULTI_ASSETS": str(FIXTURE_ROOT)}
+        env = {**self.env, "CHARMER_ASSETS": str(FIXTURE_ROOT)}
         workdir = service.ensure_gateway_workdir(self.runtime.session_store.root)
         old = "2026-09-27T01:00:00+00:00"
         for number in (errno.ENOSPC, errno.EDQUOT, errno.EIO):

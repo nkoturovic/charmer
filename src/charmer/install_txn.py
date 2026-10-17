@@ -47,7 +47,7 @@ meanwhile:
 Shell owners run it through a bundle's own interpreter (``python3 -I -B``
 with the bundle's site directory first on ``sys.path``), and the inhibition
 itself through ``charmer.gateway_inhibition``'s command the same way
-(the token in ``CLAUDE_MULTI_INHIBITION_TOKEN``)::
+(the token in ``CHARMER_INHIBITION_TOKEN``)::
 
     install_txn preflight --state-root S --install-root R [--migrate]
                           [--version V --readable-format N] [--bundle DIR]

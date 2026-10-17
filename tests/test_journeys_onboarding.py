@@ -41,7 +41,7 @@ from test_tui_pty import FINISH_TIMEOUT, PTYProcess, _read_after, _restored, _se
 TESTS_ROOT = REPO_ROOT / "tests"
 FAKE_LOGIN = FIXTURES_ROOT / "fake_gateway_login.py"
 JOURNEY_TIMEOUT = 30.0
-SESSION_MARKERS = ("CLAUDE_MULTI_MANAGED_ID", "CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT")
+SESSION_MARKERS = ("CHARMER_MANAGED_ID", "CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT")
 # Keys as a terminal in keypad (application) mode sends them.
 ESC = b"\x1b"
 ENTER = b"\n"
@@ -70,7 +70,7 @@ def child_runtime(root: Path, launch: Any, options: dict[str, Any]) -> Any:
     environ = dict(options.get("env") or {})
     login = options.get("login")
     if login:
-        environ["CLAUDE_MULTI_PROXY_BIN"] = login
+        environ["CHARMER_PROXY_BIN"] = login
     runtime = fx.fixture_runtime(root, launch_callback=launch, secrets=(), environ_extra=environ)
     with fx.hermetic(runtime):
         runtime.profiles.install_seeds()
@@ -164,7 +164,7 @@ def put_key(runtime: Any, provider_id: str, value: str) -> None:
 
     from charmer import state
 
-    path = Path(runtime.environ["CLAUDE_MULTI_SECRET_ENV"])
+    path = Path(runtime.environ["CHARMER_SECRET_ENV"])
     lines = [line for line in path.read_text(encoding="utf-8").splitlines() if line]
     lines.append(f"{secret_name(runtime, provider_id)}={value}")
     state.atomic_write(path, ("\n".join(lines) + "\n").encode("ascii"))
@@ -175,7 +175,7 @@ def put_key_name(runtime: Any, name: str, value: str) -> None:
 
     from charmer import state
 
-    path = Path(runtime.environ["CLAUDE_MULTI_SECRET_ENV"])
+    path = Path(runtime.environ["CHARMER_SECRET_ENV"])
     lines = [line for line in path.read_text(encoding="utf-8").splitlines() if line]
     lines.append(f"{name}={value}")
     state.atomic_write(path, ("\n".join(lines) + "\n").encode("ascii"))
@@ -672,7 +672,7 @@ class FailureJourneys(JourneyCase):
             import charmer.cli.screens.providers as providers
             from charmer import tui
             journeys.put_key(runtime, "openrouter", "old-journey-key")
-            key_file = Path(runtime.environ["CLAUDE_MULTI_SECRET_ENV"])
+            key_file = Path(runtime.environ["CHARMER_SECRET_ENV"])
             journeys.say("BEFORE", hashlib.sha256(key_file.read_bytes()).hexdigest())
             rows = [row.id for row in providers._ProvidersScreen(runtime, palette=tui.MONO_PALETTE).rows]
             journeys.say("ROW", rows.index("openrouter"))
@@ -681,7 +681,7 @@ class FailureJourneys(JourneyCase):
         """
         after = """
         import hashlib
-        print("AFTER=" + hashlib.sha256(Path(runtime.environ["CLAUDE_MULTI_SECRET_ENV"]).read_bytes()).hexdigest())
+        print("AFTER=" + hashlib.sha256(Path(runtime.environ["CHARMER_SECRET_ENV"]).read_bytes()).hexdigest())
         """
         child = self.child(setup=setup, after=after)
         before = self.fact(child, "BEFORE")

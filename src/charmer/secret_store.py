@@ -19,7 +19,7 @@ and the gateway share.
   There is **no process-environment fallback**, no argv secret value and no
   automatic copy or relocation. Its location is resolved here, for every
   reader alike (the launcher, the gateway render at start, doctor): the
-  ``CLAUDE_MULTI_SECRET_ENV`` override, else the file a validated pointer
+  ``CHARMER_SECRET_ENV`` override, else the file a validated pointer
   (``~/.config/claude-multi/secret-file.json``) selects, else the default
   ``~/.config/claude-multi/secrets/provider-keys.env``.
 - The credential-name policy constants live here and are re-exported **by
@@ -49,7 +49,7 @@ class SecretStoreError(errors.CharmerError, RuntimeError):
     """A secret store could not be read or written (no secret bytes inside)."""
 
 
-SECRET_ENV_OVERRIDE = "CLAUDE_MULTI_SECRET_ENV"
+SECRET_ENV_OVERRIDE = "CHARMER_SECRET_ENV"
 
 # The strict env-file grammar (shared by read and write, never shell-sourced).
 ASSIGNMENT = re.compile(r"^(?:export[ \t]+)?([A-Z0-9_]+)[ \t]*=[ \t]*(.*?)[ \t]*$")
@@ -59,7 +59,9 @@ _FILE_NAME = re.compile(r"[A-Z0-9_]+")
 # Operator-declared credential names (providers.d ``secret_ref``, legacy
 # ``secret_env`` at migration): uppercase, 3..64 characters.
 SECRET_NAME = re.compile(r"^[A-Z][A-Z0-9_]{2,63}$")
-RESERVED_SECRET_PREFIXES = ("ANTHROPIC_", "CLAUDE_")
+# The client's own variables and the launcher's session and wrapper
+# variables are never credential names.
+RESERVED_SECRET_PREFIXES = ("ANTHROPIC_", "CLAUDE_", "CHARMER_")
 RESERVED_SECRET_SUFFIXES = ("_FILE_DESCRIPTOR",)
 
 # The gateway's inherited-environment deny list:
@@ -83,7 +85,7 @@ GATEWAY_ENV_DENY_PREFIXES = ("PGSTORE_", "GITSTORE_", "OBJECTSTORE_")
 
 # Never unset these, whatever a provider secret_ref or the launch env's
 # ``*_API_KEY`` scan names. CLAUDE_CODE_MESSAGING_TOKEN is the client's own
-# token; CLAUDE_MULTI_SECRET_ENV is the secret-file path the gateway render
+# token; CHARMER_SECRET_ENV is the secret-file path the gateway render
 # reads, never a secret itself. Both carry a reserved prefix, so no provider
 # credential can take one of these names (it would survive into managed
 # sessions). Product names only: a user's own tool key (an MCP server's, say)

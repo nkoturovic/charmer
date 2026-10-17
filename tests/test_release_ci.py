@@ -159,7 +159,7 @@ class WorkflowTests(unittest.TestCase):
                 self.assertNotIn("pull_request_target", text)
                 # One secret only: the private identifier list, read by the
                 # fast lane's identifier checks through the environment.
-                allowed = "PRIVATE_IDENTIFIERS: ${{ secrets.CLAUDE_MULTI_PRIVATE_IDENTIFIERS }}"
+                allowed = "PRIVATE_IDENTIFIERS: ${{ secrets.CHARMER_PRIVATE_IDENTIFIERS }}"
                 self.assertEqual(text.count(allowed), 1 if name == "ci.yml" else 0)
                 self.assertNotIn("secrets.", text.replace(allowed, ""))
                 for job, body in _jobs(text).items():
@@ -321,11 +321,11 @@ class WorkflowTests(unittest.TestCase):
         # hygiene gates read through the environment; otherwise the generic
         # checks run alone.
         steps = _steps(_jobs(self.texts["ci.yml"])["fast"])
-        index = next(i for i, step in enumerate(steps) if "secrets.CLAUDE_MULTI_PRIVATE_IDENTIFIERS" in step)
+        index = next(i for i, step in enumerate(steps) if "secrets.CHARMER_PRIVATE_IDENTIFIERS" in step)
         step = steps[index]
-        for needle in ("PRIVATE_IDENTIFIERS: ${{ secrets.CLAUDE_MULTI_PRIVATE_IDENTIFIERS }}", "umask 077",
+        for needle in ("PRIVATE_IDENTIFIERS: ${{ secrets.CHARMER_PRIVATE_IDENTIFIERS }}", "umask 077",
                        'if [ -n "$PRIVATE_IDENTIFIERS" ]; then', 'chmod 600 "$list"',
-                       'echo "CLAUDE_MULTI_PRIVATE_IDENTIFIERS=$list" >>"$GITHUB_ENV"',
+                       'echo "CHARMER_PRIVATE_IDENTIFIERS=$list" >>"$GITHUB_ENV"',
                        "the generic identifier checks run"):
             self.assertIn(needle, step)
         run = step.split("run: |", 1)[1]
@@ -335,7 +335,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertTrue(any("tests.test_hygiene" in s for s in later))
         import _layout
 
-        self.assertEqual(_layout.load_tool("history_scan").PRIVATE_INPUT_ENV, "CLAUDE_MULTI_PRIVATE_IDENTIFIERS")
+        self.assertEqual(_layout.load_tool("history_scan").PRIVATE_INPUT_ENV, "CHARMER_PRIVATE_IDENTIFIERS")
 
     def test_tool_options_exist(self) -> None:
         """Every option a workflow or the journey passes to a repository
@@ -1225,7 +1225,7 @@ exit 71
 
 class RequiredReleaseTestsTests(unittest.TestCase):
     """``needs_ssh_keygen``: a release integration test skips without
-    ssh-keygen, unless CLAUDE_MULTI_TEST_REQUIRE_RELEASE=1 requires it (the
+    ssh-keygen, unless CHARMER_TEST_REQUIRE_RELEASE=1 requires it (the
     CI battery sets it), and then it fails naming the missing tool."""
 
     @staticmethod
@@ -1270,7 +1270,7 @@ class RequiredReleaseTestsTests(unittest.TestCase):
                 self.assertFalse(result.skipped)
                 problems = result.errors + result.failures
                 self.assertEqual(len(problems), 1)
-                self.assertIn("CLAUDE_MULTI_TEST_REQUIRE_RELEASE=1 requires this release test, but ssh-keygen is not "
+                self.assertIn("CHARMER_TEST_REQUIRE_RELEASE=1 requires this release test, but ssh-keygen is not "
                               "installed", problems[0][1])
         with mock.patch.object(_fake_release, "SSH_KEYGEN", "/usr/bin/ssh-keygen"):
             with mock.patch.dict(os.environ, {_fake_release.REQUIRE_RELEASE_ENV: "1"}):
@@ -1279,11 +1279,11 @@ class RequiredReleaseTestsTests(unittest.TestCase):
 
     def test_the_ci_battery_requires_them(self) -> None:
         ci = (WORKFLOWS_DIR / "ci.yml").read_text().split("\njobs:\n", 1)[0]
-        self.assertIn('\n  CLAUDE_MULTI_TEST_REQUIRE_RELEASE: "1"\n', ci)
+        self.assertIn('\n  CHARMER_TEST_REQUIRE_RELEASE: "1"\n', ci)
 
     def test_the_sandbox_check_requires_them_and_supplies_ssh_keygen(self) -> None:
         check = (REPO_ROOT / "tests" / "default.nix").read_text()
-        self.assertIn('\n    env.CLAUDE_MULTI_TEST_REQUIRE_RELEASE = "1";\n', check)
+        self.assertIn('\n    env.CHARMER_TEST_REQUIRE_RELEASE = "1";\n', check)
         inputs = re.search(r"(?m)^\s*nativeBuildInputs = \[(.*?)\];$", check, re.S)
         self.assertIsNotNone(inputs)
         # openssh's and openssl's binaries only: as plain inputs the build
@@ -2635,7 +2635,7 @@ class GatewayProbesScriptTests(unittest.TestCase):
         self.assertEqual(out.splitlines(), [
             f"{self.gw.BINARY_ENV}={dist / self.target / 'cli-proxy-api'}",
             f"{self.gw.BUILD_RECORD_ENV}={dist / 'BUILD.json'}",
-            f"CLAUDE_MULTI_TEST_GATEWAY_STARTUP_PROBE={probes / 'bin' / PROBE_NAMES[0]}"])
+            f"CHARMER_TEST_GATEWAY_STARTUP_PROBE={probes / 'bin' / PROBE_NAMES[0]}"])
         for path in (dist / self.target / "cli-proxy-api", *(probes / "bin" / name for name in PROBE_NAMES)):
             self.assertEqual(path.stat().st_mode & 0o777, 0o700)
 
@@ -2720,7 +2720,7 @@ class EvidenceScriptTests(unittest.TestCase):
         record = self.tmp / "BUILD.json"
         record.write_text(json.dumps({"series": [{"basename": "a.patch", "sha256": "0" * 64}],
                                       "post_apply_tree_sha256": "1" * 64}))
-        environ = {"CLAUDE_MULTI_TEST_CLI_PROXY_API": str(gateway), "CLAUDE_MULTI_TEST_GATEWAY_BUILD": str(record),
+        environ = {"CHARMER_TEST_CLI_PROXY_API": str(gateway), "CHARMER_TEST_GATEWAY_BUILD": str(record),
                    "GITHUB_RUN_ID": "42", "GITHUB_WORKFLOW": "release"}
         code, manifest, output = self.run_tool(self.log(), environ=environ)
         self.assertEqual(code, 0, output)

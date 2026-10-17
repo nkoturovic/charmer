@@ -232,18 +232,18 @@ class AssetSeamTests(unittest.TestCase):
         # The packaged default is the package's own data directory.
         self.assertEqual(charmer.resources_root(), RESOURCES_ROOT)
 
-        for env in ({}, {"CLAUDE_MULTI_ASSETS": ""}, {"CLAUDE_MULTI_ASSETS": "/overlay"}):
+        for env in ({}, {"CHARMER_ASSETS": ""}, {"CHARMER_ASSETS": "/overlay"}):
             with self.subTest(env=env):
-                expected = Path(env["CLAUDE_MULTI_ASSETS"]) if env.get("CLAUDE_MULTI_ASSETS") else charmer.resources_root()
+                expected = Path(env["CHARMER_ASSETS"]) if env.get("CHARMER_ASSETS") else charmer.resources_root()
                 self.assertEqual(assets.root(environ=env), expected)
                 self.assertEqual(assets.default_asset_root(environ=env), expected)
                 self.assertEqual(proxy.assets_root(env), expected)
                 self.assertEqual(assets.root("/explicit", environ=env), Path("/explicit"))
 
     def test_inherited_override_never_reaches_the_suite(self):
-        env = {**os.environ, "CLAUDE_MULTI_ASSETS": "/absent/inherited-assets",
+        env = {**os.environ, "CHARMER_ASSETS": "/absent/inherited-assets",
                "PYTHONPATH": str(REPO_ROOT / "src")}
-        code = "import tests, os; assert 'CLAUDE_MULTI_ASSETS' not in os.environ; import charmer.cli"
+        code = "import tests, os; assert 'CHARMER_ASSETS' not in os.environ; import charmer.cli"
         result = subprocess.run([sys.executable, "-B", "-c", code], cwd=REPO_ROOT,
                                 env=env, text=True, capture_output=True, timeout=30)
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -257,7 +257,7 @@ class AssetSeamTests(unittest.TestCase):
             # Observe the environment pop itself (the version/help
             # smoke above reads no asset for two of the three scripts).
             probe = ("import os, runpy, sys; runpy.run_path(sys.argv[1], run_name='probe'); "
-                     "assert 'CLAUDE_MULTI_ASSETS' not in os.environ, os.environ['CLAUDE_MULTI_ASSETS']")
+                     "assert 'CHARMER_ASSETS' not in os.environ, os.environ['CHARMER_ASSETS']")
             result = subprocess.run([sys.executable, "-B", "-c", probe, str(checkout / "bin" / name)],
                                     env=env, text=True, capture_output=True, timeout=30)
             self.assertEqual(result.returncode, 0, (name, result.stderr))
@@ -287,7 +287,7 @@ class AssetSeamTests(unittest.TestCase):
         # inherited override; a launcher copied anywhere else keeps what the
         # installation that placed it there states.
         probe = ("import os, runpy, sys; runpy.run_path(sys.argv[1], run_name='probe'); "
-                 "print(os.environ.get('CLAUDE_MULTI_ASSETS', '<popped>'))")
+                 "print(os.environ.get('CHARMER_ASSETS', '<popped>'))")
         with tempfile.TemporaryDirectory() as tmp:
             for layout, extra in (("installed", ()), ("staged", markers)):
                 root = Path(tmp) / layout
@@ -303,7 +303,7 @@ class AssetSeamTests(unittest.TestCase):
                     (root / marker).parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy(REPO_ROOT / marker, root / marker)
                 resources = root / "src" / "charmer" / "data"
-                env = {**os.environ, "HOME": tmp, "CLAUDE_MULTI_ASSETS": str(resources)}
+                env = {**os.environ, "HOME": tmp, "CHARMER_ASSETS": str(resources)}
                 for name in self.STUBS:
                     with self.subTest(layout=layout, stub=name):
                         result = subprocess.run([sys.executable, "-B", "-c", probe, str(root / "bin" / name)],
@@ -341,7 +341,7 @@ from charmer import assets, catalog, continuity, custom, gateway_service, layout
 from charmer import sessions, settings, upgrade
 from charmer.cli import parser
 import os
-root = Path(os.environ['CLAUDE_MULTI_ASSETS'])
+root = Path(os.environ['CHARMER_ASSETS'])
 assert assets.root() == root == proxy.assets_root()
 assert charmer.__version__ != '99.0.0'
 assert upgrade.running_release().launcher_version == charmer.__version__
@@ -360,14 +360,14 @@ assert settings._schema()['properties']['_049_asset_probe']['const'] == '049-ove
 assert sessions.default_schema()['properties']['_049_asset_probe']['const'] == '049-overlay'
 assert continuity._schema()['properties']['_049_asset_probe']['const'] == '049-overlay'
 assert custom._schema()['properties']['_049_asset_probe']['const'] == '049-overlay'
-os.environ.pop('CLAUDE_MULTI_ASSETS')
+os.environ.pop('CHARMER_ASSETS')
 assert profile._PROFILE_SCHEMA['properties']['_049_asset_probe']['const'] == '049-overlay'
 '''
             for path in (REPO_ROOT / "src", site):
-                env = {**os.environ, "HOME": str(tmp), "CLAUDE_MULTI_ASSETS": str(overlay),
+                env = {**os.environ, "HOME": str(tmp), "CHARMER_ASSETS": str(overlay),
                        "PYTHONPATH": str(path)}
-                env.pop("CLAUDE_MULTI_REGISTRY_DIR", None)
-                env.pop("CLAUDE_MULTI_HOOK_COMMAND", None)
+                env.pop("CHARMER_REGISTRY_DIR", None)
+                env.pop("CHARMER_HOOK_COMMAND", None)
                 result = subprocess.run([sys.executable, "-B", "-c", code], env=env,
                                         text=True, capture_output=True, timeout=30)
                 self.assertEqual(result.returncode, 0, result.stderr)
@@ -577,7 +577,7 @@ class HookEntryImportTests(unittest.TestCase):
 
     Each case runs ``from charmer.cli import main; main()`` in a fresh
     process on a private fixture root (the fixture catalog through
-    CLAUDE_MULTI_ASSETS), and pins the exit status and the modules loaded.
+    CHARMER_ASSETS), and pins the exit status and the modules loaded.
     """
 
     @classmethod
@@ -588,7 +588,7 @@ class HookEntryImportTests(unittest.TestCase):
 
         cls.tmp = Path(tempfile.mkdtemp(prefix="cm-hook-entry-"))
         os.chmod(cls.tmp, 0o700)
-        cls.environ = {**_cli_environ(cls.tmp), "CLAUDE_MULTI_ASSETS": str(FIXTURE_ROOT)}
+        cls.environ = {**_cli_environ(cls.tmp), "CHARMER_ASSETS": str(FIXTURE_ROOT)}
         cls.root = sessions_mod.state_root(cls.environ)
         state_mod.ensure_private_dir(cls.root)
         sessions_mod.write_state_marker(cls.root)

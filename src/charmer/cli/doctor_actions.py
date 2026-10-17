@@ -153,7 +153,7 @@ def _doctor_rotate_token(
     if not ask("Rotate the local gateway token now?"):
         write(output_stream, "rotation not started; nothing changed")
         return 1
-    environ = {**runtime.environ, "CLAUDE_MULTI_ASSETS": str(runtime.asset_root)}
+    environ = {**runtime.environ, "CHARMER_ASSETS": str(runtime.asset_root)}
 
     def confirm(question: str) -> bool:
         # The dead-confirm answer is recorded, so the next
@@ -246,7 +246,7 @@ def _doctor_prune_aliases(
         ids, status = runtime.served_models(token)
         return (status or 0), set(ids or ())
 
-    environ = {**runtime.environ, "CLAUDE_MULTI_ASSETS": str(runtime.asset_root)}
+    environ = {**runtime.environ, "CHARMER_ASSETS": str(runtime.asset_root)}
     # The process evidence is read before any lock; the prune
     # re-reads each ended holder under its lifecycle lock and applies it.
     daemon = runtime.background_liveness()

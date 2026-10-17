@@ -70,7 +70,7 @@ class SignInCase(test_cli.OperatorCommandCase):
         super().setUp()
         self.argv_log = self.root / "fake-login-argv.jsonl"
         self.launcher = self.write_launcher("fake-gateway", {"FAKE_LOGIN_ARGV": str(self.argv_log)})
-        self.runtime.environ["CLAUDE_MULTI_PROXY_BIN"] = str(self.launcher)
+        self.runtime.environ["CHARMER_PROXY_BIN"] = str(self.launcher)
         self.auth = signin.auth_dir(self.runtime)
 
     def write_launcher(self, name: str, env: dict[str, str]) -> Path:
@@ -271,7 +271,7 @@ class RunSignInTests(SignInCase):
             self.assertEqual(signin.run_sign_in(self.runtime, plan, ack=ack,
                                                 runner=lambda _i: -signal.SIGINT).status, "cancelled")
             busy = self.write_launcher("busy-gateway", {"FAKE_LOGIN_PORT_BUSY": "1"})
-            self.runtime.environ["CLAUDE_MULTI_PROXY_BIN"] = str(busy)
+            self.runtime.environ["CHARMER_PROXY_BIN"] = str(busy)
             busy_plan = self.plan("openai")
             with quiet_stdio():
                 outcome = signin.run_sign_in(self.runtime, busy_plan, ack=ack)
@@ -290,7 +290,7 @@ class RunSignInTests(SignInCase):
         seen = self.root / "child-disposition"
         plain = self.write_launcher("plain-gateway", {"FAKE_LOGIN_PLAIN": "1", "FAKE_LOGIN_SELF_INTERRUPT": "1",
                                                       "FAKE_LOGIN_DISPOSITION": str(seen)})
-        self.runtime.environ["CLAUDE_MULTI_PROXY_BIN"] = str(plain)
+        self.runtime.environ["CHARMER_PROXY_BIN"] = str(plain)
         plan = self.plan("openai")
         before = signal.getsignal(signal.SIGINT)
         with self.human(), quiet_stdio():

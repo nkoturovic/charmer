@@ -436,7 +436,7 @@ class SelfAssumeDeadTests(RestoreTestCase):
 
     def test_a_own_id_named_only_by_an_ancestor_is_restored_and_marked_ended(self) -> None:
         code, output = self.restore_as(
-            ["--assume-dead", M1], {"CLAUDE_MULTI_MANAGED_ID": M1}
+            ["--assume-dead", M1], {"CHARMER_MANAGED_ID": M1}
         )
         self.assert_restored_and_ended(code, output)
         # The preview's inventory, then a fresh one inside the commit phase.
@@ -447,20 +447,20 @@ class SelfAssumeDeadTests(RestoreTestCase):
         )
 
     def test_a_through_main_reads_the_process_environment(self) -> None:
-        with mock.patch.dict(os.environ, {"CLAUDE_MULTI_MANAGED_ID": M1}):
+        with mock.patch.dict(os.environ, {"CHARMER_MANAGED_ID": M1}):
             code, output = self.restore(["--assume-dead", M1])
         self.assert_restored_and_ended(code, output)
         self.assertEqual(self.ancestors.call_args_list, [mock.call("/proc")] * 2)
 
     def test_b_a_non_ancestor_process_naming_it_still_refuses(self) -> None:
         self.naming[_OTHER] = frozenset({M1})
-        self.assert_refused_hard(["--assume-dead", M1], {"CLAUDE_MULTI_MANAGED_ID": M1})
+        self.assert_refused_hard(["--assume-dead", M1], {"CHARMER_MANAGED_ID": M1})
         self.ancestors.assert_called_once_with(self.proc_root)
 
     def test_c_without_a_managed_id_in_the_environment_refuses(self) -> None:
         self.assert_refused_hard(["--assume-dead", M1], {})
         with mock.patch.dict(os.environ):
-            os.environ.pop("CLAUDE_MULTI_MANAGED_ID", None)
+            os.environ.pop("CHARMER_MANAGED_ID", None)
             before = self.tree()
             code, output = self.restore(["--assume-dead", M1])
         self.assertEqual(code, 1, output)
@@ -475,14 +475,14 @@ class SelfAssumeDeadTests(RestoreTestCase):
 
         self.scan.side_effect = scan
         before = self.tree()
-        code, output = self.restore_as(["--assume-dead", M1], {"CLAUDE_MULTI_MANAGED_ID": M1})
+        code, output = self.restore_as(["--assume-dead", M1], {"CHARMER_MANAGED_ID": M1})
         self.assertEqual(code, 1, output)
         self.assertIn("process table is unreadable", output)
         self.assertEqual(self.tree(), before)
         self.assertTrue(self.marker())
 
     def test_d_an_environment_naming_another_id_refuses(self) -> None:
-        self.assert_refused_hard(["--assume-dead", M1], {"CLAUDE_MULTI_MANAGED_ID": M2})
+        self.assert_refused_hard(["--assume-dead", M1], {"CHARMER_MANAGED_ID": M2})
         self.ancestors.assert_not_called()
 
     def test_h_the_override_covers_the_own_record_only(self) -> None:
@@ -490,7 +490,7 @@ class SelfAssumeDeadTests(RestoreTestCase):
         self.naming[_OWN_CLIENT] = frozenset({M1, M2})
         before = self.tree()
         code, output = self.restore_as(
-            ["--assume-dead", M1, M2], {"CLAUDE_MULTI_MANAGED_ID": M1}
+            ["--assume-dead", M1, M2], {"CHARMER_MANAGED_ID": M1}
         )
         self.assertEqual(code, 1, output)
         self.assertIn(f"charmer: {M2[:8]} is live", output)
@@ -500,12 +500,12 @@ class SelfAssumeDeadTests(RestoreTestCase):
     def test_e_daemon_liveness_of_the_own_id_is_never_overridden(self) -> None:
         self.prefixes.return_value = frozenset({M1[:8]})
         output = self.assert_refused_hard(
-            ["--assume-dead", M1], {"CLAUDE_MULTI_MANAGED_ID": M1}
+            ["--assume-dead", M1], {"CHARMER_MANAGED_ID": M1}
         )
         self.assertIn("is live in the Claude background daemon", output)
 
     def test_f_not_running_gets_no_override(self) -> None:
-        self.assert_refused_hard(["--not-running", M1], {"CLAUDE_MULTI_MANAGED_ID": M1})
+        self.assert_refused_hard(["--not-running", M1], {"CHARMER_MANAGED_ID": M1})
         self.ancestors.assert_not_called()
 
     def test_g_ancestor_pids_walks_a_fake_proc_tree(self) -> None:

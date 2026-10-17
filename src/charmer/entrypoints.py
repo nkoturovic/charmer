@@ -35,9 +35,9 @@ import sys
 from pathlib import Path
 from typing import Callable, MutableMapping, Sequence
 
-CHANNEL_ENV = "CLAUDE_MULTI_CHANNEL"
-ASSETS_ENV = "CLAUDE_MULTI_ASSETS"
-HOOK_COMMAND_ENV = "CLAUDE_MULTI_HOOK_COMMAND"
+CHANNEL_ENV = "CHARMER_CHANNEL"
+ASSETS_ENV = "CHARMER_ASSETS"
+HOOK_COMMAND_ENV = "CHARMER_HOOK_COMMAND"
 SOURCE_CHANNEL = "source"
 # A source tree: the Nix package recipe and this package's source side by
 # side. A checkout and the tree the Nix sandbox checks stage both carry them;

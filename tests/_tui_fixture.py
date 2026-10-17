@@ -152,7 +152,7 @@ def fixture_runtime(
         "XDG_CONFIG_HOME": str(root / "config"),
         "XDG_STATE_HOME": str(root / "state"),
         "TERM": "dumb",
-        "CLAUDE_MULTI_SECRET_ENV": str(secret_dir / "claude.env"),
+        "CHARMER_SECRET_ENV": str(secret_dir / "claude.env"),
     }
     environ.update(environ_extra or {})
     token_dir = state.ensure_private_dir(Path(environ["HOME"]) / ".config" / "charmer")

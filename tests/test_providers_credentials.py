@@ -230,7 +230,7 @@ class KeyFileLocationTests(CredentialCase):
 
     def setUp(self) -> None:
         super().setUp()
-        self.runtime.environ.pop("CLAUDE_MULTI_SECRET_ENV")
+        self.runtime.environ.pop("CHARMER_SECRET_ENV")
         self.env_now = self.runtime.gateway_environ()
         self.a = self.private(".config/secrets/a.env", b"KIMI_CLAUDE_API_KEY=dummy-key-aaaa\n")
         self.b = self.private(".config/secrets/b.env", b"KIMI_CLAUDE_API_KEY=dummy-key-bbbb\n")
@@ -446,7 +446,7 @@ class SetKeyCommandTests(CredentialCase):
         self.assertEqual(code, 1)
         self.assertIn("not a terminal", err)
         code, _out, err = self.op(["providers", "set-key", "kimi"], "y\nv-dummy\n",
-                                  env={"CLAUDE_MULTI_MANAGED_ID": "x"})
+                                  env={"CHARMER_MANAGED_ID": "x"})
         self.assertEqual(code, 1)
         self.assertEqual(self.store().get(KIMI), "cli-test-dummy")
 

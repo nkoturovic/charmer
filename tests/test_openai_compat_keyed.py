@@ -161,7 +161,7 @@ class KeyedHomeCase(op_tests.OperatorHomeCase):
     def setUp(self) -> None:
         super().setUp()
         self.assets = audited_root(self.root, audited=self.AUDITED)
-        self.environ["CLAUDE_MULTI_ASSETS"] = str(self.assets)
+        self.environ["CHARMER_ASSETS"] = str(self.assets)
         state.atomic_write(self.secret_file, (
             f"ACME_API_KEY={op_tests.ACME_SECRET}\nBETA_API_KEY={op_tests.BETA_SECRET}\n"
             f"KIMI_CLAUDE_API_KEY=kimi-dummy-secret-value\n{KEYED_SECRET}={KEYED_VALUE}\n"
@@ -186,9 +186,9 @@ class KeyedValidationTests(unittest.TestCase):
 
     def _home_env(self, assets: Path) -> tuple[dict[str, str], Path]:
         home = state.ensure_private_dir(self.tmp / "home")
-        environ = {"HOME": str(home), "CLAUDE_MULTI_ASSETS": str(assets),
-                   "CLAUDE_MULTI_SECRET_ENV": str(self.tmp / "secrets" / "claude.env"),
-                   "CLAUDE_MULTI_REGISTRY_DIR": str(self.tmp / "no-registry")}
+        environ = {"HOME": str(home), "CHARMER_ASSETS": str(assets),
+                   "CHARMER_SECRET_ENV": str(self.tmp / "secrets" / "claude.env"),
+                   "CHARMER_REGISTRY_DIR": str(self.tmp / "no-registry")}
         return environ, home
 
     def _install(self, environ: dict[str, str], files: dict[str, dict]) -> None:

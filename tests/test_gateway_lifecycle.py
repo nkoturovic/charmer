@@ -176,7 +176,7 @@ class _Lifecycle(unittest.TestCase):
             (bindir / name).chmod(0o755)
         return {"HOME": str(self.home), "XDG_STATE_HOME": str(self.root / "state"),
                 "XDG_CONFIG_HOME": str(self.root / "config"), "TERM": "dumb",
-                "CLAUDE_MULTI_HOOK_COMMAND": str(bindir / "charmer"), **extra}
+                "CHARMER_HOOK_COMMAND": str(bindir / "charmer"), **extra}
 
     def running(self, instance: str = "aaaaaaaaaaaaaaaa") -> None:
         self.world.become_ready(instance)
@@ -462,9 +462,9 @@ class SpawnEnvironmentTests(_Lifecycle):
         "TMPDIR": "/tmp/x", "TZ": "Europe/Belgrade", "SSL_CERT_FILE": "/etc/ca.pem", "SSL_CERT_DIR": "/etc/ca",
         "XDG_STATE_HOME": "/xdg/state", "XDG_CONFIG_HOME": "/xdg/config",
         "HTTPS_PROXY": "http://proxy.invalid:3128", "http_proxy": "http://proxy.invalid:3128",
-        "CLAUDE_MULTI_ASSETS": "/assets", "CLAUDE_MULTI_CHANNEL": "bundle", "CLAUDE_MULTI_PROXY_BIN": "/bin/gw",
-        "CLAUDE_MULTI_SECRET_ENV": "/secrets.env", "CLAUDE_MULTI_PROXY_PATCHES": "a.patch",
-        "CLAUDE_MULTI_MANAGED_ID": "11111111-1111-4111-8111-111111111111", "CLAUDE_MULTI_GATEWAY": "1",
+        "CHARMER_ASSETS": "/assets", "CHARMER_CHANNEL": "bundle", "CHARMER_PROXY_BIN": "/bin/gw",
+        "CHARMER_SECRET_ENV": "/secrets.env", "CHARMER_PROXY_PATCHES": "a.patch",
+        "CHARMER_MANAGED_ID": "11111111-1111-4111-8111-111111111111", "CHARMER_GATEWAY": "1",
         "MANAGEMENT_PASSWORD": "never", "ANTHROPIC_API_KEY": "never", "CLAUDECODE": "1",
     }
 
@@ -473,8 +473,8 @@ class SpawnEnvironmentTests(_Lifecycle):
         self.assertEqual(env, {
             "HOME": str(self.home), "PATH": gl.SPAWN_PATH, "TZ": "UTC", "LANG": "C.UTF-8", "LC_ALL": "C",
             "LC_TIME": "C", "TMPDIR": "/tmp/x", "SSL_CERT_FILE": "/etc/ca.pem", "SSL_CERT_DIR": "/etc/ca",
-            "CLAUDE_MULTI_ASSETS": "/assets", "CLAUDE_MULTI_CHANNEL": "bundle",
-            "CLAUDE_MULTI_PROXY_BIN": "/bin/gw", "CLAUDE_MULTI_SECRET_ENV": "/secrets.env",
+            "CHARMER_ASSETS": "/assets", "CHARMER_CHANNEL": "bundle",
+            "CHARMER_PROXY_BIN": "/bin/gw", "CHARMER_SECRET_ENV": "/secrets.env",
         })
 
     def test_the_state_root_is_explicit_when_xdg_state_home_moves_it(self) -> None:
@@ -496,11 +496,11 @@ class SpawnEnvironmentTests(_Lifecycle):
         binary.write_text("#!/bin/sh\n")
         binary.chmod(0o755)
         env = gl.spawn_environment({"PATH": str(bindir)}, self.home, resolve_binary=True)
-        self.assertEqual(env["CLAUDE_MULTI_PROXY_BIN"], str(binary))
+        self.assertEqual(env["CHARMER_PROXY_BIN"], str(binary))
         gateway = self.gateway(environ={"HOME": str(self.home), "PATH": str(bindir)})
         command = gateway.spawn_argv("0123456789abcdef")
         self.assertEqual(command[:2], [sys.executable, str(REPO_ROOT / "bin" / "charmer-proxy")])
-        self.assertEqual(gateway.spawn_env()["CLAUDE_MULTI_PROXY_BIN"], str(binary))
+        self.assertEqual(gateway.spawn_env()["CHARMER_PROXY_BIN"], str(binary))
 
     def test_an_installed_wrapper_is_used_as_is(self) -> None:
         bindir = self.root / "wrapper-bin"
@@ -508,16 +508,16 @@ class SpawnEnvironmentTests(_Lifecycle):
         for name in ("charmer", "charmer-proxy"):
             (bindir / name).write_text("#!/bin/sh\n")
             (bindir / name).chmod(0o755)
-        environ = {"HOME": str(self.home), "CLAUDE_MULTI_HOOK_COMMAND": str(bindir / "charmer"),
+        environ = {"HOME": str(self.home), "CHARMER_HOOK_COMMAND": str(bindir / "charmer"),
                    "PATH": str(self.root / "nothing")}
         gateway = self.gateway(environ=environ)
         self.assertEqual(gateway.spawn_argv("0123456789abcdef")[0], str(bindir / "charmer-proxy"))
-        self.assertNotIn("CLAUDE_MULTI_PROXY_BIN", gateway.spawn_env())
+        self.assertNotIn("CHARMER_PROXY_BIN", gateway.spawn_env())
 
     def test_the_script_entry_belongs_to_the_installation_never_the_resources(self) -> None:
         # Executables are not resources: a resource override never moves the
         # entry point, and the running installation is the default tree.
-        environ = {"HOME": str(self.home), "CLAUDE_MULTI_ASSETS": str(FIXTURE_ROOT)}
+        environ = {"HOME": str(self.home), "CHARMER_ASSETS": str(FIXTURE_ROOT)}
         default = gl.Gateway(home=self.home, state_root=self.state_root, environ=environ,
                              gateway_document=self.document, seams=self.world.seams(), platform="linux")
         self.assertEqual(default.installation, REPO_ROOT)
@@ -1666,7 +1666,7 @@ class TokenHelperTests(_Lifecycle):
                               managed_root=self.root / "managed")
         shim = Path(environ["XDG_STATE_HOME"]) / "charmer" / "bin" / "charmer-gateway-token"
         self.assertEqual(runtime.token_helper_command, shlex.quote(str(shim)))
-        self.assertIn(shlex.quote(environ["CLAUDE_MULTI_HOOK_COMMAND"]), shim.read_text())
+        self.assertIn(shlex.quote(environ["CHARMER_HOOK_COMMAND"]), shim.read_text())
 
     @unittest.skipUnless(sys.platform.startswith("linux"), "the listener proof reads /proc")
     def test_the_real_helper_refuses_an_unowned_listener(self) -> None:
@@ -1690,7 +1690,7 @@ class TokenHelperTests(_Lifecycle):
         launcher.chmod(0o755)
         environ = {"HOME": str(home), "PATH": os.environ.get("PATH", "/usr/bin:/bin"), "LANG": "C.UTF-8",
                    "XDG_STATE_HOME": str(self.root / "real-state"), "XDG_CONFIG_HOME": str(self.root / "real-config"),
-                   "CLAUDE_MULTI_HOOK_COMMAND": str(launcher)}
+                   "CHARMER_HOOK_COMMAND": str(launcher)}
         prepared = subprocess.run([str(launcher), "gateway", "status"], capture_output=True,
                                   text=True, timeout=60, env=environ, cwd=self.root)
         self.assertEqual(prepared.returncode, 0, prepared.stderr)
@@ -1714,7 +1714,7 @@ class StatusFactsTests(_Lifecycle):
         binary.write_text("")
         installed = self.root / "new-cli-proxy-api"
         installed.write_text("")
-        environ = {"HOME": str(self.home), "CLAUDE_MULTI_PROXY_BIN": str(installed)}
+        environ = {"HOME": str(self.home), "CHARMER_PROXY_BIN": str(installed)}
         service.write_exec_stamp(self.workdir, service.ExecStamp(
             "1.0.0", "signature", self.world.pid, str(binary), NOW.isoformat(), "pid:[101]",
             instance="aaaaaaaaaaaaaaaa"))
@@ -1724,7 +1724,7 @@ class StatusFactsTests(_Lifecycle):
         self.assertIn("1 instance log(s), 5 bytes in all", lines)
         self.assertIn(f"gateway restart pending: the running gateway runs {binary}", lines)
         self.assertEqual(gateway.running_binary(), str(binary))
-        environ["CLAUDE_MULTI_PROXY_BIN"] = str(binary)
+        environ["CHARMER_PROXY_BIN"] = str(binary)
         self.assertIsNone(self.gateway(environ=environ).binary_drift(gateway.observe()))
         binary.unlink()
         self.assertIn("no longer installed", self.gateway(environ=environ).binary_drift(gateway.observe()))
@@ -1805,8 +1805,8 @@ class RealSpawnTests(_Lifecycle):
                 "raise SystemExit(main(sys.argv[1:], chdir=os.chdir))").format(src=str(REPO_ROOT / "src"))
         environ = {
             "HOME": str(self.home), "PATH": os.environ.get("PATH", ""), "LANG": "C.UTF-8",
-            "CLAUDE_MULTI_ASSETS": str(FIXTURE_ROOT), "CLAUDE_MULTI_PROXY_BIN": str(self.fake),
-            "CLAUDE_MULTI_SECRET_ENV": str(self.root / "absent.env"),
+            "CHARMER_ASSETS": str(FIXTURE_ROOT), "CHARMER_PROXY_BIN": str(self.fake),
+            "CHARMER_SECRET_ENV": str(self.root / "absent.env"),
             "HTTPS_PROXY": "http://proxy.invalid:3128",
         }
         seams = gl.Seams(listener=self._listener,

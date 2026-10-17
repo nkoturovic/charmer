@@ -754,8 +754,8 @@ class SettingsEnvPlacementProbe(_ProbeCase):
 
 _WRAPPER = """#!/bin/sh
 printf '%s\\n' "${{2-}}" >> {log}
-CLAUDE_MULTI_HOOK_COMMAND={wrapper}
-export CLAUDE_MULTI_HOOK_COMMAND
+CHARMER_HOOK_COMMAND={wrapper}
+export CHARMER_HOOK_COMMAND
 PYTHONPATH={src}
 export PYTHONPATH
 exec {python} {launcher} "$@"
@@ -869,10 +869,10 @@ class HookShim3RealBinaryTests(_ProbeCase):
 
         # The v3 record the hook's Runtime reconciles: built exactly as the
         # hook will see it (package asset root, the client's fixture env with
-        # the wrapper's CLAUDE_MULTI_HOOK_COMMAND), so its shim refresh
+        # the wrapper's CHARMER_HOOK_COMMAND), so its shim refresh
         # writes identical bytes.
         env = fixture.environ()
-        env["CLAUDE_MULTI_HOOK_COMMAND"] = resolved
+        env["CHARMER_HOOK_COMMAND"] = resolved
         runtime = cli.Runtime(
             asset_root=RESOURCES_ROOT, environ=env, cwd=fixture.project_dir,
             allow_state_writes=False,

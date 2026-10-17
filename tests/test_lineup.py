@@ -471,13 +471,13 @@ class V3RecordTests(LineupCase):
 
     def test_inside_or_non_interactive_is_r25_and_the_record_stays_v3(self) -> None:
         before = self.record_bytes(FIXED)
-        self.runtime.environ["CLAUDE_MULTI_MANAGED_ID"] = FIXED
+        self.runtime.environ["CHARMER_MANAGED_ID"] = FIXED
         code, out, _ = self.request("profile quality")
         self.assertIn(
             f"session {FIXED[:8]} is a legacy record (version 3) and cannot hold a pending change",
             out,
         )
-        del self.runtime.environ["CLAUDE_MULTI_MANAGED_ID"]
+        del self.runtime.environ["CHARMER_MANAGED_ID"]
         code, out, _ = self.lineup("--relaunch", "profile", "quality")
         self.assertIn("cannot hold a pending change", out)
         self.assertEqual(self.record_bytes(FIXED), before)
@@ -534,13 +534,13 @@ class Gen0Tests(LineupCase):
         code, out, _ = self.lineup("--relaunch", "profile", "quality")
         self.assertIn(f"relaunch needed: {lineup.REASON_GEN0}", out)
         self.assertEqual(self.store.load(FIXED)["pending"]["profile"], "quality")
-        self.runtime.environ["CLAUDE_MULTI_MANAGED_ID"] = FIXED
+        self.runtime.environ["CHARMER_MANAGED_ID"] = FIXED
         code, out, _ = self.request("profile economy")
         self.assertIn("Recorded as a pending change", out)
         self.assertEqual(self.store.load(FIXED)["pending"]["profile"], "economy")
         self.assertEqual(self.execs, [])
         # The resume-override remedy (no --relaunch) from outside: pending too
-        del self.runtime.environ["CLAUDE_MULTI_MANAGED_ID"]
+        del self.runtime.environ["CHARMER_MANAGED_ID"]
         code, out, _ = self.lineup("profile", "quality")
         self.assertEqual(self.store.load(FIXED)["pending"]["profile"], "quality")
 
@@ -670,7 +670,7 @@ class ClassifyTests(LineupCase):
         self.assertIn("/reload-plugins", out)
 
     def test_reason_9_relaunch_forces_a_pending_change_from_inside(self) -> None:
-        self.runtime.environ["CLAUDE_MULTI_MANAGED_ID"] = self.mid
+        self.runtime.environ["CHARMER_MANAGED_ID"] = self.mid
         code, out, _ = self.lineup("--relaunch", "set implementer=opus55:xhigh")
         self.assertIn(f"relaunch needed: {lineup.REASON_FORCED}", out)
         self.assertEqual(self.execs[1:], [])
@@ -708,7 +708,7 @@ class Cp04Tests(LineupCase):
         with _fixed_id():
             record = self.launch_fresh(self.profile_target("direct"))
         self.mid, self.rid = FIXED, record["runtime_session_id"]
-        self.runtime.environ["CLAUDE_MULTI_MANAGED_ID"] = FIXED
+        self.runtime.environ["CHARMER_MANAGED_ID"] = FIXED
         code, out, _ = self.request("profile balanced")
         self.assertIn("native agents: explore native → replace", out)
         self.assertIn("Recorded as a pending change", out)
@@ -817,7 +817,7 @@ class LiveApplyTests(LineupCase):
         self.assertIn(lineup.R13.format(m8=self.mid[:8], p="gone"), out)
 
     def test_credentials_of_newly_bound_agents_only(self) -> None:
-        secrets = Path(self.env["CLAUDE_MULTI_SECRET_ENV"])
+        secrets = Path(self.env["CHARMER_SECRET_ENV"])
         code, out, _ = self.request("set reviewer=kimi-k3")
         self.assertIn(lineup.RELOAD_LINES[0], out)
         state.atomic_write(secrets, b"QWEN_CLAUDE_API_KEY=v4-test-dummy\n")
@@ -855,7 +855,7 @@ class LiveApplyTests(LineupCase):
 class PendingTests(LineupCase):
     def test_inside_pending_then_a_live_apply_drops_it_then_resume_consumes(self) -> None:
         before = self.store.load(self.mid)
-        self.runtime.environ["CLAUDE_MULTI_MANAGED_ID"] = self.mid
+        self.runtime.environ["CHARMER_MANAGED_ID"] = self.mid
         code, out, _ = self.request("direct")
         pending = self.store.load(self.mid)
         self.assertEqual(pending["applied_hash"], before["applied_hash"])
@@ -941,7 +941,7 @@ class PendingTests(LineupCase):
 class ShowTests(LineupCase):
     def test_show_names_pending_lead_target_needs_choice_and_drift(self) -> None:
         self.request("profile max")
-        self.runtime.environ["CLAUDE_MULTI_MANAGED_ID"] = self.mid
+        self.runtime.environ["CHARMER_MANAGED_ID"] = self.mid
         self.request("direct")
         code, out, _ = self.request("")
         self.assertIn("pending relaunch change: native agents:", out)
@@ -949,7 +949,7 @@ class ShowTests(LineupCase):
 
     def test_sessions_show_lists_needs_choice_pending_and_lead_target(self) -> None:
         self.request("profile max")
-        self.runtime.environ["CLAUDE_MULTI_MANAGED_ID"] = self.mid
+        self.runtime.environ["CHARMER_MANAGED_ID"] = self.mid
         self.request("direct")
         out, err = io.StringIO(), io.StringIO()
         with contextlib.redirect_stderr(err):
@@ -1183,9 +1183,9 @@ class PreviewApplyTests(LineupCase):
     refuses with a refreshed preview when the session moved meanwhile."""
 
     def _pending(self) -> None:
-        self.runtime.environ["CLAUDE_MULTI_MANAGED_ID"] = self.mid
+        self.runtime.environ["CHARMER_MANAGED_ID"] = self.mid
         self.request("direct")
-        self.runtime.environ.pop("CLAUDE_MULTI_MANAGED_ID")
+        self.runtime.environ.pop("CHARMER_MANAGED_ID")
         self.assertIn("pending", self.store.load(self.mid))
 
     def test_keep_current_lineup_previews_the_discard_and_follow_off(self) -> None:

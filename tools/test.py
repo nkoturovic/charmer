@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the claude-multi test suite from a checkout, without Nix.
+"""Run the charmer test suite from a checkout, without Nix.
 
   python3 tools/test.py                      the whole suite
   python3 tools/test.py tests.test_trust     named modules (also test_trust, tests/test_trust.py)
@@ -14,7 +14,7 @@ What it guarantees on every platform (Python 3.11 or newer):
   the live gateway ports). Any hit fails the run.
 - The suite sees a private temporary HOME and TMPDIR, and no XDG or
   ``CLAUDE_CONFIG_DIR`` overrides, so it never reads or writes your own
-  claude-multi or Claude Code state (``--home inherit`` opts out).
+  charmer or Claude Code state (``--home inherit`` opts out).
 - Platform markers: a test module may declare ``PLATFORMS = ("linux",)``
   (any of linux, darwin, windows). It is read without importing the module,
   and on other platforms the module is listed as not run, never imported.
@@ -22,9 +22,9 @@ What it guarantees on every platform (Python 3.11 or newer):
   mandatory (a skip fails the run) and ``--max-skip-ratio`` bounds skips.
 - The real-client lanes need the pinned Claude Code, which the private HOME
   does not have: ``--claude PATH`` verifies a file against the packaged pin
-  and puts a copy in the private HOME's claude-multi location (the
+  and puts a copy in the private HOME's charmer location (the
   product's own acquisition). A lane that needs it (the keyed client lane
-  once ``CLAUDE_MULTI_TEST_CLI_PROXY_API`` names a gateway) without it is
+  once ``CHARMER_TEST_CLI_PROXY_API`` names a gateway) without it is
   reported as not runnable, with the reason, and the run fails.
 """
 
@@ -45,12 +45,12 @@ REPO = Path(__file__).resolve().parents[1]
 PLATFORM_NAMES = ("linux", "darwin", "windows")
 MIN_PYTHON = (3, 11)
 CLEARED_ENV = ("XDG_CONFIG_HOME", "XDG_STATE_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_RUNTIME_DIR",
-               "CLAUDE_CONFIG_DIR", "CLAUDE_MULTI_ASSETS", "CLAUDE_MULTI_MANAGED_ID", "CLAUDECODE",
+               "CLAUDE_CONFIG_DIR", "CHARMER_ASSETS", "CHARMER_MANAGED_ID", "CLAUDECODE",
                "PYTHONHOME", "PYTHONSTARTUP")
 EXIT_OK, EXIT_FAILED, EXIT_USAGE = 0, 1, 2
 # Test modules that need the pinned Claude Code once the named variable is
 # set (it selects their real-client lane).
-PINNED_CLIENT_LANES = {"tests.test_keyed_compat_client": "CLAUDE_MULTI_TEST_CLI_PROXY_API"}
+PINNED_CLIENT_LANES = {"tests.test_keyed_compat_client": "CHARMER_TEST_CLI_PROXY_API"}
 
 
 class UsageError(Exception):
@@ -126,6 +126,19 @@ def guard_source(tests_dir: Path) -> str:
     raise UsageError(f"{path} defines no GUARD_SOURCE")
 
 
+def legacy_environment(repo: Path) -> tuple[str, ...]:
+    """The variables the pre-rename commands exported (``charmer.legacy.ENVIRONMENT``),
+    read with ``ast`` (never imported): a shell started inside an old session
+    must not leak them into a run."""
+
+    path = repo / "src" / "charmer" / "legacy.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"), str(path))
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and any(getattr(t, "id", "") == "ENVIRONMENT" for t in node.targets):
+            return tuple(ast.literal_eval(node.value))
+    raise UsageError(f"{path} defines no ENVIRONMENT")
+
+
 def prepare_environment(work: Path, *, repo: Path, home: str, tier: str) -> Path:
     """Set this process's environment (inherited by every child); returns the guard log."""
 
@@ -133,7 +146,7 @@ def prepare_environment(work: Path, *, repo: Path, home: str, tier: str) -> Path
     guard_dir.mkdir()
     (guard_dir / "sitecustomize.py").write_text(guard_source(repo / "tests"), encoding="utf-8")
     guard_log = work / "guard.log"
-    for name in CLEARED_ENV:
+    for name in (*CLEARED_ENV, *legacy_environment(repo)):
         os.environ.pop(name, None)
     tmp = work / "tmp"
     tmp.mkdir()
@@ -206,7 +219,7 @@ def main(argv: list[str] | None = None) -> int:
     if not selected:
         print("tools/test.py: nothing runnable is selected", file=sys.stderr)
         return EXIT_FAILED
-    work = Path(tempfile.mkdtemp(prefix="claude-multi-tests-"))
+    work = Path(tempfile.mkdtemp(prefix="charmer-tests-"))
     os.chmod(work, 0o700)
     try:
         return _run(args, selected, work)
@@ -225,9 +238,9 @@ def place_pinned_client(repo: Path, source: Path) -> str:
     (private) HOME's owned location, as ``setup --step claude --claude-from``
     does; returns what was placed."""
 
-    from claude_multi import acquire, errors, strict_json
+    from charmer import acquire, errors, strict_json
 
-    contract = strict_json.load(repo / "src" / "claude_multi" / "data" / "catalog" / "native-contract.json")
+    contract = strict_json.load(repo / "src" / "charmer" / "data" / "catalog" / "native-contract.json")
     try:
         outcome = acquire.acquire(contract, {"HOME": os.environ["HOME"], "PATH": ""}, claude_from=source.resolve())
     except (OSError, errors.CharmerError) as exc:

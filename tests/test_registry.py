@@ -4,7 +4,7 @@ retarget note for gateway-effort generation moves.
 
 Every test reads the frozen registry fixture ``tests/fixtures/registry``
 (cut by ``tests/fixtures/cut_registry_fixture.py``) through
-``CLAUDE_MULTI_REGISTRY_DIR`` and the frozen catalog fixture — never the
+``CHARMER_REGISTRY_DIR`` and the frozen catalog fixture — never the
 real pinned registry and never the shipped catalog.
 """
 
@@ -69,11 +69,11 @@ class RegistryDirTests(unittest.TestCase):
                 self.assertLessEqual(set(pool.registry_sections), set(registry.sections))
 
     def test_an_explicit_resource_root_selects_its_own_registry(self) -> None:
-        # Resources follow the selected root: explicit > CLAUDE_MULTI_ASSETS >
+        # Resources follow the selected root: explicit > CHARMER_ASSETS >
         # packaged. The frozen fixture root carries none.
         self.assertIsNone(catalog.registry_dir({}, FIXTURE_ROOT))
-        self.assertIsNone(catalog.registry_dir({"CLAUDE_MULTI_ASSETS": str(FIXTURE_ROOT)}))
-        self.assertEqual(catalog.registry_dir({"CLAUDE_MULTI_ASSETS": str(FIXTURE_ROOT)}, RESOURCES_ROOT),
+        self.assertIsNone(catalog.registry_dir({"CHARMER_ASSETS": str(FIXTURE_ROOT)}))
+        self.assertEqual(catalog.registry_dir({"CHARMER_ASSETS": str(FIXTURE_ROOT)}, RESOURCES_ROOT),
                          RESOURCES_ROOT / "registry")
         self.assertEqual(catalog.registry_dir({catalog.REGISTRY_DIR_ENV: str(REGISTRY_FIXTURE)}, RESOURCES_ROOT),
                          REGISTRY_FIXTURE)
@@ -102,10 +102,10 @@ class RegistrySnapshotTests(unittest.TestCase):
         self.assertIn("for name in " + " ".join(catalog.REGISTRY_FILES) + "; do", package)
         self.assertIn('cmp -s "${cliProxyApiRegistry}/$name"', package)
 
-    @unittest.skipUnless(os.environ.get("CLAUDE_MULTI_TEST_UPSTREAM_SOURCE"),
-                         "BOUNDARY: CLAUDE_MULTI_TEST_UPSTREAM_SOURCE names no pinned upstream source tree")
+    @unittest.skipUnless(os.environ.get("CHARMER_TEST_UPSTREAM_SOURCE"),
+                         "BOUNDARY: CHARMER_TEST_UPSTREAM_SOURCE names no pinned upstream source tree")
     def test_snapshot_equals_the_pinned_source(self) -> None:
-        source = Path(os.environ["CLAUDE_MULTI_TEST_UPSTREAM_SOURCE"]) / "internal" / "registry" / "models"
+        source = Path(os.environ["CHARMER_TEST_UPSTREAM_SOURCE"]) / "internal" / "registry" / "models"
         for name in catalog.REGISTRY_FILES:
             with self.subTest(name=name):
                 self.assertEqual((REGISTRY_SNAPSHOT / name).read_bytes(), (source / name).read_bytes())

@@ -231,7 +231,7 @@ class InstallRootTests(_Home):
         for name in ("charmer", "charmer-proxy"):
             (package / "bin" / name).write_text("#!/bin/sh\n")
         state.ensure_private_dir(self.home / ".local/share/charmer")
-        env = self.env(CLAUDE_MULTI_HOOK_COMMAND=str(package / "bin/charmer"), PATH=str(self.root / "no-tools"))
+        env = self.env(CHARMER_HOOK_COMMAND=str(package / "bin/charmer"), PATH=str(self.root / "no-tools"))
         with mock.patch.object(installs, "STORE_PREFIX", str(store) + "/"):
             self.assertEqual(installs.install_root(env), package)
             selection = installs.plan_selection("nix", env, None)
@@ -247,7 +247,7 @@ class InstallRootTests(_Home):
             installs.apply_selection(selection, env)
             self.assertEqual(installs.remove_nix_link(env), str(package))
             self.assertFalse(os.path.lexists(link))
-            outside = self.env(CLAUDE_MULTI_HOOK_COMMAND=str(REPO_ROOT / "bin/charmer"))
+            outside = self.env(CHARMER_HOOK_COMMAND=str(REPO_ROOT / "bin/charmer"))
             with self.assertRaises(installs.SelectionError):
                 installs.plan_selection("nix", outside, None)
 

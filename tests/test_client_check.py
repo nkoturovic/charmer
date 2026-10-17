@@ -52,7 +52,7 @@ class SessionClientTests(unittest.TestCase):
         shim = ["/bin/sh", "/state/bin/charmer-hook-3", "session-event", "prompt", "--managed-id", MID]
         self.proc.add(200, 100, shim, "/usr/bin/bash")
         self.proc.add(300, 200, shim, "/usr/bin/bash")
-        self.environ = {"HOME": str(self.tmp / "home"), "CLAUDE_MULTI_ASSETS": str(FIXTURE_ROOT)}
+        self.environ = {"HOME": str(self.tmp / "home"), "CHARMER_ASSETS": str(FIXTURE_ROOT)}
 
     def check(self, **kwargs):
         return client_check.check((RID, MID), self.environ, pid=300, proc_root=self.tmp / "proc",
@@ -74,7 +74,7 @@ class SessionClientTests(unittest.TestCase):
         self.assertIn(f"charmer -r {MID}", text)
 
     def test_unknown_or_matching_clients_stay_silent(self) -> None:
-        self.assertIsNone(client_check.check((RID,), {**self.environ, "CLAUDE_MULTI_ASSETS": str(self.tmp)},
+        self.assertIsNone(client_check.check((RID,), {**self.environ, "CHARMER_ASSETS": str(self.tmp)},
                                              pid=300, proc_root=self.tmp / "proc", platform="linux"))
         shutil.rmtree(self.tmp / "proc/100")
         owned = self.tmp / f"home/.local/share/charmer/claude/{PINNED}/claude"

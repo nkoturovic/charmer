@@ -44,7 +44,7 @@ def _forget_liveness_guard(
     """
 
     def check(current: dict[str, Any] | None) -> str | None:
-        if runtime.environ.get("CLAUDE_MULTI_MANAGED_ID") == stable_id:
+        if runtime.environ.get("CHARMER_MANAGED_ID") == stable_id:
             return (
                 "refusing to forget the session you are running "
                 "inside — exit it first"
@@ -161,7 +161,7 @@ def _stop_precheck(runtime: runtime_mod.Runtime, record: dict[str, Any], *, forc
     """
 
     stable_id = sessions.managed_id(record)
-    if runtime.environ.get("CLAUDE_MULTI_MANAGED_ID") == stable_id:
+    if runtime.environ.get("CHARMER_MANAGED_ID") == stable_id:
         return "refusing to stop the session you are running inside"
     verdict = runtime.background_liveness()
     if not verdict.known:

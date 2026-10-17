@@ -69,7 +69,7 @@ managed root unknown, so every such change refuses
 Only the owner continues past its record, through the random token
 :func:`begin` returned (a PID alone may be reused): in process by passing
 it, and for the owner's own commands through
-``CLAUDE_MULTI_INHIBITION_TOKEN`` (honoured by the explicit gateway verbs,
+``CHARMER_INHIBITION_TOKEN`` (honoured by the explicit gateway verbs,
 the ``charmer-proxy`` commands and the shim refresh; never by the
 token helper's ``gateway ensure``, so a session started from the owner's
 shell never acts for it). Recovery is explicit and idempotent:
@@ -109,7 +109,7 @@ from charmer.platform import posix_process
 
 RECORD = "inhibition.json"
 VERSION = 1
-TOKEN_ENV = "CLAUDE_MULTI_INHIBITION_TOKEN"
+TOKEN_ENV = "CHARMER_INHIBITION_TOKEN"
 # The writers' fence (a FileLock target: ``<state root>/gateway-inhibition.lock``;
 # at the root, so a writer never creates the gateway directory for it).
 FENCE = "gateway-inhibition"

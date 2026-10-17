@@ -111,7 +111,7 @@ class _DirectSecretMixin:
 
     @classmethod
     def grant(cls, runtime, key: str) -> None:
-        path = Path(runtime.environ["CLAUDE_MULTI_SECRET_ENV"])
+        path = Path(runtime.environ["CHARMER_SECRET_ENV"])
         state.atomic_write(path, path.read_bytes() + f"{cls.secret_name(runtime, key)}=tui-fixture-dummy\n".encode())
 
 
@@ -259,7 +259,7 @@ class DirectRowTests(_DirectCase):
 
 class DirectMarkTests(_DirectCase):
     def test_malformed_secret_file_marks_rows_and_never_raises(self) -> None:
-        secret = Path(self.runtime.environ["CLAUDE_MULTI_SECRET_ENV"])
+        secret = Path(self.runtime.environ["CHARMER_SECRET_ENV"])
         state.atomic_write(secret, b"\xff\xfe not an env file\n")
         with self.signed_in():
             screen = self.screen()
@@ -537,7 +537,7 @@ class DirectPermissiveTests(_DirectCase):
             ledger = operator_mod.ledger_document(None)
             ledger["routes"]["acme"] = operator_fixtures._route(snapshot.layer.providers["acme"])
             state.atomic_write(operator_mod.ledger_path(env), strict_json.canonical_file_bytes(ledger))
-        secret = Path(self.runtime.environ["CLAUDE_MULTI_SECRET_ENV"])
+        secret = Path(self.runtime.environ["CHARMER_SECRET_ENV"])
         state.atomic_write(secret, secret.read_bytes() + b"ACME_API_KEY=direct-fixture-dummy\n")
         selectors = {s.removesuffix("[1m]") for _e, s, _c in
                      catalog.line_selectors(self.runtime.lineup_catalog().lines[key])}

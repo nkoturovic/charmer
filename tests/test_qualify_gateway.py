@@ -1,6 +1,6 @@
 """The qualification battery through the real pinned gateway, offline.
 
-The built cli-proxy-api (``CLAUDE_MULTI_TEST_CLI_PROXY_API``, a /nix/store
+The built cli-proxy-api (``CHARMER_TEST_CLI_PROXY_API``, a /nix/store
 path) runs inside ``bwrap --unshare-net`` with a rendered fixture config;
 its only upstream is a unix-socket fake that counts every attempt. The
 production transport (``qualify.loopback_post``) reaches the gateway through
@@ -32,7 +32,7 @@ from charmer import catalog, probe, qualify, render, service, state
 
 GATEWAY_TOKEN = "q" * 64
 DUMMY_KIMI = "dummy-kimi-key"
-TEST_BINARY_ENV = "CLAUDE_MULTI_TEST_CLI_PROXY_API"
+TEST_BINARY_ENV = "CHARMER_TEST_CLI_PROXY_API"
 OWNER = staticmethod(lambda _base: service.OwnerVerdict("ours", "fixture gateway"))
 
 

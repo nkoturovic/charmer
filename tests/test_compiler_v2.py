@@ -264,9 +264,9 @@ class EnvTests(unittest.TestCase):
                     self.assertNotIn(key, result.env_set)
                 self.assertTrue(set(catalog.CREDENTIAL_ENV_KEYS).isdisjoint(result.env_set))
                 self.assertEqual(result.env_set["ANTHROPIC_BASE_URL"], bundle.docs["gateway"]["gateway"]["base_url"])
-                self.assertEqual(result.env_set["CLAUDE_MULTI_MANAGED_ID"], FIXED_SESSION)
-                self.assertEqual(result.env_set["CLAUDE_MULTI_SESSION_ID"], FIXED_SESSION)
-                self.assertEqual(result.env_set["CLAUDE_MULTI_LAUNCH_EPOCH"], "0")
+                self.assertEqual(result.env_set["CHARMER_MANAGED_ID"], FIXED_SESSION)
+                self.assertEqual(result.env_set["CHARMER_SESSION_ID"], FIXED_SESSION)
+                self.assertEqual(result.env_set["CHARMER_LAUNCH_EPOCH"], "0")
                 self.assertEqual(result.env_set["CLAUDE_AUTOCOMPACT_PCT_OVERRIDE"], "90")
                 window = int(result.env_set["CLAUDE_CODE_AUTO_COMPACT_WINDOW"])
                 self.assertEqual(
@@ -455,7 +455,7 @@ class ProviderSecretUnsetTests(unittest.TestCase):
                 "ANTHROPIC_API_KEY": "x",
                 "EXAMPLE_MCP_API_KEY": "x",
                 "CLAUDE_CODE_MESSAGING_TOKEN": "x",
-                "CLAUDE_MULTI_SECRET_ENV": "/p",
+                "CHARMER_SECRET_ENV": "/p",
                 "API_KEY_HOLDER": "x",
                 "BAR_API_KEY": "x",
                 "MANAGEMENT_PASSWORD": "hostile-upper",
@@ -472,11 +472,11 @@ class ProviderSecretUnsetTests(unittest.TestCase):
                          ["ALPHA_SECRET", "ZED_SECRET", "BAR_API_KEY", "EXAMPLE_MCP_API_KEY", "FOO_API_KEY"])
         self.assertEqual(names.count("MANAGEMENT_PASSWORD"), 1)
         self.assertEqual(names.count("ANTHROPIC_API_KEY"), 1)
-        for kept in ("CLAUDE_CODE_MESSAGING_TOKEN", "CLAUDE_MULTI_SECRET_ENV"):
+        for kept in ("CLAUDE_CODE_MESSAGING_TOKEN", "CHARMER_SECRET_ENV"):
             self.assertNotIn(kept, names)
         # Product names only; an MCP server's key is unset like any
         # other *_API_KEY (no operator allowlist entry).
-        self.assertEqual(compiler.ENV_UNSET_KEEP, frozenset({"CLAUDE_CODE_MESSAGING_TOKEN", "CLAUDE_MULTI_SECRET_ENV"}))
+        self.assertEqual(compiler.ENV_UNSET_KEEP, frozenset({"CLAUDE_CODE_MESSAGING_TOKEN", "CHARMER_SECRET_ENV"}))
         self.assertNotIn("API_KEY_HOLDER", names)
         scalar = compiler.v2_env_unset(scalar=300000, secret_env_names=())
         self.assertNotIn("CLAUDE_CODE_MAX_CONTEXT_TOKENS", scalar)
@@ -533,13 +533,13 @@ class ProviderSecretUnsetTests(unittest.TestCase):
             eff,
             docs=docs,
             bundle=bundle,
-            launch_environ={"OPENAI_API_KEY": "sk-x", "EXAMPLE_MCP_API_KEY": "m", "CLAUDE_MULTI_SECRET_ENV": "/p",
+            launch_environ={"OPENAI_API_KEY": "sk-x", "EXAMPLE_MCP_API_KEY": "m", "CHARMER_SECRET_ENV": "/p",
                             "PATH": "/bin"},
         )
         self.assertIn("MY_GATEWAY_TOKEN", result.env_unset)  # free-form custom name
         self.assertIn("OPENAI_API_KEY", result.env_unset)
         self.assertIn("EXAMPLE_MCP_API_KEY", result.env_unset)  # No operator keep entry
-        self.assertNotIn("CLAUDE_MULTI_SECRET_ENV", result.env_unset)
+        self.assertNotIn("CHARMER_SECRET_ENV", result.env_unset)
         self.assertNotIn("PATH", result.env_unset)
         for provider in lcat.providers.values():
             ref = provider["transport"].get("auth", {}).get("secret_ref", "")
@@ -586,14 +586,14 @@ class ProviderSecretUnsetTests(unittest.TestCase):
         binary.chmod(0o755)
         outer = {
             "HOME": str(home),
-            "CLAUDE_MULTI_SECRET_ENV": str(secret_file),
-            "CLAUDE_MULTI_ASSETS": str(FIXTURE_ROOT),
-            "CLAUDE_MULTI_PROXY_BIN": str(binary),
+            "CHARMER_SECRET_ENV": str(secret_file),
+            "CHARMER_ASSETS": str(FIXTURE_ROOT),
+            "CHARMER_PROXY_BIN": str(binary),
             "KIMI_CLAUDE_API_KEY": "env-value-never-used",
             "OPENAI_API_KEY": "sk-env",
         }
         _, result = _seed_launch(launch_environ=outer)
-        self.assertNotIn("CLAUDE_MULTI_SECRET_ENV", result.env_unset)
+        self.assertNotIn("CHARMER_SECRET_ENV", result.env_unset)
         inner = {key: value for key, value in outer.items() if key not in result.env_unset}
         inner.update(result.env_set)
         self.assertNotIn("KIMI_CLAUDE_API_KEY", inner)
@@ -856,7 +856,7 @@ class ContractTests(unittest.TestCase):
         self.assertTrue(result.durable)
         self.assertEqual(result.agents_json, "")
         self.assertEqual(result.scope_dir, SCOPE_DIR)
-        self.assertEqual(result.env_set["CLAUDE_MULTI_LAUNCH_EPOCH"], "3")
+        self.assertEqual(result.env_set["CHARMER_LAUNCH_EPOCH"], "3")
         self.assertTrue(result.scope_plan.other_files["lineup.gen"].startswith(b"7 "))
         # The 2.x path's results keep their defaults.
         self.assertIsNone(compiler.CompileResult.__dataclass_fields__["fence"].default)
@@ -1219,11 +1219,11 @@ class WslSecretDenyTests(unittest.TestCase):
 
     def test_environment_dependent_denies_name_their_cause(self) -> None:
         env = {"HOME": "/fixture/home", "ANTHROPIC_CONFIG_DIR": "/elsewhere/auth",
-               "CLAUDE_MULTI_SECRET_ENV": "/elsewhere/keys.env"}
+               "CHARMER_SECRET_ENV": "/elsewhere/keys.env"}
         causes = dict(scope.secret_deny_causes(env, wsl=False))
         self.assertIn("ANTHROPIC_CONFIG_DIR", causes["Read(//elsewhere/auth/**)"])
-        self.assertIn("CLAUDE_MULTI_SECRET_ENV", causes["Read(//elsewhere/keys.env)"])
-        self.assertIn("CLAUDE_MULTI_SECRET_ENV", causes["Edit(//elsewhere/keys.env)"])
+        self.assertIn("CHARMER_SECRET_ENV", causes["Read(//elsewhere/keys.env)"])
+        self.assertIn("CHARMER_SECRET_ENV", causes["Edit(//elsewhere/keys.env)"])
         self.assertEqual(tuple(rule for rule in scope.secret_path_denies(env, wsl=False)
                                if rule not in scope.SECRET_PATH_DENIES), tuple(causes))
 

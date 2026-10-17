@@ -3,7 +3,7 @@ unified consent guard, the bounded transport, marks, drift, declaration
 from a listing, the public feed peek and the LAN reachability observation.
 
 Every observation is injected: a synthetic pinned registry under a temp
-``CLAUDE_MULTI_REGISTRY_DIR``, a served snapshot through the Runtime seam,
+``CHARMER_REGISTRY_DIR``, a served snapshot through the Runtime seam,
 listing bodies through ``Runtime.listing_transport``. The bounded transport
 itself runs only against local fake servers on port 0 (never 8317/8316).
 No test pins a shipped model id: wires are invented or derived from the
@@ -234,7 +234,7 @@ class ConsentTests(DiscoveryCLICase):
     def test_session_or_non_tty_refuses_before_secret_access(self) -> None:
         self.approve_acme()
         before = self.state_bytes()
-        cases = [({"CLAUDE_MULTI_MANAGED_ID": test_cli.FIXED_ID}, True, "CLAUDE_MULTI_MANAGED_ID set"),
+        cases = [({"CHARMER_MANAGED_ID": test_cli.FIXED_ID}, True, "CHARMER_MANAGED_ID set"),
                  ({"CLAUDECODE": ""}, True, "CLAUDECODE set"),
                  ({}, False, "stdin/stdout is not a terminal")]
         for env, tty, reason in cases:

@@ -41,8 +41,8 @@ class GatewayHotReloadTests(unittest.TestCase):
         self.environ = {
             "HOME": str(self.home), "XDG_CONFIG_HOME": str(self.home / ".config"),
             "XDG_STATE_HOME": str(self.home / ".local/state"),
-            "CLAUDE_MULTI_ASSETS": str(self.assets),
-            "CLAUDE_MULTI_SECRET_ENV": str(self.root / "absent-secrets"),
+            "CHARMER_ASSETS": str(self.assets),
+            "CHARMER_SECRET_ENV": str(self.root / "absent-secrets"),
         }
         self.gateway_path = self.assets / "catalog/gateway.json"
         self.gateway = json.loads(self.gateway_path.read_text())

@@ -58,13 +58,13 @@ STAGED_FILE = "management-key.next"
 DISABLED_FILE = "management-key.disabled"
 PREPARED_FILE = "management-key.prepared"
 ALLOWLIST_PATCH = "cli-proxy-api-management-readonly-allowlist.patch"
-PINNED_BIN_ENV = "CLAUDE_MULTI_PROXY_BIN"
-PATCHES_ENV = "CLAUDE_MULTI_PROXY_PATCHES"
+PINNED_BIN_ENV = "CHARMER_PROXY_BIN"
+PATCHES_ENV = "CHARMER_PROXY_PATCHES"
 # The install channel every wrapper sets. Management is a channel policy:
 # only the Nix channel, whose wrapper pins the gateway binary and attests its
 # patch list, enables it; a bundle, a source checkout or no channel keeps it
 # off, whatever binary or patch list the environment names.
-CHANNEL_ENV = "CLAUDE_MULTI_CHANNEL"
+CHANNEL_ENV = "CHARMER_CHANNEL"
 MANAGEMENT_CHANNEL = "nix"
 UNAVAILABLE = "management is unavailable in this build"
 _KEY_SHAPE = re.compile(r"^[0-9a-f]{64}$")

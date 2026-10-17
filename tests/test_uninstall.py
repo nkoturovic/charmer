@@ -108,7 +108,7 @@ class UninstallCase(test_cli.OperatorCommandCase):
         self.events: list[str] = []
         self.world = lifecycle_tests.World(self)
         self.manager = service_tests.Manager(self)
-        environ = {"HOME": str(self.home), "PATH": "/usr/bin:/bin", "CLAUDE_MULTI_CHANNEL": "bundle"}
+        environ = {"HOME": str(self.home), "PATH": "/usr/bin:/bin", "CHARMER_CHANNEL": "bundle"}
         seams = self.world.seams(runner=self.manager,
                                  journal=lambda _unit, _since: observation.LogWindow((), "bounded"))
 
@@ -312,7 +312,7 @@ class CredentialTests(UninstallCase):
         other_name = self.state_dir / "scopes" / "copy.env"
         other_name.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         os.link(keys, other_name)  # the same file under another name
-        env = {"CLAUDE_MULTI_SECRET_ENV": str(keys)}
+        env = {"CHARMER_SECRET_ENV": str(keys)}
         with mock.patch.dict(self.runtime.environ, env):
             plan = uninstall.build_plan(self.runtime)
         where = self.where(plan)
@@ -527,7 +527,7 @@ class FenceTests(UninstallCase):
         lock_path = self.state_dir / "migration.lock"
         keys = self.file(lock_path, b"ACME_API_KEY=acme-dummy-value\n")
         info = keys.stat()
-        env = {"CLAUDE_MULTI_SECRET_ENV": str(keys)}
+        env = {"CHARMER_SECRET_ENV": str(keys)}
         with mock.patch.dict(self.runtime.environ, env):
             plan = uninstall.build_plan(self.runtime)
         self.assertEqual(self.where(plan)[keys], "credentials")

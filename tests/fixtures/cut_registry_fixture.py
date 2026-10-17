@@ -9,7 +9,7 @@ The source is the pinned CLIProxyAPI 7.3.15 embedded registry directory
 (``${cliProxyApi.src}/internal/registry/models``, the path nix/module.nix
 passes to nix/package.nix as ``cliProxyApiRegistry``). OUT_DIR defaults to
 ``tests/fixtures/registry``. The output is COMMITTED and FROZEN:
-tests read it through ``CLAUDE_MULTI_REGISTRY_DIR`` and never the real
+tests read it through ``CHARMER_REGISTRY_DIR`` and never the real
 registry, and nothing regenerates it at test time. Re-run it only as a
 deliberate fixture change.
 

@@ -3,13 +3,13 @@
 Two kinds of gateway are accepted:
 
 - A Nix store output (``/nix/store/...``): the explicitly selected one
-  (``CLAUDE_MULTI_TEST_CLI_PROXY_API``) or, without a selection, the one the
+  (``CHARMER_TEST_CLI_PROXY_API``) or, without a selection, the one the
   installed ``charmer-proxy`` wrapper, ``PATH`` or the Nix profile
   names. It must resolve to a regular executable that is not group- or
   other-writable.
 - A content-bound build outside the store (a ``tools/build.py gateway``
   dist, as CI builds it): only the explicitly selected binary, and only
-  with its build record named by ``CLAUDE_MULTI_TEST_GATEWAY_BUILD`` (the
+  with its build record named by ``CHARMER_TEST_GATEWAY_BUILD`` (the
   ``BUILD.json`` of ``tools/build.py gateway ... record``). The binary must
   be a regular executable, neither it nor a directory above it may be
   group- or other-writable (a root-owned sticky directory such as ``/tmp``
@@ -39,8 +39,8 @@ from charmer.probe import ProbeError
 
 from _layout import UPSTREAM_JSON
 
-BINARY_ENV = "CLAUDE_MULTI_TEST_CLI_PROXY_API"
-BUILD_RECORD_ENV = "CLAUDE_MULTI_TEST_GATEWAY_BUILD"
+BINARY_ENV = "CHARMER_TEST_CLI_PROXY_API"
+BUILD_RECORD_ENV = "CHARMER_TEST_GATEWAY_BUILD"
 NIX_STORE = "/nix/store/"
 # A content-bound probe build: <out>/bin/<probe> and this record beside it,
 # naming the gateway sha256 the probes were built against.

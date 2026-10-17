@@ -149,7 +149,7 @@ class UnknownLivenessTests(_SessionsCase):
 
     def test_the_current_session_is_never_forgotten(self) -> None:
         self.record()
-        self.runtime.environ["CLAUDE_MULTI_MANAGED_ID"] = fx.FIXED_ID
+        self.runtime.environ["CHARMER_MANAGED_ID"] = fx.FIXED_ID
         with self.unknown():
             _result, win = self.run_screen(self.screen(), ["x", *fx.FIXED_ID, ENTER, RIGHT, ENTER, ESC], width=120)
         self.assertTrue(self.runtime.session_store.exists(fx.FIXED_ID))

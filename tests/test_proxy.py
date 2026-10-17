@@ -60,7 +60,7 @@ DUMMY_OPENROUTER = "dummy-openrouter-key"
 # Point the disposable rig at a not-yet-installed gateway build (e.g.
 # the 7.3.15 store path before activation). Narrow on purpose: an absolute
 # /nix/store path only; anything else is refused, never silently ignored.
-TEST_BINARY_ENV = "CLAUDE_MULTI_TEST_CLI_PROXY_API"
+TEST_BINARY_ENV = "CHARMER_TEST_CLI_PROXY_API"
 
 
 def _find_binary() -> str | None:
@@ -565,14 +565,14 @@ class ProxyControlTestCase(unittest.TestCase):
         self.secret_file = self.secrets / "claude.env"
         self.environ = {
             "HOME": str(self.home),
-            "CLAUDE_MULTI_SECRET_ENV": str(self.secret_file),
-            "CLAUDE_MULTI_ASSETS": str(CATALOG_ROOT),
+            "CHARMER_SECRET_ENV": str(self.secret_file),
+            "CHARMER_ASSETS": str(CATALOG_ROOT),
         }
         self.binary = self.root / "bin" / "cli-proxy-api"
         self.binary.parent.mkdir()
         self.binary.write_bytes(b"#!/bin/fake\n")
         self.binary.chmod(0o755)
-        self.environ["CLAUDE_MULTI_PROXY_BIN"] = str(self.binary)
+        self.environ["CHARMER_PROXY_BIN"] = str(self.binary)
 
     def _write_secret(self, content: bytes = b"KIMI_CLAUDE_API_KEY=test-dummy-value-123\n"):
         state.atomic_write(self.secret_file, content)
@@ -1567,7 +1567,7 @@ class RunLoginTests(ProxyControlTestCase):
 
     def test_binary_resolution_failure(self) -> None:
         environ = dict(self.environ)
-        environ["CLAUDE_MULTI_PROXY_BIN"] = str(self.root / "missing")
+        environ["CHARMER_PROXY_BIN"] = str(self.root / "missing")
         with self.assertRaisesRegex(ProxyError, "not an executable"):
             proxy.resolve_proxy_binary(environ)
 
@@ -1741,7 +1741,7 @@ class GatewayEnvScrubTests(ProxyControlTestCase):
             self.assertNotIn(name, env)
         for name in self.KEPT:
             self.assertEqual(env[name], f"keep-{name}")
-        for name in ("HOME", "CLAUDE_MULTI_SECRET_ENV", "CLAUDE_MULTI_ASSETS"):
+        for name in ("HOME", "CHARMER_SECRET_ENV", "CHARMER_ASSETS"):
             self.assertEqual(env[name], self.environ[name])
         notice = [line for line in stderr.splitlines() if line.startswith("gateway env:")]
         self.assertEqual(len(notice), 1)
@@ -2062,7 +2062,7 @@ class SelectedSecretReadinessTests(ProxyControlTestCase):
         link = self.secrets / "link.env"
         link.symlink_to(self.secret_file)
         environ = dict(self.environ)
-        environ["CLAUDE_MULTI_SECRET_ENV"] = str(link)
+        environ["CHARMER_SECRET_ENV"] = str(link)
         bundle, resolved = self._resolved()
         problems = proxy.selected_secret_problems(
             resolved,
@@ -2154,7 +2154,7 @@ class TokenStateErrorTests(unittest.TestCase):
         with mock.patch.object(_sys, "stderr", err):
             code = proxy.main(
                 ["init"],
-                environ={"HOME": str(home), "CLAUDE_MULTI_ASSETS": str(CATALOG_ROOT)},
+                environ={"HOME": str(home), "CHARMER_ASSETS": str(CATALOG_ROOT)},
                 models_get=lambda _base, _token: (200, set()),
             )
         self.assertEqual(code, 1)
@@ -2813,7 +2813,7 @@ class ManagementChannelPolicyTests(ManagementTestCase):
     """Management is a channel policy: only the Nix channel enables it.
 
     A bundle-style wrapper names its own channel and the bundled gateway
-    (CLAUDE_MULTI_PROXY_BIN) and attests nothing; even a patch list inherited
+    (CHARMER_PROXY_BIN) and attests nothing; even a patch list inherited
     from a parent environment, or key files a Nix install left in the home,
     never make it create, inject or send a management key.
     """

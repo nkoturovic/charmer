@@ -1558,8 +1558,8 @@ FRAGMENTS: dict[str, str] = {
     "claude-args": "arguments Claude Code receives unchanged (after --)",
 }
 ENV_PLACEHOLDERS = {
-    "CLAUDE_MULTI_MANAGED_ID": UUIDS["id"],
-    "CLAUDE_MULTI_SESSION_ID": UUIDS["id"],
+    "CHARMER_MANAGED_ID": UUIDS["id"],
+    "CHARMER_SESSION_ID": UUIDS["id"],
     "CLAUDE_CODE_SESSION_ID": UUIDS["runtime-id"],
 }
 # Negative examples: a span a page shows as refused, with the refusal it

@@ -227,7 +227,7 @@ class RemovedTests(PropagationCase):
         self.save_profile("other", lambda d: None)
         # a: a kind-profile pending change naming "other"; b: kind-lineup under "other"
         self.mid, self.rid = a["managed_id"], a["runtime_session_id"]
-        self.runtime.environ["CLAUDE_MULTI_MANAGED_ID"] = a["managed_id"]
+        self.runtime.environ["CHARMER_MANAGED_ID"] = a["managed_id"]
         self.request("profile direct")
         pending = self.store.load(a["managed_id"])["pending"]
         self.mutate(a["managed_id"], pending={**pending, "profile": "other"})

@@ -243,7 +243,7 @@ class GatewayReadsThePointedFileTests(PointerCase):
 
     def setUp(self) -> None:
         super().setUp()
-        self.env.update({"CLAUDE_MULTI_ASSETS": str(FIXTURE_ROOT),
+        self.env.update({"CHARMER_ASSETS": str(FIXTURE_ROOT),
                          "XDG_STATE_HOME": str(self.root / "state")})
 
     def render(self) -> str:

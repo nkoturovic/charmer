@@ -81,7 +81,7 @@ REDIRECT_PROXY_TEXT = ("Same-host HTTPS redirects on downloads.claude.ai may be 
                        "destination is refused before a request; a configured HTTPS proxy is used.")
 REQUEST_PLAN_QUESTION = "Proceed with these listed requests? [y/N] "
 _VERSION = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+")
-_GPG_MISSING = "gpg not found (install GnuPG or set CLAUDE_MULTI_GPG)"
+_GPG_MISSING = "gpg not found (install GnuPG or set CHARMER_GPG)"
 
 
 class ReleaseManifestError(errors.CharmerError, RuntimeError):
@@ -298,7 +298,7 @@ def load_local(directory: Path, version: str) -> tuple[bytes, bytes]:
 
 
 def gpg_executable(environ: Mapping[str, str]) -> str:
-    configured = environ.get("CLAUDE_MULTI_GPG")
+    configured = environ.get("CHARMER_GPG")
     executable = shutil.which(configured or "gpg", path=environ.get("PATH", os.defpath))
     if executable is None:
         raise ReleaseManifestUnavailable(_GPG_MISSING)

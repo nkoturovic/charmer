@@ -544,12 +544,12 @@ class ManagementPinWiringTests(unittest.TestCase):
         flags = text.split("  proxyFlag =", 1)[1].split(";", 1)[0]
         self.assertIn("if cliProxyApiBin != null then", flags)
         self.assertIn(
-            "--set CLAUDE_MULTI_PROXY_BIN "
-            '"${cliProxyApiBin}" --set CLAUDE_MULTI_PROXY_PATCHES '
+            "--set CHARMER_PROXY_BIN "
+            '"${cliProxyApiBin}" --set CHARMER_PROXY_PATCHES '
             '"${pkgs.lib.concatStringsSep "," cliProxyApiPatches}"',
             flags,
         )
-        self.assertIn("else\n      ''--unset CLAUDE_MULTI_PROXY_BIN --unset CLAUDE_MULTI_PROXY_PATCHES''", flags)
+        self.assertIn("else\n      ''--unset CHARMER_PROXY_BIN --unset CHARMER_PROXY_PATCHES''", flags)
         phase = text.split("installPhase = ''", 1)[1]
         wrappers, proxy_wrapper = phase.split("makeWrapper ${python}/bin/python3 $out/bin/${proxyScript}", 1)
         self.assertNotIn("${proxyFlag}", wrappers)
@@ -580,7 +580,7 @@ class ManagementPinWiringTests(unittest.TestCase):
             self.assertTrue(management.allowlist_build({**env, management.CHANNEL_ENV: "nix"}))  # live negative control
             code = (
                 "import json,os; print(json.dumps({k: os.environ[k] for k in "
-                "('CLAUDE_MULTI_PROXY_BIN','CLAUDE_MULTI_PROXY_PATCHES','CLAUDE_MULTI_CHANNEL') if k in os.environ}))"
+                "('CHARMER_PROXY_BIN','CHARMER_PROXY_PATCHES','CHARMER_CHANNEL') if k in os.environ}))"
             )
             result = subprocess.run(
                 [bash, "-c", 'probe_python="$2"; probe_code="$3"; exec() { "$probe_python" -c "$probe_code"; }; source "$1"',
@@ -590,19 +590,19 @@ class ManagementPinWiringTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             captured = json.loads(result.stdout)
             # The wrapper names its own channel and clears both attestations.
-            self.assertEqual(captured, {"CLAUDE_MULTI_CHANNEL": "nix"})
+            self.assertEqual(captured, {"CHARMER_CHANNEL": "nix"})
             self.assertFalse(management.allowlist_build(captured))
 
     def test_every_wrapper_names_the_nix_channel_and_never_inherits_one(self):
         text = (NIX_DIR / "package.nix").read_text()
-        self.assertIn("channelFlag = ''--set CLAUDE_MULTI_CHANNEL nix'';", text)
+        self.assertIn("channelFlag = ''--set CHARMER_CHANNEL nix'';", text)
         phase = text.split("installPhase = ''", 1)[1]
         wrappers = phase.count("makeWrapper ${python}/bin/python3")
         self.assertEqual(wrappers, 2)  # the loop over the launcher scripts and charmer-proxy
         self.assertEqual(phase.count("${channelFlag}"), wrappers)
-        self.assertNotIn("CLAUDE_MULTI_CHANNEL", phase)
+        self.assertNotIn("CHARMER_CHANNEL", phase)
         from charmer import management
-        self.assertEqual((management.CHANNEL_ENV, management.MANAGEMENT_CHANNEL), ("CLAUDE_MULTI_CHANNEL", "nix"))
+        self.assertEqual((management.CHANNEL_ENV, management.MANAGEMENT_CHANNEL), ("CHARMER_CHANNEL", "nix"))
 
 
 class CliProxyApiDerivationTests(unittest.TestCase):
@@ -728,9 +728,9 @@ class ModuleWiringTests(unittest.TestCase):
         # The resources travel inside the Python package; the wrappers name
         # that resource directory (an inherited override never applies).
         self.assertIn('resources = "${packageDir}/data";', text)
-        self.assertEqual(text.count('--set CLAUDE_MULTI_ASSETS "$out/${resources}"'), 2)
-        self.assertEqual(text.count('--set CLAUDE_MULTI_HOOK_COMMAND "$out/bin/charmer"'), 1)
-        self.assertIn("CLAUDE_MULTI_PROXY_BIN", text)
+        self.assertEqual(text.count('--set CHARMER_ASSETS "$out/${resources}"'), 2)
+        self.assertEqual(text.count('--set CHARMER_HOOK_COMMAND "$out/bin/charmer"'), 1)
+        self.assertIn("CHARMER_PROXY_BIN", text)
         self.assertIn("../src/charmer/data/version.json", text)
         # The registry snapshot is checked in under the resources; the build
         # compares it with the pinned source (no second, generated copy).
@@ -1049,8 +1049,8 @@ class GatewayCheckWiringTests(unittest.TestCase):
         text = (REPO_ROOT / "tests/gateway-check.nix").read_text()
         for literal in (
             "pkgs.bubblewrap", "__noChroot = false",
-            "CLAUDE_MULTI_TEST_REQUIRE_GATEWAY=1",
-            'CLAUDE_MULTI_TEST_CLI_PROXY_API="$cliProxyApi/bin/cli-proxy-api"',
+            "CHARMER_TEST_REQUIRE_GATEWAY=1",
+            'CHARMER_TEST_CLI_PROXY_API="$cliProxyApi/bin/cli-proxy-api"',
             "--sandbox-proof", "--check-modules",
             'mkdir -m 0700 "$out/evidence"',
             '--validate-evidence "$out/evidence"',

@@ -412,7 +412,7 @@ def run(journey: Journey, *, mode: str = "update", assume_yes: bool = False, ask
         for line in channel_lines(journey.channel):
             _write(out, line)
         return EXIT_REFUSED
-    if mode != "check" and (journey.environ.get("CLAUDE_MULTI_MANAGED_ID") or "CLAUDECODE" in journey.environ):
+    if mode != "check" and (journey.environ.get("CHARMER_MANAGED_ID") or "CLAUDECODE" in journey.environ):
         _write(out, "claude-multi update: changing the installation is refused inside a Claude Code session; "
                     "nothing was changed.")
         _write(out, "  fix: run claude-multi update in your own terminal")

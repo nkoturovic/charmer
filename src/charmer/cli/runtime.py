@@ -832,7 +832,7 @@ class Runtime:
         """The environment the proxy render seams use (this Runtime's HOME
         and asset root), as doctor's alias prune passes it."""
 
-        return {**self.environ, "HOME": str(self.home), "CLAUDE_MULTI_ASSETS": str(self.asset_root)}
+        return {**self.environ, "HOME": str(self.home), "CHARMER_ASSETS": str(self.asset_root)}
 
     def render_gateway(self, *, policy: str = "explicit", barrier: Any = None) -> tuple[Path, Any, Any]:
         """Render the gateway config under the api-key leaf (write

@@ -71,7 +71,7 @@ class JourneyTestCase(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.tmp, True)
         self.home = self.tmp / "home"
         self.home.mkdir(mode=0o700)
-        self.environ = {"HOME": str(self.home), "CLAUDE_MULTI_CHANNEL": "bundle"}
+        self.environ = {"HOME": str(self.home), "CHARMER_CHANNEL": "bundle"}
         self.root = su.install_root(self.environ)
         self.state = self.home / ".local/state/charmer"
         self.state.mkdir(parents=True, mode=0o700)
@@ -465,7 +465,7 @@ class FactsTests(JourneyTestCase):
         self.assertIn("Installed release: charmer 1.0.0 was released 2026-10-01, 19 days ago — check for a "
                       "newer one: charmer update --check", lines)
         self.assertTrue(lines[0].startswith("HTTPS trust (update, Claude Code download): "))
-        nix = mock.Mock(environ={**self.environ, "CLAUDE_MULTI_CHANNEL": "nix"}, home=self.home)
+        nix = mock.Mock(environ={**self.environ, "CHARMER_CHANNEL": "nix"}, home=self.home)
         self.assertEqual(ru.card_hint(nix)[1], "updated through your Nix flake")
         self.assertIsNone(ru.card_hint(mock.Mock(environ={"HOME": str(self.home)}, home=self.home)))
         self.assertEqual(len(ru.doctor_lines(nix)), 1)

@@ -92,7 +92,7 @@ class CLITestCase(unittest.TestCase):
             "XDG_CONFIG_HOME": str(self.root / "config"),
             "XDG_STATE_HOME": str(self.root / "state"),
             "TERM": "dumb",
-            "CLAUDE_MULTI_SECRET_ENV": str(self.secret_file),
+            "CHARMER_SECRET_ENV": str(self.secret_file),
         }
         # A real record's cwd always exists at save time; the cwd-missing
         # resume gate depends on that. Gate tests delete/relocate explicitly.
@@ -1579,7 +1579,7 @@ class TransitionCommandTests(CLITestCase):
 
     def test_from_inside_the_target_session_it_records_a_pending_change(self) -> None:
         self.save_v4_session()
-        self.runtime.environ["CLAUDE_MULTI_SESSION_ID"] = FIXED_ID
+        self.runtime.environ["CHARMER_SESSION_ID"] = FIXED_ID
         code, output = self._transition("--its-exited", interactive=False)
         self.assertEqual(code, 0, output)
         self.assertIn("Recorded as a pending change", output)
@@ -1801,7 +1801,7 @@ class DoctorVisibilityTests(CLITestCase):
         self.assertNotIn("need a relaunch", output)
         live = scope_mod.scope_dir(self.runtime.session_store.root, FIXED_ID)
         settings = strict_json.load(live / "settings.json")
-        self.assertEqual(settings["env"]["CLAUDE_MULTI_LAUNCH_EPOCH"], "1")
+        self.assertEqual(settings["env"]["CHARMER_LAUNCH_EPOCH"], "1")
         start = settings["hooks"]["SessionStart"][0]["hooks"][0]["command"]
         end = settings["hooks"]["SessionEnd"][0]["hooks"][0]["command"]
         self.assertIn("--launch-epoch 7", start)
@@ -2129,7 +2129,7 @@ class StateMarkerWiringTests(CLITestCase):
         moved = str(self.root / "moved" / "charmer")
         runtime = cli.Runtime(
             asset_root=CATALOG_ROOT,
-            environ={**self.runtime.environ, "CLAUDE_MULTI_HOOK_COMMAND": moved},
+            environ={**self.runtime.environ, "CHARMER_HOOK_COMMAND": moved},
             cwd=self.runtime.cwd, **self._runtime_seams(),
         )
         self.assertEqual(runtime.hook3_command, str(shim3))
@@ -5059,7 +5059,7 @@ class SessionsStopTests(CLITestCase):
         argv, env = captured[0]
         self.assertEqual(argv[1:], ["stop", FIXED_ID])
         # The scrubbed env is the only barrier between the gateway
-        # token/CLAUDE_MULTI_SECRET_ENV and the subprocess.
+        # token/CHARMER_SECRET_ENV and the subprocess.
         self.assertEqual(set(env), {"PATH", "HOME"})
         self.assertIn("Stopped session", output)
         self.assertIn("conversation is kept", output)
@@ -5075,7 +5075,7 @@ class SessionsStopTests(CLITestCase):
 
     def test_stop_refuses_self_stop(self) -> None:
         self.save_session(mode="durable", scope_generation=1)
-        self.runtime.environ["CLAUDE_MULTI_MANAGED_ID"] = FIXED_ID
+        self.runtime.environ["CHARMER_MANAGED_ID"] = FIXED_ID
         try:
             with mock.patch('charmer.cli.session_facts._live_background_prefixes', return_value=frozenset({"11111111"})
             ):
@@ -5083,7 +5083,7 @@ class SessionsStopTests(CLITestCase):
                     ["sessions", "stop", FIXED_ID, "--yes"], interactive=False
                 )
         finally:
-            del self.runtime.environ["CLAUDE_MULTI_MANAGED_ID"]
+            del self.runtime.environ["CHARMER_MANAGED_ID"]
         self.assertEqual(code, 1, output)
         self.assertIn("running inside", output)
 
@@ -5999,8 +5999,8 @@ class ForgetLiveGuardTests(CLITestCase):
 
     def test_self_forget_refuses(self) -> None:
         self.save_session(mode="durable", scope_generation=1)
-        self.runtime.environ["CLAUDE_MULTI_MANAGED_ID"] = FIXED_ID
-        self.addCleanup(self.runtime.environ.pop, "CLAUDE_MULTI_MANAGED_ID", None)
+        self.runtime.environ["CHARMER_MANAGED_ID"] = FIXED_ID
+        self.addCleanup(self.runtime.environ.pop, "CHARMER_MANAGED_ID", None)
         code, output = self.run_cli_err(["sessions", "forget", FIXED_ID, "--yes"])
         self.assertEqual(code, 1)
         self.assertIn("running inside", output)
@@ -6012,8 +6012,8 @@ class ForgetLiveGuardTests(CLITestCase):
             self.runtime.session_store.sessions_dir / f"{FIXED_ID}.json",
             b"{not json",
         )
-        self.runtime.environ["CLAUDE_MULTI_MANAGED_ID"] = FIXED_ID
-        self.addCleanup(self.runtime.environ.pop, "CLAUDE_MULTI_MANAGED_ID", None)
+        self.runtime.environ["CHARMER_MANAGED_ID"] = FIXED_ID
+        self.addCleanup(self.runtime.environ.pop, "CHARMER_MANAGED_ID", None)
         code, output = self.run_cli_err(["sessions", "forget", FIXED_ID, "--yes"])
         self.assertEqual(code, 1)
         self.assertIn("running inside", output)
@@ -6633,7 +6633,7 @@ class ContinuityDoctorCase(CLITestCase):
         return set(re.findall(r'alias: "([^"]+)"', yaml)) - self.hidden, 200
 
     def _init(self) -> str:
-        environ = {**self.runtime.environ, "CLAUDE_MULTI_ASSETS": str(CATALOG_ROOT)}
+        environ = {**self.runtime.environ, "CHARMER_ASSETS": str(CATALOG_ROOT)}
         out = io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
             code = charmer.proxy.cmd_init(
@@ -7983,7 +7983,7 @@ class UpdateCommandTests(CLITestCase):
                     self.assertEqual(code, 1, output)
                     self.assertIn(needle, output)
                     self.assertIn("Nothing was changed", output)
-            with mock.patch.dict(self.runtime.environ, {"CLAUDE_MULTI_CHANNEL": "nix"}):
+            with mock.patch.dict(self.runtime.environ, {"CHARMER_CHANNEL": "nix"}):
                 code, output = self.run_cli(["update"], interactive=False)
         self.assertEqual(code, 1)
         self.assertIn("update it through your flake", output)
@@ -8129,7 +8129,7 @@ class CarryInScreenAndLivenessTests(CLITestCase):
 
     def test_force_never_bypasses_self_refusal(self):
         record = self.save_session()
-        self.runtime.environ["CLAUDE_MULTI_MANAGED_ID"] = FIXED_ID
+        self.runtime.environ["CHARMER_MANAGED_ID"] = FIXED_ID
         self.runtime.background_liveness = lambda: sessions.BackgroundLiveness(False, frozenset(), "unreadable")
         self.assertIn("running inside", cli._stop_precheck(self.runtime, record, force=True))
         self.assertIn("running inside", cli._forget_liveness_guard(self.runtime, FIXED_ID, force=True)(record))
@@ -8201,7 +8201,7 @@ class QuotaCommandTests(CLITestCase):
         self.runtime.health_get = mock.Mock(side_effect=AssertionError("health read"))
 
     def test_stdout_report_in_managed_session_no_other_gateway_reads(self):
-        self.runtime.environ["CLAUDE_MULTI_MANAGED_ID"] = FIXED_ID
+        self.runtime.environ["CHARMER_MANAGED_ID"] = FIXED_ID
         out = io.StringIO()
         with mock.patch('charmer.cli.streams._open_tty_streams', side_effect=AssertionError("must stay stdout")):
             code = cli.main(["quota"], runtime=self.runtime, input_stream=io.StringIO(), output_stream=out)
@@ -8291,7 +8291,7 @@ class QuotaCommandTests(CLITestCase):
                 env = {"HOME": str(home), "XDG_CONFIG_HOME": str(home / "config"),
                        "XDG_STATE_HOME": str(home / "state"), "TERM": "dumb"}
                 if channel is not None:
-                    env["CLAUDE_MULTI_CHANNEL"] = channel
+                    env["CHARMER_CHANNEL"] = channel
                 output = io.StringIO()
                 with mock.patch.dict(os.environ, env, clear=True), \
                         mock.patch('charmer.assets.default_asset_root', return_value=FIXTURE_ROOT), \
@@ -8771,7 +8771,7 @@ class OperatorGuardTests(OperatorCommandCase):
         self.op([*ACME_ADD, "--declare-only"])
         self.op(SMALL_ADD)
         before = self.state_bytes()
-        cases = [({"CLAUDE_MULTI_MANAGED_ID": FIXED_ID}, True, "CLAUDE_MULTI_MANAGED_ID set"),
+        cases = [({"CHARMER_MANAGED_ID": FIXED_ID}, True, "CHARMER_MANAGED_ID set"),
                  ({"CLAUDECODE": "1"}, True, "CLAUDECODE set"),
                  ({}, False, "stdin/stdout is not a terminal")]
         for env, tty, reason in cases:
@@ -8787,7 +8787,7 @@ class OperatorGuardTests(OperatorCommandCase):
         self.assertEqual(self.calls, [])
 
     def test_declaration_is_allowed_in_session_and_inert(self) -> None:
-        code, out, err = self.op([*ACME_ADD, "--declare-only"], env={"CLAUDE_MULTI_MANAGED_ID": FIXED_ID})
+        code, out, err = self.op([*ACME_ADD, "--declare-only"], env={"CHARMER_MANAGED_ID": FIXED_ID})
         self.assertEqual(code, 0, err)
         self.assertIn("declared provider acme — route unapproved; not rendered\nnext: charmer providers approve acme",
                       out)
@@ -8812,7 +8812,7 @@ class OperatorGuardTests(OperatorCommandCase):
         for argv in (["custom", "add-provider", "zed", "--base-url", "https://api.zed.example", "--auth", "bearer",
                       "--secret-env", "ZED_API_KEY"],
                      ["custom", "add-model", "zed-one", "--provider", "kimi", "--wire", "zed-1", "--context", "65536"]):
-            for env, tty in (({"CLAUDE_MULTI_MANAGED_ID": FIXED_ID}, True), ({}, False)):
+            for env, tty in (({"CHARMER_MANAGED_ID": FIXED_ID}, True), ({}, False)):
                 with self.subTest(argv=argv, env=env):
                     code, _out, err = self.op(argv, env=env, tty=tty)
                     self.assertEqual(code, 1)
@@ -8830,7 +8830,7 @@ class OperatorGuardTests(OperatorCommandCase):
         code, out, err = self.op(["discover", "acme"], "y\n")
         self.assertEqual(code, 1)
         self.assertIn("discover acme: route unapproved or changed — charmer providers approve acme", err)
-        code, out, err = self.op(["discover", "acme"], "y\n", env={"CLAUDE_MULTI_MANAGED_ID": FIXED_ID})
+        code, out, err = self.op(["discover", "acme"], "y\n", env={"CHARMER_MANAGED_ID": FIXED_ID})
         self.assertEqual(code, 1)
         self.assertIn("discover acme: needs a terminal outside Claude Code sessions", err)
         self.runtime.listing_transport.assert_not_called()
@@ -9549,9 +9549,9 @@ class OperatorPresetAndTransportTests(OperatorCommandCase):
         store = mock.Mock(side_effect=AssertionError("secret store read"))
         with mock.patch.object(charmer.secret_store, "default_store", store):
             code, _out, err = self.op(["providers", "add", "--preset", "lan-openai-compatible", "--as", "lanbox",
-                                       "--secret-file", str(key)], env={"CLAUDE_MULTI_MANAGED_ID": "x"})
+                                       "--secret-file", str(key)], env={"CHARMER_MANAGED_ID": "x"})
         self.assertEqual(code, 1)
-        self.assertIn("CLAUDE_MULTI_MANAGED_ID set", err)
+        self.assertIn("CHARMER_MANAGED_ID set", err)
         self.assertEqual(self.state_bytes(), before)
         code, _out, err = self.op(["providers", "add", "--preset", "lan-openai-compatible", "--as", "lanbox",
                                    "--secret-file", str(key)])

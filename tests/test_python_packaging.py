@@ -145,10 +145,10 @@ class EntryPointTests(unittest.TestCase):
     """The launch environment each way of starting a command states."""
 
     INHERITED = {
-        "CLAUDE_MULTI_CHANNEL": "nix",
-        "CLAUDE_MULTI_ASSETS": "/elsewhere/assets",
-        "CLAUDE_MULTI_HOOK_COMMAND": "/elsewhere/bin/charmer",
-        "CLAUDE_MULTI_PROXY_BIN": "/elsewhere/gateway",
+        "CHARMER_CHANNEL": "nix",
+        "CHARMER_ASSETS": "/elsewhere/assets",
+        "CHARMER_HOOK_COMMAND": "/elsewhere/bin/charmer",
+        "CHARMER_PROXY_BIN": "/elsewhere/gateway",
         "UNRELATED": "kept",
     }
 
@@ -159,14 +159,14 @@ class EntryPointTests(unittest.TestCase):
         # The channel stays unknown, the resources and the hook command are
         # the installation's own; a gateway binary the caller names is kept
         # (it attests nothing without the Nix channel).
-        self.assertEqual(env, {"CLAUDE_MULTI_PROXY_BIN": "/elsewhere/gateway", "UNRELATED": "kept"})
+        self.assertEqual(env, {"CHARMER_PROXY_BIN": "/elsewhere/gateway", "UNRELATED": "kept"})
 
     def test_an_editable_install_is_a_source_launch(self) -> None:
         env = dict(self.INHERITED)
         with mock.patch.object(layout, "installation", return_value=REPO_ROOT):
             entrypoints.prepare_console(env)
-        self.assertEqual(env["CLAUDE_MULTI_CHANNEL"], "source")
-        self.assertNotIn("CLAUDE_MULTI_ASSETS", env)
+        self.assertEqual(env["CHARMER_CHANNEL"], "source")
+        self.assertNotIn("CHARMER_ASSETS", env)
 
     def test_a_source_launcher_outside_a_source_tree_changes_nothing(self) -> None:
         with tempfile.TemporaryDirectory(prefix="cm-not-source-") as tmp:
@@ -174,9 +174,9 @@ class EntryPointTests(unittest.TestCase):
             self.assertFalse(entrypoints.prepare_source(tmp, env))
             self.assertEqual(env, self.INHERITED)
             self.assertTrue(entrypoints.prepare_source(REPO_ROOT, env))
-            self.assertEqual(env["CLAUDE_MULTI_CHANNEL"], "source")
-            self.assertNotIn("CLAUDE_MULTI_ASSETS", env)
-            self.assertEqual(env["CLAUDE_MULTI_HOOK_COMMAND"], "/elsewhere/bin/charmer")
+            self.assertEqual(env["CHARMER_CHANNEL"], "source")
+            self.assertNotIn("CHARMER_ASSETS", env)
+            self.assertEqual(env["CHARMER_HOOK_COMMAND"], "/elsewhere/bin/charmer")
 
     def test_the_source_markers_are_present_here_and_never_installed(self) -> None:
         installed = installed_paths()
@@ -275,10 +275,10 @@ import json, os, sys
 from pathlib import Path
 prefix = Path(sys.argv[1])
 # What a console script does first: the inherited wrapper variables go.
-os.environ["CLAUDE_MULTI_HOOK_COMMAND"] = "/elsewhere/bin/charmer"
+os.environ["CHARMER_HOOK_COMMAND"] = "/elsewhere/bin/charmer"
 from charmer import entrypoints
 entrypoints.prepare_console()
-assert not {"CLAUDE_MULTI_CHANNEL", "CLAUDE_MULTI_ASSETS", "CLAUDE_MULTI_HOOK_COMMAND"} & set(os.environ)
+assert not {"CHARMER_CHANNEL", "CHARMER_ASSETS", "CHARMER_HOOK_COMMAND"} & set(os.environ)
 import charmer
 from charmer import assets, catalog, gateway_service, layout, qualify, scope
 package = Path(charmer.__file__).resolve().parent
@@ -348,7 +348,7 @@ class InstalledPrefixTests(unittest.TestCase):
             env = {"HOME": str(home), "PATH": "/usr/bin:/bin", "LC_ALL": "C.UTF-8",
                    "PYTHONDONTWRITEBYTECODE": "1", "PYTHONPATH": str(site),
                    # Inherited from another installation: never taken.
-                   "CLAUDE_MULTI_CHANNEL": "nix", "CLAUDE_MULTI_ASSETS": str(root / "absent")}
+                   "CHARMER_CHANNEL": "nix", "CHARMER_ASSETS": str(root / "absent")}
             self.assert_installed(prefix, sys.executable, env, elsewhere, home)
 
 
@@ -522,14 +522,14 @@ class DistributionTests(unittest.TestCase):
         home.mkdir()
         elsewhere.mkdir()
         env = {"HOME": str(home), "PATH": "/usr/bin:/bin", "LC_ALL": "C.UTF-8", "PYTHONDONTWRITEBYTECODE": "1",
-               "CLAUDE_MULTI_CHANNEL": "nix"}
+               "CHARMER_CHANNEL": "nix"}
         for name in SCRIPTS:
             with self.subTest(entry=name):
                 result = subprocess.run([str(venv / "bin" / name), "--version"], env=env, cwd=elsewhere,
                                         text=True, capture_output=True, timeout=60)
                 self.assertEqual(result.returncode, 0, result.stderr)
         probe = ("import os; from charmer import entrypoints, layout; entrypoints.prepare_console(); "
-                 "print(layout.installation(), os.environ.get('CLAUDE_MULTI_CHANNEL'))")
+                 "print(layout.installation(), os.environ.get('CHARMER_CHANNEL'))")
         result = subprocess.run([str(python), "-c", probe], env=env, cwd=elsewhere, text=True,
                                 capture_output=True, timeout=60)
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -558,7 +558,7 @@ class DistributionTests(unittest.TestCase):
         home.mkdir()
         elsewhere.mkdir()
         env = {"HOME": str(home), "PATH": "/usr/bin:/bin", "LC_ALL": "C.UTF-8", "PYTHONDONTWRITEBYTECODE": "1",
-               "CLAUDE_MULTI_CHANNEL": "nix", "CLAUDE_MULTI_ASSETS": str(self.scratch / "absent")}
+               "CHARMER_CHANNEL": "nix", "CHARMER_ASSETS": str(self.scratch / "absent")}
         InstalledPrefixTests.assert_installed(self, venv, str(python), env, elsewhere, home)
         site = next((venv / "lib").glob("python*/site-packages"))
         self.assertEqual(_package_files(site / "charmer"), _package_files(PACKAGE_DIR))

@@ -1,7 +1,7 @@
 """Resource selection, separate from the running package's version identity.
 
 Precedence: an explicit resource root, then a nonempty
-``CLAUDE_MULTI_ASSETS``, then the packaged default
+``CHARMER_ASSETS``, then the packaged default
 (:func:`charmer.resources_root`). A selection changes the inputs a
 command reads; the running release (its version, executables and documents)
 stays the installed package's own (:mod:`charmer.layout`).
@@ -22,7 +22,7 @@ def root(explicit_root: Path | str | None = None, *, environ: Mapping[str, str] 
     if explicit_root is not None:
         return Path(explicit_root)
     env = os.environ if environ is None else environ
-    override = env.get("CLAUDE_MULTI_ASSETS")
+    override = env.get("CHARMER_ASSETS")
     return Path(override) if override else charmer.resources_root()
 
 

@@ -22,7 +22,7 @@ fixture helper, keeping ``availableModels`` and the hooks; because
 rewritten bytes (a test-only save; ``launch_fence`` is outside
 ``applied_hash``), modelling a launch whose gateway was the bridge. The
 compiled hooks run the source launcher through a fixture wrapper
-(``CLAUDE_MULTI_HOOK_COMMAND``), exactly like the notice probe; the hook's
+(``CHARMER_HOOK_COMMAND``), exactly like the notice probe; the hook's
 own Runtime loads the package catalog, as in production.
 
 Every ``cli.main`` call passes ``runtime=rt``; a stat/open spy
@@ -77,8 +77,8 @@ _LIVE_TOUCH = "live daemon domain touched"
 _ONE_M = "[1m]"
 
 _WRAPPER = """#!/bin/sh
-CLAUDE_MULTI_HOOK_COMMAND={wrapper}
-export CLAUDE_MULTI_HOOK_COMMAND
+CHARMER_HOOK_COMMAND={wrapper}
+export CHARMER_HOOK_COMMAND
 PYTHONPATH={src}
 export PYTHONPATH
 exec {python} {launcher} "$@"
@@ -289,7 +289,7 @@ class _LineupProbeCase(unittest.TestCase):
         )
         wrapper.chmod(0o700)
         env = self.fixture.environ()
-        env["CLAUDE_MULTI_HOOK_COMMAND"] = str(wrapper)
+        env["CHARMER_HOOK_COMMAND"] = str(wrapper)
         token_dir = state.ensure_private_dir(self.fixture.home / ".config" / "charmer")
         state.atomic_write(token_dir / "api-key", (FIXTURE_GATEWAY_TOKEN + "\n").encode())
         # A fake verified binary for perform_launch's identity check: the

@@ -161,6 +161,6 @@ class ExplainCommandTests(V4Case):
         self.assertEqual(values["conclusion"], routing.CANDIDATE)
 
     def test_no_selection_refuses_without_picker(self):
-        self.runtime.environ.pop("CLAUDE_MULTI_MANAGED_ID", None)
+        self.runtime.environ.pop("CHARMER_MANAGED_ID", None)
         with self.assertRaisesRegex(Exception, "no managed session selected"):
             session_facts.report_session(self.runtime)

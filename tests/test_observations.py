@@ -150,7 +150,7 @@ class ReportRuntimeTests(V4Case):
         self.assertEqual(inventory(home), {})
 
     def test_json_refusals_keep_specific_diagnostic_on_stderr(self):
-        self.runtime.environ.pop("CLAUDE_MULTI_MANAGED_ID", None)
+        self.runtime.environ.pop("CHARMER_MANAGED_ID", None)
         # A refusal exits 1, an invalid option value 2; stdout keeps one document.
         cases = ((["explain"], "no managed session selected — pass a session id", 1),
                  (["usage", "--since", "bogus"], "usage: --since", 2),

@@ -593,15 +593,15 @@ def _run_probe(args: argparse.Namespace, kind: str) -> int:
             [str(guard_dir), str(component / "src"), str(component / "tests")]
         )
         env["CM_ISOLATION_GUARD_LOG"] = str(guard_log)
-        env.pop("CLAUDE_MULTI_ASSETS", None)
+        env.pop("CHARMER_ASSETS", None)
         env.pop("CM_TEST_TIER", None)  # acceptance runs the full tier, never fast
         # The namespace cannot run the real gateway (bwrap is untrusted there):
         # gateway and keyed proofs belong to the host suite of the same gate,
         # so the probes use the explicit unit lane and write no gate evidence.
-        for name in ("CLAUDE_MULTI_TEST_REQUIRE_GATEWAY", "CLAUDE_MULTI_TEST_KEYED_EVIDENCE",
-                     "CLAUDE_MULTI_TEST_GATEWAY_LIFECYCLE_PROBES"):
+        for name in ("CHARMER_TEST_REQUIRE_GATEWAY", "CHARMER_TEST_KEYED_EVIDENCE",
+                     "CHARMER_TEST_GATEWAY_LIFECYCLE_PROBES"):
             env.pop(name, None)
-        env["CLAUDE_MULTI_TEST_KEYED_LANE"] = "unit"
+        env["CHARMER_TEST_KEYED_LANE"] = "unit"
         if probe_home is not None:
             env["HOME"] = str(probe_home)
 

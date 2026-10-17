@@ -1,7 +1,7 @@
 """Gateway lifecycle observations, deliberately NOT repaired-product gates.
 
 Run separately with _gateway_harness.py --run-reproducers and the explicit
-CLAUDE_MULTI_TEST_GATEWAY_LIFECYCLE_PROBES store output of gateway_go/lifecycle.nix.
+CHARMER_TEST_GATEWAY_LIFECYCLE_PROBES store output of gateway_go/lifecycle.nix.
 Full discovery also runs these when that override is supplied. Main sandbox
 checks without diagnostics retain a BOUNDARY; ordinary G7/G8 exclude this lane.
 
@@ -31,7 +31,7 @@ from _layout import SERVICE_SPEC
 from charmer import catalog, probe, proxy, render, state
 import _gateway_harness as harness
 
-PROBES_ENV = "CLAUDE_MULTI_TEST_GATEWAY_LIFECYCLE_PROBES"
+PROBES_ENV = "CHARMER_TEST_GATEWAY_LIFECYCLE_PROBES"
 ROWS = {"B017", "B020", "B021", "B023", "B024"}
 MODULE = "tests.test_gateway_regressions"
 OBSERVATIONS = harness.Evidence()

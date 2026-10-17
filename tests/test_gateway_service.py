@@ -332,7 +332,7 @@ class _ServiceCase(_Lifecycle):
         return package
 
     def environ(self, **extra: str) -> dict[str, str]:
-        return {"HOME": str(self.home), "PATH": "/usr/bin:/bin", "CLAUDE_MULTI_CHANNEL": self.CHANNEL, **extra}
+        return {"HOME": str(self.home), "PATH": "/usr/bin:/bin", "CHARMER_CHANNEL": self.CHANNEL, **extra}
 
     def seams(self, **overrides) -> gl.Seams:
         values = dict(runner=self.manager, journal=self.journal())
@@ -411,7 +411,7 @@ class InstallTests(_ServiceCase):
         with self.subTest("macOS"):
             self.assertEqual(self.service(platform="darwin").install().status, "refused")
             nothing_changed()
-        for label, env in {"source checkout": self.environ(CLAUDE_MULTI_CHANNEL="source"),
+        for label, env in {"source checkout": self.environ(CHARMER_CHANNEL="source"),
                            "unknown channel": {"HOME": str(self.home)},
                            "another state root": self.environ(XDG_STATE_HOME=str(self.root / "elsewhere"))}.items():
             with self.subTest(label):
@@ -721,7 +721,7 @@ class NixSelectionTests(_ServiceCase):
 
     def environ(self, **extra: str) -> dict[str, str]:
         package = self.store_package("aaaa-charmer", "gw-1")
-        return super().environ(CLAUDE_MULTI_HOOK_COMMAND=str(package / "bin/charmer"),
+        return super().environ(CHARMER_HOOK_COMMAND=str(package / "bin/charmer"),
                                PATH=str(self.root / "tools"), **extra)
 
     def setUp(self) -> None:
@@ -761,14 +761,14 @@ class NixSelectionTests(_ServiceCase):
             str(self.store / "gw-1/bin/cli-proxy-api"), stamp.started_at, stamp.pid_namespace, stamp.instance))
         # A launcher-only change: another store path, the same gateway.
         same = self.store_package("bbbb-charmer", "gw-1")
-        env = super().environ(CLAUDE_MULTI_HOOK_COMMAND=str(same / "bin/charmer"), PATH=str(self.root / "tools"))
+        env = super().environ(CHARMER_HOOK_COMMAND=str(same / "bin/charmer"), PATH=str(self.root / "tools"))
         self.assertTrue(self.service(environ=env).status().switch_pending)
         outcome = self.service(environ=env).install()
         self.assertIn("reloaded: only the launcher changed", "\n".join(outcome.lines()))
         self.assertEqual(self.manager.reloaded, ["charmer-gateway"])
         # A new gateway binary: restart pending, never a silent restart.
         newer = self.store_package("cccc-charmer", "gw-2")
-        env = super().environ(CLAUDE_MULTI_HOOK_COMMAND=str(newer / "bin/charmer"), PATH=str(self.root / "tools"))
+        env = super().environ(CHARMER_HOOK_COMMAND=str(newer / "bin/charmer"), PATH=str(self.root / "tools"))
         outcome = self.service(environ=env).install()
         self.assertIn("restart pending: the gateway binary changed", "\n".join(outcome.lines()))
         self.assertEqual(self.manager.reloaded, ["charmer-gateway"])
@@ -1015,7 +1015,7 @@ class StatusAndInhibitionTests(_ServiceCase):
 
     def test_the_cli_verbs(self) -> None:
         launcher = self.home / ".local/share/charmer/install/current/bin/charmer"
-        runtime = cli.Runtime(asset_root=FIXTURE_ROOT, environ=self.environ(CLAUDE_MULTI_HOOK_COMMAND=str(launcher)),
+        runtime = cli.Runtime(asset_root=FIXTURE_ROOT, environ=self.environ(CHARMER_HOOK_COMMAND=str(launcher)),
                               cwd=self.root,
                               managed_root=self.root / "managed", gateway_seams=self.seams(),
                               gateway_service_seams=gs.ServiceSeams(runner=self.manager, which=lambda *_a, **_k: None))

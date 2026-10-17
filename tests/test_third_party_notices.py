@@ -8,8 +8,8 @@ checked-in recipe and patches is re-rendered and compared byte for byte, the
 recorded build inputs must be the recipe's, and every listed text must carry
 its recorded sha256. What only a build can show (the modules each binary
 links, the vendored texts) is checked by the record step of every build, and
-here against built binaries when CLAUDE_MULTI_TEST_DIST_GATEWAY or
-CLAUDE_MULTI_TEST_NIX_GATEWAY names them.
+here against built binaries when CHARMER_TEST_DIST_GATEWAY or
+CHARMER_TEST_NIX_GATEWAY names them.
 """
 
 from __future__ import annotations
@@ -25,8 +25,8 @@ from pathlib import Path
 from _layout import (BUILD_TOOL, FIXTURES_ROOT, GATEWAY_CONTRACT, LICENSES_DIR, NIX_DIR, PATCH_DIR, RESOURCES_ROOT,
                      SBOM_DIR, UPSTREAM_JSON)
 
-NIX_GATEWAY_ENV = "CLAUDE_MULTI_TEST_NIX_GATEWAY"
-DIST_GATEWAY_ENV = "CLAUDE_MULTI_TEST_DIST_GATEWAY"
+NIX_GATEWAY_ENV = "CHARMER_TEST_NIX_GATEWAY"
+DIST_GATEWAY_ENV = "CHARMER_TEST_DIST_GATEWAY"
 
 
 def load_tool():

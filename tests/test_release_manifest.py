@@ -203,13 +203,13 @@ class SignatureTests(unittest.TestCase):
                 rm.verify_signature(b"m", b"s", gpg="gpg", runner=runner)
 
     def test_missing_gpg_names_both_remedies(self):
-        with self.assertRaisesRegex(rm.ReleaseManifestUnavailable, "install GnuPG or set CLAUDE_MULTI_GPG"):
+        with self.assertRaisesRegex(rm.ReleaseManifestUnavailable, "install GnuPG or set CHARMER_GPG"):
             rm.verify_signature(b"m", b"s", gpg="missing", runner=mock.Mock(side_effect=FileNotFoundError()))
         with mock.patch.object(shutil, "which", return_value=None):
-            with self.assertRaisesRegex(rm.ReleaseManifestUnavailable, "install GnuPG or set CLAUDE_MULTI_GPG"):
+            with self.assertRaisesRegex(rm.ReleaseManifestUnavailable, "install GnuPG or set CHARMER_GPG"):
                 rm.gpg_executable({"PATH": "/empty"})
         with mock.patch.object(shutil, "which", return_value="/fixture/gpg") as which:
-            self.assertEqual(rm.gpg_executable({"CLAUDE_MULTI_GPG": "/fixture/gpg", "PATH": "/empty"}), "/fixture/gpg")
+            self.assertEqual(rm.gpg_executable({"CHARMER_GPG": "/fixture/gpg", "PATH": "/empty"}), "/fixture/gpg")
             which.assert_called_once_with("/fixture/gpg", path="/empty")
         with mock.patch.object(shutil, "which", return_value="/fixture/gpg") as which:
             rm.gpg_executable({"PATH": "/fixture"})

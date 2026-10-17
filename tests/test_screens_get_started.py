@@ -258,7 +258,7 @@ class ProvidersStepTests(GetStartedCase):
         program = self.root / "fake-gateway"
         program.write_text("#!/bin/sh\nexit 0\n")
         program.chmod(0o755)
-        self.runtime.environ["CLAUDE_MULTI_PROXY_BIN"] = str(program)
+        self.runtime.environ["CHARMER_PROXY_BIN"] = str(program)
         runs: list = []
         self.runtime.signin_runner = lambda invocation: runs.append(invocation) or 0
         screen = self.screen()

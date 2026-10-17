@@ -962,7 +962,7 @@ class CommitTests(QualifyCommandCase):
 
     def test_session_and_redirected_stdio_refuse_before_anything(self) -> None:
         before = self.state_bytes()
-        for tty, env in ((True, {"CLAUDECODE": "1"}), (True, {"CLAUDE_MULTI_MANAGED_ID": ""}), (False, {})):
+        for tty, env in ((True, {"CLAUDECODE": "1"}), (True, {"CHARMER_MANAGED_ID": ""}), (False, {})):
             with self.subTest(tty=tty, env=env):
                 code, _out, _err = self.op(["models", "qualify", "custom-acme-agent", "--agents"], "y\n",
                                            tty=tty, env=env)

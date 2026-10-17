@@ -215,7 +215,7 @@ class LineupHelpTests(unittest.TestCase):
         from charmer.cli import runtime as runtime_mod
 
         env = {key: value for key, value in os.environ.items()
-               if key not in ("CLAUDE_CODE_SESSION_ID", "CLAUDE_MULTI_MANAGED_ID")}
+               if key not in ("CLAUDE_CODE_SESSION_ID", "CHARMER_MANAGED_ID")}
         with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(os.environ, {**env, "HOME": tmp}, clear=True), \
                 mock.patch.object(runtime_mod, "Runtime", side_effect=AssertionError("Runtime built")):
             for argv in (["lineup", "--help"], ["lineup", "-h"], ["lineup", "--relaunch", "--help"]):

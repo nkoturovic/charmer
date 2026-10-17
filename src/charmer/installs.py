@@ -218,7 +218,7 @@ def install_root(environ: Mapping[str, str], installation: Path | str | None = N
     :func:`charmer.layout.installation`); resources never name it."""
 
     candidates: list[Path] = []
-    hook = environ.get("CLAUDE_MULTI_HOOK_COMMAND")
+    hook = environ.get("CHARMER_HOOK_COMMAND")
     if hook:
         candidates.append(Path(hook).parent.parent)
     tree = Path(installation) if installation is not None else layout.installation()

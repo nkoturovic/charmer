@@ -440,7 +440,7 @@ _PROVIDER_ID = re.compile(r"^[a-z][a-z0-9-]{0,63}$")
 _GIT_RANGE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9._/~^@{}:-]{0,127}$")
 _READ_VERBS = lineup_files.CM_READ_VERBS
 _SESSION_ENV = "CLAUDE_CODE_SESSION_ID"
-_INSIDE_ENV = ("CLAUDE_MULTI_MANAGED_ID", "CLAUDE_MULTI_SESSION_ID")  # T:85-86 sentinels
+_INSIDE_ENV = ("CHARMER_MANAGED_ID", "CHARMER_SESSION_ID")  # T:85-86 sentinels
 
 
 class LineupRefusal(errors.CharmerError):

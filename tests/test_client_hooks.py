@@ -1909,7 +1909,7 @@ class SonnetForcedToolClassTests(_SpikeBase):
         included, must be recognition-confirmed, and the prompt-hook and agent-hook
         classes must show a completed, schema-valid evaluation. A
         missing gateway is a boundary (failure under
-        CLAUDE_MULTI_TEST_REQUIRE_GATEWAY=1) and keeps the verdict
+        CHARMER_TEST_REQUIRE_GATEWAY=1) and keeps the verdict
         INCONCLUSIVE."""
 
         cases = {**self._cases(), "count-tokens": ({}, ("-p", "/context"))}

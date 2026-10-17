@@ -1957,7 +1957,7 @@ def load_catalog(root: Path | str, *, contract_override: Path | None = None) -> 
 # and keeps codex `upgrade`/`retirement_at` reachable for the radar. It
 # never sets a fence, a context value or a render input.
 
-REGISTRY_DIR_ENV = "CLAUDE_MULTI_REGISTRY_DIR"
+REGISTRY_DIR_ENV = "CHARMER_REGISTRY_DIR"
 REGISTRY_FILES = ("models.json", "codex_client_models.json")
 _REGISTRY_LIMITS = strict_json.JSONLimits(max_string=1024 * 1024)
 _REGISTRY_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$")
@@ -2050,9 +2050,9 @@ def registry_dir(environ: dict[str, str] | None = None,
                  asset_root: Path | str | None = None) -> Path | None:
     """The pinned registry directory, or None when the resources carry none.
 
-    ``CLAUDE_MULTI_REGISTRY_DIR`` overrides (tests point it at the fixture
+    ``CHARMER_REGISTRY_DIR`` overrides (tests point it at the fixture
     copy); otherwise ``registry/`` under the selected resources — the
-    explicit ``asset_root``, else ``CLAUDE_MULTI_ASSETS``, else the packaged
+    explicit ``asset_root``, else ``CHARMER_ASSETS``, else the packaged
     resources, which carry the pinned snapshot.
     """
 

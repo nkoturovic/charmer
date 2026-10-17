@@ -53,7 +53,7 @@ MODULES = {
                 home = Path(os.environ["HOME"])
                 self.assertTrue(home.name == "home" and home.parent.name.startswith("charmer-tests-"))
                 self.assertEqual(Path(tempfile.gettempdir()), home.parent / "tmp")
-                for name in ("XDG_STATE_HOME", "XDG_CONFIG_HOME", "CLAUDE_CONFIG_DIR", "CLAUDE_MULTI_ASSETS"):
+                for name in ("XDG_STATE_HOME", "XDG_CONFIG_HOME", "CLAUDE_CONFIG_DIR", "CHARMER_ASSETS"):
                     self.assertNotIn(name, os.environ)
                 self.assertEqual(os.environ["CM_TEST_TIER"], os.environ.get("EXPECT_TIER", "full"))
     """,
@@ -177,19 +177,19 @@ class RunnerTests(unittest.TestCase):
 
     def test_the_real_client_lane_needs_the_pinned_client(self) -> None:
         missing = self.run_runner("tests.test_keyed_compat_client", "tests.test_pass",
-                                  CLAUDE_MULTI_TEST_CLI_PROXY_API="/nonexistent/gateway")
+                                  CHARMER_TEST_CLI_PROXY_API="/nonexistent/gateway")
         self.assertEqual(missing.returncode, 1, missing.stdout + missing.stderr)
         self.assertIn("not runnable: tests.test_keyed_compat_client needs the pinned Claude Code", missing.stdout)
         self.assertIn("pass --claude PATH", missing.stderr)
         self.assertIn("ran 2 tests", missing.stdout)  # the rest still runs
         placed = self.run_runner("tests.test_keyed_compat_client", "--claude", str(self.client),
-                                 CLAUDE_MULTI_TEST_CLI_PROXY_API="/nonexistent/gateway")
+                                 CHARMER_TEST_CLI_PROXY_API="/nonexistent/gateway")
         self.assertEqual(placed.returncode, 0, placed.stdout + placed.stderr)
         self.assertIn("Claude Code 9.9.9", placed.stdout)
         wrong = self.base / "not-the-pin"
         wrong.write_bytes(b"something else")
         refused = self.run_runner("tests.test_keyed_compat_client", "--claude", str(wrong),
-                                  CLAUDE_MULTI_TEST_CLI_PROXY_API="/nonexistent/gateway")
+                                  CHARMER_TEST_CLI_PROXY_API="/nonexistent/gateway")
         self.assertEqual(refused.returncode, 2, refused.stdout + refused.stderr)
         self.assertIn("--claude", refused.stderr)
         # Without the gateway variable the lane is not selected for the real client.

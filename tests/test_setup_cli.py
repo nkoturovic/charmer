@@ -327,7 +327,7 @@ class GatewayProxyStepTests(SetupCase):
 class KeysFileTests(SetupCase):
     def setUp(self) -> None:
         super().setUp()
-        self.runtime.environ.pop("CLAUDE_MULTI_SECRET_ENV")
+        self.runtime.environ.pop("CHARMER_SECRET_ENV")
         self.keys = self.private_file(".config/secrets/claude.env", b"KIMI_CLAUDE_API_KEY=pointed-dummy\n")
 
     def test_select_an_existing_key_file(self) -> None:
@@ -354,7 +354,7 @@ class KeysFileTests(SetupCase):
 
     def test_an_environment_override_is_named(self) -> None:
         code, out, err = self.op(["setup", "--keys-file", str(self.keys)], "y\n",
-                                 env={"CLAUDE_MULTI_SECRET_ENV": str(self.secret_file)})
+                                 env={"CHARMER_SECRET_ENV": str(self.secret_file)})
         self.assertEqual(code, 0, err)
         self.assertIn(texts.KEYS_FILE_OVERRIDDEN, out)
 
@@ -388,7 +388,7 @@ class KeysFileTests(SetupCase):
         for how in ("keys-file", "answers"):
             with self.subTest(how=how, override=True):
                 self.unselect()
-                code, out, err = self.select(how, env={"CLAUDE_MULTI_SECRET_ENV": str(self.secret_file)})
+                code, out, err = self.select(how, env={"CHARMER_SECRET_ENV": str(self.secret_file)})
                 self.assertEqual(code, 0, out + err)
                 self.assertIn(texts.KEYS_FILE_OVERRIDDEN, out)
 
@@ -585,7 +585,7 @@ class AnswersTests(SetupCase):
         self.assertIn("applied 1, skipped 0, failed 1", out)
 
     def test_keys_planned_with_the_key_file_the_answers_select(self) -> None:
-        self.runtime.environ.pop("CLAUDE_MULTI_SECRET_ENV")
+        self.runtime.environ.pop("CHARMER_SECRET_ENV")
         keys = self.private_file(".config/secrets/claude.env", b"KIMI_CLAUDE_API_KEY=pointed-dummy\n")
         key = self.private_file("keys/deepseek.txt", b"deepseek-dummy-value\n")
         document = {"version": 1, "keys_file": str(keys),
@@ -648,7 +648,7 @@ class AnswersTests(SetupCase):
         self.assertIn("anthropic", answers._keyed_providers(self.runtime, document))
         self.assertEqual(self.state_bytes(), before, "planning writes nothing")
         # Applied in one run: the key file, the transport, then the starter it planned.
-        self.runtime.environ.pop("CLAUDE_MULTI_SECRET_ENV", None)
+        self.runtime.environ.pop("CHARMER_SECRET_ENV", None)
         code, out, err = self.op(["setup", "--answers", str(self.answers(document))], "y\n")
         self.assertEqual(code, 0, out + err)
         self.assertIn("applied 3, skipped 0, failed 0", out)

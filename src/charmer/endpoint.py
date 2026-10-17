@@ -18,7 +18,7 @@ A new install chooses the first free port of :data:`NEW_INSTALL_PORTS`
 the preparation of its first launch, before a scope is compiled for it;
 never from a render). The backend is on-demand on every
 release channel and platform until the endpoint document records
-``systemd``; the channel (``CLAUDE_MULTI_CHANNEL``, set by every wrapper)
+``systemd``; the channel (``CHARMER_CHANNEL``, set by every wrapper)
 is reported, never used to choose the backend.
 """
 
@@ -52,7 +52,7 @@ _UNIT = re.compile(r"^[a-z][a-z0-9-]{0,63}$")
 _KEYS = frozenset({"version", "host", "port", "backend", "unit", "proxy_url"})
 OUTBOUND_PROXY_SCHEMES = ("http", "https", "socks5", "socks5h")
 
-CHANNEL_ENV = "CLAUDE_MULTI_CHANNEL"
+CHANNEL_ENV = "CHARMER_CHANNEL"
 CHANNELS = ("nix", "bundle", "source")
 
 # Files whose presence marks an install that already rendered a gateway:

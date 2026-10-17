@@ -1025,7 +1025,7 @@ class RunningReleaseTests(unittest.TestCase):
         import charmer
 
         packaged = upgrade.ReleaseIdentity.from_root(charmer.resources_root())
-        with mock.patch.dict(os.environ, {"CLAUDE_MULTI_ASSETS": str(FIXTURE_ROOT)}):
+        with mock.patch.dict(os.environ, {"CHARMER_ASSETS": str(FIXTURE_ROOT)}):
             self.assertEqual(upgrade.running_release(), packaged)
         self.assertEqual(packaged.launcher_version, charmer.__version__)
 

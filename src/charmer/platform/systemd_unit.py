@@ -44,7 +44,7 @@ FAILURE_DESCRIPTION = "claude-multi gateway failure notice"
 # touch only files that carry it.
 HEADER = "# Written by claude-multi gateway service install; run it again to refresh this file."
 # Variables that would point the gateway at another config root or secret file.
-UNSET_ENVIRONMENT = ("XDG_CONFIG_HOME", "CLAUDE_MULTI_SECRET_ENV")
+UNSET_ENVIRONMENT = ("XDG_CONFIG_HOME", "CHARMER_SECRET_ENV")
 START_LIMIT_INTERVAL_SEC = 300
 START_LIMIT_BURST = 5
 RESTART_SEC = "5s"

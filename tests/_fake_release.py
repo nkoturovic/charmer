@@ -38,7 +38,7 @@ PRINCIPAL = "release@charmer"
 SSH_KEYGEN = shutil.which("ssh-keygen")
 # Set (to 1) where the release integration tests must run, as in the Nix
 # sandbox: there a missing ssh-keygen fails them instead of skipping them.
-REQUIRE_RELEASE_ENV = "CLAUDE_MULTI_TEST_REQUIRE_RELEASE"
+REQUIRE_RELEASE_ENV = "CHARMER_TEST_REQUIRE_RELEASE"
 
 
 # Where a fake release says its installations look for updates.
@@ -48,7 +48,7 @@ LOCATION = {"base_url": "https://example.invalid/releases/download/v{version}",
 
 def needs_ssh_keygen(reason: str = "BOUNDARY: ssh-keygen is not installed"):
     """Skip a release integration test (or class) without ssh-keygen,
-    unless ``CLAUDE_MULTI_TEST_REQUIRE_RELEASE=1`` requires it: then every
+    unless ``CHARMER_TEST_REQUIRE_RELEASE=1`` requires it: then every
     such test fails, naming the missing tool."""
 
     if SSH_KEYGEN:
@@ -117,12 +117,12 @@ REAL_LAUNCHER = """#!/bin/sh
 # {name}: a fake-release launcher that runs this bundle's package.
 root=$(CDPATH='' cd "${{0%/*}}/.." && pwd)
 site="$root/{site}"
-CLAUDE_MULTI_CHANNEL=bundle
-CLAUDE_MULTI_ASSETS="$site/charmer/data"
-CLAUDE_MULTI_HOOK_COMMAND="$root/bin/charmer"
-CLAUDE_MULTI_PROXY_BIN="$root/libexec/charmer/cli-proxy-api"
-export CLAUDE_MULTI_CHANNEL CLAUDE_MULTI_ASSETS CLAUDE_MULTI_HOOK_COMMAND CLAUDE_MULTI_PROXY_BIN
-unset CLAUDE_MULTI_PROXY_PATCHES
+CHARMER_CHANNEL=bundle
+CHARMER_ASSETS="$site/charmer/data"
+CHARMER_HOOK_COMMAND="$root/bin/charmer"
+CHARMER_PROXY_BIN="$root/libexec/charmer/cli-proxy-api"
+export CHARMER_CHANNEL CHARMER_ASSETS CHARMER_HOOK_COMMAND CHARMER_PROXY_BIN
+unset CHARMER_PROXY_PATCHES
 exec "$root/runtime/python/bin/python3" -I -B -c 'import sys; sys.path.insert(0, sys.argv.pop(1)); from charmer.entrypoints import main; raise SystemExit(main())' "$site" {name} "$@"
 """
 

@@ -13,7 +13,7 @@ names are roles, never fixture ids.
 Determinism inputs: the fixture catalog, ``FIXED_NOW`` for doctor's
 clock (``cli._doctor_now``), the injected liveness/served/health seams and
 ``hermetic(runtime)``, the journal text through the providers ``journal=``
-seam, no pinned registry (``CLAUDE_MULTI_REGISTRY_DIR`` names a missing
+seam, no pinned registry (``CHARMER_REGISTRY_DIR`` names a missing
 directory, so the retirement radar is silent), the gateway token's mtime set
 to ``FIXED_NOW``, the temp-root ``.git`` marker, and no temp path drawn.
 """

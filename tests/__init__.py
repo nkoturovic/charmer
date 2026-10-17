@@ -11,7 +11,7 @@ import os as _os
 import sys as _sys
 
 # A packaged parent must never redirect source-suite assets.
-_os.environ.pop("CLAUDE_MULTI_ASSETS", None)
+_os.environ.pop("CHARMER_ASSETS", None)
 
 _TESTS_DIR = _os.path.dirname(_os.path.abspath(__file__))
 if not any(

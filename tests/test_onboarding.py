@@ -399,7 +399,7 @@ class ScaffoldTests(OnboardingTestCase):
 class PrefillTests(OnboardingTestCase):
     """``model add --from-registry`` / ``--from-operator`` drafts.
 
-    A synthetic pinned registry (temp ``CLAUDE_MULTI_REGISTRY_DIR``) and a
+    A synthetic pinned registry (temp ``CHARMER_REGISTRY_DIR``) and a
     temp operator HOME; invented wires only. Registry/listing values and
     operator evidence are review context; every judgment field stays
     QUALIFY-marked, so ``check`` refuses until a human fills them.

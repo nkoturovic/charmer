@@ -1193,15 +1193,15 @@ class AdoptRootTests(test_cli.CLITestCase):
 class PlanCommandTests(test_cli.CLITestCase):
     def test_plan_via_main_with_foreign_hook_command_leaves_shims_byte_identical(self) -> None:
         env = dict(self.runtime.environ)
-        env.update({"CLAUDE_MULTI_ASSETS": str(FIXTURE_ROOT),
-                    "CLAUDE_MULTI_HOOK_COMMAND": "/nix/store/aaaa-charmer-3.0.2/bin/charmer"})
+        env.update({"CHARMER_ASSETS": str(FIXTURE_ROOT),
+                    "CHARMER_HOOK_COMMAND": "/nix/store/aaaa-charmer-3.0.2/bin/charmer"})
         with mock.patch.dict(os.environ, env, clear=True):
             runtime = runtime_mod.Runtime(asset_root=FIXTURE_ROOT, environ=dict(env), cwd=self.root / "project",
                                           **self._runtime_seams())
             self.assertTrue(runtime._shims_refreshed)
         shims = {path: path.read_bytes() for path in (runtime.session_store.root / "bin").iterdir()}
         self.assertTrue(shims)
-        env["CLAUDE_MULTI_HOOK_COMMAND"] = "/nix/store/bbbb-charmer-3.1.0/bin/charmer"
+        env["CHARMER_HOOK_COMMAND"] = "/nix/store/bbbb-charmer-3.1.0/bin/charmer"
         state_tree = {path: path.read_bytes() for path in sorted(Path(env["XDG_STATE_HOME"]).rglob("*"))
                       if path.is_file()}
         output = io.StringIO()
@@ -1229,7 +1229,7 @@ class PlanCommandTests(test_cli.CLITestCase):
         self.assertEqual(document["running_launcher"], charmer.__version__)
         self.assertEqual(self.runtime.asset_root, before_root)
         self.assertEqual(self.runtime.environ, before_env)
-        self.assertNotIn("CLAUDE_MULTI_ASSETS", os.environ)
+        self.assertNotIn("CHARMER_ASSETS", os.environ)
         code, text = self.run_cli(["plan", "--assets", str(self.root / "candidate")], interactive=False)
         self.assertIn(f"Running launcher {charmer.__version__} (unchanged by --assets)", text)
         self.assertIn("(launcher 9.9.9,", text)

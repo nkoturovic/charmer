@@ -37,7 +37,7 @@ class _GatewayDoctor(V4Case):
         for name in ("charmer", "charmer-proxy"):
             (bindir / name).write_text("#!/bin/sh\nexit 1\n")
             (bindir / name).chmod(0o755)
-        self.env["CLAUDE_MULTI_HOOK_COMMAND"] = str(bindir / "charmer")
+        self.env["CHARMER_HOOK_COMMAND"] = str(bindir / "charmer")
         patcher = mock.patch.object(gl, "published_sentinel", return_value=SENTINEL)
         patcher.start()
         self.addCleanup(patcher.stop)
@@ -164,7 +164,7 @@ class LocalFilesTests(_GatewayDoctor):
 
     def test_a_foreign_owner_is_named(self) -> None:
         lstat = os.lstat
-        secret = Path(self.env["CLAUDE_MULTI_SECRET_ENV"])
+        secret = Path(self.env["CHARMER_SECRET_ENV"])
 
         def fake(path, *args, **kwargs):
             info = lstat(path, *args, **kwargs)

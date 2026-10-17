@@ -505,7 +505,7 @@ def find_candidate(native_contract: Mapping[str, Any],
 
 PENDING_RECEIPT = "0" * 64
 # ``probe.REPIN_CANDIDATE_ENV`` (the probe module is not imported here).
-REPIN_CANDIDATE_ENV = "CLAUDE_MULTI_REPIN_CANDIDATE"
+REPIN_CANDIDATE_ENV = "CHARMER_REPIN_CANDIDATE"
 
 
 # The bundled client defines its settings schema as one object literal of

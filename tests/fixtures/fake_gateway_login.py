@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """A stand-in for the gateway program's sign-in commands (tests only).
 
-Used as ``CLAUDE_MULTI_PROXY_BIN``. It reads ``auth-dir`` from the
+Used as ``CHARMER_PROXY_BIN``. It reads ``auth-dir`` from the
 ``--config`` file and behaves like the real sign-in, without any network:
 
 - ``--claude-login [--no-browser]``: prints the address line and a fake

@@ -397,7 +397,7 @@ class SetupCommandTests(V4Case):
             return answer
 
         stream = mock.Mock(spec=["confirm"], confirm=confirm)
-        for marker in ("CLAUDE_MULTI_MANAGED_ID", "CLAUDECODE"):
+        for marker in ("CHARMER_MANAGED_ID", "CLAUDECODE"):
             self.runtime.environ.pop(marker, None)
         return stream, questions
 

@@ -2520,7 +2520,7 @@ def pinned_binary_gate(contract_path: Path | str, *, what: str,
 # The candidate file a re-pin verified, handed to its evidence suite so the
 # real-binary probes find a build outside the standard locations (still
 # accepted only when its size and sha256 match the contract under test).
-REPIN_CANDIDATE_ENV = "CLAUDE_MULTI_REPIN_CANDIDATE"
+REPIN_CANDIDATE_ENV = "CHARMER_REPIN_CANDIDATE"
 
 
 def trusted_from_contract(

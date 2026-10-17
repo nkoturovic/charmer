@@ -827,13 +827,13 @@ def _collect_doctor_report_lines(
     parity = custom.registry_parity(runtime.environ)
     if parity is not None:
         scope_attention.append(parity)
-    if runtime.environ.get("CLAUDE_MULTI_SECRET_ENV"):
+    if runtime.environ.get("CHARMER_SECRET_ENV"):
         try:
             service_file = paths.display(secret_store.service_key_file(runtime.environ).path, runtime.environ)
         except secret_store.SecretStoreError as exc:
             service_file = f"nothing until its pointer is fixed ({exc})"
         info_lines.append(
-            "CLAUDE_MULTI_SECRET_ENV is set in this shell; the gateway service ignores it and reads "
+            "CHARMER_SECRET_ENV is set in this shell; the gateway service ignores it and reads "
             + service_file
         )
     _feedback, preferences_problem = settings_mod.feedback_drafts_preference(runtime.environ)

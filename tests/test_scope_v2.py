@@ -685,9 +685,9 @@ class SettingsTests(unittest.TestCase):
         for key in (
             "ANTHROPIC_BASE_URL",
             "CLAUDE_CODE_RETRY_WATCHDOG",
-            "CLAUDE_MULTI_MANAGED_ID",
-            "CLAUDE_MULTI_SESSION_ID",
-            "CLAUDE_MULTI_LAUNCH_EPOCH",
+            "CHARMER_MANAGED_ID",
+            "CHARMER_SESSION_ID",
+            "CHARMER_LAUNCH_EPOCH",
         ):
             self.assertNotIn(key, env)
 
@@ -818,7 +818,7 @@ class HookTests(unittest.TestCase):
                         "timeout": 5,
                     },
                 )
-        self.assertEqual(plan.settings["env"]["CLAUDE_MULTI_LAUNCH_EPOCH"], "7")
+        self.assertEqual(plan.settings["env"]["CHARMER_LAUNCH_EPOCH"], "7")
         self.assertNotIn("transcript", strict_json.canonical_bytes(plan.settings).decode())
 
     def test_the_2x_shim_is_refused_and_epoch_validated(self) -> None:

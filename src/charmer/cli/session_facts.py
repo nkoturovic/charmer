@@ -599,10 +599,10 @@ def resolve_session(runtime: runtime_mod.Runtime, value: str) -> dict[str, Any]:
 
 def report_session(runtime, identifier: str | None = None):
     """The session a report names (:func:`resolve_session`), else the
-    current session (``CLAUDE_MULTI_MANAGED_ID``), else this directory's
+    current session (``CHARMER_MANAGED_ID``), else this directory's
     last; never a picker or a runtime guess."""
     if identifier is None:
-        marker = runtime.environ.get("CLAUDE_MULTI_MANAGED_ID")
+        marker = runtime.environ.get("CHARMER_MANAGED_ID")
         if isinstance(marker, str) and sessions.UUID4.fullmatch(marker):
             identifier = marker
         else:
