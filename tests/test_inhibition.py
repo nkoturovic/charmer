@@ -26,9 +26,9 @@ from unittest import mock
 
 from _catalog import FIXTURE_ROOT
 from _layout import REPO_ROOT
-from claude_multi import cli, endpoint, gateway_inhibition as gi, gateway_lifecycle as gl, launch, proxy, state
-from claude_multi.cli import gateway_facts
-from claude_multi.cli.screens import gateway_actions
+from charmer import cli, endpoint, gateway_inhibition as gi, gateway_lifecycle as gl, launch, proxy, state
+from charmer.cli import gateway_facts
+from charmer.cli.screens import gateway_actions
 from test_gateway_lifecycle import NOW
 import test_cli
 import test_continuity
@@ -534,7 +534,7 @@ class EntryPointFencingTests(_Entry):
         self.assertNotIn("inhibited", self.proxy("init", "--reload-check")[2])
 
     def test_the_proxy_refuses_another_channels_state_root(self) -> None:
-        from claude_multi import installs
+        from charmer import installs
 
         installs.write_marker(self.state_root, "nix")
         for argv in (["init"], ["run", "--prepare-and-exec"], ["claude-login"]):
@@ -547,7 +547,7 @@ class EntryPointFencingTests(_Entry):
         self.assertEqual(installs.read_marker(self.state_root), "nix")
 
     def test_the_hooks_and_the_cm_intercept_leave_the_shims_to_the_owner(self) -> None:
-        import claude_multi.cli.commands.lineup as commands_lineup
+        import charmer.cli.commands.lineup as commands_lineup
 
         old, new = str(self.root / "old" / "claude-multi"), str(self.root / "new" / "claude-multi")
         with self.process_environ(old):
@@ -578,7 +578,7 @@ class StoppedProofTests(_Inhibited):
 
     def setUp(self) -> None:
         super().setUp()
-        from claude_multi import management
+        from charmer import management
 
         self.management = management
         self.env = {"HOME": str(self.home), "XDG_STATE_HOME": str(self.home / ".local/state"),
@@ -601,7 +601,7 @@ class StoppedProofTests(_Inhibited):
         key = self.management.read_active(self.home)
         self.assertIsNotNone(key)
         self.management.stage_rotation(self.home)
-        from claude_multi.platform import posix_fs
+        from charmer.platform import posix_fs
 
         held = posix_fs.hold_exclusive(self.workdir / proxy.service.INSTANCE_LOCK)  # an instance still owns it
         try:
@@ -622,7 +622,7 @@ class StoppedProofTests(_Inhibited):
         self.assertFalse(self.management.key_state(self.home).staged)
         self.assertNotEqual(self.management.read_active(self.home), key)
         # The preparation released the lock: the gateway's own run can take it.
-        from claude_multi.platform import posix_fs as fs
+        from charmer.platform import posix_fs as fs
 
         self.assertFalse(fs.lock_held(self.workdir / proxy.service.INSTANCE_LOCK))
 
@@ -910,7 +910,7 @@ class SerializationTests(_Inhibited):
         gi.end(self.state_root, token)
 
     def test_shims_and_configuration_are_written_inside_the_fence(self) -> None:
-        from claude_multi import scope
+        from charmer import scope
 
         attempts: list[str] = []
         real_shim = scope.ensure_hook_shim
@@ -1154,7 +1154,7 @@ class TwoRootsTests(_Entry):
     """One home, two state roots: the managed root's owner fences both."""
 
     def test_another_state_root_cannot_change_the_managed_roots_gateway(self) -> None:
-        from claude_multi import continuity, installs
+        from charmer import continuity, installs
 
         self.assertEqual(self.proxy("init")[0], 0)
         self.assertEqual(continuity.read(self.home)["state_root"], str(self.state_root))
@@ -1184,8 +1184,8 @@ class TwoRootsTests(_Entry):
         self.assertIn("belongs to the nix installation", err)
 
     def test_a_writer_paused_across_a_root_adoption_writes_nothing(self) -> None:
-        from claude_multi import continuity
-        from claude_multi.cli import consent
+        from charmer import continuity
+        from charmer.cli import consent
 
         self.assertEqual(self.proxy("init")[0], 0)
         self.assertEqual(continuity.read(self.home)["state_root"], str(self.state_root))
@@ -1222,7 +1222,7 @@ class TwoRootsTests(_Entry):
         self.assertEqual(self.config_files(), seen["files"])
 
     def test_the_authority_is_read_again_under_the_fence_and_at_the_write(self) -> None:
-        from claude_multi import continuity
+        from charmer import continuity
 
         self.assertEqual(self.proxy("init")[0], 0)
         roots = gi.home_roots(self.home, self.state_root)
@@ -1245,7 +1245,7 @@ class TwoRootsTests(_Entry):
         gi.revalidate(self.home)  # a flow holding no fence is not checked
 
     def test_an_unreadable_authority_refuses_every_change_and_reading_stays(self) -> None:
-        from claude_multi import continuity
+        from charmer import continuity
 
         self.assertEqual(self.proxy("init")[0], 0)
         self.inhibit()  # the managed root's transaction owner
@@ -1289,7 +1289,7 @@ class ForeignChannelShimTests(_Entry):
     """Hooks and other entry points of another channel never repoint the shared shims."""
 
     def test_hooks_of_another_channel_leave_every_shim_alone(self) -> None:
-        from claude_multi import installs
+        from charmer import installs
 
         old, new = str(self.root / "old" / "claude-multi"), str(self.root / "new" / "claude-multi")
         installs.write_marker(self.state_root, "nix")
@@ -1346,7 +1346,7 @@ class RotationPhaseTests(test_continuity.ContinuityCase):
     def test_a_root_adopted_during_the_rotation_fences_its_next_phase(self) -> None:
         import re
 
-        from claude_multi import continuity
+        from charmer import continuity
 
         state.ensure_private_dir(self.config_dir)
         state.atomic_write(self.config_dir / "api-key", (("a" * 64) + "\n").encode())

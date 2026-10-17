@@ -29,7 +29,7 @@ import unittest
 from _layout import REPO_ROOT, RESOURCES_ROOT  # noqa: E402
 
 sys.path[:0] = [str(REPO_ROOT), str(REPO_ROOT / "src"), str(REPO_ROOT / "tests")]
-from claude_multi import state
+from charmer import state
 import _gateway_harness as harness
 
 

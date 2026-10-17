@@ -15,8 +15,8 @@ import stat
 import unittest
 from unittest import mock
 
-from claude_multi import compiler, profile, scope, sessions, state, transition
-from claude_multi.transition import TransitionError
+from charmer import compiler, profile, scope, sessions, state, transition
+from charmer.transition import TransitionError
 from _v4 import V4Case
 
 FIXED_ID = "11111111-1111-4111-8111-111111111111"
@@ -212,7 +212,7 @@ class RecordAuthorityOperatorTests(unittest.TestCase):
     as admitted (the legacy line it replaced was active)."""
 
     def _lcat(self) -> profile.LineupCatalog:
-        from claude_multi import catalog as catalog_mod
+        from charmer import catalog as catalog_mod
         from _catalog import FIXTURE_ROOT
         docs = catalog_mod.load_catalog(FIXTURE_ROOT).docs
         lcat = profile.LineupCatalog.from_docs(docs)
@@ -226,7 +226,7 @@ class RecordAuthorityOperatorTests(unittest.TestCase):
         )
 
     def test_migrated_line_matching_the_record_counts_as_admitted(self) -> None:
-        from claude_multi import settings as settings_mod
+        from charmer import settings as settings_mod
         eff = settings_mod.Effective(providers_enabled={}, admitted_lines=frozenset(), unknown=())
         lcat = self._lcat()
         for applied_lead in ({"key": "oldbox", "selector": "x"}, {"key": "other", "selector": "custom-oldbox"},

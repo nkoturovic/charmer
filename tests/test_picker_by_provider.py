@@ -16,12 +16,12 @@ from unittest import mock
 import _tui_fixture as fx
 import test_cli
 from test_tui import DOWN, END, HOME, UP, FakeWindow
-from claude_multi import catalog, cli, profile, tui, views
-from claude_multi.setup import providers as setup_providers
-import claude_multi.cli.consent as consent
-import claude_multi.cli.screens.get_started as get_started
-import claude_multi.cli.text as cli_text
-import claude_multi.cli.types as types
+from charmer import catalog, cli, profile, tui, views
+from charmer.setup import providers as setup_providers
+import charmer.cli.consent as consent
+import charmer.cli.screens.get_started as get_started
+import charmer.cli.text as cli_text
+import charmer.cli.types as types
 
 ESC = "\x1b"
 ENTER = "\n"

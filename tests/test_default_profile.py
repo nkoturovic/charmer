@@ -14,10 +14,10 @@ import threading
 from unittest import mock
 
 import test_cli  # module import: no test classes re-exported
-from claude_multi import catalog, choices, profile, readiness, sessions, state
-from claude_multi.cli import selection, session_facts
-from claude_multi.cli.commands import profile as profile_cmd
-from claude_multi.setup import defaults, model
+from charmer import catalog, choices, profile, readiness, sessions, state
+from charmer.cli import selection, session_facts
+from charmer.cli.commands import profile as profile_cmd
+from charmer.setup import defaults, model
 
 NOT_READY = readiness.SlotReadiness(
     "cm-lead", readiness.BLOCKED, None,
@@ -59,7 +59,7 @@ class DefaultCase(test_cli.CLITestCase):
             mock.patch.object(runtime_cls, "profile_readiness", profile_readiness),
             mock.patch.object(runtime_cls, "line_readiness", line_readiness),
             mock.patch.object(session_facts, "_session_records", lambda _runtime: list(self.records)),
-            mock.patch("claude_multi.setup.status.connected", connected),
+            mock.patch("charmer.setup.status.connected", connected),
         ):
             patcher.start()
             self.addCleanup(patcher.stop)

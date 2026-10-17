@@ -32,7 +32,7 @@ from unittest import mock
 import _docs_vocab as vocab
 import check_docs_vocabulary as checker
 from _layout import REPO_ROOT, doc_path
-from claude_multi import cli
+from charmer import cli
 
 _SCAN: tuple[list[vocab.Target], list[vocab.Hit], list[str]] | None = None
 
@@ -69,7 +69,7 @@ class InTreeVocabularyTests(unittest.TestCase):
             self.assertIn(name, labels)
         self.assertIn("<help: claude-multi>", labels)
         self.assertIn("<doc: claude-multi-dev --help>", labels)
-        self.assertIn("src/claude_multi/tui.py", labels)
+        self.assertIn("src/charmer/tui.py", labels)
 
     def test_no_failing_hit_in_any_in_tree_file(self) -> None:
         for target in self.targets:
@@ -170,7 +170,7 @@ class HelpVocabularyTests(unittest.TestCase):
         # The rendered help carries the installation's document path (a
         # dev checkout path); the scan sees <installation> instead,
         # so R9 holds in the dev suite and in the sandbox alike.
-        from claude_multi import layout
+        from charmer import layout
 
         self.assertIn("CHEATSHEET.md", vocab.help_epilog())
         top = self.pages["claude-multi"]
@@ -201,7 +201,7 @@ class DocstringVocabularyTests(unittest.TestCase):
                 self.assertEqual([h.format() for h in hits if h.intentional], [])
 
     def test_dev_help_is_the_printed_text(self) -> None:
-        from claude_multi import dev
+        from charmer import dev
 
         self.assertIn("promote", dev.DEV_HELP)
         self.assertTrue(dev.__doc__)
@@ -211,9 +211,9 @@ class SourcePhraseTests(unittest.TestCase):
     """The two phrases in ``src`` (raw text, no markers)."""
 
     def test_no_source_file_says_the_phrases(self) -> None:
-        sources = sorted((REPO_ROOT / "src" / "claude_multi").rglob("*.py"))
+        sources = sorted((REPO_ROOT / "src" / "charmer").rglob("*.py"))
         self.assertGreater(len(sources), 20)
-        self.assertTrue(any("cli" in p.relative_to(REPO_ROOT / "src" / "claude_multi").parts[:-1] for p in sources))
+        self.assertTrue(any("cli" in p.relative_to(REPO_ROOT / "src" / "charmer").parts[:-1] for p in sources))
         for path in sources:
             label = path.relative_to(REPO_ROOT).as_posix()
             with self.subTest(label):

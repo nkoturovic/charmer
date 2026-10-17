@@ -19,11 +19,11 @@ from datetime import timedelta
 from pathlib import Path
 from unittest import mock
 
-from claude_multi import catalog, cli, custom, operator as operator_mod, profile, settings, state, strict_json, tui, views
+from charmer import catalog, cli, custom, operator as operator_mod, profile, settings, state, strict_json, tui, views
 
 import _tui_fixture as fx
 import test_operator as operator_fixtures
-import claude_multi.cli.text as cli_text
+import charmer.cli.text as cli_text
 from _catalog import FIXTURE_ROOT
 from test_screens_catalog import _fixture_copy
 from test_tui import DOWN, END, HOME, LEFT, RIGHT, UP, FakeWindow
@@ -53,7 +53,7 @@ class _DirectCase(unittest.TestCase):
         stack = contextlib.ExitStack()
         self.addCleanup(stack.close)
         stack.enter_context(fx.hermetic(runtime))
-        stack.enter_context(mock.patch('claude_multi.cli.gateway_facts._doctor_now', lambda: fx.FIXED_NOW))
+        stack.enter_context(mock.patch('charmer.cli.gateway_facts._doctor_now', lambda: fx.FIXED_NOW))
         return runtime
 
     def signed_in(self):
@@ -64,7 +64,7 @@ class _DirectCase(unittest.TestCase):
             for p in self.runtime.lineup_catalog().providers.values()
             if p["transport"]["kind"] == "oauth-pool"
         }
-        return mock.patch('claude_multi.cli.gateway_facts._oauth_credential_records', lambda _rt: {p: 1 for p in pools})
+        return mock.patch('charmer.cli.gateway_facts._oauth_credential_records', lambda _rt: {p: 1 for p in pools})
 
     def screen(self, runtime=None, **kwargs) -> cli._DirectScreen:
         return cli._DirectScreen(runtime or self.runtime, palette=tui.MONO_PALETTE, **kwargs)
@@ -326,7 +326,7 @@ class DirectMarkTests(_DirectCase):
         self.assertEqual((action, prepared.record["applied"]["lead"]["key"]), ("perform", row.key))
 
     def test_sign_in_now_runs_the_shared_sign_in_and_stays(self) -> None:
-        import claude_multi.cli.screens.signin as screens_signin
+        import charmer.cli.screens.signin as screens_signin
 
         screen = self.screen()
         row = next(r for r in screen.rows if r.mark == "not signed in")
@@ -496,7 +496,7 @@ class DirectLaunchTests(_DirectCase):
         qualify.assert_not_called()
 
     def test_g_opens_providers_and_rebuilds_the_rows(self) -> None:
-        with mock.patch('claude_multi.cli.screens.providers.run_providers_screen') as providers:
+        with mock.patch('charmer.cli.screens.providers.run_providers_screen') as providers:
             _result, _win = self.run_screen(self.screen(), ["g", ESC])
         providers.assert_called_once()
 
@@ -657,7 +657,7 @@ class DirectCommandTests(_DirectCase):
 
     def run_command(self, args, text: str = "") -> int:
         import io
-        import claude_multi.cli.launch_flow as launch_flow
+        import charmer.cli.launch_flow as launch_flow
 
         return launch_flow._direct_command(self.runtime, args, input_stream=io.StringIO(text),
                                            output_stream=io.StringIO(), interactive=True, passthrough=[])
@@ -668,7 +668,7 @@ class DirectCommandTests(_DirectCase):
         self.assertEqual(prepared.result.env_set.get("CLAUDE_CODE_DISABLE_EXPLORE_PLAN_AGENTS"), "1")
 
     def test_the_curses_picker_carries_no_subagents(self) -> None:
-        import claude_multi.cli.screens.common as screens_common
+        import charmer.cli.screens.common as screens_common
 
         with self.signed_in():
             probe = self.screen()
@@ -752,7 +752,7 @@ class DirectKeyTests(_DirectCase):
                 self.assertEqual(list(bar)[-2:], ["?", "Esc"])
         down = self.screen(self.make_runtime(self.tmp / "down-bar", gateway_down=True))
         self.assertIn(cli_text.DIRECT_GATEWAY_BINDING, down._bindings())
-        with mock.patch("claude_multi.cli.screens.gateway_actions.dialog",
+        with mock.patch("charmer.cli.screens.gateway_actions.dialog",
                         return_value="gateway ready: fixture") as dialog:
             _result, win = self.run_screen(down, ["W", ESC])
         dialog.assert_called_once()

@@ -13,7 +13,7 @@ import threading
 import unittest
 from unittest import mock
 
-from claude_multi import lineup, profile, settings, sessions, strict_json
+from charmer import lineup, profile, settings, sessions, strict_json
 from test_lineup import LineupCase
 
 TIMEOUT = 10

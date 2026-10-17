@@ -25,8 +25,8 @@ from unittest import mock
 
 from _catalog import FIXTURE_ROOT, SHIPPED_ROOT
 from _layout import RESOURCES_ROOT
-from claude_multi import account_pools, catalog, choices, discovery, operator as operator_mod, proxy, strict_json
-from claude_multi.setup import model, signin, texts
+from charmer import account_pools, catalog, choices, discovery, operator as operator_mod, proxy, strict_json
+from charmer.setup import model, signin, texts
 
 SCHEMA = strict_json.load(RESOURCES_ROOT / account_pools.SCHEMA)
 SHIPPED = strict_json.load(RESOURCES_ROOT / account_pools.FILE)

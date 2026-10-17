@@ -10,9 +10,9 @@ from unittest import mock
 
 import test_cli
 from _catalog import SHIPPED_ROOT, uses_shipped_catalog
-from claude_multi import operator as operator_mod, secret_store, sessions
-from claude_multi.setup import lines as setup_lines, model, providers as setup_providers, signin, status, texts
-import claude_multi.cli.consent as consent
+from charmer import operator as operator_mod, secret_store, sessions
+from charmer.setup import lines as setup_lines, model, providers as setup_providers, signin, status, texts
+import charmer.cli.consent as consent
 
 
 class LayerCase(test_cli.OperatorCommandCase):
@@ -114,7 +114,7 @@ class EndpointTests(LayerCase):
         self.assertEqual(setup_providers.derived_secret_name("claude-proxy"), "USER_CLAUDE_PROXY_API_KEY")
 
     def test_the_closed_openai_compatible_kind(self) -> None:
-        from claude_multi import catalog
+        from charmer import catalog
 
         with mock.patch.object(catalog, "keyed_compat_audited", return_value=False):
             with self.assertRaisesRegex(model.Refused, "not available in this release"):
@@ -167,7 +167,7 @@ class TransportTests(LayerCase):
 
     def test_the_summary_count_and_before_value_match_the_listed_rows(self) -> None:
         self.apply_and_serve()
-        from claude_multi.cli.commands import providers as provider_commands
+        from charmer.cli.commands import providers as provider_commands
 
         # The provider's selector bases undercount what moves (the gateway
         # also serves claude-multi-* aliases of the same lines): the summary
@@ -267,7 +267,7 @@ class GatewayStepTests(LayerCase):
     port shows the step as not set up and is never observed."""
 
     def live(self) -> mock.Mock:
-        from claude_multi.setup import external
+        from charmer.setup import external
 
         gateway = mock.Mock()
         for patcher in (mock.patch.object(external, "_fixture_gateway", return_value=False),
@@ -278,7 +278,7 @@ class GatewayStepTests(LayerCase):
         return gateway
 
     def test_the_step_starts_explicitly_and_chooses_the_port(self) -> None:
-        from claude_multi.setup import external
+        from charmer.setup import external
 
         gateway = self.live()
         gateway.ensure.return_value = mock.Mock(ok=True)
@@ -286,8 +286,8 @@ class GatewayStepTests(LayerCase):
         gateway.ensure.assert_called_once_with(explicit=True, choose_port=True)
 
     def test_a_home_with_no_recorded_port_is_not_set_up_and_never_observed(self) -> None:
-        from claude_multi import endpoint
-        from claude_multi.setup import external, firstrun
+        from charmer import endpoint
+        from charmer.setup import external, firstrun
 
         gateway = self.live()
         gateway.inhibition_refusal.return_value = None

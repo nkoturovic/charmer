@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Any
 from unittest import mock
 
-from claude_multi import (
+from charmer import (
     cli,
     hooks,
     lineup_files,
@@ -115,7 +115,7 @@ class _HookCase(unittest.TestCase):
                 raise AssertionError("transcript_path was opened")
             return real_os_open(path, *args, **kwargs)
 
-        with mock.patch.dict(os.environ, self.environ, clear=True), mock.patch('claude_multi.cli.runtime.Runtime'
+        with mock.patch.dict(os.environ, self.environ, clear=True), mock.patch('charmer.cli.runtime.Runtime'
         ) as runtime, mock.patch.object(sys, "stderr", error), mock.patch(
             "builtins.open", side_effect=guarded_open
         ), mock.patch("os.open", side_effect=guarded_os_open):
@@ -212,8 +212,8 @@ class LayeringTests(unittest.TestCase):
         # Never cli, compiler, catalog, profile,
         # scope, launch or transition.
         code = (
-            "import sys, claude_multi.hooks\n"
-            "print(sorted(m for m in sys.modules if m.startswith('claude_multi.')))\n"
+            "import sys, charmer.hooks\n"
+            "print(sorted(m for m in sys.modules if m.startswith('charmer.')))\n"
         )
         env = {**os.environ, "PYTHONPATH": str(REPO_ROOT / "src")}
         out = subprocess.run(
@@ -222,26 +222,26 @@ class LayeringTests(unittest.TestCase):
         self.assertEqual(
             strict_json.loads(out.strip().replace("'", '"')),
             [
-                "claude_multi.assets",
+                "charmer.assets",
                 # The pin check (which Claude Code runs the session): leaves
                 # that read one contract file, never the catalog.
-                "claude_multi.client_check",
-                "claude_multi.errors",
-                "claude_multi.hooks",
-                "claude_multi.lineup_files",
-                "claude_multi.lineup_log",
-                "claude_multi.paths",
-                "claude_multi.pin",
+                "charmer.client_check",
+                "charmer.errors",
+                "charmer.hooks",
+                "charmer.lineup_files",
+                "charmer.lineup_log",
+                "charmer.paths",
+                "charmer.pin",
                 # Reviewed leaves: the empty package, dependency-free
                 # result types and the POSIX primitives under state/sessions.
                 # Never the service or process backends (lazy in sessions).
-                "claude_multi.platform",
-                "claude_multi.platform.observation",
-                "claude_multi.platform.posix_fs",
-                "claude_multi.sessions",
-                "claude_multi.state",
-                "claude_multi.strict_json",
-                "claude_multi.validate",
+                "charmer.platform",
+                "charmer.platform.observation",
+                "charmer.platform.posix_fs",
+                "charmer.sessions",
+                "charmer.state",
+                "charmer.strict_json",
+                "charmer.validate",
             ],
         )
 
@@ -388,7 +388,7 @@ class DispatchNeverFailsTests(_HookCase):
             with self.subTest(event=event):
                 inp = mock.Mock()
                 output, error = io.StringIO(), io.StringIO()
-                with mock.patch.dict(os.environ, self.environ, clear=True), mock.patch('claude_multi.cli.runtime.Runtime'
+                with mock.patch.dict(os.environ, self.environ, clear=True), mock.patch('charmer.cli.runtime.Runtime'
                 ) as runtime, mock.patch.object(sys, "stderr", error):
                     code = cli.main(_argv(event), input_stream=inp, output_stream=output)
                 self.assertEqual(code, 0)
@@ -418,7 +418,7 @@ class DispatchNeverFailsTests(_HookCase):
         marker.write_text("5\n")
         marker.chmod(0o600)
         env = {**self.environ, "PATH": os.environ.get("PATH", "/usr/bin:/bin"), "PYTHONPATH": str(REPO_ROOT / "src")}
-        result = subprocess.run([sys.executable, "-B", "-m", "claude_multi.cli", *_argv("premodel")], env=env,
+        result = subprocess.run([sys.executable, "-B", "-m", "charmer.cli", *_argv("premodel")], env=env,
                                 input=self.payload(model="claude-fable-5-1"), capture_output=True, text=True,
                                 timeout=60, cwd=self.home)
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -753,8 +753,8 @@ class SubagentTests(_HookCase):
     def test_concurrent_processes_keep_every_line(self) -> None:
         script = (
             "import os, sys\n"
-            "from claude_multi import hooks\n"
-            "from claude_multi.cli import parser\n"
+            "from charmer import hooks\n"
+            "from charmer.cli import parser\n"
             "args = parser.build_parser().parse_args(sys.argv[1:])\n"
             "sys.exit(hooks.dispatch(args, state_root=os.environ['CM_STATE'], environ={},"
             " input_stream=sys.stdin, output_stream=sys.stdout, error_stream=sys.stderr))\n"

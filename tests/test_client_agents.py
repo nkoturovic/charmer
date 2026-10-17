@@ -53,8 +53,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from claude_multi import probe, scope, state, strict_json
-from claude_multi.probe import ProbeError
+from charmer import probe, scope, state, strict_json
+from charmer.probe import ProbeError
 
 from _tier import real_binary_gate
 from _layout import RESOURCES_ROOT  # the one root source

@@ -28,7 +28,7 @@ from pathlib import Path
 
 from _catalog import FIXTURE_ROOT
 from _gateway_harness import boundary
-from claude_multi import catalog, probe, qualify, render, service, state
+from charmer import catalog, probe, qualify, render, service, state
 
 GATEWAY_TOKEN = "q" * 64
 DUMMY_KIMI = "dummy-kimi-key"

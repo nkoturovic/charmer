@@ -18,7 +18,7 @@ from __future__ import annotations
 import unittest
 from unittest import mock
 
-from claude_multi import hooks, launch, lineup, scope, sessions, state, strict_json, transition
+from charmer import hooks, launch, lineup, scope, sessions, state, strict_json, transition
 from test_lineup import LineupCase
 
 # (checkpoint, detail filter): raise when the live apply reaches it.

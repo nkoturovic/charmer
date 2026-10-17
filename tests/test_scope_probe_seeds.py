@@ -44,7 +44,7 @@ import uuid
 from pathlib import Path
 from typing import Any, Callable
 
-from claude_multi import (
+from charmer import (
     catalog,
     cli,
     hooks,
@@ -57,7 +57,7 @@ from claude_multi import (
     strict_json,
     upgrade,
 )
-from claude_multi.probe import ProbeError
+from charmer.probe import ProbeError
 
 from _catalog import FIXTURE_ROOT, SHIPPED_ROOT, uses_shipped_catalog
 from _layout import REPO_ROOT, RESOURCES_ROOT

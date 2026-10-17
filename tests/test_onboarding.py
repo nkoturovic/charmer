@@ -14,8 +14,8 @@ from pathlib import Path
 from unittest import mock
 from contextlib import redirect_stdout
 
-from claude_multi import catalog, dev, sessions, state, strict_json
-from claude_multi.dev import DevError
+from charmer import catalog, dev, sessions, state, strict_json
+from charmer.dev import DevError
 from _catalog import FIXTURE_ROOT
 from _layout import REPO_ROOT, fake_checkout
 
@@ -24,7 +24,7 @@ from _layout import REPO_ROOT, fake_checkout
 # load_raw/verify read); the import-hygiene glob reads the package src.
 CATALOG_ROOT = FIXTURE_ROOT
 # Promotion post-images are checkout-relative (the resources sit under
-# src/claude_multi/data in a checkout).
+# src/charmer/data in a checkout).
 MODELS_IMAGE = str(dev.RESOURCES / "catalog" / "models.json")
 PROVIDERS_IMAGE = str(dev.RESOURCES / "catalog" / "providers.json")
 
@@ -445,7 +445,7 @@ class PrefillTests(OnboardingTestCase):
         return draft
 
     def declare(self, *names: str) -> None:
-        from claude_multi import operator as operator_mod
+        from charmer import operator as operator_mod
 
         directory = state.ensure_private_dir(operator_mod.providers_dir({"HOME": str(self.home)}))
         for name in names:
@@ -532,7 +532,7 @@ class PrefillTests(OnboardingTestCase):
 
     def test_list_shaped_line_on_a_claude_compatible_provider_needs_an_efforts_map(self) -> None:
         # The draft is written, efforts QUALIFY-marked, check refuses.
-        from claude_multi import operator as operator_mod
+        from charmer import operator as operator_mod
 
         directory = state.ensure_private_dir(operator_mod.providers_dir({"HOME": str(self.home)}))
         state.atomic_write(directory / "kimi.json", json.dumps({"version": 1, "lines": {"custom-kimi-list": {
@@ -593,7 +593,7 @@ class DraftTests(OnboardingTestCase):
             self.drafts.load("d1")
 
     def test_model_draft_schema_valid(self) -> None:
-        from claude_multi import validate
+        from charmer import validate
 
         draft = _model_draft()
         schema = strict_json.load(CATALOG_ROOT / "schemas" / "draft.schema.json")
@@ -872,7 +872,7 @@ class CheckTests(OnboardingTestCase):
 
 class ReviewTests(OnboardingTestCase):
     def test_review_record_exact_and_schema_valid(self) -> None:
-        from claude_multi import validate
+        from charmer import validate
 
         record = self._review(_model_draft())
         schema = strict_json.load(CATALOG_ROOT / "schemas" / "review.schema.json")
@@ -930,7 +930,7 @@ class PromoteTests(OnboardingTestCase):
         bundle = catalog.load_catalog(self.resources)
         # A promoted line is New · not admitted, but selectable without a
         # badge under the default Settings when its provider is enabled.
-        from claude_multi import profile, scope, settings
+        from charmer import profile, scope, settings
 
         self.assertIn("newmodel", bundle.lines)
         self.assertEqual(bundle.lines["newmodel"]["status"], "new")
@@ -1157,12 +1157,12 @@ class ImportHygieneTests(unittest.TestCase):
     def test_runtime_modules_never_import_dev(self) -> None:
         import ast
 
-        src = REPO_ROOT / "src" / "claude_multi"
+        src = REPO_ROOT / "src" / "charmer"
         offenders: list[str] = []
         modules = sorted(src.rglob("*.py"))
         self.assertTrue(any("cli" in p.relative_to(src).parts[:-1] for p in modules))
         for module in modules:
-            module_name = "claude_multi." + ".".join(module.relative_to(src).with_suffix("").parts).removesuffix(".__init__")
+            module_name = "charmer." + ".".join(module.relative_to(src).with_suffix("").parts).removesuffix(".__init__")
             relative = module.relative_to(src).as_posix()
             if relative == "dev.py":
                 continue
@@ -1600,7 +1600,7 @@ class DraftVersionTests(OnboardingTestCase):
         return draft
 
     def test_drafts_and_reviews_are_version_2(self) -> None:
-        from claude_multi import validate
+        from charmer import validate
 
         schema = strict_json.load(CATALOG_ROOT / "schemas" / "draft.schema.json")
         self.assertEqual(schema["version"], 1)  # schema-meta stays 1

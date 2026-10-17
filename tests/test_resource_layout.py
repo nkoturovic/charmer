@@ -18,8 +18,8 @@ import re
 import unittest
 from pathlib import Path
 
-import claude_multi
-from claude_multi import assets, layout
+import charmer
+from charmer import assets, layout
 from _layout import (
     FIXTURES_ROOT, NIX_DIR, REPO_ROOT, RESOURCE_ENTRIES, RESOURCES_RELATIVE, RESOURCES_ROOT, installed_paths,
     logical_path, staged_tops,
@@ -87,8 +87,8 @@ class RepositoryRootTests(unittest.TestCase):
                 self.assertFalse((REPO_ROOT / former).exists(), former)
 
     def test_every_resource_entry_lives_in_the_package(self) -> None:
-        self.assertEqual(RESOURCES_ROOT, REPO_ROOT / "src" / "claude_multi" / "data")
-        self.assertEqual(RESOURCES_ROOT, claude_multi.resources_root())
+        self.assertEqual(RESOURCES_ROOT, REPO_ROOT / "src" / "charmer" / "data")
+        self.assertEqual(RESOURCES_ROOT, charmer.resources_root())
         self.assertEqual(RESOURCES_RELATIVE, layout.RESOURCES_IN_CHECKOUT)
         present = {path.name for path in RESOURCES_ROOT.iterdir() if path.name != "__pycache__"}
         self.assertEqual(present, set(RESOURCE_ENTRIES))
@@ -128,7 +128,7 @@ class RepositoryRootTests(unittest.TestCase):
     def test_logical_labels_resolve_against_their_owner(self) -> None:
         self.assertEqual(logical_path("schemas/models.schema.json"), RESOURCES_ROOT / "schemas/models.schema.json")
         self.assertEqual(logical_path("version.json"), RESOURCES_ROOT / "version.json")
-        self.assertEqual(logical_path("src/claude_multi/scope.py"), REPO_ROOT / "src/claude_multi/scope.py")
+        self.assertEqual(logical_path("src/charmer/scope.py"), REPO_ROOT / "src/charmer/scope.py")
         self.assertEqual(logical_path("nix/gateway.nix"), REPO_ROOT / "nix/gateway.nix")
         # A flat fixture tree keeps the resource-relative shape.
         self.assertTrue((FIXTURES_ROOT / "assets" / "catalog").is_dir())
@@ -159,8 +159,8 @@ class RepositoryRootTests(unittest.TestCase):
             re.escape(entry) for entry in sorted(RESOURCE_ENTRIES) if "." not in entry))
         offenders = [f"{path.name}: {match.group(0)}" for path in sorted(workflows.glob("*.yml"))
                      for match in pattern.finditer(path.read_text())
-                     if not path.read_text()[max(0, match.start() - len("src/claude_multi/data/")):match.start()]
-                     .endswith("src/claude_multi/data/")]
+                     if not path.read_text()[max(0, match.start() - len("src/charmer/data/")):match.start()]
+                     .endswith("src/charmer/data/")]
         self.assertEqual(offenders, [])
 
 
@@ -169,7 +169,7 @@ class AuthorityTests(unittest.TestCase):
     checkout and the installation never stand in for one another."""
 
     def test_selected_resources_precedence(self) -> None:
-        self.assertEqual(assets.root(environ={}), claude_multi.resources_root())
+        self.assertEqual(assets.root(environ={}), charmer.resources_root())
         self.assertEqual(assets.root(environ={"CLAUDE_MULTI_ASSETS": "/env"}), Path("/env"))
         self.assertEqual(assets.root("/explicit", environ={"CLAUDE_MULTI_ASSETS": "/env"}), Path("/explicit"))
 
@@ -192,12 +192,12 @@ class AuthorityTests(unittest.TestCase):
         for site in ("lib/python3.14/site-packages", "lib64/python3.11/site-packages",
                      "lib/python3/dist-packages"):
             with self.subTest(site=site):
-                self.assertEqual(layout.installation_of(Path("/prefix") / site / "claude_multi"), Path("/prefix"))
-        for elsewhere in ("/opt/claude_multi", "/prefix/lib/site-packages/claude_multi",
-                          "/prefix/share/python3.14/site-packages/claude_multi"):
+                self.assertEqual(layout.installation_of(Path("/prefix") / site / "charmer"), Path("/prefix"))
+        for elsewhere in ("/opt/charmer", "/prefix/lib/site-packages/charmer",
+                          "/prefix/share/python3.14/site-packages/charmer"):
             with self.subTest(elsewhere=elsewhere):
                 self.assertIsNone(layout.installation_of(Path(elsewhere)))
-        self.assertEqual(layout.installation_of(REPO_ROOT / "src" / "claude_multi"), REPO_ROOT)
+        self.assertEqual(layout.installation_of(REPO_ROOT / "src" / "charmer"), REPO_ROOT)
         self.assertEqual(layout.entry_point("claude-multi", "/prefix"), Path("/prefix/bin/claude-multi"))
 
     def test_installation_resources_of_an_installed_prefix(self) -> None:
@@ -206,7 +206,7 @@ class AuthorityTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory(prefix="cm-prefix-") as tmp:
             prefix = Path(tmp)
-            data = prefix / "lib" / "python3.14" / "site-packages" / "claude_multi" / "data"
+            data = prefix / "lib" / "python3.14" / "site-packages" / "charmer" / "data"
             (data / "catalog").mkdir(parents=True)
             shutil.copy2(RESOURCES_ROOT / "version.json", data / "version.json")
             self.assertEqual(layout.installation_resources(prefix), data)

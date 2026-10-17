@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Any, Iterable
 from unittest import mock
 
-from claude_multi import catalog, dev, operator, proxy, render, secret_store, state, strict_json
+from charmer import catalog, dev, operator, proxy, render, secret_store, state, strict_json
 from _catalog import FIXTURE_ROOT, GOLDENS_ROOT
 
 import test_cli
@@ -581,7 +581,7 @@ class KeyedValidationTests(unittest.TestCase):
         add = ["providers", "add", "gen", "--kind", operator.KEYED_KIND, "--base-url", KEYED_BASE,
                "--auth", "bearer", "--secret-ref", f"env:{KEYED_SECRET}", "--family", "gen"]
         edited = raw(keyed_document(efforts=["max"], default="max", display=f"Chat {REJECTED_MARKER}"))
-        import claude_multi.cli.commands.providers as providers_cmd
+        import charmer.cli.commands.providers as providers_cmd
         with spy_store(spy):
             for argv in (["providers", "validate"], ["providers", "validate", str(candidate)],
                          ["providers", "template", "--kind", operator.KEYED_KIND], add, [*add, "--declare-only"]):
@@ -734,7 +734,7 @@ def render_plan_config(plan: operator.RenderPlan, resolve, continuity: dict | No
 
 
 def compat_sections(result: render.RenderResult) -> dict[str, dict]:
-    from claude_multi import served_plan
+    from charmer import served_plan
 
     document = served_plan.parse_restricted_yaml(result.yaml)
     return {section["name"]: section for section in document["openai-compatibility"]}
@@ -787,7 +787,7 @@ class KeyedRenderTests(unittest.TestCase):
         self.assertEqual(list(lan), ["name", "base-url", "models"])
         self.assertEqual(list(lan["models"][0]), ["name", "alias", "display-name", "force-mapping"])
         # No payload rule for a keyed alias; static settings unchanged.
-        document = __import__("claude_multi.served_plan", fromlist=["x"]).parse_restricted_yaml(result.yaml)
+        document = __import__("charmer.served_plan", fromlist=["x"]).parse_restricted_yaml(result.yaml)
         payload_models = {m["name"] for kind in ("override", "filter") for entry in document["payload"][kind]
                           for m in entry["models"]}
         self.assertNotIn(KEYED_KEY, payload_models)
@@ -973,7 +973,7 @@ class KeyedRenderTests(unittest.TestCase):
             lan = compat_sections(render_plan_config(plan, dummy_resolver()))["lanbox"]
             self.assertEqual(list(lan), ["name", "base-url", "models"])
         # Catalog-direct emission is unchanged (#12 partial: new keyed only).
-        direct = next(section for section in __import__("claude_multi.served_plan", fromlist=["x"])
+        direct = next(section for section in __import__("charmer.served_plan", fromlist=["x"])
                       .parse_restricted_yaml(test_render._render().yaml)["claude-api-key"])
         self.assertNotIn("thinking", direct["models"][0])
         self.assertIn("owned-by", direct["models"][0])
@@ -1001,7 +1001,7 @@ class KeyedRenderTests(unittest.TestCase):
                                       (unapproved, fixture_docs(audited=True), OTHER_SECRET)):
             merged = operator.merge_docs(the_docs, layer)
             self.assertIn(name, merged[operator.SECRET_NAMES_KEY])
-            from claude_multi import profile
+            from charmer import profile
 
             self.assertIn(name, profile.LineupCatalog.from_docs(merged).extra_secret_names)
 
@@ -1069,7 +1069,7 @@ def keyed_cells_golden(root: Path) -> str:
 
     import _tui_fixture as fx
     import _tui_render as tr
-    from claude_multi import cli, tui
+    from charmer import cli, tui
 
     assets = audited_root(Path(root))
     with tr.golden_runtime(root, asset_root=assets, secrets=[*fx._secret_names(assets), KEYED_SECRET]) as runtime:
@@ -1215,7 +1215,7 @@ class KeyedAvailabilityTests(KeyedServedCase):
 
     def test_keyed_credential_cells_golden(self) -> None:
         from _golden import assertGolden
-        from claude_multi import views
+        from charmer import views
         import _tui_render
 
         frame = _tui_render.build("keyed-provider-credentials")
@@ -1233,9 +1233,9 @@ class KeyedAvailabilityTests(KeyedServedCase):
         self.assertEqual(cell({"kind": "direct-openai", "credential": "keyless LAN"}, None), "keyless")
 
     def test_keyed_provider_key_action_opens_the_key_modal(self) -> None:
-        from claude_multi import cli, tui
-        import claude_multi.cli.screens.providers as providers_screen
-        from claude_multi.setup import texts
+        from charmer import cli, tui
+        import charmer.cli.screens.providers as providers_screen
+        from charmer.setup import texts
         from test_tui import FakeWindow
 
         self.declare(value=None)
@@ -1255,9 +1255,9 @@ class KeyedAvailabilityTests(KeyedServedCase):
 
     def test_direct_warning_and_detail_reserve_are_auth_aware(self) -> None:
         import argparse
-        import claude_multi.cli.launch_flow as launch_flow
-        import claude_multi.cli.screens.direct as direct_screen
-        from claude_multi.cli import gateway_facts
+        import charmer.cli.launch_flow as launch_flow
+        import charmer.cli.screens.direct as direct_screen
+        from charmer.cli import gateway_facts
 
         self.declare(value=None)
         unavailable = gateway_facts._ordinary_unavailable(self.runtime)
@@ -1271,7 +1271,7 @@ class KeyedAvailabilityTests(KeyedServedCase):
         with mock.patch.object(direct_screen.textwrap, "wrap",
                                side_effect=lambda text, width: wrapped.append(text) or real_wrap(text, width)):
             direct_screen._direct_detail_reserve(self.runtime, 80)
-        import claude_multi.cli.text as cli_text
+        import charmer.cli.text as cli_text
         display = self.runtime.lineup_catalog().providers[KEYED_ID].get("display", KEYED_ID)
         self.assertIn(cli_text.DIRECT_REASON_KEY.format(display=display), wrapped)
         self.assertIn(cli_text.DIRECT_REASON_KEY_INVALID.format(display=display), wrapped)
@@ -1294,8 +1294,8 @@ class KeyedAvailabilityTests(KeyedServedCase):
         self.assertEqual(performed[0].secret_problems, ())
 
     def test_keyed_readiness_selectors_and_doctor_agree(self) -> None:
-        from claude_multi import readiness
-        from claude_multi.cli import gateway_facts
+        from charmer import readiness
+        from charmer.cli import gateway_facts
 
         for value in (SECRET_MARKER, None):
             with self.subTest(present=value is not None):
@@ -1327,7 +1327,7 @@ class KeyedAvailabilityTests(KeyedServedCase):
         removed keeps its captured alias; provider facts, the render plan and
         the doctor snapshot agree, with a usable and with a missing key."""
 
-        from claude_multi.cli import gateway_facts
+        from charmer.cli import gateway_facts
 
         for value in (SECRET_MARKER, None):
             with self.subTest(present=value is not None):
@@ -1355,7 +1355,7 @@ class KeyedServedPlanTests(KeyedServedCase):
     """E1c: secret-free served-plan identity with keyed metadata."""
 
     def test_keyed_secret_absent_from_published_projection_plan_and_doctor(self) -> None:
-        import claude_multi.cli.doctor as doctor_mod
+        import charmer.cli.doctor as doctor_mod
 
         self.declare()
         preview = self.publish()
@@ -1385,8 +1385,8 @@ class KeyedServedPlanTests(KeyedServedCase):
         self.assertNoValues(*problems, *info, *attention)
 
     def test_keyed_levels_only_change_is_live_protected_remap(self) -> None:
-        import claude_multi.cli.doctor as doctor_mod
-        from claude_multi import served_plan
+        import charmer.cli.doctor as doctor_mod
+        from charmer import served_plan
 
         self.declare()
         self.publish()
@@ -1419,7 +1419,7 @@ class KeyedServedPlanTests(KeyedServedCase):
         self.assertIn(f"{live[:8]} lead: {KEYED_KEY} retargets", err)
 
     def test_keyed_auth_headers_context_change_plan_identity(self) -> None:
-        from claude_multi import served_plan
+        from charmer import served_plan
 
         def routes(files: dict[str, dict], values: dict | None = None) -> dict:
             plan, _ledger = keyed_plan(files)
@@ -1483,8 +1483,8 @@ class KeyedServedPlanTests(KeyedServedCase):
         self.assertNoValues(out)
 
     def test_keyed_capture_barrier_cas_and_root_checks_preserved(self) -> None:
-        import claude_multi.cli.commands.providers as providers_cmd
-        from claude_multi import continuity, served_plan
+        import charmer.cli.commands.providers as providers_cmd
+        from charmer import continuity, served_plan
 
         self.declare()
         barriers: list[Any] = []
@@ -1601,7 +1601,7 @@ class KeyedAuthorityTests(KeyedServedCase):
 
     def test_keyed_admission_preflight_fails_before_secret_or_network(self):
         """The audit wrapper keeps this name; request authority belongs to qualify."""
-        from claude_multi.cli.commands import models as commands
+        from charmer.cli.commands import models as commands
 
         self.declare({KEYED_ID: keyed_document()})
         approved = self.ledger_file.read_bytes()
@@ -1635,7 +1635,7 @@ class KeyedAuthorityTests(KeyedServedCase):
         self.assertEqual((self.calls, self.http_calls), ([], []))
 
     def test_keyed_optional_smoke_preserves_failure_reasons(self):
-        from claude_multi import qualify
+        from charmer import qualify
 
         self.prepare_keyed()
         for response, verdict, reason in (
@@ -1672,7 +1672,7 @@ class KeyedAuthorityTests(KeyedServedCase):
         self.during_smoke = None
         self.serve_current()
         # Alias remains but the current sentinel disappears: equally insufficient.
-        from claude_multi.cli.commands import models as commands
+        from charmer.cli.commands import models as commands
         sentinel, _, problem = commands.render_identity(self.runtime)
         self.assertFalse(problem)
         self.during_smoke = lambda: self.served.discard(sentinel)
@@ -1684,9 +1684,9 @@ class KeyedAuthorityTests(KeyedServedCase):
         self.assertTrue(evidence is None or KEYED_KEY not in evidence.lines)
 
     def test_keyed_admit_revoke_are_local_badges_despite_failed_evidence(self):
-        from claude_multi import qualify
-        from claude_multi.cli.commands import models as commands
-        from claude_multi.cli.commands import providers as providers_cmd
+        from charmer import qualify
+        from charmer.cli.commands import models as commands
+        from charmer.cli.commands import providers as providers_cmd
 
         self.prepare_keyed()
         with mock.patch.object(self.runtime, "qualify_post", return_value=qualify.HttpResult(200, b"", "oversize")):
@@ -1754,7 +1754,7 @@ class KeyedAuthorityTests(KeyedServedCase):
             self.assertNotIn("lanbox", layer_of({"lanbox": lan}, audited=audited).providers)
 
     def facts(self):
-        from claude_multi import profile
+        from charmer import profile
         snapshot = self.runtime.operator_snapshot()
         fields = operator.agent_fact_fields(KEYED_KEY, layer=snapshot.layer, ledger=snapshot.ledger,
             evidence=operator.load_evidence(self.runtime.gateway_environ(), snapshot.schemas), admitted_lines=(KEYED_KEY,),
@@ -1763,7 +1763,7 @@ class KeyedAuthorityTests(KeyedServedCase):
         return snapshot.layer.lines[KEYED_KEY].core_entry, profile.AgentFacts(**fields)
 
     def eligibility(self, entry, facts, **kw):
-        from claude_multi import profile
+        from charmer import profile
         defaults = dict(key=KEYED_KEY, slot="cm-reviewer", effort="high", facts=facts,
                         agent_efforts=catalog.KEYED_COMPAT_LEVELS)
         defaults.update(kw)
@@ -1795,7 +1795,7 @@ class KeyedAuthorityTests(KeyedServedCase):
                                             for w in verdict.warnings))
 
     def test_keyed_workflow_warns_without_forced_variant(self):
-        from claude_multi import profile
+        from charmer import profile
         self.prepare_keyed(agents=True)
         code, out, err = self.op(["models", "admit", KEYED_KEY], "y\n")
         self.assertEqual(code, 0, out + err)

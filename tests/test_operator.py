@@ -17,8 +17,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from claude_multi import catalog, compiler, operator, proxy, secret_store, state, strict_json
-from claude_multi import validate as schema_validate
+from charmer import catalog, compiler, operator, proxy, secret_store, state, strict_json
+from charmer import validate as schema_validate
 from _catalog import FIXTURE_ROOT, SHIPPED_ROOT
 
 OPERATOR_FIXTURES = Path(__file__).resolve().parent / "fixtures" / "operator"
@@ -291,7 +291,7 @@ class LoaderResolutionTests(unittest.TestCase):
         self.assertEqual(_layer({"acme": doc}).lines["custom-acme-small"].family, "Modèle local / v2")
 
     def test_operator_family_cannot_certify_its_own_recognition(self) -> None:
-        from claude_multi import profile
+        from charmer import profile
 
         docs = _docs()
         files = {"acme": _fixture_files()["acme"]}
@@ -1221,8 +1221,8 @@ import time
 from contextlib import redirect_stderr, redirect_stdout
 from unittest import mock
 
-from claude_multi import continuity, render, sessions
-from claude_multi import custom as custom_mod
+from charmer import continuity, render, sessions
+from charmer import custom as custom_mod
 
 ACME_SECRET = "acme-dummy-secret-value"
 BETA_SECRET = "beta-dummy-secret-value"
@@ -2113,7 +2113,7 @@ class DoctorRenderParityTests(OperatorHomeCase):
     """Doctor's expected render is the proxy's own (no false drift)."""
 
     def test_gateway_snapshot_sees_no_drift_with_an_operator_layer(self) -> None:
-        from claude_multi.cli import gateway_facts, runtime as runtime_mod
+        from charmer.cli import gateway_facts, runtime as runtime_mod
         files = _fixture_files()
         self.install(files)
         self.write_ledger(routes=self.approve(files, "acme", "beta"))
@@ -2254,7 +2254,7 @@ class ClosedTransportWordingTests(unittest.TestCase):
     """Transport wording follows shipped availability and explicit closed gates."""
 
     def test_a_closed_key_transport_offers_the_alternatives(self) -> None:
-        from claude_multi.setup import texts
+        from charmer.setup import texts
 
         # The shipped OpenAI key transport is offered; a closed descriptor (a
         # build that does not offer one) shares one generic explanation.
@@ -2269,7 +2269,7 @@ class ClosedTransportWordingTests(unittest.TestCase):
             self.assertNotRegex(text, r"SPEC|§|\b0\d\d\b")
 
     def test_the_shipped_keyed_route_is_offered_with_available_wording(self) -> None:
-        from claude_multi import views
+        from charmer import views
 
         shipped = catalog.load_catalog(SHIPPED_ROOT)
         audited = catalog.keyed_compat_audited(shipped.docs["gateway"])
@@ -2309,7 +2309,7 @@ import http.server
 import socketserver
 import threading
 
-from claude_multi import profile as profile_mod
+from charmer import profile as profile_mod
 
 ZETA_SECRET = "zeta-dummy-secret-value"
 IDLE_SECRET = "idle-dummy-secret-value"
@@ -2602,8 +2602,8 @@ class SmokeTransportTests(unittest.TestCase):
         return server, f"http://127.0.0.1:{server.server_address[1]}"
 
     def smoke(self, base: str, **kwargs):
-        from claude_multi.cli import runtime as runtime_mod
-        from claude_multi import service
+        from charmer.cli import runtime as runtime_mod
+        from charmer import service
 
         return runtime_mod.default_qualify_transport(
             base, "fixture-token", "custom-fixture-alias",
@@ -2630,7 +2630,7 @@ class SmokeTransportTests(unittest.TestCase):
         self.assertEqual(len(server.requests), 1)
 
     def test_non_loopback_endpoint_is_refused_before_any_request(self) -> None:
-        from claude_multi import errors
+        from charmer import errors
 
         with self.assertRaises(errors.ClaudeMultiError):
             self.smoke("https://gateway.example:443")
@@ -2918,7 +2918,7 @@ class ExternalizedRetirementTests(unittest.TestCase):
                         self.assertIsNone(entry["successor"])
 
     def test_render_is_quiet_until_the_sample_is_declared(self) -> None:
-        from claude_multi import continuity
+        from charmer import continuity
         bundle = catalog.load_catalog(SHIPPED_ROOT)
         seed = continuity.seed_only(bundle)["aliases"]
         external = {alias for alias, entry in seed.items() if entry["provider"] == "llm-local"}
@@ -3298,7 +3298,7 @@ class T1OverlayTests(unittest.TestCase):
                 self.assertNotIn("max-completion-tokens", document[render.OVERLAY_KEY][channel][0])
 
     def test_retired_and_capture_output_provenance(self) -> None:
-        from claude_multi import continuity
+        from charmer import continuity
 
         docs = _t1_overlay_docs()
         retired = docs["retired"]["retired"]["opfix-ret"]

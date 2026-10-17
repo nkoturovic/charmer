@@ -14,7 +14,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from claude_multi import compiler, proxy, secret_store, state
+from charmer import compiler, proxy, secret_store, state
 
 
 class _Home(unittest.TestCase):

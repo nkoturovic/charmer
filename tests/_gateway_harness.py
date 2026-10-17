@@ -39,7 +39,7 @@ from _layout import SERVICE_SPEC
 if __name__ == "__main__":
     sys.path[:0] = [str(REPO_ROOT), str(REPO_ROOT / "src")]
 
-from claude_multi import catalog, probe, render, state
+from charmer import catalog, probe, render, state
 from _gateway import NIX_STORE, _gateway_binary, diagnostic_problem, sha256_file
 
 REQUIRE_ENV = "CLAUDE_MULTI_TEST_REQUIRE_GATEWAY"
@@ -524,10 +524,10 @@ KEYED_INVENTORIES = {
                "C2-manual", "C2-auto"},
 }
 KEYED_RELEVANT_SOURCES = (
-    "src/claude_multi/catalog.py", "src/claude_multi/operator.py", "src/claude_multi/render.py",
-    "src/claude_multi/served_plan.py", "src/claude_multi/qualify.py", "src/claude_multi/discovery.py",
-    "src/claude_multi/profile.py", "src/claude_multi/compiler.py", "src/claude_multi/scope.py",
-    "src/claude_multi/cli/commands/models.py", "src/claude_multi/cli/commands/providers.py",
+    "src/charmer/catalog.py", "src/charmer/operator.py", "src/charmer/render.py",
+    "src/charmer/served_plan.py", "src/charmer/qualify.py", "src/charmer/discovery.py",
+    "src/charmer/profile.py", "src/charmer/compiler.py", "src/charmer/scope.py",
+    "src/charmer/cli/commands/models.py", "src/charmer/cli/commands/providers.py",
     "schemas/gateway.schema.json", "schemas/providers.schema.json", "schemas/operator-provider.schema.json",
     "schemas/operator-ledger.schema.json", "schemas/models.schema.json",
 )

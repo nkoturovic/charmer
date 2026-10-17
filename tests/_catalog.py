@@ -108,7 +108,7 @@ def served_selectors(
     retired line rides ``meta``, which it does not credential.
     """
 
-    from claude_multi import catalog
+    from charmer import catalog
 
     bundle = catalog.load_catalog(root)
     selectors = {
@@ -122,7 +122,7 @@ def served_selectors(
         for _level, selector, _contract in catalog.line_selectors(line)
     )
     if include_continuity:
-        from claude_multi import continuity
+        from charmer import continuity
 
         selectors.update(continuity.seed_only(bundle)["aliases"])
     return frozenset(selectors)

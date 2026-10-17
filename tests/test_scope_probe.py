@@ -28,8 +28,8 @@ import threading
 import unittest
 from pathlib import Path
 
-from claude_multi import pin, probe, state, strict_json, upgrade
-from claude_multi.probe import ProbeError
+from charmer import pin, probe, state, strict_json, upgrade
+from charmer.probe import ProbeError
 
 from _tier import fast_tier_boundary
 from _layout import RESOURCES_ROOT  # the one root source

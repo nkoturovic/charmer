@@ -35,10 +35,10 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Iterator
 from unittest import mock
 
-from claude_multi import catalog, cli, lineup, management as management_mod, scope, sessions, state, strict_json
+from charmer import catalog, cli, lineup, management as management_mod, scope, sessions, state, strict_json
 from _catalog import FIXTURE_GATEWAY_TOKEN, FIXTURE_ROOT, served_selectors
-import claude_multi.launch
-import claude_multi.service
+import charmer.launch
+import charmer.service
 
 __all__ = [
     "FIFTH_ID",
@@ -165,8 +165,8 @@ def fixture_runtime(
                 raise ConnectionRefusedError("fixture gateway down")
             return 200, set(served_set)
 
-        return claude_multi.launch.served_models(gateway, token, models_get=models_get,
-                                       owner_check=lambda _base: claude_multi.service.OwnerVerdict("ours", "fixture"))
+        return charmer.launch.served_models(gateway, token, models_get=models_get,
+                                       owner_check=lambda _base: charmer.service.OwnerVerdict("ours", "fixture"))
 
     def health_get(_base_url: str, _path: str) -> int:
         if isinstance(health, BaseException):
@@ -190,7 +190,7 @@ def fixture_runtime(
         return 0
 
     runtime = ScreenRuntime(
-        listener_owner=lambda _base: claude_multi.service.OwnerVerdict("ours", "fixture gateway"),
+        listener_owner=lambda _base: charmer.service.OwnerVerdict("ours", "fixture gateway"),
         background_liveness=lambda: sessions.BackgroundLiveness(True, cli._live_background_prefixes(root / "daemon")),
         managed_root=root / "managed",
         asset_root=asset_root,
@@ -199,7 +199,7 @@ def fixture_runtime(
         launch_callback=launch_callback or record_launch,
         doctor_callback=lambda _runtime: [],
         doctor_binary_callback=lambda _contract: ([], ["Managed Claude verified (fixture)."]),
-        doctor_daemon_callback=lambda: claude_multi.launch.DaemonStatus(
+        doctor_daemon_callback=lambda: charmer.launch.DaemonStatus(
             state="absent", summary="fixture daemon absent"
         ),
         served_models_callback=served_models,
@@ -227,8 +227,8 @@ def hermetic(runtime: ScreenRuntime) -> Iterator[ScreenRuntime]:
     "not a repository".
     """
 
-    with mock.patch('claude_multi.cli.session_facts._live_background_prefixes', lambda root=None: runtime.live_prefixes
-    ), mock.patch('claude_multi.compiler.git_work_tree', lambda _cwd: False):
+    with mock.patch('charmer.cli.session_facts._live_background_prefixes', lambda root=None: runtime.live_prefixes
+    ), mock.patch('charmer.compiler.git_work_tree', lambda _cwd: False):
         # The fixture directory is never a Git repository, wherever the
         # temporary directory lives.
         yield runtime
@@ -460,8 +460,8 @@ def gateway_actions_seam(view: GatewayViewStub, *, tty_in: str = "\n") -> Iterat
 
     import io
 
-    from claude_multi import gateway_lifecycle, tui
-    import claude_multi.cli.screens.gateway_actions as gateway_actions
+    from charmer import gateway_lifecycle, tui
+    import charmer.cli.screens.gateway_actions as gateway_actions
 
     acted: list = []
 

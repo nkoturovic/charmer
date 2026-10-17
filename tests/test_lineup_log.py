@@ -18,8 +18,8 @@ import unittest
 from unittest import mock
 from pathlib import Path
 
-from claude_multi import lineup_files, lineup_log, state, strict_json
-from claude_multi.lineup_log import LineupLogError
+from charmer import lineup_files, lineup_log, state, strict_json
+from charmer.lineup_log import LineupLogError
 from _layout import REPO_ROOT
 
 MID = "11111111-1111-4111-8111-111111111111"
@@ -190,7 +190,7 @@ class ConcurrencyTests(_Case):
 
     def test_separate_processes_append_intact_lines(self) -> None:
         script = (
-            "import sys; from claude_multi import lineup_log\n"
+            "import sys; from charmer import lineup_log\n"
             "for n in range(10):\n"
             "    lineup_log.append(sys.argv[1], sys.argv[2], {'p': int(sys.argv[3]), 'n': n})\n"
         )
@@ -244,8 +244,8 @@ class ImportLayeringTests(unittest.TestCase):
         # hooks.py must stay free of cli/compiler/catalog/profile/scope;
         # the log module is its write path.
         code = (
-            "import sys, claude_multi.lineup_log\n"
-            "print(sorted(m for m in sys.modules if m.startswith('claude_multi.')))\n"
+            "import sys, charmer.lineup_log\n"
+            "print(sorted(m for m in sys.modules if m.startswith('charmer.')))\n"
         )
         env = {**os.environ, "PYTHONPATH": str(REPO_ROOT / "src")}
         out = subprocess.run(
@@ -255,15 +255,15 @@ class ImportLayeringTests(unittest.TestCase):
             out.strip(),
             str(
                 [
-                    "claude_multi.errors",
-                    "claude_multi.lineup_files",
-                    "claude_multi.lineup_log",
+                    "charmer.errors",
+                    "charmer.lineup_files",
+                    "charmer.lineup_log",
                     # Reviewed leaves under state: the empty platform
                     # package and the POSIX primitives, never a backend.
-                    "claude_multi.platform",
-                    "claude_multi.platform.posix_fs",
-                    "claude_multi.state",
-                    "claude_multi.strict_json",
+                    "charmer.platform",
+                    "charmer.platform.posix_fs",
+                    "charmer.state",
+                    "charmer.strict_json",
                 ]
             ),
         )
@@ -311,7 +311,7 @@ class ReadObservationTests(unittest.TestCase):
                 path.unlink()
 
     def test_lineup_reader_refuses_symlink_fifo_and_oversize(self):
-        from claude_multi.lineup_files import LINEUP_LOG_MAX_BYTES
+        from charmer.lineup_files import LINEUP_LOG_MAX_BYTES
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             mid = "11111111-1111-4111-8111-111111111111"

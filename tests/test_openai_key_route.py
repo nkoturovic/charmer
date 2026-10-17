@@ -28,12 +28,12 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from claude_multi import catalog, operator, render, secret_store, served_plan, strict_json
-from claude_multi import validate as schema_validate
+from charmer import catalog, operator, render, secret_store, served_plan, strict_json
+from charmer import validate as schema_validate
 import _gateway_harness as harness
-from claude_multi.setup import model, providers as setup_providers, texts
-import claude_multi.cli.consent as consent
-import claude_multi.proxy
+from charmer.setup import model, providers as setup_providers, texts
+import charmer.cli.consent as consent
+import charmer.proxy
 import test_setup_cli
 from _catalog import FIXTURE_GATEWAY_TOKEN, FIXTURE_ROOT, SHIPPED_ROOT, uses_shipped_catalog
 
@@ -559,7 +559,7 @@ class KeyServiceTests(test_setup_cli.SetupCase):
         return secret_store.default_store(self.runtime.gateway_environ())
 
     def config(self) -> str:
-        return (claude_multi.proxy.config_dir(self.runtime.home) / "config.yaml").read_text()
+        return (charmer.proxy.config_dir(self.runtime.home) / "config.yaml").read_text()
 
     def test_the_layer_switches_to_the_key_and_back(self) -> None:
         names = {"display": "OpenAI", "account": "ChatGPT account"}
@@ -652,8 +652,8 @@ class KeyServiceTests(test_setup_cli.SetupCase):
     def details(self, key: str) -> str:
         """The Models screen's full details of ``key`` (V), read afresh."""
 
-        from claude_multi import tui
-        import claude_multi.cli.screens.models as models_screen
+        from charmer import tui
+        import charmer.cli.screens.models as models_screen
 
         return "\n".join(models_screen._ModelsScreen(self.runtime, palette=tui.MONO_PALETTE)._inspection(key))
 
@@ -664,7 +664,7 @@ class KeyServiceTests(test_setup_cli.SetupCase):
             setup_providers.apply_transport(self.runtime, plan, model.Confirmation.given(plan), value)
 
     def test_models_shows_the_evidence_of_the_route_in_use_both_ways(self) -> None:
-        from claude_multi import profile
+        from charmer import profile
 
         entry = self.runtime.catalog.docs["models-v2"]["models"][self.key]
         route = entry["key_route"]
@@ -701,7 +701,7 @@ class KeyServiceTests(test_setup_cli.SetupCase):
 
     @uses_shipped_catalog
     def test_the_shipped_key_route_lines_show_their_floor_not_the_account_measurement(self) -> None:
-        from claude_multi import profile
+        from charmer import profile
 
         self.runtime.asset_root = SHIPPED_ROOT
         self.runtime.reload_catalog()

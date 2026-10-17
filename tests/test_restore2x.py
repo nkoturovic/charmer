@@ -25,7 +25,7 @@ from pathlib import Path
 from unittest import mock
 
 import _tripwire
-from claude_multi import cli, launch, migrate, proxy, service, sessions, state, strict_json, validate
+from charmer import cli, launch, migrate, proxy, service, sessions, state, strict_json, validate
 from _v4 import V4Case
 from _catalog import FIXTURE_ROOT
 from _layout import REPO_ROOT
@@ -53,9 +53,9 @@ from test_migrate import (
     v3_managed,
     v3_ordinary,
 )
-import claude_multi.cli.session_actions
-import claude_multi.sessions
-import claude_multi.hooks
+import charmer.cli.session_actions
+import charmer.sessions
+import charmer.hooks
 
 _tripwire.install()
 
@@ -83,7 +83,7 @@ class RestoreTestCase(unittest.TestCase):
         self.root = sessions.state_root(self.environ)
         self.store = sessions.SessionStore(self.root, SCHEMA)
         self.hook = "/nix/store/fixture/bin/claude-multi"
-        from claude_multi import scope
+        from charmer import scope
 
         self.shim = scope.ensure_hook_shim(self.root, self.hook)
         patcher = mock.patch.object(sessions, "live_background_prefixes", return_value=frozenset())
@@ -116,7 +116,7 @@ class RestoreTestCase(unittest.TestCase):
                                           "XDG_CONFIG_HOME": str(self.root.parent / "config"),
                                           "XDG_STATE_HOME": str(self.root.parent / "state"),
                                           "XDG_DATA_HOME": str(self.root.parent / "data")}), \
-                mock.patch.object(claude_multi.sessions, "state_root", return_value=self.root):
+                mock.patch.object(charmer.sessions, "state_root", return_value=self.root):
             errors = io.StringIO()
             with contextlib.redirect_stderr(errors):
                 code = cli.main(
@@ -716,13 +716,13 @@ class RestoreRaceTests(RestoreTestCase):
         def slow_live(view, **kwargs):
             # The preview runs lock-free; the commit phase's
             # revalidation (EX migration lock held) is where restore waits.
-            if claude_multi.hooks.migration_lock_held(self.store.root):
+            if charmer.hooks.migration_lock_held(self.store.root):
                 entered.set()
                 release.wait(JOIN)
             return real(view, **kwargs)
 
         result: dict = {}
-        with mock.patch('claude_multi.cli.session_facts._record_view_is_live', side_effect=slow_live):
+        with mock.patch('charmer.cli.session_facts._record_view_is_live', side_effect=slow_live):
             worker = threading.Thread(target=lambda: result.update(code=self.restore()))
             worker.start()
             self.assertTrue(entered.wait(JOIN))
@@ -851,7 +851,7 @@ class MarkEndedTests(RestoreTestCase):
         before = self.store.load_raw(M1)[1]
         # The real scan of a missing /proc, through the shared adapter.
         self.scan.side_effect = _REAL_PROC_SESSION_SCAN
-        results = claude_multi.cli.session_actions._mark_ended_ids(self.runtime(), [M1], proc_root=self.tmp / "no-proc")
+        results = charmer.cli.session_actions._mark_ended_ids(self.runtime(), [M1], proc_root=self.tmp / "no-proc")
         self.assertEqual(len(results), 1)
         self.assertTrue(results[0][1].startswith(
             f"refused: cannot tell whether session {M1} is running (the process table is "
@@ -938,7 +938,7 @@ class MarkEndedTests(RestoreTestCase):
     def _assert_mark_ended_refused(self, refusal: str, all_dead: str) -> None:
         before = self.store.load_raw(M1)[1]
         self.assertTrue(sessions.may_hold_env_token(self.store.load(M1)))
-        results = claude_multi.cli.session_actions._mark_ended_ids(
+        results = charmer.cli.session_actions._mark_ended_ids(
             self.runtime(), [M1], proc_root=self.tmp / "unused-proc")
         self.assertEqual(len(results), 1)
         self.assertTrue(results[0][1].startswith(f"refused: {refusal}; nothing written"), results)
@@ -1107,7 +1107,7 @@ class RealPerformRaceTests(V4Case):
                                           "XDG_CONFIG_HOME": str(self.store.root.parent / "config"),
                                           "XDG_STATE_HOME": str(self.store.root.parent / "state"),
                                           "XDG_DATA_HOME": str(self.store.root.parent / "data")}), \
-                mock.patch.object(claude_multi.sessions, "state_root", return_value=self.store.root):
+                mock.patch.object(charmer.sessions, "state_root", return_value=self.store.root):
             errors = io.StringIO()
             with contextlib.redirect_stderr(errors):
                 code = cli.main(["restore-2x", *argv], output_stream=output, interactive=False)
@@ -1153,7 +1153,7 @@ class RealPerformRaceTests(V4Case):
         def slow_live(view, **kwargs):
             # The preview runs lock-free; the commit phase's
             # revalidation (EX migration lock held) is where restore waits.
-            if claude_multi.hooks.migration_lock_held(self.store.root):
+            if charmer.hooks.migration_lock_held(self.store.root):
                 entered.set()
                 release.wait(JOIN)
             return real(view, **kwargs)
@@ -1161,7 +1161,7 @@ class RealPerformRaceTests(V4Case):
         result: dict = {}
         before = self.record_bytes(self.mid)
         execs = len(self.execs)
-        with mock.patch('claude_multi.cli.session_facts._record_view_is_live', side_effect=slow_live):
+        with mock.patch('charmer.cli.session_facts._record_view_is_live', side_effect=slow_live):
             worker = threading.Thread(target=lambda: result.update(code=self.restore()))
             worker.start()
             try:

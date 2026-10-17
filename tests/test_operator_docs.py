@@ -25,12 +25,12 @@ from unittest import mock
 
 import _docs_vocab as vocab
 from _layout import DOCS_DIR, REPO_ROOT, RESOURCES_ROOT, doc_path, load_tool
-from claude_multi import cli, lineup, tui
+from charmer import cli, lineup, tui
 import argparse
 
 DOCS = vocab.PKG_DOCS  # every public page, by label
 docs_gen = load_tool("docs_gen")
-SRC = REPO_ROOT / "src" / "claude_multi"
+SRC = REPO_ROOT / "src" / "charmer"
 
 # The proposed tree: five root pages and these 32 pages under docs/.
 DOCS_TREE = (
@@ -276,7 +276,7 @@ class GateRuleTests(unittest.TestCase):
         text = "see `docs/design/README.md` and [x](../maintainer/run.md)\n"
         self.assertEqual([found for _line, found in vocab.private_references(text)],
                          ["docs/design/", "../maintainer/"])
-        self.assertEqual(vocab.private_references("src/claude_multi/maintainer_tools.py, docs/designer.md\n"), [])
+        self.assertEqual(vocab.private_references("src/charmer/maintainer_tools.py, docs/designer.md\n"), [])
 
     def test_an_installed_tree_links_only_inside_itself(self) -> None:
         # An installed document tree has no root pages and no repository
@@ -642,23 +642,23 @@ class CheatsheetStructureTests(unittest.TestCase):
 # index of the problems list in its return tuple)``.
 DOCTOR_BLOCK_FUNCTIONS = (
     # The report snapshot wraps these bodies.
-    ("claude_multi.cli.doctor", "_collect_doctor_report_lines", 0),
-    ("claude_multi.cli.doctor", "_doctor_profile_report", 0),
-    ("claude_multi.cli.doctor", "_doctor_hook_targets", 0),
-    ("claude_multi.cli.doctor", "_doctor_proxy_report", 0),
-    ("claude_multi.cli.doctor", "_doctor_managed_report", 0),
-    ("claude_multi.cli.doctor", "_doctor_served_checks", 0),
-    ("claude_multi.cli.doctor", "_check_scope_integrity", 0),
-    ("claude_multi.cli.doctor", "_doctor_scope_report", 1),
-    ("claude_multi.cli.session_facts", "_read_session_records", 1),
-    ("claude_multi.cli.doctor", "_doctor_collision_report", 1),
-    ("claude_multi.launch", "doctor_binary_report", 0),
+    ("charmer.cli.doctor", "_collect_doctor_report_lines", 0),
+    ("charmer.cli.doctor", "_doctor_profile_report", 0),
+    ("charmer.cli.doctor", "_doctor_hook_targets", 0),
+    ("charmer.cli.doctor", "_doctor_proxy_report", 0),
+    ("charmer.cli.doctor", "_doctor_managed_report", 0),
+    ("charmer.cli.doctor", "_doctor_served_checks", 0),
+    ("charmer.cli.doctor", "_check_scope_integrity", 0),
+    ("charmer.cli.doctor", "_doctor_scope_report", 1),
+    ("charmer.cli.session_facts", "_read_session_records", 1),
+    ("charmer.cli.doctor", "_doctor_collision_report", 1),
+    ("charmer.launch", "doctor_binary_report", 0),
 )
 # Texts the problems lists receive through a helper call (every return).
 DOCTOR_BLOCK_HELPERS = (
-    ("claude_multi.cli.session_facts", "_collision_error"),
-    ("claude_multi.sessions", "relink_message"),
-    ("claude_multi.sessions", "pending_fork_message"),
+    ("charmer.cli.session_facts", "_collision_error"),
+    ("charmer.sessions", "relink_message"),
+    ("charmer.sessions", "pending_fork_message"),
 )
 # signature (constants joined, "{}" per formatted value) substring -> reason.
 DOCTOR_BLOCK_EXCLUSIONS = {
@@ -713,8 +713,8 @@ def _first_signature(node: ast.AST) -> str | None:
 
 
 def _function(module: str, name: str) -> ast.FunctionDef:
-    relative = module.removeprefix("claude_multi.").replace(".", "/")
-    path = SRC / (relative + ("/__init__.py" if module == "claude_multi.cli" else ".py"))
+    relative = module.removeprefix("charmer.").replace(".", "/")
+    path = SRC / (relative + ("/__init__.py" if module == "charmer.cli" else ".py"))
     tree = ast.parse(path.read_text(encoding="utf-8"))
     found = [node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == name]
     if len(found) != 1:
@@ -905,7 +905,7 @@ class HelpLinkTests(unittest.TestCase):
 
     def test_pointer_falls_back_to_the_name_by_role(self) -> None:
         with tempfile.TemporaryDirectory(prefix="cm-docs-") as root:
-            with mock.patch('claude_multi.layout.installation', return_value=Path(root)):
+            with mock.patch('charmer.layout.installation', return_value=Path(root)):
                 epilog = cli.build_parser().epilog or ""
         self.assertIn("Symptom → command: CHEATSHEET.md in the claude-multi docs", epilog)
         self.assertNotIn(root, epilog)
@@ -957,7 +957,7 @@ class PackagingTests(unittest.TestCase):
 
     def test_the_help_pointers_name_the_manuals_at_the_top(self) -> None:
         from _layout import pyproject
-        from claude_multi import layout
+        from charmer import layout
 
         documents = pyproject()["tool"]["setuptools"]["data-files"]["share/claude-multi"]
         self.assertEqual(layout.DOCUMENTS, ("USAGE.md", "CHEATSHEET.md", "STANDALONE.md"))
@@ -1138,7 +1138,7 @@ class PageAnchorTests(unittest.TestCase):
                                'claude-multi = app pkg "claude-multi"',
                                'claude-multi-proxy = app pkg "claude-multi-proxy"'):
                 self.assertIn(definition, flake)
-        from claude_multi import __version__
+        from charmer import __version__
 
         self.assertIn(f"github:nkoturovic/claude-multi/v{__version__}", text)
 
@@ -1159,7 +1159,7 @@ class PageAnchorTests(unittest.TestCase):
         self.assertIn('"$out/share/cli-proxy-api/sbom.cdx.json"', _text("nix/gateway.nix"))
 
     def test_update_card_is_release_age_not_a_network_check(self) -> None:
-        from claude_multi import release_update
+        from charmer import release_update
 
         text = _flat(_text("update.md"))
         for anchor in ("not a background check for a newer version",
@@ -1169,14 +1169,14 @@ class PageAnchorTests(unittest.TestCase):
             self.assertIn(anchor, text)
 
     def test_nix_uninstall_quotes_the_kept_program_instruction(self) -> None:
-        from claude_multi.setup import texts
+        from charmer.setup import texts
 
         text = _flat(_text("uninstall.md"))
         self.assertIn(texts.UNINSTALL_NIX, text)
         self.assertIn("Nix service link", text)
 
     def test_changelog_states_current_format_and_accepted_cli_aliases(self) -> None:
-        from claude_multi import sessions
+        from charmer import sessions
 
         text = _flat(_text("CHANGELOG.md"))
         self.assertIn(f"State format is {sessions.SUPPORTED_STATE_VERSION}", text)
@@ -1191,7 +1191,7 @@ class PageAnchorTests(unittest.TestCase):
         self.assertIn("only in the Nix channel", text)
 
     def test_publication_status_and_private_reporting(self) -> None:
-        from claude_multi import __version__
+        from charmer import __version__
 
         readme = _flat(_text("README.md"))
         self.assertIn(f"**Latest release:** {__version__}", readme)
@@ -1272,7 +1272,7 @@ class PageAnchorTests(unittest.TestCase):
                 self.assertNotIn("not covered by the release signature", flat)
 
     def test_doctor_discloses_housekeeping_and_the_read_only_mode(self) -> None:
-        from claude_multi.cli.parser import build_parser
+        from charmer.cli.parser import build_parser
 
         parser = build_parser()
         commands = next(a for a in parser._actions if isinstance(a, argparse._SubParsersAction))
@@ -1286,8 +1286,8 @@ class PageAnchorTests(unittest.TestCase):
                 self.assertNotIn("never changes anything", text)
 
     def test_the_wsl_guide_shares_doctor_wording(self) -> None:
-        from claude_multi import scope
-        from claude_multi.cli import gateway_facts
+        from charmer import scope
+        from charmer.cli import gateway_facts
 
         text = _text("install/windows-wsl2.md")
         for name in ("install/windows-wsl2.md", "troubleshooting.md"):
@@ -1344,7 +1344,7 @@ class PageAnchorTests(unittest.TestCase):
                        "LAN reachability check is separate"):
             self.assertIn(anchor, text)
         self.assertIn("urllib.request.ProxyHandler(urllib.request.getproxies_environment())",
-                      _text("src/claude_multi/release_update.py"))
+                      _text("src/charmer/release_update.py"))
 
     def test_contributing_says_what_is_safe_to_attach(self) -> None:
         flat = _flat(_text("CONTRIBUTING.md"))
@@ -1371,7 +1371,7 @@ class PageAnchorTests(unittest.TestCase):
         import base64
         import hashlib
 
-        from claude_multi import trust
+        from charmer import trust
 
         packaged = (RESOURCES_ROOT / "release-trust" / "allowed_signers").read_text(encoding="utf-8")
         (signer,) = [signer for signer in trust.parse_allowed_signers(packaged)
@@ -1403,8 +1403,8 @@ class OpenAICompatibleDocsTests(unittest.TestCase):
     def test_the_example_declaration_is_agent_eligible_after_qualification(self) -> None:
         import shlex
 
-        from claude_multi import operator, profile
-        from claude_multi.cli.commands import models
+        from charmer import operator, profile
+        from charmer.cli.commands import models
 
         text = _text("providers/openai-compatible.md")
         commands = re.findall(r"^claude-multi .+$", text, re.MULTILINE)
@@ -1443,7 +1443,7 @@ class OpenAICompatibleDocsTests(unittest.TestCase):
         self.assertIn("never inflate it", _flat(text))
 
     def test_the_page_matches_the_audit_state(self) -> None:
-        from claude_multi import catalog
+        from charmer import catalog
 
         gateway = json.loads((RESOURCES_ROOT / "catalog" / "gateway.json").read_text())
         open_ = gateway["audits"][catalog.KEYED_COMPAT_AUDIT]
@@ -1472,7 +1472,7 @@ class ProviderRouteDocsTests(unittest.TestCase):
         return json.loads((RESOURCES_ROOT / "catalog" / "providers.json").read_text())["providers"]
 
     def test_the_provider_table_lists_every_keyed_provider(self) -> None:
-        from claude_multi import operator
+        from charmer import operator
 
         table = _section(_text("providers/api-keys.md"), "Providers in this release")
         for pid, provider in self._catalog_providers().items():
@@ -1493,7 +1493,7 @@ class ProviderRouteDocsTests(unittest.TestCase):
                 self.assertIn(f"`{alternative.base_url}`", row)
 
     def test_every_preset_is_documented_where_its_route_is(self) -> None:
-        from claude_multi import operator
+        from charmer import operator
 
         found = operator.presets(RESOURCES_ROOT)
         self.assertTrue(found)
@@ -1512,8 +1512,8 @@ class ProviderRouteDocsTests(unittest.TestCase):
                     self.assertIn(f"`{info.base_url}`", row)
 
     def test_the_presets_of_a_closed_route_read_as_unavailable(self) -> None:
-        from claude_multi import catalog
-        from claude_multi.setup import texts
+        from charmer import catalog
+        from charmer.setup import texts
 
         gateway = json.loads((RESOURCES_ROOT / "catalog" / "gateway.json").read_text())
         presets = _flat(_section(_text("providers/openai-compatible.md"), "Presets"))
@@ -1526,7 +1526,7 @@ class ProviderRouteDocsTests(unittest.TestCase):
             self.assertIn("listed, not available in this release", quickstart)
 
     def test_the_openai_key_section_states_the_route_facts(self) -> None:
-        from claude_multi import operator
+        from charmer import operator
 
         alternative = operator.TRANSPORT_ALTERNATIVES[("openai", operator.TRANSPORT_API_KEY)]
         section = _flat(_section(_text("providers/api-keys.md"), "OpenAI"))
@@ -1619,7 +1619,7 @@ class EarlierRenderCompatibilityTests(unittest.TestCase):
     FIXTURE = Path(__file__).resolve().parent / "fixtures" / "render" / "earlier-release-config.yaml"
 
     def test_the_served_change_plan_reads_an_earlier_render(self):
-        from claude_multi import served_plan
+        from charmer import served_plan
 
         text = self.FIXTURE.read_text()
         document = served_plan.parse_restricted_yaml(text)
@@ -1633,7 +1633,7 @@ class EarlierRenderCompatibilityTests(unittest.TestCase):
             self.assertNotIn(value, repr(routes))
 
     def test_the_published_identity_of_an_earlier_render(self):
-        from claude_multi import proxy, state
+        from charmer import proxy, state
 
         with tempfile.TemporaryDirectory(prefix="cm-earlier-render-") as tmp:
             home = Path(tmp)

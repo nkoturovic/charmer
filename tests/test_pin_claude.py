@@ -17,7 +17,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from claude_multi import catalog, pin, release_manifest, strict_json, upgrade, validate
+from charmer import catalog, pin, release_manifest, strict_json, upgrade, validate
 from _catalog import FIXTURE_ROOT
 from _layout import REPO_ROOT, RESOURCES_RELATIVE, TOOLS_DIR, fake_checkout
 

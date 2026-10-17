@@ -16,9 +16,9 @@ from pathlib import Path
 from unittest import mock
 
 import test_cli  # module import: no test classes re-exported
-from claude_multi import catalog, profile, readiness, routing, strict_json, validate, views
-from claude_multi.cli import runtime as runtime_mod
-from claude_multi.setup import defaults
+from charmer import catalog, profile, readiness, routing, strict_json, validate, views
+from charmer.cli import runtime as runtime_mod
+from charmer.setup import defaults
 
 from _catalog import FIXTURE_ROOT, SHIPPED_ROOT, uses_shipped_catalog
 
@@ -105,13 +105,13 @@ class AggregatorValidationTests(unittest.TestCase):
                       "declares a family", self._retired_errors(other, "vendor"))
 
     def test_aggregator_providers_are_one_object(self) -> None:
-        from claude_multi import operator
+        from charmer import operator
 
         self.assertIs(operator.AGGREGATOR_PROVIDERS, catalog.AGGREGATOR_PROVIDERS)
         self.assertEqual(catalog.AGGREGATOR_PROVIDERS, frozenset({"openrouter"}))
 
     def test_declared_families_are_catalog_families(self) -> None:
-        from claude_multi import operator
+        from charmer import operator
 
         docs = _raw()["docs"]
         families = operator.t1_families(docs)
@@ -151,7 +151,7 @@ class LegacyCustomEntryTests(unittest.TestCase):
         docs = copy.deepcopy(self.bundle.docs)
         docs["models"]["models"][self.key]["family"] = "custom"
         self.assertEqual(routing.current_route(selector, docs, {})[3], "legacy-custom")
-        from claude_multi import settings
+        from charmer import settings
 
         eff = settings.effective({}, provider_ids=self.bundle.providers, line_keys=self.bundle.lines)
         rows = views.line_rows(self.lcat, eff, custom_ids=frozenset())
@@ -281,7 +281,7 @@ class CredentialTableTests(test_cli.CLITestCase):
         with mock.patch.object(runtime_mod.Runtime, "readiness_observations", return_value=observations), \
                 mock.patch.object(runtime_mod.Runtime, "readiness_providers", return_value=providers), \
                 mock.patch.object(runtime_mod.Runtime, "lineup_secret_problems", secret_problems), \
-                mock.patch("claude_multi.setup.status.connected", lambda _runtime: connected):
+                mock.patch("charmer.setup.status.connected", lambda _runtime: connected):
             return defaults.resolve_default(runtime)
 
     def test_the_six_rows(self) -> None:

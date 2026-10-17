@@ -17,7 +17,7 @@ import time
 import unittest
 from pathlib import Path
 
-from claude_multi import management, probe, proxy, service, state
+from charmer import management, probe, proxy, service, state
 from _catalog import FIXTURE_ROOT
 from _layout import REPO_ROOT
 from _layout import SERVICE_SPEC
@@ -89,7 +89,7 @@ class GatewayHomeViewTests(unittest.TestCase):
         self.workdir = self.home/self.spec['working_directory']
         (self.home/'.ssh').mkdir()
         (self.home/'.ssh/probe-canary').write_text('fixture')
-        from claude_multi.platform import systemd_unit
+        from charmer.platform import systemd_unit
         rw, ro = systemd_unit.bind_sets(self.spec, self.spec['exec_links']['bundle'])
         self.view = probe.HomeView(self.home, tuple(self.home/p for p in rw), tuple(self.home/p for p in ro))
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):

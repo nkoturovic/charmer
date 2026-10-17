@@ -29,8 +29,8 @@ from dataclasses import asdict, replace
 from pathlib import Path
 from unittest import mock
 
-from claude_multi import dev, pin, probe, state, strict_json
-from claude_multi.probe import ProbeError
+from charmer import dev, pin, probe, state, strict_json
+from charmer.probe import ProbeError
 
 
 _FAKE_CLAUDE_BODY = """import http.client
@@ -3024,7 +3024,7 @@ class BwrapOwnershipTests(unittest.TestCase):
             ("os.geteuid", 1000),
             ("_overflow_uid", 65534),
         ):
-            patcher = mock.patch(f"claude_multi.probe.{target}", return_value=value)
+            patcher = mock.patch(f"charmer.probe.{target}", return_value=value)
             patcher.start()
             self.addCleanup(patcher.stop)
 
@@ -3361,7 +3361,7 @@ if __name__ == "__main__":
 
 class ForcePolicyMatrix(unittest.TestCase):
     def test_force_env_absent_empty_zero_false_enabled_matrix(self):
-        from claude_multi import compiler
+        from charmer import compiler
         name = 'CLAUDE_CODE_SUBAGENT_MODEL_FORCE'
         # This is the managed-policy matrix, not evidence that the native
         # client interprets "0" or "false" as disabled. Every spelling is unset.

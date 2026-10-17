@@ -14,8 +14,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from unittest import mock
 
-from claude_multi import catalog, compiler, endpoint, launch, pin, scope, service, sessions, state, strict_json
-from claude_multi.launch import LaunchError
+from charmer import catalog, compiler, endpoint, launch, pin, scope, service, sessions, state, strict_json
+from charmer.launch import LaunchError
 from _catalog import FIXTURE_ROOT
 import _v3
 
@@ -496,7 +496,7 @@ class GatewayAuthorizationTests(unittest.TestCase):
         attention.assert_not_called()
 
     def test_foreign_listener_never_attaches_or_sends_authorization(self):
-        from claude_multi import service
+        from charmer import service
         foreign = lambda _base: service.OwnerVerdict("foreign", "another user (uid 9000)", 9000)
         with mock.patch.object(launch.http.client, "HTTPConnection") as connection:
             with self.assertRaisesRegex(launch.GatewayOwnerError, "token was not sent"):
@@ -504,7 +504,7 @@ class GatewayAuthorizationTests(unittest.TestCase):
             connection.assert_not_called()
 
     def test_injected_transport_is_also_gated_and_needs_a_proven_listener(self):
-        from claude_multi import service
+        from charmer import service
         gateway = {"gateway": {"base_url": "http://127.0.0.1:8333"}}
         for kind in ("ours", "unknown", "none", "foreign"):
             calls = mock.Mock(return_value=(200, {"fixture-selector"}))
@@ -527,7 +527,7 @@ class GatewayAuthorizationTests(unittest.TestCase):
                 self.assertEqual(attention, [])
 
     def test_an_unconfirmed_listener_is_attention_where_no_proof_is_required(self):
-        from claude_multi import service
+        from charmer import service
         attention = []
         verdict = service.OwnerVerdict("unknown", "another process of yours")
         self.assertEqual(launch.check_listener("http://127.0.0.1:8333", owner_check=lambda _: verdict,
@@ -541,7 +541,7 @@ class GatewayAuthorizationTests(unittest.TestCase):
         of a launch or doctor refuses before the request, so the later
         "no token was sent" refusal is true."""
 
-        from claude_multi import service
+        from charmer import service
 
         hits: list = []
         handler = type("Handler", (_ModelsHandler,), {"body": b'{"data": []}', "hits": hits})
@@ -625,7 +625,7 @@ class ServedSnapshotTests(unittest.TestCase):
                          (None, 401))
 
     def test_runtime_reads_one_snapshot_through_the_seam(self) -> None:
-        from claude_multi import cli
+        from charmer import cli
 
         root = Path(tempfile.mkdtemp(prefix="claude-multi-served-"))
         self.addCleanup(lambda: __import__("shutil").rmtree(root, ignore_errors=True))
@@ -649,7 +649,7 @@ class ServedReadOwnershipTests(unittest.TestCase):
     the gateway proven before the token is sent."""
 
     def test_runtime_served_read_refuses_an_unproven_listener(self) -> None:
-        from claude_multi import cli
+        from charmer import cli
 
         root = Path(tempfile.mkdtemp(prefix="claude-multi-served-owner-"))
         self.addCleanup(lambda: __import__("shutil").rmtree(root, ignore_errors=True))
@@ -670,7 +670,7 @@ class ServedReadOwnershipTests(unittest.TestCase):
         callback.assert_not_called()
 
     def test_runtime_reload_check_uses_the_runtimes_own_verdict(self) -> None:
-        from claude_multi import cli, proxy
+        from charmer import cli, proxy
 
         root = Path(tempfile.mkdtemp(prefix="claude-multi-reload-owner-"))
         self.addCleanup(lambda: __import__("shutil").rmtree(root, ignore_errors=True))

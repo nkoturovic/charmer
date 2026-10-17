@@ -1,4 +1,4 @@
-"""``claude-multi update`` and the card's U (``claude_multi.release_update``).
+"""``claude-multi update`` and the card's U (``charmer.release_update``).
 
 Releases are fake release directories signed with the stdlib test signer
 (no ssh-keygen needed). Three layers:
@@ -34,7 +34,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from claude_multi import acquire, gateway_inhibition, install_txn, release_update as ru, self_update as su, tls, trust
+from charmer import acquire, gateway_inhibition, install_txn, release_update as ru, self_update as su, tls, trust
 import test_install_txn  # module import: no test classes re-exported
 from _fake_release import FakeRelease
 from _layout import RESOURCES_ROOT
@@ -941,7 +941,7 @@ class CommandLineTests(JourneyTestCase):
         --check while the shared shims still name the earlier launcher: the
         check reports, and repoints, records or creates nothing."""
 
-        from claude_multi import installs, scope
+        from charmer import installs, scope
 
         self.seed(self.release("1.0.0"))
         earlier = self.tmp / "earlier" / "bin" / "claude-multi"
@@ -980,7 +980,7 @@ class CommandLineTests(JourneyTestCase):
         self.assertIn(str(earlier), shims[0].read_text())
 
     def test_the_incoming_claude_code_is_put_in_place_and_recorded_for_the_incoming_release(self) -> None:
-        from claude_multi import pin
+        from charmer import pin
 
         self.seed(self.release("1.0.0"))
         platform = pin.host_platform()
@@ -994,7 +994,7 @@ class CommandLineTests(JourneyTestCase):
         (native / "2.1.999").write_bytes(client)
         os.chmod(native / "2.1.999", 0o755)
         newer = self.release("1.2.0", claude="2.1.999", claude_platforms={platform: record},
-                             overrides={"claude_multi/data/catalog/native-contract.json":
+                             overrides={"charmer/data/catalog/native-contract.json":
                                         (json.dumps(contract, indent=2) + "\n").encode()})
         result = self.cli("update", "--from-dir", str(newer.dir), "--yes")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -1016,8 +1016,8 @@ class CommandLineTests(JourneyTestCase):
         import fcntl
         import socket
 
-        from claude_multi import endpoint, gateway_hold, service
-        from claude_multi.platform import file_log
+        from charmer import endpoint, gateway_hold, service
+        from charmer.platform import file_log
         from test_gateway_lifecycle import save_line
 
         sleep = Path("/usr/bin/sleep").read_bytes()
@@ -1064,7 +1064,7 @@ class CommandLineTests(JourneyTestCase):
         self.assertIsNone(process.poll())  # the gateway was never stopped
 
     def test_an_unavailable_incoming_claude_code_changes_nothing(self) -> None:
-        from claude_multi import pin
+        from charmer import pin
 
         self.seed(self.release("1.0.0"))
         platform = pin.host_platform()
@@ -1072,7 +1072,7 @@ class CommandLineTests(JourneyTestCase):
         contract["verified"][0]["version"] = "2.1.998"
         contract["verified"][0]["platforms"][platform] = {"sha256": "e" * 64, "size": 12}
         newer = self.release("1.2.0", claude="2.1.998", overrides={
-            "claude_multi/data/catalog/native-contract.json": (json.dumps(contract) + "\n").encode()})
+            "charmer/data/catalog/native-contract.json": (json.dumps(contract) + "\n").encode()})
         with mock.patch.object(acquire, "_open", side_effect=AssertionError("no network in tests")):
             journey = self.journey(acquire_pin=ru.pin_acquirer(
                 {"HOME": str(self.home)}, platform=platform,

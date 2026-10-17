@@ -99,7 +99,7 @@ class KeyedAuditInvariantTests(unittest.TestCase):
 
     def validate_audit(self, *, fixture=None, gateway=None, changed_bytes=None):
         import _gateway_harness as harness
-        from claude_multi import catalog
+        from charmer import catalog
 
         fixture = self.fixture if fixture is None else fixture
         gateway = self.gateway if gateway is None else gateway
@@ -220,7 +220,7 @@ class KeyedAuditInvariantTests(unittest.TestCase):
         return True
 
     def test_keyed_audit_flag_bound_to_audited_patch_identities(self):
-        from claude_multi import catalog
+        from charmer import catalog
 
         # Shipped open flag must match the fixture; a closed flag grants nothing.
         if catalog.keyed_compat_audited(self.gateway):
@@ -319,7 +319,7 @@ class KeyedAuditInvariantTests(unittest.TestCase):
                 self.validate_audit(fixture=fixture, gateway=self.opened)
 
     def test_keyed_audit_false_or_absent_grants_nothing(self):
-        from claude_multi import catalog
+        from charmer import catalog
 
         for audit in ({}, {"openai_compat_keyed": False}):
             gateway = {**self.gateway, "audits": audit}
@@ -351,20 +351,20 @@ class EntryPointTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue(result.stdout.startswith(f"claude-multi {expected} (catalog "), result.stdout)
-        from claude_multi import identity
+        from charmer import identity
 
         self.assertEqual(result.stdout.strip(), identity.version_line())
 
 
     def test_module_entrypoint_runs_after_native_discovery_helpers(self) -> None:
-        from claude_multi import cli
+        from charmer import cli
 
         self.assertTrue(callable(cli._original_cwd_for_adopt))
         env = {**os.environ, "PYTHONPATH": str(REPO_ROOT / "src")}
-        result = subprocess.run([sys.executable, "-m", "claude_multi.cli", "--version"],
+        result = subprocess.run([sys.executable, "-m", "charmer.cli", "--version"],
                                 env=env, text=True, capture_output=True, timeout=30)
         self.assertEqual(result.returncode, 0, result.stderr)
-        from claude_multi import identity
+        from charmer import identity
 
         # The same full release identity as the launchers print.
         self.assertEqual(result.stdout.strip(), identity.version_line())
@@ -389,9 +389,9 @@ class PackageSourceTests(unittest.TestCase):
         for literal in ('"bin"', "docs/USAGE.md", "docs/CHEATSHEET.md", "docs/STANDALONE.md", "share/claude-multi/src"):
             self.assertNotIn(literal, text)
         phase = text.split("installPhase = ''", 1)[1].split("\n  '';", 1)[0]
-        self.assertIn("cp -r ${packageRoot}/claude_multi $out/${packageDir}", phase)
+        self.assertIn("cp -r ${packageRoot}/charmer $out/${packageDir}", phase)
         self.assertIn("${installDocuments}", phase)
-        self.assertIn('packageDir = "${sitePackages}/claude_multi";', text)
+        self.assertIn('packageDir = "${sitePackages}/charmer";', text)
         self.assertIn("sitePackages = python.sitePackages;", text)
         # The filter keys on the installed paths and keeps the pycache rule.
         self.assertIn("builtins.elem top installedPaths", text)
@@ -428,7 +428,7 @@ class PackageSourceTests(unittest.TestCase):
             self.assertNotIn("builtins.getEnv", flake)
 
     def test_every_public_launcher_gets_one_wrapper(self) -> None:
-        from claude_multi import entrypoints
+        from charmer import entrypoints
 
         scripts = pyproject()["project"]["scripts"]
         # Every console script is an entry-point program (the source
@@ -444,14 +444,14 @@ class PackageSourceTests(unittest.TestCase):
         self.assertIn("assert builtins.elem proxyScript scripts;", text)
         self.assertIn("assert builtins.all (name: builtins.elem name scripts) launchers;", text)
         phase = text.split("installPhase = ''", 1)[1]
-        self.assertIn('--add-flags "-P -m claude_multi.entrypoints $entry"', phase)
-        self.assertIn('--add-flags "-P -m claude_multi.entrypoints ${proxyScript}"', phase)
+        self.assertIn('--add-flags "-P -m charmer.entrypoints $entry"', phase)
+        self.assertIn('--add-flags "-P -m charmer.entrypoints ${proxyScript}"', phase)
 
     def test_presets_and_samples_are_installed_package_data(self) -> None:
         # Reviewed presets and externalized-provider samples ship as package
         # data (declaration templates; never auto-installed): inside src/.
         self.assertIn("src", installed_paths())
-        self.assertIn("data/**/*", pyproject()["tool"]["setuptools"]["package-data"]["claude_multi"])
+        self.assertIn("data/**/*", pyproject()["tool"]["setuptools"]["package-data"]["charmer"])
         for name in ("presets", "examples"):
             self.assertTrue((RESOURCES_ROOT / name).is_dir(), name)
             self.assertTrue(RESOURCES_ROOT.is_relative_to(REPO_ROOT / "src"))
@@ -465,9 +465,9 @@ class PackageSourceTests(unittest.TestCase):
     def test_proxy_entrypoint_passes_os_chdir(self) -> None:
         # The proxy entry point is the only production caller that chdirs;
         # main's seam defaults to no chdir.
-        tree = ast.parse((REPO_ROOT / "src" / "claude_multi" / "entrypoints.py").read_text())
+        tree = ast.parse((REPO_ROOT / "src" / "charmer" / "entrypoints.py").read_text())
         function = next(node for node in tree.body
-                        if isinstance(node, ast.FunctionDef) and node.name == "_claude_multi_proxy")
+                        if isinstance(node, ast.FunctionDef) and node.name == "_charmer_proxy")
         calls = [node for node in ast.walk(function)
                  if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "main"]
         self.assertEqual(len(calls), 1)
@@ -501,7 +501,7 @@ class ManagementPinWiringTests(unittest.TestCase):
         as package data inside the Python package; the basename attestation
         is unchanged."""
 
-        from claude_multi import qualify
+        from charmer import qualify
 
         text = (NIX_DIR / "gateway.nix").read_text()
         # Each patch file must carry its recipe sha256 at evaluation time.
@@ -510,7 +510,7 @@ class ManagementPinWiringTests(unittest.TestCase):
         self.assertIn("version = 1;", contract)
         # The passthru is the checked-in package resource's exact bytes
         # (every channel ships that file inside the package).
-        self.assertIn("builtins.toJSON contract == builtins.readFile ../src/claude_multi/data/gateway-contract.json",
+        self.assertIn("builtins.toJSON contract == builtins.readFile ../src/charmer/data/gateway-contract.json",
                       text)
         self.assertIn("upstream_version = version;", contract)
         self.assertIn('patches = map (entry: "${entry.basename}@${entry.sha256}") admitted;', contract)
@@ -521,7 +521,7 @@ class ManagementPinWiringTests(unittest.TestCase):
         # No second copy: the package asserts the checked-in resource equals
         # the passthru and installs it with the Python package.
         self.assertIn("builtins.toJSON cliProxyApiContract == builtins.readFile "
-                      "../src/claude_multi/data/gateway-contract.json", package)
+                      "../src/charmer/data/gateway-contract.json", package)
         self.assertIn("assert contractChecked;", package)
         self.assertNotIn("share/claude-multi/gateway-contract.json", package)
         # The manifest Nix would produce parses, in the applied order.
@@ -565,7 +565,7 @@ class ManagementPinWiringTests(unittest.TestCase):
         self.assertTrue(wrapper.is_file())
         bash = shutil.which("bash")
         self.assertIsNotNone(bash)
-        from claude_multi import management
+        from charmer import management
 
         with tempfile.TemporaryDirectory(prefix="cm-wrapper-attestation-") as tmp:
             # Source the REAL makeWrapper prologue, intercepting only exec.
@@ -601,7 +601,7 @@ class ManagementPinWiringTests(unittest.TestCase):
         self.assertEqual(wrappers, 2)  # the loop over the launcher scripts and claude-multi-proxy
         self.assertEqual(phase.count("${channelFlag}"), wrappers)
         self.assertNotIn("CLAUDE_MULTI_CHANNEL", phase)
-        from claude_multi import management
+        from charmer import management
         self.assertEqual((management.CHANNEL_ENV, management.MANAGEMENT_CHANNEL), ("CLAUDE_MULTI_CHANNEL", "nix"))
 
 
@@ -731,7 +731,7 @@ class ModuleWiringTests(unittest.TestCase):
         self.assertEqual(text.count('--set CLAUDE_MULTI_ASSETS "$out/${resources}"'), 2)
         self.assertEqual(text.count('--set CLAUDE_MULTI_HOOK_COMMAND "$out/bin/claude-multi"'), 1)
         self.assertIn("CLAUDE_MULTI_PROXY_BIN", text)
-        self.assertIn("../src/claude_multi/data/version.json", text)
+        self.assertIn("../src/charmer/data/version.json", text)
         # The registry snapshot is checked in under the resources; the build
         # compares it with the pinned source (no second, generated copy).
         self.assertIn("cliProxyApiRegistry ? null", text)
@@ -1074,8 +1074,8 @@ class CutoverTests(unittest.TestCase):
         for relative in (
             "nix/devshell.nix",
             "nix/package.nix",
-            "src/claude_multi/data/gateway-unit.json",
-            "src/claude_multi/proxy.py",
+            "src/charmer/data/gateway-unit.json",
+            "src/charmer/proxy.py",
             "bin/claude-multi-proxy",
             "README.md",
         ):
@@ -1134,7 +1134,7 @@ class CutoverTests(unittest.TestCase):
                 continue
             relative = child.relative_to(REPO_ROOT)
             allowed = (
-                str(relative) == "src/claude_multi/compiler.py"
+                str(relative) == "src/charmer/compiler.py"
                 or str(relative).startswith("tests/")
             )
             if not allowed:
@@ -1446,7 +1446,7 @@ class CodexIdentityGateTests(unittest.TestCase):
         source = (REPO_ROOT / "tests/gateway_codex_identity_probe_test.go").read_text()
         self.assertIn("func TestOmissionCodexIdentity(", source)
         self.assertNotIn("func TestOmissionCodexIdentity(", patch)
-        from claude_multi import proxy
+        from charmer import proxy
         self.assertIn('"Version", "' + proxy.CODEX_CLIENT_VERSION + '"', patch)
         self.assertIn("codex-tui/" + proxy.CODEX_CLIENT_VERSION, patch)
 
@@ -1474,7 +1474,7 @@ class CodexApiKeySafetyGateTests(unittest.TestCase):
         # The codex client Version default is replaced, never removed for accounts.
         self.assertIn('-\tmisc.EnsureHeader(r.Header, ginHeaders, "Version", "0.159.1")', patch)
         self.assertIn('+\tmisc.EnsureHeader(r.Header, ginHeaders, "Version", codexVersionDefault(cfg, auth))', patch)
-        from claude_multi import proxy
+        from charmer import proxy
         self.assertIn('+const codexClientVersion = "' + proxy.CODEX_CLIENT_VERSION + '"', patch)
 
     def test_gate_selects_exactly_the_patch_tests(self):

@@ -10,8 +10,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from claude_multi import state
-from claude_multi.state import StateError
+from charmer import state
+from charmer.state import StateError
 
 
 class StateTestCase(unittest.TestCase):

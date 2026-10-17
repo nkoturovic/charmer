@@ -59,7 +59,7 @@ from typing import Any
 import test_compiler_v2  # module import: no test classes re-exported
 from _tier import real_binary_gate
 from _layout import RESOURCES_ROOT  # the one root source
-from claude_multi import compiler, managed, probe, profile, scope, state, strict_json
+from charmer import compiler, managed, probe, profile, scope, state, strict_json
 
 _CONTRACT_PATH = RESOURCES_ROOT / "catalog" / "native-contract.json"
 _LIVE_DOMAIN_TOUCHED = "live daemon domain touched"

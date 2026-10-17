@@ -22,7 +22,7 @@ import test_gateway_keyed_compat as keyed_gateway
 import test_openai_compat_keyed as keyed
 from _catalog import FIXTURE_ROOT, SHIPPED_ROOT
 from test_gateway_hint_client import _GatewayRelay, _RelayHandler
-from claude_multi import catalog, compiler, probe, profile, render, scope, settings, state, strict_json
+from charmer import catalog, compiler, probe, profile, render, scope, settings, state, strict_json
 
 MODULE = "tests.test_keyed_compat_client"
 EVIDENCE = harness.Evidence()

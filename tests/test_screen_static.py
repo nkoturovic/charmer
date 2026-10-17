@@ -33,7 +33,7 @@ from pathlib import Path
 
 from _layout import REPO_ROOT
 
-SRC = REPO_ROOT / "src" / "claude_multi"
+SRC = REPO_ROOT / "src" / "charmer"
 SPEC = "the screen static contract"
 
 # The screen regions of cli.py, by screen family (classes and module functions).
@@ -120,67 +120,67 @@ def _tree(name: str) -> ast.Module:
     return ast.parse((SRC / name).read_text(encoding="utf-8"), filename=name)
 
 
-SCREEN_OWNERS = {'_ModelsScreen': 'claude_multi.cli.screens.models',
- 'run_models_screen': 'claude_multi.cli.screens.models',
- '_ProvidersScreen': 'claude_multi.cli.screens.providers',
- 'run_providers_screen': 'claude_multi.cli.screens.providers',
- '_SettingsScreen': 'claude_multi.cli.screens.settings',
- 'run_settings_screen': 'claude_multi.cli.screens.settings',
- '_screen_too_small': 'claude_multi.cli.screens.common',
- '_help_modal': 'claude_multi.cli.screens.common',
- '_default_effective': 'claude_multi.cli.screens.common',
- '_TextReportScreen': 'claude_multi.cli.screens.common',
- '_PropagationScreen': 'claude_multi.cli.screens.propagation',
- 'run_propagation_screen': 'claude_multi.cli.screens.propagation',
- '_curses_ok': 'claude_multi.cli.screens.common',
- '_state_error_text': 'claude_multi.cli.screens.common',
- '_editor_bindings': 'claude_multi.cli.selection',
- '_profile_editor_callbacks': 'claude_multi.cli.screens.profile_editor',
- '_profile_editor_state': 'claude_multi.cli.screens.profile_editor',
- '_run_profile_editor': 'claude_multi.cli.screens.profile_editor',
- '_CardHealthActions': 'claude_multi.cli.screens.launch_sessions',
- '_LaunchCardScreen': 'claude_multi.cli.screens.launch_sessions',
- 'launch_card': 'claude_multi.cli.screens.launch_sessions',
- '_perform_card_result': 'claude_multi.cli.launch_flow',
- 'profile_pick_order': 'claude_multi.cli.selection',
- '_profile_recency': 'claude_multi.cli.selection',
- '_card_action': 'claude_multi.cli.selection',
- '_record_resume_target': 'claude_multi.cli.selection',
- '_DirectScreen': 'claude_multi.cli.screens.direct',
- 'run_direct_screen': 'claude_multi.cli.screens.direct',
- '_direct_marks': 'claude_multi.cli.screens.direct',
- '_direct_reason': 'claude_multi.cli.screens.direct',
- '_direct_selector_line': 'claude_multi.cli.screens.direct',
- '_direct_detail_reserve': 'claude_multi.cli.screens.direct',
- '_wrap_help_lines': 'claude_multi.cli.screens.common',
- '_ScrollModal': 'claude_multi.cli.screens.common',
- '_liveness': 'claude_multi.cli.session_facts',
- '_profile_choice_items': 'claude_multi.cli.selection',
- '_run_choice_list': 'claude_multi.cli.screens.common',
- '_resume_card_result': 'claude_multi.cli.screens.launch_sessions',
- '_NeedsChoiceChooser': 'claude_multi.cli.screens.launch_sessions',
- '_PerAgentScreen': 'claude_multi.cli.screens.launch_sessions',
- '_LineupDialog': 'claude_multi.cli.screens.launch_sessions',
- '_SessionsScreen': 'claude_multi.cli.screens.launch_sessions',
- '_run_screen_curses': 'claude_multi.cli.screens.common',
- '_sessions_list_tui': 'claude_multi.cli.screens.launch_sessions',
- '_needs_choice_tui': 'claude_multi.cli.screens.launch_sessions',
- 'ConnectActions': 'claude_multi.cli.screens.providers',
- '_GetStartedScreen': 'claude_multi.cli.screens.get_started',
- 'run_get_started': 'claude_multi.cli.screens.get_started',
- '_ProviderPicker': 'claude_multi.cli.screens.get_started',
- 'run_picker': 'claude_multi.cli.screens.get_started',
- 'run_sign_in_flow': 'claude_multi.cli.screens.signin',
- 'sign_out_flow': 'claude_multi.cli.screens.signin',
- 'account_modal': 'claude_multi.cli.screens.signin',
- '_ProfilesScreen': 'claude_multi.cli.screens.profiles',
- 'run_profiles_screen': 'claude_multi.cli.screens.profiles'}
+SCREEN_OWNERS = {'_ModelsScreen': 'charmer.cli.screens.models',
+ 'run_models_screen': 'charmer.cli.screens.models',
+ '_ProvidersScreen': 'charmer.cli.screens.providers',
+ 'run_providers_screen': 'charmer.cli.screens.providers',
+ '_SettingsScreen': 'charmer.cli.screens.settings',
+ 'run_settings_screen': 'charmer.cli.screens.settings',
+ '_screen_too_small': 'charmer.cli.screens.common',
+ '_help_modal': 'charmer.cli.screens.common',
+ '_default_effective': 'charmer.cli.screens.common',
+ '_TextReportScreen': 'charmer.cli.screens.common',
+ '_PropagationScreen': 'charmer.cli.screens.propagation',
+ 'run_propagation_screen': 'charmer.cli.screens.propagation',
+ '_curses_ok': 'charmer.cli.screens.common',
+ '_state_error_text': 'charmer.cli.screens.common',
+ '_editor_bindings': 'charmer.cli.selection',
+ '_profile_editor_callbacks': 'charmer.cli.screens.profile_editor',
+ '_profile_editor_state': 'charmer.cli.screens.profile_editor',
+ '_run_profile_editor': 'charmer.cli.screens.profile_editor',
+ '_CardHealthActions': 'charmer.cli.screens.launch_sessions',
+ '_LaunchCardScreen': 'charmer.cli.screens.launch_sessions',
+ 'launch_card': 'charmer.cli.screens.launch_sessions',
+ '_perform_card_result': 'charmer.cli.launch_flow',
+ 'profile_pick_order': 'charmer.cli.selection',
+ '_profile_recency': 'charmer.cli.selection',
+ '_card_action': 'charmer.cli.selection',
+ '_record_resume_target': 'charmer.cli.selection',
+ '_DirectScreen': 'charmer.cli.screens.direct',
+ 'run_direct_screen': 'charmer.cli.screens.direct',
+ '_direct_marks': 'charmer.cli.screens.direct',
+ '_direct_reason': 'charmer.cli.screens.direct',
+ '_direct_selector_line': 'charmer.cli.screens.direct',
+ '_direct_detail_reserve': 'charmer.cli.screens.direct',
+ '_wrap_help_lines': 'charmer.cli.screens.common',
+ '_ScrollModal': 'charmer.cli.screens.common',
+ '_liveness': 'charmer.cli.session_facts',
+ '_profile_choice_items': 'charmer.cli.selection',
+ '_run_choice_list': 'charmer.cli.screens.common',
+ '_resume_card_result': 'charmer.cli.screens.launch_sessions',
+ '_NeedsChoiceChooser': 'charmer.cli.screens.launch_sessions',
+ '_PerAgentScreen': 'charmer.cli.screens.launch_sessions',
+ '_LineupDialog': 'charmer.cli.screens.launch_sessions',
+ '_SessionsScreen': 'charmer.cli.screens.launch_sessions',
+ '_run_screen_curses': 'charmer.cli.screens.common',
+ '_sessions_list_tui': 'charmer.cli.screens.launch_sessions',
+ '_needs_choice_tui': 'charmer.cli.screens.launch_sessions',
+ 'ConnectActions': 'charmer.cli.screens.providers',
+ '_GetStartedScreen': 'charmer.cli.screens.get_started',
+ 'run_get_started': 'charmer.cli.screens.get_started',
+ '_ProviderPicker': 'charmer.cli.screens.get_started',
+ 'run_picker': 'charmer.cli.screens.get_started',
+ 'run_sign_in_flow': 'charmer.cli.screens.signin',
+ 'sign_out_flow': 'charmer.cli.screens.signin',
+ 'account_modal': 'charmer.cli.screens.signin',
+ '_ProfilesScreen': 'charmer.cli.screens.profiles',
+ 'run_profiles_screen': 'charmer.cli.screens.profiles'}
 
 def _regions(tree: ast.Module) -> list[ast.AST]:
     found = []
     for name, owner in SCREEN_OWNERS.items():
-        relative = owner.removeprefix("claude_multi.").replace(".", "/")
-        path = relative + ("/__init__.py" if owner == "claude_multi.cli" else ".py")
+        relative = owner.removeprefix("charmer.").replace(".", "/")
+        path = relative + ("/__init__.py" if owner == "charmer.cli" else ".py")
         matches = [node for node in _tree(path).body
                    if isinstance(node, (ast.ClassDef, ast.FunctionDef)) and node.name == name]
         if len(matches) != 1:
@@ -313,7 +313,7 @@ class ImportTests(unittest.TestCase):
         for node in ast.walk(_tree("views.py")):
             if isinstance(node, ast.ImportFrom) and node.level == 1:
                 imported |= {alias.name for alias in node.names} if node.module is None else {node.module}
-            elif isinstance(node, ast.ImportFrom) and node.module and node.module.startswith("claude_multi"):
+            elif isinstance(node, ast.ImportFrom) and node.module and node.module.startswith("charmer"):
                 imported.add(node.module)
         self.assertLessEqual(imported, VIEWS_IMPORTS, f"{SPEC}: views imports")
 

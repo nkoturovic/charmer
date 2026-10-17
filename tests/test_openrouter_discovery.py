@@ -5,10 +5,10 @@ import json
 import unittest
 from unittest import mock
 
-from claude_multi import discovery, proxy, state, secret_store, tui
-from claude_multi.cli import consent, onboarding
-from claude_multi.cli.commands import discover
-from claude_multi.cli.screens import common
+from charmer import discovery, proxy, state, secret_store, tui
+from charmer.cli import consent, onboarding
+from charmer.cli.commands import discover
+from charmer.cli.screens import common
 from _layout import FIXTURES_ROOT
 from _golden import assertGolden
 from _catalog import GOLDENS_ROOT

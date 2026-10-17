@@ -27,8 +27,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from unittest import mock
 
-from claude_multi import catalog, custom, endpoint, probe, proxy, render, sessions, state
-from claude_multi.proxy import ProxyError
+from charmer import catalog, custom, endpoint, probe, proxy, render, sessions, state
+from charmer.proxy import ProxyError
 from _catalog import FIXTURE_ROOT
 from _gateway_harness import boundary
 
@@ -432,7 +432,7 @@ class InstanceListenerTests(unittest.TestCase):
         self.gateway = {"gateway": {"base_url": "http://127.0.0.1:18399", "health_path": "/healthz"}}
 
     def _fake(self, verdict, base_url="http://127.0.0.1:18399"):
-        from claude_multi.platform import observation
+        from charmer.platform import observation
 
         class Own:
             def __init__(self, **kwargs):
@@ -445,7 +445,7 @@ class InstanceListenerTests(unittest.TestCase):
         return Own
 
     def test_the_own_gateway_verdict_comes_from_the_state_roots_proof(self) -> None:
-        from claude_multi import gateway_lifecycle, service
+        from charmer import gateway_lifecycle, service
 
         ours = service.OwnerVerdict("ours", "the claude-multi gateway service")
         with mock.patch.object(gateway_lifecycle, "Gateway", self._fake(ours)), \
@@ -459,7 +459,7 @@ class InstanceListenerTests(unittest.TestCase):
             self.assertIs(check("http://127.0.0.1:18399"), plain)
 
     def test_a_proven_gateway_reload_prints_no_ownership_attention(self) -> None:
-        from claude_multi import launch, service
+        from charmer import launch, service
 
         seen = []
 
@@ -620,7 +620,7 @@ class InterruptTests(ProxyControlTestCase):
         self.state_root = self.home / ".local" / "state" / "claude-multi"
 
     def fence_free(self) -> bool:
-        from claude_multi import gateway_inhibition
+        from charmer import gateway_inhibition
 
         lock = gateway_inhibition._fence_lock(self.state_root, shared=False, create=False)
         if lock is None or not lock.acquire(blocking=False):
@@ -1242,7 +1242,7 @@ class RotationTests(ProxyControlTestCase):
 
     def test_rotation_from_other_root_does_not_move_authority(self):
         self._write_secret()
-        from claude_multi import continuity
+        from charmer import continuity
 
         managed = self.root / "state" / "claude-multi"
         proxy.render_runtime_config(self.home, environ=self.environ, state_root=managed)
@@ -1524,7 +1524,7 @@ def _acknowledged_sign_ins(case: unittest.TestCase) -> None:
     """These classes test the login exec itself; the personal-use
     acknowledgement gate in front of it is covered in test_setup_signin."""
 
-    patcher = mock.patch("claude_multi.setup.signin.login_refusal", return_value=None)
+    patcher = mock.patch("charmer.setup.signin.login_refusal", return_value=None)
     patcher.start()
     case.addCleanup(patcher.stop)
 
@@ -1591,7 +1591,7 @@ class InstanceLockTests(ProxyControlTestCase):
         self.lock_path = self.workdir / proxy.service.INSTANCE_LOCK
 
     def _exec_probe(self, seen: dict):
-        from claude_multi.platform import posix_fs
+        from charmer.platform import posix_fs
 
         def execve(executable, argv, env):
             seen["held"] = posix_fs.lock_held(self.lock_path)
@@ -1630,7 +1630,7 @@ class InstanceLockTests(ProxyControlTestCase):
 
     def test_a_held_lock_refuses_every_mode_with_its_own_status(self) -> None:
         self._init()
-        from claude_multi.platform import posix_fs
+        from charmer.platform import posix_fs
 
         before = proxy.service.read_exec_stamp(self.workdir)
         held = posix_fs.hold_exclusive(self.lock_path)
@@ -1980,7 +1980,7 @@ class SelectedSecretReadinessTests(ProxyControlTestCase):
 
     @staticmethod
     def _adapter(lineup):
-        from claude_multi import cli
+        from charmer import cli
 
         return cli._SecretAdapter(
             lead=cli._SecretModel(lineup.lead.binding.key),
@@ -1990,7 +1990,7 @@ class SelectedSecretReadinessTests(ProxyControlTestCase):
     def _lineup(self, bundle, lead_key, agents):
         import copy
 
-        from claude_multi import profile
+        from charmer import profile
 
         document = copy.deepcopy(bundle.seed_profiles[catalog.DEFAULT_SEED])
         document.pop("seed", None)
@@ -2274,7 +2274,7 @@ class ListProviderModelsTests(unittest.TestCase):
     """2.14.0: the explicit-invocation provider listing (discover)."""
 
     def _providers(self):
-        from claude_multi import catalog
+        from charmer import catalog
 
         return catalog.load_catalog(CATALOG_ROOT).docs["providers"]["providers"]
 
@@ -2416,7 +2416,7 @@ class ListingDescriptorTests(unittest.TestCase):
     openrouter public OpenAI-shape listing."""
 
     def _providers(self):
-        from claude_multi import catalog
+        from charmer import catalog
 
         return catalog.load_catalog(CATALOG_ROOT).docs["providers"]["providers"]
 
@@ -2537,7 +2537,7 @@ class DiscoveryListingContractTests(unittest.TestCase):
         # discovery executes for operator providers. A catalog-shaped keyless
         # provider without a descriptor is the clean refusal below, zero calls.
         from _catalog import SHIPPED_ROOT
-        from claude_multi import strict_json
+        from charmer import strict_json
 
         self.assertNotIn("llm-local", proxy._LISTING_SUPPORT)
         self.assertEqual(
@@ -2597,7 +2597,7 @@ class ListingParseBoundaryTests(unittest.TestCase):
     """Parse-boundary hardening pins."""
 
     def _providers(self):
-        from claude_multi import catalog
+        from charmer import catalog
 
         return catalog.load_catalog(CATALOG_ROOT).docs["providers"]["providers"]
 
@@ -2881,7 +2881,7 @@ class ManagementChannelPolicyTests(ManagementTestCase):
         self.assertEqual({path.name: path.read_bytes() for path in self.directory.glob("management-key*")}, before)
 
     def test_quota_is_unavailable_without_reading_keys_or_the_gateway(self):
-        from claude_multi import quota
+        from charmer import quota
 
         self.prepare()
         for environ in (self.bundle_environ(), {}):

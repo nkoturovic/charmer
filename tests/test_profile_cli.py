@@ -23,12 +23,12 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from claude_multi import catalog, cli, paths, profile, sessions, strict_json
-from claude_multi.cli.commands import profile as profile_cmd
+from charmer import catalog, cli, paths, profile, sessions, strict_json
+from charmer.cli.commands import profile as profile_cmd
 from _catalog import FIXTURE_ROOT
 from test_lineup import LineupCase
 from test_migrate import _cli_environ
-import claude_multi.sessions
+import charmer.sessions
 
 
 class ProfileCliCase(LineupCase):
@@ -247,7 +247,7 @@ class ProfileMigrateTests(unittest.TestCase):
                                refresh_shims=kwargs["refresh_shims"])
 
         def recording_install(store):
-            # The first claude_multi frame above this spy is the caller.
+            # The first charmer frame above this spy is the caller.
             frame = next(
                 info for info in inspect.stack()[1:]
                 if str(Path(info.filename).resolve()).startswith(package)
@@ -266,8 +266,8 @@ class ProfileMigrateTests(unittest.TestCase):
                                             side_effect=AssertionError("install_seeds before H9"))
         out = io.StringIO()
         with mock.patch.dict(os.environ, environ), \
-                mock.patch('claude_multi.cli.runtime.Runtime', side_effect=runtime_factory), \
-                mock.patch.object(claude_multi.sessions, "state_root",
+                mock.patch('charmer.cli.runtime.Runtime', side_effect=runtime_factory), \
+                mock.patch.object(charmer.sessions, "state_root",
                                   return_value=sessions.state_root(environ)), \
                 seeds_patch, contextlib.redirect_stderr(io.StringIO()):
             code = cli.main(list(argv), output_stream=out, interactive=False)
@@ -290,7 +290,7 @@ class ProfileMigrateTests(unittest.TestCase):
         self.assertEqual(code, 0, out)
         self.assertIs(captured[0]["refresh_shims"], True)
         self.assertIs(captured[0]["allow_state_writes"], True)
-        self.assertEqual(callers, [("claude_multi.migrate_profiles", "apply_plan")])
+        self.assertEqual(callers, [("charmer.migrate_profiles", "apply_plan")])
         profiles = sessions.config_root(self.environ) / "profiles"
         self.assertEqual(sorted(p.stem for p in profiles.glob("*.json") if not p.name.startswith(".")),
                          sorted(catalog.SEED_PROFILE_NAMES))

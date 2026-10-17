@@ -54,13 +54,13 @@ from typing import Any
 from unittest import mock
 
 import _tripwire
-from claude_multi import cli, pin, probe, scope, sessions, state, strict_json
-from claude_multi.probe import ProbeError
+from charmer import cli, pin, probe, scope, sessions, state, strict_json
+from charmer.probe import ProbeError
 
 from _catalog import FIXTURE_GATEWAY_TOKEN, FIXTURE_ROOT
 from _layout import REPO_ROOT, RESOURCES_ROOT
 from _tier import real_binary_gate
-import claude_multi.service
+import charmer.service
 
 _tripwire.install()
 
@@ -304,7 +304,7 @@ class _LineupProbeCase(unittest.TestCase):
             environ=env,
             cwd=self.fixture.project_dir,
             health_get=lambda _base, _path: 200,
-            listener_owner=lambda _base: claude_multi.service.OwnerVerdict("ours", "fixture"),
+            listener_owner=lambda _base: charmer.service.OwnerVerdict("ours", "fixture"),
             background_liveness=lambda: sessions.BackgroundLiveness(True, frozenset(), None),
             managed_root=self.fixture.root / "managed-policy",
             served_models_callback=lambda _gateway, _token: (None, None),

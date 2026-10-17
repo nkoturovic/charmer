@@ -22,20 +22,20 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-import claude_multi
+import charmer
 import test_cli
 import test_gateway_doctor
 import test_screens_card
 from test_tui import DOWN, RIGHT, FakeWindow
-from claude_multi import gateway_lifecycle, operator as operator_mod, secret_store, state, tui
-from claude_multi.setup import signin, status as setup_status
-import claude_multi.cli.consent as consent
-import claude_multi.cli.onboarding as onboarding
-import claude_multi.cli.screens.common as screens_common
-import claude_multi.cli.screens.gateway_actions as gateway_actions
-import claude_multi.cli.screens.models as models_screen
-import claude_multi.cli.screens.providers as providers_screen
-import claude_multi.cli.text as cli_text
+from charmer import gateway_lifecycle, operator as operator_mod, secret_store, state, tui
+from charmer.setup import signin, status as setup_status
+import charmer.cli.consent as consent
+import charmer.cli.onboarding as onboarding
+import charmer.cli.screens.common as screens_common
+import charmer.cli.screens.gateway_actions as gateway_actions
+import charmer.cli.screens.models as models_screen
+import charmer.cli.screens.providers as providers_screen
+import charmer.cli.text as cli_text
 
 ESC = "\x1b"
 ENTER = "\n"
@@ -57,11 +57,11 @@ def _recording_views(shown: list) -> type:
 
 class ResumeCardDispatchTests(test_screens_card._CardCase):
     def test_u_on_the_resume_card_shows_the_update(self) -> None:
-        from claude_multi import upgrade
+        from charmer import upgrade
 
         _record, prepared = self.resume_prepared()
         shown: list = []
-        with mock.patch.object(claude_multi.tui, "TextView", _recording_views(shown)), \
+        with mock.patch.object(charmer.tui, "TextView", _recording_views(shown)), \
                 mock.patch.object(upgrade, "run_repin", side_effect=AssertionError("never the re-pin flow")):
             self.run_card(self.resume_card(prepared), ["u", ESC])
             self.assertEqual(shown, [], "no badge, no update view")
@@ -75,7 +75,7 @@ class ResumeCardDispatchTests(test_screens_card._CardCase):
     def test_v_shows_every_row_on_the_resume_card(self) -> None:
         _record, prepared = self.resume_prepared()
         shown: list = []
-        with mock.patch.object(claude_multi.tui, "TextView", _recording_views(shown)):
+        with mock.patch.object(charmer.tui, "TextView", _recording_views(shown)):
             result, _win = self.run_card(self.resume_card(prepared), ["v", ESC, ESC])
         self.assertIsNone(result)
         self.assertEqual(len(shown), 1)
@@ -85,7 +85,7 @@ class ResumeCardDispatchTests(test_screens_card._CardCase):
         self.assertEqual(self.runtime.launches, [])
 
     def test_h_runs_doctor_on_the_resume_card(self) -> None:
-        from claude_multi.cli import doctor as doctor_mod
+        from charmer.cli import doctor as doctor_mod
 
         _record, prepared = self.resume_prepared()
         out = io.StringIO()
@@ -221,13 +221,13 @@ class _ProvidersCase(test_cli.OperatorCommandCase):
 class ProvidersDispatchTests(_ProvidersCase):
     def test_q_shows_the_details(self) -> None:
         shown: list = []
-        with mock.patch.object(claude_multi.tui, "TextView", _recording_views(shown)):
+        with mock.patch.object(charmer.tui, "TextView", _recording_views(shown)):
             self.run_screen(self.screen("kimi"), ["q", ESC])
         self.assertEqual(shown[0][0], cli_text.DETAILS_TITLE)
         self.assertTrue(shown[0][1])
 
     def test_n_opens_the_provider_picker(self) -> None:
-        import claude_multi.cli.screens.get_started as screens_get_started
+        import charmer.cli.screens.get_started as screens_get_started
 
         with mock.patch.object(screens_get_started, "run_picker", return_value=None) as picker:
             self.run_screen(self.screen(), ["n"])
@@ -307,7 +307,7 @@ class ProvidersDispatchTests(_ProvidersCase):
         add.assert_called_once_with("kimi")
 
     def test_e_edits_a_provider_in_the_form(self) -> None:
-        import claude_multi.cli.commands.providers as provider_commands
+        import charmer.cli.commands.providers as provider_commands
 
         code, _out, err = self.op(test_cli.ACME_ADD, "y\n")
         self.assertEqual(code, 0, err)
@@ -477,7 +477,7 @@ class ZeroModelProviderTests(_ProvidersCase):
         self.assertEqual(declared, [pid])
         self.assertIn(cli_text.NO_MODELS_ADMITTED.format(id=pid, keys=key), screen.message)
         self.assertNotIn("fresh-dummy-key", "\n".join(win.frames))
-        from claude_multi.cli.commands import providers as provider_commands
+        from charmer.cli.commands import providers as provider_commands
 
         self.assertIn(key, provider_commands.admitted_keys(self.runtime))
         self.assertEqual(self.calls, [])
@@ -528,14 +528,14 @@ class AccountInventoryTests(_ProvidersCase):
         self.assertEqual(bar["X"], "remove key")
         self.assertEqual(bar["L"], "accounts")
         shown: list = []
-        with mock.patch.object(claude_multi.tui, "TextView", _recording_views(shown)):
+        with mock.patch.object(charmer.tui, "TextView", _recording_views(shown)):
             self.run_screen(screen, ["q", ESC])
         self.assertIn(cli_text.DETAILS_SAVED_ACCOUNTS.format(accounts="a@example.com"), shown[0][1])
         # L still opens the account modal with the saved account.
         win = self.run_screen(screen, ["l", ESC])
         self.assertTrue(any("a@example.com" in frame for frame in win.frames))
         # The picker's account entry says the account is signed in, not in use.
-        from claude_multi.setup import providers as setup_providers, texts
+        from charmer.setup import providers as setup_providers, texts
 
         entry = next(e for e in setup_providers.picker_entries(self.runtime) if e.id == "anthropic:account")
         self.assertTrue(entry.state_text.startswith(texts.STATE_TEXT["signed-in"]), entry.state_text)
@@ -563,20 +563,20 @@ class ModelsDispatchTests(_ProvidersCase):
         shipped = next(key for key in self.runtime.catalog.docs["models-v2"]["models"]
                        if key in models_screen._ModelsScreen(self.runtime, palette=tui.MONO_PALETTE).keys)
         shown: list = []
-        with mock.patch.object(claude_multi.tui, "TextView", _recording_views(shown)):
+        with mock.patch.object(charmer.tui, "TextView", _recording_views(shown)):
             self.run_screen(self.models(shipped), [ENTER, ESC])
         self.assertEqual(shown[0][0], "model — full details")
         self.assertTrue(shown[0][1])
 
     def test_v_shows_the_full_details(self) -> None:
         shown: list = []
-        with mock.patch.object(claude_multi.tui, "TextView", _recording_views(shown)):
+        with mock.patch.object(charmer.tui, "TextView", _recording_views(shown)):
             self.run_screen(self.models(self.KEY), ["v", ESC])
         self.assertEqual(shown[0][0], "model — full details")
         self.assertIn(self.KEY, "\n".join(shown[0][1]))
 
     def test_a_candidate_opens_the_prefilled_declare_form(self) -> None:
-        from claude_multi import discovery
+        from charmer import discovery
 
         screen = self.models("__candidates__")
         row = discovery.Candidate("acme", "acme", "acme-large-2", frozenset({"served"}), None, None, None)
@@ -591,7 +591,7 @@ class ModelsDispatchTests(_ProvidersCase):
         self.assertTrue(key)
 
     def test_a_registry_candidate_keeps_its_registry_provenance(self) -> None:
-        from claude_multi import catalog as catalog_mod, discovery
+        from charmer import catalog as catalog_mod, discovery
 
         screen = self.models("__candidates__")
         meta = catalog_mod.RegistryModel(display_name="Acme Large 2", context_length=131072)
@@ -608,7 +608,7 @@ class ModelsDispatchTests(_ProvidersCase):
 
         # Enter on candidates, Enter on the row, → to Declare…, Enter: the real form.
         with mock.patch.object(models_screen._ModelsScreen, "_load"), \
-                mock.patch.object(claude_multi.tui, "OnboardingForm", RecordingForm):
+                mock.patch.object(charmer.tui, "OnboardingForm", RecordingForm):
             self.run_screen(screen, [ENTER, ENTER, RIGHT, ENTER], width=100)
         self.assertEqual(len(defaults), 1)
         form = defaults[0]

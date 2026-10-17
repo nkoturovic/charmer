@@ -11,7 +11,7 @@ from __future__ import annotations
 import copy
 import unittest
 
-from claude_multi import cli, lineup, profile
+from charmer import cli, lineup, profile
 
 from test_lineup import FIXED, LineupCase
 

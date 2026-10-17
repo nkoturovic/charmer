@@ -14,12 +14,12 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from unittest import mock
 
-import claude_multi
+import charmer
 import test_cli
 from test_tui import FakeWindow
-from claude_multi import cli, quota, tui
-import claude_multi.cli.consent as consent
-import claude_multi.cli.screens.providers as providers_screen
+from charmer import cli, quota, tui
+import charmer.cli.consent as consent
+import charmer.cli.screens.providers as providers_screen
 
 NOW = datetime(2026, 10, 3, 12, tzinfo=timezone.utc)
 SESSION = "0f0f0f0f-0f0f-4f0f-8f0f-0f0f0f0f0f0f"
@@ -94,7 +94,7 @@ class QuotaConditionTests(test_cli.OperatorCommandCase):
 
         for name in POOLS:
             with self.subTest(condition=name), self.pool(name), \
-                    mock.patch.object(claude_multi.tui, "TextView", RecordingView):
+                    mock.patch.object(charmer.tui, "TextView", RecordingView):
                 shown.clear()
                 screen = providers_screen._ProvidersScreen(self.runtime, palette=tui.MONO_PALETTE,
                                                            journal=lambda: None, now=NOW, tz=timezone.utc)

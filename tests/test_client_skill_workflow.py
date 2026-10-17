@@ -66,8 +66,8 @@ import urllib.parse
 from pathlib import Path
 from typing import Any
 
-from claude_multi import catalog, probe, profile, scope, state, strict_json
-from claude_multi.probe import ProbeError
+from charmer import catalog, probe, profile, scope, state, strict_json
+from charmer.probe import ProbeError
 
 from _tier import real_binary_gate
 from _layout import REPO_ROOT, RESOURCES_ROOT  # the one root source

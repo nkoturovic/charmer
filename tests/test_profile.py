@@ -16,7 +16,7 @@ from dataclasses import replace
 from pathlib import Path
 from unittest import mock
 
-from claude_multi import catalog, custom, profile, settings, strict_json
+from charmer import catalog, custom, profile, settings, strict_json
 
 from _catalog import FIXTURE_ROOT
 
@@ -1453,7 +1453,7 @@ class HelperTests(unittest.TestCase):
         for forbidden in ("cli", "tui", "compiler", "scope", "launch", "transition", "composition"):
             with self.subTest(module=forbidden):
                 self.assertNotRegex(
-                    source, rf"(?m)^\s*(from \. import .*\b{forbidden}\b|from \.{forbidden} import|import claude_multi\.{forbidden})"
+                    source, rf"(?m)^\s*(from \. import .*\b{forbidden}\b|from \.{forbidden} import|import charmer\.{forbidden})"
                 )
 
 

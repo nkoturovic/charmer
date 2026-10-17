@@ -18,11 +18,11 @@ from pathlib import Path
 from unittest import mock
 
 from _v4 import V4Case
-from claude_multi import cli, endpoint, gateway_hold, gateway_lifecycle as gl, lineup, quota, service, sessions, state, tui
-from claude_multi.cli import gateway_facts
-import claude_multi.cli.runtime as runtime_mod
-import claude_multi.cli.screens.gateway_actions as gateway_actions
-from claude_multi.platform import mounts
+from charmer import cli, endpoint, gateway_hold, gateway_lifecycle as gl, lineup, quota, service, sessions, state, tui
+from charmer.cli import gateway_facts
+import charmer.cli.runtime as runtime_mod
+import charmer.cli.screens.gateway_actions as gateway_actions
+from charmer.platform import mounts
 from test_gateway_lifecycle import NOW, SENTINEL, World, save_line
 from test_tui import ESC, FakeWindow
 
@@ -63,7 +63,7 @@ class _GatewayDoctor(V4Case):
         return gateway_facts.gateway_runtime_report(self.runtime)
 
     def log(self, nonce: str, lines: list[str]) -> Path:
-        from claude_multi.platform import file_log
+        from charmer.platform import file_log
 
         descriptor, path = file_log.create_instance_log(self.workdir / service.GATEWAY_LOGS, NOW, nonce)
         os.write(descriptor, "".join(line + "\n" for line in lines).encode())
@@ -122,7 +122,7 @@ class GatewayFactsTests(_GatewayDoctor):
     def test_doctor_shows_the_facts(self) -> None:
         self.runtime.doctor_callback = None
         self.runtime.doctor_served_callback = mock.Mock(return_value=([], []))
-        with mock.patch('claude_multi.cli.gateway_facts._read_gateway_journal', return_value=None):
+        with mock.patch('charmer.cli.gateway_facts._read_gateway_journal', return_value=None):
             _problems, info, _attention = cli._collect_doctor_reports(self.runtime)
         self.assertTrue(any(line.startswith("Gateway: backend on-demand") for line in info), info)
         # Management follows the release channel, not the on-demand backend.
@@ -399,8 +399,8 @@ class CoverageHoldTests(_GatewayDoctor):
         self.assertIn(f"fix: {gateway_hold.COVERAGE_REMEDY}", text)
 
     def test_update_and_uninstall_refusals_name_the_cause_and_the_recovery(self) -> None:
-        from claude_multi import install_txn
-        from claude_multi.setup import external
+        from charmer import install_txn
+        from charmer.setup import external
 
         self.over_budget()
         gateway = self.gateway()

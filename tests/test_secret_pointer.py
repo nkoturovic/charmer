@@ -14,8 +14,8 @@ import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
-from claude_multi import gateway_lifecycle, paths, proxy, secret_store, state
-from claude_multi.platform import systemd_unit
+from charmer import gateway_lifecycle, paths, proxy, secret_store, state
+from charmer.platform import systemd_unit
 
 from _catalog import FIXTURE_ROOT
 
@@ -105,7 +105,7 @@ class PrecedenceTests(PointerCase):
         self.assertIsNone(secret_store.location_problem("~/.config/claude-multi/secrets/k.env", self.env))
 
     def test_no_folder_of_one_person_ships_as_a_protected_location(self) -> None:
-        from claude_multi import scope
+        from charmer import scope
 
         self.assertEqual(secret_store.PROTECTED_DIRS, (".config/claude-multi",))
         self.assertFalse([rule for rule in scope.SECRET_PATH_DENIES if ".config/secrets" in rule])
@@ -113,7 +113,7 @@ class PrecedenceTests(PointerCase):
     def test_a_pointer_to_a_private_folder_of_your_choice_is_accepted(self) -> None:
         # The shape a person may already use: ~/.config/secrets/claude.env,
         # a private folder and file of their own.
-        from claude_multi import scope
+        from charmer import scope
 
         pointed = self.key_file(".config/secrets/claude.env")
         self.assertEqual(stat.S_IMODE(pointed.parent.stat().st_mode), 0o700)
@@ -160,7 +160,7 @@ class PrecedenceTests(PointerCase):
         self.assertIn("not your home folder itself", str(caught.exception))
 
     def test_every_selectable_location_is_denied_to_managed_sessions(self) -> None:
-        from claude_multi import scope
+        from charmer import scope
 
         for relative in secret_store.PROTECTED_DIRS:
             self.assertIn(f"Read(~/{relative}/**)", scope.SECRET_PATH_DENIES)

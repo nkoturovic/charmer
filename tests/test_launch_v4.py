@@ -21,13 +21,13 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from claude_multi import cli, launch, lineup, profile, scope, sessions, settings, state, strict_json
-from claude_multi.launch import LaunchError
+from charmer import cli, launch, lineup, profile, scope, sessions, settings, state, strict_json
+from charmer.launch import LaunchError
 from _catalog import FIXTURE_LAUNCHER_VERSION, FIXTURE_ROOT, GOLDENS_ROOT
 from _golden import assertGolden
 from _v4 import V4Case
 import _v3
-import claude_multi.compiler
+import charmer.compiler
 
 FIXED = "11111111-1111-4111-8111-111111111111"
 NOW = "2026-09-25T00:00:00Z"
@@ -79,7 +79,7 @@ def fresh_record_golden_files() -> dict[str, bytes]:
         }
         for name, target in targets.items():
             with _fixed_id(), _fixed_clock(), mock.patch.object(
-                claude_multi.compiler, "git_work_tree", lambda _cwd: True
+                charmer.compiler, "git_work_tree", lambda _cwd: True
             ):
                 prepared = runtime.prepare(target, action="fresh", passthrough=[])
             files[name] = strict_json.pretty_file_bytes(prepared.record)
@@ -154,7 +154,7 @@ class FreshCommitTests(V4Case):
         self.assertEqual(argv[argv.index("--name") + 1], "cm:direct:sol@project")
 
     def test_primary_provider_is_recorded_and_converge_is_clean(self) -> None:
-        from claude_multi import transition
+        from charmer import transition
 
         record = self.launch_fresh(self.profile_target("claude"))
         self.assertEqual(record["applied"].get("primary_provider"), "anthropic")
@@ -176,11 +176,11 @@ class ReleaseIdentityTests(V4Case):
     packaged launcher (the one ``--version`` reports)."""
 
     def test_a_resource_override_keeps_the_packaged_launcher(self) -> None:
-        import claude_multi
-        from claude_multi import upgrade
-        from claude_multi.cli.commands import portability as portability_command
+        import charmer
+        from charmer import upgrade
+        from charmer.cli.commands import portability as portability_command
 
-        packaged = claude_multi.__version__
+        packaged = charmer.__version__
         selected = strict_json.loads((FIXTURE_ROOT / "version.json").read_bytes())
         # The selected resources (the frozen fixture) carry another identity.
         self.assertEqual(self.runtime.asset_root, FIXTURE_ROOT)
@@ -447,7 +447,7 @@ class Gen0AndMigrationTests(V4Case):
 
     def test_gen0_resume_exec_failure_puts_the_2x_scope_back(self) -> None:
         self._v3_record()
-        from claude_multi import migrate
+        from charmer import migrate
 
         migrate.migrate_one(
             self.store, self.runtime.lineup_catalog(), FIXED,
@@ -946,7 +946,7 @@ class PerformPathTests(V4Case):
 
 
 def launch_catalog():
-    from claude_multi import catalog
+    from charmer import catalog
 
     return catalog
 
@@ -956,7 +956,7 @@ class SessionEnvKeepLaunchTests(V4Case):
     variable (names only) and remove every other ``*_API_KEY``."""
 
     def test_launch_and_resume_keep_the_chosen_variable_by_name_only(self) -> None:
-        from claude_multi import choices
+        from charmer import choices
 
         environ = {**self.env, "DOCS_TOOL_API_KEY": "mcp-value-7", "OTHER_TOOL_API_KEY": "other-value-8"}
         choices.update(environ, session_env_keep=["DOCS_TOOL_API_KEY"])
@@ -976,7 +976,7 @@ class SessionEnvKeepLaunchTests(V4Case):
         self.assertNotIn("DOCS_TOOL_API_KEY", json.dumps(self.store.load(mid)))
 
     def test_a_name_refused_at_launch_is_removed_and_named(self) -> None:
-        from claude_multi import choices
+        from charmer import choices
 
         environ = {**self.env, "KIMI_CLAUDE_API_KEY": "provider-value-9"}
         # Written as a hand edit: the save path refuses provider names.
@@ -1000,7 +1000,7 @@ class SessionEnvKeepLaunchTests(V4Case):
     # a key-shaped entry is never shown.
 
     def _keep_docs_tool(self) -> None:
-        from claude_multi import choices
+        from charmer import choices
 
         environ = {**self.env, "DOCS_TOOL_API_KEY": "mcp-value-7"}
         choices.update(environ, session_env_keep=["DOCS_TOOL_API_KEY"])
@@ -1010,7 +1010,7 @@ class SessionEnvKeepLaunchTests(V4Case):
         """A providers.d declaration naming the kept variable: unadmitted and
         schema-invalid, so only its syntactic secret_ref counts."""
 
-        from claude_multi import operator as operator_mod
+        from charmer import operator as operator_mod
 
         directory = state.ensure_private_dir(operator_mod.providers_dir(self.runtime.gateway_environ()))
         state.atomic_write(directory / "docs.json", strict_json.pretty_file_bytes(
@@ -1059,7 +1059,7 @@ class SessionEnvKeepLaunchTests(V4Case):
         self.assertEqual(list(self.store.scan_uuid_records()), [])
 
     def test_a_name_dropped_from_the_choice_after_prepare_refuses(self) -> None:
-        from claude_multi import choices
+        from charmer import choices
 
         self._keep_docs_tool()
         prepared = self.runtime.prepare(self.profile_target(), action="fresh", passthrough=[])
@@ -1067,9 +1067,9 @@ class SessionEnvKeepLaunchTests(V4Case):
         self._assert_refused(prepared, 0)
 
     def test_a_key_shaped_entry_is_never_shown(self) -> None:
-        from claude_multi import choices, secret_store, views
-        from claude_multi.cli import doctor
-        import claude_multi.cli.screens.launch_sessions as launch_sessions
+        from charmer import choices, secret_store, views
+        from charmer.cli import doctor
+        import charmer.cli.screens.launch_sessions as launch_sessions
 
         pasted = "ABCD1234EFGH5678IJKL9012MNOP"
         environ = {**self.env}
@@ -1087,7 +1087,7 @@ class SessionEnvKeepLaunchTests(V4Case):
         self.assertIn(secret_store.KEY_SHAPED_ENTRY, details)
         attention, info = doctor._doctor_env_keep_report(self.runtime)
         self.assertNotIn(pasted, "\n".join(map(str, attention + info)))
-        from claude_multi import tui
+        from charmer import tui
 
         screen = cli._SettingsScreen(self.runtime, tui.MONO_PALETTE, tty_in=io.StringIO(), tty_out=io.StringIO())
         row = screen._env_keep_row()

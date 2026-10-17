@@ -3,7 +3,7 @@ from datetime import timedelta
 import json
 import unittest
 
-from claude_multi import gateway_events, usage
+from charmer import gateway_events, usage
 from tests.test_observations import NOW, MID, collect, final, log
 
 

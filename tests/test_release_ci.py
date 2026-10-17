@@ -285,7 +285,7 @@ class WorkflowTests(unittest.TestCase):
     def test_lanes(self) -> None:
         ci, release, watch = (self.texts[n] for n in WORKFLOWS)
         for needle in ("tests/bless.py --check", "git diff --check", 'tools/history_scan.py --repo . --range "$RANGE"',
-                       "tests.test_hygiene", "tools/docs_gen.py --check", "import claude_multi",
+                       "tests.test_hygiene", "tools/docs_gen.py --check", "import charmer",
                        "shellcheck -s sh packaging/install.sh",
                        ".github/scripts/journey.sh", "actionlint", "zizmor", "schedule:", "tools/test.py --tier full",
                        "max-parallel: 1", "tests.test_tui_pty", "apparmor_restrict_unprivileged_userns=0",
@@ -810,11 +810,11 @@ class JourneyFixtureTests(unittest.TestCase):
         self.assertIn("confirmed", result.stdout)
 
     def test_client_names_the_installed_release_pin(self) -> None:
-        from claude_multi import acquire, pin, strict_json
+        from charmer import acquire, pin, strict_json
 
         site = self.tmp / "install" / "lib" / "python3.14" / "site-packages"
         site.mkdir(parents=True)
-        (site / "claude_multi").symlink_to(REPO_ROOT / "src" / "claude_multi")
+        (site / "charmer").symlink_to(REPO_ROOT / "src" / "charmer")
         result = self.fixture("client", "--install", str(self.tmp / "install"), env={"PATH": "/usr/bin:/bin"})
         self.assertEqual(result.returncode, 0, result.stderr)
         contract = strict_json.load(RESOURCES_ROOT / "catalog" / "native-contract.json")
@@ -834,7 +834,7 @@ cat "$STUB/text"; exit "$(cat "$STUB/text.exit")"
 
     @staticmethod
     def check(check_id: str, state: str, detail: str, fix: str | None = None):
-        from claude_multi.setup import firstrun, model
+        from charmer.setup import firstrun, model
 
         title = firstrun.TITLES[check_id].format(v="2.1.0")
         return firstrun.Check(check_id, title, state, detail,
@@ -865,14 +865,14 @@ cat "$STUB/text"; exit "$(cat "$STUB/text.exit")"
         """``journey_fixture.py first-run`` over a doctor stub whose two
         forms show ``items`` (the product's own rendering), unless replaced."""
 
-        from claude_multi.setup import firstrun, texts
+        from charmer.setup import firstrun, texts
 
         stub = self.tmp / "stub"
         stub.mkdir(exist_ok=True)
         site = self.tmp / "install" / "lib" / "python3.14" / "site-packages"
         if not site.exists():
             site.mkdir(parents=True)
-            (site / "claude_multi").symlink_to(REPO_ROOT / "src" / "claude_multi")
+            (site / "charmer").symlink_to(REPO_ROOT / "src" / "charmer")
         (stub / "claude-multi").write_text(self.STUB_DOCTOR)
         (stub / "claude-multi").chmod(0o755)
         report = document if document is not None else firstrun.to_json(items)
@@ -921,7 +921,7 @@ cat "$STUB/text"; exit "$(cat "$STUB/text.exit")"
         self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_first_run_fails_on_anything_else(self) -> None:
-        from claude_multi.setup import firstrun
+        from charmer.setup import firstrun
 
         self.home = self.tmp / "home"
         self.home.mkdir()
@@ -986,13 +986,13 @@ cat "$STUB/text"; exit "$(cat "$STUB/text.exit")"
         site = self.tmp / "install" / "lib" / "python3.14" / "site-packages"
         if not site.exists():
             site.mkdir(parents=True)
-            (site / "claude_multi").symlink_to(REPO_ROOT / "src" / "claude_multi")
+            (site / "charmer").symlink_to(REPO_ROOT / "src" / "charmer")
         return self.tmp / "install"
 
     def test_ended_waits_for_every_session_record_to_end(self) -> None:
         import threading
 
-        from claude_multi import sessions
+        from charmer import sessions
 
         home = self.tmp / "home"
         records = home / ".local" / "state" / "claude-multi" / "sessions"
@@ -1091,7 +1091,7 @@ cat "$STUB/text"; exit "$(cat "$STUB/text.exit")"
             os.close(os.openpty()[0])
         except OSError as exc:
             self.skipTest(f"BOUNDARY: no pseudo-terminal here ({exc})")
-        from claude_multi.setup import texts
+        from charmer.setup import texts
 
         asks = (f'printf "{texts.UNINSTALL_CREDENTIALS_QUESTION}" >&2; read a; [ -z "$a" ] || exit 5; '
                 'echo kept; exit 0')
@@ -1599,7 +1599,7 @@ class PinWatchTests(unittest.TestCase):
         self.tmp = Path(tempfile.mkdtemp(prefix="claude-multi-pinwatch-"))
         self.addCleanup(shutil.rmtree, self.tmp, True)
         self.repo = self.tmp / "repo"
-        for relative in ("src/claude_multi/data/catalog/native-contract.json", "gateway/UPSTREAM.json",
+        for relative in ("src/charmer/data/catalog/native-contract.json", "gateway/UPSTREAM.json",
                          "packaging/python-runtimes.json"):
             (self.repo / relative).parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(REPO_ROOT / relative, self.repo / relative)
@@ -2020,7 +2020,7 @@ def _module_produces(source: str, prefix: str, index: int | None) -> bool:
 
 
 def _unproduced(modules: list[str], prefixes=None, alternatives=None) -> list[str]:
-    from claude_multi import upgrade
+    from charmer import upgrade
 
     prefixes = upgrade.ESSENTIAL_EVIDENCE_PREFIXES if prefixes is None else prefixes
     alternatives = upgrade.ESSENTIAL_EVIDENCE_ALTERNATIVES if alternatives is None else alternatives
@@ -2033,7 +2033,7 @@ def _unproduced(modules: list[str], prefixes=None, alternatives=None) -> list[st
 @requires_release_tree
 class EvidenceJobTests(unittest.TestCase):
     """The release evidence job: every producer of the essential completion
-    lines (derived from claude_multi.upgrade, never a hand-kept list), the
+    lines (derived from charmer.upgrade, never a hand-kept list), the
     candidate gateway and its probes, the pinned client, the product's own
     completion check and the evidence artifact behind the guard."""
 
@@ -2053,7 +2053,7 @@ class EvidenceJobTests(unittest.TestCase):
             self.assertIn(needed, self.modules)
 
     def test_a_line_without_a_producer_fails_the_derivation(self) -> None:
-        from claude_multi import upgrade
+        from charmer import upgrade
 
         prefixes = (*upgrade.ESSENTIAL_EVIDENCE_PREFIXES, "client probe NEW: PASS class=NEW-proof ")
         self.assertEqual(_unproduced(self.modules, prefixes), ["client probe NEW: PASS class=NEW-proof "])
@@ -2107,7 +2107,7 @@ class EvidenceJobTests(unittest.TestCase):
         verbose log keeps AD's skip with its reason, a verbosity-1 log keeps
         nothing of it."""
 
-        from claude_multi import strict_json
+        from charmer import strict_json
         from tests import test_scope_probe
 
         real = test_scope_probe.RealPinnedBinaryTests
@@ -2683,7 +2683,7 @@ class EvidenceScriptTests(unittest.TestCase):
             "client probe SL: BOUNDARY class=unavailable BOUNDARY: no Claude Code newer than the pin\n")
 
     def log(self, *, drop: str | None = None, extra: str = "", skew: str = SKEW) -> Path:
-        from claude_multi import upgrade
+        from charmer import upgrade
 
         lines = [f"{prefix}detail of the run" for prefix in upgrade.ESSENTIAL_EVIDENCE_PREFIXES if prefix != drop]
         path = self.tmp / "battery.log"
@@ -2737,7 +2737,7 @@ class EvidenceScriptTests(unittest.TestCase):
         self.assertNotIn(b"not the pinned client", (self.tmp / "evidence" / "manifest.json").read_bytes())
 
     def test_failures(self) -> None:
-        from claude_multi import upgrade
+        from charmer import upgrade
 
         prefix = upgrade.ESSENTIAL_EVIDENCE_PREFIXES[5]
         code, manifest, output = self.run_tool(self.log(drop=prefix))
@@ -2759,7 +2759,7 @@ class EvidenceScriptTests(unittest.TestCase):
         a progress run or a test header (with or without a docstring line)
         completes; the same line after any other text does not."""
 
-        from claude_multi import upgrade
+        from charmer import upgrade
 
         def producer(line: str, documented: bool):
             def test(case: unittest.TestCase) -> None:
@@ -2867,7 +2867,7 @@ esac
         by its own name, never a program called nix-store with --add-root
         (the test tripwire refuses those)."""
 
-        from claude_multi import installs
+        from charmer import installs
 
         def runner(argv, **kwargs):
             return subprocess.run([str(self.fake), *argv[1:]], **kwargs)

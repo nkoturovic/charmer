@@ -27,7 +27,7 @@ from _layout import (
     UPSTREAM_JSON,
     UPSTREAM_REVIEW,
 )
-from claude_multi import strict_json, validate
+from charmer import strict_json, validate
 
 SCHEMA = RESOURCES_ROOT / "schemas" / "gateway-upstream.schema.json"
 

@@ -20,9 +20,9 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from claude_multi import catalog, cli, composition, scope as scope_mod, sessions, state, strict_json, tui
-from claude_multi.tui import workflow_guarantee_panel
-from claude_multi.cli import gateway_facts
+from charmer import catalog, cli, composition, scope as scope_mod, sessions, state, strict_json, tui
+from charmer.tui import workflow_guarantee_panel
+from charmer.cli import gateway_facts
 from _catalog import (
     FIXTURE_GATEWAY_TOKEN,
     FIXTURE_ROOT,
@@ -31,21 +31,21 @@ from _catalog import (
 )
 from _layout import REPO_ROOT, RESOURCES_RELATIVE
 import _v3
-import claude_multi.catalog
-import claude_multi.compiler
-import claude_multi.continuity
-import claude_multi.custom
-import claude_multi.hooks
-import claude_multi.launch
-import claude_multi.pin
-import claude_multi.management
-import claude_multi.profile
-import claude_multi.proxy
-import claude_multi.render
-import claude_multi.service
-import claude_multi.sessions
-import claude_multi.state
-import claude_multi.tui
+import charmer.catalog
+import charmer.compiler
+import charmer.continuity
+import charmer.custom
+import charmer.hooks
+import charmer.launch
+import charmer.pin
+import charmer.management
+import charmer.profile
+import charmer.proxy
+import charmer.render
+import charmer.service
+import charmer.sessions
+import charmer.state
+import charmer.tui
 
 
 CATALOG_ROOT = FIXTURE_ROOT
@@ -109,7 +109,7 @@ class CLITestCase(unittest.TestCase):
         )
         self.served = set(served_selectors(CATALOG_ROOT))
         self.runtime = cli.Runtime(
-            listener_owner=lambda _base: claude_multi.service.OwnerVerdict("ours", "fixture gateway"),
+            listener_owner=lambda _base: charmer.service.OwnerVerdict("ours", "fixture gateway"),
             background_liveness=lambda: sessions.BackgroundLiveness(True, cli._live_background_prefixes(self.root / "daemon")),
             managed_root=self.root / "managed",
             proc_root=self.root / "proc",
@@ -122,7 +122,7 @@ class CLITestCase(unittest.TestCase):
                 [],
                 ["Managed Claude 2.1.217 verified (fixture)."],
             ),
-            doctor_daemon_callback=lambda: claude_multi.launch.DaemonStatus(
+            doctor_daemon_callback=lambda: charmer.launch.DaemonStatus(
                 state="absent", summary="fixture daemon absent"
             ),
             served_models_callback=self._served_models,
@@ -142,8 +142,8 @@ class CLITestCase(unittest.TestCase):
                 raise ConnectionRefusedError("fixture gateway down")
             return 200, set(self.served)
 
-        return claude_multi.launch.served_models(gateway, token, models_get=models_get,
-                                       owner_check=lambda _base: claude_multi.service.OwnerVerdict("ours", "fixture"))
+        return charmer.launch.served_models(gateway, token, models_get=models_get,
+                                       owner_check=lambda _base: charmer.service.OwnerVerdict("ours", "fixture"))
 
     def _health_get(self, _base_url, _health_path):
         return 200
@@ -152,7 +152,7 @@ class CLITestCase(unittest.TestCase):
         """Gateway seams for extra Runtimes built inside a test."""
 
         return {
-            "listener_owner": lambda _base: claude_multi.service.OwnerVerdict("ours", "fixture gateway"),
+            "listener_owner": lambda _base: charmer.service.OwnerVerdict("ours", "fixture gateway"),
             "background_liveness": lambda: sessions.BackgroundLiveness(True, cli._live_background_prefixes(self.root / "daemon")),
             "managed_root": self.root / "managed",
             "proc_root": self.root / "proc",
@@ -236,7 +236,7 @@ class CLITestCase(unittest.TestCase):
 
         return self.runtime.prepare(
             cli.LaunchTarget(
-                "ad-hoc", claude_multi.profile.ad_hoc_direct(model), None, False, f"Direct {model}"
+                "ad-hoc", charmer.profile.ad_hoc_direct(model), None, False, f"Direct {model}"
             ),
             action="fresh",
             passthrough=[],
@@ -906,7 +906,7 @@ class SessionCommandTests(CLITestCase):
     def test_link_updates_pointer_for_adopted_original_cwd(self) -> None:
         other = self.root / "original-project"
         other.mkdir()
-        with mock.patch('claude_multi.cli.session_facts._original_cwd_for_adopt', return_value=str(other)
+        with mock.patch('charmer.cli.session_facts._original_cwd_for_adopt', return_value=str(other)
         ), contextlib.redirect_stderr(io.StringIO()) as note:
             code, output = self.run_cli(
                 ["sessions", "link", FIXED_ID, "--composition", "balanced"]
@@ -921,7 +921,7 @@ class SessionCommandTests(CLITestCase):
         self.assertIsNone(self.runtime.session_store.last(self.runtime.cwd))
 
     def test_link_can_adopt_native_session_as_ordinary_gateway(self) -> None:
-        with mock.patch('claude_multi.cli.session_facts._original_cwd_for_adopt', return_value=self.runtime.cwd
+        with mock.patch('charmer.cli.session_facts._original_cwd_for_adopt', return_value=self.runtime.cwd
         ), contextlib.redirect_stderr(io.StringIO()) as note:
             code, output = self.run_cli(
                 ["sessions", "link", FIXED_ID, "--model", "qwen38"]
@@ -1058,7 +1058,7 @@ class SessionCommandTests(CLITestCase):
         parent["pending_forks"] = [{"session_id": FIXED_ID, "observed_at": "2026-07-21T00:00:00Z"}]
         parent["identity_state"] = sessions.IDENTITY_PENDING_FORK
         _v3.save_any(self.runtime.session_store, parent)
-        with mock.patch('claude_multi.cli.session_facts._original_cwd_for_adopt', return_value=self.runtime.cwd):
+        with mock.patch('charmer.cli.session_facts._original_cwd_for_adopt', return_value=self.runtime.cwd):
             code, output = self.run_cli(["sessions", "link", FIXED_ID, "--direct", "sol"])
         self.assertEqual(code, 0, output)
         raw, _ = self.runtime.session_store.load_raw(OTHER_ID)
@@ -1098,12 +1098,12 @@ class SessionCommandTests(CLITestCase):
             cwd=self.root / "project",
             **self._runtime_seams(),
         )
-        self.assertIs(runtime.doctor_binary_callback.func, claude_multi.launch.doctor_binary_report)
+        self.assertIs(runtime.doctor_binary_callback.func, charmer.launch.doctor_binary_report)
         self.assertEqual(runtime.doctor_binary_callback.keywords, {
             "environ": runtime.environ,
             "retained_root": runtime.home / ".local/share/claude-multi/pinned-clients",
         })
-        self.assertIs(runtime.doctor_daemon_callback, claude_multi.launch.inspect_shared_daemon)
+        self.assertIs(runtime.doctor_daemon_callback, charmer.launch.inspect_shared_daemon)
 
 
 if __name__ == "__main__":
@@ -1182,7 +1182,7 @@ class DoctorBinaryParityTests(CLITestCase):
     """Real launch resolver callback behind Doctor, temp fixture artifact."""
 
     def _fixture_runtime(self, sha256: str) -> cli.Runtime:
-        from claude_multi import pin, state as state_mod
+        from charmer import pin, state as state_mod
 
         platform = pin.host_platform()
         install = pin.owned_path(self.runtime.environ, "2.1.217", platform)
@@ -1201,13 +1201,13 @@ class DoctorBinaryParityTests(CLITestCase):
             environ=self.runtime.environ,
             cwd=self.root / "project",
             doctor_callback=lambda _runtime: [],
-            doctor_daemon_callback=lambda: claude_multi.launch.DaemonStatus(
+            doctor_daemon_callback=lambda: charmer.launch.DaemonStatus(
                 state="absent", summary="fixture daemon absent"
             ),
             **self._runtime_seams(),
         )
         # Real callback (the Runtime default) against the fixture contract.
-        self.assertIs(runtime.doctor_binary_callback.func, claude_multi.launch.doctor_binary_report)
+        self.assertIs(runtime.doctor_binary_callback.func, charmer.launch.doctor_binary_report)
         self.assertEqual(runtime.doctor_binary_callback.keywords, {
             "environ": runtime.environ,
             "retained_root": runtime.home / ".local/share/claude-multi/pinned-clients",
@@ -1286,7 +1286,7 @@ class BareLaunchStreamTests(unittest.TestCase):
             return Handle()
 
         with mock.patch("builtins.open", side_effect=fake_open):
-            with mock.patch('claude_multi.cli.streams._stdio_streams_are_ttys', return_value=True):
+            with mock.patch('charmer.cli.streams._stdio_streams_are_ttys', return_value=True):
                 inp, out = cli._open_tty_streams()
         self.assertEqual(closed, [True])
         self.assertIs(inp, sys.stdin)
@@ -1357,13 +1357,13 @@ def _hide_transition_engine(test_case) -> None:
     sys.modules entry.
     """
 
-    import claude_multi
+    import charmer
 
-    if hasattr(claude_multi, "transition"):
-        saved = claude_multi.transition
-        del claude_multi.transition
-        test_case.addCleanup(setattr, claude_multi, "transition", saved)
-    patcher = mock.patch.dict(sys.modules, {"claude_multi.transition": None})
+    if hasattr(charmer, "transition"):
+        saved = charmer.transition
+        del charmer.transition
+        test_case.addCleanup(setattr, charmer, "transition", saved)
+    patcher = mock.patch.dict(sys.modules, {"charmer.transition": None})
     test_case.addCleanup(patcher.stop)
     patcher.start()
 
@@ -1606,7 +1606,7 @@ class TransitionCommandTests(CLITestCase):
             store.save({**record, "mutation_token": sessions.new_mutation_token()})
             return True
 
-        with mock.patch('claude_multi.cli.screens.transition._transition_confirm', side_effect=confirm_and_race):
+        with mock.patch('charmer.cli.screens.transition._transition_confirm', side_effect=confirm_and_race):
             code, output = self._transition(text="y\n")
         self.assertEqual(code, 1)
         self.assertIn(
@@ -1633,7 +1633,7 @@ class TransitionCommandTests(CLITestCase):
         code, output = self._transition(name="balanced", text="")
         self.assertEqual(code, 1)
         self.assertIn("transitions are unavailable", output)
-        self.assertIn("claude_multi.transition", output)
+        self.assertIn("charmer.transition", output)
 
 
 class DoctorVisibilityTests(CLITestCase):
@@ -1741,7 +1741,7 @@ class DoctorVisibilityTests(CLITestCase):
         root = self.runtime.session_store.root
         orphan = root / "lead-prompt-abcdef0123456789.md"
         state.atomic_write(orphan, b"orphaned prompt\n")
-        from claude_multi import compiler as compiler_mod
+        from charmer import compiler as compiler_mod
 
         living = compiler_mod.lead_prompt_path(
             root, "sha256:" + "a" * 64, FIXED_ID
@@ -1793,7 +1793,7 @@ class DoctorVisibilityTests(CLITestCase):
         # revocation — while the launch-time env keeps the epoch the launch
         # committed, so the rebuilt launch_fence still matches.
         record = self.save_v4_session(
-            target=cli.LaunchTarget("ad-hoc", claude_multi.profile.ad_hoc_direct("qwen38"), None, False, "Direct")
+            target=cli.LaunchTarget("ad-hoc", charmer.profile.ad_hoc_direct("qwen38"), None, False, "Direct")
         )
         self.runtime.session_store.save({**record, "launch_epoch": 7})
         code, output = self.run_cli(["doctor", "--repair", FIXED_ID])
@@ -1879,7 +1879,7 @@ class DoctorVisibilityTests(CLITestCase):
 
     def test_repair_all_handles_direct_records(self) -> None:
         record = self.save_v4_session(
-            target=cli.LaunchTarget("ad-hoc", claude_multi.profile.ad_hoc_direct("qwen38"), None, False, "Direct"),
+            target=cli.LaunchTarget("ad-hoc", charmer.profile.ad_hoc_direct("qwen38"), None, False, "Direct"),
             last_event_source="end",
         )
         live = scope_mod.scope_dir(self.runtime.session_store.root, FIXED_ID)
@@ -1943,7 +1943,7 @@ class DurableDefaultWiringTests(CLITestCase):
             for interactive in (True, False):
                 with self.subTest(argv=argv, interactive=interactive):
                     output, errors = io.StringIO(), io.StringIO()
-                    with mock.patch('claude_multi.cli.runtime.Runtime') as runtime, \
+                    with mock.patch('charmer.cli.runtime.Runtime') as runtime, \
                             contextlib.redirect_stderr(errors):
                         code = cli.main(
                             [*argv, "--legacy"], output_stream=output,
@@ -2019,7 +2019,7 @@ class StateMarkerWiringTests(CLITestCase):
             for command in commands:
                 with self.subTest(command=command):
                     output, errors = io.StringIO(), io.StringIO()
-                    with mock.patch('claude_multi.cli.runtime.Runtime') as runtime, \
+                    with mock.patch('charmer.cli.runtime.Runtime') as runtime, \
                             contextlib.redirect_stderr(errors):
                         code = cli.main(command, output_stream=output, interactive=False)
                     runtime.assert_not_called()
@@ -2055,7 +2055,7 @@ class StateMarkerWiringTests(CLITestCase):
                 with self.subTest(event=event):
                     inp = mock.Mock()
                     output, error = io.StringIO(), io.StringIO()
-                    with mock.patch('claude_multi.cli.runtime.Runtime') as runtime, mock.patch.object(
+                    with mock.patch('charmer.cli.runtime.Runtime') as runtime, mock.patch.object(
                         sys, "stderr", error
                     ):
                         code = cli.main(
@@ -2146,8 +2146,8 @@ class StateMarkerWiringTests(CLITestCase):
         # A curses-capable terminal would reach the 3.0
         # sessions screen; a newer marker still refuses it (the listing).
         self._marker()
-        with mock.patch('claude_multi.cli.screens.launch_sessions._sessions_list_tui') as picker, \
-                mock.patch.object(claude_multi.tui, "streams_curses_capable", return_value=True):
+        with mock.patch('charmer.cli.screens.launch_sessions._sessions_list_tui') as picker, \
+                mock.patch.object(charmer.tui, "streams_curses_capable", return_value=True):
             for command in (["-r"], ["sessions", "list"]):
                 code, output = self.run_cli(command, interactive=True)
                 self.assertEqual(code, 0, output)
@@ -2160,7 +2160,7 @@ class StateMarkerWiringTests(CLITestCase):
                 self.runtime.session_store.sessions_dir / f"{session_id}.json",
                 b'{"version":4}\n',
             )
-        with mock.patch('claude_multi.cli.session_facts._session_record_scan') as scan, mock.patch.object(
+        with mock.patch('charmer.cli.session_facts._session_record_scan') as scan, mock.patch.object(
             self.runtime, "custom_conflicts"
         ) as registry, mock.patch.object(self.runtime, "check_readiness") as readiness:
             code, output = self.run_cli(["doctor"], interactive=False)
@@ -2190,13 +2190,13 @@ class StateMarkerWiringTests(CLITestCase):
             state, "FileLock"
         ) as lock:
             with self.assertRaises(sessions.StateMarkerError):
-                claude_multi.custom.save_registry(self.runtime.environ, registry)
+                charmer.custom.save_registry(self.runtime.environ, registry)
             with self.assertRaises(sessions.StateMarkerError):
-                claude_multi.custom._mutate(self.runtime.environ, mutate, touches=lambda _after: set())
+                charmer.custom._mutate(self.runtime.environ, mutate, touches=lambda _after: set())
         mkdir.assert_not_called()
         lock.assert_not_called()
         mutate.assert_not_called()
-        self.assertEqual(claude_multi.custom.load_registry(self.runtime.environ), registry)
+        self.assertEqual(charmer.custom.load_registry(self.runtime.environ), registry)
 
     def test_restore_2x_never_constructs_runtime_and_gates_on_the_marker(self):
         # A compatible marker body (<= 3) is 2.x state: nothing to restore;
@@ -2214,7 +2214,7 @@ class StateMarkerWiringTests(CLITestCase):
                     self._marker(body)
                 before = self._state_bytes()
                 output, errors = io.StringIO(), io.StringIO()
-                with mock.patch.dict(os.environ, self.runtime.environ, clear=True), mock.patch('claude_multi.cli.runtime.Runtime'
+                with mock.patch.dict(os.environ, self.runtime.environ, clear=True), mock.patch('charmer.cli.runtime.Runtime'
                 ) as runtime, contextlib.redirect_stderr(errors):
                     code = cli.main(["restore-2x"], output_stream=output, interactive=False)
                 runtime.assert_not_called()
@@ -2226,7 +2226,7 @@ class StateMarkerWiringTests(CLITestCase):
                 self.assertEqual(self._state_bytes(), before)
         self._marker(b"4\n")
         output = io.StringIO()
-        with mock.patch.dict(os.environ, self.runtime.environ, clear=True), mock.patch('claude_multi.cli.runtime.Runtime'
+        with mock.patch.dict(os.environ, self.runtime.environ, clear=True), mock.patch('charmer.cli.runtime.Runtime'
         ) as runtime, mock.patch.object(
             sessions, "live_background_prefixes", return_value=frozenset()
         ), mock.patch.object(sessions, "proc_session_ids", return_value=frozenset()), mock.patch.object(
@@ -2369,12 +2369,12 @@ class SessionsListTuiDriverTests(CLITestCase):
             self.addCleanup(patcher.stop)
 
     def _capable(self):
-        return mock.patch.object(claude_multi.tui, "streams_curses_capable", return_value=True)
+        return mock.patch.object(charmer.tui, "streams_curses_capable", return_value=True)
 
     def test_quit_returns_zero_without_action(self) -> None:
         self.save_v4_session()
         with self._capable(), mock.patch(
-            "claude_multi.tui.run_curses_on_streams", return_value=None
+            "charmer.tui.run_curses_on_streams", return_value=None
         ) as curses_run:
             code, _output = self.run_cli(["-r"])
         self.assertEqual(code, 0)
@@ -2383,7 +2383,7 @@ class SessionsListTuiDriverTests(CLITestCase):
 
     def test_tty_sessions_list_is_a_listing_not_the_screen(self) -> None:
         self.save_v4_session()
-        with self._capable(), mock.patch('claude_multi.cli.screens.launch_sessions._sessions_list_tui', return_value=None) as screen:
+        with self._capable(), mock.patch('charmer.cli.screens.launch_sessions._sessions_list_tui', return_value=None) as screen:
             code, output = self.run_cli(["sessions", "list"], "1\n")
         self.assertEqual(code, 0, output)
         screen.assert_not_called()
@@ -2393,7 +2393,7 @@ class SessionsListTuiDriverTests(CLITestCase):
 
     def test_tty_bare_resume_opens_the_sessions_screen(self) -> None:
         self.save_v4_session()
-        with self._capable(), mock.patch('claude_multi.cli.screens.launch_sessions._sessions_list_tui', return_value=None) as screen:
+        with self._capable(), mock.patch('charmer.cli.screens.launch_sessions._sessions_list_tui', return_value=None) as screen:
             code, output = self.run_cli(["-r"], "1\n")
         self.assertEqual(code, 0, output)
         screen.assert_called_once()
@@ -2412,7 +2412,7 @@ class SessionsListTuiDriverTests(CLITestCase):
         )
         self._touch_transcript()
         with self._capable(), mock.patch(
-            'claude_multi.cli.screens.launch_sessions._sessions_list_tui', return_value=("perform", prepared, None)
+            'charmer.cli.screens.launch_sessions._sessions_list_tui', return_value=("perform", prepared, None)
         ):
             code, output = self.run_cli(["-r"])
         self.assertEqual(code, 0, output)
@@ -2422,14 +2422,14 @@ class SessionsListTuiDriverTests(CLITestCase):
 
     def test_tty_sessions_list_screen_esc_returns_zero(self) -> None:
         self.save_v4_session()
-        with self._capable(), mock.patch('claude_multi.cli.screens.launch_sessions._sessions_list_tui', return_value=None):
+        with self._capable(), mock.patch('charmer.cli.screens.launch_sessions._sessions_list_tui', return_value=None):
             code, _output = self.run_cli(["sessions", "list"], "\n")
         self.assertEqual(code, 0)
         self.assertEqual(self.launches, [])
 
     def test_tty_sessions_list_with_line_flag_prints_the_listing(self) -> None:
         self.save_v4_session()
-        with self._capable(), mock.patch('claude_multi.cli.screens.launch_sessions._sessions_list_tui') as screen:
+        with self._capable(), mock.patch('charmer.cli.screens.launch_sessions._sessions_list_tui') as screen:
             code, output = self.run_cli(["--line", "sessions", "list"], "1\n")
         self.assertEqual(code, 0, output)
         screen.assert_not_called()
@@ -2440,7 +2440,7 @@ class SessionsListTuiDriverTests(CLITestCase):
     def test_tty_bare_resume_with_line_flag_uses_the_line_chooser_and_resumes(self) -> None:
         self.save_v4_session()
         self._touch_transcript()
-        with self._capable(), mock.patch('claude_multi.cli.screens.launch_sessions._sessions_list_tui') as screen:
+        with self._capable(), mock.patch('charmer.cli.screens.launch_sessions._sessions_list_tui') as screen:
             code, output = self.run_cli(["--line", "-r"], "1\n")
         self.assertEqual(code, 0, output)
         screen.assert_not_called()
@@ -2451,7 +2451,7 @@ class SessionsListTuiDriverTests(CLITestCase):
 
     def test_tty_bare_resume_opens_the_sessions_screen_with_the_passthrough(self) -> None:
         self.save_v4_session()
-        with self._capable(), mock.patch('claude_multi.cli.screens.launch_sessions._sessions_list_tui', return_value=None) as screen:
+        with self._capable(), mock.patch('charmer.cli.screens.launch_sessions._sessions_list_tui', return_value=None) as screen:
             code, _output = self.run_cli(["-r", "--", "--verbose"])
         self.assertEqual(code, 0)
         screen.assert_called_once()
@@ -2506,7 +2506,7 @@ class TransitionPreflightTests(CLITestCase):
 
     def _refused(self, *extra, **kwargs) -> str:
         before = self.save_v4_session()
-        with mock.patch('claude_multi.cli.runtime.Runtime.prepare') as prepare_mock:
+        with mock.patch('charmer.cli.runtime.Runtime.prepare') as prepare_mock:
             code, output = self._transition(*extra, **kwargs)
         self.assertEqual(code, 1)
         prepare_mock.assert_not_called()
@@ -2550,8 +2550,8 @@ class TransitionPreflightTests(CLITestCase):
             calls.append("prepare")
             return real_prepare(runtime, *args, **kwargs)
 
-        with mock.patch('claude_multi.cli.launch_flow._transition_preflight_problems', preflight), mock.patch(
-            'claude_multi.cli.runtime.Runtime.prepare', prepare
+        with mock.patch('charmer.cli.launch_flow._transition_preflight_problems', preflight), mock.patch(
+            'charmer.cli.runtime.Runtime.prepare', prepare
         ):
             code, output = self._transition(text="y\n")
         self.assertEqual(code, 0, output)
@@ -2709,7 +2709,7 @@ class VisibleMessageTests(CLITestCase):
 
     def test_visible_message_sanitizes_per_line(self) -> None:
         hostile = "line one\x1b]0;pwned\x07\nline two"
-        rendered = claude_multi.tui.visible_message(hostile)
+        rendered = charmer.tui.visible_message(hostile)
         self.assertEqual(rendered, "line one^[]0;pwned^G\nline two")
 
 
@@ -3024,7 +3024,7 @@ class DoctorServedCrossCheckTests(CLITestCase):
 
     def _report(self, served):
         with unittest.mock.patch.object(
-            claude_multi.launch, "served_models", return_value=(served, 200)
+            charmer.launch, "served_models", return_value=(served, 200)
         ):
             return cli._doctor_served_report(self.runtime, "t" * 64)
 
@@ -3032,28 +3032,28 @@ class DoctorServedCrossCheckTests(CLITestCase):
         home = Path(self.runtime.environ["HOME"])
         # v2 lines plus the continuity set doctor expects (the seed
         # set while continuity.json is absent).
-        document, _available, _unavailable, _info = claude_multi.render.build_config_document(
+        document, _available, _unavailable, _info = charmer.render.build_config_document(
             self.runtime.catalog.docs["gateway"],
             self.runtime.catalog.docs["providers"]["providers"],
             self.runtime.catalog.docs["models-v2"]["models"],
             home=home,
             gateway_tokens=tokens,
-            resolve_secret=lambda name: claude_multi.proxy.resolve_secret(
+            resolve_secret=lambda name: charmer.proxy.resolve_secret(
                 name, environ=self.runtime.environ
             ),
-            continuity=claude_multi.continuity.seed_only(self.runtime.catalog)["aliases"],
+            continuity=charmer.continuity.seed_only(self.runtime.catalog)["aliases"],
         )
         return document
 
     def _expected(self):
-        return claude_multi.render.rendered_selectors(self._document())
+        return charmer.render.rendered_selectors(self._document())
 
     def _write_config(self, document) -> None:
-        config_dir = claude_multi.proxy.config_dir(Path(self.runtime.environ["HOME"]))
+        config_dir = charmer.proxy.config_dir(Path(self.runtime.environ["HOME"]))
         state.ensure_private_dir(config_dir)
         state.atomic_write(
             config_dir / "config.yaml",
-            claude_multi.render.emit_yaml(document).encode("utf-8"),
+            charmer.render.emit_yaml(document).encode("utf-8"),
         )
 
     def test_full_match_is_silent(self) -> None:
@@ -3095,7 +3095,7 @@ class DoctorServedCrossCheckTests(CLITestCase):
         self.assertIn("claude-multi gateway restart", problems[0])
 
     def test_config_drift_is_a_problem_naming_the_apply(self) -> None:
-        config_dir = claude_multi.proxy.config_dir(Path(self.runtime.environ["HOME"]))
+        config_dir = charmer.proxy.config_dir(Path(self.runtime.environ["HOME"]))
         state.ensure_private_dir(config_dir)
         state.atomic_write(config_dir / "config.yaml", b"stale: true\n")
         problems, _info = self._report(set(self._expected()))
@@ -3109,7 +3109,7 @@ class DoctorServedCrossCheckTests(CLITestCase):
     def test_fresh_config_match_produces_no_drift_problem(self) -> None:
         document = self._document()
         self._write_config(document)
-        served = set(self._expected()) | {claude_multi.render.document_sentinel(document)}
+        served = set(self._expected()) | {charmer.render.document_sentinel(document)}
         problems, info = self._report(served)
         self.assertEqual(problems, [])
         self.assertEqual(info, [])
@@ -3125,14 +3125,14 @@ class DoctorServedCrossCheckTests(CLITestCase):
         self._write_config(document)
         snap = cli._gateway_snapshot(self.runtime, FIXTURE_GATEWAY_TOKEN)
         self.assertFalse(snap.config_drift)
-        self.assertEqual(snap.sentinel, claude_multi.render.document_sentinel(document))
+        self.assertEqual(snap.sentinel, charmer.render.document_sentinel(document))
         self.assertNotIn(snap.sentinel, snap.expected)
 
     def test_older_served_sentinel_is_a_restart_required_problem(self) -> None:
         document = self._document()
         self._write_config(document)
-        stale = claude_multi.render.SENTINEL_PREFIX + "00000000"
-        self.assertNotEqual(stale, claude_multi.render.document_sentinel(document))
+        stale = charmer.render.SENTINEL_PREFIX + "00000000"
+        self.assertNotEqual(stale, charmer.render.document_sentinel(document))
         problems, info = self._report(set(self._expected()) | {stale})
         self.assertEqual(len(problems), 1)
         self.assertIn("did not reload the current render (sentinel missing)", problems[0])
@@ -3143,8 +3143,8 @@ class DoctorServedCrossCheckTests(CLITestCase):
         document = self._document()
         self._write_config(document)
         served = set(self._expected()) | {
-            claude_multi.render.document_sentinel(document),
-            claude_multi.render.SENTINEL_PREFIX + "00000000",
+            charmer.render.document_sentinel(document),
+            charmer.render.SENTINEL_PREFIX + "00000000",
         }
         problems, info = self._report(served)
         self.assertEqual(problems, [])
@@ -3160,12 +3160,12 @@ class DoctorServedCrossCheckTests(CLITestCase):
 
     def test_dual_key_window_is_attention_not_drift(self) -> None:
         home = Path(self.runtime.environ["HOME"])
-        config_dir = claude_multi.proxy.config_dir(home)
+        config_dir = charmer.proxy.config_dir(home)
         previous = "b" * 64
         state.atomic_write(config_dir / "previous-key", (previous + "\n").encode())
         document = self._document((previous, FIXTURE_GATEWAY_TOKEN))
         self._write_config(document)
-        served = set(self._expected()) | {claude_multi.render.document_sentinel(document)}
+        served = set(self._expected()) | {charmer.render.document_sentinel(document)}
         problems, info = self._report(served)
         self.assertEqual(problems, [])
         self.assertEqual(info, [])
@@ -3178,7 +3178,7 @@ class DoctorServedCrossCheckTests(CLITestCase):
         self.assertIsNone(cli._token_rotation_attention(self.runtime))
 
     def test_unusable_key_slot_is_a_problem_without_its_value(self) -> None:
-        config_dir = claude_multi.proxy.config_dir(Path(self.runtime.environ["HOME"]))
+        config_dir = charmer.proxy.config_dir(Path(self.runtime.environ["HOME"]))
         state.atomic_write(config_dir / "previous-key", b"not-a-token\n")
         problems, _info = self._report(set(self._expected()))
         self.assertTrue(problems)
@@ -3207,7 +3207,7 @@ class DoctorServedCrossCheckTests(CLITestCase):
 
     def test_non_200_is_one_info_line(self) -> None:
         with unittest.mock.patch.object(
-            claude_multi.launch, "served_models", return_value=(None, 500)
+            charmer.launch, "served_models", return_value=(None, 500)
         ):
             problems, info = cli._doctor_served_report(self.runtime, "t" * 64)
         self.assertEqual(problems, [])
@@ -3218,9 +3218,9 @@ class DoctorServedCrossCheckTests(CLITestCase):
         # Readiness passed but the models probe failed (a restart in
         # flight): the radar must SAY it never ran — silence reads as clean.
         with unittest.mock.patch.object(
-            claude_multi.launch,
+            charmer.launch,
             "served_models",
-            side_effect=claude_multi.launch.LaunchError("connection refused"),
+            side_effect=charmer.launch.LaunchError("connection refused"),
         ):
             problems, info = cli._doctor_served_report(self.runtime, "t" * 64)
         self.assertEqual(problems, [])
@@ -3291,7 +3291,7 @@ class ImprovementBatchTests(CLITestCase):
             return json.dumps({"data": data}).encode()
 
         self.runtime.listing_transport = transport
-        with unittest.mock.patch("claude_multi.cli.consent.stdio_ttys", return_value=True), \
+        with unittest.mock.patch("charmer.cli.consent.stdio_ttys", return_value=True), \
                 contextlib.redirect_stderr(io.StringIO()):
             return self.run_cli(["discover", provider], text)
 
@@ -3334,7 +3334,7 @@ class ImprovementBatchTests(CLITestCase):
         for model_id, model in sorted(models.items()):
             by_provider.setdefault(model["provider"], {}).setdefault(model["wire_model"], model_id)
         listable = [p for p in sorted(by_provider) if providers[p]["transport"]["kind"] == "direct"
-                    and claude_multi.proxy._LISTING_SUPPORT.get(p, {}).get("status") != "unsupported"]
+                    and charmer.proxy._LISTING_SUPPORT.get(p, {}).get("status") != "unsupported"]
         provider = max(listable, key=lambda p: len(by_provider[p]))
         wires = by_provider[provider]
         foreign_wire = next(model["wire_model"] for model in models.values()
@@ -3344,7 +3344,7 @@ class ImprovementBatchTests(CLITestCase):
             {"id": redirect, "display_name": "", "context_length": None},
             {"id": foreign_wire, "display_name": "", "context_length": None},
         ]
-        shape = claude_multi.proxy._LISTING_SUPPORT.get(provider, {}).get("shape", "anthropic")
+        shape = charmer.proxy._LISTING_SUPPORT.get(provider, {}).get("shape", "anthropic")
         code, out = self._discover(provider, entries, shape=shape)
         self.assertEqual(code, 0)
         # OpenRouter also prints normalized facts after the classification.
@@ -3356,7 +3356,7 @@ class ImprovementBatchTests(CLITestCase):
         self.assertEqual(marks[foreign_wire], "candidate")
 
     def test_discover_unknown_provider_is_refused(self) -> None:
-        with unittest.mock.patch("claude_multi.cli.consent.stdio_ttys", return_value=True):
+        with unittest.mock.patch("charmer.cli.consent.stdio_ttys", return_value=True):
             err = io.StringIO()
             with contextlib.redirect_stderr(err):
                 code, _out = self.run_cli(["discover", "nope"], "y\n")
@@ -3364,8 +3364,8 @@ class ImprovementBatchTests(CLITestCase):
         self.assertIn("unknown provider 'nope'", err.getvalue())
 
     def test_discover_qwen_reports_unsupported(self) -> None:
-        with self.assertRaises(claude_multi.proxy.ProxyError):
-            claude_multi.proxy.list_provider_models(
+        with self.assertRaises(charmer.proxy.ProxyError):
+            charmer.proxy.list_provider_models(
                 "qwen",
                 self.runtime.catalog.docs["providers"]["providers"],
                 environ=self.runtime.environ,
@@ -3379,7 +3379,7 @@ class CustomModelsTests(CLITestCase):
     """Custom providers & ordinary models registry + integration."""
 
     def _add_kimi_custom(self, model_id="k3-256k", context=262144):
-        claude_multi.custom.add_model(
+        charmer.custom.add_model(
             self.runtime.environ,
             model_id,
             wire_model=model_id,
@@ -3390,25 +3390,25 @@ class CustomModelsTests(CLITestCase):
         )
 
     def test_registry_roundtrip_and_mode(self) -> None:
-        claude_multi.custom.add_provider(
+        charmer.custom.add_provider(
             self.runtime.environ,
             "my-lab",
             base_url="https://lab.example.com/apps/anthropic",
             auth_kind="bearer",
             secret_env="MY_LAB_API_KEY",
         )
-        registry = claude_multi.custom.load_registry(self.runtime.environ)
+        registry = charmer.custom.load_registry(self.runtime.environ)
         self.assertIn("my-lab", registry["providers"])
-        path = claude_multi.custom.registry_path(self.runtime.environ)
+        path = charmer.custom.registry_path(self.runtime.environ)
         self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
-        self.assertEqual(claude_multi.custom.remove_provider(self.runtime.environ, "my-lab"), (True, ()))
+        self.assertEqual(charmer.custom.remove_provider(self.runtime.environ, "my-lab"), (True, ()))
 
     def test_invalid_registry_fails_closed(self) -> None:
-        path = claude_multi.custom.registry_path(self.runtime.environ)
+        path = charmer.custom.registry_path(self.runtime.environ)
         state.ensure_private_dir(path.parent)
         state.atomic_write(path, b'{"version": 1, "models": {"x": {}}, "providers": {}}')
-        with self.assertRaises(claude_multi.custom.CustomModelsError):
-            claude_multi.custom.load_registry(self.runtime.environ)
+        with self.assertRaises(charmer.custom.CustomModelsError):
+            charmer.custom.load_registry(self.runtime.environ)
 
     def test_ordinary_docs_merges_but_catalog_never_sees_customs(self) -> None:
         self._add_kimi_custom()
@@ -3423,12 +3423,12 @@ class CustomModelsTests(CLITestCase):
 
     def test_doctor_flags_unapplied_custom_as_config_drift(self) -> None:
         self._add_kimi_custom()
-        config_dir = claude_multi.proxy.config_dir(Path(self.runtime.environ["HOME"]))
+        config_dir = charmer.proxy.config_dir(Path(self.runtime.environ["HOME"]))
         state.ensure_private_dir(config_dir)
         # On-disk config rendered WITHOUT the custom model → drift problem.
         state.atomic_write(config_dir / "config.yaml", b"old: true\n")
         with unittest.mock.patch.object(
-            claude_multi.launch, "served_models", return_value=(set(), 200)
+            charmer.launch, "served_models", return_value=(set(), 200)
         ):
             problems, _info = cli._doctor_served_report(self.runtime, "t" * 64)
         self.assertTrue(any("claude-multi providers apply" in p for p in problems))
@@ -3458,7 +3458,7 @@ class CustomModelsTests(CLITestCase):
 
     def test_converge_repairs_custom_sessions(self) -> None:
         # Doctor --repair must converge custom sessions.
-        from claude_multi import transition as transition_mod
+        from charmer import transition as transition_mod
 
         self._add_kimi_custom()
         prepared = self.prepare_direct_v4("k3-256k")
@@ -3475,8 +3475,8 @@ class CustomModelsTests(CLITestCase):
         )
 
     def test_fetch_mark_rejects_catalog_id_shadowing(self) -> None:
-        with self.assertRaises(claude_multi.custom.CustomModelsError):
-            claude_multi.custom.add_model(
+        with self.assertRaises(charmer.custom.CustomModelsError):
+            charmer.custom.add_model(
                 self.runtime.environ,
                 "sol",  # a catalog id — must never be shadowed
                 wire_model="whatever-wire",
@@ -3604,7 +3604,7 @@ class PickerIntentThreadingTests(CLITestCase):
         self.assertIn("record: profile balanced · follow yes · lineup generation 1", out)
         self.assertIn("gateway auth: scope apiKeyHelper", out)
         self.assertNotIn("  set ANTHROPIC_AUTH_TOKEN", out)
-        for key in claude_multi.catalog.CREDENTIAL_ENV_KEYS:
+        for key in charmer.catalog.CREDENTIAL_ENV_KEYS:
             self.assertIn(f"  unset {key}\n", out)
 
     def test_direct_print_launch_reports_credential_unsets(self) -> None:
@@ -3616,7 +3616,7 @@ class PickerIntentThreadingTests(CLITestCase):
         self.assertIn("gateway auth: scope apiKeyHelper", output)
         self.assertNotIn("  set ANTHROPIC_AUTH_TOKEN", output)
         self.assertNotIn(FIXTURE_GATEWAY_TOKEN, output)
-        for key in claude_multi.catalog.CREDENTIAL_ENV_KEYS:
+        for key in charmer.catalog.CREDENTIAL_ENV_KEYS:
             self.assertIn(f"  unset {key}\n", output)
         self.assertEqual(self.launches, [])
 
@@ -3698,7 +3698,7 @@ class NativeDiscoveryTests(CLITestCase):
 class VersionConsistencyTests(unittest.TestCase):
     def test_package_version_matches_version_json(self) -> None:
         import json
-        from claude_multi import __version__
+        from charmer import __version__
 
         document = json.loads(
             (cli.default_asset_root() / "version.json").read_text(encoding="utf-8")
@@ -3706,7 +3706,7 @@ class VersionConsistencyTests(unittest.TestCase):
         self.assertEqual(__version__, document["launcher_version"])
 
     def test_cli_version_flag_prints_the_release_identity(self) -> None:
-        from claude_multi import identity
+        from charmer import identity
 
         parser = cli.build_parser()
         for argv in (["--version"], ["--line", "--version"]):
@@ -3718,14 +3718,14 @@ class VersionConsistencyTests(unittest.TestCase):
                 self.assertEqual(shown.getvalue(), identity.version_line() + "\n")
 
     def test_module_entry_prints_the_launchers_identity_line(self) -> None:
-        # python -m claude_multi.cli reaches the parser's --version (no
+        # python -m charmer.cli reaches the parser's --version (no
         # launcher shortcut): the same line as the launchers.
-        from claude_multi import identity
+        from charmer import identity
 
         with tempfile.TemporaryDirectory() as home:
             for argv in (["--version"], ["--no-color", "--version"]):
                 with self.subTest(argv=argv):
-                    result = subprocess.run([sys.executable, "-B", "-m", "claude_multi.cli", *argv],
+                    result = subprocess.run([sys.executable, "-B", "-m", "charmer.cli", *argv],
                                             env={"HOME": home, "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
                                                  "PYTHONPATH": str(REPO_ROOT / "src")},
                                             capture_output=True, text=True, timeout=60, cwd=home)
@@ -3737,7 +3737,7 @@ class VersionConsistencyTests(unittest.TestCase):
 class ProxyVersionConsistencyTests(unittest.TestCase):
     def test_proxy_version_matches_package(self) -> None:
         import io
-        from claude_multi import __version__, proxy
+        from charmer import __version__, proxy
 
         out = io.StringIO()
         with __import__("contextlib").redirect_stdout(out):
@@ -3895,7 +3895,7 @@ class SessionEventAndDirectModeTests(CLITestCase):
             }
         ).decode("utf-8")
         output = io.StringIO()
-        with mock.patch('claude_multi.cli.streams._open_tty_streams', side_effect=AssertionError("must not open tty")
+        with mock.patch('charmer.cli.streams._open_tty_streams', side_effect=AssertionError("must not open tty")
         ), mock.patch.object(sys, "stdin", io.StringIO(payload)):
             code = cli.main(
                 ["session-event", "start", "--managed-id", FIXED_ID],
@@ -4149,7 +4149,7 @@ class SessionEventAndDirectModeTests(CLITestCase):
 
     def test_direct_resume_targets_recorded_runtime_uuid(self) -> None:
         runtime_id = "22222222-2222-4222-8222-222222222222"
-        record = self.save_v4_session(target=cli.LaunchTarget("ad-hoc", claude_multi.profile.ad_hoc_direct("qwen38"), None, False, "Direct qwen38"))
+        record = self.save_v4_session(target=cli.LaunchTarget("ad-hoc", charmer.profile.ad_hoc_direct("qwen38"), None, False, "Direct qwen38"))
         self.runtime.session_store.save({**record, "runtime_session_id": runtime_id})
         prepared = self.runtime.prepare(
             cli.LaunchTarget("record", None, None, False, "Session"),
@@ -4172,7 +4172,7 @@ class SessionEventAndDirectModeTests(CLITestCase):
         # still counts: its record is newer than the `<d>.json` one, so
         # `direct -c` resumes it.
         self.save_v4_session()
-        other = self.save_v4_session(session_id=OTHER_ID, target=cli.LaunchTarget("ad-hoc", claude_multi.profile.ad_hoc_direct("qwen38"), None, False, "Direct qwen38"))
+        other = self.save_v4_session(session_id=OTHER_ID, target=cli.LaunchTarget("ad-hoc", charmer.profile.ad_hoc_direct("qwen38"), None, False, "Direct qwen38"))
         self.runtime.session_store.save({**other, "last_seen_at": "2099-01-01T00:00:00Z"})
         self.runtime.session_store.update_last(self.runtime.cwd, FIXED_ID)
         state.atomic_write(
@@ -4194,7 +4194,7 @@ class SessionEventAndDirectModeTests(CLITestCase):
         # A model mismatch is repaired by the launcher resume itself
         # (the relink text says "resume through the launcher"): the plain
         # resume relaunches pinned to the recorded lead.
-        record = self.save_v4_session(target=cli.LaunchTarget("ad-hoc", claude_multi.profile.ad_hoc_direct("qwen38"), None, False, "Direct qwen38"))
+        record = self.save_v4_session(target=cli.LaunchTarget("ad-hoc", charmer.profile.ad_hoc_direct("qwen38"), None, False, "Direct qwen38"))
         self.runtime.session_store.save({
             **record,
             "identity_state": sessions.IDENTITY_REPAIR_NEEDED,
@@ -4213,7 +4213,7 @@ class SessionEventAndDirectModeTests(CLITestCase):
         )
 
     def test_direct_explicit_model_repairs_with_pinned_relaunch(self) -> None:
-        record = self.save_v4_session(target=cli.LaunchTarget("ad-hoc", claude_multi.profile.ad_hoc_direct("qwen38"), None, False, "Direct qwen38"))
+        record = self.save_v4_session(target=cli.LaunchTarget("ad-hoc", charmer.profile.ad_hoc_direct("qwen38"), None, False, "Direct qwen38"))
         self.runtime.session_store.save({
             **record,
             "identity_state": sessions.IDENTITY_REPAIR_NEEDED,
@@ -4241,7 +4241,7 @@ class SessionEventAndDirectModeTests(CLITestCase):
         )
 
     def test_direct_pending_fork_blocks_even_with_explicit_model_repair(self) -> None:
-        record = self.save_v4_session(target=cli.LaunchTarget("ad-hoc", claude_multi.profile.ad_hoc_direct("qwen38"), None, False, "Direct qwen38"))
+        record = self.save_v4_session(target=cli.LaunchTarget("ad-hoc", charmer.profile.ad_hoc_direct("qwen38"), None, False, "Direct qwen38"))
         self.runtime.session_store.save({
             **record,
             "identity_state": sessions.IDENTITY_REPAIR_NEEDED,
@@ -4250,7 +4250,7 @@ class SessionEventAndDirectModeTests(CLITestCase):
                 {"session_id": OTHER_ID, "observed_at": "2026-07-22T00:00:00Z"}
             ],
         })
-        with self.assertRaisesRegex(claude_multi.launch.LaunchError, "unresolved native fork"):
+        with self.assertRaisesRegex(charmer.launch.LaunchError, "unresolved native fork"):
             self.runtime.prepare(
                 cli.LaunchTarget("record", None, None, False, "Session"),
                 action="resume",
@@ -4266,7 +4266,7 @@ class SessionEventAndDirectModeTests(CLITestCase):
             "identity_state": sessions.IDENTITY_REPAIR_NEEDED,
             "observed_cwd": "/wrong/project",
         })
-        with self.assertRaisesRegex(claude_multi.launch.LaunchError, "relink-runtime"):
+        with self.assertRaisesRegex(charmer.launch.LaunchError, "relink-runtime"):
             self.runtime.prepare(
                 cli.LaunchTarget("record", None, "balanced", True, "Session"),
                 action="resume",
@@ -4294,7 +4294,7 @@ class DoctorContractOverrideAttentionTests(CLITestCase):
     """An old-format contract override is ignored and named for removal."""
 
     def test_doctor_names_an_ignored_override(self) -> None:
-        from claude_multi import state as state_mod
+        from charmer import state as state_mod
 
         config = sessions.config_root(self.runtime.environ)
         state_mod.ensure_private_dir(config)
@@ -4518,7 +4518,7 @@ class RepinProgressTests(CLITestCase):
     def test_run_repin_reports_phases(self) -> None:
         import json as _json
 
-        from claude_multi import upgrade as upgrade_mod
+        from charmer import upgrade as upgrade_mod
         from tests.test_upgrade import FAKE_SETTINGS_KEYS, FIXTURE_SCHEMA, fake_release
 
         home = Path(self.runtime.environ["HOME"])
@@ -4769,7 +4769,7 @@ class BrokenOverrideDegradationTests(CLITestCase):
             launch_callback=self.runtime.launch_callback,
             doctor_callback=lambda _runtime: [],
             doctor_binary_callback=lambda _contract: ([], ["fixture binary ok"]),
-            doctor_daemon_callback=lambda: claude_multi.launch.DaemonStatus(
+            doctor_daemon_callback=lambda: charmer.launch.DaemonStatus(
                 state="absent", summary="fixture daemon absent"
             ),
             **self._runtime_seams(),
@@ -4819,7 +4819,7 @@ class LegacyOverrideCleanupTests(CLITestCase):
         self.config = sessions.config_root(self.runtime.environ)
         state.ensure_private_dir(self.config)
         self.override = self.config / "native-contract.json"
-        self.packaged_version = claude_multi.pin.version(self.runtime.catalog.docs["native-contract"])
+        self.packaged_version = charmer.pin.version(self.runtime.catalog.docs["native-contract"])
 
     def _legacy_document(self, version: str) -> dict:
         document = copy.deepcopy(self.runtime.catalog.docs["native-contract"])
@@ -4849,7 +4849,7 @@ class LegacyOverrideCleanupTests(CLITestCase):
             launch_callback=self.runtime.launch_callback,
             doctor_callback=lambda _runtime: [],
             doctor_binary_callback=lambda _contract: ([], ["fixture binary ok"]),
-            doctor_daemon_callback=lambda: claude_multi.launch.DaemonStatus(
+            doctor_daemon_callback=lambda: charmer.launch.DaemonStatus(
                 state="absent", summary="fixture daemon absent"
             ),
             **self._runtime_seams(),
@@ -4950,7 +4950,7 @@ class LegacyOverrideCleanupTests(CLITestCase):
         self.addCleanup(os.chmod, self.config, 0o700)
         packaged = self.runtime.catalog.docs["native-contract"]
         self.assertIsNone(
-            claude_multi.catalog.remove_legacy_contract_override(self.override, packaged=packaged)
+            charmer.catalog.remove_legacy_contract_override(self.override, packaged=packaged)
         )
         self.assertTrue(self.override.exists())
 
@@ -4999,9 +4999,9 @@ class LegacyOverrideCleanupTests(CLITestCase):
                                                   "XDG_CONFIG_HOME": str(state_root.parent / "config"),
                                                   "XDG_STATE_HOME": str(state_root.parent / "state"),
                                                   "XDG_DATA_HOME": str(state_root.parent / "data")}), \
-                        mock.patch.object(claude_multi.sessions, "state_root", return_value=state_root), \
-                        mock.patch('claude_multi.cli.runtime.Runtime', side_effect=fake_runtime), \
-                        mock.patch('claude_multi.assets.default_asset_root', return_value=CATALOG_ROOT):
+                        mock.patch.object(charmer.sessions, "state_root", return_value=state_root), \
+                        mock.patch('charmer.cli.runtime.Runtime', side_effect=fake_runtime), \
+                        mock.patch('charmer.assets.default_asset_root', return_value=CATALOG_ROOT):
                     with self.assertRaises(_Stop):
                         cli.main(
                             argv,
@@ -5019,8 +5019,8 @@ class SessionsStopTests(CLITestCase):
     def _fixture_contract(self):
         import hashlib as _hashlib
 
-        platform = claude_multi.pin.host_platform()
-        binary = claude_multi.pin.owned_path(self.runtime.environ, "2.1.999", platform)
+        platform = charmer.pin.host_platform()
+        binary = charmer.pin.owned_path(self.runtime.environ, "2.1.999", platform)
         state.ensure_private_dir(binary.parent)
         binary.write_bytes(b"#!/bin/sh\n")
         binary.chmod(0o755)
@@ -5050,7 +5050,7 @@ class SessionsStopTests(CLITestCase):
         self._runtime_with_fixture_contract()
         self.save_session(mode="durable", scope_generation=1)
         captured = []
-        with mock.patch('claude_multi.cli.session_facts._live_background_prefixes', return_value=frozenset({"11111111"})), \
+        with mock.patch('charmer.cli.session_facts._live_background_prefixes', return_value=frozenset({"11111111"})), \
              mock.patch("subprocess.run", side_effect=self._runner(captured)):
             code, output = self.run_cli(
                 ["sessions", "stop", FIXED_ID, "--yes"], interactive=False
@@ -5066,7 +5066,7 @@ class SessionsStopTests(CLITestCase):
 
     def test_stop_refuses_when_not_live(self) -> None:
         self.save_session(mode="durable", scope_generation=1)
-        with mock.patch('claude_multi.cli.session_facts._live_background_prefixes', return_value=frozenset()):
+        with mock.patch('charmer.cli.session_facts._live_background_prefixes', return_value=frozenset()):
             code, output = self.run_cli_err(
                 ["sessions", "stop", FIXED_ID, "--yes"], interactive=False
             )
@@ -5077,7 +5077,7 @@ class SessionsStopTests(CLITestCase):
         self.save_session(mode="durable", scope_generation=1)
         self.runtime.environ["CLAUDE_MULTI_MANAGED_ID"] = FIXED_ID
         try:
-            with mock.patch('claude_multi.cli.session_facts._live_background_prefixes', return_value=frozenset({"11111111"})
+            with mock.patch('charmer.cli.session_facts._live_background_prefixes', return_value=frozenset({"11111111"})
             ):
                 code, output = self.run_cli_err(
                     ["sessions", "stop", FIXED_ID, "--yes"], interactive=False
@@ -5089,14 +5089,14 @@ class SessionsStopTests(CLITestCase):
 
     def test_stop_noninteractive_requires_yes(self) -> None:
         self.save_session(mode="durable", scope_generation=1)
-        with mock.patch('claude_multi.cli.session_facts._live_background_prefixes', return_value=frozenset({"11111111"})):
+        with mock.patch('charmer.cli.session_facts._live_background_prefixes', return_value=frozenset({"11111111"})):
             code, output = self.run_cli_err(["sessions", "stop", FIXED_ID], interactive=False)
         self.assertEqual(code, 1)
         self.assertIn("--yes", output)
 
     def test_stop_confirmation_declined(self) -> None:
         self.save_session(mode="durable", scope_generation=1)
-        with mock.patch('claude_multi.cli.session_facts._live_background_prefixes', return_value=frozenset({"11111111"})):
+        with mock.patch('charmer.cli.session_facts._live_background_prefixes', return_value=frozenset({"11111111"})):
             code, output = self.run_cli_err(["sessions", "stop", FIXED_ID], "n\n")
         self.assertEqual(code, 3, output)
         self.assertIn("cancelled", output)
@@ -5108,7 +5108,7 @@ class SessionsStopTests(CLITestCase):
         def failing(argv, **kwargs):
             return subprocess.CompletedProcess(argv, 3, "", "no such session")
 
-        with mock.patch('claude_multi.cli.session_facts._live_background_prefixes', return_value=frozenset({"11111111"})), \
+        with mock.patch('charmer.cli.session_facts._live_background_prefixes', return_value=frozenset({"11111111"})), \
              mock.patch("subprocess.run", side_effect=failing):
             code, output = self.run_cli_err(
                 ["sessions", "stop", FIXED_ID, "--yes"], interactive=False
@@ -5122,7 +5122,7 @@ class SessionsStopTests(CLITestCase):
         shifted["name"] = "shifted"
         shifted["lead"] = {"model": "sol", "effort": "xhigh"}
         self.runtime.profiles.save(shifted)
-        with mock.patch('claude_multi.cli.session_facts._live_background_prefixes', return_value=frozenset({"11111111"})):
+        with mock.patch('charmer.cli.session_facts._live_background_prefixes', return_value=frozenset({"11111111"})):
             code, output = self.run_cli(
                 ["sessions", "transition", FIXED_ID, "--composition", "shifted"],
                 "n\n",
@@ -5215,11 +5215,11 @@ class ResumeGateTests(CLITestCase):
         import types
 
         action = (
-            claude_multi.compiler.build_resume(
+            charmer.compiler.build_resume(
                 sessions.managed_id(record), sessions.runtime_session_id(record)
             )
             if kind == "resume"
-            else claude_multi.compiler.build_fresh(sessions.managed_id(record))
+            else charmer.compiler.build_fresh(sessions.managed_id(record))
         )
         result = types.SimpleNamespace(session_action=action)
         return cli.PreparedLaunch(result, record, None, None)
@@ -5318,7 +5318,7 @@ class ResumeGateTests(CLITestCase):
         record = self.save_session(mode="durable", scope_generation=1)
         runtime = self._bare_runtime()
         with mock.patch.object(
-            claude_multi.launch, "perform_launch", return_value=0
+            charmer.launch, "perform_launch", return_value=0
         ) as perform_launch:
             with mock.patch.object(
                 runtime, "_live_prefixes", return_value=frozenset({FIXED_ID})
@@ -5341,7 +5341,7 @@ class ResumeGateTests(CLITestCase):
         record = self.save_session(mode="durable", scope_generation=1)
         self._transcript(record).unlink()
         runtime = self._bare_runtime()
-        with mock.patch.object(claude_multi.launch, "perform_launch", return_value=0):
+        with mock.patch.object(charmer.launch, "perform_launch", return_value=0):
             code = runtime.perform(self._prepared(record, kind="fresh"))
         self.assertEqual(code, 0)
 
@@ -5414,7 +5414,7 @@ class ResumeOptionsAndAuthorityTests(CLITestCase):
         # relaunch; the explicit recorded lead is accepted too.
         record = self.save_v4_session(
             target=cli.LaunchTarget(
-                "ad-hoc", claude_multi.profile.ad_hoc_direct("kimi-k3", "max"), None, False, "Direct"
+                "ad-hoc", charmer.profile.ad_hoc_direct("kimi-k3", "max"), None, False, "Direct"
             )
         )
         self.runtime.session_store.save({
@@ -5439,7 +5439,7 @@ class ResumeTranscriptBoundaryTests(CLITestCase):
     def _prepared(self, record, *, precommitted=False):
         import types
 
-        action = claude_multi.compiler.build_resume(
+        action = charmer.compiler.build_resume(
             sessions.managed_id(record), sessions.runtime_session_id(record)
         )
         result = types.SimpleNamespace(session_action=action)
@@ -5517,7 +5517,7 @@ class ResumePickerAndLivenessTests(CLITestCase):
     def _prepared(self, record, *, precommitted=False):
         import types
 
-        action = claude_multi.compiler.build_resume(
+        action = charmer.compiler.build_resume(
             sessions.managed_id(record), sessions.runtime_session_id(record)
         )
         result = types.SimpleNamespace(session_action=action)
@@ -5544,7 +5544,7 @@ class ResumePickerAndLivenessTests(CLITestCase):
         record = self.save_session(mode="durable", scope_generation=1)
         runtime = self._bare_runtime()
         prepared = self._prepared(record)
-        with mock.patch.object(claude_multi.launch, "perform_launch", return_value=0):
+        with mock.patch.object(charmer.launch, "perform_launch", return_value=0):
             # Decision None: a target that is live again at the boundary
             # is refused (no stale force exemption after stop & resume).
             with mock.patch.object(
@@ -5568,7 +5568,7 @@ class ResumePickerAndLivenessTests(CLITestCase):
         # Only the historical alias (FIXED_ID) is live; the current runtime
         # (OTHER_ID) is not — stop must refuse rather than target a
         # non-live identity.
-        with mock.patch('claude_multi.cli.session_facts._live_background_prefixes', return_value=frozenset({FIXED_ID})
+        with mock.patch('charmer.cli.session_facts._live_background_prefixes', return_value=frozenset({FIXED_ID})
         ):
             refusal = cli._stop_precheck(self.runtime, record)
         self.assertIsNotNone(refusal)
@@ -5989,7 +5989,7 @@ class ForgetLiveGuardTests(CLITestCase):
 
     def test_live_session_refuses_with_stop_guidance(self) -> None:
         self.save_session(mode="durable", scope_generation=1)
-        with mock.patch('claude_multi.cli.session_facts._live_background_prefixes', return_value=frozenset({"11111111"})
+        with mock.patch('charmer.cli.session_facts._live_background_prefixes', return_value=frozenset({"11111111"})
         ):
             code, output = self.run_cli_err(["sessions", "forget", FIXED_ID, "--yes"])
         self.assertEqual(code, 1)
@@ -6096,7 +6096,7 @@ class DoctorRotateTokenTests(CLITestCase):
     def setUp(self) -> None:
         super().setUp()
         self.home = Path(self.runtime.environ["HOME"])
-        self.config_dir = claude_multi.proxy.config_dir(self.home)
+        self.config_dir = charmer.proxy.config_dir(self.home)
         self.old = FIXTURE_GATEWAY_TOKEN
         self.now = 0.0
         self.gateway_calls = 0
@@ -6164,7 +6164,7 @@ class DoctorRotateTokenTests(CLITestCase):
         self.assertNotIn(self.old, out)
         self.assertNotIn(new, out)
         self.assertEqual(self._fixture_gateway(None, self.old)[1], 401)
-        self.assertGreaterEqual(self.now, claude_multi.proxy.HELPER_TTL_SECONDS)
+        self.assertGreaterEqual(self.now, charmer.proxy.HELPER_TTL_SECONDS)
 
     def _rotate_redirected(self, answers: str) -> tuple[int, str, str, str]:
         """``doctor --rotate-token`` through ``main`` with a terminal of its
@@ -6174,14 +6174,14 @@ class DoctorRotateTokenTests(CLITestCase):
             def close(self):  # main closes an owned terminal; keep the text
                 pass
 
-        real = claude_multi.proxy.rotate_token
+        real = charmer.proxy.rotate_token
 
         def rotate(home, **options):
             return real(home, clock=self._clock, sleep=self._sleep, **options)
 
         tty_in, tty_out, stdout, stderr = Terminal(answers), Terminal(), io.StringIO(), io.StringIO()
-        with mock.patch('claude_multi.cli.streams._open_tty_streams', return_value=(tty_in, tty_out)), \
-                mock.patch.object(claude_multi.proxy, "rotate_token", rotate), \
+        with mock.patch('charmer.cli.streams._open_tty_streams', return_value=(tty_in, tty_out)), \
+                mock.patch.object(charmer.proxy, "rotate_token", rotate), \
                 mock.patch.object(sys, "stdout", stdout), mock.patch.object(sys, "stderr", stderr):
             code = cli.main(["doctor", "--rotate-token"], runtime=self.runtime)
         return code, tty_out.getvalue(), stdout.getvalue(), stderr.getvalue()
@@ -6256,11 +6256,11 @@ class DoctorRotateTokenTests(CLITestCase):
         # holder; the same number on an older catalog stays conservative.
         record = self.save_session()
         record["launcher_version"] = "1.0.0"
-        record["catalog_version"] = claude_multi.sessions.HELPER_ONLY_CATALOG
+        record["catalog_version"] = charmer.sessions.HELPER_ONLY_CATALOG
         record["last_event_source"] = "startup"
         _v3.save_any(self.runtime.session_store, record)
         self.assertEqual(cli._pre_helper_session_labels(self.runtime), [])
-        record["catalog_version"] = claude_multi.sessions.HELPER_ONLY_CATALOG - 1
+        record["catalog_version"] = charmer.sessions.HELPER_ONLY_CATALOG - 1
         _v3.save_any(self.runtime.session_store, record)
         labels = cli._pre_helper_session_labels(self.runtime)
         self.assertEqual(len(labels), 1)
@@ -6349,20 +6349,20 @@ class DoctorRotateTokenTests(CLITestCase):
     def test_unrelated_key_list_with_previous_key_is_drift(self) -> None:
         state.atomic_write(self.config_dir / "previous-key", (self.old + "\n").encode())
         home = self.home
-        document, _a, _u, _i = claude_multi.render.build_config_document(
+        document, _a, _u, _i = charmer.render.build_config_document(
             self.runtime.ordinary_docs["gateway"],
             self.runtime.ordinary_docs["providers"]["providers"],
             self.runtime.ordinary_docs["models-v2"]["models"],
             home=home,
             gateway_tokens=("c" * 64, "d" * 64),
-            resolve_secret=lambda name: claude_multi.proxy.resolve_secret(
+            resolve_secret=lambda name: charmer.proxy.resolve_secret(
                 name, environ=self.runtime.environ
             ),
-            continuity=claude_multi.continuity.seed_only(self.runtime.catalog)["aliases"],
+            continuity=charmer.continuity.seed_only(self.runtime.catalog)["aliases"],
         )
         state.atomic_write(
             self.config_dir / "config.yaml",
-            claude_multi.render.emit_yaml(document).encode("utf-8"),
+            charmer.render.emit_yaml(document).encode("utf-8"),
         )
         snap = cli._gateway_snapshot(self.runtime, self.old)
         self.assertTrue(snap.config_drift)
@@ -6384,7 +6384,7 @@ class DoctorServed401Tests(CLITestCase):
 
     def _report(self, served, status):
         with unittest.mock.patch.object(
-            claude_multi.launch, "served_models", return_value=(served, status)
+            charmer.launch, "served_models", return_value=(served, status)
         ):
             return cli._doctor_served_report(self.runtime, "t" * 64)
 
@@ -6404,9 +6404,9 @@ class DoctorServed401Tests(CLITestCase):
 
     def test_gateway_down_after_readiness_is_an_informational_skip(self) -> None:
         with unittest.mock.patch.object(
-            claude_multi.launch,
+            charmer.launch,
             "served_models",
-            side_effect=claude_multi.launch.LaunchError("connection refused"),
+            side_effect=charmer.launch.LaunchError("connection refused"),
         ):
             problems, info = cli._doctor_served_report(self.runtime, "t" * 64)
         self.assertEqual(problems, [])
@@ -6419,8 +6419,8 @@ class CustomRegistryGuardTests(CLITestCase):
     guards (OAuth pools, header name, catalog shadowing, FileLock)."""
 
     def test_add_model_rejects_oauth_pool_providers(self) -> None:
-        with self.assertRaisesRegex(claude_multi.custom.CustomModelsError, "OAuth pool"):
-            claude_multi.custom.add_model(
+        with self.assertRaisesRegex(charmer.custom.CustomModelsError, "OAuth pool"):
+            charmer.custom.add_model(
                 self.runtime.environ,
                 "pool-backed",
                 wire_model="pool-backed",
@@ -6431,8 +6431,8 @@ class CustomRegistryGuardTests(CLITestCase):
             )
 
     def test_add_provider_header_auth_is_x_api_key_only(self) -> None:
-        with self.assertRaisesRegex(claude_multi.custom.CustomModelsError, "x-api-key"):
-            claude_multi.custom.add_provider(
+        with self.assertRaisesRegex(charmer.custom.CustomModelsError, "x-api-key"):
+            charmer.custom.add_provider(
                 self.runtime.environ,
                 "bad-header",
                 base_url="https://lab.example.com/apps/anthropic",
@@ -6442,8 +6442,8 @@ class CustomRegistryGuardTests(CLITestCase):
             )
 
     def test_add_provider_never_shadows_the_catalog(self) -> None:
-        with self.assertRaisesRegex(claude_multi.custom.CustomModelsError, "trusted catalog"):
-            claude_multi.custom.add_provider(
+        with self.assertRaisesRegex(charmer.custom.CustomModelsError, "trusted catalog"):
+            charmer.custom.add_provider(
                 self.runtime.environ,
                 "kimi",
                 base_url="https://example.com",
@@ -6453,8 +6453,8 @@ class CustomRegistryGuardTests(CLITestCase):
             )
 
     def test_add_model_never_shadows_the_catalog(self) -> None:
-        with self.assertRaisesRegex(claude_multi.custom.CustomModelsError, "trusted catalog"):
-            claude_multi.custom.add_model(
+        with self.assertRaisesRegex(charmer.custom.CustomModelsError, "trusted catalog"):
+            charmer.custom.add_model(
                 self.runtime.environ,
                 "sol",
                 wire_model="sol-clone",
@@ -6468,8 +6468,8 @@ class CustomRegistryGuardTests(CLITestCase):
     def test_fetch_path_shadow_guard_matches_manual_path(self) -> None:
         # A provider-advertised id colliding with the catalog is refused
         # exactly like a typed one (the guard lives in add_model itself).
-        with self.assertRaisesRegex(claude_multi.custom.CustomModelsError, "trusted catalog"):
-            claude_multi.custom.add_model(
+        with self.assertRaisesRegex(charmer.custom.CustomModelsError, "trusted catalog"):
+            charmer.custom.add_model(
                 self.runtime.environ,
                 "sol",
                 wire_model="sol",
@@ -6484,20 +6484,20 @@ class CustomRegistryGuardTests(CLITestCase):
         observed = {}
 
         def probe(registry):
-            lock = state.FileLock(claude_multi.custom.registry_path(self.runtime.environ))
+            lock = state.FileLock(charmer.custom.registry_path(self.runtime.environ))
             observed["second_acquire"] = lock.acquire(blocking=False)
             if not observed["second_acquire"]:
                 return
             lock.release()
 
-        claude_multi.custom._mutate(self.runtime.environ, probe, touches=lambda _after: set())
+        charmer.custom._mutate(self.runtime.environ, probe, touches=lambda _after: set())
         # The whole load-modify-save transaction runs under the FileLock.
         self.assertFalse(observed["second_acquire"])
 
     def test_handwritten_shadow_entries_drop_with_conflicts_named(self) -> None:
         # Bypass the add-time guards by writing the registry directly:
         # the merge must drop catalog-shadowing entries loudly.
-        path = claude_multi.custom.registry_path(self.runtime.environ)
+        path = charmer.custom.registry_path(self.runtime.environ)
         state.ensure_private_dir(path.parent)
         state.atomic_write(
             path,
@@ -6522,10 +6522,10 @@ class CustomRegistryGuardTests(CLITestCase):
                 }
             ),
         )
-        registry = claude_multi.custom.load_registry(self.runtime.environ)
-        conflicts = claude_multi.custom.merge_conflicts(self.runtime.catalog.docs, registry)
+        registry = charmer.custom.load_registry(self.runtime.environ)
+        conflicts = charmer.custom.merge_conflicts(self.runtime.catalog.docs, registry)
         self.assertEqual(sorted(conflicts), ["model sol", "provider kimi"])
-        merged = claude_multi.custom.merge_docs(self.runtime.catalog.docs, registry)
+        merged = charmer.custom.merge_docs(self.runtime.catalog.docs, registry)
         # The catalog wins: the shadow entries never reached the merged view.
         self.assertEqual(
             merged["providers"]["providers"]["kimi"],
@@ -6542,9 +6542,9 @@ class CustomRegistryGuardTests(CLITestCase):
         # would make every render refuse and crash-loop the gateway unit.
         for reserved in ("claude-multi-render", "claude-multi-render-deadbeef"):
             with self.subTest(provider=reserved), self.assertRaisesRegex(
-                claude_multi.custom.CustomModelsError, "reserved for the gateway render sentinel"
+                charmer.custom.CustomModelsError, "reserved for the gateway render sentinel"
             ):
-                claude_multi.custom.add_provider(
+                charmer.custom.add_provider(
                     self.runtime.environ,
                     reserved,
                     base_url="https://example.com",
@@ -6554,7 +6554,7 @@ class CustomRegistryGuardTests(CLITestCase):
                 )
 
     def test_handwritten_reserved_provider_drops_with_its_models(self) -> None:
-        path = claude_multi.custom.registry_path(self.runtime.environ)
+        path = charmer.custom.registry_path(self.runtime.environ)
         state.ensure_private_dir(path.parent)
         state.atomic_write(
             path,
@@ -6579,16 +6579,16 @@ class CustomRegistryGuardTests(CLITestCase):
                 }
             ),
         )
-        registry = claude_multi.custom.load_registry(self.runtime.environ)
+        registry = charmer.custom.load_registry(self.runtime.environ)
         self.assertEqual(
-            claude_multi.custom.merge_conflicts(self.runtime.catalog.docs, registry),
+            charmer.custom.merge_conflicts(self.runtime.catalog.docs, registry),
             ["provider claude-multi-render"],
         )
-        merged = claude_multi.custom.merge_docs(self.runtime.catalog.docs, registry)
+        merged = charmer.custom.merge_docs(self.runtime.catalog.docs, registry)
         self.assertNotIn("claude-multi-render", merged["providers"]["providers"])
         self.assertNotIn("rendered", merged["models"]["models"])
         # The render (what the gateway unit runs) still succeeds.
-        claude_multi.render.build_config_document(
+        charmer.render.build_config_document(
             merged["gateway"],
             merged["providers"]["providers"],
             merged["models-v2"]["models"],
@@ -6621,8 +6621,8 @@ class ContinuityDoctorCase(CLITestCase):
             b"KIMI_CLAUDE_API_KEY=cli-test-dummy\nMETA_CLAUDE_API_KEY=cli-test-meta\n",
         )
         self.home = Path(self.runtime.environ["HOME"])
-        self.config_dir = claude_multi.proxy.config_dir(self.home)
-        self.continuity_file = claude_multi.continuity.path(self.home)
+        self.config_dir = charmer.proxy.config_dir(self.home)
+        self.continuity_file = charmer.continuity.path(self.home)
         self.state_root = self.runtime.session_store.root
         self.hidden: set[str] = set()
         self.runtime.doctor_callback = None
@@ -6636,7 +6636,7 @@ class ContinuityDoctorCase(CLITestCase):
         environ = {**self.runtime.environ, "CLAUDE_MULTI_ASSETS": str(CATALOG_ROOT)}
         out = io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
-            code = claude_multi.proxy.cmd_init(
+            code = charmer.proxy.cmd_init(
                 [], environ=environ,
                 models_get=lambda _b, _t: (200, self._fixture_gateway(None, None)[0]),
             )
@@ -6707,7 +6707,7 @@ class ContinuityDoctorTests(ContinuityDoctorCase):
         # The persisted root is the gateway's
         # authority; another root is a BLOCK naming both and the adoption.
         self._init()
-        document = claude_multi.continuity.read(self.home)
+        document = charmer.continuity.read(self.home)
         document["state_root"] = "/elsewhere/claude-multi"
         state.atomic_write(self.continuity_file, strict_json.pretty_file_bytes(document))
         problems, _info, attention = self._checks()
@@ -6774,7 +6774,7 @@ class PruneAliasesTests(ContinuityDoctorCase):
         self.assertEqual(code, 0, output)
         self.assertIn(f"pruned: {_MUSE_XHIGH} (meta muse-spark-1.3)", output)
         self.assertIn(f"kept: {_MUSE_HIGH} — live session {_LIVE_ID[:8]}", output)
-        document = claude_multi.continuity.read(self.home)
+        document = charmer.continuity.read(self.home)
         self.assertEqual(set(document["aliases"]), {_MUSE_HIGH})
         self.assertEqual(document["pruned"], {_MUSE_XHIGH: 31})
 
@@ -6796,7 +6796,7 @@ class PruneAliasesTests(ContinuityDoctorCase):
         self.assertIn(f"pruned: {_MUSE_HIGH} (meta muse-spark-1.3)", output)
         self.assertIn(f"pruned: {_MUSE_XHIGH} (meta muse-spark-1.3)", output)
         self.assertIn("gateway: reloaded (sentinel claude-multi-render-", output)
-        document = claude_multi.continuity.read(self.home)
+        document = charmer.continuity.read(self.home)
         self.assertEqual(document["aliases"], {})
         self.assertEqual(document["pruned"], {_MUSE_HIGH: 31, _MUSE_XHIGH: 31})
         config = (self.config_dir / "config.yaml").read_text()
@@ -6806,7 +6806,7 @@ class PruneAliasesTests(ContinuityDoctorCase):
         # never re-seeds the tombstones.
         self.assertEqual(self._checks()[:2], ([], []))
         self._init()
-        self.assertEqual(claude_multi.continuity.read(self.home)["aliases"], {})
+        self.assertEqual(charmer.continuity.read(self.home)["aliases"], {})
         code, output = self._prune()
         self.assertEqual((code, output), (0, "nothing to prune\n"))
 
@@ -6826,7 +6826,7 @@ class PruneAliasesTests(ContinuityDoctorCase):
         finally:
             lock.release()
         self.assertEqual(code, 1)
-        self.assertIn(claude_multi.proxy.ROTATION_IN_PROGRESS, output)
+        self.assertIn(charmer.proxy.ROTATION_IN_PROGRESS, output)
         self.assertEqual(self.continuity_file.read_bytes(), before)
 
     def test_refused_under_a_newer_state_marker(self) -> None:
@@ -6865,7 +6865,7 @@ class ZeroModelProviderPaneTests(CLITestCase):
     def test_secret_problems_tolerate_model_less_providers(self) -> None:
         # The 2.x resolved input comes from tests/_v3.py.
         resolved = _v3.resolve_v1(self.runtime.catalog.docs, _v3.default_composition())
-        claude_multi.proxy.selected_secret_problems(
+        charmer.proxy.selected_secret_problems(
             resolved,
             self.runtime.catalog.docs["models"]["models"],
             self.runtime.catalog.docs["providers"]["providers"],
@@ -6884,7 +6884,7 @@ class ForgetUnderLockGuardTests(CLITestCase):
             self.runtime.session_store.sessions_dir / f"{FIXED_ID}.json",
             b"{not json",
         )
-        with mock.patch('claude_multi.cli.session_facts._live_background_prefixes', return_value=frozenset({"11111111"})
+        with mock.patch('charmer.cli.session_facts._live_background_prefixes', return_value=frozenset({"11111111"})
         ):
             code, output = self.run_cli_err(["sessions", "forget", FIXED_ID, "--yes"])
         self.assertEqual(code, 1)
@@ -6931,7 +6931,7 @@ class PointerSweepDurabilityTests(CLITestCase):
             b"{not json",
         )
         with mock.patch.object(
-            claude_multi.state, "remove_private", wraps=claude_multi.state.remove_private
+            charmer.state, "remove_private", wraps=charmer.state.remove_private
         ) as spy:
             code, output = self.run_cli(["sessions", "forget", FIXED_ID, "--yes"])
         self.assertEqual(code, 0, output)
@@ -6994,7 +6994,7 @@ class SingleModelPrepareTests(CLITestCase):
 
     def _direct(self, model):
         return cli.LaunchTarget(
-            "ad-hoc", claude_multi.profile.ad_hoc_direct(model), None, False, f"Direct {model}"
+            "ad-hoc", charmer.profile.ad_hoc_direct(model), None, False, f"Direct {model}"
         )
 
     def _fresh(self, model, **kwargs):
@@ -7032,7 +7032,7 @@ class SingleModelPrepareTests(CLITestCase):
         self.assertIsNone(loaded["profile"])
 
     def test_unknown_model_still_rejected(self) -> None:
-        with self.assertRaises((cli.CLIError, claude_multi.profile.ProfileError)):
+        with self.assertRaises((cli.CLIError, charmer.profile.ProfileError)):
             self.runtime.prepare(
                 self._direct("no-such-model"), action="fresh", passthrough=[]
             )
@@ -7063,7 +7063,7 @@ class SingleModelPrepareTests(CLITestCase):
     def test_resume_rejects_mismatching_explicit_flag(self) -> None:
         _prepared, record = self._fresh("sol")
         with self.assertRaisesRegex(
-            claude_multi.launch.LaunchError, "does not match the session's subagent policy"
+            charmer.launch.LaunchError, "does not match the session's subagent policy"
         ):
             self._resume(record["managed_id"], no_subagents=True)
 
@@ -7105,7 +7105,7 @@ class RetiredProfileDoctorHintTests(CLITestCase):
     def test_healthy_record_keeps_the_repair_hint_shape(self) -> None:
         record = self.save_v4_session(
             target=cli.LaunchTarget(
-                "ad-hoc", claude_multi.profile.ad_hoc_direct("sol"), None, False, "Direct sol"
+                "ad-hoc", charmer.profile.ad_hoc_direct("sol"), None, False, "Direct sol"
             )
         )
         # No scope on disk: the plain repair hint applies.
@@ -7222,7 +7222,7 @@ class Grok46DiscoveryAndMigrationTests(CLITestCase):
         ]
         self.runtime.listing_transport = (
             lambda url, headers, **_caps: json.dumps({"data": entries}).encode())
-        with mock.patch("claude_multi.cli.consent.stdio_ttys", return_value=True), \
+        with mock.patch("charmer.cli.consent.stdio_ttys", return_value=True), \
                 contextlib.redirect_stderr(io.StringIO()):
             code,out=self.run_cli(["discover","openrouter"],"y\n")
         self.assertEqual(code,0)
@@ -7296,7 +7296,7 @@ class NewLineListingFilterTests(CLITestCase):
             launch_callback=lambda prepared: self.launches.append(prepared) or 0,
             doctor_callback=lambda _runtime: [],
             doctor_binary_callback=lambda _contract: ([], ["fixture"]),
-            doctor_daemon_callback=lambda: claude_multi.launch.DaemonStatus(
+            doctor_daemon_callback=lambda: charmer.launch.DaemonStatus(
                 state="absent", summary="fixture daemon absent"
             ),
             **self._runtime_seams(),
@@ -7316,7 +7316,7 @@ class NewLineListingFilterTests(CLITestCase):
         ]
         self.runtime.listing_transport = (
             lambda url, headers, **_caps: json.dumps({"data": entries}).encode())
-        with mock.patch("claude_multi.cli.consent.stdio_ttys", return_value=True), \
+        with mock.patch("charmer.cli.consent.stdio_ttys", return_value=True), \
                 contextlib.redirect_stderr(io.StringIO()):
             code, out = self.run_cli(["discover", "openrouter"], "y\n")
         self.assertEqual(code, 0)
@@ -7366,7 +7366,7 @@ class HookProtocol3SessionEventTests(CLITestCase):
         return document["hookSpecificOutput"]["additionalContext"]
 
     def _seen(self, rid=OTHER_ID) -> Path:
-        return claude_multi.hooks.seen_path(self.state_root, rid)
+        return charmer.hooks.seen_path(self.state_root, rid)
 
     def _record_bytes(self) -> bytes:
         return (self.state_root / "sessions" / f"{FIXED_ID}.json").read_bytes()
@@ -7387,7 +7387,7 @@ class HookProtocol3SessionEventTests(CLITestCase):
                 self.assertEqual(self._seen(rid).read_bytes(), self.gen_bytes)
         # The fast path then stays silent for that runtime id.
         self.assertEqual(
-            claude_multi.hooks.read_seen(self.state_root, rid), self.gen_bytes.decode().strip()
+            charmer.hooks.read_seen(self.state_root, rid), self.gen_bytes.decode().strip()
         )
 
     def test_resume_restates_the_lead(self) -> None:
@@ -7413,7 +7413,7 @@ class HookProtocol3SessionEventTests(CLITestCase):
 
     def test_fork_marks_the_fork_id_and_carries_the_adopt_text(self) -> None:
         self.save_session(mode="durable", scope_generation=1)
-        claude_multi.hooks.write_seen(self.state_root, FIXED_ID, self.gen_bytes.decode())
+        charmer.hooks.write_seen(self.state_root, FIXED_ID, self.gen_bytes.decode())
         parent = self._seen(FIXED_ID).read_bytes()
         code, output, _error = self._event(self._payload("fork"))
         self.assertEqual(code, 0)
@@ -7437,7 +7437,7 @@ class HookProtocol3SessionEventTests(CLITestCase):
         self.assertEqual(self._record_bytes(), before)  # stale epoch: a no-op
         # A reconcile failure: notice + one failure line, exit 0, no marker.
         self._seen().unlink()
-        with mock.patch('claude_multi.cli.session_events._reconcile_session_start',
+        with mock.patch('charmer.cli.session_events._reconcile_session_start',
             side_effect=sessions.SessionError("17 pending forks"),
         ):
             code, output, error = self._event(self._payload("fork"))
@@ -7464,8 +7464,8 @@ class HookProtocol3SessionEventTests(CLITestCase):
 
     def test_stale_marker_is_cleared_before_anything_else(self) -> None:
         self.save_session(mode="durable", scope_generation=1)
-        claude_multi.hooks.write_seen(self.state_root, OTHER_ID, self.gen_bytes.decode())
-        with mock.patch.object(claude_multi.hooks, "read_notice", side_effect=RuntimeError("x")):
+        charmer.hooks.write_seen(self.state_root, OTHER_ID, self.gen_bytes.decode())
+        with mock.patch.object(charmer.hooks, "read_notice", side_effect=RuntimeError("x")):
             code, _output, _error = self._event(self._payload("compact"))
         self.assertEqual(code, 0)
         # No notice was delivered, so the next prompt must miss the fast path.
@@ -7476,7 +7476,7 @@ class HookProtocol3SessionEventTests(CLITestCase):
         # compact: notice JSON, exit 0, no marker; the next prompt re-notifies.
         self.save_session(mode="durable", scope_generation=1)
         output, error = io.StringIO(), io.StringIO()
-        with mock.patch.dict(os.environ, self.runtime.environ, clear=True), mock.patch('claude_multi.cli.runtime.Runtime', side_effect=claude_multi.catalog.CatalogError("catalog broken")
+        with mock.patch.dict(os.environ, self.runtime.environ, clear=True), mock.patch('charmer.cli.runtime.Runtime', side_effect=charmer.catalog.CatalogError("catalog broken")
         ) as runtime, mock.patch.object(sys, "stderr", error):
             code = cli.main(
                 ["session-event", "start", "--managed-id", FIXED_ID, "--launch-epoch", "1",
@@ -7504,7 +7504,7 @@ class HookProtocol3SessionEventTests(CLITestCase):
     def test_migration_lock_skips_the_record_not_the_notice(self) -> None:
         self.save_session(mode="durable", scope_generation=1)
         before = self._record_bytes()
-        lock = state.FileLock(self.state_root / claude_multi.hooks.MIGRATION_LOCK_TARGET)
+        lock = state.FileLock(self.state_root / charmer.hooks.MIGRATION_LOCK_TARGET)
         lock.acquire()
         try:
             code, output, error = self._event(self._payload("startup"))
@@ -7844,7 +7844,7 @@ class DirectSelectorResolverTests(CLITestCase):
             pid for pid, p in sorted(self.runtime.catalog.providers.items())
             if p["transport"]["kind"] == "direct"
         )
-        claude_multi.custom.add_model(
+        charmer.custom.add_model(
             self.runtime.environ, "resolver-custom", wire_model="resolver-custom-wire",
             provider=provider, context_tokens=262144, created_via="manual",
             catalog_providers=self.runtime.catalog.providers,
@@ -7879,7 +7879,7 @@ class CompositionStoreSideEffectTests(CLITestCase):
 
     def test_a_read_only_runtime_creates_neither_the_config_root_nor_compositions(self) -> None:
         runtime = self._read_only_runtime()
-        config_root = claude_multi.sessions.config_root(runtime.environ)
+        config_root = charmer.sessions.config_root(runtime.environ)
         compositions = config_root / "compositions"
         self.assertEqual(runtime.compositions.compositions_dir, compositions)
         self.assertFalse(config_root.exists())
@@ -7899,7 +7899,7 @@ class CompositionStoreSideEffectTests(CLITestCase):
 
     def test_a_file_only_2x_name_is_r20_and_nothing_else_appears(self) -> None:
         runtime = self._read_only_runtime()
-        config_root = claude_multi.sessions.config_root(runtime.environ)
+        config_root = charmer.sessions.config_root(runtime.environ)
         path = _write_composition(runtime, {**_v3.default_composition(), "name": "file-only"})
         before = sorted(p.relative_to(config_root) for p in config_root.rglob("*"))
         self.assertEqual(before, [Path("compositions"), path.relative_to(config_root)])
@@ -7943,7 +7943,7 @@ class CustomRemovalApplyTests(CLITestCase):
         from tests.test_custom_registry import registry_fixture
 
         registry = registry_fixture()
-        claude_multi.custom.save_registry(self.runtime.environ, registry)
+        charmer.custom.save_registry(self.runtime.environ, registry)
         self.assertEqual(self.runtime.custom_header_violations(), [("acme", "Authorization")])
         self.assertNotIn("acme", self.runtime.ordinary_docs["providers"]["providers"])
         self.assertNotIn("acme-one", self.runtime.lineup_catalog().lines)
@@ -7953,7 +7953,7 @@ class CustomRemovalApplyTests(CLITestCase):
             f"Removed: acme — apply with {cli.APPLY_GATEWAY_COMMAND}\n"
             "Removed custom models: acme-one\n")
         self.assertEqual(self.runtime.custom_header_violations(), [])
-        self.assertIn("clean-one", claude_multi.custom.load_registry(self.runtime.environ)["models"])
+        self.assertIn("clean-one", charmer.custom.load_registry(self.runtime.environ)["models"])
         code, output = self.run_cli_err(["custom", "remove-provider", "clean"])
         self.assertEqual(code, 1, output)
         self.assertIn("remove them first", output)
@@ -7963,7 +7963,7 @@ class CustomRemovalApplyTests(CLITestCase):
             for removed in (True, False):
                 with self.subTest(kind=kind, removed=removed):
                     result = (removed, ()) if kind == "provider" else removed
-                    with mock.patch.object(claude_multi.custom, f"remove_{kind}", return_value=result):
+                    with mock.patch.object(charmer.custom, f"remove_{kind}", return_value=result):
                         code, output, errors = self.run_cli_both(["custom", f"remove-{kind}", "fixture-entry"])
                     self.assertEqual(code, 0 if removed else 1)
                     self.assertEqual((output, errors),
@@ -7973,7 +7973,7 @@ class CustomRemovalApplyTests(CLITestCase):
 
 class UpdateCommandTests(CLITestCase):
     def test_update_outside_an_installed_release_says_how_and_refuses(self) -> None:
-        from claude_multi import upgrade
+        from charmer import upgrade
         with mock.patch.object(upgrade, "run_repin", side_effect=AssertionError("never the re-pin flow")):
             for argv, needle in ((["update"], "not installed by the claude-multi installer"),
                                  (["update", "--check"], "not installed by the claude-multi installer"),
@@ -8027,9 +8027,9 @@ class UpdateCommandTests(CLITestCase):
                            (["setup", "--step", "gateway", "--claude-from", "/x/claude"], "--claude-from")):
             err = io.StringIO()
             with self.subTest(argv=argv), contextlib.redirect_stderr(err), \
-                    mock.patch("claude_multi.cli.commands.setup.claude_step",
+                    mock.patch("charmer.cli.commands.setup.claude_step",
                                side_effect=AssertionError("claude step")), \
-                    mock.patch("claude_multi.cli.commands.gateway.setup_command",
+                    mock.patch("charmer.cli.commands.gateway.setup_command",
                                side_effect=AssertionError("gateway step")):
                 code, _output = self.run_cli(argv, interactive=False)
                 self.assertEqual(code, 2)
@@ -8037,9 +8037,9 @@ class UpdateCommandTests(CLITestCase):
 
     def test_setup_routes_each_step_to_its_handler(self) -> None:
         seen = []
-        with mock.patch("claude_multi.cli.commands.setup.claude_step",
+        with mock.patch("charmer.cli.commands.setup.claude_step",
                         side_effect=lambda *_a, **k: seen.append(("claude", k["claude_from"])) or 0), \
-                mock.patch("claude_multi.cli.commands.gateway.setup_command",
+                mock.patch("charmer.cli.commands.gateway.setup_command",
                            side_effect=lambda _r, args, **_k: seen.append(("gateway", args.proxy)) or 0):
             self.assertEqual(self.run_cli(["setup", "--step", "claude"], interactive=False)[0], 0)
             self.assertEqual(self.run_cli(["setup", "--step", "gateway", "--proxy", "http://p.example.invalid:1"],
@@ -8057,19 +8057,19 @@ class CarryInScreenAndLivenessTests(CLITestCase):
                              ("unknown", "another process of yours"), ("unknown", "ownership unreadable")):
             with self.subTest(kind=kind, detail=detail):
                 runtime = self.runtime
-                runtime.listener_owner = lambda _base, k=kind, d=detail: claude_multi.service.OwnerVerdict(k, d)
+                runtime.listener_owner = lambda _base, k=kind, d=detail: charmer.service.OwnerVerdict(k, d)
                 transport = mock.Mock(return_value=(self.served, 200))
                 runtime.served_models_callback = transport
                 # Candidates observe the local served set behind the same ownership guard;
                 # only a proven gateway gets the token.
-                cli._ModelsScreen(runtime, palette=claude_multi.tui.MONO_PALETTE)
+                cli._ModelsScreen(runtime, palette=charmer.tui.MONO_PALETTE)
                 if kind == "ours":
                     transport.assert_called_once()
                 else:
                     transport.assert_not_called()
                 # The model-launch picker and Providers do make authenticated requests.
-                direct = cli._DirectScreen(runtime, palette=claude_multi.tui.MONO_PALETTE)
-                providers = cli._ProvidersScreen(runtime, palette=claude_multi.tui.MONO_PALETTE,
+                direct = cli._DirectScreen(runtime, palette=charmer.tui.MONO_PALETTE)
+                providers = cli._ProvidersScreen(runtime, palette=charmer.tui.MONO_PALETTE,
                                                   journal=lambda: None)
                 self.assertEqual(len(self.launches), 0)
                 if kind == "ours":
@@ -8087,10 +8087,10 @@ class CarryInScreenAndLivenessTests(CLITestCase):
         (proc / "net").mkdir(parents=True)
         for table in ("tcp", "tcp6"):
             (proc / "net" / table).write_text("sl local_address rem_address st ...\n")
-        self.runtime.listener_owner = lambda base: claude_multi.service.listener_owner(base, proc_root=proc)
+        self.runtime.listener_owner = lambda base: charmer.service.listener_owner(base, proc_root=proc)
         self.served = None
-        direct = cli._DirectScreen(self.runtime, palette=claude_multi.tui.MONO_PALETTE)
-        providers = cli._ProvidersScreen(self.runtime, palette=claude_multi.tui.MONO_PALETTE,
+        direct = cli._DirectScreen(self.runtime, palette=charmer.tui.MONO_PALETTE)
+        providers = cli._ProvidersScreen(self.runtime, palette=charmer.tui.MONO_PALETTE,
                                          journal=lambda: None)
         self.assertTrue(providers.gateway_down)
         self.assertEqual(self.runtime.gateway_attention, [])
@@ -8120,7 +8120,7 @@ class CarryInScreenAndLivenessTests(CLITestCase):
         self.assertTrue(self.runtime.session_store.exists(FIXED_ID))
         code, output = self.run_cli_err(["sessions", "stop", FIXED_ID, "--yes"], interactive=False)
         self.assertIn(f"sessions stop {FIXED_ID} --force", output)
-        with mock.patch('claude_multi.cli.session_actions._stop_runtime', return_value=None) as stop:
+        with mock.patch('charmer.cli.session_actions._stop_runtime', return_value=None) as stop:
             code, output = self.run_cli(["sessions", "stop", FIXED_ID, "--yes", "--force"], interactive=False)
             stop.assert_called_once()
         code, output = self.run_cli(["sessions", "forget", FIXED_ID, "--force", "--yes"], interactive=False)
@@ -8138,7 +8138,7 @@ class CarryInScreenAndLivenessTests(CLITestCase):
 class RuntimePoolStatusTests(CLITestCase):
     def setUp(self):
         super().setUp()
-        from claude_multi import management
+        from charmer import management
         from tests.test_quota import FIXTURES
         management.prepare_start(self.runtime.home, stopped=True)
         self.runtime.environ[management.CHANNEL_ENV] = management.MANAGEMENT_CHANNEL
@@ -8148,7 +8148,7 @@ class RuntimePoolStatusTests(CLITestCase):
     def test_seam_suppression_with_selected_key_and_no_host_reads(self):
         from tests import _tripwire
         before = len(_tripwire.HITS)
-        with mock.patch.object(claude_multi.management, "pool_status", side_effect=AssertionError("live management")):
+        with mock.patch.object(charmer.management, "pool_status", side_effect=AssertionError("live management")):
             self.assertEqual(self.runtime.pool_status().state, "seam")
         self.assertEqual(len(_tripwire.HITS), before)
 
@@ -8171,11 +8171,11 @@ class RuntimePoolStatusTests(CLITestCase):
 
     def test_owner_and_attention_injection(self):
         self.runtime.management_callback = self.getter
-        self.runtime.listener_owner = mock.Mock(return_value=claude_multi.service.OwnerVerdict("foreign", "fixture"))
+        self.runtime.listener_owner = mock.Mock(return_value=charmer.service.OwnerVerdict("foreign", "fixture"))
         self.assertEqual(self.runtime.pool_status().state, "not-ours")
         self.getter.assert_not_called()
         self.runtime._pool_cache = None
-        self.runtime.listener_owner.return_value = claude_multi.service.OwnerVerdict("unknown", "fixture")
+        self.runtime.listener_owner.return_value = charmer.service.OwnerVerdict("unknown", "fixture")
         self.runtime.management_attention = mock.Mock()
         self.assertEqual(self.runtime.pool_status().state, "ok")
         self.runtime.management_attention.assert_called_once()
@@ -8191,7 +8191,7 @@ class RuntimePoolStatusTests(CLITestCase):
 class QuotaCommandTests(CLITestCase):
     def setUp(self):
         super().setUp()
-        from claude_multi import management
+        from charmer import management
         from tests.test_quota import FIXTURES
         management.prepare_start(self.runtime.home, stopped=True)
         self.runtime.environ[management.CHANNEL_ENV] = management.MANAGEMENT_CHANNEL
@@ -8203,7 +8203,7 @@ class QuotaCommandTests(CLITestCase):
     def test_stdout_report_in_managed_session_no_other_gateway_reads(self):
         self.runtime.environ["CLAUDE_MULTI_MANAGED_ID"] = FIXED_ID
         out = io.StringIO()
-        with mock.patch('claude_multi.cli.streams._open_tty_streams', side_effect=AssertionError("must stay stdout")):
+        with mock.patch('charmer.cli.streams._open_tty_streams', side_effect=AssertionError("must stay stdout")):
             code = cli.main(["quota"], runtime=self.runtime, input_stream=io.StringIO(), output_stream=out)
         self.assertEqual(code, 0)
         self.assertIn("Quota — local gateway", out.getvalue())
@@ -8221,7 +8221,7 @@ class QuotaCommandTests(CLITestCase):
         tty_in, tty_out, stdout = Terminal(), Terminal(), io.StringIO()
         args = cli.build_parser().parse_args(["quota"])
         self.assertIs(cli._report_output_stream(args, tty_out, stdout), stdout)
-        with mock.patch('claude_multi.cli.streams._open_tty_streams', return_value=(tty_in, tty_out)), \
+        with mock.patch('charmer.cli.streams._open_tty_streams', return_value=(tty_in, tty_out)), \
              mock.patch.object(sys, "stdout", stdout):
             code = cli.main(["quota"], runtime=self.runtime)
         self.assertEqual(code, 0)
@@ -8238,7 +8238,7 @@ class QuotaCommandTests(CLITestCase):
             self.assertIn(text, output)
             self.assertNotIn("secret error body", output)
         self.runtime._pool_cache = None
-        self.runtime.listener_owner = lambda _: claude_multi.service.OwnerVerdict("unknown", "fixture listener")
+        self.runtime.listener_owner = lambda _: charmer.service.OwnerVerdict("unknown", "fixture listener")
         result, output = self.run_cli(["quota"], interactive=False)
         self.assertIn("Attention: port", output)
 
@@ -8255,7 +8255,7 @@ class QuotaCommandTests(CLITestCase):
             self.assertFalse(kwargs["refresh_shims"])
             self.assertFalse(kwargs["initialize_session_store"])
             runtime = original_runtime(**kwargs, management_callback=self.getter,
-                listener_owner=lambda _: claude_multi.service.OwnerVerdict("ours", "fixture"),
+                listener_owner=lambda _: charmer.service.OwnerVerdict("ours", "fixture"),
                 health_get=self.runtime.health_get, served_models_callback=self.runtime.served_models_callback,
                 cwd=self.root / "project")
             constructed.append(runtime)
@@ -8265,8 +8265,8 @@ class QuotaCommandTests(CLITestCase):
                     p.read_bytes() if p.is_file() else None) for p in self.root.rglob("*")}
         before = snapshot()
         with mock.patch.dict(os.environ, self.runtime.environ, clear=True), \
-                mock.patch('claude_multi.assets.default_asset_root', return_value=FIXTURE_ROOT), \
-                mock.patch('claude_multi.cli.runtime.Runtime', side_effect=factory), \
+                mock.patch('charmer.assets.default_asset_root', return_value=FIXTURE_ROOT), \
+                mock.patch('charmer.cli.runtime.Runtime', side_effect=factory), \
                 mock.patch.object(catalog, "remove_legacy_contract_override", side_effect=AssertionError("cleanup")), \
                 mock.patch.object(scope_mod, "ensure_hook_shim", side_effect=AssertionError("shim write")), \
                 mock.patch.object(scope_mod, "ensure_hook_shim_v3", side_effect=AssertionError("shim3 write")), \
@@ -8294,9 +8294,9 @@ class QuotaCommandTests(CLITestCase):
                     env["CLAUDE_MULTI_CHANNEL"] = channel
                 output = io.StringIO()
                 with mock.patch.dict(os.environ, env, clear=True), \
-                        mock.patch('claude_multi.assets.default_asset_root', return_value=FIXTURE_ROOT), \
+                        mock.patch('charmer.assets.default_asset_root', return_value=FIXTURE_ROOT), \
                         mock.patch.object(sessions, "SessionStore", side_effect=AssertionError("unused store creates directories")), \
-                        mock.patch.object(claude_multi.service, "listener_owner", side_effect=AssertionError("host observer")):
+                        mock.patch.object(charmer.service, "listener_owner", side_effect=AssertionError("host observer")):
                     code = cli.main(["quota"], input_stream=io.StringIO(), output_stream=output, interactive=False)
                 self.assertEqual(code, 1)
                 self.assertIn(text, output.getvalue())
@@ -8309,11 +8309,11 @@ class QuotaCommandTests(CLITestCase):
 # Admission and merged consumers: origin matrix, current authority,
 # stale-Runtime refusal, the conservative T2 secret scrub and deterministic compilation.
 import test_operator as operator_fixtures  # module import: no test classes re-exported
-from claude_multi import operator as operator_mod
-from claude_multi import profile as profile_mod
-from claude_multi import settings as settings_mod
-from claude_multi import views as views_mod
-from claude_multi.cli import types as cli_types_mod
+from charmer import operator as operator_mod
+from charmer import profile as profile_mod
+from charmer import settings as settings_mod
+from charmer import views as views_mod
+from charmer.cli import types as cli_types_mod
 
 
 class OperatorConsumerTests(CLITestCase):
@@ -8415,7 +8415,7 @@ class OperatorConsumerTests(CLITestCase):
         prepared = self.prepare(document, profile="admitted")
         self.assertEqual(prepared.lineup.lead.binding.key, "custom-acme-large")
         self.assertEqual(prepared.lineup.lead.binding.selector, "custom-acme-large-high[1m]")
-        context = claude_multi.compiler.lead_set_context(prepared.result.fence, 90)
+        context = charmer.compiler.lead_set_context(prepared.result.fence, 90)
         self.assertFalse(context.custom_bound)  # custom_bound is legacy-custom only
 
     def test_operator_lead_recommendation_does_not_block_agents(self) -> None:
@@ -8454,7 +8454,7 @@ class OperatorConsumerTests(CLITestCase):
         files = copy.deepcopy(self.files["acme"])
         files["lines"]["custom-acme-large"]["context"]["declared_tokens"] = 131072
         state.atomic_write(self.pdir / "acme.json", strict_json.pretty_file_bytes(files))
-        with self.assertRaisesRegex(claude_multi.launch.LaunchError, "changed or its route/provider became unavailable"):
+        with self.assertRaisesRegex(charmer.launch.LaunchError, "changed or its route/provider became unavailable"):
             self.runtime.perform(prepared)
         self.assertEqual(self.launches, [])
         state.atomic_write(self.pdir / "acme.json", strict_json.pretty_file_bytes(self.files["acme"]))
@@ -8501,7 +8501,7 @@ class OperatorConsumerTests(CLITestCase):
     def test_legacy_custom_can_be_bound_in_a_profile_without_renaming(self) -> None:
         os.unlink(self.pdir / operator_mod.MIGRATION_MARKER)
         os.unlink(self.pdir / "legacybox.json")
-        claude_multi.custom.save_registry(self.env, {"version": 1, "providers": {
+        charmer.custom.save_registry(self.env, {"version": 1, "providers": {
             "legacyp": {"base_url": "https://legacy-p.example/v1", "auth_kind": "bearer", "secret_env": "LEGACYP_KEY"}},
             "models": {"lm": {"provider": "legacyp", "wire_model": "lm-1", "context_tokens": 65536,
                               "created_via": "manual"}}})
@@ -8525,14 +8525,14 @@ class OperatorConsumerTests(CLITestCase):
         self.assertIn("claude-multi models admit custom-acme-small",
                       views_mod.operator_admission_refusal("custom-acme-small", False))
         before = self.runtime.settings_store.load()
-        from claude_multi.cli.screens import models as models_screen
+        from charmer.cli.screens import models as models_screen
         screen = models_screen._ModelsScreen.__new__(models_screen._ModelsScreen)
         screen.runtime = self.runtime
         screen.line_rows = rows
         screen.banner = None
         screen.message = ""
         screen.message_role = "accent"
-        screen.palette = claude_multi.tui.MONO_PALETTE
+        screen.palette = charmer.tui.MONO_PALETTE
         screen.lifecycle = {"custom-acme-small": "off"}
         screen.index = 0
         screen.model = lambda _width: model
@@ -8541,7 +8541,7 @@ class OperatorConsumerTests(CLITestCase):
                                return_value="custom-acme-small"):
             win = mock.Mock()
             win.getmaxyx.return_value = (24, 80)
-            with mock.patch("claude_multi.cli.screens.common.OnboardingActions.confirm", return_value=False):
+            with mock.patch("charmer.cli.screens.common.OnboardingActions.confirm", return_value=False):
                 screen._toggle_admission(win)
         # Cancelling the shared in-screen admission leaves both authorities unchanged.
         self.assertEqual(self.runtime.settings_store.load(), before)
@@ -8549,10 +8549,10 @@ class OperatorConsumerTests(CLITestCase):
 
 # ---------------------------------------------------------------------------
 # Providers / models commands, consent, doctor wiring.
-import claude_multi.cli.consent as consent_mod
-import claude_multi.cli.parser as parser_mod
-import claude_multi.cli.streams as streams_mod
-from claude_multi.cli import doctor as doctor_mod
+import charmer.cli.consent as consent_mod
+import charmer.cli.parser as parser_mod
+import charmer.cli.streams as streams_mod
+from charmer.cli import doctor as doctor_mod
 
 
 ACME_ADD = ["providers", "add", "acme", "--kind", "anthropic-compatible", "--base-url",
@@ -8565,7 +8565,7 @@ SMALL_ADD = ["models", "add", "acme", "acme-small-1", "--as", "custom-acme-small
 def fake_gateway_reply(body: bytes):
     """A well-behaved fake gateway answer for one battery request."""
 
-    from claude_multi import qualify as qualify_mod
+    from charmer import qualify as qualify_mod
 
     document = json.loads(body)
     message = {"id": "msg_fake", "type": "message", "role": "assistant", "model": document["model"],
@@ -8613,7 +8613,7 @@ class OperatorCommandCase(CLITestCase):
         self.runtime.qualify_http = self._qualify_http
         patcher = mock.patch.object(
             self.runtime, "verify_reload",
-            side_effect=lambda sentinel: claude_multi.proxy.ReloadResult("reloaded", f"gateway: reloaded (sentinel {sentinel})"))
+            side_effect=lambda sentinel: charmer.proxy.ReloadResult("reloaded", f"gateway: reloaded (sentinel {sentinel})"))
         patcher.start()
         self.addCleanup(patcher.stop)
 
@@ -8624,7 +8624,7 @@ class OperatorCommandCase(CLITestCase):
         return self.outcome
 
     def _qualify_http(self, _base, _token, call, body):
-        from claude_multi import qualify as qualify_mod
+        from charmer import qualify as qualify_mod
 
         self.http_calls.append((call.label(), body))
         if self.during_smoke is not None:
@@ -8777,7 +8777,7 @@ class OperatorGuardTests(OperatorCommandCase):
         for env, tty, reason in cases:
             for argv in self.guarded():
                 with self.subTest(argv=argv, reason=reason), \
-                        mock.patch.object(claude_multi.secret_store.FileSecretStore, "_values",
+                        mock.patch.object(charmer.secret_store.FileSecretStore, "_values",
                                           side_effect=AssertionError("secret read before the guard")):
                     code, out, err = self.op(argv, "y\n", tty=tty, env=env)
                     self.assertEqual(code, 1, out + err)
@@ -8797,7 +8797,7 @@ class OperatorGuardTests(OperatorCommandCase):
         self.assertIn("declared custom-acme-small — New · not admitted · selectors custom-acme-small · class custom-131072\n"
                       "lead recommended; explicit agent bindings are allowed · validated floor 131072 (not near-limit measured)", out)
         self.assertIn("optional: claude-multi models admit custom-acme-small", out)
-        config = (claude_multi.proxy.config_dir(self.runtime.home) / "config.yaml").read_text()
+        config = (charmer.proxy.config_dir(self.runtime.home) / "config.yaml").read_text()
         self.assertNotIn("custom-acme-small", config)
 
     def test_default_no_writes_nothing(self) -> None:
@@ -8821,7 +8821,7 @@ class OperatorGuardTests(OperatorCommandCase):
         code, out, _err = self.op(["custom", "add-model", "zed-one", "--provider", "kimi", "--wire", "zed-1",
                                    "--context", "65536"])
         self.assertEqual(code, 0, out)
-        self.assertIn("zed-one", claude_multi.custom.load_registry(self.runtime.environ)["models"])
+        self.assertIn("zed-one", charmer.custom.load_registry(self.runtime.environ)["models"])
 
     def test_discover_refuses_an_unapproved_t2_route_with_zero_calls(self) -> None:
         # A keyed T2 listing needs the current approved route.
@@ -8841,7 +8841,7 @@ class OperatorLifecycleTests(OperatorCommandCase):
         self.declare_small()
         layer = self.runtime.operator_snapshot().layer
         self.assertEqual(self.ledger().routes["acme"]["rd"], layer.providers["acme"].route_digest)
-        config = claude_multi.proxy.config_dir(self.runtime.home) / "config.yaml"
+        config = charmer.proxy.config_dir(self.runtime.home) / "config.yaml"
         before = config.read_bytes()
         routes = dict(self.ledger().routes)
         digest = layer.lines["custom-acme-small"].definition_digest
@@ -8892,7 +8892,7 @@ class OperatorLifecycleTests(OperatorCommandCase):
         self.assertEqual(self.http_calls, [])
 
     def test_failed_optional_smoke_stays_failed_after_admission(self) -> None:
-        from claude_multi import qualify
+        from charmer import qualify
 
         self.declare_small()
         self.serve_current()
@@ -8971,7 +8971,7 @@ class OperatorLifecycleTests(OperatorCommandCase):
         self.assertIn("Removed custom-acme-small — the gateway reloaded\n"
                       "Captured aliases remain served until pruned.", out)
         self.assertEqual(self.ledger().removed["custom-acme-small"]["last_wire"], "acme-small-1")
-        config = (claude_multi.proxy.config_dir(self.runtime.home) / "config.yaml").read_text()
+        config = (charmer.proxy.config_dir(self.runtime.home) / "config.yaml").read_text()
         self.assertIn('alias: "custom-acme-small"', config)  # The capture keeps serving
         self.assertIn("custom-acme-small", self.ledger().aliases)
 
@@ -9005,9 +9005,9 @@ class OperatorLifecycleTests(OperatorCommandCase):
         for status, code in (("reloaded", 0), ("restart_required", 3), ("token_mismatch", 4), ("down", 5)):
             with self.subTest(status=status), mock.patch.object(
                     self.runtime, "verify_reload",
-                    return_value=claude_multi.proxy.ReloadResult(status, f"gateway: {status}")):
+                    return_value=charmer.proxy.ReloadResult(status, f"gateway: {status}")):
                 self.assertEqual(self.op(["providers", "apply"])[0], code)
-        config = claude_multi.proxy.config_dir(self.runtime.home) / "config.yaml"
+        config = charmer.proxy.config_dir(self.runtime.home) / "config.yaml"
         before = config.read_bytes()
         state.atomic_write(self.pdir / "broken.json", b"{not json")
         code, _out, err = self.op(["providers", "apply"])
@@ -9086,8 +9086,8 @@ class OperatorMigrateCommandTests(OperatorCommandCase):
         state.atomic_write(self.secret_file, b"KIMI_CLAUDE_API_KEY=cli-test-dummy\nZETA_API_KEY=zeta-dummy-value\n"
                                              b"IDLE_API_KEY=idle-dummy-value\n")
         self.source = (Path(operator_fixtures.OPERATOR_FIXTURES) / "custom.json").read_bytes()
-        self.shell = claude_multi.custom.registry_path(self.runtime.environ)
-        self.service = claude_multi.proxy.config_dir(self.runtime.home) / "custom.json"
+        self.shell = charmer.custom.registry_path(self.runtime.environ)
+        self.service = charmer.proxy.config_dir(self.runtime.home) / "custom.json"
         for path in (self.shell, self.service):
             state.ensure_private_dir(path.parent)
             state.atomic_write(path, self.source)
@@ -9121,13 +9121,13 @@ class OperatorMigrateCommandTests(OperatorCommandCase):
         self.assertTrue({"custom-kimi-side", "custom-zeta-pro"} <= set(settings_doc["admitted_lines"]))
         # The 3.0.2 readers (closed schemas, unchanged) accept what 3.1 wrote.
         schema = strict_json.load(CATALOG_ROOT / "schemas" / "settings.schema.json")
-        from claude_multi import validate as schema_validate
+        from charmer import validate as schema_validate
         self.assertEqual(schema_validate.validate(settings_doc, schema, "$"), [])
-        self.assertEqual(claude_multi.custom.load_registry(self.runtime.environ)["models"].keys(),
+        self.assertEqual(charmer.custom.load_registry(self.runtime.environ)["models"].keys(),
                          {"zeta-pro", "kimi-side"})
-        continuity_doc = claude_multi.continuity.read(self.runtime.home)
+        continuity_doc = charmer.continuity.read(self.runtime.home)
         if continuity_doc is not None:
-            claude_multi.continuity.validate_document(continuity_doc)
+            charmer.continuity.validate_document(continuity_doc)
         self.assertEqual({p: p.read_bytes() for p in (self.runtime.session_store.root / "sessions").glob("*.json")},
                          records_before)
         eff = self.runtime.current_effective()
@@ -9158,7 +9158,7 @@ class OperatorRouteAndKeyTests(OperatorCommandCase):
         self.assertEqual(code, 0, err)
         self.assertIn("acme API key saved (14 chars) — the gateway reloaded", out)
         self.assertNotIn("acme-new-value", out + err)
-        self.assertEqual(claude_multi.secret_store.default_store(self.runtime.environ).get("ACME_API_KEY"),
+        self.assertEqual(charmer.secret_store.default_store(self.runtime.environ).get("ACME_API_KEY"),
                          "acme-new-value")
 
     def test_route_edit_lapses_approval_until_reapproved(self) -> None:
@@ -9268,14 +9268,14 @@ class OperatorConfigCommitBoundaryTests(OperatorCommandCase):
         self.assertIn("the change is kept — rerun claude-multi providers apply to confirm it", err)
         self.assertNotIn("nothing changed", err)
         self.assertIn("custom-acme-small", json.loads((self.pdir / "acme.json").read_text())["lines"])
-        config = (claude_multi.proxy.config_dir(self.runtime.home) / "config.yaml").read_text()
+        config = (charmer.proxy.config_dir(self.runtime.home) / "config.yaml").read_text()
         self.assertIn('alias: "custom-acme-small"', config)
         self.assertIn("declared custom-acme-small", out)
 
     def test_a_refusal_before_publication_still_undoes(self) -> None:
         code, _out, err = self.op(ACME_ADD, "y\n")
         self.assertEqual(code, 0, err)
-        config = claude_multi.proxy.config_dir(self.runtime.home) / "config.yaml"
+        config = charmer.proxy.config_dir(self.runtime.home) / "config.yaml"
         before = config.read_bytes()
         original = state.atomic_write
 
@@ -9364,15 +9364,15 @@ class OperatorUndoBeforeWriteTests(OperatorCommandCase):
             "payload_contracts": ["output-config-high"]}}
         key = self.root / "acme.key"
         state.atomic_write(key, b"acme-imported-value\n")
-        store = claude_multi.secret_store.default_store(self.runtime.environ)
+        store = charmer.secret_store.default_store(self.runtime.environ)
         self.assertEqual(store.get("ACME_API_KEY"), "acme-dummy-value")
         with mock.patch.object(operator_mod, "load_preset", return_value=strict_json.pretty_file_bytes(document)), \
-                self.fail_after(claude_multi.secret_store.FileSecretStore, "set"):
+                self.fail_after(charmer.secret_store.FileSecretStore, "set"):
             code, _out, err = self.op(["providers", "add", "--preset", "acme-keyed", "--as", "acme",
                                        "--secret-file", str(key)], "y\n")
         self.assertNotEqual(code, 0, err)
         self.assertNotIn("acme-imported-value", err)
-        self.assertEqual(claude_multi.secret_store.default_store(self.runtime.environ).get("ACME_API_KEY"),
+        self.assertEqual(charmer.secret_store.default_store(self.runtime.environ).get("ACME_API_KEY"),
                          "acme-dummy-value")
         self.assertFalse((self.pdir / "acme.json").exists())
         self.assertNotIn("acme", self.routes())
@@ -9458,7 +9458,7 @@ class OperatorSuccessorRaceTests(OperatorCommandCase):
         catalog_lead = next(key for key, line in sorted(self.runtime.catalog.lines.items())
                             if line.get("status") == "active" and "lead" in line.get("capabilities", ())
                             and line["lead"] and line["lead"]["effort"] == "ultracode")
-        from claude_multi.cli.commands import models as models_cmd
+        from charmer.cli.commands import models as models_cmd
         real = models_cmd._successor_rewrites
         calls = []
 
@@ -9547,7 +9547,7 @@ class OperatorPresetAndTransportTests(OperatorCommandCase):
         key = self.key_file()
         before = self.state_bytes()
         store = mock.Mock(side_effect=AssertionError("secret store read"))
-        with mock.patch.object(claude_multi.secret_store, "default_store", store):
+        with mock.patch.object(charmer.secret_store, "default_store", store):
             code, _out, err = self.op(["providers", "add", "--preset", "lan-openai-compatible", "--as", "lanbox",
                                        "--secret-file", str(key)], env={"CLAUDE_MULTI_MANAGED_ID": "x"})
         self.assertEqual(code, 1)
@@ -9594,9 +9594,9 @@ class OperatorPresetAndTransportTests(OperatorCommandCase):
         alternative = operator_mod.transport_alternative("anthropic", "api-key")
         self.assertEqual(ledger.transport_choices, {"anthropic": "api-key"})
         self.assertEqual(ledger.routes["anthropic"]["rd"], alternative.route_digest)
-        self.assertEqual(claude_multi.secret_store.default_store(self.runtime.environ)
+        self.assertEqual(charmer.secret_store.default_store(self.runtime.environ)
                          .get("PLATFORM_ANTHROPIC_API_KEY"), "platform-dummy-key")
-        config = (claude_multi.proxy.config_dir(self.runtime.home) / "config.yaml").read_text()
+        config = (charmer.proxy.config_dir(self.runtime.home) / "config.yaml").read_text()
         self.assertIn('oauth-excluded-models:\n  claude:\n    - "*"', config)
         self.assertIn('base-url: "https://api.anthropic.com"', config)
         snap = gateway_facts._gateway_snapshot(self.runtime, self.runtime.gateway_token())
@@ -9608,11 +9608,11 @@ class OperatorPresetAndTransportTests(OperatorCommandCase):
         self.assertEqual(code, 0, err)
         self.assertIn("Claude models use your Claude account sign-in again", out)
         self.assertIn("Also remove the saved Anthropic API key (PLATFORM_ANTHROPIC_API_KEY)? [y/N] ", err)
-        self.assertTrue(claude_multi.secret_store.default_store(self.runtime.environ)
+        self.assertTrue(charmer.secret_store.default_store(self.runtime.environ)
                         .is_set("PLATFORM_ANTHROPIC_API_KEY"))  # "no" keeps it
         ledger = self.ledger()
         self.assertEqual((ledger.transport_choices, ledger.routes), ({}, {}))
-        config = (claude_multi.proxy.config_dir(self.runtime.home) / "config.yaml").read_text()
+        config = (charmer.proxy.config_dir(self.runtime.home) / "config.yaml").read_text()
         self.assertNotIn("oauth-excluded-models", config)
 
     def test_readiness_observes_the_selected_api_key_transport(self) -> None:
@@ -9620,7 +9620,7 @@ class OperatorPresetAndTransportTests(OperatorCommandCase):
         is ready with no OAuth credential record (the effective view, as on
         the Providers screen); catalog intent is unchanged."""
 
-        from claude_multi import profile, readiness
+        from charmer import profile, readiness
 
         lcat = self.runtime.lineup_catalog()
         key = next(k for k, entry in sorted(lcat.lines.items())
@@ -9662,8 +9662,8 @@ class AgentClassRollbackTests(unittest.TestCase):
         self.before_root, self.key = ac.write_bounded_assets(case.root / "assets-200k", ac.codex_line, ac.BELOW)
 
     def test_a_1m_record_reads_back_where_the_line_is_in_the_200k_class(self) -> None:
-        from claude_multi import validate as schema_validate
-        from claude_multi.cli import doctor
+        from charmer import validate as schema_validate
+        from charmer.cli import doctor
 
         case = self.case
         case.runtime = case.make_runtime(asset_root=CATALOG_ROOT)

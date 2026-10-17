@@ -26,7 +26,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from claude_multi import catalog, launch, probe, profile, scope, settings, state, strict_json, upgrade
+from charmer import catalog, launch, probe, profile, scope, settings, state, strict_json, upgrade
 from _catalog import FIXTURE_ROOT
 from _layout import PROBE_BASELINES, RESOURCES_ROOT
 from _tier import real_binary_gate
@@ -1680,7 +1680,7 @@ _XC_AGENT = "cm-xc-agent"
 def _xc_compile():
     """The admitted operator pool line compiled as a Direct lead (pure)."""
 
-    from claude_multi import operator
+    from charmer import operator
     document = strict_json.loads(_XC_FILE.read_bytes())
     document["lines"][_XC_KEY]["efforts"] = list(_XC_EFFORTS)
     bundle = catalog.load_catalog(FIXTURE_ROOT)
@@ -1771,7 +1771,7 @@ class ProductionExactClientTests(unittest.TestCase):
     def test_runner_passes_the_fixture_pool_line(self):
         if self.gate.boundary:
             self.skipTest(self.gate.boundary)
-        from claude_multi import qualify
+        from charmer import qualify
 
         line, _projection, lineup, plan = _xc_compile()
         entry = line.core_entry

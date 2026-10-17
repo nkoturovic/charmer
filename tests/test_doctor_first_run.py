@@ -18,11 +18,11 @@ from pathlib import Path
 from unittest import mock
 
 import test_cli
-from claude_multi import paths, pin, scope, sessions, state
-from claude_multi import gateway_lifecycle as gl
-from claude_multi.cli import entry
-import claude_multi.cli.runtime as runtime_mod
-from claude_multi.setup import external, firstrun, model, signin, status, texts
+from charmer import paths, pin, scope, sessions, state
+from charmer import gateway_lifecycle as gl
+from charmer.cli import entry
+import charmer.cli.runtime as runtime_mod
+from charmer.setup import external, firstrun, model, signin, status, texts
 from test_gateway_doctor import _GatewayDoctor
 from test_gateway_lifecycle import NOW
 
@@ -115,7 +115,7 @@ class KeyFileTests(FirstRunCase):
         env = dict(self.runtime.environ)
         env.pop("CLAUDE_MULTI_SECRET_ENV")
         with mock.patch.dict(self.runtime.environ, env, clear=True):
-            from claude_multi import paths
+            from charmer import paths
 
             target = paths.secret_pointer_path(self.runtime.environ)
             state.ensure_private_dir(target.parent)
@@ -329,7 +329,7 @@ class EntrypointTests(unittest.TestCase):
         return code, out.getvalue(), built
 
     def test_an_error_before_the_checks_keeps_the_first_run_json_shape(self) -> None:
-        from claude_multi import errors
+        from charmer import errors
 
         failure = errors.ClaudeMultiError("fixture: the packaged catalog cannot be read",
                                           remedy="reinstall claude-multi")
@@ -425,8 +425,8 @@ class FreshHomeInertTests(unittest.TestCase):
 
     def run_cli(self, *argv: str, answers: io.StringIO | None = None,
                 small_pin: bool = False) -> tuple[int, str]:
-        from claude_multi import acquire
-        from claude_multi.cli import consent
+        from charmer import acquire
+        from charmer.cli import consent
 
         real = runtime_mod.Runtime
 

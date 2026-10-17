@@ -35,7 +35,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterator
 from unittest import mock
 
-from claude_multi import catalog, cli, tui, views
+from charmer import catalog, cli, tui, views
 
 import _tui_fixture as fx
 import _tui_render as R
@@ -90,7 +90,7 @@ def card_notices(root: Path) -> str:
 
     with R.golden_runtime(root / "run", asset_root=_with_a_new_line(root),
                           environ_extra={"CLAUDE_CONFIG_DIR": "/srv/claude-elsewhere"}) as runtime, \
-            mock.patch("claude_multi.compiler.git_work_tree", lambda _cwd: False):
+            mock.patch("charmer.compiler.git_work_tree", lambda _cwd: False):
         return R.render(lambda: R.card_screen(runtime, R.profile_target(runtime, catalog.DEFAULT_SEED)))
 
 
@@ -128,7 +128,7 @@ def named_bindings(root: Path) -> str:
 def per_agent(root: Path) -> str:
     """The lineup dialog's per-agent edit of a session on the default seed."""
 
-    from claude_multi.cli.screens import launch_sessions
+    from charmer.cli.screens import launch_sessions
 
     with R.golden_runtime(root) as runtime:
         record = fx.v4_record(runtime, catalog.DEFAULT_SEED, managed_id=fx.FIXED_ID)
@@ -164,7 +164,7 @@ def _drive(run: Callable[[FakeWindow], Any], keys: list) -> str:
 def provider_form(root: Path, *, kind: str) -> str:
     """Draw every step of the mixed-kind endpoint draft without declaring it."""
 
-    from claude_multi.cli.screens import common
+    from charmer.cli.screens import common
 
     fields = views.provider_form_fields(kind=kind)
     form = common._ProviderForm("new provider", fields, palette=tui.MONO_PALETTE)
@@ -175,7 +175,7 @@ def _account_provider(*, methods: int | None = None) -> tuple[str, str]:
     """``(provider id, pool)`` of the first account provider (derived),
     with a sign-in that opens ``methods`` ways when given."""
 
-    from claude_multi.setup import signin
+    from charmer.setup import signin
 
     return next((pid, pool) for pid, pool in sorted(signin.ACCOUNT_POOLS.items())
                 if methods is None or len(signin.methods(pool)) == methods)
@@ -184,9 +184,9 @@ def _account_provider(*, methods: int | None = None) -> tuple[str, str]:
 def sign_in_account(root: Path, *, signed_in: bool = False) -> str:
     """L on an account provider: who is signed in, sign in (again), sign out."""
 
-    import claude_multi.cli.screens.signin as screens_signin
+    import charmer.cli.screens.signin as screens_signin
     import test_screens_providers_lifecycle as lifecycle
-    from claude_multi import account_pools
+    from charmer import account_pools
 
     with _case(lifecycle.AccountTests) as case:
         pid, pool = _account_provider()
@@ -199,9 +199,9 @@ def sign_in_steps(root: Path, *, step: str) -> str:
     """The sign-in in the full-screen UI: its typed acknowledgement, the
     choice of how it opens (a pool that opens two ways) and its result."""
 
-    import claude_multi.cli.screens.signin as screens_signin
+    import charmer.cli.screens.signin as screens_signin
     import test_screens_providers_lifecycle as lifecycle
-    from claude_multi.setup import model, signin, texts
+    from charmer.setup import model, signin, texts
 
     with _case(lifecycle.SignInFlowTests) as case, mock.patch.object(signin, "pool_offered", return_value=True):
         typed = [*texts.ACK_WORD, ENTER, ENTER]  # the word, then Continue
@@ -215,7 +215,7 @@ def sign_in_steps(root: Path, *, step: str) -> str:
         pid, pool = _account_provider(methods=1)
 
         def runner(_invocation: Any) -> int:
-            from claude_multi import account_pools
+            from charmer import account_pools
 
             case.record(account_pools.pool(pool).record_prefix + "-fixture.person@example.com.json")
             return 0
@@ -228,10 +228,10 @@ def sign_in_steps(root: Path, *, step: str) -> str:
 def sign_out_result(root: Path) -> str:
     """The sign-out's result, after its confirmation."""
 
-    import claude_multi.cli.screens.signin as screens_signin
+    import charmer.cli.screens.signin as screens_signin
     import test_screens_providers_lifecycle as lifecycle
-    from claude_multi import account_pools
-    from claude_multi.setup import signin
+    from charmer import account_pools
+    from charmer.setup import signin
 
     with _case(lifecycle.AccountTests) as case:
         pid, pool = _account_provider()
@@ -252,10 +252,10 @@ def gateway_actions_view(root: Path, *, state: str) -> str:
     """The gateway's actions (H, W): a stopped gateway with the service to
     install, one that a transaction owner holds, and the log tail."""
 
-    import claude_multi.cli.screens.gateway_actions as screens_gateway
+    import charmer.cli.screens.gateway_actions as screens_gateway
     import test_gateway_doctor
     import test_tui_dispatch
-    from claude_multi import gateway_inhibition
+    from charmer import gateway_inhibition
 
     with _case(test_gateway_doctor._GatewayDoctor) as case:
         if state == "log":
@@ -277,7 +277,7 @@ def get_started_step(root: Path, *, step: str) -> str:
     each step's own view (the gateway's log and outbound proxy too)."""
 
     import test_screens_get_started as get_started_tests
-    from claude_multi.setup import external
+    from charmer.setup import external
 
     with _case(get_started_tests.GetStartedCase) as case, \
             mock.patch.object(external, "ensure_gateway", return_value=None), \
@@ -317,8 +317,8 @@ def transition(root: Path, *, confirm: bool = False) -> str:
     """A relaunch's transition screen (the session still running in the
     background) and its exited-confirmation."""
 
-    import claude_multi.cli.launch_flow as launch_flow
-    import claude_multi.cli.text as cli_text
+    import charmer.cli.launch_flow as launch_flow
+    import charmer.cli.text as cli_text
 
     with R.golden_runtime(root) as runtime:
         runtime.profiles.install_seeds()
@@ -382,7 +382,7 @@ EXTRA: dict[str, Callable[[Path], str]] = {
 
 # --------------------------------------------------------------- the inventory
 
-_SCREENS = "claude_multi.cli.screens"
+_SCREENS = "charmer.cli.screens"
 # Every screen a person can see: each class that draws one (``module:Class``)
 # and each flow that composes its own dialogs (``module:function`` or
 # ``module:Class.method``). The sweep draws every one at both sizes.
@@ -418,16 +418,16 @@ INVENTORY: tuple[str, ...] = (
     f"{_SCREENS}.signin:sign_out_flow",
     f"{_SCREENS}.gateway_actions:dialog",
     f"{_SCREENS}.gateway_actions:log_view",
-    "claude_multi.tui:SelectList",
-    "claude_multi.tui:Modal",
-    "claude_multi.tui:TextView",
-    "claude_multi.tui:OnboardingForm",
-    "claude_multi.tui:ProfileEditorScreen",
-    "claude_multi.tui:BindingPicker",
-    "claude_multi.tui:RoutingPreviewScreen",
-    "claude_multi.tui:NamedBindingsScreen",
-    "claude_multi.tui:_GeneralForm",
-    "claude_multi.tui:_NativeForm",
+    "charmer.tui:SelectList",
+    "charmer.tui:Modal",
+    "charmer.tui:TextView",
+    "charmer.tui:OnboardingForm",
+    "charmer.tui:ProfileEditorScreen",
+    "charmer.tui:BindingPicker",
+    "charmer.tui:RoutingPreviewScreen",
+    "charmer.tui:NamedBindingsScreen",
+    "charmer.tui:_GeneralForm",
+    "charmer.tui:_NativeForm",
 )
 
 
@@ -442,10 +442,10 @@ def discovered() -> set[str]:
     gateway flows (a public function that takes the window), the Get started
     steps (the handlers its Enter opens) and the needs-a-choice chooser."""
 
-    import claude_multi.cli.screens as screens
+    import charmer.cli.screens as screens
 
     found: set[str] = set()
-    names = ["claude_multi.tui", *(f"{_SCREENS}.{info.name}" for info in pkgutil.iter_modules(screens.__path__))]
+    names = ["charmer.tui", *(f"{_SCREENS}.{info.name}" for info in pkgutil.iter_modules(screens.__path__))]
     for name in names:
         tree = ast.parse(inspect.getsource(importlib.import_module(name)))
         for node in tree.body:

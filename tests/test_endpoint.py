@@ -20,7 +20,7 @@ from unittest import mock
 import _tripwire
 from _catalog import FIXTURE_GATEWAY_TOKEN, FIXTURE_ROOT
 from _v4 import V4Case
-from claude_multi import (catalog, cli, endpoint, launch, operator, proxy, scope, service, sessions, state,
+from charmer import (catalog, cli, endpoint, launch, operator, proxy, scope, service, sessions, state,
                           strict_json)
 
 
@@ -278,7 +278,7 @@ class OutboundProxyTests(ConsumerTests):
         self.assertNotIn("proxy_url", endpoint.EndpointConfig(port=18317).document())
 
     def test_the_render_carries_the_proxy_and_the_spawn_env_carries_no_proxy_variable(self) -> None:
-        from claude_multi import gateway_lifecycle
+        from charmer import gateway_lifecycle
 
         endpoint.write_config(self.home, endpoint.EndpointConfig(port=18330, proxy_url=self.URL))
         with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
@@ -295,15 +295,15 @@ class OutboundProxyTests(ConsumerTests):
     def setup_step(self, *argv: str):
         out, err = io.StringIO(), io.StringIO()
         runtime = self.runtime(health_get=lambda _b, _p: 200)
-        from claude_multi import gateway_lifecycle
+        from charmer import gateway_lifecycle
 
         stopped = gateway_lifecycle.Observation(gateway_lifecycle.STOPPED, "fixture: not running", None,
                                                 service.OwnerVerdict("none", "fixture"), False)
         # The setup step starts the gateway under the start lock it took for
         # the endpoint change (ensure_locked).
-        with mock.patch("claude_multi.gateway_lifecycle.Gateway.ensure_locked",
+        with mock.patch("charmer.gateway_lifecycle.Gateway.ensure_locked",
                         return_value=mock.Mock(ok=True, exit_code=0, lines=lambda: ["gateway ready (fixture)"])), \
-                mock.patch("claude_multi.gateway_lifecycle.Gateway.observe", return_value=stopped), \
+                mock.patch("charmer.gateway_lifecycle.Gateway.observe", return_value=stopped), \
                 redirect_stderr(err):
             code = cli.main(["setup", "--step", "gateway", *argv], runtime=runtime, output_stream=out,
                             interactive=False)
@@ -332,7 +332,7 @@ class OutboundProxyTests(ConsumerTests):
         self.assertEqual((config.port, config.proxy_url), (18320, self.URL))
 
     def test_doctor_names_the_proxy_and_an_ignored_shell_variable(self) -> None:
-        from claude_multi.cli import gateway_facts
+        from charmer.cli import gateway_facts
 
         runtime = self.runtime(health_get=lambda _b, _p: 200, served_models_callback=lambda *_a: (set(), 200))
         _attention, info = gateway_facts.gateway_runtime_report(runtime)

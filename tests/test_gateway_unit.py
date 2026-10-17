@@ -35,8 +35,8 @@ import json
 import unittest
 from pathlib import PurePosixPath
 
-from claude_multi import catalog, endpoint, proxy, service
-from claude_multi.platform import systemd_unit
+from charmer import catalog, endpoint, proxy, service
+from charmer.platform import systemd_unit
 from _catalog import SHIPPED_ROOT, FIXTURE_ROOT
 from _layout import SERVICE_SPEC
 

@@ -17,7 +17,7 @@ import shutil
 import unittest
 from unittest import mock
 
-from claude_multi import catalog, cli, custom, profile, scope, sessions, state, strict_json, transition
+from charmer import catalog, cli, custom, profile, scope, sessions, state, strict_json, transition
 from _catalog import FIXTURE_ROOT, SHIPPED_ROOT, uses_shipped_catalog
 from _v4 import V4Case
 import _v3
@@ -317,11 +317,11 @@ class RepairAllTests(V4Case):
         agent = self.live(mid) / ".claude" / "agents" / "cm-reviewer.md"
         state.atomic_write(agent, b"tampered\n")
         self.runtime.live_prefixes = frozenset({mid[:8]})
-        with mock.patch('claude_multi.cli.session_facts._live_background_prefixes', lambda root=None: frozenset({mid[:8]})):
+        with mock.patch('charmer.cli.session_facts._live_background_prefixes', lambda root=None: frozenset({mid[:8]})):
             out = io.StringIO()
             cli.main(["doctor", "--repair-all"], runtime=self.runtime, output_stream=out, interactive=False)
         self.assertEqual(agent.read_bytes(), b"tampered\n")
-        with mock.patch('claude_multi.cli.session_facts._live_background_prefixes', lambda root=None: frozenset()):
+        with mock.patch('charmer.cli.session_facts._live_background_prefixes', lambda root=None: frozenset()):
             out = io.StringIO()
             cli.main(["doctor", "--repair-all"], runtime=self.runtime, output_stream=out, interactive=False)
         self.assertNotEqual(agent.read_bytes(), b"tampered\n")

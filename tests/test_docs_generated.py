@@ -19,8 +19,8 @@ from unittest import mock
 
 import _docs_vocab as vocab
 from _layout import DOCS_DIR, REPO_ROOT, doc_path, load_tool
-from claude_multi import lineup_files, proxy, surface_matrix
-from claude_multi.cli import parser as cli_parser
+from charmer import lineup_files, proxy, surface_matrix
+from charmer.cli import parser as cli_parser
 
 docs_gen = load_tool("docs_gen")
 
@@ -209,7 +209,7 @@ class CoverageTests(unittest.TestCase):
                                                           "y: /cm bogus is not a verb of its operations"])
 
     def test_every_key_of_the_interface_is_in_the_cheatsheet(self) -> None:
-        from claude_multi.cli.screens import actions
+        from charmer.cli.screens import actions
 
         keys = _region("CHEATSHEET.md", "cheatsheet-keys")
         for screen, rows in actions.ACTIONS.items():

@@ -16,8 +16,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from claude_multi import client_check, hooks, strict_json
-from claude_multi.cli import session_events
+from charmer import client_check, hooks, strict_json
+from charmer.cli import session_events
 from _catalog import FIXTURE_ROOT
 import test_hooks
 from test_hooks import MID, RID

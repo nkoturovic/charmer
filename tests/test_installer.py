@@ -18,7 +18,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from claude_multi import install_receipt, service
+from charmer import install_receipt, service
 from _fake_release import SSH_KEYGEN, FakeRelease, make_key, needs_ssh_keygen, signers_line
 from _release import INSTALL_SH, requires_release_tree
 
@@ -541,7 +541,7 @@ class StrictMarkerTests(InstallerTestCase):
         self.assertEqual(marker.read_bytes(), b"bundle\n")
         self.assertEqual(os.stat(marker).st_mode & 0o777, 0o600)
         self.assertEqual(os.stat(self.state).st_mode & 0o777, 0o700)
-        from claude_multi import installs
+        from charmer import installs
 
         self.assertEqual(installs.read_marker(self.state, {"HOME": str(self.home)}), "bundle")
 
@@ -583,7 +583,7 @@ class TransactionTests(InstallerTestCase):
         # ownership proof (start record + executable) holds.
         self.assertIsNone(process.poll())
         self.assertTrue(Path(f"/proc/{process.pid}/exe").samefile(binary))
-        from claude_multi.platform import linux_process
+        from charmer.platform import linux_process
 
         stamp = service.read_exec_stamp(service.gateway_workdir(self.state))
         self.assertEqual(linux_process.gateway_pid(stamp, proc_root=Path("/proc"), readlink=os.readlink,
@@ -661,7 +661,7 @@ exit $status
         return self.install(self.killing_release(version), KILL_AT=phase, KILL_SIGNAL=signal)
 
     def assertRecord(self, phase: str | None) -> None:
-        from claude_multi import gateway_inhibition
+        from charmer import gateway_inhibition
 
         record = gateway_inhibition.read(self.state)
         if phase is None:
@@ -670,7 +670,7 @@ exit $status
             self.assertEqual((record.owner, record.phase, record.remedy), ("installer", phase, "sh install.sh --repair"))
 
     def test_an_interruption_at_each_step_keeps_the_inhibition_until_repair_finishes_it(self) -> None:
-        from claude_multi import install_txn
+        from charmer import install_txn
 
         expected_current = {"replace": "1.0.0", "switch": "1.0.0", "prune": "1.1.0", "launchers": "1.1.0"}
         for phase, current in expected_current.items():
@@ -760,7 +760,7 @@ exit $status
         versions = self.root / "versions"
         os.rename(versions / "1.0.0", versions / ".replaced.1.0.0.4242")  # a reinstall stopped mid-move
         (versions / ".staging.4242").mkdir()
-        from claude_multi import gateway_inhibition
+        from charmer import gateway_inhibition
 
         gateway_inhibition.begin(self.state, owner="installer", purpose="install claude-multi 1.0.0",
                                  phase="replace", remedy="sh install.sh --repair",
@@ -777,7 +777,7 @@ exit $status
         ``current`` did (both on 1.1.0) left its switch record: the repair
         puts the recorded pair back, so the rollback target is not lost."""
 
-        from claude_multi import gateway_inhibition, self_update
+        from charmer import gateway_inhibition, self_update
 
         for version in ("1.0.0", "1.1.0"):
             self.assertInstalled(self.install(self.release(version)), version)
@@ -808,7 +808,7 @@ exit $status
         self.assertEqual(self.launcher().stdout.strip(), "claude-multi 1.0.0")
 
     def test_the_installer_prunes_claude_code_copies_and_keeps_one_in_use(self) -> None:
-        from claude_multi import pin
+        from charmer import pin
 
         self.assertInstalled(self.install(self.release("1.0.0")), "1.0.0")
         environ = {"HOME": str(self.home)}
@@ -919,7 +919,7 @@ class StaticTests(InstallerTestCase):
         refusal and doctor's installation list (``installs``) name the same
         paths below HOME."""
 
-        from claude_multi import installs
+        from charmer import installs
 
         text = INSTALL_SH.read_text()
         self.assertIn("\ndata_home=$HOME/.local/share\n", text)

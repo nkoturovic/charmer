@@ -18,7 +18,7 @@ import urllib.request
 from pathlib import Path
 from unittest import mock
 
-from claude_multi import release_manifest as rm
+from charmer import release_manifest as rm
 from _layout import REPO_ROOT
 
 

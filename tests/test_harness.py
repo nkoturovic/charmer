@@ -68,7 +68,7 @@ class TripwireTests(unittest.TestCase):
 import os, sys
 if sys.argv[1] == "in-process":
     import tests
-from claude_multi import launch, service
+from charmer import launch, service
 from pathlib import Path
 
 def backstop(event, args):
@@ -204,7 +204,7 @@ else:
         )
 
     def test_uninjected_served_models_trips_before_proc_read_or_transport(self) -> None:
-        from claude_multi import launch, service
+        from charmer import launch, service
 
         transport = mock.Mock()
 

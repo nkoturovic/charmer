@@ -11,8 +11,8 @@ import unittest
 import unittest.mock
 from pathlib import Path
 
-from claude_multi import catalog, pin, strict_json, validate
-from claude_multi.catalog import CatalogError
+from charmer import catalog, pin, strict_json, validate
+from charmer.catalog import CatalogError
 from _catalog import FIXTURE_ROOT, SHIPPED_ROOT, uses_shipped_catalog
 from _layout import ASSET_ENTRIES, PATCH_DIR, UPSTREAM_JSON
 
@@ -30,7 +30,7 @@ def assert_gpt6_probe_context(case: unittest.TestCase, context: dict) -> None:
     and equals the stated limit, the accepted size is validated and cited,
     and the operating ceiling still binds (operating capacity unchanged)."""
 
-    from claude_multi import composition
+    from charmer import composition
 
     client = context["client_tokens"]
     provider = context["provider_tokens"]
@@ -451,9 +451,9 @@ class FrozenSelectorCoverageTests(unittest.TestCase):
         # The shipped render (v2 lines + the continuity seed, every
         # secret dummy-resolved) serves all 27 frozen bases, with each
         # retired selector's recorded effort rule and kimi's filter.
-        from claude_multi import continuity, render
+        from charmer import continuity, render
 
-        from claude_multi import operator
+        from charmer import operator
 
         bundle = catalog.load_catalog(CATALOG_ROOT)
         externalized = catalog.externalized_providers(bundle.docs)
@@ -1211,7 +1211,7 @@ class SeedProfileRuleTests(unittest.TestCase):
                 self.assertIn(needle, _mutate(mutate))
 
     def test_evaluation_crash_is_reported_not_raised(self) -> None:
-        from claude_multi import profile
+        from charmer import profile
 
         with unittest.mock.patch.object(profile, "evaluate", side_effect=KeyError("boom")):
             errors = _mutate(lambda raw: None)
@@ -1282,7 +1282,7 @@ class ReviewSchemaTests(unittest.TestCase):
     def test_accepted_paths(self) -> None:
         for path in (
             "a",
-            "src/claude_multi/data/catalog/models.json",
+            "src/charmer/data/catalog/models.json",
             "x/y_z-1.2/q.md",
         ):
             with self.subTest(path=path):
@@ -1381,7 +1381,7 @@ class NativeContractTests(unittest.TestCase):
     def test_the_packaged_pin_records_its_settings_keys(self) -> None:
         # A releasable contract carries the settings keys of its build: the
         # launch's settings-skew safeguard is off without them.
-        from claude_multi import upgrade
+        from charmer import upgrade
 
         bundle = catalog.load_catalog(CATALOG_ROOT)
         keys = pin.settings_keys(bundle.docs["native-contract"])
@@ -1639,7 +1639,7 @@ class ContractOverrideTests(unittest.TestCase):
     is classified against the packaged pin (doctor reports it)."""
 
     def _override_file(self, case_root: Path, document) -> Path:
-        from claude_multi import state as state_mod
+        from charmer import state as state_mod
 
         target = case_root / "config" / "native-contract.json"
         state_mod.ensure_private_dir(target.parent)
@@ -2131,7 +2131,7 @@ class CatalogV2Tests(unittest.TestCase):
         # The catalog carries no composition; the kept 2.x reader
         # still gates compositions on SUPPORTED_DATA_VERSION.
         import _v3
-        from claude_multi import composition
+        from charmer import composition
 
         schema = strict_json.load(FIXTURE_ROOT / "schemas" / "composition.schema.json")
         document = _v3.default_composition()
@@ -2303,7 +2303,7 @@ class CatalogV2Tests(unittest.TestCase):
         # the merged-view seam) and from every BindingPicker slot's rows, yet still a
         # line, still served and still a live key.  The 2.x editor state it
         # used to check is deleted; the ordinary_* compiler helpers are gone too.
-        from claude_multi import profile, scope, settings, tui, views
+        from charmer import profile, scope, settings, tui, views
 
         from _catalog import served_selectors
 
@@ -2371,7 +2371,7 @@ class CatalogV2Tests(unittest.TestCase):
         }
 
     def test_custom_entries_are_v2_and_merge_into_both_views(self) -> None:
-        from claude_multi import custom
+        from charmer import custom
 
         bundle = catalog.load_catalog(FIXTURE_ROOT)
         snapshot = copy.deepcopy(bundle.docs)
@@ -2395,7 +2395,7 @@ class CatalogV2Tests(unittest.TestCase):
     def test_custom_collisions_cover_new_lines_and_retired_keys(self) -> None:
         # The collision set is every v2 line (New
         # included), every retired key and every @ base - never the view.
-        from claude_multi import custom
+        from charmer import custom
 
         root = _copy_tree(self)
         self._write_models(root, lambda d: d["models"]["qwen38"].update(status="new"))
@@ -2449,7 +2449,7 @@ class CatalogV2Tests(unittest.TestCase):
         self.assertFalse((Path(environ["XDG_CONFIG_HOME"]) / "claude-multi" / "custom.json").exists())
 
     def test_custom_v1_registry_still_loads(self) -> None:
-        from claude_multi import custom, state
+        from charmer import custom, state
 
         home = Path(tempfile.mkdtemp(prefix="claude-multi-custom-"))
         self.addCleanup(lambda: shutil.rmtree(home, ignore_errors=True))
@@ -2505,7 +2505,7 @@ class NewLineGateTests(unittest.TestCase):
     Lines are selected by shape, never by model id."""
 
     def _new_lines_offered_without_admission(self, bundle: catalog.Catalog, keys: list[str]) -> None:
-        from claude_multi import profile, scope, settings
+        from charmer import profile, scope, settings
 
         cat = profile.LineupCatalog.from_catalog(bundle)
         providers = bundle.docs["providers"]["providers"]
@@ -2533,7 +2533,7 @@ class NewLineGateTests(unittest.TestCase):
         self._new_lines_offered_without_admission(bundle, keys)
 
     def test_disposable_new_draft_passes_the_gates_without_admission(self) -> None:
-        from claude_multi import dev
+        from charmer import dev
 
         root = Path(tempfile.mkdtemp(prefix="claude-multi-newline-"))
         self.addCleanup(lambda: shutil.rmtree(root, ignore_errors=True))
@@ -2726,7 +2726,7 @@ class T1OutputTests(unittest.TestCase):
 @uses_shipped_catalog
 class SolGenerationTests(unittest.TestCase):
     def test_aliases_context_and_successors(self) -> None:
-        from claude_multi import continuity, operator, render
+        from charmer import continuity, operator, render
 
         bundle = catalog.load_catalog(SHIPPED_ROOT)
         key = "sol"

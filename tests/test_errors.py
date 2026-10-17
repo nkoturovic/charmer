@@ -11,8 +11,8 @@ import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from unittest import mock
 
-import claude_multi
-from claude_multi import (
+import charmer
+from charmer import (
     catalog, cli, compiler, composition, continuity, custom, dev, errors,
     hooks, launch, lineup, lineup_log, management, migrate, migrate_profiles, probe,
     profile, proxy, quota, release_manifest, render, scope, service, sessions, settings, state, strict_json,
@@ -95,14 +95,14 @@ class ErrorCompatibilityTests(unittest.TestCase):
     def test_errors_is_a_leaf_module(self) -> None:
         tree = ast.parse(inspect.getsource(errors))
         imports = [node for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)]
-        self.assertFalse(any(node.level or (node.module or "").startswith("claude_multi")
+        self.assertFalse(any(node.level or (node.module or "").startswith("charmer")
                              for node in imports))
         self.assertFalse(any(isinstance(node, ast.Import) for node in ast.walk(tree)))
 
     def test_cli_top_level_catch_uses_common_base(self) -> None:
         # Internal action catches keep their spelling.
-        # Main's canonical owner is claude_multi.cli.entry.
-        from claude_multi.cli import entry
+        # Main's canonical owner is charmer.cli.entry.
+        from charmer.cli import entry
 
         function = ast.parse(inspect.getsource(entry.main)).body[0]
         handlers = [handler for statement in function.body if isinstance(statement, ast.Try)
@@ -118,12 +118,12 @@ class ErrorCompatibilityTests(unittest.TestCase):
                              for node in ast.walk(handler.type)))
 
     def test_packaged_resources_back_the_default_asset_root_and_the_version(self) -> None:
-        self.assertEqual(claude_multi.resources_root(), RESOURCES_ROOT)
-        with mock.patch('claude_multi.resources_root', return_value=FIXTURE_ROOT):
+        self.assertEqual(charmer.resources_root(), RESOURCES_ROOT)
+        with mock.patch('charmer.resources_root', return_value=FIXTURE_ROOT):
             self.assertEqual(cli.default_asset_root(), FIXTURE_ROOT)
-        with mock.patch.object(claude_multi, "resources_root", return_value=FIXTURE_ROOT):
+        with mock.patch.object(charmer, "resources_root", return_value=FIXTURE_ROOT):
             expected = strict_json.load(FIXTURE_ROOT / "version.json")["launcher_version"]
-            self.assertEqual(claude_multi._load_version(), expected)
+            self.assertEqual(charmer._load_version(), expected)
 
 
 class EntryPointTests(CLITestCase):
@@ -132,8 +132,8 @@ class EntryPointTests(CLITestCase):
         argv = argv or ["sessions", "list"]
         # A session event reaches _handle_session_event before
         # (and without) handle_command; the error is raised at that seam.
-        seam = ("claude_multi.cli.session_events._handle_session_event" if argv[0] == "session-event"
-                else "claude_multi.cli.dispatch.handle_command")
+        seam = ("charmer.cli.session_events._handle_session_event" if argv[0] == "session-event"
+                else "charmer.cli.dispatch.handle_command")
         with mock.patch(seam, side_effect=error), redirect_stderr(err):
             code = cli.main(
                 argv, runtime=self.runtime,

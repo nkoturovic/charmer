@@ -28,8 +28,8 @@ import unittest
 import uuid
 from pathlib import Path
 
-from claude_multi import hooks, scope
-from claude_multi.scope import ScopeError
+from charmer import hooks, scope
+from charmer.scope import ScopeError
 from _catalog import GOLDENS_ROOT
 from _golden import assertGolden
 

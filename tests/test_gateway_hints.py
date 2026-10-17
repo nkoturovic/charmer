@@ -12,7 +12,7 @@ import unittest
 import uuid
 from unittest import mock
 
-from claude_multi import catalog
+from charmer import catalog
 from _catalog import FIXTURE_ROOT, SHIPPED_ROOT, uses_shipped_catalog
 import _gateway_harness as harness
 

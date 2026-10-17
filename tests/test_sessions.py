@@ -10,8 +10,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from claude_multi import catalog, sessions, state, strict_json
-from claude_multi.sessions import SessionError
+from charmer import catalog, sessions, state, strict_json
+from charmer.sessions import SessionError
 from _catalog import FIXTURE_ROOT
 import _v3
 
@@ -286,13 +286,13 @@ class RecordTests(SessionTestCase):
             self.store.load(FIXED_ID)
 
     def test_record_schema_valid(self) -> None:
-        from claude_multi import validate
+        from charmer import validate
 
         record = _record(self.snapshot, forked_from=OTHER_ID)
         self.assertEqual(validate.validate(record, _schema()), [])
 
     def test_ordinary_record_nullable_profile_and_subagents_flag(self) -> None:
-        from claude_multi import validate
+        from charmer import validate
 
         record = _v3.make_ordinary_record(
             managed_id=FIXED_ID,
@@ -376,7 +376,7 @@ class RecordTests(SessionTestCase):
         self.assertNotIn("observed_model", updated)
 
     def test_published_schema_rejects_incomplete_or_cross_type_v3_records(self) -> None:
-        from claude_multi import validate
+        from charmer import validate
 
         incomplete = {
             "version": 3,
@@ -1028,7 +1028,7 @@ class IdentityReconciliationTests(SessionTestCase):
         self.assertFalse(self.store.exists(FIXED_ID))
 
     def test_forget_scope_failure_preserves_record_authority(self) -> None:
-        from claude_multi import scope
+        from charmer import scope
 
         _v3.save_any(self.store, _record(self.snapshot))
         live = scope.scope_dir(self.store.root, FIXED_ID)
@@ -1572,7 +1572,7 @@ class CorruptForgetStoreTests(SessionTestCase):
     def test_corrupt_record_forgets_scope_and_pointers(self) -> None:
         _v3.save_any(self.store, _record(self.snapshot))
         self.store.update_last("/project/path", FIXED_ID)
-        from claude_multi import scope as scope_mod
+        from charmer import scope as scope_mod
 
         live_scope = scope_mod.scope_dir(self.store.root, FIXED_ID)
         state.ensure_private_dir(live_scope)

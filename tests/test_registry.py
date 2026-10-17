@@ -22,7 +22,7 @@ from contextlib import redirect_stdout
 from pathlib import Path
 from unittest import mock
 
-from claude_multi import account_pools, catalog, dev
+from charmer import account_pools, catalog, dev
 from _catalog import FIXTURE_ROOT, uses_shipped_catalog
 from _layout import REGISTRY_SNAPSHOT, REPO_ROOT, RESOURCES_ROOT, fake_checkout
 
@@ -248,7 +248,7 @@ class RegistryMetaTests(unittest.TestCase):
         # or fence input: the catalog modules that own those never read meta.
         for module in ("profile.py", "scope.py", "compiler.py", "settings.py", "render.py"):
             with self.subTest(module=module):
-                text = (REPO_ROOT / "src" / "claude_multi" / module).read_text()
+                text = (REPO_ROOT / "src" / "charmer" / module).read_text()
                 self.assertNotIn(".meta[", text)
                 self.assertNotIn("RegistryModel", text)
 
@@ -443,7 +443,7 @@ class RetargetNoteTests(unittest.TestCase):
         # prints each note after the promotion.
         store = dev.DraftStore(root / "state" / "claude-multi" / "drafts")
         store.save("d1", draft)
-        from claude_multi import state, strict_json
+        from charmer import state, strict_json
 
         state.atomic_write(
             store.root / "d1.review.json", strict_json.canonical_file_bytes(record)

@@ -11,7 +11,7 @@ import unittest
 from pathlib import Path
 
 from _layout import RESOURCES_ROOT
-from claude_multi import choices, settings, state
+from charmer import choices, settings, state
 
 
 class ChoicesTests(unittest.TestCase):

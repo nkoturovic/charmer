@@ -14,12 +14,12 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from claude_multi import cli, state
+from charmer import cli, state
 
 from _catalog import FIXTURE_GATEWAY_TOKEN, FIXTURE_ROOT, served_selectors
-import claude_multi.launch
-import claude_multi.service
-import claude_multi.tui
+import charmer.launch
+import charmer.service
+import charmer.tui
 
 
 class GatewaySeamTests(unittest.TestCase):
@@ -49,7 +49,7 @@ class GatewaySeamTests(unittest.TestCase):
 
     def _runtime(self, **kwargs) -> cli.Runtime:
         return cli.Runtime(
-            listener_owner=lambda _base: claude_multi.service.OwnerVerdict("ours", "fixture gateway"),
+            listener_owner=lambda _base: charmer.service.OwnerVerdict("ours", "fixture gateway"),
             managed_root=self.root / "managed",
             asset_root=FIXTURE_ROOT,
             environ=self.env,
@@ -62,8 +62,8 @@ class GatewaySeamTests(unittest.TestCase):
         self.assertIsNone(runtime.served_models_callback)
         self.assertIsNone(runtime.health_get)
         with mock.patch.object(
-            claude_multi.launch, "served_snapshot",
-            return_value=((claude_multi.launch.ServedModel("x"),), 200),
+            charmer.launch, "served_snapshot",
+            return_value=((charmer.launch.ServedModel("x"),), 200),
         ) as served:
             self.assertEqual(runtime.served_models("t" * 64), ({"x"}, 200))
         served.assert_called_once_with(runtime.catalog.docs["gateway"], "t" * 64,
@@ -109,7 +109,7 @@ class GatewaySeamTests(unittest.TestCase):
             return set(served_selectors()), 200
 
         runtime = self._runtime(served_models_callback=served)
-        screen = cli._DirectScreen(runtime, palette=claude_multi.tui.MONO_PALETTE)
+        screen = cli._DirectScreen(runtime, palette=charmer.tui.MONO_PALETTE)
         self.assertEqual(screen.served, set(served_selectors()))
         facts = cli._provider_facts(runtime)
         self.assertFalse(facts.gateway_down)
@@ -127,7 +127,7 @@ class GatewaySeamTests(unittest.TestCase):
             action="fresh",
             passthrough=[],
         )
-        with mock.patch.object(claude_multi.launch, "perform_launch", return_value=0) as perform:
+        with mock.patch.object(charmer.launch, "perform_launch", return_value=0) as perform:
             self.assertEqual(runtime.perform(prepared), 0)
         kwargs = perform.call_args.kwargs
         self.assertEqual(kwargs["home"], self.home)

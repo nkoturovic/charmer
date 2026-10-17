@@ -20,7 +20,7 @@ from unittest import mock
 from _catalog import FIXTURE_ROOT
 from _layout import REPO_ROOT
 from _layout import checkout_replica
-from claude_multi import cli, endpoint, installs, state
+from charmer import cli, endpoint, installs, state
 
 
 class _Home(unittest.TestCase):
@@ -143,15 +143,15 @@ class GuardTests(_Home):
         self.assertEqual(code, 1)
         self.assertIn("belongs to the bundle installation, and this is the nix one", out)
         self.assertIn("fix:", out)
-        with mock.patch("claude_multi.cli.doctor._doctor_install_report",
-                        wraps=__import__("claude_multi.cli.doctor", fromlist=["x"])._doctor_install_report) as report:
+        with mock.patch("charmer.cli.doctor._doctor_install_report",
+                        wraps=__import__("charmer.cli.doctor", fromlist=["x"])._doctor_install_report) as report:
             code, out = self.run_cli(["doctor"], "nix")
         report.assert_called_once()
         self.assertIn("installation: this account's claude-multi state belongs to the bundle installation", out)
         self.assertEqual(installs.read_marker(self.state_root), "bundle")
 
     def test_lineup_requests_pass_the_same_guard(self) -> None:
-        from claude_multi import lineup as lineup_mod
+        from charmer import lineup as lineup_mod
 
         installs.write_marker(self.state_root, "bundle")
         session = "11111111-2222-4333-8444-555555555555"

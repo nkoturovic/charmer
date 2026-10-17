@@ -51,8 +51,8 @@ import unittest
 from pathlib import Path
 from typing import Any, Callable
 
-from claude_multi import catalog, compiler, probe, scope, state, strict_json
-from claude_multi.probe import ProbeError
+from charmer import catalog, compiler, probe, scope, state, strict_json
+from charmer.probe import ProbeError
 
 from _tier import real_binary_gate
 from _layout import RESOURCES_ROOT  # the one root source

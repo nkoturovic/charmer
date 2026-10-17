@@ -6,7 +6,7 @@ Usage (from the repository root)::
 
 ``tests/fixtures/catalog32-models.json`` is the frozen input: a checked-in
 catalog-32 models file, never derived from the shipped catalog. Defaults:
-SHIPPED_ROOT is the packaged resources (src/claude_multi/data), OUT_DIR is
+SHIPPED_ROOT is the packaged resources (src/charmer/data), OUT_DIR is
 ``tests/fixtures/assets``. The output is COMMITTED and FROZEN: tests never
 run this script and never regenerate the fixture from the shipped catalog,
 so adding/removing a shipped model changes no test outcome. Re-run it only

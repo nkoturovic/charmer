@@ -30,10 +30,10 @@ from unittest import mock
 import _log_secrets
 from _catalog import FIXTURE_GATEWAY_TOKEN, FIXTURE_ROOT
 from _layout import REPO_ROOT
-from claude_multi import (catalog, cli, endpoint, gateway_events, gateway_hold, gateway_lifecycle as gl,
+from charmer import (catalog, cli, endpoint, gateway_events, gateway_hold, gateway_lifecycle as gl,
                           launch, proxy, secret_store, service, state)
-import claude_multi.cli.consent as consent
-from claude_multi.platform import darwin_process, file_log, observation, posix_fs, posix_process
+import charmer.cli.consent as consent
+from charmer.platform import darwin_process, file_log, observation, posix_fs, posix_process
 
 SENTINEL = "claude-multi-render-0123abcd"
 NOW = datetime.datetime(2026, 10, 2, 12, 0, tzinfo=datetime.timezone.utc)
@@ -1129,7 +1129,7 @@ class LogRedactionTests(_Lifecycle):
             self.assertEqual(again.log_tail, outcome.log_tail)
 
     def test_the_command_and_the_tui_view_print_redacted_lines(self) -> None:
-        from claude_multi.cli.screens import gateway_actions
+        from charmer.cli.screens import gateway_actions
 
         self.log_file("bbbbbbbbbbbbbbbb", self.lines())
         out, err = io.StringIO(), io.StringIO()
@@ -1244,8 +1244,8 @@ class CommandTests(_Lifecycle):
         self.assertIn("cancelled", err)
 
     def test_newer_state_refuses_every_gateway_writer_before_it_writes(self) -> None:
-        from claude_multi import sessions
-        from claude_multi.cli import parser as parser_mod
+        from charmer import sessions
+        from charmer.cli import parser as parser_mod
 
         parser = parser_mod.build_parser()
         writers = (["gateway", "start"], ["gateway", "stop"], ["gateway", "restart"], ["gateway", "ensure"],
@@ -1353,7 +1353,7 @@ class RuntimeEnsureTests(_Lifecycle):
         self.assertEqual(self.world.spawned, [])
 
     def test_provisioning_rechecks_the_state_root_before_it_writes(self) -> None:
-        from claude_multi import sessions
+        from charmer import sessions
 
         endpoint.endpoint_path(self.home).unlink()
         (self.home / ".config/claude-multi/api-key").unlink()  # a new install
@@ -1388,8 +1388,8 @@ class RuntimeEnsureTests(_Lifecycle):
         self.assertEqual(endpoint.read_config(self.home).port, endpoint.NEW_INSTALL_PORTS[0])
 
     def test_a_tui_start_refreshes_the_runtime_endpoint(self) -> None:
-        from claude_multi import scope
-        from claude_multi.cli.screens import gateway_actions
+        from charmer import scope
+        from charmer.cli.screens import gateway_actions
 
         endpoint.endpoint_path(self.home).unlink()
         token = self.home / ".config/claude-multi/api-key"
@@ -1626,7 +1626,7 @@ class TokenHelperTests(_Lifecycle):
         self.assertEqual(len(self.world.spawned), 1)
 
     def test_the_shim_prints_the_token_only_after_a_successful_ensure(self) -> None:
-        from claude_multi import scope
+        from charmer import scope
 
         token = self.home / ".config/claude-multi/api-key"
         record = self.root / "launcher-calls"
@@ -1801,7 +1801,7 @@ class RealSpawnTests(_Lifecycle):
         return service.OwnerVerdict("unknown", "unconfirmed")
 
     def test_start_reuse_and_guarded_stop(self) -> None:
-        code = ("import os, sys; sys.path.insert(0, {src!r}); from claude_multi.proxy import main; "
+        code = ("import os, sys; sys.path.insert(0, {src!r}); from charmer.proxy import main; "
                 "raise SystemExit(main(sys.argv[1:], chdir=os.chdir))").format(src=str(REPO_ROOT / "src"))
         environ = {
             "HOME": str(self.home), "PATH": os.environ.get("PATH", ""), "LANG": "C.UTF-8",

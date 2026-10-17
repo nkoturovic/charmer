@@ -34,8 +34,8 @@ import sys
 import tempfile
 from pathlib import Path
 
-from claude_multi import probe
-from claude_multi.probe import ProbeError
+from charmer import probe
+from charmer.probe import ProbeError
 
 from _layout import UPSTREAM_JSON
 

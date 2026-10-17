@@ -13,7 +13,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from claude_multi import probe
+from charmer import probe
 
 ENV = "CM_TEST_TIER"
 TIERS = ("full", "fast")

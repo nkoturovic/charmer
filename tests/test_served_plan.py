@@ -25,24 +25,24 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-import claude_multi
-from claude_multi import cli, continuity, lineup, migrate, proxy, render, sessions, state, strict_json, transition
-from claude_multi import served_plan
+import charmer
+from charmer import cli, continuity, lineup, migrate, proxy, render, sessions, state, strict_json, transition
+from charmer import served_plan
 from _catalog import FIXTURE_ROOT, GOLDENS_ROOT
 from _layout import ASSET_ENTRIES, INSTALLED_RESOURCES_RELATIVE, REPO_ROOT, RESOURCES_RELATIVE, RESOURCES_ROOT, fake_checkout
 from _v4 import V4Case
 from test_lineup import LineupCase
 import test_cli
 import test_restore2x
-import claude_multi.cli.commands.models as models_cmd
-import claude_multi.cli.commands.plan as plan_cmd
-import claude_multi.cli.commands.providers as providers_cmd
-import claude_multi.cli.consent as consent_mod
-import claude_multi.cli.doctor as doctor_mod
-import claude_multi.cli.launch_flow as launch_flow
-import claude_multi.cli.runtime as runtime_mod
+import charmer.cli.commands.models as models_cmd
+import charmer.cli.commands.plan as plan_cmd
+import charmer.cli.commands.providers as providers_cmd
+import charmer.cli.consent as consent_mod
+import charmer.cli.doctor as doctor_mod
+import charmer.cli.launch_flow as launch_flow
+import charmer.cli.runtime as runtime_mod
 
-SRC = REPO_ROOT / "src" / "claude_multi"
+SRC = REPO_ROOT / "src" / "charmer"
 LIVE = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
 ENDED = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
 # sha256 of schemas/continuity.schema.json at the 3.0.2 release (54ea3ef).
@@ -407,7 +407,7 @@ class LineupBarrierTests(LineupCase):
 
         self.write_transcript(self.rid)
         self.runtime.environ["CLAUDE_CODE_SESSION_ID"] = self.rid
-        with mock.patch('claude_multi.cli.screens.transition._transition_confirm', side_effect=confirm), \
+        with mock.patch('charmer.cli.screens.transition._transition_confirm', side_effect=confirm), \
                 mock.patch.object(state, "acquire_served_barrier", side_effect=acquire), \
                 mock.patch.object(runtime_mod.Runtime, "perform", autospec=True, side_effect=perform):
             code, out, err = self.lineup("--relaunch", "profile", "quality", skill=False,
@@ -444,7 +444,7 @@ class LaunchBarrierTests(V4Case):
                 prepared = self.runtime.prepare(self.profile_target(), action="fresh", passthrough=[])
             acquire.assert_not_called()
             started = time.monotonic()
-            with self.assertRaises(claude_multi.launch.LaunchError) as raised:
+            with self.assertRaises(charmer.launch.LaunchError) as raised:
                 self.runtime.perform(prepared)
             self.assertLess(time.monotonic() - started, 5)
         self.assertIn(state.BARRIER_BUSY_TEXT, str(raised.exception))
@@ -479,7 +479,7 @@ class LaunchBarrierTests(V4Case):
         with mock.patch.object(state, "acquire_served_barrier", side_effect=acquire), \
                 mock.patch.object(runtime_mod.Runtime, "revalidate_operator", autospec=True,
                                   side_effect=revalidate):
-            with self.assertRaises(claude_multi.launch.LaunchError) as raised:
+            with self.assertRaises(charmer.launch.LaunchError) as raised:
                 self.runtime.perform(prepared)
         self.assertIn("This gateway is managed for state root", str(raised.exception))
         self.assertIn("No served change was applied.", str(raised.exception))
@@ -531,7 +531,7 @@ class RestoreConfirmationTests(test_restore2x.RestoreTestCase):
         seen: list = []
 
         def confirm(pairs):
-            seen.append((tuple(p[0] for p in pairs), claude_multi.hooks.migration_lock_held(self.root),
+            seen.append((tuple(p[0] for p in pairs), charmer.hooks.migration_lock_held(self.root),
                          barrier_free(home)))
             return True
 
@@ -539,7 +539,7 @@ class RestoreConfirmationTests(test_restore2x.RestoreTestCase):
         real_acquire = state.acquire_served_barrier
 
         def acquire(*args, **kwargs):
-            order.append("barrier" if claude_multi.hooks.migration_lock_held(self.root) else "barrier-unguarded")
+            order.append("barrier" if charmer.hooks.migration_lock_held(self.root) else "barrier-unguarded")
             return real_acquire(*args, **kwargs)
 
         with mock.patch.object(state, "acquire_served_barrier", side_effect=acquire):
@@ -597,7 +597,7 @@ class RestoreConfirmationTests(test_restore2x.RestoreTestCase):
 
         def refresh():
             # The process inventory read inside the commit phase now names it.
-            probes.append((claude_multi.hooks.migration_lock_held(self.root), barrier_free(home)))
+            probes.append((charmer.hooks.migration_lock_held(self.root), barrier_free(home)))
             return lambda view: view.get("managed_id") == test_restore2x.M1
 
         with self.assertRaises(migrate.RestoreRefused) as raised:
@@ -631,7 +631,7 @@ class ServedOperatorTests(test_cli.OperatorCommandCase):
         return path
 
     def hand_edit(self, file_id: str, mutate) -> None:
-        path = claude_multi.operator.providers_dir(self.env) / f"{file_id}.json"
+        path = charmer.operator.providers_dir(self.env) / f"{file_id}.json"
         document = strict_json.loads(path.read_bytes())
         mutate(document)
         state.atomic_write(path, strict_json.pretty_file_bytes(document))
@@ -854,7 +854,7 @@ class ServedOperatorTests(test_cli.OperatorCommandCase):
         """The legacy custom.json registry is a candidate input;
         a wire retarget between the preview and the commit phase refuses."""
 
-        from claude_multi import custom
+        from charmer import custom
 
         env = self.runtime.gateway_environ()
         custom.add_provider(env, "legacyp", base_url="https://legacy.example.invalid/v1",
@@ -897,8 +897,8 @@ class ServedOperatorTests(test_cli.OperatorCommandCase):
         self.published()
         self.assertIsNone(doctor_mod._pending_served_change(self.runtime))
         # An out-of-band declaration (a hand or configuration-manager edit).
-        directory = state.ensure_private_dir(claude_multi.operator.providers_dir(self.env))
-        state.atomic_write(directory / "lan.json", claude_multi.operator.document_bytes({
+        directory = state.ensure_private_dir(charmer.operator.providers_dir(self.env))
+        state.atomic_write(directory / "lan.json", charmer.operator.document_bytes({
             "version": 1,
             "provider": {"display": "LAN", "kind": "openai-compatible-lan", "base_url": "http://box.lan:8000/v1",
                          "auth": {"kind": "none"}, "independence_family": "local"},
@@ -951,17 +951,17 @@ class ServedOperatorTests(test_cli.OperatorCommandCase):
         self.assertIn(f"{LIVE[:8]} lead: claude-opus-5 retargets", preview)
         # Recorded but not yet published (the state between a ledger write
         # and the next render): doctor and plan see the same retarget.
-        claude_multi.secret_store.default_store(self.runtime.gateway_environ()).set(
+        charmer.secret_store.default_store(self.runtime.gateway_environ()).set(
             "PLATFORM_ANTHROPIC_API_KEY", "platform-dummy-key")
-        alternative = claude_multi.operator.transport_alternative("anthropic", "api-key")
-        schemas = claude_multi.operator.load_schemas(test_cli.CATALOG_ROOT)
+        alternative = charmer.operator.transport_alternative("anthropic", "api-key")
+        schemas = charmer.operator.load_schemas(test_cli.CATALOG_ROOT)
 
         def select(document):
             document["transport_choices"]["anthropic"] = "api-key"
-            document["routes"]["anthropic"] = claude_multi.operator.transport_route_record(
-                alternative, at=claude_multi.operator.utc_stamp())
+            document["routes"]["anthropic"] = charmer.operator.transport_route_record(
+                alternative, at=charmer.operator.utc_stamp())
 
-        claude_multi.operator.update_ledger(self.env, schemas, select)
+        charmer.operator.update_ledger(self.env, schemas, select)
         out = self._across("  claude-opus-5: claude OAuth pool · claude-opus-5 → key route https://api.anthropic.com")
         self.assertIn(f"{LIVE[:8]} lead: claude-opus-5 retargets", out)
 
@@ -1080,8 +1080,8 @@ class ServedOperatorTests(test_cli.OperatorCommandCase):
             shown = real(*args, **kwargs)
             # An out-of-band declaration (a hand or configuration-manager edit) lands
             # after the preview was shown: the commit would publish it.
-            directory = state.ensure_private_dir(claude_multi.operator.providers_dir(self.env))
-            state.atomic_write(directory / "lan.json", claude_multi.operator.document_bytes({
+            directory = state.ensure_private_dir(charmer.operator.providers_dir(self.env))
+            state.atomic_write(directory / "lan.json", charmer.operator.document_bytes({
                 "version": 1,
                 "provider": {"display": "LAN", "kind": "openai-compatible-lan",
                              "base_url": "http://box.lan:8000/v1", "auth": {"kind": "none"},
@@ -1226,12 +1226,12 @@ class PlanCommandTests(test_cli.CLITestCase):
         document = json.loads(out)
         self.assertEqual(document["candidate"]["launcher_version"], "9.9.9")
         self.assertEqual(document["candidate"]["asset_root"], str(candidate))
-        self.assertEqual(document["running_launcher"], claude_multi.__version__)
+        self.assertEqual(document["running_launcher"], charmer.__version__)
         self.assertEqual(self.runtime.asset_root, before_root)
         self.assertEqual(self.runtime.environ, before_env)
         self.assertNotIn("CLAUDE_MULTI_ASSETS", os.environ)
         code, text = self.run_cli(["plan", "--assets", str(self.root / "candidate")], interactive=False)
-        self.assertIn(f"Running launcher {claude_multi.__version__} (unchanged by --assets)", text)
+        self.assertIn(f"Running launcher {charmer.__version__} (unchanged by --assets)", text)
         self.assertIn("(launcher 9.9.9,", text)
         digest = document["digest"]
         self.assertEqual(json.loads(self.run_cli(["plan", "--assets", str(self.root / "candidate"), "--json"],
@@ -1277,7 +1277,7 @@ class PlanApplicationBoundaryTests(test_cli.CLITestCase):
         boundary; the owner's own run (its token in the environment)
         applies."""
 
-        from claude_multi import gateway_inhibition
+        from charmer import gateway_inhibition
 
         token = gateway_inhibition.begin(
             self.runtime.session_store.root, owner="installer", purpose="update 1.0.0 to 1.0.1",

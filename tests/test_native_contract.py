@@ -6,8 +6,8 @@ import os
 import unittest
 from pathlib import Path
 
-from claude_multi import catalog, compiler, composition, pin, strict_json
-from claude_multi.compiler import CompilerError
+from charmer import catalog, compiler, composition, pin, strict_json
+from charmer.compiler import CompilerError
 from _catalog import FIXTURE_ROOT, SHIPPED_ROOT, uses_shipped_catalog
 
 

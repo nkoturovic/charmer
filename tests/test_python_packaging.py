@@ -28,8 +28,8 @@ from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest import mock
 
-import claude_multi
-from claude_multi import entrypoints, identity, layout
+import charmer
+from charmer import entrypoints, identity, layout
 from _layout import PACKAGE_DIR, REPO_ROOT, RESOURCES_ROOT, installed_paths, pyproject
 
 SCRIPTS = pyproject()["project"]["scripts"]
@@ -48,7 +48,7 @@ def documents() -> list[tuple[str, str]]:
 
 
 def _package_files(root: Path) -> list[str]:
-    """Every file of the ``claude_multi`` package under ``root`` (relative,
+    """Every file of the ``charmer`` package under ``root`` (relative,
     bytecode excluded)."""
 
     return sorted(path.relative_to(root.parent).as_posix() for path in root.rglob("*")
@@ -60,21 +60,21 @@ class VersionMappingTests(unittest.TestCase):
         for launcher, expected in (("1.0.0", "1.0.0"), ("1.0.0-dev", "1.0.0.dev0"), ("0.9.12", "0.9.12"),
                                    ("12.3.4-dev", "12.3.4.dev0")):
             with self.subTest(launcher=launcher):
-                self.assertEqual(claude_multi.python_version(launcher), expected)
+                self.assertEqual(charmer.python_version(launcher), expected)
 
     def test_other_strings_are_refused(self) -> None:
         for bad in ("1.0", "1.0.0-rc1", "1.0.0.dev0", "01.0.0", "1.0.0-dev-dev", "", "v1.0.0"):
             with self.subTest(bad=bad), self.assertRaises(ValueError):
-                claude_multi.python_version(bad)
+                charmer.python_version(bad)
 
     def test_the_package_version_follows_the_version_document(self) -> None:
         import json
 
         launcher = json.loads((RESOURCES_ROOT / "version.json").read_text())["launcher_version"]
-        self.assertEqual(claude_multi.__version__, launcher)
-        self.assertEqual(claude_multi.PACKAGE_VERSION, claude_multi.python_version(launcher))
+        self.assertEqual(charmer.__version__, launcher)
+        self.assertEqual(charmer.PACKAGE_VERSION, charmer.python_version(launcher))
         dynamic = pyproject()["tool"]["setuptools"]["dynamic"]["version"]
-        self.assertEqual(dynamic, {"attr": "claude_multi.PACKAGE_VERSION"})
+        self.assertEqual(dynamic, {"attr": "charmer.PACKAGE_VERSION"})
         self.assertEqual(pyproject()["project"]["dynamic"], ["version"])
 
 
@@ -101,7 +101,7 @@ class MetadataTests(unittest.TestCase):
         for name, target in SCRIPTS.items():
             with self.subTest(name=name):
                 module, function = target.split(":")
-                self.assertEqual(module, "claude_multi.entrypoints")
+                self.assertEqual(module, "charmer.entrypoints")
                 self.assertEqual(function, name.replace("-", "_"))
                 self.assertTrue(callable(getattr(entrypoints, function)))
         self.assertEqual(sorted(entrypoints.PROGRAMS), sorted(entrypoints.NAMES))
@@ -109,7 +109,7 @@ class MetadataTests(unittest.TestCase):
     def test_package_data_and_documents(self) -> None:
         setuptools = pyproject()["tool"]["setuptools"]
         self.assertEqual(setuptools["package-dir"], {"": "src"})
-        self.assertEqual(setuptools["package-data"], {"claude_multi": ["data/**/*"]})
+        self.assertEqual(setuptools["package-data"], {"charmer": ["data/**/*"]})
         # Every key is share/claude-multi or a directory under it, every file
         # lies under docs/ in that directory (the build tool refuses others).
         placed = documents()
@@ -137,7 +137,7 @@ class MetadataTests(unittest.TestCase):
         included = {word for rule in rules if rule[0] == "include" for word in rule[1:]}
         self.assertTrue(set(SOURCE_INPUTS) <= included, included)
         self.assertTrue({source for source, _target in documents()} <= included)
-        self.assertIn(["graft", "src/claude_multi"], rules)
+        self.assertIn(["graft", "src/charmer"], rules)
         self.assertIn(["global-exclude", "__pycache__", "*.py[cod]"], rules)
 
 
@@ -198,7 +198,7 @@ class EntryPointTests(unittest.TestCase):
             calls.append(("proxy", argv, kwargs))
             return 0
 
-        with mock.patch("claude_multi.cli.entry.main", fake_cli), mock.patch("claude_multi.proxy.main", fake_proxy), \
+        with mock.patch("charmer.cli.entry.main", fake_cli), mock.patch("charmer.proxy.main", fake_proxy), \
                 redirect_stdout(io.StringIO()) as shown:
             entrypoints.run("claude-multi", ["doctor"])
             entrypoints.run("claude-multi", ["--version"])
@@ -218,7 +218,7 @@ class EntryPointTests(unittest.TestCase):
         with redirect_stderr(io.StringIO()) as err:
             self.assertEqual(entrypoints.main([]), 2)
             self.assertEqual(entrypoints.main(["claude-other"]), 2)
-        self.assertIn("python3 -P -m claude_multi.entrypoints", err.getvalue())
+        self.assertIn("python3 -P -m charmer.entrypoints", err.getvalue())
 
     def test_the_source_launchers_run_the_same_entry_points(self) -> None:
         for name in entrypoints.NAMES:
@@ -228,7 +228,7 @@ class EntryPointTests(unittest.TestCase):
                 modules = sorted({alias.name for node in imports if isinstance(node, ast.Import)
                                   for alias in node.names}
                                  | {node.module for node in imports if isinstance(node, ast.ImportFrom)})
-                self.assertEqual(modules, ["claude_multi.entrypoints", "os", "sys"])
+                self.assertEqual(modules, ["charmer.entrypoints", "os", "sys"])
                 calls = {ast.unparse(node) for node in ast.walk(tree) if isinstance(node, ast.Call)}
                 self.assertIn("prepare_source(_ROOT)", calls)
                 self.assertIn(f"run({name!r})", calls)
@@ -240,7 +240,7 @@ class EntryPointTests(unittest.TestCase):
             env["HOME"] = tmp
             for name in entrypoints.NAMES:
                 with self.subTest(name=name):
-                    result = subprocess.run([sys.executable, "-P", "-m", "claude_multi.entrypoints", name, "--version"],
+                    result = subprocess.run([sys.executable, "-P", "-m", "charmer.entrypoints", name, "--version"],
                                             env=env, cwd=tmp, text=True, capture_output=True, timeout=60)
                     self.assertEqual(result.returncode, 0, result.stderr)
                     self.assertEqual(result.stdout.strip(), version_output(name))
@@ -256,7 +256,7 @@ def version_output(name: str) -> str:
         return identity.version_line()
     if name == "claude-multi-dev":
         return identity.version_line(name)
-    return f"{name} {claude_multi.__version__}"
+    return f"{name} {charmer.__version__}"
 
 
 def _console_script(target: str) -> str:
@@ -276,14 +276,14 @@ from pathlib import Path
 prefix = Path(sys.argv[1])
 # What a console script does first: the inherited wrapper variables go.
 os.environ["CLAUDE_MULTI_HOOK_COMMAND"] = "/elsewhere/bin/claude-multi"
-from claude_multi import entrypoints
+from charmer import entrypoints
 entrypoints.prepare_console()
 assert not {"CLAUDE_MULTI_CHANNEL", "CLAUDE_MULTI_ASSETS", "CLAUDE_MULTI_HOOK_COMMAND"} & set(os.environ)
-import claude_multi
-from claude_multi import assets, catalog, gateway_service, layout, qualify, scope
-package = Path(claude_multi.__file__).resolve().parent
+import charmer
+from charmer import assets, catalog, gateway_service, layout, qualify, scope
+package = Path(charmer.__file__).resolve().parent
 resources = package / "data"
-assert claude_multi.resources_root() == resources, claude_multi.resources_root()
+assert charmer.resources_root() == resources, charmer.resources_root()
 assert package.parent.name == "site-packages", package
 assert layout.installation() == prefix, layout.installation()
 assert assets.root() == resources
@@ -295,7 +295,7 @@ assert catalog.registry_dir() == resources / "registry"
 assert qualify.contract_identity(bundle.docs["native-contract"], assets.root()).gateway is not None
 assert gateway_service.load_spec()["unit"]
 assert layout.installation_resources(prefix) == resources
-print(json.dumps({"version": claude_multi.__version__}))
+print(json.dumps({"version": charmer.__version__}))
 """
 
 
@@ -320,7 +320,7 @@ class InstalledPrefixTests(unittest.TestCase):
         probe = subprocess.run([python, "-c", INSTALLED_PROBE, str(prefix)], env=env, cwd=elsewhere,
                                text=True, capture_output=True, timeout=60)
         self.assertEqual(probe.returncode, 0, probe.stderr)
-        self.assertIn(claude_multi.__version__, probe.stdout)
+        self.assertIn(charmer.__version__, probe.stdout)
         # Nothing was written into the home.
         self.assertEqual(sorted(path.name for path in home.iterdir()), [])
 
@@ -331,7 +331,7 @@ class InstalledPrefixTests(unittest.TestCase):
             version = f"python{sys.version_info.major}.{sys.version_info.minor}"
             site = prefix / "lib" / version / "site-packages"
             site.mkdir(parents=True)
-            shutil.copytree(PACKAGE_DIR, site / "claude_multi", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+            shutil.copytree(PACKAGE_DIR, site / "charmer", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
             for directory, files in pyproject()["tool"]["setuptools"]["data-files"].items():
                 (prefix / directory).mkdir(parents=True)
                 for item in files:
@@ -341,7 +341,7 @@ class InstalledPrefixTests(unittest.TestCase):
                 script = prefix / "bin" / name
                 script.write_text(_console_script(target))
                 script.chmod(0o755)
-            self.assertEqual(_package_files(site / "claude_multi"), _package_files(PACKAGE_DIR))
+            self.assertEqual(_package_files(site / "charmer"), _package_files(PACKAGE_DIR))
             home, elsewhere = root / "home", root / "elsewhere"
             home.mkdir()
             elsewhere.mkdir()
@@ -427,7 +427,7 @@ class DistributionTests(unittest.TestCase):
         for item, _target in documents():
             (source / item).parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(REPO_ROOT / item, source / item)
-        shutil.copytree(PACKAGE_DIR, source / "src" / "claude_multi",
+        shutil.copytree(PACKAGE_DIR, source / "src" / "charmer",
                         ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
         cls.backend = _backend_path(root, cls.scratch)
         out = cls.scratch / "dist"
@@ -439,19 +439,19 @@ class DistributionTests(unittest.TestCase):
         shutil.rmtree(cls.scratch, True)
 
     def test_the_wheel_carries_the_package_documents_and_entry_points(self) -> None:
-        version = claude_multi.PACKAGE_VERSION
-        self.assertEqual(self.wheel.name, f"claude_multi-{version}-py3-none-any.whl")
+        version = charmer.PACKAGE_VERSION
+        self.assertEqual(self.wheel.name, f"charmer-{version}-py3-none-any.whl")
         index = _wheel_index(self.wheel)
-        package = sorted(name for name in index if name.startswith("claude_multi/"))
+        package = sorted(name for name in index if name.startswith("charmer/"))
         self.assertEqual(package, _package_files(PACKAGE_DIR))
         for name in package:
             self.assertEqual(index[name], hashlib.sha256((REPO_ROOT / "src" / name).read_bytes()).hexdigest(), name)
-        data = f"claude_multi-{version}.data/data"
-        self.assertEqual(sorted(name for name in index if name.startswith(f"claude_multi-{version}.data/")),
+        data = f"charmer-{version}.data/data"
+        self.assertEqual(sorted(name for name in index if name.startswith(f"charmer-{version}.data/")),
                          sorted(f"{data}/{target}" for _source, target in documents()))
         with zipfile.ZipFile(self.wheel) as wheel:
-            metadata = wheel.read(f"claude_multi-{version}.dist-info/METADATA").decode()
-            entry_points = wheel.read(f"claude_multi-{version}.dist-info/entry_points.txt").decode()
+            metadata = wheel.read(f"charmer-{version}.dist-info/METADATA").decode()
+            entry_points = wheel.read(f"charmer-{version}.dist-info/entry_points.txt").decode()
         self.assertIn(f"\nVersion: {version}\n", metadata)
         self.assertIn("\nRequires-Python: >=3.11\n", metadata)
         self.assertNotIn("Requires-Dist:", metadata)
@@ -466,7 +466,7 @@ class DistributionTests(unittest.TestCase):
         # finds the installed pages.
         import _docs_vocab as vocab
 
-        data = f"claude_multi-{claude_multi.PACKAGE_VERSION}.data/data/"
+        data = f"charmer-{charmer.PACKAGE_VERSION}.data/data/"
         prefix = self.scratch / "installed-documents"
         with zipfile.ZipFile(self.wheel) as wheel:
             for name in wheel.namelist():
@@ -486,7 +486,7 @@ class DistributionTests(unittest.TestCase):
     def test_the_source_distribution_rebuilds_the_same_wheel(self) -> None:
         with tarfile.open(self.sdist) as archive:
             names = archive.getnames()
-            top = f"claude_multi-{claude_multi.PACKAGE_VERSION}"
+            top = f"charmer-{charmer.PACKAGE_VERSION}"
             for name in SOURCE_INPUTS:
                 self.assertIn(f"{top}/{name}", names)
             self.assertFalse([name for name in names if "__pycache__" in name or name.endswith(".pyc")])
@@ -528,7 +528,7 @@ class DistributionTests(unittest.TestCase):
                 result = subprocess.run([str(venv / "bin" / name), "--version"], env=env, cwd=elsewhere,
                                         text=True, capture_output=True, timeout=60)
                 self.assertEqual(result.returncode, 0, result.stderr)
-        probe = ("import os; from claude_multi import entrypoints, layout; entrypoints.prepare_console(); "
+        probe = ("import os; from charmer import entrypoints, layout; entrypoints.prepare_console(); "
                  "print(layout.installation(), os.environ.get('CLAUDE_MULTI_CHANNEL'))")
         result = subprocess.run([str(python), "-c", probe], env=env, cwd=elsewhere, text=True,
                                 capture_output=True, timeout=60)
@@ -561,7 +561,7 @@ class DistributionTests(unittest.TestCase):
                "CLAUDE_MULTI_CHANNEL": "nix", "CLAUDE_MULTI_ASSETS": str(self.scratch / "absent")}
         InstalledPrefixTests.assert_installed(self, venv, str(python), env, elsewhere, home)
         site = next((venv / "lib").glob("python*/site-packages"))
-        self.assertEqual(_package_files(site / "claude_multi"), _package_files(PACKAGE_DIR))
+        self.assertEqual(_package_files(site / "charmer"), _package_files(PACKAGE_DIR))
 
 
 if __name__ == "__main__":

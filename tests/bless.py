@@ -84,7 +84,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from claude_multi import (
+from charmer import (
     catalog,
     compiler,
     continuity,

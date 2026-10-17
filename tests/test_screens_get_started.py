@@ -13,11 +13,11 @@ from unittest import mock
 
 import test_cli
 from test_tui import BACKSPACE, DOWN, END, HOME, RIGHT, UP, FakeWindow
-from claude_multi import tui
-from claude_multi.setup import external, model, status
-import claude_multi.cli.consent as consent
-import claude_multi.cli.screens.get_started as get_started
-import claude_multi.cli.text as cli_text
+from charmer import tui
+from charmer.setup import external, model, status
+import charmer.cli.consent as consent
+import charmer.cli.screens.get_started as get_started
+import charmer.cli.text as cli_text
 
 ESC = "\x1b"
 ENTER = "\n"
@@ -134,7 +134,7 @@ class RefusalTests(GetStartedCase):
 
 class StepViewTests(GetStartedCase):
     def test_profile_step_builds_the_starter_and_makes_it_the_default(self) -> None:
-        from claude_multi import choices
+        from charmer import choices
 
         screen = self.screen()
         self.assertEqual(status.snapshot(self.runtime).step("profile").state, "todo")
@@ -209,7 +209,7 @@ class ProvidersStepTests(GetStartedCase):
         return [HOME, *([DOWN] * entries.index(entry_id))]
 
     def secret(self, name: str) -> str | None:
-        from claude_multi import secret_store
+        from charmer import secret_store
 
         return secret_store.default_store(self.runtime.gateway_environ()).get(name)
 
@@ -249,8 +249,8 @@ class ProvidersStepTests(GetStartedCase):
         self.assertTrue(screen.message.startswith("Added vendorx"), screen.message)
 
     def test_a_over_ssh_signs_in_to_an_account_by_its_address(self) -> None:
-        from claude_multi.setup import signin, texts
-        import claude_multi.cli.screens.signin as screens_signin
+        from charmer.setup import signin, texts
+        import charmer.cli.screens.signin as screens_signin
 
         # A display is present, so only the SSH connection preselects the address.
         self.runtime.environ.update(DISPLAY=":0", SSH_CONNECTION="192.0.2.1 50000 192.0.2.2 22")
@@ -298,7 +298,7 @@ class PresetPickerTests(GetStartedCase):
     secret = ProvidersStepTests.secret
 
     def test_enter_on_a_preset_adds_it_with_its_route_and_key(self) -> None:
-        from claude_multi.setup import texts
+        from charmer.setup import texts
 
         name = self.first("anthropic-compatible")
         info = self.presets[name]
@@ -328,7 +328,7 @@ class PresetPickerTests(GetStartedCase):
     def existing_instance(self, name: str, provider_id: str, key: str) -> None:
         """An existing, active provider from preset ``name`` (declared, approved, its key saved)."""
 
-        from claude_multi.setup import providers as layer
+        from charmer.setup import providers as layer
 
         plan = layer.plan_add_preset(self.runtime, name, provider_id, None)
         layer.apply_add_preset(self.runtime, plan, model.Confirmation.given(plan), model.Secret(key))
@@ -342,7 +342,7 @@ class PresetPickerTests(GetStartedCase):
                 ENTER]
 
     def test_one_more_instance_of_a_preset_gets_its_own_key(self) -> None:
-        from claude_multi.setup import texts
+        from charmer.setup import texts
 
         name = self.first("anthropic-compatible")
         shared = self.presets[name].secret_name
@@ -414,7 +414,7 @@ class PresetPickerTests(GetStartedCase):
         self.assertEqual(screen.message, model.NOTHING_CHANGED)
 
     def test_sharing_the_saved_key_types_none(self) -> None:
-        from claude_multi.setup import texts
+        from charmer.setup import texts
 
         name = self.first("anthropic-compatible")
         shared = self.presets[name].secret_name
@@ -437,8 +437,8 @@ class PresetPickerTests(GetStartedCase):
         self.assertTrue(screen.message.startswith("Added second"), screen.message)
 
     def test_an_openai_compatible_preset_waits_for_its_route(self) -> None:
-        from claude_multi import catalog, operator as operator_mod
-        from claude_multi.setup import texts
+        from charmer import catalog, operator as operator_mod
+        from charmer.setup import texts
 
         name = self.first(operator_mod.KEYED_KIND)
         before = self.state_bytes()
@@ -462,7 +462,7 @@ class ProxyTests(GetStartedCase):
 
     def setUp(self) -> None:
         super().setUp()
-        from claude_multi import endpoint
+        from charmer import endpoint
 
         packaged = endpoint.port_of(self.runtime.catalog.docs["gateway"]["gateway"]["base_url"])
         endpoint.set_proxy(self.runtime.home, self.OLD, packaged_port=packaged)
@@ -475,12 +475,12 @@ class ProxyTests(GetStartedCase):
         return [*([BACKSPACE] * len(self.OLD)), *self.NEW, ENTER, ENTER]
 
     def proxy_now(self) -> str | None:
-        from claude_multi import endpoint
+        from charmer import endpoint
 
         return endpoint.read_config(self.runtime.home).proxy_url
 
     def test_a_refused_configuration_keeps_the_previous_proxy(self) -> None:
-        from claude_multi import proxy
+        from charmer import proxy
 
         screen = self.screen()
         with mock.patch.object(self.runtime, "render_gateway", side_effect=proxy.ProxyError("fixture render refused")):
@@ -502,7 +502,7 @@ class ProxyTests(GetStartedCase):
         self.assertEqual(self.path.read_bytes(), self.before)
 
     def test_a_failure_or_interrupt_at_the_folder_sync_puts_the_document_back(self) -> None:
-        from claude_multi import state
+        from charmer import state
 
         real = state._fsync_directory
         for failure in (OSError(5, "fixture sync failure"), KeyboardInterrupt()):
@@ -591,7 +591,7 @@ class ClaudeStepTests(GetStartedCase):
 
     def setUp(self) -> None:
         super().setUp()
-        from claude_multi import acquire, pin
+        from charmer import acquire, pin
 
         self.platform = pin.host_platform()
         self.contract = {"verified": [{
@@ -621,7 +621,7 @@ class ClaudeStepTests(GetStartedCase):
             mock.patch.object(external, "claude_verified", return_value=external.ClaudeStatus(
                 self.VERSION, "missing", "not set up", external.CLAUDE_FIX)),
             mock.patch.object(external, "acquire_claude", acquire_claude),
-            mock.patch("claude_multi.retention.prune"),
+            mock.patch("charmer.retention.prune"),
         )
         for patcher in patches:
             patcher.start()

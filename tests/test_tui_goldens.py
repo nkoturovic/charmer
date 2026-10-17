@@ -16,7 +16,7 @@ from pathlib import Path
 from unittest import mock
 
 import _tui_render
-from claude_multi import views
+from charmer import views
 from _catalog import GOLDENS_ROOT
 from _golden import assertGolden
 

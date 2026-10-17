@@ -1,4 +1,4 @@
-"""Release signature verification (``claude_multi.trust``).
+"""Release signature verification (``charmer.trust``).
 
 RFC 8032 Ed25519 vectors, the ``PROTOCOL.sshsig`` blob rules, allowed-signer
 policy (principals, namespaces, rotation windows) and cross-checks against
@@ -19,7 +19,7 @@ import time
 import unittest
 from pathlib import Path
 
-from claude_multi import trust
+from charmer import trust
 from _fake_release import needs_ssh_keygen
 
 NS = trust.RELEASE_NAMESPACE
@@ -332,7 +332,7 @@ class ReleaseTrustTests(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.tmp, True)
 
     def test_the_packaged_file_is_the_release_trust(self) -> None:
-        from claude_multi import resources_root
+        from charmer import resources_root
 
         self.assertEqual(trust.release_trust_path(), resources_root() / "release-trust" / "allowed_signers")
         self.assertTrue(trust.release_trust_path().is_file())

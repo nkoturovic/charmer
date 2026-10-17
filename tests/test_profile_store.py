@@ -19,7 +19,7 @@ import unittest
 from dataclasses import replace
 from pathlib import Path
 
-from claude_multi import catalog, custom, paths, profile, sessions, settings, state, strict_json
+from charmer import catalog, custom, paths, profile, sessions, settings, state, strict_json
 
 from _catalog import FIXTURE_ROOT
 

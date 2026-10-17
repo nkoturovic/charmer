@@ -12,5 +12,5 @@ include docs/guides/models.md docs/guides/sessions.md docs/guides/lineup.md docs
 include docs/guides/networking.md docs/guides/move-machines.md docs/reference/cli.md
 include docs/reference/tasks.md docs/reference/settings.md docs/reference/compatibility.md
 include docs/reference/licenses.md
-graft src/claude_multi
+graft src/charmer
 global-exclude __pycache__ *.py[cod]

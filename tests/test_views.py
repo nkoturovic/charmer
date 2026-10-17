@@ -27,9 +27,9 @@ from _layout import REPO_ROOT
 import _tui_fixture as fx
 from _v4 import V4Case
 from test_migrate import _retired_entry
-from claude_multi import catalog, cli, custom, lineup, profile, scope, sessions, settings, views
-import claude_multi.sessions
-import claude_multi.cli.runtime as cli_runtime
+from charmer import catalog, cli, custom, lineup, profile, scope, sessions, settings, views
+import charmer.sessions
+import charmer.cli.runtime as cli_runtime
 import subprocess
 
 SPEC = "the views contract"
@@ -131,7 +131,7 @@ class ViewsImportTests(unittest.TestCase):
     }
 
     def test_imports_stay_inside_the_allowed_dependency_set(self) -> None:
-        tree = ast.parse((REPO_ROOT / "src" / "claude_multi" / "views.py").read_text())
+        tree = ast.parse((REPO_ROOT / "src" / "charmer" / "views.py").read_text())
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom) and node.level == 1:
                 names = [node.module] if node.module else [a.name for a in node.names]
@@ -145,7 +145,7 @@ class ViewsImportTests(unittest.TestCase):
                 for alias in node.names:
                     self.assertNotIn(
                         alias.name.split(".")[0],
-                        ("curses", "_curses", "termios", "claude_multi"),
+                        ("curses", "_curses", "termios", "charmer"),
                     )
 
 
@@ -647,14 +647,14 @@ class LivenessTests(_RuntimeCase):
         self.assertEqual(cli._liveness(self.runtime, ended, none, frozenset({fx.FIXED_ID})), "ended")
 
     def test_the_runtime_seams(self) -> None:
-        with mock.patch.object(claude_multi.sessions, "proc_session_ids", return_value=frozenset({"x"})) as proc:
+        with mock.patch.object(charmer.sessions, "proc_session_ids", return_value=frozenset({"x"})) as proc:
             plain = cli.Runtime.__new__(cli.Runtime)
             self.assertEqual(cli.Runtime._proc_ids(plain), frozenset({"x"}))
             proc.assert_called_once_with()
         self.runtime.proc_ids = frozenset({fx.FIXED_ID})
         self.runtime.live_prefixes = frozenset({"abc"})
-        with mock.patch.object(claude_multi.sessions, "proc_session_ids", side_effect=AssertionError("read /proc")), \
-                mock.patch('claude_multi.cli.session_facts._live_background_prefixes', side_effect=AssertionError("read /tmp")):
+        with mock.patch.object(charmer.sessions, "proc_session_ids", side_effect=AssertionError("read /proc")), \
+                mock.patch('charmer.cli.session_facts._live_background_prefixes', side_effect=AssertionError("read /tmp")):
             self.assertEqual(self.runtime._proc_ids(), frozenset({fx.FIXED_ID}))
             self.assertEqual(self.runtime._live_prefixes(), frozenset({"abc"}))
 
@@ -1600,7 +1600,7 @@ class TuiFixtureTests(unittest.TestCase):
         runtime = fx.fixture_runtime(self.tmp)
         model = "views-model-alias"
         text = fx.journal_text(dead_pool="codex", quota=[(model, "402", 2)])
-        with mock.patch('claude_multi.cli.gateway_facts._doctor_now', lambda: fx.FIXED_NOW):
+        with mock.patch('charmer.cli.gateway_facts._doctor_now', lambda: fx.FIXED_NOW):
             report = cli._doctor_journal_report(runtime, text)
         self.assertEqual(len(report), 2, report)
         self.assertIn("invalid_grant line(s) since the codex pool", report[0])
@@ -1612,7 +1612,7 @@ class TuiFixtureTests(unittest.TestCase):
 
 class ProviderQuotaCellTests(unittest.TestCase):
     def rows(self, *, pool=None, enabled=True, journal=None, **kwargs):
-        from claude_multi import quota
+        from charmer import quota
         facts = [dict(id="a-long-fixture-provider", kind="oauth-pool", pool="claude",
                       credential="2 credential records", enabled=enabled, selectors=["fixture-model"],
                       guidance="ordinary guidance", models=2, served_note="2/2 served"),
@@ -1636,7 +1636,7 @@ class ProviderQuotaCellTests(unittest.TestCase):
         self.assertEqual(len(rows[0].details), 2)
 
     def test_healthy_management_cannot_clear_journal_refresh_failure(self):
-        from claude_multi import quota
+        from charmer import quota
         journal = SimpleNamespace(dead_pools={"claude": (1, fx.FIXED_NOW)},
                                   quota={("fixture-model", "429"): 2})
         pool = quota.PoolStatus("ok", credentials=quota.parse_auth_files(fx.quota_body(percent=42)))
@@ -1648,7 +1648,7 @@ class ProviderQuotaCellTests(unittest.TestCase):
         self.assertIn("3d", row.details[1])
 
     def test_all_unavailable_states_and_management_auth_failure(self):
-        from claude_multi import quota
+        from charmer import quota
         for state in quota.STATES - {"ok"}:
             with self.subTest(state=state):
                 row = self.rows(pool=quota.PoolStatus(state))[0]
@@ -1662,7 +1662,7 @@ class ProviderQuotaCellTests(unittest.TestCase):
         self.assertEqual(self.rows(pool=pool)[0].cells[2], views.CREDENTIAL_TEXT["failing"])
 
     def test_quota_off_preserves_guidance_settings_and_refresh_priority(self):
-        from claude_multi import quota
+        from charmer import quota
         for state, note in (("no-key", "quota off — no management key"),
                             ("disabled", "quota off — disabled by operator"),
                             ("unavailable", "quota unavailable in this build")):

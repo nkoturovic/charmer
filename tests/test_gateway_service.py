@@ -24,9 +24,9 @@ import _log_secrets
 from _catalog import FIXTURE_ROOT
 from _layout import REPO_ROOT, RESOURCES_ROOT
 from _layout import SERVICE_SPEC
-from claude_multi import (cli, endpoint, gateway_inhibition, gateway_lifecycle as gl, gateway_service as gs, installs,
+from charmer import (cli, endpoint, gateway_inhibition, gateway_lifecycle as gl, gateway_service as gs, installs,
                           secret_store, service, state)
-from claude_multi.platform import linux_service, observation, systemd_unit
+from charmer.platform import linux_service, observation, systemd_unit
 from test_gateway_lifecycle import World, _Lifecycle, save_line
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "service"
@@ -990,7 +990,7 @@ class StatusAndInhibitionTests(_ServiceCase):
         self.assertEqual(self.recorded(), endpoint.EndpointConfig(port=self.port))
 
     def test_the_tui_offers_install_and_keeps_uninstall_in_the_terminal(self) -> None:
-        from claude_multi.cli.screens import gateway_actions
+        from charmer.cli.screens import gateway_actions
 
         self.assertIn("gateway service uninstall", gateway_actions.CLI_ONLY)
         darwin = self.service(platform="darwin")

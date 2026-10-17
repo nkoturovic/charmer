@@ -37,7 +37,7 @@ import uuid
 import test_scope_probe_client as client_probe
 from _catalog import FIXTURE_ROOT
 from _tier import real_binary_gate
-from claude_multi import catalog, compiler, probe, profile, scope, settings
+from charmer import catalog, compiler, probe, profile, scope, settings
 from test_agent_context import BELOW, bounded, codex_line, seed_lead
 
 LINE_PREFIX = "agent window probe:"

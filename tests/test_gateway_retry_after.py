@@ -34,7 +34,7 @@ from types import SimpleNamespace
 from unittest import mock
 from urllib.parse import urlsplit
 
-from claude_multi import probe, render, state
+from charmer import probe, render, state
 from _catalog import SHIPPED_ROOT, uses_shipped_catalog
 from _tier import real_binary_gate
 import _gateway_harness as harness

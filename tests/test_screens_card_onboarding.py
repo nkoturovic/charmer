@@ -16,17 +16,17 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from claude_multi import catalog, choices, cli, profile, state, tui, views
-from claude_multi.setup import defaults, model, status
+from charmer import catalog, choices, cli, profile, state, tui, views
+from charmer.setup import defaults, model, status
 
 import _tui_fixture as fx
 from _tui_render import golden_runtime, render
 from test_tui import BTAB, DOWN, END, HOME, LEFT, RIGHT, FakeWindow
-import claude_multi.cli.screens.get_started as screens_get_started
-import claude_multi.cli.screens.launch_sessions as launch_sessions
-import claude_multi.cli.screens.profiles as screens_profiles
-import claude_multi.cli.text as cli_text
-import claude_multi.cli.types as cli_types
+import charmer.cli.screens.get_started as screens_get_started
+import charmer.cli.screens.launch_sessions as launch_sessions
+import charmer.cli.screens.profiles as screens_profiles
+import charmer.cli.text as cli_text
+import charmer.cli.types as cli_types
 
 ESC = "\x1b"
 ENTER = "\n"
@@ -54,7 +54,7 @@ class CardOnboardingCase(unittest.TestCase):
         stack = contextlib.ExitStack()
         self.addCleanup(stack.close)
         stack.enter_context(fx.hermetic(self.runtime))
-        stack.enter_context(mock.patch("claude_multi.cli.gateway_facts._doctor_now", lambda: fx.FIXED_NOW))
+        stack.enter_context(mock.patch("charmer.cli.gateway_facts._doctor_now", lambda: fx.FIXED_NOW))
         for name in ("CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT"):
             self.runtime.environ.pop(name, None)
         self.runtime.profiles.install_seeds()
@@ -413,7 +413,7 @@ class CardRowsTests(CardOnboardingCase):
                 break
 
     def test_a_pay_per_token_lineup_has_its_spend_row(self) -> None:
-        aggregated = next(row.name for row in __import__("claude_multi.setup.profiles", fromlist=["rows"]).rows(
+        aggregated = next(row.name for row in __import__("charmer.setup.profiles", fromlist=["rows"]).rows(
             self.runtime) if row.ready)
         card = self.card(self.target(aggregated)).card
         spend = [row for row in card.rows if row.kind == "spend"]
@@ -492,7 +492,7 @@ class UnloadableTargetTests(CardOnboardingCase):
 
 class SettingsDefaultRowTests(CardOnboardingCase):
     def settings(self):
-        import claude_multi.cli.screens.settings as screens_settings
+        import charmer.cli.screens.settings as screens_settings
 
         screen = screens_settings._SettingsScreen(self.runtime, tui.MONO_PALETTE, tty_in=io.StringIO(),
                                                   tty_out=io.StringIO())
@@ -538,8 +538,8 @@ class LineModeTests(CardOnboardingCase):
     """``--line`` with nothing connected offers ``claude-multi setup`` first."""
 
     def offer(self, answer: str) -> tuple[bool, str, list]:
-        import claude_multi.cli.commands.setup as commands_setup
-        import claude_multi.cli.launch_flow as launch_flow
+        import charmer.cli.commands.setup as commands_setup
+        import charmer.cli.launch_flow as launch_flow
 
         calls: list = []
         out = io.StringIO()
@@ -548,7 +548,7 @@ class LineModeTests(CardOnboardingCase):
         return ran, out.getvalue(), calls
 
     def test_enter_or_y_runs_setup(self) -> None:
-        from claude_multi.setup import texts
+        from charmer.setup import texts
 
         disconnect(self.runtime)
         for answer in ("\n", "y\n", "Yes\n"):
@@ -577,9 +577,9 @@ class LineModeTests(CardOnboardingCase):
             self.assertEqual(self.offer("y\n")[:2], (False, ""))
 
     def test_an_interrupted_setup_says_so(self) -> None:
-        import claude_multi.cli.commands.setup as commands_setup
-        import claude_multi.cli.launch_flow as launch_flow
-        from claude_multi.setup import texts
+        import charmer.cli.commands.setup as commands_setup
+        import charmer.cli.launch_flow as launch_flow
+        from charmer.setup import texts
 
         disconnect(self.runtime)
         out = io.StringIO()
@@ -590,7 +590,7 @@ class LineModeTests(CardOnboardingCase):
 
 class EntryTests(CardOnboardingCase):
     def main(self, argv: list[str], stdin: str = "") -> tuple[int, str, str]:
-        from claude_multi.cli import entry
+        from charmer.cli import entry
 
         out, err = io.StringIO(), io.StringIO()
         with contextlib.redirect_stderr(err):
@@ -599,7 +599,7 @@ class EntryTests(CardOnboardingCase):
         return code, out.getvalue(), err.getvalue()
 
     def test_a_non_interactive_launch_with_nothing_connected_names_setup(self) -> None:
-        from claude_multi.setup import texts
+        from charmer.setup import texts
 
         code, out, err = self.main([])
         self.assertEqual(code, 2)
@@ -613,7 +613,7 @@ class EntryTests(CardOnboardingCase):
     def test_a_model_switch_over_newer_state_is_refused(self) -> None:
         import json
 
-        from claude_multi import hooks
+        from charmer import hooks
 
         state.atomic_write(self.runtime.session_store.root / "state-version", b"99\n")
         argv = ["session-event", "premodel", "--managed-id", fx.FIXED_ID, "--launch-epoch", "0",

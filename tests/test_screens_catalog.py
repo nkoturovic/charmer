@@ -25,16 +25,16 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
 
-from claude_multi import catalog, cli, custom, profile, proxy, settings, state, strict_json, tui, views
+from charmer import catalog, cli, custom, profile, proxy, settings, state, strict_json, tui, views
 
 import _tui_fixture as fx
-import claude_multi.cli.text as cli_text
+import charmer.cli.text as cli_text
 import _tui_render
 from _catalog import FIXTURE_ROOT
 from _layout import REPO_ROOT
 from test_tui import DOWN, END, HOME, LEFT, RIGHT, UP, FakeWindow
-import claude_multi.management
-import claude_multi.service
+import charmer.management
+import charmer.service
 import subprocess
 
 SPEC = "the catalog screens contract"
@@ -93,7 +93,7 @@ class _ScreenCase(unittest.TestCase):
         self.tmp = Path(tempfile.mkdtemp(prefix="cm-screens-catalog-"))
         self.addCleanup(shutil.rmtree, self.tmp, True)
         self.runtime = self.make_runtime(self.tmp / "root", **self.runtime_kwargs)
-        guard = mock.patch("claude_multi.cli.consent.stdio_ttys", return_value=True)
+        guard = mock.patch("charmer.cli.consent.stdio_ttys", return_value=True)
         guard.start()
         self.addCleanup(guard.stop)
 
@@ -102,7 +102,7 @@ class _ScreenCase(unittest.TestCase):
         stack = contextlib.ExitStack()
         self.addCleanup(stack.close)
         stack.enter_context(fx.hermetic(runtime))
-        stack.enter_context(mock.patch('claude_multi.cli.gateway_facts._doctor_now', lambda: fx.FIXED_NOW))
+        stack.enter_context(mock.patch('charmer.cli.gateway_facts._doctor_now', lambda: fx.FIXED_NOW))
         return runtime
 
     def settings_doc(self, runtime: cli.Runtime | None = None) -> dict:
@@ -313,7 +313,7 @@ class ModelsScreenTests(_ScreenCase):
         self.assertGreater(count, 0, "the fixture seeds continuity aliases")
         text = self.run_screen(self.screen(), [ESC]).text()
         self.assertIn(f"{count} continuity aliases retained", text)
-        with mock.patch('claude_multi.cli.gateway_facts._doctor_continuity', lambda _rt: ({}, "absent", None)):
+        with mock.patch('charmer.cli.gateway_facts._doctor_continuity', lambda _rt: ({}, "absent", None)):
             text = self.run_screen(self.screen(), [ESC]).text()
         self.assertNotIn("continuity aliases", text)
 
@@ -329,7 +329,7 @@ class ModelsScreenTests(_ScreenCase):
             if (registry.codex.get(e.get("wire_model")) or {}).get("retirement_at")
         )
         moment = datetime.fromisoformat(when.replace("Z", "+00:00")) - timedelta(days=10)
-        with mock.patch('claude_multi.cli.gateway_facts._doctor_now', lambda: moment):
+        with mock.patch('charmer.cli.gateway_facts._doctor_now', lambda: moment):
             radar = next(line for line in cli._doctor_retirement_radar(runtime) if line.startswith(f"line {key} ("))
             screen = self.screen(runtime)
             steps = screen.keys.index(key) - screen.index
@@ -337,7 +337,7 @@ class ModelsScreenTests(_ScreenCase):
         self.assertEqual(screen.selected_key, key)
         self.assertIn(views.clip(radar, 77), win.text())
         # The full radar text sits in help.
-        with mock.patch('claude_multi.cli.gateway_facts._doctor_now', lambda: moment):
+        with mock.patch('charmer.cli.gateway_facts._doctor_now', lambda: moment):
             screen = self.screen(runtime)
             # The help scrolls: End shows its last lines, the radar text.
             win = self.run_screen(screen, ["j"] * steps + ["?", END, ESC, ESC], width=160)
@@ -527,7 +527,7 @@ class ProvidersScreenTests(_ScreenCase):
 
     def test_w_opens_the_gateway_dialog_and_refreshes(self) -> None:
         screen = self.screen()
-        with mock.patch("claude_multi.cli.screens.gateway_actions.dialog",
+        with mock.patch("charmer.cli.screens.gateway_actions.dialog",
                         return_value="gateway ready: fixture") as dialog:
             self.run_screen(screen, ["W", ESC])
         dialog.assert_called_once()
@@ -600,7 +600,7 @@ class ProvidersScreenTests(_ScreenCase):
 
     def test_runner_default_journal_seam(self) -> None:
         win = FakeWindow([ESC])
-        with mock.patch('claude_multi.cli.gateway_facts._read_gateway_journal', return_value=None) as reader:
+        with mock.patch('charmer.cli.gateway_facts._read_gateway_journal', return_value=None) as reader:
             cli.run_providers_screen(self.runtime, win, tui.MONO_PALETTE)
         reader.assert_called_once_with(self.runtime)
 
@@ -649,8 +649,8 @@ class SettingsScreenTests(_ScreenCase):
         return ["j"] * selectable.index(key)
 
     def test_write_failures_keep_the_filesystem_remedy_visible(self) -> None:
-        from claude_multi import choices
-        from claude_multi.setup import defaults
+        from charmer import choices
+        from charmer.setup import defaults
 
         for number, (_what, remedy) in state.FILESYSTEM_FAILURES.items():
             for action in ("settings", "preference", "ceiling", "default", "environment"):
@@ -727,7 +727,7 @@ class SettingsScreenTests(_ScreenCase):
                       win.frames[0])
 
     def test_kept_environment_row_edits_refuses_and_resets_names_only(self) -> None:
-        from claude_multi import choices
+        from charmer import choices
 
         screen = self.screen()
         row = screen._row(views.SETTINGS_ENV_KEEP_KEY)
@@ -923,7 +923,7 @@ class SettingsScreenTests(_ScreenCase):
             calls.append((runtime, kwargs))
             return 0
 
-        with mock.patch('claude_multi.cli.doctor_actions._doctor_rotate_token', side_effect=rotate):
+        with mock.patch('charmer.cli.doctor_actions._doctor_rotate_token', side_effect=rotate):
             win = self.run_screen(screen, self.to(screen, "token") + [ENTER, LEFT, ENTER, ESC])
         self.assertTrue(any(cli.SETTINGS_TOKEN_TITLE in f for f in win.frames))
         self.assertEqual(
@@ -934,7 +934,7 @@ class SettingsScreenTests(_ScreenCase):
 
     def test_token_rotation_cancel_runs_nothing(self) -> None:
         screen = self.screen()
-        with mock.patch('claude_multi.cli.doctor_actions._doctor_rotate_token') as rotate:
+        with mock.patch('charmer.cli.doctor_actions._doctor_rotate_token') as rotate:
             self.run_screen(screen, self.to(screen, "token") + [ENTER, ESC, ESC])
         rotate.assert_not_called()
 
@@ -971,8 +971,8 @@ class SettingsScreenTests(_ScreenCase):
 
     def test_g_and_m_open_the_screens(self) -> None:
         opened = []
-        with mock.patch('claude_multi.cli.screens.providers._ProvidersScreen.run', lambda _s, _w: opened.append("providers")), \
-                mock.patch('claude_multi.cli.screens.models._ModelsScreen.run', lambda _s, _w: opened.append("models")):
+        with mock.patch('charmer.cli.screens.providers._ProvidersScreen.run', lambda _s, _w: opened.append("providers")), \
+                mock.patch('charmer.cli.screens.models._ModelsScreen.run', lambda _s, _w: opened.append("models")):
             screen = self.screen()
             self.run_screen(screen, ["G", "m", *self.to(screen, "providers"), ENTER, "j", ENTER, ESC])
         self.assertEqual(opened, ["providers", "models", "providers", "models"])
@@ -988,7 +988,7 @@ class SettingsScreenTests(_ScreenCase):
 
     def test_runner_passes_the_streams(self) -> None:
         tty_in, tty_out = io.StringIO(), io.StringIO()
-        with mock.patch('claude_multi.cli.screens.settings._SettingsScreen') as screen:
+        with mock.patch('charmer.cli.screens.settings._SettingsScreen') as screen:
             cli.run_settings_screen(self.runtime, "win", tui.MONO_PALETTE, tty_in=tty_in, tty_out=tty_out)
         screen.assert_called_once_with(
             self.runtime, tui.MONO_PALETTE, card_lineup=None, tty_in=tty_in, tty_out=tty_out
@@ -1033,7 +1033,7 @@ class ProviderQuotaScreenTests(_ScreenCase):
         for label, kwargs in (("down", {"gateway_down": True}), ("foreign", {})):
             runtime = self.make_runtime(self.tmp / label, management=fx.quota_body(), **kwargs)
             if label == "foreign":
-                runtime.listener_owner = lambda _base: claude_multi.service.OwnerVerdict("foreign", "fixture foreign")
+                runtime.listener_owner = lambda _base: charmer.service.OwnerVerdict("foreign", "fixture foreign")
             screen = cli._ProvidersScreen(runtime, palette=tui.MONO_PALETTE)
             text = self.run_screen(screen, [ESC]).text()
             self.assertEqual(runtime.management_calls, [])
@@ -1045,7 +1045,7 @@ class ProviderQuotaScreenTests(_ScreenCase):
         # A bundle or source install: even a selected key is never read or
         # sent, and the screen offers no command that could not help.
         runtime = self.make_runtime(self.tmp / "bundle", management=fx.quota_body(),
-                                    environ_extra={claude_multi.management.CHANNEL_ENV: "bundle"})
+                                    environ_extra={charmer.management.CHANNEL_ENV: "bundle"})
         screen = cli._ProvidersScreen(runtime, palette=tui.MONO_PALETTE)
         self.assertEqual(screen.pool.state, "unavailable")
         self.assertEqual(runtime.management_calls, [])
@@ -1062,7 +1062,7 @@ class ProviderQuotaScreenTests(_ScreenCase):
         # Inject the management transport without prepare_start: unlike the
         # default fixture's seam state, production without a key is no-key.
         runtime = self.make_runtime(self.tmp / "no-key")
-        runtime.environ[claude_multi.management.CHANNEL_ENV] = claude_multi.management.MANAGEMENT_CHANNEL
+        runtime.environ[charmer.management.CHANNEL_ENV] = charmer.management.MANAGEMENT_CHANNEL
         runtime.management_callback = mock.Mock(side_effect=AssertionError("no key must not make a request"))
         screen = cli._ProvidersScreen(runtime, palette=tui.MONO_PALETTE)
         self.assertEqual(screen.pool.state, "no-key")
@@ -1086,7 +1086,7 @@ class ProviderQuotaScreenTests(_ScreenCase):
     def test_an_unproven_owner_gets_no_token_and_its_attention_appears_once(self):
         # Another process of yours on the gateway port: the served read and
         # the quota read never send it the gateway's token.
-        self.runtime.listener_owner = lambda _base: claude_multi.service.OwnerVerdict("unknown", "fixture unverified owner")
+        self.runtime.listener_owner = lambda _base: charmer.service.OwnerVerdict("unknown", "fixture unverified owner")
         screen = self.screen()
         self.assertEqual(self.runtime.management_calls, [])
         self.assertTrue(self.runtime.gateway_attention)

@@ -75,8 +75,8 @@ import test_compiler_v2  # module import: no test classes re-exported
 from _catalog import FIXTURE_ROOT
 from _tier import real_binary_gate
 from _layout import RESOURCES_ROOT  # the one root source
-from claude_multi import catalog, cli, compiler, probe, profile, scope, sessions, state, strict_json
-from claude_multi.cli import doctor, doctor_actions, launch_flow, text as cli_text
+from charmer import catalog, cli, compiler, probe, profile, scope, sessions, state, strict_json
+from charmer.cli import doctor, doctor_actions, launch_flow, text as cli_text
 from _v4 import V4Case
 
 _CONTRACT_PATH = RESOURCES_ROOT / "catalog" / "native-contract.json"
@@ -719,7 +719,7 @@ class SkillPolicyScopeRepairTests(V4Case):
                 if phase == "before":
                     self.assertIn(cli_text.SKILL_POLICY_DRIFT.format(m8=mid[:8], mid=mid), attention)
                     out = io.StringIO()
-                    with mock.patch("claude_multi.cli.session_facts._live_background_prefixes",
+                    with mock.patch("charmer.cli.session_facts._live_background_prefixes",
                                     return_value=frozenset()):
                         self.assertEqual(cli.main(["doctor", "--repair-all", "--include-live"],
                                                   runtime=self.runtime, output_stream=out,
@@ -734,7 +734,7 @@ class SkillPolicyScopeRepairTests(V4Case):
     def _doctor(self) -> tuple[int, str]:
         out = io.StringIO()
         with mock.patch("sys.stderr", io.StringIO()), \
-                mock.patch("claude_multi.cli.session_facts._live_background_prefixes", return_value=frozenset()):
+                mock.patch("charmer.cli.session_facts._live_background_prefixes", return_value=frozenset()):
             code = cli.main(["doctor"], runtime=self.runtime, output_stream=out, interactive=False)
         return code, out.getvalue()
 

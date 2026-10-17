@@ -6,8 +6,8 @@ import hashlib
 import json
 import unittest
 
-from claude_multi import strict_json, validate
-from claude_multi.strict_json import JSONLimits, StrictJSONError
+from charmer import strict_json, validate
+from charmer.strict_json import JSONLimits, StrictJSONError
 
 
 class StrictLoaderTests(unittest.TestCase):

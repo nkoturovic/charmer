@@ -21,7 +21,7 @@ from unittest import mock
 
 import _gateway_harness as harness
 import test_openai_compat_keyed as keyed
-from claude_multi import catalog, operator, probe, qualify, render, state
+from charmer import catalog, operator, probe, qualify, render, state
 
 
 KEYS = {keyed.KEYED_SECRET: "keyedtest-key-first-dummy", keyed.OTHER_SECRET: "keyedtest-key-second-dummy"}

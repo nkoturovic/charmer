@@ -16,7 +16,7 @@ import threading
 import unittest
 import unittest.mock
 
-from claude_multi import tui
+from charmer import tui
 
 # Scripted key helpers: characters are fed to get_wch verbatim; special keys
 # use the real curses constants (available without initscr).
@@ -1372,7 +1372,7 @@ class TooSmallTextTests(unittest.TestCase):
         )
 
     def test_views_never_re_exports_them(self) -> None:
-        from claude_multi import views
+        from charmer import views
 
         self.assertFalse(hasattr(views, "TOO_SMALL"))
         self.assertFalse(hasattr(views, "TOO_SMALL_HINT"))
@@ -1454,11 +1454,11 @@ class CursesAbsentTests(unittest.TestCase):
         code = (
             "import sys\n"
             "sys.modules.update(curses=None, _curses=None, termios=None)\n"
-            "import claude_multi.cli, claude_multi.tui, claude_multi.views\n"
+            "import charmer.cli, charmer.tui, charmer.views\n"
             "import pkgutil, importlib\n"
-            "for module in pkgutil.walk_packages(claude_multi.cli.__path__, 'claude_multi.cli.'):\n"
+            "for module in pkgutil.walk_packages(charmer.cli.__path__, 'charmer.cli.'):\n"
             "    importlib.import_module(module.name)\n"
-            "from claude_multi import tui\n"
+            "from charmer import tui\n"
             "class Tty:\n"
             "    def isatty(self):\n"
             "        return True\n"
@@ -1488,9 +1488,9 @@ class CursesAbsentTests(unittest.TestCase):
 
         from _layout import REPO_ROOT
 
-        SRC = REPO_ROOT / "src" / "claude_multi"
+        SRC = REPO_ROOT / "src" / "charmer"
         for name in ["views.py", *[str(p.relative_to(SRC)) for p in (SRC / "cli").rglob("*.py")]]:
-            tree = ast.parse((REPO_ROOT / "src" / "claude_multi" / name).read_text())
+            tree = ast.parse((REPO_ROOT / "src" / "charmer" / name).read_text())
             for node in ast.walk(tree):
                 if isinstance(node, ast.Import):
                     modules = [alias.name.split(".")[0] for alias in node.names]
@@ -1510,7 +1510,7 @@ class CursesAbsentTests(unittest.TestCase):
 
         from _layout import REPO_ROOT
 
-        tree = ast.parse((REPO_ROOT / "src" / "claude_multi" / "tui.py").read_text())
+        tree = ast.parse((REPO_ROOT / "src" / "charmer" / "tui.py").read_text())
         for node in tree.body:
             if isinstance(node, ast.Import) and any(
                 alias.name in ("curses", "termios") for alias in node.names

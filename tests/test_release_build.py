@@ -321,11 +321,11 @@ class ReleaseBuildTests(unittest.TestCase):
                 top = self.top(target)
                 names = {entry.name.removeprefix(top + "/"): entry for entry in members(self.archive(target))}
                 for required in ("MANIFEST.json", "bin/claude-multi", "bin/claude-multi-proxy",
-                                 "runtime/python/bin/python3", f"{SITE}/claude_multi/__init__.py",
-                                 f"{SITE}/claude_multi/data/version.json",
-                                 f"{SITE}/claude_multi/data/release-trust/allowed_signers",
-                                 f"{SITE}/claude_multi/data/gateway-contract.json",
-                                 f"{SITE}/claude_multi/data/registry/models.json",
+                                 "runtime/python/bin/python3", f"{SITE}/charmer/__init__.py",
+                                 f"{SITE}/charmer/data/version.json",
+                                 f"{SITE}/charmer/data/release-trust/allowed_signers",
+                                 f"{SITE}/charmer/data/gateway-contract.json",
+                                 f"{SITE}/charmer/data/registry/models.json",
                                  "libexec/claude-multi/cli-proxy-api",
                                  "share/claude-multi/USAGE.md", "share/claude-multi/CHEATSHEET.md",
                                  "share/claude-multi/STANDALONE.md", "share/licenses/claude-multi/LICENSE",
@@ -396,7 +396,7 @@ class ReleaseBuildTests(unittest.TestCase):
             with self.subTest(target):
                 top = self.top(target)
                 entries = {entry.name.removeprefix(top + "/") for entry in members(self.archive(target))}
-                sources = sorted(name for name in entries if name.startswith(f"{SITE}/claude_multi/")
+                sources = sorted(name for name in entries if name.startswith(f"{SITE}/charmer/")
                                  and name.endswith(".py"))
                 self.assertGreater(len(sources), 50)
                 pycs = {}
@@ -408,9 +408,9 @@ class ReleaseBuildTests(unittest.TestCase):
                 launcher_sets[target] = hashlib.sha256(json.dumps(
                     {name: hashlib.sha256(data).hexdigest() for name, data in pycs.items()}, sort_keys=True).encode()
                 ).hexdigest()
-                sample = pycs[f"{SITE}/claude_multi/__pycache__/__init__.{tag}.pyc"]
+                sample = pycs[f"{SITE}/charmer/__pycache__/__init__.{tag}.pyc"]
                 self.assertEqual(int.from_bytes(sample[4:8], "little"), 0b01)  # unchecked hash
-                self.assertEqual(marshal.loads(sample[16:]).co_filename, f"{SITE}/claude_multi/__init__.py")
+                self.assertEqual(marshal.loads(sample[16:]).co_filename, f"{SITE}/charmer/__init__.py")
                 stdlib = read_member(self.archive(target), f"{top}/{STDLIB}/__pycache__/stdmod.{tag}.pyc")
                 self.assertEqual(int.from_bytes(stdlib[4:8], "little"), 0b01)
                 self.assertEqual(marshal.loads(stdlib[16:]).co_filename, f"{STDLIB}/stdmod.py")
@@ -423,7 +423,7 @@ class ReleaseBuildTests(unittest.TestCase):
         doc = json.loads(UPSTREAM_JSON.read_text())
         series = [f"{entry['basename']}@{entry['sha256']}" for entry in doc["series"] if entry["admitted"]]
         bundle = load_tool(REPO_ROOT / "tools" / "_build" / "bundle.py", "bundle")
-        from claude_multi import release_update, self_update
+        from charmer import release_update, self_update
 
         for target in TARGETS:
             with self.subTest(target):
@@ -1190,7 +1190,7 @@ class BundleLauncherTests(unittest.TestCase):
         """A selected management key in ``home``, as a Nix install leaves it
         (a home whose gateway is set up: its endpoint is recorded)."""
 
-        from claude_multi import endpoint, management, state
+        from charmer import endpoint, management, state
 
         endpoint.write_config(home, endpoint.EndpointConfig(port=18329))
         directory = management.key_dir(home)
@@ -1251,7 +1251,7 @@ class BundleLauncherTests(unittest.TestCase):
         control_key = self.selected_key(control_home)
         control = self.run_launcher(
             [str(self.install / "current" / "runtime" / "python" / "bin" / "python3"), "-I", "-B", "-c",
-             "import sys; sys.path.insert(0, sys.argv.pop(1)); from claude_multi.entrypoints import main; "
+             "import sys; sys.path.insert(0, sys.argv.pop(1)); from charmer.entrypoints import main; "
              "raise SystemExit(main())", str(self.install / "current" / SITE), "claude-multi-proxy", "run"],
             {"HOME": str(control_home), "PATH": os.defpath, "LC_ALL": "C", "CLAUDE_MULTI_CHANNEL": "nix",
              "CLAUDE_MULTI_PROXY_PATCHES": "cli-proxy-api-management-readonly-allowlist.patch",
@@ -1277,7 +1277,7 @@ class BundleLauncherTests(unittest.TestCase):
         self.assertEqual(env["CLAUDE_MULTI_CHANNEL"], "bundle")
         self.assertEqual(env["CLAUDE_MULTI_PROXY_BIN"], str(current / "libexec" / "claude-multi" / "cli-proxy-api"))
         self.assertEqual(env["CLAUDE_MULTI_HOOK_COMMAND"], str(current / "bin" / "claude-multi"))
-        self.assertEqual(env["CLAUDE_MULTI_ASSETS"], str(current / SITE / "claude_multi" / "data"))
+        self.assertEqual(env["CLAUDE_MULTI_ASSETS"], str(current / SITE / "charmer" / "data"))
         self.assertEqual(self.files(), before, "running the gateway wrote into the installation")
 
     def test_launcher_environment(self) -> None:
@@ -1309,7 +1309,7 @@ class BundleLauncherTests(unittest.TestCase):
                                                                          / "terminfo").is_dir())
         self.assertEqual((env["SSL_CERT_FILE"], env["SSL_CERT_DIR"]), ("/etc/ssl/custom.pem", "/etc/ssl/custom"))
         self.assertEqual(env["XDG_STATE_HOME"], str(self.home / "state"))  # the state root the user selected
-        self.assertEqual(env["CLAUDE_MULTI_REGISTRY_DIR"], str(current / SITE / "claude_multi" / "data" / "registry"))
+        self.assertEqual(env["CLAUDE_MULTI_REGISTRY_DIR"], str(current / SITE / "charmer" / "data" / "registry"))
         self.assertNotIn("CLAUDE_MULTI_PROXY_PATCHES", env)
 
 

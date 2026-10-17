@@ -23,7 +23,7 @@ from contextlib import nullcontext, redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest import mock
 
-from claude_multi import service, catalog, cli, proxy, sessions
+from charmer import service, catalog, cli, proxy, sessions
 from _catalog import FIXTURE_ROOT
 from _v4 import V4Case
 
@@ -573,7 +573,7 @@ class _DiscoverCliCase(_AuthHomeCase):
         ])
         self.listing = codex.start()
         self.addCleanup(codex.stop)
-        self.tty_patch = mock.patch("claude_multi.cli.consent.stdio_ttys", return_value=True)
+        self.tty_patch = mock.patch("charmer.cli.consent.stdio_ttys", return_value=True)
         self.tty_probe = self.tty_patch.start()
         self.addCleanup(self.tty_patch.stop)
 
@@ -686,7 +686,7 @@ class DiscoverInClaudeSessionTests(_DiscoverCliCase):
                          ["discover", "--feed"]):
                 verb = " ".join(argv)
                 with self.subTest(reason=reason, argv=argv), \
-                        mock.patch("claude_multi.secret_store.FileSecretStore._values",
+                        mock.patch("charmer.secret_store.FileSecretStore._values",
                                    side_effect=AssertionError("secret read before the guard")):
                     code, out, err = self.run_cli(argv, text="y\n")
                     self.assertEqual(code, 1, err)
@@ -717,11 +717,11 @@ class DiscoverInClaudeSessionTests(_DiscoverCliCase):
         self.assertEqual(self.sent, [])
 
     def test_tty_probe_is_the_process_stdio(self) -> None:
-        from claude_multi.cli.commands import discover as discover_mod
+        from charmer.cli.commands import discover as discover_mod
 
         self.tty_patch.stop()
         try:
-            with mock.patch('claude_multi.cli.streams._stdio_streams_are_ttys', return_value=False) as probe:
+            with mock.patch('charmer.cli.streams._stdio_streams_are_ttys', return_value=False) as probe:
                 self.assertFalse(discover_mod._provider_call_tty())
             probe.assert_called_once_with()
         finally:
@@ -731,7 +731,7 @@ class DiscoverInClaudeSessionTests(_DiscoverCliCase):
 class ReloadFailureVisibilityTests(V4Case):
     """Health 200 cannot hide an exit-1 reload, even without stamps."""
     def test_doctor_reports_preexec_failure_despite_older_success_and_healthy_gateway(self):
-        from claude_multi import launch
+        from charmer import launch
         self.runtime.doctor_callback = None
         self.runtime.doctor_daemon_callback = lambda: launch.DaemonStatus("absent", "fixture")
         workdir = service.ensure_gateway_workdir(self.runtime.session_store.root)
@@ -750,7 +750,7 @@ class ReloadFailureVisibilityTests(V4Case):
         self.assertEqual(runner.call_count, 2)
 
     def test_render_error_and_unwritable_stamp_directory_are_visible(self):
-        from claude_multi import launch
+        from charmer import launch
         self.runtime.doctor_callback = None
         self.runtime.doctor_daemon_callback = lambda: launch.DaemonStatus("absent", "fixture")
         env = {**self.env, "CLAUDE_MULTI_ASSETS": str(FIXTURE_ROOT)}
@@ -783,7 +783,7 @@ class ReloadFailureVisibilityTests(V4Case):
 
     def test_older_success_cannot_hide_failed_writers_in_writable_directory(self):
         import errno
-        from claude_multi import launch
+        from charmer import launch
         self.runtime.doctor_callback = None
         self.runtime.doctor_daemon_callback = lambda: launch.DaemonStatus("absent", "fixture")
         env = {**self.env, "CLAUDE_MULTI_ASSETS": str(FIXTURE_ROOT)}

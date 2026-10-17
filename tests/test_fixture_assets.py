@@ -18,7 +18,7 @@ import hashlib
 import json
 import unittest
 
-from claude_multi import catalog, composition, profile, strict_json, validate
+from charmer import catalog, composition, profile, strict_json, validate
 
 from _catalog import FIXTURE_ROOT, SHIPPED_ROOT
 from _layout import REPO_ROOT

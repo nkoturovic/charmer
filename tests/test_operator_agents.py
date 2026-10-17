@@ -19,9 +19,9 @@ import test_cli  # module import: no test classes re-exported
 import test_lineup  # module import: no test classes re-exported
 import test_operator as operator_fixtures  # module import: no test classes re-exported
 from _catalog import FIXTURE_ROOT
-from claude_multi import compiler, operator as operator_mod, profile as profile_mod, qualify, scope, sessions
-from claude_multi import settings as settings_mod, state, strict_json, transition
-from claude_multi.cli import types as cli_types
+from charmer import compiler, operator as operator_mod, profile as profile_mod, qualify, scope, sessions
+from charmer import settings as settings_mod, state, strict_json, transition
+from charmer.cli import types as cli_types
 
 CONTRACTS = qualify.ContractIdentity("c" * 64, "d" * 64)
 OTHER_CONTRACTS = qualify.ContractIdentity("c" * 64, "e" * 64)
@@ -60,7 +60,7 @@ def record_passes(environ, key: str, digest: str, *, contracts=CONTRACTS, levels
 def t1_agent(slot: str = "cm-analyst") -> tuple[str, str]:
     """A fixture catalog line (key, effort) that admits ``slot`` (derived, never pinned)."""
 
-    lines = __import__("claude_multi").catalog.load_catalog(FIXTURE_ROOT).lines
+    lines = __import__("charmer").catalog.load_catalog(FIXTURE_ROOT).lines
     for key in sorted(lines):
         entry = lines[key]
         roles = entry.get("roles")
@@ -320,7 +320,7 @@ class GateWiringTests(AgentCase):
         self.assertEqual(before.other_files, prepared.result.scope_plan.other_files)
 
     def test_picker_facts_come_from_the_gate(self) -> None:
-        from claude_multi import views
+        from charmer import views
 
         def item():
             lcat = self.runtime.lineup_catalog()
@@ -380,7 +380,7 @@ class FenceTests(AgentCase):
         # T1 keeps every offered agents-capable selector.
         t1 = {selector for key, entry in lcat.lines.items() if lcat.origin(key) == "catalog"
               and "agents" in entry["capabilities"]
-              for _e, selector, _c in __import__("claude_multi").catalog.line_selectors(entry)}
+              for _e, selector, _c in __import__("charmer").catalog.line_selectors(entry)}
         self.assertLessEqual(t1 & set(after), set(after))
         bound = self.prepare(agent_document()).result.scope_plan.settings["availableModels"]
         self.assertEqual(set(bound) - set(after), {AGENT_SELECTOR})
@@ -428,7 +428,7 @@ class PermissiveDeclarationsTests(AgentCase):
                         self.assertIn(f"model: {agent.binding.selector}\n", body)
 
     def test_keyless_lan_agent_keeps_the_same_rendered_route(self) -> None:
-        from claude_multi import render
+        from charmer import render
 
         lan = copy.deepcopy(operator_fixtures._fixture_files()["lanbox"])
         lan["lines"]["custom-lan-model"]["context"]["declared_tokens"] = 128000

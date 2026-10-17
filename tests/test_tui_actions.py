@@ -5,10 +5,10 @@ from __future__ import annotations
 import re
 import unittest
 
-from claude_multi import tui, views
-import claude_multi.cli.screens.actions as actions
-import claude_multi.cli.screens.profiles as screens_profiles
-import claude_multi.cli.text as cli_text
+from charmer import tui, views
+import charmer.cli.screens.actions as actions
+import charmer.cli.screens.profiles as screens_profiles
+import charmer.cli.text as cli_text
 
 
 def _keys(*bars) -> set[str]:

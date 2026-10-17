@@ -20,8 +20,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from claude_multi import cli, lineup, portability, profile, sessions, state, strict_json
-from claude_multi.cli import consent as consent_mod
+from charmer import cli, lineup, portability, profile, sessions, state, strict_json
+from charmer.cli import consent as consent_mod
 from test_lineup import LineupCase
 
 FIXED = "11111111-1111-4111-8111-111111111111"
@@ -116,7 +116,7 @@ class SavedTests(PropagationCase):
     def test_a_gen_0_follower_waits_for_its_first_3_0_resume(self) -> None:
         self.write_transcript(FIXED)
         out = io.StringIO()
-        with unittest.mock.patch('claude_multi.cli.session_facts._original_cwd_for_adopt', return_value=self.runtime.cwd):
+        with unittest.mock.patch('charmer.cli.session_facts._original_cwd_for_adopt', return_value=self.runtime.cwd):
             code = cli.main(["sessions", "link", FIXED, "--profile", "mine"],
                             runtime=self.runtime, output_stream=out, interactive=False)
         self.assertEqual(code, 0, out.getvalue())

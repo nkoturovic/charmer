@@ -9,8 +9,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-import claude_multi
-from claude_multi import identity
+import charmer
+from charmer import identity
 from _layout import RESOURCES_ROOT
 
 
@@ -35,7 +35,7 @@ class IdentityTests(unittest.TestCase):
         line = identity.version_line()
         version = json.loads((RESOURCES_ROOT / "version.json").read_text())
         native = json.loads((RESOURCES_ROOT / "catalog" / "native-contract.json").read_text())["verified"][0]
-        self.assertTrue(line.startswith(f"claude-multi {claude_multi.__version__} ("))
+        self.assertTrue(line.startswith(f"claude-multi {charmer.__version__} ("))
         self.assertIn(f"catalog {version['catalog_version']}", line)
         self.assertIn(f"Claude Code {native['version']}, manifest {native['manifest_sha256'][:8]}", line)
         self.assertNotIn(identity.UNAVAILABLE, line)
@@ -52,7 +52,7 @@ class IdentityTests(unittest.TestCase):
         for missing, needles in cases.items():
             with self.subTest(missing=missing):
                 data = self._resources(**{missing: False})
-                with mock.patch.object(claude_multi, "resources_root", return_value=data):
+                with mock.patch.object(charmer, "resources_root", return_value=data):
                     line = identity.version_line("claude-multi-dev")
                 self.assertTrue(line.startswith("claude-multi-dev "))
                 for needle in needles:

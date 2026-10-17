@@ -27,7 +27,7 @@ import time
 import unittest
 from pathlib import Path
 
-from claude_multi import install_receipt, state
+from charmer import install_receipt, state
 from _fake_release import FakeRelease, make_key, needs_ssh_keygen, signers_line
 from _release import INSTALL_SH, requires_release_tree
 
@@ -147,7 +147,7 @@ class InstalledUninstallTests(unittest.TestCase):
         # observation ever looks at another program's gateway).
         import socket
 
-        from claude_multi import endpoint
+        from charmer import endpoint
 
         with socket.socket() as probe:
             probe.bind(("127.0.0.1", 0))
@@ -230,8 +230,8 @@ class InstalledUninstallTests(unittest.TestCase):
 
         import datetime
 
-        from claude_multi import gateway_hold, service
-        from claude_multi.platform import file_log
+        from charmer import gateway_hold, service
+        from charmer.platform import file_log
         from test_gateway_lifecycle import save_line
 
         workdir = service.ensure_gateway_workdir(self.state)

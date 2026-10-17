@@ -30,11 +30,11 @@ from pathlib import Path
 from unittest import mock
 
 from _layout import REPO_ROOT
-from claude_multi import entrypoints, lineup, lineup_files, proxy, surface_matrix as sm
-from claude_multi.cli import parser as cli_parser
-from claude_multi.cli import streams
-import claude_multi.cli.screens.actions as tui_actions
-import claude_multi.cli.screens.gateway_actions as gateway_actions
+from charmer import entrypoints, lineup, lineup_files, proxy, surface_matrix as sm
+from charmer.cli import parser as cli_parser
+from charmer.cli import streams
+import charmer.cli.screens.actions as tui_actions
+import charmer.cli.screens.gateway_actions as gateway_actions
 
 
 def parser_inventory(parser: argparse.ArgumentParser) -> tuple[set[tuple[str, ...]], dict]:
@@ -518,10 +518,10 @@ class CensusTests(unittest.TestCase):
         self.assertTrue(paths and all(path for path in paths))
 
     def test_the_census_reads_no_home_and_builds_no_runtime(self) -> None:
-        import claude_multi.cli.runtime as runtime_mod
+        import charmer.cli.runtime as runtime_mod
 
         with mock.patch.object(runtime_mod.Runtime, "__init__", side_effect=AssertionError("no Runtime")), \
-                mock.patch("claude_multi.paths.home", side_effect=AssertionError("no home")):
+                mock.patch("charmer.paths.home", side_effect=AssertionError("no home")):
             self.assertEqual(census(), [])
 
 
@@ -651,7 +651,7 @@ class Fixture:
     def test_every_screen_names_entry_points_the_product_defines(self) -> None:
         self.assertEqual(set(SCREEN_ENTRY_POINTS), set(tui_actions.ACTIONS))
         defined: set[str] = set()
-        for path in (REPO_ROOT / "src" / "claude_multi").rglob("*.py"):
+        for path in (REPO_ROOT / "src" / "charmer").rglob("*.py"):
             defined |= {node.name for node in ast.parse(path.read_text()).body
                         if isinstance(node, (ast.FunctionDef, ast.ClassDef))}
         for screen, names in SCREEN_ENTRY_POINTS.items():
@@ -661,7 +661,7 @@ class Fixture:
 
     def test_a_dispatch_fixture_fails_without_its_handler(self) -> None:
         import test_tui_dispatch
-        import claude_multi.cli.screens.providers as providers_screen
+        import charmer.cli.screens.providers as providers_screen
 
         def run() -> unittest.TestResult:
             result = unittest.TestResult()

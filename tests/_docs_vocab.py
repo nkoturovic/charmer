@@ -3,7 +3,7 @@
 ``tests/check_docs_vocabulary.py`` (the command-line checker, never
 discovered), ``test_operator_docs`` and ``test_docs_vocabulary`` import this
 module; none of them carries a second copy of a rule. Stdlib only;
-``claude_multi`` is imported lazily (only the ``--help`` walk, the
+``charmer`` is imported lazily (only the ``--help`` walk, the
 command-span parser and the fragment check need it).
 
 The public pages are discovered from the tree (:func:`public_pages`): the
@@ -113,7 +113,7 @@ from typing import Iterable, Mapping, Sequence
 
 from _layout import DOCS_DIR, REPO_ROOT, RESOURCES_ROOT, doc_path  # the suite's single root source
 
-SRC_ROOT = REPO_ROOT / "src" / "claude_multi"
+SRC_ROOT = REPO_ROOT / "src" / "charmer"
 
 # ---------------------------------------------------------------- terms
 
@@ -692,14 +692,14 @@ def _code_shaped(token: str) -> bool:
 
 
 def _dotted_reference(token: str) -> tuple[str, list[str]] | None:
-    """``(module, attributes)`` when ``token`` is ``[claude_multi.]<module>.<attr>…``
+    """``(module, attributes)`` when ``token`` is ``[charmer.]<module>.<attr>…``
     naming an existing ``SRC/<module>.py``; ``None`` otherwise."""
 
     token = token.strip("./").rstrip(",;:")
     if not re.fullmatch(r"[a-z_]+(?:\.[A-Za-z_]\w*)+", token):
         return None
     parts = token.split(".")
-    if parts[0] == "claude_multi":
+    if parts[0] == "charmer":
         parts = parts[1:]
     if not parts or not (SRC_ROOT / f"{parts[0]}.py").is_file():
         return None
@@ -1455,7 +1455,7 @@ def help_pages(columns: int = 200) -> list[tuple[str, str]]:
     the escapes would break the ``HELP_ALIAS_TOKENS`` word boundaries.
     """
 
-    from claude_multi import cli, layout
+    from charmer import cli, layout
 
     installation = layout.installation()
     root = str(installation) if installation is not None else None
@@ -1468,7 +1468,7 @@ _ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 
 
 def help_epilog() -> str:
-    from claude_multi import cli
+    from charmer import cli
 
     return cli.build_parser().epilog or ""
 
@@ -1476,7 +1476,7 @@ def help_epilog() -> str:
 def module_help_texts() -> list[tuple[str, str]]:
     """What ``claude-multi-proxy --help`` and ``claude-multi-dev`` print."""
 
-    from claude_multi import dev, proxy
+    from charmer import dev, proxy
 
     return [
         ("<doc: claude-multi-proxy --help>", proxy.__doc__ or ""),
@@ -1789,7 +1789,7 @@ def _command_node(parser: argparse.ArgumentParser, words: list[str]) -> tuple[ar
 
 
 def _dev_problem(words: list[str], *, prefix: bool) -> str:
-    from claude_multi import dev
+    from charmer import dev
 
     if not words:
         return "" if prefix else "bare claude-multi-dev prints usage and exits 2"
@@ -1836,7 +1836,7 @@ def _proxy_problem(words: list[str], *, prefix: bool) -> str:
     """A ``claude-multi-proxy`` form against the tool's own command table:
     each command's argument check, which has no effect."""
 
-    from claude_multi import proxy
+    from charmer import proxy
 
     if not words or (words[0] in ("-h", "--help", "help", "-v", "--version") and len(words) == 1):
         return ""
@@ -1858,7 +1858,7 @@ def _cm_problem(words: list[str], *, fragment: str | None) -> str:
     """``/cm <request>`` exactly as the skill passes it: one argument to
     ``claude-multi lineup --session <runtime-id>``."""
 
-    from claude_multi import lineup
+    from charmer import lineup
 
     if fragment is not None:
         return "" if not words and fragment == "request" else f"/cm takes a <request>, not <{fragment}>"
@@ -1871,7 +1871,7 @@ def _cm_problem(words: list[str], *, fragment: str | None) -> str:
 
 
 def _lineup_problem(words: list[str], *, fragment: str | None) -> str:
-    from claude_multi import lineup
+    from charmer import lineup
 
     if words in (["--help"], ["-h"]):
         return ""  # the request grammar, before any session is read
@@ -1906,13 +1906,13 @@ def _options_problem(parser: argparse.ArgumentParser, words: list[str]) -> str:
 def _launcher_parser() -> argparse.ArgumentParser:
     """The launcher's parser, built once: parsing a form changes nothing in it."""
 
-    from claude_multi import cli
+    from charmer import cli
 
     return cli.build_parser()
 
 
 def _launcher_problem(words: list[str], *, fragment: str | None) -> str:
-    from claude_multi.cli.parser import split_passthrough
+    from charmer.cli.parser import split_passthrough
 
     if words[:1] == ["lineup"]:
         return _lineup_problem(words[1:], fragment=fragment)
@@ -2020,7 +2020,7 @@ def _head_problem(words: list[str], *, mode: str, fragment: str | None) -> str:
     if head != "claude-multi":
         return f"not a claude-multi command: {head}"
     if prefix:
-        from claude_multi import cli
+        from charmer import cli
 
         return "" if rest[:1] == ["lineup"] else _chain_problem(cli.build_parser(), rest)
     return _launcher_problem(rest, fragment=fragment)
@@ -2671,9 +2671,9 @@ def self_test() -> list[str]:
     if not any(h.rule == "machine-path" for h in _fixture_hits("generation 143 is active\n")):
         failures.append("machine-path-extended misses a generation number")
     try:
-        import claude_multi  # noqa: F401
+        import charmer  # noqa: F401
     except ImportError:
-        return failures + ["claude_multi is not importable: spans and fragments not checked"]
+        return failures + ["charmer is not importable: spans and fragments not checked"]
     failures += [f"span refused: {s!r}: {span_problem(s)}" for s in SPAN_OK if span_problem(s)]
     failures += [f"span accepted: {s!r}" for s in SPAN_BAD if not span_problem(s)]
     # A line that says "refused" exempts nothing: a negative example is

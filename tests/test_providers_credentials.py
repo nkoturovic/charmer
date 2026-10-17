@@ -10,12 +10,12 @@ import shlex
 from pathlib import Path
 from unittest import mock
 
-import claude_multi.proxy
+import charmer.proxy
 import test_cli
-from claude_multi import custom, errors, operator as operator_mod, paths, secret_store, state, strict_json
-from claude_multi.setup import model, providers as setup_providers, texts
-import claude_multi.cli.commands.providers as providers_cmd
-import claude_multi.cli.consent as consent
+from charmer import custom, errors, operator as operator_mod, paths, secret_store, state, strict_json
+from charmer.setup import model, providers as setup_providers, texts
+import charmer.cli.commands.providers as providers_cmd
+import charmer.cli.consent as consent
 
 KIMI = "KIMI_CLAUDE_API_KEY"
 ANTHROPIC_KEY = operator_mod.transport_alternative("anthropic", operator_mod.TRANSPORT_API_KEY).secret_name
@@ -124,7 +124,7 @@ class LegacyKeySharerTests(CredentialCase):
 
         raw = strict_json.pretty_file_bytes({"version": 1, "providers": providers, "models": models or {}})
         for path in (custom.registry_path(self.runtime.environ),
-                     claude_multi.proxy.config_dir(self.runtime.home) / "custom.json"):
+                     charmer.proxy.config_dir(self.runtime.home) / "custom.json"):
             state.ensure_private_dir(path.parent)
             state.atomic_write(path, raw)
 
@@ -291,7 +291,7 @@ class KeyFileLocationTests(CredentialCase):
         # holds no key, and a session record cannot be read, so whether a
         # running session uses those lines is unknown.
         self.apply_and_serve()
-        config = claude_multi.proxy.config_dir(self.runtime.home) / "config.yaml"
+        config = charmer.proxy.config_dir(self.runtime.home) / "config.yaml"
         published = config.read_bytes()
         empty = self.private(".config/secrets/empty.env", b"")
         record = Path(self.runtime.session_store.root) / "sessions" / "0b5f3b3e-8f0c-4c3b-9a65-3f0a8c1f2d4e.json"
@@ -379,7 +379,7 @@ class SelectedTransportKeyTests(CredentialCase):
         self.store().delete(ANTHROPIC_KEY)
 
     def transport_blocks(self) -> list[str]:
-        from claude_multi.cli import doctor
+        from charmer.cli import doctor
 
         problems, _info, _attention = doctor._collect_doctor_reports(self.runtime)
         return [line for line in problems if "provider anthropic transport api-key" in line]
@@ -405,9 +405,9 @@ class SelectedTransportKeyTests(CredentialCase):
         card's route to the key (G → K on the provider), the command line's
         doctor the command."""
 
-        from claude_multi import catalog, cli, tui
-        from claude_multi.cli.screens import launch_sessions
-        from claude_multi.cli import text as cli_text
+        from charmer import catalog, cli, tui
+        from charmer.cli.screens import launch_sessions
+        from charmer.cli import text as cli_text
         from test_tui import ESC, FakeWindow
 
         self.select_then_lose_the_key()
@@ -497,7 +497,7 @@ class RemoveKeyTests(CredentialCase):
 
 class ReloadExitTests(CredentialCase):
     def test_a_key_the_gateway_rejects_at_the_reload_exits_1(self) -> None:
-        self.runtime.verify_reload.side_effect = lambda sentinel: claude_multi.proxy.ReloadResult(
+        self.runtime.verify_reload.side_effect = lambda sentinel: charmer.proxy.ReloadResult(
             "token_mismatch", "gateway: token mismatch (fixture)")
         code, out, err = self.op(["providers", "set-key", "kimi"], "y\nkimi-new-dummy\n")
         self.assertEqual(code, 1, err)
@@ -505,7 +505,7 @@ class ReloadExitTests(CredentialCase):
         code, out, err = self.op(["providers", "remove-key", "kimi", "--yes"])
         self.assertEqual(code, 1, err)
         self.assertIn(texts.RELOAD_TEXT["token_mismatch"], out)
-        self.runtime.verify_reload.side_effect = lambda sentinel: claude_multi.proxy.ReloadResult(
+        self.runtime.verify_reload.side_effect = lambda sentinel: charmer.proxy.ReloadResult(
             "reloaded", f"gateway: reloaded (sentinel {sentinel})")
         code, _out, err = self.op(["providers", "set-key", "kimi"], "kimi-new-dummy\n")
         self.assertEqual(code, 0, err)
@@ -615,7 +615,7 @@ class ConnectionTestTests(CredentialCase):
         self.assertEqual(len(self.calls), 2)
 
     def test_a_consent_for_the_account_never_sends_through_a_key_switched_to_meanwhile(self) -> None:
-        from claude_multi.setup import check
+        from charmer.setup import check
 
         self.apply_and_serve()
         plan = check.plan_test(self.runtime, ["anthropic"])
@@ -631,7 +631,7 @@ class ConnectionTestTests(CredentialCase):
         self.assertEqual(str(caught.exception), texts.TEST_STALE.format(display=plan.targets[0].display))
 
     def test_a_change_between_two_requests_stops_the_rest(self) -> None:
-        from claude_multi.setup import check
+        from charmer.setup import check
 
         self.apply_and_serve()
         plan = check.plan_test(self.runtime, ["kimi", "anthropic"])
@@ -661,7 +661,7 @@ class ConnectionTestTests(CredentialCase):
         self.assertIn("Apply it: claude-multi providers apply", err)
 
     def test_outcomes_are_classified(self) -> None:
-        from claude_multi.setup import check
+        from charmer.setup import check
 
         target = check.TestTarget("kimi", "Kimi", "x", "https://api.kimi.com", "auth")
         account = check.TestTarget("anthropic", "Anthropic", "x", "claude.ai", "auth", True)

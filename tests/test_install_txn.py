@@ -1,5 +1,5 @@
-"""The installer and updater safety transaction (``claude_multi.install_txn``)
-and the installer's receipt (``claude_multi.install_receipt``)."""
+"""The installer and updater safety transaction (``charmer.install_txn``)
+and the installer's receipt (``charmer.install_receipt``)."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from claude_multi import gateway_inhibition, install_receipt, install_txn, installs, service, state
+from charmer import gateway_inhibition, install_receipt, install_txn, installs, service, state
 import test_inhibition  # module import: no test classes re-exported
 
 
@@ -76,7 +76,7 @@ class OwnershipTests(TxnTestCase):
 
     def test_a_foreign_owned_marker_refuses(self) -> None:
         self.marker(b"bundle\n")
-        with mock.patch("claude_multi.platform.posix_fs.owned_by_caller", return_value=False):
+        with mock.patch("charmer.platform.posix_fs.owned_by_caller", return_value=False):
             with self.assertRaisesRegex(install_txn.TransactionError, "owner"):
                 install_txn.check_ownership(self.state, self.environ)
 

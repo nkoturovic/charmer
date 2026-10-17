@@ -14,11 +14,11 @@ from pathlib import Path
 from unittest import mock
 
 import test_cli
-from claude_multi import acquire, paths, pin, proxy, secret_store, state
-from claude_multi.cli import consent as consent_mod
-import claude_multi.cli.commands.providers as providers_cmd
-import claude_multi.cli.commands.setup as setup_cmd
-from claude_multi.setup import external, providers as setup_providers, status, texts
+from charmer import acquire, paths, pin, proxy, secret_store, state
+from charmer.cli import consent as consent_mod
+import charmer.cli.commands.providers as providers_cmd
+import charmer.cli.commands.setup as setup_cmd
+from charmer.setup import external, providers as setup_providers, status, texts
 
 KIMI = "KIMI_CLAUDE_API_KEY"
 DEEPSEEK = "DEEPSEEK_CLAUDE_API_KEY"
@@ -194,7 +194,7 @@ class GatewayProxyStepTests(SetupCase):
 
     def setUp(self) -> None:
         super().setUp()
-        from claude_multi import endpoint
+        from charmer import endpoint
 
         packaged = endpoint.port_of(self.runtime.catalog.docs["gateway"]["gateway"]["base_url"])
         endpoint.set_proxy(self.runtime.home, self.OLD, packaged_port=packaged)
@@ -203,7 +203,7 @@ class GatewayProxyStepTests(SetupCase):
         self.before = self.path.read_bytes()
 
     def step(self, *argv: str, running: bool, **patches):
-        from claude_multi import gateway_lifecycle as gl, service
+        from charmer import gateway_lifecycle as gl, service
 
         seen = gl.Observation(gl.OURS if running else gl.STOPPED, "fixture", None,
                               service.OwnerVerdict("ours" if running else "none", "fixture"), running)
@@ -214,7 +214,7 @@ class GatewayProxyStepTests(SetupCase):
         return code, out, err, ensure
 
     def proxy_now(self) -> str | None:
-        from claude_multi import endpoint
+        from charmer import endpoint
 
         return endpoint.read_config(self.runtime.home).proxy_url
 
@@ -228,8 +228,8 @@ class GatewayProxyStepTests(SetupCase):
         ensure.assert_not_called()  # it runs already: nothing is started
 
     def test_the_running_gateways_served_change_holds_no_start_lock(self) -> None:
-        from claude_multi import service
-        from claude_multi.platform import posix_fs
+        from charmer import service
+        from charmer.platform import posix_fs
 
         held: list[bool | None] = []
         real = self.runtime.render_gateway
@@ -263,7 +263,7 @@ class GatewayProxyStepTests(SetupCase):
         ensure.assert_not_called()
 
     def test_the_served_preflight_refuses_before_anything_is_written(self) -> None:
-        from claude_multi.setup import model
+        from charmer.setup import model
 
         with mock.patch.object(setup_providers, "preflight", side_effect=model.Refused("fixture: live impact unknown")):
             code, out, err, _ensure = self.step("--proxy", self.NEW, running=True)
@@ -274,7 +274,7 @@ class GatewayProxyStepTests(SetupCase):
     def test_an_interrupt_after_the_bytes_were_replaced_is_put_back(self) -> None:
         # The undo is registered before the write: an interrupt that lands
         # right after the new document replaced the old one restores it.
-        from claude_multi import endpoint
+        from charmer import endpoint
 
         real = endpoint.write_config
 
@@ -598,7 +598,7 @@ class AnswersTests(SetupCase):
                          "deepseek-dummy-value")
 
     def test_a_starter_is_planned_against_the_transport_the_file_selects(self) -> None:
-        from claude_multi.setup import answers
+        from charmer.setup import answers
 
         # Nothing else connected: no saved key and the keyless server off.
         state.atomic_write(self.secret_file, b"")
@@ -628,8 +628,8 @@ class AnswersTests(SetupCase):
         self.assertNotIn("anthropic-dummy-value", out + err)
 
     def test_a_top_level_keys_file_keys_the_selected_transport(self) -> None:
-        from claude_multi import operator as operator_mod
-        from claude_multi.setup import answers
+        from charmer import operator as operator_mod
+        from charmer.setup import answers
 
         # Nothing else connected: no saved key and the keyless server off.
         state.atomic_write(self.secret_file, b"")
@@ -693,7 +693,7 @@ class AnswersTests(SetupCase):
                 self.assertNotIn(texts.ANSWERS_PLAN_HEAD, out)
 
     def test_a_default_chosen_during_the_confirmation_is_kept_and_reported(self) -> None:
-        from claude_multi import choices
+        from charmer import choices
 
         path = self.answers({"version": 1, "default_profile": None})
         chosen = sorted(self.runtime.profiles.names())[0]
@@ -714,7 +714,7 @@ class AnswersTests(SetupCase):
         self.assertIn(f"writes: {shown}", out)
 
     def test_the_preview_shows_the_starter_and_the_files_it_writes(self) -> None:
-        from claude_multi import choices
+        from charmer import choices
 
         path = self.answers({"version": 1, "profile": "starter"})
         before = self.state_bytes()
@@ -736,7 +736,7 @@ class AnswersTests(SetupCase):
         self.assertEqual(choices.read(self.runtime.environ).get("default_profile"), "starter")
 
     def test_the_starter_preview_counts_the_providers_this_file_gives_a_key(self) -> None:
-        from claude_multi import choices
+        from charmer import choices
 
         store = secret_store.default_store(self.runtime.gateway_environ())
         store.delete(KIMI)  # nothing keyed is connected now
@@ -753,7 +753,7 @@ class AnswersTests(SetupCase):
         self.assertEqual(store.get(KIMI), "kimi-dummy-value")
 
     def test_a_starter_that_would_differ_from_the_preview_is_not_written(self) -> None:
-        from claude_multi import choices
+        from charmer import choices
 
         path = self.answers({"version": 1, "profile": "starter"})
         store = secret_store.default_store(self.runtime.gateway_environ())

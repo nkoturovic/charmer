@@ -24,12 +24,12 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from claude_multi import catalog, choices, cli, custom, lineup, profile, sessions, settings, state, strict_json, tui, views
+from charmer import catalog, choices, cli, custom, lineup, profile, sessions, settings, state, strict_json, tui, views
 
 import _tui_fixture as fx
 from test_tui import DOWN, END, HOME, LEFT, RIGHT, UP, FakeWindow
-import claude_multi.tui
-import claude_multi.cli.text as cli_text
+import charmer.tui
+import charmer.cli.text as cli_text
 
 SPEC = "the editor contract"
 ESC = "\x1b"
@@ -59,7 +59,7 @@ class _EditorCase(unittest.TestCase):
         stack = contextlib.ExitStack()
         self.addCleanup(stack.close)
         stack.enter_context(fx.hermetic(runtime))
-        stack.enter_context(mock.patch('claude_multi.cli.gateway_facts._doctor_now', lambda: fx.FIXED_NOW))
+        stack.enter_context(mock.patch('charmer.cli.gateway_facts._doctor_now', lambda: fx.FIXED_NOW))
         return runtime
 
     # -- derived fixture facts ------------------------------------------------
@@ -1456,9 +1456,9 @@ class ProfileEditEntryTests(_EditorCase):
 
     def run_main(self, argv, *, capable=True):
         inp, out = io.StringIO(), io.StringIO()
-        with mock.patch.object(claude_multi.tui, "streams_curses_capable", return_value=capable), \
-                mock.patch('claude_multi.cli.screens.profile_editor._run_profile_editor', return_value=0) as editor, \
-                mock.patch('claude_multi.cli.commands.profile._edit_profile', return_value=True) as fallback:
+        with mock.patch.object(charmer.tui, "streams_curses_capable", return_value=capable), \
+                mock.patch('charmer.cli.screens.profile_editor._run_profile_editor', return_value=0) as editor, \
+                mock.patch('charmer.cli.commands.profile._edit_profile', return_value=True) as fallback:
             code = cli.main(argv, runtime=self.runtime, input_stream=inp, output_stream=out, interactive=True)
         return code, editor, fallback
 
@@ -1483,9 +1483,9 @@ class ProfileEditEntryTests(_EditorCase):
 
     def test_a_curses_failure_falls_back_to_editor_env(self) -> None:
         inp, out = io.StringIO(), io.StringIO()
-        with mock.patch.object(claude_multi.tui, "streams_curses_capable", return_value=True), \
-                mock.patch.object(claude_multi.tui, "run_profile_editor", side_effect=tui.CursesError("boom")), \
-                mock.patch('claude_multi.cli.commands.profile._edit_profile', return_value=True) as fallback:
+        with mock.patch.object(charmer.tui, "streams_curses_capable", return_value=True), \
+                mock.patch.object(charmer.tui, "run_profile_editor", side_effect=tui.CursesError("boom")), \
+                mock.patch('charmer.cli.commands.profile._edit_profile', return_value=True) as fallback:
             cli.main(["profile", "edit", catalog.DEFAULT_SEED], runtime=self.runtime, input_stream=inp,
                      output_stream=out, interactive=True)
         fallback.assert_called_once()
@@ -1496,7 +1496,7 @@ class ProfileEditEntryTests(_EditorCase):
         def run(app, _input, _output, *, palette=None):
             return app(FakeWindow(list(keys), height=24, width=80))
 
-        return mock.patch.object(claude_multi.tui, "run_curses_on_streams", run)
+        return mock.patch.object(charmer.tui, "run_curses_on_streams", run)
 
     def test_an_error_after_the_editor_started_is_reported_not_fallen_back(self) -> None:
         # Fail closed (AGENTS.md §4): only a curses start-up failure
@@ -1510,10 +1510,10 @@ class ProfileEditEntryTests(_EditorCase):
         for error, text in errors:
             with self.subTest(error=type(error).__name__):
                 out, err = io.StringIO(), io.StringIO()
-                with mock.patch.object(claude_multi.tui, "streams_curses_capable", return_value=True), \
+                with mock.patch.object(charmer.tui, "streams_curses_capable", return_value=True), \
                         self.on_fake_curses([CTRL_S, "L", ESC, ESC]), \
                         mock.patch.object(lineup, "on_saved", side_effect=error), \
-                        mock.patch('claude_multi.cli.commands.profile._edit_profile', return_value=True) as fallback, \
+                        mock.patch('charmer.cli.commands.profile._edit_profile', return_value=True) as fallback, \
                         contextlib.redirect_stderr(err):
                     code = cli.main(["profile", "edit", catalog.DEFAULT_SEED], runtime=self.runtime,
                                     input_stream=io.StringIO(), output_stream=out, interactive=True)
@@ -1525,7 +1525,7 @@ class ProfileEditEntryTests(_EditorCase):
     def test_ctrl_s_saves_and_offers_the_change_to_the_followers(self) -> None:
         out = io.StringIO()
         with self.on_fake_curses([CTRL_S, ESC]), \
-                mock.patch('claude_multi.cli.screens.propagation.run_propagation_screen',
+                mock.patch('charmer.cli.screens.propagation.run_propagation_screen',
                            return_value=None) as propagation:
             code = cli._run_profile_editor(self.runtime, catalog.DEFAULT_SEED, "edit",
                                            input_stream=io.StringIO(), output_stream=out)
@@ -1538,7 +1538,7 @@ class ProfileEditEntryTests(_EditorCase):
         # The save is marked before the prompt runs.
         out = io.StringIO()
         with self.on_fake_curses([CTRL_S, ESC]), \
-                mock.patch('claude_multi.cli.screens.propagation.run_propagation_screen', side_effect=KeyboardInterrupt):
+                mock.patch('charmer.cli.screens.propagation.run_propagation_screen', side_effect=KeyboardInterrupt):
             code = cli._run_profile_editor(self.runtime, catalog.DEFAULT_SEED, "edit",
                                            input_stream=io.StringIO(), output_stream=out)
         self.assertEqual(code, 0)
@@ -1553,7 +1553,7 @@ class ProfileEditEntryTests(_EditorCase):
             return None
 
         out = io.StringIO()
-        with mock.patch.object(claude_multi.tui, "run_profile_editor", fake_run):
+        with mock.patch.object(charmer.tui, "run_profile_editor", fake_run):
             code = cli._run_profile_editor(self.runtime, "brand-new", "new", input_stream=io.StringIO(),
                                            output_stream=out)
         self.assertEqual(code, 0)
@@ -1565,7 +1565,7 @@ class ProfileEditEntryTests(_EditorCase):
         self.assertEqual(captured["initial_focus"], "general")
         saved = tui.ProfileEditorOutcome("save", catalog.DEFAULT_SEED, {})
         out = io.StringIO()
-        with mock.patch.object(claude_multi.tui, "run_profile_editor", return_value=saved):
+        with mock.patch.object(charmer.tui, "run_profile_editor", return_value=saved):
             cli._run_profile_editor(self.runtime, catalog.DEFAULT_SEED, "edit", input_stream=io.StringIO(),
                                     output_stream=out)
         self.assertEqual(out.getvalue(), f"Saved profile {catalog.DEFAULT_SEED!r}.\n")
@@ -1787,7 +1787,7 @@ class ModalTabTests(unittest.TestCase):
         modal = tui.Modal("t", [], buttons=(("A", "a"), ("B", "b"), ("C", "c")))
         self.assertEqual(modal.run(FakeWindow(["\t", "\t", "\t", ENTER]), M), "a")
         modal = tui.Modal("t", [], buttons=(("A", "a"), ("B", "b"), ("C", "c")))
-        self.assertEqual(modal.run(FakeWindow([claude_multi.tui.curses.KEY_BTAB, ENTER]), M), "c")
+        self.assertEqual(modal.run(FakeWindow([charmer.tui.curses.KEY_BTAB, ENTER]), M), "c")
 
     def test_with_an_input_tab_still_cycles_through_it(self) -> None:
         modal = tui.Modal("t", [], buttons=(("OK", True), ("Cancel", False)), input=tui.TextInput())

@@ -20,7 +20,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from unittest import mock
 
-from claude_multi import __version__, acquire, cli, pin, release_manifest, retention, state
+from charmer import __version__, acquire, cli, pin, release_manifest, retention, state
 from _v4 import V4Case
 
 
@@ -423,7 +423,7 @@ class SetupCommandTests(V4Case):
 
     def test_a_declined_download_exits_3_and_sends_nothing(self):
         stream, questions = self.answering(False)
-        with mock.patch("claude_multi.cli.consent.stdio_ttys", return_value=True):
+        with mock.patch("charmer.cli.consent.stdio_ttys", return_value=True):
             code, output = self.run_setup("--step", "claude", input_stream=stream)
         self.assertEqual(code, 3, output)
         self.assertEqual(len(questions), 1)
@@ -435,7 +435,7 @@ class SetupCommandTests(V4Case):
     def test_a_guard_refusal_exits_1_without_asking(self):
         stream, questions = self.answering(True)
         self.runtime.environ["CLAUDECODE"] = "1"
-        with mock.patch("claude_multi.cli.consent.stdio_ttys", return_value=True):
+        with mock.patch("charmer.cli.consent.stdio_ttys", return_value=True):
             code, output = self.run_setup("--step", "claude", input_stream=stream)
         self.assertEqual(code, 1, output)
         self.assertEqual(questions, [])
@@ -444,7 +444,7 @@ class SetupCommandTests(V4Case):
 
     def test_cancelling_the_question_exits_130(self):
         stream, _questions = self.answering(KeyboardInterrupt())
-        with mock.patch("claude_multi.cli.consent.stdio_ttys", return_value=True):
+        with mock.patch("charmer.cli.consent.stdio_ttys", return_value=True):
             code, output = self.run_setup("--step", "claude", input_stream=stream)
         self.assertEqual(code, 130, output)
         self.assertIn("setup --step claude: cancelled", output)

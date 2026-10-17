@@ -27,11 +27,11 @@ from unittest import mock
 import test_cli
 import test_setup_cli
 from _catalog import SHIPPED_ROOT
-from claude_multi import catalog, operator as operator_mod, profile, secret_store, served_plan, state, strict_json
-from claude_multi import validate as schema_validate
-from claude_multi.setup import model, providers as setup_providers, texts
-import claude_multi.cli.commands.providers as providers_cmd
-import claude_multi.cli.consent as consent
+from charmer import catalog, operator as operator_mod, profile, secret_store, served_plan, state, strict_json
+from charmer import validate as schema_validate
+from charmer.setup import model, providers as setup_providers, texts
+import charmer.cli.commands.providers as providers_cmd
+import charmer.cli.consent as consent
 
 KEYED_KINDS = ("anthropic-compatible", operator_mod.KEYED_KIND)
 
@@ -291,7 +291,7 @@ class KeyedEndpointOfferingTests(test_cli.OperatorCommandCase):
                 self.assertNotIn("stays closed", problem)
 
     def test_keyed_endpoint_forms_offer_only_bearer(self) -> None:
-        from claude_multi import views
+        from charmer import views
 
         create = views.endpoint_form_fields(operator_mod.KEYED_KIND)
         edit = views.provider_edit_form_fields({"kind": operator_mod.KEYED_KIND,
@@ -307,7 +307,7 @@ class KeyedEndpointOfferingTests(test_cli.OperatorCommandCase):
 
     def test_keyed_cli_endpoint_never_offers_header_auth(self) -> None:
         from types import SimpleNamespace
-        from claude_multi.cli.commands import setup as setup_cmd
+        from charmer.cli.commands import setup as setup_cmd
 
         for kind in (operator_mod.KEYED_KIND, "anthropic-compatible"):
             prompts = []
@@ -379,7 +379,7 @@ class PresetPlanTests(test_cli.OperatorCommandCase):
         self.assertIn(name, self.ledger().routes)
 
     def connected(self, provider_id: str) -> bool:
-        from claude_multi.setup import status
+        from charmer.setup import status
 
         return any(conn.provider_id == provider_id for conn in status.connected(self.runtime))
 
@@ -479,7 +479,7 @@ class PresetPlanTests(test_cli.OperatorCommandCase):
         """custom.json still in effect counts like any provider: the new one
         gets a key of its own by default, and sharing names the legacy one."""
 
-        from claude_multi import custom
+        from charmer import custom
 
         name = first("anthropic-compatible")
         info = shipped()[name]

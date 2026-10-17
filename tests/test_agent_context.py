@@ -24,8 +24,8 @@ import _v4
 import bless
 import test_screens_catalog
 from _catalog import FIXTURE_ROOT, SHIPPED_ROOT, uses_shipped_catalog
-from claude_multi import catalog, choices, compiler, custom, profile, readiness, scope, sessions, settings, state, strict_json
-from claude_multi import views
+from charmer import catalog, choices, compiler, custom, profile, readiness, scope, sessions, settings, state, strict_json
+from charmer import views
 
 CEILING = settings.WINDOW_CEILING_DEFAULT
 WINDOW_ENV = "CLAUDE_CODE_AUTO_COMPACT_WINDOW"
@@ -318,7 +318,7 @@ class MixedBoundsTests(unittest.TestCase):
                     self.assertEqual(compiler.agent_context_gaps(lineup, CEILING), ())
 
     def test_a_narrowed_agent_needs_no_route_change(self) -> None:
-        from claude_multi import render
+        from charmer import render
 
         docs, _lcat_, _eff_, lineup = self.case(self.codex, BELOW)
         entry = docs["models"]["models"][self.codex]
@@ -554,8 +554,8 @@ class RecordAuthorityWindowTests(_v4.V4Case):
     next resume, with an explicit class row."""
 
     def test_the_recorded_window_governs_until_resume(self) -> None:
-        from claude_multi import cli, transition
-        from claude_multi.cli import doctor
+        from charmer import cli, transition
+        from charmer.cli import doctor
 
         root, key = write_bounded_assets(self.root / "assets", codex_line, BELOW)
         self.runtime = self.make_runtime(asset_root=root)
@@ -685,8 +685,8 @@ class WindowCeilingRuntimeTests(_v4.V4Case):
         self.assertFalse(settings.settings_path(self.env).exists())
 
     def test_an_unreadable_choice_refuses_launch_and_doctor_blocks(self) -> None:
-        from claude_multi import cli
-        from claude_multi.cli import doctor
+        from charmer import cli
+        from charmer.cli import doctor
 
         path = choices.path(self.env)
         state.ensure_private_dir(path.parent)
@@ -701,7 +701,7 @@ class WindowCeilingRuntimeTests(_v4.V4Case):
 
     def test_print_launch_lists_each_role_window(self) -> None:
         import io
-        from claude_multi.cli import launch_flow
+        from charmer.cli import launch_flow
 
         key = codex_line(self.runtime.catalog.docs)
         effort = self.runtime.catalog.docs["models"]["models"][key]["default_effort"]
@@ -729,7 +729,7 @@ class WindowCeilingRuntimeTests(_v4.V4Case):
     def test_the_command_shows_sets_and_resets(self) -> None:
         import contextlib
         import io
-        from claude_multi import cli
+        from charmer import cli
 
         def run(*argv):
             out, err = io.StringIO(), io.StringIO()
@@ -766,7 +766,7 @@ class WindowCeilingRuntimeTests(_v4.V4Case):
         self.assertEqual(run("258400")[0], 0)
         self.assertEqual(choices.window_ceiling(self.env).value, 258_400)
         run("--reset")
-        from claude_multi.cli import parser as parser_mod
+        from charmer.cli import parser as parser_mod
 
         parser = cli.build_parser()
         for argv, writes in ((["window-ceiling"], False), (["window-ceiling", "400K"], True),
@@ -777,7 +777,7 @@ class WindowCeilingRuntimeTests(_v4.V4Case):
     def test_reset_removes_an_explicitly_stored_default(self) -> None:
         import contextlib
         import io
-        from claude_multi import cli
+        from charmer import cli
 
         path = choices.path(self.env)
         state.ensure_private_dir(path.parent)
@@ -794,7 +794,7 @@ class WindowCeilingRuntimeTests(_v4.V4Case):
         self.assertEqual(choices.window_ceiling(self.env).source, "default")
 
     def test_a_ceiling_changed_after_preparation_never_launches(self) -> None:
-        from claude_multi import launch
+        from charmer import launch
 
         prepared = self.runtime.prepare(self.profile_target(), action="fresh", passthrough=[])
         # The plan states the one ceiling it was compiled with.
@@ -822,7 +822,7 @@ class WindowCeilingRuntimeTests(_v4.V4Case):
 
     def test_the_commit_barrier_checks_the_ceiling_again(self) -> None:
         from unittest import mock
-        from claude_multi import launch
+        from charmer import launch
 
         prepared = self.runtime.prepare(self.profile_target(), action="fresh", passthrough=[])
         real_acquire = state.acquire_served_barrier
@@ -844,7 +844,7 @@ class WindowCeilingRuntimeTests(_v4.V4Case):
     def test_print_launch_states_the_ceiling_the_plan_was_compiled_with(self) -> None:
         import io
         from unittest import mock
-        from claude_multi.cli import launch_flow
+        from charmer.cli import launch_flow
 
         choices.update(self.env, window_ceiling=500_000)
         reads = [choices.window_ceiling(self.env), choices.WindowCeiling(200_000, True)]
@@ -881,7 +881,7 @@ class WindowDisplayTests(unittest.TestCase):
         return {"window": role.window, "trigger": role.trigger, "percent": lineup.policy.percent, "scalar": None}
 
     def card(self, lineup, **kwargs):
-        from claude_multi.cli import types
+        from charmer.cli import types
 
         target = types.LaunchTarget("profile", {}, lineup.name, True, "x")
         return views.card_model(target=target, lineup=lineup, context=self.context(lineup), **kwargs)
@@ -914,7 +914,7 @@ class WindowDisplayTests(unittest.TestCase):
         self.assertEqual(workflow.text, "Model X · high · window 800K (agents without a cm-* type)")
 
     def test_the_lineup_summary_groups_roles_by_window(self) -> None:
-        from claude_multi import lineup as lineup_mod
+        from charmer import lineup as lineup_mod
 
         key, uniform, mixed, direct = self.lineups()
         self.assertEqual(lineup_mod.window_summary(uniform),
@@ -966,7 +966,7 @@ class WindowCeilingSettingsScreenTests(test_screens_catalog._ScreenCase):
 
     def screen(self):
         import io
-        from claude_multi import cli, tui
+        from charmer import cli, tui
 
         return cli._SettingsScreen(self.runtime, tui.MONO_PALETTE, tty_in=io.StringIO(), tty_out=io.StringIO())
 

@@ -21,9 +21,9 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from claude_multi import cli, hooks, lineup, lineup_files, lineup_log, migrate, profile, scope, sessions, state, strict_json, transition
-from claude_multi import quota as quota_mod
-from claude_multi import catalog
+from charmer import cli, hooks, lineup, lineup_files, lineup_log, migrate, profile, scope, sessions, state, strict_json, transition
+from charmer import quota as quota_mod
+from charmer import catalog
 from _catalog import FIXTURE_ROOT, GOLDENS_ROOT
 from _golden import assertGolden
 from _v4 import V4Case
@@ -47,8 +47,8 @@ class QuotaEntryInitializationTests(unittest.TestCase):
         """The real CLI entry must not initialize writable state for /cm quota."""
         import tempfile
 
-        from claude_multi import assets, catalog, scope
-        import claude_multi.cli.runtime as runtime_mod
+        from charmer import assets, catalog, scope
+        import charmer.cli.runtime as runtime_mod
 
         with tempfile.TemporaryDirectory(prefix="cm-quota-entry-") as temporary:
             home = Path(temporary)
@@ -393,7 +393,7 @@ class InterceptTests(LineupCase):
         self.assertEqual(seen[1], ["--", "set", "implementer=sol:xhigh"])
 
     def test_skill_mode_refusals_go_to_stdout_with_exit_0_and_no_tty(self) -> None:
-        with mock.patch('claude_multi.cli.streams._open_tty_streams', side_effect=AssertionError("tty opened")):
+        with mock.patch('charmer.cli.streams._open_tty_streams', side_effect=AssertionError("tty opened")):
             code, out, err = self.lineup("set implementer=", "sol")
         self.assertEqual((code, err), (0, ""))
         self.assertEqual(out, f"claude-multi: {lineup.R4.format(n=2)}\n")
@@ -900,7 +900,7 @@ class PendingTests(LineupCase):
             return False
 
         self.runtime.environ["CLAUDE_CODE_SESSION_ID"] = self.rid
-        with mock.patch('claude_multi.cli.screens.transition._transition_confirm', side_effect=confirm):
+        with mock.patch('charmer.cli.screens.transition._transition_confirm', side_effect=confirm):
             code, out, err = self.lineup("--relaunch", "profile", "quality", skill=False,
                                          interactive=True, text="")
         self.assertEqual(code, 0, err)
@@ -914,7 +914,7 @@ class PendingTests(LineupCase):
             return True
 
         self.runtime.environ["CLAUDE_CODE_SESSION_ID"] = self.rid
-        with mock.patch('claude_multi.cli.screens.transition._transition_confirm', side_effect=confirm):
+        with mock.patch('charmer.cli.screens.transition._transition_confirm', side_effect=confirm):
             code, out, err = self.lineup("--relaunch", "profile", "quality", skill=False,
                                          interactive=True, text="")
         self.assertEqual(code, 1)  # a refused request; 2 is kept for an invalid one
@@ -1009,7 +1009,7 @@ class ShowProviderErrorsTests(LineupCase):
         from datetime import timedelta
         from tests.test_observations import NOW as LOG_NOW
 
-        import claude_multi.cli.gateway_facts as gateway_facts
+        import charmer.cli.gateway_facts as gateway_facts
 
         self.gateway_facts = gateway_facts
         self.log_now = LOG_NOW
@@ -1100,7 +1100,7 @@ class ShowProviderErrorsTests(LineupCase):
                                    "(gateway-wide, not only this session; log read bounded)")
 
     def test_an_unreadable_log_is_unavailable_never_zero(self) -> None:
-        from claude_multi.platform.observation import LogWindow
+        from charmer.platform.observation import LogWindow
 
         for window in (None, LogWindow()):
             with self.subTest(window=window):
@@ -1305,8 +1305,8 @@ class SkillExpansionTests(LineupCase):
         wrapper.write_text(
             f"#!{_sys.executable}\n"
             "import os, sys\n"
-            "from claude_multi.cli.entry import main\n"
-            "from claude_multi.cli.runtime import Runtime\n"
+            "from charmer.cli.entry import main\n"
+            "from charmer.cli.runtime import Runtime\n"
             f"runtime = Runtime(asset_root={str(FIXTURE_ROOT)!r}, environ=dict(os.environ), "
             f"cwd={str(self.project)!r})\n"
             "raise SystemExit(main(sys.argv[1:], runtime=runtime))\n"
@@ -1400,7 +1400,7 @@ class AgentClassMoveTests(V4Case):
         return code, out.getvalue(), err.getvalue()
 
     def test_record_authority_keeps_the_recorded_class_and_notices_the_move(self) -> None:
-        from claude_multi.cli import doctor
+        from charmer.cli import doctor
 
         parts = self.runtime.converge_parts()
         ep = transition.expected_plan(
@@ -1458,7 +1458,7 @@ class AgentClassMoveTests(V4Case):
                              self.record["applied"]["agents"][rid]["selector"])
 
     def test_resume_shows_the_agent_class_move_and_applies_it(self) -> None:
-        from claude_multi.cli import doctor
+        from charmer.cli import doctor
 
         prepared = self.prepare_resume(self.mid)
         rows = [line for line in prepared.diff if "agent class" in line]
@@ -1764,7 +1764,7 @@ class FallbackTests(LineupCase):
 
         from datetime import datetime, timezone
 
-        from claude_multi import quota as quota_mod
+        from charmer import quota as quota_mod
 
         self.assertEqual(lineup.parse_request(["quota"]).verb, "quota")
         self.assertFalse(lineup.parse_request(["quota"]).writes)

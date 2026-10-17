@@ -20,9 +20,9 @@ import unittest
 from pathlib import Path
 from typing import Any
 
-from claude_multi import catalog, compiler, custom, lineup_files, profile, scope, settings, state, strict_json
-from claude_multi import lineup as lineup_mod
-from claude_multi.scope import ScopeError
+from charmer import catalog, compiler, custom, lineup_files, profile, scope, settings, state, strict_json
+from charmer import lineup as lineup_mod
+from charmer.scope import ScopeError
 from _catalog import FIXTURE_ROOT, uses_shipped_catalog
 from _golden import assertGolden
 
@@ -1253,7 +1253,7 @@ class LeadContextTests(unittest.TestCase):
     ``lead-set.json``'s ``context``)."""
 
     def test_reactive_trigger_matches_the_2x_formula_at_90(self) -> None:
-        from claude_multi import composition
+        from charmer import composition
 
         for window in (40_000, 200_000, 258_400, 500_000, 800_000, 983_616):
             with self.subTest(window=window):
@@ -1407,7 +1407,7 @@ class WriteScopeV2Tests(_StateRootCase):
                 self.assertEqual(scope.live_drift(live, plan), [])
 
     def test_rewrite_leaves_an_out_of_scope_log_untouched(self) -> None:
-        from claude_multi import lineup_log
+        from charmer import lineup_log
 
         plan = bless.v2_scope_plan("managed")
         self._write(plan)
@@ -1482,7 +1482,7 @@ class LiveDriftV2Tests(_StateRootCase):
         self.live = self._write(self.plan)
 
     def test_transition_delegates(self) -> None:
-        from claude_multi import transition
+        from charmer import transition
 
         self.assertIs(transition._live_drift, scope.live_drift)
 

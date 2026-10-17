@@ -11,12 +11,12 @@ import tempfile
 import unittest
 from unittest import mock
 
-from claude_multi import gateway_events as events, observations as obs, quota, sessions, state, validate
-import claude_multi.cli.doctor as doctor
-import claude_multi.cli.entry as entry
-import claude_multi.cli.gateway_facts as gateway_facts
-import claude_multi.cli.runtime as runtime_mod
-from claude_multi.platform.observation import LogRecord, LogWindow
+from charmer import gateway_events as events, observations as obs, quota, sessions, state, validate
+import charmer.cli.doctor as doctor
+import charmer.cli.entry as entry
+import charmer.cli.gateway_facts as gateway_facts
+import charmer.cli.runtime as runtime_mod
+from charmer.platform.observation import LogRecord, LogWindow
 from _catalog import FIXTURE_ROOT
 from _v4 import V4Case
 
@@ -172,8 +172,8 @@ class ReportRuntimeTests(V4Case):
         self.assertEqual(json.loads(out.getvalue())["report"], "explain")
 
     def test_json_collection_errors_keep_sanitized_diagnostic_and_remedy(self):
-        from claude_multi import errors
-        import claude_multi.cli.dispatch as dispatch
+        from charmer import errors
+        import charmer.cli.dispatch as dispatch
         for error in (sessions.StateMarkerError(99), errors.ClaudeMultiError("fixture \x1b[31m", remedy="fix \x1b[0m")):
             with self.subTest(error=type(error).__name__), \
                     mock.patch.object(dispatch, "handle_command", side_effect=error), \
@@ -215,13 +215,13 @@ class ReportRuntimeTests(V4Case):
     def test_report_reuses_management_failure_cache(self):
         # A snapshot must not circumvent the existing negative cache or TTL.
         self.runtime._pool_cache = (self.runtime.pool_clock(), quota.PoolStatus("mismatch", 401))
-        with mock.patch("claude_multi.management.pool_status", side_effect=AssertionError("retry")):
+        with mock.patch("charmer.management.pool_status", side_effect=AssertionError("retry")):
             with self.runtime.report_snapshot():
                 self.assertEqual(self.runtime.pool_status().state, "mismatch")
                 self.assertEqual(self.runtime.pool_status().state, "mismatch")
 
     def test_text_and_json_share_one_snapshot(self):
-        from claude_multi import usage
+        from charmer import usage
         with mock.patch.object(gateway_facts, "_read_gateway_journal", return_value=source(final())) as read:
             with self.runtime.report_snapshot():
                 first = gateway_facts.report_events(self.runtime)
@@ -313,7 +313,7 @@ class HookLogTests(V4Case):
                     sock = socket.socket(socket.AF_UNIX)
                     sock.bind(str(self.path))
                 try:
-                    with mock.patch("claude_multi.lineup_log.os.open", side_effect=AssertionError("opened special file")):
+                    with mock.patch("charmer.lineup_log.os.open", side_effect=AssertionError("opened special file")):
                         fact, lines = self.fact()
                     self.assertEqual((fact.status, fact.value, fact.classification), ("unavailable", None, "attention"))
                     self.assertEqual(lines, [doctor.HOOK_LOG_UNAVAILABLE])
@@ -328,7 +328,7 @@ class HookLogTests(V4Case):
 
 class ManagementReportTests(V4Case):
     def enable(self, code, body):
-        from claude_multi import management, service
+        from charmer import management, service
         management.prepare_start(self.runtime.home, stopped=True)
         self.runtime.environ[management.CHANNEL_ENV] = management.MANAGEMENT_CHANNEL
         self.runtime.management_callback = mock.Mock(return_value=(code, body))
@@ -345,7 +345,7 @@ class ManagementReportTests(V4Case):
         self.runtime.management_callback.assert_called_once()
 
     def test_quota_json_preserves_listener_ownership_attention(self):
-        from claude_multi import service
+        from charmer import service
         self.enable(200, b'{"files":[]}')
         self.runtime.listener_owner = lambda _base: service.OwnerVerdict("unknown", "fixture")
         with mock.patch("sys.stderr", new_callable=io.StringIO) as err:
@@ -361,7 +361,7 @@ class ManagementReportTests(V4Case):
     def test_no_new_management_route_is_used(self):
         self.enable(200, b'{"files":[]}')
         self.runtime.pool_status()
-        from claude_multi import management
+        from charmer import management
         connection = mock.Mock()
         connection.getresponse.return_value.status = 401
         management.send_request(connection, "dummy-test-key")
@@ -370,7 +370,7 @@ class ManagementReportTests(V4Case):
 
     def test_oauth_and_credential_save_parity_with_healthy_management(self):
         from tests.test_credential_saves import MESSAGE, line
-        from claude_multi.platform.linux_service import journal_records
+        from charmer.platform.linux_service import journal_records
         self.enable(200, b'{"files":[{"provider":"claude","status":"active"}]}')
         failure = MESSAGE.replace("result=persisted", "result=failed")
         rows = journal_records(line(failure)).records + (log("claude refresh invalid_grant"),)

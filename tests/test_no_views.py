@@ -1,6 +1,6 @@
 """No 035/037 view, 2.x projection or 2.x resolver is left in ``src``.
 
-An AST walk over ``src/claude_multi/*.py`` asserts that the deleted names are
+An AST walk over ``src/charmer/*.py`` asserts that the deleted names are
 never referenced, that nothing reads ``.models`` off a Catalog or calls the
 2.x resolver, and that the v1 record/draft shapes (``["lanes"]``,
 ``["default_lane"]``, ``["client_selector"]``) are subscripted only by the
@@ -16,11 +16,11 @@ import sys
 import unittest
 from pathlib import Path
 
-from claude_multi import catalog, composition
+from charmer import catalog, composition
 from _catalog import FIXTURE_ROOT
 from _layout import REPO_ROOT, RESOURCES_ROOT
 
-SRC = REPO_ROOT / "src" / "claude_multi"
+SRC = REPO_ROOT / "src" / "charmer"
 SPEC = "the views removal contract"
 
 DELETED_NAMES = frozenset({
@@ -216,11 +216,11 @@ class NoViewsTests(unittest.TestCase):
         env = {**os.environ, "PYTHONPATH": str(REPO_ROOT / "src")}
         result = subprocess.run(
             [sys.executable, "-c",
-             "import claude_multi.cli, claude_multi.scope, claude_multi.compiler, "
-             "claude_multi.transition, claude_multi.dev; "
+             "import charmer.cli, charmer.scope, charmer.compiler, "
+             "charmer.transition, charmer.dev; "
              "import pkgutil, importlib; "
              "[importlib.import_module(m.name) for m in pkgutil.walk_packages("
-             "claude_multi.cli.__path__, claude_multi.cli.__name__ + '.')]"],
+             "charmer.cli.__path__, charmer.cli.__name__ + '.')]"],
             env=env, capture_output=True, text=True, timeout=60,
         )
         self.assertEqual(result.returncode, 0, result.stderr)

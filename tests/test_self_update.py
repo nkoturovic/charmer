@@ -1,4 +1,4 @@
-"""The bundle self-update core (``claude_multi.self_update``), offline.
+"""The bundle self-update core (``charmer.self_update``), offline.
 
 Releases are fake release directories served by ``DirectoryTransport``;
 signatures use the test-side sshsig signer (or a stub verifier), so nothing
@@ -19,8 +19,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from claude_multi import self_update as su
-from claude_multi import trust
+from charmer import self_update as su
+from charmer import trust
 from _fake_release import FakeRelease, make_key, needs_ssh_keygen, signers_line as keygen_signers_line
 from _release import INSTALL_SH, requires_release_tree
 from test_trust import SEED_A, SEED_B, signer_line, sshsig

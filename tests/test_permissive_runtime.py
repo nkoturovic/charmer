@@ -9,8 +9,8 @@ import json
 import unittest
 from unittest import mock
 
-from claude_multi import launch, operator, profile, scope, settings, state, strict_json, transition
-from claude_multi.cli import doctor, runtime, types
+from charmer import launch, operator, profile, scope, settings, state, strict_json, transition
+from charmer.cli import doctor, runtime, types
 from _v4 import V4Case
 import test_cli as fixtures
 import test_operator as operator_fixtures

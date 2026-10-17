@@ -5,7 +5,7 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 
-from claude_multi import catalog, compiler, strict_json
+from charmer import catalog, compiler, strict_json
 from _catalog import FIXTURE_ROOT, GOLDENS_ROOT
 from _golden import assertGolden
 

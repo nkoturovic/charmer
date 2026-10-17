@@ -23,7 +23,7 @@ from pathlib import Path
 from unittest import mock
 
 import _tripwire
-from claude_multi import (
+from charmer import (
     catalog,
     cli,
     migrate,
@@ -38,8 +38,8 @@ from claude_multi import (
 from _catalog import FIXTURE_GATEWAY_TOKEN, FIXTURE_ROOT, GOLDENS_ROOT, SHIPPED_ROOT, uses_shipped_catalog
 from _golden import assertGolden
 import _v3
-import claude_multi.launch
-import claude_multi.sessions
+import charmer.launch
+import charmer.sessions
 
 _tripwire.install()
 
@@ -1011,8 +1011,8 @@ class DryRunTests(unittest.TestCase):
 
         fail = AssertionError("dry run refreshed a shim")
         output = io.StringIO()
-        with mock.patch('claude_multi.cli.runtime.Runtime', side_effect=runtime_factory), \
-                mock.patch.object(claude_multi.sessions, "state_root", return_value=self.root), \
+        with mock.patch('charmer.cli.runtime.Runtime', side_effect=runtime_factory), \
+                mock.patch.object(charmer.sessions, "state_root", return_value=self.root), \
                 mock.patch.object(scope, "ensure_hook_shim", side_effect=fail), \
                 mock.patch.object(scope, "ensure_token_helper_command", side_effect=fail), \
                 mock.patch.object(scope, "ensure_hook_shim_v3", side_effect=fail), \
@@ -1088,8 +1088,8 @@ class PrintLaunchTests(unittest.TestCase):
             captured.append(kwargs)
             raise _Stop
 
-        with mock.patch('claude_multi.cli.runtime.Runtime', side_effect=runtime_factory), \
-                mock.patch.object(claude_multi.sessions, "state_root",
+        with mock.patch('charmer.cli.runtime.Runtime', side_effect=runtime_factory), \
+                mock.patch.object(charmer.sessions, "state_root",
                                   return_value=sessions.state_root(environ)), \
                 mock.patch.dict(os.environ, environ):
             with self.assertRaises(_Stop):
@@ -1176,7 +1176,7 @@ class DoctorMarkerTests(MigrateTestCase):
             asset_root=FIXTURE_ROOT, environ=self.environ, cwd=self.tmp,
             doctor_callback=lambda _runtime: [],
             doctor_binary_callback=lambda _contract: ([], []),
-            doctor_daemon_callback=lambda: claude_multi.launch.DaemonStatus(
+            doctor_daemon_callback=lambda: charmer.launch.DaemonStatus(
                 state="absent", summary="fixture daemon absent"
             ),
         )

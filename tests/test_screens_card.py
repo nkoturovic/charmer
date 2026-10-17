@@ -24,19 +24,19 @@ from datetime import timedelta
 from pathlib import Path
 from unittest import mock
 
-from claude_multi import catalog, cli, profile, sessions, settings, state, tui, views
+from charmer import catalog, cli, profile, sessions, settings, state, tui, views
 
 import _tui_fixture as fx
 from test_tui import BTAB, DOWN, END, HOME, LEFT, RIGHT, FakeWindow
-import claude_multi.cli.text as cli_text
+import charmer.cli.text as cli_text
 import curses as _curses
-import claude_multi.compiler
-import claude_multi.custom
-import claude_multi.launch
-import claude_multi.scope
-import claude_multi.pin
-import claude_multi.tui
-import claude_multi.views
+import charmer.compiler
+import charmer.custom
+import charmer.launch
+import charmer.scope
+import charmer.pin
+import charmer.tui
+import charmer.views
 
 SPEC = "the card contract"
 ESC = "\x1b"
@@ -66,7 +66,7 @@ class _CardCase(unittest.TestCase):
         stack = contextlib.ExitStack()
         self.addCleanup(stack.close)
         stack.enter_context(fx.hermetic(runtime))
-        stack.enter_context(mock.patch('claude_multi.cli.gateway_facts._doctor_now', lambda: fx.FIXED_NOW))
+        stack.enter_context(mock.patch('charmer.cli.gateway_facts._doctor_now', lambda: fx.FIXED_NOW))
         runtime.profiles.install_seeds()
         return runtime
 
@@ -165,7 +165,7 @@ class CardNoticeTests(_CardCase):
         row = next(row for row in screen.card.rows if row.kind == "worktree")
         self.assertEqual((row.role, row.text), ("dim", views.CARD_WORKTREE))
         self.assertIn("Status  Ready", self.frame(screen, height=40))
-        with mock.patch.object(claude_multi.compiler, "git_work_tree", lambda _cwd: True):
+        with mock.patch.object(charmer.compiler, "git_work_tree", lambda _cwd: True):
             inside = self.card()
         self.assertFalse(any(row.kind == "worktree" for row in inside.card.rows))
 
@@ -180,7 +180,7 @@ class CardNoticeTests(_CardCase):
 
         screen = self.card()
         with mock.patch.dict(self.runtime.environ, {"CLAUDE_CONFIG_DIR": "/srv/claude-elsewhere"}), \
-                mock.patch.object(claude_multi.tui, "TextView", RecordingView):
+                mock.patch.object(charmer.tui, "TextView", RecordingView):
             self.run_card(screen, ["v", ESC, ESC])
         lines = shown[0]
         self.assertIn(cli_text.CARD_DETAILS_MODEL, lines)
@@ -202,7 +202,7 @@ class CardNoticeTests(_CardCase):
                 super().__init__(title, lines, **kwargs)
 
         screen = self.card()
-        with mock.patch.object(claude_multi.tui, "TextView", RecordingView):
+        with mock.patch.object(charmer.tui, "TextView", RecordingView):
             _result, win = self.run_card(screen, ["v", END, ESC, ESC], height=24, width=80)
         lines = shown[0]
         # Every term and /cm line the help shows is in V too.
@@ -303,7 +303,7 @@ class CardSignInRemedyTests(_CardCase):
         return [row.text for row in screen.card.rows if "OAuth credential record" in row.text]
 
     def test_the_fresh_card_names_g_l_and_the_command_line_keeps_the_command(self) -> None:
-        from claude_multi.cli import gateway_facts
+        from charmer.cli import gateway_facts
 
         self.without_sign_ins()
         screen = self.card()
@@ -328,7 +328,7 @@ class CardSignInRemedyTests(_CardCase):
                 shown.append(list(lines))
                 super().__init__(title, lines, **kwargs)
 
-        with mock.patch.object(claude_multi.tui, "TextView", RecordingView):
+        with mock.patch.object(charmer.tui, "TextView", RecordingView):
             self.run_card(screen, ["v", ESC, ESC])
         readiness = [line for line in shown[0] if "OAuth credential record" in line]
         self.assertTrue(readiness)
@@ -338,7 +338,7 @@ class CardSignInRemedyTests(_CardCase):
         self.assertGreater(len(readiness), len(rows))
 
     def test_slots_with_the_same_remedy_share_a_row(self) -> None:
-        from claude_multi.cli.screens import launch_sessions
+        from charmer.cli.screens import launch_sessions
 
         lines = ["! lead: no x — sign in: G → L", "! explorer: no y — sign in: G → L", "! other notice",
                  "! analyst: no y — sign in: G → L", "! reviewer: no y — sign in: G → L",
@@ -395,7 +395,7 @@ class CardSignInRemedyTests(_CardCase):
         raise AssertionError("no resume card with a sign-in remedy was drawn")
 
     def account_row(self) -> int:
-        import claude_multi.cli.screens.providers as providers_screen
+        import charmer.cli.screens.providers as providers_screen
 
         screen = providers_screen._ProvidersScreen(self.runtime, palette=tui.MONO_PALETTE, journal=lambda: None)
         return next(index for index, fact in enumerate(screen.facts) if fact.get("kind") == "oauth-pool")
@@ -460,7 +460,7 @@ class CardSignInRemedyTests(_CardCase):
         self.recorded_session()
         screen = cli._SessionsScreen(self.runtime, palette=tui.MONO_PALETTE, root=True, tty_in=io.StringIO(),
                                      tty_out=io.StringIO())
-        with mock.patch('claude_multi.cli.screens.launch_sessions._LaunchCardScreen._gateway_status', lambda _s: None):
+        with mock.patch('charmer.cli.screens.launch_sessions._LaunchCardScreen._gateway_status', lambda _s: None):
             result, win = self.run_card(screen, [ENTER, ESC, ESC], **self.WIDE)
         self.assertIsNone(result)
         route = self.displayed_route(win.frames)
@@ -485,7 +485,7 @@ class CardHealthKeyRemedyTests(_CardCase):
     first. The command line's doctor keeps the command."""
 
     def block(self) -> str:
-        from claude_multi import operator as operator_mod
+        from charmer import operator as operator_mod
 
         name = operator_mod.transport_alternative("anthropic", operator_mod.TRANSPORT_API_KEY).secret_name
         return (f"provider anthropic transport api-key: {name} is not set — claude-multi providers set-key "
@@ -493,7 +493,7 @@ class CardHealthKeyRemedyTests(_CardCase):
                 "anthropic oauth-pool)")
 
     def h_report(self, screen) -> str:
-        from claude_multi.cli import doctor as doctor_mod
+        from charmer.cli import doctor as doctor_mod
 
         with mock.patch.object(doctor_mod, "_collect_doctor_reports", return_value=([self.block()], [], [])):
             result, _win = self.run_card(screen, ["h", ESC])
@@ -516,7 +516,7 @@ class CardHealthKeyRemedyTests(_CardCase):
         self.assert_route(report, "Esc, run claude-multi, G (providers) → K on Anthropic, then S to resume")
 
     def test_only_a_findings_remedy_becomes_the_route(self) -> None:
-        from claude_multi.cli.screens import launch_sessions
+        from charmer.cli.screens import launch_sessions
 
         # A command quoted inside other advice (a file to correct) stays as it is.
         advice = ('providers.d/mine.json: a secret value is not allowed — store it with claude-multi providers '
@@ -537,7 +537,7 @@ class CardRowTests(_CardCase):
         """The card planned inside a Git work tree: no implementer notice
         takes a row (the canonical rows at 80x24)."""
 
-        with mock.patch.object(claude_multi.compiler, "git_work_tree", lambda _cwd: True):
+        with mock.patch.object(charmer.compiler, "git_work_tree", lambda _cwd: True):
             return self.card(**kwargs)
 
     def test_fresh_card_rows_and_badges(self) -> None:
@@ -571,7 +571,7 @@ class CardRowTests(_CardCase):
         wide = self.frame(screen, height=40, width=200).splitlines()
         self.assertIn(f"  review    {views.review_sentence(lineup)}", wide)
         self.assertIn(f"  spread    {lineup.spread_text()}", lines)
-        pin = claude_multi.pin.version(self.runtime.catalog.docs["native-contract"])
+        pin = charmer.pin.version(self.runtime.catalog.docs["native-contract"])
         self.assertIn(f"  health    gateway ok · Claude {pin} · catalog {self.runtime.catalog_version}", lines)
         for finding in lineup.warnings:
             self.assertIn(f"  ! {finding.message}", wide)
@@ -642,12 +642,12 @@ class CardRowTests(_CardCase):
 
     def test_card_health_formats_the_error_remedy_once(self) -> None:
         screen = self.card()
-        for error, remedy in ((claude_multi.launch.LaunchError("fixture down"), claude_multi.launch.gateway_unit_remedy()),
-                              (claude_multi.launch.GatewayKeyError("bad key", remedy="fix key"), "fix key")):
+        for error, remedy in ((charmer.launch.LaunchError("fixture down"), charmer.launch.gateway_unit_remedy()),
+                              (charmer.launch.GatewayKeyError("bad key", remedy="fix key"), "fix key")):
             with mock.patch.object(self.runtime, "check_readiness", side_effect=error):
                 self.assertEqual(screen._gateway_status(), f"{error} — {remedy}")
         with mock.patch.object(self.runtime, "check_readiness", side_effect=ValueError("fixture")):
-            self.assertEqual(screen._gateway_status(), f"gateway check failed: fixture — {claude_multi.launch.gateway_unit_remedy()}")
+            self.assertEqual(screen._gateway_status(), f"gateway check failed: fixture — {charmer.launch.gateway_unit_remedy()}")
 
     def test_health_down_preserves_problem_and_update_row_places_u(self) -> None:
         screen = self.in_a_work_tree(gateway_problem="boom", update_hint=("1.0.0", "1.0.1"))
@@ -663,7 +663,7 @@ class CardRowTests(_CardCase):
         lead_provider = self.card().lineup.lead.binding.provider
         document = self.save_profile("card-outsiders", lambda d: d.update(primary_provider=lead_provider))
         radar = ["line some-line (wire x) retires upstream in 3 days — …"]
-        with mock.patch('claude_multi.cli.doctor._doctor_retirement_radar', return_value=radar), mock.patch.object(
+        with mock.patch('charmer.cli.doctor._doctor_retirement_radar', return_value=radar), mock.patch.object(
             profile.ProfileStore, "seed_updates", return_value=[(catalog.DEFAULT_SEED, 1, 2)]
         ):
             screen = self.card(self.target(self.runtime, "card-outsiders", document))
@@ -748,7 +748,7 @@ class CardBlockedTests(_CardCase):
             def run(self, win):
                 return None
 
-        with mock.patch.object(claude_multi.tui, "ProfileEditorScreen", FakeEditor):
+        with mock.patch.object(charmer.tui, "ProfileEditorScreen", FakeEditor):
             result, _win = self.run_card(self.card(self.target(self.runtime, "card-blocked", document)), [ENTER, "e", ESC])
         self.assertIsNone(result)
         self.assertEqual([focus for _state, focus in opened], ["lead", None])
@@ -859,8 +859,8 @@ class CardBlockedTests(_CardCase):
         self.assertIn("cannot load named bindings:", text)
 
     def test_a_resolver_error_omits_the_context_row_only(self) -> None:
-        with mock.patch.object(self.runtime, "prepare", side_effect=claude_multi.compiler.CompilerError("compile boom")), \
-                mock.patch.object(claude_multi.views, "effective_context", side_effect=claude_multi.scope.ScopeError("fence boom")):
+        with mock.patch.object(self.runtime, "prepare", side_effect=charmer.compiler.CompilerError("compile boom")), \
+                mock.patch.object(charmer.views, "effective_context", side_effect=charmer.scope.ScopeError("fence boom")):
             screen = self.card()
         text = self.frame(screen)
         self.assertIsNotNone(screen.lineup)
@@ -1008,12 +1008,12 @@ class CardKeyTests(_CardCase):
 
     def test_every_key_dispatches_and_the_keybar_lists_it(self) -> None:
         screen = self.card()
-        with mock.patch('claude_multi.cli.screens.providers.run_providers_screen') as providers, \
-                mock.patch('claude_multi.cli.screens.models.run_models_screen') as models, \
-                mock.patch('claude_multi.cli.screens.settings.run_settings_screen') as settings_, \
-                mock.patch('claude_multi.cli.screens.direct.run_direct_screen', return_value=None) as direct, \
-                mock.patch('claude_multi.cli.screens.launch_sessions._SessionsScreen') as sessions_screen, \
-                mock.patch.object(claude_multi.tui, "ProfileEditorScreen") as editor, \
+        with mock.patch('charmer.cli.screens.providers.run_providers_screen') as providers, \
+                mock.patch('charmer.cli.screens.models.run_models_screen') as models, \
+                mock.patch('charmer.cli.screens.settings.run_settings_screen') as settings_, \
+                mock.patch('charmer.cli.screens.direct.run_direct_screen', return_value=None) as direct, \
+                mock.patch('charmer.cli.screens.launch_sessions._SessionsScreen') as sessions_screen, \
+                mock.patch.object(charmer.tui, "ProfileEditorScreen") as editor, \
                 mock.patch.object(screen, "_run_health") as health, \
                 mock.patch.object(screen, "_details") as details:
             sessions_screen.return_value.run.return_value = None
@@ -1038,7 +1038,7 @@ class CardKeyTests(_CardCase):
             p["transport"]["pool"] for p in self.runtime.lineup_catalog().providers.values()
             if p["transport"]["kind"] == "oauth-pool"
         }
-        with mock.patch('claude_multi.cli.gateway_facts._oauth_credential_records', lambda _rt: {p: 1 for p in pools}):
+        with mock.patch('charmer.cli.gateway_facts._oauth_credential_records', lambda _rt: {p: 1 for p in pools}):
             result, _win = self.run_card(self.card(passthrough=["--verbose"]), ["d", ENTER])
         action, prepared = result
         self.assertEqual(action, "perform")
@@ -1058,7 +1058,7 @@ class CardKeyTests(_CardCase):
         self.assertIn("BLOCKED\n" if problems else "Ready\n", printed)
         if attention:
             self.assertIn("Attention\n", printed)
-        from claude_multi.cli import doctor as doctor_mod
+        from charmer.cli import doctor as doctor_mod
 
         hidden = [line for line in info if doctor_mod.detail_line(line)]
         for line in info:
@@ -1075,7 +1075,7 @@ class CardKeyTests(_CardCase):
         self.assertEqual(self.runtime.launches, [])
 
     def test_h_offers_a_bulk_repair_only_for_session_repair_findings(self) -> None:
-        from claude_multi.cli import doctor as doctor_mod
+        from charmer.cli import doctor as doctor_mod
 
         cases = (
             ([], ["gateway: not running — claude-multi gateway start"], [], False),
@@ -1087,7 +1087,7 @@ class CardKeyTests(_CardCase):
             with self.subTest(offered=offered), \
                     mock.patch.object(doctor_mod, "_collect_doctor_reports",
                                       return_value=(problems, info, attention)), \
-                    mock.patch("claude_multi.cli.doctor_actions._doctor_repair_all",
+                    mock.patch("charmer.cli.doctor_actions._doctor_repair_all",
                                side_effect=AssertionError("answered no")):
                 self.run_card(screen, ["h", ESC])
                 printed = out.getvalue()
@@ -1097,8 +1097,8 @@ class CardKeyTests(_CardCase):
 
     def test_h_offers_the_gateway_log_after_the_report(self) -> None:
         screen = self.card(tty_in=io.StringIO("l\n\n\n"), tty_out=io.StringIO())
-        with mock.patch("claude_multi.cli.screens.gateway_actions.health_prompt", return_value="log") as prompt, \
-                mock.patch("claude_multi.cli.screens.gateway_actions.log_view",
+        with mock.patch("charmer.cli.screens.gateway_actions.health_prompt", return_value="log") as prompt, \
+                mock.patch("charmer.cli.screens.gateway_actions.log_view",
                            return_value=("gateway log — fixture", ["fixture log line"])):
             _result, win = self.run_card(screen, ["h", ESC, ESC])
         prompt.assert_called_once_with(self.runtime, screen.tty_in, screen.tty_out)
@@ -1107,7 +1107,7 @@ class CardKeyTests(_CardCase):
     def _h_gateway_action(self, answer: str, view) -> tuple[list, str]:
         """H on the card with a clean report, then ``answer`` at the gateway line."""
 
-        from claude_multi.cli import doctor as doctor_mod
+        from charmer.cli import doctor as doctor_mod
 
         out = io.StringIO()
         screen = self.card(tty_in=io.StringIO(f"{answer}\n\n\n"), tty_out=out)
@@ -1181,12 +1181,12 @@ class CardKeyTests(_CardCase):
         model_rule = next(line for line in cli.QUICK_HELP.splitlines() if line.startswith("/model"))
         self.assertIn(" ".join(cli.QUICK_HELP.splitlines()[0].split()), body(first))
         self.assertIn(" ".join(model_rule.split()), body(middle))
-        panel = claude_multi.tui.workflow_guarantee_panel("native").splitlines()
+        panel = charmer.tui.workflow_guarantee_panel("native").splitlines()
         self.assertIn(" ".join(panel[-1].split()), body(scrolled))
         self.assertIn(" ".join(panel[0].split()), body(scrolled))
 
     def test_u_shows_what_update_will_do_only_while_the_badge_shows(self) -> None:
-        from claude_multi import upgrade
+        from charmer import upgrade
 
         shown: list[tuple[str, list[str]]] = []
         real_view = tui.TextView
@@ -1196,7 +1196,7 @@ class CardKeyTests(_CardCase):
                 shown.append((title, list(lines)))
                 super().__init__(title, lines, **kwargs)
 
-        with mock.patch.object(claude_multi.tui, "TextView", RecordingView), \
+        with mock.patch.object(charmer.tui, "TextView", RecordingView), \
                 mock.patch.object(upgrade, "run_repin", side_effect=AssertionError("never the re-pin flow")):
             self.run_card(self.card(), ["u", ESC])
             self.assertEqual(shown, [])
@@ -1219,7 +1219,7 @@ class CardKeyTests(_CardCase):
                 super().__init__(title, lines, **kwargs)
 
         with mock.patch.dict(self.runtime.environ, {"CLAUDE_MULTI_CHANNEL": "nix"}), \
-                mock.patch.object(claude_multi.tui, "TextView", RecordingView):
+                mock.patch.object(charmer.tui, "TextView", RecordingView):
             screen = self.card(hint_detector=None)
             self.assertEqual(screen.update_hint[1] if screen.update_hint else
                              screen.hint_detector(None)[1], "updated through your Nix flake")
@@ -1227,7 +1227,7 @@ class CardKeyTests(_CardCase):
         self.assertIn("update it through your flake", " ".join(shown[0][1]))
 
     def test_u_on_an_installed_release_runs_the_update_journey(self) -> None:
-        from claude_multi import release_update
+        from charmer import release_update
 
         tty_in, tty_out = io.StringIO("n\n\n"), io.StringIO()
         with mock.patch.dict(self.runtime.environ, {"CLAUDE_MULTI_CHANNEL": "bundle"}), \
@@ -1265,7 +1265,7 @@ class CardKeyTests(_CardCase):
         self.assertEqual(cli.QUICK_HELP.splitlines()[1], "Enter — launch this profile (a fresh durable session).")
 
     def test_the_quick_help_names_session_verbs_terms_and_update_by_channel(self) -> None:
-        from claude_multi import lineup, lineup_files
+        from charmer import lineup, lineup_files
         import re as re_
 
         lines = cli.QUICK_HELP.splitlines()
@@ -1314,7 +1314,7 @@ class CardEditFlowTests(_CardCase):
 
         screen = self.card(self.target(self.runtime, "card-blocked", document))
         self.assertFalse(screen.card.ready)
-        with mock.patch.object(claude_multi.tui, "ProfileEditorScreen", RepairingEditor):
+        with mock.patch.object(charmer.tui, "ProfileEditorScreen", RepairingEditor):
             result, win = self.run_card(screen, [ENTER, ENTER])
         self.assertTrue(any("Status  Ready" in f for f in win.frames))
         action, prepared = result
@@ -1343,7 +1343,7 @@ class CardEditFlowTests(_CardCase):
 
         screen = self.card(target)
         self.assertIn("profile: (file card-file.json) · pinned · Fresh", self.frame(screen))
-        with mock.patch.object(claude_multi.tui, "ProfileEditorScreen", SavingEditor):
+        with mock.patch.object(charmer.tui, "ProfileEditorScreen", SavingEditor):
             self.run_card(screen, ["e", ESC])
         self.assertEqual(focus, ["general"])
         self.assertEqual(screen.target.profile, "card-file")
@@ -1379,7 +1379,7 @@ class CardProfileCycleTests(_CardCase):
     def test_p_opens_profiles_with_the_fallback_filter(self) -> None:
         # The provider-fallback list became Profiles' F filter: F lists the
         # profiles that declare a primary provider, Enter uses one.
-        from claude_multi.setup import profiles as setup_profiles
+        from charmer.setup import profiles as setup_profiles
 
         fallback = [row.name for row in setup_profiles.rows(self.runtime, fallback_only=True)]
         self.assertTrue(fallback, f"{SPEC}: fixture seeds declare primary_provider")
@@ -1407,7 +1407,7 @@ class ProfilePickOrderTests(_CardCase):
 
     def test_a_connected_profile_comes_first(self) -> None:
         a = self.seeds()[-1]
-        ready = (claude_multi.readiness.SlotReadiness("cm-lead", claude_multi.readiness.READY),)
+        ready = (charmer.readiness.SlotReadiness("cm-lead", charmer.readiness.READY),)
         with self.records(), mock.patch.object(type(self.runtime), "profile_readiness",
                                                lambda _runtime, names, observations=None:
                                                {name: ready for name in names if name == a}):
@@ -1426,7 +1426,7 @@ class ProfilePickOrderTests(_CardCase):
                 "created_at": "2026-07-20T00:00:00Z",
                 "last_seen_at": seen,
             })
-        return mock.patch('claude_multi.cli.session_facts._session_records', return_value=out)
+        return mock.patch('charmer.cli.session_facts._session_records', return_value=out)
 
     def order(self) -> list[str]:
         return cli.profile_pick_order(self.runtime)
@@ -1557,7 +1557,7 @@ class CardSessionsKeyTests(_CardCase):
 
     def test_s_on_the_resume_card_opens_the_sessions_screen(self) -> None:
         _record, prepared = self.resume_prepared(change=self.change_a_writer_effort)
-        with mock.patch('claude_multi.cli.screens.launch_sessions._SessionsScreen', wraps=cli._SessionsScreen) as spy:
+        with mock.patch('charmer.cli.screens.launch_sessions._SessionsScreen', wraps=cli._SessionsScreen) as spy:
             result, win = self.run_card(self.resume_card(prepared), ["s", ESC, ESC])
         self.assertIsNone(result)
         spy.assert_called_once()
@@ -1576,11 +1576,11 @@ class CardResumeKeyTests(_CardCase):
             screen.card.keys,
             (("Enter", "resume"), ("V", "details"), ("S", "sessions"), ("H", "doctor"), ("?", "help"), ("Esc", "cancel")),
         )
-        with mock.patch('claude_multi.cli.screens.providers.run_providers_screen') as providers, \
-                mock.patch('claude_multi.cli.screens.models.run_models_screen') as models, \
-                mock.patch('claude_multi.cli.screens.settings.run_settings_screen') as settings_, \
-                mock.patch('claude_multi.cli.screens.direct.run_direct_screen') as direct, \
-                mock.patch.object(claude_multi.tui, "ProfileEditorScreen") as editor:
+        with mock.patch('charmer.cli.screens.providers.run_providers_screen') as providers, \
+                mock.patch('charmer.cli.screens.models.run_models_screen') as models, \
+                mock.patch('charmer.cli.screens.settings.run_settings_screen') as settings_, \
+                mock.patch('charmer.cli.screens.direct.run_direct_screen') as direct, \
+                mock.patch.object(charmer.tui, "ProfileEditorScreen") as editor:
             result, win = self.run_card(screen, ["t", "c", "r", "p", "d", "g", "m", "o", "e", TAB, BTAB, ESC])
         self.assertIsNone(result)
         for called in (providers, models, settings_, direct, editor):
@@ -1590,7 +1590,7 @@ class CardResumeKeyTests(_CardCase):
 
     def test_e_is_inert_on_a_resume_card_and_never_opens_the_editor(self) -> None:
         _record, prepared = self.resume_prepared(change=self.change_a_writer_effort)
-        with mock.patch.object(claude_multi.tui, "ProfileEditorScreen") as editor:
+        with mock.patch.object(charmer.tui, "ProfileEditorScreen") as editor:
             result, _win = self.run_card(self.resume_card(prepared), ["e", "E", ESC])
         self.assertIsNone(result)
         editor.assert_not_called()
@@ -1704,7 +1704,7 @@ class CardInjectionTests(_CardCase):
             pid for pid, p in sorted(self.runtime.catalog.providers.items())
             if p["transport"]["kind"] == "direct"
         )
-        custom_mod = claude_multi.custom
+        custom_mod = charmer.custom
         custom_mod.add_model(
             self.runtime.environ, "card-hostile-line", wire_model="card-hostile-wire", provider=provider,
             context_tokens=262144, display="evil\x1b[2J\x07 display", created_via="manual",
@@ -1762,7 +1762,7 @@ class CardEntryTests(_CardCase):
     """Main's bare launch and ``_resume_flow`` route to the card when curses is OK."""
 
     # The dynamic patch names resolve to their owner modules.
-    OWNER_BY_NAME = {"launch_card": "claude_multi.cli.screens.launch_sessions"}
+    OWNER_BY_NAME = {"launch_card": "charmer.cli.screens.launch_sessions"}
 
     def main(self, argv, stdin="", **patches):
         out = io.StringIO()
@@ -1781,7 +1781,7 @@ class CardEntryTests(_CardCase):
             prepared = runtime.prepare(target, action="fresh", passthrough=list(kwargs["passthrough"]))
             return ("perform", prepared)
 
-        with mock.patch.object(claude_multi.tui, "streams_curses_capable", return_value=True):
+        with mock.patch.object(charmer.tui, "streams_curses_capable", return_value=True):
             code, _out = self.main([], launch_card=fake_card)
         self.assertEqual(code, 0)
         self.assertEqual(len(calls), 1)
@@ -1793,18 +1793,18 @@ class CardEntryTests(_CardCase):
         self.assertEqual(len(self.runtime.launches), 1)
 
     def test_esc_prints_nothing_was_launched(self) -> None:
-        with mock.patch.object(claude_multi.tui, "streams_curses_capable", return_value=True):
+        with mock.patch.object(charmer.tui, "streams_curses_capable", return_value=True):
             code, out = self.main([], launch_card=lambda *a, **k: None)
         self.assertEqual(code, 0)
         self.assertIn("Nothing was launched.", out)
         self.assertEqual(self.runtime.launches, [])
 
     def test_line_flag_and_curses_failure_take_the_line_confirm(self) -> None:
-        with mock.patch.object(claude_multi.tui, "streams_curses_capable", return_value=True):
+        with mock.patch.object(charmer.tui, "streams_curses_capable", return_value=True):
             code, out = self.main(["--line"], "q\n", launch_card=mock.Mock(side_effect=AssertionError("curses")))
             self.assertEqual(code, 0)
             self.assertIn("Enter launch · q quit: ", out)
-            code, out = self.main([], "q\n", launch_card=mock.Mock(side_effect=claude_multi.tui.CursesError("boom")))
+            code, out = self.main([], "q\n", launch_card=mock.Mock(side_effect=charmer.tui.CursesError("boom")))
         self.assertEqual(code, 0)
         self.assertIn("Enter launch · q quit: ", out)
         self.assertEqual(self.runtime.launches, [])
@@ -1820,23 +1820,23 @@ class CardEntryTests(_CardCase):
         self.assertNotIn("q quit", out)
 
     def test_interrupt_exits_130_and_says_nothing_was_launched(self) -> None:
-        with mock.patch.object(claude_multi.tui, "streams_curses_capable", return_value=True), \
+        with mock.patch.object(charmer.tui, "streams_curses_capable", return_value=True), \
                 contextlib.redirect_stderr(io.StringIO()) as err:
             code, _out = self.main([], launch_card=mock.Mock(side_effect=KeyboardInterrupt))
         self.assertEqual(code, 130)
         self.assertIn("cancelled — nothing was launched", err.getvalue())
 
     def test_launch_card_reraises_a_curses_start_failure(self) -> None:
-        with mock.patch.object(claude_multi.tui, "run_curses_on_streams", side_effect=claude_multi.tui.CursesError("no tty")):
-            with self.assertRaises(claude_multi.tui.CursesError):
+        with mock.patch.object(charmer.tui, "run_curses_on_streams", side_effect=charmer.tui.CursesError("no tty")):
+            with self.assertRaises(charmer.tui.CursesError):
                 cli.launch_card(self.runtime, self.target(self.runtime), action="fresh", passthrough=[],
                                 input_stream=io.StringIO(), output_stream=io.StringIO(), no_color=True)
 
         def started_then_failed(app, *_a, **_k):
-            with mock.patch('claude_multi.cli.screens.launch_sessions._LaunchCardScreen.run', side_effect=OSError("mid-session")):
+            with mock.patch('charmer.cli.screens.launch_sessions._LaunchCardScreen.run', side_effect=OSError("mid-session")):
                 app(FakeWindow([]))
 
-        with mock.patch.object(claude_multi.tui, "run_curses_on_streams", side_effect=started_then_failed):
+        with mock.patch.object(charmer.tui, "run_curses_on_streams", side_effect=started_then_failed):
             with self.assertRaises(cli.CLIError):
                 cli.launch_card(self.runtime, self.target(self.runtime), action="fresh", passthrough=[],
                                 input_stream=io.StringIO(), output_stream=io.StringIO(), no_color=True)
@@ -1860,8 +1860,8 @@ class CardEntryTests(_CardCase):
             passthrough=[], interactive=True, confirm=True, input_stream=io.StringIO("q\n"),
             output_stream=io.StringIO(), report_stream=io.StringIO(), force=True, print_launch=False,
         )
-        with mock.patch.object(claude_multi.tui, "streams_curses_capable", return_value=True), \
-                mock.patch('claude_multi.cli.screens.launch_sessions.launch_card', fake_card):
+        with mock.patch.object(charmer.tui, "streams_curses_capable", return_value=True), \
+                mock.patch('charmer.cli.screens.launch_sessions.launch_card', fake_card):
             self.assertEqual(cli._resume_flow(self.runtime, fx.FIXED_ID, **common), 0)
             self.assertEqual(seen, [], "the default line=True keeps the line confirm")
             self.assertEqual(self.runtime.launches, [])
@@ -1908,7 +1908,7 @@ class CardQuotaScreenTests(_CardCase):
         """V details on a resume card name the
         resume remedy only, and Per-slot readiness carries the exact legend."""
 
-        from claude_multi import readiness
+        from charmer import readiness
 
         _record, prepared = self.resume_prepared()
         lines = self.details_lines(self.resume_card(prepared, now=fx.FIXED_NOW))

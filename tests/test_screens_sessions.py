@@ -24,15 +24,15 @@ from datetime import timedelta
 from pathlib import Path
 from unittest import mock
 
-from claude_multi import catalog, cli, custom, lineup, profile, scope, sessions, tui, views
+from charmer import catalog, cli, custom, lineup, profile, scope, sessions, tui, views
 
 import _tui_fixture as fx
 import _v3
 from test_tui import BTAB, DOWN, END, HOME, LEFT, RIGHT, UP, FakeWindow
-import claude_multi.launch
-import claude_multi.lineup
-import claude_multi.tui
-import claude_multi.cli.text as cli_text
+import charmer.launch
+import charmer.lineup
+import charmer.tui
+import charmer.cli.text as cli_text
 
 SPEC = "the sessions screen contract"
 ESC = "\x1b"
@@ -58,7 +58,7 @@ class _SessionsCase(unittest.TestCase):
         stack = contextlib.ExitStack()
         self.addCleanup(stack.close)
         stack.enter_context(fx.hermetic(runtime))
-        stack.enter_context(mock.patch('claude_multi.cli.gateway_facts._doctor_now', lambda: fx.FIXED_NOW))
+        stack.enter_context(mock.patch('charmer.cli.gateway_facts._doctor_now', lambda: fx.FIXED_NOW))
         runtime.profiles.install_seeds()
         return runtime
 
@@ -311,7 +311,7 @@ class SessionsRowTests(_SessionsCase):
         self.assertEqual((screen.selected, screen.offset), (0, 0))
         self.assertIn("C all dirs", self.frame(screen))
         self.assertLessEqual(tui.KeyBar(cli.SESSIONS_KEYBAR).rows(80), 2)
-        import claude_multi.cli.text as text
+        import charmer.cli.text as text
         self.assertLessEqual(tui.KeyBar(text.SESSIONS_KEYBAR_ALL).rows(80), 2)
         self.assertTrue(screen.cwd_filter)
         self.assertEqual(screen.message, "showing only this directory")
@@ -488,11 +488,11 @@ class SessionsEntryTests(_SessionsCase):
             calls.append(win)
             return app(win)
 
-        return mock.patch.object(claude_multi.tui, "run_curses_on_streams", side_effect=run), calls
+        return mock.patch.object(charmer.tui, "run_curses_on_streams", side_effect=run), calls
 
     def main(self, argv, text=""):
         output = io.StringIO()
-        with mock.patch.object(claude_multi.tui, "streams_curses_capable", return_value=True):
+        with mock.patch.object(charmer.tui, "streams_curses_capable", return_value=True):
             code = cli.main(argv, runtime=self.runtime, input_stream=io.StringIO(text),
                             output_stream=output, interactive=True)
         return code, output.getvalue()
@@ -541,7 +541,7 @@ class SessionsEntryTests(_SessionsCase):
         record = self.v3_record(ordinary=True, managed_id=fx.FIXED_ID)
         self.transcript(record)
         screen = self.screen()
-        with self.healthy_card(), mock.patch('claude_multi.cli.screens.launch_sessions._LaunchCardScreen._gateway_status', lambda _s: None):
+        with self.healthy_card(), mock.patch('charmer.cli.screens.launch_sessions._LaunchCardScreen._gateway_status', lambda _s: None):
             result, win = self.run_screen(screen, [ENTER, ENTER])
         self.assertEqual(result[0], "perform")
         prepared = result[1]
@@ -571,7 +571,7 @@ class SessionsEntryTests(_SessionsCase):
 
     def test_line_flag_keeps_the_line_flows(self) -> None:
         self.record()
-        with mock.patch('claude_multi.cli.screens.launch_sessions._sessions_list_tui') as screen:
+        with mock.patch('charmer.cli.screens.launch_sessions._sessions_list_tui') as screen:
             code, output = self.main(["--line", "-r"], "\n")
             self.assertEqual(code, 0, output)
             self.assertIn("resume which session (number, Enter cancels): ", output)
@@ -609,7 +609,7 @@ class SessionsEntryTests(_SessionsCase):
 
     def test_curses_start_failure_falls_back_to_the_line_chooser(self) -> None:
         self.record()
-        with mock.patch.object(claude_multi.tui, "run_curses_on_streams", side_effect=claude_multi.tui.CursesError("no tty")):
+        with mock.patch.object(charmer.tui, "run_curses_on_streams", side_effect=charmer.tui.CursesError("no tty")):
             code, output = self.main(["-r"], "\n")
         self.assertEqual(code, 0, output)
         self.assertIn("resume which session (number, Enter cancels): ", output)
@@ -656,7 +656,7 @@ class ResumeGateModalTests(_SessionsCase):
             binding["effort"] = next(e for e in efforts if e != binding["effort"])
 
         self.runtime.profiles.update(catalog.DEFAULT_SEED, mutate)
-        with self.healthy_card(), mock.patch('claude_multi.cli.screens.launch_sessions._LaunchCardScreen._gateway_status', lambda _s: None):
+        with self.healthy_card(), mock.patch('charmer.cli.screens.launch_sessions._LaunchCardScreen._gateway_status', lambda _s: None):
             result, win = self.run_screen(self.screen(), [ENTER, ESC, ESC])
         self.assertIsNone(result)
         self.assertTrue(any("Enter resume" in frame for frame in win.frames), "the resume card")
@@ -713,7 +713,7 @@ class ResumeGateModalTests(_SessionsCase):
 
     def test_needs_choice_gate_opens_the_chooser(self) -> None:
         self.record(needs_choice=True)
-        with mock.patch('claude_multi.cli.screens.launch_sessions._run_resume_gate_modal') as gate_modal:
+        with mock.patch('charmer.cli.screens.launch_sessions._run_resume_gate_modal') as gate_modal:
             result, win = self.run_screen(self.screen(), [ENTER, ESC, ESC])
         self.assertIsNone(result)
         gate_modal.assert_not_called()
@@ -835,7 +835,7 @@ class SessionsLineupTests(_SessionsCase):
         name = self.live_seed()
         dialog = self.dialog()
         self.to(dialog, name)
-        with mock.patch.object(claude_multi.lineup, "apply", return_value=lineup.ApplyResult("done\n")) as apply:
+        with mock.patch.object(charmer.lineup, "apply", return_value=lineup.ApplyResult("done\n")) as apply:
             self.assertTrue(dialog.run(FakeWindow([ENTER, ENTER])))
         args = apply.call_args.args[1]
         self.assertEqual(args, lineup.LineupArgs(False, sessions.runtime_session_id(dialog.record), False, False,
@@ -886,7 +886,7 @@ class SessionsLineupTests(_SessionsCase):
         self.assertTrue(dialog.errors)
         text = self.frame(dialog)
         self.assertIn("✗", text)
-        with mock.patch.object(claude_multi.lineup, "apply") as apply:
+        with mock.patch.object(charmer.lineup, "apply") as apply:
             self.assertIsNone(dialog.run(FakeWindow([ENTER, ESC])))
         apply.assert_not_called()
         self.assertEqual(dialog.message, cli.LINEUP_NOTHING)
@@ -897,7 +897,7 @@ class SessionsLineupTests(_SessionsCase):
         self.to(dialog, catalog.DEFAULT_SEED)
         self.assertEqual(dialog.diff, [])
         self.assertIn("diff  (no change)", self.frame(dialog))
-        with mock.patch.object(claude_multi.lineup, "apply") as apply:
+        with mock.patch.object(charmer.lineup, "apply") as apply:
             self.assertIsNone(dialog.run(FakeWindow([ENTER, ESC])))
         apply.assert_not_called()
 
@@ -905,7 +905,7 @@ class SessionsLineupTests(_SessionsCase):
         self.record()
         dialog = self.dialog()
         self.to(dialog, self.live_seed())
-        with mock.patch.object(claude_multi.lineup, "apply", side_effect=lineup.LineupRefusal("R-99 refused")):
+        with mock.patch.object(charmer.lineup, "apply", side_effect=lineup.LineupRefusal("R-99 refused")):
             win = FakeWindow([ENTER, ESC])
             self.assertIsNone(dialog.run(win))
         self.assertIn("R-99 refused", win.frames[-1])
@@ -956,7 +956,7 @@ class SessionsLineupTests(_SessionsCase):
         self.record()
         dialog = self.dialog()
         agent = catalog.AGENT_ROLE_IDS[0]
-        with mock.patch.object(claude_multi.tui.BindingPicker, "run", return_value=("bind", self.default_lead(), "high")):
+        with mock.patch.object(charmer.tui.BindingPicker, "run", return_value=("bind", self.default_lead(), "high")):
             dialog.run(FakeWindow([TAB, SPACE, ENTER, ESC], height=30))
         self.assertEqual(dialog.agent_words, ["set", f"{agent}={self.default_lead()}:high"])
         self.assertEqual(dialog.request.verb, "set")
@@ -972,7 +972,7 @@ class SessionsLineupTests(_SessionsCase):
 
     def test_t_on_a_v3_row_shows_the_2x_message_and_opens_nothing(self) -> None:
         self.v3_record()
-        with mock.patch('claude_multi.cli.screens.launch_sessions._LineupDialog') as dialog:
+        with mock.patch('charmer.cli.screens.launch_sessions._LineupDialog') as dialog:
             result, win = self.run_screen(self.screen(), ["t", ESC])
         self.assertIsNone(result)
         dialog.assert_not_called()
@@ -1244,7 +1244,7 @@ class SessionsStopTests(_SessionsCase):
     def test_e_stops_a_live_row(self) -> None:
         record = self.record()
         self.runtime.live_prefixes = frozenset({sessions.runtime_session_id(record)[:8]})
-        with mock.patch('claude_multi.cli.session_actions._stop_runtime', return_value=None) as stop:
+        with mock.patch('charmer.cli.session_actions._stop_runtime', return_value=None) as stop:
             result, win = self.run_screen(self.screen(), ["e", RIGHT, ENTER, ESC])
         self.assertIsNone(result)
         stop.assert_called_once()
@@ -1255,14 +1255,14 @@ class SessionsStopTests(_SessionsCase):
     def test_enter_on_the_stop_modal_cancels_by_default(self) -> None:
         record = self.record()
         self.runtime.live_prefixes = frozenset({sessions.runtime_session_id(record)[:8]})
-        with mock.patch('claude_multi.cli.session_actions._stop_runtime', return_value=None) as stop:
+        with mock.patch('charmer.cli.session_actions._stop_runtime', return_value=None) as stop:
             _result, win = self.run_screen(self.screen(), ["e", ENTER, ESC])
         stop.assert_not_called()
         self.assertIn("Stop cancelled.", win.frames[-1])
 
     def test_e_on_a_row_not_live_is_a_message(self) -> None:
         self.record()
-        with mock.patch('claude_multi.cli.session_actions._stop_runtime') as stop:
+        with mock.patch('charmer.cli.session_actions._stop_runtime') as stop:
             _result, win = self.run_screen(self.screen(), ["e", ESC])
         stop.assert_not_called()
         self.assertIn("nothing to stop", win.frames[-1])
@@ -1289,7 +1289,7 @@ class SessionsLinkTests(_SessionsCase):
     def test_l_direct_uses_choose_mode_link_with_no_effort_field(self) -> None:
         self.native([self.NATIVE])
         labels, _choices = cli._profile_choice_items(self.runtime)
-        with mock.patch('claude_multi.cli.screens.direct.run_direct_screen', return_value=(self.default_lead(), None)) as direct:
+        with mock.patch('charmer.cli.screens.direct.run_direct_screen', return_value=(self.default_lead(), None)) as direct:
             result, _win = self.run_screen(self.screen(), ["l", ENTER, END, ENTER, ESC])
         self.assertIsNone(result)
         self.assertEqual(direct.call_args.kwargs["purpose"], "link")
@@ -1317,7 +1317,7 @@ class NeedsChoiceChooserTests(_SessionsCase):
     def test_banner_then_chooser_prepares_a_relaunch_target(self) -> None:
         self.record(managed_id=fx.FIXED_ID, needs_choice=True)
         first = cli.profile_pick_order(self.runtime)[0]
-        with self.healthy_card(), mock.patch('claude_multi.cli.screens.launch_sessions._LaunchCardScreen._gateway_status', lambda _s: None), \
+        with self.healthy_card(), mock.patch('charmer.cli.screens.launch_sessions._LaunchCardScreen._gateway_status', lambda _s: None), \
                 mock.patch.object(self.runtime, "prepare", wraps=self.runtime.prepare) as prepare:
             result, win = self.run_screen(self.screen(), [END, ENTER, ENTER, ENTER])
         target = prepare.call_args.args[0]
@@ -1341,7 +1341,7 @@ class NeedsChoiceChooserTests(_SessionsCase):
     def test_direct_choice_builds_an_ad_hoc_relaunch_target(self) -> None:
         self.record(needs_choice=True)
         key = self.default_lead()
-        with mock.patch('claude_multi.cli.screens.direct.run_direct_screen', return_value=(key, "ultracode")) as direct, \
+        with mock.patch('charmer.cli.screens.direct.run_direct_screen', return_value=(key, "ultracode")) as direct, \
                 mock.patch.object(self.runtime, "prepare", side_effect=cli.LaunchPlanError(["boom"])) as prepare:
             result, win = self.run_screen(self.screen(), [ENTER, END, ENTER, ESC, ESC])
         self.assertIsNone(result)

@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from claude_multi import managed, strict_json
+from charmer import managed, strict_json
 
 
 class ManagedSettingsTests(unittest.TestCase):

@@ -27,7 +27,7 @@ from pathlib import Path
 from types import MappingProxyType
 from unittest import mock
 
-from claude_multi import (
+from charmer import (
     catalog,
     cli,
     migrate,
@@ -43,7 +43,7 @@ from _catalog import FIXTURE_ROOT, GOLDENS_ROOT, SHIPPED_ROOT, uses_shipped_cata
 from _layout import REPO_ROOT
 from _golden import assertGolden
 from test_migrate import NOW, _cli_environ, _local_cat, _retired_entry, v3_managed
-import claude_multi.sessions
+import charmer.sessions
 
 BUNDLE = catalog.load_catalog(FIXTURE_ROOT)
 LCAT = profile.LineupCatalog.from_docs(BUNDLE.docs)
@@ -51,7 +51,7 @@ COMP_SCHEMA = strict_json.load(FIXTURE_ROOT / "schemas" / "composition.schema.js
 VERSION_DOC = BUNDLE.docs["version"]
 CATALOG32 = REPO_ROOT / "tests" / "fixtures" / "catalog32-models.json"
 GOLDENS = GOLDENS_ROOT / "v4" / "profile-migrate"
-SOURCE = REPO_ROOT / "src" / "claude_multi" / "migrate_profiles.py"
+SOURCE = REPO_ROOT / "src" / "charmer" / "migrate_profiles.py"
 CONFIG_PLACEHOLDER = "/config"
 
 
@@ -283,8 +283,8 @@ class HomeCase(unittest.TestCase):
 
         out = io.StringIO()
         with mock.patch.dict(os.environ, environ), \
-                mock.patch('claude_multi.cli.runtime.Runtime', side_effect=runtime_factory), \
-                mock.patch.object(claude_multi.sessions, "state_root", return_value=self.state_root), \
+                mock.patch('charmer.cli.runtime.Runtime', side_effect=runtime_factory), \
+                mock.patch.object(charmer.sessions, "state_root", return_value=self.state_root), \
                 mock.patch.object(mm, "PRESET_TARGETS", MappingProxyType(self.targets)), \
                 mock.patch.object(mm, "CONVERT_RULES", MappingProxyType(self.rules)), \
                 contextlib.redirect_stderr(io.StringIO()) as errors:

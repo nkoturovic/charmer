@@ -20,9 +20,9 @@ from pathlib import Path
 from unittest import mock
 
 from _catalog import FIXTURE_ROOT
-from claude_multi import catalog, cli, endpoint, gateway_lifecycle as gl, migrate, service, sessions
-from claude_multi.platform import darwin_process, observation
-import claude_multi.cli.session_actions as session_actions
+from charmer import catalog, cli, endpoint, gateway_lifecycle as gl, migrate, service, sessions
+from charmer.platform import darwin_process, observation
+import charmer.cli.session_actions as session_actions
 from test_gateway_lifecycle import World, _Lifecycle
 from test_migrate import LCAT, M1, RUNTIME, SCHEMA, _cli_environ, _write_raw, v3_managed
 
@@ -225,7 +225,7 @@ class MacOSSessionJourneys(unittest.TestCase):
         self.environ = _cli_environ(self.tmp)
         self.store = sessions.SessionStore(sessions.state_root(self.environ), SCHEMA)
         hook = "/fixture/bin/claude-multi"
-        from claude_multi import scope
+        from charmer import scope
 
         shim = scope.ensure_hook_shim(self.store.root, hook)
         _write_raw(self.store, v3_managed(M1, last_event_source="resume"))

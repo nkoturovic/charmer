@@ -28,7 +28,7 @@ from unittest import mock
 
 from _catalog import FIXTURE_GATEWAY_TOKEN, FIXTURE_ROOT
 from _layout import SERVICE_SPEC
-from claude_multi import catalog, probe, proxy, render, state
+from charmer import catalog, probe, proxy, render, state
 import _gateway_harness as harness
 
 PROBES_ENV = "CLAUDE_MULTI_TEST_GATEWAY_LIFECYCLE_PROBES"

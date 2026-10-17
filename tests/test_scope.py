@@ -10,8 +10,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from claude_multi import catalog, compiler, layout, scope, state, strict_json
-from claude_multi.scope import ScopeError
+from charmer import catalog, compiler, layout, scope, state, strict_json
+from charmer.scope import ScopeError
 from _catalog import FIXTURE_ROOT, GOLDENS_ROOT
 from _golden import assertGolden
 from _layout import REPO_ROOT
@@ -283,7 +283,7 @@ class HookShimTests(unittest.TestCase):
         """The money test on the v2 path: a
         rebuilt package (new store path) must not change the compiled scope
         bytes for the same lineup — only the protocol-3 shim's target moves."""
-        from claude_multi import profile, settings
+        from charmer import profile, settings
 
         bundle = _bundle()
         lcat = profile.LineupCatalog.from_docs(bundle.docs)

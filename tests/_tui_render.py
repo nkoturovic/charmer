@@ -30,7 +30,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterator
 from unittest import mock
 
-from claude_multi import catalog, cli, profile, proxy, tui, views
+from charmer import catalog, cli, profile, proxy, tui, views
 
 import _tui_fixture as fx
 from test_tui import FakeWindow
@@ -73,7 +73,7 @@ def golden_runtime(root: Path, **kwargs: Any) -> Iterator[fx.ScreenRuntime]:
     token = proxy.config_dir(runtime.home) / "api-key"
     stamp = fx.FIXED_NOW.timestamp()
     os.utime(token, (stamp, stamp))
-    with fx.hermetic(runtime), mock.patch('claude_multi.cli.gateway_facts._doctor_now', lambda: fx.FIXED_NOW):
+    with fx.hermetic(runtime), mock.patch('charmer.cli.gateway_facts._doctor_now', lambda: fx.FIXED_NOW):
         yield runtime
 
 
@@ -415,8 +415,8 @@ def onboarding_actions(keys: list[str], *, listing: Callable[..., bytes] | None 
     human guard itself is not under test here)."""
 
     import test_onboarding_isolation as journeys
-    import claude_multi.cli.consent as consent
-    import claude_multi.cli.screens.common as common
+    import charmer.cli.consent as consent
+    import charmer.cli.screens.common as common
 
     case = journeys.JourneyFixture()
     case.setUp()
@@ -468,7 +468,7 @@ def listing_unavailable_golden(root: Path) -> str:
 
 def qualification_consent_golden(root: Path, *, pool=False) -> str:
     import test_qualify as q
-    from claude_multi import qualify
+    from charmer import qualify
     plan = q._plan(provider=q.POOL if pool else q.PROVIDER,
                    entry=q._entry(["high"], selector="claude-fixture-9") if pool else q._entry())
     return render(lambda: tui.TextView("Confirm explicit action", qualify.consent_text(plan).splitlines(), confirm=True))
@@ -551,9 +551,9 @@ def operator_lifecycle_golden(root: Path, *, state: str) -> str:
         if state == "changed":
             key = case.declare()
             case.invoke(["models", "admit", key])
-            import claude_multi.cli.onboarding as onboarding
+            import charmer.cli.onboarding as onboarding
             edited = dict(case.line(), roles="all")
-            with mock.patch("claude_multi.cli.consent.stdio_ttys", return_value=True):
+            with mock.patch("charmer.cli.consent.stdio_ttys", return_value=True):
                 onboarding.edit_line(case.runtime, key, edited, confirm=lambda text: True, output=io.StringIO())
         else:
             case.op([*test_cli.ACME_ADD, "--declare-only"])
@@ -571,8 +571,8 @@ def operator_lifecycle_golden(root: Path, *, state: str) -> str:
 
 def admission_checklist_golden(root: Path) -> str:
     import test_onboarding_isolation as journeys
-    import claude_multi.cli.screens.common as common
-    import claude_multi.cli.consent as consent
+    import charmer.cli.screens.common as common
+    import charmer.cli.consent as consent
     case = journeys.JourneyFixture()
     case.setUp()
     try:
@@ -581,7 +581,7 @@ def admission_checklist_golden(root: Path) -> str:
         seen = []
         action.confirm = lambda text: seen.append(text) or False
         action.show = lambda *args: None
-        import claude_multi.cli.commands.models as models
+        import charmer.cli.commands.models as models
         identity = models.render_identity(case.runtime)
         # The render hashes an auth-dir under a disposable HOME. Fix this
         # observation input, not the rendered screenshot bytes.
@@ -596,8 +596,8 @@ def admission_checklist_golden(root: Path) -> str:
 def candidates_detail_golden(root: Path, *, kind: str) -> str:
     """Candidate details through the production Models details action."""
     import test_discovery
-    from claude_multi import launch
-    import claude_multi.cli.gateway_facts as facts
+    from charmer import launch
+    import charmer.cli.gateway_facts as facts
     fixture = test_discovery.CandidateTests()
     fixture.setUp()
     try:
@@ -618,11 +618,11 @@ def candidates_detail_golden(root: Path, *, kind: str) -> str:
 
 def route_consent_golden(root: Path) -> str:
     import test_cli
-    import claude_multi.cli.screens.common as common
+    import charmer.cli.screens.common as common
     with onboarding_actions([ESC, ESC]) as (case, action, win):
         case.op([*test_cli.ACME_ADD, "--declare-only"])
         action.confirm = lambda text: common.OnboardingActions.confirm(action, text)
-        from claude_multi import served_plan
+        from charmer import served_plan
         # Stable preview identity input; no golden byte post-processing.
         with mock.patch.object(served_plan, "_digest", return_value="e" * 64):
             action.invoke(["providers", "approve", "acme"])
@@ -632,7 +632,7 @@ def route_consent_golden(root: Path) -> str:
 def changed_route_refusal_golden(root: Path) -> str:
     import json
     import test_cli
-    from claude_multi import state
+    from charmer import state
     with onboarding_actions([ESC]) as (case, action, win):
         case.op(test_cli.ACME_ADD, "y\n")
         case.op(test_cli.SMALL_ADD)
@@ -645,8 +645,8 @@ def changed_route_refusal_golden(root: Path) -> str:
 
 
 def qualification_stale_golden(root: Path) -> str:
-    from claude_multi import qualify
-    import claude_multi.cli.onboarding as onboarding
+    from charmer import qualify
+    import charmer.cli.onboarding as onboarding
     with onboarding_actions([ESC]) as (case, action, win):
         key = case.declare()
         case.invoke(["models", "admit", key])
@@ -758,7 +758,7 @@ def forget_typed_golden(root: Path) -> str:
     """Sessions X while background liveness cannot be observed: the typed
     session id dialog (Cancel follows the field)."""
 
-    from claude_multi import sessions
+    from charmer import sessions
 
     with golden_runtime(root) as runtime:
         runtime.profiles.install_seeds()

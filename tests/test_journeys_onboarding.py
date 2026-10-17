@@ -64,7 +64,7 @@ def child_runtime(root: Path, launch: Any, options: dict[str, Any]) -> Any:
     observed) and, for sign-ins, the fake gateway login program."""
 
     import _tui_fixture as fx
-    from claude_multi import state
+    from charmer import state
     from test_screens_card_onboarding import disconnect
 
     environ = dict(options.get("env") or {})
@@ -87,7 +87,7 @@ def child_runtime(root: Path, launch: Any, options: dict[str, Any]) -> Any:
         serve_render(runtime)
     if options.get("lan_reachable"):
         # A server on your network answers the short reachability probe.
-        from claude_multi.cli import gateway_facts
+        from charmer.cli import gateway_facts
 
         runtime.lan_probe = lambda url: gateway_facts.LanReachability("reachable", gateway_facts.lan_host(url),
                                                                       "fixture")
@@ -98,7 +98,7 @@ def serve_render(runtime: Any) -> None:
     """The fixture gateway serves the current render too (its sentinel and
     every alias), as the running gateway does after the reload that wrote it."""
 
-    from claude_multi.cli import gateway_facts
+    from charmer.cli import gateway_facts
 
     real = runtime.served_models_callback
     busy: list[bool] = []
@@ -127,8 +127,8 @@ def child_patches(runtime: Any, options: dict[str, Any]) -> Iterator[contextlib.
     (the stack is yielded so a journey's setup can add its own seams)."""
 
     import _tui_fixture as fx
-    from claude_multi import proxy
-    from claude_multi.setup import external
+    from charmer import proxy
+    from charmer.setup import external
 
     reload = options.get("reload", "reloaded")
     with contextlib.ExitStack() as stack:
@@ -137,7 +137,7 @@ def child_patches(runtime: Any, options: dict[str, Any]) -> Iterator[contextlib.
             # The reviewed server presets ship with the product (the fixture
             # assets carry none).
             from _catalog import SHIPPED_ROOT
-            from claude_multi import operator as operator_mod
+            from charmer import operator as operator_mod
 
             paths, load = operator_mod.preset_paths, operator_mod.load_preset
             stack.enter_context(mock.patch.object(operator_mod, "preset_paths",
@@ -162,7 +162,7 @@ def secret_name(runtime: Any, provider_id: str) -> str:
 def put_key(runtime: Any, provider_id: str, value: str) -> None:
     """A key already saved before the journey (written to the key file)."""
 
-    from claude_multi import state
+    from charmer import state
 
     path = Path(runtime.environ["CLAUDE_MULTI_SECRET_ENV"])
     lines = [line for line in path.read_text(encoding="utf-8").splitlines() if line]
@@ -173,7 +173,7 @@ def put_key(runtime: Any, provider_id: str, value: str) -> None:
 def put_key_name(runtime: Any, name: str, value: str) -> None:
     """A key under ``name`` in the key file (a provider you add reads it)."""
 
-    from claude_multi import state
+    from charmer import state
 
     path = Path(runtime.environ["CLAUDE_MULTI_SECRET_ENV"])
     lines = [line for line in path.read_text(encoding="utf-8").splitlines() if line]
@@ -192,7 +192,7 @@ def mirror_screen(log: Path) -> None:
     draw), so the parent can wait for a screen text whatever cursor moves
     curses chose to emit it with."""
 
-    from claude_multi import tui
+    from charmer import tui
 
     real = tui.safe_add
 
@@ -209,8 +209,8 @@ import io, json, sys
 from pathlib import Path
 from unittest import mock
 import test_journeys_onboarding as journeys
-from claude_multi import choices
-from claude_multi.cli import entry
+from charmer import choices
+from charmer.cli import entry
 journeys.mirror_screen(Path({screen!r}))
 
 def fake(prepared):
@@ -326,14 +326,14 @@ class JourneyCase(unittest.TestCase):
             yield runtime
 
     def picker_index(self, entry_id: str, options: dict[str, Any] | None = None) -> int:
-        from claude_multi.setup import providers as layer
+        from charmer.setup import providers as layer
 
         with self.shape(options) as runtime:
             ids = [entry.id for entry in layer.picker_entries(runtime)]
         return ids.index(entry_id)
 
     def step_index(self, step_id: str) -> int:
-        from claude_multi.setup import status
+        from charmer.setup import status
 
         return list(status.STEP_ORDER).index(step_id)
 
@@ -400,7 +400,7 @@ class JourneyCase(unittest.TestCase):
 
 class FirstRunJourneys(JourneyCase):
     def test_j1_openrouter_key(self) -> None:
-        from claude_multi.setup import texts
+        from charmer.setup import texts
 
         child = self.child()
         child.expect("claude-multi — Get started")
@@ -426,8 +426,8 @@ class FirstRunJourneys(JourneyCase):
     def starter_provider(self) -> str:
         """A provider with an API key, models and no shipped profile of its own."""
 
-        from claude_multi import catalog
-        from claude_multi.setup import providers as layer, texts
+        from charmer import catalog
+        from charmer.setup import providers as layer, texts
 
         with self.shape() as runtime:
             entries = [entry for entry in layer.picker_entries(runtime)
@@ -438,7 +438,7 @@ class FirstRunJourneys(JourneyCase):
         return entries[0].provider_id
 
     def test_j2_a_key_no_shipped_profile_fits_builds_the_starter(self) -> None:
-        from claude_multi.setup import texts
+        from charmer.setup import texts
 
         provider = self.starter_provider()
         child = self.child()
@@ -462,7 +462,7 @@ class FirstRunJourneys(JourneyCase):
         self.assertIn("DEFAULT=starter", output)
 
     def test_j3_anthropic_api_key(self) -> None:
-        from claude_multi.cli import text as cli_text
+        from charmer.cli import text as cli_text
 
         child = self.child()
         child.expect("claude-multi — Get started")
@@ -482,8 +482,8 @@ class FirstRunJourneys(JourneyCase):
         self.finish(child)
 
     def test_j4_claude_account_sign_in(self) -> None:
-        from claude_multi.cli import text as cli_text
-        from claude_multi.setup import texts
+        from charmer.cli import text as cli_text
+        from charmer.setup import texts
 
         argv_log = self.tmp / "login-argv.jsonl"
         child = self.child(options={"login": self.login_launcher(FAKE_LOGIN_ARGV=str(argv_log))})
@@ -514,7 +514,7 @@ class FirstRunJourneys(JourneyCase):
         self.assertTrue(any("--claude-login" in run and "--no-browser" in run for run in argv), argv)
 
     def test_j5_chatgpt_account_device_sign_in(self) -> None:
-        from claude_multi.cli import text as cli_text
+        from charmer.cli import text as cli_text
 
         child = self.child(options={"login": self.login_launcher()})
         child.expect("claude-multi — Get started")
@@ -578,7 +578,7 @@ class FirstRunJourneys(JourneyCase):
         return self.finish(child)
 
     def test_j6_your_anthropic_compatible_endpoint(self) -> None:
-        from claude_multi.cli import text as cli_text
+        from charmer.cli import text as cli_text
 
         key = "custom-vendorx-chat"
         child = self.child(setup=MODELS_CURSOR.format(key=key), options={"serve_render": True})
@@ -607,7 +607,7 @@ class FirstRunJourneys(JourneyCase):
         self.assertIn("DEFAULT=starter", output)
 
     def test_j7_a_server_on_your_network(self) -> None:
-        from claude_multi.cli import text as cli_text
+        from charmer.cli import text as cli_text
 
         key = "custom-homelab-chat"
         options = {"presets": True, "serve_render": True, "lan_reachable": True}
@@ -634,7 +634,7 @@ class FirstRunJourneys(JourneyCase):
         self.assertIn("DEFAULT=starter", output)
 
     def entry_ids(self, options: dict[str, Any]) -> list[str]:
-        from claude_multi.setup import providers as layer
+        from charmer.setup import providers as layer
 
         with self.shape(options) as runtime:
             return [entry.id for entry in layer.picker_entries(runtime)]
@@ -643,7 +643,7 @@ class FirstRunJourneys(JourneyCase):
 # The Models screen opens on the model the journey declared (its row depends
 # on the fixture catalog's other models).
 MODELS_CURSOR = """
-import claude_multi.cli.screens.models as models_screen
+import charmer.cli.screens.models as models_screen
 hinted = models_screen._ModelsScreen._hinted_key
 stack.enter_context(mock.patch.object(models_screen._ModelsScreen, "_hinted_key", lambda self: (
     {key!r} if {key!r} in self.keys else hinted(self))))
@@ -654,7 +654,7 @@ stack.enter_context(mock.patch.object(models_screen._ModelsScreen, "_hinted_key"
 
 
 MINE = """
-from claude_multi import catalog
+from charmer import catalog
 document = runtime.profiles.load(catalog.DEFAULT_SEED)
 document.pop("seed", None)
 document["name"] = "mine"
@@ -664,13 +664,13 @@ runtime.profiles.save(document)
 
 class FailureJourneys(JourneyCase):
     def test_f2a_a_refused_render_keeps_the_previous_key(self) -> None:
-        from claude_multi.setup import texts
+        from charmer.setup import texts
 
         setup = """
-            from claude_multi import errors
+            from charmer import errors
             import hashlib
-            import claude_multi.cli.screens.providers as providers
-            from claude_multi import tui
+            import charmer.cli.screens.providers as providers
+            from charmer import tui
             journeys.put_key(runtime, "openrouter", "old-journey-key")
             key_file = Path(runtime.environ["CLAUDE_MULTI_SECRET_ENV"])
             journeys.say("BEFORE", hashlib.sha256(key_file.read_bytes()).hexdigest())
@@ -700,8 +700,8 @@ class FailureJourneys(JourneyCase):
 
     def test_f2b_a_reload_that_needs_a_restart_says_so(self) -> None:
         setup = """
-            import claude_multi.cli.screens.providers as providers
-            from claude_multi import tui
+            import charmer.cli.screens.providers as providers
+            from charmer import tui
             journeys.put_key(runtime, "openrouter", "old-journey-key")
             rows = [row.id for row in providers._ProvidersScreen(runtime, palette=tui.MONO_PALETTE).rows]
             journeys.say("ROW", rows.index("openrouter"))
@@ -719,12 +719,12 @@ class FailureJourneys(JourneyCase):
         self.finish(child)
 
     def test_f1_a_changed_route_is_approved_again(self) -> None:
-        from claude_multi.cli import text as cli_text
+        from charmer.cli import text as cli_text
 
         setup = """
             import json
-            from claude_multi import operator as operator_mod, state, tui
-            import claude_multi.cli.screens.providers as providers
+            from charmer import operator as operator_mod, state, tui
+            import charmer.cli.screens.providers as providers
             import test_cli
             journeys.put_key(runtime, "openrouter", "journey-key")
             journeys.put_key_name(runtime, "ACME_API_KEY", "acme-journey-key")
@@ -751,11 +751,11 @@ class FailureJourneys(JourneyCase):
         self.finish(child)
 
     def test_f3_a_corrupt_profile_opens_a_blocked_card(self) -> None:
-        from claude_multi.cli import text as cli_text
+        from charmer.cli import text as cli_text
 
         setup = MINE, """
             import _tui_fixture as fx
-            from claude_multi import state
+            from charmer import state
             fx.v4_record(runtime, "mine", managed_id=fx.FIXED_ID)
             state.atomic_write(runtime.profiles.root / "mine.json", b'{\\n  "name": "mine",\\n  oops\\n}\\n')
         """
@@ -784,8 +784,8 @@ class FailureJourneys(JourneyCase):
         self.assertIn("BACKUPS=1", output)
 
     def test_f4_an_interrupted_sign_in_changes_nothing(self) -> None:
-        from claude_multi.cli import text as cli_text
-        from claude_multi.setup import texts
+        from charmer.cli import text as cli_text
+        from charmer.setup import texts
 
         after = """
         auth = Path(runtime.environ["HOME"]) / runtime.catalog.docs["gateway"]["gateway"]["auth_dir"]
@@ -815,11 +815,11 @@ class FailureJourneys(JourneyCase):
         self.assertIn("RECORDS=0", output)
 
     def test_f5_a_concurrent_edit_offers_reload(self) -> None:
-        from claude_multi import tui
+        from charmer import tui
 
         setup = MINE, """
             journeys.put_key(runtime, "openrouter", "journey-key")
-            from claude_multi.setup import profiles as setup_profiles
+            from charmer.setup import profiles as setup_profiles
             journeys.say("ROW", [row.name for row in setup_profiles.rows(runtime)].index("mine"))
             journeys.say("CONFIG", runtime.environ["XDG_CONFIG_HOME"])
         """
@@ -845,13 +845,13 @@ class FailureJourneys(JourneyCase):
         self.finish(child)
 
     def write_elsewhere(self, config: str, name: str, description: str) -> None:
-        from claude_multi import profile
+        from charmer import profile
 
         store = profile.ProfileStore(seeds={}, environ={"XDG_CONFIG_HOME": config, "HOME": str(self.tmp)})
         store.update(name, lambda doc: doc.update(description=description))
 
     def test_f6_inside_a_claude_session_nothing_opens(self) -> None:
-        from claude_multi.cli import text as cli_text
+        from charmer.cli import text as cli_text
 
         child = self.child(options={"env": {"CLAUDECODE": "1"}})
         child.expect("— profile: ")
@@ -868,7 +868,7 @@ class FailureJourneys(JourneyCase):
         return text[: text.find(needle)]
 
     def test_f7_over_ssh_the_address_method_is_preselected(self) -> None:
-        from claude_multi.cli import text as cli_text
+        from charmer.cli import text as cli_text
 
         argv_log = self.tmp / "login-argv.jsonl"
         child = self.child(options={"login": self.login_launcher(FAKE_LOGIN_ARGV=str(argv_log)),
@@ -891,7 +891,7 @@ class FailureJourneys(JourneyCase):
         self.assertIn("--no-browser", argv[0])
 
     def test_f8_line_mode_offers_setup_and_n_continues(self) -> None:
-        from claude_multi.setup import texts
+        from charmer.setup import texts
 
         child = self.child(argv=["--line"])
         child.expect_out(texts.LINE_NOT_CONNECTED)

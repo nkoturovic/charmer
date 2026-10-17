@@ -15,10 +15,10 @@ from unittest import mock
 
 import test_cli  # module import: no test classes re-exported
 import test_discovery  # module import: no test classes re-exported
-from claude_multi import catalog, cli, profile, readiness, sessions, state, strict_json
-from claude_multi.cli import doctor as doctor_mod
-from claude_multi.cli import gateway_facts, selection, session_facts
-from claude_multi.cli import types as cli_types
+from charmer import catalog, cli, profile, readiness, sessions, state, strict_json
+from charmer.cli import doctor as doctor_mod
+from charmer.cli import gateway_facts, selection, session_facts
+from charmer.cli import types as cli_types
 
 
 class _Case(test_cli.CLITestCase):
@@ -93,7 +93,7 @@ class ReadinessTests(_Case):
         prepared = self.prepare(readiness.SEED_ORDER[0])  # never a block
         self.assertIn(f"! {text}", prepared.notices)
         self.assertEqual(prepared.secret_problems, ())
-        from claude_multi import views
+        from charmer import views
 
         card = views.card_model(target=prepared.target, lineup=prepared.lineup, notices=prepared.notices)
         self.assertIn(f"! {text}", [row.text for row in card.rows if row.kind == "readiness"])

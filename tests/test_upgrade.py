@@ -17,10 +17,10 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from claude_multi import catalog, paths, pin, release_manifest, state, upgrade, validate
+from charmer import catalog, paths, pin, release_manifest, state, upgrade, validate
 from _catalog import FIXTURE_ROOT
 from _layout import REPO_ROOT, RESOURCES_RELATIVE, RESOURCES_ROOT
-from claude_multi.upgrade import UpgradeError
+from charmer.upgrade import UpgradeError
 
 
 FAKE_CLAUDE = """#!/bin/sh
@@ -336,13 +336,13 @@ class SettingsKeysInventoryTests(UpgradeTestCase):
         self.assertEqual(written["verified"][0]["settings_keys"], FAKE_SETTINGS_KEYS)
 
     def test_the_dev_command_reads_the_reviewed_list(self) -> None:
-        from claude_multi.cli.commands import repin as repin_cmd
+        from charmer.cli.commands import repin as repin_cmd
 
         path = self.write_keys(json.dumps(["apiKeyHelper", "env", "hooks", "model", "permissions"]))
         product = self._product_tree()
         with mock.patch.object(upgrade, "run_repin", return_value=upgrade.UpgradeOutcome(
                 kind="current", inspection=None, messages=())) as run, \
-                mock.patch("claude_multi.dev.verify_repo", return_value=product), \
+                mock.patch("charmer.dev.verify_repo", return_value=product), \
                 mock.patch.object(catalog, "load_raw", return_value={"docs": {"native-contract": self.contract}}):
             self.assertEqual(repin_cmd.repin({"settings-keys": str(path)}, environ=self.env,
                                              output_stream=io.StringIO()), 0)
@@ -357,7 +357,7 @@ class CandidateHandoffTests(UpgradeTestCase):
     re-pin found it."""
 
     def test_a_path_candidate_outside_the_versions_dirs_reaches_the_probes(self) -> None:
-        from claude_multi import probe
+        from charmer import probe
 
         custom = self.root / "custom-releases" / "2.1.218"
         custom.parent.mkdir()
@@ -1015,19 +1015,19 @@ class CheckoutContainmentTests(UpgradeTestCase):
 
     def test_the_default_checkout_needs_an_installation_tree(self) -> None:
         self.assertEqual(upgrade.default_checkout(), REPO_ROOT)
-        with mock.patch("claude_multi.layout.installation", return_value=None), \
+        with mock.patch("charmer.layout.installation", return_value=None), \
                 self.assertRaisesRegex(UpgradeError, "pass --repo PATH"):
             upgrade.default_checkout()
 
 
 class RunningReleaseTests(unittest.TestCase):
     def test_a_resource_override_never_redefines_the_running_release(self) -> None:
-        import claude_multi
+        import charmer
 
-        packaged = upgrade.ReleaseIdentity.from_root(claude_multi.resources_root())
+        packaged = upgrade.ReleaseIdentity.from_root(charmer.resources_root())
         with mock.patch.dict(os.environ, {"CLAUDE_MULTI_ASSETS": str(FIXTURE_ROOT)}):
             self.assertEqual(upgrade.running_release(), packaged)
-        self.assertEqual(packaged.launcher_version, claude_multi.__version__)
+        self.assertEqual(packaged.launcher_version, charmer.__version__)
 
 
 class RepoFileSymlinkTests(unittest.TestCase):
@@ -1576,8 +1576,8 @@ class ChangedPathsTests(UpgradeTestCase):
         result = self.repin(checkout_root=product, native_contract=self.contract,
                             today="2026-09-27", runner=self._runner(0), git=git)
         repo = product
-        # Checkout-relative paths: the resources sit under src/claude_multi/data.
-        paths = ["src/claude_multi/data/catalog/native-contract.json", "src/claude_multi/data/version.json",
+        # Checkout-relative paths: the resources sit under src/charmer/data.
+        paths = ["src/charmer/data/catalog/native-contract.json", "src/charmer/data/version.json",
                  "tests/test_catalog.py"]
         self.assertIn(f"changed in {repo}:", result.messages)
         self.assertIn("   M version.json", result.messages)
@@ -1613,8 +1613,8 @@ class RepinCommandTests(UpgradeTestCase):
     """``claude-multi-dev repin``: flags, the default checkout, no defaults."""
 
     def test_flags_are_checked_before_anything_runs(self):
-        from claude_multi.cli.commands import repin as repin_cmd
-        from claude_multi import errors
+        from charmer.cli.commands import repin as repin_cmd
+        from charmer import errors
 
         for flags, message in (({"activate": True}, "unknown repin option --activate"),
                                ({"flake-target": ".#x"}, "unknown repin option --flake-target"),
@@ -1626,12 +1626,12 @@ class RepinCommandTests(UpgradeTestCase):
                 run.assert_not_called()
 
     def test_default_checkout_is_the_running_source_tree(self):
-        from claude_multi.cli.commands import repin as repin_cmd
+        from charmer.cli.commands import repin as repin_cmd
 
         self.assertEqual(upgrade.default_checkout(), REPO_ROOT)
         product = self._product_tree()
         (product / "flake.nix").write_text("{}\n")
-        (product / "src/claude_multi/__init__.py").write_text("")
+        (product / "src/charmer/__init__.py").write_text("")
         seen = {}
 
         def fake_run(**kwargs):
@@ -1639,7 +1639,7 @@ class RepinCommandTests(UpgradeTestCase):
             return upgrade.UpgradeOutcome("current", None, ("nothing to re-pin",))
         out = io.StringIO()
         with mock.patch.object(upgrade, "run_repin", side_effect=fake_run), \
-                mock.patch("claude_multi.catalog.load_raw", return_value={"docs": {"native-contract": self.contract}}), \
+                mock.patch("charmer.catalog.load_raw", return_value={"docs": {"native-contract": self.contract}}), \
                 mock.patch.object(upgrade, "default_checkout", return_value=product):
             self.assertEqual(repin_cmd.repin({}, environ=self.env, output_stream=out), 0)
         self.assertEqual(seen["checkout_root"], product.resolve())
@@ -1647,9 +1647,9 @@ class RepinCommandTests(UpgradeTestCase):
         self.assertIn("nothing to re-pin", out.getvalue())
 
     def test_dev_entry_routes_repin(self):
-        from claude_multi import dev
+        from charmer import dev
 
-        with mock.patch("claude_multi.cli.commands.repin.repin", return_value=0) as repin:
+        with mock.patch("charmer.cli.commands.repin.repin", return_value=0) as repin:
             self.assertEqual(dev.main(["repin", "--repo", "/x", "--manifest-dir", "/m"]), 0)
         repin.assert_called_once_with({"repo": "/x", "manifest-dir": "/m"})
         self.assertIn("claude-multi-dev repin", dev.DEV_HELP)

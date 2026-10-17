@@ -5,10 +5,10 @@ import json
 import unittest
 from unittest import mock
 
-from claude_multi import lineup_log, routing, strict_json
-import claude_multi.cli.entry as entry
-import claude_multi.cli.gateway_facts as gateway_facts
-import claude_multi.cli.session_facts as session_facts
+from charmer import lineup_log, routing, strict_json
+import charmer.cli.entry as entry
+import charmer.cli.gateway_facts as gateway_facts
+import charmer.cli.session_facts as session_facts
 from _v4 import V4Case
 from tests.test_observations import NOW, MID, collect, final, inventory, log, source
 

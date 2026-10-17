@@ -18,7 +18,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from claude_multi import (
+from charmer import (
     catalog,
     compiler,
     continuity,
@@ -30,7 +30,7 @@ from claude_multi import (
     state,
     strict_json,
 )
-from claude_multi.sessions import SessionError
+from charmer.sessions import SessionError
 from _catalog import FIXTURE_ROOT
 import _v3
 
@@ -263,10 +263,10 @@ class SchemaAndInvariantTests(V4TestCase):
                 self.assertTrue(sessions.may_hold_env_token(record))
 
     def test_a_fresh_record_of_this_release_is_helper_only(self) -> None:
-        import claude_multi
+        import charmer
 
         record = _v4()
-        record["launcher_version"] = claude_multi.__version__
+        record["launcher_version"] = charmer.__version__
         record["catalog_version"] = sessions.HELPER_ONLY_CATALOG
         record["last_event_source"] = None
         self.store.save(record)

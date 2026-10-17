@@ -21,13 +21,13 @@ from unittest import mock
 import test_cli
 import test_setup_signin
 from test_tui import BACKSPACE, DOWN, END, HOME, RIGHT, FakeWindow
-from claude_multi import secret_store, tui, views
-from claude_multi.setup import model, signin, texts
-import claude_multi.cli.consent as consent
-import claude_multi.cli.screens.common as screens_common
-import claude_multi.cli.screens.providers as providers_screen
-import claude_multi.cli.screens.signin as screens_signin
-import claude_multi.cli.text as cli_text
+from charmer import secret_store, tui, views
+from charmer.setup import model, signin, texts
+import charmer.cli.consent as consent
+import charmer.cli.screens.common as screens_common
+import charmer.cli.screens.providers as providers_screen
+import charmer.cli.screens.signin as screens_signin
+import charmer.cli.text as cli_text
 
 ESC = "\x1b"
 ENTER = "\n"
@@ -39,7 +39,7 @@ def pools_with(name: str, **fields):
 
     import copy
 
-    from claude_multi import account_pools, strict_json
+    from charmer import account_pools, strict_json
     from _layout import RESOURCES_ROOT
 
     document = copy.deepcopy(strict_json.load(RESOURCES_ROOT / account_pools.FILE))
@@ -147,8 +147,8 @@ class SelectedTransportKeyTests(ProvidersCase):
     switch to the transport already in use, and K on Anthropic saves the key."""
 
     def test_k_saves_the_missing_key_of_the_selected_transport(self) -> None:
-        from claude_multi import operator as operator_mod, profile, readiness, state
-        from claude_multi.cli import doctor
+        from charmer import operator as operator_mod, profile, readiness, state
+        from charmer.cli import doctor
 
         name = operator_mod.transport_alternative("anthropic", operator_mod.TRANSPORT_API_KEY).secret_name
         key = self.root / "platform.key"
@@ -201,14 +201,14 @@ class PresetTests(ProvidersCase):
     def to_entry(self, entry_id: str) -> list:
         """From the new-provider picker's first entry down to ``entry_id``."""
 
-        import claude_multi.cli.screens.get_started as get_started
+        import charmer.cli.screens.get_started as get_started
 
         picker = get_started._ProviderPicker(self.runtime, tui.MONO_PALETTE, only="other")
         entries = [row.entry.id for row in picker.rows if row.kind == "entry" and row.entry is not None]
         return [HOME, *([DOWN] * entries.index(entry_id))]
 
     def existing_instance(self, name: str, provider_id: str, key: str) -> None:
-        from claude_multi.setup import providers as layer
+        from charmer.setup import providers as layer
 
         plan = layer.plan_add_preset(self.runtime, name, provider_id, None)
         layer.apply_add_preset(self.runtime, plan, model.Confirmation.given(plan), model.Secret(key))
@@ -240,7 +240,7 @@ class PresetTests(ProvidersCase):
         self.assertIn(name, [row.id for row in screen.rows])
 
     def test_n_gives_one_more_instance_its_own_key(self) -> None:
-        from claude_multi.setup import texts as setup_texts
+        from charmer.setup import texts as setup_texts
 
         name = self.first("anthropic-compatible")
         shared = self.presets[name].secret_name
@@ -264,8 +264,8 @@ class PresetTests(ProvidersCase):
         self.assertTrue(screen.message.startswith("Added second"), screen.message)
 
     def test_n_keeps_an_openai_compatible_preset_closed(self) -> None:
-        from claude_multi import operator as operator_mod
-        from claude_multi.setup import texts as setup_texts
+        from charmer import operator as operator_mod
+        from charmer.setup import texts as setup_texts
 
         name = self.first(operator_mod.KEYED_KIND)
         before = self.state_bytes()
@@ -300,7 +300,7 @@ class PresetTests(ProvidersCase):
                 self.assertEqual(self.state_bytes(), before)
 
     def test_another_documented_address_is_declared_and_approved(self) -> None:
-        from claude_multi import operator as operator_mod
+        from charmer import operator as operator_mod
 
         for kind, typed in (("anthropic-compatible", "https://workspace.example.com/apps/anthropic"),
                             (operator_mod.KEYED_KIND, "https://eu.example.com/openai/v1")):
@@ -335,7 +335,7 @@ class SharedKeyTests(ProvidersCase):
     def setUp(self) -> None:
         super().setUp()
         import test_presets
-        from claude_multi.setup import providers as layer
+        from charmer.setup import providers as layer
 
         patcher = test_presets.shipped_presets()
         patcher.__enter__()
@@ -439,7 +439,7 @@ class ApplyTests(ProvidersCase):
     def test_a_gateway_that_missed_the_current_setup_is_applied_and_verified(self) -> None:
         # The configuration on disk is current (a real render), but the
         # running gateway serves none of it: P must apply and verify.
-        from claude_multi.setup import providers as layer
+        from charmer.setup import providers as layer
 
         self.runtime.render_gateway(policy="explicit")
         self.assertFalse(layer.plan_apply(self.runtime).changes)
@@ -455,7 +455,7 @@ class ApplyTests(ProvidersCase):
 
     def test_apply_previews_and_cancel_writes_nothing(self) -> None:
         import dataclasses
-        from claude_multi.setup import providers as layer
+        from charmer.setup import providers as layer
 
         actions = providers_screen.ConnectActions(self.runtime, FakeWindow([ENTER]), tui.MONO_PALETTE)
         current = layer.plan_apply(self.runtime)
@@ -477,12 +477,12 @@ ANTHROPIC_KEY_TITLE = "Use an Anthropic API key for Claude models?"
 
 class AnthropicTransportTests(ProvidersCase):
     def transport(self) -> str | None:
-        from claude_multi.setup import providers as layer
+        from charmer.setup import providers as layer
 
         return layer.current_transport(self.runtime, "anthropic")
 
     def test_enter_on_anthropic_switches_the_account_to_an_api_key(self) -> None:
-        from claude_multi import operator as operator_mod
+        from charmer import operator as operator_mod
 
         self.assertNotEqual(self.transport(), operator_mod.TRANSPORT_API_KEY)
         screen = self.screen("anthropic")
@@ -525,19 +525,19 @@ class OpenAITransportTests(ProvidersCase):
         self.runtime.reload_catalog()
 
     def transport(self) -> str | None:
-        from claude_multi.setup import providers as layer
+        from charmer.setup import providers as layer
 
         return layer.current_transport(self.runtime, "openai")
 
     def secret(self) -> str:
-        from claude_multi import operator as operator_mod
+        from charmer import operator as operator_mod
 
         return operator_mod.transport_alternative("openai", operator_mod.TRANSPORT_API_KEY).secret_name
 
     def config(self) -> str:
-        import claude_multi.proxy
+        import charmer.proxy
 
-        return (claude_multi.proxy.config_dir(self.runtime.home) / "config.yaml").read_text()
+        return (charmer.proxy.config_dir(self.runtime.home) / "config.yaml").read_text()
 
     def switch_to_key(self, value: str) -> FakeWindow:
         """Enter → the chooser → the API key → the consent (Cancel first) →
@@ -547,7 +547,7 @@ class OpenAITransportTests(ProvidersCase):
         return self.run_screen(screen, [ENTER, DOWN, ENTER, RIGHT, ENTER, *value, ENTER, ENTER])
 
     def test_enter_on_openai_switches_the_account_to_an_api_key(self) -> None:
-        from claude_multi import operator as operator_mod, render
+        from charmer import operator as operator_mod, render
 
         self.assertNotEqual(self.transport(), operator_mod.TRANSPORT_API_KEY)
         screen = self.screen("openai")
@@ -579,7 +579,7 @@ class OpenAITransportTests(ProvidersCase):
         self.assertIn("API key saved (21 chars)", screen.message)
 
     def test_switching_back_offers_removing_the_unused_key(self) -> None:
-        from claude_multi import operator as operator_mod, render
+        from charmer import operator as operator_mod, render
 
         self.switch_to_key("sk-openai-dummy-123456")
         screen = self.screen("openai")

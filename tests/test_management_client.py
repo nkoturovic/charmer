@@ -15,7 +15,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from claude_multi import management, probe, quota, service, state
+from charmer import management, probe, quota, service, state
 from _layout import REPO_ROOT
 from _tier import fast_tier_boundary
 from tests import _tripwire
@@ -204,17 +204,17 @@ class ImportBoundaryTests(unittest.TestCase):
             if module is quota:
                 relative = {alias.name for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and n.level for alias in n.names}
                 self.assertEqual(relative, {"errors", "strict_json", "Fact", "Report", "instant"})
-        source = REPO_ROOT / "src" / "claude_multi"
-        modules = {"claude_multi." + ".".join(p.relative_to(source).with_suffix("").parts).removesuffix(".__init__"): p
+        source = REPO_ROOT / "src" / "charmer"
+        modules = {"charmer." + ".".join(p.relative_to(source).with_suffix("").parts).removesuffix(".__init__"): p
                    for p in source.rglob("*.py")}
-        self.assertTrue(any(name.startswith("claude_multi.cli.") for name in modules))
+        self.assertTrue(any(name.startswith("charmer.cli.") for name in modules))
         self.assertEqual(sorted(name for name, p in modules.items() if "/v0/management" in p.read_text()),
-                         ["claude_multi.quota"])
+                         ["charmer.quota"])
         # The gateway secret name only in the scrub/injection and the session strip.
         # The scrub's deny list moved to secret_store (the shared credential
         # policy; proxy re-exports the same object), proxy keeps the injection.
         self.assertEqual(sorted(name for name, p in modules.items() if "MANAGEMENT_PASSWORD" in p.read_text()),
-                         ["claude_multi.compiler", "claude_multi.proxy", "claude_multi.secret_store"])
+                         ["charmer.compiler", "charmer.proxy", "charmer.secret_store"])
 
 
 class RealGatewayAuthFilesTests(unittest.TestCase):

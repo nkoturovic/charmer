@@ -10,7 +10,7 @@ repository marker itself; every path comes from these names):
   ``PYTHONPATH`` and every checkout-relative path come from here
   (``SRC_DIR``, ``PACKAGE_DIR``).
 - ``RESOURCES_ROOT``: the packaged runtime resources
-  (``src/claude_multi/data``: ``version.json``, ``settings.json``,
+  (``src/charmer/data``: ``version.json``, ``settings.json``,
   ``catalog/``, ``schemas/``, ``presets/``, ``examples/``,
   ``gateway-unit.json``, ``gateway-contract.json``, ``registry/``,
   ``release-trust/``, ``account-pools.json``).
@@ -49,14 +49,14 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SRC_DIR = REPO_ROOT / "src"
-PACKAGE_DIR = SRC_DIR / "claude_multi"
+PACKAGE_DIR = SRC_DIR / "charmer"
 # The packaged resources inside the source tree (checkout-relative path:
 # RESOURCES_RELATIVE), and the test fixtures.
-RESOURCES_RELATIVE = Path("src") / "claude_multi" / "data"
+RESOURCES_RELATIVE = Path("src") / "charmer" / "data"
 RESOURCES_ROOT = REPO_ROOT / RESOURCES_RELATIVE
 # Where an installed package keeps its resources, relative to its prefix
 # (the Nix package and a wheel install the package into site-packages).
-INSTALLED_RESOURCES_RELATIVE = Path("lib") / "python3.14" / "site-packages" / "claude_multi" / "data"
+INSTALLED_RESOURCES_RELATIVE = Path("lib") / "python3.14" / "site-packages" / "charmer" / "data"
 FIXTURES_ROOT = REPO_ROOT / "tests" / "fixtures"
 GATEWAY_DIR = REPO_ROOT / "gateway"
 UPSTREAM_JSON = GATEWAY_DIR / "UPSTREAM.json"
@@ -84,8 +84,8 @@ _ROOT_DOC_NAMES = frozenset({"README.md", "AGENTS.md", "CONTRIBUTING.md", "SECUR
 # The asset entries of an asset root (catalog loading reads only these); a
 # copy of a resource root as an asset root copies exactly these.
 ASSET_ENTRIES = ("catalog", "schemas", "settings.json", "version.json")
-# The markers of a source checkout (claude_multi.layout.CHECKOUT_MARKERS).
-CHECKOUT_MARKERS = ("flake.nix", "src/claude_multi/__init__.py")
+# The markers of a source checkout (charmer.layout.CHECKOUT_MARKERS).
+CHECKOUT_MARKERS = ("flake.nix", "src/charmer/__init__.py")
 # The top-level entries of the packaged resources: a logical label that
 # starts with one of them (``schemas/models.schema.json``, ``version.json``)
 # is resource-relative; every other label is repository-relative.
@@ -186,7 +186,7 @@ def pyproject() -> dict:
 def installed_paths() -> list[str]:
     """What the package installs, as ``pyproject.toml`` declares it (the Nix
     package installs the same list): the package directory (``src``: the
-    ``claude_multi`` package with its resources) and the documents."""
+    ``charmer`` package with its resources) and the documents."""
 
     setuptools = pyproject()["tool"]["setuptools"]
     paths = [setuptools["package-dir"][""]]

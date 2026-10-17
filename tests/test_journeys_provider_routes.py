@@ -36,15 +36,15 @@ journeys.say("REVIEWED", reviewed)
 """
 # The Providers screen's row of OpenAI (printed for the parent).
 OPENAI_ROW = """
-import claude_multi.cli.screens.providers as providers_screen
-from claude_multi import tui
+import charmer.cli.screens.providers as providers_screen
+from charmer import tui
 rows = [row.id for row in providers_screen._ProvidersScreen(runtime, palette=tui.MONO_PALETTE,
                                                              journal=lambda: None).rows]
 journeys.say("ROW", rows.index("openai"))
 """
 TRANSPORT_AFTER = """
-from claude_multi import secret_store
-from claude_multi.setup import providers as layer
+from charmer import secret_store
+from charmer.setup import providers as layer
 print("TRANSPORT=" + layer.current_transport(runtime, "openai"), flush=True)
 name = "PLATFORM_OPENAI_API_KEY"
 print("KEY_KEPT=" + str(secret_store.default_store(runtime.gateway_environ()).get(name) is not None), flush=True)
@@ -61,7 +61,7 @@ class ProviderRouteJourneys(JourneyCase):
         """The picker position of ``entry_id`` on the reviewed assets."""
 
         import test_openai_key_route as key_route
-        from claude_multi.setup import providers as layer
+        from charmer.setup import providers as layer
 
         with self.shape() as runtime:
             runtime.asset_root, _key = key_route.reviewed_asset_root(Path(runtime.environ["HOME"]).parent)
@@ -72,9 +72,9 @@ class ProviderRouteJourneys(JourneyCase):
 
     def preset_alone(self, size: dict[str, Any]) -> None:
         import test_presets
-        from claude_multi import views
-        from claude_multi.cli import text as cli_text
-        from claude_multi.setup import texts
+        from charmer import views
+        from charmer.cli import text as cli_text
+        from charmer.setup import texts
 
         name = test_presets.first("anthropic-compatible")
         info = test_presets.shipped()[name]
@@ -118,7 +118,7 @@ class ProviderRouteJourneys(JourneyCase):
     # -- the OpenAI API key alone -----------------------------------------------------
 
     def openai_key_alone(self, size: dict[str, Any]) -> None:
-        from claude_multi.cli import text as cli_text
+        from charmer.cli import text as cli_text
 
         index = self.reviewed_picker_index("openai:api-key")
         child = self.child(setup=REVIEWED, after=TRANSPORT_AFTER, **size)
@@ -153,7 +153,7 @@ class ProviderRouteJourneys(JourneyCase):
     # -- OpenAI's account or its API key on the Providers screen ------------------------
 
     def platform_switch(self, size: dict[str, Any]) -> None:
-        from claude_multi.cli import text as cli_text
+        from charmer.cli import text as cli_text
 
         child = self.child(setup=(REVIEWED, OPENAI_ROW), after=TRANSPORT_AFTER, **size)
         self.fact(child, "REVIEWED")

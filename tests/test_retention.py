@@ -17,11 +17,11 @@ from dataclasses import replace
 from pathlib import Path
 from unittest import mock
 
-from claude_multi import acquire, cli, launch, paths, pin, probe, retention, service, state
-from claude_multi.platform import darwin_process
+from charmer import acquire, cli, launch, paths, pin, probe, retention, service, state
+from charmer.platform import darwin_process
 from _layout import SRC_DIR
 from _v4 import V4Case
-import claude_multi.tui
+import charmer.tui
 
 
 def _contract(version: str, platform: str, data: bytes) -> dict:
@@ -667,8 +667,8 @@ class LifetimeLockProcessTests(PruneCase):
 
     LAUNCHER = (
         "import json, sys\n"
-        "from claude_multi import launch\n"
-        "from claude_multi.platform import posix_fs\n"
+        "from charmer import launch\n"
+        "from charmer.platform import posix_fs\n"
         "contract, environ, child_env = (json.loads(arg) for arg in sys.argv[1:4])\n"
         "status = launch.PinnedCopy(contract, environ).verify()\n"
         "path = str(status.inspected_path)\n"
@@ -763,7 +763,7 @@ class LifetimeLockProcessTests(PruneCase):
         self.wait_free("2.1.200")
         self.assertEqual(self.prune_copies().removed, ("2.1.200",))
 
-    def test_a_copy_started_outside_claude_multi_is_the_documented_residual(self):
+    def test_a_copy_started_outside_charmer_is_the_documented_residual(self):
         # Run directly (no launch, no lock) by a process that hides what it
         # runs: pruning cannot know, and the docs say so.
         child = subprocess.Popen([str(self.copy), "-c", self.WORKER], stdin=subprocess.PIPE,
@@ -1106,7 +1106,7 @@ class OwnedCopyLaunchTests(V4Case):
             held.append(self.exclusive())
             return subprocess.CompletedProcess(argv, 0, "", "")
 
-        with mock.patch('claude_multi.cli.session_facts._live_background_prefixes', return_value=frozenset({mid[:8]})), \
+        with mock.patch('charmer.cli.session_facts._live_background_prefixes', return_value=frozenset({mid[:8]})), \
              mock.patch.object(subprocess, "run", side_effect=run) as stop:
             code = cli.main(["sessions", "stop", mid, "--yes"], runtime=self.runtime,
                             output_stream=output, interactive=False)
@@ -1127,8 +1127,8 @@ class OwnedCopyLaunchTests(V4Case):
         def stopped(*args, **kwargs):
             self.runtime.live_prefixes = frozenset()
             return subprocess.CompletedProcess(args[0], 0, "", "")
-        with mock.patch.object(claude_multi.tui.Modal, "run", return_value="stop-resume"), \
-             mock.patch('claude_multi.cli.session_facts._live_background_prefixes', side_effect=[frozenset({mid[:8]}), frozenset()]), \
+        with mock.patch.object(charmer.tui.Modal, "run", return_value="stop-resume"), \
+             mock.patch('charmer.cli.session_facts._live_background_prefixes', side_effect=[frozenset({mid[:8]}), frozenset()]), \
              mock.patch.object(subprocess, "run", side_effect=stopped) as run:
             outcome = cli._run_resume_gate_modal(self.runtime, record, gate, None, None)
         self.assertEqual(outcome[0], "resume")

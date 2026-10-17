@@ -77,8 +77,8 @@ pkgs.runCommand "claude-multi-tests"
     installed=$(ls "$package/bin" | sort | tr '\n' ' ')
     test "$installed" = "${pkgs.lib.concatStringsSep " " launchers} " || {
       echo "installed commands: $installed (expected the public launchers)"; exit 1; }
-    pycs=$(find "$package/${pkgs.python3.sitePackages}/claude_multi" -name '*.pyc' | wc -l)
-    mods=$(find "$package/${pkgs.python3.sitePackages}/claude_multi" -name '*.py' | wc -l)
+    pycs=$(find "$package/${pkgs.python3.sitePackages}/charmer" -name '*.pyc' | wc -l)
+    mods=$(find "$package/${pkgs.python3.sitePackages}/charmer" -name '*.py' | wc -l)
     test "$pycs" -eq "$mods" || { echo "compileall: $pycs pyc for $mods modules"; exit 1; }
     touch $out
   ''

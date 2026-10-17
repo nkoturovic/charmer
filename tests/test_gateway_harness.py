@@ -12,7 +12,7 @@ from pathlib import Path
 from unittest import mock
 from urllib.parse import urlsplit
 
-from claude_multi import catalog, render, state
+from charmer import catalog, render, state
 from _catalog import FIXTURE_GATEWAY_TOKEN, FIXTURE_ROOT, served_selectors, uses_shipped_catalog
 from _layout import REPO_ROOT, RESOURCES_ROOT
 import _gateway_harness as harness

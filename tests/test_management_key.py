@@ -10,7 +10,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest import mock
 
-from claude_multi import management as m, proxy, state
+from charmer import management as m, proxy, state
 
 
 class KeySlotTests(unittest.TestCase):

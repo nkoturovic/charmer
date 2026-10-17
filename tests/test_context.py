@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import unittest
 
-from claude_multi import catalog, composition
+from charmer import catalog, composition
 from _catalog import FIXTURE_ROOT
 
 

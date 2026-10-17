@@ -20,9 +20,9 @@ from unittest import mock
 
 import test_cli
 from _layout import FIXTURES_ROOT
-from claude_multi import choices, proxy
-from claude_multi.setup import external, model, signin, texts
-import claude_multi.cli.consent as consent
+from charmer import choices, proxy
+from charmer.setup import external, model, signin, texts
+import charmer.cli.consent as consent
 
 FAKE_LOGIN = FIXTURES_ROOT / "fake_gateway_login.py"
 CLAUDE_ACK_ID, CLAUDE_ACK_TEXT = signin.ack_text("claude")

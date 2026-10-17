@@ -25,8 +25,8 @@ import unittest
 from pathlib import Path
 from typing import Any
 
-from claude_multi import catalog, compiler, profile, render, scope, settings, strict_json
-from claude_multi.scope import ScopeError
+from charmer import catalog, compiler, profile, render, scope, settings, strict_json
+from charmer.scope import ScopeError
 from _catalog import FIXTURE_ROOT, SHIPPED_ROOT, uses_shipped_catalog
 
 SEEDS = range(300)

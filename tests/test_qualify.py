@@ -1,4 +1,4 @@
-"""The qualification battery (``claude_multi.qualify``) and
+"""The qualification battery (``charmer.qualify``) and
 ``claude-multi models qualify`` — plan and consent, variants, caps, verdicts,
 context honesty, the evidence merge, contract identities and the
 exact-client check.
@@ -25,7 +25,7 @@ from unittest import mock
 import test_cli  # module import: no test classes re-exported
 import test_operator as operator_fixtures  # module import: no test classes re-exported
 from _catalog import FIXTURE_ROOT, SHIPPED_ROOT
-from claude_multi import catalog, management, operator as operator_mod, pin, qualify, service, state, strict_json
+from charmer import catalog, management, operator as operator_mod, pin, qualify, service, state, strict_json
 
 CONTRACTS = qualify.ContractIdentity("c" * 64, "d" * 64)
 OTHER_CONTRACTS = qualify.ContractIdentity("c" * 64, "e" * 64)
@@ -600,7 +600,7 @@ class ExactClientTests(unittest.TestCase):
 
     @staticmethod
     def _record(model, *, markers=("lead",), hints=(), effort="high"):
-        from claude_multi import probe
+        from charmer import probe
 
         record = probe.RequestRecord(
             method="POST", path="/v1/messages", model=model, tool_names=(), tool_count=0,
@@ -613,7 +613,7 @@ class ExactClientTests(unittest.TestCase):
     def _observe(self, *records):
         """Feed the production recorder (lead run + agent run) and classify."""
 
-        from claude_multi import probe
+        from charmer import probe
 
         lead, agent = probe._ExactClientRecorder("claude-x-9"), probe._ExactClientRecorder("claude-x-9")
         for kind, context in records:
@@ -660,7 +660,7 @@ class ExactClientTests(unittest.TestCase):
                          ("failed", "model-rewritten"))
 
     def test_platform_without_isolation_is_unavailable_never_a_pass(self) -> None:
-        from claude_multi import probe
+        from charmer import probe
 
         with mock.patch.object(probe, "network_isolation_available", return_value="no bwrap"):
             outcome = probe.run_exact_client_check(None, native_contract={})
@@ -713,7 +713,7 @@ class AdmissionMetadataTests(test_cli.OperatorCommandCase):
         self.served.clear()
 
     def test_admit_and_revoke_only_change_badges_even_with_failed_evidence(self) -> None:
-        from claude_multi.cli.commands import models, providers
+        from charmer.cli.commands import models, providers
 
         schemas = operator_mod.load_schemas(FIXTURE_ROOT)
         snapshot = self.runtime.operator_snapshot()
@@ -760,7 +760,7 @@ class AdmissionMetadataTests(test_cli.OperatorCommandCase):
         self.assertEqual((self.calls, self.http_calls), ([], []))
 
     def test_catalog_badges_are_metadata_only_too(self) -> None:
-        from claude_multi.cli.commands import providers
+        from charmer.cli.commands import providers
 
         key, entry = next(iter(self.runtime.catalog.lines.items()))
         before = self.state_bytes()
@@ -789,7 +789,7 @@ class AdmissionMetadataTests(test_cli.OperatorCommandCase):
                 self.assertEqual((self.calls, self.http_calls), ([], []))
 
     def test_definition_or_route_change_while_prompt_open_refuses_badge(self) -> None:
-        from claude_multi.cli import consent
+        from charmer.cli import consent
 
         for field in ("wire", "route"):
             with self.subTest(field=field):
@@ -894,7 +894,7 @@ class CommitTests(QualifyCommandCase):
         """B check (MAJOR): the consented authorization is revalidated after
         the answer and before every request, not only at the commit."""
 
-        from claude_multi.cli import consent as consent_mod
+        from charmer.cli import consent as consent_mod
 
         path = self.pdir / "acme.json"
         real_confirm = consent_mod.confirm

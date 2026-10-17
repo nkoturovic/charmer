@@ -27,7 +27,7 @@ from pathlib import Path
 from unittest import mock
 
 import _tripwire
-from claude_multi import (
+from charmer import (
     catalog,
     cli,
     custom,
@@ -53,11 +53,11 @@ from _v4 import V4Case
 from test_lineup import LineupCase
 from test_migrate import _local_cat, _retired_entry
 from tests.test_quota import FIXTURES as QUOTA_FIXTURES, NOW as QUOTA_NOW, SENTINELS
-import claude_multi.compiler
-from claude_multi.cli import doctor as cli_doctor, text as cli_text
-import claude_multi.launch
-import claude_multi.paths
-import claude_multi.retention
+import charmer.compiler
+from charmer.cli import doctor as cli_doctor, text as cli_text
+import charmer.launch
+import charmer.paths
+import charmer.retention
 
 _tripwire.install()
 
@@ -160,7 +160,7 @@ class ClientIdentityTests(_DoctorCase):
                 return mock.Mock(st_dev=pin_stat.st_dev + 1, st_ino=pin_stat.st_ino)
             return original_stat(path, *args, **kwargs)
         with mock.patch.object(Path, "stat", stat), \
-                mock.patch.object(claude_multi.retention, "_digest", side_effect=AssertionError("identity must not hash")), \
+                mock.patch.object(charmer.retention, "_digest", side_effect=AssertionError("identity must not hash")), \
                 mock.patch.object(subprocess, "run", side_effect=AssertionError("identity must not execute")):
             self.assertEqual(len(self._report()), 1)
 
@@ -188,7 +188,7 @@ class ClientIdentityTests(_DoctorCase):
         self.assertEqual(self._report(), [])
         shutil.copyfile(retained, self.pin)  # same bytes, new inode
         self.assertNotEqual(self.pin.stat().st_ino, retained.stat().st_ino)
-        with mock.patch.object(claude_multi.retention, "_digest", side_effect=AssertionError("identity must not hash")), \
+        with mock.patch.object(charmer.retention, "_digest", side_effect=AssertionError("identity must not hash")), \
                 mock.patch.object(subprocess, "run", side_effect=AssertionError("identity must not execute")):
             self.assertEqual(self._report(), [])
             self.exe.unlink()
@@ -590,7 +590,7 @@ class ScopeIntegrityTests(_DoctorCase):
         )
 
     def test_compile_failures_never_crash(self) -> None:
-        for exc in (KeyError("gone"), claude_multi.compiler.CompilerError("boom")):
+        for exc in (KeyError("gone"), charmer.compiler.CompilerError("boom")):
             with self.subTest(type(exc).__name__), mock.patch.object(
                 transition, "expected_plan", side_effect=exc
             ):
@@ -1127,7 +1127,7 @@ class RetirementRadarTests(_DoctorCase):
         self.wire = wire
 
     def _now(self, value: str):
-        return mock.patch('claude_multi.cli.gateway_facts._doctor_now', lambda: datetime.fromisoformat(value))
+        return mock.patch('charmer.cli.gateway_facts._doctor_now', lambda: datetime.fromisoformat(value))
 
     def test_a_retirement_within_30_days_is_attention(self) -> None:
         self._registry("2026-10-14T19:00:00Z")
@@ -1165,7 +1165,7 @@ class JournalPassTests(_DoctorCase):
         return (self.NOW - timedelta(minutes=minutes_ago)).strftime("%Y-%m-%d %H:%M:%S")
 
     def _report(self, text: str) -> list[str]:
-        with mock.patch('claude_multi.cli.gateway_facts._doctor_now', lambda: self.NOW.astimezone(timezone.utc)):
+        with mock.patch('charmer.cli.gateway_facts._doctor_now', lambda: self.NOW.astimezone(timezone.utc)):
             return cli._doctor_journal_report(self.runtime, text)
 
     def test_the_default_reader_never_runs_with_injected_seams(self) -> None:
@@ -1182,7 +1182,7 @@ class JournalPassTests(_DoctorCase):
         # conductor_refresh.go:550 (message templates). All ids are fake.
         text = (REPO_ROOT / "tests/fixtures/journal/gateway-cat.log").read_text()
         lines = text.splitlines()
-        with mock.patch('claude_multi.cli.gateway_facts._doctor_now', lambda: self.NOW.astimezone(timezone.utc)):
+        with mock.patch('charmer.cli.gateway_facts._doctor_now', lambda: self.NOW.astimezone(timezone.utc)):
             facts = cli._journal_facts(self.runtime, text)
             clean = cli._journal_facts(self.runtime, "\n".join([*lines[2:4], lines[5]]))
         self.assertEqual(facts.quota, {("fixture-quota-model", "403"): 1})
@@ -1273,8 +1273,8 @@ class QuotaDoctorTests(_DoctorCase):
         self.now = QUOTA_NOW
         self.addCleanup(mock.patch.stopall)
         mock.patch.object(quota, "_now", return_value=self.now).start()
-        mock.patch('claude_multi.cli.gateway_facts._doctor_now', return_value=self.now).start()
-        self.journal = mock.patch('claude_multi.cli.gateway_facts._read_gateway_journal', return_value="").start()
+        mock.patch('charmer.cli.gateway_facts._doctor_now', return_value=self.now).start()
+        self.journal = mock.patch('charmer.cli.gateway_facts._read_gateway_journal', return_value="").start()
         self.restart = cli.gateway_service_hint("restart")
 
     def test_management_follows_the_channel_whatever_the_backend(self):
@@ -1722,8 +1722,8 @@ class QuotaDoctorTests(_DoctorCase):
         self.journal.return_value = "\n".join(lines)
         self.runtime.doctor_served_callback.return_value = (["fixture served damage"], ["fixture served info"])
         with mock.patch.object(service, "pending_restart_lines", return_value=["fixture restart radar"]) as radar, \
-             mock.patch('claude_multi.cli.doctor._doctor_managed_report', return_value=(["fixture managed damage"], ["fixture managed attention"])), \
-             mock.patch.object(claude_multi.retention, "retention_report", return_value=(["fixture retention"], ["fixture retention info"])):
+             mock.patch('charmer.cli.doctor._doctor_managed_report', return_value=(["fixture managed damage"], ["fixture managed attention"])), \
+             mock.patch.object(charmer.retention, "retention_report", return_value=(["fixture retention"], ["fixture retention info"])):
             problems, info, attention = self.report()
         radar.assert_called_once()
         # The radar asks the manager only about the recorded unit (none on demand).
@@ -1918,7 +1918,7 @@ class CompactBoundaryWaitTests(_DoctorCase):
         def sleep(seconds: float) -> None:
             calls.append("wait")
 
-        with mock.patch.object(claude_multi.launch, "resolve_claude") as resolve:
+        with mock.patch.object(charmer.launch, "resolve_claude") as resolve:
             resolve.return_value = mock.Mock(inspected_path=Path("/bin/true"))
             error = cli._stop_runtime(self.runtime, self.rid, runner=runner, record=record,
                                       clock=lambda: now, sleep=sleep)
@@ -2054,7 +2054,7 @@ class SubstitutionRadarTests(_DoctorCase):
         wire = next(iter(self.runtime.catalog.lines.values()))["wire_model"]
         text = "\n".join([self._line(wire)] * 3)
         self.runtime.doctor_callback = None
-        with mock.patch('claude_multi.cli.gateway_facts._read_gateway_journal', return_value=text) as read:
+        with mock.patch('charmer.cli.gateway_facts._read_gateway_journal', return_value=text) as read:
             _problems, _info, attention = _doctor(self)
         read.assert_called_once_with(self.runtime)
         mine = [line for line in attention if line.startswith("gateway substitution:")]
@@ -2063,7 +2063,7 @@ class SubstitutionRadarTests(_DoctorCase):
         self.assertIn("logged at most once per credential and model pair per 10 min", mine[0])
         self.assertNotIn("auth_index", mine[0])
         self.assertNotIn("request-never-printed", mine[0])
-        with mock.patch('claude_multi.cli.gateway_facts._read_gateway_journal', return_value=""):
+        with mock.patch('charmer.cli.gateway_facts._read_gateway_journal', return_value=""):
             self.assertFalse(any(line.startswith("gateway substitution:") for line in _doctor(self)[2]))
 
 
@@ -2107,7 +2107,7 @@ class PermissionDefaultModeDriftTests(V4Case):
         return problems, attention
 
     def _repair_all_include_live(self) -> str:
-        with mock.patch('claude_multi.cli.session_facts._live_background_prefixes', return_value=frozenset()):
+        with mock.patch('charmer.cli.session_facts._live_background_prefixes', return_value=frozenset()):
             code, output = _run_doctor(self, "--repair-all", "--include-live")
         self.assertEqual(code, 0, output)
         return output
@@ -2154,7 +2154,7 @@ class PermissionDefaultModeDriftTests(V4Case):
         transcript.touch()
         self.resume(mid)
         self.assertNotIn("defaultMode", self._settings(mid)["permissions"])
-        self.assertIn("CLAUDE_CONFIG_DIR", claude_multi.compiler.V2_ENV_UNSET)
+        self.assertIn("CLAUDE_CONFIG_DIR", charmer.compiler.V2_ENV_UNSET)
 
     def test_layer_edit_after_launch_never_blocks_and_repair_keeps_presence(self):
         user = Path(self.env["HOME"]) / ".claude/settings.json"
@@ -2231,7 +2231,7 @@ class CarryInPolicyTests(V4Case):
         before = self.tree(self.live(mid))
         self.runtime.environ.pop("HTTPS_PROXY")
         self.runtime.environ.pop("NO_PROXY")
-        with mock.patch('claude_multi.cli.session_facts._live_background_prefixes', return_value=frozenset()):
+        with mock.patch('charmer.cli.session_facts._live_background_prefixes', return_value=frozenset()):
             code, output = _run_doctor(self, "--repair-all")
         self.assertEqual(code, 0, output)
         self.assertEqual(self.tree(self.live(mid)), before)
@@ -2384,7 +2384,7 @@ class CarryInPolicyTests(V4Case):
         self.assertIn("compiled hook target", str(problems))
         self.assertEqual(info, [])
         self.assertIn("compiled hook target", str(_doctor(self)[0]))
-        self.assertIn(claude_multi.paths.display(target, self.runtime.environ), str(problems))
+        self.assertIn(charmer.paths.display(target, self.runtime.environ), str(problems))
 
     def test_a_non_executable_helper_target_blocks_every_launch_kind(self):
         record = self.launch_fresh()
@@ -2569,7 +2569,7 @@ class CatalogAgentDriftTests(_DoctorCase):
         slot = self._changed_role_text()
         # Every generated agent file (isolation and disallowedTools roles
         # included) matches the frontmatter grammar the downgrade requires.
-        from claude_multi.cli import doctor as doctor_mod
+        from charmer.cli import doctor as doctor_mod
 
         for path in sorted(self._agent(slot).parent.glob("cm-*.md")):
             self.assertIsNotNone(doctor_mod._agent_frontmatter(path.read_bytes()), path.name)
@@ -2669,8 +2669,8 @@ class OperatorAgentA06Tests(test_operator_agents.AgentCase):
     predates the current pins (Attention, never BLOCK)."""
 
     def test_a06_exact_text(self) -> None:
-        from claude_multi import continuity
-        from claude_multi.cli import doctor as doctor_mod
+        from charmer import continuity
+        from charmer.cli import doctor as doctor_mod
 
         key = test_operator_agents.AGENT_KEY
         self.install(self.runtime, self.acme_files(), keys=(key,))
@@ -2699,8 +2699,8 @@ class GeneratedPreviewTests(unittest.TestCase):
         import tempfile
         from pathlib import Path
         from types import SimpleNamespace
-        from claude_multi import sessions
-        from claude_multi.cli import doctor_actions
+        from charmer import sessions
+        from charmer.cli import doctor_actions
         with tempfile.TemporaryDirectory(prefix='cm-preview-') as temporary:
             home = Path(temporary)
             root = home / 'state'
@@ -2720,8 +2720,8 @@ class GeneratedPreviewTests(unittest.TestCase):
         import io
         import tempfile
         from types import SimpleNamespace
-        from claude_multi import sessions
-        from claude_multi.cli import doctor_actions
+        from charmer import sessions
+        from charmer.cli import doctor_actions
         with tempfile.TemporaryDirectory(prefix='cm-unadmitted-') as temporary:
             home = Path(temporary)
             declaration = home / '.config/claude-multi/providers.d/unadmitted.json'
@@ -2795,7 +2795,7 @@ class ManagedPreflightLaunchTests(V4Case):
 
     def test_the_policy_remedy_names_no_particular_computer(self):
         # The launch refusal and doctor share one neutral remedy.
-        from claude_multi import managed
+        from charmer import managed
 
         self.assertEqual(managed.POLICY_REMEDY, "ask the policy owner, or use plain claude")
         self.policy({"requiredMinimumVersion": "9.0.0"})
@@ -2949,13 +2949,13 @@ class PinFactsDoctorTests(V4Case):
         self.runtime = self.make_runtime(pin_report=True)
 
     def report(self, today):
-        with mock.patch("claude_multi.cli.gateway_facts._doctor_now",
+        with mock.patch("charmer.cli.gateway_facts._doctor_now",
                         lambda: datetime(*today, tzinfo=timezone.utc)):
             return cli_doctor._doctor_pin_report(self.runtime)
 
     def test_pin_and_user_client_facts(self):
         attention, info = self.report((2026, 9, 26))
-        from claude_multi import pin as pin_mod
+        from charmer import pin as pin_mod
 
         platform = pin_mod.host_platform()
         self.assertIn(f"Claude Code pin: 2.1.281 (verified 2026-09-25; evidence on {platform}: battery).", info)

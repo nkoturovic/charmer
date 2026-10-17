@@ -21,9 +21,9 @@ import unittest
 from pathlib import Path
 from typing import Any
 
-from claude_multi import cli, pin, profile, scope, sessions, state, strict_json
+from charmer import cli, pin, profile, scope, sessions, state, strict_json
 from _catalog import FIXTURE_GATEWAY_TOKEN, FIXTURE_ROOT
-import claude_multi.service
+import charmer.service
 
 
 class _Runtime(cli.Runtime):
@@ -97,7 +97,7 @@ class V4Case(unittest.TestCase):
             environ=dict(self.env),
             cwd=self.project,
             health_get=self._health,
-            listener_owner=lambda _base: claude_multi.service.OwnerVerdict("ours", "fixture gateway"),
+            listener_owner=lambda _base: charmer.service.OwnerVerdict("ours", "fixture gateway"),
             background_liveness=lambda: sessions.BackgroundLiveness(True, cli._live_background_prefixes(self.root / "daemon")),
             managed_root=self.root / "managed",
             proc_root=self.root / "proc",

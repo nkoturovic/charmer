@@ -92,12 +92,12 @@ _ALLOWED_MARKERS = (
 
 class ImportBoundaryTests(unittest.TestCase):
     def test_runtime_modules_never_import_dev(self) -> None:
-        src = REPO_ROOT / "src" / "claude_multi"
+        src = REPO_ROOT / "src" / "charmer"
         offenders: list[str] = []
         modules = sorted(src.rglob("*.py"))
         self.assertTrue(any("cli" in p.relative_to(src).parts[:-1] for p in modules))
         for module in modules:
-            module_name = "claude_multi." + ".".join(module.relative_to(src).with_suffix("").parts).removesuffix(".__init__")
+            module_name = "charmer." + ".".join(module.relative_to(src).with_suffix("").parts).removesuffix(".__init__")
             relative = module.relative_to(src).as_posix()
             if relative == "dev.py":
                 continue
@@ -136,7 +136,7 @@ class ImportBoundaryTests(unittest.TestCase):
         for name in ("claude-multi", "claude-multi-dev", "claude-multi-proxy"):
             text = (REPO_ROOT / "bin" / name).read_text()
             with self.subTest(bin=name):
-                self.assertIn("from claude_multi.entrypoints import prepare_source, run", text)
+                self.assertIn("from charmer.entrypoints import prepare_source, run", text)
                 self.assertIn(f'raise SystemExit(run("{name}"))', text)
 
 
@@ -242,9 +242,9 @@ def identifier_ratchet(private=PRIVATE) -> dict[tuple[str, str], tuple[int, str,
 # once in its file until its owner fixes it; then the entry goes.
 # (path, needle, owner, why.)
 OPERATOR_DEFAULTS: tuple[tuple[str, str, str, str], ...] = (
-    ("src/claude_multi/service.py", 'UNIT = "cli-proxy-api"', "service",
+    ("src/charmer/service.py", 'UNIT = "cli-proxy-api"', "service",
      "an earlier unit name; new installs use the product unit"),
-    ("src/claude_multi/data/catalog/gateway.json", '"base_url": "http://127.0.0.1:8317"', "service",
+    ("src/charmer/data/catalog/gateway.json", '"base_url": "http://127.0.0.1:8317"', "service",
      "an earlier gateway port; new installs record their own port"),
 )
 
@@ -604,11 +604,11 @@ LINEAGE_CONTROLS = (
 # Reviewed sites that keep a match, each at its exact count: (path, needle,
 # count, why).
 LINEAGE_KEEP: tuple[tuple[str, str, int, str], ...] = (
-    ("src/claude_multi/scope.py", "embedded in compiled 3.0", 1,
+    ("src/charmer/scope.py", "embedded in compiled 3.0", 1,
      "the hook shim's bytes: earlier launchers write the same shim, so a new text rewrites every "
      "installed shim back and forth"),
     ("tests/goldens/shim/claude-multi-hook-3", "embedded in compiled 3.0", 1, "the golden of that shim"),
-    ("src/claude_multi/migrate.py", "2.x", 1,
+    ("src/charmer/migrate.py", "2.x", 1,
      "the target field value of the restore-2x --check --json document (a machine contract)"),
 )
 # Test files whose names still carry release or unit lineage, with the pass
@@ -646,10 +646,10 @@ def product_texts() -> dict[str, list[str]]:
     texts: dict[str, list[str]] = {}
     for path in repository_files(REPO_ROOT):
         relative = path.relative_to(REPO_ROOT).as_posix()
-        if relative.startswith("src/claude_multi/") and path.suffix == ".py":
+        if relative.startswith("src/charmer/") and path.suffix == ".py":
             texts[relative] = _string_constants(path.read_text())
-        elif relative.startswith("src/claude_multi/data/") and not relative.startswith(
-                "src/claude_multi/data/registry/"):
+        elif relative.startswith("src/charmer/data/") and not relative.startswith(
+                "src/charmer/data/registry/"):
             texts[relative] = [path.read_text(errors="replace")]
         elif relative.startswith("tests/goldens/"):
             texts[relative] = [path.read_text(errors="replace")]
@@ -701,7 +701,7 @@ class LineageWordingTests(unittest.TestCase):
             keep.setdefault(path, []).append((needle, count))
         found = {}
         texts = product_texts()
-        self.assertIn("src/claude_multi/cli/text.py", texts)
+        self.assertIn("src/charmer/cli/text.py", texts)
         for path, strings in texts.items():
             joined = "\n".join(strings)
             for needle, count in keep.get(path, ()):
@@ -720,8 +720,8 @@ class LineageWordingTests(unittest.TestCase):
         from contextlib import redirect_stdout
         import io
 
-        from claude_multi import dev, proxy
-        from claude_multi.cli.parser import build_parser
+        from charmer import dev, proxy
+        from charmer.cli.parser import build_parser
 
         helps = {"claude-multi-proxy": proxy.PROXY_USAGE, "claude-multi-dev": dev.DEV_HELP}
         helps.update({f"claude-multi-proxy {command.name}": command.help() for command in proxy.PROXY_COMMANDS})
@@ -809,8 +809,8 @@ class LocalEnvironmentTests(unittest.TestCase):
                 venv.EnvBuilder(with_pip=False).create(root / ".venv")
             # Newer venvs ignore themselves; the checkout's own rules decide.
             (root / ".venv" / ".gitignore").unlink(missing_ok=True)
-            local = (".venv/lib/vendored/notes.py", "src/claude_multi.egg-info/SOURCES.txt",
-                     "build/lib/claude_multi/notes.py")
+            local = (".venv/lib/vendored/notes.py", "src/charmer.egg-info/SOURCES.txt",
+                     "build/lib/charmer/notes.py")
             for name in local:
                 (root / name).parent.mkdir(parents=True, exist_ok=True)
                 (root / name).write_text(narration)
@@ -844,7 +844,7 @@ class ThirdPartyNoticeTests(unittest.TestCase):
         self.assertEqual(listed - notices, set(FIRST_PARTY_LICENSE_FILES))
         for name in FIRST_PARTY_LICENSE_FILES:
             self.assertFalse(exempt_from_naming_gates(f"gateway/licenses/{name}"), name)
-        for relative in ("LICENSE", "README.md", "gateway/UPSTREAM.json", "src/claude_multi/data/version.json"):
+        for relative in ("LICENSE", "README.md", "gateway/UPSTREAM.json", "src/charmer/data/version.json"):
             self.assertFalse(exempt_from_naming_gates(relative), relative)
 
     def test_notices_stay_under_the_credential_gate(self) -> None:
@@ -864,13 +864,13 @@ class PosixSeamTests(unittest.TestCase):
     """``fcntl`` only behind ``platform/`` (the dev harness ``probe.py`` is the
     one exception: its PTY driver sizes terminals with ``ioctl``)."""
 
-    ALLOWED = frozenset({"claude_multi.platform.posix_fs", "claude_multi.probe"})
+    ALLOWED = frozenset({"charmer.platform.posix_fs", "charmer.probe"})
 
     def test_fcntl_is_imported_only_by_the_platform_seam(self) -> None:
-        src = REPO_ROOT / "src" / "claude_multi"
+        src = REPO_ROOT / "src" / "charmer"
         importers = set()
         for path in sorted(src.rglob("*.py")):
-            dotted = "claude_multi." + ".".join(path.relative_to(src).with_suffix("").parts).removesuffix(".__init__")
+            dotted = "charmer." + ".".join(path.relative_to(src).with_suffix("").parts).removesuffix(".__init__")
             text = path.read_text()
             tree = ast.parse(text)
             for node in ast.walk(tree):
@@ -884,14 +884,14 @@ class PosixSeamTests(unittest.TestCase):
             if re.search(r"""(?:import_module|__import__)\(\s*["']fcntl""", text):
                 importers.add(dotted)
         outside = sorted(name for name in importers
-                         if not name.startswith("claude_multi.platform.") and name not in self.ALLOWED)
-        self.assertEqual(outside, [], "route flock/ioctl through claude_multi.platform.posix_fs")
+                         if not name.startswith("charmer.platform.") and name not in self.ALLOWED)
+        self.assertEqual(outside, [], "route flock/ioctl through charmer.platform.posix_fs")
         # Positive control: the seam itself is found by this scan.
-        self.assertIn("claude_multi.platform.posix_fs", importers)
+        self.assertIn("charmer.platform.posix_fs", importers)
 
     def test_hooks_and_lineup_log_lock_through_posix_fs(self) -> None:
         for name in ("hooks.py", "lineup_log.py"):
-            text = (REPO_ROOT / "src" / "claude_multi" / name).read_text()
+            text = (REPO_ROOT / "src" / "charmer" / name).read_text()
             with self.subTest(module=name):
                 self.assertNotIn("fcntl.", text)
                 self.assertIn("posix_fs.lock_descriptor(", text)
@@ -900,22 +900,22 @@ class PosixSeamTests(unittest.TestCase):
 # The manager's command names belong to the systemd backend only (no
 # templates ship in src/); every other module reaches them through the
 # remedy seam (service.hint) or the backend's calls.
-SERVICE_MANAGER_OWNERS = ("claude_multi.platform.linux_service",)
+SERVICE_MANAGER_OWNERS = ("charmer.platform.linux_service",)
 
 
 class ServiceBoundaryTests(unittest.TestCase):
     def test_service_manager_literals_have_one_owner(self) -> None:
-        src = REPO_ROOT / "src" / "claude_multi"
+        src = REPO_ROOT / "src" / "charmer"
         owners_seen = set()
         for path in sorted(src.rglob("*.py")):
             text = path.read_text()
-            dotted = "claude_multi." + ".".join(path.relative_to(src).with_suffix("").parts).removesuffix(".__init__")
+            dotted = "charmer." + ".".join(path.relative_to(src).with_suffix("").parts).removesuffix(".__init__")
             with self.subTest(module=dotted):
                 if dotted not in SERVICE_MANAGER_OWNERS:
                     self.assertNotRegex(text, r"systemctl|journalctl")
                 else:
                     owners_seen.add(dotted)
-                if dotted not in ("claude_multi.service", "claude_multi.proxy"):
+                if dotted not in ("charmer.service", "charmer.proxy"):
                     if path.name == "management.py":
                         # The exact build-attestation artifact, not a service
                         # name or command. All other literal uses stay refused.

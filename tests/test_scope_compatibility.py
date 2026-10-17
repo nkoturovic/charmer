@@ -17,8 +17,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from claude_multi import catalog, compiler, operator, profile, scope, sessions, settings, state, strict_json, transition
-from claude_multi.cli import doctor
+from charmer import catalog, compiler, operator, profile, scope, sessions, settings, state, strict_json, transition
+from charmer.cli import doctor
 from _catalog import FIXTURE_ROOT
 from _layout import FIXTURES_ROOT
 

@@ -73,7 +73,7 @@ from _layout import REPO_ROOT, RESOURCES_RELATIVE  # noqa: E402
 
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from claude_multi import catalog, continuity, operator, state, strict_json  # noqa: E402
+from charmer import catalog, continuity, operator, state, strict_json  # noqa: E402
 
 FAKE_MODEL_ID = "isolation-probe"
 FAKE_SELECTOR_BASE = "claude-multi-isolation-probe"
@@ -143,7 +143,7 @@ socket.socket.connect = connect
 socket.socket.connect_ex = connect_ex
 socket.create_connection = create_connection
 
-# No claude_multi import here: the guard also covers scope-only child paths
+# No charmer import here: the guard also covers scope-only child paths
 # without loading product modules before their own import restrictions apply.
 import sys
 

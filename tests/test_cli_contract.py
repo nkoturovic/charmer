@@ -23,9 +23,9 @@ from unittest import mock
 import _tripwire  # noqa: F401  (no live-home access from these tests)
 from _layout import REPO_ROOT
 from _catalog import FIXTURE_ROOT
-from claude_multi import cli, identity
-from claude_multi.cli import parser as parser_mod, streams
-from claude_multi.cli.commands import lineup as lineup_cmd
+from charmer import cli, identity
+from charmer.cli import parser as parser_mod, streams
+from charmer.cli.commands import lineup as lineup_cmd
 import test_cli
 from test_cli import FIXED_ID, OTHER_ID, CLITestCase
 
@@ -79,7 +79,7 @@ class ExitStatusTests(CLITestCase):
         self.assertFalse((self.runtime.session_store.sessions_dir / f"{FIXED_ID}.json").exists())
 
     def test_an_interrupt_is_130_and_says_so(self) -> None:
-        with mock.patch("claude_multi.cli.commands.profile._profile_list", side_effect=KeyboardInterrupt):
+        with mock.patch("charmer.cli.commands.profile._profile_list", side_effect=KeyboardInterrupt):
             code, out, err = self.run_cli_both(["profile", "list"], interactive=False)
         self.assertEqual((code, out), (130, ""))
         self.assertIn("claude-multi: cancelled", err)
@@ -90,7 +90,7 @@ class FilesystemFailureTests(CLITestCase):
         where = Path(self.runtime.environ["HOME"]) / ".config" / "claude-multi" / "profiles" / "x.json"
         failure = OSError(errno.ENOSPC, "No space left on device", str(where))
         with mock.patch.dict(os.environ, {"HOME": self.runtime.environ["HOME"]}), \
-                mock.patch("claude_multi.cli.commands.profile._profile_list", side_effect=failure):
+                mock.patch("charmer.cli.commands.profile._profile_list", side_effect=failure):
             code, out, err = self.run_cli_both(["profile", "list"], interactive=False)
         self.assertEqual((code, out), (1, ""))
         self.assertIn("at ~/.config/claude-multi/profiles/x.json", err)
@@ -104,7 +104,7 @@ class FilesystemFailureTests(CLITestCase):
         return code, out.getvalue(), err.getvalue()
 
     def test_lineup_storage_and_permission_failures_name_the_fix(self) -> None:
-        from claude_multi import state
+        from charmer import state
 
         where = Path(self.runtime.environ["HOME"]) / ".local" / "state" / "claude-multi" / "sessions" / "x.json"
         self.runtime.environ["CLAUDE_CODE_SESSION_ID"] = OTHER_ID  # a terminal run's session comes from here
@@ -113,7 +113,7 @@ class FilesystemFailureTests(CLITestCase):
             expected = f"claude-multi: {what} at ~/.local/state/claude-multi/sessions/x.json\n  fix: {remedy}\n"
             failure = OSError(number, os.strerror(number), str(where))
             with self.subTest(errno=errno.errorcode[number]), \
-                    mock.patch("claude_multi.lineup.apply", side_effect=failure):
+                    mock.patch("charmer.lineup.apply", side_effect=failure):
                 # A terminal run: stderr, exit 1, the remedy, never the errno.
                 code, out, err = self._lineup(["show"])
                 self.assertEqual((code, out, err), (1, "", expected))
@@ -122,11 +122,11 @@ class FilesystemFailureTests(CLITestCase):
                 self.assertEqual((code, out, err), (0, expected, ""))
 
     def test_a_lineup_state_error_keeps_its_message_and_gets_the_fix(self) -> None:
-        from claude_multi import state
+        from charmer import state
 
         failure = state.StateError(errno.EPERM, "the state directory is not owner-controlled")
         self.runtime.environ["CLAUDE_CODE_SESSION_ID"] = OTHER_ID
-        with mock.patch("claude_multi.lineup.apply", side_effect=failure):
+        with mock.patch("charmer.lineup.apply", side_effect=failure):
             code, out, err = self._lineup(["show"])
         self.assertEqual((code, out), (1, ""))
         self.assertIn("the state directory is not owner-controlled", err)
@@ -146,7 +146,7 @@ class FilesystemFailureTests(CLITestCase):
             return self.runtime
 
         out = io.StringIO()
-        with mock.patch.dict(os.environ, environ), mock.patch("claude_multi.cli.runtime.Runtime", side_effect=build), \
+        with mock.patch.dict(os.environ, environ), mock.patch("charmer.cli.runtime.Runtime", side_effect=build), \
                 contextlib.redirect_stderr(io.StringIO()):
             code = cli.main(["doctor"], output_stream=out, interactive=False)
         self.assertEqual(code, 1, out.getvalue())
@@ -238,8 +238,8 @@ class CommandLineOptionBoundaryTests(CLITestCase):
         """The Runtime keyword arguments and the channel ``record`` flags an
         entry run of ``argv`` asks for (the Runtime is never built)."""
 
-        import claude_multi.cli.runtime as runtime_mod
-        from claude_multi import installs
+        import charmer.cli.runtime as runtime_mod
+        from charmer import installs
 
         records: list = []
         real_check = installs.check
@@ -336,7 +336,7 @@ class CommandLineOptionBoundaryTests(CLITestCase):
                 self.assertIs(prepare.call_args.kwargs["read_only"], True)
 
     def test_a_read_only_lineup_request_builds_a_read_only_runtime(self) -> None:
-        import claude_multi.cli.runtime as runtime_mod
+        import charmer.cli.runtime as runtime_mod
 
         for words, writes in ((["profiles"], False), (["show"], False), (["review"], False),
                               (["fallback", "openai", "--preview"], False), (["pin"], True)):
@@ -357,8 +357,8 @@ class CommandLineOptionBoundaryTests(CLITestCase):
                 self.assertIs(captured[0]["initialize_session_store"], writes)
 
     def test_bare_direct_off_a_terminal_refuses_before_any_state(self) -> None:
-        import claude_multi.cli.runtime as runtime_mod
-        from claude_multi import installs
+        import charmer.cli.runtime as runtime_mod
+        from charmer import installs
 
         for argv, interactive in ((["direct"], False), (["direct", "--print-launch"], True),
                                   (["direct", "-r"], True)):
@@ -373,7 +373,7 @@ class CommandLineOptionBoundaryTests(CLITestCase):
             self.assertIn("claude-multi direct", err.getvalue())
 
     def test_json_lists_print_a_failure_document(self) -> None:
-        import claude_multi.cli.runtime as runtime_mod
+        import charmer.cli.runtime as runtime_mod
 
         failure = OSError(errno.EACCES, "Permission denied", str(Path(self.runtime.environ["HOME"]) / "x"))
         for argv, name in ((["sessions", "list", "--json"], "sessions"), (["profile", "list", "--json"], "profiles"),
@@ -390,14 +390,14 @@ class CommandLineOptionBoundaryTests(CLITestCase):
             self.assertIn("permission was denied at ~/x", err.getvalue())
             self.assertNotIn("~/x", out.getvalue())
         # A failure inside the list prints the same document.
-        with mock.patch("claude_multi.cli.commands.sessions.sessions_list_document",
+        with mock.patch("charmer.cli.commands.sessions.sessions_list_document",
                         side_effect=cli.CLIError("fixture failure")):
             code, out, err = self.run_cli_both(["sessions", "list", "--json"], interactive=False)
         self.assertEqual(code, 1)
         self.assertEqual(json.loads(out)["status"], "unavailable")
 
     def test_unknown_background_liveness_is_null(self) -> None:
-        from claude_multi import sessions
+        from charmer import sessions
 
         self.save_v4_session()
         self.runtime.background_liveness = lambda: sessions.BackgroundLiveness(False, frozenset(), "fixture unknown")
@@ -444,7 +444,7 @@ class CommandLineOptionBoundaryTests(CLITestCase):
 
 class ProviderEditDeclineTests(test_cli.OperatorCommandCase):
     def test_declining_a_provider_edit_is_3_and_writes_nothing(self) -> None:
-        from claude_multi import operator as operator_mod
+        from charmer import operator as operator_mod
 
         code, _out, err = self.op(test_cli.ACME_ADD, "y\n")
         self.assertEqual(code, 0, err)
@@ -486,13 +486,13 @@ class StreamTests(unittest.TestCase):
 class HelpBeforeStateTests(unittest.TestCase):
     def test_lineup_help_needs_no_runtime(self) -> None:
         out = io.StringIO()
-        with mock.patch("claude_multi.cli.runtime.Runtime", side_effect=AssertionError("no runtime for help")):
+        with mock.patch("charmer.cli.runtime.Runtime", side_effect=AssertionError("no runtime for help")):
             code = cli.main(["lineup", "--help"], output_stream=out, interactive=False)
         self.assertEqual(code, 0)
         self.assertEqual(out.getvalue(), lineup_cmd.lineup_help())
 
     def test_dev_lists_and_prints_the_release_identity(self) -> None:
-        from claude_multi import dev
+        from charmer import dev
 
         self.assertIn("claude-multi-dev --version", dev.DEV_HELP)
         out = io.StringIO()
@@ -511,7 +511,7 @@ class ProcessContractTests(unittest.TestCase):
         self.addCleanup(__import__("shutil").rmtree, cwd, True)
         env = {"HOME": str(home), "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
                "PYTHONPATH": str(REPO_ROOT / "src"), "PYTHONDONTWRITEBYTECODE": "1", "LC_ALL": "C.UTF-8"}
-        result = subprocess.run([sys.executable, "-B", "-m", "claude_multi.cli", *argv], env=env, cwd=cwd,
+        result = subprocess.run([sys.executable, "-B", "-m", "charmer.cli", *argv], env=env, cwd=cwd,
                                 stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=120)
         return result, home
 
@@ -556,7 +556,7 @@ class ReadOnlyEntryProcessTests(unittest.TestCase):
         if "CM_ISOLATION_GUARD_LOG" in os.environ:
             env["CM_ISOLATION_GUARD_LOG"] = os.environ["CM_ISOLATION_GUARD_LOG"]
         before = self.snapshot()
-        result = subprocess.run([sys.executable, "-B", "-m", "claude_multi.cli", *argv],
+        result = subprocess.run([sys.executable, "-B", "-m", "charmer.cli", *argv],
                                 env=env, cwd=self.cwd, stdin=subprocess.DEVNULL,
                                 capture_output=True, text=True, timeout=120)
         self.assertEqual(self.snapshot(), before, result.stdout + result.stderr)
@@ -566,7 +566,7 @@ class ReadOnlyEntryProcessTests(unittest.TestCase):
         return self.run_read_only(*argv, "--print-launch")
 
     def test_inhibited_gateway_start_refuses_before_any_entry_point_write(self) -> None:
-        from claude_multi import gateway_inhibition as gi, state
+        from charmer import gateway_inhibition as gi, state
 
         root = self.home / ".local" / "state" / "claude-multi"
         gi.begin(root, owner="installer", purpose="fixture install", phase="replace",
@@ -619,7 +619,7 @@ class ReadOnlyEntryProcessTests(unittest.TestCase):
         self.assertEqual(list(self.home.iterdir()), [])
 
     def test_a_missing_provider_key_reports_the_normal_remedy_without_writing(self) -> None:
-        from claude_multi import profile
+        from charmer import profile
 
         path = self.cwd / "profile.json"
         path.write_text(json.dumps(profile.ad_hoc_direct("qwen38")))

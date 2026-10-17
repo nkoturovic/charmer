@@ -19,7 +19,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest import mock
 
-from claude_multi import catalog, continuity, endpoint, proxy, render, sessions, state, strict_json
+from charmer import catalog, continuity, endpoint, proxy, render, sessions, state, strict_json
 from _catalog import FIXTURE_ROOT, GOLDENS_ROOT, SHIPPED_ROOT, uses_shipped_catalog
 from _golden import assertGolden
 
@@ -861,7 +861,7 @@ class ZeroModelRestoreAsCustomTests(ContinuityCase):
     """A custom model on a model-less catalog provider still renders."""
 
     def test_custom_model_on_a_zero_model_provider(self) -> None:
-        from claude_multi import custom
+        from charmer import custom
 
         bundle = self.bundle()
         self.assertFalse(any(line["provider"] == "deepseek" for line in bundle.lines.values()))

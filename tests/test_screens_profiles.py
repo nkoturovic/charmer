@@ -19,14 +19,14 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from claude_multi import catalog, choices, profile, state, tui, views
-from claude_multi.setup import defaults, model, profiles as setup_profiles
+from charmer import catalog, choices, profile, state, tui, views
+from charmer.setup import defaults, model, profiles as setup_profiles
 
 import _tui_fixture as fx
 from _tui_render import golden_runtime, render
 from test_tui import BACKSPACE, DOWN, END, HOME, RIGHT, UP, FakeWindow
-import claude_multi.cli.screens.profiles as screens_profiles
-import claude_multi.cli.text as cli_text
+import charmer.cli.screens.profiles as screens_profiles
+import charmer.cli.text as cli_text
 
 ESC = "\x1b"
 ENTER = "\n"
@@ -48,7 +48,7 @@ class ProfilesCase(unittest.TestCase):
         stack = contextlib.ExitStack()
         self.addCleanup(stack.close)
         stack.enter_context(fx.hermetic(self.runtime))
-        stack.enter_context(mock.patch("claude_multi.cli.gateway_facts._doctor_now", lambda: fx.FIXED_NOW))
+        stack.enter_context(mock.patch("charmer.cli.gateway_facts._doctor_now", lambda: fx.FIXED_NOW))
         self.runtime.profiles.install_seeds()
 
     # -- builders ------------------------------------------------------------
@@ -384,7 +384,7 @@ class NewTests(ProfilesCase):
 
 
 def readiness_order(runtime) -> list[str]:
-    from claude_multi import readiness
+    from charmer import readiness
 
     store = runtime.profiles
     seeds = [name for name in readiness.SEED_ORDER if store.is_seed(name)]
@@ -540,7 +540,7 @@ class ReseedTests(ProfilesCase):
         self.assertIn(cli_text.PROFILES_REFRESHED.split("{")[0], " ".join(win.frames))
 
     def test_an_update_that_stops_part_way_still_offers_the_updated_ones(self) -> None:
-        import claude_multi.cli.screens.propagation as screens_propagation
+        import charmer.cli.screens.propagation as screens_propagation
 
         names = [name for name in readiness_order(self.runtime)[:2]]
         real_write = profile.ProfileStore._write
@@ -568,7 +568,7 @@ class ReseedTests(ProfilesCase):
         install record cannot be saved after its file was replaced: the
         screen and the propagation offers it makes."""
 
-        import claude_multi.cli.screens.propagation as screens_propagation
+        import charmer.cli.screens.propagation as screens_propagation
 
         names = [name for name in readiness_order(self.runtime)[:2]]
         newer = self.newer_store(*names)

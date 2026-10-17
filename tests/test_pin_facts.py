@@ -10,8 +10,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from claude_multi import pin, views
-from claude_multi.cli.screens import launch_sessions
+from charmer import pin, views
+from charmer.cli.screens import launch_sessions
 from _v4 import V4Case
 
 
@@ -130,11 +130,11 @@ class ClaudeCardRowTests(V4Case):
         self.assertIsNone(launch_sessions._claude_card_staleness(self.runtime))
 
     def card_texts(self, runtime, today: datetime.date) -> list[str]:
-        from claude_multi import cli, tui
+        from charmer import cli, tui
         import io
 
         now = datetime.datetime.combine(today, datetime.time(12), tzinfo=datetime.timezone.utc)
-        with mock.patch("claude_multi.cli.gateway_facts._doctor_now", return_value=now):
+        with mock.patch("charmer.cli.gateway_facts._doctor_now", return_value=now):
             screen = cli._LaunchCardScreen(
                 runtime, self.profile_target(), passthrough=[], palette=tui.MONO_PALETTE,
                 gateway_checked=True, gateway_check=lambda: None, hint_detector=lambda _contract: None,

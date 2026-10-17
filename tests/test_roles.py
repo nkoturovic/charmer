@@ -16,8 +16,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from claude_multi import catalog, strict_json
-from claude_multi.catalog import CatalogError
+from charmer import catalog, strict_json
+from charmer.catalog import CatalogError
 
 from _catalog import FIXTURE_ROOT, SHIPPED_ROOT, uses_shipped_catalog
 

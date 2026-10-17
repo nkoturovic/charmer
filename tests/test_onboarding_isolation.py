@@ -14,12 +14,12 @@ from unittest import mock
 import test_cli
 import test_qualify
 import test_openai_compat_keyed as keyed
-from claude_multi import catalog, operator, profile, qualify, state, strict_json, tui, views
-import claude_multi.cli.consent as consent
-import claude_multi.cli.onboarding as onboarding
-import claude_multi.cli.types as types
-import claude_multi.cli.screens.models as models_screen
-import claude_multi.cli.screens.common as common
+from charmer import catalog, operator, profile, qualify, state, strict_json, tui, views
+import charmer.cli.consent as consent
+import charmer.cli.onboarding as onboarding
+import charmer.cli.types as types
+import charmer.cli.screens.models as models_screen
+import charmer.cli.screens.common as common
 from test_tui import FakeWindow
 
 
@@ -209,7 +209,7 @@ class PromptContracts(unittest.TestCase):
 
 class ActionRefusalOwners(JourneyFixture):
     def test_E11_listing_without_context(self):
-        import claude_multi.cli.commands.discover as discover
+        import charmer.cli.commands.discover as discover
         self.assertEqual(discover.missing_context_text("fixture", "model-9"),
                          'discover fixture --add model-9: the listing states no context — claude-multi models add fixture model-9 --context N --source docs --source-ref "<URL, date>"')
 
@@ -243,7 +243,7 @@ class ActionRefusalOwners(JourneyFixture):
 class ObservationAcceptance(JourneyFixture):
     def test_B29_served_extras_are_advisory_and_do_not_write(self):
         import test_discovery
-        from claude_multi import launch
+        from charmer import launch
         registry = test_discovery._registry_dir(self, {"claude": [{"id": "claude-fixture-unlisted", "context_length": 200000}]})
         self.runtime.environ[catalog.REGISTRY_DIR_ENV] = str(registry)
         self.runtime.served_models_callback = lambda gateway, token: (
@@ -259,7 +259,7 @@ class ObservationAcceptance(JourneyFixture):
         self.assertEqual(self.http_calls, [])
 
     def test_selected_transport_display_and_D28_need_the_selected_key(self):
-        import claude_multi.cli.gateway_facts as facts
+        import charmer.cli.gateway_facts as facts
         state.atomic_write(self.secret_file, self.secret_file.read_bytes() + b"PLATFORM_ANTHROPIC_API_KEY=fixture-key-only\n")
         self.assertEqual(self.invoke(["providers", "transport", "anthropic", "api-key"])[0], 0)
         self.serve_current()
@@ -358,7 +358,7 @@ class OperatorAgentRollbackTests(JourneyFixture):
     a catalog-only profile."""
 
     def test_a_t2_agent_binding_is_an_unknown_model_under_the_302_view(self):
-        from claude_multi import cli, sessions
+        from charmer import cli, sessions
         sessions.ensure_state_v4(self.runtime.session_store.root)
         key = self.declare()
         self.assertEqual(self.invoke(["models", "admit", key])[0], 0)
@@ -391,7 +391,7 @@ class OperatorAgentRollbackTests(JourneyFixture):
 class CardOperatorLeadTests(JourneyFixture):
     def test_an_operator_lead_is_tagged_op_beside_its_class(self):
         """An operator lead is tagged op beside its class."""
-        import claude_multi.cli.screens.launch_sessions as launch_sessions
+        import charmer.cli.screens.launch_sessions as launch_sessions
         key = self.declare()
         self.assertEqual(self.invoke(["models", "admit", key])[0], 0)
         lcat = self.runtime.lineup_catalog()
@@ -449,9 +449,9 @@ class KeyedProviderKeyTests(JourneyFixture):
                 self.assertEqual("--header" in argv, auth == "header")
 
     def test_keyed_new_provider_offers_the_key_modal(self):
-        import claude_multi.cli.screens.providers as providers_screen
-        import claude_multi.cli.text as cli_text
-        from claude_multi import secret_store
+        import charmer.cli.screens.providers as providers_screen
+        import charmer.cli.text as cli_text
+        from charmer import secret_store
 
         values = {"id": "acme", "kind": "anthropic-compatible", "url": "https://api.acme.example/anthropic",
                   "auth": "bearer", "secret": "ACME_API_KEY", "family": "acme", "contracts": "output-config-high",
@@ -511,7 +511,7 @@ class FormParserBoundaryTests(unittest.TestCase):
     def test_bad_form_fields_cannot_exit_or_print_over_curses(self):
         import contextlib
         from types import SimpleNamespace
-        import claude_multi.cli.commands.providers as providers
+        import charmer.cli.commands.providers as providers
         runtime = SimpleNamespace(allow_state_writes=True, gateway_environ=lambda: {})
         for value in ("--help", "--not-a-provider-id"):
             stdout, stderr, report = io.StringIO(), io.StringIO(), io.StringIO()
@@ -530,7 +530,7 @@ class OperatorStateRollbackTests(JourneyFixture):
         OperatorAgentRollbackTests.test_a_t2_agent_binding_is_an_unknown_model_under_the_302_view(self)
 
     def test_operator_state_is_safe_under_an_earlier_release_rollback(self):
-        from claude_multi import sessions, validate, settings
+        from charmer import sessions, validate, settings
         key = self.declare()
         self.assertEqual(self.invoke(['models', 'admit', key])[0], 0)
         before = self.state_bytes()
@@ -545,7 +545,7 @@ class OperatorStateRollbackTests(JourneyFixture):
                          effective=self.runtime.current_effective()).errors, ())
 
     def test_rollback_t2_workflow_default_fresh_repair_resume(self):
-        from claude_multi import cli, sessions, settings, transition
+        from charmer import cli, sessions, settings, transition
         sessions.ensure_state_v4(self.runtime.session_store.root)
         key = self.declare()
         self.assertEqual(self.invoke(['models', 'admit', key])[0], 0)

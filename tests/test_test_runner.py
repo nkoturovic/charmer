@@ -101,14 +101,14 @@ class RunnerTests(unittest.TestCase):
         for name, body in MODULES.items():
             (cls.repo / "tests" / f"{name}.py").write_text(textwrap.dedent(body).lstrip())
         # The package with a contract that pins a fake client (for --claude).
-        shutil.copytree(PACKAGE_DIR, cls.repo / "src" / "claude_multi",
+        shutil.copytree(PACKAGE_DIR, cls.repo / "src" / "charmer",
                         ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
         cls.client = cls.base / "claude-9.9.9"
         cls.client.write_bytes(b"#!/bin/sh\necho fake pinned client\n")
         os.chmod(cls.client, 0o755)
-        contract_path = cls.repo / "src/claude_multi/data/catalog/native-contract.json"
+        contract_path = cls.repo / "src/charmer/data/catalog/native-contract.json"
         contract = json.loads(contract_path.read_text())
-        from claude_multi import pin
+        from charmer import pin
 
         contract["verified"][0]["version"] = "9.9.9"
         contract["verified"][0]["platforms"][pin.host_platform()] = {

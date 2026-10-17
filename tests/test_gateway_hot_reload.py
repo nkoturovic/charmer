@@ -18,7 +18,7 @@ import time
 import unittest
 from pathlib import Path
 
-from claude_multi import probe, proxy, render, state
+from charmer import probe, proxy, render, state
 from _catalog import FIXTURE_ROOT
 from test_proxy import _find_binary
 from _gateway_harness import BINARY_ENV, boundary

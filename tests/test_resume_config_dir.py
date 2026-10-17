@@ -17,8 +17,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from claude_multi import paths
-from claude_multi.cli import resume_checks, session_facts
+from charmer import paths
+from charmer.cli import resume_checks, session_facts
 
 RUNTIME_ID = "11111111-1111-4111-8111-111111111111"
 

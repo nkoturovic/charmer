@@ -32,13 +32,13 @@ import _tui_fixture as fx
 import test_cli
 from _catalog import SHIPPED_ROOT, uses_shipped_catalog
 from test_tui import DOWN, ENTER, ESC, FakeWindow
-from claude_multi import catalog, cli, operator as operator_mod, profile, proxy, state, strict_json, tui
-from claude_multi.setup import defaults, providers as setup_providers, status as setup_status, texts
-import claude_multi.cli.commands.discover as discover_cmd
-import claude_multi.cli.consent as consent
-import claude_multi.cli.screens.common as screens_common
-import claude_multi.cli.screens.providers as providers_screen
-import claude_multi.cli.text as cli_text
+from charmer import catalog, cli, operator as operator_mod, profile, proxy, state, strict_json, tui
+from charmer.setup import defaults, providers as setup_providers, status as setup_status, texts
+import charmer.cli.commands.discover as discover_cmd
+import charmer.cli.consent as consent
+import charmer.cli.screens.common as screens_common
+import charmer.cli.screens.providers as providers_screen
+import charmer.cli.text as cli_text
 
 
 class _ShippedCase(unittest.TestCase):

@@ -13,7 +13,7 @@ import threading
 import unittest
 from pathlib import Path
 
-from claude_multi import choices, settings, state
+from charmer import choices, settings, state
 
 from _catalog import FIXTURE_ROOT
 

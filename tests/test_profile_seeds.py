@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import unittest
 
-from claude_multi import catalog, profile, strict_json
+from charmer import catalog, profile, strict_json
 
 from _catalog import FIXTURE_ROOT, SHIPPED_ROOT, uses_shipped_catalog
 

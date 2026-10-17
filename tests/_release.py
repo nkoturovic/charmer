@@ -51,7 +51,7 @@ requires_release_tree = unittest.skipUnless(
 )
 
 
-TRUST_RELATIVE = Path("src") / "claude_multi" / "data" / "release-trust" / "allowed_signers"
+TRUST_RELATIVE = Path("src") / "charmer" / "data" / "release-trust" / "allowed_signers"
 
 
 def keyless_trust_text() -> str:

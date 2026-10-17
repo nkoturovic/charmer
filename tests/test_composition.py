@@ -11,8 +11,8 @@ from __future__ import annotations
 import copy
 import unittest
 
-from claude_multi import composition, strict_json
-from claude_multi.composition import CompositionError
+from charmer import composition, strict_json
+from charmer.composition import CompositionError
 from _catalog import FIXTURE_ROOT
 from _layout import REPO_ROOT
 

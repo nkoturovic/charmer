@@ -6,7 +6,7 @@ import itertools
 import unittest
 from pathlib import Path
 
-from claude_multi import catalog, compiler, strict_json
+from charmer import catalog, compiler, strict_json
 from _catalog import FIXTURE_ROOT
 
 
@@ -97,7 +97,7 @@ class PolicyMatrixTests(unittest.TestCase):
     def test_no_same_name_shadowing(self) -> None:
         # The generated agent ids of every fixture seed
         # (3.0 agent files are named by role id), not a 2.x resolution.
-        from claude_multi import profile
+        from charmer import profile
 
         bundle = catalog.load_catalog(CATALOG_ROOT)
         lcat = profile.LineupCatalog.from_docs(bundle.docs)

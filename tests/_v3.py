@@ -23,8 +23,8 @@ from dataclasses import dataclass, replace
 from typing import Any, Mapping, Sequence
 
 from _layout import REPO_ROOT
-from claude_multi import catalog, sessions, strict_json
-from claude_multi.composition import (
+from charmer import catalog, sessions, strict_json
+from charmer.composition import (
     CompositionError,
     LEAD_ID,
     auto_compact_trigger,

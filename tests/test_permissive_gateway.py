@@ -12,7 +12,7 @@ import unittest
 
 import _gateway_harness as harness
 from _catalog import FIXTURE_ROOT
-from claude_multi import operator, profile, render, scope, settings, strict_json
+from charmer import operator, profile, render, scope, settings, strict_json
 
 
 PROVIDER = "permissive-lan"

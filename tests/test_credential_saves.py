@@ -10,9 +10,9 @@ import sys
 import unittest
 from unittest import mock
 
-from claude_multi import gateway_events as events, launch, service
-from claude_multi.cli import doctor, gateway_facts
-from claude_multi.platform import linux_service
+from charmer import gateway_events as events, launch, service
+from charmer.cli import doctor, gateway_facts
+from charmer.platform import linux_service
 from _layout import PATCH_DIR
 from _v4 import V4Case
 
@@ -325,8 +325,8 @@ class DoctorSaveTests(V4Case):
             self.assertNotIn(forbidden, repr((attention, info)))
 
     def test_reader_is_suppressed_by_injected_runtime_and_called_once_when_live(self):
-        from claude_multi import endpoint
-        from claude_multi.platform import file_log
+        from charmer import endpoint
+        from charmer.platform import file_log
 
         # The on-demand gateway's log source is its instance files; the
         # supervised unit's is its journal.

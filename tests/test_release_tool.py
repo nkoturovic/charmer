@@ -61,10 +61,10 @@ class FakeRunner:
 
 def git_repo(root: Path, version: str = "1.2.3", catalog: int = 7, changelog: str | None = None) -> Path:
     repo = root / "repo"
-    (repo / "src" / "claude_multi" / "data" / "catalog").mkdir(parents=True)
-    (repo / "src" / "claude_multi" / "data" / "version.json").write_text(json.dumps(
+    (repo / "src" / "charmer" / "data" / "catalog").mkdir(parents=True)
+    (repo / "src" / "charmer" / "data" / "version.json").write_text(json.dumps(
         {"catalog_version": catalog, "launcher_version": version, "version": 1}))
-    (repo / "src" / "claude_multi" / "data" / "catalog" / "models.json").write_text("{}\n")
+    (repo / "src" / "charmer" / "data" / "catalog" / "models.json").write_text("{}\n")
     (repo / "CHANGELOG.md").write_text(changelog if changelog is not None else
                                        f"# Changelog\n\n## [{version}] — 2026-10-15\n\n- first\n")
     env = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
@@ -118,12 +118,12 @@ class PreflightCheckTests(unittest.TestCase):
         self.assertTrue(self.tool.check_version_bump(repo, None).ok)
         tag(repo, "v1.0.0")
         self.assertTrue(self.tool.check_version_bump(repo, None).ok)  # its own tag on HEAD
-        version = repo / "src" / "claude_multi" / "data" / "version.json"
+        version = repo / "src" / "charmer" / "data" / "version.json"
         version.write_text(json.dumps({"catalog_version": 7, "launcher_version": "1.1.0", "version": 1}))
         commit(repo, "two")
         self.assertEqual(self.tool.previous_release(repo, "1.1.0"), "v1.0.0")
         self.assertTrue(self.tool.check_version_bump(repo, "v1.0.0").ok)
-        (repo / "src" / "claude_multi" / "data" / "catalog" / "models.json").write_text('{"changed": true}\n')
+        (repo / "src" / "charmer" / "data" / "catalog" / "models.json").write_text('{"changed": true}\n')
         commit(repo, "catalog")
         check = self.tool.check_version_bump(repo, "v1.0.0")
         self.assertFalse(check.ok)
@@ -182,13 +182,13 @@ class PreflightCheckTests(unittest.TestCase):
 
     def test_parity_refuses_a_stale_contract(self) -> None:
         copy = self.tmp / "tree"
-        for part in ("gateway", "tools", "packaging", "src/claude_multi/data"):
+        for part in ("gateway", "tools", "packaging", "src/charmer/data"):
             shutil.copytree(REPO_ROOT / part, copy / part, ignore=shutil.ignore_patterns("__pycache__"))
-        (copy / "src/claude_multi/data/gateway-contract.json").write_text("{}")
+        (copy / "src/charmer/data/gateway-contract.json").write_text("{}")
         check = self.tool.check_gateway_parity(copy)
         self.assertFalse(check.ok)
         self.assertIn("stale", check.detail)
-        catalog = copy / "src/claude_multi/data/catalog/gateway.json"
+        catalog = copy / "src/charmer/data/catalog/gateway.json"
         document = json.loads(catalog.read_text())
         document["gateway"]["patches"].reverse()
         catalog.write_text(json.dumps(document))
@@ -197,7 +197,7 @@ class PreflightCheckTests(unittest.TestCase):
     @needs_ssh_keygen()
     def test_trust_with_a_key(self) -> None:
         key = make_key(self.tmp)
-        trust_file = self.tmp / "tree" / "src" / "claude_multi" / "data" / "release-trust" / "allowed_signers"
+        trust_file = self.tmp / "tree" / "src" / "charmer" / "data" / "release-trust" / "allowed_signers"
         trust_file.parent.mkdir(parents=True)
         trust_file.write_text("# test key\n" + signers_line(key))
         check = self.tool.check_trust(self.tmp / "tree")
@@ -254,7 +254,7 @@ class PreflightCheckTests(unittest.TestCase):
         # A development line (X.Y.Z-dev, AGENTS.md) is refused by the version
         # and changelog checks; the release commit sets X.Y.Z and its dated
         # entry, and then both pass.
-        from claude_multi import __version__
+        from charmer import __version__
 
         released = self.tool.RELEASE_VERSION.fullmatch(__version__) is not None
         self.assertEqual(verdicts["version"], released)
@@ -610,7 +610,7 @@ exit 71
 
     def publish_repo(self) -> Path:
         repo = self.tmp / "repo"
-        trust_file = repo / "src" / "claude_multi" / "data" / "release-trust" / "allowed_signers"
+        trust_file = repo / "src" / "charmer" / "data" / "release-trust" / "allowed_signers"
         trust_file.parent.mkdir(parents=True)
         trust_file.write_text(signers_line(self.key))
         return repo

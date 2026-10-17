@@ -58,7 +58,7 @@ from _layout import NIX_DIR, REPO_ROOT, SERVICE_SPEC  # noqa: E402
 
 sys.path[:0] = [str(REPO_ROOT), str(REPO_ROOT / "src"), str(REPO_ROOT / "tests")]
 from _catalog import FIXTURE_GATEWAY_TOKEN, FIXTURE_ROOT
-from claude_multi import catalog, probe, render, state
+from charmer import catalog, probe, render, state
 import _gateway_harness as harness
 
 SCHEMA = "gwtest-races-v1"

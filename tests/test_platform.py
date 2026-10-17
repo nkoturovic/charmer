@@ -22,10 +22,10 @@ from pathlib import Path
 from unittest import mock
 
 from _layout import REPO_ROOT
-from claude_multi import management, proxy, service, sessions, state
-from claude_multi.platform import linux_process, linux_service, observation, posix_fs
+from charmer import management, proxy, service, sessions, state
+from charmer.platform import linux_process, linux_service, observation, posix_fs
 
-SRC = REPO_ROOT / "src" / "claude_multi"
+SRC = REPO_ROOT / "src" / "charmer"
 PLATFORM = SRC / "platform"
 GATEWAY_URL = "http://127.0.0.1:8333"
 
@@ -52,19 +52,19 @@ class PackageBoundaryTests(unittest.TestCase):
                 elif isinstance(node, ast.ImportFrom):
                     self.assertEqual(node.level, 0, path.name)
                     imported.add(node.module)
-            product = {name for name in imported if name.startswith("claude_multi")}
+            product = {name for name in imported if name.startswith("charmer")}
             with self.subTest(module=path.name):
-                self.assertLessEqual(product, {"claude_multi.platform"}, product)
+                self.assertLessEqual(product, {"charmer.platform"}, product)
         self.assertEqual(ast.parse((PLATFORM / "__init__.py").read_text()).body[1:], [])
 
     def test_package_import_loads_no_backend(self) -> None:
-        code = ("import sys, claude_multi.platform, claude_multi.state, claude_multi.sessions\n"
-                "print(sorted(m for m in sys.modules if m.startswith('claude_multi.platform')))\n")
+        code = ("import sys, charmer.platform, charmer.state, charmer.sessions\n"
+                "print(sorted(m for m in sys.modules if m.startswith('charmer.platform')))\n")
         env = {**os.environ, "PYTHONPATH": str(SRC.parent)}
         out = subprocess.run([sys.executable, "-B", "-c", code], env=env, text=True,
                              capture_output=True, check=True, timeout=30).stdout
-        self.assertEqual(out.strip(), "['claude_multi.platform', 'claude_multi.platform.observation', "
-                                      "'claude_multi.platform.posix_fs']")
+        self.assertEqual(out.strip(), "['charmer.platform', 'charmer.platform.observation', "
+                                      "'charmer.platform.posix_fs']")
 
     def test_compatibility_aliases_keep_identity(self) -> None:
         self.assertIs(service.OwnerVerdict, observation.OwnerVerdict)
@@ -677,8 +677,8 @@ if __name__ == "__main__":
 class CurrentNativeMetadataTests(_Private):
     def test_current_claude_config_dir_metadata_only(self):
         from types import SimpleNamespace
-        from claude_multi import paths
-        from claude_multi.cli import resume_checks, session_facts
+        from charmer import paths
+        from charmer.cli import resume_checks, session_facts
         env = {'HOME': str(self.root), 'CLAUDE_CONFIG_DIR': str(self.root / 'native')}
         rid = '11111111-1111-4111-8111-111111111111'
         record = {'session_id': rid, 'runtime_session_id': rid, 'cwd': '/fixture'}
@@ -691,7 +691,7 @@ class CurrentNativeMetadataTests(_Private):
 
     def test_historical_native_root_remains_unknown(self):
         from types import SimpleNamespace
-        from claude_multi.cli import resume_checks
+        from charmer.cli import resume_checks
         rid = '11111111-1111-4111-8111-111111111111'
         record = {'session_id': rid, 'runtime_session_id': rid, 'cwd': '/fixture'}
         runtime = SimpleNamespace(environ={'HOME': str(self.root), 'CLAUDE_CONFIG_DIR': str(self.root / 'new-native')})
@@ -701,7 +701,7 @@ class CurrentNativeMetadataTests(_Private):
 
 class DurabilityDispositionTests(_Private):
     def test_directory_sync_failure_semantics_per_operation(self):
-        from claude_multi import dev, scope, upgrade
+        from charmer import dev, scope, upgrade
         for name, write in [('state', state.atomic_write), ('upgrade', upgrade._write_repo_file),
                             ('dev', dev._repo_atomic_write)]:
             path = self.root / name

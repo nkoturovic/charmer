@@ -19,10 +19,10 @@ import types
 import unittest
 from pathlib import Path
 
-from claude_multi import (
+from charmer import (
     catalog, composition, profile, proxy, sessions, settings, state, strict_json,
 )
-from claude_multi import validate as schema_validate
+from charmer import validate as schema_validate
 from _catalog import FIXTURE_ROOT, SHIPPED_ROOT
 
 
@@ -72,7 +72,7 @@ class SettingsStoreTests(SettingsCase):
         self.assertEqual(settings.schema_path().name, "settings.schema.json")
 
     def test_a_relative_xdg_config_home_is_ignored(self) -> None:
-        from claude_multi import choices, paths, sessions
+        from charmer import choices, paths, sessions
 
         home = self.root / "home"
         for value in ("relative/config", "./config", ".config"):

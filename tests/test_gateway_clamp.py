@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from claude_multi import catalog, render
+from charmer import catalog, render
 from _catalog import FIXTURE_ROOT, SHIPPED_ROOT, uses_shipped_catalog
 import _gateway_harness as harness
 

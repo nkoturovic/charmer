@@ -16,9 +16,9 @@ from pathlib import Path
 from unittest import mock
 
 import _tui_fixture as fx
-from claude_multi import cli, lineup, sessions, views
-from claude_multi.cli import session_actions
-import claude_multi.cli.text as cli_text
+from charmer import cli, lineup, sessions, views
+from charmer.cli import session_actions
+import charmer.cli.text as cli_text
 from test_screens_sessions import ENTER, ESC, _SessionsCase, _flat
 from test_tui import DOWN, RIGHT
 
@@ -92,7 +92,7 @@ class SessionsMarkEndedTests(_SessionsCase):
 class SessionsRepairTests(_SessionsCase):
     def test_p_repairs_through_the_doctor_operation(self) -> None:
         self.record()
-        with mock.patch("claude_multi.cli.doctor_actions._doctor_repair",
+        with mock.patch("charmer.cli.doctor_actions._doctor_repair",
                         side_effect=lambda runtime, mid, out: (out.write(f"repaired {mid[:8]}\n"), 0)[1]) as repair:
             _result, win = self.run_screen(self.screen(), ["p", RIGHT, ENTER, ESC, ESC], width=120)
         repair.assert_called_once()
@@ -102,13 +102,13 @@ class SessionsRepairTests(_SessionsCase):
 
     def test_cancel_runs_nothing(self) -> None:
         self.record()
-        with mock.patch("claude_multi.cli.doctor_actions._doctor_repair") as repair:
+        with mock.patch("charmer.cli.doctor_actions._doctor_repair") as repair:
             self.run_screen(self.screen(), ["p", ENTER, ESC])
         repair.assert_not_called()
 
     def test_a_legacy_record_is_refused(self) -> None:
         self.v3_record()
-        with mock.patch("claude_multi.cli.doctor_actions._doctor_repair") as repair:
+        with mock.patch("charmer.cli.doctor_actions._doctor_repair") as repair:
             _result, win = self.run_screen(self.screen(), ["p", ESC], width=120)
         repair.assert_not_called()
         self.assertIn(cli_text.REPAIR_LEGACY, win.frames[-1])
@@ -243,7 +243,7 @@ class LineupTargetsTests(_SessionsCase):
             self.assertNotEqual(dialog.provider_name, first)
 
     def test_ended_fallback_preview_names_next_resume_and_enter_applies(self) -> None:
-        from claude_multi.cli.screens import common
+        from charmer.cli.screens import common
         from test_tui import FakeWindow
 
         for height, width in ((24, 80), (40, 120)):
@@ -306,7 +306,7 @@ class LineupTargetsTests(_SessionsCase):
         self.assertIn(lineup.FALLBACK_EXISTING, text)
         self.assertIn("Enter applies", text)
         self.assertNotIn("Apply it with /cm fallback", text)
-        from claude_multi.cli.screens import common
+        from charmer.cli.screens import common
         from test_tui import FakeWindow
 
         with mock.patch.object(common, "_ScrollModal", wraps=common._ScrollModal) as modal:
@@ -318,7 +318,7 @@ class LineupTargetsTests(_SessionsCase):
         self.assertNotIn("Next: resume with", report)
 
     def test_tab_to_direct_and_space_picks_the_lead(self) -> None:
-        from claude_multi.cli.screens import direct as screens_direct
+        from charmer.cli.screens import direct as screens_direct
         from test_tui import FakeWindow
 
         record = self.record()
@@ -347,7 +347,7 @@ class LineupTargetsTests(_SessionsCase):
         self.assertEqual(after["applied_hash"], record["applied_hash"])
 
     def test_space_never_opens_the_direct_picker_on_keep_or_fallback(self) -> None:
-        from claude_multi.cli.screens import direct as screens_direct
+        from charmer.cli.screens import direct as screens_direct
         from test_tui import FakeWindow
 
         self.record()
@@ -435,7 +435,7 @@ class LineupTargetsTests(_SessionsCase):
 
 
 def cli_tui():
-    from claude_multi import tui
+    from charmer import tui
 
     return tui
 
@@ -446,9 +446,9 @@ class RelinkGateTests(_SessionsCase):
     exact quoted move command, never a move."""
 
     def run_gate(self, record, keys):
-        from claude_multi import tui
-        from claude_multi.cli import resume_checks
-        from claude_multi.cli.screens import launch_sessions
+        from charmer import tui
+        from charmer.cli import resume_checks
+        from charmer.cli.screens import launch_sessions
         from test_tui import FakeWindow
 
         gate = resume_checks._evaluate_resume_gate(self.runtime, record, live_prefixes=frozenset())
@@ -487,7 +487,7 @@ class RelinkGateTests(_SessionsCase):
         text = _flat("\n".join(win.frames))
         self.assertIn(cli_text.RELINK_MOVE_TITLE, text)
         self.assertIn("mv -n ", text)
-        from claude_multi.cli.screens import launch_sessions
+        from charmer.cli.screens import launch_sessions
 
         command = launch_sessions._transcript_move_command(self.runtime, self.runtime.session_store.load(fx.FIXED_ID))
         mkdir, move = command.splitlines()
@@ -515,7 +515,7 @@ class RelinkGateTests(_SessionsCase):
         self.assertIn(cli_text.RELINK_INPUT_TITLE.format(short=f"{fx.FIXED_ID[:8]}…"), text)
         self.assertEqual(self.runtime.session_store.load(fx.FIXED_ID)["cwd"], str(moved))
         self.assertIn(cli_text.RELINK_MOVE_TITLE, text)
-        from claude_multi.cli.screens import launch_sessions
+        from charmer.cli.screens import launch_sessions
 
         command = launch_sessions._transcript_move_command(self.runtime, self.runtime.session_store.load(fx.FIXED_ID))
         self.assertEqual(shlex.split(command.splitlines()[1])[:3], ["mv", "-n", str(transcript)])
@@ -554,7 +554,7 @@ class RelinkGateTests(_SessionsCase):
         self.assertIn(cli_text.RELINK_INPUT_TITLE.format(short=f"{fx.FIXED_ID[:8]}…"), text)
         self.assertEqual(self.runtime.session_store.load(fx.FIXED_ID)["cwd"], str(here))
         self.assertIn(cli_text.RELINK_MOVE_TITLE, text)
-        from claude_multi.cli.screens import launch_sessions
+        from charmer.cli.screens import launch_sessions
 
         command = launch_sessions._transcript_move_command(self.runtime, self.runtime.session_store.load(fx.FIXED_ID))
         self.assertEqual(shlex.split(command.splitlines()[1])[:3], ["mv", "-n", str(filed)])
@@ -602,7 +602,7 @@ class RelinkGateTests(_SessionsCase):
         self.assertEqual(self.runtime.launches, [])
 
     def test_a_relink_to_a_missing_directory_is_refused(self) -> None:
-        from claude_multi import errors
+        from charmer import errors
 
         record = self.record()
         old_cwd = Path(self.runtime.cwd)

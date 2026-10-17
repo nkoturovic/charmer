@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from claude_multi import catalog, paths, proxy, service
+from charmer import catalog, paths, proxy, service
 from _catalog import FIXTURE_ROOT
 
 
@@ -47,7 +47,7 @@ class ServiceTests(unittest.TestCase):
         self.assertIn("systemctl --user reset-failed cli-proxy-api && systemctl --user start cli-proxy-api", body)
 
     def test_the_backend_comes_from_the_endpoint_document(self) -> None:
-        from claude_multi import endpoint
+        from charmer import endpoint
 
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp)

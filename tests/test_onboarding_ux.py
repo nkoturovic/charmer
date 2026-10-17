@@ -7,9 +7,9 @@ import unicodedata
 import unittest
 from unittest import mock
 
-from claude_multi import discovery, tui, views
-from claude_multi.cli import consent
-from claude_multi.cli.screens import common
+from charmer import discovery, tui, views
+from charmer.cli import consent
+from charmer.cli.screens import common
 import test_discovery
 import test_onboarding_isolation as journeys
 from test_tui import DELETE, END, ENTER, ESC, HOME, LEFT, FakeWindow

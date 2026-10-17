@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import unittest
 
-from claude_multi import catalog, lineup, profile, settings
+from charmer import catalog, lineup, profile, settings
 from _catalog import FIXTURE_ROOT
 
 
@@ -91,7 +91,7 @@ class LineupRenderTests(unittest.TestCase):
     def test_review_output_distinguishes_same_different_and_unknown_families(self) -> None:
         import copy
 
-        from claude_multi import scope, views
+        from charmer import scope, views
 
         for family, outcome in (("anthropic", "same-family"), ("openai", "independent"),
                                 ("Mistral", "independence unknown"), ("unknown", "independence unknown")):

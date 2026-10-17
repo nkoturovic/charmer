@@ -16,7 +16,7 @@ from collections import Counter
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from claude_multi import catalog, operator, render, state
+from charmer import catalog, operator, render, state
 from _catalog import FIXTURE_ROOT, SHIPPED_ROOT, uses_shipped_catalog
 import _gateway_harness as harness
 

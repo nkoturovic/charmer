@@ -9,8 +9,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from claude_multi import catalog, continuity, management, proxy, render, state, validate
-from claude_multi.render import RenderError
+from charmer import catalog, continuity, management, proxy, render, state, validate
+from charmer.render import RenderError
 from _catalog import FIXTURE_ROOT, GOLDENS_ROOT, SHIPPED_ROOT, uses_shipped_catalog
 from _layout import PATCH_DIR
 from _golden import assertGolden
@@ -264,7 +264,7 @@ class GoldenTests(unittest.TestCase):
             raw = catalog.load_raw(root)
             static = raw["docs"]["gateway"]["gateway"]["cliproxy_static"]
             self.assertEqual(static["discovery"], {"enabled": False})
-            from claude_multi import validate
+            from charmer import validate
 
             for bad in ({"enabled": True}, {}, {"enabled": False, "service-name": "x"}):
                 with self.subTest(root=str(root), bad=bad):
@@ -413,7 +413,7 @@ class CustomRegistryRenderTests(unittest.TestCase):
     """Custom providers/models render as ordinary direct routes."""
 
     def _merged(self):
-        from claude_multi import custom
+        from charmer import custom
 
         registry = {
             "version": 1,
@@ -1124,7 +1124,7 @@ class ZeroModelSectionTests(unittest.TestCase):
         )
 
     def test_custom_provider_without_models_emits_no_item(self) -> None:
-        from claude_multi import custom
+        from charmer import custom
 
         bundle = catalog.load_catalog(CATALOG_ROOT)
         registry = {

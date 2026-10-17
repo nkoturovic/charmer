@@ -21,16 +21,16 @@ import threading
 from pathlib import Path
 from unittest import mock
 
-from claude_multi import catalog, cli, portability, profile as profile_mod, served_plan, sessions, state, strict_json
-from claude_multi import validate
-from claude_multi import operator as operator_mod
-from claude_multi.cli import consent as consent_mod
-from claude_multi.cli import entry
-from claude_multi.cli import gateway_facts
-import claude_multi.cli.commands.portability as portability_cmd
-import claude_multi.cli.commands.providers as providers_cmd
-import claude_multi.cli.runtime as runtime_mod
-import claude_multi.secret_store
+from charmer import catalog, cli, portability, profile as profile_mod, served_plan, sessions, state, strict_json
+from charmer import validate
+from charmer import operator as operator_mod
+from charmer.cli import consent as consent_mod
+from charmer.cli import entry
+from charmer.cli import gateway_facts
+import charmer.cli.commands.portability as portability_cmd
+import charmer.cli.commands.providers as providers_cmd
+import charmer.cli.runtime as runtime_mod
+import charmer.secret_store
 
 from _catalog import FIXTURE_ROOT
 from _layout import REPO_ROOT
@@ -132,7 +132,7 @@ class ExportTests(PortabilityCase):
         evidence = operator_mod.evidence_path(self.runtime.gateway_environ())
         self.assertTrue(evidence.exists())
         # Never a credential read: the screen is shape-only.
-        with mock.patch.object(claude_multi.secret_store, "default_store",
+        with mock.patch.object(charmer.secret_store, "default_store",
                                side_effect=AssertionError("export read the credential store")):
             document, raw, err = self.export_json()
         self.assertEqual(err.splitlines(), list(portability.EXPORT_SUMMARY))
@@ -420,7 +420,7 @@ class ImportTrustTests(PortabilityCase):
         self.assertNotIn("custom-acme-small", self.runtime.current_effective().admitted_lines)
         layer = self.runtime.operator_snapshot().layer
         self.assertEqual(layer.route_status["acme"], "unapproved")
-        config = (cli_tests.claude_multi.proxy.config_dir(self.runtime.home) / "config.yaml").read_text()
+        config = (cli_tests.charmer.proxy.config_dir(self.runtime.home) / "config.yaml").read_text()
         self.assertNotIn("custom-acme-small", config)  # an unapproved keyed route is never rendered
         # A bundle cannot smuggle a grant: trust requests are names only.
         forged = copy.deepcopy(document)
@@ -490,7 +490,7 @@ class ImportTrustTests(PortabilityCase):
         code, out, err, stream = self.importing(bundle, [True, True], apply=True)
         self.assertEqual(code, 0, out + err)
         self.assertTrue((self.pdir / "lanbox.json").exists())
-        config = (cli_tests.claude_multi.proxy.config_dir(self.runtime.home) / "config.yaml").read_text()
+        config = (cli_tests.charmer.proxy.config_dir(self.runtime.home) / "config.yaml").read_text()
         self.assertIn("custom-lan-model", config)
 
     def test_import_transport_choices_not_transferred_uses_real_remedy(self) -> None:
@@ -717,7 +717,7 @@ class ImportValidationTests(PortabilityCase):
 
 class ImportCommitTests(PortabilityCase):
     def config_text(self) -> str:
-        return (cli_tests.claude_multi.proxy.config_dir(self.runtime.home) / "config.yaml").read_text()
+        return (cli_tests.charmer.proxy.config_dir(self.runtime.home) / "config.yaml").read_text()
 
     def test_import_commits_against_the_displayed_served_preview(self) -> None:
         # An unpublished LAN retarget plus a new provider to import: a session
@@ -817,7 +817,7 @@ class ImportCommitTests(PortabilityCase):
         self.assertIn("Applied: nothing.", out)
         self.assertTrue((self.pdir / "alpha.json").is_file())
         self.assertFalse((self.pdir / "beta.json").exists())
-        self.assertFalse((cli_tests.claude_multi.proxy.config_dir(self.runtime.home) / "config.yaml").exists())
+        self.assertFalse((cli_tests.charmer.proxy.config_dir(self.runtime.home) / "config.yaml").exists())
 
     def test_import_provider_batch_failure_is_rolled_back_per_declaration(self) -> None:
         names = ("alpha", "beta", "gamma")

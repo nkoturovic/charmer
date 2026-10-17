@@ -12,8 +12,8 @@ import re
 from pathlib import Path
 from unittest import mock
 
-from claude_multi import cli, dev, proxy
-from claude_multi.cli import parser as cli_parser
+from charmer import cli, dev, proxy
+from charmer.cli import parser as cli_parser
 from _catalog import GOLDENS_ROOT
 from _golden import assertGolden
 
@@ -25,7 +25,7 @@ def help_environment():
     with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(os.environ, env, clear=True):
         # The doc pointers name the installation's documents: an installation
         # without them keeps the help bytes machine-independent.
-        with mock.patch('claude_multi.layout.installation', return_value=Path(tmp)):
+        with mock.patch('charmer.layout.installation', return_value=Path(tmp)):
             yield
 
 
@@ -135,8 +135,8 @@ class KeptEnvironmentHelpTests(unittest.TestCase):
     """The help says what the keep policy does."""
 
     def test_the_help_never_offers_to_keep_a_provider_key(self) -> None:
-        import claude_multi.cli.text as cli_text
-        from claude_multi import compiler, secret_store
+        import charmer.cli.text as cli_text
+        from charmer import compiler, secret_store
 
         for name, text in (("QUICK_HELP", cli_text.QUICK_HELP), ("RESUME_QUICK_HELP", cli_text.RESUME_QUICK_HELP)):
             with self.subTest(help=name):
@@ -157,7 +157,7 @@ class GroupedRootHelpTests(unittest.TestCase):
     hides the earlier spellings and the hook."""
 
     def test_every_public_command_is_in_exactly_one_group(self) -> None:
-        from claude_multi.cli import parser as parser_mod
+        from charmer.cli import parser as parser_mod
 
         with help_environment():
             root = cli.build_parser()
@@ -176,7 +176,7 @@ class GroupedRootHelpTests(unittest.TestCase):
             self.assertNotIn(name, text)
 
     def test_the_launcher_and_its_screens_are_named(self) -> None:
-        from claude_multi.cli import parser as parser_mod
+        from charmer.cli import parser as parser_mod
 
         with help_environment():
             text = " ".join(cli.build_parser().format_help().split())
@@ -211,8 +211,8 @@ class LineupHelpTests(unittest.TestCase):
     session, state or Runtime is read."""
 
     def test_help_needs_no_session_or_runtime(self) -> None:
-        from claude_multi import lineup_files
-        from claude_multi.cli import runtime as runtime_mod
+        from charmer import lineup_files
+        from charmer.cli import runtime as runtime_mod
 
         env = {key: value for key, value in os.environ.items()
                if key not in ("CLAUDE_CODE_SESSION_ID", "CLAUDE_MULTI_MANAGED_ID")}
@@ -229,7 +229,7 @@ class LineupHelpTests(unittest.TestCase):
             self.assertEqual(list(Path(tmp).iterdir()), [])
 
     def test_help_inside_the_request_or_skill_mode_is_not_help(self) -> None:
-        from claude_multi.cli.commands import lineup as commands_lineup
+        from charmer.cli.commands import lineup as commands_lineup
 
         self.assertFalse(commands_lineup._help_requested(["set", "--help"]))
         self.assertFalse(commands_lineup._help_requested(["--", "--help"]))

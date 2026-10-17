@@ -45,8 +45,8 @@ def _child_code(temp: str, argv: list[str], *, runtime_kwargs: str = "", setup: 
 import sys
 from pathlib import Path
 import _tui_fixture as fx
-from claude_multi import catalog, sessions
-from claude_multi.cli import entry, session_facts
+from charmer import catalog, sessions
+from charmer.cli import entry, session_facts
 def fake(prepared):
     print('FAKE_LAUNCH=' + prepared.result.session_action.kind, flush=True)
     return 0
@@ -262,7 +262,7 @@ class CardKeyTests(_InputCase):
 class RemedyLayoutTests(_InputCase):
     def test_narrow_picker_warning_keeps_v_details_and_opens_them(self) -> None:
         setup = """
-from claude_multi import tui, views
+from charmer import tui, views
 
 def picker_main(argv, *, runtime, input_stream, output_stream, interactive):
     lcat, effective = runtime.lineup_catalog(), runtime.current_effective()
@@ -291,8 +291,8 @@ entry.main = picker_main
     def test_narrow_models_keeps_full_approval_remedy_and_separate_badge(self) -> None:
         setup = """
 import dataclasses
-from claude_multi import tui
-from claude_multi.cli.screens.models import _ModelsScreen
+from charmer import tui
+from charmer.cli.screens.models import _ModelsScreen
 
 def models_main(argv, *, runtime, input_stream, output_stream, interactive):
     key = next(iter(runtime.lineup_catalog().lines))

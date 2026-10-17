@@ -28,7 +28,7 @@ from pathlib import Path
 from unittest import mock
 
 import _tripwire
-from claude_multi import (
+from charmer import (
     cli,
     custom,
     hooks,
@@ -60,8 +60,8 @@ from test_migrate import (
     v3_managed,
     v3_ordinary,
 )
-import claude_multi.catalog
-import claude_multi.sessions
+import charmer.catalog
+import charmer.sessions
 
 _tripwire.install()
 
@@ -185,7 +185,7 @@ class V4ReconcileTests(HookV4TestCase):
 
     def test_migrated_ordinary_matches_any_form_of_its_line(self) -> None:
         self.migrated(v3_ordinary(M1, model="sol", cwd=self.cwd))
-        forms = [selector for _e, selector, _c in claude_multi.catalog.line_selectors(LCAT.lines["sol"])]
+        forms = [selector for _e, selector, _c in charmer.catalog.line_selectors(LCAT.lines["sol"])]
         for model in (*forms, LCAT.lines["sol"]["wire_model"]):
             with self.subTest(model=model):
                 code, _out, errors = self.start("resume", epoch=2, model=model)
@@ -345,7 +345,7 @@ class MigrationWindowTests(HookV4TestCase):
         self.migrated(v3_managed(M1, cwd=self.cwd))
         lock = self.hold()
         waiter, clock = self.fake_wait(lock, release_at=1.0)
-        with mock.patch.object(claude_multi.sessions, "migration_window_wait", side_effect=waiter):
+        with mock.patch.object(charmer.sessions, "migration_window_wait", side_effect=waiter):
             code, _out, errors = self.start("resume", model=LEAD_SELECTOR)
         self.assertEqual(code, 0, errors)
         self.assertGreaterEqual(clock[0], 1.0)
@@ -358,7 +358,7 @@ class MigrationWindowTests(HookV4TestCase):
         before = (self.store.sessions_dir / f"{M1}.json").read_bytes()
         lock = self.hold()
         waiter, clock = self.fake_wait(lock, release_at=None)
-        with mock.patch.object(claude_multi.sessions, "migration_window_wait", side_effect=waiter):
+        with mock.patch.object(charmer.sessions, "migration_window_wait", side_effect=waiter):
             code, output, errors = self.start("resume", model=LEAD_SELECTOR)
             end_code, _o, end_errors = self.hook(
                 "end", {"hook_event_name": "SessionEnd", "session_id": M1, "reason": "exit"},
@@ -375,7 +375,7 @@ class MigrationWindowTests(HookV4TestCase):
         self.migrated(v3_managed(M1, cwd=self.cwd))
         results = []
         with sessions.launcher_write_guard(self.root):
-            with mock.patch.object(claude_multi.sessions, "migration_window_wait",
+            with mock.patch.object(charmer.sessions, "migration_window_wait",
                                    wraps=sessions.migration_window_wait) as wait:
                 threads = [
                     threading.Thread(target=lambda: results.append(
@@ -638,7 +638,7 @@ class ResumeNoticeLeadTests(_SeamCase):
     def test_the_lead_is_read_before_runtime_exists(self) -> None:
         self.postmodel()
         effort = self.row["effort"] or self.lead_set["lead"]["effort"]
-        with mock.patch.dict(os.environ, self.env, clear=True), mock.patch('claude_multi.cli.runtime.Runtime', side_effect=RuntimeError("no runtime in this test")
+        with mock.patch.dict(os.environ, self.env, clear=True), mock.patch('charmer.cli.runtime.Runtime', side_effect=RuntimeError("no runtime in this test")
         ) as factory:
             code, output, errors = self.start()
         self.assertEqual(code, 0, errors)

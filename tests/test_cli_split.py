@@ -18,10 +18,10 @@ from unittest import mock
 from _catalog import FIXTURE_ROOT
 from _layout import REPO_ROOT, RESOURCES_ROOT
 from _layout import checkout_replica
-from claude_multi import assets, endpoint, errors, paths, sessions, termtext, tui
-from claude_multi import cli
+from charmer import assets, endpoint, errors, paths, sessions, termtext, tui
+from charmer import cli
 
-SRC = REPO_ROOT / "src" / "claude_multi"
+SRC = REPO_ROOT / "src" / "charmer"
 
 
 def module_imports(path: Path) -> set[str]:
@@ -32,8 +32,8 @@ def module_imports(path: Path) -> set[str]:
         if isinstance(node, ast.Import):
             imports.update(a.name for a in node.names)
         elif isinstance(node, ast.ImportFrom) and node.module != "__future__":
-            if node.module == "claude_multi":
-                imports.update("claude_multi" if a.name == "__version__" else f"claude_multi.{a.name}"
+            if node.module == "charmer":
+                imports.update("charmer" if a.name == "__version__" else f"charmer.{a.name}"
                                for a in node.names)
             else:
                 imports.add(node.module)
@@ -42,13 +42,13 @@ def module_imports(path: Path) -> set[str]:
 
 class FoundationTests(unittest.TestCase):
     def test_exact_static_leaf_imports(self):
-        self.assertEqual(module_imports(SRC / "cli/text.py"), {"claude_multi.termtext"})
+        self.assertEqual(module_imports(SRC / "cli/text.py"), {"charmer.termtext"})
         self.assertEqual(module_imports(SRC / "cli/parser.py"), {
-            "argparse", "pathlib", "claude_multi.lineup_files", "claude_multi.cli.text", "claude_multi.layout",
+            "argparse", "pathlib", "charmer.lineup_files", "charmer.cli.text", "charmer.layout",
         })
         # The installation authority is a leaf: the hook path imports it.
         self.assertEqual(module_imports(SRC / "layout.py"), {
-            "os", "stat", "pathlib", "claude_multi", "claude_multi.errors",
+            "os", "stat", "pathlib", "charmer", "charmer.errors",
         })
 
     def test_no_foundation_imports_the_facade_or_ui(self):
@@ -58,18 +58,18 @@ class FoundationTests(unittest.TestCase):
             tree = ast.parse(path.read_text())
             for node in ast.walk(tree):
                 if isinstance(node, ast.ImportFrom):
-                    self.assertNotEqual(node.module, "claude_multi.cli", str(path))
+                    self.assertNotEqual(node.module, "charmer.cli", str(path))
                 elif isinstance(node, ast.Import):
-                    self.assertNotIn("claude_multi.cli", [a.name for a in node.names], str(path))
+                    self.assertNotIn("charmer.cli", [a.name for a in node.names], str(path))
         imports = module_imports(SRC / "cli/runtime.py")
-        self.assertFalse(imports & {"claude_multi.tui", "claude_multi.cli.doctor"})
-        self.assertFalse(any(name.startswith("claude_multi.cli.screens") for name in imports))
+        self.assertFalse(imports & {"charmer.tui", "charmer.cli.doctor"})
+        self.assertFalse(any(name.startswith("charmer.cli.screens") for name in imports))
 
     def test_every_extracted_module_imports_in_a_fresh_process(self):
-        modules = ["claude_multi.assets", "claude_multi.endpoint", "claude_multi.termtext"]
-        modules += ["claude_multi.platform." + p.stem for p in (SRC / "platform").glob("*.py")
+        modules = ["charmer.assets", "charmer.endpoint", "charmer.termtext"]
+        modules += ["charmer.platform." + p.stem for p in (SRC / "platform").glob("*.py")
                     if p.name != "__init__.py"]
-        modules += ["claude_multi." + ".".join(p.relative_to(SRC).with_suffix("").parts)
+        modules += ["charmer." + ".".join(p.relative_to(SRC).with_suffix("").parts)
                     for p in (SRC / "cli").rglob("*.py") if p.name != "__init__.py"]
         with tempfile.TemporaryDirectory() as tmp:
             env = {**os.environ, "PYTHONPATH": str(REPO_ROOT / "src"), "HOME": tmp,
@@ -81,8 +81,8 @@ class FoundationTests(unittest.TestCase):
                     self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_compatibility_identity_and_terminal_leaf(self):
-        from claude_multi import lineup_files, scope
-        from claude_multi.cli import runtime, types
+        from charmer import lineup_files, scope
+        from charmer.cli import runtime, types
 
         self.assertIs(cli.Runtime, runtime.Runtime)
         self.assertIs(cli.CLIError, errors.CLIError)
@@ -177,7 +177,7 @@ class DoctorSplitTests(unittest.TestCase):
     })
 
     def test_every_moved_definition_resolves_once_in_its_owner(self):
-        from claude_multi.cli import doctor, doctor_actions, gateway_facts
+        from charmer.cli import doctor, doctor_actions, gateway_facts
 
         modules = {"gateway_facts": gateway_facts, "doctor": doctor, "doctor_actions": doctor_actions}
         facade = set(self.definitions(SRC / "cli/__init__.py"))
@@ -202,14 +202,14 @@ class DoctorSplitTests(unittest.TestCase):
 
     def test_layering_reports_actions_and_observations(self):
         facts = module_imports(SRC / "cli/gateway_facts.py")
-        self.assertFalse({m for m in facts if m.startswith("claude_multi.cli.")} - {"claude_multi.cli.text"})
+        self.assertFalse({m for m in facts if m.startswith("charmer.cli.")} - {"charmer.cli.text"})
         reports = module_imports(SRC / "cli/doctor.py")
-        self.assertNotIn("claude_multi.cli.doctor_actions", reports)
+        self.assertNotIn("charmer.cli.doctor_actions", reports)
         for relative in self.OWNERS.values():
             imports = module_imports(SRC / relative)
             with self.subTest(module=relative):
-                self.assertFalse(imports & {"claude_multi.tui", "claude_multi.cli.screens", "claude_multi.cli"})
-                self.assertFalse(any(m.startswith("claude_multi.cli.screens") for m in imports))
+                self.assertFalse(imports & {"charmer.tui", "charmer.cli.screens", "charmer.cli"})
+                self.assertFalse(any(m.startswith("charmer.cli.screens") for m in imports))
 
     def test_facade_calls_moved_names_only_through_their_owner(self):
         moved = set()
@@ -226,15 +226,15 @@ class DoctorSplitTests(unittest.TestCase):
 
 class AssetSeamTests(unittest.TestCase):
     def test_explicit_override_default_matrix(self):
-        import claude_multi
-        from claude_multi import proxy
+        import charmer
+        from charmer import proxy
 
         # The packaged default is the package's own data directory.
-        self.assertEqual(claude_multi.resources_root(), RESOURCES_ROOT)
+        self.assertEqual(charmer.resources_root(), RESOURCES_ROOT)
 
         for env in ({}, {"CLAUDE_MULTI_ASSETS": ""}, {"CLAUDE_MULTI_ASSETS": "/overlay"}):
             with self.subTest(env=env):
-                expected = Path(env["CLAUDE_MULTI_ASSETS"]) if env.get("CLAUDE_MULTI_ASSETS") else claude_multi.resources_root()
+                expected = Path(env["CLAUDE_MULTI_ASSETS"]) if env.get("CLAUDE_MULTI_ASSETS") else charmer.resources_root()
                 self.assertEqual(assets.root(environ=env), expected)
                 self.assertEqual(assets.default_asset_root(environ=env), expected)
                 self.assertEqual(proxy.assets_root(env), expected)
@@ -243,7 +243,7 @@ class AssetSeamTests(unittest.TestCase):
     def test_inherited_override_never_reaches_the_suite(self):
         env = {**os.environ, "CLAUDE_MULTI_ASSETS": "/absent/inherited-assets",
                "PYTHONPATH": str(REPO_ROOT / "src")}
-        code = "import tests, os; assert 'CLAUDE_MULTI_ASSETS' not in os.environ; import claude_multi.cli"
+        code = "import tests, os; assert 'CLAUDE_MULTI_ASSETS' not in os.environ; import charmer.cli"
         result = subprocess.run([sys.executable, "-B", "-c", code], cwd=REPO_ROOT,
                                 env=env, text=True, capture_output=True, timeout=30)
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -270,7 +270,7 @@ class AssetSeamTests(unittest.TestCase):
         # launchers must recognise the first as a source tree and never the
         # second.
         from _layout import installed_paths, staged_tops
-        from claude_multi import entrypoints
+        from charmer import entrypoints
 
         markers = entrypoints.SOURCE_MARKERS
         installed = installed_paths()
@@ -302,7 +302,7 @@ class AssetSeamTests(unittest.TestCase):
                 for marker in extra:
                     (root / marker).parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy(REPO_ROOT / marker, root / marker)
-                resources = root / "src" / "claude_multi" / "data"
+                resources = root / "src" / "charmer" / "data"
                 env = {**os.environ, "HOME": tmp, "CLAUDE_MULTI_ASSETS": str(resources)}
                 for name in self.STUBS:
                     with self.subTest(layout=layout, stub=name):
@@ -331,27 +331,27 @@ class AssetSeamTests(unittest.TestCase):
             # site-packages, the documents in the prefix's share path.
             installed = tmp / "prefix"
             site = installed / "lib" / f"python{sys.version_info.major}.{sys.version_info.minor}" / "site-packages"
-            shutil.copytree(SRC, site / "claude_multi", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+            shutil.copytree(SRC, site / "charmer", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
             (installed / "share" / "claude-multi").mkdir(parents=True)
             (installed / "share" / "claude-multi" / "CHEATSHEET.md").write_text("installed documentation")
             code = '''
-import claude_multi
+import charmer
 from pathlib import Path
-from claude_multi import assets, catalog, continuity, custom, gateway_service, layout, profile, proxy, scope
-from claude_multi import sessions, settings, upgrade
-from claude_multi.cli import parser
+from charmer import assets, catalog, continuity, custom, gateway_service, layout, profile, proxy, scope
+from charmer import sessions, settings, upgrade
+from charmer.cli import parser
 import os
 root = Path(os.environ['CLAUDE_MULTI_ASSETS'])
 assert assets.root() == root == proxy.assets_root()
-assert claude_multi.__version__ != '99.0.0'
-assert upgrade.running_release().launcher_version == claude_multi.__version__
-assert claude_multi.resources_root() != root
+assert charmer.__version__ != '99.0.0'
+assert upgrade.running_release().launcher_version == charmer.__version__
+assert charmer.resources_root() != root
 # Documents, executables and the service spec belong to the installation:
 # the resource override moves none of them.
 assert parser._doc_pointer('CHEATSHEET.md') != str(root / 'CHEATSHEET.md')
 assert parser._doc_pointer('CHEATSHEET.md') == str(layout.document('CHEATSHEET.md'))
 assert not scope.resolve_hook_command().startswith(str(root))
-assert gateway_service.load_spec() == gateway_service.load_spec(claude_multi.resources_root())
+assert gateway_service.load_spec() == gateway_service.load_spec(charmer.resources_root())
 assert catalog.registry_dir({}) is None or catalog.registry_dir({}) != root / 'registry'
 assert catalog.registry_dir() == root / 'registry'
 assert profile._PROFILE_SCHEMA['properties']['_049_asset_probe']['const'] == '049-overlay'
@@ -464,14 +464,14 @@ class StageCOwnershipTests(unittest.TestCase):
         for name in ("main", "Runtime", "CLIError", "LaunchTarget", "PreparedLaunch", "LaunchPlanError",
                      "NeedsChoiceError", "build_parser", "split_passthrough", "default_asset_root"):
             self.assertIn(name, exports)
-        code = ("import sys, warnings\nwarnings.simplefilter('error')\nimport claude_multi.cli as cli\n"
-                "print(sorted(m for m in sys.modules if m.startswith('claude_multi')))\n"
+        code = ("import sys, warnings\nwarnings.simplefilter('error')\nimport charmer.cli as cli\n"
+                "print(sorted(m for m in sys.modules if m.startswith('charmer')))\n"
                 "import importlib\n"
                 "for name, owner in cli._COMPAT_EXPORTS.items():\n"
                 "    assert getattr(cli, name) is getattr(importlib.import_module(owner), name), name\n")
         result = _child(code)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(result.stdout.splitlines()[0], "['claude_multi', 'claude_multi.cli']")
+        self.assertEqual(result.stdout.splitlines()[0], "['charmer', 'charmer.cli']")
 
     def test_no_module_imports_the_facade(self):
         for path in (SRC / "cli").rglob("*.py"):
@@ -481,26 +481,26 @@ class StageCOwnershipTests(unittest.TestCase):
                 modules = []
                 if isinstance(node, ast.ImportFrom):
                     modules = [node.module or ""]
-                    if node.module == "claude_multi":
-                        modules += [f"claude_multi.{a.name}" for a in node.names]
+                    if node.module == "charmer":
+                        modules += [f"charmer.{a.name}" for a in node.names]
                     if node.level:
                         modules = ["<relative>"]
                 elif isinstance(node, ast.Import):
                     modules = [a.name for a in node.names]
                 with self.subTest(module=path.relative_to(SRC).as_posix()):
-                    self.assertNotIn("claude_multi.cli", modules)
+                    self.assertNotIn("charmer.cli", modules)
                     self.assertNotIn("<relative>", modules)
 
     def test_screens_never_import_commands_dispatch_or_entry(self):
         for path in (SRC / "cli/screens").glob("*.py"):
             imports = module_imports(path)
             with self.subTest(module=path.name):
-                self.assertFalse({m for m in imports if m.startswith(("claude_multi.cli.commands",
-                                                                       "claude_multi.cli.launch_flow"))})
-                self.assertFalse(imports & {"claude_multi.cli.dispatch", "claude_multi.cli.entry"})
+                self.assertFalse({m for m in imports if m.startswith(("charmer.cli.commands",
+                                                                       "charmer.cli.launch_flow"))})
+                self.assertFalse(imports & {"charmer.cli.dispatch", "charmer.cli.entry"})
         for path in [*(SRC / "cli/commands").glob("*.py"), SRC / "cli/launch_flow.py"]:
             with self.subTest(module=path.name):
-                self.assertFalse(module_imports(path) & {"claude_multi.cli.dispatch", "claude_multi.cli.entry"})
+                self.assertFalse(module_imports(path) & {"charmer.cli.dispatch", "charmer.cli.entry"})
 
 
 def _child(code: str, *args: str, env: dict | None = None, stdin: str = "") -> subprocess.CompletedProcess:
@@ -512,38 +512,38 @@ def _child(code: str, *args: str, env: dict | None = None, stdin: str = "") -> s
 
 
 ENTRY_IMPORTS = {
-    "claude_multi", "claude_multi.assets", "claude_multi.cli", "claude_multi.cli.entry",
-    "claude_multi.cli.parser", "claude_multi.cli.streams", "claude_multi.cli.text", "claude_multi.errors",
-    "claude_multi.hooks", "claude_multi.layout", "claude_multi.lineup_files", "claude_multi.lineup_log",
-    "claude_multi.paths",
-    "claude_multi.platform", "claude_multi.platform.observation", "claude_multi.platform.posix_fs",
-    "claude_multi.sessions", "claude_multi.state", "claude_multi.strict_json", "claude_multi.termtext",
-    "claude_multi.validate",
+    "charmer", "charmer.assets", "charmer.cli", "charmer.cli.entry",
+    "charmer.cli.parser", "charmer.cli.streams", "charmer.cli.text", "charmer.errors",
+    "charmer.hooks", "charmer.layout", "charmer.lineup_files", "charmer.lineup_log",
+    "charmer.paths",
+    "charmer.platform", "charmer.platform.observation", "charmer.platform.posix_fs",
+    "charmer.sessions", "charmer.state", "charmer.strict_json", "charmer.termtext",
+    "charmer.validate",
     # The hooks' pin check: two leaves that read one contract file.
-    "claude_multi.client_check", "claude_multi.pin",
+    "charmer.client_check", "charmer.pin",
 }
-PARSER_IMPORTS = {"claude_multi", "claude_multi.cli", "claude_multi.cli.parser", "claude_multi.cli.text",
-                  "claude_multi.errors", "claude_multi.layout", "claude_multi.lineup_files",
-                  "claude_multi.termtext"}
-TEXT_IMPORTS = {"claude_multi", "claude_multi.cli", "claude_multi.cli.text", "claude_multi.termtext"}
+PARSER_IMPORTS = {"charmer", "charmer.cli", "charmer.cli.parser", "charmer.cli.text",
+                  "charmer.errors", "charmer.layout", "charmer.lineup_files",
+                  "charmer.termtext"}
+TEXT_IMPORTS = {"charmer", "charmer.cli", "charmer.cli.text", "charmer.termtext"}
 # Never on any hook path: the TUI, doctor, screens, commands, launch flows.
-HOOK_FORBIDDEN = ("claude_multi.tui", "claude_multi.cli.doctor", "claude_multi.cli.doctor_actions",
-                  "claude_multi.cli.gateway_facts", "claude_multi.cli.dispatch", "claude_multi.cli.launch_flow",
-                  "claude_multi.cli.screens", "claude_multi.cli.commands", "claude_multi.cli.selection",
-                  "claude_multi.upgrade", "claude_multi.dev")
+HOOK_FORBIDDEN = ("charmer.tui", "charmer.cli.doctor", "charmer.cli.doctor_actions",
+                  "charmer.cli.gateway_facts", "charmer.cli.dispatch", "charmer.cli.launch_flow",
+                  "charmer.cli.screens", "charmer.cli.commands", "charmer.cli.selection",
+                  "charmer.upgrade", "charmer.dev")
 # Scope-only events (and every path that ends before Runtime): no Runtime/catalog chain.
 SCOPE_ONLY_FORBIDDEN = HOOK_FORBIDDEN + (
-    "claude_multi.cli.runtime", "claude_multi.cli.session_events", "claude_multi.catalog",
-    "claude_multi.compiler", "claude_multi.profile", "claude_multi.scope", "claude_multi.launch",
-    "claude_multi.transition", "claude_multi.proxy", "claude_multi.views", "claude_multi.render")
+    "charmer.cli.runtime", "charmer.cli.session_events", "charmer.catalog",
+    "charmer.compiler", "charmer.profile", "charmer.scope", "charmer.launch",
+    "charmer.transition", "charmer.proxy", "charmer.views", "charmer.render")
 HOOK_CHILD = (
     "import json, sys\n"
-    "from claude_multi.cli import main\n"
+    "from charmer.cli import main\n"
     "try:\n"
     "    code = main()\n"
     "finally:\n"
     "    sys.stdout.flush()\n"
-    "    sys.stderr.write('\\n@@MODULES@@' + json.dumps(sorted(m for m in sys.modules if m.startswith('claude_multi'))))\n"
+    "    sys.stderr.write('\\n@@MODULES@@' + json.dumps(sorted(m for m in sys.modules if m.startswith('charmer'))))\n"
     "raise SystemExit(code)\n"
 )
 
@@ -553,20 +553,20 @@ class EntryImportPinTests(unittest.TestCase):
 
     def test_exact_static_entry_imports(self):
         self.assertEqual(module_imports(SRC / "cli/entry.py"), {
-            "os", "sys", "typing", "claude_multi.assets", "claude_multi.errors", "claude_multi.hooks",
-            "claude_multi.lineup_files", "claude_multi.sessions", "claude_multi.termtext",
-            "claude_multi.cli.parser", "claude_multi.cli.streams", "claude_multi.cli.text",
+            "os", "sys", "typing", "charmer.assets", "charmer.errors", "charmer.hooks",
+            "charmer.lineup_files", "charmer.sessions", "charmer.termtext",
+            "charmer.cli.parser", "charmer.cli.streams", "charmer.cli.text",
         })
 
     def test_fresh_process_pins(self):
         with tempfile.TemporaryDirectory() as tmp:
             env = {"HOME": tmp}
-            for module, expected in (("claude_multi.cli.entry", ENTRY_IMPORTS),
-                                     ("claude_multi.cli.parser", PARSER_IMPORTS),
-                                     ("claude_multi.cli.text", TEXT_IMPORTS)):
+            for module, expected in (("charmer.cli.entry", ENTRY_IMPORTS),
+                                     ("charmer.cli.parser", PARSER_IMPORTS),
+                                     ("charmer.cli.text", TEXT_IMPORTS)):
                 with self.subTest(module=module):
                     result = _child(f"import sys, {module}\n"
-                                    "print(json.dumps(sorted(m for m in sys.modules if m.startswith('claude_multi'))))"
+                                    "print(json.dumps(sorted(m for m in sys.modules if m.startswith('charmer'))))"
                                     .replace("import sys,", "import json, sys,"), env=env)
                     self.assertEqual(result.returncode, 0, result.stderr)
                     self.assertEqual(set(json.loads(result.stdout)), expected)
@@ -575,7 +575,7 @@ class EntryImportPinTests(unittest.TestCase):
 class HookEntryImportTests(unittest.TestCase):
     """The 23 ledger hook paths through the installed entry shape.
 
-    Each case runs ``from claude_multi.cli import main; main()`` in a fresh
+    Each case runs ``from charmer.cli import main; main()`` in a fresh
     process on a private fixture root (the fixture catalog through
     CLAUDE_MULTI_ASSETS), and pins the exit status and the modules loaded.
     """
@@ -583,7 +583,7 @@ class HookEntryImportTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         import bless
-        from claude_multi import migrate, scope, sessions as sessions_mod, state as state_mod
+        from charmer import migrate, scope, sessions as sessions_mod, state as state_mod
         from test_migrate import M1, NOW, SCHEMA, _cli_environ, v3_managed
 
         cls.tmp = Path(tempfile.mkdtemp(prefix="cm-hook-entry-"))
@@ -731,15 +731,15 @@ class FacadePatchGateTests(unittest.TestCase):
                 hits.extend(f"{path.name}:{line}" for line in _facade_mutations(node))
             for token in _strings(tree):
                 if re.search(r"patch\.object\(\s*cli\b|(?<![\w.])cli\.[A-Za-z_][\w.]*\s*=[^=]|setattr\(\s*cli\b"
-                             r"|patch\(\s*['\"]claude_multi\.cli\.(?!(?:" + "|".join(_SUBMODULES) + r")\b)",
+                             r"|patch\(\s*['\"]charmer\.cli\.(?!(?:" + "|".join(_SUBMODULES) + r")\b)",
                              token):
                     hits.append(f"{path.name}:<embedded> {token[:60]!r}")
         self.assertEqual(hits, [])
 
     def test_the_scanner_finds_each_form(self):
         tree = ast.parse("mock.patch.object(cli, 'x')\nmock.patch.object(cli.tui, 'x')\ncli.x = 1\n"
-                         "setattr(cli, 'x', 1)\nmock.patch('claude_multi.cli.main')\n"
-                         "mock.patch('claude_multi.cli.entry.main')\n")
+                         "setattr(cli, 'x', 1)\nmock.patch('charmer.cli.main')\n"
+                         "mock.patch('charmer.cli.entry.main')\n")
         self.assertEqual(len([line for node in ast.walk(tree) for line in _facade_mutations(node)]), 5)
 
 
@@ -762,8 +762,8 @@ def _facade_mutations(node):
         elif name in ("setattr", "delattr") and node.args and _chain_root(node.args[0]) == "cli":
             yield node.lineno
         elif name == "patch" and node.args and isinstance(node.args[0], ast.Constant) \
-                and isinstance(node.args[0].value, str) and node.args[0].value.startswith("claude_multi.cli."):
-            head = node.args[0].value.removeprefix("claude_multi.cli.").split(".")[0]
+                and isinstance(node.args[0].value, str) and node.args[0].value.startswith("charmer.cli."):
+            head = node.args[0].value.removeprefix("charmer.cli.").split(".")[0]
             if head not in _SUBMODULES:
                 yield node.lineno
     elif isinstance(node, (ast.Assign, ast.AugAssign, ast.AnnAssign)):
@@ -781,8 +781,8 @@ class CompatibilityFacadeTests(unittest.TestCase):
     """The dedicated compatibility suite: old names resolve to their one owner object."""
 
     def test_names_resolve_to_the_owner_objects(self):
-        from claude_multi.cli import dispatch, entry, launch_flow, parser, runtime
-        from claude_multi.cli.screens import launch_sessions
+        from charmer.cli import dispatch, entry, launch_flow, parser, runtime
+        from charmer.cli.screens import launch_sessions
 
         self.assertIs(cli.main, entry.main)
         self.assertIs(cli.handle_command, dispatch.handle_command)
@@ -795,7 +795,7 @@ class CompatibilityFacadeTests(unittest.TestCase):
 
     def test_facade_patch_does_not_reach_the_owner(self):
         # Why tests patch owners: a facade attribute is a separate binding.
-        from claude_multi.cli import dispatch
+        from charmer.cli import dispatch
 
         with mock.patch.object(cli, "handle_command", "sentinel"):
             self.assertIsNot(dispatch.handle_command, "sentinel")

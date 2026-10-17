@@ -5,7 +5,7 @@ import json
 import unittest
 from datetime import datetime, timedelta, timezone
 
-from claude_multi import quota
+from charmer import quota
 from _layout import REPO_ROOT
 
 FIXTURES = REPO_ROOT / "tests" / "fixtures" / "management"

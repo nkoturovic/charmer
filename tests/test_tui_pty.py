@@ -150,8 +150,8 @@ class DumbTerminalPTYTests(unittest.TestCase):
         return f"""
 import sys
 from pathlib import Path
-from claude_multi.cli.runtime import Runtime
-from claude_multi.cli.entry import main
+from charmer.cli.runtime import Runtime
+from charmer.cli.entry import main
 root = Path({str(CATALOG_ROOT)!r})
 base = Path({temp!r})
 env = {{'HOME': str(base/'home'), 'XDG_CONFIG_HOME': str(base/'config'), 'XDG_STATE_HOME': str(base/'state'), 'TERM': 'dumb', 'CLAUDE_MULTI_SECRET_ENV': {str(secret_file)!r}}}
@@ -183,8 +183,8 @@ class QuickConfirmPTYTests(unittest.TestCase):
         return f"""
 import sys
 from pathlib import Path
-from claude_multi.cli.runtime import Runtime
-from claude_multi.cli.entry import main
+from charmer.cli.runtime import Runtime
+from charmer.cli.entry import main
 root = Path({str(CATALOG_ROOT)!r})
 base = Path({temp!r})
 env = {{'HOME': str(base/'home'), 'XDG_CONFIG_HOME': str(base/'config'), 'XDG_STATE_HOME': str(base/'state'), 'CLAUDE_MULTI_SECRET_ENV': {str(secret_file)!r}}}
@@ -254,7 +254,7 @@ raise SystemExit(main([], runtime=runtime, input_stream=sys.stdin, output_stream
     def test_card_help_modal_shows_the_guarantee_panel(self) -> None:
         # The 3.0 form of the deleted
         # quick-confirm details-and-guarantee-modal PTY test.
-        from claude_multi import cli
+        from charmer import cli
 
         child = self._card("claude-multi-pty-card-help-")
         child.read_until(CARD_READY, FIXTURE_TIMEOUT)
@@ -285,8 +285,8 @@ def _bare_launch_code(temp: str, secret_file: Path) -> str:
     return f"""
 import sys
 from pathlib import Path
-from claude_multi.cli.runtime import Runtime
-from claude_multi.cli.entry import main
+from charmer.cli.runtime import Runtime
+from charmer.cli.entry import main
 root = Path({str(CATALOG_ROOT)!r})
 base = Path({temp!r})
 env = {{'HOME': str(base/'home'), 'XDG_CONFIG_HOME': str(base/'config'), 'XDG_STATE_HOME': str(base/'state'), 'TERM': 'dumb', 'CLAUDE_MULTI_SECRET_ENV': {str(secret_file)!r}}}
@@ -522,11 +522,11 @@ class SessionsAndTransitionPTYTests(unittest.TestCase):
         return f"""
 import copy, sys
 from pathlib import Path
-from claude_multi import sessions, scope as scope_mod
-from claude_multi.cli.types import LaunchTarget
-from claude_multi.cli.runtime import Runtime
-from claude_multi.cli.entry import main
-from claude_multi.cli.session_facts import _native_project_slug
+from charmer import sessions, scope as scope_mod
+from charmer.cli.types import LaunchTarget
+from charmer.cli.runtime import Runtime
+from charmer.cli.entry import main
+from charmer.cli.session_facts import _native_project_slug
 root = Path({str(CATALOG_ROOT)!r})
 base = Path({temp!r})
 env = {{'HOME': str(base/'home'), 'XDG_CONFIG_HOME': str(base/'config'), 'XDG_STATE_HOME': str(base/'state'), 'CLAUDE_MULTI_SECRET_ENV': {str(secret_file)!r}}}
@@ -675,7 +675,7 @@ class BareLaunchAutoDetectionPTYTests(unittest.TestCase):
     def test_capable_terminal_card_routes_to_controlling_terminal(self) -> None:
         # A capable TERM gets the card, on
         # /dev/tty (the PTY master), never on the pipes.
-        from claude_multi import catalog
+        from charmer import catalog
 
         temp = tempfile.mkdtemp(prefix="claude-multi-pty-ctty-curses-")
         self.addCleanup(__import__("shutil").rmtree, temp, True)
@@ -730,7 +730,7 @@ def _probe_code(*, exit_on: str) -> str:
     return f"""
 import curses
 import sys
-from claude_multi import tui
+from charmer import tui
 seen = {{}}
 def app(win):
     seen['escdelay'] = curses.get_escdelay()
@@ -811,10 +811,10 @@ class CursesAbsentPTYTests(unittest.TestCase):
 import sys
 sys.modules.update(curses=None, _curses=None)
 from pathlib import Path
-from claude_multi import tui
+from charmer import tui
 assert tui.curses_available() is False
-from claude_multi.cli.runtime import Runtime
-from claude_multi.cli.entry import main
+from charmer.cli.runtime import Runtime
+from charmer.cli.entry import main
 root = Path({str(CATALOG_ROOT)!r})
 base = Path({temp!r})
 env = {{'HOME': str(base/'home'), 'XDG_CONFIG_HOME': str(base/'config'), 'XDG_STATE_HOME': str(base/'state'), 'CLAUDE_MULTI_SECRET_ENV': {str(secret_file)!r}}}
@@ -863,8 +863,8 @@ def _fixture_editor_code(temp: str, name: str, *, setup: str = "", after: str = 
 import sys
 from pathlib import Path
 import _tui_fixture as fx
-from claude_multi import catalog, lineup as lineup_mod, profile, scope, sessions
-from claude_multi.cli import entry
+from charmer import catalog, lineup as lineup_mod, profile, scope, sessions
+from charmer.cli import entry
 runtime = fx.fixture_runtime(Path({temp!r}), environ_extra={dict(extra or {})!r})
 {setup}
 with fx.hermetic(runtime):
@@ -891,7 +891,7 @@ class ProfileEditorPTYTests(unittest.TestCase):
     """The 3.0 twin of the deleted 2.x ``CursesPTYTests``: ``profile edit <DEFAULT_SEED>``."""
 
     def child(self, *, setup: str = "", name: str | None = None, extra: dict | None = None, **size) -> PTYProcess:
-        from claude_multi import catalog
+        from charmer import catalog
 
         temp = tempfile.mkdtemp(prefix="claude-multi-pty-editor-")
         self.addCleanup(__import__("shutil").rmtree, temp, True)
@@ -969,7 +969,7 @@ class EditSavePropagatePTYTests(unittest.TestCase):
     """Edit a writer's effort, ^S, then A applies it live to the unknown follower."""
 
     def test_save_propagates_live_to_the_running_follower(self) -> None:
-        from claude_multi import catalog, profile
+        from charmer import catalog, profile
 
         temp = tempfile.mkdtemp(prefix="claude-multi-pty-propagate-")
         self.addCleanup(__import__("shutil").rmtree, temp, True)
@@ -1064,8 +1064,8 @@ import json
 import sys
 from pathlib import Path
 import _tui_fixture as fx
-from claude_multi import catalog, profile, settings
-from claude_multi.cli import entry, selection, session_facts
+from charmer import catalog, profile, settings
+from charmer.cli import entry, selection, session_facts
 def fake(prepared):
     print('FAKE_LAUNCH=' + prepared.result.session_action.kind, flush=True)
     print('TARGET=' + str(prepared.target.profile), flush=True)
@@ -1086,7 +1086,7 @@ def _expected_default(case: unittest.TestCase) -> str:
     (derived on a parent-side fixture runtime of the same shape)."""
 
     import _tui_fixture as fx
-    from claude_multi.setup import defaults
+    from charmer.setup import defaults
 
     root = tempfile.mkdtemp(prefix="claude-multi-pty-default-")
     case.addCleanup(__import__("shutil").rmtree, root, True)
@@ -1139,7 +1139,7 @@ class _CardChildCase(unittest.TestCase):
 
 class CardLaunchPTYTests(_CardChildCase):
     def test_enter_launches_the_default_seed(self) -> None:
-        from claude_multi import catalog
+        from charmer import catalog
 
         child = self.child("claude-multi-pty-card-launch-")
         child.read_until(CARD_READY, FIXTURE_TIMEOUT)
@@ -1161,8 +1161,8 @@ class DirectLaunchPTYTests(_CardChildCase):
         setup = (
             "pools = {p['transport']['pool'] for p in runtime.lineup_catalog().providers.values() "
             "if p['transport']['kind'] == 'oauth-pool'}\n"
-            "import claude_multi.cli.gateway_facts\n"
-            "claude_multi.cli.gateway_facts._oauth_credential_records = lambda _rt: {p: 1 for p in pools}\n"
+            "import charmer.cli.gateway_facts\n"
+            "charmer.cli.gateway_facts._oauth_credential_records = lambda _rt: {p: 1 for p in pools}\n"
         )
         child = self.child("claude-multi-pty-direct-", setup=setup)
         child.read_until(CARD_READY, FIXTURE_TIMEOUT)
@@ -1178,7 +1178,7 @@ class DirectLaunchPTYTests(_CardChildCase):
 
 class ModelsAdmitPTYTests(_CardChildCase):
     def test_m_then_enter_admits_the_new_line(self) -> None:
-        from claude_multi import catalog as catalog_mod
+        from charmer import catalog as catalog_mod
         from test_screens_catalog import _fixture_copy, new_line_key
 
         key = new_line_key(catalog_mod.load_catalog(CATALOG_ROOT))
@@ -1207,7 +1207,7 @@ class ModelsAdmitPTYTests(_CardChildCase):
 
 class ProvidersTogglePTYTests(_CardChildCase):
     def test_g_then_space_space_toggles_and_never_runs_journalctl(self) -> None:
-        from claude_multi import cli, tui
+        from charmer import cli, tui
 
         runtime = self.fixture_runtime()
         screen = cli._ProvidersScreen(runtime, palette=tui.MONO_PALETTE, journal=lambda: None)
@@ -1259,7 +1259,7 @@ class SettingsNextLaunchPTYTests(_CardChildCase):
     def test_o_edits_compaction_and_the_card_shows_it(self) -> None:
         import io as io_mod
 
-        from claude_multi import cli, settings, tui
+        from charmer import cli, settings, tui
 
         runtime = self.fixture_runtime()
         screen = cli._SettingsScreen(runtime, tui.MONO_PALETTE, tty_in=io_mod.StringIO(), tty_out=io_mod.StringIO())
@@ -1491,12 +1491,12 @@ import tests  # live-port tripwire, including this child
 from unittest import mock
 from test_onboarding_isolation import JourneyFixture, KeyedJourneyFixture
 import test_openai_compat_keyed as keyed_fixture
-from claude_multi import catalog, operator, state
-from claude_multi import tui, views, profile, qualify
-import claude_multi.cli.screens.providers as providers
-import claude_multi.cli.screens.models as models
-import claude_multi.cli.screens.profile_editor as editor
-import claude_multi.cli.types as types
+from charmer import catalog, operator, state
+from charmer import tui, views, profile, qualify
+import charmer.cli.screens.providers as providers
+import charmer.cli.screens.models as models
+import charmer.cli.screens.profile_editor as editor
+import charmer.cli.types as types
 case = KeyedJourneyFixture() if {keyed!r} else JourneyFixture()
 case.setUp()
 runtime = case.runtime
@@ -1683,7 +1683,7 @@ finally:
     def test_provider_wizard_recommended_kind_and_cancel(self):
         code = '''
 import sys
-from claude_multi import tui, views
+from charmer import tui, views
 form = tui.OnboardingForm('new provider', views.provider_form_fields())
 result = tui.run_curses_on_streams(form.run, sys.stdin, sys.stdout)
 assert result is None

@@ -20,8 +20,8 @@ from pathlib import Path
 from unittest import mock
 
 import test_cli  # module import: no test classes re-exported
-from claude_multi import catalog, lineup, paths, profile, readiness, sessions, settings, state, strict_json
-from claude_multi.setup import model, profiles as setup_profiles
+from charmer import catalog, lineup, paths, profile, readiness, sessions, settings, state, strict_json
+from charmer.setup import model, profiles as setup_profiles
 
 from _catalog import FIXTURE_ROOT
 
@@ -360,7 +360,7 @@ class PlanTests(test_cli.CLITestCase):
         self.assertTrue(self.runtime.profiles.has_user("mine"))
 
     def test_rename_moves_the_default(self) -> None:
-        from claude_multi import choices
+        from charmer import choices
 
         choices.update(self.runtime.environ, default_profile="mine")
         plan = setup_profiles.plan_rename(self.runtime, "mine", "ours")
@@ -375,7 +375,7 @@ class PlanTests(test_cli.CLITestCase):
         self.assertEqual(caught.exception.line_text, setup_profiles.SEED_NO_RENAME_LINE.format(name="balanced"))
 
     def test_delete_keeps_a_copy_and_clears_the_default(self) -> None:
-        from claude_multi import choices
+        from charmer import choices
 
         choices.update(self.runtime.environ, default_profile="mine")
         before = (self.runtime.profiles.root / "mine.json").read_bytes()
@@ -617,7 +617,7 @@ class PlanTests(test_cli.CLITestCase):
         self.assertEqual(sorted(p.name for p in self.runtime.profiles.root.iterdir()), before)
 
     def test_a_file_that_cannot_be_loaded_is_edited_as_stored(self) -> None:
-        from claude_multi.cli.commands import profile as profile_cmd
+        from charmer.cli.commands import profile as profile_cmd
 
         good = strict_json.pretty_file_bytes(self.runtime.profiles.load("mine"))
         path = self.runtime.profiles.root / "mine.json"

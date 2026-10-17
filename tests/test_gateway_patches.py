@@ -9,7 +9,7 @@ import time
 import unittest
 from pathlib import Path
 
-from claude_multi import probe, state
+from charmer import probe, state
 from _catalog import SHIPPED_ROOT, uses_shipped_catalog
 import _gateway_harness as harness
 

@@ -31,9 +31,9 @@ from unittest import mock
 
 import test_cli  # module import: no test classes re-exported
 from _catalog import FIXTURE_ROOT
-from claude_multi import catalog, discovery, launch, operator as operator_mod, proxy, secret_store
-from claude_multi.cli import gateway_facts
-from claude_multi.cli import parser as parser_mod
+from charmer import catalog, discovery, launch, operator as operator_mod, proxy, secret_store
+from charmer.cli import gateway_facts
+from charmer.cli import parser as parser_mod
 
 ACME_ADD = test_cli.ACME_ADD
 LAN_ADD = ["providers", "add", "lanbox", "--kind", "openai-compatible-lan", "--base-url",
@@ -241,7 +241,7 @@ class ConsentTests(DiscoveryCLICase):
             for argv in (["discover", "acme"], ["discover", "--all"], ["discover", "--feed"],
                          ["discover", "kimi", "--add", "k9"]):
                 with self.subTest(argv=argv, reason=reason), \
-                        mock.patch("claude_multi.secret_store.FileSecretStore._values",
+                        mock.patch("charmer.secret_store.FileSecretStore._values",
                                    side_effect=AssertionError("secret read before the guard")), \
                         mock.patch.object(operator_mod, "read_providers_dir",
                                           side_effect=AssertionError("plan before the guard")):
@@ -1083,7 +1083,7 @@ class LanReachabilityTests(unittest.TestCase):
 
 class LanDoctorTests(DiscoveryCLICase):
     def test_unreachable_lan_provider_is_doctor_info_never_block(self) -> None:
-        from claude_multi.cli import doctor as doctor_mod
+        from charmer.cli import doctor as doctor_mod
 
         code, _out, err = self.op(LAN_ADD)
         self.assertEqual(code, 0, err)

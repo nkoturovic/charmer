@@ -24,7 +24,7 @@ from types import SimpleNamespace
 from typing import Any
 from unittest import mock
 
-from claude_multi import (
+from charmer import (
     catalog,
     cli,
     compiler,
@@ -38,8 +38,8 @@ from claude_multi import (
     state,
     strict_json,
 )
-from claude_multi.compiler import CompilerError
-from claude_multi.scope import ScopeError
+from charmer.compiler import CompilerError
+from charmer.scope import ScopeError
 from _catalog import FIXTURE_ROOT, GOLDENS_ROOT
 from _golden import assertGolden
 

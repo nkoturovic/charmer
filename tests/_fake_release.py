@@ -5,7 +5,7 @@ wrapper around the test interpreter, ``bin/`` launchers that log their
 arguments to ``$HOME/launcher.log`` (or, with ``real_launchers``, the
 release launchers that run the package; ``launcher``, a template of
 ``{name}`` and ``{version}``, replaces both), and a copy of this checkout's
-``claude_multi`` package in ``lib/python3.14/site-packages`` (the
+``charmer`` package in ``lib/python3.14/site-packages`` (the
 installer runs its safety checks from the bundle's own package). The
 package's ``release-trust/allowed_signers`` can carry a test signer: that
 is the installed trust an update of the fake installation verifies with.
@@ -112,18 +112,18 @@ def _add(tar: tarfile.TarFile, name: str, data: bytes | None, mode: int) -> None
 
 
 SITE = "lib/python3.14/site-packages"
-TRUST = "claude_multi/data/release-trust/allowed_signers"
+TRUST = "charmer/data/release-trust/allowed_signers"
 REAL_LAUNCHER = """#!/bin/sh
 # {name}: a fake-release launcher that runs this bundle's package.
 root=$(CDPATH='' cd "${{0%/*}}/.." && pwd)
 site="$root/{site}"
 CLAUDE_MULTI_CHANNEL=bundle
-CLAUDE_MULTI_ASSETS="$site/claude_multi/data"
+CLAUDE_MULTI_ASSETS="$site/charmer/data"
 CLAUDE_MULTI_HOOK_COMMAND="$root/bin/claude-multi"
 CLAUDE_MULTI_PROXY_BIN="$root/libexec/claude-multi/cli-proxy-api"
 export CLAUDE_MULTI_CHANNEL CLAUDE_MULTI_ASSETS CLAUDE_MULTI_HOOK_COMMAND CLAUDE_MULTI_PROXY_BIN
 unset CLAUDE_MULTI_PROXY_PATCHES
-exec "$root/runtime/python/bin/python3" -I -B -c 'import sys; sys.path.insert(0, sys.argv.pop(1)); from claude_multi.entrypoints import main; raise SystemExit(main())' "$site" {name} "$@"
+exec "$root/runtime/python/bin/python3" -I -B -c 'import sys; sys.path.insert(0, sys.argv.pop(1)); from charmer.entrypoints import main; raise SystemExit(main())' "$site" {name} "$@"
 """
 
 
@@ -181,7 +181,7 @@ def bundle_files(version: str, target: str, *, state_format: int = 4, gateway: s
         files[f"{top}/{'/'.join(parts[:index])}"] = (None, 0o755)
     for relative, data, mode in package_files():
         files[f"{top}/{SITE}/{relative}"] = (None, 0o755) if mode < 0 else (data, mode)
-    files[f"{top}/{SITE}/claude_multi/data/version.json"] = (_version_document(version), 0o644)
+    files[f"{top}/{SITE}/charmer/data/version.json"] = (_version_document(version), 0o644)
     if trust is not None:
         files[f"{top}/{SITE}/{TRUST}"] = (trust.encode(), 0o644)
     for relative, data in (overrides or {}).items():

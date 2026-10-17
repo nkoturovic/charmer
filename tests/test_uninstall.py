@@ -21,11 +21,11 @@ from unittest import mock
 
 import test_cli
 from _layout import REPO_ROOT
-from claude_multi import endpoint, gateway_lifecycle as gl, gateway_service as gs, install_receipt, paths, \
+from charmer import endpoint, gateway_lifecycle as gl, gateway_service as gs, install_receipt, paths, \
     secret_store, service, sessions, state
-from claude_multi.platform import file_log, observation, posix_fs, systemd_unit
-from claude_multi.setup import external, texts, uninstall
-import claude_multi.cli.consent as consent
+from charmer.platform import file_log, observation, posix_fs, systemd_unit
+from charmer.setup import external, texts, uninstall
+import charmer.cli.consent as consent
 
 MARK = "# added by the claude-multi installer"
 EXPORT = f'export PATH="$HOME/.local/bin:$PATH" {MARK}'
@@ -462,7 +462,7 @@ class FenceTests(UninstallCase):
     def test_a_profile_writer_starting_after_the_plan_never_loses_what_it_wrote(self) -> None:
         import threading
 
-        from claude_multi import profile
+        from charmer import profile
 
         self.everything()
         store = self.runtime.profiles
@@ -600,7 +600,7 @@ class InhibitionTests(UninstallCase):
     owner and remedy, before anything is removed."""
 
     def begin(self, owner: str = "installer") -> str:
-        from claude_multi import gateway_inhibition as gi
+        from charmer import gateway_inhibition as gi
 
         return gi.begin(self.state_dir, owner=owner, purpose="update 1.0.0 to 1.0.1", phase="replace",
                         remedy="sh install.sh --repair", expiry=gi.owner_process(os.getpid()))
@@ -693,7 +693,7 @@ class CredentialInventoryTests(UninstallCase):
         return path
 
     def test_denies_export_and_uninstall_agree(self) -> None:
-        from claude_multi import portability, proxy, scope
+        from charmer import portability, proxy, scope
 
         home = self.home
         environ = self.runtime.environ
@@ -884,7 +884,7 @@ class CommandTests(UninstallCase):
         self.assertTrue(link.exists())
 
     def test_keep_setup_keeps_the_helper_shims(self) -> None:
-        from claude_multi import scope
+        from charmer import scope
 
         shim = self.file(scope.hook_shim_path(self.state_dir), b"#!/bin/sh\n", 0o700)
         code, _out, err = self.uninstall("--yes", "--keep-setup", text="\n")

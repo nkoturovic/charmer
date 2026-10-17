@@ -12,13 +12,13 @@ from unittest import mock
 
 import test_cli
 from test_tui import RIGHT, FakeWindow
-from claude_multi import tui
-from claude_multi.setup import model
-import claude_multi.cli.consent as consent
-import claude_multi.cli.screens.common as screens_common
-import claude_multi.cli.screens.models as models_screen
-import claude_multi.cli.screens.providers as providers_screen
-import claude_multi.cli.text as cli_text
+from charmer import tui
+from charmer.setup import model
+import charmer.cli.consent as consent
+import charmer.cli.screens.common as screens_common
+import charmer.cli.screens.models as models_screen
+import charmer.cli.screens.providers as providers_screen
+import charmer.cli.text as cli_text
 
 ESC = "\x1b"
 ENTER = "\n"
@@ -83,7 +83,7 @@ class RemoveTests(ModelsCase):
         self.assertIn(KEY, self.ledger().removed)
 
     def test_where_profiles_use_it_a_replacement_is_chosen_first(self) -> None:
-        from claude_multi.setup import lines as setup_lines
+        from charmer.setup import lines as setup_lines
 
         self.reference()
         plan = setup_lines.plan_line_remove(self.runtime, KEY)
@@ -151,7 +151,7 @@ class AdmitTests(ModelsCase):
             self.addCleanup(patcher.stop)
 
     def admitted(self) -> bool:
-        from claude_multi.cli.commands import providers as provider_commands
+        from charmer.cli.commands import providers as provider_commands
 
         return KEY in provider_commands.admitted_keys(self.runtime)
 
@@ -168,7 +168,7 @@ class AdmitTests(ModelsCase):
         self.assertEqual([title for title, _lines in self.shown], ["Action result", "Action result"])
 
     def test_an_admission_failure_never_offers_apply_and_retry(self) -> None:
-        import claude_multi.cli.onboarding as onboarding
+        import charmer.cli.onboarding as onboarding
 
         def refused(_runtime, _argv, *, confirm, output):
             output.write("0/1 aliases served — claude-multi providers apply")
@@ -191,7 +191,7 @@ class AdmitTests(ModelsCase):
 class ContinueTests(ModelsCase):
     def test_skip_admit_after_manual_declaration_names_ordinary_profile_selection(self) -> None:
         from test_tui import DOWN
-        from claude_multi import profile
+        from charmer import profile
 
         code, _out, err = self.op(test_cli.ACME_ADD, "y\n")
         self.assertEqual(code, 0, err)
