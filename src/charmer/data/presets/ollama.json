@@ -1,6 +1,6 @@
 {
   "lines": {},
-  "notes": "Ollama's OpenAI-compatible server on this computer (no key). Another computer: --base-url http://HOST:11434/v1. Use model names without a :tag for the latest tag. Declaration only: add models with claude-multi discover ollama --add WIRE (or claude-multi models add ollama WIRE …), then admit them.",
+  "notes": "Ollama's OpenAI-compatible server on this computer (no key). Another computer: --base-url http://HOST:11434/v1. Use model names without a :tag for the latest tag. Declaration only: add models with charmer discover ollama --add WIRE (or charmer models add ollama WIRE …), then admit them.",
   "preset": {
     "checked": "2026-10-04",
     "source": "docs",

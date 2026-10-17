@@ -1,6 +1,6 @@
 {
   "lines": {},
-  "notes": "Groq's OpenAI-compatible API. It serves several model families. Declaration only: add models with claude-multi discover groq --add WIRE (or claude-multi models add groq WIRE …), then admit them.",
+  "notes": "Groq's OpenAI-compatible API. It serves several model families. Declaration only: add models with charmer discover groq --add WIRE (or charmer models add groq WIRE …), then admit them.",
   "preset": {
     "checked": "2026-10-04",
     "source": "docs",

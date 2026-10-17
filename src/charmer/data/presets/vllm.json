@@ -1,6 +1,6 @@
 {
   "lines": {},
-  "notes": "vLLM's OpenAI-compatible server on this computer (no key; a server started with --api-key is not keyless). Another computer: --base-url http://HOST:8000/v1. Declaration only: add models with claude-multi discover vllm --add WIRE (or claude-multi models add vllm WIRE …), then admit them.",
+  "notes": "vLLM's OpenAI-compatible server on this computer (no key; a server started with --api-key is not keyless). Another computer: --base-url http://HOST:8000/v1. Declaration only: add models with charmer discover vllm --add WIRE (or charmer models add vllm WIRE …), then admit them.",
   "preset": {
     "checked": "2026-10-04",
     "source": "docs",

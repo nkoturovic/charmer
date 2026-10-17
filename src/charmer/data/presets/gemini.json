@@ -1,6 +1,6 @@
 {
   "lines": {},
-  "notes": "The Gemini API's OpenAI compatibility, which Google's documentation calls beta. Declaration only: add models with claude-multi discover gemini --add WIRE (or claude-multi models add gemini WIRE …), then admit them.",
+  "notes": "The Gemini API's OpenAI compatibility, which Google's documentation calls beta. Declaration only: add models with charmer discover gemini --add WIRE (or charmer models add gemini WIRE …), then admit them.",
   "preset": {
     "checked": "2026-10-04",
     "source": "docs",

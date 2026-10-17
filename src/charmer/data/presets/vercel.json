@@ -1,6 +1,6 @@
 {
   "lines": {},
-  "notes": "Vercel AI Gateway's Anthropic Messages API (model ids like vendor/model). It serves several model families. Declaration only: add models with claude-multi models add vercel WIRE …, then admit them.",
+  "notes": "Vercel AI Gateway's Anthropic Messages API (model ids like vendor/model). It serves several model families. Declaration only: add models with charmer models add vercel WIRE …, then admit them.",
   "preset": {
     "checked": "2026-10-04",
     "source": "docs",

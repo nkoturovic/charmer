@@ -31,13 +31,15 @@ from charmer.setup import model, signin, texts
 SCHEMA = strict_json.load(RESOURCES_ROOT / account_pools.SCHEMA)
 SHIPPED = strict_json.load(RESOURCES_ROOT / account_pools.FILE)
 
-# What the sign-in did for the two pools before they became data.
+# What the sign-in did for the two pools before they became data. The
+# acknowledgement texts name the product, so the rename gave both a fresh
+# id (a changed text needs a fresh acknowledgement).
 BEFORE = {
     "claude": {
         "provider": "anthropic", "display": "Claude account", "flow": "browser", "host": "claude.ai",
         "command": "claude-login", "policies": ("public",), "methods": ("browser", "address"),
-        "ack_id": "claude-account-personal-use/1",
-        "ack_sha256": "35e1d3ab3c7ccc3fbcd822d8fbef83ab6bbe7fe8a8d727edb471371ad6180fef",
+        "ack_id": "claude-account-personal-use/2",
+        "ack_sha256": "2fb29cf6c7d93d0fc3cc3a1d415f3d5a7670450b9e61d94814d267b643768481",
         "prefix": "claude", "section": "claude", "sections": ("claude",),
         # The account modal said the sign-in is separate from the client's
         # own login (a Claude account) for this pool only.
@@ -46,8 +48,8 @@ BEFORE = {
     "codex": {
         "provider": "openai", "display": "ChatGPT account", "flow": "device", "host": "auth.openai.com",
         "command": "codex-device-login", "policies": ("public", "public-strict"), "methods": ("device",),
-        "ack_id": "chatgpt-account-personal-use/1",
-        "ack_sha256": "ebae2232ecd1814407f16d9a2eaa129410f74a4b0fd6a83413eb694565a75ed6",
+        "ack_id": "chatgpt-account-personal-use/2",
+        "ack_sha256": "90f0d252286611af7ee89f074037e8eb392e1043e4ca58e60603fba343972c14",
         "prefix": "codex", "section": "codex-pro",
         "sections": ("codex-free", "codex-team", "codex-plus", "codex-pro"),
         "client_account": False,

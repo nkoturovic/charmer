@@ -18,7 +18,7 @@
       "wire_model": "your-model-id"
     }
   },
-  "notes": "Example: a keyless OpenAI-compatible server on your network. Nothing installs it. Declare it with claude-multi providers add --preset llm-local --base-url http://HOST:PORT/v1, set the model id your server serves, then admit the line.",
+  "notes": "Example: a keyless OpenAI-compatible server on your network. Nothing installs it. Declare it with charmer providers add --preset llm-local --base-url http://HOST:PORT/v1, set the model id your server serves, then admit the line.",
   "provider": {
     "auth": {
       "kind": "none"

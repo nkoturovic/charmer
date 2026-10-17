@@ -1,6 +1,6 @@
 {
   "lines": {},
-  "notes": "Z.ai's Anthropic-compatible endpoint for its GLM models (keys from z.ai). Its documentation names no model-list endpoint. Declaration only: add models with claude-multi models add zai WIRE …, then admit them.",
+  "notes": "Z.ai's Anthropic-compatible endpoint for its GLM models (keys from z.ai). Its documentation names no model-list endpoint. Declaration only: add models with charmer models add zai WIRE …, then admit them.",
   "preset": {
     "checked": "2026-10-04",
     "source": "docs",

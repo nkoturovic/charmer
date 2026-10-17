@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-from . import errors, strict_json, validate as schema_validate
+from . import errors, legacy, strict_json, validate as schema_validate
 
 
 # Data version of every catalog document except ``models`` and ``roles``
@@ -162,6 +162,16 @@ RESERVED_LEAD_ENV_KEYS = frozenset(
 
 _SELECTOR_SUFFIX = "[1m]"
 _RENDER_SENTINEL_PREFIX = "charmer-render-"
+# ``retired.json`` ``renamed``: selectors a live line served under an earlier
+# name. Catalog 39 renamed every gateway selector under the earlier prefix
+# (``legacy.SELECTOR_PREFIX`` + ``<rest>``) to ``charmer-<rest>``; each entry maps an old
+# selector to the live selector that replaced it (same rest, ``[1m]``
+# included) and the catalog version that renamed it. The old name is never
+# offered again; recorded sessions and compiled scopes still name it, so
+# ``Catalog.retired_selector_index`` lists it on the live line's route and
+# the continuity seed serves it there (same provider, wire, effort contract
+# and window) until an operator prunes it.
+RENAMED_SELECTOR_PREFIX = "charmer-"
 
 _HASH_FIELDS = frozenset(
     {"sha256", "composition_hash", "catalog_hash", "pre_image_hash", "post_image_hash"}
@@ -534,18 +544,33 @@ class Catalog:
 
         return resolve_key_in(self.lines, self.retired, key)
 
+    @property
+    def renamed(self) -> dict[str, Any]:
+        """``retired.json`` ``renamed``: old selector -> ``{selector, since_catalog}``."""
+
+        return self.docs["retired"].get("renamed") or {}
+
     def retired_selector_index(self) -> dict[str, tuple[str, dict[str, Any], str | None]]:
-        """Each retired selector base -> (retired key, entry, proxy contract)."""
+        """Each retired or renamed selector base -> (key, entry, proxy contract).
+
+        A retired selector names its retired key and entry. A renamed one
+        names the live line that serves it under its new selector, with a
+        retired-shaped entry built from that line
+        (:func:`renamed_selector_entries`): the continuity seed and the
+        record scan then serve the old name on the identical route.
+        """
 
         index: dict[str, tuple[str, dict[str, Any], str | None]] = {}
         for key in sorted(self.retired):
             entry = self.retired[key]
             for selector, contract in sorted(entry["selectors"].items()):
                 index.setdefault(_selector_base(selector), (key, entry, contract))
+        for base, found in renamed_selector_entries(self.lines, self.renamed).items():
+            index.setdefault(base, found)
         return index
 
     def resolve_selector(self, selector: str) -> tuple[str, dict[str, Any]] | None:
-        """A retired selector (with or without ``[1m]``) -> (retired key, entry)."""
+        """A retired or renamed selector (with or without ``[1m]``) -> (key, entry)."""
 
         found = self.retired_selector_index().get(_selector_base(selector))
         if found is None:
@@ -1366,6 +1391,117 @@ def validate_line(
     return errors
 
 
+def renamed_selector_entries(
+    models: Mapping[str, Any], renamed: Mapping[str, Any]
+) -> dict[str, tuple[str, dict[str, Any], str | None]]:
+    """Each renamed selector base -> (live line key, retired-shaped entry, proxy contract).
+
+    The entry carries what a retired entry gives the continuity seed, the
+    record scan and the render (``provider``, ``last_wire``, ``display``,
+    ``context_tokens``, ``since_catalog``, ``selectors``, ``successor`` and
+    an aggregator line's ``family``), every route fact taken from the line
+    that serves the new selector; ``context_tokens`` is the window the
+    gateway advertises for the line (``context.provider_tokens``), the
+    client's window class stays in the selector's ``[1m]``. A mapping no
+    live selector answers is left out (catalog validation refuses it).
+    """
+
+    owners: dict[str, tuple[str, str | None]] = {}
+    for key in sorted(models):
+        for _level, selector, contract in line_selectors(models[key]):
+            owners.setdefault(selector, (key, contract))
+    index: dict[str, tuple[str, dict[str, Any], str | None]] = {}
+    for old in sorted(renamed):
+        spec = renamed[old]
+        found = owners.get(spec.get("selector")) if isinstance(spec, Mapping) else None
+        if found is None:
+            continue
+        key, contract = found
+        line = models[key]
+        entry: dict[str, Any] = {
+            "provider": line["provider"],
+            "last_wire": line["wire_model"],
+            "display": line["display"],
+            "context_tokens": line["context"]["provider_tokens"],
+            "since_catalog": spec["since_catalog"],
+            "successor": key,
+            "selectors": {old: contract},
+        }
+        if isinstance(line.get("family"), str):
+            entry["family"] = line["family"]
+        index.setdefault(_selector_base(old), (key, entry, contract))
+    return index
+
+
+def retained_entries(docs: Mapping[str, Any]) -> dict[str, Any]:
+    """The retired map plus one retired-shaped entry per renamed selector
+    (keyed ``renamed:<old base>``): where a retained alias's owner family is
+    read from (``render.retained_families``)."""
+
+    retired_doc = docs.get("retired") or {}
+    models = (docs.get("models-v2") or docs.get("models") or {}).get("models") or {}
+    merged = dict(retired_doc.get("retired") or {})
+    for base, (_key, entry, _contract) in renamed_selector_entries(
+        models, retired_doc.get("renamed") or {}
+    ).items():
+        merged[f"renamed:{base}"] = entry
+    return merged
+
+
+def _check_renamed(
+    docs: dict[str, Any],
+    models: dict[str, Any],
+    live_selectors: dict[str, str],
+    route_owner: dict[str, str],
+    errors: list[str],
+) -> None:
+    """``retired.json`` ``renamed``: every old selector is the
+    ``legacy.SELECTOR_PREFIX`` twin of a live selector (the same rest,
+    ``[1m]`` included, so the effort and the window are the line's), is
+    neither live, retired nor a passthrough route, and was renamed no later
+    than this catalog."""
+
+    renamed = docs["retired"].get("renamed") or {}
+    catalog_version = docs["version"].get("catalog_version")
+    retired_bases = {
+        _selector_base(selector)
+        for entry in docs["retired"]["retired"].values()
+        for selector in entry["selectors"]
+    }
+    owners = {
+        selector
+        for key in models
+        for _level, selector, _contract in line_selectors(models[key])
+    }
+    for old in sorted(renamed):
+        spec = renamed[old]
+        where = f"retired.renamed.{old}"
+        if not SELECTOR_PATTERN.fullmatch(old):
+            errors.append(f"{where}: invalid selector")
+            continue
+        new = spec["selector"]
+        rest = old[len(legacy.SELECTOR_PREFIX):] if old.startswith(legacy.SELECTOR_PREFIX) else None
+        if rest is None or new != RENAMED_SELECTOR_PREFIX + rest:
+            errors.append(
+                f"{where}.selector: a renamed selector maps {legacy.SELECTOR_PREFIX}<rest> to "
+                f"{RENAMED_SELECTOR_PREFIX}<rest> ([1m] included), not {new!r}"
+            )
+        if new not in owners:
+            errors.append(f"{where}.selector: {new!r} is not a live selector")
+        base = _selector_base(old)
+        if base in live_selectors:
+            errors.append(f"{where}: {base!r} is still a live selector of models.{live_selectors[base]}")
+        if base in retired_bases:
+            errors.append(f"{where}: {base!r} is a retired selector")
+        if base in route_owner:
+            errors.append(f"{where}: {base!r} is a passthrough route of {route_owner[base]!r}")
+        if isinstance(catalog_version, int) and spec["since_catalog"] > catalog_version:
+            errors.append(
+                f"{where}.since_catalog: {spec['since_catalog']} is newer than "
+                f"catalog_version {catalog_version}"
+            )
+
+
 def _check_retired(
     docs: dict[str, Any],
     models: dict[str, Any],
@@ -1744,6 +1880,7 @@ def validate_catalog(raw: dict[str, Any]) -> list[str]:
         )
 
     _check_retired(docs, models, providers, live_selectors, route_owner, errors)
+    _check_renamed(docs, models, live_selectors, route_owner, errors)
 
     for document_key in (
         "gateway",

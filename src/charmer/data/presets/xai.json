@@ -1,6 +1,6 @@
 {
   "lines": {},
-  "notes": "xAI's chat completions API, which xAI offers as a legacy endpoint next to its Responses API. Declaration only: add models with claude-multi discover xai --add WIRE (or claude-multi models add xai WIRE …), then admit them.",
+  "notes": "xAI's chat completions API, which xAI offers as a legacy endpoint next to its Responses API. Declaration only: add models with charmer discover xai --add WIRE (or charmer models add xai WIRE …), then admit them.",
   "preset": {
     "checked": "2026-10-04",
     "source": "docs",

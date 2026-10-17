@@ -6,8 +6,8 @@
   "gateway": {
     "base_url": "http://127.0.0.1:8317",
     "health_path": "/healthz",
-    "token_file": ".config/claude-multi/api-key",
-    "auth_dir": ".local/share/claude-multi/auth",
+    "token_file": ".config/charmer/api-key",
+    "auth_dir": ".local/share/charmer/auth",
     "service": "cli-proxy-api",
     "cliproxyapi_baseline": "7.3.15",
     "patches": [

@@ -1804,7 +1804,7 @@ def _render_locked(
         continuity=working["aliases"], captures=plan.captures,
         provider_headers=plan.headers, oauth_overlay=plan.overlay,
         overlay_static=overlay_static_wires(env), quiet_providers=plan.quiet_providers,
-        retired=(plan.docs.get("retired") or {}).get("retired"),
+        retired=catalog_mod.retained_entries(plan.docs),
     )
     notices.extend(result.notices)
     operator_notes.extend(conflict.text() for conflict in result.overlay_conflicts)
@@ -2068,7 +2068,7 @@ def candidate_document(
         continuity=working["aliases"], captures=plan.captures,
         provider_headers=plan.headers, oauth_overlay=plan.overlay,
         overlay_static=overlay_static_wires(env, root), quiet_providers=plan.quiet_providers,
-        retired=(plan.docs.get("retired") or {}).get("retired"),
+        retired=catalog_mod.retained_entries(plan.docs),
     )
     return document
 

@@ -123,7 +123,7 @@ class AcknowledgementTests(SignInCase):
         changed = {**signin._ACK, "claude": (CLAUDE_ACK_ID, CLAUDE_ACK_TEXT + " (revised)")}
         with mock.patch.dict(signin._ACK, changed):
             self.assertIsNone(signin.current_ack(self.runtime.environ, "claude"))
-        with mock.patch.dict(signin._ACK, {"claude": ("claude-account-personal-use/2", CLAUDE_ACK_TEXT)}):
+        with mock.patch.dict(signin._ACK, {"claude": ("claude-account-personal-use/3", CLAUDE_ACK_TEXT)}):
             self.assertIsNone(signin.current_ack(self.runtime.environ, "claude"))
         self.assertIsNotNone(signin.current_ack(self.runtime.environ, "claude"))
 

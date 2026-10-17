@@ -7,6 +7,7 @@ gateway and journal reads. Moved verbatim from the CLI module.
 from __future__ import annotations
 
 from charmer import account_pools
+from charmer import catalog as catalog_mod
 from charmer import continuity as continuity_mod
 from charmer import custom
 from charmer import operator as operator_mod
@@ -497,7 +498,7 @@ def _gateway_snapshot(runtime: runtime_mod.Runtime, token: str) -> GatewaySnapsh
                 oauth_overlay=plan.overlay,
                 overlay_static=overlay_static,
                 quiet_providers=plan.quiet_providers,
-                retired=(docs.get("retired") or {}).get("retired"),
+                retired=catalog_mod.retained_entries(docs),
             )
             rendered_holder.append(info["continuity_rendered"])
             conflicts_holder.append(info["overlay_conflicts"])

@@ -1,6 +1,6 @@
 {
   "lines": {},
-  "notes": "Mistral AI's chat completions API. Declaration only: add models with claude-multi discover mistral --add WIRE (or claude-multi models add mistral WIRE …), then admit them.",
+  "notes": "Mistral AI's chat completions API. Declaration only: add models with charmer discover mistral --add WIRE (or charmer models add mistral WIRE …), then admit them.",
   "preset": {
     "checked": "2026-10-04",
     "source": "docs",

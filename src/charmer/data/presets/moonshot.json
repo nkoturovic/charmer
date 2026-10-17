@@ -1,6 +1,6 @@
 {
   "lines": {},
-  "notes": "The Kimi API platform's pay-per-token Anthropic-compatible endpoint (keys from platform.kimi.ai); the Kimi provider that ships with claude-multi is the separate Kimi Code subscription. Its documentation names no model-list endpoint for this route. Declaration only: add models with claude-multi models add moonshot WIRE …, then admit them.",
+  "notes": "The Kimi API platform's pay-per-token Anthropic-compatible endpoint (keys from platform.kimi.ai); the Kimi provider that ships with charmer is the separate Kimi Code subscription. Its documentation names no model-list endpoint for this route. Declaration only: add models with charmer models add moonshot WIRE …, then admit them.",
   "preset": {
     "checked": "2026-10-04",
     "source": "docs",

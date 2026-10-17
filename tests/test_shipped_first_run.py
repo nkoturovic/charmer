@@ -105,7 +105,15 @@ def modelless_copy(target: Path) -> tuple[Path, str]:
         raise AssertionError("no shipped keyed provider can lose its lines")
     path = root / "catalog" / "models.json"
     document = strict_json.load(path)
+    removed = {selector for entry in document["models"].values() if entry["provider"] == pid
+               for _level, selector, _contract in catalog.line_selectors(entry)}
     document["models"] = {key: entry for key, entry in document["models"].items() if entry["provider"] != pid}
+    path.write_bytes(strict_json.pretty_file_bytes(document))
+    # The lines' renamed selectors go with them (a renamed selector maps to a live one).
+    path = root / "catalog" / "retired.json"
+    document = strict_json.load(path)
+    document["renamed"] = {old: spec for old, spec in document.get("renamed", {}).items()
+                           if spec["selector"] not in removed}
     path.write_bytes(strict_json.pretty_file_bytes(document))
     return root, pid
 

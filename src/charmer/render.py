@@ -1053,8 +1053,9 @@ def build_config_document(
     that forgot it fails loudly. Catalog aliases come first and win every
     collision; continuity entries on unconfigured providers are dropped with
     a notice, on unavailable providers omitted with them. ``retired`` (the
-    catalog's retired map) gives a retained alias on an aggregator the owner
-    its retired entry declares (:func:`retained_families`). Returns
+    catalog's retired map with its renamed selectors,
+    ``catalog.retained_entries``) gives a retained alias on an aggregator the
+    owner its entry declares (:func:`retained_families`). Returns
     ``(document, available, unavailable, info)`` where ``info`` carries
     ``continuity_rendered`` (sorted) and ``notices``.
 

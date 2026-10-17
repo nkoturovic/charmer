@@ -1,4 +1,130 @@
 {
+  "renamed": {
+    "claude-multi-deepseek-flash-high[1m]": {
+      "selector": "charmer-deepseek-flash-high[1m]",
+      "since_catalog": 39
+    },
+    "claude-multi-deepseek-flash-max[1m]": {
+      "selector": "charmer-deepseek-flash-max[1m]",
+      "since_catalog": 39
+    },
+    "claude-multi-kimi-code-high[1m]": {
+      "selector": "charmer-kimi-code-high[1m]",
+      "since_catalog": 39
+    },
+    "claude-multi-kimi-code-low[1m]": {
+      "selector": "charmer-kimi-code-low[1m]",
+      "since_catalog": 39
+    },
+    "claude-multi-kimi-code-max[1m]": {
+      "selector": "charmer-kimi-code-max[1m]",
+      "since_catalog": 39
+    },
+    "claude-multi-muse-contributor-high[1m]": {
+      "selector": "charmer-muse-contributor-high[1m]",
+      "since_catalog": 39
+    },
+    "claude-multi-muse-contributor-low[1m]": {
+      "selector": "charmer-muse-contributor-low[1m]",
+      "since_catalog": 39
+    },
+    "claude-multi-muse-contributor-medium[1m]": {
+      "selector": "charmer-muse-contributor-medium[1m]",
+      "since_catalog": 39
+    },
+    "claude-multi-muse-contributor-xhigh[1m]": {
+      "selector": "charmer-muse-contributor-xhigh[1m]",
+      "since_catalog": 39
+    },
+    "claude-multi-muse-high[1m]": {
+      "selector": "charmer-muse-high[1m]",
+      "since_catalog": 39
+    },
+    "claude-multi-muse-low[1m]": {
+      "selector": "charmer-muse-low[1m]",
+      "since_catalog": 39
+    },
+    "claude-multi-muse-medium[1m]": {
+      "selector": "charmer-muse-medium[1m]",
+      "since_catalog": 39
+    },
+    "claude-multi-muse-xhigh[1m]": {
+      "selector": "charmer-muse-xhigh[1m]",
+      "since_catalog": 39
+    },
+    "claude-multi-or-deepseek-high[1m]": {
+      "selector": "charmer-or-deepseek-high[1m]",
+      "since_catalog": 39
+    },
+    "claude-multi-or-deepseek-xhigh[1m]": {
+      "selector": "charmer-or-deepseek-xhigh[1m]",
+      "since_catalog": 39
+    },
+    "claude-multi-or-gemini-high[1m]": {
+      "selector": "charmer-or-gemini-high[1m]",
+      "since_catalog": 39
+    },
+    "claude-multi-or-gemini-xhigh[1m]": {
+      "selector": "charmer-or-gemini-xhigh[1m]",
+      "since_catalog": 39
+    },
+    "claude-multi-or-gpt-high[1m]": {
+      "selector": "charmer-or-gpt-high[1m]",
+      "since_catalog": 39
+    },
+    "claude-multi-or-gpt-xhigh[1m]": {
+      "selector": "charmer-or-gpt-xhigh[1m]",
+      "since_catalog": 39
+    },
+    "claude-multi-or-grok-high": {
+      "selector": "charmer-or-grok-high",
+      "since_catalog": 39
+    },
+    "claude-multi-or-grok-xhigh": {
+      "selector": "charmer-or-grok-xhigh",
+      "since_catalog": 39
+    },
+    "claude-multi-or-kimi-high[1m]": {
+      "selector": "charmer-or-kimi-high[1m]",
+      "since_catalog": 39
+    },
+    "claude-multi-or-kimi-xhigh[1m]": {
+      "selector": "charmer-or-kimi-xhigh[1m]",
+      "since_catalog": 39
+    },
+    "claude-multi-or-opus-high[1m]": {
+      "selector": "charmer-or-opus-high[1m]",
+      "since_catalog": 39
+    },
+    "claude-multi-or-opus-xhigh[1m]": {
+      "selector": "charmer-or-opus-xhigh[1m]",
+      "since_catalog": 39
+    },
+    "claude-multi-qwen-flash-low[1m]": {
+      "selector": "charmer-qwen-flash-low[1m]",
+      "since_catalog": 39
+    },
+    "claude-multi-qwen-flash-medium[1m]": {
+      "selector": "charmer-qwen-flash-medium[1m]",
+      "since_catalog": 39
+    },
+    "claude-multi-qwen-flash-xhigh[1m]": {
+      "selector": "charmer-qwen-flash-xhigh[1m]",
+      "since_catalog": 39
+    },
+    "claude-multi-qwen-max-low[1m]": {
+      "selector": "charmer-qwen-max-low[1m]",
+      "since_catalog": 39
+    },
+    "claude-multi-qwen-max-medium[1m]": {
+      "selector": "charmer-qwen-max-medium[1m]",
+      "since_catalog": 39
+    },
+    "claude-multi-qwen-max-xhigh[1m]": {
+      "selector": "charmer-qwen-max-xhigh[1m]",
+      "since_catalog": 39
+    }
+  },
   "retired": {
     "deepseek-pro": {
       "capabilities": [
@@ -225,7 +351,7 @@
       },
       "last_wire": "qwen3.8-flash-next",
       "provider": "llm-local",
-      "reason": "Renamed to qwen-local; its provider llm-local left the catalog: choose a model or add the provider with claude-multi providers add --preset llm-local.",
+      "reason": "Renamed to qwen-local; its provider llm-local left the catalog: choose a model or add the provider with charmer providers add --preset llm-local.",
       "roles": [],
       "selectors": {
         "claude-multi-qwen-flash-next": null
@@ -244,7 +370,7 @@
       },
       "last_wire": "qwen3.8-flash-next",
       "provider": "llm-local",
-      "reason": "The keyless LAN provider llm-local left the catalog; add it with claude-multi providers add --preset llm-local to keep using it, else choose a model.",
+      "reason": "The keyless LAN provider llm-local left the catalog; add it with charmer providers add --preset llm-local to keep using it, else choose a model.",
       "roles": [],
       "selectors": {
         "claude-multi-qwen-local": null

@@ -1,6 +1,6 @@
 {
   "lines": {},
-  "notes": "LM Studio's OpenAI-compatible server on this computer (no key). Another computer: --base-url http://HOST:1234/v1. Declaration only: add models with claude-multi discover lm-studio --add WIRE (or claude-multi models add lm-studio WIRE …), then admit them.",
+  "notes": "LM Studio's OpenAI-compatible server on this computer (no key). Another computer: --base-url http://HOST:1234/v1. Declaration only: add models with charmer discover lm-studio --add WIRE (or charmer models add lm-studio WIRE …), then admit them.",
   "preset": {
     "checked": "2026-10-04",
     "source": "docs",

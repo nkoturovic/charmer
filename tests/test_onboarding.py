@@ -15,6 +15,7 @@ from unittest import mock
 from contextlib import redirect_stdout
 
 from charmer import catalog, dev, sessions, state, strict_json
+from charmer import legacy
 from charmer.dev import DevError
 from _catalog import FIXTURE_ROOT
 from _layout import REPO_ROOT, fake_checkout
@@ -1761,7 +1762,7 @@ class DraftsMigrateTests(OnboardingTestCase):
         self.assertIsNone(entry["registry_overlay"])
         self.assertEqual(
             entry["efforts"],
-            {"max": {"selector": "charmer-qwen38-max[1m]",
+            {"max": {"selector": legacy.SELECTOR_PREFIX + "qwen38-max[1m]",
                      "proxy_contract": "reasoning-effort-xhigh"}},
         )
         self.assertEqual(entry["roles"], "all")
@@ -1783,7 +1784,7 @@ class DraftsMigrateTests(OnboardingTestCase):
         self.assertEqual(code, 0, err)
         entry = self.store.load("local")["entry"]
         self.assertEqual(entry["efforts"], ["high"])
-        self.assertEqual(entry["selector"], "charmer-qwen-flash-next")
+        self.assertEqual(entry["selector"], legacy.SELECTOR_PREFIX + "qwen-flash-next")
         self.assertEqual(entry["status"], "new")
 
     def test_unconvertible_and_unknown_provider_drafts_are_discarded(self) -> None:

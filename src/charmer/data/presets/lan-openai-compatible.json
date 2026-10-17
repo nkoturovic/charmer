@@ -1,6 +1,6 @@
 {
   "lines": {},
-  "notes": "Preset: a keyless OpenAI-compatible server on your LAN. Declaration only: add lines with claude-multi models add <id> <wire> ..., then admit them.",
+  "notes": "Preset: a keyless OpenAI-compatible server on your LAN. Declaration only: add lines with charmer models add <id> <wire> ..., then admit them.",
   "preset": {
     "source": "generic",
     "support": "preset"

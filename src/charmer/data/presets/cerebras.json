@@ -1,6 +1,6 @@
 {
   "lines": {},
-  "notes": "Cerebras' OpenAI-compatible API. It serves several model families. Declaration only: add models with claude-multi discover cerebras --add WIRE (or claude-multi models add cerebras WIRE …), then admit them.",
+  "notes": "Cerebras' OpenAI-compatible API. It serves several model families. Declaration only: add models with charmer discover cerebras --add WIRE (or charmer models add cerebras WIRE …), then admit them.",
   "preset": {
     "checked": "2026-10-04",
     "source": "docs",

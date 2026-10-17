@@ -712,18 +712,19 @@ class AliasOwnerTests(unittest.TestCase):
         # The packaged catalog and its continuity seeds (invariants only).
         bundle = catalog.load_catalog(SHIPPED_ROOT)
         providers = bundle.docs["providers"]["providers"]
-        retired = bundle.docs["retired"]["retired"]
         seeds = continuity.seed_entries(bundle)
-        owners = self._owners(bundle, seeds, retired)
+        owners = self._owners(bundle, seeds, catalog.retained_entries(bundle.docs))
         checked = 0
         for alias, entry in sorted(seeds.items()):
             provider = providers.get(entry["provider"])
             if provider is None or provider["independence_family"] != render.UNKNOWN_FAMILY:
                 continue
+            # A retired selector's entry, or the live line a renamed one names.
             key = entry["source"].removeprefix("seed:")
+            declared = (bundle.retired.get(key) or bundle.lines[key])["family"]
             with self.subTest(alias=alias):
                 self.assertIn(alias, owners)
-                self.assertEqual(owners[alias], retired[key]["family"])
+                self.assertEqual(owners[alias], declared)
                 self.assertNotEqual(owners[alias], render.UNKNOWN_FAMILY)
             checked += 1
         self.assertGreater(checked, 0, "the packaged catalog retains an aggregator alias")

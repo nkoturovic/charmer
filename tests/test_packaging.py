@@ -1109,14 +1109,17 @@ class CutoverTests(unittest.TestCase):
     def test_retained_aliases_present_in_catalog(self) -> None:
         # A 2.x selector that left the live lines stays in the retired
         # map (served as continuity), so retired.json is part of the blob.
+        # Retired selectors keep the earlier product prefix (recorded names).
+        from charmer import legacy
+
         blob = (RESOURCES_ROOT / "catalog" / "models.json").read_text()
         blob += (RESOURCES_ROOT / "catalog" / "providers.json").read_text()
         blob += (RESOURCES_ROOT / "catalog" / "retired.json").read_text()
         for retained in (
             "claude-fable-5",
             "claude-opus-4-8",
-            "charmer-kimi-k3",
-            "charmer-opus-4-8",
+            legacy.SELECTOR_PREFIX + "kimi-k3",
+            legacy.SELECTOR_PREFIX + "opus-4-8",
             "gpt-multi-sol-high",
             "gpt-multi-sol-xhigh",
             "gpt-multi-gpt55-high",
