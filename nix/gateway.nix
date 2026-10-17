@@ -109,7 +109,7 @@ let
   gatewayPatches = map patchFile admitted;
   # The packaged gateway contract: the upstream version and the ordered
   # basename@sha256 identity of every applied patch. Every channel ships the
-  # checked-in package resource src/claude_multi/data/gateway-contract.json,
+  # checked-in package resource src/charmer/data/gateway-contract.json,
   # which must be its exact bytes.
   contract = {
     version = 1;
@@ -117,8 +117,8 @@ let
     patches = map (entry: "${entry.basename}@${entry.sha256}") admitted;
   };
   gatewayContract =
-    assert lib.assertMsg (builtins.toJSON contract == builtins.readFile ../src/claude_multi/data/gateway-contract.json)
-      "src/claude_multi/data/gateway-contract.json is stale: run python3 tools/build.py gateway contract";
+    assert lib.assertMsg (builtins.toJSON contract == builtins.readFile ../src/charmer/data/gateway-contract.json)
+      "src/charmer/data/gateway-contract.json is stale: run python3 tools/build.py gateway contract";
     contract;
   # The checked-in licence notices and per-target SBOMs; record checks them
   # against what each target links and copies them into the output.
@@ -206,7 +206,7 @@ let
         '';
         passthru = shared;
         meta = {
-          description = "CLIProxyAPI ${version} with claude-multi's patches (${target.name})";
+          description = "CLIProxyAPI ${version} with charmer's patches (${target.name})";
           license = lib.licenses.mit;
           mainProgram = upstream.upstream.binary;
         };

@@ -814,7 +814,9 @@ class ServiceFixture:
                                     body=json.dumps(body).encode(), timeout=30)
 
     def sentinel_ids(self):
-        reply = self.get("/v1/models")
+        # The product's served read: the OpenAI listing never cloaks the sentinel.
+        headers = {name: value for name, value in self.headers().items() if name != "anthropic-version"}
+        reply = harness.unix_request(self.socket, "GET", "/v1/models", headers=headers, timeout=10)
         return reply.status, {row["id"] for row in reply.json().get("data", [])} if reply.status == 200 else set()
 
     def ready(self, process, log_path, deadline=90):

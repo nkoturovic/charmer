@@ -1,12 +1,12 @@
 {
   "format": 1,
-  "name": "claude-multi",
+  "name": "charmer",
   "launchers": [
-    "claude-multi",
-    "claude-multi-proxy"
+    "charmer",
+    "charmer-proxy"
   ],
-  "release_base_url": "https://github.com/nkoturovic/claude-multi/releases/download/v{version}",
-  "release_latest_url": "https://github.com/nkoturovic/claude-multi/releases/latest/download",
+  "release_base_url": "https://github.com/nkoturovic/charmer/releases/download/v{version}",
+  "release_latest_url": "https://github.com/nkoturovic/charmer/releases/latest/download",
   "targets": {
     "darwin-arm64": {
       "claude_code": "darwin-arm64",

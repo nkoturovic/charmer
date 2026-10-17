@@ -43,7 +43,7 @@ index 0000000..be67635
 @@ -0,0 +1,204 @@
 +// Package retryhint carries a validated upstream Retry-After hint from the
 +// upstream response boundary to the gateway's terminal error response
-+// (claude-multi retry-after).
++// (charmer retry-after).
 +//
 +// General upstream header passthrough stays off. An executor parses the
 +// upstream Retry-After of a failure once, at the response boundary, into a

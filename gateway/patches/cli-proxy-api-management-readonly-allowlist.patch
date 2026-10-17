@@ -7,7 +7,7 @@ index 883d532..87063aa 100644
  		authManager:         manager,
  		tokenStore:          sdkAuth.GetTokenStore(),
 -		allowRemoteOverride: envSecret != "",
-+		allowRemoteOverride: false, // claude-multi: MANAGEMENT_PASSWORD never implies allow-remote
++		allowRemoteOverride: false, // charmer: MANAGEMENT_PASSWORD never implies allow-remote
  		envSecret:           envSecret,
  	}
  	h.startAttemptCleanup()
@@ -19,7 +19,7 @@ index 4295cc7..06407cb 100644
  		return
  	}
  
-+	// claude-multi: the RESP surface authenticates with the management key and
++	// charmer: the RESP surface authenticates with the management key and
 +	// pops the usage queue, so it is outside the read-only allowlist. Close
 +	// before any command is read or any key is checked, exactly as a gateway
 +	// without a management key does.
@@ -38,7 +38,7 @@ index ec04949..990c18a 100644
  	engine.Use(logging.GinLogrusLogger())
  	engine.Use(logging.GinLogrusRecovery())
  	engine.Use(logging.CPATraceIDMiddleware())
-+	// claude-multi: read-only management allowlist; must precede every route.
++	// charmer: read-only management allowlist; must precede every route.
 +	engine.Use(managementReadOnlyAllowlistMiddleware())
  	for _, mw := range optionState.extraMiddleware {
  		engine.Use(mw)
@@ -93,7 +93,7 @@ index 0000000..9e8348f
 +	"github.com/gin-gonic/gin"
 +)
 +
-+// claude-multi local patch (management-readonly-allowlist).
++// charmer local patch (management-readonly-allowlist).
 +//
 +// The Management API is reduced to an exact read-only allowlist. The guard is
 +// an engine-level middleware installed before any route exists, so it runs
@@ -183,7 +183,7 @@ index 0000000..9e8348f
 +}
 +
 +// isBrowserOriginatedRequest reports whether the request carries any header a
-+// browser attaches to cross-site or fetch-metadata requests. The claude-multi
++// browser attaches to cross-site or fetch-metadata requests. The charmer
 +// client sends none of them.
 +func isBrowserOriginatedRequest(r *http.Request) bool {
 +	for _, name := range managementBrowserRequestHeaders {
@@ -279,7 +279,7 @@ index 0000000..b5abecd
 +	sdkconfig "github.com/router-for-me/CLIProxyAPI/v7/sdk/config"
 +)
 +
-+// claude-multi local patch (management-readonly-allowlist) gate.
++// charmer local patch (management-readonly-allowlist) gate.
 +// Network-free: requests go through server.engine.ServeHTTP (no listener);
 +// the RESP check uses a 127.0.0.1:0 listener only; the source tripwire reads
 +// the module's own files.
@@ -319,7 +319,7 @@ index 0000000..b5abecd
 +	return s
 +}
 +
-+// allowlistRequest builds a request shaped like the claude-multi client: a
++// allowlistRequest builds a request shaped like the charmer client: a
 +// loopback peer, a loopback Host literal, no browser headers.
 +func allowlistRequest(method, target, key, remoteAddr string) *http.Request {
 +	req := httptest.NewRequest(method, target, nil)

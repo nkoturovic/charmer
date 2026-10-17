@@ -1,11 +1,11 @@
-"""claude-multi's indirect garbage-collector root in a real Nix store (CI).
+"""charmer's indirect garbage-collector root in a real Nix store (CI).
 
   python3 .github/scripts/nix_roots.py PACKAGE
 
-PACKAGE is a built claude-multi Nix package (a store path with
-bin/claude-multi-proxy) that nothing roots yet, in a disposable Nix
+PACKAGE is a built charmer Nix package (a store path with
+bin/charmer-proxy) that nothing roots yet, in a disposable Nix
 installation. Under a temporary HOME, the product's own code selects it as
-``claude-multi gateway service install`` does (``claude_multi.installs``:
+``charmer gateway service install`` does (``charmer.installs``:
 plan_selection, then apply_selection, which runs ``nix-store --add-root
 LINK --indirect --realise PACKAGE``), and then removes the link as the
 service uninstall does (remove_nix_link). Checked with the store's own
@@ -62,7 +62,7 @@ def roots(package: str) -> list[str]:
 def prove(package: str, runner=subprocess.run) -> list[str]:
     if str(REPO / "src") not in sys.path:
         sys.path.insert(0, str(REPO / "src"))
-    from claude_multi import installs
+    from charmer import installs
 
     steps = []
     store = installs.store_path(package)
@@ -71,7 +71,7 @@ def prove(package: str, runner=subprocess.run) -> list[str]:
     if roots(store):
         raise RootError(f"{store} already has roots ({', '.join(roots(store))}); build it with --no-link")
     steps.append("unrooted before the selection")
-    home = Path(tempfile.mkdtemp(prefix="claude-multi-gc-roots-")).resolve()
+    home = Path(tempfile.mkdtemp(prefix="charmer-gc-roots-")).resolve()
     try:
         environ = {"HOME": str(home), "PATH": os.environ.get("PATH", os.defpath)}
         selection = installs.plan_selection("nix", environ, installation=store)

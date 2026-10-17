@@ -608,7 +608,7 @@
             }
           ],
           "pattern": "lib/python3.14/lib-dynload/_dbm*",
-          "reason": "strong copyleft; claude-multi never imports it"
+          "reason": "strong copyleft; charmer never imports it"
         },
         {
           "extension": "_testbuffer",
@@ -894,7 +894,7 @@
             }
           ],
           "pattern": "lib/python3.14/lib-dynload/_dbm*",
-          "reason": "strong copyleft; claude-multi never imports it"
+          "reason": "strong copyleft; charmer never imports it"
         },
         {
           "extension": "_testbuffer",

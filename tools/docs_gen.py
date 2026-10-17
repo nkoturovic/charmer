@@ -113,13 +113,13 @@ VALUES: dict[tuple[str, str], str] = {
 def _parser() -> argparse.ArgumentParser:
     """The launcher's parser, built once per run (reading it changes nothing)."""
 
-    from claude_multi.cli.parser import build_parser
+    from charmer.cli.parser import build_parser
 
     return build_parser()
 
 
 def _matrix():
-    from claude_multi import surface_matrix
+    from charmer import surface_matrix
 
     return surface_matrix
 
@@ -158,7 +158,7 @@ def _arguments(parser: argparse.ArgumentParser) -> list[argparse.Action]:
 def _value(path: str, action: argparse.Action) -> str:
     key = (path, action.dest)
     if key not in VALUES:
-        raise SystemExit(f"docs_gen: {('claude-multi ' + path).strip()} {action.dest}: no placeholder "
+        raise SystemExit(f"docs_gen: {('charmer ' + path).strip()} {action.dest}: no placeholder "
                          "(add it to VALUES in tools/docs_gen.py)")
     if VALUES[key]:
         return f"<{VALUES[key]}>"
@@ -225,7 +225,7 @@ def usage(path: Sequence[str], parser: argparse.ArgumentParser, *, passthrough: 
         parts.append("<command>" if sub.required else "[<command>]")
     if passthrough:
         parts.append("[-- <claude-args>]")
-    return " ".join(["claude-multi", *path, *parts])
+    return " ".join(["charmer", *path, *parts])
 
 
 _MARKDOWN_TEXT = re.compile(r"([<*])")
@@ -319,7 +319,7 @@ def classification() -> dict[str, str]:
     audiences = path_audiences()
 
     def walk(parser: argparse.ArgumentParser, path: tuple[str, ...], shown: bool) -> None:
-        label = " ".join(("claude-multi", *path))
+        label = " ".join(("charmer", *path))
         out[label] = command_kind(path, audiences) if shown else "hidden: accepted, not listed by its parent's help"
         sub = _subparsers(parser)
         if sub is None:
@@ -329,10 +329,10 @@ def classification() -> dict[str, str]:
             walk(child, (*path, name), shown and out[label] == "listed" and name in listed)
 
     walk(_parser(), (), True)
-    from claude_multi import proxy
+    from charmer import proxy
 
     for command in proxy.PROXY_COMMANDS:
-        out[f"claude-multi-proxy {command.name}"] = (
+        out[f"charmer-proxy {command.name}"] = (
             "listed" if command.audience in PROXY_LISTED
             else f"counted: the gateway tool's {command.audience} command")
     for op in _matrix().OPERATIONS:
@@ -345,7 +345,7 @@ def classification() -> dict[str, str]:
 # Operations whose command needs more than its path, its flags and its
 # required arguments to read as the task (the flag acts on a resume, the
 # step is named, an option the task needs): ``(operation, spelling)`` ->
-# the words after ``claude-multi``; each spells its path and its flags.
+# the words after ``charmer``; each spells its path and its flags.
 EXAMPLES: dict[tuple[str, str], str] = {
     ("launch.direct", "direct"): "direct [--model <model>]",
     ("launch.force-resume", "--force"): "-r <id> --force",
@@ -424,27 +424,27 @@ def example(op, spelling: str) -> str:
         words = text.split()
         if tuple(words[:len(path)]) != path or not set(flags) <= set(words):
             raise SystemExit(f"docs_gen: the example {text!r} does not spell {spelling!r}")
-        return f"claude-multi {text}"
+        return f"charmer {text}"
     if path == ("lineup",):
-        return " ".join(["claude-multi lineup --session <runtime-id>", *flags, "<request>"])
+        return " ".join(["charmer lineup --session <runtime-id>", *flags, "<request>"])
     parser = _node(_parser(), path)
     owners = {option: action for action in parser._actions for option in action.option_strings}  # noqa: SLF001
     label = " ".join(path)
-    words = ["claude-multi", *path, *_required(path, flags)]
+    words = ["charmer", *path, *_required(path, flags)]
     for flag in flags:
         words += ["--", "<claude-args>"] if flag == sm.PASSTHROUGH else [_spell(label, owners[flag], flag)]
     return " ".join(words)
 
 
 def cm_spelled(name: str) -> str:
-    from claude_multi import lineup_files
+    from charmer import lineup_files
 
     verb = next(verb for verb in lineup_files.CM_VERBS if verb.name == name)
     return f"/cm {verb.spelled()}".rstrip()
 
 
 def _lineup_request(name: str) -> str:
-    return f"claude-multi lineup --session <runtime-id> {cm_spelled(name).removeprefix('/cm ')}"
+    return f"charmer lineup --session <runtime-id> {cm_spelled(name).removeprefix('/cm ')}"
 
 
 def cli_commands(op, spellings: Sequence[str] | None = None, *, verbs: int | None = None) -> list[str]:
@@ -529,11 +529,11 @@ def short_paths(paths: Sequence[str]) -> str:
 # ------------------------------------------------- the command-line reference
 
 def region_cli_reference() -> str:
-    from claude_multi.cli import parser as cli_parser
+    from charmer.cli import parser as cli_parser
 
     parser = _parser()
     audiences = path_audiences()
-    lines = ["## Launch", "", "```text", usage((), parser, passthrough=True), "claude-multi <command>", "```", "",
+    lines = ["## Launch", "", "```text", usage((), parser, passthrough=True), "charmer <command>", "```", "",
              "| Argument | What it does |", "| --- | --- |"]
     lines += [f"| {spelled} | {what} |" for spelled, what in argument_rows((), parser)]
     lines += ["", "Examples:", "", "| Command | What it does |", "| --- | --- |"]
@@ -555,7 +555,7 @@ def _command_section(path: tuple[str, ...], parser: argparse.ArgumentParser, sum
                      audiences: Mapping[tuple[str, ...], set[str]]) -> list[str]:
     label = " ".join(path)
     about = parser.description if parser.description and command_kind(path, audiences) == "listed" else summary
-    lines = ["", f"{'#' * min(len(path) + 2, 6)} claude-multi {label}", "", _prose(_sentence(about))]
+    lines = ["", f"{'#' * min(len(path) + 2, 6)} charmer {label}", "", _prose(_sentence(about))]
     if command_kind(path, audiences) == "name-only":
         lines += ["", "It reads or converts an earlier format; its own `--help` lists its options."]
         return lines
@@ -576,24 +576,24 @@ _PROXY_WORDS = {"/abs": "<root>", "NONCE": "<nonce>", "NAME": "<name>"}
 
 
 def region_proxy() -> str:
-    from claude_multi import proxy
+    from charmer import proxy
 
     listed = [command for command in proxy.PROXY_COMMANDS if command.audience in PROXY_LISTED]
     counted = [command for command in proxy.PROXY_COMMANDS if command.audience not in PROXY_LISTED]
-    lines = ["`claude-multi-proxy` is the local gateway's own tool. The launcher and the gateway service run "
+    lines = ["`charmer-proxy` is the local gateway's own tool. The launcher and the gateway service run "
              "it; a doctor finding names it when it is the fix.", "",
              "| Command | Arguments | What it does |", "| --- | --- | --- |"]
     for command in listed:
         synopsis = " ".join(_PROXY_WORDS.get(word, word) for word in command.synopsis.split())
-        lines.append(f"| {_code('claude-multi-proxy ' + command.name)} | {_code(synopsis) if synopsis else 'none'} "
+        lines.append(f"| {_code('charmer-proxy ' + command.name)} | {_code(synopsis) if synopsis else 'none'} "
                      f"| {_prose(command.description.splitlines()[0])} |")
-    lines += ["", f"`claude-multi-proxy --help` lists its {len(counted)} maintenance commands too, and the exit "
+    lines += ["", f"`charmer-proxy --help` lists its {len(counted)} maintenance commands too, and the exit "
               "statuses of every command."]
     return "\n".join(lines)
 
 
 def region_cm() -> str:
-    from claude_multi import lineup_files
+    from charmer import lineup_files
 
     lines = ["`/cm` shows or changes the session's lineup. A change applies after you type `/reload-plugins`, "
              "or at the next resume when it needs a relaunch.", "",
@@ -601,7 +601,7 @@ def region_cm() -> str:
     lines += [f"| {_code(cm_spelled(verb.name))} | {_prose(verb.summary)} | {'yes' if verb.writes else 'no'} |"
               for verb in lineup_files.CM_VERBS]
     lines += ["", "`/cm` passes everything after it as one request; "
-              "`claude-multi lineup --session <runtime-id> <request>` runs the same request from a terminal."]
+              "`charmer lineup --session <runtime-id> <request>` runs the same request from a terminal."]
     return "\n".join(lines)
 
 
@@ -628,7 +628,7 @@ OBJECT_PAGES: dict[str, tuple[str, str]] = {
 
 def region_tasks() -> str:
     sm = _matrix()
-    from claude_multi.cli.screens import actions
+    from charmer.cli.screens import actions
 
     lines = ["## The launcher's screens", "", "| Key on the card | What it does |", "| --- | --- |"]
     lines += [f"| {_prose(row.key)} | {_prose(row.does)} |" for row in actions.ACTIONS["card"]]
@@ -712,7 +712,7 @@ CHEAT_ROWS: tuple[CheatRow, ...] = (
     CheatRow("the gateway", ("gateway.status", "gateway.start", "gateway.restart", "gateway.logs"),
              "[guides/gateway.md](guides/gateway.md)"),
     CheatRow("the gateway as a user service (Linux)", ("gateway-service.install", "gateway-service.status"),
-             "unit `claude-multi-gateway`"),
+             "unit `charmer-gateway`"),
     CheatRow("update", ("install.update-check", "install.update"), "shows its plan, then asks",
              ("update --check", "update")),
     CheatRow("roll back, uninstall", ("install.rollback", "install.uninstall-preview"),
@@ -778,7 +778,7 @@ def region_cheatsheet_tasks() -> str:
 
 
 SCREEN_TITLES: dict[str, str] = {
-    "card": "launch card (`claude-multi`)", "resume-card": "resume card (`claude-multi -r <id>`)",
+    "card": "launch card (`charmer`)", "resume-card": "resume card (`charmer -r <id>`)",
     "sessions": "sessions (S)", "lineup-dialog": "lineup dialog (S → T)", "direct": "direct (D)",
     "providers": "providers (G)", "models": "models (M)", "settings": "settings (O)", "profiles": "profiles (P)",
     "get-started": "get started (W)", "editor": "profile editor (E)",
@@ -787,8 +787,8 @@ SCREEN_TITLES: dict[str, str] = {
 
 
 def region_cheatsheet_keys() -> str:
-    from claude_multi.cli import text
-    from claude_multi.cli.screens import actions
+    from charmer.cli import text
+    from charmer.cli.screens import actions
 
     lines = ["| Screen | Keys |", "| --- | --- |"]
     for screen, rows in actions.ACTIONS.items():
@@ -808,10 +808,10 @@ EFFORT_ORDER = ("low", "medium", "high", "xhigh", "max")
 
 
 def _catalog():
-    import claude_multi
-    from claude_multi import catalog
+    import charmer
+    from charmer import catalog
 
-    return catalog.load_catalog(claude_multi.resources_root())
+    return catalog.load_catalog(charmer.resources_root())
 
 
 def _tokens(n: int) -> str:
@@ -831,7 +831,7 @@ def _selectors(entry: Mapping) -> str:
     """A line's typed ``/model`` selectors: one (the effort is chosen in
     Claude Code), or one per effort written as their common pattern."""
 
-    from claude_multi import catalog
+    from charmer import catalog
 
     found = catalog.line_selectors(dict(entry))
     if len(found) == 1:
@@ -859,7 +859,7 @@ def _active(lines: Mapping, provider: str | None = None) -> list[str]:
 
 
 def region_model_lines() -> str:
-    from claude_multi import catalog
+    from charmer import catalog
 
     cat = _catalog()
     lines = ["| Key | Model | Provider | Family | Efforts (default) | Context | Roles | `/model` selectors |",
@@ -870,7 +870,7 @@ def region_model_lines() -> str:
         lines.append(f"| `{key}` | {_prose(entry['display'])} | {cat.providers[entry['provider']]['display']} | "
                      f"{catalog.line_family(dict(entry), cat.providers)} | {', '.join(_efforts(entry))} "
                      f"({entry['default_effort']}) | {_window(entry)} | {roles} | {_selectors(entry)} |")
-    lines += ["", f"{len(cat.retired)} retired keys resolve to their successors; `claude-multi models` lists them."]
+    lines += ["", f"{len(cat.retired)} retired keys resolve to their successors; `charmer models` lists them."]
     return "\n".join(lines)
 
 
@@ -892,7 +892,7 @@ def region_shipped_profiles() -> str:
 
 
 def region_openrouter_lines() -> str:
-    from claude_multi import catalog
+    from charmer import catalog
 
     cat = _catalog()
     lines = ["| Key | Model | OpenRouter model | Family | Efforts | Context |", "| --- | --- | --- | --- | --- | --- |"]
@@ -914,16 +914,16 @@ def region_openrouter_lines() -> str:
 def region_provider_index() -> str:
     import json
 
-    import claude_multi
-    from claude_multi import catalog, operator
+    import charmer
+    from charmer import catalog, operator
 
     cat = _catalog()
-    gateway = json.loads((claude_multi.resources_root() / "catalog" / "gateway.json").read_text(encoding="utf-8"))
+    gateway = json.loads((charmer.resources_root() / "catalog" / "gateway.json").read_text(encoding="utf-8"))
     alone = {profile["primary_provider"]: name for name, profile in sorted(cat.seed_profiles.items())
              if profile.get("primary_provider")}
 
     def by_itself(pid: str) -> str:
-        return f"the shipped `{alone[pid]}` profile" if pid in alone else "a starter (`claude-multi profile starter`)"
+        return f"the shipped `{alone[pid]}` profile" if pid in alone else "a starter (`charmer profile starter`)"
 
     rows: list[tuple[str, str]] = []
     for pid, provider in cat.providers.items():
@@ -943,10 +943,10 @@ def region_provider_index() -> str:
     pages = {"anthropic-compatible": "anthropic-compatible.md", operator.KEYED_KIND: "openai-compatible.md",
              operator.LAN_KIND: "lan.md"}
     lines += ["", "Presets are vendors' documented endpoints, filled in for you "
-              "(`claude-multi providers add --preset <preset>`, or **G** → **N** and **W** → **A** in the launcher):", "",
+              "(`charmer providers add --preset <preset>`, or **G** → **N** and **W** → **A** in the launcher):", "",
               "| Preset | Route | Key name | Address | Support | Available |",
               "| --- | --- | --- | --- | --- | --- |"]
-    presets = operator.presets(claude_multi.resources_root())
+    presets = operator.presets(charmer.resources_root())
     for name, info in sorted(presets.items(), key=lambda item: (list(pages).index(item[1].kind), item[0])):
         available = ("no: the route is closed in this release" if info.kind == operator.KEYED_KIND and not open_
                      else "yes")

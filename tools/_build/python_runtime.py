@@ -173,7 +173,7 @@ def host_target(system: str | None = None, machine: str | None = None) -> str:
 
 def default_cache() -> Path:
     base = os.environ.get("XDG_CACHE_HOME") or os.path.join(os.path.expanduser("~"), ".cache")
-    return Path(base) / "claude-multi-build" / "python-runtimes"
+    return Path(base) / "charmer-build" / "python-runtimes"
 
 
 # --------------------------------------------------------------- fetch

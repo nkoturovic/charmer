@@ -6,7 +6,7 @@ index fe251c3..e80842b 100644
  	// gemini-api-key, interactions-api-key, codex-api-key, xai-api-key, meta-api-key, claude-api-key, openai-compatibility, and vertex-api-key.
  	OAuthModelAlias map[string][]OAuthModelAlias `yaml:"oauth-model-alias,omitempty" json:"oauth-model-alias,omitempty"`
  
-+	// OAuthExtraModels (claude-multi local patch, oauth-model-overlay) lists extra
++	// OAuthExtraModels (charmer local patch, oauth-model-overlay) lists extra
 +	// models per OAuth channel (claude, codex), registered for every OAuth auth of the
 +	// channel like static models. See oauth_extra_models.go.
 +	OAuthExtraModels map[string][]OAuthExtraModel `yaml:"oauth-extra-models,omitempty" json:"oauth-extra-models,omitempty"`
@@ -22,7 +22,7 @@ index ac5d0e1..20568c3 100644
  		}
  		return nil, errValidate
  	}
-+	// claude-multi local patch (oauth-model-overlay): the overlay is
++	// charmer local patch (oauth-model-overlay): the overlay is
 +	// validated structurally on the parsed node and decoded from it; an invalid
 +	// overlay refuses the whole load.
 +	oauthExtraModels, errValidate := parseOAuthExtraModelsYAML(data)
@@ -41,7 +41,7 @@ index ac5d0e1..20568c3 100644
  		}
  		return nil, fmt.Errorf("failed to parse config file: %w", err)
  	}
-+	// claude-multi local patch (oauth-model-overlay): the config carries
++	// charmer local patch (oauth-model-overlay): the config carries
 +	// the validated overlay; a decoded overlay that differs refuses the load.
 +	if errValidate := adoptOAuthExtraModels(&cfg, oauthExtraModels); errValidate != nil {
 +		if optional {
@@ -58,7 +58,7 @@ index ac5d0e1..20568c3 100644
  	// Normalize global OAuth model name aliases.
  	cfg.SanitizeOAuthModelAlias()
  
-+	// claude-multi local patch (oauth-model-overlay): canonical overlay form.
++	// charmer local patch (oauth-model-overlay): canonical overlay form.
 +	cfg.OAuthExtraModels = NormalizeOAuthExtraModels(cfg.OAuthExtraModels)
 +
  	// Normalize global OAuth request-scoped error rules.
@@ -72,7 +72,7 @@ index 0000000..6fdafd6
 @@ -0,0 +1,576 @@
 +package config
 +
-+// claude-multi local patch (oauth-model-overlay): an explicit list of extra
++// charmer local patch (oauth-model-overlay): an explicit list of extra
 +// models per OAuth channel. The OAuth pools register models only from the
 +// pinned static registry, so a newly released first-party model is never
 +// advertised (and an oauth-model-alias cannot attach to it) until a gateway
@@ -654,7 +654,7 @@ index 0000000..3a022d8
 @@ -0,0 +1,327 @@
 +package config
 +
-+// claude-multi local patch (oauth-model-overlay) load gates.
++// charmer local patch (oauth-model-overlay) load gates.
 +
 +import (
 +	"os"
@@ -987,7 +987,7 @@ index 8b2f22a..a34e985 100644
  	if errValidate := validateCredentialWeightYAML(data); errValidate != nil {
  		return nil, errValidate
  	}
-+	// claude-multi local patch (oauth-model-overlay): the overlay is
++	// charmer local patch (oauth-model-overlay): the overlay is
 +	// validated structurally on the parsed node and decoded from it; an invalid
 +	// overlay refuses the whole payload.
 +	oauthExtraModels, errValidate := parseOAuthExtraModelsYAML(data)
@@ -1001,7 +1001,7 @@ index 8b2f22a..a34e985 100644
  	if err := yaml.Unmarshal(data, &cfg); err != nil {
  		return nil, fmt.Errorf("parse config payload: %w", err)
  	}
-+	// claude-multi local patch (oauth-model-overlay): the config carries
++	// charmer local patch (oauth-model-overlay): the config carries
 +	// the validated overlay; a decoded overlay that differs refuses the payload.
 +	if errValidate := adoptOAuthExtraModels(&cfg, oauthExtraModels); errValidate != nil {
 +		return nil, errValidate
@@ -1025,7 +1025,7 @@ index 0000000..88dc8aa
 @@ -0,0 +1,83 @@
 +package modelconfig
 +
-+// claude-multi local patch (oauth-model-overlay): the one builder of the
++// charmer local patch (oauth-model-overlay): the one builder of the
 +// ModelInfo for an oauth-extra-models entry, shared by registration and by the
 +// execution-time capability lookup, and the one static-collision rule.
 +
@@ -1115,7 +1115,7 @@ index 13f30ff..7950769 100644
  	authDirChanged := oldConfig == nil || oldConfig.AuthDir != newConfig.AuthDir
  	retryConfigChanged := oldConfig != nil && (oldConfig.RequestRetry != newConfig.RequestRetry || oldConfig.MaxRetryInterval != newConfig.MaxRetryInterval || oldConfig.MaxRetryCredentials != newConfig.MaxRetryCredentials)
 -	forceAuthRefresh := oldConfig != nil && (oldConfig.ForceModelPrefix != newConfig.ForceModelPrefix || !reflect.DeepEqual(oldConfig.OAuthModelAlias, newConfig.OAuthModelAlias) || retryConfigChanged)
-+	// claude-multi local patch (oauth-model-overlay): any change to overlay
++	// charmer local patch (oauth-model-overlay): any change to overlay
 +	// content re-registers the OAuth models, even with aliases and prefixes unchanged.
 +	overlayChanged := oldConfig != nil && !reflect.DeepEqual(config.NormalizeOAuthExtraModels(oldConfig.OAuthExtraModels), config.NormalizeOAuthExtraModels(newConfig.OAuthExtraModels))
 +	forceAuthRefresh := oldConfig != nil && (oldConfig.ForceModelPrefix != newConfig.ForceModelPrefix || !reflect.DeepEqual(oldConfig.OAuthModelAlias, newConfig.OAuthModelAlias) || retryConfigChanged || overlayChanged)
@@ -1130,7 +1130,7 @@ index 1fefbc8..47de015 100644
  	if entries, _ := DiffOAuthModelAliasChanges(oldCfg.OAuthModelAlias, newCfg.OAuthModelAlias); len(entries) > 0 {
  		changes = append(changes, entries...)
  	}
-+	// claude-multi local patch (oauth-model-overlay).
++	// charmer local patch (oauth-model-overlay).
 +	for _, channel := range []string{"claude", "codex"} {
 +		oldModels, newModels := oldCfg.OAuthExtraModels[channel], newCfg.OAuthExtraModels[channel]
 +		if !reflect.DeepEqual(config.NormalizeOAuthExtraModels(map[string][]config.OAuthExtraModel{channel: oldModels}), config.NormalizeOAuthExtraModels(map[string][]config.OAuthExtraModel{channel: newModels})) {
@@ -1148,7 +1148,7 @@ index 0000000..4ed0be5
 @@ -0,0 +1,228 @@
 +package watcher
 +
-+// claude-multi local patch (oauth-model-overlay): any change to overlay
++// charmer local patch (oauth-model-overlay): any change to overlay
 +// content forces the OAuth registration refresh, with aliases and
 +// prefixes unchanged; an invalid overlay reload is refused and keeps the
 +// previous config.
@@ -1392,7 +1392,7 @@ index 2574ad4..fdd7ee1 100644
  	return nil, false
  }
  
-+// lookupOAuthExtraModelCapability (claude-multi local patch,
++// lookupOAuthExtraModelCapability (charmer local patch,
 +// oauth-model-overlay) binds an oauth-extra-models entry's capabilities to an
 +// OAuth execution attempt after wire resolution, so a non-fork
 +// oauth-model-alias onto an overlay model (registered only under its alias)
@@ -1431,7 +1431,7 @@ index 0000000..956adb8
 @@ -0,0 +1,887 @@
 +package cliproxy
 +
-+// claude-multi local patch (oauth-model-overlay) gates. Model ids are
++// charmer local patch (oauth-model-overlay) gates. Model ids are
 +// fictional (never shipped ids); a static id is read from the registry.
 +
 +import (
@@ -2325,7 +2325,7 @@ index ab1b322..c0829bd 100644
  	cfgMu sync.RWMutex
  
 +	// oauthExtraShadowWarned keeps the oauth-extra-models static-wins Warn to one
-+	// line per channel and model id (claude-multi local patch, oauth-model-overlay).
++	// line per channel and model id (charmer local patch, oauth-model-overlay).
 +	oauthExtraShadowWarned sync.Map
 +
  	// configUpdateMu serializes config updates across watcher + home.
@@ -2363,7 +2363,7 @@ index c264fc8..ba33de3 100644
  	return nil
  }
  
-+// appendOAuthExtraModels (claude-multi local patch, oauth-model-overlay)
++// appendOAuthExtraModels (charmer local patch, oauth-model-overlay)
 +// appends the channel's oauth-extra-models entries to an OAuth auth's static
 +// list, before exclusions, exactly like static models. On a case-normalized
 +// collision with the auth's static list, or with any static definition of the

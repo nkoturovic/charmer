@@ -30,7 +30,7 @@ index 87063aa..c7f363d 100644
  	}
  
 -	if secretHash == "" && envSecret == "" {
-+	// claude-multi local patch (management-env-only): only MANAGEMENT_PASSWORD
++	// charmer local patch (management-env-only): only MANAGEMENT_PASSWORD
 +	// authenticates. The config secret-key is never a key, and neither is the
 +	// runtime local password (-password / TUI, SetLocalPassword): it keeps
 +	// guarding /keep-alive only.
@@ -81,7 +81,7 @@ index 990c18a..f3a2343 100644
 -	// or when a local management password is provided (e.g. TUI mode).
 -	hasManagementSecret := cfg.RemoteManagement.SecretKey != "" || envManagementSecret || s.localPassword != ""
 +	// Register management routes only when the environment secret is available.
-+	// claude-multi local patch (management-env-only): neither a config
++	// charmer local patch (management-env-only): neither a config
 +	// secret-key nor a local management password (-password / TUI mode)
 +	// enables them.
 +	hasManagementSecret := envManagementSecret
@@ -116,7 +116,7 @@ index 0000000..b780552
 +	"golang.org/x/crypto/bcrypt"
 +)
 +
-+// claude-multi local patch (management-env-only) gate. The management API
++// charmer local patch (management-env-only) gate. The management API
 +// authenticates only with the MANAGEMENT_PASSWORD environment secret, at
 +// start and after every config reload; a remote-management secret-key from
 +// config.yaml, plaintext or bcrypt, and a runtime local management password
@@ -157,7 +157,7 @@ index 0000000..b780552
 +	}
 +}
 +
-+// envOnlyYAML renders a claude-multi-shaped config; secret "" omits the key.
++// envOnlyYAML renders a charmer-shaped config; secret "" omits the key.
 +func envOnlyYAML(authDir string, port int, secret string) []byte {
 +	var b strings.Builder
 +	fmt.Fprintf(&b, "host: \"127.0.0.1\"\nport: %d\nauth-dir: %q\napi-keys:\n  - %q\n", port, authDir, envOnlyClientKey)
@@ -278,7 +278,7 @@ index 0000000..b780552
 +	}
 +}
 +
-+// replace rename-replaces config.yaml (claude-multi's atomic write pattern)
++// replace rename-replaces config.yaml (charmer's atomic write pattern)
 +// and waits until the watcher has applied it.
 +func (f *envOnlyFixture) replace(applied <-chan *proxyconfig.Config, port int, secret, label string) *proxyconfig.Config {
 +	f.t.Helper()
@@ -604,7 +604,7 @@ index c875ce8..a79a604 100644
 -		prevSecretEmpty = oldCfg.RemoteManagement.SecretKey == ""
 -	}
 -	newSecretEmpty := cfg.RemoteManagement.SecretKey == ""
-+	// claude-multi local patch (management-env-only): only MANAGEMENT_PASSWORD
++	// charmer local patch (management-env-only): only MANAGEMENT_PASSWORD
 +	// keeps management enabled across a reload; a reloaded config secret-key
 +	// never enables it (upstream's no-secret branch).
  	if s.envManagementSecret {
@@ -658,7 +658,7 @@ index 552567c..ac5d0e1 100644
 -			_ = SaveConfigPreserveCommentsUpdateNestedScalar(configFile, []string{"remote-management", "secret-key"}, hashed)
 -		}
 -	}
-+	// claude-multi local patch (management-env-only): a config secret-key is
++	// charmer local patch (management-env-only): a config secret-key is
 +	// dropped, never hashed and never written back.
 +	dropConfigManagementSecret(&cfg)
  
@@ -674,7 +674,7 @@ index 0000000..98fd5f5
 +
 +import log "github.com/sirupsen/logrus"
 +
-+// claude-multi local patch (management-env-only): the management API
++// charmer local patch (management-env-only): the management API
 +// authenticates only with the MANAGEMENT_PASSWORD environment secret. A
 +// remote-management secret-key from a config file or payload, plaintext or
 +// bcrypt, is dropped at every load (start and hot reload): it never enables
@@ -703,7 +703,7 @@ index 0000000..ef0025c
 +	"golang.org/x/crypto/bcrypt"
 +)
 +
-+// claude-multi local patch (management-env-only) gate: every config load
++// charmer local patch (management-env-only) gate: every config load
 +// drops a remote-management secret-key, plaintext or bcrypt; it is never
 +// hashed and config.yaml is never rewritten.
 +
@@ -796,7 +796,7 @@ index 86b5e75..8b2f22a 100644
 -		}
 -		cfg.RemoteManagement.SecretKey = string(hashed)
 -	}
-+	// claude-multi local patch (management-env-only): a config secret-key is
++	// charmer local patch (management-env-only): a config secret-key is
 +	// dropped, never hashed.
 +	dropConfigManagementSecret(&cfg)
  

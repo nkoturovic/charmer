@@ -46,13 +46,13 @@ Commands run alone:
            everything the shipped targets link, the patch series' modified
            files, modules.json) and gateway/sbom (a CycloneDX SBOM per
            shipped target) from a work dir that built every shipped target
-  contract write src/claude_multi/data/gateway-contract.json (or --out) from
+  contract write src/charmer/data/gateway-contract.json (or --out) from
            the recipe: the upstream version and the ordered basename@sha256
            identity of every admitted patch, byte-equal to the Nix package's
            contract
   registry copy the pinned upstream model registry (the files the launcher
            reads) from a work dir prepared by the fetch step alone into
-           src/claude_multi/data/registry (or --out DIR); the Nix package
+           src/charmer/data/registry (or --out DIR); the Nix package
            compares the checked-in copy with the pinned source
 
 Pre-fetched inputs (--inputs DIR): DIR holds the toolchain archive under its
@@ -60,7 +60,7 @@ official file name, the upstream source as ``source/`` (an unpacked tree) or
 as its archive file, and optionally the vendored modules as ``vendor/``;
 nothing in DIR is downloaded. With --offline nothing is downloaded at all
 (`--offline --inputs DIR` builds from DIR alone). Fetched inputs are cached in
-~/.cache/claude-multi-build (or $CLAUDE_MULTI_BUILD_CACHE, or --cache).
+~/.cache/charmer-build (or $CHARMER_BUILD_CACHE, or --cache).
 
 Standard library only; Python 3.11 or newer.
 """
@@ -95,7 +95,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_UPSTREAM = REPO_ROOT / "gateway" / "UPSTREAM.json"
 DEFAULT_PATCH_DIR = REPO_ROOT / "gateway" / "patches"
 DEFAULT_DIST = REPO_ROOT / "dist" / "gateway"
-CACHE_ENV = "CLAUDE_MULTI_BUILD_CACHE"
+CACHE_ENV = "CHARMER_BUILD_CACHE"
 
 STEPS = ("fetch", "vendor", "apply", "build", "gates", "inspect", "record")
 DEFAULT_STEPS = ("fetch", "vendor", "apply", "build", "inspect", "record")
@@ -351,7 +351,7 @@ def download(url: str, destination: Path, sha256: str, *, attempts: int = 3, tim
     for attempt in range(1, attempts + 1):
         digest = hashlib.sha256()
         try:
-            request = urllib.request.Request(url, headers={"User-Agent": "claude-multi-build"})
+            request = urllib.request.Request(url, headers={"User-Agent": "charmer-build"})
             with urllib.request.urlopen(request, timeout=timeout) as response, open(partial, "wb") as out:
                 for chunk in iter(lambda: response.read(1 << 20), b""):
                     out.write(chunk)
@@ -395,7 +395,7 @@ def default_cache() -> Path:
     if configured:
         return Path(configured).expanduser()
     base = os.environ.get("XDG_CACHE_HOME") or str(Path.home() / ".cache")
-    return Path(base) / "claude-multi-build"
+    return Path(base) / "charmer-build"
 
 
 def go_environment(work: Path, *, cgo: bool = False, goos: str | None = None, goarch: str | None = None,
@@ -1233,7 +1233,7 @@ SBOM_SUFFIX = ".cdx.json"
 DEFAULT_LICENSES = REPO_ROOT / "gateway" / "licenses"
 DEFAULT_SBOM = REPO_ROOT / "gateway" / "sbom"
 # The package resources the gateway recipe generates (checked in).
-RESOURCES_DIR = REPO_ROOT / "src" / "claude_multi" / "data"
+RESOURCES_DIR = REPO_ROOT / "src" / "charmer" / "data"
 DEFAULT_CONTRACT = RESOURCES_DIR / "gateway-contract.json"
 DEFAULT_REGISTRY = RESOURCES_DIR / "registry"
 REGISTRY_SOURCE = PurePosixPath("internal/registry/models")
@@ -1702,12 +1702,12 @@ def render_sbom(doc: dict[str, Any], inventory: dict[str, Any], target: dict[str
         "specVersion": "1.6",
         "version": 1,
         "metadata": {
-            "tools": {"components": [{"type": "application", "group": "claude-multi", "name": "build.py",
+            "tools": {"components": [{"type": "application", "group": "charmer", "name": "build.py",
                                       "description": "tools/build.py gateway"}]},
             "component": {
                 "type": "application", "bom-ref": upstream["binary"], "name": upstream["binary"],
                 "version": upstream["version"],
-                "description": f"{upstream['name']} {upstream['version']} with claude-multi's patches ({target['name']})",
+                "description": f"{upstream['name']} {upstream['version']} with charmer's patches ({target['name']})",
                 "licenses": _licenses(inventory["upstream"]["license"]),
                 "pedigree": {
                     "ancestors": [{
@@ -1724,9 +1724,9 @@ def render_sbom(doc: dict[str, Any], inventory: dict[str, Any], target: dict[str
                                 for identity in inputs["series"]],
                     "notes": ("Built from the upstream source at the commit above with the patches applied in "
                               "order; each patch's sha256 and the patched tree's normalised sha256 (vendor/ "
-                              "excluded) are the claude-multi:gateway properties."),
+                              "excluded) are the charmer:gateway properties."),
                 },
-                "properties": [{"name": f"claude-multi:gateway:{name}", "value": value} for name, value in properties],
+                "properties": [{"name": f"charmer:gateway:{name}", "value": value} for name, value in properties],
             },
         },
         "components": components,
@@ -1734,7 +1734,7 @@ def render_sbom(doc: dict[str, Any], inventory: dict[str, Any], target: dict[str
     }
     digest = hashlib.sha256(json.dumps(bom, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     bom = {"bomFormat": bom.pop("bomFormat"), "specVersion": bom.pop("specVersion"),
-           "serialNumber": "urn:uuid:" + str(uuid.uuid5(uuid.NAMESPACE_URL, "claude-multi:gateway-sbom:" + digest)),
+           "serialNumber": "urn:uuid:" + str(uuid.uuid5(uuid.NAMESPACE_URL, "charmer:gateway-sbom:" + digest)),
            **bom}
     return (json.dumps(bom, indent=2, ensure_ascii=False) + "\n").encode()
 
@@ -1757,7 +1757,7 @@ def render_third_party_notices(tree: NoticeTree) -> bytes:
     parts = [
         f"Third-party notices for cli-proxy-api {upstream['version']}",
         "",
-        f"cli-proxy-api is {upstream['name']} {upstream['version']} with claude-multi's patches. This",
+        f"cli-proxy-api is {upstream['name']} {upstream['version']} with charmer's patches. This",
         "file reproduces the licence and notice texts of everything its shipped",
         "builds link: the upstream source, the Go standard library and runtime,",
         "and each Go module (path, version and SPDX licence in each heading).",
@@ -1933,7 +1933,7 @@ the pinned version); the build continues under that interpreter (unless
 --no-reexec) so builders agree on the compressed bytes too. The bundle for
 this host's own target is run before it is archived: every launcher module
 and every standard-library module the launcher imports load under the pruned
-runtime, and bin/claude-multi --version answers.
+runtime, and bin/charmer --version answers.
 
 Archives are deterministic: the source date (--source-date-epoch, else
 $SOURCE_DATE_EPOCH, else the commit time of HEAD) is every entry's mtime and
@@ -1941,7 +1941,7 @@ the release date in the manifests; a bundle's identity is the sha256 of its
 uncompressed tar.
 
 A release carries what an installation needs to update itself: the release
-signing key (src/claude_multi/data/release-trust/allowed_signers) and the
+signing key (src/charmer/data/release-trust/allowed_signers) and the
 download locations (packaging/product.json release_base_url and
 release_latest_url). release refuses to build without either, and refuses
 --base-url. --test-build (for tests and local trials only, never a release)
@@ -1951,7 +1951,7 @@ refuses to sign, verify or publish it.
 
 The documents are the [tool.setuptools.data-files] table of pyproject.toml,
 the one layout of the wheel, the bundles and the Nix package: every key is
-share/claude-multi or share/claude-multi/<dir>, every file lies under docs/
+share/charmer or share/charmer/<dir>, every file lies under docs/
 in the directory the key names (docs/<dir>/), and each is installed at
 <key>/<file name> under the bundle root, so relative links between documents
 resolve the same in a checkout and in every installation.
@@ -1964,7 +1964,7 @@ Commands (release only):
   repro    assemble twice in different directories from the same inputs and
            require identical archives
 
-Inputs are cached in ~/.cache/claude-multi-build (or $CLAUDE_MULTI_BUILD_CACHE,
+Inputs are cached in ~/.cache/charmer-build (or $CHARMER_BUILD_CACHE,
 or --cache); --offline reads only the cache (and --inputs, for the gateway).
 """
 
@@ -1982,7 +1982,7 @@ or --cache); --offline reads only the cache (and --inputs, for the gateway).
 # - the pinned python-build-standalone runtimes (packaging/python-runtimes.json):
 #   fetched by hash, pruned by the delete-only list, the standard library
 #   compiled to bytecode.
-# - the launcher package (src/claude_multi with its data/), compiled once
+# - the launcher package (src/charmer with its data/), compiled once
 #   with the pinned interpreter native to this host, the same bytecode in
 #   every bundle; packaging/product.json maps each bundle target to its
 #   gateway target and Claude Code platform and names the launchers.
@@ -1993,19 +1993,19 @@ or --cache); --offline reads only the cache (and --inputs, for the gateway).
 PACKAGING = PurePosixPath("packaging")
 # The documents' installed directory (pyproject.toml's data-files keys are it
 # or a directory under it) and their directory in the source tree.
-DOCUMENTS_KEY = PurePosixPath("share/claude-multi")
+DOCUMENTS_KEY = PurePosixPath("share/charmer")
 DOCUMENTS_SOURCE = PurePosixPath("docs")
 # Launchers a bundle never ships: the contributor's entry point, and the
-# one-model alias `claude-multi direct` replaces.
-NON_BUNDLE_LAUNCHERS = ("claude-gateway", "claude-multi-dev")
+# one-model alias `charmer direct` replaces.
+NON_BUNDLE_LAUNCHERS = ("claude-gateway", "charmer-dev")
 TEST_BUILD_FLAG = "--test-build"
 RELEASE_FILES = ("MANIFEST.json", "SHA256SUMS")
 INSTALLERS = ("install.sh", "install.ps1")
 RELEASE_COMMANDS = ("compare", "repro")
-REEXEC_ENV = "CLAUDE_MULTI_BUILD_REEXEC"
+REEXEC_ENV = "CHARMER_BUILD_REEXEC"
 PRODUCT_FORMAT = 1
 RELEASE_FORMAT = 1
-TRUST_PRINCIPAL = "release@claude-multi"
+TRUST_PRINCIPAL = "release@charmer"
 _VERSION_TEXT = re.compile(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-dev)?")
 # The installer lines the release build fills in (packaging/install.sh and
 # packaging/install.ps1 leave them empty).
@@ -2022,7 +2022,7 @@ def build_module(name: str) -> Any:
 
     import importlib.util
 
-    key = f"_claude_multi_build_{name}"
+    key = f"_charmer_build_{name}"
     if key in sys.modules:
         return sys.modules[key]
     path = Path(__file__).resolve().parent / "_build" / f"{name}.py"
@@ -2043,7 +2043,7 @@ class ReleaseContext:
         self.repo = absolute(args.repo) if args.repo else REPO_ROOT
         packaging = self.repo / PACKAGING
         self.src = self.repo / "src"
-        self.package = self.src / "claude_multi"
+        self.package = self.src / "charmer"
         self.resources = self.package / "data"
         self.product_path = absolute(args.product) if args.product else packaging / "product.json"
         self.runtimes_path = absolute(args.runtimes) if args.runtimes else packaging / "python-runtimes.json"
@@ -2110,20 +2110,20 @@ def load_product(path: Path, doc: dict[str, Any], runtimes: Any) -> dict[str, An
 
     product = load_json(path)
     where = str(path)
-    if not isinstance(product, dict) or product.get("format") != PRODUCT_FORMAT or product.get("name") != "claude-multi":
-        raise BuildError(f"{where}: not a claude-multi product description (format 1)")
+    if not isinstance(product, dict) or product.get("format") != PRODUCT_FORMAT or product.get("name") != "charmer":
+        raise BuildError(f"{where}: not a charmer product description (format 1)")
     if set(product) != {"format", "name", "launchers", "release_base_url", "release_latest_url", "targets"}:
         raise BuildError(f"{where}: expected exactly format, name, launchers, release_base_url, "
                          "release_latest_url and targets")
     launchers = product["launchers"]
     if (not isinstance(launchers, list) or not launchers or launchers != sorted(set(launchers))
-            or "claude-multi" not in launchers or "claude-multi-proxy" not in launchers):
-        raise BuildError(f"{where}: launchers must be sorted and unique and name claude-multi and "
-                         "claude-multi-proxy")
+            or "charmer" not in launchers or "charmer-proxy" not in launchers):
+        raise BuildError(f"{where}: launchers must be sorted and unique and name charmer and "
+                         "charmer-proxy")
     refused = [name for name in launchers if name in NON_BUNDLE_LAUNCHERS]
     if refused:
-        raise BuildError(f"{where}: a bundle never ships {', '.join(refused)} (claude-multi-dev is the "
-                         "contributor's command; claude-multi direct starts a one-model session)")
+        raise BuildError(f"{where}: a bundle never ships {', '.join(refused)} (charmer-dev is the "
+                         "contributor's command; charmer direct starts a one-model session)")
     base = product["release_base_url"]
     if base is not None and not (isinstance(base, str) and base.startswith("https://")):
         raise BuildError(f"{where}: release_base_url must be null or an https URL")
@@ -2382,7 +2382,7 @@ def stage_launcher(ctx: ReleaseContext, python: Path, epoch: int) -> tuple[Path,
     root = ctx.work / "launcher"
     remove_tree(root)
     site = root / site_relative
-    bundle.copy_tree(ctx.package, site / "claude_multi")
+    bundle.copy_tree(ctx.package, site / "charmer")
     try:
         tool.compile_tree(python, site, site_relative, epoch, expected_version=ctx.runtimes.python)
     except tool.BuildError as exc:
@@ -2393,7 +2393,7 @@ def stage_launcher(ctx: ReleaseContext, python: Path, epoch: int) -> tuple[Path,
 def document_layout(table: Any, *, where: str = "pyproject.toml") -> list[tuple[PurePosixPath, PurePosixPath]]:
     """The documents of a [tool.setuptools.data-files] table as
     ``(source, installed path)`` pairs, both relative: every key is
-    share/claude-multi or share/claude-multi/<dir>, every file lies under
+    share/charmer or share/charmer/<dir>, every file lies under
     docs/ in that <dir> (docs/<dir>/<name>), and no two entries install the
     same path. Anything else is refused."""
 
@@ -2459,11 +2459,11 @@ def import_check(stage: Path, python_version: str, *, home: Path) -> dict[str, A
 import ast, importlib, json, pkgutil, sys
 site = sys.argv[1]
 sys.path.insert(0, site)
-import claude_multi
+import charmer
 failed, launcher, wanted = [], [], set()
-for info in pkgutil.walk_packages(claude_multi.__path__, "claude_multi."):
+for info in pkgutil.walk_packages(charmer.__path__, "charmer."):
     launcher.append(info.name)
-for name in ["claude_multi"] + launcher:
+for name in ["charmer"] + launcher:
     try:
         module = importlib.import_module(name)
     except Exception as exc:
@@ -2498,10 +2498,10 @@ print(json.dumps({"launcher_modules": len(launcher) + 1, "stdlib_modules": stdli
     problems = report["failed"] + [f"standard library: {item}" for item in report["missing"]]
     if report["flags"] != [1, True]:
         problems.append(f"the runtime did not run isolated without bytecode writes: {report['flags']}")
-    version = subprocess.run([str(stage / "bin" / "claude-multi"), "--version"], capture_output=True, text=True,
+    version = subprocess.run([str(stage / "bin" / "charmer"), "--version"], capture_output=True, text=True,
                              timeout=120, env=environment, stdin=subprocess.DEVNULL, cwd=home)
-    if version.returncode != 0 or not version.stdout.startswith("claude-multi "):
-        problems.append(f"bin/claude-multi --version failed: {(version.stdout + version.stderr).strip()[-600:]}")
+    if version.returncode != 0 or not version.stdout.startswith("charmer "):
+        problems.append(f"bin/charmer --version failed: {(version.stdout + version.stderr).strip()[-600:]}")
     written = sorted(_tree_paths(stage) - before)
     if written:
         problems.append(f"running the bundle wrote into it: {written[:5]}")
@@ -2551,7 +2551,7 @@ def assemble_target(ctx: ReleaseContext, target: str, *, python: Path, epoch: in
     for name in ctx.product["launchers"]:
         bundle.write_file(root / "bin" / name, bundle.launcher_text(name, ctx.runtimes.python), executable=True)
     licenses = root / bundle.LICENSES_DIR
-    bundle.install_file(ctx.repo / "LICENSE", licenses / "claude-multi" / "LICENSE")
+    bundle.install_file(ctx.repo / "LICENSE", licenses / "charmer" / "LICENSE")
     notices = read_notice_tree(ctx.licenses)
     for path, raw in sorted(notices.files.items()):
         bundle.write_file(licenses / "cli-proxy-api" / path, raw)
@@ -2573,7 +2573,7 @@ def assemble_target(ctx: ReleaseContext, target: str, *, python: Path, epoch: in
         filename=runtime.filename, url=runtime.url, sha256=runtime.sha256, pruned=prepared["removed"],
         license_ids=described["runtime"]["spdx"], components=licences.sbom_components(ctx.runtime_licenses, target),
         removed=[item["extension"] for item in described["pruned"]]))
-    bundle.write_file(sboms / "claude-multi.cdx.json", bundle.launcher_sbom(version=ctx.version))
+    bundle.write_file(sboms / "charmer.cdx.json", bundle.launcher_sbom(version=ctx.version))
     try:
         bundle.check_links(root)
     except bundle.BundleError as exc:
@@ -2614,7 +2614,7 @@ def assemble_target(ctx: ReleaseContext, target: str, *, python: Path, epoch: in
                     "patches": contract_document(ctx.doc, admitted_series(ctx.doc))["patches"]},
         "python": {"version": ctx.runtimes.python, "release": ctx.runtimes.release, "path": bundle.RUNTIME_DIR,
                    "archive": runtime.filename, "archive_sha256": runtime.sha256, "pruned": prepared["removed"]},
-        "launcher": {"path": f"{site_relative}/claude_multi", "bytecode_sha256": bytecode,
+        "launcher": {"path": f"{site_relative}/charmer", "bytecode_sha256": bytecode,
                      "launchers": ctx.product["launchers"]},
         "release_trust": {"sha256": trust["sha256"], "signers": len(trust["signers"])},
         "release": release_location(ctx),
@@ -2634,9 +2634,9 @@ def assemble_target(ctx: ReleaseContext, target: str, *, python: Path, epoch: in
 
 
 def release_location(ctx: "ReleaseContext") -> dict[str, str | None]:
-    """Where an installed bundle looks for its updates (``claude-multi
+    """Where an installed bundle looks for its updates (``charmer
     update``): the download location, kept with its ``{version}``
-    placeholder (the installers and ``claude-multi update`` fill it in per
+    placeholder (the installers and ``charmer update`` fill it in per
     version), and the latest release's location; null until the product
     names them."""
 
@@ -2681,7 +2681,7 @@ def write_release_files(ctx: ReleaseContext, out: Path, assets: list[dict[str, A
     pin = claude_pin(ctx.contract)
     manifest = {
         "format": RELEASE_FORMAT,
-        "name": "claude-multi",
+        "name": "charmer",
         "version": ctx.version,
         "test_build": ctx.test_build,
         "release_date": release_date(epoch),
@@ -2747,14 +2747,14 @@ def release_input_problems(ctx: ReleaseContext, trust: dict[str, Any]) -> list[s
 
     problems = []
     if not trust["signers"]:
-        problems.append("the packaged release trust (src/claude_multi/data/release-trust/allowed_signers) names "
-                        "no signing key: add the production public key line (release@claude-multi "
-                        "namespaces=\"claude-multi-release\" ssh-ed25519 ...); an installation verifies its "
+        problems.append("the packaged release trust (src/charmer/data/release-trust/allowed_signers) names "
+                        "no signing key: add the production public key line (release@charmer "
+                        "namespaces=\"charmer-release\" ssh-ed25519 ...); an installation verifies its "
                         "updates with it")
     for key in ("release_base_url", "release_latest_url"):
         if ctx.product[key] is None:
             problems.append(f"{ctx.product_path} names no {key}: set the https download location the installer "
-                            "and `claude-multi update` use")
+                            "and `charmer update` use")
     if ctx.base_url is not None:
         problems.append("--base-url replaces the download location of packaging/product.json, which a release "
                         "and its installations use: change release_base_url there instead")
@@ -3050,7 +3050,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
                               "series with patches left out: a later patch may apply at a line offset when its "
                               "full context matches (rejects, reduced context and a moved hunk without context "
                               "still fail); BUILD.json names the moved hunks")
-    gateway.add_argument("--cache", help=f"download and vendor cache (default ~/.cache/claude-multi-build, ${CACHE_ENV})")
+    gateway.add_argument("--cache", help=f"download and vendor cache (default ~/.cache/charmer-build, ${CACHE_ENV})")
     gateway.add_argument("--work", help="work directory (default CACHE/work/gateway)")
     gateway.add_argument("--dist", help="output directory (default dist/gateway in the repository)")
     gateway.add_argument("--inputs", help="pre-fetched inputs (never downloaded)")
@@ -3062,8 +3062,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     gateway.add_argument("--scratch", help="repro: where the two builds run (default CACHE/repro)")
     gateway.add_argument("--licenses", help="the licence notice tree (default gateway/licenses in the repository)")
     gateway.add_argument("--sbom", help="the per-target SBOM directory (default gateway/sbom in the repository)")
-    gateway.add_argument("--out", help="contract: the file to write (default src/claude_multi/data/gateway-contract.json); "
-                                       "registry: the directory (default src/claude_multi/data/registry)")
+    gateway.add_argument("--out", help="contract: the file to write (default src/charmer/data/gateway-contract.json); "
+                                       "registry: the directory (default src/charmer/data/registry)")
     for name, text in (("bundle", "assemble the release bundles of some targets"),
                        ("release", "build a release: every bundle, MANIFEST.json, SHA256SUMS and the installers")):
         sub = commands.add_parser(name, help=text, description=RELEASE_DOC,
@@ -3089,7 +3089,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         sub.add_argument("--patches", help="directory of the admitted gateway patches")
         sub.add_argument("--licenses", help="the gateway notice tree (default gateway/licenses)")
         sub.add_argument("--sbom", help="the gateway SBOM directory (default gateway/sbom)")
-        sub.add_argument("--cache", help=f"download cache (default ~/.cache/claude-multi-build, ${CACHE_ENV})")
+        sub.add_argument("--cache", help=f"download cache (default ~/.cache/charmer-build, ${CACHE_ENV})")
         sub.add_argument("--work", help="work directory (default CACHE/work/release)")
         sub.add_argument("--inputs", help="pre-fetched gateway inputs (never downloaded)")
         sub.add_argument("--offline", action="store_true", help="never download (the cache and --inputs only)")

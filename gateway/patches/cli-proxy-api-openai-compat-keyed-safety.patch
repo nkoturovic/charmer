@@ -1219,7 +1219,7 @@ index 77b66d2..724bd2a 100644
  				baseURL = strings.TrimSpace(v)
  			}
  		}
-+		// claude-multi: an OpenAI-compatible base URL can carry a
++		// charmer: an OpenAI-compatible base URL can carry a
 +		// credential in its userinfo or query; usage sinks get it without them.
 +		if auth.Attributes != nil && strings.TrimSpace(auth.Attributes["compat_name"]) != "" && strings.ContainsAny(baseURL, "@?#") {
 +			baseURL = compatsafe.RequestURL(baseURL)
@@ -1231,7 +1231,7 @@ index 77b66d2..724bd2a 100644
  
  func resolveUsageSource(auth *cliproxyauth.Auth, ctxAPIKey string) string {
  	if auth != nil {
-+		// claude-multi: an OpenAI-compatible provider is named by
++		// charmer: an OpenAI-compatible provider is named by
 +		// its configured name, never by its credential (AccountInfo would
 +		// return the upstream api_key, which then reaches every usage sink).
 +		if auth.Attributes != nil {

@@ -14,7 +14,7 @@
     "releases": 16,
     "commits": 108
   },
-  "admission": "A fix is backported now, as an admitted patch with its own failing-without-the-fix tests and a gate record, only when it is reachable in the configuration claude-multi renders and it protects stored credentials or the availability of sign-in or API-key routes. Everything else is carried by the rebase onto the 8.x line or needs no action.",
+  "admission": "A fix is backported now, as an admitted patch with its own failing-without-the-fix tests and a gate record, only when it is reachable in the configuration charmer renders and it protects stored credentials or the availability of sign-in or API-key routes. Everything else is carried by the rebase onto the 8.x line or needs no action.",
   "rendered_configuration": [
     "listener on 127.0.0.1 only, every client authenticated by the gateway API key",
     "plugins.enabled false, Home off, discovery off, pprof off",
@@ -97,7 +97,7 @@
       "release": "7.3.18",
       "subject": "fix(auth): unschedule disabled invalid_grant credentials and apply exponential backoff for enabled invalid_grant",
       "disposition": "rebase",
-      "reason": "The disabled-credential part is not reachable: a credential is disabled only by a disabled field in its file or by a management write, claude-multi writes neither and the allowlist refuses management writes. For an enabled credential it changes only how often a refresh that already failed with invalid_grant is retried (every 5 minutes on the pinned release, 1 minute doubling to 30 minutes upstream); it restores no route and protects no stored credential."
+      "reason": "The disabled-credential part is not reachable: a credential is disabled only by a disabled field in its file or by a management write, charmer writes neither and the allowlist refuses management writes. For an enabled credential it changes only how often a refresh that already failed with invalid_grant is retried (every 5 minutes on the pinned release, 1 minute doubling to 30 minutes upstream); it restores no route and protects no stored credential."
     },
     {
       "commits": ["6cd86fb2"],
@@ -176,7 +176,7 @@
       "release": "8.0.5",
       "subject": "fix(auth): track auto-refresh job epochs and bound credential acquisition",
       "disposition": "rebase",
-      "reason": "The bounded acquisition is Antigravity-only, and claude-multi has no Antigravity provider, route or sign-in. The job-epoch part needs refresh jobs that outlive the 1-minute pending window again and again, fill a queue of at least 64 jobs, or a restarted loop: Claude and ChatGPT account refreshes are bounded (30 s per attempt, 3 attempts), the loop starts once per process, and an install holds a handful of sign-ins."
+      "reason": "The bounded acquisition is Antigravity-only, and charmer has no Antigravity provider, route or sign-in. The job-epoch part needs refresh jobs that outlive the 1-minute pending window again and again, fill a queue of at least 64 jobs, or a restarted loop: Claude and ChatGPT account refreshes are bounded (30 s per attempt, 3 attempts), the loop starts once per process, and an install holds a handful of sign-ins."
     },
     {
       "commits": ["bfa5aed4"],

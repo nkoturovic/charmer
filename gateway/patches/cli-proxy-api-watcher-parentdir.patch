@@ -131,7 +131,7 @@ new file mode 100644
 +
 +// These tests drive the real fsnotify watch with an atomic rename-replace:
 +// a same-directory ".config.yaml.<rand>.tmp" temp file, fsync, rename over the
-+// config, then a directory fsync (the writer pattern of claude-multi's
++// config, then a directory fsync (the writer pattern of charmer's
 +// state.atomic_write).
 +
 +const (
@@ -541,7 +541,7 @@ new file mode 100644
 +	if err = os.Remove(tmp.Name()); err != nil {
 +		t.Fatal(err)
 +	}
-+	// Sibling files: claude-multi state next to its config, and look-alikes.
++	// Sibling files: charmer state next to its config, and look-alikes.
 +	for _, name := range []string{
 +		"api-key", "api-key.lock", "previous-key", "custom.json", "native-contract.json",
 +		"config.yaml.bak", "config.yaml~", ".config.yaml.swp", "xconfig.yaml", "config.yml",

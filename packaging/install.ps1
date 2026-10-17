@@ -1,14 +1,14 @@
 <#
 .SYNOPSIS
-Install claude-multi on Windows, inside a WSL 2 Linux distribution.
+Install charmer on Windows, inside a WSL 2 Linux distribution.
 
 .DESCRIPTION
-claude-multi runs on Windows through WSL 2. This script checks that WSL 2 is
+charmer runs on Windows through WSL 2. This script checks that WSL 2 is
 available (and, when you agree, installs it), picks or creates the Linux
 distribution, and runs the Linux installer (install.sh) inside it. Then it
-starts `claude-multi setup` in that distribution.
+starts `charmer setup` in that distribution.
 
-claude-multi uses its own verified copy of the pinned Linux Claude Code,
+charmer uses its own verified copy of the pinned Linux Claude Code,
 which setup copies or downloads inside the distribution. A Claude Code
 installed on Windows is not used and is not changed.
 
@@ -16,7 +16,7 @@ installed on Windows is not used and is not changed.
 The WSL distribution to install into. Default: the WSL default distribution.
 
 .PARAMETER Version
-The claude-multi release to install. Default: this script's release.
+The charmer release to install. Default: this script's release.
 
 .PARAMETER InstallerUrl
 The https URL of install.sh. Default: the copy published with the release.
@@ -30,7 +30,7 @@ an authenticated release; verification cannot be skipped.
 Answer yes to every question (installing WSL 2 or a distribution).
 
 .PARAMETER NoSetup
-Do not start `claude-multi setup` after the installation.
+Do not start `charmer setup` after the installation.
 
 .EXAMPLE
 powershell -ExecutionPolicy Bypass -File install.ps1
@@ -66,7 +66,7 @@ function Get-ReleaseInfo {
 
 function Write-Step {
     param([string]$Message)
-    Write-Host "claude-multi: $Message"
+    Write-Host "charmer: $Message"
 }
 
 function Test-WindowsHost {
@@ -114,7 +114,7 @@ function Confirm-Step {
     if ($AssumeYes) {
         return $true
     }
-    $answer = Read-Host "claude-multi: $Question [y/N]"
+    $answer = Read-Host "charmer: $Question [y/N]"
     return ($answer -match '^(y|yes)$')
 }
 
@@ -148,7 +148,7 @@ function Get-WslDistribution {
 
 function Install-Wsl {
     param([switch]$AssumeYes)
-    Write-Step 'WSL 2 is not installed. claude-multi runs inside a WSL 2 Linux distribution.'
+    Write-Step 'WSL 2 is not installed. charmer runs inside a WSL 2 Linux distribution.'
     if (-not (Confirm-Step -Question 'Install WSL 2 now? It needs administrator rights and a restart.' -AssumeYes:$AssumeYes)) {
         throw 'WSL 2 is required. Install it with: wsl --install'
     }
@@ -195,7 +195,7 @@ function Select-WslDistribution {
         return $all[0]
     }
     if (-not (Confirm-Step -Question 'No WSL distribution is installed. Install Ubuntu now?' -AssumeYes:$AssumeYes)) {
-        throw 'claude-multi needs a WSL 2 distribution. Install one with: wsl --install --distribution Ubuntu'
+        throw 'charmer needs a WSL 2 distribution. Install one with: wsl --install --distribution Ubuntu'
     }
     New-WslDistribution -Name 'Ubuntu'
     return $null
@@ -243,24 +243,24 @@ url=${1:-}
 sum=${2:-}
 case "$sum" in *[!0-9a-f]*) sum='' ;; esac
 if [ "${#sum}" -ne 64 ]; then
-    echo 'claude-multi: a trusted install.sh sha256 checksum is required' >&2
+    echo 'charmer: a trusted install.sh sha256 checksum is required' >&2
     exit 1
 fi
 shift 2
 cd "$HOME"
-file=$(mktemp "${TMPDIR:-/tmp}/claude-multi-install.XXXXXX")
+file=$(mktemp "${TMPDIR:-/tmp}/charmer-install.XXXXXX")
 trap 'rm -f "$file"' EXIT
 if command -v curl >/dev/null 2>&1; then
     curl --proto '=https' --tlsv1.2 -fsSL -o "$file" "$url"
 elif command -v wget >/dev/null 2>&1; then
     wget --https-only -q -O "$file" "$url"
 else
-    echo 'claude-multi: this distribution has neither curl nor wget; install curl (for example: sudo apt install curl) and run install.ps1 again' >&2
+    echo 'charmer: this distribution has neither curl nor wget; install curl (for example: sudo apt install curl) and run install.ps1 again' >&2
     exit 1
 fi
 actual=$(sha256sum <"$file" | cut -d ' ' -f 1)
 if [ "$actual" != "$sum" ]; then
-    echo 'claude-multi: the downloaded install.sh does not match its published checksum' >&2
+    echo 'charmer: the downloaded install.sh does not match its published checksum' >&2
     exit 1
 fi
 sh "$file" --no-setup "$@" </dev/null
@@ -319,10 +319,10 @@ function Invoke-Main {
         return
     }
     if ($target.Version -ne 2) {
-        throw "The distribution $($target.Name) uses WSL 1, which claude-multi does not support. Convert it with: wsl --set-version $($target.Name) 2 (then run this script again)."
+        throw "The distribution $($target.Name) uses WSL 1, which charmer does not support. Convert it with: wsl --set-version $($target.Name) 2 (then run this script again)."
     }
     Write-Step "installing into the WSL 2 distribution $($target.Name)"
-    Write-Step 'claude-multi uses its own copy of the pinned Linux Claude Code, which setup gets inside this distribution; a Claude Code installed on Windows is not used.'
+    Write-Step 'charmer uses its own copy of the pinned Linux Claude Code, which setup gets inside this distribution; a Claude Code installed on Windows is not used.'
     $arguments = @('--distribution', $target.Name, '--exec') + (Get-BootstrapArgument -Source $source -InstallerArguments $InstallerArguments)
     Invoke-WslInteractive -Arguments $arguments
     $code = $LASTEXITCODE
@@ -330,15 +330,15 @@ function Invoke-Main {
         throw "The Linux installer failed in $($target.Name) (exit $code). The messages above say why."
     }
     if ($NoSetup) {
-        Write-Step "installed. Next: run 'wsl --distribution $($target.Name)' and then 'claude-multi setup'."
+        Write-Step "installed. Next: run 'wsl --distribution $($target.Name)' and then 'charmer setup'."
         $script:MainExitCode = 0
         return
     }
-    Write-Step 'starting claude-multi setup'
-    Invoke-WslInteractive -Arguments @('--distribution', $target.Name, '--cd', '~', '--exec', '.local/bin/claude-multi', 'setup')
+    Write-Step 'starting charmer setup'
+    Invoke-WslInteractive -Arguments @('--distribution', $target.Name, '--cd', '~', '--exec', '.local/bin/charmer', 'setup')
     $code = $LASTEXITCODE
     if ($code -ne 0) {
-        Write-Step "setup did not finish. Run 'wsl --distribution $($target.Name)' and then 'claude-multi setup' to continue."
+        Write-Step "setup did not finish. Run 'wsl --distribution $($target.Name)' and then 'charmer setup' to continue."
     }
     $script:MainExitCode = 0
 }
@@ -350,7 +350,7 @@ if ($MyInvocation.InvocationName -ne '.') {
         exit $script:MainExitCode
     }
     catch {
-        Write-Host "claude-multi: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "charmer: $($_.Exception.Message)" -ForegroundColor Red
         exit 1
     }
 }

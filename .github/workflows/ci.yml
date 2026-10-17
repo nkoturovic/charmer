@@ -1,4 +1,4 @@
-# claude-multi CI.
+# charmer CI.
 #
 # fast       every push and pull request: goldens, whitespace, the secret
 #            and identifier scan of exactly the new commits, hygiene, import
@@ -54,7 +54,7 @@ env:
   PYTHONPATH: src:tests
   # The release integration tests (installer, update, journey, release
   # tool) must run: without ssh-keygen they fail instead of skipping.
-  CLAUDE_MULTI_TEST_REQUIRE_RELEASE: "1"
+  CHARMER_TEST_REQUIRE_RELEASE: "1"
 
 jobs:
   fast:
@@ -115,16 +115,16 @@ jobs:
         # scan and the hygiene gates below (a 0600 file the environment
         # names); without it (a fork, a pull request) the generic checks run.
         env:
-          PRIVATE_IDENTIFIERS: ${{ secrets.CLAUDE_MULTI_PRIVATE_IDENTIFIERS }}
+          PRIVATE_IDENTIFIERS: ${{ secrets.CHARMER_PRIVATE_IDENTIFIERS }}
         run: |
           umask 077
           if [ -n "$PRIVATE_IDENTIFIERS" ]; then
             list="$RUNNER_TEMP/private-identifiers.tsv"
             printf '%s\n' "$PRIVATE_IDENTIFIERS" >"$list"
             chmod 600 "$list"
-            echo "CLAUDE_MULTI_PRIVATE_IDENTIFIERS=$list" >>"$GITHUB_ENV"
+            echo "CHARMER_PRIVATE_IDENTIFIERS=$list" >>"$GITHUB_ENV"
           else
-            echo "no private identifier list: the generic identifier checks run"
+            echo "no private identifier list (secret CHARMER_PRIVATE_IDENTIFIERS is not set): the generic identifier checks run"
           fi
       - name: Secret and identifier scan of the new commits
         env:
@@ -147,8 +147,8 @@ jobs:
       - name: Import smoke
         run: |
           umask 077
-          python3 -I -c 'import sys; sys.path.insert(0, "src"); import claude_multi.cli.entry, claude_multi.proxy, claude_multi.trust, claude_multi.self_update, claude_multi.release_update, claude_multi.install_txn'
-          python3 bin/claude-multi --version
+          python3 -I -c 'import sys; sys.path.insert(0, "src"); import charmer.cli.entry, charmer.proxy, charmer.trust, charmer.self_update, charmer.release_update, charmer.install_txn'
+          python3 bin/charmer --version
       - name: Shell lint
         run: |
           umask 077
@@ -248,7 +248,7 @@ jobs:
       - name: The exact pinned Claude Code (outside the workspace; verified when the runner places it)
         run: |
           umask 077
-          url=$(python3 -c 'import sys; sys.path.insert(0, "src"); from claude_multi import acquire, pin, strict_json; c = strict_json.load("src/claude_multi/data/catalog/native-contract.json"); print(acquire.download_url(pin.version(c), pin.host_platform()))')
+          url=$(python3 -c 'import sys; sys.path.insert(0, "src"); from charmer import acquire, pin, strict_json; c = strict_json.load("src/charmer/data/catalog/native-contract.json"); print(acquire.download_url(pin.version(c), pin.host_platform()))')
           curl --proto '=https' --tlsv1.2 -fsSL --retry 3 -o "$RUNNER_TEMP/claude" "$url"
           chmod 755 "$RUNNER_TEMP/claude"
       - name: Read-only interpreter for isolated probes
@@ -312,7 +312,7 @@ jobs:
       - name: Flake checks (the sandbox suite)
         run: |
           umask 077
-          nix build --no-link -L .#checks.x86_64-linux.claude-multi
+          nix build --no-link -L .#checks.x86_64-linux.charmer
       - name: Nix and native gateway bytes are identical
         run: |
           umask 077
@@ -322,5 +322,5 @@ jobs:
       - name: The product's indirect garbage-collector root in this disposable Nix store
         run: |
           umask 077
-          package=$(nix build --no-link --print-out-paths .#claude-multi)
+          package=$(nix build --no-link --print-out-paths .#charmer)
           python3 .github/scripts/nix_roots.py "$package"

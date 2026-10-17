@@ -1,15 +1,15 @@
 #!/bin/sh
-# claude-multi installer (POSIX sh).
+# charmer installer (POSIX sh).
 #
 #   curl --proto '=https' --tlsv1.2 -fsSL <release URL>/install.sh | sh
 #   sh install.sh --from-dir DIR      install from a local release directory
 #   sh install.sh --help              every option
 #
-# It installs one verified bundle into ~/.local/share/claude-multi/install
+# It installs one verified bundle into ~/.local/share/charmer/install
 # (versions/<version>, with `current` and `previous` links), writes small
-# launcher files into ~/.local/bin and then starts `claude-multi setup`.
+# launcher files into ~/.local/bin and then starts `charmer setup`.
 # Nothing outside those places changes, except a PATH line in your shell
-# profile when you agree to it, and the claude-multi state directory's
+# profile when you agree to it, and the charmer state directory's
 # channel file, which records that this installation owns that state.
 
 set -eu
@@ -27,30 +27,30 @@ RELEASE_BASE_URL=''
 RELEASE_SIGNERS=''
 RELEASE_SUMS=''
 
-NAMESPACE='claude-multi-release'
-PRINCIPAL='release@claude-multi'
+NAMESPACE='charmer-release'
+PRINCIPAL='release@charmer'
 SUMS='SHA256SUMS'
 SIG='SHA256SUMS.sshsig'
-SHIM_MARK='# claude-multi installer launcher'
-PATH_MARK='# added by the claude-multi installer'
-SHIMS='claude-multi claude-multi-proxy'
-# The bundle's own safety checks (claude_multi.install_txn) and its gateway
-# inhibition (claude_multi.gateway_inhibition), each run as `python3 -m
+SHIM_MARK='# charmer installer launcher'
+PATH_MARK='# added by the charmer installer'
+SHIMS='charmer charmer-proxy'
+# The bundle's own safety checks (charmer.install_txn) and its gateway
+# inhibition (charmer.gateway_inhibition), each run as `python3 -m
 # MODULE` by the bundle's interpreter with its site directory first on
 # sys.path.
 MODULE_BOOT='import importlib, sys; sys.path.insert(0, sys.argv.pop(1)); raise SystemExit(importlib.import_module(sys.argv.pop(1)).main())'
-TXN=claude_multi.install_txn
-INHIBITION=claude_multi.gateway_inhibition
+TXN=charmer.install_txn
+INHIBITION=charmer.gateway_inhibition
 REPAIR='sh install.sh --repair'
 
-say() { printf 'claude-multi: %s\n' "$*"; }
-warn() { printf 'claude-multi installer: %s\n' "$*" >&2; }
+say() { printf 'charmer: %s\n' "$*"; }
+warn() { printf 'charmer installer: %s\n' "$*" >&2; }
 die() { warn "$*"; exit 1; }
 usage_error() { warn "$*"; warn "run with --help for the options"; exit 2; }
 
 usage() {
 	cat <<'EOF'
-Install claude-multi for the current user.
+Install charmer for the current user.
 
 Usage: sh install.sh [options]
 
@@ -62,19 +62,19 @@ Usage: sh install.sh [options]
                          the key the installed release carries)
   --modify-path          add ~/.local/bin to PATH in your shell profile
   --no-modify-path       never edit a shell profile (print the line instead)
-  --no-setup             do not start `claude-multi setup` afterwards
+  --no-setup             do not start `charmer setup` afterwards
   --migrate-from-nix     take over a state directory used by a Nix-managed install
   --repair               restore the launcher files and the `current` link; with nothing
                          installed yet, install the release (--from-dir or the download
                          location) to finish an interrupted first installation
   --rollback             switch back to the previously installed version
-  --uninstall [-- ARGS]  run `claude-multi uninstall` (it asks before removing anything)
+  --uninstall [-- ARGS]  run `charmer uninstall` (it asks before removing anything)
   -y, --yes              accept the default answer to every question
   -h, --help             show this help
 
-Files: ~/.local/share/claude-multi/install (the installed versions and
+Files: ~/.local/share/charmer/install (the installed versions and
 installer.json, the list of files the installer wrote elsewhere),
-~/.local/bin/claude-multi and ~/.local/bin/claude-multi-proxy (launchers).
+~/.local/bin/charmer and ~/.local/bin/charmer-proxy (launchers).
 Linux needs glibc 2.17 or newer. On Windows, run install.ps1 (WSL 2).
 EOF
 }
@@ -133,12 +133,12 @@ case ${XDG_STATE_HOME:-} in
 *) state_base=$HOME/.local/state ;;
 esac
 data_home=$HOME/.local/share
-install_root=$data_home/claude-multi/install
+install_root=$data_home/charmer/install
 bin_dir=$HOME/.local/bin
-state_root=$state_base/claude-multi
+state_root=$state_base/charmer
 lock_dir=$install_root/.lock
-nix_link_legacy=$data_home/claude-multi-release/current
-nix_link=$data_home/claude-multi/nix/current
+nix_link_legacy=$data_home/charmer-release/current
+nix_link=$data_home/charmer/nix/current
 
 work=''
 staging=''
@@ -155,10 +155,10 @@ recovering=no
 end_inhibition() {
 	if [ -n "$inhibit_token" ] && [ -n "$txn_bundle" ]; then
 		bundle_python "$txn_bundle" "$INHIBITION" --state-root "$state_root" end ||
-			warn "could not release the gateway inhibition; run 'claude-multi doctor'"
+			warn "could not release the gateway inhibition; run 'charmer doctor'"
 	fi
 	inhibit_token=''
-	unset CLAUDE_MULTI_INHIBITION_TOKEN
+	unset CHARMER_INHIBITION_TOKEN
 }
 
 cleanup() {
@@ -224,10 +224,10 @@ bundle_python() {
 	shift
 	py_site=''
 	for candidate in "$py_bundle"/lib/python3*/site-packages; do
-		if [ -d "$candidate/claude_multi" ]; then py_site=$candidate; fi
+		if [ -d "$candidate/charmer" ]; then py_site=$candidate; fi
 	done
 	if [ -z "$py_site" ]; then
-		warn "$py_bundle carries no claude_multi package"
+		warn "$py_bundle carries no charmer package"
 		return 1
 	fi
 	"$(runtime_of "$py_bundle")" -I -B -c "$MODULE_BOOT" "$py_site" "$@"
@@ -272,7 +272,7 @@ try:
 except (OSError, ValueError):
     sys.exit(1)
 fmt = doc.get("state_format")
-if (doc.get("name") != "claude-multi" or doc.get("version") != version
+if (doc.get("name") != "charmer" or doc.get("version") != version
         or (target != "*" and doc.get("target") != target)
         or not isinstance(fmt, int) or isinstance(fmt, bool)):
     sys.exit(1)
@@ -327,8 +327,8 @@ preflight() {
 hold_inhibition() {
 	# The token of this run's inhibition goes to every later child command.
 	inhibit_token=$1
-	CLAUDE_MULTI_INHIBITION_TOKEN=$inhibit_token
-	export CLAUDE_MULTI_INHIBITION_TOKEN
+	CHARMER_INHIBITION_TOKEN=$inhibit_token
+	export CHARMER_INHIBITION_TOKEN
 }
 
 begin_transaction() {
@@ -421,7 +421,7 @@ prune_copies() {
 	# Claude Code copies no installed release needs (a copy a session runs is
 	# kept and reported in use).
 	bundle_python "$txn_bundle" "$TXN" prune-copies --version "$version" ||
-		warn "Claude Code copies were not cleaned up; 'claude-multi setup --step claude' does it later"
+		warn "Claude Code copies were not cleaned up; 'charmer setup --step claude' does it later"
 }
 
 # ------------------------------------------------------------------ platform
@@ -461,12 +461,12 @@ check_wsl_home() {
 	home_real=$( (cd "$HOME" 2>/dev/null && pwd -P) || printf '%s' "$HOME")
 	case $home_real in
 	/mnt/[A-Za-z] | /mnt/[A-Za-z]/*)
-		die "your home directory ($home_real) is on a Windows drive. claude-multi needs a Linux home directory inside WSL 2 (for example /home/<you>)."
+		die "your home directory ($home_real) is on a Windows drive. charmer needs a Linux home directory inside WSL 2 (for example /home/<you>)."
 		;;
 	esac
 	case $(mount_type "$home_real") in
 	drvfs | 9p | v9fs)
-		die "your home directory ($home_real) is on a Windows file system (DrvFs). claude-multi needs a Linux home directory inside WSL 2."
+		die "your home directory ($home_real) is on a Windows file system (DrvFs). charmer needs a Linux home directory inside WSL 2."
 		;;
 	esac
 }
@@ -506,10 +506,10 @@ detect_target() {
 		esac
 		;;
 	MINGW* | MSYS* | CYGWIN* | Windows_NT)
-		die "native Windows is not supported. Run install.ps1 in PowerShell: it installs claude-multi inside WSL 2."
+		die "native Windows is not supported. Run install.ps1 in PowerShell: it installs charmer inside WSL 2."
 		;;
 	*)
-		die "unsupported operating system: $os (claude-multi runs on Linux, macOS, and Windows through WSL 2)"
+		die "unsupported operating system: $os (charmer runs on Linux, macOS, and Windows through WSL 2)"
 		;;
 	esac
 }
@@ -528,7 +528,7 @@ check_links() {
 	for link in "$nix_link_legacy" "$nix_link"; do
 		if [ -L "$link" ]; then
 			case $(readlink "$link" || true) in
-			/nix/store/*) die "a Nix-managed claude-multi is installed ($link). Keep updating it through Nix, or run the installer again with --migrate-from-nix to switch this account to the installer." ;;
+			/nix/store/*) die "a Nix-managed charmer is installed ($link). Keep updating it through Nix, or run the installer again with --migrate-from-nix to switch this account to the installer." ;;
 			esac
 		fi
 	done
@@ -537,7 +537,7 @@ check_links() {
 claim_state() {
 	# shellcheck disable=SC2046 # migrate_flag prints nothing or one word
 	replaced=$(bundle_python "$txn_bundle" "$TXN" claim --state-root "$state_root" $(migrate_flag)) || exit 1
-	if [ -n "$replaced" ]; then say "this account's claude-multi state now belongs to the installer (it was '$replaced')"; fi
+	if [ -n "$replaced" ]; then say "this account's charmer state now belongs to the installer (it was '$replaced')"; fi
 }
 
 # ------------------------------------------------------------------ launchers
@@ -599,7 +599,7 @@ handle_path() {
 		if [ "$assume_yes" = yes ]; then
 			decision=yes
 		elif tty_available; then
-			printf 'claude-multi: add ~/.local/bin to PATH in %s? [Y/n] ' "$profile" >/dev/tty
+			printf 'charmer: add ~/.local/bin to PATH in %s? [Y/n] ' "$profile" >/dev/tty
 			answer=''
 			IFS= read -r answer </dev/tty || true
 			case $answer in
@@ -628,7 +628,7 @@ handle_path() {
 write_receipt() {
 	# installer.json lists what this installer created outside the install
 	# root (launchers with their sha256, PATH lines exactly as written), so
-	# `claude-multi uninstall` can remove exactly that.
+	# `charmer uninstall` can remove exactly that.
 	set --
 	for name in $SHIMS; do set -- "$@" --launcher "$bin_dir/$name"; done
 	if [ -n "$path_file" ]; then set -- "$@" --path-line "$path_file" "$export_line $PATH_MARK"; fi
@@ -638,10 +638,10 @@ write_receipt() {
 hand_off() {
 	[ "$run_setup" = yes ] || return 0
 	if tty_available; then
-		say "starting claude-multi setup"
-		"$bin_dir/claude-multi" setup </dev/tty || say "setup did not finish; run 'claude-multi setup' to continue"
+		say "starting charmer setup"
+		"$bin_dir/charmer" setup </dev/tty || say "setup did not finish; run 'charmer setup' to continue"
 	else
-		say "next: run 'claude-multi setup'"
+		say "next: run 'charmer setup'"
 	fi
 }
 
@@ -670,13 +670,13 @@ resolve_source() {
 		from_dir=$(cd "$from_dir" && pwd -P)
 		if [ -z "$version" ] && [ -z "$RELEASE_VERSION" ]; then
 			found=''
-			for file in "$from_dir"/claude-multi-*-"$target".tar.gz; do
+			for file in "$from_dir"/charmer-*-"$target".tar.gz; do
 				[ -f "$file" ] || continue
 				[ -z "$found" ] || die "$from_dir holds several releases; pass --version"
 				found=${file##*/}
 			done
-			[ -n "$found" ] || die "$from_dir has no claude-multi bundle for $target"
-			found=${found#claude-multi-}
+			[ -n "$found" ] || die "$from_dir has no charmer bundle for $target"
+			found=${found#charmer-}
 			version=${found%-"$target".tar.gz}
 		fi
 	fi
@@ -700,7 +700,7 @@ verify_download() {
 	# must verify: a failed or missing signature is never replaced by the
 	# checksums built into this installer, which are used only when
 	# ssh-keygen is not installed.
-	asset=claude-multi-$version-$target.tar.gz
+	asset=charmer-$version-$target.tar.gz
 	fetch_file "$SUMS" "$work/$SUMS" || die "the release has no $SUMS"
 	signers=''
 	if [ -n "$signers_file" ]; then
@@ -744,7 +744,7 @@ verify_download() {
 unpack_bundle() {
 	# Unpack into the private work directory (outside the install root) and
 	# check the bundle before anything is changed.
-	top=claude-multi-$version-$target
+	top=charmer-$version-$target
 	mkdir -m 700 "$work/unpack"
 	(cd "$work/unpack" && tar -xzf "$work/$asset") || die "cannot unpack $asset"
 	entries=$(ls -A "$work/unpack")
@@ -764,7 +764,7 @@ install_bundle() {
 	if [ -e "$dest" ] || [ -L "$dest" ]; then
 		protected=$(protected_versions)
 		if is_protected "$version" "$protected"; then
-			die "claude-multi $version is installed and the running gateway executes it (or that cannot be checked), so it is not replaced in place. Use --repair to restore the launchers, or restart the gateway (claude-multi gateway restart) after installing another version."
+			die "charmer $version is installed and the running gateway executes it (or that cannot be checked), so it is not replaced in place. Use --repair to restore the launchers, or restart the gateway (charmer gateway restart) after installing another version."
 		fi
 	fi
 	advance replace
@@ -807,7 +807,7 @@ do_install() {
 	check_links
 	check_shim_paths
 	resolve_source
-	work=$(mktemp -d "${TMPDIR:-/tmp}/claude-multi-install.XXXXXX")
+	work=$(mktemp -d "${TMPDIR:-/tmp}/charmer-install.XXXXXX")
 	verify_download
 	unpack_bundle
 	# Nothing has changed yet; check ownership, inhibitions and the state
@@ -821,15 +821,15 @@ do_install() {
 		tidy_interrupted
 		finish_switch
 	else
-		begin_transaction "$unpacked" "install claude-multi $version"
+		begin_transaction "$unpacked" "install charmer $version"
 	fi
 	preflight "$unpacked" --version "$version" --readable-format "$new_format" --bundle "$unpacked" --token-env
 	install_bundle
 	finish_install
 	end_inhibition
-	say "installed claude-multi $version ($target) in $install_root"
+	say "installed charmer $version ($target) in $install_root"
 	if [ -n "$old" ] && [ "$old" != "$version" ]; then
-		say "kept $old for 'sh install.sh --rollback'; a running gateway keeps the old code until it restarts (claude-multi gateway restart)"
+		say "kept $old for 'sh install.sh --rollback'; a running gateway keeps the old code until it restarts (charmer gateway restart)"
 	fi
 	hand_off
 }
@@ -896,7 +896,7 @@ do_repair() {
 	if recover_transaction "$bundle"; then
 		say "finishing an interrupted run of the installer"
 	else
-		begin_transaction "$bundle" "repair claude-multi $version"
+		begin_transaction "$bundle" "repair charmer $version"
 	fi
 	preflight "$bundle" --version "$version" --readable-format "$format" --token-env
 	advance switch
@@ -909,7 +909,7 @@ do_repair() {
 	flip_link current "versions/$version" "$runtime"
 	finish_install
 	end_inhibition
-	say "repaired claude-multi $version"
+	say "repaired charmer $version"
 }
 
 do_rollback() {
@@ -935,7 +935,7 @@ do_rollback() {
 	if [ "$(link_version current)" != "$current" ] || [ "$(link_version previous)" != "$previous" ]; then
 		die "the installation changed while the rollback waited for the install lock; nothing was changed. Run it again."
 	fi
-	begin_transaction "$checker" "roll back claude-multi to $previous"
+	begin_transaction "$checker" "roll back charmer to $previous"
 	preflight "$checker" --version "$previous" --readable-format "$format" --bundle "$target_bundle" \
 		--rollback-from "${current:-the current version}" --token-env
 	# `previous` becomes the version that was current before this switch
@@ -947,13 +947,13 @@ do_rollback() {
 		switch_links "$previous"
 	fi
 	end_inhibition
-	say "rolled back to claude-multi $previous${current:+ ($current is kept as the previous version)}"
-	say "a running gateway keeps the code it started with until it restarts (claude-multi gateway restart)"
+	say "rolled back to charmer $previous${current:+ ($current is kept as the previous version)}"
+	say "a running gateway keeps the code it started with until it restarts (charmer gateway restart)"
 }
 
 do_uninstall() {
-	launcher=$install_root/current/bin/claude-multi
-	[ -x "$launcher" ] || die "no installed claude-multi in $install_root. Remove that directory and the launchers listed in $install_root/installer.json by hand."
+	launcher=$install_root/current/bin/charmer
+	[ -x "$launcher" ] || die "no installed charmer in $install_root. Remove that directory and the launchers listed in $install_root/installer.json by hand."
 	trap - EXIT
 	if tty_available; then
 		exec "$launcher" uninstall "$@" </dev/tty

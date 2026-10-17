@@ -201,7 +201,7 @@ def provision(dist: Path, probes: Path) -> dict[str, str]:
         if problem is not None:
             raise ProbeError(f"{probe['name']}: {problem}")
     return {gateway.BINARY_ENV: bound, gateway.BUILD_RECORD_ENV: str((dist / "BUILD.json").resolve()),
-            "CLAUDE_MULTI_TEST_GATEWAY_STARTUP_PROBE": str((probes / "bin" / names[0]["name"]).resolve())}
+            "CHARMER_TEST_GATEWAY_STARTUP_PROBE": str((probes / "bin" / names[0]["name"]).resolve())}
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -9,7 +9,7 @@ in this order; each lists the files it modifies, adds or deletes.
       modified  internal/auth/codex/oauth_server.go
 
  2. cli-proxy-api-kimi-claude-compat.patch
-    sha256 d8b4be92c5fd496980c4ad02e3e973cabb5570dc19f416b6336a608a044d2d44
+    sha256 135dadb71406136dc6e2ef1c46baa548d27cbf023c19dddce2e7d9de0f7ef9ae
       added     internal/config/claude_compat_fields_test.go
       modified  internal/config/config_types.go
       modified  internal/runtime/executor/claude_executor.go
@@ -36,7 +36,7 @@ in this order; each lists the files it modifies, adds or deletes.
       modified  internal/runtime/executor/xai_executor_request.go
 
  4. cli-proxy-api-management-readonly-allowlist.patch
-    sha256 c51d077d12280eee9419e7f928293c43a82b6839e279539ff9195a5fd885b59c
+    sha256 f1320679a8dbb7254a94a9bdb6c0a2aba37d74ba9166dc3ca5caac36b76d133d
       modified  internal/api/handlers/management/handler.go
       modified  internal/api/redis_queue_protocol.go
       modified  internal/api/server.go
@@ -47,7 +47,7 @@ in this order; each lists the files it modifies, adds or deletes.
       modified  internal/api/server_test.go
 
  5. cli-proxy-api-watcher-parentdir.patch
-    sha256 a31e05f009b66c6b74a4d6767073553f05edad8de362542899773955672c7b5c
+    sha256 c890605c3d4627f40fa214b9f564c6680b475e70644a30e289ff5e27a02c8d5a
       modified  internal/config/config_load.go
       modified  internal/watcher/clients.go
       added     internal/watcher/config_dir_watch_test.go
@@ -70,7 +70,7 @@ in this order; each lists the files it modifies, adds or deletes.
       modified  sdk/cliproxy/watcher.go
 
  7. cli-proxy-api-management-env-only.patch
-    sha256 09e56ff25352761b2f7c3b208876e09c108daf259def78e47a260d9e9cf564cd
+    sha256 34174189f296f54022abbfffe2bd50275339e25189b0981e64013dcde8258fd8
       modified  internal/api/handlers/management/handler.go
       modified  internal/api/server.go
       added     internal/api/server_management_env_only_test.go
@@ -99,7 +99,7 @@ in this order; each lists the files it modifies, adds or deletes.
       added     sdk/cliproxy/auth/credential_save_cm053_test.go
 
  9. cli-proxy-api-credentialed-redirects.patch
-    sha256 211c8157076a8a5e640796aae913853ba7719a5d9222349e58b98fe8102a40b1
+    sha256 bd5bb7fd5877a078ddeeb3287378c8dab8d201f1eaf9daa1e51b36e4ae310d44
       modified  internal/auth/claude/anthropic_auth.go
       added     internal/auth/claude/oauth_redirect_cm053_test.go
       modified  internal/auth/claude/utls_transport.go
@@ -139,7 +139,7 @@ in this order; each lists the files it modifies, adds or deletes.
       added     internal/upstreamredirect/upstreamredirect_cm053_test.go
 
 10. cli-proxy-api-openai-compat-keyed-safety.patch
-    sha256 70878f4df3027f322aa2be2298b6f9472d9815ab3d3411578e9bcdf1cabf9f20
+    sha256 3325d838983fa8d89a139ef63c4e395f81688e379fb3203be90fc39360c9e00e
       added     internal/compatsafe/compatsafe.go
       added     internal/compatsafe/compatsafe_cm053_test.go
       modified  internal/runtime/executor/helps/usage_helpers.go
@@ -158,7 +158,7 @@ in this order; each lists the files it modifies, adds or deletes.
       modified  sdk/cliproxy/auth/types.go
 
 12. cli-proxy-api-server-config-snapshot.patch
-    sha256 aa5106979d08018c80e0c3fabd7784f7b44c49bac5350ff5a760bac2e7279c0d
+    sha256 dba871bd4822226c8471ce55c7a70d16aeb6c9e723feb388dcd3bf0df311dd95
       modified  internal/api/redis_queue_protocol.go
       modified  internal/api/server.go
       added     internal/api/server_config_snapshot.go
@@ -186,7 +186,7 @@ in this order; each lists the files it modifies, adds or deletes.
       modified  sdk/api/handlers/stream_forwarder.go
 
 13. cli-proxy-api-plugin-host-locking.patch
-    sha256 d7ec5447735613fa64ce21269ebbd578ea70561d091120de8fc26379de756567
+    sha256 be26b87f742a3667ea11c6f6cb558efbeb77ee6fcd904ad838f16da4ca3ab165
       modified  internal/api/server_routes.go
       modified  sdk/api/handlers/handlers.go
       modified  sdk/api/handlers/handlers_execution.go
@@ -195,13 +195,13 @@ in this order; each lists the files it modifies, adds or deletes.
       added     sdk/api/handlers/plugin_host_cm053_test.go
 
 14. cli-proxy-api-claude-metadata-locking.patch
-    sha256 35b69fdcfac2223f76a71956c82f772e3608af20dea68dd1ff393443d707e4e0
+    sha256 2ef3f4369652b6f5947facd1954674a2844e70fea7c242d0d3d63b83e4ddcadd
       modified  internal/auth/claude/identity.go
       modified  internal/runtime/executor/claude_executor_auth.go
       added     internal/runtime/executor/claude_executor_auth_cm053_test.go
 
 15. cli-proxy-api-oauth-model-overlay.patch
-    sha256 ee11e0e82bbe81b4953b02d0c7e881e84a5d0d78425420e5cca1d76cb4228a2f
+    sha256 f3e1ff09984a5b8e3beb173a1e122e2a4ce14646ba1915df08344586cf6d6cd9
       modified  internal/config/config.go
       modified  internal/config/config_load.go
       added     internal/config/oauth_extra_models.go

@@ -26,7 +26,7 @@ import tempfile
 from pathlib import Path
 from typing import Any, Sequence
 
-GATEWAY = "libexec/claude-multi/cli-proxy-api"
+GATEWAY = "libexec/charmer/cli-proxy-api"
 TARGETS = {"linux-x86_64", "linux-aarch64", "darwin-x86_64", "darwin-arm64"}
 CLASSES = {"component-absent", "function-not-called", "feature-excluded"}
 TIMEOUT = 900

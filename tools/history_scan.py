@@ -112,7 +112,7 @@ GENERIC_IDENTIFIERS: tuple[tuple[str, str], ...] = (
 # may reuse a generic label (``home-path``): its pattern adds to that label,
 # and a place both patterns match counts once. Labels are printed; patterns
 # and matched values never are.
-PRIVATE_INPUT_ENV = "CLAUDE_MULTI_PRIVATE_IDENTIFIERS"
+PRIVATE_INPUT_ENV = "CHARMER_PRIVATE_IDENTIFIERS"
 _LABEL = re.compile(r"[a-z][a-z0-9-]*\Z")
 _SITE_KINDS = {"origin": 3, "identifier-site": 6, "origin-site": 5}
 

@@ -8,7 +8,7 @@ index 00000000..c9248f39
 +
 +import "testing"
 +
-+// claudeCompatGoldenYAML mirrors the claude-api-key shape claude-multi
++// claudeCompatGoldenYAML mirrors the claude-api-key shape charmer
 +// renders for its third-party Claude-compatible providers (Kimi-style
 +// x-api-key auth, owned-by/context-length advertisement). A silently ignored
 +// YAML key (a partial port of the kimi-claude-compat patch) must fail here.
@@ -20,7 +20,7 @@ index 00000000..c9248f39
 +      mode: "never"
 +    models:
 +      - name: "k3"
-+        alias: "claude-multi-kimi-k3"
++        alias: "charmer-kimi-k3"
 +        display-name: "Kimi K3"
 +        owned-by: "moonshot"
 +        context-length: 1000000
@@ -32,7 +32,7 @@ index 00000000..c9248f39
 +      mode: "never"
 +    models:
 +      - name: "qwen3.8-max"
-+        alias: "claude-multi-qwen38-max"
++        alias: "charmer-qwen38-max"
 +        display-name: "Qwen3.8 Max"
 +        owned-by: "alibaba"
 +        context-length: 983616
@@ -557,7 +557,7 @@ index 463d7fb5..6183b83e 100644
 +
 +// The static "codex" channel resolves to the codex-pro tier. On 7.3.15 that
 +// tier lists gpt-5.6-sol at 921000/128000 and gpt-6-sol at 272000/128000;
-+// claude-multi's OAuth aliases must advertise exactly the registry limits.
++// charmer's OAuth aliases must advertise exactly the registry limits.
 +func TestApplyOAuthModelAlias_CodexSolPreservesTokenLimits(t *testing.T) {
 +	for _, tc := range []struct {
 +		sourceID                string
@@ -569,13 +569,13 @@ index 463d7fb5..6183b83e 100644
 +			sourceID:                "gpt-5.6-sol",
 +			wantContextLength:       921000,
 +			wantMaxCompletionTokens: 128000,
-+			aliases:                 []string{"claude-multi-sol-high", "gpt-multi-sol-high", "claude-multi-sol-xhigh", "gpt-multi-sol-xhigh"},
++			aliases:                 []string{"charmer-sol-high", "gpt-multi-sol-high", "charmer-sol-xhigh", "gpt-multi-sol-xhigh"},
 +		},
 +		{
 +			sourceID:                "gpt-6-sol",
 +			wantContextLength:       272000,
 +			wantMaxCompletionTokens: 128000,
-+			aliases:                 []string{"claude-multi-sol6-high", "gpt-multi-sol6-high"},
++			aliases:                 []string{"charmer-sol6-high", "gpt-multi-sol6-high"},
 +		},
 +	} {
 +		var source *ModelInfo
@@ -626,8 +626,8 @@ index 463d7fb5..6183b83e 100644
 +func TestBuildClaudeConfigModelsAdvertisesCompatOwnerAndLimits(t *testing.T) {
 +	models := buildClaudeConfigModels(&internalconfig.ClaudeKey{
 +		Models: []internalconfig.ClaudeModel{
-+			{Name: "k3", Alias: "claude-multi-kimi-k3", DisplayName: "Kimi K3", OwnedBy: " moonshot ", ContextLength: 1000000, MaxCompletionTokens: 64000},
-+			{Name: "qwen3.8-max", Alias: "claude-multi-qwen38-max"},
++			{Name: "k3", Alias: "charmer-kimi-k3", DisplayName: "Kimi K3", OwnedBy: " moonshot ", ContextLength: 1000000, MaxCompletionTokens: 64000},
++			{Name: "qwen3.8-max", Alias: "charmer-qwen38-max"},
 +		},
 +	})
 +	if len(models) != 2 {

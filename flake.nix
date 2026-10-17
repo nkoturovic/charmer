@@ -1,5 +1,5 @@
 {
-  description = "claude-multi: a durable multi-model launcher for Claude Code";
+  description = "charmer: a durable multi-model launcher for Claude Code";
 
   # nixpkgs supplies the launcher's Python and the build tools only: the
   # gateway is built by tools/build.py from the pinned inputs in
@@ -43,16 +43,16 @@
           gateway-linux-arm64 = cliProxyApi.targets.linux-arm64;
           gateway-darwin-arm64 = cliProxyApi.targets.darwin-arm64;
           gateway-darwin-amd64 = cliProxyApi.targets.darwin-amd64;
-          claude-multi = packageFor pkgs cliProxyApi;
-          default = self.packages.${system}.claude-multi;
+          charmer = packageFor pkgs cliProxyApi;
+          default = self.packages.${system}.charmer;
         });
 
       apps = forAllSystems (system: _pkgs:
-        let pkg = self.packages.${system}.claude-multi;
+        let pkg = self.packages.${system}.charmer;
         in {
-          default = app pkg "claude-multi" "Launch Claude Code with a multi-model lineup";
-          claude-multi = app pkg "claude-multi" "Launch Claude Code with a multi-model lineup";
-          claude-multi-proxy = app pkg "claude-multi-proxy" "The local gateway's tool (init, status, run, sign-ins)";
+          default = app pkg "charmer" "Launch Claude Code with a multi-model lineup";
+          charmer = app pkg "charmer" "Launch Claude Code with a multi-model lineup";
+          charmer-proxy = app pkg "charmer-proxy" "The local gateway's tool (init, status, run, sign-ins)";
         });
 
       devShells = forAllSystems (system: pkgs: {
@@ -69,10 +69,10 @@
       # test gates, the inspection of the shipped targets, a two-directory
       # reproducibility build and the Windows compile canary.
       checks = lib.recursiveUpdate
-        (forAllSystems (system: _pkgs: { package = self.packages.${system}.claude-multi; }))
+        (forAllSystems (system: _pkgs: { package = self.packages.${system}.charmer; }))
         {
-          x86_64-linux.claude-multi = import ./tests/default.nix { inherit pkgs; };
-          x86_64-linux.claude-multi-gateway = import ./tests/gateway-check.nix { inherit pkgs cliProxyApi; };
+          x86_64-linux.charmer = import ./tests/default.nix { inherit pkgs; };
+          x86_64-linux.charmer-gateway = import ./tests/gateway-check.nix { inherit pkgs cliProxyApi; };
           x86_64-linux.gateway-gates = cliProxyApi.gates.portable;
           x86_64-linux.gateway-race = cliProxyApi.gates.race;
           x86_64-linux.gateway-inspect = cliProxyApi.inspect;

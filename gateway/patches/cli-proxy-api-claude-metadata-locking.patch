@@ -71,7 +71,7 @@ index 0000000..bc561bc
 +	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/auth"
 +)
 +
-+// claude-multi: the setup-token flags are read through the typed
++// charmer: the setup-token flags are read through the typed
 +// reader under the existing Claude metadata mutex, so a request path that
 +// prepares a shared setup-token credential cannot race the metadata writers.
 +

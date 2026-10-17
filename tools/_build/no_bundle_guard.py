@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Refuse Claude Code bytes in release artifacts and CI caches.
 
-claude-multi never redistributes Claude Code: users acquire the pinned
+charmer never redistributes Claude Code: users acquire the pinned
 version themselves. This guard scans files and the members of ``.tar``,
 ``.tar.gz``/``.tgz`` and ``.zip`` archives under the given paths and fails
 when it finds
@@ -9,7 +9,7 @@ when it finds
 - an entry named ``claude`` or ``claude.exe`` (a Claude Code executable),
 - content whose sha256 equals a pinned Claude Code hash (every ``sha256``
   value in ``native-contract.json``), or
-- a single file larger than ``--max-size`` (default 150 MiB; claude-multi's
+- a single file larger than ``--max-size`` (default 150 MiB; charmer's
   own files stay far below it, a Claude Code executable does not).
 
   python3 tools/_build/no_bundle_guard.py [--contract FILE] PATH ...
@@ -34,7 +34,7 @@ from pathlib import Path
 from typing import IO, Iterator
 
 REPO = Path(__file__).resolve().parents[2]
-DEFAULT_CONTRACT = REPO / "src" / "claude_multi" / "data" / "catalog" / "native-contract.json"
+DEFAULT_CONTRACT = REPO / "src" / "charmer" / "data" / "catalog" / "native-contract.json"
 FORBIDDEN_NAMES = frozenset({"claude", "claude.exe"})
 DEFAULT_MAX_SIZE = 150 * 1024 * 1024
 _CHUNK = 1 << 20

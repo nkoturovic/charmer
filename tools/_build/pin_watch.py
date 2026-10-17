@@ -59,7 +59,7 @@ def _version(value: object, what: str, pattern: re.Pattern[str] = _VERSION) -> s
 
 
 def pins(repo: Path = REPO) -> dict[str, str]:
-    contract_path = repo / "src/claude_multi/data/catalog/native-contract.json"
+    contract_path = repo / "src/charmer/data/catalog/native-contract.json"
     contract = _load(contract_path)
     verified = _field(contract, ("verified",), str(contract_path))
     if not isinstance(verified, list) or not verified or not isinstance(verified[0], dict):

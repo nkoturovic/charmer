@@ -711,7 +711,7 @@ class HarnessSmokeTests(unittest.TestCase):
         self.assertIsNone(gateway.process.poll())
         self.assertEqual(gateway.get("/healthz").status, 200)
         self.assertIn(harness.WATCHER_READY, gateway.log_path.read_text())
-        self.assertIn(render.document_sentinel(gateway.document), {row["id"] for row in gateway.get("/v1/models").json()["data"]})
+        self.assertIn(render.document_sentinel(gateway.document), {row["id"] for row in gateway.served_listing().json()["data"]})
         self.record("readiness", alive=True, health=200, watcher=True, sentinel=True)
         self.assertGreaterEqual(tuple(map(int, gateway.version.split("."))), (7, 3, 15))
         self.record("version", version=gateway.version)

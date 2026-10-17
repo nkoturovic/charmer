@@ -16,7 +16,7 @@ checked against the manifest, read without running it) or a reviewed
 one of them; a re-recording of the pinned version keeps the recorded keys.
 The behaviour sections of the current contract carry over unchanged.
 
-It never fetches anything and never runs the battery; ``claude-multi-dev
+It never fetches anything and never runs the battery; ``charmer-dev
 repin`` runs the whole flow (candidate inspection, the battery, the contract
 write). To fetch the pair yourself::
 
@@ -37,8 +37,8 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 
-from claude_multi import catalog, layout, pin, release_manifest, strict_json, upgrade  # noqa: E402
-from claude_multi import validate as schema_validate  # noqa: E402
+from charmer import catalog, layout, pin, release_manifest, strict_json, upgrade  # noqa: E402
+from charmer import validate as schema_validate  # noqa: E402
 
 
 def build_contract(
@@ -154,7 +154,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"wrote {contract_path}: Claude Code {args.version}, "
           f"{len(entry['platforms'])} platform builds{keys}, signed by …{fingerprint[-16:]}")
     print(f"next: bump catalog_version in {resources / 'version.json'} and the version-pinned test "
-          "literals (claude-multi-dev repin does both), then run the full suite")
+          "literals (charmer-dev repin does both), then run the full suite")
     return 0
 
 

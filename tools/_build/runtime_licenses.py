@@ -294,9 +294,9 @@ def sbom_components(inventory: Inventory, target: str) -> list[dict[str, Any]]:
             component["licenses"] = [{"license": {"id": item}} for item in library["spdx"]]
         else:
             component["licenses"] = [{"license": {"name": "public domain"}}]
-        component["properties"] = [{"name": "claude-multi:runtime:linked-by", "value": item}
+        component["properties"] = [{"name": "charmer:runtime:linked-by", "value": item}
                                    for item in library["extensions"]] + [
-            {"name": "claude-multi:runtime:license-text", "value": item} for item in library["texts"]]
+            {"name": "charmer:runtime:license-text", "value": item} for item in library["texts"]]
         components.append(component)
     return components
 
@@ -411,7 +411,7 @@ def derive(archives: Mapping[str, Path], install_only: Mapping[str, Mapping[str,
 def _prune_reason(components: list[str], versions: Mapping[str, Any]) -> str:
     licences = [item for name in components for item in versions[name].get("licenses", [])]
     if any(strong_copyleft(item) for item in licences):
-        return "strong copyleft; claude-multi never imports it"
+        return "strong copyleft; charmer never imports it"
     return "on the runtime's delete-only list"
 
 

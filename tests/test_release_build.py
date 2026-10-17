@@ -884,8 +884,8 @@ class ProductAndTrustTests(unittest.TestCase):
                 with self.assertRaises(self.tool.BuildError):
                     self.tool.load_product(self.product(change), self.doc, self.runtimes)
         with self.assertRaisesRegex(self.tool.BuildError, "a bundle never ships claude-gateway .*charmer direct"):
-            self.tool.load_product(self.product(lambda d: d.update(launchers=["claude-gateway", "charmer",
-                                                                              "charmer-proxy"])),
+            self.tool.load_product(self.product(lambda d: d.update(launchers=["charmer", "charmer-proxy",
+                                                                              "claude-gateway"])),
                                    self.doc, self.runtimes)
 
     def test_release_trust_lines(self) -> None:

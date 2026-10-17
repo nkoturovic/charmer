@@ -1883,6 +1883,15 @@ class GatewayHarness:
     def get(self, target):
         return unix_request(self.socket, "GET", target, headers=self.headers())
 
+    def served_listing(self):
+        """``GET /v1/models`` the way the product reads it (``launch``'s served
+        read): no anthropic-version, so the gateway answers with the OpenAI
+        listing, which never cloaks an alias outside the ``claude-`` names
+        (the Anthropic listing rewrites those, the render sentinel included)."""
+
+        headers = {name: value for name, value in self.headers().items() if name != "anthropic-version"}
+        return unix_request(self.socket, "GET", "/v1/models", headers=headers)
+
     def await_ready(self):
         deadline = time.monotonic() + (40 if os.environ.get("NIX_BUILD_TOP") else 20)
         while time.monotonic() < deadline:
@@ -1890,7 +1899,7 @@ class GatewayHarness:
                 raise AssertionError(self.diagnostic(f"gateway exited rc={self.process.returncode}"))
             try:
                 if self.get("/healthz").status == 200 and WATCHER_READY in self.log_path.read_text():
-                    reply = self.get("/v1/models")
+                    reply = self.served_listing()
                     if reply.status == 200 and render.document_sentinel(self.document) in {row["id"] for row in reply.json()["data"]}:
                         return
             except (OSError, http.client.HTTPException):

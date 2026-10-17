@@ -24,7 +24,7 @@ index 95e3183..347de32 100644
  	Cfg *config.SDKConfig
  
 +	// pluginHostMu guards PluginHost and ModelRouterHost after construction
-+	// (claude-multi local patch, plugin-host-locking): SetPluginHost and
++	// (charmer local patch, plugin-host-locking): SetPluginHost and
 +	// SetModelRouterHost publish under it, and every runtime reader takes one
 +	// snapshot through pluginHosts and releases it before any plugin callback.
 +	pluginHostMu sync.RWMutex
@@ -165,7 +165,7 @@ index 0000000..e1526bc
 @@ -0,0 +1,352 @@
 +package handlers
 +
-+// claude-multi local patch (plugin-host-locking): plugin-host
++// charmer local patch (plugin-host-locking): plugin-host
 +// publication (SetPluginHost / SetModelRouterHost) against its runtime readers
 +// (interceptorHost, modelRouterHost, the request lifecycle tracker and the
 +// execution-host lookup). In-process only: stub hosts, gin test contexts, no

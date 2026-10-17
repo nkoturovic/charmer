@@ -17,7 +17,7 @@
 #       lifecycle (setup --step gateway, status, stop) with its loopback
 #       confinement, a first managed turn against a fixture provider and
 #       its resume (with a client), a foreign listener on the gateway port
-#       refused, and an uninstall that keeps the state (claude-multi
+#       refused, and an uninstall that keeps the state (charmer
 #       uninstall --keep-setup --yes on a pseudo-terminal, never --force,
 #       once every managed session recorded its end: it removes the
 #       launchers and the installed release, and keeps the credentials,
@@ -69,7 +69,7 @@ fail() { printf 'journey: FAILED: %s\n' "$*" >&2; exit 1; }
 here=$(CDPATH='' cd "$(dirname "$0")" && pwd)
 installer_default=$here/../../packaging/install.sh
 fixture=$here/journey_fixture.py
-work=$(mktemp -d "${TMPDIR:-/tmp}/claude-multi-journey.XXXXXX")
+work=$(mktemp -d "${TMPDIR:-/tmp}/charmer-journey.XXXXXX")
 helpers=''
 kill_helper() {
 	# The interpreter owns a group, so cleanup also stops its descendants.
@@ -88,21 +88,21 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
-cm=$HOME/.local/bin/claude-multi
-install_dir=$HOME/.local/share/claude-multi/install/current
+cm=$HOME/.local/bin/charmer
+install_dir=$HOME/.local/share/charmer/install/current
 
 make_key() {
 	# $1 = directory: key, key.pub, allowed_signers
 	mkdir -p "$1"
 	ssh-keygen -q -t ed25519 -N '' -C 'ephemeral journey key' -f "$1/key"
-	printf 'release@claude-multi %s\n' "$(cut -d ' ' -f 1,2 "$1/key.pub")" >"$1/allowed_signers"
+	printf 'release@charmer %s\n' "$(cut -d ' ' -f 1,2 "$1/key.pub")" >"$1/allowed_signers"
 }
 
 signed_copy() {
 	# $1 = release directory, $2 = key directory, $3 = destination
 	mkdir -p "$3"
 	cp "$1"/*.tar.gz "$1/MANIFEST.json" "$1/SHA256SUMS" "$3/"
-	ssh-keygen -Y sign -f "$2/key" -n claude-multi-release "$3/SHA256SUMS" >/dev/null 2>&1
+	ssh-keygen -Y sign -f "$2/key" -n charmer-release "$3/SHA256SUMS" >/dev/null 2>&1
 	mv "$3/SHA256SUMS.sig" "$3/SHA256SUMS.sshsig"
 }
 
@@ -181,7 +181,7 @@ reply_number() {
 }
 
 fetch_client() {
-	# the installed release's pinned Claude Code; claude-multi checks its
+	# the installed release's pinned Claude Code; charmer checks its
 	# size and sha256 when it copies it
 	pin=$(fx client --install "$install_dir") || fail "the installed release names no Claude Code for this host"
 	url=${pin%% *}
@@ -289,9 +289,9 @@ bundle_channel() {
 	# else fails
 	status=0
 	"$cm" doctor >"$work/doctor.txt" 2>&1 || status=$?
-	[ "$status" -le 1 ] || { show_tail "$work/doctor.txt"; fail "claude-multi doctor ($1) exited $status"; }
+	[ "$status" -le 1 ] || { show_tail "$work/doctor.txt"; fail "charmer doctor ($1) exited $status"; }
 	grep -q 'Installation: this launcher is the bundle channel' "$work/doctor.txt" ||
-		{ show_tail "$work/doctor.txt"; fail "claude-multi doctor ($1) does not report the bundle channel"; }
+		{ show_tail "$work/doctor.txt"; fail "charmer doctor ($1) does not report the bundle channel"; }
 	say "installation channel ($1): bundle"
 }
 
@@ -305,16 +305,16 @@ session_ends() {
 }
 
 expect_version() {
-	shown=$("$cm" --version) || fail "claude-multi --version"
+	shown=$("$cm" --version) || fail "charmer --version"
 	case $shown in
-	"claude-multi $1 ("*) say "version: $shown" ;;
-	*) fail "claude-multi --version printed '$shown', expected version $1" ;;
+	"charmer $1 ("*) say "version: $shown" ;;
+	*) fail "charmer --version printed '$shown', expected version $1" ;;
 	esac
 }
 
 permission_diagnostics() {
 	[ "${JOURNEY_PERMISSIONS:-}" = 1 ] || return 0
-	for path in "$HOME" "$HOME/.local" "$HOME/.local/share" "$HOME/.local/share/claude-multi" "$HOME/.local/share/claude-multi/install"; do
+	for path in "$HOME" "$HOME/.local" "$HOME/.local/share" "$HOME/.local/share/charmer" "$HOME/.local/share/charmer/install"; do
 		[ ! -e "$path" ] || stat -c '%a %U:%G %n' "$path"
 	done
 	if command -v getfacl >/dev/null 2>&1; then getfacl -p "$HOME" || true; fi
@@ -338,7 +338,7 @@ fresh_install() {
 	permission_diagnostics
 	private_directories
 	if [ -n "${JOURNEY_TARGET:-}" ]; then
-		grep -q "^claude-multi: installed claude-multi $version ($JOURNEY_TARGET) " "$work/install.txt" ||
+		grep -q "^charmer: installed charmer $version ($JOURNEY_TARGET) " "$work/install.txt" ||
 			fail "install.sh did not install the $JOURNEY_TARGET bundle"
 		say "bundle target: $JOURNEY_TARGET"
 	fi
@@ -387,16 +387,16 @@ journey_installed() {
 		fi
 	fi
 	if [ "${JOURNEY_UNINSTALL:-run}" != skip ]; then
-		state=${XDG_STATE_HOME:-$HOME/.local/state}/claude-multi
+		state=${XDG_STATE_HOME:-$HOME/.local/state}/charmer
 		release=$(readlink "$install_dir") || fail "no installed release at $install_dir"
 		session_ends
 		# Uninstall needs a terminal: the fixture's pseudo-terminal confirms
 		# nothing (--yes) and keeps the credentials at their question.
 		fx answer -- "$cm" uninstall --keep-setup --yes >"$work/uninstall.txt" 2>&1 ||
-			{ show_tail "$work/uninstall.txt"; fail "claude-multi uninstall --keep-setup --yes"; }
-		grep -q 'claude-multi is uninstalled' "$work/uninstall.txt" ||
+			{ show_tail "$work/uninstall.txt"; fail "charmer uninstall --keep-setup --yes"; }
+		grep -q 'charmer is uninstalled' "$work/uninstall.txt" ||
 			{ show_tail "$work/uninstall.txt"; fail "uninstall did not finish"; }
-		[ ! -e "$HOME/.local/bin/claude-multi" ] || fail "the launcher was not removed"
+		[ ! -e "$HOME/.local/bin/charmer" ] || fail "the launcher was not removed"
 		if [ -e "$install_dir" ] || [ -e "${install_dir%/current}/$release" ]; then
 			fail "the installed release was not removed"
 		fi
@@ -419,7 +419,7 @@ journey_update() {
 	expect_version "$old"
 	bundle_channel "installed $old"
 	"$cm" update --check --from-dir "$work/b" >"$work/check.txt" || fail "update --check"
-	grep -q "claude-multi $new is available" "$work/check.txt" || fail "update --check does not offer $new"
+	grep -q "charmer $new is available" "$work/check.txt" || fail "update --check does not offer $new"
 	say "update check: ok"
 	bundle_channel "update check"
 	"$cm" update --from-dir "$work/b" --yes || fail "update to $new"
@@ -460,7 +460,7 @@ journey_service() {
 	say "alternate port: ok ($port)"
 	"$cm" gateway service install || fail "gateway service install"
 	"$cm" gateway service install || fail "gateway service install again (the refresh)"
-	unit=claude-multi-gateway.service
+	unit=charmer-gateway.service
 	rendered=${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/$unit
 	[ -f "$rendered" ] || fail "no rendered unit at $rendered"
 	fragment=$(unit_property "$unit" FragmentPath) || fail "systemctl --user show $unit"
@@ -470,7 +470,7 @@ journey_service() {
 	pid=$(unit_property "$unit" MainPID)
 	exe=$(readlink "/proc/$pid/exe") || fail "the unit's main process ($pid) is gone"
 	case $exe in
-	"$HOME/.local/share/claude-multi/install/"*) ;;
+	"$HOME/.local/share/charmer/install/"*) ;;
 	*) fail "the unit runs $exe, not the installed release" ;;
 	esac
 	fx reach --host 127.0.0.1 --port "$port" || fail "the service's gateway does not answer on 127.0.0.1:$port"

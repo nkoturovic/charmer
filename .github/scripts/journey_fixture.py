@@ -331,7 +331,7 @@ def client(install: Path) -> int:
 
     if not _installed_package(install):
         return 1
-    from claude_multi import acquire, pin, resources_root, strict_json
+    from charmer import acquire, pin, resources_root, strict_json
 
     contract = strict_json.load(resources_root() / "catalog" / "native-contract.json")
     version, platform = pin.version(contract), pin.host_platform()
@@ -348,7 +348,7 @@ FIRST_RUN_CHECKS = ("computer", "files", "policy", "claude", "gateway", "provide
 
 
 def _shown(path: Path, home: str) -> str:
-    """A pattern for ``path`` as claude-multi may print it: under HOME as
+    """A pattern for ``path`` as charmer may print it: under HOME as
     ``~/...``, else whole (HOME as given or resolved)."""
 
     whole = list(dict.fromkeys((str(path), os.path.realpath(path))))
@@ -368,19 +368,19 @@ def expected_unconfigured(home: str, environ: dict[str, str] | None = None) -> d
     fails the journey."""
 
     env = os.environ if environ is None else environ
-    state = Path(env.get("XDG_STATE_HOME") or Path(home) / ".local" / "state") / "claude-multi"
+    state = Path(env.get("XDG_STATE_HOME") or Path(home) / ".local" / "state") / "charmer"
     return {
         # setup --step claude has not copied the pinned Claude Code yet.
-        "claude": ("fail", re.escape("not set up for claude-multi"), "claude-multi setup --step claude"),
+        "claude": ("fail", re.escape("not set up for charmer"), "charmer setup --step claude"),
         # setup --step gateway has not recorded the gateway's port yet.
-        "gateway": ("fail", re.escape("not set up yet"), "claude-multi setup --step gateway"),
+        "gateway": ("fail", re.escape("not set up yet"), "charmer setup --step gateway"),
         # Providers: nothing connected yet, so models and the profile wait.
-        "providers": ("fail", re.escape("nothing connected yet"), "claude-multi setup --step providers"),
+        "providers": ("fail", re.escape("nothing connected yet"), "charmer setup --step providers"),
         "models": ("waiting", re.escape("waits for a provider"), None),
         "profile": ("waiting", re.escape("waits for a provider"), None),
         # The session helpers are written by the first command that changes state.
-        "hooks": ("fail", _shown(state / "bin" / "claude-multi-hook", home) + re.escape(" is missing"),
-                  "claude-multi doctor --repair-all"),
+        "hooks": ("fail", _shown(state / "bin" / "charmer-hook", home) + re.escape(" is missing"),
+                  "charmer doctor --repair-all"),
     }
 
 
@@ -412,7 +412,7 @@ def first_run_problem(json_run: subprocess.CompletedProcess, text_run: subproces
         return "doctor --first-run --json disagrees with itself (ready, next and the failing checks)", ""
     lines = text_run.stdout.splitlines()
     summary = "Ready." if ready else f"Not ready: {len(failing)} item(s) need a fix"
-    if not lines or lines[0] != "claude-multi doctor --first-run" or not lines[-1].startswith(summary):
+    if not lines or lines[0] != "charmer doctor --first-run" or not lines[-1].startswith(summary):
         return "doctor --first-run and doctor --first-run --json disagree", ""
     if ready:
         return None, "ready"
@@ -461,7 +461,7 @@ def session_ends(root: Path) -> list[tuple[str, str | None]]:
     recorded its end. A record that cannot be read has no event (uninstall
     counts it as possibly running too)."""
 
-    from claude_multi import sessions, strict_json
+    from charmer import sessions, strict_json
 
     directory = root / "sessions"
     try:
@@ -486,7 +486,7 @@ def ended(install: Path, timeout: float) -> int:
 
     if not _installed_package(install):
         return 1
-    from claude_multi import paths
+    from charmer import paths
 
     root = paths.state_root()
     deadline = time.monotonic() + timeout
@@ -512,9 +512,9 @@ def private_dirs(home: Path) -> int:
         value = os.environ.get(name, "")
         return Path(value) if os.path.isabs(value) else fallback
 
-    data = home / ".local/share/claude-multi"
-    roots = (data, xdg("XDG_CONFIG_HOME", home / ".config") / "claude-multi",
-             xdg("XDG_STATE_HOME", home / ".local/state") / "claude-multi")
+    data = home / ".local/share/charmer"
+    roots = (data, xdg("XDG_CONFIG_HOME", home / ".config") / "charmer",
+             xdg("XDG_STATE_HOME", home / ".local/state") / "charmer")
     count = 0
     for root in roots:
         if not root.exists():

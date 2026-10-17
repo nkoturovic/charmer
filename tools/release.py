@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Release a claude-multi version: check, build, reproduce, sign, verify, publish.
+"""Release a charmer version: check, build, reproduce, sign, verify, publish.
 
     python3 tools/release.py preflight --receipt FILE [--previous TAG|none]
     python3 tools/release.py build --out DIR
@@ -30,7 +30,7 @@ reproduce    clone this commit into a scratch directory, build it there and
              must match its files, and the bundle contents, the manifest and
              both installers must be identical
 sign         print the command that signs DIR/SHA256SUMS with the release key
-             (`ssh-keygen -Y sign`, namespace claude-multi-release); this
+             (`ssh-keygen -Y sign`, namespace charmer-release); this
              tool never reads or holds the key. A release whose MANIFEST.json
              names no release key or no release location (a test build) is
              refused here, by verify-draft without --allowed-signers and by
@@ -85,8 +85,8 @@ from pathlib import Path
 from typing import Callable, Mapping, Sequence, TextIO
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-NAMESPACE = "claude-multi-release"
-PRINCIPAL = "release@claude-multi"
+NAMESPACE = "charmer-release"
+PRINCIPAL = "release@charmer"
 SUMS = "SHA256SUMS"
 SIGNATURE = "SHA256SUMS.sshsig"
 MANIFEST = "MANIFEST.json"
@@ -95,7 +95,7 @@ JOURNEY_TIMEOUT = 20 * 60
 FIRST_RUN_OK = "first run: ok"  # the journey's line for a successful first-run diagnostic
 RELEASE_VERSION = re.compile(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)")
 ANY_VERSION = re.compile(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-dev)?")
-RESOURCES = Path("src") / "claude_multi" / "data"
+RESOURCES = Path("src") / "charmer" / "data"
 EXIT_REFUSED, EXIT_USAGE, EXIT_DECLINED, EXIT_CANCELLED = 1, 2, 3, 130
 
 Runner = Callable[..., subprocess.CompletedProcess]
@@ -130,17 +130,17 @@ def build_tool(repo: Path):
     """The repository's tools/build.py, as a module (loaded once per tree)."""
 
     if repo not in _BUILD_TOOLS:
-        _BUILD_TOOLS[repo] = _load(repo / "tools" / "build.py", f"_claude_multi_release_build_{len(_BUILD_TOOLS)}")
+        _BUILD_TOOLS[repo] = _load(repo / "tools" / "build.py", f"_charmer_release_build_{len(_BUILD_TOOLS)}")
     return _BUILD_TOOLS[repo]
 
 
 def trust_module(repo: Path):
-    """The repository's own signature verifier (src/claude_multi/trust.py)."""
+    """The repository's own signature verifier (src/charmer/trust.py)."""
 
     src = str(repo / "src")
     if src not in sys.path:
         sys.path.insert(0, src)
-    from claude_multi import trust
+    from charmer import trust
 
     return trust
 
@@ -216,7 +216,7 @@ def read_json(path: Path) -> object:
 def version_key(version: str) -> tuple[int, int, int, int]:
     match = ANY_VERSION.fullmatch(version)
     if match is None:
-        raise ReleaseError(f"not a claude-multi version: {version!r}")
+        raise ReleaseError(f"not a charmer version: {version!r}")
     major, minor, patch, dev = match.groups()
     return int(major), int(minor), int(patch), 0 if dev else 1
 
@@ -318,7 +318,7 @@ def check_drafting_markers(repo: Path) -> Check:
     old_path = sys.path[:]
     try:
         sys.path.insert(0, str(REPO_ROOT / "tests"))
-        vocab = _load(REPO_ROOT / "tests" / "_docs_vocab.py", "_claude_multi_release_docs")
+        vocab = _load(REPO_ROOT / "tests" / "_docs_vocab.py", "_charmer_release_docs")
     finally:
         sys.path[:] = old_path
     problems = []
@@ -399,7 +399,7 @@ def check_hygiene(repo: Path, runner: Runner = run) -> Check:
 # The private identifier list (tools/history_scan.py PRIVATE_INPUT_ENV): the
 # history scan looks for it when the environment names it, otherwise for
 # the generic identifiers only. The hygiene check inherits the variable.
-PRIVATE_IDENTIFIERS_ENV = "CLAUDE_MULTI_PRIVATE_IDENTIFIERS"
+PRIVATE_IDENTIFIERS_ENV = "CHARMER_PRIVATE_IDENTIFIERS"
 
 
 def check_history(repo: Path, runner: Runner = run, environ: dict[str, str] | None = None) -> Check:
@@ -617,7 +617,7 @@ def check_release_inputs(out: Path) -> dict:
     if problems:
         raise ReleaseError(f"{out / MANIFEST} {' and '.join(problems)}: a test build is never signed, verified "
                            "as a release or published; build the release with `tools/release.py build` from a tree "
-                           "with the production key in src/claude_multi/data/release-trust/allowed_signers and the "
+                           "with the production key in src/charmer/data/release-trust/allowed_signers and the "
                            "release locations in packaging/product.json")
     return manifest
 
@@ -701,7 +701,7 @@ def verify_draft(out: Path, *, repo: Path, allowed_signers: Path | None = None, 
         if installed.returncode != 0:
             raise ReleaseError(f"install.sh failed:\n{(installed.stdout + installed.stderr)[-2000:]}")
         installed_versions = {}
-        for name in ("claude-multi", "claude-multi-proxy"):
+        for name in ("charmer", "charmer-proxy"):
             launcher = home / ".local" / "bin" / name
             version = runner([str(launcher), "--version"], cwd=Path(root), env=environment)
             if version.returncode != 0 or not version.stdout.startswith(f"{name} {report['version']}"):
@@ -717,7 +717,7 @@ def verify_draft(out: Path, *, repo: Path, allowed_signers: Path | None = None, 
         walked = runner(["sh", str(journey), "installed", str(report["version"])], cwd=Path(root), env=steps,
                         process_group=True, timeout=JOURNEY_TIMEOUT)
         if walked.returncode != 0:
-            launcher = home / ".local" / "bin" / "claude-multi"
+            launcher = home / ".local" / "bin" / "charmer"
             if launcher.is_file():  # a gateway the failed journey started dies with this HOME
                 runner([str(launcher), "gateway", "stop"], cwd=Path(root), env=environment,
                        process_group=True, timeout=30)
@@ -857,7 +857,7 @@ def publish(out: Path, tag: str, *, repo: Path, repository: str | None = None,
     # a signature that does not match its checksums.
     check_draft(tag, files, **gh)
     expected = f"publish {version}"
-    if not confirm(f"Publish claude-multi {version} ({tag}, signed by {report['key']}) for everyone?", expected,
+    if not confirm(f"Publish charmer {version} ({tag}, signed by {report['key']}) for everyone?", expected,
                    stream=stream):
         raise Declined("not published")
     _gh(["release", "upload", tag, str(out / SIGNATURE), "--clobber"], **gh)

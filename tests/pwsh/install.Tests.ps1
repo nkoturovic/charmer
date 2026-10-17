@@ -58,6 +58,10 @@ Describe 'Invoke-Main' {
             $Arguments -contains $script:Url -and $Arguments -contains '1.0.0' -and $Arguments -contains $script:Checksum
         }
         Should -Invoke Invoke-WslInteractive -Times 1 -Exactly -ParameterFilter { $Arguments -contains 'setup' }
+        Should -Invoke Invoke-WslInteractive -Times 1 -Exactly -ParameterFilter {
+            $Arguments.Count -eq 7 -and $Arguments[4] -eq '--exec' -and $Arguments[5] -ceq '.local/bin/charmer' -and
+            $Arguments[6] -ceq 'setup'
+        }
     }
 
     It 'skips setup with -NoSetup' {

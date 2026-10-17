@@ -6,7 +6,7 @@
 LOG is the battery's output and N its exit status; FILE the pinned Claude
 Code the battery ran (read for its sha256 and size only, never copied);
 --modules the file listing the test modules it ran, one per line. The
-product's own positive-completion check (``claude_multi.upgrade``: every
+product's own positive-completion check (``charmer.upgrade``: every
 essential completion line, or a named alternative, at the start of a line)
 runs on the log. The log merges unittest's progress and test headers
 (stderr) with the probes' completion lines (stdout), so a completion line
@@ -46,9 +46,9 @@ REPO = Path(__file__).resolve().parents[2]
 SRC = REPO / "src"
 TESTS = REPO / "tests"
 MANIFEST_FORMAT = 1
-GATEWAY_ENV = "CLAUDE_MULTI_TEST_CLI_PROXY_API"
-BUILD_RECORD_ENV = "CLAUDE_MULTI_TEST_GATEWAY_BUILD"
-STARTUP_PROBE_ENV = "CLAUDE_MULTI_TEST_GATEWAY_STARTUP_PROBE"
+GATEWAY_ENV = "CHARMER_TEST_CLI_PROXY_API"
+BUILD_RECORD_ENV = "CHARMER_TEST_GATEWAY_BUILD"
+STARTUP_PROBE_ENV = "CHARMER_TEST_GATEWAY_STARTUP_PROBE"
 RUN_FIELDS = ("GITHUB_REPOSITORY", "GITHUB_WORKFLOW", "GITHUB_RUN_ID", "GITHUB_RUN_ATTEMPT", "GITHUB_JOB")
 # unittest's own output in a merged log: a verbose test header
 # ("test_x (tests.m.C.test_x)", then " ... " and the result), or a run of
@@ -103,9 +103,9 @@ def _file_identity(value: str | None) -> dict | None:
 
 def client_identity(client: Path) -> dict:
     _imports()
-    from claude_multi import pin, strict_json
+    from charmer import pin, strict_json
 
-    contract = strict_json.load(SRC / "claude_multi" / "data" / "catalog" / "native-contract.json")
+    contract = strict_json.load(SRC / "charmer" / "data" / "catalog" / "native-contract.json")
     platform = pin.host_platform()
     record = pin.platform_record(contract, platform) or {}
     sha256 = sha256_file(client) if client.is_file() else None
@@ -209,7 +209,7 @@ def evaluate(log_text: str, status: int, client: dict) -> tuple[list[str], list[
     """``(missing completion lines, problems)`` of one battery run."""
 
     _imports()
-    from claude_multi import upgrade
+    from charmer import upgrade
 
     missing = list(upgrade._missing_evidence_prefixes(record_lines(log_text)))
     problems = []
