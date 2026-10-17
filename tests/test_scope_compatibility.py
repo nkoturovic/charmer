@@ -6,6 +6,16 @@ That source differs from release 1.0.0 only in version metadata; the record
 therefore names 1.0.0. build_baseline is the pure, shared reproduction input,
 not a mock old renderer. The checked-in bytes keep tests independent of git
 history (including source archives and shallow release checkouts).
+
+The baselines were compiled under the product's earlier name; charmer
+compiles the same scope under its own. The comparisons therefore read the
+frozen bytes through the rename's name map (:func:`charmer_names`: the
+earlier name and environment prefix, from charmer.legacy) and recompute
+what the record derives from the renamed files (the launch fence, the
+applied hash and the diagnostics' generation line). What the retention judges, the
+presentation of the diagnostics, is untouched by the rename. A frozen
+scope read without the map no longer matches: its selectors moved
+(``test_the_frozen_scope_under_its_earlier_names_applies_at_the_next_resume``).
 """
 
 from __future__ import annotations
@@ -17,7 +27,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from charmer import catalog, compiler, operator, profile, scope, sessions, settings, state, strict_json, transition
+from charmer import (catalog, compiler, legacy, operator, profile, scope, sessions, settings, state, strict_json,
+                     transition)
 from charmer.cli import doctor
 from _catalog import FIXTURE_ROOT
 from _layout import FIXTURES_ROOT
@@ -97,14 +108,42 @@ def build_baseline(scenario):
     }
 
 
+def charmer_names(value):
+    """A frozen 1.0.0 artifact under the rename's name map (strings only)."""
+
+    if isinstance(value, str):
+        return value.replace(legacy.NAME, "charmer").replace(legacy.ENVIRONMENT_PREFIX, "CHARMER_")
+    if isinstance(value, dict):
+        return {charmer_names(key): charmer_names(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [charmer_names(item) for item in value]
+    return value
+
+
+def renamed_baseline(scenario):
+    """The frozen baseline of ``scenario`` under charmer's names (see the module docstring)."""
+
+    frozen = strict_json.load(FIXTURES / f"{scenario}-1.0.0.json")
+    fixture = charmer_names(frozen)
+    record = fixture["record"]
+    lineup_md = fixture["other_files"][scope.LINEUP_MD].encode("utf-8")
+    fixture["other_files"][scope.LINEUP_GEN] = scope.lineup_gen_line(record["lineup_generation"], lineup_md)
+    record["applied_hash"] = strict_json.bundle_digest(record["applied"])
+    record["launch_fence"] = sessions.launch_digest(
+        fixture["settings"], fixture["other_files"][scope.LEAD_SET_JSON].encode("utf-8"))
+    return frozen, fixture
+
+
 class ScopeCompatibilityTests(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory(prefix="scope-compatibility-")
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
 
-    def load(self, scenario="unknown-family"):
-        fixture = strict_json.load(FIXTURES / f"{scenario}-1.0.0.json")
+    def load(self, scenario="unknown-family", *, renamed=True):
+        frozen, fixture = renamed_baseline(scenario)
+        if not renamed:
+            fixture = frozen
         self.assertEqual(fixture["source_ref"], BASELINE_REF)
         self.record = fixture["record"]
         self.docs, self.prompts, _, _, _ = inputs(scenario)
@@ -282,6 +321,18 @@ class ScopeCompatibilityTests(unittest.TestCase):
                 result = self.expected()
                 self.assertFalse(result.diagnostics_kept)
                 self.assertTrue(scope.live_drift(self.live, result.plan))
+
+    def test_the_frozen_scope_under_its_earlier_names_applies_at_the_next_resume(self):
+        # Read without the name map, the 1.0.0 scope names the earlier
+        # selectors: the record-authoritative compile moves them, so the
+        # scope is never proven equal and the rename applies at the next resume.
+        for scenario in ("catalog", "unknown-family"):
+            with self.subTest(scenario=scenario):
+                self.load(scenario, renamed=False)
+                result = self.expected()
+                self.assertIsNone(result.plan)
+                self.assertIn(f"(recorded {legacy.SELECTOR_PREFIX}", result.reason)
+                self.assertIn("it applies at the next resume (charmer -r ", result.reason)
 
     def test_changed_binding_or_role_policy_is_not_presentation_compatibility(self):
         self.load()

@@ -1,7 +1,7 @@
 
   lineup — full details
   ─────────────────────────────────────────────────────────────────────────────
-  claude-multi — profile: balanced · follows profile · Fresh
+  charmer — profile: balanced · follows profile · Fresh
   Fixture seed balanced: frozen test data mirroring the shipped seed's slot
   families.
   lead: Opus 5.5 · effort ultracode · 1M class   workflows: native

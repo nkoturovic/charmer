@@ -45,7 +45,7 @@
     "workflows": "native"
   },
   "applied_hash": "sha256:5c57fe01eeeb72b8c51a0b606b3a04a2d6ea1bd1a2270e9bd4b9c3e28483a90a",
-  "catalog_hash": "sha256:ba572bfe05f9ce9c371e8911a8172f3374e40acfa650f7fa57f63923ce645f4a",
+  "catalog_hash": "sha256:9175e1540204ad4d33e09d84d7d9204829366290f3aabd84d07dbead0dab336c",
   "catalog_version": 31,
   "created_at": "2026-09-25T00:00:00Z",
   "cwd": "/project",
@@ -55,7 +55,7 @@
   "last_event_source": null,
   "last_seen_at": "2026-09-25T00:00:00Z",
   "launch_epoch": 1,
-  "launch_fence": "sha256:ed73010388ece998cad14a830eb42aa22bfdc034819d3518ebccd6109521adf7",
+  "launch_fence": "sha256:49d9dda67f4e69bdf61ca11046d760fa1f0a09662cdae52d6c71d69c3f78e572",
   "launcher_version": "2.25.1",
   "lead_class": "large",
   "lineup_generation": 1,

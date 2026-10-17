@@ -1,5 +1,5 @@
 
-  claude-multi — profile: balanced · follows profile · Fresh
+  charmer — profile: balanced · follows profile · Fresh
   ─────────────────────────────────────────────────────────────────────────────
   lead      Opus 5.5 · effort ultracode · 1M class   workflows: native
   context   window 800K (lead and agents) · compacts at ~702K (90 %)

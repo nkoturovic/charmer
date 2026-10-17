@@ -1,9 +1,9 @@
 
-  claude-multi — Get started
+  charmer — Get started
   ─────────────────────────────────────────────────────────────────────────────
-  Connect a provider and claude-multi picks a profile that uses it. Nothing is
-  saved until you confirm. claude-multi is an independent tool, not affiliated
-  with Anthropic or OpenAI.
+  Connect a provider and charmer picks a profile that uses it. Nothing is
+  saved until you confirm. charmer is an independent tool, not affiliated with
+  Anthropic or OpenAI.
 
     1 Check this computer     ✓ ready
     2 Claude Code 2.1.0       ✓ verified copy

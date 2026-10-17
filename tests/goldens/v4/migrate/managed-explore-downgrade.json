@@ -27,7 +27,7 @@
       "env": {},
       "generation": "5.5",
       "key": "opus55",
-      "selector": "claude-multi-opus-5-5[1m]"
+      "selector": "charmer-opus-5-5[1m]"
     },
     "lead_providers": [
       "anthropic",
@@ -60,7 +60,7 @@
     "settings_overrides": {},
     "workflows": "native"
   },
-  "applied_hash": "sha256:85e260e087a6fefd859a716bce9ef912a85c6264c15d1688679e3a487990b2a2",
+  "applied_hash": "sha256:2bb53f644f11adc6d1dd0b4b247eb7b43bc5ade2e61abecd04849c5ee0bf8c48",
   "catalog_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
   "catalog_version": 31,
   "created_at": "2026-09-01T00:00:00Z",

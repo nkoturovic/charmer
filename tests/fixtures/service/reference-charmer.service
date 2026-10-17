@@ -1,0 +1,57 @@
+# The reference supervised unit (reference.service) under the charmer names: the
+# product name and the environment prefix translated, every directive
+# otherwise the historical one's (test_gateway_service checks both).
+[Install]
+WantedBy=default.target
+
+[Service]
+BindPaths=%h/.local/share/charmer/auth
+BindPaths=%h/.local/share/charmer/traces
+BindPaths=%h/.local/state/charmer/gateway
+BindReadOnlyPaths=%h/.config/charmer
+BindReadOnlyPaths=%h/.local/share/charmer
+BindReadOnlyPaths=%h/.local/share/charmer-release
+BindReadOnlyPaths=%h/.local/state/charmer
+ExecReload=+%h/.local/share/charmer-release/current/bin/charmer-proxy init --reload-check --state-root %h/.local/state/charmer
+ExecStart=%h/.local/share/charmer-release/current/bin/charmer-proxy run --prepared --state-root %h/.local/state/charmer
+ExecStartPre=+%h/.local/share/charmer-release/current/bin/charmer-proxy init --prepare-start --state-root %h/.local/state/charmer
+LimitCORE=0
+LockPersonality=true
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectControlGroups=true
+ProtectHome=tmpfs
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+Restart=on-failure
+RestartSec=5s
+RestrictAddressFamilies=AF_UNIX
+RestrictAddressFamilies=AF_INET
+RestrictAddressFamilies=AF_INET6
+RestrictAddressFamilies=AF_NETLINK
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+SystemCallArchitectures=native
+SystemCallErrorNumber=EPERM
+SystemCallFilter=@system-service
+Type=simple
+UMask=0077
+UnsetEnvironment=XDG_CONFIG_HOME
+UnsetEnvironment=CHARMER_SECRET_ENV
+WorkingDirectory=-%h/.local/state/charmer/gateway
+
+[Unit]
+After=network-online.target
+Description=charmer local model gateway
+OnFailure=cli-proxy-api-failure.service
+StartLimitBurst=5
+StartLimitIntervalSec=300
+Wants=network-online.target
+X-Reload-Triggers=/nix/store/00000000000000000000000000000000-charmer
+X-Restart-Triggers=/nix/store/00000000000000000000000000000000-cli-proxy-api
+X-Restart-Triggers=0000000000000000000000000000000000000000000000000000000000000000

@@ -1,21 +1,21 @@
-# claude-multi lineup (lineup_generation 1)
+# charmer lineup (lineup_generation 1)
 
 Profile: balanced · lead class large (1M) · providers: openai 6 · anthropic 2 (+lead)
 
 ## Lead
-- lead: Opus 5.5 · 1M selector · ultracode · anthropic · `claude-multi-opus-5-5[1m]`
+- lead: Opus 5.5 · 1M selector · ultracode · anthropic · `charmer-opus-5-5[1m]`
 - /model offers only the lead set (16 entries); any other model needs a relaunch with another profile.
 - /model's built-in Default row is `claude-opus-4-8[1m]`, outside this lead set; it is refused.
 
 ## Agents
 - `cm-explorer`: GPT-5.6 Sol · high · openai · `gpt-multi-sol-high[1m]`
 - `cm-analyst`: GPT-5.6 Sol · high · openai · `gpt-multi-sol-high[1m]`
-- `cm-analyst-strong`: Opus 5.5 · 1M selector · xhigh · anthropic · `claude-multi-opus-5-5[1m]` · not a step up from the lead
+- `cm-analyst-strong`: Opus 5.5 · 1M selector · xhigh · anthropic · `charmer-opus-5-5[1m]` · not a step up from the lead
 - `cm-implementer-light`: GPT-5.6 Sol · high · openai · `gpt-multi-sol-high[1m]`
 - `cm-implementer`: GPT-5.6 Sol · high · openai · `gpt-multi-sol-high[1m]`
 - `cm-implementer-strong`: GPT-5.6 Sol · xhigh · openai · `gpt-multi-sol-xhigh[1m]`
 - `cm-reviewer`: GPT-5.6 Sol · xhigh · openai · `gpt-multi-sol-xhigh[1m]`
-- `cm-reviewer-strong`: Opus 5.5 · 1M selector · xhigh · anthropic · `claude-multi-opus-5-5[1m]` · not a step up from the lead
+- `cm-reviewer-strong`: Opus 5.5 · 1M selector · xhigh · anthropic · `charmer-opus-5-5[1m]` · not a step up from the lead
 - not bound: `cm-designer`
 
 ## Provider exhaustion

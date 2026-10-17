@@ -1,6 +1,6 @@
 
-  claude-multi — profile: blocked · follows profile · Fresh
-               Fixture seed balanced: frozen test data mirroring the shipped s…
+  charmer — profile: blocked · follows profile · Fresh
+          Fixture seed balanced: frozen test data mirroring the shipped seed's…
   ─────────────────────────────────────────────────────────────────────────────
   health    gateway ok · Claude 2.1.281 · catalog 31
 

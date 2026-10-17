@@ -1,6 +1,6 @@
 
-  claude-multi — profile: direct · follows profile · Fresh
-               Fixture seed direct: frozen test data mirroring the shipped see…
+  charmer — profile: direct · follows profile · Fresh
+          Fixture seed direct: frozen test data mirroring the shipped seed's s…
   ─────────────────────────────────────────────────────────────────────────────
   lead      Opus 5.5 · effort ultracode · 1M class   workflows: native
   context   window 800K · compacts at ~702K (90 %)

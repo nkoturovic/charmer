@@ -5,13 +5,13 @@
         "effort": "max",
         "generation": "3",
         "key": "kimi-k3",
-        "selector": "claude-multi-kimi-k3[1m]"
+        "selector": "charmer-kimi-k3[1m]"
       },
       "cm-explorer": {
         "effort": "max",
         "generation": "3",
         "key": "kimi-k3",
-        "selector": "claude-multi-kimi-k3[1m]"
+        "selector": "charmer-kimi-k3[1m]"
       },
       "cm-implementer": {
         "effort": "high",
@@ -29,7 +29,7 @@
         "effort": "xhigh",
         "generation": "5",
         "key": "opus5",
-        "selector": "claude-multi-opus-5[1m]"
+        "selector": "charmer-opus-5[1m]"
       }
     },
     "lead": {
@@ -45,7 +45,7 @@
       "env": {},
       "generation": "5.5",
       "key": "opus55",
-      "selector": "claude-multi-opus-5-5[1m]"
+      "selector": "charmer-opus-5-5[1m]"
     },
     "lead_providers": [
       "anthropic",
@@ -79,7 +79,7 @@
     "settings_overrides": {},
     "workflows": "native"
   },
-  "applied_hash": "sha256:8a6a7aae9a5811d713580ba00ea5bb64bcf76e75f79bd350d10724f62a1afaed",
+  "applied_hash": "sha256:d0d2e8eac60a599783268aff643b9b89f3b360bdf93d2416d4c2db4303ec2642",
   "catalog_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
   "catalog_version": 31,
   "created_at": "2026-09-01T00:00:00Z",

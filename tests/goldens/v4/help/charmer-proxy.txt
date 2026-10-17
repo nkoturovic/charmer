@@ -1,6 +1,6 @@
-usage: claude-multi-proxy COMMAND [ARGS]
+usage: charmer-proxy COMMAND [ARGS]
 
-The claude-multi local gateway (CLIProxyAPI, loopback only).
+The charmer local gateway (CLIProxyAPI, loopback only).
 
 commands:
   init [--reload-check | --start-check | --prepare-start] [--state-root /abs]
@@ -14,8 +14,8 @@ commands:
                                   exec the gateway, holding the single-instance lock across exec;
                                   --prepared verifies init output read-only; --prepare-and-exec
                                   prepares like init --prepare-start, then execs in one process
-  claude-login [--state-root /abs]        sign in to a Claude account (use claude-multi providers sign-in anthropic)
-  codex-device-login [--state-root /abs]  sign in to a ChatGPT account (use claude-multi providers sign-in openai)
+  claude-login [--state-root /abs]        sign in to a Claude account (use charmer providers sign-in anthropic)
+  codex-device-login [--state-root /abs]  sign in to a ChatGPT account (use charmer providers sign-in openai)
   snapshot-auth [--restore NAME]   copy the auth dir aside / restore it (gateway stopped)
   -v, --version                   print the version
 
@@ -28,4 +28,4 @@ run --prepared exits 1 if preparation is absent/stale; it never writes config.
 run exits 75 while another gateway instance holds the lock.
 Every command exits 130 when it is interrupted (Ctrl-C).
 
-The local gateway: claude-multi gateway status (also start, stop, restart, logs).
+The local gateway: charmer gateway status (also start, stop, restart, logs).

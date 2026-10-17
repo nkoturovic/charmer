@@ -1,0 +1,9 @@
+# The reference supervised unit (reference-failure.service) under the charmer names: the
+# product name and the environment prefix translated, every directive
+# otherwise the historical one's (test_gateway_service checks both).
+[Service]
+ExecStart=-/nix/store/00000000000000000000000000000000-libnotify/bin/notify-send --urgency=critical --app-name=charmer 'charmer gateway failed' 'The gateway service stopped after repeated failures. Why: systemctl --user show -p ActiveState,Result,ExecMainStatus cli-proxy-api · recover: systemctl --user reset-failed cli-proxy-api && systemctl --user start cli-proxy-api · status 226/NAMESPACE (a missing directory): systemd-tmpfiles --user --create ~/.config/user-tmpfiles.d/charmer.conf first'
+Type=oneshot
+
+[Unit]
+Description=charmer gateway failure notice

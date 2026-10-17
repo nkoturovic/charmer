@@ -92,11 +92,11 @@
       "efforts": {
         "high": {
           "proxy_contract": "output-config-high",
-          "selector": "claude-multi-grok46-high"
+          "selector": "charmer-grok46-high"
         },
         "xhigh": {
           "proxy_contract": "output-config-xhigh",
-          "selector": "claude-multi-grok46-xhigh"
+          "selector": "charmer-grok46-xhigh"
         }
       },
       "family": "x-ai",
@@ -137,7 +137,7 @@
       "efforts": {
         "max": {
           "proxy_contract": "output-config-max",
-          "selector": "claude-multi-kimi-k3[1m]"
+          "selector": "charmer-kimi-k3[1m]"
         }
       },
       "generation": "3",
@@ -190,7 +190,7 @@
         "cm-reviewer"
       ],
       "routing_note": "Fixture line opus: frozen test data, never re-synced from the shipped catalog.",
-      "selector": "claude-multi-opus-4-8[1m]",
+      "selector": "charmer-opus-4-8[1m]",
       "status": "active",
       "wire_model": "claude-opus-4-8"
     },
@@ -226,7 +226,7 @@
       "registry_overlay": null,
       "roles": "all",
       "routing_note": "Fixture line opus5: frozen test data, never re-synced from the shipped catalog.",
-      "selector": "claude-multi-opus-5[1m]",
+      "selector": "charmer-opus-5[1m]",
       "status": "active",
       "wire_model": "claude-opus-5"
     },
@@ -262,7 +262,7 @@
       "registry_overlay": null,
       "roles": "all",
       "routing_note": "Fixture line opus55: frozen test data, never re-synced from the shipped catalog.",
-      "selector": "claude-multi-opus-5-5[1m]",
+      "selector": "charmer-opus-5-5[1m]",
       "status": "active",
       "wire_model": "claude-opus-5-5"
     },
@@ -285,11 +285,11 @@
       "efforts": {
         "high": {
           "proxy_contract": "output-config-high",
-          "selector": "claude-multi-or-deepseek-high[1m]"
+          "selector": "charmer-or-deepseek-high[1m]"
         },
         "xhigh": {
           "proxy_contract": "output-config-xhigh",
-          "selector": "claude-multi-or-deepseek-xhigh[1m]"
+          "selector": "charmer-or-deepseek-xhigh[1m]"
         }
       },
       "family": "deepseek",
@@ -328,11 +328,11 @@
       "efforts": {
         "high": {
           "proxy_contract": "output-config-high",
-          "selector": "claude-multi-or-gemini-high[1m]"
+          "selector": "charmer-or-gemini-high[1m]"
         },
         "xhigh": {
           "proxy_contract": "output-config-xhigh",
-          "selector": "claude-multi-or-gemini-xhigh[1m]"
+          "selector": "charmer-or-gemini-xhigh[1m]"
         }
       },
       "family": "google",
@@ -371,11 +371,11 @@
       "efforts": {
         "high": {
           "proxy_contract": "output-config-high",
-          "selector": "claude-multi-or-gpt-high[1m]"
+          "selector": "charmer-or-gpt-high[1m]"
         },
         "xhigh": {
           "proxy_contract": "output-config-xhigh",
-          "selector": "claude-multi-or-gpt-xhigh[1m]"
+          "selector": "charmer-or-gpt-xhigh[1m]"
         }
       },
       "family": "openai",
@@ -414,11 +414,11 @@
       "efforts": {
         "high": {
           "proxy_contract": "output-config-high",
-          "selector": "claude-multi-or-grok-high"
+          "selector": "charmer-or-grok-high"
         },
         "xhigh": {
           "proxy_contract": "output-config-xhigh",
-          "selector": "claude-multi-or-grok-xhigh"
+          "selector": "charmer-or-grok-xhigh"
         }
       },
       "family": "x-ai",
@@ -457,11 +457,11 @@
       "efforts": {
         "high": {
           "proxy_contract": "output-config-high",
-          "selector": "claude-multi-or-opus-high[1m]"
+          "selector": "charmer-or-opus-high[1m]"
         },
         "xhigh": {
           "proxy_contract": "output-config-xhigh",
-          "selector": "claude-multi-or-opus-xhigh[1m]"
+          "selector": "charmer-or-opus-xhigh[1m]"
         }
       },
       "family": "anthropic",
@@ -512,7 +512,7 @@
       "registry_overlay": null,
       "roles": [],
       "routing_note": "Fixture line qwen-flash-next: frozen test data, never re-synced from the shipped catalog.",
-      "selector": "claude-multi-qwen-flash-next",
+      "selector": "charmer-qwen-flash-next",
       "status": "active",
       "wire_model": "qwen3.8-flash-next"
     },
@@ -535,7 +535,7 @@
       "efforts": {
         "max": {
           "proxy_contract": "reasoning-effort-xhigh",
-          "selector": "claude-multi-qwen38-max[1m]"
+          "selector": "charmer-qwen38-max[1m]"
         }
       },
       "generation": "3.8",

@@ -56,6 +56,18 @@
           }
         }
       }
+    },
+    "renamed": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["selector", "since_catalog"],
+        "additionalProperties": false,
+        "properties": {
+          "selector": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*(\\[1m\\])?$" },
+          "since_catalog": { "type": "integer", "minimum": 1 }
+        }
+      }
     }
   }
 }

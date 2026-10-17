@@ -1,7 +1,7 @@
 ---
 name: cm-analyst-strong
 description: "Evidence-backed analysis for ambiguous, cross-cutting or high-stakes questions. Only when you cannot write an exact spec or an error is costly; several times the cost. Final text is the report deliverable; no file edits. Managed cm session: if a selected cm-* type is unavailable, stop; never substitute a generic agent."
-model: claude-multi-opus-5-5[1m]
+model: charmer-opus-5-5[1m]
 effort: xhigh
 ---
 

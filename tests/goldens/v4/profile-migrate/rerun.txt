@@ -1,4 +1,4 @@
-claude-multi profile migrate --apply: config /config
+charmer profile migrate --apply: config /config
 catalog 31 (launcher 2.25.1); state marker absent (state 3)
 compositions: 7 files in /config/compositions (0 unreadable)
 profiles: 10 user files; seeds absent 0 (none)

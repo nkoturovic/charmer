@@ -17,7 +17,7 @@
     openrouter Opus 5.5               1M     effort [xhigh]
   /model in-session: every model in the same class
   Claude account not signed in — Enter offers the sign-in (personal use)
-  in-session: /model claude-multi-opus-5-5[1m]
+  in-session: /model charmer-opus-5-5[1m]
 
 
 

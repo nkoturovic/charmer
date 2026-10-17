@@ -12,8 +12,8 @@
       "reason": "Fixture retired line: frozen test data.",
       "roles": "all",
       "selectors": {
-        "claude-multi-muse-spark-high[1m]": "output-config-high",
-        "claude-multi-muse-spark-xhigh[1m]": "output-config-xhigh"
+        "charmer-muse-spark-high[1m]": "output-config-high",
+        "charmer-muse-spark-xhigh[1m]": "output-config-xhigh"
       },
       "since_catalog": 31,
       "successor": null

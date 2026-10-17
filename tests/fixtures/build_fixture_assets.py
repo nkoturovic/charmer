@@ -27,7 +27,10 @@ What this recipe (re)writes (catalog v2):
   catalog-32 file (NOT the shipped catalog: catalog 33 renamed or removed
   most of them), prose neutralised, converted to models v2 with
   ``tests/fixtures/convert_models_v1_to_v2.py`` and the
-  ``GENERATIONS`` table below; every line ``status: active``.
+  ``GENERATIONS`` table below; every line ``status: active``. Its
+  catalog-32 selectors carry the old product prefix
+  (``charmer.legacy.SELECTOR_PREFIX``); the recipe gives them the current
+  ``charmer-`` prefix (same rest, ``[1m]`` included), as catalog 39 did.
 - ``catalog/models.json`` also carries the aggregator line class: the
   ``FAMILIES`` table gives ``grok46`` its declared family, and the
   ``AGGREGATOR_LINES`` literal adds five OpenRouter lines of declared
@@ -71,10 +74,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(1, str(Path(__file__).resolve().parent.parent))  # tests/, for _layout
+sys.path.insert(2, str(Path(__file__).resolve().parents[2] / "src"))  # charmer.legacy
 
 from _layout import FIXTURES_ROOT, RESOURCES_ROOT  # noqa: E402
 
 from convert_models_v1_to_v2 import v1_to_v2_entry  # noqa: E402
+
+from charmer import legacy  # noqa: E402
 
 if len(sys.argv) < 2:
     sys.exit(__doc__)
@@ -103,6 +109,25 @@ KEEP = [
 ]
 # Declared families of the aggregator lines (models v2 ``family``).
 FAMILIES = {"grok46": "x-ai"}
+# The selector prefix the fixture lines carry (catalog 39's).
+SELECTOR_PREFIX = "charmer-"
+
+
+def _current_selector(selector):
+    """A frozen catalog-32 selector under the current prefix."""
+
+    if selector.startswith(legacy.SELECTOR_PREFIX):
+        return SELECTOR_PREFIX + selector[len(legacy.SELECTOR_PREFIX):]
+    return selector
+
+
+def _current_selectors(entry):
+    if "selector" in entry:
+        entry["selector"] = _current_selector(entry["selector"])
+    if isinstance(entry.get("efforts"), dict):
+        for spec in entry["efforts"].values():
+            spec["selector"] = _current_selector(spec["selector"])
+    return entry
 
 
 def _aggregator_line(key, family, wire, display, generation, default_effort, tokens=1000000):
@@ -124,7 +149,7 @@ def _aggregator_line(key, family, wire, display, generation, default_effort, tok
         "default_effort": default_effort,
         "display": display,
         "efforts": {
-            level: {"proxy_contract": f"output-config-{level}", "selector": f"charmer-{key}-{level}{suffix}"}
+            level: {"proxy_contract": f"output-config-{level}", "selector": f"{SELECTOR_PREFIX}{key}-{level}{suffix}"}
             for level in ("high", "xhigh")
         },
         "family": family,
@@ -260,7 +285,8 @@ for key in KEEP:
     entry = copy.deepcopy(models[key])
     entry["routing_note"] = f"Fixture line {key}: frozen test data, never re-synced from the shipped catalog."
     entry["context"]["qualification"] = "Fixture context; not benchmark-verified."
-    fixture_models[key] = v1_to_v2_entry(key, entry, providers[entry["provider"]], GENERATIONS[key])
+    fixture_models[key] = _current_selectors(
+        v1_to_v2_entry(key, entry, providers[entry["provider"]], GENERATIONS[key]))
     if key in FAMILIES:
         fixture_models[key]["family"] = FAMILIES[key]
 fixture_models.update(copy.deepcopy(AGGREGATOR_LINES))

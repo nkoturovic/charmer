@@ -14,7 +14,7 @@
     qwen       on key set                               1      1/1    cat n/a
   transport: oauth-pool
   sign-in failing — L signs in again (personal use)
-  claude#1 · 12m · +1 more (claude-multi quota) · 5h 42% (resets 16:00) · 7d 1…
+  claude#1 · 12m · +1 more (charmer quota) · 5h 42% (resets 16:00) · 7d 18% (r…
 
 
 

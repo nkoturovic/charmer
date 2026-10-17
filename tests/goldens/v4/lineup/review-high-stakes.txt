@@ -1,4 +1,4 @@
-claude-multi · /cm review high-stakes · lineup gen 1 · range: HEAD~3..HEAD
+charmer · /cm review high-stakes · lineup gen 1 · range: HEAD~3..HEAD
 Review routing (this session's lineup.md):
   | Author | Normal change | High-stakes change |
   |---|---|---|

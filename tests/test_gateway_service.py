@@ -1,7 +1,9 @@
 """The supervised gateway service: unit rendering, reference parity, the hand-offs.
 
 The renderer is checked against the reference unit (every hardening and
-lifecycle directive identical). Install, refresh and uninstall run against a
+lifecycle directive identical): the historical one under the charmer names
+(``reference-charmer*.service``, itself checked to be exactly that
+translation of ``reference*.service``). Install, refresh and uninstall run against a
 stub user service manager and the lifecycle's fake gateway world in a
 temporary HOME: nothing here reaches the developer's service manager, units,
 garbage-collector roots or gateway.
@@ -25,7 +27,7 @@ from _catalog import FIXTURE_ROOT
 from _layout import REPO_ROOT, RESOURCES_ROOT
 from _layout import SERVICE_SPEC
 from charmer import (cli, endpoint, gateway_inhibition, gateway_lifecycle as gl, gateway_service as gs, installs,
-                          secret_store, service, state)
+                          legacy, secret_store, service, state)
 from charmer.platform import linux_service, observation, systemd_unit
 from test_gateway_lifecycle import World, _Lifecycle, save_line
 
@@ -74,8 +76,19 @@ class RenderTests(unittest.TestCase):
     def reference_plan(self) -> systemd_unit.UnitPlan:
         return systemd_unit.UnitPlan(**REFERENCE_PLAN, notice=service.failure_notice("cli-proxy-api"))
 
+    def test_the_charmer_references_are_the_historical_ones_renamed(self) -> None:
+        # Every directive of the historical reference units, with only the
+        # product name and the environment prefix translated.
+        for historical, current in (("reference.service", "reference-charmer.service"),
+                                    ("reference-failure.service", "reference-charmer-failure.service")):
+            with self.subTest(reference=historical):
+                old = (FIXTURES / historical).read_text()
+                self.assertIn(legacy.NAME, old)
+                renamed = old.replace(legacy.NAME, "charmer").replace(legacy.ENVIRONMENT_PREFIX, "CHARMER_")
+                self.assertEqual(directives((FIXTURES / current).read_text()), directives(renamed))
+
     def test_every_hardening_and_lifecycle_directive_matches_the_reference(self) -> None:
-        reference = (FIXTURES / "reference.service").read_text()
+        reference = (FIXTURES / "reference-charmer.service").read_text()
         rendered = systemd_unit.render(spec(), self.reference_plan())
         self.assertEqual(set(rendered), {"cli-proxy-api.service", "cli-proxy-api-failure.service"})
         self.assertEqual({key for key, _ in systemd_unit.parse(reference)["Unit"]} & REFERENCE_ONLY, REFERENCE_ONLY)
@@ -88,7 +101,7 @@ class RenderTests(unittest.TestCase):
                              sum(1 for k, _ in systemd_unit.parse(reference)["Service"] if k == key), key)
 
     def test_the_failure_notice_unit_matches_except_its_text(self) -> None:
-        reference = systemd_unit.parse((FIXTURES / "reference-failure.service").read_text())
+        reference = systemd_unit.parse((FIXTURES / "reference-charmer-failure.service").read_text())
         rendered = systemd_unit.parse(
             systemd_unit.render(spec(), self.reference_plan())["cli-proxy-api-failure.service"])
         self.assertEqual(rendered["Unit"], reference["Unit"])

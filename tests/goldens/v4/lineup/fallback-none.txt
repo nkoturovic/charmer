@@ -1,2 +1,2 @@
-claude-multi: fallback kimi: no complete fallback profile is available.
+charmer: fallback kimi: no complete fallback profile is available.
 Create or edit a profile with primary_provider "kimi" and bindings for the current roles.

@@ -26,4 +26,4 @@
 
 - Managed session: 11111111-1111-4111-8111-111111111111.
 - If a selected cm-* type is unavailable, stop delegation. Never substitute a native or generic agent.
-- Exact relaunch after interruption: ask the user to run `claude-multi -r 11111111-1111-4111-8111-111111111111`.
+- Exact relaunch after interruption: ask the user to run `charmer -r 11111111-1111-4111-8111-111111111111`.

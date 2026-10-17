@@ -1,5 +1,5 @@
 
-  claude-multi — profile: balanced · follows profile · Resume 11111111 · lineup gen 2
+  charmer — profile: balanced · follows profile · Resume 11111111 · lineup gen 2
   ──────────────────────────────────────────────────────────────────────────────
   lead      Opus 5.5 · effort ultracode · 1M class   workflows: native
   context   window 800K (lead and agents) · compacts at ~702K (90 %)

@@ -1,4 +1,4 @@
-claude-multi · /cm review normal · lineup gen 1 · range: working tree against HEAD
+charmer · /cm review normal · lineup gen 1 · range: working tree against HEAD
 Review routing (this session's lineup.md):
   | Author | Normal change | High-stakes change |
   |---|---|---|

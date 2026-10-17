@@ -1,9 +1,9 @@
-# claude-multi lineup (lineup_generation 1)
+# charmer lineup (lineup_generation 1)
 
 Profile: direct · lead class large (1M) · providers: anthropic 0 (+lead)
 
 ## Lead
-- lead: Opus 5.5 · 1M selector · ultracode · anthropic · `claude-multi-opus-5-5[1m]`
+- lead: Opus 5.5 · 1M selector · ultracode · anthropic · `charmer-opus-5-5[1m]`
 - /model offers only the lead set (4 entries); any other model needs a relaunch with another profile.
 - /model's built-in Default row is `claude-opus-4-8[1m]`, outside this lead set; it is refused.
 

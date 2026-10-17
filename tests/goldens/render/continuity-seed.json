@@ -1,6 +1,6 @@
 {
   "aliases": {
-    "claude-multi-muse-spark-high": {
+    "charmer-muse-spark-high": {
       "context_tokens": 1000000,
       "display": "Muse Spark 1.3",
       "provider": "meta",
@@ -9,7 +9,7 @@
       "source": "seed:muse-spark",
       "wire": "muse-spark-1.3"
     },
-    "claude-multi-muse-spark-xhigh": {
+    "charmer-muse-spark-xhigh": {
       "context_tokens": 1000000,
       "display": "Muse Spark 1.3",
       "provider": "meta",

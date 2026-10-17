@@ -18,7 +18,7 @@
 
 
   ─
-  ~/.config/claude-multi/profiles/broken.json line 3: $: invalid JSON at line …
+  ~/.config/charmer/profiles/broken.json line 3: $: invalid JSON at line 3 col…
   cannot be loaded — E edits the file, X deletes it (a copy is kept)
 
   E edit file · X delete · N new · ? help · Esc back

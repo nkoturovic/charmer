@@ -1,7 +1,7 @@
 {
   "catalog_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
   "catalog_version": 31,
-  "composition_hash": "sha256:d3d3cc4fe9ad4758bac7e5cd9c2c4208f8fbc302d2c97dfd7b3b834569449eec",
+  "composition_hash": "sha256:12563799b3025101770184e1b08291d18f29130dca982a7d7f51d4af96ab0e6b",
   "composition_name": "opus-sol",
   "created_at": "2026-09-01T00:00:00Z",
   "cwd": "/project/moved",
@@ -47,7 +47,7 @@
     "lead": {
       "auto_compact_tokens": 702000,
       "client_context_tokens": 1000000,
-      "client_selector": "claude-multi-opus-5-5[1m]",
+      "client_selector": "charmer-opus-5-5[1m]",
       "effort": "ultracode",
       "env": {},
       "model": "opus55",
@@ -69,7 +69,7 @@
         "role": "cm-analyst"
       },
       {
-        "client_selector": "claude-multi-kimi-k3[1m]",
+        "client_selector": "charmer-kimi-k3[1m]",
         "id": "cm-analyst-kimi-k3-max",
         "lane": "max",
         "model": "kimi-k3",
@@ -85,7 +85,7 @@
         "role": "cm-implementer"
       },
       {
-        "client_selector": "claude-multi-kimi-k3[1m]",
+        "client_selector": "charmer-kimi-k3[1m]",
         "id": "cm-implementer-kimi-k3-max",
         "lane": "max",
         "model": "kimi-k3",
@@ -101,7 +101,7 @@
         "role": "cm-reviewer"
       },
       {
-        "client_selector": "claude-multi-opus-5-5[1m]",
+        "client_selector": "charmer-opus-5-5[1m]",
         "id": "cm-reviewer-opus55-xhigh",
         "lane": "xhigh",
         "model": "opus55",

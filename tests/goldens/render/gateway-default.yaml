@@ -9,7 +9,7 @@ remote-management:
   secret-key: ""
   disable-control-panel: true
   disable-auto-update-panel: true
-auth-dir: "/home/test/.local/share/claude-multi/auth"
+auth-dir: "/home/test/.local/share/charmer/auth"
 api-keys:
   - "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 debug: false
@@ -68,15 +68,15 @@ oauth-model-alias:
       force-mapping: true
       fork: true
     - name: "claude-opus-4-8"
-      alias: "claude-multi-opus-4-8"
+      alias: "charmer-opus-4-8"
       force-mapping: true
       fork: true
     - name: "claude-opus-5"
-      alias: "claude-multi-opus-5"
+      alias: "charmer-opus-5"
       force-mapping: true
       fork: true
     - name: "claude-opus-5-5"
-      alias: "claude-multi-opus-5-5"
+      alias: "charmer-opus-5-5"
       force-mapping: true
       fork: true
   codex:
@@ -100,7 +100,7 @@ claude-api-key:
       mode: "never"
     models:
       - name: "k3"
-        alias: "claude-multi-kimi-k3"
+        alias: "charmer-kimi-k3"
         display-name: "Kimi K3 · 1M selector"
         owned-by: "moonshot"
         context-length: 1000000
@@ -111,13 +111,13 @@ claude-api-key:
       mode: "never"
     models:
       - name: "muse-spark-1.3"
-        alias: "claude-multi-muse-spark-high"
+        alias: "charmer-muse-spark-high"
         display-name: "Muse Spark 1.3"
         owned-by: "meta"
         context-length: 1000000
         force-mapping: true
       - name: "muse-spark-1.3"
-        alias: "claude-multi-muse-spark-xhigh"
+        alias: "charmer-muse-spark-xhigh"
         display-name: "Muse Spark 1.3"
         owned-by: "meta"
         context-length: 1000000
@@ -129,73 +129,73 @@ claude-api-key:
       mode: "never"
     models:
       - name: "x-ai/grok-4.6"
-        alias: "claude-multi-grok46-high"
+        alias: "charmer-grok46-high"
         display-name: "Grok 4.6"
         owned-by: "x-ai"
         context-length: 500000
         force-mapping: true
       - name: "x-ai/grok-4.6"
-        alias: "claude-multi-grok46-xhigh"
+        alias: "charmer-grok46-xhigh"
         display-name: "Grok 4.6"
         owned-by: "x-ai"
         context-length: 500000
         force-mapping: true
       - name: "deepseek/deepseek-v4-flash"
-        alias: "claude-multi-or-deepseek-high"
+        alias: "charmer-or-deepseek-high"
         display-name: "DeepSeek V4 Flash · OpenRouter"
         owned-by: "deepseek"
         context-length: 1000000
         force-mapping: true
       - name: "deepseek/deepseek-v4-flash"
-        alias: "claude-multi-or-deepseek-xhigh"
+        alias: "charmer-or-deepseek-xhigh"
         display-name: "DeepSeek V4 Flash · OpenRouter"
         owned-by: "deepseek"
         context-length: 1000000
         force-mapping: true
       - name: "google/gemini-3-flash"
-        alias: "claude-multi-or-gemini-high"
+        alias: "charmer-or-gemini-high"
         display-name: "Gemini 3 Flash · OpenRouter"
         owned-by: "google"
         context-length: 1000000
         force-mapping: true
       - name: "google/gemini-3-flash"
-        alias: "claude-multi-or-gemini-xhigh"
+        alias: "charmer-or-gemini-xhigh"
         display-name: "Gemini 3 Flash · OpenRouter"
         owned-by: "google"
         context-length: 1000000
         force-mapping: true
       - name: "openai/gpt-6-sol"
-        alias: "claude-multi-or-gpt-high"
+        alias: "charmer-or-gpt-high"
         display-name: "GPT-6 Sol · OpenRouter"
         owned-by: "openai"
         context-length: 1000000
         force-mapping: true
       - name: "openai/gpt-6-sol"
-        alias: "claude-multi-or-gpt-xhigh"
+        alias: "charmer-or-gpt-xhigh"
         display-name: "GPT-6 Sol · OpenRouter"
         owned-by: "openai"
         context-length: 1000000
         force-mapping: true
       - name: "x-ai/grok-4.7"
-        alias: "claude-multi-or-grok-high"
+        alias: "charmer-or-grok-high"
         display-name: "Grok 4.7 · OpenRouter"
         owned-by: "x-ai"
         context-length: 500000
         force-mapping: true
       - name: "x-ai/grok-4.7"
-        alias: "claude-multi-or-grok-xhigh"
+        alias: "charmer-or-grok-xhigh"
         display-name: "Grok 4.7 · OpenRouter"
         owned-by: "x-ai"
         context-length: 500000
         force-mapping: true
       - name: "anthropic/claude-opus-5.5"
-        alias: "claude-multi-or-opus-high"
+        alias: "charmer-or-opus-high"
         display-name: "Opus 5.5 · OpenRouter"
         owned-by: "anthropic"
         context-length: 1000000
         force-mapping: true
       - name: "anthropic/claude-opus-5.5"
-        alias: "claude-multi-or-opus-xhigh"
+        alias: "charmer-or-opus-xhigh"
         display-name: "Opus 5.5 · OpenRouter"
         owned-by: "anthropic"
         context-length: 1000000
@@ -206,7 +206,7 @@ claude-api-key:
       mode: "never"
     models:
       - name: "qwen3.8-max"
-        alias: "claude-multi-qwen38-max"
+        alias: "charmer-qwen38-max"
         display-name: "Qwen3.8 Max"
         owned-by: "alibaba"
         context-length: 983616
@@ -216,29 +216,29 @@ openai-compatibility:
     base-url: "http://llm-local.invalid:8010/v1"
     models:
       - name: "qwen3.8-flash-next"
-        alias: "claude-multi-qwen-flash-next"
+        alias: "charmer-qwen-flash-next"
         display-name: "Qwen3.8 Flash Next (local)"
         force-mapping: true
-  - name: "claude-multi-render"
+  - name: "charmer-render"
     base-url: "http://127.0.0.1:9/v1"
     models:
-      - name: "claude-multi-render"
-        alias: "claude-multi-render-bf46dbcc"
+      - name: "charmer-render"
+        alias: "charmer-render-6bb62d81"
         force-mapping: true
 payload:
   override:
     - models:
-        - name: "claude-multi-kimi-k3"
+        - name: "charmer-kimi-k3"
           protocol: "claude"
       params:
         "output_config.effort": "max"
     - models:
-        - name: "claude-multi-muse-spark-high"
+        - name: "charmer-muse-spark-high"
           protocol: "claude"
       params:
         "output_config.effort": "high"
     - models:
-        - name: "claude-multi-muse-spark-xhigh"
+        - name: "charmer-muse-spark-xhigh"
           protocol: "claude"
       params:
         "output_config.effort": "xhigh"
@@ -255,43 +255,43 @@ payload:
       params:
         "reasoning.effort": "xhigh"
     - models:
-        - name: "claude-multi-grok46-high"
+        - name: "charmer-grok46-high"
           protocol: "claude"
-        - name: "claude-multi-or-deepseek-high"
+        - name: "charmer-or-deepseek-high"
           protocol: "claude"
-        - name: "claude-multi-or-gemini-high"
+        - name: "charmer-or-gemini-high"
           protocol: "claude"
-        - name: "claude-multi-or-gpt-high"
+        - name: "charmer-or-gpt-high"
           protocol: "claude"
-        - name: "claude-multi-or-grok-high"
+        - name: "charmer-or-grok-high"
           protocol: "claude"
-        - name: "claude-multi-or-opus-high"
+        - name: "charmer-or-opus-high"
           protocol: "claude"
       params:
         "output_config.effort": "high"
     - models:
-        - name: "claude-multi-grok46-xhigh"
+        - name: "charmer-grok46-xhigh"
           protocol: "claude"
-        - name: "claude-multi-or-deepseek-xhigh"
+        - name: "charmer-or-deepseek-xhigh"
           protocol: "claude"
-        - name: "claude-multi-or-gemini-xhigh"
+        - name: "charmer-or-gemini-xhigh"
           protocol: "claude"
-        - name: "claude-multi-or-gpt-xhigh"
+        - name: "charmer-or-gpt-xhigh"
           protocol: "claude"
-        - name: "claude-multi-or-grok-xhigh"
+        - name: "charmer-or-grok-xhigh"
           protocol: "claude"
-        - name: "claude-multi-or-opus-xhigh"
+        - name: "charmer-or-opus-xhigh"
           protocol: "claude"
       params:
         "output_config.effort": "xhigh"
     - models:
-        - name: "claude-multi-qwen38-max"
+        - name: "charmer-qwen38-max"
           protocol: "claude"
       params:
         reasoning_effort: "xhigh"
   filter:
     - models:
-        - name: "claude-multi-kimi-k3"
+        - name: "charmer-kimi-k3"
           protocol: "claude"
       params:
         - "thinking"

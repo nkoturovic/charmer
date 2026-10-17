@@ -29,7 +29,7 @@
         "effort": "xhigh",
         "generation": "5.5",
         "key": "opus55",
-        "selector": "claude-multi-opus-5-5[1m]"
+        "selector": "charmer-opus-5-5[1m]"
       }
     },
     "lead": {
@@ -45,7 +45,7 @@
       "env": {},
       "generation": null,
       "key": "muse-spark",
-      "selector": "claude-multi-muse-spark-high[1m]"
+      "selector": "charmer-muse-spark-high[1m]"
     },
     "lead_providers": [
       "anthropic",
@@ -80,7 +80,7 @@
     "settings_overrides": {},
     "workflows": "native"
   },
-  "applied_hash": "sha256:ba63cc623e11990a30c0bc6e24e21517a72d2188b8091bdea2791c936a2bc34b",
+  "applied_hash": "sha256:731dd3c58614ae9b740810666ea41390c5f0809e5be1777a95b6e49c1f2a1392",
   "catalog_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
   "catalog_version": 31,
   "created_at": "2026-09-01T00:00:00Z",

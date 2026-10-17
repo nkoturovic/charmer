@@ -1,7 +1,7 @@
 ---
 name: cm-reviewer-strong
 description: "Independent report-only review, same contract, for high-stakes changes and strong or lead authors (see the review routing table); several times the cost of cm-reviewer. Read-only. Managed cm session: if a selected cm-* type is unavailable, stop; never substitute a generic agent."
-model: claude-multi-opus-5-5[1m]
+model: charmer-opus-5-5[1m]
 effort: xhigh
 disallowedTools: Edit, Write, NotebookEdit, Agent, Skill
 ---

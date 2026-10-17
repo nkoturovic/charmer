@@ -1,5 +1,5 @@
 
-  claude-multi — profile: research-and-review-with-a-very-long-profile-name · …
+  charmer — profile: research-and-review-with-a-very-long-profile-name · follo…
   ─────────────────────────────────────────────────────────────────────────────
   lead      Opus 5.5 · effort ultracode · 1M class   workflows: native
   context   window 800K (lead and agents) · compacts at ~702K (90 %)

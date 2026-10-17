@@ -1,6 +1,6 @@
-claude-multi · profile balanced (follows) · lineup gen 1 · lead Opus 5.5 · 1M selector · ultracode · class large (1M)
+charmer · profile balanced (follows) · lineup gen 1 · lead Opus 5.5 · 1M selector · ultracode · class large (1M)
 gateway: answering at http://127.0.0.1:8317
-provider errors: unavailable — the gateway's log cannot be read here, so nothing is counted (claude-multi doctor checks the gateway)
+provider errors: unavailable — the gateway's log cannot be read here, so nothing is counted (charmer doctor checks the gateway)
 explorer GPT-5.6 Sol · high
 analyst GPT-5.6 Sol · high · analyst-strong Opus 5.5 · 1M selector · xhigh
 implementer-light GPT-5.6 Sol · high · implementer GPT-5.6 Sol · high · implementer-strong GPT-5.6 Sol · xhigh
