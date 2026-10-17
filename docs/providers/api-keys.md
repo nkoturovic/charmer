@@ -1,6 +1,6 @@
 # Connect a provider with an API key
 
-Several providers are built in: claude-multi already knows their address,
+Several providers are built in: charmer already knows their address,
 their key's name and their models, so connecting one is a matter of
 saving its API key. API keys are not interchangeable: each provider takes
 its own key from its own console, and a key only reaches that provider.
@@ -12,14 +12,14 @@ its own key from its own console, and a key only reaches that provider.
 | Provider | Key name | Address the key is sent to | For this provider alone |
 | --- | --- | --- | --- |
 | Anthropic ([API key](#anthropic)) | `PLATFORM_ANTHROPIC_API_KEY` | `https://api.anthropic.com` | the shipped `claude` profile |
-| DeepSeek | `DEEPSEEK_CLAUDE_API_KEY` | `https://api.deepseek.com/anthropic` | a starter (`claude-multi profile starter`) |
-| Kimi | `KIMI_CLAUDE_API_KEY` | `https://api.kimi.com/coding` | a starter (`claude-multi profile starter`) |
-| Meta | `META_CLAUDE_API_KEY` | `https://api.meta.ai` | a starter (`claude-multi profile starter`) |
+| DeepSeek | `DEEPSEEK_CLAUDE_API_KEY` | `https://api.deepseek.com/anthropic` | a starter (`charmer profile starter`) |
+| Kimi | `KIMI_CLAUDE_API_KEY` | `https://api.kimi.com/coding` | a starter (`charmer profile starter`) |
+| Meta | `META_CLAUDE_API_KEY` | `https://api.meta.ai` | a starter (`charmer profile starter`) |
 | OpenAI ([API key](#openai)) | `PLATFORM_OPENAI_API_KEY` | `https://api.openai.com/v1` | the shipped `openai` profile |
 | OpenRouter | `OPENROUTER_CLAUDE_API_KEY` | `https://openrouter.ai/api` ([its own page](openrouter.md)) | the shipped `openrouter` profile |
-| Qwen | `QWEN_CLAUDE_API_KEY` | `https://token-plan.ap-southeast-1.maas.aliyuncs.com/apps/anthropic` | a starter (`claude-multi profile starter`) |
+| Qwen | `QWEN_CLAUDE_API_KEY` | `https://token-plan.ap-southeast-1.maas.aliyuncs.com/apps/anthropic` | a starter (`charmer profile starter`) |
 
-Presets are vendors' documented endpoints, filled in for you (`claude-multi providers add --preset <preset>`, or **G** → **N** and **W** → **A** in the launcher):
+Presets are vendors' documented endpoints, filled in for you (`charmer providers add --preset <preset>`, or **G** → **N** and **W** → **A** in the launcher):
 
 | Preset | Route | Key name | Address | Support | Available |
 | --- | --- | --- | --- | --- | --- |
@@ -52,14 +52,14 @@ vendor's documented endpoint, filled in for you; see
 [openai-compatible.md](openai-compatible.md#presets)) or as
 [your own endpoint](anthropic-compatible.md).
 
-The key name is only the name under which claude-multi saves the key in
+The key name is only the name under which charmer saves the key in
 its own key file. A variable of that name in your shell is not read: save
-the key with claude-multi.
+the key with charmer.
 
 ## 1. What you need
 
 An API key from the provider's own console, for an account with billing or
-credit set up there. claude-multi never creates accounts or keys.
+credit set up there. charmer never creates accounts or keys.
 
 ## 2. Connect it
 
@@ -70,8 +70,8 @@ then type the key; the input is hidden. Get started's providers step
 From a terminal outside Claude Code:
 
 ```bash
-claude-multi providers set-key <provider>                  # hidden input
-claude-multi providers set-key <provider> --secret-file <file>   # a private 0600 file
+charmer providers set-key <provider>                  # hidden input
+charmer providers set-key <provider> --secret-file <file>   # a private 0600 file
 ```
 
 Setting a key re-renders the gateway's configuration and verifies that the
@@ -80,7 +80,7 @@ cannot be confirmed on disk, the previous key is put back.
 
 Anthropic and OpenAI also have an account sign-in: their key is chosen
 with Enter on the provider, or with
-`claude-multi providers transport <provider> api-key`
+`charmer providers transport <provider> api-key`
 ([Anthropic](#anthropic), [OpenAI](#openai)).
 
 A provider whose key you save before it has any model continues into
@@ -91,24 +91,24 @@ adding a model (a listing you agree to, or by hand) and admitting it; see
 
 Keys are saved in a private key file (mode 0600, `NAME=value` lines).
 The gateway also needs the keys in its private rendered
-`~/.config/claude-multi/config.yaml`. Both files contain credentials;
+`~/.config/charmer/config.yaml`. Both files contain credentials;
 never share either file, and follow the [backup precautions](../privacy.md#what-stays-on-your-computer)
 and [diagnostic-sharing rules](../privacy.md#diagnostics-you-share).
 Provider keys do not belong in a session's environment, its scope or logs.
 Which key file:
 
-1. the file `CLAUDE_MULTI_SECRET_ENV` names, when it is set (the
+1. the file `CHARMER_SECRET_ENV` names, when it is set (the
    supervised gateway service ignores it);
-2. otherwise the file `claude-multi setup --keys-file <file>` selected
-   (recorded in `~/.config/claude-multi/secret-file.json`);
-3. otherwise `~/.config/claude-multi/secrets/provider-keys.env`.
+2. otherwise the file `charmer setup --keys-file <file>` selected
+   (recorded in `~/.config/charmer/secret-file.json`);
+3. otherwise `~/.config/charmer/secrets/provider-keys.env`.
 
 The launcher, the gateway and every key command read the same file.
 Managed sessions cannot read it. More: [reference/settings.md](../reference/settings.md#the-api-key-file).
 
 ## 4. Replace, remove, disconnect
 
-- Replace: set the key again; claude-multi asks before it replaces a key.
+- Replace: set the key again; charmer asks before it replaces a key.
   When other providers use the same key name (a preset added twice with
   its key shared, or a provider of the earlier custom registry), the
   question names every one of them: “<NAME> (<n> chars) is the API key of
@@ -116,32 +116,32 @@ Managed sessions cannot read it. More: [reference/settings.md](../reference/sett
   without the question and still names them. If one of those providers is
   removed, or its key changes, between the question and the save, nothing
   is written and the command says to run it again.
-- Remove: `claude-multi providers remove-key <provider>` (asks first) or
+- Remove: `charmer providers remove-key <provider>` (asks first) or
   **G** → **X** (on Anthropic or OpenAI while its account is in use, **X**
   signs out instead). Profiles that use the provider then show it as not
   connected. A key the provider is using as its selected transport
   (Anthropic or OpenAI) is removed only after you switch back to the
   account.
 - Turn a provider off for new sessions without removing its key:
-  `claude-multi providers disable <provider>` or **G** → Space. Running
+  `charmer providers disable <provider>` or **G** → Space. Running
   sessions keep their routes.
 
 If the key may have leaked, also revoke it in the provider's console.
 
 ## 5. Check it and use it
 
-`claude-multi providers test <provider>` sends one small request after you
+`charmer providers test <provider>` sends one small request after you
 agree (it may be billed), and right before the request checks that the
 gateway serves your current setup. Then pick or build a profile that uses
-the provider: `claude-multi profile starter` previews a starter from what
+the provider: `charmer profile starter` previews a starter from what
 is connected. See [guides/profiles.md](../guides/profiles.md).
 
 ## 6. Costs and limits
 
 Each request is billed by the provider to your account, at its prices. A
 profile runs several models at once, so a multi-agent session multiplies
-the spend. claude-multi shows no prices and enforces no spending cap: set
-limits and alerts in the provider's console. `claude-multi usage` counts
+the spend. charmer shows no prices and enforces no spending cap: set
+limits and alerts in the provider's console. `charmer usage` counts
 the requests a session made; that is not a token count or a bill.
 
 Each provider's own pages, checked on 2026-10-04 (prices and limits
@@ -161,7 +161,7 @@ change; the provider's page is the authority):
 
 | You see | Next step |
 | --- | --- |
-| doctor or the card: the provider's key is missing | `claude-multi providers set-key <provider>` |
+| doctor or the card: the provider's key is missing | `charmer providers set-key <provider>` |
 | the provider answers 401 or 403 | the key is wrong, revoked or not entitled to the model: create a new key in the provider's console, then set it again |
 | 402 or 429 in doctor's gateway lines | the account is out of credit or rate-limited: check the provider's console; move agents with `/cm fallback <provider>` meanwhile |
 | requests fail saying a spending or usage limit was reached | a limit you set, or the account's monthly cap: raise it in the provider's console, or wait for the period to reset |
@@ -178,13 +178,13 @@ or on an Anthropic API key. Switch the Claude lines to the key (same
 models, same selectors) with:
 
 ```bash
-claude-multi providers transport anthropic api-key
+charmer providers transport anthropic api-key
 ```
 
 or **G** → Enter on Anthropic. The key is sent as `x-api-key` to
 `https://api.anthropic.com`. While the API key is selected, the account
 serves nothing and there is no fallback between the two;
-`claude-multi providers transport anthropic oauth-pool` switches back.
+`charmer providers transport anthropic oauth-pool` switches back.
 Both switches list the running sessions they move and ask first.
 
 Create the key in the Claude Console, for an organization with billing
@@ -194,28 +194,28 @@ set up. A paid Claude plan does not include API usage
 ### OpenAI
 
 OpenAI's models run on your ChatGPT account ([chatgpt-account.md](chatgpt-account.md))
-or on an OpenAI Platform API key. claude-multi uses one of them at a
+or on an OpenAI Platform API key. charmer uses one of them at a
 time, never both, and never falls back from one to the other.
 
 **The key.** Create an API key on the OpenAI Platform
 (`platform.openai.com`), in a project of an organization with billing set
 up. API usage is billed per token, apart from any ChatGPT plan
 ([OpenAI's billing help](https://help.openai.com/en/articles/9039756-managing-billing-for-chatgpt-and-the-api-platform)).
-claude-multi saves it as `PLATFORM_OPENAI_API_KEY` and the gateway sends
+charmer saves it as `PLATFORM_OPENAI_API_KEY` and the gateway sends
 it only to `https://api.openai.com/v1`, as `Authorization: Bearer`.
 
 **Switch to it.** **G** Providers → Enter on OpenAI → the API key, or
 Get started's picker (**W**), or from a terminal outside Claude Code:
 
 ```bash
-claude-multi providers transport openai api-key      # asks, then the key (hidden) unless one is saved
-claude-multi providers transport openai oauth-pool   # back to the ChatGPT account
-claude-multi providers transport openai              # which one is in use
+charmer providers transport openai api-key      # asks, then the key (hidden) unless one is saved
+charmer providers transport openai oauth-pool   # back to the ChatGPT account
+charmer providers transport openai              # which one is in use
 ```
 
 Each switch lists the running sessions it moves and asks first;
 `--secret-file <file>` takes the key from a private file instead. With
-the key in use, **K** on OpenAI (or `claude-multi providers set-key openai`)
+the key in use, **K** on OpenAI (or `charmer providers set-key openai`)
 replaces it, and switching back offers to remove the key you no longer
 use. Your ChatGPT sign-in stays saved while the key is in use, but it
 serves nothing.
@@ -242,7 +242,7 @@ set a monthly limit for the organization or for one project, as an alert
 or enforced as a hard limit. Over a hard limit, requests fail with HTTP
 429 (`project_spend_limit_exceeded` or `organization_spend_limit_exceeded`);
 enforcement is not instantaneous, so spend can pass the limit slightly. A
-project of its own for claude-multi's key, with a hard limit, bounds what
+project of its own for charmer's key, with a hard limit, bounds what
 it can spend. Prices: [OpenAI API pricing](https://developers.openai.com/api/docs/pricing).
 
 **What the gateway sends.** The key goes out as a plain API client: no
@@ -262,7 +262,7 @@ refuses `api.openai.com` and has its own availability
   balance. The key is sent as `x-api-key`.
 - **Line:** DeepSeek V4.1 Flash (`deepseek-flash`), efforts high and
   max, for the lead and every agent role.
-- **Alone:** `claude-multi profile starter` builds a profile with every
+- **Alone:** `charmer profile starter` builds a profile with every
   role on it.
 - **Limits:** a forced tool choice that names one tool is refused by
   DeepSeek's endpoint (HTTP 400); Claude Code's ordinary tool use works.
@@ -277,7 +277,7 @@ refuses `api.openai.com` and has its own availability
 - **Line:** Kimi for Coding (`kimi-code`), efforts low, high and max,
   for the lead and every agent role. Kimi upgrades the model behind this
   name in place.
-- **Alone:** `claude-multi profile starter` builds a profile with every
+- **Alone:** `charmer profile starter` builds a profile with every
   role on it.
 - **Limits:** every device and key of your Kimi account shares one quota
   ([membership benefits](https://www.kimi.com/code/docs/en/kimi-code/membership.html)).
@@ -293,7 +293,7 @@ refuses `api.openai.com` and has its own availability
   Meta's permission to use your prompts and completions to train future
   Meta models ([Meta's pricing page](https://dev.meta.ai/docs/getting-started/pricing-rate-limits));
   bind it only to work you are willing to share that way.
-- **Alone:** `claude-multi profile starter` builds a profile from these
+- **Alone:** `charmer profile starter` builds a profile from these
   lines.
 - **Limits:** thinking is always on; a forced tool choice that names one
   tool is refused (HTTP 400).
@@ -312,7 +312,7 @@ any profile slot on such a route.
   is sent as `Authorization: Bearer`.
 - **Lines:** Qwen3.8 Max (`qwen-max`) and Qwen3.8 Flash (`qwen-flash`),
   efforts low, medium and xhigh, for the lead and every agent role.
-- **Alone:** `claude-multi profile starter` builds a profile from these
+- **Alone:** `charmer profile starter` builds a profile from these
   lines.
 
 ### Lines read from documentation
@@ -320,7 +320,7 @@ any profile slot on such a route.
 Some shipped lines come from the vendor's documentation and have not yet
 been checked with a live request through the gateway (the Kimi and Qwen
 lines, Meta's, and the OpenAI key route's): their context windows and
-efforts are the documented ones. `claude-multi models show <line>` shows
+efforts are the documented ones. `charmer models show <line>` shows
 each line's evidence and where its figures come from. A provider that
 ships no line for the model you want takes one you add yourself
 ([guides/models.md](../guides/models.md#add-a-model-of-your-own)).

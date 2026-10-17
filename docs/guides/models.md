@@ -1,8 +1,8 @@
 # Models
 
-A **model line** is one model claude-multi can bind to a role, under a
+A **model line** is one model charmer can bind to a role, under a
 stable key (`opus`, `sol`, …). The release's catalog ships reviewed lines;
-you can add your own. `claude-multi models` (or **M** in the launcher)
+you can add your own. `charmer models` (or **M** in the launcher)
 lists them all.
 
 ## Kinds of lines
@@ -10,7 +10,7 @@ lists them all.
 | Kind | Where it comes from | Before you can bind it |
 | --- | --- | --- |
 | catalog line | the release, reviewed | connect its provider |
-| your line | `claude-multi models add <provider> <wire> <options>`, or **A** in Providers | a valid declaration and a usable provider route; admission and qualification are optional |
+| your line | `charmer models add <provider> <wire> <options>`, or **A** in Providers | a valid declaration and a usable provider route; admission and qualification are optional |
 | candidate | the pinned gateway's registry or a provider's listing | nothing: a candidate is advice, never a grant; declare it to make it your line |
 
 A line belongs to a **provider** (where it runs: OpenRouter, Anthropic, a
@@ -37,34 +37,34 @@ usable for leads, agents and reviews.
 | Key | Model | Provider | Family | Efforts (default) | Context | Roles | `/model` selectors |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `astra` | GPT-6 Astra | OpenAI | openai | low, medium, high, xhigh, max (high) | 1M class, provider window 872K | lead and agents | `gpt-multi-astra-<effort>[1m]` |
-| `deepseek-flash` | DeepSeek V4.1 Flash | DeepSeek | deepseek | high, max (high) | 1M class, provider window 1M | lead and agents | `claude-multi-deepseek-flash-<effort>[1m]` |
+| `deepseek-flash` | DeepSeek V4.1 Flash | DeepSeek | deepseek | high, max (high) | 1M class, provider window 1M | lead and agents | `charmer-deepseek-flash-<effort>[1m]` |
 | `fable` | Fable 5.1 · 1M selector | Anthropic | anthropic | low, medium, high, xhigh, max (high) | 1M class, provider window 1M | lead and agents | `claude-fable-5-1[1m]` (the effort is chosen in Claude Code) |
-| `kimi-code` | Kimi for Coding | Kimi | moonshot | low, high, max (max) | 1M class, provider window 1M | lead and agents | `claude-multi-kimi-code-<effort>[1m]` |
+| `kimi-code` | Kimi for Coding | Kimi | moonshot | low, high, max (max) | 1M class, provider window 1M | lead and agents | `charmer-kimi-code-<effort>[1m]` |
 | `luna` | GPT-6 Luna | OpenAI | openai | low, medium, high, xhigh, max (max) | 1M class, provider window 872K | lead and agents | `gpt-multi-luna-<effort>[1m]` |
-| `muse` | Muse Spark 1.3 | Meta | meta | low, medium, high, xhigh (xhigh) | 1M class, provider window 1M | lead and agents | `claude-multi-muse-<effort>[1m]` |
-| `muse-contributor` | Muse Spark 1.3 Contributor | Meta | meta | low, medium, high, xhigh (high) | 1M class, provider window 1M | lead and agents | `claude-multi-muse-contributor-<effort>[1m]` |
+| `muse` | Muse Spark 1.3 | Meta | meta | low, medium, high, xhigh (xhigh) | 1M class, provider window 1M | lead and agents | `charmer-muse-<effort>[1m]` |
+| `muse-contributor` | Muse Spark 1.3 Contributor | Meta | meta | low, medium, high, xhigh (high) | 1M class, provider window 1M | lead and agents | `charmer-muse-contributor-<effort>[1m]` |
 | `opus` | Opus 5.5 · 1M selector | Anthropic | anthropic | low, medium, high, xhigh, max (high) | 1M class, provider window 1M | lead and agents | `claude-opus-5-5[1m]` (the effort is chosen in Claude Code) |
-| `or-deepseek` | DeepSeek V4.1 Flash · OpenRouter | OpenRouter | deepseek | high, xhigh (high) | 1M class, provider window 1M | lead and agents | `claude-multi-or-deepseek-<effort>[1m]` |
-| `or-gemini` | Gemini 3.8 Flash · OpenRouter | OpenRouter | google | high, xhigh (high) | 1M class, provider window 1M | lead and agents | `claude-multi-or-gemini-<effort>[1m]` |
-| `or-gpt` | GPT-6.1 Sol · OpenRouter | OpenRouter | openai | high, xhigh (high) | 1M class, provider window 1M | lead and agents | `claude-multi-or-gpt-<effort>[1m]` |
-| `or-grok` | Grok 4.7 · OpenRouter | OpenRouter | x-ai | high, xhigh (high) | 200K class, provider window 500K | lead and agents | `claude-multi-or-grok-<effort>` |
-| `or-kimi` | Kimi K3 · OpenRouter | OpenRouter | moonshot | high, xhigh (high) | 1M class, provider window 1M | lead and agents | `claude-multi-or-kimi-<effort>[1m]` |
-| `or-opus` | Opus 5.5 · OpenRouter | OpenRouter | anthropic | high, xhigh (xhigh) | 1M class, provider window 1M | lead and agents | `claude-multi-or-opus-<effort>[1m]` |
-| `qwen-flash` | Qwen3.8 Flash | Qwen | alibaba | low, medium, xhigh (xhigh) | 1M class, provider window 983,616 | lead and agents | `claude-multi-qwen-flash-<effort>[1m]` |
-| `qwen-max` | Qwen3.8 Max | Qwen | alibaba | low, medium, xhigh (xhigh) | 1M class, provider window 983,616 | lead and agents | `claude-multi-qwen-max-<effort>[1m]` |
+| `or-deepseek` | DeepSeek V4.1 Flash · OpenRouter | OpenRouter | deepseek | high, xhigh (high) | 1M class, provider window 1M | lead and agents | `charmer-or-deepseek-<effort>[1m]` |
+| `or-gemini` | Gemini 3.8 Flash · OpenRouter | OpenRouter | google | high, xhigh (high) | 1M class, provider window 1M | lead and agents | `charmer-or-gemini-<effort>[1m]` |
+| `or-gpt` | GPT-6.1 Sol · OpenRouter | OpenRouter | openai | high, xhigh (high) | 1M class, provider window 1M | lead and agents | `charmer-or-gpt-<effort>[1m]` |
+| `or-grok` | Grok 4.7 · OpenRouter | OpenRouter | x-ai | high, xhigh (high) | 200K class, provider window 500K | lead and agents | `charmer-or-grok-<effort>` |
+| `or-kimi` | Kimi K3 · OpenRouter | OpenRouter | moonshot | high, xhigh (high) | 1M class, provider window 1M | lead and agents | `charmer-or-kimi-<effort>[1m]` |
+| `or-opus` | Opus 5.5 · OpenRouter | OpenRouter | anthropic | high, xhigh (xhigh) | 1M class, provider window 1M | lead and agents | `charmer-or-opus-<effort>[1m]` |
+| `qwen-flash` | Qwen3.8 Flash | Qwen | alibaba | low, medium, xhigh (xhigh) | 1M class, provider window 983,616 | lead and agents | `charmer-qwen-flash-<effort>[1m]` |
+| `qwen-max` | Qwen3.8 Max | Qwen | alibaba | low, medium, xhigh (xhigh) | 1M class, provider window 983,616 | lead and agents | `charmer-qwen-max-<effort>[1m]` |
 | `sol` | GPT-6.1 Sol | OpenAI | openai | low, medium, high, xhigh, max (high) | 1M class, provider window 872K | lead and agents | `gpt-multi-sol-6-1-<effort>[1m]` |
 | `sonnet` | Sonnet 5.5 · 1M selector | Anthropic | anthropic | low, medium, high, xhigh, max (high) | 1M class, provider window 1M | lead and agents | `claude-sonnet-5-5[1m]` (the effort is chosen in Claude Code) |
 
-17 retired keys resolve to their successors; `claude-multi models` lists them.
+17 retired keys resolve to their successors; `charmer models` lists them.
 
 <!-- end of generated: model-lines -->
 
 ## Inspect
 
 ```bash
-claude-multi models                    # every line: generation, provider, class, efforts, status
-claude-multi models show <line>        # one line: origin, selectors, efforts, context, admission, evidence
-claude-multi models --candidates       # advisory candidates (nothing declared or admitted)
+charmer models                    # every line: generation, provider, class, efforts, status
+charmer models show <line>        # one line: origin, selectors, efforts, context, admission, evidence
+charmer models --candidates       # advisory candidates (nothing declared or admitted)
 ```
 
 The listing shows each line's generation, provider, context class,
@@ -86,7 +86,7 @@ card and in **M**; a line the running gateway does not serve is a doctor
 finding with its fix. Local readiness means locally configured and served,
 not upstream verified.
 
-**Direct-mode exception:** `claude-multi direct --model <line>` treats a
+**Direct-mode exception:** `charmer direct --model <line>` treats a
 missing credential as advisory ("requests may fail") and still launches.
 The TUI Direct screen warns and asks **Launch anyway?**, default **No**;
 answering Yes continues despite the missing credential. Profile and binding
@@ -122,8 +122,8 @@ With the provider already connected and its route usable, add and bind
 without either optional step:
 
 ```bash
-claude-multi models add <provider> <wire> --context <n> --source docs --source-ref "URL, date" --as custom-example
-claude-multi profile edit <name>         # choose custom-example for the lead or a cm-* agent
+charmer models add <provider> <wire> --context <n> --source docs --source-ref "URL, date" --as custom-example
+charmer profile edit <name>         # choose custom-example for the lead or a cm-* agent
 ```
 
 A declaration records the wire id, a sourced context size
@@ -138,9 +138,9 @@ an agent does not inherit a model's lead-only environment.
 ### Optional admission and diagnostics
 
 ```bash
-claude-multi models admit custom-example                 # optional local badge; zero inference requests
-claude-multi models qualify custom-example --smoke        # optional minimal request, after explicit consent
-claude-multi models qualify custom-example --agents       # optional effort, tools and streaming checks too
+charmer models admit custom-example                 # optional local badge; zero inference requests
+charmer models qualify custom-example --smoke        # optional minimal request, after explicit consent
+charmer models qualify custom-example --agents       # optional effort, tools and streaming checks too
 ```
 
 - **Admit** validates the local definition and asks before recording your
@@ -187,14 +187,14 @@ To stop using a model, remove its binding or declaration; to stop using a
 provider, disable that provider in Settings.
 
 ```bash
-claude-multi models revoke <line>                      # optional badge only; not an availability control
-claude-multi models rm <line>                          # a line you added
-claude-multi models rm <line> --successor <line>       # also rewrite the profiles and bindings that use it
+charmer models revoke <line>                      # optional badge only; not an availability control
+charmer models rm <line>                          # a line you added
+charmer models rm <line> --successor <line>       # also rewrite the profiles and bindings that use it
 ```
 
 A line a live session uses is not removed out from under it: the gateway
 keeps serving the session's selector (a continuity alias) until no live
-session uses it; `claude-multi doctor --prune-aliases` removes unused
+session uses it; `charmer doctor --prune-aliases` removes unused
 ones.
 
 ## Context windows
@@ -203,9 +203,9 @@ One **window ceiling** governs the lead and every agent: 200K to 800K
 tokens, 800K by default.
 
 ```bash
-claude-multi window-ceiling            # show it, and whether it is set or the default
-claude-multi window-ceiling 400K       # set it (applies at the next launch or resume)
-claude-multi window-ceiling --reset    # back to 800K
+charmer window-ceiling            # show it, and whether it is set or the default
+charmer window-ceiling 400K       # set it (applies at the next launch or resume)
+charmer window-ceiling --reset    # back to 800K
 ```
 
 Settings (**O**) has the same row. A session's process window is the smaller
@@ -221,7 +221,7 @@ For example, with an 800K process window a line bounded at 872K can keep
 its 1M class, while a 500K line falls back to 200K. A 128K provider bound
 cannot make a 200K-class agent's window 128K: a request can overflow the
 provider before the client compacts. The card, lineup summary (`/cm show`,
-`claude-multi profile show <name>`) and `--print-launch` show the actual
+`charmer profile show <name>`) and `--print-launch` show the actual
 client class and effective window; warnings name the process window,
 compaction trigger and provider bound where they mismatch. Such predictions
 warn rather than block. Never inflate declared capacity to hide a warning.

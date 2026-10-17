@@ -77,6 +77,11 @@ Rules:
   private input's ``operator-skill`` entries, :func:`operator_skills`).
 - R15 ``release-lineage`` (the user pages): no earlier release line of
   this product (``RELEASE_LINE``), never a version of another program.
+- R16 ``former-name`` (every public page): the product's earlier name, in
+  any of its spellings (``charmer.legacy.SPELLINGS``), appears only in the
+  sections ``FORMER_NAME_SECTIONS`` lists: the release notes' release
+  sections, the released ones kept verbatim and 2.0.0's record of the
+  rename. An explicit list of headings, never a pattern.
 
 Also here: the ``--help`` walk (``help_pages``), the command-span checker
 (``command_spans``/``check_span``: every form of a span, each optional
@@ -292,6 +297,11 @@ OPERATOR_SKILL_LABEL = "operator-skill"
 # CLIProxyAPI 7.3.15, Python 3.11), a schema, a path or a number.
 # test_docs_vocabulary checks it against test_hygiene's lineage pattern.
 RELEASE_LINE = re.compile(r"(?<![\w./+\\-])(?:pre-)?(?:2\.(?:x|2\d)|3\.[0-3](?:\.(?:x|\d+))?)(?![\w%]|\.\d)")
+# R16: the sections of a public page where the earlier product name may
+# appear (each ``## `` heading, up to the next one): the release notes of
+# the releases made under that name, verbatim, and 2.0.0's record of the
+# rename. Nothing else names it.
+FORMER_NAME_SECTIONS = {"CHANGELOG.md": ("## [2.0.0] ", "## [1.1.0] ", "## [1.0.0] ")}
 
 # R9 beyond the identifiers (the user pages): store paths and a machine's
 # generation numbers.
@@ -338,7 +348,7 @@ RULES_TERMS = frozenset(TERMS)
 # Every public page: the shared rules.
 RULES_MD = RULES_TERMS | {
     "secret-read", "machine-path", "profile-migrate-flags", "journal-auth", "lineup-session-id",
-    "backend-command", "this-machine", "operator-skill",
+    "backend-command", "this-machine", "operator-skill", "former-name",
 }
 # The user pages (README, SECURITY, CHANGELOG and everything under docs/)
 # also refuse the extended machine facts and release lineage; the
@@ -1029,6 +1039,34 @@ def operator_skill_hits(unit: Unit, *, label: str) -> list[Hit]:
             for m in pattern.finditer(unit.text)]
 
 
+@functools.lru_cache(maxsize=1)
+def former_name() -> re.Pattern[str]:
+    """R16: every spelling of the product's earlier name."""
+
+    from charmer import legacy
+
+    return re.compile("|".join(re.escape(spelling) for spelling in legacy.SPELLINGS))
+
+
+def former_name_lines(label: str, text: str) -> frozenset[int]:
+    """The 1-based lines of ``text`` inside the ``FORMER_NAME_SECTIONS`` of ``label``."""
+
+    headings = FORMER_NAME_SECTIONS.get(label, ())
+    allowed: set[int] = set()
+    inside = False
+    for number, line in enumerate(text.split("\n"), 1):
+        if line.startswith("## "):
+            inside = line.startswith(headings) if headings else False
+        if inside:
+            allowed.add(number)
+    return frozenset(allowed)
+
+
+def former_name_hits(unit: Unit, *, label: str, allowed: frozenset[int] = frozenset()) -> list[Hit]:
+    return [Hit(label, unit.line_of(m.start()), "former-name", _excerpt(unit, m.start()))
+            for m in former_name().finditer(unit.text) if unit.line_of(m.start()) not in allowed]
+
+
 def release_lineage_hits(unit: Unit, *, label: str) -> list[Hit]:
     return [Hit(label, unit.line_of(m.start()), "release-lineage", _excerpt(unit, m.start()))
             for m in RELEASE_LINE.finditer(unit.text)]
@@ -1213,6 +1251,7 @@ def scan_target(target: Target, *, used: set[int] | None = None) -> list[Hit]:
     hits: list[Hit] = []
     previous: Unit | None = None
     terms = [name for name in TERMS if name in rules]
+    former_allowed = former_name_lines(target.label, text) if "former-name" in rules else frozenset()
     for unit in units:
         label = target.label
         if terms:
@@ -1230,6 +1269,8 @@ def scan_target(target: Target, *, used: set[int] | None = None) -> list[Hit]:
             hits += operator_skill_hits(unit, label=label)
         if "release-lineage" in rules:
             hits += release_lineage_hits(unit, label=label)
+        if "former-name" in rules:
+            hits += former_name_hits(unit, label=label, allowed=former_allowed)
         if "machine-path" in rules or "machine-path-extended" in rules:
             hits += machine_path_hits(unit, label=label, extended="machine-path-extended" in rules)
         if "profile-migrate-flags" in rules:
@@ -2664,6 +2705,17 @@ def self_test() -> list[str]:
                  "release 1.0.0\n", "TLS 1.3\n"):
         if any(h.rule == "release-lineage" for h in _fixture_hits(text)):
             failures.append(f"release-lineage flags {text!r}")
+    from charmer import legacy
+
+    for spelling in legacy.SPELLINGS:
+        if not any(h.rule == "former-name" for h in _fixture_hits(f"run `{spelling} doctor`\n")):
+            failures.append(f"former-name misses {spelling!r}")
+    if any(h.rule == "former-name" for h in _fixture_hits("run `charmer doctor` (Claude Code, `claude`)\n")):
+        failures.append("former-name flags the current name or the client's")
+    release_notes = f"# Changelog\n\n## [2.0.0] — x\n\nRenamed from {legacy.NAME}.\n\n## Other\n\n{legacy.NAME}\n"
+    hits = [h for h in _fixture_hits(release_notes, label="CHANGELOG.md") if h.rule == "former-name"]
+    if [h.line for h in hits] != [9]:
+        failures.append(f"former-name allows exactly the listed sections, got lines {[h.line for h in hits]}")
     if not any(h.rule == "lineup-session-id" for h in _fixture_hits("`charmer lineup --session <id> show`\n")):
         failures.append("lineup-session-id misses <id>")
     if any(h.rule == "lineup-session-id" for h in _fixture_hits("`charmer lineup --session <runtime-id> show`\n")):

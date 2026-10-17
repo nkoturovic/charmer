@@ -1,6 +1,6 @@
 # Install on Windows (WSL2)
 
-On Windows, claude-multi runs inside WSL2: the Linux release is installed
+On Windows, charmer runs inside WSL2: the Linux release is installed
 into a Linux distribution and runs there. Native Windows is not supported.
 
 Release-bundle status for Windows through WSL2:
@@ -18,7 +18,7 @@ powershell -ExecutionPolicy Bypass -File install.ps1
 ```
 
 It is published next to the Linux installer, at
-`https://github.com/nkoturovic/claude-multi/releases/latest/download/install.ps1`.
+`https://github.com/nkoturovic/charmer/releases/latest/download/install.ps1`.
 The script:
 
 1. checks that WSL2 is available and, when you agree, installs it;
@@ -26,7 +26,7 @@ The script:
    distribution), or creates one when you agree;
 3. downloads the Linux installer, checks its sha256 against the value
    published with the release, and runs it inside the distribution;
-4. starts `claude-multi setup` there (unless you pass `-NoSetup`).
+4. starts `charmer setup` there (unless you pass `-NoSetup`).
 
 Exit status 3 means WSL2 or a distribution was just installed: restart
 Windows, or finish creating the Linux user as the message says, then run
@@ -39,12 +39,12 @@ release. The bootstrap refuses to download or run an installer without a
 checksum. See [signature verification](../security.md#signed-releases).
 
 From then on, open the distribution (for example from the Start menu or
-with `wsl`) and use `claude-multi` there, exactly as on
+with `wsl`) and use `charmer` there, exactly as on
 [Linux](linux.md).
 
 ## Windows and WSL are separate
 
-Everything claude-multi uses lives inside the distribution: its own copy
+Everything charmer uses lives inside the distribution: its own copy
 of the Linux Claude Code, your API keys and sign-ins, profiles and
 sessions. A Claude Code installed on Windows is not used and is not
 changed. Doctor says so under WSL, in these words:
@@ -71,7 +71,7 @@ available; the ChatGPT sign-in uses a device code, which works anywhere.
 
 ## Keep state and projects on the Linux file system
 
-- claude-multi's state must be on the Linux file system: a state directory
+- charmer's state must be on the Linux file system: a state directory
   on a Windows drive (`/mnt/c/…`) is refused, because locks and private
   file modes do not work there. Leave `XDG_STATE_HOME` unset, or point it
   under your Linux home.
@@ -87,7 +87,7 @@ the gateway again. A session that was running reconnects through its token
 helper, which starts a stopped gateway (waiting at most 10 seconds) and
 hands the session its token only when that gateway is proven to be yours
 and ready. If a session reports that it cannot reach the gateway, run
-`claude-multi gateway status`, then `claude-multi gateway start`; see
+`charmer gateway status`, then `charmer gateway start`; see
 [troubleshooting.md](../troubleshooting.md#the-gateway).
 
 ## What the Windows-side protections cover
@@ -109,12 +109,12 @@ Their limits:
   files under your Windows profile outside those two folders) stay
   readable from WSL as they are for any Linux program.
 
-claude-multi's own credentials inside the distribution are denied to
+charmer's own credentials inside the distribution are denied to
 sessions on every platform; see [security.md](../security.md#credential-containment).
 
 ## Uninstall
 
-`claude-multi uninstall` inside the distribution removes claude-multi as
+`charmer uninstall` inside the distribution removes charmer as
 on Linux ([uninstall.md](../uninstall.md)). It leaves WSL and the
 distribution in place and never runs `wsl --unregister`; remove the
 distribution yourself if you no longer need it.

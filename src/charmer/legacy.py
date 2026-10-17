@@ -11,6 +11,19 @@ Standard library only, no imports: a leaf any module (and the test runner,
 which reads ``ENVIRONMENT`` without importing it) can use.
 """
 
+# The earlier product name and the prefix of its environment variables: the
+# name its commands, roots, units, shims and markers were spelled with. The
+# tests translate the historical reference gateway unit with them; the name
+# census allows the old spellings nowhere else in the package. Stay while
+# anything recorded under the old name can reach charmer.
+NAME = "claude-multi"
+ENVIRONMENT_PREFIX = "CLAUDE_MULTI_"
+# Every spelling of the earlier name: the command and path form, the package
+# form, the environment form and the class-name form. The repository's name
+# census and the documentation rule against the former name search for
+# exactly these.
+SPELLINGS = ("claude-multi", "claude_multi", "CLAUDE_MULTI", "ClaudeMulti")
+
 # The prefix of the gateway selectors up to catalog 38; catalog 39 serves
 # each of them as ``charmer-<rest>``. The catalog checks every renamed
 # selector against it (``retired.json`` ``renamed``), and the fixture

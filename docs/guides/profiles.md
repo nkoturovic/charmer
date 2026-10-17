@@ -30,12 +30,12 @@ init` enables them).
 - **Shipped profiles** come with the release, each a reviewed lineup for
   one set of providers. A shipped profile is read from the release until
   you change it; you cannot rename or remove one, but you can copy it.
-- **Starter**: `claude-multi profile starter` previews a profile built
+- **Starter**: `charmer profile starter` previews a profile built
   from the lines that are connected right now; `--apply` saves it (as
   `starter`, or `--name NAME`) after you confirm. Get started's profile
   step offers the same.
 - **Yours**: profiles you create or copy, in
-  `~/.config/claude-multi/profiles/<name>.json` (mode 0600).
+  `~/.config/charmer/profiles/<name>.json` (mode 0600).
 
 ### A profile for the providers you have
 
@@ -81,13 +81,13 @@ fixed: choose a default with **P** → **D**, Settings (**O**) → default
 profile, or
 
 ```bash
-claude-multi profile default <name>     # set it
-claude-multi profile default            # show it
-claude-multi profile default --clear    # choose automatically again
+charmer profile default <name>     # set it
+charmer profile default            # show it
+charmer profile default --clear    # choose automatically again
 ```
 
 The choice is stored as `default_profile` in
-`~/.config/claude-multi/choices.json`. Renaming the default profile moves
+`~/.config/charmer/choices.json`. Renaming the default profile moves
 the default with it.
 
 ## Manage profiles
@@ -100,14 +100,14 @@ edits named bindings, **F** shows only fallback profiles (one provider
 each, for an outage) and **W** opens Get started. From a terminal:
 
 ```bash
-claude-multi profile list
-claude-multi profile show <name>              # the evaluated lineup, warnings and review routing
-claude-multi profile new <name>
-claude-multi profile edit <name>
-claude-multi profile duplicate <name> <new>
-claude-multi profile rename <name> <new>
-claude-multi profile rm <name>
-claude-multi profile reseed <name>
+charmer profile list
+charmer profile show <name>              # the evaluated lineup, warnings and review routing
+charmer profile new <name>
+charmer profile edit <name>
+charmer profile duplicate <name> <new>
+charmer profile rename <name> <new>
+charmer profile rm <name>
+charmer profile reseed <name>
 ```
 
 ### The profile editor
@@ -147,8 +147,8 @@ need the exact declared selector/contract mapping; no effort is invented.
 
 - Removing one of your profiles, or reseeding a shipped profile you
   changed, keeps a private copy of your version first:
-  `~/.config/claude-multi/profiles/.<name>.removed-<time>.json` or
-  `.<name>.pre-reseed-<time>.json`. claude-multi never deletes these.
+  `~/.config/charmer/profiles/.<name>.removed-<time>.json` or
+  `.<name>.pre-reseed-<time>.json`. charmer never deletes these.
 - If the profile changed on disk while you edited it (another window or
   command saved it), saving is refused and nothing is written; reload it
   and make your change again.
@@ -157,13 +157,13 @@ need the exact declared selector/contract mapping; no effort is invented.
 
 A newer release can ship a newer version of a shipped profile. Doctor then
 says so as Attention, and **P** → **U** or
-`claude-multi profile reseed <name>` takes it; your changed copy is kept
+`charmer profile reseed <name>` takes it; your changed copy is kept
 as a backup. An update never reseeds by itself.
 
 ## Sessions that follow a profile
 
 A session started from a profile **follows** it: when you save the
-profile, claude-multi offers to apply the change to its running sessions,
+profile, charmer offers to apply the change to its running sessions,
 LIVE where it can and otherwise recorded for their next resume. A session
 that is **pinned** keeps its own lineup. See [lineup.md](lineup.md).
 
@@ -176,13 +176,13 @@ editor (**N**). A name starts with a lower-case letter and has at most 32
 lower-case letters, digits and `-`; it may not equal a model key. A
 binding still in use cannot be deleted, and an edit that would break a
 profile using it is refused. They are stored in
-`~/.config/claude-multi/bindings.json`. There is no command-line verb for
+`~/.config/charmer/bindings.json`. There is no command-line verb for
 bindings: they are edited in their validated editor.
 
 ## Claude Code's own agents and workflows
 
 A profile decides which of Claude Code's native agents stay on (Explore,
-Plan, general-purpose) and keeps native workflows on. What claude-multi
+Plan, general-purpose) and keeps native workflows on. What charmer
 guarantees about workflows (the card's `?` panel):
 
 - workflow agents run as the SESSION model by default (lead family; Settings workflow default binding changes that default), always acceptEdits — scripts may route stages to other models, so unobserved workflow output is family-unknown/mixed and never counts as an independent review verdict

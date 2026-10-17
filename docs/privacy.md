@@ -1,8 +1,8 @@
 # Privacy: what leaves your computer
 
-claude-multi runs Claude Code and a local gateway on your computer and
+charmer runs Claude Code and a local gateway on your computer and
 sends your requests to the providers you connect. This page lists what
-goes where, what stays local, and what claude-multi does not control.
+goes where, what stays local, and what charmer does not control.
 
 ## Data flows
 
@@ -38,12 +38,12 @@ background requests are absent or credential-free.
 ### Claude Code's own traffic
 
 Managed sessions keep Claude Code's upstream behaviour for its
-nonessential traffic: **claude-multi does not guarantee suppressing Claude
+nonessential traffic: **charmer does not guarantee suppressing Claude
 Code background traffic.** Claude Code controls its own start-up and
 feature-flag requests. Do not assume they are confined to loopback or
 credential-free: a managed client's credential is the gateway's local key,
 not a provider key. That key only opens your local gateway, which listens
-on loopback; rotate it any time with `claude-multi doctor --rotate-token`.
+on loopback; rotate it any time with `charmer doctor --rotate-token`.
 The launcher sets `CLAUDE_CODE_DISABLE_FAST_MODE=1`; this setting is not
 a guarantee that all non-model requests are suppressed. Claude Code's
 feedback drafts are off in managed sessions by default (Settings →
@@ -61,7 +61,7 @@ Besides the requests themselves:
   model, the session and the agent: a stable value for one agent of one
   session, from which the ids cannot be read back;
 - OpenAI-compatible routes receive none of these;
-- claude-multi adds no identifying hint headers of its own.
+- charmer adds no identifying hint headers of its own.
 
 On the OpenAI API key, the gateway sends the key as a plain API client
 (no ChatGPT client version or session header) and adds no hosted tool
@@ -78,49 +78,49 @@ use your prompts and completions to train future Meta models
 | What | Where | Notes |
 | --- | --- | --- |
 | API keys | the key file ([reference/settings.md](reference/settings.md#the-api-key-file)) | mode 0600 |
-| account sign-ins | `~/.local/share/claude-multi/` | plaintext token files, mode 0600, in a private directory |
+| account sign-ins | `~/.local/share/charmer/` | plaintext token files, mode 0600, in a private directory |
 | sign-out and profile backups | next to the originals | kept until you remove them |
-| the gateway's configuration and local key | `~/.config/claude-multi/` (`config.yaml`, `api-key`) | contain secrets |
-| session records and generated files | `~/.local/state/claude-multi/` | no transcript content |
-| the lineup log | `~/.local/state/claude-multi/lineup-log/` | the binding of each agent start; no content |
-| hook failures | `~/.local/state/claude-multi/hook-errors.log` | time, event, session and error class; never content |
-| gateway logs | `~/.local/state/claude-multi/gateway/logs/` (on demand) or the service journal | can name account files and credential indexes; `claude-multi gateway logs` shows them redacted |
+| the gateway's configuration and local key | `~/.config/charmer/` (`config.yaml`, `api-key`) | contain secrets |
+| session records and generated files | `~/.local/state/charmer/` | no transcript content |
+| the lineup log | `~/.local/state/charmer/lineup-log/` | the binding of each agent start; no content |
+| hook failures | `~/.local/state/charmer/hook-errors.log` | time, event, session and error class; never content |
+| gateway logs | `~/.local/state/charmer/gateway/logs/` (on demand) or the service journal | can name account files and credential indexes; `charmer gateway logs` shows them redacted |
 
 Backup tools, sync clients and desktop search indexers may copy files from
-your home folder, these included. Exclude `~/.config/claude-multi/` and
-`~/.local/share/claude-multi/` from them if you do not want credentials
+your home folder, these included. Exclude `~/.config/charmer/` and
+`~/.local/share/charmer/` from them if you do not want credentials
 copied.
 
-claude-multi never reads Claude Code's transcripts.
+charmer never reads Claude Code's transcripts.
 
 ## Inside managed sessions
 
 A managed session does not inherit your credentials: every provider key
-variable claude-multi knows of, and every other `*_API_KEY` variable in
+variable charmer knows of, and every other `*_API_KEY` variable in
 your shell, is removed from the session's environment, except the names
 you list in Settings (**O**) → kept environment (`session_env_keep` in
 `choices.json`; names only, never values; provider key names are refused
-there). The session's agents are also denied reading claude-multi's
+there). The session's agents are also denied reading charmer's
 configuration, its credential folders and your key file. See
 [security.md](security.md#credential-containment).
 
 ## Exports and diagnostics
 
-- `claude-multi export` writes your configuration without keys,
+- `charmer export` writes your configuration without keys,
   sign-ins, sessions, logs or evidence
   ([guides/move-machines.md](guides/move-machines.md)).
 
 ### Diagnostics you share
 
-- `claude-multi doctor --json` is the report to attach to an issue. Its
+- `charmer doctor --json` is the report to attach to an issue. Its
   environment block is an allowlist: folders are reported as present or
   not (no paths from your home), the terminal type is generalized, and
   custom hosts and proxy values are left out. Doctor never prints a
   secret.
-- `claude-multi --version` prints the release identity (launcher,
+- `charmer --version` prints the release identity (launcher,
   catalog, gateway, Claude Code); a missing component says unavailable.
 - Gateway logs are for reading locally: the files can name account files
-  and credential indexes. `claude-multi gateway logs` redacts keys, tokens,
+  and credential indexes. `charmer gateway logs` redacts keys, tokens,
   cookies and account identifiers; still check its output before you
   attach it anywhere public.
 - Never attach a key file, a sign-in file, `config.yaml`, a transcript or

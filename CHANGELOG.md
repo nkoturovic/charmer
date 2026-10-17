@@ -4,6 +4,59 @@ All notable changes are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions
 follow [Semantic Versioning](https://semver.org/).
 
+## [2.0.0] — 2026-10-17
+
+Renamed from claude-multi to charmer. The program, its commands, files,
+service, environment, model selectors, release signatures and repository
+carry the new name; what it does is unchanged. charmer 2.0.0 installs
+fresh: it neither updates nor reads an installed claude-multi.
+
+### Changed
+
+- The commands are `charmer`, `charmer-proxy` and `charmer-dev` (formerly
+  `claude-multi`, `claude-multi-proxy` and `claude-multi-dev`); the installer
+  writes `~/.local/bin/charmer` and `~/.local/bin/charmer-proxy`.
+- The Python package, its distribution and console scripts are `charmer`
+  (import package `charmer`, formerly `claude_multi`). charmer is not
+  published on PyPI or npm; the packages named `charmer` there are unrelated.
+- State, configuration and data live in `~/.local/state/charmer`,
+  `~/.config/charmer` and `~/.local/share/charmer` (installations, sign-in
+  records, charmer's own Claude Code copies, traces), formerly under
+  `claude-multi`. The hook shims are `charmer-hook`, `charmer-hook-3` and
+  `charmer-gateway-token`; the Nix service link is
+  `~/.local/share/charmer/nix/current`; the build cache is
+  `~/.cache/charmer-build`.
+- The supervised gateway is `charmer-gateway.service` with
+  `charmer-gateway-failure.service` (formerly `claude-multi-gateway…`), still
+  on 127.0.0.1:8317; its journal start line and render sentinel say
+  `charmer-proxy` and `charmer-render-`.
+- Every `CLAUDE_MULTI_*` environment variable is now `CHARMER_*` with the
+  same suffix, for example `CHARMER_MANAGED_ID`, `CHARMER_SESSION_ID`,
+  `CHARMER_LAUNCH_EPOCH`, `CHARMER_GATEWAY` and `CHARMER_SECRET_ENV`;
+  nothing exports the old names. `CHARMER_` is a reserved prefix for
+  credential names. Status lines and scripts that read the old names must
+  read the new ones.
+- Catalog 39: the 31 gateway selectors `claude-multi-<model>-<effort>` are
+  `charmer-<model>-<effort>` (same effort and `[1m]`); `gpt-multi-*`,
+  `custom-*` and the canonical Claude model ids are unchanged. Selectors
+  recorded before the rename are served as continuity aliases on the same
+  provider, model, effort and window until
+  `charmer doctor --prune-aliases` removes them.
+- Messages, help, the TUI, the `/cm` skill (`charmer lineup`) and the
+  lineup notice name charmer. The account sign-in acknowledgements carry new
+  ids, so the next sign-in asks you to type `personal` again.
+- Releases are signed under the namespace `charmer-release` with the
+  principal `release@charmer` (the same key); the assets are
+  `charmer-<version>-<target>.tar.gz`, `install.sh` and `install.ps1`.
+- The repository is `github.com/nkoturovic/charmer`; the Nix flake's outputs
+  are `charmer` and `charmer-proxy`; the doctor report's schema title and
+  the operator export's format identifier name charmer.
+
+### Removed
+
+- The instructions for reaching a release through `update --from-dir` from
+  an installed 1.0.0: charmer does not install claude-multi releases.
+
 ## [1.1.0] — 2026-10-07
 
 More permissive model selection, OpenRouter stealth discovery, and fixes for

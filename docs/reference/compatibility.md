@@ -2,16 +2,16 @@
 
 ## Claude Code
 
-Each claude-multi release runs exactly one Claude Code version: the one
+Each charmer release runs exactly one Claude Code version: the one
 its release pins, verified for every platform the release builds. This
-release pins **Claude Code 2.1.292**. `claude-multi --version` names the
+release pins **Claude Code 2.1.292**. `charmer --version` names the
 pinned version, and doctor shows the pin, when it was verified, and the
 evidence class for your platform.
 
 ### How the copy is acquired
 
-Only claude-multi's own copy runs: `~/.local/share/claude-multi/claude/<version>/claude`.
-Setup's `claude` step (`claude-multi setup --step claude`) puts it in
+Only charmer's own copy runs: `~/.local/share/charmer/claude/<version>/claude`.
+Setup's `claude` step (`charmer setup --step claude`) puts it in
 place, trying in this order:
 
 1. `--claude-from <path>`, a file you name;
@@ -31,7 +31,7 @@ never moved, linked or changed.
 
 - Every launch checks the copy's size and full sha256 before anything
   else happens, and refuses a missing or changed copy with the fix:
-  `claude-multi setup --step claude`.
+  `charmer setup --step claude`.
 - The launch card checks only the copy's size and metadata, so a damaged
   copy of the right size can look ready there; doctor and every launch
   check the full hash. This difference is deliberate.
@@ -40,7 +40,7 @@ never moved, linked or changed.
 
 ### Newer Claude Code versions
 
-A newer Claude Code reaches managed sessions with a claude-multi release
+A newer Claude Code reaches managed sessions with a charmer release
 that verifies it: releases repin as patch releases, on a regular cadence
 and when a client change requires it. Until then doctor shows Attention
 when the pin was verified more than 30 days ago or your own Claude Code
@@ -52,7 +52,7 @@ own updater, so the managed copy never changes by itself, while your own
 
 Claude Code's background supervisor can keep a backgrounded managed
 session running on your own, newer `claude`. Its hooks then tell you on
-every prompt to `/exit` and resume it with `claude-multi -r <id>`. One
+every prompt to `/exit` and resume it with `charmer -r <id>`. One
 limit: when a session already carries its lineup marker, the per-prompt
 check can stay quiet after an upgrade (or while detection is unsure)
 until the session's next start; doctor and the next resume report it.
@@ -72,7 +72,7 @@ contexts or signed reasoning history.
 - Agent frontmatter effort is a default: an explicit `effort` on an Agent
   call overrides it and the session effort. Low through max frontmatter
   values reach the wire; `ultracode` in frontmatter is silently ignored by
-  the client, so claude-multi rejects it there. A lead's `ultracode` sends
+  the client, so charmer rejects it there. A lead's `ultracode` sends
   `xhigh` on the wire.
 - Canonical Opus 5.5 with or without `[1m]` books a 1M client window and
   sends a 128K output cap on the first turn, both at startup and after a
@@ -122,7 +122,7 @@ listing Nix as a channel does not claim a Nix installation journey.
 | Anthropic Messages to the built-in keyed providers (Anthropic API key, DeepSeek, Kimi, Meta, OpenRouter, Qwen) | supported |
 | the OpenAI Platform API key, through the gateway's route to OpenAI's Responses API | supported for the models reviewed for it; the client's per-request output cap is not applied ([providers/api-keys.md](../providers/api-keys.md#openai)) |
 | Claude and ChatGPT account sign-ins | supported, for personal use |
-| Anthropic-compatible endpoints of your own, and the Anthropic-compatible presets | supported; a preset is the vendor's documented endpoint, not tested by claude-multi |
+| Anthropic-compatible endpoints of your own, and the Anthropic-compatible presets | supported; a preset is the vendor's documented endpoint, not tested by charmer |
 | keyless OpenAI-compatible servers on your network, and their presets | supported, lead only |
 | keyed OpenAI-compatible endpoints, and the presets that use them | supported in this release after the complete compatibility proof; HTTPS and bearer-only, with [translation limits](../providers/openai-compatible.md#translation-limits); presets are not vendor-tested |
 
@@ -137,4 +137,4 @@ sessions impossible: a launch refuses when the policy sets version bounds
 that exclude the pin, restricts providers without the gateway as a
 pinned custom endpoint, sets its own `apiKeyHelper` or a forced login
 organization, turns hooks off, or denies a bound model. Ask the policy
-owner; claude-multi never edits policy.
+owner; charmer never edits policy.

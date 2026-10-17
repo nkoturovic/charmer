@@ -1,7 +1,7 @@
 # Connect your own OpenAI-compatible endpoint
 
 Some vendors document only an OpenAI-style chat endpoint
-(`/chat/completions`), not Anthropic Messages. claude-multi has a route for
+(`/chat/completions`), not Anthropic Messages. charmer has a route for
 such an endpoint with an API key: the gateway translates Claude Code's
 Messages requests into chat requests. Prefer an
 [Anthropic-compatible endpoint](anthropic-compatible.md) whenever the
@@ -31,10 +31,10 @@ From a terminal outside Claude Code (an invented vendor and model with a
 inflate it to silence a context warning):
 
 ```bash
-claude-multi providers add acme --kind openai-compatible --base-url https://api.acme.example/v1 --auth bearer --secret-ref env:ACME_API_KEY --family unknown
-claude-multi providers set-key acme
-claude-multi models add acme acme-large-1 --context 200000 --source docs --source-ref "https://docs.acme.example/models" --as custom-acme-large
-claude-multi profile edit <name>         # bind custom-acme-large as a lead or agent
+charmer providers add acme --kind openai-compatible --base-url https://api.acme.example/v1 --auth bearer --secret-ref env:ACME_API_KEY --family unknown
+charmer providers set-key acme
+charmer models add acme acme-large-1 --context 200000 --source docs --source-ref "https://docs.acme.example/models" --as custom-acme-large
+charmer profile edit <name>         # bind custom-acme-large as a lead or agent
 ```
 
 `models add` defaults to recommending lead use. An explicit agent binding
@@ -43,7 +43,7 @@ capabilities or declare agent roles first. If you want to record your own
 recommendations, optionally run:
 
 ```bash
-claude-multi models edit custom-acme-large
+charmer models edit custom-acme-large
 ```
 
 Keep its existing fields and, for example, add:
@@ -56,8 +56,8 @@ These are recommendations, not an agent allowlist. Definition changes can
 make existing admission and qualification stale. Optional actions afterwards:
 
 ```bash
-claude-multi models admit custom-acme-large
-claude-multi models qualify custom-acme-large --agents
+charmer models admit custom-acme-large
+charmer models qualify custom-acme-large --agents
 ```
 
 Admission records a local badge with zero inference requests. Qualification
@@ -91,7 +91,7 @@ Other options:
 ## Presets
 
 The release carries presets (each labelled `preset`, filled in from the
-vendor's documentation and not tested by claude-multi) for vendors that
+vendor's documentation and not tested by charmer) for vendors that
 document an OpenAI-compatible endpoint with an API key. All five are
 available in Get started and Providers → **N**; the label remains `preset`,
 not vendor-tested.
@@ -105,8 +105,8 @@ not vendor-tested.
 | `xai` | xAI (Grok) | `https://api.x.ai/v1` | `XAI_API_KEY` |
 
 They work like the [Anthropic-compatible presets](anthropic-compatible.md#presets).
-From a terminal, `claude-multi providers add --preset groq` declares and
-approves one, then `claude-multi providers set-key groq` saves its key.
+From a terminal, `charmer providers add --preset groq` declares and
+approves one, then `charmer providers set-key groq` saves its key.
 The same options for [a second copy or shared key](anthropic-compatible.md#the-same-preset-twice)
 apply. Each has a model-list address: listing models is a separate, consented
 request, not automatic admission or qualification. Add the model ids you
@@ -146,5 +146,5 @@ is never retried with a weaker tool contract.
 
 ## Costs
 
-Every request is billed by the vendor. claude-multi enforces no cap; set
+Every request is billed by the vendor. charmer enforces no cap; set
 limits with the vendor.

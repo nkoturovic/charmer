@@ -11,14 +11,14 @@ and opens claude.ai in a browser.
 
 ## 2. The personal-use confirmation
 
-Before the first sign-in claude-multi shows its personal-use text once and
-asks you to type `personal`. The text says, in short: claude-multi is an
+Before the first sign-in charmer shows its personal-use text once and
+asks you to type `personal`. The text says, in short: charmer is an
 independent tool, not affiliated with Anthropic; Anthropic's terms
 restrict third parties from offering Claude.ai login or routing requests
 through Free, Pro or Max credentials on behalf of users; signing in stores
 your own account's tokens on this computer for your own sessions only; and
 an Anthropic API key is the supported alternative. Your confirmation is
-recorded in `~/.config/claude-multi/choices.json`. This is the product's
+recorded in `~/.config/charmer/choices.json`. This is the product's
 own condition for the route, not legal advice; read Anthropic's terms
 yourself.
 
@@ -28,8 +28,8 @@ In the launcher: **G** Providers → Anthropic → **L**, or Get started's
 providers step. From a terminal outside Claude Code:
 
 ```bash
-claude-multi providers sign-in anthropic
-claude-multi providers sign-in anthropic --no-browser   # print the address instead
+charmer providers sign-in anthropic
+charmer providers sign-in anthropic --no-browser   # print the address instead
 ```
 
 A browser page opens at claude.ai; approve the sign-in there and it
@@ -47,29 +47,29 @@ its login stay as they are.
 - Sign out with **G** → **L**, or:
 
   ```bash
-  claude-multi providers sign-out anthropic
+  charmer providers sign-out anthropic
   ```
 
   The sign-in records move into a kept backup,
-  `~/.local/share/claude-multi/auth.signed-out.claude.<date>`, which is
+  `~/.local/share/charmer/auth.signed-out.claude.<date>`, which is
   never deleted for you; the gateway reloads and the account's models
   disappear.
 - Sign-in records are plaintext token files in
-  `~/.local/share/claude-multi/auth/` (mode 0600, private directory). Managed
+  `~/.local/share/charmer/auth/` (mode 0600, private directory). Managed
   sessions cannot read them. Do not copy that directory between computers;
   sign in again on the new one.
 
 ## 5. Use it
 
 With the account signed in, the shipped profiles that use Claude lines are
-connected. `claude-multi providers test anthropic` sends one small request
+connected. `charmer providers test anthropic` sends one small request
 after you agree.
 
 ## 6. Limits and quota
 
 Your plan's usage limits apply, and Anthropic does not publish them as
-fixed numbers for this use; claude-multi cannot tell you what your
-account is entitled to. `claude-multi quota` (or `/cm quota` in a
+fixed numbers for this use; charmer cannot tell you what your
+account is entitled to. `charmer quota` (or `/cm quota` in a
 session) shows what the gateway observed from recent traffic: the
 condition and reset time when the provider reported them, with their age.
 No reading means no data yet, not zero use. A profile that runs several
@@ -96,9 +96,9 @@ an Anthropic API key is billed separately, per token
 
 | You see | Next step |
 | --- | --- |
-| doctor: the claude OAuth pool has no credential record | sign in: `claude-multi providers sign-in anthropic` |
+| doctor: the claude OAuth pool has no credential record | sign in: `charmer providers sign-in anthropic` |
 | doctor counts `invalid_grant` lines since the sign-in | the sign-in expired or was revoked: sign in again |
-| requests fail with a usage-limit message | wait for the reset `claude-multi quota` shows, or move agents with `/cm fallback <provider>` |
+| requests fail with a usage-limit message | wait for the reset `charmer quota` shows, or move agents with `/cm fallback <provider>` |
 | “Not signed in — type personal to continue (nothing changed).” | type the word `personal` (case and spaces around it do not matter) |
 
 ## 8. The API-key alternative

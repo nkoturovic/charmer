@@ -1,6 +1,6 @@
 # Install on macOS
 
-claude-multi installs for your user from a signed release bundle, the same
+charmer installs for your user from a signed release bundle, the same
 way as on Linux. The bundle carries the launcher, its own Python runtime
 and the gateway; you need no system Python and no preinstalled Claude
 Code.
@@ -21,13 +21,13 @@ macOS) to verify the release signature.
 ## Install
 
 ```bash
-curl -fsSLO https://github.com/nkoturovic/claude-multi/releases/latest/download/install.sh
+curl -fsSLO https://github.com/nkoturovic/charmer/releases/latest/download/install.sh
 sh install.sh
 ```
 
 The installer picks the bundle for your Mac, verifies it, installs it
-under `~/.local/share/claude-multi/install/`, writes the launchers into
-`~/.local/bin` and starts `claude-multi setup`. The options, the install
+under `~/.local/share/charmer/install/`, writes the launchers into
+`~/.local/bin` and starts `charmer setup`. The options, the install
 root, the receipt and the repair of an interrupted install are the same as
 on Linux: [install/linux.md](linux.md#options).
 
@@ -54,10 +54,10 @@ after asking. Your own `claude` is never moved, linked or updated.
 ## The gateway on macOS
 
 The gateway runs on demand only: a launch starts it when needed and leaves
-it running, and `claude-multi gateway stop` stops it. There is no
-supervised service on macOS (no launchd unit): `claude-multi gateway
+it running, and `charmer gateway stop` stops it. There is no
+supervised service on macOS (no launchd unit): `charmer gateway
 service install` is for Linux. Each start writes its own log, and
-`claude-multi gateway logs` prints the newest one. On macOS the gateway's
+`charmer gateway logs` prints the newest one. On macOS the gateway's
 ownership check and session liveness read bounded `lsof` and `ps` output.
 See [guides/gateway.md](../guides/gateway.md).
 

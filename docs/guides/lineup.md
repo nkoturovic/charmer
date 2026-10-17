@@ -15,8 +15,8 @@ providers. As `/cm` reminds you:
 - /model: press s to switch for this session only — Enter saves the choice into ~/.claude/settings.json, which plain claude then inherits
 - /model lists only the lead set; another provider family asks first (Alt+P and /config block instead); a model outside the set is refused — relaunch with a profile whose lead is that model.
 
-If an Enter in `/model` saved a claude-multi model as your global default,
-claude-multi tells you in the session and doctor offers the revert.
+If an Enter in `/model` saved a charmer model as your global default,
+charmer tells you in the session and doctor offers the revert.
 
 `/cm` changes the agents and the profile. Its grammar:
 
@@ -27,7 +27,7 @@ claude-multi tells you in the session and doctor offers the revert.
   current one).
 - Only you can run `/cm`; the model cannot invoke it.
 - Everything after `/cm` is one argument: write it without quotes.
-- `/cm` runs claude-multi's `lineup` command, so `claude-multi` must be on
+- `/cm` runs charmer's `lineup` command, so `charmer` must be on
   the session's PATH.
 - Every change ends with one next step: `next: type /reload-plugins`, a
   line about the lead, recorded for the next resume, or no change.
@@ -62,14 +62,14 @@ do, new agents keep the previous bindings. Start fresh agents afterwards;
 ## From a terminal and the sessions screen
 
 The same requests work from a terminal with the session's runtime id
-(`runtime_session_id` in `claude-multi sessions show <id>`):
+(`runtime_session_id` in `charmer sessions show <id>`):
 
 ```bash
-claude-multi lineup --session <runtime-id> show
-claude-multi lineup --session <runtime-id> --preview fallback <provider>
-claude-multi lineup --session <runtime-id> set <agent>=<model>:<effort>
-claude-multi lineup --session <runtime-id> --relaunch profile <name>
-claude-multi lineup --session <runtime-id> --relaunch --its-exited direct <model>
+charmer lineup --session <runtime-id> show
+charmer lineup --session <runtime-id> --preview fallback <provider>
+charmer lineup --session <runtime-id> set <agent>=<model>:<effort>
+charmer lineup --session <runtime-id> --relaunch profile <name>
+charmer lineup --session <runtime-id> --relaunch --its-exited direct <model>
 ```
 
 `--relaunch` applies a RELAUNCH change now: it asks you to confirm that
@@ -77,7 +77,7 @@ the session has exited (`--its-exited` confirms it up front). In the
 launcher, **S** → **T** on a session opens the lineup dialog: another
 profile, one agent, direct, keep the current lineup (which discards a
 pending change) or a fallback provider, each with its effect shown first.
-`claude-multi lineup --help` lists the requests.
+`charmer lineup --help` lists the requests.
 
 ## Switch profile inside a session
 
@@ -130,8 +130,8 @@ log cannot be read it says so and counts nothing.
 ## Direct sessions
 
 ```bash
-claude-multi direct --model <model>   # or D on the card
-claude-multi direct -c                # continue the last session in this directory
+charmer direct --model <model>   # or D on the card
+charmer direct -c                # continue the last session in this directory
 ```
 
 A direct session has a lead and no `cm-*` agents; Claude Code's own agents
@@ -143,7 +143,7 @@ direct session gains agents later with `/cm profile <name>`.
 `--no-subagents` denies delegation for that session (recorded; resume
 applies it again).
 
-With `claude-multi direct --model <model>` from the CLI, a missing provider
+With `charmer direct --model <model>` from the CLI, a missing provider
 credential is advisory: it warns "requests may fail" and still launches.
 The TUI Direct screen offers **Launch anyway?**, default **No**; explicitly
 answer Yes to continue despite the missing credential. Profile and binding
@@ -173,8 +173,8 @@ Read-only reviewer/explorer tools and writer worktree isolation stay in force.
 The lead receives a **lineup notice** when the session starts, resumes,
 compacts or clears, when it forks, and on your next prompt after the
 lineup changed. A failing lineup or model-switch hook never blocks your
-prompt: the session shows a one-line error naming `claude-multi doctor`,
-and one metadata-only line goes to `~/.local/state/claude-multi/hook-errors.log`.
+prompt: the session shows a one-line error naming `charmer doctor`,
+and one metadata-only line goes to `~/.local/state/charmer/hook-errors.log`.
 
 ## Tasks at a glance
 
@@ -182,17 +182,17 @@ and one metadata-only line goes to `~/.local/state/claude-multi/hook-errors.log`
 
 | Task | TUI | CLI | In-session | Notes |
 | --- | --- | --- | --- | --- |
-| a session's lineup, pending change and windows | card → S → V: a session row | `claude-multi lineup --session <runtime-id> show` | `/cm show` | asks nothing |
-| the profiles a session can switch to | card → S → T → ← →: the lineup dialog | `claude-multi lineup --session <runtime-id> profiles` | `/cm profiles` | asks nothing |
-| follow another profile (live or at the next resume) | card → S → T: a current-format session; card → S → T → Enter: a previewed change | `claude-multi lineup --session <runtime-id> profile <name>` | `/cm profile <name>` | asks nothing |
-| bind one agent | card → S → T → Tab to agents → Space: the lineup dialog | `claude-multi lineup --session <runtime-id> set <agent>=<model>[:<effort>]` | `/cm set <agent>=<model>[:<effort>]` | asks nothing |
-| unbind one agent | card → S → T → Tab to agents → unbind: the lineup dialog | `claude-multi lineup --session <runtime-id> unset <agent>` | `/cm unset <agent>` | asks nothing |
-| change to a lead with no agents | card → S → T → Tab to direct: the lineup dialog | `claude-multi lineup --session <runtime-id> direct [<model>[:<effort>]]` | `/cm direct [<model>[:<effort>]]` | asks nothing |
-| preview a change's effect before anything is written | card → S → T: a current-format session | `claude-multi lineup --session <runtime-id> fallback <provider> [--preview]` | `/cm fallback <provider> [--preview]` | asks nothing |
-| record a change for the next resume, or relaunch now | card → S → T → Enter (RELAUNCH): a change that needs a relaunch | `claude-multi lineup --session <runtime-id> --relaunch <request>`; `claude-multi lineup --session <runtime-id> --relaunch --its-exited <request>` | not a `/cm` request | asks nothing |
-| keep the current lineup and discard a pending change (Follow off) | card → S → T → Keep current lineup — discard pending: a pending change; card → S → F: a session that follows its profile | `claude-multi lineup --session <runtime-id> pin` | `/cm pin` | asks nothing |
-| follow the session's profile again, after a preview | card → S → F: a pinned session | `claude-multi lineup --session <runtime-id> follow` | `/cm follow` | asks nothing |
-| move the roles on one provider to a fallback lineup | card → S → T → Fallback → provider: a provider with a fallback profile | `claude-multi lineup --session <runtime-id> fallback <provider> [--preview]` | `/cm fallback <provider> [--preview]` | asks nothing |
-| apply a saved profile to its running sessions now or later | profile editor → Ctrl-S → apply now / later: running followers | `claude-multi profile edit <name>` | not a `/cm` request | asks nothing |
+| a session's lineup, pending change and windows | card → S → V: a session row | `charmer lineup --session <runtime-id> show` | `/cm show` | asks nothing |
+| the profiles a session can switch to | card → S → T → ← →: the lineup dialog | `charmer lineup --session <runtime-id> profiles` | `/cm profiles` | asks nothing |
+| follow another profile (live or at the next resume) | card → S → T: a current-format session; card → S → T → Enter: a previewed change | `charmer lineup --session <runtime-id> profile <name>` | `/cm profile <name>` | asks nothing |
+| bind one agent | card → S → T → Tab to agents → Space: the lineup dialog | `charmer lineup --session <runtime-id> set <agent>=<model>[:<effort>]` | `/cm set <agent>=<model>[:<effort>]` | asks nothing |
+| unbind one agent | card → S → T → Tab to agents → unbind: the lineup dialog | `charmer lineup --session <runtime-id> unset <agent>` | `/cm unset <agent>` | asks nothing |
+| change to a lead with no agents | card → S → T → Tab to direct: the lineup dialog | `charmer lineup --session <runtime-id> direct [<model>[:<effort>]]` | `/cm direct [<model>[:<effort>]]` | asks nothing |
+| preview a change's effect before anything is written | card → S → T: a current-format session | `charmer lineup --session <runtime-id> fallback <provider> [--preview]` | `/cm fallback <provider> [--preview]` | asks nothing |
+| record a change for the next resume, or relaunch now | card → S → T → Enter (RELAUNCH): a change that needs a relaunch | `charmer lineup --session <runtime-id> --relaunch <request>`; `charmer lineup --session <runtime-id> --relaunch --its-exited <request>` | not a `/cm` request | asks nothing |
+| keep the current lineup and discard a pending change (Follow off) | card → S → T → Keep current lineup — discard pending: a pending change; card → S → F: a session that follows its profile | `charmer lineup --session <runtime-id> pin` | `/cm pin` | asks nothing |
+| follow the session's profile again, after a preview | card → S → F: a pinned session | `charmer lineup --session <runtime-id> follow` | `/cm follow` | asks nothing |
+| move the roles on one provider to a fallback lineup | card → S → T → Fallback → provider: a provider with a fallback profile | `charmer lineup --session <runtime-id> fallback <provider> [--preview]` | `/cm fallback <provider> [--preview]` | asks nothing |
+| apply a saved profile to its running sessions now or later | profile editor → Ctrl-S → apply now / later: running followers | `charmer profile edit <name>` | not a `/cm` request | asks nothing |
 
 <!-- end of generated: lineup-tasks -->

@@ -1,12 +1,12 @@
-# claude-multi documentation
+# charmer documentation
 
-claude-multi starts Claude Code sessions with a **lineup**: a lead model
+charmer starts Claude Code sessions with a **lineup**: a lead model
 plus up to nine `cm-*` agents that can run on models from other providers.
 Every session is recorded and resumable, and its lineup can change while it
 runs. Your own Claude Code installation is not replaced or reconfigured
 ([STANDALONE.md](STANDALONE.md) explains where the two meet).
 
-This page is the map. `claude-multi --help` prints where these pages are
+This page is the map. `charmer --help` prints where these pages are
 installed; [CHEATSHEET.md](CHEATSHEET.md) is the one-page lookup of tasks,
 keys, files and symptoms.
 
@@ -43,10 +43,10 @@ The words the launcher uses, as its help (`?` on the card) defines them:
   profile and launch a first session.
 - Install: [Linux](install/linux.md) · [macOS](install/macos.md) ·
   [Windows (WSL2)](install/windows-wsl2.md) · [Nix](install/nix.md).
-- `claude-multi` with no command opens the launcher: the launch card and
+- `charmer` with no command opens the launcher: the launch card and
   its screens (**W** Get started, **P** Profiles, **D** Direct, **S**
   Sessions, **G** Providers, **M** Models, **O** Settings, **H** doctor).
-  `claude-multi setup` runs the same first steps as plain lines.
+  `charmer setup` runs the same first steps as plain lines.
 
 ## Connect a provider
 
@@ -91,7 +91,7 @@ want.
 ## Recovery
 
 - [Troubleshooting](troubleshooting.md): symptom, doctor finding, fix.
-- `claude-multi doctor` reports Ready, Attention or BLOCKED with one fix
+- `charmer doctor` reports Ready, Attention or BLOCKED with one fix
   for each finding.
 
 ## Update, move, uninstall
@@ -107,7 +107,7 @@ want.
 
 - [Privacy](privacy.md): what leaves your computer, and where.
 - [Security model](security.md): trust boundaries, signed releases and
-  what claude-multi does not protect against.
+  what charmer does not protect against.
 
 ## Reference
 
@@ -116,5 +116,5 @@ want.
   [Compatibility](reference/compatibility.md) ·
   [Licences and notices](reference/licenses.md).
 - Contributing, the architecture and the development workflow live in the
-  source repository: [CONTRIBUTING.md](https://github.com/nkoturovic/claude-multi/blob/main/CONTRIBUTING.md)
-  and [AGENTS.md](https://github.com/nkoturovic/claude-multi/blob/main/AGENTS.md).
+  source repository: [CONTRIBUTING.md](https://github.com/nkoturovic/charmer/blob/main/CONTRIBUTING.md)
+  and [AGENTS.md](https://github.com/nkoturovic/charmer/blob/main/AGENTS.md).

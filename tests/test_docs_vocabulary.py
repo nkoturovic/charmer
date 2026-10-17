@@ -286,13 +286,14 @@ class JournalConfinementTests(unittest.TestCase):
 
 
 class PublicPageRuleTests(unittest.TestCase):
-    """R8 and R13–R15 over the public pages; R9 without exceptions."""
+    """R8 and R13–R16 over the public pages; R9 without exceptions."""
 
     def test_no_public_page_hits_the_public_page_rules(self) -> None:
         for name in vocab.PKG_DOCS:
             with self.subTest(name):
                 self.assertEqual([h.format() for h in _hits_for(name) if h.rule in
-                                  ("backend-command", "this-machine", "operator-skill", "release-lineage")], [])
+                                  ("backend-command", "this-machine", "operator-skill", "release-lineage",
+                                   "former-name")], [])
 
     def test_the_rules_are_not_vacuous(self) -> None:
         unlabelled = "The gateway runs as `cli-proxy-api`; `systemctl --user restart cli-proxy-api`.\n"
@@ -301,6 +302,11 @@ class PublicPageRuleTests(unittest.TestCase):
         with mock.patch.object(vocab, "operator_skills", lambda: re.compile(r"\bexample-ops-skill\b")):
             self.assertTrue(any(h.rule == "operator-skill" for h in vocab._fixture_hits("skill example-ops-skill §6\n")))
         self.assertTrue(any(h.rule == "release-lineage" for h in vocab._fixture_hits("kept for 3.0.x\n")))
+        from charmer import legacy
+
+        self.assertTrue(any(h.rule == "former-name" for h in vocab._fixture_hits(f"`{legacy.NAME} doctor`\n")))
+        for name in vocab.PKG_DOCS:
+            self.assertIn("former-name", vocab.page_rules(name), name)
 
     def test_the_release_line_pattern_is_the_lineage_gate_s(self) -> None:
         import test_hygiene

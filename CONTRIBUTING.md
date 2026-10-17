@@ -1,4 +1,4 @@
-# Contributing to claude-multi
+# Contributing to charmer
 
 Thanks for helping. This guide covers setting up a checkout, running the
 tests, building the gateway and writing commits. The architecture, the
@@ -21,12 +21,17 @@ in [`AGENTS.md`](AGENTS.md); read it before changing code.
 ## Set up a checkout
 
 ```bash
-git clone https://github.com/nkoturovic/claude-multi
-cd claude-multi
-python3 -m venv ~/.venvs/claude-multi
-~/.venvs/claude-multi/bin/pip install -e .
-~/.venvs/claude-multi/bin/claude-multi --version
+git clone https://github.com/nkoturovic/charmer
+cd charmer
+python3 -m venv ~/.venvs/charmer
+~/.venvs/charmer/bin/pip install -e .
+~/.venvs/charmer/bin/charmer --version
 ```
+
+The editable install is for development only. charmer is not published
+on PyPI or npm (the packages named `charmer` there are unrelated
+projects): install it only from the signed GitHub releases or the Nix
+flake.
 
 Keep the virtual environment outside the checkout, as above: the
 credential check reads every file of the working tree, ignored files
@@ -35,13 +40,13 @@ repository's to vet. (The naming checks read only the repository's own
 files — what git tracks or would add — so build output and an ignored
 `.venv/` never trip them.)
 
-The editable install puts `claude-multi`, `claude-multi-proxy` and
-`claude-multi-dev` in the virtual environment's
+The editable install puts `charmer`, `charmer-proxy` and
+`charmer-dev` in the virtual environment's
 `bin/`; they run the code in `src/` and name the `source` channel, as the
-launchers in `bin/` do (`bin/claude-multi` works without any install).
-`claude-multi-dev`, the maintainers' catalog tool, runs only from a source
+launchers in `bin/` do (`bin/charmer` works without any install).
+`charmer-dev`, the maintainers' catalog tool, runs only from a source
 checkout (a wheel installs it too); release bundles and the Nix package
-install `claude-multi` and `claude-multi-proxy`.
+install `charmer` and `charmer-proxy`.
 The tests need no install: `python3 tools/test.py` runs them with any
 Python 3.11 or newer, the environment's own included.
 The build backend is setuptools, pinned in `pyproject.toml`
@@ -52,8 +57,8 @@ Layout:
 
 | Path | What |
 | --- | --- |
-| `src/claude_multi/` | the launcher package (standard library only) |
-| `src/claude_multi/data/` | its runtime resources: `version.json`, the catalog, schemas, presets, examples, the service spec, the generated gateway contract and model registry |
+| `src/charmer/` | the launcher package (standard library only) |
+| `src/charmer/data/` | its runtime resources: `version.json`, the catalog, schemas, presets, examples, the service spec, the generated gateway contract and model registry |
 | `bin/` | the source-checkout launchers |
 | `docs/` | the user documents (installed with the package) |
 | `gateway/` | the gateway recipe (`UPSTREAM.json`), its ordered patches, licences and SBOMs |
@@ -82,7 +87,7 @@ runnable and the run fails.
 The installer, update and release tests build small fake releases
 (`tests/_fake_release.py`: bundles carrying this checkout's package, signed
 with throwaway keys) and run the real `packaging/install.sh` and the
-installed `claude-multi update` against them in a temporary HOME. The CI
+installed `charmer update` against them in a temporary HOME. The CI
 workflows in `.github/workflows/` are written here and checked as text by
 `tests/test_release_ci.py`, which also runs the journey script
 `.github/scripts/journey.sh` on fake releases. On a real bundle the
@@ -93,9 +98,9 @@ in a fresh HOME inside a network namespace (for example
 
 `tools/test.py` gives the suite a private temporary HOME and refuses any
 connection to a live gateway port, so a run never reads or changes your
-own claude-multi or Claude Code state and never calls a provider. With
+own charmer or Claude Code state and never calls a provider. With
 Nix, the same suite also runs in the sandbox:
-`nix build .#checks.x86_64-linux.claude-multi`.
+`nix build .#checks.x86_64-linux.charmer`.
 
 Goldens (expected outputs under `tests/goldens/`) change only through
 `PYTHONPATH=src:tests python3 tests/bless.py`; with `--check` it lists what
@@ -115,8 +120,8 @@ personal identifiers and references to internal tracking ids
 (`tests/test_hygiene.py`); user-visible text (messages, help, packaged data
 and goldens) also names no earlier release line or planning document.
 
-Every command, option, `claude-multi-proxy` command, `/cm` verb and TUI
-action needs a row in `src/claude_multi/surface_matrix.py` (its surfaces,
+Every command, option, `charmer-proxy` command, `/cm` verb and TUI
+action needs a row in `src/charmer/surface_matrix.py` (its surfaces,
 or the reason one has none); a value-taking option that only supplies an
 input of its command's operation may instead be listed in
 `OPTION_ARGUMENTS` with the input it supplies. Each TUI path names a
@@ -125,8 +130,8 @@ dispatch test: one that presses the action's key and asserts what it does.
 
 ## Credentials and local files
 
-Keep credentials outside the checkout: claude-multi reads its provider
-keys from `~/.config/claude-multi/` (or the key file you point it at),
+Keep credentials outside the checkout: charmer reads its provider
+keys from `~/.config/charmer/` (or the key file you point it at),
 never from the repository. The tree's credential check scans every file of
 the working tree, ignored files included, so a key file left in a checkout
 fails the suite; `.gitignore` only keeps one from being committed by
@@ -179,9 +184,9 @@ explicit test-key verification.
 
 ## Change the catalog
 
-Catalog edits go to `src/claude_multi/data/catalog/` in a checkout, through
-`claude-multi-dev` (draft, check, review, promote) for new models and
-providers; `claude-multi-dev --help` shows the tracks. The behavioural tests
+Catalog edits go to `src/charmer/data/catalog/` in a checkout, through
+`charmer-dev` (draft, check, review, promote) for new models and
+providers; `charmer-dev --help` shows the tracks. The behavioural tests
 run on a frozen fixture catalog, so a catalog change does not move them.
 `catalog_version` (in `version.json`) moves once per release line: the
 first catalog change after a release bumps it, and later changes on that
@@ -217,25 +222,25 @@ to issue, plan or review identifiers, or to how the code used to be.
 Open an issue with:
 
 - what you did, what you expected and what happened;
-- `claude-multi --version` (the launcher, catalog, gateway and Claude Code
+- `charmer --version` (the launcher, catalog, gateway and Claude Code
   versions; a missing component says unavailable);
-- `claude-multi doctor --json`: one JSON document built for sharing. Its
+- `charmer doctor --json`: one JSON document built for sharing. Its
   environment block is an allowlist: folders are reported as present or
   not, never as paths from your home; the terminal type is generalized;
   custom hosts and proxy values are left out; no secret is printed.
 
 Never attach API keys or the key file, sign-in files under
-`~/.local/share/claude-multi/`, the gateway's `config.yaml` or `api-key`,
+`~/.local/share/charmer/`, the gateway's `config.yaml` or `api-key`,
 transcripts, an environment dump, or the gateway's log files: they can
-name account files and credential indexes (`claude-multi gateway logs`
+name account files and credential indexes (`charmer gateway logs`
 shows them redacted). Security problems go through [`SECURITY.md`](SECURITY.md).
 
 ## Compatibility window
 
 Each release pins one Claude Code version and one gateway version
-(`src/claude_multi/data/catalog/native-contract.json`,
+(`src/charmer/data/catalog/native-contract.json`,
 `gateway/UPSTREAM.json`). A newer Claude Code reaches users only through a
-claude-multi release that re-pins it (`claude-multi-dev repin` from a
+charmer release that re-pins it (`charmer-dev repin` from a
 source checkout, with its evidence run); re-pins ship as patch releases.
 
 ## Before you open a pull request

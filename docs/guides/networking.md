@@ -10,14 +10,14 @@ TLS-inspecting firewall, configure each one you use.
 | --- | --- | --- | --- |
 | installer (`install.sh`) | the release download location | `curl`'s or `wget`'s own proxy settings | `curl`'s or `wget`'s own CA settings |
 | launcher: Claude Code download | `downloads.claude.ai` | the environment's HTTPS proxy settings | `SSL_CERT_FILE` / `SSL_CERT_DIR`, else the Python interpreter's defaults, else a well-known system bundle |
-| launcher: `claude-multi update` | the release download location | `https_proxy` / `HTTPS_PROXY`, with `no_proxy` / `NO_PROXY` bypass | the launcher's trust, as above |
+| launcher: `charmer update` | the release download location | `https_proxy` / `HTTPS_PROXY`, with `no_proxy` / `NO_PROXY` bypass | the launcher's trust, as above |
 | launcher: model discovery and public feed | the listing endpoint shown in the request plan, or the public model feed | the environment's proxy settings | the launcher's trust, as above |
 | launcher: LAN reachability | a declared keyless server's host and port | direct DNS resolution and TCP connection, not the gateway proxy | no TLS handshake or HTTP request |
 | Claude Code (each managed session) | the gateway on loopback; other endpoints upstream Claude Code uses | inherited proxy settings; the launcher adds a loopback bypass when a proxy is set | Claude Code's own trust settings; `NODE_EXTRA_CA_CERTS` is passed through untouched |
 | gateway, started on demand | each provider you connect | only the proxy you set in setup, never inherited proxy variables | `SSL_CERT_FILE` / `SSL_CERT_DIR` from the environment that started it |
 | gateway, as a user service (Linux) | each provider you connect | only the proxy you set in setup | configured `SSL_CERT_FILE` / `SSL_CERT_DIR` values from the installing terminal are copied into the unit |
 
-The table describes how claude-multi configures each process; it is not
+The table describes how charmer configures each process; it is not
 a cross-platform proxy or certificate compatibility guarantee. Isolated
 Linux x86_64 client testing exercised a local TLS fixture with a custom
 CA, but the platform installation journeys do not verify the client's
@@ -27,7 +27,7 @@ or certificate variables supplied by the user manager.
 
 Notes:
 
-- **The launcher's trust source.** `claude-multi doctor` names the source
+- **The launcher's trust source.** `charmer doctor` names the source
   of the certificates the launcher trusts. A configured location that is
   missing or unreadable is treated as empty: the request fails its
   certificate check rather than falling back to other certificates.
@@ -38,17 +38,14 @@ Notes:
   proxy set it connects directly; a failed proxy is not retried directly.
   The isolated tests exercise HTTP CONNECT carrying verified HTTPS, not
   SOCKS, PAC or every proxy authentication scheme. TLS verification,
-  release-host restrictions and signature checks still apply.
-  The installed **1.0.0** updater disables environment proxies: behind a
-  mandatory proxy, use the installer (with `curl`'s or `wget`'s proxy
-  settings) or `claude-multi update --from-dir <path>` once to reach a
-  release with the fix. See [update](../update.md#offline-and-behind-a-proxy).
+  release-host restrictions and signature checks still apply. See
+  [update](../update.md#offline-and-behind-a-proxy).
 - **The gateway's proxy** is set with
-  `claude-multi setup --step gateway --proxy <url>` (an unauthenticated
+  `charmer setup --step gateway --proxy <url>` (an unauthenticated
   `http`, `https` or `socks5` address, no credentials in it) and removed
   with `--no-proxy`. A running gateway reloads with it; a refused render
   puts the old setting back. It is stored in `endpoint.json`.
-- **The user service's certificates.** `claude-multi gateway service
+- **The user service's certificates.** `charmer gateway service
   install` (also when it refreshes the unit) carries `SSL_CERT_FILE` and
   `SSL_CERT_DIR` from the terminal it runs in into the unit, bound
   read-only where the unit's view would hide them. It refuses, changing
@@ -71,7 +68,7 @@ Notes:
 
 ## Under WSL2
 
-Inside WSL2, claude-multi is a Linux program: the proxy variables and the
+Inside WSL2, charmer is a Linux program: the proxy variables and the
 certificate bundle of your Linux distribution apply, not Windows'
 settings. A certificate authority installed in Windows is not trusted in
 the distribution until you add it there (or point `SSL_CERT_FILE` and
@@ -84,11 +81,11 @@ the gateway still uses only the proxy you set in setup.
 
 1. Find which process failed: the installer prints `curl` or `wget`
    errors; the launcher's errors name the download; a session's provider
-   errors come from the gateway (`claude-multi gateway logs`).
+   errors come from the gateway (`charmer gateway logs`).
 2. Give that process your organisation's CA bundle as the table says,
    then retry. For the on-demand gateway, restart it from a terminal that
-   has the variables set (`claude-multi gateway restart`).
-3. Never turn TLS verification off; claude-multi has no switch for it.
+   has the variables set (`charmer gateway restart`).
+3. Never turn TLS verification off; charmer has no switch for it.
 
 ## Endpoint approvals
 

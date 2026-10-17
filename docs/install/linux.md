@@ -1,6 +1,6 @@
 # Install on Linux
 
-claude-multi installs for your user from a signed release bundle. The
+charmer installs for your user from a signed release bundle. The
 bundle carries the launcher, its own Python runtime and the gateway; you
 need no system Python and no preinstalled Claude Code.
 
@@ -36,21 +36,21 @@ apt-get install --yes --no-install-recommends curl ca-certificates openssh-clien
 ```
 
 On Fedora, the corresponding packages are `curl`, `ca-certificates` and
-`openssh-clients`. These are system packages; the claude-multi installer
+`openssh-clients`. These are system packages; the charmer installer
 itself runs as your normal user.
 
 ## Install
 
 ```bash
-curl -fsSLO https://github.com/nkoturovic/claude-multi/releases/latest/download/install.sh
+curl -fsSLO https://github.com/nkoturovic/charmer/releases/latest/download/install.sh
 sh install.sh
 ```
 
 The installer downloads the bundle for your architecture, verifies it,
-installs it, writes the launchers `claude-multi` and `claude-multi-proxy`
-into `~/.local/bin`, and starts `claude-multi setup`. A specific release:
+installs it, writes the launchers `charmer` and `charmer-proxy`
+into `~/.local/bin`, and starts `charmer setup`. A specific release:
 `sh install.sh --version VERSION`, or the installer published with that
-release, `https://github.com/nkoturovic/claude-multi/releases/download/vVERSION/install.sh`.
+release, `https://github.com/nkoturovic/charmer/releases/download/vVERSION/install.sh`.
 
 The release signature covers the installer script through its checksum in
 `SHA256SUMS`. Downloading and running the script does not authenticate it
@@ -69,25 +69,25 @@ downloading it to piping it into a shell, and see
 | `--base-url URL` | download from another https location (`{version}` is substituted) |
 | `--allowed-signers FILE` | verify this download against your own allowed-signers file; the installed release keeps verifying its updates with its built-in key |
 | `--modify-path` / `--no-modify-path` | add `~/.local/bin` to PATH in your shell profile, or only print the line |
-| `--no-setup` | do not start `claude-multi setup` afterwards |
+| `--no-setup` | do not start `charmer setup` afterwards |
 | `--migrate-from-nix` | take over a state directory a Nix installation used |
 | `--repair` | finish an interrupted install, repair or rollback |
 | `--rollback` | switch back to the previously installed version |
-| `--uninstall` | run `claude-multi uninstall` |
+| `--uninstall` | run `charmer uninstall` |
 | `-y`, `--yes` | accept the default answer to every question |
 
 ## Where things go
 
 | Path | What |
 | --- | --- |
-| `~/.local/share/claude-multi/install/versions/<version>/` | each installed release |
-| `~/.local/share/claude-multi/install/current`, `previous` | the release in use and the one before it |
-| `~/.local/share/claude-multi/install/installer.json` | the receipt: the launchers and the PATH line the installer wrote, with their sha256 |
-| `~/.local/bin/claude-multi`, `~/.local/bin/claude-multi-proxy` | the launchers |
-| `~/.local/share/claude-multi/claude/<version>/claude` | claude-multi's own copy of the pinned Claude Code |
+| `~/.local/share/charmer/install/versions/<version>/` | each installed release |
+| `~/.local/share/charmer/install/current`, `previous` | the release in use and the one before it |
+| `~/.local/share/charmer/install/installer.json` | the receipt: the launchers and the PATH line the installer wrote, with their sha256 |
+| `~/.local/bin/charmer`, `~/.local/bin/charmer-proxy` | the launchers |
+| `~/.local/share/charmer/claude/<version>/claude` | charmer's own copy of the pinned Claude Code |
 
-Your configuration is in `~/.config/claude-multi/` and session state in
-`~/.local/state/claude-multi/`; [reference/settings.md](../reference/settings.md)
+Your configuration is in `~/.config/charmer/` and session state in
+`~/.local/state/charmer/`; [reference/settings.md](../reference/settings.md)
 lists every file.
 
 If `~/.local/bin` is not on your PATH, the installer prints the line to
@@ -98,7 +98,7 @@ add (or adds it with `--modify-path`).
 Setup's `claude` step copies the pinned Claude Code from your own
 installation when an exact match exists, or downloads that exact build
 after asking. Your own `claude` is never moved, linked or updated.
-`claude-multi setup --step claude --claude-from <path>` uses a file you
+`charmer setup --step claude --claude-from <path>` uses a file you
 name. See [reference/compatibility.md](../reference/compatibility.md).
 
 ## The gateway
@@ -108,10 +108,10 @@ running. On Linux with a user service manager you can hand it to a
 supervised user service instead:
 
 ```bash
-claude-multi gateway service install
+charmer gateway service install
 ```
 
-The unit is named `claude-multi-gateway`. Its hardened systemd user unit
+The unit is named `charmer-gateway`. Its hardened systemd user unit
 needs unprivileged user namespaces, which Ubuntu 23.10 and later restrict
 by default through AppArmor. Under that restriction, service install
 reports that the gateway exited during its start and keeps the on-demand
@@ -123,8 +123,8 @@ restriction, but that is a system-wide security trade-off; see
 
 Each installation channel (release bundle, Nix, source checkout) keeps its
 own files, and the state directory records which one owns it. Another
-channel's `claude-multi` refuses with a one-line hint, and
-`claude-multi doctor` lists every installation it finds. To move an
+channel's `charmer` refuses with a one-line hint, and
+`charmer doctor` lists every installation it finds. To move an
 account from a Nix installation to the release bundle, run the installer
 with `--migrate-from-nix`.
 

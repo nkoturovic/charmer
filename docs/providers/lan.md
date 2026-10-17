@@ -21,7 +21,7 @@ authentication from your computer.
 
 Presets fill in a common server's default address and the address of its
 model list, from its documentation; they ship no models. Each is
-labelled `preset` (not tested by claude-multi) and is available in every
+labelled `preset` (not tested by charmer) and is available in every
 build. The generic one, `lan-openai-compatible`, is the template for any
 other server; the launcher lists it first, as “Server on your network”:
 
@@ -38,7 +38,7 @@ computer, give its address with `--base-url` (for example
 `http://llm.example.lan:11434/v1` for Ollama there), keeping the server's
 port and `/v1` path. A server started with a key of its own (vLLM's
 `--api-key`, for one) is not keyless: it cannot be added here. Each of
-these servers lists its models, so `claude-multi discover <provider>` (one
+these servers lists its models, so `charmer discover <provider>` (one
 request you agree to) shows what it serves; with Ollama, a model name
 without a `:tag` means its latest tag.
 
@@ -71,18 +71,18 @@ Enter changes the optional badge and **Q** offers diagnostics. From a terminal (
 provider takes the preset's name unless `--as` gives another):
 
 ```bash
-claude-multi providers add --preset ollama                # Ollama on this computer
-claude-multi discover ollama                               # one listing request, after you agree
-claude-multi discover ollama --add <wire> --context <n> --as custom-local-model
-claude-multi profile edit <name>         # bind custom-local-model as a lead or agent
+charmer providers add --preset ollama                # Ollama on this computer
+charmer discover ollama                               # one listing request, after you agree
+charmer discover ollama --add <wire> --context <n> --as custom-local-model
+charmer profile edit <name>         # bind custom-local-model as a lead or agent
 ```
 
 Any other server, here one on another computer:
 
 ```bash
-claude-multi providers add --preset lan-openai-compatible --as lanbox --base-url http://llm.example.lan:8000/v1
-claude-multi models add lanbox local-model --context 32768 --source operator --as custom-local-model
-claude-multi profile edit <name>         # bind custom-local-model as a lead or agent
+charmer providers add --preset lan-openai-compatible --as lanbox --base-url http://llm.example.lan:8000/v1
+charmer models add lanbox local-model --context 32768 --source operator --as custom-local-model
+charmer profile edit <name>         # bind custom-local-model as a lead or agent
 ```
 
 The context size is yours to state: use what the server is configured to
@@ -90,12 +90,12 @@ serve (`--source operator`), since a local server's window depends on how
 you started it.
 
 You can also choose a direct lead with
-`claude-multi direct --model custom-local-model`. Any nonempty, single-line
+`charmer direct --model custom-local-model`. Any nonempty, single-line
 printable family label up to 64 characters is accepted (not controls or
 secrets); an unrecognized label means **independence unknown** for reviews,
 not an agent-use ban.
 
-Optional `claude-multi models qualify custom-local-model --agents` checks
+Optional `charmer models qualify custom-local-model --agents` checks
 need a human's explicit consent to the request plan at a terminal outside
 Claude Code, default **No**. They never run during selection or launch. A
 small local model can overflow before the client's shared compaction trigger;
@@ -106,7 +106,7 @@ window ([models](../guides/models.md#context-windows)).
 
 Two different things are local here:
 
-- the **gateway** is claude-multi's own process; it listens on loopback
+- the **gateway** is charmer's own process; it listens on loopback
   only (127.0.0.1) and is never exposed to your network;
 - the **LAN server** is your upstream: the gateway connects to it over
   HTTP (or HTTPS) on your network, carrying the session's prompts and file
@@ -118,7 +118,7 @@ A server reachable at one place may be absent at another. An observed
 unreachable server produces an Attention warning for a launch that uses it,
 not a fast refusal; requests can still fail. Connect to the server's network
 or choose another model. Unknown reachability stays unknown, and local
-readiness is not upstream verification. claude-multi never substitutes
+readiness is not upstream verification. charmer never substitutes
 another model by itself and never probes in the background.
 
 ## 6. Costs
@@ -128,6 +128,6 @@ depend on your server.
 
 ## 7. Remove it
 
-`claude-multi models rm <line>` removes a line and
-`claude-multi providers rm <provider>` the server (refused while a line is
+`charmer models rm <line>` removes a line and
+`charmer providers rm <provider>` the server (refused while a line is
 admitted, bound or used by a live session).

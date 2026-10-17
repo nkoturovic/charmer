@@ -1,15 +1,15 @@
 # Settings and files
 
-Where claude-multi keeps its settings, its state and its credentials. Paths
+Where charmer keeps its settings, its state and its credentials. Paths
 below show the defaults; each configuration entry names its root:
 
-- **Config root**: `$XDG_CONFIG_HOME/claude-multi`, defaulting to
-  `~/.config/claude-multi`.
-- **HOME-relative**: always under `~/.config/claude-multi`, regardless of
+- **Config root**: `$XDG_CONFIG_HOME/charmer`, defaulting to
+  `~/.config/charmer`.
+- **HOME-relative**: always under `~/.config/charmer`, regardless of
   `XDG_CONFIG_HOME` (including providers, the operator ledger, endpoint,
   continuity and gateway credentials).
-- **State root**: `$XDG_STATE_HOME/claude-multi`, defaulting to
-  `~/.local/state/claude-multi`.
+- **State root**: `$XDG_STATE_HOME/charmer`, defaulting to
+  `~/.local/state/charmer`.
 
 Relative `XDG_CONFIG_HOME` and `XDG_STATE_HOME` values are ignored; only
 absolute paths select another root. Change settings through the launcher
@@ -18,14 +18,14 @@ this page says so.
 
 ## Your choices: `choices.json`
 
-`~/.config/claude-multi/choices.json`, mode 0600; **Config root**.
+`~/.config/charmer/choices.json`, mode 0600; **Config root**.
 
 | Field | Type, default | Effect | Set with |
 | --- | --- | --- | --- |
-| `default_profile` | profile name, unset | the profile a launch uses when nothing else chooses one ([guides/profiles.md](../guides/profiles.md#the-default-profile)) | `claude-multi profile default <name>`, **P** → **D**, **O** |
+| `default_profile` | profile name, unset | the profile a launch uses when nothing else chooses one ([guides/profiles.md](../guides/profiles.md#the-default-profile)) | `charmer profile default <name>`, **P** → **D**, **O** |
 | `session_env_keep` | list of variable names, empty | `*_API_KEY` variables a managed session keeps; every other one is removed. Names only; provider key names are refused | **O** → kept environment |
 | `acknowledgements` | per account, empty | the personal-use texts you confirmed for the Claude and ChatGPT sign-ins | the sign-in |
-| `window_ceiling` | tokens, 800000 (200000–800000) | the context window ceiling of the lead and every agent | `claude-multi window-ceiling <n>`, **O** |
+| `window_ceiling` | tokens, 800000 (200000–800000) | the context window ceiling of the lead and every agent | `charmer window-ceiling <n>`, **O** |
 
 A change applies at the next launch or resume. A file that cannot be read
 is reported by doctor with its fix; without it every choice has its
@@ -33,7 +33,7 @@ default.
 
 ## Session policies: `settings.json`
 
-`~/.config/claude-multi/settings.json`; **Config root**, edited on the
+`~/.config/charmer/settings.json`; **Config root**, edited on the
 Settings screen (**O**: Enter edits, **R** resets).
 
 | Field | Default | Effect |
@@ -71,7 +71,7 @@ the choices above.
 
 ## Host preferences: `preferences.json`
 
-`~/.config/claude-multi/preferences.json`; **Config root**: `claude_feedback_drafts`, `off`
+`~/.config/charmer/preferences.json`; **Config root**: `claude_feedback_drafts`, `off`
 (the default: managed sessions never offer Claude Code's feedback
 drafts) or `notify` (Claude Code's own default). Settings → feedback
 drafts edits it; it applies at each session's next launch or resume.
@@ -79,18 +79,18 @@ drafts edits it; it applies at each session's next launch or resume.
 ## The API-key file
 
 One private file (mode 0600) of `NAME=value` lines holds every API key.
-claude-multi uses, in this order:
+charmer uses, in this order:
 
-1. the file `CLAUDE_MULTI_SECRET_ENV` names (the supervised gateway
+1. the file `CHARMER_SECRET_ENV` names (the supervised gateway
    service ignores this variable);
-2. the file `claude-multi setup --keys-file <file>` selected, recorded in
-   `~/.config/claude-multi/secret-file.json`. It stays where it is, and
-   “the key file must be inside ~/.config/claude-multi/, or in a private
+2. the file `charmer setup --keys-file <file>` selected, recorded in
+   `~/.config/charmer/secret-file.json`. It stays where it is, and
+   “the key file must be inside ~/.config/charmer/, or in a private
    folder of its own that you own (no group or other access: chmod 700),
    not your home folder itself”. Every managed session is denied reading
    that file by name, and doctor names the selection when it is the cause
    of a finding;
-3. `~/.config/claude-multi/secrets/provider-keys.env`.
+3. `~/.config/charmer/secrets/provider-keys.env`.
 
 The launcher, the gateway and every key command read the same file. The
 file is never parsed by a shell. Key names are listed per provider in
@@ -103,10 +103,10 @@ file is never parsed by a shell. Key names are listed per provider in
 | `profiles/<name>.json` | Config root | your profiles (and `.<name>.<reason>-<time>.json` backups) |
 | `bindings.json` | Config root | named bindings |
 | `providers.d/<id>.json` | HOME-relative | the providers you declared |
-| `operator-ledger.json` | HOME-relative | credential-route approvals, optional definition-bound admission badges and served aliases (claude-multi writes it; never edit) |
+| `operator-ledger.json` | HOME-relative | credential-route approvals, optional definition-bound admission badges and served aliases (charmer writes it; never edit) |
 | `endpoint.json` | HOME-relative | the gateway's port, backend, unit and outbound proxy |
 | `continuity.json` | HOME-relative | aliases kept serving for sessions of retired models |
-| `custom.json` | Config root (launcher); HOME-relative (gateway) | the earlier registry of your own models (`claude-multi providers migrate-custom` moves it); differing copies are reported as a mismatch |
+| `custom.json` | Config root (launcher); HOME-relative (gateway) | the earlier registry of your own models (`charmer providers migrate-custom` moves it); differing copies are reported as a mismatch |
 | `secret-file.json`, `secrets/provider-keys.env` | HOME-relative | the key-file selection and default key file; a selected key file stays at its chosen path |
 | `api-key`, `previous-key`, `config.yaml`, `management-key*` | HOME-relative | the gateway's keys and rendered configuration: secrets, names only |
 
@@ -129,20 +129,20 @@ Every row uses the **State root**, not the configuration root.
 
 | Path | What |
 | --- | --- |
-| `~/.local/share/claude-multi/install/` | release bundles: `versions/<version>`, `current`, `previous`, and the receipt `installer.json` |
-| `~/.local/share/claude-multi/nix/current` | the Nix package the supervised service runs (only after `claude-multi gateway service install`) |
-| `~/.local/share/claude-multi/claude/<version>/claude` | claude-multi's own copy of the pinned Claude Code |
-| `~/.local/share/claude-multi/` (other files) | account sign-in records and their backups: secrets |
-| `~/.config/systemd/user/claude-multi-gateway.service` | the supervised gateway unit (Linux, optional) |
+| `~/.local/share/charmer/install/` | release bundles: `versions/<version>`, `current`, `previous`, and the receipt `installer.json` |
+| `~/.local/share/charmer/nix/current` | the Nix package the supervised service runs (only after `charmer gateway service install`) |
+| `~/.local/share/charmer/claude/<version>/claude` | charmer's own copy of the pinned Claude Code |
+| `~/.local/share/charmer/` (other files) | account sign-in records and their backups: secrets |
+| `~/.config/systemd/user/charmer-gateway.service` | the supervised gateway unit (Linux, optional) |
 
 ## Session environment
 
 Every managed session removes from its environment: the gateway credential
-variables, every provider key variable claude-multi knows of, every other
+variables, every provider key variable charmer knows of, every other
 `*_API_KEY` variable not listed in `session_env_keep`, and the variables
 that would override its model, effort, thinking or compaction policy. It
 unsets `CLAUDE_CONFIG_DIR`, so Claude Code's settings, MCP servers, memory
-and sessions come from `~/.claude`. `claude-multi --print-launch` (or
-`claude-multi -r <id> --print-launch`) prints every variable it removes.
-Claude Code's own state (`~/.claude`) is Claude Code's; claude-multi never
+and sessions come from `~/.claude`. `charmer --print-launch` (or
+`charmer -r <id> --print-launch`) prints every variable it removes.
+Claude Code's own state (`~/.claude`) is Claude Code's; charmer never
 writes there.

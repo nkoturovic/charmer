@@ -1,6 +1,6 @@
 # Connect OpenRouter
 
-OpenRouter routes one API key to models from many vendors. claude-multi
+OpenRouter routes one API key to models from many vendors. charmer
 ships OpenRouter as a built-in provider with reviewed model lines and a
 shipped `openrouter` profile, so OpenRouter alone gives you a working
 setup: connect the key, choose the profile, launch.
@@ -16,17 +16,17 @@ saved as `OPENROUTER_CLAUDE_API_KEY` and sent only to
 1. **G** Providers → OpenRouter → **K**, type the key (hidden). Or:
 
    ```bash
-   claude-multi providers set-key openrouter
+   charmer providers set-key openrouter
    ```
 
 2. Choose a profile. The shipped `openrouter` profile runs every role on
-   OpenRouter's reviewed lines; `claude-multi profile starter` previews a
+   OpenRouter's reviewed lines; `charmer profile starter` previews a
    starter built from what is connected. On the card, **P** lists the
    profiles and **D** makes one the default.
 
    ```bash
-   claude-multi profile show openrouter
-   claude-multi --profile openrouter
+   charmer profile show openrouter
+   charmer --profile openrouter
    ```
 
 The reviewed OpenRouter lines need no admission or qualification from
@@ -65,7 +65,7 @@ On OpenRouter, the provider is OpenRouter but each model belongs to its
 own vendor's family (Anthropic, OpenAI, DeepSeek, Google, xAI, Moonshot
 and so on). Reviews are routed by family, so an OpenRouter profile can
 still get an independent review from another family. The card and
-`claude-multi profile show <name>` show each slot's family.
+`charmer profile show <name>` show each slot's family.
 
 ## 4. Other OpenRouter models
 
@@ -73,7 +73,7 @@ List models with **G** Providers → OpenRouter → **A** → **List models**, o
 run this in a terminal outside Claude Code:
 
 ```bash
-claude-multi discover openrouter
+charmer discover openrouter
 ```
 
 The public listing makes one anonymous request to `/api/v1/models`, after
@@ -105,7 +105,7 @@ model is not established by the offline fixtures.
 Add a known stealth id directly, even when neither listing contains it:
 
 ```bash
-claude-multi discover openrouter --add stealth/space-bunny-alpha
+charmer discover openrouter --add stealth/space-bunny-alpha
 ```
 
 This asks to fetch the anonymous
@@ -133,8 +133,8 @@ route. See [guides/models.md](../guides/models.md#add-a-model-of-your-own).
 
 ## 5. Replace or remove the key
 
-Set the key again to replace it (claude-multi asks first);
-`claude-multi providers remove-key openrouter` removes it. Profiles that
+Set the key again to replace it (charmer asks first);
+`charmer providers remove-key openrouter` removes it. Profiles that
 use OpenRouter then show the provider as not connected until you set a
 key again.
 
@@ -143,9 +143,9 @@ key again.
 OpenRouter bills per token from your account's credit, at each model's
 listed price, and every agent of a profile bills separately: a profile
 that runs nine agents on OpenRouter can spend several times what a
-single-model session does. claude-multi shows listing prices as observations
+single-model session does. charmer shows listing prices as observations
 and enforces no spending cap. Use OpenRouter's own credit limits and per-key limits, and watch
-usage in its dashboard. `claude-multi usage` counts requests, not tokens
+usage in its dashboard. `charmer usage` counts requests, not tokens
 or cost.
 
 OpenRouter's own pages, checked on 2026-10-04:
@@ -161,7 +161,7 @@ OpenRouter's own pages, checked on 2026-10-04:
   the activity page shows spend, tokens and requests, grouped by model or
   by API key.
 
-A key of its own for claude-multi, with a credit limit, bounds what its
+A key of its own for charmer, with a credit limit, bounds what its
 sessions can spend.
 
 ## 7. When it fails

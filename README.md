@@ -1,18 +1,18 @@
-# claude-multi
+# charmer
 
-claude-multi starts Claude Code sessions with a **lineup**: a lead model
+charmer starts Claude Code sessions with a **lineup**: a lead model
 plus up to nine `cm-*` agents, each on the model you choose, from
 Anthropic or from other providers. A session's lineup comes from a
 **profile** or a single **direct** lead, is recorded with the session, and
 can change while the session runs (`/cm`). Requests to other providers go
-through a local gateway on loopback that claude-multi configures and
+through a local gateway on loopback that charmer configures and
 runs. Your own Claude Code installation is not replaced or reconfigured.
 
-claude-multi is an independent project, not affiliated with or endorsed
+charmer is an independent project, not affiliated with or endorsed
 by Anthropic or OpenAI.
 
-**Latest release:** 1.1.0 (the first release was 1.0.0). Downloads are on
-[GitHub Releases](https://github.com/nkoturovic/claude-multi/releases/latest)
+**Latest release:** 2.0.0. Downloads are on
+[GitHub Releases](https://github.com/nkoturovic/charmer/releases/latest)
 ([CHANGELOG.md](CHANGELOG.md)).
 
 ## Install
@@ -20,35 +20,39 @@ by Anthropic or OpenAI.
 Linux and macOS:
 
 ```bash
-curl -fsSLO https://github.com/nkoturovic/claude-multi/releases/latest/download/install.sh
+curl -fsSLO https://github.com/nkoturovic/charmer/releases/latest/download/install.sh
 sh install.sh
 ```
 
 Run this in a terminal outside Claude Code. Interactive setup needs
 terminal input and output; piped answers are not enough. To install without
 starting setup, use `sh install.sh --no-setup`, then run
-`claude-multi setup` in a terminal later.
+`charmer setup` in a terminal later.
 
 The installer verifies the release's signed checksums before it installs
-anything, then starts `claude-multi setup`. The installer script itself
+anything, then starts `charmer setup`. The installer script itself
 is what you trust: read it before you run it, and see
 [SECURITY.md](SECURITY.md) for the release key and the verification
 modes. Windows: run `install.ps1` from the same release to install into
 WSL2 ([docs/install/windows-wsl2.md](docs/install/windows-wsl2.md)). Nix
 is optional ([docs/install/nix.md](docs/install/nix.md)).
 
+charmer is not published on PyPI or npm (the packages named `charmer`
+there are unrelated projects): install it only from the signed GitHub
+releases or the Nix flake.
+
 You need neither a Python installation nor a preinstalled Claude Code:
-the release carries its own runtime and gateway, and claude-multi gets its
+the release carries its own runtime and gateway, and charmer gets its
 own verified copy of the Claude Code version it pins, copying a matching
 build you already have or downloading it after asking.
 
 ## Quickstart
 
 ```bash
-claude-multi                 # the launcher: W Get started, then Enter launches
-claude-multi setup           # the same first steps as plain lines
-claude-multi -c              # continue the last session in this directory
-claude-multi doctor          # what is wrong, with one fix for each finding
+charmer                 # the launcher: W Get started, then Enter launches
+charmer setup           # the same first steps as plain lines
+charmer -c              # continue the last session in this directory
+charmer doctor          # what is wrong, with one fix for each finding
 ```
 
 Connect any one provider (an API key, OpenRouter, or your Claude or
@@ -75,16 +79,16 @@ listing Nix as a channel does not claim a Nix installation journey.
 
 ## Good to know
 
-- Only claude-multi's own, hash-verified copy of the pinned Claude Code
+- Only charmer's own, hash-verified copy of the pinned Claude Code
   runs; there is no way to run an unverified client.
 - `/model` inside a managed session offers the lead set only; agents
   change with `/cm`. Pressing Enter in `/model` saves the model into your
   global Claude Code settings; press `s` to switch for the session only.
 - Models from other providers reach Claude Code through the local
-  gateway; they are routes claude-multi checks, not something Anthropic
+  gateway; they are routes charmer checks, not something Anthropic
   supports.
 - Provider keys never enter a session's environment or files, and
-  claude-multi does not guarantee suppressing Claude Code's own background
+  charmer does not guarantee suppressing Claude Code's own background
   traffic ([docs/privacy.md](docs/privacy.md)).
 - Every agent bills separately on pay-per-token providers: set spending
   limits with your providers.
@@ -96,7 +100,7 @@ listing Nix as a channel does not claim a Nix installation journey.
 | [docs/USAGE.md](docs/USAGE.md) | the documentation map |
 | [docs/quickstart.md](docs/quickstart.md) | a first session |
 | [docs/CHEATSHEET.md](docs/CHEATSHEET.md) | tasks, keys, files and symptom → command on one page |
-| [docs/STANDALONE.md](docs/STANDALONE.md) | plain Claude Code alongside claude-multi |
+| [docs/STANDALONE.md](docs/STANDALONE.md) | plain Claude Code alongside charmer |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | symptom, doctor finding, fix |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | setting up a checkout, testing, building, commits |
 | [AGENTS.md](AGENTS.md) | the development guide: architecture, invariants, workflow |

@@ -1,6 +1,6 @@
 # Quickstart
 
-The shortest path to a first managed session: install claude-multi,
+The shortest path to a first managed session: install charmer,
 connect one provider, choose a profile, launch, change one agent, resume.
 You do not need to read about model admission or the gateway to get here.
 
@@ -16,11 +16,11 @@ You do not need to read about model admission or the gateway to get here.
 A release bundle carries its own Python runtime and the gateway: you need
 no Python and no preinstalled Claude Code. The installer verifies the
 signed release before it installs anything, and at the end it starts
-`claude-multi setup` (unless you pass `--no-setup`).
+`charmer setup` (unless you pass `--no-setup`).
 
-## 2. Get claude-multi's copy of Claude Code
+## 2. Get charmer's copy of Claude Code
 
-Each claude-multi release runs one Claude Code version, and only its own
+Each charmer release runs one Claude Code version, and only its own
 verified copy of it. The `claude` step of setup puts that copy in place:
 
 - it copies a matching file from your own Claude Code installation when
@@ -29,23 +29,23 @@ verified copy of it. The `claude` step of setup puts that copy in place:
 - otherwise it shows the one download it would make (the address, the
   size, no credentials sent) and asks first. Answering no sends nothing.
 
-`claude-multi setup --step claude` runs only this step. Details:
+`charmer setup --step claude` runs only this step. Details:
 [reference/compatibility.md](reference/compatibility.md).
 
 ## 3. Open Get started
 
-In a terminal run `claude-multi`. On a new installation the launch card
+In a terminal run `charmer`. On a new installation the launch card
 offers **W — Get started**: this computer, Claude Code, the local gateway,
 providers, an optional connection test, a profile and a final check. Enter
 runs the step under the cursor; nothing is saved until you confirm.
 
-Without the full-screen interface, `claude-multi setup` runs the same
-steps as plain lines, and `claude-multi setup --status` shows which are
+Without the full-screen interface, `charmer setup` runs the same
+steps as plain lines, and `charmer setup --status` shows which are
 done.
 
 ### A prepared setup
 
-`claude-multi setup --answers <file>` applies a prepared setup after one
+`charmer setup --answers <file>` applies a prepared setup after one
 preview of everything it would do. API keys are named by file only (an
 absolute path to a private, one-line key file); sign-ins and connection
 tests are refused in an answers file because they need you at the
@@ -71,20 +71,20 @@ provider gives you a working setup. Get started's providers step (**W**,
 or **A** from any step) lists them all: the accounts and the built-in
 providers first, then the presets, the providers you added, and last your
 own endpoints and the servers on your network;
-`claude-multi setup --step providers` lists the same, numbering the ones
+`charmer setup --step providers` lists the same, numbering the ones
 you can choose.
 
 | Route | Credential | In the launcher | From a terminal | Alone gives you |
 | --- | --- | --- | --- | --- |
-| Claude account, ChatGPT account | an account sign-in, for personal use | **G** → **L** on Anthropic or OpenAI | `claude-multi providers sign-in anthropic` (or `openai`) | the shipped `claude` or `openai` profile |
-| Anthropic or OpenAI API key | the provider's API key | **G** → Enter on Anthropic or OpenAI → the API key | `claude-multi providers transport anthropic api-key` (or `openai`) | the same Claude lines; for OpenAI, the models reviewed for its API (see the note below) |
-| a built-in keyed provider: DeepSeek, Kimi, Meta, Qwen | the provider's API key | **G** → **K** on the provider | `claude-multi providers set-key <provider>` | its shipped lines, through a starter profile |
-| OpenRouter | an OpenRouter API key | **G** → **K** on OpenRouter | `claude-multi providers set-key openrouter` | the shipped `openrouter` profile |
-| a preset of a vendor's Anthropic-compatible endpoint (Z.ai, Moonshot AI, Model Studio, Novita AI, Vercel AI Gateway) | the vendor's API key | **W** → **A** → the preset | `claude-multi providers add --preset <name>` | the valid models you add on its approved route |
-| a preset of an OpenAI-compatible endpoint (Groq, Mistral AI, xAI, Cerebras, Google Gemini) | the vendor's API key | **W** → **A** → the preset | `claude-multi providers add --preset <name>` | the valid models you add on its approved route |
-| your own Anthropic-compatible endpoint (recommended for anything not listed) | the vendor's API key | **G** → **N** → Anthropic-compatible | `claude-multi providers add <name> --kind anthropic-compatible <options>` | the valid models you add on its approved route |
-| your own OpenAI-compatible endpoint | the vendor's API key | **G** → **N** → OpenAI-compatible | `claude-multi providers add <name> --kind openai-compatible <options>` | the valid models you add on its approved route, through Messages-to-chat translation ([limits](providers/openai-compatible.md#translation-limits)) |
-| a server on your network (Ollama, LM Studio, vLLM, llama.cpp, any OpenAI-compatible server) | none | **G** → **N** → the server | `claude-multi providers add --preset ollama` | the valid models you add, as leads or agents; no key required |
+| Claude account, ChatGPT account | an account sign-in, for personal use | **G** → **L** on Anthropic or OpenAI | `charmer providers sign-in anthropic` (or `openai`) | the shipped `claude` or `openai` profile |
+| Anthropic or OpenAI API key | the provider's API key | **G** → Enter on Anthropic or OpenAI → the API key | `charmer providers transport anthropic api-key` (or `openai`) | the same Claude lines; for OpenAI, the models reviewed for its API (see the note below) |
+| a built-in keyed provider: DeepSeek, Kimi, Meta, Qwen | the provider's API key | **G** → **K** on the provider | `charmer providers set-key <provider>` | its shipped lines, through a starter profile |
+| OpenRouter | an OpenRouter API key | **G** → **K** on OpenRouter | `charmer providers set-key openrouter` | the shipped `openrouter` profile |
+| a preset of a vendor's Anthropic-compatible endpoint (Z.ai, Moonshot AI, Model Studio, Novita AI, Vercel AI Gateway) | the vendor's API key | **W** → **A** → the preset | `charmer providers add --preset <name>` | the valid models you add on its approved route |
+| a preset of an OpenAI-compatible endpoint (Groq, Mistral AI, xAI, Cerebras, Google Gemini) | the vendor's API key | **W** → **A** → the preset | `charmer providers add --preset <name>` | the valid models you add on its approved route |
+| your own Anthropic-compatible endpoint (recommended for anything not listed) | the vendor's API key | **G** → **N** → Anthropic-compatible | `charmer providers add <name> --kind anthropic-compatible <options>` | the valid models you add on its approved route |
+| your own OpenAI-compatible endpoint | the vendor's API key | **G** → **N** → OpenAI-compatible | `charmer providers add <name> --kind openai-compatible <options>` | the valid models you add on its approved route, through Messages-to-chat translation ([limits](providers/openai-compatible.md#translation-limits)) |
+| a server on your network (Ollama, LM Studio, vLLM, llama.cpp, any OpenAI-compatible server) | none | **G** → **N** → the server | `charmer providers add --preset ollama` | the valid models you add, as leads or agents; no key required |
 
 On the OpenAI API key, Claude Code's per-request output cap is not
 applied: one answer can run up to the model's own output limit, billed
@@ -116,38 +116,38 @@ Each of these is a complete setup on its own (after steps 1 and 2).
 same way):
 
 ```bash
-claude-multi providers set-key deepseek     # the key, hidden
-claude-multi profile starter --apply        # a starter from what is connected, after its preview
-claude-multi doctor --first-run
-claude-multi
+charmer providers set-key deepseek     # the key, hidden
+charmer profile starter --apply        # a starter from what is connected, after its preview
+charmer doctor --first-run
+charmer
 ```
 
 **An account sign-in alone** (your Claude account):
 
 ```bash
-claude-multi providers sign-in anthropic    # type personal once, then sign in in the browser
-claude-multi --profile claude
+charmer providers sign-in anthropic    # type personal once, then sign in in the browser
+charmer --profile claude
 ```
 
 **OpenRouter alone**, from a prepared setup: the answers file in
 [A prepared setup](#a-prepared-setup) above, then
 
 ```bash
-claude-multi setup --answers <file>
-claude-multi doctor --first-run
+charmer setup --answers <file>
+charmer doctor --first-run
 ```
 
 The same file with `{"id": "openai", "transport": "api-key", "api_key_file": "…"}`
 as its provider entry sets up the OpenAI API key alone.
 
 **A custom endpoint alone** (the Z.ai preset; your own endpoint works the
-same way after `claude-multi providers add`):
+same way after `charmer providers add`):
 
 ```bash
-claude-multi providers add --preset zai     # approve where the key goes
-claude-multi providers set-key zai
-claude-multi models add zai <wire> --context <n> --source docs --source-ref "https://docs.z.ai/ 2026-10" --as custom-example
-claude-multi profile starter --apply
+charmer providers add --preset zai     # approve where the key goes
+charmer providers set-key zai
+charmer models add zai <wire> --context <n> --source docs --source-ref "https://docs.z.ai/ 2026-10" --as custom-example
+charmer profile starter --apply
 ```
 
 A valid model on a usable route can lead or run agents without admission
@@ -156,9 +156,9 @@ profile selection. Starter selection prefers locally ready models, not
 upstream-verified ones. Explicit bindings override role recommendations
 with warnings; they do not override route approval or native limits.
 
-`claude-multi models admit custom-example` records an optional local badge
+`charmer models admit custom-example` records an optional local badge
 with zero inference requests.
-`claude-multi models qualify custom-example --agents` is an optional
+`charmer models qualify custom-example --agents` is an optional
 diagnostic: it lists its request plan, needs your explicit yes at a terminal
 outside Claude Code (default **No**) and may be billed. Selection, launch,
 doctor and import never run it automatically. Failed or stale evidence stays
@@ -169,29 +169,29 @@ visible as Attention; it is not a use prohibition. See
 
 A profile runs several models at once: the lead and every agent you bind
 bill separately on pay-per-token providers. The card, Get started and
-`claude-multi profile starter` show a spend note for the providers a
+`charmer profile starter` show a spend note for the providers a
 profile uses. Set spending limits with each provider before you start
 long multi-agent work; see the provider pages.
 
 ## 6. Choose a profile
 
 A **profile** is a saved lineup: the lead model and the agents bound to
-roles. Get started's profile step (or `claude-multi profile starter`)
+roles. Get started's profile step (or `charmer profile starter`)
 builds a **starter** from what is connected, or you pick a shipped profile
 whose lines are all connected. The card shows the profile it will launch:
 the one you used last in this directory, else your chosen default, else a
 connected profile. Make one the default with **P** → **D** or
-`claude-multi profile default <name>`. More: [guides/profiles.md](guides/profiles.md).
+`charmer profile default <name>`. More: [guides/profiles.md](guides/profiles.md).
 
 ## 7. Check, then launch
 
 ```bash
-claude-multi doctor --first-run   # the first-run checks in order, one fix each
-claude-multi                      # the launch card: Enter launches
+charmer doctor --first-run   # the first-run checks in order, one fix each
+charmer                      # the launch card: Enter launches
 ```
 
 Claude Code may show its own first-run and folder-trust prompts. These
-belong to Claude Code, not to claude-multi, and depend on its existing
+belong to Claude Code, not to charmer, and depend on its existing
 configuration. Read and answer any prompts before continuing. The release
 installation checks use print-mode sessions and do not verify a particular
 interactive first-run screen sequence on Linux, macOS or Windows through
@@ -219,8 +219,8 @@ binding. Otherwise the change is recorded for relaunch. Only you can run
 Exit Claude Code as usual. Later:
 
 ```bash
-claude-multi -c          # continue the last session in this directory
-claude-multi -r          # pick a session on the sessions screen
+charmer -c          # continue the last session in this directory
+charmer -r          # pick a session on the sessions screen
 ```
 
 The session keeps its lineup across exits, updates and restarts. More:
@@ -228,6 +228,6 @@ The session keeps its lineup across exits, updates and restarts. More:
 
 ## When something is wrong
 
-`claude-multi doctor` names one fix for each finding;
+`charmer doctor` names one fix for each finding;
 [troubleshooting.md](troubleshooting.md) maps symptoms to fixes and
 [CHEATSHEET.md](CHEATSHEET.md) is the one-page lookup.

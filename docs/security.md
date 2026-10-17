@@ -1,15 +1,15 @@
 # Security model
 
-What claude-multi protects, how, and where its protection ends. To report
+What charmer protects, how, and where its protection ends. To report
 a vulnerability, follow the repository's
-[security policy](https://github.com/nkoturovic/claude-multi/blob/main/SECURITY.md).
+[security policy](https://github.com/nkoturovic/charmer/blob/main/SECURITY.md).
 
 ## Trust boundaries
 
 | Component | Trusted for | Not trusted for |
 | --- | --- | --- |
 | the release you installed | the launcher, the gateway, the bundled runtime | (it is the root of trust: verify it before you install) |
-| Claude Code (the pinned copy) | running your session | reading claude-multi's credentials |
+| Claude Code (the pinned copy) | running your session | reading charmer's credentials |
 | the local gateway | holding provider keys and sign-ins, sending each only to its approved address | anything beyond loopback: it never listens on the network |
 | a provider you approved | the requests of the roles you bind to it | other providers' keys |
 | a model | its answers | proof of which model actually answered (a provider may substitute) |
@@ -18,7 +18,7 @@ a vulnerability, follow the repository's
 
 Every release publishes `SHA256SUMS` and its signature
 `SHA256SUMS.sshsig` (an `ssh-keygen -Y sign` signature in the
-`claude-multi-release` namespace). The installer verifies a download in one
+`charmer-release` namespace). The installer verifies a download in one
 of two modes, exactly as `install.sh` implements them:
 
 - **with `ssh-keygen`** (OpenSSH 8.1 or newer) installed, the signature
@@ -28,7 +28,7 @@ of two modes, exactly as `install.sh` implements them:
   release verifies that release's download against the checksums built
   into that installer.
 
-`claude-multi update` always verifies the signature, with its built-in
+`charmer update` always verifies the signature, with its built-in
 verifier and the key the installed release carries. `--allowed-signers
 FILE` changes only that one installation's check, never the trust the
 installed updater uses afterwards.
@@ -39,8 +39,8 @@ leading `v` (for example, `1.0.1`):
 
 ```sh
 version=VERSION
-curl -fsSLO "https://github.com/nkoturovic/claude-multi/releases/download/v${version}/SHA256SUMS"
-curl -fsSLO "https://github.com/nkoturovic/claude-multi/releases/download/v${version}/SHA256SUMS.sshsig"
+curl -fsSLO "https://github.com/nkoturovic/charmer/releases/download/v${version}/SHA256SUMS"
+curl -fsSLO "https://github.com/nkoturovic/charmer/releases/download/v${version}/SHA256SUMS.sshsig"
 ```
 
 Run these commands in the directory containing the downloaded installer
@@ -52,16 +52,16 @@ you can check a download, the installer included, before you run it. The
 release key, as an installation carries it:
 
 ```text
-release@claude-multi namespaces="claude-multi-release" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJmVeafPpudkejVTvnbP7S31hPCGEsXK6HrAilRzRZai
+release@charmer namespaces="charmer-release" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJmVeafPpudkejVTvnbP7S31hPCGEsXK6HrAilRzRZai
 ```
 
 Its fingerprint is `SHA256:LN8n9Tr21eijMbM7Sk7AdQs1FBaQg//dfCc0zeZHD1E`, the
-same as in the repository's [security policy](https://github.com/nkoturovic/claude-multi/blob/main/SECURITY.md).
+same as in the repository's [security policy](https://github.com/nkoturovic/charmer/blob/main/SECURITY.md).
 Save that line as `allowed_signers` next to the downloaded files, then:
 
 ```sh
 awk '{print $3, $4}' allowed_signers | ssh-keygen -l -f -     # prints the fingerprint above
-ssh-keygen -Y verify -f allowed_signers -I release@claude-multi -n claude-multi-release \
+ssh-keygen -Y verify -f allowed_signers -I release@charmer -n charmer-release \
   -s SHA256SUMS.sshsig < SHA256SUMS
 sha256sum -c --ignore-missing SHA256SUMS
 ```
@@ -79,7 +79,7 @@ value published with the release.
 
 ## Claude Code integrity
 
-Only claude-multi's own copy of the pinned Claude Code version runs, and
+Only charmer's own copy of the pinned Claude Code version runs, and
 only after its size and full sha256 match the values the release pins
 (taken from Anthropic's signed release manifest). There is no switch to
 run an unverified client. The launch card checks the copy's size and
@@ -91,12 +91,12 @@ by a running session is locked against removal.
 
 - Provider keys live in one 0600 key file; sign-ins in a private
   directory; the gateway's key and configuration under
-  `~/.config/claude-multi/`. No key is ever written to a session's
+  `~/.config/charmer/`. No key is ever written to a session's
   environment, scope, record or a log, or passed on a command line.
 - Every managed session is compiled with rules that deny Claude Code's
-  Read and Edit tools claude-multi's configuration and credential folders,
+  Read and Edit tools charmer's configuration and credential folders,
   your key file wherever it is, and Claude Code's own credentials file;
-  editing claude-multi's state is denied too.
+  editing charmer's state is denied too.
 - Sessions get the gateway's key only from a token helper, which hands it
   over only to a gateway proven to be yours.
 - Under WSL, the Windows-side Claude Code folders are denied as well; see
@@ -113,7 +113,7 @@ terminal outside Claude Code. A preset is no exception: it fills in a
 vendor's documented address and key name, and you still approve where the
 key goes. Switching Anthropic or OpenAI to its API key is a route approval
 of the same kind, for that provider's fixed address. Every request
-claude-multi itself makes to a provider (a listing, a test, an admission
+charmer itself makes to a provider (a listing, a test, an admission
 or qualification check) is listed and needs your yes; no flag waives
 this, and these commands refuse inside a Claude Code session.
 
@@ -134,10 +134,10 @@ hardening options the unit lists.
 
 ## Rotation
 
-- `claude-multi doctor --rotate-token` replaces the gateway's local key
+- `charmer doctor --rotate-token` replaces the gateway's local key
   without dropping sessions.
 - Provider keys: replace them in the provider's console, then
-  `claude-multi providers set-key <provider>`.
+  `charmer providers set-key <provider>`.
 - Sign-ins: sign out and in again; revoke sessions in the account's own
   settings.
 - The release signing key: updates verify against the keys the
@@ -148,7 +148,7 @@ hardening options the unit lists.
   same day). The production key's line carries no dates: it stays valid
   until a rotation states otherwise.
 
-## What claude-multi does not protect against
+## What charmer does not protect against
 
 - a compromised user account or computer: everything here runs as you;
 - a provider, or an endpoint you approved, misusing what you send it;
@@ -159,5 +159,5 @@ hardening options the unit lists.
 
 ## Sharing diagnostics
 
-Attach `claude-multi doctor --json` and `claude-multi --version` to
+Attach `charmer doctor --json` and `charmer --version` to
 reports; see [privacy.md](privacy.md#diagnostics-you-share).
