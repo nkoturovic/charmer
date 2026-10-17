@@ -3,23 +3,23 @@
 Each release channel installs under a root of its own, so two installations
 never overwrite each other's files:
 
-- ``bundle``: ``~/.local/share/claude-multi/install/{versions/<v>,current,previous}``
+- ``bundle``: ``~/.local/share/charmer/install/{versions/<v>,current,previous}``
   with relative links; the installer and the self-update own it (this module
   only reads it).
 - ``nix``: the Nix store. Its stable exec link
-  ``~/.local/share/claude-multi/nix/current`` exists only once
-  ``claude-multi gateway service install`` selected an installation for the
+  ``~/.local/share/charmer/nix/current`` exists only once
+  ``charmer gateway service install`` selected an installation for the
   supervised service; it is registered as an indirect garbage-collector root
   so the store path it names stays.
 - ``source``: a checkout, run in place.
 
 One state root serves one channel. ``<state root>/channel`` (the state root
-is ``$XDG_STATE_HOME/claude-multi`` or ``~/.local/state/claude-multi``) is one
+is ``$XDG_STATE_HOME/charmer`` or ``~/.local/state/charmer``) is one
 ASCII line, ``bundle``, ``nix`` or ``source``, newline-terminated, mode
 0600. The first state-writing run of a launcher whose channel is known
 claims it under an exclusive lock (``channel.lock``), so of two first runs
 of different channels exactly one owns the state root; a launcher of another
-channel then refuses with a one-line hint, and ``claude-multi doctor`` shows
+channel then refuses with a one-line hint, and ``charmer doctor`` shows
 every installation it finds. Any other marker content fails closed, and a
 claim that cannot be written refuses the state-writing run.
 """
@@ -42,8 +42,8 @@ CHANNELS = endpoint.CHANNELS
 BUNDLE_DIR = "install"
 NIX_LINK = Path("nix") / "current"
 # An exec link some Nix setups keep outside the data root.
-NIX_RELEASE_LINK = Path(".local") / "share" / "claude-multi-release" / "current"
-PROXY_ENTRY = Path("bin") / "claude-multi-proxy"
+NIX_RELEASE_LINK = Path(".local") / "share" / "charmer-release" / "current"
+PROXY_ENTRY = Path("bin") / "charmer-proxy"
 STORE_PREFIX = "/nix/store/"
 GC_ROOT_TIMEOUT = 60
 
@@ -158,7 +158,7 @@ def check(state_root: Path | str, environ: Mapping[str, str], *, record: bool) -
         except (OSError, errors.CharmerError) as exc:
             return ChannelCheck(
                 running, None,
-                problem=f"this installation could not record itself as the owner of the claude-multi state "
+                problem=f"this installation could not record itself as the owner of the charmer state "
                         f"({getattr(exc, 'strerror', None) or exc})",
                 remedy=f"make {paths.display(state_root, environ)} a private directory you own, then retry")
     if owner == running:
@@ -168,9 +168,9 @@ def check(state_root: Path | str, environ: Mapping[str, str], *, record: bool) -
                        "use that installation, or remove {marker} once it is uninstalled").format(marker=shown)
     return ChannelCheck(
         running, owner,
-        problem=f"this account's claude-multi state belongs to the {owner} installation, and this is the "
+        problem=f"this account's charmer state belongs to the {owner} installation, and this is the "
                 f"{running} one",
-        remedy=hint + " (claude-multi doctor lists both)",
+        remedy=hint + " (charmer doctor lists both)",
     )
 
 
@@ -213,7 +213,7 @@ def nix_release_link(environ: Mapping[str, str]) -> Path:
 
 def install_root(environ: Mapping[str, str], installation: Path | str | None = None) -> Path | None:
     """The installation this launcher runs from: the directory whose
-    ``bin/claude-multi-proxy`` belongs to it (None when not found).
+    ``bin/charmer-proxy`` belongs to it (None when not found).
     ``installation`` is the launcher tree (default: the running one,
     :func:`charmer.layout.installation`); resources never name it."""
 
@@ -335,7 +335,7 @@ def plan_selection(channel: str | None, environ: Mapping[str, str],
         store = store_path(root) if root is not None else None
         if store is None or not (Path(store) / PROXY_ENTRY).is_file():
             raise SelectionError("this launcher does not run from a Nix store package",
-                                 remedy="run claude-multi gateway service install from the installed package")
+                                 remedy="run charmer gateway service install from the installed package")
         link = nix_link(environ)
         if os.path.lexists(link) and not os.path.islink(link):
             raise SelectionError(f"{paths.display(link, environ)} exists and is not a link",
@@ -345,7 +345,7 @@ def plan_selection(channel: str | None, environ: Mapping[str, str],
     raise SelectionError(
         "the supervised gateway service runs only from an installed release or the Nix package"
         + ("" if channel is None else f" (this launcher is a {channel} checkout)"),
-        remedy="install a release (or the Nix package) and run its claude-multi gateway service install; "
+        remedy="install a release (or the Nix package) and run its charmer gateway service install; "
                "the on-demand gateway keeps working meanwhile")
 
 
@@ -379,7 +379,7 @@ def apply_selection(selection: Selection, environ: Mapping[str, str], *,
     registered = register_gc_root(selection.link, selection.root, environ, runner=runner)
     note = None if registered else (
         "the link is not a garbage-collector root (nix-store failed or is missing): a collection may remove "
-        "the package the service runs; run claude-multi gateway service install again after rebuilding")
+        "the package the service runs; run charmer gateway service install again after rebuilding")
     return Selection(selection.channel, selection.link, selection.root, selection.previous,
                      selection.changed, registered, note)
 

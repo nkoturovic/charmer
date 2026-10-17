@@ -1,4 +1,4 @@
-"""Runtime proxy control for claude-multi.
+"""Runtime proxy control for charmer.
 
 Commands: ``init``, ``status``, ``run``, ``rotate-management-key``,
 ``disable-management-key``, ``claude-login``,
@@ -6,7 +6,7 @@ Commands: ``init``, ``status``, ``run``, ``rotate-management-key``,
 gateway auth dir to ``<auth_dir>.pre-7.3.<YYYYMMDD>`` before a gateway
 upgrade; restore it on rollback while the gateway is stopped; names only,
 never contents).
-The existing auth root (``~/.local/share/claude-multi``) and OAuth records
+The existing auth root (``~/.local/share/charmer``) and OAuth records
 are preserved untouched. Provider ``env:NAME`` references resolve from the
 existing mode-restricted secret env file via strict assignment parsing — no
 shell sourcing, no eval, no value ever printed. The complete gateway config
@@ -15,11 +15,11 @@ and the login helpers initialize safely, then ``execve`` the pinned
 CLIProxyAPI with no resident wrapper.
 
 ``init``, ``run`` and the login helpers accept one flag, ``--state-root
-/abs/path`` (default: ``$XDG_STATE_HOME/claude-multi`` or
-``~/.local/state/claude-multi``): the session state root whose records
-extend the gateway continuity set (``~/.config/claude-multi/
+/abs/path`` (default: ``$XDG_STATE_HOME/charmer`` or
+``~/.local/state/charmer``): the session state root whose records
+extend the gateway continuity set (``~/.config/charmer/
 continuity.json``) — retired selectors live sessions still
-name stay served until ``claude-multi doctor --prune-aliases``.
+name stay served until ``charmer doctor --prune-aliases``.
 
 ``run`` and the login helpers use ``<state root>/gateway`` (0700, with
 ``logs/``) as the gateway's working directory: the pinned
@@ -93,7 +93,7 @@ class ConfigPublishedError(state.CommittedStateError):
 
 @dataclass(frozen=True)
 class ProxyCommand:
-    """One ``claude-multi-proxy`` command: the single definition its
+    """One ``charmer-proxy`` command: the single definition its
     dispatch, its own help, the overall usage and the surface census read.
 
     ``listing`` is the command's block of the overall usage, ``synopsis``
@@ -113,7 +113,7 @@ class ProxyCommand:
     check: Callable[[list[str], "dict[str, str] | None"], Any]
 
     def usage(self) -> str:
-        return f"usage: claude-multi-proxy {self.name}" + (f" {self.synopsis}" if self.synopsis else "")
+        return f"usage: charmer-proxy {self.name}" + (f" {self.synopsis}" if self.synopsis else "")
 
     def help(self) -> str:
         return f"{self.usage()}\n\n{self.description}"
@@ -122,13 +122,13 @@ class ProxyCommand:
 def _no_arguments(name: str) -> Callable[[list[str], "dict[str, str] | None"], None]:
     def check(args: list[str], _environ: "dict[str, str] | None") -> None:
         if args:
-            raise ProxyError(f"usage: claude-multi-proxy {name}")
+            raise ProxyError(f"usage: charmer-proxy {name}")
     return check
 
 
 def _check_snapshot_args(args: list[str], _environ: "dict[str, str] | None") -> None:
     if args and not (len(args) == 2 and args[0] == "--restore"):
-        raise ProxyError("usage: claude-multi-proxy snapshot-auth [--restore SNAPSHOT]")
+        raise ProxyError("usage: charmer-proxy snapshot-auth [--restore SNAPSHOT]")
 
 
 def _check_login_args(name: str) -> Callable[[list[str], "dict[str, str] | None"], None]:
@@ -185,16 +185,16 @@ PROXY_COMMANDS: tuple[ProxyCommand, ...] = (
     ProxyCommand(
         "claude-login", "[--state-root /abs]",
         "  claude-login [--state-root /abs]        sign in to a Claude account "
-        "(use claude-multi providers sign-in anthropic)\n",
-        "Sign the gateway in to a Claude account. Use claude-multi providers sign-in anthropic, which\n"
+        "(use charmer providers sign-in anthropic)\n",
+        "Sign the gateway in to a Claude account. Use charmer providers sign-in anthropic, which\n"
         "shows the personal-use acknowledgement this command requires first.",
         "maintenance", ("account.sign-in",), _check_login_args("claude-login"),
     ),
     ProxyCommand(
         "codex-device-login", "[--state-root /abs]",
         "  codex-device-login [--state-root /abs]  sign in to a ChatGPT account "
-        "(use claude-multi providers sign-in openai)\n",
-        "Sign the gateway in to a ChatGPT account. Use claude-multi providers sign-in openai, which\n"
+        "(use charmer providers sign-in openai)\n",
+        "Sign the gateway in to a ChatGPT account. Use charmer providers sign-in openai, which\n"
         "shows the personal-use acknowledgement this command requires first.",
         "maintenance", ("account.sign-in",), _check_login_args("codex-device-login"),
     ),
@@ -211,9 +211,9 @@ _PROXY_COMMANDS = {command.name: command for command in PROXY_COMMANDS}
 HELP_ARGUMENTS = ("-h", "--help")
 
 PROXY_USAGE = (
-    "usage: claude-multi-proxy COMMAND [ARGS]\n"
+    "usage: charmer-proxy COMMAND [ARGS]\n"
     "\n"
-    "The claude-multi local gateway (CLIProxyAPI, loopback only).\n"
+    "The charmer local gateway (CLIProxyAPI, loopback only).\n"
     "\n"
     "commands:\n"
     + "".join(command.listing for command in PROXY_COMMANDS)
@@ -228,7 +228,7 @@ PROXY_USAGE = (
     "run exits 75 while another gateway instance holds the lock.\n"
     "Every command exits 130 when it is interrupted (Ctrl-C).\n"
     "\n"
-    "The local gateway: claude-multi gateway status (also start, stop, restart, logs)."
+    "The local gateway: charmer gateway status (also start, stop, restart, logs)."
 )
 
 
@@ -249,7 +249,7 @@ def _home(environ: dict[str, str] | None = None) -> Path:
 
 
 def state_dir(home: Path) -> Path:
-    return home / ".local" / "share" / "claude-multi"
+    return home / ".local" / "share" / "charmer"
 
 
 def config_dir(home: Path) -> Path:
@@ -399,7 +399,7 @@ _LISTING_SUPPORT = _freeze_descriptors({
         "url": f"https://chatgpt.com/backend-api/codex/models?client_version={CODEX_CLIENT_VERSION}",
         "auth": "pool-credential",
         "shape": "codex",
-        "note": "an OAuth pool: list it with `claude-multi discover openai` "
+        "note": "an OAuth pool: list it with `charmer discover openai` "
         "(one codex credential, explicit per-call confirmation)",
     },
 })
@@ -407,7 +407,7 @@ _LISTING_SUPPORT = _freeze_descriptors({
 
 # This table covers catalog providers only. llm-local left the catalog;
 # its sample declaration carries its own ``listing`` block ({base}/models,
-# openai shape, keyless), which ``claude-multi discover`` plans for operator
+# openai shape, keyless), which ``charmer discover`` plans for operator
 # providers (this catalog-only listing refuses them, below).
 # Providers synthesized from a providers.d provider block carry
 # ``origin: "operator"``; lines-only files on catalog providers keep the
@@ -415,7 +415,7 @@ _LISTING_SUPPORT = _freeze_descriptors({
 OPERATOR_PROVIDER_ORIGINS = frozenset({"operator", "operator-migrated"})
 OPERATOR_LISTING_REFUSAL = (
     "discover {provider_id}: an operator provider is listed through its approved listing block "
-    "(claude-multi discover)"
+    "(charmer discover)"
 )
 
 
@@ -708,7 +708,7 @@ class _ListingDeadline:
             except OSError as exc:
                 outcome["error"] = type(exc)
 
-        worker = threading.Thread(target=work, name="claude-multi-listing-resolve", daemon=True)
+        worker = threading.Thread(target=work, name="charmer-listing-resolve", daemon=True)
         worker.start()
         worker.join(max(0.0, self.left()))
         self.check()
@@ -1106,7 +1106,7 @@ def _codex_credential(
     if not names:
         raise ProxyError(
             f"no codex-*.json credential in {auth_dir} — sign in first "
-            "(`claude-multi providers sign-in openai`)"
+            "(`charmer providers sign-in openai`)"
         )
     expired: list[str] = []
     for name in names:
@@ -1735,10 +1735,10 @@ def _render_locked(
     if blockers and policy == "explicit":
         raise ProxyError(
             "operator layer invalid — config not written:\n  " + "\n  ".join(_problem_lines(blockers))
-            + "\nfix the named file(s) (claude-multi providers validate), then rerun"
+            + "\nfix the named file(s) (charmer providers validate), then rerun"
         )
     for file in sorted({problem.file for problem in blockers}):
-        operator_notes.append(f"{file} not rendered (invalid; claude-multi providers validate)")
+        operator_notes.append(f"{file} not rendered (invalid; charmer providers validate)")
     plan = operator_mod.render_plan(bundle.docs, layer, snapshot.ledger, legacy=legacy)
     if snapshot.ledger_error is not None and plan.layer.lines and policy == "start":
         plan = operator_mod.render_plan(
@@ -1750,7 +1750,7 @@ def _render_locked(
         # it actually emits T2 aliases (they could not be captured).
         operator_notes.append(snapshot.ledger_error)
     for pid, status in sorted(plan.not_rendered.items()):
-        operator_notes.append(f"provider {pid} not rendered (route {status}; claude-multi providers approve {pid})")
+        operator_notes.append(f"provider {pid} not rendered (route {status}; charmer providers approve {pid})")
     providers = plan.docs["providers"]["providers"]
     lines = plan.docs["models-v2"]["models"]
     notices: list[str] = []
@@ -1814,7 +1814,7 @@ def _render_locked(
         if operator_mod.emitted_operator_aliases(plan, result.served):
             raise ProxyError(
                 f"{snapshot.ledger_error}: operator aliases cannot be captured — config not written; "
-                "move ~/.config/claude-multi/operator-ledger.json aside only after reviewing it"
+                "move ~/.config/charmer/operator-ledger.json aside only after reviewing it"
             )
     declared = operator_mod.declared_aliases(layer, snapshot.read)
     # Capture history absent or corrupt while providers.d exists (or a
@@ -1893,7 +1893,7 @@ def _render_locked(
         except (state.StateError, OSError, operator_mod.OperatorError) as exc:
             raise ProxyError(
                 f"operator alias capture could not be committed ({type(exc).__name__}) — "
-                "config not published; rerun claude-multi-proxy init"
+                "config not published; rerun charmer-proxy init"
             ) from exc
     target = config_dir(home) / "config.yaml"
     report = ContinuityReport(
@@ -2129,7 +2129,7 @@ ROTATION_ENV_CREDENTIAL_PREFIX = "sessions that may still hold an environment cr
 ROTATION_WAIT_DONE = "  helper cache window complete: {total}s elapsed on the monotonic clock"
 ROTATION_WAIT_CANCELLED = (
     "Wait interrupted: both gateway keys remain accepted and no key was discarded; rerun "
-    "claude-multi doctor --rotate-token to resume (the full {total}s window starts again)."
+    "charmer doctor --rotate-token to resume (the full {total}s window starts again)."
 )
 # Hot reload (and a config-only init): the listener never went down, so the
 # render sentinel alone proves the reload, within this hard-clamped deadline.
@@ -2175,8 +2175,8 @@ def _start_missing(last: str, status: int | None, sentinel: str,
         return f"the render sentinel {sentinel} is not served (the running gateway has not loaded this render)"
     return (
         f"none of the {len(required)} rendered OAuth aliases is served (their pools are not "
-        "registered; a pool without a sign-in serves none: claude-multi providers sign-in anthropic "
-        "or claude-multi providers sign-in openai)"
+        "registered; a pool without a sign-in serves none: charmer providers sign-in anthropic "
+        "or charmer providers sign-in openai)"
     )
 
 
@@ -2247,7 +2247,7 @@ def await_sentinel(
     def attention(message: str) -> None:
         if message not in notices:
             notices.add(message)
-            print(f"claude-multi: Attention: {message}", file=sys.stderr)
+            print(f"charmer: Attention: {message}", file=sys.stderr)
 
     if start:
         budget = max(0.0, START_READINESS_TIMEOUT if timeout is None else timeout)
@@ -2588,8 +2588,8 @@ def _plan_alias_prune(
     except continuity_mod.ContinuityError as exc:
         return PruneOutcome(1, (
             f"gateway continuity set unreadable ({exc}); nothing pruned — move "
-            "~/.config/claude-multi/continuity.json aside and run "
-            "claude-multi-proxy init",
+            "~/.config/charmer/continuity.json aside and run "
+            "charmer-proxy init",
         ))
     bundle = load_bundle(environ, home=home)
     legacy = custom_mod.load_registry(env)
@@ -2979,7 +2979,7 @@ def _prepared_config(home: Path, state_root: Path, environ: dict[str, str] | Non
         gateway_api_keys(home)  # validate key slots without ever creating them
     except (OSError, ValueError, errors.CharmerError) as exc:
         raise ProxyError(
-            "gateway preparation is absent or stale; run claude-multi-proxy init before run --prepared"
+            "gateway preparation is absent or stale; run charmer-proxy init before run --prepared"
         ) from exc
     return config_dir(home) / "config.yaml"
 
@@ -3071,12 +3071,12 @@ def _continuity_problem_lines(report: ContinuityReport) -> list[str]:
         lines.append(
             f"gateway continuity set unreadable ({report.corrupt}): serving the "
             f"seed set; move {config_dir(Path('~'))}/continuity.json aside and "
-            "run claude-multi-proxy init"
+            "run charmer-proxy init"
         )
     return lines
 
 
-STATE_ROOT_USAGE = "usage: claude-multi-proxy {command} [--state-root /abs/path]"
+STATE_ROOT_USAGE = "usage: charmer-proxy {command} [--state-root /abs/path]"
 
 
 def _parse_state_root(
@@ -3110,7 +3110,7 @@ def _parse_state_root(
         raise ProxyError(usage)
     path = Path(value)
     if path.parent == path:
-        # "/" (or "//") is never a claude-multi state root, and the
+        # "/" (or "//") is never a charmer state root, and the
         # continuity schema would refuse to persist it anyway.
         raise ProxyError(usage)
     return path
@@ -3120,7 +3120,7 @@ def _parse_state_root(
 RUN_MODES = ("--prepared", "--prepare-and-exec")
 RUN_DETACH = "--detach"
 RUN_INSTANCE = "--instance"
-RUN_USAGE = ("usage: claude-multi-proxy run [--prepared | --prepare-and-exec [--detach]] "
+RUN_USAGE = ("usage: charmer-proxy run [--prepared | --prepare-and-exec [--detach]] "
              "[--instance NONCE] [--state-root /abs/path]")
 # Exit status of run when another instance holds the single-instance lock.
 INSTANCE_BUSY_EXIT = 75
@@ -3174,7 +3174,7 @@ INIT_MODE_FLAGS = ("--reload-check", "--start-check", "--prepare-start")
 
 
 ADOPT_ROOT_FLAG = "--adopt-root"
-INIT_USAGE = ("usage: claude-multi-proxy init [--reload-check | --start-check | --prepare-start] "
+INIT_USAGE = ("usage: charmer-proxy init [--reload-check | --start-check | --prepare-start] "
               "[--state-root /abs/path] | init --state-root /abs/path --adopt-root")
 
 
@@ -3272,7 +3272,7 @@ def _init_management(home: Path, environ: dict[str, str] | None, *, prepare_star
         info = management.key_state(home)
         restart = service.hint('restart')
         if result == "disabled":
-            print("management key: disabled (claude-multi-proxy rotate-management-key re-enables)")
+            print("management key: disabled (charmer-proxy rotate-management-key re-enables)")
         elif info.pending and info.staged:
             print("management key: new key staged in management-key.next; quota reads stay off "
                   f"until the gateway next starts: {restart}")
@@ -3290,7 +3290,7 @@ def _init_management(home: Path, environ: dict[str, str] | None, *, prepare_star
 
 def cmd_rotate_management_key(args: list[str], *, environ: dict[str, str] | None = None) -> int:
     if args:
-        raise ProxyError("usage: claude-multi-proxy rotate-management-key")
+        raise ProxyError("usage: charmer-proxy rotate-management-key")
     if not management.allowlist_build(os.environ if environ is None else environ):
         raise ProxyError(f"{management.UNAVAILABLE}; nothing written")
     result = management.stage_rotation(_home(environ))
@@ -3306,12 +3306,12 @@ def cmd_rotate_management_key(args: list[str], *, environ: dict[str, str] | None
 
 def cmd_disable_management_key(args: list[str], *, environ: dict[str, str] | None = None) -> int:
     if args:
-        raise ProxyError("usage: claude-multi-proxy disable-management-key")
+        raise ProxyError("usage: charmer-proxy disable-management-key")
     management.disable(_home(environ))
     print("management key: removed and disabled; quota reads are off "
           "(doctor falls back to the gateway journal)")
     print(f"the running gateway keeps its key until it restarts: {service.hint('restart')}")
-    print("re-enable: claude-multi-proxy rotate-management-key")
+    print("re-enable: charmer-proxy rotate-management-key")
     return 0
 
 
@@ -3397,7 +3397,7 @@ def adopt_root(
         from charmer.cli import consent  # the one human guard (entry-level only)
 
         guard = consent.require_human
-    guard("claude-multi-proxy init --adopt-root", env)
+    guard("charmer-proxy init --adopt-root", env)
     managed = managed_state_root(home)
     try:
         current = continuity_mod.read(home)
@@ -3627,7 +3627,7 @@ def _hold_instance_lock(workdir: Path, *, wait: float | None = None,
         if clock() >= deadline:
             raise InstanceBusyError(
                 "another gateway instance is running or starting (its lock is held)",
-                remedy="check it with: claude-multi gateway status",
+                remedy="check it with: charmer gateway status",
             )
         sleep(0.05)
 
@@ -3697,7 +3697,7 @@ def cmd_run(
         _refuse_gateway_dotenv(workdir)
         target = _prepared_config(home, state_root, environ)
         if not workdir.is_dir() or not (workdir / GATEWAY_LOGS).is_dir():
-            raise ProxyError("gateway working directory is absent; run claude-multi-proxy init")
+            raise ProxyError("gateway working directory is absent; run charmer-proxy init")
         lock = _hold_instance_lock(workdir)
     elif mode == "--prepare-and-exec":
         workdir = _prepare_gateway_workdir(state_root)
@@ -3772,7 +3772,7 @@ def _exec_gateway(home: Path, environ: dict[str, str] | None, workdir: Path, tar
         except (OSError, errors.CharmerError):
             pass
         print(
-            f"claude-multi-proxy: could not record the gateway start ({type(exc).__name__}); "
+            f"charmer-proxy: could not record the gateway start ({type(exc).__name__}); "
             "doctor cannot tell whether a restart is pending", file=sys.stderr,
         )
     try:
@@ -3840,7 +3840,7 @@ def cmd_login(
     """Exec the pinned proxy's supported OAuth/device flow via existing auth paths.
 
     Refused unless the account's personal-use acknowledgement is current
-    (``claude-multi providers sign-in`` shows it first). ``chdir`` as for
+    (``charmer providers sign-in`` shows it first). ``chdir`` as for
     :func:`cmd_run` (None = no chdir).
     """
 
@@ -3879,7 +3879,7 @@ def cmd_snapshot_auth(
             print(f"  {name}")
         print(
             "restore on rollback (gateway stopped): "
-            f"claude-multi-proxy snapshot-auth --restore {target.name}"
+            f"charmer-proxy snapshot-auth --restore {target.name}"
         )
         return 0
     if len(args) == 2 and args[0] == "--restore":
@@ -3894,11 +3894,11 @@ def cmd_snapshot_auth(
         for name in names:
             print(f"  {name}")
         return 0
-    raise ProxyError("usage: claude-multi-proxy snapshot-auth [--restore SNAPSHOT]")
+    raise ProxyError("usage: charmer-proxy snapshot-auth [--restore SNAPSHOT]")
 
 
 # The supervised unit's own directives (ExecStartPre, ExecStart, ExecReload):
-# the service manager runs them, and every claude-multi path that asks it to
+# the service manager runs them, and every charmer path that asks it to
 # start, restart or reload the unit is itself fenced (see _entry_refusal).
 UNIT_DIRECTIVES = (("init", "--prepare-start"), ("init", "--reload-check"), ("run", "--prepared"))
 # Commands that render the configuration or run the gateway program.
@@ -3922,7 +3922,7 @@ def _entry_roots(home: Path, root: Path, *, reading: bool) -> tuple[Path, ...]:
 
 def _entry_refusal(command: str, rest: list[str], environ: dict[str, str] | None,
                    fence: contextlib.ExitStack | None = None) -> ProxyError | None:
-    """The checks every ``claude-multi-proxy`` command that changes state
+    """The checks every ``charmer-proxy`` command that changes state
     passes before it does anything (it runs outside the launcher's command
     dispatcher, so it applies them itself):
 
@@ -4016,7 +4016,7 @@ def main(
     pid_get: Callable | None = None,
 ) -> Any:
     """Dispatch one command. ``chdir`` reaches only ``run`` and the login
-    helpers (None = no chdir; ``bin/claude-multi-proxy`` passes ``os.chdir``).
+    helpers (None = no chdir; ``bin/charmer-proxy`` passes ``os.chdir``).
     """
 
     import sys
@@ -4029,11 +4029,11 @@ def main(
     if command in ("-v", "--version"):
         from . import __version__
 
-        print(f"claude-multi-proxy {__version__}")
+        print(f"charmer-proxy {__version__}")
         return 0
     descriptor = _PROXY_COMMANDS.get(command)
     if descriptor is None:
-        print(f"claude-multi-proxy: unknown command: {command}", file=sys.stderr)
+        print(f"charmer-proxy: unknown command: {command}", file=sys.stderr)
         print(PROXY_USAGE, file=sys.stderr)
         return 1
     if rest and rest[0] in HELP_ARGUMENTS:
@@ -4044,7 +4044,7 @@ def main(
         # Options are validated before anything runs or is read.
         descriptor.check(rest, environ)
     except ProxyError as exc:
-        print(f"claude-multi-proxy: {exc}", file=sys.stderr)
+        print(f"charmer-proxy: {exc}", file=sys.stderr)
         return 1
     fence = contextlib.ExitStack()  # the entry check's writer fence, held through the command
     try:
@@ -4064,30 +4064,30 @@ def main(
             try:
                 return cmd_run(rest, environ=environ, execve=execve, chdir=chdir)
             except InstanceBusyError as exc:
-                print(f"claude-multi-proxy: {exc}", file=sys.stderr)
+                print(f"charmer-proxy: {exc}", file=sys.stderr)
                 return INSTANCE_BUSY_EXIT
         if command in LOGIN_FLAGS:
             return cmd_login(command, rest, environ=environ, execve=execve, chdir=chdir)
         if command == "snapshot-auth":
             return cmd_snapshot_auth(rest, environ=environ, service_active=service_active,
                                      gateway_status=gateway_status)
-        raise AssertionError(f"claude-multi-proxy {command} has no dispatch")  # PROXY_COMMANDS is closed
+        raise AssertionError(f"charmer-proxy {command} has no dispatch")  # PROXY_COMMANDS is closed
     except errors.CharmerError as exc:
         # Domain refusals are concise errors, never a traceback loop under
         # the systemd unit (including corrupt catalog/custom input).
-        print(f"claude-multi-proxy: {exc}", file=sys.stderr)
+        print(f"charmer-proxy: {exc}", file=sys.stderr)
         if exc.remedy:
             print(f"  fix: {exc.remedy}", file=sys.stderr)
         return 1
     except OSError as exc:
         # snapshot-auth copy/rename failures: the path and reason, one line.
-        print(f"claude-multi-proxy: {exc.strerror or type(exc).__name__}"
+        print(f"charmer-proxy: {exc.strerror or type(exc).__name__}"
               f"{f' ({exc.filename})' if exc.filename else ''}", file=sys.stderr)
         return 1
     except KeyboardInterrupt:
         # Ctrl-C during a render, a readiness wait or a sign-in: one line,
         # exit 130; the writer fence is released below like on every exit.
-        print(f"\nclaude-multi-proxy: {command} cancelled", file=sys.stderr)
+        print(f"\ncharmer-proxy: {command} cancelled", file=sys.stderr)
         return CANCELLED_EXIT
     finally:
         fence.close()

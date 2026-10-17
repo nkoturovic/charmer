@@ -1,4 +1,4 @@
-"""``claude-multi update`` and the card's U: one journey for every channel.
+"""``charmer update`` and the card's U: one journey for every channel.
 
 An installed release (the ``bundle`` channel) updates itself::
 
@@ -59,17 +59,17 @@ MAX_REDIRECTS = 5
 _CHUNK = 1 << 20
 
 NIX_LINES = (
-    "This claude-multi is the Nix package: update it through your flake "
-    "(nix flake update claude-multi, then rebuild or reinstall the package).",
+    "This charmer is the Nix package: update it through your flake "
+    "(nix flake update charmer, then rebuild or reinstall the package).",
     "Nothing was changed. A rollback is your Nix generation rollback; state is only ever migrated forward, "
     "so an older generation refuses state a newer one upgraded.",
 )
 SOURCE_LINES = (
-    "This claude-multi runs from a source checkout: update the checkout (git pull) instead.",
+    "This charmer runs from a source checkout: update the checkout (git pull) instead.",
     "Nothing was changed.",
 )
 OTHER_LINES = (
-    "This claude-multi was not installed by the claude-multi installer, so it cannot update itself.",
+    "This charmer was not installed by the charmer installer, so it cannot update itself.",
     "Nothing was changed. Update it the way you installed it, or install a release with install.sh.",
 )
 
@@ -136,7 +136,7 @@ class HttpsTransport:
         handlers = [urllib.request.HTTPSHandler(context=tls.context(self._environ)), _Redirects(self.hosts),
                     urllib.request.ProxyHandler(urllib.request.getproxies_environment())]
         opener = urllib.request.build_opener(*handlers)
-        request = urllib.request.Request(url, headers={"User-Agent": "claude-multi-update"})
+        request = urllib.request.Request(url, headers={"User-Agent": "charmer-update"})
         return opener.open(request, timeout=self.timeout)
 
     def _response(self, name: str, version: str | None):
@@ -240,9 +240,9 @@ def release_age(release_date: str, today: datetime.date) -> int | None:
 def age_text(version: str, release_date: str, today: datetime.date) -> str:
     days = release_age(release_date, today)
     if days is None or days < 0:
-        return f"claude-multi {version} (released {release_date})"
+        return f"charmer {version} (released {release_date})"
     unit = "day" if days == 1 else "days"
-    return f"claude-multi {version} was released {release_date}, {days} {unit} ago"
+    return f"charmer {version} was released {release_date}, {days} {unit} ago"
 
 
 def installed_release(journey: Journey) -> self_update.Installation:
@@ -260,7 +260,7 @@ def installed_release(journey: Journey) -> self_update.Installation:
         raise self_update.UpdateError(
             f"this launcher runs from {where}, not from the installed release's current version "
             f"({_display(journey, journey.install_root / self_update.CURRENT)}); nothing was changed",
-            remedy="run the claude-multi on your PATH (~/.local/bin/claude-multi)")
+            remedy="run the charmer on your PATH (~/.local/bin/charmer)")
     try:
         install_txn.check_ownership(journey.state_root, journey.environ)
     except install_txn.TransactionError as exc:
@@ -297,7 +297,7 @@ def _transport(journey: Journey, installation: self_update.Installation, *, from
     if base is None:
         raise self_update.UpdateError(
             "this release names no download location, so it cannot check for updates by itself",
-            remedy="download the newer release and run: claude-multi update --from-dir DIR")
+            remedy="download the newer release and run: charmer update --from-dir DIR")
     transport = HttpsTransport(base, latest, environ=journey.environ)
     return transport, urllib.parse.urlsplit(latest or base).hostname or base
 
@@ -330,7 +330,7 @@ def _transaction(journey: Journey, purpose: str) -> Iterator[install_txn.Inhibit
         raise self_update.Interrupted(
             f"{purpose} stopped in its {held.phase} step ({cause}); gateway changes stay paused until it is "
             "finished", phase=held.phase, cancelled=cancelled,
-            remedy="run claude-multi update again: it finishes the interrupted run first") from exc
+            remedy="run charmer update again: it finishes the interrupted run first") from exc
     else:
         held.end()
 
@@ -376,7 +376,7 @@ def _write(out: TextIO, line: str) -> None:
 
 
 def _refuse(out: TextIO, exc: errors.CharmerError) -> int:
-    _write(out, f"claude-multi update: {exc}")
+    _write(out, f"charmer update: {exc}")
     if exc.remedy:
         _write(out, f"  fix: {exc.remedy}")
     return EXIT_REFUSED
@@ -413,9 +413,9 @@ def run(journey: Journey, *, mode: str = "update", assume_yes: bool = False, ask
             _write(out, line)
         return EXIT_REFUSED
     if mode != "check" and (journey.environ.get("CHARMER_MANAGED_ID") or "CLAUDECODE" in journey.environ):
-        _write(out, "claude-multi update: changing the installation is refused inside a Claude Code session; "
+        _write(out, "charmer update: changing the installation is refused inside a Claude Code session; "
                     "nothing was changed.")
-        _write(out, "  fix: run claude-multi update in your own terminal")
+        _write(out, "  fix: run charmer update in your own terminal")
         return EXIT_REFUSED
     try:
         installation = installed_release(journey)
@@ -436,16 +436,16 @@ def run(journey: Journey, *, mode: str = "update", assume_yes: bool = False, ask
         return _refuse(out, exc)
     current, release = installation.current, result.release
     if result.status == "current":
-        _write(out, f"claude-multi {current.version} is up to date (released {current.release_date}).")
+        _write(out, f"charmer {current.version} is up to date (released {current.release_date}).")
         return EXIT_OK
     if result.status == "older":
-        _write(out, f"The installed claude-multi {current.version} is newer than the latest release "
+        _write(out, f"The installed charmer {current.version} is newer than the latest release "
                     f"{release.version}; nothing to do.")
         return EXIT_OK
-    _write(out, f"claude-multi {release.version} is available (released {release.release_date}); "
+    _write(out, f"charmer {release.version} is available (released {release.release_date}); "
                 f"{current.version} is installed.")
     if mode == "check":
-        _write(out, "Run 'claude-multi update' to see what it changes and install it.")
+        _write(out, "Run 'charmer update' to see what it changes and install it.")
         return EXIT_OK
     return _update(journey, installation, release, transport, assume_yes=assume_yes, ask=ask, out=out)
 
@@ -461,16 +461,16 @@ def _update(journey: Journey, installation: self_update.Installation, release: s
     for step in planned.steps:
         _write(out, f"  - {step}")
     if planned.rollback_blocked:
-        _write(out, f"  ! after this update, 'claude-multi update --rollback' to {planned.from_version} is refused "
+        _write(out, f"  ! after this update, 'charmer update --rollback' to {planned.from_version} is refused "
                     "once the new version has upgraded your state")
     try:
-        stop = _confirm(ask, f"Update claude-multi to {planned.to_version} now?", assume_yes, out)
+        stop = _confirm(ask, f"Update charmer to {planned.to_version} now?", assume_yes, out)
         if stop is not None:
             return stop
         applied = self_update.apply(
             installation, release, planned, transport, state_root=journey.state_root, hold=journey.hold,
             protected=journey.protected,
-            inhibit=lambda: _transaction(journey, f"update claude-multi {planned.from_version} to {planned.to_version}"),
+            inhibit=lambda: _transaction(journey, f"update charmer {planned.from_version} to {planned.to_version}"),
             prune_copies=journey.prune_copies, acquire_pin=journey.acquire_pin)
     except KeyboardInterrupt:
         _write(out, "Cancelled; nothing was changed.")
@@ -479,8 +479,8 @@ def _update(journey: Journey, installation: self_update.Installation, release: s
         return _interrupted(out, exc)
     except (self_update.UpdateError, errors.CharmerError) as exc:
         return _refuse(out, exc)
-    _write(out, f"Updated claude-multi to {applied.version}; {applied.previous} is kept for "
-                "'claude-multi update --rollback'.")
+    _write(out, f"Updated charmer to {applied.version}; {applied.previous} is kept for "
+                "'charmer update --rollback'.")
     for line in applied.copies:
         _write(out, line)
     if applied.kept:
@@ -489,7 +489,7 @@ def _update(journey: Journey, installation: self_update.Installation, release: s
         _write(out, f"Kept {', '.join(applied.kept)}: {reason}.")
     if applied.restart == self_update.RESTART_GATEWAY:
         _write(out, "The gateway binary changed: a running gateway keeps the old one until it restarts "
-                    "(claude-multi gateway restart, between turns).")
+                    "(charmer gateway restart, between turns).")
     else:
         _write(out, "Only the launcher changed: new sessions use it; the running gateway keeps running.")
     return EXIT_OK
@@ -499,18 +499,18 @@ def _rollback(journey: Journey, installation: self_update.Installation, *, assum
               out: TextIO) -> int:
     previous = installation.previous
     if previous is None:
-        _write(out, "claude-multi update: there is no previous version to roll back to; nothing was changed.")
+        _write(out, "charmer update: there is no previous version to roll back to; nothing was changed.")
         return EXIT_REFUSED
     current = installation.current
     _write(out, f"Rollback: {current.version} -> {previous.version} ({current.version} stays installed as the "
                 "previous version, so a second rollback returns to it).")
     try:
-        stop = _confirm(ask, f"Roll back claude-multi to {previous.version} now?", assume_yes, out)
+        stop = _confirm(ask, f"Roll back charmer to {previous.version} now?", assume_yes, out)
         if stop is not None:
             return stop
         result = self_update.rollback(
             journey.install_root, state_root=journey.state_root, hold=journey.hold,
-            inhibit=lambda: _transaction(journey, f"roll back claude-multi to {previous.version}"),
+            inhibit=lambda: _transaction(journey, f"roll back charmer to {previous.version}"),
             confirmed=installation)
     except KeyboardInterrupt:
         _write(out, "Cancelled; nothing was changed.")
@@ -519,10 +519,10 @@ def _rollback(journey: Journey, installation: self_update.Installation, *, assum
         return _interrupted(out, exc)
     except (self_update.UpdateError, errors.CharmerError) as exc:
         return _refuse(out, exc)
-    _write(out, f"Rolled back to claude-multi {result.version}; {result.previous} is now the previous version.")
+    _write(out, f"Rolled back to charmer {result.version}; {result.previous} is now the previous version.")
     if result.restart == self_update.RESTART_GATEWAY:
         _write(out, "The gateway binary changed: a running gateway keeps the code it started with until it "
-                    "restarts (claude-multi gateway restart, between turns).")
+                    "restarts (charmer gateway restart, between turns).")
     return EXIT_OK
 
 
@@ -660,7 +660,7 @@ def doctor_lines(runtime: Any, *, today: datetime.date | None = None) -> list[st
     current = installation.current
     text = age_text(current.version, current.release_date, moment)
     previous = f"; previous {installation.previous.version}" if installation.previous is not None else ""
-    lines.append(f"Installed release: {text}{previous} — check for a newer one: claude-multi update --check")
+    lines.append(f"Installed release: {text}{previous} — check for a newer one: charmer update --check")
     return lines
 
 
@@ -684,5 +684,5 @@ def card_hint(runtime: Any, *, today: datetime.date | None = None) -> tuple[str,
     moment = today or datetime.datetime.now(datetime.timezone.utc).date()
     days = release_age(installation.current.release_date, moment)
     if days is not None and days >= AGE_NOTICE_DAYS:
-        return (installation.current.version, f"this release is {days} days old — claude-multi update --check")
+        return (installation.current.version, f"this release is {days} days old — charmer update --check")
     return (installation.current.version, f"released {installation.current.release_date}")

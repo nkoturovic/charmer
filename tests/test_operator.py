@@ -465,7 +465,8 @@ class CollisionTests(unittest.TestCase):
         cases = {
             "passthrough route without a line": ("claude-fable-5-1", "passthrough route of anthropic"),
             "retired selector": ("claude-fixture-old", "retired key fixture-old"),
-            "render sentinel": ("charmer-render-x", "sentinel"),
+            # The render sentinel is no claude-* id: the canonical-id rule refuses it.
+            "render sentinel": ("charmer-render-x", "canonical claude-* model id"),
         }
         for name, (wire, needle) in cases.items():
             with self.subTest(case=name):

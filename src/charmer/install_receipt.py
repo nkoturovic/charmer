@@ -1,15 +1,15 @@
 """The installer's receipt: ``<data root>/install/installer.json``.
 
-``packaging/install.sh`` writes it; ``claude-multi uninstall`` reads it to
+``packaging/install.sh`` writes it; ``charmer uninstall`` reads it to
 remove exactly what the installer created outside the install root. One
 schema serves both sides, so the reader is strict and the receipt alone is
 the authority for a deletion::
 
     {"format": 2,
-     "launchers": [{"path": "/home/u/.local/bin/claude-multi", "sha256": "<64 hex>"}],
+     "launchers": [{"path": "/home/u/.local/bin/charmer", "sha256": "<64 hex>"}],
      "path_lines": [{"file": "/home/u/.bashrc",
-                     "marker": "# added by the claude-multi installer",
-                     "line": "export PATH=\\"$HOME/.local/bin:$PATH\\" # added by the claude-multi installer"}]}
+                     "marker": "# added by the charmer installer",
+                     "line": "export PATH=\\"$HOME/.local/bin:$PATH\\" # added by the charmer installer"}]}
 
 - ``launchers``: every launcher file the installer wrote, with the sha256 of
   the bytes it wrote. A launcher may be removed only while it is still a
@@ -40,8 +40,8 @@ from charmer import errors, state, strict_json
 
 NAME = "installer.json"
 FORMAT = 2
-LAUNCHER_MARK = "# claude-multi installer launcher"
-PATH_MARK = "# added by the claude-multi installer"
+LAUNCHER_MARK = "# charmer installer launcher"
+PATH_MARK = "# added by the charmer installer"
 PATH_LINE = f'export PATH="$HOME/.local/bin:$PATH" {PATH_MARK}'
 MAX_BYTES = 64 * 1024
 MAX_ENTRIES = 64

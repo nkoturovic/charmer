@@ -1,4 +1,4 @@
-"""Pure deterministic CLIProxyAPI config renderer for claude-multi v2.
+"""Pure deterministic CLIProxyAPI config renderer for charmer v2.
 
 Consumes only trusted ``gateway.json``/``providers.json``/``models.json``
 facts and emits the complete integration YAML with a small schema-specific
@@ -123,9 +123,9 @@ ADAPTER_PAYLOAD_CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
     },
 }
 
-SENTINEL_PREFIX = "claude-multi-render-"
+SENTINEL_PREFIX = "charmer-render-"
 SENTINEL_BASE_URL = "http://127.0.0.1:9/v1"
-SENTINEL_NAME = "claude-multi-render"
+SENTINEL_NAME = "charmer-render"
 
 
 def is_reserved_name(name: str) -> bool:
@@ -305,7 +305,7 @@ class RenderResult:
 # ------------------------------------------------------------ outbound proxy
 # The lexical, credential-free gateway→provider proxy URL policy (owned by
 # ``endpoint``): the reviewed gateway.json ``proxy-url``, replaced by the
-# user's ``endpoint.json`` ``proxy_url`` (``claude-multi setup --step gateway
+# user's ``endpoint.json`` ``proxy_url`` (``charmer setup --step gateway
 # --proxy URL``), reaches the config; there is no per-provider proxy.
 # Diagnostics never echo a refused URL (it may carry a secret).
 OUTBOUND_PROXY_SCHEMES = endpoint.OUTBOUND_PROXY_SCHEMES

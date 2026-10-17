@@ -1,8 +1,8 @@
 """Release signature verification: OpenSSH signatures over Ed25519 (stdlib only).
 
-claude-multi releases publish ``SHA256SUMS`` with a detached signature made by
+charmer releases publish ``SHA256SUMS`` with a detached signature made by
 ``ssh-keygen -Y sign`` (the ``PROTOCOL.sshsig`` format) under the namespace
-``claude-multi-release``. This module verifies such a signature the way
+``charmer-release``. This module verifies such a signature the way
 ``ssh-keygen -Y verify`` does, against an ``allowed_signers`` document, so the
 self-update path needs no OpenSSH installation:
 
@@ -33,8 +33,8 @@ from typing import Sequence
 
 from .errors import CharmerError
 
-RELEASE_NAMESPACE = "claude-multi-release"
-RELEASE_PRINCIPAL = "release@claude-multi"
+RELEASE_NAMESPACE = "charmer-release"
+RELEASE_PRINCIPAL = "release@charmer"
 SUMS_NAME = "SHA256SUMS"
 SIGNATURE_SUFFIX = ".sshsig"
 

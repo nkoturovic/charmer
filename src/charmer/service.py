@@ -47,11 +47,11 @@ ON_DEMAND, SYSTEMD = "on-demand", "systemd"
 # persistence-hold checks), so every control remedy names them; a raw manager
 # restart would skip the hold.
 _PRODUCT_VERBS = {
-    "start": "claude-multi gateway start",
-    "stop": "claude-multi gateway stop",
-    "restart": "claude-multi gateway restart",
-    "status": "claude-multi gateway status",
-    "logs": "claude-multi gateway logs",
+    "start": "charmer gateway start",
+    "stop": "charmer gateway stop",
+    "restart": "charmer gateway restart",
+    "status": "charmer gateway status",
+    "logs": "charmer gateway logs",
 }
 HINT_VERBS = (*_PRODUCT_VERBS, "reload", "reset-failed", "recover", "why")
 
@@ -104,7 +104,7 @@ def hint(verb: str, *, home: Path | str | None = None, backend: Backend | None =
             return f"{linux_service.hint('reset-failed', unit=chosen.unit)} && {_PRODUCT_VERBS['start']}"
         return linux_service.hint(verb, unit=chosen.unit)
     if verb == "reload":
-        return "claude-multi-proxy init"
+        return "charmer-proxy init"
     if verb == "why":
         return _PRODUCT_VERBS["logs"]
     return _PRODUCT_VERBS["start"]  # recover, reset-failed: an explicit start clears the pause
@@ -203,10 +203,10 @@ def failure_notice(unit: str = UNIT) -> tuple[str, str]:
     """The supervised unit's failure notice (``OnFailure``): systemd text by nature."""
 
     return (
-        "claude-multi gateway failed",
+        "charmer gateway failed",
         "The gateway service stopped after repeated failures. "
         f"Why: {linux_service.hint('why', unit=unit)} · recover: {linux_service.hint('recover', unit=unit)} · "
-        "status 226/NAMESPACE (a missing directory): claude-multi gateway service install recreates them",
+        "status 226/NAMESPACE (a missing directory): charmer gateway service install recreates them",
     )
 
 
@@ -293,7 +293,7 @@ def owner_policy(verdict: OwnerVerdict) -> str:
 
 def owner_attention(base_url: str, verdict: OwnerVerdict) -> str:
     port = urllib.parse.urlsplit(base_url).port or 80
-    return (f"port {port}: {verdict.detail}; the claude-multi gateway service "
+    return (f"port {port}: {verdict.detail}; the charmer gateway service "
             f"could not be confirmed — proceeding; check with: {hint_code('status')}")
 
 
@@ -327,7 +327,7 @@ INSTANCE_NONCE = re.compile(r"^[0-9a-f]{16}$")
 def start_marker_prefix(instance: str) -> str:
     """The start of the line ``run`` writes to stdout right before the exec."""
 
-    return f"claude-multi-proxy: gateway instance {instance} starting"
+    return f"charmer-proxy: gateway instance {instance} starting"
 RELOAD_STAMP = "last-reload.json"
 RELOAD_ATTEMPT = "reload-attempt.json"
 RELOAD_SUCCESS = "reload-success.json"
@@ -576,7 +576,7 @@ def pending_restart_lines(
         )
     if stamp is not None and stamp.signature != signature:
         lines.append(
-            "gateway restart pending: the running gateway was started by claude-multi "
+            "gateway restart pending: the running gateway was started by charmer "
             f"{stamp.launcher_version} and this release changes its start arguments or "
             "environment filter, which apply only at a restart: "
             f"{hint_code('restart', backend=backend)} (between turns)"

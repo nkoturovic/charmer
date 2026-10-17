@@ -1,4 +1,4 @@
-"""Trusted catalog loading and reference validation for claude-multi v2.
+"""Trusted catalog loading and reference validation for charmer v2.
 
 Loads versioned JSON assets, validates them against the closed-vocabulary
 schemas, and enforces semantic invariants: reference integrity, availability
@@ -161,7 +161,7 @@ RESERVED_LEAD_ENV_KEYS = frozenset(
 )
 
 _SELECTOR_SUFFIX = "[1m]"
-_RENDER_SENTINEL_PREFIX = "claude-multi-render-"
+_RENDER_SENTINEL_PREFIX = "charmer-render-"
 
 _HASH_FIELDS = frozenset(
     {"sha256", "composition_hash", "catalog_hash", "pre_image_hash", "post_image_hash"}
@@ -621,7 +621,7 @@ def is_legacy_contract_override(document: Any) -> bool:
 
     The current contract splits ``effort_vocabulary`` into
     ``agent_efforts``/``lead_efforts``; an override written by an earlier
-    launcher's ``claude-multi update`` still carries the old key and can
+    launcher's ``charmer update`` still carries the old key and can
     never load again.
     """
 
@@ -1953,7 +1953,7 @@ def load_catalog(root: Path | str, *, contract_override: Path | None = None) -> 
 # because the gateway runs with --local-model) is a checked-in, read-only
 # resource under `registry/` (the Nix package build compares it with the
 # pinned source). It is evidence, never authority: it feeds
-# the `claude-multi-dev check` presence rule (the registry overlay's trigger)
+# the `charmer-dev check` presence rule (the registry overlay's trigger)
 # and keeps codex `upgrade`/`retirement_at` reachable for the radar. It
 # never sets a fence, a context value or a render input.
 

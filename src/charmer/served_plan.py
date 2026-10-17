@@ -41,8 +41,8 @@ SECTION_KEY = "claude-api-key"
 # behaviour switches and each model's capability metadata (never the key).
 SECTION_CODEX_KEY = "codex-api-key"
 SECTION_COMPAT = "openai-compatibility"
-SENTINEL_NAME = "claude-multi-render"
-SENTINEL_PREFIX = "claude-multi-render-"
+SENTINEL_NAME = "charmer-render"
+SENTINEL_PREFIX = "charmer-render-"
 
 HEADER = "Served change preview — no changes written"
 NO_SERVED_CHANGE = "Served selectors: unchanged."
@@ -65,17 +65,17 @@ ROOT_UNREADABLE_REFUSAL = (
     "gateway continuity set unreadable ({reason}): the gateway's state-root authority is unknown; "
     "the requested root is {requested}.\n"
     "Cross-root selector safety is not established. No served change was applied. Repair: move "
-    "~/.config/claude-multi/continuity.json aside and run claude-multi-proxy init"
+    "~/.config/charmer/continuity.json aside and run charmer-proxy init"
 )
 ROOT_BLOCK = (
     "gateway managed for root {managed}; this command used {requested} — run with the managed "
-    "root, or adopt this one after the root inventory: claude-multi-proxy init --state-root "
+    "root, or adopt this one after the root inventory: charmer-proxy init --state-root "
     "{requested} --adopt-root"
 )
 PENDING_FACT = (
     "Pending served change: {added} added · {retargeted} retargeted · {removed} removed "
     "(live impact: {impact}) — a gateway start or reload publishes it without asking; review "
-    "with claude-multi plan, publish with claude-multi providers apply"
+    "with charmer plan, publish with charmer providers apply"
 )
 
 
@@ -522,9 +522,9 @@ class ServedChangePlan:
         out = [HEADER, f"Scope: gateway {self.gateway} · state root {self.state_root}"]
         if self.before_unknown is not None:
             # Nothing to compare with: a count, not a list of every selector
-            # (``claude-multi plan --json`` carries the full candidate set).
+            # (``charmer plan --json`` carries the full candidate set).
             out += ["", f"Published render: unknown — {self.before_unknown}; {len(self.added)} selector(s) "
-                        "would be served (claude-multi plan --json lists them)"]
+                        "would be served (charmer plan --json lists them)"]
         if self.added and self.before_unknown is None:
             out += ["", "Added", *(f"  {selector} → {route.label()}" for selector, route in self.added)]
         if self.retargeted:

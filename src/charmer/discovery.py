@@ -39,11 +39,11 @@ from . import operator as operator_mod
 # pool's catalog section shows by default (``claude``, ``codex-pro``), every
 # other one only with --all.
 DEFAULT_SECTIONS = tuple(pool.registry_section for pool in account_pools.pools().values())
-SENTINEL_PREFIX = "claude-multi-render-"
+SENTINEL_PREFIX = "charmer-render-"
 # Launcher-owned alias namespaces: a served id in them is an alias of ours
 # (possibly stale — doctor's served cross-check reports those), never an
 # uncataloged upstream model.
-OWNED_ALIAS_PREFIXES = ("claude-multi-", "gpt-multi-", "custom-")
+OWNED_ALIAS_PREFIXES = ("charmer-", "gpt-multi-", "custom-")
 
 
 def section_provider(section: str) -> str | None:
@@ -331,7 +331,7 @@ def doctor_info_lines(by_channel: Mapping[str, Sequence[str]], unattributed: Seq
     total = sum(len(ids) for ids in by_channel.values()) + len(unattributed)
     if not total:
         return []
-    lines = [f"discovery: {total} routable, uncataloged model IDs — claude-multi models --candidates"]
+    lines = [f"discovery: {total} routable, uncataloged model IDs — charmer models --candidates"]
     for channel in sorted(by_channel):
         lines.append(f"discovery {channel}: {len(by_channel[channel])} routable, uncataloged; "
                      "locally registered only, upstream access unverified")
@@ -345,11 +345,11 @@ def doctor_info_lines(by_channel: Mapping[str, Sequence[str]], unattributed: Seq
 OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models"
 STEALTH_CAUTION = "stealth: maker hidden; pre-release; may retain prompts; may disappear"
 OPENROUTER_HELP = (
-    "OpenRouter listing: claude-multi discover openrouter (Providers → OpenRouter → A).\n"
+    "OpenRouter listing: charmer discover openrouter (Providers → OpenRouter → A).\n"
     "Regular models remain visible; stealth/<name> models have a hidden maker, are pre-release,\n"
     "may retain prompts and may disappear. The public list may omit them; with a key,\n"
     "a separately confirmed account-filtered listing adds account-only rows.\n"
-    "Add an id directly: claude-multi discover openrouter --add stealth/space-bunny-alpha.\n"
+    "Add an id directly: charmer discover openrouter --add stealth/space-bunny-alpha.\n"
     "Variant ids such as :free are listed but not addable in this release."
 )
 
@@ -376,9 +376,9 @@ FEED_URL = "https://raw.githubusercontent.com/router-for-me/models/refs/heads/ma
 LISTING_WHY = "list models to declare; nothing is admitted"
 LISTING_CAPS = "20 s wall-clock; 4 MiB response; no redirects or retries"
 CODEX_EXCLUDED = ("openai: not included; its plan listing requires separate consent:\n"
-                  "  claude-multi discover openai")
+                  "  charmer discover openai")
 STALE_TEXT = "discover {provider}: configuration changed while awaiting confirmation — nothing sent; retry"
-ROUTE_TEXT = "discover {provider}: route unapproved or changed — claude-multi providers approve {provider}"
+ROUTE_TEXT = "discover {provider}: route unapproved or changed — charmer providers approve {provider}"
 # Attempt descriptors of T2 providers without a ``listing`` block.
 ATTEMPT_DESCRIPTORS = {
     "anthropic-compatible": ("/v1/models", "anthropic", "provider"),
@@ -474,7 +474,7 @@ def plan_provider(
     if provider.get("origin") in operator_mod.OPERATOR_ORIGINS:
         # A T2 provider whose declaration does not resolve now.
         raise PlanRefusal(provider_id, f"discover {provider_id}: the declaration does not resolve — "
-                                       "claude-multi providers validate")
+                                       "charmer providers validate")
     descriptor = dict(descriptors.get(provider_id, {}))
     if account:
         descriptor.update(url=OPENROUTER_MODELS_URL + "/user", auth="bearer", shape="openrouter", status="attempt")
@@ -484,7 +484,7 @@ def plan_provider(
     if descriptor.get("status") == "unsupported":
         note = descriptor.get("note") or "no listing endpoint is known"
         raise PlanRefusal(provider_id, f"discover {provider_id}: model listing unsupported ({note}) — "
-                                       f"declare manually: claude-multi models add {provider_id} WIRE --context N "
+                                       f"declare manually: charmer models add {provider_id} WIRE --context N "
                                        "--source docs --source-ref URL")
     if transport["kind"] == "oauth-pool":
         choice = (transports or {}).get(provider_id)
@@ -492,11 +492,11 @@ def plan_provider(
             # The selected reviewed transport has no reviewed
             # listing descriptor: never guessed, never the pool's.
             raise PlanRefusal(provider_id, f"discover {provider_id}: its selected {choice} transport has no "
-                                           f"reviewed model listing — declare manually: claude-multi models add "
+                                           f"reviewed model listing — declare manually: charmer models add "
                                            f"{provider_id} WIRE --context N --source docs --source-ref URL")
         if descriptor.get("auth") != "pool-credential":
             raise PlanRefusal(provider_id, f"discover {provider_id}: an OAuth pool has no model listing — "
-                                           f"declare manually: claude-multi models add {provider_id} WIRE "
+                                           f"declare manually: charmer models add {provider_id} WIRE "
                                            "--context N --source docs --source-ref URL")
         call = {"provider_id": provider_id, "tier": "T1", "kind": "oauth-pool", "url": descriptor["url"],
                 "shape": "codex", "auth": "pool-credential", "header": None, "secret_name": None,
@@ -545,7 +545,7 @@ def _plan_t2(resolved: operator_mod.ResolvedProvider, layer: operator_mod.Operat
         attempt = ATTEMPT_DESCRIPTORS.get(resolved.kind)
         if attempt is None:
             raise PlanRefusal(pid, f"discover {pid}: no listing endpoint is known for kind {resolved.kind} — "
-                                   f"declare manually: claude-multi models add {pid} WIRE --context N --source docs")
+                                   f"declare manually: charmer models add {pid} WIRE --context N --source docs")
         suffix, shape, mode = attempt
         url, verified = resolved.base_url.rstrip("/") + suffix, False
     if mode == "none":
@@ -610,7 +610,7 @@ def plan_all(
             continue
         if call.secret_name is not None and not secret_present(call.secret_name):
             skipped.append(Skipped(pid, f"credential {call.secret_name} is not set — "
-                                        f"claude-multi providers set-key {pid}"))
+                                        f"charmer providers set-key {pid}"))
             continue
         calls.append(call)
     return DiscoveryPlan(tuple(calls), tuple(skipped), codex)
@@ -635,8 +635,8 @@ def consent_text(calls: Sequence[ListingCall], skipped: Sequence[Skipped] = (), 
     if codex_excluded:
         lines.append(CODEX_EXCLUDED)
     count = len(calls)
-    lines.append("claude-multi will make ONE request to a provider:" if count == 1 else
-                 f"claude-multi will make {count} requests to providers:")
+    lines.append("charmer will make ONE request to a provider:" if count == 1 else
+                 f"charmer will make {count} requests to providers:")
     for index, call in enumerate(calls, 1):
         lines.append(f"  {index}. GET {call.url}")
         lines.append(f"     {auth_text(call)}")
@@ -653,7 +653,7 @@ def consent_text(calls: Sequence[ListingCall], skipped: Sequence[Skipped] = (), 
 
 
 def feed_consent_text(url: str = FEED_URL) -> str:
-    return ("claude-multi will make ONE credential-free third-party request:\n"
+    return ("charmer will make ONE credential-free third-party request:\n"
             f"  GET {url}\n"
             "  why: compare the public feed with the pinned registry\n"
             f"  caps: {LISTING_CAPS}\n"
@@ -794,7 +794,7 @@ def drift_lines(
         if isinstance(context, int) and not isinstance(context, bool) and context != state.declared_tokens:
             lines.extend([
                 f"{key}: listed context {context} != declared {state.declared_tokens}",
-                f"  edit: claude-multi models edit {key}",
+                f"  edit: charmer models edit {key}",
                 f"  change: context.declared_tokens = {context}",
                 "  consequence: new class; admission and evidence lapse; running sessions keep their fence "
                 "until relaunch",
@@ -804,7 +804,7 @@ def drift_lines(
         if listed_efforts:
             lines.extend([
                 f"{key}: listing efforts now include {', '.join(sorted(set(listed_efforts)))}",
-                f"  edit: claude-multi models edit {key}",
+                f"  edit: charmer models edit {key}",
                 "  consequence: only reviewed contracts are eligible; re-admission and qualification are "
                 "optional after a definition change",
             ])
@@ -917,7 +917,7 @@ def declaration_efforts(
     if not efforts:
         raise DeclarationRefusal(
             "no reviewed effort contract matches the advertised levels — declare the line manually: "
-            "claude-multi models add PROVIDER WIRE --effort LEVEL=CONTRACT --context N --source listing")
+            "charmer models add PROVIDER WIRE --effort LEVEL=CONTRACT --context N --source listing")
     order = [level for level in native if level in efforts]
     default = "high" if "high" in efforts else order[-1]
     return efforts, default

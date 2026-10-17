@@ -37,12 +37,12 @@ SPEC_KEYS = frozenset({"version", "backend", "unit", "exec_links", "state_root",
 EXEC_CHANNELS = ("bundle", "nix")
 HOME_LEVELS = ("tmpfs", "read-only", "none")
 UNIT_NAME = re.compile(r"^[a-z][a-z0-9-]{0,63}$")
-PROXY_ENTRY = "bin/claude-multi-proxy"
-DESCRIPTION = "claude-multi local model gateway"
-FAILURE_DESCRIPTION = "claude-multi gateway failure notice"
+PROXY_ENTRY = "bin/charmer-proxy"
+DESCRIPTION = "charmer local model gateway"
+FAILURE_DESCRIPTION = "charmer gateway failure notice"
 # The first line of every unit this product writes: uninstall and refresh
 # touch only files that carry it.
-HEADER = "# Written by claude-multi gateway service install; run it again to refresh this file."
+HEADER = "# Written by charmer gateway service install; run it again to refresh this file."
 # Variables that would point the gateway at another config root or secret file.
 UNSET_ENVIRONMENT = ("XDG_CONFIG_HOME", "CHARMER_SECRET_ENV")
 START_LIMIT_INTERVAL_SEC = 300
@@ -297,7 +297,7 @@ def render(spec: Mapping[str, Any], plan: UnitPlan) -> dict[str, str]:
             ("Unit", [("Description", FAILURE_DESCRIPTION)]),
             ("Service", [("Type", "oneshot"), (
                 "ExecStart",
-                f"-{plan.notify_send} --urgency=critical --app-name=claude-multi "
+                f"-{plan.notify_send} --urgency=critical --app-name=charmer "
                 f"{_exec_word(title)} {_exec_word(body)}")]),
         ])
     return files

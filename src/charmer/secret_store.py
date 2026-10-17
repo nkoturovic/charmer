@@ -20,8 +20,8 @@ and the gateway share.
   automatic copy or relocation. Its location is resolved here, for every
   reader alike (the launcher, the gateway render at start, doctor): the
   ``CHARMER_SECRET_ENV`` override, else the file a validated pointer
-  (``~/.config/claude-multi/secret-file.json``) selects, else the default
-  ``~/.config/claude-multi/secrets/provider-keys.env``.
+  (``~/.config/charmer/secret-file.json``) selects, else the default
+  ``~/.config/charmer/secrets/provider-keys.env``.
 - The credential-name policy constants live here and are re-exported **by
   reference** (the same objects) from ``proxy`` (gateway deny lists) and
   ``compiler`` (the managed-environment keep-list), so the operator layer
@@ -206,7 +206,7 @@ def env_keep_problem(name: str, *, credential_names: Iterable[str] = ()) -> str 
     ``session_env_keep`` choice), or None. Names only, never a value.
 
     A kept name only exempts one variable from the generic ``*_API_KEY``
-    rule. It can never keep a name claude-multi owns (the reserved
+    rule. It can never keep a name charmer owns (the reserved
     ``ANTHROPIC_*``/``CLAUDE_*`` prefixes, the ``*_FILE_DESCRIPTOR``
     suffix), a gateway secret, or the credential name of a provider
     (``credential_names``: every catalog and user provider's API-key name,
@@ -221,7 +221,7 @@ def env_keep_problem(name: str, *, credential_names: Iterable[str] = ()) -> str 
         return (f"{name} is not removed from managed sessions (only *{API_KEY_SUFFIX} variables are), "
                 "so it needs no exception")
     if name.startswith(RESERVED_SECRET_PREFIXES):
-        return f"{name} uses a reserved prefix ({', '.join(p + '*' for p in RESERVED_SECRET_PREFIXES)}); claude-multi sets those itself"
+        return f"{name} uses a reserved prefix ({', '.join(p + '*' for p in RESERVED_SECRET_PREFIXES)}); charmer sets those itself"
     if name.endswith(RESERVED_SECRET_SUFFIXES) or gateway_env_denied(name):
         return f"{name} is a gateway secret; it never enters a managed session"
     if name in set(credential_names):
@@ -231,7 +231,7 @@ def env_keep_problem(name: str, *, credential_names: Iterable[str] = ()) -> str 
 
 # ------------------------------------------------------------ log redaction
 # What the public gateway-log surfaces print instead of a secret or an
-# account identifier (``claude-multi gateway logs``, the TUI log view, the
+# account identifier (``charmer gateway logs``, the TUI log view, the
 # log tail a failed start shows).
 REDACTED = "<redacted>"
 _HEADER_NAMES = (r"(?:proxy-)?authorization|x-api-key|api-key|x-goog-api-key|x-management-key|"
@@ -521,13 +521,13 @@ def redact(text: str) -> str:
 # The key-file pointer: ``{"version": 1, "path": "~/…" | "/abs"}``.
 POINTER_VERSION = 1
 POINTER_PATH_MAX = 4096
-# claude-multi's own key-file folder (HOME-relative): every managed session
+# charmer's own key-file folder (HOME-relative): every managed session
 # is denied reading it (the compiled scope's Read denies), so any file in it
 # may be selected. A key file the pointer selects anywhere else must sit in a
 # private folder of its own, and the compiled scope denies that file by name.
-PROTECTED_DIRS = (".config/claude-multi",)
+PROTECTED_DIRS = (".config/charmer",)
 KEY_SOURCES = ("environment", "pointer", "default")
-KEY_FOLDER_RULE = ("the key file must be inside ~/.config/claude-multi/, or in a private folder of its own "
+KEY_FOLDER_RULE = ("the key file must be inside ~/.config/charmer/, or in a private folder of its own "
                    "that you own (no group or other access: chmod 700), not your home folder itself")
 KEY_FILE_RULE = "the key file must be a private regular file you own (no group or other access: chmod 600)"
 
@@ -553,7 +553,7 @@ def location_problem(path: Path | str, environ: Mapping[str, str]) -> str | None
     """Why ``path`` cannot be the key file a pointer selects, or None.
 
     It must be absolute (``~/`` expands to HOME). Resolved (symlinks
-    followed), it lies inside claude-multi's own folder
+    followed), it lies inside charmer's own folder
     (:data:`PROTECTED_DIRS`), or in a folder the person chose: a private
     folder they own (no group or other access) other than HOME and its
     parents, the file itself (once it exists) a private regular file they
@@ -697,7 +697,7 @@ def _outside_protected(path: str | Path, environ: Mapping[str, str]) -> tuple[Pa
 
 def pointer_key_files(environ: Mapping[str, str]) -> tuple[Path, ...]:
     """The key file the pointer names, as written and as it resolves, when
-    it lies outside claude-multi's own folder (empty otherwise)."""
+    it lies outside charmer's own folder (empty otherwise)."""
 
     named = _pointer_named(environ)
     return _outside_protected(named, environ) if named is not None else ()
@@ -723,7 +723,7 @@ def unprotected_key_files(environ: Mapping[str, str]) -> tuple[Path, ...]:
 
 # Where the gateway keeps the account sign-ins (HOME-relative, as the
 # catalog's gateway ``auth_dir``).
-ACCOUNT_RECORDS = ".local/share/claude-multi/auth"
+ACCOUNT_RECORDS = ".local/share/charmer/auth"
 
 
 def credential_locations(environ: Mapping[str, str]) -> tuple[Path, ...]:

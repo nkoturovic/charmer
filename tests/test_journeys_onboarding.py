@@ -765,7 +765,10 @@ class FailureJourneys(JourneyCase):
         child = self.child(setup=setup, after=after)
         child.expect("Status  BLOCKED")
         child.expect("profile mine cannot be loaded:")
-        child.expect("line 3:")
+        # "<path> line 3:": the TMPDIR path's length decides where the card
+        # wraps, so the two words may sit on two lines.
+        child.expect("line")
+        child.expect("3:")
         child.keys("p")
         child.expect(cli_text.PROFILES_TITLE)
         child.expect("cannot load")

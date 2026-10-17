@@ -22,7 +22,7 @@ def display(path: Path | str, environ: Mapping[str, str]) -> str:
 
 
 def state_root(environ: dict[str, str] | None = None) -> Path:
-    """``$XDG_STATE_HOME/claude-multi``, or ``~/.local/state/claude-multi``.
+    """``$XDG_STATE_HOME/charmer``, or ``~/.local/state/charmer``.
 
     A relative ``XDG_STATE_HOME`` is invalid by the XDG rules and ignored, as
     the installer ignores it, so both name the same state root.
@@ -31,11 +31,11 @@ def state_root(environ: dict[str, str] | None = None) -> Path:
     env = os.environ if environ is None else environ
     xdg = env.get("XDG_STATE_HOME")
     base = Path(xdg) if xdg and os.path.isabs(xdg) else Path(env.get("HOME", str(Path.home()))) / ".local" / "state"
-    return base / "claude-multi"
+    return base / "charmer"
 
 
 def config_root(environ: dict[str, str] | None = None) -> Path:
-    """``$XDG_CONFIG_HOME/claude-multi``, or ``~/.config/claude-multi``.
+    """``$XDG_CONFIG_HOME/charmer``, or ``~/.config/charmer``.
 
     A relative ``XDG_CONFIG_HOME`` is invalid by the XDG rules and ignored,
     like a relative ``XDG_STATE_HOME`` (:func:`state_root`) and as the
@@ -45,12 +45,12 @@ def config_root(environ: dict[str, str] | None = None) -> Path:
     env = os.environ if environ is None else environ
     xdg = env.get("XDG_CONFIG_HOME")
     base = Path(xdg) if xdg and os.path.isabs(xdg) else Path(env.get("HOME", str(Path.home()))) / ".config"
-    return base / "claude-multi"
+    return base / "charmer"
 
 
 
 def gateway_config_dir(environ: Mapping[str, str]) -> Path:
-    return home(environ) / ".config" / "claude-multi"
+    return home(environ) / ".config" / "charmer"
 
 
 def secret_env_default(environ: Mapping[str, str]) -> Path:
@@ -62,7 +62,7 @@ def secret_env_default(environ: Mapping[str, str]) -> Path:
 
 def secret_pointer_path(environ: Mapping[str, str]) -> Path:
     """The optional pointer that selects an existing key file
-    (``claude-multi setup --keys-file PATH``); HOME-relative like the default."""
+    (``charmer setup --keys-file PATH``); HOME-relative like the default."""
 
     return gateway_config_dir(environ) / "secret-file.json"
 
@@ -72,7 +72,7 @@ def choices_path(environ: Mapping[str, str]) -> Path:
 
 
 def data_root(environ: Mapping[str, str]) -> Path:
-    return home(environ) / ".local" / "share" / "claude-multi"
+    return home(environ) / ".local" / "share" / "charmer"
 
 
 def installer_receipt(environ: Mapping[str, str]) -> Path:

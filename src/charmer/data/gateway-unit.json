@@ -1,31 +1,31 @@
 {
   "version": 1,
   "backend": "systemd",
-  "unit": "claude-multi-gateway",
+  "unit": "charmer-gateway",
   "exec_links": {
-    "bundle": ".local/share/claude-multi/install/current",
-    "nix": ".local/share/claude-multi/nix/current"
+    "bundle": ".local/share/charmer/install/current",
+    "nix": ".local/share/charmer/nix/current"
   },
-  "state_root": ".local/state/claude-multi",
-  "working_directory": ".local/state/claude-multi/gateway",
+  "state_root": ".local/state/charmer",
+  "working_directory": ".local/state/charmer/gateway",
   "private_dirs": [
-    ".config/claude-multi",
-    ".local/share/claude-multi",
-    ".local/share/claude-multi/auth",
-    ".local/share/claude-multi/traces",
-    ".local/state/claude-multi",
-    ".local/state/claude-multi/gateway",
-    ".local/state/claude-multi/gateway/logs"
+    ".config/charmer",
+    ".local/share/charmer",
+    ".local/share/charmer/auth",
+    ".local/share/charmer/traces",
+    ".local/state/charmer",
+    ".local/state/charmer/gateway",
+    ".local/state/charmer/gateway/logs"
   ],
   "bind_rw": [
-    ".local/share/claude-multi/auth",
-    ".local/share/claude-multi/traces",
-    ".local/state/claude-multi/gateway"
+    ".local/share/charmer/auth",
+    ".local/share/charmer/traces",
+    ".local/state/charmer/gateway"
   ],
   "bind_ro": [
-    ".config/claude-multi",
-    ".local/share/claude-multi",
-    ".local/state/claude-multi"
+    ".config/charmer",
+    ".local/share/charmer",
+    ".local/state/charmer"
   ],
   "hardening": {
     "home": "tmpfs",

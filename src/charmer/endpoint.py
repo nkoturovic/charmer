@@ -47,7 +47,7 @@ PORT_MIN, PORT_MAX = 1024, 65535
 
 ON_DEMAND, SYSTEMD = "on-demand", "systemd"
 BACKENDS = (ON_DEMAND, SYSTEMD)
-DEFAULT_UNIT = "claude-multi-gateway"
+DEFAULT_UNIT = "charmer-gateway"
 _UNIT = re.compile(r"^[a-z][a-z0-9-]{0,63}$")
 _KEYS = frozenset({"version", "host", "port", "backend", "unit", "proxy_url"})
 OUTBOUND_PROXY_SCHEMES = ("http", "https", "socks5", "socks5h")
@@ -59,7 +59,7 @@ CHANNELS = ("nix", "bundle", "source")
 # it keeps its port (the catalog value) unless endpoint.json says otherwise.
 _EXISTING_INSTALL_MARKERS = ("config.yaml", "api-key")
 # What sets the gateway up in a home that has neither (it records the port).
-SETUP_COMMAND = "claude-multi setup --step gateway"
+SETUP_COMMAND = "charmer setup --step gateway"
 NOT_SET_UP = f"the local gateway is not set up yet: run {SETUP_COMMAND} first"
 
 

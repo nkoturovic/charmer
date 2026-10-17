@@ -247,7 +247,7 @@ class AllowedSignerTests(unittest.TestCase):
     def test_principal_patterns(self) -> None:
         signature = sshsig(SEED_A, MESSAGE)
         for principals, accepted in {
-            WHO: True, "release@*": True, "*": True, "other@x,release@claude-?ulti": True,
+            WHO: True, "release@*": True, "*": True, "other@x,release@charm?r": True,
             "*,!release@charmer": False, "other@x": False, "RELEASE@charmer": False,
         }.items():
             with self.subTest(principals):

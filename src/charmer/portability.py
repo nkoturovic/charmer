@@ -39,7 +39,7 @@ from . import profile as profile_mod
 from . import settings as settings_mod
 from . import validate as schema_validate
 
-FORMAT = "claude-multi-operator-export"
+FORMAT = "charmer-operator-export"
 VERSION = 1
 SCHEMA_NAME = "operator-export.schema.json"
 RECEIPT_SCHEMA_NAME = "export-receipt.schema.json"
@@ -64,12 +64,12 @@ APPLIED_HEADER = "Applied the confirmed configuration changes."
 APPLIED_TRUST = "No imported route approval, admission or qualification evidence was trusted."
 APPLIED_RERUN = "Rerun import after completing the listed authorization steps."
 STALE_PLAN = ("the configuration changed since the preview — nothing written; rerun "
-              "claude-multi import FILE to see the new plan")
+              "charmer import FILE to see the new plan")
 KEYLESS_TEXT = ("No approval step exists on this host for {provider} {origin} "
                 "(interpreted on this machine's network)")
 KEYLESS_QUESTION = KEYLESS_TEXT + "; declare it (its aliases are served at once)? [y/N] "
 TRANSPORT_TEXT = ("Not transferred: transport choice {provider} {choice} — "
-                  "claude-multi providers transport {provider} {choice}")
+                  "charmer providers transport {provider} {choice}")
 _STAMP = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$")
 _BINDING_NAME = profile_mod.BINDING_NAME
 
@@ -383,7 +383,7 @@ class ImportPlan:
         lines = [KEYLESS_TEXT.format(provider=pid, origin=origin) for pid, origin in self.keyless]
         lines += [TRANSPORT_TEXT.format(provider=pid, choice=choice) for pid, choice in self.transports]
         lines.append(TRUST_INACTIVE)
-        lines += [f"  claude-multi providers approve {pid}" for pid in self.routes]
+        lines += [f"  charmer providers approve {pid}" for pid in self.routes]
         return lines
 
     def preview_lines(self) -> list[str]:
@@ -460,7 +460,7 @@ def plan_import(bundle: Bundle, target: ImportTarget, *, excluded: Iterable[str]
             items.append(Item("provider", file_id, UNCHANGED) if same else Item(
                 "provider", file_id, CONFLICT,
                 f"{operator_mod.file_label(file_id)} differs on this host — not overwritten; compare and "
-                f"edit it: claude-multi providers edit {file_id}"))
+                f"edit it: charmer providers edit {file_id}"))
             continue
         if file_id in excluded:
             items.append(Item("provider", file_id, BLOCKED, "declined at the keyless confirmation"))
@@ -588,7 +588,7 @@ def plan_import(bundle: Bundle, target: ImportTarget, *, excluded: Iterable[str]
         if have is not None:
             items.append(Item("profile", name, UNCHANGED) if dict(have) == document else Item(
                 "profile", name, CONFLICT, "differs on this host — not overwritten; edit it: "
-                f"claude-multi profile edit {name}"))
+                f"charmer profile edit {name}"))
             continue
         problems = target.profile_errors(document, bindings, merged)
         if problems:
@@ -674,7 +674,7 @@ def check_output_path(path: Path | str, roots: Iterable[Path]) -> Path:
     for root in roots:
         if _within(resolved, root) or _within(str(target), root):
             raise PortabilityError(f"export --out {path}: refusing a path under {root} "
-                                   "(claude-multi state/config/gateway, a credential location or the native "
+                                   "(charmer state/config/gateway, a credential location or the native "
                                    "~/.claude)")
     return Path(resolved)
 
@@ -769,11 +769,11 @@ def receipt_info_line(receipt: Receipt | None, *, now: datetime.datetime) -> str
         tzinfo=datetime.timezone.utc)
     days = max(0, (now - moment).days)
     text = f"Operator state: last confirmed export {days} days ago"
-    return text + (" — claude-multi export --out FILE" if days > REMINDER_DAYS else ".")
+    return text + (" — charmer export --out FILE" if days > REMINDER_DAYS else ".")
 
 
 def receipt_error_line(error: PortabilityError) -> str:
-    return f"Operator state: {error}; no confirmed file export recorded — claude-multi export --out FILE"
+    return f"Operator state: {error}; no confirmed file export recorded — charmer export --out FILE"
 
 
 __all__ = [

@@ -108,7 +108,7 @@ def version_key(version: str) -> tuple[int, int, int, int]:
 
     match = _VERSION.fullmatch(version)
     if match is None:
-        raise UpdateError(f"not a claude-multi version: {version!r}")
+        raise UpdateError(f"not a charmer version: {version!r}")
     major, minor, patch, dev = match.groups()
     return (int(major), int(minor), int(patch), 0 if dev else 1)
 
@@ -197,8 +197,8 @@ def _common(document: object, where: str) -> tuple[Mapping[str, object], str, st
 
     if not isinstance(document, dict):
         raise UpdateError(f"{where}: not a JSON object")
-    if document.get("format") != 1 or document.get("name") != "claude-multi":
-        raise UpdateError(f"{where}: not a claude-multi manifest (format 1)")
+    if document.get("format") != 1 or document.get("name") != "charmer":
+        raise UpdateError(f"{where}: not a charmer manifest (format 1)")
     release_date = _text(document, "release_date", where)
     if not _DATE.fullmatch(release_date):
         raise UpdateError(f"{where}: release_date must be YYYY-MM-DD")
@@ -244,7 +244,7 @@ def parse_release(manifest: bytes, sums: Mapping[str, str], target: str) -> Rele
     document, version, release_date, state_format, claude = _common(document, f"release {MANIFEST}")
     version = _release_version(version, f"release {MANIFEST}")
     assets = _object(document, "assets", f"release {MANIFEST}")
-    name = f"claude-multi-{version}-{target}.tar.gz"
+    name = f"charmer-{version}-{target}.tar.gz"
     entry = assets.get(name)
     if not isinstance(entry, dict):
         raise UpdateError(f"release {version} has no bundle for {target}")
@@ -332,10 +332,10 @@ def state_version(state_root: Path) -> int:
     if not os.path.lexists(marker):
         return UNMARKED_STATE_VERSION
     if marker.is_symlink() or not marker.is_file():
-        raise UpdateError(f"the state marker {marker} is not a regular file; run 'claude-multi doctor'")
+        raise UpdateError(f"the state marker {marker} is not a regular file; run 'charmer doctor'")
     raw = marker.read_bytes()
     if not re.fullmatch(rb"[0-9]+\n?", raw):
-        raise UpdateError(f"the state marker {marker} is damaged; run 'claude-multi doctor'")
+        raise UpdateError(f"the state marker {marker} is damaged; run 'charmer doctor'")
     return int(raw)
 
 
@@ -494,7 +494,7 @@ def _refuse_unfinished_switch(root: Path) -> None:
     if os.path.lexists(record):
         raise UpdateError(f"an interrupted switch of the installed version is not finished ({record}); "
                           "nothing was changed",
-                          remedy="sh install.sh --repair (or, after an interrupted update, claude-multi update "
+                          remedy="sh install.sh --repair (or, after an interrupted update, charmer update "
                                  "again) puts the links back")
 
 
@@ -691,7 +691,7 @@ def plan(installation: Installation, release: Release, *, state: int, platform: 
 
     current = installation.current
     if version_key(release.version) <= version_key(current.version):
-        raise UpdateError(f"claude-multi {current.version} is installed; {release.version} is not newer")
+        raise UpdateError(f"charmer {current.version} is installed; {release.version} is not newer")
     if state > release.state_format:
         raise UpdateError(
             f"{release.version} reads state formats up to {release.state_format}, "
@@ -703,7 +703,7 @@ def plan(installation: Installation, release: Release, *, state: int, platform: 
     steps = [
         f"download {release.asset.name} ({_mib(release.asset.size)}) and verify it against the signed checksums",
         f"install {release.version} next to {current.version}; {current.version} stays available "
-        "for 'claude-multi update --rollback'",
+        "for 'charmer update --rollback'",
     ]
     claude_size = release.claude_size(platform) if (claude_change is not None and platform) else None
     if claude_change is not None:
@@ -715,7 +715,7 @@ def plan(installation: Installation, release: Release, *, state: int, platform: 
         steps.append(f"the first run of {release.version} upgrades the state format from {state_change[0]} "
                      f"to {state_change[1]}; after that, rolling back to {current.version} is refused")
     if restart == RESTART_GATEWAY:
-        steps.append("the gateway changes: restart it when no session needs it (claude-multi gateway restart)")
+        steps.append("the gateway changes: restart it when no session needs it (charmer gateway restart)")
     else:
         steps.append("only the launcher changes: new sessions use it; the running gateway keeps running")
     return Plan(current.version, release.version, release.asset.name, release.asset.size, restart,
@@ -854,7 +854,7 @@ def _gateway_refusal(hold: Hold) -> None:
     reason = hold()
     if reason:
         raise UpdateError(f"the gateway cannot be replaced now: {reason}; nothing was changed",
-                          remedy="keep the gateway running until claude-multi gateway status shows the hold "
+                          remedy="keep the gateway running until charmer gateway status shows the hold "
                                  "cleared, then run the update again")
 
 
@@ -889,14 +889,14 @@ def apply(installation: Installation, release: Release, planned: Plan, transport
         if os.path.lexists(root / VERSIONS / release.version) and (guarded is None or release.version in guarded):
             raise UpdateError(f"{release.version} is installed and the running gateway executes it (or that cannot "
                               "be checked), so it is not replaced in place; nothing was changed",
-                              remedy="restart the gateway (claude-multi gateway restart), then update again")
+                              remedy="restart the gateway (charmer gateway restart), then update again")
         old = fresh.current.version
         _advance(held, "download")
         downloads = root / DOWNLOADS
         downloads.mkdir(mode=0o700, exist_ok=True)
         archive = downloads / release.asset.name
         partial = downloads / f".{release.asset.name}.part"
-        top = f"claude-multi-{release.version}-{release.asset.target}"
+        top = f"charmer-{release.version}-{release.asset.target}"
         staging = root / VERSIONS / f".staging.{os.getpid()}"
         try:
             transport.download(release.asset.name, release.version, partial, release.asset.size)
@@ -965,7 +965,7 @@ def rollback(root: Path, *, state_root: Path, hold: Hold, inhibit: Inhibit,
             raise UpdateError(
                 f"the installation changed since the rollback was confirmed ({shown} was confirmed; it is now "
                 f"{current.version} -> {previous.version}); nothing was changed",
-                remedy="run claude-multi update --rollback again to see what it would do now")
+                remedy="run charmer update --rollback again to see what it would do now")
         on_disk = state_version(state_root)
         if on_disk > previous.state_format:
             raise UpdateError(

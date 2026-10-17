@@ -2,10 +2,10 @@
 
 A retired catalog line leaves selectors behind in live sessions, their
 records and compiled scopes. The gateway keeps serving them as continuity
-aliases (never offered for new launches): ``~/.config/claude-multi/
+aliases (never offered for new launches): ``~/.config/charmer/
 continuity.json`` persists the set, the renderer merges it after the
 catalog (the catalog wins every collision), and entries leave only through
-``claude-multi doctor --prune-aliases``.
+``charmer doctor --prune-aliases``.
 
 Lifecycle: a seed watermark plus a tombstone map. ``merge_seed``
 adds each retired selector once per catalog version (never a tombstoned
@@ -54,9 +54,9 @@ class ContinuityError(errors.CharmerError, ValueError):
 
 
 def path(home: Path) -> Path:
-    """``<home>/.config/claude-multi/continuity.json`` (HOME-relative)."""
+    """``<home>/.config/charmer/continuity.json`` (HOME-relative)."""
 
-    return Path(home) / ".config" / "claude-multi" / FILE_NAME
+    return Path(home) / ".config" / "charmer" / FILE_NAME
 
 
 def empty() -> dict[str, Any]:
@@ -204,7 +204,7 @@ class RecordScan:
     ``refs`` maps a selector base to the record ids naming it; ``live`` is
     every readable record whose last event is not ``end`` (a missing event
     counts as live: pre-v3 and never-hooked records stay live until the
-    operator runs ``claude-multi sessions forget`` or the session ends);
+    operator runs ``charmer sessions forget`` or the session ends);
     ``unreadable`` lists record ids that could not be read at all.
     """
 
