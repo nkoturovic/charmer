@@ -105,11 +105,11 @@ class ListenerTests(unittest.TestCase):
 
 
 class GatewayPidTests(unittest.TestCase):
-    def stamp(self, binary="/opt/claude-multi/bin/cli-proxy-api"):
+    def stamp(self, binary="/opt/charmer/bin/cli-proxy-api"):
         return service.ExecStamp("1.0.0", "sig", 4242, binary, "2026-10-02T12:00:00+00:00", None, "a" * 16)
 
     def test_identity(self) -> None:
-        runner = Runner(ps=completed("/opt/claude-multi/bin/cli-proxy-api\n"))
+        runner = Runner(ps=completed("/opt/charmer/bin/cli-proxy-api\n"))
         self.assertEqual(darwin_process.gateway_pid(self.stamp(), exists=lambda _p: True, runner=runner,
                                                     ps="/bin/ps"), (4242, True))
         self.assertEqual(runner.calls, [["/bin/ps", "-p", "4242", "-o", "comm="]])
@@ -224,7 +224,7 @@ class MacOSSessionJourneys(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.tmp, True)
         self.environ = _cli_environ(self.tmp)
         self.store = sessions.SessionStore(sessions.state_root(self.environ), SCHEMA)
-        hook = "/fixture/bin/claude-multi"
+        hook = "/fixture/bin/charmer"
         from charmer import scope
 
         shim = scope.ensure_hook_shim(self.store.root, hook)

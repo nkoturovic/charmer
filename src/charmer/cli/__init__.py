@@ -1,4 +1,4 @@
-"""claude-multi's command-line package: a lazy compatibility facade.
+"""charmer's command-line package: a lazy compatibility facade.
 
 The implementation lives in the modules of this package (``entry``,
 ``dispatch``, ``commands``, ``launch_flow``, ``screens``, ``doctor``,

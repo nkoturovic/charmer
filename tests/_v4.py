@@ -42,7 +42,7 @@ class V4Case(unittest.TestCase):
 
     def setUp(self) -> None:
         super().setUp()
-        self.root = Path(tempfile.mkdtemp(prefix="claude-multi-v4-"))
+        self.root = Path(tempfile.mkdtemp(prefix="charmer-v4-"))
         os.chmod(self.root, 0o700)
         self.addCleanup(shutil.rmtree, self.root, True)
         self.project = self.root / "project"
@@ -59,7 +59,7 @@ class V4Case(unittest.TestCase):
             self.root / "secrets" / "claude.env",
             b"KIMI_CLAUDE_API_KEY=v4-test-dummy\nQWEN_CLAUDE_API_KEY=v4-test-dummy\n",
         )
-        token_dir = state.ensure_private_dir(Path(self.env["HOME"]) / ".config" / "claude-multi")
+        token_dir = state.ensure_private_dir(Path(self.env["HOME"]) / ".config" / "charmer")
         state.atomic_write(token_dir / "api-key", (FIXTURE_GATEWAY_TOKEN + "\n").encode())
         self.platform = pin.host_platform()
         install = pin.owned_path(self.env, "2.1.281", self.platform)

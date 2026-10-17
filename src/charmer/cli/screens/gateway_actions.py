@@ -26,11 +26,11 @@ import charmer.cli.screens.common as screens_common
 # Gateway operations the TUI deliberately leaves to the CLI, with the reason.
 CLI_ONLY = {
     "gateway stop": "a launch never needs it and it is refused while the persistence hold is active; "
-                    "run claude-multi gateway stop in a terminal",
+                    "run charmer gateway stop in a terminal",
     "gateway clear-hold": "it needs a typed confirmation in a terminal outside Claude Code: "
-                          "claude-multi gateway clear-hold",
+                          "charmer gateway clear-hold",
     "gateway service uninstall": "it reverses a deliberate choice and changes the service manager; run "
-                                 "claude-multi gateway service uninstall in a terminal",
+                                 "charmer gateway service uninstall in a terminal",
 }
 LOG_TAIL_LINES = 200
 TITLE = "Local gateway"
@@ -83,7 +83,7 @@ def observe(runtime: Any) -> GatewayView:
 
     try:
         gateway = runtime.gateway()
-    except (errors.ClaudeMultiError, OSError) as exc:
+    except (errors.CharmerError, OSError) as exc:
         return GatewayView(None, None, termtext.visible_message(exc), runtime=runtime)
     live = runtime.gateway_seams is not None or (
         runtime.health_get is None and runtime.served_models_callback is None)
@@ -93,7 +93,7 @@ def observe(runtime: Any) -> GatewayView:
     try:
         manager = runtime.gateway_service()
         status = manager.status()
-    except (errors.ClaudeMultiError, OSError):
+    except (errors.CharmerError, OSError):
         manager = status = None
     return GatewayView(gateway, gateway.observe(), service=manager, service_status=status, runtime=runtime,
                        inhibition=_inhibition_text(gateway))
@@ -115,7 +115,7 @@ def refresh_endpoint(runtime: Any | None) -> None:
         return
     try:
         runtime.reload_catalog()
-    except (errors.ClaudeMultiError, OSError):
+    except (errors.CharmerError, OSError):
         pass  # the previous view stays; the next screen load reports the problem
 
 
@@ -126,7 +126,7 @@ def act(view: GatewayView, action: str) -> gateway_lifecycle.Outcome:
     runtime = view.runtime
     if runtime is not None and not getattr(runtime, "allow_state_writes", True):
         return gateway_lifecycle.Outcome("refused", "this run is read-only; nothing was done",
-                                         "run claude-multi from a terminal to act on the gateway")
+                                         "run charmer from a terminal to act on the gateway")
     if action == "start" and view.can_start:
         outcome = view.gateway.ensure(explicit=True, choose_port=True)
     elif action == "restart" and view.can_restart:
@@ -135,7 +135,7 @@ def act(view: GatewayView, action: str) -> gateway_lifecycle.Outcome:
         outcome = view.service.install()
     else:
         return gateway_lifecycle.Outcome("refused", f"{view.headline()}; nothing was done",
-                                         "check it with: claude-multi gateway status")
+                                         "check it with: charmer gateway status")
     refresh_endpoint(runtime)
     return outcome
 
@@ -147,7 +147,7 @@ def log_view(view: GatewayView) -> tuple[str, list[str]]:
         return "gateway log", [view.headline()]
     try:
         lines = view.gateway.logs(lines=LOG_TAIL_LINES)
-    except (gateway_lifecycle.LifecycleError, errors.ClaudeMultiError, OSError) as exc:
+    except (gateway_lifecycle.LifecycleError, errors.CharmerError, OSError) as exc:
         return "gateway log", [termtext.visible_message(exc)]
     return f"gateway log — last {LOG_TAIL_LINES} lines", [termtext.visible_text(line) for line in lines] or ["(empty)"]
 
@@ -163,7 +163,7 @@ def _run_suspended(win: Any, view: GatewayView, action: str, tty_in: TextIO, tty
         outcome = act(view, action)
         for line in outcome.lines():
             tty_out.write(termtext.visible_text(line) + "\n")
-        tty_out.write("\nPress Enter to return to claude-multi.")
+        tty_out.write("\nPress Enter to return to charmer.")
         tty_out.flush()
         try:
             tty_in.readline()
@@ -192,7 +192,7 @@ def dialog(runtime: Any, win: Any, palette: tui.Palette, *, background: Callable
         lines.append(view.service_line())
     if view.inhibition is not None:
         lines.append(view.inhibition)
-    lines.append("Stop it from a terminal: claude-multi gateway stop.")
+    lines.append("Stop it from a terminal: charmer gateway stop.")
     # Wrapped to the box, so no remedy is cut off (the inhibition's above all).
     body = [piece for line in lines for piece in screens_common.modal_lines(line, win)]
     choice = tui.Modal(TITLE, body, buttons=tuple(buttons)).run(win, palette, background=background)
@@ -223,7 +223,7 @@ def health_prompt(runtime: Any, tty_in: TextIO, tty_out: TextIO) -> str | None:
         offers.append("i  install the gateway service")
     offers.append("l  show its log")
     tty_out.write("  " + " · ".join(offers) + "\n")
-    tty_out.write("Press Enter to return to claude-multi.")
+    tty_out.write("Press Enter to return to charmer.")
     tty_out.flush()
     try:
         answer = tty_in.readline().strip().lower()
@@ -240,7 +240,7 @@ def health_prompt(runtime: Any, tty_in: TextIO, tty_out: TextIO) -> str | None:
     tty_out.flush()
     for line in act(view, action).lines():
         tty_out.write(termtext.visible_text(line) + "\n")
-    tty_out.write("\nPress Enter to return to claude-multi.")
+    tty_out.write("\nPress Enter to return to charmer.")
     tty_out.flush()
     try:
         tty_in.readline()

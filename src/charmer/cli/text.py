@@ -27,7 +27,7 @@ LEGACY_REFUSAL = (
 # render sentinel, printing the restart command only when the reload did
 # not apply.
 APPLY_GATEWAY_COMMAND = (
-    "`claude-multi providers apply` (verified reload; it prints the "
+    "`charmer providers apply` (verified reload; it prints the "
     "restart command if one is needed)"
 )
 
@@ -40,21 +40,21 @@ RELAUNCH_PREFLIGHT_REFUSAL = (
 # A launch without a terminal names its profile.
 NONINTERACTIVE_PROFILE_REQUIRED = (
     "noninteractive launch requires --profile NAME or --profile-file PATH (or "
-    "claude-multi direct --model MODEL); no default was selected"
+    "charmer direct --model MODEL); no default was selected"
 )
 PROFILE_IS_COMPOSITION = (
     "{name!r} is a legacy composition, not a profile; run "
-    "claude-multi profile migrate --dry-run"
+    "charmer profile migrate --dry-run"
 )
 RESUME_PROFILE_OVERRIDE_REFUSAL = (
     "resume always uses the session's lineup; --profile {name} does not apply to "
-    "{mid}. To change it: claude-multi lineup --session {rid} profile {name} (live "
+    "{mid}. To change it: charmer lineup --session {rid} profile {name} (live "
     "when compatible; add --relaunch otherwise)"
 )
 RESUME_PROFILE_FILE_REFUSAL = (
     "--profile-file cannot apply to a resume: an unsaved profile is never "
-    "verifiably the recorded lineup; save it (claude-multi profile new NAME) and "
-    "use claude-multi lineup --session {rid} profile NAME"
+    "verifiably the recorded lineup; save it (charmer profile new NAME) and "
+    "use charmer lineup --session {rid} profile NAME"
 )
 # A resume whose transcript sits under ~/.claude while this shell exports
 # CLAUDE_CONFIG_DIR (managed launches unset it); the retry unsets it for
@@ -67,11 +67,11 @@ CONFIG_DIR_RESUME_MISMATCH = (
 )
 NEEDS_CHOICE_REFUSAL = (
     "session {mid} needs a profile or model choice (lead {key} was removed: "
-    "{notice}); run claude-multi -r {mid} interactively, or: claude-multi lineup "
+    "{notice}); run charmer -r {mid} interactively, or: charmer lineup "
     "--session {rid} --relaunch --its-exited profile <name> | direct <model>"
 )
 ALIAS_NOTE = (
-    "claude-multi: '{old}' is the earlier spelling of '{new}'; the alias stays accepted"
+    "charmer: '{old}' is the earlier spelling of '{new}'; the alias stays accepted"
 )
 
 
@@ -90,9 +90,9 @@ _HELP_MODEL = (
     "profile whose lead is that model.\n"
 )
 _HELP_DOCTOR = (
-    "H — doctor: the report claude-multi doctor prints (Ready / Attention / BLOCKED), then the\n"
+    "H — doctor: the report charmer doctor prints (Ready / Attention / BLOCKED), then the\n"
     "gateway's own actions (start, restart, log).\n"
-    "U — update claude-multi, shown when an update applies: an installed release checks, asks and\n"
+    "U — update charmer, shown when an update applies: an installed release checks, asks and\n"
     "applies; a Nix install updates through its flake. Claude Code itself: W → Claude Code.\n"
 )
 # The terms and the in-session /cm guidance: the help (?) and the card's
@@ -105,7 +105,7 @@ CARD_TERMS = (
     "  follow / pin — a following session takes its profile's edits; a pinned one keeps its lineup.",
     "  GP — Claude Code's own general-purpose agent.",
 )
-CARD_CM_TITLE = "In a claude-multi session"
+CARD_CM_TITLE = "In a charmer session"
 CARD_CM_GUIDANCE = (
     "  /cm show — this session's lineup; /cm profiles and /cm profile <name> switch profiles.",
     "  /cm set <agent>=<model>[:<effort>] and /cm unset <agent> bind or unbind one agent.",
@@ -231,7 +231,7 @@ FORGET_MODAL_TITLE = "Forget session {short}?"
 FORGET_MODAL_BODY = (
     "Runtime id {runtime_id}.\n"
     "Deletes: the session record and its generated scope{scope_note}.\n"
-    "Claude Code's transcript is never touched: S → L, or claude-multi sessions link {runtime_id},\n"
+    "Claude Code's transcript is never touched: S → L, or charmer sessions link {runtime_id},\n"
     "manages it again."
 )
 FORGET_BUTTONS = (("Cancel", False), ("Forget", True))
@@ -246,7 +246,7 @@ STOP_MODAL_BODY = (
 )
 STOP_BUTTONS = (("Cancel", False), ("Stop", True))
 FORGET_DONE = ("forgot {short}; its conversation stays as native session {runtime_id} — S → L or "
-               "claude-multi sessions link {runtime_id} manages it again")
+               "charmer sessions link {runtime_id} manages it again")
 # The view a TUI forget ends with (wrapped and scrollable, so the full ids
 # and both ways back stay readable at 80x24).
 FORGET_DONE_TITLE = "forgot {short}"
@@ -256,7 +256,7 @@ FORGET_DONE_BODY = (
     "",
     "To manage it again:",
     "  here: L in Sessions lists the native sessions of this directory — choose {runtime_id}",
-    "  in a terminal: claude-multi sessions link {runtime_id}",
+    "  in a terminal: charmer sessions link {runtime_id}",
 )
 # Forget and stop when background liveness cannot be observed.
 FORCE_TITLE = "{verb} {short} without a liveness check?"
@@ -278,7 +278,7 @@ MARK_NOT_NEEDED = "{short} already has an end event — nothing to mark"
 REPAIR_TITLE = "Repair the scope of {short}?"
 REPAIR_BODY = (
     "Rebuilds the session's generated files from its record and the installed catalog\n"
-    "(claude-multi doctor --repair). A running session keeps what it loaded until it resumes."
+    "(charmer doctor --repair). A running session keeps what it loaded until it resumes."
 )
 REPAIR_BUTTONS = (("Cancel", False), ("Repair", True))
 REPAIR_LEGACY = "a legacy record has no generated scope to repair — resume it once (Enter)"
@@ -295,7 +295,7 @@ RELINK_DONE = "relinked {short} to {path}"
 RELINK_MOVE_TITLE = "Move the transcript by hand"
 RELINK_MOVE_BODY = (
     "The record now points at {cwd}, but Claude Code's transcript is still filed under the old "
-    "directory. claude-multi never moves, reads or deletes transcripts. To move it yourself, run these "
+    "directory. charmer never moves, reads or deletes transcripts. To move it yourself, run these "
     "two commands in a terminal, then resume again:\n"
     "\n"
     "{command}"
@@ -474,7 +474,7 @@ DIRECT_CUSTOM_REFUSAL = (
 DIRECT_NOT_LAUNCHED = "not launched: the provider's API key is missing (G → K)"
 DIRECT_UNSERVED_TITLE = "Not served by the running gateway"
 DIRECT_UNSERVED_BODY = ("The gateway configuration carries this model but the running gateway does not serve it "
-                        "yet — apply your changes with G → P (claude-multi providers apply; a verified reload). "
+                        "yet — apply your changes with G → P (charmer providers apply; a verified reload). "
                         "Launching now fails at request time.")
 DIRECT_SIGNIN_TITLE = "Not signed in"
 DIRECT_SIGNIN_BODY = ("{kind} is not signed in on this computer, so this model fails at its first "
@@ -529,7 +529,7 @@ PROVIDERS_PRIMARY = {"approve": "approve", "set-key": "set key", "connect": "con
                      "account": "sign in/out", "details": "details"}
 PROVIDERS_KEY_LABELS = {"set": "set key", "replace": "replace key"}
 L_NOT_ACCOUNT = "{display} uses an API key — K sets it."
-E_CATALOG = "{display} ships with claude-multi — E edits providers you added (N adds one)."
+E_CATALOG = "{display} ships with charmer — E edits providers you added (N adds one)."
 DETAILS_MULTI_ACCOUNT = ("{n} accounts are signed in; requests may use any of them — L signs out all of "
                          "them.")
 DETAILS_SIGNED_IN = "Signed in: {accounts}"
@@ -554,7 +554,7 @@ PROVIDERS_HELP = (
     "Space turns a provider on or off for new sessions; running sessions keep theirs.\n"
     "Q shows details: models, served state, signed-in accounts, quota. R refreshes.\n"
     "W opens the local gateway: start or restart it now, or read its log (stopping it is a terminal\n"
-    "command: claude-multi gateway stop).\n"
+    "command: charmer gateway stop).\n"
     "Changing credentials needs a terminal outside Claude Code."
 )
 # The key modal (set or replace an API key).
@@ -590,10 +590,10 @@ REMOVE_BUTTONS = (("Cancel", False), ("Remove", True))
 # An account provider (Anthropic, OpenAI): its account or its API key. The
 # items are the picker's labels, padded to one column, then the state.
 TRANSPORT_CHOOSER_TITLE = "Connect {display} — choose one"
-TRANSPORT_CHOOSER_BODY = ("Both reach the same {models}; claude-multi uses one of them at a time, never "
+TRANSPORT_CHOOSER_BODY = ("Both reach the same {models}; charmer uses one of them at a time, never "
                           "both.")
 # A key route that serves only the models reviewed for it.
-TRANSPORT_CHOOSER_BODY_REVIEWED = ("claude-multi uses one of them at a time, never both. The API key serves "
+TRANSPORT_CHOOSER_BODY_REVIEWED = ("charmer uses one of them at a time, never both. The API key serves "
                                    "only the models reviewed for it: {names}.")
 TRANSPORT_CHOOSER_GAP = 3
 TRANSPORT_IN_USE = "  · in use"
@@ -640,9 +640,9 @@ EDIT_FORM_FOOTER = "Nothing is saved before the preview and your confirmation."
 EDIT_FORM_HELP = (
     "Each field starts with what the provider has now; Enter keeps it.\n"
     "A changed base URL or key header is a new route: it is approved again before it is used.\n"
-    "The id, the kind and the key name stay; claude-multi providers edit ID opens every field in your editor."
+    "The id, the kind and the key name stay; charmer providers edit ID opens every field in your editor."
 )
-EDIT_UNREADABLE = "{id}: its declaration cannot be read here ({problem}) — claude-multi providers edit {id}"
+EDIT_UNREADABLE = "{id}: its declaration cannot be read here ({problem}) — charmer providers edit {id}"
 EDIT_DONE = "{id} saved (the result lists what changed)"
 EDIT_NOT_SAVED = "{id}: nothing changed"
 ENDPOINT_FORM_TITLE = {"anthropic-compatible": "your Anthropic-compatible endpoint",
@@ -669,15 +669,15 @@ PRESET_FORM_HELP = (
     "Address: the preset's by default. Change it only to another address the vendor documents (a\n"
     "workspace or regional endpoint); it must be https:// and is checked like the command line's\n"
     "providers add --preset NAME --base-url URL.\n"
-    "The key's name and the model list come from the vendor's documentation; claude-multi has not\n"
+    "The key's name and the model list come from the vendor's documentation; charmer has not\n"
     "tested them. You approve where the key is sent before anything is saved."
 )
 ADD_MODELS_TITLE = "add models for {id}?"
 NO_MODELS_HEAD = "{id} has no models yet; declare one to select in a profile. Admission is optional."
-NO_MODELS_LATER = "{id} has no models yet — A on Providers adds them (claude-multi discover {id} --add WIRE)"
+NO_MODELS_LATER = "{id} has no models yet — A on Providers adds them (charmer discover {id} --add WIRE)"
 NO_MODELS_NOT_ADMITTED = ("P (Profiles) selects normally. Optional diagnostics: M → Q. "
                           "{id}: added {keys}, not admitted; provider/route restrictions still apply. "
-                          "CLI diagnostics: claude-multi models qualify KEY --smoke.")
+                          "CLI diagnostics: charmer models qualify KEY --smoke.")
 NO_MODELS_ADMITTED = ("{id}: admitted {keys} (badge only) — P (Profiles) selects it normally; "
                      "provider/route restrictions still apply. Optional diagnostics: M → Q.")
 ADMIT_NOW_TITLE = "Admit {key} now?"
@@ -722,14 +722,14 @@ CEILING_RULE = (
     "the lead and every agent run at the smaller of the ceiling and the lead set's smallest provider "
     "bound; agent lines whose bound is below it keep the 200K class"
 )
-CEILING_HOW = "set: claude-multi window-ceiling 400K · default: claude-multi window-ceiling --reset"
+CEILING_HOW = "set: charmer window-ceiling 400K · default: charmer window-ceiling --reset"
 CEILING_SET = "window ceiling set to {value} ({tokens} tokens) — {applies}; running sessions keep their window"
 CEILING_RESET = "window ceiling reset to the default {value} ({tokens} tokens) — {applies}"
 # A reset is reversible: its result names the ceiling it replaced.
-CEILING_RESET_WAS = "  it was {value}: claude-multi window-ceiling {value} sets it again"
+CEILING_RESET_WAS = "  it was {value}: charmer window-ceiling {value} sets it again"
 CEILING_UNCHANGED = "window ceiling is already {value} ({source}) — nothing changed"
 SETTINGS_HELP = (
-    "Launcher settings (settings.json and choices.json in ~/.config/claude-multi).\n"
+    "Launcher settings (settings.json and choices.json in ~/.config/charmer).\n"
     "Every value is snapshotted into a session at launch: a change applies at the\n"
     "next launch or resume (\"next\"); running sessions show \"settings changed\" and\n"
     "are never blocked. \"live\" applies at once. ◆ marks a value a profile\n"
@@ -816,10 +816,10 @@ CARD_DETAILS_MANAGED = (
     "  Settings, MCP servers, memory and resumable sessions come from ~/.claude (CLAUDE_CONFIG_DIR is unset).",
     "  /model offers the lead set only; the cm-* agents come from the lineup, and /cm changes it.",
     "  Models are served through the local gateway; the session is recorded and resumable "
-    "(claude-multi -r).",
+    "(charmer -r).",
 )
 # The card's H (doctor's report in the terminal).
-CARD_DOCTOR_HIDDEN = "({n} more detail line{s}: claude-multi doctor -v)"
+CARD_DOCTOR_HIDDEN = "({n} more detail line{s}: charmer doctor -v)"
 CARD_DOCTOR_REPAIR = "\n{n} session finding(s) above name a repair. Repair every stopped session now? [y/N] "
 CARD_ONE_PROFILE = "only one profile"
 CARD_SECRET_TITLE = "Provider credential missing"
@@ -828,30 +828,30 @@ CARD_SECRET_HINT_RESUME = "Set it with {way}, G (providers) → K, or sign in th
 CARD_RESUME_INERT = "a resume card keeps the session's lineup: change it in sessions (S, then T)"
 # A sign-in remedy as the card states it: the key route, never the command.
 # A resume card has no G: its way back (``{way}``: Esc once for each screen
-# between it and the launch card, or out of claude-multi and into it again
+# between it and the launch card, or out of charmer and into it again
 # when no launch card is below it) leads to a card where G → L signs in and
 # S resumes the session again.
 CARD_SIGN_IN_FRESH = "G → L"
 CARD_SIGN_IN_RESUME = "{way}, G → L, then S to resume"
-# A key remedy (``claude-multi providers set-key <id>`` on the command line)
+# A key remedy (``charmer providers set-key <id>`` on the command line)
 # as the card's H report states it: K on the provider in Providers.
 CARD_SET_KEY = "set the key: {route}"
 CARD_SET_KEY_FRESH = "G (providers) → K on {display}"
 CARD_SET_KEY_RESUME = "{way}, G (providers) → K on {display}, then S to resume"
-CARD_WAY_REOPEN = "run claude-multi"
+CARD_WAY_REOPEN = "run charmer"
 RESUME_SIGN_IN_HELP_BACK = (
     "A sign-in remedy here reads \"{route}\": Esc leads back, screen by screen, to the launch card,\n"
     "    G → L signs in there, and S resumes this session again."
 )
 RESUME_SIGN_IN_HELP_REOPEN = (
-    "A sign-in remedy here reads \"{route}\": Esc leaves claude-multi; run claude-multi again, sign\n"
+    "A sign-in remedy here reads \"{route}\": Esc leaves charmer; run charmer again, sign\n"
     "    in there with G → L, and S resumes this session again."
 )
 
 
 # A relaunch of a session still running in the background.
 TRANSITION_LIVE_NOTE = ("the target session is LIVE in the background (●, daemon-owned) — a relaunch on a live "
-                        "session forks it; stop it first with `claude-multi sessions stop {mid}`")
+                        "session forks it; stop it first with `charmer sessions stop {mid}`")
 # The transition screen's help ("lineup" is the word for what a session runs).
 TRANSITION_HELP = (
     "A transition changes a session's lineup while keeping its transcript:\n"
@@ -865,7 +865,7 @@ TRANSITION_HELP = (
     "are restored and an exact recovery command is shown."
 )
 COMPOSE_RESTORE_DEFAULT_NOTE = (
-    "claude-multi: 'compose restore-default' is the earlier spelling of 'profile reseed "
+    "charmer: 'compose restore-default' is the earlier spelling of 'profile reseed "
     "balanced'; it overwrites your edits to the balanced seed, as the earlier spelling did for default"
 )
 PROFILE_EDITOR_REFUSAL = (
@@ -878,20 +878,20 @@ PROFILE_EDITOR_REFUSAL = (
 # policy (the ``scope.SKILL_POLICY`` denies, the /cm skill bytes) is lazy.
 SKILL_POLICY_DRIFT = (
     "session {m8}: the managed skill policy or /cm skill differs from this release (an "
-    "earlier skill deny or /cm skill; lazy state); applies at the next resume (claude-multi -r "
-    "{mid}) — or claude-multi doctor --repair {mid} now (a repaired live scope is written, "
+    "earlier skill deny or /cm skill; lazy state); applies at the next resume (charmer -r "
+    "{mid}) — or charmer doctor --repair {mid} now (a repaired live scope is written, "
     "not yet proven active in the running client)"
 )
 # The permission default mode is decided once per launch/resume;
 # a live scope whose only difference is ``permissions.defaultMode`` is lazy.
 DEFAULT_MODE_DRIFT = (
     "session {m8}: the compiled permission default mode differs from this launch's decision "
-    "(lazy state); applies at the next resume (claude-multi -r {mid})"
+    "(lazy state); applies at the next resume (charmer -r {mid})"
 )
 # A passthrough surface S14 proved to defeat the deny gets exactly
 # this one stderr line at launch (``compiler.SKILL_POLICY_BYPASS_FLAGS``).
 SKILL_POLICY_BYPASS_NOTICE = (
-    "claude-multi: notice: {flag} defeats the managed skill deny at this client; "
+    "charmer: notice: {flag} defeats the managed skill deny at this client; "
     "agent-spawning bundled skills are then reachable by the model in this session"
 )
 
@@ -899,9 +899,9 @@ SKILL_POLICY_BYPASS_NOTICE = (
 # ---------------------------------------------------------------- Get started
 
 GS_TITLE = "Get started"
-GS_HEADER = "claude-multi — Get started"
-GS_INTRO = ("Connect a provider and claude-multi picks a profile that uses it. Nothing is saved "
-            "until you confirm. claude-multi is an independent tool, not affiliated with "
+GS_HEADER = "charmer — Get started"
+GS_INTRO = ("Connect a provider and charmer picks a profile that uses it. Nothing is saved "
+            "until you confirm. charmer is an independent tool, not affiliated with "
             "Anthropic or OpenAI.")
 GS_STEP_TITLES = {"preflight": "Check this computer", "claude": "Claude Code {version}",
                   "gateway": "Local gateway", "providers": "Connect providers",
@@ -934,8 +934,8 @@ GS_PROFILE_WHY = {"default": "your default"}
 GS_PROFILE_WHY_AUTOMATIC = "chosen automatically"
 GS_DETAIL = {
     "preflight": "Supported system, private folders for your settings, and no administrator "
-                 "policy that blocks claude-multi. Read-only.",
-    "claude": "claude-multi runs its own verified copy of Claude Code {version}. Your own "
+                 "policy that blocks charmer. Read-only.",
+    "claude": "charmer runs its own verified copy of Claude Code {version}. Your own "
               "Claude Code install is never changed.",
     "gateway": "A local gateway on this computer sends each model's requests to its provider. "
                "It starts when you launch a session.",
@@ -948,7 +948,7 @@ GS_DETAIL = {
 }
 GS_KEYBAR = (("Enter", "open"), ("A", "add a provider"), ("P", "profiles"), ("?", "help"), ("Esc", "launch card"))
 GS_HELP = (
-    "Get started lists what claude-multi needs, in order. ✓ is done; Enter opens any step to run or review it.\n"
+    "Get started lists what charmer needs, in order. ✓ is done; Enter opens any step to run or review it.\n"
     "Progress is read from your setup each time: stop at any point and come back with W on the launch card.\n"
     "A connects a provider: an API key, a Claude or ChatGPT account sign-in, your own Anthropic- or\n"
     "OpenAI-compatible endpoint, or a server on your network.\n"
@@ -957,9 +957,9 @@ GS_HELP = (
 )
 GS_HELP_TITLE = "Get started — help"
 GS_RESUME_READONLY = "Get started is read-only on a resume card — Esc, then W on the launch card."
-GS_IN_SESSION = ("Get started needs a terminal outside Claude Code sessions — run claude-multi in a separate "
+GS_IN_SESSION = ("Get started needs a terminal outside Claude Code sessions — run charmer in a separate "
                  "terminal.")
-GS_READONLY = "This claude-multi cannot change your setup: it was written by a newer claude-multi."
+GS_READONLY = "This charmer cannot change your setup: it was written by a newer charmer."
 GS_PROFILES_FROM_CARD = "Profiles open from the launch card: Esc, then P."
 GS_MIN_ROWS = 18
 GS_MIN_COLS = 60
@@ -968,8 +968,8 @@ PREFLIGHT_TITLE = "check this computer"
 CLAUDE_STEP_TITLE = "install Claude Code {version}"
 CLAUDE_STEP_STATUS_TITLE = "Claude Code {version}"
 CLAUDE_STEP_UNTOUCHED = "Your own Claude Code install is not changed."
-CLAUDE_STEP_DONE = "Claude Code {version} is installed for claude-multi (verified)."
-CLAUDE_STEP_NOT_DONE = "Claude Code {version} is not set up for claude-multi."
+CLAUDE_STEP_DONE = "Claude Code {version} is installed for charmer (verified)."
+CLAUDE_STEP_NOT_DONE = "Claude Code {version} is not set up for charmer."
 CLAUDE_STEP_PROGRESS = "… {line}"
 GATEWAY_STEP_TITLE = "local gateway"
 GATEWAY_STEP_STARTED = "The local gateway is running ({port})."
@@ -993,7 +993,7 @@ PROFILE_STEP_WHY = {"seed": "chosen automatically: the first shipped profile tha
                     "recent": "chosen automatically: the most recently used connected profile",
                     "yours": "chosen automatically: the first connected profile of yours"}
 PROFILE_STEP_KEEP_BUTTONS = (("Keep it", "keep"), ("Other profiles (P)", "profiles"))
-PROFILE_STEP_STARTER_INTRO = ("Nothing shipped fits {connected}. claude-multi can build a profile from what is "
+PROFILE_STEP_STARTER_INTRO = ("Nothing shipped fits {connected}. charmer can build a profile from what is "
                               "connected (no request is sent; nothing is saved yet):")
 PROFILE_STEP_STARTER_BUTTONS = (("Save as starter and use it", "save"), ("Profiles (P)", "profiles"),
                                 ("Not now", None))
@@ -1016,7 +1016,7 @@ PICKER_TITLE_OTHER = "add your own provider"
 PICKER_KEYBAR = (("Enter", "connect"), ("?", "help"), ("Esc", "back"))
 PICKER_HELP = (
     "Pick one way to connect; come back for more. A provider can have two ways (Anthropic: a Claude\n"
-    "account sign-in or an Anthropic API key) — claude-multi uses one at a time.\n"
+    "account sign-in or an Anthropic API key) — charmer uses one at a time.\n"
     "API keys are typed masked and stored in a private file on this computer; saving reloads the\n"
     "local gateway and sends nothing to the provider. Account sign-ins are for your own, personal\n"
     "use and run in this terminal. Your own endpoint: Anthropic-compatible is recommended when the\n"
@@ -1032,14 +1032,14 @@ PICKER_DETAIL = {
     "api-key": "Paste the key from your {display} account. It is stored in a private file on this "
                "computer; saving reloads the local gateway and sends nothing to {display}.",
     "api-key-paid": " Billed per token by {display}: set a spend limit in your {display} account.",
-    "no-models": "{display} has no models in claude-multi yet: after the key, A on the providers "
+    "no-models": "{display} has no models in charmer yet: after the key, A on the providers "
                  "screen adds models.",
     "own": "A provider you added. Enter approves its route or sets its key; G → E edits it.",
     "endpoint": "Your vendor's documented endpoint and an API key. You approve where the key is "
                 "sent before anything is saved.",
     "lan": "An OpenAI-compatible server on your network (no key), for example a local model server.",
     "preset": "{display}'s documented endpoint: the address, the key's name and the model list are filled "
-              "in from its documentation (not tested by claude-multi). You name it, approve where the key "
+              "in from its documentation (not tested by charmer). You name it, approve where the key "
               "is sent and type the key.",
     "unavailable": "{note}",
     "manual": "Every field of a provider declaration, for endpoints the forms above do not cover.",
@@ -1056,7 +1056,7 @@ ACK_READ_BUTTON = ("Continue", True)
 SIGNIN_METHOD_TITLE = "{kind} — how to open the sign-in"
 SIGNIN_METHODS = (("browser", "Open my browser on this computer"),
                   ("address", "Show an address to open on any device (SSH, no browser)"))
-SIGNIN_RETURN = "Press Enter to return to claude-multi."
+SIGNIN_RETURN = "Press Enter to return to charmer."
 SIGNIN_RESULT_TITLE = "{kind}"
 L_TITLE = "{kind}"
 L_BODY_SIGNED_IN = "Signed in: {accounts}"

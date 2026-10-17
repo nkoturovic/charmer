@@ -34,14 +34,14 @@ class _GatewayDoctor(V4Case):
         super().setUp()
         bindir = self.root / "wrapper-bin"
         bindir.mkdir()
-        for name in ("claude-multi", "claude-multi-proxy"):
+        for name in ("charmer", "charmer-proxy"):
             (bindir / name).write_text("#!/bin/sh\nexit 1\n")
             (bindir / name).chmod(0o755)
-        self.env["CLAUDE_MULTI_HOOK_COMMAND"] = str(bindir / "claude-multi")
+        self.env["CLAUDE_MULTI_HOOK_COMMAND"] = str(bindir / "charmer")
         patcher = mock.patch.object(gl, "published_sentinel", return_value=SENTINEL)
         patcher.start()
         self.addCleanup(patcher.stop)
-        self.state_root = Path(self.env["XDG_STATE_HOME"]) / "claude-multi"
+        self.state_root = Path(self.env["XDG_STATE_HOME"]) / "charmer"
         self.workdir = service.ensure_gateway_workdir(self.state_root)
         self.case = mock.Mock(root=self.root, workdir=self.workdir)
         self.world = World(self.case)
@@ -135,27 +135,27 @@ class LocalFilesTests(_GatewayDoctor):
     """Roots and secret files are checked before the gateway key (no misleading key remedy)."""
 
     def test_unsafe_roots_and_secret_files_have_their_own_fix_first(self) -> None:
-        config = self.runtime.home / ".config" / "claude-multi"
+        config = self.runtime.home / ".config" / "charmer"
         os.chmod(config, 0o755)
         self.runtime.doctor_callback = None
         problems, _info, _attention = cli._collect_doctor_reports(self.runtime)
-        self.assertIn(f"~/.config/claude-multi has mode 0755 (group/other access): chmod 700 ~/.config/claude-multi",
+        self.assertIn(f"~/.config/charmer has mode 0755 (group/other access): chmod 700 ~/.config/charmer",
                       problems[0])
         self.assertFalse([line for line in problems if line.startswith("local gateway key file:")])
         os.chmod(config, 0o700)
         os.chmod(config / "api-key", 0o644)
         problems, _info, _attention = cli._collect_doctor_reports(self.runtime)
-        self.assertIn("~/.config/claude-multi/api-key has mode 0644 (group/other access): "
-                      "chmod 600 ~/.config/claude-multi/api-key", problems)
+        self.assertIn("~/.config/charmer/api-key has mode 0644 (group/other access): "
+                      "chmod 600 ~/.config/charmer/api-key", problems)
         os.chmod(config / "api-key", 0o600)
         target = self.root / "elsewhere.yaml"
         target.write_text("x")
         os.symlink(target, config / "config.yaml")
         problems, _flagged = gateway_facts.local_files_report(self.runtime)
-        self.assertIn("is a symlink — claude-multi refuses symlinks", problems[0])
+        self.assertIn("is a symlink — charmer refuses symlinks", problems[0])
 
     def test_a_malformed_key_is_reported_by_shape_never_by_value(self) -> None:
-        key = self.runtime.home / ".config" / "claude-multi" / "api-key"
+        key = self.runtime.home / ".config" / "charmer" / "api-key"
         state.atomic_write(key, b"not-a-token-SENTINEL\n")
         problems, flagged = gateway_facts.local_files_report(self.runtime)
         self.assertIn(key, flagged)
@@ -277,7 +277,7 @@ class CmGatewayLineTests(V4Case):
         runtime = self.make_runtime(health_get=mock.Mock(side_effect=ConnectionRefusedError("fixture")))
         line = lineup.gateway_health_line(runtime)
         self.assertIn("gateway: not answering at http://127.0.0.1:", line)
-        self.assertIn("start it: claude-multi gateway start (details: claude-multi gateway status)", line)
+        self.assertIn("start it: charmer gateway start (details: charmer gateway status)", line)
         runtime = self.make_runtime(health_get=lambda _b, _p: 503)
         self.assertIn("answered HTTP 503", lineup.gateway_health_line(runtime))
         self.assertEqual(lineup._with_gateway_line("head\nbody\n", "gw"), "head\ngw\nbody\n")
@@ -312,7 +312,7 @@ class GatewayActionsTests(_GatewayDoctor):
         self.assertIn("Gateway: stopped", printed)
         self.assertIn("s  start it now · l  show its log", printed)
         self.assertIn("gateway ready", printed)
-        self.assertIn("Press Enter to return to claude-multi.", printed)
+        self.assertIn("Press Enter to return to charmer.", printed)
         self.assertEqual(gateway_actions.health_prompt(self.runtime, io.StringIO("l\n"), io.StringIO()), "log")
         self.assertIsNone(gateway_actions.health_prompt(self.runtime, io.StringIO("s\n"), io.StringIO()))
         self.assertEqual(len(self.world.spawned), 1)  # already ours: no start is offered or run
@@ -379,7 +379,7 @@ class CoverageHoldTests(_GatewayDoctor):
         attention, _info = self.facts()
         line = next(line for line in attention if line.startswith("gateway persistence hold: HELD"))
         self.assertIn("log coverage is incomplete, not because a credential failed", line)
-        self.assertIn("claude-multi gateway clear-hold", line)
+        self.assertIn("charmer gateway clear-hold", line)
         self.assertIn("stop, restart, update and uninstall are refused", line)
 
     def test_stop_and_restart_refuse_with_the_cause_and_the_recovery(self) -> None:
@@ -389,7 +389,7 @@ class CoverageHoldTests(_GatewayDoctor):
                 self.assertEqual(outcome.status, "held")
                 self.assertIn(gateway_hold.COVERAGE_ONLY, outcome.message)
                 self.assertEqual(outcome.remedy, gateway_hold.COVERAGE_REMEDY)
-                self.assertIn("claude-multi gateway clear-hold", "\n".join(outcome.lines()))
+                self.assertIn("charmer gateway clear-hold", "\n".join(outcome.lines()))
         self.assertEqual(self.world.terminated, [])
 
     def test_status_names_the_cause_and_the_recovery(self) -> None:
@@ -408,7 +408,7 @@ class CoverageHoldTests(_GatewayDoctor):
                      external._hold_problem(gateway, gateway.observe())):
             with self.subTest(text=text[:40]):
                 self.assertIn(gateway_hold.COVERAGE_ONLY, text)
-                self.assertIn("claude-multi gateway clear-hold", text)
+                self.assertIn("charmer gateway clear-hold", text)
 
     def test_clear_hold_releases_it_and_stop_proceeds(self) -> None:
         self.over_budget()

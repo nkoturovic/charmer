@@ -335,7 +335,7 @@ class StarterTests(_Case):
         # The exact legend precedes the exact preview block.
         self.assertTrue(text.startswith(readiness.LEGEND + "\nstarter preview — no profile written\n"), text)
         self.assertIn("\nNo model was admitted or qualified.\n", text)
-        self.assertIn("save it: claude-multi profile starter --name starter --apply\n", text)
+        self.assertIn("save it: charmer profile starter --name starter --apply\n", text)
         self.assertNotIn("Save as", text)
         # Preview writes nothing.
         self.assertEqual(sorted(str(p) for p in Path(self.runtime.environ["XDG_CONFIG_HOME"]).rglob("*")), before)

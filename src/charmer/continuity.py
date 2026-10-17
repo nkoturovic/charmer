@@ -49,7 +49,7 @@ _ALIAS_KEY = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
 _SUFFIX = "[1m]"
 
 
-class ContinuityError(errors.ClaudeMultiError, ValueError):
+class ContinuityError(errors.CharmerError, ValueError):
     """The persisted continuity set is unreadable or invalid."""
 
 

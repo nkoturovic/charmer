@@ -232,7 +232,7 @@ class ExportTests(PortabilityCase):
         self.assertEqual(doctor_info(stamp + datetime.timedelta(days=3)),
                          ["Operator state: last confirmed export 3 days ago."])
         self.assertEqual(doctor_info(stamp + datetime.timedelta(days=31)),
-                         ["Operator state: last confirmed export 31 days ago — claude-multi export --out FILE"])
+                         ["Operator state: last confirmed export 31 days ago — charmer export --out FILE"])
         # Stdout exports never refresh the receipt.
         before = receipt.read_bytes()
         self.export_json()
@@ -307,7 +307,7 @@ class ExportTests(PortabilityCase):
             self.outside / "missing" / "x.json": "the directory does not exist",
             self.runtime.session_store.root / "x.json": "refusing a path under",
             sessions.config_root(self.runtime.environ) / "x.json": "refusing a path under",
-            home / ".config" / "claude-multi" / "x.json": "refusing a path under",
+            home / ".config" / "charmer" / "x.json": "refusing a path under",
             home / ".claude" / "x.json": "refusing a path under",
         }
         for path, message in refused.items():
@@ -399,7 +399,7 @@ class ImportReaderTests(PortabilityCase):
         self.assertNotIn("model admissions required", out)
         self.assertNotIn("pending admission", out)
         self.assertNotIn("models admit", out)
-        self.assertIn("Imported trust is not active.\n  claude-multi providers approve acme\n", out)
+        self.assertIn("Imported trust is not active.\n  charmer providers approve acme\n", out)
         self.assertIn("Nothing was written.", out)
         self.assertEqual(err, "")  # no prompt in a preview
 
@@ -498,7 +498,7 @@ class ImportTrustTests(PortabilityCase):
         document["trust_requests"]["transport_choices"] = {"anthropic": "api-key"}
         code, out, err, _stream = self.importing(self.bundle_file(document))
         line = ("Not transferred: transport choice anthropic api-key — "
-                "claude-multi providers transport anthropic api-key")
+                "charmer providers transport anthropic api-key")
         self.assertIn(line, out)
         self.assertNotIn("providers enable", out)
         args = cli.build_parser().parse_args(line.split(" — ", 1)[1].split()[1:])
@@ -790,7 +790,7 @@ class ImportCommitTests(PortabilityCase):
         self.assertEqual(calls, 2)
         self.assertIn("Written and kept: providers.d alpha", out)
         self.assertIn("its removal is unconfirmed", out)
-        self.assertIn("claude-multi providers rm alpha", out)
+        self.assertIn("charmer providers rm alpha", out)
         self.assertIn("Not applied: providers.d beta", out)
         self.assertNotIn("Not applied: providers.d alpha", out)
         os.chmod(self.pdir, 0o700)
@@ -811,7 +811,7 @@ class ImportCommitTests(PortabilityCase):
         self.assertEqual(code, 1, out + err)
         remove.assert_called_once_with(self.runtime.gateway_environ(), "alpha", None)
         self.assertIn("Written and kept: providers.d alpha (not published: the removal failed:", out)
-        self.assertIn("claude-multi providers rm alpha", out)
+        self.assertIn("charmer providers rm alpha", out)
         self.assertIn("Not applied: providers.d beta", out)
         self.assertNotIn("Not applied: providers.d alpha", out)
         self.assertIn("Applied: nothing.", out)
@@ -859,7 +859,7 @@ class ImportCommitTests(PortabilityCase):
         self.assertEqual(code, 1, out + err)
         self.assertIn("Applied: nothing.", out)
         self.assertIn("Written and kept: providers.d alpha (not published: the removal failed: fixture removal "
-                      "refused; remove it with: claude-multi providers rm alpha).", out)
+                      "refused; remove it with: charmer providers rm alpha).", out)
         self.assertIn("Not applied: providers.d beta, providers.d gamma", out)
         self.assertEqual(sorted(p.stem for p in self.pdir.glob("*.json")), ["alpha"])
         self.assertNotIn("custom-alpha-model", self.config_text())

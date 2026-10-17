@@ -171,7 +171,7 @@ class PinnedRegistryTests(unittest.TestCase):
         self.assertTrue(pro - free)
 
     def test_malformed_registry_raises(self) -> None:
-        root = Path(tempfile.mkdtemp(prefix="claude-multi-registry-"))
+        root = Path(tempfile.mkdtemp(prefix="charmer-registry-"))
         self.addCleanup(lambda: shutil.rmtree(root, ignore_errors=True))
         for models, codex in (
             ("[]", '{"models": []}'),
@@ -190,7 +190,7 @@ class RegistryMetaTests(unittest.TestCase):
     """Bounded, advisory ``PinnedRegistry.meta``."""
 
     def write(self, models: dict, codex: dict | None = None) -> Path:
-        root = Path(tempfile.mkdtemp(prefix="claude-multi-registry-meta-"))
+        root = Path(tempfile.mkdtemp(prefix="charmer-registry-meta-"))
         self.addCleanup(lambda: shutil.rmtree(root, ignore_errors=True))
         (root / "models.json").write_text(json.dumps(models))
         (root / "codex_client_models.json").write_text(json.dumps(codex or {"models": []}))
@@ -287,7 +287,7 @@ class PresenceRuleTests(unittest.TestCase):
         self.assertFalse(any("presence rule skipped" in line for line in lines), lines)
 
     def test_check_carries_and_prints_the_rule(self) -> None:
-        root = Path(tempfile.mkdtemp(prefix="claude-multi-registry-check-"))
+        root = Path(tempfile.mkdtemp(prefix="charmer-registry-check-"))
         os.chmod(root, 0o700)
         self.addCleanup(lambda: shutil.rmtree(root, ignore_errors=True))
         repo = fake_checkout(root / "repo", FIXTURE_ROOT)
@@ -327,7 +327,7 @@ class PresenceRuleTests(unittest.TestCase):
         self.assertEqual(len(result.registry), 1)
         self.assertIn("'newmodel' wire 'gpt-new' is absent", result.registry[0])
         self.assertIn("'codex-pro'", result.registry[0])
-        store = dev.DraftStore(root / "state" / "claude-multi" / "drafts")
+        store = dev.DraftStore(root / "state" / "charmer" / "drafts")
         store.save("d1", draft)
         out = io.StringIO()
         with mock.patch.dict(os.environ, {**self.env, "XDG_STATE_HOME": str(root / "state")}), \
@@ -393,7 +393,7 @@ class RetargetNoteTests(unittest.TestCase):
         self.assertEqual(dev.gateway_effort_moves(before, lines, providers), [])
 
     def test_promote_returns_and_prints_notes_against_the_running_catalog(self) -> None:
-        root = Path(tempfile.mkdtemp(prefix="claude-multi-retarget-"))
+        root = Path(tempfile.mkdtemp(prefix="charmer-retarget-"))
         os.chmod(root, 0o700)
         self.addCleanup(lambda: shutil.rmtree(root, ignore_errors=True))
         repo = fake_checkout(root / "repo", FIXTURE_ROOT)
@@ -441,7 +441,7 @@ class RetargetNoteTests(unittest.TestCase):
         )
         # The CLI compares against the installed (running) catalog and
         # prints each note after the promotion.
-        store = dev.DraftStore(root / "state" / "claude-multi" / "drafts")
+        store = dev.DraftStore(root / "state" / "charmer" / "drafts")
         store.save("d1", draft)
         from charmer import state, strict_json
 

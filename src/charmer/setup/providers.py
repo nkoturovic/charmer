@@ -228,8 +228,8 @@ def _render(runtime: Any, undo: model.UndoStack, verb: str) -> tuple[Any, tuple[
     except proxy_mod.ConfigPublishedError as exc:
         _target, result, report = exc.rendered
         notes.append(f"the new gateway configuration was published but its durability is unconfirmed "
-                     f"({exc}); the change is kept — claude-multi providers apply confirms it")
-    except (errors.ClaudeMultiError, OSError) as exc:
+                     f"({exc}); the change is kept — charmer providers apply confirms it")
+    except (errors.CharmerError, OSError) as exc:
         failed = _run_undo(undo)
         message = texts.RENDER_REFUSED.format(reason=exc)
         if failed is not None:
@@ -274,7 +274,7 @@ def preflight(runtime: Any, verb: str, **kwargs: Any) -> Any:
         return cmd.served_preflight(runtime, verb, show=False, **kwargs)
     except cmd.OperatorCommandError as exc:
         raise _refusal(exc) from exc
-    except (errors.ClaudeMultiError, OSError) as exc:
+    except (errors.CharmerError, OSError) as exc:
         raise _refusal(exc) from exc
 
 
@@ -286,7 +286,7 @@ def served_sample(runtime: Any) -> str:
     cmd = _cmd()
     try:
         return cmd._sample(runtime)
-    except (errors.ClaudeMultiError, OSError) as exc:
+    except (errors.CharmerError, OSError) as exc:
         raise _refusal(exc) from exc
 
 
@@ -302,8 +302,8 @@ def reload_text(runtime: Any, status: str, *, display: str | None = None, lines:
     if status == "restart_required":
         try:
             hint = service.hint("restart", home=runtime.home)
-        except (ValueError, OSError, errors.ClaudeMultiError):
-            hint = "claude-multi gateway restart"
+        except (ValueError, OSError, errors.CharmerError):
+            hint = "charmer gateway restart"
         return texts.RELOAD_TEXT["restart_required"].format(restart_hint=hint)
     return texts.RELOAD_TEXT.get(status, texts.RELOAD_TEXT["reloaded"])
 
@@ -370,7 +370,7 @@ def keyed_provider(runtime: Any, provider_id: str, ctx: Any | None = None) -> Ke
         if not alternative.available:
             raise model.Refused(texts.KEY_TRANSPORT_CLOSED.format(**names),
                                 line=texts.KEY_TRANSPORT_CLOSED_LINE.format(**names, id=provider_id),
-                                fix=model.Fix(f"Enter on {display}", f"claude-multi providers sign-in {provider_id}"))
+                                fix=model.Fix(f"Enter on {display}", f"charmer providers sign-in {provider_id}"))
         if current_transport(runtime, provider_id, ctx) == operator_mod.TRANSPORT_API_KEY:
             # The API key in use: replacing it is a key change.
             return KeyedProvider(provider_id, display, alternative.secret_name, "catalog",
@@ -378,7 +378,7 @@ def keyed_provider(runtime: Any, provider_id: str, ctx: Any | None = None) -> Ke
         raise model.Refused(texts.KEY_ACCOUNT_TRANSPORT.format(**names),
                             line=texts.KEY_ACCOUNT_TRANSPORT_LINE.format(**names, id=provider_id),
                             fix=model.Fix(f"Enter on {display}",
-                                          f"claude-multi providers transport {provider_id} api-key"))
+                                          f"charmer providers transport {provider_id} api-key"))
     own = ctx.layer.providers.get(provider_id)
     if own is not None:
         display = str(own.entry.get("display") or provider_id)
@@ -410,13 +410,13 @@ def profiles_using(runtime: Any, provider_id: str) -> tuple[str, ...]:
     try:
         lcat = runtime.lineup_catalog()
         names = runtime.profiles.names()
-    except (errors.ClaudeMultiError, OSError):
+    except (errors.CharmerError, OSError):
         return ()
     found: list[str] = []
     for name in names:
         try:
             document = runtime.profiles.load(name)
-        except (errors.ClaudeMultiError, OSError, ValueError):
+        except (errors.CharmerError, OSError, ValueError):
             continue
         specs = [document.get("lead"), *(document.get("agents") or {}).values()]
         for spec in specs:
@@ -425,7 +425,7 @@ def profiles_using(runtime: Any, provider_id: str) -> tuple[str, ...]:
                 continue
             try:
                 resolved = lcat.resolve_key(key).key
-            except (catalog.CatalogError, errors.ClaudeMultiError, KeyError):
+            except (catalog.CatalogError, errors.CharmerError, KeyError):
                 resolved = key
             entry = lcat.lines.get(resolved) if resolved else None
             if isinstance(entry, Mapping) and entry.get("provider") == provider_id:
@@ -633,7 +633,7 @@ def _key_target(runtime: Any, provider_id: str, ctx: Any) -> tuple[str, str]:
             raise model.Refused(texts.KEY_IN_USE.format(**names),
                                 line=texts.KEY_IN_USE_LINE.format(**names, id=provider_id),
                                 fix=model.Fix(f"Enter on {names['display']}",
-                                              f"claude-multi providers transport {provider_id} oauth-pool"))
+                                              f"charmer providers transport {provider_id} oauth-pool"))
         # Not in use (or not offered by this build): a saved key can go.
         return names["display"], alternative.secret_name
     keyed = keyed_provider(runtime, provider_id, ctx)
@@ -708,7 +708,7 @@ def current_transport(runtime: Any, provider_id: str, ctx: Any | None = None) ->
 
 def moved_selectors(served: Any, selectors: Iterable[str]) -> int:
     """How many served selectors a transport switch moves: the retargeted
-    rows its served-change preview lists (the claude-multi-* aliases
+    rows its served-change preview lists (the charmer-* aliases
     included), so the summary and the list agree; the provider's selector
     bases when the published render is unknown."""
 
@@ -1354,11 +1354,11 @@ def _new_declaration_checks(runtime: Any, ctx: Any, provider_id: str) -> None:
     if not _PROVIDER_ID.fullmatch(provider_id or ""):
         raise model.Refused("a provider name uses a–z, 0–9 and -, starting with a letter")
     if provider_id in ctx.docs["providers"]["providers"]:
-        raise model.Refused(f"{provider_id} ships with claude-multi — choose another name")
+        raise model.Refused(f"{provider_id} ships with charmer — choose another name")
     target = operator_mod.providers_dir(ctx.env) / f"{provider_id}.json"
     if provider_id in ctx.read.files or os.path.lexists(target):
         raise model.Refused(f"{operator_mod.file_label(provider_id)} exists — choose another name, or edit it: "
-                            f"claude-multi providers edit {provider_id}")
+                            f"charmer providers edit {provider_id}")
 
 
 def _layer_problems(cmd: Any, ctx: Any, provider_id: str, raw: bytes) -> Any:
@@ -1640,7 +1640,7 @@ def plan_toggle(runtime: Any, provider_id: str, enabled: bool) -> TogglePlan:
     try:
         eff = runtime.current_effective()
         was: bool | None = settings_mod.provider_enabled(eff, provider_id)
-    except errors.ClaudeMultiError:
+    except errors.CharmerError:
         was = None
     state = "enabled" if enabled else "disabled"
     if was is not None and was == enabled:
@@ -1832,7 +1832,7 @@ def provider_key_names(runtime: Any) -> dict[str, tuple[str, str]]:
     found: dict[str, tuple[str, str]] = {}
     try:
         ctx = _cmd().operator_context(runtime, metadata_only=True)
-    except (errors.ClaudeMultiError, OSError):
+    except (errors.CharmerError, OSError):
         return found
     for pid, provider in ctx.docs["providers"]["providers"].items():
         ref = ((provider.get("transport") or {}).get("auth") or {}).get("secret_ref")
@@ -1860,7 +1860,7 @@ def reconnect_facts(runtime: Any) -> dict[str, list[str]]:
     wanted: set[str] = set()
     try:
         ctx = _cmd().operator_context(runtime, metadata_only=True)
-    except (errors.ClaudeMultiError, OSError):
+    except (errors.CharmerError, OSError):
         ctx = None
     if ctx is not None:
         wanted |= {provider.secret_name for provider in ctx.layer.providers.values() if provider.secret_name}
@@ -1876,12 +1876,12 @@ def reconnect_facts(runtime: Any) -> dict[str, list[str]]:
         lines = operator_mod.merge_docs(ctx.docs, ctx.layer)["models-v2"]["models"]
     try:
         profile_names = [name for name in runtime.profiles.names() if runtime.profiles.has_user(name)]
-    except (errors.ClaudeMultiError, OSError):
+    except (errors.CharmerError, OSError):
         profile_names = []
     for name in profile_names:
         try:
             document = runtime.profiles.load(name)
-        except (errors.ClaudeMultiError, OSError, ValueError):
+        except (errors.CharmerError, OSError, ValueError):
             continue
         for spec in [document.get("lead"), *(document.get("agents") or {}).values()]:
             key = spec.get("model") if isinstance(spec, Mapping) else None
@@ -1894,6 +1894,6 @@ def reconnect_facts(runtime: Any) -> dict[str, list[str]]:
         try:
             if signin.accounts(runtime, provider_id):
                 sign_ins.append(provider_id)
-        except errors.ClaudeMultiError:
+        except errors.CharmerError:
             continue
     return {"api_keys": sorted(wanted), "sign_ins": sign_ins}

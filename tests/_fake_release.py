@@ -33,8 +33,8 @@ from pathlib import Path
 
 from _layout import PACKAGE_DIR
 
-NAMESPACE = "claude-multi-release"
-PRINCIPAL = "release@claude-multi"
+NAMESPACE = "charmer-release"
+PRINCIPAL = "release@charmer"
 SSH_KEYGEN = shutil.which("ssh-keygen")
 # Set (to 1) where the release integration tests must run, as in the Nix
 # sandbox: there a missing ssh-keygen fails them instead of skipping them.
@@ -119,8 +119,8 @@ root=$(CDPATH='' cd "${{0%/*}}/.." && pwd)
 site="$root/{site}"
 CLAUDE_MULTI_CHANNEL=bundle
 CLAUDE_MULTI_ASSETS="$site/charmer/data"
-CLAUDE_MULTI_HOOK_COMMAND="$root/bin/claude-multi"
-CLAUDE_MULTI_PROXY_BIN="$root/libexec/claude-multi/cli-proxy-api"
+CLAUDE_MULTI_HOOK_COMMAND="$root/bin/charmer"
+CLAUDE_MULTI_PROXY_BIN="$root/libexec/charmer/cli-proxy-api"
 export CLAUDE_MULTI_CHANNEL CLAUDE_MULTI_ASSETS CLAUDE_MULTI_HOOK_COMMAND CLAUDE_MULTI_PROXY_BIN
 unset CLAUDE_MULTI_PROXY_PATCHES
 exec "$root/runtime/python/bin/python3" -I -B -c 'import sys; sys.path.insert(0, sys.argv.pop(1)); from charmer.entrypoints import main; raise SystemExit(main())' "$site" {name} "$@"
@@ -148,9 +148,9 @@ def bundle_files(version: str, target: str, *, state_format: int = 4, gateway: s
                  python: str | None = None, trust: str | None = None, real_launchers: bool = False,
                  gateway_binary: bytes | None = None, launcher: str | None = None,
                  overrides: dict[str, bytes] | None = None) -> dict[str, tuple[bytes | None, int]]:
-    top = f"claude-multi-{version}-{target}"
+    top = f"charmer-{version}-{target}"
     manifest = {
-        "format": 1, "name": "claude-multi", "version": version, "target": target,
+        "format": 1, "name": "charmer", "version": version, "target": target,
         "release_date": release_date, "state_format": state_format,
         "claude_code": {"version": claude}, "gateway": {"sha256": gateway},
         "python": {"version": "3.14.8"},
@@ -165,10 +165,10 @@ def bundle_files(version: str, target: str, *, state_format: int = 4, gateway: s
         f"{top}/runtime/python/bin": (None, 0o755),
         f"{top}/runtime/python/bin/python3": (f"#!/bin/sh\nexec '{interpreter}' \"$@\"\n".encode(), 0o755),
         f"{top}/libexec": (None, 0o755),
-        f"{top}/libexec/claude-multi": (None, 0o755),
-        f"{top}/libexec/claude-multi/cli-proxy-api": (gateway_binary or f"gateway {gateway}\n".encode(), 0o755),
+        f"{top}/libexec/charmer": (None, 0o755),
+        f"{top}/libexec/charmer/cli-proxy-api": (gateway_binary or f"gateway {gateway}\n".encode(), 0o755),
     }
-    for name in ("claude-multi", "claude-multi-proxy"):
+    for name in ("charmer", "charmer-proxy"):
         if launcher is not None:
             text = launcher.format(name=name, version=version)
         elif real_launchers:
@@ -222,7 +222,7 @@ class FakeRelease:
         directory.mkdir(parents=True, exist_ok=True)
         assets = {}
         for target in targets:
-            name = f"claude-multi-{version}-{target}.tar.gz"
+            name = f"charmer-{version}-{target}.tar.gz"
             files = bundle_files(version, target, state_format=state_format, gateway=gateway, claude=claude,
                                  python=python, trust=trust, real_launchers=real_launchers,
                                  gateway_binary=gateway_binary, release_date=release_date, overrides=overrides,
@@ -236,7 +236,7 @@ class FakeRelease:
         if claude_platforms is not None:
             claude_record["platforms"] = claude_platforms
         self.manifest = {
-            "format": 1, "name": "claude-multi", "version": version, "release_date": release_date,
+            "format": 1, "name": "charmer", "version": version, "release_date": release_date,
             "state_format": state_format, "claude_code": claude_record, "assets": assets,
             "release_trust": {"sha256": hashlib.sha256((trust or "").encode()).hexdigest(),
                               "signers": release_signers},
@@ -246,7 +246,7 @@ class FakeRelease:
         self.write_sums()
 
     def asset(self, target: str = "linux-x86_64") -> Path:
-        return self.dir / f"claude-multi-{self.version}-{target}.tar.gz"
+        return self.dir / f"charmer-{self.version}-{target}.tar.gz"
 
     def write_sums(self) -> None:
         """SHA256SUMS over the release members present: the archives,

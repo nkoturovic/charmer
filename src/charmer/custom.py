@@ -1,6 +1,6 @@
 """Custom providers & ordinary models: the legacy user registry.
 
-``~/.config/claude-multi/custom.json`` holds operator-added providers
+``~/.config/charmer/custom.json`` holds operator-added providers
 (Anthropic-compatible endpoint + key env var) and ordinary-session models
 — provider-listed (verified endpoints, e.g. Kimi) or manually typed.
 Composition admission stays a catalog act: customs carry no lanes/roles/
@@ -26,7 +26,7 @@ from . import validate as schema_validate
 CUSTOM_QUALIFICATION = "operator-declared (custom.json); not benchmark-verified"
 
 
-class CustomModelsError(errors.ClaudeMultiError, ValueError):
+class CustomModelsError(errors.CharmerError, ValueError):
     """Raised on any custom-registry failure (fail closed)."""
 
 
@@ -38,7 +38,7 @@ def registry_parity(environ: dict[str, str]) -> str | None:
     """Report a shell/service registry mismatch without exposing either file."""
 
     shell = registry_path(environ)
-    service = paths.home(environ) / ".config/claude-multi/custom.json"
+    service = paths.home(environ) / ".config/charmer/custom.json"
     if shell == service:
         return None
     a, b = paths.display(shell, environ), paths.display(service, environ)
@@ -56,7 +56,7 @@ def registry_parity(environ: dict[str, str]) -> str | None:
                 f"custom.json unreadable: {shown} cannot be read ({reason}), so the shell "
                 f"({a}, XDG_CONFIG_HOME) and gateway service ({b}) registries cannot be "
                 f"compared — restore its access (owner-readable, 0600), keep one registry at "
-                f"{b} and run claude-multi without XDG_CONFIG_HOME, then claude-multi-proxy init"
+                f"{b} and run charmer without XDG_CONFIG_HOME, then charmer-proxy init"
             )
     shell_bytes, service_bytes = contents
     shell_exists, service_exists = shell_bytes is not None, service_bytes is not None
@@ -72,7 +72,7 @@ def registry_parity(environ: dict[str, str]) -> str | None:
         f"custom.json mismatch: this shell reads {a} (XDG_CONFIG_HOME) but the gateway "
         f"service reads {b} (it runs without XDG_CONFIG_HOME); {mismatch} — custom "
         f"models can launch but are not served. Keep one registry at {b} and run "
-        "claude-multi without XDG_CONFIG_HOME, then claude-multi-proxy init"
+        "charmer without XDG_CONFIG_HOME, then charmer-proxy init"
     )
 
 
@@ -159,7 +159,7 @@ def _mutate(
                     f"refusing to save the custom registry: provider {provider_id} uses "
                     f"header auth with {header!r}, and this gateway build honors only "
                     'the x-api-key header — set "header": "x-api-key" for it in '
-                    f"{paths.display(path, environ)}, or remove it: claude-multi custom "
+                    f"{paths.display(path, environ)}, or remove it: charmer custom "
                     f"remove-provider {provider_id} (its models go with it)"
                 )
         save_registry(environ, registry)

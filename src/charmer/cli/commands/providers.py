@@ -63,7 +63,7 @@ class OperatorUsageError(cli_errors.CLIError):
 # The command-level refusals that exit 1 (argparse misuse stays 2).
 _REFUSALS = (
     cli_errors.CLIError, operator_mod.OperatorError, proxy_mod.ProxyError, settings_mod.SettingsError,
-    secret_store.SecretStoreError, state.StateError, sessions.MigrationBusyError, errors.ClaudeMultiError,
+    secret_store.SecretStoreError, state.StateError, sessions.MigrationBusyError, errors.CharmerError,
 )
 
 TEMPLATES: Mapping[str, dict[str, Any]] = {
@@ -132,7 +132,7 @@ TEMPLATES: Mapping[str, dict[str, Any]] = {
 
 
 def fail(message: str) -> int:
-    consent.prompt_stream().write(f"claude-multi: {termtext.visible_message(message)}\n")
+    consent.prompt_stream().write(f"charmer: {termtext.visible_message(message)}\n")
     consent.prompt_stream().flush()
     return 1
 
@@ -578,8 +578,8 @@ def published_unconfirmed(exc: proxy_mod.ConfigPublishedError, verb: str) -> Any
     already serve it; returns the render's ``(target, result, report)``."""
 
     consent.prompt_stream().write(
-        f"claude-multi: {verb}: the new gateway config was published but its durability is unconfirmed "
-        f"({termtext.visible_message(str(exc))}); the change is kept — rerun claude-multi providers apply "
+        f"charmer: {verb}: the new gateway config was published but its durability is unconfirmed "
+        f"({termtext.visible_message(str(exc))}); the change is kept — rerun charmer providers apply "
         "to confirm it\n")
     return exc.rendered
 
@@ -595,7 +595,7 @@ def render_or_undo(
     except proxy_mod.ConfigPublishedError as exc:
         # The new config is already visible: keep the inputs that match it.
         _target, result, continuity_report = published_unconfirmed(exc, verb)
-    except (errors.ClaudeMultiError, OSError) as exc:
+    except (errors.CharmerError, OSError) as exc:
         undo()
         raise OperatorCommandError(f"{verb}: the gateway render refused — nothing changed:\n{exc}") from exc
     except BaseException:
@@ -622,7 +622,7 @@ def run_editor(runtime: runtime_mod.Runtime, raw: bytes, label: str) -> tuple[by
     editor = runtime.environ.get("VISUAL") or runtime.environ.get("EDITOR")
     if not editor:
         raise OperatorCommandError(f"{label}: set VISUAL or EDITOR to edit a declaration")
-    descriptor, temporary = tempfile.mkstemp(prefix="claude-multi-operator-", suffix=".json")
+    descriptor, temporary = tempfile.mkstemp(prefix="charmer-operator-", suffix=".json")
     path = Path(temporary)
     try:
         os.fchmod(descriptor, 0o600)
@@ -662,7 +662,7 @@ def definition_consequences(
                                                  after, key)
             text = f"{key}: definition changed ({', '.join(fields)})"
             if key in granted:
-                text += " — its optional admission badge lapses (not a use restriction); re-admit: claude-multi models admit " + key
+                text += " — its optional admission badge lapses (not a use restriction); re-admit: charmer models admit " + key
             if old.core_entry["wire_model"] != new.core_entry["wire_model"] and scan is not None:
                 users = live_users(scan, operator_mod.line_aliases(old.core_entry))
                 if users:
@@ -688,12 +688,12 @@ def _provider_states(runtime: runtime_mod.Runtime) -> tuple[dict[str, Any], dict
 
     try:
         loaded = gateway_facts._provider_facts(runtime)
-    except (errors.ClaudeMultiError, OSError, ValueError, KeyError) as exc:
+    except (errors.CharmerError, OSError, ValueError, KeyError) as exc:
         return {}, {}, termtext.visible_message(exc)
     facts = {str(fact["id"]): fact for fact in loaded.facts}
     try:
         found = status.connections(runtime, facts=loaded.facts)
-    except (errors.ClaudeMultiError, OSError, ValueError, KeyError) as exc:
+    except (errors.CharmerError, OSError, ValueError, KeyError) as exc:
         return facts, {}, termtext.visible_message(exc)
     return facts, {item.provider_id: item for item in found}, None
 
@@ -771,7 +771,7 @@ def _provider_head(entry: Mapping[str, Any], layer: operator_mod.OperatorLayer) 
         count = entry["models"]
         head += f" · {count} model{'s' if count != 1 else ''} · served {entry['served']}"
     if entry["problems"]:
-        head += f" · {entry['problems']} problem(s): claude-multi providers validate"
+        head += f" · {entry['problems']} problem(s): charmer providers validate"
     return head
 
 
@@ -794,7 +794,7 @@ def _providers_list(runtime: runtime_mod.Runtime, args: argparse.Namespace, outp
     legacy = document["legacy_registry"]
     if legacy is not None:
         report(output_stream, f"custom.json\tlegacy registry · {legacy['providers']} providers, "
-                              f"{legacy['models']} models · preview: claude-multi providers migrate-custom")
+                              f"{legacy['models']} models · preview: charmer providers migrate-custom")
     return 0
 
 
@@ -840,7 +840,7 @@ def _providers_show(runtime: runtime_mod.Runtime, provider_id: str, resolved: bo
     declared = provider_id in ctx.read.files or label in ctx.layer.problems_by_file
     if not declared and shipped is None:
         return fail(f"providers show {provider_id}: no shipped provider and no {label} "
-                    "(the providers: claude-multi providers list)")
+                    "(the providers: charmer providers list)")
     document = _resolved_provider(ctx, provider_id)
     if resolved:
         output_stream.write(strict_json.pretty_file_bytes(document).decode("utf-8"))
@@ -1010,11 +1010,11 @@ def _providers_add(runtime: runtime_mod.Runtime, args: argparse.Namespace, *, in
     require_ledger(ctx, f"providers add {provider_id}")
     if provider_id in ctx.docs["providers"]["providers"]:
         return fail(f"providers add {provider_id}: {provider_id} is a catalog provider — declare lines with "
-                    f"claude-multi models add {provider_id} <wire> ...")
+                    f"charmer models add {provider_id} <wire> ...")
     target = operator_mod.providers_dir(ctx.env) / f"{provider_id}.json"
     if provider_id in ctx.read.files or os.path.lexists(target):
         return fail(f"providers add {provider_id}: {operator_mod.file_label(provider_id)} exists — "
-                    f"edit it: claude-multi providers edit {provider_id}")
+                    f"edit it: charmer providers edit {provider_id}")
     auth: dict[str, Any] = {"kind": args.auth}
     if args.secret_ref is not None:
         auth["secret_ref"] = args.secret_ref
@@ -1062,11 +1062,11 @@ def _providers_add(runtime: runtime_mod.Runtime, args: argparse.Namespace, *, in
         report(output_stream, _approved_line(resolved))
     elif keyed:
         report(output_stream, f"declared provider {provider_id} — route unapproved; not rendered")
-        report(output_stream, f"next: claude-multi providers approve {provider_id}")
+        report(output_stream, f"next: charmer providers approve {provider_id}")
     else:
         report(output_stream, f"declared provider {provider_id} — keyless LAN route")
     if keyed and not secret_store.default_store(ctx.env).is_set(resolved.secret_name or ""):
-        report(output_stream, f"note: {resolved.secret_name} is not set — claude-multi providers set-key {provider_id}")
+        report(output_stream, f"note: {resolved.secret_name} is not set — charmer providers set-key {provider_id}")
     verify(runtime, result, output_stream)
     return 0
 
@@ -1135,7 +1135,7 @@ def _providers_add_preset(runtime: runtime_mod.Runtime, args: argparse.Namespace
     target = operator_mod.providers_dir(ctx.env) / f"{provider_id}.json"
     if provider_id in ctx.read.files or os.path.lexists(target):
         return fail(f"{verb}: {operator_mod.file_label(provider_id)} exists — "
-                    f"edit it: claude-multi providers edit {provider_id}")
+                    f"edit it: charmer providers edit {provider_id}")
     key_line = ""
     sharers: tuple[str, ...] = ()
     if keyed and isinstance(auth, Mapping):
@@ -1209,7 +1209,7 @@ def _providers_add_preset(runtime: runtime_mod.Runtime, args: argparse.Namespace
     elif keyed:
         report(output_stream, f"declared provider {provider_id} from preset {name}{lines_note} — "
                               "route unapproved; not rendered")
-        report(output_stream, f"next: claude-multi providers approve {provider_id}")
+        report(output_stream, f"next: charmer providers approve {provider_id}")
     else:
         report(output_stream, f"declared provider {provider_id} from preset {name}{lines_note} — keyless LAN route")
     if key_line:
@@ -1218,9 +1218,9 @@ def _providers_add_preset(runtime: runtime_mod.Runtime, args: argparse.Namespace
         report(output_stream, f"stored {resolved.secret_name} ({store.description()}; value not shown)"
                               + (f" — the key of {', '.join(sharers)} too" if sharers else ""))
     elif keyed and resolved is not None and not store.is_set(resolved.secret_name or ""):
-        report(output_stream, f"note: {resolved.secret_name} is not set — claude-multi providers set-key {provider_id}")
+        report(output_stream, f"note: {resolved.secret_name} is not set — charmer providers set-key {provider_id}")
     for key in sorted(k for k, line in layer.lines.items() if line.provider_id == provider_id):
-        report(output_stream, f"next: claude-multi models admit {key}")
+        report(output_stream, f"next: charmer models admit {key}")
     verify(runtime, result, output_stream)
     return 0
 
@@ -1437,7 +1437,7 @@ def edit_declaration(runtime: runtime_mod.Runtime, provider_id: str, previous: b
     consequences = definition_consequences(ctx.layer, layer, keys, record_scan(runtime), admitted_keys(runtime))
     if provider_id in layer.providers and layer.route_status.get(provider_id) == "changed":
         consequences.append(f"provider {provider_id}: the route changes — not rendered until "
-                            f"claude-multi providers approve {provider_id}")
+                            f"charmer providers approve {provider_id}")
     for line in consequences:
         report(output_stream, line)
     try:
@@ -1718,7 +1718,7 @@ def _providers_apply(runtime: runtime_mod.Runtime, *, output_stream: TextIO) -> 
             _target, result, continuity_report = runtime.render_gateway(policy="explicit")
         except proxy_mod.ConfigPublishedError as exc:
             _target, result, continuity_report = published_unconfirmed(exc, "providers apply")
-        except (errors.ClaudeMultiError, OSError) as exc:
+        except (errors.CharmerError, OSError) as exc:
             return fail(f"providers apply: {exc}")
     for note in continuity_report.operator:
         consent.prompt_stream().write(f"operator: {termtext.visible_text(note)}\n")
@@ -1770,7 +1770,7 @@ def _providers_migrate(runtime: runtime_mod.Runtime, apply: bool, *, input_strea
         return 1
     if not apply:
         if plan.status in ("ready", "changed"):
-            report(output_stream, "dry run: nothing written — apply with claude-multi providers migrate-custom --apply")
+            report(output_stream, "dry run: nothing written — apply with charmer providers migrate-custom --apply")
         return 0
     if plan.status == "nothing" or (plan.status == "done" and not plan.pending):
         return 0
@@ -1807,9 +1807,9 @@ def _providers_migrate(runtime: runtime_mod.Runtime, apply: bool, *, input_strea
             _target, result, continuity_report = runtime.render_gateway(policy="explicit")
         except proxy_mod.ConfigPublishedError as exc:
             _target, result, continuity_report = published_unconfirmed(exc, verb)
-        except (errors.ClaudeMultiError, OSError) as exc:
+        except (errors.CharmerError, OSError) as exc:
             return fail(f"{verb}: migrated (files, routes, admissions and marker committed) but the render "
-                        f"refused — the previous config keeps serving; fix it, then claude-multi providers apply:\n{exc}")
+                        f"refused — the previous config keeps serving; fix it, then charmer providers apply:\n{exc}")
     for note in continuity_report.operator:
         consent.prompt_stream().write(f"operator: {termtext.visible_text(note)}\n")
     migrated = sorted(f"custom-{mid}" for mid in fresh.legacy.get("models", {}))
@@ -1817,7 +1817,7 @@ def _providers_migrate(runtime: runtime_mod.Runtime, apply: bool, *, input_strea
     missing = [key for key in expected if key not in set(result.served)]
     if missing:
         report(output_stream, f"migrated, but these selectors are not rendered: {', '.join(missing)} — "
-                              "claude-multi doctor")
+                              "charmer doctor")
         verify(runtime, result, output_stream)
         return 1
     report(output_stream, f"migrated custom.json: {len(again.targets)} providers.d file(s); "
@@ -1830,7 +1830,7 @@ def _providers_command(
     runtime: runtime_mod.Runtime, args: argparse.Namespace, *, input_stream: TextIO, output_stream: TextIO,
     interactive: bool,
 ) -> int:
-    """``claude-multi providers ...``: exit 0 ok, 1 refused, 2 usage."""
+    """``charmer providers ...``: exit 0 ok, 1 refused, 2 usage."""
 
     command = args.providers_command
     try:
@@ -1872,12 +1872,12 @@ def _providers_command(
             return _providers_migrate(runtime, bool(args.migrate_apply), input_stream=input_stream,
                                       output_stream=output_stream)
     except OperatorUsageError as exc:
-        consent.prompt_stream().write(f"claude-multi providers {command}: {termtext.visible_message(exc)}\n")
+        consent.prompt_stream().write(f"charmer providers {command}: {termtext.visible_message(exc)}\n")
         return 2
     except sessions.StateMarkerError:
         raise
     except KeyboardInterrupt:
-        consent.prompt_stream().write("claude-multi: cancelled\n")
+        consent.prompt_stream().write("charmer: cancelled\n")
         return 130
     except _REFUSALS as exc:
         return refusal_exit(exc)

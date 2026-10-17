@@ -52,7 +52,7 @@ _LAUNCHER_KEYS = frozenset({"path", "sha256"})
 _LINE_KEYS = frozenset({"file", "marker", "line"})
 
 
-class ReceiptError(errors.ClaudeMultiError, ValueError):
+class ReceiptError(errors.CharmerError, ValueError):
     """The receipt is missing, unreadable or not this schema."""
 
 
@@ -175,7 +175,7 @@ def read(install_root: Path | str) -> Receipt:
     target = receipt_path(install_root)
     try:
         raw = state.read_private(target)
-    except (OSError, errors.ClaudeMultiError) as exc:
+    except (OSError, errors.CharmerError) as exc:
         raise ReceiptError(f"{target}: unreadable ({getattr(exc, 'strerror', None) or exc})") from exc
     if len(raw) > MAX_BYTES:
         raise ReceiptError(f"{target}: larger than {MAX_BYTES} bytes")

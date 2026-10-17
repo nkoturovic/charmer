@@ -430,7 +430,7 @@ class Runtime:
             gateway = self.gateway()
             if gateway.base_url == base_url:
                 return gateway.observe().listener
-        except (errors.ClaudeMultiError, OSError):
+        except (errors.CharmerError, OSError):
             pass
         return service.listener_owner(base_url)
 
@@ -547,9 +547,9 @@ class Runtime:
             raise
         except endpoint.EndpointError as exc:
             raise launch.LaunchError(f"local gateway: {exc}", remedy=exc.remedy) from exc
-        except (OSError, errors.ClaudeMultiError) as exc:
+        except (OSError, errors.CharmerError) as exc:
             raise launch.LaunchError(f"local gateway: the gateway port could not be recorded: {exc}",
-                                     remedy="check: claude-multi doctor") from exc
+                                     remedy="check: charmer doctor") from exc
         self.catalog = self._with_endpoint(self.catalog)
         return True
 
@@ -574,13 +574,13 @@ class Runtime:
         self.provision_endpoint()
         try:
             outcome = self.gateway().ensure()
-        except errors.ClaudeMultiError as exc:
+        except errors.CharmerError as exc:
             raise launch.LaunchError(str(exc), remedy=exc.remedy) from exc
         finally:
             self.catalog = self._with_endpoint(self.catalog)
         if not outcome.ok:
             raise launch.LaunchError("local gateway: " + outcome.message.removeprefix("BLOCKED: "),
-                                     remedy=outcome.remedy or "read its log: claude-multi gateway logs")
+                                     remedy=outcome.remedy or "read its log: charmer gateway logs")
 
     @property
     def session_store(self) -> sessions.SessionStore:
@@ -971,7 +971,7 @@ class Runtime:
 
         try:
             gate = self.agent_gate(snapshot)
-        except (errors.ClaudeMultiError, OSError, ValueError):
+        except (errors.CharmerError, OSError, ValueError):
             return [], 0
         if not gate.facts:
             return [], 0
@@ -1023,12 +1023,12 @@ class Runtime:
         found: dict[str, list[str]] = {}
         try:
             names = self.profiles.names()
-        except errors.ClaudeMultiError:
+        except errors.CharmerError:
             names = []
         for name in names:
             try:
                 document = self.profiles.load(name)
-            except (errors.ClaudeMultiError, OSError, ValueError):
+            except (errors.CharmerError, OSError, ValueError):
                 continue
             lead = document.get("lead")
             if isinstance(lead, dict) and isinstance(lead.get("model"), str):
@@ -1038,7 +1038,7 @@ class Runtime:
                     found.setdefault(spec["model"], []).append(f"profile {name} {slot}")
         try:
             bindings = self.bindings.bindings()
-        except (errors.ClaudeMultiError, OSError, ValueError):
+        except (errors.CharmerError, OSError, ValueError):
             bindings = {}
         for name, spec in sorted(bindings.items()):
             if isinstance(spec, dict) and isinstance(spec.get("model"), str):
@@ -1116,7 +1116,7 @@ class Runtime:
         if self.contract_notice is None or self._contract_notice_shown:
             return
         self._contract_notice_shown = True
-        stream.write(f"claude-multi: {self.contract_notice}\n")
+        stream.write(f"charmer: {self.contract_notice}\n")
         stream.flush()
 
     @property
@@ -1230,7 +1230,7 @@ class Runtime:
         if served:
             try:
                 ids, _status = self.served_models(self.gateway_token())
-            except (errors.ClaudeMultiError, OSError, ValueError, KeyError):
+            except (errors.CharmerError, OSError, ValueError, KeyError):
                 ids = None
             served_set = frozenset(ids) if ids is not None else None
         try:
@@ -1263,7 +1263,7 @@ class Runtime:
 
         try:
             return self.effective_transport_docs()["providers"]["providers"]
-        except (errors.ClaudeMultiError, OSError, ValueError, KeyError):
+        except (errors.CharmerError, OSError, ValueError, KeyError):
             return self.lineup_catalog().providers
 
     def lineup_readiness(
@@ -1277,7 +1277,7 @@ class Runtime:
         providers = self.readiness_providers()
         try:
             texts = self.lineup_secret_problems(lineup)
-        except (KeyError, errors.ClaudeMultiError):
+        except (KeyError, errors.CharmerError):
             texts = []
         for text in texts:
             for provider_id in providers:
@@ -1625,7 +1625,7 @@ class Runtime:
             m8 = mid[:8]
             if record.get("version") != sessions.RECORD_VERSION:
                 if read_only:
-                    raise cli_errors.CLIError(f"would migrate {m8} first (claude-multi migrate)")
+                    raise cli_errors.CLIError(f"would migrate {m8} first (charmer migrate)")
                 try:
                     outcome = migrate_mod.migrate_one(
                         store,
@@ -1973,10 +1973,10 @@ class Runtime:
             return
         try:
             credentials = self.provider_credential_names()
-        except (cli_errors.ClaudeMultiError, OSError, ValueError, KeyError, TypeError) as exc:
+        except (cli_errors.CharmerError, OSError, ValueError, KeyError, TypeError) as exc:
             raise launch.LaunchError(
                 "cannot read the providers' API-key names to check the kept environment "
-                f"({type(exc).__name__}) — nothing launched; run claude-multi doctor"
+                f"({type(exc).__name__}) — nothing launched; run charmer doctor"
             ) from exc
         if getattr(result, "env_unset", None) is None:
             return
@@ -2028,7 +2028,7 @@ class Runtime:
             raise launch.LaunchError("; ".join(blocks))
         for lock in findings:
             if lock.kind == "model":
-                print(f"claude-multi: {managed.finding_text(lock)}", file=sys.stderr)
+                print(f"charmer: {managed.finding_text(lock)}", file=sys.stderr)
         store = self.session_store
         if prepared.result.session_action.kind == "fresh":
             try:
@@ -2226,7 +2226,7 @@ def operator_effective(
                 key, layer=layer, ledger=snapshot.ledger, provider_enabled=True):
             status = layer.route_status.get(line.provider_id, "unapproved")
             unavailable[key] = (f"provider {line.provider_id}: route {status}; route approval required — "
-                                f"claude-multi providers approve {line.provider_id}")
+                                f"charmer providers approve {line.provider_id}")
     if docs is not None:
         lines = (docs["models-v2"] if "models-v2" in docs else docs["models"])["models"]
         for pid, selected in operator_mod.transport_selections(docs, snapshot.ledger).items():
@@ -2237,7 +2237,7 @@ def operator_effective(
                 if problem is None and selected.alternative is not None and selected.alternative.explicit_models:
                     if catalog.key_route(entry) is None:
                         problem = (f"line {key} is not served by the selected {pid} {selected.choice} transport — "
-                                   f"choose a reviewed line or claude-multi providers transport {pid} oauth-pool")
+                                   f"choose a reviewed line or charmer providers transport {pid} oauth-pool")
                 if problem is not None:
                     unavailable[key] = problem
     return dataclasses.replace(eff, admitted_lines=frozenset(eff.admitted_lines - lapsed),

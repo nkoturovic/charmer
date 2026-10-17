@@ -51,7 +51,7 @@ MODULES = {
         class T(unittest.TestCase):
             def test_private_home_and_tmp(self):
                 home = Path(os.environ["HOME"])
-                self.assertTrue(home.name == "home" and home.parent.name.startswith("claude-multi-tests-"))
+                self.assertTrue(home.name == "home" and home.parent.name.startswith("charmer-tests-"))
                 self.assertEqual(Path(tempfile.gettempdir()), home.parent / "tmp")
                 for name in ("XDG_STATE_HOME", "XDG_CONFIG_HOME", "CLAUDE_CONFIG_DIR", "CLAUDE_MULTI_ASSETS"):
                     self.assertNotIn(name, os.environ)
@@ -80,7 +80,7 @@ MODULES = {
         from pathlib import Path
         class T(unittest.TestCase):
             def test_the_pinned_client_is_in_the_private_home(self):
-                owned = Path(os.environ["HOME"]) / ".local/share/claude-multi/claude/9.9.9"
+                owned = Path(os.environ["HOME"]) / ".local/share/charmer/claude/9.9.9"
                 self.assertEqual((owned / "claude").read_bytes(), b"#!/bin/sh\\necho fake pinned client\\n")
     """,
 }
@@ -90,7 +90,7 @@ MODULES = {
 class RunnerTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.base = Path(tempfile.mkdtemp(prefix="claude-multi-runner-"))
+        cls.base = Path(tempfile.mkdtemp(prefix="charmer-runner-"))
         cls.repo = cls.base / "repo"
         (cls.repo / "tools").mkdir(parents=True)
         (cls.repo / "src").mkdir()
@@ -135,7 +135,7 @@ class RunnerTests(unittest.TestCase):
         self.assertIn("not run on linux: tests.test_marked (PLATFORMS = windows)", result.stdout)
         self.assertIn("ran 3 tests", result.stdout)
         self.assertIn("skipped 1: BOUNDARY", result.stdout)
-        self.assertFalse(list(self.base.glob("claude-multi-tests-*")))  # the private HOME/TMPDIR is removed
+        self.assertFalse(list(self.base.glob("charmer-tests-*")))  # the private HOME/TMPDIR is removed
 
     def test_marker_selects_on_the_named_platform(self) -> None:
         result = self.run_runner("tests.test_marked", "--platform", "windows")

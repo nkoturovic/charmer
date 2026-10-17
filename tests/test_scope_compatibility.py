@@ -26,8 +26,8 @@ from _layout import FIXTURES_ROOT
 BASELINE_REF = "ec821bab8ec3fb7a2d31554c1abd337ba82e6da9"
 FIXTURES = FIXTURES_ROOT / "permissive"
 MID = "11111111-1111-4111-8111-111111111111"
-HOOK = "/fixture/bin/claude-multi-hook-3"
-HELPER = "/fixture/bin/claude-multi-gateway-token"
+HOOK = "/fixture/bin/charmer-hook-3"
+HELPER = "/fixture/bin/charmer-gateway-token"
 OPERATOR_KEY = "custom-acme-large"
 
 

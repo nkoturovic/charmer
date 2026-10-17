@@ -707,7 +707,7 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual([o["label"] for o in picker["options"]], [r["label"] for r in rows])
         self.assertEqual(
             [o["description"] for o in picker["options"]],
-            [f"claude-multi · {r['key']}" for r in rows],
+            [f"charmer · {r['key']}" for r in rows],
         )
         labels = [o["label"] for o in picker["options"]]
         self.assertEqual(len(labels), len(set(labels)))
@@ -823,8 +823,8 @@ class HookTests(unittest.TestCase):
 
     def test_the_2x_shim_is_refused_and_epoch_validated(self) -> None:
         bundle, lcat, eff, lineup = _seed("balanced")
-        with self.assertRaisesRegex(ScopeError, "claude-multi-hook-3"):
-            _compile(lineup, lcat, eff, bundle, hook_command="/state/bin/claude-multi-hook")
+        with self.assertRaisesRegex(ScopeError, "charmer-hook-3"):
+            _compile(lineup, lcat, eff, bundle, hook_command="/state/bin/charmer-hook")
         for epoch in (-1, True, "1"):
             with self.subTest(epoch=epoch):
                 with self.assertRaisesRegex(ScopeError, "launch_epoch"):
@@ -833,9 +833,9 @@ class HookTests(unittest.TestCase):
             _compile(lineup, lcat, eff, bundle, managed_id="not-a-uuid")
 
     def test_hook_command_is_shell_quoted(self) -> None:
-        _, plan = _plan("balanced", hook_command="/st ate/bin/claude-multi-hook-3")
+        _, plan = _plan("balanced", hook_command="/st ate/bin/charmer-hook-3")
         command = plan.settings["hooks"]["SessionStart"][0]["hooks"][0]["command"]
-        self.assertTrue(command.startswith("'/st ate/bin/claude-multi-hook-3' session-event"))
+        self.assertTrue(command.startswith("'/st ate/bin/charmer-hook-3' session-event"))
 
 
 class DenyTests(unittest.TestCase):
@@ -869,12 +869,12 @@ class DenyTests(unittest.TestCase):
         self.assertEqual(
             list(scope.SECRET_PATH_DENIES),
             [
-                "Read(~/.config/claude-multi/**)",
-                "Read(~/.local/share/claude-multi/**)",
+                "Read(~/.config/charmer/**)",
+                "Read(~/.local/share/charmer/**)",
                 "Read(~/.config/anthropic/**)",
                 "Read(~/.claude/.credentials.json)",
-                "Edit(~/.local/state/claude-multi/**)",
-                "Edit(~/.config/claude-multi/**)",
+                "Edit(~/.local/state/charmer/**)",
+                "Edit(~/.config/charmer/**)",
             ],
         )
 
@@ -888,7 +888,7 @@ class LineupFileTests(unittest.TestCase):
         eff = dataclasses.replace(eff, review_round_cap=3)
         plan = _compile(lineup, lcat, eff, bundle, generation=42)
         md = _md(plan)
-        self.assertTrue(md.startswith("# claude-multi lineup (lineup_generation 42)\n"))
+        self.assertTrue(md.startswith("# charmer lineup (lineup_generation 42)\n"))
         self.assertTrue(md.endswith("\n") and not md.endswith("\n\n"))
         lead = lineup.lead.binding
         self.assertIn(
@@ -959,7 +959,7 @@ class LineupFileTests(unittest.TestCase):
         meta_line = copy.deepcopy(lines[template_key])
         meta_line["provider"] = "meta"
         meta_line["efforts"] = {
-            level: {"selector": f"claude-multi-strictline-{level}", "proxy_contract": spec["proxy_contract"]}
+            level: {"selector": f"charmer-strictline-{level}", "proxy_contract": spec["proxy_contract"]}
             for level, spec in meta_line["efforts"].items()
         }
         lines["strictline"] = meta_line
@@ -1064,7 +1064,7 @@ class SkillTests(unittest.TestCase):
     EXPECTED = (
         "---\n"
         "name: cm\n"
-        "description: Show or change this claude-multi session's agent lineup "
+        "description: Show or change this charmer session's agent lineup "
         "(/cm, /cm profiles, /cm profile NAME, /cm set AGENT=MODEL[:EFFORT], /cm unset AGENT, "
         "/cm direct [MODEL[:EFFORT]], /cm pin, /cm follow, /cm fallback PROVIDER [--preview], "
         "/cm review [high-stakes] [RANGE], /cm quota)\n"
@@ -1072,9 +1072,9 @@ class SkillTests(unittest.TestCase):
         'direct [MODEL[:EFFORT]] · pin · follow · fallback PROVIDER [--preview] · '
         'review [high-stakes] [RANGE] · quota"\n'
         "disable-model-invocation: true\n"
-        "allowed-tools: Bash(claude-multi lineup:*)\n"
+        "allowed-tools: Bash(charmer lineup:*)\n"
         "---\n"
-        "!`claude-multi lineup --session ${CLAUDE_SESSION_ID} '$ARGUMENTS'`\n"
+        "!`charmer lineup --session ${CLAUDE_SESSION_ID} '$ARGUMENTS'`\n"
     ).encode("utf-8")
     # The bytes earlier releases compiled; a live scope may still carry one
     # until its next resume or repair.
@@ -1176,7 +1176,7 @@ class SkillExpansionTests(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.tmp, True)
         bindir = self.tmp / "bin"
         bindir.mkdir()
-        stub = bindir / "claude-multi"
+        stub = bindir / "charmer"
         stub.write_text(
             "#!/bin/sh\n"
             ': > "$CM_OUT"\n'

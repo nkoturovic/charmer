@@ -125,7 +125,7 @@ class ShippedPoolsTests(unittest.TestCase):
                 self.assertEqual(pooled, {name: pool.provider for name, pool in account_pools.pools().items()})
 
     def test_each_pool_login_command_is_a_gateway_program_command(self) -> None:
-        # The gateway program's login commands stay in claude-multi-proxy's
+        # The gateway program's login commands stay in charmer-proxy's
         # command table; the pools name them, one each.
         self.assertEqual(set(proxy.LOGIN_FLAGS),
                          {pool.sign_in.command for pool in account_pools.pools().values()})

@@ -73,7 +73,7 @@ from . import secret_store, state, strict_json
 from .platform import linux_process, posix_fs
 
 
-class ProxyError(errors.ClaudeMultiError, RuntimeError):
+class ProxyError(errors.CharmerError, RuntimeError):
     """Raised on any proxy-control failure (fail closed, secrets redacted)."""
 
 
@@ -1665,7 +1665,7 @@ def _stored_secret_values(environ: Mapping[str, str]) -> frozenset[str]:
 
     try:
         return secret_store.default_store(environ).scan_values()
-    except (errors.ClaudeMultiError, OSError, ValueError):
+    except (errors.CharmerError, OSError, ValueError):
         return frozenset()
 
 
@@ -1679,7 +1679,7 @@ def overlay_static_wires(environ: Mapping[str, str],
         return None
     try:
         return operator_mod.static_overlay_wires(catalog_mod.load_pinned_registry(directory))
-    except (errors.ClaudeMultiError, OSError, ValueError):
+    except (errors.CharmerError, OSError, ValueError):
         return None
 
 
@@ -2197,7 +2197,7 @@ def instance_listener(home: Path, state_root: Path, environ: Mapping[str, str] |
                                             gateway_document=gateway)
             if own.base_url == base_url:
                 return own.observe().listener
-        except (errors.ClaudeMultiError, OSError):
+        except (errors.CharmerError, OSError):
             pass
         return service.listener_owner(base_url)
 
@@ -2977,7 +2977,7 @@ def _prepared_config(home: Path, state_root: Path, environ: dict[str, str] | Non
         if receipt != current or current["files"]["config.yaml"] is None:
             raise ValueError("stale preparation")
         gateway_api_keys(home)  # validate key slots without ever creating them
-    except (OSError, ValueError, errors.ClaudeMultiError) as exc:
+    except (OSError, ValueError, errors.CharmerError) as exc:
         raise ProxyError(
             "gateway preparation is absent or stale; run claude-multi-proxy init before run --prepared"
         ) from exc
@@ -3332,7 +3332,7 @@ def pending_served_summary(
             references=references, state_root=str(state_root), before_unknown=published.unknown,
             gateway=served_plan_mod.gateway_label(document),
         )
-    except (errors.ClaudeMultiError, OSError, ValueError, KeyError, TypeError):
+    except (errors.CharmerError, OSError, ValueError, KeyError, TypeError):
         return []
     if published.routes is None or not plan.served_changed:
         # Nothing published yet (a first init) has nothing to compare with.
@@ -3501,7 +3501,7 @@ def cmd_init(
             try:
                 ensure_gateway_workdir(state_root)
                 service.write_reload_attempt(workdir, service.utc_now(), __version__)
-            except (OSError, errors.ClaudeMultiError):
+            except (OSError, errors.CharmerError):
                 service.invalidate_reload_stamps(workdir)
         ensure_directories(home)
         ensure_gateway_workdir(state_root)
@@ -3549,7 +3549,7 @@ def cmd_init(
         try:
             if status is not None:
                 service.write_reload_stamp(workdir, status, service.utc_now(), __version__)
-        except (OSError, errors.ClaudeMultiError):
+        except (OSError, errors.CharmerError):
             service.invalidate_reload_stamps(workdir)
 
 
@@ -3765,11 +3765,11 @@ def _exec_gateway(home: Path, environ: dict[str, str] | None, workdir: Path, tar
         service.write_exec_stamp(workdir, service.ExecStamp(
             __version__, exec_signature(), os.getpid(), str(binary), service.utc_now(),
             pid_namespace=pid_namespace, instance=instance))
-    except (OSError, errors.ClaudeMultiError) as exc:
+    except (OSError, errors.CharmerError) as exc:
         # An older PID must not survive as stopped evidence for this new start.
         try:
             state.remove_private(workdir / service.EXEC_STAMP)
-        except (OSError, errors.ClaudeMultiError):
+        except (OSError, errors.CharmerError):
             pass
         print(
             f"claude-multi-proxy: could not record the gateway start ({type(exc).__name__}); "
@@ -3777,7 +3777,7 @@ def _exec_gateway(home: Path, environ: dict[str, str] | None, workdir: Path, tar
         )
     try:
         port = endpoint.port_of(endpoint.gateway_endpoint(load_bundle(environ, home=home).docs["gateway"]).base_url)
-    except (errors.ClaudeMultiError, OSError):
+    except (errors.CharmerError, OSError):
         port = None
     print(_start_marker(instance, port))
     sys.stdout.flush()
@@ -4072,7 +4072,7 @@ def main(
             return cmd_snapshot_auth(rest, environ=environ, service_active=service_active,
                                      gateway_status=gateway_status)
         raise AssertionError(f"claude-multi-proxy {command} has no dispatch")  # PROXY_COMMANDS is closed
-    except errors.ClaudeMultiError as exc:
+    except errors.CharmerError as exc:
         # Domain refusals are concise errors, never a traceback loop under
         # the systemd unit (including corrupt catalog/custom input).
         print(f"claude-multi-proxy: {exc}", file=sys.stderr)

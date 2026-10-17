@@ -465,7 +465,7 @@ class CollisionTests(unittest.TestCase):
         cases = {
             "passthrough route without a line": ("claude-fable-5-1", "passthrough route of anthropic"),
             "retired selector": ("claude-fixture-old", "retired key fixture-old"),
-            "render sentinel": ("claude-multi-render-x", "sentinel"),
+            "render sentinel": ("charmer-render-x", "sentinel"),
         }
         for name, (wire, needle) in cases.items():
             with self.subTest(case=name):
@@ -661,7 +661,7 @@ class RedactionAndHeaderTests(unittest.TestCase):
                 files = _fixture_files()
                 files["acme"]["provider"]["headers"] = {name: value}
                 self.assertNotIn("acme", _layer(files).providers)
-        self.assertIsNone(operator.header_problem("X-Title", "claude-multi fixture"))
+        self.assertIsNone(operator.header_problem("X-Title", "charmer fixture"))
         files = _fixture_files()
         files["lanbox"]["provider"]["headers"] = {"X-Title": "fixture"}
         self.assertNotIn("lanbox", _layer(files).providers)
@@ -819,7 +819,7 @@ class DigestTests(unittest.TestCase):
 
 class SchemaPropagationTests(unittest.TestCase):
     def test_composed_entry_schema_tracks_fixture_schema(self) -> None:
-        temporary = Path(tempfile.mkdtemp(prefix="claude-multi-operator-schema-"))
+        temporary = Path(tempfile.mkdtemp(prefix="charmer-operator-schema-"))
         self.addCleanup(shutil.rmtree, temporary, True)
         shutil.copytree(FIXTURE_ROOT / "schemas", temporary / "schemas")
         path = temporary / "schemas" / "models.schema.json"
@@ -842,7 +842,7 @@ class ProvidersDirTests(unittest.TestCase):
     """Symlink safety: readable symlinks, never replaced; bounded reads."""
 
     def setUp(self) -> None:
-        self.root = Path(tempfile.mkdtemp(prefix="claude-multi-providers-"))
+        self.root = Path(tempfile.mkdtemp(prefix="charmer-providers-"))
         os.chmod(self.root, 0o700)
         self.addCleanup(shutil.rmtree, self.root, True)
         self.store = self.root / "store"
@@ -944,9 +944,9 @@ class ProvidersDirTests(unittest.TestCase):
 
     def test_paths_are_home_relative(self) -> None:
         environ = {"HOME": "/h", "XDG_CONFIG_HOME": "/x", "XDG_STATE_HOME": "/s"}
-        self.assertEqual(operator.providers_dir(environ), Path("/h/.config/claude-multi/providers.d"))
-        self.assertEqual(operator.ledger_path(environ), Path("/h/.config/claude-multi/operator-ledger.json"))
-        self.assertEqual(operator.evidence_path(environ), Path("/s/claude-multi/operator-evidence.json"))
+        self.assertEqual(operator.providers_dir(environ), Path("/h/.config/charmer/providers.d"))
+        self.assertEqual(operator.ledger_path(environ), Path("/h/.config/charmer/operator-ledger.json"))
+        self.assertEqual(operator.evidence_path(environ), Path("/s/charmer/operator-evidence.json"))
 
 
 class LedgerEvidenceTests(unittest.TestCase):
@@ -964,7 +964,7 @@ class LedgerEvidenceTests(unittest.TestCase):
         self.assertEqual(evidence.lines["custom-acme-small"]["checks"]["smoke"]["result"], "pass")
 
     def test_load_is_private_and_absent_is_none(self) -> None:
-        home = Path(tempfile.mkdtemp(prefix="claude-multi-ledger-"))
+        home = Path(tempfile.mkdtemp(prefix="charmer-ledger-"))
         os.chmod(home, 0o700)
         self.addCleanup(shutil.rmtree, home, True)
         environ = {"HOME": str(home), "XDG_STATE_HOME": str(home / "state")}
@@ -1528,7 +1528,7 @@ class OperatorHomeCase(unittest.TestCase):
 
     def models_get(self, _base, _token):
         text = (self.config / "config.yaml").read_text()
-        return 200, set(re.findall(r'alias: "(claude-multi-render-[0-9a-f]+)"', text))
+        return 200, set(re.findall(r'alias: "(charmer-render-[0-9a-f]+)"', text))
 
     def init(self, *flags: str) -> tuple[int, str, str]:
         out, err = io.StringIO(), io.StringIO()
@@ -2392,7 +2392,7 @@ class MigrationApplyTests(OperatorHomeCase):
         text = "\n".join(operator.migration_preview_lines(plan))
         self.assertIn("skipped legacy provider idle: no custom.json model references it (not migrated, never rendered)",
                       text)
-        self.assertIn("admit custom-zeta-pro (via migrate; unverified until claude-multi models qualify custom-zeta-pro)",
+        self.assertIn("admit custom-zeta-pro (via migrate; unverified until charmer models qualify custom-zeta-pro)",
                       text)
 
     def test_apply_is_byte_exact_and_selector_parity_holds(self) -> None:
@@ -2632,7 +2632,7 @@ class SmokeTransportTests(unittest.TestCase):
     def test_non_loopback_endpoint_is_refused_before_any_request(self) -> None:
         from charmer import errors
 
-        with self.assertRaises(errors.ClaudeMultiError):
+        with self.assertRaises(errors.CharmerError):
             self.smoke("https://gateway.example:443")
 
     def test_classify_smoke_structure(self) -> None:
@@ -2675,7 +2675,7 @@ class DoctorFindingsTests(unittest.TestCase):
         live = self.findings(self.snapshot(files, ledger=_ledger(routes={})),
                              refs={"custom-acme-small": frozenset({self.LIVE})}, live={self.LIVE})
         self.assertTrue(any("sessions/profiles use its lines (session 55555555)" in line
-                            and "fix: claude-multi providers edit acme" in line for line in live.blocks), live)
+                            and "fix: charmer providers edit acme" in line for line in live.blocks), live)
         bound = self.findings(self.snapshot(files, ledger=_ledger(routes={})),
                               key_refs={"custom-acme-small": ["profile p lead"]})
         self.assertTrue(any("(profile p lead)" in line for line in bound.blocks), bound)
@@ -2695,13 +2695,13 @@ class DoctorFindingsTests(unittest.TestCase):
                    "since_catalog": 31, "overlay": None}
         ledger = _ledger(routes={}, aliases={"custom-acme-old": capture})
         quiet = self.findings(self.snapshot(files, ledger=ledger))
-        self.assertIn("provider acme: route unapproved; not rendered — claude-multi providers approve acme",
+        self.assertIn("provider acme: route unapproved; not rendered — charmer providers approve acme",
                       quiet.attention)
         self.assertIn("alias custom-acme-old (captured for custom-acme-old; provider acme not rendered) has no line — "
-                      "prune when unused: claude-multi doctor --prune-aliases", quiet.attention)
+                      "prune when unused: charmer doctor --prune-aliases", quiet.attention)
         busy = self.findings(self.snapshot(files, ledger=ledger), refs={"custom-acme-small": frozenset({self.LIVE})},
                              live={self.LIVE})
-        self.assertIn("provider acme: route unapproved; not rendered — claude-multi providers approve acme "
+        self.assertIn("provider acme: route unapproved; not rendered — charmer providers approve acme "
                       "(used by 55555555)", busy.blocks)
         approved = _ledger(routes={"acme": _route(layer.providers["acme"])}, aliases={"custom-acme-old": capture})
         b05 = self.findings(self.snapshot(files, ledger=approved), refs={"custom-acme-old": frozenset({self.LIVE})},
@@ -2709,7 +2709,7 @@ class DoctorFindingsTests(unittest.TestCase):
         self.assertIn("alias custom-acme-old (provider acme not rendered) is used by 55555555 — restore "
                       "providers.d/acme.json or end the session; a record without a recorded end counts as live, "
                       "including a launch that exited before SessionStart; if that session is not running, record "
-                      f"its end: claude-multi sessions mark-ended {self.LIVE}", b05.blocks)
+                      f"its end: charmer sessions mark-ended {self.LIVE}", b05.blocks)
 
     def test_admission_lapse_unserved_and_counts(self) -> None:
         files, layer = self.acme()
@@ -2719,7 +2719,7 @@ class DoctorFindingsTests(unittest.TestCase):
                  "diagnostic": {"wire": "acme-small-1", "fields": layer.metadata["custom-acme-small"]["field_hashes"]}}
         ok = self.findings(self.snapshot(files, ledger=_ledger(routes=routes, admissions={"custom-acme-small": grant})),
                            admitted={"custom-acme-small"}, served=frozenset())
-        self.assertIn("custom-acme-small: 0/1 aliases served — claude-multi providers apply", ok.attention)
+        self.assertIn("custom-acme-small: 0/1 aliases served — charmer providers apply", ok.attention)
         self.assertIn("operator: 1 providers · 2 lines (1 admitted, 1 not admitted, 0 qualified, 0 usable for agents)", ok.info)
         self.assertFalse(any("candidates" in line for line in ok.info))
         files["acme"]["lines"]["custom-acme-small"]["wire_model"] = "acme-small-2"
@@ -2727,7 +2727,7 @@ class DoctorFindingsTests(unittest.TestCase):
                                admitted={"custom-acme-small"}, refs={"custom-acme-small": frozenset({self.LIVE})},
                                live={self.LIVE})
         self.assertTrue(any(text.startswith("custom-acme-small changed since admission (wire acme-small-1→acme-small-2")
-                            and "re-admit: claude-multi models admit custom-acme-small" in text
+                            and "re-admit: charmer models admit custom-acme-small" in text
                             and "retarget at the next reload: 55555555" in text for text in lapsed.attention), lapsed)
 
     def test_legacy_displacement_and_overlay_lines(self) -> None:
@@ -2737,7 +2737,7 @@ class DoctorFindingsTests(unittest.TestCase):
         legacy["models"]["bad_id"] = {"wire_model": "b", "provider": "zeta", "context_tokens": 65536,
                                       "created_via": "manual"}
         found = self.findings(self.snapshot({}), legacy=legacy, overlay_conflicts=("codex/x: kept a over b",))
-        self.assertIn("custom.json: 3 providers, 3 models not migrated — preview: claude-multi providers migrate-custom",
+        self.assertIn("custom.json: 3 providers, 3 models not migrated — preview: charmer providers migrate-custom",
                       found.attention)
         self.assertTrue(any(text.startswith("custom.json: migrate-custom would refuse — $.models.bad_id: model id")
                             and "re-add it under a valid id" in text for text in found.attention), found)
@@ -2812,7 +2812,7 @@ class CapturePruneTests(OperatorHomeCase):
         self.assertTrue(refused.lines[0].endswith(
             f"; nothing pruned; a record without a recorded end counts as live, including a launch that exited "
             f"before SessionStart; if that session is not running, record its end: "
-            f"claude-multi sessions mark-ended {mid}"), refused.lines[0])
+            f"charmer sessions mark-ended {mid}"), refused.lines[0])
         self.assertIn("custom-acme-small", self.ledger().aliases)
 
     def test_unreadable_record_refuses(self) -> None:
@@ -2880,7 +2880,7 @@ class ExternalizedRetirementTests(unittest.TestCase):
                 {d["_externalized"][1]: copy.deepcopy(catalog.load_raw(FIXTURE_ROOT)["docs"]["providers"]
                                                       ["providers"][d["_externalized"][1]])})),
             "successor must be null": lambda d: self._externalize(d, successor="sol"),
-            "no proxy contract": lambda d: self._externalize(d, selectors={"claude-multi-opfix-ext": "x-high"}),
+            "no proxy contract": lambda d: self._externalize(d, selectors={"charmer-opfix-ext": "x-high"}),
             "no OAuth overlay": lambda d: self._externalize(d, registry_overlay={"channel": "claude"}),
         }
         for needle, mutate in cases.items():
@@ -3147,7 +3147,7 @@ class TransportDoctorTests(unittest.TestCase):
         self.assertTrue(any("PLATFORM_ANTHROPIC_API_KEY is not set" in line for line in found.blocks), found.blocks)
         found = self.findings(self._snap(approved=False))
         self.assertTrue(any("is not approved for the current reviewed descriptor" in line
-                            and "claude-multi providers transport anthropic oauth-pool" in line
+                            and "charmer providers transport anthropic oauth-pool" in line
                             for line in found.blocks), found.blocks)
 
 
@@ -3179,7 +3179,7 @@ class OnboardingRefusalCatalogueTests(unittest.TestCase):
         doc = _fixture_files()["acme"]
         doc["lines"]["custom-acme-small"]["validated_tokens"] = 200000
         self.assertEqual(self.problem(doc, "E04").text(),
-                         'providers.d/acme.json: lines.custom-acme-small.validated_tokens: evidence is tool-owned — run claude-multi models qualify custom-acme-small --context N')
+                         'providers.d/acme.json: lines.custom-acme-small.validated_tokens: evidence is tool-owned — run charmer models qualify custom-acme-small --context N')
 
     def test_E05_namespace(self):
         doc = _fixture_files()["acme"]
@@ -3211,7 +3211,7 @@ class OnboardingRefusalCatalogueTests(unittest.TestCase):
         doc = _fixture_files()["acme"]
         doc["notes"] = "sk-" + "x" * 50
         self.assertEqual(self.problem(doc, "E08").text(),
-                         'providers.d/acme.json: notes: a secret value is not allowed — store it with claude-multi providers set-key acme; write "env:NAME"')
+                         'providers.d/acme.json: notes: a secret value is not allowed — store it with charmer providers set-key acme; write "env:NAME"')
 
     def test_E09_permissions(self):
         with tempfile.TemporaryDirectory() as root:
@@ -3234,7 +3234,7 @@ class OnboardingRefusalCatalogueTests(unittest.TestCase):
     def test_E14_unauthorized_pool_override_not_supported_lines(self):
         pid = next(k for k,p in _docs()["providers"]["providers"].items() if p["transport"]["kind"] == "oauth-pool")
         self.assertEqual(self.problem(_fixture_files()["acme"], "E14", pid=pid).text(),
-                         f"providers.d/{pid}.json: provider: openai/anthropic lines ship with claude-multi (pool admission is the catalog's) — claude-multi models --candidates")
+                         f"providers.d/{pid}.json: provider: openai/anthropic lines ship with charmer (pool admission is the catalog's) — charmer models --candidates")
         doc = {"version": 1, "lines": {"custom-pool": _acme_line(wire_model="claude-fixture-9")}}
         layer = _layer({"anthropic": doc})
         self.assertFalse(any(p.error_id == "E14" for p in layer.problems))

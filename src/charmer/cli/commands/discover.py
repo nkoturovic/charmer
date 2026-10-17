@@ -134,7 +134,7 @@ def _secret(runtime: runtime_mod.Runtime, call: discovery.ListingCall) -> str | 
     if value is None:
         raise ListingCredentialUnavailable(
             f"discover {call.provider_id}: credential {call.secret_name} is not set — nothing sent; "
-            f"claude-multi providers set-key {call.provider_id}")
+            f"charmer providers set-key {call.provider_id}")
     return value
 
 
@@ -205,7 +205,7 @@ def listing(runtime, provider_id, *, confirm, notice):
     if call.secret_name is not None and not secret_store.default_store(runtime.gateway_environ()).is_set(call.secret_name):
         raise providers_cmd.OperatorCommandError(
             f"discover {provider_id}: credential {call.secret_name} is not set — nothing sent; "
-            f"claude-multi providers set-key {provider_id}")
+            f"charmer providers set-key {provider_id}")
     if not confirm(discovery.consent_text([call])):
         return None
     result = _execute(runtime, call)
@@ -262,7 +262,7 @@ def _report_listing(
 
 
 def _usage(message: str) -> int:
-    consent.prompt_stream().write(f"claude-multi discover: {message}\n")
+    consent.prompt_stream().write(f"charmer discover: {message}\n")
     return 2
 
 
@@ -326,7 +326,7 @@ def _registry_model(runtime: runtime_mod.Runtime, provider: Mapping[str, Any], w
 
 def missing_context_text(provider: str, wire: str) -> str:
     return (f"discover {provider} --add {wire}: the listing states no context — "
-            f'claude-multi models add {provider} {wire} --context N --source docs --source-ref "<URL, date>"')
+            f'charmer models add {provider} {wire} --context N --source docs --source-ref "<URL, date>"')
 
 
 def _declare(
@@ -350,7 +350,7 @@ def _declare(
         item = by_id.get(wire)
         if item is None:
             code = fail(f"{verb}: {wire} is not in the listing — declare it manually: "
-                        f"claude-multi models add {call.provider_id} {wire} --context N --source docs")
+                        f"charmer models add {call.provider_id} {wire} --context N --source docs")
             continue
         if item.mark not in ("candidate", "new"):
             code = fail(f"{verb}: {wire} is {item.mark} — declaration never edits an existing line")
@@ -474,11 +474,11 @@ def _discover_command(
     output_stream: TextIO,
     interactive: bool,
 ) -> int:
-    """``claude-multi discover PROVIDER | --all | --feed`` (exit 0 ok, 1 refused
+    """``charmer discover PROVIDER | --all | --feed`` (exit 0 ok, 1 refused
     or a failed request, 2 usage)."""
 
     if getattr(args, "approve_provider_call", False):
-        consent.prompt_stream().write(f"claude-multi: {LEGACY_FLAG_ERROR}\n")
+        consent.prompt_stream().write(f"charmer: {LEGACY_FLAG_ERROR}\n")
         return 2
     provider = getattr(args, "provider", None)
     modes = [provider is not None, bool(getattr(args, "discover_all", False)),

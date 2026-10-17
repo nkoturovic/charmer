@@ -46,8 +46,8 @@ class PointerCase(unittest.TestCase):
 class PrecedenceTests(PointerCase):
     def test_default_path_is_home_relative_under_the_product_folder(self) -> None:
         self.assertEqual(secret_store.secret_env_path(self.env),
-                         self.home / ".config/claude-multi/secrets/provider-keys.env")
-        self.assertEqual(paths.secret_pointer_path(self.env), self.home / ".config/claude-multi/secret-file.json")
+                         self.home / ".config/charmer/secrets/provider-keys.env")
+        self.assertEqual(paths.secret_pointer_path(self.env), self.home / ".config/charmer/secret-file.json")
         # XDG_CONFIG_HOME moves settings, never the key file (the gateway reads it too).
         moved = {**self.env, "XDG_CONFIG_HOME": str(self.root / "xdg")}
         self.assertEqual(secret_store.secret_env_path(moved), secret_store.secret_env_path(self.env))
@@ -69,7 +69,7 @@ class PrecedenceTests(PointerCase):
         self.assertEqual(secret_store.default_store(self.env).get("KIMI_CLAUDE_API_KEY"), "pointed-dummy-value")
 
     def test_an_invalid_pointer_raises_and_never_falls_back(self) -> None:
-        self.key_file(".config/claude-multi/secrets/provider-keys.env", b"KIMI_CLAUDE_API_KEY=default-dummy\n")
+        self.key_file(".config/charmer/secrets/provider-keys.env", b"KIMI_CLAUDE_API_KEY=default-dummy\n")
         cases = {
             "not JSON": b"{nope",
             "wrong version": json.dumps({"version": 2, "path": "~/.config/secrets/claude.env"}).encode(),
@@ -84,8 +84,8 @@ class PrecedenceTests(PointerCase):
                 state.atomic_write(target, raw)
                 with self.assertRaises(secret_store.SecretStoreError) as caught:
                     secret_store.secret_env_path(self.env)
-                self.assertIn("key file pointer ~/.config/claude-multi/secret-file.json is unreadable", str(caught.exception))
-                self.assertEqual(caught.exception.remedy, "fix or delete ~/.config/claude-multi/secret-file.json")
+                self.assertIn("key file pointer ~/.config/charmer/secret-file.json is unreadable", str(caught.exception))
+                self.assertEqual(caught.exception.remedy, "fix or delete ~/.config/charmer/secret-file.json")
                 # Readers fail closed too (never the default file).
                 with self.assertRaises(proxy.ProxyError):
                     proxy.resolve_secret("KIMI_CLAUDE_API_KEY", environ=self.env)
@@ -102,12 +102,12 @@ class PrecedenceTests(PointerCase):
         self.assertIsNotNone(secret_store.location_problem("~/.config/secrets/claude.env", self.env))
         os.chmod(outside, 0o700)
         self.assertIsNone(secret_store.location_problem("~/.config/secrets/claude.env", self.env))
-        self.assertIsNone(secret_store.location_problem("~/.config/claude-multi/secrets/k.env", self.env))
+        self.assertIsNone(secret_store.location_problem("~/.config/charmer/secrets/k.env", self.env))
 
     def test_no_folder_of_one_person_ships_as_a_protected_location(self) -> None:
         from charmer import scope
 
-        self.assertEqual(secret_store.PROTECTED_DIRS, (".config/claude-multi",))
+        self.assertEqual(secret_store.PROTECTED_DIRS, (".config/charmer",))
         self.assertFalse([rule for rule in scope.SECRET_PATH_DENIES if ".config/secrets" in rule])
 
     def test_a_pointer_to_a_private_folder_of_your_choice_is_accepted(self) -> None:
@@ -194,7 +194,7 @@ class PrecedenceTests(PointerCase):
                     # The folder rule already covers it: nothing is added.
                     self.assertEqual(denies, scope.SECRET_PATH_DENIES)
                 if label == "pointer":
-                    # The pointed file outside claude-multi's folder is denied by name.
+                    # The pointed file outside charmer's folder is denied by name.
                     self.assertEqual(denies, (*scope.SECRET_PATH_DENIES, "Read(~/.config/secrets/claude.env)",
                                               "Edit(~/.config/secrets/claude.env)"))
                     paths.secret_pointer_path(env).unlink(missing_ok=True)
@@ -249,11 +249,11 @@ class GatewayReadsThePointedFileTests(PointerCase):
     def render(self) -> str:
         with redirect_stderr(io.StringIO()), redirect_stdout(io.StringIO()):
             target, _result, _report = proxy.render_runtime_config(
-                self.home, environ=dict(self.env), state_root=self.root / "state" / "claude-multi", policy="start")
+                self.home, environ=dict(self.env), state_root=self.root / "state" / "charmer", policy="start")
         return target.read_text()
 
     def test_start_render_uses_the_pointed_file(self) -> None:
-        self.key_file(".config/claude-multi/secrets/provider-keys.env", b"KIMI_CLAUDE_API_KEY=default-file-key\n")
+        self.key_file(".config/charmer/secrets/provider-keys.env", b"KIMI_CLAUDE_API_KEY=default-file-key\n")
         self.assertIn("default-file-key", self.render())
         pointed = self.key_file(data=b"KIMI_CLAUDE_API_KEY=pointed-file-key\n")
         secret_store.write_pointer(self.env, pointed)
@@ -265,7 +265,7 @@ class GatewayReadsThePointedFileTests(PointerCase):
         self.pointer({"version": 1, "path": "~/nowhere.env"})
         with self.assertRaises(proxy.ProxyError) as caught:
             self.render()
-        self.assertEqual(caught.exception.remedy, "fix or delete ~/.config/claude-multi/secret-file.json")
+        self.assertEqual(caught.exception.remedy, "fix or delete ~/.config/charmer/secret-file.json")
 
     def test_the_spawned_gateway_keeps_home_so_it_reads_the_same_pointer(self) -> None:
         pointed = self.key_file()

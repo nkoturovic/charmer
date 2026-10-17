@@ -676,9 +676,9 @@ class Fixture:
     def test_a_new_gateway_tool_command_is_unclassified(self) -> None:
         commands = {**proxy_inventory(), "frobnicate": ("gateway.frobnicate",)}
         problems = census(proxy_commands=commands)
-        self.assertIn("claude-multi-proxy frobnicate: no row classifies it", problems)
-        self.assertIn("claude-multi-proxy frobnicate: missing from its usage", problems)
-        self.assertIn("claude-multi-proxy frobnicate: operation gateway.frobnicate has no row", problems)
+        self.assertIn("charmer-proxy frobnicate: no row classifies it", problems)
+        self.assertIn("charmer-proxy frobnicate: missing from its usage", problems)
+        self.assertIn("charmer-proxy frobnicate: operation gateway.frobnicate has no row", problems)
 
     def test_a_new_cm_verb_is_unclassified(self) -> None:
         problems = census(cm_verbs=(*lineup_files.CM_VERB_NAMES, "teleport"))
@@ -775,7 +775,7 @@ class PublicSurfaceTests(unittest.TestCase):
         with redirect_stdout(io.StringIO()):
             text = cli_parser.build_parser().format_help()
         self.assertNotIn("claude-gateway", text)
-        self.assertNotIn("claude-multi-dev", text)
+        self.assertNotIn("charmer-dev", text)
 
 
 class InstalledEntryPointTests(unittest.TestCase):
@@ -785,9 +785,9 @@ class InstalledEntryPointTests(unittest.TestCase):
 
     def test_the_installed_set_is_the_manifest(self) -> None:
         manifest = json.loads((REPO_ROOT / "packaging" / "product.json").read_text())
-        self.assertEqual(manifest["launchers"], ["claude-multi", "claude-multi-proxy"])
+        self.assertEqual(manifest["launchers"], ["charmer", "charmer-proxy"])
         scripts = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text())["project"]["scripts"]
-        self.assertEqual(sorted(scripts), sorted([*manifest["launchers"], "claude-multi-dev"]))
+        self.assertEqual(sorted(scripts), sorted([*manifest["launchers"], "charmer-dev"]))
         self.assertEqual(set(entrypoints.NAMES), set(scripts))
         self.assertEqual(set(entrypoints.PROGRAMS), set(scripts))
         source = REPO_ROOT / "bin"
@@ -800,7 +800,7 @@ class InstalledEntryPointTests(unittest.TestCase):
 
     def test_the_nix_package_installs_the_manifest_launchers_only(self) -> None:
         manifest = json.loads((REPO_ROOT / "packaging" / "product.json").read_text())
-        self.assertNotIn("claude-multi-dev", manifest["launchers"])
+        self.assertNotIn("charmer-dev", manifest["launchers"])
         package = (REPO_ROOT / "nix" / "package.nix").read_text()
         phase = package.split("installPhase = ''", 1)[1].split("\n  '';", 1)[0]
         # One wrapper loop over the launchers (the proxy has its own), none over
@@ -816,7 +816,7 @@ class InstalledEntryPointTests(unittest.TestCase):
         check = (REPO_ROOT / "tests" / "default.nix").read_text()
         self.assertIn("(builtins.fromJSON (builtins.readFile ../packaging/product.json)).launchers;", check)
         self.assertIn('test "$installed" = "${pkgs.lib.concatStringsSep " " launchers} "', check)
-        self.assertNotIn("claude-multi-dev", check)
+        self.assertNotIn("charmer-dev", check)
 
 
 class DispatchTests(unittest.TestCase):

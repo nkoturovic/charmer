@@ -97,7 +97,7 @@ SETUP_DOWNLOAD_VERB = "setup --step claude (Claude Code download)"
 
 def update_fetch_consent(environ: Mapping[str, str], ask: Callable[[Any], bool]) -> Callable[[Any], bool]:
     """The ONE per-candidate consent for the signed-manifest download of
-    ``claude-multi-dev repin``. Each call passes the human guard (no session
+    ``charmer-dev repin``. Each call passes the human guard (no session
     marker, real stdio terminals) before ``ask`` shows that candidate's
     exact ``release_manifest.RequestPlan``; a "no" (the default) sends
     nothing. An earlier "yes" never covers another candidate: the verifier

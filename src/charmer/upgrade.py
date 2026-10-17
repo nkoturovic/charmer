@@ -1,6 +1,6 @@
-"""Evidence-gated Claude Code re-pin (``claude-multi-dev repin``; maintainer).
+"""Evidence-gated Claude Code re-pin (``charmer-dev repin``; maintainer).
 
-A claude-multi release pins exactly one Claude Code version. Moving the pin
+A charmer release pins exactly one Claude Code version. Moving the pin
 is a maintainer step from a source checkout, run as one command:
 
 1. **detect** a candidate artifact newer than the pin: the target of the
@@ -138,12 +138,12 @@ def _diagnostic_notes(output: str, version: str) -> tuple[str, ...]:
         notes[probe_id] = (
             f"note: probe {probe_id} observed {observed} on Claude {version} "
             f"(recorded: {baseline}); the doctor and lead-prompt text that depends on it "
-            "may be inaccurate until a claude-multi release re-records it"
+            "may be inaccurate until a charmer release re-records it"
         )
     return tuple(notes.values())
 
 
-class UpgradeError(errors.ClaudeMultiError, RuntimeError):
+class UpgradeError(errors.CharmerError, RuntimeError):
     """Raised on any failed re-pin step (fail closed, checkout untouched)."""
 
 
@@ -170,7 +170,7 @@ def _release_document(root: Path, *, running_version: str | None = None) -> dict
                   if isinstance(exc, FileNotFoundError) and running_version is not None else "")
         raise UpgradeError(
             f"repin refused: {root}/version.json is unreadable or incomplete ({exc}); "
-            "this launcher cannot tell which claude-multi release the checkout is" + remedy
+            "this launcher cannot tell which charmer release the checkout is" + remedy
         ) from exc
 
 
@@ -214,7 +214,7 @@ def checkout_guard(product_root: Path, running: ReleaseIdentity, *, writes: bool
         )
     if checkout_core[:2] != running_core[:2] or checkout_core < running_core:
         raise UpgradeError(
-            f"repin refused: the checkout at {root} is claude-multi {cv}, this launcher is {rv}; "
+            f"repin refused: the checkout at {root} is charmer {cv}, this launcher is {rv}; "
             "repin writes only into a checkout of its own release — run repin from the checkout, "
             f"or pass --repo with a {rv} checkout"
         )
@@ -231,7 +231,7 @@ def checkout_guard(product_root: Path, running: ReleaseIdentity, *, writes: bool
             digest = hashlib.sha256(schema.read_bytes()).hexdigest()
         except OSError as exc:
             raise UpgradeError(
-                f"repin refused: {schema} is missing; the checkout is not a claude-multi {mm}.x source tree"
+                f"repin refused: {schema} is missing; the checkout is not a charmer {mm}.x source tree"
             ) from exc
         if digest != running.contract_schema_sha256:
             raise UpgradeError(
@@ -242,7 +242,7 @@ def checkout_guard(product_root: Path, running: ReleaseIdentity, *, writes: bool
             )
     if cv != rv:
         raise UpgradeError(
-            f"repin refused: the checkout at {root} is claude-multi {cv} and this launcher is {rv}; "
+            f"repin refused: the checkout at {root} is charmer {cv} and this launcher is {rv}; "
             "repin promotes only into a checkout of exactly the running release "
             "(a -dev checkout carries unreleased code) — run repin from the checkout, "
             f"or pass --repo with a {rv} checkout"
@@ -648,7 +648,7 @@ def read_settings_keys_file(path: Path | str) -> list[str]:
 
     try:
         document = strict_json.loads(Path(path).read_bytes())
-    except (OSError, ValueError, errors.ClaudeMultiError) as exc:
+    except (OSError, ValueError, errors.CharmerError) as exc:
         raise UpgradeError(f"cannot read the settings keys in {path}: {exc}") from exc
     if (not isinstance(document, list) or not document
             or not all(isinstance(key, str) and _SETTINGS_KEY_NAME.fullmatch(key) for key in document)):
@@ -722,7 +722,7 @@ def render_contract(
 # A declined request plan sends nothing and changes nothing.
 FETCH_DECLINED = "repin: declined — nothing sent; nothing was changed"
 CANDIDATE_CHANGED = ("repin stopped: {what} changed while the candidate was being verified — "
-                     "nothing was changed; rerun claude-multi-dev repin")
+                     "nothing was changed; rerun charmer-dev repin")
 
 
 @dataclass(frozen=True)
@@ -777,7 +777,7 @@ def _artifact_identity(path: Path) -> tuple[str, int] | None:
 def _offline_hint(version: str) -> str:
     url = release_manifest.MANIFEST_URL.format(version=version)
     return (f"Offline: fetch {url} and {url}.sig into DIR/{version}/ and run "
-            "claude-multi-dev repin --manifest-dir DIR")
+            "charmer-dev repin --manifest-dir DIR")
 
 
 def _select_candidate(
@@ -949,13 +949,13 @@ def promoted_catalog_version(checkout: int, running: int) -> int:
 
 
 def default_checkout() -> Path:
-    """The tree this ``claude-multi-dev`` runs from (``--repo`` default); the
+    """The tree this ``charmer-dev`` runs from (``--repo`` default); the
     caller verifies it is a writable source checkout. Never the packaged
     resources."""
 
     tree = layout.installation()
     if tree is None:
-        raise UpgradeError("this claude-multi-dev runs from no source checkout — pass --repo PATH")
+        raise UpgradeError("this charmer-dev runs from no source checkout — pass --repo PATH")
     return tree
 
 
@@ -1012,7 +1012,7 @@ def run_repin(
         return UpgradeOutcome(kind="fetch-declined", inspection=None, messages=(selection.declined,))
     lock = state.FileLock(_lock_path(environ))
     if not lock.acquire(blocking=False):
-        _note("another claude-multi-dev repin is running; waiting for it…")
+        _note("another charmer-dev repin is running; waiting for it…")
         lock.acquire(blocking=True)
     try:
         return _run_repin_locked(
@@ -1079,7 +1079,7 @@ def _run_repin_locked(
         and (product_root / "tests").is_dir()
     ):
         raise UpgradeError(
-            f"{product_root} is not a claude-multi source checkout with tests; "
+            f"{product_root} is not a charmer source checkout with tests; "
             "the evidence suite needs the checkout — pass --repo with a source checkout"
         )
     for destination in (contract_path, version_path):
@@ -1218,7 +1218,7 @@ def _run_repin_locked(
     _note(f"[4/{total}] evidence green; the checkout pins Claude Code {inspection.version}")
     messages.append(
         f"promoted into the source checkout (catalog_version {version_doc['catalog_version']}); "
-        "a build of this checkout runs the new pin after `claude-multi setup --step claude`"
+        "a build of this checkout runs the new pin after `charmer setup --step claude`"
     )
     repo = product_root
     changed = [str(path.relative_to(repo)) for path in (contract_path, version_path)]

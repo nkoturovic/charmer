@@ -1,4 +1,4 @@
-"""``claude-multi uninstall``: the one removal path (the installer's
+"""``charmer uninstall``: the one removal path (the installer's
 ``--uninstall`` runs it too).
 
 The plan classifies every file under the product's roots before anything is
@@ -22,7 +22,7 @@ identity), the gateway's keys and configuration and the account sign-ins.
 When the key-file pointer cannot be read, which file holds the keys is not
 known, and nothing is planned.
 
-The installer's receipt (``~/.local/share/claude-multi/install/installer.json``)
+The installer's receipt (``~/.local/share/charmer/install/installer.json``)
 authorizes a launcher's removal only with the SHA-256 it recorded (and the
 file still matching it, checked again right before it is removed), and a
 PATH edit only as the exact line it recorded, present exactly once. A
@@ -48,7 +48,7 @@ from charmer.setup import model, texts
 
 CLASSES = ("program", "claude", "sessions", "setup", "credentials", "never")
 CREDENTIAL_FILES = frozenset({"api-key", "previous-key", "config.yaml"})
-SHIM_NAMES = ("claude-multi-hook", "claude-multi-hook-3", "claude-multi-gateway-token")
+SHIM_NAMES = ("charmer-hook", "charmer-hook-3", "charmer-gateway-token")
 POINTER_FILE = "secret-file.json"
 LOCK_SUFFIX = ".lock"
 # How long uninstall waits for a launch or another writer of the session
@@ -538,7 +538,7 @@ def build_plan(runtime: Any, *, keep_setup: bool = False) -> UninstallPlan:
     for provider_id, pool in signin.ACCOUNT_POOLS.items():
         try:
             found = signin.accounts(runtime, provider_id)
-        except errors.ClaudeMultiError:
+        except errors.CharmerError:
             found = ()
         accounts.extend(f"{texts.ACCOUNT_KINDS[pool]} ({name})" for name in found)
     plan.accounts = tuple(accounts)
@@ -679,7 +679,7 @@ def session_check(runtime: Any) -> SessionCheck:
             raw, _bytes = store.load_raw(stem)
             view = sessions._lifecycle_view(raw)
             ids = sessions.record_session_ids(view)
-        except (errors.ClaudeMultiError, OSError, ValueError, KeyError, TypeError):
+        except (errors.CharmerError, OSError, ValueError, KeyError, TypeError):
             unknown.append(f"{stem[:8]} (its record cannot be read)")
             continue
         running = bool(scan.ids & ids) or any(item.startswith(prefix) for item in ids for prefix in daemon.prefixes)
@@ -787,7 +787,7 @@ def _lock_file(root: Root, path: Path) -> Held | None:
 
 
 class Fence:
-    """What keeps other claude-multi writers out while files go: the session
+    """What keeps other charmer writers out while files go: the session
     state's migration lock, exclusively (no launch, live lineup change or
     record write runs meanwhile), the gateway's start lock (nothing starts
     it), and the lock of every store whose files go (:meth:`stores`), all
@@ -814,7 +814,7 @@ class Fence:
             lock = sessions.acquire_exclusive_bounded(plan.state_root.path, timeout=LOCK_WAIT)
         except sessions.MigrationBusyError:
             return texts.UNINSTALL_BUSY
-        except (OSError, errors.ClaudeMultiError) as exc:
+        except (OSError, errors.CharmerError) as exc:
             return texts.UNINSTALL_STATE_LOCK.format(reason=getattr(exc, "strerror", None) or str(exc))
         self._keep(lock, plan.state_root, existed=existed)
         return None
@@ -1077,7 +1077,7 @@ def remove_path_edit(edit: PathEdit, result: Result, environ: Mapping[str, str])
     index = items.index(edit.line)
     kept = items[:index] + items[index + 1:]
     mode = stat.S_IMODE(os.lstat(edit.file).st_mode)
-    temporary = edit.file.with_name(f".{edit.file.name}.claude-multi.{os.getpid()}")
+    temporary = edit.file.with_name(f".{edit.file.name}.charmer.{os.getpid()}")
     try:
         temporary.write_text("\n".join(kept), encoding="utf-8")
         os.chmod(temporary, mode)

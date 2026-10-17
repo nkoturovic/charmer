@@ -1,4 +1,4 @@
-"""``claude-multi profile …`` and its 2.x aliases.
+"""``charmer profile …`` and its 2.x aliases.
 
 ``list``/``show`` are read commands; every other subcommand is write-allowed
 and installs the absent seeds first. ``new``/``edit`` run
@@ -74,7 +74,7 @@ class ReadCommandTests(ProfileCliCase):
     def test_show_defaults_to_the_seed_and_refuses_a_2x_name(self) -> None:
         code, out, _ = self.cli("profile", "show")
         self.assertEqual(code, 0)
-        self.assertTrue(out.startswith("claude-multi · profile balanced · lead "), out)
+        self.assertTrue(out.startswith("charmer · profile balanced · lead "), out)
         self.assertNotIn("/cm profile", out)
         code, _out, err = self.cli("profile", "show", "default")
         self.assertEqual(code, 1)
@@ -110,15 +110,15 @@ class WriteCommandTests(ProfileCliCase):
         (kept,) = self.runtime.profiles.root.glob(".c.removed-*.json")
         self.assertIn(f"Deleted c; a copy is kept as {paths.display(kept, self.runtime.environ)}.", out)
         self.assertFalse(self.runtime.profiles.has_user("c"))
-        self.assertEqual(self.cli("profile", "rm", "c")[1:], ("", "claude-multi: profile 'c' does not exist\n"))
+        self.assertEqual(self.cli("profile", "rm", "c")[1:], ("", "charmer: profile 'c' does not exist\n"))
         code, _out, err = self.cli("profile", "rm", "balanced")
         self.assertEqual(code, 1)
         self.assertIn("balanced is a shipped profile and cannot be deleted — restore its shipped version: "
-                      "claude-multi profile reseed balanced", err)
+                      "charmer profile reseed balanced", err)
         code, _out, err = self.cli("profile", "rename", "balanced", "x")
         self.assertEqual(code, 1)
         self.assertIn("balanced is a shipped profile and keeps its name — copy it under a new name: "
-                      "claude-multi profile duplicate balanced NEW", err)
+                      "charmer profile duplicate balanced NEW", err)
         code, _out, err = self.cli("profile", "new", "a", "--from", "balanced")
         self.assertEqual(code, 1)
         self.assertIn("already exists", err)
@@ -209,7 +209,7 @@ class WriteCommandTests(ProfileCliCase):
         self.assertEqual(code, 0, out.getvalue())
         self.assertIn("implementer   opus55 · xhigh       →  ", out.getvalue())
         self.assertIn("Restored balanced to shipped version ", out.getvalue())
-        self.assertIn("not applied — apply with: claude-multi lineup --session", out.getvalue())
+        self.assertIn("not applied — apply with: charmer lineup --session", out.getvalue())
         self.assertEqual(self.record_bytes(follower["managed_id"]), before)
         code, out_text, _ = self.cli("profile", "reseed", "balanced")
         self.assertEqual((code, out_text), (0, "balanced already matches its shipped version.\n"))
@@ -227,7 +227,7 @@ class ProfileMigrateTests(unittest.TestCase):
     """The dispatch, its parser and the read-only Runtime."""
 
     def setUp(self) -> None:
-        self.tmp = Path(tempfile.mkdtemp(prefix="claude-multi-profile-migrate-"))
+        self.tmp = Path(tempfile.mkdtemp(prefix="charmer-profile-migrate-"))
         self.addCleanup(shutil.rmtree, self.tmp, True)
         self.environ = _cli_environ(self.tmp)
 
@@ -278,7 +278,7 @@ class ProfileMigrateTests(unittest.TestCase):
             with self.subTest(argv=argv):
                 captured, code, out, _callers = self.run_main(*argv)
                 self.assertEqual(code, 0, out)
-                self.assertTrue(out.startswith("claude-multi profile migrate --dry-run: config "), out)
+                self.assertTrue(out.startswith("charmer profile migrate --dry-run: config "), out)
                 self.assertIn("(directory absent)", out)
                 self.assertIs(captured[0]["refresh_shims"], False)
                 self.assertIs(captured[0]["allow_state_writes"], False)

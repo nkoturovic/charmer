@@ -766,7 +766,7 @@ class ServiceFixture:
         spec = json.loads((SERVICE_SPEC).read_text())
         self.home, self.control = root / "home", root / "run"
         for path in (self.home, self.control, *(self.home / p for p in spec["private_dirs"]),
-                     self.home / ".local/share/claude-multi-release"):
+                     self.home / ".local/share/charmer-release"):
             state.ensure_private_dir(path)
         self.egress, self.port = harness.ports()
         document, self.aliases, _ = harness.build_document(catalog.load_catalog(FIXTURE_ROOT),
@@ -775,7 +775,7 @@ class ServiceFixture:
         if b108 and b108_mode == "config":
             document, self.b108 = with_b108_credentials(document, self.egress, b108)
         self.document = document
-        self.config = self.home / ".config/claude-multi/config.yaml"
+        self.config = self.home / ".config/charmer/config.yaml"
         state.atomic_write(self.config, render.emit_yaml(document).encode())
         self.auth_file = Path(document["auth-dir"]) / "gwtest-race-claude.json"
         state.atomic_write(self.auth_file, file_auth("gwtest-0"))
@@ -1462,7 +1462,7 @@ class SelfTests(unittest.TestCase):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--out", type=Path, default=Path.home() / ".cache/claude-multi-gateway-races" /
+    parser.add_argument("--out", type=Path, default=Path.home() / ".cache/charmer-gateway-races" /
                         datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ"))
     parser.add_argument("--omit-patch", action="append", default=[], choices=list(harness.PATCH_ROWS),
                         help="diagnostic-only omission; must be dependency closed")

@@ -1,7 +1,7 @@
 """Protocol-3 hook handlers: the lineup notice, the model-switch fence, spawns.
 
 A compiled lineup-enabled (v2) scope runs every hook through
-``<state>/bin/claude-multi-hook-3 session-event <event> --managed-id <id>
+``<state>/bin/charmer-hook-3 session-event <event> --managed-id <id>
 --launch-epoch <n> --hook-protocol 3``. ``cli.main`` hands the four
 scope-only events (``prompt``, ``premodel``, ``postmodel``, ``subagent``) to
 :func:`dispatch` **before** it constructs ``Runtime``: no catalog load, no shim
@@ -19,8 +19,8 @@ Contract (every event):
   ``UserPromptSubmit`` would block the user's prompt);
 - stdout carries at most one JSON document, written once;
 - an internal error is visible: stdout gets
-  ``{"systemMessage": "claude-multi <event> failed: <ExceptionClass> — run
-  claude-multi doctor"}`` (``premodel`` instead answers an explicit **deny**
+  ``{"systemMessage": "charmer <event> failed: <ExceptionClass> — run
+  charmer doctor"}`` (``premodel`` instead answers an explicit **deny**
   carrying the same system message: blocking a switch is the safe failure;
   the same fixed deny is answered by ``cli.main`` when argparse rejects a
   ``premodel`` argv and by the protocol-3 shim when the launcher is missing
@@ -39,7 +39,7 @@ reconcile failure).
 The SessionStart and prompt hooks also check which Claude Code runs the
 session (``client_check``): a session the Claude daemon moved onto a
 different version than the pin gets a user-facing message to exit and resume
-through claude-multi, on every prompt until it does.
+through charmer, on every prompt until it does.
 
 Layering: stdlib plus ``client_check``, ``lineup_files``,
 ``lineup_log``, ``sessions`` (``UUID4``, ``check_state_marker``), ``state``,
@@ -97,7 +97,7 @@ _FIELD_MAX = 128
 _AGENT_TYPE = re.compile(r"^cm-[a-z0-9-]{1,60}$")
 
 
-class HookInputError(errors.ClaudeMultiError, ValueError):
+class HookInputError(errors.CharmerError, ValueError):
     """A hook input (payload, scope file, marker) is missing or malformed."""
 
 
@@ -321,7 +321,7 @@ def migration_lock_held(state_root: Path | str) -> bool:
 
 # ---------------------------------------------------------------- notice
 
-_NOTICE_HEAD = "[claude-multi lineup notice · lineup_generation {generation}]"
+_NOTICE_HEAD = "[charmer lineup notice · lineup_generation {generation}]"
 _PREFACES = {
     "prompt": "The lineup below is current; it supersedes every earlier lineup notice in this conversation.",
     "startup": "Session started. The lineup below is current.",
@@ -505,7 +505,7 @@ def classify_switch(
     if not isinstance(to_model, str) or not to_model:
         return (
             "deny",
-            "claude-multi cannot classify this model switch (no target model); switch refused.",
+            "charmer cannot classify this model switch (no target model); switch refused.",
         )
     rows = {normalize_model(row["selector"]): row for row in lead_set["rows"]}
     target = rows.get(normalize_model(to_model))
@@ -530,8 +530,8 @@ def classify_switch(
 
 
 PREMODEL_FAIL_CLOSED_REASON = (
-    "claude-multi could not check this model switch; switch refused "
-    "(fail closed). Run claude-multi doctor."
+    "charmer could not check this model switch; switch refused "
+    "(fail closed). Run charmer doctor."
 )
 
 
@@ -658,7 +658,7 @@ def visible(text: object) -> str:
 def failure_message(event: str, exc: BaseException) -> str:
     """The failure systemMessage (the exception class only, no content)."""
 
-    return f"claude-multi {event} failed: {type(exc).__name__} — run claude-multi doctor"
+    return f"charmer {event} failed: {type(exc).__name__} — run charmer doctor"
 
 
 def record_hook_error(
@@ -706,7 +706,7 @@ class _Hook:
     launch_epoch: int | None = None
 
     def note(self, message: str) -> None:
-        self.error_stream.write(f"claude-multi: {self.event} hook: {visible(message)}\n")
+        self.error_stream.write(f"charmer: {self.event} hook: {visible(message)}\n")
 
 
 # A handler returns (stdout text or None, an after-output action or None).
@@ -748,8 +748,8 @@ def _premodel(hook: _Hook) -> _Result:
         return (
             _premodel_response(
                 "deny",
-                f"claude-multi cannot read this session's lead set ({exc}); switch refused. "
-                f"Run `claude-multi doctor --repair {hook.managed_id}` or relaunch the session.",
+                f"charmer cannot read this session's lead set ({exc}); switch refused. "
+                f"Run `charmer doctor --repair {hook.managed_id}` or relaunch the session.",
             ),
             None,
         )
@@ -760,7 +760,7 @@ def _premodel(hook: _Hook) -> _Result:
 
 
 PIN_WARNING = (
-    "claude-multi: session {m8} now keeps this lead and no longer follows its profile; "
+    "charmer: session {m8} now keeps this lead and no longer follows its profile; "
     "/cm follow re-applies the profile (its lead applies at the next resume)"
 )
 _RECORDS_DIR = "sessions"
@@ -816,9 +816,9 @@ def _postmodel(hook: _Hook) -> _Result:
     warnings: list[str] = []
     if lead_set is not None and to_norm is not None and to_norm not in members:
         warnings.append(
-            f"claude-multi: this session switched to {to_model}, which is outside its lead "
+            f"charmer: this session switched to {to_model}, which is outside its lead "
             "set; its compaction settings do not fit that model. Switch back with /model or "
-            f"relaunch: claude-multi -r {hook.managed_id}"
+            f"relaunch: charmer -r {hook.managed_id}"
         )
     saved = saved_user_model(hook.environ)
     if saved is not None:
@@ -828,9 +828,9 @@ def _postmodel(hook: _Hook) -> _Result:
             candidates.add(to_norm)
         if normalize_model(value) in candidates:
             warnings.append(
-                f"claude-multi: your /model choice was saved as the default model in {path} "
+                f"charmer: your /model choice was saved as the default model in {path} "
                 f"(plain claude now starts on {value}). Next time press s (this session "
-                "only); claude-multi doctor shows the exact revert."
+                "only); charmer doctor shows the exact revert."
             )
     # Only an in-set target is recorded, after
     # the warnings and before stdout is written.
@@ -905,10 +905,10 @@ def dispatch(
             # A model switch is the one event that decides something: older
             # code cannot read the lead set the newer release wrote, so it
             # refuses (fail closed) instead of silently allowing.
-            error_stream.write(f"claude-multi: {visible(exc)}\n")
+            error_stream.write(f"charmer: {visible(exc)}\n")
             if event == "premodel":
                 output_stream.write(premodel_fail_closed_response(
-                    f"claude-multi premodel refused: {visible(exc)}"))
+                    f"charmer premodel refused: {visible(exc)}"))
                 output_stream.flush()
             return 0
         handler = _HANDLERS[event]
@@ -933,7 +933,7 @@ def dispatch(
         return 0
     except (Exception, SystemExit) as exc:  # the hook must never fail the client
         try:
-            error_stream.write(f"claude-multi: {event} hook ignored: {visible(exc)}\n")
+            error_stream.write(f"charmer: {event} hook ignored: {visible(exc)}\n")
         except Exception:
             pass
         try:
@@ -941,7 +941,7 @@ def dispatch(
         except Exception as log_exc:
             try:
                 error_stream.write(
-                    f"claude-multi: {HOOK_ERRORS_LOG} not written: {visible(log_exc)}\n"
+                    f"charmer: {HOOK_ERRORS_LOG} not written: {visible(log_exc)}\n"
                 )
             except Exception:
                 pass

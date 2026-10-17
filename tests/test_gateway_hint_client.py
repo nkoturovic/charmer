@@ -654,7 +654,7 @@ def start_oauth_gateway(root, respond=None):
             {"type": "claude", "email": "probe-d11@example.invalid",
              "access_token": D11_OAUTH_TOKEN, "scope": "user:inference",
              "expired": "2099-01-01T00:00:00Z"}).encode())
-        trust = home / ".config/claude-multi/probe-d11-ca.pem"
+        trust = home / ".config/charmer/probe-d11-ca.pem"
         state.atomic_write(trust, cert.read_bytes())
         holder["trust"] = str(trust)
         return render.finalize_document(document), {}, info

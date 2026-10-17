@@ -44,7 +44,7 @@ def _jwt(exp: datetime.datetime) -> str:
 
 class _AuthHomeCase(unittest.TestCase):
     def setUp(self) -> None:
-        self.root = Path(tempfile.mkdtemp(prefix="claude-multi-authtools-"))
+        self.root = Path(tempfile.mkdtemp(prefix="charmer-authtools-"))
         os.chmod(self.root, 0o700)
         self.addCleanup(lambda: shutil.rmtree(self.root, ignore_errors=True))
         self.home = self.root / "home"
@@ -283,7 +283,7 @@ class SnapshotAuthTests(_AuthHomeCase):
                 service_active=lambda unit: True, gateway_status=self.status(True),
             )
         self.assertEqual(code, 1)
-        self.assertIn("claude-multi gateway stop", err.getvalue())
+        self.assertIn("charmer gateway stop", err.getvalue())
 
     @staticmethod
     def status(running):
@@ -508,7 +508,7 @@ class CodexPlanListingTests(_AuthHomeCase):
             )
 
     def test_missing_credential_names_the_login_command(self) -> None:
-        with self.assertRaisesRegex(proxy.ProxyError, "claude-multi providers sign-in openai"):
+        with self.assertRaisesRegex(proxy.ProxyError, "charmer providers sign-in openai"):
             proxy.list_codex_plan_models(
                 self.gateway_info, environ=self.environ,
                 fetch=lambda u, h: self.LISTING, now=NOW,
@@ -602,12 +602,12 @@ class _DiscoverCliCase(_AuthHomeCase):
 
 
 class DiscoverOpenAICliTests(_DiscoverCliCase):
-    """`claude-multi discover openai`: its own single-provider consent."""
+    """`charmer discover openai`: its own single-provider consent."""
 
     def test_prompt_states_the_exact_url_the_pool_credential_and_the_caps(self) -> None:
         code, out, err = self.run_cli(["discover", "openai"], text="n\n")
         self.assertEqual(code, 0)
-        self.assertIn("claude-multi will make ONE request to a provider:\n"
+        self.assertIn("charmer will make ONE request to a provider:\n"
                       f"  1. GET {proxy.CODEX_MODELS_URL}\n"
                       "     auth: one codex pool access credential from the gateway auth dir "
                       "(value not shown; nothing is refreshed or written)\n", err)
@@ -692,7 +692,7 @@ class DiscoverInClaudeSessionTests(_DiscoverCliCase):
                     self.assertEqual(code, 1, err)
                     self.assertEqual(
                         err.strip(),
-                        f"claude-multi: {verb}: needs a terminal outside Claude Code sessions ({reason}) "
+                        f"charmer: {verb}: needs a terminal outside Claude Code sessions ({reason}) "
                         "— run it in a separate shell")
                     self.assertEqual(out, "")
         self.listing.assert_not_called()
@@ -713,7 +713,7 @@ class DiscoverInClaudeSessionTests(_DiscoverCliCase):
         code, _out, err = self.run_cli(["discover", "qwen"], text="y\n")
         self.assertEqual(code, 1)
         self.assertIn("model listing unsupported", err)
-        self.assertIn("declare manually: claude-multi models add qwen", err)
+        self.assertIn("declare manually: charmer models add qwen", err)
         self.assertEqual(self.sent, [])
 
     def test_tty_probe_is_the_process_stdio(self) -> None:

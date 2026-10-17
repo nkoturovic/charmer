@@ -1,4 +1,4 @@
-"""``claude-multi uninstall [--dry-run] [--keep-setup] [--keep-credentials] [--yes] [--force]``.
+"""``charmer uninstall [--dry-run] [--keep-setup] [--keep-credentials] [--yes] [--force]``.
 
 The plan comes first; nothing is removed before the y/N (``--yes`` skips it
 on a terminal), and credentials only after the typed phrase, which no flag
@@ -51,8 +51,8 @@ def command(runtime: "runtime_mod.Runtime", args: argparse.Namespace, *, input_s
     except KeyboardInterrupt:
         _write(output_stream, [*(f"  removed {item}" for item in result.removed), texts.UNINSTALL_CANCELLED])
         return EXIT_CANCELLED
-    except errors.ClaudeMultiError as exc:
-        lines = ["claude-multi uninstall: " + termtext.visible_message(exc)]
+    except errors.CharmerError as exc:
+        lines = ["charmer uninstall: " + termtext.visible_message(exc)]
         if exc.remedy:
             lines.append(f"  fix: {exc.remedy}")
         _write(sys.stderr, lines)
@@ -60,7 +60,7 @@ def command(runtime: "runtime_mod.Runtime", args: argparse.Namespace, *, input_s
 
 
 def _refuse(text: str) -> int:
-    _write(sys.stderr, ("claude-multi uninstall: " + text).split("\n"))  # a refusal may carry its fix line
+    _write(sys.stderr, ("charmer uninstall: " + text).split("\n"))  # a refusal may carry its fix line
     return EXIT_FAILED
 
 
@@ -87,12 +87,12 @@ def _run(runtime: "runtime_mod.Runtime", args: argparse.Namespace, *, input_stre
 
     environ = runtime.environ
     if consent.session_marker(environ) is not None:
-        consent.require_human("claude-multi uninstall", environ)
+        consent.require_human("charmer uninstall", environ)
     plan = uninstall.build_plan(runtime, keep_setup=bool(args.keep_setup))
     _write(output_stream, uninstall.plan_lines(runtime, plan))
     if args.uninstall_dry_run:
         return EXIT_DONE
-    consent.require_human("claude-multi uninstall", environ)
+    consent.require_human("charmer uninstall", environ)
     shown = uninstall.session_check(runtime).names()
     if shown and not args.force:
         return _refuse(texts.UNINSTALL_LIVE.format(ids=", ".join(shown)))
@@ -141,7 +141,7 @@ def _remove(runtime: "runtime_mod.Runtime", args: argparse.Namespace, plan: obje
     if refused is None and stopped == "failed":
         refused = f"the gateway could not be stopped ({detail}); nothing was removed"
     if refused is not None and stopped == "hold":
-        _write(sys.stderr, ["claude-multi uninstall: " + refused, f"  why: {detail}"])
+        _write(sys.stderr, ["charmer uninstall: " + refused, f"  why: {detail}"])
         return EXIT_FAILED
     if refused is not None:
         return _refuse(refused)

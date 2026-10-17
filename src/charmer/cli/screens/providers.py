@@ -73,7 +73,7 @@ def key_choice(runtime: Any, provider_id: str, current: str | None = None) -> bo
             return True
         if current is None:
             current = layer.current_transport(runtime, provider_id)
-    except (cli_errors.ClaudeMultiError, OSError, ValueError):
+    except (cli_errors.CharmerError, OSError, ValueError):
         return False
     return current == operator_mod.TRANSPORT_API_KEY
 
@@ -174,7 +174,7 @@ class ConnectActions:
             return refusal
         try:
             plan = layer.plan_set_key(self.runtime, provider_id)
-        except cli_errors.ClaudeMultiError as exc:
+        except cli_errors.CharmerError as exc:
             return self._refused(exc)
         refusal = self._guard(f"providers set-key {provider_id}")
         if refusal is not None:
@@ -193,7 +193,7 @@ class ConnectActions:
             return Outcome(texts.KEY_EMPTY, "warn")
         try:
             applied = layer.apply_set_key(self.runtime, plan, model.Confirmation.given(plan), model.Secret(value))
-        except cli_errors.ClaudeMultiError as exc:
+        except cli_errors.CharmerError as exc:
             return self._refused(exc)
         return Outcome(_joined([*applied.lines, self.continue_to_models(provider_id) or ""]))
 
@@ -205,7 +205,7 @@ class ConnectActions:
             return refusal
         try:
             plan = layer.plan_remove_key(self.runtime, provider_id, secret=secret)
-        except cli_errors.ClaudeMultiError as exc:
+        except cli_errors.CharmerError as exc:
             return self._refused(exc)
         refusal = self._guard(f"providers remove-key {provider_id}")
         if refusal is not None:
@@ -215,7 +215,7 @@ class ConnectActions:
             return Outcome(model.NOTHING_CHANGED, "warn")
         try:
             applied = layer.apply_remove_key(self.runtime, plan, model.Confirmation.given(plan))
-        except cli_errors.ClaudeMultiError as exc:
+        except cli_errors.CharmerError as exc:
             return self._refused(exc)
         return Outcome(_joined(applied.lines))
 
@@ -263,7 +263,7 @@ class ConnectActions:
         try:
             current, present, names = self._transport_facts(provider_id)
             words = self._names(provider_id)
-        except cli_errors.ClaudeMultiError as exc:
+        except cli_errors.CharmerError as exc:
             return self._refused(exc)
         account_in_use = current != operator_mod.TRANSPORT_API_KEY
         choice = prefer
@@ -304,7 +304,7 @@ class ConnectActions:
             return refusal
         try:
             plan = layer.plan_transport(self.runtime, provider_id, to)
-        except cli_errors.ClaudeMultiError as exc:
+        except cli_errors.CharmerError as exc:
             return self._refused(exc)
         refusal = self._guard(f"providers transport {provider_id} {to}")
         if refusal is not None:
@@ -323,7 +323,7 @@ class ConnectActions:
         try:
             applied = layer.apply_transport(self.runtime, plan, model.Confirmation.given(plan),
                                             model.Secret(value) if value else None)
-        except cli_errors.ClaudeMultiError as exc:
+        except cli_errors.CharmerError as exc:
             return self._refused(exc)
         lines = list(applied.lines)
         if not to_key:
@@ -382,7 +382,7 @@ class ConnectActions:
             return refusal
         try:
             plan = layer.plan_approve(self.runtime, provider_id)
-        except cli_errors.ClaudeMultiError as exc:
+        except cli_errors.CharmerError as exc:
             return self._refused(exc)
         refusal = self._guard(f"providers approve {provider_id}")
         if refusal is not None:
@@ -392,7 +392,7 @@ class ConnectActions:
             return Outcome(model.NOTHING_CHANGED, "warn")
         try:
             applied = layer.apply_approve(self.runtime, plan, model.Confirmation.given(plan))
-        except cli_errors.ClaudeMultiError as exc:
+        except cli_errors.CharmerError as exc:
             return self._refused(exc)
         lines = list(applied.lines)
         if plan.secret_name and not plan.key_present:
@@ -417,7 +417,7 @@ class ConnectActions:
             return refusal
         try:
             plan = layer.plan_apply(self.runtime)
-        except cli_errors.ClaudeMultiError as exc:
+        except cli_errors.CharmerError as exc:
             return self._refused(exc)
         if not plan.changes and not not_served:
             return Outcome(texts.NOTHING_TO_APPLY)
@@ -426,7 +426,7 @@ class ConnectActions:
             return Outcome(model.NOTHING_CHANGED, "warn")
         try:
             applied = layer.apply_apply(self.runtime, plan, model.Confirmation.given(plan))
-        except cli_errors.ClaudeMultiError as exc:
+        except cli_errors.CharmerError as exc:
             return self._refused(exc)
         return Outcome(_joined(applied.lines))
 
@@ -438,7 +438,7 @@ class ConnectActions:
 
         try:
             status = onboarding.key_status(self.runtime, provider_id)
-        except (cli_errors.ClaudeMultiError, OSError, ValueError):
+        except (cli_errors.CharmerError, OSError, ValueError):
             status = None
         key_present = bool(status and status[1])
         items = ([cli_text.REMOVE_CHOICE_KEY] if key_present else []) + [
@@ -454,7 +454,7 @@ class ConnectActions:
             return refusal
         try:
             plan = layer.plan_remove_provider(self.runtime, provider_id)
-        except cli_errors.ClaudeMultiError as exc:
+        except cli_errors.CharmerError as exc:
             return self._refused(exc)
         if plan.blockers:
             lines = [cli_text.REMOVE_BLOCKED_HEAD] + [cli_text.REMOVE_BLOCKED_ITEM.format(fix=b.fix_tui)
@@ -467,7 +467,7 @@ class ConnectActions:
             return Outcome(model.NOTHING_CHANGED, "warn")
         try:
             applied = layer.apply_remove_provider(self.runtime, plan, model.Confirmation.given(plan))
-        except cli_errors.ClaudeMultiError as exc:
+        except cli_errors.CharmerError as exc:
             return self._refused(exc)
         lines = list(applied.lines)
         if plan.key_present and plan.secret_name:
@@ -492,7 +492,7 @@ class ConnectActions:
             return refusal
         try:
             plan = check.plan_test(self.runtime, list(provider_ids))
-        except cli_errors.ClaudeMultiError as exc:
+        except cli_errors.CharmerError as exc:
             return self._refused(exc)
         if not plan.targets:
             return Outcome(_joined(plan.excluded) or texts.TEST_NOTHING, "warn")
@@ -501,7 +501,7 @@ class ConnectActions:
             return Outcome(cli_text.TEST_DECLINED, "warn")
         try:
             results = check.run_test(self.runtime, plan, model.Confirmation.given(plan))
-        except cli_errors.ClaudeMultiError as exc:
+        except cli_errors.CharmerError as exc:
             return self._refused(exc)
         texts_out = [result.text for result in results]
         if show_results:
@@ -514,7 +514,7 @@ class ConnectActions:
     def _provider_lines(self, provider_id: str) -> frozenset[str]:
         try:
             lines = self.runtime.lineup_catalog().lines
-        except (cli_errors.ClaudeMultiError, OSError, ValueError):
+        except (cli_errors.CharmerError, OSError, ValueError):
             return frozenset()
         return frozenset(key for key, entry in lines.items() if entry.get("provider") == provider_id)
 
@@ -530,7 +530,7 @@ class ConnectActions:
             code = onboarding.invoke(self.runtime, ["models", "admit", key],
                                      confirm=lambda text: action.confirm(output.getvalue() + "\n" + text),
                                      output=output)
-        except (cli_errors.ClaudeMultiError, ValueError, OSError) as exc:
+        except (cli_errors.CharmerError, ValueError, OSError) as exc:
             code = 1
             output.write(str(exc))
         action.show("Action result", output.getvalue().splitlines())
@@ -588,7 +588,7 @@ class ConnectActions:
             return None
         try:
             plan = layer.plan_add_endpoint(self.runtime, {**values, "kind": kind})
-        except cli_errors.ClaudeMultiError as exc:
+        except cli_errors.CharmerError as exc:
             return self._refused(exc)
         return self._declare_keyed(plan, plan.provider_id)
 
@@ -623,7 +623,7 @@ class ConnectActions:
         try:
             applied = layer.apply_add_preset(self.runtime, plan, model.Confirmation.given(plan),
                                              model.Secret(value) if value else None)
-        except cli_errors.ClaudeMultiError as exc:
+        except cli_errors.CharmerError as exc:
             return self._refused(exc)
         return Outcome(_joined([*applied.lines, self._add_models(plan.provider_id) or ""]))
 
@@ -660,7 +660,7 @@ class ConnectActions:
         base_url = typed if typed and typed != address else None
         try:
             plan = layer.plan_add_preset(self.runtime, name, provider_id, base_url)
-        except cli_errors.ClaudeMultiError as exc:
+        except cli_errors.CharmerError as exc:
             return self._refused(exc)
         if not isinstance(plan, layer.EndpointPlan):
             return Outcome(model.NOTHING_CHANGED, "warn")  # a keyless server is the network form's
@@ -699,7 +699,7 @@ class ConnectActions:
             return plan
         try:
             return layer.plan_add_preset(self.runtime, name, provider_id, base_url, key=key)
-        except cli_errors.ClaudeMultiError as exc:
+        except cli_errors.CharmerError as exc:
             return self._refused(exc)
 
     def lan(self, preset: str) -> Outcome | None:
@@ -716,14 +716,14 @@ class ConnectActions:
             return None
         try:
             plan = layer.plan_add_preset(self.runtime, preset, values["id"].strip(), values["url"].strip() or None)
-        except cli_errors.ClaudeMultiError as exc:
+        except cli_errors.CharmerError as exc:
             return self._refused(exc)
         if not tui.TextView(cli_text.LAN_PREVIEW_TITLE, plan.lines, palette=self.palette,
                             confirm="declare").run(self.win):
             return Outcome(model.NOTHING_CHANGED, "warn")
         try:
             applied = layer.apply_add_preset(self.runtime, plan, model.Confirmation.given(plan))
-        except cli_errors.ClaudeMultiError as exc:
+        except cli_errors.CharmerError as exc:
             return self._refused(exc)
         return Outcome(_joined([*applied.lines, self._add_models(plan.provider_id) or ""]))
 
@@ -831,7 +831,7 @@ class _ProvidersScreen:
         try:
             self.connections = {item.provider_id: item
                                 for item in status.connections(self.runtime, facts=loaded.facts)}
-        except (cli_errors.ClaudeMultiError, OSError, ValueError):
+        except (cli_errors.CharmerError, OSError, ValueError):
             self.connections = {}
         self.rows = self._rows()
         self.selected = min(self.selected, max(0, len(self.rows) - 1))
@@ -1096,7 +1096,7 @@ class _ProvidersScreen:
             sessions.MigrationBusyError,
             state.StateError,
             custom.CustomModelsError,
-            cli_errors.ClaudeMultiError,
+            cli_errors.CharmerError,
             OSError,
         ) as exc:
             self._say(str(exc), "warn")
@@ -1106,7 +1106,7 @@ class _ProvidersScreen:
         message = f"{row.id} {word} — {cli_text._APPLIES_NEXT}; running sessions keep their routes"
         if plan.served_changed and plan.before_unknown is None:
             # Never expected from a toggle; say so rather than hide it.
-            message += " (the declared render also differs from the published one: claude-multi plan)"
+            message += " (the declared render also differs from the published one: charmer plan)"
         self._say(message)
 
     def _primary_action(self, win: Any) -> None:
@@ -1194,7 +1194,7 @@ class _ProvidersScreen:
             # drawn; the bytes stay the baseline of the save.
             previous, block = onboarding.provider_edit_snapshot(self.runtime, pid)
             fields = views.provider_edit_form_fields(block)
-        except (cli_errors.ClaudeMultiError, OSError, ValueError, KeyError, TypeError) as exc:
+        except (cli_errors.CharmerError, OSError, ValueError, KeyError, TypeError) as exc:
             self._say(cli_text.EDIT_UNREADABLE.format(id=pid, problem=_error_text(exc)), "warn")
             return
         values = tui.OnboardingForm(cli_text.EDIT_FORM_TITLE.format(id=pid), fields, palette=self.palette,
@@ -1206,7 +1206,7 @@ class _ProvidersScreen:
         try:
             code = onboarding.edit_provider(self.runtime, pid, values, previous=previous, output=output,
                                             confirm=lambda text: action.confirm(output.getvalue() + "\n" + text))
-        except (cli_errors.ClaudeMultiError, ValueError, OSError) as exc:
+        except (cli_errors.CharmerError, ValueError, OSError) as exc:
             code = 1
             output.write(_error_text(exc))
         action.show("Action result", output.getvalue().splitlines())

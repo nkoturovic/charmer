@@ -176,7 +176,7 @@ class LinuxSideTests(InstallerTestCase):
         self.assertInstalled(result, "1.0.0")
         self.assertEqual((self.home / "curl.log").read_text(), "https://example.invalid/releases/v1.0.0/install.sh\n")
         self.assertNotIn("next: run", result.stdout)  # install.ps1 starts setup itself
-        self.assertFalse(list(self.tmp.glob("claude-multi-install.*")))  # the downloaded copy is removed
+        self.assertFalse(list(self.tmp.glob("charmer-install.*")))  # the downloaded copy is removed
 
     def test_bootstrap_refuses_missing_or_invalid_checksum_before_download(self) -> None:
         release = self.release("1.0.0")

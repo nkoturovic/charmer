@@ -46,9 +46,9 @@ _LINEUP_ERRORS = (
 )
 
 
-# The options of ``claude-multi lineup`` (the request follows them).
+# The options of ``charmer lineup`` (the request follows them).
 LINEUP_OPTIONS = (
-    ("--session ID", "the session's runtime id (/cm passes it; claude-multi sessions show SESSION names it)"),
+    ("--session ID", "the session's runtime id (/cm passes it; charmer sessions show SESSION names it)"),
     ("--relaunch", "relaunch the session with the change instead of a live apply"),
     ("--its-exited", "the session has exited: relaunch it without asking"),
     ("--preview", "with fallback: show the plan and change nothing"),
@@ -57,12 +57,12 @@ LINEUP_OPTIONS = (
 
 
 def lineup_help() -> str:
-    """``claude-multi lineup --help``: the request grammar from the one /cm
+    """``charmer lineup --help``: the request grammar from the one /cm
     verb table, written before any Runtime, session or state is read."""
 
     width = max(len(verb.spelled()) for verb in lineup_files.CM_VERBS) + 2
     lines = [
-        "usage: claude-multi lineup [--session ID] [--relaunch] [--its-exited] [REQUEST ...]",
+        "usage: charmer lineup [--session ID] [--relaunch] [--its-exited] [REQUEST ...]",
         "",
         "Show or change a managed session's lineup: what /cm runs inside the session. Inside the",
         "session the session id comes from its environment; from another terminal pass --session.",
@@ -101,11 +101,11 @@ def _lineup_main(
     output_stream: TextIO | None,
     interactive: bool | None,
 ) -> int:
-    """``claude-multi lineup`` (the raw-argv intercept of ``main``).
+    """``charmer lineup`` (the raw-argv intercept of ``main``).
 
     Skill mode (``--session`` present): never opens ``/dev/tty``, every
     line (refusals and internal errors included) goes to stdout as
-    ``claude-multi: …`` and the exit status is 0 (the /cm transport). Outside
+    ``charmer: …`` and the exit status is 0 (the /cm transport). Outside
     skill mode success goes to stdout (exit 0) and a refusal to stderr: exit
     2 for a request or option the parser rejects, 1 for a refused or failed
     request. ``--help`` prints the grammar before anything else. An injected
@@ -126,10 +126,10 @@ def _lineup_main(
             termtext.visible_text(line) for line in str(message).splitlines()
         ) or termtext.visible_text(str(message))
         if skill:
-            out.write(f"claude-multi: {text}\n")
+            out.write(f"charmer: {text}\n")
             out.flush()
             return 0
-        sys.stderr.write(f"claude-multi: {text}\n")
+        sys.stderr.write(f"charmer: {text}\n")
         sys.stderr.flush()
         return code
 
@@ -212,7 +212,7 @@ def _lineup_main(
             try:
                 with bound.report_snapshot():
                     events = gateway_facts.report_events(bound, since=f"-{lineup_mod.PROVIDER_ERRORS_HOURS}h")
-            except (cli_errors.ClaudeMultiError, OSError, ValueError):
+            except (cli_errors.CharmerError, OSError, ValueError):
                 events = None
             return lineup_mod.provider_error_lines(bound, record, events, start=start, end=end)
 

@@ -5,20 +5,20 @@ Two kinds of copies live under the data root:
 - ``pinned-clients/<version>``: copies retained by earlier releases. They are
   rollback material and are never pruned; a launch only reads one, to copy a
   hash-identical pin into the owned layout.
-- ``claude/<version>/claude``: claude-multi's own copies (``pin.py``). The
+- ``claude/<version>/claude``: charmer's own copies (``pin.py``). The
   prune rule keeps the current pin, the previous release's pin, every
-  version a claude-multi launch holds the use lock of, every version a
+  version a charmer launch holds the use lock of, every version a
   readable process runs, and the version the running gateway's launcher
   release pins; it never decides when the process table or the gateway's
   start record cannot be read.
 
-The use lock is the authority for what claude-multi runs: every launch holds
+The use lock is the authority for what charmer runs: every launch holds
 ``<version>/.in-use`` shared from before its hash check for as long as that
 Claude Code runs (``launch.PinnedCopy``; the descriptor is inherited across
 exec). The process scan only adds evidence: a process whose executable link
 (``/proc``) or path (macOS ``ps``) names an owned copy keeps it, and a
 process whose executable cannot be read is no evidence either way. A copy
-started outside claude-multi holds no lock, so it is protected only while
+started outside charmer holds no lock, so it is protected only while
 its process can be inspected (the documented residual).
 
 Pruning coordinates with the writers and the users of the owned layout
@@ -157,7 +157,7 @@ def _proc_executables(proc_root: Path) -> list[Path] | None:
     be listed in full. A process that exited meanwhile, has no executable (a
     kernel thread) or whose link cannot be read (another user's, or a
     non-dumpable one) is skipped: the use lock, not this scan, protects what
-    claude-multi runs."""
+    charmer runs."""
 
     try:
         entries = [entry for entry in os.scandir(proc_root) if entry.name.isdecimal()]
@@ -218,7 +218,7 @@ def scan_processes(
 
 
 def use_state(environ: Mapping[str, str], name: str) -> bool | None:
-    """Whether a claude-multi launch or session holds version ``name``'s use
+    """Whether a charmer launch or session holds version ``name``'s use
     lock: a momentary non-blocking probe that creates nothing. None when the
     lock file or its directory is unsafe (:func:`pin.take_use_lock` would
     refuse it; the version is then kept)."""
@@ -293,7 +293,7 @@ def prune_plan(
     Keeps the current pin; the previous release's pin (the version the
     newest older launcher release recorded, else the newest owned version
     below the current pin); the pin of the launcher release that started
-    the gateway; every version whose use lock a claude-multi launch holds
+    the gateway; every version whose use lock a charmer launch holds
     (:func:`use_state`; an unsafe lock file keeps its version too); and
     every version a live process is seen to run. A pin keeps its pin reason
     while it is in use too (doctor adds the use), so only the use-based
@@ -336,7 +336,7 @@ def prune_plan(
     if isinstance(stamped, str) and stamped != launcher:
         stamped_pin = index.get(stamped)
         if stamped_pin is None:
-            gateway_blocked = (f"the running gateway was started by claude-multi {stamped}, "
+            gateway_blocked = (f"the running gateway was started by charmer {stamped}, "
                                "whose Claude Code version is not recorded here")
         else:
             keep.setdefault(stamped_pin, f"the running gateway's release ({stamped}) pins it")
@@ -442,7 +442,7 @@ def _remove_version(root: Path, name: str) -> str:
 @dataclass(frozen=True)
 class PruneOutcome:
     """What :func:`prune_copies` did: the versions it removed; the ones it
-    would have removed but kept because they are in use (a claude-multi
+    would have removed but kept because they are in use (a charmer
     session or launch holds the use lock, a setup is putting the version in
     place, or a process started meanwhile runs it); and the ones it tried
     to remove but left in place, perhaps in part (the directory holds
@@ -578,12 +578,12 @@ def retention_report(
     for name, reason in plan.keep.items():
         if name not in present:
             continue
-        # A pin keeps its pin reason; a claude-multi session using it shows too.
+        # A pin keeps its pin reason; a charmer session using it shows too.
         if reason not in (IN_USE, RUNNING, LOCK_UNKNOWN) and use_state(environ, name):
             reason = f"{reason}, {IN_USE}"
         kept.append(f"{name} ({reason})")
     if kept:
-        info.append("Claude Code copies kept by claude-multi: " + ", ".join(kept) + ".")
+        info.append("Claude Code copies kept by charmer: " + ", ".join(kept) + ".")
     if plan.remove:
         attention.append(
             f"Claude Code copies no release here needs: {_sizes(plan.remove)} — "

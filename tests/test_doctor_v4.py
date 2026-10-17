@@ -1,7 +1,7 @@
 """Doctor on v4 state, plus the settings radar, retirement radar and journal pass.
 
 Sessions are real v4 launches (``_v4.V4Case``); switch sequences use the real
-``claude-multi lineup`` and the protocol-3 ``postmodel`` seam. Retired /
+``charmer lineup`` and the protocol-3 ``postmodel`` seam. Retired /
 renamed keys use test-local catalogs; the
 retirement radar reads a test-local copy of the pinned-registry fixture with
 an injected clock; the journal pass reads fixture text through its seam, so
@@ -133,9 +133,9 @@ class ClientIdentityTests(_DoctorCase):
     def test_mismatch_is_exact_doctor_attention_only(self) -> None:
         expected = (f"session {self.m8} runs Claude 2.1.999, not the pinned {self.fake_claude['version']} "
                     "(it started before a re-pin, or the daemon adopted it after an auto-update); "
-                    f"resume it with claude-multi -r {self.mid} after it exits")
+                    f"resume it with charmer -r {self.mid} after it exits")
         self.assertEqual(self._report(), [expected])
-        argument = expected.split("claude-multi -r ", 1)[1].split(" after it exits", 1)[0]
+        argument = expected.split("charmer -r ", 1)[1].split(" after it exits", 1)[0]
         self.assertEqual(cli._resolve_resume_target(self.runtime, argument), self.mid)
         problems, _info, attention = _doctor(self)
         self.assertEqual(problems, [])
@@ -219,7 +219,7 @@ class ClientIdentityTests(_DoctorCase):
         interpreter = self.root / "python3.14"
         interpreter.write_bytes(b"fixture interpreter")
         (self.process / "cmdline").write_bytes(
-            b"python3.14\0/nix/store/fixture-claude-multi/bin/.claude-multi-wrapped\0--resume\0"
+            b"python3.14\0/nix/store/fixture-charmer/bin/.charmer-wrapped\0--resume\0"
             + self.rid.encode() + b"\0"
         )
         self.exe.unlink()
@@ -331,7 +331,7 @@ class ProfileReportTests(_DoctorCase):
         _problems, _info, attention = _doctor(self)
         self.assertIn(
             f"profile {seed}: a newer shipped version of this seed exists (v? → v{shipped}): "
-            f"claude-multi profile reseed {seed} (your version is kept as a backup)",
+            f"charmer profile reseed {seed} (your version is kept as a backup)",
             attention,
         )
         if shipped >= 2:
@@ -341,7 +341,7 @@ class ProfileReportTests(_DoctorCase):
             _problems, _info, attention = _doctor(self)
             self.assertIn(
                 f"profile {seed}: a newer shipped version of this seed exists (v{shipped - 1} → v{shipped}): "
-                f"claude-multi profile reseed {seed} (your version is kept as a backup)",
+                f"charmer profile reseed {seed} (your version is kept as a backup)",
                 attention,
             )
 
@@ -370,7 +370,7 @@ class RecordReportTests(_DoctorCase):
         _problems, _info, attention = _doctor(self)
         line = next(a for a in attention if "need a profile or model choice" in a)
         self.assertTrue(line.startswith("2 session(s) need a profile or model choice (lead removed): "))
-        self.assertIn("claude-multi lineup --session <runtime-id> --relaunch profile <name> | direct <model>", line)
+        self.assertIn("charmer lineup --session <runtime-id> --relaunch profile <name> | direct <model>", line)
         self.assertIn(self.m8, line)
         self.assertIn(second[:8], line)
 
@@ -378,7 +378,7 @@ class RecordReportTests(_DoctorCase):
         # The absence of a sample is never a standing
         # warning; a session on an externalized provider's key gets one notice.
         entry = {**_retired_entry(None, since=36, wire="opfix-lan-1", provider="opfix-lan",
-                                  selectors={"claude-multi-opfix-lan": None}),
+                                  selectors={"charmer-opfix-lan": None}),
                  "externalized": {"sample": "opfix-lan.json"}}
         local = _local_cat(retired={"opfix-lan-line": entry})
         with mock.patch.object(type(self.runtime), "lineup_catalog", lambda _self: local):
@@ -389,7 +389,7 @@ class RecordReportTests(_DoctorCase):
             _problems, _info, attention = _doctor(self)
         line = next(a for a in attention if "left the catalog" in a)
         self.assertTrue(line.startswith("1 session(s) lead on provider opfix-lan, which left the catalog"))
-        self.assertIn("claude-multi providers add --preset opfix-lan", line)
+        self.assertIn("charmer providers add --preset opfix-lan", line)
         self.assertIn(self.m8, line)
         self.assertTrue(any("need a profile or model choice" in a for a in attention))
 
@@ -451,8 +451,8 @@ class RecordReportTests(_DoctorCase):
         rid = mine["runtime_session_id"]
         self.assertIn(
             f"session {mine['managed_id'][:8]} follows profile 'mine', which no longer exists; it "
-            f"keeps its applied lineup — pin it (claude-multi lineup --session {rid} pin) or "
-            f"choose one (claude-multi lineup --session {rid} profile <name>)",
+            f"keeps its applied lineup — pin it (charmer lineup --session {rid} pin) or "
+            f"choose one (charmer lineup --session {rid} profile <name>)",
             attention,
         )
         self.assertEqual(self.record_bytes(mine["managed_id"]), before)
@@ -489,10 +489,10 @@ class RecordReportTests(_DoctorCase):
 
         _write_raw(self.store, v3_managed("11111111-1111-4111-8111-111111111111", cwd=self.runtime.cwd))
         _problems, info, attention = _doctor(self)
-        self.assertIn("1 legacy record(s) (version ≤ 3) remain: rerun claude-multi migrate", attention)
+        self.assertIn("1 legacy record(s) (version ≤ 3) remain: rerun charmer migrate", attention)
         self.assertFalse(any("11111111" in line and "retired" in line for line in attention))
         self.assertTrue(any("legacy record · lead" in line for line in info), info)
-        self.assertIn("Sessions: 2 recorded · 1 legacy record (claude-multi migrate).", info)
+        self.assertIn("Sessions: 2 recorded · 1 legacy record (charmer migrate).", info)
 
     def test_a_v3_record_gets_no_compile_or_compaction_diagnostics(self) -> None:
         # Doctor never compiles
@@ -506,7 +506,7 @@ class RecordReportTests(_DoctorCase):
         self.assertIn("lead", legacy["snapshot"])  # the 2.x snapshot, with its own context facts
         _write_raw(self.store, legacy)
         problems, info, attention = _doctor(self)
-        self.assertIn("1 legacy record(s) (version ≤ 3) remain: rerun claude-multi migrate", attention)
+        self.assertIn("1 legacy record(s) (version ≤ 3) remain: rerun charmer migrate", attention)
         words = ("compile", "fence", "compaction", "compacts", "context window", "trigger", "auto-compact")
         for line in [*problems, *attention, *info]:
             if mid[:8] in line or mid in line:
@@ -556,7 +556,7 @@ class ScopeIntegrityTests(_DoctorCase):
         problems, _info, _attention = _doctor(self)
         self.assertIn(
             f"session {self.m8}: reviewer is bound to {reviewer}, which the compiled fence does not "
-            "admit — the agent would silently run on the lead model; run claude-multi doctor "
+            "admit — the agent would silently run on the lead model; run charmer doctor "
             f"--repair {self.mid}",
             problems,
         )
@@ -585,7 +585,7 @@ class ScopeIntegrityTests(_DoctorCase):
         self.assertEqual(problems, [])
         self.assertIn(
             f"session {self.m8}: launch-time files were rebuilt from the installed catalog after "
-            f"launch; live agent changes need a relaunch — claude-multi -r {self.mid} after it exits",
+            f"launch; live agent changes need a relaunch — charmer -r {self.mid} after it exits",
             attention,
         )
 
@@ -758,7 +758,7 @@ class ModelsListingTests(V4Case):
              "efforts high,xhigh", "active", "wire=x-ai/grok-4.6"],
             rows,
         )
-        self.assertIn("  in-session: /model claude-multi-grok46-high · /model claude-multi-grok46-xhigh",
+        self.assertIn("  in-session: /model charmer-grok46-high · /model charmer-grok46-xhigh",
                       text.splitlines())
         self.assertIn(["opus@4.7", "claude-opus-4-7", "retired (catalog 33)", "successor opus55"], rows)
         self.assertIn(["muse-spark", "Muse Spark 1.3", "retired (catalog 31)", "no successor"], rows)
@@ -781,12 +781,12 @@ class MarkerAndCensusTests(_DoctorCase):
         self.addCleanup(lock.release)
         _problems, info, _attention = _doctor(self)
         self.assertIn("migration or restore in progress (session hooks skip record writes)", info)
-        self.assertIn("1 legacy backup(s) kept for claude-multi restore-2x", info)
+        self.assertIn("1 legacy backup(s) kept for charmer restore-2x", info)
         self.assertIn("Sessions: 1 recorded.", info)
 
 
 class UserSettingsTests(_DoctorCase):
-    """claude-multi selectors saved in the user's Claude settings; /cm collisions."""
+    """charmer selectors saved in the user's Claude settings; /cm collisions."""
 
     def _user_settings(self, document: dict) -> Path:
         path = Path(self.env["HOME"]) / ".claude" / "settings.json"
@@ -799,16 +799,16 @@ class UserSettingsTests(_DoctorCase):
         selector = next(iter(sol["efforts"].values()))["selector"]
         path = self._user_settings({
             "model": selector,
-            "modelSettings": {"claude-multi-kimi-k3[1m]": {}, "claude-opus-4-8": {}},
+            "modelSettings": {"charmer-kimi-k3[1m]": {}, "claude-opus-4-8": {}},
         })
         before = (path.read_bytes(), path.stat().st_mtime_ns)
         _problems, _info, attention = _doctor(self)
         self.assertIn(
-            f"{path}: model holds the claude-multi selector {selector!r} (saved by a /model choice "
-            f"inside a claude-multi session); plain claude cannot use it. Revert: remove model from {path}",
+            f"{path}: model holds the charmer selector {selector!r} (saved by a /model choice "
+            f"inside a charmer session); plain claude cannot use it. Revert: remove model from {path}",
             attention,
         )
-        self.assertTrue(any('modelSettings["claude-multi-kimi-k3[1m]"]' in line for line in attention),
+        self.assertTrue(any('modelSettings["charmer-kimi-k3[1m]"]' in line for line in attention),
                         attention)
         self.assertFalse(any("claude-opus-4-8" in line for line in attention), attention)
         self.assertEqual((path.read_bytes(), path.stat().st_mtime_ns), before)
@@ -825,7 +825,7 @@ class UserSettingsTests(_DoctorCase):
         (other / "settings.json").write_text(json.dumps({"model": selector}))
         self.runtime.environ["CLAUDE_CONFIG_DIR"] = str(other)
         _problems, _info, attention = _doctor(self)
-        self.assertFalse([line for line in attention if "holds the claude-multi selector" in line], attention)
+        self.assertFalse([line for line in attention if "holds the charmer selector" in line], attention)
         path = self._user_settings({"model": selector})
         _problems, _info, attention = _doctor(self)
         self.assertTrue([line for line in attention if line.startswith(f"{path}: model holds")], attention)
@@ -873,7 +873,7 @@ class SettingsRadarTests(_DoctorCase):
         problems, _info, attention = _doctor(self)
         self.assertEqual(problems, [])
         text = "\n".join(attention)
-        self.assertIn(f"{user}: env.DISABLE_AUTO_COMPACT defeats the claude-multi session policy", text)
+        self.assertIn(f"{user}: env.DISABLE_AUTO_COMPACT defeats the charmer session policy", text)
         self.assertIn(f"{user}: env.MAX_THINKING_TOKENS defeats", text)
         self.assertIn(f"{user}: disableAllHooks disables every hook", text)
         self.assertIn(f"{user}: alwaysThinkingEnabled turns extended thinking off", text)
@@ -1003,10 +1003,10 @@ class DoctorFactsTests(_DoctorCase):
         problems, _info, attention = _doctor(self)
         self.assertFalse(any("fixture-new" in problem for problem in problems))
         self.assertIn("New model: Fixture New Line (fixture-new) — not admitted (optional badge): "
-                      "claude-multi models admit fixture-new (or Models, then Enter; use does not require it)", attention)
+                      "charmer models admit fixture-new (or Models, then Enter; use does not require it)", attention)
         finding = self.codes(self.json_report())["model-newly-available"]
         self.assertEqual((finding["subject_id"], finding["remedy"]),
-                         ("fixture-new", "claude-multi models admit fixture-new"))
+                         ("fixture-new", "charmer models admit fixture-new"))
 
     def test_a_deny_that_only_the_launch_environment_selects_is_attention(self) -> None:
         live = self.live(self.mid)
@@ -1017,7 +1017,7 @@ class DoctorFactsTests(_DoctorCase):
         self.assertFalse([line for line in problems if self.m8 in line and "scope differs" in line], problems)
         line = next(line for line in attention if line.startswith(f"session {self.m8}: its secret-file denies"))
         self.assertIn("the launching shell added 1 rule(s) this shell does not select", line)
-        self.assertIn(f"claude-multi doctor --repair {self.mid}", line)
+        self.assertIn(f"charmer doctor --repair {self.mid}", line)
         # Any other settings difference stays damage.
         doc["env"]["ANTHROPIC_BASE_URL"] = "http://127.0.0.1:9999"
         state.atomic_write(live / "settings.json", strict_json.canonical_file_bytes(doc))
@@ -1084,7 +1084,7 @@ class DoctorFactsTests(_DoctorCase):
         code, plain = _run_doctor(self)
         self.assertEqual(code, 0, plain)
         self.assertNotIn(f"Scope: {self.m8} OK", plain)
-        self.assertRegex(plain, r"\(\d+ more detail lines?: claude-multi doctor -v\)")
+        self.assertRegex(plain, r"\(\d+ more detail lines?: charmer doctor -v\)")
         code, verbose = _run_doctor(self, "-v")
         self.assertEqual(code, 0, verbose)
         self.assertIn(f"Scope: {self.m8} OK", verbose)
@@ -1203,7 +1203,7 @@ class JournalPassTests(_DoctorCase):
             lines.append(f"[{self._ts(10)}] [{rid}] [info ] [selector.go:468] session-affinity: cache miss | "
                          "session=abc auth=x provider=codex model=gpt-multi-sol-high[1m]")
             lines.append(f"[{self._ts(10)}] [{rid}] [warn ] [gin_logger.go:99] 429 |  1.2s | 127.0.0.1 | POST \"/v1/messages\"")
-        lines.append(f"[{self._ts(300)}] [pay00001] [info ] [selector.go:468] x | model=claude-multi-kimi-k3[1m]")
+        lines.append(f"[{self._ts(300)}] [pay00001] [info ] [selector.go:468] x | model=charmer-kimi-k3[1m]")
         lines.append(f"[{self._ts(300)}] [pay00001] [warn ] [gin_logger.go:99] 402 |  0.1s | 127.0.0.1 | POST \"/v1/messages\"")
         # old 429s (over an hour) never count toward the hourly threshold
         for n in range(30):
@@ -1217,7 +1217,7 @@ class JournalPassTests(_DoctorCase):
             "a foreground agent then blocks its lead",
             report,
         )
-        self.assertTrue(any("model claude-multi-kimi-k3[1m] got 1× 402 (payment required) in the last 24 h" in line
+        self.assertTrue(any("model charmer-kimi-k3[1m] got 1× 402 (payment required) in the last 24 h" in line
                             for line in report), report)
         self.assertFalse(any("unattributed" in line for line in report), report)
         self.assertFalse(any("Retry-After" in line for line in report if "402" in line or "403" in line))
@@ -1237,7 +1237,7 @@ class JournalPassTests(_DoctorCase):
         self.assertEqual(len(report), 1, report)
         self.assertTrue(report[0].startswith("gateway journal: 1 invalid_grant line(s) since the codex pool "
                                              "credential was written"))
-        self.assertTrue(report[0].endswith("sign in again: claude-multi providers sign-in openai"))
+        self.assertTrue(report[0].endswith("sign in again: charmer providers sign-in openai"))
 
     def test_an_unattributed_invalid_grant_is_one_line_naming_the_candidates(self) -> None:
         auth = self.runtime.home / self.runtime.catalog.docs["gateway"]["gateway"]["auth_dir"]
@@ -1252,7 +1252,7 @@ class JournalPassTests(_DoctorCase):
         self.assertTrue(report[0].startswith("gateway journal: 1 invalid_grant line(s) naming no pool "), report)
         self.assertIn("candidates: claude, codex;", report[0])
         self.assertTrue(report[0].endswith(
-            "claude-multi providers sign-in anthropic or claude-multi providers sign-in openai"), report)
+            "charmer providers sign-in anthropic or charmer providers sign-in openai"), report)
         self.assertNotIn("the refresh token is dead", report[0])
         # older than every credential write: stale, nothing reported
         self.assertEqual(self._report(
@@ -1446,10 +1446,10 @@ class QuotaDoctorTests(_DoctorCase):
         # the printed proxy command to the entry point copied into an
         # installed-style tree (a source checkout's entry names the source
         # channel, which has no management), with the Nix wrapper's channel.
-        installed = self.root / "installed" / "bin" / "claude-multi-proxy"
+        installed = self.root / "installed" / "bin" / "charmer-proxy"
         installed.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy(REPO_ROOT / "bin/claude-multi-proxy", installed)
-        script = 'claude-multi-proxy() { "$PYTHON" "$PROXY" "$@"; }; ' + remedy
+        shutil.copy(REPO_ROOT / "bin/charmer-proxy", installed)
+        script = 'charmer-proxy() { "$PYTHON" "$PROXY" "$@"; }; ' + remedy
         result = subprocess.run([shutil.which("bash"), "-c", script], capture_output=True, text=True,
             env={**self.runtime.environ, "PATH": os.environ.get("PATH", ""),
                  "PYTHON": sys.executable, "PROXY": str(installed),
@@ -1517,13 +1517,13 @@ class QuotaDoctorTests(_DoctorCase):
                     management.disable(self.runtime.home)
                 self.assertEqual((caught.exception.filename, caught.exception.reason), (filename, reason))
                 remedy = caught.exception.remedy
-                self.assertTrue(remedy.endswith("&& claude-multi-proxy disable-management-key"), remedy)
+                self.assertTrue(remedy.endswith("&& charmer-proxy disable-management-key"), remedy)
                 self.assertNotIn("rotate-management-key", remedy)
-                self.assertIn(f'"$HOME/.config/claude-multi/{filename}"', remedy)
+                self.assertIn(f'"$HOME/.config/charmer/{filename}"', remedy)
                 # Interrupted after the repair step and before the
                 # retried disable, reads are still off (the selection is gone).
                 repair, retry = remedy.rsplit(" && ", 1)
-                self.assertEqual(retry, "claude-multi-proxy disable-management-key")
+                self.assertEqual(retry, "charmer-proxy disable-management-key")
                 self._execute_remedy(repair)
                 self.assertIsNone(management.read_active(self.runtime.home))
                 self._execute_remedy(retry)
@@ -1555,7 +1555,7 @@ class QuotaDoctorTests(_DoctorCase):
                 self.assertIn("could not be written; management reads may still be on", str(caught.exception))
                 remedy = caught.exception.remedy
                 self.assertNotIn("rotate-management-key", remedy)
-                self.assertTrue(remedy.endswith("then claude-multi-proxy disable-management-key"), remedy)
+                self.assertTrue(remedy.endswith("then charmer-proxy disable-management-key"), remedy)
                 if failing == management.DISABLED_FILE:
                     # The selection was invalidated before the marker write.
                     self.assertIsNone(management.read_active(self.runtime.home))
@@ -1601,7 +1601,7 @@ class QuotaDoctorTests(_DoctorCase):
                 self.assertEqual(management.read_active(self.runtime.home), selected)
                 remedy = text.split(" — ", 1)[1].split("; then restart the gateway:", 1)[0]
                 if kind == "shape":
-                    self.assertEqual(remedy, "claude-multi-proxy rotate-management-key")
+                    self.assertEqual(remedy, "charmer-proxy rotate-management-key")
                 self._execute_remedy(remedy)
                 self.enable()
                 current = management.read_active(self.runtime.home)
@@ -1816,7 +1816,7 @@ class GatewayWorkdirTests(_DoctorCase):
         self.workdir = self.store.root / "gateway"
         self.dotenv = self.workdir / ".env"
         self.expected = (
-            f"gateway working directory {self.workdir} holds a .env file: claude-multi-proxy "
+            f"gateway working directory {self.workdir} holds a .env file: charmer-proxy "
             "refuses to start the gateway while it exists (CLIProxyAPI would load it: "
             "HOME_JWT, DEPLOY, WRITABLE_PATH and the store variables override the "
             "gateway's config); move it aside unless you put it there"
@@ -1959,14 +1959,14 @@ class CustomRegistryRadarTests(_DoctorCase):
         self.assertIn("auth header 'Authorization'", line)
         self.assertIn('set "header": "x-api-key"', line)
         self.assertIn(paths.display(path, self.runtime.environ), line)
-        self.assertIn("claude-multi custom remove-provider acme", line)
+        self.assertIn("charmer custom remove-provider acme", line)
         conflict = next(line for line in attention if "shadow catalog ids" in line)
         self.assertTrue(conflict.endswith(paths.display(path, self.runtime.environ)))
-        self.assertNotIn("~/.config/claude-multi/custom.json", conflict)
+        self.assertNotIn("~/.config/charmer/custom.json", conflict)
 
     def test_parity_states_wired_into_attention(self):
         shell = custom.registry_path(self.runtime.environ)
-        service = self.runtime.home / ".config/claude-multi/custom.json"
+        service = self.runtime.home / ".config/charmer/custom.json"
         empty = {"version": 1, "providers": {}, "models": {}}
         self.assertFalse(any("custom.json mismatch:" in line for line in _doctor(self)[2]))
         self._write_registry(shell, empty)
@@ -2001,7 +2001,7 @@ class CustomRegistryRadarTests(_DoctorCase):
         _problems, info, _attention = _doctor(self)
         line = next(line for line in info if line.startswith("CLAUDE_MULTI_SECRET_ENV is set"))
         self.assertEqual(line, "CLAUDE_MULTI_SECRET_ENV is set in this shell; the gateway service ignores it "
-                              "and reads ~/.config/claude-multi/secrets/provider-keys.env")
+                              "and reads ~/.config/charmer/secrets/provider-keys.env")
         self.assertNotIn(self.runtime.environ["CLAUDE_MULTI_SECRET_ENV"], line)
         self.runtime.environ.pop("CLAUDE_MULTI_SECRET_ENV")
         self.assertFalse(any(line.startswith("CLAUDE_MULTI_SECRET_ENV is set") for line in _doctor(self)[1]))
@@ -2362,7 +2362,7 @@ class CarryInPolicyTests(V4Case):
         for problem in problems:
             self.assertTrue(problem.startswith("~/.claude/settings.json:"))
             self.assertIn(str(self.live(record["managed_id"]) / "settings.json"), problem)
-            self.assertIn(f"claude-multi doctor --repair {record['managed_id']}", problem)
+            self.assertIn(f"charmer doctor --repair {record['managed_id']}", problem)
             self.assertNotIn("secret-value", problem)
         path.unlink()
         self.runtime.environ["HTTPS_PROXY"] = "fixture"
@@ -2578,7 +2578,7 @@ class CatalogAgentDriftTests(_DoctorCase):
         self.assertIn(
             f"session {self.m8}: agent definitions differ from the installed catalog ({slot}; catalog "
             "content changed since launch, bindings unchanged); applies at the next resume "
-            f"(claude-multi -r {self.mid}) — or claude-multi doctor --repair {self.mid} now",
+            f"(charmer -r {self.mid}) — or charmer doctor --repair {self.mid} now",
             attention,
         )
         code, output = _run_doctor(self, "--repair", self.mid)
@@ -2724,7 +2724,7 @@ class GeneratedPreviewTests(unittest.TestCase):
         from charmer.cli import doctor_actions
         with tempfile.TemporaryDirectory(prefix='cm-unadmitted-') as temporary:
             home = Path(temporary)
-            declaration = home / '.config/claude-multi/providers.d/unadmitted.json'
+            declaration = home / '.config/charmer/providers.d/unadmitted.json'
             declaration.parent.mkdir(parents=True); declaration.write_bytes(b'fixture declaration')
             store = sessions.SessionStore(home / 'state', sessions.default_schema(), read_only=True)
             out = io.StringIO()
@@ -2780,7 +2780,7 @@ class ManagedPreflightLaunchTests(V4Case):
 
     def test_version_bounds_and_providers_refuse_with_an_explanation(self):
         self.policy({"requiredMinimumVersion": "9.0.0"})
-        text = self.refused("requiredMinimumVersion: Claude Code 2.1.281, the version claude-multi runs")
+        text = self.refused("requiredMinimumVersion: Claude Code 2.1.281, the version charmer runs")
         self.assertIn("ask the policy owner", text)
         self.assertNotIn("9.0.0", text)
         self.policy({"allowedProviders": ["anthropic"]})
@@ -2960,11 +2960,11 @@ class PinFactsDoctorTests(V4Case):
         platform = pin_mod.host_platform()
         self.assertIn(f"Claude Code pin: 2.1.281 (verified 2026-09-25; evidence on {platform}: battery).", info)
         self.assertIn("Your Claude Code is 2.1.290 (~/.local/share/claude/versions/2.1.290); "
-                      "this claude-multi runs 2.1.281.", info)
+                      "this charmer runs 2.1.281.", info)
         # The user's claude is newer: stale, with no command to run.
         self.assertEqual(len(attention), 1)
         self.assertIn("your Claude Code is 2.1.290", attention[0])
-        self.assertNotIn("claude-multi update", attention[0])
+        self.assertNotIn("charmer update", attention[0])
         self.assertNotIn("run `", attention[0])
 
     def test_age_alone_makes_the_pin_stale(self):
@@ -2981,7 +2981,7 @@ class PinFactsDoctorTests(V4Case):
     def test_unknown_or_missing_user_client(self):
         (self.root / "bin/claude").unlink()
         info = self.report((2026, 9, 26))[1]
-        self.assertIn("Your Claude Code: none on PATH; this claude-multi runs its own copy of 2.1.281.", info)
+        self.assertIn("Your Claude Code: none on PATH; this charmer runs its own copy of 2.1.281.", info)
         script = self.root / "bin/claude"
         script.write_bytes(b"#!/bin/sh\n")
         script.chmod(0o755)

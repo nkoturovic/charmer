@@ -1,10 +1,10 @@
-"""Shared domain-error base; deliberately imports no claude-multi modules."""
+"""Shared domain-error base; deliberately imports no charmer modules."""
 
 from __future__ import annotations
 
 
-class ClaudeMultiError(Exception):
-    """Base of every claude-multi domain error.
+class CharmerError(Exception):
+    """Base of every charmer domain error.
 
     Subclasses retain their historical builtin base through multiple
     inheritance, so existing ValueError/OSError handlers keep working.
@@ -20,5 +20,5 @@ class ClaudeMultiError(Exception):
 
 
 
-class CLIError(ClaudeMultiError, RuntimeError):
+class CLIError(CharmerError, RuntimeError):
     """Actionable command or interaction failure."""

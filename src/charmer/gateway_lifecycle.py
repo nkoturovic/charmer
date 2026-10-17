@@ -31,7 +31,7 @@ install's port first.
 
 On-demand ``ensure`` serializes starters with ``gateway-start.lock``; reuses a
 gateway proven ours whose /healthz answers; otherwise spawns one detached
-``claude-multi-proxy run --prepare-and-exec`` (new session, umask 077, cwd the
+``charmer-proxy run --prepare-and-exec`` (new session, umask 077, cwd the
 gateway directory, an allowlisted environment, stdout and stderr to a fresh
 per-instance log) and waits, bounded, for its start readiness: ours, healthy,
 and serving the render sentinel of the configuration it prepared. It reports
@@ -93,7 +93,7 @@ BUSY_EXIT = 75  # run's status while another instance holds the lock
 
 SPAWN_PATH = "/usr/bin:/bin"
 # Where a package links the gateway executable it ships (relative to its root).
-PACKAGED_GATEWAY = Path("libexec") / "claude-multi"
+PACKAGED_GATEWAY = Path("libexec") / "charmer"
 _SPAWN_PASS = frozenset({"LANG", "LANGUAGE", "TMPDIR", "SSL_CERT_FILE", "SSL_CERT_DIR"})
 # Never handed to a spawned gateway: the gateway is not a session (the session
 # markers would outlive the session that started it), and a spawned gateway
@@ -117,7 +117,7 @@ EXIT_CODES = {"ready": 0, "stopped": 0, "refused": 1, "blocked": 1, "failed": 1,
               "timeout": 1, "busy": 1, "held": 1, "inhibited": 1}
 
 
-class LifecycleError(errors.ClaudeMultiError, RuntimeError):
+class LifecycleError(errors.CharmerError, RuntimeError):
     """The gateway lifecycle cannot proceed (e.g. no proxy entry point)."""
 
 
@@ -225,7 +225,7 @@ def spawn_environment(environ: Mapping[str, str], home: Path | str, *,
 
 
 def packaged_gateway(root: Path | str | None) -> str | None:
-    """The gateway an installation ships (``libexec/claude-multi/<binary>``), or None."""
+    """The gateway an installation ships (``libexec/charmer/<binary>``), or None."""
 
     if root is None:
         return None
@@ -251,7 +251,7 @@ def published_sentinel(home: Path) -> str | None:
     try:
         raw = state.read_private(paths.gateway_config_dir({"HOME": str(home)}) / "config.yaml")
         return render.document_sentinel(served_plan.parse_restricted_yaml(raw.decode("utf-8")))
-    except (OSError, ValueError, KeyError, IndexError, TypeError, errors.ClaudeMultiError):
+    except (OSError, ValueError, KeyError, IndexError, TypeError, errors.CharmerError):
         return None
 
 
@@ -411,7 +411,7 @@ class Gateway:
         if listener.kind == FOREIGN:
             return Observation(FOREIGN, f"port {port} is held by {listener.detail}", stamp, listener, lock)
         if listener.kind == "ours" and lock is True and alive is True:
-            return Observation(OURS, f"the claude-multi gateway runs on port {port}", stamp, listener, lock)
+            return Observation(OURS, f"the charmer gateway runs on port {port}", stamp, listener, lock)
         if listener.kind == "none":
             if lock is False:
                 return Observation(STOPPED, "the gateway is not running", stamp, listener, lock)
@@ -438,7 +438,7 @@ class Gateway:
             starts = [datetime.datetime.fromisoformat(value) for value in document["starts"]]
             if document.get("version") != 1 or any(item.tzinfo is None for item in starts):
                 raise ValueError("invalid start history")
-        except (OSError, ValueError, KeyError, TypeError, errors.ClaudeMultiError):
+        except (OSError, ValueError, KeyError, TypeError, errors.CharmerError):
             return []
         floor = self.seams.now() - CRASH_WINDOW
         return [item for item in starts if item > floor]
@@ -450,7 +450,7 @@ class Gateway:
     def reset_history(self) -> None:
         try:
             self._write_history([])
-        except (OSError, errors.ClaudeMultiError):
+        except (OSError, errors.CharmerError):
             pass
 
     # ------------------------------------------------------------ helpers
@@ -504,7 +504,7 @@ class Gateway:
         return tuple(file_log.tail_lines(path, lines=LOG_TAIL_READ))
 
     def _proxy_entry(self) -> tuple[list[str], bool]:
-        """``(command, script)``: the ``claude-multi-proxy`` entry point next to
+        """``(command, script)``: the ``charmer-proxy`` entry point next to
         this launcher; ``script`` when it is the bare Python entry (no wrapper
         pins the gateway binary for it)."""
 
@@ -512,14 +512,14 @@ class Gateway:
             return list(self._proxy_command), False
         hook = self.environ.get("CLAUDE_MULTI_HOOK_COMMAND")
         if hook:
-            sibling = Path(hook).with_name("claude-multi-proxy")
+            sibling = Path(hook).with_name("charmer-proxy")
             if sibling.is_file() and os.access(sibling, os.X_OK):
                 return [str(sibling)], False
-        script = layout.entry_point("claude-multi-proxy", self.installation) if self.installation else None
+        script = layout.entry_point("charmer-proxy", self.installation) if self.installation else None
         if script is not None and script.is_file():
             return [sys.executable, str(script)], True
-        raise LifecycleError("claude-multi-proxy was not found next to this launcher",
-                             remedy="reinstall claude-multi")
+        raise LifecycleError("charmer-proxy was not found next to this launcher",
+                             remedy="reinstall charmer")
 
     def spawn_argv(self, instance: str) -> list[str]:
         # The state root is always explicit: the spawn environment carries no
@@ -539,7 +539,7 @@ class Gateway:
             remedy = (f"free port {self.port}, or give the gateway another port in "
                       f"{paths.display(endpoint.endpoint_path(self.home), {'HOME': str(self.home)})}")
         else:
-            remedy = "check it with: claude-multi gateway status"
+            remedy = "check it with: charmer gateway status"
         return Outcome("refused", f"{seen.detail}; {what}", remedy)
 
     # ------------------------------------------------------------ ensure
@@ -567,7 +567,7 @@ class Gateway:
         if lock is None:
             unlocked = self._ensure_unlocked(deadline, max_wait, choose_port=choose_port, destination=destination)
             return unlocked or Outcome("busy", "another start of this gateway is still in progress",
-                                       "retry in a moment, or check: claude-multi gateway status")
+                                       "retry in a moment, or check: charmer gateway status")
         try:
             return self.ensure_locked(deadline, max_wait, explicit=explicit, destination=destination,
                                       choose_port=choose_port)
@@ -598,7 +598,7 @@ class Gateway:
         return Outcome(
             "refused", f"this session sends to {termtext.visible_text(destination)}, but the gateway's "
             f"endpoint is now {self.base_url}; no token was sent",
-            "exit the session and resume it (claude-multi -r <session>): resuming recompiles it for the "
+            "exit the session and resume it (charmer -r <session>): resuming recompiles it for the "
             "current endpoint")
 
     def reload_endpoint(self) -> None:
@@ -663,7 +663,7 @@ class Gateway:
         if clear and self.inhibition_token is not None:
             try:
                 gateway_inhibition.end(self.state_root, self.inhibition_token, held_lock=True)
-            except (OSError, errors.ClaudeMultiError):
+            except (OSError, errors.CharmerError):
                 pass
         self.inhibition_token = None
         self._handoff_recorded = False
@@ -724,8 +724,8 @@ class Gateway:
                     "blocked",
                     f"BLOCKED: the gateway was started {len(starts)} times in the last "
                     f"{int(CRASH_WINDOW.total_seconds() // 60)} minutes; automatic starts are paused",
-                    "read the log (claude-multi gateway logs), fix the cause, then start it "
-                    "yourself: claude-multi gateway start",
+                    "read the log (charmer gateway logs), fix the cause, then start it "
+                    "yourself: charmer gateway start",
                     self._tail(),
                 )
         return self._spawn(deadline, max_wait)
@@ -737,7 +737,7 @@ class Gateway:
 
         try:
             return gateway_hold.prune_at_start(self.state_root, self.providers())
-        except (OSError, errors.ClaudeMultiError) as exc:
+        except (OSError, errors.CharmerError) as exc:
             return gateway_hold.PruneReport(skipped=str(exc))
 
     def _spawn(self, deadline: float, max_wait: float) -> Outcome:
@@ -750,16 +750,16 @@ class Gateway:
             argv, env = self.spawn_argv(instance), self.spawn_env()
             self._write_history([*self.recent_starts(), started])
             descriptor, log_path = file_log.create_instance_log(self.logs_dir, started, instance)
-        except (OSError, errors.ClaudeMultiError) as exc:
+        except (OSError, errors.CharmerError) as exc:
             return Outcome("failed", f"the gateway could not be started: {exc}",
-                           getattr(exc, "remedy", None) or "check: claude-multi doctor")
+                           getattr(exc, "remedy", None) or "check: charmer doctor")
         try:
             remaining = max(MIN_CALL, deadline - self.seams.clock())
             code = self.seams.spawn(argv, cwd=str(self.workdir), env=env, output=descriptor,
                                     timeout=min(posix_process.DETACH_TIMEOUT, remaining))
         except OSError as exc:
             return Outcome("failed", f"the gateway could not be started ({exc.strerror or type(exc).__name__})",
-                           "check: claude-multi doctor", self._tail(log_path))
+                           "check: charmer doctor", self._tail(log_path))
         finally:
             os.close(descriptor)
         if code == BUSY_EXIT:
@@ -769,13 +769,13 @@ class Gateway:
             return self._refused(seen, "another gateway instance holds the lock")
         if code != 0:
             what = "did not detach in time" if code is None else f"exited with status {code}"
-            return Outcome("failed", f"the gateway starter {what}", "read its log: claude-multi gateway logs",
+            return Outcome("failed", f"the gateway starter {what}", "read its log: charmer gateway logs",
                            self._tail(log_path))
         return self._await_ready(deadline, max_wait, instance=instance, log_path=log_path, dispatched=True)
 
     def _out_of_time(self, max_wait: float, what: str, log_path: Path | None = None) -> Outcome:
         return Outcome("timeout", f"the gateway is not ready after {max_wait:g} s: {what}",
-                       "check it with: claude-multi gateway status", self._tail(log_path) if log_path else ())
+                       "check it with: charmer gateway status", self._tail(log_path) if log_path else ())
 
     def await_ready(self, deadline: float, max_wait: float) -> Outcome:
         """Wait (bounded) until the gateway is ours and answers health."""
@@ -809,20 +809,20 @@ class Gateway:
         while True:
             if self.seams.clock() > deadline:
                 return Outcome("timeout", f"the gateway is not ready after {max_wait:g} s: {missing}",
-                               "read its log: claude-multi gateway logs", self._tail(log_path))
+                               "read its log: charmer gateway logs", self._tail(log_path))
             seen = self.observe(deadline=deadline)
             current = seen.stamp.instance if seen.stamp is not None else None
             if instance is not None and current != instance:
                 if seen.lock is False:
                     return Outcome("failed", "the gateway exited before it started",
-                                   "read its log: claude-multi gateway logs", self._tail(log_path))
+                                   "read its log: charmer gateway logs", self._tail(log_path))
                 missing = "the gateway is still preparing its configuration"
             elif seen.state == FOREIGN:
                 return self._refused(seen, "no token was sent")
             elif seen.state == STOPPED:
                 if not self._unit_starting(deadline):
                     return Outcome("failed", "the gateway exited during its start",
-                                   "read its log: claude-multi gateway logs", self._tail(log_path))
+                                   "read its log: charmer gateway logs", self._tail(log_path))
                 missing = "the service is still starting"
             elif seen.state == OURS:
                 ready, missing = self._ready(seen, fresh=instance is not None, deadline=deadline)
@@ -839,7 +839,7 @@ class Gateway:
             remaining = deadline - self.seams.clock()
             if remaining <= 0 or once:
                 return Outcome("timeout", f"the gateway is not ready after {max_wait:g} s: {missing}",
-                               "read its log: claude-multi gateway logs", self._tail(log_path))
+                               "read its log: charmer gateway logs", self._tail(log_path))
             self.seams.sleep(min(POLL, remaining))
 
     def _unit_starting(self, deadline: float) -> bool:
@@ -1000,7 +1000,7 @@ class Gateway:
             remaining = deadline - self.seams.clock()
             if remaining <= 0:
                 return Outcome("timeout", f"the gateway (pid {target.pid}) did not exit within {wait:g} s",
-                               "check it with: claude-multi gateway status")
+                               "check it with: charmer gateway status")
             self.seams.sleep(min(POLL, remaining))
 
     def _stop_service(self, wait: float) -> Outcome:
@@ -1077,7 +1077,7 @@ class Gateway:
         health = self._health() if seen.state in (OURS, STARTING) else None
         try:
             hold = self.persistence_hold(seen)
-        except (OSError, errors.ClaudeMultiError) as exc:
+        except (OSError, errors.CharmerError) as exc:
             hold = gateway_hold.HoldReport(True, (f"the hold cannot be evaluated: {exc}",), "unknown")
         log = None
         logs: tuple[file_log.InstanceLog, ...] = ()

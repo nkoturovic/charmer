@@ -1,4 +1,4 @@
-"""The claude-multi entry point.
+"""The charmer entry point.
 
 ``main`` parses the argv and routes it.  Its module-level imports are the
 lightweight hook path only (pinned by ``test_cli_split``): every session-event
@@ -72,15 +72,15 @@ def main(
         # client on an argument it cannot parse; a legacy start/end keeps
         # argparse's exit 2.
         if exc.code not in (0, None) and hooks.is_nonblocking_hook_argv(launcher_args):
-            sys.stderr.write("claude-multi: hook arguments rejected; event ignored\n")
+            sys.stderr.write("charmer: hook arguments rejected; event ignored\n")
             if launcher_args[1:2] == ["premodel"]:
                 # A model switch the launcher cannot check is refused (fail
                 # closed), never silently allowed.
                 stream = output_stream or sys.stdout
                 stream.write(
                     hooks.premodel_fail_closed_response(
-                        "claude-multi premodel failed: hook arguments rejected "
-                        "— run claude-multi doctor"
+                        "charmer premodel failed: hook arguments rejected "
+                        "— run charmer doctor"
                     )
                 )
                 stream.flush()
@@ -91,7 +91,7 @@ def main(
     # Refuse the retired flag before constructing Runtime (which refreshes
     # shims and creates store directories), including picker/print launches.
     if args.legacy:
-        sys.stderr.write(f"claude-multi: {cli_text.LEGACY_REFUSAL}\n")
+        sys.stderr.write(f"charmer: {cli_text.LEGACY_REFUSAL}\n")
         sys.stderr.flush()
         return 2
     owned_tty: tuple[TextIO, TextIO] | None = None
@@ -279,7 +279,7 @@ def main(
                     refresh_shims=not read_only,
                     initialize_session_store=not (read_only or plain_doctor),
                 )
-            except (errors.ClaudeMultiError, OSError) as exc:
+            except (errors.CharmerError, OSError) as exc:
                 if not plain_doctor or not isinstance(exc, OSError):
                     raise
                 # A doctor report never needs the preparation that failed:
@@ -360,7 +360,7 @@ def main(
                 if session_id is None:
                     raise cli_errors.CLIError(
                         "no managed session is recorded for this directory",
-                        remedy="claude-multi -r SESSION (no value opens the picker), or start fresh: claude-multi",
+                        remedy="charmer -r SESSION (no value opens the picker), or start fresh: charmer",
                     )
             record = runtime.session_store.resolve(session_id)
             selection._refuse_resume_override(args.profile, record, profile_file=args.profile_file)
@@ -440,25 +440,25 @@ def main(
         if _json_requested(args):
             return _json_error(args, exc, output)
         if args.command == "session-event":
-            sys.stderr.write(f"claude-multi: {exc}\n")
+            sys.stderr.write(f"charmer: {exc}\n")
             if getattr(args, "event", None) == "premodel":
                 # A model switch over state this release cannot read is
                 # refused (fail closed), never silently allowed.
                 message = termtext.visible_message(exc)
                 if exc.remedy:
                     message += " — " + termtext.visible_text(exc.remedy)
-                output.write(hooks.premodel_fail_closed_response(f"claude-multi premodel failed: {message}"))
+                output.write(hooks.premodel_fail_closed_response(f"charmer premodel failed: {message}"))
                 output.flush()
             return 0
         return _report_error(exc)
-    except errors.ClaudeMultiError as exc:
+    except errors.CharmerError as exc:
         if _json_requested(args):
             return _json_error(args, exc, output)
         if args.command == "session-event":
             # Claude shows a SessionStart/End hook's stderr, never its stdout,
             # and exit 2 there is no blocking signal: stderr, exit 1, nothing
             # on stdout.
-            sys.stderr.write(f"claude-multi: {_error_text(exc)}\n")
+            sys.stderr.write(f"charmer: {_error_text(exc)}\n")
             return 1
         return _report_error(exc)
     except OSError as exc:
@@ -466,7 +466,7 @@ def main(
             raise
         if _json_requested(args):
             return _json_error(args, cli_errors.CLIError(_failure_text(exc, os.environ)), output)
-        sys.stderr.write(f"claude-multi: {_failure_text(exc, os.environ)}\n")
+        sys.stderr.write(f"charmer: {_failure_text(exc, os.environ)}\n")
         sys.stderr.flush()
         return 1
     finally:
@@ -531,7 +531,7 @@ def _list_schema(name: str) -> int:
     return int(schema)
 
 
-def _error_text(exc: errors.ClaudeMultiError) -> str:
+def _error_text(exc: errors.CharmerError) -> str:
     """The error's text and its one fix, safe for a terminal. A filesystem
     failure without a remedy of its own gets the standard one."""
 
@@ -545,11 +545,11 @@ def _error_text(exc: errors.ClaudeMultiError) -> str:
     return message
 
 
-def _report_error(exc: errors.ClaudeMultiError) -> int:
+def _report_error(exc: errors.CharmerError) -> int:
     """An ordinary command's failure or refusal on stderr: exit 1, or the
     error type's own status (2 for an invalid command line)."""
 
-    sys.stderr.write(f"claude-multi: {_error_text(exc)}\n")
+    sys.stderr.write(f"charmer: {_error_text(exc)}\n")
     sys.stderr.flush()
     return getattr(type(exc), "exit_status", 1)
 
@@ -588,7 +588,7 @@ def _failure_text(exc: BaseException, environ: Any) -> str:
     text = state.failure_text(exc, environ, own_message=False)
     if text is not None:
         return text
-    return f"the operation failed{state.failure_location(exc, environ)}\n  fix: run claude-multi doctor"
+    return f"the operation failed{state.failure_location(exc, environ)}\n  fix: run charmer doctor"
 
 
 def _interrupted(args: Any) -> int:
@@ -596,12 +596,12 @@ def _interrupted(args: Any) -> int:
     what happened and exit 130."""
 
     launching = args is not None and getattr(args, "command", None) in (None, "direct")
-    sys.stderr.write("\nclaude-multi: cancelled" + (" — nothing was launched" if launching else "") + "\n")
+    sys.stderr.write("\ncharmer: cancelled" + (" — nothing was launched" if launching else "") + "\n")
     sys.stderr.flush()
     return 130
 
 
-def _json_error(args: Any, exc: errors.ClaudeMultiError, output: TextIO) -> int:
+def _json_error(args: Any, exc: errors.CharmerError, output: TextIO) -> int:
     """A JSON command that failed before it could report: the error on
     stderr and the command's own JSON shape on stdout (exit 1) — a list's
     failure document (:func:`list_error_document`), the first-run checks'
@@ -609,7 +609,7 @@ def _json_error(args: Any, exc: errors.ClaudeMultiError, output: TextIO) -> int:
     stdout carries exactly one document."""
 
     message = _error_text(exc)
-    sys.stderr.write(f"claude-multi: {message}\n")
+    sys.stderr.write(f"charmer: {message}\n")
     listed = _json_list(args)
     if listed is not None:
         from charmer import strict_json

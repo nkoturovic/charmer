@@ -38,7 +38,7 @@ MODELS_LIST_SCHEMA = 1
 
 
 def _models_listing(runtime: runtime_mod.Runtime, output_stream: Any) -> int:
-    """``claude-multi models`` and ``models list``: the lines, then retired keys.
+    """``charmer models`` and ``models list``: the lines, then retired keys.
 
     One row per line of the merged (shipped and your own) view: key,
     display, generation, provider, class (``context.ordinary_profile``;
@@ -122,7 +122,7 @@ report = providers_cmd.report
 OperatorCommandError = providers_cmd.OperatorCommandError
 
 CANDIDATES_HEADER = "Candidates — advisory only; nothing declared or admitted"
-CANDIDATES_NEXT = "next: claude-multi models add PROVIDER WIRE --context N --source registry"
+CANDIDATES_NEXT = "next: charmer models add PROVIDER WIRE --context N --source registry"
 REGISTRY_UNAVAILABLE = "Pinned registry unavailable; showing served candidates only."
 GATEWAY_UNAVAILABLE = "Gateway observation unavailable; showing pinned-registry candidates only."
 
@@ -132,7 +132,7 @@ def _tokens(value: int | None) -> str:
 
 
 def _models_candidates(runtime: runtime_mod.Runtime, include_all: bool, output_stream: TextIO) -> int:
-    """``claude-multi models --candidates [--all]``.
+    """``charmer models --candidates [--all]``.
 
     The offline pinned registry plus one loopback /v1/models snapshot; no
     provider request, declaration prompt or write. Registry figures are
@@ -193,7 +193,7 @@ def render_identity(runtime: runtime_mod.Runtime) -> tuple[str | None, frozenset
     if snap.render_error is not None:
         return None, snap.served, f"the expected render failed ({snap.render_error})"
     if snap.served is None:
-        return snap.sentinel, None, "the gateway is not reachable (claude-multi-proxy status)"
+        return snap.sentinel, None, "the gateway is not reachable (charmer-proxy status)"
     if snap.config_drift is not False:
         return snap.sentinel, snap.served, "the on-disk gateway config is not the current render"
     if snap.sentinel not in snap.served:
@@ -205,7 +205,7 @@ def _served_check(key: str, line: operator_mod.ResolvedOperatorLine, served: fro
     aliases = operator_mod.line_aliases(line.core_entry)
     count = len(set(aliases) & set(served or ()))
     if count < len(aliases):
-        return f"{count}/{len(aliases)} aliases served — claude-multi providers apply"
+        return f"{count}/{len(aliases)} aliases served — charmer providers apply"
     return ""
 
 
@@ -295,7 +295,7 @@ def _operator_line(ctx: providers_cmd.OperatorContext, key: str, verb: str) -> o
     if line is not None:
         return line
     if key in layer.pending:
-        raise OperatorCommandError(f"{verb}: {key} is pending migration — claude-multi providers migrate-custom --apply")
+        raise OperatorCommandError(f"{verb}: {key} is pending migration — charmer providers migrate-custom --apply")
     if key in layer.displaced:
         displaced = layer.displaced[key]
         raise OperatorCommandError(
@@ -304,7 +304,7 @@ def _operator_line(ctx: providers_cmd.OperatorContext, key: str, verb: str) -> o
     file_id = operator_mod.line_file_ids(ctx.read).get(key)
     found = [p.text() for p in ctx.layer.problems_by_file.get(operator_mod.file_label(file_id), ())] if file_id else []
     detail = ("\n  " + "\n  ".join(found)) if found else ""
-    raise OperatorCommandError(f"{verb}: no valid declaration of {key} (claude-multi providers validate){detail}")
+    raise OperatorCommandError(f"{verb}: no valid declaration of {key} (charmer providers validate){detail}")
 
 
 def _catalog_view(runtime: runtime_mod.Runtime) -> Any:
@@ -354,12 +354,12 @@ def _models_add(runtime: runtime_mod.Runtime, args: argparse.Namespace, *, outpu
             document = strict_json.loads(previous)
         except strict_json.StrictJSONError:
             return fail(f"models add: {operator_mod.file_label(provider_id)} is not valid JSON — "
-                        "claude-multi providers validate")
+                        "charmer providers validate")
     elif catalog_provider is not None:
         document = {"version": operator_mod.DATA_VERSION, "lines": {}}
     else:
         return fail(f"models add: unknown provider {provider_id} — declare it first: "
-                    f"claude-multi providers add {provider_id} ...")
+                    f"charmer providers add {provider_id} ...")
     provider = (ctx.layer.providers[provider_id].entry if provider_id in ctx.layer.providers
                 else catalog_provider or document.get("provider") or {})
     key = args.key or _derived_key(args.wire)
@@ -394,16 +394,16 @@ def declare_line(
             document = strict_json.loads(previous)
         except strict_json.StrictJSONError:
             return fail(f"{verb}: {operator_mod.file_label(provider_id)} is not valid JSON — "
-                        "claude-multi providers validate")
+                        "charmer providers validate")
     elif catalog_provider is not None:
         document = {"version": operator_mod.DATA_VERSION, "lines": {}}
     else:
         return fail(f"{verb}: unknown provider {provider_id} — declare it first: "
-                    f"claude-multi providers add {provider_id} ...")
+                    f"charmer providers add {provider_id} ...")
     wire = line["wire_model"]
     if key in document.get("lines", {}):
         return fail(f"{verb}: {key} is already declared in {operator_mod.file_label(provider_id)} — "
-                    f"edit it: claude-multi models edit {key}")
+                    f"edit it: charmer models edit {key}")
     document = {**document, "lines": {**document.get("lines", {}), key: dict(line)}}
     raw = operator_mod.document_bytes(document)
     layer = providers_cmd.proposed(ctx, {provider_id: raw})
@@ -434,9 +434,9 @@ def declare_line(
     status = layer.route_status.get(provider_id)
     if status in ("unapproved", "changed"):
         report(output_stream, f"provider {provider_id}: route {status} — not served until "
-                              f"claude-multi providers approve {provider_id}")
-    report(output_stream, f"select this model on a configured route; optional: claude-multi models admit {key} "
-                          f"or claude-multi models qualify {key} --smoke")
+                              f"charmer providers approve {provider_id}")
+    report(output_stream, f"select this model on a configured route; optional: charmer models admit {key} "
+                          f"or charmer models qualify {key} --smoke")
     providers_cmd.verify(runtime, result, output_stream)
     return 0
 
@@ -514,7 +514,7 @@ def _confirm_revoke(key: str, *, input_stream: TextIO, interactive: bool, yes: b
         return
     if not interactive:
         raise cli_errors.CLIError(f"models revoke {key} needs a terminal to confirm; nothing changed",
-                                  remedy=f"claude-multi models revoke {key} --yes")
+                                  remedy=f"charmer models revoke {key} --yes")
     if not consent.confirm(REVOKE_QUESTION.format(key=key), input_stream=input_stream):
         raise setup_model.Declined(f"models revoke {key}: not revoked — nothing changed")
 
@@ -724,7 +724,7 @@ def _models_show(runtime: runtime_mod.Runtime, key: str, resolved: bool, evidenc
     line = ctx.layer.lines.get(key)
     if resolved:
         if line is None:
-            return fail(f"models show {key}: no valid operator declaration (claude-multi providers validate)")
+            return fail(f"models show {key}: no valid operator declaration (charmer providers validate)")
         document = {"key": key, "definition_digest": line.definition_digest, "entry": line.core_entry,
                     "family": line.family, "origin": line.origin, "selector_mode": line.selector_mode,
                     "source": line.source, "provider": line.provider_id}
@@ -738,7 +738,7 @@ def _models_show(runtime: runtime_mod.Runtime, key: str, resolved: bool, evidenc
         return 0
     if line is None:
         status = providers_cmd.line_status(key, ctx, providers_cmd.admitted_keys(runtime))
-        return fail(f"models show {key}: {status} (claude-multi providers validate)")
+        return fail(f"models show {key}: {status} (charmer providers validate)")
     entry = line.core_entry
     evidence = operator_mod.load_evidence(ctx.env, ctx.schemas)
     found = evidence.lines.get(key) if evidence is not None else None
@@ -911,7 +911,7 @@ def _models_qualify(runtime: runtime_mod.Runtime, args: argparse.Namespace, *, i
     secret = (selection.alternative.secret_name if selection is not None and selection.alternative is not None
               else ((provider["transport"].get("auth") or {}).get("secret_ref") or "").removeprefix("env:") or None)
     if secret is not None and not _credential_present(ctx, provider, secret):
-        raise OperatorCommandError(f"{verb}: credential {secret} is not set — claude-multi providers set-key {pid}")
+        raise OperatorCommandError(f"{verb}: credential {secret} is not set — charmer providers set-key {pid}")
     sentinel, served, problem = render_identity(runtime)
     if problem:
         raise OperatorCommandError(f"{verb}: {problem} — nothing sent")
@@ -965,15 +965,15 @@ def _models_command(
     runtime: runtime_mod.Runtime, args: argparse.Namespace, *, input_stream: TextIO, output_stream: TextIO,
     interactive: bool,
 ) -> int:
-    """``claude-multi models [VERB]``: exit 0 ok, 1 refused, 2 usage."""
+    """``charmer models [VERB]``: exit 0 ok, 1 refused, 2 usage."""
 
     command = getattr(args, "models_command", None)
     candidates = bool(getattr(args, "candidates", False))
     if getattr(args, "candidates_all", False) and not candidates:
-        consent.prompt_stream().write("claude-multi models: --all requires --candidates\n")
+        consent.prompt_stream().write("charmer models: --all requires --candidates\n")
         return 2
     if candidates and command is not None:
-        consent.prompt_stream().write(f"claude-multi models: --candidates cannot accompany `models {command}`\n")
+        consent.prompt_stream().write(f"charmer models: --candidates cannot accompany `models {command}`\n")
         return 2
     if candidates:
         return _models_candidates(runtime, bool(getattr(args, "candidates_all", False)), output_stream)
@@ -1001,12 +1001,12 @@ def _models_command(
         if command == "qualify":
             return _models_qualify(runtime, args, input_stream=input_stream, output_stream=output_stream)
     except providers_cmd.OperatorUsageError as exc:
-        consent.prompt_stream().write(f"claude-multi models {command}: {exc}\n")
+        consent.prompt_stream().write(f"charmer models {command}: {exc}\n")
         return 2
     except sessions.StateMarkerError:
         raise
     except KeyboardInterrupt:
-        consent.prompt_stream().write("claude-multi: cancelled\n")
+        consent.prompt_stream().write("charmer: cancelled\n")
         return 130
     except providers_cmd._REFUSALS as exc:
         return providers_cmd.refusal_exit(exc)

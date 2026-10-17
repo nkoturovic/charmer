@@ -81,7 +81,7 @@ class ProviderRouteJourneys(JourneyCase):
         key = f"custom-{name}-chat"
         options = {"presets": True, "serve_render": True}
         child = self.child(setup=MODELS_CURSOR.format(key=key), options=options, **size)
-        child.expect("claude-multi — Get started")
+        child.expect("charmer — Get started")
         self.to_picker_entry(child, f"preset:{name}", options)
         child.expect(cli_text.PRESET_FORM_TITLE.format(display=info.display))
         child.keys(ENTER)  # the preset's own name
@@ -101,7 +101,7 @@ class ProviderRouteJourneys(JourneyCase):
         child.keys(ENTER)  # Default Skip; Models records an optional local badge below.
         child.expect(f"Added {name}")
         child.keys(ESC)
-        child.expect("claude-multi — Get started")
+        child.expect("charmer — Get started")
         child.keys(ESC)
         child.expect("Status  ")
         self.admit_on_models(child)
@@ -123,7 +123,7 @@ class ProviderRouteJourneys(JourneyCase):
         index = self.reviewed_picker_index("openai:api-key")
         child = self.child(setup=REVIEWED, after=TRANSPORT_AFTER, **size)
         reviewed = self.fact(child, "REVIEWED")
-        child.expect("claude-multi — Get started")
+        child.expect("charmer — Get started")
         child.keys("a")
         child.expect("connect a provider — more can follow")
         child.keys(HOME, *([DOWN] * index), ENTER)
@@ -134,7 +134,7 @@ class ProviderRouteJourneys(JourneyCase):
         child.keys("sk-openai-journey-key", ENTER, ENTER)
         child.expect("OpenAI models now use your OpenAI API key")
         child.keys(ESC)
-        child.expect("claude-multi — Get started")
+        child.expect("charmer — Get started")
         child.keys(ESC)
         child.expect("profile: openai")
         child.keys(ENTER)
@@ -158,7 +158,7 @@ class ProviderRouteJourneys(JourneyCase):
         child = self.child(setup=(REVIEWED, OPENAI_ROW), after=TRANSPORT_AFTER, **size)
         self.fact(child, "REVIEWED")
         row = int(self.fact(child, "ROW"))
-        child.expect("claude-multi — Get started")
+        child.expect("charmer — Get started")
         child.keys(ESC)
         child.expect("Status  ")
         child.keys("g")

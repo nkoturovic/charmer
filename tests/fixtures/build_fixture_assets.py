@@ -124,7 +124,7 @@ def _aggregator_line(key, family, wire, display, generation, default_effort, tok
         "default_effort": default_effort,
         "display": display,
         "efforts": {
-            level: {"proxy_contract": f"output-config-{level}", "selector": f"claude-multi-{key}-{level}{suffix}"}
+            level: {"proxy_contract": f"output-config-{level}", "selector": f"charmer-{key}-{level}{suffix}"}
             for level in ("high", "xhigh")
         },
         "family": family,
@@ -162,8 +162,8 @@ FIXTURE_RETIRED = {
             "reason": "Fixture retired line: frozen test data.",
             "roles": "all",
             "selectors": {
-                "claude-multi-muse-spark-high[1m]": "output-config-high",
-                "claude-multi-muse-spark-xhigh[1m]": "output-config-xhigh",
+                "charmer-muse-spark-high[1m]": "output-config-high",
+                "charmer-muse-spark-xhigh[1m]": "output-config-xhigh",
             },
             "since_catalog": 31,
             "successor": None,

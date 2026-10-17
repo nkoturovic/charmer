@@ -4,7 +4,7 @@ Two kinds of gateway are accepted:
 
 - A Nix store output (``/nix/store/...``): the explicitly selected one
   (``CLAUDE_MULTI_TEST_CLI_PROXY_API``) or, without a selection, the one the
-  installed ``claude-multi-proxy`` wrapper, ``PATH`` or the Nix profile
+  installed ``charmer-proxy`` wrapper, ``PATH`` or the Nix profile
   names. It must resolve to a regular executable that is not group- or
   other-writable.
 - A content-bound build outside the store (a ``tools/build.py gateway``
@@ -50,7 +50,7 @@ BUILD_FORMAT = 1
 
 
 def _wrapper_gateway() -> str | None:
-    wrapper = shutil.which("claude-multi-proxy")
+    wrapper = shutil.which("charmer-proxy")
     if wrapper is None:
         return None
     try:

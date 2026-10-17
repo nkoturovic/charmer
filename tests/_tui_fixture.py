@@ -155,7 +155,7 @@ def fixture_runtime(
         "CLAUDE_MULTI_SECRET_ENV": str(secret_dir / "claude.env"),
     }
     environ.update(environ_extra or {})
-    token_dir = state.ensure_private_dir(Path(environ["HOME"]) / ".config" / "claude-multi")
+    token_dir = state.ensure_private_dir(Path(environ["HOME"]) / ".config" / "charmer")
     state.atomic_write(token_dir / "api-key", (FIXTURE_GATEWAY_TOKEN + "\n").encode("ascii"))
     served_set = frozenset(served_selectors(asset_root) if served is None else served)
 

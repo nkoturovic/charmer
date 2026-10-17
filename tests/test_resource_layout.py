@@ -175,7 +175,7 @@ class AuthorityTests(unittest.TestCase):
 
     def test_the_installation_is_the_tree_beside_the_package(self) -> None:
         self.assertEqual(layout.installation(), REPO_ROOT)
-        self.assertEqual(layout.entry_point("claude-multi"), REPO_ROOT / "bin" / "claude-multi")
+        self.assertEqual(layout.entry_point("charmer"), REPO_ROOT / "bin" / "charmer")
         self.assertEqual(layout.document("USAGE.md"), REPO_ROOT / "docs" / "USAGE.md")
         self.assertIsNone(layout.document("ABSENT.md"))
         self.assertEqual(layout.installation_resources(REPO_ROOT), RESOURCES_ROOT)
@@ -187,7 +187,7 @@ class AuthorityTests(unittest.TestCase):
 
     def test_an_installed_package_names_its_prefix(self) -> None:
         # The package in site-packages: the installation is the prefix, with
-        # its console scripts in bin/ and its documents in share/claude-multi
+        # its console scripts in bin/ and its documents in share/charmer
         # (tests/test_python_packaging.py runs such an installation).
         for site in ("lib/python3.14/site-packages", "lib64/python3.11/site-packages",
                      "lib/python3/dist-packages"):
@@ -198,7 +198,7 @@ class AuthorityTests(unittest.TestCase):
             with self.subTest(elsewhere=elsewhere):
                 self.assertIsNone(layout.installation_of(Path(elsewhere)))
         self.assertEqual(layout.installation_of(REPO_ROOT / "src" / "charmer"), REPO_ROOT)
-        self.assertEqual(layout.entry_point("claude-multi", "/prefix"), Path("/prefix/bin/claude-multi"))
+        self.assertEqual(layout.entry_point("charmer", "/prefix"), Path("/prefix/bin/charmer"))
 
     def test_installation_resources_of_an_installed_prefix(self) -> None:
         import shutil
@@ -210,9 +210,9 @@ class AuthorityTests(unittest.TestCase):
             (data / "catalog").mkdir(parents=True)
             shutil.copy2(RESOURCES_ROOT / "version.json", data / "version.json")
             self.assertEqual(layout.installation_resources(prefix), data)
-            (prefix / "share" / "claude-multi").mkdir(parents=True)
-            (prefix / "share" / "claude-multi" / "USAGE.md").write_text("usage\n")
-            self.assertEqual(layout.document("USAGE.md", prefix), prefix / "share" / "claude-multi" / "USAGE.md")
+            (prefix / "share" / "charmer").mkdir(parents=True)
+            (prefix / "share" / "charmer" / "USAGE.md").write_text("usage\n")
+            self.assertEqual(layout.document("USAGE.md", prefix), prefix / "share" / "charmer" / "USAGE.md")
 
 
 if __name__ == "__main__":

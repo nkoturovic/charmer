@@ -74,7 +74,7 @@ class SavedTests(PropagationCase):
         self.assertEqual(unreadable, [])
         text = self.saved(["mine"], apply_live=False)
         self.assertIn(
-            f"● {self.where(live)}: not applied — apply with: claude-multi lineup --session "
+            f"● {self.where(live)}: not applied — apply with: charmer lineup --session "
             f"{live['runtime_session_id']} follow", text,
         )
         text = self.saved(["mine"])
@@ -97,7 +97,7 @@ class SavedTests(PropagationCase):
         text = self.saved(["mine"])
         self.assertIn(
             f"● {self.where(live)}: relaunch needed (native agents: plan native → off); "
-            f"recorded as pending — exit it, then claude-multi -r {live['managed_id']}", text,
+            f"recorded as pending — exit it, then charmer -r {live['managed_id']}", text,
         )
         pending = self.store.load(live["managed_id"])["pending"]
         self.assertEqual((pending["kind"], pending["profile"]), ("profile", "mine"))

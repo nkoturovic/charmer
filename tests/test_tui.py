@@ -1,4 +1,4 @@
-"""Widget-layer tests for claude-multi's TUI (curses test double, no terminal).
+"""Widget-layer tests for charmer's TUI (curses test double, no terminal).
 
 The :class:`FakeWindow` double implements the exact window protocol the
 widgets use (``getmaxyx``/``addstr``/``erase``/``refresh``/``get_wch``/

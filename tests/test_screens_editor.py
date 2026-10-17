@@ -1520,7 +1520,7 @@ class ProfileEditEntryTests(_EditorCase):
                 fallback.assert_not_called()
                 self.assertEqual(code, 1)
                 self.assertIn(f"Saved profile {catalog.DEFAULT_SEED!r}.\n", out.getvalue())
-                self.assertIn(f"claude-multi: {text}", err.getvalue())
+                self.assertIn(f"charmer: {text}", err.getvalue())
 
     def test_ctrl_s_saves_and_offers_the_change_to_the_followers(self) -> None:
         out = io.StringIO()

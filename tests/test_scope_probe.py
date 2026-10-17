@@ -109,7 +109,7 @@ if MODE in {"inherited", "generated", "low-context"}:
                     {
                         "type": "tool_result",
                         "tool_use_id": block["id"],
-                        "content": "CLAUDE-MULTI-PROBE-DELEGATION-OK",
+                        "content": "CHARMER-PROBE-DELEGATION-OK",
                     }
                 ],
             },
@@ -136,7 +136,7 @@ else:
                     {
                         "type": "tool_result",
                         "tool_use_id": block["id"],
-                        "content": "CLAUDE-MULTI-PROBE-DELEGATION-OK",
+                        "content": "CHARMER-PROBE-DELEGATION-OK",
                     }
                 ],
             }
@@ -235,7 +235,7 @@ followup = {
                 {
                     "type": "tool_result",
                     "tool_use_id": block["id"],
-                    "content": "CLAUDE-MULTI-PROBE-DELEGATION-OK",
+                    "content": "CHARMER-PROBE-DELEGATION-OK",
                 }
             ],
         },
@@ -262,7 +262,7 @@ class ScopeProbeTestCase(unittest.TestCase):
     """Base: disposable fixture plus a synthetic marker-agent scope dir."""
 
     def setUp(self) -> None:
-        self.root = Path(tempfile.mkdtemp(prefix="claude-multi-scope-probe-"))
+        self.root = Path(tempfile.mkdtemp(prefix="charmer-scope-probe-"))
         os.chmod(self.root, 0o700)
         self.addCleanup(self._cleanup)
         live = self.root / "live"
@@ -744,7 +744,7 @@ class ScriptedDelegationRunTests(ScopeProbeTestCase):
         # persist: only hashes, flags, classifications, and paths.
         self.assertNotIn(b"Use the Agent tool exactly once", raw)
         self.assertNotIn(b"TOKEN-XYZZY-MARKER", raw)
-        self.assertNotIn(b"CLAUDE-MULTI-PROBE-DELEGATION-OK", raw)
+        self.assertNotIn(b"CHARMER-PROBE-DELEGATION-OK", raw)
         evidence = strict_json.loads(raw)
         self.assertEqual(evidence["kind"], "scripted-delegation")
         self.assertEqual(evidence["subagent_type"], "cm-probe-marker")
@@ -1231,10 +1231,10 @@ class RealPinnedBinaryTests(ScopeProbeTestCase):
                         probe.PTYInteraction(b"Press", b"\r"),
                         probe.PTYInteraction(
                             "❯".encode("utf-8"),
-                            b"CLAUDE-MULTI-COMPACTION-FIRST\r",
+                            b"CHARMER-COMPACTION-FIRST\r",
                         ),
                         probe.PTYInteraction(
-                            b"PROBE-OK", b"CLAUDE-MULTI-COMPACTION-SECOND\r"
+                            b"PROBE-OK", b"CHARMER-COMPACTION-SECOND\r"
                         ),
                         probe.PTYInteraction(b"PROBE-OK", b"/compact\r"),
                         probe.PTYInteraction(b"Compacted", b"/exit\r"),

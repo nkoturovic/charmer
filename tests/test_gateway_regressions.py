@@ -274,12 +274,12 @@ class LifecycleReproducerTests(unittest.TestCase):
             root = Path(directory).resolve()
             home, control = root / "home", root / "run"
             spec = json.loads((SERVICE_SPEC).read_text())
-            for path in (home, control, *(home / p for p in spec["private_dirs"]), home / ".local/share/claude-multi-release"):
+            for path in (home, control, *(home / p for p in spec["private_dirs"]), home / ".local/share/charmer-release"):
                 state.ensure_private_dir(path)
             egress, port = harness.ports()
             original, _, _ = harness.build_document(catalog.load_catalog(FIXTURE_ROOT), egress, port, home)
             replacement = revised(original, **{"request-retry": 1})
-            config = home / ".config/claude-multi/config.yaml"
+            config = home / ".config/charmer/config.yaml"
             state.atomic_write(config, render.emit_yaml(original).encode())
             socket, log_path = control / "gateway.sock", root / "probe.log"
             upstream = harness.FakeUpstream(control / "upstream.sock")

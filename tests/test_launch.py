@@ -52,7 +52,7 @@ def _serve(status: int = 200):
 
 class LaunchTestCase(unittest.TestCase):
     def setUp(self) -> None:
-        self.root = Path(tempfile.mkdtemp(prefix="claude-multi-launch-"))
+        self.root = Path(tempfile.mkdtemp(prefix="charmer-launch-"))
         os.chmod(self.root, 0o700)
         self.addCleanup(self._cleanup)
         self.project = self.root / "project"
@@ -99,7 +99,7 @@ class LaunchTestCase(unittest.TestCase):
         self.home = self.root / "home"
         self.home.mkdir(exist_ok=True)
         os.chmod(self.home, 0o700)
-        token_dir = state.ensure_private_dir(self.home / ".config" / "claude-multi")
+        token_dir = state.ensure_private_dir(self.home / ".config" / "charmer")
         self.token_file = token_dir / "api-key"
         state.atomic_write(self.token_file, b"a" * 64 + b"\n")
 
@@ -141,7 +141,7 @@ class ResolveClaudeTests(LaunchTestCase):
         self.assertFalse(status.migrated)
 
     def test_owned_path_follows_the_data_root(self) -> None:
-        self.assertEqual(self.install, self.root / "home/.local/share/claude-multi/claude/2.1.216" /
+        self.assertEqual(self.install, self.root / "home/.local/share/charmer/claude/2.1.216" /
                          pin.binary_name(self.platform))
         self.assertEqual(pin.binary_name("win32-x64"), "claude.exe")
         self.assertEqual(pin.binary_name("darwin-arm64"), "claude")
@@ -150,8 +150,8 @@ class ResolveClaudeTests(LaunchTestCase):
         self.install.unlink()
         with self.assertRaises(LaunchError) as raised:
             self.resolve()
-        self.assertEqual(str(raised.exception), "Claude Code 2.1.216 is not set up for claude-multi — "
-                                                 "run `claude-multi setup --step claude`")
+        self.assertEqual(str(raised.exception), "Claude Code 2.1.216 is not set up for charmer — "
+                                                 "run `charmer setup --step claude`")
 
     def test_missing_platform_build_fails_closed(self) -> None:
         contract = copy.deepcopy(self.native_contract)
@@ -203,7 +203,7 @@ class ResolveClaudeTests(LaunchTestCase):
         self.assertEqual(spy.call_count, 2)
 
     def test_migration_copies_a_hash_identical_retained_copy_only(self) -> None:
-        retained = state.ensure_private_dir(self.root / "home/.local/share/claude-multi/pinned-clients")
+        retained = state.ensure_private_dir(self.root / "home/.local/share/charmer/pinned-clients")
         source = retained / "2.1.216"
         source.write_bytes(self.install.read_bytes())
         source.chmod(0o755)
@@ -224,7 +224,7 @@ class ResolveClaudeTests(LaunchTestCase):
         self.assertFalse(self.install.exists())
 
     def test_read_only_resolution_never_migrates(self) -> None:
-        retained = state.ensure_private_dir(self.root / "home/.local/share/claude-multi/pinned-clients")
+        retained = state.ensure_private_dir(self.root / "home/.local/share/charmer/pinned-clients")
         (retained / "2.1.216").write_bytes(self.install.read_bytes())
         (retained / "2.1.216").chmod(0o755)
         self.install.unlink()
@@ -239,7 +239,7 @@ class DoctorBinaryReportTests(LaunchTestCase):
         self.assertEqual(problems, [])
         self.assertEqual(len(info), 1)
         self.assertIn("Managed Claude 2.1.216 verified", info[0])
-        self.assertIn("~/.local/share/claude-multi/claude/2.1.216/", info[0])
+        self.assertIn("~/.local/share/charmer/claude/2.1.216/", info[0])
 
     def test_failure_matches_launch_failure_exactly(self) -> None:
         tampered = copy.deepcopy(self.native_contract)
@@ -252,7 +252,7 @@ class DoctorBinaryReportTests(LaunchTestCase):
         self.assertIn(str(raised.exception), problems[0])
 
     def test_pending_migration_is_info_not_a_problem(self) -> None:
-        retained = state.ensure_private_dir(self.root / "home/.local/share/claude-multi/pinned-clients")
+        retained = state.ensure_private_dir(self.root / "home/.local/share/charmer/pinned-clients")
         (retained / "2.1.216").write_bytes(self.install.read_bytes())
         (retained / "2.1.216").chmod(0o755)
         self.install.unlink()
@@ -404,7 +404,7 @@ class RemedyTests(LaunchTestCase):
     def test_every_binary_refusal_names_the_setup_step(self) -> None:
         original = self.install.read_bytes()
         cases = (
-            ("missing", "Claude Code 2.1.216 is not set up for claude-multi"),
+            ("missing", "Claude Code 2.1.216 is not set up for charmer"),
             ("symlink", "is a symlink"),
             ("directory", "not a regular file"),
             ("mode", "not executable"),
@@ -429,8 +429,8 @@ class RemedyTests(LaunchTestCase):
                     launch.resolve_claude(contract, environ=self.env)
                 text = str(raised.exception)
                 self.assertIn(detail, text)
-                self.assertIn("claude-multi setup --step claude", text)
-                self.assertNotIn("claude-multi update", text)
+                self.assertIn("charmer setup --step claude", text)
+                self.assertNotIn("charmer update", text)
                 if self.install.is_dir() and not self.install.is_symlink():
                     self.install.rmdir()
                 elif self.install.is_symlink():
@@ -440,9 +440,9 @@ class RemedyTests(LaunchTestCase):
 
     def test_key_remedies_are_distinct_and_do_not_contact_health(self) -> None:
         health = mock.Mock(side_effect=AssertionError("must not request health"))
-        cases = (("missing", "run claude-multi-proxy init"),
-                 ("mode", "mode 0600 (chmod 600 ~/.config/claude-multi/api-key)"),
-                 ("shape", "mv ~/.config/claude-multi/api-key ~/.config/claude-multi/api-key.invalid"),
+        cases = (("missing", "run charmer-proxy init"),
+                 ("mode", "mode 0600 (chmod 600 ~/.config/charmer/api-key)"),
+                 ("shape", "mv ~/.config/charmer/api-key ~/.config/charmer/api-key.invalid"),
                  ("encoding", "create a fresh key"))
         for kind, remedy in cases:
             with self.subTest(kind=kind):
@@ -478,7 +478,7 @@ class RemedyTests(LaunchTestCase):
         self.assertEqual(raised.exception.remedy, launch.gateway_unit_remedy())
         # The on-demand backend names only the product's verbs; the supervised
         # unit adds its recovery and diagnosis commands.
-        self.assertIn("claude-multi gateway start", launch.gateway_problem_text(raised.exception))
+        self.assertIn("charmer gateway start", launch.gateway_problem_text(raised.exception))
         self.assertNotIn("systemctl", launch.gateway_unit_remedy())
         endpoint.write_config(self.home, endpoint.EndpointConfig(port=18317, backend=endpoint.SYSTEMD))
         with mock.patch.object(endpoint.sys, "platform", "linux"):
@@ -533,7 +533,7 @@ class GatewayAuthorizationTests(unittest.TestCase):
         self.assertEqual(launch.check_listener("http://127.0.0.1:8333", owner_check=lambda _: verdict,
                                                attention=attention.append), verdict)
         self.assertEqual(len(attention), 1)
-        with self.assertRaisesRegex(launch.GatewayOwnerError, "not proven to be the claude-multi gateway"):
+        with self.assertRaisesRegex(launch.GatewayOwnerError, "not proven to be the charmer gateway"):
             launch.check_listener("http://127.0.0.1:8333", owner_check=lambda _: verdict, require_proof=True)
 
     def test_a_foreign_same_user_listener_never_sees_the_token(self):
@@ -627,7 +627,7 @@ class ServedSnapshotTests(unittest.TestCase):
     def test_runtime_reads_one_snapshot_through_the_seam(self) -> None:
         from charmer import cli
 
-        root = Path(tempfile.mkdtemp(prefix="claude-multi-served-"))
+        root = Path(tempfile.mkdtemp(prefix="charmer-served-"))
         self.addCleanup(lambda: __import__("shutil").rmtree(root, ignore_errors=True))
         calls = []
 
@@ -651,7 +651,7 @@ class ServedReadOwnershipTests(unittest.TestCase):
     def test_runtime_served_read_refuses_an_unproven_listener(self) -> None:
         from charmer import cli
 
-        root = Path(tempfile.mkdtemp(prefix="claude-multi-served-owner-"))
+        root = Path(tempfile.mkdtemp(prefix="charmer-served-owner-"))
         self.addCleanup(lambda: __import__("shutil").rmtree(root, ignore_errors=True))
         callback = mock.Mock(return_value=({"sel-a"}, 200))
         runtime = cli.Runtime(asset_root=FIXTURE_ROOT, environ={"HOME": str(root / "home"),
@@ -663,7 +663,7 @@ class ServedReadOwnershipTests(unittest.TestCase):
         with self.assertRaises(launch.GatewayOwnerError):
             runtime.served_snapshot("t" * 64)
         callback.assert_not_called()
-        self.assertTrue(any("not proven to be the claude-multi gateway" in line
+        self.assertTrue(any("not proven to be the charmer gateway" in line
                             for line in runtime.gateway_attention), runtime.gateway_attention)
         observed = runtime.readiness_observations([], served=True)
         self.assertIsNone(observed.served)
@@ -672,7 +672,7 @@ class ServedReadOwnershipTests(unittest.TestCase):
     def test_runtime_reload_check_uses_the_runtimes_own_verdict(self) -> None:
         from charmer import cli, proxy
 
-        root = Path(tempfile.mkdtemp(prefix="claude-multi-reload-owner-"))
+        root = Path(tempfile.mkdtemp(prefix="charmer-reload-owner-"))
         self.addCleanup(lambda: __import__("shutil").rmtree(root, ignore_errors=True))
         verdict = lambda _base: service.OwnerVerdict("ours", "fixture gateway")
         runtime = cli.Runtime(asset_root=FIXTURE_ROOT, environ={"HOME": str(root / "home"),
@@ -682,7 +682,7 @@ class ServedReadOwnershipTests(unittest.TestCase):
         endpoint.write_config(root / "home", endpoint.EndpointConfig(port=18317))
         with mock.patch.object(proxy, "gateway_api_keys", return_value=["t" * 64]), \
                 mock.patch.object(proxy, "await_sentinel", return_value="reloaded") as waited:
-            self.assertEqual(runtime.verify_reload("claude-multi-render-0123abcd"), "reloaded")
+            self.assertEqual(runtime.verify_reload("charmer-render-0123abcd"), "reloaded")
         self.assertIs(waited.call_args.kwargs["owner_check"], runtime.listener_owner)
 
 

@@ -108,7 +108,7 @@ POLICY_KEYS = (
 _SNAPSHOT_KEYS = frozenset({"version", "providers_enabled", "admitted_lines", *POLICY_KEYS})
 
 
-class SettingsError(errors.ClaudeMultiError, ValueError):
+class SettingsError(errors.CharmerError, ValueError):
     """Raised on a corrupt, unsafe or refused operator settings document."""
 
 

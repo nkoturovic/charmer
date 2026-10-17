@@ -535,7 +535,7 @@ class SettingsDefaultRowTests(CardOnboardingCase):
 
 
 class LineModeTests(CardOnboardingCase):
-    """``--line`` with nothing connected offers ``claude-multi setup`` first."""
+    """``--line`` with nothing connected offers ``charmer setup`` first."""
 
     def offer(self, answer: str) -> tuple[bool, str, list]:
         import charmer.cli.commands.setup as commands_setup
@@ -620,12 +620,12 @@ class EntryTests(CardOnboardingCase):
                 "--hook-protocol", "3"]
         code, out, err = self.main(argv, '{"hook_event_name": "PreModelSwitch", "model": "x"}')
         self.assertEqual(code, 0)
-        self.assertTrue(err.startswith("claude-multi: "), err)
+        self.assertTrue(err.startswith("charmer: "), err)
         document = json.loads(out)
         specific = document["hookSpecificOutput"]
         self.assertEqual(specific["hookEventName"], "PreModelSwitch")
         self.assertEqual(out, hooks.premodel_fail_closed_response(document["systemMessage"]))
-        self.assertTrue(document["systemMessage"].startswith("claude-multi premodel failed: "))
+        self.assertTrue(document["systemMessage"].startswith("charmer premodel failed: "))
         # Every other event stays silent on stdout.
         code, out, _err = self.main(["session-event", "prompt", "--managed-id", fx.FIXED_ID, "--launch-epoch", "0",
                                      "--hook-protocol", "3"], "{}")

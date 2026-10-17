@@ -41,8 +41,8 @@ class ExitStatusTests(CLITestCase):
     def test_a_refusal_is_1_on_stderr_with_nothing_on_stdout(self) -> None:
         code, out, err = self.run_cli_both(["sessions", "show", OTHER_ID], interactive=False)
         self.assertEqual((code, out), (1, ""))
-        self.assertIn("claude-multi: ", err)
-        self.assertIn("fix: list the sessions: claude-multi sessions list", err)
+        self.assertIn("charmer: ", err)
+        self.assertIn("fix: list the sessions: charmer sessions list", err)
 
     def test_an_invalid_command_line_is_2(self) -> None:
         for argv in (["profile", "list", "--bogus"], ["doctor", "--preview"], ["doctor", "--include-live"]):
@@ -75,25 +75,25 @@ class ExitStatusTests(CLITestCase):
         self.assertTrue((self.runtime.session_store.sessions_dir / f"{FIXED_ID}.json").exists())
         code, out, err = self.run_cli_both(["sessions", "forget", FIXED_ID, "--yes"], interactive=False)
         self.assertEqual(code, 0, err)
-        self.assertIn("manage it again with Sessions → L, or: claude-multi sessions link", out)
+        self.assertIn("manage it again with Sessions → L, or: charmer sessions link", out)
         self.assertFalse((self.runtime.session_store.sessions_dir / f"{FIXED_ID}.json").exists())
 
     def test_an_interrupt_is_130_and_says_so(self) -> None:
         with mock.patch("charmer.cli.commands.profile._profile_list", side_effect=KeyboardInterrupt):
             code, out, err = self.run_cli_both(["profile", "list"], interactive=False)
         self.assertEqual((code, out), (130, ""))
-        self.assertIn("claude-multi: cancelled", err)
+        self.assertIn("charmer: cancelled", err)
 
 
 class FilesystemFailureTests(CLITestCase):
     def test_no_space_is_one_line_and_a_fix_never_a_traceback(self) -> None:
-        where = Path(self.runtime.environ["HOME"]) / ".config" / "claude-multi" / "profiles" / "x.json"
+        where = Path(self.runtime.environ["HOME"]) / ".config" / "charmer" / "profiles" / "x.json"
         failure = OSError(errno.ENOSPC, "No space left on device", str(where))
         with mock.patch.dict(os.environ, {"HOME": self.runtime.environ["HOME"]}), \
                 mock.patch("charmer.cli.commands.profile._profile_list", side_effect=failure):
             code, out, err = self.run_cli_both(["profile", "list"], interactive=False)
         self.assertEqual((code, out), (1, ""))
-        self.assertIn("at ~/.config/claude-multi/profiles/x.json", err)
+        self.assertIn("at ~/.config/charmer/profiles/x.json", err)
         self.assertIn("\n  fix: ", err)
         self.assertNotIn("Traceback", err)
 
@@ -106,11 +106,11 @@ class FilesystemFailureTests(CLITestCase):
     def test_lineup_storage_and_permission_failures_name_the_fix(self) -> None:
         from charmer import state
 
-        where = Path(self.runtime.environ["HOME"]) / ".local" / "state" / "claude-multi" / "sessions" / "x.json"
+        where = Path(self.runtime.environ["HOME"]) / ".local" / "state" / "charmer" / "sessions" / "x.json"
         self.runtime.environ["CLAUDE_CODE_SESSION_ID"] = OTHER_ID  # a terminal run's session comes from here
         for number in (errno.ENOSPC, errno.EACCES, errno.EROFS, errno.EPERM):
             what, remedy = state.FILESYSTEM_FAILURES[number]
-            expected = f"claude-multi: {what} at ~/.local/state/claude-multi/sessions/x.json\n  fix: {remedy}\n"
+            expected = f"charmer: {what} at ~/.local/state/charmer/sessions/x.json\n  fix: {remedy}\n"
             failure = OSError(number, os.strerror(number), str(where))
             with self.subTest(errno=errno.errorcode[number]), \
                     mock.patch("charmer.lineup.apply", side_effect=failure):
@@ -136,7 +136,7 @@ class FilesystemFailureTests(CLITestCase):
         home = Path(self.runtime.environ["HOME"])
         environ = {"HOME": str(home), "XDG_STATE_HOME": str(home / ".local" / "state"),
                    "XDG_CONFIG_HOME": str(home / ".config"), "XDG_DATA_HOME": str(home / ".local" / "share")}
-        failure = OSError(errno.EACCES, "Permission denied", str(home / ".local" / "state" / "claude-multi"))
+        failure = OSError(errno.EACCES, "Permission denied", str(home / ".local" / "state" / "charmer"))
         calls = []
 
         def build(*_args, **kwargs):
@@ -153,8 +153,8 @@ class FilesystemFailureTests(CLITestCase):
         self.assertEqual(len(calls), 2)
         self.assertFalse(calls[1]["allow_state_writes"])
         self.assertEqual(out.getvalue().splitlines()[0], "BLOCKED")
-        self.assertIn("claude-multi could not prepare its state:", out.getvalue())
-        self.assertIn("~/.local/state/claude-multi", out.getvalue())
+        self.assertIn("charmer could not prepare its state:", out.getvalue())
+        self.assertIn("~/.local/state/charmer", out.getvalue())
 
 
 class SessionResolverTests(CLITestCase):
@@ -370,7 +370,7 @@ class CommandLineOptionBoundaryTests(CLITestCase):
                 code = cli.main(argv, input_stream=io.StringIO() if interactive else None, output_stream=out,
                                 interactive=interactive)
             self.assertEqual((code, out.getvalue()), (2, ""), err.getvalue())
-            self.assertIn("claude-multi direct", err.getvalue())
+            self.assertIn("charmer direct", err.getvalue())
 
     def test_json_lists_print_a_failure_document(self) -> None:
         import charmer.cli.runtime as runtime_mod
@@ -494,11 +494,11 @@ class HelpBeforeStateTests(unittest.TestCase):
     def test_dev_lists_and_prints_the_release_identity(self) -> None:
         from charmer import dev
 
-        self.assertIn("claude-multi-dev --version", dev.DEV_HELP)
+        self.assertIn("charmer-dev --version", dev.DEV_HELP)
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
             self.assertEqual(dev.main(["--version"]), 0)
-        self.assertEqual(out.getvalue(), identity.version_line("claude-multi-dev") + "\n")
+        self.assertEqual(out.getvalue(), identity.version_line("charmer-dev") + "\n")
 
 
 class ProcessContractTests(unittest.TestCase):
@@ -568,7 +568,7 @@ class ReadOnlyEntryProcessTests(unittest.TestCase):
     def test_inhibited_gateway_start_refuses_before_any_entry_point_write(self) -> None:
         from charmer import gateway_inhibition as gi, state
 
-        root = self.home / ".local" / "state" / "claude-multi"
+        root = self.home / ".local" / "state" / "charmer"
         gi.begin(root, owner="installer", purpose="fixture install", phase="replace",
                  remedy="finish the fixture install", expiry=gi.deadline(600))
         record = gi.read(root)
@@ -581,10 +581,10 @@ class ReadOnlyEntryProcessTests(unittest.TestCase):
         with state.FileLock(gi.record_path(root).parent / "gateway-start"):
             result = self.run_read_only("gateway", "start")
         self.assertEqual((result.returncode, result.stdout, result.stderr),
-                         (1, "", f"claude-multi: {message}\n  fix: {remedy}\n"))
+                         (1, "", f"charmer: {message}\n  fix: {remedy}\n"))
 
     def assert_legacy_preview(self, argv: tuple[str, ...], roles: tuple[str, ...]) -> None:
-        config = self.home / ".config" / "claude-multi"
+        config = self.home / ".config" / "charmer"
         config.mkdir(parents=True, mode=0o700)
         override = config / "native-contract.json"
         override.write_text('{"version":1,"claude":{"validated_version":"0.0.0"},"effort_vocabulary":[]}\n')
@@ -615,7 +615,7 @@ class ReadOnlyEntryProcessTests(unittest.TestCase):
             with self.subTest(argv=argv):
                 result = self.run_preview(*argv)
                 self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-                self.assertIn("fix: list the sessions: claude-multi sessions list", result.stderr)
+                self.assertIn("fix: list the sessions: charmer sessions list", result.stderr)
         self.assertEqual(list(self.home.iterdir()), [])
 
     def test_a_missing_provider_key_reports_the_normal_remedy_without_writing(self) -> None:
@@ -626,7 +626,7 @@ class ReadOnlyEntryProcessTests(unittest.TestCase):
         result = self.run_preview("--profile-file", str(path))
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn("would fail:", result.stdout)
-        self.assertIn("fix: set the provider's API key: claude-multi providers set-key PROVIDER", result.stdout)
+        self.assertIn("fix: set the provider's API key: charmer providers set-key PROVIDER", result.stdout)
         self.assertEqual(list(self.home.iterdir()), [])
 
 

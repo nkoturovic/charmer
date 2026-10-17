@@ -115,9 +115,9 @@ def signer_line(seed: bytes, *, principals: str = WHO, options: str | None = Non
     return f"{head} ssh-ed25519 {encoded} comment\n"
 
 
-SEED_A = hashlib.sha256(b"claude-multi test key A").digest()
-SEED_B = hashlib.sha256(b"claude-multi test key B").digest()
-MESSAGE = b"0" * 64 + b"  claude-multi-1.0.0-linux-x86_64.tar.gz\n"
+SEED_A = hashlib.sha256(b"charmer test key A").digest()
+SEED_B = hashlib.sha256(b"charmer test key B").digest()
+MESSAGE = b"0" * 64 + b"  charmer-1.0.0-linux-x86_64.tar.gz\n"
 
 
 def _utc(stamp: str) -> int:
@@ -221,7 +221,7 @@ class SshsigFormatTests(unittest.TestCase):
 class AllowedSignerTests(unittest.TestCase):
     def test_parse_options_and_comments(self) -> None:
         text = ("# release keys\n\n"
-                + signer_line(SEED_A, options='namespaces="claude-multi-release",valid-after="20260101Z"')
+                + signer_line(SEED_A, options='namespaces="charmer-release",valid-after="20260101Z"')
                 + signer_line(SEED_B, principals='"a@x,b@y"', options='cert-authority'))
         first, second = trust.parse_allowed_signers(text)
         self.assertEqual((first.line, first.namespaces, first.valid_after), (3, NS, _utc("20260101")))
@@ -248,7 +248,7 @@ class AllowedSignerTests(unittest.TestCase):
         signature = sshsig(SEED_A, MESSAGE)
         for principals, accepted in {
             WHO: True, "release@*": True, "*": True, "other@x,release@claude-?ulti": True,
-            "*,!release@claude-multi": False, "other@x": False, "RELEASE@claude-multi": False,
+            "*,!release@charmer": False, "other@x": False, "RELEASE@charmer": False,
         }.items():
             with self.subTest(principals):
                 allowed = signer_line(SEED_A, principals=principals)
@@ -260,7 +260,7 @@ class AllowedSignerTests(unittest.TestCase):
 
     def test_namespaces_option(self) -> None:
         signature = sshsig(SEED_A, MESSAGE)
-        trust.verify(MESSAGE, signature, signer_line(SEED_A, options='namespaces="file,claude-multi-*"'))
+        trust.verify(MESSAGE, signature, signer_line(SEED_A, options='namespaces="file,charmer-*"'))
         with self.assertRaisesRegex(trust.TrustError, "namespace not allowed"):
             trust.verify(MESSAGE, signature, signer_line(SEED_A, options='namespaces="file"'))
 
@@ -298,9 +298,9 @@ class AllowedSignerTests(unittest.TestCase):
 
 class SumsTests(unittest.TestCase):
     def test_parse(self) -> None:
-        text = f"{'a' * 64}  claude-multi-1.0.0-linux-x86_64.tar.gz\n{'b' * 64} *MANIFEST.json\n\n"
+        text = f"{'a' * 64}  charmer-1.0.0-linux-x86_64.tar.gz\n{'b' * 64} *MANIFEST.json\n\n"
         self.assertEqual(trust.parse_sums(text), {
-            "claude-multi-1.0.0-linux-x86_64.tar.gz": "a" * 64, "MANIFEST.json": "b" * 64})
+            "charmer-1.0.0-linux-x86_64.tar.gz": "a" * 64, "MANIFEST.json": "b" * 64})
 
     def test_refusals(self) -> None:
         for label, text in {
@@ -317,9 +317,9 @@ class SumsTests(unittest.TestCase):
                     trust.parse_sums(text)
 
     def test_verify_sums(self) -> None:
-        sums = f"{'c' * 64}  claude-multi-1.0.0-linux-x86_64.tar.gz\n".encode()
+        sums = f"{'c' * 64}  charmer-1.0.0-linux-x86_64.tar.gz\n".encode()
         entries = trust.verify_sums(sums, sshsig(SEED_A, sums), signer_line(SEED_A))
-        self.assertEqual(list(entries), ["claude-multi-1.0.0-linux-x86_64.tar.gz"])
+        self.assertEqual(list(entries), ["charmer-1.0.0-linux-x86_64.tar.gz"])
         with self.assertRaises(trust.TrustError):
             trust.verify_sums(sums + b"\n", sshsig(SEED_A, sums), signer_line(SEED_A))
 
@@ -328,7 +328,7 @@ class ReleaseTrustTests(unittest.TestCase):
     """The packaged release trust (``data/release-trust/allowed_signers``)."""
 
     def setUp(self) -> None:
-        self.tmp = Path(tempfile.mkdtemp(prefix="claude-multi-trust-"))
+        self.tmp = Path(tempfile.mkdtemp(prefix="charmer-trust-"))
         self.addCleanup(shutil.rmtree, self.tmp, True)
 
     def test_the_packaged_file_is_the_release_trust(self) -> None:
@@ -340,7 +340,7 @@ class ReleaseTrustTests(unittest.TestCase):
     def test_the_packaged_trust_names_the_production_key(self) -> None:
         (signer,) = trust.release_signers()
         self.assertEqual((signer.principals, signer.key_type, signer.namespaces),
-                         ("release@claude-multi", "ssh-ed25519", "claude-multi-release"))
+                         ("release@charmer", "ssh-ed25519", "charmer-release"))
         self.assertEqual((signer.valid_after, signer.valid_before, signer.cert_authority), (None, None, False))
 
     def test_a_build_without_a_key_refuses(self) -> None:
@@ -360,7 +360,7 @@ class ReleaseTrustTests(unittest.TestCase):
 
     def test_a_key_is_trusted_and_verifies(self) -> None:
         path = self.tmp / "allowed_signers"
-        path.write_text("# release key\n" + signer_line(SEED_A, options='namespaces="claude-multi-release"'))
+        path.write_text("# release key\n" + signer_line(SEED_A, options='namespaces="charmer-release"'))
         signers = trust.release_signers(path)
         self.assertEqual(len(signers), 1)
         sums = f"{'d' * 64}  MANIFEST.json\n".encode()
@@ -372,7 +372,7 @@ class ReleaseTrustTests(unittest.TestCase):
         with self.assertRaisesRegex(trust.TrustError, "cannot be read"):
             trust.release_signers(self.tmp / "missing")
         path = self.tmp / "allowed_signers"
-        path.write_text("release@claude-multi ssh-ed25519 not-base64!\n")
+        path.write_text("release@charmer ssh-ed25519 not-base64!\n")
         with self.assertRaises(trust.TrustError):
             trust.release_signers(path)
 
@@ -383,7 +383,7 @@ class SshKeygenCrossCheckTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        cls.dir = Path(tempfile.mkdtemp(prefix="claude-multi-trust-"))
+        cls.dir = Path(tempfile.mkdtemp(prefix="charmer-trust-"))
         os.chmod(cls.dir, 0o700)
         cls.env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(cls.dir), "LC_ALL": "C"}
         for name in ("release", "other"):
@@ -432,7 +432,7 @@ class SshKeygenCrossCheckTests(unittest.TestCase):
         return True
 
     def test_ssh_keygen_signature_verifies(self) -> None:
-        allowed = self._allowed(self._line("release", 'namespaces="claude-multi-release"'))
+        allowed = self._allowed(self._line("release", 'namespaces="charmer-release"'))
         signature = self._sign("release")
         self.assertTrue(self._keygen_accepts(signature, allowed))
         self.assertTrue(self._trust_accepts(signature, allowed))

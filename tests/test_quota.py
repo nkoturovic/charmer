@@ -27,13 +27,13 @@ def mixed():
 
 def command(pool):
     return quota.command_lines(pool, provider_by_pool={"claude": "anthropic", "codex": "openai"},
-                               login_commands={"claude": "claude-multi providers sign-in anthropic", "codex": "claude-multi providers sign-in openai"},
+                               login_commands={"claude": "charmer providers sign-in anthropic", "codex": "charmer providers sign-in openai"},
                                restart_hint="RESTART", now=NOW, tz=timezone.utc)
 
 
 def doctor(pool):
     return quota.doctor_report(pool, provider_by_pool={"claude": "anthropic", "codex": "openai"},
-                              login_commands={"claude": "claude-multi providers sign-in anthropic", "codex": "claude-multi providers sign-in openai"},
+                              login_commands={"claude": "charmer providers sign-in anthropic", "codex": "charmer providers sign-in openai"},
                               restart_hint="RESTART", now=NOW, tz=timezone.utc)
 
 
@@ -240,7 +240,7 @@ anthropic (claude pool)
     retry-after: elapsed · observed 12 min ago
     The provider reported Retry-After 7s.
     The client may wait silently; this is not proof that an agent has stopped.
-  claude#2  error     credential rejected (unauthorized) — sign in again: claude-multi providers sign-in anthropic
+  claude#2  error     credential rejected (unauthorized) — sign in again: charmer providers sign-in anthropic
     retry-after: unknown · observed age unknown
   Pool headroom: unknown
 openai (codex pool)
@@ -253,7 +253,7 @@ openai (codex pool)
     credits: unknown provider credits · has-credits unknown · unlimited unknown
     retry-after: unknown · observed 7 h ago
   Pool headroom: unknown
-other credentials (not a claude-multi provider): 1
+other credentials (not a charmer provider): 1
 Management safety: five failed logins on allowlisted routes can ban loopback for 30 min; refused routes and guard-refused browser/Host requests do not count.
 Quota is passive metadata from gateway traffic; no provider request was made.
 Management authentication failures on allowed paths can trigger the gateway's five-strike lockout; this command does not retry them.""")
@@ -309,7 +309,7 @@ class DoctorReportTests(unittest.TestCase):
     def test_exact_credential_attention_texts_and_equivalent_refresh_only(self):
         base = mixed()[0]
         prefix = "quota: claude#1 (anthropic)"
-        login = "claude-multi providers sign-in anthropic"
+        login = "charmer providers sign-in anthropic"
         fallback = "anthropic: quota pressure; choose a profile that does not depend on this provider. For an existing session, use /cm or Sessions -> T."
         cases = [
             ({"reason": "unauthorized"}, f"{prefix} credential rejected by the provider (unauthorized) — sign in again: {login}"),
@@ -363,7 +363,7 @@ class QuotaSurfaceTests(unittest.TestCase):
         import _tui_fixture as fx
         self.fx = fx
         self.now = fx.FIXED_NOW
-        self.logins = {"claude": "claude-multi providers sign-in anthropic", "codex": "claude-multi providers sign-in openai"}
+        self.logins = {"claude": "charmer providers sign-in anthropic", "codex": "charmer providers sign-in openai"}
 
     def credentials(self, **kwargs):
         return quota.parse_auth_files(self.fx.quota_body(**kwargs))
@@ -388,7 +388,7 @@ class QuotaSurfaceTests(unittest.TestCase):
         details = quota.provider_details(credentials, self.now, timezone.utc)
         self.assertIn("observed 12 min ago", details[0])
         self.assertIn("resets 16:00", details[0])
-        self.assertEqual(details[1], "+1 more (claude-multi quota)")
+        self.assertEqual(details[1], "+1 more (charmer quota)")
 
     def test_provider_states_never_fabricate_percent_or_reset(self):
         for kwargs, label in ((dict(window=False), "no data"),
@@ -428,7 +428,7 @@ class QuotaSurfaceTests(unittest.TestCase):
         self.assertEqual(self.card(self.credentials(percent=42))[1], "dim")
         for reason in ("invalid_grant", "token expired"):
             text, role = self.card(self.credentials(reason=reason))
-            self.assertIn("claude-multi providers sign-in anthropic", text)
+            self.assertIn("charmer providers sign-in anthropic", text)
             self.assertEqual(role, "warn")
         for kwargs in (dict(reason="payment_required"), dict(window=False)):
             self.assertIsNone(self.card(self.credentials(**kwargs)))
@@ -458,7 +458,7 @@ class QuotaSurfaceTests(unittest.TestCase):
         text, role = self.card((c,))
         self.assertLessEqual(len(text), 67)
         self.assertIn("age unknown", text)
-        self.assertIn("claude-multi providers sign-in openai", text)
+        self.assertIn("charmer providers sign-in openai", text)
         self.assertEqual(role, "warn")
 
 

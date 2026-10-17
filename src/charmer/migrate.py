@@ -1,4 +1,4 @@
-"""``claude-multi migrate`` and ``claude-multi restore-2x``.
+"""``charmer migrate`` and ``charmer restore-2x``.
 
 Records only: the migration run and ``profile migrate`` live elsewhere;
 this module owns the v3 -> v4 record conversion, the
@@ -35,11 +35,11 @@ LEAD_EFFORTS = (*profile.EFFORT_ORDER, profile.ULTRACODE)
 MECHANICAL_ROLES = ("cm-analyst", "cm-implementer", "cm-reviewer")
 OUTCOMES = ("needs-choice", "successor", "renamed", "unchanged")
 DEFAULT_CLEANUP_PERIOD_DAYS = 30  # Claude's default when cleanupPeriodDays is unset
-PROFILE_MIGRATE_COMMAND = "claude-multi profile migrate --apply"
+PROFILE_MIGRATE_COMMAND = "charmer profile migrate --apply"
 ORDINARY_NATIVE = {"explore": "native", "general_purpose": "on", "plan": "native"}
 
 
-class MigrationError(errors.ClaudeMultiError, ValueError):
+class MigrationError(errors.CharmerError, ValueError):
     """``migrate``/``restore-2x`` refused or failed (exit 2)."""
 
 
@@ -569,7 +569,7 @@ def _blocked_refusal(blocked: Sequence[RecordOutcome]) -> MigrationError:
     return MigrationError(
         f"migrate refused: {len(blocked)} record(s) map to profiles that do not "
         f"exist yet ({listed}); run {PROFILE_MIGRATE_COMMAND} first, then rerun "
-        "claude-multi migrate. Nothing was changed."
+        "charmer migrate. Nothing was changed."
     )
 
 
@@ -912,7 +912,7 @@ def run(
     home: Path | None = None,
     barrier_timeout: float | None = state.SERVED_BARRIER_TIMEOUT,
 ) -> MigrationReport:
-    """``claude-multi migrate`` (§4.2); never calls ``ensure_state_v4`` (sc[16]).
+    """``charmer migrate`` (§4.2); never calls ``ensure_state_v4`` (sc[16]).
 
     With ``home`` (the CLI passes it) the exclusive
     migration lock is followed by the gateway served-change barrier, so a
@@ -1095,7 +1095,7 @@ def render_text(report: MigrationReport) -> str:
     """§4.8 (exact; ``--dry-run`` and the real run share the format)."""
 
     dry = report.dry_run
-    lines = [f"claude-multi migrate{' --dry-run' if dry else ''}: state {report.state_root}"]
+    lines = [f"charmer migrate{' --dry-run' if dry else ''}: state {report.state_root}"]
     before = (
         "absent (state 3)"
         if report.marker_before < sessions.SUPPORTED_STATE_VERSION
@@ -1158,8 +1158,8 @@ def render_text(report: MigrationReport) -> str:
     for item in live:
         lines.append(
             f"  {item.managed_id[:8]}  last event {item.last_event_source or 'none'} at "
-            f"{item.last_seen_at}: verify with claude-multi sessions show {item.managed_id}; "
-            "if it was /clear-ed or resumed while this ran, claude-multi sessions "
+            f"{item.last_seen_at}: verify with charmer sessions show {item.managed_id}; "
+            "if it was /clear-ed or resumed while this ran, charmer sessions "
             f"relink-runtime {item.managed_id} <runtime-id>"
         )
     lines.append("")
@@ -1180,7 +1180,7 @@ def render_text(report: MigrationReport) -> str:
                 "Claude deletes it at its next cleanup)"
             )
             lines.append(
-                f"  {note.managed_id[:8]}  {what}: claude-multi sessions forget {note.managed_id}"
+                f"  {note.managed_id[:8]}  {what}: charmer sessions forget {note.managed_id}"
             )
     lines.append("")
     digests = {item.digest for item in report.pointers}
@@ -1285,8 +1285,8 @@ def restore_live_lines(
 
     listed = ", ".join(f"{mid[:8]} (last event {src or 'none'})" for mid, src in refusals)
     return (
-        f"claude-multi: restore-2x refused: {len(refusals)} session(s) may still be "
-        f"running (live or unknown): {listed}. Stop them (claude-multi sessions stop "
+        f"charmer: restore-2x refused: {len(refusals)} session(s) may still be "
+        f"running (live or unknown): {listed}. Stop them (charmer sessions stop "
         "<id>); for a session you know has exited without a SessionEnd, rerun with "
         "--not-running <id>. Nothing was changed."
     )
@@ -1314,7 +1314,7 @@ def _restore_one(
     ):
         raise RestoreStopped(
             f"restore-2x stopped: {managed[:8]} changed while restoring (a session event "
-            "or launcher write reached it); the marker is still 4 — rerun claude-multi "
+            "or launcher write reached it); the marker is still 4 — rerun charmer "
             "restore-2x",
             report,
         )
@@ -1373,7 +1373,7 @@ def _restore_preview(
         except sessions.SessionError as exc:
             hard = True
             refusal_lines.append(
-                f"{managed[:8]}: record unreadable ({exc}); fix it or run claude-multi "
+                f"{managed[:8]}: record unreadable ({exc}); fix it or run charmer "
                 f"sessions forget {managed} (this drops its legacy backup)"
             )
             continue
@@ -1383,7 +1383,7 @@ def _restore_preview(
             hard = True
             if managed in overrides:
                 refusal_lines.append(
-                    f"claude-multi: {managed[:8]} is live in the Claude background "
+                    f"charmer: {managed[:8]} is live in the Claude background "
                     "daemon; --not-running cannot override that"
                 )
             else:
@@ -1400,14 +1400,14 @@ def _restore_preview(
             refusal_lines.append(
                 f"{managed[:8]}: migrated record without its legacy backup "
                 f"(sessions/{managed}.v3.json missing); restore it from a copy or run "
-                f"claude-multi sessions forget {managed}"
+                f"charmer sessions forget {managed}"
             )
     return ids0, samples, live_pairs, refusal_lines, hard
 
 
 RESTORE_CHANGED = (
     "restore-2x: session records changed after confirmation — nothing restored; rerun "
-    "claude-multi restore-2x"
+    "charmer restore-2x"
 )
 
 
@@ -1423,7 +1423,7 @@ def restore_2x(
     barrier_timeout: float | None = state.SERVED_BARRIER_TIMEOUT,
     refresh_live: Callable[[], Callable[[dict[str, Any]], bool]] | None = None,
 ) -> RestoreReport:
-    """``claude-multi restore-2x`` (§5.1) under the exclusive migration lock.
+    """``charmer restore-2x`` (§5.1) under the exclusive migration lock.
 
     The caller checked the marker reads 4. ``is_live(view)`` is the ●
     liveness (daemon socket or ``/proc`` cmdline): never overridable.
@@ -1466,7 +1466,7 @@ def restore_2x(
         if live_pairs:
             lines.append(restore_live_lines(live_pairs))
             lines.append(
-                "  or record their end first: claude-multi sessions mark-ended <id> "
+                "  or record their end first: charmer sessions mark-ended <id> "
                 "(or rerun with --assume-dead <id>)"
             )
         lines.extend(refusal_lines)
@@ -1525,7 +1525,7 @@ def _restore_locked(
         except (sessions.SessionError, state.StateError, OSError, ValueError) as exc:
             raise RestoreStopped(
                 f"restore-2x stopped: {managed[:8]} changed while restoring (restore "
-                f"failed: {exc}); the marker is still 4 — rerun claude-multi restore-2x",
+                f"failed: {exc}); the marker is still 4 — rerun charmer restore-2x",
                 report,
             ) from exc
         finally:
@@ -1544,7 +1544,7 @@ def _restore_locked(
     if new_ids:
         raise RestoreStopped(
             f"restore-2x stopped: {new_ids[0][:8]} changed while restoring (new record "
-            f"{', '.join(new_ids)} appeared); the marker is still 4 — rerun claude-multi "
+            f"{', '.join(new_ids)} appeared); the marker is still 4 — rerun charmer "
             "restore-2x",
             report,
         )
@@ -1646,7 +1646,7 @@ def _restore_pointers(
 def render_restore(report: RestoreReport) -> str:
     """§5.3 (stdout)."""
 
-    lines = [f"claude-multi restore-2x: state {report.state_root} (marker 4)"]
+    lines = [f"charmer restore-2x: state {report.state_root} (marker 4)"]
     for managed, from_version, epoch, ended in report.restored:
         version = "v3" if from_version == 3 else f"v{from_version}→3"
         suffix = ", marked ended" if ended else ""
@@ -1669,9 +1669,9 @@ def render_restore(report: RestoreReport) -> str:
     if report.marker_removed:
         lines.append("marker removed.")
         lines.append(
-            "Next: start the earlier launcher, then run `claude-multi doctor`; "
+            "Next: start the earlier launcher, then run `charmer doctor`; "
             "if it reports scope drift for sessions relaunched under this release, run "
-            "`claude-multi doctor --repair-all` there. Live lineup changes made under this "
+            "`charmer doctor --repair-all` there. Live lineup changes made under this "
             "release are not carried back."
         )
     return "\n".join(lines) + "\n"

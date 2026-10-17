@@ -41,7 +41,7 @@ def _frontmatter(data: bytes) -> dict[str, str]:
 
 class WriteScopeTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.root = Path(tempfile.mkdtemp(prefix="claude-multi-scope-"))
+        self.root = Path(tempfile.mkdtemp(prefix="charmer-scope-"))
         os.chmod(self.root, 0o700)
         self.addCleanup(lambda: shutil.rmtree(self.root, ignore_errors=True))
         # The 2.x compile path is gone; the effects are plan-agnostic.
@@ -131,7 +131,7 @@ class CollisionGateTests(unittest.TestCase):
     })
 
     def setUp(self) -> None:
-        self.root = Path(tempfile.mkdtemp(prefix="claude-multi-gate-"))
+        self.root = Path(tempfile.mkdtemp(prefix="charmer-gate-"))
         os.chmod(self.root, 0o700)
         self.addCleanup(lambda: shutil.rmtree(self.root, ignore_errors=True))
         self.names = self.NAMES
@@ -275,7 +275,7 @@ class HookShimTests(unittest.TestCase):
     """Stable lifecycle-hook indirection (store-path volatility root fix)."""
 
     def setUp(self) -> None:
-        self.root = Path(tempfile.mkdtemp(prefix="claude-multi-shim-"))
+        self.root = Path(tempfile.mkdtemp(prefix="charmer-shim-"))
         os.chmod(self.root, 0o700)
         self.addCleanup(lambda: shutil.rmtree(self.root, ignore_errors=True))
 
@@ -303,54 +303,54 @@ class HookShimTests(unittest.TestCase):
                 managed_id=FIXED_SESSION,
                 hook_command=str(shim),
                 launch_epoch=1,
-                token_helper_command="/state/bin/claude-multi-gateway-token",
+                token_helper_command="/state/bin/charmer-gateway-token",
             )
 
-        plan_a = compile_with({"CLAUDE_MULTI_HOOK_COMMAND": "/nix/store/gen95/bin/claude-multi"})
-        plan_b = compile_with({"CLAUDE_MULTI_HOOK_COMMAND": "/nix/store/gen96/bin/claude-multi"})
+        plan_a = compile_with({"CLAUDE_MULTI_HOOK_COMMAND": "/nix/store/gen95/bin/charmer"})
+        plan_b = compile_with({"CLAUDE_MULTI_HOOK_COMMAND": "/nix/store/gen96/bin/charmer"})
         self.assertEqual(scope.plan_hash(plan_a), scope.plan_hash(plan_b))
         shim_body = scope.hook_shim_v3_path(self.root).read_text()
-        self.assertIn("/nix/store/gen96/bin/claude-multi", shim_body)
-        self.assertNotIn("/nix/store/gen95/bin/claude-multi", shim_body)
+        self.assertIn("/nix/store/gen96/bin/charmer", shim_body)
+        self.assertNotIn("/nix/store/gen95/bin/charmer", shim_body)
 
     def test_shim_written_executable_and_idempotent(self) -> None:
-        path = scope.ensure_hook_shim(self.root, "/nix/store/a/bin/claude-multi")
+        path = scope.ensure_hook_shim(self.root, "/nix/store/a/bin/charmer")
         self.assertEqual(path, scope.hook_shim_path(self.root))
         info = os.lstat(path)
         self.assertTrue(stat.S_ISREG(info.st_mode))
         self.assertEqual(stat.S_IMODE(info.st_mode) & 0o111, 0o100)
         body = path.read_text()
-        self.assertIn("exec /nix/store/a/bin/claude-multi", body)
-        self.assertIn("command -v claude-multi", body)
+        self.assertIn("exec /nix/store/a/bin/charmer", body)
+        self.assertIn("command -v charmer", body)
         before = path.read_bytes()
-        again = scope.ensure_hook_shim(self.root, "/nix/store/a/bin/claude-multi")
+        again = scope.ensure_hook_shim(self.root, "/nix/store/a/bin/charmer")
         self.assertEqual(again, path)
         self.assertEqual(path.read_bytes(), before)
 
     def test_shim_refreshes_when_resolved_command_changes(self) -> None:
-        path = scope.ensure_hook_shim(self.root, "/nix/store/a/bin/claude-multi")
-        scope.ensure_hook_shim(self.root, "/nix/store/b/bin/claude-multi")
+        path = scope.ensure_hook_shim(self.root, "/nix/store/a/bin/charmer")
+        scope.ensure_hook_shim(self.root, "/nix/store/b/bin/charmer")
         body = path.read_text()
-        self.assertIn("/nix/store/b/bin/claude-multi", body)
-        self.assertNotIn("/nix/store/a/bin/claude-multi", body)
+        self.assertIn("/nix/store/b/bin/charmer", body)
+        self.assertNotIn("/nix/store/a/bin/charmer", body)
 
     def test_shim_target_is_shell_quoted(self) -> None:
-        path = scope.ensure_hook_shim(self.root, "/nix/store/a b/bin/claude-multi")
+        path = scope.ensure_hook_shim(self.root, "/nix/store/a b/bin/charmer")
         body = path.read_text()
-        self.assertIn("'/nix/store/a b/bin/claude-multi'", body)
+        self.assertIn("'/nix/store/a b/bin/charmer'", body)
 
     def test_shim_requires_a_resolved_command(self) -> None:
         with self.assertRaises(ScopeError):
             scope.ensure_hook_shim(self.root, "")
 
     def test_resolve_hook_command_precedence(self) -> None:
-        env = {"CLAUDE_MULTI_HOOK_COMMAND": "/some/wrapper/../wrapper/claude-multi"}
-        self.assertEqual(scope.resolve_hook_command(env), "/some/wrapper/claude-multi")
+        env = {"CLAUDE_MULTI_HOOK_COMMAND": "/some/wrapper/../wrapper/charmer"}
+        self.assertEqual(scope.resolve_hook_command(env), "/some/wrapper/charmer")
         # Without the wrapper's command: the running installation's own entry
         # point (here the source tree's bin/), never a resource directory.
-        self.assertEqual(scope.resolve_hook_command({}), str((REPO_ROOT / "bin" / "claude-multi").resolve()))
+        self.assertEqual(scope.resolve_hook_command({}), str((REPO_ROOT / "bin" / "charmer").resolve()))
         self.assertEqual(scope.resolve_hook_command({}, installation=Path("/install")),
-                         "/install/bin/claude-multi")
+                         "/install/bin/charmer")
         with mock.patch.object(layout, "installation", return_value=None), self.assertRaises(ScopeError):
             scope.resolve_hook_command({})
 
@@ -364,13 +364,13 @@ class HookShimTests(unittest.TestCase):
     def test_shim_bytes_are_the_pure_text(self) -> None:
         # The 2.x text is factored into scope.hook_shim_text with its
         # bytes unchanged (golden-pinned; the live 2.26 shims match it).
-        command = "/nix/store/a/bin/claude-multi"
+        command = "/nix/store/a/bin/charmer"
         path = scope.ensure_hook_shim(self.root, command)
         self.assertEqual(path.read_bytes(), scope.hook_shim_text(command))
         assertGolden(
             self,
-            GOLDENS_ROOT / "shim" / "claude-multi-hook",
-            scope.hook_shim_text("/nix/store/fixture/bin/claude-multi"),
+            GOLDENS_ROOT / "shim" / "charmer-hook",
+            scope.hook_shim_text("/nix/store/fixture/bin/charmer"),
         )
         with self.assertRaises(ScopeError):
             scope.hook_shim_text("")
@@ -378,9 +378,9 @@ class HookShimTests(unittest.TestCase):
     def test_shim_repairs_a_lost_exec_bit(self) -> None:
         # Crash-window: atomic_write leaves 0600 before chmod; the next
         # ensure must restore 0700 even when the content is unchanged.
-        path = scope.ensure_hook_shim(self.root, "/nix/store/a/bin/claude-multi")
+        path = scope.ensure_hook_shim(self.root, "/nix/store/a/bin/charmer")
         os.chmod(path, 0o600)
-        scope.ensure_hook_shim(self.root, "/nix/store/a/bin/claude-multi")
+        scope.ensure_hook_shim(self.root, "/nix/store/a/bin/charmer")
         self.assertEqual(stat.S_IMODE(os.lstat(path).st_mode), 0o700)
 
 
@@ -388,7 +388,7 @@ class GatewayTokenShimTests(unittest.TestCase):
     """apiKeyHelper indirection: gateway auth survives daemon env scrubbing."""
 
     def setUp(self) -> None:
-        self.root = Path(tempfile.mkdtemp(prefix="claude-multi-token-shim-"))
+        self.root = Path(tempfile.mkdtemp(prefix="charmer-token-shim-"))
         os.chmod(self.root, 0o700)
         self.addCleanup(lambda: shutil.rmtree(self.root, ignore_errors=True))
 
@@ -429,7 +429,7 @@ class GatewayTokenShimTests(unittest.TestCase):
         env = {"HOME": "/home/test"}
         self.assertEqual(
             scope.resolve_gateway_token_path(env),
-            Path("/home/test/.config/claude-multi/api-key"),
+            Path("/home/test/.config/charmer/api-key"),
         )
         # XDG_CONFIG_HOME is deliberately ignored: the token writer
         # (proxy.config_dir) and reader (launch via gateway.token_file) are
@@ -438,7 +438,7 @@ class GatewayTokenShimTests(unittest.TestCase):
         env = {"HOME": "/home/test", "XDG_CONFIG_HOME": "/xdg"}
         self.assertEqual(
             scope.resolve_gateway_token_path(env),
-            Path("/home/test/.config/claude-multi/api-key"),
+            Path("/home/test/.config/charmer/api-key"),
         )
 
 

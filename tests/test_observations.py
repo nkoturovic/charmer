@@ -161,7 +161,7 @@ class ReportRuntimeTests(V4Case):
                 self.assertEqual(entry.main([*argv, "--json"], runtime=self.runtime,
                                             output_stream=out, interactive=False), status)
                 self.assertEqual(json.loads(out.getvalue())["report"], argv[0])
-                self.assertIn("claude-multi: " + message, err.getvalue())
+                self.assertIn("charmer: " + message, err.getvalue())
                 self.assertNotIn(message, out.getvalue())
         record = self.launch_fresh()
         with mock.patch("sys.stderr", new_callable=io.StringIO) as err:
@@ -174,7 +174,7 @@ class ReportRuntimeTests(V4Case):
     def test_json_collection_errors_keep_sanitized_diagnostic_and_remedy(self):
         from charmer import errors
         import charmer.cli.dispatch as dispatch
-        for error in (sessions.StateMarkerError(99), errors.ClaudeMultiError("fixture \x1b[31m", remedy="fix \x1b[0m")):
+        for error in (sessions.StateMarkerError(99), errors.CharmerError("fixture \x1b[31m", remedy="fix \x1b[0m")):
             with self.subTest(error=type(error).__name__), \
                     mock.patch.object(dispatch, "handle_command", side_effect=error), \
                     mock.patch("sys.stderr", new_callable=io.StringIO) as err:
@@ -183,7 +183,7 @@ class ReportRuntimeTests(V4Case):
                                             output_stream=out, interactive=False), 1)
                 self.assertEqual(json.loads(out.getvalue())["report"], "quota")
                 self.assertNotIn("\x1b", err.getvalue())
-                self.assertIn("claude-multi: ", err.getvalue())
+                self.assertIn("charmer: ", err.getvalue())
                 if error.remedy:
                     self.assertIn("fix: fix ", err.getvalue())
                 else:
@@ -395,8 +395,8 @@ class DiagnosticContractTests(unittest.TestCase):
 
     def test_fields_are_validated(self) -> None:
         good = obs.Diagnostic("attention", "gateway-not-set-up", "the gateway is not set up yet",
-                              subject_id="gateway", remedy="claude-multi setup --step gateway")
-        self.assertEqual(good.remedy, "claude-multi setup --step gateway")
+                              subject_id="gateway", remedy="charmer setup --step gateway")
+        self.assertEqual(good.remedy, "charmer setup --step gateway")
         for kwargs in ({"severity": "fatal"}, {"code": "Not A Code"}, {"code": "legacy_line"},
                        {"subject_id": "/home/user/secret path"}, {"subject_id": "user@example.com"},
                        {"remedy": "line one\nline two"}, {"remedy": "x" * 241}):
@@ -406,7 +406,7 @@ class DiagnosticContractTests(unittest.TestCase):
     def test_the_document_carries_stable_keys(self) -> None:
         report = obs.Report("doctor", datetime.now(timezone.utc), {}, diagnostics=(
             obs.Diagnostic("block", "scope-damaged", "scope damaged", subject_id="1111aaaa",
-                           remedy="claude-multi doctor --repair 1111aaaa"),
+                           remedy="charmer doctor --repair 1111aaaa"),
             obs.Diagnostic("info", "legacy-line", "x")))
         document = report.document()
         self.assertEqual(document["status"], "blocked")

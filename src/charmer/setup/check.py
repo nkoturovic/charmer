@@ -114,7 +114,7 @@ def _lead_key(runtime: Any) -> str | None:
     try:
         choice = defaults.resolve_default(runtime)
         document = runtime.profiles.load(choice.name)
-    except (errors.ClaudeMultiError, OSError, ValueError):
+    except (errors.CharmerError, OSError, ValueError):
         return None
     lead = document.get("lead")
     return lead.get("model") if isinstance(lead, Mapping) else None
@@ -179,7 +179,7 @@ def plan_test(runtime: Any, provider_ids: Sequence[str]) -> TestPlan:
         # The gateway does not serve what the consent would describe.
         raise model.Refused(texts.TEST_NOT_CURRENT.format(reason=problem),
                             line=texts.TEST_NOT_CURRENT_LINE.format(reason=problem),
-                            fix=model.Fix("P", "claude-multi providers apply"))
+                            fix=model.Fix("P", "charmer providers apply"))
     lines_out = [texts.TEST_CONSENT_HEAD.format(n=len(targets))]
     for index, target in enumerate(targets, start=1):
         lines_out += texts.TEST_CONSENT_ITEM.format(i=index, display=target.display, alias=target.alias,
@@ -235,7 +235,7 @@ def run_test(runtime: Any, plan: TestPlan, confirmation: model.Confirmation, *,
         started = clock()
         try:
             outcome = runtime.smoke(target.alias)
-        except (errors.ClaudeMultiError, OSError) as exc:
+        except (errors.CharmerError, OSError) as exc:
             outcome = operator_mod.SmokeOutcome("fail", None, f"connection: {type(exc).__name__}")
         result = classify(target, outcome, int((clock() - started) * 1000))
         results.append(result)

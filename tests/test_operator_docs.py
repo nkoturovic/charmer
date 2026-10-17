@@ -170,13 +170,13 @@ class GateRuleTests(unittest.TestCase):
                 self.assertTrue(vocab.command_spans(_text(name)), name)
 
     def test_negative_examples_need_their_refusal(self) -> None:
-        with mock.patch.dict(vocab.NEGATIVE_EXAMPLES, {("x.md", "claude-multi profile new"): "required: name",
-                                                       ("x.md", "claude-multi profile list"): "anything",
-                                                       ("x.md", "claude-multi profile show NAME"): "required"}):
-            self.assertEqual(vocab.page_span_problem("x.md", "claude-multi profile new"), "")
-            self.assertIn("a negative example that parses", vocab.page_span_problem("x.md", "claude-multi profile list"))
+        with mock.patch.dict(vocab.NEGATIVE_EXAMPLES, {("x.md", "charmer profile new"): "required: name",
+                                                       ("x.md", "charmer profile list"): "anything",
+                                                       ("x.md", "charmer profile show NAME"): "required"}):
+            self.assertEqual(vocab.page_span_problem("x.md", "charmer profile new"), "")
+            self.assertIn("a negative example that parses", vocab.page_span_problem("x.md", "charmer profile list"))
             self.assertIn("refused for another reason",
-                          vocab.page_span_problem("x.md", "claude-multi profile show NAME"))
+                          vocab.page_span_problem("x.md", "charmer profile show NAME"))
         for (page, span), expected in vocab.NEGATIVE_EXAMPLES.items():
             with self.subTest(span):
                 self.assertIn(page, DOCS)
@@ -189,7 +189,7 @@ class GateRuleTests(unittest.TestCase):
                 self.assertRegex(name, r"^[a-z][a-z0-9-]*$")
                 self.assertTrue(placeholder.kind and placeholder.sample)
                 self.assertNotIn(name, vocab.FRAGMENTS)
-        self.assertEqual(vocab.span_problem("claude-multi sessions show <session>"), "unknown placeholder <session>")
+        self.assertEqual(vocab.span_problem("charmer sessions show <session>"), "unknown placeholder <session>")
 
     def test_no_page_names_the_removed_launcher(self) -> None:
         for name in DOCS:
@@ -283,7 +283,7 @@ class GateRuleTests(unittest.TestCase):
         # around it: links resolve inside it (nested directories and
         # anchors included), and a root page is reached by its public URL.
         with tempfile.TemporaryDirectory(prefix="cm-installed-") as tmp:
-            share = Path(tmp) / "share" / "claude-multi"
+            share = Path(tmp) / "share" / "charmer"
             (share / "guides" / "deep").mkdir(parents=True)
             (share / "USAGE.md").write_text("# Usage\n\n## Start\n\n[deep](guides/deep/page.md#deep)\n")
             (share / "guides" / "deep" / "page.md").write_text(
@@ -303,8 +303,8 @@ class GateRuleTests(unittest.TestCase):
 
     def test_heading_anchors(self) -> None:
         for heading, slug in (("3. Where the key is kept", "3-where-the-key-is-kept"),
-                              ("The sessions screen (`claude-multi -r` or **S**)",
-                               "the-sessions-screen-claude-multi--r-or-s"),
+                              ("The sessions screen (`charmer -r` or **S**)",
+                               "the-sessions-screen-charmer--r-or-s"),
                               ("`/model` and `/cm`", "model-and-cm"),
                               ("Windows and WSL are separate", "windows-and-wsl-are-separate")):
             with self.subTest(heading):
@@ -317,10 +317,10 @@ class GateRuleTests(unittest.TestCase):
                 self.assertEqual(vocab.lineup_session_hits(unit, label=name), [], name)
 
     def test_lineup_help_is_never_called_refused(self) -> None:
-        # `claude-multi lineup --help` lists the request grammar.
+        # `charmer lineup --help` lists the request grammar.
         for name in DOCS:
             for unit in vocab.parse_markdown(_text(name)):
-                if "claude-multi lineup --help" in unit.text:
+                if "charmer lineup --help" in unit.text:
                     self.assertNotRegex(unit.text, r"lineup --help`? is refused", f"{name}:{unit.start}")
 
     def test_migration_material_is_not_documented_here(self) -> None:
@@ -363,7 +363,7 @@ class TreeTests(unittest.TestCase):
         self.assertEqual(sorted(installed), sorted(f"docs/{name}" for name in DOCS_TREE))
         for source, target in installed.items():
             with self.subTest(source):
-                self.assertEqual(Path(target).relative_to("share/claude-multi"), Path(source).relative_to("docs"))
+                self.assertEqual(Path(target).relative_to("share/charmer"), Path(source).relative_to("docs"))
         manifest = (REPO_ROOT / "MANIFEST.in").read_text()
         for source in installed:
             self.assertIn(source, manifest.split())
@@ -478,15 +478,15 @@ class GatewayServiceDocumentationTests(unittest.TestCase):
             self.assertIn(anchor, limits)
         row = next(row for row in _rows(_section(_text("troubleshooting.md"), "The gateway"))
                    if "gateway exited during its start" in row)
-        for anchor in ("claude-multi gateway service install", "on-demand gateway", "security trade-off",
-                       "guides/gateway.md#the-supervised-service-linux", "claude-multi gateway service status"):
+        for anchor in ("charmer gateway service install", "on-demand gateway", "security trade-off",
+                       "guides/gateway.md#the-supervised-service-linux", "charmer gateway service status"):
             self.assertIn(anchor, row)
 
 
 class QuotaDocumentationTests(unittest.TestCase):
     def test_quota_is_documented_as_an_observation_with_its_limits(self) -> None:
         text = _flat(_section(_text("guides/gateway.md"), "Quota readings"))
-        for anchor in ("claude-multi quota", "/cm quota", "no provider call", "not zero use",
+        for anchor in ("charmer quota", "/cm quota", "no provider call", "not zero use",
                        "exits 1 when no reading was made", "only the Nix package enables",
                        "unavailable in this build", "not a balance", "not billed tokens",
                        "not on whether the gateway is on demand or supervised",
@@ -536,18 +536,18 @@ class CheatsheetStructureTests(unittest.TestCase):
         self.assertEqual(tasks, [row.task for row in docs_gen.CHEAT_ROWS])
         for anchor in (
             "| get started | W |", "P is the Profiles screen, not provider fallback", "P → F",
-            "`claude-multi profile default [<name>]`", "`claude-multi profile starter`",
-            "your version is kept as a backup", "`claude-multi profile reseed <name>`",
-            "`claude-multi --profile <name>`", "`claude-multi direct [--model <model>]`",
-            "`claude-multi -c`", "`claude-multi -r [<id>]`", "/cm set <agent>=<model>[:<effort>]",
-            "`claude-multi lineup --session <runtime-id> show`", "`claude-multi profile list`",
-            "`claude-multi models`", "`claude-multi discover <provider>`",
-            "`claude-multi sessions list`", "`claude-multi sessions link <fork-id> --profile <name>`",
-            "`claude-multi doctor --first-run`", "`claude-multi update`", "`claude-multi gateway status`",
-            "`claude-multi providers set-key <provider>`", "`claude-multi window-ceiling --reset`",
-            "`claude-multi export --out <file>`", "`claude-multi uninstall --dry-run`",
+            "`charmer profile default [<name>]`", "`charmer profile starter`",
+            "your version is kept as a backup", "`charmer profile reseed <name>`",
+            "`charmer --profile <name>`", "`charmer direct [--model <model>]`",
+            "`charmer -c`", "`charmer -r [<id>]`", "/cm set <agent>=<model>[:<effort>]",
+            "`charmer lineup --session <runtime-id> show`", "`charmer profile list`",
+            "`charmer models`", "`charmer discover <provider>`",
+            "`charmer sessions list`", "`charmer sessions link <fork-id> --profile <name>`",
+            "`charmer doctor --first-run`", "`charmer update`", "`charmer gateway status`",
+            "`charmer providers set-key <provider>`", "`charmer window-ceiling --reset`",
+            "`charmer export --out <file>`", "`charmer uninstall --dry-run`",
             "LIVE", "RELAUNCH", "`/reload-plugins`",
-            "`choices.json`", "`~/.config/claude-multi/`", "`~/.claude/projects/`",
+            "`choices.json`", "`~/.config/charmer/`", "`~/.claude/projects/`",
         ):
             self.assertIn(anchor, reference)
 
@@ -577,7 +577,7 @@ class CheatsheetStructureTests(unittest.TestCase):
         for anchor in ("`<id>` is the full managed session id", "$CLAUDE_MULTI_MANAGED_ID",
                        "`Session <id>` line per session, with `→ runtime <runtime-id>` when the two differ",
                        "shows only the first 8 characters",
-                       "`runtime_session_id` in `claude-multi sessions show <id>`"):
+                       "`runtime_session_id` in `charmer sessions show <id>`"):
             self.assertIn(anchor, head)
 
     def test_troubleshooting_uses_the_public_gateway_commands(self) -> None:
@@ -587,27 +587,27 @@ class CheatsheetStructureTests(unittest.TestCase):
         for row in rows:
             with self.subTest(row[:50]):
                 self.assertNotRegex(row, r"systemctl|journalctl|launchctl|cli-proxy-api|this machine")
-        self.assertIn("`claude-multi gateway restart`", trouble)
-        self.assertIn("`claude-multi gateway start`", trouble)
+        self.assertIn("`charmer gateway restart`", trouble)
+        self.assertIn("`charmer gateway start`", trouble)
 
     def test_the_persistence_hold_comes_before_any_restart(self) -> None:
         trouble = self.text.split("## Troubleshooting (symptom → command)", 1)[1]
         hold = trouble.index("persistence hold")
-        self.assertLess(hold, trouble.index("`claude-multi gateway restart`"))
+        self.assertLess(hold, trouble.index("`charmer gateway restart`"))
         self.assertLess(hold, trouble.index("### Gateway"))
 
     def test_symptom_rows(self) -> None:
         trouble = _flat(self.text.split("## Troubleshooting (symptom → command)", 1)[1])
         for anchor in (
-            "`claude-multi` must be on the session's PATH",
+            "`charmer` must be on the session's PATH",
             "“may shadow the session's /cm skill”",
-            "“is not set up for claude-multi”", "“does not match the verified sha256”",
+            "“is not set up for charmer”", "“does not match the verified sha256”",
             "one provider's agents stall", "`/cm fallback <provider>`",
             "“the on-disk gateway config differs from a fresh render of the installed catalog”",
             "“gateway key slots unusable”", "“gateway continuity set unreadable”", "“local gateway: <error> — <fix>”",
             "“scope(s) diverged from record authority”", "“scope differs from the record-authoritative compile”",
             "/cm: “next: type /reload-plugins”",
-            "relaunch with a profile whose lead is that model: `claude-multi lineup --session <runtime-id> --relaunch profile <name>`",
+            "relaunch with a profile whose lead is that model: `charmer lineup --session <runtime-id> --relaunch profile <name>`",
             "“keyed generic openai-compatible routes are unavailable in this build: their compatibility audit gate is closed”",
             "add its name in O → kept environment",
             "`sh install.sh --repair`",
@@ -624,9 +624,9 @@ class CheatsheetStructureTests(unittest.TestCase):
         self.assertEqual([hit for hit in vocab._fixture_hits(self.text, {"operator-skill"})], [])
         trouble = self.text.split("## Troubleshooting (symptom → command)", 1)[1]
         start = next(row for row in _rows(trouble) if "“local gateway: <error> — <fix>”" in row)
-        self.assertIn("`claude-multi gateway logs`", start)
+        self.assertIn("`charmer gateway logs`", start)
         why = next(row for row in _rows(trouble) if row.startswith("| why did the gateway stop"))
-        for anchor in ("`claude-multi gateway logs`", "redacted", "never paste them publicly", "`claude-multi doctor`",
+        for anchor in ("`charmer gateway logs`", "redacted", "never paste them publicly", "`charmer doctor`",
                        "without account details"):
             self.assertIn(anchor, why)
         for name in ("guides/gateway.md", "privacy.md", "troubleshooting.md"):
@@ -760,12 +760,12 @@ def doctor_block_families() -> list[tuple[str, str]]:
 
 
 # A chunk shorter than this, or one of these generic phrases, names no single
-# doctor BLOCK: nearly every remedy names a claude-multi command, and "session
+# doctor BLOCK: nearly every remedy names a charmer command, and "session
 # record" / "is unreadable" recur across families. Such a chunk counts only as
 # part of a whole-fragment skeleton match (``_covered``).
 SPECIFIC_CHUNK = 15
 GENERIC_CHUNKS = frozenset({
-    "claude-multi", "claude-multi doctor", "— run claude-multi doctor", "session record",
+    "charmer", "charmer doctor", "— run charmer doctor", "session record",
     "is unreadable", "is missing", "doctor", "restart required",
 })
 PLACEHOLDER = re.compile(r"<[^<>]+>|…")
@@ -830,7 +830,7 @@ class DoctorBlockCoverageTests(unittest.TestCase):
     def test_a_generic_overlap_does_not_cover(self) -> None:
         chunks, skeletons = _cheatsheet_chunks(), _skeletons()
         for signature in (
-            "a brand-new gateway failure {} — run `claude-multi doctor --repair`",
+            "a brand-new gateway failure {} — run `charmer doctor --repair`",
             "totally new BLOCK: session record corrupt",
             "session record {} is corrupt: {}",
             "something {} is unreadable: {}",
@@ -907,7 +907,7 @@ class HelpLinkTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="cm-docs-") as root:
             with mock.patch('charmer.layout.installation', return_value=Path(root)):
                 epilog = cli.build_parser().epilog or ""
-        self.assertIn("Symptom → command: CHEATSHEET.md in the claude-multi docs", epilog)
+        self.assertIn("Symptom → command: CHEATSHEET.md in the charmer docs", epilog)
         self.assertNotIn(root, epilog)
 
     def test_parser_strings(self) -> None:
@@ -935,7 +935,7 @@ class HelpLinkTests(unittest.TestCase):
         # Get started and Profiles lines come first).
         wrapped = cli._wrap_help_lines(cli.QUICK_HELP, 72)  # noqa: SLF001
         self.assertLess(wrapped.index(tui.CHEATSHEET_HINT), 2 * 19)
-        self.assertEqual(tui.CHEATSHEET_HINT, "Symptom → command: CHEATSHEET.md (claude-multi --help prints its path).")
+        self.assertEqual(tui.CHEATSHEET_HINT, "Symptom → command: CHEATSHEET.md (charmer --help prints its path).")
 
     def test_sessions_help_hint(self) -> None:
         self.assertEqual(cli.SESSIONS_HELP.splitlines()[-1], tui.CHEATSHEET_HINT)
@@ -945,7 +945,7 @@ class HelpLinkTests(unittest.TestCase):
 class PackagingTests(unittest.TestCase):
     def test_installed_pages_link_only_to_installed_pages(self) -> None:
         # Every relative link of a page under docs/ resolves inside docs/,
-        # which the package installs as share/claude-multi with the same
+        # which the package installs as share/charmer with the same
         # relative paths; the root pages are reached by their public URL.
         from _layout import pyproject
 
@@ -959,13 +959,13 @@ class PackagingTests(unittest.TestCase):
         from _layout import pyproject
         from charmer import layout
 
-        documents = pyproject()["tool"]["setuptools"]["data-files"]["share/claude-multi"]
+        documents = pyproject()["tool"]["setuptools"]["data-files"]["share/charmer"]
         self.assertEqual(layout.DOCUMENTS, ("USAGE.md", "CHEATSHEET.md", "STANDALONE.md"))
         self.assertEqual(documents[:3], [f"docs/{name}" for name in layout.DOCUMENTS])
         text = _text("nix/package.nix")
         self.assertIn("dataFiles = pyproject.tool.setuptools.data-files;", text)
         self.assertIn(
-            'description = "claude-multi: durable multi-model launcher for Claude Code, with its '
+            'description = "charmer: durable multi-model launcher for Claude Code, with its '
             'gateway and onboarding tools";',
             text,
         )
@@ -974,12 +974,12 @@ class PackagingTests(unittest.TestCase):
 
     def test_sandbox_greps_the_help_for_the_path(self) -> None:
         self.assertIn(
-            '"$package/bin/claude-multi" --help | grep -qF "$package/share/claude-multi/CHEATSHEET.md"',
+            '"$package/bin/charmer" --help | grep -qF "$package/share/charmer/CHEATSHEET.md"',
             _text("tests/default.nix"),
         )
         # The Nix package's installed documents: the same closure check as
         # the wheel's and the bundles'.
-        self.assertIn('tests/check_docs_vocabulary.py" --installed "$package/share/claude-multi"',
+        self.assertIn('tests/check_docs_vocabulary.py" --installed "$package/share/charmer"',
                       _text("tests/default.nix"))
 
 
@@ -992,7 +992,7 @@ class PageAnchorTests(unittest.TestCase):
     def test_usage_is_the_map(self) -> None:
         flat = _flat(_text("USAGE.md"))
         for anchor in ("[CHEATSHEET.md](CHEATSHEET.md)", "[Quickstart](quickstart.md)",
-                       "`claude-multi --help` prints where these pages are installed",
+                       "`charmer --help` prints where these pages are installed",
                        "Any one provider is enough for a working setup",
                        f"{vocab.PUBLIC_REPOSITORY}/blob/main/CONTRIBUTING.md"):
             self.assertIn(anchor, flat)
@@ -1015,7 +1015,7 @@ class PageAnchorTests(unittest.TestCase):
         flat = _flat(text)
         for line in lineup.MODEL_HELP_LINES:
             self.assertIn(_flat(line), flat)
-        for anchor in ("`claude-multi` must be on the session's PATH", "one argument", "`--its-exited`",
+        for anchor in ("`charmer` must be on the session's PATH", "one argument", "`--its-exited`",
                        "`--relaunch`", "LIVE", "RELAUNCH", "follow", "pin", "`/cm fallback <provider>`",
                        "`--preview` writes nothing", "`/cm review [high-stakes] [<range>]`"):
             self.assertIn(anchor, flat)
@@ -1034,8 +1034,8 @@ class PageAnchorTests(unittest.TestCase):
             self.assertIn(mark, keys)
         flat = _flat(text)
         for anchor in ("`Session <id>` line per session", "`→ runtime <runtime-id>`", "$CLAUDE_MULTI_MANAGED_ID",
-                       "`claude-multi sessions resolve-fork <id> <fork-id>`", "--all-dead",
-                       "claude-multi doctor --repair-all", "the transcript stays"):
+                       "`charmer sessions resolve-fork <id> <fork-id>`", "--all-dead",
+                       "charmer doctor --repair-all", "the transcript stays"):
             self.assertIn(anchor, flat)
 
     def test_the_profiles_guide_carries_the_workflow_guarantees(self) -> None:
@@ -1044,8 +1044,8 @@ class PageAnchorTests(unittest.TestCase):
         self.assertEqual(len(bullets), 3)
         for bullet in bullets:
             self.assertIn(_flat(bullet), flat)
-        for anchor in ("`default_profile`", "claude-multi profile default --clear", "**F** shows only fallback",
-                       "claude-multi profile starter", ".pre-reseed-", "saving is refused and nothing is written"):
+        for anchor in ("`default_profile`", "charmer profile default --clear", "**F** shows only fallback",
+                       "charmer profile starter", ".pre-reseed-", "saving is refused and nothing is written"):
             self.assertIn(anchor, flat)
 
     def test_readme(self) -> None:
@@ -1055,7 +1055,7 @@ class PageAnchorTests(unittest.TestCase):
                        "[docs/reference/licenses.md](docs/reference/licenses.md)",
                        "A platform is supported only with a completed native install journey",
                        "not affiliated with", "neither a Python installation nor a preinstalled Claude Code",
-                       "https://github.com/nkoturovic/claude-multi/releases/latest/download/install.sh",
+                       "https://github.com/nkoturovic/charmer/releases/latest/download/install.sh",
                        "lead set", "MIT ([LICENSE](LICENSE))",
                        "does not guarantee suppressing Claude Code's own background traffic"):
             self.assertIn(anchor, flat)
@@ -1099,7 +1099,7 @@ class PageAnchorTests(unittest.TestCase):
             self.assertIn("input and output", flat)
             self.assertIn("piped answers are not enough", flat)
         self.assertIn("`sh install.sh --no-setup`", readme)
-        self.assertIn("`claude-multi setup` in a terminal later", readme)
+        self.assertIn("`charmer setup` in a terminal later", readme)
         self.assertIn("connected to the terminal", uninstall)
         self.assertIn("`--yes` skips the y/N question, not the terminal requirement or the typed phrase", uninstall)
         self.assertIn("`delete credentials`", uninstall)
@@ -1125,22 +1125,22 @@ class PageAnchorTests(unittest.TestCase):
         # source-tree.nix deliberately omits flake.nix to preserve the
         # staged-tree boundary; the public page is still checked everywhere.
         flake = _text("flake.nix") if (REPO_ROOT / "flake.nix").is_file() else None
-        for output in ("packages.<system>.default", "packages.<system>.claude-multi",
-                       "apps.<system>.default", "apps.<system>.claude-multi",
-                       "apps.<system>.claude-multi-proxy", "devShells.<system>.default"):
+        for output in ("packages.<system>.default", "packages.<system>.charmer",
+                       "apps.<system>.default", "apps.<system>.charmer",
+                       "apps.<system>.charmer-proxy", "devShells.<system>.default"):
             self.assertIn(f"`{output}`", text)
         for system in ("x86_64-linux", "aarch64-linux", "aarch64-darwin"):
             if flake is not None:
                 self.assertIn(f'"{system}"', flake)
             self.assertIn(f"`{system}`", text)
         if flake is not None:
-            for definition in ('default = self.packages.${system}.claude-multi;',
-                               'claude-multi = app pkg "claude-multi"',
-                               'claude-multi-proxy = app pkg "claude-multi-proxy"'):
+            for definition in ('default = self.packages.${system}.charmer;',
+                               'charmer = app pkg "charmer"',
+                               'charmer-proxy = app pkg "charmer-proxy"'):
                 self.assertIn(definition, flake)
         from charmer import __version__
 
-        self.assertIn(f"github:nkoturovic/claude-multi/v{__version__}", text)
+        self.assertIn(f"github:nkoturovic/charmer/v{__version__}", text)
 
     def test_nix_entry_point_check_accepts_staging_but_checks_an_existing_flake(self) -> None:
         with tempfile.TemporaryDirectory() as root, mock.patch(f"{__name__}.REPO_ROOT", Path(root)):
@@ -1154,7 +1154,7 @@ class PageAnchorTests(unittest.TestCase):
         for anchor in ("separate gateway store output", "share/cli-proxy-api/licenses/",
                        "share/cli-proxy-api/sbom.cdx.json"):
             self.assertIn(anchor, text)
-        self.assertIn('ln -s "${cliProxyApiBin}" $out/libexec/claude-multi/cli-proxy-api',
+        self.assertIn('ln -s "${cliProxyApiBin}" $out/libexec/charmer/cli-proxy-api',
                       _text("nix/package.nix"))
         self.assertIn('"$out/share/cli-proxy-api/sbom.cdx.json"', _text("nix/gateway.nix"))
 
@@ -1207,10 +1207,10 @@ class PageAnchorTests(unittest.TestCase):
         for anchor in ("own copy", "never writes `~/.claude/settings.json`", "`CLAUDE_CONFIG_DIR`",
                        "Managed sessions unset it", "does not promise that your installation is current",
                        "`CLAUDE_MULTI_SECRET_ENV` when set (the supervised gateway service ignores it)",
-                       "`~/.config/claude-multi/secret-file.json`",
-                       "`~/.config/claude-multi/secrets/provider-keys.env`",
+                       "`~/.config/charmer/secret-file.json`",
+                       "`~/.config/charmer/secrets/provider-keys.env`",
                        "[the client skew notes](reference/compatibility.md#client-skew)",
-                       "`claude-multi sessions link <id> --profile <name>`"):
+                       "`charmer sessions link <id> --profile <name>`"):
             self.assertIn(anchor, flat)
         # Bounded noninterference, not "unaffected".
         self.assertNotRegex(flat, r"(?i)\bunaffected\b|nothing writes")
@@ -1240,20 +1240,20 @@ class PageAnchorTests(unittest.TestCase):
 
     def test_key_storage_names_both_credential_bearing_files(self) -> None:
         text = _flat(_section(_text("providers/api-keys.md"), "3. Where the key is kept"))
-        for anchor in ("private key file", "`~/.config/claude-multi/config.yaml`",
+        for anchor in ("private key file", "`~/.config/charmer/config.yaml`",
                        "Both files contain credentials", "never share either file",
                        "../privacy.md#what-stays-on-your-computer", "../privacy.md#diagnostics-you-share"):
             self.assertIn(anchor, text)
-        self.assertNotIn("never in claude-multi's other files", text)
+        self.assertNotIn("never in charmer's other files", text)
 
     def test_settings_paths_distinguish_config_and_home_roots(self) -> None:
         text = _text("reference/settings.md")
         flat = _flat(text)
         self.assertIn("Relative `XDG_CONFIG_HOME` and `XDG_STATE_HOME` values are ignored", flat)
-        self.assertIn("`$XDG_CONFIG_HOME/claude-multi`", flat)
-        self.assertIn("`$XDG_STATE_HOME/claude-multi`", flat)
+        self.assertIn("`$XDG_CONFIG_HOME/charmer`", flat)
+        self.assertIn("`$XDG_STATE_HOME/charmer`", flat)
         for name in ("choices.json", "settings.json", "preferences.json"):
-            self.assertRegex(text, rf"`~/.config/claude-multi/{re.escape(name)}`[^\n]*\*\*Config root\*\*")
+            self.assertRegex(text, rf"`~/.config/charmer/{re.escape(name)}`[^\n]*\*\*Config root\*\*")
         rows = _rows(_section(text, "Other configuration"))
         for name in ("providers.d/<id>.json", "operator-ledger.json", "endpoint.json", "continuity.json"):
             with self.subTest(name=name):
@@ -1314,7 +1314,7 @@ class PageAnchorTests(unittest.TestCase):
 
     def test_the_privacy_page_states_the_traffic_default(self) -> None:
         flat = _flat(_text("privacy.md"))
-        self.assertIn("claude-multi does not guarantee suppressing Claude Code background traffic", flat)
+        self.assertIn("charmer does not guarantee suppressing Claude Code background traffic", flat)
         for anchor in ("`session_env_keep`", "the gateway's local key", "allowlist"):
             self.assertIn(anchor, flat)
 
@@ -1348,8 +1348,8 @@ class PageAnchorTests(unittest.TestCase):
 
     def test_contributing_says_what_is_safe_to_attach(self) -> None:
         flat = _flat(_text("CONTRIBUTING.md"))
-        for anchor in ("`claude-multi doctor --json`", "`claude-multi --version`", "allowlist",
-                       "Never attach", "https://github.com/nkoturovic/claude-multi"):
+        for anchor in ("`charmer doctor --json`", "`charmer --version`", "allowlist",
+                       "Never attach", "https://github.com/nkoturovic/charmer"):
             self.assertIn(anchor, flat)
 
     def test_security_states_both_installer_trust_modes(self) -> None:
@@ -1357,7 +1357,7 @@ class PageAnchorTests(unittest.TestCase):
         for anchor in ("With `ssh-keygen` (OpenSSH 8.1 or newer) installed",
                        "a failed or missing signature stops the install",
                        "Only when `ssh-keygen` is not installed", "checksums built into that installer",
-                       "`claude-multi update` always verifies the signature",
+                       "`charmer update` always verifies the signature",
                        "never changes the keys the installed updater trusts", "inputs you trust"):
             self.assertIn(anchor, flat)
         installer = _text("packaging/install.sh")
@@ -1375,8 +1375,8 @@ class PageAnchorTests(unittest.TestCase):
 
         packaged = (RESOURCES_ROOT / "release-trust" / "allowed_signers").read_text(encoding="utf-8")
         (signer,) = [signer for signer in trust.parse_allowed_signers(packaged)
-                     if signer.principals == "release@claude-multi"]
-        self.assertEqual(signer.namespaces, "claude-multi-release")
+                     if signer.principals == "release@charmer"]
+        self.assertEqual(signer.namespaces, "charmer-release")
         line = packaged.splitlines()[signer.line - 1]
         blob = base64.b64decode(line.split()[-1])
         self.assertEqual(blob, signer.key_blob)
@@ -1407,7 +1407,7 @@ class OpenAICompatibleDocsTests(unittest.TestCase):
         from charmer.cli.commands import models
 
         text = _text("providers/openai-compatible.md")
-        commands = re.findall(r"^claude-multi .+$", text, re.MULTILINE)
+        commands = re.findall(r"^charmer .+$", text, re.MULTILINE)
         command = next(command for command in commands if " models add " in command)
         args = cli.build_parser().parse_args(shlex.split(command)[1:])
         provider = {"transport": {"kind": "direct-openai", "auth": {"kind": "bearer"}}}
@@ -1434,7 +1434,7 @@ class OpenAICompatibleDocsTests(unittest.TestCase):
                     entry, key=args.key, slot=slot, effort=default, facts=facts,
                     agent_efforts=profile.declared_efforts(entry))
                 self.assertTrue(verdict.eligible, verdict.reasons)
-        steps = [f"claude-multi models {verb} {args.key}" for verb in ("edit", "admit", "qualify")]
+        steps = [f"charmer models {verb} {args.key}" for verb in ("edit", "admit", "qualify")]
         for step in (steps[0], steps[1], steps[2] + " --agents"):
             self.assertIn(step, commands)
         self.assertLess(commands.index(command), commands.index(steps[0]))
@@ -1448,7 +1448,7 @@ class OpenAICompatibleDocsTests(unittest.TestCase):
         gateway = json.loads((RESOURCES_ROOT / "catalog" / "gateway.json").read_text())
         open_ = gateway["audits"][catalog.KEYED_COMPAT_AUDIT]
         text = _text("providers/openai-compatible.md")
-        setup = re.search(r"claude-multi providers add \S+ --kind openai-compatible\b", text)
+        setup = re.search(r"charmer providers add \S+ --kind openai-compatible\b", text)
         if open_:
             self.assertIsNotNone(setup, "the audit is open: the page gives the setup journey")
         else:
@@ -1531,8 +1531,8 @@ class ProviderRouteDocsTests(unittest.TestCase):
         alternative = operator.TRANSPORT_ALTERNATIVES[("openai", operator.TRANSPORT_API_KEY)]
         section = _flat(_section(_text("providers/api-keys.md"), "OpenAI"))
         for anchor in (f"`{alternative.secret_name}`", f"`{alternative.base_url}`",
-                       "claude-multi providers transport openai api-key",
-                       "claude-multi providers transport openai oauth-pool",
+                       "charmer providers transport openai api-key",
+                       "charmer providers transport openai oauth-pool",
                        "per-request output cap is not applied", "the model's documented maximum output",
                        "https://developers.openai.com/api/docs/guides/spend-limits",
                        "never both", "fixed local text", "refuses `api.openai.com`"):
@@ -1570,10 +1570,10 @@ class ProviderRouteDocsTests(unittest.TestCase):
         self.assertIn("OpenAI-compatible", routes[own[1]])
         # One singleton example per route class, each a complete journey.
         examples = _section(text, "One provider, start to finish")
-        for anchor in ("claude-multi providers set-key deepseek", "claude-multi providers sign-in anthropic",
-                       "claude-multi setup --answers <file>", "claude-multi providers add --preset zai",
-                       "claude-multi models admit custom-example", "claude-multi profile starter --apply",
-                       "claude-multi doctor --first-run"):
+        for anchor in ("charmer providers set-key deepseek", "charmer providers sign-in anthropic",
+                       "charmer setup --answers <file>", "charmer providers add --preset zai",
+                       "charmer models admit custom-example", "charmer profile starter --apply",
+                       "charmer doctor --first-run"):
             self.assertIn(anchor, examples)
 
     def test_cost_references_are_official_and_dated(self) -> None:
@@ -1606,7 +1606,7 @@ class CleanupTests(unittest.TestCase):
     def test_doctor_footer_names_profiles(self) -> None:
         source = "\n".join(p.read_text(encoding="utf-8") for p in (SRC / "cli").rglob("*.py"))
         self.assertNotIn("Catalog, compositions, and local gateway are valid", source)
-        # One closing line, shared by claude-multi doctor and the card's H.
+        # One closing line, shared by charmer doctor and the card's H.
         self.assertEqual(source.count("Catalog, profiles, and local gateway are valid"), 1)
 
 

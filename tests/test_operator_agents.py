@@ -220,7 +220,7 @@ class GateTests(unittest.TestCase):
             verdict = self.verdict(facts=replace(self.FACTS, route=route, admitted=False))
             self.assertFalse(verdict.eligible)
             self.assertIn(route, verdict.reasons[0])
-            self.assertEqual(verdict.remedy, "claude-multi providers approve acme")
+            self.assertEqual(verdict.remedy, "charmer providers approve acme")
         for effort in ("ultracode", "max", "impossible"):
             self.assertFalse(self.verdict(effort=effort).eligible)
         missing = self.verdict(facts=None)

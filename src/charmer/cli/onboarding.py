@@ -124,7 +124,7 @@ def provider_edit_snapshot(runtime, provider_id):
     with contextlib.redirect_stderr(refusal):
         previous = providers.edit_target(runtime, provider_id)
     if isinstance(previous, int):
-        text = refusal.getvalue().strip().removeprefix("claude-multi: ")
+        text = refusal.getvalue().strip().removeprefix("charmer: ")
         raise providers.OperatorCommandError(text or f"providers edit {provider_id}: {label} cannot be edited")
     gated = operator.keyed_preflight(runtime.catalog.docs, provider_id, previous)
     if gated is not None:
@@ -135,7 +135,7 @@ def provider_edit_snapshot(runtime, provider_id):
     except strict_json.StrictJSONError as exc:
         raise providers.OperatorCommandError(
             f"{label} is not strict JSON ({operator._json_failure(exc)}); "
-            f"fix it in an editor: claude-multi providers edit {provider_id}") from None
+            f"fix it in an editor: charmer providers edit {provider_id}") from None
     stored = proxy._stored_secret_values(runtime.gateway_environ())
     hits = operator._secret_hits(document, "$", stored)
     if not hits and operator._raw_secret_hit(previous, stored):
@@ -143,11 +143,11 @@ def provider_edit_snapshot(runtime, provider_id):
     if hits:
         raise providers.OperatorCommandError(
             f"{label} holds a value that looks like a secret at {', '.join(hits)} (not shown); remove it and "
-            f"reference the key as env:NAME: claude-multi providers edit {provider_id}")
+            f"reference the key as env:NAME: charmer providers edit {provider_id}")
     block = document.get("provider") if isinstance(document, dict) else None
     if not isinstance(block, dict):
         raise providers.OperatorCommandError(
-            f"{label} has no provider block; fix it in an editor: claude-multi providers edit {provider_id}")
+            f"{label} has no provider block; fix it in an editor: charmer providers edit {provider_id}")
     return previous, block
 
 

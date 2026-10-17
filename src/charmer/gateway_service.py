@@ -1,4 +1,4 @@
-"""``claude-multi gateway service install|uninstall|status``: the opt-in supervised gateway.
+"""``charmer gateway service install|uninstall|status``: the opt-in supervised gateway.
 
 The gateway runs on demand by default and needs no service manager. On Linux
 with a reachable user service manager the user may hand it to a hardened
@@ -6,7 +6,7 @@ systemd user unit instead, which restarts it on failure and confines it
 (``ProtectHome=tmpfs`` with explicit binds plus Tier B). The unit is rendered
 from the one service spec (``gateway-unit.json`` in the packaged resources)
 by ``platform.systemd_unit`` and written as ``<name>.service`` (default name
-``claude-multi-gateway``; ``--name`` chooses another) in the user's unit
+``charmer-gateway``; ``--name`` chooses another) in the user's unit
 directory; with ``notify-send`` on PATH a ``<name>-failure.service`` notice
 unit joins it. The port stays the one ``endpoint.json`` records.
 
@@ -32,7 +32,7 @@ automatic starts paused, and the outcome says what remains to finish.
 Run again on an installed service, install refreshes the unit files and the
 selected installation, then says what the running gateway needs: nothing, a
 reload (only the launcher changed) or a restart (the unit or the gateway
-binary changed; ``claude-multi gateway restart`` is guarded by the hold).
+binary changed; ``charmer gateway restart`` is guarded by the hold).
 The refresh records the hand-off's inhibition (phase ``refresh``) before its
 first change and removes it once complete (or completely restored: the
 files back and reloaded by the manager); an interrupted refresh or an
@@ -83,9 +83,9 @@ SPEC_FILE = Path("gateway-unit.json")
 NOTIFIER = "notify-send"
 ACTIVE_STATES = frozenset({"active", "activating", "reloading", "deactivating"})
 _UNSAFE_HOME = frozenset(" \t\n\r%$\\'\"")
-RESTART = "claude-multi gateway restart"
-INSTALL = "claude-multi gateway service install"
-UNINSTALL = "claude-multi gateway service uninstall"
+RESTART = "charmer gateway restart"
+INSTALL = "charmer gateway service install"
+UNINSTALL = "charmer gateway service uninstall"
 # The purpose a hand-off records (Gateway.begin_handoff) names its unit.
 _HANDOFF_PURPOSE = re.compile(r"gateway service (?:install|uninstall|refresh) \(([a-z][a-z0-9-]{0,63})\)")
 # What the unit's view hides besides its home (ProtectHome=tmpfs empties
@@ -182,7 +182,7 @@ def trust_notes(trust: tuple[systemd_unit.TrustPath, ...], environ: Mapping[str,
             for item in trust]
 
 
-class ServiceSetupError(errors.ClaudeMultiError, RuntimeError):
+class ServiceSetupError(errors.CharmerError, RuntimeError):
     """The service spec cannot be loaded."""
 
 
@@ -194,11 +194,11 @@ def load_spec(root: Path | str | None = None) -> dict[str, Any]:
         document = strict_json.load(path)
     except (OSError, ValueError) as exc:
         raise ServiceSetupError(f"the gateway service spec cannot be read ({path})",
-                                remedy="reinstall claude-multi") from exc
+                                remedy="reinstall charmer") from exc
     try:
         return systemd_unit.validate_spec(document)
     except systemd_unit.UnitSpecError as exc:
-        raise ServiceSetupError(f"the gateway service spec is invalid: {exc}", remedy="reinstall claude-multi") from exc
+        raise ServiceSetupError(f"the gateway service spec is invalid: {exc}", remedy="reinstall charmer") from exc
 
 
 @dataclass
@@ -254,7 +254,7 @@ class ServiceStatus:
         if self.installed:
             state_text = "installed"
         elif self.foreign:
-            state_text = "not installed (a file of that name was not written by claude-multi)"
+            state_text = "not installed (a file of that name was not written by charmer)"
         else:
             state_text = "not installed"
         lines = [f"gateway service: {state_text} — {self.name} ({where})",
@@ -428,11 +428,11 @@ class GatewayService:
             return gateway_lifecycle.Outcome("failed", str(exc), exc.remedy)
         if reason is not None:
             return gateway_lifecycle.Outcome("refused", f"the gateway service was not {verb}: {reason}",
-                                             "the on-demand gateway keeps working: claude-multi gateway start")
+                                             "the on-demand gateway keeps working: charmer gateway start")
         if not linux_service.manager_available(self.seams.runner):
             return gateway_lifecycle.Outcome(
                 "refused", f"the gateway service was not {verb}: no user service manager answers",
-                "the on-demand gateway keeps working: claude-multi gateway start")
+                "the on-demand gateway keeps working: charmer gateway start")
         return None
 
     def _packaged_port(self) -> int:
@@ -454,7 +454,7 @@ class GatewayService:
         for path in (self.unit_path(chosen), self.failure_path(chosen)):
             if self._own_text(path)[0]:
                 return gateway_lifecycle.Outcome(
-                    "refused", f"{paths.display(path, self.environ)} exists and was not written by claude-multi",
+                    "refused", f"{paths.display(path, self.environ)} exists and was not written by charmer",
                     "move it away, or choose another name with --name, then retry")
         channel = self.channel()
         try:
@@ -464,7 +464,7 @@ class GatewayService:
         exec_root = self.spec()["exec_links"][selection.channel]
         if selection.link != self.home / exec_root:
             return gateway_lifecycle.Outcome("failed", "the service spec and the installation layout disagree",
-                                             "reinstall claude-multi")
+                                             "reinstall charmer")
         trust, problem = unit_trust(self.environ, self.home)
         if problem is not None:
             verb = "refreshed" if recorded is not None else "installed"
@@ -513,9 +513,9 @@ class GatewayService:
                 gateway.reload_endpoint()
             except endpoint.EndpointError as exc:
                 return gateway_lifecycle.Outcome("refused", f"{exc}; nothing was installed", exc.remedy)
-            except (OSError, errors.ClaudeMultiError) as exc:
+            except (OSError, errors.CharmerError) as exc:
                 return gateway_lifecycle.Outcome("failed", f"the gateway port could not be recorded: {exc}",
-                                                 "check: claude-multi doctor")
+                                                 "check: charmer doctor")
             if gateway.backend == endpoint.SYSTEMD:
                 return gateway_lifecycle.Outcome("refused", "the gateway service was installed meanwhile",
                                                  f"run {INSTALL} again to refresh it")
@@ -544,9 +544,9 @@ class GatewayService:
                     undo.restart_on_demand = True
                 try:
                     outcome = self._commit_install(name, files, selection, undo, max_wait)
-                except (OSError, errors.ClaudeMultiError) as exc:
+                except (OSError, errors.CharmerError) as exc:
                     outcome = gateway_lifecycle.Outcome("failed", f"the gateway service could not be installed: {exc}",
-                                                        getattr(exc, "remedy", None) or "check: claude-multi doctor")
+                                                        getattr(exc, "remedy", None) or "check: charmer doctor")
                 except BaseException:
                     _notes, complete = self._restore_on_demand(undo)
                     raise
@@ -668,7 +668,7 @@ class GatewayService:
         return ["restore: the service manager did not reload the restored unit files, so the hand-off is not "
                 "finished",
                 "starts, stops and service changes stay refused until it is; once the service manager reloads "
-                f"(check: claude-multi doctor), finish it: {INSTALL} (or {UNINSTALL})"]
+                f"(check: charmer doctor), finish it: {INSTALL} (or {UNINSTALL})"]
 
     def _restore_on_demand(self, undo: _Undo) -> tuple[list[str], bool]:
         """Undo a failed install: ``(notes, complete)``.
@@ -693,7 +693,7 @@ class GatewayService:
                 return self._unfinished(
                     f"the {undo.name} gateway did not stop" + ("" if disabled else
                                                                " (the service manager refused to disable it)")
-                    + "; the service stays installed (check: claude-multi gateway status)"), False
+                    + "; the service stays installed (check: charmer gateway status)"), False
         reloaded = True
         if undo.written:
             problems = self._restore_files(undo)
@@ -705,7 +705,7 @@ class GatewayService:
             if undo.selection is not None:
                 installs.restore_selection(undo.selection)
             gateway.reload_endpoint()
-        except (OSError, errors.ClaudeMultiError) as exc:
+        except (OSError, errors.CharmerError) as exc:
             notes.append(f"restore: {exc}")
         if undo.restart_on_demand:
             deadline = gateway.seams.clock() + gateway_lifecycle.START_READINESS_TIMEOUT
@@ -764,7 +764,7 @@ class GatewayService:
                 return inhibited
             if self.recorded_unit() != name:
                 return gateway_lifecycle.Outcome("refused", "the gateway service changed meanwhile; nothing was changed",
-                                                 f"check it with: claude-multi gateway service status, then run "
+                                                 f"check it with: charmer gateway service status, then run "
                                                  f"{INSTALL} again")
             try:
                 selection = installs.plan_selection(selection.channel, self.environ, self.installation)
@@ -802,10 +802,10 @@ class GatewayService:
         runner = self.seams.runner
         try:
             created = self._ensure_private_dirs()
-        except (OSError, errors.ClaudeMultiError) as exc:
+        except (OSError, errors.CharmerError) as exc:
             done[0] = not interrupted
             return gateway_lifecycle.Outcome("failed", f"the gateway service was not refreshed: {exc}",
-                                             getattr(exc, "remedy", None) or "check: claude-multi doctor")
+                                             getattr(exc, "remedy", None) or "check: charmer doctor")
         recreated = ([f"recreated the missing service directories ({', '.join(created)}); restart it between "
                       f"turns: {RESTART}"] if created else [])
         stale = {path: text for path, text in files.items() if self._own_text(path)[1] != text.encode("utf-8")}
@@ -876,7 +876,7 @@ class GatewayService:
             return gateway_lifecycle.Outcome(
                 "failed", f"{message}; its restoration is not finished, so gateway changes stay paused",
                 f"run {INSTALL} again", notes=tuple(problems))
-        return gateway_lifecycle.Outcome("failed", message, "check: claude-multi doctor")
+        return gateway_lifecycle.Outcome("failed", message, "check: charmer doctor")
 
     def _finish_handoff(self, name: str, notes: list[str], max_wait: float) -> gateway_lifecycle.Outcome:
         """Finish a hand-off that died with the service recorded: the unit
@@ -893,7 +893,7 @@ class GatewayService:
         if seen.state != gateway_lifecycle.STOPPED and properties.get("ActiveState") not in ACTIVE_STATES:
             return gateway_lifecycle.Outcome(
                 "refused", "a gateway runs outside the recorded service; the interrupted gateway service "
-                "hand-off was not finished", f"check it with: claude-multi gateway status, then run {INSTALL} again")
+                "hand-off was not finished", f"check it with: charmer gateway status, then run {INSTALL} again")
         if not linux_service.enable_now(name, runner):
             return gateway_lifecycle.Outcome(
                 "failed", f"the service manager did not enable and start {name}; the interrupted hand-off is "
@@ -903,7 +903,7 @@ class GatewayService:
             tail = service.journal_tail(name, lines=gateway_lifecycle.LOG_TAIL_READ, runner=runner) or ()
             return gateway_lifecycle.Outcome(
                 ready.status, f"the gateway service {name} did not become ready: {ready.message}; the "
-                "interrupted hand-off is not finished", f"check it with: claude-multi gateway status, then run "
+                "interrupted hand-off is not finished", f"check it with: charmer gateway status, then run "
                 f"{INSTALL} again", tuple(tail), tuple(notes))
         return gateway_lifecycle.Outcome(
             "ready", f"gateway service {name} installed and running (an interrupted hand-off was finished) — "
@@ -927,7 +927,7 @@ class GatewayService:
         for path in (self.unit_path(name), self.failure_path(name)):
             if self._own_text(path)[0]:
                 return gateway_lifecycle.Outcome(
-                    "refused", f"{paths.display(path, self.environ)} was not written by claude-multi; nothing was "
+                    "refused", f"{paths.display(path, self.environ)} was not written by charmer; nothing was "
                     "removed", "remove that unit yourself, then retry")
         gateway = self.gateway
         runner = self.seams.runner
@@ -963,9 +963,9 @@ class GatewayService:
                 try:
                     outcome = self._commit_uninstall(name, running, undo, max_wait,
                                                      known=properties.get("LoadState") != "not-found")
-                except (OSError, errors.ClaudeMultiError) as exc:
+                except (OSError, errors.CharmerError) as exc:
                     outcome = gateway_lifecycle.Outcome("failed", f"the gateway service could not be removed: {exc}",
-                                                        getattr(exc, "remedy", None) or "check: claude-multi doctor")
+                                                        getattr(exc, "remedy", None) or "check: charmer doctor")
                 except BaseException:
                     _notes, complete = self._restore_service(undo, max_wait)
                     raise
@@ -1022,7 +1022,7 @@ class GatewayService:
             for path in (self.unit_path(name), self.failure_path(name)):
                 if self._own_text(path)[0]:
                     return gateway_lifecycle.Outcome(
-                        "refused", f"{paths.display(path, self.environ)} was not written by claude-multi; nothing was "
+                        "refused", f"{paths.display(path, self.environ)} was not written by charmer; nothing was "
                         "removed", "remove that unit yourself, then retry")
             seen = gateway.observe()
             if seen.state in (gateway_lifecycle.FOREIGN, gateway_lifecycle.UNKNOWN):
@@ -1030,7 +1030,7 @@ class GatewayService:
             if (linux_service.unit_properties(name, runner) or {}).get("ActiveState") in ACTIVE_STATES:
                 return gateway_lifecycle.Outcome(
                     "refused", f"the gateway service {name} still runs; the interrupted uninstall was not finished",
-                    "check it with: claude-multi gateway service status")
+                    "check it with: charmer gateway service status")
             refused = gateway.begin_handoff("uninstall", name)
             if refused is not None:
                 return refused
@@ -1044,7 +1044,7 @@ class GatewayService:
                 if not linux_service.daemon_reload(runner):
                     return gateway_lifecycle.Outcome(
                         "failed", "the service manager did not reload its unit files; the interrupted uninstall is "
-                        "not finished", f"check: claude-multi doctor, then run {UNINSTALL} again")
+                        "not finished", f"check: charmer doctor, then run {UNINSTALL} again")
                 installs.remove_nix_link(self.environ)
                 finished = True
                 return gateway_lifecycle.Outcome(
@@ -1053,7 +1053,7 @@ class GatewayService:
             except OSError as exc:
                 return gateway_lifecycle.Outcome(
                     "failed", f"the interrupted uninstall is not finished: {exc.strerror or exc}",
-                    "check: claude-multi doctor")
+                    "check: charmer doctor")
             finally:
                 gateway.end_handoff(clear=finished)
         finally:
@@ -1074,14 +1074,14 @@ class GatewayService:
                                                  f"why: {service.hint('why', backend=self._backend(name))}")
             if not self._await_unit_stopped():
                 return gateway_lifecycle.Outcome("timeout", f"the {name} gateway did not exit",
-                                                 "check it with: claude-multi gateway status")
+                                                 "check it with: charmer gateway status")
         for path, raw in undo.files.items():
             if raw is not None:
                 undo.written = True
                 os.unlink(path)
         if not linux_service.daemon_reload(runner):
             return gateway_lifecycle.Outcome("failed", "the service manager did not reload its unit files",
-                                             "check: claude-multi doctor")
+                                             "check: charmer doctor")
         undo.config, _ = endpoint.set_backend(self.home, endpoint.ON_DEMAND, packaged_port=self._packaged_port(),
                                               probe=gateway.seams.port_probe)
         undo.config_written = True
@@ -1128,7 +1128,7 @@ class GatewayService:
             if undo.config_written:
                 endpoint.restore_config(self.home, undo.config)
             gateway.reload_endpoint()
-        except (OSError, errors.ClaudeMultiError) as exc:
+        except (OSError, errors.CharmerError) as exc:
             notes.append(f"restore: {exc}")
         reloaded = linux_service.daemon_reload(runner)
         if undo.enabled and linux_service.enable_now(undo.name, runner):

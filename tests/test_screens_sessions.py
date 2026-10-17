@@ -636,7 +636,7 @@ class ResumeGateModalTests(_SessionsCase):
 
     def test_enter_continues_this_directorys_newest_session(self) -> None:
         # The list opens on this directory's most recently used session, so
-        # Enter continues it (claude-multi -c on the screen).
+        # Enter continues it (charmer -c on the screen).
         self.record(managed_id=fx.OTHER_ID, last_seen=timedelta(hours=3))
         self.record(managed_id=fx.FIXED_ID, last_seen=timedelta(minutes=2))
         result, win = self.run_screen(self.screen(), [ENTER])
@@ -1188,7 +1188,7 @@ class SessionsForgetTests(_SessionsCase):
         self.assertIn(f"Runtime id {runtime_id}.", modal)
         self.assertIn("the session record and its generated scope", modal)
         self.assertIn("transcript is never touched", modal)
-        self.assertIn(f"claude-multi sessions link {runtime_id}", modal)
+        self.assertIn(f"charmer sessions link {runtime_id}", modal)
         self.assertFalse(self.runtime.session_store.exists(fx.FIXED_ID))
         self.assertFalse(scope_dir.exists())
         # After the forget: the runtime id and how to manage it again.
@@ -1203,7 +1203,7 @@ class SessionsForgetTests(_SessionsCase):
         modal = max(index for index, frame in enumerate(win.frames) if "Forget session 11111111…?" in frame)
         after = win.frames[modal + 1:]
         # A frame after the confirmation keeps the full runtime id and the command.
-        view = next((frame for frame in after if f"claude-multi sessions link {runtime_id}" in _flat(frame)), None)
+        view = next((frame for frame in after if f"charmer sessions link {runtime_id}" in _flat(frame)), None)
         self.assertIsNotNone(view, "the result after the forget keeps the full id and the command at 80x24")
         self.assertIn(cli_text.FORGET_DONE_TITLE.format(short="11111111…"), view)
         lines = view.splitlines()
@@ -1213,7 +1213,7 @@ class SessionsForgetTests(_SessionsCase):
         self.assertIn(f"Session {fx.FIXED_ID} is forgotten", flat)
         self.assertIn(f"native session {runtime_id};", flat)
         self.assertIn(f"choose {runtime_id}", flat)
-        self.assertIn(f"claude-multi sessions link {runtime_id}", flat)
+        self.assertIn(f"charmer sessions link {runtime_id}", flat)
         self.assertIn("L in Sessions", flat)
 
     def test_x_cancel_keeps_the_record(self) -> None:

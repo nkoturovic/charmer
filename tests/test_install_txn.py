@@ -24,14 +24,14 @@ import test_inhibition  # module import: no test classes re-exported
 
 class TxnTestCase(unittest.TestCase):
     def setUp(self) -> None:
-        self.tmp = Path(tempfile.mkdtemp(prefix="claude-multi-txn-"))
+        self.tmp = Path(tempfile.mkdtemp(prefix="charmer-txn-"))
         self.addCleanup(shutil.rmtree, self.tmp, True)
         self.home = self.tmp / "home"
         self.home.mkdir(mode=0o700)
         self.environ = {"HOME": str(self.home)}
-        self.state = self.home / ".local/state/claude-multi"
+        self.state = self.home / ".local/state/charmer"
         self.state.mkdir(parents=True, mode=0o700)
-        self.install = self.home / ".local/share/claude-multi/install"
+        self.install = self.home / ".local/share/charmer/install"
         (self.install / "versions").mkdir(parents=True, mode=0o700)
         os.chmod(self.install, 0o700)
 
@@ -111,7 +111,7 @@ def legacy_handoff(state_root: Path, *, pid: int) -> None:
     """An earlier release's service hand-off record (``service-handoff.json``)."""
 
     service.ensure_gateway_workdir(state_root)
-    document = {"version": 1, "operation": "install", "unit": "claude-multi-gateway", "pid": pid,
+    document = {"version": 1, "operation": "install", "unit": "charmer-gateway", "pid": pid,
                 "started_at": datetime.datetime.now(datetime.timezone.utc).isoformat(), "token": "c" * 32}
     state.atomic_write(gateway_inhibition.legacy_path(state_root), json.dumps(document).encode())
 
@@ -120,14 +120,14 @@ class InhibitionTests(TxnTestCase):
     """The installer's and the updater's inhibition is the runtime's one record."""
 
     def test_begin_advance_and_end(self) -> None:
-        held = install_txn.begin(self.state, owner="installer", purpose="install claude-multi 1.0.1")
+        held = install_txn.begin(self.state, owner="installer", purpose="install charmer 1.0.1")
         record = gateway_inhibition.read(self.state)
         self.assertEqual((record.owner, record.phase, record.remedy), ("installer", "prepare", "sh install.sh --repair"))
         self.assertEqual((record.expiry.policy, record.expiry.pid), ("owner-process", os.getpid()))
         self.assertEqual(record.token, held.token)
         with self.assertRaises(install_txn.TransactionError) as caught:
             install_txn.guard(self.state)
-        self.assertIn("the gateway is inhibited by installer (install claude-multi 1.0.1; phase prepare",
+        self.assertIn("the gateway is inhibited by installer (install charmer 1.0.1; phase prepare",
                       str(caught.exception))
         self.assertEqual(caught.exception.remedy.split(": ")[-1], "sh install.sh --repair")
         install_txn.guard(self.state, token=held.token)
@@ -146,9 +146,9 @@ class InhibitionTests(TxnTestCase):
 
     def test_one_owner_at_a_time_and_recovery_is_explicit(self) -> None:
         # Owned by a live process (the test runner's parent stands in for it).
-        held = install_txn.begin(self.state, owner="updater", purpose="update claude-multi 1.0.0 to 1.0.1",
+        held = install_txn.begin(self.state, owner="updater", purpose="update charmer 1.0.0 to 1.0.1",
                                  pid=os.getppid())
-        self.assertIn("claude-multi update", gateway_inhibition.read(self.state).remedy)
+        self.assertIn("charmer update", gateway_inhibition.read(self.state).remedy)
         with self.assertRaisesRegex(install_txn.TransactionError, "inhibited by updater"):
             install_txn.begin(self.state, owner="installer", purpose="install")
         with self.assertRaisesRegex(install_txn.TransactionError, "still in progress"):
@@ -156,10 +156,10 @@ class InhibitionTests(TxnTestCase):
         held.end()
         # An interrupted run (its owner process gone) still refuses a begin of
         # the same owner: only an explicit recovery takes it back.
-        install_txn.begin(self.state, owner="installer", purpose="install claude-multi 1.0.1", pid=DEAD_PID)
+        install_txn.begin(self.state, owner="installer", purpose="install charmer 1.0.1", pid=DEAD_PID)
         gateway_inhibition.advance(self.state, gateway_inhibition.read(self.state).token, "switch")
         with self.assertRaisesRegex(install_txn.TransactionError, "did not finish"):
-            install_txn.begin(self.state, owner="installer", purpose="install claude-multi 1.0.2")
+            install_txn.begin(self.state, owner="installer", purpose="install charmer 1.0.2")
         with self.assertRaisesRegex(install_txn.TransactionError, "did not finish"):
             install_txn.guard(self.state)
         install_txn.guard(self.state, recoverable="installer")  # the repair's check before its lock
@@ -181,9 +181,9 @@ class InhibitionTests(TxnTestCase):
                 legacy_handoff(self.state, pid=pid)
                 with self.assertRaises(install_txn.TransactionError) as caught:
                     install_txn.guard(self.state)
-                self.assertIn("the gateway is inhibited by service (gateway service install (claude-multi-gateway)",
+                self.assertIn("the gateway is inhibited by service (gateway service install (charmer-gateway)",
                               str(caught.exception))
-                self.assertIn("claude-multi gateway service install", caught.exception.remedy)
+                self.assertIn("charmer gateway service install", caught.exception.remedy)
                 with self.assertRaises(install_txn.TransactionError):
                     install_txn.guard(self.state, recoverable="installer")
                 for owner in ("installer", "updater"):
@@ -203,7 +203,7 @@ class InhibitionTests(TxnTestCase):
             install_txn.guard(self.state)
 
     def test_the_marker_claim_is_fenced_for_the_owner(self) -> None:
-        held = install_txn.begin(self.state, owner="installer", purpose="install claude-multi 1.0.1")
+        held = install_txn.begin(self.state, owner="installer", purpose="install charmer 1.0.1")
         with self.assertRaisesRegex(install_txn.TransactionError, "inhibited by installer"):
             install_txn.claim(self.state, self.environ)
         self.assertFalse((self.state / "channel").exists())
@@ -233,7 +233,7 @@ class CompetingChangeTests(_Competing):
     outcome before any effect; an interrupted run keeps refusing them."""
 
     def test_competing_starts_and_service_installs_are_inhibited(self) -> None:
-        for owner, remedy in (("installer", "sh install.sh --repair"), ("updater", "claude-multi update")):
+        for owner, remedy in (("installer", "sh install.sh --repair"), ("updater", "charmer update")):
             with self.subTest(owner):
                 held = install_txn.begin(self.state_root, owner=owner, purpose=f"{owner} run")
                 self.assert_inhibited(self.gateway().ensure(max_wait=1), owner, remedy)  # the token helper
@@ -245,7 +245,7 @@ class CompetingChangeTests(_Competing):
                 held.advance("switch")
                 held.end()
         # An interrupted installer (its shell gone) still refuses them.
-        install_txn.begin(self.state_root, owner="installer", purpose="install claude-multi 1.0.1", pid=DEAD_PID)
+        install_txn.begin(self.state_root, owner="installer", purpose="install charmer 1.0.1", pid=DEAD_PID)
         outcome = self.gateway().ensure(max_wait=1)
         self.assert_inhibited(outcome, "installer", "sh install.sh --repair")
         self.assertIn("its owner did not finish (stale)", outcome.message)
@@ -286,7 +286,7 @@ class ProtectedTests(TxnTestCase):
     @unittest.skipUnless(Path("/proc/self/exe").exists() and Path("/usr/bin/sleep").is_file(),
                          "BOUNDARY: needs /proc and /usr/bin/sleep")
     def test_a_running_gateway_protects_its_version(self) -> None:
-        binary = self.install / "versions/1.0.0/libexec/claude-multi/cli-proxy-api"
+        binary = self.install / "versions/1.0.0/libexec/charmer/cli-proxy-api"
         binary.parent.mkdir(parents=True)
         shutil.copy2("/usr/bin/sleep", binary)
         process = subprocess.Popen([str(binary), "30"])
@@ -356,7 +356,7 @@ class CommandTests(TxnTestCase):
         self.marker(b"nix\n")
         code, _out, err = self.run_main("preflight", *roots)
         self.assertEqual(code, 1)
-        self.assertIn("claude-multi installer: this account's claude-multi state", err)
+        self.assertIn("charmer installer: this account's charmer state", err)
         self.assertIn("  fix: ", err)
         self.assertEqual(self.run_main("preflight", *roots, "--migrate")[0], 0)
         code, out, _err = self.run_main("claim", "--state-root", str(self.state), "--migrate")
@@ -366,7 +366,7 @@ class CommandTests(TxnTestCase):
 
     def test_preflight_lets_only_the_recovering_owner_pass(self) -> None:
         roots = ("--state-root", str(self.state), "--install-root", str(self.install))
-        install_txn.begin(self.state, owner="installer", purpose="install claude-multi 1.0.1", pid=DEAD_PID)
+        install_txn.begin(self.state, owner="installer", purpose="install charmer 1.0.1", pid=DEAD_PID)
         code, _out, err = self.run_main("preflight", *roots)
         self.assertEqual(code, 1)
         self.assertIn("inhibited by installer", err)
@@ -383,9 +383,9 @@ class CommandTests(TxnTestCase):
         held.end()
 
     def test_receipt(self) -> None:
-        launcher = self.home / ".local/bin/claude-multi"
+        launcher = self.home / ".local/bin/charmer"
         launcher.parent.mkdir(parents=True)
-        launcher.write_text("#!/bin/sh\n# claude-multi installer launcher\nexec x\n")
+        launcher.write_text("#!/bin/sh\n# charmer installer launcher\nexec x\n")
         profile = self.home / ".profile"
         line = install_receipt.PATH_LINE
         profile.write_text(f"{line}\n")
@@ -400,7 +400,7 @@ class CommandTests(TxnTestCase):
 
 class ReceiptTests(TxnTestCase):
     def document(self, **changes: object) -> dict:
-        launcher = self.home / ".local/bin/claude-multi"
+        launcher = self.home / ".local/bin/charmer"
         base = {"format": 2,
                 "launchers": [{"path": str(launcher), "sha256": "a" * 64}],
                 "path_lines": [{"file": str(self.home / ".bashrc"), "marker": install_receipt.PATH_MARK,
@@ -416,7 +416,7 @@ class ReceiptTests(TxnTestCase):
             "legacy hashless format": self.document(format=1),
             "legacy launcher list": self.document(launchers=[launcher["path"]]),
             "unknown key": {**self.document(), "extra": 1},
-            "relative launcher": self.document(launchers=[{"path": "bin/claude-multi", "sha256": "a" * 64}]),
+            "relative launcher": self.document(launchers=[{"path": "bin/charmer", "sha256": "a" * 64}]),
             "unnormalized launcher": self.document(launchers=[{"path": "/home/../x", "sha256": "a" * 64}]),
             "short digest": self.document(launchers=[{"path": launcher["path"], "sha256": "a" * 63}]),
             "upper-case digest": self.document(launchers=[{"path": launcher["path"], "sha256": "A" * 64}]),
@@ -434,7 +434,7 @@ class ReceiptTests(TxnTestCase):
             install_receipt.read(self.install)
 
     def test_ownership_evidence(self) -> None:
-        launcher = self.home / ".local/bin/claude-multi"
+        launcher = self.home / ".local/bin/charmer"
         launcher.parent.mkdir(parents=True)
         launcher.write_bytes(b"#!/bin/sh\nexec x\n")
         receipt = install_receipt.record(self.install, [launcher])
@@ -458,7 +458,7 @@ class ReceiptTests(TxnTestCase):
         fd = os.open(self.install / "installer.json", os.O_WRONLY | os.O_CREAT, 0o600)
         os.write(fd, json.dumps(legacy).encode())
         os.close(fd)
-        launcher = self.home / "claude-multi"
+        launcher = self.home / "charmer"
         launcher.write_bytes(b"x")
         receipt = install_receipt.record(self.install, [launcher])
         self.assertEqual(receipt.path_lines, ())

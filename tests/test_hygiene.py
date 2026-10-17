@@ -102,7 +102,7 @@ class ImportBoundaryTests(unittest.TestCase):
             if relative == "dev.py":
                 continue
             tree = ast.parse(module.read_text())
-            # The entry points load dev.py inside the claude-multi-dev
+            # The entry points load dev.py inside the charmer-dev
             # command only, so their module-level imports are what counts.
             nodes = tree.body if relative == "entrypoints.py" else ast.walk(tree)
             for node in nodes:
@@ -133,7 +133,7 @@ class ImportBoundaryTests(unittest.TestCase):
         self.assertEqual(found, [])
 
     def test_bins_run_their_command_through_the_entry_points(self) -> None:
-        for name in ("claude-multi", "claude-multi-dev", "claude-multi-proxy"):
+        for name in ("charmer", "charmer-dev", "charmer-proxy"):
             text = (REPO_ROOT / "bin" / name).read_text()
             with self.subTest(bin=name):
                 self.assertIn("from charmer.entrypoints import prepare_source, run", text)
@@ -334,7 +334,7 @@ _installed_paths = installed_paths
 # The public repository's identity (owner/name, and its URL) is the
 # product's own public address, not a personal identifier: the identifier
 # gate reads every file with it masked. Nothing else of the owner's name is.
-PUBLIC_REPOSITORY = re.compile(rb"(?:https://github\.com/)?nkoturovic/claude-multi(?![\w-])")
+PUBLIC_REPOSITORY = re.compile(rb"(?:https://github\.com/)?nkoturovic/charmer(?![\w-])")
 
 
 def identifier_bytes(data: bytes) -> bytes:
@@ -381,12 +381,12 @@ class IdentifierGateTests(unittest.TestCase):
 
     def test_only_the_public_repository_is_masked(self) -> None:
         owner = b"nko" + b"turovic"  # split: the owner's name stays a private identifier here
-        for text in (b"https://github.com/" + owner + b"/claude-multi/releases/latest/download",
-                     b"[" + owner + b"/claude-multi](https://github.com/" + owner + b"/claude-multi)",
-                     b"git clone https://github.com/" + owner + b"/claude-multi"):
+        for text in (b"https://github.com/" + owner + b"/charmer/releases/latest/download",
+                     b"[" + owner + b"/charmer](https://github.com/" + owner + b"/charmer)",
+                     b"git clone https://github.com/" + owner + b"/charmer"):
             with self.subTest(text=text):
                 self.assertNotIn(owner, identifier_bytes(text))
-        for text in (b"https://github.com/" + owner + b"/other-project", owner + b"/claude-multi-private", owner):
+        for text in (b"https://github.com/" + owner + b"/other-project", owner + b"/charmer-private", owner):
             with self.subTest(text=text):
                 self.assertIn(owner, identifier_bytes(text))
 
@@ -595,7 +595,7 @@ LINEAGE_SAMPLES = tuple("fixture: " + token for tokens in LINEAGE_EXAMPLES.value
 LINEAGE_CONTROLS = (
     "schema v3", "v4 records", "state version 3", "Claude Code 2.1.286", "CLIProxyAPI 7.3.15",
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36", "Mac OS X 10_15_7",
-    "Copyright (c) 2026 the claude-multi authors", "\\033[0m", "\\070", "0o700", "mode 0700",
+    "Copyright (c) 2026 the charmer authors", "\\033[0m", "\\070", "0o700", "mode 0700",
     "python3.14", "Python 3.11", "timeout 3.05 s", "restore-2x", "quarantine-3x/", "<id>.v3.json",
     "catalog 37", "HTTP/2.0", "TLS 1.3", "200K..800K", "GPL-3.0-or-later", "port 8070",
     "tests/test_cm_help.py", "test_s1_reload_plugins_rebinds_next_spawn", "gateway_startup_probe_test.go",
@@ -607,7 +607,7 @@ LINEAGE_KEEP: tuple[tuple[str, str, int, str], ...] = (
     ("src/charmer/scope.py", "embedded in compiled 3.0", 1,
      "the hook shim's bytes: earlier launchers write the same shim, so a new text rewrites every "
      "installed shim back and forth"),
-    ("tests/goldens/shim/claude-multi-hook-3", "embedded in compiled 3.0", 1, "the golden of that shim"),
+    ("tests/goldens/shim/charmer-hook-3", "embedded in compiled 3.0", 1, "the golden of that shim"),
     ("src/charmer/migrate.py", "2.x", 1,
      "the target field value of the restore-2x --check --json document (a machine contract)"),
 )
@@ -723,8 +723,8 @@ class LineageWordingTests(unittest.TestCase):
         from charmer import dev, proxy
         from charmer.cli.parser import build_parser
 
-        helps = {"claude-multi-proxy": proxy.PROXY_USAGE, "claude-multi-dev": dev.DEV_HELP}
-        helps.update({f"claude-multi-proxy {command.name}": command.help() for command in proxy.PROXY_COMMANDS})
+        helps = {"charmer-proxy": proxy.PROXY_USAGE, "charmer-dev": dev.DEV_HELP}
+        helps.update({f"charmer-proxy {command.name}": command.help() for command in proxy.PROXY_COMMANDS})
         seen: set[int] = set()
 
         def walk(parser: argparse.ArgumentParser, name: str) -> None:
@@ -738,7 +738,7 @@ class LineageWordingTests(unittest.TestCase):
                         walk(child, f"{name} {child_name}")
 
         with redirect_stdout(io.StringIO()):
-            walk(build_parser(), "claude-multi")
+            walk(build_parser(), "charmer")
         self.assertGreater(len(helps), 40)
         found = {name: lineage_matches(text) for name, text in helps.items() if lineage_matches(text)}
         self.assertEqual(found, {})
@@ -778,7 +778,7 @@ class LocalEnvironmentTests(unittest.TestCase):
         self.assertTrue(venv.startswith(("~/", "/", "$HOME/")), venv)
         used = [line.split()[0] for line in setup.splitlines() if line.startswith(venv + "/bin/")]
         self.assertIn(f"{venv}/bin/pip", used)
-        self.assertIn(f"{venv}/bin/claude-multi", used)
+        self.assertIn(f"{venv}/bin/charmer", used)
 
     def test_ignored_local_content_stays_out_of_the_naming_gates(self) -> None:
         import shutil

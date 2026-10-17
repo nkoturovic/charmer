@@ -32,7 +32,7 @@ from test_gateway_lifecycle import World, _Lifecycle, save_line
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "service"
 STORE_NOTIFIER = "/nix/store/00000000000000000000000000000000-libnotify/bin/notify-send"
 # The reference unit's settings: its name, its exec link and its notifier.
-REFERENCE_PLAN = dict(name="cli-proxy-api", exec_root=".local/share/claude-multi-release/current",
+REFERENCE_PLAN = dict(name="cli-proxy-api", exec_root=".local/share/charmer-release/current",
                       notify_send=STORE_NOTIFIER)
 # Triggers of the packaging the reference came from; the product classifies
 # reload versus restart itself (service install), so they have no successor.
@@ -93,25 +93,25 @@ class RenderTests(unittest.TestCase):
             systemd_unit.render(spec(), self.reference_plan())["cli-proxy-api-failure.service"])
         self.assertEqual(rendered["Unit"], reference["Unit"])
         self.assertEqual(dict(rendered["Service"])["Type"], dict(reference["Service"])["Type"])
-        prefix = f"-{STORE_NOTIFIER} --urgency=critical --app-name=claude-multi 'claude-multi gateway failed' "
+        prefix = f"-{STORE_NOTIFIER} --urgency=critical --app-name=charmer 'charmer gateway failed' "
         ours, theirs = dict(rendered["Service"])["ExecStart"], dict(reference["Service"])["ExecStart"]
         self.assertTrue(ours.startswith(prefix) and theirs.startswith(prefix))
         # The remedy for a missing directory changed: the install creates them now.
-        self.assertIn("claude-multi gateway service install recreates them", ours)
+        self.assertIn("charmer gateway service install recreates them", ours)
         self.assertNotIn("tmpfiles", ours)
 
     def test_a_new_install_renders_through_its_channel_link(self) -> None:
         s = spec()
         for channel, link in s["exec_links"].items():
             with self.subTest(channel=channel):
-                files = systemd_unit.render(s, systemd_unit.UnitPlan("claude-multi-gateway", link))
-                self.assertEqual(list(files), ["claude-multi-gateway.service"])
-                text = files["claude-multi-gateway.service"]
+                files = systemd_unit.render(s, systemd_unit.UnitPlan("charmer-gateway", link))
+                self.assertEqual(list(files), ["charmer-gateway.service"])
+                text = files["charmer-gateway.service"]
                 self.assertTrue(systemd_unit.written_here(text))
                 service_section = dict(systemd_unit.parse(text)["Service"])
                 self.assertEqual(service_section["ExecStart"],
-                                 f"%h/{link}/bin/claude-multi-proxy run --prepared --state-root "
-                                 "%h/.local/state/claude-multi")
+                                 f"%h/{link}/bin/charmer-proxy run --prepared --state-root "
+                                 "%h/.local/state/charmer")
                 self.assertEqual(service_section["ExecStartPre"][:1], "+")
                 self.assertEqual(service_section["ExecReload"][:1], "+")
                 self.assertNotIn("/nix/store", text)
@@ -173,7 +173,7 @@ class RenderTests(unittest.TestCase):
             "unknown key": lambda s: s.update(extra=1),
             "absolute path": lambda s: s["bind_rw"].append("/etc"),
             "bind outside the private dirs": lambda s: s["bind_ro"].append(".ssh"),
-            "child before parent": lambda s: s["private_dirs"].insert(0, ".local/share/claude-multi/auth/x"),
+            "child before parent": lambda s: s["private_dirs"].insert(0, ".local/share/charmer/auth/x"),
             "unknown tier b": lambda s: s["hardening"]["tier_b"].append("PrivateNetwork"),
             "workdir outside the state root": lambda s: s.update(working_directory=".cache/gw"),
             "exec links": lambda s: s["exec_links"].pop("nix"),
@@ -185,7 +185,7 @@ class RenderTests(unittest.TestCase):
             with self.subTest(label), self.assertRaises(systemd_unit.UnitSpecError):
                 systemd_unit.validate_spec(document)
         with self.assertRaises(systemd_unit.UnitSpecError):
-            systemd_unit.render(spec(), systemd_unit.UnitPlan("Bad Name", ".local/share/claude-multi/nix/current"))
+            systemd_unit.render(spec(), systemd_unit.UnitPlan("Bad Name", ".local/share/charmer/nix/current"))
 
     def test_the_packaged_spec_is_what_the_service_reads(self) -> None:
         self.assertEqual(gs.load_spec(), spec())
@@ -282,7 +282,7 @@ class _ServiceCase(_Lifecycle):
     def setUp(self) -> None:
         super().setUp()
         # The service runs with the HOME-relative state root.
-        self.state_root = self.home / ".local" / "state" / "claude-multi"
+        self.state_root = self.home / ".local" / "state" / "charmer"
         self.workdir = service.ensure_gateway_workdir(self.state_root)
         self.logs = self.workdir / service.GATEWAY_LOGS
         self.unit_dir = self.home / ".config" / "systemd" / "user"
@@ -305,10 +305,10 @@ class _ServiceCase(_Lifecycle):
 
     # ----------------------------------------------------------- fixtures
     def install_bundle(self, version: str) -> Path:
-        root = state.ensure_private_dir(self.home / ".local/share/claude-multi") / "install"
+        root = state.ensure_private_dir(self.home / ".local/share/charmer") / "install"
         target = root / "versions" / version
         (target / "bin").mkdir(parents=True, exist_ok=True)
-        for entry in ("claude-multi", "claude-multi-proxy"):
+        for entry in ("charmer", "charmer-proxy"):
             (target / "bin" / entry).write_text("#!/bin/sh\nexit 1\n")
             (target / "bin" / entry).chmod(0o755)
         link = root / "current"
@@ -320,13 +320,13 @@ class _ServiceCase(_Lifecycle):
     def store_package(self, name: str, gateway: str) -> Path:
         package = self.store / name
         (package / "bin").mkdir(parents=True, exist_ok=True)
-        for entry in ("claude-multi", "claude-multi-proxy"):
+        for entry in ("charmer", "charmer-proxy"):
             (package / "bin" / entry).write_text("#!/bin/sh\n")
         binary = self.store / gateway / "bin" / "cli-proxy-api"
         binary.parent.mkdir(parents=True, exist_ok=True)
         binary.write_text("gateway")
-        (package / "libexec/claude-multi").mkdir(parents=True, exist_ok=True)
-        link = package / "libexec/claude-multi/cli-proxy-api"
+        (package / "libexec/charmer").mkdir(parents=True, exist_ok=True)
+        link = package / "libexec/charmer/cli-proxy-api"
         if not os.path.lexists(link):
             link.symlink_to(binary)
         return package
@@ -353,7 +353,7 @@ class _ServiceCase(_Lifecycle):
     def recorded(self) -> endpoint.EndpointConfig | None:
         return endpoint.read_config(self.home)
 
-    def unit_text(self, name: str = "claude-multi-gateway") -> str:
+    def unit_text(self, name: str = "charmer-gateway") -> str:
         return (self.unit_dir / f"{name}.service").read_text()
 
 
@@ -364,17 +364,17 @@ class InstallTests(_ServiceCase):
         outcome = self.service().install()
         self.assertTrue(outcome.ok, outcome.lines())
         self.assertEqual(outcome.status, "ready")
-        self.assertIn("gateway service claude-multi-gateway installed and running", outcome.message)
+        self.assertIn("gateway service charmer-gateway installed and running", outcome.message)
         # The on-demand instance stopped (and its exit was proven) before any unit file existed.
         self.assertEqual(self.events.index("terminate 4242") < self.events.index("systemctl --user --no-ask-password daemon-reload"), True)
         self.assertEqual(self.manager.verbs(), ["show", "daemon-reload", "show", "enable"])
         self.assertTrue(systemd_unit.written_here(self.unit_text()))
-        self.assertIn("ExecStart=%h/.local/share/claude-multi/install/current/bin/claude-multi-proxy run --prepared",
+        self.assertIn("ExecStart=%h/.local/share/charmer/install/current/bin/charmer-proxy run --prepared",
                       self.unit_text())
-        self.assertIn("OnFailure=claude-multi-gateway-failure.service", self.unit_text())
-        self.assertTrue((self.unit_dir / "claude-multi-gateway-failure.service").is_file())
+        self.assertIn("OnFailure=charmer-gateway-failure.service", self.unit_text())
+        self.assertTrue((self.unit_dir / "charmer-gateway-failure.service").is_file())
         config = self.recorded()
-        self.assertEqual((config.port, config.backend, config.unit), (self.port, endpoint.SYSTEMD, "claude-multi-gateway"))
+        self.assertEqual((config.port, config.backend, config.unit), (self.port, endpoint.SYSTEMD, "charmer-gateway"))
         for rel in spec()["private_dirs"]:
             mode = (self.home / rel).stat().st_mode & 0o777
             self.assertEqual(mode, 0o700, rel)
@@ -417,7 +417,7 @@ class InstallTests(_ServiceCase):
             with self.subTest(label):
                 manager = self.service(environ=env)
                 if label == "another state root":
-                    manager.gateway.state_root = self.root / "elsewhere" / "claude-multi"
+                    manager.gateway.state_root = self.root / "elsewhere" / "charmer"
                 outcome = manager.install()
                 self.assertEqual(outcome.status, "refused", outcome.lines())
                 nothing_changed()
@@ -546,7 +546,7 @@ class InstallTests(_ServiceCase):
         bundle.parent.mkdir(mode=0o700)
         bundle.write_text("fixture\n")
         self.assertTrue(self.service(environ=self.ca_environ(SSL_CERT_FILE=str(bundle))).install().ok)
-        path = self.unit_dir / "claude-multi-gateway.service"
+        path = self.unit_dir / "charmer-gateway.service"
         self.assertIs(self.service().status().stale, False)
         text = path.read_text()
         self.assertIn("BindReadOnlyPaths=%h/certs/corp.pem\n", text)
@@ -568,10 +568,10 @@ class InstallTests(_ServiceCase):
 
     def test_a_foreign_unit_file_is_never_overwritten(self) -> None:
         self.unit_dir.mkdir(parents=True)
-        (self.unit_dir / "claude-multi-gateway.service").write_text("[Service]\nExecStart=/bin/true\n")
+        (self.unit_dir / "charmer-gateway.service").write_text("[Service]\nExecStart=/bin/true\n")
         outcome = self.service().install()
         self.assertEqual(outcome.status, "refused")
-        self.assertIn("was not written by claude-multi", outcome.message)
+        self.assertIn("was not written by charmer", outcome.message)
         self.assertEqual(self.unit_text(), "[Service]\nExecStart=/bin/true\n")
 
     def test_a_failed_start_restores_the_on_demand_gateway(self) -> None:
@@ -698,7 +698,7 @@ class InstallTests(_ServiceCase):
 
     def test_a_new_install_records_its_own_port(self) -> None:
         endpoint.endpoint_path(self.home).unlink()
-        (self.home / ".config/claude-multi/api-key").unlink()  # no rendered gateway yet: a new install
+        (self.home / ".config/charmer/api-key").unlink()  # no rendered gateway yet: a new install
         packaged = endpoint.port_of(self.document["gateway"]["base_url"])
         observed = []
 
@@ -720,8 +720,8 @@ class NixSelectionTests(_ServiceCase):
     CHANNEL = "nix"
 
     def environ(self, **extra: str) -> dict[str, str]:
-        package = self.store_package("aaaa-claude-multi", "gw-1")
-        return super().environ(CLAUDE_MULTI_HOOK_COMMAND=str(package / "bin/claude-multi"),
+        package = self.store_package("aaaa-charmer", "gw-1")
+        return super().environ(CLAUDE_MULTI_HOOK_COMMAND=str(package / "bin/charmer"),
                                PATH=str(self.root / "tools"), **extra)
 
     def setUp(self) -> None:
@@ -734,12 +734,12 @@ class NixSelectionTests(_ServiceCase):
     def test_install_links_this_store_path_and_registers_its_root(self) -> None:
         outcome = self.service().install()
         self.assertTrue(outcome.ok, outcome.lines())
-        link = self.home / ".local/share/claude-multi/nix/current"
-        self.assertEqual(os.readlink(link), str(self.store / "aaaa-claude-multi"))
-        self.assertEqual(self.manager.gc_roots, [(str(link), str(self.store / "aaaa-claude-multi"))])
-        self.assertIn("%h/.local/share/claude-multi/nix/current/bin/claude-multi-proxy", self.unit_text())
-        self.assertFalse(os.path.lexists(self.home / ".local/share/claude-multi/install/current")
-                         and os.readlink(self.home / ".local/share/claude-multi/install/current") != "versions/1.0.0")
+        link = self.home / ".local/share/charmer/nix/current"
+        self.assertEqual(os.readlink(link), str(self.store / "aaaa-charmer"))
+        self.assertEqual(self.manager.gc_roots, [(str(link), str(self.store / "aaaa-charmer"))])
+        self.assertIn("%h/.local/share/charmer/nix/current/bin/charmer-proxy", self.unit_text())
+        self.assertFalse(os.path.lexists(self.home / ".local/share/charmer/install/current")
+                         and os.readlink(self.home / ".local/share/charmer/install/current") != "versions/1.0.0")
 
     def test_without_nix_store_the_link_is_kept_with_a_note(self) -> None:
         (self.root / "tools" / "nix-store").unlink()
@@ -752,7 +752,7 @@ class NixSelectionTests(_ServiceCase):
         status = self.service().status()
         self.assertFalse(status.stale)
         self.assertFalse(status.switch_pending)
-        self.assertEqual(self.service().install().message, "gateway service claude-multi-gateway is installed and current")
+        self.assertEqual(self.service().install().message, "gateway service charmer-gateway is installed and current")
         # The running unit gateway runs the first package's gateway binary.
         self.world.write_stamp("bbbbbbbbbbbbbbbb")
         stamp = service.read_exec_stamp(self.workdir)
@@ -760,21 +760,21 @@ class NixSelectionTests(_ServiceCase):
             stamp.launcher_version, stamp.signature, stamp.pid,
             str(self.store / "gw-1/bin/cli-proxy-api"), stamp.started_at, stamp.pid_namespace, stamp.instance))
         # A launcher-only change: another store path, the same gateway.
-        same = self.store_package("bbbb-claude-multi", "gw-1")
-        env = super().environ(CLAUDE_MULTI_HOOK_COMMAND=str(same / "bin/claude-multi"), PATH=str(self.root / "tools"))
+        same = self.store_package("bbbb-charmer", "gw-1")
+        env = super().environ(CLAUDE_MULTI_HOOK_COMMAND=str(same / "bin/charmer"), PATH=str(self.root / "tools"))
         self.assertTrue(self.service(environ=env).status().switch_pending)
         outcome = self.service(environ=env).install()
         self.assertIn("reloaded: only the launcher changed", "\n".join(outcome.lines()))
-        self.assertEqual(self.manager.reloaded, ["claude-multi-gateway"])
+        self.assertEqual(self.manager.reloaded, ["charmer-gateway"])
         # A new gateway binary: restart pending, never a silent restart.
-        newer = self.store_package("cccc-claude-multi", "gw-2")
-        env = super().environ(CLAUDE_MULTI_HOOK_COMMAND=str(newer / "bin/claude-multi"), PATH=str(self.root / "tools"))
+        newer = self.store_package("cccc-charmer", "gw-2")
+        env = super().environ(CLAUDE_MULTI_HOOK_COMMAND=str(newer / "bin/charmer"), PATH=str(self.root / "tools"))
         outcome = self.service(environ=env).install()
         self.assertIn("restart pending: the gateway binary changed", "\n".join(outcome.lines()))
-        self.assertEqual(self.manager.reloaded, ["claude-multi-gateway"])
-        self.assertEqual(os.readlink(self.home / ".local/share/claude-multi/nix/current"), str(newer))
+        self.assertEqual(self.manager.reloaded, ["charmer-gateway"])
+        self.assertEqual(os.readlink(self.home / ".local/share/charmer/nix/current"), str(newer))
         # A changed unit text: restart pending.
-        (self.unit_dir / "claude-multi-gateway.service").write_text(self.unit_text().replace("RestartSec=5s", "RestartSec=9s"))
+        (self.unit_dir / "charmer-gateway.service").write_text(self.unit_text().replace("RestartSec=5s", "RestartSec=9s"))
         self.assertTrue(self.service(environ=env).status().stale)
         outcome = self.service(environ=env).install()
         self.assertIn("restart pending: the unit changed", "\n".join(outcome.lines()))
@@ -786,11 +786,11 @@ class NixSelectionTests(_ServiceCase):
         self.world.spawned.clear()
         outcome = self.service().uninstall()
         self.assertTrue(outcome.ok, outcome.lines())
-        self.assertIn("gateway service claude-multi-gateway removed", outcome.message)
+        self.assertIn("gateway service charmer-gateway removed", outcome.message)
         self.assertIn("disable", self.manager.verbs())
         self.assertEqual(list(self.unit_dir.glob("*.service")), [])
         self.assertEqual(self.recorded(), endpoint.EndpointConfig(port=self.port))
-        self.assertFalse(os.path.lexists(self.home / ".local/share/claude-multi/nix/current"))
+        self.assertFalse(os.path.lexists(self.home / ".local/share/charmer/nix/current"))
         self.assertEqual(len(self.world.spawned), 1)  # the on-demand gateway runs again
         self.assertIsNone(gateway_inhibition.read(self.state_root))
         self.assertEqual(self.service().uninstall().message,
@@ -810,7 +810,7 @@ class NixSelectionTests(_ServiceCase):
         self.assertIn("restored: the gateway service runs again", "\n".join(outcome.lines()))
         self.assertEqual(self.recorded().backend, endpoint.SYSTEMD)
         self.assertTrue(systemd_unit.written_here(self.unit_text()))
-        self.assertTrue(os.path.islink(self.home / ".local/share/claude-multi/nix/current"))
+        self.assertTrue(os.path.islink(self.home / ".local/share/charmer/nix/current"))
         self.assertEqual(self.manager.verbs()[-2:], ["daemon-reload", "enable"])
         self.assertIsNone(gateway_inhibition.read(self.state_root))  # completely restored, reload included
 
@@ -841,18 +841,18 @@ class StatusAndInhibitionTests(_ServiceCase):
         status = self.service().status()
         self.assertFalse(status.installed)
         self.assertEqual(status.attention({"HOME": str(self.home)}), [])
-        self.assertIn("gateway service: not installed — claude-multi-gateway", status.lines({"HOME": str(self.home)})[0])
+        self.assertIn("gateway service: not installed — charmer-gateway", status.lines({"HOME": str(self.home)})[0])
         self.assertTrue(self.service().install().ok)
         status = self.service().status()
         self.assertTrue(status.installed and status.recorded)
         self.assertIs(status.stale, False)
         self.assertEqual(status.properties["UnitFileState"], "enabled")
         text = self.unit_text().replace("UMask=0077", "UMask=0022")
-        (self.unit_dir / "claude-multi-gateway.service").write_text(text)
+        (self.unit_dir / "charmer-gateway.service").write_text(text)
         attention = self.service().status().attention({"HOME": str(self.home)})
         self.assertTrue(any("differs from what this release renders" in line for line in attention))
-        (self.unit_dir / "claude-multi-gateway.service").unlink()
-        self.manager.loaded.discard("claude-multi-gateway")
+        (self.unit_dir / "charmer-gateway.service").unlink()
+        self.manager.loaded.discard("charmer-gateway")
         attention = self.service().status().attention({"HOME": str(self.home)})
         self.assertTrue(any("recorded in endpoint.json but the service manager has no such unit" in line
                             for line in attention))
@@ -862,7 +862,7 @@ class StatusAndInhibitionTests(_ServiceCase):
         """The inhibition a service hand-off of process ``pid`` recorded at ``started``."""
 
         return gateway_inhibition.begin(
-            self.state_root, owner=gl.SERVICE_OWNER, purpose="gateway service install (claude-multi-gateway)",
+            self.state_root, owner=gl.SERVICE_OWNER, purpose="gateway service install (charmer-gateway)",
             phase="install", remedy=gl.SERVICE_REMEDY, expiry=gateway_inhibition.owner_process(pid),
             now=started)
 
@@ -870,7 +870,7 @@ class StatusAndInhibitionTests(_ServiceCase):
         self.handoff_record(pid=os.getppid(), started=self.world.now)
         outcome = self.gateway().ensure(max_wait=0)
         self.assertEqual(outcome.status, "inhibited")
-        self.assertIn("inhibited by service (gateway service install (claude-multi-gateway); phase install",
+        self.assertIn("inhibited by service (gateway service install (charmer-gateway); phase install",
                       outcome.message)
         self.assertNotIn("stale", outcome.message)
         self.assertIn(gl.SERVICE_REMEDY, outcome.remedy)
@@ -888,7 +888,7 @@ class StatusAndInhibitionTests(_ServiceCase):
         # Only the hand-off's own continuation (the object holding its token) passes.
         gateway_inhibition.record_path(self.state_root).unlink()
         owner = self.gateway()
-        owner.begin_handoff("install", "claude-multi-gateway")
+        owner.begin_handoff("install", "charmer-gateway")
         self.assertEqual(gateway_inhibition.read(self.state_root).owner, gl.SERVICE_OWNER)
         self.assertEqual(self.gateway().ensure(max_wait=1).status, "inhibited")
         self.assertTrue(owner.ensure(max_wait=1).ok)
@@ -937,7 +937,7 @@ class StatusAndInhibitionTests(_ServiceCase):
         self.assertIsNone(gateway_inhibition.read(self.state_root))
         self.assertEqual(self.gateway().ensure(max_wait=1).status, "ready")
         self.assertEqual(self.service().install().message,
-                         "gateway service claude-multi-gateway is installed and current")
+                         "gateway service charmer-gateway is installed and current")
 
     def test_a_refresh_planned_before_an_uninstall_changes_nothing(self) -> None:
         self.assertTrue(self.service().install().ok)
@@ -957,17 +957,17 @@ class StatusAndInhibitionTests(_ServiceCase):
 
     def test_a_refresh_recreates_missing_service_directories(self) -> None:
         self.assertTrue(self.service().install().ok)
-        traces = self.home / ".local/share/claude-multi/traces"
+        traces = self.home / ".local/share/charmer/traces"
         traces.rmdir()
         outcome = self.service().install()
         self.assertTrue(outcome.ok, outcome.lines())
-        self.assertIn("recreated the missing service directories (.local/share/claude-multi/traces)",
+        self.assertIn("recreated the missing service directories (.local/share/charmer/traces)",
                       "\n".join(outcome.lines()))
         self.assertEqual(traces.stat().st_mode & 0o777, 0o700)
 
     def test_the_start_lock_comes_before_the_backend(self) -> None:
         endpoint.write_config(self.home, endpoint.EndpointConfig(port=self.port, backend=endpoint.SYSTEMD,
-                                                                 unit="claude-multi-gateway"))
+                                                                 unit="charmer-gateway"))
         lock = state.FileLock(self.workdir / service.START_LOCK.removesuffix(".lock"))
         self.assertTrue(lock.acquire(blocking=False))
         try:
@@ -1008,13 +1008,13 @@ class StatusAndInhibitionTests(_ServiceCase):
         view = gateway_actions.GatewayView(manager.gateway, manager.gateway.observe(), service=manager,
                                            service_status=manager.status())
         self.assertFalse(view.can_install_service)  # installed and current
-        self.assertEqual(view.service_line(), "service: installed (claude-multi-gateway)")
+        self.assertEqual(view.service_line(), "service: installed (charmer-gateway)")
         self.assertEqual(gateway_actions.act(view, "service").status, "refused")
         # A fixture view (nothing observed) never offers it.
         self.assertFalse(gateway_actions.GatewayView(None, None).can_install_service)
 
     def test_the_cli_verbs(self) -> None:
-        launcher = self.home / ".local/share/claude-multi/install/current/bin/claude-multi"
+        launcher = self.home / ".local/share/charmer/install/current/bin/charmer"
         runtime = cli.Runtime(asset_root=FIXTURE_ROOT, environ=self.environ(CLAUDE_MULTI_HOOK_COMMAND=str(launcher)),
                               cwd=self.root,
                               managed_root=self.root / "managed", gateway_seams=self.seams(),
@@ -1033,7 +1033,7 @@ class StatusAndInhibitionTests(_ServiceCase):
         self.assertEqual(code, 0, err)
         self.assertIn("installed and running", out)
         code, out, _ = run("status")
-        self.assertIn("gateway service: installed — claude-multi-gateway", out)
+        self.assertIn("gateway service: installed — charmer-gateway", out)
         code, out, err = run("uninstall")
         self.assertEqual(code, 0, err)
         self.assertIn("removed", out)

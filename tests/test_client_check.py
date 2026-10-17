@@ -49,7 +49,7 @@ class SessionClientTests(unittest.TestCase):
         self.newer.write_bytes(b"x")
         # The hook chain: client -> shim -> shim subshell (the launcher's parent).
         self.proc.add(100, 1, [str(self.newer), "--resume", RID, "--settings", "s.json"], self.newer)
-        shim = ["/bin/sh", "/state/bin/claude-multi-hook-3", "session-event", "prompt", "--managed-id", MID]
+        shim = ["/bin/sh", "/state/bin/charmer-hook-3", "session-event", "prompt", "--managed-id", MID]
         self.proc.add(200, 100, shim, "/usr/bin/bash")
         self.proc.add(300, 200, shim, "/usr/bin/bash")
         self.environ = {"HOME": str(self.tmp / "home"), "CLAUDE_MULTI_ASSETS": str(FIXTURE_ROOT)}
@@ -70,14 +70,14 @@ class SessionClientTests(unittest.TestCase):
         self.assertEqual((mismatch.actual_version, mismatch.pinned), ("2.1.290", PINNED))
         text = client_check.message(mismatch, MID, self.environ)
         self.assertIn("runs Claude Code 2.1.290 (~/.local/share/claude/versions/2.1.290)", text)
-        self.assertIn(f"not the {PINNED} claude-multi verified", text)
-        self.assertIn(f"claude-multi -r {MID}", text)
+        self.assertIn(f"not the {PINNED} charmer verified", text)
+        self.assertIn(f"charmer -r {MID}", text)
 
     def test_unknown_or_matching_clients_stay_silent(self) -> None:
         self.assertIsNone(client_check.check((RID,), {**self.environ, "CLAUDE_MULTI_ASSETS": str(self.tmp)},
                                              pid=300, proc_root=self.tmp / "proc", platform="linux"))
         shutil.rmtree(self.tmp / "proc/100")
-        owned = self.tmp / f"home/.local/share/claude-multi/claude/{PINNED}/claude"
+        owned = self.tmp / f"home/.local/share/charmer/claude/{PINNED}/claude"
         owned.parent.mkdir(parents=True)
         owned.write_bytes(b"x")
         self.proc.add(100, 1, [str(owned), "--session-id", RID], owned)
@@ -126,7 +126,7 @@ class HookMessageTests(test_hooks._HookCase):
             out, _err = self.run_hook("prompt", self.payload(prompt="hi"))
             again, _err = self.run_hook("prompt", self.payload(prompt="again"))
         document = strict_json.loads(out)
-        self.assertIn(f"claude-multi -r {MID}", document["systemMessage"])
+        self.assertIn(f"charmer -r {MID}", document["systemMessage"])
         self.assertIn("additionalContext", document["hookSpecificOutput"])
         self.assertFalse(self.seen().exists())
         self.assertIn("systemMessage", again)
@@ -156,7 +156,7 @@ class HookMessageTests(test_hooks._HookCase):
         self.assertNotIn("systemMessage", document)
         self.assertTrue(hooks.seen_path(self.state, RID).exists())
         document = self.start(self.mismatch())
-        self.assertIn(f"claude-multi -r {MID}", document["systemMessage"])
+        self.assertIn(f"charmer -r {MID}", document["systemMessage"])
         self.assertIn("additionalContext", document["hookSpecificOutput"])
         self.assertFalse(hooks.seen_path(self.state, RID).exists())
 

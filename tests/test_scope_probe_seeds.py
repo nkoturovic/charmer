@@ -225,7 +225,7 @@ class _ProbeCase(unittest.TestCase):
         super().setUp()
         if self.boundary_skip is not None:
             self.skipTest(self.boundary_skip)
-        self.root = Path(tempfile.mkdtemp(prefix="claude-multi-seed-probe-"))
+        self.root = Path(tempfile.mkdtemp(prefix="charmer-seed-probe-"))
         os.chmod(self.root, 0o700)
         self.addCleanup(shutil.rmtree, self.root, True)
         # Simulated live roots: the fixture stays disjoint from them and the
@@ -787,7 +787,7 @@ class HookShim3RealBinaryTests(_ProbeCase):
     def _state_root(fixture: probe.ProbeFixture) -> Path:
         # sessions.state_root of the client env the hooks inherit.
         state.ensure_private_dir(fixture.xdg_state_home)
-        return state.ensure_private_dir(fixture.xdg_state_home / "claude-multi")
+        return state.ensure_private_dir(fixture.xdg_state_home / "charmer")
 
     @staticmethod
     def _hook_entry(command: str) -> list[dict[str, Any]]:
@@ -848,14 +848,14 @@ class HookShim3RealBinaryTests(_ProbeCase):
         fixture = self._fixture()
         state_root = self._state_root(fixture)
         log = fixture.root / "launcher-events.log"
-        wrapper = fixture.root / "claude-multi-wrapper"
+        wrapper = fixture.root / "charmer-wrapper"
         wrapper.write_text(
             _WRAPPER.format(
                 log=shlex.quote(str(log)),
                 wrapper=shlex.quote(str(wrapper.resolve())),
                 src=shlex.quote(str(REPO_ROOT / "src")),
                 python=shlex.quote(sys.executable),
-                launcher=shlex.quote(str(REPO_ROOT / "bin" / "claude-multi")),
+                launcher=shlex.quote(str(REPO_ROOT / "bin" / "charmer")),
             ),
             encoding="utf-8",
         )

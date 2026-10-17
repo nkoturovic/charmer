@@ -5,7 +5,7 @@ The stale terms (``composition``, ``variant``, ``cm-*-<model>-<lane>``,
 in-tree set only as intentional mentions of legacy formats, and each file
 stays within its budget (``_docs_vocab.BUDGETS``). Every rule lives in
 ``tests/_docs_vocab.py``; this module runs it over the in-tree set (every
-public page, every rendered ``claude-multi`` ``--help``, the proxy/dev
+public page, every rendered ``charmer`` ``--help``, the proxy/dev
 help texts, the two phrases in ``src``), plus the secret-read (R7),
 backend-command (R8) and public-page rules (R13–R15), the allowlist
 hygiene, the rule unit cases (``self_test``) and the checker's refusal to
@@ -67,8 +67,8 @@ class InTreeVocabularyTests(unittest.TestCase):
         labels = {t.label for t in self.targets}
         for name in vocab.PKG_DOCS:
             self.assertIn(name, labels)
-        self.assertIn("<help: claude-multi>", labels)
-        self.assertIn("<doc: claude-multi-dev --help>", labels)
+        self.assertIn("<help: charmer>", labels)
+        self.assertIn("<doc: charmer-dev --help>", labels)
         self.assertIn("src/charmer/tui.py", labels)
 
     def test_no_failing_hit_in_any_in_tree_file(self) -> None:
@@ -123,7 +123,7 @@ class InTreeVocabularyTests(unittest.TestCase):
 
 
 class HelpVocabularyTests(unittest.TestCase):
-    """Every rendered claude-multi --help page."""
+    """Every rendered charmer --help page."""
 
     @classmethod
     def setUpClass(cls) -> None:
@@ -133,16 +133,16 @@ class HelpVocabularyTests(unittest.TestCase):
     def test_the_walk_reaches_every_subparser(self) -> None:
         expected = {p.prog for p in vocab._walk(cli.build_parser())}
         self.assertEqual(set(self.pages), expected)
-        for prog in ("claude-multi", "claude-multi direct", "claude-multi lineup",
-                     "claude-multi profile migrate", "claude-multi sessions mark-ended",
-                     "claude-multi doctor", "claude-multi restore-2x"):
+        for prog in ("charmer", "charmer direct", "charmer lineup",
+                     "charmer profile migrate", "charmer sessions mark-ended",
+                     "charmer doctor", "charmer restore-2x"):
             self.assertIn(prog, self.pages)
         self.assertGreaterEqual(len(self.pages), 40)
 
     def test_only_the_profile_migrate_line_is_an_intentional_hit(self) -> None:
         self.assertEqual(_failing(self.help_hits), [])
         intentional = [(h.path, h.rule) for h in self.help_hits if h.intentional]
-        self.assertEqual(intentional, [("<help: claude-multi profile>", "composition")])
+        self.assertEqual(intentional, [("<help: charmer profile>", "composition")])
         (only,) = [h for h in self.help_hits if h.intentional]
         self.assertIn("convert legacy compositions", only.text)
 
@@ -151,7 +151,7 @@ class HelpVocabularyTests(unittest.TestCase):
         parser = cli.build_parser()
         self.assertNotRegex(parser.description.lower(), r"composition|variant")
         direct_line = next(
-            line for line in self.pages["claude-multi"].splitlines() if line.strip().startswith("direct ")
+            line for line in self.pages["charmer"].splitlines() if line.strip().startswith("direct ")
         )
         self.assertNotRegex(direct_line.lower(), r"composition|ordinary gateway")
 
@@ -159,7 +159,7 @@ class HelpVocabularyTests(unittest.TestCase):
         # The root page no longer shows the earlier alias flags (they parse,
         # hidden); any composition hit left on a page is on a line that
         # carries an alias token, which the walk blanks.
-        raw = vocab.Target("<raw>", "text", frozenset(vocab.RULES_TERMS), text=self.pages["claude-multi"])
+        raw = vocab.Target("<raw>", "text", frozenset(vocab.RULES_TERMS), text=self.pages["charmer"])
         raw_hits = vocab.scan_target(raw)
         self.assertFalse(any(h.rule == "composition" for h in raw_hits))
         for hit in raw_hits:
@@ -173,7 +173,7 @@ class HelpVocabularyTests(unittest.TestCase):
         from charmer import layout
 
         self.assertIn("CHEATSHEET.md", vocab.help_epilog())
-        top = self.pages["claude-multi"]
+        top = self.pages["charmer"]
         root = layout.installation()
         self.assertNotIn(str(root), top)
         # A source checkout keeps the doc under docs/; the package installs
@@ -186,13 +186,13 @@ class HelpVocabularyTests(unittest.TestCase):
 
 
 class DocstringVocabularyTests(unittest.TestCase):
-    """claude-multi-proxy --help, bare claude-multi-dev, claude-multi-dev --help."""
+    """charmer-proxy --help, bare charmer-dev, charmer-dev --help."""
 
     def test_module_help_texts_are_clean(self) -> None:
         labels = [label for label, _text in vocab.module_help_texts()]
         self.assertEqual(
             labels,
-            ["<doc: claude-multi-proxy --help>", "<doc: claude-multi-dev (bare)>", "<doc: claude-multi-dev --help>"],
+            ["<doc: charmer-proxy --help>", "<doc: charmer-dev (bare)>", "<doc: charmer-dev --help>"],
         )
         for label in labels:
             with self.subTest(label):
@@ -386,9 +386,9 @@ class PathGuardTests(unittest.TestCase):
         projects = self.claude / "projects" / "p"
         self._write(projects / "notes.md", "never read\n")
         for path in (projects / "notes.md", self.home / "x.jsonl",
-                     self.home / ".config" / "claude-multi" / "api-key",
-                     self.home / ".config" / "claude-multi" / "config.yaml",
-                     *(self.home / ".config" / "claude-multi" / name for name in
+                     self.home / ".config" / "charmer" / "api-key",
+                     self.home / ".config" / "charmer" / "config.yaml",
+                     *(self.home / ".config" / "charmer" / name for name in
                        ("management-key", "management-key.next", "management-key.disabled",
                         "management-key.prepared", "management-key.lock", "management-key.backup"))):
             with self.subTest(str(path)):

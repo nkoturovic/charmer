@@ -48,7 +48,7 @@ def _fixture_copy(case: unittest.TestCase, *, new: tuple[str, ...] = ()) -> Path
 
     temporary = Path(tempfile.mkdtemp(prefix="cm-screens-catalog-assets-"))
     case.addCleanup(shutil.rmtree, temporary, True)
-    root = temporary / "claude-multi"
+    root = temporary / "charmer"
     shutil.copytree(FIXTURE_ROOT, root)
     for root_dir, _dirs, files in os.walk(root):
         os.chmod(root_dir, 0o755)
@@ -494,7 +494,7 @@ class ProvidersScreenTests(_ScreenCase):
         row = next(r for r in screen.rows if r.id == "screens-lab")
         self.assertTrue(row.custom)
         win = self.run_screen(screen, self.steps_to(screen, "screens-lab") + [ESC], height=30)
-        self.assertIn("custom provider — edit or remove it with claude-multi custom …", win.text())
+        self.assertIn("custom provider — edit or remove it with charmer custom …", win.text())
         fact = next(f for f in screen.facts if f["id"] == "screens-lab")
         self.assertEqual((fact["source"], fact["models"]), ("custom", 0))
 
@@ -981,7 +981,9 @@ class SettingsScreenTests(_ScreenCase):
         win = self.run_screen(self.screen(), ["?", ESC, ESC])
         modal = next(f for f in win.frames if "settings — help" in f)
         self.assertIn(" ".join(cli.SETTINGS_HELP.split()[:6]), modal)
-        self.assertIn("Provider keys are never", modal)
+        # The modal wraps its text; read it as one paragraph.
+        flat = " ".join(" ".join(line.strip().strip("|").split()) for line in modal.splitlines())
+        self.assertIn("Provider keys are never", flat)
 
     def test_floor(self) -> None:
         self.assertFloor(self.screen)
@@ -1015,7 +1017,7 @@ class ProviderQuotaScreenTests(_ScreenCase):
         drawn = next(line for line in text.splitlines() if line.startswith("  › "))
         self.assertIn("12m", drawn)
         self.assertIn(views.SIGNIN_REMEDY, text)
-        self.assertIn("+1 more (claude-multi quota)", text)
+        self.assertIn("+1 more (charmer quota)", text)
         self.assertIn("quota", text)
         self.assertEqual(len(self.runtime.management_calls), 1)
 
@@ -1055,8 +1057,8 @@ class ProviderQuotaScreenTests(_ScreenCase):
             screen.selected = index
             text = self.run_screen(screen, [ESC]).text()
             self.assertIn("quota unavailable in this build", text)
-            self.assertNotIn("claude-multi-proxy init", text)
-            self.assertNotIn("claude-multi quota —", text)
+            self.assertNotIn("charmer-proxy init", text)
+            self.assertNotIn("charmer quota —", text)
 
     def test_no_management_key_keeps_signin_and_full_settings_guidance(self):
         # Inject the management transport without prepare_start: unlike the
@@ -1066,7 +1068,7 @@ class ProviderQuotaScreenTests(_ScreenCase):
         runtime.management_callback = mock.Mock(side_effect=AssertionError("no key must not make a request"))
         screen = cli._ProvidersScreen(runtime, palette=tui.MONO_PALETTE)
         self.assertEqual(screen.pool.state, "no-key")
-        self.assertFalse((runtime.home / ".config" / "claude-multi" / "management-key").exists())
+        self.assertFalse((runtime.home / ".config" / "charmer" / "management-key").exists())
         for index, row in enumerate(screen.rows):
             if row.kind != "oauth-pool":
                 continue
@@ -1090,7 +1092,7 @@ class ProviderQuotaScreenTests(_ScreenCase):
         screen = self.screen()
         self.assertEqual(self.runtime.management_calls, [])
         self.assertTrue(self.runtime.gateway_attention)
-        self.assertIn("not proven to be the claude-multi gateway", self.runtime.gateway_attention[0])
+        self.assertIn("not proven to be the charmer gateway", self.runtime.gateway_attention[0])
         text = self.run_screen(screen, [ESC]).text()
         self.assertEqual(text.count("fixture unverified owner"), 1)
 
@@ -1104,14 +1106,14 @@ class ProviderQuotaScreenTests(_ScreenCase):
         screen.rows = screen._rows()
         text = self.run_screen(screen, [ESC]).text()
         self.assertIn("12m", next(line for line in text.splitlines() if line.startswith("  › ")))
-        self.assertIn("+1 more (claude-multi quota)", text)
+        self.assertIn("+1 more (charmer quota)", text)
 
     def test_management_failure_detail_keeps_readonly_remedy_visible(self):
         for code in (401, 403, 404, 500):
             runtime = self.make_runtime(self.tmp / str(code), management=code)
             screen = cli._ProvidersScreen(runtime, palette=tui.MONO_PALETTE)
             text = self.run_screen(screen, [ESC]).text()
-            self.assertIn("claude-multi quota", text)
+            self.assertIn("charmer quota", text)
             self.assertEqual(len(runtime.management_calls), 1)
             self.run_screen(screen, ["R", ESC])
             self.assertEqual(len(runtime.management_calls), 1)
@@ -1135,7 +1137,7 @@ class OnboardingHelpTextTests(unittest.TestCase):
     def test_providers_help_states_case_and_the_guarded_key_import(self) -> None:
         text = " ".join(cli_text.PROVIDERS_HELP.split())
         self.assertNotIn("case-sensitive", text)
-        self.assertNotIn("(claude-multi providers approve ID)", " ".join(cli_text.MODELS_HELP.split()))
+        self.assertNotIn("(charmer providers approve ID)", " ".join(cli_text.MODELS_HELP.split()))
         self.assertIn("K sets or replaces an API key (typed masked; saving reloads the gateway; nothing is sent "
                       "to the provider)", text)
         self.assertIn("Changing credentials needs a terminal outside Claude Code.", text)

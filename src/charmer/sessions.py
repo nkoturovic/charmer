@@ -1,4 +1,4 @@
-"""Launcher-owned session state for claude-multi.
+"""Launcher-owned session state for charmer.
 
 Stable-managed-ID records under XDG state, per-CWD last-session pointers with
 advisory locking, and adoption (`link`) records. All persistence uses the
@@ -40,7 +40,7 @@ from . import errors, state, strict_json, validate as schema_validate
 from .platform.observation import BackgroundLiveness, ProcessScan
 
 
-class SessionError(errors.ClaudeMultiError, RuntimeError):
+class SessionError(errors.CharmerError, RuntimeError):
     """Raised on session state failures, including corrupt/stale records."""
 
 
@@ -150,7 +150,7 @@ def mark_ended_remedy(ids: Iterable[str] = ()) -> str:
     target = ordered[0] if len(ordered) == 1 else "<id>"
     text = ("a record without a recorded end counts as live, including a launch that exited "
             "before SessionStart; if that session is not running, record its end: "
-            f"claude-multi sessions mark-ended {target}")
+            f"charmer sessions mark-ended {target}")
     if len(ordered) > 1:
         text += f" (ids: {', '.join(ordered)})"
     return text
@@ -175,13 +175,13 @@ class StateMarkerError(SessionError):
 
     # Older code over newer state: state only ever migrates forward, so the
     # fix is the newer release, never a downgrade of the state.
-    NEWER_REMEDY = ("use the newer claude-multi that wrote it (an installed release updates with "
-                    "claude-multi update); state is only ever migrated forward")
+    NEWER_REMEDY = ("use the newer charmer that wrote it (an installed release updates with "
+                    "charmer update); state is only ever migrated forward")
 
     def __init__(self, version: int | None = None):
         self.version = version
         label = str(version) if version is not None else "unknown"
-        message = (f"state belongs to a newer claude-multi (state version {label}); "
+        message = (f"state belongs to a newer charmer (state version {label}); "
                    f"this launcher understands state version {SUPPORTED_STATE_VERSION} or older")
         # The fix rides in the message (not ``remedy``): every surface that
         # shows this error (hooks, screens, doctor) prints only the message.
@@ -614,7 +614,7 @@ def record_is_proc_live(record: dict[str, Any], proc_ids: frozenset[str]) -> boo
 
 
 def managed_id(record: dict[str, Any]) -> str:
-    """Stable claude-multi identity for a normalized or legacy record."""
+    """Stable charmer identity for a normalized or legacy record."""
 
     value = record.get("managed_id", record.get("session_id"))
     if not isinstance(value, str) or not UUID4.fullmatch(value):
@@ -697,13 +697,13 @@ def pending_fork_message(record: dict[str, Any]) -> str:
         # keep their own text.
         remedy = (
             f"adopt it with `{fork_adopt_command(record, fork_ids[0])}`, or "
-            f"discard the marker with `claude-multi sessions resolve-fork "
+            f"discard the marker with `charmer sessions resolve-fork "
             f"{stable_id} {fork_ids[0]}`"
         )
         if len(fork_ids) > 1:
             remedy = (
-                "adopt or discard each with `claude-multi sessions link "
-                "<fork-uuid> --profile NAME|--direct MODEL` / `claude-multi "
+                "adopt or discard each with `charmer sessions link "
+                "<fork-uuid> --profile NAME|--direct MODEL` / `charmer "
                 f"sessions resolve-fork {stable_id} <fork-uuid>`"
             )
         return (
@@ -711,14 +711,14 @@ def pending_fork_message(record: dict[str, Any]) -> str:
             f"{fork_list}); {remedy} — the fork transcript is kept either way"
         )
     if record["session_type"] == SESSION_TYPE_ORDINARY:
-        adopt = f"claude-multi sessions link {fork_ids[0]} --model MODEL"
+        adopt = f"charmer sessions link {fork_ids[0]} --model MODEL"
     else:
         adopt = (
-            f"claude-multi sessions link {fork_ids[0]} --composition "
+            f"charmer sessions link {fork_ids[0]} --composition "
             f"{record.get('composition_name', 'NAME')}"
         )
     remedy = (
-        f"adopt it with `{adopt}`, or discard the marker with `claude-multi "
+        f"adopt it with `{adopt}`, or discard the marker with `charmer "
         f"sessions resolve-fork {stable_id} {fork_ids[0]}`"
     )
     if len(fork_ids) > 1:
@@ -728,8 +728,8 @@ def pending_fork_message(record: dict[str, Any]) -> str:
             else "--composition NAME"
         )
         remedy = (
-            f"adopt or discard each with `claude-multi sessions link <fork-uuid> "
-            f"{link_flags}` / `claude-multi sessions resolve-fork "
+            f"adopt or discard each with `charmer sessions link <fork-uuid> "
+            f"{link_flags}` / `charmer sessions resolve-fork "
             f"{stable_id} <fork-uuid>`"
         )
     return (
@@ -757,7 +757,7 @@ def fork_resolution_problem(
         return (
             f"fork {fork_runtime_id} holds the resume authority of "
             f"session {managed_session_id}; it is already resolved "
-            "(run `claude-multi doctor --repair-all` to clear the marker)"
+            "(run `charmer doctor --repair-all` to clear the marker)"
         )
     return None
 
@@ -772,7 +772,7 @@ def relink_message(record: dict[str, Any]) -> str:
 
     stable_id = managed_id(record)
     runtime_id = runtime_session_id(record)
-    base = f"claude-multi sessions relink-runtime {stable_id} {runtime_id}"
+    base = f"charmer sessions relink-runtime {stable_id} {runtime_id}"
     observed_cwd = record.get("observed_cwd")
     if not observed_cwd:
         observed_model = record.get("observed_model")
@@ -788,7 +788,7 @@ def relink_message(record: dict[str, Any]) -> str:
                 f"session {stable_id} identity is repair-needed (observed "
                 f"model {observed_model} differs from the recorded "
                 f"{recorded}); resume through the launcher to "
-                f"reconcile the recorded lead (`claude-multi -r {stable_id}`), "
+                f"reconcile the recorded lead (`charmer -r {stable_id}`), "
                 f"or relink only if the runtime UUID itself changed: `{base}`"
             )
         return (
@@ -812,7 +812,7 @@ def fork_adopt_command(record: dict[str, Any], fork_id: str) -> str:
     Shared by ``pending_fork_message``, the hook fork text and the TUI modal.
     """
 
-    base = f"claude-multi sessions link {fork_id}"
+    base = f"charmer sessions link {fork_id}"
     if record.get("version") == RECORD_VERSION:
         if record.get("profile"):
             return f"{base} --profile {record['profile']}"
@@ -851,7 +851,7 @@ def _require_v4(record: dict[str, Any]) -> None:
         stable = record.get("managed_id", record.get("session_id", "?"))
         raise LegacyRecordError(
             f"session {stable} is a legacy record (version {record.get('version')}); "
-            f"resume it (claude-multi -r {stable}) or run claude-multi migrate"
+            f"resume it (charmer -r {stable}) or run charmer migrate"
         )
 
 
@@ -1728,7 +1728,7 @@ class SessionStore:
         if marker < SUPPORTED_STATE_VERSION:
             raise SessionError(
                 "state marker missing: v4 records need state version 4 "
-                "(run claude-multi migrate)"
+                "(run charmer migrate)"
             )
         return self._write_record(record, "save")
 
@@ -1754,7 +1754,7 @@ class SessionStore:
         except strict_json.StrictJSONError as exc:
             raise SessionError(
                 f"corrupt session record {managed_session_id}: {exc}; "
-                "use `claude-multi sessions forget` to remove it"
+                "use `charmer sessions forget` to remove it"
             ) from exc
         if not isinstance(record, dict):
             raise SessionError(
@@ -1792,8 +1792,8 @@ class SessionStore:
         if record["version"] != RECORD_VERSION:
             raise LegacyRecordError(
                 f"session {managed_session_id} is a legacy record (version "
-                f"{record['version']}); resume it (claude-multi -r "
-                f"{managed_session_id}) or run claude-multi migrate"
+                f"{record['version']}); resume it (charmer -r "
+                f"{managed_session_id}) or run charmer migrate"
             )
         record.setdefault("launch_epoch", 0)
         return record
@@ -1936,7 +1936,7 @@ class SessionStore:
         if prefix is None and names is None:
             raise SessionError(f"session {value!r} is neither a session id nor a prefix of at least "
                                f"{HUMAN_PREFIX_MIN} characters of one",
-                               remedy="list the sessions: claude-multi sessions list")
+                               remedy="list the sessions: charmer sessions list")
         found: dict[str, dict[str, Any]] = {}
         unreadable: list[str] = []
         for path in self.scan_uuid_records():
@@ -1958,13 +1958,13 @@ class SessionStore:
         if unreadable:
             raise SessionError(
                 f"session record {unreadable[0]} is unreadable and may be {value!r}; nothing was chosen",
-                remedy=f"repair or forget it first: claude-multi sessions forget {unreadable[0]}",
+                remedy=f"repair or forget it first: charmer sessions forget {unreadable[0]}",
             )
         if len(found) > 1:
             raise AmbiguousSessionError(value, sorted(found))
         if not found:
             raise SessionError(f"no managed session matches {value!r}",
-                               remedy="list the sessions: claude-multi sessions list")
+                               remedy="list the sessions: charmer sessions list")
         return next(iter(found.values()))
 
     def _unreadable_record_mentions(self, path: Path, value: str, *, prefix: str | None = None) -> bool:
@@ -2025,7 +2025,7 @@ class SessionStore:
                 f"runtime id ({stable_owner['runtime_session_id']}) — /cm passes it "
                 "automatically"
             )
-        raise SessionError(f"no claude-multi session has runtime id {identifier}")
+        raise SessionError(f"no charmer session has runtime id {identifier}")
 
     def reconcile_runtime(
         self,
@@ -2334,7 +2334,7 @@ class SessionStore:
                 if is_live is not None and is_live(view):
                     raise SessionError(
                         f"session {stable_id} is live (Claude background daemon or a "
-                        "running process); stop it first (claude-multi sessions stop "
+                        "running process); stop it first (charmer sessions stop "
                         f"{stable_id})"
                     )
                 updated = {

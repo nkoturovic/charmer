@@ -230,7 +230,7 @@ class DoctorSaveTests(V4Case):
         self.assertEqual(len(attention), 1)
         for value in ("failed provider=claude", f"auth_index={INDEX}", "bytes=123/123", "errno=28",
                       "keep the gateway running", "free space", "wait for a persisted save",
-                      "re-authenticate with claude-multi providers sign-in anthropic only if none appears",
+                      "re-authenticate with charmer providers sign-in anthropic only if none appears",
                       "before any restart or rollback", "retain auth.pre-*"):
             self.assertIn(value, attention[0])
         self.assertTrue(any("coverage=bounded" in text for text in info))

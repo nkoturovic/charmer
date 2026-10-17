@@ -2,7 +2,7 @@
 
 Clients need no GnuPG: the native contract records the per-platform size and
 sha256 a maintainer verified against the signed manifest
-(``tools/pin_claude.py`` and ``claude-multi-dev repin``), and launch, setup
+(``tools/pin_claude.py`` and ``charmer-dev repin``), and launch, setup
 and doctor check files against those values only. ``platform_key`` is the one
 client-side piece: it names this machine in the manifest's spelling.
 
@@ -84,7 +84,7 @@ _VERSION = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+")
 _GPG_MISSING = "gpg not found (install GnuPG or set CLAUDE_MULTI_GPG)"
 
 
-class ReleaseManifestError(errors.ClaudeMultiError, RuntimeError):
+class ReleaseManifestError(errors.CharmerError, RuntimeError):
     """Release evidence could not be established."""
 
 
@@ -243,7 +243,7 @@ def _abandon(response) -> None:
         except Exception:  # best effort: the worker thread is abandoned either way
             pass
 
-    threading.Thread(target=close, name="claude-multi-release-close", daemon=True).start()
+    threading.Thread(target=close, name="charmer-release-close", daemon=True).start()
 
 
 def fetch(version: str, *, opener=_open_release, timeout: float = 30.0,
@@ -270,7 +270,7 @@ def fetch(version: str, *, opener=_open_release, timeout: float = 30.0,
             except BaseException as exc:  # handed to the caller's thread below
                 holder["error"] = exc
 
-        worker = threading.Thread(target=work, name="claude-multi-release-fetch", daemon=True)
+        worker = threading.Thread(target=work, name="charmer-release-fetch", daemon=True)
         worker.start()
         worker.join(max(0.0, deadline - (clock() - started)))
         if worker.is_alive():
@@ -311,7 +311,7 @@ def verify_signature(manifest: bytes, signature: bytes, *, gpg: str,
     if max(len(manifest), len(signature)) > MAX_BYTES:
         raise ReleaseManifestUnavailable("file too large")
     try:
-        with tempfile.TemporaryDirectory(prefix="claude-multi-release-") as directory:
+        with tempfile.TemporaryDirectory(prefix="charmer-release-") as directory:
             root = Path(directory)
             (root / "manifest.json").write_bytes(manifest)
             (root / "manifest.json.sig").write_bytes(signature)

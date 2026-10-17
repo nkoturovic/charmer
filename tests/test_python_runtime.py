@@ -109,7 +109,7 @@ class RuntimeTestCase(unittest.TestCase):
         cls.shipped = json.loads(RUNTIMES_JSON.read_text())
 
     def setUp(self) -> None:
-        self.tmp = Path(tempfile.mkdtemp(prefix="claude-multi-runtime-"))
+        self.tmp = Path(tempfile.mkdtemp(prefix="charmer-runtime-"))
         self.addCleanup(shutil.rmtree, self.tmp, True)
 
     def manifest(self, archive: bytes | None = None, **changes) -> Path:

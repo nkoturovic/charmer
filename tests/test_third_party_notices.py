@@ -190,7 +190,7 @@ class SbomTests(unittest.TestCase):
                 self.assertEqual(pedigree["commits"][0]["uid"], doc["upstream"]["commit"])
                 self.assertEqual([patch["diff"]["url"].rsplit("/", 1)[-1] for patch in pedigree["patches"]],
                                  [entry["basename"] for entry in admitted()])
-                properties = [(item["name"].removeprefix("claude-multi:gateway:"), item["value"]) for item in main["properties"]]
+                properties = [(item["name"].removeprefix("charmer:gateway:"), item["value"]) for item in main["properties"]]
                 self.assertEqual([value for name, value in properties if name == "patch"], inventory["inputs"]["series"])
                 values = dict(properties)
                 self.assertEqual(values["post-apply-tree-sha256"], inventory["inputs"]["post_apply_tree_sha256"])

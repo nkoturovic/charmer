@@ -29,15 +29,15 @@ WRITER = r'''
 import errno, json, os
 from pathlib import Path
 h = Path(os.environ['HOME'])
-a = h / '.local/share/claude-multi/auth/probe-write'
+a = h / '.local/share/charmer/auth/probe-write'
 results = {}
 try:
     a.write_text('first'); a.write_text('second'); a.rename(a.with_suffix('.renamed'))
     results['auth'] = True
 except OSError:
     results['auth'] = False
-for name, path in [('home', h/'forbidden'), ('data', h/'.local/share/claude-multi/forbidden'),
-                   ('policy', h/'.config/claude-multi/native-contract.json')]:
+for name, path in [('home', h/'forbidden'), ('data', h/'.local/share/charmer/forbidden'),
+                   ('policy', h/'.config/charmer/native-contract.json')]:
     try:
         path.write_text('forbidden')
         results[name] = False
@@ -71,9 +71,9 @@ class GatewayHomeViewTests(unittest.TestCase):
         # Exercise the installed-layout entry point: source-tree bin scripts
         # intentionally discard inherited asset overrides, whereas the
         # copied package script must keep this synthetic release's assets.
-        self.entry = release/'bin'/'claude-multi-proxy'
+        self.entry = release/'bin'/'charmer-proxy'
         self.entry.parent.mkdir()
-        shutil.copy(REPO_ROOT/'bin/claude-multi-proxy', self.entry)
+        shutil.copy(REPO_ROOT/'bin/charmer-proxy', self.entry)
         self.assets = release/'assets'
         shutil.copytree(FIXTURE_ROOT, self.assets)
         self.gateway = self.assets/'catalog/gateway.json'
@@ -111,7 +111,7 @@ class GatewayHomeViewTests(unittest.TestCase):
             return json.loads(out.read())
 
     def test_fresh_home_policy_and_auth_rename_with_negative_control(self):
-        self.assertFalse((self.home/'.config/claude-multi/native-contract.json').exists())
+        self.assertFalse((self.home/'.config/charmer/native-contract.json').exists())
         self.assertTrue(all(self.writer(self.view).values()))
         negative = probe.HomeView(self.home, tuple(p for p in self.view.bind_rw if p.name != 'auth'), self.view.bind_ro)
         self.assertFalse(self.writer(negative)['auth'])
@@ -143,7 +143,7 @@ class GatewayHomeViewTests(unittest.TestCase):
                 while time.monotonic() < deadline:
                     try:
                         status, before = get()
-                        if status == 200 and any(v.startswith('claude-multi-render-') for v in before):
+                        if status == 200 and any(v.startswith('charmer-render-') for v in before):
                             break
                     except OSError:
                         pass
@@ -151,7 +151,7 @@ class GatewayHomeViewTests(unittest.TestCase):
                 self.assertIsNotNone(before)
                 self.assertEqual(get(path='/healthz')[0], 200)
                 self.assertEqual(child.poll(), None)
-                old = next(v for v in before if v.startswith('claude-multi-render-'))
+                old = next(v for v in before if v.startswith('charmer-render-'))
                 # A harmless, real render input: a new loopback alias. Not merely
                 # re-rendering identical bytes (which proves no watcher activity).
                 doc = json.loads(self.gateway.read_text())

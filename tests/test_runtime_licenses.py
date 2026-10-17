@@ -77,7 +77,7 @@ class CheckedInTests(unittest.TestCase):
                 if target.startswith("linux"):
                     # Berkeley DB (Sleepycat) behind _dbm: the only strong copyleft.
                     self.assertEqual([(lib["name"], lib["spdx"]) for lib in strong], [("bdb", ["Sleepycat"])])
-                    self.assertEqual(pruned["_dbm"]["reason"], "strong copyleft; claude-multi never imports it")
+                    self.assertEqual(pruned["_dbm"]["reason"], "strong copyleft; charmer never imports it")
                 else:
                     self.assertEqual(strong, [])
         for spdx, strong in (("GPL-2.0-only", True), ("AGPL-3.0-or-later", True), ("Sleepycat", True),
@@ -113,7 +113,7 @@ class CheckedInTests(unittest.TestCase):
             notices = (destination / "THIRD_PARTY_NOTICES.txt").read_text()
             self.assertIn("openssl-3.5 3.5.9 — Apache-2.0", notices)
             self.assertIn("sqlite 3.53.1 — public domain", notices)
-            self.assertIn("_dbm: bdb 6.0.19 (Sleepycat) — strong copyleft; claude-multi never imports it", notices)
+            self.assertIn("_dbm: bdb 6.0.19 (Sleepycat) — strong copyleft; charmer never imports it", notices)
             self.assertIn((RUNTIME_LICENSES / "LICENSE.zstd.txt").read_text().splitlines()[0], notices)
         components = self.tool.sbom_components(self.inventory, "darwin-arm64")
         self.assertEqual([item["name"] for item in components],
@@ -126,7 +126,7 @@ class RefusalTests(unittest.TestCase):
     def setUp(self) -> None:
         self.tool, runtime_tool = tools()
         self.runtimes = runtime_tool.load(RUNTIMES_JSON)
-        self.tmp = Path(tempfile.mkdtemp(prefix="claude-multi-runtime-licences-"))
+        self.tmp = Path(tempfile.mkdtemp(prefix="charmer-runtime-licences-"))
         self.addCleanup(shutil.rmtree, self.tmp, True)
         self.dir = self.tmp / "licences"
         shutil.copytree(RUNTIME_LICENSES, self.dir)
@@ -251,7 +251,7 @@ class DeriveTests(unittest.TestCase):
             self.assertEqual(entry["pruned"], [{"extension": "_dbm", "pattern": "lib/python3.14/lib-dynload/_dbm*",
                                                 "libraries": [{"name": "bdb", "version": "6.0.19",
                                                                "spdx": ["Sleepycat"]}],
-                                                "reason": "strong copyleft; claude-multi never imports it"}])
+                                                "reason": "strong copyleft; charmer never imports it"}])
             self.assertEqual(entry["extensions_without_libraries"], ["_ctypes_test"])
             self.assertEqual(sorted(texts), ["LICENSE.openssl-3.txt", "LICENSE.sqlite.txt", "LICENSE.zstd.txt"])
             self.assertEqual(document["texts"]["LICENSE.zstd.txt"]["source"], "supplied")

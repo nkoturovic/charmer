@@ -15,7 +15,7 @@ part of the release and never comes from a resource override. A pool names:
 - ``sign_in``: how the sign-in opens (``flow`` ``browser``: a page on this
   computer, or an address printed for another device; ``device``: an
   address and a one-time code), the account ``host``, the
-  ``claude-multi-proxy`` login ``command`` that runs it and the
+  ``charmer-proxy`` login ``command`` that runs it and the
   ``signin_policy`` values (``version.json``) that offer it;
 - ``acknowledgement``: the personal-use text shown before a sign-in and
   its versioned ``id`` (a changed text needs a fresh acknowledgement);
@@ -36,7 +36,7 @@ longest prefix it starts with (followed by ``-``): ``kimi-ai-1.json`` is a
 ``kimi-ai`` record, never a ``kimi`` one.
 
 Adding a pool is an entry here plus its catalog provider and lines and the
-gateway program's login command in ``claude-multi-proxy``; the sign-in,
+gateway program's login command in ``charmer-proxy``; the sign-in,
 acknowledgement, account listing, sign-out, registry evidence and the
 render read it from here.
 """
@@ -66,10 +66,10 @@ FLOW_METHODS: Mapping[str, tuple[str, ...]] = {"browser": ("browser", "address")
 METHODS = ("browser", "address", "device")
 NAME = re.compile(r"^[a-z][a-z0-9-]{0,31}$")
 RECORD_SUFFIX = ".json"
-REMEDY = "reinstall claude-multi"
+REMEDY = "reinstall charmer"
 
 
-class AccountPoolsError(errors.ClaudeMultiError, ValueError):
+class AccountPoolsError(errors.CharmerError, ValueError):
     """The packaged account pools cannot be read or are invalid."""
 
     remedy = REMEDY

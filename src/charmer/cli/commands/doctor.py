@@ -53,7 +53,7 @@ def _doctor_command(
                                         ("--prune-aliases", args.doctor_prune_aliases is not None),
                                         ("--preview", getattr(args, "preview", False))) if on]
         if others:
-            sys.stderr.write(f"claude-multi doctor: --first-run cannot accompany {', '.join(others)}\n")
+            sys.stderr.write(f"charmer doctor: --first-run cannot accompany {', '.join(others)}\n")
             return 2
         return _first_run(runtime, json_output=bool(getattr(args, "json", False)), output_stream=output_stream)
     if getattr(args, "preview", False):
@@ -117,7 +117,7 @@ def _doctor_command(
         output_stream.write(f"{termtext.visible_text(line)}\n")
     hidden = len(info_lines) - len(shown)
     if hidden:
-        output_stream.write(f"({hidden} more detail line{'s' if hidden != 1 else ''}: claude-multi doctor -v)\n")
+        output_stream.write(f"({hidden} more detail line{'s' if hidden != 1 else ''}: charmer doctor -v)\n")
     output_stream.write(doctor.DOCTOR_SUMMARY[status])
     return 1 if status == "blocked" else 0
 

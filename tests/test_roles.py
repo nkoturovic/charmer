@@ -41,7 +41,7 @@ def _roles(raw: dict) -> dict:
 
 
 def _copy_tree(case: unittest.TestCase) -> Path:
-    temporary = Path(tempfile.mkdtemp(prefix="claude-multi-roles-"))
+    temporary = Path(tempfile.mkdtemp(prefix="charmer-roles-"))
     case.addCleanup(lambda: shutil.rmtree(temporary, ignore_errors=True))
     root = temporary / "assets"
     shutil.copytree(FIXTURE_ROOT, root)
@@ -359,7 +359,7 @@ BRANDS = (
 # "`/cm profile claude`" names the shipped seed profile (a catalog profile
 # name, not a binding): the lead prompt's exhaustion escape quotes the exact
 # operator command.
-ALLOWLISTED_PHRASES = ("claude-multi", "Claude Code", "`/cm profile claude`")
+ALLOWLISTED_PHRASES = ("charmer", "Claude Code", "`/cm profile claude`")
 
 
 @uses_shipped_catalog

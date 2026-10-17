@@ -395,7 +395,7 @@ class OnboardingActions:
         try:
             code = onboarding.invoke(self.runtime, argv,
                                      confirm=lambda text: self.confirm(output.getvalue() + "\n" + text), output=output)
-        except (cli_errors.ClaudeMultiError, ValueError, OSError) as exc:
+        except (cli_errors.CharmerError, ValueError, OSError) as exc:
             code = 1
             output.write(str(exc))
         self.show("Action result", output.getvalue().splitlines())
@@ -408,7 +408,7 @@ class OnboardingActions:
         import charmer.cli.screens.providers as screens_providers
         try:
             status = onboarding.key_status(self.runtime, provider_id)
-        except (cli_errors.ClaudeMultiError, ValueError, OSError):
+        except (cli_errors.CharmerError, ValueError, OSError):
             return
         if status is None or status[1]:
             return
@@ -547,7 +547,7 @@ class OnboardingActions:
                     onboarding.declare(self.runtime, provider_id, model_key, drafted, output=output)
             else:
                 return
-        except (cli_errors.ClaudeMultiError, ValueError, OSError) as exc:
+        except (cli_errors.CharmerError, ValueError, OSError) as exc:
             output.write(str(exc))
         self.show("Declaration result", output.getvalue().splitlines())
 
@@ -579,7 +579,7 @@ class OnboardingActions:
             if observed is None:
                 return
             call, result = observed
-        except (cli_errors.ClaudeMultiError, ValueError, OSError) as exc:
+        except (cli_errors.CharmerError, ValueError, OSError) as exc:
             self.show("Listing unavailable — manual entry is available", [str(exc)])
             self.model_form(provider_id)
             return
@@ -610,7 +610,7 @@ class OnboardingActions:
                     continue
                 try:
                     draft = onboarding.line_draft(self.runtime, provider_id, entry, call)
-                except (cli_errors.ClaudeMultiError, ValueError) as exc:
+                except (cli_errors.CharmerError, ValueError) as exc:
                     self.show("Context required — manual entry", [str(exc)])
                     draft = {"wire_model": entry["id"]}
                 key = discovery.derived_key(entry["id"], set(self.runtime.lineup_catalog().lines)) or ""
@@ -641,7 +641,7 @@ class OnboardingActions:
                 draft = {"wire_model": wire, "display": entry.get("display_name") or wire, "family": "unknown"}
             key = discovery.derived_key(wire, set(self.runtime.lineup_catalog().lines)) or ""
             self.model_form("openrouter", draft, key)
-        except (cli_errors.ClaudeMultiError, ValueError, OSError) as exc:
+        except (cli_errors.CharmerError, ValueError, OSError) as exc:
             self.show("Lookup unavailable", [str(exc)])
 
     def qualify(self, key):

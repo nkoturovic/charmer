@@ -196,7 +196,7 @@ SETTINGS_ALLOWED_KEYS = frozenset(
 )
 
 
-class CatalogError(errors.ClaudeMultiError, ValueError):
+class CatalogError(errors.CharmerError, ValueError):
     """Raised when trusted catalog data fails loading or validation."""
 
 

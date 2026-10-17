@@ -316,7 +316,7 @@ def prove(destination, patches=None):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--out", type=Path, default=Path.home() / ".cache/claude-multi-gateway-revert" /
+    parser.add_argument("--out", type=Path, default=Path.home() / ".cache/charmer-gateway-revert" /
                         datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ"))
     parser.add_argument("--patch", action="append", help="prove this patch's closure (repeatable; default: every patch); all rows still run")
     parser.add_argument("--run-rows", type=Path, help=argparse.SUPPRESS)

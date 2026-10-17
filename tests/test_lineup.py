@@ -1,4 +1,4 @@
-"""``claude-multi lineup`` — parser, resolution, classify, live apply.
+"""``charmer lineup`` — parser, resolution, classify, live apply.
 
 Every session here is really launched through ``Runtime.prepare`` ->
 ``perform_launch`` (``_v4.V4Case``: temp HOME/XDG, fake verified binary,
@@ -54,7 +54,7 @@ class QuotaEntryInitializationTests(unittest.TestCase):
             home = Path(temporary)
             env = {"HOME": str(home), "XDG_CONFIG_HOME": str(home / "config"),
                    "XDG_STATE_HOME": str(home / "state"), "TERM": "dumb"}
-            state_root = home / "state" / "claude-multi"
+            state_root = home / "state" / "charmer"
             state_root.mkdir(parents=True)
             # The real shim locations, so a writable Runtime would rewrite them.
             shims = [scope.hook_shim_path(state_root), scope.hook_shim_v3_path(state_root),
@@ -63,7 +63,7 @@ class QuotaEntryInitializationTests(unittest.TestCase):
                 shim.parent.mkdir(parents=True, exist_ok=True)
                 shim.write_bytes(b"existing shim\n")
             # 0600, so a writable Runtime's legacy-override removal would act on it.
-            override = home / "config" / "claude-multi" / "native-contract.json"
+            override = home / "config" / "charmer" / "native-contract.json"
             override.parent.mkdir(parents=True)
             override.write_bytes(b'{"effort_vocabulary": [], "version": 1}\n')
             override.chmod(0o600)
@@ -396,12 +396,12 @@ class InterceptTests(LineupCase):
         with mock.patch('charmer.cli.streams._open_tty_streams', side_effect=AssertionError("tty opened")):
             code, out, err = self.lineup("set implementer=", "sol")
         self.assertEqual((code, err), (0, ""))
-        self.assertEqual(out, f"claude-multi: {lineup.R4.format(n=2)}\n")
+        self.assertEqual(out, f"charmer: {lineup.R4.format(n=2)}\n")
 
     def test_outside_skill_mode_refusals_go_to_stderr_with_exit_2(self) -> None:
         code, out, err = self.lineup("frobnicate", skill=False)
         self.assertEqual((code, out), (2, ""))
-        self.assertEqual(err, f"claude-multi: {lineup.R2}\n")
+        self.assertEqual(err, f"charmer: {lineup.R2}\n")
         self.runtime.environ["CLAUDE_CODE_SESSION_ID"] = self.rid
         code, out, err = self.lineup("frobnicate", skill=False)
         self.assertEqual(code, 2)
@@ -415,10 +415,10 @@ class InterceptTests(LineupCase):
         for text in ("set implementer=opus55:xhigh", "pin", "profile quality", "direct"):
             with self.subTest(request=text):
                 code, out, _ = self.request(text)
-                self.assertEqual((code, out), (0, f"claude-multi: {lineup.R19}\n"))
+                self.assertEqual((code, out), (0, f"charmer: {lineup.R19}\n"))
         self.assertEqual(self.record_bytes(self.mid), before)
         code, out, _ = self.request("")  # show takes no lock
-        self.assertTrue(out.startswith("claude-multi · profile balanced (follows)"))
+        self.assertTrue(out.startswith("charmer · profile balanced (follows)"))
 
 
 # ------------------------------------------------------------ resolution
@@ -432,7 +432,7 @@ class ResolutionTests(LineupCase):
         self.assertIn(f"lineup --session takes the runtime id ({OTHER})", out)
         with mock.patch.object(self, "rid", OTHER):
             code, out, _ = self.request("")
-        self.assertTrue(out.startswith("claude-multi · profile balanced"), out)
+        self.assertTrue(out.startswith("charmer · profile balanced"), out)
 
     def test_a_pending_fork_is_r8(self) -> None:
         record = self.store.load(self.mid)
@@ -444,8 +444,8 @@ class ResolutionTests(LineupCase):
         del record
         with mock.patch.object(self, "rid", OTHER):
             code, out, _ = self.request("pin")
-        self.assertTrue(out.startswith(f"claude-multi: {OTHER} is an unadopted native fork: "), out)
-        self.assertIn("claude-multi sessions link", out)
+        self.assertTrue(out.startswith(f"charmer: {OTHER} is an unadopted native fork: "), out)
+        self.assertIn("charmer sessions link", out)
 
 
 class V3RecordTests(LineupCase):
@@ -613,7 +613,7 @@ class ClassifyTests(LineupCase):
         self.save_profile("balanced-x", lambda d: d["lead"].update({"effort": "xhigh"}))
         code, out, _ = self.request("profile balanced-x")
         self.assertIn(
-            f"lead effort ultracode → xhigh applies at the next resume (claude-multi -r {self.mid})",
+            f"lead effort ultracode → xhigh applies at the next resume (charmer -r {self.mid})",
             out,
         )
         self.assertNotIn("switch the lead with /model", out)
@@ -652,7 +652,7 @@ class ClassifyTests(LineupCase):
     def test_reason_7_a_selector_outside_the_launch_time_fence(self) -> None:
         live = self.live(self.mid)
         settings_doc = strict_json.loads((live / "settings.json").read_bytes())
-        selector = "claude-multi-qwen38-max[1m]"
+        selector = "charmer-qwen38-max[1m]"
         settings_doc["availableModels"] = [s for s in settings_doc["availableModels"] if s != selector]
         state.atomic_write(live / "settings.json", strict_json.canonical_file_bytes(settings_doc))
         self.refence()
@@ -800,9 +800,9 @@ class LiveApplyTests(LineupCase):
         before = self.record_bytes(self.mid)
         files = self.scope_files()
         code, out, _ = self.request("profile nosuch")
-        self.assertEqual(out, f"claude-multi: {lineup.R11.format(name='nosuch')}\n")
+        self.assertEqual(out, f"charmer: {lineup.R11.format(name='nosuch')}\n")
         code, out, _ = self.request("set analyst=sol:low")  # no gateway selector mapping for low
-        self.assertTrue(out.startswith(f"claude-multi: {lineup.R14}\n- "), out)
+        self.assertTrue(out.startswith(f"charmer: {lineup.R14}\n- "), out)
         code, out, _ = self.request("set implementer=nosuch-model")
         self.assertIn(lineup.R14, out)
         self.assertEqual(self.record_bytes(self.mid), before)
@@ -823,7 +823,7 @@ class LiveApplyTests(LineupCase):
         state.atomic_write(secrets, b"QWEN_CLAUDE_API_KEY=v4-test-dummy\n")
         before = self.record_bytes(self.mid)
         code, out, _ = self.request("set implementer=kimi-k3")
-        self.assertTrue(out.startswith("claude-multi: implementer → kimi-k3: provider kimi has no credential ("), out)
+        self.assertTrue(out.startswith("charmer: implementer → kimi-k3: provider kimi has no credential ("), out)
         self.assertIn("connect it first — nothing changed", out)
         self.assertEqual(self.record_bytes(self.mid), before)
         # the reviewer stays bound to kimi-k3: an unchanged binding never refuses
@@ -848,8 +848,8 @@ class LiveApplyTests(LineupCase):
         disk = scope.read_disk_plan(self.live(self.mid), compiled.result.scope_plan)
         self.assertIsNotNone(disk)
         agent = ".claude/agents/cm-implementer.md"
-        self.assertIn(b"model: claude-multi-opus-5-5[1m]", disk.agent_files[agent])
-        self.assertIn(b"model: claude-multi-opus-5-5[1m]", compiled.result.scope_plan.agent_files[agent])
+        self.assertIn(b"model: charmer-opus-5-5[1m]", disk.agent_files[agent])
+        self.assertIn(b"model: charmer-opus-5-5[1m]", compiled.result.scope_plan.agent_files[agent])
 
 
 class PendingTests(LineupCase):
@@ -958,7 +958,7 @@ class ShowTests(LineupCase):
         self.assertEqual(code, 0)
         text = err.getvalue()
         self.assertIn("pending relaunch change: native agents:", text)
-        self.assertIn(f"applies at the next resume (claude-multi -r {self.mid})", text)
+        self.assertIn(f"applies at the next resume (charmer -r {self.mid})", text)
         self.assertIn("requested lead: Fable 5 · 1M selector · ultracode (claude-fable-5[1m])", text)
         record = self.store.load(self.mid)
         self.assertEqual(strict_json.loads(out.getvalue()), record)
@@ -974,7 +974,7 @@ class ShowTests(LineupCase):
         self.assertIn(
             f"needs a lead choice: lead gone-lead: unknown to catalog", err.getvalue()
         )
-        self.assertIn(f"claude-multi lineup --session {self.rid} --relaunch --its-exited "
+        self.assertIn(f"charmer lineup --session {self.rid} --relaunch --its-exited "
                       "profile <name>", err.getvalue())
 
     def test_resolve_fork_names_the_v4_adopt_command(self) -> None:
@@ -987,7 +987,7 @@ class ShowTests(LineupCase):
         code = cli.main(["sessions", "resolve-fork", self.mid, OTHER, "--yes"], runtime=self.runtime,
                         output_stream=out, interactive=False)
         self.assertEqual(code, 0, out.getvalue())
-        self.assertIn(f"`claude-multi sessions link {OTHER} --profile balanced`", out.getvalue())
+        self.assertIn(f"`charmer sessions link {OTHER} --profile balanced`", out.getvalue())
 
     def test_show_never_raises_on_an_unknown_lead(self) -> None:
         record = self.store.load(self.mid)
@@ -1301,7 +1301,7 @@ class SkillExpansionTests(LineupCase):
 
         bindir = self.root / "wrapper-bin"
         bindir.mkdir()
-        wrapper = bindir / "claude-multi"
+        wrapper = bindir / "charmer"
         wrapper.write_text(
             f"#!{_sys.executable}\n"
             "import os, sys\n"
@@ -1353,14 +1353,14 @@ class SkillExpansionTests(LineupCase):
         for raw, refusal in cases.items():
             with self.subTest(raw=raw):
                 code, out, err = self.expand(raw)
-                self.assertEqual((code, out), (0, f"claude-multi: {refusal}\n"), err)
+                self.assertEqual((code, out), (0, f"charmer: {refusal}\n"), err)
         self.assertEqual(sorted(p.name for p in (self.root / "cwd").iterdir()), [])
         code, out, err = self.expand("set implementer=opus55:xhigh")
         self.assertEqual(code, 0, err)
         self.assertTrue(out.startswith("lineup gen 2: implementer "), out)
         self.assertIn(lineup.RELOAD_LINES[0], out)
         code, out, _ = self.expand("")
-        self.assertTrue(out.startswith("claude-multi · profile balanced (pinned) · lineup gen 2"), out)
+        self.assertTrue(out.startswith("charmer · profile balanced (pinned) · lineup gen 2"), out)
 
 
 # ------------------------------------------------------------------ agent class moves
@@ -1416,7 +1416,7 @@ class AgentClassMoveTests(V4Case):
         self.assertEqual(problems, [])
         notice = next(line for line in attention if "agent context class changes at the next resume" in line)
         self.assertIn(f"{profile.label(self.slots[0])} 200K → 1M", notice)
-        self.assertIn(f"claude-multi -r {self.mid} after it exits", notice)
+        self.assertIn(f"charmer -r {self.mid} after it exits", notice)
         self.assertIn("matches", self.converge_report()[-1])
 
     def converge_report(self):
@@ -1588,7 +1588,7 @@ class ReviewTests(LineupCase):
         # No reviewer bound: said so, never a generic agent.
         self.request("unset reviewer-strong")
         code, out, _ = self.request("unset reviewer")
-        self.assertNotIn("claude-multi:", out)
+        self.assertNotIn("charmer:", out)
         code, out, _ = self.request("review")
         self.assertIn("No cm reviewer is bound", out)
 
@@ -1613,7 +1613,7 @@ class FallbackTests(LineupCase):
         before = self._state()
         code, out, _ = self.request("fallback kimi")
         _golden(self, "fallback-none.txt", out)
-        self.assertEqual(out, "claude-multi: " + lineup.FALLBACK_NONE.format(provider="kimi") + "\n")
+        self.assertEqual(out, "charmer: " + lineup.FALLBACK_NONE.format(provider="kimi") + "\n")
         _user_copy(self, "balanced", primary_provider="kimi")
         _lead_profile(self, "kimi-two", {"model": "opus55", "effort": "ultracode"})
         _user_copy(self, "kimi-two", primary_provider="kimi")
@@ -1642,7 +1642,7 @@ class FallbackTests(LineupCase):
         code, out, _ = self.request("fallback anthropic")
         self.assertEqual(
             out,
-            "claude-multi: " + lineup.FALLBACK_MISSING.format(
+            "charmer: " + lineup.FALLBACK_MISSING.format(
                 provider="anthropic", name="claude", roles="cm-designer") + "\n",
         )
         self.assertEqual(self._state(), before)
@@ -1782,8 +1782,8 @@ class FallbackTests(LineupCase):
             return pool
 
         expected = quota_mod.command_lines(
-            pool, provider_by_pool=self.runtime.pool_providers(), login_commands={"claude": "claude-multi providers sign-in anthropic",
-                                                                                 "codex": "claude-multi providers sign-in openai"},
+            pool, provider_by_pool=self.runtime.pool_providers(), login_commands={"claude": "charmer providers sign-in anthropic",
+                                                                                 "codex": "charmer providers sign-in openai"},
             restart_hint="x", now=now, surface="session")[1]
         with mock.patch.object(sessions.SessionStore, "lifecycle_lock",
                                side_effect=AssertionError("quota takes no lock")), \

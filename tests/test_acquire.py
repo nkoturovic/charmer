@@ -1,4 +1,4 @@
-"""Acquisition of the owned Claude Code copy and ``claude-multi setup --step claude``.
+"""Acquisition of the owned Claude Code copy and ``charmer setup --step claude``.
 
 Fixtures only: local files and a loopback fake download server reached
 through the download opener seam. Nothing is fetched from the network and
@@ -128,7 +128,7 @@ class DownloadTests(FakeServerCase):
                 self.assertEqual(outcome.state, "declined")
                 self.assertIsNone(outcome.path)
                 self.assertIn("--claude-from PATH", outcome.notes[-1])
-                self.assertIn("update claude-multi", outcome.notes[-1])
+                self.assertIn("update charmer", outcome.notes[-1])
         self.assertEqual(self.handler.requests, [])
         self.assertFalse(self.owned.exists())
 
@@ -321,7 +321,7 @@ class LocalSourceTests(FakeServerCase):
         (root / "2.1.400").symlink_to(elsewhere.parent)
         self.write(self.home / ".local/share/claude/versions/2.1.400")
         with self.assertRaisesRegex(acquire.AcquireError,
-                                    "2.1.400 is a symbolic link.*rm .*rerun `claude-multi setup --step claude`"):
+                                    "2.1.400 is a symbolic link.*rm .*rerun `charmer setup --step claude`"):
             self.acquire()
         self.assertTrue((root / "2.1.400").is_symlink())
         self.assertEqual(elsewhere.read_bytes(), PAYLOAD)
@@ -411,14 +411,14 @@ class SetupCommandTests(V4Case):
         self.assertTrue(self.fake_binary.is_file())
         code, output = self.run_setup("--step", "claude")
         self.assertEqual(code, 0, output)
-        self.assertIn("Claude Code 2.1.281 is set up for claude-multi", output)
+        self.assertIn("Claude Code 2.1.281 is set up for charmer", output)
 
     def test_download_question_needs_a_terminal_and_nothing_is_sent(self):
         code, output = self.run_setup("--step", "claude")
         self.assertEqual(code, 1, output)
         self.assertIn("needs a terminal outside Claude Code sessions", output)
         self.assertIn("nothing was downloaded", output)
-        self.assertIn("not set up for claude-multi", output)
+        self.assertIn("not set up for charmer", output)
         self.assertFalse(self.fake_binary.exists())
 
     def test_a_declined_download_exits_3_and_sends_nothing(self):
@@ -429,7 +429,7 @@ class SetupCommandTests(V4Case):
         self.assertEqual(len(questions), 1)
         self.assertIn("downloads.claude.ai", questions[0])
         self.assertIn("nothing was downloaded", output)
-        self.assertIn("not set up for claude-multi", output)
+        self.assertIn("not set up for charmer", output)
         self.assertFalse(self.fake_binary.exists())
 
     def test_a_guard_refusal_exits_1_without_asking(self):
@@ -463,7 +463,7 @@ class SetupCommandTests(V4Case):
         finally:
             lock.release()
         self.assertEqual(code, 1, output)
-        self.assertIn("another claude-multi setup is putting Claude Code 2.1.281 in place", output)
+        self.assertIn("another charmer setup is putting Claude Code 2.1.281 in place", output)
         self.assertFalse(self.fake_binary.exists())
 
     def test_setup_prunes_copies_no_release_needs(self):
@@ -486,9 +486,9 @@ class SetupCommandTests(V4Case):
         self.assertEqual(code, 0, output)
         self.assertIn("Removed Claude Code copies no release here needs: 2.1.100.", output)
         self.assertIn("Kept Claude Code copies in use: 2.1.200 — once no session runs them, "
-                      "`claude-multi setup --step claude` removes them.", output)
+                      "`charmer setup --step claude` removes them.", output)
         self.assertIn("Could not remove Claude Code copies: 2.1.090 — check ", output)
-        self.assertIn(", then run `claude-multi setup --step claude` again.", output)
+        self.assertIn(", then run `charmer setup --step claude` again.", output)
         self.assertTrue(pin.owned_path(self.env, "2.1.090", self.platform).exists())
         self.assertTrue(pin.owned_path(self.env, "2.1.200", self.platform).exists())
         self.assertTrue(pin.owned_path(self.env, "2.1.250", self.platform).exists())  # previous pin
@@ -499,7 +499,7 @@ class SetupCommandTests(V4Case):
         code = cli.main(["update"], runtime=self.runtime, output_stream=output, interactive=False)
         self.assertEqual(code, 1)  # refused: not an installed release
         text = output.getvalue()
-        self.assertIn("not installed by the claude-multi installer", text)
+        self.assertIn("not installed by the charmer installer", text)
         self.assertIn("Nothing was changed", text)
         self.assertNotIn("evidence", text)
         after = sorted(str(path) for path in pin.owned_root(self.env).rglob("*")) if pin.owned_root(self.env).exists() else []

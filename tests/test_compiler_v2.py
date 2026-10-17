@@ -571,7 +571,7 @@ class ProviderSecretUnsetTests(unittest.TestCase):
         # The render resolves secret_ref from the secret file
         # (proxy.resolve_secret), never the process env, so a managed
         # session's env (secrets unset) renders byte-identically.
-        root = Path(tempfile.mkdtemp(prefix="claude-multi-v2-unset-"))
+        root = Path(tempfile.mkdtemp(prefix="charmer-v2-unset-"))
         self.addCleanup(lambda: shutil.rmtree(root, ignore_errors=True))
         os.chmod(root, 0o700)
         home = root / "home"
@@ -602,7 +602,7 @@ class ProviderSecretUnsetTests(unittest.TestCase):
 
         def models_get(_base, _token):
             yaml = config.read_text()
-            return 200, set(re.findall(r'alias: "(claude-multi-render-[0-9a-f]+)"', yaml))
+            return 200, set(re.findall(r'alias: "(charmer-render-[0-9a-f]+)"', yaml))
 
         rendered = []
         for environ in (outer, inner):
@@ -703,7 +703,7 @@ class AppendixTests(unittest.TestCase):
         self.assertIn(f"`{SCOPE_DIR / lineup_files.LINEUP_MD}`", appendix)
         self.assertIn("- Explore: replaced by `cm-explorer` (native Explore denied).", appendix)
         self.assertIn(f"- Managed session: {FIXED_SESSION}.", appendix)
-        self.assertIn(f"`claude-multi -r {FIXED_SESSION}`", appendix)
+        self.assertIn(f"`charmer -r {FIXED_SESSION}`", appendix)
         self.assertIn("press `s` (this session only)", appendix)
         self.assertTrue(result.lead_prompt.startswith(
             _bundle().prompt_bodies["cm-lead"].decode("utf-8") + "\n"
@@ -870,8 +870,8 @@ class ContractTests(unittest.TestCase):
                     _launch(lineup, eff, bundle=bundle, token_helper_command=missing)
         with self.assertRaisesRegex(CompilerError, "hook command"):
             _launch(lineup, eff, bundle=bundle, hook_command="")
-        with self.assertRaisesRegex(ScopeError, "claude-multi-hook-3"):
-            _launch(lineup, eff, bundle=bundle, hook_command="/state/bin/claude-multi-hook")
+        with self.assertRaisesRegex(ScopeError, "charmer-hook-3"):
+            _launch(lineup, eff, bundle=bundle, hook_command="/state/bin/charmer-hook")
         with self.assertRaisesRegex(ScopeError, "lineup_generation"):
             _launch(lineup, eff, bundle=bundle, lineup_generation=0)
         with self.assertRaisesRegex(CompilerError, "unknown session action"):
@@ -1003,7 +1003,7 @@ class CustomLeadLaunchTests(unittest.TestCase):
 
 class WorktreeSeamTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.root = Path(tempfile.mkdtemp(prefix="claude-multi-v2-git-"))
+        self.root = Path(tempfile.mkdtemp(prefix="charmer-v2-git-"))
         self.addCleanup(lambda: shutil.rmtree(self.root, ignore_errors=True))
         self.repo = self.root / "repo"
         self.plain = self.root / "plain"

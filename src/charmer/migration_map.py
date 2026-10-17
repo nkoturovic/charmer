@@ -1,6 +1,6 @@
 """How legacy compositions become profiles.
 
-The single source of the migration map: ``claude-multi migrate`` reads
+The single source of the migration map: ``charmer migrate`` reads
 :func:`record_profile` for each record's ``profile``, and ``profile
 migrate`` reads :data:`PRESET_TARGETS` and :data:`CONVERT_RULES` for
 reviewed rows, and :func:`generic_row` and :func:`generic_rule` for every

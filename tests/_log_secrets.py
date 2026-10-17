@@ -32,7 +32,7 @@ def secrets_and_lines() -> list[tuple[str, str]]:
         (google, f"{stamp} GET \"/v1beta/models?key={google}&alt=sse\""),
         (mixed, f"{stamp} provider=custom-vendor api_key={mixed} status=401"),
         (jwt, f"{stamp} oauth refresh returned access_token={jwt}"),
-        (email, f"{stamp} model=claude-multi-opus provider=claude auth=claude-{email}.json"),
+        (email, f"{stamp} model=charmer-opus provider=claude auth=claude-{email}.json"),
         (email, f"{stamp} account {email} quota exhausted"),
         ("dummy-cookie-value", f"{stamp} Cookie: {cookie}"),
         ("dummy-password", f"{stamp} proxy http://user:dummy-password@proxy.invalid:3128 refused"),

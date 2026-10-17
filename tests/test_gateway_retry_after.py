@@ -315,7 +315,7 @@ def document_factory(case, tls_paths):
                                 "proxy-url": f"http://127.0.0.1:{egress}"})
                 document["payload"] = {"override": [{"models": [{"name": "*", "protocol": "claude"}],
                                                      "params": {"speed": "fast"}}]}
-                cert, key = home / ".config/claude-multi/fake-ca.pem", home / ".config/claude-multi/fake-key.pem"
+                cert, key = home / ".config/charmer/fake-ca.pem", home / ".config/charmer/fake-key.pem"
                 subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",
                     "-subj", "/CN=api.anthropic.com", "-addext", "subjectAltName=DNS:api.anthropic.com",
                     "-keyout", str(key), "-out", str(cert)], check=True, capture_output=True, timeout=20)

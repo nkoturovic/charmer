@@ -50,11 +50,11 @@ SEED_NO_RENAME = "{name} is a shipped profile and keeps its name — C copies it
 SEED_NO_DELETE = "{name} is a shipped profile and cannot be deleted — U restores its shipped version."
 NOT_A_SEED = "{name} is your own profile — there is no shipped version to restore."
 SEED_NO_RENAME_LINE = ("{name} is a shipped profile and keeps its name — copy it under a new name: "
-                       "claude-multi profile duplicate {name} NEW")
+                       "charmer profile duplicate {name} NEW")
 SEED_NO_DELETE_LINE = ("{name} is a shipped profile and cannot be deleted — restore its shipped version: "
-                       "claude-multi profile reseed {name}")
-NOT_FOUND = "profile {name!r} does not exist — claude-multi profile list"
-UNLOADABLE_SOURCE = "{error} — fix it first: claude-multi profile edit {name} (or rm; a copy is kept)"
+                       "charmer profile reseed {name}")
+NOT_FOUND = "profile {name!r} does not exist — charmer profile list"
+UNLOADABLE_SOURCE = "{error} — fix it first: charmer profile edit {name} (or rm; a copy is kept)"
 
 # Plan and result lines.
 COPY_LINE = "Copy {source} to {target}."
@@ -99,7 +99,7 @@ def _require(store: profile_mod.ProfileStore, name: str) -> None:
     except profile_mod.ProfileError as exc:
         raise model.Refused(str(exc)) from exc
     if not exists:
-        raise model.Refused(NOT_FOUND.format(name=name), remedy="claude-multi profile list")
+        raise model.Refused(NOT_FOUND.format(name=name), remedy="charmer profile list")
 
 
 def _load_source(store: profile_mod.ProfileStore, name: str) -> dict[str, Any]:
@@ -108,7 +108,7 @@ def _load_source(store: profile_mod.ProfileStore, name: str) -> dict[str, Any]:
         return store.load(name)
     except profile_mod.ProfileError as exc:
         raise model.Refused(UNLOADABLE_SOURCE.format(error=exc, name=name),
-                            remedy=f"claude-multi profile edit {name}") from exc
+                            remedy=f"charmer profile edit {name}") from exc
 
 
 def _changed(name: str) -> model.Stale:
@@ -361,7 +361,7 @@ def plan_rename(runtime: Any, source: str, target: str, *, document: Mapping[str
     _require(store, source)
     if store.is_seed(source):
         raise model.Refused(SEED_NO_RENAME.format(name=source), line=SEED_NO_RENAME_LINE.format(name=source),
-                            fix=model.Fix("C", f"claude-multi profile duplicate {source} NEW"))
+                            fix=model.Fix("C", f"charmer profile duplicate {source} NEW"))
     _check_name(store, target)
     followers, running = _followers(runtime, source)
     is_default = defaults.chosen_default(runtime) == source
@@ -434,7 +434,7 @@ def plan_delete(runtime: Any, name: str) -> DeletePlan:
     _require(store, name)
     if store.is_seed(name):
         raise model.Refused(SEED_NO_DELETE.format(name=name), line=SEED_NO_DELETE_LINE.format(name=name),
-                            fix=model.Fix("U", f"claude-multi profile reseed {name}"))
+                            fix=model.Fix("U", f"charmer profile reseed {name}"))
     followers, running = _followers(runtime, name)
     is_default = defaults.chosen_default(runtime) == name
     lines = [DELETE_LINE.format(backup=_backup_hint(runtime, name, "removed"))]

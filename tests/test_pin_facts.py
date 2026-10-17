@@ -46,7 +46,7 @@ class PinFactTests(unittest.TestCase):
         contract = _contract()
         state, text = pin.copy_state(contract, self.env, platform="linux-x64")
         self.assertEqual(state, "not set up")
-        self.assertIn("claude-multi setup --step claude", text)
+        self.assertIn("charmer setup --step claude", text)
         retained = self.root / "retained"
         retained.mkdir()
         (retained / "2.1.300").write_bytes(b"xyz")
@@ -62,8 +62,8 @@ class PinFactTests(unittest.TestCase):
 
     def test_version_from_path_never_runs_the_file(self) -> None:
         self.assertEqual(pin.version_from_path("/x/claude/versions/2.1.290"), "2.1.290")
-        self.assertEqual(pin.version_from_path("/x/claude-multi/claude/2.1.286/claude"), "2.1.286")
-        self.assertEqual(pin.version_from_path("/x/claude-multi/claude/2.1.286/claude.exe"), "2.1.286")
+        self.assertEqual(pin.version_from_path("/x/charmer/claude/2.1.286/claude"), "2.1.286")
+        self.assertEqual(pin.version_from_path("/x/charmer/claude/2.1.286/claude.exe"), "2.1.286")
         self.assertIsNone(pin.version_from_path("/usr/lib/node_modules/@anthropic-ai/claude-code/cli.js"))
         self.assertIsNone(pin.version_from_path("/usr/local/bin/claude"))
 
@@ -90,7 +90,7 @@ class PinFactTests(unittest.TestCase):
         self.assertIn("your Claude Code is 2.1.301", pin.staleness(contract, day, "2.1.301"))
         late = pin.staleness(contract, datetime.date(2026, 10, 2), None)
         self.assertIn("it was verified 31 days ago", late)
-        self.assertIn("a claude-multi release that verifies a newer Claude Code brings it", late)
+        self.assertIn("a charmer release that verifies a newer Claude Code brings it", late)
         self.assertIsNone(pin.staleness(contract, datetime.date(2026, 10, 1), None))
 
     def test_settings_keys(self) -> None:
@@ -145,12 +145,12 @@ class ClaudeCardRowTests(V4Case):
     def test_the_card_names_a_stale_pin_without_a_command(self) -> None:
         runtime = self.make_runtime(pin_report=True)
         fresh = self.card_texts(runtime, datetime.date(2026, 9, 26))
-        self.assertFalse([text for text in fresh if "this claude-multi runs Claude Code" in text])
+        self.assertFalse([text for text in fresh if "this charmer runs Claude Code" in text])
         stale = [text for text in self.card_texts(runtime, datetime.date(2026, 11, 26))
-                 if "this claude-multi runs Claude Code" in text]
+                 if "this charmer runs Claude Code" in text]
         self.assertEqual(len(stale), 1)
         self.assertIn("it was verified 62 days ago", stale[0])
-        self.assertNotIn("claude-multi update", stale[0])
+        self.assertNotIn("charmer update", stale[0])
         # A newer installed claude is an Attention on the card too.
         bin_dir = self.root / "bin"
         bin_dir.mkdir()

@@ -1,4 +1,4 @@
-"""``claude-multi restore-2x``.
+"""``charmer restore-2x``.
 
 The restore half plus the liveness usability
 (``sessions mark-ended``, the ``/proc`` liveness source, ``--assume-dead``
@@ -76,13 +76,13 @@ def _v4_born(managed_id: str, *, cwd: str = "/project/new", last_event_source: s
 
 class RestoreTestCase(unittest.TestCase):
     def setUp(self) -> None:
-        self.tmp = Path(tempfile.mkdtemp(prefix="claude-multi-restore-"))
+        self.tmp = Path(tempfile.mkdtemp(prefix="charmer-restore-"))
         os.chmod(self.tmp, 0o700)
         self.addCleanup(shutil.rmtree, self.tmp, True)
         self.environ = _cli_environ(self.tmp)
         self.root = sessions.state_root(self.environ)
         self.store = sessions.SessionStore(self.root, SCHEMA)
-        self.hook = "/nix/store/fixture/bin/claude-multi"
+        self.hook = "/nix/store/fixture/bin/charmer"
         from charmer import scope
 
         self.shim = scope.ensure_hook_shim(self.root, self.hook)
@@ -164,7 +164,7 @@ class MarkerGateTests(RestoreTestCase):
                 before = self.tree()
                 code, output = self.restore()
                 self.assertEqual(code, 1)
-                self.assertTrue(output.startswith("claude-multi: state belongs to a newer"), output)
+                self.assertTrue(output.startswith("charmer: state belongs to a newer"), output)
                 self.assertEqual(self.tree(), before)
                 if body is None:
                     os.unlink(marker)
@@ -183,13 +183,13 @@ class RefusalTests(RestoreTestCase):
         code, output = self.restore()
         self.assertEqual(code, 1)
         self.assertIn(
-            f"claude-multi: restore-2x refused: 1 session(s) may still be running (live or "
-            f"unknown): {M1[:8]} (last event resume). Stop them (claude-multi sessions stop "
+            f"charmer: restore-2x refused: 1 session(s) may still be running (live or "
+            f"unknown): {M1[:8]} (last event resume). Stop them (charmer sessions stop "
             "<id>); for a session you know has exited without a SessionEnd, rerun with "
             "--not-running <id>. Nothing was changed.",
             output,
         )
-        self.assertIn("claude-multi sessions mark-ended <id>", output)
+        self.assertIn("charmer sessions mark-ended <id>", output)
         self.assertEqual(self.tree(), before)
         self.assertTrue(self.marker())
         code, output = self.restore(["--not-running", M1])
@@ -220,7 +220,7 @@ class RefusalTests(RestoreTestCase):
                     f"{M5[:8]}: record unreadable (", output
                 )
                 self.assertIn(
-                    f"fix it or run claude-multi sessions forget {M5} (this drops its legacy backup)",
+                    f"fix it or run charmer sessions forget {M5} (this drops its legacy backup)",
                     output,
                 )
                 self.assertEqual(self.tree(), before)
@@ -231,7 +231,7 @@ class RefusalTests(RestoreTestCase):
         code, output = self.restore(["--not-running", M1])
         self.assertEqual(code, 1)
         self.assertIn(
-            f"claude-multi: {M1[:8]} is live in the Claude background daemon; --not-running "
+            f"charmer: {M1[:8]} is live in the Claude background daemon; --not-running "
             "cannot override that",
             output,
         )
@@ -279,7 +279,7 @@ class RefusalTests(RestoreTestCase):
             with self.subTest(argv=argv):
                 code, output = self.restore(argv)
                 self.assertEqual(code, 1, output)
-                self.assertIn("claude-multi: restore-2x: cannot tell which sessions are live in the "
+                self.assertIn("charmer: restore-2x: cannot tell which sessions are live in the "
                               "background (symlink in daemon root); nothing restored", output)
                 self.assertEqual(self.tree(), before)
                 self.assertTrue(self.marker())
@@ -308,7 +308,7 @@ class RefusalTests(RestoreTestCase):
         self.assertEqual(code, 1)
         self.assertIn(
             f"{M1[:8]}: migrated record without its legacy backup (sessions/{M1}.v3.json "
-            f"missing); restore it from a copy or run claude-multi sessions forget {M1}",
+            f"missing); restore it from a copy or run charmer sessions forget {M1}",
             output,
         )
         self.assertEqual(self.tree(), before)
@@ -421,7 +421,7 @@ class SelfAssumeDeadTests(RestoreTestCase):
         before = self.tree()
         code, output = self.restore_as(argv, environ)
         self.assertEqual(code, 1, output)
-        self.assertIn(f"claude-multi: {M1[:8]} is live", output)
+        self.assertIn(f"charmer: {M1[:8]} is live", output)
         self.assertEqual(self.tree(), before)
         self.assertTrue(self.marker())
         return output
@@ -493,8 +493,8 @@ class SelfAssumeDeadTests(RestoreTestCase):
             ["--assume-dead", M1, M2], {"CLAUDE_MULTI_MANAGED_ID": M1}
         )
         self.assertEqual(code, 1, output)
-        self.assertIn(f"claude-multi: {M2[:8]} is live", output)
-        self.assertNotIn(f"claude-multi: {M1[:8]} is live", output)
+        self.assertIn(f"charmer: {M2[:8]} is live", output)
+        self.assertNotIn(f"charmer: {M1[:8]} is live", output)
         self.assertEqual(self.tree(), before)
 
     def test_e_daemon_liveness_of_the_own_id_is_never_overridden(self) -> None:
@@ -752,9 +752,9 @@ class RestoreRaceTests(RestoreTestCase):
             code, output = self.restore()
         self.assertEqual(code, 1)
         self.assertIn(
-            f"claude-multi: restore-2x stopped: {M5[:8]} changed while restoring", output
+            f"charmer: restore-2x stopped: {M5[:8]} changed while restoring", output
         )
-        self.assertIn("the marker is still 4 — rerun claude-multi restore-2x", output)
+        self.assertIn("the marker is still 4 — rerun charmer restore-2x", output)
         self.assertTrue(self.marker())
         self.assert_226_readable(M1)  # the first record was restored already
         code, output = self.restore()
@@ -863,7 +863,7 @@ class MarkEndedTests(RestoreTestCase):
         self.assertIn(f"{M1}  refused: cannot tell whether session", output)
         code, output = self.run_cli(["sessions", "mark-ended", "--all-dead"])
         self.assertEqual(code, 1, output)
-        self.assertEqual(output, "claude-multi: cannot tell which sessions are running (the process table is "
+        self.assertEqual(output, "charmer: cannot tell which sessions are running (the process table is "
                                  "unreadable: PermissionError); nothing marked\n")
         self.assertEqual(self.store.load_raw(M1)[1], before)
         self.assertEqual(self.store.load(M1)["last_event_source"], "resume")
@@ -885,7 +885,7 @@ class MarkEndedTests(RestoreTestCase):
             block = yaml.split("api-keys:\n", 1)[1].split("debug:", 1)[0]
             keys = re.findall(r'"([0-9a-f]{64})"', block)
             seen_keys.append(tuple(keys))
-            ids = set(re.findall(r'alias: "(claude-multi-render-[0-9a-f]+)"', yaml))
+            ids = set(re.findall(r'alias: "(charmer-render-[0-9a-f]+)"', yaml))
             return (ids, 200) if token in keys else (set(), 401)
 
         def sleep(seconds):
@@ -914,7 +914,7 @@ class MarkEndedTests(RestoreTestCase):
             self.assertNotIn("step 4/4", text)
             self.assertNotIn("previous key is retired", text)
             self.assertIn("rotation paused", text)
-            self.assertIn("resume with `claude-multi doctor --rotate-token`", text)
+            self.assertIn("resume with `charmer doctor --rotate-token`", text)
         else:
             self.assertFalse(previous.exists())
             self.assertEqual(seen_keys[-1], (new_token,))
@@ -947,7 +947,7 @@ class MarkEndedTests(RestoreTestCase):
         self.assertIn(f"{M1}  refused: {refusal}", output)
         code, output = self.run_cli(["sessions", "mark-ended", "--all-dead"])
         self.assertEqual(code, 1, output)
-        self.assertEqual(output, f"claude-multi: {all_dead}; nothing marked\n")
+        self.assertEqual(output, f"charmer: {all_dead}; nothing marked\n")
         self.assertEqual(self.store.load_raw(M1)[1], before)
         self.assertTrue(sessions.may_hold_env_token(self.store.load(M1)))
 
@@ -1047,7 +1047,7 @@ class MarkEndedTests(RestoreTestCase):
 
 class ProcSessionIdsTests(unittest.TestCase):
     def test_reads_session_flags_from_a_proc_tree(self) -> None:
-        root = Path(tempfile.mkdtemp(prefix="claude-multi-proc-"))
+        root = Path(tempfile.mkdtemp(prefix="charmer-proc-"))
         self.addCleanup(shutil.rmtree, root, True)
         cmdlines = {
             "101": b"claude\0--session-id\0" + M1.encode() + b"\0--settings\0x\0",
@@ -1068,7 +1068,7 @@ class ProcSessionIdsTests(unittest.TestCase):
         self.assertFalse(sessions.record_is_proc_live(record, frozenset({M1})))
 
     def test_live_background_prefixes_moved_with_a_cli_delegate(self) -> None:
-        root = Path(tempfile.mkdtemp(prefix="claude-multi-daemon-"))
+        root = Path(tempfile.mkdtemp(prefix="charmer-daemon-"))
         self.addCleanup(shutil.rmtree, root, True)
         (root / "x" / "pty").mkdir(parents=True)
         (root / "x" / "pty" / "abcdef12.sock").write_bytes(b"")

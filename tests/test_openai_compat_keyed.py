@@ -374,8 +374,8 @@ class KeyedValidationTests(unittest.TestCase):
         self.assertIsNone(catalog.platform_host_problem("https://api.chatco.example"))
 
     def test_keyed_headers_are_closed_static_and_redacted(self) -> None:
-        ok = layer_of({KEYED_ID: keyed_document(headers={"x-client": "claude-multi"})})
-        self.assertEqual(ok.providers[KEYED_ID].headers, {"X-Client": "claude-multi"})
+        ok = layer_of({KEYED_ID: keyed_document(headers={"x-client": "charmer"})})
+        self.assertEqual(ok.providers[KEYED_ID].headers, {"X-Client": "charmer"})
         marker_name = f"X-{REJECTED_MARKER}"
         refused = {
             "authorization": {"Authorization": "fixed-value"},
@@ -416,7 +416,7 @@ class KeyedValidationTests(unittest.TestCase):
         self.assertEqual(operator.compat_provider_key(KEYED_ID), f"openai-compatible-{KEYED_ID}")
         self.assertEqual(operator.compat_provider_key("openai-compatibility"), "openai-compatibility")
         # The normalized render sentinel key and a T1 compat key win.
-        for pid in ("openai-compatible-claude-multi-render", "openai-compatible-llm-local"):
+        for pid in ("openai-compatible-charmer-render", "openai-compatible-llm-local"):
             with self.subTest(pid=pid):
                 found = layer_of({pid: keyed_document()})
                 self.assertNotIn(pid, found.providers)
@@ -745,7 +745,7 @@ def keyed_render_golden_bytes() -> bytes:
     two keyed providers (one with the closed X-Client header and a
     captured-only alias), the keyless LAN fixture provider, dummy values."""
 
-    plan, _ledger = keyed_plan(keyed_files(headers={"X-Client": "claude-multi"}),
+    plan, _ledger = keyed_plan(keyed_files(headers={"X-Client": "charmer"}),
                                captures={"custom-chatco-old": {"pid": KEYED_ID, "wire": "chatco-old-1"}})
     resolve = lambda name: f"golden-dummy-{name.lower().replace('_', '-')}"  # noqa: E731
     return render_plan_config(plan, resolve).yaml.encode("utf-8")
@@ -755,14 +755,14 @@ class KeyedRenderTests(unittest.TestCase):
     """E1b: one usable key, the keyed model item, availability parity, captures."""
 
     def test_keyed_render_one_nonblank_key_and_per_model_force_mapping(self) -> None:
-        plan, _ledger = keyed_plan(keyed_files(headers={"x-client": "claude-multi"}))
+        plan, _ledger = keyed_plan(keyed_files(headers={"x-client": "charmer"}))
         result = render_plan_config(plan, dummy_resolver())
         sections = compat_sections(result)
         chat, other = sections[KEYED_ID], sections[OTHER_ID]
         self.assertEqual(list(chat), ["name", "base-url", "api-key-entries", "headers", "models"])
         self.assertEqual(list(other), ["name", "base-url", "api-key-entries", "models"])
         self.assertEqual(chat["base-url"], KEYED_BASE)
-        self.assertEqual(chat["headers"], {"X-Client": "claude-multi"})
+        self.assertEqual(chat["headers"], {"X-Client": "charmer"})
         for section, value in ((chat, KEYED_VALUE), (other, OTHER_VALUE)):
             entries = section["api-key-entries"]
             self.assertEqual(len(entries), 1)
@@ -1034,7 +1034,7 @@ class KeyedRenderTests(unittest.TestCase):
         assertGolden(self, KEYED_RENDER_GOLDEN, data)
         text = data.decode("utf-8")
         self.assertIn("api-key-entries", text)
-        self.assertIn('X-Client: "claude-multi"', text)
+        self.assertIn('X-Client: "charmer"', text)
         self.assertIn("custom-chatco-old", text)
 
 

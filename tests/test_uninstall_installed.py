@@ -1,8 +1,8 @@
-"""``claude-multi uninstall`` against a real installation.
+"""``charmer uninstall`` against a real installation.
 
 A bundle built from this checkout (its package, real launchers) is
 installed by the real ``packaging/install.sh`` into a temporary HOME, as the
-installer tests do; then the installed ``claude-multi uninstall`` (and
+installer tests do; then the installed ``charmer uninstall`` (and
 ``install.sh --uninstall``, which runs it) removes what the installer's
 receipt proves: the launchers whose sha256 still matches, the PATH line
 exactly as written, the installed release, while the release it runs from
@@ -38,7 +38,7 @@ case $1 in
 *) echo Linux ;;
 esac
 """
-LAUNCHERS = ("claude-multi", "claude-multi-proxy")
+LAUNCHERS = ("charmer", "charmer-proxy")
 USER_PROFILE = "# my shell\nalias ll='ls -l'\n"
 KEY_NAME = "DEEPSEEK_CLAUDE_API_KEY"
 KEY_VALUE = "fixture-key-value-never-shown"
@@ -98,7 +98,7 @@ def run_on_terminal(argv: list[str], *, env: dict[str, str], cwd: Path, phrase: 
 class InstalledUninstallTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.base = Path(tempfile.mkdtemp(prefix="claude-multi-uninstall-installed-"))
+        cls.base = Path(tempfile.mkdtemp(prefix="charmer-uninstall-installed-"))
         os.chmod(cls.base, 0o700)
         cls.fakebin = cls.base / "fakebin"
         cls.fakebin.mkdir()
@@ -121,9 +121,9 @@ class InstalledUninstallTests(unittest.TestCase):
         self.home = self.tmp / "home dir"  # a space in HOME on purpose
         self.home.mkdir(mode=0o700)
         self.bin = self.home / ".local/bin"
-        self.install_root = self.home / ".local/share/claude-multi/install"
-        self.state = self.home / ".local/state/claude-multi"
-        self.config = self.home / ".config/claude-multi"
+        self.install_root = self.home / ".local/share/charmer/install"
+        self.state = self.home / ".local/state/charmer"
+        self.config = self.home / ".config/charmer"
         self.bashrc = self.home / ".bashrc"
         self.bashrc.write_text(USER_PROFILE)
         # The caller's PATH (the installer's tools may live anywhere, as in
@@ -170,13 +170,13 @@ class InstalledUninstallTests(unittest.TestCase):
         if via_installer:
             argv = ["sh", str(INSTALL_SH), "--uninstall", "--", *args]
         else:
-            argv = [str(self.bin / "claude-multi"), "uninstall", *args]
+            argv = [str(self.bin / "charmer"), "uninstall", *args]
         return run_on_terminal(argv, env=env, cwd=self.tmp, phrase=phrase)
 
     def assertProgramRemoved(self, code: int, out: str, *, kept_launchers: tuple[str, ...] = ()) -> None:
         self.assertEqual(code, 0, out)
         # The command finished, and said so, after the release it runs from was removed.
-        self.assertIn("claude-multi is uninstalled.", out)
+        self.assertIn("charmer is uninstalled.", out)
         self.assertNotIn("Traceback", out)
         self.assertNotIn("ModuleNotFoundError", out)
         self.assertFalse(self.release_dir.exists())
@@ -199,11 +199,11 @@ class InstalledUninstallTests(unittest.TestCase):
         self.assertNotIn("also revoke these keys", out)
 
     def test_only_the_typed_phrase_deletes_credentials_and_a_changed_launcher_stays(self) -> None:
-        changed = self.bin / "claude-multi-proxy"
+        changed = self.bin / "charmer-proxy"
         changed.write_text(changed.read_text() + "# my own change\n")
         code, out = self.uninstall("--yes", phrase=b"yes")  # anything but the phrase keeps them
-        self.assertProgramRemoved(code, out, kept_launchers=("claude-multi-proxy",))
-        self.assertIn("~/.local/bin/claude-multi-proxy: changed since it was installed — kept", out)
+        self.assertProgramRemoved(code, out, kept_launchers=("charmer-proxy",))
+        self.assertIn("~/.local/bin/charmer-proxy: changed since it was installed — kept", out)
         self.assertTrue(changed.read_text().endswith("# my own change\n"))
         self.assertTrue(self.key_file.exists() and self.gateway_key.exists())
         self.assertFalse(self.profile.exists())  # the setup went (no --keep-setup)
@@ -220,7 +220,7 @@ class InstalledUninstallTests(unittest.TestCase):
     def test_install_sh_uninstall_runs_the_same_command(self) -> None:
         code, out = self.uninstall("--keep-setup", "--yes", via_installer=True)
         self.assertProgramRemoved(code, out)
-        self.assertIn("claude-multi uninstall — plan (nothing has been removed yet)", out)
+        self.assertIn("charmer uninstall — plan (nothing has been removed yet)", out)
         self.assertTrue(self.notice.exists() and self.profile.exists() and self.key_file.exists())
 
     def test_a_failed_credential_save_whose_log_was_pruned_still_refuses(self) -> None:

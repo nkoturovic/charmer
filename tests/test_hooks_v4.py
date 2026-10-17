@@ -71,7 +71,7 @@ LEAD_WIRE = LCAT.lines["opus55"]["wire_model"]
 
 class HookV4TestCase(unittest.TestCase):
     def setUp(self) -> None:
-        self.tmp = Path(tempfile.mkdtemp(prefix="claude-multi-hooks-v4-"))
+        self.tmp = Path(tempfile.mkdtemp(prefix="charmer-hooks-v4-"))
         os.chmod(self.tmp, 0o700)
         self.addCleanup(shutil.rmtree, self.tmp, True)
         self.environ = _cli_environ(self.tmp)
@@ -158,7 +158,7 @@ class V4ReconcileTests(HookV4TestCase):
     def test_migrated_managed_equivalent_forms_need_no_repair(self) -> None:
         cat = _local_cat(retired={"opus@4.8": _retired_entry(
             "opus", since=33, wire="claude-opus-old", generation="4.8",
-            selectors={"claude-multi-opus-old[1m]": None})})
+            selectors={"charmer-opus-old[1m]": None})})
         for model in (LEAD_SELECTOR, LEAD_WIRE, LEAD_WIRE + "[1m]"):
             with self.subTest(model=model):
                 self.migrated(v3_managed(M1, cwd=self.cwd))
@@ -169,12 +169,12 @@ class V4ReconcileTests(HookV4TestCase):
                 os.unlink(self.store.sessions_dir / f"{M1}.json")
         # a record whose lead translated to a retired generation: last_wire
         raw = v3_managed(M1, cwd=self.cwd, catalog_version=32,
-                         lead={"model": "opus", "client_selector": "claude-multi-opus-old[1m]"})
+                         lead={"model": "opus", "client_selector": "charmer-opus-old[1m]"})
         record = self.migrated(raw, cat)
         self.assertEqual(record["applied"]["lead"]["key"], "opus@4.8")
         runtime = self.runtime()
         with mock.patch.object(runtime, "lineup_catalog", return_value=cat):
-            for model in ("claude-opus-old", "claude-opus-old[1m]", "claude-multi-opus-old[1m]"):
+            for model in ("claude-opus-old", "claude-opus-old[1m]", "charmer-opus-old[1m]"):
                 with self.subTest(model=model):
                     code, _out, errors = self.hook(
                         "start", {"session_id": RUNTIME, "source": "startup", "model": model},
@@ -194,7 +194,7 @@ class V4ReconcileTests(HookV4TestCase):
         # its retired entry's forms too (a record kept on a retired key)
         os.unlink(self.store.sessions_dir / f"{M1}.json")
         self.migrated(v3_ordinary(M1, model="muse-spark", cwd=self.cwd))
-        for model in ("claude-multi-muse-spark-xhigh[1m]", "muse-spark-1.3[1m]"):
+        for model in ("charmer-muse-spark-xhigh[1m]", "muse-spark-1.3[1m]"):
             with self.subTest(model=model):
                 code, _out, errors = self.start("resume", epoch=2, model=model)
                 self.assertEqual(code, 0, errors)
@@ -224,7 +224,7 @@ class V4ReconcileTests(HookV4TestCase):
         self.assertEqual(disk["identity_state"], sessions.IDENTITY_REPAIR_NEEDED)
         context = strict_json.loads(output)["hookSpecificOutput"]["additionalContext"]
         self.assertEqual(context, sessions.relink_message(disk))
-        self.assertIn(f"claude-multi -r {M1}", context)
+        self.assertIn(f"charmer -r {M1}", context)
         self.assertNotIn("sessions transition", context)
         # evidence survives a compact (model and cwd dropped) and a resume
         # start without a model
@@ -260,7 +260,7 @@ class V4ReconcileTests(HookV4TestCase):
                 )
                 self.assertEqual(code, 0, errors)
                 context = strict_json.loads(output)["hookSpecificOutput"]["additionalContext"]
-                self.assertIn(f"`claude-multi sessions link {FORK} {flag}`", context)
+                self.assertIn(f"`charmer sessions link {FORK} {flag}`", context)
                 self.assertNotIn("--composition", context)
                 self.assertNotIn("--model", context)
                 os.unlink(self.store.sessions_dir / f"{M1}.json")
@@ -523,7 +523,7 @@ class PostmodelSeamTests(_SeamCase):
         self.assertEqual(code, 0)
         self.assertEqual(
             strict_json.loads(output),
-            {"systemMessage": "claude-multi postmodel failed: RuntimeError — run claude-multi doctor"},
+            {"systemMessage": "charmer postmodel failed: RuntimeError — run charmer doctor"},
         )
         self.assertIn("postmodel hook ignored", errors)
         self.assertEqual(self.record_bytes(self.mid), before)

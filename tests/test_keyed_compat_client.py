@@ -226,7 +226,7 @@ class KeyedClientTests(unittest.TestCase):
         helper = root_state / "token-helper"
         state.atomic_write(helper, b"#!/bin/sh\nprintf '%s\\n' probe-dummy-token\n")
         helper.chmod(0o700)
-        recorder = state.ensure_private_dir(root_state / "bin") / "claude-multi-hook-3"
+        recorder = state.ensure_private_dir(root_state / "bin") / "charmer-hook-3"
         self.events = root_state / "events.jsonl"
         recorder.write_text(f"#!{sys.executable}\nimport json,sys\ne=json.load(sys.stdin)\n"
             f"with open({str(self.events)!r},'a') as f: f.write(json.dumps({{k:e.get(k) for k in "

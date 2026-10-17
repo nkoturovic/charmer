@@ -143,11 +143,11 @@ class PolicyPreflightTests(unittest.TestCase):
 
     def test_denied_models_block_only_a_bound_line(self):
         self.write({"deniedModels": ["opus", "claude-sonnet-5", "best"]})
-        self.assertEqual(self.kinds(selectors=["claude-multi-sol-high[1m]"]),
+        self.assertEqual(self.kinds(selectors=["charmer-sol-high[1m]"]),
                          [("deniedModels", "models", False)])
         for selector in ("claude-opus-5-5[1m]", "claude-sonnet-5-5", "claude-sonnet-5-20260101"):
             with self.subTest(selector=selector):
-                found = self.findings(selectors=["claude-multi-sol-high[1m]", selector])
+                found = self.findings(selectors=["charmer-sol-high[1m]", selector])
                 self.assertEqual([(lock.kind, lock.blocks) for lock in found], [("denied", True)])
                 self.assertIn(selector, found[0].effect)
 

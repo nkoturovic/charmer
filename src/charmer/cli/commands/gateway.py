@@ -1,4 +1,4 @@
-"""``claude-multi gateway``: the local gateway's lifecycle verbs.
+"""``charmer gateway``: the local gateway's lifecycle verbs.
 
 ``start`` (also records a new install's port), ``ensure`` (for scripts and the
 token helper: exit 0 only when the gateway is ours and ready), ``stop`` and
@@ -10,7 +10,7 @@ unit; see ``gateway_service``). Exit statuses: 0 ok; 1 refused, not ready or
 failed (the message names which); 2 a usage error; 3 a declined
 confirmation; 130 cancelled.
 
-``claude-multi setup --step gateway [--proxy URL | --no-proxy]`` is the
+``charmer setup --step gateway [--proxy URL | --no-proxy]`` is the
 gateway's setup step: it records (or clears) the gateway's outbound proxy in
 ``endpoint.json``, then starts the gateway, or re-renders a running one so
 the proxy applies.
@@ -51,13 +51,13 @@ def _report(outcome: gateway_lifecycle.Outcome, output_stream: TextIO) -> int:
     if outcome.ok:
         _write(output_stream, lines)
     else:
-        _write(sys.stderr, ["claude-multi: " + lines[0], *lines[1:]])
+        _write(sys.stderr, ["charmer: " + lines[0], *lines[1:]])
     return outcome.exit_code
 
 
 def _clear_hold(gateway: gateway_lifecycle.Gateway, runtime: "runtime_mod.Runtime",
                 input_stream: TextIO, output_stream: TextIO) -> int:
-    consent.require_human("claude-multi gateway clear-hold", runtime.environ)
+    consent.require_human("charmer gateway clear-hold", runtime.environ)
     report = gateway.persistence_hold()
     if not report.held:
         _write(output_stream, ["persistence hold: none — nothing to clear"])
@@ -80,7 +80,7 @@ def _clear_hold(gateway: gateway_lifecycle.Gateway, runtime: "runtime_mod.Runtim
         _write(output_stream, [
             "persistence hold cleared for what was shown; evidence recorded after it still holds:",
             *(f"  instance {item['instance']}: {item['reason']}" for item in newer),
-            f"Verify those credentials too, then run claude-multi gateway {CLEAR_WORD} again.",
+            f"Verify those credentials too, then run charmer gateway {CLEAR_WORD} again.",
         ])
         return 1
     _write(output_stream, ["persistence hold cleared"])
@@ -109,12 +109,12 @@ def _public(run) -> int:
     try:
         return run()
     except KeyboardInterrupt:
-        _write(sys.stderr, ["claude-multi: cancelled"])
+        _write(sys.stderr, ["charmer: cancelled"])
         return EXIT_CANCELLED
     except sessions.StateMarkerError:
         raise
-    except errors.ClaudeMultiError as exc:
-        lines = ["claude-multi: " + termtext.visible_message(exc)]
+    except errors.CharmerError as exc:
+        lines = ["charmer: " + termtext.visible_message(exc)]
         if exc.remedy:
             lines.append(f"  fix: {exc.remedy}")
         _write(sys.stderr, lines)
@@ -140,7 +140,7 @@ def _command(runtime: "runtime_mod.Runtime", args: argparse.Namespace, *,
 
     verb = args.gateway_command
     if parser_mod._gateway_command_writes(args):
-        _require_writes(runtime, f"claude-multi gateway {verb}")
+        _require_writes(runtime, f"charmer gateway {verb}")
     try:
         gateway = runtime.gateway()
     except endpoint.EndpointError as exc:
@@ -195,7 +195,7 @@ def _service(runtime: "runtime_mod.Runtime", args: argparse.Namespace, output_st
 
 def setup_command(runtime: "runtime_mod.Runtime", args: argparse.Namespace, *,
                   input_stream: TextIO, output_stream: TextIO) -> int:
-    """``claude-multi setup --step gateway [--proxy URL | --no-proxy]``."""
+    """``charmer setup --step gateway [--proxy URL | --no-proxy]``."""
 
     return _public(lambda: _setup(runtime, args, output_stream=output_stream))
 
@@ -223,7 +223,7 @@ def _proxy_lines(args: argparse.Namespace, applied: object) -> list[str]:
 def _setup(runtime: "runtime_mod.Runtime", args: argparse.Namespace, *, output_stream: TextIO) -> int:
     if args.step != "gateway":
         raise errors.CLIError(f"unsupported setup step {args.step!r}")
-    _require_writes(runtime, "claude-multi setup")
+    _require_writes(runtime, "charmer setup")
     if runtime.endpoint_error is not None:
         raise errors.CLIError(str(runtime.endpoint_error), remedy=runtime.endpoint_error.remedy)
     try:

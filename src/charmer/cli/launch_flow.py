@@ -79,8 +79,8 @@ def _transition_preflight_problems(runtime: runtime_mod.Runtime) -> list[str]:
 
 
 # The command-line fix for a missing key (never a TUI key).
-PRINT_LAUNCH_KEY_FIX = ("set the provider's API key: claude-multi providers set-key PROVIDER, or sign in: "
-                        "claude-multi providers sign-in anthropic|openai")
+PRINT_LAUNCH_KEY_FIX = ("set the provider's API key: charmer providers set-key PROVIDER, or sign in: "
+                        "charmer providers sign-in anthropic|openai")
 
 
 def _print_launch_verdict(prepared: cli_types.PreparedLaunch, output_stream: TextIO, *, warn_only: bool = False) -> int:
@@ -111,7 +111,7 @@ def _print_launch(
         prepared = runtime.prepare(target, action="fresh", passthrough=passthrough, read_only=True)
     except cli_types.NeedsChoiceError:
         raise
-    except cli_errors.ClaudeMultiError as exc:
+    except cli_errors.CharmerError as exc:
         output_stream.write(f"would fail: {termtext.visible_message(exc)}\n")
         if exc.remedy:
             output_stream.write(f"  fix: {termtext.visible_text(exc.remedy)}\n")
@@ -219,7 +219,7 @@ def _launch_notes(prepared: cli_types.PreparedLaunch, stream: TextIO) -> None:
     record = prepared.record
     m8 = sessions.managed_id(record)[:8]
     for notice in prepared.notices:
-        stream.write(f"claude-multi: {termtext.visible_text(notice)}\n")
+        stream.write(f"charmer: {termtext.visible_text(notice)}\n")
     if prepared.diff:
         if prepared.target.kind == "record" and record.get("follow") and record.get("profile"):
             stream.write(
@@ -298,7 +298,7 @@ def _relaunch_exec(
         # when they were still this attempt's (CAS-by-own-write).
         raise cli_errors.CLIError(
             f"relaunch exec failed ({exc}); the prior record and scope were restored "
-            f"where this attempt still owned them — check with claude-multi doctor, "
+            f"where this attempt still owned them — check with charmer doctor, "
             f"then retry"
         ) from exc
 
@@ -311,13 +311,13 @@ def _nothing_connected(runtime: runtime_mod.Runtime) -> bool:
 
     try:
         return not status.connected(runtime)
-    except (cli_errors.ClaudeMultiError, OSError, ValueError, KeyError):
+    except (cli_errors.CharmerError, OSError, ValueError, KeyError):
         return False
 
 
 def _offer_setup_line(runtime: runtime_mod.Runtime, input_stream: TextIO, output_stream: TextIO) -> bool:
     """A fresh launch in line mode while nothing is connected: say so and
-    offer ``claude-multi setup`` first (Enter or y runs it). True when setup
+    offer ``charmer setup`` first (Enter or y runs it). True when setup
     ran, so the caller resolves the default profile again."""
 
     import charmer.cli.commands.setup as commands_setup
@@ -611,11 +611,11 @@ def _resume_flow(
     return runtime.perform(prepared, resume_decision="force" if force else None)
 
 
-DIRECT_NEEDS_MODEL = "claude-multi direct needs a model: there is no terminal to pick one in"
-DIRECT_MODEL_REMEDY = "claude-multi direct --model MODEL (the models: claude-multi models list)"
-DIRECT_RESUME_NEEDS_SESSION = "claude-multi direct -r needs the session to resume"
-DIRECT_RESUME_REMEDY = ("claude-multi direct -r SESSION (its id, an id prefix of 8 or more characters, or its "
-                        "name); claude-multi -r with no value opens the sessions picker")
+DIRECT_NEEDS_MODEL = "charmer direct needs a model: there is no terminal to pick one in"
+DIRECT_MODEL_REMEDY = "charmer direct --model MODEL (the models: charmer models list)"
+DIRECT_RESUME_NEEDS_SESSION = "charmer direct -r needs the session to resume"
+DIRECT_RESUME_REMEDY = ("charmer direct -r SESSION (its id, an id prefix of 8 or more characters, or its "
+                        "name); charmer -r with no value opens the sessions picker")
 
 
 def _direct_preflight(args: argparse.Namespace, *, interactive: bool) -> None:
@@ -649,7 +649,7 @@ def _direct_line_choice(runtime: runtime_mod.Runtime, input_stream: TextIO, outp
         marks={},
     )
     if not rows:
-        output_stream.write("No model can lead a direct session here; see claude-multi models list.\n")
+        output_stream.write("No model can lead a direct session here; see charmer models list.\n")
         output_stream.flush()
         return None
     for index, row in enumerate(rows, start=1):
@@ -710,7 +710,7 @@ def _direct_command(
     interactive: bool,
     passthrough: list[str],
 ) -> int:
-    """``claude-multi direct``: an ad-hoc direct lineup on the one launch path.
+    """``charmer direct``: an ad-hoc direct lineup on the one launch path.
 
     ``--model`` names the lead; without it a terminal opens the Direct
     picker and anything else is refused with the ``--model`` remedy. A

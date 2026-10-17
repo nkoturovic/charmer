@@ -158,7 +158,7 @@ _BINDING_SHAPES = (frozenset({"model", "effort"}), frozenset({"use"}))
 _DEFAULT_WORKFLOWS = "native"  # as in legacy compositions (composition.py)
 
 
-class ProfileError(errors.ClaudeMultiError, ValueError):
+class ProfileError(errors.CharmerError, ValueError):
     """A profile could not be loaded, stored or found."""
 
 
@@ -679,7 +679,7 @@ _AUTO_COMPACT_OUTPUT_RESERVE = 20_000
 _AUTO_COMPACT_REACTIVE_HEADROOM = 13_000
 AGENT_ATTENTION_CONTRACT = (
     "operator agent {key}: qualification predates the current pins — "
-    "re-qualify with claude-multi models qualify {key} --agents"
+    "re-qualify with charmer models qualify {key} --agents"
 )
 AGENT_ATTENTION_STALE = (
     "operator agent {key}: qualification is stale for the current pins; running binding retained — "
@@ -893,7 +893,7 @@ def agent_eligibility(
             remedies.append("inspect operator-ledger.json and restore a valid ledger")
         if facts.route not in ("approved", "keyless", "catalog"):
             reasons.append(f"the route of provider {facts.provider} is {facts.route}")
-            remedies.append(f"claude-multi providers approve {facts.provider}")
+            remedies.append(f"charmer providers approve {facts.provider}")
     family = family if family is not None else str(entry.get("family", facts.family if facts else UNKNOWN_FAMILY))
     known = known_families if known_families is not None else (facts.t1_families if facts else ())
     if not recognized_family(family, known):
@@ -1223,7 +1223,7 @@ class Evaluation:
 def _e1(version: Any) -> str:
     return (
         f"version: unsupported profile version {version!r} "
-        "(profiles are v2; legacy compositions migrate with 'claude-multi profile migrate')"
+        "(profiles are v2; legacy compositions migrate with 'charmer profile migrate')"
     )
 
 
@@ -1608,7 +1608,7 @@ def _resolve_slot(
         err("model", unavailable)
     if facts is not None and facts.route not in ("approved", "keyless", "catalog") and not recorded:
         err("model", f"the route of provider {provider_id} is {facts.route} — "
-                     f"claude-multi providers approve {provider_id}")
+                     f"charmer providers approve {provider_id}")
     if is_lead and (not isinstance(entry.get("lead"), Mapping)
                     or not isinstance(entry["context"].get("ordinary_profile"), str)):
         err("model", f"{key!r} lacks the lead/context fields required for compilation")
@@ -2059,7 +2059,7 @@ def derive_routing(
 BINDINGS_DATA_VERSION = 1
 
 
-class BindingError(errors.ClaudeMultiError, ValueError):
+class BindingError(errors.CharmerError, ValueError):
     """Named bindings could not be loaded or a change was refused."""
 
 
@@ -3060,7 +3060,7 @@ class ProfileStore:
         if self.is_seed(name):
             raise ProfileError(
                 f"profile {name!r} is a seed; edit it, or restore it with "
-                f"'claude-multi profile reseed {name}'"
+                f"'charmer profile reseed {name}'"
             )
         lock = self._begin()
         try:
@@ -3077,7 +3077,7 @@ class ProfileStore:
         if self.is_seed(name):
             raise ProfileError(
                 f"profile {name!r} is a seed; edit it, or restore it with "
-                f"'claude-multi profile reseed {name}'"
+                f"'charmer profile reseed {name}'"
             )
         lock = self._begin()
         try:

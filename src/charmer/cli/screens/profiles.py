@@ -139,7 +139,7 @@ class _ProfilesScreen:
         current = select if select is not None else (self.selected.name if self.selected is not None else None)
         try:
             self.rows = setup_profiles.rows(self.runtime, fallback_only=self.fallback_only)
-        except (cli_errors.ClaudeMultiError, OSError, ValueError) as exc:
+        except (cli_errors.CharmerError, OSError, ValueError) as exc:
             self.rows = ()
             self._say(str(exc), "warn")
         names = [row.name for row in self.rows]
@@ -354,7 +354,7 @@ class _ProfilesScreen:
             draft.pop("primary_provider", None)
         try:
             editor_state = screens_profile_editor._draft_editor_state(self.runtime, draft)
-        except (cli_errors.ClaudeMultiError, OSError) as exc:
+        except (cli_errors.CharmerError, OSError) as exc:
             self._fail(exc)
             return
         self._editor(win, editor_state, focus="general")
@@ -379,7 +379,7 @@ class _ProfilesScreen:
         except model.Refused:
             self._say(cli_text.STARTER_NO_LEAD_TUI, "warn")
             return
-        except (cli_errors.ClaudeMultiError, OSError) as exc:
+        except (cli_errors.CharmerError, OSError) as exc:
             self._fail(exc)
             return
         if not tui.TextView(cli_text.STARTER_PREVIEW_TITLE, plan.lines, palette=self.palette, confirm=True).run(win):
@@ -387,7 +387,7 @@ class _ProfilesScreen:
             return
         try:
             setup_profiles.apply_new_starter(self.runtime, plan, model.Confirmation.given(plan))
-        except (cli_errors.ClaudeMultiError, OSError) as exc:
+        except (cli_errors.CharmerError, OSError) as exc:
             self._fail(exc)
             return
         self._reload(select=name)
@@ -397,7 +397,7 @@ class _ProfilesScreen:
             try:
                 chosen = defaults.set_default_plan(self.runtime, name)
                 defaults.apply_default(self.runtime, chosen, model.Confirmation.given(chosen))
-            except (cli_errors.ClaudeMultiError, OSError) as exc:
+            except (cli_errors.CharmerError, OSError) as exc:
                 self._fail(exc)
                 return
             self._say(cli_text.DEFAULT_SET.format(name=name))
@@ -414,7 +414,7 @@ class _ProfilesScreen:
             return
         try:
             editor_state = screens_profile_editor._profile_editor_state(self.runtime, row.name, "edit")
-        except (cli_errors.ClaudeMultiError, OSError) as exc:
+        except (cli_errors.CharmerError, OSError) as exc:
             self._fail(exc)
             return
         self._editor(win, editor_state)
@@ -445,7 +445,7 @@ class _ProfilesScreen:
             try:
                 saved = commands_profile._edit_profile(self.runtime, None, name=name, verb="edit",
                                                        output_stream=output, raw=raw, expected=digest)
-            except (cli_errors.ClaudeMultiError, OSError) as exc:
+            except (cli_errors.CharmerError, OSError) as exc:
                 saved = False
                 output.write(f"{exc}\n")
         lines = output.getvalue().splitlines()
@@ -478,7 +478,7 @@ class _ProfilesScreen:
         try:
             plan = setup_profiles.plan_copy(self.runtime, row.name, name, keep_fallback=keep)
             setup_profiles.apply_copy(self.runtime, plan, model.Confirmation.given(plan))
-        except (cli_errors.ClaudeMultiError, OSError) as exc:
+        except (cli_errors.CharmerError, OSError) as exc:
             self._fail(exc)
             return
         self._say(setup_profiles.COPIED.format(source=row.name, target=name))
@@ -511,7 +511,7 @@ class _ProfilesScreen:
         try:
             plan = setup_profiles.plan_rename(self.runtime, row.name, name)
             outcome = setup_profiles.apply_rename(self.runtime, plan, model.Confirmation.given(plan))
-        except (cli_errors.ClaudeMultiError, OSError) as exc:
+        except (cli_errors.CharmerError, OSError) as exc:
             self._fail(exc)
             return
         self.renamed.append((row.name, name))
@@ -530,7 +530,7 @@ class _ProfilesScreen:
             return
         try:
             plan = setup_profiles.plan_delete(self.runtime, row.name)
-        except (cli_errors.ClaudeMultiError, OSError) as exc:
+        except (cli_errors.CharmerError, OSError) as exc:
             self._fail(exc)
             return
         if not self._confirm(win, cli_text.DELETE_TITLE.format(name=row.name), "\n".join(plan.lines),
@@ -538,7 +538,7 @@ class _ProfilesScreen:
             return
         try:
             outcome = setup_profiles.apply_delete(self.runtime, plan, model.Confirmation.given(plan))
-        except (cli_errors.ClaudeMultiError, OSError) as exc:
+        except (cli_errors.CharmerError, OSError) as exc:
             self._fail(exc)
             return
         self.removed.append(row.name)
@@ -562,7 +562,7 @@ class _ProfilesScreen:
                     self._refresh(win, plan)
                     return
             plan_one = setup_profiles.plan_reseed(self.runtime, row.name)
-        except (cli_errors.ClaudeMultiError, OSError) as exc:
+        except (cli_errors.CharmerError, OSError) as exc:
             self._fail(exc)
             return
         if plan_one.nothing:
@@ -575,7 +575,7 @@ class _ProfilesScreen:
             return
         try:
             outcome = setup_profiles.apply_reseed(self.runtime, plan_one, model.Confirmation.given(plan_one))
-        except (cli_errors.ClaudeMultiError, OSError) as exc:
+        except (cli_errors.CharmerError, OSError) as exc:
             self._fail(exc)
             return
         self._say(outcome.lines[0])
@@ -598,7 +598,7 @@ class _ProfilesScreen:
             screens_propagation.run_propagation_screen(self.runtime, win, self.palette, list(exc.done))
             self._reload()
             return
-        except (cli_errors.ClaudeMultiError, OSError) as exc:
+        except (cli_errors.CharmerError, OSError) as exc:
             self._fail(exc)
             return
         self._say(cli_text.PROFILES_REFRESHED.format(names=", ".join(done)))
@@ -622,7 +622,7 @@ class _ProfilesScreen:
         try:
             plan = defaults.set_default_plan(self.runtime, name)
             defaults.apply_default(self.runtime, plan, model.Confirmation.given(plan))
-        except (cli_errors.ClaudeMultiError, OSError) as exc:
+        except (cli_errors.CharmerError, OSError) as exc:
             self._fail(exc)
             return
         self._say(defaults.DEFAULT_CLEARED if name is None else cli_text.DEFAULT_SET.format(name=name))

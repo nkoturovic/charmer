@@ -41,7 +41,7 @@ SHELLS = [("sh",)] + ([("busybox", "sh")] if shutil.which("busybox") else [])
 class InstallerTestCase(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.base = Path(tempfile.mkdtemp(prefix="claude-multi-installer-"))
+        cls.base = Path(tempfile.mkdtemp(prefix="charmer-installer-"))
         os.chmod(cls.base, 0o700)
         cls.fakebin = cls.base / "fakebin"
         cls.fakebin.mkdir()
@@ -63,9 +63,9 @@ class InstallerTestCase(unittest.TestCase):
         self.tmp = Path(tempfile.mkdtemp(prefix="case-", dir=self.base))
         self.home = self.tmp / "home dir"  # a space in HOME on purpose
         self.home.mkdir()
-        self.root = self.home / ".local/share/claude-multi/install"
+        self.root = self.home / ".local/share/charmer/install"
         self.bin = self.home / ".local/bin"
-        self.state = self.home / ".local/state/claude-multi"
+        self.state = self.home / ".local/state/charmer"
 
     def release(self, version: str, *, sign: bool = True, **kwargs) -> FakeRelease:
         release = FakeRelease(self.tmp / f"release-{version}", version, **kwargs)
@@ -93,7 +93,7 @@ class InstallerTestCase(unittest.TestCase):
     def assertNothingInstalled(self) -> None:
         self.assertFalse((self.root / "current").exists())
         self.assertEqual([p.name for p in (self.root / "versions").iterdir()] if (self.root / "versions").exists() else [], [])
-        self.assertFalse((self.bin / "claude-multi").exists())
+        self.assertFalse((self.bin / "charmer").exists())
 
     def write_marker(self, data: bytes, mode: int = 0o600) -> Path:
         self.state.mkdir(parents=True, exist_ok=True)
@@ -123,7 +123,7 @@ class InstallerTestCase(unittest.TestCase):
         return found
 
     def launcher(self, *args: str) -> subprocess.CompletedProcess[str]:
-        return subprocess.run([str(self.bin / "claude-multi"), *args], stdin=subprocess.DEVNULL, env={"HOME": str(self.home), "PATH": "/usr/bin:/bin"},
+        return subprocess.run([str(self.bin / "charmer"), *args], stdin=subprocess.DEVNULL, env={"HOME": str(self.home), "PATH": "/usr/bin:/bin"},
                               capture_output=True, text=True, timeout=60)
 
 
@@ -138,20 +138,20 @@ class InstallTests(InstallerTestCase):
                 self.assertInstalled(result, "1.0.0")
                 self.assertIn("verified the SHA256SUMS signature", result.stdout)
                 self.assertFalse((self.root / "previous").exists())
-                for name in ("claude-multi", "claude-multi-proxy"):
+                for name in ("charmer", "charmer-proxy"):
                     shim = self.bin / name
                     self.assertTrue(shim.is_file() and not shim.is_symlink())
                     self.assertTrue(os.access(shim, os.X_OK))
-                    self.assertIn("# claude-multi installer launcher", shim.read_text())
+                    self.assertIn("# charmer installer launcher", shim.read_text())
                 self.assertFalse((self.bin / "claude-gateway").exists())
-                self.assertFalse((self.bin / "claude-multi-dev").exists())
-                self.assertEqual(self.launcher("--version").stdout.strip(), "claude-multi 1.0.0")
+                self.assertFalse((self.bin / "charmer-dev").exists())
+                self.assertEqual(self.launcher("--version").stdout.strip(), "charmer 1.0.0")
                 self.assertEqual((self.state / "channel").read_text(), "bundle\n")
                 self.assertEqual(os.stat(self.root).st_mode & 0o777, 0o700)
                 receipt = json.loads((self.root / "installer.json").read_text())
                 self.assertEqual(receipt["format"], 2)
                 self.assertEqual([entry["path"] for entry in receipt["launchers"]],
-                                 sorted(str(self.bin / n) for n in ("claude-multi", "claude-multi-proxy")))
+                                 sorted(str(self.bin / n) for n in ("charmer", "charmer-proxy")))
                 for entry in receipt["launchers"]:
                     self.assertEqual(entry["sha256"], hashlib.sha256(Path(entry["path"]).read_bytes()).hexdigest())
                 self.assertEqual(receipt["path_lines"], [])
@@ -169,9 +169,9 @@ class InstallTests(InstallerTestCase):
         subprocess.run(["setfacl", "-m", "d:u::rwx,d:g::rwx,d:o::rx", str(self.home)],
                        check=True, capture_output=True)
         self.assertInstalled(self.install(self.release("1.0.0")), "1.0.0")
-        for relative in (".local", ".local/share", ".local/share/claude-multi",
-                         ".local/share/claude-multi/install", ".local/share/claude-multi/install/versions",
-                         ".local/bin", ".local/state", ".local/state/claude-multi"):
+        for relative in (".local", ".local/share", ".local/share/charmer",
+                         ".local/share/charmer/install", ".local/share/charmer/install/versions",
+                         ".local/bin", ".local/state", ".local/state/charmer"):
             path = self.home / relative
             self.assertEqual(path.stat().st_mode & 0o777, 0o700, relative)
 
@@ -180,7 +180,7 @@ class InstallTests(InstallerTestCase):
         result = self.run_installer("--from-dir", str(release.dir), "--allowed-signers", str(self.signers),
                                     "--no-modify-path")
         self.assertInstalled(result, "1.0.0")
-        self.assertIn("next: run 'claude-multi setup'", result.stdout)
+        self.assertIn("next: run 'charmer setup'", result.stdout)
         self.assertFalse((self.home / "launcher.log").exists())
 
     def test_updates_keep_one_previous_version(self) -> None:
@@ -188,14 +188,14 @@ class InstallTests(InstallerTestCase):
             self.assertInstalled(self.install(self.release(version)), version)
         self.assertEqual(os.readlink(self.root / "previous"), "versions/1.0.1")
         self.assertEqual(sorted(p.name for p in (self.root / "versions").iterdir()), ["1.0.1", "1.1.0"])
-        self.assertEqual(self.launcher("--version").stdout.strip(), "claude-multi 1.1.0")
+        self.assertEqual(self.launcher("--version").stdout.strip(), "charmer 1.1.0")
 
     def test_reinstalling_the_same_version_replaces_it(self) -> None:
         release = self.release("1.0.0")
         self.assertInstalled(self.install(release), "1.0.0")
-        (self.root / "versions/1.0.0/bin/claude-multi").write_text("broken")
+        (self.root / "versions/1.0.0/bin/charmer").write_text("broken")
         self.assertInstalled(self.install(release), "1.0.0")
-        self.assertEqual(self.launcher("--version").stdout.strip(), "claude-multi 1.0.0")
+        self.assertEqual(self.launcher("--version").stdout.strip(), "charmer 1.0.0")
         self.assertFalse((self.root / "previous").exists())
 
     def test_rollback_and_the_state_format_refusal(self) -> None:
@@ -214,7 +214,7 @@ class InstallTests(InstallerTestCase):
         self.assertEqual(rolled.returncode, 0, rolled.stderr)
         self.assertEqual(os.readlink(self.root / "current"), "versions/1.0.0")
         self.assertEqual(os.readlink(self.root / "previous"), "versions/1.1.0")
-        self.assertEqual(self.launcher("--version").stdout.strip(), "claude-multi 1.0.0")
+        self.assertEqual(self.launcher("--version").stdout.strip(), "charmer 1.0.0")
 
     def test_the_install_lock(self) -> None:
         release = self.release("1.0.0")
@@ -248,12 +248,12 @@ class InstallTests(InstallerTestCase):
 
     def test_repair_restores_launchers_and_the_current_link(self) -> None:
         self.assertInstalled(self.install(self.release("1.0.0")), "1.0.0")
-        (self.bin / "claude-multi").unlink()
+        (self.bin / "charmer").unlink()
         (self.root / "current").unlink()
         result = self.run_installer("--repair", "--no-modify-path")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(os.readlink(self.root / "current"), "versions/1.0.0")
-        self.assertEqual(self.launcher("--version").stdout.strip(), "claude-multi 1.0.0")
+        self.assertEqual(self.launcher("--version").stdout.strip(), "charmer 1.0.0")
         empty = tempfile.mkdtemp(dir=self.tmp)
         nothing = self.run_installer("--repair", HOME=empty)
         self.assertEqual(nothing.returncode, 1)
@@ -263,17 +263,17 @@ class InstallTests(InstallerTestCase):
         installed = self.install(self.release("1.0.0"), "--repair", HOME=str(fresh))
         self.assertEqual(installed.returncode, 0, installed.stderr)
         self.assertIn("installing the release", installed.stdout)
-        self.assertEqual(os.readlink(fresh / ".local/share/claude-multi/install/current"), "versions/1.0.0")
+        self.assertEqual(os.readlink(fresh / ".local/share/charmer/install/current"), "versions/1.0.0")
 
     def test_uninstall_delegates_to_the_launcher(self) -> None:
         self.assertInstalled(self.install(self.release("1.0.0")), "1.0.0")
         result = self.run_installer("--uninstall", "--", "--yes")
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual((self.home / "launcher.log").read_text(), "claude-multi 1.0.0 uninstall --yes\n")
+        self.assertEqual((self.home / "launcher.log").read_text(), "charmer 1.0.0 uninstall --yes\n")
         empty = tempfile.mkdtemp(dir=self.tmp)
         missing = self.run_installer("--uninstall", HOME=empty)
         self.assertEqual(missing.returncode, 1)
-        self.assertIn("no installed claude-multi", missing.stderr)
+        self.assertIn("no installed charmer", missing.stderr)
 
     def test_modify_path_appends_one_marked_line(self) -> None:
         release = self.release("1.0.0")
@@ -282,12 +282,12 @@ class InstallTests(InstallerTestCase):
                                         "--no-setup", "--modify-path", SHELL="/bin/bash")
             self.assertInstalled(result, "1.0.0")
         lines = (self.home / ".bashrc").read_text().splitlines()
-        marked = [line for line in lines if "# added by the claude-multi installer" in line]
-        self.assertEqual(marked, ['export PATH="$HOME/.local/bin:$PATH" # added by the claude-multi installer'])
+        marked = [line for line in lines if "# added by the charmer installer" in line]
+        self.assertEqual(marked, ['export PATH="$HOME/.local/bin:$PATH" # added by the charmer installer'])
         receipt = json.loads((self.root / "installer.json").read_text())
         self.assertEqual(receipt["path_lines"], [{
-            "file": str(self.home / ".bashrc"), "marker": "# added by the claude-multi installer",
-            "line": 'export PATH="$HOME/.local/bin:$PATH" # added by the claude-multi installer'}])
+            "file": str(self.home / ".bashrc"), "marker": "# added by the charmer installer",
+            "line": 'export PATH="$HOME/.local/bin:$PATH" # added by the charmer installer'}])
         self.assertTrue(install_receipt.read(self.root).path_lines[0].present())
         on_path = self.install(release, PATH=f"{self.fakebin}:{self.bin}:{os.environ.get('PATH', '/usr/bin:/bin')}")
         self.assertEqual(on_path.returncode, 0, on_path.stderr + on_path.stdout)
@@ -297,7 +297,7 @@ class InstallTests(InstallerTestCase):
         state_home = self.tmp / "state-home"
         result = self.install(self.release("1.0.0"), XDG_STATE_HOME=str(state_home))
         self.assertInstalled(result, "1.0.0")
-        self.assertEqual((state_home / "claude-multi" / "channel").read_text(), "bundle\n")
+        self.assertEqual((state_home / "charmer" / "channel").read_text(), "bundle\n")
         self.assertFalse(self.state.exists())
 
 
@@ -417,7 +417,7 @@ class VerificationTests(InstallerTestCase):
         release.sign(self.key)
         result = self.install(release)
         self.assertEqual(result.returncode, 1)
-        self.assertIn("does not hold exactly claude-multi-1.0.2-linux-x86_64/", result.stderr)
+        self.assertIn("does not hold exactly charmer-1.0.2-linux-x86_64/", result.stderr)
         self.assertNothingInstalled()
 
 
@@ -437,31 +437,31 @@ class ChannelTests(InstallerTestCase):
         self.assertIn("it was 'nix'", moved.stdout)
 
     def test_a_nix_store_link_refuses_without_the_migration_flag(self) -> None:
-        legacy = self.home / ".local/share/claude-multi-release"
+        legacy = self.home / ".local/share/charmer-release"
         legacy.mkdir(parents=True)
-        (legacy / "current").symlink_to("/nix/store/00000000000000000000000000000000-claude-multi-1.0.0")
+        (legacy / "current").symlink_to("/nix/store/00000000000000000000000000000000-charmer-1.0.0")
         release = self.release("1.0.0")
         refused = self.install(release)
         self.assertEqual(refused.returncode, 1)
-        self.assertIn("Nix-managed claude-multi is installed", refused.stderr)
+        self.assertIn("Nix-managed charmer is installed", refused.stderr)
         self.assertNothingInstalled()
         self.assertInstalled(self.install(release, "--migrate-from-nix"), "1.0.0")
         self.assertTrue((legacy / "current").is_symlink())  # never touched
 
     def test_a_current_link_into_the_nix_store_always_refuses(self) -> None:
         self.root.mkdir(parents=True)
-        (self.root / "current").symlink_to("/nix/store/00000000000000000000000000000000-claude-multi")
+        (self.root / "current").symlink_to("/nix/store/00000000000000000000000000000000-charmer")
         result = self.install(self.release("1.0.0"), "--migrate-from-nix")
         self.assertEqual(result.returncode, 1)
         self.assertIn("points into /nix/store", result.stderr)
 
     def test_a_foreign_launcher_file_is_never_overwritten(self) -> None:
         self.bin.mkdir(parents=True)
-        (self.bin / "claude-multi-proxy").write_text("#!/bin/sh\necho mine\n")
+        (self.bin / "charmer-proxy").write_text("#!/bin/sh\necho mine\n")
         result = self.install(self.release("1.0.0"))
         self.assertEqual(result.returncode, 1)
         self.assertIn("was not written by this installer", result.stderr)
-        self.assertEqual((self.bin / "claude-multi-proxy").read_text(), "#!/bin/sh\necho mine\n")
+        self.assertEqual((self.bin / "charmer-proxy").read_text(), "#!/bin/sh\necho mine\n")
         self.assertFalse((self.root / "current").exists())
 
 
@@ -555,7 +555,7 @@ class TransactionTests(InstallerTestCase):
     def start_gateway(self, version: str) -> subprocess.Popen:
         """A process executing versions/<version>'s gateway file, with its start record."""
 
-        binary = self.root / "versions" / version / "libexec/claude-multi/cli-proxy-api"
+        binary = self.root / "versions" / version / "libexec/charmer/cli-proxy-api"
         process = subprocess.Popen([str(binary), "300"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                                    stderr=subprocess.DEVNULL)
         self.addCleanup(lambda: (process.kill(), process.wait()))
@@ -573,7 +573,7 @@ class TransactionTests(InstallerTestCase):
     def test_the_running_gateways_installation_survives_two_updates(self) -> None:
         self.assertInstalled(self.install(self.gateway_release("1.0.0")), "1.0.0")
         process = self.start_gateway("1.0.0")
-        binary = os.path.realpath(self.root / "versions/1.0.0/libexec/claude-multi/cli-proxy-api")
+        binary = os.path.realpath(self.root / "versions/1.0.0/libexec/charmer/cli-proxy-api")
         self.assertInstalled(self.install(self.release("1.1.0")), "1.1.0")
         result = self.install(self.release("1.2.0"))
         self.assertInstalled(result, "1.2.0")
@@ -634,7 +634,7 @@ class TransactionTests(InstallerTestCase):
                     self.assertEqual(result.returncode, 1, result.stderr)
                     if args != ("--rollback",):  # the rollback has no previous version to go to first
                         self.assertIn("the gateway is inhibited by service (gateway service install "
-                                      "(claude-multi-gateway)", result.stderr)
+                                      "(charmer-gateway)", result.stderr)
                         self.assertIn("fix: ", result.stderr)
                     self.assertEqual(self.snapshot(), before)
 
@@ -690,11 +690,11 @@ exit $status
                 self.assertIn("sh install.sh --repair", again.stderr)
                 repaired = self.run_installer("--repair")
                 self.assertEqual(repaired.returncode, 0, repaired.stderr + repaired.stdout)
-                self.assertIn("recovered installer (install claude-multi 1.1.0; phase " + phase, repaired.stderr)
+                self.assertIn("recovered installer (install charmer 1.1.0; phase " + phase, repaired.stderr)
                 self.assertIn("finishing an interrupted run of the installer", repaired.stdout)
                 self.assertRecord(None)
                 self.assertEqual(os.readlink(self.root / "current"), f"versions/{current}")
-                self.assertEqual(self.launcher().stdout.strip(), f"claude-multi {current}")
+                self.assertEqual(self.launcher().stdout.strip(), f"charmer {current}")
                 self.assertFalse([p.name for p in (self.root / "versions").iterdir() if p.name.startswith(".")])
                 # Recovery is idempotent: a second repair has nothing to recover.
                 repaired = self.run_installer("--repair")
@@ -732,7 +732,7 @@ exit $status
                 self.assertIn("finishing an interrupted run of the installer", repaired.stdout)
                 self.assertRecord(None)
                 self.assertEqual(os.readlink(self.root / "current"), "versions/1.0.0")
-                self.assertEqual(self.launcher().stdout.strip(), "claude-multi 1.0.0")
+                self.assertEqual(self.launcher().stdout.strip(), "charmer 1.0.0")
                 self.assertEqual([p.name for p in (self.root / "versions").iterdir()], ["1.0.0"])
                 self.assertEqual((self.state / "channel").read_text(), "bundle\n")
 
@@ -762,14 +762,14 @@ exit $status
         (versions / ".staging.4242").mkdir()
         from charmer import gateway_inhibition
 
-        gateway_inhibition.begin(self.state, owner="installer", purpose="install claude-multi 1.0.0",
+        gateway_inhibition.begin(self.state, owner="installer", purpose="install charmer 1.0.0",
                                  phase="replace", remedy="sh install.sh --repair",
                                  expiry=gateway_inhibition.owner_process(2 ** 22 + 1))
         repaired = self.run_installer("--repair")
         self.assertEqual(repaired.returncode, 0, repaired.stderr + repaired.stdout)
         self.assertIn("put back 1.0.0", repaired.stdout)
         self.assertEqual(sorted(p.name for p in versions.iterdir()), ["1.0.0"])
-        self.assertEqual(self.launcher().stdout.strip(), "claude-multi 1.0.0")
+        self.assertEqual(self.launcher().stdout.strip(), "charmer 1.0.0")
         self.assertRecord(None)
 
     def test_a_switch_stopped_between_its_links_is_put_back_on_repair(self) -> None:
@@ -786,7 +786,7 @@ exit $status
                                       "after": {"current": "versions/1.0.0", "previous": "versions/1.1.0"}}))
         (self.root / "previous").unlink()
         (self.root / "previous").symlink_to("versions/1.1.0")
-        gateway_inhibition.begin(self.state, owner="installer", purpose="roll back claude-multi to 1.0.0",
+        gateway_inhibition.begin(self.state, owner="installer", purpose="roll back charmer to 1.0.0",
                                  phase="switch", remedy="sh install.sh --repair",
                                  expiry=gateway_inhibition.owner_process(2 ** 22 + 1))
         refused = self.run_installer("--rollback")  # the stopped run's inhibition still holds
@@ -805,7 +805,7 @@ exit $status
         self.assertEqual((os.readlink(self.root / "current"), os.readlink(self.root / "previous")),
                          ("versions/1.0.0", "versions/1.1.0"))
         self.assertFalse(record.exists())
-        self.assertEqual(self.launcher().stdout.strip(), "claude-multi 1.0.0")
+        self.assertEqual(self.launcher().stdout.strip(), "charmer 1.0.0")
 
     def test_the_installer_prunes_claude_code_copies_and_keeps_one_in_use(self) -> None:
         from charmer import pin
@@ -844,7 +844,7 @@ exit $status
         receipt = install_receipt.read(self.root)
         self.assertEqual([item.file for item in receipt.path_lines], [str(bashrc)])
         self.assertTrue(all(item.owned() for item in receipt.launchers))
-        (self.bin / "claude-multi").write_text("#!/bin/sh\n# claude-multi installer launcher\necho edited\n")
+        (self.bin / "charmer").write_text("#!/bin/sh\n# charmer installer launcher\necho edited\n")
         self.assertFalse(install_receipt.read(self.root).launchers[0].owned())
 
 
@@ -872,7 +872,7 @@ class PlatformTests(InstallerTestCase):
         result = self.run_installer("--from-dir", str(self.tmp), "--no-setup",
                                     FAKE_UNAME_R="5.15.167.4-microsoft-standard-WSL2")
         self.assertEqual(result.returncode, 1)
-        self.assertIn("has no claude-multi bundle for linux-x86_64", result.stderr)
+        self.assertIn("has no charmer bundle for linux-x86_64", result.stderr)
 
     def test_usage_errors(self) -> None:
         for args, text in ((("--bogus",), "unknown option: --bogus"), (("--version",), "--version needs a value"),
@@ -926,7 +926,7 @@ class StaticTests(InstallerTestCase):
         links = {name: Path(".local/share") / path for name, path in
                  re.findall(r"(?m)^(nix_link(?:_legacy)?)=\$data_home/(\S+)$", text)}
         self.assertEqual(links, {"nix_link_legacy": installs.NIX_RELEASE_LINK,
-                                 "nix_link": Path(".local/share/claude-multi") / installs.NIX_LINK})
+                                 "nix_link": Path(".local/share/charmer") / installs.NIX_LINK})
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
-"""Launch execution for claude-multi v2.
+"""Launch execution for charmer v2.
 
-Consumes a pure CompileResult, verifies claude-multi's own copy of the pinned
+Consumes a pure CompileResult, verifies charmer's own copy of the pinned
 Claude Code against the native contract, performs loopback-only readiness
 checks after explicit confirmation, persists the session snapshot atomically,
 and replaces the process via an injectable ``os.execve`` boundary. No resident
@@ -14,7 +14,7 @@ reviewed.
 Trust model: only ``<data root>/claude/<version>/claude`` (``claude.exe`` on
 Windows) is executed, and only when it is a regular, non-symlinked,
 executable file whose size and full SHA-256 equal the contract's record for
-this platform. A missing copy is set up by ``claude-multi setup --step
+this platform. A missing copy is set up by ``charmer setup --step
 claude``; a launch only copies an existing hash-identical retained copy
 (``pinned-clients/<version>``) into place. The user's own Claude Code install
 is never executed, moved, linked or modified. The version's use lock is
@@ -59,7 +59,7 @@ from .platform import posix_fs
 from .compiler import CompileResult
 from .sessions import SessionStore
 
-class LaunchError(errors.ClaudeMultiError, RuntimeError):
+class LaunchError(errors.CharmerError, RuntimeError):
     """Raised when launch cannot proceed (fail closed, no effects leaked)."""
 
 
@@ -107,7 +107,7 @@ def resolve_claude(
     native_contract: dict[str, Any], *, environ: Mapping[str, str] | None = None,
     retained_root: Path | None = None, platform: str | None = None,
 ) -> BinaryStatus:
-    """Verify claude-multi's own copy of the pinned Claude Code.
+    """Verify charmer's own copy of the pinned Claude Code.
 
     The owned copy must be a regular, non-symlinked, executable file whose
     size and full SHA-256 match the contract's record for this platform; any
@@ -144,12 +144,12 @@ def resolve_claude(
             raise LaunchError(f"{pin.not_set_up_text(version)} ({exc})") from exc
     except pin.PinError as exc:
         raise LaunchError(
-            f"the claude-multi copy of Claude Code {version} cannot be used: {exc} — "
+            f"the charmer copy of Claude Code {version} cannot be used: {exc} — "
             f"run `{pin.SETUP_COMMAND}` to replace it"
         ) from exc
     except OSError as exc:
         raise LaunchError(
-            f"the claude-multi copy of Claude Code {version} cannot be checked: {exc} — "
+            f"the charmer copy of Claude Code {version} cannot be checked: {exc} — "
             f"run `{pin.SETUP_COMMAND}`"
         ) from exc
     return BinaryStatus(
@@ -187,7 +187,7 @@ class PinnedCopy:
             return True
         try:
             version = pin.version(self._contract)
-        except (KeyError, TypeError, ValueError, AttributeError, errors.ClaudeMultiError):
+        except (KeyError, TypeError, ValueError, AttributeError, errors.CharmerError):
             return False
         if pin.version_key(version) is None:
             return False
@@ -197,11 +197,11 @@ class PinnedCopy:
             return False
         except pin.PinError as exc:
             raise LaunchError(
-                f"the claude-multi copy of Claude Code {version} cannot be used: {exc}"
+                f"the charmer copy of Claude Code {version} cannot be used: {exc}"
             ) from exc
         except OSError as exc:
             raise LaunchError(
-                f"the claude-multi copy of Claude Code {version} cannot be checked: {exc} — "
+                f"the charmer copy of Claude Code {version} cannot be checked: {exc} — "
                 f"run `{pin.SETUP_COMMAND}`"
             ) from exc
         return True
@@ -250,12 +250,12 @@ def doctor_binary_report(
 
             try:
                 pending = acquire.retained_source(native_contract, env, retained_root)
-            except (OSError, errors.ClaudeMultiError):
+            except (OSError, errors.CharmerError):
                 pending = None
             if pending is not None:
                 return [], [
                     f"Claude Code {pin.version(native_contract)}: the next launch copies the "
-                    f"verified retained copy {paths.display(pending, env)} into claude-multi's "
+                    f"verified retained copy {paths.display(pending, env)} into charmer's "
                     "own location."
                 ]
         return [f"managed Claude binary: {exc}"], []
@@ -380,7 +380,7 @@ def check_listener(base_url: str, *, owner_check=None, attention=None,
         )
     if require_proof:
         raise GatewayOwnerError(
-            f"BLOCK: the listener on port {port} is not proven to be the claude-multi gateway "
+            f"BLOCK: the listener on port {port} is not proven to be the charmer gateway "
             f"({verdict.detail}); the gateway token was not sent",
             remedy=f"check the listener before launching: {service.hint_code('status')}",
         )
@@ -388,7 +388,7 @@ def check_listener(base_url: str, *, owner_check=None, attention=None,
     if attention is not None:
         attention(message)
     else:
-        print(f"claude-multi: Attention: {message}", file=sys.stderr)
+        print(f"charmer: Attention: {message}", file=sys.stderr)
     return verdict
 
 
@@ -582,7 +582,7 @@ def read_gateway_token(gateway: dict[str, Any], *, home: Path | None = None) -> 
         raw = state.read_private(token_path)
     except state.StateError as exc:
         remedy = (
-            "run claude-multi-proxy init (it creates the key and re-renders the gateway config)"
+            "run charmer-proxy init (it creates the key and re-renders the gateway config)"
             if exc.errno == errno.ENOENT else
             f"make {shown} a regular file you own with mode 0600 (chmod 600 {shown}), then retry"
         )
@@ -594,7 +594,7 @@ def read_gateway_token(gateway: dict[str, Any], *, home: Path | None = None) -> 
     if not _TOKEN_SHAPE.fullmatch(token):
         raise GatewayKeyError(
             "gateway key file has an invalid token shape",
-            remedy=f"move it aside and create a fresh key: mv {shown} {shown}.invalid && claude-multi-proxy init",
+            remedy=f"move it aside and create a fresh key: mv {shown} {shown}.invalid && charmer-proxy init",
         )
     return token
 
@@ -650,7 +650,7 @@ class _CwdLease:
             os.close(original_fd)
             raise LaunchError(
                 f"cannot open the session's original project directory {target}: {exc}; "
-                "if it was renamed/moved, repair the record with `claude-multi "
+                "if it was renamed/moved, repair the record with `charmer "
                 "sessions relink-runtime <managed-id> <runtime-id> --cwd <new "
                 "project directory>` (or rename it back)"
             ) from exc
@@ -833,8 +833,8 @@ def _perform_launch(
     if missing:
         raise LaunchError(
             f"compiled hook target {missing[0]} is missing or not executable; the session's "
-            "/model fence and lineup hooks would silently not run — run claude-multi doctor "
-            "(a normal claude-multi command restores the hook shims), then launch again"
+            "/model fence and lineup hooks would silently not run — run charmer doctor "
+            "(a normal charmer command restores the hook shims), then launch again"
         )
     collisions = scope.find_cm_collisions(
         record["cwd"],

@@ -102,11 +102,11 @@ def _print_sessions_listing(runtime: runtime_mod.Runtime, output_stream: TextIO)
     if not records:
         output_stream.write("(no recorded sessions)\n")
     output_stream.write(
-        "[r] resume: claude-multi -r <id> · "
-        "[t] lineup: claude-multi lineup --session <runtime-id> "
+        "[r] resume: charmer -r <id> · "
+        "[t] lineup: charmer lineup --session <runtime-id> "
         "show|set|unset|profile|pin|follow|direct · "
-        "[e] end a live session: claude-multi sessions stop <id> · "
-        "[f] forget: claude-multi sessions forget <id> "
+        "[e] end a live session: charmer sessions stop <id> · "
+        "[f] forget: charmer sessions forget <id> "
         "(deletes the record + generated scope; transcripts are never touched)\n"
     )
     output_stream.write(
@@ -115,7 +115,7 @@ def _print_sessions_listing(runtime: runtime_mod.Runtime, output_stream: TextIO)
     )
     output_stream.write(
         "not seeing a session? only managed (launcher-started or adopted) sessions "
-        "are listed — adopt native ones with `claude-multi sessions link <fork> "
+        "are listed — adopt native ones with `charmer sessions link <fork> "
         "--profile NAME | --direct MODEL` (run it bare for the discovery guide)\n"
     )
     native = session_facts._discover_native_sessions(runtime)
@@ -215,14 +215,14 @@ def _session_show_lines(runtime: runtime_mod.Runtime, record: dict[str, Any]) ->
     if sessions.lead_needs_choice(record, lcat):
         lines.append(
             f"needs a lead choice: {sessions.lead_choice_notice(record, lcat)} — "
-            f"claude-multi -r {mid} (interactive) or claude-multi lineup --session {rid} "
+            f"charmer -r {mid} (interactive) or charmer lineup --session {rid} "
             "--relaunch --its-exited profile <name>"
         )
     pending = record.get("pending")
     if pending:
         lines.append(
             f"pending relaunch change: {'; '.join(pending.get('reasons') or ())} — applies "
-            f"at the next resume (claude-multi -r {mid})"
+            f"at the next resume (charmer -r {mid})"
         )
     target = record.get("lead_target")
     if target:
@@ -241,7 +241,7 @@ def _session_show_lines(runtime: runtime_mod.Runtime, record: dict[str, Any]) ->
 def _refused(message: str) -> int:
     """A refusal of an ordinary sessions command: stderr, exit 1."""
 
-    sys.stderr.write(f"claude-multi: {termtext.visible_text(message)}\n")
+    sys.stderr.write(f"charmer: {termtext.visible_text(message)}\n")
     sys.stderr.flush()
     return 1
 
@@ -298,14 +298,14 @@ def _forget_confirmed(
         return True
     if not interactive:
         raise cli_errors.CLIError("sessions forget needs a confirmation: there is no terminal to ask in",
-                                  remedy=f"claude-multi sessions forget {stable_id} --yes")
+                                  remedy=f"charmer sessions forget {stable_id} --yes")
     runtime_id = sessions.runtime_session_id(record) if record is not None else None
     prompt = sys.stderr
     prompt.write(
         f"Forget session {stable_id}"
         + (f" (runtime {runtime_id})" if runtime_id and runtime_id != stable_id else "")
         + "? Its record and generated scope are deleted; the conversation transcript is kept, and "
-        "Sessions → L (or claude-multi sessions link RUNTIME-ID) can manage it again. [y/N] "
+        "Sessions → L (or charmer sessions link RUNTIME-ID) can manage it again. [y/N] "
     )
     prompt.flush()
     answer = (input_stream.readline() or "").strip().lower()
@@ -323,7 +323,7 @@ def _resolve_fork_confirmed(
         return True
     if not interactive:
         raise cli_errors.CLIError("sessions resolve-fork needs a confirmation: there is no terminal to ask in",
-                                  remedy=f"claude-multi sessions resolve-fork {stable_id} {fork_id} --yes")
+                                  remedy=f"charmer sessions resolve-fork {stable_id} {fork_id} --yes")
     prompt = sys.stderr
     prompt.write(
         f"Discard the pending fork {fork_id} of session {stable_id}? Its marker is removed and the fork's "
@@ -345,7 +345,7 @@ def _sessions_command(
     no_color: bool,
 ) -> int | None:
     """The ``sessions`` command: ``list`` is a report (the interactive
-    picker is bare ``claude-multi -r`` and the card's S); the other verbs act
+    picker is bare ``charmer -r`` and the card's S); the other verbs act
     on the session a person names (``session_facts.resolve_session``)."""
 
     command = args.sessions_command
@@ -398,7 +398,7 @@ def _sessions_command(
                 if damaged and sessions.UUID4.fullmatch(damaged[1]):
                     raise cli_errors.CLIError(
                         f"{exc}; to remove that record, retry with its managed ID: "
-                        f"claude-multi sessions forget {damaged[1]}"
+                        f"charmer sessions forget {damaged[1]}"
                     ) from exc
                 raise
             stable_id = args.uuid
@@ -429,7 +429,7 @@ def _sessions_command(
         if runtime_id is not None:
             output_stream.write(
                 f"Its conversation stays a native session (runtime {runtime_id}); manage it again with "
-                f"Sessions → L, or: claude-multi sessions link {runtime_id} --profile NAME\n"
+                f"Sessions → L, or: charmer sessions link {runtime_id} --profile NAME\n"
             )
         return 0
     if command == "relink-runtime":
@@ -460,7 +460,7 @@ def _sessions_command(
                     f"Reconciled managed {stable_id} to runtime "
                     f"{updated['runtime_session_id']}, but scope reconverge "
                     f"failed: {termtext.visible_message(exc)}; run "
-                    f"`claude-multi doctor --repair {stable_id}`\n"
+                    f"`charmer doctor --repair {stable_id}`\n"
                 )
                 return 1
         output_stream.write(
@@ -531,7 +531,7 @@ def _sessions_command(
             )
         output_stream.write(
             f"Stopped session {stable_id} (runtime {runtime_id}). The "
-            "conversation is kept — resume it with `claude-multi -r "
+            "conversation is kept — resume it with `charmer -r "
             f"{stable_id}` when ready.\n"
         )
         return 0

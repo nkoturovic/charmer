@@ -309,8 +309,8 @@ def plan_sign_in(runtime: Any, provider_id: str, *, method: str | None = None,
         invocation = proxy.login_invocation(
             LOGIN_COMMANDS[pool], environ=environ, state_root=runtime.session_store.root,
             no_browser=chosen == "address" or bool(opener))
-    except errors.ClaudeMultiError as exc:
-        raise SignInError(str(exc), remedy=exc.remedy or "claude-multi setup --step gateway") from exc
+    except errors.CharmerError as exc:
+        raise SignInError(str(exc), remedy=exc.remedy or "charmer setup --step gateway") from exc
     before = _record_files(auth_dir(runtime), pool)
     records = frozenset((name, size, mtime) for name, (size, mtime) in before.items())
     host = texts.SIGNIN_HOSTS[pool]
@@ -624,7 +624,7 @@ def apply_sign_out(runtime: Any, plan: SignOutPlan, confirmation: model.Confirma
     held = external.persistence_held(runtime)
     if held:
         raise model.Refused(texts.SIGNOUT_HOLD.format(reason=held[0]),
-                            remedy="claude-multi gateway status")
+                            remedy="charmer gateway status")
     directory = auth_dir(runtime)
     found = _record_files(directory, plan.pool)
     if tuple(sorted(found)) != plan.files:
@@ -724,7 +724,7 @@ def pool_aliases(runtime: Any, pool: str) -> frozenset[str]:
 def _served_now(runtime: Any) -> frozenset[str] | None:
     try:
         ids, _status = runtime.served_models(runtime.gateway_token())
-    except (errors.ClaudeMultiError, OSError, ValueError):
+    except (errors.CharmerError, OSError, ValueError):
         return None
     return None if ids is None else frozenset(ids)
 

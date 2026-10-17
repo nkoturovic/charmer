@@ -230,7 +230,7 @@ def place_pinned_client(repo: Path, source: Path) -> str:
     contract = strict_json.load(repo / "src" / "claude_multi" / "data" / "catalog" / "native-contract.json")
     try:
         outcome = acquire.acquire(contract, {"HOME": os.environ["HOME"], "PATH": ""}, claude_from=source.resolve())
-    except (OSError, errors.ClaudeMultiError) as exc:
+    except (OSError, errors.CharmerError) as exc:
         raise UsageError(f"--claude {source}: {exc}") from exc
     return f"Claude Code {outcome.version} ({outcome.platform}) placed in the private HOME"
 

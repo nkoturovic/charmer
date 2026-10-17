@@ -96,7 +96,7 @@ def config_dir_retry(stable_id: str) -> str:
     """The resume command with ``CLAUDE_CONFIG_DIR`` unset for that one
     invocation (the shell keeps its value)."""
 
-    return f"env -u CLAUDE_CONFIG_DIR claude-multi -r {shlex.quote(stable_id)}"
+    return f"env -u CLAUDE_CONFIG_DIR charmer -r {shlex.quote(stable_id)}"
 
 
 def _evaluate_resume_gate(
@@ -150,7 +150,7 @@ def _evaluate_resume_gate(
         if decoded:
             remedy = (
                 f"if the session was intentionally re-homed there, repair "
-                f"the record with `claude-multi sessions relink-runtime "
+                f"the record with `charmer sessions relink-runtime "
                 f"{stable_id} {runtime_id} --cwd {shlex.quote(detail)}`; "
                 "otherwise move the transcript to the expected location "
                 f"{expected} and resume from the recorded dir"
@@ -158,7 +158,7 @@ def _evaluate_resume_gate(
         else:
             remedy = (
                 "inspect those directories and relink with "
-                "`claude-multi sessions relink-runtime "
+                "`charmer sessions relink-runtime "
                 f"{stable_id} {runtime_id} --cwd <that project directory>` "
                 "only if the session was intentionally re-homed; the "
                 f"expected transcript location is {expected}"
@@ -207,9 +207,9 @@ def _evaluate_resume_gate(
             f"{sessions.runtime_session_id(record)} anywhere under "
             "~/.claude/projects (expected at "
             f"{detail}). Resume cannot work — Claude resumes from that "
-            "file, and claude-multi never deletes transcripts. Restore it "
+            "file, and charmer never deletes transcripts. Restore it "
             "from a backup if one exists; otherwise forget the record with "
-            f"`claude-multi sessions forget {stable_id}`."
+            f"`charmer sessions forget {stable_id}`."
         )
         return ResumeGate(
             kind="transcript-missing",
@@ -228,7 +228,7 @@ def _evaluate_resume_gate(
             f"the recorded project dir ({record['cwd']}) is gone, though the "
             "transcript is still filed under it. If the directory was "
             "renamed or moved, either rename it back (resume then just "
-            "works), or repair the record to the new location — `claude-multi "
+            "works), or repair the record to the new location — `charmer "
             f"sessions relink-runtime {stable_id} {runtime_id} --cwd "
             "'<new project directory>'` — and resume again: the follow-up "
             "check then names the exact spot to move the transcript to."
@@ -255,7 +255,7 @@ def _evaluate_resume_gate(
             "background-owned session natively either fails or forks it — "
             "the fork path is what caused the original incident. The "
             "supported route is to stop it first "
-            f"(`claude-multi sessions stop {stable_id}`), then resume. The "
+            f"(`charmer sessions stop {stable_id}`), then resume. The "
             "marker is a best-effort heuristic — if you are sure it is "
             "stale, Resume anyway."
         )

@@ -61,7 +61,7 @@ _BINDING_LABEL = "binding at gen {generation} (reload unconfirmed)"
 _MAX_ATTEMPTS = 8
 
 
-class LineupLogError(errors.ClaudeMultiError, ValueError):
+class LineupLogError(errors.CharmerError, ValueError):
     """A lineup-log input is invalid (managed id, record shape, line size)."""
 
 

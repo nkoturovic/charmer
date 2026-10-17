@@ -29,18 +29,18 @@ CLAUDE_ACK_ID, CLAUDE_ACK_TEXT = signin.ack_text("claude")
 _CHATGPT_ACK_ID, CHATGPT_ACK_TEXT = signin.ack_text("codex")
 # The headers as they read before the pools became data, byte for byte.
 CLAUDE_BROWSER_HEADER = (
-    "claude-multi — Claude account sign-in (personal use)\n"
+    "charmer — Claude account sign-in (personal use)\n"
     "A browser page opens at claude.ai. Approve the sign-in there; it finishes here.\n"
     "If no page opens, open the address printed below. If the browser ends on a page that cannot\n"
     "load, copy that page's full address and paste it here when asked.\n"
     "Ctrl-C cancels; nothing changes unless the sign-in completes.\n")
 CLAUDE_ADDRESS_HEADER = (
-    "claude-multi — Claude account sign-in (personal use)\n"
+    "charmer — Claude account sign-in (personal use)\n"
     "Open the address printed below in a browser on any device and approve the sign-in. The browser\n"
     "then ends on a page that cannot load: copy that page's full address and paste it here when asked.\n"
     "Ctrl-C cancels; nothing changes unless the sign-in completes.\n")
 CHATGPT_HEADER = (
-    "claude-multi — ChatGPT account sign-in (personal use)\n"
+    "charmer — ChatGPT account sign-in (personal use)\n"
     "An address and a one-time code are printed below. Open the address on any device, enter the code\n"
     "and approve; the sign-in finishes here.\n"
     "Ctrl-C cancels; nothing changes unless the sign-in completes.\n")
@@ -149,7 +149,7 @@ class LoginGateTests(SignInCase):
                 with contextlib.redirect_stderr(err):
                     code = proxy.cmd_login(command, [], environ=env, execve=lambda *a: executed.append(a))
                 self.assertEqual(code, 1)
-                self.assertIn(f"sign in with claude-multi providers sign-in {provider}", err.getvalue())
+                self.assertIn(f"sign in with charmer providers sign-in {provider}", err.getvalue())
         self.assertEqual(executed, [])
         self.assertFalse(self.auth.exists() and any(self.auth.iterdir()))
         self.acknowledge("codex")
@@ -193,7 +193,7 @@ class MethodTests(SignInCase):
         self.assertEqual(signin.first_address("Visit:\nhttps://claude.ai/oauth?x=1\nPaste"), "https://claude.ai/oauth?x=1")
 
     def test_account_providers_only(self) -> None:
-        with self.assertRaisesRegex(model.Refused, "claude-multi providers set-key kimi"):
+        with self.assertRaisesRegex(model.Refused, "charmer providers set-key kimi"):
             signin.plan_sign_in(self.runtime, "kimi")
         with self.assertRaisesRegex(model.Refused, "no 'device' method"):
             signin.plan_sign_in(self.runtime, "anthropic", method="device")
@@ -481,7 +481,7 @@ class SignOutTests(SignInCase):
         message = str(caught.exception)
         self.assertIn(backups[0].name, message)
         self.assertIn("a@example.com", message)
-        self.assertIn("claude-multi providers sign-out anthropic", message)
+        self.assertIn("charmer providers sign-out anthropic", message)
         # The newer record keeps its place; the older one stays in the backup.
         now = first.stat()
         self.assertEqual((now.st_ino, now.st_size), (refreshed[0].st_ino, refreshed[0].st_size))
@@ -528,7 +528,7 @@ class SignOutTests(SignInCase):
                                  ["claude-a@example.com.json", "claude-b@example.com.json"])
                 self.assertIn(texts.SIGNED_OUT_INCOMPLETE, outcome.lines)
                 self.assertTrue(any("stay signed in: a@example.com, b@example.com" in line
-                                    and "claude-multi providers sign-out anthropic" in line
+                                    and "charmer providers sign-out anthropic" in line
                                     for line in outcome.lines), outcome.lines)
                 self.assertFalse(any(line.startswith("A record that came back") for line in outcome.lines))
 
@@ -692,7 +692,7 @@ class CommandTests(SignInCase):
         code, out, err = self.op(["providers", "sign-in", "openai"], "")
         self.assertEqual(code, 1, err)
         self.assertNotIn(CHATGPT_ACK_TEXT, err)
-        self.assertIn("Try again: claude-multi providers sign-in openai", out)
+        self.assertIn("Try again: charmer providers sign-in openai", out)
         self.runtime.signin_runner = lambda _i: 130
         code, out, _err = self.op(["providers", "sign-in", "openai"])
         self.assertEqual(code, 130)
@@ -719,7 +719,7 @@ class CommandTests(SignInCase):
         code, out, err = self.op(["providers", "sign-out", "anthropic"], "y\n")
         self.assertEqual(code, 0, err)
         self.assertIn("Signed out of your Claude account; the record(s) are kept in", out)
-        self.assertIn("To sign in again: claude-multi providers sign-in anthropic.", out)
+        self.assertIn("To sign in again: charmer providers sign-in anthropic.", out)
         code, _out, err = self.op(["providers", "sign-out", "anthropic", "--yes"])
         self.assertEqual(code, 1)
         self.assertIn(texts.NOT_SIGNED_IN, err)

@@ -2,8 +2,8 @@
 
 
 # The card and sessions help name the symptom index; its
-# path is printed by `claude-multi --help` (the asset root differs per install).
-CHEATSHEET_HINT = "Symptom → command: CHEATSHEET.md (claude-multi --help prints its path)."
+# path is printed by `charmer --help` (the asset root differs per install).
+CHEATSHEET_HINT = "Symptom → command: CHEATSHEET.md (charmer --help prints its path)."
 
 
 # ---------------------------------------------------------------------------

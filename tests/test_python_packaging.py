@@ -87,16 +87,16 @@ class MetadataTests(unittest.TestCase):
 
     def test_project_metadata(self) -> None:
         project = pyproject()["project"]
-        self.assertEqual(project["name"], "claude-multi")
+        self.assertEqual(project["name"], "charmer")
         self.assertEqual(project["requires-python"], ">=3.11")
         self.assertEqual(project["dependencies"], [])
         self.assertEqual(project["license"], "MIT")
         self.assertTrue((REPO_ROOT / project["readme"]).is_file())
 
     def test_three_console_entry_points(self) -> None:
-        # The product's two commands and the contributor's; `claude-multi
+        # The product's two commands and the contributor's; `charmer
         # direct` starts a one-model session.
-        self.assertEqual(sorted(SCRIPTS), ["claude-multi", "claude-multi-dev", "claude-multi-proxy"])
+        self.assertEqual(sorted(SCRIPTS), ["charmer", "charmer-dev", "charmer-proxy"])
         self.assertTrue(set(SCRIPTS) <= set(entrypoints.NAMES))
         for name, target in SCRIPTS.items():
             with self.subTest(name=name):
@@ -110,22 +110,22 @@ class MetadataTests(unittest.TestCase):
         setuptools = pyproject()["tool"]["setuptools"]
         self.assertEqual(setuptools["package-dir"], {"": "src"})
         self.assertEqual(setuptools["package-data"], {"charmer": ["data/**/*"]})
-        # Every key is share/claude-multi or a directory under it, every file
+        # Every key is share/charmer or a directory under it, every file
         # lies under docs/ in that directory (the build tool refuses others).
         placed = documents()
         for source, target in placed:
             self.assertTrue((REPO_ROOT / source).is_file(), source)
-            self.assertEqual(Path(target).relative_to("share/claude-multi"), Path(source).relative_to("docs"))
+            self.assertEqual(Path(target).relative_to("share/charmer"), Path(source).relative_to("docs"))
         # The help's documents stay at the top.
         for name in layout.DOCUMENTS:
-            self.assertIn((f"docs/{name}", f"share/claude-multi/{name}"), placed)
-        self.assertIn(Path("share") / "claude-multi", layout.DOCUMENT_DIRS)
+            self.assertIn((f"docs/{name}", f"share/charmer/{name}"), placed)
+        self.assertIn(Path("share") / "charmer", layout.DOCUMENT_DIRS)
         self.assertEqual(installed_paths(), ["src", *(source for source, _target in placed)])
 
     def test_a_nested_document_resolves_in_an_installation(self) -> None:
         with tempfile.TemporaryDirectory(prefix="cm-nested-doc-") as tmp:
             prefix = Path(tmp)
-            nested = prefix / "share" / "claude-multi" / "reference" / "licenses.md"
+            nested = prefix / "share" / "charmer" / "reference" / "licenses.md"
             nested.parent.mkdir(parents=True)
             nested.write_text("# Licences\n")
             self.assertEqual(layout.document("reference/licenses.md", prefix), nested)
@@ -147,7 +147,7 @@ class EntryPointTests(unittest.TestCase):
     INHERITED = {
         "CLAUDE_MULTI_CHANNEL": "nix",
         "CLAUDE_MULTI_ASSETS": "/elsewhere/assets",
-        "CLAUDE_MULTI_HOOK_COMMAND": "/elsewhere/bin/claude-multi",
+        "CLAUDE_MULTI_HOOK_COMMAND": "/elsewhere/bin/charmer",
         "CLAUDE_MULTI_PROXY_BIN": "/elsewhere/gateway",
         "UNRELATED": "kept",
     }
@@ -176,7 +176,7 @@ class EntryPointTests(unittest.TestCase):
             self.assertTrue(entrypoints.prepare_source(REPO_ROOT, env))
             self.assertEqual(env["CLAUDE_MULTI_CHANNEL"], "source")
             self.assertNotIn("CLAUDE_MULTI_ASSETS", env)
-            self.assertEqual(env["CLAUDE_MULTI_HOOK_COMMAND"], "/elsewhere/bin/claude-multi")
+            self.assertEqual(env["CLAUDE_MULTI_HOOK_COMMAND"], "/elsewhere/bin/charmer")
 
     def test_the_source_markers_are_present_here_and_never_installed(self) -> None:
         installed = installed_paths()
@@ -200,16 +200,16 @@ class EntryPointTests(unittest.TestCase):
 
         with mock.patch("charmer.cli.entry.main", fake_cli), mock.patch("charmer.proxy.main", fake_proxy), \
                 redirect_stdout(io.StringIO()) as shown:
-            entrypoints.run("claude-multi", ["doctor"])
-            entrypoints.run("claude-multi", ["--version"])
-            entrypoints.run("claude-multi-proxy", ["status"])
+            entrypoints.run("charmer", ["doctor"])
+            entrypoints.run("charmer", ["--version"])
+            entrypoints.run("charmer-proxy", ["status"])
         self.assertEqual(calls, [
             ("cli", ["doctor"]),
             ("proxy", ["status"], {"chdir": os.chdir}),
         ])
         self.assertEqual(shown.getvalue(), identity.version_line() + "\n")
-        # The one-model session is `claude-multi direct`: no other program.
-        self.assertEqual(entrypoints.NAMES, ("claude-multi", "claude-multi-proxy", "claude-multi-dev"))
+        # The one-model session is `charmer direct`: no other program.
+        self.assertEqual(entrypoints.NAMES, ("charmer", "charmer-proxy", "charmer-dev"))
         self.assertEqual(set(entrypoints.PROGRAMS), set(entrypoints.NAMES))
         with self.assertRaises(KeyError):
             entrypoints.run("claude-gateway", [])
@@ -249,12 +249,12 @@ class EntryPointTests(unittest.TestCase):
 
 def version_output(name: str) -> str:
     """What ``NAME --version`` prints: the release identity line for
-    claude-multi and claude-multi-dev, the plain version for the gateway
+    charmer and charmer-dev, the plain version for the gateway
     tool."""
 
-    if name == "claude-multi":
+    if name == "charmer":
         return identity.version_line()
-    if name == "claude-multi-dev":
+    if name == "charmer-dev":
         return identity.version_line(name)
     return f"{name} {charmer.__version__}"
 
@@ -275,7 +275,7 @@ import json, os, sys
 from pathlib import Path
 prefix = Path(sys.argv[1])
 # What a console script does first: the inherited wrapper variables go.
-os.environ["CLAUDE_MULTI_HOOK_COMMAND"] = "/elsewhere/bin/claude-multi"
+os.environ["CLAUDE_MULTI_HOOK_COMMAND"] = "/elsewhere/bin/charmer"
 from charmer import entrypoints
 entrypoints.prepare_console()
 assert not {"CLAUDE_MULTI_CHANNEL", "CLAUDE_MULTI_ASSETS", "CLAUDE_MULTI_HOOK_COMMAND"} & set(os.environ)
@@ -287,9 +287,9 @@ assert charmer.resources_root() == resources, charmer.resources_root()
 assert package.parent.name == "site-packages", package
 assert layout.installation() == prefix, layout.installation()
 assert assets.root() == resources
-assert scope.resolve_hook_command() == str(prefix / "bin" / "claude-multi"), scope.resolve_hook_command()
+assert scope.resolve_hook_command() == str(prefix / "bin" / "charmer"), scope.resolve_hook_command()
 for name in layout.DOCUMENTS:
-    assert layout.document(name) == prefix / "share" / "claude-multi" / name, name
+    assert layout.document(name) == prefix / "share" / "charmer" / name, name
 bundle = catalog.load_catalog(assets.root())
 assert catalog.registry_dir() == resources / "registry"
 assert qualify.contract_identity(bundle.docs["native-contract"], assets.root()).gateway is not None
@@ -301,7 +301,7 @@ print(json.dumps({"version": charmer.__version__}))
 
 class InstalledPrefixTests(unittest.TestCase):
     """The package as an installer lays it out (a prefix with the package in
-    site-packages, the documents in share/claude-multi and the console
+    site-packages, the documents in share/charmer and the console
     scripts in bin/), outside the checkout, run from a foreign directory
     with an empty HOME and no inherited wrapper environment. Needs no build
     backend, so it also runs in the Nix sandbox."""
@@ -313,10 +313,10 @@ class InstalledPrefixTests(unittest.TestCase):
                                         text=True, capture_output=True, timeout=60)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(result.stdout.strip(), version_output(name))
-        help_text = subprocess.run([str(prefix / "bin" / "claude-multi"), "--help"], env=env, cwd=elsewhere,
+        help_text = subprocess.run([str(prefix / "bin" / "charmer"), "--help"], env=env, cwd=elsewhere,
                                    text=True, capture_output=True, timeout=60)
         self.assertEqual(help_text.returncode, 0, help_text.stderr)
-        self.assertIn(f"Symptom → command: {prefix / 'share' / 'claude-multi' / 'CHEATSHEET.md'}", help_text.stdout)
+        self.assertIn(f"Symptom → command: {prefix / 'share' / 'charmer' / 'CHEATSHEET.md'}", help_text.stdout)
         probe = subprocess.run([python, "-c", INSTALLED_PROBE, str(prefix)], env=env, cwd=elsewhere,
                                text=True, capture_output=True, timeout=60)
         self.assertEqual(probe.returncode, 0, probe.stderr)
@@ -460,7 +460,7 @@ class DistributionTests(unittest.TestCase):
 
     def test_the_installed_documents_link_only_inside_the_installation(self) -> None:
         # The wheel's documents unpacked where an installation puts them
-        # (share/claude-multi, nested directories included): every relative
+        # (share/charmer, nested directories included): every relative
         # link and heading anchor resolves inside that tree, a root page is
         # reached only by its public URL, and the help's document lookup
         # finds the installed pages.
@@ -470,13 +470,13 @@ class DistributionTests(unittest.TestCase):
         prefix = self.scratch / "installed-documents"
         with zipfile.ZipFile(self.wheel) as wheel:
             for name in wheel.namelist():
-                if name.startswith(data + "share/claude-multi/") and not name.endswith("/"):
+                if name.startswith(data + "share/charmer/") and not name.endswith("/"):
                     target = prefix / name.removeprefix(data)
                     target.parent.mkdir(parents=True, exist_ok=True)
                     target.write_bytes(wheel.read(name))
-        share = prefix / "share" / "claude-multi"
+        share = prefix / "share" / "charmer"
         pages = sorted(path.relative_to(share).as_posix() for path in share.rglob("*.md"))
-        self.assertEqual(pages, sorted(Path(target).relative_to("share/claude-multi").as_posix()
+        self.assertEqual(pages, sorted(Path(target).relative_to("share/charmer").as_posix()
                                        for _source, target in documents()))
         self.assertTrue(any("/" in page for page in pages))
         self.assertEqual(vocab.installed_link_problems(share), [])

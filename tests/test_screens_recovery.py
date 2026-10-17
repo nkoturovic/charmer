@@ -279,13 +279,13 @@ class LineupTargetsTests(_SessionsCase):
                 self.assertGreaterEqual(after["lineup_generation"], before["lineup_generation"])
                 report = _flat(" ".join(modal.call_args.args[1]))
                 self.assertIn("scope changed now; used at the next resume", report)
-                self.assertIn(f"Next: resume with claude-multi -r {fx.FIXED_ID}", report)
+                self.assertIn(f"Next: resume with charmer -r {fx.FIXED_ID}", report)
                 frames = [frame for frame in win.frames
                           if cli_text.LINEUP_REPORT_TITLE.format(m8=fx.FIXED_ID[:8]) in frame]
                 self.assertTrue(frames, "the post-apply result modal was not rendered")
                 rendered = "\n".join(frames)
                 self.assertIn("scope changed now; used at the next resume", rendered)
-                self.assertIn("Next: resume with claude-multi -r", rendered)
+                self.assertIn("Next: resume with charmer -r", rendered)
                 for forbidden in ("Effect: LIVE", "Existing agents", "fresh agents", "/reload-plugins"):
                     self.assertNotIn(forbidden, report)
                     self.assertNotIn(forbidden, rendered)

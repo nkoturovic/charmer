@@ -120,14 +120,14 @@ class UseLockTests(PruneCase):
         path = pin.owned_root(self.env) / "2.1.200" / pin.IN_USE
         path.symlink_to(target)
         with self.assertRaisesRegex(pin.PinError, r"is a symbolic link.*rm .*\.in-use.*"
-                                                  r"`claude-multi setup --step claude`"):
+                                                  r"`charmer setup --step claude`"):
             pin.take_use_lock(self.env, "2.1.200", shared=True)
         self.assertEqual(target.read_bytes(), b"keep")
         self.assertEqual(stat.S_IMODE(target.stat().st_mode), 0o644)
         # The launch refuses with the same remedy.
         contract = _contract("2.1.200", self.platform, FAKE)
         with self.assertRaisesRegex(launch.LaunchError, r"Claude Code 2\.1\.200 cannot be used: .*symbolic link"
-                                                        r".*`claude-multi setup --step claude`"):
+                                                        r".*`charmer setup --step claude`"):
             launch.PinnedCopy(contract, self.env).verify()
         # Pruning keeps it (its lock cannot be checked) and never follows it.
         plan = self.plan()
@@ -217,7 +217,7 @@ class PruneRuleTests(PruneCase):
         self.assertEqual(self.plan(running=None).remove, ())
         self.assertEqual(self.prune_copies(running=None), retention.PruneOutcome())
         blocked = self.plan(gateway_launcher="0.8.0")
-        self.assertIn("claude-multi 0.8.0", blocked.blocked)
+        self.assertIn("charmer 0.8.0", blocked.blocked)
         self.assertEqual(blocked.remove, ())
         # The gateway of this very release pins the current version.
         self.assertIsNone(self.plan(gateway_launcher="1.0.2").blocked)
@@ -226,7 +226,7 @@ class PruneRuleTests(PruneCase):
         workdir = service.ensure_gateway_workdir(paths.state_root(self.env))
         service.write_exec_stamp(workdir, service.ExecStamp("0.7.0", "sig", 4242, "/gw", "2026-10-01T00:00:00+00:00"))
         plan = retention.prune_plan(self.contract, self.env, launcher_version="1.0.2", running=set())
-        self.assertIn("claude-multi 0.7.0", plan.blocked)
+        self.assertIn("charmer 0.7.0", plan.blocked)
 
     def test_running_versions_come_from_process_exe_links(self):
         proc = self.home / "proc"
@@ -294,10 +294,10 @@ class PruneRuleTests(PruneCase):
             attention, info = report()
         finally:
             lock.release()
-        self.assertEqual(info, ["Claude Code copies kept by claude-multi: 2.1.300 (the current pin), "
+        self.assertEqual(info, ["Claude Code copies kept by charmer: 2.1.300 (the current pin), "
                                 "2.1.280 (the previous release's pin), 2.1.200 (in use)."])
         self.assertEqual(attention, ["Claude Code copies no release here needs: 2.1.250 (0 MiB) — "
-                                     "`claude-multi setup --step claude` removes them"])
+                                     "`charmer setup --step claude` removes them"])
         attention, info = report()
         self.assertNotIn("in use", info[0])
         self.assertIn("2.1.200 (0 MiB), 2.1.250 (0 MiB)", attention[0])
@@ -326,7 +326,7 @@ class PruneRuleTests(PruneCase):
         finally:
             for lock in locks:
                 lock.release()
-        self.assertEqual(info, ["Claude Code copies kept by claude-multi: 2.1.300 (the current pin, in use), "
+        self.assertEqual(info, ["Claude Code copies kept by charmer: 2.1.300 (the current pin, in use), "
                                 "2.1.280 (the previous release's pin, in use), "
                                 "2.1.200 (the running gateway's release (0.8.0) pins it, in use), "
                                 "2.1.250 (in use)."])
@@ -366,7 +366,7 @@ class PruneRuleTests(PruneCase):
             attention, info = retention.retention_report(self.contract, None, self.env)
         self.assertIn("2.1.300 (the current pin)", info[0])
         self.assertIn("2.1.200", attention[0])
-        self.assertIn("`claude-multi setup --step claude` removes them", attention[0])
+        self.assertIn("`charmer setup --step claude` removes them", attention[0])
 
     def test_report_low_disk_line_compares_free_bytes_with_the_build_size(self):
         size = pin.platform_record(self.contract, pin.host_platform())["size"]
@@ -636,7 +636,7 @@ class PruneInterleavingTests(PruneCase):
         pruned, result, pinned = self.prune_while_a_launch_waits(self.old)
         self.assertEqual(pruned.removed, ("2.1.200", "2.1.250"))
         self.assertIsInstance(result, launch.NotSetUpError)
-        self.assertIn("Claude Code 2.1.200 is not set up for claude-multi", str(result))
+        self.assertIn("Claude Code 2.1.200 is not set up for charmer", str(result))
         self.assertIsNone(pinned.lock)
         self.assertFalse((pin.owned_root(self.env) / "2.1.200").exists())
 
@@ -801,7 +801,7 @@ class RetainedHelperTests(unittest.TestCase):
 
 
 class ExactClientHoldTests(PruneCase):
-    """The qualification probe that runs claude-multi's own copy holds its use lock."""
+    """The qualification probe that runs charmer's own copy holds its use lock."""
 
     def check(self, trusted: probe.TrustedExecutable, verify) -> tuple[object, list]:
         seen: list = []
@@ -848,7 +848,7 @@ class ExactClientHoldTests(PruneCase):
 
 
 class NativeProbeHoldTests(PruneCase):
-    """Both native probe runners lock claude-multi's own copy before its hash
+    """Both native probe runners lock charmer's own copy before its hash
     check and hand that lock to the client they start."""
 
     # The "owned copy": it reports which of its descriptors is its version's
@@ -1053,7 +1053,7 @@ class OwnedCopyLaunchTests(V4Case):
 
     def test_read_only_runtime_never_migrates(self):
         self.runtime._shims_refreshed = False
-        with self.assertRaisesRegex(launch.LaunchError, "not set up for claude-multi"):
+        with self.assertRaisesRegex(launch.LaunchError, "not set up for charmer"):
             self.launch_fresh()
         self.assertFalse(self.owned.exists())
         self.assertFalse(self.owned.parent.exists())  # the lock creates no version directory
@@ -1061,7 +1061,7 @@ class OwnedCopyLaunchTests(V4Case):
     def test_verification_failure_checks_no_gateway(self):
         self.retained.write_bytes(b"tampered")
         with mock.patch.object(self.runtime, "health_get", side_effect=AssertionError("no readiness")), \
-             self.assertRaisesRegex(launch.LaunchError, "claude-multi setup --step claude"):
+             self.assertRaisesRegex(launch.LaunchError, "charmer setup --step claude"):
             self.launch_fresh()
         self.assertFalse(self.owned.exists())
 

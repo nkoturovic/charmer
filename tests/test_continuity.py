@@ -27,8 +27,8 @@ SEED_GOLDEN = GOLDENS_ROOT / "render" / "continuity-seed.json"
 RECORD_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 RECORD_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
 RECORD_C = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
-MUSE_HIGH = "claude-multi-muse-spark-high"
-MUSE_XHIGH = "claude-multi-muse-spark-xhigh"
+MUSE_HIGH = "charmer-muse-spark-high"
+MUSE_XHIGH = "charmer-muse-spark-xhigh"
 
 
 # run/login gained a chdir seam that defaults to "no chdir";
@@ -94,7 +94,7 @@ class ContinuityCase(unittest.TestCase):
             self.secret_file,
             b"KIMI_CLAUDE_API_KEY=kimi-dummy-value\nMETA_CLAUDE_API_KEY=meta-dummy-value\n",
         )
-        self.state_root = self.root / "state" / "claude-multi"
+        self.state_root = self.root / "state" / "charmer"
         self.environ = {
             "HOME": str(self.home),
             # Deliberately elsewhere: continuity.json is HOME-relative.
@@ -154,9 +154,9 @@ class SeedTests(ContinuityCase):
     def test_missing_file_is_seeded_home_relative(self) -> None:
         self.assertFalse(self.file.exists())
         _target, result, report = self.render()
-        self.assertEqual(self.file, self.home / ".config" / "claude-multi" / "continuity.json")
+        self.assertEqual(self.file, self.home / ".config" / "charmer" / "continuity.json")
         self.assertTrue(self.file.is_file())
-        self.assertFalse((self.root / "xdg-config" / "claude-multi" / "continuity.json").exists())
+        self.assertFalse((self.root / "xdg-config" / "charmer" / "continuity.json").exists())
         self.assertEqual(self.file.stat().st_mode & 0o777, 0o600)
         document = continuity.read(self.home)
         expected = continuity.seed_only(self.bundle())
@@ -269,7 +269,7 @@ class WatermarkTests(ContinuityCase):
             "provider": "kimi",
             "reason": "Fixture retired line: frozen test data.",
             "roles": "all",
-            "selectors": {"claude-multi-kimi-old[1m]": "output-config-max"},
+            "selectors": {"charmer-kimi-old[1m]": "output-config-max"},
             "since_catalog": 32,
             "successor": None,
         }
@@ -277,8 +277,8 @@ class WatermarkTests(ContinuityCase):
         merged, changed = continuity.merge_seed(document, self.bundle())
         self.assertTrue(changed)
         self.assertEqual(merged["seeded_through_catalog"], 32)
-        self.assertEqual(set(merged["aliases"]), {MUSE_XHIGH, "claude-multi-kimi-old"})
-        self.assertEqual(merged["aliases"]["claude-multi-kimi-old"]["source"], "seed:kimi-old")
+        self.assertEqual(set(merged["aliases"]), {MUSE_XHIGH, "charmer-kimi-old"})
+        self.assertEqual(merged["aliases"]["charmer-kimi-old"]["source"], "seed:kimi-old")
         again, changed = continuity.merge_seed(merged, self.bundle())
         self.assertFalse(changed)
         self.assertEqual(again, merged)
@@ -380,13 +380,13 @@ class RecordExtensionTests(ContinuityCase):
 
     def test_unknown_selector_is_unservable_never_stored(self) -> None:
         self.write_record(
-            RECORD_A, _managed_record(RECORD_A, "claude-multi-grok45-high[1m]"),
+            RECORD_A, _managed_record(RECORD_A, "charmer-grok45-high[1m]"),
         )
         code, out, _err = self.init()
         self.assertEqual(code, 0)
-        self.assertIn("unservable selectors: claude-multi-grok45-high", out)
+        self.assertIn("unservable selectors: charmer-grok45-high", out)
         self.assertIn("continuity: 2 aliases (2 rendered)", out)
-        self.assertNotIn("claude-multi-grok45-high", continuity.read(self.home)["aliases"])
+        self.assertNotIn("charmer-grok45-high", continuity.read(self.home)["aliases"])
 
     def test_bad_records_are_skipped_by_stem8_and_the_render_succeeds(self) -> None:
         self.write_record(RECORD_A, b"{not json")
@@ -407,7 +407,7 @@ class RecordExtensionTests(ContinuityCase):
         self.assertNotIn(RECORD_A, err)
 
     def test_no_state_root_reads_no_records(self) -> None:
-        self.write_record(RECORD_A, _managed_record(RECORD_A, "claude-multi-grok45-high"))
+        self.write_record(RECORD_A, _managed_record(RECORD_A, "charmer-grok45-high"))
 
         def refuse(*_args, **_kwargs):
             raise AssertionError("record scan without a state root")
@@ -422,16 +422,16 @@ class RecordExtensionTests(ContinuityCase):
         # is readable (never "unreadable") and its scope fence and observed
         # model are its references.
         record = _ordinary_record(RECORD_A)
-        record["observed_model"] = "claude-multi-kimi-k3[1m]"
+        record["observed_model"] = "charmer-kimi-k3[1m]"
         self.write_record(RECORD_A, record)
         self.write_scope_settings(RECORD_A, {
-            "availableModels": [MUSE_HIGH + "[1m]", "claude-multi-qwen38-max[1m]"],
+            "availableModels": [MUSE_HIGH + "[1m]", "charmer-qwen38-max[1m]"],
             "model": MUSE_HIGH + "[1m]",
         })
         scan = continuity.scan_records(self.state_root)
         self.assertEqual(scan.unreadable, ())
         self.assertEqual(scan.notices, ())
-        for base in (MUSE_HIGH, "claude-multi-qwen38-max", "claude-multi-kimi-k3"):
+        for base in (MUSE_HIGH, "charmer-qwen38-max", "charmer-kimi-k3"):
             self.assertEqual(scan.refs[base], frozenset({RECORD_A}))
         self.assertEqual(scan.live, frozenset({RECORD_A}))
 
@@ -495,7 +495,7 @@ class RunSurvivesCorruptionTests(ContinuityCase):
     def test_corrupt_continuity_renders_the_seed_set_only(self) -> None:
         state.ensure_private_dir(self.config_dir)
         state.atomic_write(self.file, b"garbage")
-        self.write_record(RECORD_A, _managed_record(RECORD_A, "claude-multi-kimi-old[1m]"))
+        self.write_record(RECORD_A, _managed_record(RECORD_A, "charmer-kimi-old[1m]"))
         _target, result, report = self.render()
         self.assertIsNotNone(report.corrupt)
         self.assertEqual(report.unservable, ())  # no record extension
@@ -507,7 +507,7 @@ class RunSurvivesCorruptionTests(ContinuityCase):
                      ["--state-root", "/a", "extra"]):
             with self.subTest(args=args), self.assertRaisesRegex(proxy.ProxyError, "usage"):
                 proxy.cmd_run(args, environ=self.environ, execve=lambda *a: None)
-        self.write_record(RECORD_A, _managed_record(RECORD_A, "claude-multi-grok45-high"))
+        self.write_record(RECORD_A, _managed_record(RECORD_A, "charmer-grok45-high"))
         # Default: the passed environ's XDG_STATE_HOME (not the process one).
         _calls, _err = self.run_proxy()
         self.assertEqual(continuity.read(self.home)["state_root"], str(self.state_root))
@@ -523,7 +523,7 @@ class RunSurvivesCorruptionTests(ContinuityCase):
         for value in ("rel/state", "."):
             with self.subTest(value=value):
                 self.assertEqual(sessions.state_root({**self.environ, "XDG_STATE_HOME": value}),
-                                 Path(self.environ["HOME"]) / ".local" / "state" / "claude-multi")
+                                 Path(self.environ["HOME"]) / ".local" / "state" / "charmer")
         # A relative HOME-derived default gets the same usage error as an
         # explicit relative --state-root, before anything renders.
         before = self.file.read_bytes() if self.file.exists() else None
@@ -531,7 +531,7 @@ class RunSurvivesCorruptionTests(ContinuityCase):
         environ["HOME"] = "rel-home"
         with self.assertRaisesRegex(
             proxy.ProxyError,
-            r"^usage: claude-multi-proxy run \[--state-root /abs/path\] "
+            r"^usage: charmer-proxy run \[--state-root /abs/path\] "
             r"\(the default state root .* is not absolute\)$",
         ):
             proxy.cmd_run([], environ=environ, execve=lambda *a: None)
@@ -559,7 +559,7 @@ class RootAuthorityTests(ContinuityCase):
 
     def test_startup_render_other_root_is_additive_and_exit_0(self) -> None:
         before = self.managed_with_tombstone()
-        other = self.root / "other-state" / "claude-multi"
+        other = self.root / "other-state" / "charmer"
         sessions_dir = state.ensure_private_dir(other / "sessions")
         state.atomic_write(sessions_dir / f"{RECORD_A}.json", strict_json.canonical_file_bytes(
             _managed_record(RECORD_A, MUSE_HIGH + "[1m]")))
@@ -570,7 +570,7 @@ class RootAuthorityTests(ContinuityCase):
         self.assertEqual(self.file.read_bytes(), before)
         yaml = self.config.read_text()
         self.assertIn(f'alias: "{MUSE_XHIGH}"', yaml)
-        self.assertIn('alias: "claude-multi-kimi-k3"', yaml)
+        self.assertIn('alias: "charmer-kimi-k3"', yaml)
         self.assertNotIn(f'alias: "{MUSE_HIGH}"', yaml)
         _target, _result, report = self.render(other)
         self.assertTrue(report.other_root)
@@ -679,7 +679,7 @@ class LockingTests(ContinuityCase):
             yaml = self.config.read_text()
             block = yaml.split("api-keys:\n", 1)[1].split("debug:", 1)[0]
             keys = re.findall(r'"([0-9a-f]{64})"', block)
-            ids = set(re.findall(r'alias: "(claude-multi-render-[0-9a-f]+)"', yaml))
+            ids = set(re.findall(r'alias: "(charmer-render-[0-9a-f]+)"', yaml))
             return (200, ids) if token in keys else (401, set())
 
         clock = [0.0]
@@ -741,7 +741,7 @@ class RenderMergeTests(unittest.TestCase):
 
     def test_catalog_wins_a_colliding_alias(self) -> None:
         aliases = {
-            "claude-multi-kimi-k3": _entry("meta", "other-wire", "output-config-high"),
+            "charmer-kimi-k3": _entry("meta", "other-wire", "output-config-high"),
             "gpt-multi-sol-high": _entry("openai", "gpt-5.5", "reasoning-effort-high"),
             "claude-opus-4-8": _entry("anthropic", "claude-opus-4-8", None),
         }
@@ -754,50 +754,50 @@ class RenderMergeTests(unittest.TestCase):
             self.assertEqual(yaml.count(f'alias: "{alias}"'), 1, alias)
 
     def test_kimi_continuity_alias_gets_override_and_filter(self) -> None:
-        aliases = {"claude-multi-kimi-old": _entry("kimi", "k2", "output-config-max")}
+        aliases = {"charmer-kimi-old": _entry("kimi", "k2", "output-config-max")}
         document, _a, _u, info = _document(self.bundle, aliases)
-        self.assertEqual(info["continuity_rendered"], ("claude-multi-kimi-old",))
+        self.assertEqual(info["continuity_rendered"], ("charmer-kimi-old",))
         max_override = next(
             entry for entry in document["payload"]["override"]
             if entry["params"] == {"output_config.effort": "max"}
         )
-        self.assertIn({"name": "claude-multi-kimi-old", "protocol": "claude"}, max_override["models"])
+        self.assertIn({"name": "charmer-kimi-old", "protocol": "claude"}, max_override["models"])
         thinking = next(
             entry for entry in document["payload"]["filter"] if entry["params"] == ["thinking"]
         )
-        self.assertIn({"name": "claude-multi-kimi-old", "protocol": "claude"}, thinking["models"])
+        self.assertIn({"name": "charmer-kimi-old", "protocol": "claude"}, thinking["models"])
         kimi = self.bundle.providers["kimi"]
         section = next(
             item for item in document["claude-api-key"]
             if item["base-url"] == kimi["transport"]["base_url"]
         )
         self.assertEqual(section["models"][-1], {
-            "name": "k2", "alias": "claude-multi-kimi-old", "display-name": "Old line",
+            "name": "k2", "alias": "charmer-kimi-old", "display-name": "Old line",
             "owned-by": kimi["independence_family"], "context-length": 1000000,
             "force-mapping": True,
         })
 
     def test_undeclared_contract_keeps_alias_without_override(self) -> None:
-        aliases = {"claude-multi-kimi-old": _entry("kimi", "k2", "output-config-low")}
+        aliases = {"charmer-kimi-old": _entry("kimi", "k2", "output-config-low")}
         document, _a, _u, info = _document(self.bundle, aliases)
-        self.assertEqual(info["continuity_rendered"], ("claude-multi-kimi-old",))
+        self.assertEqual(info["continuity_rendered"], ("charmer-kimi-old",))
         self.assertEqual(
             info["notices"],
-            ("continuity alias claude-multi-kimi-old: effort rule output-config-low unavailable",),
+            ("continuity alias charmer-kimi-old: effort rule output-config-low unavailable",),
         )
         overrides = [
             model["name"] for entry in document["payload"]["override"] for model in entry["models"]
         ]
-        self.assertNotIn("claude-multi-kimi-old", overrides)
+        self.assertNotIn("charmer-kimi-old", overrides)
 
     def test_unconfigured_provider_dropped_with_notice(self) -> None:
-        aliases = {"claude-multi-gone": _entry("nowhere", "gone-1", None)}
+        aliases = {"charmer-gone": _entry("nowhere", "gone-1", None)}
         document, _a, _u, info = _document(self.bundle, aliases)
         self.assertEqual(info["continuity_rendered"], ())
         self.assertEqual(
-            info["notices"], ("continuity alias claude-multi-gone: provider nowhere is not configured",),
+            info["notices"], ("continuity alias charmer-gone: provider nowhere is not configured",),
         )
-        self.assertNotIn("claude-multi-gone", render.emit_yaml(document))
+        self.assertNotIn("charmer-gone", render.emit_yaml(document))
 
     def test_unavailable_provider_omits_its_continuity_silently(self) -> None:
         document, _a, unavailable, info = _document(
@@ -810,17 +810,17 @@ class RenderMergeTests(unittest.TestCase):
 
     def test_oauth_continuity_on_a_routed_wire_forks(self) -> None:
         aliases = {
-            "claude-multi-opus-old": _entry("anthropic", "claude-opus-4-8", None),
+            "charmer-opus-old": _entry("anthropic", "claude-opus-4-8", None),
             "gpt-multi-old-high": _entry("openai", "gpt-5.1", "reasoning-effort-high"),
         }
         document, _a, _u, info = _document(self.bundle, aliases)
         claude = document["oauth-model-alias"]["claude"]
         self.assertEqual(claude[-1], {
-            "name": "claude-opus-4-8", "alias": "claude-multi-opus-old",
+            "name": "claude-opus-4-8", "alias": "charmer-opus-old",
             "force-mapping": True, "fork": True,
         })
         self.assertEqual(document["oauth-model-alias"]["codex"][-1]["fork"], False)
-        self.assertEqual(info["continuity_rendered"], ("claude-multi-opus-old", "gpt-multi-old-high"))
+        self.assertEqual(info["continuity_rendered"], ("charmer-opus-old", "gpt-multi-old-high"))
 
     def test_provider_selectors_equal_the_built_sections(self) -> None:
         cases = {
@@ -828,9 +828,9 @@ class RenderMergeTests(unittest.TestCase):
             "seed": continuity.seed_only(self.bundle)["aliases"],
             "mixed": {
                 **continuity.seed_only(self.bundle)["aliases"],
-                "claude-multi-kimi-old": _entry("kimi", "k2", "output-config-max"),
-                "claude-multi-opus-old": _entry("anthropic", "claude-opus-4-8", None),
-                "claude-multi-kimi-k3": _entry("meta", "other-wire", None),
+                "charmer-kimi-old": _entry("kimi", "k2", "output-config-max"),
+                "charmer-opus-old": _entry("anthropic", "claude-opus-4-8", None),
+                "charmer-kimi-k3": _entry("meta", "other-wire", None),
             },
         }
         for label, aliases in cases.items():
@@ -849,7 +849,7 @@ class RenderMergeTests(unittest.TestCase):
 
     def test_malformed_continuity_never_raises(self) -> None:
         aliases = {
-            "claude-multi-bad": {"provider": "kimi"},
+            "charmer-bad": {"provider": "kimi"},
             render.SENTINEL_PREFIX + "deadbeef": _entry("kimi", "k2", None),
         }
         _document_, _a, _u, info = _document(self.bundle, aliases)
@@ -971,7 +971,7 @@ class VerifyMinorsTests(ContinuityCase):
                               models_get=self.models_get)
         self.assertEqual(code, 1)
         self.assertEqual(err.getvalue(),
-                         "claude-multi-proxy: usage: claude-multi-proxy init "
+                         "charmer-proxy: usage: charmer-proxy init "
                          "[--state-root /abs/path]\n")
         self.assertFalse(self.file.exists())
 
@@ -983,7 +983,7 @@ class VerifyMinorsTests(ContinuityCase):
         ), redirect_stderr(err):
             code = proxy.main(["init"], environ=self.environ, models_get=self.models_get)
         self.assertEqual(code, 1)
-        self.assertEqual(err.getvalue(), "claude-multi-proxy: bad set\n")
+        self.assertEqual(err.getvalue(), "charmer-proxy: bad set\n")
 
     def _seed_route_alias(self) -> None:
         self.assertEqual(self.init()[0], 0)

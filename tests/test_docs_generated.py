@@ -66,7 +66,7 @@ class CurrentTests(unittest.TestCase):
     def test_a_definition_change_makes_its_region_stale(self) -> None:
         # The parser's examples, the inventory and the verb table each feed
         # a region: a change to one of them leaves the committed page stale.
-        examples = (*cli_parser.HELP_EXAMPLES, ("claude-multi doctor --json", "a report for scripts"))
+        examples = (*cli_parser.HELP_EXAMPLES, ("charmer doctor --json", "a report for scripts"))
         with mock.patch.object(cli_parser, "HELP_EXAMPLES", examples):
             self.assertIn("reference/cli.md: cli-reference", docs_gen.stale())
         first = surface_matrix.OPERATIONS[0]
@@ -118,22 +118,22 @@ class CoverageTests(unittest.TestCase):
         kinds = {kind.split(":", 1)[0] for kind in classified.values()}
         self.assertEqual(kinds, {"listed", "name-only", "hidden", "counted"})
         for command in proxy.PROXY_COMMANDS:
-            self.assertIn(f"claude-multi-proxy {command.name}", classified)
+            self.assertIn(f"charmer-proxy {command.name}", classified)
         for op in surface_matrix.OPERATIONS:
             self.assertIn(f"operation {op.id}", classified)
         # The earlier spellings and the hook command are hidden.
-        for label in ("claude-multi compose", "claude-multi show", "claude-multi session-event",
-                      "claude-multi sessions transition"):
+        for label in ("charmer compose", "charmer show", "charmer session-event",
+                      "charmer sessions transition"):
             self.assertTrue(classified[label].startswith("hidden"), label)
-        for label in ("claude-multi custom", "claude-multi migrate", "claude-multi restore-2x",
-                      "claude-multi profile migrate", "claude-multi providers migrate-custom"):
+        for label in ("charmer custom", "charmer migrate", "charmer restore-2x",
+                      "charmer profile migrate", "charmer providers migrate-custom"):
             self.assertEqual(classified[label], "name-only", label)
 
     def test_the_command_reference_follows_the_classification(self) -> None:
         reference = _region("reference/cli.md", "cli-reference")
         headings = set(_headings(reference))
         for label, kind in docs_gen.classification().items():
-            if not label.startswith("claude-multi ") or label.startswith("claude-multi-proxy"):
+            if not label.startswith("charmer ") or label.startswith("charmer-proxy"):
                 continue
             with self.subTest(label):
                 if kind in ("listed", "name-only"):
@@ -150,7 +150,7 @@ class CoverageTests(unittest.TestCase):
         reference = _region("reference/cli.md", "cli-reference")
         parser = cli_parser.build_parser()
         for label, kind in docs_gen.classification().items():
-            if kind != "listed" or not label.startswith("claude-multi") or label.startswith("claude-multi-proxy"):
+            if kind != "listed" or not label.startswith("charmer") or label.startswith("charmer-proxy"):
                 continue
             path = tuple(label.split()[1:])
             node = docs_gen._node(parser, path)
@@ -165,7 +165,7 @@ class CoverageTests(unittest.TestCase):
         self.assertTrue(listed)
         for command in proxy.PROXY_COMMANDS:
             with self.subTest(command.name):
-                self.assertEqual(f"`claude-multi-proxy {command.name}`" in reference, command in listed)
+                self.assertEqual(f"`charmer-proxy {command.name}`" in reference, command in listed)
         counted = len(proxy.PROXY_COMMANDS) - len(listed)
         self.assertIn(f"lists its {counted} maintenance commands", reference)
         for verb in lineup_files.CM_VERBS:
@@ -238,8 +238,8 @@ class InputTests(unittest.TestCase):
             with self.subTest(op_id):
                 self.assertIn(op_id, rows)
                 self.assertIn(spelling, rows[op_id].cli)
-                self.assertTrue(docs_gen.example(rows[op_id], spelling).startswith("claude-multi "))
-                self.assertEqual(vocab.span_problem("claude-multi " + text), "")
+                self.assertTrue(docs_gen.example(rows[op_id], spelling).startswith("charmer "))
+                self.assertEqual(vocab.span_problem("charmer " + text), "")
         # An example that drops its spelling's flag stops the generator.
         with mock.patch.dict(docs_gen.EXAMPLES, {("setup.status", "setup --status"): "setup"}), \
                 self.assertRaises(SystemExit):

@@ -87,7 +87,7 @@ class FoundationTests(unittest.TestCase):
         self.assertIs(cli.Runtime, runtime.Runtime)
         self.assertIs(cli.CLIError, errors.CLIError)
         self.assertTrue(issubclass(errors.CLIError, RuntimeError))
-        self.assertTrue(issubclass(errors.CLIError, errors.ClaudeMultiError))
+        self.assertTrue(issubclass(errors.CLIError, errors.CharmerError))
         self.assertTrue(issubclass(types.LaunchPlanError, errors.CLIError))
         self.assertTrue(issubclass(types.NeedsChoiceError, errors.CLIError))
         self.assertIs(tui.visible_text, termtext.visible_text)
@@ -250,8 +250,8 @@ class AssetSeamTests(unittest.TestCase):
         # The entry points as a source checkout (the sandbox tree is none).
         checkout = checkout_replica(Path(tempfile.mkdtemp(prefix="cm-checkout-")) / "checkout")
         self.addCleanup(shutil.rmtree, checkout.parent, True)
-        for name in ("claude-multi", "claude-multi-proxy", "claude-multi-dev"):
-            result = subprocess.run([sys.executable, str(checkout / "bin" / name), "--help" if name == "claude-multi-dev" else "--version"],
+        for name in ("charmer", "charmer-proxy", "charmer-dev"):
+            result = subprocess.run([sys.executable, str(checkout / "bin" / name), "--help" if name == "charmer-dev" else "--version"],
                                     env=env, text=True, capture_output=True, timeout=30)
             self.assertEqual(result.returncode, 0, (name, result.stderr))
             # Observe the environment pop itself (the version/help
@@ -262,7 +262,7 @@ class AssetSeamTests(unittest.TestCase):
                                     env=env, text=True, capture_output=True, timeout=30)
             self.assertEqual(result.returncode, 0, (name, result.stderr))
 
-    STUBS = ("claude-multi", "claude-multi-proxy", "claude-multi-dev")
+    STUBS = ("charmer", "charmer-proxy", "charmer-dev")
 
     def test_source_marker_is_staged_and_never_installed(self):
         # The Nix sandbox checks stage tests/source-tree.nix (no flake.nix)
@@ -332,8 +332,8 @@ class AssetSeamTests(unittest.TestCase):
             installed = tmp / "prefix"
             site = installed / "lib" / f"python{sys.version_info.major}.{sys.version_info.minor}" / "site-packages"
             shutil.copytree(SRC, site / "charmer", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
-            (installed / "share" / "claude-multi").mkdir(parents=True)
-            (installed / "share" / "claude-multi" / "CHEATSHEET.md").write_text("installed documentation")
+            (installed / "share" / "charmer").mkdir(parents=True)
+            (installed / "share" / "charmer" / "CHEATSHEET.md").write_text("installed documentation")
             code = '''
 import charmer
 from pathlib import Path
@@ -384,15 +384,15 @@ class PathEndpointTests(unittest.TestCase):
                 with self.subTest(home=home, xdg=xdg):
                     config = Path("/other/config") if xdg else Path(home) / ".config"
                     state = Path("/other/state") if xdg else Path(home) / ".local/state"
-                    self.assertEqual(paths.config_root(env), config / "claude-multi")
-                    self.assertEqual(paths.state_root(env), state / "claude-multi")
+                    self.assertEqual(paths.config_root(env), config / "charmer")
+                    self.assertEqual(paths.state_root(env), state / "charmer")
                     self.assertEqual(sessions.config_root(env), paths.config_root(env))
                     self.assertEqual(sessions.state_root(env), paths.state_root(env))
                     display_home = Path(home) if home else Path.home()
-                    self.assertEqual(paths.gateway_config_dir(env), display_home / ".config/claude-multi")
-                    self.assertEqual(paths.data_root(env), display_home / ".local/share/claude-multi")
+                    self.assertEqual(paths.gateway_config_dir(env), display_home / ".config/charmer")
+                    self.assertEqual(paths.data_root(env), display_home / ".local/share/charmer")
                     self.assertEqual(paths.secret_env_default(env),
-                                     display_home / ".config/claude-multi/secrets/provider-keys.env")
+                                     display_home / ".config/charmer/secrets/provider-keys.env")
                     self.assertEqual(paths.native_projects(display_home), display_home / ".claude/projects")
                     # The managed client's settings directory; every managed
                     # launch unsets CLAUDE_CONFIG_DIR, so it never moves it.
@@ -664,7 +664,7 @@ class HookEntryImportTests(unittest.TestCase):
         for name, (argv, stdin, environ, status, forbidden) in cases.items():
             with self.subTest(case=name):
                 # Shims a lifecycle case refreshed must not mask a scope-only write.
-                shutil.rmtree(Path(environ["XDG_STATE_HOME"]) / "claude-multi" / "bin", True)
+                shutil.rmtree(Path(environ["XDG_STATE_HOME"]) / "charmer" / "bin", True)
                 result = self.run_case(argv, stdin, environ)
                 stderr, _, modules = result.stderr.rpartition("\n@@MODULES@@")
                 self.assertNotIn("Traceback", stderr)
@@ -674,7 +674,7 @@ class HookEntryImportTests(unittest.TestCase):
                     self.assertEqual(result.returncode, status, stderr)
                 if forbidden is SCOPE_ONLY_FORBIDDEN:
                     # No Runtime: no shim refresh, no store setup.
-                    self.assertFalse((Path(environ["XDG_STATE_HOME"]) / "claude-multi" / "bin").exists(), name)
+                    self.assertFalse((Path(environ["XDG_STATE_HOME"]) / "charmer" / "bin").exists(), name)
 
     def test_passthrough_parity(self):
         """Runtime first, then the refusal (stderr, exit 1, empty stdout); start ignores it."""
@@ -690,9 +690,9 @@ class HookEntryImportTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 1)
                 self.assertEqual(result.stdout, "")
                 self.assertTrue(result.stderr.startswith(
-                    "claude-multi: passthrough arguments are accepted only for launch\n"), result.stderr)
+                    "charmer: passthrough arguments are accepted only for launch\n"), result.stderr)
                 # Runtime was built before the refusal (shims refreshed); the record is untouched.
-                self.assertTrue((shims / "claude-multi-hook").exists())
+                self.assertTrue((shims / "charmer-hook").exists())
                 self.assertEqual(self.record_path.read_bytes(), before)
         # 2.x start refuses too (Runtime first); protocol-3 start and prompt ignore passthrough.
         start = json.dumps({"session_id": "22222222-2222-4222-8222-222222222222",

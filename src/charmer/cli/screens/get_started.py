@@ -218,7 +218,7 @@ class _ProviderPicker:
 
         try:
             entries = list(layer.picker_entries(self.runtime, only=self.only))
-        except (cli_errors.ClaudeMultiError, OSError, ValueError) as exc:
+        except (cli_errors.CharmerError, OSError, ValueError) as exc:
             entries = []
             self.message, self.message_role = str(exc), "warn"
         if self.only == "other":
@@ -529,7 +529,7 @@ class _GetStartedScreen:
         contract = self.runtime.catalog.docs["native-contract"]
         try:
             outcome = external.acquire_claude(self.runtime, consent=ask, progress=progress)
-        except (acquire.AcquireError, pin.PinError, cli_errors.ClaudeMultiError, OSError) as exc:
+        except (acquire.AcquireError, pin.PinError, cli_errors.CharmerError, OSError) as exc:
             remedy = getattr(exc, "remedy", None)
             self._say(str(exc) + (f" — {remedy}" if remedy and remedy not in str(exc) else ""), "warn")
             return
@@ -546,7 +546,7 @@ class _GetStartedScreen:
         before = external.gateway_status(self.runtime)
         try:
             outcome = external.ensure_gateway(self.runtime)
-        except (cli_errors.ClaudeMultiError, OSError) as exc:
+        except (cli_errors.CharmerError, OSError) as exc:
             self._say(str(exc), "warn")
             return
         after = external.gateway_status(self.runtime)
@@ -579,7 +579,7 @@ class _GetStartedScreen:
 
         try:
             current = endpoint.read_config(self.runtime.home)
-        except (cli_errors.ClaudeMultiError, OSError) as exc:
+        except (cli_errors.CharmerError, OSError) as exc:
             self._say(str(exc), "warn")
             return
         shown = current.proxy_url if current is not None and current.proxy_url else cli_text.PROXY_NONE
@@ -599,7 +599,7 @@ class _GetStartedScreen:
         try:
             plan = layer.plan_proxy(self.runtime, url)
             applied = layer.apply_proxy(self.runtime, plan, model.Confirmation.given(plan))
-        except (cli_errors.ClaudeMultiError, OSError, KeyError, ValueError) as exc:
+        except (cli_errors.CharmerError, OSError, KeyError, ValueError) as exc:
             remedy = getattr(exc, "remedy", None)
             self._say(str(exc) + (f" — {remedy}" if remedy and remedy not in str(exc) else ""), "warn")
             return
@@ -770,7 +770,7 @@ class _ProfileStepView:
             evaluation = profile_mod.evaluate(document, self.runtime.lineup_catalog(),
                                               bindings=self.runtime.bindings.bindings(),
                                               effective=self.runtime.current_effective(), ad_hoc=False)
-        except (cli_errors.ClaudeMultiError, OSError):
+        except (cli_errors.CharmerError, OSError):
             return lines
         if evaluation.lineup is not None:
             notes = defaults.spend_notes(self.runtime, evaluation.lineup)
@@ -802,7 +802,7 @@ class _ProfileStepView:
                       palette=self.palette, buttons=(("Back", None),)).run(win)
             self.message, self.message_role = cli_text.STARTER_NO_LEAD_TUI, "warn"
             return None
-        except (cli_errors.ClaudeMultiError, OSError) as exc:
+        except (cli_errors.CharmerError, OSError) as exc:
             self.message, self.message_role = str(exc), "warn"
             return None
         names = " · ".join(item.display for item in connected)
@@ -816,7 +816,7 @@ class _ProfileStepView:
             setup_profiles.apply_new_starter(self.runtime, plan, model.Confirmation.given(plan))
             chosen = defaults.set_default_plan(self.runtime, name)
             defaults.apply_default(self.runtime, chosen, model.Confirmation.given(chosen))
-        except (cli_errors.ClaudeMultiError, OSError) as exc:
+        except (cli_errors.CharmerError, OSError) as exc:
             self.message, self.message_role = str(exc), "warn"
             return None
         self.message = cli_text.PROFILE_STEP_SAVED.format(name=name)

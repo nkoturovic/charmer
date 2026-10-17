@@ -1,4 +1,4 @@
-"""``claude-multi-dev repin``: the maintainer's evidence-gated Claude Code re-pin.
+"""``charmer-dev repin``: the maintainer's evidence-gated Claude Code re-pin.
 
 The flow itself lives in ``charmer.upgrade``. This module turns the dev
 flags into a run: the checkout (``--repo``, default: the checkout this
@@ -21,7 +21,7 @@ import sys
 import charmer.cli.consent as consent
 
 
-USAGE = "usage: claude-multi-dev repin [--repo PATH] [--manifest-dir DIR] [--settings-keys FILE]"
+USAGE = "usage: charmer-dev repin [--repo PATH] [--manifest-dir DIR] [--settings-keys FILE]"
 
 
 def repin(

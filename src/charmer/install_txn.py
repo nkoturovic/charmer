@@ -1,6 +1,6 @@
 """The safety transaction of the installer, the updater and their rollbacks.
 
-``packaging/install.sh`` and ``claude-multi update`` change the same
+``packaging/install.sh`` and ``charmer update`` change the same
 installation (``<data root>/install``: ``versions/<v>``, ``current``,
 ``previous``) and the same state root. Before either mutates anything it
 runs the checks here, and it runs them again once it holds the install lock
@@ -36,7 +36,7 @@ meanwhile:
   place.
 - **The persistence hold.** Neither the installer nor the updater stops the
   gateway; a change of the gateway binary is a restart the user makes later
-  with ``claude-multi gateway restart`` (which honours the hold itself). A
+  with ``charmer gateway restart`` (which honours the hold itself). A
   gateway-changing switch is still refused while the hold vetoes a restart,
   so a replacement never waits on a gateway that must not restart.
 - **Claude Code copies.** Their cleanup is
@@ -88,7 +88,7 @@ OWNER_UPDATER = "updater"
 VERSIONS = "versions"
 
 
-class TransactionError(errors.ClaudeMultiError, RuntimeError):
+class TransactionError(errors.CharmerError, RuntimeError):
     """An install, update or rollback must not proceed; nothing was changed."""
 
 
@@ -107,7 +107,7 @@ def check_ownership(state_root: Path | str, environ: Mapping[str, str], *, migra
         return owner
     shown = paths.display(state_root, environ)
     raise TransactionError(
-        f"this account's claude-multi state ({shown}) belongs to the {owner} installation; nothing was changed",
+        f"this account's charmer state ({shown}) belongs to the {owner} installation; nothing was changed",
         remedy="to move it to the installed release, run the installer again with --migrate-from-nix, "
                "then remove the other installation")
 
@@ -152,7 +152,7 @@ def check_state(state_root: Path | str, readable: int, version: str, *,
             f"cannot read (it reads up to {readable}); nothing was changed",
             remedy=f"stay on {rollback_from}; state is only ever migrated forward")
     raise TransactionError(
-        f"claude-multi {version} cannot read your state (format {on_disk}; it reads up to {readable}); "
+        f"charmer {version} cannot read your state (format {on_disk}; it reads up to {readable}); "
         "nothing was changed", remedy="install a newer version instead")
 
 
@@ -163,7 +163,7 @@ def check_state(state_root: Path | str, readable: int, version: str, *,
 # changed (only temporary files, removed on failure), so a failure ends the
 # record; from ``replace`` on an interruption keeps it, and the owner's
 # recovery finishes the run (``sh install.sh --repair`` for the installer,
-# ``claude-multi update`` again for the updater).
+# ``charmer update`` again for the updater).
 PHASE_PREPARE = "prepare"
 PHASE_DOWNLOAD = "download"
 PHASE_PIN = "pin"
@@ -174,12 +174,12 @@ PHASE_LAUNCHERS = "launchers"
 RESTORABLE_PHASES = frozenset({PHASE_PREPARE, PHASE_DOWNLOAD, PHASE_PIN})
 REMEDIES = {
     OWNER_INSTALLER: "sh install.sh --repair",
-    OWNER_UPDATER: "claude-multi update (run it again to finish the interrupted run)",
+    OWNER_UPDATER: "charmer update (run it again to finish the interrupted run)",
 }
 
 
 def _transaction_error(exc: BaseException) -> TransactionError:
-    if isinstance(exc, errors.ClaudeMultiError):
+    if isinstance(exc, errors.CharmerError):
         return TransactionError(termtext.visible_message(exc), remedy=exc.remedy)
     return TransactionError(f"the gateway inhibition cannot be recorded ({exc}); nothing was changed")
 
@@ -225,9 +225,9 @@ class Inhibition:
             raise TransactionError("this run no longer holds its gateway inhibition; nothing more was changed")
         try:
             gateway_inhibition.advance(self.state_root, self.token, phase)
-        except (gateway_inhibition.InhibitionError, OSError, errors.ClaudeMultiError) as exc:
+        except (gateway_inhibition.InhibitionError, OSError, errors.CharmerError) as exc:
             raise TransactionError(f"{exc}; nothing more was changed",
-                                   remedy="check: claude-multi doctor") from exc
+                                   remedy="check: charmer doctor") from exc
         self.phase = phase
 
     @contextlib.contextmanager
@@ -247,7 +247,7 @@ class Inhibition:
         if self.token is not None:
             try:
                 gateway_inhibition.end(self.state_root, self.token)
-            except (gateway_inhibition.InhibitionError, OSError, errors.ClaudeMultiError) as exc:
+            except (gateway_inhibition.InhibitionError, OSError, errors.CharmerError) as exc:
                 raise _transaction_error(exc) from exc
         self.token = None
 
@@ -265,7 +265,7 @@ def begin(state_root: Path | str, *, owner: str, purpose: str, remedy: str | Non
         token = gateway_inhibition.begin(root, owner=owner, purpose=purpose, phase=PHASE_PREPARE,
                                          remedy=remedy or REMEDIES[owner],
                                          expiry=gateway_inhibition.owner_process(pid))
-    except (gateway_inhibition.InhibitionError, OSError, errors.ClaudeMultiError) as exc:
+    except (gateway_inhibition.InhibitionError, OSError, errors.CharmerError) as exc:
         raise _transaction_error(exc) from exc
     return Inhibition(root, owner, token)
 
@@ -280,7 +280,7 @@ def recover(state_root: Path | str, owner: str) -> Inhibition | None:
     root = Path(state_root)
     try:
         record = gateway_inhibition.recover(root, owner)
-    except (gateway_inhibition.InhibitionError, OSError, errors.ClaudeMultiError) as exc:
+    except (gateway_inhibition.InhibitionError, OSError, errors.CharmerError) as exc:
         raise _transaction_error(exc) from exc
     if record is None:
         return None
@@ -364,7 +364,7 @@ def hold_reason(state_root: Path | str, environ: Mapping[str, str], *,
         if seen.state == gateway_lifecycle.STOPPED:
             return None
         report = gateway.persistence_hold(seen)
-    except (OSError, errors.ClaudeMultiError) as exc:
+    except (OSError, errors.CharmerError) as exc:
         return f"the gateway's persistence hold cannot be evaluated ({exc})"
     if report.held:
         from charmer import gateway_hold
@@ -379,7 +379,7 @@ def _packaged_gateway(state_root: Path | str, environ: Mapping[str, str]):
 
     try:
         docs = catalog.load_raw(resources_root())["docs"]
-    except (OSError, KeyError, errors.ClaudeMultiError) as exc:
+    except (OSError, KeyError, errors.CharmerError) as exc:
         raise TransactionError(f"the packaged catalog cannot be read ({exc})") from exc
     providers = docs["providers"]["providers"]
     names = {*providers, *(entry["transport"]["pool"] for entry in providers.values()
@@ -405,7 +405,7 @@ def prune_copies(environ: Mapping[str, str], *, launcher_version: str,
         if contract is None:
             contract = catalog.load_raw(resources_root())["docs"]["native-contract"]
         outcome = retention.prune_copies(contract, environ, launcher_version=launcher_version)
-    except (OSError, KeyError, TypeError, ValueError, errors.ClaudeMultiError) as exc:
+    except (OSError, KeyError, TypeError, ValueError, errors.CharmerError) as exc:
         return [f"Claude Code copies were not cleaned up ({exc}); `{pin.SETUP_COMMAND}` does it later."]
     return retention.prune_lines(outcome, environ)
 
@@ -483,7 +483,7 @@ def preflight(args: argparse.Namespace, environ: Mapping[str, str]) -> None:
             if reason:
                 raise TransactionError(f"{reason}; nothing was changed",
                                        remedy="keep the gateway running until it is clear "
-                                              "(claude-multi gateway status), then run the installer again")
+                                              "(charmer gateway status), then run the installer again")
 
 
 def main(argv: Sequence[str] | None = None, *, environ: Mapping[str, str] | None = None,
@@ -503,7 +503,7 @@ def main(argv: Sequence[str] | None = None, *, environ: Mapping[str, str] | None
             found = protected_versions(_absolute(args.install_root, "--install-root"),
                                        _absolute(args.state_root, "--state-root"))
             if found is None:
-                err.write("claude-multi installer: whether a running gateway uses an installed version "
+                err.write("charmer installer: whether a running gateway uses an installed version "
                           "cannot be checked; every installed version is kept\n")
                 return EXIT_UNKNOWN
             for name in sorted(found):
@@ -517,7 +517,7 @@ def main(argv: Sequence[str] | None = None, *, environ: Mapping[str, str] | None
             return EXIT_OK
         if args.command == "prune-copies":
             for line in prune_copies(env, launcher_version=args.version):
-                out.write(f"claude-multi: {termtext.visible_text(line)}\n")
+                out.write(f"charmer: {termtext.visible_text(line)}\n")
             return EXIT_OK
         if args.command in ("switch", "finish-switch"):
             from charmer import self_update
@@ -537,9 +537,9 @@ def main(argv: Sequence[str] | None = None, *, environ: Mapping[str, str] | None
                                    [_absolute(path, "--launcher") for path in args.launcher],
                                    tuple(args.path_line) if args.path_line else None)
             return EXIT_OK
-    except (TransactionError, errors.ClaudeMultiError, OSError) as exc:
-        message = termtext.visible_message(exc) if isinstance(exc, errors.ClaudeMultiError) else str(exc)
-        err.write(f"claude-multi installer: {message}\n")
+    except (TransactionError, errors.CharmerError, OSError) as exc:
+        message = termtext.visible_message(exc) if isinstance(exc, errors.CharmerError) else str(exc)
+        err.write(f"charmer installer: {message}\n")
         remedy = getattr(exc, "remedy", None)
         if remedy:
             err.write(f"  fix: {termtext.visible_text(remedy)}\n")

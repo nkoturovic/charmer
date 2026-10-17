@@ -33,7 +33,7 @@ STATES = frozenset({"ok", "no-key", "disabled", "key-unusable", "pending",
 INFO_STATES = frozenset({"no-key", "disabled", "unavailable"})
 
 
-class QuotaParseError(errors.ClaudeMultiError, ValueError):
+class QuotaParseError(errors.CharmerError, ValueError):
     """A structural error, never containing response values or JSON paths."""
 
 
@@ -383,7 +383,7 @@ def credential_text(credential: Credential, *, login_command: str | None, now: d
 # journal, or the on-demand instance logs.
 HEALTH_SOURCES = {
     "systemd": "the gateway service's journal",
-    "on-demand": "the gateway's instance logs (claude-multi gateway logs)",
+    "on-demand": "the gateway's instance logs (charmer gateway logs)",
 }
 HEALTH_SOURCE_UNKNOWN = ("the gateway's log (the service journal when supervised, "
                          "the instance logs on demand)")
@@ -447,7 +447,7 @@ CONDITION_TEXT = {
     "unavailable": "no reading can be made here now",
     "not-ours": "another program holds the gateway port; the management key was not sent",
 }
-# ``claude-multi quota`` exits 1 exactly when no reading was made.
+# ``charmer quota`` exits 1 exactly when no reading was made.
 CONDITION_EXIT = {"available": 0, "stale": 0, "exhausted": 0,
                   "management-disabled": 1, "unavailable": 1, "not-ours": 1}
 
@@ -463,8 +463,8 @@ def state_text(pool: PoolStatus, *, restart_hint: str, backend: str | None = Non
     source = health_source(backend)
     return {
         "no-key": f"Quota: off — no management key; credential health comes from {source} "
-                  f"(enable: claude-multi-proxy init, then restart the gateway: {r})",
-        "disabled": "Quota: disabled by the operator (claude-multi-proxy rotate-management-key re-enables)",
+                  f"(enable: charmer-proxy init, then restart the gateway: {r})",
+        "disabled": "Quota: disabled by the operator (charmer-proxy rotate-management-key re-enables)",
         "unavailable": f"Quota: unavailable in this build; credential health comes from {source}",
         "pending": f"quota: management key awaits start preparation; reads stay off — restart the gateway: {r}",
         "key-unusable": f"quota: {pool.key_file or 'management-key'} is unusable "
@@ -480,7 +480,7 @@ def state_text(pool: PoolStatus, *, restart_hint: str, backend: str | None = Non
         "malformed": "quota: the gateway's auth-files answer was not understood (ignored)",
         "error": f"quota: the gateway answered HTTP {pool.http_status}" if pool.http_status is not None
                  else "quota: the management read failed",
-        "not-ours": "quota: the process on the gateway port is not claude-multi's gateway; the management key was not sent",
+        "not-ours": "quota: the process on the gateway port is not charmer's gateway; the management key was not sent",
         "down": "quota: the local gateway is down",
     }.get(pool.state)
 
@@ -595,7 +595,7 @@ def provider_details(credentials: Iterable[Credential], now: datetime, tz: tzinf
         # The worst window first makes a high secondary window visible too.
         windows = sorted(c.windows, key=lambda w: w != finding.window)
         text += " · " + (" · ".join(window_text(w, c, now, tz) for w in windows) or "no quota headers yet")
-    more = (f"+{len(credentials) - 1} more (claude-multi quota)",) if len(credentials) > 1 else ()
+    more = (f"+{len(credentials) - 1} more (charmer quota)",) if len(credentials) > 1 else ()
     extra = metadata_lines(c, now, tz) if c.metadata != QuotaMetadata() or c.model_quotas or c.plan_type else ()
     return (text, *more, *extra)
 
@@ -640,7 +640,7 @@ def card_summary(pool: PoolStatus, *, pools: Iterable[str], login_commands,
         if len(text) > width:
             text = f"{value} · {age} · {reset} — {remedy}"
     elif len(text) > width:
-        # A known reset remains in Providers/claude-multi quota; never lose
+        # A known reset remains in Providers/charmer quota; never lose
         # the observation age or suggest the unavailable P action on resume.
         text = f"{base} — {remedy}"
     return text, "warn"
@@ -729,7 +729,7 @@ def command_lines(pool: PoolStatus, *, provider_by_pool, login_commands, restart
                      "  All usable credentials observed exhausted (advisory)")
     other = len(pool.credentials) - len(known)
     if other:
-        lines.append(f"other credentials (not a claude-multi provider): {other}")
+        lines.append(f"other credentials (not a charmer provider): {other}")
     lines.append("Management safety: five failed logins on allowlisted routes can ban loopback for 30 min; "
                  "refused routes and guard-refused browser/Host requests do not count.")
     lines.append("Quota is passive metadata from gateway traffic; no provider request was made.")

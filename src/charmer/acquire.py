@@ -1,4 +1,4 @@
-"""Acquire claude-multi's own copy of the pinned Claude Code.
+"""Acquire charmer's own copy of the pinned Claude Code.
 
 The owned copy (``pin.owned_path``) is put in place by copying a file whose
 size and SHA-256 equal the contract's record for this platform from, in
@@ -43,7 +43,7 @@ INDEX_NAME = "pins.json"
 INDEX_LIMIT = 32
 
 
-class AcquireError(errors.ClaudeMultiError, RuntimeError):
+class AcquireError(errors.CharmerError, RuntimeError):
     """The owned copy could not be put in place (nothing half-written stays)."""
 
 
@@ -138,7 +138,7 @@ def _record(contract: Mapping[str, Any], platform: str) -> Mapping[str, Any]:
     record = pin.platform_record(contract, platform)
     if record is None:
         raise AcquireError(
-            f"this claude-multi release has no verified Claude Code {pin.version(contract)} "
+            f"this charmer release has no verified Claude Code {pin.version(contract)} "
             f"build for {platform}"
         )
     return record
@@ -218,7 +218,7 @@ def _check_version_dir(destination: Path, environ: Mapping[str, str]) -> None:
         return
     shown = paths.display(directory, environ)
     raise AcquireError(
-        f"{shown} {problem}; claude-multi keeps its copy only in a real directory there — "
+        f"{shown} {problem}; charmer keeps its copy only in a real directory there — "
         f"remove it (rm {shown}; a link's target is not touched), then rerun `{pin.SETUP_COMMAND}`"
     )
 
@@ -291,7 +291,7 @@ def read_index(environ: Mapping[str, str]) -> dict[str, str]:
 
     try:
         document = strict_json.loads(state.read_private(_index_path(environ)))
-    except (OSError, ValueError, errors.ClaudeMultiError):
+    except (OSError, ValueError, errors.CharmerError):
         return {}
     launchers = document.get("launchers") if isinstance(document, dict) else None
     if not isinstance(launchers, dict):
@@ -405,7 +405,7 @@ class DownloadPlan:
             "Authentication: none",
             f"Size: {self.size} bytes ({_megabytes(self.size)})",
             f"Saved to: {paths.display(self.destination, environ)}",
-            "Used only if its size and sha256 equal what this claude-multi release pins.",
+            "Used only if its size and sha256 equal what this charmer release pins.",
             release_manifest.REDIRECT_PROXY_TEXT,
             f"Up to {DOWNLOAD_TRIES} tries; an interrupted download resumes where it stopped.",
             "Anthropic's installer is not run, and your own Claude Code install is not touched.",
@@ -532,8 +532,8 @@ def unavailable_remedy(version: str) -> str:
     return (
         f"To set it up without the download: install Claude Code {version} with Anthropic's "
         f"installer yourself, then rerun `{pin.SETUP_COMMAND}`; or copy a {version} binary here and "
-        f"pass `--claude-from PATH`. A newer claude-multi release may pin a version that is "
-        "available: update claude-multi."
+        f"pass `--claude-from PATH`. A newer charmer release may pin a version that is "
+        "available: update charmer."
     )
 
 
@@ -578,7 +578,7 @@ def acquire(
     except OSError as exc:
         raise AcquireError(f"cannot prepare {paths.display(pin.owned_root(environ), environ)}: {exc}") from exc
     if not locked:
-        raise AcquireBusy(f"another claude-multi setup is putting Claude Code {version} in place; "
+        raise AcquireBusy(f"another charmer setup is putting Claude Code {version} in place; "
                           "wait for it to finish, then rerun this step")
     try:
         destination = pin.owned_path(environ, version, platform)

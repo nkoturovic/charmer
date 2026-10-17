@@ -56,7 +56,7 @@ DOCUMENT_DIRS = (Path("share") / "charmer", Path("docs"))
 NIX_STORE = "/nix/store"
 
 
-class LayoutError(errors.ClaudeMultiError, ValueError):
+class LayoutError(errors.CharmerError, ValueError):
     """A path is not a usable source checkout or write destination."""
 
 

@@ -8,7 +8,7 @@ their log, every Get started step, the needs-a-choice chooser, the profile
 editor's forms and the transition and propagation confirmations, at both
 sizes. Every text a screen cuts to fit (``views.clip`` and the last-cell
 clip of ``tui.safe_add``) is recorded, and an action it names — a key route
-such as ``G → L``, a ``claude-multi`` command, ``git init``, a ``/cm`` verb,
+such as ``G → L``, a ``charmer`` command, ``git init``, a ``/cm`` verb,
 ``V details`` — must still be on the screen. ``table()`` is the recorded
 sweep: one row per screen and size.
 
@@ -49,7 +49,7 @@ SIZES = ((80, 24), (120, 40))
 # What a person acts on: a key route, a command, a verb.
 ACTION = re.compile(
     r"\b(?:[A-Z]|Enter|Esc|Tab|Space) → (?:[A-Z]\b|Enter|Esc|Space)"
-    r"|claude-multi [a-z][a-z-]*(?: [a-z][a-z-]*)?"
+    r"|charmer [a-z][a-z-]*(?: [a-z][a-z-]*)?"
     r"|\bgit init\b|\bV details\b|/cm [a-z]+|\bpress [A-Z]\b"
     r"|\bEnter (?:admits|revokes|approves|inspects|declares|links)\b"
 )
@@ -264,8 +264,8 @@ def gateway_actions_view(root: Path, *, state: str) -> str:
             title, lines = screens_gateway.log_view(screens_gateway.observe(case.runtime))
             return R.render(lambda: tui.TextView(title, lines, palette=tui.MONO_PALETTE))
         if state == "inhibited":
-            gateway_inhibition.begin(case.state_root, owner="installer", purpose="install claude-multi 1.0.0",
-                                     phase="replace", remedy="claude-multi gateway service install")
+            gateway_inhibition.begin(case.state_root, owner="installer", purpose="install charmer 1.0.0",
+                                     phase="replace", remedy="charmer gateway service install")
         service = test_tui_dispatch._Service()
         with mock.patch.object(type(case.runtime), "gateway_service", return_value=service), \
                 mock.patch.object(tui, "suspended_curses", mock.MagicMock()):

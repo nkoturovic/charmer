@@ -103,7 +103,7 @@ class ConvergeV4Tests(V4Case):
         _v3.save_any(self.store, v3)
         self.assertEqual(
             _converge(self, other),
-            [f"session {other[:8]} is a legacy record; run claude-multi migrate (or resume it) first"],
+            [f"session {other[:8]} is a legacy record; run charmer migrate (or resume it) first"],
         )
         self.assertEqual(self.store.load(other)["version"], 3)
 

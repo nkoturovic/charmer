@@ -48,7 +48,7 @@ STORE_PREFIX = "/nix/store/"
 GC_ROOT_TIMEOUT = 60
 
 
-class ChannelError(errors.ClaudeMultiError, ValueError):
+class ChannelError(errors.CharmerError, ValueError):
     """The channel marker is unreadable or names no known channel."""
 
 
@@ -155,7 +155,7 @@ def check(state_root: Path | str, environ: Mapping[str, str], *, record: bool) -
             owner, recorded = claim_marker(state_root, running, environ)
         except ChannelError as exc:
             return ChannelCheck(running, None, problem=str(exc), remedy=exc.remedy)
-        except (OSError, errors.ClaudeMultiError) as exc:
+        except (OSError, errors.CharmerError) as exc:
             return ChannelCheck(
                 running, None,
                 problem=f"this installation could not record itself as the owner of the claude-multi state "
@@ -302,7 +302,7 @@ def installer_launchers(environ: Mapping[str, str]) -> list[str]:
 
 # ------------------------------------------------------------ selection
 
-class SelectionError(errors.ClaudeMultiError, RuntimeError):
+class SelectionError(errors.CharmerError, RuntimeError):
     """The installation for the supervised service cannot be selected."""
 
 

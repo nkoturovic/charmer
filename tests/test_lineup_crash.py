@@ -74,11 +74,11 @@ class LiveApplyCrashTests(LineupCase):
                     code, out, _ = self.request("profile mix")
                 self.assertEqual(code, 0)
                 self.assertTrue(
-                    out.startswith("claude-multi: the lineup change failed after partially "
+                    out.startswith("charmer: the lineup change failed after partially "
                                    "updating the scope ("), out,
                 )
                 self.assertIn(
-                    f"the record still holds lineup generation 1; run claude-multi doctor "
+                    f"the record still holds lineup generation 1; run charmer doctor "
                     f"--repair {self.mid}, then retry", out,
                 )
                 after = self.store.load(self.mid)

@@ -1,4 +1,4 @@
-"""``claude-multi update`` and the card's U (``charmer.release_update``).
+"""``charmer update`` and the card's U (``charmer.release_update``).
 
 Releases are fake release directories signed with the stdlib test signer
 (no ssh-keygen needed). Three layers:
@@ -7,7 +7,7 @@ Releases are fake release directories signed with the stdlib test signer
   rollback, refusals and exit codes);
 - the https transport and the certificate trust against a local https
   server with a certificate authority made for the test (needs openssl);
-- the real command line: an installation's own ``bin/claude-multi`` (the
+- the real command line: an installation's own ``bin/charmer`` (the
   bundle carries this checkout's package and a test release key as its
   installed trust) updating, rolling back and putting the incoming Claude
   Code in place through the real acquisition, in a private HOME.
@@ -67,13 +67,13 @@ class Answers:
 
 class JourneyTestCase(unittest.TestCase):
     def setUp(self) -> None:
-        self.tmp = Path(tempfile.mkdtemp(prefix="claude-multi-journey-"))
+        self.tmp = Path(tempfile.mkdtemp(prefix="charmer-journey-"))
         self.addCleanup(shutil.rmtree, self.tmp, True)
         self.home = self.tmp / "home"
         self.home.mkdir(mode=0o700)
         self.environ = {"HOME": str(self.home), "CLAUDE_MULTI_CHANNEL": "bundle"}
         self.root = su.install_root(self.environ)
-        self.state = self.home / ".local/state/claude-multi"
+        self.state = self.home / ".local/state/charmer"
         self.state.mkdir(parents=True, mode=0o700)
         self.held: list[str] = []
 
@@ -86,7 +86,7 @@ class JourneyTestCase(unittest.TestCase):
         os.chmod(self.root, 0o700)
         with tarfile.open(release.asset()) as tar:
             tar.extractall(versions, filter="data")
-        (versions / f"claude-multi-{release.version}-linux-x86_64").rename(versions / release.version)
+        (versions / f"charmer-{release.version}-linux-x86_64").rename(versions / release.version)
         current = self.root / "current"
         if current.is_symlink():
             current.unlink()
@@ -112,7 +112,7 @@ class JourneyTestCase(unittest.TestCase):
 class ChannelTests(JourneyTestCase):
     def test_other_channels_get_instructions_and_nothing_changes(self) -> None:
         for channel, needle in (("nix", "update it through your flake"), ("source", "git pull"),
-                                (None, "not installed by the claude-multi installer")):
+                                (None, "not installed by the charmer installer")):
             for mode in ("update", "check", "rollback"):
                 with self.subTest(channel=channel, mode=mode):
                     code, out = self.run_journey(mode=mode, journey=self.journey(channel=channel))
@@ -134,7 +134,7 @@ class CheckAndUpdateTests(JourneyTestCase):
             for mode in ("update", "check"):
                 code, out = self.run_journey(mode=mode, from_dir=str(same.dir), assume_yes=True)
                 self.assertEqual(code, ru.EXIT_OK, out)
-                self.assertIn("claude-multi 1.0.0 is up to date (released 2026-10-15)", out)
+                self.assertIn("charmer 1.0.0 is up to date (released 2026-10-15)", out)
         self.assertEqual(self.current(), "versions/1.0.0")
         older = self.release("0.9.0")
         code, out = self.run_journey(from_dir=str(older.dir))
@@ -145,7 +145,7 @@ class CheckAndUpdateTests(JourneyTestCase):
         newer = self.release("1.1.0")
         code, out = self.run_journey(mode="check", from_dir=str(newer.dir))
         self.assertEqual(code, ru.EXIT_OK, out)
-        self.assertIn("claude-multi 1.1.0 is available (released 2026-10-15); 1.0.0 is installed", out)
+        self.assertIn("charmer 1.1.0 is available (released 2026-10-15); 1.0.0 is installed", out)
         self.assertEqual(self.current(), "versions/1.0.0")
 
     def test_confirmation_and_exit_codes(self) -> None:
@@ -158,12 +158,12 @@ class CheckAndUpdateTests(JourneyTestCase):
                 code, out = self.run_journey(from_dir=str(newer.dir), ask=ask)
                 self.assertEqual(code, code_expected, out)
                 self.assertIn(text, out)
-                self.assertEqual(ask.questions, ["Update claude-multi to 1.1.0 now?"])
+                self.assertEqual(ask.questions, ["Update charmer to 1.1.0 now?"])
                 self.assertIn("Update plan: 1.0.0 -> 1.1.0", out)
                 self.assertEqual(self.current(), "versions/1.0.0")
         code, out = self.run_journey(from_dir=str(newer.dir), ask=Answers(True))
         self.assertEqual(code, ru.EXIT_OK, out)
-        self.assertIn("Updated claude-multi to 1.1.0; 1.0.0 is kept for 'claude-multi update --rollback'", out)
+        self.assertIn("Updated charmer to 1.1.0; 1.0.0 is kept for 'charmer update --rollback'", out)
         self.assertIn("Only the launcher changed", out)
         self.assertEqual(self.current(), "versions/1.1.0")
 
@@ -200,7 +200,7 @@ class CheckAndUpdateTests(JourneyTestCase):
         code, out = self.run_journey(assume_yes=True)
         self.assertEqual(code, ru.EXIT_REFUSED)
         self.assertIn("names no download location", out)
-        self.assertIn("claude-multi update --from-dir DIR", out)
+        self.assertIn("charmer update --from-dir DIR", out)
 
     def test_the_gateway_hold_and_the_running_gateway(self) -> None:
         newer = self.release("1.1.0", gateway="b" * 64)
@@ -221,7 +221,7 @@ class CheckAndUpdateTests(JourneyTestCase):
         code, out = self.run_journey(from_dir=str(migrating.dir), ask=Answers(False))
         self.assertEqual(code, ru.EXIT_DECLINED)
         self.assertIn("rolling back to 1.0.0 is refused", out)
-        self.assertIn("'claude-multi update --rollback' to 1.0.0 is refused", out)
+        self.assertIn("'charmer update --rollback' to 1.0.0 is refused", out)
 
 
 class RollbackTests(JourneyTestCase):
@@ -238,7 +238,7 @@ class RollbackTests(JourneyTestCase):
         self.assertEqual(code, ru.EXIT_DECLINED)
         code, out = self.run_journey(mode="rollback", ask=Answers(True))
         self.assertEqual(code, ru.EXIT_OK, out)
-        self.assertIn("Rolled back to claude-multi 1.0.0; 1.1.0 is now the previous version", out)
+        self.assertIn("Rolled back to charmer 1.0.0; 1.1.0 is now the previous version", out)
         self.assertEqual((self.current(), os.readlink(self.root / "previous")), ("versions/1.0.0", "versions/1.1.0"))
         self.run_journey(mode="rollback", assume_yes=True)
         fd = os.open(self.state / "state-version", os.O_WRONLY | os.O_CREAT, 0o600)
@@ -285,7 +285,7 @@ class TransactionTests(JourneyTestCase):
         code, out = self.run_journey(journey=self.journey(prune_copies=prune, acquire_pin=lambda *_a: None),
                                      from_dir=str(self.newer.dir), assume_yes=True)
         self.assertEqual(code, ru.EXIT_OK, out)
-        self.assertEqual(seen, [("updater", "prune", "update claude-multi 1.0.0 to 1.1.0")])
+        self.assertEqual(seen, [("updater", "prune", "update charmer 1.0.0 to 1.1.0")])
         self.assertIn("Kept Claude Code copies in use: 2.1.100", out)
         self.assertIsNone(self.record())
 
@@ -329,8 +329,8 @@ class TransactionTests(JourneyTestCase):
                 with failure:
                     code, out = self.run_journey(journey=journey, from_dir=str(self.newer.dir), assume_yes=True)
                 self.assertEqual(code, exit_code, out)
-                self.assertIn(f"update claude-multi 1.0.0 to 1.1.0 stopped in its {phase} step", out)
-                self.assertIn("run claude-multi update again", out)
+                self.assertIn(f"update charmer 1.0.0 to 1.1.0 stopped in its {phase} step", out)
+                self.assertIn("run charmer update again", out)
                 self.assertEqual(self.current(), current)
                 record = self.record()
                 self.assertEqual((record.owner, record.phase), ("updater", phase))
@@ -357,7 +357,7 @@ class TransactionTests(JourneyTestCase):
         with mock.patch.object(su, "_flip", side_effect=OSError(5, "Input/output error")):
             code, out = self.run_journey(mode="rollback", assume_yes=True)
         self.assertEqual(code, ru.EXIT_REFUSED, out)
-        self.assertIn("roll back claude-multi to 1.0.0 stopped in its switch step", out)
+        self.assertIn("roll back charmer to 1.0.0 stopped in its switch step", out)
         self.assertEqual(self.record().phase, "switch")
         code, out = self.run_journey(mode="rollback", assume_yes=True)
         self.assertEqual(code, ru.EXIT_OK, out)
@@ -386,7 +386,7 @@ class TransactionTests(JourneyTestCase):
         with mock.patch.object(su, "_flip", side_effect=flip):
             code, out = self.run_journey(mode="rollback", assume_yes=True)
         self.assertEqual(code, ru.EXIT_REFUSED, out)
-        self.assertIn("roll back claude-multi to 1.0.0 stopped in its switch step", out)
+        self.assertIn("roll back charmer to 1.0.0 stopped in its switch step", out)
         self.assertEqual(self.links(), ("versions/1.1.0", "versions/1.1.0"))
         self.assertEqual((self.record().owner, self.record().phase), ("updater", "switch"))
         code, out = self.run_journey(mode="rollback", assume_yes=True)
@@ -394,7 +394,7 @@ class TransactionTests(JourneyTestCase):
         self.assertIn("Put the installed versions back as they were before an interrupted switch "
                       "(current 1.1.0, previous 1.0.0).", out)
         self.assertIn("gateway changes are no longer paused", out)
-        self.assertIn("Rolled back to claude-multi 1.0.0; 1.1.0 is now the previous version.", out)
+        self.assertIn("Rolled back to charmer 1.0.0; 1.1.0 is now the previous version.", out)
         self.assertEqual(self.links(), ("versions/1.0.0", "versions/1.1.0"))
         self.assertIsNone(self.record())
         self.assertFalse((self.root / su.SWITCH_RECORD).exists())
@@ -422,7 +422,7 @@ class TransactionTests(JourneyTestCase):
         newest = self.release("1.2.0", claude="9.9.9")
 
         def ask(question: str) -> bool:
-            self.assertEqual(question, "Roll back claude-multi to 1.0.0 now?")
+            self.assertEqual(question, "Roll back charmer to 1.0.0 now?")
             code, out = self.run_journey(journey=self.journey(acquire_pin=lambda *_a: None),
                                          from_dir=str(newest.dir), assume_yes=True)
             self.assertEqual(code, ru.EXIT_OK, out)
@@ -437,19 +437,19 @@ class TransactionTests(JourneyTestCase):
         self.assertIsNone(self.record())  # nothing changed: the rollback's inhibition ended
 
     def test_another_owners_inhibition_and_an_earlier_hand_off_record_refuse(self) -> None:
-        held = install_txn.begin(self.state, owner="installer", purpose="install claude-multi 1.0.0",
+        held = install_txn.begin(self.state, owner="installer", purpose="install charmer 1.0.0",
                                  pid=os.getppid())
         code, out = self.run_journey(from_dir=str(self.newer.dir), assume_yes=True)
         self.assertEqual(code, ru.EXIT_REFUSED, out)
-        self.assertIn("the gateway is inhibited by installer (install claude-multi 1.0.0; phase prepare", out)
+        self.assertIn("the gateway is inhibited by installer (install charmer 1.0.0; phase prepare", out)
         self.assertIn("sh install.sh --repair", out)
         self.assertEqual(self.current(), "versions/1.0.0")
         held.end()
         test_install_txn.legacy_handoff(self.state, pid=test_install_txn.DEAD_PID)
         code, out = self.run_journey(from_dir=str(self.newer.dir), assume_yes=True)
         self.assertEqual(code, ru.EXIT_REFUSED, out)
-        self.assertIn("inhibited by service (gateway service install (claude-multi-gateway)", out)
-        self.assertIn("claude-multi gateway service install", out)
+        self.assertIn("inhibited by service (gateway service install (charmer-gateway)", out)
+        self.assertIn("charmer gateway service install", out)
         self.assertEqual(self.current(), "versions/1.0.0")
 
 
@@ -460,10 +460,10 @@ class FactsTests(JourneyTestCase):
         self.seed(self.release("1.0.0", release_date="2026-10-01"))
         self.assertEqual(ru.card_hint(runtime, today=TODAY), ("1.0.0", "released 2026-10-01"))
         old = ru.card_hint(runtime, today=datetime.date(2026, 12, 1))
-        self.assertEqual(old, ("1.0.0", "this release is 61 days old — claude-multi update --check"))
+        self.assertEqual(old, ("1.0.0", "this release is 61 days old — charmer update --check"))
         lines = ru.doctor_lines(runtime, today=TODAY)
-        self.assertIn("Installed release: claude-multi 1.0.0 was released 2026-10-01, 19 days ago — check for a "
-                      "newer one: claude-multi update --check", lines)
+        self.assertIn("Installed release: charmer 1.0.0 was released 2026-10-01, 19 days ago — check for a "
+                      "newer one: charmer update --check", lines)
         self.assertTrue(lines[0].startswith("HTTPS trust (update, Claude Code download): "))
         nix = mock.Mock(environ={**self.environ, "CLAUDE_MULTI_CHANNEL": "nix"}, home=self.home)
         self.assertEqual(ru.card_hint(nix)[1], "updated through your Nix flake")
@@ -566,11 +566,11 @@ class _HttpsFixture:
 
     @classmethod
     def setUpClass(cls) -> None:
-        cls.tmp = Path(tempfile.mkdtemp(prefix="claude-multi-tls-"))
+        cls.tmp = Path(tempfile.mkdtemp(prefix="charmer-tls-"))
         run = lambda *args: subprocess.run(["openssl", *args], cwd=cls.tmp, check=True, capture_output=True,  # noqa: E731
                                            timeout=120, stdin=subprocess.DEVNULL)
         run("req", "-x509", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:prime256v1", "-nodes", "-days", "2",
-            "-subj", "/CN=claude-multi test CA", "-keyout", "ca.key", "-out", "ca.pem",
+            "-subj", "/CN=charmer test CA", "-keyout", "ca.key", "-out", "ca.pem",
             "-addext", "basicConstraints=critical,CA:TRUE", "-addext", "keyUsage=critical,keyCertSign")
         run("req", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:prime256v1", "-nodes", "-subj", "/CN=localhost",
             "-keyout", "server.key", "-out", "server.csr")
@@ -859,7 +859,7 @@ class ProxyHttpsTests(_HttpsFixture, JourneyTestCase):
         self.assertNotIn(f"/{newer.asset().name}", self.proxy.requests)
         code, out = self.proxy_journey()
         self.assertEqual(code, ru.EXIT_OK, out)
-        self.assertIn("Updated claude-multi to 1.1.0", out)
+        self.assertIn("Updated charmer to 1.1.0", out)
         self.assertEqual((self.current(), os.readlink(self.root / "previous")),
                          ("versions/1.1.0", "versions/1.0.0"))
         for name in ("MANIFEST.json", "SHA256SUMS", "SHA256SUMS.sshsig", newer.asset().name):
@@ -899,7 +899,7 @@ class ProxyHttpsTests(_HttpsFixture, JourneyTestCase):
 
 
 class CommandLineTests(JourneyTestCase):
-    """The installed release's own claude-multi, in a subprocess with a private HOME."""
+    """The installed release's own charmer, in a subprocess with a private HOME."""
 
     def release(self, version: str, **kwargs) -> FakeRelease:
         kwargs.setdefault("trust", signer_line(SEED_A))
@@ -907,18 +907,18 @@ class CommandLineTests(JourneyTestCase):
 
     def cli(self, *args: str, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
         env = {"HOME": str(self.home), "PATH": "/usr/bin:/bin", "LC_ALL": "C", "TMPDIR": str(self.tmp)}
-        return subprocess.run([str(self.root / "current/bin/claude-multi"), *args], env=env, cwd=cwd or self.tmp,
+        return subprocess.run([str(self.root / "current/bin/charmer"), *args], env=env, cwd=cwd or self.tmp,
                               capture_output=True, text=True, timeout=180, stdin=subprocess.DEVNULL)
 
     def test_update_and_rollback_through_the_installed_command(self) -> None:
         self.seed(self.release("1.0.0"))
         result = self.cli("update", "--from-dir", str(self.release("1.0.0").dir))
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("claude-multi 1.0.0 is up to date", result.stdout)
+        self.assertIn("charmer 1.0.0 is up to date", result.stdout)
         newer = self.release("1.1.0")
         result = self.cli("update", "--check", "--from-dir", str(newer.dir))
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("claude-multi 1.1.0 is available", result.stdout)
+        self.assertIn("charmer 1.1.0 is available", result.stdout)
         result = self.cli("update", "--from-dir", str(newer.dir))
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn("confirm on a terminal, or pass --yes", result.stdout)
@@ -927,10 +927,10 @@ class CommandLineTests(JourneyTestCase):
         self.assertIn("names no download location", result.stdout)
         result = self.cli("update", "--from-dir", str(newer.dir), "--yes", cwd=Path("/"))
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("Updated claude-multi to 1.1.0", result.stdout)
+        self.assertIn("Updated charmer to 1.1.0", result.stdout)
         self.assertEqual(self.current(), "versions/1.1.0")
         version = self.cli("--version")
-        self.assertTrue(version.stdout.startswith("claude-multi 1.1.0"), version.stdout + version.stderr)
+        self.assertTrue(version.stdout.startswith("charmer 1.1.0"), version.stdout + version.stderr)
         result = self.cli("update", "--rollback", "--yes")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(self.current(), "versions/1.0.0")
@@ -944,7 +944,7 @@ class CommandLineTests(JourneyTestCase):
         from charmer import installs, scope
 
         self.seed(self.release("1.0.0"))
-        earlier = self.tmp / "earlier" / "bin" / "claude-multi"
+        earlier = self.tmp / "earlier" / "bin" / "charmer"
         earlier.parent.mkdir(parents=True)
         earlier.write_text("#!/bin/sh\n")
         environ = {"HOME": str(self.home)}
@@ -966,11 +966,11 @@ class CommandLineTests(JourneyTestCase):
         before, entries = snapshot(), tree()
         result = self.cli("update", "--check", "--from-dir", str(self.release("1.0.0").dir))
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("claude-multi 1.0.0 is up to date (released 2026-10-15)", result.stdout)
+        self.assertIn("charmer 1.0.0 is up to date (released 2026-10-15)", result.stdout)
         result = self.cli("update", "--check", "--from-dir", str(self.release("1.1.0").dir))
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("claude-multi 1.1.0 is available (released 2026-10-15); 1.0.0 is installed", result.stdout)
-        self.assertIn("Run 'claude-multi update' to see what it changes and install it.", result.stdout)
+        self.assertIn("charmer 1.1.0 is available (released 2026-10-15); 1.0.0 is installed", result.stdout)
+        self.assertIn("Run 'charmer update' to see what it changes and install it.", result.stdout)
         result = self.cli("update", "--check")
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn("names no download location", result.stdout)
@@ -1031,7 +1031,7 @@ class CommandLineTests(JourneyTestCase):
         workdir = service.ensure_gateway_workdir(self.state)
         lock = os.open(service.instance_lock_path(self.state), os.O_RDWR | os.O_CREAT, 0o600)
         fcntl.flock(lock, fcntl.LOCK_EX)
-        binary = self.root / "versions/1.0.0/libexec/claude-multi/cli-proxy-api"
+        binary = self.root / "versions/1.0.0/libexec/charmer/cli-proxy-api"
         process = subprocess.Popen([str(binary), "300"], pass_fds=(lock,), stdin=subprocess.DEVNULL)
         os.close(lock)  # the gateway process keeps the lock
         self.addCleanup(lambda: (process.kill(), process.wait()))

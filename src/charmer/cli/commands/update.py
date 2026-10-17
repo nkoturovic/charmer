@@ -1,6 +1,6 @@
-"""The ``update`` command: updating claude-multi itself.
+"""The ``update`` command: updating charmer itself.
 
-``claude-multi update`` checks for a newer release, shows its plan, asks and
+``charmer update`` checks for a newer release, shows its plan, asks and
 installs it; ``--check`` only checks, ``--rollback`` returns to the previous
 version. The journey (and its refusals and exit codes) is
 :mod:`charmer.release_update`, shared with the card's U.

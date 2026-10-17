@@ -1,6 +1,6 @@
 """Test-harness hygiene: tripwire, tiers, goldens, bless --check.
 
-These tests pin the harness itself, not claude-multi behaviour:
+These tests pin the harness itself, not charmer behaviour:
 
 - the always-on live-gateway connect tripwire (``tests/_tripwire.py``,
   installed by ``tests/__init__.py``) refuses 8317/8316 on loopback, records
@@ -200,7 +200,7 @@ else:
         # arms this guard there too, exactly as in the dev gate.
         text = (REPO_ROOT / "tests" / "default.nix").read_text(encoding="utf-8")
         self.assertIn(
-            'discover -s "$staged/claude-multi/tests" -t "$staged/claude-multi"', text
+            'discover -s "$staged/charmer/tests" -t "$staged/charmer"', text
         )
 
     def test_uninjected_served_models_trips_before_proc_read_or_transport(self) -> None:

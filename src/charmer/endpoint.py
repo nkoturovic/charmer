@@ -63,11 +63,11 @@ SETUP_COMMAND = "claude-multi setup --step gateway"
 NOT_SET_UP = f"the local gateway is not set up yet: run {SETUP_COMMAND} first"
 
 
-class NotSetUpError(errors.ClaudeMultiError, RuntimeError):
+class NotSetUpError(errors.CharmerError, RuntimeError):
     """A gateway change in a home whose gateway was never set up."""
 
 
-class EndpointError(errors.ClaudeMultiError, ValueError):
+class EndpointError(errors.CharmerError, ValueError):
     """The endpoint document is unreadable, invalid or names an unsupported backend."""
 
 

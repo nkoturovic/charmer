@@ -1,5 +1,5 @@
 """Where setup stands, derived from real state each time (there is no
-progress file): the steps of Get started and ``claude-multi setup``, and
+progress file): the steps of Get started and ``charmer setup``, and
 each provider's connection.
 
 A snapshot never writes and never calls a provider; it makes at most one
@@ -64,7 +64,7 @@ def connections(runtime: Any, *, facts: Sequence[Mapping[str, Any]] | None = Non
     if facts is None:
         try:
             facts = gateway_facts._provider_facts(runtime).facts
-        except (errors.ClaudeMultiError, OSError, ValueError, KeyError):
+        except (errors.CharmerError, OSError, ValueError, KeyError):
             return ()
     try:
         observed = gateway_facts.oauth_record_observation(runtime)
@@ -73,12 +73,12 @@ def connections(runtime: Any, *, facts: Sequence[Mapping[str, Any]] | None = Non
     try:
         snapshot = runtime.operator_snapshot()
         layer, ledger = snapshot.layer, snapshot.ledger
-    except (errors.ClaudeMultiError, OSError, ValueError):
+    except (errors.CharmerError, OSError, ValueError):
         layer, ledger = None, None
     choices = ledger.transport_choices if ledger is not None else {}
     try:
         providers = runtime.effective_transport_docs()["providers"]["providers"]
-    except (errors.ClaudeMultiError, OSError, ValueError, KeyError):
+    except (errors.CharmerError, OSError, ValueError, KeyError):
         providers = {}
     result: list[Connection] = []
     for fact in facts:
@@ -96,7 +96,7 @@ def connections(runtime: Any, *, facts: Sequence[Mapping[str, Any]] | None = Non
             # survive a switch to the API key and serve again after one back.
             try:
                 accounts = signin.accounts(runtime, pid)
-            except errors.ClaudeMultiError:
+            except errors.CharmerError:
                 accounts = ()
         if fact["kind"] == "oauth-pool":
             pool = str(fact.get("pool"))
@@ -143,7 +143,7 @@ def without_models(runtime: Any, provider_ids: Sequence[str]) -> tuple[str, ...]
 
     try:
         lines = runtime.lineup_catalog().lines
-    except (errors.ClaudeMultiError, OSError, ValueError):
+    except (errors.CharmerError, OSError, ValueError):
         return ()
     used = {entry.get("provider") for entry in lines.values()}
     return tuple(pid for pid in provider_ids if pid not in used)
@@ -219,7 +219,7 @@ def snapshot(runtime: Any) -> SetupState:
     steps.append(Step("test", "optional"))
     try:
         default = defaults.resolve_default(runtime)
-    except (errors.ClaudeMultiError, OSError, ValueError):
+    except (errors.CharmerError, OSError, ValueError):
         default = None
     if not links:
         steps.append(Step("profile", "waiting"))
@@ -254,7 +254,7 @@ def should_open(runtime: Any, *, explicit: bool, resume: bool = False) -> str | 
 
 
 def status_lines(state: SetupState) -> list[str]:
-    """The ``claude-multi setup --status`` table."""
+    """The ``charmer setup --status`` table."""
 
     lines = []
     for number, step in enumerate(state.steps, start=1):

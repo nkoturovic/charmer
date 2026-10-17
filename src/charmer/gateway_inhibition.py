@@ -1,15 +1,15 @@
 """One durable inhibition of gateway changes per state root.
 
-A transaction owner — ``claude-multi gateway service install|uninstall``, the
+A transaction owner — ``charmer gateway service install|uninstall``, the
 installer, the updater, a machine move — records an inhibition before it
 changes the gateway or its installation and removes it when it is done.
 While one is recorded, every other path that would start, stop, restart,
 hand over, install, update or reconfigure the gateway refuses with the same
 *inhibited* outcome before it does anything: the token helper's automatic
-start, the gateway start of a launch or resume, ``claude-multi gateway
+start, the gateway start of a launch or resume, ``charmer gateway
 start|restart|stop``, ``gateway service install|uninstall``, the setup
 step, a published configuration (provider and model writes, the token
-rotation, the alias prune), the ``claude-multi-proxy`` commands that render,
+rotation, the alias prune), the ``charmer-proxy`` commands that render,
 run or sign in, the activation boundary, and the installer and updater
 (which call :func:`guard`). Reading stays available: health, status, doctor,
 and the token for a gateway already proven ours and ready. Launchers also
@@ -47,7 +47,7 @@ readable earlier record into this format (same token, under the start lock),
 so the service verbs finish it like any interrupted hand-off.
 
 Writers that do not dispatch — configuration publication, the endpoint's
-first port, the shared hook and token shims, the ``claude-multi-proxy``
+first port, the shared hook and token shims, the ``charmer-proxy``
 commands — check the inhibition inside :func:`fenced`, which holds the
 root's writer fence (``gateway-inhibition.lock`` in the state root) shared
 from the check through the write; :func:`begin` takes it exclusively while
@@ -70,7 +70,7 @@ Only the owner continues past its record, through the random token
 :func:`begin` returned (a PID alone may be reused): in process by passing
 it, and for the owner's own commands through
 ``CLAUDE_MULTI_INHIBITION_TOKEN`` (honoured by the explicit gateway verbs,
-the ``claude-multi-proxy`` commands and the shim refresh; never by the
+the ``charmer-proxy`` commands and the shim refresh; never by the
 token helper's ``gateway ensure``, so a session started from the owner's
 shell never acts for it). Recovery is explicit and idempotent:
 :func:`recover` hands an interrupted owner its record (token and phase) back
@@ -116,9 +116,9 @@ FENCE = "gateway-inhibition"
 # The owners this release knows; any name of the grammar is accepted, so an
 # owner a later release adds is still reported by name.
 OWNERS = ("service", "installer", "updater", "cutover")
-# The service hand-off (``claude-multi gateway service install|uninstall``).
+# The service hand-off (``charmer gateway service install|uninstall``).
 SERVICE_OWNER = "service"
-SERVICE_REMEDY = "claude-multi gateway service install (or: claude-multi gateway service uninstall)"
+SERVICE_REMEDY = "charmer gateway service install (or: charmer gateway service uninstall)"
 # An earlier hand-off record (see the module docstring).
 LEGACY_RECORD = "service-handoff.json"
 LEGACY_STALE_AFTER = 600
@@ -138,11 +138,11 @@ _TOKEN = re.compile(r"^[0-9a-f]{32}$")
 _PURPOSE_MAX, _REMEDY_MAX = 200, 300
 
 
-class InhibitionError(errors.ClaudeMultiError, RuntimeError):
+class InhibitionError(errors.CharmerError, RuntimeError):
     """An inhibition operation was refused (another owner, a wrong token, bad input)."""
 
 
-class Inhibited(errors.ClaudeMultiError, RuntimeError):
+class Inhibited(errors.CharmerError, RuntimeError):
     """Raised by :func:`guard`: a recorded inhibition refuses this change."""
 
     def __init__(self, record: "Inhibition", what: str, *, now: datetime.datetime | None = None) -> None:
@@ -332,7 +332,7 @@ def _load(target: Path, parse: Callable[[Any], Inhibition], label: str) -> Inhib
         if not os.path.lexists(target):
             return None
         return Inhibition(problem=f"{label}{exc.strerror or exc}")
-    except (OSError, ValueError, TypeError, KeyError, RecursionError, errors.ClaudeMultiError) as exc:
+    except (OSError, ValueError, TypeError, KeyError, RecursionError, errors.CharmerError) as exc:
         return Inhibition(problem=f"{label}{type(exc).__name__}: {exc}"[:200])
 
 
@@ -403,7 +403,7 @@ def refusal(record: Inhibition, what: str, *, now: datetime.datetime | None = No
         return (f"the gateway is inhibited by {record.describe()}; {what}",
                 "if no installer, updater, machine move or gateway service hand-off is running, remove "
                 f"{RECORD} (and an earlier {LEGACY_RECORD}) from the gateway directory of the state root "
-                "(claude-multi doctor names it)")
+                "(charmer doctor names it)")
     state_text = " — its owner did not finish (stale)" if record.stale(now=now) else ""
     return (f"the gateway is inhibited by {record.describe()}{state_text}; {what}",
             f"wait until it has finished; if it was interrupted, its owner finishes or releases it: "
@@ -503,12 +503,12 @@ def managed_root(home: Path | str, *, what: str = "nothing was changed") -> Path
 
     try:
         persisted = continuity.read(Path(home))
-    except (continuity.ContinuityError, OSError, ValueError, errors.ClaudeMultiError) as exc:
+    except (continuity.ContinuityError, OSError, ValueError, errors.CharmerError) as exc:
         where = paths.display(continuity.path(Path(home)), {"HOME": str(home)})
         raise AuthorityUnreadable(
             f"gateway continuity set unreadable ({termtext.visible_text(str(exc))}): the state root that "
             f"manages this home's gateway is unknown; {what}",
-            remedy=f"claude-multi doctor shows it; repair or remove {where}, then run it again") from None
+            remedy=f"charmer doctor shows it; repair or remove {where}, then run it again") from None
     managed = persisted.get("state_root") if isinstance(persisted, dict) else None
     return Path(managed) if isinstance(managed, str) and os.path.isabs(managed) else None
 
@@ -581,7 +581,7 @@ def fenced(state_roots: Iterable[Path | str], *, token: str | None = None, what:
                 raise InhibitionError(str(exc), remedy=exc.remedy) from exc
             except OSError as exc:
                 raise InhibitionError(f"the gateway's inhibition cannot be checked ({exc.strerror or exc}); {what}",
-                                      remedy="check: claude-multi doctor") from exc
+                                      remedy="check: charmer doctor") from exc
             guard(root, token=token, what=what)
         if home is not None:
             revalidate(home, what=what)
@@ -687,7 +687,7 @@ def recover(state_root: Path | str, owner: str, *, now: datetime.datetime | None
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python3 -m charmer.gateway_inhibition",
                                      description="Record, inspect and release the gateway's inhibition.")
-    parser.add_argument("--state-root", help="the state root (default: $XDG_STATE_HOME/claude-multi)")
+    parser.add_argument("--state-root", help="the state root (default: $XDG_STATE_HOME/charmer)")
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("status", help="show the recorded inhibition (exit 1 when one is recorded)")
     start = commands.add_parser("begin", help="record an inhibition and print its token")

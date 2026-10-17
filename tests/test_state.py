@@ -16,7 +16,7 @@ from charmer.state import StateError
 
 class StateTestCase(unittest.TestCase):
     def setUp(self) -> None:
-        self.root = Path(tempfile.mkdtemp(prefix="claude-multi-state-"))
+        self.root = Path(tempfile.mkdtemp(prefix="charmer-state-"))
         os.chmod(self.root, 0o700)
         self.addCleanup(self._cleanup)
 

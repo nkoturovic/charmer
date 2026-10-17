@@ -1,4 +1,4 @@
-"""``claude-multi profile migrate [--dry-run | --apply]``.
+"""``charmer profile migrate [--dry-run | --apply]``.
 
 Converts legacy compositions (``<config root>/compositions/*.json``, v1
 documents over catalog-32 keys) into profiles by the migration table:
@@ -806,8 +806,8 @@ def _compare_existing(outcome: TargetOutcome, store: profile.ProfileStore) -> Ta
         status="conflict",
         errors=(
             f"profile {target} exists and differs from the migration result; compare with "
-            f"claude-multi profile show {target}; to re-migrate, rename it "
-            f"(claude-multi profile rename {target} {target}-2x-old) and rerun",
+            f"charmer profile show {target}; to re-migrate, rename it "
+            f"(charmer profile rename {target} {target}-2x-old) and rerun",
         ),
     )
 
@@ -1035,7 +1035,7 @@ def render_text(report: ProfileMigrationReport) -> str:
     unreadable = sum(1 for item in presets if item.error is not None)
     absent = "" if report.compositions_present else " (directory absent)"
     lines = [
-        f"claude-multi profile migrate{mode}: config {config}",
+        f"charmer profile migrate{mode}: config {config}",
         f"catalog {report.catalog_version} (launcher {report.launcher_version}); "
         f"state marker {report.marker}",
         f"compositions: {len(presets)} files in {config}/compositions "
@@ -1097,7 +1097,7 @@ def render_text(report: ProfileMigrationReport) -> str:
 
 
 def run_command(runtime: Any, *, apply: bool, output: TextIO) -> int:
-    """``claude-multi profile migrate``: the report on stdout; exit 2 while blocking.
+    """``charmer profile migrate``: the report on stdout; exit 2 while blocking.
 
     ``runtime`` is ``cli.Runtime`` (read-only for a dry run: main builds it
     with ``allow_state_writes=False, refresh_shims=False``). Only ``--apply``

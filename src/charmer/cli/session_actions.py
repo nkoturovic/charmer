@@ -55,7 +55,7 @@ def _forget_liveness_guard(
                 return None
             return (f"cannot tell whether session {stable_id} is live in the background ({verdict.reason}); "
                     "refusing to forget it — if you are sure it is not running: "
-                    f"claude-multi sessions forget {stable_id} --force")
+                    f"charmer sessions forget {stable_id} --force")
         prefixes = verdict.prefixes
         if current is not None:
             live = session_facts._record_is_live(current, prefixes)
@@ -64,7 +64,7 @@ def _forget_liveness_guard(
         if live:
             return (
                 f"session {stable_id} is live in the background — "
-                "stop it first (`claude-multi sessions stop "
+                "stop it first (`charmer sessions stop "
                 f"{stable_id}`)"
             )
         return None
@@ -117,7 +117,7 @@ def _stop_runtime(
 ) -> str | None:
     """Upstream `claude stop <id>` via the verified binary; error text or None.
 
-    This is the only process-lifecycle action claude-multi takes, and it goes
+    This is the only process-lifecycle action charmer takes, and it goes
     through upstream's own public CLI — never a signal, never daemon
     internals. The conversation is always kept (upstream guarantee). A
     session compacted moments ago is stopped only after that window
@@ -169,7 +169,7 @@ def _stop_precheck(runtime: runtime_mod.Runtime, record: dict[str, Any], *, forc
             return None
         return (f"cannot tell whether session {stable_id} is live in the background ({verdict.reason}); "
                 "refusing to stop it — to send claude stop anyway: "
-                f"claude-multi sessions stop {stable_id} --force")
+                f"charmer sessions stop {stable_id} --force")
     runtime_id = sessions.runtime_session_id(record)
     if not any(
         runtime_id.startswith(prefix) for prefix in verdict.prefixes
@@ -205,9 +205,9 @@ def _sessions_link(
 
     if args.uuid is None:
         output_stream.write(
-            "Only sessions launched through claude-multi (or adopted) appear in\n"
+            "Only sessions launched through charmer (or adopted) appear in\n"
             "the sessions list.\n"
-            "adopt a native fork: claude-multi sessions link <fork-uuid> --profile NAME "
+            "adopt a native fork: charmer sessions link <fork-uuid> --profile NAME "
             "| --direct MODEL [--cwd DIR]\n"
             "Add `--cwd DIR` when native project-slug decoding is ambiguous.\n"
         )
@@ -282,7 +282,7 @@ def _sessions_link(
     )
     output_stream.write(
         f"Linked runtime {args.uuid} as {stable_id} {termtext.visible_text(what)} (lineup "
-        f"generation 0: its first `claude-multi -r {stable_id}` compiles the lineup-enabled scope).\n"
+        f"generation 0: its first `charmer -r {stable_id}` compiles the lineup-enabled scope).\n"
     )
     return 0
 

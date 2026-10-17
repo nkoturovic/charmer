@@ -211,7 +211,7 @@ class ActionRefusalOwners(JourneyFixture):
     def test_E11_listing_without_context(self):
         import charmer.cli.commands.discover as discover
         self.assertEqual(discover.missing_context_text("fixture", "model-9"),
-                         'discover fixture --add model-9: the listing states no context — claude-multi models add fixture model-9 --context N --source docs --source-ref "<URL, date>"')
+                         'discover fixture --add model-9: the listing states no context — charmer models add fixture model-9 --context N --source docs --source-ref "<URL, date>"')
 
     def test_admit_unserved_records_only_an_optional_badge(self):
         key = self.declare()
@@ -231,7 +231,7 @@ class ActionRefusalOwners(JourneyFixture):
 
     def test_E16_changed_route(self):
         self.assertEqual(operator.route_status_text("fixture", "changed", old="https://old.example", new="https://new.example"),
-                         "provider fixture: route changed (origin https://old.example → https://new.example) — claude-multi providers approve fixture")
+                         "provider fixture: route changed (origin https://old.example → https://new.example) — charmer providers approve fixture")
 
     def test_E19_session_guard(self):
         with self.assertRaises(consent.ConsentRefused) as raised:

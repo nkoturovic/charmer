@@ -51,7 +51,7 @@ WINDOW_CEILING_MAX = settings.WINDOW_CEILING_MAX
 _TOKENS_TEXT = re.compile(r"^(\d{1,7})(?:\s*([kK]))?$")
 
 
-class ChoicesError(errors.ClaudeMultiError, ValueError):
+class ChoicesError(errors.CharmerError, ValueError):
     """The choices document is unreadable, invalid or a value is refused."""
 
 

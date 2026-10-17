@@ -19,7 +19,7 @@ from charmer import compiler, proxy, secret_store, state
 
 class _Home(unittest.TestCase):
     def setUp(self) -> None:
-        self.root = Path(tempfile.mkdtemp(prefix="claude-multi-secret-store-"))
+        self.root = Path(tempfile.mkdtemp(prefix="charmer-secret-store-"))
         os.chmod(self.root, 0o700)
         self.addCleanup(shutil.rmtree, self.root, True)
         self.path = self.root / "secrets" / "claude.env"
@@ -68,7 +68,7 @@ class FileBackendTests(_Home):
 
     def test_default_location(self) -> None:
         self.assertEqual(secret_store.secret_env_path({"HOME": "/h"}),
-                         Path("/h/.config/claude-multi/secrets/provider-keys.env"))
+                         Path("/h/.config/charmer/secrets/provider-keys.env"))
         self.assertEqual(secret_store.secret_env_path({"HOME": "/h", "CLAUDE_MULTI_SECRET_ENV": "/x/y.env"}), Path("/x/y.env"))
         self.assertEqual(proxy.secret_env_path({"HOME": "/h"}), secret_store.secret_env_path({"HOME": "/h"}))
 
@@ -276,7 +276,7 @@ class LogRedactionTests(unittest.TestCase):
         lines = dict((line.split("] ", 4)[-1][:24], secret_store.redact(line))
                      for _secret, line in _log_secrets.secrets_and_lines())
         shown = "\n".join(lines.values())
-        for kept in ("model=claude-multi-opus provider=claude auth=<redacted>", "Authorization: <redacted>",
+        for kept in ("model=charmer-opus provider=claude auth=<redacted>", "Authorization: <redacted>",
                      "X-Management-Key: <redacted>", "?key=<redacted>&alt=sse", "api_key=<redacted> status=401",
                      "Cookie: <redacted>", "http://<redacted>@proxy.invalid:3128"):
             self.assertIn(kept, shown)

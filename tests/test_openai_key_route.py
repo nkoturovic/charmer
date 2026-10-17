@@ -477,8 +477,8 @@ class KeyRouteDoctorTests(unittest.TestCase):
         found = self.findings(selected(), unset_secrets=(SECRET,))
         # The transport is chosen and approved: the fix saves the key (a
         # second switch to the same transport would change nothing).
-        self.assertTrue(any(f"{SECRET} is not set — claude-multi providers set-key openai" in line
-                            and "back to the pool: claude-multi providers transport openai oauth-pool" in line
+        self.assertTrue(any(f"{SECRET} is not set — charmer providers set-key openai" in line
+                            and "back to the pool: charmer providers transport openai oauth-pool" in line
                             for line in found.blocks), found.blocks)
         self.assertFalse(any("providers transport openai api-key" in line for line in found.blocks), found.blocks)
         found = self.findings(selected(approved=False))
@@ -619,7 +619,7 @@ class KeyServiceTests(test_setup_cli.SetupCase):
         self.assertEqual(self.store().get(SECRET), "openai-dummy-platform-key-second")
         code, _out, err = self.op(["providers", "remove-key", "openai", "--yes"])
         self.assertEqual(code, 1)
-        self.assertIn("claude-multi providers transport openai oauth-pool", err)
+        self.assertIn("charmer providers transport openai oauth-pool", err)
         code, out, err = self.op(["providers", "transport", "openai", "oauth-pool"], "y\ny\n")
         self.assertEqual(code, 0, err)
         self.assertIn("OpenAI models use your ChatGPT account sign-in again", out)
@@ -755,7 +755,7 @@ class ClosedBuildTests(test_setup_cli.SetupCase):
                          (False, texts.PICKER_KEY_CLOSED_LABEL.format(display="OpenAI"), texts.OPENAI_KEY_NOTE))
         code, _out, err = self.op(["providers", "set-key", "openai"], "x\n")
         self.assertEqual(code, 1)
-        self.assertIn("claude-multi providers sign-in openai", err)
+        self.assertIn("charmer providers sign-in openai", err)
         secret_store.default_store(self.runtime.gateway_environ()).set(SECRET, DUMMY)
         code, out, err = self.op(["providers", "remove-key", "openai", "--yes"])
         self.assertEqual(code, 0, err)

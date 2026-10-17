@@ -41,7 +41,7 @@ def _doc_pointer(name: str) -> str:
     override never moves this pointer."""
 
     path = layout.document(name)
-    return str(path) if path is not None else f"{name} in the claude-multi docs"
+    return str(path) if path is not None else f"{name} in the charmer docs"
 
 
 # The root help's command groups, in order: (title, ((command, summary), ...)).
@@ -76,7 +76,7 @@ COMMAND_GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
         ("window-ceiling", "show, set or reset the context window ceiling of the lead and every agent "
                            "(200K to 800K, default 800K; applies at the next launch or resume)"),
         ("gateway", "the local gateway: status, logs, start, stop, restart and the supervised service"),
-        ("update", "update claude-multi itself, or roll back to the previously installed version"),
+        ("update", "update charmer itself, or roll back to the previously installed version"),
         ("export", "write your configuration as a portable file (no keys, sessions, logs or evidence)"),
         ("import", "preview an exported configuration on this computer; --apply writes the ready items"),
     )),
@@ -85,9 +85,9 @@ COMMAND_GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
                     "restore-2x); --dry-run writes nothing"),
         ("restore-2x", "put back the legacy session records a migration backed up, before running an "
                        "earlier launcher"),
-        ("custom", "the earlier custom-model registry (move it to providers: claude-multi providers "
+        ("custom", "the earlier custom-model registry (move it to providers: charmer providers "
                    "migrate-custom)"),
-        ("uninstall", "remove claude-multi from this computer (shows the plan first; credentials only "
+        ("uninstall", "remove charmer from this computer (shows the plan first; credentials only "
                       "after a typed confirmation)"),
     )),
 )
@@ -122,7 +122,7 @@ def _help_description() -> str:
         "Launch Claude Code with a durable multi-model lineup: a saved profile, an unsaved profile file, "
         "or a direct lead.",
         "",
-        *_wrap(f"In a terminal, claude-multi with no command opens the launcher: the launch card (Enter "
+        *_wrap(f"In a terminal, charmer with no command opens the launcher: the launch card (Enter "
                f"launches the profile shown) and its screens {screens}. ? lists the keys; --line uses plain "
                "lines instead.", HELP_WIDTH, ""),
     ]
@@ -138,33 +138,33 @@ def _help_description() -> str:
 
 
 HELP_EXAMPLES = (
-    ("claude-multi", "open the launcher"),
-    ("claude-multi --profile NAME", "launch a saved profile"),
-    ("claude-multi -c", "continue the last session in this directory"),
-    ("claude-multi -r SESSION", "resume a session (its id, an 8+ character prefix, or its name)"),
-    ("claude-multi direct --model MODEL", "launch one model as the lead"),
-    ("claude-multi doctor", "check health, with one fix for each finding"),
-    ("claude-multi --profile NAME -- ARGS", "pass ARGS to Claude Code unchanged"),
+    ("charmer", "open the launcher"),
+    ("charmer --profile NAME", "launch a saved profile"),
+    ("charmer -c", "continue the last session in this directory"),
+    ("charmer -r SESSION", "resume a session (its id, an 8+ character prefix, or its name)"),
+    ("charmer direct --model MODEL", "launch one model as the lead"),
+    ("charmer doctor", "check health, with one fix for each finding"),
+    ("charmer --profile NAME -- ARGS", "pass ARGS to Claude Code unchanged"),
 )
 
 
 def _help_epilog() -> str:
     return "\n".join([
         "Examples:",
-        *(f"  {command:<36}  {what}" for command, what in HELP_EXAMPLES),
+        *(f"  {command:<31}  {what}" for command, what in HELP_EXAMPLES),
         "",
         "Arguments after -- go to Claude Code unchanged (launches and direct only).",
         "--line and --no-color also work after a command.",
         "Inside a session: /cm shows or changes the lineup (then /reload-plugins).",
-        "The local gateway's own tool: claude-multi-proxy --help",
+        "The local gateway's own tool: charmer-proxy --help",
         f"Symptom → command: {_doc_pointer(cli_text.CHEATSHEET_NAME)}",
         f"Documentation map: {_doc_pointer(cli_text.USAGE_NAME)}",
     ])
 
 
 ROOT_USAGE = (
-    "claude-multi [--profile NAME | --profile-file PATH|-] [-c | -r [SESSION]] [options] "
-    "[-- CLAUDE_ARGS ...]\n       claude-multi COMMAND [options]"
+    "charmer [--profile NAME | --profile-file PATH|-] [-c | -r [SESSION]] [options] "
+    "[-- CLAUDE_ARGS ...]\n       charmer COMMAND [options]"
 )
 
 
@@ -181,7 +181,7 @@ def _hide_command(commands: "argparse._SubParsersAction", name: str) -> None:
 
 
 def _add_presentation_flags(parser: argparse.ArgumentParser) -> None:
-    """``--line`` and ``--no-color`` after a command too (``claude-multi
+    """``--line`` and ``--no-color`` after a command too (``charmer
     sessions list --line``), on every command parser below the root. They set
     the root's options and say nothing in each command's help."""
 
@@ -209,7 +209,7 @@ def _add_presentation_flags(parser: argparse.ArgumentParser) -> None:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="claude-multi",
+        prog="charmer",
         usage=ROOT_USAGE,
         description=_help_description(),
         epilog=_help_epilog(),
@@ -237,9 +237,9 @@ def build_parser() -> argparse.ArgumentParser:
     # The commands are listed by group in the description; the default
     # flat listing is hidden.
     commands = parser.add_subparsers(dest="command", metavar="COMMAND", title="commands", help=argparse.SUPPRESS,
-                                     prog="claude-multi")
+                                     prog="charmer")
     direct_parser = _add_command(commands, "direct")
-    direct_parser.add_argument("--model", dest="direct_model", help="the model to run as the lead (claude-multi models list); without it a terminal opens the Direct picker")
+    direct_parser.add_argument("--model", dest="direct_model", help="the model to run as the lead (charmer models list); without it a terminal opens the Direct picker")
     direct_parser.add_argument("--no-subagents", action="store_true", default=argparse.SUPPRESS, help="hard-deny subagent delegation for this session (recorded; resume re-applies it, a mismatching explicit flag is rejected)")
     direct_parser.add_argument("--force", action="store_true", default=argparse.SUPPRESS, help="resume despite a background-liveness marker (only bypasses the heuristic ● check)")
     direct_parser.add_argument("--print-launch", action="store_true", help="print the exact Claude argv and env summary instead of launching")
@@ -254,7 +254,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     # `main` hands `lineup` to its own parser on the raw argv (a request may
     # start with `-`); this parser exists for the root help and the parser
-    # surface only. `claude-multi lineup --help` describes the request grammar.
+    # surface only. `charmer lineup --help` describes the request grammar.
     lineup_parser = _add_command(commands, "lineup")
     lineup_parser.add_argument("--session", metavar="ID", help="runtime session id (/cm passes it)")
     lineup_parser.add_argument("--relaunch", action="store_true", help="relaunch instead of a live apply")
@@ -308,7 +308,7 @@ def build_parser() -> argparse.ArgumentParser:
     migrate_mode.add_argument("--apply", action="store_true", dest="profile_migrate_apply", help="apply the profile conversion")
 
     # The earlier spelling of `profile`: accepted, not shown in the root help.
-    compose_parser = commands.add_parser("compose", description="The earlier spelling of claude-multi profile.")
+    compose_parser = commands.add_parser("compose", description="The earlier spelling of charmer profile.")
     compose_commands = compose_parser.add_subparsers(dest="compose_command", required=True, help="command to run")
     compose_commands.add_parser("list", help="earlier spelling of `profile list`")
 
@@ -352,7 +352,7 @@ def build_parser() -> argparse.ArgumentParser:
     sessions_parser = _add_command(commands, "sessions")
     session_commands = sessions_parser.add_subparsers(dest="sessions_command", required=True, help="command to run")
     sessions_list = session_commands.add_parser(
-        "list", help="list managed sessions (a report; pick one to resume with claude-multi -r)")
+        "list", help="list managed sessions (a report; pick one to resume with charmer -r)")
     sessions_list.add_argument("--json", action="store_true", dest="json_output",
                                help="one JSON document (stable fields; no transcript content)")
     show_session = session_commands.add_parser("show", help="show a managed session's record (JSON)")
@@ -422,11 +422,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="every record whose last event is not `end` and that no daemon "
         "socket or running process names",
     )
-    # The earlier spelling of `claude-multi lineup --session ID --relaunch
+    # The earlier spelling of `charmer lineup --session ID --relaunch
     # profile NAME`: accepted, not shown in `sessions --help`.
     transition_parser = session_commands.add_parser(
         "transition",
-        description="The earlier spelling of claude-multi lineup --session ID --relaunch profile NAME: "
+        description="The earlier spelling of charmer lineup --session ID --relaunch profile NAME: "
         "diff, exited-confirmation, relaunch through the one launch path.",
     )
     transition_parser.add_argument("uuid", help="session UUID or name")
@@ -507,7 +507,7 @@ def build_parser() -> argparse.ArgumentParser:
         "in a terminal outside Claude Code sessions, after one y/N naming every request.",
     )
     discover_parser.add_argument("provider", nargs="?", default=None, metavar="PROVIDER",
-                                 help="provider id (see `claude-multi models`)")
+                                 help="provider id (see `charmer models`)")
     discover_modes = discover_parser.add_mutually_exclusive_group()
     discover_modes.add_argument("--all", dest="discover_all", action="store_true",
                                 help="list every enabled direct provider with a supported listing "
@@ -532,7 +532,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     update_parser = _add_command(
         commands, "update",
-        description="Update claude-multi itself: check, show the plan, ask, install (installed releases), "
+        description="Update charmer itself: check, show the plan, ask, install (installed releases), "
         "or switch back to the previously installed version.",
     )
     update_modes = update_parser.add_mutually_exclusive_group()
@@ -576,13 +576,13 @@ def build_parser() -> argparse.ArgumentParser:
         commands, "import",
         description="Preview a portable export against this computer (writes nothing); --apply writes the "
         "ready items; imported trust is never active.")
-    import_parser.add_argument("import_file", type=Path, metavar="FILE", help="a `claude-multi export` JSON file")
+    import_parser.add_argument("import_file", type=Path, metavar="FILE", help="a `charmer export` JSON file")
     import_parser.add_argument("--apply", dest="import_apply", action="store_true",
                                help="confirm and apply the ready items shown (a terminal outside Claude Code)")
     _add_gateway_commands(commands)
     uninstall_parser = _add_command(
         commands, "uninstall",
-        description="Remove claude-multi from this computer. The plan is shown first; your credentials go "
+        description="Remove charmer from this computer. The plan is shown first; your credentials go "
         "only after a typed confirmation; kept backups and your Claude Code are never removed.")
     uninstall_parser.add_argument("--dry-run", dest="uninstall_dry_run", action="store_true",
                                   help="show the plan and remove nothing")
@@ -659,7 +659,7 @@ GATEWAY_START_WAIT = 45.0
 
 
 def _add_gateway_commands(commands: "argparse._SubParsersAction") -> None:
-    """``claude-multi gateway start|stop|restart|status|logs|clear-hold|ensure|service``."""
+    """``charmer gateway start|stop|restart|status|logs|clear-hold|ensure|service``."""
 
     parser = _add_command(
         commands, "gateway",
@@ -675,7 +675,7 @@ def _add_gateway_commands(commands: "argparse._SubParsersAction") -> None:
     sub.add_parser("status", help="backend, endpoint, instance, log and persistence hold (sends no token)")
     logs = sub.add_parser("logs", help="the newest gateway log lines (or one instance's)")
     logs.add_argument("-n", "--lines", type=int, default=50, metavar="N", help="how many lines (default 50)")
-    logs.add_argument("--instance", metavar="ID", help="the instance id shown by `claude-multi gateway status`")
+    logs.add_argument("--instance", metavar="ID", help="the instance id shown by `charmer gateway status`")
     sub.add_parser("clear-hold", help="clear the persistence hold after you verified the credentials "
                    "(a terminal outside Claude Code; typed confirmation; the gateway's own recovery "
                    "for a hold its log reads could not settle)")
@@ -691,7 +691,7 @@ def _add_gateway_commands(commands: "argparse._SubParsersAction") -> None:
 
 
 def _add_gateway_service_commands(sub: "argparse._SubParsersAction") -> None:
-    """``claude-multi gateway service install [--name NAME] | uninstall | status``."""
+    """``charmer gateway service install [--name NAME] | uninstall | status``."""
 
     parser = sub.add_parser(
         "service", help="the supervised service (Linux with a user service manager): install, uninstall, status",
@@ -702,7 +702,7 @@ def _add_gateway_service_commands(sub: "argparse._SubParsersAction") -> None:
     service = parser.add_subparsers(dest="gateway_service_command", required=True, metavar="COMMAND",
                                     help="command to run")
     install = service.add_parser("install", help="install (or refresh) the unit and hand the gateway to it")
-    install.add_argument("--name", metavar="NAME", help="the unit's name (default: claude-multi-gateway)")
+    install.add_argument("--name", metavar="NAME", help="the unit's name (default: charmer-gateway)")
     service.add_parser("uninstall", help="remove the unit and hand the gateway back to the on-demand start")
     service.add_parser("status", help="whether the service is installed, its name, backend and unit state")
 
@@ -730,7 +730,7 @@ TRANSPORT_CHOICES = ("oauth-pool", "api-key")
 
 
 def _add_providers_commands(parser: argparse.ArgumentParser) -> None:
-    """``claude-multi providers ...``: the shipped providers and yours
+    """``charmer providers ...``: the shipped providers and yours
     (``providers.d``), presets, keys and sign-ins, and the ``transport`` verb,
     which stays apart from enable/disable."""
 
@@ -832,10 +832,10 @@ def _add_providers_commands(parser: argparse.ArgumentParser) -> None:
 
 
 def _add_models_commands(parser: argparse.ArgumentParser) -> None:
-    """``claude-multi models ...``; bare ``models`` stays the listing."""
+    """``charmer models ...``; bare ``models`` stays the listing."""
 
     sub = parser.add_subparsers(dest="models_command", metavar="COMMAND", help="command to run")
-    models_list = sub.add_parser("list", help="the listing (same as claude-multi models)")
+    models_list = sub.add_parser("list", help="the listing (same as charmer models)")
     models_list.add_argument("--json", action="store_true", dest="json_output",
                              help="one JSON document (stable fields)")
     add = sub.add_parser("add", help="declare a model of yours (New · not admitted; allowed anywhere)")
@@ -1004,13 +1004,13 @@ SETUP_STEP_OPTIONS = {"claude": ("claude_from",), "gateway": ("proxy", "no_proxy
 
 
 def _add_setup_parser(commands: "argparse._SubParsersAction") -> None:
-    """``claude-multi setup [--step STEP] [--redo] [--status] [--answers FILE] [--keys-file PATH]``."""
+    """``charmer setup [--step STEP] [--redo] [--status] [--answers FILE] [--keys-file PATH]``."""
 
     setup_parser = _add_command(
         commands, "setup",
         description="Run the setup steps that are not done yet, in order: preflight, claude, gateway, "
         "providers, test (optional), profile, check. Nothing is saved until you confirm. --step runs one "
-        "step (also when it is done); claude puts claude-multi's own copy of the pinned Claude Code in place; "
+        "step (also when it is done); claude puts charmer's own copy of the pinned Claude Code in place; "
         "gateway records the gateway's outbound proxy (an unauthenticated http, https or socks5 URL; the "
         "gateway never inherits proxy variables) and starts the gateway, or re-renders a running one.",
     )
@@ -1035,7 +1035,7 @@ def _add_setup_parser(commands: "argparse._SubParsersAction") -> None:
 
 
 def _add_window_ceiling_parser(commands: "argparse._SubParsersAction") -> None:
-    """``claude-multi window-ceiling [VALUE | --reset]`` (show with neither)."""
+    """``charmer window-ceiling [VALUE | --reset]`` (show with neither)."""
 
     parser = _add_command(
         commands, "window-ceiling",

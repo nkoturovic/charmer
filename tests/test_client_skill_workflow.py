@@ -2,7 +2,7 @@
 
 S4 — in-session ``/cm`` as a scope skill: a ``--add-dir`` scope
 skill with ``disable-model-invocation: true`` and ``allowed-tools:
-Bash(claude-multi lineup:*)`` invokes a recording fake ``claude-multi`` on
+Bash(charmer lineup:*)`` invokes a recording fake ``charmer`` on
 PATH. The probe pins that the skill is invocable, that
 ``${CLAUDE_SESSION_ID}`` becomes the runtime session id reported by the
 SessionStart hook, which argument bytes reach the launcher for the SPEC's
@@ -133,7 +133,7 @@ class _SpikeTestCase(unittest.TestCase):
         super().setUp()
         if self.boundary_skip is not None:
             self.skipTest(self.boundary_skip)
-        self.root = Path(tempfile.mkdtemp(prefix="claude-multi-client-check-"))
+        self.root = Path(tempfile.mkdtemp(prefix="charmer-client-check-"))
         os.chmod(self.root, 0o700)
         self.addCleanup(shutil.rmtree, self.root, True)
         # Simulated live roots: the fixture stays disjoint and the ambient
@@ -173,18 +173,18 @@ class _SpikeTestCase(unittest.TestCase):
 _SKILL_FRONTMATTER = (
     "---\n"
     "name: {name}\n"
-    "description: {marker} claude-multi lineup control (client check fixture)\n"
+    "description: {marker} charmer lineup control (client check fixture)\n"
     "disable-model-invocation: true\n"
-    "allowed-tools: Bash(claude-multi lineup:*)\n"
+    "allowed-tools: Bash(charmer lineup:*)\n"
     "---\n"
 )
 _SKILL_BODIES = {
-    "cm": "!`claude-multi lineup --session ${CLAUDE_SESSION_ID} $ARGUMENTS`\n",
-    "cmq": "!`claude-multi lineup --session ${CLAUDE_SESSION_ID} '$ARGUMENTS'`\n",
+    "cm": "!`charmer lineup --session ${CLAUDE_SESSION_ID} $ARGUMENTS`\n",
+    "cmq": "!`charmer lineup --session ${CLAUDE_SESSION_ID} '$ARGUMENTS'`\n",
     "cmr": (
         "Run exactly this command with the Bash tool and relay its output.\n"
         "BEGIN-CHECK-CMD\n"
-        "claude-multi lineup --session ${CLAUDE_SESSION_ID} $ARGUMENTS\n"
+        "charmer lineup --session ${CLAUDE_SESSION_ID} $ARGUMENTS\n"
         "END-CHECK-CMD\n"
     ),
 }
@@ -244,7 +244,7 @@ class _SkillResponder:
                         "type": "tool_use",
                         "id": f"toolu_check_relay_{ordinal:04d}",
                         "name": "Bash",
-                        "input": {"command": command, "description": "claude-multi lineup"},
+                        "input": {"command": command, "description": "charmer lineup"},
                     }
                 ]
             else:
@@ -286,7 +286,7 @@ class S4ScopeSkillTests(_SpikeTestCase):
             "    handle.write(json.dumps(entry) + '\\n')\n"
             "print('CHECK-LINEUP-OUT-%04d' % (count + 1))\n"
         )
-        probe.write_fixture_executable(self.fixture, bin_dir, "claude-multi", body)
+        probe.write_fixture_executable(self.fixture, bin_dir, "charmer", body)
         return bin_dir, record
 
     def _install_session_start_recorder(self) -> Path:

@@ -184,7 +184,7 @@ class DisposableProxyTests(unittest.TestCase):
         reason = probe.network_isolation_available()
         if reason is not None:
             boundary("BOUNDARY: " + reason)
-        self.root = Path(tempfile.mkdtemp(prefix="claude-multi-proxy-"))
+        self.root = Path(tempfile.mkdtemp(prefix="charmer-proxy-"))
         self.addCleanup(self._cleanup)
         self.process: subprocess.Popen | None = None
         self.upstream: probe.UnixHTTPServer | None = None
@@ -284,17 +284,17 @@ class DisposableProxyTests(unittest.TestCase):
 
         models = self._request(base_url, "/v1/models")
         entries = {item.get("id"): item for item in models.get("data", [])}
-        self.assertIn("claude-multi-kimi-k3", entries)
-        self.assertEqual(entries["claude-multi-kimi-k3"].get("owned_by"), "moonshot")
+        self.assertIn("charmer-kimi-k3", entries)
+        self.assertEqual(entries["charmer-kimi-k3"].get("owned_by"), "moonshot")
         self.assertEqual(
-            entries["claude-multi-kimi-k3"].get("max_input_tokens"), 1000000
+            entries["charmer-kimi-k3"].get("max_input_tokens"), 1000000
         )
 
         message = self._request(
             base_url,
             "/v1/messages",
             {
-                "model": "claude-multi-kimi-k3",
+                "model": "charmer-kimi-k3",
                 "max_tokens": 64,
                 "thinking": {"type": "enabled", "budget_tokens": 1024},
                 "messages": [{"role": "user", "content": "fake test"}],
@@ -323,7 +323,7 @@ class DisposableProxyTests(unittest.TestCase):
             base_url,
             "/v1/messages",
             {
-                "model": "claude-multi-grok46-xhigh",
+                "model": "charmer-grok46-xhigh",
                 "max_tokens": 256,
                 "messages": [{"role": "user", "content": "use the check tool"}],
                 "tools": [
@@ -366,7 +366,7 @@ class DisposableProxyTests(unittest.TestCase):
             self.base_url + "/v1/messages",
             data=json.dumps(
                 {
-                    "model": "claude-multi-kimi-k3",
+                    "model": "charmer-kimi-k3",
                     "max_tokens": 64,
                     "stream": True,
                     "messages": [{"role": "user", "content": "stream test"}],
@@ -398,7 +398,7 @@ class DisposableProxyTests(unittest.TestCase):
             self.base_url + "/v1/messages",
             data=json.dumps(
                 {
-                    "model": "claude-multi-kimi-k3",
+                    "model": "charmer-kimi-k3",
                     "max_tokens": 64,
                     "messages": [{"role": "user", "content": "trigger-error-400"}],
                 }
@@ -428,7 +428,7 @@ class InstanceListenerTests(unittest.TestCase):
         self.root = Path(tempfile.mkdtemp(prefix="cm-instance-listener-"))
         self.addCleanup(shutil.rmtree, self.root, True)
         self.home = self.root / "home"
-        self.state_root = self.root / "state" / "claude-multi"
+        self.state_root = self.root / "state" / "charmer"
         self.gateway = {"gateway": {"base_url": "http://127.0.0.1:18399", "health_path": "/healthz"}}
 
     def _fake(self, verdict, base_url="http://127.0.0.1:18399"):
@@ -447,7 +447,7 @@ class InstanceListenerTests(unittest.TestCase):
     def test_the_own_gateway_verdict_comes_from_the_state_roots_proof(self) -> None:
         from charmer import gateway_lifecycle, service
 
-        ours = service.OwnerVerdict("ours", "the claude-multi gateway service")
+        ours = service.OwnerVerdict("ours", "the charmer gateway service")
         with mock.patch.object(gateway_lifecycle, "Gateway", self._fake(ours)), \
                 mock.patch.object(service, "listener_owner", side_effect=AssertionError("manager-only verdict")):
             check = proxy.instance_listener(self.home, self.state_root, {"HOME": str(self.home)}, self.gateway)
@@ -466,7 +466,7 @@ class InstanceListenerTests(unittest.TestCase):
         def models_get(base_url, token, timeout=1.5, *, owner_check=None, attention=None, require_proof=False):
             seen.append(owner_check)
             launch.check_listener(base_url, owner_check=owner_check, attention=attention)
-            return 200, {"claude-multi-render-0123abcd"}
+            return 200, {"charmer-render-0123abcd"}
 
         for kind, attention_expected in (("ours", False), ("unknown", True)):
             seen.clear()
@@ -474,7 +474,7 @@ class InstanceListenerTests(unittest.TestCase):
             err = io.StringIO()
             with self.subTest(kind=kind), mock.patch.object(launch, "_default_models_get", models_get), \
                     redirect_stderr(err):
-                outcome = proxy.await_sentinel(self.gateway, "t" * 64, "claude-multi-render-0123abcd",
+                outcome = proxy.await_sentinel(self.gateway, "t" * 64, "charmer-render-0123abcd",
                                                owner_check=lambda _base: verdict)
                 self.assertEqual(outcome.status, "reloaded")
                 self.assertEqual(len(seen), 1)
@@ -507,7 +507,7 @@ class ProxyCommandTableTests(unittest.TestCase):
                     out = io.StringIO()
                     with redirect_stdout(out):
                         self.assertEqual(proxy.main([command.name, flag], environ=self.environ), 0)
-                    self.assertTrue(out.getvalue().startswith(f"usage: claude-multi-proxy {command.name}"))
+                    self.assertTrue(out.getvalue().startswith(f"usage: charmer-proxy {command.name}"))
                     self.assertIn(command.description.splitlines()[0], out.getvalue())
         self.assertFalse((self.root / "home").exists())
 
@@ -525,7 +525,7 @@ class ProxyCommandTableTests(unittest.TestCase):
                 err = io.StringIO()
                 with redirect_stderr(err):
                     self.assertEqual(proxy.main([name, *args], environ=self.environ), 1)
-                self.assertIn(f"usage: claude-multi-proxy {name}", err.getvalue())
+                self.assertIn(f"usage: charmer-proxy {name}", err.getvalue())
         self.assertFalse((self.root / "home").exists())
 
     def test_the_usage_lists_exactly_the_table_and_every_entry_dispatches(self) -> None:
@@ -554,7 +554,7 @@ if __name__ == "__main__":
 
 class ProxyControlTestCase(unittest.TestCase):
     def setUp(self) -> None:
-        self.root = Path(tempfile.mkdtemp(prefix="claude-multi-proxyctl-"))
+        self.root = Path(tempfile.mkdtemp(prefix="charmer-proxyctl-"))
         os.chmod(self.root, 0o700)
         self.addCleanup(lambda: shutil.rmtree(self.root, ignore_errors=True))
         self.home = self.root / "home"
@@ -579,7 +579,7 @@ class ProxyControlTestCase(unittest.TestCase):
 
     def set_up_gateway(self, home: Path | None = None) -> None:
         """Record the gateway's port in this home (the packaged one): the
-        ``claude-multi-proxy`` command renders, runs and signs in only in a
+        ``charmer-proxy`` command renders, runs and signs in only in a
         home whose gateway is set up."""
 
         base = catalog.load_catalog(CATALOG_ROOT).docs["gateway"]["gateway"]["base_url"]
@@ -589,7 +589,7 @@ class ProxyControlTestCase(unittest.TestCase):
         import re
 
         yaml = (proxy.config_dir(self.home) / "config.yaml").read_text()
-        return 200, set(re.findall(r'alias: "(claude-multi-render-[0-9a-f]+)"', yaml))
+        return 200, set(re.findall(r'alias: "(charmer-render-[0-9a-f]+)"', yaml))
 
     def _init(self) -> str:
         buffer = io.StringIO()
@@ -617,7 +617,7 @@ class InterruptTests(ProxyControlTestCase):
     def setUp(self) -> None:
         super().setUp()
         self.set_up_gateway()
-        self.state_root = self.home / ".local" / "state" / "claude-multi"
+        self.state_root = self.home / ".local" / "state" / "charmer"
 
     def fence_free(self) -> bool:
         from charmer import gateway_inhibition
@@ -649,21 +649,21 @@ class InterruptTests(ProxyControlTestCase):
                                          sleep=interrupted)
         self.assertEqual(code, 130, err)
         self.assertEqual(held, [True])
-        self.assertEqual(err.strip(), "claude-multi-proxy: init cancelled")
+        self.assertEqual(err.strip(), "charmer-proxy: init cancelled")
         self.assertTrue(self.fence_free())
 
     def test_an_interrupted_render_exits_130_and_releases_the_fence(self) -> None:
         with mock.patch.object(proxy, "_publish_prepared_render", side_effect=KeyboardInterrupt):
             code, err = self.run_interrupted(["init"])
         self.assertEqual(code, 130, err)
-        self.assertEqual(err.strip(), "claude-multi-proxy: init cancelled")
+        self.assertEqual(err.strip(), "charmer-proxy: init cancelled")
         self.assertNotIn("Traceback", err)
         self.assertTrue(self.fence_free())
 
 
 class ReloadTests(ProxyControlTestCase):
     def test_init_reloaded(self):
-        self.assertIn("gateway: reloaded (sentinel claude-multi-render-", self._init())
+        self.assertIn("gateway: reloaded (sentinel charmer-render-", self._init())
 
     def test_init_wait_outcomes_and_deadline(self):
         self.set_up_gateway()
@@ -785,7 +785,7 @@ class StartReadinessTests(ProxyControlTestCase):
     """
 
     GATEWAY = {"gateway": {"base_url": "unused"}}
-    SENTINEL = "claude-multi-render-0123abcd"
+    SENTINEL = "charmer-render-0123abcd"
     ALIASES = frozenset({"fixture-oauth-a", "fixture-oauth-b"})
 
     def _wait(self, responses, clock, **kwargs):
@@ -842,7 +842,7 @@ class StartReadinessTests(ProxyControlTestCase):
 
     def test_deadline_expiry_names_the_missing_piece(self):
         cases = (
-            ((200, {"claude-multi-render-old"}), "render sentinel claude-multi-render-0123abcd is not served"),
+            ((200, {"charmer-render-old"}), "render sentinel charmer-render-0123abcd is not served"),
             ((200, {self.SENTINEL}), "none of the 2 rendered OAuth aliases is served"),
             ((401, set()), "rejects the current key"),
             ((503, set()), "answered HTTP 503"),
@@ -922,7 +922,7 @@ class StartReadinessTests(ProxyControlTestCase):
         def getter(_base, token):
             yaml = (proxy.config_dir(self.home) / "config.yaml").read_text()
             import re
-            sentinel = set(re.findall(r'alias: "(claude-multi-render-[0-9a-f]+)"', yaml))
+            sentinel = set(re.findall(r'alias: "(charmer-render-[0-9a-f]+)"', yaml))
             seen.append(token)
             return 200, sentinel
         code, _out, err, now = self._start_check(getter)
@@ -947,7 +947,7 @@ class StartReadinessTests(ProxyControlTestCase):
             code, out, err, now = self._start_check(ready, "--state-root", str(sessions.state_root(self.environ)))
         self.assertEqual((code, err), (0, ""))
         self.assertEqual(now, 0)
-        self.assertIn("gateway: ready (sentinel claude-multi-render-", out)
+        self.assertIn("gateway: ready (sentinel charmer-render-", out)
         self.assertEqual(captured["mode"], "start")
         _, result, _ = proxy.render_runtime_config(self.home, environ=self.environ)
         self.assertEqual(captured["oauth_aliases"], result.oauth_aliases)
@@ -1002,7 +1002,7 @@ class RotationTests(ProxyControlTestCase):
         block = yaml.split("api-keys:\n", 1)[1].split("debug:", 1)[0]
         keys = re.findall(r'"([0-9a-f]{64})"', block)
         self.seen_keys.append(tuple(keys))
-        ids = set(re.findall(r'alias: "(claude-multi-render-[0-9a-f]+)"', yaml))
+        ids = set(re.findall(r'alias: "(charmer-render-[0-9a-f]+)"', yaml))
         return (200, ids) if token in keys else (401, set())
 
     def sleep(self, seconds):
@@ -1212,7 +1212,7 @@ class RotationTests(ProxyControlTestCase):
 
         @contextlib.contextmanager
         def held():
-            directory = state.ensure_private_dir(Path(home) / ".config" / "claude-multi")
+            directory = state.ensure_private_dir(Path(home) / ".config" / "charmer")
             descriptor = os.open(directory / "served-change.lock", os.O_RDWR | os.O_CREAT | os.O_CLOEXEC, 0o600)
             try:
                 fcntl.flock(descriptor, fcntl.LOCK_EX)
@@ -1225,7 +1225,7 @@ class RotationTests(ProxyControlTestCase):
     def test_render_unit_init_rotation_never_acquire_barrier(self):
         self._write_secret()
         acquire = mock.Mock(side_effect=AssertionError("a render took the served-change barrier"))
-        root = str(self.root / "state" / "claude-multi")
+        root = str(self.root / "state" / "charmer")
         with self._foreign_barrier(self.home), mock.patch.object(state, "acquire_served_barrier", acquire), \
                 mock.patch.object(state, "require_barrier", side_effect=AssertionError("asserted a barrier")):
             started = time.monotonic()
@@ -1244,11 +1244,11 @@ class RotationTests(ProxyControlTestCase):
         self._write_secret()
         from charmer import continuity
 
-        managed = self.root / "state" / "claude-multi"
+        managed = self.root / "state" / "charmer"
         proxy.render_runtime_config(self.home, environ=self.environ, state_root=managed)
         before = continuity.path(self.home).read_bytes()
         self.assertEqual(continuity.read(self.home)["state_root"], str(managed))
-        other = self.root / "shell-xdg-state" / "claude-multi"
+        other = self.root / "shell-xdg-state" / "charmer"
         self.rotate(state_root=other)
         self.assertEqual(continuity.read(self.home)["state_root"], str(managed))
         self.assertEqual(continuity.path(self.home).read_bytes(), before)
@@ -1329,7 +1329,7 @@ class RotationTests(ProxyControlTestCase):
         err = io.StringIO()
         with mock.patch.object(
             proxy, "render_runtime_config",
-            side_effect=proxy.render_mod.RenderError("provider id 'claude-multi-render' is reserved"),
+            side_effect=proxy.render_mod.RenderError("provider id 'charmer-render' is reserved"),
         ), redirect_stderr(err):
             code = proxy.main(["run"], environ=self.environ, execve=lambda *_: None)
         self.assertEqual(code, 1)
@@ -1450,7 +1450,7 @@ class InitRenderTests(ProxyControlTestCase):
         self.assertIn("anthropic", output)
         self.assertIn("openai", output)
         config = (proxy.config_dir(self.home) / "config.yaml").read_text()
-        self.assertNotIn("claude-multi-kimi-k3", config)
+        self.assertNotIn("charmer-kimi-k3", config)
         self.assertIn("gpt-multi-sol-high", config)
 
     def test_no_secret_in_init_output_or_config_artifacts_except_resolved(self) -> None:
@@ -1619,7 +1619,7 @@ class InstanceLockTests(ProxyControlTestCase):
         self.assertEqual(len(seen["inheritable"]), 1)  # the lock fd survives the exec
         self.assertEqual(seen["stamp"].instance, self.NONCE)
         marker = out.getvalue().strip().splitlines()[-1]
-        self.assertTrue(marker.startswith(f"claude-multi-proxy: gateway instance {self.NONCE} starting "
+        self.assertTrue(marker.startswith(f"charmer-proxy: gateway instance {self.NONCE} starting "
                                           f"(pid {os.getpid()}, port "), marker)
         self.assertFalse(proxy.posix_fs.lock_held(self.lock_path))  # a returning exec released it
         # Without --instance a random nonce is stamped.
@@ -1695,7 +1695,7 @@ class InstanceLockTests(ProxyControlTestCase):
                      ["--prepared", "--instance", "XYZ"], ["--prepared", "--prepare-and-exec"],
                      ["--prepared", "--instance", self.NONCE, "--instance", self.NONCE],
                      ["--prepare-and-exec", "--detach", "--detach"], ["--prepared", "--state-root", "relative"]):
-            with self.subTest(args=args), self.assertRaisesRegex(ProxyError, r"^usage: claude-multi-proxy run \["):
+            with self.subTest(args=args), self.assertRaisesRegex(ProxyError, r"^usage: charmer-proxy run \["):
                 proxy.cmd_run(args, environ=self.environ, execve=lambda *_a: self.fail("exec"))
 
 
@@ -1926,7 +1926,7 @@ class GatewayWorkdirTests(ProxyControlTestCase):
         workdir = proxy.ensure_gateway_workdir(self.state_root)
         self.assertEqual(workdir, self.workdir)
         expected = (
-            f"claude-multi-proxy: gateway working directory {self.workdir} holds a .env "
+            f"charmer-proxy: gateway working directory {self.workdir} holds a .env "
             "file: CLIProxyAPI would load it (HOME_JWT, DEPLOY, WRITABLE_PATH and the "
             "store variables override the gateway's config); move it aside unless you "
             "put it there; the gateway was not started\n"
@@ -2130,7 +2130,7 @@ class TokenStateErrorTests(unittest.TestCase):
     """A wrong-mode token file is a clean one-line error, no traceback."""
 
     def test_ensure_token_wraps_state_error(self) -> None:
-        home = Path(tempfile.mkdtemp(prefix="claude-multi-proxy-"))
+        home = Path(tempfile.mkdtemp(prefix="charmer-proxy-"))
         self.addCleanup(shutil.rmtree, home, True)
         token_path = proxy.config_dir(home) / "api-key"
         token_path.parent.mkdir(parents=True)
@@ -2142,7 +2142,7 @@ class TokenStateErrorTests(unittest.TestCase):
     def test_main_reports_state_error_as_one_line(self) -> None:
         import io as _io
 
-        home = Path(tempfile.mkdtemp(prefix="claude-multi-proxy-"))
+        home = Path(tempfile.mkdtemp(prefix="charmer-proxy-"))
         self.addCleanup(shutil.rmtree, home, True)
         token_path = proxy.config_dir(home) / "api-key"
         token_path.parent.mkdir(parents=True)
@@ -2158,7 +2158,7 @@ class TokenStateErrorTests(unittest.TestCase):
                 models_get=lambda _base, _token: (200, set()),
             )
         self.assertEqual(code, 1)
-        self.assertIn("claude-multi-proxy:", err.getvalue())
+        self.assertIn("charmer-proxy:", err.getvalue())
         self.assertNotIn("Traceback", err.getvalue())
 
 
@@ -2166,7 +2166,7 @@ class SetSecretValueTests(unittest.TestCase):
     """proxy.set_secret_value — parse-preserving 0600 secret writes."""
 
     def setUp(self) -> None:
-        self.root = Path(tempfile.mkdtemp(prefix="claude-multi-secret-"))
+        self.root = Path(tempfile.mkdtemp(prefix="charmer-secret-"))
         os.chmod(self.root, 0o700)
         self.addCleanup(shutil.rmtree, self.root, True)
         self.path = self.root / "claude.env"
@@ -2901,7 +2901,7 @@ class ManagementChannelPolicyTests(ManagementTestCase):
             self.assertEqual(quota.doctor_report(pool, provider_by_pool={}, login_commands={}, restart_hint="RESTART",
                                                  now=quota._now()), ([], [text], frozenset()))
             self.assertNotIn("RESTART", text)
-            self.assertNotIn("claude-multi-proxy", text)
+            self.assertNotIn("charmer-proxy", text)
 
 
 class ManagementInjectionTests(ManagementTestCase):
@@ -3217,10 +3217,10 @@ class ManagementKeyCommandTests(ManagementTestCase):
                 # names the source channel, which has no management).
                 import sys
                 from _layout import REPO_ROOT
-                installed = self.home.parent / "installed" / "bin" / "claude-multi-proxy"
+                installed = self.home.parent / "installed" / "bin" / "charmer-proxy"
                 installed.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy(REPO_ROOT / "bin/claude-multi-proxy", installed)
-                script = 'claude-multi-proxy() { "$PYTHON" "$PROXY" "$@"; }; ' + remedy
+                shutil.copy(REPO_ROOT / "bin/charmer-proxy", installed)
+                script = 'charmer-proxy() { "$PYTHON" "$PROXY" "$@"; }; ' + remedy
                 result = subprocess.run([shutil.which("bash"), "-c", script], capture_output=True, text=True,
                                         env={**self.environ, "PATH": os.environ.get("PATH", ""),
                                              "PYTHON": sys.executable, "PROXY": str(installed),
@@ -3258,7 +3258,7 @@ class OperatorListingRefusalTests(unittest.TestCase):
                 self.assertEqual(
                     str(caught.exception),
                     f"discover {provider_id}: an operator provider is listed through its approved "
-                    "listing block (claude-multi discover)",
+                    "listing block (charmer discover)",
                 )
         self.assertEqual(calls, [])
 

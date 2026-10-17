@@ -28,8 +28,8 @@ class ClaudeStatus:
     fix: model.Fix | None
 
 
-CLAUDE_FIX = model.Fix("Enter on step 2", "claude-multi setup --step claude",
-                       ("claude-multi", "setup", "--step", "claude"))
+CLAUDE_FIX = model.Fix("Enter on step 2", "charmer setup --step claude",
+                       ("charmer", "setup", "--step", "claude"))
 
 
 def claude_status(runtime: Any) -> ClaudeStatus:
@@ -52,7 +52,7 @@ def claude_status(runtime: Any) -> ClaudeStatus:
     return ClaudeStatus(version, "unavailable", text or state, None)
 
 
-SUPPORTED_FIX = model.Fix(None, "see Supported systems in the claude-multi guide")
+SUPPORTED_FIX = model.Fix(None, "see Supported systems in the charmer guide")
 
 
 def claude_verified(runtime: Any) -> ClaudeStatus:
@@ -76,12 +76,12 @@ def claude_verified(runtime: Any) -> ClaudeStatus:
     try:
         pin.verify_owned(contract, runtime.environ)
     except FileNotFoundError:
-        return ClaudeStatus(version, "missing", "not set up for claude-multi", CLAUDE_FIX)
+        return ClaudeStatus(version, "missing", "not set up for charmer", CLAUDE_FIX)
     except pin.PinError as exc:
-        return ClaudeStatus(version, "mismatch", f"the claude-multi copy cannot be used: {exc}", CLAUDE_FIX)
+        return ClaudeStatus(version, "mismatch", f"the charmer copy cannot be used: {exc}", CLAUDE_FIX)
     except OSError as exc:
         return ClaudeStatus(version, "mismatch",
-                            f"the claude-multi copy cannot be read ({exc.strerror or type(exc).__name__})",
+                            f"the charmer copy cannot be read ({exc.strerror or type(exc).__name__})",
                             CLAUDE_FIX)
     return ClaudeStatus(version, "verified", "verified copy", None)
 
@@ -106,8 +106,8 @@ class GatewayState:
     fix: model.Fix | None
 
 
-GATEWAY_FIX = model.Fix("Enter on step 3", "claude-multi setup --step gateway",
-                        ("claude-multi", "setup", "--step", "gateway"))
+GATEWAY_FIX = model.Fix("Enter on step 3", "charmer setup --step gateway",
+                        ("charmer", "setup", "--step", "gateway"))
 NOT_SET_UP = "not set up yet"
 
 
@@ -118,7 +118,7 @@ def _fixture_gateway(runtime: Any) -> bool:
 def _port(runtime: Any) -> int | None:
     try:
         return endpoint.port_of(endpoint.gateway_endpoint(runtime.catalog.docs["gateway"]).base_url)
-    except (errors.ClaudeMultiError, KeyError, ValueError):
+    except (errors.CharmerError, KeyError, ValueError):
         return None
 
 
@@ -135,7 +135,7 @@ def gateway_status(runtime: Any) -> GatewayState:
         try:
             target = endpoint.gateway_endpoint(gateway)
             healthy = runtime.health_get is None or runtime.health_get(target.base_url, target.health_path) == 200
-        except (OSError, errors.ClaudeMultiError, ValueError):
+        except (OSError, errors.CharmerError, ValueError):
             healthy = False
         return GatewayState("running" if healthy else "todo", "on-demand", _port(runtime),
                             "running" if healthy else "not running", None if healthy else GATEWAY_FIX)
@@ -146,7 +146,7 @@ def gateway_status(runtime: Any) -> GatewayState:
     try:
         gateway = runtime.gateway()
         seen = gateway.observe()
-    except (errors.ClaudeMultiError, OSError) as exc:
+    except (errors.CharmerError, OSError) as exc:
         return GatewayState("blocked", "unknown", _port(runtime), str(exc), GATEWAY_FIX)
     backend = getattr(gateway, "backend", "on-demand")
     if seen.state in (lifecycle.OURS, lifecycle.STARTING):
@@ -157,12 +157,12 @@ def gateway_status(runtime: Any) -> GatewayState:
             return GatewayState("blocked", backend, _port(runtime), problem[0], problem[1])
         return GatewayState("todo", backend, _port(runtime), seen.detail, GATEWAY_FIX)
     return GatewayState("blocked", backend, _port(runtime), seen.detail,
-                        model.Fix(None, "claude-multi gateway status"))
+                        model.Fix(None, "charmer gateway status"))
 
 
-REINSTALL_FIX = model.Fix(None, "reinstall claude-multi")
-PAUSED_FIX = model.Fix(None, "read the log (claude-multi gateway logs), fix the cause, then start it yourself: "
-                             "claude-multi gateway start")
+REINSTALL_FIX = model.Fix(None, "reinstall charmer")
+PAUSED_FIX = model.Fix(None, "read the log (charmer gateway logs), fix the cause, then start it yourself: "
+                             "charmer gateway start")
 
 
 def start_problem(runtime: Any, gateway: Any) -> tuple[str, model.Fix] | None:
@@ -206,7 +206,7 @@ def ensure_gateway(runtime: Any) -> Any:
 def gateway_log_tail(runtime: Any, lines: int = 40) -> tuple[str, ...]:
     try:
         return tuple(runtime.gateway().logs(lines=lines))
-    except (errors.ClaudeMultiError, OSError):
+    except (errors.CharmerError, OSError):
         return ()
 
 
@@ -217,7 +217,7 @@ def persistence_held(runtime: Any) -> tuple[str, ...]:
         return ()
     try:
         report = runtime.gateway().persistence_hold()
-    except (errors.ClaudeMultiError, OSError) as exc:
+    except (errors.CharmerError, OSError) as exc:
         return (f"the hold cannot be evaluated: {exc}",)
     return tuple(report.reasons) if report.held else ()
 
@@ -229,7 +229,7 @@ def _hold_problem(gateway: Any, seen: Any) -> str | None:
 
     try:
         report = gateway.persistence_hold(seen)
-    except (errors.ClaudeMultiError, OSError) as exc:
+    except (errors.CharmerError, OSError) as exc:
         return f"the hold cannot be evaluated: {exc}"
     if not report.held:
         return None
@@ -277,7 +277,7 @@ def stop_gateway_for_uninstall(runtime: Any) -> tuple[str, str]:
             held = _hold_problem(gateway, None)
             return ("hold", held) if held is not None else ("not-running", NOT_SET_UP)
         seen = gateway.observe()
-    except (errors.ClaudeMultiError, OSError) as exc:
+    except (errors.CharmerError, OSError) as exc:
         return "failed", str(exc)
     if seen.state == lifecycle.FOREIGN:
         return "not-ours", str(_port(runtime))
@@ -314,7 +314,7 @@ def hold_gateway_starts(runtime: Any, *, what: str = UNINSTALL_NOT_REMOVED) -> t
         if not workdir.is_dir() or workdir.is_symlink():
             return None, None
         lock = gateway._acquire_start_lock(gateway.seams.clock() + lifecycle.START_LOCK_WAIT)
-    except (errors.ClaudeMultiError, OSError) as exc:
+    except (errors.CharmerError, OSError) as exc:
         return None, f"the gateway cannot be checked: {exc}"
     if lock is None:
         return None, "a start of the gateway is in progress"
@@ -328,7 +328,7 @@ def hold_gateway_starts(runtime: Any, *, what: str = UNINSTALL_NOT_REMOVED) -> t
             seen = gateway.observe()
             problem = (_hold_problem(gateway, seen) if seen.state == lifecycle.STOPPED
                        else f"the gateway is not stopped: {seen.detail}")
-    except (errors.ClaudeMultiError, OSError) as exc:
+    except (errors.CharmerError, OSError) as exc:
         problem = f"the gateway cannot be checked: {exc}"
     if problem is not None:
         lock.release()
@@ -340,15 +340,15 @@ def service_state(runtime: Any) -> tuple[str, str]:
     """The supervised service as uninstall must treat it: ``(state,
     detail)`` where the state is ``absent``; ``recorded`` (endpoint.json
     records it: only the service's own uninstall removes it, and that
-    refuses a unit file claude-multi did not write); ``stray`` (a unit file
-    claude-multi wrote that is not recorded); or ``unknown`` (it cannot be
+    refuses a unit file charmer did not write); ``stray`` (a unit file
+    charmer wrote that is not recorded); or ``unknown`` (it cannot be
     checked)."""
 
     if _fixture_gateway(runtime):
         return "absent", ""
     try:
         status = runtime.gateway_service().status(live=False)
-    except (errors.ClaudeMultiError, OSError) as exc:
+    except (errors.CharmerError, OSError) as exc:
         return "unknown", str(exc)
     if status.recorded:
         return "recorded", status.name
@@ -362,7 +362,7 @@ def service_installed(runtime: Any) -> bool:
         return False
     try:
         return bool(runtime.gateway_service().status(live=False).installed)
-    except (errors.ClaudeMultiError, OSError):
+    except (errors.CharmerError, OSError):
         return False
 
 
@@ -378,11 +378,11 @@ def managed_policy_findings(runtime: Any) -> tuple[tuple[str, str, model.Fix | N
 
     try:
         found = runtime.managed_findings()
-    except (errors.ClaudeMultiError, OSError) as exc:
+    except (errors.CharmerError, OSError) as exc:
         return (("attention", f"the managed policy could not be read: {exc}", None),)
     result = []
     for lock in found:
-        fix = model.Fix(None, f"ask your administrator: {lock.key} in {lock.path} blocks claude-multi")
+        fix = model.Fix(None, f"ask your administrator: {lock.key} in {lock.path} blocks charmer")
         result.append(("block" if lock.blocks else "attention", managed.finding_text(lock), fix))
     return tuple(result)
 

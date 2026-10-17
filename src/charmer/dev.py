@@ -1,4 +1,4 @@
-"""Developer onboarding for claude-multi: drafts, check, review, promote.
+"""Developer onboarding for charmer: drafts, check, review, promote.
 
 Draft → Check → Review exact diff/hash → Promote source. Promotion writes
 trusted repository JSON only: it never builds, activates, stages, commits,
@@ -39,7 +39,7 @@ from . import sessions, state, strict_json
 from . import validate as schema_validate
 
 
-class DevError(errors.ClaudeMultiError, RuntimeError):
+class DevError(errors.CharmerError, RuntimeError):
     """Raised on any onboarding failure (fail closed)."""
 
 
@@ -95,7 +95,7 @@ class DraftStore:
         # not the schema's const noise.
         if isinstance(draft, dict) and draft.get("version") == 1:
             raise DevError(
-                f"draft {name} is a version-1 draft; run claude-multi-dev drafts migrate"
+                f"draft {name} is a version-1 draft; run charmer-dev drafts migrate"
             )
         return draft
 
@@ -183,7 +183,7 @@ def _entry_id(entry: dict[str, Any], what: str) -> str:
 
 _NEW_OFF_REFUSAL = (
     'promoted lines start New · not admitted (status "new"); local admission is an optional '
-    "operator badge (claude-multi models admit KEY), not a draft field"
+    "operator badge (charmer models admit KEY), not a draft field"
 )
 
 
@@ -318,12 +318,12 @@ def _check_selector_shape(docs: dict[str, Any], key: str, entry: dict[str, Any])
     - Anthropic (``cliproxy-oauth-claude-v1``): the selector is the
       canonical wire id, ``wire_model`` + ``[1m]`` iff the line books 1M
       client tokens.
-    - OpenAI-compatible client-effort: ``claude-multi-<key>`` (+``[1m]``
+    - OpenAI-compatible client-effort: ``charmer-<key>`` (+``[1m]``
       iff 1M), the shape the scaffold derives.
     - Gateway-effort: every ``efforts[<level>].selector`` is
       ``<prefix><key>-<level>`` (+``[1m]`` iff 1M) — key + effort, never
       the generation — with ``gpt-multi-`` for the codex pool
-      and ``claude-multi-`` otherwise; its ``proxy_contract`` level equals
+      and ``charmer-`` otherwise; its ``proxy_contract`` level equals
       the effort (the contract ends with ``-<level>``).
     """
 
@@ -339,7 +339,7 @@ def _check_selector_shape(docs: dict[str, Any], key: str, entry: dict[str, Any])
             )
         return
     if isinstance(efforts, list):
-        expected = f"claude-multi-{key}{suffix}"
+        expected = f"charmer-{key}{suffix}"
         if entry.get("selector") != expected:
             raise DevError(
                 f"new model {key!r}: an OpenAI-compatible selector must be "
@@ -350,7 +350,7 @@ def _check_selector_shape(docs: dict[str, Any], key: str, entry: dict[str, Any])
     prefix = (
         "gpt-multi-"
         if transport.get("kind") == "oauth-pool" and transport.get("pool") == "codex"
-        else "claude-multi-"
+        else "charmer-"
     )
     for level, spec in sorted(efforts.items()):
         expected = f"{prefix}{key}-{level}{suffix}"
@@ -503,7 +503,7 @@ def materialize_candidate(
     if parent is None:
         root = Path(state_root_default())
         state.ensure_private_dir(root)
-        parent = Path(tempfile.mkdtemp(prefix="claude-multi-candidate-", dir=root))
+        parent = Path(tempfile.mkdtemp(prefix="charmer-candidate-", dir=root))
     if parent.exists():
         os.chmod(parent, 0o700)
     state.ensure_private_dir(parent)
@@ -550,7 +550,7 @@ def materialize_candidate(
 
 def state_root_default() -> str:
     root = os.environ.get("XDG_STATE_HOME") or str(Path.home() / ".local" / "state")
-    return str(Path(root) / "claude-multi")
+    return str(Path(root) / "charmer")
 
 
 # --------------------------------------------------------------- lifecycle
@@ -1110,7 +1110,7 @@ def promote_patch_output(
 
 DRAFTS_ARCHIVE = "archive-2x"
 _MIGRATED_NOTE = (
-    "migrated from a version-1 draft by claude-multi-dev drafts migrate; "
+    "migrated from a version-1 draft by charmer-dev drafts migrate; "
     "fill every QUALIFY field and review selectors/roles before check"
 )
 _V1_ENTRY_FIELDS = (
@@ -1195,7 +1195,7 @@ def _drafts_root() -> Path:
 
     return (
         Path(os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local" / "state")))
-        / "claude-multi"
+        / "charmer"
         / "drafts"
     )
 
@@ -1466,32 +1466,32 @@ def _drafts_migrate(flags: dict[str, Any], repo: Path | None) -> int:
     return 0
 
 
-DEV_HELP = """claude-multi-dev — catalog onboarding pipeline (draft → check → review → promote)
+DEV_HELP = """charmer-dev — catalog onboarding pipeline (draft → check → review → promote)
 
-  claude-multi-dev --version   the release identity (launcher, catalog, gateway, Claude Code)
+  charmer-dev --version   the release identity (launcher, catalog, gateway, Claude Code)
 
 Two tracks:
   Existing-provider model release:
-    claude-multi-dev model add --like astra --id NEWID --wire-id WIRE --name DRAFT
+    charmer-dev model add --like astra --id NEWID --wire-id WIRE --name DRAFT
       (scaffolds a draft from the like-model with QUALIFY markers at the
        judgment fields — fill those before check)
     or: model add --from-json FILE --name DRAFT (a complete hand-written entry)
     or: hand-edit the checkout's src/charmer/data/catalog/models.json
         with the full battery (AGENTS.md §5)
   New provider / provider kind:
-    claude-multi-dev provider add --from-json FILE --name DRAFT
+    charmer-dev provider add --from-json FILE --name DRAFT
 
   Prefill from observations (review context, never catalog verification):
-    claude-multi-dev model add --from-registry CHANNEL:WIRE --id KEY [--provider P] [--name DRAFT]
-      (a pinned-registry candidate: claude-multi models --candidates)
-    claude-multi-dev model add --from-operator KEY --id CATALOG_KEY [--name DRAFT]
+    charmer-dev model add --from-registry CHANNEL:WIRE --id KEY [--provider P] [--name DRAFT]
+      (a pinned-registry candidate: charmer models --candidates)
+    charmer-dev model add --from-operator KEY --id CATALOG_KEY [--name DRAFT]
       (an operator declaration; a line on a T2-only provider becomes a provider draft)
     The four sources (--like, --from-json, --from-registry, --from-operator) are
     mutually exclusive.
 
 Then:  check DRAFT → review DRAFT → promote DRAFT --repo PATH
 Developer promotion installs a New · not admitted catalog line (status "new"); operator
-admission is only an optional local badge (Models, or `claude-multi models
+admission is only an optional local badge (Models, or `charmer models
 admit KEY`), not permission to use it. Selectors follow the catalog-33 shape: Anthropic =
 canonical wire[1m], gateway-effort = <prefix><key>-<effort>[1m].
 `check` also reports every OAuth-pool line whose wire is absent from the
@@ -1503,7 +1503,7 @@ use generation-tagged aliases and retire the old ones. --like refuses a
 generation-tagged sibling; use --from-json and review the new entry.
 
 Version 1 drafts:
-  claude-multi-dev drafts migrate [--apply] [--repo PATH]
+  charmer-dev drafts migrate [--apply] [--repo PATH]
     (dry run by default; --apply archives promoted/unconvertible drafts and
      converts v1 model drafts to v2 under drafts/archive-2x/ — never deletes)
 No test pin or golden moves for a shipped line: the behavioural suite and
@@ -1517,7 +1517,7 @@ frozen legacy selector table (FrozenSelectorCoverageTests) must stay covered —
 never edit it to pass.
 
 Claude Code re-pin (maintainers, from a source checkout):
-  claude-multi-dev repin [--repo PATH] [--manifest-dir DIR]
+  charmer-dev repin [--repo PATH] [--manifest-dir DIR]
                          [--settings-keys FILE]
     Finds a Claude Code newer than the pin (the claude on PATH, then the native
     versions directories), verifies it against Anthropic's signed release
@@ -1534,7 +1534,7 @@ Claude Code re-pin (maintainers, from a source checkout):
 
 Never performed by promote: builds, activations, restarts, secret reads.
 `check` runs the sandbox builds in a candidate tree — that is the gate.
-Live provider calls need per-call approval (a listing via `claude-multi
+Live provider calls need per-call approval (a listing via `charmer
 discover PROVIDER`, in a terminal outside Claude Code sessions). Promotion
 writes trusted repository JSON only.
 """
@@ -1622,12 +1622,12 @@ def _prefill_entry(
         if wire not in routes:
             prerequisites.append(_ROUTE_PREREQUISITE)
     elif catalog_mod.effort_mode(provider) == "client":
-        entry["selector"] = f"claude-multi-{new_id}{suffix}"
+        entry["selector"] = f"charmer-{new_id}{suffix}"
         entry["efforts"] = (list(levels) if isinstance(levels, list) and levels
                             else "QUALIFY: client-effort levels (a list of native efforts)")
     else:
         prefix = "gpt-multi-" if transport.get("kind") == "oauth-pool" and transport.get("pool") == "codex" \
-            else "claude-multi-"
+            else "charmer-"
         if isinstance(levels, dict) and levels:
             entry["efforts"] = {level: {"selector": f"{prefix}{new_id}-{level}{suffix}", "proxy_contract": contract}
                                 for level, contract in sorted(levels.items())}
@@ -1683,7 +1683,7 @@ def _registry_prefill(
 
     channel, separator, wire = source.partition(":")
     if not separator or not channel or not wire:
-        raise DevError("--from-registry takes CHANNEL:WIRE (see claude-multi models --candidates)")
+        raise DevError("--from-registry takes CHANNEL:WIRE (see charmer models --candidates)")
     if channel not in registry.sections:
         raise DevError(f"registry channel {channel!r} is not in the pinned registry "
                        f"(have: {', '.join(sorted(registry.sections))})")
@@ -1760,7 +1760,7 @@ def _operator_prefill(
                                           legacy=custom_mod.load_registry(environ))
     line = snapshot.layer.lines.get(key)
     if line is None:
-        raise DevError(f"--from-operator {key}: no valid operator declaration (claude-multi providers validate)")
+        raise DevError(f"--from-operator {key}: no valid operator declaration (charmer providers validate)")
     core = line.core_entry
     efforts = core["efforts"]
     wire = core["wire_model"]
@@ -1882,7 +1882,7 @@ def _prefill_command(flags: dict[str, Any], repo: Path | None) -> int:
         print(line)
     print(PREFILL_REVIEW)
     print("Fill every QUALIFY field, then:")
-    print(f"  claude-multi-dev check {name}")
+    print(f"  charmer-dev check {name}")
     print(PREFILL_PROMOTION)
     return 0
 
@@ -1899,9 +1899,9 @@ def _scaffold_model_entry(
     line is first tested on the current gateway, not the sibling's.
     Selectors are derived from the documented shapes only — never by
     substring replacement: a gateway-effort level selector must read
-    ``{gpt-multi-|claude-multi-}<like>-<level>[1m]?`` and becomes
+    ``{gpt-multi-|charmer-}<like>-<level>[1m]?`` and becomes
     ``<prefix><new>-<level>`` with the same suffix; an OpenAI-compatible
-    client selector must read ``claude-multi-<like>[1m]?``. Anything else is
+    client selector must read ``charmer-<like>[1m]?``. Anything else is
     refused (write the entry with --from-json). Anthropic lines are refused:
     their canonical wire must be a passthrough route of the pool, which a
     model draft cannot add. Judgment fields become
@@ -1949,15 +1949,15 @@ def _scaffold_model_entry(
 
     if isinstance(like["efforts"], list):
         match = re.fullmatch(
-            "claude-multi-" + re.escape(like_id) + r"(\[1m\])?", like["selector"]
+            "charmer-" + re.escape(like_id) + r"(\[1m\])?", like["selector"]
         )
         if match is None:
             raise _cannot(like["selector"])
-        entry["selector"] = f"claude-multi-{new_id}{match.group(1) or ''}"
+        entry["selector"] = f"charmer-{new_id}{match.group(1) or ''}"
     else:
         for level, spec in entry["efforts"].items():
             match = re.fullmatch(
-                r"(gpt-multi-|claude-multi-)"
+                r"(gpt-multi-|charmer-)"
                 + re.escape(like_id)
                 + "-"
                 + re.escape(level)
@@ -2020,7 +2020,7 @@ def main(argv: list[str]) -> int:
     if argv[0] in ("-v", "--version"):
         from . import identity
 
-        print(identity.version_line("claude-multi-dev"))
+        print(identity.version_line("charmer-dev"))
         return 0
     command, rest = argv[0], argv[1:]
     if command == "repin":
@@ -2032,8 +2032,8 @@ def main(argv: list[str]) -> int:
             if positionals:
                 raise DevError(repin_cmd.USAGE)
             return repin_cmd.repin(flags)
-        except (errors.ClaudeMultiError, OSError) as exc:
-            print(f"claude-multi-dev: {exc}", file=os.sys.stderr)
+        except (errors.CharmerError, OSError) as exc:
+            print(f"charmer-dev: {exc}", file=os.sys.stderr)
             return 2
     if command == "probe":
         # Lazy: a tracked module must not hard-import the dev-only probe
@@ -2094,7 +2094,7 @@ def main(argv: list[str]) -> int:
                 )
                 print(f"draft: {saved}")
                 print("fill every QUALIFY field, then:")
-                print(f"  claude-multi-dev check {name}")
+                print(f"  charmer-dev check {name}")
                 return 0
             if "from-json" not in flags:
                 raise DevError(f"{kind} add requires --from-json FILE")
@@ -2132,7 +2132,7 @@ def main(argv: list[str]) -> int:
             return 0
         if command == "drafts":
             if positionals != ["migrate"]:
-                raise DevError("usage: claude-multi-dev drafts migrate [--apply] [--repo PATH]")
+                raise DevError("usage: charmer-dev drafts migrate [--apply] [--repo PATH]")
             return _drafts_migrate(flags, repo)
         if command == "check":
             drafts = _draft_store()
@@ -2207,7 +2207,7 @@ def main(argv: list[str]) -> int:
             print("  2. full host suite + sandbox green; no golden or test pin moved")
             print("  3. activate: install a build of the checkout through your channel (it reloads the gateway;")
             print("     a gateway binary or gateway.json change restarts it)")
-            print("     or: claude-multi-proxy init (verifies reload; prints restart command if needed)")
+            print("     or: charmer-proxy init (verifies reload; prints restart command if needed)")
             print("  4. verify /v1/models serves it; one consent-gated live call")
             return 0
         if command == "smoke-test":
@@ -2220,11 +2220,11 @@ def main(argv: list[str]) -> int:
             return 2 if outcome["status"] == "refused" else 0
         raise DevError(f"unknown command {command!r}")
     except (
-        errors.ClaudeMultiError,
+        errors.CharmerError,
         TypeError,
         KeyError,
         UnicodeDecodeError,
         OSError,
     ) as exc:
-        print(f"claude-multi-dev: {exc}", file=os.sys.stderr)
+        print(f"charmer-dev: {exc}", file=os.sys.stderr)
         return 2

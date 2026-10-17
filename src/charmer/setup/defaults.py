@@ -25,11 +25,11 @@ NONE_CONNECTED = "! nothing is connected yet — W opens Get started"
 NONE_READY = ("! no profile is connected here ({why}); using {used} — P picks another, "
               "or P → N builds one from your connected providers")
 LINE_FORMS = {
-    "P picks another": "claude-multi --profile NAME",
-    "W opens Get started": "claude-multi setup",
-    "P → D sets another": "claude-multi profile default NAME",
-    "P → N builds one from your connected providers": "claude-multi profile starter --apply",
-    "P shows why": "claude-multi profile list",
+    "P picks another": "charmer --profile NAME",
+    "W opens Get started": "charmer setup",
+    "P → D sets another": "charmer profile default NAME",
+    "P → N builds one from your connected providers": "charmer profile starter --apply",
+    "P shows why": "charmer profile list",
 }
 
 # Why a profile was chosen.
@@ -43,17 +43,17 @@ REASON_TEXT = {
     "fallback": "nothing is connected",
 }
 
-# ``claude-multi profile default`` and its plan.
+# ``charmer profile default`` and its plan.
 DEFAULT_SHOW_SET = "default profile: {name} (set by you)"
 DEFAULT_SHOW_AUTO = "default profile: automatic"
 DEFAULT_SHOW_HERE = "here: {resolved} ({reason_text})"
 DEFAULT_SET_LINE = "Default profile: {name}."
 DEFAULT_SET_NOTE = "note: {name} is not connected here ({why}); it is used wherever it is connected."
 DEFAULT_CLEARED = "The default profile is automatic again."
-DEFAULT_UNKNOWN = "profile {name!r} does not exist — claude-multi profile list"
-DEFAULT_UNLOADABLE_REFUSAL = "{error} — fix it first: claude-multi profile edit {name} (or rm; a copy is kept)"
+DEFAULT_UNKNOWN = "profile {name!r} does not exist — charmer profile list"
+DEFAULT_UNLOADABLE_REFUSAL = "{error} — fix it first: charmer profile edit {name} (or rm; a copy is kept)"
 # The fix of a profile file that cannot be loaded.
-UNLOADABLE_FIX = "claude-multi profile edit {name} (or rm; a copy is kept)"
+UNLOADABLE_FIX = "charmer profile edit {name} (or rm; a copy is kept)"
 
 # Pay-per-token providers that back several slots of a lineup.
 SPEND_NOTE = "{who} bill per token to {display} — set a spend limit in your {display} account"
@@ -138,7 +138,7 @@ def summarize(rows: Sequence[readiness.SlotReadiness], *, lines: Mapping[str, An
 def summarize_for(runtime: Any, rows: Sequence[readiness.SlotReadiness]) -> ProfileReadiness:
     try:
         lines, providers = runtime.lineup_catalog().lines, runtime.readiness_providers()
-    except (errors.ClaudeMultiError, OSError, ValueError, KeyError):
+    except (errors.CharmerError, OSError, ValueError, KeyError):
         lines, providers = {}, {}
     return summarize(rows, lines=lines, providers=providers)
 
@@ -188,7 +188,7 @@ def profile_verdicts(runtime: Any, names: Iterable[str]) -> dict[str, tuple[read
 
     try:
         return runtime.profile_readiness(list(names))
-    except (errors.ClaudeMultiError, OSError, ValueError, KeyError):
+    except (errors.CharmerError, OSError, ValueError, KeyError):
         return {}
 
 
@@ -231,7 +231,7 @@ def _nothing_connected(runtime: Any) -> bool:
 
     try:
         return not status.connected(runtime)
-    except (errors.ClaudeMultiError, OSError, ValueError, KeyError):
+    except (errors.CharmerError, OSError, ValueError, KeyError):
         return False
 
 
@@ -376,12 +376,12 @@ def set_default_plan(runtime: Any, name: str | None) -> DefaultPlan:
         except profile_mod.ProfileError as exc:
             raise model.Refused(str(exc)) from exc
         if not exists:
-            raise model.Refused(DEFAULT_UNKNOWN.format(name=name), remedy="claude-multi profile list")
+            raise model.Refused(DEFAULT_UNKNOWN.format(name=name), remedy="charmer profile list")
         try:
             store.load(name)
         except profile_mod.ProfileError as exc:
             raise model.Refused(DEFAULT_UNLOADABLE_REFUSAL.format(error=exc, name=name),
-                                remedy=f"claude-multi profile edit {name}") from exc
+                                remedy=f"charmer profile edit {name}") from exc
         profile_digest = store.digest(name)
         rows = profile_verdicts(runtime, [name]).get(name, ())
         summary = summarize_for(runtime, rows)

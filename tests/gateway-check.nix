@@ -2,7 +2,7 @@
 # remains tests/default.nix. Never accept fallback to an unsandboxed build.
 { pkgs, cliProxyApi }:
 let startupProbe = import ./gateway-startup-probe.nix { inherit cliProxyApi; };
-in pkgs.runCommand "claude-multi-gateway-tests"
+in pkgs.runCommand "charmer-gateway-tests"
   {
     nativeBuildInputs = [ pkgs.python3 pkgs.bubblewrap pkgs.openssl ];
     env.PYTHONDONTWRITEBYTECODE = "1";
@@ -14,7 +14,7 @@ in pkgs.runCommand "claude-multi-gateway-tests"
     export HOME="$TMPDIR/home"
     mkdir -p "$HOME" "$out"
     mkdir -m 0700 "$out/evidence"
-    staged="$TMPDIR/staged/claude-multi"
+    staged="$TMPDIR/staged/charmer"
     mkdir -p "$(dirname "$staged")"
     cp -r "$tree" "$staged"
     chmod -R u+w "$staged"

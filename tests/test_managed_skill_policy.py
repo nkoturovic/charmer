@@ -384,7 +384,7 @@ class _RealCase(unittest.TestCase):
         super().setUp()
         if self.boundary_skip is not None:
             self.skipTest(self.boundary_skip)
-        self.root = Path(tempfile.mkdtemp(prefix="claude-multi-s14-"))
+        self.root = Path(tempfile.mkdtemp(prefix="charmer-s14-"))
         os.chmod(self.root, 0o700)
         self.addCleanup(shutil.rmtree, self.root, True)
         self.environ = {"HOME": str(self.root / "live" / "home"), "PATH": "/usr/bin:/bin"}
@@ -521,7 +521,7 @@ class LaunchNoticeTests(unittest.TestCase):
             launch_flow._skill_policy_notices(prepared, stream)
         lines = stream.getvalue().splitlines()
         self.assertEqual(lines, [cli_text.SKILL_POLICY_BYPASS_NOTICE.format(flag="--defeating-flag")])
-        self.assertTrue(lines[0].startswith("claude-multi: notice: --defeating-flag"))
+        self.assertTrue(lines[0].startswith("charmer: notice: --defeating-flag"))
         stream = io.StringIO()
         launch_flow._skill_policy_notices(prepared, stream)
         self.assertEqual(stream.getvalue(), "")
@@ -997,7 +997,7 @@ class S14SkillPolicyTests(_RealCase):
             f"open({str(record)!r}, 'a', encoding='utf-8').write(json.dumps(sys.argv[1:]) + '\\n')\n"
             "print('S14-CM-OUT')\n"
         )
-        probe.write_fixture_executable(self.fixture, bin_dir, "claude-multi", body)
+        probe.write_fixture_executable(self.fixture, bin_dir, "charmer", body)
         path = self.settings_file(self.policy)
 
         class Ack:

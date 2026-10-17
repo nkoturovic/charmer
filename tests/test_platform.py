@@ -90,10 +90,10 @@ class PackageBoundaryTests(unittest.TestCase):
 
     def test_gnu_only_remedy_text_is_unchanged(self) -> None:
         error = management.ManagementKeyError("not a regular file")
-        path = '"$HOME/.config/claude-multi/management-key"'
-        backup = '"$HOME/.config/claude-multi/management-key.rejected"'
+        path = '"$HOME/.config/charmer/management-key"'
+        backup = '"$HOME/.config/charmer/management-key.rejected"'
         self.assertEqual(error.remedy, f"test ! -e {backup} && test ! -L {backup} && mv -T -- {path} {backup}"
-                                       " && claude-multi-proxy rotate-management-key")
+                                       " && charmer-proxy rotate-management-key")
 
 
 class PosixFaultInjectionTests(_Private):

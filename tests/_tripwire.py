@@ -4,7 +4,7 @@
 package (the documented ``discover -s tests -t .`` gate and the Nix sandbox
 suite). It wraps ``socket.socket.connect`` and ``connect_ex`` and refuses any
 TCP connect to the live gateway ports (8317 gateway, 8316 proxy, and the port
-the developer's own ``~/.config/claude-multi/endpoint.json`` configures, read
+the developer's own ``~/.config/charmer/endpoint.json`` configures, read
 once at import from the real HOME) on a loopback/unspecified host (``127.0.0.0/8``, ``::1``, ``0.0.0.0``, ``::``,
 ``localhost``) by raising
 ``ConnectionRefusedError("test tripwire: live gateway port")`` — before the
@@ -46,7 +46,7 @@ def configured_ports(environ: Any = os.environ) -> frozenset[int]:
 
     home = environ.get("HOME") or os.path.expanduser("~")
     try:
-        with open(os.path.join(home, ".config", "claude-multi", "endpoint.json"), "rb") as handle:
+        with open(os.path.join(home, ".config", "charmer", "endpoint.json"), "rb") as handle:
             port = json.loads(handle.read(65536)).get("port")
     except (OSError, ValueError, AttributeError):
         return frozenset()

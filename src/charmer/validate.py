@@ -1,4 +1,4 @@
-"""Closed-vocabulary JSON schema validation for claude-multi v2.
+"""Closed-vocabulary JSON schema validation for charmer v2.
 
 Only the approved keyword set is supported; every unknown keyword or schema
 version fails closed. No third-party packages. Supported keywords: type,
@@ -44,7 +44,7 @@ TYPE_NAMES = frozenset(
 )
 
 
-class SchemaError(errors.ClaudeMultiError, ValueError):
+class SchemaError(errors.CharmerError, ValueError):
     """Raised when a schema document itself is invalid."""
 
 

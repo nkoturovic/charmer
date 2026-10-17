@@ -30,7 +30,7 @@ let
   ];
 in
 lib.cleanSourceWith {
-  name = "claude-multi-tree";
+  name = "charmer-tree";
   src = root;
   filter =
     path: _type:

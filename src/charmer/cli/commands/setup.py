@@ -1,10 +1,10 @@
-"""``claude-multi setup``: the setup steps in line mode.
+"""``charmer setup``: the setup steps in line mode.
 
 A bare run prints where setup stands and runs every step that is not done,
 in order (``--redo`` runs the done ones too); ``--step NAME`` runs one step,
 also when it is done; ``--status`` only reports (exit 0 when every required
 step is done). ``--answers FILE`` runs a prepared setup and ``--keys-file
-PATH`` selects an existing key file. ``--step claude`` puts claude-multi's
+PATH`` selects an existing key file. ``--step claude`` puts charmer's
 own copy of the pinned Claude Code in place (``charmer.acquire``);
 ``--step gateway [--proxy URL | --no-proxy]`` records the gateway's outbound
 proxy and starts the gateway. Nothing is saved until the person confirms;
@@ -59,14 +59,14 @@ def _setup_command(
     if misplaced:
         flags = ", ".join("--" + name.replace("_", "-") for name in misplaced)
         consent.prompt_stream().write(
-            f"claude-multi setup: {flags} belongs to another step than --step {step}\n")
+            f"charmer setup: {flags} belongs to another step than --step {step}\n")
         return EXIT_USAGE
     modes = [flag for flag, on in (("--status", getattr(args, "setup_status", False)),
                                    ("--answers", getattr(args, "answers", None) is not None),
                                    ("--keys-file", getattr(args, "keys_file", None) is not None),
                                    ("--step", step is not None)) if on]
     if len(modes) > 1:
-        consent.prompt_stream().write(f"claude-multi setup: {' and '.join(modes)} exclude each other\n")
+        consent.prompt_stream().write(f"charmer setup: {' and '.join(modes)} exclude each other\n")
         return EXIT_USAGE
     write = _writer(output_stream)
     try:
@@ -110,7 +110,7 @@ def _fail(write: Callable[[str], None], exc: BaseException) -> int:
 
     text = exc.line_text if isinstance(exc, model.SetupError) else str(exc)
     remedy = getattr(exc, "remedy", None)
-    consent.prompt_stream().write(f"claude-multi: {termtext.visible_message(text)}\n")
+    consent.prompt_stream().write(f"charmer: {termtext.visible_message(text)}\n")
     if remedy and remedy not in text:
         consent.prompt_stream().write(f"  fix: {termtext.visible_message(remedy)}\n")
     return EXIT_DECLINED if isinstance(exc, model.Declined) else EXIT_FAILED
@@ -167,7 +167,7 @@ def _run_step(runtime: runtime_mod.Runtime, step: str, *, input_stream: TextIO |
     }
     try:
         return handlers[step](runtime, input_stream=input_stream, output_stream=output_stream, write=write)
-    except (model.SetupError, cli_errors.ClaudeMultiError) as exc:
+    except (model.SetupError, cli_errors.CharmerError) as exc:
         return _fail(write, exc)
 
 
@@ -298,7 +298,7 @@ def _connect(runtime: runtime_mod.Runtime, entry: Any, *, input_stream: TextIO |
             return _connect_preset(runtime, kind[1], input_stream=input_stream, write=write)
         if entry.kind == "lan":
             return _connect_lan(runtime, kind[2], input_stream=input_stream, write=write)
-    except (model.SetupError, cli_errors.ClaudeMultiError) as exc:
+    except (model.SetupError, cli_errors.CharmerError) as exc:
         return _fail(write, exc)
     return EXIT_READY
 
@@ -335,7 +335,7 @@ def _connect_endpoint(runtime: runtime_mod.Runtime, endpoint_kind: str, *, input
     applied = providers.apply_add_endpoint(runtime, plan, model.Confirmation.given(plan), value)
     for line in applied.lines:
         write(line)
-    write(f"next: add models — claude-multi discover {plan.provider_id} --add WIRE, or claude-multi models add "
+    write(f"next: add models — charmer discover {plan.provider_id} --add WIRE, or charmer models add "
           f"{plan.provider_id} WIRE …")
     return EXIT_READY
 
@@ -375,10 +375,10 @@ def _connect_preset(runtime: runtime_mod.Runtime, preset: str, *, input_stream: 
     for line in applied.lines:
         write(line)
     if getattr(plan, "listing", None):
-        write(f"next: add models — claude-multi discover {plan.provider_id} --add WIRE, or claude-multi models "
+        write(f"next: add models — charmer discover {plan.provider_id} --add WIRE, or charmer models "
               f"add {plan.provider_id} WIRE …")
     else:
-        write(f"next: add models — claude-multi models add {plan.provider_id} WIRE …")
+        write(f"next: add models — charmer models add {plan.provider_id} WIRE …")
     return EXIT_READY
 
 
@@ -461,7 +461,7 @@ def _step_profile(runtime: runtime_mod.Runtime, *, input_stream: TextIO | None, 
             if evaluation.lineup is not None:
                 for note in defaults.spend_notes(runtime, evaluation.lineup):
                     write(f"! {note}")
-        except (cli_errors.ClaudeMultiError, OSError):
+        except (cli_errors.CharmerError, OSError):
             pass
         prompt = consent.prompt_stream()
         prompt.write(texts.SETUP_KEEP_PROFILE.format(name=choice.name))
@@ -469,7 +469,7 @@ def _step_profile(runtime: runtime_mod.Runtime, *, input_stream: TextIO | None, 
         answer = (consent._answer_stream(input_stream).readline() or "").strip().lower()
         if answer in ("", "y", "yes"):
             return EXIT_READY
-        write("Other profiles: claude-multi profile list · make one the default: claude-multi profile default NAME")
+        write("Other profiles: charmer profile list · make one the default: charmer profile default NAME")
         return EXIT_READY
     taken = set(runtime.profiles.names())
     name, n = "starter", 2
@@ -528,7 +528,7 @@ def _keys_file(runtime: runtime_mod.Runtime, path: Path, *, input_stream: TextIO
         for line in applied.lines:
             write(line)
         return providers_cmd.applied_exit(applied)
-    except (model.SetupError, cli_errors.ClaudeMultiError, OSError) as exc:
+    except (model.SetupError, cli_errors.CharmerError, OSError) as exc:
         return _fail(write, exc)
 
 
@@ -546,9 +546,9 @@ def _answers(runtime: runtime_mod.Runtime, path: Path, *, input_stream: TextIO |
         document = answers.load(path, runtime.gateway_environ())
         items = answers.build_items(runtime, document, progress=lambda line: write(f"… {line}"))
     except answers.AnswersError as exc:
-        consent.prompt_stream().write(f"claude-multi setup: {termtext.visible_message(exc)}\n")
+        consent.prompt_stream().write(f"charmer setup: {termtext.visible_message(exc)}\n")
         return EXIT_USAGE
-    except (model.SetupError, cli_errors.ClaudeMultiError) as exc:
+    except (model.SetupError, cli_errors.CharmerError) as exc:
         return _fail(write, exc)
     attended = consent.session_marker(runtime.environ) is None and consent.stdio_ttys()
     if attended:
@@ -574,7 +574,7 @@ def _answers(runtime: runtime_mod.Runtime, path: Path, *, input_stream: TextIO |
             result = item.run()
         except KeyboardInterrupt:
             raise
-        except (model.SetupError, cli_errors.ClaudeMultiError, OSError) as exc:
+        except (model.SetupError, cli_errors.CharmerError, OSError) as exc:
             _fail(write, exc)
             failed += 1
             continue
@@ -639,16 +639,16 @@ def _claude_step(runtime: runtime_mod.Runtime, *, claude_from, input_stream: Tex
             progress=lambda line: write(f"… {line}"),
         )
     except (acquire.AcquireError, pin.PinError) as exc:
-        write(f"claude-multi: setup --step claude: {exc}")
+        write(f"charmer: setup --step claude: {exc}")
         return EXIT_FAILED
     for note in outcome.notes:
         write(note)
     if outcome.path is None:
-        write(f"Claude Code {outcome.version} is not set up for claude-multi.")
+        write(f"Claude Code {outcome.version} is not set up for charmer.")
         return EXIT_DECLINED if declined else EXIT_FAILED
     shown = paths.display(outcome.path, environ)
     if outcome.state == "present":
-        write(f"Claude Code {outcome.version} is set up for claude-multi ({shown}).")
+        write(f"Claude Code {outcome.version} is set up for charmer ({shown}).")
     elif outcome.state == "copied":
         write(f"Claude Code {outcome.version} copied from {outcome.source} to {shown} (size and sha256 verified).")
     else:

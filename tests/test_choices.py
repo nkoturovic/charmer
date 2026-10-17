@@ -34,7 +34,7 @@ class ChoicesTests(unittest.TestCase):
     def test_update_writes_a_closed_private_document(self) -> None:
         result = choices.update(self.env, default_profile="balanced", session_env_keep=["EXAMPLE_TOOL_API_KEY"])
         path = choices.path(self.env)
-        self.assertEqual(path, self.home / ".config/claude-multi/choices.json")
+        self.assertEqual(path, self.home / ".config/charmer/choices.json")
         self.assertEqual(path.stat().st_mode & 0o777, 0o600)
         self.assertEqual(json.loads(path.read_text()), {"version": 1, "default_profile": "balanced",
                                                         "session_env_keep": ["EXAMPLE_TOOL_API_KEY"]})
@@ -46,7 +46,7 @@ class ChoicesTests(unittest.TestCase):
     def test_the_config_root_follows_xdg_config_home(self) -> None:
         env = {**self.env, "XDG_CONFIG_HOME": str(self.root / "xdg")}
         choices.update(env, default_profile="quality")
-        self.assertTrue((self.root / "xdg/claude-multi/choices.json").is_file())
+        self.assertTrue((self.root / "xdg/charmer/choices.json").is_file())
         self.assertEqual(choices.path(env).parent, settings.settings_path(env).parent)
 
     def test_refused_values_and_documents(self) -> None:

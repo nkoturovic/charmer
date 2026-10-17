@@ -586,7 +586,7 @@ def admission_checklist_golden(root: Path) -> str:
         # The render hashes an auth-dir under a disposable HOME. Fix this
         # observation input, not the rendered screenshot bytes.
         with mock.patch.object(consent, "stdio_ttys", return_value=True), mock.patch.object(
-                models, "render_identity", return_value=("claude-multi-render-05100000", identity[1], identity[2])):
+                models, "render_identity", return_value=("charmer-render-05100000", identity[1], identity[2])):
             action.invoke(["models", "admit", key])
         return render(lambda: tui.TextView("Confirm explicit action", seen[0].splitlines(), confirm=True))
     finally:
@@ -636,7 +636,7 @@ def changed_route_refusal_golden(root: Path) -> str:
     with onboarding_actions([ESC]) as (case, action, win):
         case.op(test_cli.ACME_ADD, "y\n")
         case.op(test_cli.SMALL_ADD)
-        path = case.runtime.home / ".config/claude-multi/providers.d/acme.json"
+        path = case.runtime.home / ".config/charmer/providers.d/acme.json"
         doc = json.loads(path.read_bytes())
         doc["provider"]["base_url"] = "https://changed.example.test/anthropic"
         state.atomic_write(path, json.dumps(doc).encode())
@@ -922,7 +922,7 @@ def golden_name(name: str) -> str:
 def build(name: str) -> str:
     """Render golden ``name`` in a fresh temp root (removed afterwards)."""
 
-    root = Path(tempfile.mkdtemp(prefix=f"claude-multi-tui-golden-{name}-"))
+    root = Path(tempfile.mkdtemp(prefix=f"charmer-tui-golden-{name}-"))
     try:
         return GOLDENS[name](root)
     finally:

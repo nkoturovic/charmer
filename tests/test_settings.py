@@ -29,7 +29,7 @@ from _catalog import FIXTURE_ROOT, SHIPPED_ROOT
 def _copy_with_new_lines(case: unittest.TestCase, *keys: str) -> Path:
     temporary = Path(tempfile.mkdtemp(prefix="cm-settings-catalog-"))
     case.addCleanup(shutil.rmtree, temporary, True)
-    root = temporary / "claude-multi"
+    root = temporary / "charmer"
     shutil.copytree(FIXTURE_ROOT, root)
     for root_dir, _dirs, files in os.walk(root):
         os.chmod(root_dir, 0o755)
@@ -67,7 +67,7 @@ class SettingsCase(unittest.TestCase):
 
 class SettingsStoreTests(SettingsCase):
     def test_path_is_the_xdg_config_root(self) -> None:
-        self.assertEqual(self.store.path, self.root / "config" / "claude-multi" / "settings.json")
+        self.assertEqual(self.store.path, self.root / "config" / "charmer" / "settings.json")
         self.assertEqual(settings.settings_path(self.environ), self.store.path)
         self.assertEqual(settings.schema_path().name, "settings.schema.json")
 
@@ -78,14 +78,14 @@ class SettingsStoreTests(SettingsCase):
         for value in ("relative/config", "./config", ".config"):
             with self.subTest(value=value):
                 environ = {"HOME": str(home), "XDG_CONFIG_HOME": value}
-                self.assertEqual(paths.config_root(environ), home / ".config" / "claude-multi")
-                self.assertEqual(sessions.config_root(environ), home / ".config" / "claude-multi")
-                self.assertEqual(settings.settings_path(environ), home / ".config/claude-multi/settings.json")
-                self.assertEqual(choices.path(environ), home / ".config/claude-multi/choices.json")
+                self.assertEqual(paths.config_root(environ), home / ".config" / "charmer")
+                self.assertEqual(sessions.config_root(environ), home / ".config" / "charmer")
+                self.assertEqual(settings.settings_path(environ), home / ".config/charmer/settings.json")
+                self.assertEqual(choices.path(environ), home / ".config/charmer/choices.json")
         absolute = {"HOME": str(home), "XDG_CONFIG_HOME": str(self.root / "xdg")}
-        self.assertEqual(paths.config_root(absolute), self.root / "xdg" / "claude-multi")
+        self.assertEqual(paths.config_root(absolute), self.root / "xdg" / "charmer")
         self.assertEqual(paths.config_root({"HOME": str(home), "XDG_CONFIG_HOME": ""}),
-                         home / ".config" / "claude-multi")
+                         home / ".config" / "charmer")
 
     def test_absent_is_default_and_creates_nothing(self) -> None:
         self.assertEqual(self.store.load(), {"version": 1})
@@ -740,8 +740,8 @@ class SettingsIsNotACatalogDocumentTests(SettingsCase):
         )
         proxy.render_runtime_config(home, environ=environ, state_root=None)
         self.assertEqual(config.read_bytes(), baseline)
-        self.assertIn(b"claude-multi-kimi-k3", baseline)
-        self.assertIn(b"claude-multi-qwen38-max", baseline)  # a New line still renders
+        self.assertIn(b"charmer-kimi-k3", baseline)
+        self.assertIn(b"charmer-qwen38-max", baseline)  # a New line still renders
 
 
 if __name__ == "__main__":

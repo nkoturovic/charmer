@@ -209,9 +209,9 @@ def _session_start_messages(
         adopt_hint = sessions.fork_adopt_command(record, observed)
         return [
             "This native fork does not yet have an independent durable "
-            "claude-multi scope, and the parent is fork-blocked until you "
+            "charmer scope, and the parent is fork-blocked until you "
             f"decide. Exit this fork, then either adopt it: `{adopt_hint}`, "
-            f"or discard the marker: `claude-multi sessions resolve-fork "
+            f"or discard the marker: `charmer sessions resolve-fork "
             f"{stable_id} {observed}` (the fork transcript is kept either "
             "way). Note: adopting or discarding advances the parent's "
             "launch epoch, so this fork's later hooks can no longer claim "
@@ -368,7 +368,7 @@ def _reconcile_session_start(
     return _session_start_messages(record, observed, source, stable_id)
 
 
-_MIGRATION_SKIP_NOTE = "claude-multi: migration in progress; session event not recorded\n"
+_MIGRATION_SKIP_NOTE = "charmer: migration in progress; session event not recorded\n"
 
 
 def _notice_record_lead(state_path: Path, stable_id: str) -> dict[str, Any] | None:
@@ -413,7 +413,7 @@ def _session_start_v3(
     """
 
     def note(message: str) -> None:
-        error_stream.write(f"claude-multi: start hook: {hooks.visible(message)}\n")
+        error_stream.write(f"charmer: start hook: {hooks.visible(message)}\n")
 
     stable_id = args.managed_id
     if not sessions.UUID4.fullmatch(stable_id):
@@ -480,8 +480,8 @@ def _session_start_v3(
             raise
         failed = True
         messages.append(
-            "claude-multi could not record this session start: "
-            f"{hooks.visible(exc)}. Run claude-multi doctor."
+            "charmer could not record this session start: "
+            f"{hooks.visible(exc)}. Run charmer doctor."
         )
         note(f"session start not recorded: {exc}")
     parts = ([notice] if notice is not None else []) + messages
@@ -517,7 +517,7 @@ def _handle_session_event(
         sessions.check_state_marker(root)
     except sessions.StateMarkerError as exc:
         # A legacy hook must not block a running session or mutate its state.
-        sys.stderr.write(f"claude-multi: {exc}\n")
+        sys.stderr.write(f"charmer: {exc}\n")
         return 0
     # Hand-built Namespaces (legacy callers and tests) carry no
     # hook_protocol attribute.

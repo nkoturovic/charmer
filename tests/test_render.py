@@ -73,8 +73,8 @@ class SentinelTests(unittest.TestCase):
         sentinel = without["openai-compatibility"].pop()
         digest = hashlib.sha256(render.emit_yaml(without).encode()).hexdigest()[:8]
         self.assertEqual(sentinel, {
-            "name": "claude-multi-render", "base-url": "http://127.0.0.1:9/v1",
-            "models": [{"name": "claude-multi-render",
+            "name": "charmer-render", "base-url": "http://127.0.0.1:9/v1",
+            "models": [{"name": "charmer-render",
                         "alias": render.SENTINEL_PREFIX + digest, "force-mapping": True}],
         })
         self.assertEqual(_render().sentinel, render.SENTINEL_PREFIX + digest)
@@ -117,7 +117,7 @@ class SentinelTests(unittest.TestCase):
 
     def test_reserved_provider_names_refused_without_dropping_routes(self):
         bundle = catalog.load_catalog(CATALOG_ROOT)
-        for name in ("claude-multi-render", render.SENTINEL_PREFIX + "custom"):
+        for name in ("charmer-render", render.SENTINEL_PREFIX + "custom"):
             with self.subTest(name=name):
                 providers = copy.deepcopy(bundle.providers)
                 # Admission refuses even credentialed/unavailable providers,
@@ -277,20 +277,20 @@ class GoldenTests(unittest.TestCase):
     def test_retained_and_removed_aliases(self) -> None:
         yaml = _render().yaml
         for retained in (
-            "claude-multi-kimi-k3",
-            "claude-multi-opus-4-8",
+            "charmer-kimi-k3",
+            "charmer-opus-4-8",
             "gpt-multi-sol-high",
             "gpt-multi-sol-xhigh",
             "gpt-multi-gpt55-high",
             # the fixture continuity seed (retired muse-spark, meta)
-            "claude-multi-muse-spark-high",
-            "claude-multi-muse-spark-xhigh",
+            "charmer-muse-spark-high",
+            "charmer-muse-spark-xhigh",
         ):
             self.assertIn(retained, yaml)
         for removed in (
-            "claude-multi-fable-5",
-            "claude-multi-sol-",
-            "claude-multi-gpt55",
+            "charmer-fable-5",
+            "charmer-sol-",
+            "charmer-gpt55",
             "conserve-",
         ):
             self.assertNotIn(removed, yaml)
@@ -475,7 +475,7 @@ class CustomRegistryRenderTests(unittest.TestCase):
         )
         selectors = render.rendered_selectors(document)
         self.assertIn("custom-lab-model", selectors)
-        self.assertIn("claude-multi-kimi-k3", selectors)
+        self.assertIn("charmer-kimi-k3", selectors)
 
 
 class DirectProviderLaneTests(unittest.TestCase):
@@ -483,22 +483,22 @@ class DirectProviderLaneTests(unittest.TestCase):
         bundle = catalog.load_catalog(CATALOG_ROOT)
         models = copy.deepcopy(bundle.lines)
         models["kimi-k3"]["efforts"]["high"] = {
-            "selector": "claude-multi-kimi-k3-turbo[1m]",
+            "selector": "charmer-kimi-k3-turbo[1m]",
             "proxy_contract": "output-config-max",
         }
         yaml = _render(models=models).yaml
-        self.assertIn('alias: "claude-multi-kimi-k3"', yaml)
-        self.assertIn('alias: "claude-multi-kimi-k3-turbo"', yaml)
+        self.assertIn('alias: "charmer-kimi-k3"', yaml)
+        self.assertIn('alias: "charmer-kimi-k3-turbo"', yaml)
 
     def test_kimi_output_single_lane_unchanged(self) -> None:
         yaml = _render().yaml
-        self.assertEqual(yaml.count('alias: "claude-multi-kimi-k3"'), 1)
+        self.assertEqual(yaml.count('alias: "charmer-kimi-k3"'), 1)
 
     def test_qwen_1m_client_suffix_is_stripped_from_exact_wire_mapping(self) -> None:
         yaml = _render().yaml
         block = yaml.split('name: "qwen3.8-max"', 1)[1]
-        self.assertIn('alias: "claude-multi-qwen38-max"', block)
-        self.assertNotIn('alias: "claude-multi-qwen38-max[1m]"', block)
+        self.assertIn('alias: "charmer-qwen38-max"', block)
+        self.assertNotIn('alias: "charmer-qwen38-max[1m]"', block)
         self.assertIn("context-length: 983616", block)
 
     def test_glm52_alias_and_max_reasoning_override_rendered(self) -> None:
@@ -516,7 +516,7 @@ class DirectProviderLaneTests(unittest.TestCase):
         sibling["context"]["declared_tokens"] = 1000000
         sibling["efforts"] = {
             "max": {
-                "selector": "claude-multi-fixture-max[1m]",
+                "selector": "charmer-fixture-max[1m]",
                 "proxy_contract": "reasoning-effort-max",
             }
         }
@@ -528,13 +528,13 @@ class DirectProviderLaneTests(unittest.TestCase):
         self.assertEqual(catalog.validate_catalog(raw), [])
         yaml = _render(models=lines).yaml
         block = yaml.split('name: "fixture-max-wire"', 1)[1]
-        self.assertIn('alias: "claude-multi-fixture-max"', block)
-        self.assertNotIn('alias: "claude-multi-fixture-max[1m]"', block)
+        self.assertIn('alias: "charmer-fixture-max"', block)
+        self.assertNotIn('alias: "charmer-fixture-max[1m]"', block)
         self.assertIn("context-length: 1000000", block)
         self.assertIn(f'owned-by: "{provider["independence_family"]}"', block)
         override = (
             '- models:\n'
-            '        - name: "claude-multi-fixture-max"\n'
+            '        - name: "charmer-fixture-max"\n'
             '          protocol: "claude"\n'
             '      params:\n'
             '        reasoning_effort: "max"'
@@ -868,7 +868,7 @@ class AdapterContractTests(unittest.TestCase):
             "proxy_contract": "reasoning-effort-low",
         }
         compat["efforts"]["medium"] = {
-            "selector": "claude-multi-fixture-medium",
+            "selector": "charmer-fixture-medium",
             "proxy_contract": "output-config-medium",
         }
         providers[codex["provider"]]["payload_contracts"].append("reasoning-effort-low")
@@ -884,7 +884,7 @@ class AdapterContractTests(unittest.TestCase):
         )
         self.assertIn(
             {
-                "models": [{"name": "claude-multi-fixture-medium", "protocol": "claude"}],
+                "models": [{"name": "charmer-fixture-medium", "protocol": "claude"}],
                 "params": {"output_config.effort": "medium"},
             },
             overrides,
@@ -954,7 +954,7 @@ def _two_lane_direct_model(base: dict, provider: str, stem: str, wire: str) -> d
     model["context"]["scalar_tokens"] = None
     model["efforts"] = {
         effort: {
-            "selector": f"claude-multi-{stem}-{effort}[1m]",
+            "selector": f"charmer-{stem}-{effort}[1m]",
             "proxy_contract": f"output-config-{effort}",
         }
         for effort in ("high", "max")
@@ -998,25 +998,25 @@ class DeepSeekProRenderTests(unittest.TestCase):
         )[1].split("- api-key:", 1)[0]
         self.assertEqual(section.count('name: "fixture-pro-wire"'), 2)
         self.assertEqual(section.count('name: "fixture-flash-wire"'), 2)
-        self.assertIn('alias: "claude-multi-fixture-pro-high"', section)
-        self.assertIn('alias: "claude-multi-fixture-pro-max"', section)
+        self.assertIn('alias: "charmer-fixture-pro-high"', section)
+        self.assertIn('alias: "charmer-fixture-pro-max"', section)
         self.assertNotIn("[1m]", section)
         self.assertIn(f'owned-by: "{provider["independence_family"]}"', section)
         self.assertIn('context-length: 1000000', section)
         high = (
             '- models:\n'
-            '        - name: "claude-multi-fixture-flash-high"\n'
+            '        - name: "charmer-fixture-flash-high"\n'
             '          protocol: "claude"\n'
-            '        - name: "claude-multi-fixture-pro-high"\n'
+            '        - name: "charmer-fixture-pro-high"\n'
             '          protocol: "claude"\n'
             '      params:\n'
             '        "output_config.effort": "high"'
         )
         max_ = (
             '- models:\n'
-            '        - name: "claude-multi-fixture-flash-max"\n'
+            '        - name: "charmer-fixture-flash-max"\n'
             '          protocol: "claude"\n'
-            '        - name: "claude-multi-fixture-pro-max"\n'
+            '        - name: "charmer-fixture-pro-max"\n'
             '          protocol: "claude"\n'
             '      params:\n'
             '        "output_config.effort": "max"'
@@ -1031,18 +1031,18 @@ class Grok46RenderTests(unittest.TestCase):
     def test_exact_46_route_and_no_active_45(self) -> None:
         yaml=_render().yaml
         self.assertIn('name: "x-ai/grok-4.6"',yaml)
-        self.assertIn('alias: "claude-multi-grok46-xhigh"',yaml)
+        self.assertIn('alias: "charmer-grok46-xhigh"',yaml)
         self.assertNotIn('x-ai/grok-4.5',yaml)
-        self.assertNotIn('claude-multi-grok45',yaml)
+        self.assertNotIn('charmer-grok45',yaml)
         payload = yaml.split('payload:', 1)[1]
         for level in ("high", "xhigh"):
             # The alias sits in the override group of its own effort (other
             # lines of the same contract share the group).
-            entry = f'        - name: "claude-multi-grok46-{level}"\n          protocol: "claude"\n'
+            entry = f'        - name: "charmer-grok46-{level}"\n          protocol: "claude"\n'
             self.assertIn(entry, payload)
             group = payload.split(entry, 1)[1].split('      params:\n', 1)[1]
             self.assertTrue(group.startswith(f'        "output_config.effort": "{level}"'), group[:80])
-        self.assertNotIn('reasoning_effort: "xhigh"', yaml.split('payload:',1)[1].split('claude-multi-qwen38-max',1)[0])
+        self.assertNotIn('reasoning_effort: "xhigh"', yaml.split('payload:',1)[1].split('charmer-qwen38-max',1)[0])
 
 
 class ZeroModelSectionTests(unittest.TestCase):
@@ -1120,7 +1120,7 @@ class ZeroModelSectionTests(unittest.TestCase):
         document = self._document(models=models)[0]
         self.assertEqual(
             [item["name"] for item in document["openai-compatibility"]],
-            ["claude-multi-render"],
+            ["charmer-render"],
         )
 
     def test_custom_provider_without_models_emits_no_item(self) -> None:

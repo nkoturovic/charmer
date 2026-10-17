@@ -139,7 +139,7 @@ def listener_owner(
     if any(owner is None for _pid, owner in rows):
         return observation.OwnerVerdict("unknown", "listener ownership is incomplete")
     if pid is not None and all(owner_pid == pid for owner_pid, _owner in rows):
-        return observation.OwnerVerdict("ours", "the claude-multi gateway", uid, pid)
+        return observation.OwnerVerdict("ours", "the charmer gateway", uid, pid)
     return observation.OwnerVerdict("unknown", "another process of yours (gateway ownership unconfirmed)",
                                     uid, rows[0][0])
 

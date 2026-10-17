@@ -8,7 +8,7 @@ from typing import Any, Callable, Iterable
 
 from charmer import errors, strict_json
 
-READ_ONLY_SETUP = "read-only: this claude-multi cannot change your setup"
+READ_ONLY_SETUP = "read-only: this charmer cannot change your setup"
 CONFIRMATION_MISMATCH = "confirmation does not match the plan"
 STALE = "{what} changed while you were deciding — nothing written; try again"
 NOTHING_CHANGED = "Nothing changed."
@@ -26,7 +26,7 @@ class Fix:
     argv: tuple[str, ...] = ()
 
 
-class SetupError(errors.ClaudeMultiError, RuntimeError):
+class SetupError(errors.CharmerError, RuntimeError):
     """A setup operation did not happen; ``remedy`` is the command form of
     the fix and ``fix`` the structured one."""
 

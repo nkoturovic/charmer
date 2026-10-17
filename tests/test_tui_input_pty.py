@@ -112,7 +112,7 @@ class LateColourAnswerTests(_InputCase):
     read as one sequence, never as Esc followed by text."""
 
     def _late(self, delay: float) -> None:
-        child = self.child(f"claude-multi-pty-osc-{int(delay * 1000)}-", runtime_kwargs=CAPABLE)
+        child = self.child(f"charmer-pty-osc-{int(delay * 1000)}-", runtime_kwargs=CAPABLE)
         child.read_until(OSC_QUERY, FIXTURE_TIMEOUT)
         time.sleep(delay)
         # Under load, the query can finish before curses enters no-echo
@@ -146,7 +146,7 @@ class LateColourAnswerTests(_InputCase):
     def test_a_terminator_that_arrives_after_the_card_is_drawn(self) -> None:
         # The reply starts inside the query's wait; its ESC backslash comes
         # only once the card is up, at the key reader.
-        child = self.child("claude-multi-pty-osc-split-", runtime_kwargs=CAPABLE)
+        child = self.child("charmer-pty-osc-split-", runtime_kwargs=CAPABLE)
         child.read_until(OSC_QUERY, FIXTURE_TIMEOUT)
         child.send(OSC_REPLY[:-2])
         child.read_until(CARD_STATUS, FIXTURE_TIMEOUT)
@@ -161,7 +161,7 @@ class LateColourAnswerTests(_InputCase):
         # The reply starts inside the query's wait, more of its body comes
         # once the card is up, then a pause, then its ESC backslash: the card
         # stays open and no byte of the reply arrives as a key.
-        child = self.child("claude-multi-pty-osc-three-", runtime_kwargs=CAPABLE)
+        child = self.child("charmer-pty-osc-three-", runtime_kwargs=CAPABLE)
         child.read_until(OSC_QUERY, FIXTURE_TIMEOUT)
         child.send(b"\x1b]11;rgb:0000/0000/")
         child.read_until(CARD_STATUS, FIXTURE_TIMEOUT)
@@ -177,7 +177,7 @@ class LateColourAnswerTests(_InputCase):
         # The reply starts inside the query's wait and its rest never comes;
         # once the card is up, a real Esc and then Enter right after it: the
         # Esc cancels the card, and nothing is launched.
-        child = self.child("claude-multi-pty-osc-esc-enter-", runtime_kwargs=CAPABLE)
+        child = self.child("charmer-pty-osc-esc-enter-", runtime_kwargs=CAPABLE)
         child.read_until(OSC_QUERY, FIXTURE_TIMEOUT)
         child.send(b"\x1b]11;rgb:0000/0000/")
         child.read_until(CARD_STATUS, FIXTURE_TIMEOUT)
@@ -193,7 +193,7 @@ class LateColourAnswerTests(_InputCase):
 
 class TerminalTypeTests(_InputCase):
     def test_an_unknown_terminal_type_gets_the_line_interface_and_one_notice(self) -> None:
-        child = self.child("claude-multi-pty-term-", env={"TERM": "xterm-nonexistent-type"})
+        child = self.child("charmer-pty-term-", env={"TERM": "xterm-nonexistent-type"})
         child.read_until("Enter launch · q quit: ".encode(), FIXTURE_TIMEOUT)
         child.send(b"q\r")
         code, output, after = child.finish()
@@ -207,7 +207,7 @@ class TerminalTypeTests(_InputCase):
 
 class InterruptTests(_InputCase):
     def test_ctrl_c_on_the_card_exits_130_and_restores_the_terminal(self) -> None:
-        child = self.child("claude-multi-pty-ctrl-c-")
+        child = self.child("charmer-pty-ctrl-c-")
         child.read_until(CARD_STATUS, FIXTURE_TIMEOUT)
         # The test terminal is not the child's controlling terminal, so the
         # interrupt Ctrl-C raises is delivered as the signal itself.
@@ -222,7 +222,7 @@ class InterruptTests(_InputCase):
 
 class CardKeyTests(_InputCase):
     def test_keys_work_in_both_cases(self) -> None:
-        child = self.child("claude-multi-pty-case-")
+        child = self.child("charmer-pty-case-")
         child.read_until(CARD_STATUS, FIXTURE_TIMEOUT)
         for key in (b"s", b"S"):
             self.press(child, key, b"sessions \xe2\x80\x94")
@@ -233,7 +233,7 @@ class CardKeyTests(_InputCase):
         self.quit_card(child)
 
     def test_the_help_scrolls_to_its_end(self) -> None:
-        child = self.child("claude-multi-pty-scroll-")
+        child = self.child("charmer-pty-scroll-")
         child.read_until(CARD_STATUS, FIXTURE_TIMEOUT)
         self.press(child, b"?", "launch card — help".encode())
         self.press(child, END_KEY, b"-- workflow guarantees")
@@ -241,7 +241,7 @@ class CardKeyTests(_InputCase):
         self.quit_card(child)
 
     def test_a_question_mark_typed_in_a_text_field_is_text(self) -> None:
-        child = self.child("claude-multi-pty-field-")
+        child = self.child("charmer-pty-field-")
         child.read_until(CARD_STATUS, FIXTURE_TIMEOUT)
         self.press(child, b"o", "settings — global".encode())
         # The kept environment row: End reaches the last row, then up past
@@ -276,7 +276,7 @@ def picker_main(argv, *, runtime, input_stream, output_stream, interactive):
     return 0
 entry.main = picker_main
 """
-        child = self.child("claude-multi-pty-picker-remedy-", setup=setup)
+        child = self.child("charmer-pty-picker-remedy-", setup=setup)
         child.read_until("— V details".encode(), FIXTURE_TIMEOUT)
         self.press(child, b"v", "model — details".encode())
         child.read_until(b"effort unverified for this line", FIXTURE_TIMEOUT)
@@ -298,15 +298,15 @@ def models_main(argv, *, runtime, input_stream, output_stream, interactive):
     key = next(iter(runtime.lineup_catalog().lines))
     original = runtime.current_effective
     runtime.current_effective = lambda: dataclasses.replace(original(), unavailable_lines={
-        key: "provider fixture: route unapproved; route approval required — claude-multi providers approve fixture"})
+        key: "provider fixture: route unapproved; route approval required — charmer providers approve fixture"})
     screen = _ModelsScreen(runtime, palette=tui.MONO_PALETTE)
     screen.index = screen.keys.index(key)
     tui.run_curses_on_streams(screen.run, input_stream, output_stream, palette=tui.MONO_PALETTE)
     return 0
 entry.main = models_main
 """
-        child = self.child("claude-multi-pty-model-remedy-", setup=setup)
-        child.read_until(b"claude-multi providers approve fixture", FIXTURE_TIMEOUT)
+        child = self.child("charmer-pty-model-remedy-", setup=setup)
+        child.read_until(b"charmer providers approve fixture", FIXTURE_TIMEOUT)
         child.read_until(b"admission: not admitted (optional)", FIXTURE_TIMEOUT)
         child.send(b"\x1b")
         code, output, after = child.finish()
@@ -323,7 +323,7 @@ for provider in sorted({e['provider'] for e in lcat.lines.values() if 'lead' in 
 """
 
     def test_direct_disabled_models_stay_visible_with_remedy_and_never_launch(self) -> None:
-        child = self.child("claude-multi-pty-direct-none-", ["direct"], setup=self._NO_LEADS)
+        child = self.child("charmer-pty-direct-none-", ["direct"], setup=self._NO_LEADS)
         child.read_until("provider off — G → Space enables it".encode(), FIXTURE_TIMEOUT)
         self.assertIn(b"(unavailable)", bytes(child.output))
         self.press(child, b"\r", b"model unavailable")
@@ -337,7 +337,7 @@ for provider in sorted({e['provider'] for e in lcat.lines.values() if 'lead' in 
         _restored(self, child, after)
 
     def test_w_is_offered_on_direct_and_providers_while_the_gateway_is_down(self) -> None:
-        child = self.child("claude-multi-pty-w-", runtime_kwargs=", gateway_down=True")
+        child = self.child("charmer-pty-w-", runtime_kwargs=", gateway_down=True")
         child.read_until(CARD_STATUS, FIXTURE_TIMEOUT)
         self.press(child, b"d", "direct session — lead only".encode())
         self.press(child, b"W", "Local gateway".encode())
@@ -368,14 +368,14 @@ class SessionPreviewTests(_InputCase):
         _restored(self, child, after)
 
     def test_follow_previews_the_dropped_change_and_esc_keeps_it(self) -> None:
-        child = self.sessions("claude-multi-pty-follow-", follow=False, pending=True)
+        child = self.sessions("charmer-pty-follow-", follow=False, pending=True)
         self.press(child, b"f", b"follow \xe2\x80\x94 preview for")
         child.read_until(b"dropped", FIXTURE_TIMEOUT)
         self.press(child, b"\x1b", b"nothing changed")
         self.finish_unchanged(child)
 
     def test_keep_previews_discarding_the_pending_change_and_esc_writes_nothing(self) -> None:
-        child = self.sessions("claude-multi-pty-keep-", follow=True, pending=True)
+        child = self.sessions("charmer-pty-keep-", follow=True, pending=True)
         self.press(child, b"T", b"change lineup")
         for _ in range(3):
             offset = len(child.output)
@@ -386,7 +386,7 @@ class SessionPreviewTests(_InputCase):
         self.finish_unchanged(child)
 
     def test_recovery_actions_cancel_by_default(self) -> None:
-        child = self.sessions("claude-multi-pty-recovery-", follow=True, pending=False)
+        child = self.sessions("charmer-pty-recovery-", follow=True, pending=False)
         self.press(child, b"m", "ended?".encode())
         self.press(child, b"\r", b"nothing changed")
         self.press(child, b"x", b"Forget session")

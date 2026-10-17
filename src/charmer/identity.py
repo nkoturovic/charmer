@@ -1,6 +1,6 @@
-"""The release identity ``claude-multi --version`` prints.
+"""The release identity ``charmer --version`` prints.
 
-    claude-multi 1.0.0 (catalog 37; CLIProxyAPI 7.3.15 + 19 patches; Claude Code 2.1.286, manifest 0123abcd)
+    charmer 1.0.0 (catalog 37; CLIProxyAPI 7.3.15 + 19 patches; Claude Code 2.1.286, manifest 0123abcd)
 
 Everything comes from the packaged resources (the running release's own
 identity, never a resource override): ``version.json``, the generated
@@ -79,7 +79,7 @@ def collect() -> Identity:
     return Identity(__version__, catalog, upstream, patches, client, manifest)
 
 
-def version_line(name: str = "claude-multi") -> str:
+def version_line(name: str = "charmer") -> str:
     found = collect()
     parts = [f"catalog {found.catalog}" if found.catalog is not None else f"catalog {UNAVAILABLE}"]
     if found.gateway_upstream is None:

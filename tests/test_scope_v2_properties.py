@@ -31,8 +31,8 @@ from _catalog import FIXTURE_ROOT, SHIPPED_ROOT, uses_shipped_catalog
 
 SEEDS = range(300)
 FIXED_SESSION = "11111111-1111-4111-8111-111111111111"
-HOOK3 = "/state/bin/claude-multi-hook-3"
-HELPER = "/state/bin/claude-multi-gateway-token"
+HOOK3 = "/state/bin/charmer-hook-3"
+HELPER = "/state/bin/charmer-gateway-token"
 CEILING = 800_000
 OUTPUT_RESERVE = 20_000
 HEADROOM = 13_000
@@ -42,12 +42,12 @@ FAMILY_VARS = (
     ("sonnet", "ANTHROPIC_DEFAULT_SONNET_MODEL"),
 )
 SECRET_DENIES = [
-    "Read(~/.config/claude-multi/**)",
-    "Read(~/.local/share/claude-multi/**)",
+    "Read(~/.config/charmer/**)",
+    "Read(~/.local/share/charmer/**)",
     "Read(~/.config/anthropic/**)",
     "Read(~/.claude/.credentials.json)",
-    "Edit(~/.local/state/claude-multi/**)",
-    "Edit(~/.config/claude-multi/**)",
+    "Edit(~/.local/state/charmer/**)",
+    "Edit(~/.config/charmer/**)",
 ]
 
 # An independent named inventory of the skill policy (including editing and

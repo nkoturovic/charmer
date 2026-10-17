@@ -1,6 +1,6 @@
 """POSIX filesystem, lock and exec primitives (Linux/POSIX only).
 
-Stdlib only, no claude-multi imports, no policy: callers own error types,
+Stdlib only, no charmer imports, no policy: callers own error types,
 messages, transaction order and recovery. Every primitive performs exactly
 the operation it names once; nothing here retries, sleeps or falls back.
 """

@@ -1,6 +1,6 @@
 """Disposable no-provider capability probe harness.
 
-This module backs the explicitly gated ``claude-multi-dev probe`` command
+This module backs the explicitly gated ``charmer-dev probe`` command
 used by the client capability probes. It builds
 a fully disposable fixture — private HOME/XDG/config/state/cache/runtime
 directories, zero provider tokens — and a deterministic loopback-only fake
@@ -16,7 +16,7 @@ Fail-closed refusals:
 - fixture roots that are relative, contain ``..``, resolve through a
   symlink (leaf or any ancestor), are not owner-private, or that equal,
   contain, or enter the live HOME, XDG, ``CLAUDE_CONFIG_DIR``, Claude
-  config, claude-multi state, or uid-shared daemon paths (live roots are
+  config, charmer state, or uid-shared daemon paths (live roots are
   canonicalized before comparison, so symlinked environment roots cannot
   hide an overlap);
 - inherited provider credentials in the ambient environment;
@@ -125,7 +125,7 @@ from typing import Any, Callable
 from . import errors, state, strict_json
 
 
-class ProbeError(errors.ClaudeMultiError, RuntimeError):
+class ProbeError(errors.CharmerError, RuntimeError):
     """Raised on any probe safety violation (fail closed)."""
 
 
@@ -149,7 +149,7 @@ class PTYTimeoutError(ProbeError):
         )
 
 
-DUMMY_TOKEN = "claude-multi-probe-dummy-token"
+DUMMY_TOKEN = "charmer-probe-dummy-token"
 
 _LOOPBACK_HOSTS = ("127.0.0.1",)
 _SHA256_RE = re.compile(r"[0-9a-f]{64}")
@@ -386,7 +386,7 @@ def _live_roots(environ: Mapping[str, str]) -> dict[str, Path]:
     state_home = Path(environ.get("XDG_STATE_HOME") or home / ".local" / "state")
     roots = {
         "Claude config root": home / ".claude",
-        "claude-multi state root": state_home / "claude-multi",
+        "charmer state root": state_home / "charmer",
         "uid-shared daemon socket": Path(f"/tmp/cc-daemon-{os.geteuid()}"),
         "XDG_CONFIG_HOME": Path(environ.get("XDG_CONFIG_HOME") or home / ".config"),
         "XDG_STATE_HOME": state_home,
@@ -942,7 +942,7 @@ def write_fixture_executable(
     ``bin_dir`` is validated exactly like a PATH entry
     (:func:`validate_fixture_path_dirs`); ``name`` is a plain safe file
     name; the body is bounded. The write is atomic and symlink-refusing.
-    Fake launchers (for example a recording ``claude-multi``) are test
+    Fake launchers (for example a recording ``charmer``) are test
     fixtures, never trusted artifacts.
     """
 
@@ -1431,7 +1431,7 @@ class ProviderReply:
 
 
 class _ProviderHandler(BaseHTTPRequestHandler):
-    server_version = "claude-multi-probe/1"
+    server_version = "charmer-probe/1"
     protocol_version = "HTTP/1.1"
 
     def log_message(self, *_args: Any) -> None:
@@ -1487,8 +1487,8 @@ class _ProviderHandler(BaseHTTPRequestHandler):
                 {
                     "data": [
                         {"id": "gpt-multi-sol-high", "type": "model"},
-                        {"id": "claude-multi-qwen38-max", "type": "model"},
-                        {"id": "claude-multi-kimi-k3", "type": "model"},
+                        {"id": "charmer-qwen38-max", "type": "model"},
+                        {"id": "charmer-kimi-k3", "type": "model"},
                         {"id": "claude-fable-5", "type": "model"},
                     ],
                     "has_more": False,
@@ -1907,7 +1907,7 @@ _ISOLATION_CACHE: dict[str, str | None] = {}
 _NETNS_WRAPPER_SOURCE = r'''
 import json, os, socket, sys, threading
 def fail(message):
-    os.write(2, ("claude-multi probe netns wrapper: " + message + "\n").encode())
+    os.write(2, ("charmer probe netns wrapper: " + message + "\n").encode())
     os._exit(125)
 def unix_address(path):
     if len(path.encode()) < 100:
@@ -2430,7 +2430,7 @@ class TrustedExecutable:
     ``fake=True`` marks a unit-test fake executable; anything else is a
     real native artifact and runs only under the narrow ``allow_real``
     allowance (fixture-root config dir, loopback fake provider, live-domain
-    snapshot tripwire). ``owned_root`` is claude-multi's owned-copies root
+    snapshot tripwire). ``owned_root`` is charmer's owned-copies root
     when the executable is the owned copy found there
     (:func:`trusted_from_contract`): every run holds that version's use
     lock, whatever environment the run itself uses.
@@ -2530,10 +2530,10 @@ def trusted_from_contract(
 
     The contract is path-free, so the file is found where acquisition looks:
     the candidate a re-pin hands its evidence suite
-    (:data:`REPIN_CANDIDATE_ENV`, set only by ``claude-multi-dev repin``),
+    (:data:`REPIN_CANDIDATE_ENV`, set only by ``charmer-dev repin``),
     then the native versions directories of ``environ`` (a file named after
     its version, beside the other installed versions the probes compare
-    with), then the retained copy and claude-multi's owned copy. The
+    with), then the retained copy and charmer's owned copy. The
     ``claude`` on PATH is never consulted. Only a file whose size and full
     sha256 match this platform's record qualifies. The owned copy carries
     its owned root, so its runs lock it there (:func:`run_native`).
@@ -2546,7 +2546,7 @@ def trusted_from_contract(
         version = pin.version(native_contract)
         platform = pin.host_platform()
         record = pin.platform_record(native_contract, platform)
-    except (KeyError, TypeError, ValueError, errors_mod.ClaudeMultiError) as exc:
+    except (KeyError, TypeError, ValueError, errors_mod.CharmerError) as exc:
         raise ProbeError(f"native contract lacks a pinned Claude Code identity: {exc}") from exc
     if record is None:
         raise ProbeError(f"native contract pins no {platform} build of Claude Code {version}")
@@ -2660,7 +2660,7 @@ def _verify_trusted_executable(trusted: TrustedExecutable) -> Path:
 
 
 def _hold_owned_copy(trusted: TrustedExecutable, environ: Mapping[str, str]) -> Any:
-    """The shared use lock of claude-multi's owned copy, or None when
+    """The shared use lock of charmer's owned copy, or None when
     ``trusted`` names any other file.
 
     The owned root is the one recorded where the copy was found
@@ -2687,7 +2687,7 @@ def _hold_owned_copy(trusted: TrustedExecutable, environ: Mapping[str, str]) -> 
         return pin.take_use_lock_in(root, real.parent.name, shared=True)
     except FileNotFoundError as exc:
         raise ProbeError(f"probe executable {real} does not exist") from exc
-    except (OSError, errors.ClaudeMultiError) as exc:
+    except (OSError, errors.CharmerError) as exc:
         raise ProbeError(f"the use lock of probe executable {real} cannot be taken: {exc}") from exc
 
 
@@ -2872,7 +2872,7 @@ def run_native(
     validated fixture bin dirs) and are validated before anything starts.
     The whole process group is SIGKILLed and reaped on timeout or error. A
     caller-supplied provider keeps its lifecycle; an internally created one is
-    stopped deterministically. claude-multi's own copy runs under its use
+    stopped deterministically. charmer's own copy runs under its use
     lock (:func:`_hold_owned_copy`), taken before the hash check and
     inherited by the client.
     """
@@ -3558,7 +3558,7 @@ class ScriptedDelegationResponder:
             raise ProbeError("delegated input limit must be positive")
         self.subagent_type = subagent_type
         self.tool_use_id = "toolu_probe_delegation_0001"
-        self._prompt = "Reply with exactly: CLAUDE-MULTI-PROBE-DELEGATION-OK"
+        self._prompt = "Reply with exactly: CHARMER-PROBE-DELEGATION-OK"
         self._hold = hold
         self._hold_timeout = hold_timeout
         self._delegated_input_limit_bytes = delegated_input_limit_bytes
@@ -3674,7 +3674,7 @@ class ScriptedDelegationResponder:
                         "id": self.tool_use_id,
                         "name": tool,
                         "input": {
-                            "description": "claude-multi probe delegation",
+                            "description": "charmer probe delegation",
                             "subagent_type": self.subagent_type,
                             "prompt": self._prompt,
                         },
@@ -3926,7 +3926,7 @@ def _contract_hash_for(
         return None
     try:
         platform = pin.host_platform()
-    except errors_mod.ClaudeMultiError:
+    except errors_mod.CharmerError:
         return None
     for entry in verified:
         if not isinstance(entry, dict) or entry.get("version") != version:
@@ -4360,11 +4360,11 @@ def run_exact_client_check(request: Any, *, native_contract: dict[str, Any],
     hold = None
     try:
         trusted = trusted_from_contract(native_contract, environ)
-        # claude-multi's own copy stays locked across every run of the check
+        # charmer's own copy stays locked across every run of the check
         # (each run also hands its own lock to the client it starts).
         hold = _hold_owned_copy(trusted, os.environ if environ is None else environ)
         _verify_trusted_executable(trusted)
-    except (ProbeError, OSError, errors.ClaudeMultiError):
+    except (ProbeError, OSError, errors.CharmerError):
         if hold is not None:
             hold.release()
         return unavailable
@@ -4422,7 +4422,7 @@ def _exact_client_runs(request: Any, trusted: TrustedExecutable, timeout: float)
             live = scope_mod.write_scope(built.root / "state", str(uuid.uuid4()), request.plan)
             directory = state.ensure_private_dir(built.project_dir / ".claude/agents")
             state.atomic_write(directory / f"{_XC_AGENT}.md", (
-                f"---\nname: {_XC_AGENT}\ndescription: claude-multi qualification probe\n"
+                f"---\nname: {_XC_AGENT}\ndescription: charmer qualification probe\n"
                 f"model: {request.selector}\neffort: {effort}\n---\nReply PROBE-OK. {_XC_AGENT_MARKER}\n").encode())
             responder = _ExactClientRecorder(request.wire, spawn=True)
             lead_effort = request.efforts[0]
@@ -4539,6 +4539,6 @@ def probe_cli(
             f"unknown probe action {action!r}; "
             "expected 'init' or 'run'"
         )
-    except (errors.ClaudeMultiError, OSError) as exc:
-        print(f"claude-multi-dev: probe: {exc}", file=sys.stderr)
+    except (errors.CharmerError, OSError) as exc:
+        print(f"charmer-dev: probe: {exc}", file=sys.stderr)
         return 2

@@ -171,7 +171,7 @@ class AdmitTests(ModelsCase):
         import charmer.cli.onboarding as onboarding
 
         def refused(_runtime, _argv, *, confirm, output):
-            output.write("0/1 aliases served — claude-multi providers apply")
+            output.write("0/1 aliases served — charmer providers apply")
             return 1
 
         with mock.patch.object(onboarding, "invoke", side_effect=refused) as invoke, \

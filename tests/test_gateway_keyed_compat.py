@@ -140,7 +140,7 @@ class KeyedTLS:
                 self.files_resolved = files
                 self.docs = docs
                 result = self.render(home)
-                trust = home / ".config/claude-multi/keyedtest-ca.pem"
+                trust = home / ".config/charmer/keyedtest-ca.pem"
                 state.atomic_write(trust, cert.read_bytes())
                 self.holder["trust"] = str(trust)
                 return result, {}, {}
@@ -465,7 +465,7 @@ class KeyedGatewayAuditTests(unittest.TestCase):
                 document['debug'] = debug
                 document['request-log'] = debug  # non-authorable diagnostic control
                 document['openai-compatibility'] = [s for s in document['openai-compatibility']
-                                                   if s['name'] != 'claude-multi-render']
+                                                   if s['name'] != 'charmer-render']
                 gateway.document = render.finalize_document(document)
                 state.atomic_write(gateway.config, render.emit_yaml(gateway.document).encode())
                 gateway.await_ready()
@@ -601,7 +601,7 @@ class KeyedGatewayAuditTests(unittest.TestCase):
             for compat in (False, True):
                 document = copy.deepcopy(gateway.document)
                 document['openai-compatibility'] = [s for s in document['openai-compatibility']
-                                                   if s['name'] != 'claude-multi-render']
+                                                   if s['name'] != 'charmer-render']
                 for section in document['openai-compatibility']:
                     for model in section['models']:
                         if compat:

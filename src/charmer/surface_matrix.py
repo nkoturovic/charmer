@@ -1,8 +1,8 @@
-"""Every semantic operation of claude-multi and where a person reaches it.
+"""Every semantic operation of charmer and where a person reaches it.
 
 One row per operation, not per parser leaf: its object, who it is for, the
 command-line spellings that perform it (option-derived spellings such as
-``direct --no-subagents`` included), the ``claude-multi-proxy`` commands, the
+``direct --no-subagents`` included), the ``charmer-proxy`` commands, the
 ``/cm`` verbs, the TUI actions (an action id of ``cli.screens.actions``, the
 path a person takes, when it is offered and the test that drives it), and an
 explicit reason for every surface it does not have. Destructive operations
@@ -117,11 +117,11 @@ SERVICE_TUI = "the supervised unit and the launcher run it; a person never needs
 # The gateway operations the TUI leaves to the CLI (``gateway_actions.CLI_ONLY``
 # gives the same reasons on the screen).
 GATEWAY_STOP_TUI = ("a launch never needs it and it is refused while the persistence hold is active; "
-                    "run claude-multi gateway stop in a terminal")
+                    "run charmer gateway stop in a terminal")
 GATEWAY_CLEAR_HOLD_TUI = ("it needs a typed confirmation in a terminal outside Claude Code: "
-                          "claude-multi gateway clear-hold")
+                          "charmer gateway clear-hold")
 GATEWAY_SERVICE_UNINSTALL_TUI = ("it reverses a deliberate choice and changes the service manager; run "
-                                 "claude-multi gateway service uninstall in a terminal")
+                                 "charmer gateway service uninstall in a terminal")
 
 T_CARD = "tests.test_screens_card"
 T_CARD_ONB = "tests.test_screens_card_onboarding"
@@ -166,7 +166,7 @@ OPERATIONS: tuple[Op, ...] = (
     Op("launch.resume", "launch", "select a managed session and resume it", cli=("-r", "direct -r"),
        tui=(_t("sessions.resume", "card → S → Enter", "a managed session that is not running",
                f"{T_SESSIONS}.ResumeGateModalTests.test_resume_without_a_diff_returns_the_perform_intent_directly"),
-            _t("resume-card.resume", "claude-multi -r → Enter", "the resume card",
+            _t("resume-card.resume", "charmer -r → Enter", "the resume card",
                f"{T_CARD}.CardResumeKeyTests.test_enter_resumes_with_the_callers_decision")),
        stream="terminal", exit="user"),
     Op("launch.force-resume", "launch", "resume despite a background-liveness marker",
@@ -220,7 +220,7 @@ OPERATIONS: tuple[Op, ...] = (
        tui=(_t("get-started.open", "card → W → this computer", ALWAYS,
                f"{T_GS}.StepListTests.test_enter_on_this_computer_opens_the_preflight"),),
        stream="stdout", exit="user"),
-    Op("setup.claude", "setup", "acquire and verify claude-multi's own copy of the pinned Claude Code",
+    Op("setup.claude", "setup", "acquire and verify charmer's own copy of the pinned Claude Code",
        cli=("setup --step",),
        tui=(_t("get-started.open", "card → W → Claude Code", ALWAYS,
                f"{T_GS}.ClaudeStepTests.test_a_no_downloads_nothing_and_a_yes_installs_the_verified_copy"),),
@@ -276,7 +276,7 @@ OPERATIONS: tuple[Op, ...] = (
     Op("install.update-check", "install", "check whether a newer release exists", cli=("update --check",),
        tui=(_t("card.update", "card → U", "the update badge is shown",
                f"{T_CARD}.CardKeyTests.test_u_shows_what_update_will_do_only_while_the_badge_shows"),
-            _t("resume-card.update", "claude-multi -r → U", "the update badge is shown",
+            _t("resume-card.update", "charmer -r → U", "the update badge is shown",
                f"{T_DISPATCH}.ResumeCardDispatchTests.test_u_on_the_resume_card_shows_the_update")),
        stream="stdout", exit="user"),
     Op("install.update", "install", "update an installed release (plan, confirm, install)",
@@ -298,7 +298,7 @@ OPERATIONS: tuple[Op, ...] = (
        confirm="y/N, default No; --yes off a terminal", stream="stdout", exit="user"),
     Op("install.uninstall-preview", "install", "show what uninstalling would remove",
        cli=("uninstall --dry-run",), absent={"tui": INSTALL_TUI}, stream="stdout", exit="user"),
-    Op("install.uninstall", "install", "remove claude-multi (keeping what you choose)",
+    Op("install.uninstall", "install", "remove charmer (keeping what you choose)",
        cli=("uninstall", "uninstall --keep-setup", "uninstall --keep-credentials", "uninstall --force"),
        absent={"tui": INSTALL_TUI}, destructive=True, confirm="typed confirmation", stream="stdout",
        exit="user"),
@@ -596,7 +596,7 @@ OPERATIONS: tuple[Op, ...] = (
     Op("profiles.show", "profiles", "a profile's evaluated lineup", cli=("profile show",),
        tui=(_t("card.details", "card → V", "the card shows a profile",
                f"{T_CARD}.CardNoticeTests.test_v_names_the_lead_set_the_kept_environment_and_managed_differences"),
-            _t("resume-card.details", "claude-multi -r → V", "the resume card",
+            _t("resume-card.details", "charmer -r → V", "the resume card",
                f"{T_DISPATCH}.ResumeCardDispatchTests.test_v_shows_every_row_on_the_resume_card")),
        stream="stdout", exit="user"),
     Op("profiles.new", "profiles", "create a profile (from scratch or from another)",
@@ -669,7 +669,7 @@ OPERATIONS: tuple[Op, ...] = (
     # ------------------------------------------------------------ managed sessions
     Op("sessions.list", "sessions", "list managed sessions", cli=("sessions list", "sessions list --json"),
        tui=(_t("card.sessions", "card → S", ALWAYS, f"{T_CARD}.CardKeyTests.test_every_key_dispatches_and_the_keybar_lists_it"),
-            _t("resume-card.sessions", "claude-multi -r → S", "the resume card",
+            _t("resume-card.sessions", "charmer -r → S", "the resume card",
                f"{T_CARD}.CardSessionsKeyTests.test_s_on_the_resume_card_opens_the_sessions_screen")),
        stream="stdout", exit="user"),
     Op("sessions.filter", "sessions", "this directory's sessions or every directory's", cli=("sessions list",),
@@ -812,7 +812,7 @@ OPERATIONS: tuple[Op, ...] = (
     Op("diagnostics.doctor", "diagnostics", "check this installation and its sessions",
        cli=("doctor", "doctor --verbose"),
        tui=(_t("card.doctor", "card → H", ALWAYS, f"{T_CARD}.CardKeyTests.test_h_runs_doctor_in_place_and_prints_its_sections"),
-            _t("resume-card.doctor", "claude-multi -r → H", "the resume card",
+            _t("resume-card.doctor", "charmer -r → H", "the resume card",
                f"{T_DISPATCH}.ResumeCardDispatchTests.test_h_runs_doctor_on_the_resume_card")),
        stream="stdout", exit="user"),
     Op("diagnostics.first-run", "diagnostics", "the first-run checks in order, one fix each",
@@ -877,7 +877,7 @@ OPERATIONS: tuple[Op, ...] = (
        cli=("window-ceiling --reset",),
        tui=(_t("settings.reset", "card → O → context window ceiling → R → Reset", "a ceiling is set",
                f"{T_WINDOW}.WindowCeilingSettingsScreenTests.test_edit_reset_and_refusal"),),
-       reversible=("the result names the ceiling it replaced, and claude-multi window-ceiling VALUE sets it "
+       reversible=("the result names the ceiling it replaced, and charmer window-ceiling VALUE sets it "
                    "again; running sessions keep their window either way"),
        stream="stdout", exit="user"),
     Op("settings.role-windows", "settings", "each role's effective context window (the lineup summary)",
@@ -958,8 +958,8 @@ OPERATIONS: tuple[Op, ...] = (
        exit="proxy"),
     Op("account.sign-in", "maintenance", "the gateway's own sign-in commands (behind the acknowledgement)",
        audience="maintenance", proxy=("claude-login", "codex-device-login"),
-       absent={"tui": "claude-multi providers sign-in (and L in Providers) is the sign-in a person uses",
-               "cli": "claude-multi providers sign-in is the sign-in a person uses"},
+       absent={"tui": "charmer providers sign-in (and L in Providers) is the sign-in a person uses",
+               "cli": "charmer providers sign-in is the sign-in a person uses"},
        confirm="typed confirmation", exit="proxy"),
     # ------------------------------------------------------------ compatibility
     Op("compatibility.custom", "compatibility", "the legacy custom-model registry", audience="compatibility",
@@ -1326,17 +1326,17 @@ def census(
     claimed_proxy = {name for op in ops for name in op.proxy}
     for name, operation_ids in sorted(proxy_commands.items()):
         if name not in claimed_proxy:
-            problems.append(f"claude-multi-proxy {name}: no row classifies it")
+            problems.append(f"charmer-proxy {name}: no row classifies it")
         if f"  {name}" not in proxy_usage:
-            problems.append(f"claude-multi-proxy {name}: missing from its usage")
+            problems.append(f"charmer-proxy {name}: missing from its usage")
         for operation_id in operation_ids:
             op = by_id.get(operation_id)
             if op is None:
-                problems.append(f"claude-multi-proxy {name}: operation {operation_id} has no row")
+                problems.append(f"charmer-proxy {name}: operation {operation_id} has no row")
             elif name not in op.proxy:
-                problems.append(f"claude-multi-proxy {name}: row {operation_id} does not list it")
+                problems.append(f"charmer-proxy {name}: row {operation_id} does not list it")
     for name in sorted(claimed_proxy - set(proxy_commands)):
-        problems.append(f"claude-multi-proxy {name}: a row names a command the tool does not have")
+        problems.append(f"charmer-proxy {name}: a row names a command the tool does not have")
     # The /cm verbs.
     verbs = set(cm_verbs)
     claimed_cm = {verb for op in ops for verb in op.cm}
@@ -1369,8 +1369,8 @@ def document() -> dict[str, object]:
         "operations": [
             {
                 "id": op.id, "object": op.object, "does": op.does, "audience": op.audience,
-                "cli": [f"claude-multi {spelling}".rstrip() for spelling in op.cli],
-                "proxy": [f"claude-multi-proxy {name}" for name in op.proxy],
+                "cli": [f"charmer {spelling}".rstrip() for spelling in op.cli],
+                "proxy": [f"charmer-proxy {name}" for name in op.proxy],
                 "cm": [f"/cm {verb}" for verb in op.cm],
                 "tui": [{"action": t.action, "path": t.path, "available": t.available} for t in op.tui],
                 "absent": dict(sorted(op.absent.items())),

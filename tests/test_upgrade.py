@@ -1,4 +1,4 @@
-"""Tests for the evidence-gated Claude Code re-pin (claude-multi-dev repin)."""
+"""Tests for the evidence-gated Claude Code re-pin (charmer-dev repin)."""
 
 from __future__ import annotations
 
@@ -80,7 +80,7 @@ class UpgradeTestCase(unittest.TestCase):
         ):
             patcher.start()
             self.addCleanup(patcher.stop)
-        self.root = Path(tempfile.mkdtemp(prefix="claude-multi-upgrade-"))
+        self.root = Path(tempfile.mkdtemp(prefix="charmer-upgrade-"))
         os.chmod(self.root, 0o700)
         self.addCleanup(lambda: shutil.rmtree(self.root, ignore_errors=True))
         self.env = {"HOME": str(self.root / "home"), "PATH": str(self.root / "bin"),
@@ -479,7 +479,7 @@ class RunRepinTests(UpgradeTestCase):
         # No operator override anywhere: a build runs only its own pin.
         self.assertFalse((self.root / "config").exists())
         self.assertFalse(any("override" in line for line in outcome.messages))
-        self.assertTrue(any("claude-multi setup --step claude" in line for line in outcome.messages))
+        self.assertTrue(any("charmer setup --step claude" in line for line in outcome.messages))
 
     def test_diagnostic_observations_promote_with_notes_only_for_changes(self) -> None:
         for index, (probe_id, observed, recorded, detail) in enumerate((
@@ -501,7 +501,7 @@ class RunRepinTests(UpgradeTestCase):
                                      today="2026-09-28", runner=self._runner(0, output))
                 note = (f"note: probe {probe_id} observed {observed} on Claude 2.1.218 "
                         f"(recorded: {recorded}); the doctor and lead-prompt text that depends on it "
-                        "may be inaccurate until a claude-multi release re-records it")
+                        "may be inaccurate until a charmer release re-records it")
                 notes = [line for line in outcome.messages if line.startswith("note: probe ")]
                 self.assertEqual(notes, [note] if "changed recorded=" in detail else [])
                 self.assertEqual(outcome.kind, "prepared")
@@ -715,7 +715,7 @@ class RepinLockWaitNoteTests(UpgradeTestCase):
             worker.join(timeout=10)
         self.assertFalse(worker.is_alive())
         self.assertEqual(outcome_holder[0].kind, "current")
-        self.assertEqual(upgrade._lock_path(self.env).parent, self.root / "state/claude-multi/locks")
+        self.assertEqual(upgrade._lock_path(self.env).parent, self.root / "state/charmer/locks")
 
 
 def _unused_runner(*args, **kwargs):  # pragma: no cover - never reached
@@ -917,7 +917,7 @@ class RepoFileWriteTests(unittest.TestCase):
     """Promotion writes are crash-atomic and preserve repo modes."""
 
     def test_write_repo_file_preserves_mode_and_content(self) -> None:
-        root = Path(tempfile.mkdtemp(prefix="claude-multi-repofile-"))
+        root = Path(tempfile.mkdtemp(prefix="charmer-repofile-"))
         self.addCleanup(shutil.rmtree, root, True)
         target = root / "file.json"
         target.write_text("old\n", encoding="utf-8")
@@ -928,7 +928,7 @@ class RepoFileWriteTests(unittest.TestCase):
         self.assertEqual(list(root.glob("*.tmp-*")), [])
 
     def test_write_repo_file_new_file_gets_644(self) -> None:
-        root = Path(tempfile.mkdtemp(prefix="claude-multi-repofile-"))
+        root = Path(tempfile.mkdtemp(prefix="charmer-repofile-"))
         self.addCleanup(shutil.rmtree, root, True)
         target = root / "created.json"
         upgrade._write_repo_file(target, b"x\n")
@@ -1032,7 +1032,7 @@ class RunningReleaseTests(unittest.TestCase):
 
 class RepoFileSymlinkTests(unittest.TestCase):
     def test_write_repo_file_refuses_symlinked_target(self) -> None:
-        root = Path(tempfile.mkdtemp(prefix="claude-multi-symlink-"))
+        root = Path(tempfile.mkdtemp(prefix="charmer-symlink-"))
         self.addCleanup(shutil.rmtree, root, True)
         real = root / "real"
         real.write_text("x\n", encoding="utf-8")
@@ -1053,7 +1053,7 @@ class RealSyncedLiteralTests(unittest.TestCase):
     decoupled ``floors`` lines must stay byte-identical, and the real files
     are never written. A future edit that hides a pin from the sync (or moves
     a test off the shipped literals) fails here instead of at the next
-    ``claude-multi-dev repin``. Values are derived, never pinned in this file.
+    ``charmer-dev repin``. Values are derived, never pinned in this file.
     """
 
     def test_sync_finds_and_rewrites_every_real_pinned_literal(self) -> None:
@@ -1078,9 +1078,9 @@ class RealSyncedLiteralTests(unittest.TestCase):
                          for index, (name, record) in enumerate(sorted(old_platforms.items()), start=1)}
         new_platforms["linux-x64"] = {"sha256": new_sha, "size": new_size}
 
-        root = Path(tempfile.mkdtemp(prefix="claude-multi-sync-real-"))
+        root = Path(tempfile.mkdtemp(prefix="charmer-sync-real-"))
         self.addCleanup(lambda: shutil.rmtree(root, ignore_errors=True))
-        product = root / "claude-multi"
+        product = root / "charmer"
         (product / "tests").mkdir(parents=True)
         originals: dict[str, bytes] = {}
         for relative in upgrade._SYNC_TEST_FILES:
@@ -1315,7 +1315,7 @@ class ReleaseEvidenceTests(UpgradeTestCase):
         self.new.write_text(f'#!/bin/sh\n: > "{marker}"\n')
         verifier = mock.Mock(side_effect=release_manifest.ReleaseManifestUnavailable("network: timeout"))
         runner = mock.Mock()
-        with self.assertRaisesRegex(UpgradeError, "nothing was changed.*claude-multi-dev repin --manifest-dir DIR") as caught:
+        with self.assertRaisesRegex(UpgradeError, "nothing was changed.*charmer-dev repin --manifest-dir DIR") as caught:
             self.repin(checkout_root=product, native_contract=self.contract,
                                 today="2026-09-27", runner=runner, release_verifier=verifier)
         self.assertIn("repin stopped: cannot verify", str(caught.exception))
@@ -1610,7 +1610,7 @@ class ChangedPathsTests(UpgradeTestCase):
 
 
 class RepinCommandTests(UpgradeTestCase):
-    """``claude-multi-dev repin``: flags, the default checkout, no defaults."""
+    """``charmer-dev repin``: flags, the default checkout, no defaults."""
 
     def test_flags_are_checked_before_anything_runs(self):
         from charmer.cli.commands import repin as repin_cmd
@@ -1621,7 +1621,7 @@ class RepinCommandTests(UpgradeTestCase):
                                ({"manifest-dir": True}, "--manifest-dir needs a value"),
                                ({"bogus": "x"}, "unknown repin option --bogus")):
             with self.subTest(flags=flags), mock.patch.object(upgrade, "run_repin") as run:
-                with self.assertRaisesRegex(errors.ClaudeMultiError, message):
+                with self.assertRaisesRegex(errors.CharmerError, message):
                     repin_cmd.repin(flags, environ=self.env, output_stream=io.StringIO())
                 run.assert_not_called()
 
@@ -1652,6 +1652,6 @@ class RepinCommandTests(UpgradeTestCase):
         with mock.patch("charmer.cli.commands.repin.repin", return_value=0) as repin:
             self.assertEqual(dev.main(["repin", "--repo", "/x", "--manifest-dir", "/m"]), 0)
         repin.assert_called_once_with({"repo": "/x", "manifest-dir": "/m"})
-        self.assertIn("claude-multi-dev repin", dev.DEV_HELP)
+        self.assertIn("charmer-dev repin", dev.DEV_HELP)
         self.assertNotRegex(dev.DEV_HELP, r"#\w")  # no flake target anywhere
         self.assertNotIn("--activate", dev.DEV_HELP)

@@ -22,17 +22,17 @@ class ServiceTests(unittest.TestCase):
         # Control verbs name the guarded product verbs on every backend.
         systemd = service.Backend(service.SYSTEMD, "fixture")
         for verb in ("start", "stop", "restart", "status", "logs"):
-            self.assertEqual(service.hint(verb), f"claude-multi gateway {verb}")
-            self.assertEqual(service.hint(verb, backend=systemd), f"claude-multi gateway {verb}")
+            self.assertEqual(service.hint(verb), f"charmer gateway {verb}")
+            self.assertEqual(service.hint(verb, backend=systemd), f"charmer gateway {verb}")
             self.assertEqual(service.hint_code(verb), f"`{service.hint(verb)}`")
         # The on-demand backend never names the service manager.
-        self.assertEqual(service.hint("why"), "claude-multi gateway logs")
-        self.assertEqual(service.hint("recover"), "claude-multi gateway start")
-        self.assertEqual(service.hint("reset-failed"), "claude-multi gateway start")
-        self.assertEqual(service.hint("reload"), "claude-multi-proxy init")
+        self.assertEqual(service.hint("why"), "charmer gateway logs")
+        self.assertEqual(service.hint("recover"), "charmer gateway start")
+        self.assertEqual(service.hint("reset-failed"), "charmer gateway start")
+        self.assertEqual(service.hint("reload"), "charmer-proxy init")
         # Manager text only where the unit exists.
         self.assertEqual(service.hint("recover", backend=systemd),
-                         "systemctl --user reset-failed fixture && claude-multi gateway start")
+                         "systemctl --user reset-failed fixture && charmer gateway start")
         self.assertEqual(service.hint("why", backend=systemd),
                          "systemctl --user show -p ActiveState,Result,ExecMainStatus fixture")
         self.assertEqual(service.hint("reload", backend=systemd), "systemctl --user reload fixture")
@@ -42,7 +42,7 @@ class ServiceTests(unittest.TestCase):
                          ("journalctl", "--user", "-u", "cli-proxy-api", "--since", "-24h", "-o", "cat"))
         self.assertIn("fixture", service.journal_argv(unit="fixture", since="-1h"))
         title, body = service.failure_notice()
-        self.assertEqual(title, "claude-multi gateway failed")
+        self.assertEqual(title, "charmer gateway failed")
         self.assertIn("systemctl --user show -p ActiveState,Result,ExecMainStatus cli-proxy-api", body)
         self.assertIn("systemctl --user reset-failed cli-proxy-api && systemctl --user start cli-proxy-api", body)
 
@@ -52,15 +52,15 @@ class ServiceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp)
             self.assertEqual(service.backend_of(home), service.Backend())
-            self.assertEqual(service.hint("why", home=home), "claude-multi gateway logs")
+            self.assertEqual(service.hint("why", home=home), "charmer gateway logs")
             endpoint.write_config(home, endpoint.EndpointConfig(port=18317, backend=endpoint.SYSTEMD))
             with mock.patch.object(endpoint.sys, "platform", "linux"):
                 self.assertEqual(service.backend_of(home), service.Backend(service.SYSTEMD, endpoint.DEFAULT_UNIT))
                 self.assertIn(endpoint.DEFAULT_UNIT, service.hint("why", home=home))
             with mock.patch.object(endpoint.sys, "platform", "darwin"):  # unsupported: text only
                 self.assertEqual(service.backend_of(home), service.Backend())
-            (home / ".config/claude-multi/endpoint.json").write_text("{broken")
-            self.assertEqual(service.hint("why", home=home), "claude-multi gateway logs")
+            (home / ".config/charmer/endpoint.json").write_text("{broken")
+            self.assertEqual(service.hint("why", home=home), "charmer gateway logs")
 
     def test_service_probe_fails_closed(self) -> None:
         # Migrated from test_gateway_auth_tools: the manager belongs here.
@@ -139,10 +139,10 @@ class PathTests(unittest.TestCase):
         self.assertEqual(paths.display("/fixture/home/a", env), "~/a")
         self.assertEqual(paths.display("/fixture/home", env), "~")
         self.assertEqual(paths.display("/fixture/home-other/a", env), "/fixture/home-other/a")
-        self.assertEqual(paths.config_root(env), Path("/fixture/config/claude-multi"))
-        self.assertEqual(paths.gateway_config_dir(env), Path("/fixture/home/.config/claude-multi"))
+        self.assertEqual(paths.config_root(env), Path("/fixture/config/charmer"))
+        self.assertEqual(paths.gateway_config_dir(env), Path("/fixture/home/.config/charmer"))
         self.assertEqual(paths.secret_env_default(env),
-                         Path("/fixture/home/.config/claude-multi/secrets/provider-keys.env"))
+                         Path("/fixture/home/.config/charmer/secrets/provider-keys.env"))
 
 
 class ListenerOwnerTests(unittest.TestCase):
@@ -278,7 +278,7 @@ class GatewayStampTests(unittest.TestCase):
         # Production, non-injected path uses the dated observation of the
         # recorded unit (the default or a custom name), and asks no manager
         # on demand.
-        for unit in ("claude-multi-gateway", "my-gateway"):
+        for unit in ("charmer-gateway", "my-gateway"):
             with self.subTest(unit=unit), \
                     mock.patch.object(service, "last_reload_result", return_value=result) as reader:
                 self.assertEqual(service.pending_restart_lines(

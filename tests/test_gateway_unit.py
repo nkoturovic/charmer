@@ -52,10 +52,10 @@ class GatewayUnitTests(unittest.TestCase):
         # The one service spec describes the supervised backend; on-demand needs no unit.
         self.assertEqual(s["backend"], endpoint.SYSTEMD)
         self.assertEqual(s["unit"], endpoint.DEFAULT_UNIT)
-        self.assertEqual(s["state_root"], ".local/state/claude-multi")
+        self.assertEqual(s["state_root"], ".local/state/charmer")
         self.assertEqual(s["working_directory"], s["state_root"] + "/" + service.GATEWAY_WORKDIR)
-        self.assertEqual(s["exec_links"], {"bundle": ".local/share/claude-multi/install/current",
-                                           "nix": ".local/share/claude-multi/nix/current"})
+        self.assertEqual(s["exec_links"], {"bundle": ".local/share/charmer/install/current",
+                                           "nix": ".local/share/charmer/nix/current"})
         for key in ("private_dirs", "bind_rw", "bind_ro"):
             for value in s[key]:
                 path = PurePosixPath(value)
@@ -67,9 +67,9 @@ class GatewayUnitTests(unittest.TestCase):
                                  for parent in s["private_dirs"][i + 1:]))
         for path in s["bind_rw"] + s["bind_ro"]:
             self.assertIn(path, s["private_dirs"])
-        self.assertEqual(set(s["bind_rw"]), {".local/share/claude-multi/auth",
-                                           ".local/share/claude-multi/traces", s["working_directory"]})
-        self.assertIn(".config/claude-multi", s["bind_ro"])
+        self.assertEqual(set(s["bind_rw"]), {".local/share/charmer/auth",
+                                           ".local/share/charmer/traces", s["working_directory"]})
+        self.assertIn(".config/charmer", s["bind_ro"])
         self.assertNotIn(".config/secrets/claude.env", str(s))
         self.assertIn(s["hardening"]["home"], ("tmpfs", "read-only", "none"))
         # Both exec links sit under the read-only data bind: no extra bind needed.
@@ -79,10 +79,10 @@ class GatewayUnitTests(unittest.TestCase):
         self.assertLessEqual(set(s["hardening"]["tier_b"]), set(systemd_unit.TIER_B))
 
     def test_notice_and_disabled_write_paths(self):
-        title, body = service.failure_notice("claude-multi-gateway")
-        self.assertEqual(title, "claude-multi gateway failed")
-        self.assertIn("reset-failed claude-multi-gateway", body)
-        self.assertIn("claude-multi gateway service install recreates them", body)
+        title, body = service.failure_notice("charmer-gateway")
+        self.assertEqual(title, "charmer gateway failed")
+        self.assertIn("reset-failed charmer-gateway", body)
+        self.assertIn("charmer gateway service install recreates them", body)
         self.assertNotIn("tmpfiles", body)
         for root in (SHIPPED_ROOT, FIXTURE_ROOT):
             static = catalog.load_catalog(root).docs["gateway"]["gateway"]["cliproxy_static"]

@@ -756,13 +756,13 @@ class WindowCeilingRuntimeTests(_v4.V4Case):
         # command that sets it again.
         self.assertEqual(run("--reset")[:2], (0, "window ceiling reset to the default 800K (800000 tokens) — "
                                                  "applies at the next launch or resume\n"
-                                                 "  it was 400K: claude-multi window-ceiling 400K sets it again\n"))
+                                                 "  it was 400K: charmer window-ceiling 400K sets it again\n"))
         self.assertEqual(choices.window_ceiling(self.env), choices.WindowCeiling(CEILING, False))
         self.assertIn("nothing changed", run("--reset")[1])
         # A ceiling that is no whole thousand comes back to the token.
         self.assertEqual(run("258400")[0], 0)
         shown = run("--reset")[1]
-        self.assertIn("it was 258400: claude-multi window-ceiling 258400 sets it again", shown)
+        self.assertIn("it was 258400: charmer window-ceiling 258400 sets it again", shown)
         self.assertEqual(run("258400")[0], 0)
         self.assertEqual(choices.window_ceiling(self.env).value, 258_400)
         run("--reset")

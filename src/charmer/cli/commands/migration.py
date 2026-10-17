@@ -35,7 +35,7 @@ def _restore_2x(
     proc_root: Path | str = "/proc",
     environ: Mapping[str, str] | None = None,
 ) -> int:
-    """``claude-multi restore-2x`` (dispatched before ``main``'s marker gate).
+    """``charmer restore-2x`` (dispatched before ``main``'s marker gate).
 
     Marker > 4, malformed or unsafe -> the marker error, exit 2, nothing
     touched (sc[15]); missing (3) -> nothing to restore, exit 0 — both before
@@ -55,7 +55,7 @@ def _restore_2x(
     errors = error_stream or sys.stderr
     if getattr(args, "check", False):
         if getattr(args, "not_running", None) or getattr(args, "assume_dead", None):
-            errors.write("claude-multi: --check cannot record liveness overrides\n")
+            errors.write("charmer: --check cannot record liveness overrides\n")
             return 2
         env = dict(os.environ if environ is None else environ)
         report = migrate_mod.restore_check(state_path, product_paths.config_root(env))
@@ -68,12 +68,12 @@ def _restore_2x(
                 output_stream.write(f"  {item['path']}: {item['status']}\n")
         return 1 if report["status"] == "refused" else 0
     if getattr(args, "json_output", False):
-        errors.write("claude-multi: --json requires --check\n")
+        errors.write("charmer: --json requires --check\n")
         return 2
     try:
         version = sessions.check_state_marker(state_path)
     except sessions.StateMarkerError as exc:
-        errors.write(f"claude-multi: {exc}\n")
+        errors.write(f"charmer: {exc}\n")
         return 1
     if version <= sessions.UNMARKED_STATE_VERSION:
         output_stream.write(
@@ -84,7 +84,7 @@ def _restore_2x(
     assume_dead = list(getattr(args, "assume_dead", None) or [])
     for value in not_running + assume_dead:
         if not sessions.UUID4.fullmatch(value):
-            errors.write(f"claude-multi: restore-2x: {value!r} is not a managed session UUID\n")
+            errors.write(f"charmer: restore-2x: {value!r} is not a managed session UUID\n")
             return 2
     store = sessions.SessionStore(state_path, sessions.default_schema())
     self_id = (os.environ if environ is None else environ).get("CLAUDE_MULTI_MANAGED_ID")
@@ -97,7 +97,7 @@ def _restore_2x(
         daemon = sessions.background_liveness()
         if not daemon.known:
             raise migrate_mod.RestoreRefused([
-                "claude-multi: restore-2x: cannot tell which sessions are live in the background "
+                "charmer: restore-2x: cannot tell which sessions are live in the background "
                 f"({daemon.reason}); nothing restored"
             ])
         prefixes = daemon.prefixes
@@ -110,7 +110,7 @@ def _restore_2x(
         if not (scan.known and foreign_scan.known):
             reason = scan.reason if not scan.known else foreign_scan.reason
             raise migrate_mod.RestoreRefused([
-                f"claude-multi: restore-2x: cannot tell which sessions are running (the process "
+                f"charmer: restore-2x: cannot tell which sessions are running (the process "
                 f"table is unreadable: {reason}); nothing restored"
             ])
         proc_ids, foreign = scan.ids, foreign_scan.ids
@@ -170,13 +170,13 @@ def _restore_2x(
         )
     except migrate_mod.RestoreRefused as exc:
         for line in exc.lines:
-            errors.write(line if line.startswith("claude-multi: ") or line.startswith("  ")
-                         else f"claude-multi: {line}")
+            errors.write(line if line.startswith("charmer: ") or line.startswith("  ")
+                         else f"charmer: {line}")
             errors.write("\n")
         return 3 if declined else 1
     except migrate_mod.RestoreStopped as exc:
         output_stream.write(migrate_mod.render_restore(exc.done))
-        errors.write(f"claude-multi: {exc}\n")
+        errors.write(f"charmer: {exc}\n")
         return 1
     output_stream.write(migrate_mod.render_restore(report))
     return 0
@@ -185,7 +185,7 @@ def _restore_2x(
 def _migrate_command(
     runtime: runtime_mod.Runtime, args: argparse.Namespace, output_stream: TextIO
 ) -> int:
-    """``claude-multi migrate [--dry-run] [--json]``."""
+    """``charmer migrate [--dry-run] [--json]``."""
 
     store = runtime.session_store
     lcat = runtime.lineup_catalog()

@@ -65,7 +65,7 @@ class _WayBack:
     """How a screen opened over others leads back to a fresh launch card,
     where G → L signs in and S resumes a session: the Esc presses it takes
     (one per screen), and whether they reach that card (``card``) or end
-    claude-multi (then it is run again)."""
+    charmer (then it is run again)."""
 
     escapes: int = 1
     card: bool = False
@@ -139,7 +139,7 @@ class _CardHealthActions:
 
     def _resume_note(self, win: Any) -> None:
         with tui.suspended_curses(win):
-            self.tty_out.write("\nPress Enter to return to claude-multi.")
+            self.tty_out.write("\nPress Enter to return to charmer.")
             self.tty_out.flush()
             try:
                 self.tty_in.readline()
@@ -147,22 +147,22 @@ class _CardHealthActions:
                 pass
 
     def _run_update(self, win: Any) -> None:
-        """U: the ``claude-multi update`` journey (an installed release checks,
+        """U: the ``charmer update`` journey (an installed release checks,
         plans, asks and applies; the Nix package says to update the flake).
-        Rollback stays a command-line action (``claude-multi update --rollback``)."""
+        Rollback stays a command-line action (``charmer update --rollback``)."""
 
         from charmer import release_update
 
         journey = release_update.journey_for(self.runtime)
         if journey.channel != "bundle":
             lines = [*release_update.channel_lines(journey.channel),
-                     "To roll back an installed release: claude-multi update --rollback"]
-            tui.TextView("Update claude-multi", lines, palette=self.palette).run(win)
+                     "To roll back an installed release: charmer update --rollback"]
+            tui.TextView("Update charmer", lines, palette=self.palette).run(win)
             return
         with tui.suspended_curses(win):
-            self.tty_out.write("Update claude-multi\n")
+            self.tty_out.write("Update charmer\n")
             ask = release_update.terminal_ask(self.tty_in, self.tty_out, interactive=True)
-            go = ask("Check the release server for a newer claude-multi now?")
+            go = ask("Check the release server for a newer charmer now?")
             if go:
                 release_update.run(journey, mode="update", ask=ask, out=self.tty_out)
             else:
@@ -171,13 +171,13 @@ class _CardHealthActions:
         self._refresh_health()
 
     def _run_health(self, win: Any) -> None:
-        """H: doctor's report as ``claude-multi doctor`` prints it (detail
+        """H: doctor's report as ``charmer doctor`` prints it (detail
         lines folded behind ``doctor -v``, the same closing line; a key a
         finding says to save is named by the card's route, G → K, as the
         card's other remedies are), a bulk repair offered only when a
         finding names a session repair, then the gateway's own actions."""
 
-        self._pause_for_lines(win, "claude-multi doctor")
+        self._pause_for_lines(win, "charmer doctor")
         problems, info_lines, attention = doctor._collect_doctor_reports(self.runtime)
         status = "blocked" if problems else ("attention" if attention else "ready")
         shown = [line for line in info_lines if not doctor.detail_line(line)]
@@ -292,7 +292,7 @@ class _NeedsChoiceChooser:
     ):
         self.runtime = runtime
         self.records = list(records)
-        # From the chooser's first list: Esc leaves it (claude-multi -r: ends it).
+        # From the chooser's first list: Esc leaves it (charmer -r: ends it).
         self.way_back = way_back or _WayBack()
         self.palette = palette
         self.passthrough = list(passthrough)
@@ -676,7 +676,7 @@ class _LineupDialog:
         except lineup_mod.LineupRefusal as exc:
             self.message = str(exc).replace("\n", " ")
             return
-        except (sessions.SessionError, profile_mod.ProfileError, cli_errors.ClaudeMultiError) as exc:
+        except (sessions.SessionError, profile_mod.ProfileError, cli_errors.CharmerError) as exc:
             self.message = termtext.visible_message(exc)
             return
         self.request = request
@@ -882,7 +882,7 @@ class _LineupDialog:
             lines = text.splitlines()
             # Shared fallback reports end with one next step. An ended
             # session needs resume, never a running-client reload.
-            lines[-1] = f"Next: resume with claude-multi -r {self.mid}"
+            lines[-1] = f"Next: resume with charmer -r {self.mid}"
             replacements = {
                 "Effect: LIVE": "Effect: scope changed now; used at the next resume",
                 lineup_mod.FALLBACK_UNCHANGED:
@@ -1023,7 +1023,7 @@ class _SessionsScreen:
         self.tty_out = tty_out
         self.root = root
         # Esc leaves the screen: back to the launch card that opened it, or
-        # (the first screen) out of claude-multi.
+        # (the first screen) out of charmer.
         self.way_back = way_back or _WayBack(1, card=not root)
         self.cwd_filter = True
         self.selected = 0
@@ -1655,7 +1655,7 @@ class _SessionsScreen:
         buf = io.StringIO()
         try:
             code = doctor_actions._doctor_repair(self.runtime, mid, buf)
-        except (cli_errors.ClaudeMultiError, sessions.SessionError, state.StateError, OSError) as exc:
+        except (cli_errors.CharmerError, sessions.SessionError, state.StateError, OSError) as exc:
             self._say(termtext.visible_message(exc), "warn")
             return
         self._reload()
@@ -1696,7 +1696,7 @@ class _SessionsScreen:
             if v4:
                 try:
                     explain = routing.text(session_facts.explanation(runtime, mid)).splitlines()
-                except (cli_errors.ClaudeMultiError, sessions.SessionError, OSError, ValueError, KeyError):
+                except (cli_errors.CharmerError, sessions.SessionError, OSError, ValueError, KeyError):
                     explain = None
             try:
                 now = gateway_facts._doctor_now()
@@ -1704,7 +1704,7 @@ class _SessionsScreen:
                 events = gateway_facts.report_events(runtime, since=start.isoformat())
                 if events.coverage != "unavailable":
                     usage_lines = usage_mod.text(usage_mod.report(events, start, now, mid)).splitlines()
-            except (cli_errors.ClaudeMultiError, OSError, ValueError):
+            except (cli_errors.CharmerError, OSError, ValueError):
                 usage_lines = None
         lines = views.session_details(
             summary, record, state=self.states.get(mid, "unknown"), lead=lead, agents=agents, drift=drift,
@@ -1904,7 +1904,7 @@ def _claude_card_row(runtime: Any) -> tuple[str | None, str | None]:
         version = pin_mod.version(contract)
         state, problem = pin_mod.copy_state(contract, runtime.environ, platform=platform,
                                             retained_root=product_paths.retained_root(runtime.environ))
-    except (cli_errors.ClaudeMultiError, KeyError, TypeError, ValueError, OSError) as exc:
+    except (cli_errors.CharmerError, KeyError, TypeError, ValueError, OSError) as exc:
         return None, f"Claude Code cannot run here: {termtext.visible_message(exc)}"
     evidence = pin_mod.evidence_class(contract, platform)
     text = f"Claude Code {version}"
@@ -1929,7 +1929,7 @@ def _claude_card_staleness(runtime: Any) -> str | None:
         client = pin_mod.installed_client(runtime.environ)
         return pin_mod.staleness(runtime.catalog.docs["native-contract"], gateway_facts._doctor_now().date(),
                                  client.version if client is not None else None)
-    except (cli_errors.ClaudeMultiError, KeyError, TypeError, ValueError, OSError):
+    except (cli_errors.CharmerError, KeyError, TypeError, ValueError, OSError):
         return None
 
 
@@ -1941,7 +1941,7 @@ def _card_new_lines(runtime: Any, eff: Any) -> tuple[str, ...]:
     try:
         registry = custom.load_registry(runtime.environ)
         rows = views.line_rows(runtime.lineup_catalog(), eff, custom_ids=frozenset(registry["models"]))
-    except (cli_errors.ClaudeMultiError, KeyError, TypeError, ValueError, OSError):
+    except (cli_errors.CharmerError, KeyError, TypeError, ValueError, OSError):
         return ()
     return tuple(row.short for row in rows
                  if row.source == "catalog" and row.status == "new" and not row.admitted and row.provider_enabled)
@@ -1990,7 +1990,7 @@ def _card_sign_in_route(way_back: _WayBack | None) -> str:
 
 # A finding's remedy (after its " — ") that saves a provider's key; a
 # command quoted inside other advice (a file to correct) stays as it is.
-_SET_KEY_COMMAND = re.compile(r"(?<= — )claude-multi providers set-key ([a-z][a-z0-9-]*)")
+_SET_KEY_COMMAND = re.compile(r"(?<= — )charmer providers set-key ([a-z][a-z0-9-]*)")
 
 
 def _card_key_route(display: str, way_back: _WayBack | None) -> str:
@@ -2111,7 +2111,7 @@ def _lead_origin(runtime: Any, lineup: Any) -> str | None:
         return None
     try:
         return runtime.lineup_catalog().origin(lineup.lead.binding.key)
-    except (cli_errors.ClaudeMultiError, KeyError, AttributeError):
+    except (cli_errors.CharmerError, KeyError, AttributeError):
         return None
 
 
@@ -2165,7 +2165,7 @@ class _LaunchCardScreen(_CardHealthActions):
         if action != "fresh" and prepared is None:
             raise ValueError("a resume card is built with the prepared launch of its caller")
         # A resume card's way back to a launch card (its sign-in and key
-        # remedies say it): Esc ends claude-multi -r <id> unless a screen
+        # remedies say it): Esc ends charmer -r <id> unless a screen
         # that opened the card says otherwise.
         self.way_back = (way_back or _WayBack()) if action != "fresh" else None
         self.runtime = runtime
@@ -2346,7 +2346,7 @@ class _LaunchCardScreen(_CardHealthActions):
             if lineup is not None:
                 try:
                     spend = defaults.spend_notes(runtime, lineup)
-                except (cli_errors.ClaudeMultiError, KeyError, ValueError):
+                except (cli_errors.CharmerError, KeyError, ValueError):
                     spend = ()
         load_error = self.load_error if unloadable else None
         load_path = None
@@ -2444,7 +2444,7 @@ class _LaunchCardScreen(_CardHealthActions):
         limit = width - 1
         if row.kind == "title":
             tui.safe_add(win, y, 2, row.label, palette.attr("accent") | tui.curses.A_BOLD)
-            tui.safe_add(win, y, 15, views.clip(row.text, limit - 15), palette.attr(row.role))
+            tui.safe_add(win, y, row.col, views.clip(row.text, limit - row.col), palette.attr(row.role))
             return
         if row.kind == "rule":
             tui.safe_add(win, y, 2, views.rule(width), palette.attr("dim"))
@@ -2635,7 +2635,7 @@ class _LaunchCardScreen(_CardHealthActions):
 
         try:
             focus = status.should_open(self.runtime, explicit=False, resume=self.resume)
-        except (cli_errors.ClaudeMultiError, OSError, ValueError):
+        except (cli_errors.CharmerError, OSError, ValueError):
             return None
         if focus == "claude" and not self.runtime.pin_report:
             # An injected binary report describes the copy: the card shows
@@ -2653,7 +2653,7 @@ class _LaunchCardScreen(_CardHealthActions):
             return
         try:
             self.not_connected = not status.connected(self.runtime)
-        except (cli_errors.ClaudeMultiError, OSError, ValueError, KeyError):
+        except (cli_errors.CharmerError, OSError, ValueError, KeyError):
             self.not_connected = False
 
     def _get_started(self, win: Any, *, focus: str | None = None) -> None:
@@ -3116,7 +3116,7 @@ def _relink_and_recheck(
     directory (or one the person names, prefilled with the current one)
     through the store's relink, then evaluate the gate again. When the
     transcript still sits under the old directory, show the exact quoted
-    command that moves it and stop — claude-multi never moves, reads or
+    command that moves it and stop — charmer never moves, reads or
     deletes a transcript."""
 
     stable_id = sessions.managed_id(record)

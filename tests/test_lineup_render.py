@@ -84,7 +84,7 @@ class LineupRenderTests(unittest.TestCase):
         direct = self._lineup(profile.ad_hoc_direct("qwen38", "max"), ad_hoc=True)
         text = lineup.render_text(direct, header="profile (ad-hoc direct)", generation=3)
         first = text.splitlines()[0]
-        self.assertTrue(first.startswith("claude-multi · profile (ad-hoc direct) · lineup gen 3 · lead "))
+        self.assertTrue(first.startswith("charmer · profile (ad-hoc direct) · lineup gen 3 · lead "))
         self.assertIn("none: this session has no cm-* agents", text)
         self.assertTrue(text.endswith("\n".join((lineup.HELP_LINE, *lineup.MODEL_HELP_LINES)) + "\n"))
 
@@ -135,12 +135,12 @@ class LineupRenderTests(unittest.TestCase):
         self.assertIn("lineup gen -", text)
         self.assertIn(
             "pending relaunch change: lead class changes — applies at the next resume "
-            "(claude-multi -r 11111111-1111-4111-8111-111111111111)",
+            "(charmer -r 11111111-1111-4111-8111-111111111111)",
             text,
         )
         self.assertIn("requested lead: ", text)
         self.assertIn("(gpt-multi-sol-high[1m]) — switch with /model", text)
-        self.assertIn("needs a lead choice: lead gone: retired — claude-multi -r", text)
+        self.assertIn("needs a lead choice: lead gone: retired — charmer -r", text)
         self.assertIn(
             "settings changed since launch: compaction 80 → 90 — applies at the next resume",
             text,

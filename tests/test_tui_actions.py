@@ -59,7 +59,7 @@ class ActionTableTests(unittest.TestCase):
                 seen.add(row.id)
                 self.assertTrue(row.does)
                 if row.command is not None:
-                    self.assertTrue(row.command.startswith("claude-multi"), row.id)
+                    self.assertTrue(row.command.startswith("charmer"), row.id)
         self.assertEqual(actions.action("card.doctor").key, "H")
         for missing in ("card.nothing", "nowhere.quit"):
             with self.assertRaises(KeyError):

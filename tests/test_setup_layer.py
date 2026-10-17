@@ -94,14 +94,14 @@ class EndpointTests(LayerCase):
         self.assertEqual(self.store().get("VENDORX_API_KEY"), "vendorx-dummy-key")
         with self.assertRaisesRegex(model.Refused, "exists — choose another name"):
             setup_providers.plan_add_endpoint(self.runtime, self.VALUES)
-        with self.assertRaisesRegex(model.Refused, "ships with claude-multi"):
+        with self.assertRaisesRegex(model.Refused, "ships with charmer"):
             setup_providers.plan_add_endpoint(self.runtime, {**self.VALUES, "id": "kimi"})
 
     def test_a_refused_render_leaves_nothing_behind(self) -> None:
         with self.human():
             plan = setup_providers.plan_add_endpoint(self.runtime, self.VALUES)
             with mock.patch.object(self.runtime, "render_gateway",
-                                   side_effect=setup_providers.errors.ClaudeMultiError("fixture refusal")):
+                                   side_effect=setup_providers.errors.CharmerError("fixture refusal")):
                 with self.assertRaises(model.Refused):
                     setup_providers.apply_add_endpoint(self.runtime, plan, model.Confirmation.given(plan),
                                                        model.Secret("vendorx-dummy-key"))
@@ -170,7 +170,7 @@ class TransportTests(LayerCase):
         from charmer.cli.commands import providers as provider_commands
 
         # The provider's selector bases undercount what moves (the gateway
-        # also serves claude-multi-* aliases of the same lines): the summary
+        # also serves charmer-* aliases of the same lines): the summary
         # follows the listed rows, never the bases.
         with self.human(), mock.patch.object(provider_commands, "_transport_selectors",
                                              return_value=frozenset({"claude-opus-5-5"})):
@@ -215,7 +215,7 @@ class LineRemoveTests(LayerCase):
 
     def test_shipped_and_unknown_lines(self) -> None:
         shipped = next(iter(self.runtime.catalog.docs["models-v2"]["models"]))
-        with self.assertRaisesRegex(model.Refused, "ships with claude-multi"):
+        with self.assertRaisesRegex(model.Refused, "ships with charmer"):
             setup_lines.plan_line_remove(self.runtime, shipped)
         with self.assertRaisesRegex(model.Refused, "no providers.d declaration of nothing-here"):
             setup_lines.plan_line_remove(self.runtime, "nothing-here")
@@ -297,9 +297,9 @@ class GatewayStepTests(LayerCase):
             self.assertEqual((found.state, found.detail, found.fix), ("setup", "not set up yet", external.GATEWAY_FIX))
             check = {item.id: item for item in firstrun.checks(self.runtime)}["gateway"]
             self.assertEqual((check.state, check.detail, check.fix.cli),
-                             ("fail", "not set up yet", "claude-multi setup --step gateway"))
+                             ("fail", "not set up yet", "charmer setup --step gateway"))
             row = status.status_lines(status.snapshot(self.runtime))[2]
-            self.assertIn("not set up yet — claude-multi setup --step gateway", row)
+            self.assertIn("not set up yet — charmer setup --step gateway", row)
             outcome = external.stop_gateway_for_uninstall(self.runtime)
         self.assertEqual(outcome, ("not-running", "not set up yet"))
         gateway.observe.assert_not_called()

@@ -66,7 +66,7 @@ class SetKeyLayerTests(CredentialCase):
                                               model.Secret("kimi-new-dummy"))
         self.assertEqual(self.store().get(KIMI), "changed-meanwhile")
         # Outside a terminal the guarded apply refuses.
-        with mock.patch.object(consent, "stdio_ttys", return_value=False), self.assertRaises(errors.ClaudeMultiError):
+        with mock.patch.object(consent, "stdio_ttys", return_value=False), self.assertRaises(errors.CharmerError):
             setup_providers.apply_set_key(self.runtime, plan, model.Confirmation.given(plan), model.Secret("v-dummy"))
         self.runtime.allow_state_writes = False
         with self.human(), self.assertRaisesRegex(model.Refused, "read-only"):
@@ -76,7 +76,7 @@ class SetKeyLayerTests(CredentialCase):
         with self.human():
             plan = setup_providers.plan_set_key(self.runtime, "kimi")
             with mock.patch.object(self.runtime, "render_gateway",
-                                   side_effect=errors.ClaudeMultiError("fixture render refusal")):
+                                   side_effect=errors.CharmerError("fixture render refusal")):
                 with self.assertRaises(model.Refused) as caught:
                     setup_providers.apply_set_key(self.runtime, plan, model.Confirmation.given(plan),
                                                   model.Secret("kimi-new-dummy"))
@@ -278,7 +278,7 @@ class KeyFileLocationTests(CredentialCase):
         pointer = paths.secret_pointer_path(self.env_now)
         before = pointer.read_bytes()
         with mock.patch.object(self.runtime, "render_gateway",
-                               side_effect=errors.ClaudeMultiError("fixture render refusal")):
+                               side_effect=errors.CharmerError("fixture render refusal")):
             with self.assertRaises(model.Refused):
                 setup_providers.apply_key_file(self.runtime, self.b)
         self.assertEqual(pointer.read_bytes(), before)
@@ -388,7 +388,7 @@ class SelectedTransportKeyTests(CredentialCase):
         self.select_then_lose_the_key()
         blocks = self.transport_blocks()
         self.assertEqual(len(blocks), 1, blocks)
-        self.assertIn(f"{ANTHROPIC_KEY} is not set — claude-multi providers set-key anthropic", blocks[0])
+        self.assertIn(f"{ANTHROPIC_KEY} is not set — charmer providers set-key anthropic", blocks[0])
         self.assertNotIn("providers transport anthropic api-key", blocks[0])
         # The transport command is a no-op here: it is already the transport in use.
         code, out, err = self.op(["providers", "transport", "anthropic", "api-key"], "y\n")
@@ -411,7 +411,7 @@ class SelectedTransportKeyTests(CredentialCase):
         from test_tui import ESC, FakeWindow
 
         self.select_then_lose_the_key()
-        command = "claude-multi providers set-key anthropic"
+        command = "charmer providers set-key anthropic"
         out = io.StringIO()
         target = cli.LaunchTarget("profile", self.runtime.profiles.load(catalog.DEFAULT_SEED), catalog.DEFAULT_SEED,
                                   True, f"Profile {catalog.DEFAULT_SEED}")
@@ -453,7 +453,7 @@ class SetKeyCommandTests(CredentialCase):
     def test_anthropic_names_the_transport_command(self) -> None:
         code, _out, err = self.op(["providers", "set-key", "anthropic"])
         self.assertEqual(code, 1)
-        self.assertIn("claude-multi providers transport anthropic api-key", err)
+        self.assertIn("charmer providers transport anthropic api-key", err)
 
 
 class RemoveKeyTests(CredentialCase):
@@ -489,7 +489,7 @@ class RemoveKeyTests(CredentialCase):
         with self.human():
             plan = setup_providers.plan_remove_key(self.runtime, "kimi")
             with mock.patch.object(self.runtime, "render_gateway",
-                                   side_effect=errors.ClaudeMultiError("fixture render refusal")):
+                                   side_effect=errors.CharmerError("fixture render refusal")):
                 with self.assertRaises(model.Refused):
                     setup_providers.apply_remove_key(self.runtime, plan, model.Confirmation.given(plan))
         self.assertEqual(self.store().get(KIMI), "cli-test-dummy")
@@ -560,7 +560,7 @@ class RemoveProviderTests(CredentialCase):
         self.assertEqual(code, 0, err)
         line = next(line for line in out.splitlines() if "was kept" in line)
         command = shlex.split(line.split(" — ", 1)[1])
-        self.assertEqual(command[:3], ["claude-multi", "providers", "remove-key"])
+        self.assertEqual(command[:3], ["charmer", "providers", "remove-key"])
         code, out, err = self.op([*command[1:], "--yes"])
         self.assertEqual(code, 0, err)
         self.assertIsNone(self.store().get("ACME_API_KEY"))
@@ -586,12 +586,12 @@ class RemoveProviderTests(CredentialCase):
         self.assertEqual(code, 0, err)
         plan = setup_providers.plan_remove_provider(self.runtime, "acme")
         self.assertEqual([(b.kind, b.subject) for b in plan.blockers], [("admitted", "custom-acme-small")])
-        self.assertEqual(plan.blockers[0].fix_cli, "claude-multi models revoke custom-acme-small")
+        self.assertEqual(plan.blockers[0].fix_cli, "charmer models revoke custom-acme-small")
         with self.assertRaises(model.Refused):
             setup_providers.apply_remove_provider(self.runtime, plan, model.Confirmation.given(plan))
         code, _out, err = self.op(["providers", "rm", "acme", "--yes"])
         self.assertEqual(code, 1)
-        self.assertIn("refused — claude-multi models revoke custom-acme-small", err)
+        self.assertIn("refused — charmer models revoke custom-acme-small", err)
 
 
 class ConnectionTestTests(CredentialCase):
@@ -601,7 +601,7 @@ class ConnectionTestTests(CredentialCase):
         code, out, err = self.op(["providers", "test", "kimi"], "n\n")
         self.assertEqual(code, 3)
         self.assertEqual(self.calls, [])
-        self.assertIn("claude-multi will make 1 request(s), one per provider:", err)
+        self.assertIn("charmer will make 1 request(s), one per provider:", err)
         self.assertIn(f"auth: header from {KIMI} (value not shown)", err)
         self.assertIn("Providers may bill these requests.", err)
         code, out, err = self.op(["providers", "test", "kimi"], "y\n")
@@ -658,7 +658,7 @@ class ConnectionTestTests(CredentialCase):
         code, _out, err = self.op(["providers", "test", "kimi"], "y\n")
         self.assertEqual(code, 1)
         self.assertEqual(self.calls, [])
-        self.assertIn("Apply it: claude-multi providers apply", err)
+        self.assertIn("Apply it: charmer providers apply", err)
 
     def test_outcomes_are_classified(self) -> None:
         from charmer.setup import check

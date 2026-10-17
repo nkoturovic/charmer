@@ -57,7 +57,7 @@ from pathlib import Path
 from typing import Any, Callable, ContextManager, Mapping, Protocol
 
 from . import paths, state, strict_json, trust
-from .errors import ClaudeMultiError
+from .errors import CharmerError
 from .platform import posix_fs
 from .sessions import STATE_MARKER, UNMARKED_STATE_VERSION
 
@@ -84,7 +84,7 @@ _DATE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
 _CHUNK = 1 << 20
 
 
-class UpdateError(ClaudeMultiError):
+class UpdateError(CharmerError):
     """An update, check or rollback cannot proceed; nothing was changed
     unless the message says so."""
 

@@ -45,7 +45,7 @@ from . import errors, paths, state, strict_json
 from .platform import posix_fs
 
 
-class SecretStoreError(errors.ClaudeMultiError, RuntimeError):
+class SecretStoreError(errors.CharmerError, RuntimeError):
     """A secret store could not be read or written (no secret bytes inside)."""
 
 

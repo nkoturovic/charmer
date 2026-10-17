@@ -1,7 +1,7 @@
-# Offline unittest derivation for the claude-multi suite (the sandbox gate).
+# Offline unittest derivation for the charmer suite (the sandbox gate).
 # Runs the complete current suite in a Nix sandbox against this tree.
 # The repository flake exposes this exact derivation as
-# checks.x86_64-linux.claude-multi (preferred gate: it evaluates only
+# checks.x86_64-linux.charmer (preferred gate: it evaluates only
 # git-tracked files); `nix build --file tests/default.nix` is the alias.
 # Default pkgs resolves the locked nixpkgs from the repository flake.lock.
 {
@@ -27,7 +27,7 @@ let
   launchers = pkgs.lib.sort (a: b: a < b)
     (builtins.fromJSON (builtins.readFile ../packaging/product.json)).launchers;
 in
-pkgs.runCommand "claude-multi-tests"
+pkgs.runCommand "charmer-tests"
   {
     # git: tools/build.py applies gateway patches with `git apply`.
     # openssh: ssh-keygen signs and verifies the fake releases of the
@@ -59,21 +59,21 @@ pkgs.runCommand "claude-multi-tests"
     mkdir -p "$HOME"
     staged="$TMPDIR/staged"
     mkdir -p "$staged"
-    cp -r "$tree" "$staged/claude-multi"
-    chmod -R u+w "$staged/claude-multi"
-    export PYTHONPATH="$staged/claude-multi/src:$staged/claude-multi/tests"
+    cp -r "$tree" "$staged/charmer"
+    chmod -R u+w "$staged/charmer"
+    export PYTHONPATH="$staged/charmer/src:$staged/charmer/tests"
     # Explicit non-gateway lane: select pure keyed self-tests, never skip a required proof.
     export CLAUDE_MULTI_TEST_KEYED_LANE=unit
     cd "$TMPDIR"
     # Same discovery as the dev gate (-t: tests is a package), so
     # tests/__init__.py arms the live-gateway connect tripwire here too.
-    python3 -m unittest discover -s "$staged/claude-multi/tests" -t "$staged/claude-multi" -p 'test_*.py'
-    "$package/bin/claude-multi" --version
-    "$package/bin/claude-multi-proxy" --version
-    "$package/bin/claude-multi" --help | grep -qF "$package/share/claude-multi/CHEATSHEET.md"
-    # The package's documents link only inside share/claude-multi (nested
+    python3 -m unittest discover -s "$staged/charmer/tests" -t "$staged/charmer" -p 'test_*.py'
+    "$package/bin/charmer" --version
+    "$package/bin/charmer-proxy" --version
+    "$package/bin/charmer" --help | grep -qF "$package/share/charmer/CHEATSHEET.md"
+    # The package's documents link only inside share/charmer (nested
     # directories and heading anchors included).
-    python3 "$staged/claude-multi/tests/check_docs_vocabulary.py" --installed "$package/share/claude-multi"
+    python3 "$staged/charmer/tests/check_docs_vocabulary.py" --installed "$package/share/charmer"
     installed=$(ls "$package/bin" | sort | tr '\n' ' ')
     test "$installed" = "${pkgs.lib.concatStringsSep " " launchers} " || {
       echo "installed commands: $installed (expected the public launchers)"; exit 1; }

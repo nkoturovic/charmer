@@ -16,7 +16,7 @@ live-roots check against the real environment (the ``test_scope_probe.py``
 precedent); the child never inherits it.
 
 - S7 which wire the client requests for bare ``opus``/``fable`` aliases,
-  canonical ``claude-<wire>[1m]`` vs ``claude-multi-<wire>[1m]`` selectors
+  canonical ``claude-<wire>[1m]`` vs ``charmer-<wire>[1m]`` selectors
   (output cap, effort, thinking, prompt-bundle size class, recognition betas,
   model-not-found chain) and the refusal fallback (``stop_reason: refusal`` +
   ``stop_details.category``) with and without its target in the fence.
@@ -83,8 +83,8 @@ _SONNET = _FAMILY["ANTHROPIC_DEFAULT_SONNET_MODEL"]
 _OPUS48 = "claude-opus-4-8[1m]"
 _OPUS5 = "claude-opus-5[1m]"
 _SONNET5 = "claude-sonnet-5[1m]"
-_MULTI_OPUS = "claude-multi-" + _OPUS.removeprefix("claude-")
-_MULTI_FABLE = "claude-multi-" + _FABLE.removeprefix("claude-")
+_MULTI_OPUS = "charmer-" + _OPUS.removeprefix("claude-")
+_MULTI_FABLE = "charmer-" + _FABLE.removeprefix("claude-")
 # A managed scope configured nowhere compiles this default mode;
 # without it 2.1.284+ starts in auto mode, which (through a gateway) cannot
 # classify Agent spawns and refuses them.
@@ -337,7 +337,7 @@ class _SpikeTestCase(unittest.TestCase):
         super().setUp()
         if self.boundary_skip is not None:
             self.skipTest(self.boundary_skip)
-        self.root = Path(tempfile.mkdtemp(prefix="claude-multi-client-check-"))
+        self.root = Path(tempfile.mkdtemp(prefix="charmer-client-check-"))
         os.chmod(self.root, 0o700)
         self.addCleanup(shutil.rmtree, self.root, True)
         # Simulated live roots: the fixture stays disjoint from them and the
@@ -521,7 +521,7 @@ class SelectorRecognitionProbe(_SpikeTestCase):
         self.assertEqual(canonical_sonnet["max_tokens"], 128000)
         self.assertEqual(canonical_sonnet["effort"], "medium")
         self.assertFalse(unrecognized[_OPUS] or unrecognized[_FABLE] or unrecognized[_SONNET])
-        # claude-multi-* ids are unknown: generic 32000 cap, generic effort,
+        # charmer-* ids are unknown: generic 32000 cap, generic effort,
         # the unrecognized_model stderr marker.
         for selector in (_MULTI_OPUS, _MULTI_FABLE):
             self.assertEqual(observed[selector]["max_tokens"], 32000)
@@ -536,7 +536,7 @@ class SelectorRecognitionProbe(_SpikeTestCase):
             f"effort={canonical_opus['effort']} fable max_tokens="
             f"{canonical_fable['max_tokens']} effort={canonical_fable['effort']} "
             f"sonnet max_tokens={canonical_sonnet['max_tokens']} effort={canonical_sonnet['effort']}; "
-            f"claude-multi max_tokens={multi_opus['max_tokens']} effort={multi_opus['effort']} "
+            f"charmer max_tokens={multi_opus['max_tokens']} effort={multi_opus['effort']} "
             "unrecognized_model; system bytes opus "
             f"{canonical_opus['system_bytes']}/{multi_opus['system_bytes']} fable "
             f"{canonical_fable['system_bytes']}/{multi_fable['system_bytes']}"
@@ -651,7 +651,7 @@ class SelectorRecognitionProbe(_SpikeTestCase):
         ]
         print(
             f"client check S7: PASS {self._identity()} canonical anthropic "
-            "selectors recognised, claude-multi-* unknown; " + "; ".join(details)
+            "selectors recognised, charmer-* unknown; " + "; ".join(details)
         )
 
 

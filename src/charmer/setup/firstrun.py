@@ -1,5 +1,5 @@
 """The first-run checks: nine ordered, local checks with one fix each
-(``claude-multi doctor --first-run``, Get started's review step).
+(``charmer doctor --first-run``, Get started's review step).
 
 Every check runs, in order, on local facts only; a check whose prerequisite
 failed is ``waiting``. Nothing is written and no provider is called.
@@ -40,7 +40,7 @@ class Check:
 
 
 def _fix(cli: str, tui: str | None = None) -> model.Fix:
-    return model.Fix(tui, cli, tuple(cli.split()) if cli.startswith("claude-multi ") else ())
+    return model.Fix(tui, cli, tuple(cli.split()) if cli.startswith("charmer ") else ())
 
 
 def _gb(value: int) -> str:
@@ -56,7 +56,7 @@ def _computer(runtime: Any) -> Check:
     parts = [f"{system} {facts['arch']}"]
     problems: list[tuple[str, model.Fix | None]] = []
     if not sys.platform.startswith(SUPPORTED_PLATFORMS):
-        problems.append((f"{system} is not supported", _fix("see Supported systems in the claude-multi guide")))
+        problems.append((f"{system} is not supported", _fix("see Supported systems in the charmer guide")))
     try:
         release = (Path(runtime.proc_root) / "sys/kernel/osrelease").read_text(errors="replace")
     except (OSError, TypeError):
@@ -70,7 +70,7 @@ def _computer(runtime: Any) -> Check:
             fstype = None
         if fstype in mounts.NETWORK_TYPES:
             problems.append((f"the {label} folder {paths.display(root, runtime.environ)} is on a network "
-                             f"filesystem ({fstype})", _fix("keep claude-multi's folders on a local disk")))
+                             f"filesystem ({fstype})", _fix("keep charmer's folders on a local disk")))
     data = paths.data_root(runtime.environ)
     free = external.free_bytes(data)
     if free is not None:
@@ -145,7 +145,7 @@ def _policy(runtime: Any) -> Check:
         return Check("policy", TITLES["policy"], "fail", blocking[0][1], blocking[0][2])
     if findings:
         return Check("policy", TITLES["policy"], "attention", findings[0][1], findings[0][2])
-    return Check("policy", TITLES["policy"], "ok", "no administrator setting blocks claude-multi", None)
+    return Check("policy", TITLES["policy"], "ok", "no administrator setting blocks charmer", None)
 
 
 def _claude(runtime: Any, verified: Any = None) -> Check:
@@ -174,14 +174,14 @@ def _gateway(runtime: Any) -> Check:
     if os.path.lexists(key):
         try:
             launch.read_gateway_token(runtime.catalog.docs["gateway"], home=runtime.home)
-        except (launch.GatewayKeyError, errors.ClaudeMultiError, OSError) as exc:
+        except (launch.GatewayKeyError, errors.CharmerError, OSError) as exc:
             return Check("gateway", TITLES["gateway"], "fail", f"the local gateway key is unreadable: {exc}",
                          external.GATEWAY_FIX)
     try:
         runtime.operator_render_plan()
-    except (errors.ClaudeMultiError, OSError, ValueError) as exc:
+    except (errors.CharmerError, OSError, ValueError) as exc:
         return Check("gateway", TITLES["gateway"], "fail", f"the gateway configuration does not render: {exc}",
-                     _fix("claude-multi providers validate"))
+                     _fix("charmer providers validate"))
     detail = "running" if status.state == "running" else "starts when needed"
     return Check("gateway", TITLES["gateway"], "ok", detail, None)
 
@@ -192,13 +192,13 @@ def _providers(runtime: Any, conns: Sequence[Any]) -> Check:
     linked = [item for item in conns if item.state == "connected"]
     if not linked:
         return Check("providers", TITLES["providers"], "fail", "nothing connected yet",
-                     _fix("claude-multi setup --step providers", "A on Get started"))
+                     _fix("charmer setup --step providers", "A on Get started"))
     for item in linked:
         if item.kind == "account" and item.credential in signin.LOGIN_COMMANDS \
                 and signin.current_ack(runtime.environ, str(item.credential)) is None:
             return Check("providers", TITLES["providers"], "attention",
                          f"{item.label} is signed in without a current personal-use confirmation",
-                         _fix(f"claude-multi providers sign-in {item.provider_id}", "L on the provider"))
+                         _fix(f"charmer providers sign-in {item.provider_id}", "L on the provider"))
     return Check("providers", TITLES["providers"], "ok", " · ".join(item.label for item in linked), None)
 
 
@@ -207,8 +207,8 @@ def _models(runtime: Any, conns: Sequence[Any]) -> Check:
     try:
         lcat = runtime.lineup_catalog()
         eff = runtime.current_effective()
-    except (errors.ClaudeMultiError, OSError, ValueError) as exc:
-        return Check("models", TITLES["models"], "fail", str(exc), _fix("claude-multi doctor"))
+    except (errors.CharmerError, OSError, ValueError) as exc:
+        return Check("models", TITLES["models"], "fail", str(exc), _fix("charmer doctor"))
     from charmer import settings as settings_mod
 
     leads: dict[str, int] = {}
@@ -220,11 +220,11 @@ def _models(runtime: Any, conns: Sequence[Any]) -> Check:
     if not leads:
         first = sorted(linked)[0]
         return Check("models", TITLES["models"], "fail", "no connected provider has a model that can lead",
-                     _fix(f"claude-multi discover {first}", "G → A adds models"))
+                     _fix(f"charmer discover {first}", "G → A adds models"))
     served = [linked[pid].served for pid in leads]
     if all(text.startswith("0/") for text in served):
         return Check("models", TITLES["models"], "fail", "the gateway serves none of them yet",
-                     _fix("claude-multi providers apply", "G → P applies"))
+                     _fix("charmer providers apply", "G → P applies"))
     return Check("models", TITLES["models"], "ok", f"{sum(leads.values())} model(s) can lead", None)
 
 
@@ -233,12 +233,12 @@ def _profile(runtime: Any) -> Check:
 
     try:
         choice = defaults.resolve_default(runtime)
-    except (errors.ClaudeMultiError, OSError, ValueError) as exc:
-        return Check("profile", TITLES["profile"], "fail", str(exc), _fix("claude-multi setup --step profile"))
+    except (errors.CharmerError, OSError, ValueError) as exc:
+        return Check("profile", TITLES["profile"], "fail", str(exc), _fix("charmer setup --step profile"))
     if choice.ready:
         return Check("profile", TITLES["profile"], "ok", f"{choice.name} ({choice.reason_text})", None)
     return Check("profile", TITLES["profile"], "fail", f"{choice.name} is not connected here",
-                 _fix("claude-multi setup --step profile", "Enter on step 6"))
+                 _fix("charmer setup --step profile", "Enter on step 6"))
 
 
 def _hooks(runtime: Any) -> Check:
@@ -252,11 +252,11 @@ def _hooks(runtime: Any) -> Check:
         try:
             info = os.lstat(shim)
         except OSError:
-            return Check("hooks", TITLES["hooks"], "fail", f"{shown} is missing", _fix("claude-multi doctor --repair-all"))
+            return Check("hooks", TITLES["hooks"], "fail", f"{shown} is missing", _fix("charmer doctor --repair-all"))
         if (stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode) or not posix_fs.owned_by_caller(info)
                 or info.st_mode & (stat.S_IWGRP | stat.S_IWOTH)):
             return Check("hooks", TITLES["hooks"], "fail", f"{shown} is not a private file you own",
-                         _fix("claude-multi doctor --repair-all"))
+                         _fix("charmer doctor --repair-all"))
     return Check("hooks", TITLES["hooks"], "ok", "the hook and gateway-key helpers are in place", None)
 
 
@@ -293,16 +293,16 @@ def info_lines(runtime: Any) -> tuple[str, ...]:
     lines = [texts.FIRSTRUN_INFO]
     try:
         managed = management.allowlist_build(runtime.environ)
-    except (errors.ClaudeMultiError, OSError):
+    except (errors.CharmerError, OSError):
         managed = False
     lines.append("Gateway quota reads: " + ("available" if managed else "not part of this build (expected)"))
     try:
         backend = endpoint.read_config(runtime.home)
         systemd = backend is not None and backend.backend == endpoint.SYSTEMD
-    except (errors.ClaudeMultiError, OSError, AttributeError):
+    except (errors.CharmerError, OSError, AttributeError):
         systemd = False
     lines.append("Gateway logs: " + ("the service journal" if systemd
-                                     else "files under the state folder (claude-multi gateway logs)"))
+                                     else "files under the state folder (charmer gateway logs)"))
     return tuple(lines)
 
 

@@ -1,4 +1,4 @@
-"""``claude-multi export`` and ``claude-multi import``.
+"""``charmer export`` and ``charmer import``.
 
 Export reads every source through the ordinary safe stores (never the
 credential store) and refuses an invalid source rather than writing a
@@ -132,7 +132,7 @@ def collect_export(runtime: runtime_mod.Runtime) -> dict[str, Any]:
         raise _refuse("providers.d has problems:\n  " + "\n  ".join(problem.text() for problem in problems[:8]))
     if legacy.get("providers") or legacy.get("models"):
         _say("note: legacy custom.json declarations are not exported — migrate them first: "
-             "claude-multi providers migrate-custom")
+             "charmer providers migrate-custom")
     try:
         return portability.build_export(
             launcher_version=runtime.launcher_version,
@@ -159,7 +159,7 @@ def _reconnect(runtime: runtime_mod.Runtime) -> dict[str, list[str]]:
 
 
 def export_command(runtime: runtime_mod.Runtime, args: argparse.Namespace, output_stream: TextIO) -> int:
-    """``claude-multi export [--out FILE]``."""
+    """``charmer export [--out FILE]``."""
 
     out: Path | None = getattr(args, "export_out", None)
     roots = portability.forbidden_roots(runtime.environ, runtime.home)
@@ -182,7 +182,7 @@ def export_command(runtime: runtime_mod.Runtime, args: argparse.Namespace, outpu
     sha = portability.digest(payload)
     try:
         receipt = portability.write_receipt(runtime.session_store.root, sha, asset_root=runtime.asset_root)
-    except (state.StateError, OSError, errors.ClaudeMultiError) as exc:
+    except (state.StateError, OSError, errors.CharmerError) as exc:
         raise cli_errors.CLIError(f"export: wrote {target}, but the confirmed-export receipt could not be "
                                   f"recorded ({termtext.visible_message(exc)})") from exc
     _report(output_stream, [f"exported the operator configuration to {target} "
@@ -364,7 +364,7 @@ def _rollback_providers(env: dict[str, str], written: dict[str, bytes]) -> dict[
                 retained[file_id] = "it changed after this import wrote it"
                 continue
             providers_cmd.restore_file(env, file_id, None)
-        except (errors.ClaudeMultiError, OSError) as exc:
+        except (errors.CharmerError, OSError) as exc:
             detail = termtext.visible_message(exc)
         # A normal return is not proof of removal; confirm after every attempt.
         try:
@@ -399,7 +399,7 @@ def _commit_providers(runtime: runtime_mod.Runtime, env: dict[str, str], provide
             written[file_id] = providers[file_id]  # renamed into place, durability unconfirmed
             failure = f"{labels[file_id]}: {exc.strerror or exc}"
             break
-        except (errors.ClaudeMultiError, OSError) as exc:
+        except (errors.CharmerError, OSError) as exc:
             failure = f"{labels[file_id]}: {termtext.visible_message(exc)}"
             break
         written[file_id] = providers[file_id]
@@ -424,7 +424,7 @@ def _commit_providers(runtime: runtime_mod.Runtime, env: dict[str, str], provide
         if file_id in retained:
             report.retained.append(
                 f"{labels[file_id]} (not published: {retained[file_id]}; "
-                f"remove it with: claude-multi providers rm {file_id})")
+                f"remove it with: charmer providers rm {file_id})")
         else:
             report.not_applied.append(labels[file_id])
     return None, True
@@ -504,7 +504,7 @@ def apply_import(
                 report.error = f"{label}: {exc.strerror or exc}"
                 report.not_applied += [later for later, _ in steps[index + 1:]]
                 break
-            except (errors.ClaudeMultiError, OSError) as exc:
+            except (errors.CharmerError, OSError) as exc:
                 report.error = f"{label}: {termtext.visible_message(exc)}"
                 report.not_applied += [later for later, _ in steps[index:]]
                 break
@@ -520,7 +520,7 @@ def apply_import(
 
 def import_command(runtime: runtime_mod.Runtime, args: argparse.Namespace, *, input_stream: TextIO,
                    output_stream: TextIO) -> int:
-    """``claude-multi import FILE [--apply]``."""
+    """``charmer import FILE [--apply]``."""
 
     apply = bool(getattr(args, "import_apply", False))
     if apply:
@@ -534,7 +534,7 @@ def import_command(runtime: runtime_mod.Runtime, args: argparse.Namespace, *, in
     plan = shown.plan
     if not apply:
         _report(output_stream, ["", f"Import plan digest: {plan.digest[:16]}",
-                                "Nothing was written. Apply the ready items: claude-multi import FILE --apply"])
+                                "Nothing was written. Apply the ready items: charmer import FILE --apply"])
         return 0
     if not plan.has_changes:
         _report(output_stream, ["", "Nothing to apply on this host."])
@@ -572,7 +572,7 @@ def import_command(runtime: runtime_mod.Runtime, args: argparse.Namespace, *, in
             *([f"Written and kept: {', '.join(report.retained)}."] if report.retained else []),
             "Not applied: " + (", ".join(report.not_applied) or "nothing") + ".",
             portability.APPLIED_TRUST,
-            "Fix the cause and rerun claude-multi import FILE --apply (applied items are unchanged then).",
+            "Fix the cause and rerun charmer import FILE --apply (applied items are unchanged then).",
         ])
         return 1
     _report(output_stream, [

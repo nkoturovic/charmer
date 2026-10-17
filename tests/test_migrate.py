@@ -1,4 +1,4 @@
-"""``claude-multi migrate``.
+"""``charmer migrate``.
 
 Synthetic 2.x records of every variant are written as raw JSON matching the
 session schema (no 2.x builder). Retired-key cases that the
@@ -251,9 +251,9 @@ def _variant(role: str, model: str, lane: str, selector: str, preferred: bool) -
 
 
 SOL_HIGH = "gpt-multi-sol-high[1m]"
-KIMI = "claude-multi-kimi-k3[1m]"
-MUSE_HIGH = "claude-multi-muse-spark-high[1m]"
-OPUS5 = "claude-multi-opus-5[1m]"
+KIMI = "charmer-kimi-k3[1m]"
+MUSE_HIGH = "charmer-muse-spark-high[1m]"
+OPUS5 = "charmer-opus-5[1m]"
 
 
 def golden_inputs() -> dict[str, dict]:
@@ -354,7 +354,7 @@ def _transcript_stub(view: dict) -> tuple[str, float | None]:
 def _dry_run_golden_files() -> dict[str, bytes]:
     """``render_text``/``render_json`` of ``plan`` over the golden dry-run state."""
 
-    root = Path(tempfile.mkdtemp(prefix="claude-multi-migrate-golden-"))
+    root = Path(tempfile.mkdtemp(prefix="charmer-migrate-golden-"))
     try:
         os.chmod(root, 0o700)
         store = sessions.SessionStore(root / "state", SCHEMA)
@@ -409,7 +409,7 @@ def restore_golden_files() -> dict[str, bytes]:
 
 def _cli_environ(tmp: Path) -> dict[str, str]:
     home = tmp / "home"
-    token_dir = state.ensure_private_dir(home / ".config" / "claude-multi")
+    token_dir = state.ensure_private_dir(home / ".config" / "charmer")
     state.atomic_write(token_dir / "api-key", (FIXTURE_GATEWAY_TOKEN + "\n").encode("ascii"))
     return {
         "HOME": str(home),
@@ -422,13 +422,13 @@ def _cli_environ(tmp: Path) -> dict[str, str]:
 
 class MigrateTestCase(unittest.TestCase):
     def setUp(self) -> None:
-        self.tmp = Path(tempfile.mkdtemp(prefix="claude-multi-migrate-"))
+        self.tmp = Path(tempfile.mkdtemp(prefix="charmer-migrate-"))
         os.chmod(self.tmp, 0o700)
         self.addCleanup(shutil.rmtree, self.tmp, True)
         self.environ = _cli_environ(self.tmp)
         self.root = sessions.state_root(self.environ)
         self.store = sessions.SessionStore(self.root, SCHEMA)
-        self.hook_command = "/nix/store/fixture/bin/claude-multi"
+        self.hook_command = "/nix/store/fixture/bin/charmer"
         self.shim = scope.ensure_hook_shim(self.root, self.hook_command)
 
     def write(self, record: dict) -> None:
@@ -461,10 +461,10 @@ class TranslateKeyTests(unittest.TestCase):
     def cat(self) -> profile.LineupCatalog:
         return _local_cat(retired={
             "opus@4.8": _retired_entry("opus", since=33, wire="claude-opus-old-a",
-                                       selectors={"claude-multi-opus-old-a[1m]": None},
+                                       selectors={"charmer-opus-old-a[1m]": None},
                                        generation="4.8"),
             "opus@5": _retired_entry("opus", since=34, wire="claude-opus-old-b",
-                                     selectors={"claude-multi-opus-old-b[1m]": None},
+                                     selectors={"charmer-opus-old-b[1m]": None},
                                      generation="5"),
         })
 
@@ -477,7 +477,7 @@ class TranslateKeyTests(unittest.TestCase):
     def test_a_retired_selector_wins_over_the_key_rule(self) -> None:
         cat = self.cat()
         self.assertEqual(
-            migrate.translate_key("opus", "claude-multi-opus-old-b", 32, cat), "opus@5"
+            migrate.translate_key("opus", "charmer-opus-old-b", 32, cat), "opus@5"
         )
         self.assertEqual(migrate.translate_key("muse-spark", MUSE_HIGH, 20, LCAT), "muse-spark")
         # A live selector is no retired hit: the key rule applies.
@@ -490,7 +490,7 @@ class TranslateKeyTests(unittest.TestCase):
         })
         with self.assertRaisesRegex(migrate.MigrationError, "share since_catalog 33"):
             migrate.translate_key("opus", None, 32, cat)
-        raw = v3_managed(lead={"model": "opus", "client_selector": "claude-multi-opus-4-8[1m]"},
+        raw = v3_managed(lead={"model": "opus", "client_selector": "charmer-opus-4-8[1m]"},
                          catalog_version=32)
         with self.assertRaises(migrate.MigrationError):
             migrate.convert_record(raw, cat=cat, now=NOW)
@@ -557,9 +557,9 @@ class ConvertRecordTests(unittest.TestCase):
     def test_renamed_key_same_wire(self) -> None:
         cat = _local_cat(retired={"opusx": _retired_entry(
             "opus", since=32, wire=LCAT.lines["opus"]["wire_model"],
-            selectors={"claude-multi-opusx[1m]": None})})
+            selectors={"charmer-opusx[1m]": None})})
         outcome = self.convert(
-            v3_managed(lead={"model": "opusx", "client_selector": "claude-multi-opusx[1m]"}),
+            v3_managed(lead={"model": "opusx", "client_selector": "charmer-opusx[1m]"}),
             cat,
         )
         self.assertEqual(outcome.outcome, "renamed")
@@ -571,10 +571,10 @@ class ConvertRecordTests(unittest.TestCase):
     def _generation_cat(self) -> profile.LineupCatalog:
         return _local_cat(retired={"opus@4.8": _retired_entry(
             "opus", since=33, wire="claude-opus-old", generation="4.8",
-            selectors={"claude-multi-opus-old[1m]": None})})
+            selectors={"charmer-opus-old[1m]": None})})
 
     def test_successor_through_the_selector(self) -> None:
-        raw = v3_managed(lead={"model": "opus", "client_selector": "claude-multi-opus-old[1m]"},
+        raw = v3_managed(lead={"model": "opus", "client_selector": "charmer-opus-old[1m]"},
                          catalog_version=32)
         outcome = self.convert(raw, self._generation_cat())
         self.assertEqual(outcome.outcome, "successor")
@@ -583,7 +583,7 @@ class ConvertRecordTests(unittest.TestCase):
         self.assertEqual(outcome.successor, "opus")
 
     def test_successor_through_the_at_rule_and_unchanged_after_it(self) -> None:
-        raw = v3_managed(lead={"model": "opus", "client_selector": "claude-multi-opus-4-8[1m]"},
+        raw = v3_managed(lead={"model": "opus", "client_selector": "charmer-opus-4-8[1m]"},
                          catalog_version=32)
         self.assertEqual(self.convert(raw, self._generation_cat()).v4_lead, "opus@4.8")
         raw["catalog_version"] = 33
@@ -885,7 +885,7 @@ class RunTests(MigrateTestCase):
         self.write(v3_managed(M5, last_event_source="end"))
         text = migrate.render_text(self.run_migrate())
         self.assertIn("live during migration: 1", text)
-        self.assertIn(f"  {M1[:8]}  last event resume at {NOW}: verify with claude-multi "
+        self.assertIn(f"  {M1[:8]}  last event resume at {NOW}: verify with charmer "
                       f"sessions show {M1}", text)
         self.assertNotIn(f"  {M5[:8]}  last event", text)
 
@@ -946,7 +946,7 @@ class RunTests(MigrateTestCase):
         text = migrate.render_text(report)
         self.assertIn("1 blocked)", text)
         self.assertIn("blocked: profile 'muse' (convert target of legacy composition 'muse') "
-                      "does not exist yet; run claude-multi profile migrate --apply first", text)
+                      "does not exist yet; run charmer profile migrate --apply first", text)
         report = self.run_migrate(profile_exists=lambda name: True)
         self.assertTrue(report.ok)
         self.assertEqual(self.store.load(M1)["profile"], "muse")
@@ -963,7 +963,7 @@ class RunTests(MigrateTestCase):
 
 class DryRunTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.tmp = Path(tempfile.mkdtemp(prefix="claude-multi-migrate-dry-"))
+        self.tmp = Path(tempfile.mkdtemp(prefix="charmer-migrate-dry-"))
         os.chmod(self.tmp, 0o700)
         self.addCleanup(shutil.rmtree, self.tmp, True)
         self.environ = _cli_environ(self.tmp)
@@ -1027,10 +1027,10 @@ class DryRunTests(unittest.TestCase):
         self.assertIs(captured[0]["refresh_shims"], False)
         self.assertEqual(self.snapshot(), before)
         text = output.getvalue()
-        self.assertTrue(text.startswith(f"claude-multi migrate --dry-run: state {self.root}\n"))
+        self.assertTrue(text.startswith(f"charmer migrate --dry-run: state {self.root}\n"))
         # The fixture HOME has no transcripts at all
         self.assertIn("transcripts: 8 record(s) whose transcript is missing", text)
-        self.assertIn(f"transcript missing: claude-multi sessions forget {M1}", text)
+        self.assertIn(f"transcript missing: charmer sessions forget {M1}", text)
 
     def test_json_output(self) -> None:
         report = migrate.plan(self.store, LCAT, now=NOW)
@@ -1060,7 +1060,7 @@ class TranscriptNoteTests(unittest.TestCase):
         self.assertEqual(migrate.cleanup_period_days(None), 30)
 
     def test_transcript_presence_checks_the_path_only(self) -> None:
-        tmp = Path(tempfile.mkdtemp(prefix="claude-multi-transcript-"))
+        tmp = Path(tempfile.mkdtemp(prefix="charmer-transcript-"))
         self.addCleanup(shutil.rmtree, tmp, True)
         environ = _cli_environ(tmp)
         runtime = cli.Runtime(asset_root=FIXTURE_ROOT, environ=environ, cwd=tmp)
@@ -1076,7 +1076,7 @@ class TranscriptNoteTests(unittest.TestCase):
 
 class PrintLaunchTests(unittest.TestCase):
     def test_print_launch_builds_a_runtime_that_refreshes_no_shim(self) -> None:
-        tmp = Path(tempfile.mkdtemp(prefix="claude-multi-print-launch-"))
+        tmp = Path(tempfile.mkdtemp(prefix="charmer-print-launch-"))
         self.addCleanup(shutil.rmtree, tmp, True)
         environ = _cli_environ(tmp)
         captured: list[dict] = []
@@ -1107,7 +1107,7 @@ class PrintLaunchTests(unittest.TestCase):
         self.assertTrue(Path(runtime.hook3_command).exists())
 
     def test_lineup_catalog_is_the_merged_view(self) -> None:
-        tmp = Path(tempfile.mkdtemp(prefix="claude-multi-lineup-cat-"))
+        tmp = Path(tempfile.mkdtemp(prefix="charmer-lineup-cat-"))
         self.addCleanup(shutil.rmtree, tmp, True)
         runtime = cli.Runtime(asset_root=FIXTURE_ROOT, environ=_cli_environ(tmp), cwd=tmp)
         lcat = runtime.lineup_catalog()
@@ -1189,14 +1189,14 @@ class DoctorMarkerTests(MigrateTestCase):
         self.write(v3_ordinary(M2))
         problems, info, attention = cli._collect_doctor_reports(self.runtime())
         self.assertIn(
-            "state not migrated yet: 2 legacy record(s); run claude-multi migrate --dry-run, "
-            "then claude-multi migrate",
+            "state not migrated yet: 2 legacy record(s); run charmer migrate --dry-run, "
+            "then charmer migrate",
             attention,
         )
         self.run_migrate()
         problems, info, attention = cli._collect_doctor_reports(self.runtime())
         self.assertFalse(any("not migrated" in line or "legacy record" in line for line in attention))
-        self.assertIn("2 legacy backup(s) kept for claude-multi restore-2x", info)
+        self.assertIn("2 legacy backup(s) kept for charmer restore-2x", info)
         # A v4 record's line is its record_summary.
         self.assertTrue(
             any(line.startswith(f"Session {M1}") and "lineup generation 0" in line for line in info),
@@ -1205,7 +1205,7 @@ class DoctorMarkerTests(MigrateTestCase):
         self.assertIn("Sessions: 2 recorded.", info)
         self.write(v3_managed(M5))
         _problems, _info, attention = cli._collect_doctor_reports(self.runtime())
-        self.assertIn("1 legacy record(s) (version ≤ 3) remain: rerun claude-multi migrate",
+        self.assertIn("1 legacy record(s) (version ≤ 3) remain: rerun charmer migrate",
                       attention)
 
     def test_possibly_missed_hooks_and_lock_and_rollback_dirs(self) -> None:
@@ -1222,14 +1222,14 @@ class DoctorMarkerTests(MigrateTestCase):
         self.assertIn(
             f"session {M1[:8]} was live while it was migrated and no session event has "
             "reached it since; if it was /clear-ed or resumed then, check its runtime id "
-            f"(claude-multi sessions show {M1}; claude-multi sessions relink-runtime {M1} "
+            f"(charmer sessions show {M1}; charmer sessions relink-runtime {M1} "
             "<runtime-id>)",
             attention,
         )
         self.assertFalse(any(M5[:8] in line and "was live" in line for line in attention))
         self.assertIn("migration or restore in progress (session hooks skip record writes)", info)
         self.assertIn(
-            f"{self.root / 'restored-2x'} holds files moved aside by claude-multi restore-2x", info
+            f"{self.root / 'restored-2x'} holds files moved aside by charmer restore-2x", info
         )
 
     def test_newer_marker_blocks_and_counts_uuid_records_only(self) -> None:

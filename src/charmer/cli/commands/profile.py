@@ -137,7 +137,7 @@ def _copy_profile(runtime: runtime_mod.Runtime, source: str, target: str, *, kee
 
 
 def _profile_default(runtime: runtime_mod.Runtime, args: argparse.Namespace, output_stream: TextIO) -> int:
-    """``claude-multi profile default [NAME | --clear]``: show, set or clear the default profile."""
+    """``charmer profile default [NAME | --clear]``: show, set or clear the default profile."""
 
     from charmer.setup import defaults
     from charmer.setup import model as setup_model
@@ -156,7 +156,7 @@ def _profile_default(runtime: runtime_mod.Runtime, args: argparse.Namespace, out
         plan = defaults.set_default_plan(runtime, None if clear else name)
         defaults.apply_default(runtime, plan, setup_model.Confirmation.given(plan))
     except setup_model.SetupError as exc:
-        sys.stderr.write(f"claude-multi: {termtext.visible_message(exc)}\n")
+        sys.stderr.write(f"charmer: {termtext.visible_message(exc)}\n")
         return 1
     _write_lines(output_stream, plan.lines)
     return 0
@@ -239,7 +239,7 @@ def _edit_profile(
     if not editor:
         raise cli_errors.CLIError(cli_text.PROFILE_EDITOR_REFUSAL.format(verb=verb))
     descriptor, temporary = tempfile.mkstemp(
-        prefix=f"claude-multi-profile-{name}-", suffix=".json"
+        prefix=f"charmer-profile-{name}-", suffix=".json"
     )
     path = Path(temporary)
     try:
@@ -301,7 +301,7 @@ def _profile_command(
     output_stream: TextIO,
     interactive: bool,
 ) -> int:
-    """``claude-multi profile …`` and its legacy ``compose``/``show`` aliases."""
+    """``charmer profile …`` and its legacy ``compose``/``show`` aliases."""
 
     from charmer.setup import model as setup_model
 
@@ -471,7 +471,7 @@ def _profile_starter(
     output_stream: TextIO,
     interactive: bool,
 ) -> int:
-    """``claude-multi profile starter [--name NAME] [--apply]``.
+    """``charmer profile starter [--name NAME] [--apply]``.
 
     Preview by default (writes nothing). ``--apply`` confirms and saves
     through ``ProfileStore.new``, which refuses an existing name (a seed or
@@ -500,7 +500,7 @@ def _profile_starter(
     for line in [*preview[:-1], *notes, *preview[-1:]]:
         output_stream.write(termtext.visible_text(line) + "\n")
     if not getattr(args, "starter_apply", False):
-        output_stream.write(f"save it: claude-multi profile starter --name {name} --apply\n")
+        output_stream.write(f"save it: charmer profile starter --name {name} --apply\n")
         return 0
     if not interactive:
         raise cli_errors.CLIError("profile starter --apply needs a terminal to confirm the save")
@@ -511,7 +511,7 @@ def _profile_starter(
         output_stream.write("Nothing written.\n")
         return 1
     store.new(plan.document)
-    output_stream.write(f"Saved profile {termtext.visible_text(name)!r} (launch it: claude-multi --profile {name}).\n")
+    output_stream.write(f"Saved profile {termtext.visible_text(name)!r} (launch it: charmer --profile {name}).\n")
     return 0
 
 

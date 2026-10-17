@@ -74,7 +74,7 @@ _STAMP = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$")
 _BINDING_NAME = profile_mod.BINDING_NAME
 
 
-class PortabilityError(errors.ClaudeMultiError, ValueError):
+class PortabilityError(errors.CharmerError, ValueError):
     """An export or import input was refused (nothing written)."""
 
 

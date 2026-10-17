@@ -216,7 +216,7 @@ class _SpikeBase(unittest.TestCase):
         super().setUp()
         if self.boundary_skip is not None:
             self.skipTest(self.boundary_skip)
-        self.root = Path(tempfile.mkdtemp(prefix="claude-multi-check-hooks-"))
+        self.root = Path(tempfile.mkdtemp(prefix="charmer-check-hooks-"))
         os.chmod(self.root, 0o700)
         self.addCleanup(shutil.rmtree, self.root, True)
         live = self.root / "live"
@@ -421,7 +421,7 @@ _S5_TURNS = {
 # tags inside additionalContext; ordinary markup and Markdown remain text.
 _S5_CONTEXTS = {
     key: (
-        f"# claude-multi lineup (lineup_generation 1)\n\n"
+        f"# charmer lineup (lineup_generation 1)\n\n"
         f"Profile: <fixture> & notice {marker}\n\n"
         f"## Lead\n- lead: fixture · high · `{_OPUS}`\n\n"
         f"## Agents\n- `cm-explorer`: fixture · high · `{_SONNET}`\n\n"

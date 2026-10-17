@@ -644,7 +644,7 @@ class DirectPermissiveTests(_DirectCase):
 
 
 class DirectCommandTests(_DirectCase):
-    """``claude-multi direct`` carries ``--no-subagents`` on every
+    """``charmer direct`` carries ``--no-subagents`` on every
     path, and Ctrl-C in its line picker is an interrupt."""
 
     def args(self, **changes):

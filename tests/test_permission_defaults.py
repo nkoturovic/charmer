@@ -89,7 +89,7 @@ class PermissionLayerTests(unittest.TestCase):
     """The decision seam itself (no binary)."""
 
     def setUp(self) -> None:
-        self.root = Path(tempfile.mkdtemp(prefix="claude-multi-pd-"))
+        self.root = Path(tempfile.mkdtemp(prefix="charmer-pd-"))
         self.addCleanup(shutil.rmtree, self.root, True)
         self.home = self.root / "home"
         self.cwd = self.home / "project"
@@ -236,7 +236,7 @@ class _PermissionCase(unittest.TestCase):
         super().setUp()
         if self.boundary_skip is not None:
             self.skipTest(self.boundary_skip)
-        self.root = Path(tempfile.mkdtemp(prefix="claude-multi-pd-"))
+        self.root = Path(tempfile.mkdtemp(prefix="charmer-pd-"))
         os.chmod(self.root, 0o700)
         self.addCleanup(shutil.rmtree, self.root, True)
         self.environ = {"HOME": str(self.root / "live" / "home"), "PATH": "/usr/bin:/bin"}

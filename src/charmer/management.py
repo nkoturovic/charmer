@@ -72,34 +72,34 @@ _KEY_SHAPE = re.compile(r"^[0-9a-f]{64}$")
 EXEC_POLICY = "047-v1:private-selected-key;stopped-prepare-start-only;allowlist-build;after-scrub"
 
 
-class ManagementKeyError(errors.ClaudeMultiError, RuntimeError):
+class ManagementKeyError(errors.CharmerError, RuntimeError):
     """A redacted key/path failure, with an actionable non-following repair."""
 
     def __init__(self, reason: str, filename: str = KEY_FILE, *,
-                 then: str = "claude-multi-proxy rotate-management-key"):
+                 then: str = "charmer-proxy rotate-management-key"):
         self.reason = reason
         self.filename = filename
-        path = f'"$HOME/.config/claude-multi/{filename}"'
+        path = f'"$HOME/.config/charmer/{filename}"'
         if reason in ("symlink", "foreign owner"):
             # The 0700 directory is owner-controlled, so unlinking a foreign
             # file or a link there works; never follow or touch a link target.
             remedy = f"unlink -- {path} && {then}"
         elif reason == "not a regular file":
             # No recursive deletion, and never overwrite an existing backup.
-            backup = f'"$HOME/.config/claude-multi/{filename}.rejected"'
+            backup = f'"$HOME/.config/charmer/{filename}.rejected"'
             remedy = f"{posix_fs.move_aside_command(path, backup)} && {then}"
         elif reason == "invalid shape" and filename == STAGED_FILE:
             remedy = then  # rotation replaces a readable staged slot; A stays usable
         elif reason == "unsafe directory":
-            remedy = 'restore an owner-controlled, non-symlink 0700 "$HOME/.config/claude-multi", then ' + then
+            remedy = 'restore an owner-controlled, non-symlink 0700 "$HOME/.config/charmer", then ' + then
         elif reason == "write failed":
             # An I/O failure (e.g. ENOSPC) says nothing about the slot: fix the
             # cause and retry the same command, never a different one.
-            remedy = 'free space or fix permissions in "$HOME/.config/claude-multi", then ' + then
+            remedy = 'free space or fix permissions in "$HOME/.config/charmer", then ' + then
         else:
             # remove_private refuses symlinks/foreign ownership (handled above),
             # but removes an owner-controlled regular file with bad shape or mode.
-            remedy = f"claude-multi-proxy disable-management-key && {then}"
+            remedy = f"charmer-proxy disable-management-key && {then}"
         message = (f"{filename} could not be written; management reads may still be on"
                    if reason == "write failed" else f"{filename} is unusable ({reason}); quota stays off")
         super().__init__(message, remedy=remedy)
@@ -116,7 +116,7 @@ class KeyState:
 
 
 def key_dir(home: Path) -> Path:
-    return Path(home) / ".config" / "claude-multi"
+    return Path(home) / ".config" / "charmer"
 
 
 def management_channel(environ: Mapping[str, str]) -> bool:
@@ -280,7 +280,7 @@ def stage_rotation(home: Path) -> str:
 def disable(home: Path) -> None:
     directory = _directory(home, create=True)
     # A repair here continues the disable; rotating would re-enable reads.
-    again = "claude-multi-proxy disable-management-key"
+    again = "charmer-proxy disable-management-key"
     try:
         with state.FileLock(directory / KEY_FILE):
             # Invalidate the start selection before touching the marker.
@@ -417,7 +417,7 @@ def pool_status(home: Path, gateway: Mapping, *, get: ManagementGetter | None = 
             if attention is not None:
                 attention(message)
             else:
-                print(f"claude-multi: Attention: {message}", file=sys.stderr)
+                print(f"charmer: Attention: {message}", file=sys.stderr)
         key = read_active(home)
     except ManagementKeyError as exc:
         return quota.PoolStatus("key-unusable", key_problem=exc.reason, remedy=exc.remedy,

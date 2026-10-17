@@ -594,7 +594,7 @@ def resolve_session(runtime: runtime_mod.Runtime, value: str) -> dict[str, Any]:
         raise
     except sessions.SessionError as exc:
         raise cli_errors.CLIError(str(exc), remedy=getattr(exc, "remedy", None)
-                                  or "list the sessions: claude-multi sessions list") from exc
+                                  or "list the sessions: charmer sessions list") from exc
 
 
 def report_session(runtime, identifier: str | None = None):
@@ -609,7 +609,7 @@ def report_session(runtime, identifier: str | None = None):
             identifier = runtime.session_store.last(runtime.cwd)
     if identifier is None:
         raise cli_errors.CLIError("no managed session selected — pass a session id",
-                                  remedy="list the sessions: claude-multi sessions list")
+                                  remedy="list the sessions: charmer sessions list")
     return resolve_session(runtime, identifier)
 
 
@@ -649,7 +649,7 @@ def explanation(runtime, identifier=None, agent=None):
                    managed_root=parts.managed_root, feedback_drafts=parts.feedback_drafts)
         if expected.plan is not None:
             integrity = "drifted" if scope.live_drift(live, expected.plan) else "matched"
-    except (OSError, ValueError, KeyError, TypeError, errors.ClaudeMultiError):
+    except (OSError, ValueError, KeyError, TypeError, errors.CharmerError):
         pass
     lcat = runtime.lineup_catalog()
     key = binding.get("key")
@@ -671,7 +671,7 @@ def explanation(runtime, identifier=None, agent=None):
             route = snap.routes.get(selector, route)
             confirmed = bool(snap.config_drift is False and snap.sentinel and snap.served is not None
                              and snap.sentinel in snap.served and selector in snap.served)
-    except errors.ClaudeMultiError:
+    except errors.CharmerError:
         pass
     runtime.pool_status()  # existing 60 s failure cache; never a provider call
     return routing.report(record=record, role=role, binding=binding, available=available,

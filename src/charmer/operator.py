@@ -47,7 +47,7 @@ from . import sessions as sessions_mod
 from . import validate as schema_validate
 
 
-class OperatorError(errors.ClaudeMultiError, ValueError):
+class OperatorError(errors.CharmerError, ValueError):
     """An operator input (ledger, evidence, candidate docs) is unusable."""
 
 
@@ -540,7 +540,7 @@ def normalize_endpoint(url: Any, *, keyed: bool, lan: bool, gateway_ports: Itera
     loopback = host == "localhost" or (address is not None and address.is_loopback)
     effective_port = port if port is not None else (443 if scheme == "https" else 80)
     if loopback and effective_port in set(gateway_ports):
-        raise ValueError("the claude-multi gateway port is not a provider")
+        raise ValueError("the charmer gateway port is not a provider")
     if lan:
         local = loopback or (address is not None and address.is_private) or (
             address is None and ("." not in host or host.endswith(LAN_SUFFIXES))
@@ -1099,7 +1099,7 @@ def _resolve_provider_block(
             reason = f"secret name {secret_name} is compiler-owned"
         if reason:
             problems.append(_problem("secret-name", file, f"{path}.auth.secret_ref", reason,
-                                     "store the key under another name: claude-multi providers set-key"))
+                                     "store the key under another name: charmer providers set-key"))
     keyed = auth_kind != "none"
     try:
         origin, base_url = normalize_endpoint(block["base_url"], keyed=keyed, lan=lan, gateway_ports=ports)
@@ -1302,7 +1302,7 @@ def _schema_problems(document: Any, schema: Mapping[str, Any], file: str) -> tup
             match = re.fullmatch(r"unexpected key '([^']+)'", problem.subject)
             if match and match[1] in {"validated_tokens", "provider_tokens", "client_tokens", "checks", "evidence", "agent_eligible"}:
                 problems[i] = _problem("schema", file, problem.json_path + "." + match[1],
-                                       "evidence is tool-owned", f"run claude-multi models qualify {key} --context N")
+                                       "evidence is tool-owned", f"run charmer models qualify {key} --context N")
             elif problem.json_path.endswith(".context.declared_tokens"):
                 value = (line.get("context") or {}).get("declared_tokens")
                 shown = format(value, "g") if isinstance(value, (float, int)) and not isinstance(value, bool) else repr(value)
@@ -1327,8 +1327,8 @@ def _schema_problems(document: Any, schema: Mapping[str, Any], file: str) -> tup
                       else problem for problem in file_level]
     if isinstance(block, dict) and block.get("kind") == "oauth-pool":
         file_level = [dataclasses.replace(problem, subject=(
-            "openai/anthropic lines ship with claude-multi (pool admission is the catalog's)"),
-            remedy="claude-multi models --candidates") if problem.json_path == "$.provider.kind" else problem
+            "openai/anthropic lines ship with charmer (pool admission is the catalog's)"),
+            remedy="charmer models --candidates") if problem.json_path == "$.provider.kind" else problem
             for problem in file_level]
     return file_level, per_line
 
@@ -1409,7 +1409,7 @@ def validate_layer(
         except strict_json.StrictJSONError as exc:
             if _raw_secret_hit(raw, literals):
                 add(_problem("secret-literal", file, "$", 'a secret value is not allowed (not strict JSON)',
-                             f'store it with claude-multi providers set-key {file_id}; write "env:NAME"'))
+                             f'store it with charmer providers set-key {file_id}; write "env:NAME"'))
             else:
                 problem = _problem("json", file, "$", f"not strict JSON ({_json_failure(exc)})")
                 if str(exc).startswith("duplicate key "):
@@ -1433,7 +1433,7 @@ def validate_layer(
         if hits:
             for hit in hits:
                 add(_problem("secret-literal", file, hit, 'a secret value is not allowed',
-                             f'store it with claude-multi providers set-key {file_id}; write "env:NAME"'))
+                             f'store it with charmer providers set-key {file_id}; write "env:NAME"'))
             continue
         # The trusted audit gate, by metadata alone (a closed
         # keyed declaration is refused before schema or semantic work and
@@ -1452,10 +1452,10 @@ def validate_layer(
         if file_id in catalog_providers:
             if block is not None:
                 add(_problem("catalog-provider", file, "$.provider",
-                             ('openai/anthropic lines ship with claude-multi (pool admission is the catalog\'s)'
+                             ('openai/anthropic lines ship with charmer (pool admission is the catalog\'s)'
                               if catalog_providers[file_id]["transport"]["kind"] == "oauth-pool" else
                               f'"{file_id}" is a catalog provider'),
-                             ("claude-multi models --candidates" if catalog_providers[file_id]["transport"]["kind"] == "oauth-pool"
+                             ("charmer models --candidates" if catalog_providers[file_id]["transport"]["kind"] == "oauth-pool"
                               else 'remove the "provider" block; lines only')))
                 continue
             provider = catalog_providers[file_id]
@@ -1478,7 +1478,7 @@ def validate_layer(
                     continue
                 add(_problem("legacy-collision", file, "",
                              f"provider id {file_id} is a legacy custom provider (custom.json)",
-                             "migrate it: claude-multi providers migrate-custom"))
+                             "migrate it: charmer providers migrate-custom"))
                 continue
             resolved_provider, provider_problems = _resolve_provider_block(
                 file_id, block, file, ports=ports, audited=catalog.keyed_compat_audited(docs["gateway"]))
@@ -2019,7 +2019,7 @@ class TransportSelection:
             return self.alternative.closed_reason
         if not self.approved:
             return (f"the {self.choice} transport of {self.provider} is not approved for the current "
-                    f"reviewed descriptor: claude-multi providers transport {self.provider} {self.choice}")
+                    f"reviewed descriptor: charmer providers transport {self.provider} {self.choice}")
         return None
 
 
@@ -2896,7 +2896,7 @@ def migration_preflight(
             problems.append(_problem(
                 "migrate-model-id", source, f"$.models.{mid}",
                 f"model id {mid!r} cannot migrate (must match {LEGACY_MODEL_ID.pattern}, at most {LEGACY_MODEL_ID_MAX} characters)",
-                f"re-add it under a valid id with claude-multi custom, then remove {mid}",
+                f"re-add it under a valid id with charmer custom, then remove {mid}",
             ))
         provider = registry["models"][mid].get("provider")
         if provider not in registry.get("providers", {}) and provider not in catalog_providers:
@@ -2949,11 +2949,11 @@ def _legacy_provider_problems(
     if not LEGACY_PROVIDER_ID.fullmatch(pid):
         problems.append(_problem("migrate-provider-id", source, where,
                                  f"provider id {pid!r} cannot migrate (must match {LEGACY_PROVIDER_ID.pattern})",
-                                 "re-add the provider under a valid id with claude-multi custom add-provider"))
+                                 "re-add the provider under a valid id with charmer custom add-provider"))
     elif pid in catalog_providers or render.is_reserved_name(pid):
         problems.append(_problem("migrate-provider-id", source, where,
                                  f"provider id {pid} is a catalog or reserved id",
-                                 "re-add the provider under another id with claude-multi custom add-provider"))
+                                 "re-add the provider under another id with charmer custom add-provider"))
     name = spec.get("secret_env")
     reason = secret_store.secret_name_problem(name) if isinstance(name, str) else "missing secret_env"
     if reason is None and name in catalog.RESERVED_LEAD_ENV_KEYS:
@@ -2982,7 +2982,7 @@ def store_scan_values(environ: Mapping[str, str]) -> frozenset[str] | None:
 
     try:
         return secret_store.default_store(environ).scan_values()
-    except (errors.ClaudeMultiError, OSError, ValueError):
+    except (errors.CharmerError, OSError, ValueError):
         return None
 
 
@@ -3300,7 +3300,7 @@ def smoke_consent_text(plan: SmokePlan) -> str:
     """The exact consent for the one smoke request."""
 
     return (
-        "claude-multi will make ONE request to a provider:\n"
+        "charmer will make ONE request to a provider:\n"
         f"  gateway alias: {plan.alias}\n"
         f"  upstream origin: {plan.upstream}\n"
         f"  auth: {plan.auth}\n"
@@ -3869,11 +3869,11 @@ def migration_preview_lines(plan: CustomMigrationPlan, *, key_refs: Mapping[str,
     for problem in plan.problems:
         lines.append(f"refused: {problem.text()}")
     if plan.status == "refused":
-        lines.append("nothing was written; fix every listed field, then rerun claude-multi providers migrate-custom")
+        lines.append("nothing was written; fix every listed field, then rerun charmer providers migrate-custom")
         return lines
     if plan.status == "changed":
         lines.append("custom.json changed since migration: reconciling tool-owned files only; "
-                     "changed or new lines need claude-multi models admit (no automatic admission)")
+                     "changed or new lines need charmer models admit (no automatic admission)")
     for pid in sorted(plan.targets):
         document = strict_json.loads(plan.targets[pid])
         keys = sorted(document.get("lines", {}))
@@ -3889,7 +3889,7 @@ def migration_preview_lines(plan: CustomMigrationPlan, *, key_refs: Mapping[str,
         if provider is not None:
             lines.append(f"approve route {pid}: {provider.auth_kind} env:{provider.secret_name} → {provider.origin}")
     for key in plan.admissions:
-        lines.append(f"admit {key} (via migrate; unverified until claude-multi models qualify {key})")
+        lines.append(f"admit {key} (via migrate; unverified until charmer models qualify {key})")
     refs = key_refs or {}
     for row in plan.displaced:
         users = sorted(refs.get(row.key, ()))
@@ -3897,7 +3897,7 @@ def migration_preview_lines(plan: CustomMigrationPlan, *, key_refs: Mapping[str,
                      f"{', '.join(row.catalog_keys)}; it yields (no automatic successor)"
                      + (f"; used by {', '.join(users)}" if users else ""))
     for pid in plan.kept_files:
-        lines.append(f"kept {file_label(pid)}: no longer in custom.json (remove with claude-multi providers rm {pid})")
+        lines.append(f"kept {file_label(pid)}: no longer in custom.json (remove with charmer providers rm {pid})")
     return lines
 
 
@@ -3971,7 +3971,7 @@ def doctor_findings(
     captures = dict(ledger.aliases) if ledger is not None else {}
     if snapshot.ledger_error is not None:
         text = (f"{snapshot.ledger_error}: operator admissions and captured aliases are unknown, so operator lines "
-                "are unusable — review ~/.config/claude-multi/operator-ledger.json and restore it from a backup")
+                "are unusable — review ~/.config/charmer/operator-ledger.json and restore it from a backup")
         (blocks if (layer.providers or layer.lines) else attention).append(text)
     unread = tuple(unreadable)
     if unread:
@@ -4007,7 +4007,7 @@ def doctor_findings(
             if users:
                 file_id = problem.file.removeprefix(f"{PROVIDERS_DIRNAME}/").removesuffix(".json")
                 blocks.append(f"{problem.text()} — {len(users)} sessions/profiles use its lines "
-                              f"({', '.join(users[:5])}); fix: claude-multi providers edit {file_id}")
+                              f"({', '.join(users[:5])}); fix: charmer providers edit {file_id}")
             elif problem.code in _CONFLICT_CODES:
                 attention.append(problem.text())
             else:
@@ -4025,7 +4025,7 @@ def doctor_findings(
             old, new = layer.route_changes.get(pid, ("?", "?"))
             text = route_status_text(pid, "changed", old=old, new=new)
         else:
-            text = f"provider {pid}: route unapproved; not rendered — claude-multi providers approve {pid}"
+            text = f"provider {pid}: route unapproved; not rendered — charmer providers approve {pid}"
         users = holders(aliases)
         if users:
             route_blocked.add(pid)
@@ -4050,10 +4050,10 @@ def doctor_findings(
                                   f"{sessions_mod.mark_ended_remedy(users)}")
             else:
                 attention.append(f"alias {alias} (captured for {key}; provider {pid} not rendered) has no line — "
-                                 "prune when unused: claude-multi doctor --prune-aliases")
+                                 "prune when unused: charmer doctor --prune-aliases")
         elif not users:
             attention.append(f"alias {alias} (captured for {key}) has no line — "
-                             "prune when unused: claude-multi doctor --prune-aliases")
+                             "prune when unused: charmer doctor --prune-aliases")
 
     for key in sorted(ledger.admissions if ledger is not None else {}):
         grant = ledger.admissions[key]
@@ -4061,7 +4061,7 @@ def doctor_findings(
         if line is None:
             if key not in layer.pending and key not in layer.displaced:
                 attention.append(f"{key} is admitted but no valid declaration serves it (invalid or removed) — fix its "
-                                 f"providers.d file or revoke: claude-multi models revoke {key}")
+                                 f"providers.d file or revoke: charmer models revoke {key}")
             continue
         if grant["digest"] != line.definition_digest:
             fields = [name for name in changed_fields(grant, layer, key) if name != "wire"]
@@ -4071,15 +4071,15 @@ def doctor_findings(
             users = holders(line_aliases(line.core_entry))
             retarget = f"; live sessions retarget at the next reload: {_ids8(users)}" if users else ""
             attention.append(f"{key} changed since admission ({', '.join(parts) or 'definition'}) — "
-                             f"re-admit: claude-multi models admit {key}{retarget}")
+                             f"re-admit: charmer models admit {key}{retarget}")
             continue
         if key in admitted_set and served is not None:
             aliases = line_aliases(line.core_entry)
             count = len(set(aliases) & set(served))
             if count < len(aliases):
-                attention.append(f"{key}: {count}/{len(aliases)} aliases served — claude-multi providers apply")
+                attention.append(f"{key}: {count}/{len(aliases)} aliases served — charmer providers apply")
         if grant.get("via") == "migrate" and not smoke_current(evidence, key, line.definition_digest):
-            info.append(f"{key}: migrated admission is unverified (no smoke yet) — claude-multi models qualify {key}")
+            info.append(f"{key}: migrated admission is unverified (no smoke yet) — charmer models qualify {key}")
 
     try:
         rows = displaced_lines(docs, layer, ledger)
@@ -4103,7 +4103,7 @@ def doctor_findings(
     if legacy_present and not layer.marker:
         attention.append(f"custom.json: {len(legacy_doc.get('providers', {}))} providers, "
                          f"{len(legacy_doc.get('models', {}))} models not migrated — "
-                         "preview: claude-multi providers migrate-custom")
+                         "preview: charmer providers migrate-custom")
         if snapshot.schemas is not None:
             preflight = migration_preflight(legacy_doc, docs, schemas=snapshot.schemas)
             for problem in preflight.problems:
@@ -4114,9 +4114,9 @@ def doctor_findings(
     elif layer.marker and marker_doc is not None and legacy_sha is not None \
             and marker_doc.get("custom_sha256") != legacy_sha:
         attention.append("custom.json changed since migration (it is no longer read) — review: "
-                         "claude-multi providers migrate-custom")
+                         "charmer providers migrate-custom")
     if ledger is not None and ledger.migration is not None:
-        attention.append("providers migrate-custom was interrupted — resume: claude-multi providers migrate-custom --apply")
+        attention.append("providers migrate-custom was interrupted — resume: charmer providers migrate-custom --apply")
 
     for text in overlay_conflicts:
         attention.append(f"oauth-extra-models: {text}")
@@ -4139,12 +4139,12 @@ def doctor_findings(
         if problem is None and alternative is not None and alternative.secret_name in missing_secrets:
             # The choice is already made and approved: what is missing is the
             # key itself, which set-key saves (switching again changes nothing).
-            problem = f"{alternative.secret_name} is not set — claude-multi providers set-key {pid}"
+            problem = f"{alternative.secret_name} is not set — charmer providers set-key {pid}"
         if problem is None and reviewed is not None and not reviewed:
             problem = f"no model is reviewed for this route, so nothing of {pid} is served"
         if problem is not None:
             blocks.append(f"provider {pid} transport {selection.choice}: {problem}; its selectors are not served "
-                          f"(back to the pool: claude-multi providers transport {pid} {TRANSPORT_POOL})")
+                          f"(back to the pool: charmer providers transport {pid} {TRANSPORT_POOL})")
         elif alternative is not None:
             info.append(f"provider {pid} transport: {selection.choice} ({alternative.auth_kind} "
                         f"env:{alternative.secret_name} → {alternative.origin}); the {alternative.pool} "
@@ -4166,4 +4166,4 @@ def doctor_findings(
 def route_status_text(provider: str, status: str, *, old: str | None = None, new: str | None = None) -> str:
     """E16 diagnostic owner; never a route-policy decision."""
     change = f" (origin {old} → {new})" if status == "changed" and old and new else ""
-    return f"provider {provider}: route {status}{change} — claude-multi providers approve {provider}"
+    return f"provider {provider}: route {status}{change} — charmer providers approve {provider}"

@@ -76,7 +76,7 @@ def lineup_log_rotated_path(state_root: Path | str, managed_id: str) -> Path:
 
 @dataclass(frozen=True)
 class CmVerb:
-    """One ``/cm`` (``claude-multi lineup``) request verb: the single
+    """One ``/cm`` (``charmer lineup``) request verb: the single
     definition the request parser, the in-session help line and the
     generated skill grammar read. ``args`` is the argument grammar after the
     verb in the help spelling (``<name>``, ``[optional]``); ``writes`` says
@@ -111,9 +111,9 @@ CM_VERBS: tuple[CmVerb, ...] = (
 )
 CM_VERB_NAMES = tuple(verb.name for verb in CM_VERBS)
 CM_READ_VERBS = frozenset(verb.name for verb in CM_VERBS if not verb.writes)
-# The launcher-wide presentation switches. ``claude-multi lineup`` prints
+# The launcher-wide presentation switches. ``charmer lineup`` prints
 # plain text, so it takes them before or after its name as no-ops
-# (``claude-multi --no-color lineup show`` and ``claude-multi lineup
+# (``charmer --no-color lineup show`` and ``charmer lineup
 # --no-color show`` both show).
 PRESENTATION_FLAGS = ("--line", "--no-color")
 

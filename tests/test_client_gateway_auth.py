@@ -195,7 +195,7 @@ class _SpikeCase(unittest.TestCase):
         super().setUp()
         if self.boundary_skip is not None:
             self.skipTest(self.boundary_skip)
-        self.root = Path(tempfile.mkdtemp(prefix="claude-multi-client-check-"))
+        self.root = Path(tempfile.mkdtemp(prefix="charmer-client-check-"))
         os.chmod(self.root, 0o700)
         self.addCleanup(shutil.rmtree, self.root, True)
         # Simulated live roots: the fixture stays disjoint and the ambient

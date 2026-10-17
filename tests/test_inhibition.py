@@ -4,7 +4,7 @@ The record and its API (begin, advance, check, end, recover; the command for
 shell owners), the stable inhibited outcome on every mutation path with the
 read-only paths kept available, the owner's continuation, the doctor and
 status reports, the entry points outside the command dispatcher called
-directly (``claude-multi-proxy``, the ``/cm`` intercept, the hooks), and
+directly (``charmer-proxy``, the ``/cm`` intercept, the hooks), and
 a home whose gateway was never set up. Everything runs in temporary homes
 against the lifecycle's fake gateway world, a stub service manager and
 injected loopback seams: nothing reaches a real gateway, port or manager.
@@ -52,7 +52,7 @@ class RecordTests(unittest.TestCase):
         self.root = Path(tempfile.mkdtemp(prefix="cm-inhibition-"))
         os.chmod(self.root, 0o700)
         self.addCleanup(shutil.rmtree, self.root, True)
-        self.state_root = self.root / "state" / "claude-multi"
+        self.state_root = self.root / "state" / "charmer"
 
     def test_begin_writes_one_closed_private_record(self) -> None:
         token = gi.begin(self.state_root, **OWNER, expiry=gi.owner_process(os.getpid(), 120), now=NOW)
@@ -254,7 +254,7 @@ class _Inhibited(test_gateway_service._ServiceCase):
                         remedy="sh cutover.sh --recover", expiry=expiry, now=at or self.world.now)
 
     def runtime(self, **environ: str) -> cli.Runtime:
-        launcher = self.home / ".local/share/claude-multi/install/current/bin/claude-multi"
+        launcher = self.home / ".local/share/charmer/install/current/bin/charmer"
         return cli.Runtime(asset_root=FIXTURE_ROOT, environ=self.environ(CLAUDE_MULTI_HOOK_COMMAND=str(launcher),
                                                                          **environ),
                            cwd=self.root, managed_root=self.root / "managed", gateway_seams=self.seams(),
@@ -300,7 +300,7 @@ class MutationPathTests(_Inhibited):
 
     def test_a_new_install_records_no_port_under_an_inhibition(self) -> None:
         endpoint.endpoint_path(self.home).unlink()
-        (self.home / ".config/claude-multi/api-key").unlink()
+        (self.home / ".config/charmer/api-key").unlink()
         self.inhibit()
         self.assert_inhibited(self.gateway().ensure(max_wait=1, explicit=True, choose_port=True))
         self.assert_inhibited(self.service().install())
@@ -332,7 +332,7 @@ class MutationPathTests(_Inhibited):
         self.assertIn("    fix: wait until it has finished", out)
         code, out, err = self.run_cli("gateway", "stop")
         self.assertEqual((code, out), (1, ""))
-        self.assertIn("claude-multi: the gateway is inhibited by cutover", err)
+        self.assertIn("charmer: the gateway is inhibited by cutover", err)
         self.assertIn("  fix: wait until it has finished; if it was interrupted, its owner finishes or releases it: "
                       "sh cutover.sh --recover", err)
         self.assertEqual(self.world.terminated, [])
@@ -403,7 +403,7 @@ class MutationPathTests(_Inhibited):
         self.assertEqual(self.world.spawned, [])
         # A new install records nothing while inhibited; the launch reports the inhibition.
         endpoint.endpoint_path(self.home).unlink()
-        (self.home / ".config/claude-multi/api-key").unlink()
+        (self.home / ".config/charmer/api-key").unlink()
         runtime = self.runtime()
         self.assertFalse(runtime.provision_endpoint())
         with self.assertRaises(launch.LaunchError):
@@ -456,7 +456,7 @@ class StaleHandOffTests(_Inhibited):
         self.manager.active.clear()
         self.world.lock, self.world.alive, self.world.listener = False, False, "none"
         # A hand-off of another (dead) process, long ago.
-        gi.begin(self.state_root, owner=gl.SERVICE_OWNER, purpose="gateway service install (claude-multi-gateway)",
+        gi.begin(self.state_root, owner=gl.SERVICE_OWNER, purpose="gateway service install (charmer-gateway)",
                  phase="install", remedy=gl.SERVICE_REMEDY, expiry=gi.owner_process(os.getppid()),
                  now=self.world.now - stale_after() * 2)
         self.assertEqual(self.gateway().ensure(max_wait=0).status, "inhibited")
@@ -482,7 +482,7 @@ class _Entry(_Inhibited):
         return code, out.getvalue(), err.getvalue(), execs
 
     def config_files(self) -> dict[str, bytes]:
-        directory = self.home / ".config/claude-multi"
+        directory = self.home / ".config/charmer"
         return {path.name: path.read_bytes() for path in sorted(directory.iterdir()) if path.is_file()}
 
     def shims(self) -> dict[str, bytes]:
@@ -513,7 +513,7 @@ class EntryPointFencingTests(_Entry):
             with self.subTest(argv=argv):
                 code, out, err, execs = self.proxy(*argv)
                 self.assertEqual((code, out, execs), (1, "", []))
-                self.assertIn("claude-multi-proxy: the gateway is inhibited by cutover", err)
+                self.assertIn("charmer-proxy: the gateway is inhibited by cutover", err)
                 self.assertIn("fix: wait until it has finished", err)
         self.assertEqual(self.config_files(), before)
         self.assertFalse(os.path.lexists(self.workdir / proxy.service.EXEC_STAMP))
@@ -527,7 +527,7 @@ class EntryPointFencingTests(_Entry):
     def test_the_units_directives_are_the_reviewed_exception(self) -> None:
         self.assertEqual(self.proxy("init", "--prepare-start")[0], 0)
         self.inhibit()
-        # The service manager runs them; every claude-multi path that asks it to is fenced.
+        # The service manager runs them; every charmer path that asks it to is fenced.
         self.assertEqual(self.proxy("init", "--prepare-start")[0], 0)
         code, _out, err, execs = self.proxy("run", "--prepared")
         self.assertEqual((code, len(execs)), (None, 1), err)
@@ -549,7 +549,7 @@ class EntryPointFencingTests(_Entry):
     def test_the_hooks_and_the_cm_intercept_leave_the_shims_to_the_owner(self) -> None:
         import charmer.cli.commands.lineup as commands_lineup
 
-        old, new = str(self.root / "old" / "claude-multi"), str(self.root / "new" / "claude-multi")
+        old, new = str(self.root / "old" / "charmer"), str(self.root / "new" / "charmer")
         with self.process_environ(old):
             cli.Runtime(asset_root=FIXTURE_ROOT)
         before = self.shims()
@@ -633,7 +633,7 @@ class ConfigurationTests(test_cli.OperatorCommandCase):
     def test_provider_writes_rotation_and_prune_wait_for_the_owner(self) -> None:
         root = self.runtime.session_store.root
         token = gi.begin(root, owner="updater", purpose="update 1.0.0 to 1.0.1", phase="replace",
-                         remedy="claude-multi update --rollback")
+                         remedy="charmer update --rollback")
         config = proxy.config_dir(self.runtime.home) / "config.yaml"
         before = config.read_bytes() if config.exists() else None
         code, _out, err = self.op(test_cli.ACME_ADD, "y\n")
@@ -659,7 +659,7 @@ class FreshHomeTests(test_cli.OperatorCommandCase):
 
     def setUp(self) -> None:
         super().setUp()
-        (self.runtime.home / ".config/claude-multi/api-key").unlink()  # nothing was ever rendered here
+        (self.runtime.home / ".config/charmer/api-key").unlink()  # nothing was ever rendered here
         self.assertFalse(endpoint.set_up(self.runtime.home))
 
     @contextlib.contextmanager
@@ -676,7 +676,7 @@ class FreshHomeTests(test_cli.OperatorCommandCase):
         self.assertEqual(attempts, [])
 
     def gateway_files(self) -> list[str]:
-        directory = self.runtime.home / ".config/claude-multi"
+        directory = self.runtime.home / ".config/charmer"
         return sorted(name for name in ("config.yaml", "api-key", "endpoint.json") if (directory / name).exists())
 
     def test_models_add_sends_nothing_to_any_port(self) -> None:
@@ -690,7 +690,7 @@ class FreshHomeTests(test_cli.OperatorCommandCase):
                                       "--context", "65536", "--source", "operator",
                                       "--effort", "max=output-config-max"])
         self.assertEqual(code, 1, out)
-        self.assertIn("the local gateway is not set up yet: run claude-multi setup --step gateway first", err)
+        self.assertIn("the local gateway is not set up yet: run charmer setup --step gateway first", err)
         self.assertEqual((self.pdir / "kimi.json").read_bytes(), before)  # undone
         self.assertEqual(self.gateway_files(), [])  # no config, key or port: still a new install
 
@@ -700,7 +700,7 @@ class FreshHomeTests(test_cli.OperatorCommandCase):
             self.assertEqual(code, 1)
             self.assertIn("not set up", err)
             with self.assertRaises(endpoint.NotSetUpError):  # (the case's fixture patches the instance's)
-                cli.Runtime.verify_reload(self.runtime, "claude-multi-render-0123abcd")
+                cli.Runtime.verify_reload(self.runtime, "charmer-render-0123abcd")
             gateway = gl.Gateway(home=self.runtime.home, state_root=self.runtime.session_store.root,
                                  environ=self.runtime.environ, gateway_document=self.runtime.catalog.docs["gateway"],
                                  installation=REPO_ROOT, seams=gl.Seams(
@@ -710,7 +710,7 @@ class FreshHomeTests(test_cli.OperatorCommandCase):
             outcome = gateway.ensure(max_wait=1)
             self.assertEqual(outcome.status, "refused")
             self.assertIn("not set up", outcome.message)
-            self.assertEqual(outcome.remedy, "set it up: claude-multi setup --step gateway")
+            self.assertEqual(outcome.remedy, "set it up: charmer setup --step gateway")
             outcome = proxy.prune_aliases(self.runtime.home, self.runtime.session_store.root, None,
                                           environ=self.runtime.gateway_environ())
             self.assertEqual(outcome.code, 1)
@@ -725,15 +725,15 @@ class FreshHomeTests(test_cli.OperatorCommandCase):
                                           execve=mock.Mock(side_effect=AssertionError("exec")))
                     self.assertEqual(code, 1)
                     self.assertIn("not set up", err.getvalue())
-                    self.assertIn("fix: claude-multi setup --step gateway", err.getvalue())
+                    self.assertIn("fix: charmer setup --step gateway", err.getvalue())
         self.assertEqual(self.gateway_files(), [])
         status = io.StringIO()
         gateway.seams.listener = lambda _b, _p: proxy.service.OwnerVerdict("none", "fixture")
         status.write("\n".join(gateway.status().lines(self.runtime.environ)))
-        self.assertIn("(not set up: claude-multi setup --step gateway)", status.getvalue())
+        self.assertIn("(not set up: charmer setup --step gateway)", status.getvalue())
 
     def test_an_existing_install_keeps_the_packaged_port(self) -> None:
-        state.atomic_write(self.runtime.home / ".config/claude-multi/api-key", b"a" * 64 + b"\n")
+        state.atomic_write(self.runtime.home / ".config/charmer/api-key", b"a" * 64 + b"\n")
         self.assertTrue(endpoint.set_up(self.runtime.home))
         observed: list[str] = []
         gateway = gl.Gateway(home=self.runtime.home, state_root=self.runtime.session_store.root,
@@ -753,7 +753,7 @@ def legacy_record(state_root: Path, *, pid: int, started: datetime.datetime, ope
     """An earlier hand-off record (service-handoff.json); returns its token."""
 
     token = "c" * 32
-    document = {"version": 1, "operation": operation, "unit": "claude-multi-gateway", "pid": pid,
+    document = {"version": 1, "operation": operation, "unit": "charmer-gateway", "pid": pid,
                 "started_at": started.isoformat(), "token": token}
     state.atomic_write(gi.legacy_path(state_root), raw if raw is not None else json.dumps(document).encode())
     return token
@@ -766,7 +766,7 @@ class LegacyRecordTests(_Inhibited):
         token = legacy_record(self.state_root, pid=os.getppid(), started=self.world.now - datetime.timedelta(days=1))
         record = gi.read(self.state_root)
         self.assertEqual((record.owner, record.phase, record.token), (gl.SERVICE_OWNER, "install", token))
-        self.assertIn("gateway service install (claude-multi-gateway)", record.describe())
+        self.assertIn("gateway service install (charmer-gateway)", record.describe())
         outcome = self.gateway().ensure(max_wait=1)
         self.assertEqual(outcome.status, "inhibited", outcome.lines())
         self.assertIn("its owner did not finish (stale)", outcome.message)
@@ -953,7 +953,7 @@ class ReadOnlyWithoutTheStartLockTests(_Inhibited):
         lock = state.FileLock(self.workdir / "gateway-start")
         self.assertTrue(lock.acquire(blocking=False))
         try:
-            gi.begin(self.state_root, owner=gl.SERVICE_OWNER, purpose="gateway service refresh (claude-multi-gateway)",
+            gi.begin(self.state_root, owner=gl.SERVICE_OWNER, purpose="gateway service refresh (charmer-gateway)",
                      phase="refresh", remedy=gl.SERVICE_REMEDY, expiry=gi.owner_process(os.getppid()),
                      now=self.world.now, held_lock=True)
             started = self.world.clock()
@@ -1025,7 +1025,7 @@ class RefreshTransactionTests(_Inhibited):
         self.assertEqual(self.unit_text(), before)  # the files are back, but the manager never reloaded them
         self.assertIn("its restoration is not finished", outcome.message)
         self.assertIn("the service manager did not reload the restored unit files", "\n".join(outcome.notes))
-        self.assertEqual(outcome.remedy, "run claude-multi gateway service install again")
+        self.assertEqual(outcome.remedy, "run charmer gateway service install again")
         record = gi.read(self.state_root)
         self.assertEqual((record.owner, record.phase), (gl.SERVICE_OWNER, "refresh"))  # kept
         self.manager.active.clear()
@@ -1070,7 +1070,7 @@ class InterruptedUninstallTests(_Inhibited):
         self.assertEqual(self.recorded().backend, endpoint.ON_DEMAND)
         # As a process killed right after it recorded the on-demand backend
         # leaves it: the service gone, its record behind.
-        gi.begin(self.state_root, owner=gl.SERVICE_OWNER, purpose="gateway service uninstall (claude-multi-gateway)",
+        gi.begin(self.state_root, owner=gl.SERVICE_OWNER, purpose="gateway service uninstall (charmer-gateway)",
                  phase="uninstall", remedy=gl.SERVICE_REMEDY, expiry=gi.owner_process(os.getppid()),
                  now=self.world.now - stale_after() * 2)
         self.assertEqual(self.gateway().stop().status, "inhibited")
@@ -1084,7 +1084,7 @@ class InterruptedUninstallTests(_Inhibited):
         self.assertEqual(self.service().uninstall().message, "the gateway service is not installed; nothing was changed")
         self.assertEqual(gi.read(self.state_root).token, token)
         gi.end(self.state_root, token)
-        live = gi.begin(self.state_root, owner=gl.SERVICE_OWNER, purpose="gateway service uninstall (claude-multi-gateway)",
+        live = gi.begin(self.state_root, owner=gl.SERVICE_OWNER, purpose="gateway service uninstall (charmer-gateway)",
                         phase="uninstall", remedy=gl.SERVICE_REMEDY, expiry=gi.owner_process(os.getppid()),
                         now=self.world.now)
         self.assertEqual(self.service().uninstall().status, "inhibited")
@@ -1094,11 +1094,11 @@ class InterruptedUninstallTests(_Inhibited):
         self.assertTrue(self.service().install().ok)
         text = self.unit_text()
         self.assertTrue(self.service().uninstall().ok)
-        (self.unit_dir / "claude-multi-gateway.service").write_text(text)  # a restoration interrupted midway
-        gi.begin(self.state_root, owner=gl.SERVICE_OWNER, purpose="gateway service uninstall (claude-multi-gateway)",
+        (self.unit_dir / "charmer-gateway.service").write_text(text)  # a restoration interrupted midway
+        gi.begin(self.state_root, owner=gl.SERVICE_OWNER, purpose="gateway service uninstall (charmer-gateway)",
                  phase="uninstall", remedy=gl.SERVICE_REMEDY, expiry=gi.owner_process(os.getppid()),
                  now=self.world.now - stale_after() * 2)
-        self.manager.active.add("claude-multi-gateway")
+        self.manager.active.add("charmer-gateway")
         outcome = self.service().uninstall()
         self.assertEqual(outcome.status, "refused", outcome.lines())
         self.assertIn("still runs", outcome.message)
@@ -1106,12 +1106,12 @@ class InterruptedUninstallTests(_Inhibited):
         self.manager.active.clear()
         outcome = self.service().uninstall()
         self.assertEqual(outcome.status, "stopped", outcome.lines())
-        self.assertFalse((self.unit_dir / "claude-multi-gateway.service").exists())
+        self.assertFalse((self.unit_dir / "charmer-gateway.service").exists())
         self.assertIsNone(gi.read(self.state_root))
 
 
     def test_a_failed_reload_keeps_it_until_a_later_reload_succeeds(self) -> None:
-        unit = "claude-multi-gateway"
+        unit = "charmer-gateway"
         self.assertTrue(self.service().install().ok)
         text = self.unit_text()
         self.assertTrue(self.service().uninstall().ok)
@@ -1160,7 +1160,7 @@ class TwoRootsTests(_Entry):
         self.assertEqual(continuity.read(self.home)["state_root"], str(self.state_root))
         token = self.inhibit()
         before = self.config_files()
-        other = self.root / "other" / "claude-multi"
+        other = self.root / "other" / "charmer"
         state.ensure_private_dir(other)
         for argv, extra in ((["init", "--state-root", str(other)], {}),
                             (["init"], {"XDG_STATE_HOME": str(self.root / "other")}),
@@ -1189,7 +1189,7 @@ class TwoRootsTests(_Entry):
 
         self.assertEqual(self.proxy("init")[0], 0)
         self.assertEqual(continuity.read(self.home)["state_root"], str(self.state_root))
-        adopted = self.root / "adopted" / "claude-multi"
+        adopted = self.root / "adopted" / "charmer"
         state.ensure_private_dir(adopted)
         seen: dict = {}
         real_summary = proxy.pending_served_summary
@@ -1227,7 +1227,7 @@ class TwoRootsTests(_Entry):
         self.assertEqual(self.proxy("init")[0], 0)
         roots = gi.home_roots(self.home, self.state_root)
         self.assertEqual(roots, (self.state_root,))
-        adopted = self.root / "adopted" / "claude-multi"
+        adopted = self.root / "adopted" / "charmer"
         document = continuity.read(self.home)
         document["state_root"] = str(adopted)
         continuity.write(self.home, document)  # adopted after the roots were resolved
@@ -1249,7 +1249,7 @@ class TwoRootsTests(_Entry):
 
         self.assertEqual(self.proxy("init")[0], 0)
         self.inhibit()  # the managed root's transaction owner
-        other = self.root / "other" / "claude-multi"
+        other = self.root / "other" / "charmer"
         state.ensure_private_dir(other)
         state.atomic_write(continuity.path(self.home), b'{"version": 1, "state_root": ')
         before = self.config_files()
@@ -1262,7 +1262,7 @@ class TwoRootsTests(_Entry):
                 code, _out, err, execs = self.proxy(*argv, **extra)
                 self.assertEqual((code, execs), (1, []), err)
                 self.assertIn("gateway continuity set unreadable (continuity.json:", err)
-                self.assertIn("repair or remove ~/.config/claude-multi/continuity.json", err)
+                self.assertIn("repair or remove ~/.config/charmer/continuity.json", err)
         self.assertEqual(self.config_files(), before)
         # The launcher's configuration and credential writes from the other
         # root refuse the same way.
@@ -1291,7 +1291,7 @@ class ForeignChannelShimTests(_Entry):
     def test_hooks_of_another_channel_leave_every_shim_alone(self) -> None:
         from charmer import installs
 
-        old, new = str(self.root / "old" / "claude-multi"), str(self.root / "new" / "claude-multi")
+        old, new = str(self.root / "old" / "charmer"), str(self.root / "new" / "charmer")
         installs.write_marker(self.state_root, "nix")
         with self.process_environ(old, CLAUDE_MULTI_CHANNEL="nix"):
             self.assertIsNone(cli.Runtime(asset_root=FIXTURE_ROOT).shims_withheld)
@@ -1326,7 +1326,7 @@ class RotationPhaseTests(test_continuity.ContinuityCase):
         def getter(_base, token):
             yaml = self.config.read_text()
             keys = re.findall(r'"([0-9a-f]{64})"', yaml.split("api-keys:\n", 1)[1].split("debug:", 1)[0])
-            ids = set(re.findall(r'alias: "(claude-multi-render-[0-9a-f]+)"', yaml))
+            ids = set(re.findall(r'alias: "(charmer-render-[0-9a-f]+)"', yaml))
             return (200, ids) if token in keys else (401, set())
 
         clock, begun = [0.0], []
@@ -1354,10 +1354,10 @@ class RotationPhaseTests(test_continuity.ContinuityCase):
         def getter(_base, token):
             yaml = self.config.read_text()
             keys = re.findall(r'"([0-9a-f]{64})"', yaml.split("api-keys:\n", 1)[1].split("debug:", 1)[0])
-            ids = set(re.findall(r'alias: "(claude-multi-render-[0-9a-f]+)"', yaml))
+            ids = set(re.findall(r'alias: "(charmer-render-[0-9a-f]+)"', yaml))
             return (200, ids) if token in keys else (401, set())
 
-        adopted = self.root / "adopted" / "claude-multi"
+        adopted = self.root / "adopted" / "charmer"
         clock, seen = [0.0], {}
 
         def sleep(seconds: float) -> None:  # the wait between phases: the home is adopted, its owner begins
@@ -1386,7 +1386,7 @@ class FreshHomeUnitDirectiveTests(test_cli.OperatorCommandCase):
     """The unit's own directives get no exception from the fresh-home rule."""
 
     def test_the_units_directives_never_provision_the_packaged_port(self) -> None:
-        (self.runtime.home / ".config/claude-multi/api-key").unlink()
+        (self.runtime.home / ".config/charmer/api-key").unlink()
         self.assertFalse(endpoint.set_up(self.runtime.home))
         asked: list = []
         for argv in (["init", "--reload-check"], ["init", "--prepare-start"], ["run", "--prepared"]):
@@ -1402,7 +1402,7 @@ class FreshHomeUnitDirectiveTests(test_cli.OperatorCommandCase):
                 self.assertEqual(code, 1)
                 self.assertIn("not set up", err.getvalue())
         self.assertEqual(asked, [])
-        directory = self.runtime.home / ".config/claude-multi"
+        directory = self.runtime.home / ".config/charmer"
         self.assertEqual([name for name in ("config.yaml", "api-key", "endpoint.json") if (directory / name).exists()],
                          [])
 

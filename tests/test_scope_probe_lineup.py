@@ -1,4 +1,4 @@
-"""Spike S1/S2 re-run end to end through ``claude-multi lineup``.
+"""Spike S1/S2 re-run end to end through ``charmer lineup``.
 
 Real-binary probes against the pinned Claude Code binary (gated by
 ``probe.pinned_binary_gate`` through ``tests/_tier.real_binary_gate``; a
@@ -68,7 +68,7 @@ _CONTRACT_PATH = RESOURCES_ROOT / "catalog" / "native-contract.json"
 _HINT_ENV = {"CLAUDE_CODE_GATEWAY_HINT_HEADERS": "1"}
 _PROMPT_GLYPH = "❯".encode("utf-8")
 _DIRECTIVE_RE = re.compile(r"AGENTPROBE-SPAWN-(\d{1,2})")
-_NOTICE_RE = re.compile(r"\[claude-multi lineup notice · lineup_generation (\d+)\]")
+_NOTICE_RE = re.compile(r"\[charmer lineup notice · lineup_generation (\d+)\]")
 _TOOL_ID_PREFIX = "toolu_agentprobe_"
 _SUMMARY = "AGENTPROBE-COMPACT-SUMMARY"
 _AGENT = "cm-analyst"
@@ -217,7 +217,7 @@ class _LiveStateSpy:
     """Records any stat/open of the operator's live state root (names only)."""
 
     def __init__(self) -> None:
-        self.live_root = os.path.join(os.path.expanduser("~"), ".local", "state", "claude-multi")
+        self.live_root = os.path.join(os.path.expanduser("~"), ".local", "state", "charmer")
         self.hits: list[str] = []
         self._patches: list[Any] = []
 
@@ -265,7 +265,7 @@ class _LineupProbeCase(unittest.TestCase):
         super().setUp()
         if self.boundary_skip is not None:
             self.skipTest(self.boundary_skip)
-        self.root = Path(tempfile.mkdtemp(prefix="claude-multi-agent-probe-"))
+        self.root = Path(tempfile.mkdtemp(prefix="charmer-agent-probe-"))
         os.chmod(self.root, 0o700)
         self.addCleanup(shutil.rmtree, self.root, True)
         self.environ = {"HOME": str(self.root / "live" / "home"), "PATH": "/usr/bin:/bin"}
@@ -277,20 +277,20 @@ class _LineupProbeCase(unittest.TestCase):
     # ---------------------------------------------------------- runtime
 
     def _runtime(self) -> cli.Runtime:
-        wrapper = self.fixture.root / "claude-multi-wrapper"
+        wrapper = self.fixture.root / "charmer-wrapper"
         wrapper.write_text(
             _WRAPPER.format(
                 wrapper=shlex.quote(str(wrapper)),
                 src=shlex.quote(str(REPO_ROOT / "src")),
                 python=shlex.quote(sys.executable),
-                launcher=shlex.quote(str(REPO_ROOT / "bin" / "claude-multi")),
+                launcher=shlex.quote(str(REPO_ROOT / "bin" / "charmer")),
             ),
             encoding="utf-8",
         )
         wrapper.chmod(0o700)
         env = self.fixture.environ()
         env["CLAUDE_MULTI_HOOK_COMMAND"] = str(wrapper)
-        token_dir = state.ensure_private_dir(self.fixture.home / ".config" / "claude-multi")
+        token_dir = state.ensure_private_dir(self.fixture.home / ".config" / "charmer")
         state.atomic_write(token_dir / "api-key", (FIXTURE_GATEWAY_TOKEN + "\n").encode())
         # A fake verified binary for perform_launch's identity check: the
         # execve seam captures argv; the pinned client runs through the probe.
@@ -450,7 +450,7 @@ class _LineupProbeCase(unittest.TestCase):
 
 
 class LineupS1Probe(_LineupProbeCase):
-    """S1 through `claude-multi lineup`: /cm set + /reload-plugins rebinds the next spawn."""
+    """S1 through `charmer lineup`: /cm set + /reload-plugins rebinds the next spawn."""
 
     def test_cm_set_then_reload_rebinds_next_spawn(self) -> None:
         mid = self._launch_fresh()
@@ -507,7 +507,7 @@ class LineupS1Probe(_LineupProbeCase):
 
 
 class LineupS2Probe(_LineupProbeCase):
-    """S2 through `claude-multi lineup`: the live change survives /compact + `-r`."""
+    """S2 through `charmer lineup`: the live change survives /compact + `-r`."""
 
     def test_live_change_survives_compact_and_resume(self) -> None:
         mid = self._launch_fresh()
@@ -542,7 +542,7 @@ class LineupS2Probe(_LineupProbeCase):
             self._run_pty("S2", argv, steps, provider)
             _lead, model_b = self._selectors(mid)
             applied_after_live = copy.deepcopy(self.rt.session_store.load(mid)["applied"])
-            # `claude-multi -r <mid>`: prepared and performed through the probe
+            # `charmer -r <mid>`: prepared and performed through the probe
             # Runtime (the exec seam), then bridged again.
             self._resume(mid)
             resume_argv = self._bridge_scope(mid, provider)

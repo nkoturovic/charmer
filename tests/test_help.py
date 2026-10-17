@@ -36,8 +36,8 @@ def help_golden_files() -> dict[str, bytes]:
         # help bytes still compare exactly.
         root_help = cli.build_parser().format_help().replace(
             "-r [SESSION], --resume [SESSION]", "-r, --resume [SESSION]")
-        result = {"claude-multi.txt": root_help.encode()}
-        for name, main in (("claude-multi-proxy", proxy.main), ("claude-multi-dev", dev.main)):
+        result = {"charmer.txt": root_help.encode()}
+        for name, main in (("charmer-proxy", proxy.main), ("charmer-dev", dev.main)):
             out = io.StringIO()
             with redirect_stdout(out):
                 assert main(["--help"]) == 0
@@ -61,11 +61,11 @@ class HelpTests(unittest.TestCase):
         for label, text in (("single metavar", canonical), ("repeated metavar", legacy)):
             with self.subTest(format=label), mock.patch.object(cli_parser, "build_parser", return_value=parser), \
                     mock.patch.object(parser, "format_help", return_value=text):
-                self.assertEqual(help_golden_files()["claude-multi.txt"], canonical.encode())
+                self.assertEqual(help_golden_files()["charmer.txt"], canonical.encode())
         changed = legacy.replace("resume a managed session", "changed help")
         with mock.patch.object(cli_parser, "build_parser", return_value=parser), \
                 mock.patch.object(parser, "format_help", return_value=changed):
-            self.assertEqual(help_golden_files()["claude-multi.txt"],
+            self.assertEqual(help_golden_files()["charmer.txt"],
                              canonical.replace("resume a managed session", "changed help").encode())
 
     def test_hidden_hook_is_still_parseable(self) -> None:
@@ -106,15 +106,15 @@ class HelpTests(unittest.TestCase):
     def test_epilog_preserves_doc_pointers_last(self) -> None:
         with help_environment():
             text = cli.build_parser().format_help()
-        for needle in ("Inside a session: /cm", "-- CLAUDE_ARGS", "claude-multi-proxy"):
+        for needle in ("Inside a session: /cm", "-- CLAUDE_ARGS", "charmer-proxy"):
             self.assertIn(needle, text)
         # The companion launchers are not part of the ordinary help: `direct`
         # covers the one-model session; the developer tool is a checkout's.
-        for needle in ("claude-gateway", "claude-multi-dev"):
+        for needle in ("claude-gateway", "charmer-dev"):
             self.assertNotIn(needle, text)
         lines = text.splitlines()
-        self.assertEqual(lines[-2], "Symptom → command: CHEATSHEET.md in the claude-multi docs")
-        self.assertEqual(lines[-1], "Documentation map: USAGE.md in the claude-multi docs")
+        self.assertEqual(lines[-2], "Symptom → command: CHEATSHEET.md in the charmer docs")
+        self.assertEqual(lines[-1], "Documentation map: USAGE.md in the charmer docs")
 
     def test_proxy_help_and_unknown_command(self) -> None:
         for argv in ([], ["-h"], ["--help"], ["help"]):
@@ -123,7 +123,7 @@ class HelpTests(unittest.TestCase):
                 self.assertEqual(out.getvalue(), proxy.PROXY_USAGE + "\n")
         with redirect_stderr(io.StringIO()) as err:
             self.assertEqual(proxy.main(["unknown"]), 1)
-        self.assertEqual(err.getvalue(), "claude-multi-proxy: unknown command: unknown\n" + proxy.PROXY_USAGE + "\n")
+        self.assertEqual(err.getvalue(), "charmer-proxy: unknown command: unknown\n" + proxy.PROXY_USAGE + "\n")
 
     def test_dev_no_arguments_prints_help_but_is_usage_error(self) -> None:
         with redirect_stdout(io.StringIO()) as out:
@@ -180,7 +180,7 @@ class GroupedRootHelpTests(unittest.TestCase):
 
         with help_environment():
             text = " ".join(cli.build_parser().format_help().split())
-        self.assertIn("claude-multi with no command opens the launcher", text)
+        self.assertIn("charmer with no command opens the launcher", text)
         for key, name in parser_mod.TUI_SCREENS:
             self.assertIn(f"{key} {name}", text)
         self.assertIn("Examples:", text)
@@ -207,7 +207,7 @@ class GroupedRootHelpTests(unittest.TestCase):
 
 
 class LineupHelpTests(unittest.TestCase):
-    """`claude-multi lineup --help` describes the request grammar before any
+    """`charmer lineup --help` describes the request grammar before any
     session, state or Runtime is read."""
 
     def test_help_needs_no_session_or_runtime(self) -> None:
@@ -222,7 +222,7 @@ class LineupHelpTests(unittest.TestCase):
                 with self.subTest(argv=argv), redirect_stdout(io.StringIO()) as out:
                     self.assertEqual(cli.main(argv), 0)
                 text = out.getvalue()
-                self.assertTrue(text.startswith("usage: claude-multi lineup"), text)
+                self.assertTrue(text.startswith("usage: charmer lineup"), text)
                 for verb in lineup_files.CM_VERBS:
                     self.assertIn(verb.spelled(), text)
                 self.assertIn("--preview", text)

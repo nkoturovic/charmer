@@ -297,7 +297,7 @@ class BusyTextTests(test_cli.CLITestCase):
         with mock.patch.object(lineup, "served_phase", side_effect=sessions.MigrationBusyError("busy")):
             self.assertEqual(lineup.on_removed(self.runtime, "mine", renamed_to=None, out=out), 0)
         self.assertEqual(out.getvalue(), "? migration or restore in progress; not updated now — they keep "
-                                         "their lineup and are pinned at their next resume (claude-multi "
+                                         "their lineup and are pinned at their next resume (charmer "
                                          "doctor lists them)\n")
         out = io.StringIO()
         with mock.patch.object(lineup, "served_phase", side_effect=state.BarrierBusyError("busy")):

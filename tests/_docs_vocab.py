@@ -46,7 +46,7 @@ Rules:
   ``launchctl``) names the backend it applies to (systemd or launchd), in
   the unit or a heading above it, and never targets the earlier unit name
   ``cli-proxy-api``; ordinary remedies use the public gateway commands
-  (``claude-multi gateway …``).
+  (``charmer gateway …``).
 - R9 ``machine-path``: a personal identifier in every in-tree file: the
   home directory of a real account (``tools/history_scan.py``
   ``GENERIC_IDENTIFIERS``; neutral identities such as ``/home/user`` pass)
@@ -81,8 +81,8 @@ Rules:
 Also here: the ``--help`` walk (``help_pages``), the command-span checker
 (``command_spans``/``check_span``: every form of a span, each optional
 part left out and put in and each alternative, parsed by the parser that
-owns it — the launcher's, ``claude-multi lineup``'s and ``/cm``'s request
-parser, the gateway tool's command table, ``claude-multi-dev``'s rules —
+owns it — the launcher's, ``charmer lineup``'s and ``/cm``'s request
+parser, the gateway tool's command table, ``charmer-dev``'s rules —
 with the finite typed ``PLACEHOLDERS`` registry, typed grammar
 ``FRAGMENTS``, registered ``NEGATIVE_EXAMPLES`` and ``span_coverage``
 counts), the fragment check
@@ -187,15 +187,15 @@ BUDGET_HEADROOM = 2
 
 # ------------------------------------------------------------ R7-R15
 
-# The OAuth records (under ~/.local/share/claude-multi; `pinned-clients/`
+# The OAuth records (under ~/.local/share/charmer; `pinned-clients/`
 # there is not one) and the
 # auth-file shapes (`claude-<account>.json`, `codex-<account>.json`).
 SECRET_NAMES = re.compile(
     r"api-key|previous-key|management-key|MANAGEMENT_PASSWORD"
     r"|config\.yaml|claude\.env|\.credentials\.json|secrets/"
-    r"|share/claude-multi/(?!pinned-clients\b)|\b(?:claude|codex)-[^\s/'\"]*\.json", re.I
+    r"|share/charmer/(?!pinned-clients\b)|\b(?:claude|codex)-[^\s/'\"]*\.json", re.I
 )
-TOKEN_HELPER = "claude-multi-gateway-token"
+TOKEN_HELPER = "charmer-gateway-token"
 # The helper in command position: at the start, after a shell separator
 # (`;`, `&&`, `||`, `|`, `&`), inside `$( )` or backticks, or behind a
 # wrapper (`sh -c '…'`, `sudo -u X`, `timeout 5`, `watch`, `env A=1`, …);
@@ -203,7 +203,7 @@ TOKEN_HELPER = "claude-multi-gateway-token"
 # paren/quote, or a flag. `start`/`end` tell the bare form (the helper
 # alone) apart: in a fenced line that runs it, in an inline span it is a
 # name unless a run verb precedes it. A file listing
-# (`bin/claude-multi-gateway-token (apiKeyHelper shim)`) is a name.
+# (`bin/charmer-gateway-token (apiKeyHelper shim)`) is a name.
 _HELPER_RUN = re.compile(
     r"(?:(?P<start>^\s*(?:\$\s+)?['\"]?)"
     r"|(?:[;|&]|\$\(|`)\s*['\"]?"
@@ -301,7 +301,7 @@ MACHINE_PATH_EXTENDED = (
 )
 # The public repository's address is the product's own, never a personal
 # identifier (as in the identifier gate).
-_PUBLIC_REPOSITORY_ADDRESS = re.compile(r"(?:https://github\.com/)?nkoturovic/claude-multi(?![\w-])")
+_PUBLIC_REPOSITORY_ADDRESS = re.compile(r"(?:https://github\.com/)?nkoturovic/charmer(?![\w-])")
 
 
 @functools.lru_cache(maxsize=1)
@@ -354,7 +354,7 @@ CONTRIBUTOR_PAGES = ("AGENTS.md", "CONTRIBUTING.md")
 MANUALS = ("USAGE.md", "CHEATSHEET.md", "STANDALONE.md")
 # The documents' installed directory and the public repository, through
 # whose URL an installed page reaches a root page.
-PUBLIC_REPOSITORY = "https://github.com/nkoturovic/claude-multi"
+PUBLIC_REPOSITORY = "https://github.com/nkoturovic/charmer"
 
 
 def docs_pages(docs: Path = DOCS_DIR) -> tuple[str, ...]:
@@ -1384,7 +1384,7 @@ def forbidden_reason(path: Path, environ: Mapping[str, str] = os.environ) -> str
     }
     secret_roots = {
         Path(os.path.abspath(home / ".config" / "secrets")),
-        Path(os.path.abspath(home / ".local" / "share" / "claude-multi")),
+        Path(os.path.abspath(home / ".local" / "share" / "charmer")),
     }
     candidates = [lexical]
     if not any(lexical == root or root in lexical.parents for root in projects):
@@ -1408,7 +1408,7 @@ def forbidden_reason(path: Path, environ: Mapping[str, str] = os.environ) -> str
         ) or candidate.name in {
             "api-key", "previous-key", ".credentials.json", TOKEN_HELPER,
         } or (
-            candidate.name == "config.yaml" and candidate.parent.name == "claude-multi"
+            candidate.name == "config.yaml" and candidate.parent.name == "charmer"
         ):
             return "a secret file (names only)"
     return ""
@@ -1445,7 +1445,7 @@ def _columns(columns: int):
 
 
 def help_pages(columns: int = 200) -> list[tuple[str, str]]:
-    """``(prog, format_help())`` for every claude-multi parser and subparser.
+    """``(prog, format_help())`` for every charmer parser and subparser.
 
     The installation root (where the help's doc pointers live) is replaced
     by ``<installation>``: the dev checkout path must not fail
@@ -1474,23 +1474,23 @@ def help_epilog() -> str:
 
 
 def module_help_texts() -> list[tuple[str, str]]:
-    """What ``claude-multi-proxy --help`` and ``claude-multi-dev`` print."""
+    """What ``charmer-proxy --help`` and ``charmer-dev`` print."""
 
     from charmer import dev, proxy
 
     return [
-        ("<doc: claude-multi-proxy --help>", proxy.__doc__ or ""),
-        ("<doc: claude-multi-dev (bare)>", dev.__doc__ or ""),
-        ("<doc: claude-multi-dev --help>", dev.DEV_HELP),
+        ("<doc: charmer-proxy --help>", proxy.__doc__ or ""),
+        ("<doc: charmer-dev (bare)>", dev.__doc__ or ""),
+        ("<doc: charmer-dev --help>", dev.DEV_HELP),
     ]
 
 
 # ----------------------------------------------------- command spans
 
 # The commands a span may name. ``claude-gateway`` (a launcher that no
-# longer exists; ``claude-multi direct`` launches one model) is extracted
+# longer exists; ``charmer direct`` launches one model) is extracted
 # only to be refused.
-COMMAND_PREFIXES = ("claude-multi-proxy ", "claude-multi-dev ", "claude-multi ", "claude-gateway ", "/cm")
+COMMAND_PREFIXES = ("charmer-proxy ", "charmer-dev ", "charmer ", "claude-gateway ", "/cm")
 REMOVED_LAUNCHER = re.compile(r"(?<![\w-])claude-gateway(?![\w-])")
 UUIDS = {
     "id": "11111111-1111-4111-8111-111111111111",
@@ -1523,7 +1523,7 @@ PLACEHOLDERS: dict[str, Placeholder] = {
     "line": Placeholder("a model line", "opus"),
     "agent": Placeholder("an agent id", "implementer"),
     "effort": Placeholder("an effort", "high"),
-    "alias": Placeholder("a gateway continuity alias", "claude-multi-example-alias"),
+    "alias": Placeholder("a gateway continuity alias", "charmer-example-alias"),
     "provider": Placeholder("a provider id", "kimi"),
     "draft": Placeholder("a catalog draft name", "draft"),
     "repo": Placeholder("a source checkout", "/tmp/cm-repo"),
@@ -1547,7 +1547,7 @@ PLACEHOLDERS: dict[str, Placeholder] = {
     "header": Placeholder("a key header", "x-api-key"),
     "family": Placeholder("a model family", "example"),
     "contracts": Placeholder("payload contracts", "output-config-high"),
-    "unit": Placeholder("a service unit name", "claude-multi-gateway"),
+    "unit": Placeholder("a service unit name", "charmer-gateway"),
 }
 # Grammar fragments: typed placeholders only a grammar span carries (it
 # ends with one), checked up to where it stands.
@@ -1792,13 +1792,13 @@ def _dev_problem(words: list[str], *, prefix: bool) -> str:
     from charmer import dev
 
     if not words:
-        return "" if prefix else "bare claude-multi-dev prints usage and exits 2"
+        return "" if prefix else "bare charmer-dev prints usage and exits 2"
     command, rest = words[0], words[1:]
     if command in ("-h", "--help", "help"):
         return ""
     known = {"model", "provider", "drafts", "check", "review", "promote", "smoke-test", "probe", "repin"}
     if command not in known:
-        return f"unknown claude-multi-dev command {command!r}"
+        return f"unknown charmer-dev command {command!r}"
     if prefix:
         return ""
     if command == "probe":
@@ -1833,7 +1833,7 @@ def _dev_problem(words: list[str], *, prefix: bool) -> str:
 
 
 def _proxy_problem(words: list[str], *, prefix: bool) -> str:
-    """A ``claude-multi-proxy`` form against the tool's own command table:
+    """A ``charmer-proxy`` form against the tool's own command table:
     each command's argument check, which has no effect."""
 
     from charmer import proxy
@@ -1843,20 +1843,20 @@ def _proxy_problem(words: list[str], *, prefix: bool) -> str:
     commands = {command.name: command for command in proxy.PROXY_COMMANDS}
     descriptor = commands.get(words[0])
     if descriptor is None:
-        return f"unknown claude-multi-proxy command {words[0]!r}"
+        return f"unknown charmer-proxy command {words[0]!r}"
     args = words[1:]
     if prefix or args[:1] and args[0] in proxy.HELP_ARGUMENTS:
         return ""
     try:
         descriptor.check(args, {"HOME": "/nonexistent-cm-docs-home"})
     except proxy.ProxyError as exc:
-        return f"claude-multi-proxy refuses: {exc}"
+        return f"charmer-proxy refuses: {exc}"
     return ""
 
 
 def _cm_problem(words: list[str], *, fragment: str | None) -> str:
     """``/cm <request>`` exactly as the skill passes it: one argument to
-    ``claude-multi lineup --session <runtime-id>``."""
+    ``charmer lineup --session <runtime-id>``."""
 
     from charmer import lineup
 
@@ -1877,7 +1877,7 @@ def _lineup_problem(words: list[str], *, fragment: str | None) -> str:
         return ""  # the request grammar, before any session is read
     if fragment is not None:
         if fragment != "request":
-            return f"claude-multi lineup takes a <request>, not <{fragment}>"
+            return f"charmer lineup takes a <request>, not <{fragment}>"
         words = [*words, "show"]
     try:
         # Inside a session the runtime id comes from the environment.
@@ -1922,7 +1922,7 @@ def _launcher_problem(words: list[str], *, fragment: str | None) -> str:
     if fragment == "claude-args" and not passthrough:
         return "<claude-args> stands after --"
     if fragment in ("request",):
-        return "<request> belongs to claude-multi lineup and /cm"
+        return "<request> belongs to charmer lineup and /cm"
     if fragment == "command":
         node, problem = _command_node(parser, launcher)
         if problem:
@@ -1937,7 +1937,7 @@ def _launcher_problem(words: list[str], *, fragment: str | None) -> str:
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             command = parser.parse_args(launcher).command
         if command not in (None, "direct"):
-            return "arguments after -- reach Claude Code only from a launch or claude-multi direct"
+            return "arguments after -- reach Claude Code only from a launch or charmer direct"
     return ""
 
 
@@ -2010,15 +2010,15 @@ def _head_problem(words: list[str], *, mode: str, fragment: str | None) -> str:
     head, rest = words[0], words[1:]
     prefix = mode == "name"
     if head == "claude-gateway":
-        return "claude-gateway is not a command of this release (claude-multi direct launches one model)"
+        return "claude-gateway is not a command of this release (charmer direct launches one model)"
     if head == "/cm":
         return "" if prefix else _cm_problem(rest, fragment=fragment)
-    if head == "claude-multi-proxy":
+    if head == "charmer-proxy":
         return _proxy_problem(rest, prefix=prefix or fragment is not None)
-    if head == "claude-multi-dev":
+    if head == "charmer-dev":
         return _dev_problem(rest, prefix=prefix or fragment is not None)
-    if head != "claude-multi":
-        return f"not a claude-multi command: {head}"
+    if head != "charmer":
+        return f"not a charmer command: {head}"
     if prefix:
         from charmer import cli
 
@@ -2042,7 +2042,7 @@ def check_span(span: str, *, mode: str = "example") -> SpanCheck:
 
     text = span.replace("\\|", "|").strip().rstrip(".,;:")
     if REMOVED_LAUNCHER.search(text):
-        return SpanCheck("claude-gateway is not a command of this release (claude-multi direct launches one model)",
+        return SpanCheck("claude-gateway is not a command of this release (charmer direct launches one model)",
                          "complete", 0)
     forms_checked, kinds = 0, set()
     for command in re.split(r"\s*(?:&&|;|\|\|)\s*", text):
@@ -2266,7 +2266,7 @@ def link_problems(path: Path, *, outside_only: bool = False, root: Path = REPO_R
 
 def installed_link_problems(share: Path, *, repository: Path = REPO_ROOT) -> list[tuple[str, int, str, str]]:
     """``(page, line, target, problem)`` for every page of an installed
-    document tree (``share/claude-multi`` of a wheel, a bundle or the Nix
+    document tree (``share/charmer`` of a wheel, a bundle or the Nix
     package): every relative link and ``#fragment`` resolves inside the tree,
     nested directories included, and a root page of the repository is
     reached only by its public URL (checked against ``repository``)."""
@@ -2357,11 +2357,11 @@ MODEL_IN_NAME_NEGATIVE = (
     "cm-explorer",
 )
 SECRET_POSITIVE = (
-    "`cat ~/.config/claude-multi/management-key`",
-    "`head -c 64 ~/.config/claude-multi/management-key.next`",
-    "`cp ~/.config/claude-multi/management-key* /tmp/backup/`",
-    "`TOKEN=$(<~/.config/claude-multi/management-key)`",
-    "`bash -c 'cat ~/.config/claude-multi/management-key.next'`",
+    "`cat ~/.config/charmer/management-key`",
+    "`head -c 64 ~/.config/charmer/management-key.next`",
+    "`cp ~/.config/charmer/management-key* /tmp/backup/`",
+    "`TOKEN=$(<~/.config/charmer/management-key)`",
+    "`bash -c 'cat ~/.config/charmer/management-key.next'`",
     '`curl -H "X-Management-Key: $KEY" http://127.0.0.1:8317/v0/management/auth-files`',
     '`curl -H "x-management-key: ${KEY}" http://127.0.0.1:8317/v0/management/auth-files`',
     '`echo "$MANAGEMENT_PASSWORD"`',
@@ -2385,47 +2385,47 @@ SECRET_POSITIVE = (
     "`tr '=' ' ' </proc/1/environ | cut -d= -f1`",
     "```\nps -p \"$PID\" eww\n```",
     "`ps -o pid e`",
-    "`cat -A ~/.config/claude-multi/api-key`",
-    "`head -c 64 ~/.config/claude-multi/api-key`",
-    "`tr -d '\\n' < ~/.config/claude-multi/api-key`",
-    "`grep -c . ~/.config/claude-multi/previous-key`",
-    "`wc -c ~/.config/claude-multi/api-key`",
-    "`TOKEN=$(<~/.config/claude-multi/api-key)`",
+    "`cat -A ~/.config/charmer/api-key`",
+    "`head -c 64 ~/.config/charmer/api-key`",
+    "`tr -d '\\n' < ~/.config/charmer/api-key`",
+    "`grep -c . ~/.config/charmer/previous-key`",
+    "`wc -c ~/.config/charmer/api-key`",
+    "`TOKEN=$(<~/.config/charmer/api-key)`",
     "`curl -H \"Authorization: Bearer $TOKEN\" http://127.0.0.1:8317/v1/models`",
-    "`~/.local/state/claude-multi/bin/claude-multi-gateway-token | wc -c`",
-    "To check the token, run `<state>/bin/claude-multi-gateway-token`.",
+    "`~/.local/state/charmer/bin/charmer-gateway-token | wc -c`",
+    "To check the token, run `<state>/bin/charmer-gateway-token`.",
     "`python3 -c 'print(open(\"/home/u/.config/secrets/claude.env\").read())'`",
     # The spec floor on plain prose, any read word of a
     # segment, quoted -c bodies.
-    "Then run cat ~/.config/claude-multi/api-key to compare.",
-    "`bash -c 'cat ~/.config/claude-multi/api-key'`",
-    "`sudo -u user cat ~/.config/claude-multi/api-key`",
-    "`timeout 5 cat ~/.config/claude-multi/api-key`",
-    "`watch cat ~/.config/claude-multi/previous-key`",
-    "`ssh host cat ~/.config/claude-multi/api-key`",
-    "```\nsh -c \"head -c 8 ~/.config/claude-multi/api-key\"\n```",
-    "```\ncat \\\n  ~/.config/claude-multi/api-key\n```",
+    "Then run cat ~/.config/charmer/api-key to compare.",
+    "`bash -c 'cat ~/.config/charmer/api-key'`",
+    "`sudo -u user cat ~/.config/charmer/api-key`",
+    "`timeout 5 cat ~/.config/charmer/api-key`",
+    "`watch cat ~/.config/charmer/previous-key`",
+    "`ssh host cat ~/.config/charmer/api-key`",
+    "```\nsh -c \"head -c 8 ~/.config/charmer/api-key\"\n```",
+    "```\ncat \\\n  ~/.config/charmer/api-key\n```",
     # The helper run behind ;, &&, || and in a -c body.
-    "```\n<state>/bin/claude-multi-gateway-token; echo\n```",
-    "```\n~/.local/state/claude-multi/bin/claude-multi-gateway-token && echo ok\n```",
-    "```\n<state>/bin/claude-multi-gateway-token || true\n```",
-    "`bash -c '<state>/bin/claude-multi-gateway-token'`",
-    "`x=$(<state>/bin/claude-multi-gateway-token)`",
-    "`sudo -u user <state>/bin/claude-multi-gateway-token`",
+    "```\n<state>/bin/charmer-gateway-token; echo\n```",
+    "```\n~/.local/state/charmer/bin/charmer-gateway-token && echo ok\n```",
+    "```\n<state>/bin/charmer-gateway-token || true\n```",
+    "`bash -c '<state>/bin/charmer-gateway-token'`",
+    "`x=$(<state>/bin/charmer-gateway-token)`",
+    "`sudo -u user <state>/bin/charmer-gateway-token`",
     # The OAuth records and a quoted helper run on a fenced line.
-    "`cat ~/.local/share/claude-multi/claude-me@x.json`",
-    "`grep -h access_token ~/.local/share/claude-multi/*.json`",
+    "`cat ~/.local/share/charmer/claude-me@x.json`",
+    "`grep -h access_token ~/.local/share/charmer/*.json`",
     "`jq .access_token codex-me@x.json`",
-    "```\n\"$STATE/bin/claude-multi-gateway-token\"\n```",
-    "```\nx=$(\"$STATE/bin/claude-multi-gateway-token\")\n```",
+    "```\n\"$STATE/bin/charmer-gateway-token\"\n```",
+    "```\nx=$(\"$STATE/bin/charmer-gateway-token\")\n```",
 )
 SECRET_NEGATIVE = (
-    "`stat -c %s ~/.config/claude-multi/management-key*`",
-    "`find ~/.config/claude-multi -name 'management-key*'`",
+    "`stat -c %s ~/.config/charmer/management-key*`",
+    "`find ~/.config/charmer -name 'management-key*'`",
     "`management-key*`, `MANAGEMENT_PASSWORD` and `X-Management-Key` are names only.",
     "Never print `MANAGEMENT_PASSWORD` or pass `X-Management-Key` by hand.",
-    "`claude-multi-proxy rotate-management-key`",
-    "`claude-multi-proxy disable-management-key`",
+    "`charmer-proxy rotate-management-key`",
+    "`charmer-proxy disable-management-key`",
     "`readlink /proc/$PID/exe`",
     "```\ntr '\\0' '\\n' </proc/<pid>/environ | cut -d= -f1 | sort\n```",
     "`cat /proc/$PID/environ | tr '\\0' '\\n' | cut -d= -f1`",
@@ -2437,83 +2437,83 @@ SECRET_NEGATIVE = (
     "`ps -eo pid,comm`",
     "`ps -e`",
     "Never read the gateway process environment (`/proc/<pid>/environ`, `ps e`).",
-    "`stat -c %s ~/.config/claude-multi/api-key`",
-    "Never `cat ~/.config/claude-multi/api-key`; names only.",
+    "`stat -c %s ~/.config/charmer/api-key`",
+    "Never `cat ~/.config/charmer/api-key`; names only.",
     "`api-key` and `previous-key` are secrets — names only.",
-    "the scope `apiKeyHelper` is `<state>/bin/claude-multi-gateway-token`",
-    "`ls -la ~/.config/claude-multi`",
-    "`find ~/.config/claude-multi -name api-key`",
-    "`bin/claude-multi-gateway-token` (apiKeyHelper shim)",
-    "```\nbin/claude-multi-gateway-token (apiKeyHelper shim)\n```",
-    "Sizes only: `stat -c %s ~/.config/claude-multi/api-key ~/.config/claude-multi/previous-key`.",
-    "`ls -l ~/.local/share/claude-multi/pinned-clients/`",
-    "`cmp ~/.local/share/claude-multi/pinned-clients/7.2.80 \"$(command -v claude)\"`",
-    "`stat -c %s ~/.local/share/claude-multi/claude-me@x.json`",
-    "the apiKeyHelper is `\"<state>/bin/claude-multi-gateway-token\"`",
+    "the scope `apiKeyHelper` is `<state>/bin/charmer-gateway-token`",
+    "`ls -la ~/.config/charmer`",
+    "`find ~/.config/charmer -name api-key`",
+    "`bin/charmer-gateway-token` (apiKeyHelper shim)",
+    "```\nbin/charmer-gateway-token (apiKeyHelper shim)\n```",
+    "Sizes only: `stat -c %s ~/.config/charmer/api-key ~/.config/charmer/previous-key`.",
+    "`ls -l ~/.local/share/charmer/pinned-clients/`",
+    "`cmp ~/.local/share/charmer/pinned-clients/7.2.80 \"$(command -v claude)\"`",
+    "`stat -c %s ~/.local/share/charmer/claude-me@x.json`",
+    "the apiKeyHelper is `\"<state>/bin/charmer-gateway-token\"`",
 )
 # A unit named without a journal command is no journal read.
 UNIT_MENTION = (
-    "The supervised gateway is the systemd user unit `claude-multi-gateway`\n"
-    "(`systemctl --user … claude-multi-gateway`); its log through `claude-multi gateway logs`.\n"
+    "The supervised gateway is the systemd user unit `charmer-gateway`\n"
+    "(`systemctl --user … charmer-gateway`); its log through `charmer gateway logs`.\n"
 )
 JOURNAL_POSITIVE = (
-    "`journalctl --user -u claude-multi-gateway -n 50 -o cat`",
-    "`journalctl --user -u claude-multi-gateway --since \"2 hours ago\" | grep selector.go`",
+    "`journalctl --user -u charmer-gateway -n 50 -o cat`",
+    "`journalctl --user -u charmer-gateway --since \"2 hours ago\" | grep selector.go`",
     # A stage that selects auth values is not a filter.
-    "`journalctl --user -u claude-multi-gateway -o cat | grep -oE 'auth=[^ ]+'`",
-    "`journalctl --user -u claude-multi-gateway -o cat | sed -n '/auth=/p'`",
-    "`journalctl --user -u claude-multi-gateway -o cat | grep -oE 'auth=[^ ]+' | sort | uniq -c`",
-    "`journalctl --user -u claude-multi-gateway -o cat | sort | uniq -c`",
-    "`journalctl --user -u claude-multi-gateway -o cat | sed -E 's/.*(auth=[^ ]+).*/\\1/'`",
+    "`journalctl --user -u charmer-gateway -o cat | grep -oE 'auth=[^ ]+'`",
+    "`journalctl --user -u charmer-gateway -o cat | sed -n '/auth=/p'`",
+    "`journalctl --user -u charmer-gateway -o cat | grep -oE 'auth=[^ ]+' | sort | uniq -c`",
+    "`journalctl --user -u charmer-gateway -o cat | sort | uniq -c`",
+    "`journalctl --user -u charmer-gateway -o cat | sed -E 's/.*(auth=[^ ]+).*/\\1/'`",
     # A sed that deletes only the key, and grep -o patterns
     # that can span the auth field, are not filters.
-    "`journalctl --user -u claude-multi-gateway -o cat | sed -n 's/auth=//p'`",
-    "`journalctl --user -u claude-multi-gateway -o cat | grep -o 'session-affinity.*'`",
-    "`journalctl --user -u claude-multi-gateway -o cat | grep -oE '[a-z_]+=[^ ]+'`",
-    "`journalctl --user -u claude-multi-gateway -o cat | grep -oE 'model=.*'`",
+    "`journalctl --user -u charmer-gateway -o cat | sed -n 's/auth=//p'`",
+    "`journalctl --user -u charmer-gateway -o cat | grep -o 'session-affinity.*'`",
+    "`journalctl --user -u charmer-gateway -o cat | grep -oE '[a-z_]+=[^ ]+'`",
+    "`journalctl --user -u charmer-gateway -o cat | grep -oE 'model=.*'`",
     # A bare journal mention is a command too.
-    "systemd user unit `claude-multi-gateway` (`journalctl --user -u claude-multi-gateway`,",
+    "systemd user unit `charmer-gateway` (`journalctl --user -u charmer-gateway`,",
 )
 JOURNAL_NEGATIVE = (
-    "`journalctl --user -u claude-multi-gateway -n 50 -o cat \\| sed -E 's/ auth=[^ ]+//'`",
-    "`journalctl --user -u claude-multi-gateway --since -2h -o cat | grep -F 'session-affinity:' | grep -oE 'model=[^ ]+' | sort | uniq -c`",
-    "`journalctl --user -u claude-multi-gateway --since -24h -o cat | grep -F 'upstream served model' | sed -E 's/ \\(auth_index=[^)]*\\)//'`",
-    "`journalctl --user -u claude-multi-gateway -o cat | sed -E 's/auth=[^ ]+/auth=<id>/'`",
-    "`journalctl --user -u claude-multi-gateway -o cat | grep -v 'auth='`",
-    "`journalctl --user -u claude-multi-gateway -o cat | grep -c 'auth='`",
-    "`journalctl --user -u claude-multi-gateway -o cat | grep -oE 'auth=[^ ]+' | sort -u | wc -l`",
-    "`journalctl --user -u claude-multi-gateway -o cat | grep -oE 'model=[a-z0-9.-]+' | sort | uniq -c`",
-    "`journalctl --user -u claude-multi-gateway -o cat | grep -o -e 'provider=[^ ]*' | sort | uniq -c`",
+    "`journalctl --user -u charmer-gateway -n 50 -o cat \\| sed -E 's/ auth=[^ ]+//'`",
+    "`journalctl --user -u charmer-gateway --since -2h -o cat | grep -F 'session-affinity:' | grep -oE 'model=[^ ]+' | sort | uniq -c`",
+    "`journalctl --user -u charmer-gateway --since -24h -o cat | grep -F 'upstream served model' | sed -E 's/ \\(auth_index=[^)]*\\)//'`",
+    "`journalctl --user -u charmer-gateway -o cat | sed -E 's/auth=[^ ]+/auth=<id>/'`",
+    "`journalctl --user -u charmer-gateway -o cat | grep -v 'auth='`",
+    "`journalctl --user -u charmer-gateway -o cat | grep -c 'auth='`",
+    "`journalctl --user -u charmer-gateway -o cat | grep -oE 'auth=[^ ]+' | sort -u | wc -l`",
+    "`journalctl --user -u charmer-gateway -o cat | grep -oE 'model=[a-z0-9.-]+' | sort | uniq -c`",
+    "`journalctl --user -u charmer-gateway -o cat | grep -o -e 'provider=[^ ]*' | sort | uniq -c`",
     UNIT_MENTION,
 )
 BACKEND_POSITIVE = (
     "| restart | `systemctl --user restart cli-proxy-api` |",
     "| restart (systemd) | `systemctl --user restart cli-proxy-api` |",
-    "Restart it: `systemctl --user restart claude-multi-gateway`.",
-    "```\njournalctl --user -u claude-multi-gateway -n 20 | wc -l\n```",
+    "Restart it: `systemctl --user restart charmer-gateway`.",
+    "```\njournalctl --user -u charmer-gateway -n 20 | wc -l\n```",
 )
 BACKEND_NEGATIVE = (
-    "With the systemd user service: `systemctl --user status claude-multi-gateway`.",
-    "| restart | `claude-multi gateway restart` |",
-    "The gateway binary is `libexec/claude-multi/cli-proxy-api`.",
+    "With the systemd user service: `systemctl --user status charmer-gateway`.",
+    "| restart | `charmer gateway restart` |",
+    "The gateway binary is `libexec/charmer/cli-proxy-api`.",
     "Its licences are in `share/licenses/cli-proxy-api/`.",
 )
 SPAN_OK = (
-    "claude-multi lineup --session <runtime-id> show",
-    "claude-multi lineup --session <runtime-id> --relaunch --its-exited profile <name>",
-    "claude-multi lineup --session <runtime-id> <request>",
-    "claude-multi profile list|show",
-    "claude-multi profile rename <name> <new>",
-    "claude-multi doctor --repair-all [--include-live]",
-    "claude-multi restore-2x [--not-running <id>…] [--assume-dead <id>…]",
-    "claude-multi sessions mark-ended --all-dead",
-    "claude-multi models | grep -F '<alias>'",
-    "claude-multi gateway <command>",
-    "claude-multi providers add <provider> <options>",
-    "claude-multi models add <provider> <wire> <options>",
-    "claude-multi lineup <request>",
-    "claude-multi --profile <name> -- <claude-args>",
-    "claude-multi direct --model <model> -- --verbose",
+    "charmer lineup --session <runtime-id> show",
+    "charmer lineup --session <runtime-id> --relaunch --its-exited profile <name>",
+    "charmer lineup --session <runtime-id> <request>",
+    "charmer profile list|show",
+    "charmer profile rename <name> <new>",
+    "charmer doctor --repair-all [--include-live]",
+    "charmer restore-2x [--not-running <id>…] [--assume-dead <id>…]",
+    "charmer sessions mark-ended --all-dead",
+    "charmer models | grep -F '<alias>'",
+    "charmer gateway <command>",
+    "charmer providers add <provider> <options>",
+    "charmer models add <provider> <wire> <options>",
+    "charmer lineup <request>",
+    "charmer --profile <name> -- <claude-args>",
+    "charmer direct --model <model> -- --verbose",
     "/cm set <agent>=<model>[:<effort>]",
     "/cm direct [<model>[:<effort>]]",
     "/cm fallback <provider> [--preview]",
@@ -2521,46 +2521,46 @@ SPAN_OK = (
     "/cm pin|follow",
     "/cm profile claude",
     "/cm",
-    "claude-multi-proxy status",
-    "claude-multi-proxy init --state-root <root>",
-    "claude-multi-proxy snapshot-auth [--restore <file>]",
-    "claude-multi-proxy --help",
-    "claude-multi-dev model add --like <line> --id <new-id> --wire-id <wire> --name <draft>",
-    "claude-multi-dev promote <draft> --repo <repo>",
-    "claude-multi migrate --dry-run && claude-multi migrate",
-    "claude-multi sessions mark-ended (<id> | --all-dead)",
-    "claude-multi setup [--step <step>] [--proxy <url> | --no-proxy]",
-    "claude-multi update [--check | --rollback] [--yes]",
-    "claude-multi [-c | -r [<id>]] [-- <claude-args>]",
-    "claude-multi providers remove-key <provider> --name <key-name>",
+    "charmer-proxy status",
+    "charmer-proxy init --state-root <root>",
+    "charmer-proxy snapshot-auth [--restore <file>]",
+    "charmer-proxy --help",
+    "charmer-dev model add --like <line> --id <new-id> --wire-id <wire> --name <draft>",
+    "charmer-dev promote <draft> --repo <repo>",
+    "charmer migrate --dry-run && charmer migrate",
+    "charmer sessions mark-ended (<id> | --all-dead)",
+    "charmer setup [--step <step>] [--proxy <url> | --no-proxy]",
+    "charmer update [--check | --rollback] [--yes]",
+    "charmer [-c | -r [<id>]] [-- <claude-args>]",
+    "charmer providers remove-key <provider> --name <key-name>",
 )
 SPAN_BAD = (
-    "claude-multi lineup --session <id> set",
-    "claude-multi profile new",
-    "claude-multi lineup --session <runtime-id> show | set | unset",
-    "claude-multi lineup --session <runtime-id> …",
-    "claude-multi providers remove-key …",
-    "claude-multi profile show NAME",
-    "claude-multi doctor --repair-all [--no-such-flag]",
-    "claude-multi sessions list -- --verbose",
-    "claude-multi gateway status <command>",
-    "claude-multi gateway <command> extra",
-    "claude-multi <request>",
-    "claude-multi providers add <name> --bogus <options>",
-    "claude-multi providers <options>",
+    "charmer lineup --session <id> set",
+    "charmer profile new",
+    "charmer lineup --session <runtime-id> show | set | unset",
+    "charmer lineup --session <runtime-id> …",
+    "charmer providers remove-key …",
+    "charmer profile show NAME",
+    "charmer doctor --repair-all [--no-such-flag]",
+    "charmer sessions list -- --verbose",
+    "charmer gateway status <command>",
+    "charmer gateway <command> extra",
+    "charmer <request>",
+    "charmer providers add <name> --bogus <options>",
+    "charmer providers <options>",
     "claude-gateway -r <id>",
     "/cm bogus",
     "/cm direct [<model> <model>]",
-    "claude-multi-dev review",
-    "claude-multi-dev promote <draft>",
-    "claude-multi-proxy restart",
-    "claude-multi-proxy init --state-root relative/root",
-    "claude-multi-proxy status --extra",
-    "claude-multi sessions frobnicate <id>",
-    "claude-multi sessions show <session>",
-    "claude-multi sessions mark-ended (<id> | --bogus)",
-    "claude-multi update [--check | --nope]",
-    "claude-multi providers remove-key <provider> --name KEY_NAME",
+    "charmer-dev review",
+    "charmer-dev promote <draft>",
+    "charmer-proxy restart",
+    "charmer-proxy init --state-root relative/root",
+    "charmer-proxy status --extra",
+    "charmer sessions frobnicate <id>",
+    "charmer sessions show <session>",
+    "charmer sessions mark-ended (<id> | --bogus)",
+    "charmer update [--check | --nope]",
+    "charmer providers remove-key <provider> --name KEY_NAME",
 )
 
 
@@ -2616,9 +2616,9 @@ def self_test() -> list[str]:
             failures.append(f"a dotted name the module does not define passed: {text.strip()!r}")
     if any(h.failing for h in _fixture_hits("Only `composition.CompositionError` stays.\n")):
         failures.append("a defined dotted name failed")
-    if not any(h.failing for h in _fixture_hits("Run `claude-multi --composition default`.\n")):
+    if not any(h.failing for h in _fixture_hits("Run `charmer --composition default`.\n")):
         failures.append("a 2.x flag without a marker passed")
-    front = "---\nrelated:\n  - claude-multi-composition-design\n---\n# Page\n"
+    front = "---\nrelated:\n  - charmer-composition-design\n---\n# Page\n"
     if any(h.failing for h in _fixture_hits(front)):
         failures.append("a wiki slug in related: failed")
     for text in SECRET_POSITIVE:
@@ -2641,7 +2641,7 @@ def self_test() -> list[str]:
     for text in BACKEND_NEGATIVE:
         if any(h.rule == "backend-command" for h in _fixture_hits(text + "\n")):
             failures.append(f"backend-command flags {text!r}")
-    for text in ("Run this on this machine.\n", "| fix | `claude-multi gateway restart` (this machine) |\n"):
+    for text in ("Run this on this machine.\n", "| fix | `charmer gateway restart` (this machine) |\n"):
         if not any(h.rule == "this-machine" for h in _fixture_hits(text)):
             failures.append(f"this-machine misses {text!r}")
     if any(h.rule == "this-machine" for h in _fixture_hits("doctor: “ask the policy owner, or use plain claude on this machine”\n")):
@@ -2664,9 +2664,9 @@ def self_test() -> list[str]:
                  "release 1.0.0\n", "TLS 1.3\n"):
         if any(h.rule == "release-lineage" for h in _fixture_hits(text)):
             failures.append(f"release-lineage flags {text!r}")
-    if not any(h.rule == "lineup-session-id" for h in _fixture_hits("`claude-multi lineup --session <id> show`\n")):
+    if not any(h.rule == "lineup-session-id" for h in _fixture_hits("`charmer lineup --session <id> show`\n")):
         failures.append("lineup-session-id misses <id>")
-    if any(h.rule == "lineup-session-id" for h in _fixture_hits("`claude-multi lineup --session <runtime-id> show`\n")):
+    if any(h.rule == "lineup-session-id" for h in _fixture_hits("`charmer lineup --session <runtime-id> show`\n")):
         failures.append("lineup-session-id flags <runtime-id>")
     if not any(h.rule == "machine-path" for h in _fixture_hits("generation 143 is active\n")):
         failures.append("machine-path-extended misses a generation number")
@@ -2678,27 +2678,27 @@ def self_test() -> list[str]:
     failures += [f"span accepted: {s!r}" for s in SPAN_BAD if not span_problem(s)]
     # A line that says "refused" exempts nothing: a negative example is
     # registered with the refusal it must meet.
-    if not span_problem("claude-multi profile new", "`claude-multi profile new` is refused"):
+    if not span_problem("charmer profile new", "`charmer profile new` is refused"):
         failures.append("a span on a line that says refused was skipped")
     forms = optional_forms("/cm direct [<model>[:<effort>]]")
     if forms != ["/cm direct", "/cm direct <model>", "/cm direct <model>:<effort>"]:
         failures.append(f"optional forms are not all checked: {forms}")
-    if check_span("claude-multi doctor --repair-all [--include-live]").forms != 2:
+    if check_span("charmer doctor --repair-all [--include-live]").forms != 2:
         failures.append("both forms of an optional flag are not parsed")
     # Linear: every group at its default, then each group's alternatives in
     # turn (four forms for three optional flags, not eight).
-    if optional_forms("claude-multi doctor [-v] [--first-run] [--preview]") != [
-            "claude-multi doctor", "claude-multi doctor --first-run", "claude-multi doctor --preview",
-            "claude-multi doctor -v"]:
+    if optional_forms("charmer doctor [-v] [--first-run] [--preview]") != [
+            "charmer doctor", "charmer doctor --first-run", "charmer doctor --preview",
+            "charmer doctor -v"]:
         failures.append("optional groups are not expanded one at a time")
-    if optional_forms("claude-multi x (a | b [c])") != ["claude-multi x a", "claude-multi x b", "claude-multi x b c"]:
+    if optional_forms("charmer x (a | b [c])") != ["charmer x a", "charmer x b", "charmer x b c"]:
         failures.append("a required choice is not expanded into each alternative")
-    if check_span("claude-multi gateway <command>").kind != "fragment":
+    if check_span("charmer gateway <command>").kind != "fragment":
         failures.append("a typed fragment is not reported as a grammar fragment")
-    if check_span("claude-multi gateway restart …", mode="name").problem:
+    if check_span("charmer gateway restart …", mode="name").problem:
         failures.append("a name-only span with a trailing ellipsis failed")
-    wrapped_span = command_spans("```bash\nclaude-multi doctor \\\n  --repair-all\n```\n")
-    if [(line, span) for line, span, _ in wrapped_span] != [(2, "claude-multi doctor --repair-all")] or any(
+    wrapped_span = command_spans("```bash\ncharmer doctor \\\n  --repair-all\n```\n")
+    if [(line, span) for line, span, _ in wrapped_span] != [(2, "charmer doctor --repair-all")] or any(
         span_problem(span) for _, span, _ in wrapped_span
     ):
         failures.append(f"a \\-continued fenced command was not joined: {wrapped_span}")

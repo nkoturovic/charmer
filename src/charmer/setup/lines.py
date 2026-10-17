@@ -63,7 +63,7 @@ def _slot_spec(runtime: Any, kind: str, name: str, slot: str) -> Mapping[str, An
             document = runtime.profiles.load(name)
             return document.get("lead") if slot == "lead" else (document.get("agents") or {}).get(slot)
         return runtime.bindings.bindings().get(name)
-    except (errors.ClaudeMultiError, OSError, ValueError):
+    except (errors.CharmerError, OSError, ValueError):
         return None
 
 

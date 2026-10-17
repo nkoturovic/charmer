@@ -35,7 +35,7 @@ from charmer import (catalog, cli, endpoint, gateway_events, gateway_hold, gatew
 import charmer.cli.consent as consent
 from charmer.platform import darwin_process, file_log, observation, posix_fs, posix_process
 
-SENTINEL = "claude-multi-render-0123abcd"
+SENTINEL = "charmer-render-0123abcd"
 NOW = datetime.datetime(2026, 10, 2, 12, 0, tzinfo=datetime.timezone.utc)
 SAVE = ("credential_save_v1 operation=refresh result={result} provider=claude auth_index=0123456789abcdef "
         "credentials_changed=true stage={stage} errno={errno} category={category} bytes=10 size=10 "
@@ -107,7 +107,7 @@ class World:
         if self.listener == "foreign":
             return service.OwnerVerdict("foreign", "another user (uid 1234)", uid=1234)
         if self.listener == "ours":
-            return (service.OwnerVerdict("ours", "the claude-multi gateway service", os.getuid(), pid)
+            return (service.OwnerVerdict("ours", "the charmer gateway service", os.getuid(), pid)
                     if pid == self.pid else service.OwnerVerdict("unknown", "unconfirmed"))
         return service.OwnerVerdict(self.listener, "fixture listener")
 
@@ -124,7 +124,7 @@ class World:
         instance = argv[argv.index("--instance") + 1]
         self.spawned.append({"argv": list(argv), "cwd": cwd, "env": dict(env), "instance": instance,
                              "log": os.readlink(f"/proc/self/fd/{output}")})
-        os.write(output, f"claude-multi-proxy: gateway instance {instance} starting\n".encode())
+        os.write(output, f"charmer-proxy: gateway instance {instance} starting\n".encode())
         if self.spawn_code == 0 and self.on_spawn is not None:
             self.on_spawn(instance)
         return self.spawn_code
@@ -145,7 +145,7 @@ class _Lifecycle(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.root, True)
         self.home = self.root / "home"
         self.home.mkdir(mode=0o700)
-        self.state_root = self.root / "state" / "claude-multi"
+        self.state_root = self.root / "state" / "charmer"
         self.workdir = service.ensure_gateway_workdir(self.state_root)
         self.logs = self.workdir / service.GATEWAY_LOGS
         self.port = _free_port()
@@ -156,7 +156,7 @@ class _Lifecycle(unittest.TestCase):
             patcher = mock.patch.object(gl, "published_sentinel", return_value=SENTINEL)
             patcher.start()
             self.addCleanup(patcher.stop)
-        token_dir = state.ensure_private_dir(self.home / ".config" / "claude-multi")
+        token_dir = state.ensure_private_dir(self.home / ".config" / "charmer")
         state.atomic_write(token_dir / "api-key", (FIXTURE_GATEWAY_TOKEN + "\n").encode("ascii"))
 
     def gateway(self, *, environ=None, seams=None, platform="linux", **kwargs) -> gl.Gateway:
@@ -171,12 +171,12 @@ class _Lifecycle(unittest.TestCase):
 
         bindir = self.root / "wrapper-bin"
         bindir.mkdir(exist_ok=True)
-        for name in ("claude-multi", "claude-multi-proxy"):
+        for name in ("charmer", "charmer-proxy"):
             (bindir / name).write_text("#!/bin/sh\nexit 1\n")
             (bindir / name).chmod(0o755)
         return {"HOME": str(self.home), "XDG_STATE_HOME": str(self.root / "state"),
                 "XDG_CONFIG_HOME": str(self.root / "config"), "TERM": "dumb",
-                "CLAUDE_MULTI_HOOK_COMMAND": str(bindir / "claude-multi"), **extra}
+                "CLAUDE_MULTI_HOOK_COMMAND": str(bindir / "charmer"), **extra}
 
     def running(self, instance: str = "aaaaaaaaaaaaaaaa") -> None:
         self.world.become_ready(instance)
@@ -360,7 +360,7 @@ class EnsureTests(_Lifecycle):
         self.assertEqual((outcome.status, outcome.exit_code), ("blocked", 1))
         self.assertIn("3 times in the last 10 minutes", outcome.message)
         self.assertIn("fatal: bind: address already in use", outcome.log_tail)
-        self.assertIn("claude-multi gateway start", outcome.remedy)
+        self.assertIn("charmer gateway start", outcome.remedy)
         self.assertEqual(self.world.spawned, [])
         # Older starts fall out of the window; an explicit start clears the counter.
         self.history(NOW - 30 * minute, NOW - 5 * minute, NOW - minute)
@@ -425,7 +425,7 @@ class EnsureTests(_Lifecycle):
         self.assertEqual(self.world.spawned, [])
 
     def test_only_an_explicit_start_records_a_new_install_port(self) -> None:
-        key = self.home / ".config/claude-multi/api-key"
+        key = self.home / ".config/charmer/api-key"
 
         def fresh_install() -> None:
             endpoint.endpoint_path(self.home).unlink(missing_ok=True)
@@ -483,10 +483,10 @@ class SpawnEnvironmentTests(_Lifecycle):
         runtime_root = cli.Runtime(asset_root=FIXTURE_ROOT, environ=environ, cwd=self.root,
                                    health_get=lambda _b, _p: 200, managed_root=self.root / "managed",
                                    refresh_shims=False, allow_state_writes=False)
-        gateway = runtime_root.gateway(seams=self.world.seams(), state_root=xdg / "claude-multi")
-        self.assertEqual(runtime_root.gateway().state_root, xdg / "claude-multi")
+        gateway = runtime_root.gateway(seams=self.world.seams(), state_root=xdg / "charmer")
+        self.assertEqual(runtime_root.gateway().state_root, xdg / "charmer")
         argv = gateway.spawn_argv("0123456789abcdef")
-        self.assertEqual(argv[argv.index("--state-root") + 1], str(xdg / "claude-multi"))
+        self.assertEqual(argv[argv.index("--state-root") + 1], str(xdg / "charmer"))
         self.assertNotIn("XDG_STATE_HOME", gateway.spawn_env())
 
     def test_a_script_entry_resolves_the_gateway_binary_on_the_launcher_path(self) -> None:
@@ -499,19 +499,19 @@ class SpawnEnvironmentTests(_Lifecycle):
         self.assertEqual(env["CLAUDE_MULTI_PROXY_BIN"], str(binary))
         gateway = self.gateway(environ={"HOME": str(self.home), "PATH": str(bindir)})
         command = gateway.spawn_argv("0123456789abcdef")
-        self.assertEqual(command[:2], [sys.executable, str(REPO_ROOT / "bin" / "claude-multi-proxy")])
+        self.assertEqual(command[:2], [sys.executable, str(REPO_ROOT / "bin" / "charmer-proxy")])
         self.assertEqual(gateway.spawn_env()["CLAUDE_MULTI_PROXY_BIN"], str(binary))
 
     def test_an_installed_wrapper_is_used_as_is(self) -> None:
         bindir = self.root / "wrapper-bin"
         bindir.mkdir()
-        for name in ("claude-multi", "claude-multi-proxy"):
+        for name in ("charmer", "charmer-proxy"):
             (bindir / name).write_text("#!/bin/sh\n")
             (bindir / name).chmod(0o755)
-        environ = {"HOME": str(self.home), "CLAUDE_MULTI_HOOK_COMMAND": str(bindir / "claude-multi"),
+        environ = {"HOME": str(self.home), "CLAUDE_MULTI_HOOK_COMMAND": str(bindir / "charmer"),
                    "PATH": str(self.root / "nothing")}
         gateway = self.gateway(environ=environ)
-        self.assertEqual(gateway.spawn_argv("0123456789abcdef")[0], str(bindir / "claude-multi-proxy"))
+        self.assertEqual(gateway.spawn_argv("0123456789abcdef")[0], str(bindir / "charmer-proxy"))
         self.assertNotIn("CLAUDE_MULTI_PROXY_BIN", gateway.spawn_env())
 
     def test_the_script_entry_belongs_to_the_installation_never_the_resources(self) -> None:
@@ -521,13 +521,13 @@ class SpawnEnvironmentTests(_Lifecycle):
         default = gl.Gateway(home=self.home, state_root=self.state_root, environ=environ,
                              gateway_document=self.document, seams=self.world.seams(), platform="linux")
         self.assertEqual(default.installation, REPO_ROOT)
-        self.assertEqual(default._proxy_entry(), ([sys.executable, str(REPO_ROOT / "bin" / "claude-multi-proxy")], True))
+        self.assertEqual(default._proxy_entry(), ([sys.executable, str(REPO_ROOT / "bin" / "charmer-proxy")], True))
         empty = self.root / "empty-installation"
         empty.mkdir()
         bare = gl.Gateway(home=self.home, state_root=self.state_root, environ=environ,
                           gateway_document=self.document, installation=empty, seams=self.world.seams(),
                           platform="linux")
-        with self.assertRaisesRegex(gl.LifecycleError, "claude-multi-proxy was not found"):
+        with self.assertRaisesRegex(gl.LifecycleError, "charmer-proxy was not found"):
             bare._proxy_entry()
 
 
@@ -644,7 +644,7 @@ class HoldAndStopTests(_Lifecycle):
 
     def test_an_unfinished_save_record_holds_until_it_is_complete_or_cleared(self) -> None:
         self.running("1515151515151515")
-        path = self.log_file("1515151515151515", ["claude-multi-proxy: gateway instance 1515151515151515 starting"])
+        path = self.log_file("1515151515151515", ["charmer-proxy: gateway instance 1515151515151515 starting"])
         with open(path, "a") as handle:  # a full disk cut the failure record short
             handle.write(save_line("failed")[:60])
         gateway = self.gateway()
@@ -706,14 +706,14 @@ class ServiceBackendTests(_Lifecycle):
 
     def test_verbs_delegate_to_the_manager_behind_the_same_checks(self) -> None:
         gateway = self.service_gateway()
-        self.assertEqual((gateway.backend, gateway.unit), ("systemd", "claude-multi-gateway"))
+        self.assertEqual((gateway.backend, gateway.unit), ("systemd", "charmer-gateway"))
         self.assertEqual(gateway.ensure().status, "ready")
-        self.assertIn(["systemctl", "--user", "--no-ask-password", "--no-block", "start", "claude-multi-gateway"],
+        self.assertIn(["systemctl", "--user", "--no-ask-password", "--no-block", "start", "charmer-gateway"],
                       self.calls)
         self.assertEqual(self.world.spawned, [])
         self.active = "active"
         self.assertEqual(gateway.stop().status, "stopped")
-        self.assertIn(["systemctl", "--user", "--no-ask-password", "stop", "claude-multi-gateway"], self.calls)
+        self.assertIn(["systemctl", "--user", "--no-ask-password", "stop", "charmer-gateway"], self.calls)
         self.assertEqual(gateway.logs(lines=2), ["one", "two"])
 
     def test_the_journal_hold_vetoes_the_service_stop(self) -> None:
@@ -958,7 +958,7 @@ class DarwinDeadlineTests(_Lifecycle):
 
 
 class LogRedactionTests(_Lifecycle):
-    """``claude-multi gateway logs`` and the TUI log view show every line of
+    """``charmer gateway logs`` and the TUI log view show every line of
     either backend's log redacted: an instance's log file on demand, the
     unit's journal for the service."""
 
@@ -993,7 +993,7 @@ class LogRedactionTests(_Lifecycle):
         self.assertEqual(calls[0][:2], ["journalctl", "--user"])
         # A service hand-off that failed carries the journal's tail the same way.
         outcome = gl.Outcome("failed", "the gateway service did not become ready", None,
-                             tuple(service.journal_tail("claude-multi-gateway", lines=100, runner=runner)))
+                             tuple(service.journal_tail("charmer-gateway", lines=100, runner=runner)))
         self.assert_redacted("\n".join(outcome.lines()))
 
     def assert_clean(self, shown: list[str] | tuple[str, ...], secrets: list[str]) -> None:
@@ -1042,7 +1042,7 @@ class LogRedactionTests(_Lifecycle):
                     self.assert_clean(shown, list(secrets))
                 # A failed start's tail read from the journal.
                 outcome = gl.Outcome("failed", "the gateway service did not become ready", None,
-                                     tuple(service.journal_tail("claude-multi-gateway", lines=gl.LOG_TAIL_LINES,
+                                     tuple(service.journal_tail("charmer-gateway", lines=gl.LOG_TAIL_LINES,
                                                                 runner=runner)))
                 self.assert_clean(outcome.log_tail, list(secrets))
                 self.assert_clean(outcome.lines(), list(secrets))
@@ -1100,7 +1100,7 @@ class LogRedactionTests(_Lifecycle):
         # The journal's tail of the same log, as the service hand-off reads it.
         _gateway, runner = self.journal_gateway(lines)
         outcome = gl.Outcome("failed", "the gateway service did not become ready", None,
-                             tuple(service.journal_tail("claude-multi-gateway", lines=gl.LOG_TAIL_READ,
+                             tuple(service.journal_tail("charmer-gateway", lines=gl.LOG_TAIL_READ,
                                                         runner=runner)))
         self.assertEqual(outcome.log_tail, (secret_store.REDACTED,) * gl.LOG_TAIL_LINES)
 
@@ -1218,7 +1218,7 @@ class CommandTests(_Lifecycle):
         self.world.listener = "foreign"
         code, out, err = self.run_cli(["gateway", "ensure", "--quiet", "--max-wait", "1"])
         self.assertEqual((code, out), (1, ""))
-        self.assertIn("claude-multi: port", err)
+        self.assertIn("charmer: port", err)
         self.world.listener = "none"
         self.running()
         self.world.listener = "ours"
@@ -1265,7 +1265,7 @@ class CommandTests(_Lifecycle):
                 code = cli.main(argv, runtime=runtime, output_stream=out, interactive=False)
             with self.subTest(argv=argv):
                 self.assertEqual(code, 1)
-                self.assertIn("newer claude-multi", err.getvalue())
+                self.assertIn("newer charmer", err.getvalue())
         self.assertEqual(self.world.spawned, [])
         self.assertFalse((self.workdir / gl.START_HISTORY).exists())
         self.assertIsNone(endpoint.read_config(self.home).proxy_url)
@@ -1314,9 +1314,9 @@ class RuntimeEnsureTests(_Lifecycle):
 
     def test_a_first_automatic_start_records_the_new_install_port(self) -> None:
         endpoint.endpoint_path(self.home).unlink()
-        (self.home / ".config/claude-multi/api-key").unlink()  # nothing rendered yet: a new install
+        (self.home / ".config/charmer/api-key").unlink()  # nothing rendered yet: a new install
         packaged = self.document["gateway"]["base_url"]
-        token = self.home / ".config/claude-multi/api-key"
+        token = self.home / ".config/charmer/api-key"
 
         def prepared(instance: str) -> None:  # the start renders the config and the key
             state.atomic_write(token, (FIXTURE_GATEWAY_TOKEN + "\n").encode("ascii"))
@@ -1340,7 +1340,7 @@ class RuntimeEnsureTests(_Lifecycle):
 
     def test_a_new_install_records_its_port_before_a_launch_is_prepared(self) -> None:
         endpoint.endpoint_path(self.home).unlink()
-        (self.home / ".config/claude-multi/api-key").unlink()
+        (self.home / ".config/charmer/api-key").unlink()
         self.assertFalse(self.runtime(health_get=lambda _b, _p: 200).provision_endpoint())  # a fixture gateway
         self.assertIsNone(endpoint.read_config(self.home))
         self.assertFalse(self.runtime(gateway_seams=self.world.seams(), refresh_shims=False).provision_endpoint())
@@ -1356,7 +1356,7 @@ class RuntimeEnsureTests(_Lifecycle):
         from charmer import sessions
 
         endpoint.endpoint_path(self.home).unlink()
-        (self.home / ".config/claude-multi/api-key").unlink()  # a new install
+        (self.home / ".config/charmer/api-key").unlink()  # a new install
         runtime = self.runtime(gateway_seams=self.world.seams())  # built while the state was ours
         target = cli.LaunchTarget("profile", runtime.profiles.load("balanced"), "balanced", True,
                                   "Profile balanced")
@@ -1392,7 +1392,7 @@ class RuntimeEnsureTests(_Lifecycle):
         from charmer.cli.screens import gateway_actions
 
         endpoint.endpoint_path(self.home).unlink()
-        token = self.home / ".config/claude-multi/api-key"
+        token = self.home / ".config/charmer/api-key"
         token.unlink()
         self.world.on_spawn = lambda instance: (
             state.atomic_write(token, (FIXTURE_GATEWAY_TOKEN + "\n").encode("ascii")),
@@ -1628,9 +1628,9 @@ class TokenHelperTests(_Lifecycle):
     def test_the_shim_prints_the_token_only_after_a_successful_ensure(self) -> None:
         from charmer import scope
 
-        token = self.home / ".config/claude-multi/api-key"
+        token = self.home / ".config/charmer/api-key"
         record = self.root / "launcher-calls"
-        launcher = self.root / "launcher dir" / "claude-multi"
+        launcher = self.root / "launcher dir" / "charmer"
         launcher.parent.mkdir()
         launcher.write_text(f'#!/bin/sh\nprintf "%s\\n" "$*" >> "{record}"\necho noise\nexit "$HELPER_EXIT"\n')
         launcher.chmod(0o755)
@@ -1658,13 +1658,13 @@ class TokenHelperTests(_Lifecycle):
         result = subprocess.run([str(missing)], capture_output=True, text=True, timeout=10,
                                 env={"PATH": "/nonexistent"})
         self.assertEqual((result.returncode, result.stdout), (1, ""))
-        self.assertIn("no claude-multi launcher found", result.stderr)
+        self.assertIn("no charmer launcher found", result.stderr)
 
     def test_a_spaced_state_root_is_quoted_in_the_compiled_helper(self) -> None:
         environ = {**self.wrapper_env(), "XDG_STATE_HOME": str(self.root / "state home")}
         runtime = cli.Runtime(asset_root=FIXTURE_ROOT, environ=environ, cwd=self.root,
                               managed_root=self.root / "managed")
-        shim = Path(environ["XDG_STATE_HOME"]) / "claude-multi" / "bin" / "claude-multi-gateway-token"
+        shim = Path(environ["XDG_STATE_HOME"]) / "charmer" / "bin" / "charmer-gateway-token"
         self.assertEqual(runtime.token_helper_command, shlex.quote(str(shim)))
         self.assertIn(shlex.quote(environ["CLAUDE_MULTI_HOOK_COMMAND"]), shim.read_text())
 
@@ -1678,15 +1678,15 @@ class TokenHelperTests(_Lifecycle):
         self.addCleanup(server.close)
         home = self.root / "real-home"
         home.mkdir(mode=0o700)
-        token_dir = state.ensure_private_dir(home / ".config" / "claude-multi")
+        token_dir = state.ensure_private_dir(home / ".config" / "charmer")
         state.atomic_write(token_dir / "api-key", (FIXTURE_GATEWAY_TOKEN + "\n").encode("ascii"))
         endpoint.write_config(home, endpoint.EndpointConfig(port=server.getsockname()[1]))
         # The real launcher behind an executable wrapper (its own `#!/usr/bin/env`
         # line has no interpreter inside the build sandbox).
-        launcher = self.root / "real-bin" / "claude-multi"
+        launcher = self.root / "real-bin" / "charmer"
         launcher.parent.mkdir()
         launcher.write_text(f'#!/bin/sh\nexec {shlex.quote(sys.executable)} '
-                            f'{shlex.quote(str(REPO_ROOT / "bin" / "claude-multi"))} "$@"\n')
+                            f'{shlex.quote(str(REPO_ROOT / "bin" / "charmer"))} "$@"\n')
         launcher.chmod(0o755)
         environ = {"HOME": str(home), "PATH": os.environ.get("PATH", "/usr/bin:/bin"), "LANG": "C.UTF-8",
                    "XDG_STATE_HOME": str(self.root / "real-state"), "XDG_CONFIG_HOME": str(self.root / "real-config"),
@@ -1695,7 +1695,7 @@ class TokenHelperTests(_Lifecycle):
                                   text=True, timeout=60, env=environ, cwd=self.root)
         self.assertEqual(prepared.returncode, 0, prepared.stderr)
         self.assertIn("gateway: unknown", prepared.stdout)
-        shim = self.root / "real-state" / "claude-multi" / "bin" / "claude-multi-gateway-token"
+        shim = self.root / "real-state" / "charmer" / "bin" / "charmer-gateway-token"
         # A report never installs the shims; a writable launcher run does.
         self.assertFalse(shim.exists())
         cli.Runtime(asset_root=FIXTURE_ROOT, environ=environ, cwd=self.root, managed_root=self.root / "managed")
@@ -1775,7 +1775,7 @@ class RealSpawnTests(_Lifecycle):
 
     def setUp(self) -> None:
         super().setUp()
-        (self.home / ".config/claude-multi/api-key").unlink()
+        (self.home / ".config/charmer/api-key").unlink()
         self.fake = self.root / "fake-gateway"
         self.fake.write_text(self.FAKE.format(python=sys.executable))
         self.fake.chmod(0o755)

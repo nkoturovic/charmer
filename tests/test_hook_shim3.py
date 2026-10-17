@@ -1,10 +1,10 @@
-"""The protocol-3 hook shim ``<state>/bin/claude-multi-hook-3``.
+"""The protocol-3 hook shim ``<state>/bin/charmer-hook-3``.
 
 Hermetic ``/bin/sh`` subprocesses (plus ``dash`` and ``busybox sh`` when
 present) over the exact text ``scope.hook_shim_v3_text`` returns. The shim
 runs with an empty environment except ``PATH``, which holds only logging
 wrappers: ``cat`` (logs its name, execs the real one) and stubs for
-``python``, ``python3`` and ``claude-multi`` that log and exit 97, so a test
+``python``, ``python3`` and ``charmer`` that log and exit 97, so a test
 can prove exactly which external commands ran. The launcher is a sh stub
 that records its argv, its stdin and its invocation count, prints
 ``$STUB_OUT`` and exits ``$STUB_EXIT`` (or is killed, or emulates a 2.26
@@ -34,7 +34,7 @@ from _catalog import GOLDENS_ROOT
 from _golden import assertGolden
 
 SHIM_GOLDENS = GOLDENS_ROOT / "shim"
-GOLDEN_COMMAND = "/nix/store/fixture/bin/claude-multi"
+GOLDEN_COMMAND = "/nix/store/fixture/bin/charmer"
 GEN = "4242 0123456789ab"
 
 _REAL_CAT = shutil.which("cat")
@@ -55,8 +55,8 @@ case "${STUB_MODE-exit}" in
         kill -9 $$
         ;;
     argparse)
-        echo 'usage: claude-multi [-h] {session-event,...} ...' >&2
-        echo 'claude-multi: error: unrecognized arguments: --hook-protocol 3' >&2
+        echo 'usage: charmer [-h] {session-event,...} ...' >&2
+        echo 'charmer: error: unrecognized arguments: --hook-protocol 3' >&2
         exit 2
         ;;
 esac
@@ -117,7 +117,7 @@ class _ShimHarness(unittest.TestCase):
     def setUp(self) -> None:
         if _REAL_CAT is None:  # pragma: no cover - every supported host has cat
             self.skipTest("no cat on PATH")
-        self.root = Path(tempfile.mkdtemp(prefix="claude-multi-shim3-"))
+        self.root = Path(tempfile.mkdtemp(prefix="charmer-shim3-"))
         os.chmod(self.root, 0o700)
         self.addCleanup(shutil.rmtree, self.root, True)
         self.state = self.root / self.state_name
@@ -125,12 +125,12 @@ class _ShimHarness(unittest.TestCase):
         self.stub_dir.mkdir()
         self.tools = self.root / "tools"
         self.tool_log = self.root / "tools.log"
-        self.launcher = _write_exec(self.root / "launcher" / "claude-multi", _STUB_LAUNCHER)
+        self.launcher = _write_exec(self.root / "launcher" / "charmer", _STUB_LAUNCHER)
         _write_exec(
             self.tools / "cat",
             f'#!/bin/sh\necho cat >> "$TOOL_LOG"\nexec {_REAL_CAT} "$@"\n',
         )
-        for name in ("python", "python3", "claude-multi"):
+        for name in ("python", "python3", "charmer"):
             _write_exec(
                 self.tools / name, f'#!/bin/sh\necho {name} >> "$TOOL_LOG"\nexit 97\n'
             )
@@ -235,16 +235,16 @@ class ShimTextTests(unittest.TestCase):
     def test_goldens(self) -> None:
         assertGolden(
             self,
-            SHIM_GOLDENS / "claude-multi-hook-3",
+            SHIM_GOLDENS / "charmer-hook-3",
             scope.hook_shim_v3_text(Path("/state"), GOLDEN_COMMAND),
         )
         assertGolden(
-            self, SHIM_GOLDENS / "claude-multi-hook", scope.hook_shim_text(GOLDEN_COMMAND)
+            self, SHIM_GOLDENS / "charmer-hook", scope.hook_shim_text(GOLDEN_COMMAND)
         )
 
     def test_posix_syntax(self) -> None:
-        text = scope.hook_shim_v3_text(Path("/state dir/x'y"), "/a b/claude-multi")
-        with tempfile.TemporaryDirectory(prefix="claude-multi-shim3-") as tmp:
+        text = scope.hook_shim_v3_text(Path("/state dir/x'y"), "/a b/charmer")
+        with tempfile.TemporaryDirectory(prefix="charmer-shim3-") as tmp:
             path = Path(tmp) / "shim"
             path.write_bytes(text)
             shells = [[shell] for shell in _shells()]
@@ -267,9 +267,9 @@ class ShimTextTests(unittest.TestCase):
         self.assertTrue(text.endswith("\nexit 0\n"))
 
     def test_paths_are_shell_quoted(self) -> None:
-        text = scope.hook_shim_v3_text(Path("/st ate"), "/a b/claude-multi").decode()
+        text = scope.hook_shim_v3_text(Path("/st ate"), "/a b/charmer").decode()
         self.assertIn("state='/st ate'\n", text)
-        self.assertIn("launcher='/a b/claude-multi'\n", text)
+        self.assertIn("launcher='/a b/charmer'\n", text)
 
     def test_placeholders_are_substituted_once(self) -> None:
         text = scope.hook_shim_v3_text(Path("/s/@Q_CMD@"), "/c/@UUID@").decode()
@@ -340,7 +340,7 @@ class FastPathTests(_ShimHarness):
         self.assertEqual(self.stub_argv(), argv or self.prompt_argv())
         self.assertNotIn("python", self.tools_used())
         self.assertNotIn("python3", self.tools_used())
-        self.assertNotIn("claude-multi", self.tools_used())
+        self.assertNotIn("charmer", self.tools_used())
 
     def test_misses_go_to_the_launcher_with_the_payload(self) -> None:
         self.set_gen()
@@ -503,7 +503,7 @@ class ExitMappingTests(_ShimHarness):
                     self.assertEqual(done.stdout, self.expected_failure_stdout(event))
                     self.assertNotIn(b"JUNK-MARKER", done.stdout)
                     self.assertEqual(self.stub_runs(), 1)
-                    notes = done.stderr.decode().count("claude-multi hook shim: launcher exited")
+                    notes = done.stderr.decode().count("charmer hook shim: launcher exited")
                     self.assertEqual(notes, 1, done.stderr)
                     self.assertIn(f"(event {event})", done.stderr.decode())
 
@@ -524,7 +524,7 @@ class ExitMappingTests(_ShimHarness):
                 "permissionDecisionReason": hooks.PREMODEL_FAIL_CLOSED_REASON,
             },
         )
-        self.assertIn("run claude-multi doctor", document["systemMessage"])
+        self.assertIn("run charmer doctor", document["systemMessage"])
         self.assertEqual(self.PREMODEL_DENY.count(b"\n"), 1)
         payload = '{"hook_event_name":"PreModelSwitch","to_model":"evil"}'
         done = self.run_shim(self.event_argv("premodel"), payload, stub_exit=1)
@@ -563,33 +563,33 @@ class ExitMappingTests(_ShimHarness):
                 self.assertEqual(done.stdout, b"")
 
     def test_launcher_absent_without_path_fallback(self) -> None:
-        self.shim = self.write_shim(str(self.root / "gone" / "claude-multi"))
-        (self.tools / "claude-multi").unlink()
+        self.shim = self.write_shim(str(self.root / "gone" / "charmer"))
+        (self.tools / "charmer").unlink()
         for event in (*self.NON_BLOCKING, "start", "end"):
             with self.subTest(event=event):
                 done = self.run_shim(self._argv(event), _payload(self.rid))
                 self.assertEqual(done.returncode, 0)
                 self.assertEqual(done.stdout, self.expected_failure_stdout(event))
                 self.assertEqual(
-                    done.stderr, b"claude-multi hook shim: no claude-multi launcher found\n"
+                    done.stderr, b"charmer hook shim: no charmer launcher found\n"
                 )
                 self.assertNotIn("python", self.tools_used())
 
     def test_path_fallback_when_the_resolved_command_is_gone(self) -> None:
-        # A garbage-collected store path falls back to claude-multi on PATH
+        # A garbage-collected store path falls back to charmer on PATH
         # (here the logging stub that exits 97: a failure, so exit 0).
-        self.shim = self.write_shim(str(self.root / "gone" / "claude-multi"))
+        self.shim = self.write_shim(str(self.root / "gone" / "charmer"))
         done = self.run_shim(self.event_argv("premodel"), "{}")
         self.assertEqual(done.returncode, 0)
         self.assertEqual(done.stdout, self.PREMODEL_DENY)
-        self.assertIn("claude-multi", self.tools_used())
+        self.assertIn("charmer", self.tools_used())
         self.assertIn(b"status 97", done.stderr)
         done = self.run_shim(self.event_argv("start"), "{}")
         self.assertEqual(done.returncode, 97)
 
     def test_prompt_hit_needs_no_launcher(self) -> None:
-        self.shim = self.write_shim(str(self.root / "gone" / "claude-multi"))
-        (self.tools / "claude-multi").unlink()
+        self.shim = self.write_shim(str(self.root / "gone" / "charmer"))
+        (self.tools / "charmer").unlink()
         self.set_gen()
         self.set_seen()
         done = self.run_shim(self.prompt_argv(), _payload(self.rid))
@@ -624,38 +624,38 @@ class BusyboxExitMappingTests(ExitMappingTests):
 
 class EnsureHookShimV3Tests(unittest.TestCase):
     def setUp(self) -> None:
-        self.root = Path(tempfile.mkdtemp(prefix="claude-multi-shim3-"))
+        self.root = Path(tempfile.mkdtemp(prefix="charmer-shim3-"))
         os.chmod(self.root, 0o700)
         self.addCleanup(shutil.rmtree, self.root, True)
 
     def test_written_executable_and_idempotent(self) -> None:
-        path = scope.ensure_hook_shim_v3(self.root, "/nix/store/a/bin/claude-multi")
+        path = scope.ensure_hook_shim_v3(self.root, "/nix/store/a/bin/charmer")
         self.assertEqual(path, scope.hook_shim_v3_path(self.root))
-        self.assertEqual(path, self.root / "bin" / "claude-multi-hook-3")
+        self.assertEqual(path, self.root / "bin" / "charmer-hook-3")
         info = os.lstat(path)
         self.assertTrue(stat.S_ISREG(info.st_mode))
         self.assertEqual(stat.S_IMODE(info.st_mode), 0o700)
         self.assertEqual(stat.S_IMODE(os.lstat(path.parent).st_mode), 0o700)
         self.assertEqual(
             path.read_bytes(),
-            scope.hook_shim_v3_text(self.root, "/nix/store/a/bin/claude-multi"),
+            scope.hook_shim_v3_text(self.root, "/nix/store/a/bin/charmer"),
         )
         inode = info.st_ino
-        again = scope.ensure_hook_shim_v3(self.root, "/nix/store/a/bin/claude-multi")
+        again = scope.ensure_hook_shim_v3(self.root, "/nix/store/a/bin/charmer")
         self.assertEqual(again, path)
         self.assertEqual(os.lstat(path).st_ino, inode)  # unchanged bytes: no rewrite
 
     def test_refreshes_when_the_command_changes(self) -> None:
-        path = scope.ensure_hook_shim_v3(self.root, "/nix/store/a/bin/claude-multi")
-        scope.ensure_hook_shim_v3(self.root, "/nix/store/b/bin/claude-multi")
+        path = scope.ensure_hook_shim_v3(self.root, "/nix/store/a/bin/charmer")
+        scope.ensure_hook_shim_v3(self.root, "/nix/store/b/bin/charmer")
         body = path.read_text()
-        self.assertIn("launcher=/nix/store/b/bin/claude-multi\n", body)
+        self.assertIn("launcher=/nix/store/b/bin/charmer\n", body)
         self.assertNotIn("/nix/store/a/", body)
 
     def test_repairs_a_lost_exec_bit(self) -> None:
-        path = scope.ensure_hook_shim_v3(self.root, "/nix/store/a/bin/claude-multi")
+        path = scope.ensure_hook_shim_v3(self.root, "/nix/store/a/bin/charmer")
         os.chmod(path, 0o600)
-        scope.ensure_hook_shim_v3(self.root, "/nix/store/a/bin/claude-multi")
+        scope.ensure_hook_shim_v3(self.root, "/nix/store/a/bin/charmer")
         self.assertEqual(stat.S_IMODE(os.lstat(path).st_mode), 0o700)
 
     def test_refuses_an_empty_command(self) -> None:
@@ -664,13 +664,13 @@ class EnsureHookShimV3Tests(unittest.TestCase):
         self.assertFalse(scope.hook_shim_v3_path(self.root).exists())
 
     def test_the_two_shims_are_independent(self) -> None:
-        shim2 = scope.ensure_hook_shim(self.root, "/nix/store/a/bin/claude-multi")
+        shim2 = scope.ensure_hook_shim(self.root, "/nix/store/a/bin/charmer")
         before2 = (shim2.read_bytes(), os.lstat(shim2).st_ino)
         self.assertFalse(scope.hook_shim_v3_path(self.root).exists())
-        shim3 = scope.ensure_hook_shim_v3(self.root, "/nix/store/b/bin/claude-multi")
+        shim3 = scope.ensure_hook_shim_v3(self.root, "/nix/store/b/bin/charmer")
         self.assertEqual((shim2.read_bytes(), os.lstat(shim2).st_ino), before2)
         before3 = (shim3.read_bytes(), os.lstat(shim3).st_ino)
-        scope.ensure_hook_shim(self.root, "/nix/store/c/bin/claude-multi")
+        scope.ensure_hook_shim(self.root, "/nix/store/c/bin/charmer")
         self.assertEqual((shim3.read_bytes(), os.lstat(shim3).st_ino), before3)
         self.assertNotEqual(shim2, shim3)
 

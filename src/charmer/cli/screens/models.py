@@ -110,7 +110,7 @@ class _ModelsScreen:
         # shows the route's own evidence in its details.
         try:
             ledger = runtime.operator_snapshot().ledger
-        except (cli_errors.ClaudeMultiError, OSError):
+        except (cli_errors.CharmerError, OSError):
             ledger = None
         choices = ledger.transport_choices if ledger is not None else {}
         self.key_transports = frozenset(pid for pid, choice in choices.items()
@@ -124,11 +124,11 @@ class _ModelsScreen:
         }
         try:
             self.lifecycle = onboarding.statuses(runtime)
-        except cli_errors.ClaudeMultiError:
+        except cli_errors.CharmerError:
             self.lifecycle = {}
         try:
             served, _status = runtime.served_snapshot(runtime.gateway_token())
-        except cli_errors.ClaudeMultiError:
+        except cli_errors.CharmerError:
             served = None
         self.candidates = discovery.candidates(gateway_facts.pinned_registry(runtime), served,
                                                gateway_facts.discovery_known(runtime))
@@ -418,7 +418,7 @@ class _ModelsScreen:
             return
         try:
             plan = setup_lines.plan_line_remove(self.runtime, key)
-        except cli_errors.ClaudeMultiError as exc:
+        except cli_errors.CharmerError as exc:
             self._say(str(exc), "warn")
             return
         actions = screens_providers.ConnectActions(self.runtime, win, self.palette, background=self._draw)
@@ -444,7 +444,7 @@ class _ModelsScreen:
                 return
             try:
                 plan = setup_lines.plan_line_remove(self.runtime, key, successor=plan.candidates[index])
-            except cli_errors.ClaudeMultiError as exc:
+            except cli_errors.CharmerError as exc:
                 self._say(str(exc), "warn")
                 return
             lines = [*plan.rewrites, texts.REWRITE_QUESTION.format(key=key)]
@@ -457,7 +457,7 @@ class _ModelsScreen:
             return
         try:
             applied = setup_lines.apply_line_remove(self.runtime, plan, setup_model.Confirmation.given(plan))
-        except cli_errors.ClaudeMultiError as exc:
+        except cli_errors.CharmerError as exc:
             self._say(str(exc), "warn")
             return
         self._load()
@@ -526,7 +526,7 @@ class _ModelsScreen:
         registry = (meta, row.channel) if meta is not None and row.channel else None
         try:
             draft = onboarding.line_draft(self.runtime, row.provider_hint, {"id": row.wire}, registry=registry)
-        except (cli_errors.ClaudeMultiError, ValueError, KeyError) as exc:
+        except (cli_errors.CharmerError, ValueError, KeyError) as exc:
             # The form still opens: the person states what the registry did not.
             self._say(f"prefill incomplete: {exc}", "warn")
             draft = {"wire_model": row.wire}

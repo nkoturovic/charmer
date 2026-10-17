@@ -150,7 +150,7 @@ class CustomRegistryTests(unittest.TestCase):
                     "refusing to save the custom registry: provider acme uses header auth "
                     "with 'Authorization', and this gateway build honors only the x-api-key "
                     'header — set "header": "x-api-key" for it in '
-                    '~/.config/claude-multi/custom.json, or remove it: claude-multi custom '
+                    '~/.config/charmer/custom.json, or remove it: charmer custom '
                     'remove-provider acme (its models go with it)')
                 self.assertEqual(self.path.read_bytes(), before)
 
@@ -222,7 +222,7 @@ class RegistryParityTests(unittest.TestCase):
                 home = Path(tmp)
                 env = {"HOME": tmp, "XDG_CONFIG_HOME": str(home / "xdg")}
                 a = custom.registry_path(env)
-                b = home / ".config/claude-multi/custom.json"
+                b = home / ".config/charmer/custom.json"
                 if presence in ("shell", "different", "equal"):
                     state.ensure_private_dir(a.parent)
                     state.atomic_write(a, b"fixture-shell-content")
@@ -244,8 +244,8 @@ class RegistryParityTests(unittest.TestCase):
                         f"custom.json mismatch: this shell reads {a_text} (XDG_CONFIG_HOME) "
                         f"but the gateway service reads {b_text} (it runs without "
                         f"XDG_CONFIG_HOME); {mismatch} — custom models can launch but are "
-                        f"not served. Keep one registry at {b_text} and run claude-multi "
-                        "without XDG_CONFIG_HOME, then claude-multi-proxy init")
+                        f"not served. Keep one registry at {b_text} and run charmer "
+                        "without XDG_CONFIG_HOME, then charmer-proxy init")
                     self.assertNotIn("fixture-", result)
                 self.assertEqual({str(p): p.read_bytes() for p in (a, b) if p.exists()}, before)
                 if presence == "neither":
@@ -260,7 +260,7 @@ class RegistryParityTests(unittest.TestCase):
                 home = Path(tmp)
                 env = {"HOME": tmp, "XDG_CONFIG_HOME": str(home / "xdg")}
                 a = custom.registry_path(env)
-                b = home / ".config/claude-multi/custom.json"
+                b = home / ".config/charmer/custom.json"
                 for path in (a, b):
                     state.ensure_private_dir(path.parent)
                     state.atomic_write(path, b"fixture-registry-content")

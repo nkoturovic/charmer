@@ -1,4 +1,4 @@
-"""``claude-multi plan [--assets PATH] [--json]``.
+"""``charmer plan [--assets PATH] [--json]``.
 
 Read-only: it runs on the read-only Runtime branch (no shim refresh, no
 state write, no lock, no plan file) and never contacts a provider or the
@@ -52,7 +52,7 @@ def candidate_asset_root(path: Path | str) -> Path:
 
     resources = layout.installation_resources(path)
     if resources is None:
-        raise PlanError(f"plan --assets {path}: not a claude-multi package or asset root "
+        raise PlanError(f"plan --assets {path}: not a charmer package or asset root "
                         "(no catalog/ and version.json)")
     return resources
 
@@ -73,7 +73,7 @@ def candidate_identity(asset_root: Path) -> CandidateIdentity:
     try:
         version = strict_json.loads((asset_root / "version.json").read_bytes())
         bundle = catalog_mod.load_catalog(asset_root)
-    except (OSError, ValueError, cli_errors.ClaudeMultiError) as exc:
+    except (OSError, ValueError, cli_errors.CharmerError) as exc:
         raise PlanError(f"plan: candidate assets unreadable ({termtext.visible_message(exc)})") from exc
     return CandidateIdentity(str(asset_root), str(version.get("launcher_version")),
                              int(bundle.docs["version"]["catalog_version"]), bundle.bundle_sha256)

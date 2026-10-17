@@ -375,9 +375,9 @@ def _doctor_continuity(runtime: runtime_mod.Runtime) -> tuple[dict[str, Any], st
 # The sign-in command a remedy names for each OAuth pool: the public verb,
 # which takes the personal-use confirmation (the gateway tool's own login
 # commands refuse without a current one).
-_OAUTH_LOGIN_COMMANDS = {name: f"claude-multi providers sign-in {pool.provider}"
+_OAUTH_LOGIN_COMMANDS = {name: f"charmer providers sign-in {pool.provider}"
                          for name, pool in account_pools.pools().items()}
-SIGN_IN_ANY = "claude-multi providers sign-in " + "|".join(
+SIGN_IN_ANY = "charmer providers sign-in " + "|".join(
     pool.provider for pool in account_pools.pools().values())
 
 
@@ -655,7 +655,7 @@ def _doctor_now() -> datetime:
 
 def journal_command(runtime: runtime_mod.Runtime) -> tuple[str, ...] | None:
     """The supervised unit's journal command, or None: the on-demand gateway
-    logs to its per-instance files (``claude-multi gateway logs``)."""
+    logs to its per-instance files (``charmer gateway logs``)."""
 
     backend = service.backend_of(runtime.home)
     if backend.name != service.SYSTEMD or backend.unit is None:
@@ -1206,7 +1206,7 @@ def _entry_problem(path: Path, *, directory: bool, environ: Mapping[str, str]) -
         return f"{shown} cannot be inspected ({exc.strerror or type(exc).__name__})"
     kind = "directory" if directory else "file"
     if stat.S_ISLNK(info.st_mode):
-        return (f"{shown} is a symlink — claude-multi refuses symlinks for private state: "
+        return (f"{shown} is a symlink — charmer refuses symlinks for private state: "
                 f"replace the symlink with the {kind} itself")
     if directory != stat.S_ISDIR(info.st_mode) or (not directory and not stat.S_ISREG(info.st_mode)):
         return f"{shown} is not a {'directory' if directory else 'regular file'}: move it aside"
@@ -1312,14 +1312,14 @@ HOLD_COVERAGE_TEXT = (
     "gateway persistence hold: HELD because the log coverage is incomplete, not because a credential "
     "failed — {reasons}. A verbose, long-running gateway can write more log than one read evaluates, so "
     "the save evidence stays incomplete and stop, restart, update and uninstall are refused. Keep it "
-    "running; after checking the credentials (claude-multi providers list), clear it on the command line "
-    "(claude-multi gateway clear-hold: it records that you checked them and evaluates the logs again from "
+    "running; after checking the credentials (charmer providers list), clear it on the command line "
+    "(charmer gateway clear-hold: it records that you checked them and evaluates the logs again from "
     "there on)"
 )
 
 
 GATEWAY_NOT_SET_UP = ("Gateway: not set up yet in this home — no port is recorded, so nothing was observed on "
-                      "the packaged port (claude-multi setup prepares it)")
+                      "the packaged port (charmer setup prepares it)")
 
 
 def gateway_runtime_report(runtime: runtime_mod.Runtime) -> tuple[list[str], list[str]]:
@@ -1342,7 +1342,7 @@ def gateway_runtime_report(runtime: runtime_mod.Runtime) -> tuple[list[str], lis
     info: list[str] = []
     try:
         gateway = runtime.gateway()
-    except (cli_errors.ClaudeMultiError, OSError) as exc:
+    except (cli_errors.CharmerError, OSError) as exc:
         return [f"gateway facts unavailable: {exc}"], []
     live = runtime.gateway_seams is not None or (
         runtime.health_get is None and runtime.served_models_callback is None)
@@ -1358,10 +1358,10 @@ def gateway_runtime_report(runtime: runtime_mod.Runtime) -> tuple[list[str], lis
         info.append(f"Gateway outbound proxy: {proxy_url} (endpoint.json)")
     elif any(runtime.environ.get(name) for name in _PROXY_VARIABLES):
         info.append("A proxy variable is set in this shell; the gateway never inherits it — give the gateway "
-                    "its outbound proxy with: claude-multi setup --step gateway --proxy URL")
+                    "its outbound proxy with: charmer setup --step gateway --proxy URL")
     if live and not endpoint_mod.set_up(runtime.home):
         info.append(Finding(GATEWAY_NOT_SET_UP, code="gateway-not-set-up", public=GATEWAY_NOT_SET_UP,
-                            remedy="claude-multi setup"))
+                            remedy="charmer setup"))
     elif live:
         seen = gateway.observe()
         lock = {True: "held", False: "free", None: "unknown"}[seen.lock]
@@ -1468,7 +1468,7 @@ def service_report(runtime: runtime_mod.Runtime) -> tuple[list[str], list[str]]:
         live = runtime.gateway_seams is not None or runtime.gateway_service_seams is not None or (
             runtime.health_get is None and runtime.served_models_callback is None)
         status = manager.status(live=live)
-    except (cli_errors.ClaudeMultiError, OSError) as exc:
+    except (cli_errors.CharmerError, OSError) as exc:
         return [], [f"Gateway service: unknown ({exc})"]
     where = paths.display(status.unit_path, runtime.environ)
     if status.installed:
@@ -1477,6 +1477,6 @@ def service_report(runtime: runtime_mod.Runtime) -> tuple[list[str], list[str]]:
     elif status.supported is not None:
         info = [f"Gateway service: not available here ({status.supported}); the gateway runs on demand"]
     else:
-        info = [f"Gateway service: not installed · backend {status.backend} (claude-multi gateway service "
+        info = [f"Gateway service: not installed · backend {status.backend} (charmer gateway service "
                 "install hands the gateway to a supervised unit)"]
     return status.attention(runtime.environ), info

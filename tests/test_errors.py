@@ -55,7 +55,7 @@ class ErrorCompatibilityTests(unittest.TestCase):
         for builtin, classes in HISTORICAL_BASES.items():
             for cls in classes:
                 with self.subTest(cls=cls):
-                    self.assertTrue(issubclass(cls, errors.ClaudeMultiError))
+                    self.assertTrue(issubclass(cls, errors.CharmerError))
                     self.assertTrue(issubclass(cls, builtin))
 
     def test_oserror_fields_and_remedy_survive_pickle(self) -> None:
@@ -109,7 +109,7 @@ class ErrorCompatibilityTests(unittest.TestCase):
                     for handler in statement.handlers]
         domain = [handler for handler in handlers
                   if isinstance(handler.type, ast.Attribute)
-                  and ast.unparse(handler.type) == "errors.ClaudeMultiError"]
+                  and ast.unparse(handler.type) == "errors.CharmerError"]
         self.assertEqual(len(domain), 1)
         self.assertEqual(ast.unparse(handlers[handlers.index(domain[0]) - 1].type),
                          "sessions.StateMarkerError")
@@ -151,36 +151,36 @@ class EntryPointTests(CLITestCase):
             with self.subTest(cls=cls):
                 # A refused or failed ordinary command: exit 1, the error on stderr.
                 self.assertEqual(self.invoke_cli(cls("boom")),
-                                 (1, "", "claude-multi: boom\n"))
+                                 (1, "", "charmer: boom\n"))
 
     def test_cli_session_event_uses_stderr_and_exit_one(self) -> None:
         self.assertEqual(
             self.invoke_cli(render.RenderError("boom"),
                             ["session-event", "end", "--managed-id", FIXED_ID]),
-            (1, "", "claude-multi: boom\n"),
+            (1, "", "charmer: boom\n"),
         )
 
     def test_state_marker_keeps_special_hook_status(self) -> None:
         error = sessions.StateMarkerError(9)
         for args, expected in (
-            (["sessions", "list"], (1, "", f"claude-multi: {error}\n"
+            (["sessions", "list"], (1, "", f"charmer: {error}\n"
                                     + (f"  fix: {error.remedy}\n" if error.remedy else ""))),
             (["session-event", "end", "--managed-id", FIXED_ID],
-             (0, "", f"claude-multi: {error}\n")),
+             (0, "", f"charmer: {error}\n")),
         ):
             with self.subTest(args=args):
                 self.assertEqual(self.invoke_cli(error, args), expected)
 
     def test_cli_remedy_and_control_bytes(self) -> None:
         self.assertEqual(self.invoke_cli(launch.LaunchError("boom", remedy="r")),
-                         (1, "", "claude-multi: boom\n  fix: r\n"))
+                         (1, "", "charmer: boom\n  fix: r\n"))
         error = launch.LaunchError("boom\x1b[31m\nmore", remedy="r\n\x1b[0m")
         self.assertEqual(self.invoke_cli(error),
-                         (1, "", "claude-multi: boom^[[31m\nmore\n  fix: r^J^[[0m\n"))
+                         (1, "", "charmer: boom^[[31m\nmore\n  fix: r^J^[[0m\n"))
         self.assertEqual(
             self.invoke_cli(launch.LaunchError("boom", remedy="r"),
                             ["session-event", "end", "--managed-id", FIXED_ID]),
-            (1, "", "claude-multi: boom\n  fix: r\n"),
+            (1, "", "charmer: boom\n  fix: r\n"),
         )
 
     def test_cli_does_not_hide_programming_errors(self) -> None:
@@ -200,15 +200,15 @@ class EntryPointTests(CLITestCase):
         self.assertEqual(out.getvalue(), "")
         self.assertEqual(len(err.getvalue().splitlines()), 1)
         self.assertTrue(err.getvalue().startswith(
-            "claude-multi-proxy: cannot load the custom registry"))
+            "charmer-proxy: cannot load the custom registry"))
         execve.assert_not_called()
 
     def test_proxy_domain_remedy_and_oserror_fallback(self) -> None:
         for error, expected in (
             (catalog.CatalogError("boom", remedy="r"),
-             "claude-multi-proxy: boom\n  fix: r\n"),
+             "charmer-proxy: boom\n  fix: r\n"),
             (OSError(errno.EACCES, "denied", "/fixture"),
-             "claude-multi-proxy: denied (/fixture)\n"),
+             "charmer-proxy: denied (/fixture)\n"),
         ):
             with self.subTest(error=type(error)):
                 err = io.StringIO()
@@ -223,7 +223,7 @@ class EntryPointTests(CLITestCase):
                 redirect_stderr(err):
             code = dev.main(["smoke-test", "fixture-model"])
         self.assertEqual(code, 2)
-        self.assertEqual(err.getvalue(), "claude-multi-dev: boom\n")
+        self.assertEqual(err.getvalue(), "charmer-dev: boom\n")
 
     def test_probe_catches_other_domains_and_oserror(self) -> None:
         for error in (compiler.CompilerError("boom"), OSError("boom")):
@@ -235,7 +235,7 @@ class EntryPointTests(CLITestCase):
                         [], environ={"HOME": str(self.root)},
                     )
                 self.assertEqual(code, 2)
-                self.assertEqual(err.getvalue(), "claude-multi-dev: probe: boom\n")
+                self.assertEqual(err.getvalue(), "charmer-dev: probe: boom\n")
 
 
 if __name__ == "__main__":

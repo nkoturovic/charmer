@@ -521,7 +521,7 @@ class _SettingsScreen:
         try:
             plan = defaults.set_default_plan(self.runtime, name)
             defaults.apply_default(self.runtime, plan, model.Confirmation.given(plan))
-        except (cli_errors.ClaudeMultiError, OSError) as exc:
+        except (cli_errors.CharmerError, OSError) as exc:
             self._say(self._failure(exc), "warn")
             return
         self._load()
@@ -584,7 +584,7 @@ class _SettingsScreen:
                     interactive=True,
                 )
             except (cli_errors.CLIError, proxy_mod.ProxyError, OSError) as exc:
-                self.tty_out.write(f"claude-multi: {termtext.visible_message(self._failure(exc))}\n")
+                self.tty_out.write(f"charmer: {termtext.visible_message(self._failure(exc))}\n")
                 code = 1
             self.tty_out.write("Press Enter to return")
             self.tty_out.flush()
@@ -595,7 +595,7 @@ class _SettingsScreen:
         else:
             self._say(
                 f"token rotation did not finish (exit {code}): finish with "
-                "`claude-multi doctor --rotate-token`",
+                "`charmer doctor --rotate-token`",
                 "warn",
             )
 
@@ -640,7 +640,7 @@ class _SettingsScreen:
     def _credential_names(self) -> frozenset[str]:
         try:
             return compiler.credential_env_names(doctor._provider_secret_names(self.runtime))
-        except (KeyError, TypeError, cli_errors.ClaudeMultiError):
+        except (KeyError, TypeError, cli_errors.CharmerError):
             return frozenset()
 
     def _env_keep_row(self) -> views.SettingsRow:

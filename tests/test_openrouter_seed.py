@@ -86,7 +86,7 @@ class AggregatorValidationTests(unittest.TestCase):
         retired = raw["docs"]["retired"]["retired"]
         entry = copy.deepcopy(next(iter(retired.values())))
         entry.update(provider=provider, last_wire="vendor/fixture-retired",
-                     selectors={"claude-multi-fixture-retired-high": "output-config-high"})
+                     selectors={"charmer-fixture-retired-high": "output-config-high"})
         if family is not None:
             entry["family"] = family
         retired["fixture-retired"] = entry

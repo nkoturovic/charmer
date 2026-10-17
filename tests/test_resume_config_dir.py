@@ -51,14 +51,14 @@ class ConfigDirResumeTests(unittest.TestCase):
         self.assertIn("CLAUDE_CONFIG_DIR", gate.title)
         self.assertIn("managed sessions do not use it", text)
         self.assertIn(paths.display(transcript, self.runtime.environ), text)
-        retry = f"env -u CLAUDE_CONFIG_DIR claude-multi -r {RUNTIME_ID}"
+        retry = f"env -u CLAUDE_CONFIG_DIR charmer -r {RUNTIME_ID}"
         self.assertIn(retry, text)
         self.assertEqual(shlex.split(retry)[:3], ["env", "-u", "CLAUDE_CONFIG_DIR"])
         self.assertNotIn("forget", text)
         self.assertFalse(self.exported.exists())
 
     def test_the_retry_quotes_an_unusual_id(self) -> None:
-        self.assertEqual(resume_checks.config_dir_retry("a b"), "env -u CLAUDE_CONFIG_DIR claude-multi -r 'a b'")
+        self.assertEqual(resume_checks.config_dir_retry("a b"), "env -u CLAUDE_CONFIG_DIR charmer -r 'a b'")
 
     def test_a_transcript_in_neither_root_keeps_the_unknown_root_refusal(self) -> None:
         gate = resume_checks._evaluate_resume_gate(self.runtime, self.record, live_prefixes=frozenset())

@@ -57,7 +57,7 @@ class TuiGoldenDeterminismTests(unittest.TestCase):
         for name, builder in _tui_render.GOLDENS.items():
             frames = []
             for _ in range(2):
-                root = Path(tempfile.mkdtemp(prefix=f"claude-multi-tui-det-{name}-"))
+                root = Path(tempfile.mkdtemp(prefix=f"charmer-tui-det-{name}-"))
                 try:
                     frames.append(builder(root))
                 finally:
@@ -85,7 +85,7 @@ class QuotaGoldenTests(unittest.TestCase):
         providers = _tui_render.build("providers-quota")
         self.assertIn("5h 42% · 7d 18% · 12m", providers)
         self.assertIn(views.SIGNIN_REMEDY, providers)
-        self.assertIn("+1 more (claude-multi quota)", providers)
+        self.assertIn("+1 more (charmer quota)", providers)
         for name in (n for n in _tui_render.GOLDENS if n.startswith("card-quota")):
             text = _tui_render.build(name)
             if "exhausted" in name:
@@ -135,7 +135,7 @@ class OperatorGoldens(unittest.TestCase):
     def test_route_remedy_and_badge_both_survive_narrow_models_layout(self):
         text = _tui_render.build("operator-route-unapproved")
         remedy = next(line for line in text.splitlines() if line.startswith("  use:"))
-        self.assertTrue(remedy.endswith("— claude-multi providers approve acme"), remedy)
+        self.assertTrue(remedy.endswith("— charmer providers approve acme"), remedy)
         self.assertIn("admission: not admitted (optional)", text)
         assertGolden(self, TUI_GOLDENS / _tui_render.golden_name("operator-route-unapproved"), text.encode())
 

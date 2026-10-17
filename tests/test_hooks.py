@@ -72,7 +72,7 @@ class _HookCase(unittest.TestCase):
         self.root = Path(tempfile.mkdtemp(prefix="cm-hooks-"))
         os.chmod(self.root, 0o700)
         self.addCleanup(shutil.rmtree, self.root, True)
-        self.state = self.root / "state" / "claude-multi"
+        self.state = self.root / "state" / "charmer"
         state.ensure_private_dir(self.state)
         self.home = self.root / "home"
         self.home.mkdir()
@@ -183,7 +183,7 @@ class NoticeGoldenTests(_HookCase):
             with self.subTest(event=event, source=source):
                 text = hooks.notice_text(md, gen, event=event, source=source, lead=None)
                 self.assertTrue(
-                    text.startswith("[claude-multi lineup notice · lineup_generation 1]\n")
+                    text.startswith("[charmer lineup notice · lineup_generation 1]\n")
                 )
                 self.assertIn(md.rstrip("\n"), text)
                 # Stated once and repeated once, in-process only.
@@ -283,7 +283,7 @@ class DispatchNeverFailsTests(_HookCase):
                         out, err = self.run_hook(event, self.payload(prompt="SECRET-PAYLOAD"))
                     document = strict_json.loads(out)
                     message = (
-                        f"claude-multi {event} failed: {type(exc).__name__} — run claude-multi doctor"
+                        f"charmer {event} failed: {type(exc).__name__} — run charmer doctor"
                     )
                     self.assertEqual(document["systemMessage"], message)
                     if event == "premodel":
@@ -296,7 +296,7 @@ class DispatchNeverFailsTests(_HookCase):
                     else:
                         self.assertEqual(set(document), {"systemMessage"})
                     self.assertEqual(out.count("\n"), 1)
-                    self.assertEqual(err.count(f"claude-multi: {event} hook ignored:"), 1)
+                    self.assertEqual(err.count(f"charmer: {event} hook ignored:"), 1)
                     lines = self.error_log()
                     self.assertEqual(len(lines), before + 1)
                     self.assertEqual(
@@ -373,7 +373,7 @@ class DispatchNeverFailsTests(_HookCase):
         )
         self.assertEqual(
             document["systemMessage"],
-            "claude-multi premodel failed: hook arguments rejected — run claude-multi doctor",
+            "charmer premodel failed: hook arguments rejected — run charmer doctor",
         )
         # A 2.x start/end keeps argparse's exit 2 (parity).
         with mock.patch.object(sys, "stderr", io.StringIO()), self.assertRaises(SystemExit) as caught:
@@ -399,10 +399,10 @@ class DispatchNeverFailsTests(_HookCase):
                     document = json.loads(output.getvalue())
                     self.assertEqual(output.getvalue(), hooks.premodel_fail_closed_response(document["systemMessage"]))
                     self.assertTrue(document["systemMessage"].startswith(
-                        "claude-multi premodel failed: state belongs to a newer claude-multi"), document)
+                        "charmer premodel failed: state belongs to a newer charmer"), document)
                 else:
                     self.assertEqual(output.getvalue(), "")
-                self.assertIn("newer claude-multi", error.getvalue())
+                self.assertIn("newer charmer", error.getvalue())
         self.assertFalse((self.state / hooks.HOOK_ERRORS_LOG).exists())
 
     def test_the_entry_point_refuses_a_switch_over_newer_state(self) -> None:
@@ -426,8 +426,8 @@ class DispatchNeverFailsTests(_HookCase):
         self.assertEqual(result.stdout, hooks.premodel_fail_closed_response(document["systemMessage"]))
         self.assertEqual(document["hookSpecificOutput"]["permissionDecision"], "deny")
         self.assertTrue(document["systemMessage"].startswith(
-            "claude-multi premodel failed: state belongs to a newer claude-multi"), document)
-        self.assertIn("newer claude-multi", result.stderr)
+            "charmer premodel failed: state belongs to a newer charmer"), document)
+        self.assertIn("newer charmer", result.stderr)
 
     def test_premodel_over_newer_state_refuses_the_switch(self) -> None:
         marker = self.state / sessions.STATE_MARKER
@@ -443,8 +443,8 @@ class DispatchNeverFailsTests(_HookCase):
         # Older code over newer state refuses the switch (fail closed), naming the fix.
         document = json.loads(output.getvalue())
         self.assertEqual(document["hookSpecificOutput"]["permissionDecision"], "deny")
-        self.assertIn("newer claude-multi", document["systemMessage"])
-        self.assertIn("claude-multi update", document["systemMessage"])
+        self.assertIn("newer charmer", document["systemMessage"])
+        self.assertIn("charmer update", document["systemMessage"])
 
 
 class PromptTests(_HookCase):
@@ -503,7 +503,7 @@ class PromptTests(_HookCase):
         out, _err = self.run_hook("prompt", self.payload())
         self.assertEqual(
             strict_json.loads(out),
-            {"systemMessage": "claude-multi prompt failed: HookInputError — run claude-multi doctor"},
+            {"systemMessage": "charmer prompt failed: HookInputError — run charmer doctor"},
         )
 
 
@@ -542,7 +542,7 @@ class PremodelTests(_HookCase):
         outside = [s for s in _plan().settings["availableModels"] if s not in members]
         # Fallback-only, agent-only and other-class selectors are all outside.
         self.assertTrue(any(s.endswith("[1m]") for s in outside))
-        for selector in [*outside, "no-such-model", "claude-multi-unknown[1m]"]:
+        for selector in [*outside, "no-such-model", "charmer-unknown[1m]"]:
             with self.subTest(outside=selector):
                 decision, reason = self.decide(to_model=selector)
                 self.assertEqual(decision, "deny")
@@ -595,7 +595,7 @@ class PremodelTests(_HookCase):
                 damage()
                 decision, reason = self.decide(to_model=self.rows()[0]["selector"])
                 self.assertEqual(decision, "deny")
-                self.assertIn(f"claude-multi doctor --repair {MID}", reason)
+                self.assertIn(f"charmer doctor --repair {MID}", reason)
 
 
 class PostmodelTests(_HookCase):
@@ -624,7 +624,7 @@ class PostmodelTests(_HookCase):
                 context = strict_json.loads(out)["hookSpecificOutput"]
                 self.assertEqual(context["hookEventName"], "PostModelSwitch")
                 self.assertIn("outside its lead set", context["additionalContext"])
-                self.assertIn(f"claude-multi -r {MID}", context["additionalContext"])
+                self.assertIn(f"charmer -r {MID}", context["additionalContext"])
 
     def test_saved_user_model_warning_never_writes(self) -> None:
         member = _lead_set()["rows"][0]["selector"]

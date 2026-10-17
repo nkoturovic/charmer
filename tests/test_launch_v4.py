@@ -52,7 +52,7 @@ def fresh_record_golden_files() -> dict[str, bytes]:
     import tempfile
 
     files: dict[str, bytes] = {}
-    with tempfile.TemporaryDirectory(prefix="claude-multi-golden-") as tmp:
+    with tempfile.TemporaryDirectory(prefix="charmer-golden-") as tmp:
         base = Path(tmp)
         env = {
             "HOME": str(base / "home"),
@@ -647,7 +647,7 @@ class NeedsChoiceTests(V4Case):
             out.getvalue(),
         )
         self.assertIn(
-            f"claude-multi lineup --session {rid} --relaunch --its-exited profile <name> | direct <model>",
+            f"charmer lineup --session {rid} --relaunch --its-exited profile <name> | direct <model>",
             out.getvalue(),
         )
 

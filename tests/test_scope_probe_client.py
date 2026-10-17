@@ -903,7 +903,7 @@ class MissingHookProbe(_ProbeCase, unittest.TestCase):
             document = {**plan.settings, "model": lead, "availableModels": [lead, second],
                         "modelPicker": {"replaceBuiltInOptions": True, "options": rows},
                         "hooks": hooks}
-            shim = state.ensure_private_dir(fixture.root / "state/bin") / "claude-multi-hook-3"
+            shim = state.ensure_private_dir(fixture.root / "state/bin") / "charmer-hook-3"
             recorder.rename(shim)
             for entry in hooks["PreModelSwitch"]:
                 entry["hooks"][0]["command"] = shlex.quote(str(shim))
@@ -995,7 +995,7 @@ class SettingsSkewProbe(_ProbeCase, unittest.TestCase):
 
 
 class OwnedCopyIsolationProbe(_ProbeCase, unittest.TestCase):
-    """The owned copy (claude-multi's own layout, the managed update switches
+    """The owned copy (charmer's own layout, the managed update switches
     set) runs a turn in a HOME with a native install: the ``~/.local/bin/claude``
     link, the version file and ``installMethod``/``autoUpdates`` in both global
     config locations are compared before and after."""
@@ -1670,7 +1670,7 @@ class ClaudeCodeMarkerProbe(_ProbeCase, unittest.TestCase):
 # window. Unsupported payload semantics (a dropped or rewritten effort,
 # stripped thinking, a wrong window, an output limit above the declaration)
 # are a FAIL class, never a silent pass; the class is essential, so a re-pin
-# (``claude-multi update``) refuses without it.
+# (``charmer update``) refuses without it.
 _XC_FILE = Path(__file__).resolve().parent / "fixtures/operator/providers.d/anthropic.json"
 _XC_KEY = "custom-claude-fixture"
 _XC_EFFORTS = ("low", "medium", "high", "xhigh", "max")

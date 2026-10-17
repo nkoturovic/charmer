@@ -24,7 +24,7 @@ import charmer.tui
 
 class GatewaySeamTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.root = Path(tempfile.mkdtemp(prefix="claude-multi-seam-"))
+        self.root = Path(tempfile.mkdtemp(prefix="charmer-seam-"))
         self.addCleanup(shutil.rmtree, self.root, True)
         self.home = self.root / "home"
         self.env = {
@@ -35,7 +35,7 @@ class GatewaySeamTests(unittest.TestCase):
             "CLAUDE_MULTI_SECRET_ENV": str(self.root / "secrets" / "claude.env"),
         }
         (self.root / "project").mkdir()
-        token_dir = state.ensure_private_dir(self.home / ".config" / "claude-multi")
+        token_dir = state.ensure_private_dir(self.home / ".config" / "charmer")
         state.atomic_write(
             token_dir / "api-key", (FIXTURE_GATEWAY_TOKEN + "\n").encode("ascii")
         )

@@ -1,4 +1,4 @@
-"""Terminal UI layer for claude-multi: widgets, palettes, and the profile editor.
+"""Terminal UI layer for charmer: widgets, palettes, and the profile editor.
 
 Everything interactive lives here: a small stdlib-curses widget set (labels,
 badges, key bars, checkboxes and groups, select lists, text inputs, modals,
@@ -451,9 +451,9 @@ def terminal_known(term: str, output_stream: Any = None) -> bool:
     return True
 
 
-TERM_NOTICE = ("claude-multi: the terminal type TERM={term} is not known here, so the line interface is "
+TERM_NOTICE = ("charmer: the terminal type TERM={term} is not known here, so the line interface is "
                "used; if your terminal supports it, run with TERM=xterm-256color for the full screen")
-TERM_UNSET_NOTICE = ("claude-multi: TERM is not set, so the line interface is used; if your terminal supports "
+TERM_UNSET_NOTICE = ("charmer: TERM is not set, so the line interface is used; if your terminal supports "
                      "it, run with TERM=xterm-256color for the full screen")
 
 
@@ -3234,7 +3234,7 @@ class ProfileEditorScreen:
     def _edit_json(self, win: Any) -> None:
         state = self.state
         before = strict_json.pretty_file_bytes(state.document)
-        fd, path = tempfile.mkstemp(prefix="claude-multi-profile-", suffix=".json")
+        fd, path = tempfile.mkstemp(prefix="charmer-profile-", suffix=".json")
         try:
             with os.fdopen(fd, "wb") as handle:
                 handle.write(before)

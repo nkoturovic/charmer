@@ -4,7 +4,7 @@
     python3 tests/check_docs_vocabulary.py [--links] [--spans] [--installed DIR] [--self-test] [-v] [PATH[:REGEX]…]
 
 Without ``--links``, ``--self-test`` or a PATH it scans the in-tree set
-(every public page, every rendered ``claude-multi`` ``--help``, the proxy/dev
+(every public page, every rendered ``charmer`` ``--help``, the proxy/dev
 help texts, and ``src`` for the two phrases). ``--links`` resolves the
 Markdown links of every public page (``_docs_vocab.public_pages``: the root
 pages and every page under ``docs/``; a link leaving the repository, a
@@ -13,7 +13,7 @@ relative path fails) and lists references to material outside it.
 ``--spans`` parses every command span of every public page (each form of
 it, with the parser that owns it) and prints the coverage counts.
 ``--installed DIR`` resolves the links of an installed document tree
-(``share/claude-multi`` of a wheel, a bundle or the Nix package): every
+(``share/charmer`` of a wheel, a bundle or the Nix package): every
 relative link and heading anchor stays inside it, nested directories
 included, and the root pages are reached only by their public URL.
 ``PATH[:REGEX]`` scans one Markdown file with the full rule set (only lines
@@ -56,7 +56,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--spans", action="store_true",
                         help="parse every command span of the public pages and print the coverage counts")
     parser.add_argument("--installed", type=Path, metavar="DIR",
-                        help="resolve the links of an installed document tree (share/claude-multi)")
+                        help="resolve the links of an installed document tree (share/charmer)")
     parser.add_argument("--self-test", action="store_true", help="run the rule unit cases")
     parser.add_argument("-v", "--verbose", action="store_true", help="also print intentional and report-only hits")
     parser.add_argument("paths", nargs="*", metavar="PATH[:REGEX]")

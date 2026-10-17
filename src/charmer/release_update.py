@@ -375,7 +375,7 @@ def _write(out: TextIO, line: str) -> None:
     out.write(termtext.visible_text(line) + "\n")
 
 
-def _refuse(out: TextIO, exc: errors.ClaudeMultiError) -> int:
+def _refuse(out: TextIO, exc: errors.CharmerError) -> int:
     _write(out, f"claude-multi update: {exc}")
     if exc.remedy:
         _write(out, f"  fix: {exc.remedy}")
@@ -432,7 +432,7 @@ def run(journey: Journey, *, mode: str = "update", assume_yes: bool = False, ask
     except KeyboardInterrupt:
         _write(out, "Cancelled; nothing was changed.")
         return EXIT_CANCELLED
-    except (self_update.UpdateError, errors.ClaudeMultiError) as exc:
+    except (self_update.UpdateError, errors.CharmerError) as exc:
         return _refuse(out, exc)
     current, release = installation.current, result.release
     if result.status == "current":
@@ -477,7 +477,7 @@ def _update(journey: Journey, installation: self_update.Installation, release: s
         return EXIT_CANCELLED
     except self_update.Interrupted as exc:
         return _interrupted(out, exc)
-    except (self_update.UpdateError, errors.ClaudeMultiError) as exc:
+    except (self_update.UpdateError, errors.CharmerError) as exc:
         return _refuse(out, exc)
     _write(out, f"Updated claude-multi to {applied.version}; {applied.previous} is kept for "
                 "'claude-multi update --rollback'.")
@@ -517,7 +517,7 @@ def _rollback(journey: Journey, installation: self_update.Installation, *, assum
         return EXIT_CANCELLED
     except self_update.Interrupted as exc:
         return _interrupted(out, exc)
-    except (self_update.UpdateError, errors.ClaudeMultiError) as exc:
+    except (self_update.UpdateError, errors.CharmerError) as exc:
         return _refuse(out, exc)
     _write(out, f"Rolled back to claude-multi {result.version}; {result.previous} is now the previous version.")
     if result.restart == self_update.RESTART_GATEWAY:
@@ -553,7 +553,7 @@ def pin_acquirer(environ: Mapping[str, str], *, platform: str | None = None,
         contract = bundle_contract(bundle)
         try:
             version = pin.version(contract)
-        except (KeyError, TypeError, ValueError, errors.ClaudeMultiError) as exc:
+        except (KeyError, TypeError, ValueError, errors.CharmerError) as exc:
             raise self_update.UpdateError(f"the new release's Claude Code contract is invalid ({exc})") from exc
         if version != release.claude_code:
             raise self_update.UpdateError(f"the new release pins Claude Code {version}, but its manifest says "
@@ -608,13 +608,13 @@ def journey_for(runtime: Any) -> Journey:
     def hold() -> str | None:
         try:
             gateway = runtime.gateway()
-        except (OSError, errors.ClaudeMultiError) as exc:
+        except (OSError, errors.CharmerError) as exc:
             return f"the gateway cannot be examined ({exc})"
         return install_txn.hold_reason(state_root, environ, gateway=gateway)
 
     try:
         platform = pin.host_platform()
-    except (errors.ClaudeMultiError, KeyError, ValueError):
+    except (errors.CharmerError, KeyError, ValueError):
         platform = None
     return Journey(
         environ=environ, state_root=state_root, install_root=install_root, channel=endpoint.channel(environ),

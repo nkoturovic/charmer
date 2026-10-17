@@ -1,4 +1,4 @@
-"""`claude-multi lineup` and propagation.
+"""`charmer lineup` and propagation.
 
 The pure rendering helpers come first: the one launch path shows the
 one-time profile diff and the line-mode confirm with them; ``cat`` there is
@@ -238,7 +238,7 @@ def render_text(
 
     del follow
     lead = lineup.lead.binding
-    head = f"claude-multi · {header}"
+    head = f"charmer · {header}"
     if not profile_view:
         head += f" · lineup gen {generation if generation else '-'}"
     head += (
@@ -257,7 +257,7 @@ def render_text(
         reasons = "; ".join(pending.get("reasons") or ())
         lines.append(
             f"pending relaunch change: {reasons} — applies at the next resume "
-            f"(claude-multi -r {mid})"
+            f"(charmer -r {mid})"
         )
     if lead_target:
         label = binding_label(
@@ -271,7 +271,7 @@ def render_text(
         )
     if needs_choice:
         lines.append(
-            f"needs a lead choice: {needs_choice} — claude-multi -r {mid} (interactive) "
+            f"needs a lead choice: {needs_choice} — charmer -r {mid} (interactive) "
             "or /cm profile <name>"
         )
     for line in drift:
@@ -288,9 +288,9 @@ def render_text(
 
 # ------------------------------------------------------------------ texts
 
-PREFIX = "claude-multi: "
+PREFIX = "charmer: "
 R1 = "lineup: unknown option {opt!r} (options: --session ID, --relaunch, --its-exited, --preview)"
-R2 = "lineup needs --session <runtime-id> (or run /cm inside a claude-multi session)"
+R2 = "lineup needs --session <runtime-id> (or run /cm inside a charmer session)"
 R3 = "lineup: session id {value!r} is not a UUID"
 R4 = (
     "/cm received {n} arguments; write the request without quotes (balanced "
@@ -303,8 +303,8 @@ R26 = "lineup: --preview applies only to a fallback request (lineup fallback <pr
 R8 = "{rid} is an unadopted native fork: {message}"
 R9 = (
     "session {m8} is a legacy record (version {v}); a lineup change needs one resume with this "
-    "launcher first: claude-multi -r {mid} (or claude-multi migrate), or relaunch it now from "
-    "outside with claude-multi lineup --session {rid} --relaunch …"
+    "launcher first: charmer -r {mid} (or charmer migrate), or relaunch it now from "
+    "outside with charmer lineup --session {rid} --relaunch …"
 )
 R11 = "profile {name!r} does not exist"
 R12 = (
@@ -321,7 +321,7 @@ R16 = (
 )
 R17 = (
     "the lineup change failed after partially updating the scope ({exc}); the record "
-    "still holds lineup generation {G}; run claude-multi doctor --repair {mid}, then retry"
+    "still holds lineup generation {G}; run charmer doctor --repair {mid}, then retry"
 )
 R18 = "{label} → {key}: provider {provider} has no credential ({hint}); connect it first — nothing changed"
 R19 = sessions.MIGRATION_BUSY_TEXT
@@ -330,8 +330,8 @@ R19 = sessions.MIGRATION_BUSY_TEXT
 R27 = state.BARRIER_BUSY_TEXT + " — nothing changed; retry in a moment"
 R25 = (
     "session {m8} is a legacy record (version {v}) and cannot hold a pending change; rerun "
-    "from outside with --its-exited after it exits (claude-multi lineup --session {rid} "
-    "--relaunch --its-exited {request}), or run claude-multi migrate first"
+    "from outside with --its-exited after it exits (charmer lineup --session {rid} "
+    "--relaunch --its-exited {request}), or run charmer migrate first"
 )
 
 RELOAD_LINES = (
@@ -348,8 +348,8 @@ NEXT_RELOAD = (
 )
 NEXT_RELOAD_AND_MODEL = "Next: /reload-plugins, then /model (press s) — or resume the session."
 NEXT_LEAD_NOW = "lead: {label} — now with /model {row} (press s), or at the next resume"
-NEXT_LEAD_RESUME = "lead: {label} — at the next resume: claude-multi -r {mid}"
-NEXT_RESUME = "Exit the session, then run: claude-multi -r {mid}"
+NEXT_LEAD_RESUME = "lead: {label} — at the next resume: charmer -r {mid}"
+NEXT_RESUME = "Exit the session, then run: charmer -r {mid}"
 NEXT_RECORDED = "recorded; applies at the next resume"
 NEXT_NONE = "no change"
 
@@ -400,7 +400,7 @@ REASON_LEAD_NEEDS_AGENTS = (
 )
 REASON_FENCE_DIGEST = (
     "this session's launch-time files (model fence, picker, model, env or "
-    "lead-set.json) changed after launch (claude-multi doctor --repair?); the running "
+    "lead-set.json) changed after launch (charmer doctor --repair?); the running "
     "process still enforces its launch-time fence, so agent changes need a relaunch"
 )
 REASON_FENCE_GAP = (
@@ -413,10 +413,10 @@ REASON_T2_AGENT = (
 )
 REASON_FORCED = "requested (--relaunch)"
 REASON_LEAD_SET_UNREADABLE = (
-    "the scope's lead-set.json is unreadable; run claude-multi doctor --repair {mid}"
+    "the scope's lead-set.json is unreadable; run charmer doctor --repair {mid}"
 )
 REASON_SETTINGS_UNREADABLE = (
-    "the scope's settings.json is unreadable; run claude-multi doctor --repair {mid}"
+    "the scope's settings.json is unreadable; run charmer doctor --repair {mid}"
 )
 LEAD_SWITCH_HINT = (
     "To switch the lead within the lead set without a relaunch, use /model (press s: "
@@ -424,7 +424,7 @@ LEAD_SWITCH_HINT = (
 )
 SHOW_2X_LINE = (
     "this session still runs a legacy scope; changes are recorded as pending and apply at "
-    "its next resume: claude-multi -r {mid}"
+    "its next resume: charmer -r {mid}"
 )
 # pending.reasons items are schema-bounded (160 characters, at most 16).
 _PENDING_REASON_MAX = 160
@@ -443,8 +443,8 @@ _SESSION_ENV = "CLAUDE_CODE_SESSION_ID"
 _INSIDE_ENV = ("CLAUDE_MULTI_MANAGED_ID", "CLAUDE_MULTI_SESSION_ID")  # T:85-86 sentinels
 
 
-class LineupRefusal(errors.ClaudeMultiError):
-    """A refused request; ``str(exc)`` is the text without the ``claude-multi: `` prefix."""
+class LineupRefusal(errors.CharmerError):
+    """A refused request; ``str(exc)`` is the text without the ``charmer: `` prefix."""
 
 
 # ------------------------------------------------------------ §7.1 parse
@@ -611,7 +611,7 @@ def _split_element(element: str) -> list[str]:
 
 
 def parse_cli(argv: Sequence[str], environ: Mapping[str, str]) -> LineupArgs:
-    """``claude-multi lineup`` argv (the tail after ``lineup``; §7.1 rules 1-4).
+    """``charmer lineup`` argv (the tail after ``lineup``; §7.1 rules 1-4).
 
     Skill mode (``--session`` given) takes the session per rules 2a-2d
     (an empty ``${CLAUDE_SESSION_ID}`` expansion falls back to
@@ -787,7 +787,7 @@ def _record_eff(record: Mapping[str, Any]) -> settings_mod.Effective:
         mid = sessions.managed_id(dict(record))
         raise LineupRefusal(
             f"session {_m8(mid)}: its Settings snapshot is unreadable ({exc}); resume it "
-            f"once (claude-multi -r {mid})"
+            f"once (charmer -r {mid})"
         ) from exc
 
 
@@ -2086,7 +2086,7 @@ def _extra_lines(
     elif effort_only and target is not None:
         lines.append(
             f"lead effort {record['applied']['lead']['effort']} → {target['effort']} applies "
-            f"at the next resume (claude-multi -r {mid})"
+            f"at the next resume (charmer -r {mid})"
         )
     return lines
 
@@ -2113,7 +2113,7 @@ def show_text(runtime: Any, record: Mapping[str, Any]) -> str:
         key, _selector = sessions.lead_identity(dict(record))
         summary = sessions.record_summary(dict(record))
         lines = [
-            f"claude-multi · legacy record (version {record.get('version')}) · "
+            f"charmer · legacy record (version {record.get('version')}) · "
             f"{summary.profile_label} · lead {key}",
             SHOW_2X_LINE.format(mid=mid),
             *profiles_block(runtime, lcat, current=None),
@@ -2175,7 +2175,7 @@ def show_text(runtime: Any, record: Mapping[str, Any]) -> str:
     else:
         lead = record["applied"]["lead"]
         lines = [
-            f"claude-multi · {header} · lineup gen {generation or '-'} · lead "
+            f"charmer · {header} · lineup gen {generation or '-'} · lead "
             f"{_lead_label(lcat, lead['key'], lead['effort'])}"
         ]
         lines += [f"! {error}" for error in errors]
@@ -2183,11 +2183,11 @@ def show_text(runtime: Any, record: Mapping[str, Any]) -> str:
             reasons = "; ".join(record["pending"].get("reasons") or ())
             lines.append(
                 f"pending relaunch change: {reasons} — applies at the next resume "
-                f"(claude-multi -r {mid})"
+                f"(charmer -r {mid})"
             )
         if needs_choice:
             lines.append(
-                f"needs a lead choice: {needs_choice} — claude-multi -r {mid} (interactive) "
+                f"needs a lead choice: {needs_choice} — charmer -r {mid} (interactive) "
                 "or /cm profile <name>"
             )
         for line in drift:
@@ -2238,7 +2238,7 @@ PROVIDER_ERRORS_REST = "  none observed for {providers}"
 # are never listed into the row, so none can be cut into a command.
 PROVIDER_ERRORS_FALLBACK = "/cm fallback <provider> (see /cm profiles)"
 PROVIDER_ERRORS_UNAVAILABLE = ("provider errors: unavailable — the gateway's log cannot be read here, so "
-                               "nothing is counted (claude-multi doctor checks the gateway)")
+                               "nothing is counted (charmer doctor checks the gateway)")
 
 
 def _log_coverage(events: Any) -> str:
@@ -2387,7 +2387,7 @@ def profiles_block(runtime: Any, lcat: Any, *, current: str | None) -> list[str]
         try:
             document = runtime.profiles.load(name)
         except profile.ProfileError:
-            lines.append(f"{mark} {name:<{width}}  (unreadable; claude-multi doctor)")
+            lines.append(f"{mark} {name:<{width}}  (unreadable; charmer doctor)")
             continue
         lead = _spec_label(lcat, document.get("lead"), bindings)
         purpose = _one_line_purpose(document.get("description"))
@@ -2440,7 +2440,7 @@ def review_text(runtime: Any, record: Mapping[str, Any], request: Request) -> st
     lead_row = next((row for row in lineup.routing.rows if row.author == profile.LEAD_ROLE), None)
     bound = [rid for rid in profile.REVIEWER_IDS if rid in lineup.agents]
     lines = [
-        f"claude-multi · /cm review {stakes} · lineup gen {record['lineup_generation']} · "
+        f"charmer · /cm review {stakes} · lineup gen {record['lineup_generation']} · "
         f"range: {request.range or 'working tree against HEAD'}",
         "Review routing (this session's lineup.md):",
         *routing_rows(lineup),
@@ -2576,7 +2576,7 @@ def apply(
 
     if args.request.verb == "quota":
         if quota_text is None:
-            raise LineupRefusal("lineup: quota is not available on this surface; run claude-multi quota")
+            raise LineupRefusal("lineup: quota is not available on this surface; run charmer quota")
         code, text = quota_text()
         return ApplyResult(text, 0 if args.skill_mode else code)  # skill mode exits 0
     store = runtime.session_store
@@ -2785,7 +2785,7 @@ def _on_saved_in_phase(
             if not apply_live and not served:
                 return Decision(
                     "line",
-                    text=f"● {where}: not applied — apply with: claude-multi lineup --session {rid} follow",
+                    text=f"● {where}: not applied — apply with: charmer lineup --session {rid} follow",
                 )
             try:
                 decision = decide_locked(
@@ -2816,7 +2816,7 @@ def _on_saved_in_phase(
                     "written",
                     text=(
                         f"● {where}: relaunch needed ({'; '.join(decision.reasons)}); recorded as "
-                        f"pending — exit it, then claude-multi -r {mid}"
+                        f"pending — exit it, then charmer -r {mid}"
                     ),
                 )
             if decision.kind == "record":
@@ -2855,7 +2855,7 @@ def _one_line(text: str) -> str:
 # them to the lineup they run (doctor names them meanwhile).
 MIGRATION_BUSY_STATE = "migration or restore in progress"
 REMOVED_BUSY = ("? {state}; not updated now — they keep their lineup and are pinned at their "
-                "next resume (claude-multi doctor lists them)")
+                "next resume (charmer doctor lists them)")
 
 
 def on_removed(

@@ -133,7 +133,7 @@ class AttemptTests(unittest.TestCase):
         reason = probe.network_isolation_available()
         if reason is not None:
             boundary("BOUNDARY: " + reason)
-        self.root = Path(tempfile.mkdtemp(prefix="claude-multi-qualify-gw-"))
+        self.root = Path(tempfile.mkdtemp(prefix="charmer-qualify-gw-"))
         os.chmod(self.root, 0o700)
         self.process: subprocess.Popen | None = None
         self.upstream: probe.UnixHTTPServer | None = None

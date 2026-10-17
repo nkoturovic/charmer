@@ -56,7 +56,7 @@ class DocumentTests(_Home):
             "privileged port": {**good, "port": 80},
             "port too large": {**good, "port": 70000},
             "backend": {**good, "backend": "launchd"},
-            "unit without the service backend": {**good, "unit": "claude-multi-gateway"},
+            "unit without the service backend": {**good, "unit": "charmer-gateway"},
             "unit shape": {**good, "backend": "systemd", "unit": "../evil"},
             "not an object": [good],
         }
@@ -73,7 +73,7 @@ class DocumentTests(_Home):
         self.assertIsNone(endpoint.read_config(self.home))
         config = endpoint.EndpointConfig(port=18320)
         path = endpoint.write_config(self.home, config)
-        self.assertEqual(path, self.home / ".config/claude-multi/endpoint.json")
+        self.assertEqual(path, self.home / ".config/charmer/endpoint.json")
         self.assertEqual(path.stat().st_mode & 0o777, 0o600)
         self.assertEqual(path.parent.stat().st_mode & 0o777, 0o700)
         self.assertEqual(endpoint.read_config(self.home), config)
@@ -156,8 +156,8 @@ class PortSelectionTests(_Home):
         self.assertEqual(endpoint.ensure_config(self.home, probe=lambda _p: self.fail("probe")), config)
         other = self.root / "other-home"
         other.mkdir(mode=0o700)
-        state.ensure_private_dir(other / ".config" / "claude-multi")
-        state.atomic_write(other / ".config/claude-multi/api-key", b"x" * 64 + b"\n")
+        state.ensure_private_dir(other / ".config" / "charmer")
+        state.atomic_write(other / ".config/charmer/api-key", b"x" * 64 + b"\n")
         self.assertTrue(endpoint.existing_install(other))
         self.assertIsNone(endpoint.ensure_config(other, probe=lambda _p: self.fail("probe")))
         self.assertFalse(endpoint.endpoint_path(other).exists())
@@ -199,7 +199,7 @@ class ConsumerTests(_Home):
             "CLAUDE_MULTI_ASSETS": str(FIXTURE_ROOT),
         }
         (self.root / "project").mkdir()
-        token_dir = state.ensure_private_dir(self.home / ".config" / "claude-multi")
+        token_dir = state.ensure_private_dir(self.home / ".config" / "charmer")
         state.atomic_write(token_dir / "api-key", (FIXTURE_GATEWAY_TOKEN + "\n").encode("ascii"))
 
     def runtime(self, **kwargs) -> cli.Runtime:
@@ -252,11 +252,11 @@ class ConsumerTests(_Home):
             proxy.cmd_init(["--prepare-start"], environ=env, models_get=lambda *_a: (200, set()),
                            listener_observer=lambda _b: service.OwnerVerdict("none", "fixture"),
                            pid_get=lambda **_k: (None, False))
-        self.assertTrue(proxy._prepared_config(self.home, Path(self.env["XDG_STATE_HOME"]) / "claude-multi", env))
+        self.assertTrue(proxy._prepared_config(self.home, Path(self.env["XDG_STATE_HOME"]) / "charmer", env))
         # Moving the port after the preparation makes it stale for run --prepared.
         endpoint.write_config(self.home, endpoint.EndpointConfig(port=18331))
         with self.assertRaisesRegex(proxy.ProxyError, "preparation is absent or stale"):
-            proxy._prepared_config(self.home, Path(self.env["XDG_STATE_HOME"]) / "claude-multi", env)
+            proxy._prepared_config(self.home, Path(self.env["XDG_STATE_HOME"]) / "charmer", env)
         receipt = strict_json.loads(state.read_private(proxy.config_dir(self.home) / proxy.PREPARED_STAMP))
         self.assertIn(endpoint.ENDPOINT_FILE, receipt["files"])
 
@@ -327,7 +327,7 @@ class OutboundProxyTests(ConsumerTests):
         self.assertIn("credentials are never allowed", out + err)
 
     def test_a_new_install_takes_a_new_port_with_its_proxy(self) -> None:
-        (self.home / ".config/claude-multi/api-key").unlink()
+        (self.home / ".config/charmer/api-key").unlink()
         config = endpoint.set_proxy(self.home, self.URL, probe=lambda port: port == 18320)
         self.assertEqual((config.port, config.proxy_url), (18320, self.URL))
 

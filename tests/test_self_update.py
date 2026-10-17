@@ -60,7 +60,7 @@ def roll_back(root: Path, **seams) -> su.RolledBack:
 
 class SelfUpdateTestCase(unittest.TestCase):
     def setUp(self) -> None:
-        self.tmp = Path(tempfile.mkdtemp(prefix="claude-multi-update-"))
+        self.tmp = Path(tempfile.mkdtemp(prefix="charmer-update-"))
         self.addCleanup(shutil.rmtree, self.tmp, True)
         self.root = self.tmp / "install"
         self.state = self.tmp / "state"
@@ -77,7 +77,7 @@ class SelfUpdateTestCase(unittest.TestCase):
         versions.mkdir(parents=True, exist_ok=True)
         with tarfile.open(release.asset()) as tar:
             tar.extractall(versions, filter="data")
-        (versions / f"claude-multi-{release.version}-linux-x86_64").rename(versions / release.version)
+        (versions / f"charmer-{release.version}-linux-x86_64").rename(versions / release.version)
         current = self.root / "current"
         if current.is_symlink():
             current.unlink()
@@ -127,12 +127,12 @@ class VersionAndStateTests(SelfUpdateTestCase):
 
     def test_install_root_is_under_the_data_root(self) -> None:
         self.assertEqual(su.install_root({"HOME": "/home/someone"}),
-                         Path("/home/someone/.local/share/claude-multi/install"))
+                         Path("/home/someone/.local/share/charmer/install"))
 
 
 class InstallationTests(SelfUpdateTestCase):
     def test_install_lock_creates_private_ancestors_under_permissive_umask(self) -> None:
-        root = self.tmp / ".local/share/claude-multi/install"
+        root = self.tmp / ".local/share/charmer/install"
         previous = os.umask(0o002)
         try:
             with su._InstallLock(root):
@@ -158,7 +158,7 @@ class InstallationTests(SelfUpdateTestCase):
 
     def test_damaged_layouts(self) -> None:
         self.root.mkdir()
-        (self.root / "current").symlink_to("/nix/store/x-claude-multi")
+        (self.root / "current").symlink_to("/nix/store/x-charmer")
         with self.assertRaisesRegex(su.UpdateError, "not at an installed version"):
             su.read_installation(self.root)
         (self.root / "current").unlink()
@@ -218,7 +218,7 @@ class CheckAndPlanTests(SelfUpdateTestCase):
         self.assertFalse(planned.rollback_blocked)
         self.assertEqual(planned.size, (self.tmp / "release-1.0.1" / planned.asset).stat().st_size)
         self.assertIn("only the launcher changes", planned.steps[-1])
-        self.assertIn("claude-multi update --rollback", planned.steps[1])
+        self.assertIn("charmer update --rollback", planned.steps[1])
 
     def test_plan_for_a_gateway_pin_and_state_change(self) -> None:
         planned = self._plan(self.release("1.1.0", gateway=GATEWAY_B, claude="9.9.9", state_format=5))
@@ -231,7 +231,7 @@ class CheckAndPlanTests(SelfUpdateTestCase):
         self.assertIn("downloaded", text)
         self.assertIn("before anything is switched", text)
         self.assertIn("rolling back to 1.0.0 is refused", text)
-        self.assertIn("claude-multi gateway restart", text)
+        self.assertIn("charmer gateway restart", text)
 
     def test_plan_refusals(self) -> None:
         older = self.release("0.9.0")
@@ -258,7 +258,7 @@ class ApplyTests(SelfUpdateTestCase):
         self.assertEqual(self.versions(), ["1.0.1", "1.1.0"])
         self.assertFalse((self.root / ".downloads").exists())
         self.assertFalse((self.root / ".lock").exists())
-        launcher = self.root / "current" / "bin" / "claude-multi"
+        launcher = self.root / "current" / "bin" / "charmer"
         self.assertIn("1.1.0", launcher.read_text())
 
     def test_the_persistence_hold_vetoes_a_gateway_change_only(self) -> None:
@@ -337,18 +337,18 @@ class ApplyTests(SelfUpdateTestCase):
     def test_unpack_refuses_entries_outside_the_bundle(self) -> None:
         archive = self.tmp / "evil.tar.gz"
         with tarfile.open(archive, "w:gz") as tar:
-            for name in ("claude-multi-1.0.1-linux-x86_64/MANIFEST.json", "evil"):
+            for name in ("charmer-1.0.1-linux-x86_64/MANIFEST.json", "evil"):
                 info = tarfile.TarInfo(name)
                 tar.addfile(info)
-        with self.assertRaisesRegex(su.UpdateError, "outside claude-multi-1.0.1-linux-x86_64/"):
-            su._unpack(archive, self.tmp / "staging", "claude-multi-1.0.1-linux-x86_64")
+        with self.assertRaisesRegex(su.UpdateError, "outside charmer-1.0.1-linux-x86_64/"):
+            su._unpack(archive, self.tmp / "staging", "charmer-1.0.1-linux-x86_64")
         link = self.tmp / "link.tar.gz"
         with tarfile.open(link, "w:gz") as tar:
-            info = tarfile.TarInfo("claude-multi-1.0.1-linux-x86_64/escape")
+            info = tarfile.TarInfo("charmer-1.0.1-linux-x86_64/escape")
             info.type, info.linkname = tarfile.SYMTYPE, "../../etc/passwd"
             tar.addfile(info)
         with self.assertRaisesRegex(su.UpdateError, "points outside"):
-            su._unpack(link, self.tmp / "staging2", "claude-multi-1.0.1-linux-x86_64")
+            su._unpack(link, self.tmp / "staging2", "charmer-1.0.1-linux-x86_64")
 
     def test_directory_transport_limits(self) -> None:
         release = self.release("1.0.1")
@@ -494,7 +494,7 @@ class SafetyTests(SelfUpdateTestCase):
         self.update_to(self.release("1.0.1"), acquire_pin=acquire)  # the same pin: nothing to acquire
         self.assertEqual(calls, [])
         self.update_to(self.release("1.1.0", claude="9.9.9"), acquire_pin=acquire)
-        self.assertEqual(calls, [("claude-multi-1.1.0-linux-x86_64", "1.1.0", "9.9.9")])
+        self.assertEqual(calls, [("charmer-1.1.0-linux-x86_64", "1.1.0", "9.9.9")])
 
         def unavailable(_bundle: Path, _release: su.Release) -> None:
             raise su.UpdateError("Claude Code 9.9.10 is not in place; nothing was changed")
@@ -664,7 +664,7 @@ class InstallerLayoutTests(SelfUpdateTestCase):
         installed = run("--from-dir", str(first.dir), "--allowed-signers", str(allowed), "--no-setup", "--no-modify-path")
         self.assertEqual(installed.returncode, 0, installed.stderr)
         root = su.install_root({"HOME": str(home)})
-        state_root = home / ".local/state/claude-multi"
+        state_root = home / ".local/state/charmer"
         installation = su.read_installation(root)
         self.assertEqual(installation.current.version, "1.0.0")
         second = FakeRelease(self.tmp / "r2", "1.0.1", gateway=GATEWAY_B)
@@ -673,9 +673,9 @@ class InstallerLayoutTests(SelfUpdateTestCase):
         result = su.check(installation, transport, su.signature_verifier(allowed.read_text()))
         planned = su.plan(installation, result.release, state=su.state_version(state_root))
         su.apply(installation, result.release, planned, transport, state_root=state_root, **SAFE)
-        launcher = home / ".local/bin/claude-multi"
+        launcher = home / ".local/bin/charmer"
         version = subprocess.run([str(launcher)], env=env, capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL).stdout.strip()
-        self.assertEqual(version, "claude-multi 1.0.1")
+        self.assertEqual(version, "charmer 1.0.1")
         rolled = run("--rollback")
         self.assertEqual(rolled.returncode, 0, rolled.stderr)
         after = su.read_installation(root)

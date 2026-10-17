@@ -1,4 +1,4 @@
-"""claude-multi test package.
+"""charmer test package.
 
 Importing it arms the always-on live-gateway connect tripwire
 (``tests/_tripwire.py``) for the whole test process: any connect

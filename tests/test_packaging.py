@@ -1,4 +1,4 @@
-"""Source-level packaging and cutover assertions for claude-multi v2.
+"""Source-level packaging and cutover assertions for charmer v2.
 
 The repository-layout assertions need ``flake.nix``/``flake.lock``, so they
 skip with an explicit boundary inside the Nix sandbox test derivation, whose
@@ -31,7 +31,7 @@ FLAKE_NIX = FLAKE_REPO / "flake.nix" if FLAKE_REPO else None
 
 
 REMOVED_IDENTIFIERS = (
-    "claude-multi-plugin",
+    "charmer-plugin",
     "claudeMultiPlugin",
     "claudeMultiLauncher",
     "claudeMultiProxy",
@@ -45,14 +45,14 @@ REMOVED_IDENTIFIERS = (
     "kimi-specialist",
     "gpt55-reviewer",
     "opus-reviewer",
-    "claude-multi:orchestrator",
+    "charmer:orchestrator",
 )
 
 REMOVED_ALIASES = (
-    "claude-multi-fable-5",
-    "claude-multi-sol-high",
-    "claude-multi-sol-xhigh",
-    "claude-multi-gpt55-high",
+    "charmer-fable-5",
+    "charmer-sol-high",
+    "charmer-sol-xhigh",
+    "charmer-gpt55-high",
 )
 
 
@@ -331,10 +331,10 @@ class KeyedAuditInvariantTests(unittest.TestCase):
 
 class EntryPointTests(unittest.TestCase):
     def test_source_launcher_version_matches_launcher_version(self) -> None:
-        # The one-model session is `claude-multi direct`; no separate
+        # The one-model session is `charmer direct`; no separate
         # launcher, in a checkout or installed.
         self.assertFalse((REPO_ROOT / "bin" / "claude-gateway").exists())
-        gateway = REPO_ROOT / "bin" / "claude-multi"
+        gateway = REPO_ROOT / "bin" / "charmer"
         if not gateway.is_file():
             self.skipTest("boundary: source entrypoints are absent in sandbox package tree")
         expected = json.loads((RESOURCES_ROOT / "version.json").read_text())[
@@ -350,7 +350,7 @@ class EntryPointTests(unittest.TestCase):
             check=False,
         )
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertTrue(result.stdout.startswith(f"claude-multi {expected} (catalog "), result.stdout)
+        self.assertTrue(result.stdout.startswith(f"charmer {expected} (catalog "), result.stdout)
         from charmer import identity
 
         self.assertEqual(result.stdout.strip(), identity.version_line())
@@ -368,7 +368,7 @@ class EntryPointTests(unittest.TestCase):
 
         # The same full release identity as the launchers print.
         self.assertEqual(result.stdout.strip(), identity.version_line())
-        self.assertTrue(result.stdout.startswith(f"claude-multi {cli._pkg_version} (catalog "), result.stdout)
+        self.assertTrue(result.stdout.startswith(f"charmer {cli._pkg_version} (catalog "), result.stdout)
 
 
 class PackageSourceTests(unittest.TestCase):
@@ -386,7 +386,7 @@ class PackageSourceTests(unittest.TestCase):
         self.assertIn("dataFiles = pyproject.tool.setuptools.data-files;", text)
         self.assertIn("scripts = builtins.attrNames pyproject.project.scripts;", text)
         self.assertIn("installedPaths = [ packageRoot ] ++ documents;", text)
-        for literal in ('"bin"', "docs/USAGE.md", "docs/CHEATSHEET.md", "docs/STANDALONE.md", "share/claude-multi/src"):
+        for literal in ('"bin"', "docs/USAGE.md", "docs/CHEATSHEET.md", "docs/STANDALONE.md", "share/charmer/src"):
             self.assertNotIn(literal, text)
         phase = text.split("installPhase = ''", 1)[1].split("\n  '';", 1)[0]
         self.assertIn("cp -r ${packageRoot}/charmer $out/${packageDir}", phase)
@@ -424,7 +424,7 @@ class PackageSourceTests(unittest.TestCase):
         if FLAKE_NIX is not None:
             flake = FLAKE_NIX.read_text()
             self.assertIn("pkgs.callPackage ./nix/package.nix", flake)
-            self.assertIn("claude-multi = packageFor pkgs cliProxyApi;", flake)
+            self.assertIn("charmer = packageFor pkgs cliProxyApi;", flake)
             self.assertNotIn("builtins.getEnv", flake)
 
     def test_every_public_launcher_gets_one_wrapper(self) -> None:
@@ -436,7 +436,7 @@ class PackageSourceTests(unittest.TestCase):
         self.assertTrue(set(scripts) <= set(entrypoints.NAMES), sorted(scripts))
         self.assertNotIn("claude-gateway", scripts)
         text = (NIX_DIR / "package.nix").read_text()
-        self.assertIn('proxyScript = "claude-multi-proxy";', text)
+        self.assertIn('proxyScript = "charmer-proxy";', text)
         # The wrappers are the manifest's launchers, each a console script.
         self.assertIn("launchers = (builtins.fromJSON (builtins.readFile ../packaging/product.json)).launchers;",
                       text)
@@ -523,7 +523,7 @@ class ManagementPinWiringTests(unittest.TestCase):
         self.assertIn("builtins.toJSON cliProxyApiContract == builtins.readFile "
                       "../src/charmer/data/gateway-contract.json", package)
         self.assertIn("assert contractChecked;", package)
-        self.assertNotIn("share/claude-multi/gateway-contract.json", package)
+        self.assertNotIn("share/charmer/gateway-contract.json", package)
         # The manifest Nix would produce parses, in the applied order.
         names = admitted_names()
         root = PATCH_DIR
@@ -561,7 +561,7 @@ class ManagementPinWiringTests(unittest.TestCase):
         package = os.environ.get("package")
         if not package:
             self.skipTest("boundary: built standalone wrapper supplied by the Nix sandbox gate")
-        wrapper = Path(package) / "bin" / "claude-multi-proxy"
+        wrapper = Path(package) / "bin" / "charmer-proxy"
         self.assertTrue(wrapper.is_file())
         bash = shutil.which("bash")
         self.assertIsNotNone(bash)
@@ -598,7 +598,7 @@ class ManagementPinWiringTests(unittest.TestCase):
         self.assertIn("channelFlag = ''--set CLAUDE_MULTI_CHANNEL nix'';", text)
         phase = text.split("installPhase = ''", 1)[1]
         wrappers = phase.count("makeWrapper ${python}/bin/python3")
-        self.assertEqual(wrappers, 2)  # the loop over the launcher scripts and claude-multi-proxy
+        self.assertEqual(wrappers, 2)  # the loop over the launcher scripts and charmer-proxy
         self.assertEqual(phase.count("${channelFlag}"), wrappers)
         self.assertNotIn("CLAUDE_MULTI_CHANNEL", phase)
         from charmer import management
@@ -715,28 +715,28 @@ class ModuleWiringTests(unittest.TestCase):
         # is linked at a root-relative path the service install compares.
         self.assertIn("src", installed_paths())
         self.assertTrue((RESOURCES_ROOT / "gateway-unit.json").is_file())
-        self.assertIn('ln -s "${cliProxyApiBin}" $out/libexec/claude-multi/cli-proxy-api', package)
+        self.assertIn('ln -s "${cliProxyApiBin}" $out/libexec/charmer/cli-proxy-api', package)
         self.assertNotIn("plugin", text.lower())
 
     def test_package_nix_installs_gateway_and_management_bins(self) -> None:
         text = (NIX_DIR / "package.nix").read_text()
         # The commands come from pyproject.toml's console scripts (no
-        # one-model alias: `claude-multi direct` covers it).
+        # one-model alias: `charmer direct` covers it).
         self.assertEqual(sorted(pyproject()["project"]["scripts"]),
-                         ["claude-multi", "claude-multi-dev", "claude-multi-proxy"])
+                         ["charmer", "charmer-dev", "charmer-proxy"])
         self.assertIn("scripts = builtins.attrNames pyproject.project.scripts;", text)
         # The resources travel inside the Python package; the wrappers name
         # that resource directory (an inherited override never applies).
         self.assertIn('resources = "${packageDir}/data";', text)
         self.assertEqual(text.count('--set CLAUDE_MULTI_ASSETS "$out/${resources}"'), 2)
-        self.assertEqual(text.count('--set CLAUDE_MULTI_HOOK_COMMAND "$out/bin/claude-multi"'), 1)
+        self.assertEqual(text.count('--set CLAUDE_MULTI_HOOK_COMMAND "$out/bin/charmer"'), 1)
         self.assertIn("CLAUDE_MULTI_PROXY_BIN", text)
         self.assertIn("../src/charmer/data/version.json", text)
         # The registry snapshot is checked in under the resources; the build
         # compares it with the pinned source (no second, generated copy).
         self.assertIn("cliProxyApiRegistry ? null", text)
         self.assertIn('"$out/${resources}/registry/$name"', text)
-        self.assertNotIn("$out/share/claude-multi/registry", text)
+        self.assertNotIn("$out/share/charmer/registry", text)
         for name in ("models.json", "codex_client_models.json"):
             self.assertIn(name, text)
             self.assertTrue((RESOURCES_ROOT / "registry" / name).is_file())
@@ -758,7 +758,7 @@ class ModuleWiringTests(unittest.TestCase):
     def test_flake_checks_wiring(self) -> None:
         text = FLAKE_NIX.read_text()
         self.assertIn("checks", text)
-        self.assertIn("x86_64-linux.claude-multi", text)
+        self.assertIn("x86_64-linux.charmer", text)
         self.assertIn("tests/default.nix", text)
         # The flake check IS tests/default.nix (imported, never copied).
         self.assertIn("import ./tests/default.nix", text)
@@ -1037,7 +1037,7 @@ class GatewayCheckWiringTests(unittest.TestCase):
     def test_separate_gateway_check_uses_shared_derivation(self) -> None:
         text = FLAKE_NIX.read_text()
         for literal in (
-            "x86_64-linux.claude-multi-gateway",
+            "x86_64-linux.charmer-gateway",
             "import ./tests/gateway-check.nix",
             "import ./nix/gateway.nix",
             "import ./tests/default.nix",
@@ -1076,7 +1076,7 @@ class CutoverTests(unittest.TestCase):
             "nix/package.nix",
             "src/charmer/data/gateway-unit.json",
             "src/charmer/proxy.py",
-            "bin/claude-multi-proxy",
+            "bin/charmer-proxy",
             "README.md",
         ):
             with self.subTest(path=relative):
@@ -1115,8 +1115,8 @@ class CutoverTests(unittest.TestCase):
         for retained in (
             "claude-fable-5",
             "claude-opus-4-8",
-            "claude-multi-kimi-k3",
-            "claude-multi-opus-4-8",
+            "charmer-kimi-k3",
+            "charmer-opus-4-8",
             "gpt-multi-sol-high",
             "gpt-multi-sol-xhigh",
             "gpt-multi-gpt55-high",

@@ -112,18 +112,18 @@ class ResolutionTests(DefaultCase):
         self.assertEqual(choice.notice, "! your default profile mine is not connected here (needs apply); "
                                         "using claude — P picks another")
         self.assertEqual(choice.notice_line, "! your default profile mine is not connected here (needs apply); "
-                                             "using claude — claude-multi --profile NAME")
+                                             "using claude — charmer --profile NAME")
         choices.update(self.runtime.environ, default_profile="gone")
         choice = self.resolve()
         self.assertEqual(choice.notice, "! your default profile gone no longer exists; using claude — P → D sets another")
         self.assertEqual(choice.notice_line, "! your default profile gone no longer exists; using claude — "
-                                             "claude-multi profile default NAME")
+                                             "charmer profile default NAME")
         state.atomic_write(self.runtime.profiles.root / "mine.json", b"{ broken")
         choices.update(self.runtime.environ, default_profile="mine")
         choice = self.resolve()
         self.assertEqual(choice.notice, "! your default profile mine cannot be loaded; using claude — P shows why")
         self.assertEqual(choice.notice_line, "! your default profile mine cannot be loaded; using claude — "
-                                             "claude-multi profile list")
+                                             "charmer profile list")
         # Nothing connected at all: the skipped default is still what is named.
         self.ready = set()
         self.assertEqual(self.resolve().notice,
@@ -154,14 +154,14 @@ class ResolutionTests(DefaultCase):
 
     def test_the_fallback_notices(self) -> None:
         self.assertEqual(defaults.NONE_CONNECTED, "! nothing is connected yet — W opens Get started")
-        self.assertEqual(defaults.line_form(defaults.NONE_CONNECTED), "! nothing is connected yet — claude-multi setup")
+        self.assertEqual(defaults.line_form(defaults.NONE_CONNECTED), "! nothing is connected yet — charmer setup")
         self.any_line_ready = True
         choice = self.resolve()
         self.assertEqual(choice.notice, f"! no profile is connected here (needs apply); using {catalog.DEFAULT_SEED} "
                                         "— P picks another, or P → N builds one from your connected providers")
         self.assertEqual(choice.notice_line,
                          f"! no profile is connected here (needs apply); using {catalog.DEFAULT_SEED} — "
-                         "claude-multi --profile NAME, or claude-multi profile starter --apply")
+                         "charmer --profile NAME, or charmer profile starter --apply")
         self.assertEqual(defaults.REASON_TEXT["fallback"], "nothing is connected")
 
     def test_the_selection_wrapper_keeps_the_decision(self) -> None:
@@ -185,14 +185,14 @@ class UnloadableTargetTests(DefaultCase):
         error = self.runtime.selection_load_error
         self.assertIsInstance(error, profile.ProfileLoadError)
         self.assertEqual(error.line, 3)
-        self.assertEqual(error.remedy, "claude-multi profile edit mine (or rm; a copy is kept)")
+        self.assertEqual(error.remedy, "charmer profile edit mine (or rm; a copy is kept)")
         with self.assertRaises(Exception) as caught:
             self.runtime.prepare(target, action="fresh", passthrough=[])
         self.assertIn("cannot load profile 'mine'", str(caught.exception))
         # Named explicitly, it keeps refusing, now with the path, line and fix.
         with self.assertRaises(profile.ProfileLoadError) as caught:
             selection._fresh_target(self.runtime, self.args("mine"), io.StringIO(), read_only=False)
-        self.assertEqual(caught.exception.remedy, "claude-multi profile edit mine (or rm; a copy is kept)")
+        self.assertEqual(caught.exception.remedy, "charmer profile edit mine (or rm; a copy is kept)")
 
 
 class ChoiceOrderTests(DefaultCase):
@@ -249,7 +249,7 @@ class DefaultChoiceTests(DefaultCase):
         self.assertIsNone(choices.read(self.runtime.environ).get("default_profile"))
         with self.assertRaises(model.Refused) as caught:
             defaults.set_default_plan(self.runtime, "nobody")
-        self.assertEqual(str(caught.exception), "profile 'nobody' does not exist — claude-multi profile list")
+        self.assertEqual(str(caught.exception), "profile 'nobody' does not exist — charmer profile list")
         state.atomic_write(self.runtime.profiles.root / "mine.json", b"{")
         with self.assertRaises(model.Refused):
             defaults.set_default_plan(self.runtime, "mine")
@@ -330,7 +330,7 @@ class DefaultChoiceTests(DefaultCase):
                          (0, "default profile: mine (set by you)\nhere: mine (your default)\n", ""))
         self.assertEqual(run(name=None, clear=True), (0, "The default profile is automatic again.\n", ""))
         self.assertEqual(run(name="nobody", clear=False),
-                         (1, "", "claude-multi: profile 'nobody' does not exist — claude-multi profile list\n"))
+                         (1, "", "charmer: profile 'nobody' does not exist — charmer profile list\n"))
 
 
 class SpendNoteTests(test_cli.CLITestCase):

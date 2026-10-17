@@ -56,7 +56,7 @@ LAN_ALIAS = "custom-lan-model"
 
 
 def barrier_lock_path(home: Path | str) -> Path:
-    return Path(home) / ".config" / "claude-multi" / "served-change.lock"
+    return Path(home) / ".config" / "charmer" / "served-change.lock"
 
 
 def barrier_free(home: Path | str) -> bool:
@@ -81,7 +81,7 @@ def barrier_free(home: Path | str) -> bool:
 def foreign_barrier(home: Path | str):
     """The barrier held by "another process" (a separate descriptor)."""
 
-    directory = state.ensure_private_dir(Path(home) / ".config" / "claude-multi")
+    directory = state.ensure_private_dir(Path(home) / ".config" / "charmer")
     descriptor = os.open(directory / "served-change.lock", os.O_RDWR | os.O_CREAT | os.O_CLOEXEC, 0o600)
     try:
         fcntl.flock(descriptor, fcntl.LOCK_EX)
@@ -118,12 +118,12 @@ class PlannerTests(unittest.TestCase):
         identity = json.dumps({s: r.as_document() for s, r in routes.items()})
         for value in ("dummy-kimi-key", "a" * 64, "org-secret-value"):
             self.assertNotIn(value, identity)
-        kimi = routes["claude-multi-kimi-k3"]
+        kimi = routes["charmer-kimi-k3"]
         self.assertEqual((kimi.section, kimi.route, kimi.wire, kimi.auth_header, kimi.header_names),
                          (served_plan.SECTION_KEY, "https://api.kimi.com/coding", "k3", "x-api-key", ("X-Org",)))
         self.assertTrue(kimi.contract)
         self.assertEqual(routes["claude-opus-5"].section, served_plan.SECTION_OAUTH)
-        self.assertEqual(routes["claude-multi-qwen-flash-next"].route,
+        self.assertEqual(routes["charmer-qwen-flash-next"].route,
                          "llm-local http://llm-local.invalid:8010/v1")
         self.assertFalse(any(s.startswith(served_plan.SENTINEL_PREFIX) for s in routes))
         for broken in ("", "a:\n\tb: 1\n", "a: [1]\n", "- x\nb: 1\n", "a: b c\n"):
@@ -136,15 +136,15 @@ class PlannerTests(unittest.TestCase):
         changed["claude-api-key"][0]["models"][0]["name"] = "k3-turbo"
         plan = served_plan.build_plan(
             before, served_plan.routes_from_document(changed),
-            references=served_plan.References({"claude-multi-kimi-k3": frozenset({LIVE})}, frozenset({LIVE}),
-                                              slots={LIVE: {"claude-multi-kimi-k3": ("lead",)}}),
+            references=served_plan.References({"charmer-kimi-k3": frozenset({LIVE})}, frozenset({LIVE}),
+                                              slots={LIVE: {"charmer-kimi-k3": ("lead",)}}),
             state_root="/state", gateway="127.0.0.1:8317")
-        self.assertEqual([s for s, _o, _n in plan.retargeted], ["claude-multi-kimi-k3"])
+        self.assertEqual([s for s, _o, _n in plan.retargeted], ["charmer-kimi-k3"])
         self.assertEqual((plan.added, plan.removed), ((), ()))
         text = plan.text()
-        self.assertIn("Retargeted\n  claude-multi-kimi-k3: key route https://api.kimi.com/coding (x-api-key) · k3", text)
+        self.assertIn("Retargeted\n  charmer-kimi-k3: key route https://api.kimi.com/coding (x-api-key) · k3", text)
         self.assertIn("→ key route https://api.kimi.com/coding (x-api-key) · k3-turbo", text)
-        self.assertIn(f"Live session impact\n  {LIVE[:8]} lead: claude-multi-kimi-k3 retargets", text)
+        self.assertIn(f"Live session impact\n  {LIVE[:8]} lead: charmer-kimi-k3 retargets", text)
         self.assertEqual(plan.as_document()["retargeted"][0]["changed"], ["wire"])
         # The same selector, same wire, another effort contract: a retarget too.
         contract = self.document()
@@ -152,12 +152,12 @@ class PlannerTests(unittest.TestCase):
         plan = served_plan.build_plan(before, served_plan.routes_from_document(contract),
                                       references=served_plan.References({}, frozenset()),
                                       state_root="/state", gateway="g")
-        self.assertEqual([s for s, _o, _n in plan.retargeted], ["claude-multi-kimi-k3"])
+        self.assertEqual([s for s, _o, _n in plan.retargeted], ["charmer-kimi-k3"])
 
     def test_plan_digest_changes_on_input_or_reference_change(self) -> None:
         before = served_plan.routes_from_document(self.document())
         after = dict(before)
-        after.pop("claude-multi-qwen-flash-next")
+        after.pop("charmer-qwen-flash-next")
         refs = served_plan.References({}, frozenset())
 
         def digest(after_routes, references, **kwargs):
@@ -167,9 +167,9 @@ class PlannerTests(unittest.TestCase):
         first = digest(after, refs)
         self.assertEqual(first, digest(dict(after), served_plan.References({}, frozenset())))
         self.assertNotEqual(first, digest(before, refs))
-        holder = served_plan.References({"claude-multi-qwen-flash-next": frozenset({ENDED})}, frozenset())
+        holder = served_plan.References({"charmer-qwen-flash-next": frozenset({ENDED})}, frozenset())
         self.assertNotEqual(first, digest(after, holder))
-        live = served_plan.References({"claude-multi-qwen-flash-next": frozenset({ENDED})}, frozenset({ENDED}))
+        live = served_plan.References({"charmer-qwen-flash-next": frozenset({ENDED})}, frozenset({ENDED}))
         self.assertNotEqual(digest(after, holder), digest(after, live))
         self.assertNotEqual(first, digest(after, refs, inputs={"candidate": "other"}))
         self.assertNotEqual(first, digest(after, refs, authority_after={"line x": "admitted"}))
@@ -182,7 +182,7 @@ class PlannerTests(unittest.TestCase):
         state.atomic_write(sessions_dir / f"{ENDED}.json",
                            strict_json.canonical_file_bytes(lenient_record(ENDED, "claude-opus-5", event="end")))
         scope = state.ensure_private_dir(root / "scopes" / ENDED)
-        state.atomic_write(scope / "settings.json", b'{"availableModels": ["claude-multi-qwen-flash-next"]}')
+        state.atomic_write(scope / "settings.json", b'{"availableModels": ["charmer-qwen-flash-next"]}')
         os.chmod(scope / "settings.json", 0o644)  # group/other readable: refused as unsafe
         scan = continuity.scan_records(root)
         self.assertEqual(scan.fence_unreadable, (ENDED,))
@@ -190,7 +190,7 @@ class PlannerTests(unittest.TestCase):
         self.assertIn(f"unreadable scope fences {ENDED[:8]}", references.unknown)
         before = served_plan.routes_from_document(self.document())
         after = dict(before)
-        after.pop("claude-multi-qwen-flash-next")
+        after.pop("charmer-qwen-flash-next")
         plan = served_plan.build_plan(before, after, references=references, state_root=str(root), gateway="g")
         self.assertEqual(plan.coverage, "unknown")
         self.assertEqual(plan.refusal(), served_plan.UNKNOWN_IMPACT.format(reason=references.unknown))
@@ -215,9 +215,9 @@ class PlannerTests(unittest.TestCase):
         scope = state.ensure_private_dir(root / "scopes" / live)
         before = served_plan.routes_from_document(self.document())
         after = dict(before)
-        after.pop("claude-multi-qwen-flash-next")
-        for settings in (None, {"availableModels": "claude-multi-qwen-flash-next"},
-                         {"availableModels": ["claude-multi-qwen-flash-next", 7]}, {"model": None},
+        after.pop("charmer-qwen-flash-next")
+        for settings in (None, {"availableModels": "charmer-qwen-flash-next"},
+                         {"availableModels": ["charmer-qwen-flash-next", 7]}, {"model": None},
                          {"model": 7}, ["x"]):
             with self.subTest(settings=settings):
                 state.atomic_write(scope / "settings.json", strict_json.canonical_file_bytes(settings))
@@ -230,7 +230,7 @@ class PlannerTests(unittest.TestCase):
                 self.assertEqual(plan.coverage, "unknown")
                 self.assertIsNotNone(plan.refusal())
         # Documented compiled shapes (absent keys included) stay complete.
-        for settings in ({}, {"model": "claude-opus-5"}, {"availableModels": ["claude-multi-qwen-flash-next"]}):
+        for settings in ({}, {"model": "claude-opus-5"}, {"availableModels": ["charmer-qwen-flash-next"]}):
             with self.subTest(settings=settings):
                 state.atomic_write(scope / "settings.json", strict_json.canonical_file_bytes(settings))
                 scan = continuity.scan_records(root)
@@ -884,7 +884,7 @@ class ServedOperatorTests(test_cli.OperatorCommandCase):
         state.atomic_write(config, published.encode())
         code, out = self.run_cli(["plan"], interactive=False)
         self.assertEqual(code, 0, out)
-        self.assertIn("Retargeted\n  claude-multi-kimi-k3: key route https://api.kimi.com/coding (x-api-key) · k2",
+        self.assertIn("Retargeted\n  charmer-kimi-k3: key route https://api.kimi.com/coding (x-api-key) · k2",
                       out)
         self.assertIn("→ key route https://api.kimi.com/coding (x-api-key) · k3", out)
         self.assertEqual(config.read_text(), published)  # nothing written
@@ -1126,7 +1126,7 @@ class AdoptRootTests(test_cli.CLITestCase):
             code, _out = self.run_cli(["providers", "apply"], interactive=False)
         managed = continuity.read(home)["state_root"]
         self.assertEqual(managed, str(self.runtime.session_store.root))
-        new_root = self.root / "adopted-state" / "claude-multi"
+        new_root = self.root / "adopted-state" / "charmer"
         guard = mock.Mock()
         # A reference creator (a launch in its commit phase) holds the barrier:
         # the adoption waits, then refuses, writing nothing.
@@ -1165,7 +1165,7 @@ class AdoptRootTests(test_cli.CLITestCase):
             code, _out = self.run_cli(["providers", "apply"], interactive=False)
         old_root = self.runtime.session_store.root
         self.assertEqual(continuity.read(home)["state_root"], str(old_root))
-        new_root = self.root / "adopted-state" / "claude-multi"
+        new_root = self.root / "adopted-state" / "charmer"
         before = continuity.path(home).read_bytes()
         launched = old_root / "sessions" / f"{LIVE}.json"
 
@@ -1194,14 +1194,14 @@ class PlanCommandTests(test_cli.CLITestCase):
     def test_plan_via_main_with_foreign_hook_command_leaves_shims_byte_identical(self) -> None:
         env = dict(self.runtime.environ)
         env.update({"CLAUDE_MULTI_ASSETS": str(FIXTURE_ROOT),
-                    "CLAUDE_MULTI_HOOK_COMMAND": "/nix/store/aaaa-claude-multi-3.0.2/bin/claude-multi"})
+                    "CLAUDE_MULTI_HOOK_COMMAND": "/nix/store/aaaa-charmer-3.0.2/bin/charmer"})
         with mock.patch.dict(os.environ, env, clear=True):
             runtime = runtime_mod.Runtime(asset_root=FIXTURE_ROOT, environ=dict(env), cwd=self.root / "project",
                                           **self._runtime_seams())
             self.assertTrue(runtime._shims_refreshed)
         shims = {path: path.read_bytes() for path in (runtime.session_store.root / "bin").iterdir()}
         self.assertTrue(shims)
-        env["CLAUDE_MULTI_HOOK_COMMAND"] = "/nix/store/bbbb-claude-multi-3.1.0/bin/claude-multi"
+        env["CLAUDE_MULTI_HOOK_COMMAND"] = "/nix/store/bbbb-charmer-3.1.0/bin/charmer"
         state_tree = {path: path.read_bytes() for path in sorted(Path(env["XDG_STATE_HOME"]).rglob("*"))
                       if path.is_file()}
         output = io.StringIO()
@@ -1243,7 +1243,7 @@ class PlanCommandTests(test_cli.CLITestCase):
             plan_cmd.plan_application(self.runtime, "0" * 64, self.root / "candidate")
         code, out = self.run_cli_err(["plan", "--assets", str(self.root / "nothing")], interactive=False)
         self.assertEqual(code, 1)
-        self.assertIn("not a claude-multi package or asset root", out)
+        self.assertIn("not a charmer package or asset root", out)
 
 
 class PlanApplicationBoundaryTests(test_cli.CLITestCase):

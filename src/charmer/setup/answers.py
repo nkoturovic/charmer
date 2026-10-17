@@ -1,4 +1,4 @@
-"""``claude-multi setup --answers FILE``: a prepared setup.
+"""``charmer setup --answers FILE``: a prepared setup.
 
 The answers file names keys only by file (``api_key_file``), never by
 value; sign-ins and tests are refused (they need a person at the terminal).
@@ -299,7 +299,7 @@ def _planned_item(kind: str, subject: str, guarded: bool, verb: str, runtime: An
 
     try:
         plan = make(view)
-    except (model.SetupError, errors.ClaudeMultiError, OSError) as exc:
+    except (model.SetupError, errors.CharmerError, OSError) as exc:
         return _failing(kind, subject, guarded, (texts.ANSWERS_ITEM_HEAD.format(id=subject, what=kind),),
                         _problem(exc), verb)
     shown = reviewed(plan)
@@ -335,7 +335,7 @@ def _claude_item(runtime: Any, claude: Mapping[str, Any], progress: Callable[[st
     if allowed:
         try:
             reviewed_plan = acquire.download_plan(contract, runtime.environ, pin.host_platform())
-        except (errors.ClaudeMultiError, KeyError, ValueError) as exc:
+        except (errors.CharmerError, KeyError, ValueError) as exc:
             return _failing("claude", "claude", True, tuple(lines), _problem(exc), "setup --step claude")
         lines.append(texts.ANSWERS_CLAUDE_DOWNLOAD)
         lines.extend(f"  {line}" for line in reviewed_plan.lines(runtime.environ))
@@ -355,7 +355,7 @@ def _claude_item(runtime: Any, claude: Mapping[str, Any], progress: Callable[[st
     def run() -> model.Applied:
         outcome = external.acquire_claude(runtime, consent=consent, progress=progress, claude_from=claude_from)
         if outcome.path is None:
-            raise model.Refused(f"Claude Code {outcome.version} is not set up for claude-multi"
+            raise model.Refused(f"Claude Code {outcome.version} is not set up for charmer"
                                 + (f" ({outcome.notes[0]})" if outcome.notes else ""))
         return model.Applied("claude", "claude", "not-needed", (f"Claude Code {outcome.version}: {outcome.state}",))
 
@@ -552,7 +552,7 @@ def _keyed_providers(runtime: Any, document: Mapping[str, Any]) -> frozenset[str
         try:
             names = set(secret_store.check_key_file(secret_store.expand(keys_file, env), env))
             ctx = providers_cmd.operator_context(_projected_transports(runtime, document))
-        except (secret_store.SecretStoreError, errors.ClaudeMultiError, OSError):
+        except (secret_store.SecretStoreError, errors.CharmerError, OSError):
             names, ctx = set(), None
         if ctx is not None:
             chosen = dict(ctx.ledger.transport_choices) if ctx.ledger is not None else {}
@@ -590,7 +590,7 @@ def _profile_item(runtime: Any, profile: str, chain: _ChoicesChain,
                                                       assume_keys=assume_keys)
             written = _starter_digest(starter)
             default = defaults.planned_default_plan(runtime, name, written)
-        except (model.SetupError, errors.ClaudeMultiError, OSError, ValueError) as exc:
+        except (model.SetupError, errors.CharmerError, OSError, ValueError) as exc:
             return _failing("profile", "profile", False, (texts.ANSWERS_STARTER,), _problem(exc)), {}
         shown = reviewed(starter)
 
@@ -618,7 +618,7 @@ def _profile_item(runtime: Any, profile: str, chain: _ChoicesChain,
         return Item("profile", name, False, lines, run_starter), {name: written}
     try:
         chosen = defaults.set_default_plan(runtime, profile)
-    except (model.SetupError, errors.ClaudeMultiError, OSError) as exc:
+    except (model.SetupError, errors.CharmerError, OSError) as exc:
         return _failing("profile", profile, False, (texts.ANSWERS_PROFILE.format(name=profile),), _problem(exc)), {}
 
     def run() -> model.Applied:
@@ -648,7 +648,7 @@ def _default_item(runtime: Any, name: str | None, chain: _ChoicesChain, planned:
             plan = defaults.planned_default_plan(runtime, name, planned[name])
         else:
             plan = defaults.set_default_plan(runtime, name)
-    except (model.SetupError, errors.ClaudeMultiError, OSError) as exc:
+    except (model.SetupError, errors.CharmerError, OSError) as exc:
         return _failing("default", "default_profile", False, (head,), _problem(exc))
 
     def run() -> model.Applied:
@@ -671,7 +671,7 @@ def _known_providers(runtime: Any) -> frozenset[str]:
 
     try:
         ctx = providers_cmd.operator_context(runtime)
-    except (errors.ClaudeMultiError, OSError):
+    except (errors.CharmerError, OSError):
         return frozenset()
     return frozenset(ctx.docs["providers"]["providers"]) | frozenset(ctx.layer.providers)
 

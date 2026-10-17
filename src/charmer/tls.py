@@ -9,7 +9,7 @@ doctor reports):
    private CA bundle; the same variables OpenSSL reads, and the gateway
    receives them too: the on-demand gateway from the launcher's
    environment, the supervised service from its unit, which
-   ``claude-multi gateway service install`` writes with them, bound
+   ``charmer gateway service install`` writes with them, bound
    read-only; :func:`configured`).
 2. Otherwise the interpreter's default locations, when they exist.
 3. Otherwise the first system bundle found at a well-known path. The

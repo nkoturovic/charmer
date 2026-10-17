@@ -1,4 +1,4 @@
-"""``claude-multi setup`` in line mode: --status, the modes and their
+"""``charmer setup`` in line mode: --status, the modes and their
 usage errors, the steps, --keys-file and --answers, with their exit
 statuses (0 ok, 1 refused or not done, 2 usage, 3 declined, 130 cancelled)."""
 
@@ -67,7 +67,7 @@ class StatusTests(SetupCase):
         self.claude_copy(MISSING)
         code, out, _err = self.op(["setup", "--status"], tty=False)
         self.assertEqual(code, 1)
-        self.assertIn("Claude Code 2.1.0 not installed — claude-multi setup --step claude", out)
+        self.assertIn("Claude Code 2.1.0 not installed — charmer setup --step claude", out)
 
     def test_nothing_connected(self) -> None:
         state.atomic_write(self.secret_file, b"")
@@ -76,7 +76,7 @@ class StatusTests(SetupCase):
         self.served = set()
         code, out, _err = self.op(["setup", "--status"], tty=False)
         self.assertEqual(code, 1)
-        self.assertIn("nothing connected yet — claude-multi setup --step providers", out)
+        self.assertIn("nothing connected yet — charmer setup --step providers", out)
         self.assertIn("after a provider is connected", out)
         self.assertEqual(status.should_open(self.runtime, explicit=False), "providers")
         self.assertIsNone(status.should_open(self.runtime, explicit=True))
@@ -410,8 +410,8 @@ class AnswersTests(SetupCase):
         cases = {
             "secret": ({"version": 1, "providers": [{"id": "kimi", "api_key_file": token}]}, "looks like a key"),
             "sign-in": ({"version": 1, "providers": [{"id": "openai", "sign_in": True}]},
-                        "claude-multi providers sign-in openai"),
-            "test": ({"version": 1, "providers": [{"id": "kimi", "test": True}]}, "claude-multi providers test kimi"),
+                        "charmer providers sign-in openai"),
+            "test": ({"version": 1, "providers": [{"id": "kimi", "test": True}]}, "charmer providers test kimi"),
             "inline key": ({"version": 1, "providers": [{"id": "kimi", "api_key": "abc"}]}, "use api_key_file"),
             "relative": ({"version": 1, "providers": [{"id": "kimi", "api_key_file": "k.txt"}]}, "absolute path"),
             "schema": ({"version": 2}, "invalid"),

@@ -4,7 +4,7 @@
   "required": ["format", "version", "exported_by", "profiles", "bindings", "settings", "providers", "trust_requests"],
   "additionalProperties": false,
   "properties": {
-    "format": { "const": "claude-multi-operator-export" },
+    "format": { "const": "charmer-operator-export" },
     "version": { "const": 1 },
     "exported_by": {
       "type": "object",

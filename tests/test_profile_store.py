@@ -107,7 +107,7 @@ class StoreCase(unittest.TestCase):
             "HOME": str(self.tmp / "home"),
             "XDG_STATE_HOME": str(self.tmp / "state"),
         }
-        self.config_root = self.tmp / "home" / ".config" / "claude-multi"
+        self.config_root = self.tmp / "home" / ".config" / "charmer"
         self.bstore = profile.BindingStore(self.environ)
         self.pstore = profile.ProfileStore.for_catalog(_BUNDLE, self.environ)
 
@@ -718,7 +718,7 @@ class BindingStoreTests(StoreCase):
     def test_xdg_config_home_moves_the_file(self) -> None:
         environ = dict(self.environ, XDG_CONFIG_HOME=str(self.tmp / "xdg"))
         store = profile.BindingStore(environ)
-        self.assertEqual(store.path, self.tmp / "xdg" / "claude-multi" / "bindings.json")
+        self.assertEqual(store.path, self.tmp / "xdg" / "charmer" / "bindings.json")
         self.assertEqual(profile.bindings_path(environ), store.path)
 
 
@@ -849,7 +849,7 @@ class ProfileStoreTests(StoreCase):
         self.assertEqual(
             self.profile_error(lambda: self.pstore.load("x")),
             f"cannot load profile 'x': {shown}: version: unsupported profile version 1 "
-            "(profiles are v2; legacy compositions migrate with 'claude-multi profile migrate')",
+            "(profiles are v2; legacy compositions migrate with 'charmer profile migrate')",
         )
 
     def test_unreadable_files_are_load_errors(self) -> None:
@@ -934,7 +934,7 @@ class ProfileStoreTests(StoreCase):
         self.assertEqual(
             self.profile_error(lambda: self.pstore.delete("balanced")),
             "profile 'balanced' is a seed; edit it, or restore it with "
-            "'claude-multi profile reseed balanced'",
+            "'charmer profile reseed balanced'",
         )
         self.pstore.new(p3())
         self.assertTrue(self.pstore.delete("p3"))
@@ -1083,10 +1083,10 @@ class ProfileStoreTests(StoreCase):
     def test_xdg_config_home_moves_the_root(self) -> None:
         environ = dict(self.environ, XDG_CONFIG_HOME=str(self.tmp / "xdg"))
         store = profile.ProfileStore.for_catalog(_BUNDLE, environ)
-        self.assertEqual(store.root, self.tmp / "xdg" / "claude-multi" / "profiles")
+        self.assertEqual(store.root, self.tmp / "xdg" / "charmer" / "profiles")
         self.assertEqual(profile.profiles_dir(environ), store.root)
         store.new(p3())
-        self.assertTrue((self.tmp / "xdg" / "claude-multi" / "profiles" / "p3.json").is_file())
+        self.assertTrue((self.tmp / "xdg" / "charmer" / "profiles" / "p3.json").is_file())
         self.assertFalse((self.tmp / "home").exists())
 
 

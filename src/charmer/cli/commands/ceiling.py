@@ -1,4 +1,4 @@
-"""``claude-multi window-ceiling [VALUE | --reset]``: the context window ceiling.
+"""``charmer window-ceiling [VALUE | --reset]``: the context window ceiling.
 
 One ceiling governs the lead and every agent: a session's window is the
 smaller of it and the lead set's smallest provider bound. It lives in
@@ -23,7 +23,7 @@ EXIT_USAGE = 2
 
 
 def _refuse(message: str, remedy: str | None = None, *, code: int = 1) -> int:
-    sys.stderr.write(f"claude-multi: {termtext.visible_text(message)}\n")
+    sys.stderr.write(f"charmer: {termtext.visible_text(message)}\n")
     if remedy:
         sys.stderr.write(f"  fix: {termtext.visible_text(remedy)}\n")
     return code

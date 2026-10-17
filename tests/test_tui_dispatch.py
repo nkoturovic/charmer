@@ -68,7 +68,7 @@ class ResumeCardDispatchTests(test_screens_card._CardCase):
             result, _win = self.run_card(self.resume_card(prepared, update_hint=("1.0.0", "1.0.1")),
                                          ["u", ESC, ESC])
         self.assertIsNone(result)
-        self.assertEqual(shown[0][0], "Update claude-multi")
+        self.assertEqual(shown[0][0], "Update charmer")
         self.assertIn("Nothing was changed", " ".join(shown[0][1]))
         self.assertEqual(self.runtime.launches, [])
 
@@ -95,7 +95,7 @@ class ResumeCardDispatchTests(test_screens_card._CardCase):
             result, _win = self.run_card(screen, ["h", ESC])
         self.assertIsNone(result)
         collect.assert_called_once()
-        self.assertIn("claude-multi doctor\n", out.getvalue())
+        self.assertIn("charmer doctor\n", out.getvalue())
         self.assertIn(doctor_mod.DOCTOR_SUMMARY["ready"], out.getvalue())
         self.assertEqual(self.runtime.launches, [])
 
@@ -110,7 +110,7 @@ class _Service:
         self.installed: list[str] = []
 
     def status(self):
-        return types.SimpleNamespace(supported=None, name="claude-multi-gateway.service", installed=False,
+        return types.SimpleNamespace(supported=None, name="charmer-gateway.service", installed=False,
                                      foreign=False, stale=None)
 
     def install(self):
@@ -158,7 +158,7 @@ class GatewayDialogTests(test_gateway_doctor._GatewayDoctor):
         with mock.patch.object(type(self.runtime), "gateway_service", return_value=service):
             _message, win, _printed = self.dialog([ESC])
         self.assertIn("service: not installed (the gateway starts on demand)", win.frames[0])
-        self.assertIn("claude-multi gateway stop", win.frames[0])
+        self.assertIn("charmer gateway stop", win.frames[0])
         self.assertEqual(service.installed, [])
 
     def test_install_service_runs_the_service_install(self) -> None:
@@ -378,7 +378,7 @@ class ProvidersGatewayDispatchTests(_ProvidersCase):
         self.assertEqual(acted, [])
         dialog = next(frame for frame in win.frames if gateway_actions.TITLE in frame)
         self.assertIn(line, dialog)
-        self.assertIn("claude-multi gateway stop", dialog)
+        self.assertIn("charmer gateway stop", dialog)
 
 
 class ProviderEditFormTests(_ProvidersCase):
@@ -505,7 +505,7 @@ class ZeroModelProviderTests(_ProvidersCase):
         code, out, err = self.op(["providers", "set-key", pid, "--secret-file", str(key_file)])
         self.assertEqual(code, 0, err)
         self.assertIn(f"next: {pid} has no models yet", out)
-        self.assertIn(f"claude-multi discover {pid} --add WIRE", out)
+        self.assertIn(f"charmer discover {pid} --add WIRE", out)
 
 
 class AccountInventoryTests(_ProvidersCase):

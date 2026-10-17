@@ -30,7 +30,7 @@ previous instances' logs beyond a byte budget, and only after persisting
 each one's unresolved failures (with the coverage of that evaluation) as
 holds in the hold document (``<state root>/gateway/persistence-hold.json``);
 recorded holds veto like live evidence. Only the user clears a hold
-(``claude-multi gateway clear-hold``, a typed confirmation): the clear records
+(``charmer gateway clear-hold``, a typed confirmation): the clear records
 how far each log was evaluated, so later failures hold again, and it removes
 only the recorded holds the user was shown; one recorded after that report
 (for example by a pruning start meanwhile) stays.
@@ -65,20 +65,20 @@ _HOLD_OPTIONAL = frozenset({"coverage", "evidence"})
 REMEDY = (
     "keep the gateway running, free disk space and wait for a persisted save of that "
     "credential; sign in again only if none appears; once you have verified the "
-    "credentials: claude-multi gateway clear-hold"
+    "credentials: charmer gateway clear-hold"
 )
 # A hold whose every reason is incomplete log coverage (a log larger than the
 # read budget, a cut or unfinished read) and no failed save in what was read.
 COVERAGE_ONLY = "held because the log coverage is incomplete, not because a credential save failed"
 COVERAGE_REMEDY = (
     "keep the gateway running: a verbose, long-running gateway can write more log than one read "
-    "evaluates, so its save evidence stays incomplete; check the credentials (claude-multi providers "
-    "list), then clear it on the command line: claude-multi gateway clear-hold (it records that you "
+    "evaluates, so its save evidence stays incomplete; check the credentials (charmer providers "
+    "list), then clear it on the command line: charmer gateway clear-hold (it records that you "
     "checked them, and the logs are evaluated again from that point on)"
 )
 
 
-class HoldError(errors.ClaudeMultiError, RuntimeError):
+class HoldError(errors.CharmerError, RuntimeError):
     """The hold document is unreadable or invalid."""
 
 
@@ -308,7 +308,7 @@ def evaluate_journal(state_root: Path, providers: Iterable[str], *,
     if observed or any(item.get("evidence") in resolved for item in recorded):
         try:
             recorded = _record_journal_evidence(state_root, observed, resolved)
-        except (OSError, errors.ClaudeMultiError) as exc:
+        except (OSError, errors.CharmerError) as exc:
             reasons = [*map(_recorded_reason, recorded), *coverage,
                        f"service journal: the failure evidence could not be recorded ({exc})"]
             if observed:
@@ -455,7 +455,7 @@ def prune_at_start(state_root: Path, providers: Iterable[str], *, keep: Iterable
         try:
             state.atomic_write(path, strict_json.pretty_file_bytes(
                 {**document, "cleared": cleared, "holds": holds}))
-        except (OSError, errors.ClaudeMultiError) as exc:
+        except (OSError, errors.CharmerError) as exc:
             return PruneReport(skipped=f"the hold record could not be written: {exc}",
                                retained_bytes=retained + sum(log.size for log in victims))
         removed = []
@@ -471,6 +471,6 @@ def prune_at_start(state_root: Path, providers: Iterable[str], *, keep: Iterable
             try:  # best effort: a stale cleared position names no file
                 state.atomic_write(path, strict_json.pretty_file_bytes(
                     {**document, "cleared": cleared, "holds": holds}))
-            except (OSError, errors.ClaudeMultiError):
+            except (OSError, errors.CharmerError):
                 pass
     return PruneReport(tuple(removed), tuple(persisted), None, retained)

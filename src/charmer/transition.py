@@ -40,7 +40,7 @@ from . import compiler, errors, managed, profile, scope, sessions, settings as s
 from .launch import disk_generation
 
 
-class TransitionError(errors.ClaudeMultiError, RuntimeError):
+class TransitionError(errors.CharmerError, RuntimeError):
     """Raised when converge cannot proceed (fail closed, nothing mutated)."""
 
 
@@ -52,7 +52,7 @@ LEGACY_SESSION_ENV_VAR = "CLAUDE_MULTI_SESSION_ID"
 
 # The exact relaunch command printed for a session.
 COMMAND_TEMPLATE = (
-    "claude-multi lineup --session {session_id} --relaunch profile {name}"
+    "charmer lineup --session {session_id} --relaunch profile {name}"
 )
 
 # The env value that differs between an epoch-bumped record (sessions link,
@@ -471,7 +471,7 @@ def expected_plan(
         return ExpectedPlan(
             None,
             f"the record's Settings snapshot is unreadable ({exc}); it applies at the next "
-            f"resume (claude-multi -r {mid})",
+            f"resume (charmer -r {mid})",
             None, False, None, False, lead_switched,
         )
     eff = recorded_operator_admissions(record, lcat, eff)
@@ -482,7 +482,7 @@ def expected_plan(
             None,
             "the installed catalog no longer evaluates the recorded lineup ("
             + "; ".join(evaluation.errors)
-            + f"); it applies at the next resume (claude-multi -r {mid})",
+            + f"); it applies at the next resume (charmer -r {mid})",
             None, False, None, False, lead_switched,
         )
     lineup = profile.keep_recorded_agent_class(evaluation.lineup, applied["agents"], lcat)
@@ -501,7 +501,7 @@ def expected_plan(
         return ExpectedPlan(
             None,
             f"the installed catalog resolves {label} to {new} (recorded {old}); it applies "
-            f"at the next resume (claude-multi -r {mid})",
+            f"at the next resume (charmer -r {mid})",
             None, False, None, False, lead_switched,
         )
     if worktree_available is None:
@@ -672,7 +672,7 @@ def converge(
             record = store.load(session_id)
             if record.get("version") != sessions.RECORD_VERSION:
                 return [
-                    f"session {m8} is a legacy record; run claude-multi migrate (or resume it) first"
+                    f"session {m8} is a legacy record; run charmer migrate (or resume it) first"
                 ]
             if record["lineup_generation"] == 0:
                 return [f"session {m8} runs a legacy scope; it converges at its next launch with this launcher"]

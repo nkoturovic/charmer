@@ -130,7 +130,7 @@ def legacy_diagnostic(severity: str, text: str) -> Diagnostic:
               "gateway credential save", "Contract", "Shared daemon", "Sessions",
               "Evidence", "managed", "profile", "binding", "custom", "native contract")
     topic = next((t for t in topics if text.casefold().startswith(t.casefold())), "local check")
-    return Diagnostic(severity, "legacy-line", f"{topic}: {severity}; details and remedy in plain claude-multi doctor")
+    return Diagnostic(severity, "legacy-line", f"{topic}: {severity}; details and remedy in plain charmer doctor")
 
 
 def error_report(name: str) -> Report:

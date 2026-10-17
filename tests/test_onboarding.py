@@ -107,7 +107,7 @@ def _provider_draft() -> dict:
     model["provider"] = "zeta"
     model["wire_model"] = "z1"
     model["efforts"] = {
-        "max": {"selector": "claude-multi-zetamodel-max[1m]", "proxy_contract": "output-config-max"}
+        "max": {"selector": "charmer-zetamodel-max[1m]", "proxy_contract": "output-config-max"}
     }
     model["default_effort"] = "max"
     model["context"] = {
@@ -130,7 +130,7 @@ def _provider_draft() -> dict:
 
 class OnboardingTestCase(unittest.TestCase):
     def setUp(self) -> None:
-        self.root = Path(tempfile.mkdtemp(prefix="claude-multi-dev-"))
+        self.root = Path(tempfile.mkdtemp(prefix="charmer-dev-"))
         os.chmod(self.root, 0o700)
         self.addCleanup(lambda: shutil.rmtree(self.root, ignore_errors=True))
         self.drafts = dev.DraftStore(self.root / "drafts")
@@ -161,7 +161,7 @@ class DraftStateMarkerTests(OnboardingTestCase):
         self.assertEqual(self.drafts.load("d1"), draft)
 
     def test_mutating_cli_refuses_before_draft_store_initialization(self):
-        state_root = state.ensure_private_dir(self.root / "claude-multi")
+        state_root = state.ensure_private_dir(self.root / "charmer")
         state.atomic_write(state_root / sessions.STATE_MARKER, b"5\n")
         for command in (
             ["model", "add"], ["provider", "add"], ["review", "d1"],
@@ -174,7 +174,7 @@ class DraftStateMarkerTests(OnboardingTestCase):
                 "sys.stderr", io.StringIO()
             ) as error:
                 self.assertEqual(dev.main(command), 2)
-                self.assertIn("newer claude-multi", error.getvalue())
+                self.assertIn("newer charmer", error.getvalue())
                 store.assert_not_called()
         self.assertFalse((state_root / "drafts").exists())
 
@@ -196,7 +196,7 @@ class DraftStateMarkerTests(OnboardingTestCase):
         self.assertFalse((self.drafts.root / "d1.journal.json").exists())
 
     def test_review_rechecks_marker_before_writing_output(self):
-        state_root = state.ensure_private_dir(self.root / "claude-multi")
+        state_root = state.ensure_private_dir(self.root / "charmer")
         store = dev.DraftStore(state_root / "drafts")
         store.save("d1", _model_draft())
 
@@ -208,11 +208,11 @@ class DraftStateMarkerTests(OnboardingTestCase):
             dev, "review_draft", side_effect=review
         ), mock.patch("sys.stderr", io.StringIO()) as error:
             self.assertEqual(dev.main(["review", "d1", "--repo", str(self.repo)]), 2)
-        self.assertIn("newer claude-multi", error.getvalue())
+        self.assertIn("newer charmer", error.getvalue())
         self.assertFalse((store.root / "d1.review.json").exists())
 
     def test_check_remains_read_only_under_marker(self):
-        state_root = state.ensure_private_dir(self.root / "claude-multi")
+        state_root = state.ensure_private_dir(self.root / "charmer")
         store = dev.DraftStore(state_root / "drafts")
         store.save("d1", _model_draft())
         state.atomic_write(state_root / sessions.STATE_MARKER, b"5\n")
@@ -225,7 +225,7 @@ class DraftStateMarkerTests(OnboardingTestCase):
 
 
 class ScaffoldTests(OnboardingTestCase):
-    """2.13.1: claude-multi-dev model add --like scaffold."""
+    """2.13.1: charmer-dev model add --like scaffold."""
 
     def _docs(self):
         # The scaffold reads RAW catalog docs (models v2 + retired).
@@ -240,7 +240,7 @@ class ScaffoldTests(OnboardingTestCase):
         self.assertNotIn("selector", entry)
         self.assertEqual(
             entry["efforts"],
-            {"max": {"selector": "claude-multi-qwen39-max[1m]",
+            {"max": {"selector": "charmer-qwen39-max[1m]",
                      "proxy_contract": "reasoning-effort-xhigh"}},
         )
         self.assertIn("QUALIFY", entry["display"])
@@ -282,11 +282,11 @@ class ScaffoldTests(OnboardingTestCase):
                 self._docs(), like_id="qwen38", new_id="kimi-k3", wire_model="w"
             )
         # A new key whose derived selectors already exist must fail too:
-        # a test-local live line already serving claude-multi-qwen39-max.
+        # a test-local live line already serving charmer-qwen39-max.
         docs = copy.deepcopy(self._docs())
         other = copy.deepcopy(docs["models"]["models"]["qwen38"])
         other["wire_model"] = "other-wire"
-        other["efforts"]["max"]["selector"] = "claude-multi-qwen39-max[1m]"
+        other["efforts"]["max"]["selector"] = "charmer-qwen39-max[1m]"
         docs["models"]["models"]["other"] = other
         with self.assertRaisesRegex(dev.DevError, "selector collision"):
             dev._scaffold_model_entry(
@@ -306,7 +306,7 @@ class ScaffoldTests(OnboardingTestCase):
             dev._scaffold_model_entry(docs, like_id="qwen38", new_id="qwen40", wire_model="w")
         # a derived selector colliding with a retired 2.x selector
         retired["qwen-old"] = copy.deepcopy(retired["muse-spark"])
-        retired["qwen-old"]["selectors"] = {"claude-multi-qwen39-max[1m]": "output-config-high"}
+        retired["qwen-old"]["selectors"] = {"charmer-qwen39-max[1m]": "output-config-high"}
         with self.assertRaisesRegex(dev.DevError, "selector collision"):
             dev._scaffold_model_entry(docs, like_id="qwen38", new_id="qwen39", wire_model="w")
         with self.assertRaisesRegex(dev.DevError, "must match"):
@@ -323,11 +323,11 @@ class ScaffoldTests(OnboardingTestCase):
         local = dev._scaffold_model_entry(
             self._docs(), like_id="qwen-flash-next", new_id="qwen-local2", wire_model="w"
         )
-        self.assertEqual(local["selector"], "claude-multi-qwen-local2")
+        self.assertEqual(local["selector"], "charmer-qwen-local2")
         self.assertEqual(local["efforts"], ["high"])
 
     def test_scaffold_refuses_a_selector_shape_it_cannot_derive(self) -> None:
-        # kimi-k3's selector carries no effort suffix (claude-multi-kimi-k3[1m]):
+        # kimi-k3's selector carries no effort suffix (charmer-kimi-k3[1m]):
         # no substring mangling, the --from-json path instead.
         with self.assertRaisesRegex(dev.DevError, "cannot derive selectors.*--from-json"):
             dev._scaffold_model_entry(
@@ -354,7 +354,7 @@ class ScaffoldTests(OnboardingTestCase):
                 )
         self.assertEqual(code, 0)
         self.assertIn("QUALIFY", out.getvalue())
-        store = dev.DraftStore(self.root / "claude-multi" / "drafts")
+        store = dev.DraftStore(self.root / "charmer" / "drafts")
         draft = store.load("sc1")
         self.assertEqual(draft["entry"]["wire_model"], "qwen3.9-max")
 
@@ -371,7 +371,7 @@ class ScaffoldTests(OnboardingTestCase):
         # like line whose selector does not read <prefix><like>-<level>
         # (test-local) fails with the --from-json guidance.
         docs = copy.deepcopy(self._docs())
-        docs["models"]["models"]["grok46"]["efforts"]["high"]["selector"] = "claude-multi-grok-high"
+        docs["models"]["models"]["grok46"]["efforts"]["high"]["selector"] = "charmer-grok-high"
         with self.assertRaises(dev.DevError) as ctx:
             dev._scaffold_model_entry(docs, like_id="grok46", new_id="grok47", wire_model="w")
         self.assertIn("--from-json", str(ctx.exception))
@@ -433,7 +433,7 @@ class PrefillTests(OnboardingTestCase):
         return code, out.getvalue() + err.getvalue()
 
     def draft(self, name: str) -> dict:
-        return dev.DraftStore(self.root / "claude-multi" / "drafts").load(name)
+        return dev.DraftStore(self.root / "charmer" / "drafts").load(name)
 
     @staticmethod
     def fill_text_fields(draft: dict) -> dict:
@@ -455,13 +455,13 @@ class PrefillTests(OnboardingTestCase):
         code, out = self.run_dev(["model", "add", "--from-registry", "codex-pro:gpt-fixture-7", "--id", "terra",
                                   "--name", "r1"])
         self.assertEqual(code, 0, out)
-        draft_path = self.root / "claude-multi" / "drafts" / "r1.json"
+        draft_path = self.root / "charmer" / "drafts" / "r1.json"
         self.assertEqual(out, (
             f"draft: {draft_path}\n"
             "source: registry codex-pro:gpt-fixture-7\n"
             "Registry/listing values and operator qualification are review context, not catalog verification.\n"
             "Fill every QUALIFY field, then:\n"
-            "  claude-multi-dev check r1\n"
+            "  charmer-dev check r1\n"
             "Promotion installs a New · not admitted catalog line; local admission is an optional operator badge, not permission to use it.\n"))
         draft = self.draft("r1")
         entry = draft["entry"]
@@ -501,7 +501,7 @@ class PrefillTests(OnboardingTestCase):
                                   "--provider", "kimi", "--name", "r3"])
         self.assertEqual(code, 0, out)
         self.assertEqual(self.draft("r3")["entry"]["efforts"], {
-            "max": {"selector": "claude-multi-k9-max[1m]", "proxy_contract": "output-config-max"}})
+            "max": {"selector": "charmer-k9-max[1m]", "proxy_contract": "output-config-max"}})
         for argv in (["--from-registry", "kimi:nope", "--id", "k9"], ["--from-registry", "nochannel", "--id", "k9"],
                      ["--from-registry", "codex-pro:gpt-fixture-7", "--id", "sol"],
                      ["--from-registry", "codex-pro:gpt-fixture-7"]):
@@ -526,7 +526,7 @@ class PrefillTests(OnboardingTestCase):
         draft = self.draft("o1")
         self.assertEqual((draft["kind"], draft["provider"]), ("model", "kimi"))
         self.assertEqual(draft["entry"]["efforts"], {
-            "max": {"selector": "claude-multi-kimi-next-max[1m]", "proxy_contract": "output-config-max"}})
+            "max": {"selector": "charmer-kimi-next-max[1m]", "proxy_contract": "output-config-max"}})
         self.assertIn("operator qualification: none recorded", draft["notes"])
         self.assertNotIn("admission", json.dumps(draft["entry"]))
 
@@ -563,7 +563,7 @@ class PrefillTests(OnboardingTestCase):
         self.assertIn("QUALIFY", provider["support_note"])
         self.assertEqual(draft["entry"]["contract_claims"], ["output-config-high"])
         self.assertEqual(draft["entry"]["model"]["efforts"], {
-            "high": {"selector": "claude-multi-acme-large-high[1m]", "proxy_contract": "output-config-high"}})
+            "high": {"selector": "charmer-acme-large-high[1m]", "proxy_contract": "output-config-high"}})
         with self.assertRaisesRegex(DevError, "QUALIFY marker in 'support_note'"):
             dev.check_draft(draft, repo=self.repo)
         code, out = self.run_dev(["model", "add", "--from-operator", "custom-missing", "--id", "x1"])
@@ -753,7 +753,7 @@ class CheckTests(OnboardingTestCase):
             runner=lambda c, w: {"cmd": c, "returncode": 0},
         )
         leftover = list(
-            Path(dev.state_root_default()).glob("claude-multi-candidate-*")
+            Path(dev.state_root_default()).glob("charmer-candidate-*")
         )
         self.assertEqual(leftover, [])
 
@@ -1167,7 +1167,7 @@ class ImportHygieneTests(unittest.TestCase):
             if relative == "dev.py":
                 continue
             tree = ast.parse(module.read_text())
-            # The entry points load dev.py inside the claude-multi-dev
+            # The entry points load dev.py inside the charmer-dev
             # command only, so their module-level imports are what counts.
             nodes = tree.body if relative == "entrypoints.py" else ast.walk(tree)
             for node in nodes:
@@ -1189,7 +1189,7 @@ class DevCLIErrorTests(OnboardingTestCase):
         spec = self.root / "spec.json"
         spec.write_text('{"provider": "openai", "entry": {}}')
         with mock.patch.dict(os.environ, {"XDG_STATE_HOME": str(self.root)}):
-            with mock.patch("sys.argv", ["claude-multi-dev"]):
+            with mock.patch("sys.argv", ["charmer-dev"]):
                 code = dev.main(
                     ["model", "add", "--from-json", str(spec), "--repo", str(self.root / "nowhere")]
                 )
@@ -1334,7 +1334,7 @@ class ReviewRecordValidationTests(OnboardingTestCase):
 
 class CandidateFailureCleanupTests(OnboardingTestCase):
     def test_copy_failure_removes_partial_candidate(self) -> None:
-        parent = self.root / "claude-multi-candidate-x"
+        parent = self.root / "charmer-candidate-x"
         parent.mkdir()
         sentinel_dir = self.root / "outside"
         sentinel_dir.mkdir()
@@ -1346,12 +1346,12 @@ class CandidateFailureCleanupTests(OnboardingTestCase):
                 dev.materialize_candidate(self.repo, {}, parent)
         self.assertFalse(parent.exists())
         self.assertEqual(
-            list(self.root.glob("claude-multi-candidate-*")), []
+            list(self.root.glob("charmer-candidate-*")), []
         )
         self.assertEqual((sentinel_dir / "keep.txt").read_text(), "untouched")
 
     def test_image_apply_failure_removes_candidate(self) -> None:
-        parent = self.root / "claude-multi-candidate-y"
+        parent = self.root / "charmer-candidate-y"
         parent.mkdir()
         images = {MODELS_IMAGE: b"{}\n"}
         with mock.patch.object(
@@ -1361,7 +1361,7 @@ class CandidateFailureCleanupTests(OnboardingTestCase):
                 dev.materialize_candidate(self.repo, images, parent)
         self.assertFalse(parent.exists())
         self.assertEqual(
-            list(self.root.glob("claude-multi-candidate-*")), []
+            list(self.root.glob("charmer-candidate-*")), []
         )
 
     def test_default_location_no_leftovers(self) -> None:
@@ -1371,7 +1371,7 @@ class CandidateFailureCleanupTests(OnboardingTestCase):
             with self.assertRaises(OSError):
                 dev.materialize_candidate(self.repo, {}, None)
         leftover = list(
-            Path(dev.state_root_default()).glob("claude-multi-candidate-*")
+            Path(dev.state_root_default()).glob("charmer-candidate-*")
         )
         self.assertEqual(leftover, [])
 
@@ -1515,7 +1515,7 @@ class PromoteSelectorShapeTests(OnboardingTestCase):
             # the generation in the selector (never the generation)
             "gpt-multi-newmodel-1-high": "key \\+ effort, never the generation",
             # the claude prefix on the codex pool
-            "claude-multi-newmodel-high": "must be 'gpt-multi-newmodel-high'",
+            "charmer-newmodel-high": "must be 'gpt-multi-newmodel-high'",
             # [1m] on a line below 1M client tokens
             "gpt-multi-newmodel-high[1m]": "must be 'gpt-multi-newmodel-high'",
             # another key
@@ -1536,7 +1536,7 @@ class PromoteSelectorShapeTests(OnboardingTestCase):
     def test_gateway_selector_needs_1m_suffix_at_1m(self) -> None:
         draft = _provider_draft()
         entry = draft["entry"]["model"]
-        entry["efforts"]["max"]["selector"] = "claude-multi-zetamodel-max"
+        entry["efforts"]["max"]["selector"] = "charmer-zetamodel-max"
         # validate_catalog already refuses the [1m]/client_tokens mismatch in
         # the pipeline; the promote shape gate refuses it on its own too.
         with self.assertRaisesRegex(DevError, "selector classification"):
@@ -1545,7 +1545,7 @@ class PromoteSelectorShapeTests(OnboardingTestCase):
             "zetamodel", entry,
             providers={"zeta": {k: v for k, v in draft["entry"]["provider"].items() if k != "id"}},
         )
-        with self.assertRaisesRegex(DevError, "must be 'claude-multi-zetamodel-max\\[1m\\]'"):
+        with self.assertRaisesRegex(DevError, "must be 'charmer-zetamodel-max\\[1m\\]'"):
             dev._check_new_entry_policy(docs, draft)
 
     def test_contract_level_must_equal_effort(self) -> None:
@@ -1564,7 +1564,7 @@ class PromoteSelectorShapeTests(OnboardingTestCase):
         entry = copy.deepcopy(docs["models"]["models"]["fable"])
         entry.update(
             id="fable-next", wire_model="claude-fable-5-1",
-            selector="claude-multi-fable-next[1m]", status="new",
+            selector="charmer-fable-next[1m]", status="new",
         )
         draft = dev.make_model_draft(name="d1", provider="anthropic", entry=entry)
         with self.assertRaisesRegex(DevError, "canonical wire id 'claude-fable-5-1\\[1m\\]', not"):
@@ -1582,9 +1582,9 @@ class PromoteSelectorShapeTests(OnboardingTestCase):
     def test_openai_compatible_selector_is_the_key(self) -> None:
         docs = catalog.load_raw(self.resources)["docs"]
         entry = copy.deepcopy(docs["models"]["models"]["qwen-flash-next"])
-        entry.update(id="local2", wire_model="w", selector="claude-multi-local-2", status="new")
-        self._refused("local2", entry, "must be 'claude-multi-local2'")
-        entry["selector"] = "claude-multi-local2"
+        entry.update(id="local2", wire_model="w", selector="charmer-local-2", status="new")
+        self._refused("local2", entry, "must be 'charmer-local2'")
+        entry["selector"] = "charmer-local2"
         dev._check_new_entry_policy(
             self._policy_docs("local2", entry),
             dev.make_model_draft(name="d1", provider="llm-local", entry=entry),
@@ -1621,12 +1621,12 @@ class DraftVersionTests(OnboardingTestCase):
             self.drafts.root / "old.json", strict_json.canonical_file_bytes(self._v1_draft())
         )
         with self.assertRaisesRegex(
-            DevError, "draft old is a version-1 draft; run claude-multi-dev drafts migrate"
+            DevError, "draft old is a version-1 draft; run charmer-dev drafts migrate"
         ):
             self.drafts.load("old")
 
     def test_cli_check_on_v1_draft_exits_2_with_migrate_pointer(self) -> None:
-        store = dev.DraftStore(self.root / "claude-multi" / "drafts")
+        store = dev.DraftStore(self.root / "charmer" / "drafts")
         state.atomic_write(
             store.root / "old.json", strict_json.canonical_file_bytes(self._v1_draft())
         )
@@ -1635,7 +1635,7 @@ class DraftVersionTests(OnboardingTestCase):
             "sys.stderr", error
         ):
             self.assertEqual(dev.main(["check", "old", "--repo", str(self.repo)]), 2)
-        self.assertIn("run claude-multi-dev drafts migrate", error.getvalue())
+        self.assertIn("run charmer-dev drafts migrate", error.getvalue())
         self.assertNotIn("must equal", error.getvalue())
 
     def test_v1_review_record_refused_by_promote(self) -> None:
@@ -1682,12 +1682,12 @@ def _v1_provider_draft() -> dict:
 
 
 class DraftsMigrateTests(OnboardingTestCase):
-    """`claude-multi-dev drafts migrate` on temp roots only."""
+    """`charmer-dev drafts migrate` on temp roots only."""
 
     def setUp(self) -> None:
         super().setUp()
         self.state_home = self.root / "xdg-state"
-        self.store = dev.DraftStore(self.state_home / "claude-multi" / "drafts")
+        self.store = dev.DraftStore(self.state_home / "charmer" / "drafts")
         self.droot = self.store.root
 
     def _put(self, name: str, document) -> None:
@@ -1761,7 +1761,7 @@ class DraftsMigrateTests(OnboardingTestCase):
         self.assertIsNone(entry["registry_overlay"])
         self.assertEqual(
             entry["efforts"],
-            {"max": {"selector": "claude-multi-qwen38-max[1m]",
+            {"max": {"selector": "charmer-qwen38-max[1m]",
                      "proxy_contract": "reasoning-effort-xhigh"}},
         )
         self.assertEqual(entry["roles"], "all")
@@ -1783,7 +1783,7 @@ class DraftsMigrateTests(OnboardingTestCase):
         self.assertEqual(code, 0, err)
         entry = self.store.load("local")["entry"]
         self.assertEqual(entry["efforts"], ["high"])
-        self.assertEqual(entry["selector"], "claude-multi-qwen-flash-next")
+        self.assertEqual(entry["selector"], "charmer-qwen-flash-next")
         self.assertEqual(entry["status"], "new")
 
     def test_unconvertible_and_unknown_provider_drafts_are_discarded(self) -> None:
@@ -1815,7 +1815,7 @@ class DraftsMigrateTests(OnboardingTestCase):
         state.atomic_write(self.droot.parent / sessions.STATE_MARKER, b"5\n")
         code, _out, err = self._run("--apply")
         self.assertEqual(code, 2)
-        self.assertIn("newer claude-multi", err)
+        self.assertIn("newer charmer", err)
         self.assertEqual(self._tree(), before)
         # The dry run stays read-only and available.
         self.assertEqual(self._run()[0], 0)

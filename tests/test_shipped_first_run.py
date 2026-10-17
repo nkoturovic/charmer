@@ -132,9 +132,9 @@ class SyntheticModellessProviderTests(test_cli.OperatorCommandCase):
         pid = self.pid
         key_file = self.root / "provider.key"
         state.atomic_write(key_file, b"cli-dummy-key\n")
-        steps = (f"claude-multi discover {pid})", f"claude-multi discover {pid} --add WIRE",
-                 f"claude-multi models add {pid} WIRE", "claude-multi models admit KEY",
-                 "claude-multi setup --step profile")
+        steps = (f"charmer discover {pid})", f"charmer discover {pid} --add WIRE",
+                 f"charmer models add {pid} WIRE", "charmer models admit KEY",
+                 "charmer setup --step profile")
         for argv, answers in ((["providers", "set-key", pid, "--secret-file", str(key_file)], ""),
                               (["setup", "--step", "profile"], "\n")):
             with self.subTest(argv=argv[:2]):
@@ -154,7 +154,7 @@ class SyntheticModellessProviderTests(test_cli.OperatorCommandCase):
         code, out, err = self.op(["providers", "set-key", pid, "--secret-file", str(key_file)])
         self.assertEqual(code, 0, out + err)
         self.assertIn(f"next: {pid} has no models yet", out)
-        self.assertIn(f"claude-multi discover {pid} --add WIRE", out)
+        self.assertIn(f"charmer discover {pid} --add WIRE", out)
         self.assertNotIn("modelless-dummy-key", out + err)
         self.assertEqual(setup_status.without_models(self.runtime, (pid,)), (pid,))
         code, out, err = self.op(["setup", "--step", "profile"], "\n")

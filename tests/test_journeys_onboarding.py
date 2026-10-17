@@ -1,5 +1,5 @@
 """First-run and failure journeys through the real full-screen UI in a
-pseudo-terminal: a bare ``claude-multi`` on a temporary home with nothing
+pseudo-terminal: a bare ``charmer`` on a temporary home with nothing
 connected, through Get started, a connection of each kind, the profile and
 the launch card, to the fake launch.
 
@@ -403,19 +403,19 @@ class FirstRunJourneys(JourneyCase):
         from charmer.setup import texts
 
         child = self.child()
-        child.expect("claude-multi — Get started")
+        child.expect("charmer — Get started")
         self.to_picker_entry(child, "openrouter:api-key")
         child.expect("OpenRouter API key")
         child.keys("sk-or-journey-key", ENTER, ENTER)
         child.expect("OpenRouter API key saved (")
         child.expect(texts.RELOAD_TEXT["reloaded"])
         child.keys(ESC)
-        child.expect("claude-multi — Get started")
+        child.expect("charmer — Get started")
         self.open_step(child, "profile")
         child.expect("openrouter (chosen automatically")
         child.expect("bill per token to OpenRouter")
         child.keys(ESC)
-        child.expect("claude-multi — Get started")
+        child.expect("charmer — Get started")
         child.keys(ESC)
         child.expect("profile: openrouter")
         child.expect("Status  Ready")
@@ -442,7 +442,7 @@ class FirstRunJourneys(JourneyCase):
 
         provider = self.starter_provider()
         child = self.child()
-        child.expect("claude-multi — Get started")
+        child.expect("charmer — Get started")
         self.to_picker_entry(child, f"{provider}:api-key")
         child.expect("API key")
         child.keys("journey-key-123456", ENTER, ENTER)
@@ -465,7 +465,7 @@ class FirstRunJourneys(JourneyCase):
         from charmer.cli import text as cli_text
 
         child = self.child()
-        child.expect("claude-multi — Get started")
+        child.expect("charmer — Get started")
         self.to_picker_entry(child, "anthropic:api-key")
         child.expect("Use an Anthropic API key for Claude models?")
         child.keys(RIGHT, ENTER)  # Switch
@@ -473,7 +473,7 @@ class FirstRunJourneys(JourneyCase):
         child.keys("sk-ant-journey-123456", ENTER, ENTER)
         child.expect("the gateway reloaded")
         child.keys(ESC)
-        child.expect("claude-multi — Get started")
+        child.expect("charmer — Get started")
         child.keys(ESC)
         child.expect("profile: claude")
         child.expect("Status  Ready")
@@ -487,7 +487,7 @@ class FirstRunJourneys(JourneyCase):
 
         argv_log = self.tmp / "login-argv.jsonl"
         child = self.child(options={"login": self.login_launcher(FAKE_LOGIN_ARGV=str(argv_log))})
-        child.expect("claude-multi — Get started")
+        child.expect("charmer — Get started")
         self.to_picker_entry(child, "anthropic:account")
         child.expect(cli_text.ACK_TITLE.format(kind="Claude account"))
         child.keys("nope", ENTER, ENTER)
@@ -504,7 +504,7 @@ class FirstRunJourneys(JourneyCase):
         child.expect("(Claude account). Its models are")
         child.keys(ENTER)  # Close
         child.keys(ESC)
-        child.expect("claude-multi — Get started")
+        child.expect("charmer — Get started")
         child.keys(ESC)
         child.expect("profile: claude")
         child.keys(ENTER)
@@ -517,7 +517,7 @@ class FirstRunJourneys(JourneyCase):
         from charmer.cli import text as cli_text
 
         child = self.child(options={"login": self.login_launcher()})
-        child.expect("claude-multi — Get started")
+        child.expect("charmer — Get started")
         self.to_picker_entry(child, "openai:account")
         child.expect(cli_text.ACK_TITLE.format(kind="ChatGPT account"))
         child.keys("personal", ENTER, ENTER)
@@ -527,7 +527,7 @@ class FirstRunJourneys(JourneyCase):
         child.expect("(ChatGPT account). Its models are")
         child.keys(ENTER)
         child.keys(ESC)
-        child.expect("claude-multi — Get started")
+        child.expect("charmer — Get started")
         child.keys(ESC)
         child.expect("profile: openai")
         child.keys(ENTER)
@@ -566,7 +566,7 @@ class FirstRunJourneys(JourneyCase):
 
     def starter_from_step_six(self, child: JourneyPTY) -> str:
         child.keys("w")
-        child.expect("claude-multi — Get started")
+        child.expect("charmer — Get started")
         self.open_step(child, "profile")
         child.expect("Nothing shipped fits")
         child.expect("starter preview")
@@ -582,7 +582,7 @@ class FirstRunJourneys(JourneyCase):
 
         key = "custom-vendorx-chat"
         child = self.child(setup=MODELS_CURSOR.format(key=key), options={"serve_render": True})
-        child.expect("claude-multi — Get started")
+        child.expect("charmer — Get started")
         self.to_picker_entry(child, "other:anthropic-compatible")
         child.expect(cli_text.ENDPOINT_FORM_TITLE["anthropic-compatible"])
         child.keys("vendorx", ENTER, "https://api.vendorx.example/anthropic", ENTER, ENTER)
@@ -599,7 +599,7 @@ class FirstRunJourneys(JourneyCase):
         child.keys(ENTER)  # Default Skip: ordinary selection needs no badge
         child.expect("Added vendorx")
         child.keys(ESC)
-        child.expect("claude-multi — Get started")
+        child.expect("charmer — Get started")
         child.keys(ESC)
         child.expect("Status  ")
         self.admit_on_models(child)
@@ -612,7 +612,7 @@ class FirstRunJourneys(JourneyCase):
         key = "custom-homelab-chat"
         options = {"presets": True, "serve_render": True, "lan_reachable": True}
         child = self.child(setup=MODELS_CURSOR.format(key=key), options=options)
-        child.expect("claude-multi — Get started")
+        child.expect("charmer — Get started")
         preset = next(entry for entry in self.entry_ids(options) if entry.startswith("other:lan:"))
         self.to_picker_entry(child, preset, options)
         child.expect(cli_text.LAN_FORM_TITLE)
@@ -626,7 +626,7 @@ class FirstRunJourneys(JourneyCase):
         child.keys(ENTER)  # Default Skip: ordinary selection needs no badge
         child.expect("Added homelab")
         child.keys(ESC)
-        child.expect("claude-multi — Get started")
+        child.expect("charmer — Get started")
         child.keys(ESC)
         child.expect("Status  ")
         # Skipping both admission and diagnostics still reaches ordinary selection.
@@ -677,7 +677,7 @@ class FailureJourneys(JourneyCase):
             rows = [row.id for row in providers._ProvidersScreen(runtime, palette=tui.MONO_PALETTE).rows]
             journeys.say("ROW", rows.index("openrouter"))
             stack.enter_context(mock.patch.object(runtime, "render_gateway",
-                                                  side_effect=errors.ClaudeMultiError("fixture render refusal")))
+                                                  side_effect=errors.CharmerError("fixture render refusal")))
         """
         after = """
         import hashlib
@@ -792,7 +792,7 @@ class FailureJourneys(JourneyCase):
         print("RECORDS=" + str(len(list(auth.iterdir()))))
         """
         child = self.child(options={"login": self.login_launcher()}, after=after)
-        child.expect("claude-multi — Get started")
+        child.expect("charmer — Get started")
         self.to_picker_entry(child, "anthropic:account")
         child.expect(cli_text.ACK_TITLE.format(kind="Claude account"))
         child.keys("personal", ENTER, ENTER)
@@ -806,7 +806,7 @@ class FailureJourneys(JourneyCase):
         child.keys(ESC)
         child.expect("connect a provider — more can follow")
         child.keys(ESC)
-        child.expect("claude-multi — Get started")
+        child.expect("charmer — Get started")
         child.keys(ESC)
         # Still nothing connected: the card can launch but asks for a look.
         child.expect("Status  Attention")
@@ -873,7 +873,7 @@ class FailureJourneys(JourneyCase):
         argv_log = self.tmp / "login-argv.jsonl"
         child = self.child(options={"login": self.login_launcher(FAKE_LOGIN_ARGV=str(argv_log)),
                                     "env": {"SSH_CONNECTION": "192.0.2.1 50000 192.0.2.2 22"}})
-        child.expect("claude-multi — Get started")
+        child.expect("charmer — Get started")
         self.to_picker_entry(child, "anthropic:account")
         child.expect(cli_text.ACK_TITLE.format(kind="Claude account"))
         child.keys("personal", ENTER, ENTER)

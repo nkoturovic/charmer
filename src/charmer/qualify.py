@@ -1,6 +1,6 @@
 """The qualification battery of user-defined model lines.
 
-``claude-multi models qualify KEY [--smoke] [--efforts] [--tools]
+``charmer models qualify KEY [--smoke] [--efforts] [--tools]
 [--stream] [--context N] [--agents]`` runs a consented, bounded set of
 requests through the loopback gateway on the line's own aliases, so the
 check covers the rendered route (auth, payload rules, force-mapping). This
@@ -164,7 +164,7 @@ def client_contract_digest(native_contract: Mapping[str, Any], *, platform: str 
     try:
         platform = pin.host_platform() if platform is None else platform
         record = pin.platform_record(native_contract, platform)
-    except errors_mod.ClaudeMultiError:
+    except errors_mod.CharmerError:
         record = None
     return _digest("cm-client-contract", {
         "validated_version": pin.version(native_contract),

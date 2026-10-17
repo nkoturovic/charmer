@@ -25,7 +25,7 @@ step 2, see ``_add_fake_retired``):
    ``catalog/models.json`` (models v2): a clone of an existing lead-capable
    direct gateway-effort line (same provider, so no provider entry is
    needed) with a unique id and wire, one effort whose selector follows the
-   shipped shape ``claude-multi-<key>-<effort>[1m]``, ``status: active``,
+   shipped shape ``charmer-<key>-<effort>[1m]``, ``status: active``,
    ``minimum_tested.claude_code`` at the 2.1.216 baseline (<= the pinned
    client) and in no composition. It asserts ``validate_catalog == []`` and
    the shipped selector-shape rules on the copy before going on.
@@ -76,10 +76,10 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 from charmer import catalog, continuity, operator, state, strict_json  # noqa: E402
 
 FAKE_MODEL_ID = "isolation-probe"
-FAKE_SELECTOR_BASE = "claude-multi-isolation-probe"
+FAKE_SELECTOR_BASE = "charmer-isolation-probe"
 FAKE_WIRE = "isolation-probe-1"
 FAKE_RETIRED_ID = "isolation-retired"
-FAKE_RETIRED_SELECTOR_BASE = "claude-multi-isolation-retired"
+FAKE_RETIRED_SELECTOR_BASE = "charmer-isolation-retired"
 FAKE_RETIRED_WIRE = "isolation-retired-1"
 FAKE_OPERATOR_PROVIDER = "isolation-operator"
 FAKE_OPERATOR_KEY = "custom-isolation-operator"
@@ -251,7 +251,7 @@ def _add_fake_model(component: Path) -> dict:
 
     Models v2: the template is the first direct, lead-capable, >=1M
     gateway-effort line; the fake keeps only its default effort, with the
-    shipped selector shape ``claude-multi-<key>-<effort>[1m]`` and the
+    shipped selector shape ``charmer-<key>-<effort>[1m]`` and the
     template's contract for that effort (the shipped-shape test in
     test_catalog runs inside the copy, so the fake must pass it).
     """
@@ -285,7 +285,7 @@ def _add_fake_model(component: Path) -> dict:
     # The shipped-shape rules (test_catalog.SeedLoadTests): key + effort
     # selector, [1m] iff 1M, contract level == effort.
     for level, selector, level_contract in catalog.line_selectors(fake):
-        if selector != f"claude-multi-{FAKE_MODEL_ID}-{level}[1m]":
+        if selector != f"charmer-{FAKE_MODEL_ID}-{level}[1m]":
             raise SystemExit(f"setup: fake selector {selector!r} breaks the shipped shape")
         if not level_contract.endswith("-" + level):
             raise SystemExit(f"setup: fake contract {level_contract!r} does not match {level!r}")
@@ -309,7 +309,7 @@ def _add_fake_retired(component: Path) -> dict:
 
     The entry names the provider of probe 1's template line (so no provider
     entry is needed), one 2.x-shaped selector
-    ``claude-multi-isolation-retired-<effort>[1m]`` carrying that line's
+    ``charmer-isolation-retired-<effort>[1m]`` carrying that line's
     default-effort contract, a unique wire, ``successor: null`` and
     ``since_catalog`` = the current catalog version. It asserts
     ``validate_catalog == []``, that ``resolve_key`` reports the "needs a
@@ -371,7 +371,7 @@ def _add_fake_operator(component: Path, home: Path) -> dict:
     """Probe 3: operator state in the probe HOME, nothing in the copy.
 
     A keyless LAN provider declaration with one line in
-    ``<home>/.config/claude-multi/providers.d/`` and a ledger that admits
+    ``<home>/.config/charmer/providers.d/`` and a ledger that admits
     that line (its real definition digest). It asserts the loader resolves
     both cleanly against the COPY's shipped catalog, so a test that read
     the HOME's operator state would actually see an operator provider.
@@ -425,7 +425,7 @@ def _add_fake_operator(component: Path, home: Path) -> dict:
 
 
 def _operator_files(home: Path) -> dict[str, bytes]:
-    """Every file under the probe HOME's claude-multi config directory."""
+    """Every file under the probe HOME's charmer config directory."""
 
     root = operator.ledger_path({"HOME": str(home)}).parent
     return {
@@ -553,7 +553,7 @@ def _refresh_catalog_docs(component: Path, env: dict[str, str], prefix: list[str
 def _run_probe(args: argparse.Namespace, kind: str) -> int:
     """One probe (``model``, ``retired`` or ``operator``) in its own disposable copy."""
 
-    workdir = Path(tempfile.mkdtemp(prefix=f"claude-multi-isolation-{kind}-"))
+    workdir = Path(tempfile.mkdtemp(prefix=f"charmer-isolation-{kind}-"))
     ok = False
     try:
         component = _copy_tree(workdir)

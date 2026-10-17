@@ -62,7 +62,7 @@ def _link_record(session_id: str) -> dict:
 
 class SessionTestCase(unittest.TestCase):
     def setUp(self) -> None:
-        self.root = Path(tempfile.mkdtemp(prefix="claude-multi-sessions-"))
+        self.root = Path(tempfile.mkdtemp(prefix="charmer-sessions-"))
         os.chmod(self.root, 0o700)
         self.addCleanup(self._cleanup)
         self.store = sessions.SessionStore(self.root, _schema())
@@ -121,7 +121,7 @@ class StateMarkerTests(SessionTestCase):
         with self.assertRaises(sessions.StateMarkerError) as caught:
             sessions.check_state_marker(self.root)
         self.assertEqual(str(caught.exception),
-                         "state belongs to a newer claude-multi (state version 5); "
+                         "state belongs to a newer charmer (state version 5); "
                          "this launcher understands state version 4 or older. Fix: "
                          + sessions.StateMarkerError.NEWER_REMEDY)
         self.assertIsNone(caught.exception.remedy)
@@ -1339,14 +1339,14 @@ class RootTests(unittest.TestCase):
             "XDG_CONFIG_HOME": "/tmp/config-x",
             "HOME": "/tmp/home-x",
         }
-        self.assertEqual(sessions.state_root(env), Path("/tmp/state-x/claude-multi"))
-        self.assertEqual(sessions.config_root(env), Path("/tmp/config-x/claude-multi"))
+        self.assertEqual(sessions.state_root(env), Path("/tmp/state-x/charmer"))
+        self.assertEqual(sessions.config_root(env), Path("/tmp/config-x/charmer"))
         fallback = {"HOME": "/tmp/home-y"}
         self.assertEqual(
-            sessions.state_root(fallback), Path("/tmp/home-y/.local/state/claude-multi")
+            sessions.state_root(fallback), Path("/tmp/home-y/.local/state/charmer")
         )
         self.assertEqual(
-            sessions.config_root(fallback), Path("/tmp/home-y/.config/claude-multi")
+            sessions.config_root(fallback), Path("/tmp/home-y/.config/charmer")
         )
 
 
@@ -1492,7 +1492,7 @@ class RelinkGuidanceTests(SessionTestCase):
     def test_relink_message_with_observed_cwd_names_both_commands(self) -> None:
         record = self._repair_needed_record()
         message = sessions.relink_message(record)
-        base = f"claude-multi sessions relink-runtime {FIXED_ID} {FIXED_ID}"
+        base = f"charmer sessions relink-runtime {FIXED_ID} {FIXED_ID}"
         self.assertIn(f"`{base} --cwd /project/path`", message)
         self.assertIn(f"`{base} --cwd /wrong/project`", message)
         self.assertIn("common case", message)
@@ -1503,7 +1503,7 @@ class RelinkGuidanceTests(SessionTestCase):
         record["identity_state"] = sessions.IDENTITY_REPAIR_NEEDED
         message = sessions.relink_message(record)
         self.assertIn(
-            f"`claude-multi sessions relink-runtime {FIXED_ID} {FIXED_ID}`",
+            f"`charmer sessions relink-runtime {FIXED_ID} {FIXED_ID}`",
             message,
         )
         self.assertNotIn("--cwd", message)
@@ -1514,7 +1514,7 @@ class RelinkGuidanceTests(SessionTestCase):
         record["observed_model"] = "gpt-multi-sol-high"
         message = sessions.relink_message(record)
         self.assertIn("observed model gpt-multi-sol-high", message)
-        self.assertIn(f"`claude-multi -r {FIXED_ID}`", message)
+        self.assertIn(f"`charmer -r {FIXED_ID}`", message)
         self.assertIn("relink only if the runtime UUID itself changed", message)
 
     def test_relink_message_shell_quotes_cwds(self) -> None:
@@ -1549,7 +1549,7 @@ class RelinkMessageOrdinaryTests(SessionTestCase):
         record["observed_model"] = "gpt-multi-sol-high"
         message = sessions.relink_message(record)
         self.assertIn("observed model gpt-multi-sol-high", message)
-        self.assertIn(f"(`claude-multi -r {FIXED_ID}`)", message)
+        self.assertIn(f"(`charmer -r {FIXED_ID}`)", message)
         self.assertNotIn("claude-gateway -r", message)
         self.assertNotIn("the recorded model", message)
 
@@ -1616,10 +1616,10 @@ class MarkEndedRemedyTests(unittest.TestCase):
         two = "44444444-4444-4444-8444-444444444444"
         text = sessions.mark_ended_remedy([one])
         self.assertIn("a launch that exited before SessionStart", text)
-        self.assertTrue(text.endswith(f"claude-multi sessions mark-ended {one}"))
+        self.assertTrue(text.endswith(f"charmer sessions mark-ended {one}"))
         text = sessions.mark_ended_remedy([two, one, two])
-        self.assertIn("claude-multi sessions mark-ended <id> (ids: " + one + ", " + two + ")", text)
-        self.assertTrue(sessions.mark_ended_remedy().endswith("claude-multi sessions mark-ended <id>"))
+        self.assertIn("charmer sessions mark-ended <id> (ids: " + one + ", " + two + ")", text)
+        self.assertTrue(sessions.mark_ended_remedy().endswith("charmer sessions mark-ended <id>"))
 
 
 class BackgroundLivenessTests(unittest.TestCase):

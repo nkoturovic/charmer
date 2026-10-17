@@ -1831,7 +1831,7 @@ class GatewayHarness:
             state.ensure_private_dir(self.root)
             self.home, self.run = self.root / "home", self.root / "run"
             spec = json.loads((SERVICE_SPEC).read_text())
-            for directory in (self.home, self.run, *(self.home / p for p in spec["private_dirs"]), self.home / ".local/share/claude-multi-release"):
+            for directory in (self.home, self.run, *(self.home / p for p in spec["private_dirs"]), self.home / ".local/share/charmer-release"):
                 state.ensure_private_dir(directory)
             bundle = catalog.load_catalog(FIXTURE_ROOT)
             if document_factory is not None:
@@ -1843,7 +1843,7 @@ class GatewayHarness:
                 self.document, self.aliases, self.info = build_census_document(bundle, self.egress, self.port, self.home, census_lines)
             if config_secret:
                 self.document["remote-management"]["secret-key"] = "dummy-gwtest-config-secret"
-            self.config = self.home / ".config/claude-multi/config.yaml"
+            self.config = self.home / ".config/charmer/config.yaml"
             state.atomic_write(self.config, render.emit_yaml(self.document).encode())
             self.socket = self.run / "gateway.sock"
             self.log_path = self.root / "gateway.log"

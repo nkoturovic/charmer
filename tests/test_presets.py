@@ -356,7 +356,7 @@ class PresetPlanTests(test_cli.OperatorCommandCase):
         self.assertEqual(self.store().get(info.secret_name), "preset-dummy-key")
         with shipped_presets(), self.assertRaisesRegex(model.Refused, "exists — choose another name"):
             setup_providers.plan_add_preset(self.runtime, name, "mine", None)
-        with shipped_presets(), self.assertRaisesRegex(model.Refused, "ships with claude-multi"):
+        with shipped_presets(), self.assertRaisesRegex(model.Refused, "ships with charmer"):
             setup_providers.plan_add_preset(self.runtime, name, "kimi", None)
 
     def test_an_openai_compatible_preset_waits_for_its_route(self) -> None:
@@ -519,7 +519,7 @@ class PresetMenuTests(test_setup_cli.SetupCase):
         self.assertEqual(code, 0, out + err)
         self.assertIn(texts.PRESET_PREVIEW_HEAD.format(display=info.display), out)
         self.assertIn(f"Added {name}", out)
-        self.assertIn(f"claude-multi models add {name} WIRE", out)
+        self.assertIn(f"charmer models add {name} WIRE", out)
         self.assertNotIn("preset-menu-key", out + err)
         self.assertEqual(secret_store.default_store(self.runtime.gateway_environ()).get(info.secret_name),
                          "preset-menu-key")

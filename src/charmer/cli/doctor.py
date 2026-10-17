@@ -84,7 +84,7 @@ def pending_served_plan(runtime: runtime_mod.Runtime) -> served_plan.ServedChang
             state_root=runtime.session_store.root,
         )
         scan = continuity_mod.scan_records(runtime.session_store.root)
-    except (cli_errors.ClaudeMultiError, OSError, ValueError, KeyError, TypeError):
+    except (cli_errors.CharmerError, OSError, ValueError, KeyError, TypeError):
         return None
     return served_plan.build_plan(
         published.routes, served_plan.routes_from_document(document),
@@ -111,7 +111,7 @@ def _doctor_served_checks(
     order: on-disk config drift (init not run), a stale render sentinel
     (the gateway did not reload the current render — restart required),
     unserved rendered selectors (or, for OAuth pools without a credential
-    record, login missing), and stale claude-multi-shaped served selectors
+    record, login missing), and stale charmer-shaped served selectors
     (removed aliases). Embedded-registry extras (unrelated Anthropic/Codex
     models) and render sentinels are ignored by design. Wire-name
     remappings are invisible to /v1/models — the config-drift byte check
@@ -133,8 +133,8 @@ def _doctor_served_checks(
         reason = snap.continuity_status.removeprefix("corrupt: ")
         problems.append(
             f"gateway continuity set unreadable ({reason}): move "
-            "~/.config/claude-multi/continuity.json aside and run "
-            "claude-multi-proxy init (it is re-seeded from retired.json and "
+            "~/.config/charmer/continuity.json aside and run "
+            "charmer-proxy init (it is re-seeded from retired.json and "
             "session records)"
         )
     elif (
@@ -149,7 +149,7 @@ def _doctor_served_checks(
     elif snap.continuity_status == "persisted" and snap.continuity_state_root is None:
         attention.append(
             "continuity was extended from no session state root, but "
-            f"sessions live under {session_root}; run claude-multi-proxy init "
+            f"sessions live under {session_root}; run charmer-proxy init "
             f"--state-root {session_root}"
         )
     pending = _pending_served_change(runtime)
@@ -170,9 +170,9 @@ def _doctor_served_checks(
         problems.append(
             f"gateway key slots unusable: {snap.key_problem} — the gateway "
             "cannot re-render its config on restart; inspect "
-            "~/.config/claude-multi (names/modes only; an interrupted "
+            "~/.config/charmer (names/modes only; an interrupted "
             "rotation's malformed previous-key can be removed), then rerun "
-            "`claude-multi doctor --rotate-token`"
+            "`charmer doctor --rotate-token`"
         )
     if snap.config_note is not None:
         info.append(snap.config_note)
@@ -180,8 +180,8 @@ def _doctor_served_checks(
         # A paused rotation (Attention via _token_rotation_attention) is
         # not drift; running init here could undo the retirement phase.
         info.append(
-            f"{snap.rotation_phase} — finish with `claude-multi doctor "
-            "--rotate-token` (not `claude-multi-proxy init`)"
+            f"{snap.rotation_phase} — finish with `charmer doctor "
+            "--rotate-token` (not `charmer-proxy init`)"
         )
     if snap.render_error is not None:
         info.append(f"served-selector cross-check skipped: {snap.render_error}")
@@ -211,7 +211,7 @@ def _doctor_served_checks(
             problems.append(
                 "the running gateway rejected the local token (401 on "
                 "/v1/models): token mismatch — the daemon serves an older "
-                "config; run `claude-multi-proxy init` (verifies the reload), "
+                "config; run `charmer-proxy init` (verifies the reload), "
                 f"or restart with {service.hint_code('restart')}"
             )
             return problems, info, attention
@@ -249,7 +249,7 @@ def _doctor_served_checks(
             attention.append(
                 f"continuity alias {selector} is not served (its upstream "
                 "route may be gone); once no live session uses it: "
-                f"claude-multi doctor --prune-aliases {selector}"
+                f"charmer doctor --prune-aliases {selector}"
             )
         else:
             missing.append(selector)
@@ -292,7 +292,7 @@ def _doctor_served_checks(
     stale = [
         selector
         for selector in sorted(snap.served - snap.expected)
-        if selector.startswith(("claude-multi-", "gpt-multi-"))
+        if selector.startswith(("charmer-", "gpt-multi-"))
         and not selector.startswith(render.SENTINEL_PREFIX)
     ]
     if stale:
@@ -308,7 +308,7 @@ def _doctor_served_checks(
     # upstream access, and absence is never retirement.
     try:
         info.extend(gateway_facts.served_extras_info(runtime, snap))
-    except (cli_errors.ClaudeMultiError, OSError, ValueError):
+    except (cli_errors.CharmerError, OSError, ValueError):
         pass
     return problems, info, attention
 
@@ -326,7 +326,7 @@ def _doctor_lan_report(
 
     try:
         layer = runtime.operator_snapshot().layer
-    except (cli_errors.ClaudeMultiError, OSError, ValueError):
+    except (cli_errors.CharmerError, OSError, ValueError):
         return []
     info: list[str] = []
     for pid in sorted(layer.providers):
@@ -356,7 +356,7 @@ def _lan_live_bindings(runtime: runtime_mod.Runtime, pid: str, keys: set[str], t
 
     try:
         layer = runtime.operator_snapshot().layer
-    except (cli_errors.ClaudeMultiError, OSError, ValueError):
+    except (cli_errors.CharmerError, OSError, ValueError):
         return []
     scan = continuity_mod.scan_records(runtime.session_store.root)
     bound: dict[str, set[str]] = {}
@@ -391,7 +391,7 @@ def _doctor_readiness_report(
         eff = runtime.current_effective()
         bindings = runtime.bindings.bindings()
         names = runtime.profiles.names()
-    except (cli_errors.ClaudeMultiError, OSError, ValueError, KeyError):
+    except (cli_errors.CharmerError, OSError, ValueError, KeyError):
         return [], []
     lcat = runtime.lineup_catalog()
     lineups: list[tuple[str, profile_mod.ResolvedLineup]] = []
@@ -408,7 +408,7 @@ def _doctor_readiness_report(
         observations = runtime.readiness_observations(
             [lineup for _name, lineup in lineups], served=gateway_reached, lan_observed=lan_observed,
         )
-    except (cli_errors.ClaudeMultiError, OSError, ValueError, KeyError):
+    except (cli_errors.CharmerError, OSError, ValueError, KeyError):
         return [], []
     attention: list[str] = []
     ready = total = 0
@@ -438,7 +438,7 @@ def _doctor_gateway_workdir(runtime: runtime_mod.Runtime) -> list[str]:
     if not proxy_mod.gateway_dotenv_present(workdir):
         return []
     return [
-        f"gateway working directory {workdir} holds a .env file: claude-multi-proxy "
+        f"gateway working directory {workdir} holds a .env file: charmer-proxy "
         "refuses to start the gateway while it exists (CLIProxyAPI would load it: "
         "HOME_JWT, DEPLOY, WRITABLE_PATH and the store variables override the "
         "gateway's config); move it aside unless you put it there"
@@ -460,7 +460,7 @@ def _doctor_hook_targets(runtime: runtime_mod.Runtime, records: list[dict[str, A
             problems.append(
                 f"session {mid[:8]}: compiled hook target {paths.display(path, runtime.environ)} is missing or not executable — "
                 "its /model fence and lineup hooks silently do not run; restore it: "
-                f"claude-multi doctor --repair {mid}"
+                f"charmer doctor --repair {mid}"
             )
     info = [] if problems else [f"Hook targets: every compiled hook command exists ({checked} session(s))."]
     return problems, info
@@ -502,7 +502,7 @@ def _doctor_install_report(runtime: runtime_mod.Runtime) -> tuple[list[str], lis
     attention, service_info = gateway_facts.service_report(runtime)
     try:
         release_info = release_update.doctor_lines(runtime)
-    except (cli_errors.ClaudeMultiError, OSError, ValueError) as exc:
+    except (cli_errors.CharmerError, OSError, ValueError) as exc:
         release_info = [f"Installed release: unknown ({exc})"]
     release_info = [_trust_line(runtime) if line.startswith("HTTPS trust (") else line for line in release_info]
     held, holding, held_info = gateway_facts.inhibition_report(runtime)
@@ -529,7 +529,7 @@ def _doctor_pin_report(runtime: runtime_mod.Runtime) -> tuple[list[str], list[st
     version = pin_mod.version(contract)
     try:
         platform = pin_mod.host_platform()
-    except errors_mod.ClaudeMultiError as exc:
+    except errors_mod.CharmerError as exc:
         return [], [f"Claude Code pin: {version}; this platform is not supported ({exc})."]
     evidence = pin_mod.evidence_class(contract, platform)
     verified = pin_mod.entry(contract).get("verified_at", "unknown")
@@ -537,14 +537,14 @@ def _doctor_pin_report(runtime: runtime_mod.Runtime) -> tuple[list[str], list[st
     info = [f"Claude Code pin: {version} (verified {verified}; {proof})."]
     client = pin_mod.installed_client(runtime.environ)
     if client is None:
-        info.append(f"Your Claude Code: none on PATH; this claude-multi runs its own copy of {version}.")
+        info.append(f"Your Claude Code: none on PATH; this charmer runs its own copy of {version}.")
     else:
         shown = paths.display(client.real, runtime.environ)
         if client.version is None:
             info.append(f"Your Claude Code: {shown} (its path names no version; it is never run "
-                        f"to ask); this claude-multi runs {version}.")
+                        f"to ask); this charmer runs {version}.")
         else:
-            info.append(f"Your Claude Code is {client.version} ({shown}); this claude-multi runs {version}.")
+            info.append(f"Your Claude Code is {client.version} ({shown}); this charmer runs {version}.")
     stale = pin_mod.staleness(contract, gateway_facts._doctor_now().date(),
                               client.version if client is not None else None)
     return ([stale] if stale else []), info
@@ -598,10 +598,10 @@ def _doctor_proxy_report(runtime: runtime_mod.Runtime, records: list[dict[str, A
                               scope_env.get(name, scope_env.get(other, "")).split(",")}
             if scope_path is not None and not ("*" in compiled_hosts or set(compiler.LOOPBACK_HOSTS) <= compiled_hosts):
                 repair = (f"; recompile the bypass in {paths.display(scope_path, runtime.environ)}: "
-                          f"claude-multi doctor --repair {sessions.managed_id(record)}")
+                          f"charmer doctor --repair {sessions.managed_id(record)}")
             problems.append(
                 f"{source}: env.{name} leaves out the loopback addresses while a proxy is set — "
-                "claude-multi sessions would send the gateway token to the proxy; "
+                "charmer sessions would send the gateway token to the proxy; "
                 "add 127.0.0.1,localhost,::1 to env.NO_PROXY and env.no_proxy" + repair
             )
         if compiler.proxy_effective(runtime.environ):
@@ -616,8 +616,8 @@ def _init_problem_line(text: str) -> str:
 
     what, _sep, remedy = text.partition("\n  fix: ")
     return gateway_facts.Finding(
-        f"claude-multi could not prepare its state: {what}" + (f" — {remedy}" if remedy else ""),
-        code="state-unprepared", public="claude-multi could not prepare its state; this report ran read-only",
+        f"charmer could not prepare its state: {what}" + (f" — {remedy}" if remedy else ""),
+        code="state-unprepared", public="charmer could not prepare its state; this report ran read-only",
         remedy=remedy or None,
     )
 
@@ -679,7 +679,7 @@ def _collect_doctor_report_lines(
         scope_attention_extra.append(
             f"custom provider {provider} was IGNORED: auth header {header!r} — this gateway build "
             f'honors only x-api-key (set "header": "x-api-key" in {registry}, or remove it: '
-            f"claude-multi custom remove-provider {provider}); its models are not served"
+            f"charmer custom remove-provider {provider}); its models are not served"
         )
     if runtime.broken_override_error is not None:
         # The operator contract override could not be removed and was
@@ -924,7 +924,7 @@ def _doctor_operator_report(
     try:
         snapshot = runtime.operator_snapshot()
         legacy = custom.load_registry(runtime.environ)
-    except (cli_errors.ClaudeMultiError, OSError, ValueError) as exc:
+    except (cli_errors.CharmerError, OSError, ValueError) as exc:
         return [f"operator layer unreadable: {exc}"], [], []
     layer = snapshot.layer
     legacy_present = bool(legacy.get("providers") or legacy.get("models"))
@@ -940,7 +940,7 @@ def _doctor_operator_report(
         conflicts = tuple(conflict.text() for conflict in snap.overlay_conflicts)
     try:
         plan: operator_mod.RenderPlan | None = runtime.operator_render_plan()
-    except (cli_errors.ClaudeMultiError, ValueError):
+    except (cli_errors.CharmerError, ValueError):
         plan = None
     scan = continuity_mod.scan_records(runtime.session_store.root)
     try:
@@ -995,7 +995,7 @@ def _doctor_client_report(runtime: runtime_mod.Runtime, records: list[dict[str, 
     version = pin_mod.version(contract)
     try:
         owned = pin_mod.owned_path(runtime.environ, version, pin_mod.host_platform())
-    except cli_errors.ClaudeMultiError:
+    except cli_errors.CharmerError:
         return []
     clients = sessions.proc_client_mismatches(
         (rid for record in records for rid in sessions.record_session_ids(record)),
@@ -1012,7 +1012,7 @@ def _doctor_client_report(runtime: runtime_mod.Runtime, records: list[dict[str, 
             attention.append(
                 f"session {m8} runs Claude {client}, not the pinned {version} "
                 "(it started before a re-pin, or the daemon adopted it after an auto-update); "
-                f"resume it with claude-multi -r {mid} after it exits"
+                f"resume it with charmer -r {mid} after it exits"
             )
     return attention
 
@@ -1043,32 +1043,32 @@ def _doctor_marker_report(runtime: runtime_mod.Runtime, marker: int) -> tuple[li
             missed.append(path.stem)
     if legacy and marker < sessions.SUPPORTED_STATE_VERSION:
         attention.append(gateway_facts.Finding(
-            f"state not migrated yet: {legacy} legacy record(s); run claude-multi "
-            "migrate --dry-run, then claude-multi migrate",
+            f"state not migrated yet: {legacy} legacy record(s); run charmer "
+            "migrate --dry-run, then charmer migrate",
             code="legacy-records", public="legacy session records are not migrated yet",
-            remedy="claude-multi migrate --dry-run, then claude-multi migrate",
+            remedy="charmer migrate --dry-run, then charmer migrate",
         ))
     elif legacy:
         attention.append(gateway_facts.Finding(
-            f"{legacy} legacy record(s) (version ≤ 3) remain: rerun claude-multi migrate",
-            code="legacy-records", public="legacy session records remain", remedy="claude-multi migrate",
+            f"{legacy} legacy record(s) (version ≤ 3) remain: rerun charmer migrate",
+            code="legacy-records", public="legacy session records remain", remedy="charmer migrate",
         ))
     for managed in missed:
         attention.append(
             f"session {managed[:8]} was live while it was migrated and no session "
             "event has reached it since; if it was /clear-ed or resumed then, check "
-            f"its runtime id (claude-multi sessions show {managed}; claude-multi "
+            f"its runtime id (charmer sessions show {managed}; charmer "
             f"sessions relink-runtime {managed} <runtime-id>)"
         )
     if hooks.migration_lock_held(root):
         info.append("migration or restore in progress (session hooks skip record writes)")
     backups = len(list(store.sessions_dir.glob(f"*{sessions.BACKUP_SUFFIX}")))
     if backups:
-        info.append(f"{backups} legacy backup(s) kept for claude-multi restore-2x")
+        info.append(f"{backups} legacy backup(s) kept for charmer restore-2x")
     for name in ("quarantine-3x", "restored-2x"):
         if os.path.lexists(root / name):
             info.append(f"{paths.display(root / name, runtime.environ)} holds files moved aside by "
-                        "claude-multi restore-2x")
+                        "charmer restore-2x")
     return info, attention
 
 
@@ -1184,7 +1184,7 @@ def _doctor_profile_report(runtime: runtime_mod.Runtime) -> tuple[list[str], lis
         attention.append(
             f"profile {name}: a newer shipped version of this seed exists "
             f"(v{installed if installed is not None else '?'} → v{shipped}): "
-            f"claude-multi profile reseed {name} (your version is kept as a backup)"
+            f"charmer profile reseed {name} (your version is kept as a backup)"
         )
     return problems, attention
 
@@ -1247,8 +1247,8 @@ def _doctor_record_report(
         ):
             attention.append(
                 f"session {m8} follows profile {profile_name!r}, which no longer exists; it "
-                f"keeps its applied lineup — pin it (claude-multi lineup --session {rid} pin) "
-                f"or choose one (claude-multi lineup --session {rid} profile <name>)"
+                f"keeps its applied lineup — pin it (charmer lineup --session {rid} pin) "
+                f"or choose one (charmer lineup --session {rid} profile <name>)"
             )
         if eff is not None:
             for line in settings_mod.drift(applied["settings"], eff):
@@ -1271,14 +1271,14 @@ def _doctor_record_report(
     if needs_choice:
         attention.append(
             f"{len(needs_choice)} session(s) need a profile or model choice (lead removed): "
-            "resume interactively with claude-multi -r <id>, or claude-multi lineup --session "
+            "resume interactively with charmer -r <id>, or charmer lineup --session "
             "<runtime-id> --relaunch profile <name> | direct <model> — "
             + ", ".join(needs_choice)
         )
     for provider_id, ids in sorted(externalized.items()):
         attention.append(
             f"{len(ids)} session(s) lead on provider {provider_id}, which left the catalog: to keep it, "
-            f"declare its reviewed sample (claude-multi providers add --preset {provider_id} --base-url <your "
+            f"declare its reviewed sample (charmer providers add --preset {provider_id} --base-url <your "
             "server>) and admit its line, then choose it at the resume; otherwise choose another model — "
             + ", ".join(ids)
         )
@@ -1291,7 +1291,7 @@ _RADAR_SETTINGS_KEYS: dict[str, tuple[Callable[[Any], bool], str, str]] = {
     "disableAllHooks": (
         lambda value: value is True,
         "disables every hook: session records, lineup notices and the /model fence stop "
-        "working in claude-multi sessions",
+        "working in charmer sessions",
         "attention",
     ),
     "maxEffortLevel": (
@@ -1394,11 +1394,11 @@ def _settings_radar(runtime: runtime_mod.Runtime, records: list[dict[str, Any]])
                     attention.append(
                         f"{path}: env.{key} sets a gateway credential; it outranks the "
                         "session's apiKeyHelper (token rotation would break those sessions) "
-                        "— remove it (claude-multi doctor --rotate-token refuses while it is set)"
+                        "— remove it (charmer doctor --rotate-token refuses while it is set)"
                     )
                 elif key in policy_keys and env[key] not in (None, ""):
                     attention.append(
-                        f"{path}: env.{key} defeats the claude-multi session policy (claude "
+                        f"{path}: env.{key} defeats the charmer session policy (claude "
                         "merges it after the launcher's env cleanup) — remove it"
                     )
                 elif key in subagent and env[key]:
@@ -1458,13 +1458,13 @@ def _is_charmer_selector(value: Any, known: frozenset[str]) -> bool:
     if not isinstance(value, str) or not value:
         return False
     norm = scope_mod.normalize_model(value)
-    return norm in known or norm.startswith(("claude-multi-", "gpt-multi-"))
+    return norm in known or norm.startswith(("charmer-", "gpt-multi-"))
 
 
 def _doctor_user_settings_report(
     runtime: runtime_mod.Runtime, records: list[dict[str, Any]]
 ) -> tuple[list[str], list[str]]:
-    """Claude-multi selectors saved in user settings + /cm skill collisions."""
+    """charmer selectors saved in user settings + /cm skill collisions."""
 
     attention: list[str] = []
     info: list[str] = []
@@ -1488,8 +1488,8 @@ def _doctor_user_settings_report(
                     hits.append((f"modelSettings[{json.dumps(key)}]", key))
         for json_path, value in hits:
             attention.append(
-                f"{path}: {json_path} holds the claude-multi selector {value!r} (saved by a "
-                "/model choice inside a claude-multi session); plain claude cannot use it. "
+                f"{path}: {json_path} holds the charmer selector {value!r} (saved by a "
+                "/model choice inside a charmer session); plain claude cannot use it. "
                 f"Revert: remove {json_path} from {path}"
             )
     cwds = [runtime.cwd] + [
@@ -1521,7 +1521,7 @@ def _doctor_retirement_radar(runtime: runtime_mod.Runtime) -> list[str]:
 
     Reads the pinned registry's codex metadata for every merged
     catalog/custom line's wire and every continuity alias's wire. The date is
-    upstream's; claude-multi only infers that the wire may be refused after it.
+    upstream's; charmer only infers that the wire may be refused after it.
     """
 
     root = catalog.registry_dir(runtime.environ, runtime.asset_root)
@@ -1695,7 +1695,7 @@ def _doctor_journal_report(runtime: runtime_mod.Runtime, text: str | gateway_eve
             f"gateway substitution: {substitution.label} was answered by {substitution.served} "
             f"({substitution.count}× in 24 h{qualifier}, a lower bound: logged at most once per credential "
             "and model pair per 10 min); the provider serves another model under this wire — "
-            "check the line (claude-multi models) and move agents off it if that matters"
+            "check the line (charmer models) and move agents off it if that matters"
         )
     return lines
 
@@ -1761,7 +1761,7 @@ def _hook_error_observation(runtime, records):
         if count:
             detail = ", ".join(f"{event} {n}" for event, n in sorted(events.items()))
             lines.append(f"{count} protocol-3 hook failure(s) logged since the last launch ({detail}) in {path} "
-                         "(metadata only); claude-multi doctor --prune rotates the log once read")
+                         "(metadata only); charmer doctor --prune rotates the log once read")
         return fact("known", count, "malformed-lines" if damaged else "observed",
                     "attention" if count else "info", coverage="partial"), lines
     return runtime.report_value("hook-errors", collect)
@@ -1868,7 +1868,7 @@ def _token_rotation_attention(runtime: runtime_mod.Runtime) -> str | None:
     }[published]
     return (
         f"gateway token rotation in progress ({phase}; previous-key since "
-        f"{since}): finish with `claude-multi doctor --rotate-token`"
+        f"{since}): finish with `charmer doctor --rotate-token`"
     )
 
 
@@ -2009,7 +2009,7 @@ def _check_scope_integrity(
     info: list[str] = []
     disk = scope_mod.read_disk_plan(live, ep.plan) if live.is_dir() else None
     if disk is None:
-        problems.append(f"session {m8}: scope unreadable; claude-multi doctor --repair {mid}")
+        problems.append(f"session {m8}: scope unreadable; charmer doctor --repair {mid}")
     elif scope_mod.plan_hash(disk) != scope_mod.plan_hash(ep.plan):
         drifted = scope_mod.live_drift(live, ep.plan)
         agent_files = _catalog_agent_drift(runtime, record, live, drifted)
@@ -2031,8 +2031,8 @@ def _check_scope_integrity(
             attention.append(
                 f"session {m8}: agent definitions differ from the installed catalog "
                 f"({', '.join(agent_files)}; catalog content changed since launch, bindings "
-                f"unchanged); applies at the next resume (claude-multi -r {mid}) — or "
-                f"claude-multi doctor --repair {mid} now"
+                f"unchanged); applies at the next resume (charmer -r {mid}) — or "
+                f"charmer doctor --repair {mid} now"
             )
         elif (deny_note := _deny_drift_note(runtime, live, ep.plan, m8, mid, drifted)) is not None:
             attention.append(deny_note)
@@ -2040,7 +2040,7 @@ def _check_scope_integrity(
             drift = "; ".join(drifted) or "content differs"
             problems.append(
                 f"session {m8}: scope differs from the record-authoritative compile ({drift}); "
-                f"run claude-multi doctor --repair {mid}"
+                f"run charmer doctor --repair {mid}"
             )
     else:
         info.append(
@@ -2049,7 +2049,7 @@ def _check_scope_integrity(
         if not ep.launch_files_kept and ep.rebuilt_fence_matches is False:
             attention.append(
                 f"session {m8}: launch-time files were rebuilt from the installed catalog "
-                f"after launch; live agent changes need a relaunch — claude-multi -r {mid} "
+                f"after launch; live agent changes need a relaunch — charmer -r {mid} "
                 "after it exits"
             )
     if ep.diagnostics_kept:
@@ -2085,7 +2085,7 @@ def _check_scope_integrity(
         )
         attention.append(
             f"session {m8}: agent context class changes at the next resume ({rows}) — "
-            f"claude-multi -r {mid} after it exits"
+            f"charmer -r {mid} after it exits"
         )
     # The compiled fence must admit every applied binding.
     if disk is not None:
@@ -2107,7 +2107,7 @@ def _check_scope_integrity(
                     problems.append(
                         f"session {m8}: {label} is bound to {selector}, which the compiled "
                         "fence does not admit — the agent would silently run on the lead "
-                        f"model; run claude-multi doctor --repair {mid}"
+                        f"model; run charmer doctor --repair {mid}"
                     )
     return problems, attention, info
 
@@ -2137,7 +2137,7 @@ def _doctor_scope_report(runtime: runtime_mod.Runtime) -> tuple[list[str], list[
         if sessions.drop_resolved_pending_forks(record) is not None:
             attention.append(
                 f"session {sessions.managed_id(record)} holds a fork marker its live "
-                "runtime already resolved; `claude-multi doctor --repair-all` clears it "
+                "runtime already resolved; `charmer doctor --repair-all` clears it "
                 "in place"
             )
         elif state_label == sessions.IDENTITY_PENDING_FORK:
@@ -2183,7 +2183,7 @@ def _doctor_scope_report(runtime: runtime_mod.Runtime) -> tuple[list[str], list[
     if scope_mismatch:
         problems.append(
             f"{scope_mismatch} scope(s) diverged from record authority; run "
-            "`claude-multi doctor --repair-all` to converge them in one pass"
+            "`charmer doctor --repair-all` to converge them in one pass"
         )
     return info, problems, attention
 
@@ -2229,7 +2229,7 @@ def _sessions_line(recorded: int, legacy: int, unreadable: int) -> str:
 
     parts = [f"Sessions: {recorded} recorded"]
     if legacy:
-        parts.append(f"{legacy} legacy record{'s' if legacy != 1 else ''} (claude-multi migrate)")
+        parts.append(f"{legacy} legacy record{'s' if legacy != 1 else ''} (charmer migrate)")
     if unreadable:
         parts.append(f"{unreadable} unreadable")
     return " · ".join(parts) + "."
@@ -2281,7 +2281,7 @@ def _deny_drift_note(runtime: runtime_mod.Runtime, live: Path, plan: Any, m8: st
     return gateway_facts.Finding(
         f"session {m8}: its secret-file denies differ from this shell's compile only because the launch "
         f"environment selects them ({'; '.join(parts)}); repair or resume it from the shell you launch from "
-        f"(claude-multi doctor --repair {mid}) so the denies follow that environment",
+        f"(charmer doctor --repair {mid}) so the denies follow that environment",
         code="secret-deny-environment", subject_id=mid,
         public="a session's secret-file denies depend on the environment it was launched from",
         remedy="repair or resume the session from the shell it is launched from",
@@ -2345,7 +2345,7 @@ def _doctor_env_keep_report(runtime: runtime_mod.Runtime) -> tuple[list[str], li
         return [], []
     try:
         names = _provider_secret_names(runtime)
-    except (KeyError, TypeError, cli_errors.ClaudeMultiError):
+    except (KeyError, TypeError, cli_errors.CharmerError):
         names = frozenset()
     usable, refused = compiler.checked_env_keep(keep, credential_names=compiler.credential_env_names(names))
     unset = compiler.v2_env_unset(scalar=None, secret_env_names=names, launch_environ=runtime.environ,
@@ -2374,7 +2374,7 @@ def _doctor_new_lines_report(runtime: runtime_mod.Runtime) -> list[str]:
     try:
         lines = runtime.lineup_catalog().lines
         admitted = set(runtime.current_effective().admitted_lines)
-    except (cli_errors.ClaudeMultiError, KeyError, ValueError):
+    except (cli_errors.CharmerError, KeyError, ValueError):
         return []
     found: list[str] = []
     for key in sorted(lines):
@@ -2383,9 +2383,9 @@ def _doctor_new_lines_report(runtime: runtime_mod.Runtime) -> list[str]:
             continue
         found.append(gateway_facts.Finding(
             f"New model: {line.get('display', key)} ({key}) — not admitted (optional badge): "
-            f"claude-multi models admit {key} (or Models, then Enter; use does not require it)",
+            f"charmer models admit {key} (or Models, then Enter; use does not require it)",
             code="model-newly-available", subject_id=key if observations.identifier(key) else None,
-            public="a new model is available and not admitted", remedy=f"claude-multi models admit {key}",
+            public="a new model is available and not admitted", remedy=f"charmer models admit {key}",
         ))
     return found
 
@@ -2407,7 +2407,7 @@ def _health_backend(runtime: runtime_mod.Runtime) -> str | None:
 
     try:
         return service.backend_of(runtime.home).name
-    except (cli_errors.ClaudeMultiError, OSError, ValueError):
+    except (cli_errors.CharmerError, OSError, ValueError):
         return None
 
 

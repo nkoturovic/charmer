@@ -148,7 +148,7 @@ Describe 'Installer output and native exit status' {
     }
 
     It 'succeeds when the installer prints lines and exits 0' {
-        Set-Content $script:InstallerStub "Write-Output 'verified signature', 'installed claude-multi 1.0.0'; exit 0"
+        Set-Content $script:InstallerStub "Write-Output 'verified signature', 'installed charmer 1.0.0'; exit 0"
         Invoke-Main -Version '1.0.0' -InstallerUrl $script:Url -NoSetup
         $script:MainExitCode | Should -Be 0
     }

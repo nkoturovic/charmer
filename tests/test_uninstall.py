@@ -1,4 +1,4 @@
-"""``claude-multi uninstall``: the plan first, removal only through the
+"""``charmer uninstall``: the plan first, removal only through the
 installer receipt's proofs, credentials only after the typed phrase, kept
 backups and Claude Code's own files never touched, and the exit statuses.
 
@@ -27,7 +27,7 @@ from charmer.platform import file_log, observation, posix_fs, systemd_unit
 from charmer.setup import external, texts, uninstall
 import charmer.cli.consent as consent
 
-MARK = "# added by the claude-multi installer"
+MARK = "# added by the charmer installer"
 EXPORT = f'export PATH="$HOME/.local/bin:$PATH" {MARK}'
 RECORD_ID = "abcdef12-3456-4789-8abc-def012345678"
 
@@ -50,9 +50,9 @@ class UninstallCase(test_cli.OperatorCommandCase):
     def installed(self, *, receipt_format: int = 2) -> dict[str, Path]:
         """A bundle install: release files, two launchers and one PATH line."""
 
-        self.file(self.install / "versions" / "1.0.0" / "bin" / "claude-multi", b"#!/bin/sh\n", 0o755)
+        self.file(self.install / "versions" / "1.0.0" / "bin" / "charmer", b"#!/bin/sh\n", 0o755)
         launchers = [self.file(self.home / ".local/bin" / name, f"# launcher {name}\n".encode(), 0o755)
-                     for name in ("claude-multi", "claude-multi-proxy")]
+                     for name in ("charmer", "charmer-proxy")]
         profile = self.file(self.home / ".bashrc", f"alias ll='ls -l'\n\n{EXPORT}\n# mine\n".encode(), 0o644)
         if receipt_format == 2:  # written by the installer's own receipt writer
             os.chmod(self.install, 0o700)  # as the installer makes it
@@ -142,7 +142,7 @@ class ReceiptTests(UninstallCase):
         made["proxy"].write_text("# edited by hand\n")
         plan = uninstall.build_plan(self.runtime)
         self.assertNotIn(made["proxy"], {entry.path for entry in plan.program})
-        self.assertIn(texts.UNINSTALL_CHANGED_WRAPPER.format(path="~/.local/bin/claude-multi-proxy"),
+        self.assertIn(texts.UNINSTALL_CHANGED_WRAPPER.format(path="~/.local/bin/charmer-proxy"),
                       plan.kept_program)
 
     def test_a_launcher_replaced_while_the_question_waits_is_kept(self) -> None:
@@ -161,8 +161,8 @@ class ReceiptTests(UninstallCase):
         self.assertEqual(code, 1, out + err)
         self.assertEqual(made["proxy"].read_bytes(), replacement)
         self.assertTrue(made["launcher"].exists())
-        self.assertIn(texts.UNINSTALL_CHANGED_SINCE_PLAN.format(path="~/.local/bin/claude-multi-proxy"), out)
-        self.assertIn(texts.UNINSTALL_CHANGED_SINCE_PLAN.format(path="~/.local/bin/claude-multi"), out)
+        self.assertIn(texts.UNINSTALL_CHANGED_SINCE_PLAN.format(path="~/.local/bin/charmer-proxy"), out)
+        self.assertIn(texts.UNINSTALL_CHANGED_SINCE_PLAN.format(path="~/.local/bin/charmer"), out)
         self.assertNotIn(EXPORT, made["profile"].read_text())  # the rest of the plan ran
 
     def test_a_hashless_earlier_format_authorizes_nothing_outside_the_release(self) -> None:
@@ -202,7 +202,7 @@ class ReceiptTests(UninstallCase):
         self.assertTrue(any("not valid JSON" in note for note in plan.kept_program), plan.kept_program)
 
     def test_no_receipt(self) -> None:
-        self.file(self.install / "versions" / "1.0.0" / "bin" / "claude-multi", b"#!/bin/sh\n", 0o755)
+        self.file(self.install / "versions" / "1.0.0" / "bin" / "charmer", b"#!/bin/sh\n", 0o755)
         plan = uninstall.build_plan(self.runtime)
         self.assertIn(texts.UNINSTALL_NO_RECEIPT, plan.kept_program)
 
@@ -273,7 +273,7 @@ class RootTests(UninstallCase):
     def test_a_folder_replaced_by_a_link_after_the_plan_keeps_what_it_points_to(self) -> None:
         made = self.everything()
         outside = self.root / "elsewhere"
-        bait = self.file(outside / "t.json", b"not claude-multi's\n")
+        bait = self.file(outside / "t.json", b"not charmer's\n")
 
         def swap(_text, *, input_stream=None):
             shutil.rmtree(made["trace"].parent)
@@ -283,7 +283,7 @@ class RootTests(UninstallCase):
         with mock.patch.object(consent, "confirm", side_effect=swap):
             code, out, err = self.uninstall("--keep-credentials", text="")
         self.assertEqual(code, 1, out + err)
-        self.assertEqual(bait.read_bytes(), b"not claude-multi's\n")
+        self.assertEqual(bait.read_bytes(), b"not charmer's\n")
         self.assertIn(texts.UNINSTALL_MOVED.format(path=paths.display(made["trace"], self.runtime.environ)), out)
         self.assertFalse(made["claude"].exists())  # everything else in the plan went
 
@@ -293,15 +293,15 @@ class RootTests(UninstallCase):
         share.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         share.symlink_to(self.file(self.root / "other-disk" / "share" / ".keep").parent, target_is_directory=True)
         self.installed()
-        release = self.install / "versions" / "1.0.0" / "bin" / "claude-multi"
+        release = self.install / "versions" / "1.0.0" / "bin" / "charmer"
         trace = self.file(self.data / "traces" / "t.json")
         code, out, err = self.uninstall("--yes", "--keep-credentials", text="")
         self.assertEqual(code, 0, out + err)
         self.assertTrue(release.exists())
         self.assertFalse(trace.exists())  # the data root itself is a real folder
-        self.assertIn(texts.UNINSTALL_RELEASE_OUTSIDE.format(path="~/.local/share/claude-multi/install"), out)
+        self.assertIn(texts.UNINSTALL_RELEASE_OUTSIDE.format(path="~/.local/share/charmer/install"), out)
         with mock.patch.object(external, "is_store_path", return_value=True):
-            self.assertIn(texts.UNINSTALL_RELEASE_OUTSIDE.format(path="~/.local/share/claude-multi/install"),
+            self.assertIn(texts.UNINSTALL_RELEASE_OUTSIDE.format(path="~/.local/share/charmer/install"),
                           uninstall.build_plan(self.runtime).kept)
 
 
@@ -346,7 +346,7 @@ class CredentialTests(UninstallCase):
         self.assertTrue(pointed.exists())
         self.assertTrue(all(path.exists() for path in made.values()))
         self.assertIn("which file holds your API keys is not known, so nothing was removed", err)
-        self.assertIn("fix: fix or delete ~/.config/claude-multi/secret-file.json", err)
+        self.assertIn("fix: fix or delete ~/.config/charmer/secret-file.json", err)
         with self.assertRaises(uninstall.UninstallRefused):
             uninstall.build_plan(self.runtime)
 
@@ -354,7 +354,7 @@ class CredentialTests(UninstallCase):
 class RetainedReleaseTests(UninstallCase):
     def test_the_previous_release_is_kept_for_rollback(self) -> None:
         self.installed()
-        previous = self.file(self.install / "versions" / "0.9.0" / "bin" / "claude-multi", b"#!/bin/sh\n", 0o755)
+        previous = self.file(self.install / "versions" / "0.9.0" / "bin" / "charmer", b"#!/bin/sh\n", 0o755)
         (self.install / "current").symlink_to("versions/1.0.0")
         (self.install / "previous").symlink_to("versions/0.9.0")
         plan = uninstall.build_plan(self.runtime)
@@ -362,14 +362,14 @@ class RetainedReleaseTests(UninstallCase):
         self.assertEqual((where[previous], where[self.install / "previous"]), ("never", "never"))
         self.assertEqual(where[self.install / "current"], "program")
         lines = "\n".join(uninstall.plan_lines(self.runtime, plan))
-        self.assertIn("previous release  ~/.local/share/claude-multi/install/versions/0.9.0", lines)
+        self.assertIn("previous release  ~/.local/share/charmer/install/versions/0.9.0", lines)
         code, out, err = self.uninstall("--yes", "--keep-credentials", text="")
         self.assertEqual(code, 0, out + err)
         self.assertEqual(previous.read_bytes(), b"#!/bin/sh\n")
         self.assertTrue((self.install / "previous").is_symlink())
         self.assertFalse(os.path.lexists(self.install / "current"))
         self.assertFalse((self.install / "versions" / "1.0.0").exists())
-        self.assertIn(f"~/.local/share/claude-multi/install/versions/0.9.0 ({texts.UNINSTALL_RETAINED})", out)
+        self.assertIn(f"~/.local/share/charmer/install/versions/0.9.0 ({texts.UNINSTALL_RETAINED})", out)
 
 
 class LivenessTests(UninstallCase):
@@ -614,7 +614,7 @@ class InhibitionTests(UninstallCase):
             code, out, err = self.uninstall("--keep-credentials", text="")
         self.assertEqual(code, 1, out + err)
         self.assertEqual(asked, [])
-        self.assertIn("claude-multi uninstall: the gateway is inhibited by installer (update 1.0.0 to 1.0.1", err)
+        self.assertIn("charmer uninstall: the gateway is inhibited by installer (update 1.0.0 to 1.0.1", err)
         self.assertIn("nothing was removed", err)
         self.assertIn("  fix: wait until it has finished; if it was interrupted, its owner finishes or releases it: "
                       "sh install.sh --repair", err)
@@ -654,7 +654,7 @@ class InhibitionTests(UninstallCase):
 
     def test_an_unreadable_continuity_file_refuses(self) -> None:
         made = self.everything()
-        self.file(self.home / ".config" / "claude-multi" / "continuity.json", b"{broken")
+        self.file(self.home / ".config" / "charmer" / "continuity.json", b"{broken")
         code, out, err = self.uninstall("--yes", "--keep-credentials", text="")
         self.assertEqual(code, 1, out + err)
         self.assertIn("continuity.json", err)
@@ -704,7 +704,7 @@ class CredentialInventoryTests(UninstallCase):
             "a pointer under ~/.config/secrets": ({secret_store.SECRET_ENV_OVERRIDE: None},
                                                   home / ".config" / "secrets" / "keys.env"),
             "a pointer under the gateway folder": ({secret_store.SECRET_ENV_OVERRIDE: None},
-                                                   home / ".config" / "claude-multi" / "secrets" / "other.env"),
+                                                   home / ".config" / "charmer" / "secrets" / "other.env"),
             "the environment's key file inside HOME": ({secret_store.SECRET_ENV_OVERRIDE: str(home / "keys.env")},
                                                        None),
         }
@@ -757,31 +757,31 @@ class CredentialInventoryTests(UninstallCase):
 class ServiceStateTests(UninstallCase):
     def test_a_recorded_service_with_a_replaced_unit_refuses_before_any_file_goes(self) -> None:
         made = self.everything()
-        gateway_state = self.home / ".local" / "state" / "claude-multi"
+        gateway_state = self.home / ".local" / "state" / "charmer"
         endpoint.write_config(self.home, endpoint.EndpointConfig(port=18329, backend=endpoint.SYSTEMD,
-                                                                 unit="claude-multi-gateway"))
+                                                                 unit="charmer-gateway"))
         self.live_gateway(state_root=gateway_state)
-        unit = self.file(self.unit_dir / "claude-multi-gateway.service", b"[Unit]\nDescription=mine\n", 0o644)
+        unit = self.file(self.unit_dir / "charmer-gateway.service", b"[Unit]\nDescription=mine\n", 0o644)
         status = self.runtime.gateway_service().status(live=False)
         self.assertEqual((status.recorded, status.foreign, status.installed), (True, True, False))
         code, out, err = self.uninstall("--yes", "--keep-credentials", text="")
         self.assertEqual(code, 1, out + err)
         self.assertTrue(unit.exists())
         self.assertTrue(all(path.exists() for path in made.values()))
-        self.assertIn("was not written by claude-multi", err)
+        self.assertIn("was not written by charmer", err)
         self.assertEqual(external.service_state(self.runtime)[0], "recorded")
 
     def test_a_service_that_cannot_be_checked_or_is_not_recorded_refuses(self) -> None:
         made = self.everything()
-        self.live_gateway(state_root=self.home / ".local" / "state" / "claude-multi")
+        self.live_gateway(state_root=self.home / ".local" / "state" / "charmer")
         with mock.patch.object(gs.GatewayService, "status", side_effect=OSError(13, "Permission denied")):
             code, out, err = self.uninstall("--yes", "--keep-credentials", text="")
             self.assertEqual(code, 1, out + err)
             self.assertTrue(all(path.exists() for path in made.values()))
             self.assertIn("the gateway service cannot be checked", err)
             self.assertEqual(external.service_state(self.runtime)[0], "unknown")
-        self.file(self.unit_dir / "claude-multi-gateway.service",
-                  f"{systemd_unit.HEADER}\n[Unit]\nDescription=claude-multi gateway\n".encode(), 0o644)
+        self.file(self.unit_dir / "charmer-gateway.service",
+                  f"{systemd_unit.HEADER}\n[Unit]\nDescription=charmer gateway\n".encode(), 0o644)
         code, out, err = self.uninstall("--yes", "--keep-credentials", text="")
         self.assertEqual(code, 1, out + err)
         self.assertTrue(all(path.exists() for path in made.values()))
@@ -828,7 +828,7 @@ class CommandTests(UninstallCase):
         inhibited = "the gateway is inhibited by installer (update); nothing was removed\n  fix: sh install.sh --repair"
         for outcome, detail, text in (("hold", "8317", texts.UNINSTALL_HOLD),
                                       ("inhibited", inhibited, inhibited),
-                                      ("not-ours", "8317", "used by a program claude-multi did not start")):
+                                      ("not-ours", "8317", "used by a program charmer did not start")):
             with self.subTest(outcome=outcome), \
                     mock.patch.object(external, "stop_gateway_for_uninstall", return_value=(outcome, detail)):
                 code, _out, err = self.uninstall("--yes", text="\n")
@@ -848,7 +848,7 @@ class CommandTests(UninstallCase):
         for name in ("kept-record", "signed-out", "retained", "native", "account"):
             self.assertTrue(made[name].exists(), name)
         self.assertTrue(self.secret_file.exists())
-        self.assertTrue((self.home / ".config/claude-multi/api-key").exists())
+        self.assertTrue((self.home / ".config/charmer/api-key").exists())
         self.assertIn(texts.UNINSTALL_DONE, out)
         self.assertIn(texts.UNINSTALL_REMAINS, out)
         self.assertIn("your credentials:", out)
@@ -858,7 +858,7 @@ class CommandTests(UninstallCase):
         code, out, err = self.uninstall("--yes", text="delete credentials\n")
         self.assertEqual(code, 0, err)
         self.assertFalse(made["account"].exists())
-        self.assertFalse((self.home / ".config/claude-multi/api-key").exists())
+        self.assertFalse((self.home / ".config/charmer/api-key").exists())
         self.assertTrue(made["signed-out"].exists())
         self.assertTrue(self.secret_file.exists())  # outside the product's folders: never removed
         self.assertIn("also revoke these keys at their providers: ACME_API_KEY, KIMI_CLAUDE_API_KEY", out)

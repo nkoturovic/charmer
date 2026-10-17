@@ -122,7 +122,7 @@ def _with_meta_line(docs: dict) -> dict:
     entry = copy.deepcopy(docs["models"]["models"]["grok46"])
     entry.update(provider="meta", display="Meta Test Line")
     entry["efforts"] = {
-        "high": {"proxy_contract": "output-config-high", "selector": "claude-multi-mx-high[1m]"}
+        "high": {"proxy_contract": "output-config-high", "selector": "charmer-mx-high[1m]"}
     }
     entry["default_effort"] = "high"
     docs["models"]["models"]["mx"] = entry
@@ -164,7 +164,7 @@ class ParseTests(ProfileTestCase):
             self.parse_errors({"version": 1, "slots": []}),
             [
                 "version: unsupported profile version 1 (profiles are v2; legacy compositions "
-                "migrate with 'claude-multi profile migrate')"
+                "migrate with 'charmer profile migrate')"
             ],
         )
 

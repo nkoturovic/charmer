@@ -1,7 +1,7 @@
 """Catalog v1 -> v2 model-entry converter.
 
 Test helper, not product code: the fixture builder uses it to convert the
-frozen catalog-32 lines, and the ``claude-multi-dev drafts migrate``
+frozen catalog-32 lines, and the ``charmer-dev drafts migrate``
 classification mirrors it. A lane's id
 must equal its agent effort; a client-effort (Anthropic OAuth pool or
 OpenAI-compatible) entry must have exactly one lane whose selector is the

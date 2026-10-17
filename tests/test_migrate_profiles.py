@@ -1,4 +1,4 @@
-"""``claude-multi profile migrate [--dry-run | --apply]``.
+"""``charmer profile migrate [--dry-run | --apply]``.
 
 Fixture-based: the frozen asset root (``FIXTURE_ROOT``), synthetic v1
 compositions over fixture keys (``opus55``, ``opus``, ``sol``, ``gpt55``,
@@ -233,7 +233,7 @@ class HomeCase(unittest.TestCase):
     maxDiff = None
 
     def setUp(self) -> None:
-        self.tmp = Path(tempfile.mkdtemp(prefix="claude-multi-profile-migrate-"))
+        self.tmp = Path(tempfile.mkdtemp(prefix="charmer-profile-migrate-"))
         os.chmod(self.tmp, 0o700)
         self.addCleanup(shutil.rmtree, self.tmp, True)
         self.environ = _cli_environ(self.tmp)
@@ -305,7 +305,7 @@ class HomeCase(unittest.TestCase):
 def profile_migrate_golden_files() -> dict[str, bytes]:
     """dry-run / refused over the golden directory; apply / rerun without its blocking files."""
 
-    tmp = Path(tempfile.mkdtemp(prefix="claude-multi-profile-migrate-golden-"))
+    tmp = Path(tempfile.mkdtemp(prefix="charmer-profile-migrate-golden-"))
     try:
         os.chmod(tmp, 0o700)
         environ = _cli_environ(tmp)
@@ -450,7 +450,7 @@ class ReadPresetsTests(HomeCase):
                 self.assertTrue(str(ctx.exception).startswith("cannot read compositions: "))
                 code, out = self.main()
                 self.assertEqual(code, 1)
-                self.assertTrue(out.startswith("claude-multi: cannot read compositions: "), out)
+                self.assertTrue(out.startswith("charmer: cannot read compositions: "), out)
                 if self.compositions.is_symlink() or self.compositions.is_file():
                     self.compositions.unlink()
                 else:
@@ -761,7 +761,7 @@ class MechanicalRuleTests(unittest.TestCase):
 class KeyTranslationTests(unittest.TestCase):
     def test_a_renamed_key_is_written_as_its_successor(self) -> None:
         lcat = _local_cat(retired={"x-old": _retired_entry(
-            "sol", since=32, wire="x-old-1", selectors={"claude-multi-x-old": None},
+            "sol", since=32, wire="x-old-1", selectors={"charmer-x-old": None},
             provider="openai")})
         out = convert("t", rule("src"), comp("src", "sol", slot("cm-analyst", "x-old", "high")),
                       lcat=lcat)
@@ -1055,7 +1055,7 @@ class DryRunNoWritesTests(HomeCase):
                 mock.patch.object(scope, "ensure_token_helper_command", failing):
             code, out = self.main(*argv, captured=captured)
         self.assertIn(code, (0, 1))
-        self.assertTrue(out.startswith("claude-multi profile migrate --dry-run: config "), out)
+        self.assertTrue(out.startswith("charmer profile migrate --dry-run: config "), out)
         self.assertTrue(out.endswith(mp.DRY_RUN_FOOTER + "\n"), out)
         self.assertEqual(failing.call_count, 0)
         self.assertEqual(captured[0]["allow_state_writes"], False)
@@ -1192,7 +1192,7 @@ class IdempotencyTests(HomeCase):
         seeds = len(catalog.SEED_PROFILE_NAMES)
         self.assertIn(f"\nstopped: wrote 1 profiles, installed {seeds} seeds before an error; "
                       "compositions untouched; rerun to converge\n"
-                      f"claude-multi: profile migrate stopped after writing 1 profile(s) and {seeds} "
+                      f"charmer: profile migrate stopped after writing 1 profile(s) and {seeds} "
                       "seed(s): disk full (injected)", out)
         code, out = self.main("--apply")
         self.assertEqual(code, 0, out)
@@ -1225,7 +1225,7 @@ class RefusalTests(HomeCase):
         self.assertEqual(code, 1)
         self.assertIn(
             "    errors: profile fx-direct exists and differs from the migration result; compare "
-            "with claude-multi profile show fx-direct; to re-migrate, rename it (claude-multi "
+            "with charmer profile show fx-direct; to re-migrate, rename it (charmer "
             "profile rename fx-direct fx-direct-2x-old) and rerun\n", out)
         self.assertTrue(out.endswith("refused: 1 blocking outcome(s); nothing was written\n"))
         self.assertEqual((self.config_root / "profiles" / "fx-direct.json").read_bytes(), before)
@@ -1253,7 +1253,7 @@ class RefusalTests(HomeCase):
         state.atomic_write(self.state_root / "state-version", b"5\n")
         code, out = self.main("--apply")
         self.assertEqual(code, 1)
-        self.assertEqual(out, f"claude-multi: {sessions.StateMarkerError(5)}\n")
+        self.assertEqual(out, f"charmer: {sessions.StateMarkerError(5)}\n")
         self.assertFalse((self.config_root / "profiles").exists())
         code, out = self.main()
         self.assertEqual(code, 0, out)

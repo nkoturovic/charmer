@@ -238,7 +238,7 @@ class RecordAuthorityOperatorTests(unittest.TestCase):
         record = {"applied": {"lead": {"key": "custom-fresh", "selector": "custom-fresh"}, "agents": {}}}
         # A plain operator line rides the snapshot only: no inference.
         self.assertEqual(transition.recorded_operator_admissions(record, lcat, eff).admitted_lines, frozenset())
-        unrelated = {"applied": {"lead": {"key": "opus", "selector": "claude-multi-opus-4-8[1m]"}, "agents": {}}}
+        unrelated = {"applied": {"lead": {"key": "opus", "selector": "charmer-opus-4-8[1m]"}, "agents": {}}}
         self.assertIs(transition.recorded_operator_admissions(unrelated, lcat, eff), eff)
 
     def test_expected_plan_takes_no_ledger_input(self) -> None:

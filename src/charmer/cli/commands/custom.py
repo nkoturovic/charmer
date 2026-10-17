@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 def _not_found(name: str) -> int:
     """A removal of an entry the registry does not hold: refused, exit 1."""
 
-    sys.stderr.write(f"claude-multi: not found: {termtext.visible_text(name)}; nothing was removed\n")
+    sys.stderr.write(f"charmer: not found: {termtext.visible_text(name)}; nothing was removed\n")
     return 1
 
 
@@ -40,8 +40,8 @@ def _custom_command(
             # After migrate-custom the legacy registry is no longer read;
             # writing it would change nothing served.
             replacement = {
-                "add-provider": "claude-multi providers add", "remove-provider": "claude-multi providers rm",
-                "add-model": "claude-multi models add", "remove-model": "claude-multi models rm",
+                "add-provider": "charmer providers add", "remove-provider": "charmer providers rm",
+                "add-model": "charmer models add", "remove-model": "charmer models rm",
             }[command]
             raise cli_errors.CLIError(
                 f"custom {command}: custom.json was migrated to providers.d and is no longer read — use {replacement}"

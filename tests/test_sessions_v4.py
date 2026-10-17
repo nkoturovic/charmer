@@ -45,7 +45,7 @@ NOW = "2026-09-26T00:00:00Z"
 LATER = "2026-09-27T00:00:00Z"
 HASH0 = "sha256:" + "0" * 64
 FENCE = "sha256:" + "1" * 64
-LEAD_SELECTOR = "claude-multi-opus-5-5[1m]"
+LEAD_SELECTOR = "charmer-opus-5-5[1m]"
 AGENT_SELECTOR = "gpt-multi-sol-high[1m]"
 
 _BUNDLE = catalog.load_catalog(FIXTURE_ROOT)
@@ -161,7 +161,7 @@ def _v1(managed_id: str = MID) -> dict:
 
 class V4TestCase(unittest.TestCase):
     def setUp(self) -> None:
-        self.root = Path(tempfile.mkdtemp(prefix="claude-multi-sessions-v4-"))
+        self.root = Path(tempfile.mkdtemp(prefix="charmer-sessions-v4-"))
         os.chmod(self.root, 0o700)
         self.addCleanup(shutil.rmtree, self.root, True)
         self.store = sessions.SessionStore(self.root, _schema())
@@ -398,7 +398,7 @@ class SchemaAndInvariantTests(V4TestCase):
                             "lead_target equals the applied lead")
         self.store.save({**record, "lead_target": {**sessions.lead_ref(lead), "effort": "max"}})
         self.store.save({**record, "lead_target": {"key": "opus", "effort": "ultracode",
-                                                   "selector": "claude-multi-opus-4-8[1m]"}})
+                                                   "selector": "charmer-opus-4-8[1m]"}})
 
     def test_identity_invariants_are_shared_with_v3(self) -> None:
         record = _v4()
@@ -444,7 +444,7 @@ class SchemaAndInvariantTests(V4TestCase):
                                                               "selector": "s"},
                    "pending": {"requested_at": NOW, "kind": "profile", "profile": "max",
                                "follow": True, "document": None, "reasons": ["r"]}}
-        applied = _applied(key="opus5", selector="claude-multi-opus-5[1m]")
+        applied = _applied(key="opus5", selector="charmer-opus-5[1m]")
         nxt = sessions.next_v4_record(
             current, profile="max", follow=True, applied=applied, lineup_generation=2,
             lead_class="large", catalog_version=34, catalog_hash=HASH0,
@@ -474,7 +474,7 @@ class MarkerAndLockTests(V4TestCase):
             sessions.check_state_marker(self.root)
         self.assertEqual(
             str(caught.exception),
-            "state belongs to a newer claude-multi (state version 5); "
+            "state belongs to a newer charmer (state version 5); "
             "this launcher understands state version 4 or older. Fix: "
             + sessions.StateMarkerError.NEWER_REMEDY,
         )
@@ -719,13 +719,13 @@ class LifecycleVersionPreservationTests(V4TestCase):
 
     def test_v3_ordinary_repin_reaches_disk_and_stays_version_3(self) -> None:
         raw = _v3_ordinary()
-        raw["observed_model"] = "claude-multi-kimi-k3-max[1m]"
+        raw["observed_model"] = "charmer-kimi-k3-max[1m]"
         raw["identity_state"] = sessions.IDENTITY_REPAIR_NEEDED
         self.write_raw(raw)
         self.store.reconcile_runtime(
             MID, observed_runtime_id=MID, source="startup", cwd="/project/path",
             model="kimi-k3", model_profile="large",
-            observed_model="claude-multi-kimi-k3-max[1m]", launch_epoch=1, now=LATER,
+            observed_model="charmer-kimi-k3-max[1m]", launch_epoch=1, now=LATER,
         )
         saved = self.disk()
         self.assertEqual(saved["version"], 3)
@@ -776,8 +776,8 @@ class V4ModelEvidenceTests(V4TestCase):
     def test_tri_state(self) -> None:
         record = _v4()
         self.store.save(record)
-        updated = self.start("claude-multi-opus-5[1m]")
-        self.assertEqual(updated["observed_model"], "claude-multi-opus-5[1m]")
+        updated = self.start("charmer-opus-5[1m]")
+        self.assertEqual(updated["observed_model"], "charmer-opus-5[1m]")
         self.assertEqual(updated["identity_state"], sessions.IDENTITY_REPAIR_NEEDED)
         self.assertEqual(self.disk()["applied"], record["applied"])  # never a re-pin
         self.start(sessions.MODEL_EQUIVALENT)
@@ -787,7 +787,7 @@ class V4ModelEvidenceTests(V4TestCase):
         self.assertEqual(saved["applied_hash"], record["applied_hash"])
 
     def test_repair_evidence_survives_compact_resume_and_relink(self) -> None:
-        record = {**_v4(), "observed_model": "claude-multi-opus-5[1m]",
+        record = {**_v4(), "observed_model": "charmer-opus-5[1m]",
                   "identity_state": sessions.IDENTITY_REPAIR_NEEDED}
         self.store.save(record)
         self.start(None, source="compact")
@@ -795,11 +795,11 @@ class V4ModelEvidenceTests(V4TestCase):
         for step in ("compact", "resume"):
             with self.subTest(step=step):
                 saved = self.disk()
-                self.assertEqual(saved["observed_model"], "claude-multi-opus-5[1m]")
+                self.assertEqual(saved["observed_model"], "charmer-opus-5[1m]")
                 self.assertEqual(saved["identity_state"], sessions.IDENTITY_REPAIR_NEEDED)
         self.store.relink_runtime(MID, observed_runtime_id=MID)
         saved = self.disk()
-        self.assertEqual(saved["observed_model"], "claude-multi-opus-5[1m]")
+        self.assertEqual(saved["observed_model"], "charmer-opus-5[1m]")
         self.assertEqual(saved["identity_state"], sessions.IDENTITY_REPAIR_NEEDED)
 
     def test_model_equivalent_on_a_v3_view_raises(self) -> None:
@@ -856,7 +856,7 @@ class V4ModelEvidenceTests(V4TestCase):
 
     def test_compact_admissibility_is_decided_on_the_locked_view(self) -> None:  # Ordinary-only observations must not alter a managed record.
         _v3.save_any(self.store, _v3_ordinary())  # its lock-free rule would keep a compact model
-        v4_record = {**_v4(), "observed_model": "claude-multi-opus-5[1m]",
+        v4_record = {**_v4(), "observed_model": "charmer-opus-5[1m]",
                      "observed_cwd": "/elsewhere",
                      "identity_state": sessions.IDENTITY_REPAIR_NEEDED}
         calls: list[int] = []
@@ -868,7 +868,7 @@ class V4ModelEvidenceTests(V4TestCase):
             )
         self.assertEqual(calls, [4])
         saved = self.disk()
-        self.assertEqual(saved["observed_model"], "claude-multi-opus-5[1m]")
+        self.assertEqual(saved["observed_model"], "charmer-opus-5[1m]")
         self.assertEqual(saved["observed_cwd"], "/elsewhere")
         self.assertEqual(saved["identity_state"], sessions.IDENTITY_REPAIR_NEEDED)
 
@@ -935,8 +935,8 @@ class ReaderTests(V4TestCase):
             self.store.load_v4(MID)
         self.assertEqual(
             str(caught.exception),
-            f"session {MID} is a legacy record (version 1); resume it (claude-multi -r {MID}) "
-            "or run claude-multi migrate",
+            f"session {MID} is a legacy record (version 1); resume it (charmer -r {MID}) "
+            "or run charmer migrate",
         )
         self.assertEqual(self.store.load(MID)["version"], 3)
         raw, _data = self.store.load_raw(MID)
@@ -995,7 +995,7 @@ class ResolveRuntimeTests(V4TestCase):
         self.assertEqual(str(caught.exception), sessions.pending_fork_message(self.record))
         with self.assertRaises(SessionError) as caught:
             self.store.resolve_runtime(THIRD)
-        self.assertEqual(str(caught.exception), f"no claude-multi session has runtime id {THIRD}")
+        self.assertEqual(str(caught.exception), f"no charmer session has runtime id {THIRD}")
 
     def test_unreadable_record_claiming_it_fails_closed(self) -> None:
         state.atomic_write(self.store.sessions_dir / f"{OTHER}.json",
@@ -1228,7 +1228,7 @@ class RelinkMigrationGuardTests(V4TestCase):
 
 
 class LeadSwitchTests(V4TestCase):
-    ROW = {"key": "opus5", "selector": "claude-multi-opus-5[1m]", "effort": None,
+    ROW = {"key": "opus5", "selector": "charmer-opus-5[1m]", "effort": None,
            "display": "Opus 5", "family": "anthropic"}
 
     def setUp(self) -> None:
@@ -1260,7 +1260,7 @@ class LeadSwitchTests(V4TestCase):
         self.assertEqual(self.switch(), "switched")
         saved = self.disk()
         self.assertEqual(saved["applied"]["lead"]["key"], "opus5")
-        self.assertEqual(saved["applied"]["lead"]["selector"], "claude-multi-opus-5[1m]")
+        self.assertEqual(saved["applied"]["lead"]["selector"], "charmer-opus-5[1m]")
         self.assertEqual(saved["applied"]["lead"]["effort"], "ultracode")  # null row effort keeps it
         self.assertIsNone(saved["applied"]["lead"]["generation"])
         self.assertEqual(saved["applied"]["lead"]["compaction"], record["applied"]["lead"]["compaction"])
@@ -1277,7 +1277,7 @@ class LeadSwitchTests(V4TestCase):
         saved = self.disk()
         self.assertFalse(saved["follow"])
         self.assertEqual(saved["profile"], "balanced")
-        target = {"key": "opus5", "effort": "ultracode", "selector": "claude-multi-opus-5[1m]"}
+        target = {"key": "opus5", "effort": "ultracode", "selector": "charmer-opus-5[1m]"}
         self.store.save({**_v4(), "lead_target": target})
         self.assertEqual(self.switch(), "switched")
         saved = self.disk()
@@ -1285,13 +1285,13 @@ class LeadSwitchTests(V4TestCase):
         self.assertNotIn("lead_target", saved)
 
     def test_identity_re_derived_when_the_evidence_was_this_model(self) -> None:
-        self.store.save({**_v4(), "observed_model": "claude-multi-opus-5[1m]",
+        self.store.save({**_v4(), "observed_model": "charmer-opus-5[1m]",
                          "identity_state": sessions.IDENTITY_REPAIR_NEEDED})
         self.switch()
         saved = self.disk()
         self.assertNotIn("observed_model", saved)
         self.assertEqual(saved["identity_state"], sessions.IDENTITY_AUTHORITATIVE)
-        self.store.save({**_v4(), "observed_model": "claude-multi-opus-5[1m]",
+        self.store.save({**_v4(), "observed_model": "charmer-opus-5[1m]",
                          "observed_cwd": "/elsewhere",
                          "identity_state": sessions.IDENTITY_REPAIR_NEEDED})
         self.switch()
@@ -1340,7 +1340,7 @@ class RestoreOverlayTests(V4TestCase):
 
 class MessageTests(unittest.TestCase):
     def test_fork_adopt_command_table(self) -> None:
-        base = f"claude-multi sessions link {FORK}"
+        base = f"charmer sessions link {FORK}"
         rows = (
             (_v4(), f"{base} --profile balanced"),
             (sessions.with_applied({**_v4(profile_name=None, follow=False)},
@@ -1358,14 +1358,14 @@ class MessageTests(unittest.TestCase):
         self.assertEqual(
             sessions.pending_fork_message(record),
             f"session {MID} has an unresolved native fork (runtime {FORK}); adopt it with "
-            f"`claude-multi sessions link {FORK} --profile balanced`, or discard the marker "
-            f"with `claude-multi sessions resolve-fork {MID} {FORK}` — the fork transcript "
+            f"`charmer sessions link {FORK} --profile balanced`, or discard the marker "
+            f"with `charmer sessions resolve-fork {MID} {FORK}` — the fork transcript "
             "is kept either way",
         )
         record["pending_forks"].append({"session_id": THIRD, "observed_at": NOW})
         self.assertIn(
-            "adopt or discard each with `claude-multi sessions link <fork-uuid> "
-            f"--profile NAME|--direct MODEL` / `claude-multi sessions resolve-fork {MID} "
+            "adopt or discard each with `charmer sessions link <fork-uuid> "
+            f"--profile NAME|--direct MODEL` / `charmer sessions resolve-fork {MID} "
             "<fork-uuid>`",
             sessions.pending_fork_message(record),
         )
@@ -1380,7 +1380,7 @@ class MessageTests(unittest.TestCase):
         message = sessions.relink_message(ordinary)
         self.assertNotIn("claude-gateway -r", message)
         self.assertIn("observed model x differs from the recorded qwen38", message)
-        self.assertIn(f"(`claude-multi -r {MID}`)", message)
+        self.assertIn(f"(`charmer -r {MID}`)", message)
         managed = {**_v3_managed(), "observed_model": "x"}
         self.assertIn(
             f"differs from the recorded {_SNAPSHOT['lead']['client_selector']}",
@@ -1388,13 +1388,13 @@ class MessageTests(unittest.TestCase):
         )
 
     def test_v4_relink_message(self) -> None:
-        record = {**_v4(), "observed_model": "claude-multi-opus-5[1m]"}
-        base = f"claude-multi sessions relink-runtime {MID} {MID}"
+        record = {**_v4(), "observed_model": "charmer-opus-5[1m]"}
+        base = f"charmer sessions relink-runtime {MID} {MID}"
         self.assertEqual(
             sessions.relink_message(record),
             f"session {MID} identity is repair-needed (observed model "
-            f"claude-multi-opus-5[1m] differs from the recorded {LEAD_SELECTOR}); resume "
-            f"through the launcher to reconcile the recorded lead (`claude-multi -r {MID}`), "
+            f"charmer-opus-5[1m] differs from the recorded {LEAD_SELECTOR}); resume "
+            f"through the launcher to reconcile the recorded lead (`charmer -r {MID}`), "
             f"or relink only if the runtime UUID itself changed: `{base}`",
         )
         migrated = sessions.with_applied(record, _applied(key="qwen38", selector=None))
@@ -1411,11 +1411,11 @@ class ContinuityScanTests(V4TestCase):
         record = {**_v4(), "lead_target": {"key": "fable", "effort": "max",
                                            "selector": "claude-fable-5[1m]"}}
         record["scope_lead"] = {"key": "opus", "effort": "xhigh",
-                                "selector": "claude-multi-opus-4-8[1m]"}
+                                "selector": "charmer-opus-4-8[1m]"}
         self.store.save(record)
         scan = continuity.scan_records(self.root)
-        for base in ("claude-multi-opus-5-5", "gpt-multi-sol-high", "claude-fable-5",
-                     "claude-multi-opus-4-8"):
+        for base in ("charmer-opus-5-5", "gpt-multi-sol-high", "claude-fable-5",
+                     "charmer-opus-4-8"):
             with self.subTest(base=base):
                 self.assertEqual(scan.refs.get(base), frozenset({MID}))
         self.assertEqual(scan.live, frozenset({MID}))

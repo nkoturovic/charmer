@@ -310,7 +310,7 @@ class ManagedLock:
         if self.kind == "hooks":
             return "hooks do not run in managed sessions (the /model fence and lineup notices are off)"
         if self.kind == "model":
-            return "the model choice is locked by policy (claude-multi lineups may not apply)"
+            return "the model choice is locked by policy (charmer lineups may not apply)"
         if self.key == "allowManagedPermissionRulesOnly":
             return "the session's secret-path denies do not apply"
         if self.key == "apiKeyHelper":
@@ -329,7 +329,7 @@ def finding_text(lock: ManagedLock) -> str:
 
 
 # Kinds that make a launch refuse (doctor BLOCKED as well). ``unchecked``: a
-# policy file the client applies but claude-multi cannot read in full.
+# policy file the client applies but charmer cannot read in full.
 BLOCKING_KINDS = frozenset({"hooks", "credential", "version", "provider", "denied", "unchecked"})
 # A policy file that exists but cannot be used (``unreadable``: Attention, the
 # client cannot parse or read it either; ``unchecked``: BLOCK).
@@ -342,11 +342,11 @@ def _unreadable_locks(source: PolicySource) -> list[ManagedLock]:
     for path, reason in source.unreadable:
         if reason == "is larger than 1 MiB":
             locks.append(ManagedLock(path, "", "unchecked", (
-                f"{reason}: claude-multi cannot check what it restricts, so a managed session "
+                f"{reason}: charmer cannot check what it restricts, so a managed session "
                 "cannot rely on its hooks and gateway endpoint")))
         else:
             locks.append(ManagedLock(path, "", "unreadable", (
-                f"{reason}: the managed client cannot apply it either, and claude-multi checked "
+                f"{reason}: the managed client cannot apply it either, and charmer checked "
                 "nothing in it")))
     return locks
 
@@ -514,10 +514,10 @@ def policy_findings(
         if bound is None:
             findings.append(ManagedLock(origin[key], key, "version-unknown", (
                 f"its version bound cannot be compared with Claude Code {pin_version}, "
-                "the version claude-multi runs")))
+                "the version charmer runs")))
         elif _compare(pin, bound) == sign:
             findings.append(ManagedLock(origin[key], key, "version", (
-                f"Claude Code {pin_version}, the version claude-multi runs, is {word}: "
+                f"Claude Code {pin_version}, the version charmer runs, is {word}: "
                 "the managed client would exit at startup")))
     providers = doc.get("allowedProviders")
     if isinstance(providers, list):
@@ -525,11 +525,11 @@ def policy_findings(
         if "customEndpoint" not in providers:
             findings.append(ManagedLock(origin["allowedProviders"], "allowedProviders", "provider", (
                 "it does not list customEndpoint, so the managed client refuses "
-                "claude-multi's gateway endpoint")))
+                "charmer's gateway endpoint")))
         elif base_url is None or _normalized_url(env.get("ANTHROPIC_BASE_URL")) != _normalized_url(base_url):
             findings.append(ManagedLock(origin["allowedProviders"], "allowedProviders", "provider", (
                 "it admits a custom endpoint only at the ANTHROPIC_BASE_URL the managed policy "
-                "pins, and that is not claude-multi's gateway")))
+                "pins, and that is not charmer's gateway")))
     if "deniedModels" in doc:
         denied = [selector for selector in wanted if denied_by(selector, doc["deniedModels"])]
         if denied:

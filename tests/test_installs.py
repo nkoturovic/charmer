@@ -30,7 +30,7 @@ class _Home(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.root, True)
         self.home = self.root / "home"
         self.home.mkdir(mode=0o700)
-        self.state_root = self.home / ".local" / "state" / "claude-multi"
+        self.state_root = self.home / ".local" / "state" / "charmer"
 
     def env(self, channel: str | None = None, **extra: str) -> dict[str, str]:
         result = {"HOME": str(self.home), **extra}
@@ -147,7 +147,7 @@ class GuardTests(_Home):
                         wraps=__import__("charmer.cli.doctor", fromlist=["x"])._doctor_install_report) as report:
             code, out = self.run_cli(["doctor"], "nix")
         report.assert_called_once()
-        self.assertIn("installation: this account's claude-multi state belongs to the bundle installation", out)
+        self.assertIn("installation: this account's charmer state belongs to the bundle installation", out)
         self.assertEqual(installs.read_marker(self.state_root), "bundle")
 
     def test_lineup_requests_pass_the_same_guard(self) -> None:
@@ -185,13 +185,13 @@ class GuardTests(_Home):
         empty.mkdir(mode=0o700)
         cwd = self.root / "cwd"
         cwd.mkdir()
-        launcher = checkout_replica(self.root / "checkout") / "bin" / "claude-multi"
+        launcher = checkout_replica(self.root / "checkout") / "bin" / "charmer"
         env = {"HOME": str(empty), "PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"}
         result = subprocess.run([sys.executable, str(launcher), "profile", "duplicate", "balanced", "copy"],
                                 cwd=cwd, env=env, capture_output=True, text=True, timeout=60)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual((empty / ".local/state/claude-multi/channel").read_bytes(), b"source\n")
-        installs.write_marker(empty / ".local/state/claude-multi", "nix")
+        self.assertEqual((empty / ".local/state/charmer/channel").read_bytes(), b"source\n")
+        installs.write_marker(empty / ".local/state/charmer", "nix")
         result = subprocess.run([sys.executable, str(launcher), "profile", "list"],
                                 cwd=cwd, env=env, capture_output=True, text=True, timeout=60)
         self.assertEqual(result.returncode, 1)
@@ -202,20 +202,20 @@ class GuardTests(_Home):
 class InstallRootTests(_Home):
     def test_roots_links_and_discovery(self) -> None:
         env = self.env()
-        data = state.ensure_private_dir(self.home / ".local/share/claude-multi")
+        data = state.ensure_private_dir(self.home / ".local/share/charmer")
         self.assertEqual(installs.bundle_link(env), data / "install/current")
         self.assertEqual(installs.nix_link(env), data / "nix/current")
         self.assertEqual(installs.discover(env), [])
         version = data / "install/versions/1.0.0/bin"
         version.mkdir(parents=True)
-        (version / "claude-multi-proxy").write_text("#!/bin/sh\n")
+        (version / "charmer-proxy").write_text("#!/bin/sh\n")
         (data / "install/current").symlink_to("versions/1.0.0")
-        release = self.home / ".local/share/claude-multi-release"
+        release = self.home / ".local/share/charmer-release"
         release.mkdir()
-        (release / "current").symlink_to("/nix/store/0000-claude-multi")
+        (release / "current").symlink_to("/nix/store/0000-charmer")
         found = installs.discover(env)
         self.assertEqual([item.channel for item in found], ["bundle", "nix"])
-        self.assertTrue(found[0].line(env).startswith("bundle: ~/.local/share/claude-multi/install/current -> "))
+        self.assertTrue(found[0].line(env).startswith("bundle: ~/.local/share/charmer/install/current -> "))
         self.assertIn("(dangling)", found[1].line(env))
         selection = installs.plan_selection("bundle", env, None)
         self.assertEqual(selection.root, str((data / "install/versions/1.0.0").resolve()))
@@ -226,12 +226,12 @@ class InstallRootTests(_Home):
 
     def test_the_nix_selection_links_a_store_path_and_restores(self) -> None:
         store = self.root / "store"
-        package = store / "aaaa-claude-multi"
+        package = store / "aaaa-charmer"
         (package / "bin").mkdir(parents=True)
-        for name in ("claude-multi", "claude-multi-proxy"):
+        for name in ("charmer", "charmer-proxy"):
             (package / "bin" / name).write_text("#!/bin/sh\n")
-        state.ensure_private_dir(self.home / ".local/share/claude-multi")
-        env = self.env(CLAUDE_MULTI_HOOK_COMMAND=str(package / "bin/claude-multi"), PATH=str(self.root / "no-tools"))
+        state.ensure_private_dir(self.home / ".local/share/charmer")
+        env = self.env(CLAUDE_MULTI_HOOK_COMMAND=str(package / "bin/charmer"), PATH=str(self.root / "no-tools"))
         with mock.patch.object(installs, "STORE_PREFIX", str(store) + "/"):
             self.assertEqual(installs.install_root(env), package)
             selection = installs.plan_selection("nix", env, None)
@@ -247,7 +247,7 @@ class InstallRootTests(_Home):
             installs.apply_selection(selection, env)
             self.assertEqual(installs.remove_nix_link(env), str(package))
             self.assertFalse(os.path.lexists(link))
-            outside = self.env(CLAUDE_MULTI_HOOK_COMMAND=str(REPO_ROOT / "bin/claude-multi"))
+            outside = self.env(CLAUDE_MULTI_HOOK_COMMAND=str(REPO_ROOT / "bin/charmer"))
             with self.assertRaises(installs.SelectionError):
                 installs.plan_selection("nix", outside, None)
 

@@ -34,7 +34,7 @@ if TYPE_CHECKING:  # avoid the runtime cycle: scope.py imports this module
     from .scope import Fence, ScopePlan
 
 
-class CompilerError(errors.ClaudeMultiError, ValueError):
+class CompilerError(errors.CharmerError, ValueError):
     """Raised when compilation cannot proceed (fail closed)."""
 
 
@@ -115,13 +115,13 @@ FORK_UNVERIFIED_GUIDANCE = (
     "fork with --resume OLD --fork-session --session-id NEW is unverified for "
     "the pinned Claude CLI; fork natively (`claude --resume OLD "
     "--fork-session`) and adopt the resulting session with "
-    "`claude-multi sessions link UUID` instead"
+    "`charmer sessions link UUID` instead"
 )
 
 
 @dataclass(frozen=True)
 class SessionAction:
-    """Stable claude-multi identity plus the native UUID targeted by argv."""
+    """Stable charmer identity plus the native UUID targeted by argv."""
 
     kind: str  # "fresh" | "resume"
     managed_id: str
@@ -202,8 +202,8 @@ def validate_passthrough(args: list[str]) -> list[str]:
             if token == "-c" or token.startswith("-r") or token.startswith("-n"):
                 raise CompilerError(
                     f"passthrough argument {token!r} is launcher-owned "
-                    "(launcher session identity/display); use `claude-multi -c`, "
-                    "`claude-multi -r UUID`, or the launcher --name equivalent"
+                    "(launcher session identity/display); use `charmer -c`, "
+                    "`charmer -r UUID`, or the launcher --name equivalent"
                 )
     return list(args)
 
@@ -641,7 +641,7 @@ def generate_session_appendix(
         f"- Managed session: {managed_id}.",
         "- If a selected cm-* type is unavailable, stop delegation. Never substitute a "
         "native or generic agent.",
-        f"- Exact relaunch after interruption: ask the user to run `claude-multi -r "
+        f"- Exact relaunch after interruption: ask the user to run `charmer -r "
         f"{managed_id}`.",
         "",
     ]

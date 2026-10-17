@@ -207,7 +207,7 @@ class CardNoticeTests(_CardCase):
         lines = shown[0]
         # Every term and /cm line the help shows is in V too.
         help_terms = cli_text.QUICK_HELP.split("\nTerms\n", 1)[1].split("\n\n", 1)[0].splitlines()
-        session = cli_text.QUICK_HELP.split("\nIn a claude-multi session\n", 1)[1].splitlines()
+        session = cli_text.QUICK_HELP.split("\nIn a charmer session\n", 1)[1].splitlines()
         help_cm = [line for line in session if line.startswith(("  /cm", "  A change applies"))]
         self.assertTrue(help_terms and help_cm)
         for line in (*help_terms, *help_cm):
@@ -312,7 +312,7 @@ class CardSignInRemedyTests(_CardCase):
         self.assertFalse([text for text in rows if "providers sign-in" in text], "the card names its keys")
         for text in rows:
             self.assertTrue(text.endswith(" — sign in: " + cli_text.CARD_SIGN_IN_FRESH), text)
-            self.assertNotIn("claude-multi providers sign-in", text)
+            self.assertNotIn("charmer providers sign-in", text)
         frame = self.frame(screen, height=40, width=80)
         self.assertIn("— sign in: " + cli_text.CARD_SIGN_IN_FRESH, frame)
         self.assertNotIn("providers sign-in", frame)
@@ -356,7 +356,7 @@ class CardSignInRemedyTests(_CardCase):
         rows = self.sign_in_rows(screen)
         self.assertTrue(rows)
         self.assertFalse([text for text in rows if "providers sign-in" in text], "the card names its keys")
-        route = "Esc, run claude-multi, G → L, then S to resume"
+        route = "Esc, run charmer, G → L, then S to resume"
         for text in rows:
             self.assertTrue(text.endswith(" — sign in: " + route), text)
         frame = self.frame(screen, height=40, width=120)
@@ -367,7 +367,7 @@ class CardSignInRemedyTests(_CardCase):
         self.assertIsNone(result)
 
     # The whole key sequence a resume card's sign-in remedy displays, pressed
-    # as shown: Esc as often as it says, claude-multi run again when it says
+    # as shown: Esc as often as it says, charmer run again when it says
     # so, then G → L reaches the sign-in on the launch card, and S resumes.
 
     WIDE = {"height": 40, "width": 120}
@@ -413,12 +413,12 @@ class CardSignInRemedyTests(_CardCase):
             position = found + 1
 
     def steps(self, route: str) -> tuple[int, bool]:
-        """``(Esc presses, run claude-multi again)`` the route says before G → L."""
+        """``(Esc presses, run charmer again)`` the route says before G → L."""
 
         words = route.split(", ")
         self.assertIn("G → L", words, route)
         before = words[: words.index("G → L")]
-        reopen = bool(before) and before[-1] == "run claude-multi"
+        reopen = bool(before) and before[-1] == "run charmer"
         escapes = before[:-1] if reopen else before
         self.assertEqual(set(escapes), {"Esc"}, route)
         return len(escapes), reopen
@@ -446,10 +446,10 @@ class CardSignInRemedyTests(_CardCase):
         _result, win = self.run_card(self.resume_card(prepared), [ESC], **self.WIDE)
         route = self.displayed_route(win.frames)
         escapes, reopen = self.steps(route)
-        self.assertTrue(reopen, f"Esc ends claude-multi -r: the route must run it again ({route})")
+        self.assertTrue(reopen, f"Esc ends charmer -r: the route must run it again ({route})")
         result, _win = self.run_card(self.resume_card(prepared), [ESC] * escapes, **self.WIDE)
-        self.assertIsNone(result, "Esc ends claude-multi -r")
-        # claude-multi run again: its launch card.
+        self.assertIsNone(result, "Esc ends charmer -r")
+        # charmer run again: its launch card.
         result, win = self.run_card(self.card(self.target(self.runtime)), [*self.sign_in_then_resume(), ESC, ESC, ESC],
                                     **self.WIDE)
         self.assertIsNone(result)
@@ -465,7 +465,7 @@ class CardSignInRemedyTests(_CardCase):
         self.assertIsNone(result)
         route = self.displayed_route(win.frames)
         self.assertEqual(self.steps(route), (2, True), route)
-        self.assertEqual(route, "Esc, Esc, run claude-multi, G → L, then S to resume")
+        self.assertEqual(route, "Esc, Esc, run charmer, G → L, then S to resume")
 
     def test_a_rejected_sign_in_in_the_quota_row_names_g_l(self) -> None:
         from datetime import timezone
@@ -488,8 +488,8 @@ class CardHealthKeyRemedyTests(_CardCase):
         from charmer import operator as operator_mod
 
         name = operator_mod.transport_alternative("anthropic", operator_mod.TRANSPORT_API_KEY).secret_name
-        return (f"provider anthropic transport api-key: {name} is not set — claude-multi providers set-key "
-                "anthropic; its selectors are not served (back to the pool: claude-multi providers transport "
+        return (f"provider anthropic transport api-key: {name} is not set — charmer providers set-key "
+                "anthropic; its selectors are not served (back to the pool: charmer providers transport "
                 "anthropic oauth-pool)")
 
     def h_report(self, screen) -> str:
@@ -502,7 +502,7 @@ class CardHealthKeyRemedyTests(_CardCase):
 
     def assert_route(self, report: str, route: str) -> None:
         self.assertNotIn("providers set-key", report)
-        expected = self.block().replace("claude-multi providers set-key anthropic",
+        expected = self.block().replace("charmer providers set-key anthropic",
                                         cli_text.CARD_SET_KEY.format(route=route))
         self.assertIn(f"  - {expected}\n", report)
 
@@ -513,17 +513,17 @@ class CardHealthKeyRemedyTests(_CardCase):
     def test_a_resume_card_names_its_way_back_first(self) -> None:
         _record, prepared = self.resume_prepared()
         report = self.h_report(self.resume_card(prepared, tty_in=io.StringIO("\n\n\n"), tty_out=io.StringIO()))
-        self.assert_route(report, "Esc, run claude-multi, G (providers) → K on Anthropic, then S to resume")
+        self.assert_route(report, "Esc, run charmer, G (providers) → K on Anthropic, then S to resume")
 
     def test_only_a_findings_remedy_becomes_the_route(self) -> None:
         from charmer.cli.screens import launch_sessions
 
         # A command quoted inside other advice (a file to correct) stays as it is.
-        advice = ('providers.d/mine.json: a secret value is not allowed — store it with claude-multi providers '
+        advice = ('providers.d/mine.json: a secret value is not allowed — store it with charmer providers '
                   'set-key mine; write "env:NAME"')
         self.assertEqual(launch_sessions._card_doctor_line(self.runtime, advice, None), advice)
         # A provider the merged view does not know is named by its id.
-        self.assertEqual(launch_sessions._card_doctor_line(self.runtime, "X is not set — claude-multi providers "
+        self.assertEqual(launch_sessions._card_doctor_line(self.runtime, "X is not set — charmer providers "
                                                                           "set-key nobody", None),
                          "X is not set — " + cli_text.CARD_SET_KEY.format(
                              route=cli_text.CARD_SET_KEY_FRESH.format(display="nobody")))
@@ -547,7 +547,7 @@ class CardRowTests(_CardCase):
         lead = lineup.lead.binding
         text = self.frame(screen)
         lines = text.splitlines()
-        self.assertEqual(lines[1], f"  claude-multi — profile: {catalog.DEFAULT_SEED} · follows profile · Fresh")
+        self.assertEqual(lines[1], f"  charmer — profile: {catalog.DEFAULT_SEED} · follows profile · Fresh")
         self.assertEqual(lines[2], "  " + "─" * 77)
         self.assertEqual(
             lines[3],
@@ -656,7 +656,7 @@ class CardRowTests(_CardCase):
             "  health    gateway unreachable — launches will fail: boom",
             text.splitlines(),
         )
-        self.assertIn("  update    claude-multi 1.0.0 · 1.0.1 · press U to update", text.splitlines())
+        self.assertIn("  update    charmer 1.0.0 · 1.0.1 · press U to update", text.splitlines())
         self.assertIn("Enter launch · U update · E edit", text)
 
     def test_notices_outsiders_radar_and_seed_lines(self) -> None:
@@ -808,7 +808,7 @@ class CardBlockedTests(_CardCase):
         )
         screen = self.resume_card(prepared, runtime=runtime)
         self.assertTrue(prepared.secret_problems)
-        way = "Esc, run claude-multi"  # claude-multi -r opened it: Esc ends it
+        way = "Esc, run charmer"  # charmer -r opened it: Esc ends it
         self.assertIn(f"    {views.SECRET_REMEDY_RESUME.format(way=way)}", self.frame(screen, height=40, width=200))
         self.assertNotIn(views.SECRET_REMEDY + "\n", self.frame(screen, height=40, width=200))
         result, win = self.run_card(screen, [ENTER, ENTER, ESC], height=30)
@@ -1054,7 +1054,7 @@ class CardKeyTests(_CardCase):
         result, _win = self.run_card(screen, ["h", ESC])
         self.assertIsNone(result)
         printed = out.getvalue()
-        self.assertIn("claude-multi doctor\n", printed)
+        self.assertIn("charmer doctor\n", printed)
         self.assertIn("BLOCKED\n" if problems else "Ready\n", printed)
         if attention:
             self.assertIn("Attention\n", printed)
@@ -1071,15 +1071,15 @@ class CardKeyTests(_CardCase):
         status = "blocked" if problems else ("attention" if attention else "ready")
         self.assertIn(doctor_mod.DOCTOR_SUMMARY[status], printed)
         self.assertNotIn("--repair-all", printed)
-        self.assertIn("Press Enter to return to claude-multi.", printed)
+        self.assertIn("Press Enter to return to charmer.", printed)
         self.assertEqual(self.runtime.launches, [])
 
     def test_h_offers_a_bulk_repair_only_for_session_repair_findings(self) -> None:
         from charmer.cli import doctor as doctor_mod
 
         cases = (
-            ([], ["gateway: not running — claude-multi gateway start"], [], False),
-            (["session 1234abcd: scope drift — claude-multi doctor --repair 1234abcd"], [], [], True),
+            ([], ["gateway: not running — charmer gateway start"], [], False),
+            (["session 1234abcd: scope drift — charmer doctor --repair 1234abcd"], [], [], True),
         )
         for problems, attention, info, offered in cases:
             out = io.StringIO()
@@ -1154,9 +1154,9 @@ class CardKeyTests(_CardCase):
         self.assertIn("session's lineup).", first)
         self.assertNotIn(cli.QUICK_HELP.splitlines()[0], first)
         self.assertIn("S — sessions: change this session's lineup", first)
-        # The sign-in line names this card's own way back (claude-multi -r: run it again).
+        # The sign-in line names this card's own way back (charmer -r: run it again).
         self.assertNotIn("{sign_in}", "\n".join(win.frames))
-        self.assertIn('"Esc, run claude-multi, G → L, then S to resume": Esc leaves claude-multi', _flat(first))
+        self.assertIn('"Esc, run charmer, G → L, then S to resume": Esc leaves charmer', _flat(first))
         self.assertIn("-- workflow guarantees --", scrolled)
         # The doctor, update, /model, terms and in-session lines are shared;
         # only the keys of a fresh launch and the Esc wording differ.
@@ -1203,10 +1203,10 @@ class CardKeyTests(_CardCase):
             badge = self.card(update_hint=("1.0.0", "1.0.1"))
             result, _win = self.run_card(badge, ["u", ESC, ESC])
         self.assertIsNone(result)
-        self.assertEqual(shown[0][0], "Update claude-multi")
+        self.assertEqual(shown[0][0], "Update charmer")
         text = " ".join(shown[0][1])
         self.assertIn("Nothing was changed", text)
-        self.assertIn("claude-multi update --rollback", text)  # rollback stays a command-line action
+        self.assertIn("charmer update --rollback", text)  # rollback stays a command-line action
         self.assertEqual(self.runtime.launches, [])
 
     def test_u_on_the_nix_package_says_to_update_the_flake(self) -> None:
@@ -1234,7 +1234,7 @@ class CardKeyTests(_CardCase):
                 mock.patch.object(release_update, "run", side_effect=AssertionError("not checked")):
             screen = self.card(update_hint=("1.0.0", "released 2026-10-15"), tty_in=tty_in, tty_out=tty_out)
             self.run_card(screen, ["u", ESC])
-        self.assertIn("Check the release server for a newer claude-multi now? [y/N]", tty_out.getvalue())
+        self.assertIn("Check the release server for a newer charmer now? [y/N]", tty_out.getvalue())
         self.assertIn("Nothing was checked.", tty_out.getvalue())
         calls = []
         tty_in, tty_out = io.StringIO("y\n\n"), io.StringIO()
@@ -1274,7 +1274,7 @@ class CardKeyTests(_CardCase):
         self.assertTrue(named)
         self.assertLessEqual(named, set(lineup_files.CM_VERB_NAMES))
         self.assertEqual(named, set(lineup_files.CM_VERB_NAMES))
-        for needle in ("Terms", "In a claude-multi session", "U — update claude-multi",
+        for needle in ("Terms", "In a charmer session", "U — update charmer",
                        "a Nix install updates through its flake", "H — doctor", "Git worktree",
                        "CLAUDE_CONFIG_DIR", "kept environment"):
             self.assertIn(needle, cli.QUICK_HELP)
@@ -1736,7 +1736,7 @@ class CardLineModeTests(_CardCase):
         self.assertFalse(cli._confirm_launch_line(prepared, io.StringIO("q\n"), out, runtime=self.runtime))
         text = out.getvalue()
         lines = text.splitlines()
-        self.assertEqual(lines[0], f"  claude-multi — profile: {catalog.DEFAULT_SEED} · follows profile · Fresh")
+        self.assertEqual(lines[0], f"  charmer — profile: {catalog.DEFAULT_SEED} · follows profile · Fresh")
         for label in ("  lead      ", "  context   ", "  lineup    ", "  review    ", "  spread    "):
             self.assertTrue(any(line.startswith(label) for line in lines), label)
         for absent in ("Status", "health", "Esc", "  update "):

@@ -1,4 +1,4 @@
-"""Owner-controlled, symlink-safe state primitives for claude-multi v2.
+"""Owner-controlled, symlink-safe state primitives for charmer v2.
 
 All launcher writes go through this module: parent directories must be owned
 and group/other-inaccessible, targets must be regular files (never symlinks),
@@ -37,7 +37,7 @@ from . import errors
 from .platform import posix_fs
 
 
-class StateError(errors.ClaudeMultiError, OSError):
+class StateError(errors.CharmerError, OSError):
     """Raised when a state path or write violates safety requirements."""
 
 
@@ -52,7 +52,7 @@ FILESYSTEM_FAILURES = {
     errno.EDQUOT: ("the disk quota is exhausted", "free some space, then run the command again"),
     errno.EACCES: ("permission was denied", "check that you own the folder and can write to it"),
     errno.EPERM: ("the operation is not permitted", "check that you own the folder and can write to it"),
-    errno.EROFS: ("the file system is read-only", "run claude-multi where its folders are writable"),
+    errno.EROFS: ("the file system is read-only", "run charmer where its folders are writable"),
 }
 
 
@@ -82,7 +82,7 @@ def failure_location(exc: BaseException, environ: Mapping[str, str]) -> str:
 def failure_text(exc: BaseException, environ: Mapping[str, str], *, own_message: bool = True) -> str | None:
     """The text every command shows for a filesystem failure
     (:func:`filesystem_failure`), as ``<what>\\n  fix: <remedy>``, or None
-    for any other error. One of claude-multi's own errors keeps its message
+    for any other error. One of charmer's own errors keeps its message
     and its own remedy (``own_message``); any other one says what happened
     and where, home-relative. Never a traceback, never an errno."""
 
@@ -90,7 +90,7 @@ def failure_text(exc: BaseException, environ: Mapping[str, str], *, own_message:
     if found is None:
         return None
     what, remedy = found
-    if own_message and isinstance(exc, errors.ClaudeMultiError):
+    if own_message and isinstance(exc, errors.CharmerError):
         return f"{exc}\n  fix: {exc.remedy or remedy}"
     return f"{what}{failure_location(exc, environ)}\n  fix: {remedy}"
 
@@ -316,7 +316,7 @@ class FileLock:
 
 # ------------------------------------------------------ served-change barrier
 # One gateway-scoped mutation
-# barrier, ``<HOME>/.config/claude-multi/served-change.lock`` (HOME-relative
+# barrier, ``<HOME>/.config/charmer/served-change.lock`` (HOME-relative
 # like the api-key leaf, so every XDG state root shares it). Lock order:
 # migration guard -> barrier -> token rotation (non-blocking) -> store and
 # lifecycle locks -> Settings -> api-key leaf. One acquisition per commit

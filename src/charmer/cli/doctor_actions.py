@@ -186,12 +186,12 @@ def _doctor_rotate_token(
     except KeyboardInterrupt:
         write(problems,
               "interrupted — the rotation state is resumable: rerun "
-              "`claude-multi doctor --rotate-token`")
+              "`charmer doctor --rotate-token`")
         return 130
     except (proxy_mod.ProxyError, render.RenderError) as exc:
         write(problems, f"rotation paused: {exc}")
         if os.path.lexists(proxy_mod.config_dir(runtime.home) / "previous-key"):
-            write(problems, "resume with `claude-multi doctor --rotate-token`")
+            write(problems, "resume with `charmer doctor --rotate-token`")
         return 1
     write(output_stream, outcome.message)
     write(output_stream, "gateway token rotated: the previous key is retired (old=401, new=200)")
@@ -230,7 +230,7 @@ def _doctor_prune_aliases(
     and capture removals plus every pending declaration change) against the
     published one and shows it. Anything served beyond this prune's own
     removals (an out-of-band retarget, an addition, an unknown published
-    render) refuses — publish it first through ``claude-multi providers
+    render) refuses — publish it first through ``charmer providers
     apply``, which previews it. The commit phase revalidates the plan's
     inputs (taken before the preview) and the prune itself under its locks.
     """
@@ -282,8 +282,8 @@ def _doctor_prune_aliases(
     if preview.unrelated():
         output_stream.write(
             "prune-aliases refused: the render would also publish the served changes above that are "
-            "not part of this prune; review them with claude-multi plan and publish them with "
-            "claude-multi providers apply first — nothing pruned\n")
+            "not part of this prune; review them with charmer plan and publish them with "
+            "charmer providers apply first — nothing pruned\n")
         return 1
     expected = (preview.prune.remove_continuity, preview.prune.remove_captures,
                 served_plan.references_from_scan(preview.prune.scan).fingerprint())
@@ -611,7 +611,7 @@ def _doctor_repair_all(
     if failures:
         return 1
     output_stream.write(
-        "Re-run `claude-multi doctor` to confirm; `doctor --prune` collects "
+        "Re-run `charmer doctor` to confirm; `doctor --prune` collects "
         "retained .prev generations afterwards.\n"
     )
     return 0
@@ -643,7 +643,7 @@ def _repair_all_records(
                 failures.append(f"{stable_id}: {exc}")
                 continue
             skipped.append(
-                f"session {m8} is a legacy record; run claude-multi migrate (or resume it) first"
+                f"session {m8} is a legacy record; run charmer migrate (or resume it) first"
             )
             continue
         if record["lineup_generation"] == 0:
@@ -700,7 +700,7 @@ def _doctor_prune_preview(runtime: runtime_mod.Runtime, output_stream: TextIO) -
     root = runtime.session_store.root
     output_stream.write(
         "Generated-state cleanup preview — no files removed.\n"
-        "Only recognized claude-multi-generated files are candidates.\n"
+        "Only recognized charmer-generated files are candidates.\n"
         "Unadmitted declarations, session records, credentials and rollback backups are not garbage.\n"
     )
     try:

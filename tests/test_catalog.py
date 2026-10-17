@@ -54,7 +54,7 @@ def assert_gpt6_probe_context(case: unittest.TestCase, context: dict) -> None:
 
 # Selector shape by transport (an invariant, replacing the exact shipped
 # selector inventory): codex-pool lanes are ``gpt-multi-*``; every other
-# lane is ``claude-multi-*`` or rides its own provider's canonical
+# lane is ``charmer-*`` or rides its own provider's canonical
 # passthrough route. The launcher's stale-selector filter keys on exactly
 # these prefixes, so a new model must follow them.
 # The frozen catalog-32 (2.x) selector bases that live sessions, records and
@@ -96,11 +96,11 @@ FROZEN_2X_SELECTORS = {
 }
 RETAINED_SELECTOR_BASES = frozenset(FROZEN_2X_SELECTORS)
 CODEX_SELECTOR_PREFIX = "gpt-multi-"
-CLAUDE_SELECTOR_PREFIX = "claude-multi-"
+CLAUDE_SELECTOR_PREFIX = "charmer-"
 REMOVED_PATTERNS = (
-    "claude-multi-fable-5",
-    "claude-multi-sol-",
-    "claude-multi-gpt55",
+    "charmer-fable-5",
+    "charmer-sol-",
+    "charmer-gpt55",
     "conserve-",
 )
 
@@ -120,23 +120,23 @@ def _mutate(mutator, root: Path = FIXTURE_ROOT) -> list[str]:
 
 
 def _copy_tree(case: unittest.TestCase, root: Path = FIXTURE_ROOT) -> Path:
-    temporary = Path(tempfile.mkdtemp(prefix="claude-multi-catalog-"))
+    temporary = Path(tempfile.mkdtemp(prefix="charmer-catalog-"))
     case.addCleanup(lambda: shutil.rmtree(temporary, ignore_errors=True))
     # The shipped root is the repository root; copy only its asset
     # entries (the fixture root holds exactly these).
-    (temporary / "claude-multi").mkdir()
+    (temporary / "charmer").mkdir()
     for name in ASSET_ENTRIES:
-        source, target = root / name, temporary / "claude-multi" / name
+        source, target = root / name, temporary / "charmer" / name
         if source.is_dir():
             shutil.copytree(source, target)
         elif source.is_file():
             shutil.copyfile(source, target)
     # Copies may originate from a read-only store path; make them writable.
-    for root_dir, dirs, files in os.walk(temporary / "claude-multi"):
+    for root_dir, dirs, files in os.walk(temporary / "charmer"):
         os.chmod(root_dir, 0o755)
         for name in files:
             os.chmod(Path(root_dir) / name, 0o644)
-    return temporary / "claude-multi"
+    return temporary / "charmer"
 
 
 class SeedLoadTests(unittest.TestCase):
@@ -326,7 +326,7 @@ class SeedLoadTests(unittest.TestCase):
         # qwen38's max selector records its 2.x rule (xhigh), not max.
         self.assertEqual(
             bundle.retired["qwen38"]["selectors"],
-            {"claude-multi-qwen38-max[1m]": "reasoning-effort-xhigh"},
+            {"charmer-qwen38-max[1m]": "reasoning-effort-xhigh"},
         )
 
     def test_opus_line_serves_every_role(self) -> None:
@@ -364,8 +364,8 @@ class FrozenSelectorCoverageTests(unittest.TestCase):
         "gpt-multi-sol-xhigh": {"iii"},
         "gpt-multi-astra-high": {"i"},
         "gpt-multi-astra-xhigh": {"i"},
-        "claude-multi-deepseek-flash-high": {"i"},
-        "claude-multi-deepseek-flash-max": {"i"},
+        "charmer-deepseek-flash-high": {"i"},
+        "charmer-deepseek-flash-max": {"i"},
     }
 
     def test_no_trusted_wire_has_static_header_override(self) -> None:
@@ -438,8 +438,8 @@ class FrozenSelectorCoverageTests(unittest.TestCase):
     def test_rules_named_in_the_spec(self) -> None:
         bundle = catalog.load_catalog(CATALOG_ROOT)
         index = bundle.retired_selector_index()
-        self.assertEqual(index["claude-multi-qwen38-max"][2], "reasoning-effort-xhigh")
-        self.assertEqual(index["claude-multi-kimi-k3"][2], "output-config-max")
+        self.assertEqual(index["charmer-qwen38-max"][2], "reasoning-effort-xhigh")
+        self.assertEqual(index["charmer-kimi-k3"][2], "output-config-max")
         self.assertIn("filter-thinking", bundle.providers["kimi"]["payload_contracts"])
         # Historical GPT-5.6 -> GPT-6 retarget, now owned by sol@6 continuity.
         self.assertNotEqual(bundle.lines["sol"]["wire_model"], bundle.retired["sol@6"]["last_wire"])
@@ -497,10 +497,10 @@ class FrozenSelectorCoverageTests(unittest.TestCase):
                 for model in entry["models"]
             }
 
-        self.assertIn("claude-multi-qwen38-max", aliases("override", {"reasoning_effort": "xhigh"}))
-        self.assertNotIn("claude-multi-qwen38-max", aliases("override", {"reasoning_effort": "max"}))
-        self.assertIn("claude-multi-kimi-k3", aliases("override", {"output_config.effort": "max"}))
-        self.assertIn("claude-multi-kimi-k3", aliases("filter", ["thinking"]))
+        self.assertIn("charmer-qwen38-max", aliases("override", {"reasoning_effort": "xhigh"}))
+        self.assertNotIn("charmer-qwen38-max", aliases("override", {"reasoning_effort": "max"}))
+        self.assertIn("charmer-kimi-k3", aliases("override", {"output_config.effort": "max"}))
+        self.assertIn("charmer-kimi-k3", aliases("filter", ["thinking"]))
 
 
 class ReferenceViolationTests(unittest.TestCase):
@@ -604,7 +604,7 @@ class ReferenceViolationTests(unittest.TestCase):
 
     def test_fork_rejected_on_noncanonical_route(self) -> None:
         self._route_schema_refusal(
-            lambda routes: routes.append({"name": "claude-multi-fable-5", "fork": True})
+            lambda routes: routes.append({"name": "charmer-fable-5", "fork": True})
         )
 
     def test_passthrough_without_fork_rejected(self) -> None:
@@ -679,7 +679,7 @@ class ReferenceViolationTests(unittest.TestCase):
             with self.subTest(target=target):
                 raw = _raw(FIXTURE_ROOT)
                 models = raw["docs"]["models"]["models"]
-                reserved = "claude-multi-render-deadbeef"
+                reserved = "charmer-render-deadbeef"
                 if target == "model":
                     # a client-effort line's selector
                     models["qwen-flash-next"]["selector"] = reserved
@@ -1014,9 +1014,9 @@ class BundleHashTests(unittest.TestCase):
 
     def test_user_bindings_and_profiles_never_change_the_bundle(self) -> None:
         before = catalog.load_catalog(FIXTURE_ROOT).bundle_sha256
-        config = Path(tempfile.mkdtemp(prefix="claude-multi-config-"))
+        config = Path(tempfile.mkdtemp(prefix="charmer-config-"))
         self.addCleanup(lambda: shutil.rmtree(config, ignore_errors=True))
-        root = config / "claude-multi"
+        root = config / "charmer"
         (root / "profiles").mkdir(parents=True)
         (root / "bindings.json").write_bytes(
             strict_json.pretty_file_bytes(
@@ -1775,8 +1775,8 @@ class WireSlashPatternTests(unittest.TestCase):
             import copy as _copy
 
             clone = _copy.deepcopy(models["grok46"])
-            clone["efforts"]["high"]["selector"] = "claude-multi-grok46-high-alt"
-            clone["efforts"]["xhigh"]["selector"] = "claude-multi-grok46-xhigh-alt"
+            clone["efforts"]["high"]["selector"] = "charmer-grok46-high-alt"
+            clone["efforts"]["xhigh"]["selector"] = "charmer-grok46-xhigh-alt"
             models["grok46-alt"] = clone
 
         errors = _mutate(dup_same)
@@ -1790,9 +1790,9 @@ class WireSlashPatternTests(unittest.TestCase):
             clone = _copy.deepcopy(models["grok46"])
             clone["provider"] = "deepseek"
             clone["wire_model"] = "x-ai/grok-4.6"  # same wire, different provider
-            clone["efforts"]["high"]["selector"] = "claude-multi-grok46-high-ds"
+            clone["efforts"]["high"]["selector"] = "charmer-grok46-high-ds"
             clone["efforts"]["high"]["proxy_contract"] = "output-config-high"
-            clone["efforts"]["xhigh"]["selector"] = "claude-multi-grok46-xhigh-ds"
+            clone["efforts"]["xhigh"]["selector"] = "charmer-grok46-xhigh-ds"
             clone["efforts"]["xhigh"]["proxy_contract"] = "output-config-max"
             clone["efforts"]["max"] = clone["efforts"].pop("xhigh")
             clone["default_effort"] = "high"
@@ -1865,8 +1865,8 @@ class DeepSeekProductionModelsTests(unittest.TestCase):
         self.assertEqual(
             pro["selectors"],
             {
-                "claude-multi-deepseek-pro-high[1m]": "output-config-high",
-                "claude-multi-deepseek-pro-max[1m]": "output-config-max",
+                "charmer-deepseek-pro-high[1m]": "output-config-high",
+                "charmer-deepseek-pro-max[1m]": "output-config-max",
             },
         )
         self.assertIn(
@@ -1914,15 +1914,15 @@ class RetiredDirectLinesTests(unittest.TestCase):
         self.assertEqual(
             grok["selectors"],
             {
-                "claude-multi-grok46-high": "output-config-high",
-                "claude-multi-grok46-xhigh": "output-config-xhigh",
+                "charmer-grok46-high": "output-config-high",
+                "charmer-grok46-xhigh": "output-config-xhigh",
             },
         )
 
     def test_kimi_k3_retired_keeps_its_max_rule(self) -> None:
         bundle = catalog.load_catalog(CATALOG_ROOT)
         kimi = bundle.retired["kimi-k3"]
-        self.assertEqual(kimi["selectors"], {"claude-multi-kimi-k3[1m]": "output-config-max"})
+        self.assertEqual(kimi["selectors"], {"charmer-kimi-k3[1m]": "output-config-max"})
         self.assertIn("kimi", bundle.providers)
         self.assertNotIn("kimi-k3", bundle.lines)
         # A current Kimi line never takes over the retired selector.
@@ -1931,7 +1931,7 @@ class RetiredDirectLinesTests(unittest.TestCase):
             for line in bundle.lines.values() if line["provider"] == "kimi"
             for _level, selector, _contract in catalog.line_selectors(line)
         }
-        self.assertNotIn("claude-multi-kimi-k3", current)
+        self.assertNotIn("charmer-kimi-k3", current)
 
     def test_every_keyed_provider_ships_a_line_that_can_lead(self) -> None:
         # A key alone is a usable start: each shipped provider reached with an
@@ -2014,7 +2014,7 @@ class AstraAndMuseModelTests(unittest.TestCase):
                 self.assertEqual(
                     model["efforts"][level],
                     {
-                        "selector": f"claude-multi-{key}-{level}[1m]",
+                        "selector": f"charmer-{key}-{level}[1m]",
                         "proxy_contract": f"output-config-{level}",
                     },
                 )
@@ -2063,7 +2063,7 @@ def _retired_entry(**overrides) -> dict:
         "context_tokens": 1000000,
         "capabilities": ["agents"],
         "roles": ["cm-reviewer"],
-        "selectors": {"claude-multi-muse-test-high[1m]": "output-config-high"},
+        "selectors": {"charmer-muse-test-high[1m]": "output-config-high"},
     }
     entry.update(overrides)
     return entry
@@ -2201,7 +2201,7 @@ class CatalogV2Tests(unittest.TestCase):
         return _mutate(mutator)
 
     def test_retired_rules(self) -> None:
-        sol_selectors = lambda n: {f"claude-multi-muse-t{n}-high[1m]": "output-config-high"}  # noqa: E731
+        sol_selectors = lambda n: {f"charmer-muse-t{n}-high[1m]": "output-config-high"}  # noqa: E731
         failing = [
             ("cycle", {"a": _retired_entry(successor="b", selectors=sol_selectors(1)),
                        "b": _retired_entry(successor="a", selectors=sol_selectors(2))}, None,
@@ -2219,21 +2219,21 @@ class CatalogV2Tests(unittest.TestCase):
                                                               capabilities=["lead", "agents"])}, None,
              "successor opus does not admit roles/capabilities"),
             ("undeclared contract", {"x": _retired_entry(
-                selectors={"claude-multi-muse-test-max[1m]": "output-config-max"})}, None,
+                selectors={"charmer-muse-test-max[1m]": "output-config-max"})}, None,
              "is not declared by provider 'meta'"),
             ("live selector on another wire", {"x": _retired_entry(
                 provider="openai", last_wire="gpt-5.5",
                 selectors={"gpt-multi-sol-high[1m]": "reasoning-effort-high"})}, None,
              "is live on models.sol with a different provider or wire"),
             ("duplicate retired base", {"x": _retired_entry(
-                selectors={"claude-multi-muse-spark-high": "output-config-high"})}, None,
+                selectors={"charmer-muse-spark-high": "output-config-high"})}, None,
              "duplicates retired.muse-spark"),
             ("route on another wire", {"x": _retired_entry(
                 provider="anthropic", last_wire="claude-opus-5", capabilities=["agents"],
                 selectors={"claude-opus-4-8[1m]": None})}, None,
              "equal last_wire"),
             ("since after catalog", {"x": _retired_entry(since_catalog=99)}, None, "newer than catalog_version"),
-            ("unknown provider", {"x": _retired_entry(provider="nope", selectors={"claude-multi-x-high": None})},
+            ("unknown provider", {"x": _retired_entry(provider="nope", selectors={"charmer-x-high": None})},
              None, "unknown provider 'nope'"),
             ("empty selectors", {"x": _retired_entry(selectors={})}, None, "at least one legacy selector"),
             ("secret reason", {"x": _retired_entry(reason="leaked sk-live1234567890abc")}, None,
@@ -2256,7 +2256,7 @@ class CatalogV2Tests(unittest.TestCase):
                 selectors={"claude-fable-5[1m]": None})}),
             ("@ generation of a live line", {"opus@4.7": _retired_entry(
                 provider="anthropic", last_wire="claude-opus-4-7", successor="opus",
-                generation="4.7", selectors={"claude-multi-opus-4-7[1m]": None})}),
+                generation="4.7", selectors={"charmer-opus-4-7[1m]": None})}),
         ]
         for name, entries in passing:
             with self.subTest(case=name):
@@ -2286,13 +2286,13 @@ class CatalogV2Tests(unittest.TestCase):
         )
         with self.assertRaisesRegex(CatalogError, "unknown model key 'nope'"):
             bundle.resolve_key("nope")
-        key, entry = bundle.resolve_selector("claude-multi-muse-spark-high[1m]")
+        key, entry = bundle.resolve_selector("charmer-muse-spark-high[1m]")
         self.assertEqual(key, "muse-spark")
         self.assertEqual(entry["provider"], "meta")
-        self.assertEqual(bundle.resolve_selector("claude-multi-muse-spark-xhigh")[0], "muse-spark")
+        self.assertEqual(bundle.resolve_selector("charmer-muse-spark-xhigh")[0], "muse-spark")
         self.assertIsNone(bundle.resolve_selector("gpt-multi-sol-high[1m]"))
         self.assertEqual(
-            bundle.retired_selector_index()["claude-multi-muse-spark-high"][2],
+            bundle.retired_selector_index()["charmer-muse-spark-high"][2],
             "output-config-high",
         )
 
@@ -2424,7 +2424,7 @@ class CatalogV2Tests(unittest.TestCase):
         self.assertIn("qwen38", custom.catalog_line_ids(docs))
         self.assertLessEqual({"muse-spark", "sol@5.5", "sol"}, custom.retired_model_ids(docs))
         environ = {
-            "HOME": tempfile.mkdtemp(prefix="claude-multi-custom-"),
+            "HOME": tempfile.mkdtemp(prefix="charmer-custom-"),
         }
         self.addCleanup(lambda: shutil.rmtree(environ["HOME"], ignore_errors=True))
         environ["XDG_CONFIG_HOME"] = environ["HOME"] + "/.config"
@@ -2446,12 +2446,12 @@ class CatalogV2Tests(unittest.TestCase):
                         catalog_models=custom.catalog_line_ids(docs),
                         retired_models=custom.retired_model_ids(docs),
                     )
-        self.assertFalse((Path(environ["XDG_CONFIG_HOME"]) / "claude-multi" / "custom.json").exists())
+        self.assertFalse((Path(environ["XDG_CONFIG_HOME"]) / "charmer" / "custom.json").exists())
 
     def test_custom_v1_registry_still_loads(self) -> None:
         from charmer import custom, state
 
-        home = Path(tempfile.mkdtemp(prefix="claude-multi-custom-"))
+        home = Path(tempfile.mkdtemp(prefix="charmer-custom-"))
         self.addCleanup(lambda: shutil.rmtree(home, ignore_errors=True))
         environ = {
             "HOME": str(home),
@@ -2535,7 +2535,7 @@ class NewLineGateTests(unittest.TestCase):
     def test_disposable_new_draft_passes_the_gates_without_admission(self) -> None:
         from charmer import dev
 
-        root = Path(tempfile.mkdtemp(prefix="claude-multi-newline-"))
+        root = Path(tempfile.mkdtemp(prefix="charmer-newline-"))
         self.addCleanup(lambda: shutil.rmtree(root, ignore_errors=True))
         tree = root / "assets"
         for part in ("catalog", "schemas"):
@@ -2607,7 +2607,7 @@ class ValidateLineExtractionTests(unittest.TestCase):
             lambda raw: raw["docs"]["models"]["models"]["sol"].update(default_effort="ultracode"),
             lambda raw: raw["docs"]["models"]["models"].__setitem__(
                 "sol-dup", copy.deepcopy(raw["docs"]["models"]["models"]["sol"])),
-            lambda raw: raw["docs"]["models"]["models"]["opus"].update(selector="claude-multi-render-x"),
+            lambda raw: raw["docs"]["models"]["models"]["opus"].update(selector="charmer-render-x"),
             lambda raw: raw["docs"]["models"]["models"]["kimi-k3"].update(provider="nope"),
         ]
         for index, mutate in enumerate(mutations):

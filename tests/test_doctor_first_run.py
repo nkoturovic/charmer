@@ -1,4 +1,4 @@
-"""``claude-multi doctor --first-run``: nine ordered local checks, each
+"""``charmer doctor --first-run``: nine ordered local checks, each
 with one fix, the waiting propagation, the JSON form, the exit statuses,
 and nothing written."""
 
@@ -63,7 +63,7 @@ class OrderTests(FirstRunCase):
     def test_nothing_connected_makes_models_and_profile_wait(self) -> None:
         found = self.checks(connections=())
         self.assertEqual((found["providers"].state, found["providers"].fix.cli),
-                         ("fail", "claude-multi setup --step providers"))
+                         ("fail", "charmer setup --step providers"))
         self.assertEqual(found["models"].state, "waiting")
         self.assertEqual(found["models"].detail, "waits for a provider")
         self.assertEqual(found["profile"].state, "waiting")
@@ -73,7 +73,7 @@ class OrderTests(FirstRunCase):
     def test_a_signed_in_account_without_a_current_acknowledgement_needs_attention(self) -> None:
         found = self.checks(connections=(account(),))
         self.assertEqual(found["providers"].state, "attention")
-        self.assertEqual(found["providers"].fix.cli, "claude-multi providers sign-in anthropic")
+        self.assertEqual(found["providers"].fix.cli, "charmer providers sign-in anthropic")
         signin.record_ack(self.runtime, "claude", "personal")
         self.assertEqual(self.checks(connections=(account(),))["providers"].state, "ok")
 
@@ -82,7 +82,7 @@ class OrderTests(FirstRunCase):
                 "2.1.0", "missing", "not installed", external.CLAUDE_FIX)):
             found = self.checks()
         self.assertEqual((found["claude"].title, found["claude"].state), ("Claude Code 2.1.0", "fail"))
-        self.assertEqual(found["claude"].fix.argv, ("claude-multi", "setup", "--step", "claude"))
+        self.assertEqual(found["claude"].fix.argv, ("charmer", "setup", "--step", "claude"))
 
     def test_a_policy_that_blocks(self) -> None:
         blocked = (("block", "allowManagedHooksOnly blocks the session hooks", model.Fix(None, "ask your administrator")),)
@@ -93,7 +93,7 @@ class OrderTests(FirstRunCase):
     def test_missing_hook_helpers(self) -> None:
         found = self.checks()
         if found["hooks"].state == "fail":
-            self.assertEqual(found["hooks"].fix.cli, "claude-multi doctor --repair-all")
+            self.assertEqual(found["hooks"].fix.cli, "charmer doctor --repair-all")
 
 
 class KeyFileTests(FirstRunCase):
@@ -123,7 +123,7 @@ class KeyFileTests(FirstRunCase):
             found = self.checks()["files"]
         self.assertEqual(found.state, "fail")
         self.assertIn("key file pointer", found.detail)
-        self.assertEqual(found.fix.cli, "fix or delete ~/.config/claude-multi/secret-file.json")
+        self.assertEqual(found.fix.cli, "fix or delete ~/.config/charmer/secret-file.json")
 
 
 class CommandTests(FirstRunCase):
@@ -168,14 +168,14 @@ class CommandTests(FirstRunCase):
         tui = "\n".join(firstrun.render_lines(items, surface="tui"))
         cli = "\n".join(firstrun.render_lines(items, surface="cli"))
         self.assertIn("fix: A on Get started", tui)
-        self.assertIn("fix: claude-multi setup --step providers", cli)
+        self.assertIn("fix: charmer setup --step providers", cli)
 
 
 CLAUDE_BUILD = b"#!/bin/sh\n# a fixture build, never run\n" + bytes(range(256)) * 4
 
 
 class ClaudeCopyTests(FirstRunCase):
-    """Only claude-multi's own copy with the pinned size and sha256 passes."""
+    """Only charmer's own copy with the pinned size and sha256 passes."""
 
     VERSION = "2.1.400"
 
@@ -215,7 +215,7 @@ class ClaudeCopyTests(FirstRunCase):
         found = self.claude()
         self.assertEqual(found.state, "fail")
         self.assertIn("does not match", found.detail)
-        self.assertEqual(found.fix.cli, "claude-multi setup --step claude")
+        self.assertEqual(found.fix.cli, "charmer setup --step claude")
         # Get started and setup --status show the same verdict.
         self.assertEqual(status.snapshot(self.runtime).step("claude").state, "blocked")
 
@@ -225,8 +225,8 @@ class ClaudeCopyTests(FirstRunCase):
         state.ensure_private_dir(retained)
         (retained / self.VERSION).write_bytes(CLAUDE_BUILD)
         found = self.claude()
-        self.assertEqual((found.state, found.detail), ("fail", "not set up for claude-multi"))
-        self.assertEqual(found.fix.argv, ("claude-multi", "setup", "--step", "claude"))
+        self.assertEqual((found.state, found.detail), ("fail", "not set up for charmer"))
+        self.assertEqual(found.fix.argv, ("charmer", "setup", "--step", "claude"))
         self.assertFalse(self.owned.exists())  # nothing was put in place
 
 
@@ -266,7 +266,7 @@ class GatewayStartTests(_GatewayDoctor):
         found = self.gateway()
         self.assertEqual(found.state, "fail")
         self.assertIn("the gateway program (cli-proxy-api) is not installed", found.detail)
-        self.assertEqual(found.fix.cli, "reinstall claude-multi")
+        self.assertEqual(found.fix.cli, "reinstall charmer")
         self.assertEqual(status.snapshot(self.runtime).step("gateway").state, "blocked")
 
     def test_a_program_that_cannot_run_fails(self) -> None:
@@ -284,8 +284,8 @@ class GatewayStartTests(_GatewayDoctor):
         self.assertEqual(found.state, "fail")
         self.assertIn("automatic starts are paused: the gateway was started 3 times in the last 10 minutes",
                       found.detail)
-        self.assertIn("claude-multi gateway start", found.fix.cli)
-        self.assertIn("claude-multi gateway logs", found.fix.cli)
+        self.assertIn("charmer gateway start", found.fix.cli)
+        self.assertIn("charmer gateway logs", found.fix.cli)
 
 
 def _home_tree(root: Path) -> dict[str, tuple[int, int, bytes]]:
@@ -331,8 +331,8 @@ class EntrypointTests(unittest.TestCase):
     def test_an_error_before_the_checks_keeps_the_first_run_json_shape(self) -> None:
         from charmer import errors
 
-        failure = errors.ClaudeMultiError("fixture: the packaged catalog cannot be read",
-                                          remedy="reinstall claude-multi")
+        failure = errors.CharmerError("fixture: the packaged catalog cannot be read",
+                                          remedy="reinstall charmer")
         for argv, first_run in ((["doctor", "--first-run", "--json"], True), (["doctor", "--json"], False)):
             with self.subTest(argv=argv):
                 out, err = io.StringIO(), io.StringIO()
@@ -341,12 +341,12 @@ class EntrypointTests(unittest.TestCase):
                         contextlib.redirect_stderr(err):
                     code = entry.main(argv, output_stream=out, interactive=False)
                 self.assertEqual(code, 1)
-                self.assertIn("claude-multi: fixture: the packaged catalog cannot be read", err.getvalue())
+                self.assertIn("charmer: fixture: the packaged catalog cannot be read", err.getvalue())
                 document = json.loads(out.getvalue())
                 if first_run:
                     self.assertEqual(document, {
                         "version": 1, "ready": False, "next": None, "items": [], "info": [texts.FIRSTRUN_INFO],
-                        "error": "fixture: the packaged catalog cannot be read\n  fix: reinstall claude-multi"})
+                        "error": "fixture: the packaged catalog cannot be read\n  fix: reinstall charmer"})
                 else:  # the ordinary report keeps its own error form
                     self.assertEqual(document["report"], "doctor")
                     self.assertNotIn("items", document)
@@ -368,7 +368,7 @@ class EntrypointTests(unittest.TestCase):
                     hooks = None
                 if hooks is not None:
                     self.assertEqual((hooks["state"], hooks["fix"]["text"]),
-                                     ("fail", "claude-multi doctor --repair-all"))
+                                     ("fail", "charmer doctor --repair-all"))
 
     def test_the_helpers_of_an_existing_install_are_never_repointed(self) -> None:
         with mock.patch.dict(os.environ, self.env, clear=True):
@@ -376,9 +376,9 @@ class EntrypointTests(unittest.TestCase):
         state.ensure_private_dir(root.parent.parent)
         state.ensure_private_dir(root.parent)
         state.ensure_private_dir(root)
-        scope.ensure_hook_shim(root, "/elsewhere/bin/claude-multi")
-        scope.ensure_hook_shim_v3(root, "/elsewhere/bin/claude-multi")
-        scope.ensure_token_helper_command(root, self.env, "/elsewhere/bin/claude-multi")
+        scope.ensure_hook_shim(root, "/elsewhere/bin/charmer")
+        scope.ensure_hook_shim_v3(root, "/elsewhere/bin/charmer")
+        scope.ensure_token_helper_command(root, self.env, "/elsewhere/bin/charmer")
         before = _home_tree(self.home)
         for argv in ((), ("--json",)):
             with self.subTest(argv=argv):
@@ -400,7 +400,7 @@ class FreshHomeInertTests(unittest.TestCase):
     # Files and folders only an earlier release's state has.
     OBSOLETE = re.compile(r"(^|/)(compositions|custom\.json|native-contract\.json|state-version)$"
                           r"|\.v3\.json$|\.ordinary$|\.v3$")
-    ADVICE = re.compile(r"restore-2x|claude-multi migrate|profile migrate|compositions?\b")
+    ADVICE = re.compile(r"restore-2x|charmer migrate|profile migrate|compositions?\b")
     BUILD = b"#!/bin/sh\n# a fixture build, never run\n" + bytes(range(256)) * 4
 
     def setUp(self) -> None:

@@ -1,4 +1,4 @@
-"""Strict JSON loading and canonical serialization for claude-multi v2.
+"""Strict JSON loading and canonical serialization for charmer v2.
 
 All trusted and user data is parsed through this module: duplicate keys,
 trailing data, invalid UTF-8, non-finite numbers, and oversized structures are
@@ -18,7 +18,7 @@ from typing import Any
 from . import errors
 
 
-class StrictJSONError(errors.ClaudeMultiError, ValueError):
+class StrictJSONError(errors.CharmerError, ValueError):
     """Raised when JSON input violates strictness or safety limits."""
 
 

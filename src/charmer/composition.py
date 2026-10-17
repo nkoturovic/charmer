@@ -17,7 +17,7 @@ from . import errors
 from . import strict_json
 
 
-class CompositionError(errors.ClaudeMultiError, ValueError):
+class CompositionError(errors.CharmerError, ValueError):
     """Raised when a composition cannot be loaded or resolved."""
 
 

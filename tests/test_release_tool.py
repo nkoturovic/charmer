@@ -88,7 +88,7 @@ def tag(repo: Path, name: str) -> None:
 @requires_release_tree
 class PreflightCheckTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.tmp = Path(tempfile.mkdtemp(prefix="claude-multi-release-tool-"))
+        self.tmp = Path(tempfile.mkdtemp(prefix="charmer-release-tool-"))
         self.addCleanup(shutil.rmtree, self.tmp, True)
         self.tool = tool()
 
@@ -277,7 +277,7 @@ class PreflightCheckTests(unittest.TestCase):
 class BuildCommandTests(unittest.TestCase):
     def test_build_and_reproduce_call_the_build_tool(self) -> None:
         release = tool()
-        tmp = Path(tempfile.mkdtemp(prefix="claude-multi-release-tool-build-"))
+        tmp = Path(tempfile.mkdtemp(prefix="charmer-release-tool-build-"))
         self.addCleanup(shutil.rmtree, tmp, True)
         summary = json.dumps({"assets": {}})
         compared = json.dumps({"content_identical": True})
@@ -287,8 +287,8 @@ class BuildCommandTests(unittest.TestCase):
             # A release directory as the build tool writes it.
             out = Path(argv[argv.index("--out") + 1])
             out.mkdir(parents=True, exist_ok=True)
-            (out / "MANIFEST.json").write_text(json.dumps({"assets": {"claude-multi-1.2.3-linux-x86_64.tar.gz": {}}}))
-            names = ["MANIFEST.json", "claude-multi-1.2.3-linux-x86_64.tar.gz"]
+            (out / "MANIFEST.json").write_text(json.dumps({"assets": {"charmer-1.2.3-linux-x86_64.tar.gz": {}}}))
+            names = ["MANIFEST.json", "charmer-1.2.3-linux-x86_64.tar.gz"]
             (out / names[1]).write_bytes(b"fixture archive")
             for name in ("install.sh", "install.ps1"):
                 (out / name).write_text("fixture installer\n")
@@ -325,7 +325,7 @@ class SignTests(unittest.TestCase):
         release = tool()
         out = Path("/nonexistent") / "dist"
         lines = release.sign_commands(out, "/keys/it's private")
-        self.assertEqual(lines[0], "ssh-keygen -Y sign -f '/keys/it'\\''s private' -n claude-multi-release "
+        self.assertEqual(lines[0], "ssh-keygen -Y sign -f '/keys/it'\\''s private' -n charmer-release "
                                    "'/nonexistent/dist/SHA256SUMS'")
         self.assertIn("SHA256SUMS.sshsig", lines[1])
         self.assertIn("verify-draft", lines[2])
@@ -346,7 +346,7 @@ exit 71
 """
 
     def setUp(self) -> None:
-        self.tmp = Path(tempfile.mkdtemp(prefix="claude-multi-release-draft-"))
+        self.tmp = Path(tempfile.mkdtemp(prefix="charmer-release-draft-"))
         self.addCleanup(shutil.rmtree, self.tmp, True)
         self.release = tool()
         self.key = make_key(self.tmp)
@@ -389,9 +389,9 @@ exit 71
         report = self.release.verify_draft(self.draft.dir, repo=REPO_ROOT, allowed_signers=self.signers,
                                            journey_env=self.JOURNEY_ENV)
         self.assertEqual(report["version"], "1.2.3")
-        self.assertEqual(sorted(report["installed"]), ["claude-multi", "claude-multi-proxy"])
-        self.assertTrue(report["installed"]["claude-multi"].startswith("claude-multi 1.2.3 (catalog "))
-        self.assertEqual(report["installed"]["claude-multi-proxy"], "claude-multi-proxy 1.2.3")
+        self.assertEqual(sorted(report["installed"]), ["charmer", "charmer-proxy"])
+        self.assertTrue(report["installed"]["charmer"].startswith("charmer 1.2.3 (catalog "))
+        self.assertEqual(report["installed"]["charmer-proxy"], "charmer-proxy 1.2.3")
         self.assertTrue(report["key"].startswith("SHA256:"))
         # Beyond --version: the first-run checks of the new installation, not
         # ready only for the setup steps the install left out (--no-setup),
@@ -399,7 +399,7 @@ exit 71
         self.assertIn("first run: ok, not ready only for what a fresh install has not set up yet "
                       "(claude, gateway, providers, models, profile, hooks)", report["journey"])
         self.assertIn("uninstall keeping the state: ok", report["journey"])
-        self.assertTrue(any(line.startswith("version: claude-multi 1.2.3 (") for line in report["journey"]))
+        self.assertTrue(any(line.startswith("version: charmer 1.2.3 (") for line in report["journey"]))
         self.assertEqual(report["journey"][-1], "done")
 
     def test_verify_draft_runs_more_than_version(self) -> None:
@@ -437,7 +437,7 @@ doctor)
       printf '%s{{"id": "%s", "state": "ok", "detail": "fine", "fix": null}}' "$sep" "$id"; sep=', '
     done
     printf ']}}\\n'
-  else printf 'claude-multi doctor --first-run\\nReady.\\n'; fi
+  else printf 'charmer doctor --first-run\\nReady.\\n'; fi
   exit 71 ;;
 esac
 exit 71
@@ -686,22 +686,22 @@ else:
             self.release.publish(self.draft.dir, "v1.2.4", repo=repo, stream=io.StringIO("publish 1.2.3\n"))
         log.unlink()
         with contextlib.redirect_stderr(io.StringIO()):
-            report = self.release.publish(self.draft.dir, "v1.2.3", repo=repo, repository="example/claude-multi",
+            report = self.release.publish(self.draft.dir, "v1.2.3", repo=repo, repository="example/charmer",
                                           stream=io.StringIO("publish 1.2.3\n"))
         self.assertEqual(report["published"], "v1.2.3")
         calls = self.calls(log)
         files = sorted(path.name for path in self.draft.dir.iterdir() if path.name != "SHA256SUMS.sshsig")
-        self.assertEqual(calls[0], "release view v1.2.3 --json isDraft,assets --repo example/claude-multi")
+        self.assertEqual(calls[0], "release view v1.2.3 --json isDraft,assets --repo example/charmer")
         self.assertTrue(calls[1].startswith("release download v1.2.3 --dir "))
-        self.assertEqual(calls[1].split(" --pattern ")[1:], [*files[:-1], files[-1] + " --repo example/claude-multi"])
+        self.assertEqual(calls[1].split(" --pattern ")[1:], [*files[:-1], files[-1] + " --repo example/charmer"])
         self.assertEqual(calls[2], f"release upload v1.2.3 {self.draft.dir / 'SHA256SUMS.sshsig'} --clobber "
-                                   "--repo example/claude-multi")
-        self.assertEqual(calls[3], "release view v1.2.3 --json isDraft,assets --repo example/claude-multi")
+                                   "--repo example/charmer")
+        self.assertEqual(calls[3], "release view v1.2.3 --json isDraft,assets --repo example/charmer")
         # Right before the promotion every asset is downloaded again, the signature included.
         signed = sorted([*files, "SHA256SUMS.sshsig"])
         self.assertTrue(calls[4].startswith("release download v1.2.3 --dir "))
-        self.assertEqual(calls[4].split(" --pattern ")[1:], [*signed[:-1], signed[-1] + " --repo example/claude-multi"])
-        self.assertEqual(calls[5], "release edit v1.2.3 --draft=false --repo example/claude-multi")
+        self.assertEqual(calls[4].split(" --pattern ")[1:], [*signed[:-1], signed[-1] + " --repo example/charmer"])
+        self.assertEqual(calls[5], "release edit v1.2.3 --draft=false --repo example/charmer")
         self.assertEqual(len(calls), 6)
         self.assertTrue(self.published())
         self.assertEqual((self.remote / "SHA256SUMS.sshsig").read_bytes(),

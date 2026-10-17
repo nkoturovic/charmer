@@ -233,7 +233,7 @@ class ReleaseBuildTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        cls.tmp = Path(tempfile.mkdtemp(prefix="claude-multi-release-build-"))
+        cls.tmp = Path(tempfile.mkdtemp(prefix="charmer-release-build-"))
         cls.fixture = Fixture(cls.tmp)
         cls.out = cls.tmp / "out"
         code, stdout, stderr = run_tool(cls.fixture.argv("release", cls.out, cls.tmp / "work"))
@@ -250,14 +250,14 @@ class ReleaseBuildTests(unittest.TestCase):
         shutil.rmtree(cls.tmp, ignore_errors=True)
 
     def archive(self, target: str) -> Path:
-        return self.out / f"claude-multi-{self.version}-{target}.tar.gz"
+        return self.out / f"charmer-{self.version}-{target}.tar.gz"
 
     def top(self, target: str) -> str:
-        return f"claude-multi-{self.version}-{target}"
+        return f"charmer-{self.version}-{target}"
 
     def test_the_release_directory(self) -> None:
         names = sorted(path.name for path in self.out.iterdir())
-        archives = [f"claude-multi-{self.version}-{target}.tar.gz" for target in TARGETS]
+        archives = [f"charmer-{self.version}-{target}.tar.gz" for target in TARGETS]
         self.assertEqual(names, sorted(["MANIFEST.json", "SHA256SUMS", "install.sh", "install.ps1", *archives]))
         sums = (self.out / "SHA256SUMS").read_text().splitlines()
         listed = {line.split("  ")[1]: line.split("  ")[0] for line in sums}
@@ -280,7 +280,7 @@ class ReleaseBuildTests(unittest.TestCase):
         for name, asset in self.manifest["assets"].items():
             with self.subTest(name):
                 path = self.out / name
-                self.assertEqual(name, f"claude-multi-{self.version}-{asset['target']}.tar.gz")
+                self.assertEqual(name, f"charmer-{self.version}-{asset['target']}.tar.gz")
                 self.assertEqual(asset["size"], path.stat().st_size)
                 self.assertEqual(asset["sha256"], listed[name])
                 self.assertEqual(asset["tar_sha256"], hashlib.sha256(gzip.decompress(path.read_bytes())).hexdigest())
@@ -320,39 +320,39 @@ class ReleaseBuildTests(unittest.TestCase):
             with self.subTest(target):
                 top = self.top(target)
                 names = {entry.name.removeprefix(top + "/"): entry for entry in members(self.archive(target))}
-                for required in ("MANIFEST.json", "bin/claude-multi", "bin/claude-multi-proxy",
+                for required in ("MANIFEST.json", "bin/charmer", "bin/charmer-proxy",
                                  "runtime/python/bin/python3", f"{SITE}/charmer/__init__.py",
                                  f"{SITE}/charmer/data/version.json",
                                  f"{SITE}/charmer/data/release-trust/allowed_signers",
                                  f"{SITE}/charmer/data/gateway-contract.json",
                                  f"{SITE}/charmer/data/registry/models.json",
-                                 "libexec/claude-multi/cli-proxy-api",
-                                 "share/claude-multi/USAGE.md", "share/claude-multi/CHEATSHEET.md",
-                                 "share/claude-multi/STANDALONE.md", "share/licenses/claude-multi/LICENSE",
+                                 "libexec/charmer/cli-proxy-api",
+                                 "share/charmer/USAGE.md", "share/charmer/CHEATSHEET.md",
+                                 "share/charmer/STANDALONE.md", "share/licenses/charmer/LICENSE",
                                  "share/licenses/cli-proxy-api/THIRD_PARTY_NOTICES.txt",
                                  "share/licenses/cli-proxy-api/modules.json",
                                  "share/licenses/cli-proxy-api/CLIProxyAPI/MODIFICATIONS.txt",
-                                 "share/licenses/python/LICENSE.txt", "share/sbom/claude-multi.cdx.json",
+                                 "share/licenses/python/LICENSE.txt", "share/sbom/charmer.cdx.json",
                                  "share/sbom/cli-proxy-api.cdx.json", "share/sbom/python.cdx.json"):
                     self.assertIn(required, names)
-                for name in ("bin/claude-multi", "bin/claude-multi-proxy", "libexec/claude-multi/cli-proxy-api"):
+                for name in ("bin/charmer", "bin/charmer-proxy", "libexec/charmer/cli-proxy-api"):
                     self.assertEqual(names[name].mode, 0o755)
                 # The launchers are exactly product.json's: never the contributor's command
-                # or the one-model alias (claude-multi direct).
+                # or the one-model alias (charmer direct).
                 self.assertEqual(sorted(name for name in names if name.startswith("bin/")),
-                                 ["bin/claude-multi", "bin/claude-multi-proxy"])
+                                 ["bin/charmer", "bin/charmer-proxy"])
                 for pruned in ("runtime/python/lib/itcl4.3.8", "runtime/python/lib/thread3.0.6",
                                "runtime/python/bin/pip3", "runtime/python/share/man",
                                f"{STDLIB}/ensurepip"):
                     self.assertNotIn(pruned, names)
                 self.assertEqual(target.startswith("linux"), "runtime/python/share/terminfo/x/xterm" in names)
                 self.assertFalse([name for name in names if name.endswith((".pyo",)) or "/tests/" in name])
-                gateway = read_member(self.archive(target), f"{top}/libexec/claude-multi/cli-proxy-api")
+                gateway = read_member(self.archive(target), f"{top}/libexec/charmer/cli-proxy-api")
                 gateway_target = json.loads(PRODUCT_JSON.read_text())["targets"][target]["gateway"]
                 self.assertEqual(gateway, (self.fixture.dist / gateway_target / "cli-proxy-api").read_bytes())
                 self.assertEqual(read_member(self.archive(target), f"{top}/share/sbom/cli-proxy-api.cdx.json"),
                                  (SBOM_DIR / f"{gateway_target}.cdx.json").read_bytes())
-                self.assertEqual(read_member(self.archive(target), f"{top}/share/licenses/claude-multi/LICENSE"),
+                self.assertEqual(read_member(self.archive(target), f"{top}/share/licenses/charmer/LICENSE"),
                                  (REPO_ROOT / "LICENSE").read_bytes())
 
     def test_runtime_licences_notices_and_sbom(self) -> None:
@@ -381,7 +381,7 @@ class ReleaseBuildTests(unittest.TestCase):
                 self.assertEqual(bom["dependencies"][0]["dependsOn"],
                                  [item["bom-ref"] for item in bom["components"]])
                 properties = {(item["name"], item["value"]) for item in bom["metadata"]["component"]["properties"]}
-                self.assertIn(("claude-multi:runtime:removed-extension", "_dbm"), properties)
+                self.assertIn(("charmer:runtime:removed-extension", "_dbm"), properties)
                 self.assertEqual([item["license"]["id"] for item in bom["metadata"]["component"]["licenses"]],
                                  entry["runtime"]["spdx"])
                 for component in bom["components"]:
@@ -433,7 +433,7 @@ class ReleaseBuildTests(unittest.TestCase):
                 asset = self.manifest["assets"][f"{top}.tar.gz"]
                 self.assertEqual(hashlib.sha256(raw).hexdigest(), asset["manifest_sha256"])
                 self.assertEqual((manifest["name"], manifest["version"], manifest["target"]),
-                                 ("claude-multi", self.version, target))
+                                 ("charmer", self.version, target))
                 platform_name = product["targets"][target]["claude_code"]
                 self.assertEqual(manifest["claude_code"], {"version": pin["version"], "platform": platform_name,
                                                            **pin["platforms"][platform_name]})
@@ -460,7 +460,7 @@ class ReleaseBuildTests(unittest.TestCase):
                     installed = self_update.read_bundle_manifest(root, version=self.version, target=target)
                     self.assertEqual(installed.gateway_sha256, asset["gateway_sha256"])
                     self.assertEqual(installed.claude_code, pin["version"])
-                    # claude-multi update (and update --check) of this installation: the
+                    # charmer update (and update --check) of this installation: the
                     # latest release's MANIFEST from the latest location, a version's files
                     # from the download location with {version} filled in.
                     base, latest = release_update.release_location(root)
@@ -473,11 +473,11 @@ class ReleaseBuildTests(unittest.TestCase):
 
     def test_host_bundle_was_run_before_archiving(self) -> None:
         checked = {name: asset["import_check"] for name, asset in self.summary["assets"].items()}
-        host = f"claude-multi-{self.version}-{self.host}.tar.gz"
+        host = f"charmer-{self.version}-{self.host}.tar.gz"
         self.assertIsNotNone(checked.pop(host))
         self.assertEqual(set(checked.values()), {None})
         report = self.summary["assets"][host]["import_check"]
-        self.assertTrue(report["version"].startswith(f"claude-multi {self.version} (catalog "), report["version"])
+        self.assertTrue(report["version"].startswith(f"charmer {self.version} (catalog "), report["version"])
         self.assertGreater(report["launcher_modules"], 50)
         self.assertGreater(report["stdlib_modules"], 10)
 
@@ -524,7 +524,7 @@ class ReleaseBuildTests(unittest.TestCase):
                          dict.fromkeys(("archives_identical", "gateways_identical", "tar_identical",
                                         "bytecode_identical"), True))
         # The same tar compressed differently: the contents still match.
-        name = f"claude-multi-{self.version}-linux-x86_64.tar.gz"
+        name = f"charmer-{self.version}-linux-x86_64.tar.gz"
         tar_bytes = gzip.decompress((other / name).read_bytes())
         (other / name).write_bytes(gzip.compress(tar_bytes, compresslevel=1, mtime=0))
         self._resign(other, name)
@@ -674,7 +674,7 @@ class ReleaseBuildTests(unittest.TestCase):
 @requires_release_tree
 class ReleaseCommandTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.tmp = Path(tempfile.mkdtemp(prefix="claude-multi-release-cmd-"))
+        self.tmp = Path(tempfile.mkdtemp(prefix="charmer-release-cmd-"))
         self.addCleanup(shutil.rmtree, self.tmp, True)
         self.fixture = Fixture(self.tmp)
 
@@ -684,9 +684,9 @@ class ReleaseCommandTests(unittest.TestCase):
         self.assertEqual(code, 0, stderr)
         version = json.loads(stdout)["version"]
         self.assertEqual(sorted(path.name for path in out.iterdir()),
-                         sorted(["MANIFEST.json", "SHA256SUMS", f"claude-multi-{version}-darwin-arm64.tar.gz"]))
+                         sorted(["MANIFEST.json", "SHA256SUMS", f"charmer-{version}-darwin-arm64.tar.gz"]))
         self.assertEqual(list(json.loads((out / "MANIFEST.json").read_text())["assets"]),
-                         [f"claude-multi-{version}-darwin-arm64.tar.gz"])
+                         [f"charmer-{version}-darwin-arm64.tar.gz"])
 
     def test_repro_builds_twice_and_compares(self) -> None:
         code, stdout, stderr = run_tool(["release", "repro", "--scratch", str(self.tmp / "scratch"),
@@ -775,7 +775,7 @@ class GatewayInputTests(unittest.TestCase):
     notices and SBOMs before anything is assembled."""
 
     def setUp(self) -> None:
-        self.tmp = Path(tempfile.mkdtemp(prefix="claude-multi-release-gw-"))
+        self.tmp = Path(tempfile.mkdtemp(prefix="charmer-release-gw-"))
         self.addCleanup(shutil.rmtree, self.tmp, True)
         self.fixture = Fixture(self.tmp)
         self.tool = build_tool()
@@ -841,7 +841,7 @@ class GatewayInputTests(unittest.TestCase):
 @requires_release_tree
 class ProductAndTrustTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.tmp = Path(tempfile.mkdtemp(prefix="claude-multi-release-product-"))
+        self.tmp = Path(tempfile.mkdtemp(prefix="charmer-release-product-"))
         self.addCleanup(shutil.rmtree, self.tmp, True)
         self.tool = build_tool()
         self.doc = json.loads(UPSTREAM_JSON.read_text())
@@ -861,20 +861,20 @@ class ProductAndTrustTests(unittest.TestCase):
         self.assertEqual(sorted(product["targets"]), list(TARGETS))
         self.assertEqual({entry["gateway"] for entry in product["targets"].values()},
                          {"linux-amd64", "linux-arm64", "darwin-arm64", "darwin-amd64"})
-        self.assertEqual(product["launchers"], ["claude-multi", "claude-multi-proxy"])
+        self.assertEqual(product["launchers"], ["charmer", "charmer-proxy"])
         # The release locations: the public repository's GitHub releases.
         self.assertEqual(product["release_base_url"],
-                         "https://github.com/nkoturovic/claude-multi/releases/download/v{version}")
+                         "https://github.com/nkoturovic/charmer/releases/download/v{version}")
         self.assertEqual(product["release_latest_url"],
-                         "https://github.com/nkoturovic/claude-multi/releases/latest/download")
+                         "https://github.com/nkoturovic/charmer/releases/latest/download")
 
     def test_product_refusals(self) -> None:
         cases = {
             "windows canary": lambda d: d["targets"]["linux-x86_64"].update(gateway="windows-amd64"),
             "shared gateway": lambda d: d["targets"]["linux-aarch64"].update(gateway="linux-amd64"),
-            "developer launcher": lambda d: d.update(launchers=sorted(d["launchers"] + ["claude-multi-dev"])),
+            "developer launcher": lambda d: d.update(launchers=sorted(d["launchers"] + ["charmer-dev"])),
             "one-model alias": lambda d: d.update(launchers=sorted(d["launchers"] + ["claude-gateway"])),
-            "missing proxy": lambda d: d.update(launchers=["claude-multi"]),
+            "missing proxy": lambda d: d.update(launchers=["charmer"]),
             "target set": lambda d: d["targets"].pop("darwin-x86_64"),
             "plain http": lambda d: d.update(release_base_url="http://example.invalid"),
             "extra key": lambda d: d.update(extra=1),
@@ -883,9 +883,9 @@ class ProductAndTrustTests(unittest.TestCase):
             with self.subTest(label):
                 with self.assertRaises(self.tool.BuildError):
                     self.tool.load_product(self.product(change), self.doc, self.runtimes)
-        with self.assertRaisesRegex(self.tool.BuildError, "a bundle never ships claude-gateway .*claude-multi direct"):
-            self.tool.load_product(self.product(lambda d: d.update(launchers=["claude-gateway", "claude-multi",
-                                                                              "claude-multi-proxy"])),
+        with self.assertRaisesRegex(self.tool.BuildError, "a bundle never ships claude-gateway .*charmer direct"):
+            self.tool.load_product(self.product(lambda d: d.update(launchers=["claude-gateway", "charmer",
+                                                                              "charmer-proxy"])),
                                    self.doc, self.runtimes)
 
     def test_release_trust_lines(self) -> None:
@@ -894,11 +894,11 @@ class ProductAndTrustTests(unittest.TestCase):
         trust_file.parent.mkdir(parents=True)
         trust_file.write_text("# comments only\n\n")
         self.assertEqual(self.tool.release_trust(resources)["signers"], [])
-        line = 'release@claude-multi namespaces="claude-multi-release" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample'
+        line = 'release@charmer namespaces="charmer-release" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample'
         trust_file.write_text(f"# key\n{line}\n")
         self.assertEqual(self.tool.release_trust(resources)["signers"], [line])
-        for bad in ("someone@else ssh-ed25519 AAAA", "release@claude-multi ssh-rsa AAAA",
-                    "release@claude-multi ssh-ed25519 AAAA it's"):
+        for bad in ("someone@else ssh-ed25519 AAAA", "release@charmer ssh-rsa AAAA",
+                    "release@charmer ssh-ed25519 AAAA it's"):
             with self.subTest(bad):
                 trust_file.write_text(bad + "\n")
                 with self.assertRaises(self.tool.BuildError):
@@ -931,7 +931,7 @@ class ReleaseInputTests(unittest.TestCase):
     release build refuses before it builds anything; --test-build (tests and
     local trials only) builds anyway and says so."""
 
-    KEY_LINE = 'release@claude-multi namespaces="claude-multi-release" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample'
+    KEY_LINE = 'release@charmer namespaces="charmer-release" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample'
     REMEDIES = {
         "key": "names no signing key: add the production public key line",
         "base": "names no release_base_url: set the https download location",
@@ -940,7 +940,7 @@ class ReleaseInputTests(unittest.TestCase):
     }
 
     def setUp(self) -> None:
-        self.tmp = Path(tempfile.mkdtemp(prefix="claude-multi-release-inputs-"))
+        self.tmp = Path(tempfile.mkdtemp(prefix="charmer-release-inputs-"))
         self.addCleanup(shutil.rmtree, self.tmp, True)
         self.fixture = Fixture(self.tmp)
         self.tool = build_tool()
@@ -1047,7 +1047,7 @@ class ReleaseInputTests(unittest.TestCase):
 @requires_release_tree
 class DocumentLayoutTests(unittest.TestCase):
     """pyproject.toml's data-files table is the one document layout of the
-    wheel, the bundles and the Nix package: keys share/claude-multi[/<dir>],
+    wheel, the bundles and the Nix package: keys share/charmer[/<dir>],
     files under docs/<dir>/, installed at <key>/<name>."""
 
     def setUp(self) -> None:
@@ -1059,26 +1059,26 @@ class DocumentLayoutTests(unittest.TestCase):
         self.assertEqual([(path.relative_to(REPO_ROOT).as_posix(), str(target)) for path, target in found],
                          [(str(source), str(target)) for source, target in table])
         for name in ("USAGE.md", "CHEATSHEET.md", "STANDALONE.md"):
-            self.assertIn((f"docs/{name}", f"share/claude-multi/{name}"),
+            self.assertIn((f"docs/{name}", f"share/charmer/{name}"),
                           [(str(source), str(target)) for source, target in table])
 
     def test_the_rule(self) -> None:
         layout = self.tool.document_layout
-        accepted = layout({"share/claude-multi": ["docs/USAGE.md"],
-                           "share/claude-multi/reference": ["docs/reference/licenses.md", "docs/reference/a.md"],
-                           "share/claude-multi/guide/deep": ["docs/guide/deep/x.md"]})
+        accepted = layout({"share/charmer": ["docs/USAGE.md"],
+                           "share/charmer/reference": ["docs/reference/licenses.md", "docs/reference/a.md"],
+                           "share/charmer/guide/deep": ["docs/guide/deep/x.md"]})
         self.assertEqual([(str(source), str(target)) for source, target in accepted], [
-            ("docs/USAGE.md", "share/claude-multi/USAGE.md"),
-            ("docs/reference/licenses.md", "share/claude-multi/reference/licenses.md"),
-            ("docs/reference/a.md", "share/claude-multi/reference/a.md"),
-            ("docs/guide/deep/x.md", "share/claude-multi/guide/deep/x.md")])
+            ("docs/USAGE.md", "share/charmer/USAGE.md"),
+            ("docs/reference/licenses.md", "share/charmer/reference/licenses.md"),
+            ("docs/reference/a.md", "share/charmer/reference/a.md"),
+            ("docs/guide/deep/x.md", "share/charmer/guide/deep/x.md")])
         refused = {
-            "both install": {"share/claude-multi": ["docs/USAGE.md", "docs/USAGE.md"]},
-            "its directory below docs/ is not reference": {"share/claude-multi/reference": ["docs/licenses.md"]},
-            "its directory below docs/ is not the top": {"share/claude-multi": ["docs/reference/licenses.md"]},
-            "is not a file under docs/": {"share/claude-multi": ["README.md"]},
-            "is not share/claude-multi or a directory under it": {"share/doc/claude-multi": ["docs/USAGE.md"]},
-            "lists no files": {"share/claude-multi": []},
+            "both install": {"share/charmer": ["docs/USAGE.md", "docs/USAGE.md"]},
+            "its directory below docs/ is not reference": {"share/charmer/reference": ["docs/licenses.md"]},
+            "its directory below docs/ is not the top": {"share/charmer": ["docs/reference/licenses.md"]},
+            "is not a file under docs/": {"share/charmer": ["README.md"]},
+            "is not share/charmer or a directory under it": {"share/doc/charmer": ["docs/USAGE.md"]},
+            "lists no files": {"share/charmer": []},
         }
         for needle, table in refused.items():
             with self.subTest(needle):
@@ -1086,12 +1086,12 @@ class DocumentLayoutTests(unittest.TestCase):
                     layout(table)
         for name in ("docs/../README.md", "/docs/USAGE.md", "docs"):
             with self.subTest(name), self.assertRaises(self.tool.BuildError):
-                layout({"share/claude-multi": [name]})
+                layout({"share/charmer": [name]})
         with self.assertRaises(self.tool.BuildError):
-            layout({"share/claude-multi/../etc": ["docs/USAGE.md"]})
+            layout({"share/charmer/../etc": ["docs/USAGE.md"]})
 
     def test_a_nested_document_is_installed_at_its_relative_path(self) -> None:
-        tmp = Path(tempfile.mkdtemp(prefix="claude-multi-release-docs-"))
+        tmp = Path(tempfile.mkdtemp(prefix="charmer-release-docs-"))
         self.addCleanup(shutil.rmtree, tmp, True)
         fixture = Fixture(tmp)
         tree = tmp / "tree"
@@ -1104,28 +1104,28 @@ class DocumentLayoutTests(unittest.TestCase):
         nested.write_text("# Nested\n\nSee [usage](../USAGE.md).\n")
         project = (REPO_ROOT / "pyproject.toml").read_text()
         self.assertEqual(project.count('\n[tool.setuptools.data-files]\n'), 1)
-        project += '"share/claude-multi/extra" = ["docs/extra/nested.md"]\n'
+        project += '"share/charmer/extra" = ["docs/extra/nested.md"]\n'
         (tree / "pyproject.toml").write_text(project)
         out = tmp / "out"
         host = load_tool(REPO_ROOT / "tools" / "_build" / "python_runtime.py", "python_runtime").host_target()
         code, stdout, stderr = run_tool(fixture.argv("bundle", out, tmp / "w", "--repo", str(tree), "--target", host))
         self.assertEqual(code, 0, stderr)
         version = json.loads(stdout)["version"]
-        archive = out / f"claude-multi-{version}-{host}.tar.gz"
-        top = f"claude-multi-{version}-{host}"
-        self.assertEqual(read_member(archive, f"{top}/share/claude-multi/extra/nested.md"), nested.read_bytes())
-        self.assertEqual(read_member(archive, f"{top}/share/claude-multi/USAGE.md"),
+        archive = out / f"charmer-{version}-{host}.tar.gz"
+        top = f"charmer-{version}-{host}"
+        self.assertEqual(read_member(archive, f"{top}/share/charmer/extra/nested.md"), nested.read_bytes())
+        self.assertEqual(read_member(archive, f"{top}/share/charmer/USAGE.md"),
                          (REPO_ROOT / "docs" / "USAGE.md").read_bytes())
         # The relative link resolves inside the installation as it does in the checkout.
         names = {entry.name for entry in members(archive)}
-        self.assertIn(f"{top}/share/claude-multi/USAGE.md", names)
+        self.assertIn(f"{top}/share/charmer/USAGE.md", names)
         # A table that breaks the rule refuses the bundle.
-        (tree / "pyproject.toml").write_text(project.replace('"share/claude-multi/extra"',
-                                                             '"share/claude-multi/elsewhere"'))
+        (tree / "pyproject.toml").write_text(project.replace('"share/charmer/extra"',
+                                                             '"share/charmer/elsewhere"'))
         code, _stdout, stderr = run_tool(fixture.argv("bundle", tmp / "out2", tmp / "w", "--repo", str(tree),
                                                       "--target", host))
         self.assertEqual(code, 1)
-        self.assertIn("is installed into share/claude-multi/elsewhere, but its directory below docs/ is not "
+        self.assertIn("is installed into share/charmer/elsewhere, but its directory below docs/ is not "
                       "elsewhere", stderr)
 
 
@@ -1138,7 +1138,7 @@ class BundleLauncherTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        cls.tmp = Path(tempfile.mkdtemp(prefix="claude-multi-release-launch-"))
+        cls.tmp = Path(tempfile.mkdtemp(prefix="charmer-release-launch-"))
         fixture = Fixture(cls.tmp)
         out = cls.tmp / "out"
         host = load_tool(REPO_ROOT / "tools" / "_build" / "python_runtime.py", "python_runtime").host_target()
@@ -1148,14 +1148,14 @@ class BundleLauncherTests(unittest.TestCase):
             raise AssertionError(stderr)
         version = json.loads(stdout)["version"]
         cls.version = version
-        cls.install = cls.tmp / "home" / ".local" / "share" / "claude-multi" / "install"
+        cls.install = cls.tmp / "home" / ".local" / "share" / "charmer" / "install"
         (cls.install / "versions").mkdir(parents=True)
-        with tarfile.open(out / f"claude-multi-{version}-{host}.tar.gz", "r:gz") as tar:
+        with tarfile.open(out / f"charmer-{version}-{host}.tar.gz", "r:gz") as tar:
             tar.extractall(cls.install / "versions", filter="data")
-        (cls.install / "versions" / f"claude-multi-{version}-{host}").rename(cls.install / "versions" / version)
+        (cls.install / "versions" / f"charmer-{version}-{host}").rename(cls.install / "versions" / version)
         os.symlink(f"versions/{version}", cls.install / "current")
         cls.bundle = cls.install / "versions" / version
-        recorder = cls.bundle / "libexec" / "claude-multi" / "cli-proxy-api"
+        recorder = cls.bundle / "libexec" / "charmer" / "cli-proxy-api"
         executable = sys.executable
         half = len(executable) // 2
         recorder.write_text(
@@ -1170,8 +1170,8 @@ class BundleLauncherTests(unittest.TestCase):
         shutil.rmtree(cls.tmp, ignore_errors=True)
 
     def setUp(self) -> None:
-        self.home = Path(tempfile.mkdtemp(prefix="claude-multi-launch-home-", dir=self.tmp))
-        self.cwd = Path(tempfile.mkdtemp(prefix="claude-multi-launch-cwd-", dir=self.tmp))
+        self.home = Path(tempfile.mkdtemp(prefix="charmer-launch-home-", dir=self.tmp))
+        self.cwd = Path(tempfile.mkdtemp(prefix="charmer-launch-cwd-", dir=self.tmp))
 
     def files(self) -> set[str]:
         return {str(path.relative_to(self.bundle)) for path in self.bundle.rglob("*")}
@@ -1206,7 +1206,7 @@ class BundleLauncherTests(unittest.TestCase):
 
     def test_version_through_the_installation_link(self) -> None:
         before = self.files()
-        for name in ("claude-multi", "claude-multi-proxy"):
+        for name in ("charmer", "charmer-proxy"):
             with self.subTest(name):
                 result = self.run_launcher([str(self.install / "current" / "bin" / name), "--version"], self.hostile())
                 self.assertEqual(result.returncode, 0, result.stderr)
@@ -1216,19 +1216,19 @@ class BundleLauncherTests(unittest.TestCase):
     def test_the_installed_documents_link_only_inside_the_installation(self) -> None:
         # The bundle's documents as an installation holds them: every page
         # the data-files table names, nested directories included; every
-        # relative link and heading anchor resolves inside share/claude-multi
+        # relative link and heading anchor resolves inside share/charmer
         # and a root page is reached only by its public URL; the help's
         # pointers name those installed pages.
         import _docs_vocab as vocab
 
-        share = self.bundle / "share" / "claude-multi"
+        share = self.bundle / "share" / "charmer"
         pages = sorted(path.relative_to(share).as_posix() for path in share.rglob("*.md"))
         table = pyproject()["tool"]["setuptools"]["data-files"]
         self.assertEqual(pages, sorted(Path(source).relative_to("docs").as_posix()
                                        for files in table.values() for source in files))
         self.assertTrue(any("/" in page for page in pages))
         self.assertEqual(vocab.installed_link_problems(share), [])
-        result = self.run_launcher([str(self.install / "current" / "bin" / "claude-multi"), "--help"], self.hostile())
+        result = self.run_launcher([str(self.install / "current" / "bin" / "charmer"), "--help"], self.hostile())
         self.assertEqual(result.returncode, 0, result.stderr)
         pointers = re.findall(r"(?m)^(?:Symptom → command|Documentation map): (.+)$", result.stdout)
         self.assertEqual(len(pointers), 2, result.stdout[-600:])
@@ -1239,7 +1239,7 @@ class BundleLauncherTests(unittest.TestCase):
 
     def test_a_link_to_a_launcher_finds_its_installation(self) -> None:
         link = self.cwd / "cm"
-        os.symlink(self.install / "current" / "bin" / "claude-multi", link)
+        os.symlink(self.install / "current" / "bin" / "charmer", link)
         result = self.run_launcher(["./cm", "--version"], self.hostile())
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn(self.version, result.stdout)
@@ -1247,36 +1247,36 @@ class BundleLauncherTests(unittest.TestCase):
     def test_gateway_exec_keeps_management_off_with_a_hostile_environment(self) -> None:
         # Control (its own HOME): the inherited channel and patch list,
         # without the launcher, enable management and inject the key.
-        control_home = Path(tempfile.mkdtemp(prefix="claude-multi-launch-control-", dir=self.tmp))
+        control_home = Path(tempfile.mkdtemp(prefix="charmer-launch-control-", dir=self.tmp))
         control_key = self.selected_key(control_home)
         control = self.run_launcher(
             [str(self.install / "current" / "runtime" / "python" / "bin" / "python3"), "-I", "-B", "-c",
              "import sys; sys.path.insert(0, sys.argv.pop(1)); from charmer.entrypoints import main; "
-             "raise SystemExit(main())", str(self.install / "current" / SITE), "claude-multi-proxy", "run"],
+             "raise SystemExit(main())", str(self.install / "current" / SITE), "charmer-proxy", "run"],
             {"HOME": str(control_home), "PATH": os.defpath, "LC_ALL": "C", "CLAUDE_MULTI_CHANNEL": "nix",
              "CLAUDE_MULTI_PROXY_PATCHES": "cli-proxy-api-management-readonly-allowlist.patch",
-             "CLAUDE_MULTI_PROXY_BIN": str(self.bundle / "libexec" / "claude-multi" / "cli-proxy-api")})
+             "CLAUDE_MULTI_PROXY_BIN": str(self.bundle / "libexec" / "charmer" / "cli-proxy-api")})
         self.assertEqual(control.returncode, 0, control.stderr)
         recorded = json.loads((control_home / "gateway.json").read_text())
         self.assertEqual(recorded["env"].get("MANAGEMENT_PASSWORD"), control_key)
         # The launcher, with a selected key in its HOME too.
         self.selected_key(self.home)
         before = self.files()
-        result = self.run_launcher([str(self.install / "current" / "bin" / "claude-multi-proxy"), "run"],
+        result = self.run_launcher([str(self.install / "current" / "bin" / "charmer-proxy"), "run"],
                                    self.hostile())
         self.assertEqual(result.returncode, 0, result.stderr)
         recorded = json.loads((self.home / "gateway.json").read_text())
         env = recorded["env"]
         current = self.install / "current"
         self.assertEqual(Path(recorded["argv"][1]).resolve(),
-                         (self.bundle / "libexec" / "claude-multi" / "cli-proxy-api").resolve())
+                         (self.bundle / "libexec" / "charmer" / "cli-proxy-api").resolve())
         self.assertNotIn("MANAGEMENT_PASSWORD", {name.upper() for name in env})
         self.assertNotIn("CLAUDE_MULTI_PROXY_PATCHES", env)
         self.assertNotIn("INHERITED-VALUE", result.stdout + result.stderr + json.dumps(env))
         self.assertIn("management is unavailable in this build", result.stderr)
         self.assertEqual(env["CLAUDE_MULTI_CHANNEL"], "bundle")
-        self.assertEqual(env["CLAUDE_MULTI_PROXY_BIN"], str(current / "libexec" / "claude-multi" / "cli-proxy-api"))
-        self.assertEqual(env["CLAUDE_MULTI_HOOK_COMMAND"], str(current / "bin" / "claude-multi"))
+        self.assertEqual(env["CLAUDE_MULTI_PROXY_BIN"], str(current / "libexec" / "charmer" / "cli-proxy-api"))
+        self.assertEqual(env["CLAUDE_MULTI_HOOK_COMMAND"], str(current / "bin" / "charmer"))
         self.assertEqual(env["CLAUDE_MULTI_ASSETS"], str(current / SITE / "charmer" / "data"))
         self.assertEqual(self.files(), before, "running the gateway wrote into the installation")
 
@@ -1284,7 +1284,7 @@ class BundleLauncherTests(unittest.TestCase):
         probe = self.cwd / "probe.py"
         # The launcher text, with the interpreter's program replaced by a
         # report of what it was given (same shell logic, same exports).
-        text = (self.bundle / "bin" / "claude-multi").read_text()
+        text = (self.bundle / "bin" / "charmer").read_text()
         bundle = load_tool(REPO_ROOT / "tools" / "_build" / "bundle.py", "bundle")
         self.assertIn(bundle.BOOTSTRAP, text)
         probe.write_text(text.replace(bundle.BOOTSTRAP, 'import json, os, sys; print(json.dumps({"argv": sys.argv, '
@@ -1299,7 +1299,7 @@ class BundleLauncherTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         report = json.loads(result.stdout)
         current = self.install / "current"
-        self.assertEqual(report["argv"], ["-c", str(current / SITE), "claude-multi", "one", "two words"])
+        self.assertEqual(report["argv"], ["-c", str(current / SITE), "charmer", "one", "two words"])
         self.assertEqual(report["flags"], [1, True])
         self.assertNotIn(str(self.tmp / "hostile-path"), report["path"])
         env = report["env"]

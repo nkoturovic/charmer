@@ -37,7 +37,7 @@ START_LOCK = "gateway-start.lock"
 _VERBS = linux_service.VERBS
 
 
-class ServiceError(errors.ClaudeMultiError, RuntimeError):
+class ServiceError(errors.CharmerError, RuntimeError):
     """An unreadable service state must not authorize destructive recovery."""
 
 
@@ -363,7 +363,7 @@ def _read_stamp(path: Path) -> dict | None:
     try:
         value = strict_json.loads(state.read_private(path))
         return value if isinstance(value, dict) else None
-    except (OSError, ValueError, errors.ClaudeMultiError):
+    except (OSError, ValueError, errors.CharmerError):
         return None
 
 
@@ -429,7 +429,7 @@ def gateway_observation(
         owner = (listener or listener_owner)(base_url)
         pid, alive = (pid_get or gateway_pid)(state_root=state_root)
         after = read_exec_stamp(workdir)
-    except (OSError, errors.ClaudeMultiError):
+    except (OSError, errors.CharmerError):
         unknown = observation.ProcessObservation(observation.UNKNOWN, None, None, "gateway was not observable")
         return observation.GatewayObservation(unknown, OwnerVerdict("unknown", "listener ownership is unavailable"))
     if before != after:
@@ -481,7 +481,7 @@ def invalidate_reload_stamps(workdir: Path) -> None:
     for name in (RELOAD_STAMP, RELOAD_SUCCESS):
         try:
             state.remove_private(workdir / name)
-        except (OSError, errors.ClaudeMultiError):
+        except (OSError, errors.CharmerError):
             pass
 
 

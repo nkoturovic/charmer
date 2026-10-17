@@ -123,7 +123,7 @@ def run_sign_in_flow(runtime: Any, win: Any, palette: tui.Palette, provider_id: 
         # terminal until the sign-in starts.
         with contextlib.redirect_stderr(io.StringIO()):
             plan = signin.plan_sign_in(runtime, provider_id, method=chosen)
-    except (model.SetupError, cli_errors.ClaudeMultiError) as exc:
+    except (model.SetupError, cli_errors.CharmerError) as exc:
         remedy = getattr(exc, "remedy", None)
         tell(str(exc) + (f" — {remedy}" if remedy and remedy not in str(exc) else ""), "warn")
         return None
@@ -181,7 +181,7 @@ def sign_out_flow(runtime: Any, win: Any, palette: tui.Palette, provider_id: str
         return None
     try:
         outcome = signin.apply_sign_out(runtime, plan, model.Confirmation.given(plan))
-    except (model.SetupError, cli_errors.ClaudeMultiError, OSError) as exc:
+    except (model.SetupError, cli_errors.CharmerError, OSError) as exc:
         tell(str(exc), "warn")
         return None
     undo = texts.SIGNED_OUT_UNDO.format(backup=outcome.backup,

@@ -20,10 +20,10 @@ trees compiled by ``scope.compile_lineup_scope`` from the fixture seeds
 ``tests/goldens/v2/{managed,direct}/{argv-fresh,argv-resume,env}.json`` and
 ``lead-appendix.md`` are the matching ``compiler.compile_lineup_launch``
 argv, process environment and lead appendix.
-``tests/goldens/shim/claude-multi-hook`` (the 2.x lifecycle hook shim,
-frozen) and ``tests/goldens/shim/claude-multi-hook-3`` (the protocol-3 shim)
+``tests/goldens/shim/charmer-hook`` (the 2.x lifecycle hook shim,
+frozen) and ``tests/goldens/shim/charmer-hook-3`` (the protocol-3 shim)
 are the two shim texts for the state root ``/state`` and the fixed
-launcher ``/nix/store/fixture/bin/claude-multi``.
+launcher ``/nix/store/fixture/bin/charmer``.
 ``tests/goldens/v2/managed/notice/{startup,resume,fork,prompt}.json``
 are the exact protocol-3 hook stdout of the lineup notice
 (``hooks.notice_text``) over the managed golden scope files.
@@ -39,12 +39,12 @@ commits (launch seam, fixed UUID and clock, cwd ``/project``), and
 ``resume-follow-diff.txt`` the stderr diff of a following session
 resumed after a local profile edit.
 ``tests/goldens/v4/lineup/*.txt`` are the exact stdout of
-``claude-multi lineup --session <id> '<request>'`` on a fixture ``balanced``
+``charmer lineup --session <id> '<request>'`` on a fixture ``balanced``
 session (fixed UUID and clock): ``show``, the live ``set``/``unset``/
 ``profile`` applies, the pending relaunch of ``profile direct`` and
 ``direct sol``, and the skill-mode refusal of a split argument.
 ``tests/goldens/v4/profile-migrate/{dry-run,refused,apply,rerun}.txt``
-are the exact ``claude-multi profile migrate`` reports over the synthetic
+are the exact ``charmer profile migrate`` reports over the synthetic
 preset directory of ``tests/test_migrate_profiles.py`` (test-local tables,
 config root shown as ``/config``): the dry run and the refused ``--apply``
 over the full directory, then ``--apply`` and its idempotent rerun without
@@ -122,8 +122,8 @@ CONTINUITY_SEED_GOLDEN = GOLDENS_ROOT / "render" / "continuity-seed.json"
 V2_GOLDENS = GOLDENS_ROOT / "v2"
 V2_SEEDS = {"managed": "balanced", "direct": "direct"}
 V2_STATE_ROOT = Path("/state")
-V2_HOOK_COMMAND = "/state/bin/claude-multi-hook-3"
-V2_TOKEN_HELPER = "/state/bin/claude-multi-gateway-token"
+V2_HOOK_COMMAND = "/state/bin/charmer-hook-3"
+V2_TOKEN_HELPER = "/state/bin/charmer-gateway-token"
 V2_GENERATION = 1
 
 # The lineup notice hook stdout over the managed golden scope files.
@@ -142,7 +142,7 @@ SHIM_GOLDENS = GOLDENS_ROOT / "shim"
 # Migrated v4 records, the migrate report, and restore-2x overlays
 # (fixture catalog, fixed UUIDs, clock 2026-09-25T00:00:00Z, state /state).
 V4_GOLDENS = GOLDENS_ROOT / "v4"
-SHIM_COMMAND = "/nix/store/fixture/bin/claude-multi"
+SHIM_COMMAND = "/nix/store/fixture/bin/charmer"
 
 # The 3.0 TUI screens (tests/_tui_render.py).
 TUI_GOLDENS = GOLDENS_ROOT / "tui"

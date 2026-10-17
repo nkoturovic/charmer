@@ -157,7 +157,7 @@ def listener_owner(
                 except FileNotFoundError:
                     continue  # an unrelated fd may close during the snapshot
             if not unreadable and all(f"socket:[{inode}]" in inodes for _, inode in rows):
-                return observation.OwnerVerdict("ours", "the claude-multi gateway service", uid, pid)
+                return observation.OwnerVerdict("ours", "the charmer gateway service", uid, pid)
         except OSError:
             pass
     return observation.OwnerVerdict("unknown", "another process of yours (unit ownership unconfirmed)", uid, pid)

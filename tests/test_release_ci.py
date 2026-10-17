@@ -339,7 +339,7 @@ class WorkflowTests(unittest.TestCase):
 
     def test_tool_options_exist(self) -> None:
         """Every option a workflow or the journey passes to a repository
-        tool (or to the installed claude-multi) is one that command has."""
+        tool (or to the installed charmer) is one that command has."""
 
         help_cache: dict[tuple[str, ...], str] = {}
 
@@ -369,7 +369,7 @@ class WorkflowTests(unittest.TestCase):
                 if first in subcommands.get(script, ()):
                     argv = (script, first)
             elif claude:
-                argv, rest = ("bin/claude-multi", "update"), claude.group(2)
+                argv, rest = ("bin/charmer", "update"), claude.group(2)
             else:
                 continue
             for option in re.findall(r"(?<![\w-])(--[a-z][a-z-]*)", rest):
@@ -511,7 +511,7 @@ class JourneyStepsTests(unittest.TestCase):
         self.assertIn('no_credential_sent "the managed launch" "$1"', foreign)
 
     STUB_CM = """#!/bin/sh
-# claude-multi as the foreign-listener step meets it: both attempts refuse;
+# charmer as the foreign-listener step meets it: both attempts refuse;
 # LEAK names the one that first sends the listener a credential.
 case $1 in
 gateway) [ "${LEAK:-}" != start ] || printf '{"credentials": true}\\n' >>"$WORK/foreign.log"
@@ -541,7 +541,7 @@ fx() {
 
     def run_foreign_listener(self, tmp: Path, leak: str) -> subprocess.CompletedProcess[str]:
         """The journey's own foreign-listener step (and the helpers it
-        calls), with a listener and a claude-multi stub."""
+        calls), with a listener and a charmer stub."""
 
         text = JOURNEY.read_text()
         functions = []
@@ -551,7 +551,7 @@ fx() {
             if start >= 0:
                 start += 1
                 functions.append(text[start:text.index("\n}\n", start) + 3])
-        stub = tmp / "claude-multi"
+        stub = tmp / "charmer"
         stub.write_text(self.STUB_CM)
         stub.chmod(0o755)
         (tmp / "work" / "project").mkdir(parents=True, exist_ok=True)
@@ -698,7 +698,7 @@ class JourneyFixtureTests(unittest.TestCase):
     only), run the way the journey runs it: a separate isolated Python."""
 
     def setUp(self) -> None:
-        self.tmp = Path(tempfile.mkdtemp(prefix="claude-multi-journey-fixture-"))
+        self.tmp = Path(tempfile.mkdtemp(prefix="charmer-journey-fixture-"))
         self.addCleanup(shutil.rmtree, self.tmp, True)
 
     def fixture(self, *args: str, **kwargs) -> subprocess.CompletedProcess[str]:
@@ -730,7 +730,7 @@ class JourneyFixtureTests(unittest.TestCase):
             return response.read()
 
     def test_directory_check_rejects_shared_state_but_not_signed_payload_modes(self) -> None:
-        data = self.tmp / ".local/share/claude-multi"
+        data = self.tmp / ".local/share/charmer"
         versions = data / "install/versions"
         versions.mkdir(parents=True)
         for path in (data, data / "install", versions):
@@ -824,7 +824,7 @@ class JourneyFixtureTests(unittest.TestCase):
         missing = self.fixture("client", "--install", str(self.tmp / "nothing"))
         self.assertEqual(missing.returncode, 1)
 
-    # claude-multi as the first run meets it: doctor --first-run --json and
+    # charmer as the first run meets it: doctor --first-run --json and
     # doctor --first-run print what the test wrote and exit with its codes.
     STUB_DOCTOR = """#!/bin/sh
 [ "$1" = doctor ] && [ "${2:-}" = --first-run ] || exit 2
@@ -846,15 +846,15 @@ cat "$STUB/text"; exit "$(cat "$STUB/text.exit")"
         found = {
             "computer": self.check("computer", "ok", "Linux x86_64 · 12.0 GB free · local disk"),
             "files": self.check("files", "ok", "private folders for your settings"),
-            "policy": self.check("policy", "ok", "no administrator setting blocks claude-multi"),
-            "claude": self.check("claude", "fail", "not set up for claude-multi", "claude-multi setup --step claude"),
-            "gateway": self.check("gateway", "fail", "not set up yet", "claude-multi setup --step gateway"),
+            "policy": self.check("policy", "ok", "no administrator setting blocks charmer"),
+            "claude": self.check("claude", "fail", "not set up for charmer", "charmer setup --step claude"),
+            "gateway": self.check("gateway", "fail", "not set up yet", "charmer setup --step gateway"),
             "providers": self.check("providers", "fail", "nothing connected yet",
-                                    "claude-multi setup --step providers"),
+                                    "charmer setup --step providers"),
             "models": self.check("models", "waiting", "waits for a provider"),
             "profile": self.check("profile", "waiting", "waits for a provider"),
-            "hooks": self.check("hooks", "fail", "~/.local/state/claude-multi/bin/claude-multi-hook is missing",
-                                "claude-multi doctor --repair-all"),
+            "hooks": self.check("hooks", "fail", "~/.local/state/charmer/bin/charmer-hook is missing",
+                                "charmer doctor --repair-all"),
         }
         found.update(changes)
         return list(found.values())
@@ -873,8 +873,8 @@ cat "$STUB/text"; exit "$(cat "$STUB/text.exit")"
         if not site.exists():
             site.mkdir(parents=True)
             (site / "charmer").symlink_to(REPO_ROOT / "src" / "charmer")
-        (stub / "claude-multi").write_text(self.STUB_DOCTOR)
-        (stub / "claude-multi").chmod(0o755)
+        (stub / "charmer").write_text(self.STUB_DOCTOR)
+        (stub / "charmer").chmod(0o755)
         report = document if document is not None else firstrun.to_json(items)
         code = 0 if report.get("ready") else 1
         (stub / "json").write_text(json_text if json_text is not None else json.dumps(report))
@@ -886,7 +886,7 @@ cat "$STUB/text"; exit "$(cat "$STUB/text.exit")"
         # The caller's PATH: the stub's cat may live anywhere (the Nix sandbox has no /usr/bin).
         environ = {"PATH": os.environ.get("PATH", os.defpath), "HOME": str(home or self.home), "STUB": str(stub),
                    **(env or {})}
-        return self.fixture("first-run", "--launcher", str(stub / "claude-multi"), "--install",
+        return self.fixture("first-run", "--launcher", str(stub / "charmer"), "--install",
                             str(self.tmp / "install"), env=environ)
 
     FRESH = "not ready only for what a fresh install has not set up yet"
@@ -910,13 +910,13 @@ cat "$STUB/text"; exit "$(cat "$STUB/text.exit")"
         # The helpers named under the home as given, as resolved, or under XDG_STATE_HOME.
         linked = self.tmp / "linked-home"
         linked.symlink_to(self.home)
-        absolute = self.check("hooks", "fail", f"{self.home}/.local/state/claude-multi/bin/claude-multi-hook is missing",
-                              "claude-multi doctor --repair-all")
+        absolute = self.check("hooks", "fail", f"{self.home}/.local/state/charmer/bin/charmer-hook is missing",
+                              "charmer doctor --repair-all")
         result = self.first_run(self.fresh(hooks=absolute), home=linked)
         self.assertEqual(result.returncode, 0, result.stderr)
         state = self.tmp / "state"
-        elsewhere = self.check("hooks", "fail", f"{state}/claude-multi/bin/claude-multi-hook is missing",
-                               "claude-multi doctor --repair-all")
+        elsewhere = self.check("hooks", "fail", f"{state}/charmer/bin/charmer-hook is missing",
+                               "charmer doctor --repair-all")
         result = self.first_run(self.fresh(hooks=elsewhere), env={"XDG_STATE_HOME": str(state)})
         self.assertEqual(result.returncode, 0, result.stderr)
 
@@ -947,31 +947,31 @@ cat "$STUB/text"; exit "$(cat "$STUB/text.exit")"
                  "doctor --first-run --json does not list the nine checks in order"),
                 ("next disagrees", self.fresh(), dict(document=wrong_next),
                  "doctor --first-run --json disagrees with itself"),
-                ("text says ready", self.fresh(), dict(text="claude-multi doctor --first-run\nReady.\n"),
+                ("text says ready", self.fresh(), dict(text="charmer doctor --first-run\nReady.\n"),
                  "doctor --first-run and doctor --first-run --json disagree"),
                 ("a check the fresh install passes", self.fresh(computer=self.check(
-                    "computer", "fail", "less than 600 MB free under ~/.local/share/claude-multi",
-                    "free at least 600 MB under ~/.local/share/claude-multi")), {},
+                    "computer", "fail", "less than 600 MB free under ~/.local/share/charmer",
+                    "free at least 600 MB under ~/.local/share/charmer")), {},
                  unexpected.format(state="fail") + "computer (less than 600 MB free"),
                 ("another gateway problem", self.fresh(gateway=self.check(
                     "gateway", "fail", "the gateway program (cli-proxy-api) is not installed",
-                    "reinstall claude-multi")), {},
+                    "reinstall charmer")), {},
                  unexpected.format(state="fail") + "gateway (the gateway program"),
                 ("near miss", self.fresh(providers=self.check(
-                    "providers", "fail", "nothing connected yet (or not)", "claude-multi setup --step providers")), {},
+                    "providers", "fail", "nothing connected yet (or not)", "charmer setup --step providers")), {},
                  unexpected.format(state="fail") + "providers (nothing connected yet (or not)"),
                 ("another fix", self.fresh(claude=self.check(
-                    "claude", "fail", "not set up for claude-multi", "claude-multi doctor")), {},
-                 unexpected.format(state="fail") + "claude (not set up for claude-multi; fix: claude-multi doctor)"),
+                    "claude", "fail", "not set up for charmer", "charmer doctor")), {},
+                 unexpected.format(state="fail") + "claude (not set up for charmer; fix: charmer doctor)"),
                 ("waiting instead of failing", self.fresh(providers=self.check(
                     "providers", "waiting", "nothing connected yet")), {},
                  unexpected.format(state="waiting") + "providers"),
                 ("another home", self.fresh(hooks=self.check(
-                    "hooks", "fail", f"{self.tmp}/elsewhere/.local/state/claude-multi/bin/claude-multi-hook is missing",
-                    "claude-multi doctor --repair-all")), {},
+                    "hooks", "fail", f"{self.tmp}/elsewhere/.local/state/charmer/bin/charmer-hook is missing",
+                    "charmer doctor --repair-all")), {},
                  unexpected.format(state="fail") + "hooks"),
                 ("text without the check", self.fresh(), dict(
-                    text="claude-multi doctor --first-run\nNot ready: 6 item(s) need a fix (first: Claude Code 2.1.0).\n"),
+                    text="charmer doctor --first-run\nNot ready: 6 item(s) need a fix (first: Claude Code 2.1.0).\n"),
                  "doctor --first-run does not show the claude check")):
             with self.subTest(name):
                 result = self.first_run(items, **kwargs)
@@ -995,7 +995,7 @@ cat "$STUB/text"; exit "$(cat "$STUB/text.exit")"
         from charmer import sessions
 
         home = self.tmp / "home"
-        records = home / ".local" / "state" / "claude-multi" / "sessions"
+        records = home / ".local" / "state" / "charmer" / "sessions"
         environ = {"HOME": str(home), "PATH": os.environ.get("PATH", os.defpath)}
         nothing = self.fixture("ended", "--install", str(self.installed()), "--timeout", "1", env=environ)
         self.assertEqual((nothing.returncode, nothing.stdout), (0, "0 managed session record(s), every one ended\n"))
@@ -1063,7 +1063,7 @@ cat "$STUB/text"; exit "$(cat "$STUB/text.exit")"
 
         # The same authority and certificate .github/scripts/wsl_prepare.sh makes.
         openssl("req", "-x509", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:prime256v1", "-nodes", "-days", "2",
-                "-subj", "/CN=claude-multi journey loopback CA", "-keyout", "ca.key", "-out", "ca.pem",
+                "-subj", "/CN=charmer journey loopback CA", "-keyout", "ca.key", "-out", "ca.pem",
                 "-addext", "basicConstraints=critical,CA:TRUE", "-addext", "keyUsage=critical,keyCertSign")
         openssl("req", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:prime256v1", "-nodes", "-subj", "/CN=localhost",
                 "-keyout", "server.key", "-out", "server.csr")
@@ -1109,7 +1109,7 @@ class JourneyScriptTests(unittest.TestCase):
     uninstall run for real."""
 
     def setUp(self) -> None:
-        self.tmp = Path(tempfile.mkdtemp(prefix="claude-multi-journey-script-"))
+        self.tmp = Path(tempfile.mkdtemp(prefix="charmer-journey-script-"))
         self.addCleanup(shutil.rmtree, self.tmp, True)
         self.home = self.tmp / "home"
         self.home.mkdir(mode=0o700)
@@ -1143,14 +1143,14 @@ class JourneyScriptTests(unittest.TestCase):
         release = FakeRelease(self.tmp / "dist", "1.0.0", real_launchers=True)
         result = self.run_journey("install", str(release.dir), uninstall=True, target="linux-x86_64")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        for step in ("bundle target: linux-x86_64", "fresh install: ok", "version: claude-multi 1.0.0 (catalog",
+        for step in ("bundle target: linux-x86_64", "fresh install: ok", "version: charmer 1.0.0 (catalog",
                      self.FIRST_RUN_OK, "installation channel (installed 1.0.0): bundle",
                      "managed sessions ended: ok (0 managed session record(s), every one ended)",
                      "uninstall keeping the state: ok", "done"):
             self.assertIn(step, result.stdout)
-        self.assertFalse((self.home / ".local/bin/claude-multi").exists())
-        self.assertFalse((self.home / ".local/share/claude-multi/install/current").exists())
-        self.assertTrue((self.home / ".local/state/claude-multi").is_dir())
+        self.assertFalse((self.home / ".local/bin/charmer").exists())
+        self.assertFalse((self.home / ".local/share/charmer/install/current").exists())
+        self.assertTrue((self.home / ".local/state/charmer").is_dir())
 
     # Launchers whose first-run checks fail for a reason no fresh
     # installation has (exit 71 with a report that says ready).
@@ -1165,7 +1165,7 @@ doctor)
       printf '%s{{"id": "%s", "state": "ok", "detail": "fine", "fix": null}}' "$sep" "$id"; sep=', '
     done
     printf ']}}\\n'
-  else printf 'claude-multi doctor --first-run\\nReady.\\n'; fi
+  else printf 'charmer doctor --first-run\\nReady.\\n'; fi
   exit 71 ;;
 esac
 exit 71
@@ -1189,7 +1189,7 @@ exit 71
         second = FakeRelease(self.tmp / "b", "1.0.1", real_launchers=True, trust=trust)
         result = self.run_journey("update", str(keys), str(first.dir), str(second.dir))
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        for step in ("update check: ok", "version: claude-multi 1.0.1 (", "update and up to date: ok", "rollback: ok"):
+        for step in ("update check: ok", "version: charmer 1.0.1 (", "update and up to date: ok", "rollback: ok"):
             self.assertIn(step, result.stdout)
         channels = re.findall(r"(?m)^journey: installation channel \((.*)\): bundle$", result.stdout)
         self.assertEqual(channels, ["installed 1.0.0", "update check", "updated to 1.0.1", "up to date",
@@ -1212,8 +1212,8 @@ exit 71
         self.assertIn("SHA256SUMS.sshsig", names)
         self.assertIn("install.sh", names)
         verified = subprocess.run(
-            ["ssh-keygen", "-Y", "verify", "-f", str(out / "key" / "allowed_signers"), "-I", "release@claude-multi",
-             "-n", "claude-multi-release", "-s", str(out / "release" / "SHA256SUMS.sshsig")],
+            ["ssh-keygen", "-Y", "verify", "-f", str(out / "key" / "allowed_signers"), "-I", "release@charmer",
+             "-n", "charmer-release", "-s", str(out / "release" / "SHA256SUMS.sshsig")],
             stdin=open(out / "release" / "SHA256SUMS", "rb"), capture_output=True, timeout=60)
         self.assertEqual(verified.returncode, 0, verified.stderr)
 
@@ -1306,7 +1306,7 @@ class VulncheckTests(unittest.TestCase):
         cls.tool = load_tool(VULNCHECK, "vulncheck")
 
     def setUp(self) -> None:
-        self.tmp = Path(tempfile.mkdtemp(prefix="claude-multi-vulncheck-"))
+        self.tmp = Path(tempfile.mkdtemp(prefix="charmer-vulncheck-"))
         self.addCleanup(shutil.rmtree, self.tmp, True)
         binary = b"a fake gateway binary\n"
         self.release = FakeRelease(self.tmp / "dist", "1.0.0", targets=self.TARGETS,
@@ -1596,7 +1596,7 @@ class PinWatchTests(unittest.TestCase):
         cls.tool = load_tool(PIN_WATCH, "pin_watch")
 
     def setUp(self) -> None:
-        self.tmp = Path(tempfile.mkdtemp(prefix="claude-multi-pinwatch-"))
+        self.tmp = Path(tempfile.mkdtemp(prefix="charmer-pinwatch-"))
         self.addCleanup(shutil.rmtree, self.tmp, True)
         self.repo = self.tmp / "repo"
         for relative in ("src/charmer/data/catalog/native-contract.json", "gateway/UPSTREAM.json",
@@ -1644,7 +1644,7 @@ class NoBundleGuardTests(unittest.TestCase):
         cls.guard = load_tool(NO_BUNDLE_GUARD, "no_bundle_guard")
 
     def setUp(self) -> None:
-        self.tmp = Path(tempfile.mkdtemp(prefix="claude-multi-guard-"))
+        self.tmp = Path(tempfile.mkdtemp(prefix="charmer-guard-"))
         self.addCleanup(shutil.rmtree, self.tmp, True)
         self.pinned = b"pretend this is the pinned client"
         self.contract = self.tmp / "contract.json"
@@ -1673,7 +1673,7 @@ class NoBundleGuardTests(unittest.TestCase):
         return path
 
     def test_clean_artifacts_pass(self) -> None:
-        self._tar("claude-multi-1.0.0-linux-x86_64.tar.gz", {"claude-multi-1.0.0-linux-x86_64/bin/claude-multi": b"#!/bin/sh\n"})
+        self._tar("charmer-1.0.0-linux-x86_64.tar.gz", {"charmer-1.0.0-linux-x86_64/bin/charmer": b"#!/bin/sh\n"})
         code, output = self.run_guard(self.dist)
         self.assertEqual(code, 0, output)
         self.assertIn("1 pinned hashes checked", output)
@@ -1739,7 +1739,7 @@ class ContentBoundGatewayTests(unittest.TestCase):
         import _gateway
 
         self.gw = _gateway
-        self.tmp = Path(tempfile.mkdtemp(prefix="claude-multi-bound-")).resolve()
+        self.tmp = Path(tempfile.mkdtemp(prefix="charmer-bound-")).resolve()
         self.addCleanup(shutil.rmtree, self.tmp, True)
         if _gateway.unsafe_location(self.tmp):
             self.skipTest(f"BOUNDARY: the temporary directory is not private here ({_gateway.unsafe_location(self.tmp)})")
@@ -2100,7 +2100,7 @@ class EvidenceJobTests(unittest.TestCase):
                 for quoted, name in re.findall(r"--require (?:'([^']*)'|\"\$(\w+)\")", command)]
 
     def test_a_clean_runner_skips_only_the_retained_client_diagnostics(self) -> None:
-        """--claude places only the pin, in the private HOME's claude-multi
+        """--claude places only the pin, in the private HOME's charmer
         location: the stop-gate probe and AD (they need retained and newer
         clients) skip there, by their own bodies, and those skips must not
         fail the battery; every other real-client test stays required. The
@@ -2246,7 +2246,7 @@ class ReleaseRefTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         if shutil.which("git") is None:
             raise unittest.SkipTest("BOUNDARY: git is not installed")
-        cls.tmp = Path(tempfile.mkdtemp(prefix="claude-multi-release-ref-"))
+        cls.tmp = Path(tempfile.mkdtemp(prefix="charmer-release-ref-"))
         cls.repo = cls.tmp / "repo"
         cls.env = {"PATH": os.environ.get("PATH", os.defpath), "HOME": str(cls.tmp), "GIT_CONFIG_NOSYSTEM": "1",
                    "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.invalid", "GIT_COMMITTER_NAME": "t",
@@ -2409,9 +2409,9 @@ class NativeLaneTests(unittest.TestCase):
                  "if ! sudo -H -u service-journey env -u XDG_CONFIG_HOME",
                  "sh .github/scripts/journey.sh service dist'; then",
                  manager.replace("            DBUS", "              DBUS"),
-                 "systemctl --user status 'claude-multi-gateway*' --no-pager || true",
+                 "systemctl --user status 'charmer-gateway*' --no-pager || true",
                  manager.replace("            DBUS", "              DBUS"),
-                 "journalctl --user -u claude-multi-gateway -n 200 --no-pager || true",
+                 "journalctl --user -u charmer-gateway -n 200 --no-pager || true",
                  "::error::supervised gateway service journey failed", "exit 1", "fi"]
         offset = 0
         for needle in order:
@@ -2443,7 +2443,7 @@ class NativeLaneTests(unittest.TestCase):
 
     def test_the_nix_lane_proves_the_indirect_root(self) -> None:
         job = self.ci["nix"]
-        self.assertIn("package=$(nix build --no-link --print-out-paths .#claude-multi)", job)
+        self.assertIn("package=$(nix build --no-link --print-out-paths .#charmer)", job)
         self.assertIn('python3 .github/scripts/nix_roots.py "$package"', job)
 
     def test_windows_installs_through_install_ps1(self) -> None:
@@ -2513,7 +2513,7 @@ finally:
     os.close(slave)
     os.close(master)
 """
-        with tempfile.TemporaryDirectory(prefix="claude-multi-journey-tty-") as root:
+        with tempfile.TemporaryDirectory(prefix="charmer-journey-tty-") as root:
             tmp = Path(root)
             home = tmp / "home"
             home.mkdir(mode=0o700)
@@ -2579,7 +2579,7 @@ class GatewayProbesScriptTests(unittest.TestCase):
 
         self.gw = _gateway
         self.tool = _gateway_probes()
-        self.tmp = Path(tempfile.mkdtemp(prefix="claude-multi-probes-")).resolve()
+        self.tmp = Path(tempfile.mkdtemp(prefix="charmer-probes-")).resolve()
         self.addCleanup(shutil.rmtree, self.tmp, True)
         if _gateway.unsafe_location(self.tmp) or _gateway.host_target() is None:
             self.skipTest("BOUNDARY: no private temporary directory or no gateway target here")
@@ -2673,7 +2673,7 @@ class EvidenceScriptTests(unittest.TestCase):
 
     def setUp(self) -> None:
         self.tool = load_tool(SCRIPTS / "evidence.py", "evidence")
-        self.tmp = Path(tempfile.mkdtemp(prefix="claude-multi-evidence-"))
+        self.tmp = Path(tempfile.mkdtemp(prefix="charmer-evidence-"))
         self.addCleanup(shutil.rmtree, self.tmp, True)
         self.client = self.tmp / "claude"
         self.client.write_bytes(b"not the pinned client")
@@ -2848,7 +2848,7 @@ esac
 
     def setUp(self) -> None:
         self.tool = load_tool(SCRIPTS / "nix_roots.py", "nix_roots")
-        self.tmp = Path(tempfile.mkdtemp(prefix="claude-multi-nix-roots-")).resolve()
+        self.tmp = Path(tempfile.mkdtemp(prefix="charmer-nix-roots-")).resolve()
         self.addCleanup(shutil.rmtree, self.tmp, True)
         (self.tmp / "bin").mkdir()
         self.fake = self.tmp / "fake-nix-store"
@@ -2857,9 +2857,9 @@ esac
         (self.tmp / "bin" / "nix-store").symlink_to(self.fake)
         (self.tmp / "state").mkdir()
         self.store = self.tmp / "store"
-        self.package = self.store / "abc-claude-multi"
+        self.package = self.store / "abc-charmer"
         (self.package / "bin").mkdir(parents=True)
-        (self.package / "bin" / "claude-multi-proxy").write_text("#!/bin/sh\n")
+        (self.package / "bin" / "charmer-proxy").write_text("#!/bin/sh\n")
 
     def prove(self, **environ: str) -> tuple[int, str]:
         """main() on the stand-in store. The product registers its root
@@ -2890,7 +2890,7 @@ esac
             self.assertIn(step, output)
         roots = (self.tmp / "state" / "roots").read_text().split()
         self.assertEqual(len(roots), 1)
-        self.assertTrue(roots[0].endswith("/.local/share/claude-multi/nix/current"))
+        self.assertTrue(roots[0].endswith("/.local/share/charmer/nix/current"))
 
     def test_failures(self) -> None:
         code, output = self.prove(FAKE_NIX_ADD="fail")

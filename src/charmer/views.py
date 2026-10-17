@@ -674,10 +674,10 @@ CARD_WINDOW_TABLE_COLUMNS = ("agent", "model", "effort", "provider", "window", "
 CARD_WINDOW_WIDTHS_MIN = (12, 10, 6, 7, 4, 0)
 SECRET_REMEDY = "set a key: G (providers) → K"
 # A resume card has no G: ``{way}`` is its way back to a launch card
-# (Esc once per screen, or out of claude-multi and in again).
+# (Esc once per screen, or out of charmer and in again).
 SECRET_REMEDY_RESUME = "set a key: {way}, G → K, then S to resume"
-# A resume card that claude-multi -r opened: Esc ends claude-multi.
-RESUME_WAY_DIRECT = "Esc, run claude-multi"
+# A resume card that charmer -r opened: Esc ends charmer.
+RESUME_WAY_DIRECT = "Esc, run charmer"
 CARD_NOT_CONNECTED = "! nothing is connected yet — W opens Get started"
 CARD_SEED_UPDATES = "! {n} shipped profile(s) have updates: {names} — P → U (your edits are kept as a backup)"
 CARD_UNLOADABLE = "profile {name} cannot be loaded: {path} line {line}: {detail}"
@@ -825,9 +825,9 @@ def card_model(
     follow = "follows profile" if following else "pinned"
     mark = CARD_DEFAULT_MARK if is_default else ""
     title = f"— profile: {name}{mark} · {follow} · {_card_action(action, record)}"
-    rows.append(CardRow("title", "claude-multi", title, "normal", 0, col=15, label_role="accent"))
+    rows.append(CardRow("title", "charmer", title, "normal", 0, col=10, label_role="accent"))
     if description:
-        rows.append(CardRow("description", "", description, "dim", 9, col=15))
+        rows.append(CardRow("description", "", description, "dim", 9, col=10))
     rows.append(CardRow("rule", "", "", "dim", 0, col=2))
     if lineup is not None:
         binding = lineup.lead.binding
@@ -933,7 +933,7 @@ def card_model(
         rows.append(
             CardRow(
                 "update", "update",
-                f"claude-multi {installed} · {note} · press U to update",
+                f"charmer {installed} · {note} · press U to update",
                 "warn" if old_release else "dim", 1 if old_release else 6,
                 label_role="warn" if old_release else "dim",
             )
@@ -1936,7 +1936,7 @@ def session_details(
         if pending:
             why = "; ".join(pending.get("reasons") or ()) or "a change that needs a relaunch"
             lines.append(f"pending: {pending_target or 'a recorded change'} — waits because {why}")
-            lines.append(f"  it applies at the next resume (Enter, or claude-multi -r {mid[:8]}); "
+            lines.append(f"  it applies at the next resume (Enter, or charmer -r {mid[:8]}); "
                          "T → keep current lineup discards it")
         else:
             lines.append("pending: none")
@@ -2160,7 +2160,7 @@ def models_model(
 def operator_admission_command(key: str, admitted: bool) -> str:
     """The guarded CLI verb for an operator line (never Settings-only)."""
 
-    return f"claude-multi models {'revoke' if admitted else 'admit'} {key}"
+    return f"charmer models {'revoke' if admitted else 'admit'} {key}"
 
 
 def operator_admission_refusal(key: str, admitted: bool) -> str:
@@ -2170,7 +2170,7 @@ def operator_admission_refusal(key: str, admitted: bool) -> str:
             f"`{operator_admission_command(key, admitted)}` in a terminal outside Claude Code sessions")
 
 
-LINE_ORIGINS = {"catalog": "shipped with claude-multi", "legacy-custom": "custom registry",
+LINE_ORIGINS = {"catalog": "shipped with charmer", "legacy-custom": "custom registry",
                 "operator": "a model you added", "operator-migrated": "a model you added (migrated)"}
 
 
@@ -2238,7 +2238,7 @@ def line_inspection(
     lines.append(f"admission: {state} — optional badge; revoke keeps availability and evidence")
     lines.append(f"qualification: {row.qualification}")
     if row.origin in profile.OPERATOR_ORIGINS:
-        lines.append(f"optional diagnostics: Q (claude-multi models qualify {row.key} --agents); consent before requests")
+        lines.append(f"optional diagnostics: Q (charmer models qualify {row.key} --agents); consent before requests")
     lines.append("family independence: " + ("recognized family; depends on the review pair" if row.family_recognized
                                              else "unknown — this label does not establish independence"))
     lines.append(f"used by: {_plural(used, 'profile') if used else 'no profile'}")
@@ -2505,7 +2505,7 @@ def provider_rows(facts: Any, *, eff: settings.Effective, journal: Any,
                 "off in Settings: new sessions do not fence its models; running sessions keep their routes"
             )
         if fact.get("custom"):
-            details.append("custom provider — edit or remove it with claude-multi custom …")
+            details.append("custom provider — edit or remove it with charmer custom …")
         if fact.get("kind") == "oauth-pool" and pool is not None and pool.state not in {"seam", "down"}:
             details = _provider_quota_details(
                 fact, pool, credentials, finding, now, tz, enabled, journal,
@@ -2548,7 +2548,7 @@ def _provider_quota_details(fact, pool, credentials, finding, now, tz, enabled, 
     elif pool.state != "ok" and pool.state not in quota.INFO_STATES:
         # The read-only CLI has the full category-specific repair. Keep its
         # route first so a long state explanation cannot hide the remedy.
-        first = "claude-multi quota — " + (quota.state_text(pool, restart_hint=restart_hint) or "")
+        first = "charmer quota — " + (quota.state_text(pool, restart_hint=restart_hint) or "")
     elif finding and finding.level in {"high", "exhausted", "payment"}:
         first = quota.guidance(str(fact["id"]), "providers")
     elif not enabled:
@@ -2578,7 +2578,7 @@ def _provider_quota_details(fact, pool, credentials, finding, now, tz, enabled, 
     elif pool.state in quota.INFO_STATES:
         notes.append("quota off — " + ("no management key" if pool.state == "no-key" else "disabled by operator"))
     elif pool.state != "ok":
-        notes.append(f"quota {pool.state} — claude-multi quota")
+        notes.append(f"quota {pool.state} — charmer quota")
     return [clip(first, width), clip(" · ".join(notes), width)]
 
 
@@ -2812,7 +2812,7 @@ def settings_rows(
     rows.append(
         SettingsRow(
             sec[4], "token", "token", "rotate…", note, "live", "token",
-            "Hitless dual-key rotation (claude-multi doctor --rotate-token); running sessions "
+            "Hitless dual-key rotation (charmer doctor --rotate-token); running sessions "
             "switch within one helper TTL.",
             True,
         )

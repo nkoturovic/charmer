@@ -40,7 +40,7 @@ from .catalog import (
 )
 
 
-class RenderError(errors.ClaudeMultiError, ValueError):
+class RenderError(errors.CharmerError, ValueError):
     """Raised when trusted facts cannot be rendered deterministically."""
 
 

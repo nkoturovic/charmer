@@ -1,5 +1,5 @@
 """The qualification battery (``charmer.qualify``) and
-``claude-multi models qualify`` — plan and consent, variants, caps, verdicts,
+``charmer models qualify`` — plan and consent, variants, caps, verdicts,
 context honesty, the evidence merge, contract identities and the
 exact-client check.
 
@@ -394,7 +394,7 @@ def _tempdir():
 
     @contextlib.contextmanager
     def manager():
-        root = tempfile.mkdtemp(prefix="claude-multi-qualify-")
+        root = tempfile.mkdtemp(prefix="charmer-qualify-")
         os.chmod(root, 0o700)
         try:
             yield root
@@ -887,8 +887,8 @@ class CommitTests(QualifyCommandCase):
         state.atomic_write(path, strict_json.pretty_file_bytes(document))
         code, _out, err = self.op(["models", "qualify", "custom-acme-agent", "--smoke"], "y\n")
         self.assertEqual((code, self.http_calls), (1, []))
-        self.assertEqual(err, "claude-multi: qualify custom-acme-agent: provider acme: route changed — "
-                              "claude-multi providers approve acme\n")
+        self.assertEqual(err, "charmer: qualify custom-acme-agent: provider acme: route changed — "
+                              "charmer providers approve acme\n")
 
     def test_a_change_while_the_prompt_is_open_sends_nothing(self) -> None:
         """B check (MAJOR): the consented authorization is revalidated after
@@ -970,12 +970,12 @@ class CommitTests(QualifyCommandCase):
         self.assertEqual((self.http_calls, self.state_bytes()), ([], before))
 
     def test_a_newer_state_marker_refuses_before_any_request(self) -> None:
-        marker = self.root / "state" / "claude-multi" / "state-version"
+        marker = self.root / "state" / "charmer" / "state-version"
         state.ensure_private_dir(marker.parent)
         state.atomic_write(marker, b"9\n")
         code, out, err = self.op(["models", "qualify", "custom-acme-agent", "--smoke"], "y\n")
         self.assertNotEqual(code, 0)
-        self.assertIn("state belongs to a newer claude-multi", out + err)
+        self.assertIn("state belongs to a newer charmer", out + err)
         self.assertNotIn("Qualification plan", out + err)
         self.assertEqual(self.http_calls, [])
         self.assertIsNone(self.evidence())

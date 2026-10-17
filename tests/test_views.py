@@ -186,7 +186,7 @@ class _RuntimeCase(unittest.TestCase):
     """A temp fixture runtime (``_tui_fixture.fixture_runtime``)."""
 
     def setUp(self) -> None:
-        self.tmp = Path(tempfile.mkdtemp(prefix="claude-multi-views-"))
+        self.tmp = Path(tempfile.mkdtemp(prefix="charmer-views-"))
         self.addCleanup(shutil.rmtree, self.tmp, True)
         self.runtime = fx.fixture_runtime(self.tmp)
 
@@ -313,7 +313,7 @@ class LineRowsTests(unittest.TestCase):
             self.assertFalse(row.admits(catalog.LEAD_ROLE))
 
     def test_custom_source_from_a_temp_custom_registry(self) -> None:
-        tmp = Path(tempfile.mkdtemp(prefix="claude-multi-views-custom-"))
+        tmp = Path(tempfile.mkdtemp(prefix="charmer-views-custom-"))
         self.addCleanup(shutil.rmtree, tmp, True)
         runtime = fx.fixture_runtime(tmp)
         direct = next(
@@ -680,7 +680,7 @@ class CardModelTests(_RuntimeCase):
         lines = text.splitlines()
         self.assertEqual(
             lines[0],
-            f"  claude-multi — profile: {catalog.DEFAULT_SEED} · follows profile · Fresh",
+            f"  charmer — profile: {catalog.DEFAULT_SEED} · follows profile · Fresh",
         )
         self.assertEqual(lines[1], "  " + "─" * 77)
         lead = prepared.lineup.lead.binding
@@ -707,12 +707,12 @@ class CardModelTests(_RuntimeCase):
         _prepared, card = self.card(update_hint=("1.0.0", "released 2026-10-15"))
         self.assertEqual(card.keys[:2], (("Enter", "launch"), ("U", "update")))
         self.assertIn(
-            "  update    claude-multi 1.0.0 · released 2026-10-15 · press U to update",
+            "  update    charmer 1.0.0 · released 2026-10-15 · press U to update",
             views.card_text(card, 80).splitlines(),
         )
         row = next(row for row in card.rows if row.kind == "update")
         self.assertEqual((row.role, row.priority), ("dim", 6))
-        _prepared, old = self.card(update_hint=("1.0.0", "this release is 61 days old — claude-multi update --check"))
+        _prepared, old = self.card(update_hint=("1.0.0", "this release is 61 days old — charmer update --check"))
         row = next(row for row in old.rows if row.kind == "update")
         self.assertEqual((row.role, row.priority, row.label_role), ("warn", 1, "warn"))
         _prepared, resume = self.card(action="resume")
@@ -784,8 +784,8 @@ class CardModelTests(_RuntimeCase):
             target=prepared.target, action="resume", lineup=prepared.lineup, context=ctx, eff=eff,
             secret_problems=("missing secret",),
         )
-        # A resume card claude-multi -r opened: Esc ends it, so the way back runs it again.
-        self.assertEqual(resume.remedy, "set a key: Esc, run claude-multi, G → K, then S to resume")
+        # A resume card charmer -r opened: Esc ends it, so the way back runs it again.
+        self.assertEqual(resume.remedy, "set a key: Esc, run charmer, G → K, then S to resume")
         nested = views.card_model(
             target=prepared.target, action="resume", lineup=prepared.lineup, context=ctx, eff=eff,
             secret_problems=("missing secret",), resume_way="Esc, Esc",
@@ -1422,7 +1422,7 @@ class ProviderRowsTests(unittest.TestCase):
         self.assertEqual(rows["p-dead"].cells[2], views.CREDENTIAL_TEXT["failing"])
         self.assertEqual(rows["p-key"].cells[2], "key set")
         self.assertEqual(rows["p-key"].span, views.PROVIDERS_NO_MODELS)
-        self.assertIn("custom provider — edit or remove it with claude-multi custom …", rows["p-key"].details)
+        self.assertIn("custom provider — edit or remove it with charmer custom …", rows["p-key"].details)
         self.assertEqual(rows["p-off"].cells[1:3], ("off", "key missing"))
         self.assertTrue(any(d.startswith("off in Settings") for d in rows["p-off"].details))
         self.assertEqual(rows["p-lan"].cells[2], "keyless")
@@ -1537,7 +1537,7 @@ class EditorRowsTests(_RuntimeCase):
 
 class TuiFixtureTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.tmp = Path(tempfile.mkdtemp(prefix="claude-multi-views-fx-"))
+        self.tmp = Path(tempfile.mkdtemp(prefix="charmer-views-fx-"))
         self.addCleanup(shutil.rmtree, self.tmp, True)
 
     def test_hermetic_roots_and_seams(self) -> None:
@@ -1567,7 +1567,7 @@ class TuiFixtureTests(unittest.TestCase):
         self.assertEqual(runtime.launches, [prepared])
 
     def test_v4_record_is_deterministic_and_schema_valid(self) -> None:
-        other = Path(tempfile.mkdtemp(prefix="claude-multi-views-fx2-"))
+        other = Path(tempfile.mkdtemp(prefix="charmer-views-fx2-"))
         self.addCleanup(shutil.rmtree, other, True)
         records = []
         for root in (self.tmp, other):
@@ -1632,7 +1632,7 @@ class ProviderQuotaCellTests(unittest.TestCase):
         self.assertEqual([r.cells[3] for r in rows[1:]], ["", ""])
         self.assertIn("quota pressure; choose a profile", rows[0].details[0])
         self.assertIn("3d", rows[0].details[1])
-        self.assertIn("+1 more (claude-multi quota)", rows[0].details[1])
+        self.assertIn("+1 more (charmer quota)", rows[0].details[1])
         self.assertEqual(len(rows[0].details), 2)
 
     def test_healthy_management_cannot_clear_journal_refresh_failure(self):
@@ -1657,7 +1657,7 @@ class ProviderQuotaCellTests(unittest.TestCase):
                     # A management state never asks a signed-in account to sign in.
                     self.assertEqual(row.details[0], views.SIGNED_IN_GUIDANCE)
                 else:
-                    self.assertTrue(row.details[0].startswith("claude-multi quota — "))
+                    self.assertTrue(row.details[0].startswith("charmer quota — "))
         pool = quota.PoolStatus("ok", credentials=quota.parse_auth_files(fx.quota_body(reason="token expired")))
         self.assertEqual(self.rows(pool=pool)[0].cells[2], views.CREDENTIAL_TEXT["failing"])
 

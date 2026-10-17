@@ -31,7 +31,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Sequence
 
-from .errors import ClaudeMultiError
+from .errors import CharmerError
 
 RELEASE_NAMESPACE = "claude-multi-release"
 RELEASE_PRINCIPAL = "release@claude-multi"
@@ -49,7 +49,7 @@ _MAX_SIGNATURE_TEXT = 64 * 1024
 _MAX_SUMS_TEXT = 1024 * 1024
 
 
-class TrustError(ClaudeMultiError, ValueError):
+class TrustError(CharmerError, ValueError):
     """A signature, signer list or checksum list failed verification."""
 
 

@@ -8,7 +8,7 @@ ancestor whose command line names the session (``--session-id <id>`` or
 ``--resume <id>``), and compare its executable with the pin: on Linux the
 ``/proc/<pid>/exe`` link, on macOS ``ps -o comm=``. A different Claude Code
 version gets one message telling the user to exit and resume through
-claude-multi. Anything unknown (no such ancestor, an executable whose path
+charmer. Anything unknown (no such ancestor, an executable whose path
 names no version, an unreadable contract) stays silent.
 
 Stdlib plus ``assets``, ``paths``, ``pin`` and ``strict_json``: the scope-only
@@ -168,10 +168,10 @@ def message(mismatch: ClientMismatch, managed_id: str, environ: Mapping[str, str
     """The user-facing line (a hook ``systemMessage``)."""
 
     return (
-        f"claude-multi: this session runs Claude Code {mismatch.actual_version} "
-        f"({paths.display(mismatch.actual, environ)}), not the {mismatch.pinned} claude-multi "
+        f"charmer: this session runs Claude Code {mismatch.actual_version} "
+        f"({paths.display(mismatch.actual, environ)}), not the {mismatch.pinned} charmer "
         "verified — the Claude daemon may have moved it onto your own claude after an update. "
-        f"Exit it (/exit) and resume it with: claude-multi -r {managed_id}"
+        f"Exit it (/exit) and resume it with: charmer -r {managed_id}"
     )
 
 

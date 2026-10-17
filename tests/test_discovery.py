@@ -42,7 +42,7 @@ DAY = 86400
 
 
 def _registry_dir(testcase: unittest.TestCase, models: dict, codex: list | None = None) -> Path:
-    root = Path(tempfile.mkdtemp(prefix="claude-multi-discovery-registry-"))
+    root = Path(tempfile.mkdtemp(prefix="charmer-discovery-registry-"))
     testcase.addCleanup(lambda: shutil.rmtree(root, ignore_errors=True))
     (root / "models.json").write_text(json.dumps(models))
     (root / "codex_client_models.json").write_text(json.dumps({"models": codex or []}))
@@ -94,11 +94,11 @@ class CandidateTests(unittest.TestCase):
             {"id": catalog.REFUSAL_FALLBACK_WIRES[0], "created": 950 * DAY},
         ], extra_codex=[{"id": retired["last_wire"], "created": 950 * DAY}])
         known = discovery.known_index(self.docs, continuity=continuity, captures=captures,
-                                      expected={"claude-multi-render-0123abcd"})
+                                      expected={"charmer-render-0123abcd"})
         served = (launch.ServedModel("claude-fixture-new", "anthropic", 1100 * DAY),
                   launch.ServedModel("mystery-model", "someone", None),
-                  launch.ServedModel("claude-multi-stale-high"), launch.ServedModel("custom-old-x"),
-                  launch.ServedModel("claude-multi-render-0123abcd"), launch.ServedModel("cont-alias-1"))
+                  launch.ServedModel("charmer-stale-high"), launch.ServedModel("custom-old-x"),
+                  launch.ServedModel("charmer-render-0123abcd"), launch.ServedModel("cont-alias-1"))
         report = discovery.candidates(registry, served, known)
         rows = {(row.channel, row.wire): row for row in report.rows}
         self.assertNotIn(("claude", self.claude_known), rows)
@@ -174,13 +174,13 @@ class CandidateTests(unittest.TestCase):
         known = discovery.known_index(self.docs)
         served = [launch.ServedModel(wire) for wire in (
             "gpt-fixture-free", "claude-fixture-new", "shared-wire", "loose-id", self.claude_known,
-            "claude-multi-render-00000000", "gpt-multi-anything-high")]
+            "charmer-render-00000000", "gpt-multi-anything-high")]
         by_channel, unattributed = discovery.served_extras(registry, served, known)
         # gpt-fixture-free is in codex-free and codex-team: one id, one count.
         self.assertEqual(by_channel, {"claude": ["claude-fixture-new"], "codex-free": ["gpt-fixture-free"]})
         self.assertEqual(unattributed, ["loose-id", "shared-wire"])
         self.assertEqual(discovery.doctor_info_lines(by_channel, unattributed), [
-            "discovery: 4 routable, uncataloged model IDs — claude-multi models --candidates",
+            "discovery: 4 routable, uncataloged model IDs — charmer models --candidates",
             "discovery claude: 1 routable, uncataloged; locally registered only, upstream access unverified",
             "discovery codex-free: 1 routable, uncataloged; locally registered only, upstream access unverified",
             "discovery unattributed: 2 routable, uncataloged; locally registered only, upstream access unverified",
@@ -262,12 +262,12 @@ class ConsentTests(DiscoveryCLICase):
         # Deterministic, provider-id sorted; the codex pool is excluded by name.
         self.assertIn("skipped anthropic: an OAuth pool has no model listing", err)
         self.assertIn("skipped deepseek: credential DEEPSEEK_CLAUDE_API_KEY is not set — "
-                      "claude-multi providers set-key deepseek", err)
+                      "charmer providers set-key deepseek", err)
         self.assertIn("skipped qwen: model listing unsupported", err)
         self.assertIn("openai: not included; its plan listing requires separate consent:\n"
-                      "  claude-multi discover openai", err)
-        block = err[err.index("claude-multi will make "):]
-        self.assertTrue(block.startswith("claude-multi will make 4 requests to providers:\n"), block)
+                      "  charmer discover openai", err)
+        block = err[err.index("charmer will make "):]
+        self.assertTrue(block.startswith("charmer will make 4 requests to providers:\n"), block)
         urls = [line.split("GET ", 1)[1] for line in block.splitlines() if "GET " in line]
         self.assertEqual(urls, ["https://api.acme.example/anthropic/v1/models",
                                 "https://api.kimi.com/coding/v1/models",
@@ -329,7 +329,7 @@ class ConsentTests(DiscoveryCLICase):
 # ------------------------------------------------------------ routes
 class RouteTests(DiscoveryCLICase):
     def test_unapproved_changed_and_raced_routes_send_nothing(self) -> None:
-        refusal = "discover acme: route unapproved or changed — claude-multi providers approve acme"
+        refusal = "discover acme: route unapproved or changed — charmer providers approve acme"
         code, _out, err = self.op([*ACME_ADD, "--declare-only"])
         self.assertEqual(code, 0, err)
         code, _out, err = self.op(["discover", "acme"], "y\n")
@@ -549,7 +549,7 @@ class TransportBoundsTests(unittest.TestCase):
 
         if not shutil.which("openssl"):
             self.skipTest("openssl is needed for a disposable TLS fake")
-        root = Path(tempfile.mkdtemp(prefix="claude-multi-listing-tls-"))
+        root = Path(tempfile.mkdtemp(prefix="charmer-listing-tls-"))
         self.addCleanup(lambda: shutil.rmtree(root, ignore_errors=True))
         cert, key = root / "cert.pem", root / "key.pem"
         subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",
@@ -711,11 +711,11 @@ class DriftTests(DiscoveryCLICase):
         ])
         self.assertEqual(lines[4:], [
             "custom-acme-one: listed context 262144 != declared 131072",
-            "  edit: claude-multi models edit custom-acme-one",
+            "  edit: charmer models edit custom-acme-one",
             "  change: context.declared_tokens = 262144",
             "  consequence: new class; admission and evidence lapse; running sessions keep their fence until relaunch",
             "custom-acme-one: listing efforts now include max",
-            "  edit: claude-multi models edit custom-acme-one",
+            "  edit: charmer models edit custom-acme-one",
             "  consequence: only reviewed contracts are eligible; re-admission and qualification are optional "
             "after a definition change",
         ])
@@ -727,7 +727,7 @@ class DriftTests(DiscoveryCLICase):
             operator={line.key: line}, today=self.today)
         self.assertEqual(drift, [
             "custom-a: listing efforts now include max",
-            "  edit: claude-multi models edit custom-a",
+            "  edit: charmer models edit custom-a",
             "  consequence: only reviewed contracts are eligible; re-admission and qualification are optional "
             "after a definition change",
         ])
@@ -798,7 +798,7 @@ class DeclarationTests(DiscoveryCLICase):
         self.listing(self.URL, [{"id": "acme-ctx", "context_length": 100000}, {"id": "acme-none"}])
         code, _out, err = self.op(["discover", "acme", "--add", "acme-none"], "y\n")
         self.assertEqual(code, 1)
-        self.assertIn("discover acme --add acme-none: the listing states no context — claude-multi models add acme acme-none --context N --source docs", err)
+        self.assertIn("discover acme --add acme-none: the listing states no context — charmer models add acme acme-none --context N --source docs", err)
         code, _out, err = self.op(["discover", "acme", "--add", "acme-ctx", "--context", "200000"], "y\n")
         self.assertEqual(code, 1)
         self.assertIn("exceeds the listed context 100000; give --over-listed REASON", err)
@@ -892,7 +892,7 @@ class PurityTests(DiscoveryCLICase):
             "unattributed  loose-served  registry-stated context unknown  max output unknown",
             "  served candidate · owned_by someone (advisory) · created unknown",
             "other registry channels hidden: gemini — --all shows them",
-            "next: claude-multi models add PROVIDER WIRE --context N --source registry",
+            "next: charmer models add PROVIDER WIRE --context N --source registry",
             *discovery.OPENROUTER_HELP.splitlines(),
         ])
         self.assertEqual(self.sent, [])
@@ -936,7 +936,7 @@ class FeedTests(DiscoveryCLICase):
             "codex-pro": [{"id": "gpt-feed-new"}], "junk": "x"}).encode()
         code, out, err = self.op(["discover", "--feed"], "y\n")
         self.assertEqual(code, 0, err)
-        self.assertIn("claude-multi will make ONE credential-free third-party request:\n"
+        self.assertIn("charmer will make ONE credential-free third-party request:\n"
                       f"  GET {discovery.FEED_URL}\n"
                       "  why: compare the public feed with the pinned registry\n"
                       "  caps: 20 s wall-clock; 4 MiB response; no redirects or retries\n"

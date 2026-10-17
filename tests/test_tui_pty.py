@@ -160,7 +160,7 @@ raise SystemExit(main(['compose', 'edit', 'balanced'], runtime=runtime, input_st
 """
 
     def test_dumb_terminal_prints_plan_and_editor_command(self) -> None:
-        temp = tempfile.mkdtemp(prefix="claude-multi-pty-dumb-")
+        temp = tempfile.mkdtemp(prefix="charmer-pty-dumb-")
         self.addCleanup(__import__("shutil").rmtree, temp, True)
         child = PTYProcess(
             self._edit_code(temp, _secret_file(temp)),
@@ -208,7 +208,7 @@ raise SystemExit(main([], runtime=runtime, input_stream=sys.stdin, output_stream
         return child
 
     def test_line_confirm_one_enter_uses_fake_launch(self) -> None:
-        temp, secret_file = self._temp_runtime("claude-multi-pty-runtime-")
+        temp, secret_file = self._temp_runtime("charmer-pty-runtime-")
         child = PTYProcess(self._runtime_code(temp, secret_file), extra_env={"TERM": "dumb"})
         self.addCleanup(child.close)
         child.read_until(LINE_CONFIRM)
@@ -221,7 +221,7 @@ raise SystemExit(main([], runtime=runtime, input_stream=sys.stdin, output_stream
 
     def test_card_on_a_capable_terminal_launches_and_restores(self) -> None:
         # A capable TERM gets the card.
-        child = self._card("claude-multi-pty-card-")
+        child = self._card("charmer-pty-card-")
         child.read_until(CARD_READY, FIXTURE_TIMEOUT)
         child.send(b"\n")
         returncode, output, after = child.finish()
@@ -231,7 +231,7 @@ raise SystemExit(main([], runtime=runtime, input_stream=sys.stdin, output_stream
         _restored(self, child, after)
 
     def test_card_esc_never_launches(self) -> None:
-        child = self._card("claude-multi-pty-card-esc-")
+        child = self._card("charmer-pty-card-esc-")
         child.read_until(CARD_READY, FIXTURE_TIMEOUT)
         child.send(b"\x1b")
         returncode, output, after = child.finish()
@@ -241,7 +241,7 @@ raise SystemExit(main([], runtime=runtime, input_stream=sys.stdin, output_stream
         _restored(self, child, after)
 
     def test_line_flag_keeps_the_line_confirm(self) -> None:
-        child = self._card("claude-multi-pty-card-line-", ["--line"])
+        child = self._card("charmer-pty-card-line-", ["--line"])
         child.read_until(LINE_CONFIRM, FIXTURE_TIMEOUT)
         child.send(b"q\n")
         returncode, output, after = child.finish()
@@ -256,7 +256,7 @@ raise SystemExit(main([], runtime=runtime, input_stream=sys.stdin, output_stream
         # quick-confirm details-and-guarantee-modal PTY test.
         from charmer import cli
 
-        child = self._card("claude-multi-pty-card-help-")
+        child = self._card("charmer-pty-card-help-")
         child.read_until(CARD_READY, FIXTURE_TIMEOUT)
         child.send(b"?")
         child.read_until("launch card — help".encode())
@@ -555,7 +555,7 @@ raise SystemExit(main({argv!r}, runtime=runtime, input_stream=sys.stdin, output_
 """
 
     def test_transition_confirm_relaunches(self) -> None:
-        temp, secret_file = self._temp("claude-multi-pty-transition-")
+        temp, secret_file = self._temp("charmer-pty-transition-")
         child = PTYProcess(
             self._sessions_code(
                 temp,
@@ -580,7 +580,7 @@ raise SystemExit(main({argv!r}, runtime=runtime, input_stream=sys.stdin, output_
     def test_transition_curses_modal_shows_the_diff_and_relaunches(self) -> None:
         # _transition_confirm keeps its curses modal (TransitionTuiScreenTests
         # stays); the preview is the lineup diff.
-        temp, secret_file = self._temp("claude-multi-pty-transition-curses-")
+        temp, secret_file = self._temp("charmer-pty-transition-curses-")
         child = PTYProcess(
             self._sessions_code(
                 temp,
@@ -605,7 +605,7 @@ raise SystemExit(main({argv!r}, runtime=runtime, input_stream=sys.stdin, output_
         self.assertIn(b"FAKE_LAUNCH=resume", output)
 
     def test_transition_no_never_launches(self) -> None:
-        temp, secret_file = self._temp("claude-multi-pty-transition-n-")
+        temp, secret_file = self._temp("charmer-pty-transition-n-")
         child = PTYProcess(
             self._sessions_code(
                 temp,
@@ -633,7 +633,7 @@ class BareLaunchAutoDetectionPTYTests(unittest.TestCase):
     """Bare launch auto-detection with no injected interactive flag."""
 
     def test_no_controlling_terminal_still_reaches_the_line_confirm(self) -> None:
-        temp = tempfile.mkdtemp(prefix="claude-multi-pty-bare-")
+        temp = tempfile.mkdtemp(prefix="charmer-pty-bare-")
         self.addCleanup(__import__("shutil").rmtree, temp, True)
         child = _NoCttyChild(_bare_launch_code(temp, _secret_file(temp)))
         self.addCleanup(child.close)
@@ -658,7 +658,7 @@ class BareLaunchAutoDetectionPTYTests(unittest.TestCase):
         self.assertEqual(output.strip(), b"True", "the harness closed every slave descriptor before exec")
 
     def test_controlling_terminal_pipes_stdio_still_uses_dev_tty(self) -> None:
-        temp = tempfile.mkdtemp(prefix="claude-multi-pty-ctty-")
+        temp = tempfile.mkdtemp(prefix="charmer-pty-ctty-")
         self.addCleanup(__import__("shutil").rmtree, temp, True)
         child = _CttyPipesChild(_bare_launch_code(temp, _secret_file(temp)))
         self.addCleanup(child.close)
@@ -677,7 +677,7 @@ class BareLaunchAutoDetectionPTYTests(unittest.TestCase):
         # /dev/tty (the PTY master), never on the pipes.
         from charmer import catalog
 
-        temp = tempfile.mkdtemp(prefix="claude-multi-pty-ctty-curses-")
+        temp = tempfile.mkdtemp(prefix="charmer-pty-ctty-curses-")
         self.addCleanup(__import__("shutil").rmtree, temp, True)
         child = _CttyPipesChild(
             _fixture_card_code(temp, [], streams=False),
@@ -697,7 +697,7 @@ class BareLaunchAutoDetectionPTYTests(unittest.TestCase):
         self.assertNotIn(b"FAKE_LAUNCH", tty_output + pipe_output)
 
     def test_genuine_pipe_fails_with_explicit_profile_error(self) -> None:
-        temp = tempfile.mkdtemp(prefix="claude-multi-pty-pipe-")
+        temp = tempfile.mkdtemp(prefix="charmer-pty-pipe-")
         self.addCleanup(__import__("shutil").rmtree, temp, True)
         env = dict(os.environ)
         env.update({"PYTHONDONTWRITEBYTECODE": "1", "PYTHONPATH": str(SRC_ROOT), "TERM": "dumb"})
@@ -826,7 +826,7 @@ raise SystemExit(main([], runtime=runtime, input_stream=sys.stdin, output_stream
 """
 
     def test_capable_terminal_without_curses_uses_the_line_card(self) -> None:
-        temp = tempfile.mkdtemp(prefix="claude-multi-pty-nocurses-")
+        temp = tempfile.mkdtemp(prefix="charmer-pty-nocurses-")
         self.addCleanup(__import__("shutil").rmtree, temp, True)
         child = PTYProcess(self._code(temp, _secret_file(temp)))
         self.addCleanup(child.close)
@@ -838,7 +838,7 @@ raise SystemExit(main([], runtime=runtime, input_stream=sys.stdin, output_stream
         self.assertNotIn(b"FAKE_LAUNCH", output)
         self.assertNotIn(b"Traceback", output)
         # The line card, under the unchanged line footer.
-        self.assertIn("claude-multi — profile: balanced · follows profile · Fresh".encode(), output)
+        self.assertIn("charmer — profile: balanced · follows profile · Fresh".encode(), output)
         mask = termios.ECHO | termios.ICANON
         self.assertEqual(child.before[3] & mask, after[3] & mask)
         self.assertEqual(child.before[0] & termios.IXON, after[0] & termios.IXON)
@@ -893,7 +893,7 @@ class ProfileEditorPTYTests(unittest.TestCase):
     def child(self, *, setup: str = "", name: str | None = None, extra: dict | None = None, **size) -> PTYProcess:
         from charmer import catalog
 
-        temp = tempfile.mkdtemp(prefix="claude-multi-pty-editor-")
+        temp = tempfile.mkdtemp(prefix="charmer-pty-editor-")
         self.addCleanup(__import__("shutil").rmtree, temp, True)
         child = PTYProcess(
             _fixture_editor_code(temp, name or catalog.DEFAULT_SEED, setup=setup, extra=extra),
@@ -971,7 +971,7 @@ class EditSavePropagatePTYTests(unittest.TestCase):
     def test_save_propagates_live_to_the_running_follower(self) -> None:
         from charmer import catalog, profile
 
-        temp = tempfile.mkdtemp(prefix="claude-multi-pty-propagate-")
+        temp = tempfile.mkdtemp(prefix="charmer-pty-propagate-")
         self.addCleanup(__import__("shutil").rmtree, temp, True)
         writer = profile.WRITER_IDS[0]
         setup = (
@@ -1088,7 +1088,7 @@ def _expected_default(case: unittest.TestCase) -> str:
     import _tui_fixture as fx
     from charmer.setup import defaults
 
-    root = tempfile.mkdtemp(prefix="claude-multi-pty-default-")
+    root = tempfile.mkdtemp(prefix="charmer-pty-default-")
     case.addCleanup(__import__("shutil").rmtree, root, True)
     runtime = fx.fixture_runtime(Path(root))
     with fx.hermetic(runtime):
@@ -1132,7 +1132,7 @@ class _CardChildCase(unittest.TestCase):
 
         import _tui_fixture as fx
 
-        root = tempfile.mkdtemp(prefix="claude-multi-pty-derive-")
+        root = tempfile.mkdtemp(prefix="charmer-pty-derive-")
         self.addCleanup(__import__("shutil").rmtree, root, True)
         return fx.fixture_runtime(Path(root), **kwargs)
 
@@ -1141,9 +1141,9 @@ class CardLaunchPTYTests(_CardChildCase):
     def test_enter_launches_the_default_seed(self) -> None:
         from charmer import catalog
 
-        child = self.child("claude-multi-pty-card-launch-")
+        child = self.child("charmer-pty-card-launch-")
         child.read_until(CARD_READY, FIXTURE_TIMEOUT)
-        self.assertIn(b"claude-multi", child.output)
+        self.assertIn(b"charmer", child.output)
         expected = _expected_default(self)
         self.assertIn(f"profile: {expected}".encode(), child.output)
         child.send(b"\n")
@@ -1164,7 +1164,7 @@ class DirectLaunchPTYTests(_CardChildCase):
             "import charmer.cli.gateway_facts\n"
             "charmer.cli.gateway_facts._oauth_credential_records = lambda _rt: {p: 1 for p in pools}\n"
         )
-        child = self.child("claude-multi-pty-direct-", setup=setup)
+        child = self.child("charmer-pty-direct-", setup=setup)
         child.read_until(CARD_READY, FIXTURE_TIMEOUT)
         child.send(b"d")
         child.read_until(DIRECT_READY)
@@ -1184,7 +1184,7 @@ class ModelsAdmitPTYTests(_CardChildCase):
         key = new_line_key(catalog_mod.load_catalog(CATALOG_ROOT))
         asset = _fixture_copy(self, new=(key,))
         after = "print('ADMITTED=' + json.dumps(runtime.settings_store.load().get('admitted_lines')), flush=True)\n"
-        child = self.child("claude-multi-pty-models-", asset_root=str(asset), after=after)
+        child = self.child("charmer-pty-models-", asset_root=str(asset), after=after)
         child.read_until(CARD_READY, FIXTURE_TIMEOUT)
         child.send(b"M")
         child.send(DOWN_KEY * 40)  # the New rows are last; the cursor stops there
@@ -1218,7 +1218,7 @@ class ProvidersTogglePTYTests(_CardChildCase):
         self.assertIsNotNone(index, "a provider with at least one line")
         provider = screen.rows[index].id
         steps = index - screen.selected
-        stub_dir = Path(tempfile.mkdtemp(prefix="claude-multi-pty-journal-stub-"))
+        stub_dir = Path(tempfile.mkdtemp(prefix="charmer-pty-journal-stub-"))
         self.addCleanup(__import__("shutil").rmtree, stub_dir, True)
         marker = stub_dir / "marker"
         stub = stub_dir / "journalctl"
@@ -1228,7 +1228,7 @@ class ProvidersTogglePTYTests(_CardChildCase):
             "doc = json.loads(settings.settings_path(runtime.environ).read_text())\n"
             f"print('ENABLED=' + json.dumps(doc['providers'][{provider!r}]['enabled']), flush=True)\n"
         )
-        temp = tempfile.mkdtemp(prefix="claude-multi-pty-providers-")
+        temp = tempfile.mkdtemp(prefix="charmer-pty-providers-")
         self.addCleanup(__import__("shutil").rmtree, temp, True)
         child = PTYProcess(
             _fixture_card_code(temp, [], after=after),
@@ -1270,7 +1270,7 @@ class SettingsNextLaunchPTYTests(_CardChildCase):
             "doc = json.loads(settings.settings_path(runtime.environ).read_text())\n"
             "print('PERCENT=' + str(doc[settings.COMPACTION_PERCENT_KEY]), flush=True)\n"
         )
-        child = self.child("claude-multi-pty-settings-", after=after)
+        child = self.child("charmer-pty-settings-", after=after)
         child.read_until(CARD_READY, FIXTURE_TIMEOUT)
         child.send(b"O")
         child.read_until(b"auto-compact at")
@@ -1323,7 +1323,7 @@ class SessionsScreenPTYTests(_SessionsChildCase):
     ``--line`` keeps the line flows."""
 
     def test_sessions_screen_esc_cancels_and_restores_terminal(self) -> None:
-        child = self.sessions_child("claude-multi-pty-sessions-", ["-r"])
+        child = self.sessions_child("charmer-pty-sessions-", ["-r"])
         child.read_until(SESSIONS_READY, FIXTURE_TIMEOUT)
         child.send(b"\x1b")
         code, output, after = child.finish()
@@ -1334,7 +1334,7 @@ class SessionsScreenPTYTests(_SessionsChildCase):
         _restored(self, child, after)
 
     def test_sessions_list_on_a_terminal_prints_the_listing(self) -> None:
-        child = self.sessions_child("claude-multi-pty-sessions-list-", ["sessions", "list"])
+        child = self.sessions_child("charmer-pty-sessions-list-", ["sessions", "list"])
         code, output, after = child.finish()
         self.assertEqual(code, 0, output)
         self.assertIn(b"11111111", output)
@@ -1344,7 +1344,7 @@ class SessionsScreenPTYTests(_SessionsChildCase):
         _restored(self, child, after)
 
     def test_bare_resume_screen_launches(self) -> None:
-        child = self.sessions_child("claude-multi-pty-bare-r-", ["-r"])
+        child = self.sessions_child("charmer-pty-bare-r-", ["-r"])
         child.read_until(SESSIONS_READY, FIXTURE_TIMEOUT)
         child.send(b"\r")
         code, output, after = child.finish()
@@ -1353,7 +1353,7 @@ class SessionsScreenPTYTests(_SessionsChildCase):
         _restored(self, child, after)
 
     def test_line_sessions_list_prints_the_listing_and_restores_terminal(self) -> None:
-        child = self.sessions_child("claude-multi-pty-line-sessions-", ["--line", "sessions", "list"])
+        child = self.sessions_child("charmer-pty-line-sessions-", ["--line", "sessions", "list"])
         code, output, after = child.finish()
         self.assertEqual(code, 0, output)
         self.assertIn(b"11111111", output)
@@ -1362,7 +1362,7 @@ class SessionsScreenPTYTests(_SessionsChildCase):
         _restored(self, child, after)
 
     def test_line_sessions_list_never_prompts_or_launches(self) -> None:
-        child = self.sessions_child("claude-multi-pty-line-sessions-r-", ["--line", "sessions", "list"])
+        child = self.sessions_child("charmer-pty-line-sessions-r-", ["--line", "sessions", "list"])
         child.send(b"1\n")
         code, output, after = child.finish()
         self.assertEqual(code, 0, output)
@@ -1372,7 +1372,7 @@ class SessionsScreenPTYTests(_SessionsChildCase):
         _restored(self, child, after)
 
     def test_line_bare_resume_keeps_the_line_chooser_and_launches(self) -> None:
-        child = self.sessions_child("claude-multi-pty-line-bare-r-", ["--line", "-r"])
+        child = self.sessions_child("charmer-pty-line-bare-r-", ["--line", "-r"])
         child.read_until(b"resume which session (number, Enter cancels): ", FIXTURE_TIMEOUT)
         child.send(b"1\n")
         code, output, after = child.finish()
@@ -1428,7 +1428,7 @@ class SessionsLineupPTYTests(_SessionsChildCase):
             _read_after(child, offset, b"\x1b[")
 
     def test_live(self) -> None:
-        child = self.sessions_child("claude-multi-pty-lineup-live-", ["-r"], setup=_steps_to(_LIVE_SEED))
+        child = self.sessions_child("charmer-pty-lineup-live-", ["-r"], setup=_steps_to(_LIVE_SEED))
         self._to_target(child)
         offset = len(child.output)
         child.send(b"\r")
@@ -1446,7 +1446,7 @@ class SessionsLineupPTYTests(_SessionsChildCase):
         _restored(self, child, after)
 
     def test_relaunch(self) -> None:
-        child = self.sessions_child("claude-multi-pty-lineup-relaunch-", ["-r"], setup=_steps_to(_RELAUNCH_SEED))
+        child = self.sessions_child("charmer-pty-lineup-relaunch-", ["-r"], setup=_steps_to(_RELAUNCH_SEED))
         self._to_target(child)
         offset = len(child.output)
         child.send(b"\r")
@@ -1465,7 +1465,7 @@ class SessionsLineupPTYTests(_SessionsChildCase):
 
     def test_esc_in_the_lineup_dialog_changes_nothing(self) -> None:
         # Restores tp SessionsAndTransitionPTYTests.test_transition_esc_prints_command_without_mutating.
-        child = self.sessions_child("claude-multi-pty-lineup-esc-", ["-r"])
+        child = self.sessions_child("charmer-pty-lineup-esc-", ["-r"])
         child.read_until(SESSIONS_READY, FIXTURE_TIMEOUT)
         offset = len(child.output)
         child.send(b"T")

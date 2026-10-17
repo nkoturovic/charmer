@@ -87,7 +87,7 @@ print("PATH=" + env.get("PATH", ""))
 print("HINTS=" + env.get("CLAUDE_CODE_GATEWAY_HINT_HEADERS", "absent"))
 print("SUBAGENT=" + env.get("CLAUDE_CODE_SUBAGENT_MODEL", "absent"))
 print("TTL=" + env.get("CLAUDE_CODE_API_KEY_HELPER_TTL_MS", "absent"))
-launcher = shutil.which("claude-multi")
+launcher = shutil.which("charmer")
 print("LAUNCHER=" + (launcher or "absent"))
 if launcher:
     subprocess.run([launcher, "lineup", "--probe-arg=x y"], check=True)
@@ -131,7 +131,7 @@ time.sleep(30)
 
 class ProbeTestCase(unittest.TestCase):
     def setUp(self) -> None:
-        self.root = Path(tempfile.mkdtemp(prefix="claude-multi-probe-test-"))
+        self.root = Path(tempfile.mkdtemp(prefix="charmer-probe-test-"))
         os.chmod(self.root, 0o700)
         self.addCleanup(self._cleanup)
         # Simulated "live" environment roots; the fixture must stay disjoint.
@@ -299,7 +299,7 @@ class GatingTests(ProbeTestCase):
             with contextlib.redirect_stderr(io.StringIO()):
                 code = dev.main(["probe", "init"])
         self.assertEqual(code, 2)
-        self.assertFalse((live_state / "claude-multi" / "drafts").exists())
+        self.assertFalse((live_state / "charmer" / "drafts").exists())
 
 
 class CredentialRefusalTests(ProbeTestCase):
@@ -412,17 +412,17 @@ class FixtureRootRefusalTests(ProbeTestCase):
             probe.build_fixture(self.root / "live", environ=self.environ)
 
     def test_live_state_root_refused(self) -> None:
-        with self.assertRaisesRegex(ProbeError, "live claude-multi state root"):
+        with self.assertRaisesRegex(ProbeError, "live charmer state root"):
             probe.build_fixture(
-                self._live(".local", "state", "claude-multi"), environ=self.environ
+                self._live(".local", "state", "charmer"), environ=self.environ
             )
 
     def test_inside_live_state_root_refused(self) -> None:
         with self.assertRaisesRegex(
-            ProbeError, "inside the live claude-multi state root"
+            ProbeError, "inside the live charmer state root"
         ):
             probe.build_fixture(
-                self._live(".local", "state", "claude-multi", "probe"),
+                self._live(".local", "state", "charmer", "probe"),
                 environ=self.environ,
             )
 
@@ -480,8 +480,8 @@ class FixtureRootRefusalTests(ProbeTestCase):
         link_state = self.root / "link-state"
         link_state.symlink_to(real_state, target_is_directory=True)
         environ = {**self.environ, "XDG_STATE_HOME": str(link_state)}
-        with self.assertRaisesRegex(ProbeError, "live claude-multi state root"):
-            probe.build_fixture(real_state / "claude-multi", environ=environ)
+        with self.assertRaisesRegex(ProbeError, "live charmer state root"):
+            probe.build_fixture(real_state / "charmer", environ=environ)
 
 
 class BuildFixtureTests(ProbeTestCase):
@@ -1959,7 +1959,7 @@ class ProbeEnvAllowlistTests(ProbeTestCase):
             "CLAUDE_CODE_WORKFLOWS": "true",
             "CLAUDE_CODE_DISABLE_WORKFLOWS": "0",
             "CLAUDE_CODE_SUBAGENT_MODEL": "claude-sonnet-4-6",
-            "CLAUDE_CODE_SUBAGENT_MODEL_FORCE": "claude-multi-opus-5-5[1m]",
+            "CLAUDE_CODE_SUBAGENT_MODEL_FORCE": "charmer-opus-5-5[1m]",
             "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-5-5[1m]",
             "ANTHROPIC_DEFAULT_FABLE_MODEL": "claude-fable-5-1[1m]",
             "ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-sonnet-4-6",
@@ -2200,9 +2200,9 @@ class FixturePathDirTests(ProbeTestCase):
 
     def test_write_fixture_executable_is_private_and_validated(self) -> None:
         path = probe.write_fixture_executable(
-            self.fixture, self.bin_dir, "claude-multi", "#!/bin/sh\nexit 0\n"
+            self.fixture, self.bin_dir, "charmer", "#!/bin/sh\nexit 0\n"
         )
-        self.assertEqual(path, self.bin_dir / "claude-multi")
+        self.assertEqual(path, self.bin_dir / "charmer")
         self.assertEqual(stat.S_IMODE(os.lstat(path).st_mode), 0o700)
         for name in ("", "../x", "a/b", ".hidden", "x" * 80):
             with self.subTest(name=name):
@@ -2213,9 +2213,9 @@ class FixturePathDirTests(ProbeTestCase):
         outside = state.ensure_private_dir(self.root / "outside-bin")
         with self.assertRaisesRegex(ProbeError, "not inside fixture root"):
             probe.write_fixture_executable(
-                self.fixture, outside, "claude-multi", "#!/bin/sh\n"
+                self.fixture, outside, "charmer", "#!/bin/sh\n"
             )
-        self.assertFalse((outside / "claude-multi").exists())
+        self.assertFalse((outside / "charmer").exists())
         with self.assertRaisesRegex(ProbeError, "nonempty"):
             probe.write_fixture_executable(self.fixture, self.bin_dir, "empty", b"")
 
@@ -2224,7 +2224,7 @@ class FixturePathDirTests(ProbeTestCase):
         probe.write_fixture_executable(
             self.fixture,
             self.bin_dir,
-            "claude-multi",
+            "charmer",
             f"#!{sys.executable}\nimport json, sys\n"
             f"open({str(record)!r}, 'w').write(json.dumps(sys.argv[1:]))\n",
         )
@@ -2237,7 +2237,7 @@ class FixturePathDirTests(ProbeTestCase):
             path_dirs=(self.bin_dir,),
         )
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn(f"LAUNCHER={self.bin_dir / 'claude-multi'}", result.stdout)
+        self.assertIn(f"LAUNCHER={self.bin_dir / 'charmer'}", result.stdout)
         self.assertEqual(
             strict_json.loads(record.read_bytes()), ["lineup", "--probe-arg=x y"]
         )

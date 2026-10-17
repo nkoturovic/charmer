@@ -5,14 +5,14 @@ path-free: its ``verified`` list holds one entry with the version, the
 per-platform ``{sha256, size}`` taken from Anthropic's signed release
 manifest, the manifest provenance and the evidence class per platform.
 
-claude-multi executes only its own copy of that version,
+charmer executes only its own copy of that version,
 ``<data root>/claude/<version>/claude`` (``claude.exe`` on Windows), after a
 full size and SHA-256 check on every launch. The copy is put there by the
-acquisition step (``claude-multi setup --step claude``, ``acquire.py``);
+acquisition step (``charmer setup --step claude``, ``acquire.py``);
 the user's own Claude Code install is never executed, moved, linked or
 modified by a launch. Each launch holds the version's use lock
 (:func:`take_use_lock`) for as long as the copy runs, so pruning never
-removes a copy a claude-multi session uses.
+removes a copy a charmer session uses.
 """
 
 from __future__ import annotations
@@ -44,16 +44,16 @@ PLATFORMS = (
 )
 EVIDENCE_CLASSES = ("battery", "identity+smoke")
 CONTRACT_VERSION = 2
-SETUP_COMMAND = "claude-multi setup --step claude"
+SETUP_COMMAND = "charmer setup --step claude"
 _VERSION = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
 
 
-class PinError(errors.ClaudeMultiError, RuntimeError):
+class PinError(errors.CharmerError, RuntimeError):
     """The owned copy of the pinned Claude Code cannot be used (fail closed)."""
 
 
 def not_set_up_text(version: str) -> str:
-    return f"Claude Code {version} is not set up for claude-multi — run `{SETUP_COMMAND}`"
+    return f"Claude Code {version} is not set up for charmer — run `{SETUP_COMMAND}`"
 
 
 def override_attention(source: str, detail: str | None, pinned: str, override: str) -> str | None:
@@ -63,7 +63,7 @@ def override_attention(source: str, detail: str | None, pinned: str, override: s
         return None
     if source == "override-ignored-newer":
         reason = (f"it pins Claude Code {detail}, newer than the {pinned} this release verified; "
-                  "a newer pin comes with a claude-multi release")
+                  "a newer pin comes with a charmer release")
     elif source == "override-ignored-stale":
         reason = f"it pins Claude Code {detail}; this release runs its verified {pinned}"
     else:
@@ -128,7 +128,7 @@ def owned_path(environ: Mapping[str, str], version_name: str, platform: str) -> 
 
 
 # The use lock of one owned version: ``<owned root>/<version>/.in-use``.
-# Every claude-multi launch of the copy holds it shared from before the hash
+# Every charmer launch of the copy holds it shared from before the hash
 # check for as long as that Claude Code runs (the descriptor is inherited
 # across exec); pruning takes it exclusively without waiting and keeps every
 # version it cannot lock.
@@ -188,7 +188,7 @@ def check_private_directory(directory: Path) -> None:
 
 
 def _unsafe_lock(path: Path, problem: str) -> PinError:
-    return PinError(f"{path} {problem}; claude-multi keeps its use lock there only as its own "
+    return PinError(f"{path} {problem}; charmer keeps its use lock there only as its own "
                     f"regular file — remove it (rm {path}), then run `{SETUP_COMMAND}`")
 
 
@@ -338,7 +338,7 @@ def verify_owned(
     record = platform_record(contract, platform)
     if record is None:
         raise PinError(
-            f"this claude-multi release has no verified Claude Code {pinned} build for {platform}"
+            f"this charmer release has no verified Claude Code {pinned} build for {platform}"
         )
     executable = owned_path(environ, pinned, platform)
     check_owned_dirs(executable)
@@ -369,7 +369,7 @@ def version_from_path(path: Path | str) -> str | None:
     """The Claude Code version a client path names, without running it.
 
     A native install names each build after its version
-    (``.../claude/versions/2.1.286``); claude-multi's own copy is
+    (``.../claude/versions/2.1.286``); charmer's own copy is
     ``.../claude/<version>/claude``. Anything else is unknown (None)."""
 
     target = Path(path)
@@ -415,7 +415,7 @@ def copy_state(contract: Mapping[str, Any], environ: Mapping[str, str], *,
     pinned = version(contract)
     record = platform_record(contract, platform)
     if record is None:
-        return "no build", (f"this claude-multi release has no verified Claude Code {pinned} "
+        return "no build", (f"this charmer release has no verified Claude Code {pinned} "
                             f"build for {platform}")
     executable = owned_path(environ, pinned, platform)
     try:
@@ -432,11 +432,11 @@ def copy_state(contract: Mapping[str, Any], environ: Mapping[str, str], *,
                 pass
         return "not set up", not_set_up_text(pinned)
     except (PinError, OSError) as exc:
-        return "damaged", (f"the claude-multi copy of Claude Code {pinned} cannot be used: {exc} — "
+        return "damaged", (f"the charmer copy of Claude Code {pinned} cannot be used: {exc} — "
                            f"run `{SETUP_COMMAND}` to replace it")
     if (stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode)
             or info.st_size != record["size"] or not os.access(executable, os.X_OK)):
-        return "damaged", (f"the claude-multi copy of Claude Code {pinned} is damaged — "
+        return "damaged", (f"the charmer copy of Claude Code {pinned} is damaged — "
                            f"run `{SETUP_COMMAND}` to replace it")
     return "ready", None
 
@@ -457,7 +457,7 @@ def staleness(contract: Mapping[str, Any], today: datetime.date,
 
     Stale when the pin was verified more than :data:`STALE_AFTER_DAYS` days
     ago or the user's own Claude Code is newer. The text states the fact and
-    what brings a newer pin (a claude-multi release); it names no command,
+    what brings a newer pin (a charmer release); it names no command,
     because no command of this release changes the pin."""
 
     pinned = version(contract)
@@ -470,6 +470,6 @@ def staleness(contract: Mapping[str, Any], today: datetime.date,
         reasons.append(f"your Claude Code is {user_version}")
     if not reasons:
         return None
-    return (f"this claude-multi runs Claude Code {pinned}, and {' and '.join(reasons)}: "
-            "a claude-multi release that verifies a newer Claude Code brings it; until then "
+    return (f"this charmer runs Claude Code {pinned}, and {' and '.join(reasons)}: "
+            "a charmer release that verifies a newer Claude Code brings it; until then "
             f"managed sessions keep running {pinned} and your own claude is not affected")
