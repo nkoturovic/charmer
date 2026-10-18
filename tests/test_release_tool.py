@@ -189,11 +189,28 @@ class PreflightCheckTests(unittest.TestCase):
                                capture_output=True, timeout=60)
         if probe.returncode != 0:
             self.skipTest("BOUNDARY: the v1.1.0 tag is not in this checkout (shallow or exported tree)")
-        self.assertEqual(self.tool.release_resources(REPO_ROOT, "v1.1.0"), legacy.LEGACY_RESOURCES)
-        version, catalog = self.tool.release_version(REPO_ROOT)
-        check = self.tool.check_version_bump(REPO_ROOT, "v1.1.0")
+        # Exercise the real earlier layout without treating this development
+        # commit as another release of the current version. Its published tag
+        # correctly fails preflight once HEAD moves on. The isolated clone
+        # carries only the previous tag; the tag-collision test above keeps
+        # the production refusal mandatory.
+        repo = self.tmp / "real-history"
+        env = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+        subprocess.run(["git", "clone", "--shared", "--no-tags", str(REPO_ROOT), str(repo)],
+                       env=env, check=True, capture_output=True, timeout=60)
+        previous = self.tool.git(REPO_ROOT, "rev-parse", "v1.1.0").strip()
+        subprocess.run(["git", "-C", str(repo), "update-ref", "refs/tags/v1.1.0", previous],
+                       env=env, check=True, capture_output=True, timeout=60)
+        self.assertEqual(self.tool.release_resources(repo, "v1.1.0"), legacy.LEGACY_RESOURCES)
+        version, catalog = self.tool.release_version(repo)
+        check = self.tool.check_version_bump(repo, "v1.1.0")
         self.assertTrue(check.ok, check.detail)
         self.assertIn(f"catalog 38 -> {catalog}", check.detail)
+        subprocess.run(["git", "-C", str(repo), "update-ref", f"refs/tags/v{version}", previous],
+                       env=env, check=True, capture_output=True, timeout=60)
+        refused = self.tool.check_version_bump(repo, "v1.1.0")
+        self.assertFalse(refused.ok)
+        self.assertIn("names another commit", refused.detail)
 
     def test_repository_checks_on_this_tree(self) -> None:
         self.assertTrue(self.tool.check_contract(REPO_ROOT).ok, self.tool.check_contract(REPO_ROOT).detail)
