@@ -1608,8 +1608,23 @@ On memory-tight hosts the suite's tmpfs fixture copies can fail with
   against a loopback fixture provider (`.github/scripts/journey_fixture.py`,
   declared and admitted like any provider) and its resume, another
   program's listener on the gateway port refused, update and rollback —
-  the draft behind the protected `release` environment) and
-  `pin-watch.yml` (`tools/_build/pin_watch.py`). Every action, tool and
+  the draft behind the protected `release` environment),
+  `pin-watch.yml` (`tools/_build/pin_watch.py`) and
+  `vulnerability-watch.yml` (weekly when `CM_SCHEDULES` is `on`, or by
+  hand: `.github/scripts/vulnerability_watch.py` downloads the latest
+  published release, verifies its signature and checksums, runs govulncheck
+  over each bundle's gateway against the dispositions of that release's tag
+  (the current ones only when the gateway version and every target hash
+  match) and OSV over its Go modules and CPython; neither the bundles nor
+  their gateways run. `vulnerability_watch_issue.py` keeps one issue: a
+  changed finding fingerprint adds a comment, an unchanged one stays
+  silent, and failed checks still leave evidence. CPython advisories are
+  accepted only by explicit entries in
+  `.github/vulnerability-watch-reviewed.json` bound to the advisory id,
+  aliases, modified time, runtime version and an expiry — never a blanket
+  exemption). CI-only Go and ShellCheck come from
+  `.github/scripts/ci_tools.sh` (publisher digest verified before
+  extraction, a fresh runner-temporary directory). Every action, tool and
   container image they use is pinned (actions by commit, images by index
   digest; zizmor also by its wheel's sha256, installed with
   `--require-hashes`) to its newest release (JavaScript actions on
