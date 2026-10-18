@@ -111,6 +111,23 @@ def _links(name: str) -> set[str]:
     return found
 
 
+# Bound at import: some tests point REPO_ROOT at a staged tree without it.
+_CHANGELOG = REPO_ROOT / "CHANGELOG.md"
+
+
+def _released_version() -> str:
+    """The release the published pages name: this version, or on a ``-dev``
+    line the newest dated CHANGELOG section (the line is not released yet)."""
+    from charmer import __version__
+
+    if not __version__.endswith("-dev"):
+        return __version__
+    match = re.search(r"^## \[(\d+\.\d+\.\d+)\] — \d{4}-\d{2}-\d{2}$",
+                      _CHANGELOG.read_text(encoding="utf-8"), re.M)
+    assert match is not None, "CHANGELOG.md names no released version"
+    return match.group(1)
+
+
 class GateRuleTests(unittest.TestCase):
     """Every public page: the shared rules (no failing hit), spans, fragments, links."""
 
@@ -1139,9 +1156,7 @@ class PageAnchorTests(unittest.TestCase):
                                'charmer = app pkg "charmer"',
                                'charmer-proxy = app pkg "charmer-proxy"'):
                 self.assertIn(definition, flake)
-        from charmer import __version__
-
-        self.assertIn(f"github:nkoturovic/charmer/v{__version__}", text)
+        self.assertIn(f"github:nkoturovic/charmer/v{_released_version()}", text)
 
     def test_nix_entry_point_check_accepts_staging_but_checks_an_existing_flake(self) -> None:
         with tempfile.TemporaryDirectory() as root, mock.patch(f"{__name__}.REPO_ROOT", Path(root)):
@@ -1192,10 +1207,8 @@ class PageAnchorTests(unittest.TestCase):
         self.assertIn("only in the Nix channel", text)
 
     def test_publication_status_and_private_reporting(self) -> None:
-        from charmer import __version__
-
         readme = _flat(_text("README.md"))
-        self.assertIn(f"**Latest release:** {__version__}", readme)
+        self.assertIn(f"**Latest release:** {_released_version()}", readme)
         self.assertIn("GitHub Releases", readme)
         self.assertNotIn("not released yet", readme)
         security = _flat(_text("SECURITY.md"))
