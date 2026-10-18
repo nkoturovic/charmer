@@ -1603,9 +1603,10 @@ WORKFLOW_MODEL_ENV = "CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL"
 WORKFLOW_MODEL_NEUTRAL = "inherit"
 
 
-# Claude Code 2.1.284+ starts a session whose settings configure no
-# permission mode in ``auto`` (2.1.281 started in ``default``; both
-# measured). A managed launch compiles ``permissions.defaultMode:
+# Claude Code 2.1.284-2.1.301 start a session whose settings configure no
+# permission mode in ``auto`` (2.1.281 started in ``default``, and 2.1.302
+# does again behind a third-party provider; all measured), so the mode
+# follows no client default. A managed launch compiles ``permissions.defaultMode:
 # "default"`` into the flag settings ONLY when no layer the client reads
 # configures one (``managed.permission_mode_configured``); a configured layer
 # or an explicit ``--permission-mode`` wins. Decided at launch and resume;
