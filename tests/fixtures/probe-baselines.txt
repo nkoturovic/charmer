@@ -34,3 +34,26 @@ client probe SL: BOUNDARY class=unavailable
 # SL: no newer-than-pin client retained; not a successful resume observation.
 # Supervisor takeover and staged marketplace-plugin updates remain INCONCLUSIVE
 # offline. Signed real-provider behavior is not established by these fixtures.
+#
+# The session window and a cm-* agent's own window
+# (tests/test_compaction_window_probe.py), signed client 2.1.302 linux-x64
+# (binary sha256 60d7eb7f12fbb28a52533fe8be5884097403562aa02dc73991a021c7067e29a5,
+# release manifest sha256 d7d4f193bfebb48733027b0dc43d6996d99f5335d152961a729730e55bbd5aa1),
+# 2026-10-19, session window 800000 at 90 %:
+compaction window probe: PASS class=settings-window-lowers-agents
+# The window variable (the earlier compile) outranks an agent's own
+# autoCompactWindow: a 128000 agent compacted at its 200K class, 162000. The
+# settings key with the variable "0" in the flag-settings env: the lead at
+# 702000; a 128000 agent window at 95000; 300000 on a 1M agent at 252000; no
+# own window keeps 162000 and 702000; a window above the agent's class or
+# below the 100K floor is ignored (162000); the lead and the agent hold
+# against user, project and local top-level, per-model and env values and the
+# process env, after /autocompact 300000, on --resume, and under --agent (the
+# main thread keeps 702000). --autocompact passes the same offline cases; the
+# client's /autocompact resets a --autocompact value to the settings in a
+# running session (read from the build, not driven by these fixtures), so it
+# is not compiled.
+# The fence's cold start (protocol-3 shim plus a launcher answering premodel,
+# 300 runs each, bytecode warm, 16 CPUs): CPython 3.14.6 p99 0.13 / 0.26 /
+# 0.43 / 2.57 s at 0, 16, 32 and 64 CPU burners (max 3.33 s); CPython 3.15.0
+# p99 0.17 / 0.45 / 1.75 / 3.47 s (max 4.31 s). Its budget is 15 s.

@@ -152,15 +152,45 @@ def diff_rows(
     return rows
 
 
-def window_diff_rows(record: Mapping[str, Any], lineup: profile.ResolvedLineup) -> list[tuple[str, str, str]]:
-    """The session window a resume moves to (the window ceiling or the lead
-    set's bounds changed since the session launched): one row, or none."""
+# The first release that compiles a cm-* agent's own window: a session an
+# earlier launcher recorded ran every agent at its class window.
+AGENT_WINDOW_RELEASE = (2, 1)
 
+
+def window_diff_rows(record: Mapping[str, Any], lineup: profile.ResolvedLineup) -> list[tuple[str, str, str]]:
+    """The windows a resume moves to: the session window (the window ceiling
+    or the lead set's bounds changed since the session launched), one row or
+    none; then, for a session an earlier launcher recorded, before agents had
+    their own window (:data:`AGENT_WINDOW_RELEASE`), one row per agent that
+    now gets one."""
+
+    rows: list[tuple[str, str, str]] = []
     old = sessions.recorded_window(record)
     new = lineup.policy.window if lineup.policy is not None else None
-    if old is None or new is None or old == new:
-        return []
-    return [("context window", profile.format_tokens(old), profile.format_tokens(new))]
+    if old is not None and new is not None and old != new:
+        rows.append(("context window", profile.format_tokens(old), profile.format_tokens(new)))
+    try:
+        recorded_release = sessions.release_tuple(str(record.get("launcher_version")))[:2]
+    except ValueError:
+        return rows
+    if recorded_release >= AGENT_WINDOW_RELEASE:
+        return rows
+    applied = record.get("applied") or {}
+    recorded = applied.get("agents") or {}
+    scalar = ((applied.get("lead") or {}).get("compaction") or {}).get("scalar")
+    scalar = scalar if isinstance(scalar, int) and not isinstance(scalar, bool) else None
+    windows = dict(profile.lineup_windows(lineup))
+    for rid in lineup.agents:
+        window, before = windows[rid], recorded.get(rid)
+        if window.agent_window is None or not isinstance(before, Mapping) \
+                or not isinstance(before.get("selector"), str):
+            continue
+        shared = profile.agent_class_window(before["selector"], scalar)
+        if old is not None:
+            shared = min(shared, old)
+        rows.append((f"{profile.label(rid)} agent window", profile.format_tokens(shared),
+                     profile.format_tokens(window.agent_window)))
+    return rows
 
 
 def window_summary(lineup: profile.ResolvedLineup, workflow_default: profile.RoleWindow | None = None) -> str:
@@ -172,11 +202,11 @@ def window_summary(lineup: profile.ResolvedLineup, workflow_default: profile.Rol
         roles.append(("workflow default", workflow_default))
     percent = (lineup.policy.percent if lineup.policy is not None
                else settings_mod.COMPACTION_PERCENT_DEFAULT)
-    groups: dict[tuple[int, int], list[str]] = {}
+    groups: dict[tuple[int, int, bool], list[str]] = {}
     for name, window in roles:
-        groups.setdefault((window.window, window.trigger), []).append(name)
+        groups.setdefault((window.window, window.trigger, window.agent_window is not None), []).append(name)
     if len(groups) == 1:
-        (window, trigger), = groups
+        (window, trigger, _own), = groups
         who = "the lead"
         if lineup.agents:
             who += " and every agent" if workflow_default is None else ", every agent"
@@ -184,8 +214,10 @@ def window_summary(lineup: profile.ResolvedLineup, workflow_default: profile.Rol
             who += " and the workflow default"
         return (f"context window {profile.format_tokens(window)} for {who} · compacts at "
                 f"~{profile.format_tokens(trigger)} ({percent} %)")
-    parts = [f"{profile.format_tokens(window)} (compacts at ~{profile.format_tokens(trigger)}) {', '.join(names)}"
-             for (window, trigger), names in groups.items()]
+    # An agent's own window (its provider bound) is marked "own".
+    parts = [f"{profile.format_tokens(window)}{' own' if own else ''} (compacts at ~{profile.format_tokens(trigger)}) "
+             f"{', '.join(names)}"
+             for (window, trigger, own), names in groups.items()]
     return f"context windows ({percent} %): " + " · ".join(parts)
 
 

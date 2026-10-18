@@ -268,7 +268,9 @@ class EnvTests(unittest.TestCase):
                 self.assertEqual(result.env_set["CHARMER_SESSION_ID"], FIXED_SESSION)
                 self.assertEqual(result.env_set["CHARMER_LAUNCH_EPOCH"], "0")
                 self.assertEqual(result.env_set["CLAUDE_AUTOCOMPACT_PCT_OVERRIDE"], "90")
-                window = int(result.env_set["CLAUDE_CODE_AUTO_COMPACT_WINDOW"])
+                # The window is the scope's settings key, never the process env.
+                self.assertNotIn("CLAUDE_CODE_AUTO_COMPACT_WINDOW", result.env_set)
+                window = result.scope_plan.settings["autoCompactWindow"]
                 self.assertEqual(
                     window, strict_json.loads(result.scope_plan.other_files["lead-set.json"])["context"]["window"]
                 )
@@ -298,7 +300,7 @@ class EnvTests(unittest.TestCase):
         doc["settings_overrides"] = {"compaction_percent": 70}
         lineup = profile.resolve(doc, lcat, effective=eff)
         result = _launch(lineup, eff, bundle=bundle)
-        window = int(result.env_set["CLAUDE_CODE_AUTO_COMPACT_WINDOW"])
+        window = result.scope_plan.settings["autoCompactWindow"]
         trigger = compiler.reactive_trigger(window, 70)
         self.assertEqual(result.env_set["CLAUDE_AUTOCOMPACT_PCT_OVERRIDE"], "70")
         appendix = _appendix(result)
@@ -734,17 +736,27 @@ class AgentContextGuardTests(unittest.TestCase):
         self.assertEqual(lineup.agents[rid].binding.client_context_tokens, 200_000)
         self.assertEqual(compiler.agent_context_gaps(lineup, 800_000), ())
         _launch(lineup, eff, docs=docs, bundle=bundle)
-        # A genuinely smaller provider bound warns, rather than inventing
-        # a per-agent 128K window or refusing short requests that can work.
+        # A smaller provider bound gives the agent its own window, the bound
+        # (its agent file's autoCompactWindow), so it compacts below it.
         docs["models-v2"]["models"][key]["context"]["provider_tokens"] = 128_000
+        lcat = _lcat(docs)
+        lineup = profile.resolve(doc, lcat, effective=eff)
+        self.assertEqual(compiler.agent_context_gaps(lineup, 800_000), ())
+        self.assertFalse([f for f in lineup.warnings if f.code == "context-risk" and f.slot == rid])
+        result = _launch(lineup, eff, docs=docs, bundle=bundle)
+        self.assertIn(lineup.agents[rid].binding.selector, result.scope_plan.settings["availableModels"])
+        self.assertIn(b"\nautoCompactWindow: 128000\n", result.scope_plan.agent_files[f".claude/agents/{rid}.md"])
+        # Below the client's smallest agent window, it warns, rather than
+        # refusing short requests that can work.
+        docs["models-v2"]["models"][key]["context"]["provider_tokens"] = 64_000
         lcat = _lcat(docs)
         lineup = profile.resolve(doc, lcat, effective=eff)
         self.assertEqual(compiler.agent_context_gaps(lineup, 800_000), (rid,))
         warning = next(f.message for f in lineup.warnings if f.code == "context-risk" and f.slot == rid)
-        for number in ("200000", "800000", "128000"):
+        for number in ("200000", "800000", "64000"):
             self.assertIn(number, warning)
         result = _launch(lineup, eff, docs=docs, bundle=bundle)
-        self.assertIn(lineup.agents[rid].binding.selector, result.scope_plan.settings["availableModels"])
+        self.assertNotIn(b"autoCompactWindow", result.scope_plan.agent_files[f".claude/agents/{rid}.md"])
 
     def test_fixture_catalog_never_trips_the_guard(self) -> None:
         bundle = _bundle()

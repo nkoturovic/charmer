@@ -671,6 +671,7 @@ class SettingsTests(unittest.TestCase):
                 "model",
                 "modelPicker",
                 "autoCompactEnabled",
+                "autoCompactWindow",
                 "disableAllHooks",
                 "worktree",
                 "env",
@@ -746,12 +747,18 @@ class SettingsTests(unittest.TestCase):
                         token_helper_command=HELPER, worktree_available=True,
                     )
                     plan = _compile(lineup, lcat, eff, bundle)
-                    keys = ("CLAUDE_CODE_AUTO_COMPACT_WINDOW", "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE",
-                            "CLAUDE_CODE_MAX_CONTEXT_TOKENS")
+                    keys = ("CLAUDE_AUTOCOMPACT_PCT_OVERRIDE", "CLAUDE_CODE_MAX_CONTEXT_TOKENS")
                     self.assertEqual({key: plan.settings["env"][key] for key in keys if key in plan.settings["env"]},
                                      {key: result.env_set[key] for key in keys if key in result.env_set})
-                    self.assertEqual(plan.settings["env"][keys[1]], str(percent))
-                    self.assertEqual(keys[2] in plan.settings["env"], scalar is not None and client_tokens < 1000000)
+                    self.assertEqual(plan.settings["env"][keys[0]], str(percent))
+                    self.assertEqual(keys[1] in plan.settings["env"], scalar is not None and client_tokens < 1000000)
+                    # The window: the settings key, the variable neutral in the
+                    # settings env and cleared in the process.
+                    context = strict_json.loads(plan.other_files["lead-set.json"])["context"]
+                    self.assertEqual(plan.settings["autoCompactWindow"], context["window"])
+                    self.assertEqual(plan.settings["env"]["CLAUDE_CODE_AUTO_COMPACT_WINDOW"], "0")
+                    self.assertNotIn("CLAUDE_CODE_AUTO_COMPACT_WINDOW", result.env_set)
+                    self.assertIn("CLAUDE_CODE_AUTO_COMPACT_WINDOW", result.env_unset)
 
     def test_explore_cap_setting(self) -> None:
         bundle, lcat, eff, lineup = _seed("balanced")
@@ -953,6 +960,71 @@ class ForkPolicyDriftTests(unittest.TestCase):
         edited = copy.deepcopy(earlier)
         edited["env"]["CLAUDE_CODE_SUBAGENT_MODEL"] = "charmer-opus-5[1m]"
         self.assertFalse(self.drift(self.plan, edited)[1])
+
+    @staticmethod
+    def env_window(settings: dict[str, Any], *, keep_key: bool = False, value: int | None = None) -> dict[str, Any]:
+        """``settings`` with the window as earlier releases compiled it (the
+        window variable alone), or both (``keep_key``)."""
+
+        document = copy.deepcopy(settings)
+        window = document[scope.AGENT_WINDOW_KEY]
+        if not keep_key:
+            del document[scope.AGENT_WINDOW_KEY]
+        document["env"][scope.WINDOW_ENV] = str(window if value is None else value)
+        return document
+
+    def test_the_window_form_of_another_release_is_lazy(self) -> None:
+        settings = self.plan.settings
+        self.assertEqual((settings["autoCompactWindow"], settings["env"]["CLAUDE_CODE_AUTO_COMPACT_WINDOW"]),
+                         (800_000, "0"))
+        lazy = [f"{scope.SETTINGS_RELPATH} content differs"]
+        earlier = self.env_window(settings)
+        self.assertEqual(self.drift(self.plan, earlier), (lazy, True))
+        # The 2.0.x scope: the window variable, no fence policy, no fork deny.
+        everything = self.fence_policy(self.without(earlier, compiler.FORK_AGENT_DENY), None, 5)
+        self.assertEqual(self.drift(self.plan, everything), (lazy, True))
+        # Its proven live env kept under this release's compile states both.
+        mixed = dataclasses.replace(self.plan, settings=self.env_window(settings, keep_key=True))
+        self.assertTrue(self.drift(mixed, everything)[1])
+        # Another window, or a variable beside the key that states another
+        # one, stays BLOCK.
+        self.assertFalse(self.drift(self.plan, self.env_window(settings, value=600_000))[1])
+        self.assertFalse(self.drift(self.plan, self.env_window(settings, keep_key=True, value=600_000))[1])
+        no_variable = copy.deepcopy(earlier)
+        del no_variable["env"]["CLAUDE_CODE_AUTO_COMPACT_WINDOW"]
+        self.assertFalse(self.drift(self.plan, no_variable)[1])
+
+    def test_an_agents_own_window_beside_the_settings_of_another_release_is_lazy(self) -> None:
+        relpath = sorted(self.plan.agent_files)[0]
+        data = self.plan.agent_files[relpath]
+        head, _sep, rest = data.partition(b"\neffort: ")
+        effort, _newline, tail = rest.partition(b"\n")
+        windowed = head + b"\neffort: " + effort + b"\nautoCompactWindow: 128000\n" + tail
+        plan = dataclasses.replace(self.plan, agent_files={**self.plan.agent_files, relpath: windowed})
+        earlier = self.env_window(self.plan.settings)
+
+        def drift(agent_bytes: bytes, live_settings: dict[str, Any]) -> tuple[list[str], bool]:
+            live = scope.write_scope(self.root / str(len(list(self.root.iterdir()))), FIXED_SESSION,
+                                     dataclasses.replace(plan, settings=live_settings,
+                                                         agent_files={**plan.agent_files, relpath: agent_bytes}))
+            drifted = scope.live_drift(live, plan)
+            return drifted, scope.fork_policy_drift(live, plan, drifted)
+
+        drifted, lazy = drift(data, earlier)
+        self.assertEqual(sorted(drifted), sorted([f"{scope.SETTINGS_RELPATH} content differs",
+                                                  f"{relpath} content differs"]))
+        self.assertTrue(lazy)
+        # The agent file alone differing goes to doctor's catalog check.
+        self.assertFalse(drift(data, copy.deepcopy(plan.settings))[1])
+        # Any other agent-file change, or another own window, stays BLOCK.
+        self.assertFalse(drift(data.replace(b"effort: ", b"effort:  ", 1), earlier)[1])
+        self.assertFalse(drift(windowed.replace(b"128000", b"150000"), earlier)[1])
+        # A rollback compile without the window over a scope that has it.
+        rollback = dataclasses.replace(self.plan, settings=earlier)
+        live = scope.write_scope(self.root / "rollback", FIXED_SESSION, plan)
+        drifted = scope.live_drift(live, rollback)
+        self.assertEqual(len(drifted), 2)
+        self.assertTrue(scope.fork_policy_drift(live, rollback, drifted))
 
 
 class DenyTests(unittest.TestCase):

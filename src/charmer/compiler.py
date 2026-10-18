@@ -459,16 +459,21 @@ def agent_context_gaps(lineup: profile.ResolvedLineup, window: int) -> tuple[str
     hold more context than its route accepts (agents never shrink the lead
     window). An agent whose 1M class was narrowed to the 200K class
     (``profile.role_window``) is no gap unless its bound is below that
-    class too. Returns the affected agent ids in lineup order; unbound
-    lines are never checked. These are diagnostic predictions, not compile
-    or live-apply refusals; profile evaluation reports the actual numbers.
+    class too, and an agent with its own window (a bound from
+    ``profile.AGENT_WINDOW_MIN`` on) is none either. Returns the affected
+    agent ids in lineup order; unbound lines are never checked. These are
+    diagnostic predictions, not compile or live-apply refusals; profile
+    evaluation reports the actual numbers.
     """
+
+    from . import profile as profile_mod
 
     return tuple(
         rid
         for rid, agent in lineup.agents.items()
         if agent.binding.provider_context_tokens < agent.binding.client_context_tokens
         and agent.binding.provider_context_tokens < window
+        and agent.binding.provider_context_tokens < profile_mod.AGENT_WINDOW_MIN
     )
 
 
@@ -966,7 +971,9 @@ def compile_lineup_launch(
     if context.scalar is not None:
         env_set["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] = str(context.scalar)
     env_set.update(lineup.lead.env)
-    env_set["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] = str(context.window)
+    # The window is the scope's autoCompactWindow (``scope.WINDOW_ENV``
+    # stays cleared: in the environment it would outrank every agent's own
+    # window).
     env_set["CLAUDE_AUTOCOMPACT_PCT_OVERRIDE"] = str(context.percent)
     env_set.update(policy_env)
     env_set.update(bypass)

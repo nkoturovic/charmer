@@ -11,8 +11,8 @@ policy (the window ceiling over a 1M-class lead set, at the default percent):
 
 * ``lead``: the lead compacts at the session window's trigger;
 * ``agent``: a ``[1m]`` agent compacts at that same trigger;
-* ``no-window``: the same agent without the window policy (neither the
-  process environment nor the compiled settings) does not compact there;
+* ``no-window``: the same agent without the window policy (no compiled
+  window and no percent in the settings) does not compact there;
 * ``bounded``: an agent whose line's provider bound is below the session
   window runs on the alias without ``[1m]`` and compacts at the 200K class's
   trigger, below its bound.
@@ -224,16 +224,14 @@ class _WindowResponder(client_probe._Recorder):
 class ProductionCompileTests(unittest.TestCase):
     """What the probe runs: the production compile's selectors and policy."""
 
-    def test_the_session_policy_reaches_both_environments(self) -> None:
+    def test_the_session_policy_is_in_the_compiled_settings(self) -> None:
         case = production_compile()
         context, plan = case["context"], case["plan"]
         self.assertEqual(context.window, settings.WINDOW_CEILING_DEFAULT)
         self.assertEqual(context.percent, settings.COMPACTION_PERCENT_DEFAULT)
-        self.assertEqual(plan.settings["env"]["CLAUDE_CODE_AUTO_COMPACT_WINDOW"], str(context.window))
+        self.assertEqual(plan.settings[scope.AGENT_WINDOW_KEY], context.window)
+        self.assertEqual(plan.settings["env"]["CLAUDE_CODE_AUTO_COMPACT_WINDOW"], scope.WINDOW_ENV_NEUTRAL)
         self.assertEqual(plan.settings["env"]["CLAUDE_AUTOCOMPACT_PCT_OVERRIDE"], str(context.percent))
-        self.assertEqual(probe.ProbeCompactionPolicy(context.window, context.percent).environ(),
-                         {"CLAUDE_CODE_AUTO_COMPACT_WINDOW": str(context.window),
-                          "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": str(context.percent)})
 
     def test_a_1m_agent_runs_at_the_session_window(self) -> None:
         case = production_compile()
@@ -368,18 +366,20 @@ class AgentWindowProbe(client_probe._ProbeCase, unittest.TestCase):
         print(line(*cls.verdict), flush=True)
 
     def _case(self, name: str, compiled: dict, *, target: str, schedule: tuple[int, ...], window: bool) -> dict:
-        plan, context = compiled["plan"], compiled["context"]
+        plan = compiled["plan"]
         document = copy.deepcopy(plan.settings)
         env = {key: value for key, value in (document.get("env") or {}).items()
                if window or key not in _WINDOW_ENV}
         document["env"] = dict(env, **_HINTS)
+        if not window:
+            del document[scope.AGENT_WINDOW_KEY]
         fixture = self._fixture()
         live = scope.write_scope(fixture.root / "state", str(uuid.uuid4()), plan)
         responder = _WindowResponder(target, schedule)
-        policy = probe.ProbeCompactionPolicy(context.window, context.percent) if window else None
+        # As a launch: the window is the compiled settings key, never the
+        # process environment.
         result, responder = self._run(fixture, responder=responder, model=compiled["lead"].selector,
-                                      extra=("--add-dir", str(live)), document=document,
-                                      compaction=policy, timeout=240)
+                                      extra=("--add-dir", str(live)), document=document, timeout=240)
         self._complete(result)
         row = responder.observation()
         self.evidence[name] = row

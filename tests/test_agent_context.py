@@ -33,6 +33,14 @@ PERCENT_ENV = "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE"
 BELOW = 500_000  # a provider bound below the default session window
 
 
+def compiled_window(settings_doc) -> int:
+    """The session window a scope's settings carry: ``autoCompactWindow``,
+    with the window variable stated neutral in their env."""
+
+    assert settings_doc["env"][WINDOW_ENV] == "0", settings_doc["env"].get(WINDOW_ENV)
+    return settings_doc["autoCompactWindow"]
+
+
 # ------------------------------------------------------------------ fixture shapes
 
 
@@ -226,6 +234,42 @@ class RoleWindowRuleTests(unittest.TestCase):
         wide = self.role(bound=900_000, policy=policy)
         self.assertEqual((wide.selector, wide.window), ("x-high[1m]", 320_032))
 
+    def test_a_cm_agent_below_its_window_gets_its_own_window(self) -> None:
+        def own(selector, bound, client=200_000, policy=None):
+            return profile.role_window(selector, client_tokens=client, provider_tokens=bound,
+                                       policy=policy or self.POLICY, decide=False, own=True)
+
+        for bound in (100_000, 128_000, 199_999):
+            with self.subTest(bound=bound):
+                role = own("y-high", bound)
+                self.assertEqual((role.client_class, role.window, role.agent_window), (200_000, bound, bound))
+                self.assertEqual(role.trigger, compiler.reactive_trigger(bound, 90))
+                self.assertLess(role.trigger, bound)
+                # Shared (the lead, the workflow default): never its own.
+                shared = self.role("y-high", bound=bound, client=200_000, decide=False)
+                self.assertEqual((shared.window, shared.agent_window), (200_000, None))
+        # Below the client's smallest agent window, or at/above the window
+        # it shares, there is none.
+        self.assertEqual(profile.AGENT_WINDOW_MIN, 100_000)
+        for selector, bound, client in (("y-high", 99_999, 200_000), ("y-high", 200_000, 200_000),
+                                        ("x-high[1m]", 900_000, 1_000_000)):
+            with self.subTest(selector=selector, bound=bound):
+                role = own(selector, bound, client)
+                self.assertIsNone(role.agent_window)
+                self.assertEqual(role.window, min(role.client_class, 800_000))
+        # A 1M agent below a lowered session window keeps its class and gets
+        # its own window when it is read as bound.
+        role = own("x-high[1m]", 300_000, 1_000_000, profile.WindowPolicy(window=400_000, percent=90))
+        self.assertEqual((role.client_class, role.window, role.agent_window), (1_000_000, 300_000, 300_000))
+        # The scalar class: its own window below the scalar.
+        scalar = profile.WindowPolicy(window=320_032, percent=90, scalar=258_400)
+        self.assertEqual(own("y-high", 128_000, policy=scalar).agent_window, 128_000)
+        # The agent gate: an own window clears the capacity warning a shared
+        # one gives.
+        self.assertIsNotNone(profile.agent_window_problem("y-high", 128_000, client_tokens=200_000))
+        self.assertIsNone(profile.agent_window_problem("y-high", 128_000, client_tokens=200_000, own=True))
+        self.assertIsNotNone(profile.agent_window_problem("y-high", 64_000, client_tokens=200_000, own=True))
+
     def test_window_policy_over_the_lead_set(self) -> None:
         rows = [(1_000_000, 1_000_000, None), (872_000, 1_000_000, None)]
         self.assertEqual(profile.window_policy(rows, 90), profile.WindowPolicy(800_000, 90, None))
@@ -314,7 +358,7 @@ class MixedBoundsTests(unittest.TestCase):
                         self.assertLess(role.trigger, bound)
                     # The lead runs at the session window either way.
                     self.assertEqual(windows(lineup)["cm-lead"].window, CEILING)
-                    self.assertEqual(plan.settings["env"][WINDOW_ENV], str(CEILING))
+                    self.assertEqual(compiled_window(plan.settings), CEILING)
                     self.assertEqual(compiler.agent_context_gaps(lineup, CEILING), ())
 
     def test_a_narrowed_agent_needs_no_route_change(self) -> None:
@@ -349,8 +393,8 @@ class MixedBoundsTests(unittest.TestCase):
             self.assertTrue(lineup.agents[rid].binding.selector.endswith("[1m]"))
             self.assertEqual(rows[rid].window, 600_000)
         result = launch(self.bundle, docs, eff, lineup)
-        self.assertEqual(result.env_set[WINDOW_ENV], "600000")
-        self.assertEqual(result.scope_plan.settings["env"][WINDOW_ENV], "600000")
+        self.assertNotIn(WINDOW_ENV, result.env_set)
+        self.assertEqual(compiled_window(result.scope_plan.settings), 600_000)
 
     def test_a_lowered_ceiling_lowers_the_lead_and_agent_windows_alike(self) -> None:
         docs, lcat, eff, lineup = self.case(self.codex, BELOW, window_ceiling=400_000)
@@ -360,9 +404,9 @@ class MixedBoundsTests(unittest.TestCase):
                 self.assertEqual(role.window, 400_000)
                 self.assertTrue(role.selector.endswith("[1m]"))
         result = launch(self.bundle, docs, eff, lineup)
-        self.assertEqual((result.env_set[WINDOW_ENV], result.env_set[PERCENT_ENV]), ("400000", "90"))
+        self.assertEqual((WINDOW_ENV in result.env_set, result.env_set[PERCENT_ENV]), (False, "90"))
         env = result.scope_plan.settings["env"]
-        self.assertEqual((env[WINDOW_ENV], env[PERCENT_ENV]), ("400000", "90"))
+        self.assertEqual((compiled_window(result.scope_plan.settings), env[PERCENT_ENV]), (400_000, "90"))
         context = strict_json.loads(result.scope_plan.other_files["lead-set.json"])["context"]
         self.assertEqual((context["window"], context["trigger"]), (400_000, compiler.reactive_trigger(400_000, 90)))
 
@@ -416,26 +460,48 @@ class MixedBoundsTests(unittest.TestCase):
                          small_entry["efforts"][small_entry["default_effort"]]["selector"])
         self.assertEqual(rows[slot].window, min(profile.CLASS_STANDARD, bound))
         result = launch(self.bundle, self.docs, eff, lineup)
-        self.assertEqual(result.env_set[WINDOW_ENV], str(bound))
+        self.assertEqual(compiled_window(result.scope_plan.settings), bound)
 
-    def test_risky_agent_and_workflow_use_actual_shared_window_without_refusal(self) -> None:
+    def test_a_small_bound_agent_gets_its_own_window_and_the_workflow_default_warns(self) -> None:
         docs = bounded(self.docs, self.codex, 128_000)
         entry = docs["models"]["models"][self.codex]
         document = agents_on(narrowed_balanced(self.bundle), self.codex, docs, "cm-analyst")
         lcat, eff, lineup = self.resolve(
             docs, document, workflow_default_binding={"model": self.codex, "effort": entry["default_effort"]})
         role = windows(lineup)["cm-analyst"]
-        self.assertEqual((role.client_class, role.window, role.trigger), (200_000, 200_000, 162_000))
-        risk = next(w for w in lineup.warnings if w.code == "context-risk" and w.slot == "cm-analyst")
-        for actual in ("200000", "800000", "162000", "128000"):
-            self.assertIn(actual, risk.message)
+        # The cm-* agent compacts at its own window, the bound: no overflow.
+        self.assertEqual((role.client_class, role.window, role.trigger, role.agent_window),
+                         (200_000, 128_000, 95_000, 128_000))
+        self.assertFalse([w for w in lineup.warnings if w.code == "context-risk" and w.slot == "cm-analyst"])
         result = launch(self.bundle, docs, eff, lineup)
         self.assertIn(role.selector, result.scope_plan.settings["availableModels"])
+        self.assertIn(b"\nautoCompactWindow: 128000\n", result.scope_plan.agent_files[".claude/agents/cm-analyst.md"])
+        # Only agents on the small-bound line carry a window of their own.
+        for rid, agent in lineup.agents.items():
+            with self.subTest(agent=rid):
+                data = result.scope_plan.agent_files[f".claude/agents/{rid}.md"]
+                self.assertEqual(b"autoCompactWindow" in data, agent.binding.key == self.codex)
+        # A workflow agent has no agent file: the workflow default keeps the
+        # shared window and warns.
         workflow = scope.workflow_default_window(lcat, eff, policy=lineup.policy)
-        self.assertEqual(workflow.window, 200_000)
+        self.assertEqual((workflow.window, workflow.agent_window), (200_000, None))
         warnings = scope.workflow_default_warnings(lcat, eff, policy=lineup.policy)
         self.assertTrue(any(w.code == "context-risk" and "128000" in w.message for w in warnings))
         self.assertNotIn(b"context overflow", result.scope_plan.other_files["lineup.md"])
+
+    def test_below_the_smallest_agent_window_the_agent_warns_without_refusal(self) -> None:
+        docs = bounded(self.docs, self.codex, 64_000)
+        document = agents_on(narrowed_balanced(self.bundle), self.codex, docs, "cm-analyst")
+        lcat, eff, lineup = self.resolve(docs, document)
+        role = windows(lineup)["cm-analyst"]
+        self.assertEqual((role.client_class, role.window, role.trigger, role.agent_window),
+                         (200_000, 200_000, 162_000, None))
+        risk = next(w for w in lineup.warnings if w.code == "context-risk" and w.slot == "cm-analyst")
+        for actual in ("200000", "800000", "162000", "64000"):
+            self.assertIn(actual, risk.message)
+        result = launch(self.bundle, docs, eff, lineup)
+        self.assertIn(role.selector, result.scope_plan.settings["availableModels"])
+        self.assertNotIn(b"autoCompactWindow", result.scope_plan.agent_files[".claude/agents/cm-analyst.md"])
 
     def test_legacy_suffixless_agent_never_invents_a_1m_class(self) -> None:
         registry = {"version": 1, "providers": {}, "models": {
@@ -477,7 +543,7 @@ class MixedBoundsTests(unittest.TestCase):
         selector = codex["efforts"][codex["default_effort"]]["selector"]
         self.assertTrue(selector.endswith("[1m]"))
         self.assertEqual(result.scope_plan.settings["env"]["CLAUDE_CODE_SUBAGENT_MODEL"], selector)
-        self.assertEqual(result.env_set[WINDOW_ENV], "262144")
+        self.assertEqual(compiled_window(result.scope_plan.settings), 262_144)
         role = scope.workflow_default_window(lcat, eff, policy=lineup.policy)
         self.assertEqual(role.window, 262_144)
 
@@ -486,8 +552,9 @@ class MixedBoundsTests(unittest.TestCase):
 
 
 class CompiledEnvTests(unittest.TestCase):
-    """The process env and the compiled settings ``env`` carry the session
-    window and percent with 1M-class agents."""
+    """The compiled settings carry the session window (``autoCompactWindow``)
+    and the process env and the settings ``env`` the percent, with 1M-class
+    agents."""
 
     def test_1m_lead_set_with_872k_agent_lines(self) -> None:
         bundle = _bundle()
@@ -500,8 +567,10 @@ class CompiledEnvTests(unittest.TestCase):
         self.assertTrue(on_line)
         self.assertTrue(all(agent.binding.selector.endswith("[1m]") for agent in lineup.agents.values()))
         result = launch(bundle, docs, eff, lineup)
+        self.assertEqual(compiled_window(result.scope_plan.settings), 800_000)
+        self.assertNotIn(WINDOW_ENV, result.env_set)
         for env in (result.env_set, result.scope_plan.settings["env"]):
-            self.assertEqual((env[WINDOW_ENV], env[PERCENT_ENV]), ("800000", "90"))
+            self.assertEqual(env[PERCENT_ENV], "90")
         for rid in on_line:
             self.assertTrue(frontmatter_model(result.scope_plan, rid).endswith("[1m]"))
             self.assertEqual(windows(lineup)[rid].trigger, 702_000)
@@ -515,8 +584,9 @@ class CompiledEnvTests(unittest.TestCase):
         lineup = profile.resolve(document, lcat, effective=eff)
         self.assertEqual(lineup.policy, profile.WindowPolicy(800_000, 70, None))
         result = launch(bundle, bundle.docs, eff, lineup)
+        self.assertEqual(compiled_window(result.scope_plan.settings), 800_000)
         for env in (result.env_set, result.scope_plan.settings["env"]):
-            self.assertEqual((env[WINDOW_ENV], env[PERCENT_ENV]), ("800000", "70"))
+            self.assertEqual(env[PERCENT_ENV], "70")
         self.assertEqual({role.trigger for role in windows(lineup).values()},
                          {compiler.reactive_trigger(800_000, 70)})
 
@@ -566,7 +636,9 @@ class RecordAuthorityWindowTests(_v4.V4Case):
         choices.update(self.env, window_ceiling=choices.WINDOW_CEILING_DEFAULT)  # back to the default
         mid = record["managed_id"]
         self.assertEqual(sessions.recorded_window(record), 400_000)
-        self.assertEqual(self.execs[-1][2][WINDOW_ENV], "400000")
+        self.assertNotIn(WINDOW_ENV, self.execs[-1][2])
+        live = strict_json.loads((self.live(record["managed_id"]) / "settings.json").read_bytes())
+        self.assertEqual(compiled_window(live), 400_000)
         slots = sorted(rid for rid, b in record["applied"]["agents"].items() if b["key"] == key)
         self.assertTrue(slots)
         self.assertTrue(all(record["applied"]["agents"][rid]["selector"].endswith("[1m]") for rid in slots))
@@ -670,9 +742,9 @@ class WindowCeilingRuntimeTests(_v4.V4Case):
         self.assertEqual(self.runtime.settings_effective().window_ceiling, CEILING)
         record = self.launch_fresh()
         self.assertEqual(sessions.recorded_window(record), 400_000)
-        self.assertEqual((self.execs[-1][2][WINDOW_ENV], self.execs[-1][2][PERCENT_ENV]), ("400000", "90"))
+        self.assertEqual((WINDOW_ENV in self.execs[-1][2], self.execs[-1][2][PERCENT_ENV]), (False, "90"))
         live = strict_json.loads((self.live(record["managed_id"]) / "settings.json").read_bytes())
-        self.assertEqual(live["env"][WINDOW_ENV], "400000")
+        self.assertEqual(compiled_window(live), 400_000)
         # 1M-class agents keep [1m] and run at the lowered window like the lead.
         agents = record["applied"]["agents"]
         self.assertTrue(agents)
@@ -722,8 +794,8 @@ class WindowCeilingRuntimeTests(_v4.V4Case):
         trigger = compiler.reactive_trigger(500_000, 90)
         self.assertTrue(all(line.endswith(f"window 500000 · compacts at {trigger}") for line in rows), rows)
         self.assertTrue(all("[1m] · 1M class" in line for line in rows), rows)
-        self.assertIn(f"compaction env (process and scope settings): {WINDOW_ENV}=500000 {PERCENT_ENV}=90\n",
-                      text)
+        self.assertIn("compaction window (scope settings): autoCompactWindow=500000\n", text)
+        self.assertIn(f"compaction env (process and scope settings): {PERCENT_ENV}=90\n", text)
         self.assertNotIn(_v4.FIXTURE_GATEWAY_TOKEN, text)
 
     def test_the_command_shows_sets_and_resets(self) -> None:
@@ -799,7 +871,7 @@ class WindowCeilingRuntimeTests(_v4.V4Case):
         prepared = self.runtime.prepare(self.profile_target(), action="fresh", passthrough=[])
         # The plan states the one ceiling it was compiled with.
         self.assertEqual(prepared.window_ceiling, choices.WindowCeiling(CEILING, False))
-        self.assertEqual(prepared.result.env_set[WINDOW_ENV], str(CEILING))
+        self.assertEqual(compiled_window(prepared.result.scope_plan.settings), CEILING)
         choices.update(self.env, window_ceiling=200_000)
         with self.assertRaises(launch.LaunchError) as caught:
             self.runtime.perform(prepared)
@@ -818,7 +890,7 @@ class WindowCeilingRuntimeTests(_v4.V4Case):
         state.atomic_write(path, b'{"version": 1}')
         self.runtime.perform(prepared)
         self.assertEqual(len(self.execs), 1)
-        self.assertEqual(self.execs[0][2][WINDOW_ENV], str(CEILING))
+        self.assertNotIn(WINDOW_ENV, self.execs[0][2])
 
     def test_the_commit_barrier_checks_the_ceiling_again(self) -> None:
         from unittest import mock
@@ -841,6 +913,40 @@ class WindowCeilingRuntimeTests(_v4.V4Case):
         self.assertEqual(self.execs, [])
         self.assertEqual(self.store.scan_uuid_records(), [])
 
+    def test_an_agents_own_window_is_launched_shown_and_moved_to_at_resume(self) -> None:
+        import io
+        from charmer import cli
+        from charmer.cli import launch_flow
+
+        root, key = write_bounded_assets(self.root / "assets", codex_line, 128_000)
+        self.runtime = self.make_runtime(asset_root=root)
+        document = narrowed_balanced(self.runtime.catalog)
+        self.runtime.profiles.new(document)
+        target = cli.LaunchTarget("profile", document, document["name"], False, "Narrow")
+        prepared = self.runtime.prepare(target, action="fresh", passthrough=[], read_only=True)
+        own = [rid for rid, agent in prepared.lineup.agents.items() if agent.binding.key == key]
+        self.assertTrue(own)
+        buffer = io.StringIO()
+        launch_flow._print_launch_plan(prepared, buffer)
+        rows = {line.split()[0]: line for line in buffer.getvalue().splitlines() if " class · window " in line}
+        for rid in own:
+            self.assertTrue(rows[profile.label(rid)].endswith("· 200K class · window 128000 (own) · compacts at 95000"),
+                            rows[profile.label(rid)])
+        self.assertTrue(rows["lead"].endswith(f"window {CEILING} · compacts at 702000"), rows["lead"])
+        record = self.launch_fresh(target)
+        mid = record["managed_id"]
+        for rid in own:
+            agent_file = (self.live(mid) / ".claude/agents" / f"{rid}.md").read_bytes()
+            self.assertIn(b"\nautoCompactWindow: 128000\n", agent_file)
+        # This release's session resumes without a window row.
+        self.assertFalse([line for line in self.prepare_resume(mid).diff if "agent window" in line])
+        # A session an earlier launcher recorded ran its agents at their
+        # class window: the resume shows each move and applies it.
+        self.mutate(mid, launcher_version="2.0.1")
+        prepared = self.prepare_resume(mid)
+        rows = [line for line in prepared.diff if "agent window" in line]
+        self.assertEqual(rows, [f"  {profile.label(rid) + ' agent window':<20} 200K → 128K" for rid in own])
+
     def test_print_launch_states_the_ceiling_the_plan_was_compiled_with(self) -> None:
         import io
         from unittest import mock
@@ -857,7 +963,7 @@ class WindowCeilingRuntimeTests(_v4.V4Case):
         buffer = io.StringIO()
         launch_flow._print_launch_plan(prepared, buffer)
         self.assertIn("context windows (ceiling 500000, set):\n", buffer.getvalue())
-        self.assertEqual(prepared.result.env_set[WINDOW_ENV], "500000")
+        self.assertEqual(compiled_window(prepared.result.scope_plan.settings), 500_000)
 
 
 
@@ -933,6 +1039,37 @@ class WindowDisplayTests(unittest.TestCase):
                          f"200K (compacts at ~162K) {', '.join(narrow)}")
         text = lineup_mod.render_text(mixed, header="profile narrow", profile_view=True)
         self.assertIn(lineup_mod.window_summary(mixed) + "\n", text)
+
+    def own_window_lineup(self):
+        bundle = _bundle()
+        key = codex_line(bundle.docs)
+        lcat = _lcat(bounded(bundle.docs, key, 128_000))
+        return key, profile.resolve(agents_on(narrowed_balanced(bundle), key, bundle.docs, "cm-analyst"), lcat,
+                                    effective=_eff(lcat))
+
+    def test_an_agents_own_window_is_marked_in_the_card_and_the_summary(self) -> None:
+        from charmer import lineup as lineup_mod
+
+        key, lineup = self.own_window_lineup()
+        own = [profile.label(rid) for rid, agent in lineup.agents.items() if agent.binding.key == key]
+        shared = [profile.label(rid) for rid, agent in lineup.agents.items() if agent.binding.key != key]
+        self.assertTrue(own and shared)
+        card = self.card(lineup)
+        self.assertEqual(next(row for row in card.rows if row.kind == "header").cells,
+                         views.CARD_WINDOW_TABLE_COLUMNS)
+        cells = {row.cells[0]: row.cells for row in card.rows if row.kind == "agent"}
+        for label in own:
+            self.assertEqual(cells[label][4], "128K own")
+        for label in shared:
+            self.assertEqual(cells[label][4], "800K")
+        self.assertEqual(lineup_mod.window_summary(lineup),
+                         f"context windows (90 %): 800K (compacts at ~702K) {', '.join(['lead', *shared])} · "
+                         f"128K own (compacts at ~95K) {', '.join(own)}")
+        rows = {row.role: row for row in views.role_window_rows(lineup)}
+        self.assertEqual([(label, rows[label].window, rows[label].own) for label in own],
+                         [(label, 128_000, True) for label in own])
+        self.assertFalse(rows["lead"].own)
+        self.assertEqual(views.window_cell(windows(lineup)["cm-lead"]), "800K")
 
     def test_the_settings_row_shows_value_and_source(self) -> None:
         lcat = _lcat(_bundle().docs)
@@ -1017,7 +1154,7 @@ class WindowCeilingSettingsScreenTests(test_screens_catalog._ScreenCase):
 class ShippedAgentClassTests(unittest.TestCase):
     """The shipped catalog: no line carries an agent class of its own; every
     seed's agents on 1M-class lines whose bound is at least the session
-    window use ``[1m]`` and compact at the window, both envs carry it."""
+    window use ``[1m]`` and compact at the window the settings carry."""
 
     def test_no_line_carries_an_agent_class(self) -> None:
         bundle = catalog.load_catalog(SHIPPED_ROOT)
@@ -1036,8 +1173,8 @@ class ShippedAgentClassTests(unittest.TestCase):
             with self.subTest(seed=name):
                 lineup = profile.resolve(bundle.seed_profiles[name], lcat, effective=eff)
                 result = launch(bundle, bundle.docs, eff, lineup)
-                window = int(result.env_set[WINDOW_ENV])
-                self.assertEqual(result.scope_plan.settings["env"][WINDOW_ENV], str(window))
+                window = compiled_window(result.scope_plan.settings)
+                self.assertNotIn(WINDOW_ENV, result.env_set)
                 self.assertEqual(window, lineup.policy.window)
                 self.assertLessEqual(window, CEILING)
                 for rid, agent in lineup.agents.items():

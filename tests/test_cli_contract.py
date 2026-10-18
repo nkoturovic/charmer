@@ -597,8 +597,8 @@ class ReadOnlyEntryProcessTests(unittest.TestCase):
         self.assertIn("context windows (ceiling", result.stdout)
         for role in roles:
             self.assertRegex(result.stdout, rf"(?m)^  {role}\s+\S+ · .+ class · window \d+ · compacts at \d+$")
+        self.assertRegex(result.stdout, r"(?m)^compaction window \(scope settings\): autoCompactWindow=\d+$")
         self.assertRegex(result.stdout, r"(?m)^compaction env \(process and scope settings\): "
-                                       r"CLAUDE_CODE_AUTO_COMPACT_WINDOW=\d+ "
                                        r"CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=\d+"
                                        r"(?: CLAUDE_CODE_MAX_CONTEXT_TOKENS=\d+)?$")
         self.assertIn("would launch", result.stdout)

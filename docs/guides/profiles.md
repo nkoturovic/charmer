@@ -201,9 +201,11 @@ warns that Explore remains disabled; it is never silently re-enabled.
 A profile's card warns about missing/stale admission, missing/failed/stale
 qualification, capability or role recommendations, missing companion grades,
 provider concentration, weak strong grades and strict tool schemas. It also
-warns when the actual shared client window or compaction trigger can exceed
-a model's provider bound. A small provider limit does not create a smaller
-per-agent window ([context windows](models.md#context-windows)).
+warns when the actual client window or compaction trigger can exceed a
+model's provider bound. A `cm-*` agent on a line bounded below its window
+gets its own window, the bound, from 100K tokens on; below that, and for the
+lead and the workflow default, the card warns
+([context windows](models.md#context-windows)).
 
 Review routing prefers **recognized different families**. For a recognized
 equal pair it reports **same-family**; when either family is unknown or

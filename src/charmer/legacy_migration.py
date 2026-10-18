@@ -1676,8 +1676,9 @@ def _earlier_launch_items(settings: dict[str, Any], renamed: Mapping[str, Any]) 
     option's model under its earlier name and its description under the
     earlier product name, and the lifecycle ``env`` keys under their earlier
     names (values kept, a selector value under its earlier name), without
-    the :data:`LATER_ENV_KEYS`. Every other key stays; the earlier release's
-    repair recompiles those."""
+    the :data:`LATER_ENV_KEYS` and with the session window as the window
+    variable again. Every other key stays; the earlier release's repair
+    recompiles those."""
 
     updated = dict(settings)
     available = settings.get("availableModels")
@@ -1700,6 +1701,12 @@ def _earlier_launch_items(settings: dict[str, Any], renamed: Mapping[str, Any]) 
     if isinstance(env, dict):
         updated["env"] = {_earlier_env_name(key): earlier_selector(renamed, value) for key, value in env.items()
                           if key not in LATER_ENV_KEYS}
+        # The earlier release compiled the session window as the window
+        # variable alone; charmer states it neutral beside autoCompactWindow.
+        window = settings.get(scope.AGENT_WINDOW_KEY)
+        if (isinstance(window, int) and not isinstance(window, bool)
+                and updated["env"].get(scope.WINDOW_ENV) == scope.WINDOW_ENV_NEUTRAL):
+            updated["env"][scope.WINDOW_ENV] = str(window)
     return updated
 
 

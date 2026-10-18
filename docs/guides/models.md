@@ -208,28 +208,43 @@ charmer window-ceiling 400K       # set it (applies at the next launch or resume
 charmer window-ceiling --reset    # back to 800K
 ```
 
-Settings (**O**) has the same row. A session's process window is the smaller
-of the ceiling and the smallest provider bound among its lead set. A
-1M-class agent whose provider bound reaches that window keeps the 1M class
-and shares that window; one whose bound falls below it uses the existing
-200K fallback. In scalar-window sessions, agents share that process policy.
-A new binding using a legacy suffixless selector uses the actual scalar or
-200K client class, not 1M merely because its declaration says 1M. There is
-no separately adjustable per-agent provider-sized window.
+Settings (**O**) has the same row. A session's window is the smaller of the
+ceiling and the smallest provider bound among its lead set. A 1M-class
+agent whose provider bound reaches that window keeps the 1M class and
+shares that window; one whose bound falls below it uses the existing 200K
+fallback. In scalar-window sessions, agents share that policy. A new
+binding using a legacy suffixless selector uses the actual scalar or 200K
+client class, not 1M merely because its declaration says 1M.
 
-For example, with an 800K process window a line bounded at 872K can keep
-its 1M class, while a 500K line falls back to 200K. A 128K provider bound
-cannot make a 200K-class agent's window 128K: a request can overflow the
-provider before the client compacts. The card, lineup summary (`/cm show`,
-`charmer profile show <name>`) and `--print-launch` show the actual
-client class and effective window; warnings name the process window,
-compaction trigger and provider bound where they mismatch. Such predictions
-warn rather than block. Never inflate declared capacity to hide a warning.
-Concrete invalid-window or native selector limits still refuse.
+A `cm-*` agent whose provider bound is still below the window it would
+share gets **its own window**: the bound itself, so it compacts at the
+session percent of its bound, before the provider overflows. For example,
+with an 800K session window a line bounded at 872K keeps its 1M class, a
+500K line falls back to 200K, and a 128K line runs at its own 128K window
+(compacting at about 95K at 90 %). There is no knob for it: it follows the
+line's provider bound. Claude Code takes an agent's own window from 100K
+tokens on, so a line bounded below 100K keeps the 200K class and can still
+overflow; the card warns about it. The lead and agents without a `cm-*`
+type (the workflow default) always share the session window.
+
+The card, lineup summary (`/cm show`, `charmer profile show <name>`) and
+`--print-launch` show each role's actual client class and effective window,
+an agent's own window marked "own" (for example "128K own (compacts at
+~95K) reviewer"); warnings name the session window, compaction trigger and
+provider bound where they mismatch. Such predictions warn rather than
+block. Never inflate declared capacity to hide a warning. Concrete
+invalid-window or native selector limits still refuse.
+
+Your own Claude Code settings cannot move a managed session's window: the
+session's settings state it (`autoCompactWindow`), and they outrank your
+user, project and local settings, `/autocompact` and an inherited
+`CLAUDE_CODE_AUTO_COMPACT_WINDOW`. A managed policy still can.
 
 A session recorded with agents in another class keeps them until its next
 resume, which shows each move (for example "agent class 200K → 1M");
-doctor lists pending moves as Attention.
+doctor lists pending moves as Attention. A session an earlier charmer
+recorded gets its agents' own windows at its next resume, which shows each
+one (for example "reviewer agent window 200K → 128K").
 
 Third-party providers' token counts are estimated locally by the gateway,
 so context figures on those models are approximate.

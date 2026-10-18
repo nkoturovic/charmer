@@ -103,6 +103,7 @@ __all__ = [
     "AgentGate",
     "RoleWindow",
     "WindowPolicy",
+    "AGENT_WINDOW_MIN",
     "agent_class_window",
     "agent_compaction_trigger",
     "agent_selectors",
@@ -391,19 +392,25 @@ def binding_selector(
 
 # ------------------------------------------------------------ context windows
 #
-# One process-wide compaction policy per session: the window
-# (``CLAUDE_CODE_AUTO_COMPACT_WINDOW``) is min(ceiling, the lead set's
-# smallest provider bound) and the percent is
-# ``CLAUDE_AUTOCOMPACT_PCT_OVERRIDE``. The pinned client applies that window
-# to the lead and to every subagent in the 1M class (a ``[1m]`` selector);
-# a selector without ``[1m]`` runs in the client's 200K class (or the
-# exported ``CLAUDE_CODE_MAX_CONTEXT_TOKENS``). :func:`role_window` is the
-# one rule that decides each role's class and effective window from that
-# policy: an agent on a 1M-class line whose provider bound is at least the
-# session window keeps ``[1m]`` and runs at the window; one whose bound is
-# below it uses the same alias without ``[1m]``, so it compacts in the 200K
-# class. Very small provider bounds can still overflow; evaluation warns.
+# One compaction policy per session: the window (the compiled
+# ``autoCompactWindow``) is min(ceiling, the lead set's smallest provider
+# bound) and the percent is ``CLAUDE_AUTOCOMPACT_PCT_OVERRIDE``. The pinned
+# client applies that window to the lead and to every subagent in the 1M
+# class (a ``[1m]`` selector); a selector without ``[1m]`` runs in the
+# client's 200K class (or the exported ``CLAUDE_CODE_MAX_CONTEXT_TOKENS``).
+# :func:`role_window` is the one rule that decides each role's class and
+# effective window from that policy: an agent on a 1M-class line whose
+# provider bound is at least the session window keeps ``[1m]`` and runs at
+# the window; one whose bound is below it uses the same alias without
+# ``[1m]``, so it compacts in the 200K class. A ``cm-*`` agent whose
+# provider bound is still below that window gets its own window (its agent
+# file's ``autoCompactWindow``), the bound itself, so it compacts below the
+# bound; the client takes one from :data:`AGENT_WINDOW_MIN` on. Below that
+# floor the agent can still overflow; evaluation warns.
 SUFFIX_1M = "[1m]"
+# The smallest own window the pinned client accepts for an agent (frontmatter
+# ``autoCompactWindow``, 100K to 1M tokens; anything else is ignored).
+AGENT_WINDOW_MIN = 100_000
 
 
 @dataclass(frozen=True)
@@ -421,9 +428,12 @@ class RoleWindow:
 
     selector: str  # the selector the role uses
     client_class: int  # the client's context class for that selector
-    window: int  # the effective compaction window: min(class, session window)
+    window: int  # the effective compaction window: min(class, session window), or its own
     trigger: int  # the reactive compaction trigger at the policy percent
     narrowed: bool = False  # a 1M-class line kept in the 200K class (bound below the window)
+    # A cm-* agent's own window (its provider bound, below the window it
+    # would share), compiled into its agent file; None when it shares.
+    agent_window: int | None = None
 
 
 def default_policy(effective: "settings.Effective | None" = None, *,
@@ -467,6 +477,7 @@ def window_policy(
 
 def role_window(
     selector: str, *, client_tokens: int, provider_tokens: int, policy: WindowPolicy, decide: bool,
+    own: bool = False,
 ) -> RoleWindow:
     """The one rule for a role's context class and effective window.
 
@@ -477,7 +488,13 @@ def role_window(
     selector as bound (the lead, a resolved or recorded binding). The class
     is 1M for ``[1m]``; otherwise the exported scalar when the policy has
     one, else 200K for a newly decided agent. Reading an already bound
-    selector retains its ``client_tokens``."""
+    selector retains its ``client_tokens``.
+
+    ``own`` True is a ``cm-*`` agent, which can carry its own window: when
+    ``provider_tokens`` is below the effective window and at least
+    :data:`AGENT_WINDOW_MIN`, the window is the bound (``agent_window``) and
+    the trigger follows it. The lead and the workflow default never do (a
+    workflow agent without a ``cm-*`` type has no agent file)."""
 
     narrowed = decide and selector.endswith(SUFFIX_1M) and provider_tokens < policy.window
     if narrowed:
@@ -489,7 +506,11 @@ def role_window(
     else:
         client = CLASS_STANDARD if decide else client_tokens
     window = min(client, policy.window)
-    return RoleWindow(selector, client, window, agent_compaction_trigger(window, policy.percent), narrowed)
+    agent_window = None
+    if own and AGENT_WINDOW_MIN <= provider_tokens < window:
+        window = agent_window = provider_tokens
+    return RoleWindow(selector, client, window, agent_compaction_trigger(window, policy.percent), narrowed,
+                      agent_window)
 
 
 def lead_set_member(entry: Mapping[str, Any], provider_id: str, lead_class: str | None,
@@ -561,7 +582,7 @@ def line_agent_window_problems(entry: Mapping[str, Any], provider: Mapping[str, 
     problems = []
     for selector in agent_selectors(entry, provider):
         problem = agent_window_problem(selector, bound, policy=policy,
-                                       client_tokens=context.get("client_tokens"))
+                                       client_tokens=context.get("client_tokens"), own=True)
         if problem is not None:
             problems.append(f"{selector}: {problem}")
     return tuple(problems)
@@ -619,7 +640,8 @@ def lineup_windows(lineup: "ResolvedLineup") -> tuple[tuple[str, RoleWindow], ..
     rows = [(LEAD_ROLE, lineup.lead.binding)] + [(rid, agent.binding) for rid, agent in lineup.agents.items()]
     return tuple(
         (slot, role_window(binding.selector, client_tokens=binding.client_context_tokens,
-                           provider_tokens=binding.provider_context_tokens, policy=policy, decide=False))
+                           provider_tokens=binding.provider_context_tokens, policy=policy, decide=False,
+                           own=slot != LEAD_ROLE))
         for slot, binding in rows
     )
 
@@ -766,18 +788,19 @@ def agent_compaction_trigger(class_window: int, percent: int = settings.COMPACTI
 
 
 def agent_window_problem(selector: str, provider_tokens: int, *, policy: WindowPolicy | None = None,
-                         client_tokens: int | None = None) -> str | None:
+                         client_tokens: int | None = None, own: bool = False) -> str | None:
     """Why an agent's client window or compaction trigger exceeds its
     provider bound under ``policy`` (the default policy at the largest
     percent without one), or None. The class is decided by
     :func:`role_window`; ``client_tokens`` is the line's client class (by
-    default the selector's). The text names the numbers."""
+    default the selector's); ``own`` True is a ``cm-*`` agent, which can
+    carry its own window. The text names the numbers."""
 
     policy = policy or default_policy()
     if not isinstance(client_tokens, int) or isinstance(client_tokens, bool):
         client_tokens = agent_class_window(selector)
     role = role_window(selector, client_tokens=client_tokens, provider_tokens=provider_tokens,
-                       policy=policy, decide=True)
+                       policy=policy, decide=True, own=own)
     if role.window <= provider_tokens and role.trigger <= provider_tokens:
         return None
     return _window_risk_text(role, provider_tokens, policy)
@@ -905,7 +928,7 @@ def agent_eligibility(
         remedies.append("bind an effort with an existing selector mapping")
     else:
         window = agent_window_problem(selector, int(context.get("provider_tokens", 0)), policy=policy,
-                                      client_tokens=context.get("client_tokens"))
+                                      client_tokens=context.get("client_tokens"), own=use != WORKFLOW_USE)
         if window is not None:
             warn("context-risk", window)
     warnings.extend(qualification_warnings(key, facts, slot=slot, use=use))
@@ -1834,7 +1857,8 @@ def _warnings(
         binding = agent.binding
         active_policy = policy or default_policy(percent=settings.COMPACTION_PERCENT_DEFAULT)
         role = role_window(binding.selector, client_tokens=binding.client_context_tokens,
-                           provider_tokens=binding.provider_context_tokens, policy=active_policy, decide=False)
+                           provider_tokens=binding.provider_context_tokens, policy=active_policy, decide=False,
+                           own=True)
         if role.window > binding.provider_context_tokens or role.trigger > binding.provider_context_tokens:
             message = f"{label(rid)}: {_window_risk_text(role, binding.provider_context_tokens, active_policy)}"
             found.append(Finding("context-risk", rid, message, f"{label(rid)}: context overflow risk"))

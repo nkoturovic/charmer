@@ -190,13 +190,20 @@ class GateTests(unittest.TestCase):
             "capability-recommendation": dict(self.ENTRY, capabilities=["lead"]),
             "role-recommendation": dict(self.ENTRY, roles=["cm-explorer"]),
             "lead-env-ignored": dict(self.ENTRY, lead={"effort": "high", "env": {"X": "1"}}),
-            "context-risk": dict(self.ENTRY, context={"client_tokens": 200000, "provider_tokens": 131072}),
+            # Below the 100K smallest agent window: no own window, so it warns.
+            "context-risk": dict(self.ENTRY, context={"client_tokens": 200000, "provider_tokens": 64000}),
         }
         for code, entry in entry_cases.items():
             with self.subTest(code=code):
                 verdict = self.verdict(entry=entry)
                 self.assertTrue(verdict.eligible, verdict.reasons)
                 self.assertIn(code, {w.code for w in verdict.warnings})
+        # From 100K the agent compacts in its own window, so nothing warns;
+        # as the workflow default it shares the class window and warns.
+        own = dict(self.ENTRY, context={"client_tokens": 200000, "provider_tokens": 131072})
+        self.assertNotIn("context-risk", {w.code for w in self.verdict(entry=own).warnings})
+        workflow = self.verdict(entry=own, slot=None, use=profile_mod.WORKFLOW_USE)
+        self.assertIn("context-risk", {w.code for w in workflow.warnings})
         fact_cases = (
             ("admission", "not admitted", replace(self.FACTS, admitted=False)),
             ("family-unknown", "independence unknown", replace(self.FACTS, family="acme")),
@@ -437,7 +444,10 @@ class PermissiveDeclarationsTests(AgentCase):
         agent = prepared.lineup.agents["cm-reviewer"].binding
         self.assertEqual(agent.selector, "custom-lan-model")
         self.assertEqual(agent.client_context_tokens, 200000)
-        self.assertIn("context-risk", {w.code for w in prepared.lineup.warnings})
+        # Its 128K bound is its own window, so it does not warn.
+        self.assertNotIn("context-risk", {w.code for w in prepared.lineup.warnings})
+        self.assertIn("autoCompactWindow: 128000\n",
+                      prepared.result.scope_plan.agent_files[".claude/agents/cm-reviewer.md"].decode())
         snapshot = self.runtime.operator_snapshot()
         plan = operator_mod.render_plan(self.runtime.catalog.docs, snapshot.layer, snapshot.ledger)
         config, _available, _unavailable, _info = render.build_config_document(
@@ -477,7 +487,7 @@ class OperatorAgentWindowTests(AgentCase):
         role = dict(profile_mod.lineup_windows(prepared.lineup))["cm-reviewer"]
         self.assertEqual((role.client_class, role.window), (200_000, 200_000))
         self.assertLess(role.trigger, 500_000)
-        self.assertEqual(prepared.result.env_set["CLAUDE_CODE_AUTO_COMPACT_WINDOW"], "800000")
+        self.assertEqual(settings_doc["autoCompactWindow"], 800000)
 
     def test_a_line_at_the_window_runs_in_the_1m_class(self) -> None:
         prepared = self._prepared(1_000_000)
