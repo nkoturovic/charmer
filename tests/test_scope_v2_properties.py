@@ -160,6 +160,8 @@ def oracle_denies(native: dict[str, str], aliases, no_subagents: bool) -> list[s
             denies.append("Agent(Plan)")
     if native["general_purpose"] == "off":
         denies.append("Agent(general-purpose)")
+    # Fork subagents are no lineup agent: denied in every scope (2.1.302 pin).
+    denies.append("Agent(fork)")
     for alias in sorted(set(aliases)):
         if f"Agent({alias})" not in denies:
             denies.append(f"Agent({alias})")

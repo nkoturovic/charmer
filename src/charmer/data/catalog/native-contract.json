@@ -72,6 +72,10 @@
       "note": "Client check S10-precedence (client 2.1.302): CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL (2.1.296+) in a settings env or the process env runs every workflow agent on its model, over a cm-* agentType's frontmatter and a per-call model; the compiled flag settings state it inherit, so the lineup precedence holds against user/project/local env and the process env, fresh and on --resume. agent.spawn mod rewrites are not exercised offline. Radar: tests/test_client_skill_workflow.py test_s10_workflow_model_precedence.",
       "status": "verified"
     },
+    "U26": {
+      "note": "Client check S15 (client 2.1.302): without a deny, fork subagents (subagent_type fork, the caller's own model and context) start headless and in a terminal, from the lead and from a cm agent; the compiled Agent(fork) deny refuses them naming the rule, against user/project/local CLAUDE_CODE_FORK_SUBAGENT=1 with Agent(fork) allows and the process env, fresh and on --resume. Radar: tests/test_client_agents.py test_s15_fork_subagents_are_denied.",
+      "status": "verified"
+    },
     "U5": {
       "note": "availableModels compiles lead + every roster selector after the lead-only fence silently degraded all subagent dispatch to the lead; the offline delegation probe asserts the subagent's wire model through the production-shaped fence on the pinned binary every build (with the lead-only negative control preserved as the incident document).",
       "status": "verified"

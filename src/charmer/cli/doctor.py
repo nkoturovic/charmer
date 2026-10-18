@@ -2078,6 +2078,9 @@ def _check_scope_integrity(
             )
             if scope_mod.default_mode_differs(live, ep.plan):
                 attention.append(cli_text.DEFAULT_MODE_DRIFT.format(m8=m8, mid=mid))
+        elif scope_mod.fork_policy_drift(live, ep.plan, drifted):
+            # The fork-subagent deny of another release: lazy, Attention, with the repair path.
+            attention.append(cli_text.FORK_POLICY_DRIFT.format(m8=m8, mid=mid))
         elif scope_mod.default_mode_drift(live, ep.plan, drifted):
             # Decided once per launch; never BLOCK, repair never
             # adds or removes the key (the plan keeps the on-disk presence).

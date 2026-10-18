@@ -31,9 +31,10 @@ import bless
 FIXED_SESSION = bless.FIXED_SESSION
 HOOK3 = bless.V2_HOOK_COMMAND
 HELPER = bless.V2_TOKEN_HELPER
+# Native agents no seed denies. The fork subagent left this list with the
+# 2.1.302 pin: every scope denies Agent(fork) (compiler.FORK_AGENT_DENY).
 NEVER_DENIED = (
     "Plan",
-    "fork",
     "claude-code-guide",
     "statusline-setup",
     "web-fetch",
@@ -838,6 +839,44 @@ class HookTests(unittest.TestCase):
         self.assertTrue(command.startswith("'/st ate/bin/charmer-hook-3' session-event"))
 
 
+class ForkPolicyDriftTests(unittest.TestCase):
+    """A live scope whose only drift is the fork-subagent deny of another
+    release is lazy state (doctor Attention); any other difference is not."""
+
+    def setUp(self) -> None:
+        temporary = tempfile.TemporaryDirectory(prefix="fork-drift-")
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        _, self.plan = _plan("balanced")
+
+    def drift(self, plan: scope.ScopePlan, live_settings: dict[str, Any]) -> tuple[list[str], bool]:
+        live = scope.write_scope(self.root / str(len(list(self.root.iterdir()))), FIXED_SESSION,
+                                 dataclasses.replace(plan, settings=live_settings))
+        drifted = scope.live_drift(live, plan)
+        return drifted, scope.fork_policy_drift(live, plan, drifted)
+
+    @staticmethod
+    def without(settings: dict[str, Any], rule: str) -> dict[str, Any]:
+        document = copy.deepcopy(settings)
+        document["permissions"]["deny"].remove(rule)
+        return document
+
+    def test_only_the_fork_deny_of_another_release_is_lazy(self) -> None:
+        settings = self.plan.settings
+        self.assertIn(compiler.FORK_AGENT_DENY, settings["permissions"]["deny"])
+        self.assertEqual(self.drift(self.plan, copy.deepcopy(settings)), ([], False))
+        earlier = self.without(settings, compiler.FORK_AGENT_DENY)
+        self.assertEqual(self.drift(self.plan, earlier), ([f"{scope.SETTINGS_RELPATH} content differs"], True))
+        # A rollback compile without the rule over a scope that has it.
+        rollback = dataclasses.replace(self.plan, settings=earlier)
+        self.assertTrue(self.drift(rollback, copy.deepcopy(settings))[1])
+        # Any other deny, or the fork deny with anything else, stays BLOCK.
+        self.assertFalse(self.drift(self.plan, self.without(settings, "Agent(claude)"))[1])
+        edited = copy.deepcopy(earlier)
+        edited["env"]["CLAUDE_CODE_SUBAGENT_MODEL"] = "charmer-opus-5[1m]"
+        self.assertFalse(self.drift(self.plan, edited)[1])
+
+
 class DenyTests(unittest.TestCase):
     def test_seed_denies(self) -> None:
         for name in catalog.SEED_PROFILE_NAMES:
@@ -851,11 +890,11 @@ class DenyTests(unittest.TestCase):
                 self.assertEqual(policy, list(scope.MANAGED_SKILL_DENIES))
                 agent_denies = deny[: -len(scope.SECRET_PATH_DENIES) - len(scope.MANAGED_SKILL_DENIES)]
                 if lineup.is_direct:
-                    self.assertEqual(agent_denies, ["Agent(claude)"])
+                    self.assertEqual(agent_denies, ["Agent(fork)", "Agent(claude)"])
                 else:
                     self.assertEqual(
                         agent_denies,
-                        ["Agent(Explore)", "Agent(general-purpose)", "Agent(claude)"],
+                        ["Agent(Explore)", "Agent(general-purpose)", "Agent(fork)", "Agent(claude)"],
                     )
                 for native in NEVER_DENIED:
                     self.assertNotIn(f"Agent({native})", deny)

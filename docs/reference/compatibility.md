@@ -90,6 +90,10 @@ contexts or signed reasoning history.
   which outrank your user, project and local settings, so workflow agents
   keep their lineup models; a value you set elsewhere has no effect there.
   A managed policy that sets it is reported like any policy model lock.
+- Fork subagents (a copy of the calling agent on its own model and context)
+  are not lineup agents: managed sessions deny them (`Agent(fork)`), and the
+  client refuses a fork naming that rule. Other agents keep running in the
+  background as before.
 - The client's built-in helper agents run on their own model only when the
   session's model list allows it. `claude-code-guide` asks for the default
   Haiku (now Haiku 5.5); no managed lineup includes a Haiku model, so it

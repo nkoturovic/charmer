@@ -439,6 +439,26 @@ class EnvTests(unittest.TestCase):
         with self.assertRaisesRegex(CompilerError, "compiler-owned and reserved"):
             _launch(bad, eff, bundle=bundle)
 
+    def test_fork_subagents_are_denied_in_every_scope(self) -> None:
+        """Fork subagents run outside the lineup on the caller's own model;
+        every scope denies Agent(fork) (--no-subagents denies Agent itself).
+        The fork gate itself is left alone: CLAUDE_CODE_FORK_SUBAGENT is never
+        compiled. The real-client proof is S15 in ``test_client_agents``."""
+
+        self.assertEqual(compiler.FORK_AGENT_DENY, "Agent(fork)")
+        for seed in ("balanced", "direct"):
+            for no_subagents in (False, True):
+                _lineup, result = _seed_launch(seed, no_subagents=no_subagents)
+                with self.subTest(seed=seed, no_subagents=no_subagents):
+                    deny = result.scope_plan.settings["permissions"]["deny"]
+                    if no_subagents:
+                        self.assertEqual(deny[0], "Agent")
+                        self.assertNotIn(compiler.FORK_AGENT_DENY, deny)
+                    else:
+                        self.assertEqual(deny.count(compiler.FORK_AGENT_DENY), 1)
+                    self.assertNotIn("CLAUDE_CODE_FORK_SUBAGENT", result.scope_plan.settings["env"])
+                    self.assertNotIn("CLAUDE_CODE_FORK_SUBAGENT", result.env_set)
+
     def test_no_subagents_belt(self) -> None:
         lineup, result = _seed_launch(no_subagents=True)
         self.assertEqual(result.env_set["CLAUDE_CODE_DISABLE_EXPLORE_PLAN_AGENTS"], "1")

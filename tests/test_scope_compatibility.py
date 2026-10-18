@@ -1,5 +1,10 @@
 """Recorded 1.0.0 scopes survive presentation-only compiler changes.
 
+The one executable change since is the fork-subagent deny (``Agent(fork)``,
+compiled from the 2.1.302 pin on): a baseline scope differs from the current
+compile by exactly that rule, which doctor reports as lazy state (Attention,
+applied at the next resume or by repair) and repair writes, nothing else.
+
 The two frozen outputs were built with the actual source compiler at
 BASELINE_REF (git archive of src/, private HOME, no Runtime or execution).
 That source differs from release 1.0.0 only in version metadata; the record
@@ -23,6 +28,7 @@ new names, from which the live scope differs until the next resume
 from __future__ import annotations
 
 import copy
+import dataclasses
 import tempfile
 import unittest
 from pathlib import Path
@@ -31,7 +37,7 @@ from unittest import mock
 
 from charmer import (catalog, compiler, legacy, operator, profile, scope, sessions, settings, state, strict_json,
                      transition)
-from charmer.cli import doctor
+from charmer.cli import doctor, text as cli_text
 from _catalog import FIXTURE_ROOT
 from _layout import FIXTURES_ROOT
 
@@ -136,6 +142,14 @@ def renamed_baseline(scenario):
     return frozen, fixture
 
 
+def without_fork_deny(settings):
+    """``settings`` without the fork-subagent deny (its only executable change since 1.0.0)."""
+
+    permissions = settings["permissions"]
+    deny = [rule for rule in permissions["deny"] if rule != compiler.FORK_AGENT_DENY]
+    return {**settings, "permissions": {**permissions, "deny": deny}}
+
+
 class ScopeCompatibilityTests(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory(prefix="scope-compatibility-")
@@ -177,8 +191,15 @@ class ScopeCompatibilityTests(unittest.TestCase):
                 self.assertIsNotNone(result.plan, result.reason)
                 self.assertTrue(result.launch_files_kept)
                 self.assertEqual(result.diagnostics_kept, scenario == "unknown-family")
-                self.assertEqual(scope.live_drift(self.live, result.plan), [])
-                self.assertEqual(scope.plan_hash(result.plan), scope.plan_hash(self.old_plan))
+                # Only the fork deny moves: everything else is the baseline's.
+                drift = scope.live_drift(self.live, result.plan)
+                self.assertEqual(drift, [f"{scope.SETTINGS_RELPATH} content differs"])
+                self.assertTrue(scope.fork_policy_drift(self.live, result.plan, drift))
+                self.assertIn(compiler.FORK_AGENT_DENY, result.plan.settings["permissions"]["deny"])
+                self.assertNotIn(compiler.FORK_AGENT_DENY, self.old_plan.settings["permissions"]["deny"])
+                self.assertEqual(without_fork_deny(result.plan.settings), self.old_plan.settings)
+                self.assertEqual(scope.plan_hash(dataclasses.replace(result.plan, settings=self.old_plan.settings)),
+                                 scope.plan_hash(self.old_plan))
                 self.assertEqual(self.tree(), before)
                 self.assertEqual(self.record, record)
                 # Actual old class reporting, not fixtures emitted by the new compiler.
@@ -203,7 +224,8 @@ class ScopeCompatibilityTests(unittest.TestCase):
             problems, attention, info = doctor._check_scope_integrity(reader, self.record)
         self.assertEqual(problems, [])
         self.assertTrue(any("proven scope is kept until the next resume" in line for line in attention))
-        self.assertTrue(any("Scope:" in line and "OK" in line for line in info))
+        # The fork deny it predates is lazy state, never BLOCK.
+        self.assertIn(cli_text.FORK_POLICY_DRIFT.format(m8=MID[:8], mid=MID), attention)
         self.assertEqual(self.tree(), before)
         altered = self.old_plan.other_files[scope.LINEUP_MD] + b"Injected instructions.\n"
         state.atomic_write(self.live / scope.LINEUP_MD, altered)
@@ -226,8 +248,14 @@ class ScopeCompatibilityTests(unittest.TestCase):
                 worktree_available=lambda _cwd: True,
             ),
         )
-        self.assertIn("live scope matches the record-authoritative compile", report)
-        self.assertEqual(self.tree(), before)
+        # Repair writes the fork deny the baseline predates, and only that.
+        self.assertTrue(any("recompiled from the record and the installed catalog" in line for line in report),
+                        report)
+        after = self.tree()
+        self.assertEqual({name for name in after if after[name] != before.get(name)}, {scope.SETTINGS_RELPATH})
+        repaired = strict_json.loads(after[scope.SETTINGS_RELPATH])
+        self.assertIn(compiler.FORK_AGENT_DENY, repaired["permissions"]["deny"])
+        self.assertEqual(without_fork_deny(repaired), self.old_plan.settings)
         self.assertEqual(store.read_record_bytes(MID), record)
 
     def test_normal_resume_compile_converges_to_current_diagnostics(self):

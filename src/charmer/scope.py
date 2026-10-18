@@ -2319,6 +2319,32 @@ def skill_policy_drift(live: Path, plan: ScopePlan, drifted: Sequence[str]) -> b
     return True
 
 
+def fork_policy_drift(live: Path, plan: ScopePlan, drifted: Sequence[str]) -> bool:
+    """True when the ONLY drift of a live scope is the fork-subagent deny
+    (``compiler.FORK_AGENT_DENY``) of another release: ``settings.json`` with
+    or without that one rule and otherwise equal to ``plan`` (a scope compiled
+    before the 2.1.302 pin, or one with the rule under a rollback compile) —
+    lazy state that resume or ``doctor --repair`` resolves. Any other
+    difference is not: doctor keeps it BLOCK. Read-only."""
+
+    if list(drifted) != [f"{SETTINGS_RELPATH} content differs"]:
+        return False
+    try:
+        disk = strict_json.loads(state.read_private(Path(live) / SETTINGS_RELPATH))
+    except (OSError, state.StateError, strict_json.StrictJSONError):
+        return False
+
+    def without_fork(document: Any) -> dict[str, Any] | None:
+        permissions = document.get("permissions") if isinstance(document, Mapping) else None
+        if not isinstance(permissions, Mapping) or not isinstance(permissions.get("deny"), list):
+            return None
+        deny = [rule for rule in permissions["deny"] if rule != compiler.FORK_AGENT_DENY]
+        return {**document, "permissions": {**permissions, "deny": deny}}
+
+    on_disk, expected = without_fork(disk), without_fork(plan.settings)
+    return on_disk is not None and on_disk == expected and disk != plan.settings
+
+
 def read_disk_plan(live: Path, expected: ScopePlan) -> ScopePlan | None:
     """Read an on-disk scope as a plan for ``plan_hash`` comparison. Read-only.
 
