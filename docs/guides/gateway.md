@@ -129,6 +129,35 @@ the credentials (`charmer providers list`),
 Claude Code, typed confirmation). A generic restart is never the fix for a
 held gateway.
 
+The hold reads only what it needs, over the gateway's whole run: on the
+supervised service, the credential-save lines and the running gateway's
+start line in the service journal, from that start; on demand, the
+credential-save lines of every instance log from the position last
+cleared. Only lines the gateway's credential-save reporter wrote count; a
+request path that merely contains the same words does not. How long the
+gateway has run and how much it logged do not matter. It still holds when
+evidence is missing, and the reason says which: the journal no longer
+reaches back to the gateway's start or to the last clear-hold (journald
+keeps less than the gateway's run; `SystemMaxUse=` and `MaxRetentionSec=`
+in journald.conf set how much it keeps), journald's rate
+limit for your user services, which the gateway shares, dropped log lines,
+a read did not finish within 30 seconds, or a credential-save line does
+not parse. charmer sees journald's rate-limit notices only when your account
+may read the system journal (for example in the `systemd-journal`, `adm` or
+`wheel` group); otherwise `charmer gateway status` and `charmer doctor` say
+that they were not checked, and that alone does not hold.
+
+What to do depends on the reason. When it says part of the log could not be
+evaluated, no failed save was seen: check the credentials
+(`charmer providers list`), then run `charmer gateway clear-hold` once.
+When it says a credential save failed, clearing is not the fix: keep the
+gateway running and wait for a persisted save of that credential (sign in
+again only if none comes), and clear only after that. `charmer gateway status`
+shows where a hold-free evaluation started and how many credential saves it
+read. In the launcher, **H** and the gateway dialog (**W** on Providers and
+Direct) show the hold and offer no restart while it holds; a restart there
+first lists the managed sessions running now and asks.
+
 ## When gateway changes are paused
 
 An installer, an update, a service install or uninstall, or a move to
