@@ -438,6 +438,9 @@ class GatewayViewStub:
 
     gateway = None
     inhibition = None
+    runtime = None  # no sessions to list before a restart
+    hold = None
+    held = False
 
     def __init__(self, *, start: bool = False, restart: bool = False, service: bool = False,
                  service_line: str | None = None) -> None:
@@ -449,6 +452,12 @@ class GatewayViewStub:
 
     def service_line(self) -> str | None:
         return self._service_line
+
+    def hold_summary(self) -> list[str]:
+        return []
+
+    def hold_lines(self) -> list[str]:
+        return []
 
 
 @contextlib.contextmanager

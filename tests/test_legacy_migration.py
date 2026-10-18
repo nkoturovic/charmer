@@ -31,8 +31,8 @@ from unittest import mock
 import _legacy_tree as lt
 from _catalog import FIXTURE_GATEWAY_TOKEN, FIXTURE_ROOT
 from _v4 import V4Case
-from charmer import (assets, catalog, continuity, endpoint, gateway_hold, gateway_inhibition, install_receipt,
-                     legacy, legacy_migration as lm, pin, scope, sessions, state, strict_json)
+from charmer import (assets, catalog, continuity, endpoint, gateway_events, gateway_hold, gateway_inhibition,
+                     install_receipt, legacy, legacy_migration as lm, pin, scope, sessions, state, strict_json)
 
 OLD_UNIT, OLD_FAILURE = legacy.LEGACY_UNIT, legacy.LEGACY_FAILURE_UNIT
 
@@ -1210,13 +1210,23 @@ class OAuthRefreshHoldTests(unittest.TestCase):
         with mock.patch.object(assets, "default_asset_root", return_value=FIXTURE_ROOT), \
                 mock.patch("charmer.platform.linux_service.unit_properties",
                            return_value={"ActiveState": "active"}) as properties, \
-                mock.patch.object(service, "read_gateway_journal",
+                mock.patch.object(service, "read_hold_journal",
                                   return_value=observation.LogWindow(tuple(records), "bounded")) as reader, \
+                mock.patch.object(service, "journal_reaches", return_value=None) as reaches, \
+                mock.patch.object(service, "journal_drops", return_value=()) as drops, \
                 mock.patch.object(gateway_hold, "evaluate_journal", wraps=gateway_hold.evaluate_journal) as evaluate:
             reasons = command._charmer_hold(layout) if back else command._legacy_hold(layout)
         properties.assert_called_once_with(unit, subprocess.run)
         reader.assert_called_once()
-        self.assertEqual(reader.call_args.kwargs["unit"], unit)
+        asked = dict(reader.call_args.kwargs)
+        since = int(asked.pop("since").removeprefix("@"))
+        self.assertEqual(asked, {"unit": unit, "evidence": gateway_events.SAVE_LINE_PATTERN,
+                                 "marker": marker(instance), "max_bytes": gateway_hold.JOURNAL_BUDGET})
+        # The earlier of 24 hours ago and the instance's start (a minute ago).
+        day_ago = (datetime.datetime.now(datetime.timezone.utc) - gateway_hold.JOURNAL_WINDOW).timestamp()
+        self.assertLessEqual(abs(since - day_ago), 60)
+        reaches.assert_not_called()  # the start line is in the read
+        drops.assert_called_once()
         self.assertEqual(evaluate.call_args.kwargs["running"], (instance, started))
         self.assertEqual(hold.read_bytes(), recorded)  # the precondition records nothing
         return reasons, set(evaluate.call_args.args[1])
@@ -1237,7 +1247,8 @@ class OAuthRefreshHoldTests(unittest.TestCase):
             with self.subTest(back=back):
                 reasons, _providers = self.journal_hold(back=back, providers=("claude", "codex", "unknown-provider"))
                 self.assertEqual(reasons, ["service journal: the log could not be evaluated completely "
-                                           "(coverage incomplete)"])
+                                           "(coverage incomplete); a credential-save line did not parse "
+                                           "(an unknown provider name or a damaged line)"])
 
     def test_failed_account_refresh_still_holds(self) -> None:
         for back in (False, True):
@@ -1246,6 +1257,43 @@ class OAuthRefreshHoldTests(unittest.TestCase):
                 self.assertEqual(len(reasons), 1)
                 self.assertIn("a credential save failed", reasons[0])
                 self.assertNotIn("coverage", reasons[0])
+
+    def test_a_week_long_earlier_journal_read_through_journalctl_holds_nothing(self) -> None:
+        # Revert-failing: b4d8004f read the newest JOURNAL_BUDGET bytes of the
+        # earlier unit's journal, found its start line cut off and held.
+        import datetime
+
+        import _fake_journalctl as fake
+        import charmer.cli.commands.migration as command
+        from charmer import service
+        from test_gateway_lifecycle import week_long_entries
+
+        harness = Harness(self)
+        layout = harness.layout
+        root = layout.legacy_state
+        instance = "0123456789abcdef"
+        started = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0) - datetime.timedelta(days=7)
+        service.write_exec_stamp(service.gateway_workdir(root), service.ExecStamp(
+            launcher_version="1.1.0", signature="test", pid=4242, binary="/nonexistent/cli-proxy-api",
+            started_at=started.isoformat(), instance=instance))
+        bindir = Path(tempfile.mkdtemp(prefix="cm-fake-journalctl-"))
+        self.addCleanup(shutil.rmtree, bindir, True)
+        log = fake.install(bindir, week_long_entries(started, instance, unit=f"{OLD_UNIT}.service",
+                                                     marker=legacy.legacy_start_marker),
+                           [fake.system_entry(int(started.timestamp() * 1_000_000))])
+        hold = gateway_hold.hold_path(root)
+        recorded = hold.read_bytes()
+        with mock.patch.dict(os.environ, {"PATH": str(bindir)}), \
+                mock.patch.object(assets, "default_asset_root", return_value=FIXTURE_ROOT), \
+                mock.patch("charmer.platform.linux_service.unit_properties", return_value={"ActiveState": "active"}), \
+                mock.patch.object(gateway_hold, "JOURNAL_BUDGET", 256 << 10):
+            reasons = command._legacy_hold(layout)
+        self.assertEqual(reasons, [])
+        self.assertEqual(hold.read_bytes(), recorded)  # the precondition records nothing
+        calls = fake.calls(log)
+        self.assertTrue(calls, "the fake journalctl is the one that answered")
+        self.assertEqual(calls[0][calls[0].index("-u") + 1], OLD_UNIT)
+        self.assertIn(f"--grep={gateway_events.SAVE_LINE_PATTERN}|^{legacy.legacy_start_marker(instance)}", calls[0])
 
     def test_on_demand_back_accepts_persisted_account_refreshes(self) -> None:
         import charmer.cli.commands.migration as command
@@ -1450,7 +1498,9 @@ class BackGatewayTests(unittest.TestCase):
                                          failed_at, "boot:invocation", "c1"))
         asked = []
 
-        def journal(*, max_bytes, unit, since):
+        def journal(*, max_bytes, unit, since, evidence, marker):
+            self.assertEqual((evidence, marker), (gateway_events.SAVE_LINE_PATTERN,
+                                                  service.start_marker_prefix(instance)))
             asked.append(since)
             since_at = datetime.datetime.fromtimestamp(int(since.removeprefix("@")), datetime.timezone.utc)
             return observation.LogWindow(tuple(record for record in records if record.timestamp >= since_at),
@@ -1461,7 +1511,9 @@ class BackGatewayTests(unittest.TestCase):
         cases = {}
         for name, properties in (("unreadable", None), ("active", {"ActiveState": "active"})):
             with mock.patch("charmer.platform.linux_service.unit_properties", return_value=properties), \
-                    mock.patch.object(service, "read_gateway_journal", side_effect=journal):
+                    mock.patch.object(service, "read_hold_journal", side_effect=journal), \
+                    mock.patch.object(service, "journal_reaches", return_value=None), \
+                    mock.patch.object(service, "journal_drops", return_value=None):
                 cases[name] = command._charmer_hold(layout)
         self.assertIn("cannot be read", cases["unreadable"][0])
         # The same window the stop reads: from the instance's start, so the
@@ -1473,7 +1525,7 @@ class BackGatewayTests(unittest.TestCase):
         # A running instance without a readable start holds too.
         os.unlink(workdir / service.EXEC_STAMP)
         with mock.patch("charmer.platform.linux_service.unit_properties", return_value={"ActiveState": "active"}), \
-                mock.patch.object(service, "read_gateway_journal", side_effect=journal):
+                mock.patch.object(service, "read_hold_journal", side_effect=journal):
             self.assertIn("start cannot be read", command._charmer_hold(layout)[0])
         self.assertEqual(hold.read_bytes(), recorded)  # nothing recorded
         # Through --back: refused before anything, the journal as it was.

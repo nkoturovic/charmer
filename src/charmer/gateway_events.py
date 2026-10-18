@@ -7,6 +7,7 @@ A bounded window is never proof of a complete backup-retirement interval.
 
 from __future__ import annotations
 
+from collections import deque
 from dataclasses import dataclass
 from datetime import datetime
 import re
@@ -44,6 +45,36 @@ class CredentialSaves:
     coverage: str
 
 
+# Credential-save evidence comes only from patch 8's emitter
+# (sdk/cliproxy/auth/credential_save.go, emitCredentialSave). It logs through
+# the gateway's logrus formatter, which always reports the caller:
+# ``[<local time>] [<request id>] [<level>] [credential_save.go:<line>] credential_save_v1 ...``.
+# A line is a candidate only when that envelope names the emitter and the
+# token follows it at once: an access-log line (gin_logger.go) carries a
+# request path a local client chooses, so a token inside it is never evidence
+# and never reduces coverage. Every candidate must parse with the strict v1
+# grammar (``_EVENT``); a line of another version, or a damaged one, makes
+# coverage "incomplete". The one discriminator serves every reader: the
+# journal's ``--grep`` (PCRE2, case-sensitive, byte mode), its Python fallback
+# and the instance-log scan. It uses only ASCII literals and the ``[0-9]`` and
+# ``[^]]`` classes, so it matches the same lines on raw bytes as on their
+# UTF-8 "replace" decoding, and the same in PCRE2 as in Python.
+SAVE_TOKEN = "credential_save_v"
+SAVE_EMITTER = "credential_save.go"
+SAVE_LINE_PATTERN = (
+    r"^\[[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}\] \[[^]]*\] \[[^]]*\] "
+    r"\[credential_save\.go:[0-9]+\] credential_save_v"
+)
+SAVE_LINE = re.compile(SAVE_LINE_PATTERN)
+SAVE_LINE_BYTES = re.compile(SAVE_LINE_PATTERN.encode("ascii"))
+
+
+def is_save_line(message: str) -> bool:
+    """Whether ``message`` is a credential-save candidate (the emitter's envelope, then the token)."""
+
+    return SAVE_LINE.search(message) is not None
+
+
 # Patch 8's grep-pinned credentialSaveEventFormat; fullmatch is intentional.
 _EVENT = re.compile(
     r"credential_save_v1 operation=(refresh|prepare|update|result|reconcile|register|reset) "
@@ -57,14 +88,18 @@ _EVENT = re.compile(
     r"delegated|store|dirsync_unsupported|superseded) "
     r"bytes=([0-9]{1,20}) size=([0-9]{1,20}) generation=([0-9]{1,20}) epoch=([0-9]{1,20})"
 )
-_ENVELOPE = re.compile(
-    r"^\[\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\] \[[^\]\r\n]*\] \[[^\]\r\n]*\] "
-    r"(?:\[[^\]\r\n]*\] )?(.*)$"
+_SAVE_ENVELOPE = re.compile(
+    r"\[[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}\] \[[^\]\r\n]*\] \[[^\]\r\n]*\] "
+    r"\[credential_save\.go:[0-9]+\] (.*)"
 )
 
 
-def collect_credential_saves(window: LogWindow, *, providers: Iterable[str]) -> CredentialSaves:
+def collect_credential_saves(window: LogWindow, *, providers: Iterable[str],
+                             max_events: int = MAX_EVENTS) -> CredentialSaves:
     """Keep strict metadata only, in source order; malformed events reduce coverage.
+
+    Only candidates (:func:`is_save_line`) are considered. More than
+    ``max_events`` events keep the newest and say "truncated".
 
     Provider membership, not just its character shape, prevents filenames and
     account labels masquerading as a provider. Unknown indices are explicit and
@@ -73,21 +108,18 @@ def collect_credential_saves(window: LogWindow, *, providers: Iterable[str]) -> 
     """
     allowed = frozenset(providers) | {"invalid"}
     coverage = window.coverage
-    events: list[CredentialSave] = []
+    events: deque[CredentialSave] = deque()
     seen = set()
     for record in window.records[:MAX_RECORDS]:
         if record.source_cursor is not None:
             if record.source_cursor in seen:
                 continue
             seen.add(record.source_cursor)
-        if "credential_save_v1" not in record.message:
+        if not is_save_line(record.message):
             continue
         message = record.message
-        if len(message) <= MAX_MESSAGE:
-            envelope = _ENVELOPE.fullmatch(message)
-            match = _EVENT.fullmatch(envelope[1] if envelope else message)
-        else:
-            match = None
+        envelope = _SAVE_ENVELOPE.fullmatch(message) if len(message) <= MAX_MESSAGE else None
+        match = _EVENT.fullmatch(envelope[1]) if envelope else None
         if match is None or match[3] not in allowed:
             coverage = "incomplete"
             continue
@@ -102,8 +134,8 @@ def collect_credential_saves(window: LogWindow, *, providers: Iterable[str]) -> 
             op, result, provider, index, changed == "true", stage, int(err), category,
             int(count), int(size), int(gen), int(epoch),
         ))
-        if len(events) > MAX_EVENTS:
-            del events[0]
+        if len(events) > max_events:
+            events.popleft()
             coverage = "truncated"
     if len(window.records) > MAX_RECORDS:
         coverage = "truncated"
@@ -202,7 +234,7 @@ def collect(window: LogWindow, *, providers: Iterable[str]) -> GatewayEvents:
         if len(row.message) > MAX_MESSAGE:
             incomplete += 1
             continue
-        if "credential_save_v1" in row.message:
+        if is_save_line(row.message):
             continue
         envelope = _REQUEST_ENVELOPE.fullmatch(row.message)
         if not envelope:

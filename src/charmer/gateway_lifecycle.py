@@ -46,7 +46,9 @@ block automatic starts (with the log tail) until the user starts it
 explicitly.
 
 ``stop`` and ``restart`` signal only a PID proven ours, and only after the
-persistence hold (:mod:`gateway_hold`) found nothing unresolved. A spawn
+persistence hold (:mod:`gateway_hold`) found nothing unresolved; the
+evaluation can take seconds, so the stop observes the gateway again after it
+and refuses one that changed meanwhile (on either backend). A spawn
 first prunes previous instances' logs beyond a byte budget, after their
 unresolved failures became recorded holds; a running instance's log is never
 touched. On macOS the ownership proof reads ``lsof`` and ``ps`` through
@@ -187,8 +189,13 @@ class Seams:
     terminate: Callable[[int], bool] = posix_process.terminate
     models_get: Callable[[str, str, observation.OwnerVerdict], tuple[int, Any]] | None = None
     runner: Callable = subprocess.run
-    # The unit journal from an instant on: ``journal(unit, since)``.
+    # The unit journal's hold evidence from an instant on: ``journal(unit,
+    # since)``; with it injected, the reach-back probe ``journal_reaches(unit,
+    # at)`` and the drop notices ``journal_drops(unit, since)`` are seams too
+    # (a missing one answers None) and the host journal is never read.
     journal: Callable[[str, datetime.datetime], observation.LogWindow] | None = None
+    journal_reaches: Callable[[str, datetime.datetime], bool | None] | None = None
+    journal_drops: Callable[[str, datetime.datetime], gateway_hold.Drops | None] | None = None
     port_probe: Callable[[int], bool] = endpoint.port_free
     clock: Callable[[], float] = time.monotonic
     sleep: Callable[[float], None] = time.sleep
@@ -930,14 +937,23 @@ class Gateway:
                 if running is not None and running[1].tzinfo is None:
                     running = None
 
-            def reader(since: datetime.datetime) -> observation.LogWindow:
-                if self.seams.journal is not None:
-                    return self.seams.journal(unit, since)
-                return service.read_gateway_journal(max_bytes=gateway_hold.JOURNAL_BUDGET, unit=unit,
-                                                    since=f"@{int(since.timestamp())}")
+            seams = self.seams
+            if seams.journal is not None:
+                journal, probe, notices = seams.journal, seams.journal_reaches, seams.journal_drops
 
+                def reader(since: datetime.datetime) -> observation.LogWindow:
+                    return journal(unit, since)
+
+                def reaches(at: datetime.datetime) -> bool | None:
+                    return probe(unit, at) if probe is not None else None
+
+                def drops(since: datetime.datetime) -> gateway_hold.Drops | None:
+                    return notices(unit, since) if notices is not None else None
+            else:
+                marker = service.start_marker_prefix(running[0]) if running is not None and running[0] else None
+                reader, reaches, drops = gateway_hold.journal_sources(unit, marker)
             return gateway_hold.evaluate_journal(self.state_root, self.providers(), reader=reader,
-                                                 running=running, now=self._now_text)
+                                                 running=running, now=self._now_text, reaches=reaches, drops=drops)
         return gateway_hold.evaluate_files(self.state_root, self.providers(), now=self._now_text)
 
     def _now_text(self) -> str:
@@ -1014,6 +1030,10 @@ class Gateway:
         if hold.held:
             return Outcome("held", "the gateway was not stopped: " + gateway_hold.describe(hold),
                            gateway_hold.remedy(hold))
+        # The evaluation can take seconds: it covers only the gateway it read.
+        again = self.observe()
+        if again.stamp != seen.stamp:
+            return self._refused(again, "the gateway changed meanwhile; nothing was stopped")
         if not service.unit_control("stop", unit, runner=self.seams.runner):
             return Outcome("failed", f"the service manager did not stop {unit}",
                            f"why: {service.hint('why', backend=self.remedy_backend)}")
@@ -1177,7 +1197,8 @@ class StatusReport:
             lines.extend(f"    {reason}" for reason in self.hold.reasons)
             lines.append(f"    fix: {gateway_hold.remedy(self.hold)}")
         else:
-            lines.append(f"  persistence hold: none ({self.hold.source} evaluated)")
+            detail = f" — {self.hold.evaluated}" if self.hold.evaluated else ""
+            lines.append(f"  persistence hold: none ({self.hold.source} evaluated){detail}")
         if self.inhibition is None:
             lines.append("  inhibition: none")
         else:

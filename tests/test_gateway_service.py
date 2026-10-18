@@ -812,10 +812,13 @@ class NixSelectionTests(_ServiceCase):
     def test_uninstall_waits_for_the_hold_and_restores_on_failure(self) -> None:
         self.running()
         self.assertTrue(self.service().install().ok)
-        held = observation.LogRecord(save_line("failed").split("] ", 4)[-1], None, None, None)
+        # The emitter's failed save, without a time or instance: it cannot be evaluated, so it holds.
+        held = observation.LogRecord(save_line("failed"), None, None, None)
         outcome = self.service(seams=self.seams(journal=self.journal(held))).uninstall()
         self.assertEqual(outcome.status, "held", outcome.lines())
         self.assertNotIn("disable", self.manager.verbs())
+        # The failure was recorded as a hold at once (its read was incomplete); start clean.
+        (self.workdir / "persistence-hold.json").unlink()
         # The on-demand start fails: the service comes back.
         self.world.spawn_code = 1
         outcome = self.service().uninstall()

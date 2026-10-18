@@ -122,6 +122,30 @@ def read_gateway_journal(*, max_bytes: int, since: str = "-24h", unit: str = UNI
     return linux_service.read_gateway_journal(unit=unit, max_bytes=max_bytes, since=since)
 
 
+def read_hold_journal(*, unit: str = UNIT, since: str, evidence: str, marker: str | None,
+                      max_bytes: int) -> observation.LogWindow:
+    """The persistence hold's evidence in the unit's journal (its
+    credential-save lines and the start line ``marker``) from ``since``."""
+
+    return linux_service.read_hold_journal(unit=unit, since=since, evidence=evidence, marker=marker,
+                                           max_bytes=max_bytes)
+
+
+def journal_reaches(*, unit: str = UNIT, at: datetime.datetime) -> bool | None:
+    """Whether the unit's journal still reaches back to ``at`` (None: cannot tell)."""
+
+    return linux_service.journal_reaches(unit=unit, at=at)
+
+
+def journal_drops(*, since: datetime.datetime,
+                  unit: str) -> tuple[tuple[datetime.datetime, int | None], ...] | None:
+    """journald's rate-limit drop notices since ``since`` that can stand for
+    lines of this user's unit ``unit`` (None: the system journal is not
+    readable here)."""
+
+    return linux_service.journal_drops(since=since, uid=os.getuid(), unit=unit)
+
+
 def unit_control(verb: str, unit: str, *, runner: Callable = subprocess.run, timeout: float | None = None,
                  no_block: bool = False) -> bool:
     """Run one start/stop/restart of ``unit``; True when the manager accepted it.

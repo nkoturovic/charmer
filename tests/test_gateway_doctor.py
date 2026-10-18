@@ -340,7 +340,7 @@ class GatewayActionsTests(_GatewayDoctor):
         with mock.patch.object(tui.Modal, "run", autospec=True, side_effect=choose), \
                 mock.patch.object(tui, "suspended_curses", mock.MagicMock()):
             message = gateway_actions.dialog(self.runtime, FakeWindow([]), tui.MONO_PALETTE,
-                                             tty_in=io.StringIO("\n"), tty_out=out)
+                                             tty_in=io.StringIO("y\n\n"), tty_out=out)
         self.assertEqual(captured["buttons"], ["Restart now", "Show log", "Close"])
         self.assertEqual(self.world.terminated, [4242])
         self.assertTrue(message.startswith("gateway ready"), message)
@@ -348,17 +348,20 @@ class GatewayActionsTests(_GatewayDoctor):
 
 
 class CoverageHoldTests(_GatewayDoctor):
-    """A verbose, long-running instance whose log is larger than one read
-    evaluates: the hold is incomplete coverage, not a failed save. Doctor,
-    ``gateway status``, stop, restart, update and uninstall say so and name
-    the command-line clear-hold recovery, which then releases it."""
+    """Instance logs larger than one evaluation examines (here 2 MiB against
+    a 1 MiB scan budget): the hold is incomplete coverage, not a failed save.
+    Doctor, ``gateway status``, stop, restart, update and uninstall say so
+    and name the command-line clear-hold recovery, which then releases it."""
 
     NONCE = "cccccccccccccccc"
 
     def over_budget(self, *, failed_tail: bool = False) -> None:
+        patcher = mock.patch.object(gateway_hold, "TOTAL_BUDGET", 1 << 20)
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.ready(self.NONCE)
         filler = "[2026-10-02 12:00:00] [--------] [debug] [handler.go:7] verbose request trace " + "x" * 100
-        count = gateway_hold.FILE_BUDGET // len(filler) + 64
+        count = (2 << 20) // len(filler) + 64
         tail = [save_line("failed")] if failed_tail else []
         self.log(self.NONCE, ["started", *([filler] * count), *tail])
 
@@ -370,15 +373,18 @@ class CoverageHoldTests(_GatewayDoctor):
         report = self.gateway().persistence_hold()
         self.assertTrue(report.held)
         self.assertTrue(report.coverage_only, report.reasons)
-        self.assertIn("coverage truncated", "; ".join(report.reasons))
+        self.assertIn("(coverage truncated); the logs are larger than one evaluation reads", "; ".join(report.reasons))
         self.assertEqual(gateway_hold.remedy(report), gateway_hold.COVERAGE_REMEDY)
+        self.assertNotIn("verbose", gateway_hold.COVERAGE_ONLY + gateway_hold.COVERAGE_REMEDY)
         self.assertTrue(gateway_hold.describe(report).startswith(gateway_hold.COVERAGE_ONLY))
 
     def test_doctor_names_the_cause_and_the_clear_hold_recovery(self) -> None:
         self.over_budget()
         attention, _info = self.facts()
         line = next(line for line in attention if line.startswith("gateway persistence hold: HELD"))
-        self.assertIn("log coverage is incomplete, not because a credential failed", line)
+        self.assertIn("part of the log could not be evaluated (no failed credential save was seen in the "
+                      "part read)", line)
+        self.assertNotIn("verbose", line)
         self.assertIn("charmer gateway clear-hold", line)
         self.assertIn("stop, restart, update and uninstall are refused", line)
 
@@ -437,11 +443,141 @@ class CoverageHoldTests(_GatewayDoctor):
         self.assertEqual(gateway_hold.remedy(report), gateway_hold.REMEDY)
         attention, _info = self.facts()
         line = next(line for line in attention if line.startswith("gateway persistence hold: HELD"))
-        self.assertNotIn("log coverage is incomplete", line)
+        self.assertNotIn("part of the log could not be evaluated", line)
         self.assertIn(gateway_hold.REMEDY, line)
         stopped = self.gateway().stop(wait=0.1)
         self.assertEqual(stopped.remedy, gateway_hold.REMEDY)
         self.assertNotIn(gateway_hold.COVERAGE_ONLY, stopped.message)
+
+
+class HoldViewTests(_GatewayDoctor):
+    """The TUI knows the hold: the gateway dialog (W) and H's gateway line
+    show it, offer no restart while it holds and name the clear-hold route;
+    a restart lists the running managed sessions and asks y/N."""
+
+    NONCE = "abababababababab"
+
+    def coverage_only(self) -> None:
+        patcher = mock.patch.object(gateway_hold, "TOTAL_BUDGET", 1 << 20)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.ready(self.NONCE)
+        filler = "[2026-10-02 12:00:00] [a1b2c3d4] [info ] [gin_logger.go:92] 200 | 1s | POST " + "x" * 120
+        self.log(self.NONCE, ["started", *[filler] * ((2 << 20) // len(filler) + 64)])
+
+    def buttons(self, **tty) -> tuple[list[str], str, FakeWindow]:
+        captured: dict[str, list[str]] = {}
+        out = io.StringIO()
+        win = FakeWindow([ESC], height=40, width=100)  # Esc closes a details view
+
+        def choose(modal, *_args, **_kwargs):
+            captured["buttons"] = [label for label, _value in modal.buttons]
+            captured["lines"] = list(modal.lines)
+            return tty.pop("choose", None)
+
+        with mock.patch.object(tui.Modal, "run", autospec=True, side_effect=choose), \
+                mock.patch.object(tui, "suspended_curses", mock.MagicMock()):
+            gateway_actions.dialog(self.runtime, win, tui.MONO_PALETTE, tty_in=io.StringIO(tty.get("tty_in", "\n")),
+                                   tty_out=out)
+        return captured["buttons"], " ".join(captured["lines"]), win
+
+    def test_a_coverage_only_hold_is_shown_and_restart_is_not_offered(self) -> None:
+        self.coverage_only()
+        view = gateway_actions.observe(self.runtime)
+        self.assertFalse(view.can_restart)
+        self.assertTrue(view.held)
+        self.assertEqual(view.hold_summary()[0], "persistence hold: held — log coverage incomplete, not a failed save")
+        route = view.hold_summary()[1]
+        self.assertIn("charmer providers list", route)
+        self.assertIn("charmer gateway clear-hold (in a terminal outside Claude Code, with a typed confirmation)", route)
+        self.assertEqual(gateway_actions.act(view, "restart").status, "refused")
+        buttons, body, _win = self.buttons()
+        self.assertEqual(buttons, ["Hold details", "Show log", "Close"])
+        self.assertIn("log coverage incomplete, not a failed save", body)
+        self.assertIn("charmer gateway clear-hold", body)
+        # The details: every reason, then the route.
+        _buttons, _body, win = self.buttons(choose="hold")
+        text = "\n".join(win.frames)
+        self.assertIn("Persistence hold", text)
+        self.assertIn("logs are larger than one evaluation reads", text)
+        # H's gateway line says the same and offers no r.
+        out = io.StringIO()
+        self.assertIsNone(gateway_actions.health_prompt(self.runtime, io.StringIO("r\n"), out))
+        printed = out.getvalue()
+        self.assertIn("persistence hold: held — log coverage incomplete, not a failed save", printed)
+        self.assertIn("(coverage truncated); the logs are larger than one evaluation reads", printed)
+        self.assertIn("charmer gateway clear-hold", printed)
+        self.assertNotIn("r  restart it now", printed)
+        self.assertEqual(self.world.terminated, [])
+
+    def test_a_failed_save_is_shown_with_its_remedy(self) -> None:
+        self.ready(self.NONCE)
+        self.log(self.NONCE, [save_line("failed")])
+        view = gateway_actions.observe(self.runtime)
+        self.assertFalse(view.can_restart)
+        head, route = view.hold_summary()
+        self.assertEqual(head, f"persistence hold: held — instance {self.NONCE}: a credential save failed and no "
+                               "later save repaired it (claude)")
+        self.assertIn(gateway_hold.REMEDY, route)
+        self.assertNotIn("log coverage incomplete", head)
+        buttons, _body, _win = self.buttons()
+        self.assertNotIn("Restart now", buttons)
+
+    def test_no_hold_says_what_was_evaluated_and_offers_restart(self) -> None:
+        self.ready(self.NONCE)
+        self.log(self.NONCE, [save_line("persisted")])
+        view = gateway_actions.observe(self.runtime)
+        self.assertTrue(view.can_restart)
+        self.assertEqual(view.hold_summary(), ["persistence hold: none — 1 instance log(s): 1 credential save"])
+        buttons, body, _win = self.buttons()
+        self.assertEqual(buttons, ["Restart now", "Show log", "Close"])
+        self.assertIn("persistence hold: none", body)
+        self.assertIsNone(gateway_actions.GatewayView(None, None).hold)  # a fixture view evaluates nothing
+
+    def test_a_restart_lists_the_running_sessions_and_asks_first(self) -> None:
+        self.ready(self.NONCE)
+        running = (["0123abcd-0000-4000-8000-000000000000 (profile:balanced)"], None)
+        with mock.patch.object(gateway_actions, "running_sessions", return_value=running):
+            _buttons, _body, _win = self.buttons(choose="restart", tty_in="\n\n")
+            self.assertEqual(self.world.terminated, [])  # No is the default
+            out = io.StringIO()
+            gateway_actions.health_prompt(self.runtime, io.StringIO("r\nn\n"), out)
+            self.assertEqual(self.world.terminated, [])
+            printed = out.getvalue()
+            self.assertIn("1 managed session(s) run now; a restart fails their requests in flight:\n"
+                          "  - 0123abcd-0000-4000-8000-000000000000 (profile:balanced)\n"
+                          "Restart the gateway now? [y/N] ", printed)
+            self.assertIn("Not restarted; nothing was done.", printed)
+            out = io.StringIO()
+            gateway_actions.health_prompt(self.runtime, io.StringIO("r\ny\n\n"), out)
+        self.assertEqual(self.world.terminated, [4242])
+        self.assertIn("Restarting the gateway", out.getvalue())
+
+    def test_the_running_sessions_come_from_the_liveness_scan(self) -> None:
+        record = self.launch_fresh()
+        mid = sessions.managed_id(record)
+        self.assertEqual(gateway_actions.running_sessions(self.runtime), ([], None))
+        self.runtime.live_prefixes = frozenset({mid[:8]})
+        labels, unknown = gateway_actions.running_sessions(self.runtime)
+        self.assertIsNone(unknown)
+        self.assertEqual(len(labels), 1)
+        self.assertTrue(labels[0].startswith(mid), labels)
+        with mock.patch("charmer.cli.session_facts._session_records", side_effect=OSError("unreadable")):
+            labels, unknown = gateway_actions.running_sessions(self.runtime)
+        self.assertEqual(labels, [])
+        self.assertIn("unreadable", unknown)
+        out = io.StringIO()
+        with mock.patch("charmer.cli.session_facts._session_records", side_effect=OSError("unreadable")):
+            self.assertFalse(gateway_actions.confirm_restart(gateway_actions.observe(self.runtime),
+                                                             io.StringIO(""), out))
+        self.assertIn("Whether managed sessions run now cannot be told (unreadable).", out.getvalue())
+
+    def test_the_doctor_none_line_says_what_was_evaluated(self) -> None:
+        self.ready(self.NONCE)
+        self.log(self.NONCE, [save_line("persisted"), save_line("persisted", at="2026-10-02 12:00:01")])
+        _attention, info = self.facts()
+        self.assertIn("Gateway persistence hold: none (instance logs evaluated completely) — 1 instance log(s): "
+                      "2 credential saves", info)
 
 
 if __name__ == "__main__":

@@ -461,10 +461,11 @@ def _gateway_hold(state_root: Path, unit: str, supervised: bool, marker: Callabl
             return [f"{unit}.service runs, but its running instance's start cannot be read, so its credential "
                     "saves cannot be evaluated"]
         running = (stamp.instance, started)
+    reader, reaches, drops = gateway_hold.journal_sources(
+        unit, marker(running[0]) if running is not None and running[0] else None)
     report = gateway_hold.evaluate_journal(
         state_root, providers, running=running, marker=marker, record=False,
-        reader=lambda since: service.read_gateway_journal(
-            max_bytes=gateway_hold.JOURNAL_BUDGET, unit=unit, since=f"@{int(since.timestamp())}"))
+        reader=reader, reaches=reaches, drops=drops)
     return list(report.reasons) if report.held else []
 
 

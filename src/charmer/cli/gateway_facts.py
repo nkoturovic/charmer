@@ -827,9 +827,9 @@ def _journal_facts(runtime: runtime_mod.Runtime, text: str | gateway_events.LogW
     substitutions: dict[tuple[str, str], int] = {}
     for record in window.records:
         raw_line = record.message
-        # Receipt-shaped lines (including malformed/path-bearing ones) never
+        # Credential-save lines (including malformed/path-bearing ones) never
         # fall through to the older permissive journal pattern recognizers.
-        if "credential_save_v1" in raw_line:
+        if gateway_events.is_save_line(raw_line):
             continue
         match = _JOURNAL_LINE.match(raw_line)
         if match is None:
@@ -1310,9 +1310,8 @@ def platform_report(runtime: runtime_mod.Runtime) -> tuple[list[str], list[str]]
 
 
 HOLD_COVERAGE_TEXT = (
-    "gateway persistence hold: HELD because the log coverage is incomplete, not because a credential "
-    "failed — {reasons}. A verbose, long-running gateway can write more log than one read evaluates, so "
-    "the save evidence stays incomplete and stop, restart, update and uninstall are refused. Keep it "
+    "gateway persistence hold: HELD because part of the log could not be evaluated (no failed credential "
+    "save was seen in the part read) — {reasons}; stop, restart, update and uninstall are refused. Keep it "
     "running; after checking the credentials (charmer providers list), clear it on the command line "
     "(charmer gateway clear-hold: it records that you checked them and evaluates the logs again from "
     "there on)"
@@ -1396,7 +1395,8 @@ def gateway_runtime_report(runtime: runtime_mod.Runtime) -> tuple[list[str], lis
             attention.append("gateway persistence hold: HELD — stop, restart, update and uninstall are refused: "
                              + "; ".join(hold.reasons) + " — " + gateway_hold.REMEDY)
         else:
-            info.append(f"Gateway persistence hold: none ({hold.source} evaluated completely)")
+            detail = f" — {hold.evaluated}" if hold.evaluated else ""
+            info.append(f"Gateway persistence hold: none ({hold.source} evaluated completely){detail}")
     return attention, info
 
 

@@ -13,6 +13,9 @@ never part of a window; :func:`read_evidence`, the reader the persistence
 hold uses, also says the window is ``incomplete`` then (an unfinished line
 may be a failed save cut short by a full disk), and :func:`scan_instance_logs`
 reports a directory or file it could not examine instead of leaving it out.
+In keep mode :func:`read_evidence` streams the whole range and keeps only
+the lines of an evidence pattern, so its budgets bound the kept bytes, the
+bytes examined and the time, and its ``cause`` says which one cut a read.
 
 Logs are safety evidence (a failed credential save may be the only record
 of an unpersisted credential): nothing here truncates or rewrites a log file.
@@ -23,10 +26,12 @@ persists what that file still proves. Stdlib only.
 
 from __future__ import annotations
 
+import collections
 import datetime
 import os
 import re
 import stat
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -157,17 +162,122 @@ class Evidence:
     window: observation.LogWindow
     end: int
     through: int
+    # Why the window is not bounded (keep-mode reads), else "".
+    cause: str = ""
 
 
-def read_evidence(log: InstanceLog, *, start: int = 0, max_bytes: int = 32 << 20) -> Evidence:
+def read_evidence(log: InstanceLog, *, start: int = 0, max_bytes: int = 32 << 20,
+                  keep: re.Pattern[bytes] | None = None, scan_limit: int | None = None,
+                  deadline: float | None = None) -> Evidence:
     """The complete lines from byte ``start`` to the end, for the persistence hold.
 
     Like :func:`read_window`, but the window is ``incomplete`` whenever the
     range could not be covered completely: an unfinished last line (a record
     cut short, for example by a full disk) or a read that ended early.
+
+    With ``keep`` (the evidence pattern) the read streams every byte from
+    ``start`` and keeps only the lines ``keep`` matches; ``max_bytes`` then
+    bounds the kept bytes (the newest are kept), ``scan_limit`` the bytes
+    examined (the newest), and ``deadline`` (``time.monotonic``) the time.
+    Each limit makes the window ``truncated`` or ``incomplete`` and says why
+    in ``cause``.
     """
 
+    if keep is not None:
+        return _scan(log, start=start, max_bytes=max_bytes, keep=keep, scan_limit=scan_limit,
+                     deadline=deadline)
     return _read(log, start=start, max_bytes=max_bytes, strict=True)
+
+
+_SCAN_CHUNK = 1 << 20
+
+
+def _scan(log: InstanceLog, *, start: int, max_bytes: int, keep: re.Pattern[bytes],
+          scan_limit: int | None, deadline: float | None) -> Evidence:
+    """:func:`read_evidence` in keep mode: one streamed pass, kept lines only."""
+
+    try:
+        descriptor = _open_regular(log.path)
+    except OSError:
+        return Evidence(observation.LogWindow(), start, start, "the log could not be opened")
+    coverage, cause, timed_out = "bounded", "", False
+
+    def lower(to: str, why: str) -> None:
+        nonlocal coverage, cause
+        if coverage == "bounded" or (to == "truncated" and coverage != "truncated"):
+            coverage, cause = to, why
+
+    kept: collections.deque[observation.LogRecord] = collections.deque()
+    sizes: collections.deque[int] = collections.deque()
+    kept_bytes = 0
+    try:
+        size = os.fstat(descriptor).st_size
+        if start < 0 or start > size:
+            return Evidence(observation.LogWindow(coverage="incomplete"), start, start,
+                            "the position cleared last is beyond the log's end")
+        begin, skipping = start, False
+        if scan_limit is not None and size - start > scan_limit:
+            begin, skipping = size - max(0, scan_limit), True  # drop the partial first line
+            lower("truncated", "the logs are larger than one evaluation reads")
+        os.lseek(descriptor, begin, os.SEEK_SET)
+        offset = begin  # the next byte to read
+        line_start = begin  # where the carried line starts
+        end = begin  # after the last complete line
+        carry = bytearray()
+        while offset < size:
+            if deadline is not None and time.monotonic() >= deadline:
+                timed_out = True
+                break
+            chunk = os.read(descriptor, min(_SCAN_CHUNK, size - offset))
+            if not chunk:
+                break
+            position = 0
+            while True:
+                newline = chunk.find(b"\n", position)
+                if newline < 0:
+                    if not skipping:
+                        carry += chunk[position:]
+                        if len(carry) > LINE_LIMIT:
+                            lower("incomplete", "a log line longer than 1 MiB")
+                            carry.clear()
+                            skipping = True
+                    break
+                here = line_start
+                line_start = offset + newline + 1
+                end = line_start
+                piece = chunk[position:newline]
+                position = newline + 1
+                if skipping:
+                    skipping = False
+                    continue
+                line = bytes(carry) + piece if carry else piece
+                carry.clear()
+                if len(line) > LINE_LIMIT:
+                    lower("incomplete", "a log line longer than 1 MiB")
+                    continue
+                if keep.search(line) is None:
+                    continue
+                kept.append(observation.LogRecord(
+                    line.decode("utf-8", "replace"), _timestamp(line), log.nonce, f"{log.nonce}:{here}"))
+                sizes.append(len(line) + 1)
+                kept_bytes += len(line) + 1
+                while kept and (kept_bytes > max_bytes or len(kept) > observation.LOG_MAX_RECORDS):
+                    kept.popleft()
+                    kept_bytes -= sizes.popleft()
+                    lower("truncated", "more credential-save lines than one read keeps")
+            offset += len(chunk)
+    except OSError:
+        return Evidence(observation.LogWindow(), start, start, "the log could not be read")
+    finally:
+        os.close(descriptor)
+    through = offset
+    if timed_out:
+        coverage, cause = "incomplete", "the log read did not finish in time"
+    elif offset < size:
+        lower("incomplete", "the log changed while it was read")  # it shrank, or a read ended early
+    elif carry or skipping:
+        lower("incomplete", "an unfinished last line (a record cut short, for example by a full disk)")
+    return Evidence(observation.LogWindow(tuple(kept), coverage, timed_out), end, through, cause)
 
 
 def _read(log: InstanceLog, *, start: int, max_bytes: int, strict: bool) -> Evidence:
