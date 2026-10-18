@@ -45,6 +45,10 @@ blocks a download, verify its source and signature before proceeding;
 these instructions do not require disabling Gatekeeper or removing
 quarantine attributes.
 
+An installation made before the rename is moved, not set up again: the
+installer says so, and [the migration guide](../guides/legacy-migration.md)
+shows how.
+
 ## Claude Code
 
 Setup's `claude` step copies the pinned macOS Claude Code from your own

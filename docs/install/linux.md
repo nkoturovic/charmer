@@ -126,7 +126,9 @@ own files, and the state directory records which one owns it. Another
 channel's `charmer` refuses with a one-line hint, and
 `charmer doctor` lists every installation it finds. To move an
 account from a Nix installation to the release bundle, run the installer
-with `--migrate-from-nix`.
+with `--migrate-from-nix`. An installation made before the rename is moved,
+not set up again: the installer says so, and
+[the migration guide](../guides/legacy-migration.md) shows how.
 
 ## Interrupted installs
 

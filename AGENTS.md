@@ -100,7 +100,7 @@ implementer grades, Sol max reviewer and Opus reviewer-strong.
 The trusted catalog pins Claude
 **2.1.292** as the verified binary. The gateway is **CLIProxyAPI 7.3.15**
 (pinned in `gateway/UPSTREAM.json` and built by `tools/build.py` with the official
-Go toolchain, `CGO_ENABLED=0`; see "Gateway build" in §4) with twenty-one local patches (numbered 1–10 and 12–22; 11 is deferred) —
+Go toolchain, `CGO_ENABLED=0`; see "Gateway build" in §4) with twenty-two local patches (numbered 1–10 and 12–23; 11 is deferred) —
 loopback OAuth bind, Kimi/Claude compat, the non-Claude cache-retention
 boundary (§2 invariant 11), the read-only management allowlist (an
 engine-level guard serves
@@ -145,13 +145,21 @@ shutdown: `Service.Shutdown` waits, within the existing bounded shutdown,
 for every refresh run started before the stop through its durable save and
 receipt report, and `Run` starts its 30-second shutdown budget at exit (HTTP
 graceful draining is unchanged; a deadline exit leaves persistence
-unverified; omission row RS1). The last patch, #22, decodes OpenAI-compatible
+unverified; omission row RS1). #22 decodes OpenAI-compatible
 content-chunk arrays (Mistral-style `text` and `thinking` chunks) on all
 three response paths into text and unsigned thinking blocks, ignores
 `closed:true` as a block terminator, and keeps string, null and absent
 content byte-identical; unsupported chunks keep each path's earlier
 behavior (omission rows MC1/MC2). Signed Mistral history replay stays
-unsupported. Refused
+unsupported. The last patch, #23, keeps charmer's own names literal in the
+Anthropic-format `/v1/models` listing (the one an `Anthropic-Version`
+request gets): upstream's `EnsureClaudeModelIDPrefix` lists every id outside
+`claude-` as `claude-fable-5-dd-` plus the id reversed, and now also leaves
+`charmer-*` selectors and `charmer-render-*` sentinels unchanged, as 1.1.0 listed
+its own selectors under their earlier prefix; every other id (`gpt-multi-*` included)
+stays cloaked, requests resolve either form as before, and the
+OpenAI-format listing is unchanged (Go gate `charmer-model-ids`,
+built-gateway row `CharmerModelListingTests` CL1). Refused
 credentialed redirects yield fixed local 502 `upstream redirect refused`, with
 no upstream body/Location or path-bearing refusal log. Keyed-compat safety is
 route-scoped to Claude `/v1/messages` → chat; compact, images and SDK
@@ -511,6 +519,8 @@ Profile lineups and direct lineups, one compile path:
 | `release_update.py` | `charmer update` and the card's U | one journey: channel (Nix/source get instructions, exit 1), the running launcher is `install/current`, ownership (`install_txn`), the packaged release key, `HttpsTransport` (https only, release host plus its download host, size caps, `tls` trust through `environ`; proxy selection and bypass from the process environment via `getproxies_environment()`, lowercase including empty overrides wins, no gateway proxy or OS proxy discovery, no direct retry; connection and CONNECT failures, `HTTPException` included, have fixed credential-free text) or `--from-dir`; equal version = up to date (never planned); y/N or `--yes`; refused inside a Claude Code session; exits 0/1/2/3/130; the run's inhibition (owner `updater`, `_transaction`: ended on success or when nothing changed, kept by an interruption from `replace` on — `self_update.Interrupted`, exit 1, or 130 when cancelled) and its recovery (`_recover`: the next update or rollback takes it back under the install lock, `tidy` and `finish_switch`, ends it, then carries on); a rollback passes the installation it showed as `confirmed`; `copies_pruner` (the use-lock prune for the incoming contract); `pin_acquirer` (the incoming contract's pin through `acquire`, recorded for the incoming release); `doctor_lines`/`card_hint` (offline release age, trust source) |
 | `install_txn.py` | the installer's and updater's safety transaction | strict channel-marker ownership (`installs.read_marker` rules; `--migrate-from-nix` accepts only a valid foreign marker), `claim` (the runtime's marker format, inside the root's writer fence for the inhibition's owner), state format (forward only), the gateway inhibition (`gateway_inhibition`, no fallback: `guard` refuses any record the caller does not own — an earlier release's `service-handoff.json` and an unreadable one included; `begin` (owner `installer`/`updater`, owner-process expiry, never a silent take-over), `Inhibition.advance`/`fenced`/`end`/`restorable` (phases up to `pin` change nothing the installation runs from), `recover` (explicit, under the install lock)), `protected_versions` (the running gateway's version from its start record; unknown = None), `hold_reason`, `prune_copies` (`retention.prune_copies` for the current release); a `main` that `install.sh` runs through the bundle's own interpreter, which also runs `charmer.gateway_inhibition`'s command for the installer's record |
 | `install_receipt.py` | `install/installer.json` | format 2: launchers `{path, sha256}` and PATH lines `{file, marker, line}`; strict `read` (a hash-less format 1 vouches for nothing), `Launcher.owned`, `PathLine.present`, `record` (the installer's writer) — the one schema the uninstall command reads |
+| `legacy.py` | the names charmer had before the rename | the one module of the package that spells them (`NAME`, `SPELLINGS`, `NAME_PATTERN`, `LEGACY_SELECTOR_PREFIX`, the earlier roots by the same resolution policies as `paths.py`, shims, units with their exact header, launchers and their mark, the managed-id variable, the Nix links, the export format, caches, resources and start line); standard library only, nothing from charmer; each constant says who reads it and how long it stays |
+| `legacy_migration.py` | `charmer migrate from-legacy` | a journaled, idempotent move of an earlier release-bundle installation (`units`, `roots`, `authorities`, `shims`, `gateway`, `remnants`, `verify`), `--back` from any step (charmer's persistence hold checked and its gateway stop proven before anything moves; the whole reverse plan checked first; unit files byte for byte, enablement and start restored separately; the records and the fenced launch items of the scopes charmer wrote in the earlier form again, then the kept earlier launcher's own `doctor --repair-all --include-live` once while a scope carries a charmer name), `--purge` (install tree and caches whole, emptied roots by `rmdir` only; each target reached from `/` one component at a time without following any link, checked and removed through the same descriptors; refuses on a protected root, a linked component, or a key selection through a link or `..` or inside a target), `--dry-run`/`--status`; migrate, `--back` and `--purge` share one transaction lock (both install locks) and read the journal under it; the journal is written before the inhibition; preconditions refuse with a fix and write nothing; guards on the roots where they are, then charmer's own before any rewrite; effects outside the files through `Seams`; `pending` makes every other command refuse (`runs_while_pending`: the gateway hold commands once the roots are in place, until `--back` marks the journal `unwound`); `remnants`, `report_only`, `fresh_with_legacy`, `fresh_start` feed doctor, setup and the first-run hint |
 | `tls.py` | certificate trust of the launcher's own HTTPS | `SSL_CERT_FILE`/`SSL_CERT_DIR` (`configured()`, which the supervised gateway's unit also carries), else the defaults, else a system bundle at a well-known path; never unverified; `source()` is doctor's line (`show=` formats each value: doctor passes `paths.display`, so a relative one is shown from the working directory, home-relative) |
 | `identity.py` | the `--version` line | the version, catalog, gateway (with its patch count) and Claude Code versions from the packaged resources; printed by the entry points for a bare `--version` |
 | `upgrade.py` | evidence-gated re-pin (`charmer-dev repin`; maintainer) | candidates (the PATH `claude` target, then the native versions dirs, version-key ordered, invalid ones skipped with a note); signed manifest (gpg, consented fetch or `--manifest-dir`) before any candidate execution → offline inspect → contract v2 with every signed platform build + version-pin sync (boundary-anchored; `promoted_catalog_version` bumps `catalog_version` only when the checkout equals the running release, keeps a checkout already ahead, refuses one behind) → suite → receipt sha256; crash-atomic `_write_repo_file` for promotion AND restore; no operator override; never builds or installs (the pin ships with the next release); FileLock-serialized under the state root; `[N/M]` progress + heartbeat; `ESSENTIAL_EVIDENCE_PREFIXES`: the four delegation/compaction completion lines keep indices 0–3, `per-seed delegation outcome: ran ` is index 4, then the pinned-client checks' and class-pinned probes' PASS lines (`client check S<n>: PASS `, `client probe <ID>: PASS class=<class> `; the feedback-drafts line also accepts its named `ESSENTIAL_EVIDENCE_ALTERNATIVES` class), each listed in the tuple — a BOUNDARY skip of any of them is missing evidence and `repin` refuses |
@@ -1624,6 +1634,21 @@ On memory-tight hosts the suite's tmpfs fixture copies can fail with
 
 ## 5. How to make common changes
 
+- **The earlier name (`legacy.py`) and the name census:** charmer was released
+  under an earlier name up to 1.1.0. Only `src/charmer/legacy.py` spells it in the
+  package; every other module, test and tool reads it from there, and each
+  constant there carries who reads it and how long it stays. Everything else
+  is held to the new names by `tests/test_name_census.py`, which searches for
+  every form (`legacy.NAME_PATTERN`: any case or separator, split across a line,
+  half renamed) and allows exactly: whole historical files pinned by sha256,
+  spans with their occurrence count, blocks pinned by sha256, the migration
+  guide with its occurrence count, the released release-note sections pinned
+  by sha256 with the exact rename lines of 2.0.0, and the retired map's keys
+  where the map keeps them (each exactly once). Its mutation tests prove each
+  exemption is exact. A new place that must keep the old name (a recorded
+  fixture, evidence) gets an entry with its reason and pin, never a pattern;
+  a public page or help text gets R16's allowance only through the census's
+  lists (`_docs_vocab.former_name_lines`).
 - **Add/revise a model or provider:** two sanctioned paths, by size. For a
   new provider or a provider-kind change (transport, auth, routes), use the
   product's own pipeline — `charmer-dev` draft → check → review
@@ -1772,24 +1797,30 @@ On memory-tight hosts the suite's tmpfs fixture copies can fail with
   - A retired selector base must stay unique and may not shadow a live
     selector on another wire or a route of another provider.
   - *A live line's selector is renamed, the line stays* (catalog 39 renamed
-    every `charmer-<rest>` gateway selector to `charmer-<rest>`): no
-    retired entry (the line is not retired), but one entry per old selector
-    in the `renamed` map of `retired.json`:
+    every gateway selector beginning with `legacy.LEGACY_SELECTOR_PREFIX` to
+    `charmer-<rest>`, preserving the suffix): no retired entry (the line is
+    not retired), but one entry per old selector in the `renamed` map of
+    `retired.json`:
     `"<old selector>": {"selector": "<new selector>", "since_catalog": N}`.
     The validator (`catalog._check_renamed`) requires the new selector to be
-    a live selector and the exact twin of the old one (`legacy.SELECTOR_PREFIX`
-    `<rest>` → `charmer-<rest>`, the same `<rest>` and `[1m]`, so the effort
-    and the window class are the line's), the old base to be neither live,
-    retired nor a passthrough route, and `since_catalog` ≤ `catalog_version`.
-    `Catalog.retired_selector_index`/`resolve_selector` then list each old
-    base under the live line's key with a retired-shaped entry built from
-    that line (`catalog.renamed_selector_entries`: provider, wire, contract,
-    display, the gateway window `context.provider_tokens`, `family`), so the
-    continuity seed and the record scan serve the old name on the identical
-    route, records resolve it to the same line, and the render reports the
-    same owner (`catalog.retained_entries` → `render.retained_families`).
-    `RenamedSelectorContinuityTests` (`tests/test_catalog.py`) proves it per
-    selector.
+    a live selector and the exact twin of the old one
+    (`legacy.LEGACY_SELECTOR_PREFIX` `<rest>` → `charmer-<rest>`, the same
+    `<rest>` and `[1m]`, so the effort and the window class are the line's),
+    the old base to be neither live, retired nor a passthrough route, and
+    `since_catalog` ≤ `catalog_version`. The gateway serves the new name
+    only: the continuity seed and the record scan never serve an old one.
+    `Catalog.renamed_selector_index`/`resolve_selector` list each old base
+    under the live line's key with a retired-shaped entry built from that
+    line (`catalog.renamed_selector_entries`: provider, wire, contract,
+    display, the gateway window `context.provider_tokens`, `family`), so a
+    record resolves it to the same line; every comparison of a recorded or
+    saved selector with the catalog translates it first
+    (`catalog.renamed_selector`, `Catalog.current_selector`: expected-plan,
+    converge, doctor and resume), so a resume launches the same binding
+    under the new name. `RenamedSelectorContinuityTests`
+    (`tests/test_catalog.py`) proves it per selector against an immutable
+    catalog-38 projection (`tests/fixtures/catalog38-routes.json`, recipe
+    `tests/fixtures/build_catalog38_routes.py`).
   - *A provider leaves the catalog* (as `llm-local` did): retire each of
     its lines with `successor: null` and the explicit
     `externalized: {"sample": "<provider>.json"}` marker (the validator then
@@ -1954,7 +1985,8 @@ On memory-tight hosts the suite's tmpfs fixture copies can fail with
      auth-snapshot-locking → server-config-snapshot → plugin-host-locking →
      claude-metadata-locking → oauth-model-overlay → no-antigravity-egress →
      codex-client-identity → antigravity-loopback-callback →
-     codex-api-key-safety. Retry-After (11) is not
+     codex-api-key-safety → refresh-shutdown-join → openai-content-chunks →
+     charmer-model-ids. Retry-After (11) is not
      admitted. New hunks must be generated against the
      **sequentially patched** source. Generate it offline against
      the pinned tag (`git show v<baseline>:internal/registry/models/models.json`,
@@ -2509,7 +2541,7 @@ states the user-facing caveats.
 
 Audit=true is guarded by `tests/fixtures/keyed-compat-audit.json` and
 `test_packaging.KeyedAuditInvariantTests`: full ordered basename@sha256 manifest
-(series order, 21 entries numbered 1–10 and 12–22), mandatory 3/9/10,
+(series order, 22 entries numbered 1–10 and 12–23), mandatory 3/9/10,
 no 11, build definition, recipe and build tool,
 source/vendor, client and exact whole-file relevant-source identities plus
 complete core/audit/client/`J1` proof. The fixture is test provenance, never runtime policy. Closed and
@@ -2517,7 +2549,7 @@ absent flags remain regression inputs; changing the flag creates no operator sta
 Any listed-source change requires fresh complete keyed proof and fixture refresh,
 or audit=false; patch basenames/version equality alone are insufficient.
 **Available in this release:** the regenerated complete proof passes all 34
-required rows (5 core, 11 audit, 9 client and 9 journeys) against the 21-patch
+required rows (5 core, 11 audit, 9 client and 9 journeys) against the 22-patch
 gateway and pinned client. The shipped flag is true. Source paths in the
 fixture are repository-relative; immutable store paths and binary digests
 remain exact. The package-containment journey checks that the standalone

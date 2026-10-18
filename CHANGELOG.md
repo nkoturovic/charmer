@@ -4,12 +4,44 @@ All notable changes are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions
 follow [Semantic Versioning](https://semver.org/).
 
-## [2.0.0] — 2026-10-17
+## [2.0.0] — 2026-10-18
 
 Renamed from claude-multi to charmer. The program, its commands, files,
 service, environment, model selectors, release signatures and repository
 carry the new name; what it does is unchanged. charmer 2.0.0 installs
-fresh: it neither updates nor reads an installed claude-multi.
+beside an installed claude-multi and never updates it in place;
+`charmer migrate from-legacy` moves such an installation onto charmer once.
+
+### Added
+
+- `charmer migrate from-legacy` moves an installation of claude-multi 1.1.0
+  onto charmer in one journaled transaction: it stops the claude-multi
+  gateway, renames its state, configuration and data directories, rewrites
+  the files that name them or its service, writes charmer's hook shims,
+  starts `charmer-gateway.service` when the gateway ran as a service (an
+  on-demand gateway stays on demand) and runs doctor. `--dry-run` lists
+  what it would move, `--status` shows the journal, `--back` returns to
+  claude-multi from any step, and `--purge` removes the retained
+  claude-multi installation tree and caches once the move is complete. It
+  refuses while a session runs, across file systems, and when charmer
+  already has state of its own; see the legacy migration guide. `--back`
+  also hands back the sessions resumed or started with charmer: their
+  records and launch settings name the earlier model names and variables
+  again, and the kept release's own `doctor --repair-all` compiles the rest
+  of their files again. `--back` checks charmer's gateway for an unsaved
+  credential and stops it before it moves anything, enables the earlier
+  gateway service again only if it was enabled and starts it if it was
+  enabled or running, and refuses, moving nothing, when a folder exists
+  under both names. `--purge` removes the emptied folders only while they
+  are empty, reaches what it removes only through real folders, and
+  refuses when the gateway's key file is selected through a link or `..`
+  or lies inside what it removes.
+- The installer and `charmer setup` notice a claude-multi installation and
+  point to `charmer migrate from-legacy` instead of setting up beside it
+  (one that cannot move, such as a Nix installation, is set aside as the
+  guide's Start fresh instead section shows); doctor reports what such an
+  installation left behind, and `charmer
+  import` accepts an operator export claude-multi wrote.
 
 ### Changed
 
@@ -38,10 +70,17 @@ fresh: it neither updates nor reads an installed claude-multi.
   read the new ones.
 - Catalog 39: the 31 gateway selectors `claude-multi-<model>-<effort>` are
   `charmer-<model>-<effort>` (same effort and `[1m]`); `gpt-multi-*`,
-  `custom-*` and the canonical Claude model ids are unchanged. Selectors
-  recorded before the rename are served as continuity aliases on the same
-  provider, model, effort and window until
-  `charmer doctor --prune-aliases` removes them.
+  `custom-*` and the canonical Claude model ids are unchanged. The gateway
+  serves those 31 under the new names only: a session or setting recorded
+  under an old name is translated to its new name when it launches or
+  resumes, on the same provider, model, effort and window. A continuity
+  alias the gateway keeps for a retired model keeps the name it was saved
+  under, so it still shows in both model lists with the old prefix.
+- The gateway's model list is unchanged from 1.1.0: the Anthropic-format
+  list (`GET /v1/models` with an `anthropic-version` header) shows each
+  `charmer-*` selector as it is, as it showed the old names, and
+  `gpt-multi-*` and `custom-*` in the gateway's cloaked form as before. The
+  gateway carries one more patch to keep it so.
 - Messages, help, the TUI, the `/cm` skill (`charmer lineup`) and the
   lineup notice name charmer. The account sign-in acknowledgements carry new
   ids, so the next sign-in asks you to type `personal` again.

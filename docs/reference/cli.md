@@ -996,7 +996,7 @@ charmer import <file> [--apply]
 
 ### charmer migrate
 
-Convert legacy session records to the current format (backups are kept for restore-2x); --dry-run writes nothing.
+Convert legacy session records to the current format (backups are kept for restore-2x); --dry-run writes nothing; migrate from-legacy moves an installation of the earlier name onto charmer.
 
 It reads or converts an earlier format; its own `--help` lists its options.
 

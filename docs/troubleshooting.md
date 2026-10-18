@@ -9,6 +9,13 @@ In the launcher, **H** shows the same report. The tables below go from a
 symptom to the doctor finding, the safest fix and how to check it worked.
 [CHEATSHEET.md](CHEATSHEET.md) has the short version.
 
+An installation from before the rename is moved with
+`charmer migrate from-legacy` ([the migration guide](guides/legacy-migration.md));
+while that move is unfinished, every other command refuses and names it (but
+for `charmer gateway status`, `logs` and `clear-hold` from when its folders
+are in place until `--back` changes them, so a persistence hold can be
+resolved).
+
 Two rules come first:
 
 - A signed-in account's credentials may be mid-save: when doctor reports a

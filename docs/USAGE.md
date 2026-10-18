@@ -96,12 +96,12 @@ want.
 
 ## Update, move, uninstall
 
-- [Update](update.md) · [Move to another computer](guides/move-machines.md)
-  · [Uninstall](uninstall.md).
-- Import never approves a credential destination or imports trusted passing
-  evidence. No storage migration is needed for permissive bindings, but older
-  releases may refuse broader family labels or newly allowed profiles;
-  [rollback limits](guides/move-machines.md#moving-to-an-older-release-or-rolling-back).
+- [Update](update.md) · [Move to another computer](guides/move-machines.md) · [Uninstall](uninstall.md) ·
+  [An installation from before the rename](guides/legacy-migration.md): 31 renamed model names launch as
+  `charmer-` names, the only ones served for them; continuity aliases keep the names they were saved under.
+- Import never approves a credential destination or imports trusted passing evidence. No storage
+  migration is needed for permissive bindings, but older releases may refuse broader family labels
+  or newly allowed profiles; [rollback limits](guides/move-machines.md#moving-to-an-older-release-or-rolling-back).
 
 ## Trust and privacy
 

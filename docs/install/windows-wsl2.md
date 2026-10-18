@@ -42,6 +42,10 @@ From then on, open the distribution (for example from the Start menu or
 with `wsl`) and use `charmer` there, exactly as on
 [Linux](linux.md).
 
+An installation made before the rename is moved, not set up again: the
+installer says so, and [the migration guide](../guides/legacy-migration.md)
+shows how.
+
 ## Windows and WSL are separate
 
 Everything charmer uses lives inside the distribution: its own copy
