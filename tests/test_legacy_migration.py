@@ -1247,6 +1247,29 @@ class OAuthRefreshHoldTests(unittest.TestCase):
                 self.assertIn("a credential save failed", reasons[0])
                 self.assertNotIn("coverage", reasons[0])
 
+    def test_on_demand_back_accepts_persisted_account_refreshes(self) -> None:
+        import charmer.cli.commands.migration as command
+        from charmer import service
+        from charmer.platform import file_log
+        from test_gateway_lifecycle import NOW, save_line
+
+        harness = Harness(self, service=False)
+        harness.migrate()
+        layout = harness.layout
+        descriptor, _log = file_log.create_instance_log(
+            service.gateway_workdir(layout.state) / service.GATEWAY_LOGS, NOW, "fedcba9876543210")
+        lines = [save_line("persisted").replace("provider=claude", f"provider={provider}")
+                 for provider in ("claude", "codex")]
+        os.write(descriptor, ("\n".join(lines) + "\n").encode())
+        os.close(descriptor)
+        hold = gateway_hold.hold_path(layout.state)
+        recorded = hold.read_bytes()
+        with mock.patch.object(assets, "default_asset_root", return_value=FIXTURE_ROOT), \
+                mock.patch("charmer.platform.linux_service.unit_properties") as properties:
+            self.assertEqual(command._charmer_hold(layout), [])
+        properties.assert_not_called()  # on demand: the instance logs, never the service manager
+        self.assertEqual(hold.read_bytes(), recorded)
+
 
 class BackGatewayTests(unittest.TestCase):
     """--back stops charmer's gateway through its own stop, after its own
@@ -1399,6 +1422,8 @@ class BackGatewayTests(unittest.TestCase):
                 self.assertTrue(reasons)
         self.assertIn("a refreshed credential was not saved", cases["recorded"][0])
         self.assertIn("fedcba9876543210", cases["unrecorded"][0])
+        self.assertIn("a credential save failed", cases["unrecorded"][0])
+        self.assertNotIn("coverage", cases["unrecorded"][0])
         self.assertIn("not valid JSON", cases["unavailable"][0])
 
     def test_the_preflight_reads_the_running_instances_window_or_holds(self) -> None:
@@ -1421,8 +1446,7 @@ class BackGatewayTests(unittest.TestCase):
             started_at=started.isoformat(), instance=instance))
         records = (observation.LogRecord(service.start_marker_prefix(instance) + " (pid 4242)", started,
                                          "boot:invocation", "c0"),
-                   observation.LogRecord(save_line("failed", at=failed_at.strftime("%Y-%m-%d %H:%M:%S")).replace(
-                                             "provider=claude", "provider=anthropic"),
+                   observation.LogRecord(save_line("failed", at=failed_at.strftime("%Y-%m-%d %H:%M:%S")),
                                          failed_at, "boot:invocation", "c1"))
         asked = []
 
