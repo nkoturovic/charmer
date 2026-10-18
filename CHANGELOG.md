@@ -6,8 +6,24 @@ follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- When this build cannot read quota, `charmer quota` and `/cm quota` add
+  one line: readings are available only in the Nix package in this
+  release; `charmer doctor` shows per-model 429/402/403 counts and
+  `/cm fallback <provider>` moves affected roles. `--json` output and exit
+  statuses are unchanged.
+
 ### Fixed
 
+- `charmer lineup --session` accepts managed and runtime ids, historical
+  runtime aliases and unique prefixes of at least eight characters, as
+  doctor prints them. Ambiguous or unknown selections list the candidates;
+  pending forks and unreadable possible owners still refuse.
+- `charmer uninstall` fences gateway starts even when the gateway's working
+  folder is absent and refuses a symlinked working folder before removing
+  anything. Waiting writers reject lock files unlinked or replaced while
+  they acquire them.
 - `charmer migrate from-legacy` and `--back` recognize credential-save
   receipts logged under the Claude and ChatGPT account pool names.
   Persisted token refreshes no longer cause a false unsaved-credential
