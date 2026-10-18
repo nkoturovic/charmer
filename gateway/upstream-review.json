@@ -20,7 +20,7 @@
     "published": "2026-10-18T13:06:35Z",
     "cherry_picks": [
       "4337f1f000ffc1bcdfa6f1a05e5b0687842a83aa: fix(logging) access-log path %q quoting (#6731). Taken verbatim, including internal/logging/gin_logger_test.go (TestGinLogrusLoggerEscapesEncodedNewlineInPath, TestGinLogrusLoggerKeepsMaskedQueryReadable). Ships as tail series patch cli-proxy-api-access-log-path-quoting.patch.",
-      "feb6398456ccaed50d20dfc6353ad050ef714d31: partial, lead only (#6742). Takes const CodexOuterRefreshLead = 96*time.Hour in sdk/cliproxy/auth/types.go, sdk/auth/codex.go RefreshLead() returning it, the codex default in CodexOuterNeedsRefresh, and the sdk/auth/refresh_registry_test.go expectation of 96 h. Ships as tail series patch cli-proxy-api-codex-refresh-lead.patch. The rejected-token handling in conductor_cooldown.go MarkResult, scheduler.go isCredentialBlocked, markRejectedAccessToken, the CodexOuterNeedsRefresh rejected-token early return and the ProviderRefreshLead rework is not taken; it waits for the next re-pin.",
+      "feb6398456ccaed50d20dfc6353ad050ef714d31: partial, lead only (#6742). Takes const CodexOuterRefreshLead = 96*time.Hour in sdk/cliproxy/auth/types.go, sdk/auth/codex.go RefreshLead() returning it, the codex default in CodexOuterNeedsRefresh, and the sdk/auth/refresh_registry_test.go expectation of 96 h. Ships as tail series patch cli-proxy-api-codex-refresh-lead.patch. The rejected-token handling in conductor_cooldown.go MarkResult, scheduler.go isCredentialBlocked, markRejectedAccessToken, the CodexOuterNeedsRefresh rejected-token early return and the ProviderRefreshLead rework is not taken; it waits for the next re-pin. The codex_executor_auth.go lead hunk is inside homeEnabled && !hasOuter, so it is Home-only and unreachable with Home off; it is not taken.",
       "Not taken: 7484a5216a332fe468becb3ad16ced0151b036f1 (#6734). It is not reachable once credential-save-report is rewritten; see fixes[]."
     ],
     "rule_check": "Target selection rule checked on 2026-10-18 at 19:22Z against a fresh public clone, now removed. (1) Stable tags. gh release list shows no prerelease and nothing beyond 8.0.x. The newest are v8.0.33 (2422c6b0, published 2026-10-18T13:06:35Z) and v8.0.32 (2026-10-16T18:57:27Z). (2) The rule needs 4337f1f0. No tag contains it. It is only on origin/dev, whose tip 904ec710 is 18 commits past v8.0.33. The three candidate fixes were committed on dev at 13:37Z (4337f1f0), 16:03Z (7484a521) and 17:41Z (feb63984) on 2026-10-18. (3) Age at L1 start on 2026-10-21. v8.0.33 turns 72 h old at 2026-10-21T13:06:35Z and v8.0.32 at 2026-10-19T18:57:27Z. Any tag containing 4337f1f0 would be published after this check, so it cannot reach 72 h before 2026-10-21T19:22Z, and it would also be unreviewed. No tag meets all three conditions, so the fallback applies: v8.0.33 plus reviewed cherry-picks. (4) Regressions. I searched open issues created since 2026-09-26, plus searches for 8.0.32, 8.0.33, regression, OAuth claude and codex 401. No open issue reports a regression introduced by a v8 tag on the Claude OAuth or Codex paths. The open issues on those paths, and why none blocks: #6742, Codex credentials invalidated about 7 days after issue. The 24 h lead behind it is also in 7.3.15; reported on v8.0.31; mitigated by the feb63984 lead. #6749, encrypted reasoning items cannot move between Codex API-key and OAuth credentials. This is by design and charmer never mixes the two. #6469, Codex SSE streams ending early since v8.0.5. The cause is not established; a network or proxy is suspected. #6702, the listener opens before the initial auth load. Present since 7.x (#3953) and covered by cli-proxy-api-serve-after-initial-auth-load.patch. #6750 and #6746, CPU cost of Claude-format translation to non-Claude upstreams. Performance only. #6744, ABBA deadlock. It needs plugin records; with plugins disabled, activeRecordsFromSnapshot returns before Host.mu (internal/pluginhost/snapshot.go:57-60). #6734, a scan during an in-place write. Not reachable after the credential-save rewrite. Recently closed regressions fixed in v8.0.33: #6709, #6718, #6720, #6722, #6692, #6697, #6698. (5) Admission. 4337f1f0 is required by the target selection rule and reachable without authentication: every request path is access-logged, and a %0A splits the line. feb63984 is admitted for the lead only. 7484a521 is not admitted. All three cherry-pick cleanly onto v8.0.33. The 22-patch series, with /v7 rewritten to /v8, measures 144 rejected hunks and 139 offsets on v8.0.33, on v8.0.33 plus 4337f1f0, on plus feb63984 and on plus all three; dev 904ec710 measures 144/140. (6) Repeat the issue scan at L1 start (after 2026-10-21T13:07Z) and at the RC. A regression found then becomes one more reviewed cherry-pick; the base moves only if upstream has no fix."
@@ -32,7 +32,20 @@
     "logging-to-file false and no request-log key (request logging off; error logs of failed requests are still forced)",
     "disable-cooling true for every credential, no request-scoped error rules, no per-credential or per-provider cooling override",
     "management only through the environment key and the read-only allowlist on the Nix channel, otherwise off",
-    "request-retry 0, max-retry-credentials 1, fill-first routing; one auto-refresh loop per process with 16 workers"
+    "request-retry 0, max-retry-credentials 1, fill-first routing; one auto-refresh loop per process with 16 workers",
+    "debug false; unchanged for 2.1.0",
+    "--local-model on every gateway run/login; no models: section (effective models {}), so catalogs stay embedded; 2.1.0 never renders models.catalog or other catalog file/URL overrides",
+    "remote-management.disable-control-panel true and disable-auto-update-panel true; github-token omitted (effective empty); 2.1.0 never renders github-token",
+    "signin-with-chatgpt-identifier omitted and no SIWC sign-in or --siwc-bind; 2.1.0 keeps SIWC unrendered and never passes --siwc-bind",
+    "usage-statistics-enabled false; unchanged for 2.1.0",
+    "routing.session-affinity true with session-affinity-ttl 24h; session-affinity-rebind-on absent (effective any); unchanged for 2.1.0",
+    "max-request-body-bytes absent (effective 0, unlimited); not adopted in 2.1.0 without a large-context body probe",
+    "streaming.send-keepalive-before-ft absent (effective false); refused for 2.1.0, not emitted by the rendered-key allowlist",
+    "upstream.claude.tool-search and claude-api-key native-tool-search absent (effective false); not adopted or rendered in 2.1.0",
+    "tls-handshake-timeout-seconds currently absent (effective 0, off); planned 2.1.0 value 20 makes the configured timeout and retry reachable, dropped if L4 or the proxy-url lane shows slow but healthy handshakes are rejected",
+    "claude-header-defaults overrides and client-request-id absent (effective empty client-request-id means on); no such overrides rendered in 2.1.0",
+    "oauth-excluded-models: {pool: [\"*\"]} for pools moved to a reviewed keyed transport (render.py:1210-1218); charmer writes no per-credential excluded_models but records may contain it; 2.1.0 keeps global exclusions authoritative via the additive P15 hunk, including after reload",
+    "These are current-render assumptions plus explicitly planned 2.1.0 changes, not a claim that the planned ports have shipped. Any rendered-configuration change reopens the affected reachability reasons before it is merged."
   ],
   "dependencies": {
     "go_mod": "only the module path changes (/v7 to /v8); the go directive stays 1.26.0",
@@ -58,7 +71,7 @@
       "release": "7.3.16",
       "subject": "fix(auth): isolate credential-scoped quota cooldown from model quota state",
       "disposition": "rebase",
-      "reason": "Not reachable: every change sits behind cooling being enabled, and the rendered disable-cooling true applies to every credential (no request-scoped force-cooldown rule, no cooling override). Upstream's regression tests fail on the pinned tree with cooling enabled; the same model-only plus credential-scoped 429 sequence under the rendered setting leaves no credential or model deadline."
+      "reason": "Arrives with v8.0.33 (re-reviewed 2026-10-18). Still not reachable: every change sits behind cooling being enabled. The v8.0.33 effective config of both render goldens (offline probe, 2026-10-18) keeps disable-cooling true for every credential, with no request-scoped error rule and no cooling override. Any render change that enables cooling reopens this."
     },
     {
       "commits": ["855a7223"],
@@ -80,7 +93,7 @@
       "subject": "fix(api): immediately close connections on stop and guard state access",
       "disposition": "backport",
       "patch": "cli-proxy-api-refresh-shutdown-join.patch",
-      "reason": "Partial backport, re-reviewed 2026-10-07: only Service.Run creates the existing 30-second shutdown context inside its defer, so its budget starts on exit. The same local patch independently joins in-flight refresh workers through durable save and receipt reporting; atomic replacement alone prevents torn files, not loss of a rotated token. The listener-locking and immediate HTTP connection-closing changes remain deferred to rebase; HTTP graceful draining is unchanged. A live v7* tag check found v7.3.20 (ef9e71201e0ca72b03a540d9b6e0862f8c053347) latest, and its 43-commit comparison from v7.3.15 contains no smaller worker-join fix. This bounded wait does not guarantee persistence after a crash, SIGKILL, filesystem failure or a stop-budget overrun."
+      "reason": "While the pin is 7.3.15, the partial backport stays in cli-proxy-api-refresh-shutdown-join.patch. On v8.0.33 the listener locking and immediate connection close arrive with the tag. Service.Run already creates its 30 s shutdown context inside the deferred function (sdk/cliproxy/service_lifecycle.go:69-74), so the patch drops that sub-hunk. Shutdown still only cancels refresh workers (StopAutoRefresh, :327-329), so the worker join through durable save and receipt is kept, re-based on the 81756a57 epoch model. When the pin moves, this entry becomes rebase."
     },
     {
       "commits": ["1dffddf4"],
@@ -108,7 +121,7 @@
       "release": "7.3.18",
       "subject": "fix(auth): unschedule disabled invalid_grant credentials and apply exponential backoff for enabled invalid_grant",
       "disposition": "rebase",
-      "reason": "The disabled-credential part is not reachable: a credential is disabled only by a disabled field in its file or by a management write, charmer writes neither and the allowlist refuses management writes. For an enabled credential it changes only how often a refresh that already failed with invalid_grant is retried (every 5 minutes on the pinned release, 1 minute doubling to 30 minutes upstream); it restores no route and protects no stored credential."
+      "reason": "Arrives with v8.0.33 (re-reviewed 2026-10-18; reachability unchanged). The disabled part needs a disabled field or a management write: charmer writes neither, and the v8 default-deny refuses management writes. For an enabled credential it only changes how often an already-failed refresh is retried. The new statuses 'invalid grant (retrying)' and 'disabled (invalid grant)' must be mapped in quota.py and doctor at L4."
     },
     {
       "commits": ["6cd86fb2"],
@@ -129,7 +142,7 @@
       "release": "8.0.0",
       "subject": "feat(config): add v8 configuration API; feat(api): use query params for v8 oauth routes",
       "disposition": "rebase",
-      "reason": "New /v8/management namespace and OAuth routes; the read-only management allowlist scopes only /v0/management and must be extended to the new namespace before these routes are enabled."
+      "reason": "L1 must-fix for cli-proxy-api-management-readonly-allowlist.patch (P4): extend the engine-level default-deny across /v0/management and /v8/management, both engine-level GET/POST OAuth callback pairs, /v0/resource/plugins/* and /management.html. Keep only the existing exact-GET v0 exceptions (auth-files, auth-files/models and model-definitions/:channel); the v8 latest-version, routing/model-definitions and requests/api-call routes stay refused. Also refuse GET /v1/models/*model, POST /v1/audio/speech and POST /v1/tts by default. v8.0.33 registers 41 v8 management routes: 39 in the group (35 direct registrations plus GET, PUT, PATCH and DELETE /config/*path) and 2 engine-level callbacks. L1/L5 must derive the full registered set from s.engine.Routes(), assert that inventory and test the reviewed route table, canonical spellings and Origin/Host refusals; new routes fail the gate. The delta tool reports 38 static registrations because it counts the Handle loop once, not its four runtime methods; that hint is not the route-table gate."
     },
     {
       "commits": ["6c385e60", "4a2c8186", "01274e22", "48686ccc"],
@@ -187,7 +200,7 @@
       "release": "8.0.5",
       "subject": "fix(auth): track auto-refresh job epochs and bound credential acquisition",
       "disposition": "rebase",
-      "reason": "The bounded acquisition is Antigravity-only, and charmer has no Antigravity provider, route or sign-in. The job-epoch part needs refresh jobs that outlive the 1-minute pending window again and again, fill a queue of at least 64 jobs, or a restarted loop: Claude and ChatGPT account refreshes are bounded (30 s per attempt, 3 attempts), the loop starts once per process, and an install holds a handful of sign-ins."
+      "reason": "Arrives with v8.0.33 (re-reviewed 2026-10-18; reachability unchanged). Bounded acquisition is Antigravity-only, and charmer has no Antigravity sign-in or route. Job epochs matter only for refresh jobs that repeatedly outlive the pending window, or for a restarted loop. charmer runs one loop per process over a handful of Claude/ChatGPT sign-ins, with refreshes bounded at 30 s x 3. cli-proxy-api-refresh-shutdown-join.patch is re-based on the epoch model (7 rejected hunks)."
     },
     {
       "commits": ["bfa5aed4"],
@@ -293,35 +306,6 @@
       "subject": "signature log aggregation and executor translation refactors",
       "disposition": "not-applicable",
       "reason": "No authentication, credential or verification change."
-    },
-    {
-      "commits": ["aafa4e95"],
-      "release": "7.3.16",
-      "subject": "fix(auth): isolate credential-scoped quota cooldown from model quota state",
-      "disposition": "rebase",
-      "reason": "Arrives with v8.0.33 (replaces the 2026-10-02 entry). Still not reachable: every change sits behind cooling being enabled. The v8.0.33 effective config of both render goldens (offline probe, 2026-10-18) keeps disable-cooling true for every credential, with no request-scoped error rule and no cooling override. Any render change that enables cooling reopens this."
-    },
-    {
-      "commits": ["759c57c2"],
-      "release": "7.3.17",
-      "subject": "fix(api): immediately close connections on stop and guard state access",
-      "disposition": "backport",
-      "patch": "cli-proxy-api-refresh-shutdown-join.patch",
-      "reason": "While the pin is 7.3.15, the partial backport stays in cli-proxy-api-refresh-shutdown-join.patch. On v8.0.33 the listener locking and immediate connection close arrive with the tag. Service.Run already creates its 30 s shutdown context inside the deferred function (sdk/cliproxy/service_lifecycle.go:69-74), so the patch drops that sub-hunk. Shutdown still only cancels refresh workers (StopAutoRefresh, :327-329), so the worker join through durable save and receipt is kept, re-based on the 81756a57 epoch model. When the pin moves, this entry becomes rebase."
-    },
-    {
-      "commits": ["58461c8f", "960be012"],
-      "release": "7.3.18",
-      "subject": "fix(auth): unschedule disabled invalid_grant credentials and apply exponential backoff for enabled invalid_grant",
-      "disposition": "rebase",
-      "reason": "Arrives with v8.0.33 (replaces the 2026-10-02 entry; reachability unchanged). The disabled part needs a disabled field or a management write: charmer writes neither, and the v8 default-deny refuses management writes. For an enabled credential it only changes how often an already-failed refresh is retried. The new statuses 'invalid grant (retrying)' and 'disabled (invalid grant)' must be mapped in quota.py and doctor at L4."
-    },
-    {
-      "commits": ["81756a57"],
-      "release": "8.0.5",
-      "subject": "fix(auth): track auto-refresh job epochs and bound credential acquisition",
-      "disposition": "rebase",
-      "reason": "Arrives with v8.0.33 (replaces the 2026-10-02 entry; reachability unchanged). Bounded acquisition is Antigravity-only, and charmer has no Antigravity sign-in or route. Job epochs matter only for refresh jobs that repeatedly outlive the pending window, or for a restarted loop. charmer runs one loop per process over a handful of Claude/ChatGPT sign-ins, with refreshes bounded at 30 s x 3. cli-proxy-api-refresh-shutdown-join.patch is re-based on the epoch model (7 rejected hunks)."
     },
     {
       "commits": ["5ec31442", "8fbf152b", "d7c3c0aa"],
@@ -440,7 +424,7 @@
       "release": "8.0.14",
       "subject": "feat(interactions): Antigravity session continuation and model detail lookup (GET /v1/models/*model)",
       "disposition": "rebase",
-      "reason": "The Antigravity part is not reachable. The new API-key route GET /v1/models/*model answers from the final catalog (sdk/api/handlers/handlers_interceptors.go:694), so the literal charmer-* ids of cli-proxy-api-charmer-model-ids.patch apply. On 7.3.15 that path returned 404. L4 checks whether the pinned Claude Code requests /v1/models/{id}, and the reviewed route table lists the route."
+      "reason": "The Antigravity part is not reachable. Upstream adds the API-key route GET /v1/models/*model, answering from the final catalog (sdk/api/handlers/handlers_interceptors.go:694); on 7.3.15 that path returned 404. The L1 default-deny must refuse it, and L1/L5 list the refusal in the reviewed route table. L4 checks whether the pinned Claude Code requests /v1/models/{id}; any such evidence requires a new review before the route can be enabled. The charmer-model-ids patch still governs the allowed GET /v1/models listing, not admission of the new detail route."
     },
     {
       "commits": ["868e137f"],
@@ -454,7 +438,7 @@
       "release": "8.0.14-8.0.16",
       "subject": "feat(registry): custom model catalog sources and dynamic reload; Devin catalog off for Home",
       "disposition": "rebase",
-      "reason": "Neutral. With --local-model and no models: section (probe: models {}), the general, Codex and Devin catalogs stay embedded (internal/registry/catalog_sources.go:246-260), so there is no catalog egress. models.catalog is not adopted as a replacement for the overlay patch (L0 decision). The L5 no-egress test asserts embedded catalogs."
+      "reason": "With --local-model and no models: section (probe: models {}), the general, Codex and Devin catalogs stay embedded (internal/registry/catalog_sources.go:246-260), so there is no catalog egress. L0 choice: rebase cli-proxy-api-oauth-model-overlay.patch (P15), not replace it with models.catalog. CatalogSources selects a process-wide catalog from a file or URL; it does not provide the closed, per-OAuth-channel additive overlay with no header/transport overrides and whole-load refusal on invalid input. Keep that contract and static-wins precedence, refresh the pinned registry snapshot and prove static/overlay collisions at L4. The service_models.go port must also carry the additive global oauth-excluded-models hunk: a credential's excluded_models must never replace the global exclusion, with an own-red seeded-record test and an L4 GET /v1/models check after reload (see b015f208). models.catalog is never rendered in 2.1.0; the L5 no-egress test asserts embedded catalogs. After the v8.0.33 registry refresh, claude-sonnet-5-5 and gpt-6.1-sol are static: gpt-6.1-sol is then served only to team, plus and pro Codex credentials (the overlay served it to every Codex credential), the sonnet qualification text is updated, and the XC probe needs an overlay-only wire the v8.0.33 registry lacks."
     },
     {
       "commits": ["8a01bc02"],
@@ -545,7 +529,7 @@
       "release": "8.0.18",
       "subject": "feat(xai): Grok TTS on /v1/audio/speech and /v1/tts; speech-only routing",
       "disposition": "not-applicable",
-      "reason": "New API-key routes served only by xAI credentials, and none are rendered. The reviewed route table lists them, and the credentialed-redirects patch covers xai_executor_speech.go like the other xAI executors."
+      "reason": "Upstream adds API-key routes POST /v1/audio/speech and POST /v1/tts served only by xAI credentials, and none are rendered. Independently of that reachability assumption, L1 must refuse both routes by default and L1/L5 must list and test their refusals in the reviewed route table. Redirect coverage of xai_executor_speech.go in the credentialed-redirects port does not authorize serving these routes."
     },
     {
       "commits": ["7c41cd05"],
@@ -580,7 +564,7 @@
       "release": "8.0.22-8.0.33",
       "subject": "Cooldown accounting: overage resets, canceled-stream cooldowns, stale-success watermark, HTTP/2 closed connections, credential_quota availability, per-minute Retry-After narrowing",
       "disposition": "not-applicable",
-      "reason": "Not reachable: each change sets or clears cooldown state, and disable-cooling true applies to every credential. 56eee6a4's transient classification only matters when request-retry is above 0, and the render sets 0. Client-visible Retry-After forwarding is unchanged (handlers_errors.go:125-127), so the Retry-After deferral stands."
+      "reason": "Not reachable: each change sets or clears cooldown state, and disable-cooling true applies to every credential. 56eee6a4's transient classification only matters when request-retry is above 0, and the render sets 0. Client-visible Retry-After forwarding is unchanged (handlers_errors.go:125-127), so the rebase establishes no new need for the candidate. L0 choice: retire the unadmitted Retry-After candidate, not carry a stale /v7 patch as a deferred port. L1 removes gateway/candidates/cli-proxy-api-retry-after.patch and sets UPSTREAM.json candidates to []; patch number 11 stays retired and is never reused. Reopening requires a new decision with client evidence and admission/revert proof, not an automatic port."
     },
     {
       "commits": ["67465884"],
@@ -657,7 +641,7 @@
       "release": "8.0.27",
       "subject": "feat(streaming): support send-keepalive-before-ft option",
       "disposition": "rebase",
-      "reason": "Neutral, not adopted: defaults to false. Adopt only after an offline Claude Code tolerance probe."
+      "reason": "Not adopted: streaming.send-keepalive-before-ft is absent and defaults to false. It is refused for 2.1.0; the rendered-key allowlist must not emit it. A future tolerance probe alone does not change this release decision."
     },
     {
       "commits": ["f62d4d28", "4c159069", "6143cc11", "f9ac397b", "74592556"],
@@ -671,7 +655,7 @@
       "release": "8.0.28",
       "subject": "fix(server): prevent data races during concurrent config access and reloads",
       "disposition": "rebase",
-      "reason": "Arrives with the tag: Server.cfgMu/getConfig, BaseAPIHandler.runtimeMu/CurrentConfig and the watcher configApplyMu. The server-config-snapshot patch shrinks to its residual: one snapshot pinned per request or connection, plus the existing race gates. About 25 call sites still re-read CurrentConfig, for example handlers.go:635 and handlers_errors.go:131. plugin-host-locking is dropped (L0 decision)."
+      "reason": "Arrives with the tag: Server.cfgMu/getConfig, BaseAPIHandler.runtimeMu/CurrentConfig and the watcher configApplyMu. The server-config-snapshot patch shrinks to its residual: one snapshot pinned per request or connection, plus the existing race gates. About 25 call sites still re-read CurrentConfig, for example handlers.go:635 and handlers_errors.go:131. L0 choice: drop cli-proxy-api-plugin-host-locking.patch (P13): upstream now locks SetPluginHost/SetModelRouterHost and supplies ModelRouterHostSnapshot (handlers.go:470-506). The remaining model-list double sample of interceptorHost (handlers_interceptors.go:659 and newRequestLifecycleTracker at :124) is dormant with plugins disabled; enabling plugins reopens it. Drop only after porting TestCM053PluginHostConcurrentModelInterception, TestCM053PluginHostConcurrentExecutorLookup and TestCM053PluginHostTypedNilAndReentrantCallback to the v8 API and showing all three green without P13 for 100 runs with -race. Then remove those three selections from the race-handlers gate along with the retired patch; do not remove them before collecting that evidence."
     },
     {
       "commits": ["51952a7b"],
@@ -692,7 +676,7 @@
       "release": "8.0.29",
       "subject": "feat(claude): timeout and retry for silent TLS handshakes; tls-handshake-timeout-seconds at the root",
       "disposition": "rebase",
-      "reason": "Neutral: the render leaves tls-handshake-timeout-seconds at 0, and a non-positive timeout leaves the context unbounded (helps/utls_handshake_timeout.go:22-39), so the retry is dormant. The credentialed-redirects port still covers utls_handshake_timeout.go."
+      "reason": "Reachability changes for 2.1.0: the current render omits tls-handshake-timeout-seconds, whose effective default 0 leaves the context unbounded (helps/utls_handshake_timeout.go:22-39). L0 retains the planned value 20, so the configured handshake timeout and its retry become reachable; they are not dormant in the release being rebased. The bound starts after dialing and proxy CONNECT and ends with TLS establishment, not inference or SSE. L4 and the proxy-url lane must cover silent handshakes, cancellation, slow but healthy handshakes and the HTTP/1.1-only intercepting proxy; drop the 20 s bound if those lanes show it rejecting healthy handshakes. The credentialed-redirects port must cover the timeout wrapper and retry path. No contrary L0 evidence justifies keeping 0."
     },
     {
       "commits": ["5fc580b1"],
@@ -741,7 +725,7 @@
       "release": "8.0.32-8.0.33",
       "subject": "Claude preserved-thinking block binding (thinking-binding-controls beta), adaptive synthesis, between_tools disable type and registry thinking facts",
       "disposition": "rebase",
-      "reason": "Arrives with the tag and changes native Claude Code requests. On opus-5-5, sonnet-5-5, haiku-5-5 and fable-5-1, a history with signed thinking gets thinking.block_binding.prefix_mismatch_behavior=drop_block plus the beta, in every fingerprint mode. Disabled thinking becomes between_tools or low adaptive wherever the registry now says zero_allowed false: ad9e456d sets that for claude-fable-5, claude-fable-5-1 and claude-opus-5-5, and removes budget min/max on fable-5, fable-5-1 and opus-4-8. This turns 400s into served requests (#6697, #6698). L4 records them as named exact-client deltas and re-proves the effort, thinking and Kimi filter-thinking contracts. No payload filter, because it would bring the 400s back."
+      "reason": "Arrives with the tag and changes native Claude Code requests. On opus-5-5, sonnet-5-5, haiku-5-5 and fable-5-1, a history with signed thinking gets thinking.block_binding.prefix_mismatch_behavior=drop_block plus the beta, in every fingerprint mode. Disabled thinking becomes between_tools or low adaptive wherever the registry now says zero_allowed false: ad9e456d sets that for claude-fable-5, claude-fable-5-1 and claude-opus-5-5, and removes budget min/max on fable-5, fable-5-1, opus-4-8 and opus-4-7 (not rendered), adding dynamic_allowed on those entries. This turns 400s into served requests (#6697, #6698). L4 records them as named exact-client deltas and re-proves the effort, thinking and Kimi filter-thinking contracts. No payload filter, because it would bring the 400s back."
     },
     {
       "commits": ["c4c1d43e"],
@@ -755,7 +739,7 @@
       "release": "8.0.33",
       "subject": "OAuth excluded-models priority, tolerant load of invalid excluded_models, plugin exclusions",
       "disposition": "rebase",
-      "reason": "Neutral: the render sets no oauth-excluded-models, and charmer writes no per-credential excluded_models. 1a28c61e keeps a credential loading when that field is invalid, which helps availability. The write-side validation is management and default-denied."
+      "reason": "Reachable and a no-silent-credential-fallback blocker for the rebase. render.py:1210-1218 emits oauth-excluded-models: {pool: [\"*\"]} for every pool whose provider moves to a reviewed keyed transport. charmer writes no per-credential excluded_models, but imported or copied sign-in records can carry it and charmer never opens them. v7.3.15 merged the per-account and global lists (internal/watcher/synthesizer/helpers.go:78-83); v8.0.33 lets a non-empty credential excluded_models replace the global rule (sdk/cliproxy/service_models.go:73-81), so such a record can serve OAuth models while served_plan.py:329 reports the pool excluded. L2 must-fix: add the authoritative global exclusion back additively in cli-proxy-api-oauth-model-overlay.patch (P15), at its service_models.go port; a credential's list must not weaken the global list. Require an own-red test with a seeded record carrying non-empty excluded_models and an L4 served-models check that GET /v1/models lists none of the excluded pool's models after a reload. 1a28c61e keeps a credential loading when its own field is invalid; that availability change remains, but cannot bypass the global exclusion. Write-side validation is management and default-denied."
     },
     {
       "commits": ["294ed097"],
@@ -790,7 +774,7 @@
       "release": "dev (after 8.0.33)",
       "subject": "feat(auth): increase Codex proactive refresh lead to 96 hours and improve rejected token handling",
       "disposition": "rebase",
-      "reason": "Admitted as a partial cherry-pick, shipped as cli-proxy-api-codex-refresh-lead.patch. Only the 96 h CodexOuterRefreshLead is taken: sdk/auth/codex.go RefreshLead, plus the constant and the codex default in sdk/cliproxy/auth/types.go. Meets the admission rule: Codex OAuth refresh runs in the rendered loop, and with a 24 h lead, tokens invalidated about 7 days after issue stay selected under disable-cooling + fill-first (#6742, open). The existing refresh-on-401 in conductor_execution.go and conductor_stream.go does not prevent this. The rejected-token half (credential-scoped 401 in MarkResult, scheduler blocking of expired tokens, markRejectedAccessToken) changes selection for every OAuth provider, including Claude. It is under a day old and unsoaked, so it waits for the next re-pin."
+      "reason": "Admitted as a partial cherry-pick, shipped as cli-proxy-api-codex-refresh-lead.patch. Only the 96 h CodexOuterRefreshLead is taken: sdk/auth/codex.go RefreshLead, plus the constant and the codex default in sdk/cliproxy/auth/types.go. Meets the admission rule: Codex OAuth refresh runs in the rendered loop, and with a 24 h lead, tokens invalidated about 7 days after issue stay selected under disable-cooling + fill-first (#6742, open). The existing refresh-on-401 in conductor_execution.go and conductor_stream.go does not prevent this. The rejected-token half (credential-scoped 401 in MarkResult, scheduler blocking of expired tokens, markRejectedAccessToken) changes selection for every OAuth provider, including Claude. It is under a day old and unsoaked, so it waits for the next re-pin. The codex_executor_auth.go lead hunk is inside homeEnabled && !hasOuter, so it is Home-only and unreachable with Home off; it is not taken."
     },
     {
       "commits": ["7484a521"],
@@ -811,7 +795,7 @@
       "release": "dev (after 8.0.33)",
       "subject": "feat(management): safe Modify for auth records with epoch validation; static and plugin model definitions by channel",
       "disposition": "not-applicable",
-      "reason": "Management writes, and reads beyond the allowlist (#6733, #6736); default-denied."
+      "reason": "d69962e4 changes management writes (#6733), which remain default-denied. 50cfd238 changes the allowlisted GET /v0/management/model-definitions/:channel read (#6736): an unknown static channel falls back to the plugin host and then GetGlobalRegistry().GetAvailableModelsByProvider(channel), returning registered models instead of 400 when any exist (an empty result still returns 400). This is reachable through the allowlist, but has no credential or route-availability effect and charmer never calls it. On the re-pin that includes it, the allowlist tests must assert both the registered-model fallback and the still-unknown empty case; the v8 counterpart remains refused."
     }
   ]
 }

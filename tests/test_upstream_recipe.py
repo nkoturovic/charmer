@@ -294,9 +294,9 @@ class UpstreamReviewTests(unittest.TestCase):
 
     gateway/upstream-review.json lists every reviewed fix with its disposition:
     "backport" (an admitted patch now), "rebase" (carried by the rebase onto the
-    next upstream line) or "not-applicable". Re-reviews append the same commit
-    group: the last entry is current, earlier reasons remain as history.
-    A re-pin makes the review stale; the reviewed target is not the shipped pin.
+    next upstream line) or "not-applicable". Re-reviews replace the original
+    entry; git history preserves earlier reasons. A re-pin makes the review
+    stale; the reviewed target is not the shipped pin.
     """
 
     DISPOSITIONS = {"backport", "rebase", "not-applicable"}
@@ -342,9 +342,9 @@ class UpstreamReviewTests(unittest.TestCase):
         self.assertTrue(all(isinstance(pick, str) and pick.strip() for pick in target["cherry_picks"]))
         self.assertTrue(target["rule_check"].strip())
 
-    def test_every_fix_has_one_current_disposition_and_a_reason(self):
+    def test_every_fix_has_one_disposition_and_a_reason(self):
         admitted = {entry["basename"] for entry in self.recipe["series"] if entry["admitted"]}
-        seen = {}
+        seen = set()
         for fix in self.review["fixes"]:
             with self.subTest(commits=fix.get("commits")):
                 self.assertLessEqual(self.FIX_KEYS, set(fix))
@@ -356,14 +356,8 @@ class UpstreamReviewTests(unittest.TestCase):
                 self.assertEqual(len(fix["commits"]), len(set(fix["commits"])))
                 for commit in fix["commits"]:
                     self.assertRegex(commit, r"^[0-9a-f]{8,40}$")
-                    if commit in seen:
-                        previous = seen[commit]
-                        # A re-review replaces one whole group, never overlapping
-                        # pieces or a second spelling of a different subject.
-                        for field in ("commits", "release", "subject"):
-                            self.assertEqual(fix[field], previous[field])
-                        self.assertNotEqual(fix["reason"], previous["reason"])
-                    seen[commit] = fix
+                    self.assertNotIn(commit, seen)
+                    seen.add(commit)
                 # A backport is an admitted patch; a covered fix names the local patch.
                 if fix["disposition"] == "backport":
                     self.assertIn(fix.get("patch"), admitted)
