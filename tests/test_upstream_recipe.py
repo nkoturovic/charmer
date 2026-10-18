@@ -294,7 +294,9 @@ class UpstreamReviewTests(unittest.TestCase):
 
     gateway/upstream-review.json lists every reviewed fix with its disposition:
     "backport" (an admitted patch now), "rebase" (carried by the rebase onto the
-    next upstream line) or "not-applicable". A re-pin makes the review stale.
+    next upstream line) or "not-applicable". Re-reviews append the same commit
+    group: the last entry is current, earlier reasons remain as history.
+    A re-pin makes the review stale; the reviewed target is not the shipped pin.
     """
 
     DISPOSITIONS = {"backport", "rebase", "not-applicable"}
@@ -306,7 +308,7 @@ class UpstreamReviewTests(unittest.TestCase):
 
     def test_closed_shape(self):
         self.assertEqual(set(self.review), {"format", "upstream", "admission", "rendered_configuration",
-                                            "dependencies", "vulncheck", "fixes"})
+                                            "dependencies", "vulncheck", "fixes", "target"})
         self.assertEqual(self.review["format"], 1)
         upstream = self.review["upstream"]
         self.assertEqual(set(upstream), {"repository", "pinned", "reviewed_through", "reviewed_on",
@@ -330,9 +332,19 @@ class UpstreamReviewTests(unittest.TestCase):
 
         self.assertGreater(release(upstream["reviewed_through"]["version"]), release(pinned["version"]))
 
-    def test_every_fix_has_one_disposition_and_a_reason(self):
+    def test_reviewed_target_has_a_closed_shape_and_a_selection_record(self):
+        target = self.review["target"]
+        self.assertEqual(set(target), {"tag", "commit", "published", "cherry_picks", "rule_check"})
+        self.assertEqual(target["tag"], "v" + self.review["upstream"]["reviewed_through"]["version"])
+        self.assertEqual(target["commit"], self.review["upstream"]["reviewed_through"]["commit"])
+        self.assertRegex(target["published"], r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+        self.assertIsInstance(target["cherry_picks"], list)
+        self.assertTrue(all(isinstance(pick, str) and pick.strip() for pick in target["cherry_picks"]))
+        self.assertTrue(target["rule_check"].strip())
+
+    def test_every_fix_has_one_current_disposition_and_a_reason(self):
         admitted = {entry["basename"] for entry in self.recipe["series"] if entry["admitted"]}
-        seen = set()
+        seen = {}
         for fix in self.review["fixes"]:
             with self.subTest(commits=fix.get("commits")):
                 self.assertLessEqual(self.FIX_KEYS, set(fix))
@@ -341,10 +353,17 @@ class UpstreamReviewTests(unittest.TestCase):
                 for field in ("release", "subject", "reason"):
                     self.assertTrue(fix[field].strip())
                 self.assertTrue(fix["commits"])
+                self.assertEqual(len(fix["commits"]), len(set(fix["commits"])))
                 for commit in fix["commits"]:
                     self.assertRegex(commit, r"^[0-9a-f]{8,40}$")
-                    self.assertNotIn(commit, seen)
-                    seen.add(commit)
+                    if commit in seen:
+                        previous = seen[commit]
+                        # A re-review replaces one whole group, never overlapping
+                        # pieces or a second spelling of a different subject.
+                        for field in ("commits", "release", "subject"):
+                            self.assertEqual(fix[field], previous[field])
+                        self.assertNotEqual(fix["reason"], previous["reason"])
+                    seen[commit] = fix
                 # A backport is an admitted patch; a covered fix names the local patch.
                 if fix["disposition"] == "backport":
                     self.assertIn(fix.get("patch"), admitted)
