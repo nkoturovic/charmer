@@ -5,6 +5,10 @@
 # Go caches stay under ~/.cache/cm-go, never ~/go.
 { pkgs, go }:
 
+# bubblewrap 0.12.0 fixes GHSA-pxhw-h44j-8pfx (CVE-2026-87766) in the isolation
+# the network-isolated tests and the gateway proofs rely on.
+assert pkgs.stdenv.hostPlatform.isLinux -> pkgs.lib.versionAtLeast pkgs.bubblewrap.version "0.12.0";
+
 pkgs.mkShell {
   packages =
     [
