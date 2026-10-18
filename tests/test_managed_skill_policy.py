@@ -33,14 +33,16 @@ interactive client seeded with ``fastMode: true`` and a cached
 ``penguinModeOrgEnabled: true`` and a fixed fake helper key sends zero
 ``GET /api/claude_code_penguin_mode`` through a local non-forwarding
 CONNECT/TLS tripwire for ``api.anthropic.com:443`` and no ``speed`` on the
-fake messages request; the same run without the disable reaches the
-tripwire (the negative control). The compiled flag settings state the same
-disable, because user, project and local settings ``env`` override the
-process environment: with all three stating ``0`` the flag-settings ``1``
-still holds on a fresh start and on ``--resume`` (FM-layers; its control,
-without the flag-settings disable, prefetches and sends ``fast``). The
-tripwire never forwards, resolves or dials anything; other hosts are refused
-with 403.
+fake messages request; the same run without the disable sends ``fast``
+(the negative control). Since Claude Code 2.1.299 neither run sends the
+prefetch or the helper key to Anthropic (the pin before sent both: S16 in
+``test_client_gateway_auth`` covers every destination). The compiled flag
+settings state the same disable, because user, project and local settings
+``env`` override the process environment: with all three stating ``0`` the
+flag-settings ``1`` still holds on a fresh start and on ``--resume``
+(FM-layers; its control, without the flag-settings disable, sends
+``fast``). The tripwire never forwards, resolves or dials anything; other
+hosts are refused with 403.
 
 Every mandatory case prints its own ``PASS class=...`` completion record
 (``upgrade.ESSENTIAL_EVIDENCE_PREFIXES``): a case that skips as
@@ -1213,8 +1215,10 @@ class FastModeTripwireTests(_RealCase):
 
     def test_fast_mode_negative_control_hits_fake_tripwire(self) -> None:
         control = self._observe(False)
-        self.assertGreaterEqual(control["penguin"], 1, control)
-        self.assertGreaterEqual(control["penguin_with_key"], 1, control)
+        # The control reaches the tripwire; since 2.1.299 it sends no
+        # prefetch and no helper key there, but still the fast speed.
+        self.assertIn("api.anthropic.com:443", control["connects"], control)
+        self.assertEqual((control["penguin"], control["keyed_paths"]), (0, []), control)
         self.assertIn("fast", control["speeds"], control)
 
     def test_fast_mode_fake_messages_omit_speed(self) -> None:
@@ -1227,7 +1231,7 @@ class FastModeTripwireTests(_RealCase):
         control = self._observe(False)
         self.assertEqual(disabled["penguin"], 0, disabled)
         self.assertIn("api.anthropic.com:443", disabled["connects"])
-        self.assertGreaterEqual(control["penguin"], 1, control)
+        self.assertEqual(control["penguin"], 0, control)
         # The completion record below states both halves of FM, so it is
         # printed only when this test has itself seen them.
         self.assertTrue(disabled["speeds"], disabled)
@@ -1238,7 +1242,8 @@ class FastModeTripwireTests(_RealCase):
         residual = [path for path in disabled["keyed_paths"] if path != "/api/claude_code_penguin_mode"]
         print(
             "client probe FM: PASS class=FM-prefetch-off disable=1: penguin-mode GET 0, messages "
-            f"speed none; control: penguin-mode GET {control['penguin']} (keyed), speed fast; "
+            f"speed none; control: penguin-mode GET {control['penguin']}, keyed first-party paths "
+            f"{control['keyed_paths'] or 'none'}, speed fast; "
             f"residual keyed first-party paths with the disable: {residual or 'none'} "
             f"{self.binary_label}"
         )
@@ -1289,14 +1294,14 @@ class FastModeTripwireTests(_RealCase):
                 self.assertIn("api.anthropic.com:443", observed["connects"])
                 self.assertTrue(observed["speeds"], observed)
                 self.assertEqual(set(observed["speeds"]), {None}, observed)
-        self.assertGreaterEqual(control["penguin_with_key"], 1, control)
+        self.assertEqual((control["penguin"], control_resumed["penguin"]), (0, 0), (control, control_resumed))
         self.assertIn("fast", control["speeds"], control)
         self.assertIn("fast", control_resumed["speeds"], control_resumed)
         print(
             "client probe FM-layers: PASS class=FM-flag-settings user/project/local env disable=0 "
             "against flag-settings disable=1: penguin-mode GET 0 and speed none on a fresh start "
             "and on --resume; control without the flag-settings disable: penguin-mode GET "
-            f"{control['penguin']} (keyed) fresh, {control_resumed['penguin']} on resume; speed "
+            f"{control['penguin']} fresh, {control_resumed['penguin']} on resume; speed "
             f"fast on both {self.binary_label}"
         )
 

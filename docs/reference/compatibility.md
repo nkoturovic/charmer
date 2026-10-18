@@ -4,7 +4,7 @@
 
 Each charmer release runs exactly one Claude Code version: the one
 its release pins, verified for every platform the release builds. This
-release pins **Claude Code 2.1.292**. `charmer --version` names the
+release pins **Claude Code 2.1.302**. `charmer --version` names the
 pinned version, and doctor shows the pin, when it was verified, and the
 evidence class for your platform.
 
@@ -84,8 +84,17 @@ contexts or signed reasoning history.
   `system-reminder` tag openings; it does not discard the notice.
 - After a lineup change, spawn fresh agents. Continuing an old agent with
   SendMessage can use its new model with its old prompt and history.
-- A synthetic session made by 2.1.292, including a tool turn and manual
-  compaction, resumes on the previous pin, 2.1.286, from its summary without
+- The client's built-in helper agents run on their own model only when the
+  session's model list allows it. `claude-code-guide` asks for the default
+  Haiku (now Haiku 5.5); no managed lineup includes a Haiku model, so it
+  runs on the lead.
+- In isolated testing the gateway key reached only the gateway: none of the
+  client's requests to Anthropic or its other hosts carried it, with the
+  managed settings or without them. The previous pin sent it with its
+  start-up and feature-flag requests to Anthropic. See
+  [privacy.md](../privacy.md#data-flows).
+- A synthetic session made by 2.1.302, including a tool turn and manual
+  compaction, resumes on the previous pin, 2.1.292, from its summary without
   replaying the old tool turn. This does not verify every operator session
   or background-supervisor rollback.
 - Qualification evidence recorded against an older client remains stored
@@ -123,7 +132,7 @@ listing Nix as a channel does not claim a Nix installation journey.
 | the OpenAI Platform API key, through the gateway's route to OpenAI's Responses API | supported for the models reviewed for it; the client's per-request output cap is not applied ([providers/api-keys.md](../providers/api-keys.md#openai)) |
 | Claude and ChatGPT account sign-ins | supported, for personal use |
 | Anthropic-compatible endpoints of your own, and the Anthropic-compatible presets | supported; a preset is the vendor's documented endpoint, not tested by charmer |
-| keyless OpenAI-compatible servers on your network, and their presets | supported, lead only |
+| keyless OpenAI-compatible servers on your network, and their presets | supported, for leads and agents |
 | keyed OpenAI-compatible endpoints, and the presets that use them | supported in this release after the complete compatibility proof; HTTPS and bearer-only, with [translation limits](../providers/openai-compatible.md#translation-limits); presets are not vendor-tested |
 
 Anthropic and OpenAI use either their account sign-in or their API key,

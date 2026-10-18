@@ -1,5 +1,5 @@
 # The recorded class of each real-binary probe (tests/test_scope_probe_client.py).
-# Re-observed on signed client 2.1.292 (linux-x64), 2026-10-07.
+# Re-observed on signed client 2.1.302 (linux-x64), 2026-10-18.
 # PASS names an observed class, not a blanket capability or provider guarantee.
 # A diagnostic probe whose new run differs reports 'changed recorded=<class>';
 # the correctness-essential classes are asserted by the probes themselves.
@@ -24,7 +24,7 @@ client probe FD: PASS class=FD-env-off-subagent-withheld
 # FD: notify restores the lead; the subagent notify control is unavailable.
 client probe XC: PASS class=XC-exact
 client probe DG: PASS class=DG-resumable
-# DG: 2.1.292 tool turn + /compact resumes on 2.1.286 with summary only.
+# DG: 2.1.302 tool turn + /compact resumes on 2.1.292 with summary only.
 client probe SL: BOUNDARY class=unavailable
 # SL: no newer-than-pin client retained; not a successful resume observation.
 # Supervisor takeover and staged marketplace-plugin updates remain INCONCLUSIVE
