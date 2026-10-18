@@ -39,7 +39,7 @@ is active, a switch that changes the gateway waits.
 
 ## An installation from before the rename
 
-charmer was renamed in 2.0.0. An installation made under its earlier name
+charmer was renamed in 2.0. An installation made under its earlier name
 is not updated in place: `charmer migrate from-legacy` moves it onto charmer
 once, and `--back` returns it ([the migration guide](guides/legacy-migration.md)).
 

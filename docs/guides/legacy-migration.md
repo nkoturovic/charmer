@@ -1,7 +1,8 @@
 # Move an installation from before the rename
 
-charmer was released as claude-multi up to 1.1.0. charmer 2.0.0 installs
-beside an installation of claude-multi and never updates it in place.
+charmer was released as claude-multi up to 1.1.0. From 2.0 on, charmer
+installs beside an installation of claude-multi and never updates it in
+place.
 `charmer migrate from-legacy` moves that installation onto charmer once:
 your sessions, profiles, keys, account sign-ins, Claude Code copies and the
 supervised gateway keep working, under charmer's names. Until you remove the

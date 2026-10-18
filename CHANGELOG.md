@@ -4,6 +4,26 @@ All notable changes are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions
 follow [Semantic Versioning](https://semver.org/).
 
+## [2.0.1] — 2026-10-18
+
+The first release under the name charmer. 2.0.0 was tagged but never
+published: the release check found the vulnerabilities below in the
+gateway's Go toolchain and in golang.org/x/net. 2.0.1 contains everything
+listed under 2.0.0, with the gateway rebuilt on the fixed versions.
+
+### Security
+
+- The gateway is built with Go 1.26.9, which fixes GO-2026-6599 and
+  GO-2026-6600 (html/template), GO-2026-6603, GO-2026-6609, GO-2026-6610,
+  GO-2026-6611, GO-2026-6612, GO-2026-6613 and GO-2026-6617 (net/http),
+  GO-2026-6605 (net/http and net/http/httputil), GO-2026-6607 (crypto/tls)
+  and GO-2026-6608 (mime/multipart and net/textproto).
+- The gateway links golang.org/x/net 0.60.0, which fixes GO-2026-6603,
+  GO-2026-6610, GO-2026-6611, GO-2026-6612 and GO-2026-6617 in its HTTP/2
+  implementation. The update moves golang.org/x/crypto to 0.57.0,
+  golang.org/x/sync to 0.23.0, golang.org/x/sys to 0.48.0 and
+  golang.org/x/text to 0.42.0, the smallest set of versions it requires.
+
 ## [2.0.0] — 2026-10-18
 
 Renamed from claude-multi to charmer. The program, its commands, files,

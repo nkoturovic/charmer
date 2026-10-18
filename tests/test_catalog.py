@@ -315,7 +315,7 @@ class SeedLoadTests(unittest.TestCase):
 
     def test_version_json_is_the_development_release_and_catalog(self) -> None:
         bundle = catalog.load_catalog(CATALOG_ROOT)
-        self.assertEqual(bundle.docs["version"]["launcher_version"], "2.0.0")
+        self.assertEqual(bundle.docs["version"]["launcher_version"], "2.0.1")
         self.assertEqual(bundle.docs["version"]["catalog_version"], 39)
 
     def test_removed_lines_are_retired_without_successor(self) -> None:
