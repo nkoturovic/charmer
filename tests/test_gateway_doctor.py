@@ -348,17 +348,20 @@ class GatewayActionsTests(_GatewayDoctor):
 
 
 class CoverageHoldTests(_GatewayDoctor):
-    """A verbose, long-running instance whose log is larger than one read
-    evaluates: the hold is incomplete coverage, not a failed save. Doctor,
-    ``gateway status``, stop, restart, update and uninstall say so and name
-    the command-line clear-hold recovery, which then releases it."""
+    """Instance logs larger than one evaluation examines (here 2 MiB against
+    a 1 MiB scan budget): the hold is incomplete coverage, not a failed save.
+    Doctor, ``gateway status``, stop, restart, update and uninstall say so
+    and name the command-line clear-hold recovery, which then releases it."""
 
     NONCE = "cccccccccccccccc"
 
     def over_budget(self, *, failed_tail: bool = False) -> None:
+        patcher = mock.patch.object(gateway_hold, "TOTAL_BUDGET", 1 << 20)
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.ready(self.NONCE)
         filler = "[2026-10-02 12:00:00] [--------] [debug] [handler.go:7] verbose request trace " + "x" * 100
-        count = gateway_hold.FILE_BUDGET // len(filler) + 64
+        count = (2 << 20) // len(filler) + 64
         tail = [save_line("failed")] if failed_tail else []
         self.log(self.NONCE, ["started", *([filler] * count), *tail])
 
@@ -370,15 +373,18 @@ class CoverageHoldTests(_GatewayDoctor):
         report = self.gateway().persistence_hold()
         self.assertTrue(report.held)
         self.assertTrue(report.coverage_only, report.reasons)
-        self.assertIn("coverage truncated", "; ".join(report.reasons))
+        self.assertIn("(coverage truncated); the logs are larger than one evaluation reads", "; ".join(report.reasons))
         self.assertEqual(gateway_hold.remedy(report), gateway_hold.COVERAGE_REMEDY)
+        self.assertNotIn("verbose", gateway_hold.COVERAGE_ONLY + gateway_hold.COVERAGE_REMEDY)
         self.assertTrue(gateway_hold.describe(report).startswith(gateway_hold.COVERAGE_ONLY))
 
     def test_doctor_names_the_cause_and_the_clear_hold_recovery(self) -> None:
         self.over_budget()
         attention, _info = self.facts()
         line = next(line for line in attention if line.startswith("gateway persistence hold: HELD"))
-        self.assertIn("log coverage is incomplete, not because a credential failed", line)
+        self.assertIn("part of the log could not be evaluated (no failed credential save was seen in the "
+                      "part read)", line)
+        self.assertNotIn("verbose", line)
         self.assertIn("charmer gateway clear-hold", line)
         self.assertIn("stop, restart, update and uninstall are refused", line)
 
@@ -437,7 +443,7 @@ class CoverageHoldTests(_GatewayDoctor):
         self.assertEqual(gateway_hold.remedy(report), gateway_hold.REMEDY)
         attention, _info = self.facts()
         line = next(line for line in attention if line.startswith("gateway persistence hold: HELD"))
-        self.assertNotIn("log coverage is incomplete", line)
+        self.assertNotIn("part of the log could not be evaluated", line)
         self.assertIn(gateway_hold.REMEDY, line)
         stopped = self.gateway().stop(wait=0.1)
         self.assertEqual(stopped.remedy, gateway_hold.REMEDY)

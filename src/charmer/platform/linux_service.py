@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import datetime
 import json
+import math
 import os
 import re
 import selectors
@@ -241,6 +242,27 @@ def last_reload_result(*, unit: str, runner: Callable) -> observation.ExecReload
     return max(results, key=lambda result: (result.started_at, result.failed), default=None)
 
 
+def _normalize(item: dict, message: str) -> observation.LogRecord:
+    """One journald entry as a record: its timestamp, instance and cursor
+    (each unknown when its field is missing or malformed)."""
+
+    timestamp = None
+    micros = item.get("__REALTIME_TIMESTAMP")
+    if isinstance(micros, str) and re.fullmatch(r"[0-9]{1,18}", micros):
+        try:
+            timestamp = datetime.datetime.fromtimestamp(int(micros) / 1_000_000, datetime.timezone.utc)
+        except (ValueError, OverflowError, OSError):
+            pass
+    ids = (item.get("_BOOT_ID"), item.get("_SYSTEMD_INVOCATION_ID"))
+    instance = ":".join(ids) if all(
+        isinstance(value, str) and re.fullmatch(r"[0-9a-f]{32}", value) for value in ids
+    ) else None
+    cursor = item.get("__CURSOR")
+    if not isinstance(cursor, str) or not re.fullmatch(r"[A-Za-z0-9;=_.-]{1,512}", cursor):
+        cursor = None
+    return observation.LogRecord(message, timestamp, instance, cursor)
+
+
 def journal_records(raw: bytes, *, coverage: str = "bounded",
                     newest_first: bool = False) -> observation.LogWindow:
     """Normalize journald fields; raw JSON, paths and messages are never facts.
@@ -266,22 +288,7 @@ def journal_records(raw: bytes, *, coverage: str = "bounded",
         if not isinstance(item, dict) or not isinstance(item.get("MESSAGE"), str):
             coverage = "incomplete"
             continue
-        message = item["MESSAGE"]
-        timestamp = None
-        micros = item.get("__REALTIME_TIMESTAMP")
-        if isinstance(micros, str) and re.fullmatch(r"[0-9]{1,18}", micros):
-            try:
-                timestamp = datetime.datetime.fromtimestamp(int(micros) / 1_000_000, datetime.timezone.utc)
-            except (ValueError, OverflowError, OSError):
-                pass
-        ids = (item.get("_BOOT_ID"), item.get("_SYSTEMD_INVOCATION_ID"))
-        instance = ":".join(ids) if all(
-            isinstance(value, str) and re.fullmatch(r"[0-9a-f]{32}", value) for value in ids
-        ) else None
-        cursor = item.get("__CURSOR")
-        if not isinstance(cursor, str) or not re.fullmatch(r"[A-Za-z0-9;=_.-]{1,512}", cursor):
-            cursor = None
-        records.append(observation.LogRecord(message, timestamp, instance, cursor))
+        records.append(_normalize(item, item["MESSAGE"]))
     if newest_first:
         records.reverse()
     return observation.LogWindow(tuple(records), coverage)
@@ -342,3 +349,280 @@ def read_gateway_journal(*, unit: str, max_bytes: int, timeout: float = 10,
     if len(window.records) >= observation.LOG_MAX_RECORDS:
         return observation.LogWindow(window.records, "truncated", timed_out)
     return observation.LogWindow(window.records, window.coverage, timed_out)
+
+
+# The persistence hold's journal reads (:func:`read_hold_journal`,
+# :func:`journal_reaches`, :func:`journal_drops`). They read only what the
+# hold needs over the gateway's whole run: its credential-save lines and the
+# running instance's start line. One deadline bounds a read and the caps count
+# kept evidence only, so how long the gateway ran and how much it logged do
+# not matter. ``--all`` keeps a field over 4096 bytes from reading as null.
+HOLD_TIMEOUT = 30.0
+HOLD_LINE_LIMIT = 1 << 20
+PROBE_TIMEOUT = 10.0
+# SD_MESSAGE_JOURNAL_DROPPED: journald suppressed messages (its rate limit).
+DROPPED_MESSAGE_ID = "a596d6fe7bfa4994828e72309e95d61e"
+DROPS_MAX = 256
+_HOLD_FIELDS = "--output-fields=MESSAGE,__CURSOR,__REALTIME_TIMESTAMP,_BOOT_ID,_SYSTEMD_INVOCATION_ID"
+# Only literal-safe text joins a --grep pattern: printable ASCII for the
+# evidence pattern (the caller's constant) and a start line of this shape.
+_SAFE_PATTERN = re.compile(r"[ -~]+")
+_SAFE_MARKER = re.compile(r"[a-z][a-z0-9-]*: gateway instance [0-9a-f]{16} starting")
+_MICROS = re.compile(r"[0-9]{1,18}")
+
+
+def hold_grep_pattern(evidence: str, marker: str | None) -> str | None:
+    """The ``--grep`` pattern for ``evidence`` (a regular expression that
+    means the same in PCRE2 and Python) or the start line ``marker``; None
+    when either cannot be passed safely (the read then filters in Python
+    only). Every character the marker shape allows is literal in PCRE2."""
+
+    if not _SAFE_PATTERN.fullmatch(evidence):
+        return None
+    if marker is None:
+        return evidence
+    if _SAFE_MARKER.fullmatch(marker):
+        return f"{evidence}|^{marker}"
+    return None
+
+
+def _message_text(item: dict) -> str | bool | None:
+    """MESSAGE as text: a string, or journald's byte array decoded (UTF-8,
+    "replace"); False when the entry has none, None when its shape cannot
+    be read."""
+
+    if "MESSAGE" not in item:
+        return False
+    message = item["MESSAGE"]
+    if isinstance(message, str):
+        return message
+    if isinstance(message, list) and all(type(value) is int and 0 <= value <= 255 for value in message):
+        return bytes(message).decode("utf-8", "replace")
+    return None
+
+
+def _stream(argv: list[str], keep: Callable[[str], bool], max_bytes: int, deadline: float,
+            popen: Callable) -> tuple[int | None, observation.LogWindow]:
+    """One streamed ``journalctl -o json`` read, newest first, keeping only
+    the entries ``keep`` accepts: ``(exit status, window)``.
+
+    The status is None when the read was stopped (a cap, the deadline) or
+    could not start. Kept records over ``max_bytes`` of JSON, or over the
+    record cap, drop the oldest kept and stop the read ("truncated"); invalid
+    JSON, an unreadable MESSAGE shape, a line over :data:`HOLD_LINE_LIMIT`
+    or an unfinished last line make it "incomplete"; so does the deadline,
+    with ``timed_out``. stderr is discarded; only the reader is ever killed.
+    """
+
+    records: list[observation.LogRecord] = []
+    kept_bytes = 0
+    coverage = "bounded"
+    timed_out = False
+    code = None
+
+    def incomplete() -> None:
+        nonlocal coverage
+        if coverage == "bounded":
+            coverage = "incomplete"
+
+    def take(line: bytes) -> bool:
+        """One complete line; False once a cap stops the read."""
+
+        nonlocal kept_bytes, coverage
+        if len(line) > HOLD_LINE_LIMIT:
+            incomplete()
+            return True
+        try:
+            item = json.loads(line)
+        except (ValueError, UnicodeDecodeError, RecursionError):
+            incomplete()
+            return True
+        if not isinstance(item, dict):
+            incomplete()
+            return True
+        text = _message_text(item)
+        if text is False:
+            return True  # no MESSAGE: never evidence
+        if text is None:
+            incomplete()
+            return True
+        if not keep(text):
+            return True
+        records.append(_normalize(item, text))
+        kept_bytes += len(line)
+        if len(records) > observation.LOG_MAX_RECORDS or kept_bytes > max_bytes:
+            records.pop()  # newest first: the last one kept is the oldest
+            coverage = "truncated"
+            return False
+        return True
+
+    try:
+        with popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                   stderr=subprocess.DEVNULL) as process:
+            try:
+                carry = bytearray()
+                skipping = False  # inside a line over the limit, up to its newline
+                stopped = False
+                with selectors.DefaultSelector() as selector:
+                    selector.register(process.stdout, selectors.EVENT_READ)
+                    while not stopped:
+                        remaining = deadline - time.monotonic()
+                        if remaining <= 0 or not selector.select(remaining):
+                            coverage, timed_out, stopped = "incomplete", True, True
+                            break
+                        chunk = os.read(process.stdout.fileno(), 65536)
+                        if not chunk:
+                            if carry or skipping:
+                                incomplete()  # an unfinished last line
+                            break
+                        position = 0
+                        while not stopped:
+                            newline = chunk.find(b"\n", position)
+                            if newline < 0:
+                                if not skipping:
+                                    carry += chunk[position:]
+                                    if len(carry) > HOLD_LINE_LIMIT:
+                                        incomplete()
+                                        carry.clear()
+                                        skipping = True
+                                break
+                            piece = chunk[position:newline]
+                            position = newline + 1
+                            if skipping:
+                                skipping = False
+                                continue
+                            if carry:
+                                carry += piece
+                                line, carry = bytes(carry), bytearray()
+                            else:
+                                line = piece
+                            stopped = not take(line)
+                if not stopped:
+                    try:
+                        code = process.wait(timeout=max(0.001, deadline - time.monotonic()))
+                    except subprocess.TimeoutExpired:
+                        coverage, timed_out = "incomplete", True
+            finally:
+                if process.poll() is None:
+                    process.kill()
+                process.wait()
+    except (OSError, subprocess.SubprocessError):
+        return None, observation.LogWindow()
+    records.reverse()
+    return code, observation.LogWindow(tuple(records), coverage, timed_out)
+
+
+def read_hold_journal(*, unit: str, since: str, evidence: str, marker: str | None, max_bytes: int,
+                      timeout: float = HOLD_TIMEOUT, popen: Callable = subprocess.Popen) -> observation.LogWindow:
+    """The persistence hold's evidence in the unit's journal from ``since``:
+    the entries whose MESSAGE matches the regular expression ``evidence`` or
+    starts with the start line ``marker``, in chronological order.
+
+    Pass 1 lets journalctl filter (``--case-sensitive=yes --grep``). Any exit
+    there other than 0 (no match, no PCRE2, an older or failing journalctl,
+    no journalctl) discards what it read, and pass 2 reads every entry and
+    applies the same predicate in Python; a non-zero pass 2 is
+    "unavailable", never an empty journal. One deadline covers both passes,
+    and a pass cut by a cap or the deadline is returned as it is.
+    """
+
+    predicate = re.compile(evidence)
+
+    def keep(text: str) -> bool:
+        return predicate.search(text) is not None or (marker is not None and text.startswith(marker))
+
+    base = ["journalctl", "--user", "-u", unit, "--since", since, "--no-pager", "--reverse", "--all",
+            "-o", "json", _HOLD_FIELDS]
+    deadline = time.monotonic() + timeout
+    pattern = hold_grep_pattern(evidence, marker)
+    if pattern is not None:
+        code, window = _stream([*base, "--case-sensitive=yes", f"--grep={pattern}"], keep, max_bytes,
+                               deadline, popen)
+        if window.timed_out or window.coverage == "truncated" or code == 0:
+            return window
+    code, window = _stream(base, keep, max_bytes, deadline, popen)
+    if window.timed_out or window.coverage == "truncated":
+        return window
+    return window if code == 0 else observation.LogWindow()
+
+
+def _probe(argv: list[str], runner: Callable, timeout: float) -> list[bytes] | None:
+    """A bounded journalctl query's non-empty stdout lines (None when it fails)."""
+
+    try:
+        completed = runner(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                           stderr=subprocess.DEVNULL, timeout=timeout)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if completed.returncode != 0:
+        return None
+    raw = completed.stdout if isinstance(completed.stdout, bytes) else str(completed.stdout or "").encode()
+    return [line for line in raw.split(b"\n") if line.strip()]
+
+
+def _entry(line: bytes) -> dict | None:
+    try:
+        item = json.loads(line)
+    except (ValueError, UnicodeDecodeError, RecursionError):
+        return None
+    return item if isinstance(item, dict) else None
+
+
+def _epoch_micros(at: datetime.datetime) -> int:
+    return (at - datetime.datetime(1970, 1, 1, tzinfo=datetime.timezone.utc)) // datetime.timedelta(microseconds=1)
+
+
+def journal_reaches(*, unit: str, at: datetime.datetime, timeout: float = PROBE_TIMEOUT,
+                    runner: Callable = subprocess.run) -> bool | None:
+    """Whether the unit's journal still holds an entry at or before ``at``:
+    True, False (none: it was rotated or vacuumed past ``at``) or None
+    (cannot tell). journald removes the oldest entries first, so True asked
+    after a read means that read saw everything after ``at``."""
+
+    lines = _probe(["journalctl", "--user", "-u", unit, "--until", f"@{math.floor(at.timestamp())}",
+                    "-n", "1", "--no-pager", "-o", "json", "--output-fields=__REALTIME_TIMESTAMP"],
+                   runner, timeout)
+    if lines is None:
+        return None
+    if not lines:
+        return False
+    item = _entry(lines[0]) if len(lines) == 1 else None
+    micros = item.get("__REALTIME_TIMESTAMP") if item is not None else None
+    if not isinstance(micros, str) or not _MICROS.fullmatch(micros) or int(micros) > _epoch_micros(at):
+        return None
+    return True
+
+
+def journal_drops(*, since: datetime.datetime, uid: int, timeout: float = PROBE_TIMEOUT,
+                  runner: Callable = subprocess.run) -> tuple[tuple[datetime.datetime, int | None], ...] | None:
+    """journald's rate-limit drop notices for the user's services since
+    ``since``: ``(time, lines dropped or None)`` each, the newest
+    :data:`DROPS_MAX` at most. journald limits all of a user's services
+    together, as ``user@<uid>.service``, so a notice naming another of the
+    user's units may stand for gateway lines too. None when the system
+    journal, where journald writes them, cannot be read here (an ordinary
+    user's account) or the query fails."""
+
+    probe = _probe(["journalctl", "--system", "-n", "1", "--no-pager", "-o", "json",
+                    "--output-fields=__REALTIME_TIMESTAMP"], runner, timeout)
+    if probe is None or len(probe) != 1 or _entry(probe[0]) is None:
+        return None
+    lines = _probe(["journalctl", "--system", f"MESSAGE_ID={DROPPED_MESSAGE_ID}", "_UID=0", f"OBJECT_UID={uid}",
+                    f"OBJECT_SYSTEMD_UNIT=user@{uid}.service", "--since", f"@{math.floor(since.timestamp())}",
+                    "-n", str(DROPS_MAX), "--no-pager", "-o", "json",
+                    "--output-fields=__REALTIME_TIMESTAMP,N_DROPPED"], runner, timeout)
+    if lines is None:
+        return None
+    notices = []
+    for line in lines[-DROPS_MAX:]:
+        item = _entry(line)
+        micros = item.get("__REALTIME_TIMESTAMP") if item is not None else None
+        if not isinstance(micros, str) or not _MICROS.fullmatch(micros):
+            return None
+        try:
+            moment = datetime.datetime.fromtimestamp(int(micros) / 1_000_000, datetime.timezone.utc)
+        except (ValueError, OverflowError, OSError):
+            return None
+        count = item.get("N_DROPPED")
+        notices.append((moment, int(count) if isinstance(count, str) and _MICROS.fullmatch(count) else None))
+    return tuple(notices)

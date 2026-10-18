@@ -27,6 +27,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest import mock
 
+import _fake_journalctl as fake
 import _log_secrets
 from _catalog import FIXTURE_GATEWAY_TOKEN, FIXTURE_ROOT
 from _layout import REPO_ROOT
@@ -51,9 +52,14 @@ def _free_port() -> int:
 
 
 def save_line(result: str, *, at: str = "2026-10-02 12:00:00") -> str:
+    """One credential-save line as patch 8's emitter writes it (2.0.1's
+    journal shape: a failure at Warn from credential_save.go:214, any other
+    outcome at Info from :217)."""
+
     stage, errno_, category = ("write", 28, "errno") if result == "failed" else ("none", 0, "none")
     body = SAVE.format(result=result, stage=stage, errno=errno_, category=category)
-    return f"[{at}] [--------] [info ] [auth.go:12] {body}"
+    caller = "[warn ] [credential_save.go:214]" if result == "failed" else "[info ] [credential_save.go:217]"
+    return f"[{at}] [--------] {caller} {body}"
 
 
 class FakeClock:
@@ -602,7 +608,7 @@ class HoldAndStopTests(_Lifecycle):
 
     def test_a_save_line_without_a_timestamp_or_cut_by_the_budget_holds(self) -> None:
         self.running("6666666666666666")
-        self.log_file("6666666666666666", [save_line("failed").split("] ", 4)[-1]])
+        self.log_file("6666666666666666", [save_line("failed", at="2026-99-99 99:99:99")])
         self.assertTrue(self.gateway().persistence_hold().held)
         report = gateway_hold.evaluate_files(self.state_root, ("claude",), file_budget=8)
         self.assertTrue(report.held)
@@ -673,7 +679,9 @@ class HoldAndStopTests(_Lifecycle):
         self.assertEqual(len(self.world.spawned), 1)
 
 
-class ServiceBackendTests(_Lifecycle):
+class _ServiceBackend(_Lifecycle):
+    """The supervised backend with a stub service manager (``runner``)."""
+
     def setUp(self) -> None:
         super().setUp()
         endpoint.write_config(self.home, endpoint.EndpointConfig(port=self.port, backend="systemd"))
@@ -704,6 +712,8 @@ class ServiceBackendTests(_Lifecycle):
     def service_gateway(self, *records: observation.LogRecord) -> gl.Gateway:
         return self.gateway(seams=self.world.seams(runner=self.runner, journal=self.journal(*records)))
 
+
+class ServiceBackendTests(_ServiceBackend):
     def test_verbs_delegate_to_the_manager_behind_the_same_checks(self) -> None:
         gateway = self.service_gateway()
         self.assertEqual((gateway.backend, gateway.unit), ("systemd", "charmer-gateway"))
@@ -822,7 +832,9 @@ class ServiceBackendTests(_Lifecycle):
             asked.append(since)
             return observation.LogWindow(tuple(r for r in records if r.timestamp >= since), "bounded")
 
-        gateway = self.gateway(seams=self.world.seams(runner=self.runner, journal=journal))
+        gateway = self.gateway(seams=self.world.seams(
+            runner=self.runner, journal=journal,
+            journal_reaches=lambda _unit, at: any(r.timestamp <= at for r in records)))
         # The start marker proves the window covers the instance.
         self.assertFalse(gateway.persistence_hold().held)
         self.assertEqual(asked[-1], NOW - gateway_hold.START_MARGIN)  # not the last 24 hours
@@ -836,10 +848,11 @@ class ServiceBackendTests(_Lifecycle):
         self.assertTrue(report.held, report)
         self.assertEqual(gateway.stop().status, "held")
         self.assertFalse(any("stop" in call for call in self.calls))
-        # A clear after the start acknowledges the earlier history.
+        # A clear after the start acknowledges the earlier history; the read
+        # still starts at the instance's start (the clear filters what counts).
         gateway.clear_hold(report)
         self.assertFalse(gateway.persistence_hold().held)
-        self.assertEqual(asked[-1], self.world.now)
+        self.assertEqual(asked[-1], NOW - gateway_hold.START_MARGIN)
 
     def test_a_journal_vacuum_after_a_clear_cannot_unhold_the_running_instance(self) -> None:
         self.world.become_ready("9999999999999999")  # started at NOW
@@ -856,7 +869,9 @@ class ServiceBackendTests(_Lifecycle):
         def journal(_unit, since):
             return observation.LogWindow(tuple(r for r in records if r.timestamp >= since), "bounded")
 
-        gateway = self.gateway(seams=self.world.seams(runner=self.runner, journal=journal))
+        gateway = self.gateway(seams=self.world.seams(
+            runner=self.runner, journal=journal,
+            journal_reaches=lambda _unit, at: any(r.timestamp <= at for r in records)))
         self.world.now = NOW + datetime.timedelta(hours=1)
         gateway.clear_hold(gateway.persistence_hold())  # the user verified the first failure
         self.assertFalse(gateway.persistence_hold().held)
@@ -1837,6 +1852,510 @@ class RealSpawnTests(_Lifecycle):
         self.assertEqual(stopped.status, "stopped", stopped.lines())
         self.assertFalse(posix_fs.lock_held(service.instance_lock_path(self.state_root)))
         self.assertEqual(gateway.observe().state, gl.STOPPED)
+
+
+# ---------------------------------------------------------------- hold coverage over a whole run
+
+def micros(moment: datetime.datetime) -> int:
+    return int(moment.timestamp() * 1_000_000)
+
+
+def save_at(at: datetime.datetime, result: str = "persisted", *, provider: str = "claude",
+            category: str | None = None, generation: int = 1) -> str:
+    """A credential-save line of patch 8's emitter at ``at``."""
+
+    line = save_line(result, at=f"{at:%Y-%m-%d %H:%M:%S}").replace("provider=claude", f"provider={provider}")
+    line = line.replace("generation=1 ", f"generation={generation} ")
+    return line.replace("category=none", f"category={category}") if category else line
+
+
+def request_at(at: datetime.datetime, n: int) -> str:
+    """An ordinary access-log line (about 575 bytes of journal JSON)."""
+
+    return (f'[{at:%Y-%m-%d %H:%M:%S}] [{n:08x}] [info ] [gin_logger.go:92] 200 |  1.234s |  127.0.0.1 | '
+            f'POST "/v1/messages?beta=true" | model=charmer-opus-high[1m] ' + "r" * 290)
+
+
+# The operator's measured week: 36 claude refreshes, one codex refresh, an
+# unverified (no_sync) and a skipped (stale_generation) claude save among
+# them, and later persisted ones.
+WEEK_SAVES = (*(("persisted", "claude", None),) * 12, ("unverified", "claude", "no_sync"),
+              *(("persisted", "claude", None),) * 12, ("skipped", "claude", "stale_generation"),
+              ("persisted", "codex", None), *(("persisted", "claude", None),) * 12)
+
+
+def week_long_entries(started: datetime.datetime, nonce: str, *, unit: str = "charmer-gateway.service",
+                      marker=service.start_marker_prefix, requests: int = 5000) -> list[dict]:
+    """A week of one instance's journal: its start line, ``requests``
+    ordinary request lines and the 39 saves of :data:`WEEK_SAVES`."""
+
+    span = datetime.timedelta(days=7) - datetime.timedelta(minutes=5)
+    entries = [fake.entry(marker(nonce) + " (pid 4242, port 8317, launcher 2.0.1)",
+                          micros(started + datetime.timedelta(milliseconds=500)), unit=unit, cursor="s=week;start")]
+    for n in range(requests):
+        at = started + datetime.timedelta(seconds=1) + span * n / requests
+        entries.append(fake.entry(request_at(at, n), micros(at), unit=unit, cursor=f"s=week;r={n}"))
+    for index, (result, provider, category) in enumerate(WEEK_SAVES):
+        at = started + datetime.timedelta(seconds=7) + span * index / len(WEEK_SAVES)
+        entries.append(fake.entry(save_at(at, result, provider=provider, category=category, generation=index + 1),
+                                  micros(at), unit=unit, cursor=f"s=week;s={index}"))
+    return entries
+
+
+class ServiceHoldScaleTests(_ServiceBackend):
+    """The supervised hold over a long run, read through a fake journalctl
+    alone on PATH with the production seams (no journal seam): the host's
+    journalctl is never run."""
+
+    NONCE = "0123456789abcdef"
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.bindir = self.root / "fake-bin"
+        self.bindir.mkdir()
+        patcher = mock.patch.dict(os.environ, {"PATH": str(self.bindir)})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.system = [fake.system_entry(micros(NOW - datetime.timedelta(minutes=5)))]
+        self.log_path: Path | None = None
+
+    def run_instance(self, started: datetime.datetime) -> None:
+        service.write_exec_stamp(self.workdir, service.ExecStamp(
+            "2.0.1", "signature", self.world.pid, "/fixture/gateway", started.isoformat(), "pid:[101]",
+            instance=self.NONCE))
+        self.world.lock, self.world.alive, self.world.listener = True, True, "ours"
+        self.active = "active"
+
+    def install(self, user: list[dict], system: list[dict] | None = None, mode: str | None = None) -> Path:
+        self.log_path = fake.install(self.bindir, user, self.system if system is None else system, mode)
+        return self.log_path
+
+    def rewrite(self, user: list[dict], system: list[dict] | None = None, mode: str | None = None) -> None:
+        fake.write_fixture(self.bindir, user, self.system if system is None else system, mode)
+
+    def production(self) -> gl.Gateway:
+        return self.gateway(seams=self.world.seams(runner=self.runner))
+
+    def journal_calls(self) -> list[list[str]]:
+        assert self.log_path is not None
+        calls = fake.calls(self.log_path)
+        self.assertTrue(calls, "the fake journalctl is the one that answered")
+        return calls
+
+    def test_a_week_long_instance_holds_nothing(self) -> None:
+        # Revert-failing: b4d8004f read the newest JOURNAL_BUDGET bytes of the
+        # whole unit journal and held "coverage truncated".
+        started = NOW - datetime.timedelta(days=7)
+        self.run_instance(started)
+        self.install(week_long_entries(started, self.NONCE))
+        with mock.patch.object(gateway_hold, "JOURNAL_BUDGET", 256 << 10):
+            gateway = self.production()
+            report = gateway.persistence_hold()
+            self.assertFalse(report.held, report.reasons)
+            self.assertEqual(report.evaluated, f"from {started - gateway_hold.START_MARGIN:%Y-%m-%d %H:%M} UTC: "
+                                               "39 credential saves")
+            self.assertIn(f"persistence hold: none (journal evaluated) — {report.evaluated}",
+                          "\n".join(gateway.status().lines({})))
+            outcome = gateway.stop()
+        self.assertEqual(outcome.status, "stopped", outcome.lines())
+        self.assertIn(["systemctl", "--user", "--no-ask-password", "stop", "charmer-gateway"], self.calls)
+        calls = self.journal_calls()
+        self.assertTrue(any(arg.startswith("--grep=") for arg in calls[0]))
+        self.assertIn("--all", calls[0])
+
+    def test_without_pcre_the_same_report_and_a_failing_journalctl_holds(self) -> None:
+        started = NOW - datetime.timedelta(days=7)
+        self.run_instance(started)
+        entries = week_long_entries(started, self.NONCE)
+        self.install(entries)
+        with mock.patch.object(gateway_hold, "JOURNAL_BUDGET", 256 << 10):
+            expected = self.production().persistence_hold()
+            log = self.install(entries, mode="no-pcre")
+            report = self.production().persistence_hold()
+        self.assertEqual((report.held, report.reasons, report.coverage_only, report.evaluated),
+                         (expected.held, expected.reasons, expected.coverage_only, expected.evaluated))
+        reads = [argv for argv in fake.calls(log) if "--user" in argv]
+        self.assertEqual(len(reads), 2)
+        self.assertTrue(any(arg.startswith("--grep=") for arg in reads[0]))
+        self.assertFalse(any(arg.startswith("--grep") for arg in reads[1]))
+        self.install(entries, mode="error")
+        gateway = self.production()
+        report = gateway.persistence_hold()
+        self.assertTrue(report.held)
+        self.assertIn("(coverage unavailable); the unit's journal could not be read", "; ".join(report.reasons))
+        self.assertEqual(gateway.stop().status, "held")
+        self.assertFalse(any("stop" in call for call in self.calls))
+
+    def clear_during_the_instance(self) -> tuple[gl.Gateway, list[dict], datetime.datetime]:
+        """An instance started 3 days ago, cleared a day ago with its start
+        line in the journal; returns the gateway, the entries and the clear."""
+
+        started = NOW - datetime.timedelta(days=3)
+        self.run_instance(started)
+        entries = [entry for entry in week_long_entries(started, self.NONCE, requests=200)
+                   if int(entry["__REALTIME_TIMESTAMP"]) < micros(NOW - datetime.timedelta(days=1))]
+        self.install(entries)
+        self.world.now = NOW - datetime.timedelta(days=1)
+        gateway = self.production()
+        report = gateway.persistence_hold()
+        self.assertFalse(report.held, report.reasons)
+        gateway.clear_hold(report)
+        self.world.now = NOW
+        return gateway, entries, NOW - datetime.timedelta(days=1)
+
+    def recent(self) -> list[dict]:
+        """Only entries of the last 12 hours, persisted saves among them."""
+
+        start = NOW - datetime.timedelta(hours=12)
+        entries = []
+        for n in range(20):
+            at = start + datetime.timedelta(minutes=30 * n)
+            entries.append(fake.entry(request_at(at, n), micros(at), cursor=f"s=recent;r={n}"))
+            entries.append(fake.entry(save_at(at + datetime.timedelta(seconds=1), generation=100 + n),
+                                      micros(at) + 1_000_000, cursor=f"s=recent;s={n}"))
+        return entries
+
+    def test_a_vacuum_past_a_clear_during_the_instance_holds(self) -> None:
+        # Revert-failing: b4d8004f read from the clear and never asked
+        # whether the journal still reached back to it.
+        gateway, _entries, cleared = self.clear_during_the_instance()
+        self.rewrite(self.recent())  # rotated or vacuumed: nothing at or before the clear is left
+        report = gateway.persistence_hold()
+        self.assertTrue(report.held)
+        self.assertTrue(report.coverage_only, report.reasons)
+        self.assertIn(f"service journal: the journal no longer reaches back to the last clear-hold "
+                      f"({cleared.isoformat(timespec='seconds')}); it was rotated or vacuumed since",
+                      "; ".join(report.reasons))
+        self.assertEqual(gateway_hold.remedy(report), gateway_hold.COVERAGE_REMEDY)
+        self.assertEqual(gateway.stop().status, "held")
+        self.assertFalse(any("stop" in call for call in self.calls))
+        # The windowed read runs first, then the reach-back probe.
+        calls = self.journal_calls()
+        last_probe = max(i for i, argv in enumerate(calls) if "--until" in argv)
+        last_read = max(i for i, argv in enumerate(calls) if "--user" in argv and "--since" in argv)
+        self.assertLess(last_read, last_probe)
+        self.assertEqual(calls[last_probe][calls[last_probe].index("--until") + 1], f"@{int(cleared.timestamp())}")
+
+    def test_the_journal_still_reaching_the_clear_is_complete_and_a_failed_probe_holds(self) -> None:
+        gateway, _entries, cleared = self.clear_during_the_instance()
+        before = cleared - datetime.timedelta(hours=1)
+        self.rewrite([fake.entry(request_at(before, 1), micros(before), cursor="s=kept;r=1"), *self.recent()])
+        report = gateway.persistence_hold()
+        self.assertFalse(report.held, report.reasons)
+        self.assertIn("20 credential saves", report.evaluated)
+        self.rewrite(self.recent(), mode="until-error")
+        report = gateway.persistence_hold()
+        self.assertTrue(report.held)
+        self.assertTrue(report.coverage_only)
+        self.assertIn("whether the journal still reaches back to the last clear-hold", "; ".join(report.reasons))
+        self.assertIn("could not be read", "; ".join(report.reasons))
+
+    def test_journald_drop_notices_on_the_users_service_group_hold(self) -> None:
+        # Revert-failing: b4d8004f never read journald's drop notices.
+        gateway, entries, cleared = self.clear_during_the_instance()
+        uid = os.getuid()
+        after, before = micros(NOW - datetime.timedelta(hours=2)), micros(cleared - datetime.timedelta(hours=5))
+        cases = {
+            "a notice after the clear": ([fake.drop_notice(after, uid=uid, dropped="5")], "dropped 5 log lines"),
+            "attributed to another user unit": (
+                [fake.drop_notice(after, uid=uid, dropped="7", user_unit="pipewire.service")], "dropped 7 log lines"),
+            "a count journald did not give": ([fake.drop_notice(after, uid=uid, dropped=None)], "dropped some log"),
+            "a notice before the clear": ([fake.drop_notice(before, uid=uid, dropped="5")], None),
+            "another user's services": ([fake.drop_notice(after, uid=uid + 1, dropped="5")], None),
+        }
+        for label, (notices, held) in cases.items():
+            with self.subTest(label):
+                self.rewrite(entries, [*self.system, *notices])
+                report = gateway.persistence_hold()
+                self.assertEqual(report.held, held is not None, report.reasons)
+                if held is not None:
+                    self.assertTrue(report.coverage_only)
+                    text = "; ".join(report.reasons)
+                    self.assertIn("service journal: journald's rate limit for your user services, which the gateway "
+                                  "shares, " + held, text)
+                    self.assertIn(f"(last notice {(NOW - datetime.timedelta(hours=2)).isoformat(timespec='seconds')})"
+                                  "; a credential save among them cannot be ruled out", text)
+                else:
+                    self.assertNotIn("drop notices", report.evaluated)
+        # An ordinary user cannot read the system journal: said, not held.
+        self.rewrite(entries, [*self.system, fake.drop_notice(after, uid=uid, dropped="5")], mode="system-unreadable")
+        report = gateway.persistence_hold()
+        self.assertFalse(report.held, report.reasons)
+        self.assertIn("; journald's drop notices are not readable for this user", report.evaluated)
+        status = "\n".join(gateway.status().lines({}))
+        self.assertIn("drop notices are not readable for this user", status)
+
+    def test_both_passes_read_the_same_window_and_report(self) -> None:
+        started = NOW - datetime.timedelta(days=2)
+        self.run_instance(started)
+        entries = [fake.entry(service.start_marker_prefix(self.NONCE) + " (pid 4242)", micros(started) + 500_000,
+                              cursor="s=eq;start")]
+        for n in range(2000):
+            at = started + datetime.timedelta(seconds=30 * n + 2)
+            entries.append(fake.entry(request_at(at, n), micros(at), cursor=f"s=eq;r={n}"))
+        for n in range(50):
+            at = started + datetime.timedelta(seconds=1000 * n + 3)
+            result = "failed" if n == 10 else "persisted"
+            entries.append(fake.entry(save_at(at, result, generation=n + 1), micros(at), cursor=f"s=eq;s={n}"))
+        binary_at = started + datetime.timedelta(hours=20)
+        entries.append(fake.entry(list(save_at(binary_at, generation=99).encode()), micros(binary_at),
+                                  cursor="s=eq;bin-save"))
+        entries.append(fake.entry(list(b"an ordinary line with a byte \xff"), micros(binary_at) + 1,
+                                  cursor="s=eq;bin-other"))
+        self.install(entries)
+        since = f"@{int((started - gateway_hold.START_MARGIN).timestamp())}"
+
+        def read() -> observation.LogWindow:
+            return service.read_hold_journal(unit="charmer-gateway", since=since,
+                                             evidence=gateway_events.SAVE_LINE_PATTERN,
+                                             marker=service.start_marker_prefix(self.NONCE),
+                                             max_bytes=gateway_hold.JOURNAL_BUDGET)
+
+        first, first_report = read(), self.production().persistence_hold()
+        self.rewrite(entries, mode="no-pcre")
+        second, second_report = read(), self.production().persistence_hold()
+        self.assertEqual(first, second)
+        self.assertEqual((first.coverage, len(first.records)), ("bounded", 1 + 50 + 1))
+        self.assertEqual(
+            (first_report.held, first_report.reasons, first_report.coverage_only, first_report.evaluated),
+            (second_report.held, second_report.reasons, second_report.coverage_only, second_report.evaluated))
+        self.assertFalse(first_report.held, first_report.reasons)
+        self.assertIn("51 credential saves", first_report.evaluated)
+        modes = [any(arg.startswith("--grep") for arg in argv) for argv in self.journal_calls() if "--user" in argv]
+        self.assertEqual(modes[-2:], [True, False])
+
+    def test_the_systemd_stop_refuses_a_gateway_that_changed_while_its_hold_was_read(self) -> None:
+        # Revert-failing: b4d8004f dispatched the stop to whatever ran then.
+        self.world.become_ready("9999999999999999")
+        self.active = "active"
+        marker = observation.LogRecord(service.start_marker_prefix("9999999999999999"), NOW, "boot:invocation", "c0")
+
+        def journal(_unit, _since):
+            self.world.become_ready("8888888888888888")  # a restart during the evaluation
+            return observation.LogWindow((marker,), "bounded")
+
+        outcome = self.gateway(seams=self.world.seams(runner=self.runner, journal=journal)).stop()
+        self.assertEqual(outcome.status, "refused", outcome.lines())
+        self.assertIn("the gateway changed meanwhile; nothing was stopped", outcome.message)
+        self.assertFalse(any("stop" in call for call in self.calls))
+
+
+class OnDemandHoldScaleTests(_Lifecycle):
+    """The on-demand hold reads each instance log's credential-save lines
+    whole: how much the gateway logged no longer matters."""
+
+    FILLER = ('[2026-10-02 11:00:00] [a1b2c3d4] [info ] [gin_logger.go:92] 200 |  1.2s |  127.0.0.1 | '
+              'POST "/v1/messages" ' + "y" * 200)
+
+    def big_log(self, nonce: str, megabytes: int, *, started: datetime.datetime = NOW,
+                failure: bool = True) -> Path:
+        """``megabytes`` of ordinary lines with persisted saves at the start,
+        middle and end, and (``failure``) a failure in the middle that the
+        last save repairs."""
+
+        half = (megabytes << 20) // (len(self.FILLER) + 1) // 2 + 1
+        lines = [f"charmer-proxy: gateway instance {nonce} starting", save_line("persisted", at="2026-10-02 10:00:00"),
+                 *[self.FILLER] * half, save_line("persisted", at="2026-10-02 10:30:00"),
+                 *([save_line("failed", at="2026-10-02 11:00:00")] if failure else []), *[self.FILLER] * half,
+                 save_line("persisted", at="2026-10-02 11:30:00")]
+        path = self.log_file(nonce, lines, started=started)
+        self.assertGreater(path.stat().st_size, megabytes << 20)
+        return path
+
+    def test_a_20_mb_running_log_with_a_repaired_failure_holds_nothing(self) -> None:
+        # Revert-failing: b4d8004f read the newest 8 MiB and held "truncated".
+        self.running("abababababababab")
+        self.big_log("abababababababab", 20)
+        report = self.gateway().persistence_hold()
+        self.assertFalse(report.held, report.reasons)
+        self.assertEqual(report.evaluated, "1 instance log(s): 4 credential saves")
+        self.assertEqual(self.gateway().stop().status, "stopped")
+
+    def test_keep_mode_equals_the_full_read_on_small_logs(self) -> None:
+        failed = save_line("failed").encode()
+        cases = {
+            "a cleared start": ([b"noise", save_line("persisted").encode(), failed, b"tail"], 6),
+            "an unfinished last line": ([b"noise", failed, failed[:40] + b"\x00no newline"], 0),
+            "a line over the limit": ([failed, b"x" * (file_log.LINE_LIMIT + 5), failed, b"after"], 0),
+            "invalid UTF-8 around the token": ([b"\xff" + failed, failed.replace(b"[--------]", b"[\xfe\xff]") + b"\xc3",
+                                                b"[2026-10-02 12:00:00] [\xff] [warn ] [credential_save.go:214] "
+                                                b"credential_save_v1 \xff"], 0),
+        }
+        for label, (lines, start) in cases.items():
+            with self.subTest(label):
+                nonce = f"{abs(hash(label)) % (1 << 64):016x}"
+                descriptor, path = file_log.create_instance_log(self.logs, NOW, nonce)
+                body = b"\n".join(lines) + (b"" if label == "an unfinished last line" else b"\n")
+                os.write(descriptor, body)
+                os.close(descriptor)
+                log = file_log.find_instance(self.logs, nonce)
+                full = file_log.read_evidence(log, start=start)
+                kept = file_log.read_evidence(log, start=start, keep=gateway_events.SAVE_LINE_BYTES)
+                self.assertEqual(kept.window.records, tuple(record for record in full.window.records
+                                                            if gateway_events.is_save_line(record.message)))
+                self.assertEqual((kept.window.coverage, kept.end, kept.through),
+                                 (full.window.coverage, full.end, full.through))
+                for record in kept.window.records:  # each cursor is its line's exact offset
+                    offset = int(record.source_cursor.split(":")[1])
+                    self.assertTrue(offset == 0 or body[offset - 1:offset] == b"\n")
+                    self.assertEqual(body[offset:].split(b"\n", 1)[0].decode("utf-8", "replace"), record.message)
+                os.unlink(path)
+
+    def test_the_scan_budget_and_the_deadline_hold_and_say_why(self) -> None:
+        self.running("cdcdcdcdcdcdcdcd")
+        self.big_log("cdcdcdcdcdcdcdcd", 2, failure=False)
+        gateway = self.gateway()
+        with mock.patch.object(gateway_hold, "TOTAL_BUDGET", 1 << 20):
+            report = gateway.persistence_hold()
+            self.assertTrue(report.held)
+            self.assertTrue(report.coverage_only, report.reasons)
+            self.assertIn("instance cdcdcdcdcdcdcdcd: the log could not be evaluated completely (coverage truncated); "
+                          "the logs are larger than one evaluation reads", report.reasons)
+            gateway.clear_hold(report)
+            self.assertFalse(gateway.persistence_hold().held)  # cleared through the end of the log
+        self.log_file("efefefefefefefef", [save_line("persisted")], started=NOW - datetime.timedelta(hours=1))
+        report = gateway_hold.evaluate_files(self.state_root, ("claude",), deadline=time.monotonic() - 1)
+        self.assertTrue(report.held)
+        self.assertTrue(report.coverage_only)
+        self.assertIn("instance efefefefefefefef: the log could not be evaluated completely (coverage incomplete); "
+                      "the log read did not finish within 30 s", report.reasons)
+
+    def test_pruning_reads_a_whole_victim(self) -> None:
+        # Revert-failing: b4d8004f evaluated the newest 8 MiB and recorded a
+        # "(log pruned)" truncated hold.
+        path = self.big_log("1111111111111111", 20, started=NOW - datetime.timedelta(hours=2))
+        report = gateway_hold.prune_at_start(self.state_root, ("claude",), budget=0)
+        self.assertEqual((report.removed, report.persisted), (("1111111111111111",), ()))
+        self.assertFalse(path.exists())
+        self.assertEqual(gateway_hold.read_document(self.state_root)["holds"], [])
+
+    def test_a_prune_that_runs_out_of_time_keeps_the_log_and_records_nothing(self) -> None:
+        path = self.log_file("2222222222222222", ["noise", save_line("failed")],
+                             started=NOW - datetime.timedelta(hours=2))
+        hold = self.workdir / gateway_hold.HOLD_FILE
+        report = gateway_hold.prune_at_start(self.state_root, ("claude",), budget=0, deadline=time.monotonic() - 1)
+        self.assertEqual((report.removed, report.persisted), ((), ()))
+        self.assertEqual(report.retained_bytes, path.stat().st_size)
+        self.assertTrue(path.exists())
+        self.assertFalse(hold.exists())
+        report = gateway_hold.prune_at_start(self.state_root, ("claude",), budget=0)
+        self.assertEqual((report.removed, report.persisted), (("2222222222222222",),) * 2)
+        (held,) = gateway_hold.read_document(self.state_root)["holds"]
+        self.assertEqual(held["reason"], "a credential save failed and no later save repaired it (claude) (log pruned)")
+        self.assertEqual(held["coverage"], "bounded")
+
+
+def _valid_201(document) -> bool:
+    """2.0.1's hold-document check (``gateway_hold._valid`` at b4d8004f),
+    frozen: every document this release writes must pass it."""
+
+    import re
+
+    hold_keys, optional = frozenset({"instance", "reason", "recorded_at"}), frozenset({"coverage", "evidence"})
+    coverages = ("bounded", "truncated", "incomplete", "unavailable")
+    if not isinstance(document, dict) or set(document) != {"version", "cleared", "cleared_through", "holds"}:
+        return False
+    if document["version"] != 1:
+        return False
+    cleared = document["cleared"]
+    if not isinstance(cleared, dict) or not all(
+            isinstance(key, str) and re.compile(r"^[0-9a-f]{16}$").fullmatch(key) and type(value) is int
+            and value >= 0 for key, value in cleared.items()):
+        return False
+    through = document["cleared_through"]
+    if through is not None:
+        try:
+            if not isinstance(through, str) or datetime.datetime.fromisoformat(through).tzinfo is None:
+                return False
+        except ValueError:
+            return False
+    holds = document["holds"]
+    return isinstance(holds, list) and all(
+        isinstance(item, dict) and hold_keys <= set(item) <= hold_keys | optional
+        and all(isinstance(item[key], str) and item[key] for key in item)
+        and item.get("coverage", "bounded") in coverages
+        for item in holds)
+
+
+class HoldDocumentCompatibilityTests(_Lifecycle):
+    """HOLD_VERSION 1 both ways: this release reads 2.0.1's documents and
+    recognizes their coverage-only holds; 2.0.1 reads every document this
+    release writes."""
+
+    PRUNED = {"instance": "1111111111111111", "recorded_at": "2026-10-01T10:00:00+00:00",
+              "reason": "the log could not be evaluated completely (coverage truncated) (log pruned)",
+              "coverage": "truncated"}
+    JOURNAL = {"instance": "boot:invocation", "recorded_at": "2026-10-01T10:00:00+00:00",
+               "reason": "a credential save failed and no later save repaired it (claude; service journal)",
+               "evidence": "journal boot:invocation claude 0123456789abcdef 2026-10-01T09:00:00+00:00"}
+
+    def hold_document(self, *holds, through="2026-10-18T17:24:54.595482+00:00", cleared=None) -> dict:
+        return {"version": 1, "cleared": cleared or {}, "cleared_through": through, "holds": list(holds)}
+
+    def written(self) -> dict:
+        document = json.loads((self.workdir / gateway_hold.HOLD_FILE).read_text())
+        self.assertEqual(set(document), {"version", "cleared", "cleared_through", "holds"})
+        self.assertTrue(_valid_201(document), document)
+        return document
+
+    def test_documents_of_2_0_1_read_and_their_coverage_holds_are_recognized(self) -> None:
+        hold = self.workdir / gateway_hold.HOLD_FILE
+        for holds, coverage_only in (((self.PRUNED,), True), ((self.PRUNED, self.JOURNAL), False),
+                                     ((dict(self.PRUNED, reason="an unresolved save (pruned log)"),), False), ((), None)):
+            with self.subTest(holds=len(holds), coverage_only=coverage_only):
+                document = self.hold_document(*holds, cleared={"2222222222222222": 7})
+                self.assertTrue(_valid_201(document))
+                state.atomic_write(hold, json.dumps(document).encode())
+                self.assertEqual(gateway_hold.read_document(self.state_root), document)
+                report = gateway_hold.evaluate_files(self.state_root, ("claude",))
+                self.assertEqual(report.held, coverage_only is not None)
+                if coverage_only is not None:
+                    self.assertEqual(report.coverage_only, coverage_only)
+        # The operator's document: cleared just before the running instance
+        # started, so its start line decides.
+        state.atomic_write(hold, json.dumps(self.hold_document(through="2026-10-18T17:24:54.595482Z")).encode())
+        started = datetime.datetime(2026, 10, 18, 17, 25, 25, 493491, tzinfo=datetime.timezone.utc)
+        marker = observation.LogRecord(service.start_marker_prefix("d26721e6b9c12dfb") + " (pid 1)", started,
+                                       "boot:invocation", "c0")
+        asked = []
+
+        def reader(since):
+            asked.append(since)
+            return observation.LogWindow((marker,), "bounded")
+
+        report = gateway_hold.evaluate_journal(self.state_root, ("claude",), reader=reader,
+                                               now=lambda: "2026-10-25T12:00:00+00:00",
+                                               running=("d26721e6b9c12dfb", started), drops=lambda _since: ())
+        self.assertFalse(report.held, report.reasons)
+        self.assertEqual(asked, [started - gateway_hold.START_MARGIN])
+
+    def test_every_document_this_release_writes_passes_2_0_1s_check(self) -> None:
+        # A clear.
+        self.running("3333333333333333")
+        self.log_file("3333333333333333", [save_line("failed")])
+        gateway = self.gateway()
+        gateway.clear_hold(gateway.persistence_hold())
+        self.assertEqual(self.written()["cleared"], {"3333333333333333": len(save_line("failed")) + 1})
+        # A prune: a failure and a cut evaluation, with byte-identical 2.0.1 reasons.
+        self.log_file("4444444444444444", [save_line("failed", at="2026-10-02 11:00:00")],
+                      started=NOW - datetime.timedelta(hours=3))
+        self.log_file("5555555555555555", [save_line("persisted", at="2026-10-02 10:00:00")],
+                      started=NOW - datetime.timedelta(hours=4))
+        gateway_hold.prune_at_start(self.state_root, ("claude",), keep={"3333333333333333"}, budget=0, file_budget=64)
+        reasons = {item["instance"]: item["reason"] for item in self.written()["holds"]}
+        self.assertEqual(reasons, {
+            "4444444444444444": "the log could not be evaluated completely (coverage truncated) (log pruned)",
+            "5555555555555555": "the log could not be evaluated completely (coverage truncated) (log pruned)"})
+        self.assertTrue(gateway_hold.evaluate_files(self.state_root, ("claude",)).coverage_only)
+        # Journal evidence, from a complete and from an incomplete read.
+        failed = observation.LogRecord(save_line("failed"), NOW, "boot:invocation", "c1")
+        bogus = observation.LogRecord(save_line("persisted").replace("operation=refresh", "operation=bogus"), NOW,
+                                      "boot:invocation", "c2")
+        for coverage, records in (("bounded", (failed,)), ("truncated", (failed, bogus))):
+            gateway_hold.evaluate_journal(self.state_root, ("claude",), now=lambda: NOW.isoformat(),
+                                          reader=lambda _since, records=records, coverage=coverage:
+                                          observation.LogWindow(records, coverage))
+            self.assertTrue(any("evidence" in item for item in self.written()["holds"]))
 
 
 if __name__ == "__main__":
