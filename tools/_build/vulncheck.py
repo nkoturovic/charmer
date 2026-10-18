@@ -149,7 +149,7 @@ def findings(stream: str, policy: dict[str, Any]) -> dict[str, Any]:
         require(isinstance(value, dict), f"malformed {kind} message")
         if kind == "config":
             require(config is None and value.get("protocol_version") == "v1.0.0"
-                    and value.get("scanner_name") == "govulncheck" and value.get("scanner_version") == "v1.8.0"
+                    and value.get("scanner_name") == "govulncheck" and value.get("scanner_version") == "v1.9.0"
                     and value.get("scan_mode") == "binary" and value.get("scan_level") == "symbol"
                     and text(value.get("db")) and revision(value.get("db_last_modified")), "invalid scanner config")
             config = value

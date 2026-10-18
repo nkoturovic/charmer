@@ -50,6 +50,22 @@ class CheckedInTests(unittest.TestCase):
                                  runtime.filename.replace("install_only_stripped.tar.gz", "pgo+lto-full.tar.zst"))
                 self.assertRegex(entry["full_archive"]["sha256"], r"^[0-9a-f]{64}$")
 
+    def test_security_refresh_provenance_and_components_move_together(self) -> None:
+        self.assertEqual(self.runtimes.release, "20261013")
+        self.assertEqual(self.runtimes.python, "3.14.8")
+        self.assertIn("0a176490488b79448ef66087e480bf0966c8450849ff0c168a9a26cd1756abea",
+                      self.inventory.document["source"]["versions"])
+        for target in self.runtimes.targets:
+            with self.subTest(target=target):
+                components = {item["name"]: item["version"]
+                              for item in self.tool.sbom_components(self.inventory, target)}
+                self.assertEqual(components["expat"], "2.9.0")
+                self.assertEqual(components["libffi"], "3.8.0")
+                notices = self.tool.notices_bytes(self.inventory, target).decode()
+                self.assertIn("expat 2.9.0", notices)
+                self.assertIn("libffi 3.8.0", notices)
+                self.assertIn("20261013", self.inventory.target(target)["full_archive"]["filename"])
+
     def test_every_shipped_library_has_its_text(self) -> None:
         for target, entry in self.inventory.document["targets"].items():
             for library in entry["libraries"]:

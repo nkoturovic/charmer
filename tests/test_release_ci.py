@@ -14,7 +14,9 @@ pin watch run on stubs.
 from __future__ import annotations
 
 import contextlib
+import datetime
 import hashlib
+import http.client
 import io
 import json
 import re
@@ -40,7 +42,7 @@ from _layout import REPO_ROOT, RESOURCES_ROOT
 from _release import (NO_BUNDLE_GUARD, TOOLS_DIR, WORKFLOWS_DIR, load_tool, process_running,
                       requires_checkout, requires_release_tree)
 
-WORKFLOWS = ("ci.yml", "release.yml", "pin-watch.yml")
+WORKFLOWS = ("ci.yml", "release.yml", "pin-watch.yml", "vulnerability-watch.yml")
 JOURNEY = REPO_ROOT / ".github" / "scripts" / "journey.sh"
 JOURNEY_FIXTURE = REPO_ROOT / ".github" / "scripts" / "journey_fixture.py"
 SCRIPTS = REPO_ROOT / ".github" / "scripts"
@@ -149,7 +151,7 @@ class WorkflowTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.texts = {name: (WORKFLOWS_DIR / name).read_text() for name in WORKFLOWS}
 
-    def test_the_three_workflows_exist(self) -> None:
+    def test_the_four_workflows_exist(self) -> None:
         self.assertEqual(sorted(p.name for p in WORKFLOWS_DIR.glob("*.yml")), sorted(WORKFLOWS))
 
     def test_permissions_and_triggers(self) -> None:
@@ -196,12 +198,15 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(used, actions)
         workflows = "\n".join(self.texts.values())
         tools = {row[0]: row[1] for row in tables["Tools (pinned by version)"]}
+        tool_script = (SCRIPTS / "ci_tools.sh").read_text()
         found = {
             "actionlint": re.findall(r"github\.com/rhysd/actionlint/cmd/actionlint@(\S+)", workflows),
             "zizmor": re.findall(r"'zizmor==([^' ]+)[ ']", workflows),
             "govulncheck": re.findall(r"golang\.org/x/vuln/cmd/govulncheck@(\S+)", workflows),
             "Pester": re.findall(r"Pester -RequiredVersion (\S+)", workflows),
             "setuptools": re.findall(r"'setuptools==([^' ]+)[ ']", workflows),
+            "ShellCheck": re.findall(r"shellcheck\)\n    version=(\S+)", tool_script),
+            "Go (CI tools)": re.findall(r"go\)\n    version=(\S+)", tool_script),
         }
         self.assertEqual(set(tools), set(found))
         for tool, versions in found.items():
@@ -227,7 +232,7 @@ class WorkflowTests(unittest.TestCase):
         tables = _pin_tables(PINS.read_text())
         version = {row[0]: row[1] for row in tables["Tools (pinned by version)"]}["zizmor"]
         artifacts = {row[0]: row for row in tables["Tool artifacts (pinned by sha256)"]}
-        self.assertEqual(set(artifacts), {"zizmor", "setuptools"})
+        self.assertEqual(set(artifacts), {"zizmor", "setuptools", "ShellCheck", "Go (CI tools)"})
         _tool, wheel, digest, _verified = artifacts["zizmor"]
         self.assertRegex(digest, r"^[0-9a-f]{64}$")
         self.assertRegex(wheel, rf"^zizmor-{re.escape(version)}-py3-none-manylinux_[0-9_]+_x86_64\.whl$")
@@ -242,6 +247,34 @@ class WorkflowTests(unittest.TestCase):
         for option in ("--require-hashes", "--no-deps", "--only-binary=:all:", '-r "$RUNNER_TEMP/zizmor.txt"'):
             self.assertIn(option, install[0])
         self.assertEqual(re.findall(r"zizmor==\S+", "\n".join(self.texts.values())), [f"zizmor=={version}"])
+
+    def test_security_refresh_and_tool_compilers_are_explicit(self) -> None:
+        tables = _pin_tables(PINS.read_text())
+        tools = {row[0]: row[1] for row in tables["Tools (pinned by version)"]}
+        self.assertEqual({name: tools[name] for name in ("setuptools", "zizmor", "govulncheck")},
+                         {"setuptools": "84.0.0", "zizmor": "1.31.1", "govulncheck": "v1.9.0"})
+        actions = {row[0]: row[1] for row in tables["Actions (pinned by commit)"]}
+        for action, tag in {"actions/upload-artifact": "v7.0.2", "actions/download-artifact": "v8.0.2",
+                            "cachix/install-nix-action": "v31.11.2"}.items():
+            self.assertEqual(actions[action], tag)
+        script = (SCRIPTS / "ci_tools.sh").read_text()
+        for row in tables["Tool artifacts (pinned by sha256)"]:
+            if row[0] in ("Go (CI tools)", "ShellCheck"):
+                self.assertIn("sha256=" + row[2], script)
+        self.assertLess(script.index("sha256sum --check"), script.index("tar -xf"))
+        for workflow, job in (("ci.yml", "fast"), ("release.yml", "vulnerabilities"),
+                              ("vulnerability-watch.yml", "watch")):
+            body = _jobs(self.texts[workflow])[job]
+            self.assertIn('sh .github/scripts/ci_tools.sh go "$RUNNER_TEMP/ci-go"', body)
+            self.assertIn("export GOTOOLCHAIN=local", body)
+            self.assertLess(body.index("ci_tools.sh go"), body.index("go install") if "go install" in body
+                            else body.index('bin/go" install'))
+        fast = _jobs(self.texts["ci.yml"])["fast"]
+        self.assertLess(fast.index("ci_tools.sh shellcheck"), fast.index("shellcheck -s sh"))
+        windows = _jobs(self.texts["release.yml"])["journeys-windows"]
+        self.assertIn("distribution: [Ubuntu-24.04, Ubuntu-26.04]", windows)
+        self.assertIn("WSL_DISTRIBUTION: ${{ matrix.distribution }}", windows)
+        self.assertNotRegex("\n".join(_commands(windows)), r"Ubuntu-(24|26)\.04")
 
     def test_checkout_drops_credentials(self) -> None:
         for name, text in self.texts.items():
@@ -283,7 +316,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(_upload_guard_problems(tolerant), ["upload 1 follows a guard that may fail"])
 
     def test_lanes(self) -> None:
-        ci, release, watch = (self.texts[n] for n in WORKFLOWS)
+        ci, release, watch = (self.texts[n] for n in WORKFLOWS[:3])
         for needle in ("tests/bless.py --check", "git diff --check", 'tools/history_scan.py --repo . --range "$RANGE"',
                        "tests.test_hygiene", "tools/docs_gen.py --check", "import charmer",
                        "shellcheck -s sh packaging/install.sh",
@@ -1317,7 +1350,7 @@ class VulncheckTests(unittest.TestCase):
         manifest["gateway"] = {"version": self.policy["gateway"]["version"]}
         manifest_path.write_text(json.dumps(manifest))
         self.messages = [
-            {"config": {"protocol_version": "v1.0.0", "scanner_name": "govulncheck", "scanner_version": "v1.8.0",
+            {"config": {"protocol_version": "v1.0.0", "scanner_name": "govulncheck", "scanner_version": "v1.9.0",
                         "db": "file:///synthetic-db", "db_last_modified": "2026-10-01T20:24:15Z",
                         "scan_level": "symbol", "scan_mode": "binary"}},
             {"progress": {"message": "Checking the binary against the vulnerabilities..."}},
@@ -1343,7 +1376,7 @@ mode = os.environ.get("STUB_MODE", "reviewed")
 if "-version" in sys.argv:
     if mode == "version-fail":
         sys.exit(1)
-    print("Scanner: govulncheck@v1.8.0")
+    print("Scanner: govulncheck@v1.9.0")
     if mode != "no-db":
         print("DB: file:///synthetic-db")
     sys.exit(0)
@@ -1444,6 +1477,15 @@ if mode == "fail":
         code, report, _ = self.run_check()
         self.assertEqual(code, 1)
         self.assertTrue(all(identifier in entry["unreviewed_findings"] for entry in report["targets"]))
+
+    def test_scanner_version_is_exact_not_just_protocol_compatible(self) -> None:
+        self.assertEqual(self.run_check()[0], 0)
+        for version in ("v1.8.0", "v1.10.0", "v1.9.0-dev", "", None):
+            with self.subTest(version=version):
+                self.messages[0]["config"]["scanner_version"] = version
+                code, report, _ = self.run_check()
+                self.assertEqual(code, 1)
+                self.assertTrue(all("invalid scanner config" in entry["error"] for entry in report["targets"]))
 
     def test_malformed_or_incomplete_scans_never_pass(self) -> None:
         streams = ["", "not json", "[]", '{"config":{}}', '{"finding":null}',
@@ -1989,7 +2031,7 @@ class ScheduleTests(unittest.TestCase):
                         scheduled.append(f"{name}:{job}")
                         self.assertTrue(dispatch, "a scheduled job also runs on a manual run")
         self.assertEqual(sorted(scheduled), ["ci.yml:battery", "ci.yml:gateway", "ci.yml:nix", "ci.yml:pty",
-                                             "pin-watch.yml:watch"])
+                                             "pin-watch.yml:watch", "vulnerability-watch.yml:watch"])
 
     def test_the_evaluator_reads_the_guard(self) -> None:
         guard = "(github.event_name == 'schedule' && vars.CM_SCHEDULES == 'on') || github.event_name == 'workflow_dispatch'"
@@ -2160,7 +2202,7 @@ class EvidenceJobTests(unittest.TestCase):
         self.assertIn("--target host", gateway)
         self.assertIn("gateway_probes.py compile", gateway)
         self.assertIn("needs: gateway", battery)
-        order = ["setuptools==82.0.1", "name: gateway-dist", "name: gateway-probes", "gateway_probes.py provision",
+        order = ["setuptools==84.0.0", "name: gateway-dist", "name: gateway-probes", "gateway_probes.py provision",
                  "curl --proto", "tools/test.py --tier full --claude \"$RUNNER_TEMP/claude\" --require 'DistributionTests'"]
         positions = [battery.index(needle) for needle in order]
         self.assertEqual(positions, sorted(positions))
@@ -2185,7 +2227,7 @@ class EvidenceJobTests(unittest.TestCase):
         self.assertEqual(len(install), 1, install)
         for option in ("--require-hashes", "--no-deps", "--only-binary=:all:", '-r "$RUNNER_TEMP/setuptools.txt"'):
             self.assertIn(option, install[0])
-        self.assertIn('python: ["3.11", "3.14"]', battery)  # both Pythons install it
+        self.assertIn('python: ["3.11", "3.14", "3.15"]', battery)  # every supported CI Python installs it
 
 
 @requires_release_tree
@@ -2437,7 +2479,7 @@ class NativeLaneTests(unittest.TestCase):
         # scope; PowerShell variable names are case-insensitive.
         self.assertEqual(step.count(". ./dist/install.ps1"), 1)
         source = step.index(". ./dist/install.ps1")
-        self.assertLess(source, step.index("$distribution = 'Ubuntu-24.04'"))
+        self.assertLess(source, step.index("$distribution = $env:WSL_DISTRIBUTION"))
         self.assertLess(source, step.index("$version = (Get-Content dist/MANIFEST.json"))
         self.assertIn("wsl --distribution $distribution --exec python3 -I -c", step)
         self.assertIn("could not verify Linux loopback server cleanup", step)
@@ -2450,7 +2492,7 @@ class NativeLaneTests(unittest.TestCase):
     def test_windows_installs_through_install_ps1(self) -> None:
         job = self.release["journeys-windows"]
         order = ["Invoke-Pester", ". ./dist/install.ps1", "Test-WslReady", "Install-Wsl -AssumeYes",
-                 "wsl --install --distribution Ubuntu-24.04 --no-launch", "sh .github/scripts/wsl_prepare.sh",
+                 "wsl --install --distribution $env:WSL_DISTRIBUTION --no-launch", "sh .github/scripts/wsl_prepare.sh",
                  "journey.sh prepare dist", "serve-files", "--cert", "Invoke-Main -Distribution $distribution",
                  '-InstallerUrl "https://localhost:$port/install.sh"', "-InstallerSha256 $sum",
                  "-InstallerArguments @('--from-dir'", "'--allowed-signers'",
@@ -2907,6 +2949,440 @@ esac
         self.assertEqual(code, 1)
         self.assertIn("already has roots", output)
         self.assertEqual(self.tool.main([]), 2)
+
+
+@requires_release_tree
+class VulnerabilityWatchTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.watch = load_tool(SCRIPTS / "vulnerability_watch.py", "vulnerability_watch")
+        with mock.patch.dict(sys.modules, {"vulnerability_watch": cls.watch}):
+            cls.issue = load_tool(SCRIPTS / "vulnerability_watch_issue.py", "vulnerability_watch_issue")
+
+    def test_workflow_is_read_only_guarded_and_reports_before_failing(self) -> None:
+        text = (WORKFLOWS_DIR / "vulnerability-watch.yml").read_text()
+        job = _jobs(text)["watch"]
+        self.assertIn("vars.CM_SCHEDULES == 'on'", job)
+        self.assertEqual(re.findall(r"^      (\S+): (read|write)", job, re.M),
+                         [("contents", "read"), ("issues", "write")])
+        for forbidden in ("pull_request", "git push", "release create", "continue-on-error"):
+            self.assertNotIn(forbidden, text)
+        self.assertIn("cancel-in-progress: false", text)
+        self.assertIn("--dispositions gateway/vulnerability-dispositions.json", job)
+        notify = next(s for s in _steps(job) if "name: Open or update" in s)
+        self.assertIn("if: always() && steps.scan.outputs.failed != 'false'", notify)
+        self.assertIn("vulnerability_watch_issue.py", notify)
+        self.assertLess(job.index("vulnerability_watch_issue.py"), job.index("Fail closed"))
+        scan = next(s for s in _steps(job) if "id: scan" in s)
+        self.assertNotIn("GH_TOKEN", scan)
+        self.assertEqual(_upload_guard_problems(job), [])
+
+    def test_cpython_uses_the_bundled_versions_commit_not_a_pypi_name(self) -> None:
+        commit = "a" * 40
+        with mock.patch.object(self.watch, "request", side_effect=[
+                json.dumps({"object": {"sha": "b" * 40, "type": "tag"}}).encode(),
+                json.dumps({"object": {"sha": commit, "type": "commit"}}).encode()]) as fetch:
+            query, identity = self.watch.cpython_query({"python": {"version": "3.14.8"}})
+        self.assertEqual(query, {"commit": commit})
+        self.assertEqual(identity, {"version": "3.14.8", "commit": commit})
+        self.assertTrue(fetch.call_args_list[0].args[0].endswith("/git/ref/tags/v3.14.8"))
+        for version in (None, "", "../main", "3.15.0rc1"):
+            with self.subTest(version=version), mock.patch.object(self.watch, "request") as fetch:
+                with self.assertRaisesRegex(ValueError, "invalid CPython version"):
+                    self.watch.cpython_query({"python": {"version": version}})
+                fetch.assert_not_called()
+
+    def test_osv_aliases_need_binary_validated_module_and_version(self) -> None:
+        queries = [{"package": {"ecosystem": "Go", "name": "example.invalid/module"}, "version": "v1.0.0"},
+                   {"commit": "a" * 40}]
+        responses = [{"results": [{"vulns": [{"id": "GHSA-test"}]}, {"vulns": [{"id": "CVE-2026-99999"}]}]},
+                     {"id": "GHSA-test", "aliases": ["GO-2026-9999"]}, {"id": "CVE-2026-99999"}]
+        reviewed = {("GO-2026-9999", "example.invalid/module", "v1.0.0")}
+        for accepted in (reviewed, set(), {("GO-2026-9999", "other", "v1.0.0")},
+                         {("GO-2026-9999", "example.invalid/module", "v2.0.0")}):
+            with self.subTest(accepted=accepted), mock.patch.object(self.watch, "request", side_effect=[
+                    json.dumps(d).encode() for d in responses]) as fetch:
+                rows = self.watch.osv_findings(queries, accepted)
+                self.assertEqual(rows[0]["result"], "reviewed" if accepted == reviewed else "unreviewed")
+                self.assertEqual(rows[1]["result"], "unreviewed")
+                self.assertEqual(fetch.call_args_list[0].args[1], {"queries": queries})
+
+    def test_osv_pagination_and_incomplete_responses(self) -> None:
+        query = {"commit": "a" * 40}
+        with mock.patch.object(self.watch, "request", side_effect=[
+                b'{"results":[{"next_page_token":"next"}]}',
+                b'{"results":[{"vulns":[{"id":"CVE-test"}]}]}', b'{"id":"CVE-test"}']) as fetch:
+            rows = self.watch.osv_findings([query], set())
+        self.assertEqual(rows[0]["id"], "CVE-test")
+        self.assertEqual(fetch.call_args_list[1].args[1], {"queries": [{**query, "page_token": "next"}]})
+        for response in (b'{}', b'{"results":[]}', b'{"results":[null]}', b'{"results":[{"error":"failed"}]}',
+                         b'{"results":[{"vulns":null}]}', b'{"results":[{"next_page_token":5}]}'):
+            with self.subTest(response=response), mock.patch.object(self.watch, "request", return_value=response):
+                with self.assertRaises(ValueError):
+                    self.watch.osv_findings([query], set())
+
+    def test_failed_binary_check_never_suppresses_osv_or_accepts_its_matches(self) -> None:
+        binary = {"problems": ["disposition gateway hash mismatch"], "targets": []}
+        with mock.patch.object(self.watch, "download_release", return_value={"version": "1.0.0"}), \
+                mock.patch.object(self.watch, "release_dispositions", return_value=(Path("policy"),
+                                  {"source": "default-branch", "sha256": "b" * 64})), \
+                mock.patch.object(self.watch.vulncheck, "check", return_value=(binary, False)) as scanner, \
+                mock.patch.object(self.watch, "module_queries", return_value=[]), \
+                mock.patch.object(self.watch, "cpython_query", return_value=({"commit": "a" * 40}, {"version": "3.14.8"})), \
+                mock.patch.object(self.watch, "osv_findings", return_value=[]) as osv:
+            report, ok = self.watch.watch("example/project", Path("unused"), "scanner", Path("policy"))
+        scanner.assert_called_once_with(Path("unused"), "scanner", Path("policy"))
+        shipped = self.watch.cpython_reviews(SCRIPTS.parent / "vulnerability-watch-reviewed.json")
+        osv.assert_called_once_with([{"commit": "a" * 40}], set(), cpython={"version": "3.14.8"}, reviews=shipped)
+        self.assertFalse(ok)
+        self.assertIn("disposition gateway hash mismatch", self.watch.issue_body(report, ok))
+        self.assertEqual(self.watch.issue_body(report, True), "")
+
+    def test_network_failure_leaves_actionable_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as raw, mock.patch.object(self.watch, "request", side_effect=OSError("offline")):
+            root = Path(raw)
+            code = self.watch.main(["--repository", "example/project", "--dist", str(root / "dist"),
+                                    "--govulncheck", "unused", "--dispositions", str(root / "policy"),
+                                    "--out", str(root / "report.json"), "--body", str(root / "body.txt")])
+            self.assertEqual(code, 1)
+            self.assertEqual(json.loads((root / "report.json").read_text())["problems"], ["offline"])
+            self.assertIn("offline", (root / "body.txt").read_text())
+
+    def test_http_protocol_and_unexpected_failures_leave_evidence(self) -> None:
+        for error in (http.client.IncompleteRead(b"partial", 100), http.client.BadStatusLine("broken"),
+                      RuntimeError("unexpected transport failure")):
+            with self.subTest(error=type(error).__name__), tempfile.TemporaryDirectory() as raw, \
+                    mock.patch.object(self.watch, "request", side_effect=error):
+                root = Path(raw)
+                code = self.watch.main(["--repository", "example/project", "--dist", str(root / "dist"),
+                                        "--govulncheck", "unused", "--dispositions", str(root / "policy"),
+                                        "--out", str(root / "report.json"), "--body", str(root / "body.txt")])
+                self.assertEqual(code, 1)
+                report = json.loads((root / "report.json").read_text())
+                self.assertIn(str(error), report["problems"][0])
+                self.assertIn(str(error), (root / "body.txt").read_text())
+                self.assertIsNotNone(self.issue.fingerprint((root / "body.txt").read_text()))
+        with mock.patch.object(self.watch, "request", side_effect=http.client.IncompleteRead(b"", 1)):
+            report, ok = self.watch.watch("example/project", Path("unused"), "unused", Path("unused"))
+        self.assertFalse(ok)
+        self.assertIn("IncompleteRead", report["problems"][0])
+
+    def test_cpython_reviews_bind_id_aliases_version_revision_and_expiry(self) -> None:
+        cpython = {"version": "3.14.8", "commit": "a" * 40}
+        advisory = {"id": "PSF-test", "aliases": ["CVE-test"], "modified": "2026-10-18T12:00:00Z"}
+        today = datetime.datetime.now(datetime.timezone.utc).date()
+        entry = {**advisory, "version": cpython["version"], "reason": "Synthetic platform-only advisory.",
+                 "re_review": str(today + datetime.timedelta(days=1))}
+        variants = [{}, {"id": "CVE-test"}, {"aliases": []}, {"version": "3.15.0"},
+                    {"modified": "2026-10-19T12:00:00Z"}, {"re_review": str(today)},
+                    {"re_review": str(today - datetime.timedelta(days=1))}]
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / "reviewed.json"
+            for changes in variants:
+                path.write_text(json.dumps({"format": 1, "cpython": [{**entry, **changes}]}))
+                # An id equal to its alias is malformed, not an alias-only exemption.
+                if changes.get("id") == "CVE-test":
+                    with self.assertRaises(ValueError):
+                        self.watch.cpython_reviews(path)
+                    continue
+                reviews = self.watch.cpython_reviews(path)
+                with self.subTest(changes=changes), mock.patch.object(self.watch, "request", side_effect=[
+                        b'{"results":[{"vulns":[{"id":"PSF-test"}]}]}', json.dumps(advisory).encode()]):
+                    rows = self.watch.osv_findings([{"commit": cpython["commit"]}], set(), cpython=cpython, reviews=reviews)
+                self.assertEqual(rows[0]["result"], "unreviewed" if changes else "reviewed")
+                if not changes:
+                    self.assertEqual(rows[0]["review"], entry)
+            for changes in ({"id": "other"}, {"commit": "b" * 40}):
+                current = {**advisory, **changes} if "id" in changes else advisory
+                query = {"commit": changes.get("commit", cpython["commit"])}
+                with self.subTest(changes=changes), mock.patch.object(self.watch, "request", side_effect=[
+                        json.dumps({"results": [{"vulns": [{"id": current["id"]}]}]}).encode(),
+                        json.dumps(current).encode()]):
+                    rows = self.watch.osv_findings([query], set(), cpython=cpython, reviews=[entry])
+                self.assertEqual(rows[0]["result"], "unreviewed")
+            for entries in ([entry, entry], [{**entry, "reason": ""}], [{**entry, "re_review": "2026-02-30"}],
+                            [{**entry, "modified": ""}], [{**entry, "extra": True}]):
+                path.write_text(json.dumps({"format": 1, "cpython": entries}))
+                with self.subTest(entries=entries), self.assertRaises(ValueError):
+                    self.watch.cpython_reviews(path)
+
+    def test_shipped_cpython_review_list_validates(self) -> None:
+        reviews = self.watch.cpython_reviews(SCRIPTS.parent / "vulnerability-watch-reviewed.json")
+        self.assertIsInstance(reviews, list)
+
+    def test_watch_applies_explicit_cpython_reviews(self) -> None:
+        cpython = {"version": "3.14.8", "commit": "a" * 40}
+        entry = {"id": "PSF-test", "aliases": [], "modified": "2026-10-18T12:00:00Z", "version": "3.14.8",
+                 "reason": "Synthetic review.",
+                 "re_review": str(datetime.datetime.now(datetime.timezone.utc).date() + datetime.timedelta(days=1))}
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            reviews = root / "reviews.json"
+            reviews.write_text(json.dumps({"format": 1, "cpython": [entry]}))
+            with mock.patch.object(self.watch, "download_release", return_value={"version": "1.0.0"}), \
+                    mock.patch.object(self.watch, "release_dispositions", return_value=(Path("policy"),
+                                      {"source": "tag:v1.0.0", "sha256": "b" * 64})), \
+                    mock.patch.object(self.watch.vulncheck, "check", return_value=({"targets": []}, True)), \
+                    mock.patch.object(self.watch, "module_queries", return_value=[]), \
+                    mock.patch.object(self.watch, "cpython_query", return_value=({"commit": cpython["commit"]}, cpython)), \
+                    mock.patch.object(self.watch, "request", side_effect=[
+                        b'{"results":[{"vulns":[{"id":"PSF-test"}]}]}', json.dumps(entry).encode()]):
+                report, ok = self.watch.watch("example/project", root, "scanner", Path("policy"), reviews)
+            self.assertTrue(ok, report)
+            self.assertEqual(report["osv"][0]["review"], entry)
+            self.assertIn("Gateway dispositions: tag:v1.0.0", self.watch.issue_body(report, False))
+
+    def test_release_dispositions_select_matching_main_or_exact_release_tag(self) -> None:
+        policy = json.loads((REPO_ROOT / "gateway/vulnerability-dispositions.json").read_text())
+        manifest = {"version": "1.0.0", "gateway": {"version": policy["gateway"]["version"]},
+                    "assets": {target: {"target": target, "gateway_sha256": digest}
+                               for target, digest in policy["gateway"]["targets"].items()}}
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            main = root / "main.json"
+            main.write_text(json.dumps(policy))
+            with mock.patch.object(self.watch.subprocess, "run") as git:
+                selected, source = self.watch.release_dispositions(manifest, main, root)
+            git.assert_not_called()
+            self.assertEqual(selected, main)
+            self.assertEqual(source, {"source": "default-branch", "sha256": hashlib.sha256(main.read_bytes()).hexdigest()})
+            for change in ("version", "hash"):
+                newer = json.loads(json.dumps(policy))
+                if change == "version":
+                    newer["gateway"]["version"] = "9.0.0"
+                else:
+                    newer["gateway"]["targets"]["linux-x86_64"] = "a" * 64
+                main.write_text(json.dumps(newer))
+                tagged = json.dumps(policy)
+                with self.subTest(change=change), mock.patch.object(self.watch.subprocess, "run", side_effect=[
+                        subprocess.CompletedProcess([], 0, ""), subprocess.CompletedProcess([], 0, tagged)]) as git:
+                    selected, source = self.watch.release_dispositions(manifest, main, root)
+                self.assertEqual(git.call_args_list[0].args[0],
+                                 ["git", "fetch", "--no-tags", "--depth=1", "origin", "tag", "v1.0.0"])
+                self.assertEqual(git.call_args_list[1].args[0],
+                                 ["git", "show", "refs/tags/v1.0.0:gateway/vulnerability-dispositions.json"])
+                self.assertEqual(selected.read_text(), tagged)
+                self.assertEqual(main.read_text(), json.dumps(newer))
+                self.assertEqual(source, {"source": "tag:v1.0.0", "sha256": hashlib.sha256(tagged.encode()).hexdigest()})
+            with mock.patch.object(self.watch.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, main.read_text())):
+                with self.assertRaisesRegex(ValueError, "release-tag disposition identity mismatch"):
+                    self.watch.release_dispositions(manifest, main, root)
+
+    def test_release_policy_fetch_failure_does_not_hide_osv(self) -> None:
+        with mock.patch.object(self.watch, "download_release", return_value={"version": "1.0.0"}), \
+                mock.patch.object(self.watch, "release_dispositions", side_effect=subprocess.CalledProcessError(1, "git fetch")), \
+                mock.patch.object(self.watch.vulncheck, "check") as scanner, \
+                mock.patch.object(self.watch, "module_queries", return_value=[]), \
+                mock.patch.object(self.watch, "cpython_query", return_value=({"commit": "a" * 40}, {"version": "3.14.8"})), \
+                mock.patch.object(self.watch, "osv_findings", return_value=[]) as osv:
+            report, ok = self.watch.watch("example/project", Path("unused"), "scanner", Path("policy"))
+        self.assertFalse(ok)
+        scanner.assert_not_called()
+        self.assertEqual(osv.call_args.args[1], set())
+        self.assertIn("git fetch", self.watch.issue_body(report, ok))
+
+    def test_issue_fingerprint_tracks_findings_and_traces_not_scan_time_or_order(self) -> None:
+        report = {"problems": ["second", "first"], "osv": [], "binary": {"checked_at": "one", "targets": [{
+            "target": "linux-x86_64", "result": "unreviewed", "unreviewed_findings": ["GO-test"],
+            "observed_traces": {"GO-test": {"trace_sha256": "a" * 64, "trace_count": 1}}}]}}
+        before = self.issue.fingerprint(self.watch.issue_body(report, False))
+        report["problems"].reverse()
+        report["binary"]["checked_at"] = "two"
+        self.assertEqual(before, self.issue.fingerprint(self.watch.issue_body(report, False)))
+        report["binary"]["targets"][0]["observed_traces"]["GO-test"]["trace_sha256"] = "b" * 64
+        changed_trace = self.issue.fingerprint(self.watch.issue_body(report, False))
+        self.assertNotEqual(before, changed_trace)
+        report["osv"] = [{"id": "CVE-new", "query": {"commit": "a" * 40}, "result": "unreviewed"}]
+        self.assertNotEqual(changed_trace, self.issue.fingerprint(self.watch.issue_body(report, False)))
+
+    def test_issue_notifies_delta_once_before_edit_and_identical_findings_stay_silent(self) -> None:
+        previous = self.watch.issue_body({"problems": ["old failure", "standing failure"], "osv": []}, False)
+        current = self.watch.issue_body({"problems": ["new failure", "standing failure"], "osv": []}, False)
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            body = root / "issue.txt"
+            body.write_text(current)
+            with mock.patch.object(self.issue, "gh", side_effect=["", "42\n", json.dumps({"body": previous}), "", ""]) as gh:
+                self.issue.publish(body, root / "report.json", "https://example.invalid/run/1")
+            self.assertEqual([c.args[:2] for c in gh.call_args_list],
+                             [("label", "create"), ("issue", "list"), ("issue", "view"), ("issue", "comment"), ("issue", "edit")])
+            self.assertEqual(gh.call_args_list[2].args, ("issue", "view", "42", "--json", "body"))
+            comment = (root / "issue-delta.txt").read_text()
+            self.assertIn("### Added or changed\n- new failure", comment)
+            self.assertIn("### No longer reported\n- old failure", comment)
+            self.assertNotIn("standing failure", comment)
+            previous = body.read_text()
+            body.write_text(current)
+            with mock.patch.object(self.issue, "gh", side_effect=["", "42\n", json.dumps({"body": previous})]) as gh:
+                self.issue.publish(body, root / "report.json", "https://example.invalid/run/2")
+            self.assertEqual([c.args[:2] for c in gh.call_args_list],
+                             [("label", "create"), ("issue", "list"), ("issue", "view")])
+            body.write_text(current)
+            with mock.patch.object(self.issue, "gh", side_effect=["", "42\n", json.dumps({"body": "older issue, no marker"}),
+                                   subprocess.CalledProcessError(1, "gh issue comment")]) as gh:
+                with self.assertRaises(subprocess.CalledProcessError):
+                    self.issue.publish(body, root / "report.json", "https://example.invalid/run/3")
+            self.assertNotIn(("issue", "edit"), [c.args[:2] for c in gh.call_args_list])
+
+    def test_issue_created_for_missing_scan_output_with_fallback_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw) / "evidence"
+            with mock.patch.object(self.issue, "gh", side_effect=["", "", ""]) as gh:
+                code = self.issue.main(["--body", str(root / "issue.txt"), "--report", str(root / "report.json"),
+                                        "--run-url", "https://example.invalid/run/1"])
+            self.assertEqual(code, 0)
+            self.assertEqual(gh.call_args_list[-1].args[:2], ("issue", "create"))
+            report = json.loads((root / "report.json").read_text())
+            self.assertIn("did not produce", report["problems"][0])
+            self.assertIn(report["problems"][0], (root / "issue.txt").read_text())
+
+    def test_direct_file_run_discovers_watch_classes(self) -> None:
+        result = subprocess.run([sys.executable, str(REPO_ROOT / "tests/test_release_ci.py"),
+                                 "VulnerabilityWatchTests.test_cpython_uses_the_bundled_versions_commit_not_a_pypi_name",
+                                 "SignedVulnerabilityWatchTests.test_signature_and_all_four_bundle_checksums_before_inventory_queries"],
+                                capture_output=True, text=True, timeout=60, cwd=Path.home())
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Ran 2 tests", result.stderr)
+
+    def test_ci_tool_hash_failure_prevents_extraction(self) -> None:
+        real_sha256sum = shutil.which("sha256sum")
+        if real_sha256sum is None:
+            self.skipTest("sha256sum is not installed")
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "uname").write_text('#!/bin/sh\ncase "$1" in -s) echo Linux;; -m) echo x86_64;; esac\n')
+            (root / "curl").write_text('#!/bin/sh\ntouch "$DOWNLOAD_MARKER"\n'
+                                       'while [ "$1" != -o ]; do shift; done\nprintf tampered >"$2"\n')
+            # Records that the pinned digest was checked, then lets the real
+            # tool compare the tampered bytes against it.
+            (root / "sha256sum").write_text('#!/bin/sh\ntouch "$HASH_MARKER"\nexec "$REAL_SHA256SUM" "$@"\n')
+            (root / "tar").write_text('#!/bin/sh\ntouch "$EXTRACT_MARKER"\n')
+            for name in ("uname", "curl", "sha256sum", "tar"):
+                (root / name).chmod(0o755)
+            result = subprocess.run(["sh", str(SCRIPTS / "ci_tools.sh"), "go", str(root / "destination")],
+                                    env={**os.environ, "PATH": str(root) + os.pathsep + os.environ["PATH"],
+                                         "DOWNLOAD_MARKER": str(root / "downloaded"),
+                                         "HASH_MARKER": str(root / "hashed"),
+                                         "REAL_SHA256SUM": real_sha256sum,
+                                         "EXTRACT_MARKER": str(root / "extracted")}, capture_output=True, timeout=30)
+            self.assertTrue((root / "downloaded").exists())
+            self.assertTrue((root / "hashed").exists())
+            self.assertEqual(result.returncode, 1)
+            self.assertFalse((root / "extracted").exists())
+
+
+@requires_release_tree
+@needs_ssh_keygen()
+class SignedVulnerabilityWatchTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.watch = load_tool(SCRIPTS / "vulnerability_watch.py", "vulnerability_watch")
+        cls.tmp = Path(tempfile.mkdtemp(prefix="charmer-signed-watch-"))
+        cls.addClassCleanup(shutil.rmtree, cls.tmp, True)
+        cls.key = make_key(cls.tmp)
+        cls.signers = signers_line(cls.key)
+
+    def setUp(self) -> None:
+        self.root = Path(tempfile.mkdtemp(dir=self.tmp))
+        self.addCleanup(shutil.rmtree, self.root, True)
+        self.inventory = {"format": 1, "modules": [{"path": "example.invalid/module", "version": "v1.0.0"}]}
+        self.files = {}
+        assets = {}
+        for target in sorted(self.watch.vulncheck.TARGETS):
+            name = f"charmer-1.0.0-{target}.tar.gz"
+            self.files[name] = self.archive(name, self.inventory)
+            assets[name] = {"target": target, "size": len(self.files[name]),
+                            "sha256": hashlib.sha256(self.files[name]).hexdigest()}
+        self.manifest = {"format": 1, "name": "charmer", "version": "1.0.0", "test_build": False,
+                         "assets": assets, "python": {"version": "3.14.8"}}
+        self.files["install.sh"] = b"not executed\n"
+        self.files["install.ps1"] = b"not executed\n"
+        self.sign()
+
+    def archive(self, name, inventory, *, kind=None, duplicate=False):
+        out = io.BytesIO()
+        member = name.removesuffix(".tar.gz") + "/" + self.watch.MODULES
+        with tarfile.open(fileobj=out, mode="w:gz") as archive:
+            data = json.dumps(inventory).encode()
+            for _ in range(2 if duplicate else 1):
+                info = tarfile.TarInfo(member)
+                if kind is not None:
+                    info.type, info.linkname = kind, "/outside"
+                    archive.addfile(info)
+                else:
+                    info.size = len(data)
+                    archive.addfile(info, io.BytesIO(data))
+        return out.getvalue()
+
+    def sign(self):
+        self.files["MANIFEST.json"] = json.dumps(self.manifest).encode()
+        sums = "".join(f"{hashlib.sha256(value).hexdigest()}  {name}\n" for name, value in sorted(self.files.items())
+                       if name not in ("SHA256SUMS", "SHA256SUMS.sshsig")).encode()
+        path = self.root / "sums"
+        path.write_bytes(sums)
+        path.with_suffix(".sig").unlink(missing_ok=True)
+        subprocess.run(["ssh-keygen", "-Y", "sign", "-f", str(self.key), "-n", "charmer-release", str(path)],
+                       check=True, capture_output=True, timeout=30)
+        self.files["SHA256SUMS"] = sums
+        self.files["SHA256SUMS.sshsig"] = path.with_suffix(".sig").read_bytes()
+
+    def fetch(self, url, payload=None, *, limit=None):
+        if url == "https://api.github.com/repos/example/project/releases/latest":
+            return b'{"tag_name":"v1.0.0","draft":false,"prerelease":false}'
+        prefix = "https://github.com/example/project/releases/download/v1.0.0/"
+        self.assertTrue(url.startswith(prefix), url)
+        return self.files[url.removeprefix(prefix)]
+
+    def download(self, folder="download"):
+        with mock.patch.object(self.watch, "request", side_effect=self.fetch), \
+                mock.patch.object(self.watch.trust, "release_signers", return_value=self.signers):
+            return self.watch.download_release("example/project", self.root / folder)
+
+    def test_signature_and_all_four_bundle_checksums_before_inventory_queries(self) -> None:
+        manifest = self.download()
+        self.assertEqual(manifest, self.manifest)
+        queries = self.watch.module_queries(self.root / "download", manifest)
+        self.assertEqual(queries, [{"package": {"ecosystem": "Go", "name": "example.invalid/module"},
+                                    "version": "v1.0.0"}])
+        self.assertEqual({p.name for p in (self.root / "download").iterdir()},
+                         {"SHA256SUMS", "SHA256SUMS.sshsig", "MANIFEST.json", *manifest["assets"]})
+
+    def test_bad_signature_and_tampered_manifest_or_bundle_refuse(self) -> None:
+        original = self.files.copy()
+        for name in ("SHA256SUMS.sshsig", "MANIFEST.json", next(iter(self.manifest["assets"]))):
+            self.files = original.copy()
+            self.files[name] = b"tampered"
+            with self.subTest(name=name), self.assertRaises((ValueError, self.watch.trust.TrustError)):
+                self.download(name.replace(".", "-"))
+        self.files = original.copy()
+        self.files["SHA256SUMS.sshsig"] = b"tampered"
+        with mock.patch.object(self.watch, "request", side_effect=self.fetch) as fetch, \
+                mock.patch.object(self.watch.trust, "release_signers", return_value=self.signers):
+            with self.assertRaises(self.watch.trust.TrustError):
+                self.watch.download_release("example/project", self.root / "bad")
+        self.assertEqual(len(fetch.call_args_list), 3)  # no manifest or archive request
+
+    def test_signed_but_inconsistent_release_is_not_scanned(self) -> None:
+        original = json.dumps(self.manifest)
+        for index, mutate in enumerate((lambda m: m.update(test_build=True), lambda m: m.update(version="2.0.0"),
+                                       lambda m: m["assets"].pop(next(iter(m["assets"]))),
+                                       lambda m: next(iter(m["assets"].values())).update(sha256="a" * 64),
+                                       lambda m: next(iter(m["assets"].values())).update(target="../../outside"))):
+            self.manifest = json.loads(original)
+            mutate(self.manifest)
+            self.sign()
+            with self.subTest(index=index), self.assertRaises(ValueError):
+                self.download(f"bad-{index}")
+
+    def test_module_inventory_links_duplicates_and_cross_bundle_skew_refuse(self) -> None:
+        manifest = self.download()
+        name = next(iter(manifest["assets"]))
+        for raw in (self.archive(name, self.inventory, kind=tarfile.SYMTYPE),
+                    self.archive(name, self.inventory, duplicate=True),
+                    self.archive(name, {"format": 1, "modules": []})):
+            (self.root / "download" / name).write_bytes(raw)
+            with self.assertRaises(ValueError):
+                self.watch.module_queries(self.root / "download", manifest)
 
 
 if __name__ == "__main__":
