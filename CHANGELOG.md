@@ -8,6 +8,9 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Security
 
+- With Claude Code 2.1.302 the gateway key reaches only the gateway. A
+  client check proves this on every release; the previous pin also sent it
+  with start-up and feature-flag requests.
 - The four bundled CPython 3.14.8 runtimes come from python-build-standalone
   20261013 (Expat 2.9.0, libffi 3.8.0), with matching archive provenance,
   licence inventories, notices and SBOM inputs.
@@ -32,6 +35,19 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- Managed sessions run Claude Code 2.1.302 (was 2.1.292), catalog 40. Every
+  platform build is checked against Anthropic's signed release manifest. The
+  client starts an unconfigured session in default mode again; charmer's
+  compiled permission default is unchanged. The compatibility page names the
+  pin and its limits and lists keyless network (LAN) servers as supported for
+  leads and agents; the privacy page states the new traffic observation.
+- `charmer gateway status` and `charmer doctor` show where the persistence
+  hold's evaluation started and how many credential saves it read.
+- The launcher's gateway actions (**H**, and **W** on Providers and Direct)
+  show the persistence hold: a coverage-only hold reads "held — log coverage
+  incomplete, not a failed save", otherwise the failure is shown. While held,
+  no restart is offered and the clear-hold command is named. A restart there
+  first lists the managed sessions running now and asks y/N.
 - CI tests Python 3.15 beside 3.11 and 3.14, and Ubuntu 26.04 beside 24.04
   in the WSL lane.
 
@@ -43,6 +59,37 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- A gateway that has run for days no longer holds every stop, restart,
+  update and uninstall because its log coverage is incomplete. The
+  persistence hold reads only the gateway's credential-save lines and its
+  start line, over the gateway's whole run, instead of the newest 32 MB of
+  the service journal (8 MB of each on-demand log). Missing or unreadable
+  evidence still holds, and the reason says what could not be read.
+- Only lines the gateway's credential-save reporter wrote count as
+  credential-save evidence; a request path containing the same words no
+  longer reduces the hold's coverage.
+- The persistence hold also holds when the service journal no longer reaches
+  back to the last `charmer gateway clear-hold`, and when journald reports
+  that its rate limit for your user services, which the gateway shares,
+  dropped log lines (visible only when your account may read the system
+  journal; otherwise status and doctor say the notices were not checked).
+- A failed credential save seen in an otherwise incomplete read is recorded
+  as a hold at once; a save line of an unknown format version holds; a
+  gateway log line over 4 KB no longer makes the evaluation incomplete.
+- Starting an on-demand gateway removes an old instance log only after
+  reading it completely; a read that does not finish within ten seconds keeps
+  the log for a later start instead of holding.
+- `charmer gateway stop` on the supervised service refuses when the gateway
+  restarted while its hold was being evaluated.
+- Workflow agents keep their lineup models: `CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL`
+  (Claude Code 2.1.296+) set in a user, project or local settings file or in
+  the environment no longer rebinds a managed session's workflow agents; a
+  model's lead environment cannot set it, and a managed policy that sets it is
+  reported as a model lock.
+- Managed sessions deny fork subagents (`Agent(fork)`), which Claude Code
+  2.1.302 also enables headless. `charmer doctor` reports a session compiled
+  before this change as lazy state, applied at the next resume or by
+  `charmer doctor --repair`.
 - `charmer lineup --session` accepts managed and runtime ids, historical
   runtime aliases and unique prefixes of at least eight characters, as
   doctor prints them. Ambiguous or unknown selections list the candidates;
