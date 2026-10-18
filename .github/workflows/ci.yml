@@ -6,8 +6,8 @@
 # gateway    nightly and on demand: the gateway for this host and its
 #            diagnostic probes (tools/build.py, .github/scripts/
 #            gateway_probes.py), for the battery.
-# battery    nightly and on demand: the full Linux suite (Python 3.11 and
-#            3.14) with bubblewrap available for the isolated classes, the
+# battery    nightly and on demand: the full Linux suite (Python 3.11,
+#            3.14 and 3.15), bubblewrap for the isolated classes, the
 #            candidate gateway and its probes (bound to the build record),
 #            the pinned Claude Code, and the pinned setuptools for the
 #            distribution tests, which must run.
@@ -149,18 +149,25 @@ jobs:
           umask 077
           python3 -I -c 'import sys; sys.path.insert(0, "src"); import charmer.cli.entry, charmer.proxy, charmer.trust, charmer.self_update, charmer.release_update, charmer.install_txn'
           python3 bin/charmer --version
+      - name: Pinned CI compiler and shell linter (by hash)
+        run: |
+          umask 077
+          sh .github/scripts/ci_tools.sh go "$RUNNER_TEMP/ci-go"
+          sh .github/scripts/ci_tools.sh shellcheck "$RUNNER_TEMP/ci-shellcheck"
+          printf '%s\n' "$RUNNER_TEMP/ci-go/bin" "$RUNNER_TEMP/ci-shellcheck" >>"$GITHUB_PATH"
       - name: Shell lint
         run: |
           umask 077
-          shellcheck -s sh packaging/install.sh .github/scripts/journey.sh .github/scripts/wsl_prepare.sh
+          shellcheck -s sh packaging/install.sh .github/scripts/journey.sh .github/scripts/wsl_prepare.sh .github/scripts/ci_tools.sh
       - name: Workflow lint
         run: |
           umask 077
+          export GOTOOLCHAIN=local GOPATH="$RUNNER_TEMP/go-tools" GOCACHE="$RUNNER_TEMP/go-build"
           GOBIN="$RUNNER_TEMP/bin" go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
           # zizmor by the hash of its manylinux x86_64 wheel (.github/PINS.md),
           # the file the local lint ran. The wheel ships an executable, not a
           # Python module.
-          printf '%s\n' 'zizmor==1.30.1 --hash=sha256:eee12266b793cb87ad4a7e3af2e72404f8a63e3de5eb099b80bf7b1cfd232a8e' >"$RUNNER_TEMP/zizmor.txt"
+          printf '%s\n' 'zizmor==1.31.1 --hash=sha256:58e878eb2dbd2c6183c105e1ac28c14f7dd1eca44a783f1fe2a69647d012c410' >"$RUNNER_TEMP/zizmor.txt"
           python3 -m pip install --disable-pip-version-check --no-deps --only-binary=:all: --require-hashes --target "$RUNNER_TEMP/zizmor" -r "$RUNNER_TEMP/zizmor.txt"
           "$RUNNER_TEMP/bin/actionlint"
           "$RUNNER_TEMP/zizmor/bin/zizmor" --offline .github
@@ -189,13 +196,13 @@ jobs:
         run: |
           umask 077
           python3 tools/_build/no_bundle_guard.py gateway-dist gateway-probes
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: gateway-dist
           path: gateway-dist
           retention-days: 3
           if-no-files-found: error
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: gateway-probes
           path: gateway-probes
@@ -212,7 +219,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python: ["3.11", "3.14"]
+        python: ["3.11", "3.14", "3.15"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -228,13 +235,13 @@ jobs:
       - name: The pinned build backend for the distribution tests (by hash, .github/PINS.md)
         run: |
           umask 077
-          printf '%s\n' 'setuptools==82.0.1 --hash=sha256:a59e362652f08dcd477c78bb6e7bd9d80a7995bc73ce773050228a348ce2e5bb' >"$RUNNER_TEMP/setuptools.txt"
+          printf '%s\n' 'setuptools==84.0.0 --hash=sha256:51a52592b3b99e102b609654876bd65f19f999935166d1352678931132b0c670' >"$RUNNER_TEMP/setuptools.txt"
           python3 -m pip install --disable-pip-version-check --no-deps --only-binary=:all: --require-hashes -r "$RUNNER_TEMP/setuptools.txt"
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: gateway-dist
           path: ${{ runner.temp }}/gateway-dist
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: gateway-probes
           path: ${{ runner.temp }}/gateway-probes
@@ -305,7 +312,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+      - uses: cachix/install-nix-action@448cde739abec1eaf0646249e3d25bb8d9bc7702 # v31.11.2
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.14"

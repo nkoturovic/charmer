@@ -159,19 +159,19 @@ jobs:
         run: |
           umask 077
           python3 tools/_build/no_bundle_guard.py dist gateway-dist gateway-probes
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: dist
           path: dist
           retention-days: 7
           if-no-files-found: error
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: gateway-dist
           path: gateway-dist
           retention-days: 7
           if-no-files-found: error
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: gateway-probes
           path: gateway-probes
@@ -198,7 +198,7 @@ jobs:
         run: |
           umask 077
           python3 tools/build.py release --out rebuilt
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: dist
           path: dist
@@ -218,7 +218,7 @@ jobs:
         with:
           ref: ${{ needs.resolve.outputs.sha }}
           persist-credentials: false
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: dist
           path: dist
@@ -250,16 +250,22 @@ jobs:
         with:
           ref: ${{ needs.resolve.outputs.sha }}
           persist-credentials: false
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: dist
           path: dist
+      - name: Pinned CI compiler (by hash)
+        run: |
+          umask 077
+          sh .github/scripts/ci_tools.sh go "$RUNNER_TEMP/ci-go"
+          printf '%s\n' "$RUNNER_TEMP/ci-go/bin" >>"$GITHUB_PATH"
       - name: govulncheck on each shipped gateway binary
         env:
           HARNESS_SHA: ${{ github.sha }}
         run: |
           umask 077
-          GOBIN="$RUNNER_TEMP/bin" go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
+          export GOTOOLCHAIN=local GOPATH="$RUNNER_TEMP/go-tools" GOCACHE="$RUNNER_TEMP/go-build"
+          GOBIN="$RUNNER_TEMP/bin" go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
           mkdir -p evidence
           # Pin current review controls to this harness revision; keep the product frozen.
           [[ "$HARNESS_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo '::error::invalid harness revision'; exit 1; }
@@ -277,7 +283,7 @@ jobs:
           python3 tools/_build/no_bundle_guard.py evidence
       # The evidence is uploaded after a failed vulnerability check too, but
       # never when the guard itself failed or did not run.
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always() && steps.guard.outcome == 'success'
         with:
           name: vulncheck
@@ -304,11 +310,11 @@ jobs:
           umask 077
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           sudo apt-get install --yes --no-install-recommends bubblewrap
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: gateway-dist
           path: ${{ runner.temp }}/gateway-dist
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: gateway-probes
           path: ${{ runner.temp }}/gateway-probes
@@ -370,7 +376,7 @@ jobs:
           python3 tools/_build/no_bundle_guard.py .
       # The evidence (the log and its manifest) is kept after a failed
       # battery too, but never when the guard itself failed or did not run.
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always() && steps.guard.outcome == 'success'
         with:
           name: evidence
@@ -389,9 +395,9 @@ jobs:
       matrix:
         # Pinned by image index digest (.github/PINS.md).
         image:
-          - "ubuntu:22.04@sha256:b1066385161d28ddf6bc7e7b28a9170eec11484c821d1a5150d176cbde41d7f7"
-          - "ubuntu:24.04@sha256:a853f94d226358a79c740cfc7bce0c289748f3fe3488d921d038ccd752c61b60"
-          - "debian:12@sha256:f37a335e82bca302e955fa39f9dfe28f1be618f016f8a2b56318e5a5111afc26"
+          - "ubuntu:22.04@sha256:0a9887931b0e38af2e3487ed39e29436b0535c4f3f52e57745baaf79d1898956"
+          - "ubuntu:24.04@sha256:68ee22004a9109b44973313b02ff7b1de250f1de0f5ecb628d73f579aaff33ac"
+          - "debian:12@sha256:2c037a04925515fdd6ea85ea14a682d0e79931f5e9f5d07b6dbfc6ba12f9e858"
           - "fedora:44@sha256:43b29f65a41eb9c35e1cd5323e3bdf3b655c2357a9f4f1ff2f9c2798e5045d80"
     container:
       image: ${{ matrix.image }}
@@ -409,7 +415,7 @@ jobs:
         with:
           ref: ${{ needs.resolve.outputs.sha }}
           persist-credentials: false
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: dist
           path: dist
@@ -434,7 +440,7 @@ jobs:
         with:
           ref: ${{ needs.resolve.outputs.sha }}
           persist-credentials: false
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: dist
           path: dist
@@ -460,7 +466,7 @@ jobs:
         with:
           ref: ${{ needs.resolve.outputs.sha }}
           persist-credentials: false
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: dist
           path: dist
@@ -556,7 +562,7 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.14"
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: gateway-dist
           path: gateway-dist
@@ -602,7 +608,7 @@ jobs:
         with:
           ref: ${{ needs.resolve.outputs.sha }}
           persist-credentials: false
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: dist
           path: dist
@@ -645,7 +651,7 @@ jobs:
         with:
           ref: ${{ needs.resolve.outputs.sha }}
           persist-credentials: false
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: dist
           path: dist
@@ -669,12 +675,18 @@ jobs:
     timeout-minutes: 75
     permissions:
       contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        distribution: [Ubuntu-24.04, Ubuntu-26.04]
+    env:
+      WSL_DISTRIBUTION: ${{ matrix.distribution }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.resolve.outputs.sha }}
           persist-credentials: false
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: dist
           path: dist
@@ -699,13 +711,13 @@ jobs:
       - name: A WSL 2 distribution with an ordinary default user (what its interactive first start makes)
         shell: pwsh
         run: |
-          wsl --install --distribution Ubuntu-24.04 --no-launch
+          wsl --install --distribution $env:WSL_DISTRIBUTION --no-launch
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $workspace = (wsl --distribution Ubuntu-24.04 --user root --exec wslpath -a "$PWD").Trim()
-          wsl --distribution Ubuntu-24.04 --user root --cd "$workspace" --exec sh .github/scripts/wsl_prepare.sh
+          $workspace = (wsl --distribution $env:WSL_DISTRIBUTION --user root --exec wslpath -a "$PWD").Trim()
+          wsl --distribution $env:WSL_DISTRIBUTION --user root --cd "$workspace" --exec sh .github/scripts/wsl_prepare.sh
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          wsl --terminate Ubuntu-24.04
-          wsl --set-default Ubuntu-24.04
+          wsl --terminate $env:WSL_DISTRIBUTION
+          wsl --set-default $env:WSL_DISTRIBUTION
       # install.ps1's own test seam gives the download locations (install.sh
       # from a loopback https server, the release from a signed local copy):
       # before publication there is no published URL. Its published defaults
@@ -716,7 +728,7 @@ jobs:
         run: |
           # Dot-sourced param defaults must run before our same-named variables.
           . ./dist/install.ps1
-          $distribution = 'Ubuntu-24.04'
+          $distribution = $env:WSL_DISTRIBUTION
           $workspace = (wsl --distribution $distribution --exec wslpath -a "$PWD").Trim()
           $linuxHome = (wsl --distribution $distribution --exec sh -c 'printf %s "$HOME"').Trim()
           wsl --distribution $distribution --cd "$workspace" --exec sh -c 'umask 077; sh .github/scripts/journey.sh prepare dist "$HOME/journey"'
@@ -813,7 +825,7 @@ jobs:
       id-token: write # sign the provenance attestation (Sigstore)
       attestations: write # store the provenance attestation
     steps:
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: dist
           path: dist
