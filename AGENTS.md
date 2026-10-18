@@ -1413,10 +1413,13 @@ On memory-tight hosts the suite's tmpfs fixture copies can fail with
   Nix) builds the patched gateway from `gateway/UPSTREAM.json`: `fetch`
   (upstream source at its commit and the official Go toolchain archive for
   the host, both sha256-verified), `vendor` (first the recipe's
-  `vendor.modules_patch` when it names one: a sha256-pinned patch to go.mod
-  and go.sum only, such as a dependency moved to a fixed release, applied
-  with no fuzz and listed first in `MODIFICATIONS.txt`, not part of the
-  series or the contract; then `go mod vendor`, normalised vendor-tree hash),
+  `vendor.modules_patch` when it names one: a sha256-pinned patch that only
+  edits the text of go.mod and go.sum, such as a dependency moved to a fixed
+  release — git's own report of the patch and the tree before and after
+  must show nothing else, so binary sections, creates, deletes, renames,
+  copies and mode changes are refused — applied with no fuzz and listed
+  first in `MODIFICATIONS.txt`, not part of the series or the contract; then
+  `go mod vendor`, normalised vendor-tree hash),
   `apply` (the admitted series, no fuzz or offset),
   `build` (`CGO_ENABLED=0 -trimpath -buildvcs=false -mod=vendor`, upstream
   version in `main.Version`; four shipped targets plus a windows-amd64

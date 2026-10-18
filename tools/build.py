@@ -19,10 +19,12 @@ build inspect record):
   fetch    take the upstream source archive and the Go toolchain archive for
            this host from the cache (downloading what is missing) or from
            --inputs, verify their sha256 and unpack both into the work dir
-  vendor   apply the recipe's module-requirements patch (vendor.modules_patch,
-           go.mod and go.sum only) when it names one, vendor the Go modules
-           with the pinned toolchain (`go mod vendor`; offline: copy a
-           pre-fetched tree) and verify the normalised vendor-tree sha256
+  vendor   apply the recipe's module-requirements patch (vendor.modules_patch:
+           text edits to go.mod and go.sum, nothing else; binary sections,
+           creates, deletes, renames, copies and mode changes are refused)
+           when it names one, vendor the Go modules with the pinned
+           toolchain (`go mod vendor`; offline: copy a pre-fetched tree)
+           and verify the normalised vendor-tree sha256
   apply    apply the admitted patch series in order: `git apply --check`, then
            apply; any reject, offset or reduced context fails (a diagnostic
            omission build may pass --omission-offsets, see its help)
@@ -252,9 +254,21 @@ def tree_sha256(root: Path, *, exclude_top: Iterable[str] = ()) -> str:
     copy, a fresh unpack and a writable work copy hash alike.
     """
 
+    total = hashlib.sha256(TREE_FORMAT.encode() + b"\n")
+    for encoded, (kind, digest) in sorted((path.encode(), entry)
+                                          for path, entry in tree_entries(root, exclude_top=exclude_top).items()):
+        total.update(kind + b" " + digest.encode() + b" " + encoded + b"\n")
+    return total.hexdigest()
+
+
+def tree_entries(root: Path, *, exclude_top: Iterable[str] = ()) -> dict[str, tuple[bytes, str]]:
+    """What :func:`tree_sha256` hashes, per relative path: ``(kind, digest)``
+    with kind ``F-`` (a regular file), ``Fx`` (one with an execute bit) or
+    ``L-`` (a symbolic link, the digest of its target)."""
+
     root = Path(root)
     excluded = set(exclude_top)
-    records: list[tuple[bytes, bytes]] = []
+    records: dict[str, tuple[bytes, str]] = {}
     for directory, dirs, files in os.walk(root):
         here = Path(directory)
         if here == root:
@@ -280,12 +294,8 @@ def tree_sha256(root: Path, *, exclude_top: Iterable[str] = ()) -> str:
                 digest = sha256_file(path)
             else:
                 raise BuildError(f"unsupported file type in {root}: {relative}")
-            encoded = relative.encode()
-            records.append((encoded, kind + b" " + digest.encode() + b" " + encoded + b"\n"))
-    total = hashlib.sha256(TREE_FORMAT.encode() + b"\n")
-    for _, line in sorted(records):
-        total.update(line)
-    return total.hexdigest()
+            records[relative] = (kind, digest)
+    return records
 
 
 def make_writable_copy(source: Path, destination: Path) -> None:
@@ -646,6 +656,63 @@ def modules_patch(ctx: Context) -> tuple[Path, dict[str, Any]] | None:
     return path, entry
 
 
+MODULE_FILES = ("go.mod", "go.sum")
+
+
+def apply_modules_patch(src: Path, patch: Path, name: str) -> list[dict[str, str]]:
+    """Apply the module-requirements patch: text edits to go.mod and go.sum
+    and nothing else. Returns the files it modifies (``patch_files``).
+
+    Before it applies, git's own reading of the patch (``git apply --numstat``
+    and ``--summary``, every file section git would act on) must name exactly
+    go.mod and go.sum, as text hunks, with no binary section and no create,
+    delete, rename, copy, rewrite or mode change; this tool's reading of the
+    patch must agree. After it applies, the tree's footprint (every path, its
+    kind, execute bit and content) may differ only in the contents of go.mod
+    and go.sum.
+    """
+
+    def refuse(reason: str) -> BuildError:
+        return BuildError(f"{name} must only edit the text of go.mod and go.sum: {reason}")
+
+    def git_report(*options: str) -> str:
+        # Reports only: with --numstat or --summary alone, git applies nothing.
+        try:
+            result = subprocess.run(["git", "apply", *options, str(patch)], cwd=src, env=git_environment(src),
+                                    check=False, capture_output=True)
+        except OSError as exc:
+            raise BuildError(f"cannot run git: {exc}") from exc
+        if result.returncode:
+            error = result.stderr.decode("utf-8", "replace").strip()[-2000:]
+            raise BuildError(f"{name} is not a patch git can read:\n{error}")
+        return result.stdout.decode("utf-8", "replace")
+
+    sections = [record.split("\t", 2) for record in git_report("--numstat", "-z").split("\0") if record]
+    if any(len(section) != 3 for section in sections):
+        raise BuildError(f"{name}: unexpected git apply --numstat output")
+    binary = [path for added, deleted, path in sections if (added, deleted) == ("-", "-")]
+    if binary:
+        raise refuse("it carries a binary patch for " + ", ".join(binary))
+    operations = [line.strip() for line in git_report("--summary").splitlines() if line.strip()]
+    if operations:
+        raise refuse("git would " + "; ".join(operations))
+    paths = sorted(path for _, _, path in sections)
+    if paths != sorted(MODULE_FILES):
+        raise refuse("it changes " + (", ".join(paths) or "nothing") + ", not exactly go.mod and go.sum")
+    files = patch_files(patch.read_text(encoding="utf-8"))
+    if sorted(item["path"] for item in files) != paths or any(item["change"] != "modified" for item in files):
+        raise refuse("its file headers disagree with what git would apply")
+    before = tree_entries(src, exclude_top=("vendor",))
+    apply_patch(src, patch, name)
+    after = tree_entries(src, exclude_top=("vendor",))
+    changed = sorted(path for path in before.keys() | after.keys() if before.get(path) != after.get(path))
+    beyond = [path for path in changed if path not in MODULE_FILES
+              or before.get(path, (None,))[0] != b"F-" or after.get(path, (None,))[0] != b"F-"]
+    if beyond:
+        raise refuse("applying it changed " + ", ".join(beyond))
+    return files
+
+
 def step_vendor(ctx: Context) -> None:
     state = ctx.load_state("fetch")
     if "vendor" in state["done"]:
@@ -659,13 +726,8 @@ def step_vendor(ctx: Context) -> None:
     modules = None
     if requirements is not None:
         path, entry = requirements
-        text = path.read_text(encoding="utf-8")
-        files = patch_files(text)
-        if sorted(item["path"] for item in files) != ["go.mod", "go.sum"] or \
-                any(item["change"] != "modified" for item in files):
-            raise BuildError(f"{entry['basename']} must modify go.mod and go.sum and nothing else")
         log(f"updating the module requirements ({entry['basename']})")
-        apply_patch(ctx.src, path, entry["basename"])
+        files = apply_modules_patch(ctx.src, path, entry["basename"])
         modules = {"basename": entry["basename"], "sha256": entry["sha256"], "files": files}
     required_tree = tree_sha256(ctx.src, exclude_top=("vendor",))
     provided = ctx.inputs / "vendor" if ctx.inputs is not None else None

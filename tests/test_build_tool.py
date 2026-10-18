@@ -727,11 +727,113 @@ class EndToEndTests(unittest.TestCase):
                                          ["func main() {"], ["}"]))
         self.run_tool("fetch")
         _, err = self.run_tool("vendor", expect=1)
-        self.assertIn("must modify go.mod and go.sum and nothing else", err)
+        self.assertIn("it changes cmd/server/main.go, go.mod, go.sum, not exactly go.mod and go.sum", err)
         patch.unlink()
         self.run_tool("fetch")
         _, err = self.run_tool("vendor", expect=1)
         self.assertIn("module-requirements patch not found", err)
+
+    def git_modules_patch(self, change):
+        """A module-requirements patch git writes from the fixture source: the
+        go.mod and go.sum edits plus ``change(repo)``, pinned in the recipe."""
+
+        repo = self.root / "patch-repo"
+        tool.remove_tree(repo)
+        shutil.copytree(self.root / "unpacked", repo)
+        env = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1", "LC_ALL": "C",
+               "GIT_AUTHOR_NAME": "fixture", "GIT_AUTHOR_EMAIL": "fixture@example.invalid",
+               "GIT_COMMITTER_NAME": "fixture", "GIT_COMMITTER_EMAIL": "fixture@example.invalid"}
+
+        def git(*argv):
+            return subprocess.run(["git", "-C", str(repo), *argv], env=env, check=True, capture_output=True).stdout
+
+        git("init", "-q")
+        git("add", "-A")
+        git("commit", "-q", "-m", "upstream")
+        with (repo / "go.mod").open("a") as handle:
+            handle.write("\nrequire example.dep v1.0.0\n")
+        with (repo / "go.sum").open("a") as handle:
+            handle.write("example.dep v1.1.0/go.mod h1:BBBB\n")
+        change(repo)
+        git("add", "-A")
+        text = git("diff", "--cached", "--binary", "-M", "-C", "--find-copies-harder", "HEAD")
+        patch = self.patches / "cli-proxy-api-modules.patch"
+        patch.write_bytes(text)
+        self.recipe["vendor"]["modules_patch"] = {"basename": patch.name, "sha256": hashlib.sha256(text).hexdigest()}
+        self.write_recipe()
+        return text.decode()
+
+    def test_the_module_requirements_patch_admits_only_text_edits_to_the_module_files(self):
+        def binary_file(repo):
+            (repo / ".git" / "info" / "attributes").write_text("review_extra.go binary\n")
+            (repo / "cmd" / "server" / "review_extra.go").write_text("package main\n")
+
+        def binary_go_sum(repo):
+            (repo / ".git" / "info" / "attributes").write_text("go.sum binary\n")
+
+        def rename(repo):
+            (repo / "cmd" / "server" / "main.go").rename(repo / "cmd" / "server" / "moved.go")
+
+        def copy(repo):
+            shutil.copyfile(repo / "cmd" / "server" / "main.go", repo / "cmd" / "server" / "copy.go")
+
+        def create(repo):
+            (repo / "cmd" / "server" / "review_extra.go").write_text("package main\n")
+
+        def extra_path(repo):
+            main = repo / "cmd" / "server" / "main.go"
+            main.write_text(main.read_text().replace('println("upstream")', 'println("other")'))
+
+        rows = [
+            ("binary section", binary_file, "GIT binary patch",
+             "it carries a binary patch for cmd/server/review_extra.go"),
+            ("binary module file", binary_go_sum, "GIT binary patch", "it carries a binary patch for go.sum"),
+            ("rename", rename, "rename from", "git would rename cmd/server/{main.go => moved.go}"),
+            ("copy", copy, "copy from", "git would copy cmd/server/{main.go => copy.go}"),
+            ("mode change", lambda repo: os.chmod(repo / "go.sum", 0o755), "new mode",
+             "git would mode change 100644 => 100755 go.sum"),
+            ("delete", lambda repo: (repo / "LICENSE").unlink(), "deleted file mode",
+             "git would delete mode 100644 LICENSE"),
+            ("create", create, "new file mode", "git would create mode 100644 cmd/server/review_extra.go"),
+            ("extra path", extra_path, "+++ b/cmd/server/main.go",
+             "it changes cmd/server/main.go, go.mod, go.sum, not exactly go.mod and go.sum"),
+        ]
+        for label, change, form, refusal in rows:
+            with self.subTest(label):
+                self.assertIn(form, self.git_modules_patch(change))
+                self.run_tool("fetch")
+                before = tool.tree_sha256(self.work / "src")
+                _, err = self.run_tool("vendor", expect=1)
+                self.assertIn("must only edit the text of go.mod and go.sum: " + refusal, err)
+                # Refused before anything is applied.
+                self.assertEqual(tool.tree_sha256(self.work / "src"), before)
+        # The same edits alone, as git writes them, are admitted.
+        self.git_modules_patch(lambda repo: None)
+        self.seed_vendor_cache()
+        self.run_tool("fetch", "vendor")
+        self.assertIn("require example.dep v1.0.0", (self.work / "src" / "go.mod").read_text())
+
+    def test_the_module_requirements_patch_must_change_no_other_path_when_applied(self):
+        self.git_modules_patch(lambda repo: None)
+        real = tool.apply_patch
+
+        def also(effect):
+            def apply(src, patch, name, **options):
+                moved = real(src, patch, name, **options)
+                effect(src)
+                return moved
+            return apply
+
+        for label, effect, changed in (
+                ("extra file", lambda src: (src / "cmd" / "server" / "review_extra.go").write_text("package main\n"),
+                 "cmd/server/review_extra.go"),
+                ("execute bit", lambda src: os.chmod(src / "go.sum", 0o755), "go.sum"),
+                ("removed file", lambda src: (src / "LICENSE").unlink(), "LICENSE")):
+            with self.subTest(label):
+                self.run_tool("fetch")
+                with mock.patch.object(tool, "apply_patch", side_effect=also(effect)):
+                    _, err = self.run_tool("vendor", expect=1)
+                self.assertIn("must only edit the text of go.mod and go.sum: applying it changed " + changed, err)
 
     def test_the_module_requirements_patch_comes_from_the_inputs_when_offline(self):
         patch = self.modules_patch()
