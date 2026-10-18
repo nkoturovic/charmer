@@ -152,6 +152,22 @@ with its sha256, in `gateway/UPSTREAM.json`; a patch basename is an
 identity and never changes. After a patch change, regenerate the checked-in
 contract (`python3 tools/build.py gateway contract`).
 
+One exception: `vendor.modules_patch` in `gateway/UPSTREAM.json` names a
+patch that moves a Go module to a fixed release. It may only edit the text
+of `go.mod` and `go.sum`; the build refuses binary sections, creates,
+deletes, renames, copies and mode changes. The `vendor` step applies it
+before `go mod vendor`, and it is not part of the series or the contract.
+After a change to it, update its sha256 in `gateway/UPSTREAM.json`, then
+regenerate the vendor hashes, notices, licences and SBOMs:
+
+```bash
+cache=$(mktemp -d)   # a fresh cache, so no earlier vendored tree is reused
+python3 tools/build.py gateway fetch vendor --cache "$cache"   # online; reports the new vendor.tree_sha256
+nix hash path --type sha256 --sri "$cache/work/gateway/src/vendor"   # the new vendor.nix_hash
+python3 tools/build.py gateway fetch vendor apply build --cache "$cache"   # every target, new hashes
+python3 tools/build.py gateway notices --cache "$cache"   # gateway/licenses and gateway/sbom
+```
+
 ## Build a release
 
 ```bash
