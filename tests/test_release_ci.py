@@ -1297,8 +1297,7 @@ class RequiredReleaseTestsTests(unittest.TestCase):
 class VulncheckTests(unittest.TestCase):
     """Exact dispositions over a fake release and a hermetic scanner stub."""
 
-    IDS = {"GO-2026-5841", "GO-2026-5932", "GO-2026-6213", "GO-2026-6214",
-           "GO-2026-6303", "GO-2026-6354", "GO-2026-6355", "GO-2026-6629"}
+    IDS = {"GO-2026-5841", "GO-2026-5932", "GO-2026-6213", "GO-2026-6214"}
     TARGETS = ("linux-x86_64", "linux-aarch64", "darwin-x86_64", "darwin-arm64")
 
     @classmethod
@@ -1371,18 +1370,18 @@ if mode == "fail":
         self.assertTrue(out.is_file(), "failed checks must still produce evidence")
         return code, json.loads(out.read_text()), output.getvalue()
 
-    def test_exact_eight_reviewed_findings_pass_without_hiding_them(self) -> None:
+    def test_exact_reviewed_findings_pass_without_hiding_them(self) -> None:
         code, report, output = self.run_check()
         self.assertEqual(code, 0, report)
         self.assertEqual({entry["target"] for entry in report["targets"]}, set(self.TARGETS))
         for entry in report["targets"]:
             self.assertEqual(entry["result"], "reviewed")
             self.assertEqual(set(entry["findings"]), self.IDS)
-            self.assertEqual(len(entry["raw_findings"]), 8)
+            self.assertEqual(len(entry["raw_findings"]), len(self.IDS))
             self.assertEqual({item["id"] for item in entry["reviewed_dispositions"]}, self.IDS)
             self.assertEqual(entry["unreviewed_findings"], [])
             self.assertEqual(entry["scanner_stdout"].strip(), self.stream_file.read_text())
-        self.assertIn("reviewed dispositions: 8", output)
+        self.assertIn(f"reviewed dispositions: {len(self.IDS)}", output)
         self.assertNotIn("no vulnerabilities", output.lower())
 
     def test_unknown_findings_remain_blocking_and_visible(self) -> None:
@@ -1391,7 +1390,7 @@ if mode == "fail":
         self.assertEqual(code, 1)
         for entry in report["targets"]:
             self.assertEqual(entry["unreviewed_findings"], ["GO-2026-9999"])
-            self.assertEqual(len(entry["reviewed_dispositions"]), 8)
+            self.assertEqual(len(entry["reviewed_dispositions"]), len(self.IDS))
 
     def test_module_and_reported_trace_changes_require_review(self) -> None:
         original = json.dumps(self.messages)
@@ -1423,7 +1422,7 @@ if mode == "fail":
             self.assertIn(self.policy["dispositions"][0]["advisory_modified"], output)
             self.assertIn(self.messages[3]["osv"]["modified"], output)
             for entry in report["targets"]:
-                self.assertEqual(len(entry["reviewed_dispositions"]), 8)
+                self.assertEqual(len(entry["reviewed_dispositions"]), len(self.IDS))
                 self.assertEqual(len(entry["warnings"]), 1)
                 self.assertNotEqual(entry["advisory_revisions"][0]["reviewed_sha256"],
                                     entry["advisory_revisions"][0]["current_sha256"])
@@ -1449,7 +1448,8 @@ if mode == "fail":
     def test_malformed_or_incomplete_scans_never_pass(self) -> None:
         streams = ["", "not json", "[]", '{"config":{}}', '{"finding":null}',
                    '{"finding":{"osv":"GO-2026-5841","trace":[]}}', '{"error":{"message":"failed"}}']
-        streams.extend("\n".join(json.dumps(m) for m in self.messages[:end]) for end in (1, 2, 3, 4, 5, 16, 18))
+        ends = (1, 2, 3, 4, 5, len(self.messages) - 3, len(self.messages) - 1)
+        streams.extend("\n".join(json.dumps(m) for m in self.messages[:end]) for end in ends)
         for index in (0, 1, 2, 3):
             streams.append("\n".join(json.dumps(m) for i, m in enumerate(self.messages) if i != index))
         streams.append("\n".join(json.dumps(m) for m in self.messages) + '\n{"finding":')
@@ -1526,29 +1526,30 @@ if mode == "fail":
         (self.release.dir / archive).unlink()
         self.assertEqual(self.run_check()[0], 1)
 
-    def test_nickname_disposition_has_exact_reviewed_bindings(self) -> None:
+    def test_openpgp_disposition_has_exact_reviewed_bindings(self) -> None:
         policy = self.tool.dispositions(REPO_ROOT / "gateway/vulnerability-dispositions.json")
-        entry = next(entry for entry in policy["dispositions"] if entry["id"] == "GO-2026-6629")
+        entry = next(entry for entry in policy["dispositions"] if entry["id"] == "GO-2026-5932")
         expected = {
-            "id": "GO-2026-6629", "module": "golang.org/x/text", "version": "v0.40.0",
-            "class": "feature-excluded", "advisory_modified": "2026-10-07T14:09:43Z",
-            "advisory_sha256": "98f94e2a194dd631cb5d2d3f13cc69dba620db4f936cc509cd818758a5e9127a",
-            "trace_count": 13,
-            "trace_sha256": "a063585705828dda128dc3e65e0c9b28073c9c60790891d348e29608b47fa797",
+            "id": "GO-2026-5932", "module": "golang.org/x/crypto", "version": "v0.57.0",
+            "class": "component-absent", "advisory_modified": "2026-07-07T22:15:29Z",
+            "advisory_sha256": "6a685f52c906f24f2b6f96eebaade65cbba74ed674e8c54ba0c4f7a9da1c25d3",
+            "trace_count": 15,
+            "trace_sha256": "75cd55d48a93450cc7cdba43f30637bee36c1f860dbbfd0614d443d02a19924c",
         }
         self.assertEqual({key: entry[key] for key in expected}, expected)
         self.assertEqual(policy["gateway"]["targets"], {
-            "darwin-arm64": "d83d01460ac365f1b5527abf5ef92417ed2d5e200a35d3042c60fcc956c6c30e",
-            "darwin-x86_64": "f53a8a6211dc025a1531ca78b13800281f5b745b5da21d252c46b4072222cbbe",
-            "linux-aarch64": "95595639950d0495f4db7dda0a7ee132eb4be7bf0b5822aa987c68be8f7744ae",
-            "linux-x86_64": "5d59edd7cd762d4bb858e3768a68b079837075e054e9c7cf1e5f8dd7247855b7",
+            "darwin-arm64": "08e58bb6d9453979bc69e8f93ee47e184036e68e886465a604df25b99a073af6",
+            "darwin-x86_64": "bb4022dc2cbcdce73c3dbefabf0e824e188192a21b7129c1ba25d74c228fda9a",
+            "linux-aarch64": "f9940a2bb470596792a907a8aef27e7b6ea7daaa1a757842899fd125c7d3fd14",
+            "linux-x86_64": "2ff8c1362c554420028e10dcdaf869f080ad89f879111ea764e725dc999257ac",
         })
-        for fact in ("nickAdditionalMapping.Transform", "present", "only external PRECIS consumer",
-                     "OpaqueString", "Profile.String is reachable", "PGSTORE_", ".env"):
+        for fact in ("golang.org/x/crypto/openpgp", "not imported", "ProtonMail", "component is absent"):
             self.assertIn(fact, entry["reason"])
         triggers = " ".join(entry["re_review"])
-        for trigger in ("consumer", "profile", "PGSTORE_", ".env", "dependency", "toolchain", "patch"):
+        for trigger in ("OpenPGP", "Git-store crypto", "dependency", "toolchain", "patch"):
             self.assertIn(trigger, triggers)
+        self.assertIn("v0.57.0", entry["evidence"][-1])
+        self.assertIn("no golang.org/x/crypto/openpgp package", entry["evidence"][-1])
 
     def test_workflow_fetches_review_controls_without_changing_the_product_checkout(self) -> None:
         job = _jobs((WORKFLOWS_DIR / "release.yml").read_text())["vulnerabilities"]

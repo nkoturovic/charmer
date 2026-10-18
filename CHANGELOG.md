@@ -23,6 +23,10 @@ listed under 2.0.0, with the gateway rebuilt on the fixed versions.
   implementation. The update moves golang.org/x/crypto to 0.57.0,
   golang.org/x/sync to 0.23.0, golang.org/x/sys to 0.48.0 and
   golang.org/x/text to 0.42.0, the smallest set of versions it requires.
+- These golang.org/x/crypto and golang.org/x/text versions also fix
+  GO-2026-6303, GO-2026-6354 and GO-2026-6355 (golang.org/x/crypto/ssh)
+  and GO-2026-6629 (golang.org/x/text/secure/precis). The 2.0.0 review had
+  found that none of them affects the gateway as charmer runs it.
 
 ## [2.0.0] — 2026-10-18
 
