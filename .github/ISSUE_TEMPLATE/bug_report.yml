@@ -31,6 +31,8 @@ body:
         - Release bundle
         - Nix
         - WSL2
+        - Source checkout (editable install)
+        - Other
     validations:
       required: true
   - type: textarea
