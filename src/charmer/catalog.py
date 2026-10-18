@@ -128,6 +128,9 @@ RESERVED_LEAD_ENV_KEYS = frozenset(
         # Claude Code 2.1.296+: one model for every workflow agent, over a
         # cm-* agentType's frontmatter; compiled neutral ("inherit").
         "CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL",
+        # Claude Code 2.1.302+: the auto-mode classifier's model (a lineup
+        # model choice the launch clears; a lead's env never sets it).
+        "CLAUDE_CODE_AUTO_MODE_MODEL",
         "CLAUDE_CODE_MAX_OUTPUT_TOKENS",
         "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY",
         "CLAUDE_CODE_MAX_CONTEXT_TOKENS",

@@ -439,6 +439,42 @@ class EnvTests(unittest.TestCase):
         with self.assertRaisesRegex(CompilerError, "compiler-owned and reserved"):
             _launch(bad, eff, bundle=bundle)
 
+    def test_the_auto_mode_classifier_model_is_cleared_and_reserved(self) -> None:
+        """Claude Code 2.1.302 picks the auto-mode classifier's model from
+        CLAUDE_CODE_AUTO_MODE_MODEL: the launch unsets it (an inherited value
+        never picks a lineup model the lineup did not choose) and a lead env
+        can never set it."""
+
+        key = "CLAUDE_CODE_AUTO_MODE_MODEL"
+        self.assertIn(key, catalog.RESERVED_LEAD_ENV_KEYS)
+        self.assertIn(key, compiler.V2_ENV_UNSET)
+        for seed in ("balanced", "direct"):
+            _lineup, result = _seed_launch(seed)
+            with self.subTest(seed=seed):
+                self.assertIn(key, result.env_unset)
+                self.assertNotIn(key, result.env_set)
+                self.assertNotIn(key, result.scope_plan.settings["env"])
+        bundle, _l, eff, lineup = _seed("balanced")
+        bad = dataclasses.replace(lineup, lead=dataclasses.replace(lineup.lead, env={key: "x"}))
+        with self.assertRaisesRegex(CompilerError, "compiler-owned and reserved"):
+            _launch(bad, eff, bundle=bundle)
+
+    def test_the_retry_watchdog_caps_stay_the_users(self) -> None:
+        """The watchdog is pinned on; its wait caps (Claude Code 2.1.295 and
+        2.1.301) bound its silent waits and stay user-settable: never
+        reserved, cleared or compiled."""
+
+        for key in ("CLAUDE_CODE_RETRY_WATCHDOG_MAX_WAIT_MS", "CLAUDE_CODE_RETRY_WATCHDOG_MAX_USAGE_LIMIT_WAIT_MS"):
+            with self.subTest(key=key):
+                self.assertNotIn(key, catalog.RESERVED_LEAD_ENV_KEYS)
+                self.assertNotIn(key, compiler.V2_ENV_UNSET)
+                _lineup, result = _seed_launch("balanced", launch_environ={key: "1800000"})
+                self.assertNotIn(key, result.env_unset)
+                self.assertNotIn(key, result.env_set)
+                self.assertNotIn(key, result.scope_plan.settings["env"])
+        _lineup, result = _seed_launch("balanced")
+        self.assertEqual(result.scope_plan.settings["env"]["CLAUDE_CODE_RETRY_WATCHDOG"], "1")
+
     def test_fork_subagents_are_denied_in_every_scope(self) -> None:
         """Fork subagents run outside the lineup on the caller's own model;
         every scope denies Agent(fork) (--no-subagents denies Agent itself).

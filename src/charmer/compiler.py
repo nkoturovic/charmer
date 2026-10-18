@@ -667,6 +667,8 @@ def generate_session_appendix(
 # settings omit them; CLAUDE_CODE_SUBAGENT_MODEL(_FORCE) stay unset (the
 # compiled workflow default lives only in flag settings), and so does
 # CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL (the flag settings state it neutral).
+# CLAUDE_CODE_AUTO_MODE_MODEL (the auto-mode classifier's model) is cleared
+# too: an inherited value would pick a lineup model the lineup never chose.
 V2_ENV_UNSET = (
     *catalog_mod.CREDENTIAL_ENV_KEYS,
     "ANTHROPIC_DEFAULT_FABLE_MODEL",
@@ -676,6 +678,7 @@ V2_ENV_UNSET = (
     "CLAUDE_CODE_SUBAGENT_MODEL",
     "CLAUDE_CODE_SUBAGENT_MODEL_FORCE",
     "CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL",
+    "CLAUDE_CODE_AUTO_MODE_MODEL",
     "CLAUDE_CODE_MAX_OUTPUT_TOKENS",
     "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY",
     "CLAUDE_CODE_AUTO_COMPACT_WINDOW",

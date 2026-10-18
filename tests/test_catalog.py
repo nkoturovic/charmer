@@ -1012,6 +1012,8 @@ LEAD_ENV_KEYS_RESERVED_BY_THE_COMPILER = (
     "CLAUDE_CODE_COORDINATOR_FORCE_WORKER_INHERIT_MODEL",
     # Compiled neutral into the flag settings since the 2.1.302 pin.
     "CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL",
+    # The auto-mode classifier's model (2.1.302): unset at every launch.
+    "CLAUDE_CODE_AUTO_MODE_MODEL",
 )
 
 
