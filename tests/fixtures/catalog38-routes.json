@@ -1,0 +1,254 @@
+{
+  "catalog_version": 38,
+  "routes": {
+    "deepseek-flash-high[1m]": {
+      "client_tokens": 1000000,
+      "key": "deepseek-flash",
+      "provider": "deepseek",
+      "provider_tokens": 1000000,
+      "proxy_contract": "output-config-high",
+      "wire_model": "deepseek-flash"
+    },
+    "deepseek-flash-max[1m]": {
+      "client_tokens": 1000000,
+      "key": "deepseek-flash",
+      "provider": "deepseek",
+      "provider_tokens": 1000000,
+      "proxy_contract": "output-config-max",
+      "wire_model": "deepseek-flash"
+    },
+    "kimi-code-high[1m]": {
+      "client_tokens": 1000000,
+      "key": "kimi-code",
+      "provider": "kimi",
+      "provider_tokens": 1000000,
+      "proxy_contract": "output-config-high",
+      "wire_model": "kimi-for-coding"
+    },
+    "kimi-code-low[1m]": {
+      "client_tokens": 1000000,
+      "key": "kimi-code",
+      "provider": "kimi",
+      "provider_tokens": 1000000,
+      "proxy_contract": "output-config-low",
+      "wire_model": "kimi-for-coding"
+    },
+    "kimi-code-max[1m]": {
+      "client_tokens": 1000000,
+      "key": "kimi-code",
+      "provider": "kimi",
+      "provider_tokens": 1000000,
+      "proxy_contract": "output-config-max",
+      "wire_model": "kimi-for-coding"
+    },
+    "muse-contributor-high[1m]": {
+      "client_tokens": 1000000,
+      "key": "muse-contributor",
+      "provider": "meta",
+      "provider_tokens": 1000000,
+      "proxy_contract": "output-config-high",
+      "wire_model": "muse-spark-1.3-contributor"
+    },
+    "muse-contributor-low[1m]": {
+      "client_tokens": 1000000,
+      "key": "muse-contributor",
+      "provider": "meta",
+      "provider_tokens": 1000000,
+      "proxy_contract": "output-config-low",
+      "wire_model": "muse-spark-1.3-contributor"
+    },
+    "muse-contributor-medium[1m]": {
+      "client_tokens": 1000000,
+      "key": "muse-contributor",
+      "provider": "meta",
+      "provider_tokens": 1000000,
+      "proxy_contract": "output-config-medium",
+      "wire_model": "muse-spark-1.3-contributor"
+    },
+    "muse-contributor-xhigh[1m]": {
+      "client_tokens": 1000000,
+      "key": "muse-contributor",
+      "provider": "meta",
+      "provider_tokens": 1000000,
+      "proxy_contract": "output-config-xhigh",
+      "wire_model": "muse-spark-1.3-contributor"
+    },
+    "muse-high[1m]": {
+      "client_tokens": 1000000,
+      "key": "muse",
+      "provider": "meta",
+      "provider_tokens": 1000000,
+      "proxy_contract": "output-config-high",
+      "wire_model": "muse-spark-1.3"
+    },
+    "muse-low[1m]": {
+      "client_tokens": 1000000,
+      "key": "muse",
+      "provider": "meta",
+      "provider_tokens": 1000000,
+      "proxy_contract": "output-config-low",
+      "wire_model": "muse-spark-1.3"
+    },
+    "muse-medium[1m]": {
+      "client_tokens": 1000000,
+      "key": "muse",
+      "provider": "meta",
+      "provider_tokens": 1000000,
+      "proxy_contract": "output-config-medium",
+      "wire_model": "muse-spark-1.3"
+    },
+    "muse-xhigh[1m]": {
+      "client_tokens": 1000000,
+      "key": "muse",
+      "provider": "meta",
+      "provider_tokens": 1000000,
+      "proxy_contract": "output-config-xhigh",
+      "wire_model": "muse-spark-1.3"
+    },
+    "or-deepseek-high[1m]": {
+      "client_tokens": 1000000,
+      "key": "or-deepseek",
+      "provider": "openrouter",
+      "provider_tokens": 1000000,
+      "proxy_contract": "output-config-high",
+      "wire_model": "deepseek/deepseek-v4.1-flash"
+    },
+    "or-deepseek-xhigh[1m]": {
+      "client_tokens": 1000000,
+      "key": "or-deepseek",
+      "provider": "openrouter",
+      "provider_tokens": 1000000,
+      "proxy_contract": "output-config-xhigh",
+      "wire_model": "deepseek/deepseek-v4.1-flash"
+    },
+    "or-gemini-high[1m]": {
+      "client_tokens": 1000000,
+      "key": "or-gemini",
+      "provider": "openrouter",
+      "provider_tokens": 1000000,
+      "proxy_contract": "output-config-high",
+      "wire_model": "google/gemini-3.8-flash"
+    },
+    "or-gemini-xhigh[1m]": {
+      "client_tokens": 1000000,
+      "key": "or-gemini",
+      "provider": "openrouter",
+      "provider_tokens": 1000000,
+      "proxy_contract": "output-config-xhigh",
+      "wire_model": "google/gemini-3.8-flash"
+    },
+    "or-gpt-high[1m]": {
+      "client_tokens": 1000000,
+      "key": "or-gpt",
+      "provider": "openrouter",
+      "provider_tokens": 1000000,
+      "proxy_contract": "output-config-high",
+      "wire_model": "openai/gpt-6.1-sol"
+    },
+    "or-gpt-xhigh[1m]": {
+      "client_tokens": 1000000,
+      "key": "or-gpt",
+      "provider": "openrouter",
+      "provider_tokens": 1000000,
+      "proxy_contract": "output-config-xhigh",
+      "wire_model": "openai/gpt-6.1-sol"
+    },
+    "or-grok-high": {
+      "client_tokens": 500000,
+      "key": "or-grok",
+      "provider": "openrouter",
+      "provider_tokens": 500000,
+      "proxy_contract": "output-config-high",
+      "wire_model": "x-ai/grok-4.7"
+    },
+    "or-grok-xhigh": {
+      "client_tokens": 500000,
+      "key": "or-grok",
+      "provider": "openrouter",
+      "provider_tokens": 500000,
+      "proxy_contract": "output-config-xhigh",
+      "wire_model": "x-ai/grok-4.7"
+    },
+    "or-kimi-high[1m]": {
+      "client_tokens": 1000000,
+      "key": "or-kimi",
+      "provider": "openrouter",
+      "provider_tokens": 1000000,
+      "proxy_contract": "output-config-high",
+      "wire_model": "moonshotai/kimi-k3"
+    },
+    "or-kimi-xhigh[1m]": {
+      "client_tokens": 1000000,
+      "key": "or-kimi",
+      "provider": "openrouter",
+      "provider_tokens": 1000000,
+      "proxy_contract": "output-config-xhigh",
+      "wire_model": "moonshotai/kimi-k3"
+    },
+    "or-opus-high[1m]": {
+      "client_tokens": 1000000,
+      "key": "or-opus",
+      "provider": "openrouter",
+      "provider_tokens": 1000000,
+      "proxy_contract": "output-config-high",
+      "wire_model": "anthropic/claude-opus-5.5"
+    },
+    "or-opus-xhigh[1m]": {
+      "client_tokens": 1000000,
+      "key": "or-opus",
+      "provider": "openrouter",
+      "provider_tokens": 1000000,
+      "proxy_contract": "output-config-xhigh",
+      "wire_model": "anthropic/claude-opus-5.5"
+    },
+    "qwen-flash-low[1m]": {
+      "client_tokens": 1000000,
+      "key": "qwen-flash",
+      "provider": "qwen",
+      "provider_tokens": 983616,
+      "proxy_contract": "output-config-low",
+      "wire_model": "qwen3.8-flash"
+    },
+    "qwen-flash-medium[1m]": {
+      "client_tokens": 1000000,
+      "key": "qwen-flash",
+      "provider": "qwen",
+      "provider_tokens": 983616,
+      "proxy_contract": "output-config-medium",
+      "wire_model": "qwen3.8-flash"
+    },
+    "qwen-flash-xhigh[1m]": {
+      "client_tokens": 1000000,
+      "key": "qwen-flash",
+      "provider": "qwen",
+      "provider_tokens": 983616,
+      "proxy_contract": "output-config-xhigh",
+      "wire_model": "qwen3.8-flash"
+    },
+    "qwen-max-low[1m]": {
+      "client_tokens": 1000000,
+      "key": "qwen-max",
+      "provider": "qwen",
+      "provider_tokens": 983616,
+      "proxy_contract": "output-config-low",
+      "wire_model": "qwen3.8-max"
+    },
+    "qwen-max-medium[1m]": {
+      "client_tokens": 1000000,
+      "key": "qwen-max",
+      "provider": "qwen",
+      "provider_tokens": 983616,
+      "proxy_contract": "output-config-medium",
+      "wire_model": "qwen3.8-max"
+    },
+    "qwen-max-xhigh[1m]": {
+      "client_tokens": 1000000,
+      "key": "qwen-max",
+      "provider": "qwen",
+      "provider_tokens": 983616,
+      "proxy_contract": "output-config-xhigh",
+      "wire_model": "qwen3.8-max"
+    }
+  },
+  "source": "ba3c59b4a1ed5d3ec54950c86f24fe91bb71a462"
+}

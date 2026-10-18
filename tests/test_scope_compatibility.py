@@ -14,7 +14,9 @@ earlier name and environment prefix, from charmer.legacy) and recompute
 what the record derives from the renamed files (the launch fence, the
 applied hash and the diagnostics' generation line). What the retention judges, the
 presentation of the diagnostics, is untouched by the rename. A frozen
-scope read without the map no longer matches: its selectors moved
+scope read without the map translates its recorded selectors through the
+catalog's renamed map, so its record compiles the same bindings under their
+new names, from which the live scope differs until the next resume
 (``test_the_frozen_scope_under_its_earlier_names_applies_at_the_next_resume``).
 """
 
@@ -323,16 +325,25 @@ class ScopeCompatibilityTests(unittest.TestCase):
                 self.assertTrue(scope.live_drift(self.live, result.plan))
 
     def test_the_frozen_scope_under_its_earlier_names_applies_at_the_next_resume(self):
-        # Read without the name map, the 1.0.0 scope names the earlier
-        # selectors: the record-authoritative compile moves them, so the
-        # scope is never proven equal and the rename applies at the next resume.
+        # Read without the name map, the 1.0.0 record names the earlier
+        # selectors: the record-authoritative compile translates them (the
+        # same bindings, no "moved" refusal) and compiles them under their new
+        # names; the live scope, under the earlier names, differs from it
+        # until the next resume recompiles it.
         for scenario in ("catalog", "unknown-family"):
             with self.subTest(scenario=scenario):
+                _frozen, renamed = renamed_baseline(scenario)
                 self.load(scenario, renamed=False)
+                recorded = {binding["selector"] for binding in self.record["applied"]["agents"].values()}
+                self.assertTrue(any(selector.startswith(legacy.LEGACY_SELECTOR_PREFIX) for selector in recorded))
                 result = self.expected()
-                self.assertIsNone(result.plan)
-                self.assertIn(f"(recorded {legacy.SELECTOR_PREFIX}", result.reason)
-                self.assertIn("it applies at the next resume (charmer -r ", result.reason)
+                self.assertIsNotNone(result.plan, result.reason)
+                # The bindings the record names, under their new selectors: the
+                # agent the rename moved is compiled exactly as the renamed scope.
+                agent = ".claude/agents/cm-reviewer-strong.md"
+                self.assertEqual(result.plan.agent_files[agent], renamed["agent_files"][agent].encode("utf-8"))
+                self.assertNotIn(legacy.LEGACY_SELECTOR_PREFIX.encode(), result.plan.agent_files[agent])
+                self.assertIn(f"{agent} content differs", scope.live_drift(self.live, result.plan))
 
     def test_changed_binding_or_role_policy_is_not_presentation_compatibility(self):
         self.load()

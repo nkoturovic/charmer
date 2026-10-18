@@ -164,13 +164,14 @@ _SELECTOR_SUFFIX = "[1m]"
 _RENDER_SENTINEL_PREFIX = "charmer-render-"
 # ``retired.json`` ``renamed``: selectors a live line served under an earlier
 # name. Catalog 39 renamed every gateway selector under the earlier prefix
-# (``legacy.SELECTOR_PREFIX`` + ``<rest>``) to ``charmer-<rest>``; each entry maps an old
+# (``legacy.LEGACY_SELECTOR_PREFIX`` + ``<rest>``) to ``charmer-<rest>``; each entry maps an old
 # selector to the live selector that replaced it (same rest, ``[1m]``
 # included) and the catalog version that renamed it. The old name is never
-# offered again; recorded sessions and compiled scopes still name it, so
-# ``Catalog.retired_selector_index`` lists it on the live line's route and
-# the continuity seed serves it there (same provider, wire, effort contract
-# and window) until an operator prunes it.
+# offered and never served again: the gateway serves the new name only.
+# Recorded sessions, compiled scopes and saved settings may still name it;
+# every comparison with the catalog translates it first
+# (:func:`renamed_selector`), so a resume launches on the new name with the
+# same provider, wire, effort contract and window.
 RENAMED_SELECTOR_PREFIX = "charmer-"
 
 _HASH_FIELDS = frozenset(
@@ -551,31 +552,40 @@ class Catalog:
         return self.docs["retired"].get("renamed") or {}
 
     def retired_selector_index(self) -> dict[str, tuple[str, dict[str, Any], str | None]]:
-        """Each retired or renamed selector base -> (key, entry, proxy contract).
-
-        A retired selector names its retired key and entry. A renamed one
-        names the live line that serves it under its new selector, with a
-        retired-shaped entry built from that line
-        (:func:`renamed_selector_entries`): the continuity seed and the
-        record scan then serve the old name on the identical route.
-        """
+        """Each retired selector base -> (retired key, entry, proxy contract):
+        what the continuity seed and the record scan serve."""
 
         index: dict[str, tuple[str, dict[str, Any], str | None]] = {}
         for key in sorted(self.retired):
             entry = self.retired[key]
             for selector, contract in sorted(entry["selectors"].items()):
                 index.setdefault(_selector_base(selector), (key, entry, contract))
-        for base, found in renamed_selector_entries(self.lines, self.renamed).items():
-            index.setdefault(base, found)
         return index
+
+    def renamed_selector_index(self) -> dict[str, tuple[str, dict[str, Any], str | None]]:
+        """Each renamed selector base -> (live line key, retired-shaped entry,
+        proxy contract) (:func:`renamed_selector_entries`): the route the old
+        name stands for. Never served; resolution and translation only."""
+
+        return renamed_selector_entries(self.lines, self.renamed)
 
     def resolve_selector(self, selector: str) -> tuple[str, dict[str, Any]] | None:
         """A retired or renamed selector (with or without ``[1m]``) -> (key, entry)."""
 
-        found = self.retired_selector_index().get(_selector_base(selector))
+        base = _selector_base(selector)
+        retired = self.retired_selector_index()
+        found = retired.get(base) or self.renamed_selector_index().get(base)
+        if found is None:
+            # Renamed, then retired by a later catalog: through its new name.
+            found = retired.get(_selector_base(self.current_selector(selector)))
         if found is None:
             return None
         return found[0], found[1]
+
+    def current_selector(self, selector: str) -> str:
+        """``selector`` under the name the catalog serves it by now (:func:`renamed_selector`)."""
+
+        return renamed_selector(self.renamed, selector)
 
     @property
     def roles(self) -> dict[str, Any]:
@@ -1433,19 +1443,29 @@ def renamed_selector_entries(
     return index
 
 
-def retained_entries(docs: Mapping[str, Any]) -> dict[str, Any]:
-    """The retired map plus one retired-shaped entry per renamed selector
-    (keyed ``renamed:<old base>``): where a retained alias's owner family is
-    read from (``render.retained_families``)."""
+def renamed_selector(renamed: Mapping[str, Any], selector: Any) -> Any:
+    """``selector`` translated through ``retired.json`` ``renamed`` (old
+    selector -> its new one, ``[1m]`` kept as given); anything else as it is.
 
-    retired_doc = docs.get("retired") or {}
-    models = (docs.get("models-v2") or docs.get("models") or {}).get("models") or {}
-    merged = dict(retired_doc.get("retired") or {})
-    for base, (_key, entry, _contract) in renamed_selector_entries(
-        models, retired_doc.get("renamed") or {}
-    ).items():
-        merged[f"renamed:{base}"] = entry
-    return merged
+    Every comparison of a recorded or saved selector with the catalog goes
+    through this first: a selector a session recorded under its earlier name
+    is the same binding as its new name."""
+
+    if not isinstance(selector, str) or not renamed:
+        return selector
+    suffix = _SELECTOR_SUFFIX if selector.endswith(_SELECTOR_SUFFIX) else ""
+    base = _selector_base(selector)
+    for old, spec in renamed.items():
+        if _selector_base(old) == base and isinstance(spec, Mapping) and isinstance(spec.get("selector"), str):
+            return _selector_base(spec["selector"]) + suffix
+    return selector
+
+
+def renamed_bases(docs: Mapping[str, Any]) -> frozenset[str]:
+    """The bases of every renamed (old) selector of ``docs``."""
+
+    renamed = (docs.get("retired") or {}).get("renamed") or {}
+    return frozenset(_selector_base(old) for old in renamed)
 
 
 def _check_renamed(
@@ -1456,10 +1476,11 @@ def _check_renamed(
     errors: list[str],
 ) -> None:
     """``retired.json`` ``renamed``: every old selector is the
-    ``legacy.SELECTOR_PREFIX`` twin of a live selector (the same rest,
-    ``[1m]`` included, so the effort and the window are the line's), is
-    neither live, retired nor a passthrough route, and was renamed no later
-    than this catalog."""
+    ``legacy.LEGACY_SELECTOR_PREFIX`` twin of a live selector (the same rest,
+    ``[1m]`` included, so the effort and the window are the line's) or of
+    one a later catalog retired (its line moved on: the old name then
+    resolves through the new one), is neither live, retired nor a
+    passthrough route, and was renamed no later than this catalog."""
 
     renamed = docs["retired"].get("renamed") or {}
     catalog_version = docs["version"].get("catalog_version")
@@ -1480,14 +1501,14 @@ def _check_renamed(
             errors.append(f"{where}: invalid selector")
             continue
         new = spec["selector"]
-        rest = old[len(legacy.SELECTOR_PREFIX):] if old.startswith(legacy.SELECTOR_PREFIX) else None
+        rest = old[len(legacy.LEGACY_SELECTOR_PREFIX):] if old.startswith(legacy.LEGACY_SELECTOR_PREFIX) else None
         if rest is None or new != RENAMED_SELECTOR_PREFIX + rest:
             errors.append(
-                f"{where}.selector: a renamed selector maps {legacy.SELECTOR_PREFIX}<rest> to "
+                f"{where}.selector: a renamed selector maps {legacy.LEGACY_SELECTOR_PREFIX}<rest> to "
                 f"{RENAMED_SELECTOR_PREFIX}<rest> ([1m] included), not {new!r}"
             )
-        if new not in owners:
-            errors.append(f"{where}.selector: {new!r} is not a live selector")
+        if new not in owners and _selector_base(new) not in retired_bases:
+            errors.append(f"{where}.selector: {new!r} is not a live selector (nor a retired one)")
         base = _selector_base(old)
         if base in live_selectors:
             errors.append(f"{where}: {base!r} is still a live selector of models.{live_selectors[base]}")

@@ -1762,7 +1762,7 @@ class DraftsMigrateTests(OnboardingTestCase):
         self.assertIsNone(entry["registry_overlay"])
         self.assertEqual(
             entry["efforts"],
-            {"max": {"selector": legacy.SELECTOR_PREFIX + "qwen38-max[1m]",
+            {"max": {"selector": legacy.LEGACY_SELECTOR_PREFIX + "qwen38-max[1m]",
                      "proxy_contract": "reasoning-effort-xhigh"}},
         )
         self.assertEqual(entry["roles"], "all")
@@ -1784,7 +1784,7 @@ class DraftsMigrateTests(OnboardingTestCase):
         self.assertEqual(code, 0, err)
         entry = self.store.load("local")["entry"]
         self.assertEqual(entry["efforts"], ["high"])
-        self.assertEqual(entry["selector"], legacy.SELECTOR_PREFIX + "qwen-flash-next")
+        self.assertEqual(entry["selector"], legacy.LEGACY_SELECTOR_PREFIX + "qwen-flash-next")
         self.assertEqual(entry["status"], "new")
 
     def test_unconvertible_and_unknown_provider_drafts_are_discarded(self) -> None:

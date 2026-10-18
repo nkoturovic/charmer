@@ -1,4 +1,38 @@
 {
+  "renamed": {
+    "claude-multi-grok46-high": {
+      "selector": "charmer-grok46-high",
+      "since_catalog": 31
+    },
+    "claude-multi-grok46-xhigh": {
+      "selector": "charmer-grok46-xhigh",
+      "since_catalog": 31
+    },
+    "claude-multi-kimi-k3[1m]": {
+      "selector": "charmer-kimi-k3[1m]",
+      "since_catalog": 31
+    },
+    "claude-multi-opus-4-8[1m]": {
+      "selector": "charmer-opus-4-8[1m]",
+      "since_catalog": 31
+    },
+    "claude-multi-opus-5-5[1m]": {
+      "selector": "charmer-opus-5-5[1m]",
+      "since_catalog": 31
+    },
+    "claude-multi-opus-5[1m]": {
+      "selector": "charmer-opus-5[1m]",
+      "since_catalog": 31
+    },
+    "claude-multi-qwen-flash-next": {
+      "selector": "charmer-qwen-flash-next",
+      "since_catalog": 31
+    },
+    "claude-multi-qwen38-max[1m]": {
+      "selector": "charmer-qwen38-max[1m]",
+      "since_catalog": 31
+    }
+  },
   "retired": {
     "muse-spark": {
       "capabilities": [

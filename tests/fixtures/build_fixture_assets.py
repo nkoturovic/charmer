@@ -29,8 +29,11 @@ What this recipe (re)writes (catalog v2):
   ``tests/fixtures/convert_models_v1_to_v2.py`` and the
   ``GENERATIONS`` table below; every line ``status: active``. Its
   catalog-32 selectors carry the old product prefix
-  (``charmer.legacy.SELECTOR_PREFIX``); the recipe gives them the current
-  ``charmer-`` prefix (same rest, ``[1m]`` included), as catalog 39 did.
+  (``charmer.legacy.LEGACY_SELECTOR_PREFIX``); the recipe gives them the current
+  ``charmer-`` prefix (same rest, ``[1m]`` included), as catalog 39 did, and
+  records each in ``retired.json`` ``renamed`` (``since_catalog`` the
+  fixture's catalog version), so a record or scope compiled before the
+  rename translates on the fixture exactly as on the shipped catalog.
 - ``catalog/models.json`` also carries the aggregator line class: the
   ``FAMILIES`` table gives ``grok46`` its declared family, and the
   ``AGGREGATOR_LINES`` literal adds five OpenRouter lines of declared
@@ -116,8 +119,8 @@ SELECTOR_PREFIX = "charmer-"
 def _current_selector(selector):
     """A frozen catalog-32 selector under the current prefix."""
 
-    if selector.startswith(legacy.SELECTOR_PREFIX):
-        return SELECTOR_PREFIX + selector[len(legacy.SELECTOR_PREFIX):]
+    if selector.startswith(legacy.LEGACY_SELECTOR_PREFIX):
+        return SELECTOR_PREFIX + selector[len(legacy.LEGACY_SELECTOR_PREFIX):]
     return selector
 
 
@@ -281,17 +284,25 @@ for rel in ("settings.json", "catalog/roles.json"):
 providers = json.loads((OUT / "catalog" / "providers.json").read_text(encoding="utf-8"))["providers"]
 models = json.loads(CATALOG32_MODELS.read_text(encoding="utf-8"))["models"]
 fixture_models = {}
+renamed = {}
+fixture_version = json.loads((OUT / "version.json").read_text(encoding="utf-8"))["catalog_version"]
 for key in KEEP:
     entry = copy.deepcopy(models[key])
     entry["routing_note"] = f"Fixture line {key}: frozen test data, never re-synced from the shipped catalog."
     entry["context"]["qualification"] = "Fixture context; not benchmark-verified."
-    fixture_models[key] = _current_selectors(
-        v1_to_v2_entry(key, entry, providers[entry["provider"]], GENERATIONS[key]))
+    converted = v1_to_v2_entry(key, entry, providers[entry["provider"]], GENERATIONS[key])
+    efforts = converted.get("efforts")
+    earlier = ([converted["selector"]] if "selector" in converted else []) + (
+        [spec["selector"] for spec in efforts.values()] if isinstance(efforts, dict) else [])
+    fixture_models[key] = _current_selectors(converted)
+    for old in earlier:
+        if _current_selector(old) != old:
+            renamed[old] = {"selector": _current_selector(old), "since_catalog": fixture_version}
     if key in FAMILIES:
         fixture_models[key]["family"] = FAMILIES[key]
 fixture_models.update(copy.deepcopy(AGGREGATOR_LINES))
 dump("catalog/models.json", {"models": fixture_models, "version": 2})
-dump("catalog/retired.json", FIXTURE_RETIRED)
+dump("catalog/retired.json", {**FIXTURE_RETIRED, "renamed": dict(sorted(renamed.items()))})
 if (OUT / "catalog" / "profiles").exists():
     shutil.rmtree(OUT / "catalog" / "profiles")
 (OUT / "catalog" / "profiles").mkdir()

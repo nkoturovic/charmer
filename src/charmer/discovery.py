@@ -30,6 +30,7 @@ from typing import Any, Callable, Iterable, Mapping, Sequence
 
 from . import account_pools
 from . import catalog as catalog_mod
+from . import legacy
 from . import operator as operator_mod
 
 # ------------------------------------------------------------ channels
@@ -44,6 +45,9 @@ SENTINEL_PREFIX = "charmer-render-"
 # (possibly stale — doctor's served cross-check reports those), never an
 # uncataloged upstream model.
 OWNED_ALIAS_PREFIXES = ("charmer-", "gpt-multi-", "custom-")
+# The same, plus the prefix our selectors had before catalog 39 renamed them
+# (a gateway of the earlier release, or a continuity alias, serves those).
+RECOGNISED_ALIAS_PREFIXES = (*OWNED_ALIAS_PREFIXES, legacy.LEGACY_SELECTOR_PREFIX)
 
 
 def section_provider(section: str) -> str | None:
@@ -286,7 +290,7 @@ def candidates(
                 ))
     unattributed: list[Candidate] = []
     for wire, model in sorted(served_by_id.items()):
-        if attributed[wire] or wire.startswith(OWNED_ALIAS_PREFIXES):
+        if attributed[wire] or wire.startswith(RECOGNISED_ALIAS_PREFIXES):
             continue
         if known.knows(None, wire):
             continue
@@ -310,7 +314,7 @@ def served_extras(
     unattributed: list[str] = []
     for model in sorted(served, key=lambda item: item.id):
         wire = model.id
-        if wire.startswith(OWNED_ALIAS_PREFIXES) or wire.startswith(SENTINEL_PREFIX):
+        if wire.startswith(RECOGNISED_ALIAS_PREFIXES) or wire.startswith(SENTINEL_PREFIX):
             continue
         provider, sections = _served_attribution(registry, wire)
         if provider is not None:

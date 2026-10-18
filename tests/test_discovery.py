@@ -116,6 +116,21 @@ class CandidateTests(unittest.TestCase):
         self.assertEqual(report.unattributed[0].owned_by, "someone")
         self.assertIsNone(report.unattributed[0].provider_hint)
 
+    def test_a_stale_alias_under_the_earlier_prefix_is_launcher_owned(self) -> None:
+        # A gateway of the earlier release (or a continuity alias) may serve a
+        # selector under the prefix catalog 39 renamed: ours, possibly stale
+        # (doctor's served check names it), never an upstream candidate.
+        from charmer import legacy
+
+        stale = legacy.LEGACY_SELECTOR_PREFIX + "no-such-line-high"
+        known = discovery.known_index(self.docs)
+        served = (launch.ServedModel(stale, "someone"), launch.ServedModel("mystery-model", "someone"))
+        report = discovery.candidates(self.registry(), served, known, include_all=True)
+        self.assertEqual([row.wire for row in report.unattributed], ["mystery-model"])
+        self.assertNotIn(stale, {row.wire for row in report.rows})
+        self.assertTrue(stale.startswith(discovery.RECOGNISED_ALIAS_PREFIXES))
+        self.assertFalse(stale.startswith(discovery.OWNED_ALIAS_PREFIXES))
+
     def test_created_cutoff_unknown_dates_and_all(self) -> None:
         registry = self.registry()
         known = discovery.known_index(self.docs)

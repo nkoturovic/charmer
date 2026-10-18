@@ -713,15 +713,15 @@ class AliasOwnerTests(unittest.TestCase):
         bundle = catalog.load_catalog(SHIPPED_ROOT)
         providers = bundle.docs["providers"]["providers"]
         seeds = continuity.seed_entries(bundle)
-        owners = self._owners(bundle, seeds, catalog.retained_entries(bundle.docs))
+        owners = self._owners(bundle, seeds, bundle.docs["retired"]["retired"])
         checked = 0
         for alias, entry in sorted(seeds.items()):
             provider = providers.get(entry["provider"])
             if provider is None or provider["independence_family"] != render.UNKNOWN_FAMILY:
                 continue
-            # A retired selector's entry, or the live line a renamed one names.
+            # The retired entry that serves the selector (a renamed one is never a seed).
             key = entry["source"].removeprefix("seed:")
-            declared = (bundle.retired.get(key) or bundle.lines[key])["family"]
+            declared = bundle.retired[key]["family"]
             with self.subTest(alias=alias):
                 self.assertIn(alias, owners)
                 self.assertEqual(owners[alias], declared)

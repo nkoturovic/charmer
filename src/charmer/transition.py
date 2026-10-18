@@ -487,14 +487,19 @@ def expected_plan(
         )
     lineup = profile.keep_recorded_agent_class(evaluation.lineup, applied["agents"], lcat)
     class_kept = agent_class_rows(evaluation.lineup, lineup)
+    # A selector recorded under its earlier name (catalog 39 renamed it) is
+    # the same binding as its new name: compared after translation.
+    from . import catalog as catalog_mod
+
+    renamed = (docs.get("retired") or {}).get("renamed") or {}
     moved: list[tuple[str, str, str]] = []
-    if lineup.lead.binding.selector != scope_lead["selector"]:
+    if lineup.lead.binding.selector != catalog_mod.renamed_selector(renamed, scope_lead["selector"]):
         moved.append(("lead", lineup.lead.binding.selector, str(scope_lead["selector"])))
     for rid in catalog_role_order(set(applied["agents"]) | set(lineup.agents)):
         old = applied["agents"].get(rid, {}).get("selector") or "(unbound)"
         agent = lineup.agents.get(rid)
         new = agent.binding.selector if agent is not None else "(unbound)"
-        if old != new:
+        if catalog_mod.renamed_selector(renamed, old) != new:
             moved.append((profile.label(rid), new, old))
     if moved:
         label, new, old = moved[0]

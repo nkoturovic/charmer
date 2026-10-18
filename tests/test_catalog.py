@@ -62,10 +62,11 @@ def assert_gpt6_probe_context(case: unittest.TestCase, context: dict) -> None:
 # (provider, wire, proxy contract). Catalog 33 serves every one of them: as
 # a live line selector, an Anthropic passthrough route, or a continuity seed
 # alias from retired.json (FrozenSelectorCoverageTests). Since catalog 39
-# renamed the live selectors under the earlier prefix to charmer-*, the old live ones
-# are served through continuity: a renamed-selector seed alias on the
-# identical route. Additions stay free, but dropping one of these fails
-# loudly. These are recorded wire names: they keep the old product prefix.
+# renamed the live selectors under the earlier prefix to charmer-*, an old
+# live one is no longer served under its old name: every comparison and
+# every launch translates it to its new name on the identical route.
+# Additions stay free, but dropping one of these fails loudly. These are
+# recorded wire names: they keep the old product prefix.
 FROZEN_2X_SELECTORS = {
     "claude-fable-5": ("anthropic", "claude-fable-5", None),
     "claude-fable-5-1": ("anthropic", "claude-fable-5-1", None),
@@ -219,11 +220,12 @@ class SeedLoadTests(unittest.TestCase):
                     for pattern in REMOVED_PATTERNS:
                         self.assertNotIn(pattern, base)
 
-    def test_retained_selectors_never_renamed_or_removed(self) -> None:
+    def test_retained_selectors_stay_resolvable(self) -> None:
         # The shipped selector bases must stay a SUPERSET of
         # the retained set (running sessions and 2.x records reference them).
         # A selector leaves the live lines only through a retired
-        # entry, whose selectors the continuity set keeps serving.
+        # entry, whose selectors the continuity set keeps serving, or a
+        # renamed one, which every launch translates to its new name.
         bundle = catalog.load_catalog(CATALOG_ROOT)
         bases = {
             route["name"]
@@ -236,6 +238,7 @@ class SeedLoadTests(unittest.TestCase):
             for _level, selector, _contract in catalog.line_selectors(model)
         }
         bases |= set(bundle.retired_selector_index())
+        bases |= set(bundle.renamed_selector_index())
         self.assertEqual(sorted(RETAINED_SELECTOR_BASES - bases), [])
 
     def test_removed_aliases_absent_from_bundle(self) -> None:
@@ -329,7 +332,7 @@ class SeedLoadTests(unittest.TestCase):
         # qwen38's max selector records its 2.x rule (xhigh), not max.
         self.assertEqual(
             bundle.retired["qwen38"]["selectors"],
-            {legacy.SELECTOR_PREFIX + "qwen38-max[1m]": "reasoning-effort-xhigh"},
+            {legacy.LEGACY_SELECTOR_PREFIX + "qwen38-max[1m]": "reasoning-effort-xhigh"},
         )
 
     def test_opus_line_serves_every_role(self) -> None:
@@ -345,15 +348,18 @@ class SeedLoadTests(unittest.TestCase):
 
 
 class FrozenSelectorCoverageTests(unittest.TestCase):
-    """Every frozen catalog-32 selector stays served by catalog 33.
+    """Every frozen catalog-32 selector stays usable on its route.
 
     Each base must satisfy at least one of (not "exactly one": that is
     false for the data itself):
       (i)   a live line selector base, same provider and contract (the wire
             may differ only for a gateway-effort codex line: sol retargets);
       (ii)  an Anthropic passthrough route;
-      (iii) a continuity seed alias (a retired or renamed selector) with the
-            identical (provider, wire, contract).
+      (iii) a continuity seed alias (a retired selector) with the identical
+            (provider, wire, contract);
+      (iv)  a selector catalog 39 renamed: never served under the old name,
+            translated to its live new name, whose (provider, wire,
+            contract) are identical.
     Wherever several hold, (provider, wire, contract) agree across them.
     """
 
@@ -367,6 +373,8 @@ class FrozenSelectorCoverageTests(unittest.TestCase):
         "gpt-multi-sol-xhigh": {"iii"},
         "gpt-multi-astra-high": {"i"},
         "gpt-multi-astra-xhigh": {"i"},
+        legacy.LEGACY_SELECTOR_PREFIX + "deepseek-flash-high": {"iv"},
+        legacy.LEGACY_SELECTOR_PREFIX + "deepseek-flash-max": {"iv"},
     }
 
     def test_no_trusted_wire_has_static_header_override(self) -> None:
@@ -406,6 +414,10 @@ class FrozenSelectorCoverageTests(unittest.TestCase):
             base: (entry["provider"], entry["last_wire"], contract)
             for base, (_key, entry, contract) in bundle.retired_selector_index().items()
         }
+        renamed = {
+            base: (entry["provider"], entry["last_wire"], contract)
+            for base, (_key, entry, contract) in bundle.renamed_selector_index().items()
+        }
         self.assertEqual(len(FROZEN_2X_SELECTORS), 27)
         for base, (provider, wire, contract) in sorted(FROZEN_2X_SELECTORS.items()):
             with self.subTest(base=base):
@@ -431,6 +443,13 @@ class FrozenSelectorCoverageTests(unittest.TestCase):
                     self.assertEqual(seed[base], (provider, wire, contract))
                     holds.add("iii")
                     facts.append(seed[base])
+                if base in renamed:
+                    self.assertEqual(renamed[base], (provider, wire, contract))
+                    new = bundle.current_selector(base)
+                    self.assertNotEqual(new, base)
+                    self.assertEqual(live[new][:3], (provider, wire, contract))
+                    holds.add("iv")
+                    facts.append(renamed[base])
                 self.assertTrue(holds, f"{base} is no longer served")
                 self.assertEqual(holds, self.EXPECTED.get(base, {"iii"}))
                 if facts:  # sol's retargeted live wire is the only exception
@@ -439,8 +458,8 @@ class FrozenSelectorCoverageTests(unittest.TestCase):
     def test_rules_named_in_the_spec(self) -> None:
         bundle = catalog.load_catalog(CATALOG_ROOT)
         index = bundle.retired_selector_index()
-        self.assertEqual(index[legacy.SELECTOR_PREFIX + "qwen38-max"][2], "reasoning-effort-xhigh")
-        self.assertEqual(index[legacy.SELECTOR_PREFIX + "kimi-k3"][2], "output-config-max")
+        self.assertEqual(index[legacy.LEGACY_SELECTOR_PREFIX + "qwen38-max"][2], "reasoning-effort-xhigh")
+        self.assertEqual(index[legacy.LEGACY_SELECTOR_PREFIX + "kimi-k3"][2], "output-config-max")
         self.assertIn("filter-thinking", bundle.providers["kimi"]["payload_contracts"])
         # Historical GPT-5.6 -> GPT-6 retarget, now owned by sol@6 continuity.
         self.assertNotEqual(bundle.lines["sol"]["wire_model"], bundle.retired["sol@6"]["last_wire"])
@@ -451,7 +470,8 @@ class FrozenSelectorCoverageTests(unittest.TestCase):
     def test_render_serves_every_frozen_selector_with_its_rule(self) -> None:
         # The shipped render (v2 lines + the continuity seed, every
         # secret dummy-resolved) serves all 27 frozen bases, with each
-        # retired selector's recorded effort rule and kimi's filter.
+        # retired selector's recorded effort rule and kimi's filter; a
+        # renamed one under its new name only.
         from charmer import continuity, render
 
         from charmer import operator
@@ -462,6 +482,8 @@ class FrozenSelectorCoverageTests(unittest.TestCase):
             base for base, (_provider, _wire, _contract) in FROZEN_2X_SELECTORS.items()
             if _provider in externalized
         }
+        renamed_bases = set(FROZEN_2X_SELECTORS) & set(bundle.renamed_selector_index())
+        self.assertEqual(len(renamed_bases), 2)
 
         def build(docs):
             return render.build_config_document(
@@ -477,7 +499,8 @@ class FrozenSelectorCoverageTests(unittest.TestCase):
         document, _available, unavailable, info = build(bundle.docs)
         self.assertEqual(unavailable, ())
         self.assertEqual(info["notices"], ())
-        self.assertEqual(set(FROZEN_2X_SELECTORS) - render.rendered_selectors(document), external_bases)
+        self.assertEqual(set(FROZEN_2X_SELECTORS) - render.rendered_selectors(document),
+                         external_bases | renamed_bases)
         schemas = operator.load_schemas(CATALOG_ROOT)
         for provider_id, sample in sorted(externalized.items()):
             raw = (CATALOG_ROOT / catalog.EXAMPLES_PROVIDERS_DIR / sample).read_bytes()
@@ -488,7 +511,8 @@ class FrozenSelectorCoverageTests(unittest.TestCase):
         self.assertEqual(unavailable, ())
         self.assertEqual(info["notices"], ())
         served = render.rendered_selectors(document)
-        self.assertEqual(sorted(set(FROZEN_2X_SELECTORS) - served), [])
+        self.assertEqual(sorted(set(FROZEN_2X_SELECTORS) - served), sorted(renamed_bases))
+        self.assertEqual(sorted(base for base in renamed_bases if bundle.current_selector(base) not in served), [])
 
         def aliases(kind: str, params) -> set[str]:
             return {
@@ -498,18 +522,49 @@ class FrozenSelectorCoverageTests(unittest.TestCase):
                 for model in entry["models"]
             }
 
-        self.assertIn(legacy.SELECTOR_PREFIX + "qwen38-max", aliases("override", {"reasoning_effort": "xhigh"}))
-        self.assertNotIn(legacy.SELECTOR_PREFIX + "qwen38-max", aliases("override", {"reasoning_effort": "max"}))
-        self.assertIn(legacy.SELECTOR_PREFIX + "kimi-k3", aliases("override", {"output_config.effort": "max"}))
-        self.assertIn(legacy.SELECTOR_PREFIX + "kimi-k3", aliases("filter", ["thinking"]))
+        self.assertIn(legacy.LEGACY_SELECTOR_PREFIX + "qwen38-max", aliases("override", {"reasoning_effort": "xhigh"}))
+        self.assertNotIn(legacy.LEGACY_SELECTOR_PREFIX + "qwen38-max", aliases("override", {"reasoning_effort": "max"}))
+        self.assertIn(legacy.LEGACY_SELECTOR_PREFIX + "kimi-k3", aliases("override", {"output_config.effort": "max"}))
+        self.assertIn(legacy.LEGACY_SELECTOR_PREFIX + "kimi-k3", aliases("filter", ["thinking"]))
+
+
+# The routes catalog 38 gave the selectors catalog 39 renamed, keyed by
+# the rest after the earlier prefix (recipe: build_catalog38_routes.py,
+# read from the last commit before the rename; never from this catalog).
+CATALOG38_ROUTES = Path(__file__).resolve().parent / "fixtures" / "catalog38-routes.json"
+
+
+def catalog38_mismatches(bundle, projection: dict) -> list[str]:
+    """Where catalog 39's renamed selectors leave the routes catalog 38
+    gave their old names (``projection``: the checked-in routes file)."""
+
+    live = RenamedSelectorContinuityTests.live_routes(bundle)
+    found: list[str] = []
+    expected = {legacy.LEGACY_SELECTOR_PREFIX + rest for rest in projection["routes"]}
+    if set(bundle.renamed) != expected:
+        found.append(f"renamed selectors differ: {sorted(set(bundle.renamed) ^ expected)}")
+    for rest, route in sorted(projection["routes"].items()):
+        old = legacy.LEGACY_SELECTOR_PREFIX + rest
+        new = bundle.current_selector(old)
+        if new not in live:
+            found.append(f"{old}: translates to {new}, not a live selector")
+            continue
+        key, provider, wire, contract, window = live[new]
+        client = bundle.lines[key]["context"]["client_tokens"]
+        now = {"key": key, "provider": provider, "wire_model": wire, "proxy_contract": contract,
+               "provider_tokens": window, "client_tokens": client}
+        if now != route:
+            found.append(f"{old} -> {new}: {now} != {route}")
+    return found
 
 
 class RenamedSelectorContinuityTests(unittest.TestCase):
     """Catalog 39 renamed every live selector under the earlier prefix
-    (``legacy.SELECTOR_PREFIX`` + ``<rest>``) to ``charmer-<rest>``. Sessions, records and
-    compiled scopes made before the rename still name the old selectors:
-    each must resolve, and be served, on exactly the route its new name
-    serves (provider, wire model, effort contract and context window)."""
+    (``legacy.LEGACY_SELECTOR_PREFIX`` + ``<rest>``) to ``charmer-<rest>``.
+    Sessions, records and compiled scopes made before the rename still
+    name the old selectors: each must resolve, and translate, to exactly
+    the route its new name serves (provider, wire model, effort contract
+    and context window). The gateway serves the new name only."""
 
     @staticmethod
     def live_routes(bundle) -> dict[str, tuple[str, str, str, str | None, int]]:
@@ -533,17 +588,21 @@ class RenamedSelectorContinuityTests(unittest.TestCase):
         self.assertEqual(len(set(targets)), 31)
         self.assertEqual([selector for selector in targets if not selector.startswith("charmer-")], [])
         self.assertEqual([selector for selector in targets if selector not in live], [])
-        index = bundle.retired_selector_index()
+        index = bundle.renamed_selector_index()
+        retired = bundle.retired_selector_index()
         for old, spec in sorted(renamed.items()):
             with self.subTest(old=old):
                 new = spec["selector"]
                 self.assertEqual(spec["since_catalog"], 39)
-                self.assertEqual(old, legacy.SELECTOR_PREFIX + new.removeprefix("charmer-"))
+                self.assertEqual(old, legacy.LEGACY_SELECTOR_PREFIX + new.removeprefix("charmer-"))
                 # The same [1m] class: the client sees the same window.
                 self.assertEqual(old.endswith("[1m]"), new.endswith("[1m]"))
                 key, provider, wire, contract, window = live[new]
                 base = old.removesuffix("[1m]")
                 self.assertNotIn(base, {s.removesuffix("[1m]") for s in live})
+                self.assertNotIn(base, retired)
+                self.assertEqual(bundle.current_selector(old), new)
+                self.assertEqual(bundle.current_selector(base), new.removesuffix("[1m]"))
                 found_key, entry, found_contract = index[base]
                 self.assertEqual(found_key, key)
                 self.assertEqual((entry["provider"], entry["last_wire"], found_contract, entry["context_tokens"]),
@@ -552,11 +611,41 @@ class RenamedSelectorContinuityTests(unittest.TestCase):
                 self.assertEqual(bundle.resolve_selector(base)[0], key)
                 self.assertEqual(bundle.resolve_key(key).key, key)
 
-    def test_the_continuity_seed_serves_each_old_selector_on_its_route(self) -> None:
+    def test_catalog_39_keeps_the_catalog_38_routes(self) -> None:
+        # The immutable catalog-38 projection: every old name's route then
+        # is its new name's route now (line key, provider, wire, effort
+        # contract, both windows), and the renamed set is exactly its names.
+        bundle = catalog.load_catalog(CATALOG_ROOT)
+        projection = json.loads(CATALOG38_ROUTES.read_text(encoding="utf-8"))
+        self.assertEqual(projection["catalog_version"], 38)
+        self.assertEqual(len(projection["routes"]), 31)
+        self.assertEqual(catalog38_mismatches(bundle, projection), [])
+
+    def test_the_catalog_38_comparison_catches_a_moved_route(self) -> None:
+        bundle = catalog.load_catalog(CATALOG_ROOT)
+        projection = json.loads(CATALOG38_ROUTES.read_text(encoding="utf-8"))
+        rest = "kimi-code-high[1m]"
+        for field, value in (("proxy_contract", "output-config-max"), ("wire_model", "k3"),
+                             ("provider_tokens", 200_000), ("key", "kimi-k3")):
+            with self.subTest(field=field):
+                moved = copy.deepcopy(projection)
+                moved["routes"][rest][field] = value
+                self.assertEqual(len(catalog38_mismatches(bundle, moved)), 1)
+        dropped = copy.deepcopy(projection)
+        del dropped["routes"][rest]
+        self.assertTrue(catalog38_mismatches(bundle, dropped))
+        # A catalog whose renamed entry points at another effort of the line.
+        other = copy.deepcopy(bundle)
+        other.docs["retired"]["renamed"][legacy.LEGACY_SELECTOR_PREFIX + rest] = {
+            "selector": "charmer-kimi-code-max[1m]", "since_catalog": 39}
+        self.assertTrue(catalog38_mismatches(other, projection))
+
+    def test_the_gateway_serves_each_renamed_selector_under_its_new_name_only(self) -> None:
         from charmer import continuity, render
 
         bundle = catalog.load_catalog(CATALOG_ROOT)
         live = self.live_routes(bundle)
+        projection = json.loads(CATALOG38_ROUTES.read_text(encoding="utf-8"))["routes"]
         seed = continuity.seed_only(bundle)
         self.assertEqual(seed["seeded_through_catalog"], 39)
         document, _available, unavailable, info = render.build_config_document(
@@ -565,7 +654,7 @@ class RenamedSelectorContinuityTests(unittest.TestCase):
             resolve_secret=lambda _name: "dummy-secret",
             continuity=seed["aliases"],
             quiet_providers=frozenset(catalog.externalized_providers(bundle.docs)),
-            retired=catalog.retained_entries(bundle.docs),
+            retired=bundle.docs["retired"]["retired"],
         )
         self.assertEqual(unavailable, ())
         served = render.rendered_selectors(document)
@@ -593,19 +682,20 @@ class RenamedSelectorContinuityTests(unittest.TestCase):
             with self.subTest(old=old):
                 base, new_base = old.removesuffix("[1m]"), spec["selector"].removesuffix("[1m]")
                 key, provider, wire, contract, window = live[spec["selector"]]
-                alias = seed["aliases"][base]
-                self.assertEqual((alias["provider"], alias["wire"], alias["proxy_contract"],
-                                  alias["context_tokens"], alias["since_catalog"]),
-                                 (provider, wire, contract, window, 39))
-                self.assertEqual(alias["source"], f"seed:{key}")
-                self.assertIn(base, served)
+                route = projection[old.removeprefix(legacy.LEGACY_SELECTOR_PREFIX)]
+                self.assertEqual((route["provider"], route["wire_model"], route["proxy_contract"]),
+                                 (provider, wire, contract))
+                # Never a seed alias, never rendered under the old name.
+                self.assertNotIn(base, seed["aliases"])
+                self.assertNotIn(base, served)
+                self.assertEqual(upstream(base), [])
+                self.assertEqual(params(base), [])
+                # The new name carries the catalog-38 route: its wire upstream
+                # and the effort contract's payload rules.
                 self.assertIn(new_base, served)
-                # The rendered upstream (section, endpoint, wire) and the
-                # payload rules (effort contract) of the old name are the new name's.
                 self.assertTrue(upstream(new_base))
-                self.assertEqual(upstream(base), upstream(new_base))
-                self.assertEqual(params(base), params(new_base))
-        self.assertFalse([n for n in info["notices"] if "charmer-" in n or legacy.SELECTOR_PREFIX in n])
+                self.assertEqual({found[2] for found in upstream(new_base)}, {route["wire_model"]})
+        self.assertFalse([n for n in info["notices"] if "charmer-" in n or legacy.LEGACY_SELECTOR_PREFIX in n])
 
     def test_old_selectors_name_their_line_in_records(self) -> None:
         # A record's old lead selector resolves to the same line key (a
@@ -621,8 +711,43 @@ class RenamedSelectorContinuityTests(unittest.TestCase):
                 self.assertEqual(migrate.translate_key(key, old, 38, bundle), key)
                 self.assertIsNone(migrate.resolve_retired_selector(bundle.retired, old))
 
+    def test_a_renamed_selector_a_later_catalog_retired_resolves_through_its_new_name(self) -> None:
+        # Catalog 39 renamed grok46's selectors; a later generation move
+        # retires them. The renamed entries stay valid, and an old name still
+        # resolves, through its new name, to the retired generation.
+        root = _copy_tree(self)
+        models_path, retired_path = root / "catalog" / "models.json", root / "catalog" / "retired.json"
+        models, retired = json.loads(models_path.read_text()), json.loads(retired_path.read_text())
+        key = "grok46"
+        old_line = copy.deepcopy(models["models"][key])
+        line = models["models"][key]
+        line.update(generation="99", wire_model="x-ai/grok-fixture-99")
+        for level, spec in line["efforts"].items():
+            spec["selector"] = f"charmer-grok46-next-{level}"
+        retired["retired"][f"{key}@{old_line['generation']}"] = {
+            "successor": key, "generation": old_line["generation"], "reason": "Fixture generation move",
+            "since_catalog": json.loads((root / "version.json").read_text())["catalog_version"],
+            "provider": old_line["provider"], "last_wire": old_line["wire_model"], "display": old_line["display"],
+            "context_tokens": old_line["context"]["provider_tokens"], "capabilities": old_line["capabilities"],
+            "roles": old_line["roles"], "family": old_line["family"],
+            "selectors": {selector: contract for _level, selector, contract in catalog.line_selectors(old_line)},
+        }
+        models_path.write_bytes(strict_json.pretty_file_bytes(models))
+        retired_path.write_bytes(strict_json.pretty_file_bytes(retired))
+        bundle = catalog.load_catalog(root)
+        old = legacy.LEGACY_SELECTOR_PREFIX + "grok46-xhigh"
+        self.assertEqual(bundle.current_selector(old), "charmer-grok46-xhigh")
+        self.assertEqual(bundle.resolve_selector(old)[0], f"{key}@{old_line['generation']}")
+        self.assertEqual(bundle.resolve_selector("charmer-grok46-xhigh")[0], f"{key}@{old_line['generation']}")
+        self.assertNotIn(old, bundle.renamed_selector_index())
+        # A new name that is neither live nor retired stays refused.
+        del retired["retired"][f"{key}@{old_line['generation']}"]
+        retired_path.write_bytes(strict_json.pretty_file_bytes(retired))
+        with self.assertRaisesRegex(CatalogError, "is not a live selector"):
+            catalog.load_catalog(root)
+
     def test_validation_refuses_a_renamed_selector_off_its_twin(self) -> None:
-        old = legacy.SELECTOR_PREFIX + "kimi-code-high[1m]"
+        old = legacy.LEGACY_SELECTOR_PREFIX + "kimi-code-high[1m]"
 
         def change(field, value):
             def mutate(raw):
@@ -651,7 +776,7 @@ class RenamedSelectorContinuityTests(unittest.TestCase):
         self.assertTrue(any("still a live selector" in error for error in errors), errors)
 
         def retired_twin(raw):
-            raw["docs"]["retired"]["renamed"][legacy.SELECTOR_PREFIX + "kimi-k3[1m]"] = {
+            raw["docs"]["retired"]["renamed"][legacy.LEGACY_SELECTOR_PREFIX + "kimi-k3[1m]"] = {
                 "selector": "charmer-kimi-k3[1m]", "since_catalog": 39}
 
         errors = _mutate(retired_twin, root=CATALOG_ROOT)
@@ -1888,6 +2013,7 @@ class GatewayManifestConsistencyTests(unittest.TestCase):
                 "cli-proxy-api-codex-api-key-safety.patch",
                 "cli-proxy-api-refresh-shutdown-join.patch",
                 "cli-proxy-api-openai-content-chunks.patch",
+                "cli-proxy-api-charmer-model-ids.patch",
             ],
         )
 
@@ -2020,8 +2146,8 @@ class DeepSeekProductionModelsTests(unittest.TestCase):
         self.assertEqual(
             pro["selectors"],
             {
-                legacy.SELECTOR_PREFIX + "deepseek-pro-high[1m]": "output-config-high",
-                legacy.SELECTOR_PREFIX + "deepseek-pro-max[1m]": "output-config-max",
+                legacy.LEGACY_SELECTOR_PREFIX + "deepseek-pro-high[1m]": "output-config-high",
+                legacy.LEGACY_SELECTOR_PREFIX + "deepseek-pro-max[1m]": "output-config-max",
             },
         )
         self.assertIn(
@@ -2069,15 +2195,15 @@ class RetiredDirectLinesTests(unittest.TestCase):
         self.assertEqual(
             grok["selectors"],
             {
-                legacy.SELECTOR_PREFIX + "grok46-high": "output-config-high",
-                legacy.SELECTOR_PREFIX + "grok46-xhigh": "output-config-xhigh",
+                legacy.LEGACY_SELECTOR_PREFIX + "grok46-high": "output-config-high",
+                legacy.LEGACY_SELECTOR_PREFIX + "grok46-xhigh": "output-config-xhigh",
             },
         )
 
     def test_kimi_k3_retired_keeps_its_max_rule(self) -> None:
         bundle = catalog.load_catalog(CATALOG_ROOT)
         kimi = bundle.retired["kimi-k3"]
-        self.assertEqual(kimi["selectors"], {legacy.SELECTOR_PREFIX + "kimi-k3[1m]": "output-config-max"})
+        self.assertEqual(kimi["selectors"], {legacy.LEGACY_SELECTOR_PREFIX + "kimi-k3[1m]": "output-config-max"})
         self.assertIn("kimi", bundle.providers)
         self.assertNotIn("kimi-k3", bundle.lines)
         # A current Kimi line never takes over the retired selector.
@@ -2086,7 +2212,7 @@ class RetiredDirectLinesTests(unittest.TestCase):
             for line in bundle.lines.values() if line["provider"] == "kimi"
             for _level, selector, _contract in catalog.line_selectors(line)
         }
-        self.assertNotIn(legacy.SELECTOR_PREFIX + "kimi-k3", current)
+        self.assertNotIn(legacy.LEGACY_SELECTOR_PREFIX + "kimi-k3", current)
 
     def test_every_keyed_provider_ships_a_line_that_can_lead(self) -> None:
         # A key alone is a usable start: each shipped provider reached with an

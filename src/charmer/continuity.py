@@ -427,17 +427,19 @@ def extend_from_records(
 
     Catalog, custom and route aliases are served by the catalog already;
     known continuity aliases stay as they are; a tombstoned alias is revived
-    only for a live referencing record. Anything else is ``unservable``:
-    reported, never guessed, never stored. Returns ``(doc, changed,
-    unservable_bases)``.
+    only for a live referencing record. A selector catalog 39 renamed is
+    served under its new name only (a launch translates the recorded one).
+    Anything else is ``unservable``: reported, never guessed, never stored.
+    Returns ``(doc, changed, unservable_bases)``.
     """
 
     result = copy.deepcopy(dict(document))
     index = catalog.retired_selector_index()
+    renamed = catalog_mod.renamed_bases(catalog.docs)
     changed = False
     unservable: list[str] = []
     for base in sorted(scan.refs):
-        if base in catalog_aliases or base in result["aliases"]:
+        if base in catalog_aliases or base in result["aliases"] or base in renamed:
             continue
         found = index.get(base)
         if found is None:
