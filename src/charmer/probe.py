@@ -3558,7 +3558,7 @@ class ScriptedDelegationResponder:
             raise ProbeError("delegated input limit must be positive")
         self.subagent_type = subagent_type
         self.tool_use_id = "toolu_probe_delegation_0001"
-        self._prompt = "Reply with exactly: CHARMER-PROBE-DELEGATION-OK"
+        self._prompt = "Reply with exactly: charmer-probe-delegation-ok"
         self._hold = hold
         self._hold_timeout = hold_timeout
         self._delegated_input_limit_bytes = delegated_input_limit_bytes

@@ -83,6 +83,9 @@ first = {
 status, reply = post(first)
 assert status == 200, status
 block = next(item for item in reply["content"] if item["type"] == "tool_use")
+# The scripted delegation asks for the lowercase marker the earlier
+# releases used: exactly this prompt, nothing else.
+assert block["input"]["prompt"] == "Reply with exactly: charmer-probe-delegation-ok", block["input"]
 
 if MODE in {"inherited", "generated", "low-context"}:
     delegated_turn = {"role": "user", "content": "delegated task"}
@@ -109,7 +112,7 @@ if MODE in {"inherited", "generated", "low-context"}:
                     {
                         "type": "tool_result",
                         "tool_use_id": block["id"],
-                        "content": "CHARMER-PROBE-DELEGATION-OK",
+                        "content": "charmer-probe-delegation-ok",
                     }
                 ],
             },
@@ -136,7 +139,7 @@ else:
                     {
                         "type": "tool_result",
                         "tool_use_id": block["id"],
-                        "content": "CHARMER-PROBE-DELEGATION-OK",
+                        "content": "charmer-probe-delegation-ok",
                     }
                 ],
             }
@@ -223,6 +226,9 @@ first = {
 status, reply = post(first)
 assert status == 200, status
 block = next(item for item in reply["content"] if item["type"] == "tool_use")
+# The scripted delegation asks for the lowercase marker the earlier
+# releases used: exactly this prompt, nothing else.
+assert block["input"]["prompt"] == "Reply with exactly: charmer-probe-delegation-ok", block["input"]
 followup = {
     "model": "probe-model",
     "max_tokens": 16,
@@ -235,7 +241,7 @@ followup = {
                 {
                     "type": "tool_result",
                     "tool_use_id": block["id"],
-                    "content": "CHARMER-PROBE-DELEGATION-OK",
+                    "content": "charmer-probe-delegation-ok",
                 }
             ],
         },
@@ -744,7 +750,7 @@ class ScriptedDelegationRunTests(ScopeProbeTestCase):
         # persist: only hashes, flags, classifications, and paths.
         self.assertNotIn(b"Use the Agent tool exactly once", raw)
         self.assertNotIn(b"TOKEN-XYZZY-MARKER", raw)
-        self.assertNotIn(b"CHARMER-PROBE-DELEGATION-OK", raw)
+        self.assertNotIn(b"charmer-probe-delegation-ok", raw)
         evidence = strict_json.loads(raw)
         self.assertEqual(evidence["kind"], "scripted-delegation")
         self.assertEqual(evidence["subagent_type"], "cm-probe-marker")
