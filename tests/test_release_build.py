@@ -167,7 +167,8 @@ class Fixture:
             "upstream": {key: doc["upstream"][key] for key in ("name", "repository", "tag", "version", "commit")},
             "toolchain": {"version": doc["toolchain"]["version"], "host": "linux-amd64"},
             "source": {"tree_sha256": doc["source"]["tree_sha256"], "archive_sha256": doc["source"]["archive_sha256"]},
-            "vendor": {"tree_sha256": doc["vendor"]["tree_sha256"]},
+            "vendor": {"tree_sha256": doc["vendor"]["tree_sha256"],
+                       **({"modules_patch": doc["vendor"]["modules_patch"]} if "modules_patch" in doc["vendor"] else {})},
             "series": [{"basename": entry["basename"], "sha256": entry["sha256"]} for entry in admitted],
             "admitted_series": True,
             "post_apply_tree_sha256": "0" * 64,
@@ -810,6 +811,7 @@ class GatewayInputTests(unittest.TestCase):
             "not the binary BUILD.json records": lambda: (dist / "linux-amd64" / "cli-proxy-api").write_bytes(
                 (dist / "linux-amd64" / "cli-proxy-api").read_bytes() + b"x"),
             "series": lambda: self.edit_record(lambda r: r["series"].pop()),
+            "vendor": lambda: self.edit_record(lambda r: r["vendor"].pop("modules_patch")),
             "admitted_series": lambda: self.edit_record(lambda r: r.update(admitted_series=False)),
             "upstream": lambda: self.edit_record(lambda r: r["upstream"].update(commit="0" * 40)),
             "no shipped record of darwin-amd64": lambda: self.edit_record(lambda r: r["targets"].pop("darwin-amd64")),

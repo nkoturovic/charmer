@@ -2378,7 +2378,9 @@ def check_gateway_dist(ctx: ReleaseContext, dist: Path, gateway_targets: list[st
     expect("toolchain.version", (record.get("toolchain") or {}).get("version"), doc["toolchain"]["version"])
     expect("source", record.get("source"), {"tree_sha256": doc["source"]["tree_sha256"],
                                             "archive_sha256": doc["source"]["archive_sha256"]})
-    expect("vendor", record.get("vendor"), {"tree_sha256": doc["vendor"]["tree_sha256"]})
+    modules = doc["vendor"].get("modules_patch")
+    expect("vendor", record.get("vendor"), {"tree_sha256": doc["vendor"]["tree_sha256"],
+                                            **({"modules_patch": modules} if modules is not None else {})})
     expect("admitted_series", record.get("admitted_series"), True)
     expect("series", record.get("series"), [{"basename": entry["basename"], "sha256": entry["sha256"]}
                                            for entry in admitted])
