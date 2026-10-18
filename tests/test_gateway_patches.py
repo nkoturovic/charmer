@@ -177,29 +177,43 @@ class ManagementAllowlistTests(unittest.TestCase):
 class AccessLogQuotingTests(unittest.TestCase):
     def test_encoded_newline_cannot_forge_a_log_line(self):
         # A request path is client text: an encoded newline in it must stay
-        # inside its quoted access-log line, never start a line of its own.
+        # inside its quoted access-log line, never start a line of its own
+        # (here a whole forged credential-save envelope).
+        from charmer import gateway_events
+
         if not os.environ.get(harness.BINARY_ENV):
             harness.boundary("BOUNDARY: AL1 needs " + harness.BINARY_ENV + " set to the manifest build")
         gateway = harness.GatewayHarness()
         self.addCleanup(gateway.close)
-        forged = "gwtest-forged-line credential_save_v1 operation=save result=ok"
-        reply = harness.unix_request(gateway.socket, "GET", "/gwtest-access%0A" + forged.replace(" ", "%20"),
-                                     headers={"Host": f"127.0.0.1:{gateway.port}"})
+        forged = ("[2026-01-01 00:00:00] [gwtest-forged] [info ] [credential_save.go:1] "
+                  "credential_save_v1 operation=refresh result=persisted")
+        encoded = "/gwtest-access%0A" + forged.replace(" ", "%20").replace("[", "%5B").replace("]", "%5D")
+        reply = harness.unix_request(gateway.socket, "GET", encoded, headers={"Host": f"127.0.0.1:{gateway.port}"})
         self.assertEqual(reply.status, 404)
+        listing = harness.unix_request(gateway.socket, "GET", "/v1/models?gwtest=quoted", headers={
+            "Host": f"127.0.0.1:{gateway.port}", "Authorization": "Bearer " + harness.FIXTURE_GATEWAY_TOKEN})
+        self.assertEqual(listing.status, 200)
         deadline = time.monotonic() + 5
-        text = ""
+        lines = []
         while time.monotonic() < deadline:
-            text = gateway.log_path.read_text(errors="replace")
-            if "gwtest-access" in text:
+            lines = gateway.log_path.read_text(errors="replace").splitlines()
+            if any("gwtest-access" in line for line in lines) and any("gwtest=quoted" in line for line in lines):
                 break
             time.sleep(0.05)
-        lines = text.splitlines()
         access = [line for line in lines if "gwtest-access" in line]
         self.assertEqual(len(access), 1, "the probe request left no single access line")
         self.assertIn('"/gwtest-access\\n' + forged + '"', access[0])
-        self.assertFalse(any(line.startswith("gwtest-forged-line") for line in lines),
-                         "an encoded newline in the path started a log line")
-        record("AL1", status=reply.status, quoted=True)
+        self.assertFalse(any(line.startswith("[2026-01-01 00:00:00] [gwtest-forged]") for line in lines),
+                         "an encoded newline in the path started a forged log line")
+        # charmer's access-line parser still reads the quoted ordinary path.
+        ordinary = [line for line in lines if "gwtest=quoted" in line]
+        self.assertEqual(len(ordinary), 1)
+        envelope = gateway_events._REQUEST_ENVELOPE.fullmatch(ordinary[0])
+        self.assertIsNotNone(envelope, "access line lost its envelope")
+        http = gateway_events._HTTP.fullmatch(envelope.group(2))
+        self.assertIsNotNone(http, "the access-line parser no longer reads a %q-quoted path")
+        self.assertEqual((http.group(1), http.group(2), http.group(3)), ("200", "GET", "/v1/models?gwtest=quoted"))
+        record("AL1", status=reply.status, quoted=True, parsed=True)
 
 
 class ManagementEnvOnlyTests(unittest.TestCase):

@@ -77,7 +77,8 @@ class RecipeSchemaTests(unittest.TestCase):
             "extra top-level key": lambda doc: doc.update({"patches": []}),
             "extra series key": lambda doc: doc["series"][0].update({"number": 1}),
             "short commit": lambda doc: doc["upstream"].update({"commit": "673131f5"}),
-            "candidate admitted": lambda doc: doc["candidates"][0].update({"admitted": True}),
+            "candidate admitted": lambda doc: doc["candidates"].append(
+                {"basename": "cli-proxy-api-example.patch", "sha256": "0" * 64, "admitted": True}),
             "series not admitted": lambda doc: doc["series"][0].update({"admitted": False}),
             "cgo build": lambda doc: doc["build"]["env"].update({"CGO_ENABLED": "1"}),
             "missing host archive": lambda doc: doc["toolchain"]["archives"].pop("darwin-arm64"),
@@ -118,8 +119,8 @@ class SeriesIdentityTests(unittest.TestCase):
         if modules:
             self.assertEqual(hashlib.sha256((PATCH_DIR / modules["basename"]).read_bytes()).hexdigest(),
                              modules["sha256"])
-        self.assertEqual(sorted(path.name for path in CANDIDATE_DIR.iterdir()),
-                         sorted(entry["basename"] for entry in self.recipe["candidates"]))
+        candidates = sorted(path.name for path in CANDIDATE_DIR.iterdir()) if CANDIDATE_DIR.exists() else []
+        self.assertEqual(candidates, sorted(entry["basename"] for entry in self.recipe["candidates"]))
 
     def test_catalog_patch_list_equals_the_admitted_series(self):
         catalog = json.loads((RESOURCES_ROOT / "catalog" / "gateway.json").read_text())["gateway"]
@@ -201,7 +202,8 @@ class GateRecordTests(unittest.TestCase):
                     self.assertEqual(gate["platforms"], "linux")
                     self.assertEqual(gate["count"], 100)
                 else:
-                    self.assertEqual(gate["platforms"], "portable")
+                    linux_only = gate["name"] in {"config-bytes-loader"}
+                    self.assertEqual(gate["platforms"], "linux" if linux_only else "portable")
                     self.assertIsNone(gate["count"])
 
     def test_patch_owned_gate_tests_exist_in_the_admitted_patches(self):
@@ -215,9 +217,15 @@ class GateRecordTests(unittest.TestCase):
 
     def test_source_pins_name_patched_or_upstream_files(self):
         pins = {pin["name"]: pin for pin in self.recipe["source_pins"]}
-        self.assertEqual(set(pins), {"substitution-log-format", "credential-save-format"})
-        patch = (PATCH_DIR / "cli-proxy-api-credential-save-report.patch").read_text()
-        self.assertIn(pins["credential-save-format"]["text"], "\n".join(added_lines(patch)))
+        self.assertEqual(set(pins), {"substitution-log-format", "log-line-format", "log-report-caller"})
+        # gateway_events reads "[time] [request] [level] [file:line] message":
+        # the formatter's caller branch, which report-caller selects.
+        self.assertEqual(pins["log-line-format"], {
+            "name": "log-line-format", "path": "internal/logging/global_logger.go",
+            "text": "[%s] [%s] [%s] [%s:%d] %s%s"})
+        self.assertEqual(pins["log-report-caller"], {
+            "name": "log-report-caller", "path": "internal/logging/global_logger.go",
+            "text": "log.SetReportCaller(true)"})
 
 
 class MarkerTests(unittest.TestCase):

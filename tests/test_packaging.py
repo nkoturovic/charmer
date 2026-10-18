@@ -782,6 +782,7 @@ class ManagementAllowlistGateTests(unittest.TestCase):
 
     PATCH = PATCH_DIR / "cli-proxy-api-management-readonly-allowlist.patch"
     GATE_TESTS = (
+        "TestManagementAllowlist_RouteTableMatchesReview",
         "TestManagementAllowlist_EveryRegisteredRouteRefusedUnlessAllowlisted",
         "TestManagementAllowlist_KeyMiddlewareRunsOnlyOnAllowlistedRoutes",
         "TestManagementAllowlist_UnregisteredManagementPathsNeverReachKeyMiddleware",
@@ -794,6 +795,7 @@ class ManagementAllowlistGateTests(unittest.TestCase):
         "TestManagementAllowlist_NonLoopbackHostRefusedAndNeverCounts",
         "TestManagementAllowlist_RemoteOverrideForcedOff",
         "TestManagementAllowlist_OAuthCallbackWithPendingSessionWritesNothing",
+        "TestManagementAllowlist_RefusedAPISurfaces",
         "TestManagementAllowlist_RESPSurfaceClosedWithoutKeyCheck",
     )
     # Upstream tests that pin surfaces the allowlist refuses by design. A
@@ -806,6 +808,10 @@ class ManagementAllowlistGateTests(unittest.TestCase):
         "TestManagementUsageRequiresManagementAuthAndPopsArray",
         "TestManagementPluginsRouteRegistered",
         "TestManagementResponseExposesPluginSupportHeaderForCORS",
+        "TestConfigV8ETagExposedForCORS",
+        "TestIssue5190ModelDetailLifecycle",
+        "TestIssue5190ModelDetailUsesVisibleCatalog",
+        "TestIssue5190ModelDetailHomeVisibility",
     )
 
     def _patch_text(self) -> str:
@@ -838,6 +844,13 @@ class ManagementAllowlistGateTests(unittest.TestCase):
                 self.assertIn(wiring, added)
         # The source tripwire pins the audited management-key consumers.
         self.assertIn("var auditedManagementKeyConsumers = map[string]int{", added)
+        # Both namespaces are in scope; the v8 read twins are refused, and a
+        # reviewed route table names every registered route.
+        self.assertIn('"/v8/management",', added)
+        self.assertIn('"/v1/models/",', added)
+        self.assertIn("+++ b/internal/api/server_management_route_table_test.go", text)
+        self.assertRegex(added, r'"GET /v8/management/credentials":\s+routeRefuse,')
+        self.assertRegex(added, r'"GET /v0/management/auth-files":\s+routeAllow,')
 
     def test_gate_runs_internal_api_with_explicit_skips(self) -> None:
         record = gate("management-allowlist")
@@ -922,23 +935,27 @@ class StartupGateTests(unittest.TestCase):
 
 
 class ManagementEnvOnlyGateTests(unittest.TestCase):
-    """The seventh patch and its Go gate.
+    """The env-only patch and its Go gate.
 
     The management API authenticates only with MANAGEMENT_PASSWORD: a
     remote-management secret-key in config.yaml, plaintext or bcrypt, is
     dropped at every load (start and hot reload; never hashed, never written
     back), never enables management and never authenticates; a runtime local
-    password (-password / TUI) neither enables nor authenticates it. Pin the patch
-    body next to the package (the sandbox stages the manifest's patches
-    there), its position seventh (written against the six patches before it),
-    and the exact -run list of the postCheck gate, so a regenerated patch
-    that drops a gate test, or a narrowed filter, fails here.
+    password (-password / TUI) neither enables nor authenticates it; the
+    secret is ignored under both spellings (remote-management.secret-key and
+    management.secret-key). Pin the patch body next to the package (the
+    sandbox stages the manifest's patches there), its position right after
+    the byte loader (watcher-parentdir), and the exact -run list of the gate,
+    so a regenerated patch that drops a gate test, or a narrowed filter,
+    fails here.
     """
 
     PATCH = PATCH_DIR / "cli-proxy-api-management-env-only.patch"
     CONFIG_GATE_TESTS = (
         "TestManagementEnvOnly_LoadConfigDropsSecretKeyWithoutWriteBack",
         "TestManagementEnvOnly_ReloadAndPayloadLoadsDropSecretKey",
+        "TestManagementEnvOnly_BothSpellingsIgnoredFileUntouched",
+        "TestManagementEnvOnly_V8MigrationKeepsSecuritySettings",
     )
     API_GATE_TESTS = (
         "TestManagementEnvOnly_InitialConfigSecretDoesNotEnableManagement",
@@ -960,7 +977,6 @@ class ManagementEnvOnlyGateTests(unittest.TestCase):
     def test_patch_makes_config_secret_inert_and_carries_gate_tests(self) -> None:
         text = self._patch_text()
         for path in (
-            "internal/config/config_load.go",
             "internal/config/parse.go",
             "internal/config/management_env_only.go",
             "internal/config/management_env_only_test.go",
@@ -973,10 +989,13 @@ class ManagementEnvOnlyGateTests(unittest.TestCase):
                 self.assertIn(f"+++ b/{path}", text)
         added = "\n".join(line[1:] for line in text.splitlines() if line.startswith("+") and not line.startswith("+++"))
         removed = "\n".join(line[1:] for line in text.splitlines() if line.startswith("-") and not line.startswith("---"))
-        # Every load drops the config secret; nothing hashes or writes it back.
-        self.assertEqual(added.count("dropConfigManagementSecret(&cfg)"), 2)
+        # Every load goes through ParseConfigBytes (the byte loader routes
+        # LoadConfig and LoadConfigBytes there), which drops the config
+        # secret under either spelling instead of hashing it.
+        self.assertEqual(added.count("dropConfigManagementSecret(&cfg)"), 1)
         self.assertIn("cfg.RemoteManagement.SecretKey = \"\"", added)
-        self.assertIn("SaveConfigPreserveCommentsUpdateNestedScalar(configFile, []string{\"remote-management\", \"secret-key\"}, hashed)", removed)
+        self.assertIn("bcrypt.GenerateFromPassword([]byte(cfg.RemoteManagement.SecretKey), bcrypt.DefaultCost)", removed)
+        self.assertIn("remote-management.secret-key and management.secret-key are ignored", added)
         # Start, reload and the key check no longer read the config secret.
         self.assertIn("hasManagementSecret := envManagementSecret\n", added + "\n")
         self.assertIn("hasManagementSecret := cfg.RemoteManagement.SecretKey != \"\" || envManagementSecret || s.localPassword != \"\"", removed)
@@ -1009,8 +1028,9 @@ class ManagementEnvOnlyGateTests(unittest.TestCase):
         self.assertIn("watcher.NewWatcher(f.cfgPath, f.authDir, func(cfg *proxyconfig.Config) {", added)
         self.assertIn("s.UpdateClients(cfg)", added)
 
-    def test_gate_runs_every_env_only_test_and_patch_is_seventh(self) -> None:
-        self.assertEqual(admitted_names()[6], self.PATCH.name)
+    def test_gate_runs_every_env_only_test_and_follows_the_byte_loader(self) -> None:
+        names = admitted_names()
+        self.assertEqual(names[names.index(self.PATCH.name) - 1], "cli-proxy-api-watcher-parentdir.patch")
         record = gate("management-env-only")
         self.assertEqual(record["packages"], ["./internal/config", "./internal/api"])
         match = re.fullmatch(r"\^\(([^()]*)\)\$", record["run"])
@@ -1284,17 +1304,33 @@ class AdmittedPatchGateTests(unittest.TestCase):
 
     def test_no_antigravity_egress_gate(self):
         names = ("TestCM053NoAntigravityEgressLocalModel",
-                 "TestCM053NoAntigravityEgressRemoteModel")
+                 "TestCM053NoAntigravityEgressRemoteModel",
+                 "TestLocalModeNoEgressSDKLocalModel",
+                 "TestLocalModeNoEgressSDKRemoteModel")
         record = gate("no-antigravity-egress")
-        self.assertEqual(record["packages"], ["./cmd/server"])
+        self.assertEqual(record["packages"], ["./cmd/server", "./sdk/cliproxy"])
         self.assertEqual(record["run"], f"^({'|'.join(names)})$")
         self.assertEqual(record["expected_tests"], list(names))
         patch = (PATCH_DIR / "cli-proxy-api-no-antigravity-egress.patch").read_text()
-        self.assertEqual(set(re.findall(r"^\+func (TestCM053NoAntigravityEgress\w+)\(",
+        self.assertEqual(set(re.findall(r"^\+func (Test\w*NoAntigravityEgress\w+|Test\w*NoEgress\w+)\(",
                                        patch, re.MULTILINE)), set(names))
-        # Both ordinary and embedded TUI servers obey the same flag.
-        self.assertEqual(patch.count("+\t\t\tif antigravityVersionUpdaterPlan(localModel) {"), 1)
-        self.assertEqual(patch.count("+\t\t\t\tif antigravityVersionUpdaterPlan(localModel) {"), 1)
+        # One policy, set once from --local-model before any updater starts.
+        self.assertIn("+++ b/internal/localmode/localmode.go", patch)
+        self.assertEqual(patch.count("+\tlocalmode.Set(localModel)\n"), 1)
+        # Both ordinary and embedded TUI servers start updaters through it.
+        self.assertEqual(patch.count(
+            "+\t\t\t\tstartBackgroundUpdaters(localModel, configFilePath, defaultBackgroundUpdaters)"), 1)
+        self.assertEqual(patch.count(
+            "+\t\t\tstartBackgroundUpdaters(localModel, configFilePath, defaultBackgroundUpdaters)"), 1)
+        # Every network-refreshing starter reads it: Antigravity, the npm
+        # (Grok CLI) updater in the SDK and executor paths, the management
+        # asset updater and the latest-version lookup.
+        for path in ("internal/misc/antigravity_version.go", "internal/runtime/executor/helps/xai_version.go",
+                     "internal/managementasset/updater.go", "sdk/cliproxy/service_lifecycle.go",
+                     "internal/api/handlers/management/config_basic.go", "cmd/server/main.go"):
+            with self.subTest(path=path):
+                chunk = patch.split("+++ b/" + path + "\n", 1)[1].split("\ndiff --git ", 1)[0]
+                self.assertIn("+\tif localmode.NoEgress() {", chunk)
 
     def test_no_antigravity_row_requires_explicit_selection(self):
         from unittest import mock
@@ -1372,6 +1408,9 @@ class NoAntigravityEgressTests(unittest.TestCase):
                              "Antigravity updater started under --local-model")
             self.assertFalse("failed to refresh antigravity version" in text,
                              "Antigravity manifest refresh attempted under --local-model")
+            # The same policy keeps the Grok CLI (npm) version updater off.
+            self.assertFalse("periodic Grok CLI version refresh started" in text,
+                             "Grok CLI updater started under --local-model")
             harness.EVIDENCE.record(__name__, "patches", {"row": "AG1", "updater_started": False})
             harness.EVIDENCE.finalize_module(__name__)
         finally:
