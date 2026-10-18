@@ -71,7 +71,7 @@ Before the modules are vendored, this patch updates the module requirements:
      modified  internal/watcher/watcher.go
 
 6. cli-proxy-api-management-env-only.patch
-   sha256 531ce03607ffaa8154d8c74cc6f34750693af2f5f3dfd153c574d57e113cefbc
+   sha256 832dfc7d76dc4b82eb130910a33c63a981827a8a5257d87e184f40a35a307822
      modified  internal/api/handlers/management/handler.go
      modified  internal/api/server.go
      added     internal/api/server_management_env_only_test.go

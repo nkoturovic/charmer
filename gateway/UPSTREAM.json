@@ -77,7 +77,7 @@
     },
     {
       "basename": "cli-proxy-api-management-env-only.patch",
-      "sha256": "531ce03607ffaa8154d8c74cc6f34750693af2f5f3dfd153c574d57e113cefbc",
+      "sha256": "832dfc7d76dc4b82eb130910a33c63a981827a8a5257d87e184f40a35a307822",
       "admitted": true
     },
     {

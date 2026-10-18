@@ -703,7 +703,7 @@ index 00000000..2437574a
 +}
 diff --git a/internal/config/management_env_only_test.go b/internal/config/management_env_only_test.go
 new file mode 100644
-index 00000000..57b19c03
+index 00000000..5657410e
 --- /dev/null
 +++ b/internal/config/management_env_only_test.go
 @@ -0,0 +1,187 @@
@@ -869,8 +869,8 @@ index 00000000..57b19c03
 +		host                               string
 +		port                               int
 +		tls, allowRemote, panelOff         bool
-+		panelUpdateOff, pprof              bool
-+		pprofAddr, secret                  string
++		panelUpdateOff, pprof, secretSet   bool
++		pprofAddr                          string
 +		apiKeys                            string
 +		plugins, discovery, commercial, ws bool
 +		cooling                            bool
@@ -880,7 +880,7 @@ index 00000000..57b19c03
 +			host: cfg.Host, port: cfg.Port, tls: cfg.TLS.Enable,
 +			allowRemote: cfg.RemoteManagement.AllowRemote, panelOff: cfg.RemoteManagement.DisableControlPanel,
 +			panelUpdateOff: cfg.RemoteManagement.DisableAutoUpdatePanel, pprof: cfg.Pprof.Enable,
-+			pprofAddr: cfg.Pprof.Addr, secret: cfg.RemoteManagement.SecretKey, apiKeys: strings.Join(cfg.APIKeys, ","),
++			pprofAddr: cfg.Pprof.Addr, secretSet: cfg.RemoteManagement.SecretKey != "", apiKeys: strings.Join(cfg.APIKeys, ","),
 +			plugins: cfg.Plugins.Enabled, discovery: cfg.Discovery.Enabled, commercial: cfg.CommercialMode,
 +			ws: cfg.WebsocketAuth, cooling: cfg.DisableCooling,
 +		}
