@@ -84,6 +84,12 @@ contexts or signed reasoning history.
   `system-reminder` tag openings; it does not discard the notice.
 - After a lineup change, spawn fresh agents. Continuing an old agent with
   SendMessage can use its new model with its old prompt and history.
+- Claude Code can run every workflow agent on one model
+  (`CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL`), replacing the models of `cm-*`
+  agents too. Managed sessions set it to `inherit` in their own settings,
+  which outrank your user, project and local settings, so workflow agents
+  keep their lineup models; a value you set elsewhere has no effect there.
+  A managed policy that sets it is reported like any policy model lock.
 - The client's built-in helper agents run on their own model only when the
   session's model list allows it. `claude-code-guide` asks for the default
   Haiku (now Haiku 5.5); no managed lineup includes a Haiku model, so it

@@ -1588,6 +1588,21 @@ FEEDBACK_DRAFTS_VALUES = settings_mod.FEEDBACK_DRAFTS_VALUES
 FAST_MODE_ENV = "CLAUDE_CODE_DISABLE_FAST_MODE"
 
 
+# Claude Code 2.1.296+ runs every workflow agent on
+# CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL when it is set, over a cm-* agentType's
+# frontmatter model and the agent() model (spawns a workflow agent makes
+# included); the value "inherit" leaves it unset. Any settings layer could
+# set it (a project file before trust, too), so the flag settings, which
+# outrank the user, project and local layers, state it neutral in every
+# scope: workflow agents keep the lineup precedence (a per-call model, then
+# cm-* frontmatter, then the compiled CLAUDE_CODE_SUBAGENT_MODEL workflow
+# default, then the lead).
+# The real-binary proof is tests/test_client_skill_workflow
+# WorkflowModelPrecedenceTests (client check S10-precedence).
+WORKFLOW_MODEL_ENV = "CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL"
+WORKFLOW_MODEL_NEUTRAL = "inherit"
+
+
 # Claude Code 2.1.284+ starts a session whose settings configure no
 # permission mode in ``auto`` (2.1.281 started in ``default``; both
 # measured). A managed launch compiles ``permissions.defaultMode:
@@ -1700,6 +1715,7 @@ def compile_lineup_scope(
         env["CLAUDE_CODE_DISABLE_EXPLORE_INHERIT_CAP"] = "1"
     if workflow_default is not None:
         env["CLAUDE_CODE_SUBAGENT_MODEL"] = workflow_default
+    env[WORKFLOW_MODEL_ENV] = WORKFLOW_MODEL_NEUTRAL
     env.update(feedback_drafts_env(feedback_drafts))
     env[FAST_MODE_ENV] = "1"
 

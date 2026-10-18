@@ -1010,6 +1010,8 @@ LEAD_ENV_KEYS_RESERVED_BY_THE_COMPILER = (
     "CLAUDE_CODE_DISABLE_THINKING",
     "CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING",
     "CLAUDE_CODE_COORDINATOR_FORCE_WORKER_INHERIT_MODEL",
+    # Compiled neutral into the flag settings since the 2.1.302 pin.
+    "CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL",
 )
 
 
@@ -1614,10 +1616,11 @@ class NativeContractTests(unittest.TestCase):
         self.assertNotIn("claude", record)  # path-free: no local install paths
         acceptance = record["acceptance"]
         # The real-client probe verdicts S1-S12 fold in as U11-U22, S7c
-        # (the refusal fallback) as U23 and S16 (auxiliary destinations) as U24.
+        # (the refusal fallback) as U23, S16 (auxiliary destinations) as U24,
+        # and S10-precedence (a 2.1.302 policy gap) as U25.
         self.assertEqual(
             set(acceptance),
-            {"U1", "U2", "U5", "U6", "U10", *(f"U{n}" for n in range(11, 25))},
+            {"U1", "U2", "U5", "U6", "U10", *(f"U{n}" for n in range(11, 26))},
         )
         for name, entry in acceptance.items():
             with self.subTest(acceptance=name):
@@ -1628,11 +1631,11 @@ class NativeContractTests(unittest.TestCase):
                     self.assertEqual(entry["status"], "unverified")
                 else:
                     # The fence (U5) and SubagentStop (U10) are
-                    # probe-verified; U11-U24 are the real-client probe verdicts.
+                    # probe-verified; U11-U25 are the real-client probe verdicts.
                     self.assertEqual(entry["status"], "verified")
                 if entry["status"] == "failed":
                     self.assertIn("fallback", entry["note"])
-                if name in {f"U{n}" for n in range(11, 25)}:
+                if name in {f"U{n}" for n in range(11, 26)}:
                     self.assertIn("client 2.1.302", entry["note"])
                     self.assertIn("Radar: tests/test_client_", entry["note"])
         # The same-launch delivery record is deleted: contingency is the only

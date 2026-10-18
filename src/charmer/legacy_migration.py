@@ -1663,6 +1663,11 @@ def _earlier_env_name(name: str) -> str:
     return name
 
 
+# Scope env keys charmer compiles that the earlier release never did (its
+# pinned client knows none of them): a scope handed back leaves them out.
+LATER_ENV_KEYS = frozenset({scope.WORKFLOW_MODEL_ENV})
+
+
 def _earlier_launch_items(settings: dict[str, Any], renamed: Mapping[str, Any]) -> dict[str, Any]:
     """``settings.json`` with its launch-time items (the keys the client reads
     once at start, which the record's ``launch_fence`` proves and a repair
@@ -1670,8 +1675,9 @@ def _earlier_launch_items(settings: dict[str, Any], renamed: Mapping[str, Any]) 
     and ``model`` under the earlier selector names, each ``modelPicker``
     option's model under its earlier name and its description under the
     earlier product name, and the lifecycle ``env`` keys under their earlier
-    names (values kept, a selector value under its earlier name). Every
-    other key stays; the earlier release's repair recompiles those."""
+    names (values kept, a selector value under its earlier name), without
+    the :data:`LATER_ENV_KEYS`. Every other key stays; the earlier release's
+    repair recompiles those."""
 
     updated = dict(settings)
     available = settings.get("availableModels")
@@ -1692,7 +1698,8 @@ def _earlier_launch_items(settings: dict[str, Any], renamed: Mapping[str, Any]) 
         updated["modelPicker"] = {**picker, "options": options}
     env = settings.get("env")
     if isinstance(env, dict):
-        updated["env"] = {_earlier_env_name(key): earlier_selector(renamed, value) for key, value in env.items()}
+        updated["env"] = {_earlier_env_name(key): earlier_selector(renamed, value) for key, value in env.items()
+                          if key not in LATER_ENV_KEYS}
     return updated
 
 

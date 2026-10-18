@@ -44,6 +44,16 @@ class ManagedSettingsTests(unittest.TestCase):
         self.assertNotIn("secret", repr(locks))
         self.assertNotIn("UNRELATED", repr(locks))
 
+    def test_a_policy_workflow_model_is_a_model_lock(self):
+        # A policy env outranks the flag settings that state the workflow
+        # model neutral, so it locks the model like the subagent keys do.
+        self.write(self.root / "managed-settings.json", {
+            "env": {"CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL": "DO-NOT-REPORT-VALUE"}})
+        locks = managed.read_locks(self.root)
+        self.assertEqual([(lock.key, lock.kind) for lock in locks],
+                         [("env.CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL", "model")])
+        self.assertNotIn("DO-NOT-REPORT-VALUE", repr(locks))
+
     def test_false_hook_flags_are_not_locks(self):
         self.write(self.root / "managed-settings.json", {
             "disableAllHooks": False, "allowManagedHooksOnly": False,

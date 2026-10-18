@@ -652,7 +652,8 @@ def generate_session_appendix(
 # Moved keys (family defaults and the Explore inherit cap live in the
 # flag settings env) are unset so an inherited value never leaks when the
 # settings omit them; CLAUDE_CODE_SUBAGENT_MODEL(_FORCE) stay unset (the
-# compiled workflow default lives only in flag settings).
+# compiled workflow default lives only in flag settings), and so does
+# CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL (the flag settings state it neutral).
 V2_ENV_UNSET = (
     *catalog_mod.CREDENTIAL_ENV_KEYS,
     "ANTHROPIC_DEFAULT_FABLE_MODEL",
@@ -661,6 +662,7 @@ V2_ENV_UNSET = (
     "ANTHROPIC_DEFAULT_SONNET_MODEL",
     "CLAUDE_CODE_SUBAGENT_MODEL",
     "CLAUDE_CODE_SUBAGENT_MODEL_FORCE",
+    "CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL",
     "CLAUDE_CODE_MAX_OUTPUT_TOKENS",
     "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY",
     "CLAUDE_CODE_AUTO_COMPACT_WINDOW",

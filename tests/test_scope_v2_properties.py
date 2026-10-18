@@ -424,6 +424,8 @@ class FixturePropertyTests(unittest.TestCase):
         if case.workflow_selector is not None:
             self.assertIn(case.workflow_selector, available)
         self.assertNotIn("CLAUDE_CODE_SUBAGENT_MODEL_FORCE", env)
+        # Every scope states the 2.1.296+ workflow-wide model neutral.
+        self.assertEqual(env["CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL"], "inherit")
         self.assertEqual(env["CLAUDE_CODE_RETRY_WATCHDOG"], "1")
         # Both layers pin fast mode off; settings env wins over
         # user/project settings, and process env covers the launch boundary.
