@@ -10,7 +10,7 @@ and list candidates; `/cm` still passes its runtime id automatically.
 
 Quota readings are available only in the Nix package in this release. Bundle
 users can check `charmer doctor` for per-model 429/402/403 counts and move
-affected roles with `/cm fallback <provider>`. When the pool cannot be read,
+affected roles with `/cm fallback <provider>`. When this build cannot read quota,
 `charmer quota` and `/cm quota` add this availability hint in plain text.
 `charmer quota --json` is unchanged: schema version 1, the same facts and
 `quota-condition` value, no extra hint field or diagnostic. Its exit status

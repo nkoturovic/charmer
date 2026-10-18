@@ -24,7 +24,6 @@ from unittest import mock
 from charmer import cli, hooks, lineup, lineup_files, lineup_log, migrate, profile, scope, sessions, state, strict_json, transition
 from charmer import quota as quota_mod
 from charmer import catalog
-from charmer.cli.commands import quota as quota_cmd
 from _catalog import FIXTURE_ROOT, GOLDENS_ROOT
 from _golden import assertGolden
 from _v4 import V4Case
@@ -97,8 +96,7 @@ class QuotaEntryInitializationTests(unittest.TestCase):
                                 output_stream=output, interactive=False)
             self.assertEqual(code, 0)
             # Skill mode returns 0 even on a swallowed error: pin the exact output.
-            self.assertEqual(output.getvalue(), "quota: the local gateway is down\nQuota condition: unavailable — no reading can be made here now\n"
-                             + quota_cmd.QUOTA_AVAILABILITY + "\n")
+            self.assertEqual(output.getvalue(), "quota: the local gateway is down\nQuota condition: unavailable — no reading can be made here now\n")
             self.assertEqual(len(constructed), 1)
             self.assertEqual({str(p.relative_to(home)): (p.stat().st_mtime_ns,
                               p.read_bytes() if p.is_file() else None) for p in home.rglob("*")}, before)
@@ -1839,8 +1837,7 @@ class FallbackTests(LineupCase):
         self.runtime.environ["CLAUDE_CODE_SESSION_ID"] = self.rid
         with mock.patch.object(self.runtime, "pool_status", return_value=quota_mod.PoolStatus("down")):
             code, out, err = self.lineup("quota", skill=False, interactive=False)
-        self.assertEqual((code, out), (1, "quota: the local gateway is down\nQuota condition: unavailable — no reading can be made here now\n"
-                             + quota_cmd.QUOTA_AVAILABILITY + "\n"))
+        self.assertEqual((code, out), (1, "quota: the local gateway is down\nQuota condition: unavailable — no reading can be made here now\n"))
 
     def test_fallback_three_outcomes_and_follow_remedy(self) -> None:
         with _fixed_clock():

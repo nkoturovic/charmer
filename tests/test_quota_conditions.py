@@ -38,7 +38,7 @@ POOLS = {
                               credentials=(_credential(used=40, observed=NOW - timedelta(days=40)),)),
     "exhausted": quota.PoolStatus("ok", read_at=NOW, credentials=(_credential(used=100, observed=NOW),)),
     "management-disabled": quota.PoolStatus("no-key"),
-    "unavailable": quota.PoolStatus("down"),
+    "unavailable": quota.PoolStatus("unavailable"),
     "not-ours": quota.PoolStatus("not-ours"),
 }
 
@@ -90,13 +90,13 @@ class QuotaConditionTests(test_cli.OperatorCommandCase):
             with self.subTest(condition=name), self.pool(name):
                 code, text, err = self.op(["quota"])
                 self.assertEqual(code, quota.CONDITION_EXIT[name])
-                self.assertEqual(text.splitlines().count(notice), int(pool.state != "ok"))
+                self.assertEqual(text.splitlines().count(notice), int(pool.state == "unavailable"))
                 self.assertEqual(err, "")
                 out = io.StringIO()
                 code = cli.main(["lineup", "--session", SESSION, "quota"], runtime=self.runtime,
                                 output_stream=out)
                 self.assertEqual(code, 0)
-                self.assertEqual(out.getvalue().splitlines().count(notice), int(pool.state != "ok"))
+                self.assertEqual(out.getvalue().splitlines().count(notice), int(pool.state == "unavailable"))
                 code, text, err = self.op(["quota", "--json"])
                 self.assertEqual((code, err), (quota.CONDITION_EXIT[name], ""))
                 document = json.loads(text)
