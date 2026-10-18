@@ -21,6 +21,15 @@ follow [Semantic Versioning](https://semver.org/).
   explicit, expiring reviews bound to the advisory revision and runtime
   version; one issue tracks the findings.
 
+### Added
+
+- When you add an OpenRouter model (`charmer discover openrouter --add`, or
+  the TUI declaration form), charmer suggests its vendor family from the
+  model's namespace (`deepseek/` → deepseek, `qwen/` → alibaba, …), so
+  review routing can tell families apart. The suggestion is editable,
+  `--family` wins, unknown, router and stealth namespaces stay unknown, and
+  existing lines are never rewritten.
+
 ### Changed
 
 - CI tests Python 3.15 beside 3.11 and 3.14, and Ubuntu 26.04 beside 24.04
