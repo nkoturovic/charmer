@@ -1,0 +1,25 @@
+name: Feature request
+description: Suggest an improvement to charmer.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What problem would this feature solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposed-behaviour
+    attributes:
+      label: Proposed behaviour
+      description: Describe how you would like charmer to behave.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Describe the alternatives you considered. If none fit, explain why.
+    validations:
+      required: true

@@ -1,0 +1,69 @@
+name: Bug report
+description: Report a problem with charmer.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Never paste API keys, tokens, sign-in records or `~/.config/charmer` key files.**
+        Do not attach transcripts, environment dumps or raw gateway logs.
+        Security problems go through the [security policy](https://github.com/nkoturovic/charmer/security/policy), not public issues.
+  - type: textarea
+    id: version
+    attributes:
+      label: charmer version
+      description: Paste the output of `charmer --version`.
+      render: text
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Operating system and architecture
+      description: Include the operating system version and CPU architecture.
+    validations:
+      required: true
+  - type: dropdown
+    id: install-channel
+    attributes:
+      label: Install channel
+      options:
+        - Release bundle
+        - Nix
+        - WSL2
+    validations:
+      required: true
+  - type: textarea
+    id: behaviour
+    attributes:
+      label: What happened and what did you expect?
+      description: Describe both the actual and expected behaviour.
+      placeholder: |
+        What happened:
+
+        What I expected:
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: List the steps needed to reproduce the problem.
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Relevant charmer doctor output (optional)
+      description: '`charmer doctor --json` is a no-write check. Paste only the relevant part and review it before sharing.'
+      render: json
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs (optional)
+      description: Paste relevant, redacted snippets only. For gateway output, use `charmer gateway logs`, not raw log files.
+      render: text
+    validations:
+      required: false
