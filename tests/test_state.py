@@ -208,6 +208,38 @@ class FileLockTests(StateTestCase):
         self.assertEqual(stat.S_IMODE(info.st_mode), 0o600)
         lock.release()
 
+    def test_lock_changed_after_open_is_refused_and_its_descriptor_closed(self) -> None:
+        directory = self._dir()
+        for shared in (False, True):
+            for blocking in (False, True):
+                for change in ("unlink", "replace", "symlink"):
+                    with self.subTest(shared=shared, blocking=blocking, change=change):
+                        lock = state.FileLock(directory / f"{shared}-{blocking}-{change}")
+                        opened = []
+                        flock = state.posix_fs.lock_descriptor
+
+                        def changed(descriptor, **kwargs):
+                            opened.append(descriptor)
+                            lock.lock_path.unlink()
+                            if change == "replace":
+                                state.atomic_write(lock.lock_path, b"")
+                            elif change == "symlink":
+                                lock.lock_path.symlink_to(directory / "missing")
+                            flock(descriptor, **kwargs)
+
+                        with mock.patch.object(state.posix_fs, "lock_descriptor", side_effect=changed):
+                            with self.assertRaisesRegex(StateError, "lock file changed while acquiring"):
+                                lock.acquire(blocking=blocking)
+                        self.assertIsNone(lock.identity())
+                        with self.assertRaises(OSError) as caught:
+                            os.fstat(opened[0])
+                        self.assertEqual(caught.exception.errno, errno.EBADF)
+                        if lock.lock_path.is_symlink():
+                            lock.lock_path.unlink()
+                        # A new, explicit attempt can acquire the current lock.
+                        with state.FileLock(lock.lock_path.with_suffix("")):
+                            pass
+
     def test_lock_rejects_symlinked_lock_file(self) -> None:
         directory = self._dir()
         target = directory / "last-session.json"

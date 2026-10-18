@@ -279,6 +279,19 @@ class FileLock:
         try:
             os.fchmod(descriptor, 0o600)
             posix_fs.lock_descriptor(descriptor, shared=self._shared, blocking=blocking)
+            # Uninstall can unlink the file while a writer waits in flock.
+            # That writer then owns an orphan, not the lock other writers
+            # will take. Refuse before its critical section, never recreate
+            # removed state or silently retry on a different inode.
+            held = os.fstat(descriptor)
+            try:
+                current = os.lstat(self._lock_path)
+            except FileNotFoundError:
+                current = None
+            if (current is None or not stat.S_ISREG(current.st_mode)
+                    or (current.st_dev, current.st_ino) != (held.st_dev, held.st_ino)):
+                raise StateError(errno.EAGAIN, f"lock file changed while acquiring {self._lock_path}; "
+                                 "run the command again")
         except BlockingIOError:
             os.close(descriptor)
             return False

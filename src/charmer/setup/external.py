@@ -298,21 +298,21 @@ def stop_gateway_for_uninstall(runtime: Any) -> tuple[str, str]:
 
 def hold_gateway_starts(runtime: Any, *, what: str = UNINSTALL_NOT_REMOVED) -> tuple[Any, str | None]:
     """Hold the gateway's start lock so nothing starts it while uninstall
-    removes files: ``(lock, None)``; ``(None, None)`` when there is no
-    gateway to hold (a fixture, or a state root that never had one); or
+    removes files: ``(lock, None)``; ``(None, None)`` for a fixture; or
     ``(None, refusal)``. Under the lock the gateway must still be stopped,
     clear of every inhibition (a transaction owner records one only while
     it holds this lock) and of the persistence hold."""
 
-    from charmer import gateway_lifecycle as lifecycle
+    from charmer import gateway_lifecycle as lifecycle, state
 
     if _fixture_gateway(runtime):
         return None, None
     try:
         gateway = runtime.gateway()
-        workdir = Path(gateway.workdir)
-        if not workdir.is_dir() or workdir.is_symlink():
-            return None, None
+        # A first start creates this directory too: absence is not a fence.
+        # Make only the lock's private parent; unsafe paths (including a
+        # symlink) refuse before removal instead of proceeding unlocked.
+        state.ensure_private_dir(gateway.workdir)
         lock = gateway._acquire_start_lock(gateway.seams.clock() + lifecycle.START_LOCK_WAIT)
     except (errors.CharmerError, OSError) as exc:
         return None, f"the gateway cannot be checked: {exc}"

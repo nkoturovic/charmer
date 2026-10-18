@@ -522,6 +522,51 @@ class FenceTests(UninstallCase):
             self.assertIn("refused", outcome)
             self.assertTrue(events["blocking"].is_set())
 
+    def test_a_writer_cannot_enter_an_orphaned_lock_after_uninstall(self) -> None:
+        import threading
+
+        self.everything()
+        target = self.runtime.profiles.lock_target
+        target.parent.chmod(0o700)
+        plan = uninstall.build_plan(self.runtime)
+        fence = uninstall.Fence(plan)
+        self.addCleanup(fence.release)
+        self.assertIsNone(fence.stores(self.runtime, credentials=False))
+        waiter = state.FileLock(target)
+        self.addCleanup(waiter.release)
+        opened = threading.Event()
+        outcome = {}
+        flock = posix_fs.lock_descriptor
+
+        def lock_descriptor(descriptor, *, shared, blocking):
+            if threading.current_thread().name == "late-writer":
+                opened.set()  # the old inode is open; it cannot yet be locked
+            flock(descriptor, shared=shared, blocking=blocking)
+
+        def write():
+            try:
+                with waiter:
+                    outcome["entered"] = True
+            except state.StateError as exc:
+                outcome["refused"] = str(exc)
+
+        with mock.patch.object(posix_fs, "lock_descriptor", side_effect=lock_descriptor):
+            thread = threading.Thread(target=write, name="late-writer", daemon=True)
+            thread.start()
+            try:
+                self.assertTrue(opened.wait(5))
+                result = uninstall.Result()
+                fence.remove_own(result, self.runtime.environ, credentials_removed=False)
+                self.assertEqual(result.failed, [])
+                self.assertFalse(waiter.lock_path.exists())
+            finally:
+                fence.release()
+                thread.join(5)
+        self.assertFalse(thread.is_alive())
+        self.assertNotIn("entered", outcome)
+        self.assertIn("lock file changed while acquiring", outcome.get("refused", ""))
+        self.assertIsNone(waiter.identity())
+
     def test_a_key_file_where_the_state_lock_lives_is_kept_with_the_credentials(self) -> None:
         self.everything()
         lock_path = self.state_dir / "migration.lock"
@@ -550,6 +595,55 @@ class FenceTests(UninstallCase):
 
 
 class GatewayHoldTests(UninstallCase):
+    def test_an_absent_workdir_is_fenced_before_removal(self) -> None:
+        made = self.everything()
+        gateway = self.live_gateway()
+        shutil.rmtree(gateway.workdir)  # disposable fixture; no gateway has started
+        seen = []
+        remove = uninstall.remove_entries
+
+        def start_during_removal(entries, result, environ, **kwargs):
+            if not seen:
+                outcome = gateway.ensure(max_wait=5, choose_port=True)
+                seen.append(outcome)
+                self.assertEqual(self.world.spawned, [], outcome)
+                self.assertEqual(outcome.status, "busy", outcome)
+            return remove(entries, result, environ, **kwargs)
+
+        with mock.patch.object(uninstall, "remove_entries", side_effect=start_during_removal):
+            code, out, err = self.uninstall("--yes", "--keep-credentials", text="")
+        self.assertEqual(code, 0, out + err)
+        self.assertEqual(len(seen), 1)
+        self.assertFalse(made["claude"].exists())
+        self.assertFalse(service.start_lock_path(self.state_dir).exists())
+
+    def test_a_symlinked_workdir_cannot_start_and_uninstall_refuses_before_removal(self) -> None:
+        made = self.everything()
+        gateway = self.live_gateway()
+        elsewhere = self.root / "other-gateway"
+        gateway.workdir.rename(elsewhere)
+        gateway.workdir.symlink_to(elsewhere, target_is_directory=True)
+        # The start itself already refuses a symlink; uninstall must not
+        # proceed unfenced while another process could replace that link.
+        with self.assertRaises(state.StateError):
+            gateway.ensure(max_wait=0, choose_port=True)
+        self.assertEqual(self.world.spawned, [])
+        remove = uninstall.remove_entries
+
+        def start_after_link_removal(entries, result, environ, **kwargs):
+            remove(entries, result, environ, **kwargs)
+            if not os.path.lexists(gateway.workdir):
+                gateway.ensure(max_wait=5, choose_port=True)
+
+        with mock.patch.object(uninstall, "remove_entries", side_effect=start_after_link_removal):
+            code, out, err = self.uninstall("--yes", "--keep-credentials", text="")
+        self.assertEqual(self.world.spawned, [])
+        self.assertEqual(code, 1, out + err)
+        self.assertIn("gateway cannot be checked", err)
+        self.assertTrue(gateway.workdir.is_symlink())
+        self.assertTrue(all(path.exists() for path in made.values()))
+        self.assertEqual(list(elsewhere.iterdir()), [elsewhere / "logs"])
+
     def test_an_unconfirmed_save_of_a_stopped_gateway_refuses(self) -> None:
         import test_gateway_lifecycle as lifecycle_tests
 
