@@ -8,8 +8,9 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from urllib.parse import urlsplit
 
-from charmer import probe, state
+from charmer import probe, render, state
 from _catalog import SHIPPED_ROOT, uses_shipped_catalog
 import _gateway_harness as harness
 
@@ -316,6 +317,70 @@ class CodexApiKeySafetyTests(unittest.TestCase):
                    session_header=False)
         finally:
             gateway.close()
+
+
+CHARMER_SELECTOR = "charmer-gwtest-listed"
+GPT_MULTI_SELECTOR = "gpt-multi-gwtest-listed"
+
+
+def cloaked(model_id):
+    """CLIProxyAPI's Anthropic-listing name for an id it cloaks
+    (EnsureClaudeModelIDPrefix): ``claude-fable-5-dd-`` plus the id reversed."""
+    return "claude-fable-5-dd-" + model_id[::-1]
+
+
+def charmer_listing_document(bundle, egress, gateway, home):
+    """The main document plus a ``charmer-`` and a ``gpt-multi-`` alias of the
+    plain compat model, listed next to the ``charmer-render-`` sentinel."""
+    document, aliases, info = harness.build_document(bundle, egress, gateway, home, "main")
+    section = next(section for section in document["openai-compatibility"]
+                   if urlsplit(section["base-url"]).path == "/gwtest-compat")
+    plain = next(model for model in section["models"] if model["alias"] == "gwtest-compat-plain")
+    for alias in (CHARMER_SELECTOR, GPT_MULTI_SELECTOR):
+        section["models"].append({**plain, "alias": alias})
+        aliases[alias] = aliases["gwtest-compat-plain"]
+    return document, aliases, info
+
+
+class CharmerModelListingTests(unittest.TestCase):
+    """With Anthropic-Version the gateway answers ``GET /v1/models`` in the
+    Anthropic format: ``charmer-`` selectors and the ``charmer-render-``
+    sentinel are listed literally (as 1.1.0 listed its own selectors under
+    their earlier prefix), and every other alias outside ``claude-``, ``gpt-multi-``
+    included, keeps the upstream cloaking. Without the header the OpenAI
+    listing is unchanged: every alias as configured."""
+
+    @classmethod
+    def setUpClass(cls):
+        # An installed gateway may predate this patch: never fall back to it.
+        if not os.environ.get(harness.BINARY_ENV):
+            harness.boundary("BOUNDARY: CL1 needs " + harness.BINARY_ENV + " set to the manifest build")
+        cls.gateway = harness.GatewayHarness(document_factory=charmer_listing_document)
+        cls.addClassCleanup(cls.gateway.close)
+
+    def listing(self, headers):
+        reply = harness.unix_request(self.gateway.socket, "GET", "/v1/models", headers=headers)
+        self.assertEqual(reply.status, 200)
+        return {row["id"] for row in reply.json()["data"]}
+
+    def test_both_listing_formats(self):
+        sentinel = render.document_sentinel(self.gateway.document)
+        self.assertTrue(sentinel.startswith(render.SENTINEL_PREFIX), sentinel)
+        headers = self.gateway.headers()
+        self.assertIn("anthropic-version", headers)
+        anthropic = self.listing(headers)
+        openai = self.listing({name: value for name, value in headers.items() if name != "anthropic-version"})
+        for literal in (sentinel, CHARMER_SELECTOR):
+            self.assertIn(literal, anthropic)
+            self.assertNotIn(cloaked(literal), anthropic)
+        for other in (GPT_MULTI_SELECTOR, "gwtest-compat-plain"):
+            self.assertIn(cloaked(other), anthropic)
+            self.assertNotIn(other, anthropic)
+        for alias in (sentinel, CHARMER_SELECTOR, GPT_MULTI_SELECTOR, "gwtest-compat-plain"):
+            self.assertIn(alias, openai)
+            self.assertNotIn(cloaked(alias), openai)
+        record("CL1", status="passed", anthropic_literal=[sentinel, CHARMER_SELECTOR],
+               anthropic_cloaked=[GPT_MULTI_SELECTOR, "gwtest-compat-plain"], openai_literal=True)
 
 
 @uses_shipped_catalog

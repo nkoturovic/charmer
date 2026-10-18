@@ -1538,10 +1538,10 @@ if mode == "fail":
         }
         self.assertEqual({key: entry[key] for key in expected}, expected)
         self.assertEqual(policy["gateway"]["targets"], {
-            "darwin-arm64": "4fe62123d464de988a2c869d3c144c920140212442f4478070df7ad984e693f8",
-            "darwin-x86_64": "3ecce779efecae87b4fd49270da9b570d4b71afd74a8a21789cdf7691718b031",
-            "linux-aarch64": "7a5d72e0e4cfbd0cb57c1caafb49a19f5c578d58aaeec16c3cdaab4d5861340a",
-            "linux-x86_64": "e5ffe87601ef548388713e88ada5fd46d18029c276032c8b09a70d8bc0098b7e",
+            "darwin-arm64": "d83d01460ac365f1b5527abf5ef92417ed2d5e200a35d3042c60fcc956c6c30e",
+            "darwin-x86_64": "f53a8a6211dc025a1531ca78b13800281f5b745b5da21d252c46b4072222cbbe",
+            "linux-aarch64": "95595639950d0495f4db7dda0a7ee132eb4be7bf0b5822aa987c68be8f7744ae",
+            "linux-x86_64": "5d59edd7cd762d4bb858e3768a68b079837075e054e9c7cf1e5f8dd7247855b7",
         })
         for fact in ("nickAdditionalMapping.Transform", "present", "only external PRECIS consumer",
                      "OpaqueString", "Profile.String is reachable", "PGSTORE_", ".env"):

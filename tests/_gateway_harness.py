@@ -140,6 +140,9 @@ PATCH_ROWS = {
         "tests.test_gateway_patches.MistralContentChunkTests.test_streaming_content_chunks",
         "tests.test_gateway_patches.MistralContentChunkTests.test_non_streaming_content_chunks",
     ),
+    "cli-proxy-api-charmer-model-ids.patch": (
+        "tests.test_gateway_patches.CharmerModelListingTests.test_both_listing_formats",
+    ),
 }
 
 
@@ -338,7 +341,7 @@ REQUIRED_EVIDENCE["tests.test_gateway_clamp"] = {
 
 
 REQUIRED_EVIDENCE["tests.test_gateway_patches"] = {
-    "patches": {"LO1", "LO2", "LO1-A", "LO3", "LO4", "M0", "M1", "M2", "M3", "M4", "ME1", "S1", "P1", "CS1", "CR1", "KS1", "AS1", "SC1", "PH1", "ML1", "OM1", "CI1", "CI2", "CK1", "RS1", "MC1", "MC2", "MG1", "MG2"},
+    "patches": {"LO1", "LO2", "LO1-A", "LO3", "LO4", "M0", "M1", "M2", "M3", "M4", "ME1", "S1", "P1", "CS1", "CR1", "KS1", "AS1", "SC1", "PH1", "ML1", "OM1", "CI1", "CI2", "CK1", "RS1", "MC1", "MC2", "MG1", "MG2", "CL1"},
 }
 
 
@@ -1886,8 +1889,8 @@ class GatewayHarness:
     def served_listing(self):
         """``GET /v1/models`` the way the product reads it (``launch``'s served
         read): no anthropic-version, so the gateway answers with the OpenAI
-        listing, which never cloaks an alias outside the ``claude-`` names
-        (the Anthropic listing rewrites those, the render sentinel included)."""
+        listing, which names every alias as configured (the Anthropic listing
+        cloaks an alias outside the ``claude-`` and ``charmer-`` names)."""
 
         headers = {name: value for name, value in self.headers().items() if name != "anthropic-version"}
         return unix_request(self.socket, "GET", "/v1/models", headers=headers)

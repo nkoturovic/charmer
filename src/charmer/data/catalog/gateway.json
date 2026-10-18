@@ -31,7 +31,8 @@
       "cli-proxy-api-antigravity-loopback-callback.patch",
       "cli-proxy-api-codex-api-key-safety.patch",
       "cli-proxy-api-refresh-shutdown-join.patch",
-      "cli-proxy-api-openai-content-chunks.patch"
+      "cli-proxy-api-openai-content-chunks.patch",
+      "cli-proxy-api-charmer-model-ids.patch"
     ],
     "model_discovery": "disabled",
     "renderer": "restricted-yaml-v1",

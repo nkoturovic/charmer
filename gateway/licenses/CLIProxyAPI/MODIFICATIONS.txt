@@ -259,3 +259,8 @@ in this order; each lists the files it modifies, adds or deletes.
       modified  internal/translator/openai/claude/openai_claude_response.go
       added     internal/translator/openai/claude/openai_claude_content_chunks_test.go
       added     internal/translator/openai/claude/openai_claude_content_goldens_test.go
+
+22. cli-proxy-api-charmer-model-ids.patch
+    sha256 dca1642ceec36e49ce975522696011081c1a7fe549e3d8009f7e667dff7c29e3
+      modified  internal/client/claude/models/models.go
+      added     internal/client/claude/models/models_charmer_test.go

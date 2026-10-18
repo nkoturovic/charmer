@@ -150,6 +150,11 @@
       "basename": "cli-proxy-api-openai-content-chunks.patch",
       "sha256": "f2db67071e99b3c106ea262502c04be887f6fb17277a848d0cdd6810f9b03025",
       "admitted": true
+    },
+    {
+      "basename": "cli-proxy-api-charmer-model-ids.patch",
+      "sha256": "dca1642ceec36e49ce975522696011081c1a7fe549e3d8009f7e667dff7c29e3",
+      "admitted": true
     }
   ],
   "candidates": [
@@ -780,6 +785,20 @@
         "TestContentChunksReasoningPrecedenceAndTools",
         "TestContentChunksFinishAndUsage",
         "TestContentChunksLegacyGoldens"
+      ]
+    },
+    {
+      "name": "charmer-model-ids",
+      "packages": [
+        "./internal/client/claude/models"
+      ],
+      "platforms": "portable",
+      "race": false,
+      "count": null,
+      "expected_tests": [
+        "TestCharmerModelIDsListedLiterally",
+        "TestOtherModelIDsStayCloaked",
+        "TestBuildResponseListsCharmerIDsLiterally"
       ]
     }
   ],

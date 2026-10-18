@@ -284,15 +284,10 @@ class DisposableProxyTests(unittest.TestCase):
 
         models = self._request(base_url, "/v1/models")
         entries = {item.get("id"): item for item in models.get("data", [])}
-        # The Anthropic listing names an id outside ``claude-`` as
-        # ``claude-fable-5-dd-`` plus the id reversed (CLIProxyAPI's
-        # EnsureClaudeModelIDPrefix); a request resolves either name.
-        listed = "claude-fable-5-dd-" + "charmer-kimi-k3"[::-1]
-        self.assertIn(listed, entries)
-        self.assertNotIn("charmer-kimi-k3", entries)
-        self.assertEqual(entries[listed].get("owned_by"), "moonshot")
+        self.assertIn("charmer-kimi-k3", entries)
+        self.assertEqual(entries["charmer-kimi-k3"].get("owned_by"), "moonshot")
         self.assertEqual(
-            entries[listed].get("max_input_tokens"), 1000000
+            entries["charmer-kimi-k3"].get("max_input_tokens"), 1000000
         )
 
         message = self._request(

@@ -1,7 +1,7 @@
 {
   "bomFormat": "CycloneDX",
   "specVersion": "1.6",
-  "serialNumber": "urn:uuid:40313b32-5f1c-5914-8e59-75b05b64ff49",
+  "serialNumber": "urn:uuid:c60ac771-9253-5809-8afc-5e0cc2335e26",
   "version": 1,
   "metadata": {
     "tools": {
@@ -192,6 +192,12 @@
             "diff": {
               "url": "gateway/patches/cli-proxy-api-openai-content-chunks.patch"
             }
+          },
+          {
+            "type": "unofficial",
+            "diff": {
+              "url": "gateway/patches/cli-proxy-api-charmer-model-ids.patch"
+            }
           }
         ],
         "notes": "Built from the upstream source at the commit above with the patches applied in order; each patch's sha256 and the patched tree's normalised sha256 (vendor/ excluded) are the charmer:gateway properties."
@@ -235,7 +241,7 @@
         },
         {
           "name": "charmer:gateway:post-apply-tree-sha256",
-          "value": "8cdbb90e82cde31a04728b2d11333a0f65e8ac325cc1c7175d5b9c9eb29b616e"
+          "value": "6ce5ab3cab8ea78ccbf75c6208b8e1a441b50d35306ecdd8518a2c7fe4b0bda7"
         },
         {
           "name": "charmer:gateway:patch",
@@ -320,6 +326,10 @@
         {
           "name": "charmer:gateway:patch",
           "value": "cli-proxy-api-openai-content-chunks.patch@f2db67071e99b3c106ea262502c04be887f6fb17277a848d0cdd6810f9b03025"
+        },
+        {
+          "name": "charmer:gateway:patch",
+          "value": "cli-proxy-api-charmer-model-ids.patch@dca1642ceec36e49ce975522696011081c1a7fe549e3d8009f7e667dff7c29e3"
         }
       ]
     }
