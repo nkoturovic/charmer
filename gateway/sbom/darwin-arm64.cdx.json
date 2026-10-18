@@ -1,7 +1,7 @@
 {
   "bomFormat": "CycloneDX",
   "specVersion": "1.6",
-  "serialNumber": "urn:uuid:c935c585-b285-5997-92c0-26c6d745f9cd",
+  "serialNumber": "urn:uuid:bd8fc8a0-837a-5e85-b00a-d35e0bd18ea8",
   "version": 1,
   "metadata": {
     "tools": {
@@ -18,8 +18,8 @@
       "type": "application",
       "bom-ref": "cli-proxy-api",
       "name": "cli-proxy-api",
-      "version": "7.3.15",
-      "description": "CLIProxyAPI 7.3.15 with charmer's patches (darwin-arm64)",
+      "version": "8.0.33",
+      "description": "CLIProxyAPI 8.0.33 with charmer's patches (darwin-arm64)",
       "licenses": [
         {
           "license": {
@@ -31,10 +31,10 @@
         "ancestors": [
           {
             "type": "application",
-            "bom-ref": "pkg:golang/github.com/router-for-me/CLIProxyAPI/v7@v7.3.15",
+            "bom-ref": "pkg:golang/github.com/router-for-me/CLIProxyAPI/v8@v8.0.33",
             "name": "CLIProxyAPI",
-            "version": "7.3.15",
-            "purl": "pkg:golang/github.com/router-for-me/CLIProxyAPI/v7@v7.3.15",
+            "version": "8.0.33",
+            "purl": "pkg:golang/github.com/router-for-me/CLIProxyAPI/v8@v8.0.33",
             "licenses": [
               {
                 "license": {
@@ -49,11 +49,11 @@
               },
               {
                 "type": "distribution",
-                "url": "https://github.com/router-for-me/CLIProxyAPI/archive/673131f57484517c3a1eae7e36c4cfa7b9bb4efc.tar.gz",
+                "url": "https://github.com/router-for-me/CLIProxyAPI/archive/2422c6b0f5fe16495320fa29456493874c1977a0.tar.gz",
                 "hashes": [
                   {
                     "alg": "SHA-256",
-                    "content": "66c1727f5447d5dd7eeec5a7b25e6e81c40a6516ff4778d423e2688e1161e71b"
+                    "content": "6e7d5e1ec706a262f0a19223b9122ac876d2601c1ef44cc79b9aa64793995b8f"
                   }
                 ]
               }
@@ -62,8 +62,8 @@
         ],
         "commits": [
           {
-            "uid": "673131f57484517c3a1eae7e36c4cfa7b9bb4efc",
-            "url": "https://github.com/router-for-me/CLIProxyAPI/commit/673131f57484517c3a1eae7e36c4cfa7b9bb4efc"
+            "uid": "2422c6b0f5fe16495320fa29456493874c1977a0",
+            "url": "https://github.com/router-for-me/CLIProxyAPI/commit/2422c6b0f5fe16495320fa29456493874c1977a0"
           }
         ],
         "patches": [
@@ -100,61 +100,7 @@
           {
             "type": "unofficial",
             "diff": {
-              "url": "gateway/patches/cli-proxy-api-serve-after-initial-auth-load.patch"
-            }
-          },
-          {
-            "type": "unofficial",
-            "diff": {
               "url": "gateway/patches/cli-proxy-api-management-env-only.patch"
-            }
-          },
-          {
-            "type": "unofficial",
-            "diff": {
-              "url": "gateway/patches/cli-proxy-api-credential-save-report.patch"
-            }
-          },
-          {
-            "type": "unofficial",
-            "diff": {
-              "url": "gateway/patches/cli-proxy-api-credentialed-redirects.patch"
-            }
-          },
-          {
-            "type": "unofficial",
-            "diff": {
-              "url": "gateway/patches/cli-proxy-api-openai-compat-keyed-safety.patch"
-            }
-          },
-          {
-            "type": "unofficial",
-            "diff": {
-              "url": "gateway/patches/cli-proxy-api-auth-snapshot-locking.patch"
-            }
-          },
-          {
-            "type": "unofficial",
-            "diff": {
-              "url": "gateway/patches/cli-proxy-api-server-config-snapshot.patch"
-            }
-          },
-          {
-            "type": "unofficial",
-            "diff": {
-              "url": "gateway/patches/cli-proxy-api-plugin-host-locking.patch"
-            }
-          },
-          {
-            "type": "unofficial",
-            "diff": {
-              "url": "gateway/patches/cli-proxy-api-claude-metadata-locking.patch"
-            }
-          },
-          {
-            "type": "unofficial",
-            "diff": {
-              "url": "gateway/patches/cli-proxy-api-oauth-model-overlay.patch"
             }
           },
           {
@@ -166,37 +112,13 @@
           {
             "type": "unofficial",
             "diff": {
-              "url": "gateway/patches/cli-proxy-api-codex-client-identity.patch"
+              "url": "gateway/patches/cli-proxy-api-access-log-path-quoting.patch"
             }
           },
           {
             "type": "unofficial",
             "diff": {
-              "url": "gateway/patches/cli-proxy-api-antigravity-loopback-callback.patch"
-            }
-          },
-          {
-            "type": "unofficial",
-            "diff": {
-              "url": "gateway/patches/cli-proxy-api-codex-api-key-safety.patch"
-            }
-          },
-          {
-            "type": "unofficial",
-            "diff": {
-              "url": "gateway/patches/cli-proxy-api-refresh-shutdown-join.patch"
-            }
-          },
-          {
-            "type": "unofficial",
-            "diff": {
-              "url": "gateway/patches/cli-proxy-api-openai-content-chunks.patch"
-            }
-          },
-          {
-            "type": "unofficial",
-            "diff": {
-              "url": "gateway/patches/cli-proxy-api-charmer-model-ids.patch"
+              "url": "gateway/patches/cli-proxy-api-codex-refresh-lead.patch"
             }
           }
         ],
@@ -229,11 +151,11 @@
         },
         {
           "name": "charmer:gateway:ldflags",
-          "value": "-s -w -buildid= -X main.Version=7.3.15 -X main.Commit=673131f57484517c3a1eae7e36c4cfa7b9bb4efc -X main.BuildDate=1970-01-01T00:00:00Z"
+          "value": "-s -w -buildid= -X main.Version=8.0.33 -X main.Commit=2422c6b0f5fe16495320fa29456493874c1977a0 -X main.BuildDate=1970-01-01T00:00:00Z"
         },
         {
           "name": "charmer:gateway:source-tree-sha256",
-          "value": "8e16856693412a7d1ebc0e7fec2c659f13bc90f740f9e1f641804aa597120b3c"
+          "value": "81b3a85fa058bd7e887b95a21670d13b10fa451ebe510ffdcd1fa84788230281"
         },
         {
           "name": "charmer:gateway:vendor-tree-sha256",
@@ -241,95 +163,43 @@
         },
         {
           "name": "charmer:gateway:post-apply-tree-sha256",
-          "value": "cf48615592f0059039d9210dc123320a458e35de4c3aecc88429f1befa87f756"
+          "value": "38a6d5690045425b0d3ca437e3a6f6acc0826cbd522dc82ea9e25efe783539c1"
         },
         {
           "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-loopback-oauth.patch@2eb510b85f5204820d7a3d70c9b9a7bce283b1a7f23ead305ddfe28d500163a5"
+          "value": "cli-proxy-api-loopback-oauth.patch@244e68528cbc72a636d112d4350c9e2e9aeb0c4b55c9097e08ee42a201fa22f4"
         },
         {
           "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-kimi-claude-compat.patch@135dadb71406136dc6e2ef1c46baa548d27cbf023c19dddce2e7d9de0f7ef9ae"
+          "value": "cli-proxy-api-kimi-claude-compat.patch@87dbef9c2e4c05e914443e9c16beecdabbee4b70cbee154fcac22ce34e0d45ff"
         },
         {
           "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-non-claude-cache-retention.patch@6e022c54355322e5a307156ec1301710d50faff3f75dfc058506b17c6145128b"
+          "value": "cli-proxy-api-non-claude-cache-retention.patch@f00b89bafb25cc750e933bb7dda96df1374ef485d5b10785704331f9257f0ade"
         },
         {
           "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-management-readonly-allowlist.patch@f1320679a8dbb7254a94a9bdb6c0a2aba37d74ba9166dc3ca5caac36b76d133d"
+          "value": "cli-proxy-api-management-readonly-allowlist.patch@7a3c575b2a34547b3cb2ae4b2144643ac9f02872746d961630a83dde252d86f2"
         },
         {
           "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-watcher-parentdir.patch@c890605c3d4627f40fa214b9f564c6680b475e70644a30e289ff5e27a02c8d5a"
+          "value": "cli-proxy-api-watcher-parentdir.patch@af4b36cb94fedb9c4a8f5d2b195f2673994ca2002b57f68cd06c0fc076b1d808"
         },
         {
           "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-serve-after-initial-auth-load.patch@600f4c5bc0cf90dbd11ad5a48b84c007050a948efcc754b30648856f4e8bba70"
+          "value": "cli-proxy-api-management-env-only.patch@531ce03607ffaa8154d8c74cc6f34750693af2f5f3dfd153c574d57e113cefbc"
         },
         {
           "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-management-env-only.patch@34174189f296f54022abbfffe2bd50275339e25189b0981e64013dcde8258fd8"
+          "value": "cli-proxy-api-no-antigravity-egress.patch@730f8f8fa5293d2aeca12e3d707674ee22865cf2abaaba75129dfaeb57ee7d14"
         },
         {
           "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-credential-save-report.patch@c04cc0fc0af41dca57a801e87ee8cf4e4aba8377c716a8ca2ff1621d0f8d5107"
+          "value": "cli-proxy-api-access-log-path-quoting.patch@d06758cdb11c5dd4d5f088ecb1d1cf5ce6137c8c1eb24bcab0c6431de128fb31"
         },
         {
           "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-credentialed-redirects.patch@bd5bb7fd5877a078ddeeb3287378c8dab8d201f1eaf9daa1e51b36e4ae310d44"
-        },
-        {
-          "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-openai-compat-keyed-safety.patch@3325d838983fa8d89a139ef63c4e395f81688e379fb3203be90fc39360c9e00e"
-        },
-        {
-          "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-auth-snapshot-locking.patch@a6ecd426d45d91d74ef4c830982c1b0ad3b6f7dfcad3c0f1ff6123fbfe29dbfd"
-        },
-        {
-          "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-server-config-snapshot.patch@dba871bd4822226c8471ce55c7a70d16aeb6c9e723feb388dcd3bf0df311dd95"
-        },
-        {
-          "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-plugin-host-locking.patch@be26b87f742a3667ea11c6f6cb558efbeb77ee6fcd904ad838f16da4ca3ab165"
-        },
-        {
-          "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-claude-metadata-locking.patch@2ef3f4369652b6f5947facd1954674a2844e70fea7c242d0d3d63b83e4ddcadd"
-        },
-        {
-          "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-oauth-model-overlay.patch@f3e1ff09984a5b8e3beb173a1e122e2a4ce14646ba1915df08344586cf6d6cd9"
-        },
-        {
-          "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-no-antigravity-egress.patch@233443d22a411ee935b4c0776c26992543a5b97d1241784db5bf726ca80464c6"
-        },
-        {
-          "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-codex-client-identity.patch@b4ffbda891ee82dbd0441dfa6a6b1d154fd82be33dc4c5e2edb2526eeb041c65"
-        },
-        {
-          "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-antigravity-loopback-callback.patch@f728ba3eb999266d30137cd7d4501d54cdb9613c2cc33579194a6d7b9a23a523"
-        },
-        {
-          "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-codex-api-key-safety.patch@b656f4cdfe4dfbe0d5d47f33f419d3a1416d9bff88f94b54deba2126dbb61628"
-        },
-        {
-          "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-refresh-shutdown-join.patch@6474a404f9ecba94c07fc9415ffee3601059941101cbf944a17a623e5b80c8e3"
-        },
-        {
-          "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-openai-content-chunks.patch@f2db67071e99b3c106ea262502c04be887f6fb17277a848d0cdd6810f9b03025"
-        },
-        {
-          "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-charmer-model-ids.patch@dca1642ceec36e49ce975522696011081c1a7fe549e3d8009f7e667dff7c29e3"
+          "value": "cli-proxy-api-codex-refresh-lead.patch@5b9ab7e62287d48dd2674028ded6154ec2acbdf310d5a00bd36b238ebb08f138"
         }
       ]
     }

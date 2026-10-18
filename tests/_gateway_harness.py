@@ -87,61 +87,23 @@ PATCH_ROWS = {
         "tests.test_gateway_patches.ManagementAllowlistTests.test_refused_route_is_404_with_valid_key",
         "tests.test_gateway_patches.ManagementAllowlistTests.test_oauth_callback_is_404",
         "tests.test_gateway_patches.ManagementAllowlistTests.test_browser_origin_is_404_on_allowlisted_route",
+        "tests.test_gateway_patches.ManagementAllowlistTests.test_v8_management_is_404_with_valid_key",
+        "tests.test_gateway_patches.ManagementAllowlistTests.test_refused_api_surfaces_are_404",
     ),
     "cli-proxy-api-watcher-parentdir.patch": (
         "tests.test_gateway_hot_reload.GatewayHotReloadTests.test_repeated_atomic_replaces_with_old_inode_open",
     ),
-    "cli-proxy-api-serve-after-initial-auth-load.patch": (
-        "tests.test_gateway_patches.StartupFileAuthTests.test_first_model_route_waits_for_file_auth",
-    ),
     "cli-proxy-api-management-env-only.patch": (
         "tests.test_gateway_patches.ManagementEnvOnlyTests.test_config_secret_cannot_enable_management",
-    ),
-    "cli-proxy-api-credential-save-report.patch": (
-        "tests.test_gateway_patches.PatchOmissionProbeTests.test_credential_receipt",
-    ),
-    "cli-proxy-api-credentialed-redirects.patch": (
-        "tests.test_gateway_patches.PatchOmissionProbeTests.test_credentialed_redirect",
-    ),
-    "cli-proxy-api-openai-compat-keyed-safety.patch": (
-        "tests.test_gateway_patches.PatchOmissionProbeTests.test_keyed_safety",
-    ),
-    "cli-proxy-api-auth-snapshot-locking.patch": (
-        "tests.test_gateway_patches.PatchOmissionProbeTests.test_auth_snapshot",
-    ),
-    "cli-proxy-api-server-config-snapshot.patch": (
-        "tests.test_gateway_patches.PatchOmissionProbeTests.test_config_snapshot",
-    ),
-    "cli-proxy-api-plugin-host-locking.patch": (
-        "tests.test_gateway_patches.PatchOmissionProbeTests.test_plugin_host_lock",
-    ),
-    "cli-proxy-api-claude-metadata-locking.patch": (
-        "tests.test_gateway_patches.PatchOmissionProbeTests.test_metadata_lock",
-    ),
-    "cli-proxy-api-oauth-model-overlay.patch": (
-        "tests.test_gateway_patches.PatchOmissionProbeTests.test_overlay",
     ),
     "cli-proxy-api-no-antigravity-egress.patch": (
         "tests.test_packaging.NoAntigravityEgressTests.test_local_model_never_starts_antigravity_updater",
     ),
-    "cli-proxy-api-codex-client-identity.patch": (
-        "tests.test_gateway_patches.CodexIdentityTests.test_codex_identity",
+    "cli-proxy-api-access-log-path-quoting.patch": (
+        "tests.test_gateway_patches.AccessLogQuotingTests.test_encoded_newline_cannot_forge_a_log_line",
     ),
-    "cli-proxy-api-antigravity-loopback-callback.patch": (
-        "tests.test_gateway_patches.LoopbackOAuthListenerTests.test_antigravity_login_callback_listens_on_loopback_only",
-    ),
-    "cli-proxy-api-codex-api-key-safety.patch": (
-        "tests.test_gateway_patches.CodexApiKeySafetyTests.test_key_route_failures_and_identity",
-    ),
-    "cli-proxy-api-refresh-shutdown-join.patch": (
-        "tests.test_gateway_patches.PatchOmissionProbeTests.test_refresh_shutdown",
-    ),
-    "cli-proxy-api-openai-content-chunks.patch": (
-        "tests.test_gateway_patches.MistralContentChunkTests.test_streaming_content_chunks",
-        "tests.test_gateway_patches.MistralContentChunkTests.test_non_streaming_content_chunks",
-    ),
-    "cli-proxy-api-charmer-model-ids.patch": (
-        "tests.test_gateway_patches.CharmerModelListingTests.test_both_listing_formats",
+    "cli-proxy-api-codex-refresh-lead.patch": (
+        "tests.test_gateway_patches.PatchOmissionProbeTests.test_codex_refresh_lead",
     ),
 }
 
@@ -149,10 +111,6 @@ PATCH_ROWS = {
 # Regression controls travel with a patch's omission proof, but are not its
 # discriminating rows: their bytes must stay green even when it is omitted.
 PATCH_CONTROL_ROWS = {
-    "cli-proxy-api-openai-content-chunks.patch": (
-        "tests.test_gateway_patches.ContentChunkGoldenTests.test_legacy_chat_bytes",
-        "tests.test_gateway_patches.ContentChunkGoldenTests.test_native_route_bytes",
-    ),
 }
 
 class DiagnosticMissing(AssertionError):
@@ -225,62 +183,12 @@ def gateway_check_selections():
              if not any(row.startswith(module + ".") for module in GATEWAY_CHECK_MODULES)))
 
 
-# Declared application dependencies, companion metadata to PATCH_ROWS.
-# The env-only config-load hunk is written against the watcher-guarded source.
-# Omit the dependent as well, then attribute the watcher row by difference
-# against the dependent-only omission. Never infer edges from build failures.
+# Declared application dependencies, companion metadata to PATCH_ROWS:
+# {dependent: {prerequisite: {"file", "hunk", "reason"}}}. Omit the dependent
+# as well, then attribute the prerequisite's rows by difference against the
+# dependent-only omission. Never infer edges from build failures. The ported
+# series applies patch by patch on its own: no edge is declared.
 PATCH_DEPENDENCIES = {
-    "cli-proxy-api-refresh-shutdown-join.patch": {
-        "cli-proxy-api-credential-save-report.patch": {
-            "file": "sdk/auth/refresh_shutdown_test.go", "hunk": 0,
-            "reason": "durable-save tests use the reporting store and its private saveFileOps sync seam",
-        },
-        "cli-proxy-api-serve-after-initial-auth-load.patch": {
-            "file": "sdk/cliproxy/service_shutdown_test.go", "hunk": 0,
-            "reason": "the Run context regression uses the initial-auth barrier and authQueueDone consumer join",
-        },
-    },
-    "cli-proxy-api-oauth-model-overlay.patch": {
-        "cli-proxy-api-serve-after-initial-auth-load.patch": {
-            "file": "sdk/cliproxy/oauth_extra_models_cm053_test.go", "hunk": 817,
-            "reason": "overlay reload gate uses the initial-auth DispatchAuthBarrier seam",
-        },
-        "cli-proxy-api-watcher-parentdir.patch": {
-            "file": "sdk/cliproxy/oauth_extra_models_cm053_test.go", "hunk": 65,
-            "reason": "overlay registration gate uses LoadConfigBytes introduced by watcher-parentdir",
-        },
-    },
-    "cli-proxy-api-openai-compat-keyed-safety.patch": {
-        "cli-proxy-api-credentialed-redirects.patch": {
-            "file": "internal/runtime/executor/openai_compat_executor.go", "hunk": 191,
-            "reason": "keyed error handling replaces the redirect-guarded request paths (also hunk 432)",
-        },
-    },
-    "cli-proxy-api-auth-snapshot-locking.patch": {
-        "cli-proxy-api-credential-save-report.patch": {
-            "file": "sdk/cliproxy/auth/auth_snapshot_cm053_test.go", "hunk": 120,
-            "reason": "registration ownership gate reads RegistrationEpoch introduced by credential-save-report",
-        },
-    },
-    "cli-proxy-api-management-env-only.patch": {
-        "cli-proxy-api-watcher-parentdir.patch": {
-            "file": "internal/config/config_load.go", "hunk": 122,
-        },
-    },
-    "cli-proxy-api-codex-api-key-safety.patch": {
-        "cli-proxy-api-credentialed-redirects.patch": {
-            "file": "internal/runtime/executor/codex_executor_execute.go", "hunk": 107,
-            "reason": "the transport-error hunks sit on the redirect-guarded request calls (also compact and stream)",
-        },
-        "cli-proxy-api-openai-compat-keyed-safety.patch": {
-            "file": "internal/runtime/executor/codex_key_safety.go", "hunk": 0,
-            "reason": "the fixed failure texts and the bounded error-body read come from internal/compatsafe",
-        },
-        "cli-proxy-api-codex-client-identity.patch": {
-            "file": "internal/runtime/executor/codex_executor_request.go", "hunk": 341,
-            "reason": "the plain-key Version default replaces the codex client Version default (also the websocket hunk)",
-        },
-    },
 }
 
 
@@ -341,7 +249,7 @@ REQUIRED_EVIDENCE["tests.test_gateway_clamp"] = {
 
 
 REQUIRED_EVIDENCE["tests.test_gateway_patches"] = {
-    "patches": {"LO1", "LO2", "LO1-A", "LO3", "LO4", "M0", "M1", "M2", "M3", "M4", "ME1", "S1", "P1", "CS1", "CR1", "KS1", "AS1", "SC1", "PH1", "ML1", "OM1", "CI1", "CI2", "CK1", "RS1", "MC1", "MC2", "MG1", "MG2", "CL1"},
+    "patches": {"LO1", "LO2", "LO1-A", "LO3", "LO4", "M0", "M1", "M2", "M3", "M4", "M5", "M6", "AL1", "RL1", "ME1", "S1", "P1", "CS1", "CR1", "KS1", "AS1", "SC1", "PH1", "ML1", "OM1", "CI1", "CI2", "CK1", "RS1", "MC1", "MC2", "MG1", "MG2", "CL1"},
 }
 
 
@@ -610,7 +518,7 @@ def validate_keyed_evidence(directory, *, core_only=False, gateway_only=False):
 
 
 # The one pinned vendor (go-modules) output every diagnostic reuses.
-PINNED_GO_MODULES = "/nix/store/k5sxp95pxcy66q9hqljia6cl2xsnil6h-cli-proxy-api-7.3.15-go-modules"
+PINNED_GO_MODULES = "/nix/store/i413qgl0fyky72mlla8fcqjfi46wkg55-cli-proxy-api-8.0.33-go-modules"
 
 
 def consumed_vendor(installable, run=subprocess.run) -> dict:

@@ -1,5 +1,5 @@
 diff --git a/internal/api/handlers/management/handler.go b/internal/api/handlers/management/handler.go
-index 883d532..87063aa 100644
+index c186e75f..cf802eb0 100644
 --- a/internal/api/handlers/management/handler.go
 +++ b/internal/api/handlers/management/handler.go
 @@ -79,7 +79,7 @@ func NewHandler(cfg *config.Config, configFilePath string, manager *coreauth.Man
@@ -11,8 +11,34 @@ index 883d532..87063aa 100644
  		envSecret:           envSecret,
  	}
  	h.startAttemptCleanup()
+diff --git a/internal/api/max_request_body_bytes_test.go b/internal/api/max_request_body_bytes_test.go
+index 000626d5..b3f52e81 100644
+--- a/internal/api/max_request_body_bytes_test.go
++++ b/internal/api/max_request_body_bytes_test.go
+@@ -378,7 +378,9 @@ access:
+ 		}
+ 	})
+ 
+-	t.Run("v8 management chunked body exceeding limit returns 413", func(t *testing.T) {
++	// charmer: /v8/management is refused by the engine-level allowlist guard
++	// before the body limit applies.
++	t.Run("v8 management chunked body exceeding limit is refused", func(t *testing.T) {
+ 		rawCfg := "config-version: 8\nserver:\n  max-request-body-bytes: 32\nmanagement:\n  allow-remote: true\n  secret-key: mgmt-secret\n"
+ 		cfgMgmt := parseTestServerConfigYAML(t, rawCfg)
+ 		srvMgmt := newTestServerWithConfig(t, cfgMgmt)
+@@ -399,8 +401,8 @@ access:
+ 			reqMgmt.Header.Set("Content-Type", "application/json")
+ 			rrMgmt := httptest.NewRecorder()
+ 			srvMgmt.engine.ServeHTTP(rrMgmt, reqMgmt)
+-			if rrMgmt.Code != http.StatusRequestEntityTooLarge {
+-				t.Fatalf("%s %s status = %d, want %d; body=%s", endpoint.method, endpoint.path, rrMgmt.Code, http.StatusRequestEntityTooLarge, rrMgmt.Body.String())
++			if rrMgmt.Code != http.StatusNotFound {
++				t.Fatalf("%s %s status = %d, want %d; body=%s", endpoint.method, endpoint.path, rrMgmt.Code, http.StatusNotFound, rrMgmt.Body.String())
+ 			}
+ 		}
+ 	})
 diff --git a/internal/api/redis_queue_protocol.go b/internal/api/redis_queue_protocol.go
-index 4295cc7..06407cb 100644
+index f14344a1..0c04866c 100644
 --- a/internal/api/redis_queue_protocol.go
 +++ b/internal/api/redis_queue_protocol.go
 @@ -64,6 +64,14 @@ func (s *Server) handleRedisConnection(conn net.Conn, reader *bufio.Reader) {
@@ -31,20 +57,20 @@ index 4295cc7..06407cb 100644
  		if !s.managementRoutesEnabled.Load() {
  			return
 diff --git a/internal/api/server.go b/internal/api/server.go
-index ec04949..990c18a 100644
+index fc1646c9..a11c3b81 100644
 --- a/internal/api/server.go
 +++ b/internal/api/server.go
-@@ -143,6 +143,8 @@ func NewServer(cfg *config.Config, authManager *auth.Manager, accessManager *sdk
+@@ -172,6 +172,8 @@ func NewServer(cfg *config.Config, authManager *auth.Manager, accessManager *sdk
  	engine.Use(logging.GinLogrusLogger())
  	engine.Use(logging.GinLogrusRecovery())
  	engine.Use(logging.CPATraceIDMiddleware())
 +	// charmer: read-only management allowlist; must precede every route.
 +	engine.Use(managementReadOnlyAllowlistMiddleware())
+ 	engine.Use(s.maxRequestBodyBytesMiddleware())
  	for _, mw := range optionState.extraMiddleware {
  		engine.Use(mw)
- 	}
 diff --git a/internal/api/server_devin_oauth_test.go b/internal/api/server_devin_oauth_test.go
-index f2f5290..533e61d 100644
+index e96150f3..51635255 100644
 --- a/internal/api/server_devin_oauth_test.go
 +++ b/internal/api/server_devin_oauth_test.go
 @@ -18,7 +18,7 @@ func TestDevinOAuthRoutes(t *testing.T) {
@@ -57,7 +83,7 @@ index f2f5290..533e61d 100644
  	}
  	registered := false
 diff --git a/internal/api/server_kimi_oauth_test.go b/internal/api/server_kimi_oauth_test.go
-index a026e3e..391e38c 100644
+index a026e3e5..391e38c6 100644
 --- a/internal/api/server_kimi_oauth_test.go
 +++ b/internal/api/server_kimi_oauth_test.go
 @@ -12,13 +12,13 @@ func TestKimiAndKimiAIOAuthRoutes(t *testing.T) {
@@ -78,10 +104,10 @@ index a026e3e..391e38c 100644
  
 diff --git a/internal/api/server_management_allowlist.go b/internal/api/server_management_allowlist.go
 new file mode 100644
-index 0000000..9e8348f
+index 00000000..5724526b
 --- /dev/null
 +++ b/internal/api/server_management_allowlist.go
-@@ -0,0 +1,163 @@
+@@ -0,0 +1,220 @@
 +package api
 +
 +import (
@@ -95,19 +121,30 @@ index 0000000..9e8348f
 +
 +// charmer local patch (management-readonly-allowlist).
 +//
-+// The Management API is reduced to an exact read-only allowlist. The guard is
-+// an engine-level middleware installed before any route exists, so it runs
-+// ahead of every /v0/management handler: the group routes (and their
-+// management-key middleware), the engine-level oauth-callback routes, and the
-+// NoRoute plugin dispatcher. A management-scoped request is refused with a
-+// bare 404 before any key check, so it never reaches the failed-attempt
-+// counter, when any of these holds:
++// The Management API is reduced to an exact read-only allowlist, and the
++// gateway's other administrative and unused surfaces are refused. The guard
++// is an engine-level middleware installed before any route exists, so it runs
++// ahead of every handler in scope: the /v0/management and /v8/management
++// groups (and their management-key middleware), the engine-level OAuth
++// callback routes of both namespaces, the NoRoute plugin dispatcher (plugin
++// management routes, plugin logins, plugin resources), the control panel, and
++// CORS. A request in scope is refused with a bare 404 before any key check,
++// so it never reaches the failed-attempt counter, when any of these holds:
 +//   - it is not an exact allowlisted request (GET, canonical path);
 +//   - it carries browser request metadata (Origin or Sec-Fetch-*), so a
 +//     Fetch-Metadata-capable browser page cannot drive the 5-strike ban on
 +//     the allowlisted routes;
 +//   - its Host is not a loopback literal, so the Host check covers DNS
 +//     rebinding.
++//
++// The allowlist is GET /v0/management/auth-files, GET
++// /v0/management/auth-files/models and GET
++// /v0/management/model-definitions/<channel>. Every /v8/management route is
++// refused, including its read-only twins of the allowlisted handlers.
++//
++// Outside the management namespaces the same refusal applies, with no
++// exception, to model detail lookups (/v1/models/<id>) and the speech
++// routes (/v1/audio/speech, /v1/tts), which the gateway does not serve.
 +//
 +// Older browsers without Fetch Metadata remain an accepted residual: their
 +// cross-site simple GETs to 127.0.0.1 still reach the key check on the
@@ -117,14 +154,31 @@ index 0000000..9e8348f
 +// The refusal has an empty body and no X-CPA-* headers, like upstream's
 +// "management unavailable" 404, but also no Access-Control-* headers: CORS
 +// runs after the guard. That is intentional: no cross-origin read or
-+// preflight succeeds on a management path.
++// preflight succeeds on a refused path.
 +//
 +// The one pre-routing exception is gin's trailing-slash redirect
 +// (RedirectTrailingSlash): a registered path plus "/" is answered with a
 +// 301/307 before any middleware runs. It runs no handler, counts nothing and
 +// returns no data, but it does show which refused paths are registered.
 +
-+const managementAllowlistScopePrefix = "/v0/management"
++// managementAllowlistScopePrefixes are the management namespaces. A request
++// whose path spells one of them (with no segment boundary) is in scope and
++// may only be served when it is allowlisted.
++var managementAllowlistScopePrefixes = []string{
++	"/v0/management",
++	"/v8/management",
++}
++
++// refusedSurfacePrefixes are refused outright, with no allowlist: plugin
++// resources and the control panel, which belong to the management surface,
++// and the API routes the gateway does not serve.
++var refusedSurfacePrefixes = []string{
++	"/v0/resource/plugins",
++	"/management.html",
++	"/v1/models/",
++	"/v1/audio/speech",
++	"/v1/tts",
++}
 +
 +// managementRESPOutputDisabled closes the RESP (Redis protocol) usage/error
 +// surface that shares the HTTP port, authenticates with the management key
@@ -152,11 +206,7 @@ index 0000000..9e8348f
 +			c.AbortWithStatus(http.StatusNotFound)
 +			return
 +		}
-+		if !isManagementScopedRequest(r) {
-+			c.Next()
-+			return
-+		}
-+		if isBrowserOriginatedRequest(r) || !isLoopbackHostHeader(r.Host) || !isAllowlistedManagementRequest(r) {
++		if managementGuardRefuses(r) {
 +			c.AbortWithStatus(http.StatusNotFound)
 +			return
 +		}
@@ -164,19 +214,52 @@ index 0000000..9e8348f
 +	}
 +}
 +
-+// isManagementScopedRequest is deliberately broad: any spelling that gin (in
-+// any engine configuration: raw or decoded path, extra slashes removed or
-+// not) or the NoRoute dispatcher could route to a management handler is in
-+// scope. There is no segment boundary on purpose.
-+func isManagementScopedRequest(r *http.Request) bool {
++// managementGuardRefuses is the guard's whole decision for one request.
++func managementGuardRefuses(r *http.Request) bool {
++	if isRefusedSurfaceRequest(r) {
++		return true
++	}
++	if !isManagementScopedRequest(r) {
++		return false
++	}
++	return isBrowserOriginatedRequest(r) || !isLoopbackHostHeader(r.Host) || !isAllowlistedManagementRequest(r)
++}
++
++// guardPathCandidates are the spellings of the request path the guard
++// matches: the decoded and the raw path, each case-folded as sent and after
++// path.Clean. Gin (raw or decoded path, extra slashes removed or not, in any
++// engine configuration) and the NoRoute dispatcher route on one of these.
++func guardPathCandidates(r *http.Request) []string {
++	var out []string
 +	for _, candidate := range []string{r.URL.Path, r.URL.RawPath} {
 +		if candidate == "" {
 +			continue
 +		}
 +		lower := strings.ToLower(candidate)
-+		if strings.HasPrefix(lower, managementAllowlistScopePrefix) ||
-+			strings.HasPrefix(path.Clean("/"+lower), managementAllowlistScopePrefix) {
-+			return true
++		out = append(out, lower, path.Clean("/"+lower))
++	}
++	return out
++}
++
++// isManagementScopedRequest is deliberately broad: any spelling that could
++// route to a management handler is in scope. There is no segment boundary on
++// purpose.
++func isManagementScopedRequest(r *http.Request) bool {
++	return guardPathHasPrefix(r, managementAllowlistScopePrefixes)
++}
++
++// isRefusedSurfaceRequest reports whether any spelling of the path reaches a
++// surface that is refused for every request.
++func isRefusedSurfaceRequest(r *http.Request) bool {
++	return guardPathHasPrefix(r, refusedSurfacePrefixes)
++}
++
++func guardPathHasPrefix(r *http.Request, prefixes []string) bool {
++	for _, candidate := range guardPathCandidates(r) {
++		for _, prefix := range prefixes {
++			if strings.HasPrefix(candidate, prefix) {
++				return true
++			}
 +		}
 +	}
 +	return false
@@ -247,10 +330,10 @@ index 0000000..9e8348f
 +}
 diff --git a/internal/api/server_management_allowlist_test.go b/internal/api/server_management_allowlist_test.go
 new file mode 100644
-index 0000000..b5abecd
+index 00000000..e81c277f
 --- /dev/null
 +++ b/internal/api/server_management_allowlist_test.go
-@@ -0,0 +1,734 @@
+@@ -0,0 +1,972 @@
 +package api
 +
 +import (
@@ -273,10 +356,10 @@ index 0000000..b5abecd
 +	"time"
 +
 +	"github.com/gin-gonic/gin"
-+	managementHandlers "github.com/router-for-me/CLIProxyAPI/v7/internal/api/handlers/management"
-+	proxyconfig "github.com/router-for-me/CLIProxyAPI/v7/internal/config"
-+	"github.com/router-for-me/CLIProxyAPI/v7/internal/pluginhost"
-+	sdkconfig "github.com/router-for-me/CLIProxyAPI/v7/sdk/config"
++	managementHandlers "github.com/router-for-me/CLIProxyAPI/v8/internal/api/handlers/management"
++	proxyconfig "github.com/router-for-me/CLIProxyAPI/v8/internal/config"
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/pluginhost"
++	sdkconfig "github.com/router-for-me/CLIProxyAPI/v8/sdk/config"
 +)
 +
 +// charmer local patch (management-readonly-allowlist) gate.
@@ -285,14 +368,23 @@ index 0000000..b5abecd
 +// the module's own files.
 +
 +const (
-+	allowlistTestKey  = "allowlist-test-management-key"
-+	allowlistTestHost = "127.0.0.1:8317"
++	allowlistTestKey    = "allowlist-test-management-key"
++	allowlistTestAPIKey = "test-key"
++	allowlistTestHost   = "127.0.0.1:8317"
 +)
 +
 +var allowlistedManagementRoutes = map[string]string{
 +	"GET /v0/management/auth-files":                 "/v0/management/auth-files",
 +	"GET /v0/management/auth-files/models":          "/v0/management/auth-files/models?name=none",
 +	"GET /v0/management/model-definitions/:channel": "/v0/management/model-definitions/claude",
++}
++
++// The read-only v8 twins of the allowlisted handlers. They are refused: the
++// client reads only the v0 routes.
++var refusedV8ReadTwins = []string{
++	"/v8/management/credentials",
++	"/v8/management/credentials/models?name=none",
++	"/v8/management/routing/model-definitions/claude",
 +}
 +
 +// newAllowlistTestServer builds every gate server production-shaped: the
@@ -306,7 +398,7 @@ index 0000000..b5abecd
 +	t.Setenv("MANAGEMENT_PASSWORD", allowlistTestKey)
 +	cfg := &proxyconfig.Config{
 +		SDKConfig: sdkconfig.SDKConfig{
-+			APIKeys: []string{"test-key"},
++			APIKeys: []string{allowlistTestAPIKey},
 +		},
 +	}
 +	host := pluginhost.New()
@@ -351,11 +443,22 @@ index 0000000..b5abecd
 +	return strings.Join(segments, "/")
 +}
 +
++func isManagementRoutePath(routePath string) bool {
++	for _, prefix := range managementAllowlistScopePrefixes {
++		if routePath == prefix || strings.HasPrefix(routePath, prefix+"/") {
++			return true
++		}
++	}
++	return false
++}
++
++// managementRoutes are the registered routes of both management namespaces,
++// engine-level OAuth callbacks included.
 +func managementRoutes(t *testing.T, s *Server) map[string]string {
 +	t.Helper()
 +	out := make(map[string]string)
 +	for _, route := range s.engine.Routes() {
-+		if strings.HasPrefix(route.Path, managementAllowlistScopePrefix) {
++		if isManagementRoutePath(route.Path) {
 +			out[route.Method+" "+route.Path] = concreteRoutePath(route.Path)
 +		}
 +	}
@@ -363,8 +466,8 @@ index 0000000..b5abecd
 +}
 +
 +// refusalProblem returns "" for the guard's refusal (a bare 404: empty body,
-+// no X-CPA-* header from the management key middleware) and a description
-+// otherwise.
++// no X-CPA-* header from the management key middleware, no CORS header) and
++// a description otherwise.
 +func refusalProblem(rr *httptest.ResponseRecorder) string {
 +	if rr.Code != http.StatusNotFound {
 +		return fmt.Sprintf("status = %d, want 404 body=%q", rr.Code, rr.Body.String())
@@ -373,8 +476,12 @@ index 0000000..b5abecd
 +		return fmt.Sprintf("body = %q, want empty (upstream NoRoute shape)", rr.Body.String())
 +	}
 +	for name := range rr.Header() {
-+		if strings.HasPrefix(strings.ToUpper(name), "X-CPA-") {
++		upper := strings.ToUpper(name)
++		if strings.HasPrefix(upper, "X-CPA-") {
 +			return fmt.Sprintf("header %s present: management key middleware ran on a refused request", name)
++		}
++		if strings.HasPrefix(upper, "ACCESS-CONTROL-") {
++			return fmt.Sprintf("header %s present: CORS ran on a refused request", name)
 +		}
 +	}
 +	return ""
@@ -395,10 +502,75 @@ index 0000000..b5abecd
 +	}
 +}
 +
++// Every route the engine registers is in the committed reviewed table, with
++// its disposition, and the guard enforces that disposition: allowlisted
++// routes serve with the key, refused routes are a bare 404 with the key,
++// every other route is outside the guard's scope.
++func TestManagementAllowlist_RouteTableMatchesReview(t *testing.T) {
++	s := newAllowlistTestServer(t)
++	registered := make(map[string]string)
++	for _, route := range s.engine.Routes() {
++		registered[route.Method+" "+route.Path] = concreteRoutePath(route.Path)
++	}
++	var diffs []string
++	for key := range registered {
++		if _, ok := reviewedRouteTable[key]; !ok {
++			diffs = append(diffs, "registered but not reviewed: "+key)
++		}
++	}
++	for key := range reviewedRouteTable {
++		if _, ok := registered[key]; !ok {
++			diffs = append(diffs, "reviewed but no longer registered: "+key)
++		}
++	}
++	sort.Strings(diffs)
++	if len(diffs) > 0 {
++		t.Fatalf("the engine's routes differ from the reviewed route table; review each against the default-deny guard, then update reviewedRouteTable:\n  %s", strings.Join(diffs, "\n  "))
++	}
++	counts := map[reviewedRouteDisposition]int{}
++	v8Refused := 0
++	for key, concrete := range registered {
++		method := strings.SplitN(key, " ", 2)[0]
++		disposition := reviewedRouteTable[key]
++		counts[disposition]++
++		switch disposition {
++		case routeAllow:
++			target, ok := allowlistedManagementRoutes[key]
++			if !ok {
++				t.Fatalf("%s is reviewed as allowed but is not in the allowlist", key)
++			}
++			if rr := serveAllowlist(s, allowlistRequest(method, target, allowlistTestKey, "")); rr.Code != http.StatusOK {
++				t.Fatalf("%s: allowlisted status = %d, want 200 body=%q", key, rr.Code, rr.Body.String())
++			}
++		case routeRefuse:
++			assertRefused(t, serveAllowlist(s, allowlistRequest(method, concrete, allowlistTestKey, "")), key+" (management key)")
++			assertRefused(t, serveAllowlist(s, allowlistRequest(method, concrete, allowlistTestAPIKey, "")), key+" (API key)")
++			if strings.HasPrefix(key, method+" /v8/management") {
++				v8Refused++
++			}
++		case routeOpen:
++			if managementGuardRefuses(allowlistRequest(method, concrete, "", "")) {
++				t.Fatalf("%s is reviewed as open but the guard refuses it", key)
++			}
++			if isManagementRoutePath(strings.SplitN(key, " ", 2)[1]) {
++				t.Fatalf("%s is a management route reviewed as open", key)
++			}
++		}
++	}
++	if counts[routeAllow] != len(allowlistedManagementRoutes) {
++		t.Fatalf("%d routes reviewed as allowed, want exactly the %d allowlisted", counts[routeAllow], len(allowlistedManagementRoutes))
++	}
++	if v8Refused < 41 || counts[routeRefuse] < 180 {
++		t.Fatalf("refused %d routes (%d under /v8/management); enumeration broken?", counts[routeRefuse], v8Refused)
++	}
++	t.Logf("reviewed %d routes: %d allowed, %d refused (%d under /v8/management), %d open",
++		len(registered), counts[routeAllow], counts[routeRefuse], v8Refused, counts[routeOpen])
++}
++
 +func TestManagementAllowlist_EveryRegisteredRouteRefusedUnlessAllowlisted(t *testing.T) {
 +	s := newAllowlistTestServer(t)
 +	routes := managementRoutes(t, s)
-+	if len(routes) < 100 {
++	if len(routes) < 180 {
 +		t.Fatalf("only %d management routes registered; enumeration broken?", len(routes))
 +	}
 +	for key := range allowlistedManagementRoutes {
@@ -412,8 +584,22 @@ index 0000000..b5abecd
 +		"GET /v0/management/api-keys",
 +		"GET /v0/management/usage-queue",
 +		"GET /v0/management/auth-files/download",
++		"GET /v0/management/latest-version",
++		"POST /v0/management/api-call",
 +		"GET /v0/management/oauth-callback",
 +		"POST /v0/management/oauth-callback",
++		"GET /v8/management/oauth/callback",
++		"POST /v8/management/oauth/callback",
++		"GET /v8/management/credentials",
++		"GET /v8/management/credentials/models",
++		"GET /v8/management/credentials/download",
++		"GET /v8/management/config",
++		"GET /v8/management/config/*path",
++		"GET /v8/management/server/latest-version",
++		"POST /v8/management/requests/api-call",
++		"GET /v8/management/routing/model-definitions/:channel",
++		"GET /v8/management/observability/usage/queue",
++		"GET /v8/management/oauth/auth-url",
 +	} {
 +		if _, ok := routes[key]; !ok {
 +			t.Fatalf("refused route %s is not registered upstream; enumeration broken?", key)
@@ -430,15 +616,18 @@ index 0000000..b5abecd
 +		}
 +		assertRefused(t, serveAllowlist(s, allowlistRequest(method, concrete, allowlistTestKey, "")), key)
 +	}
++	for _, target := range refusedV8ReadTwins {
++		assertRefused(t, serveAllowlist(s, allowlistRequest(http.MethodGet, target, allowlistTestKey, "")), "GET "+target+" (v8 read twin)")
++	}
 +}
 +
-+// The management key is consumed outside the /v0/management route group too:
++// The management key is consumed outside the management route groups too:
 +// s.mgmt.Middleware() also runs from the NoRoute dispatcher, and
 +// AuthenticateManagementKey from the RESP protocol (closed; see the RESP
 +// test). Probe every engine route with no prefix filter, plus unregistered
 +// paths that reach NoRoute, with a bad key in each header the key middleware
 +// reads. Only the three allowlisted routes may run it (X-CPA-VERSION), so an
-+// upstream route that attaches the key middleware outside the prefix fails
++// upstream route that attaches the key middleware outside the allowlist fails
 +// here instead of silently counting strikes and serving data.
 +func TestManagementAllowlist_KeyMiddlewareRunsOnlyOnAllowlistedRoutes(t *testing.T) {
 +	s := newAllowlistTestServer(t)
@@ -451,18 +640,18 @@ index 0000000..b5abecd
 +		req.Header.Set(header, value)
 +		return serveAllowlist(s, req)
 +	}
-+	probed, outsidePrefix := 0, 0
++	probed, v8, outsideManagement := 0, 0, 0
 +	for _, route := range s.engine.Routes() {
-+		if route.Path == "/management.html" {
-+			continue // control panel; may fetch its asset over the network
-+		}
 +		key := route.Method + " " + route.Path
 +		if _, ok := allowlistedManagementRoutes[key]; ok {
 +			continue // positive control below
 +		}
 +		probed++
-+		if !strings.HasPrefix(route.Path, managementAllowlistScopePrefix) {
-+			outsidePrefix++
++		switch {
++		case strings.HasPrefix(route.Path, "/v8/management"):
++			v8++
++		case !isManagementRoutePath(route.Path):
++			outsideManagement++
 +		}
 +		target := concreteRoutePath(route.Path)
 +		for _, bad := range badKeys {
@@ -471,11 +660,14 @@ index 0000000..b5abecd
 +			}
 +		}
 +	}
-+	if probed < 150 || outsidePrefix < 30 {
-+		t.Fatalf("probed %d routes (%d outside %s); enumeration broken?", probed, outsidePrefix, managementAllowlistScopePrefix)
++	if probed < 230 || v8 < 41 || outsideManagement < 50 {
++		t.Fatalf("probed %d routes (%d under /v8/management, %d outside both namespaces); enumeration broken?", probed, v8, outsideManagement)
 +	}
-+	t.Logf("probed %d non-allowlisted routes (%d outside %s)", probed, outsidePrefix, managementAllowlistScopePrefix)
-+	for _, target := range []string{"/unregistered", "/v0/unregistered", "/v1/unregistered", "/v0/resource/plugins/sample"} {
++	t.Logf("probed %d non-allowlisted routes (%d under /v8/management, %d outside both namespaces)", probed, v8, outsideManagement)
++	for _, target := range []string{
++		"/unregistered", "/v0/unregistered", "/v1/unregistered", "/v8/unregistered",
++		"/v0/resource/plugins/sample", "/v8/management/no-such-route", "/v8/management/plugins/x/y",
++	} {
 +		for _, method := range []string{http.MethodGet, http.MethodPost} {
 +			for _, bad := range badKeys {
 +				if rr := probe(method, target, bad.header, bad.value); rr.Header().Get("X-CPA-VERSION") != "" {
@@ -529,11 +721,16 @@ index 0000000..b5abecd
 +// first, so a single strike leaking past the guard would ban loopback.
 +func TestManagementAllowlist_UnregisteredManagementPathsNeverReachKeyMiddleware(t *testing.T) {
 +	s := newAllowlistTestServer(t)
-+	targets := []string{
++	dispatched := []string{
 +		"/v0/management/no-such-route",
 +		"/v0/management/plugins/x/y",
 +		"/v0/management/foo-auth-url",
 +	}
++	targets := append([]string{
++		"/v8/management/no-such-route",
++		"/v8/management/plugins/x/y/z",
++		"/v8/management/foo-auth-url",
++	}, dispatched...)
 +	methods := []string{http.MethodGet, http.MethodPost}
 +	keys := []struct{ label, header, value string }{
 +		{"bad key via Authorization", "Authorization", "Bearer wrong"},
@@ -555,11 +752,12 @@ index 0000000..b5abecd
 +		}
 +	}
 +	// Positive control: on this server shape the dispatcher itself runs the
-+	// key middleware for these paths (a bare engine with only the dispatcher,
-+	// no guard). The valid key on the guarded engine then resets the counter.
++	// key middleware for the /v0 paths (a bare engine with only the
++	// dispatcher, no guard). The valid key on the guarded engine then resets
++	// the counter.
 +	bare := gin.New()
 +	bare.NoRoute(s.pluginManagementNoRoute)
-+	for _, target := range targets {
++	for _, target := range dispatched {
 +		for _, method := range methods {
 +			for _, key := range keys {
 +				rr := httptest.NewRecorder()
@@ -607,7 +805,9 @@ index 0000000..b5abecd
 +//   - redis_queue_protocol.go: the RESP surface, closed before any command is
 +//     read (managementRESPOutputDisabled);
 +//   - server_management.go: the /v0/management group and the NoRoute
-+//     dispatcher, both behind the engine-level guard.
++//     dispatcher, both behind the engine-level guard;
++//   - server_management_v8.go: the /v8/management group, refused entirely by
++//     the engine-level guard.
 +//
 +// A new consumer (an upstream bump) fails here until it is audited against
 +// the allowlist.
@@ -615,6 +815,7 @@ index 0000000..b5abecd
 +	"AuthenticateManagementKey internal/api/handlers/management/handler.go": 1,
 +	"AuthenticateManagementKey internal/api/redis_queue_protocol.go":        3,
 +	"Middleware internal/api/server_management.go":                          2,
++	"Middleware internal/api/server_management_v8.go":                       1,
 +}
 +
 +var managementKeyConsumerNames = map[string]struct{}{
@@ -640,8 +841,8 @@ index 0000000..b5abecd
 +					break
 +				}
 +			}
-+			if module != "github.com/router-for-me/CLIProxyAPI/v7" {
-+				t.Fatalf("%s/go.mod declares module %q, want github.com/router-for-me/CLIProxyAPI/v7", dir, module)
++			if module != "github.com/router-for-me/CLIProxyAPI/v8" {
++				t.Fatalf("%s/go.mod declares module %q, want github.com/router-for-me/CLIProxyAPI/v8", dir, module)
 +			}
 +			return dir
 +		}
@@ -763,6 +964,10 @@ index 0000000..b5abecd
 +	}
 +}
 +
++// The spelling matrix: every way gin (decoded or raw path, extra slashes,
++// case, dot segments) or the NoRoute dispatcher could route a request to a
++// handler in scope, for both management namespaces, the plugin resources, the
++// control panel and the refused API surfaces.
 +var managementBypassTargets = []struct{ method, target string }{
 +	{http.MethodGet, "/v0/management"},
 +	{http.MethodGet, "/v0/management/"},
@@ -780,12 +985,15 @@ index 0000000..b5abecd
 +	{http.MethodGet, "/x/../v0/management/config.yaml"},
 +	{http.MethodGet, "/v0/management/auth-files/../config.yaml"},
 +	{http.MethodGet, "/v0/management/%2e%2e/management/config.yaml"},
++	{http.MethodGet, "/v0/management/%2e/auth-files"},
 +	{http.MethodGet, "/v0/management/model-definitions/..%2fconfig.yaml"},
 +	{http.MethodGet, "/v0/management/model-definitions/claude%2F..%2F..%2Fconfig.yaml"},
 +	{http.MethodGet, "/v0/management/model-definitions/.."},
 +	{http.MethodGet, "/v0/management/model-definitions/CLAUDE"},
 +	{http.MethodGet, "/v0/management/auth-files%00"},
 +	{http.MethodGet, "/v0/management/auth-files;/../config.yaml"},
++	{http.MethodGet, "/v0/management/auth-files;x"},
++	{http.MethodGet, "/v0/management;/auth-files"},
 +	{http.MethodGet, "http://127.0.0.1/v0/management%2Fconfig.yaml"},
 +	{http.MethodGet, "http://127.0.0.1/v0/management/config.yaml"},
 +	{http.MethodGet, "/V0/MANAGEMENT/config.yaml"},
@@ -803,6 +1011,63 @@ index 0000000..b5abecd
 +	{http.MethodPatch, "/v0/management/auth-files/models"},
 +	{http.MethodDelete, "/v0/management/auth-files"},
 +	{http.MethodPost, "/v0/management/api-call"},
++	{http.MethodGet, "/v8/management"},
++	{http.MethodGet, "/v8/management/"},
++	{http.MethodGet, "/v8/management/credentials"},
++	{http.MethodGet, "/v8/management/credentials/models?name=none"},
++	{http.MethodGet, "/v8/management/credentials/download?name=x"},
++	{http.MethodGet, "//v8/management/credentials"},
++	{http.MethodGet, "/v8//management/credentials"},
++	{http.MethodGet, "/v8/management//credentials"},
++	{http.MethodGet, "/v8/management%2Fcredentials"},
++	{http.MethodGet, "/v8/%6danagement/credentials"},
++	{http.MethodGet, "/V8/MANAGEMENT/credentials"},
++	{http.MethodGet, "/v8/management/./credentials"},
++	{http.MethodGet, "/v8/management/x/../credentials"},
++	{http.MethodGet, "/x/../v8/management/credentials"},
++	{http.MethodGet, "/v8/management/%2e%2e/management/credentials"},
++	{http.MethodGet, "/v8/management/credentials;x"},
++	{http.MethodGet, "/v8/management/config"},
++	{http.MethodGet, "/v8/management/config/"},
++	{http.MethodGet, "/v8/management/config/remote-management/secret-key"},
++	{http.MethodGet, "/v8/management/config.yaml"},
++	{http.MethodPut, "/v8/management/config"},
++	{http.MethodPatch, "/v8/management/config/debug"},
++	{http.MethodDelete, "/v8/management/config/proxy-url"},
++	{http.MethodGet, "/v8/management/server/latest-version"},
++	{http.MethodPost, "/v8/management/requests/api-call"},
++	{http.MethodPost, "/v8/management/routing/cooldown/reset"},
++	{http.MethodGet, "/v8/management/routing/model-definitions/claude"},
++	{http.MethodGet, "/v8/management/observability/usage/queue"},
++	{http.MethodGet, "/v8/management/observability/logs"},
++	{http.MethodGet, "/v8/management/oauth/auth-url?provider=anthropic"},
++	{http.MethodGet, "/v8/management/oauth/callback?state=s&code=c"},
++	{http.MethodPost, "/v8/management/oauth/callback"},
++	{http.MethodPost, "/v8/management/oauth/import"},
++	{http.MethodGet, "/v8/management/plugins/store"},
++	{http.MethodOptions, "/v8/management/credentials"},
++	{http.MethodHead, "/v8/management/credentials"},
++	{http.MethodGet, "/v0/resource/plugins/sample/asset.js"},
++	{http.MethodGet, "/v0/resource/plugins"},
++	{http.MethodGet, "/v0//resource/plugins/sample"},
++	{http.MethodGet, "/V0/Resource/Plugins/sample"},
++	{http.MethodGet, "/management.html"},
++	{http.MethodGet, "//management.html"},
++	{http.MethodGet, "/MANAGEMENT.HTML"},
++	{http.MethodGet, "/x/../management.html"},
++	{http.MethodGet, "/v1/models/claude-sonnet-5-5"},
++	{http.MethodGet, "/v1/models/"},
++	{http.MethodGet, "/v1/models/charmer-sample"},
++	{http.MethodGet, "/v1/models/a/b"},
++	{http.MethodGet, "/v1/models%2Fclaude"},
++	{http.MethodGet, "//v1/models/claude"},
++	{http.MethodGet, "/v1/models/../models/claude"},
++	{http.MethodPost, "/v1/audio/speech"},
++	{http.MethodPost, "/v1//audio/speech"},
++	{http.MethodPost, "/v1/audio%2Fspeech"},
++	{http.MethodPost, "/v1/tts"},
++	{http.MethodPost, "/V1/TTS"},
++	{http.MethodOptions, "/v1/tts"},
 +}
 +
 +// Trailing slash on a registered path: gin answers 301/307 before any
@@ -815,12 +1080,17 @@ index 0000000..b5abecd
 +	{http.MethodGet, "/v0/management/auth-files/download/", http.StatusNotFound},
 +	{http.MethodPost, "/v0/management/api-call/", http.StatusNotFound},
 +	{http.MethodGet, "/v0/management/auth-files/", http.StatusOK},
++	{http.MethodGet, "/v8/management/credentials/", http.StatusNotFound},
++	{http.MethodPost, "/v8/management/requests/api-call/", http.StatusNotFound},
++	{http.MethodGet, "/v8/management/server/latest-version/", http.StatusNotFound},
 +}
 +
 +func TestManagementAllowlist_BypassVariantsRefused(t *testing.T) {
 +	s := newAllowlistTestServer(t)
 +	for _, tc := range managementBypassTargets {
-+		assertRefused(t, serveAllowlist(s, allowlistRequest(tc.method, tc.target, allowlistTestKey, "")), tc.method+" "+tc.target)
++		for _, key := range []string{allowlistTestKey, allowlistTestAPIKey} {
++			assertRefused(t, serveAllowlist(s, allowlistRequest(tc.method, tc.target, key, "")), tc.method+" "+tc.target)
++		}
 +	}
 +	for _, tc := range managementTrailingSlashTargets {
 +		label := tc.method + " " + tc.target
@@ -861,7 +1131,7 @@ index 0000000..b5abecd
 +
 +// A web page can send simple GETs to 127.0.0.1 without a preflight; with no
 +// key (or a guessed one) each would count toward the loopback ban. Browser
-+// request metadata is refused before the key check.
++// request metadata is refused before the key check, in both namespaces.
 +func TestManagementAllowlist_BrowserOriginatedRequestsRefusedAndNeverCount(t *testing.T) {
 +	s := newAllowlistTestServer(t)
 +	shapes := []map[string]string{
@@ -873,15 +1143,20 @@ index 0000000..b5abecd
 +		{"Origin": "null"},
 +		{"Origin": ""},
 +	}
++	targets := []string{}
++	for _, target := range allowlistedManagementRoutes {
++		targets = append(targets, target)
++	}
++	targets = append(targets, refusedV8ReadTwins...)
 +	for i, shape := range shapes {
 +		for _, key := range []string{"", "wrong", allowlistTestKey} {
-+			for route, target := range allowlistedManagementRoutes {
++			for _, target := range targets {
 +				for n := 0; n < 5; n++ {
 +					req := allowlistRequest(http.MethodGet, target, key, "")
 +					for name, value := range shape {
 +						req.Header.Set(name, value)
 +					}
-+					assertRefused(t, serveAllowlist(s, req), fmt.Sprintf("%s browser shape %d key %q", route, i, key))
++					assertRefused(t, serveAllowlist(s, req), fmt.Sprintf("%s browser shape %d key %q", target, i, key))
 +				}
 +			}
 +		}
@@ -890,7 +1165,7 @@ index 0000000..b5abecd
 +}
 +
 +// A DNS-rebinding page reaches 127.0.0.1 under its own host name. Only
-+// loopback Host literals are served.
++// loopback Host literals are served, in both namespaces.
 +func TestManagementAllowlist_NonLoopbackHostRefusedAndNeverCounts(t *testing.T) {
 +	s := newAllowlistTestServer(t)
 +	for _, host := range []string{
@@ -904,11 +1179,13 @@ index 0000000..b5abecd
 +		"192.168.1.10:8317",
 +		"",
 +	} {
-+		for _, key := range []string{"", "wrong", allowlistTestKey} {
-+			for n := 0; n < 5; n++ {
-+				req := allowlistRequest(http.MethodGet, "/v0/management/auth-files", key, "")
-+				req.Host = host
-+				assertRefused(t, serveAllowlist(s, req), "Host "+host)
++		for _, target := range []string{"/v0/management/auth-files", "/v8/management/credentials"} {
++			for _, key := range []string{"", "wrong", allowlistTestKey} {
++				for n := 0; n < 5; n++ {
++					req := allowlistRequest(http.MethodGet, target, key, "")
++					req.Host = host
++					assertRefused(t, serveAllowlist(s, req), "Host "+host+" "+target)
++				}
 +			}
 +		}
 +	}
@@ -919,6 +1196,9 @@ index 0000000..b5abecd
 +		if rr := serveAllowlist(s, req); rr.Code != http.StatusOK {
 +			t.Fatalf("Host %q: status = %d body=%q, want 200", host, rr.Code, rr.Body.String())
 +		}
++		req = allowlistRequest(http.MethodGet, "/v8/management/credentials", allowlistTestKey, "")
++		req.Host = host
++		assertRefused(t, serveAllowlist(s, req), "Host "+host+" /v8/management/credentials")
 +	}
 +}
 +
@@ -933,25 +1213,66 @@ index 0000000..b5abecd
 +	}
 +}
 +
-+// Upstream serves oauth-callback without the key middleware and writes a
-+// callback file for a pending session. With a session pending, both methods
-+// are refused and nothing is written.
++// Upstream serves the engine-level OAuth callbacks of both namespaces without
++// the key middleware and writes a callback file for a pending session. With a
++// session pending, both methods on both callbacks are refused and nothing is
++// written; the same request on an unguarded engine writes the file.
 +func TestManagementAllowlist_OAuthCallbackWithPendingSessionWritesNothing(t *testing.T) {
 +	s := newAllowlistTestServer(t)
 +	state := "allowlist-pending-oauth-state"
-+	if err := managementHandlers.RegisterPluginOAuthSession(state, "gemini-cli", nil); err != nil {
-+		t.Fatalf("register plugin oauth session: %v", err)
-+	}
++	managementHandlers.RegisterOAuthSession(state, "anthropic")
 +	defer managementHandlers.CompleteOAuthSession(state)
-+	for _, method := range []string{http.MethodGet, http.MethodPost} {
-+		for _, key := range []string{"", allowlistTestKey} {
-+			target := "/v0/management/oauth-callback?state=" + state + "&code=test-code"
-+			assertRefused(t, serveAllowlist(s, allowlistRequest(method, target, key, "")), method+" oauth-callback (pending session)")
++	callbackPath := filepath.Join(s.cfg.AuthDir, ".oauth-anthropic-"+state+".oauth")
++	callbacks := []string{"/v0/management/oauth-callback", "/v8/management/oauth/callback"}
++
++	// Positive control: unguarded, the handler writes the callback file.
++	bare := gin.New()
++	bare.GET(callbacks[0], s.mgmt.GetOAuthCallback)
++	rr := httptest.NewRecorder()
++	bare.ServeHTTP(rr, allowlistRequest(http.MethodGet, callbacks[0]+"?state="+state+"&code=test-code", "", ""))
++	if rr.Code != http.StatusOK {
++		t.Fatalf("positive control: unguarded callback status = %d body=%q, want 200", rr.Code, rr.Body.String())
++	}
++	if _, err := os.Stat(callbackPath); err != nil {
++		t.Fatalf("positive control: unguarded callback wrote no file: %v", err)
++	}
++	if err := os.Remove(callbackPath); err != nil {
++		t.Fatalf("remove positive-control callback file: %v", err)
++	}
++
++	for _, callback := range callbacks {
++		for _, method := range []string{http.MethodGet, http.MethodPost} {
++			for _, key := range []string{"", allowlistTestKey} {
++				target := callback + "?state=" + state + "&code=test-code&provider=anthropic"
++				assertRefused(t, serveAllowlist(s, allowlistRequest(method, target, key, "")), method+" "+callback+" (pending session)")
++			}
 +		}
 +	}
-+	callbackPath := filepath.Join(s.cfg.AuthDir, ".oauth-gemini-cli-"+state+".oauth")
 +	if _, err := os.Stat(callbackPath); !errors.Is(err, os.ErrNotExist) {
 +		t.Fatalf("callback file %s: stat err = %v, want not exist", callbackPath, err)
++	}
++}
++
++// The model detail lookup and the speech routes are refused outright, with or
++// without a valid API key and with no CORS; the model list stays served.
++func TestManagementAllowlist_RefusedAPISurfaces(t *testing.T) {
++	s := newAllowlistTestServer(t)
++	for _, tc := range []struct{ method, target string }{
++		{http.MethodGet, "/v1/models/claude-sonnet-5-5"},
++		{http.MethodGet, "/v1/models/charmer-sample"},
++		{http.MethodPost, "/v1/audio/speech"},
++		{http.MethodPost, "/v1/tts"},
++	} {
++		for _, key := range []string{"", allowlistTestAPIKey} {
++			assertRefused(t, serveAllowlist(s, allowlistRequest(tc.method, tc.target, key, "")), tc.method+" "+tc.target)
++		}
++	}
++	rr := serveAllowlist(s, allowlistRequest(http.MethodGet, "/v1/models", allowlistTestAPIKey, ""))
++	if rr.Code != http.StatusOK {
++		t.Fatalf("GET /v1/models with the API key: status = %d body=%q, want 200", rr.Code, rr.Body.String())
++	}
++	if rr.Header().Get("Access-Control-Allow-Origin") == "" {
++		t.Fatal("GET /v1/models: CORS did not run; the control does not reach the ordinary route")
 +	}
 +}
 +
@@ -985,11 +1306,339 @@ index 0000000..b5abecd
 +	}
 +	assertNotBanned(t, s, "RESP attempts")
 +}
+diff --git a/internal/api/server_management_route_table_test.go b/internal/api/server_management_route_table_test.go
+new file mode 100644
+index 00000000..554f0489
+--- /dev/null
++++ b/internal/api/server_management_route_table_test.go
+@@ -0,0 +1,261 @@
++package api
++
++// charmer local patch (management-readonly-allowlist): the reviewed route
++// table. Every route the production-shaped engine registers is listed with
++// its reviewed disposition; a route upstream adds, removes or renames fails
++// TestManagementAllowlist_RouteTableMatchesReview until it is reviewed here.
++//   - routeAllow:  the read-only management allowlist (served with the key);
++//   - routeRefuse: refused by the engine-level guard with a bare 404;
++//   - routeOpen:   outside the guard's scope (the proxy API, health, the
++//     provider login redirects), reviewed as served.
++
++type reviewedRouteDisposition int
++
++const (
++	routeOpen reviewedRouteDisposition = iota
++	routeAllow
++	routeRefuse
++)
++
++var reviewedRouteTable = map[string]reviewedRouteDisposition{
++	"DELETE /v0/management/api-keys":                    routeRefuse,
++	"DELETE /v0/management/auth-files":                  routeRefuse,
++	"DELETE /v0/management/claude-api-key":              routeRefuse,
++	"DELETE /v0/management/codex-api-key":               routeRefuse,
++	"DELETE /v0/management/gemini-api-key":              routeRefuse,
++	"DELETE /v0/management/interactions-api-key":        routeRefuse,
++	"DELETE /v0/management/logs":                        routeRefuse,
++	"DELETE /v0/management/meta-api-key":                routeRefuse,
++	"DELETE /v0/management/oauth-excluded-models":       routeRefuse,
++	"DELETE /v0/management/oauth-model-alias":           routeRefuse,
++	"DELETE /v0/management/oauth-request-scoped-errors": routeRefuse,
++	"DELETE /v0/management/oauth-session":               routeRefuse,
++	"DELETE /v0/management/openai-compatibility":        routeRefuse,
++	"DELETE /v0/management/plugins/:id":                 routeRefuse,
++	"DELETE /v0/management/plugins/:id/quota":           routeRefuse,
++	"DELETE /v0/management/proxy-url":                   routeRefuse,
++	"DELETE /v0/management/vertex-api-key":              routeRefuse,
++	"DELETE /v0/management/xai-api-key":                 routeRefuse,
++	"DELETE /v8/management/config/*path":                routeRefuse,
++	"DELETE /v8/management/credentials":                 routeRefuse,
++	"DELETE /v8/management/oauth/session":               routeRefuse,
++	"DELETE /v8/management/observability/logs":          routeRefuse,
++	"DELETE /v8/management/plugins/:id":                 routeRefuse,
++	"DELETE /v8/management/plugins/:id/quota":           routeRefuse,
++	"GET /":                                                    routeOpen,
++	"GET /anthropic/callback":                                  routeOpen,
++	"GET /antigravity/callback":                                routeOpen,
++	"GET /backend-api/codex/responses":                         routeOpen,
++	"GET /callback":                                            routeOpen,
++	"GET /codex/callback":                                      routeOpen,
++	"GET /devin/callback":                                      routeOpen,
++	"GET /healthz":                                             routeOpen,
++	"GET /management.html":                                     routeRefuse,
++	"GET /openai/v1/videos/:video_id":                          routeOpen,
++	"GET /openai/v1/videos/:video_id/content":                  routeOpen,
++	"GET /v0/management/anthropic-auth-url":                    routeRefuse,
++	"GET /v0/management/antigravity-auth-url":                  routeRefuse,
++	"GET /v0/management/api-key-usage":                         routeRefuse,
++	"GET /v0/management/api-keys":                              routeRefuse,
++	"GET /v0/management/auth-files":                            routeAllow,
++	"GET /v0/management/auth-files/download":                   routeRefuse,
++	"GET /v0/management/auth-files/models":                     routeAllow,
++	"GET /v0/management/claude-api-key":                        routeRefuse,
++	"GET /v0/management/codex-api-key":                         routeRefuse,
++	"GET /v0/management/codex-auth-url":                        routeRefuse,
++	"GET /v0/management/config":                                routeRefuse,
++	"GET /v0/management/config.yaml":                           routeRefuse,
++	"GET /v0/management/debug":                                 routeRefuse,
++	"GET /v0/management/devin-auth-url":                        routeRefuse,
++	"GET /v0/management/error-logs-max-files":                  routeRefuse,
++	"GET /v0/management/force-model-prefix":                    routeRefuse,
++	"GET /v0/management/gemini-api-key":                        routeRefuse,
++	"GET /v0/management/get-auth-status":                       routeRefuse,
++	"GET /v0/management/interactions-api-key":                  routeRefuse,
++	"GET /v0/management/kimi-ai-auth-url":                      routeRefuse,
++	"GET /v0/management/kimi-auth-url":                         routeRefuse,
++	"GET /v0/management/latest-version":                        routeRefuse,
++	"GET /v0/management/logging-to-file":                       routeRefuse,
++	"GET /v0/management/logs":                                  routeRefuse,
++	"GET /v0/management/logs-max-total-size-mb":                routeRefuse,
++	"GET /v0/management/max-retry-credentials":                 routeRefuse,
++	"GET /v0/management/max-retry-interval":                    routeRefuse,
++	"GET /v0/management/meta-api-key":                          routeRefuse,
++	"GET /v0/management/meta-auth-url":                         routeRefuse,
++	"GET /v0/management/model-definitions/:channel":            routeAllow,
++	"GET /v0/management/oauth-callback":                        routeRefuse,
++	"GET /v0/management/oauth-excluded-models":                 routeRefuse,
++	"GET /v0/management/oauth-model-alias":                     routeRefuse,
++	"GET /v0/management/oauth-request-scoped-errors":           routeRefuse,
++	"GET /v0/management/openai-compatibility":                  routeRefuse,
++	"GET /v0/management/plugin-store":                          routeRefuse,
++	"GET /v0/management/plugins":                               routeRefuse,
++	"GET /v0/management/plugins/:id/config":                    routeRefuse,
++	"GET /v0/management/plugins/:id/quota":                     routeRefuse,
++	"GET /v0/management/proxy-url":                             routeRefuse,
++	"GET /v0/management/quota-exceeded/switch-preview-model":   routeRefuse,
++	"GET /v0/management/quota-exceeded/switch-project":         routeRefuse,
++	"GET /v0/management/quota/providers":                       routeRefuse,
++	"GET /v0/management/request-error-logs":                    routeRefuse,
++	"GET /v0/management/request-error-logs/:name":              routeRefuse,
++	"GET /v0/management/request-log":                           routeRefuse,
++	"GET /v0/management/request-log-by-id/:id":                 routeRefuse,
++	"GET /v0/management/request-retry":                         routeRefuse,
++	"GET /v0/management/routing/strategy":                      routeRefuse,
++	"GET /v0/management/usage-queue":                           routeRefuse,
++	"GET /v0/management/usage-statistics-enabled":              routeRefuse,
++	"GET /v0/management/vertex-api-key":                        routeRefuse,
++	"GET /v0/management/ws-auth":                               routeRefuse,
++	"GET /v0/management/xai-api-key":                           routeRefuse,
++	"GET /v0/management/xai-auth-url":                          routeRefuse,
++	"GET /v1/live/:call_id":                                    routeOpen,
++	"GET /v1/models":                                           routeOpen,
++	"GET /v1/models/*model":                                    routeRefuse,
++	"GET /v1/realtime":                                         routeOpen,
++	"GET /v1/realtime/calls/:call_id":                          routeOpen,
++	"GET /v1/realtime/translations":                            routeOpen,
++	"GET /v1/responses":                                        routeOpen,
++	"GET /v1/videos/:request_id":                               routeOpen,
++	"GET /v1beta/models":                                       routeOpen,
++	"GET /v1beta/models/*action":                               routeOpen,
++	"GET /v8/management/config":                                routeRefuse,
++	"GET /v8/management/config.yaml":                           routeRefuse,
++	"GET /v8/management/config/*path":                          routeRefuse,
++	"GET /v8/management/credentials":                           routeRefuse,
++	"GET /v8/management/credentials/download":                  routeRefuse,
++	"GET /v8/management/credentials/models":                    routeRefuse,
++	"GET /v8/management/oauth/auth-url":                        routeRefuse,
++	"GET /v8/management/oauth/callback":                        routeRefuse,
++	"GET /v8/management/oauth/status":                          routeRefuse,
++	"GET /v8/management/observability/logs":                    routeRefuse,
++	"GET /v8/management/observability/logs/errors":             routeRefuse,
++	"GET /v8/management/observability/logs/errors/:name":       routeRefuse,
++	"GET /v8/management/observability/logs/requests/:id":       routeRefuse,
++	"GET /v8/management/observability/usage/api-keys":          routeRefuse,
++	"GET /v8/management/observability/usage/queue":             routeRefuse,
++	"GET /v8/management/plugins":                               routeRefuse,
++	"GET /v8/management/plugins/:id/quota":                     routeRefuse,
++	"GET /v8/management/plugins/store":                         routeRefuse,
++	"GET /v8/management/routing/model-definitions/:channel":    routeRefuse,
++	"GET /v8/management/server/latest-version":                 routeRefuse,
++	"HEAD /healthz":                                            routeOpen,
++	"PATCH /v0/management/api-keys":                            routeRefuse,
++	"PATCH /v0/management/auth-files/fields":                   routeRefuse,
++	"PATCH /v0/management/auth-files/status":                   routeRefuse,
++	"PATCH /v0/management/claude-api-key":                      routeRefuse,
++	"PATCH /v0/management/codex-api-key":                       routeRefuse,
++	"PATCH /v0/management/debug":                               routeRefuse,
++	"PATCH /v0/management/error-logs-max-files":                routeRefuse,
++	"PATCH /v0/management/force-model-prefix":                  routeRefuse,
++	"PATCH /v0/management/gemini-api-key":                      routeRefuse,
++	"PATCH /v0/management/interactions-api-key":                routeRefuse,
++	"PATCH /v0/management/logging-to-file":                     routeRefuse,
++	"PATCH /v0/management/logs-max-total-size-mb":              routeRefuse,
++	"PATCH /v0/management/max-retry-credentials":               routeRefuse,
++	"PATCH /v0/management/max-retry-interval":                  routeRefuse,
++	"PATCH /v0/management/meta-api-key":                        routeRefuse,
++	"PATCH /v0/management/oauth-excluded-models":               routeRefuse,
++	"PATCH /v0/management/oauth-model-alias":                   routeRefuse,
++	"PATCH /v0/management/oauth-request-scoped-errors":         routeRefuse,
++	"PATCH /v0/management/openai-compatibility":                routeRefuse,
++	"PATCH /v0/management/plugins/:id/config":                  routeRefuse,
++	"PATCH /v0/management/plugins/:id/enabled":                 routeRefuse,
++	"PATCH /v0/management/proxy-url":                           routeRefuse,
++	"PATCH /v0/management/quota-exceeded/switch-preview-model": routeRefuse,
++	"PATCH /v0/management/quota-exceeded/switch-project":       routeRefuse,
++	"PATCH /v0/management/request-log":                         routeRefuse,
++	"PATCH /v0/management/request-retry":                       routeRefuse,
++	"PATCH /v0/management/routing/strategy":                    routeRefuse,
++	"PATCH /v0/management/usage-statistics-enabled":            routeRefuse,
++	"PATCH /v0/management/vertex-api-key":                      routeRefuse,
++	"PATCH /v0/management/ws-auth":                             routeRefuse,
++	"PATCH /v0/management/xai-api-key":                         routeRefuse,
++	"PATCH /v8/management/config":                              routeRefuse,
++	"PATCH /v8/management/config/*path":                        routeRefuse,
++	"PATCH /v8/management/credentials/fields":                  routeRefuse,
++	"PATCH /v8/management/credentials/status":                  routeRefuse,
++	"POST /backend-api/codex/alpha/search":                     routeOpen,
++	"POST /backend-api/codex/responses":                        routeOpen,
++	"POST /backend-api/codex/responses/compact":                routeOpen,
++	"POST /openai/v1/videos":                                   routeOpen,
++	"POST /v0/management/api-call":                             routeRefuse,
++	"POST /v0/management/auth-files":                           routeRefuse,
++	"POST /v0/management/auth-files/refresh":                   routeRefuse,
++	"POST /v0/management/oauth-callback":                       routeRefuse,
++	"POST /v0/management/plugin-store/:id/install":             routeRefuse,
++	"POST /v0/management/plugins/:id/quota":                    routeRefuse,
++	"POST /v0/management/plugins/:id/quota/reset":              routeRefuse,
++	"POST /v0/management/quota/fetch":                          routeRefuse,
++	"POST /v0/management/quota/reset":                          routeRefuse,
++	"POST /v0/management/reset-quota":                          routeRefuse,
++	"POST /v0/management/vertex/import":                        routeRefuse,
++	"POST /v1/alpha/search":                                    routeOpen,
++	"POST /v1/audio/speech":                                    routeRefuse,
++	"POST /v1/chat/completions":                                routeOpen,
++	"POST /v1/completions":                                     routeOpen,
++	"POST /v1/images/edits":                                    routeOpen,
++	"POST /v1/images/generations":                              routeOpen,
++	"POST /v1/live":                                            routeOpen,
++	"POST /v1/messages":                                        routeOpen,
++	"POST /v1/messages/count_tokens":                           routeOpen,
++	"POST /v1/realtime":                                        routeOpen,
++	"POST /v1/realtime/calls":                                  routeOpen,
++	"POST /v1/realtime/calls/:call_id/accept":                  routeOpen,
++	"POST /v1/realtime/calls/:call_id/hangup":                  routeOpen,
++	"POST /v1/realtime/calls/:call_id/refer":                   routeOpen,
++	"POST /v1/realtime/calls/:call_id/reject":                  routeOpen,
++	"POST /v1/realtime/client_secrets":                         routeOpen,
++	"POST /v1/realtime/sessions":                               routeOpen,
++	"POST /v1/realtime/transcription_sessions":                 routeOpen,
++	"POST /v1/realtime/translations":                           routeOpen,
++	"POST /v1/realtime/translations/client_secrets":            routeOpen,
++	"POST /v1/responses":                                       routeOpen,
++	"POST /v1/responses/compact":                               routeOpen,
++	"POST /v1/tts":                                             routeRefuse,
++	"POST /v1/videos":                                          routeOpen,
++	"POST /v1/videos/edits":                                    routeOpen,
++	"POST /v1/videos/extensions":                               routeOpen,
++	"POST /v1/videos/generations":                              routeOpen,
++	"POST /v1beta/interactions":                                routeOpen,
++	"POST /v1beta/models/*action":                              routeOpen,
++	"POST /v8/management/credentials":                          routeRefuse,
++	"POST /v8/management/credentials/refresh":                  routeRefuse,
++	"POST /v8/management/oauth/callback":                       routeRefuse,
++	"POST /v8/management/oauth/import":                         routeRefuse,
++	"POST /v8/management/plugins/:id/quota":                    routeRefuse,
++	"POST /v8/management/plugins/store/:id/install":            routeRefuse,
++	"POST /v8/management/requests/api-call":                    routeRefuse,
++	"POST /v8/management/routing/cooldown/reset":               routeRefuse,
++	"PUT /v0/management/api-keys":                              routeRefuse,
++	"PUT /v0/management/claude-api-key":                        routeRefuse,
++	"PUT /v0/management/codex-api-key":                         routeRefuse,
++	"PUT /v0/management/config.yaml":                           routeRefuse,
++	"PUT /v0/management/debug":                                 routeRefuse,
++	"PUT /v0/management/error-logs-max-files":                  routeRefuse,
++	"PUT /v0/management/force-model-prefix":                    routeRefuse,
++	"PUT /v0/management/gemini-api-key":                        routeRefuse,
++	"PUT /v0/management/interactions-api-key":                  routeRefuse,
++	"PUT /v0/management/logging-to-file":                       routeRefuse,
++	"PUT /v0/management/logs-max-total-size-mb":                routeRefuse,
++	"PUT /v0/management/max-retry-credentials":                 routeRefuse,
++	"PUT /v0/management/max-retry-interval":                    routeRefuse,
++	"PUT /v0/management/meta-api-key":                          routeRefuse,
++	"PUT /v0/management/oauth-excluded-models":                 routeRefuse,
++	"PUT /v0/management/oauth-model-alias":                     routeRefuse,
++	"PUT /v0/management/oauth-request-scoped-errors":           routeRefuse,
++	"PUT /v0/management/openai-compatibility":                  routeRefuse,
++	"PUT /v0/management/plugins/:id/config":                    routeRefuse,
++	"PUT /v0/management/proxy-url":                             routeRefuse,
++	"PUT /v0/management/quota-exceeded/switch-preview-model":   routeRefuse,
++	"PUT /v0/management/quota-exceeded/switch-project":         routeRefuse,
++	"PUT /v0/management/request-log":                           routeRefuse,
++	"PUT /v0/management/request-retry":                         routeRefuse,
++	"PUT /v0/management/routing/strategy":                      routeRefuse,
++	"PUT /v0/management/usage-statistics-enabled":              routeRefuse,
++	"PUT /v0/management/vertex-api-key":                        routeRefuse,
++	"PUT /v0/management/ws-auth":                               routeRefuse,
++	"PUT /v0/management/xai-api-key":                           routeRefuse,
++	"PUT /v8/management/config":                                routeRefuse,
++	"PUT /v8/management/config.yaml":                           routeRefuse,
++	"PUT /v8/management/config/*path":                          routeRefuse,
++}
 diff --git a/internal/api/server_test.go b/internal/api/server_test.go
-index 5a853ea..74f7abd 100644
+index 44862bb9..e7cc9a02 100644
 --- a/internal/api/server_test.go
 +++ b/internal/api/server_test.go
-@@ -1920,7 +1920,9 @@ func TestExampleAPIKeySafeModeShowsWarningAndKeepsManagement(t *testing.T) {
+@@ -1865,44 +1865,22 @@ func TestExampleAPIKeySafeModeShowsWarningAndKeepsManagement(t *testing.T) {
+ 		}
+ 	})
+ 
+-	t.Run("management html defaults to warning page", func(t *testing.T) {
+-		req := httptest.NewRequest(http.MethodGet, "/management.html", nil)
+-		rr := httptest.NewRecorder()
+-		server.engine.ServeHTTP(rr, req)
+-		if rr.Code != http.StatusOK {
+-			t.Fatalf("status = %d, want %d body=%s", rr.Code, http.StatusOK, rr.Body.String())
+-		}
+-		if !strings.Contains(rr.Body.String(), "Example API key detected") {
+-			t.Fatalf("management.html did not show warning page: %s", rr.Body.String())
+-		}
+-	})
+-
+-	t.Run("management html head stops at warning page", func(t *testing.T) {
+-		req := httptest.NewRequest(http.MethodHead, "/management.html", nil)
+-		rr := httptest.NewRecorder()
+-		server.engine.ServeHTTP(rr, req)
+-		if rr.Code != http.StatusOK {
+-			t.Fatalf("status = %d, want %d body=%s", rr.Code, http.StatusOK, rr.Body.String())
+-		}
+-		if rr.Body.Len() != 0 {
+-			t.Fatalf("HEAD body length = %d, want 0", rr.Body.Len())
+-		}
+-		if got := rr.Header().Get("Cache-Control"); got != "no-store" {
+-			t.Fatalf("Cache-Control = %q, want no-store", got)
+-		}
+-	})
+-
+-	t.Run("management button query opens control panel", func(t *testing.T) {
+-		req := httptest.NewRequest(http.MethodGet, "/management.html?safe-mode=configure", nil)
+-		rr := httptest.NewRecorder()
+-		server.engine.ServeHTTP(rr, req)
+-		if rr.Code != http.StatusOK {
+-			t.Fatalf("status = %d, want %d body=%s", rr.Code, http.StatusOK, rr.Body.String())
+-		}
+-		if !strings.Contains(rr.Body.String(), "management app") {
+-			t.Fatalf("management panel body missing: %s", rr.Body.String())
+-		}
+-	})
++	// charmer: the control panel is refused by the engine-level allowlist
++	// guard, in safe mode too.
++	for _, tc := range []struct{ method, target string }{
++		{http.MethodGet, "/management.html"},
++		{http.MethodHead, "/management.html"},
++		{http.MethodGet, "/management.html?safe-mode=configure"},
++	} {
++		t.Run("management html refused "+tc.method+" "+tc.target, func(t *testing.T) {
++			req := httptest.NewRequest(tc.method, tc.target, nil)
++			rr := httptest.NewRecorder()
++			server.engine.ServeHTTP(rr, req)
++			if rr.Code != http.StatusNotFound {
++				t.Fatalf("status = %d, want %d body=%s", rr.Code, http.StatusNotFound, rr.Body.String())
++			}
++		})
++	}
+ 
+ 	t.Run("proxy endpoints are blocked", func(t *testing.T) {
+ 		req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+@@ -1929,7 +1907,9 @@ func TestExampleAPIKeySafeModeShowsWarningAndKeepsManagement(t *testing.T) {
  	})
  
  	t.Run("management endpoints still work", func(t *testing.T) {

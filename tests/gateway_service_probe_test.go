@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/router-for-me/CLIProxyAPI/v7/internal/config"
-	sdkauth "github.com/router-for-me/CLIProxyAPI/v7/sdk/auth"
-	coreauth "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/auth"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
+	sdkauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/auth"
+	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -180,5 +180,19 @@ func TestOmissionOverlay(t *testing.T) {
 	}
 	if _, err := config.ParseConfigBytes(data); err == nil {
 		t.Fatal("invalid payload overlay accepted")
+	}
+}
+
+// The proactive Codex refresh lead, through the provider registry the
+// gateway links: 96 h, so a credential 95 h from expiry is refreshed.
+func TestOmissionCodexRefreshLead(t *testing.T) {
+	lead := coreauth.ProviderRefreshLead("codex", nil)
+	if lead == nil || *lead != 96*time.Hour {
+		t.Fatalf("codex refresh lead = %v, want 96h", lead)
+	}
+	auth := &coreauth.Auth{ID: "omission-codex-lead", Provider: "codex", Metadata: map[string]any{
+		"type": "codex", "refresh_token": "dummy-omission", "expired": time.Now().Add(95 * time.Hour).Format(time.RFC3339)}}
+	if _, has, need := coreauth.CodexOuterNeedsRefresh(auth, time.Now()); !has || !need {
+		t.Fatalf("codex credential 95h from expiry: has=%t need=%t, want a refresh", has, need)
 	}
 }

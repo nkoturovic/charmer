@@ -150,6 +150,57 @@ class ManagementAllowlistTests(unittest.TestCase):
         self.assertEqual(reply.status, 404)
         record("M4", status=reply.status)
 
+    def test_v8_management_is_404_with_valid_key(self):
+        # The v8 namespace is refused whole, its read twin of the allowlist too.
+        statuses = {}
+        for method, path in (("GET", "/v8/management/credentials"), ("GET", "/v8/management/config"),
+                             ("GET", "/v8/management/oauth/callback"), ("POST", "/v8/management/requests/api-call")):
+            reply = self.request(method, path)
+            self.assertEqual((reply.status, len(reply.raw)), (404, 0), method + " " + path)
+            statuses[method + " " + path] = reply.status
+        record("M5", refused=len(statuses))
+
+    def test_refused_api_surfaces_are_404(self):
+        # Model detail and the speech routes are refused with the API key too.
+        headers = {"Authorization": "Bearer " + harness.FIXTURE_GATEWAY_TOKEN}
+        statuses = {}
+        for method, path in (("GET", "/v1/models/gwtest-detail"), ("POST", "/v1/audio/speech"), ("POST", "/v1/tts")):
+            reply = self.request(method, path, key=False, **headers)
+            self.assertEqual((reply.status, len(reply.raw)), (404, 0), method + " " + path)
+            self.assertNotIn("access-control-allow-origin", reply.headers, method + " " + path)
+            statuses[method + " " + path] = reply.status
+        listing = self.request("GET", "/v1/models", key=False, **headers)
+        self.assertEqual(listing.status, 200)
+        record("M6", refused=len(statuses), listing=listing.status)
+
+
+class AccessLogQuotingTests(unittest.TestCase):
+    def test_encoded_newline_cannot_forge_a_log_line(self):
+        # A request path is client text: an encoded newline in it must stay
+        # inside its quoted access-log line, never start a line of its own.
+        if not os.environ.get(harness.BINARY_ENV):
+            harness.boundary("BOUNDARY: AL1 needs " + harness.BINARY_ENV + " set to the manifest build")
+        gateway = harness.GatewayHarness()
+        self.addCleanup(gateway.close)
+        forged = "gwtest-forged-line credential_save_v1 operation=save result=ok"
+        reply = harness.unix_request(gateway.socket, "GET", "/gwtest-access%0A" + forged.replace(" ", "%20"),
+                                     headers={"Host": f"127.0.0.1:{gateway.port}"})
+        self.assertEqual(reply.status, 404)
+        deadline = time.monotonic() + 5
+        text = ""
+        while time.monotonic() < deadline:
+            text = gateway.log_path.read_text(errors="replace")
+            if "gwtest-access" in text:
+                break
+            time.sleep(0.05)
+        lines = text.splitlines()
+        access = [line for line in lines if "gwtest-access" in line]
+        self.assertEqual(len(access), 1, "the probe request left no single access line")
+        self.assertIn('"/gwtest-access\\n' + forged + '"', access[0])
+        self.assertFalse(any(line.startswith("gwtest-forged-line") for line in lines),
+                         "an encoded newline in the path started a log line")
+        record("AL1", status=reply.status, quoted=True)
+
 
 class ManagementEnvOnlyTests(unittest.TestCase):
     def test_config_secret_cannot_enable_management(self):
@@ -250,6 +301,9 @@ class PatchOmissionProbeTests(unittest.TestCase):
 
     def test_refresh_shutdown(self):
         self.check_probe("service", "TestOmissionRefreshShutdown", "RS1")
+
+    def test_codex_refresh_lead(self):
+        self.check_probe("service", "TestOmissionCodexRefreshLead", "RL1")
 
 
 
