@@ -7,7 +7,12 @@ port is shown, never acted on, and a fixture runtime (injected loopback
 seams) is never observed or started. The supervised service's state is
 shown, and installing (or refreshing) it is offered where it can run.
 While a transaction owner holds the gateway's inhibition the view says so,
-with its remedy, and offers no start, restart or service install.
+with its remedy, and offers no start, restart or service install. The
+persistence hold is evaluated for a live view as ``charmer gateway status``
+does: the view shows it (a coverage-only hold as such, otherwise the
+failure), offers no restart while it holds and names the clear-hold route;
+clearing stays a typed confirmation in a terminal outside Claude Code. A
+restart first lists the managed sessions running now and asks y/N.
 Stopping and removing the service stay CLI verbs (:data:`CLI_ONLY`). The log
 tail opens in a ``TextView``. After an action the runtime's catalog view is
 reloaded (:func:`refresh_endpoint`), so a port the action recorded is what
@@ -20,7 +25,7 @@ import sys
 from dataclasses import dataclass
 from typing import Any, Callable, TextIO
 
-from charmer import errors, gateway_inhibition, gateway_lifecycle, termtext, tui
+from charmer import errors, gateway_hold, gateway_inhibition, gateway_lifecycle, termtext, tui
 import charmer.cli.screens.common as screens_common
 
 # Gateway operations the TUI deliberately leaves to the CLI, with the reason.
@@ -34,6 +39,14 @@ CLI_ONLY = {
 }
 LOG_TAIL_LINES = 200
 TITLE = "Local gateway"
+HOLD_TITLE = "Persistence hold"
+HOLD_COVERAGE = "held — log coverage incomplete, not a failed save"
+CLEAR_ROUTE = "charmer gateway clear-hold (in a terminal outside Claude Code, with a typed confirmation)"
+HOLD_COVERAGE_ROUTE = ("Restart is not offered while it holds. Keep the gateway running, check the credentials "
+                       f"(charmer providers list), then clear it: {CLEAR_ROUTE}")
+HOLD_FAILURE_ROUTE = (f"Restart is not offered while it holds. Fix: {gateway_hold.REMEDY} (clear-hold runs in a "
+                      "terminal outside Claude Code, with a typed confirmation)")
+RESTART_QUESTION = "Restart the gateway now?"
 
 
 @dataclass(frozen=True)
@@ -45,6 +58,7 @@ class GatewayView:
     service_status: Any | None = None
     runtime: Any | None = None  # the runtime the view was observed for (refreshed after an action)
     inhibition: str | None = None  # the inhibited text (with its remedy) while one is recorded
+    hold: gateway_hold.HoldReport | None = None  # the persistence hold (live views only)
 
     @property
     def can_install_service(self) -> bool:
@@ -67,8 +81,36 @@ class GatewayView:
         return self.seen is not None and self.seen.state == gateway_lifecycle.STOPPED and self.inhibition is None
 
     @property
+    def held(self) -> bool:
+        return self.hold is not None and self.hold.held
+
+    @property
     def can_restart(self) -> bool:
-        return self.seen is not None and self.seen.state == gateway_lifecycle.OURS and self.inhibition is None
+        return (self.seen is not None and self.seen.state == gateway_lifecycle.OURS and self.inhibition is None
+                and not self.held)
+
+    def hold_summary(self) -> list[str]:
+        """The hold in a line or two: its state, then (held) the clear-hold route."""
+
+        hold = self.hold
+        if hold is None:
+            return []
+        if not hold.held:
+            return ["persistence hold: none" + (f" — {hold.evaluated}" if hold.evaluated else "")]
+        if hold.coverage_only:
+            return [f"persistence hold: {HOLD_COVERAGE}", HOLD_COVERAGE_ROUTE]
+        first = hold.reasons[0] if hold.reasons else "the persistence hold"
+        more = f" (and {len(hold.reasons) - 1} more)" if len(hold.reasons) > 1 else ""
+        return [f"persistence hold: held — {first}{more}", HOLD_FAILURE_ROUTE]
+
+    def hold_lines(self) -> list[str]:
+        """The hold in full: every reason, then the route (the details view, H)."""
+
+        hold = self.hold
+        if hold is None or not hold.held:
+            return self.hold_summary()
+        head, route = self.hold_summary()
+        return [head, *(f"  {reason}" for reason in hold.reasons), route]
 
     def headline(self) -> str:
         if self.error is not None:
@@ -95,8 +137,70 @@ def observe(runtime: Any) -> GatewayView:
         status = manager.status()
     except (errors.CharmerError, OSError):
         manager = status = None
-    return GatewayView(gateway, gateway.observe(), service=manager, service_status=status, runtime=runtime,
-                       inhibition=_inhibition_text(gateway))
+    seen = gateway.observe()
+    return GatewayView(gateway, seen, service=manager, service_status=status, runtime=runtime,
+                       inhibition=_inhibition_text(gateway), hold=_hold(gateway, seen))
+
+
+def _hold(gateway: Any, seen: gateway_lifecycle.Observation) -> gateway_hold.HoldReport:
+    """The persistence hold as ``charmer gateway status`` evaluates it (an
+    evaluation that fails holds)."""
+
+    try:
+        return gateway.persistence_hold(seen)
+    except (OSError, errors.CharmerError) as exc:
+        return gateway_hold.HoldReport(True, (f"the hold cannot be evaluated: {termtext.visible_message(exc)}",),
+                                       "unknown")
+
+
+def running_sessions(runtime: Any) -> tuple[list[str], str | None]:
+    """The managed sessions that run now (labels), and why that cannot be
+    told (None when it can): a daemon pty socket or a ``/proc`` argv names
+    them, as the Sessions screen's ● does."""
+
+    if runtime is None:
+        return [], None
+    from charmer import sessions
+    import charmer.cli.session_facts as session_facts
+
+    try:
+        records = session_facts._session_records(runtime)
+        prefixes, proc_ids = runtime._live_prefixes(), runtime._proc_ids()
+    except (errors.CharmerError, OSError) as exc:
+        return [], termtext.visible_message(exc)
+    labels = []
+    for record in records:
+        if not session_facts._record_view_is_live(record, prefixes=prefixes, proc_ids=proc_ids):
+            continue
+        try:
+            label = f"{sessions.managed_id(record)} ({session_facts._record_target_label(record)})"
+        except (KeyError, TypeError, errors.CharmerError):
+            label = str(record.get("managed_id") or record.get("runtime_session_id") or "a session")
+        labels.append(termtext.visible_text(label))
+    return labels, None
+
+
+def confirm_restart(view: GatewayView, tty_in: TextIO, tty_out: TextIO) -> bool:
+    """List the managed sessions running now, then ask y/N (default No)."""
+
+    labels, unknown = running_sessions(view.runtime)
+    if unknown is not None:
+        tty_out.write(f"Whether managed sessions run now cannot be told ({unknown}).\n")
+    elif labels:
+        tty_out.write(f"{len(labels)} managed session(s) run now; a restart fails their requests in flight:\n")
+        for label in labels:
+            tty_out.write(f"  - {label}\n")
+    else:
+        tty_out.write("No managed session runs now.\n")
+    tty_out.write(f"{RESTART_QUESTION} [y/N] ")
+    tty_out.flush()
+    try:
+        answer = tty_in.readline()
+    except KeyboardInterrupt:
+        answer = ""
+    if not answer.endswith("\n"):
+        tty_out.write("\n")
+    return answer.strip().lower() in ("y", "yes")
 
 
 def _inhibition_text(gateway: Any) -> str | None:
@@ -120,8 +224,9 @@ def refresh_endpoint(runtime: Any | None) -> None:
 
 
 def act(view: GatewayView, action: str) -> gateway_lifecycle.Outcome:
-    """Run ``start`` (stopped only), ``restart`` (proven ours only) or the
-    service install, then refresh the runtime's endpoint view."""
+    """Run ``start`` (stopped only), ``restart`` (proven ours, not held; the
+    restart itself evaluates the hold again) or the service install, then
+    refresh the runtime's endpoint view."""
 
     runtime = view.runtime
     if runtime is not None and not getattr(runtime, "allow_state_writes", True):
@@ -158,6 +263,14 @@ _ACTION_TEXT = {"start": "Starting the gateway", "restart": "Restarting the gate
 
 def _run_suspended(win: Any, view: GatewayView, action: str, tty_in: TextIO, tty_out: TextIO) -> str:
     with tui.suspended_curses(win):
+        if action == "restart" and not confirm_restart(view, tty_in, tty_out):
+            tty_out.write("Not restarted; nothing was done.\n\nPress Enter to return to charmer.")
+            tty_out.flush()
+            try:
+                tty_in.readline()
+            except KeyboardInterrupt:
+                pass
+            return "gateway not restarted"
         tty_out.write(f"{_ACTION_TEXT[action]} (at most {gateway_lifecycle.START_READINESS_TIMEOUT:g} s)…\n")
         tty_out.flush()
         outcome = act(view, action)
@@ -184,6 +297,8 @@ def dialog(runtime: Any, win: Any, palette: tui.Palette, *, background: Callable
         buttons.append(("Restart now", "restart"))
     if view.can_install_service:
         buttons.append(("Install service", "service"))
+    if view.held:
+        buttons.append(("Hold details", "hold"))
     buttons += [("Show log", "log"), ("Close", None)]
     lines = [view.headline()]
     if view.gateway is not None:
@@ -192,6 +307,7 @@ def dialog(runtime: Any, win: Any, palette: tui.Palette, *, background: Callable
         lines.append(view.service_line())
     if view.inhibition is not None:
         lines.append(view.inhibition)
+    lines.extend(view.hold_summary())
     lines.append("Stop it from a terminal: charmer gateway stop.")
     # Wrapped to the box, so no remedy is cut off (the inhibition's above all).
     body = [piece for line in lines for piece in screens_common.modal_lines(line, win)]
@@ -199,6 +315,9 @@ def dialog(runtime: Any, win: Any, palette: tui.Palette, *, background: Callable
     if choice == "log":
         title, text = log_view(view)
         tui.TextView(title, text, palette=palette).run(win)
+        return ""
+    if choice == "hold":
+        tui.TextView(HOLD_TITLE, [termtext.visible_text(line) for line in view.hold_lines()], palette=palette).run(win)
         return ""
     if choice in ("start", "restart", "service"):
         return _run_suspended(win, view, choice, tty_in or sys.stdin, tty_out or sys.stdout)
@@ -214,6 +333,8 @@ def health_prompt(runtime: Any, tty_in: TextIO, tty_out: TextIO) -> str | None:
     tty_out.write("\n" + termtext.visible_text(view.headline()) + "\n")
     if view.inhibition is not None:
         tty_out.write(termtext.visible_text(view.inhibition) + "\n")
+    for line in view.hold_lines():
+        tty_out.write(termtext.visible_text(line) + "\n")
     offers = []
     if view.can_start:
         offers.append("s  start it now")
@@ -236,6 +357,12 @@ def health_prompt(runtime: Any, tty_in: TextIO, tty_out: TextIO) -> str | None:
             action == "restart" and not view.can_restart) or (
             action == "service" and not view.can_install_service):
         return None
+    if action == "restart":
+        tty_out.write("\n")
+        if not confirm_restart(view, tty_in, tty_out):
+            tty_out.write("Not restarted; nothing was done.\n")
+            tty_out.flush()
+            return None
     tty_out.write(f"\n{_ACTION_TEXT[action]} (at most {gateway_lifecycle.START_READINESS_TIMEOUT:g} s)…\n")
     tty_out.flush()
     for line in act(view, action).lines():
