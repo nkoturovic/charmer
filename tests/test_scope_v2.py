@@ -876,6 +876,42 @@ class ForkPolicyDriftTests(unittest.TestCase):
         edited["env"]["CLAUDE_CODE_SUBAGENT_MODEL"] = "charmer-opus-5[1m]"
         self.assertFalse(self.drift(self.plan, edited)[1])
 
+    def test_a_default_mode_difference_alongside_is_lazy_too(self) -> None:
+        """The permission default mode (presence or value) is lazy on its
+        own (``default_mode_drift``); beside the fork deny of another
+        release it stays lazy, and doctor reports both."""
+
+        settings = self.plan.settings
+        earlier = self.without(settings, compiler.FORK_AGENT_DENY)
+        for label, mode in (("value", "acceptEdits"), ("presence", None)):
+            with self.subTest(default_mode=label):
+                live = copy.deepcopy(earlier)
+                if mode is None:
+                    live["permissions"].pop("defaultMode", None)
+                    plan = dataclasses.replace(self.plan, settings={
+                        **settings, "permissions": {**settings["permissions"],
+                                                    "defaultMode": scope.PERMISSION_DEFAULT_MODE}})
+                else:
+                    live["permissions"]["defaultMode"] = mode
+                    plan = self.plan
+                self.assertTrue(self.drift(plan, live)[1])
+                # The default mode alone is not fork drift (default_mode_drift owns it).
+                alone = copy.deepcopy(live)
+                alone["permissions"]["deny"] = list(plan.settings["permissions"]["deny"])
+                self.assertFalse(self.drift(plan, alone)[1])
+                # Anything else alongside stays BLOCK.
+                other = copy.deepcopy(live)
+                other["permissions"]["deny"].remove("Agent(claude)")
+                self.assertFalse(self.drift(plan, other)[1])
+                other = copy.deepcopy(live)
+                other["permissions"]["allow"] = ["Bash(rm:*)"]
+                self.assertFalse(self.drift(plan, other)[1])
+        # The fork deny moved within the list is no release difference.
+        moved = self.without(settings, compiler.FORK_AGENT_DENY)
+        moved["permissions"]["deny"].append(compiler.FORK_AGENT_DENY)
+        self.assertNotEqual(moved, settings)
+        self.assertFalse(self.drift(self.plan, moved)[1])
+
 
 class DenyTests(unittest.TestCase):
     def test_seed_denies(self) -> None:

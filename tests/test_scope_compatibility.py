@@ -234,6 +234,43 @@ class ScopeCompatibilityTests(unittest.TestCase):
             problems, _attention, _info = doctor._check_scope_integrity(reader, self.record)
         self.assertTrue(any("scope differs" in line for line in problems))
 
+    def test_doctor_composes_the_fork_deny_with_a_default_mode_difference(self):
+        """A baseline scope without the fork deny whose permission default
+        mode also differs from the compile is lazy on both counts (both
+        Attention lines, no problem); another settings or deny change
+        alongside stays BLOCK."""
+
+        self.load()
+        parts = transition.RuntimeParts(
+            docs=self.docs, prompt_bodies=self.prompts, hook_command=HOOK,
+            token_helper_command=HELPER, environ={}, managed_root=self.root / "managed")
+        reader = SimpleNamespace(
+            session_store=SimpleNamespace(root=self.root), converge_parts=lambda: parts,
+            catalog=SimpleNamespace(bundle_sha256=self.record["catalog_hash"]), environ={})
+        path = self.live / scope.SETTINGS_RELPATH
+        document = strict_json.loads(path.read_bytes())
+        document["permissions"]["defaultMode"] = "acceptEdits"
+        state.atomic_write(path, strict_json.canonical_file_bytes(document))
+
+        def check(settings_document):
+            state.atomic_write(path, strict_json.canonical_file_bytes(settings_document))
+            with mock.patch.object(compiler, "git_work_tree", return_value=True):
+                return doctor._check_scope_integrity(reader, self.record)[:2]
+
+        problems, attention = check(document)
+        self.assertEqual(problems, [])
+        self.assertIn(cli_text.FORK_POLICY_DRIFT.format(m8=MID[:8], mid=MID), attention)
+        self.assertIn(cli_text.DEFAULT_MODE_DRIFT.format(m8=MID[:8], mid=MID), attention)
+        extra_deny = copy.deepcopy(document)
+        extra_deny["permissions"]["deny"].append("Bash(rm:*)")
+        edited_key = copy.deepcopy(document)
+        edited_key["workflowSizeGuideline"] = "large"
+        for label, edited in (("deny", extra_deny), ("settings", edited_key)):
+            with self.subTest(alongside=label):
+                problems, attention = check(edited)
+                self.assertTrue(any("scope differs" in line for line in problems), problems)
+                self.assertNotIn(cli_text.FORK_POLICY_DRIFT.format(m8=MID[:8], mid=MID), attention)
+
     def test_converge_leaves_proven_baseline_files_and_record_unchanged(self):
         self.load()
         store = sessions.SessionStore(self.root, strict_json.load(FIXTURE_ROOT / "schemas" / "session.schema.json"))
