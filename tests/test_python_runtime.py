@@ -14,6 +14,7 @@ import json
 import marshal
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -22,7 +23,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from _release import PYTHON_RUNTIME, RUNTIMES_JSON, load_tool, requires_release_tree
+from _release import BUNDLE_TOOL, PYTHON_RUNTIME, RUNTIMES_JSON, load_tool, requires_release_tree
 
 
 def _tar(entries: list[tuple[str, str, object]]) -> bytes:
@@ -50,53 +51,70 @@ def _tar(entries: list[tuple[str, str, object]]) -> bytes:
     return buffer.getvalue()
 
 
+def _pinned_minor() -> str:
+    """The pinned runtime's X.Y: the synthetic archive has its layout."""
+
+    try:
+        version = json.loads(RUNTIMES_JSON.read_text())["python"]
+    except (OSError, ValueError, KeyError):  # a tree without packaging/ skips these tests
+        return "3.0"
+    return version.rsplit(".", 1)[0]
+
+
+MINOR = _pinned_minor()
+TAG = "cpython-" + MINOR.replace(".", "")
 SYNTHETIC = [
     ("python", "dir", None),
     ("python/bin", "dir", None),
-    ("python/bin/python3.14", "file", b"#!/bin/sh\necho interpreter\n"),
-    ("python/bin/python3", "symlink", "python3.14"),
-    ("python/bin/pip3.14", "file", b"pip"),
-    ("python/bin/pip3", "symlink", "pip3.14"),
-    ("python/bin/idle3.14", "file", b"idle"),
-    ("python/bin/idle3", "symlink", "idle3.14"),
-    ("python/bin/pydoc3.14", "file", b"pydoc"),
-    ("python/bin/pydoc3", "symlink", "pydoc3.14"),
-    ("python/include/python3.14/Python.h", "file", b"/* header */"),
-    ("python/lib/libpython3.14.so.1.0", "file", b"\x7fELF shared"),
-    ("python/lib/libpython3.so", "symlink", "libpython3.14.so.1.0"),
+    (f"python/bin/python{MINOR}", "file", b"#!/bin/sh\necho interpreter\n"),
+    ("python/bin/python3", "symlink", f"python{MINOR}"),
+    (f"python/bin/pip{MINOR}", "file", b"pip"),
+    ("python/bin/pip3", "symlink", f"pip{MINOR}"),
+    (f"python/bin/idle{MINOR}", "file", b"idle"),
+    ("python/bin/idle3", "symlink", f"idle{MINOR}"),
+    (f"python/bin/pydoc{MINOR}", "file", b"pydoc"),
+    ("python/bin/pydoc3", "symlink", f"pydoc{MINOR}"),
+    (f"python/include/python{MINOR}/Python.h", "file", b"/* header */"),
+    (f"python/lib/libpython{MINOR}.so.1.0", "file", b"\x7fELF shared"),
+    ("python/lib/libpython3.so", "symlink", f"libpython{MINOR}.so.1.0"),
     ("python/lib/libtcl9.0.so", "file", b"tcl"),
     ("python/lib/libtk9.0.so", "file", b"tk"),
     ("python/lib/tcl9.0/init.tcl", "file", b"tcl script"),
     ("python/lib/tk9.0/tk.tcl", "file", b"tk script"),
     ("python/lib/itcl4.3.8/itcl.tcl", "file", b"itcl"),
     ("python/lib/thread3.0.6/thread.tcl", "file", b"thread"),
-    ("python/lib/python3.14/os.py", "file", b"# os\n"),
-    ("python/lib/python3.14/pydoc.py", "file", b"# pydoc module stays\n"),
-    ("python/lib/python3.14/_testcapi_feature.py", "file", b"# test helper\n"),
-    ("python/lib/python3.14/ensurepip/__init__.py", "file", b""),
-    ("python/lib/python3.14/idlelib/idle.py", "file", b""),
-    ("python/lib/python3.14/tkinter/__init__.py", "file", b""),
-    ("python/lib/python3.14/turtledemo/demo.py", "file", b""),
-    ("python/lib/python3.14/turtle.py", "file", b"# kept\n"),
-    ("python/lib/python3.14/lib-dynload/_json.cpython-314-x86_64-linux-gnu.so", "file", b"json"),
-    ("python/lib/python3.14/lib-dynload/_tkinter.cpython-314-x86_64-linux-gnu.so", "file", b"tk"),
-    ("python/lib/python3.14/lib-dynload/_testcapi.cpython-314-x86_64-linux-gnu.so", "file", b"t"),
-    ("python/lib/python3.14/site-packages/README.txt", "file", b"kept"),
-    ("python/lib/python3.14/site-packages/pip/__init__.py", "file", b""),
-    ("python/lib/python3.14/site-packages/pip-25.2.dist-info/METADATA", "file", b""),
-    ("python/lib/python3.14/site-packages/pipx_like/__init__.py", "file", b"# not pip\n"),
+    (f"python/lib/python{MINOR}/os.py", "file", b"# os\n"),
+    (f"python/lib/python{MINOR}/pydoc.py", "file", b"# pydoc module stays\n"),
+    (f"python/lib/python{MINOR}/_testcapi_feature.py", "file", b"# test helper\n"),
+    (f"python/lib/python{MINOR}/ensurepip/__init__.py", "file", b""),
+    (f"python/lib/python{MINOR}/idlelib/idle.py", "file", b""),
+    (f"python/lib/python{MINOR}/tkinter/__init__.py", "file", b""),
+    (f"python/lib/python{MINOR}/turtledemo/demo.py", "file", b""),
+    (f"python/lib/python{MINOR}/turtle.py", "file", b"# kept\n"),
+    (f"python/lib/python{MINOR}/lib-dynload/_json.{TAG}-x86_64-linux-gnu.so", "file", b"json"),
+    (f"python/lib/python{MINOR}/lib-dynload/_tkinter.{TAG}-x86_64-linux-gnu.so", "file", b"tk"),
+    (f"python/lib/python{MINOR}/lib-dynload/_testcapi.{TAG}-x86_64-linux-gnu.so", "file", b"t"),
+    (f"python/lib/python{MINOR}/site-packages/README.txt", "file", b"kept"),
+    (f"python/lib/python{MINOR}/site-packages/pip/__init__.py", "file", b""),
+    (f"python/lib/python{MINOR}/site-packages/pip-25.2.dist-info/METADATA", "file", b""),
+    (f"python/lib/python{MINOR}/site-packages/pipx_like/__init__.py", "file", b"# not pip\n"),
+    (f"python/lib/python{MINOR}/site-packages/distutils-precedence.pth", "file", b"import _distutils_hack\n"),
+    (f"python/lib/python{MINOR}/site-packages/_distutils_hack/__init__.py", "file", b""),
     ("python/share/man/man1/python3.1", "file", b"man"),
     ("python/share/terminfo/x/xterm-256color", "file", b"terminfo"),
     ("python/share/terminfo/x/xterm-hardlink", "hardlink", "python/share/terminfo/x/xterm-256color"),
+    ("python/share/terminfo/a/adm3a", "file", b"terminfo"),
+    ("python/share/terminfo/1/1178", "symlink", "../a/adm3a"),
 ]
 PRUNED = {
-    "bin/idle3", "bin/idle3.14", "bin/pip3", "bin/pip3.14", "bin/pydoc3", "bin/pydoc3.14",
+    "bin/idle3", f"bin/idle{MINOR}", "bin/pip3", f"bin/pip{MINOR}", "bin/pydoc3", f"bin/pydoc{MINOR}",
     "include", "lib/itcl4.3.8", "lib/libtcl9.0.so", "lib/libtk9.0.so", "lib/tcl9.0", "lib/thread3.0.6", "lib/tk9.0",
-    "lib/python3.14/_testcapi_feature.py", "lib/python3.14/ensurepip", "lib/python3.14/idlelib",
-    "lib/python3.14/tkinter", "lib/python3.14/turtledemo",
-    "lib/python3.14/lib-dynload/_tkinter.cpython-314-x86_64-linux-gnu.so",
-    "lib/python3.14/lib-dynload/_testcapi.cpython-314-x86_64-linux-gnu.so",
-    "lib/python3.14/site-packages/pip", "lib/python3.14/site-packages/pip-25.2.dist-info",
+    f"lib/python{MINOR}/_testcapi_feature.py", f"lib/python{MINOR}/ensurepip", f"lib/python{MINOR}/idlelib",
+    f"lib/python{MINOR}/tkinter", f"lib/python{MINOR}/turtledemo",
+    f"lib/python{MINOR}/lib-dynload/_tkinter.{TAG}-x86_64-linux-gnu.so",
+    f"lib/python{MINOR}/lib-dynload/_testcapi.{TAG}-x86_64-linux-gnu.so",
+    f"lib/python{MINOR}/site-packages/pip", f"lib/python{MINOR}/site-packages/pip-25.2.dist-info",
+    f"lib/python{MINOR}/site-packages/distutils-precedence.pth", f"lib/python{MINOR}/site-packages/_distutils_hack",
     "share/man",
 }
 
@@ -134,19 +152,52 @@ class ManifestTests(RuntimeTestCase):
     def test_shipped_manifest_is_consistent(self) -> None:
         runtimes = self.tool.load(RUNTIMES_JSON)
         self.assertEqual(sorted(runtimes.targets), sorted(self.tool.TRIPLES))
-        self.assertTrue(runtimes.python.startswith("3.14."))
+        self.assertEqual(runtimes.python, "3.15.0")
+        self.assertEqual(runtimes.minor, MINOR)
         for target, runtime in runtimes.targets.items():
             with self.subTest(target):
                 self.assertIn(runtime.triple, runtime.filename)
+                self.assertNotIn("freethreaded", runtime.filename)
                 self.assertTrue(runtime.url.startswith("https://github.com/astral-sh/python-build-standalone/releases/download/"))
                 self.assertIn("%2B", runtime.url)
                 self.assertNotIn("+", runtime.url)
                 self.assertTrue(runtime.url.endswith(runtime.filename.replace("+", "%2B")))
         self.assertEqual(list(runtimes.prune), sorted(set(runtimes.prune)))
-        for component in ("bin/pip*", "lib/python3.14/ensurepip", "lib/python3.14/tkinter", "include", "share/man",
-                          "lib/itcl*", "lib/thread*"):
+        for component in ("bin/pip*", f"lib/python{MINOR}/ensurepip", f"lib/python{MINOR}/tkinter", "include",
+                          "share/man", "lib/itcl*", "lib/thread*",
+                          f"lib/python{MINOR}/site-packages/distutils-precedence.pth"):
             self.assertIn(component, runtimes.prune)
         self.assertFalse(any(p.startswith("share/terminfo") for p in runtimes.prune))
+        # Every version-specific entry is a template in the file itself.
+        written = self.shipped["prune"]
+        self.assertFalse([entry for entry in written if re.search(r"python3\.\d", entry)])
+        versioned = [entry for entry in written if entry.startswith("lib/python")]
+        self.assertTrue(versioned)
+        self.assertTrue(all(entry.startswith("lib/python{python_minor}/") for entry in versioned), versioned)
+
+    def test_prune_entries_follow_the_pinned_version(self) -> None:
+        """Moving the pin to another minor moves every version-specific
+        entry with it; a literal minor (which would silently match nothing
+        after the next move) and any other placeholder are refused."""
+
+        document = json.loads(json.dumps(self.shipped))
+        document["python"] = "3.16.1"
+        for entry in document["targets"].values():
+            entry["filename"] = entry["filename"].replace(f"cpython-{self.shipped['python']}+",
+                                                          "cpython-3.16.1+")
+        path = self.tmp / "next.json"
+        path.write_text(json.dumps(document))
+        moved = self.tool.load(path)
+        self.assertIn("lib/python3.16/ensurepip", moved.prune)
+        self.assertFalse([p for p in moved.prune if f"python{MINOR}/" in p])
+        self.assertEqual(self.tool.expand_pattern("lib/python{python_minor}/x", "3.11.4"), "lib/python3.11/x")
+        for entry, needle in (("lib/python3.15/ensurepip", "names a CPython minor version"),
+                              ("lib/libpython3.15.so", "names a CPython minor version"),
+                              ("lib/python{python_version}/x", "the only placeholder"),
+                              ("lib/python{python_minor/x", "the only placeholder")):
+            with self.subTest(entry):
+                with self.assertRaisesRegex(self.tool.BuildError, needle):
+                    self.tool.load(self.manifest(prune=sorted(["include", entry])))
 
     def test_manifest_refusals(self) -> None:
         cases = {
@@ -245,23 +296,52 @@ class ExtractPruneTests(RuntimeTestCase):
         self.assertTrue(set(after) <= set(before))
         self.assertEqual({k: before[k] for k in after}, after)
         self.assertTrue((root / "share/terminfo/x/xterm-256color").is_file())
-        self.assertTrue((root / "lib/python3.14/pydoc.py").is_file())
-        self.assertTrue((root / "lib/python3.14/site-packages/pipx_like/__init__.py").is_file())
-        self.assertEqual(os.readlink(root / "bin/python3"), "python3.14")
+        self.assertTrue((root / "share/terminfo/1/1178").is_file())  # a relative link within the runtime
+        self.assertTrue((root / f"lib/python{MINOR}/pydoc.py").is_file())
+        self.assertTrue((root / f"lib/python{MINOR}/site-packages/pipx_like/__init__.py").is_file())
+        self.assertEqual(os.readlink(root / "bin/python3"), f"python{MINOR}")
         self.assertEqual(self.tool.dangling_links(root), [])
+        self.assertEqual(self.tool.startup_files(root), [])
 
     def test_a_prune_gap_is_reported(self) -> None:
-        archive = _tar(SYNTHETIC + [("python/bin/pip", "symlink", "pip3.14")])
+        archive = _tar(SYNTHETIC + [("python/bin/pip", "symlink", f"pip{MINOR}")])
         runtimes = self.tool.load(self.manifest(archive, prune=["bin/pip3*"]))
         with self.assertRaisesRegex(self.tool.BuildError, "dangling links: bin/pip"):
             self.tool.prepare(runtimes, "linux-x86_64", self.tmp / "b", cache=self.tmp / "c",
                               opener=self.opener(archive))
 
+    def test_startup_files_left_after_pruning_are_refused(self) -> None:
+        """-I does not skip the site module: a .pth or .start file in a site
+        directory, or a sitecustomize/usercustomize module anywhere on the
+        path, would run at every start. The runtime ships none."""
+
+        site = f"python/lib/python{MINOR}/site-packages"
+        cases = [
+            ([(f"{site}/zz-hook.pth", "file", b"import os\n")], f"lib/python{MINOR}/site-packages/zz-hook.pth"),
+            ([(f"{site}/zz-hook.start", "file", b"pkg.mod:main\n")], f"lib/python{MINOR}/site-packages/zz-hook.start"),
+            ([(f"python/lib/python{MINOR}/sitecustomize.py", "file", b"x = 1\n")], f"lib/python{MINOR}/sitecustomize.py"),
+            ([(f"{site}/usercustomize", "dir", None), (f"{site}/usercustomize/__init__.py", "file", b"")],
+             f"lib/python{MINOR}/site-packages/usercustomize"),
+        ]
+        for extra, found in cases:
+            with self.subTest(found):
+                archive = _tar(SYNTHETIC + list(extra))
+                runtimes = self.tool.load(self.manifest(archive))
+                dest = self.tmp / f"startup-{len(list(self.tmp.iterdir()))}"
+                with self.assertRaisesRegex(self.tool.BuildError, f"runs at startup: {re.escape(found)}"):
+                    self.tool.prepare(runtimes, "linux-x86_64", dest, cache=self.tmp / "c", opener=self.opener(archive))
+        # The setuptools hook the prune list names is removed, so it passes.
+        archive = _tar(SYNTHETIC)
+        result = self.tool.prepare(self.tool.load(self.manifest(archive)), "linux-x86_64", self.tmp / "clean",
+                                   cache=self.tmp / "c", opener=self.opener(archive))
+        self.assertIn(f"lib/python{MINOR}/site-packages/distutils-precedence.pth", result["removed"])
+
     def test_a_store_path_reference_is_refused(self) -> None:
         store = b"/nix/store/" + b"0" * 31 + b"a-glibc-2.40/lib/ld-linux-x86-64.so.2"
-        archive = _tar(SYNTHETIC + [("python/lib/python3.14/lib-dynload/_ssl.so", "file", b"\x7fELF" + store)])
+        archive = _tar(SYNTHETIC + [(f"python/lib/python{MINOR}/lib-dynload/_ssl.so", "file", b"\x7fELF" + store)])
         runtimes = self.tool.load(self.manifest(archive))
-        with self.assertRaisesRegex(self.tool.BuildError, "names /nix/store paths: lib/python3.14/lib-dynload/_ssl.so"):
+        with self.assertRaisesRegex(self.tool.BuildError,
+                                    f"names /nix/store paths: lib/python{MINOR}/lib-dynload/_ssl.so"):
             self.tool.prepare(runtimes, "linux-x86_64", self.tmp / "b", cache=self.tmp / "c",
                               opener=self.opener(archive))
         # The bare prefix in path-detection text is not a concrete store path.
@@ -295,6 +375,20 @@ class ExtractPruneTests(RuntimeTestCase):
             "dangling hard link": base + [("python/h", "hardlink", "python/nowhere")],
             "fifo": base + [("python/pipe", "fifo", None)],
             "no interpreter": [("python", "dir", None), ("python/lib/x", "file", b"x")],
+            # Each link alone stays inside python/; followed together they
+            # leave it (the names are checked as the tree will resolve them).
+            "symlink chain": base + [("python/d", "symlink", "."), ("python/d/e", "symlink", ".."),
+                                     ("python/d/e/f", "symlink", ".."), ("python/d/e/f/evil", "file", b"x")],
+            "link through a later link": base + [("python/x", "symlink", "d/.."), ("python/d", "symlink", ".")],
+            "member below a symlink": base + [("python/up", "symlink", "."), ("python/up/file", "file", b"x")],
+            "self-referencing link": base + [("python/loop", "symlink", "loop")],
+            # tarfile's link fallback would recreate the symlink at the hard
+            # link's place, where "../b" points outside python/.
+            "hard link to a symlink": base + [("python/a", "dir", None), ("python/a/s", "symlink", "../b"),
+                                               ("python/h", "hardlink", "python/a/s")],
+            "hard link to a directory": base + [("python/sub", "dir", None), ("python/h", "hardlink", "python/sub")],
+            "hard link to a later file": base + [("python/h", "hardlink", "python/later"),
+                                                  ("python/later", "file", b"x")],
         }
         for label, entries in cases.items():
             with self.subTest(label):
@@ -302,6 +396,8 @@ class ExtractPruneTests(RuntimeTestCase):
                 with self.assertRaises(self.tool.BuildError):
                     self.tool.extract(self._archive_file(_tar(entries)), dest)
                 self.assertFalse((self.tmp / "evil").exists())
+                if label != "no interpreter":  # every member is checked before anything is written
+                    self.assertEqual(list(dest.iterdir()) if dest.exists() else [], [])
         occupied = self.tmp / "occupied"
         occupied.mkdir()
         (occupied / "x").write_text("")
@@ -310,7 +406,7 @@ class ExtractPruneTests(RuntimeTestCase):
 
 
 class BytecodeTests(RuntimeTestCase):
-    DDIR = "lib/python3.14/site-packages"  # the launcher package's place in a bundle
+    DDIR = f"lib/python{MINOR}/site-packages"  # the launcher package's place in a bundle
 
     def _tree(self, name: str) -> Path:
         tree = self.tmp / name / "src"
@@ -321,7 +417,7 @@ class BytecodeTests(RuntimeTestCase):
             "def f(x):\n    return x in {'alpha', 'beta', 'gamma', 'delta'}\n")
         stale = tree / "pkg" / "__pycache__"
         stale.mkdir()
-        (stale / "gone.cpython-314.pyc").write_bytes(b"stale")
+        (stale / f"gone.{sys.implementation.cache_tag}.pyc").write_bytes(b"stale")
         return tree
 
     def test_compile_is_deterministic_unchecked_hash_with_in_bundle_names(self) -> None:
@@ -331,7 +427,7 @@ class BytecodeTests(RuntimeTestCase):
         self.tool.compile_tree(sys.executable, second, self.DDIR, 1800000000, expected_version=version)
         self.assertEqual(len(files), 3)
         self.assertFalse(any("gone" in f for f in files))
-        self.assertFalse((first / "pkg" / "__pycache__" / "gone.cpython-314.pyc").exists())
+        self.assertFalse((first / "pkg" / "__pycache__" / f"gone.{sys.implementation.cache_tag}.pyc").exists())
         self.assertEqual(self.tool.pyc_digest(first), self.tool.pyc_digest(second))
         tag = sys.implementation.cache_tag
         data = (first / "pkg" / "sub" / "__pycache__" / f"mod.{tag}.pyc").read_bytes()
@@ -360,6 +456,61 @@ class BytecodeTests(RuntimeTestCase):
                       "--cache", str(self.tmp / "empty-cache"), "--offline")
         self.assertEqual(refused.returncode, 1)
         self.assertIn("offline", refused.stderr)
+
+    def running_manifest(self) -> Path:
+        """The shipped manifest pinned to the interpreter running the tests."""
+
+        document = json.loads(json.dumps(self.shipped))
+        version = platform.python_version()
+        document["python"] = version
+        for entry in document["targets"].values():
+            entry["filename"] = entry["filename"].replace(f"cpython-{self.shipped['python']}+", f"cpython-{version}+")
+        path = self.tmp / "running.json"
+        path.write_text(json.dumps(document))
+        return path
+
+    def test_two_builders_cannot_embed_different_paths(self) -> None:
+        """CI compiles the launcher on Linux and macOS with --bundle-site; the
+        bundle builder compiles it at bundle.site_dir. Both derive the path
+        from the manifest's version, so the bytecode names the bundle's real
+        place on every builder, and any other path changes the digest."""
+
+        bundle = load_tool(BUNDLE_TOOL, "bundle")
+        shipped = self.tool.load(RUNTIMES_JSON)
+        self.assertEqual(self.tool.bundle_site_dir(shipped), bundle.site_dir(shipped.python))
+        self.assertEqual(self.tool.bundle_site_dir(shipped), f"lib/python{MINOR}/site-packages")
+        running = self.tool.load(self.running_manifest())
+        site = self.tool.bundle_site_dir(running)
+        self.assertEqual(site, f"lib/python{sys.version_info[0]}.{sys.version_info[1]}/site-packages")
+        env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(self.tmp / "home"), "LC_ALL": "C"}
+        (self.tmp / "home").mkdir()
+
+        def compile_cli(tree: Path, *options: str, manifest: Path = RUNTIMES_JSON) -> subprocess.CompletedProcess[str]:
+            return subprocess.run([sys.executable, str(PYTHON_RUNTIME), "--manifest", str(manifest), "compile",
+                                   "--python", sys.executable, "--tree", str(tree), *options, "--epoch", "1"],
+                                  capture_output=True, text=True, env=env, cwd=self.tmp, stdin=subprocess.DEVNULL,
+                                  timeout=120)
+
+        ci = self._tree("ci")  # what the workflow copies (cp -R src)
+        staged = self.tmp / "staged" / site
+        bundle.copy_tree(ci / "pkg", staged / "pkg")  # what the bundle builder stages
+        first = compile_cli(ci, "--bundle-site", manifest=self.running_manifest())
+        self.assertEqual(first.returncode, 0, first.stderr)
+        self.assertEqual(json.loads(first.stdout)["ddir"], site)
+        self.tool.compile_tree(sys.executable, staged, site, 0, expected_version=running.python)
+        self.assertEqual(json.loads(first.stdout)["pyc_sha256"], self.tool.pyc_digest(staged))
+        code = marshal.loads((ci / "pkg" / "sub" / "__pycache__" / f"mod.{sys.implementation.cache_tag}.pyc")
+                             .read_bytes()[16:])
+        self.assertEqual(code.co_filename, f"{site}/pkg/sub/mod.py")
+        other = compile_cli(self._tree("other"), "--ddir", "lib/python3.0/site-packages")
+        self.assertNotEqual(json.loads(other.stdout)["pyc_sha256"], json.loads(first.stdout)["pyc_sha256"])
+        # The pinned version decides: another interpreter cannot compile for it.
+        if platform.python_version() != shipped.python:
+            mismatch = compile_cli(self._tree("pinned"), "--bundle-site")
+            self.assertEqual(mismatch.returncode, 1)
+            self.assertIn(f"the bundles pin {shipped.python}", mismatch.stderr)
+        both = compile_cli(self._tree("both"), "--bundle-site", "--ddir", site)
+        self.assertEqual(both.returncode, 2)  # one source of the path, never two
 
 
 if __name__ == "__main__":

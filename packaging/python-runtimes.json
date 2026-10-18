@@ -2,33 +2,33 @@
   "format": 1,
   "source": "python-build-standalone",
   "release": "20261013",
-  "python": "3.14.8",
+  "python": "3.15.0",
   "flavor": "install_only_stripped",
   "url": "https://github.com/astral-sh/python-build-standalone/releases/download/{release}/{filename}",
   "targets": {
     "darwin-arm64": {
       "triple": "aarch64-apple-darwin",
-      "filename": "cpython-3.14.8+20261013-aarch64-apple-darwin-install_only_stripped.tar.gz",
-      "size": 26678949,
-      "sha256": "994adadc202c5df0b4570192cc9a70e3f2c131e512f4a125c56efa8562f44b28"
+      "filename": "cpython-3.15.0+20261013-aarch64-apple-darwin-install_only_stripped.tar.gz",
+      "size": 27654134,
+      "sha256": "b4ab2009803cef142e4ebf2ebef225f6875f83cc35caf4eefb437aa9b2b76783"
     },
     "darwin-x86_64": {
       "triple": "x86_64-apple-darwin",
-      "filename": "cpython-3.14.8+20261013-x86_64-apple-darwin-install_only_stripped.tar.gz",
-      "size": 26894901,
-      "sha256": "f0137337ecf6234b30c9c955219dae2d71e1a00387c4d204d6c6929e24bf9a90"
+      "filename": "cpython-3.15.0+20261013-x86_64-apple-darwin-install_only_stripped.tar.gz",
+      "size": 27752666,
+      "sha256": "4760e8fb2821441c0dbc72be49a25400c6ae90be4daa7e2a49617ed09f6a2919"
     },
     "linux-aarch64": {
       "triple": "aarch64-unknown-linux-gnu",
-      "filename": "cpython-3.14.8+20261013-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz",
-      "size": 30364232,
-      "sha256": "d8ae14f303d3971431184cf423ae5467202de2bc19bf6491a490250b87647d4b"
+      "filename": "cpython-3.15.0+20261013-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz",
+      "size": 31466994,
+      "sha256": "064778ca701efc4c8366d0b235a2a0f5dbe14d921aeb2ef4f5c7b93e5a75cbd0"
     },
     "linux-x86_64": {
       "triple": "x86_64-unknown-linux-gnu",
-      "filename": "cpython-3.14.8+20261013-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz",
-      "size": 36326733,
-      "sha256": "d8faa1b588506b9e3e5a3f57807bb056d534a1641a6b10d15b6ea3f0b413b960"
+      "filename": "cpython-3.15.0+20261013-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz",
+      "size": 37656157,
+      "sha256": "69740dcd9b3480b3d53760f2d3b75582adb14fa54434628dea32480ddede542a"
     }
   },
   "prune": [
@@ -40,21 +40,21 @@
     "lib/itcl*",
     "lib/libtcl*",
     "lib/libtk*",
-    "lib/python3.14/_test*",
-    "lib/python3.14/ensurepip",
-    "lib/python3.14/idlelib",
-    "lib/python3.14/lib-dynload/_dbm*",
-    "lib/python3.14/lib-dynload/_test*",
-    "lib/python3.14/lib-dynload/_tkinter*",
-    "lib/python3.14/lib2to3",
-    "lib/python3.14/site-packages/_distutils_hack",
-    "lib/python3.14/site-packages/distutils-precedence.pth",
-    "lib/python3.14/site-packages/pip",
-    "lib/python3.14/site-packages/pip-*.dist-info",
-    "lib/python3.14/site-packages/setuptools",
-    "lib/python3.14/site-packages/setuptools-*.dist-info",
-    "lib/python3.14/tkinter",
-    "lib/python3.14/turtledemo",
+    "lib/python{python_minor}/_test*",
+    "lib/python{python_minor}/ensurepip",
+    "lib/python{python_minor}/idlelib",
+    "lib/python{python_minor}/lib-dynload/_dbm*",
+    "lib/python{python_minor}/lib-dynload/_test*",
+    "lib/python{python_minor}/lib-dynload/_tkinter*",
+    "lib/python{python_minor}/lib2to3",
+    "lib/python{python_minor}/site-packages/_distutils_hack",
+    "lib/python{python_minor}/site-packages/distutils-precedence.pth",
+    "lib/python{python_minor}/site-packages/pip",
+    "lib/python{python_minor}/site-packages/pip-*.dist-info",
+    "lib/python{python_minor}/site-packages/setuptools",
+    "lib/python{python_minor}/site-packages/setuptools-*.dist-info",
+    "lib/python{python_minor}/tkinter",
+    "lib/python{python_minor}/turtledemo",
     "lib/tcl*",
     "lib/thread*",
     "lib/tk*",

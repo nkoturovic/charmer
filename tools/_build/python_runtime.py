@@ -8,16 +8,27 @@ module
 - fetches an archive and accepts it only when size and sha256 match (a cache
   hit is re-hashed; an offline run reads only the cache),
 - extracts it with every member checked (inside ``python/``, no absolute or
-  escaping links, no device files) and never rewrites a byte,
+  escaping links, links resolved through the archive's other links, nothing
+  below a link, hard links only to earlier regular files, no device files)
+  and never rewrites a byte,
 - prunes the runtime by deleting the entries the manifest's fixed list names
-  (delete-only: nothing is added, patched or stripped), and
+  (delete-only: nothing is added, patched or stripped); an entry names the
+  version-specific directory as ``lib/python{python_minor}``, never as a
+  literal ``python3.X``, so it follows the pinned version,
+- refuses a prepared runtime that keeps a file the ``site`` module would run
+  at startup (``.pth`` and ``.start`` files, ``sitecustomize`` and
+  ``usercustomize``): ``-I`` does not skip ``site``, so the runtime ships
+  none,
 - compiles a source tree to ``.pyc`` with the pinned interpreter native to the
   build host: ``--invalidation-mode unchecked-hash``, source file names given
   by the in-bundle path (``-d``), ``SOURCE_DATE_EPOCH`` set, so every target
   can ship the same bytecode set; ``digest`` prints the identity CI compares
   across builders. In a bundle the launcher package sits in
   ``lib/python3.X/site-packages`` and the runtime's standard library in
-  ``runtime/python/lib/python3.X``; those are the ``--ddir`` values, and
+  ``runtime/python/lib/python3.X``; those are the ``--ddir`` values.
+  ``--bundle-site`` derives the first from the manifest's version (the
+  bundle builder's own ``site_dir``), so two builders cannot embed different
+  paths, and
 - refuses a runtime or bytecode tree that names a concrete ``/nix/store``
   path (bundles must not depend on the build host).
 
@@ -26,7 +37,7 @@ Command line (each prints one JSON document)::
   python_runtime.py fetch --target linux-x86_64 [--cache DIR] [--offline]
   python_runtime.py prepare --target T --dest DIR [--cache DIR] [--offline]
   python_runtime.py host-interpreter --work DIR [--cache DIR] [--offline]
-  python_runtime.py compile --python PY --tree DIR --ddir lib/python3.14/site-packages --epoch N
+  python_runtime.py compile --python PY --tree DIR (--ddir PATH | --bundle-site) --epoch N
   python_runtime.py digest --tree DIR
 """
 
@@ -35,6 +46,7 @@ from __future__ import annotations
 import argparse
 import fnmatch
 import hashlib
+import importlib.util
 import json
 import os
 import platform
@@ -65,6 +77,15 @@ _CHUNK = 1 << 20
 _HEX64 = re.compile(r"[0-9a-f]{64}")
 # A concrete store path: the prefix, 32 characters of Nix's base-32 alphabet, a dash.
 _STORE_PATH = re.compile(rb"/nix/store/[0-9a-df-np-sv-z]{32}-")
+# The one placeholder a prune entry may use: the pinned version's X.Y.
+MINOR_FIELD = "{python_minor}"
+_LITERAL_MINOR = re.compile(r"python3\.[0-9]+")
+# What the site module runs at startup, even under -I: .pth and .start files
+# in a site directory, and the sitecustomize/usercustomize modules anywhere
+# on the path.
+STARTUP_SUFFIXES = (".pth", ".start")
+STARTUP_MODULES = ("sitecustomize", "usercustomize")
+_LINK_DEPTH = 40
 
 Opener = Callable[[str], BinaryIO]
 
@@ -88,7 +109,11 @@ class Runtimes:
     release: str
     python: str
     targets: dict[str, Runtime]
-    prune: tuple[str, ...]
+    prune: tuple[str, ...]  # expanded for ``python``
+
+    @property
+    def minor(self) -> str:
+        return python_minor(self.python)
 
     def runtime(self, target: str) -> Runtime:
         try:
@@ -100,6 +125,14 @@ class Runtimes:
 # --------------------------------------------------------------- manifest
 
 
+def python_minor(version: str) -> str:
+    """``3.15`` for ``3.15.0``."""
+
+    if not re.fullmatch(r"3\.[0-9]+\.[0-9]+", version):
+        raise BuildError(f"not an exact CPython version: {version!r}")
+    return version.rsplit(".", 1)[0]
+
+
 def _check_pattern(pattern: object) -> str:
     if not isinstance(pattern, str) or not pattern:
         raise BuildError(f"prune entry {pattern!r} is not a path pattern")
@@ -107,6 +140,21 @@ def _check_pattern(pattern: object) -> str:
     if (pattern.startswith("/") or "\\" in pattern or any(s in ("", ".", "..") for s in segments)):
         raise BuildError(f"prune entry {pattern!r} must be a relative path without '..'")
     return pattern
+
+
+def expand_pattern(template: str, version: str) -> str:
+    """A manifest prune entry for ``version``: ``{python_minor}`` becomes its
+    X.Y. A literal ``python3.X`` is refused: it would silently match nothing
+    once the pin moves to another minor version."""
+
+    _check_pattern(template)
+    if _LITERAL_MINOR.search(template):
+        raise BuildError(f"prune entry {template!r} names a CPython minor version; write "
+                         f"{MINOR_FIELD} so it follows the pinned version")
+    rest = template.replace(MINOR_FIELD, "")
+    if "{" in rest or "}" in rest:
+        raise BuildError(f"prune entry {template!r}: {MINOR_FIELD} is the only placeholder")
+    return template.replace(MINOR_FIELD, python_minor(version))
 
 
 def load(path: Path | str = MANIFEST) -> Runtimes:
@@ -152,9 +200,10 @@ def load(path: Path | str = MANIFEST) -> Runtimes:
     prune = document["prune"]
     if not isinstance(prune, list):
         raise BuildError(f"{path}: prune must be a list")
-    patterns = tuple(_check_pattern(p) for p in prune)
-    if list(patterns) != sorted(set(patterns)):
+    templates = [_check_pattern(p) for p in prune]
+    if templates != sorted(set(templates)):
         raise BuildError(f"{path}: prune entries must be sorted and unique")
+    patterns = tuple(expand_pattern(p, version) for p in templates)
     return Runtimes(release=release, python=version, targets=runtimes, prune=patterns)
 
 
@@ -245,23 +294,73 @@ def _inside(name: str) -> bool:
     return name == ROOT_DIR or name.startswith(ROOT_DIR + "/")
 
 
-def _check_member(member: tarfile.TarInfo, seen: set[str]) -> None:
-    name = member.name
-    normal = posixpath.normpath(name)
-    if (name.startswith("/") or normal != name.rstrip("/") or normal.startswith("..")
-            or not _inside(normal)):
-        raise BuildError(f"archive member {name!r} is outside {ROOT_DIR}/")
-    if member.issym():
-        link = member.linkname
-        resolved = posixpath.normpath(posixpath.join(posixpath.dirname(normal), link))
-        if link.startswith("/") or not _inside(resolved):
-            raise BuildError(f"archive symlink {name!r} -> {link!r} escapes {ROOT_DIR}/")
-    elif member.islnk():
-        if posixpath.normpath(member.linkname) not in seen:
-            raise BuildError(f"archive hard link {name!r} names {member.linkname!r}, not an earlier member")
-    elif not (member.isfile() or member.isdir()):
-        raise BuildError(f"archive member {name!r} is not a file, directory or link")
-    seen.add(normal)
+def _resolve_link(path: str, links: dict[str, str]) -> str | None:
+    """``path`` with every symlink of the archive on it followed (the tree
+    as extracted, not the lexical name); None when it leaves the archive
+    root, is absolute or does not settle."""
+
+    pending = path.split("/")
+    resolved: list[str] = []
+    followed = 0
+    while pending:
+        part = pending.pop(0)
+        if part in ("", "."):
+            continue
+        if part == "..":
+            if not resolved:
+                return None
+            resolved.pop()
+            continue
+        resolved.append(part)
+        target = links.get("/".join(resolved))
+        if target is not None:
+            followed += 1
+            if followed > _LINK_DEPTH or target.startswith("/"):
+                return None
+            resolved.pop()
+            pending = target.split("/") + pending
+    return "/".join(resolved)
+
+
+def _check_members(members: list[tarfile.TarInfo]) -> None:
+    """Every member inside ``python/``, nothing below a symlink, every
+    symlink resolving inside ``python/`` through the archive's other
+    symlinks (whatever their order), every hard link naming an earlier
+    regular file, and nothing else than files, directories and links."""
+
+    links: dict[str, str] = {}
+    for member in members:
+        name = member.name
+        normal = posixpath.normpath(name)
+        if (name.startswith("/") or normal != name.rstrip("/") or normal.startswith("..")
+                or not _inside(normal)):
+            raise BuildError(f"archive member {name!r} is outside {ROOT_DIR}/")
+        if member.issym():
+            links[normal] = member.linkname
+    files: set[str] = set()
+    for member in members:
+        normal = posixpath.normpath(member.name)
+        parents = normal.split("/")[:-1]
+        for depth in range(1, len(parents) + 1):
+            if "/".join(parents[:depth]) in links:
+                raise BuildError(f"archive member {member.name!r} lies below the symlink "
+                                 f"{'/'.join(parents[:depth])!r}")
+        if member.issym():
+            link = member.linkname
+            resolved = _resolve_link(posixpath.join(posixpath.dirname(normal), link), links)
+            if link.startswith("/") or resolved is None or not _inside(resolved):
+                raise BuildError(f"archive symlink {member.name!r} -> {link!r} escapes {ROOT_DIR}/")
+        elif member.islnk():
+            # A link to anything else would take tarfile's fallback, which
+            # recreates that member (a symlink, say) at another place.
+            if posixpath.normpath(member.linkname) not in files:
+                raise BuildError(f"archive hard link {member.name!r} names {member.linkname!r}, "
+                                 "not an earlier regular file")
+            files.add(normal)
+        elif member.isfile():
+            files.add(normal)
+        elif not member.isdir():
+            raise BuildError(f"archive member {member.name!r} is not a file, directory or link")
 
 
 def extract(archive: Path, dest: Path) -> Path:
@@ -273,9 +372,7 @@ def extract(archive: Path, dest: Path) -> Path:
         raise BuildError(f"{dest} is not empty")
     with tarfile.open(archive, "r:*") as tar:
         members = tar.getmembers()
-        seen: set[str] = set()
-        for member in members:
-            _check_member(member, seen)
+        _check_members(members)
         if hasattr(tarfile, "data_filter"):
             tar.extractall(dest, members=members, filter="data")
         else:  # pragma: no cover - Python 3.11.0-3.11.3 without extraction filters
@@ -359,6 +456,19 @@ def store_references(root: Path) -> list[str]:
     return found
 
 
+def startup_files(root: Path) -> list[str]:
+    """Everything under ``root`` the ``site`` module could run when the
+    interpreter starts: ``.pth`` and ``.start`` files and ``sitecustomize``
+    or ``usercustomize`` modules (sources, bytecode, extensions, packages)."""
+
+    found = []
+    for directory, dirs, files in os.walk(root):
+        for name in dirs + files:
+            if name.endswith(STARTUP_SUFFIXES) or name.split(".", 1)[0] in STARTUP_MODULES:
+                found.append((Path(directory) / name).relative_to(root).as_posix())
+    return sorted(found)
+
+
 def prepare(runtimes: Runtimes, target: str, dest: Path, *, cache: Path | None = None,
             offline: bool = False, opener: Opener | None = None) -> dict[str, object]:
     """Fetch, extract and prune one target's runtime into ``dest/python``."""
@@ -370,6 +480,10 @@ def prepare(runtimes: Runtimes, target: str, dest: Path, *, cache: Path | None =
     dangling = dangling_links(root)
     if dangling:
         raise BuildError(f"pruning left dangling links: {', '.join(dangling)}")
+    startup = startup_files(root)
+    if startup:
+        raise BuildError(f"the runtime keeps files the site module runs at startup: {', '.join(startup)}; "
+                         "prune them (an installer or build-backend hook is not part of the runtime)")
     stored = store_references(root)
     if stored:
         raise BuildError(f"the runtime names /nix/store paths: {', '.join(stored[:5])}")
@@ -471,6 +585,19 @@ def compile_tree(python: Path | str, tree: Path, ddir: str, epoch: int, *,
     return compiled
 
 
+def bundle_site_dir(runtimes: Runtimes) -> str:
+    """Where a bundle of the pinned version holds the launcher package: the
+    bundle builder's own ``site_dir`` (``bundle.py``), the ``-d`` path its
+    bytecode embeds."""
+
+    spec = importlib.util.spec_from_file_location("_charmer_bundle_layout", Path(__file__).with_name("bundle.py"))
+    if spec is None or spec.loader is None:
+        raise BuildError("cannot load the bundle layout (bundle.py)")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.site_dir(runtimes.python)
+
+
 def pyc_digest(tree: Path) -> str:
     """sha256 over every ``.pyc`` under ``tree`` (sorted relative path + bytes)."""
 
@@ -504,7 +631,11 @@ def main(argv: list[str] | None = None) -> int:
     compile_cmd = sub.add_parser("compile")
     compile_cmd.add_argument("--python", required=True)
     compile_cmd.add_argument("--tree", type=Path, required=True)
-    compile_cmd.add_argument("--ddir", required=True)
+    where = compile_cmd.add_mutually_exclusive_group(required=True)
+    where.add_argument("--ddir", help="the in-bundle path the bytecode names")
+    where.add_argument("--bundle-site", action="store_true",
+                       help="the launcher's place in a bundle of the pinned version (from --manifest); "
+                            "the interpreter must be that version")
     compile_cmd.add_argument("--epoch", type=int, default=None)
     compile_cmd.add_argument("--expect-version", default=None)
     digest_cmd = sub.add_parser("digest")
@@ -515,8 +646,14 @@ def main(argv: list[str] | None = None) -> int:
             result: dict[str, object] = {"pyc_sha256": pyc_digest(args.tree)}
         elif args.command == "compile":
             epoch = args.epoch if args.epoch is not None else int(os.environ.get("SOURCE_DATE_EPOCH", "0"))
-            files = compile_tree(args.python, args.tree, args.ddir, epoch, expected_version=args.expect_version)
-            result = {"compiled": len(files), "pyc_sha256": pyc_digest(args.tree)}
+            ddir, expected = args.ddir, args.expect_version
+            if args.bundle_site:
+                runtimes = load(args.manifest)
+                if expected is not None and expected != runtimes.python:
+                    raise BuildError(f"--expect-version {expected} is not the pinned CPython {runtimes.python}")
+                ddir, expected = bundle_site_dir(runtimes), runtimes.python
+            files = compile_tree(args.python, args.tree, ddir, epoch, expected_version=expected)
+            result = {"compiled": len(files), "ddir": ddir, "pyc_sha256": pyc_digest(args.tree)}
         else:
             runtimes = load(args.manifest)
             if args.command == "fetch":

@@ -52,7 +52,8 @@ class CheckedInTests(unittest.TestCase):
 
     def test_security_refresh_provenance_and_components_move_together(self) -> None:
         self.assertEqual(self.runtimes.release, "20261013")
-        self.assertEqual(self.runtimes.python, "3.14.8")
+        self.assertEqual(self.runtimes.python, "3.15.0")
+        self.assertEqual(self.inventory.document["python"], self.runtimes.python)
         self.assertIn("0a176490488b79448ef66087e480bf0966c8450849ff0c168a9a26cd1756abea",
                       self.inventory.document["source"]["versions"])
         for target in self.runtimes.targets:
@@ -65,6 +66,21 @@ class CheckedInTests(unittest.TestCase):
                 self.assertIn("expat 2.9.0", notices)
                 self.assertIn("libffi 3.8.0", notices)
                 self.assertIn("20261013", self.inventory.target(target)["full_archive"]["filename"])
+
+    def test_the_runtimes_are_the_default_build(self) -> None:
+        """Read from each full archive's PYTHON.json when the inventory was
+        derived: the GIL enabled (not a free-threaded build), the
+        experimental JIT compiled in but off by default, or not built
+        (python-build-standalone builds none for Intel macOS)."""
+
+        for target in self.runtimes.targets:
+            with self.subTest(target):
+                build = self.inventory.target(target)["build"]
+                self.assertEqual(build["gil"], "enabled")
+                self.assertEqual(build["options"], "pgo+lto")
+                self.assertEqual(build["jit"], "not built" if target == "darwin-x86_64" else "built, off by default")
+                target_inventory = json.loads(self.tool.target_inventory_bytes(self.inventory, target))
+                self.assertEqual(target_inventory["build"], build)  # what each bundle ships in share/licenses/python
 
     def test_every_shipped_library_has_its_text(self) -> None:
         for target, entry in self.inventory.document["targets"].items():
@@ -80,7 +96,7 @@ class CheckedInTests(unittest.TestCase):
                                          self.inventory.document["texts"][name]["sha256"])
 
     def test_the_copyleft_rule(self) -> None:
-        self.assertIn("lib/python3.14/lib-dynload/_dbm*", self.runtimes.prune)
+        self.assertIn(f"lib/python{self.runtimes.minor}/lib-dynload/_dbm*", self.runtimes.prune)
         for target, entry in self.inventory.document["targets"].items():
             with self.subTest(target):
                 for library in entry["libraries"]:
@@ -166,6 +182,8 @@ class RefusalTests(unittest.TestCase):
                 {"extension": first(d)["extensions"][0], "pattern": "x", "libraries": []}),
             "not sorted and unique": lambda d: d["targets"]["linux-x86_64"]["libraries"].append(first(d)),
             "not format 1": lambda d: d.update(format=2),
+            "build (the GIL enabled": lambda d: d["targets"]["linux-x86_64"]["build"].update(gil="disabled"),
+            "the JIT off or not built)": lambda d: d["targets"]["darwin-arm64"]["build"].update(jit="on"),
         }
         for needle, change in cases.items():
             with self.subTest(needle):
@@ -220,8 +238,14 @@ class DeriveTests(unittest.TestCase):
         "zlib": {"version": "1.3.2", "license_file": "LICENSE.zlib.txt", "licenses": ["Zlib"]},
     }
 
-    def archive(self, path: Path, *, with_zstd_text: bool) -> Path:
-        meta = {"licenses": ["Python-2.0", "CNRI-Python"], "build_info": {"extensions": {
+    CONFIG = {"Py_GIL_DISABLED": 0, "ABIFLAGS": "",
+              "CONFIG_ARGS": "'--with-lto=full' '--enable-experimental-jit=yes-off' '--enable-optimizations'"}
+
+    def archive(self, path: Path, *, with_zstd_text: bool, config: dict | None = None,
+                version: str = "3.14.8") -> Path:
+        meta = {"python_version": version, "build_options": "pgo+lto",
+                "python_config_vars": dict(self.CONFIG if config is None else config),
+                "licenses": ["Python-2.0", "CNRI-Python"], "build_info": {"extensions": {
             "_dbm": [{"links": [{"name": "db", "path_static": "build/lib/libdb.a"}],
                       "shared_lib": "install/lib/python3.14/lib-dynload/_dbm.cpython-314-x86_64-linux-gnu.so"}],
             "_ssl": [{"links": [{"name": "crypto", "path_static": "x"}, {"name": "ssl", "path_static": "y"}]}],
@@ -259,6 +283,7 @@ class DeriveTests(unittest.TestCase):
             document, texts = tool.derive({"linux-x86_64": archive},
                                           extra_texts={"LICENSE.zstd.txt": (b"zstd text\n", "supplied")}, **arguments)
             entry = document["targets"]["linux-x86_64"]
+            self.assertEqual(entry["build"], {"options": "pgo+lto", "gil": "enabled", "jit": "built, off by default"})
             self.assertEqual(entry["full_archive"]["sha256"], hashlib.sha256(archive.read_bytes()).hexdigest())
             self.assertEqual([(lib["name"], lib["version"], lib["extensions"]) for lib in entry["libraries"]],
                              [("openssl-3.5", "3.5.9", ["_ssl"]), ("sqlite", "3.53.1", ["_sqlite3"]),
@@ -275,6 +300,35 @@ class DeriveTests(unittest.TestCase):
             tool.write(out, document, texts)
             loaded = tool.load(out)
             self.assertEqual(loaded.document, json.loads(json.dumps(document)))
+
+    def test_only_the_default_build_of_the_pinned_version_is_described(self) -> None:
+        """A free-threaded build, the JIT on by default or a full archive of
+        another CPython version is refused; a target without the JIT is
+        recorded as such."""
+
+        tool, _ = tools()
+        extra = {"LICENSE.zstd.txt": (b"zstd text\n", "supplied")}
+        arguments = dict(install_only={"linux-x86_64": {"filename": "io.tar.gz", "sha256": "1" * 64}},
+                         versions=self.VERSIONS, prune=["lib/python3.14/lib-dynload/_dbm*"],
+                         release="20261001", python="3.14.8", versions_source="downloads.json")
+        refused = {
+            "free-threaded": ({**self.CONFIG, "Py_GIL_DISABLED": 1}, "3.14.8"),
+            "free-threaded abiflags": ({**self.CONFIG, "ABIFLAGS": "t"}, "3.14.8"),
+            "JIT on": ({**self.CONFIG, "CONFIG_ARGS": "'--enable-experimental-jit=yes'"}, "3.14.8"),
+            "JIT bare": ({**self.CONFIG, "CONFIG_ARGS": "'--enable-experimental-jit'"}, "3.14.8"),
+            "another version": (self.CONFIG, "3.14.7"),
+        }
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            for label, (config, version) in refused.items():
+                with self.subTest(label):
+                    archive = self.archive(root / f"{label}.tar.gz", with_zstd_text=True, config=config, version=version)
+                    with self.assertRaises(tool.LicenseError):
+                        tool.derive({"linux-x86_64": archive}, extra_texts=extra, **arguments)
+            archive = self.archive(root / "nojit.tar.gz", with_zstd_text=True,
+                                   config={**self.CONFIG, "CONFIG_ARGS": "'--with-lto=full'"})
+            document, _texts = tool.derive({"linux-x86_64": archive}, extra_texts=extra, **arguments)
+            self.assertEqual(document["targets"]["linux-x86_64"]["build"]["jit"], "not built")
 
 
 if __name__ == "__main__":
