@@ -3032,7 +3032,8 @@ class VulnerabilityWatchTests(unittest.TestCase):
                 mock.patch.object(self.watch, "osv_findings", return_value=[]) as osv:
             report, ok = self.watch.watch("example/project", Path("unused"), "scanner", Path("policy"))
         scanner.assert_called_once_with(Path("unused"), "scanner", Path("policy"))
-        osv.assert_called_once_with([{"commit": "a" * 40}], set(), cpython={"version": "3.14.8"}, reviews=[])
+        shipped = self.watch.cpython_reviews(SCRIPTS.parent / "vulnerability-watch-reviewed.json")
+        osv.assert_called_once_with([{"commit": "a" * 40}], set(), cpython={"version": "3.14.8"}, reviews=shipped)
         self.assertFalse(ok)
         self.assertIn("disposition gateway hash mismatch", self.watch.issue_body(report, ok))
         self.assertEqual(self.watch.issue_body(report, True), "")
@@ -3104,6 +3105,10 @@ class VulnerabilityWatchTests(unittest.TestCase):
                 path.write_text(json.dumps({"format": 1, "cpython": entries}))
                 with self.subTest(entries=entries), self.assertRaises(ValueError):
                     self.watch.cpython_reviews(path)
+
+    def test_shipped_cpython_review_list_validates(self) -> None:
+        reviews = self.watch.cpython_reviews(SCRIPTS.parent / "vulnerability-watch-reviewed.json")
+        self.assertIsInstance(reviews, list)
 
     def test_watch_applies_explicit_cpython_reviews(self) -> None:
         cpython = {"version": "3.14.8", "commit": "a" * 40}
@@ -3240,12 +3245,17 @@ class VulnerabilityWatchTests(unittest.TestCase):
         self.assertIn("Ran 2 tests", result.stderr)
 
     def test_ci_tool_hash_failure_prevents_extraction(self) -> None:
+        real_sha256sum = shutil.which("sha256sum")
+        if real_sha256sum is None:
+            self.skipTest("sha256sum is not installed")
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
             (root / "uname").write_text('#!/bin/sh\ncase "$1" in -s) echo Linux;; -m) echo x86_64;; esac\n')
             (root / "curl").write_text('#!/bin/sh\ntouch "$DOWNLOAD_MARKER"\n'
                                        'while [ "$1" != -o ]; do shift; done\nprintf tampered >"$2"\n')
-            (root / "sha256sum").write_text('#!/bin/sh\ntouch "$HASH_MARKER"\nexit 1\n')
+            # Records that the pinned digest was checked, then lets the real
+            # tool compare the tampered bytes against it.
+            (root / "sha256sum").write_text('#!/bin/sh\ntouch "$HASH_MARKER"\nexec "$REAL_SHA256SUM" "$@"\n')
             (root / "tar").write_text('#!/bin/sh\ntouch "$EXTRACT_MARKER"\n')
             for name in ("uname", "curl", "sha256sum", "tar"):
                 (root / name).chmod(0o755)
@@ -3253,6 +3263,7 @@ class VulnerabilityWatchTests(unittest.TestCase):
                                     env={**os.environ, "PATH": str(root) + os.pathsep + os.environ["PATH"],
                                          "DOWNLOAD_MARKER": str(root / "downloaded"),
                                          "HASH_MARKER": str(root / "hashed"),
+                                         "REAL_SHA256SUM": real_sha256sum,
                                          "EXTRACT_MARKER": str(root / "extracted")}, capture_output=True, timeout=30)
             self.assertTrue((root / "downloaded").exists())
             self.assertTrue((root / "hashed").exists())
