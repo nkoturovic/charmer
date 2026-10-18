@@ -37,13 +37,15 @@ _README = PROBE_BASELINES
 _PROMPT = "❯".encode()
 _LEAD = "probe-lead"
 _AGENT = "probe-agent"
-_DIAGNOSTICS = frozenset({"U1", "X5", "RL", "R19", "RET", "SC", "SX", "SF", "SK", "OC", "FL", "SL"})
+_DIAGNOSTICS = frozenset({"U1", "X5", "RL", "RET", "SC", "SX", "SF", "SK", "OC", "FL", "SL"})
 # FD (feedback drafts) accepts the full lead-and-subagent proof or the explicit client
 # boundary (off suppresses both; notify restores the lead; the client never
-# offers the tool to a subagent); see _feedback_class.
+# offers the tool to a subagent); see _feedback_class. R19 is the model fence's
+# failure policy (the compiled PreModelSwitch hook blocks when its shim cannot
+# answer), so a changed class fails.
 _ESSENTIAL_CLASSES = {"CE": ("CE-A",), "DAH": ("DAH-override",),
                       "FD": ("FD-env-off", "FD-env-off-subagent-withheld"), "CC": ("CC-bash-child",),
-                      "XC": ("XC-exact",)}
+                      "XC": ("XC-exact",), "R19": ("R19-closed",)}
 
 
 def _baseline(probe_id, text):
@@ -181,7 +183,7 @@ class _Recorder:
 
 class ObservationTests(unittest.TestCase):
     def test_diagnostic_changes_are_passing_data(self):
-        self.assertEqual(_DIAGNOSTICS, {"U1", "X5", "RL", "R19", "RET", "SC", "SX", "SF", "SK", "OC", "FL", "SL"})
+        self.assertEqual(_DIAGNOSTICS, {"U1", "X5", "RL", "RET", "SC", "SX", "SF", "SK", "OC", "FL", "SL"})
         for name in _DIAGNOSTICS:
             text = f"client probe {name}: PASS class=old previous observation"
             self.assertIn("changed recorded=old",
@@ -275,7 +277,7 @@ class ObservationTests(unittest.TestCase):
         for cls, changed in ((CompactionEnvironmentProbe, "CE-B"), (DisableAllHooksProbe, "DAH-partial"),
                              (ClientIdentityProbe, "U1-none"), (SpawnCapsProbe, "SC-future"),
                              (SubagentExhaustionProbe, "SX-closed"), (SmallFastProbe, "SF-lead-light"),
-                             (ExactClientProbe, "XC-effort-dropped")):
+                             (ExactClientProbe, "XC-effort-dropped"), (MissingHookProbe, "R19-open")):
             case = cls("test_observation")
             case.evidence = {}
             previous = getattr(cls, "verdict", None)
@@ -295,6 +297,23 @@ class ObservationTests(unittest.TestCase):
                         self.assertEqual(case.verdict[:2], ("PASS", changed))
             finally:
                 cls.verdict = previous
+
+    def test_the_model_fence_class_needs_every_shim_failure_closed(self):
+        closed = {"deny": (False, 1), "allow": (True, 1), "missing": (False, 0),
+                  "not-executable": (False, 0), "crash": (False, 1), "invalid-json": (True, 1),
+                  "timeout": (False, 1)}
+        self.assertEqual(_r19_class(closed), "R19-closed")
+        # A non-JSON answer on exit 0 is no decision: recorded, never required.
+        self.assertEqual(_r19_class(dict(closed, **{"invalid-json": (False, 1)})), "R19-closed")
+        self.assertEqual(_r19_class(dict(closed, missing=(True, 0))), "R19-open")
+        for case in ("not-executable", "crash", "timeout"):
+            with self.subTest(case=case):
+                self.assertEqual(_r19_class(dict(closed, **{case: (True, 1)})), "R19-partial")
+        self.assertEqual(_r19_class(dict(closed, allow=(False, 1))), "R19-working-fence-blocked")
+        self.assertEqual(_r19_class(dict(closed, allow=(True, 0))), "R19-working-fence-blocked")
+        for deny in ((True, 1), (False, 0)):
+            with self.subTest(deny=deny), self.assertRaises(_Inconclusive):
+                _r19_class(dict(closed, deny=deny))
 
     def test_inconclusive_control_keeps_inconclusive_verdict(self):
         case = CompactionEnvironmentProbe("test_observation")
@@ -882,61 +901,133 @@ class ReloadHooksProbe(_ProbeCase, unittest.TestCase):
         return ("RL-hook", "event=" + ",".join(events)) if events else ("RL-none", "no observing hook versus control")
 
 
+# The R19 cases: how the stand-in shim behaves when ``/model`` asks it. ``deny``
+# and ``allow`` are the working fence (the control and an in-set switch);
+# every other case is a shim that cannot answer.
+_R19_FAILURES = ("missing", "not-executable", "crash", "invalid-json", "timeout")
+_R19_CASES = ("deny", "allow", *_R19_FAILURES)
+# A case closes the fence when the switch never reaches the provider. A shim
+# that exits 0 with a non-JSON answer gives the client no decision, so the
+# switch proceeds; the real shim never does that (it forwards the launcher's
+# answer only on exit 0 and otherwise prints its fixed deny).
+_R19_MUST_CLOSE = ("missing", "not-executable", "crash", "timeout")
+
+
+def _r19_class(outcomes):
+    """The R19 class from each case's ``(switched, hook_runs)``. The controls
+    must hold first: the deny keeps the lead after the hook ran, the allow
+    reaches the second model."""
+
+    deny, allow = outcomes["deny"], outcomes["allow"]
+    if deny[0] or not deny[1]:
+        raise _Inconclusive("R19 deny control failed")
+    if not allow[0] or not allow[1]:
+        return "R19-working-fence-blocked"
+    switched = [case for case in _R19_MUST_CLOSE if outcomes[case][0]]
+    if not switched:
+        return "R19-closed"
+    return "R19-open" if outcomes["missing"][0] else "R19-partial"
+
+
+def _r19_shim(mode, log):
+    """The stand-in for ``bin/charmer-hook-3`` in one R19 case: it records
+    that it ran in ``log``, then answers like the case says (metadata only)."""
+
+    decision = {"deny": "deny", "allow": "allow"}.get(mode)
+    source = f'''#!{sys.executable}
+import json, os, sys, time
+fd = os.open({str(log)!r}, os.O_CREAT | os.O_WRONLY | os.O_APPEND, 0o600)
+with os.fdopen(fd, "w") as out: out.write(json.dumps({{"mode": {mode!r}}}) + "\\n")
+'''
+    if decision is not None:
+        source += (f"print(json.dumps({{'hookSpecificOutput': {{'hookEventName': 'PreModelSwitch', "
+                   f"'permissionDecision': {decision!r}, 'permissionDecisionReason': 'probe fence'}}}}))\n")
+    elif mode == "crash":
+        source += "sys.exit(1)\n"
+    elif mode == "invalid-json":
+        source += "print('probe: not a hook answer')\n"
+    elif mode == "timeout":
+        source += "time.sleep(40)\n"
+    else:
+        source += "print('{}')\n"
+    return source.encode()
+
+
 class MissingHookProbe(_ProbeCase, unittest.TestCase):
+    """R19: the compiled PreModelSwitch fence when its shim cannot answer.
+
+    Each case runs the production compile's PreModelSwitch hook entry
+    (command, timeout and failure policy, as ``scope`` writes them); only the
+    shim at the compiled path is a fixture stand-in (:func:`_r19_shim`),
+    removed or made non-executable just before ``/model``."""
+
     probe_id = "R19"
 
     def _probe(self):
         outcomes = {}
-        for remove in (False, True):
+        for case in _R19_CASES:
             fixture = self._fixture()
-            hooks, log, recorder = self._hooks(fixture, ("PreModelSwitch",), deny=True)
+            log = fixture.root / "events.jsonl"
+            shim = state.ensure_private_dir(fixture.root / "state/bin") / "charmer-hook-3"
             bundle = catalog.load_catalog(FIXTURE_ROOT)
             lcat = profile.LineupCatalog.from_docs(bundle.docs)
             eff = settings.effective({"version": 1}, provider_ids=lcat.providers, line_keys=lcat.lines)
             lineup = profile.resolve(bundle.seed_profiles["direct"], lcat, effective=eff)
-            plan = scope.compile_lineup_scope(lineup, lcat, eff, bundle.prompt_bodies,
-                scope.catalog_meta_v2(bundle.docs), lineup_generation=1)
+            managed_id = str(uuid.uuid4())
+            meta = scope.catalog_meta_v2(bundle.docs)
+            plan = scope.compile_lineup_scope(lineup, lcat, eff, bundle.prompt_bodies, meta, lineup_generation=1)
+            # Only the hook entry comes from the lifecycle compile: its env
+            # names the gateway, never the fake provider.
+            hooked = scope.compile_lineup_scope(lineup, lcat, eff, bundle.prompt_bodies, meta, lineup_generation=1,
+                                                managed_id=managed_id, hook_command=str(shim))
             rows = plan.settings["modelPicker"]["options"][:2]
             lead, second = (row["model"] for row in rows)
-            # Keep two compiler-generated rows. The control denies deliberately:
-            # a missing target must not be confused with a permitted switch.
+            # Keep two compiler-generated rows and only the compiled
+            # PreModelSwitch entry; its command names the fixture shim.
+            hooks = {"PreModelSwitch": copy.deepcopy(hooked.settings["hooks"]["PreModelSwitch"])}
             document = {**plan.settings, "model": lead, "availableModels": [lead, second],
                         "modelPicker": {"replaceBuiltInOptions": True, "options": rows},
                         "hooks": hooks}
-            shim = state.ensure_private_dir(fixture.root / "state/bin") / "charmer-hook-3"
-            recorder.rename(shim)
-            for entry in hooks["PreModelSwitch"]:
-                entry["hooks"][0]["command"] = shlex.quote(str(shim))
-            recorder = shim
+            state.atomic_write(shim, _r19_shim(case, log))
+            shim.chmod(0o700)
             other_files = dict(plan.other_files)
             lead_set = strict_json.loads(other_files["lead-set.json"])
             lead_set["rows"] = [row for row in lead_set["rows"] if row["selector"] in (lead, second)]
             first = next(row for row in lead_set["rows"] if row["selector"] == lead)
             lead_set["lead"] = {key: first[key] for key in lead_set["lead"]}
             other_files["lead-set.json"] = strict_json.canonical_file_bytes(lead_set)
-            scope_path = scope.write_scope(fixture.root / "state", str(uuid.uuid4()),
+            scope_path = scope.write_scope(fixture.root / "state", managed_id,
                 scope.ScopePlan(plan.agent_files, document, other_files))
-            def change():
-                if remove:
-                    recorder.unlink()
+
+            def change(case=case, shim=shim):
+                if case == "missing":
+                    shim.unlink()
+                elif case == "not-executable":
+                    shim.chmod(0o600)
             # The switch comes before the first turn: with a cached
             # conversation an allowed switch first asks "Switch model?", and
             # the next typed turn would answer that dialog instead.
+            # A timed-out shim is given its whole budget before the next turn.
+            wait = hooks["PreModelSwitch"][0]["hooks"][0]["timeout"] + 2.0 if case == "timeout" else 0.5
             steps = self._onboarding() + [
                 probe.PTYInteraction(_PROMPT, f"/model {second}\r".encode(), before_send=change),
                 probe.PTYInteraction(_PROMPT, b"probe after\r",
-                                     before_send=lambda: threading.Event().wait(0.5)),
+                                     before_send=lambda wait=wait: threading.Event().wait(wait)),
                 probe.PTYInteraction(b"PROBE-OK", b"", preserve_after_wait=True),
                 probe.PTYInteraction(_PROMPT, b"/exit\r"),
             ]
             result, _ = self._run(fixture, model=lead, document=document, steps=steps,
-                                  extra=("--add-dir", str(scope_path)), timeout=60)
+                                  extra=("--add-dir", str(scope_path)), timeout=90)
             self._complete(result)
-            outcomes[remove] = (any(row.model == second.removesuffix("[1m]") for row in result.requests), len(self._events(log)))
-        self.evidence["missing_hook"] = {str(k): v for k, v in outcomes.items()}
-        if outcomes[False][0] or not outcomes[False][1]:
-            return "unavailable", "present-target negative control failed; hint=disabled"
-        return "R19-open" if outcomes[True][0] else "R19-closed", f"present={outcomes[False]} removed={outcomes[True]}"
+            outcomes[case] = (any(row.model == second.removesuffix("[1m]") for row in result.requests),
+                              len(self._events(log)))
+        self.evidence["missing_hook"] = {case: list(value) for case, value in outcomes.items()}
+        entry = hooks["PreModelSwitch"][0]["hooks"][0]
+        observed = _r19_class(outcomes)
+        detail = (f"onFailure={entry.get('onFailure', 'unset')} timeout={entry.get('timeout')} "
+                  + " ".join(f"{case}={'switched' if outcomes[case][0] else 'kept'}/{outcomes[case][1]}"
+                             for case in _R19_CASES))
+        return observed, detail
 
 
 class _ToolsRecorder(_Recorder):

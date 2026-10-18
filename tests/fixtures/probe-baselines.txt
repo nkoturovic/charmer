@@ -15,7 +15,12 @@ client probe SX: PASS class=SX-open-continue-dies
 client probe SF: PASS class=SF-lead-heavy
 client probe RL: PASS class=RL-none
 client probe RET: PASS class=RET-ok
-client probe R19: PASS class=R19-open
+client probe R19: PASS class=R19-closed
+# R19: the compiled PreModelSwitch hook carries onFailure "block": a missing,
+# non-executable, crashing or timed-out shim keeps the lead (without it the
+# first three switch); deny and allow answers are unchanged. A shim exiting 0
+# with a non-JSON answer gives no decision and the switch proceeds (the real
+# shim answers its own deny on every failure).
 client probe SK: PASS class=SK-kept
 client probe OC: PASS class=OC-untouched
 client probe FL: PASS class=FL-ok
