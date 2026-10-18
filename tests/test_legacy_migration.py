@@ -1575,7 +1575,7 @@ class PurgeSafetyTests(unittest.TestCase):
                 self.assertIsNone(harness.journal().document["purged"])
 
     def test_a_symlinked_directory_never_leads_purge_into_protected_content(self) -> None:
-        for protected in (Path(".claude"), *legacy.LEGACY_PROTECTED):
+        for protected in (Path(".claude"), Path(".local") / "state" / "unrelated-tool"):
             with self.subTest(protected=protected):
                 harness = Harness(self)
                 home = harness.tree.home
@@ -2146,9 +2146,9 @@ class StatusTests(unittest.TestCase):
 class PurgeTests(unittest.TestCase):
     def decoys(self, harness: Harness) -> list[Path]:
         home = harness.tree.home
-        return [lt.write(home / ".local" / "state" / f"{legacy.NAME}-gcroots" / "anchor", "x"),
-                lt.write(home / ".local" / "state" / "cm069-move" / "journal", "x"),
-                lt.write(harness.layout.unit_dir / f"{legacy.NAME}-move-runner.service", "x", 0o644),
+        return [lt.write(home / ".local" / "state" / "unrelated-tool" / "anchor", "x"),
+                lt.write(home / ".local" / "state" / "other-journal" / "journal", "x"),
+                lt.write(harness.layout.unit_dir / "unrelated-tool.service", "x", 0o644),
                 lt.write(home / ".claude" / "settings.json", "{}"),
                 lt.write(home / ".ssh" / "id", "x")]
 
@@ -2269,7 +2269,7 @@ class ResumeAfterMigrationTests(V4Case):
     launch path (a fake client): the same bindings on the same routes and
     windows, under charmer's selectors, hooks and environment."""
 
-    def setUp(self) -> None:  # noqa: D401 - the V4 runtime over a migrated tree
+    def setUp(self) -> None:
         unittest.TestCase.setUp(self)
         self.harness = Harness(self)
         self.layout = self.harness.layout

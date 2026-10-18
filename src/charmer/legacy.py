@@ -217,11 +217,6 @@ LEGACY_OPERATOR_EXPORT_FORMAT = "claude-multi-operator-export"
 # The old build and test caches (HOME-relative), which ``--purge`` removes.
 LEGACY_CACHE_DIRS = (Path(".cache") / "claude-multi-build", Path(".cache") / "claude-multi-test-tmp")
 
-# What ``--purge`` never removes, nor anything inside or around it, however
-# a path reaches it (HOME-relative): the Nix roots an earlier machine move
-# kept for its rollback, and that move's own state.
-LEGACY_PROTECTED = (Path(".local") / "state" / f"{NAME}-gcroots", Path(".local") / "state" / "cm069-move")
-
 # Where the release of the earlier name kept its packaged resources in the
 # source tree (``version.json``, ``catalog/``): ``tools/release.py`` reads a
 # previous release's version there when that release predates the rename.

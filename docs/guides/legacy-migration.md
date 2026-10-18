@@ -151,8 +151,8 @@ or the one its gateway service reads) is reached through a link or a
 `~/.local/share/claude-multi` first: `charmer setup --keys-file <path>`); or
 when a path leads to a folder it never touches. It checks and removes
 through the same open folders, so nothing swapped in between is followed.
-It removes nothing else: never Claude Code's own `~/.claude`, the rollback
-roots and records of an earlier machine move, or charmer's own folders.
+It removes nothing else: every other folder, Claude Code's own `~/.claude`
+and charmer's own folders included, stays as it is.
 
 ## Start fresh instead
 

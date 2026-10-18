@@ -1968,9 +1968,9 @@ def purge_targets(layout: Layout) -> list[Removal]:
     (``rmdir``: a file something wrote there after the move, such as a
     sign-in, stays and is named), the earlier Nix selection directory, the
     earlier data root and the earlier state and configuration roots. Nothing
-    else: never the Nix roots kept for rollback, the earlier machine move's
-    state, its runner unit, charmer's own roots or Claude Code's own
-    directory (:func:`purge_problems`)."""
+    else: every other directory is untouched by construction, and
+    :func:`purge_problems` refuses a target that is, lies in or holds Claude
+    Code's own directory or one of charmer's roots."""
 
     removals = [Removal(layout.legacy_install, True), *(Removal(path, True) for path in layout.legacy_cache_dirs()),
                 Removal(layout.legacy_data / KEPT_DATA[1], False), Removal(layout.legacy_data, False),
@@ -2008,11 +2008,13 @@ def _identity_of(path: Path) -> tuple[int, int] | None:
 
 
 def _protected(layout: Layout) -> list[Path]:
-    """What ``--purge`` never touches, resolved: Claude Code's own directory,
-    the earlier machine move's rollback roots and state, charmer's roots."""
+    """The roots the overlap check names, resolved: Claude Code's own
+    directory (``~/.claude`` and ``CLAUDE_CONFIG_DIR``) and charmer's roots.
+    ``--purge`` removes only its listed targets (:func:`purge_targets`), so
+    every other directory is untouched by construction; this check only
+    refuses a target that is, lies in or holds one of these."""
 
-    roots = [layout.home / ".claude", *(layout.home / relative for relative in legacy.LEGACY_PROTECTED),
-             layout.state, layout.config, layout.gateway, layout.data]
+    roots = [layout.home / ".claude", layout.state, layout.config, layout.gateway, layout.data]
     configured = layout.environ.get("CLAUDE_CONFIG_DIR")
     if configured and os.path.isabs(configured):
         roots.append(Path(configured))
