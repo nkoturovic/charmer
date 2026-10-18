@@ -157,11 +157,30 @@ The vulnerability watch downloads the latest published release from public
 URLs, verifies its signature with the packaged release trust, then verifies
 every bundle against the signed checksums. It never runs downloaded code.
 Binary-mode govulncheck uses the same exact disposition validator as release
-CI. OSV queries the bundles' copy of gateway/licenses/modules.json; CPython
-uses the upstream release tag's commit (OSV GIT ranges), not a PyPI package
-with a similar name. Only matching Go findings validated by the binary gate
-are reviewed automatically. Failures, new traces and unreviewed OSV matches
-update one issue and fail the workflow; no release, pin or disposition changes.
+CI. The default branch's gateway dispositions apply only when their version
+and all four gateway hashes match the signed manifest. Otherwise the watch
+fetches the signed manifest's release tag and reads its dispositions (data
+only; no checkout or execution); the report records the source and file hash.
+OSV queries the bundles' copy of gateway/licenses/modules.json; CPython uses
+the upstream release tag's commit (OSV GIT ranges), not a PyPI package with a
+similar name. Only matching Go findings validated by the binary gate are
+reviewed automatically.
+
+Non-Go reviews live in `vulnerability-watch-reviewed.json` (`format: 1`,
+`cpython` list). Each entry requires the exact OSV `id`, complete `aliases`,
+`modified` timestamp, bundled CPython `version`, a concrete `reason`, and a
+`re_review` date (YYYY-MM-DD, UTC). On that date, or when the id, aliases,
+revision or version changes, the match needs review again. The list starts
+empty: adding a mechanism is not a review of an advisory, and there is no
+version-wide or alias-only exemption.
+
+Failures, new traces and unreviewed OSV matches fail the workflow and attempt
+to open or update one issue. A sorted finding fingerprint excludes run URLs
+and scanner timestamps; changed findings post a delta comment before updating
+the body, so subscribers are notified, while identical findings stay silent.
+Failed tool installation or an interrupted scan also produces a fallback
+report and issue body. Reporting still needs GitHub and its issue API to be
+available. No release, pin or disposition changes.
 
 Local lint of this refresh used actionlint 1.7.12 with ShellCheck 0.11.0 and
 zizmor 1.31.1 (`--offline`): both passed with no new findings. The existing

@@ -14,7 +14,9 @@ pin watch run on stubs.
 from __future__ import annotations
 
 import contextlib
+import datetime
 import hashlib
+import http.client
 import io
 import json
 import re
@@ -2949,15 +2951,13 @@ esac
         self.assertEqual(self.tool.main([]), 2)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 @requires_release_tree
 class VulnerabilityWatchTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.watch = load_tool(SCRIPTS / "vulnerability_watch.py", "vulnerability_watch")
+        with mock.patch.dict(sys.modules, {"vulnerability_watch": cls.watch}):
+            cls.issue = load_tool(SCRIPTS / "vulnerability_watch_issue.py", "vulnerability_watch_issue")
 
     def test_workflow_is_read_only_guarded_and_reports_before_failing(self) -> None:
         text = (WORKFLOWS_DIR / "vulnerability-watch.yml").read_text()
@@ -2969,9 +2969,10 @@ class VulnerabilityWatchTests(unittest.TestCase):
             self.assertNotIn(forbidden, text)
         self.assertIn("cancel-in-progress: false", text)
         self.assertIn("--dispositions gateway/vulnerability-dispositions.json", job)
-        self.assertIn("gh issue edit", job)
-        self.assertIn("--label vulnerability-watch", job)
-        self.assertLess(job.index("gh issue edit"), job.index("Fail closed"))
+        notify = next(s for s in _steps(job) if "name: Open or update" in s)
+        self.assertIn("if: always() && steps.scan.outputs.failed != 'false'", notify)
+        self.assertIn("vulnerability_watch_issue.py", notify)
+        self.assertLess(job.index("vulnerability_watch_issue.py"), job.index("Fail closed"))
         scan = next(s for s in _steps(job) if "id: scan" in s)
         self.assertNotIn("GH_TOKEN", scan)
         self.assertEqual(_upload_guard_problems(job), [])
@@ -3023,13 +3024,15 @@ class VulnerabilityWatchTests(unittest.TestCase):
     def test_failed_binary_check_never_suppresses_osv_or_accepts_its_matches(self) -> None:
         binary = {"problems": ["disposition gateway hash mismatch"], "targets": []}
         with mock.patch.object(self.watch, "download_release", return_value={"version": "1.0.0"}), \
+                mock.patch.object(self.watch, "release_dispositions", return_value=(Path("policy"),
+                                  {"source": "default-branch", "sha256": "b" * 64})), \
                 mock.patch.object(self.watch.vulncheck, "check", return_value=(binary, False)) as scanner, \
                 mock.patch.object(self.watch, "module_queries", return_value=[]), \
                 mock.patch.object(self.watch, "cpython_query", return_value=({"commit": "a" * 40}, {"version": "3.14.8"})), \
                 mock.patch.object(self.watch, "osv_findings", return_value=[]) as osv:
             report, ok = self.watch.watch("example/project", Path("unused"), "scanner", Path("policy"))
         scanner.assert_called_once_with(Path("unused"), "scanner", Path("policy"))
-        osv.assert_called_once_with([{"commit": "a" * 40}], set())
+        osv.assert_called_once_with([{"commit": "a" * 40}], set(), cpython={"version": "3.14.8"}, reviews=[])
         self.assertFalse(ok)
         self.assertIn("disposition gateway hash mismatch", self.watch.issue_body(report, ok))
         self.assertEqual(self.watch.issue_body(report, True), "")
@@ -3044,17 +3047,216 @@ class VulnerabilityWatchTests(unittest.TestCase):
             self.assertEqual(json.loads((root / "report.json").read_text())["problems"], ["offline"])
             self.assertIn("offline", (root / "body.txt").read_text())
 
+    def test_http_protocol_and_unexpected_failures_leave_evidence(self) -> None:
+        for error in (http.client.IncompleteRead(b"partial", 100), http.client.BadStatusLine("broken"),
+                      RuntimeError("unexpected transport failure")):
+            with self.subTest(error=type(error).__name__), tempfile.TemporaryDirectory() as raw, \
+                    mock.patch.object(self.watch, "request", side_effect=error):
+                root = Path(raw)
+                code = self.watch.main(["--repository", "example/project", "--dist", str(root / "dist"),
+                                        "--govulncheck", "unused", "--dispositions", str(root / "policy"),
+                                        "--out", str(root / "report.json"), "--body", str(root / "body.txt")])
+                self.assertEqual(code, 1)
+                report = json.loads((root / "report.json").read_text())
+                self.assertIn(str(error), report["problems"][0])
+                self.assertIn(str(error), (root / "body.txt").read_text())
+                self.assertIsNotNone(self.issue.fingerprint((root / "body.txt").read_text()))
+        with mock.patch.object(self.watch, "request", side_effect=http.client.IncompleteRead(b"", 1)):
+            report, ok = self.watch.watch("example/project", Path("unused"), "unused", Path("unused"))
+        self.assertFalse(ok)
+        self.assertIn("IncompleteRead", report["problems"][0])
+
+    def test_cpython_reviews_bind_id_aliases_version_revision_and_expiry(self) -> None:
+        cpython = {"version": "3.14.8", "commit": "a" * 40}
+        advisory = {"id": "PSF-test", "aliases": ["CVE-test"], "modified": "2026-10-18T12:00:00Z"}
+        today = datetime.datetime.now(datetime.timezone.utc).date()
+        entry = {**advisory, "version": cpython["version"], "reason": "Synthetic platform-only advisory.",
+                 "re_review": str(today + datetime.timedelta(days=1))}
+        variants = [{}, {"id": "CVE-test"}, {"aliases": []}, {"version": "3.15.0"},
+                    {"modified": "2026-10-19T12:00:00Z"}, {"re_review": str(today)},
+                    {"re_review": str(today - datetime.timedelta(days=1))}]
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / "reviewed.json"
+            for changes in variants:
+                path.write_text(json.dumps({"format": 1, "cpython": [{**entry, **changes}]}))
+                # An id equal to its alias is malformed, not an alias-only exemption.
+                if changes.get("id") == "CVE-test":
+                    with self.assertRaises(ValueError):
+                        self.watch.cpython_reviews(path)
+                    continue
+                reviews = self.watch.cpython_reviews(path)
+                with self.subTest(changes=changes), mock.patch.object(self.watch, "request", side_effect=[
+                        b'{"results":[{"vulns":[{"id":"PSF-test"}]}]}', json.dumps(advisory).encode()]):
+                    rows = self.watch.osv_findings([{"commit": cpython["commit"]}], set(), cpython=cpython, reviews=reviews)
+                self.assertEqual(rows[0]["result"], "unreviewed" if changes else "reviewed")
+                if not changes:
+                    self.assertEqual(rows[0]["review"], entry)
+            for changes in ({"id": "other"}, {"commit": "b" * 40}):
+                current = {**advisory, **changes} if "id" in changes else advisory
+                query = {"commit": changes.get("commit", cpython["commit"])}
+                with self.subTest(changes=changes), mock.patch.object(self.watch, "request", side_effect=[
+                        json.dumps({"results": [{"vulns": [{"id": current["id"]}]}]}).encode(),
+                        json.dumps(current).encode()]):
+                    rows = self.watch.osv_findings([query], set(), cpython=cpython, reviews=[entry])
+                self.assertEqual(rows[0]["result"], "unreviewed")
+            for entries in ([entry, entry], [{**entry, "reason": ""}], [{**entry, "re_review": "2026-02-30"}],
+                            [{**entry, "modified": ""}], [{**entry, "extra": True}]):
+                path.write_text(json.dumps({"format": 1, "cpython": entries}))
+                with self.subTest(entries=entries), self.assertRaises(ValueError):
+                    self.watch.cpython_reviews(path)
+
+    def test_watch_applies_explicit_cpython_reviews(self) -> None:
+        cpython = {"version": "3.14.8", "commit": "a" * 40}
+        entry = {"id": "PSF-test", "aliases": [], "modified": "2026-10-18T12:00:00Z", "version": "3.14.8",
+                 "reason": "Synthetic review.",
+                 "re_review": str(datetime.datetime.now(datetime.timezone.utc).date() + datetime.timedelta(days=1))}
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            reviews = root / "reviews.json"
+            reviews.write_text(json.dumps({"format": 1, "cpython": [entry]}))
+            with mock.patch.object(self.watch, "download_release", return_value={"version": "1.0.0"}), \
+                    mock.patch.object(self.watch, "release_dispositions", return_value=(Path("policy"),
+                                      {"source": "tag:v1.0.0", "sha256": "b" * 64})), \
+                    mock.patch.object(self.watch.vulncheck, "check", return_value=({"targets": []}, True)), \
+                    mock.patch.object(self.watch, "module_queries", return_value=[]), \
+                    mock.patch.object(self.watch, "cpython_query", return_value=({"commit": cpython["commit"]}, cpython)), \
+                    mock.patch.object(self.watch, "request", side_effect=[
+                        b'{"results":[{"vulns":[{"id":"PSF-test"}]}]}', json.dumps(entry).encode()]):
+                report, ok = self.watch.watch("example/project", root, "scanner", Path("policy"), reviews)
+            self.assertTrue(ok, report)
+            self.assertEqual(report["osv"][0]["review"], entry)
+            self.assertIn("Gateway dispositions: tag:v1.0.0", self.watch.issue_body(report, False))
+
+    def test_release_dispositions_select_matching_main_or_exact_release_tag(self) -> None:
+        policy = json.loads((REPO_ROOT / "gateway/vulnerability-dispositions.json").read_text())
+        manifest = {"version": "1.0.0", "gateway": {"version": policy["gateway"]["version"]},
+                    "assets": {target: {"target": target, "gateway_sha256": digest}
+                               for target, digest in policy["gateway"]["targets"].items()}}
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            main = root / "main.json"
+            main.write_text(json.dumps(policy))
+            with mock.patch.object(self.watch.subprocess, "run") as git:
+                selected, source = self.watch.release_dispositions(manifest, main, root)
+            git.assert_not_called()
+            self.assertEqual(selected, main)
+            self.assertEqual(source, {"source": "default-branch", "sha256": hashlib.sha256(main.read_bytes()).hexdigest()})
+            for change in ("version", "hash"):
+                newer = json.loads(json.dumps(policy))
+                if change == "version":
+                    newer["gateway"]["version"] = "9.0.0"
+                else:
+                    newer["gateway"]["targets"]["linux-x86_64"] = "a" * 64
+                main.write_text(json.dumps(newer))
+                tagged = json.dumps(policy)
+                with self.subTest(change=change), mock.patch.object(self.watch.subprocess, "run", side_effect=[
+                        subprocess.CompletedProcess([], 0, ""), subprocess.CompletedProcess([], 0, tagged)]) as git:
+                    selected, source = self.watch.release_dispositions(manifest, main, root)
+                self.assertEqual(git.call_args_list[0].args[0],
+                                 ["git", "fetch", "--no-tags", "--depth=1", "origin", "tag", "v1.0.0"])
+                self.assertEqual(git.call_args_list[1].args[0],
+                                 ["git", "show", "refs/tags/v1.0.0:gateway/vulnerability-dispositions.json"])
+                self.assertEqual(selected.read_text(), tagged)
+                self.assertEqual(main.read_text(), json.dumps(newer))
+                self.assertEqual(source, {"source": "tag:v1.0.0", "sha256": hashlib.sha256(tagged.encode()).hexdigest()})
+            with mock.patch.object(self.watch.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, main.read_text())):
+                with self.assertRaisesRegex(ValueError, "release-tag disposition identity mismatch"):
+                    self.watch.release_dispositions(manifest, main, root)
+
+    def test_release_policy_fetch_failure_does_not_hide_osv(self) -> None:
+        with mock.patch.object(self.watch, "download_release", return_value={"version": "1.0.0"}), \
+                mock.patch.object(self.watch, "release_dispositions", side_effect=subprocess.CalledProcessError(1, "git fetch")), \
+                mock.patch.object(self.watch.vulncheck, "check") as scanner, \
+                mock.patch.object(self.watch, "module_queries", return_value=[]), \
+                mock.patch.object(self.watch, "cpython_query", return_value=({"commit": "a" * 40}, {"version": "3.14.8"})), \
+                mock.patch.object(self.watch, "osv_findings", return_value=[]) as osv:
+            report, ok = self.watch.watch("example/project", Path("unused"), "scanner", Path("policy"))
+        self.assertFalse(ok)
+        scanner.assert_not_called()
+        self.assertEqual(osv.call_args.args[1], set())
+        self.assertIn("git fetch", self.watch.issue_body(report, ok))
+
+    def test_issue_fingerprint_tracks_findings_and_traces_not_scan_time_or_order(self) -> None:
+        report = {"problems": ["second", "first"], "osv": [], "binary": {"checked_at": "one", "targets": [{
+            "target": "linux-x86_64", "result": "unreviewed", "unreviewed_findings": ["GO-test"],
+            "observed_traces": {"GO-test": {"trace_sha256": "a" * 64, "trace_count": 1}}}]}}
+        before = self.issue.fingerprint(self.watch.issue_body(report, False))
+        report["problems"].reverse()
+        report["binary"]["checked_at"] = "two"
+        self.assertEqual(before, self.issue.fingerprint(self.watch.issue_body(report, False)))
+        report["binary"]["targets"][0]["observed_traces"]["GO-test"]["trace_sha256"] = "b" * 64
+        changed_trace = self.issue.fingerprint(self.watch.issue_body(report, False))
+        self.assertNotEqual(before, changed_trace)
+        report["osv"] = [{"id": "CVE-new", "query": {"commit": "a" * 40}, "result": "unreviewed"}]
+        self.assertNotEqual(changed_trace, self.issue.fingerprint(self.watch.issue_body(report, False)))
+
+    def test_issue_notifies_delta_once_before_edit_and_identical_findings_stay_silent(self) -> None:
+        previous = self.watch.issue_body({"problems": ["old failure", "standing failure"], "osv": []}, False)
+        current = self.watch.issue_body({"problems": ["new failure", "standing failure"], "osv": []}, False)
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            body = root / "issue.txt"
+            body.write_text(current)
+            with mock.patch.object(self.issue, "gh", side_effect=["", "42\n", json.dumps({"body": previous}), "", ""]) as gh:
+                self.issue.publish(body, root / "report.json", "https://example.invalid/run/1")
+            self.assertEqual([c.args[:2] for c in gh.call_args_list],
+                             [("label", "create"), ("issue", "list"), ("issue", "view"), ("issue", "comment"), ("issue", "edit")])
+            self.assertEqual(gh.call_args_list[2].args, ("issue", "view", "42", "--json", "body"))
+            comment = (root / "issue-delta.txt").read_text()
+            self.assertIn("### Added or changed\n- new failure", comment)
+            self.assertIn("### No longer reported\n- old failure", comment)
+            self.assertNotIn("standing failure", comment)
+            previous = body.read_text()
+            body.write_text(current)
+            with mock.patch.object(self.issue, "gh", side_effect=["", "42\n", json.dumps({"body": previous})]) as gh:
+                self.issue.publish(body, root / "report.json", "https://example.invalid/run/2")
+            self.assertEqual([c.args[:2] for c in gh.call_args_list],
+                             [("label", "create"), ("issue", "list"), ("issue", "view")])
+            body.write_text(current)
+            with mock.patch.object(self.issue, "gh", side_effect=["", "42\n", json.dumps({"body": "older issue, no marker"}),
+                                   subprocess.CalledProcessError(1, "gh issue comment")]) as gh:
+                with self.assertRaises(subprocess.CalledProcessError):
+                    self.issue.publish(body, root / "report.json", "https://example.invalid/run/3")
+            self.assertNotIn(("issue", "edit"), [c.args[:2] for c in gh.call_args_list])
+
+    def test_issue_created_for_missing_scan_output_with_fallback_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw) / "evidence"
+            with mock.patch.object(self.issue, "gh", side_effect=["", "", ""]) as gh:
+                code = self.issue.main(["--body", str(root / "issue.txt"), "--report", str(root / "report.json"),
+                                        "--run-url", "https://example.invalid/run/1"])
+            self.assertEqual(code, 0)
+            self.assertEqual(gh.call_args_list[-1].args[:2], ("issue", "create"))
+            report = json.loads((root / "report.json").read_text())
+            self.assertIn("did not produce", report["problems"][0])
+            self.assertIn(report["problems"][0], (root / "issue.txt").read_text())
+
+    def test_direct_file_run_discovers_watch_classes(self) -> None:
+        result = subprocess.run([sys.executable, str(REPO_ROOT / "tests/test_release_ci.py"),
+                                 "VulnerabilityWatchTests.test_cpython_uses_the_bundled_versions_commit_not_a_pypi_name",
+                                 "SignedVulnerabilityWatchTests.test_signature_and_all_four_bundle_checksums_before_inventory_queries"],
+                                capture_output=True, text=True, timeout=60, cwd=Path.home())
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Ran 2 tests", result.stderr)
+
     def test_ci_tool_hash_failure_prevents_extraction(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
-            (root / "curl").write_text('#!/bin/sh\nwhile [ "$1" != -o ]; do shift; done\nprintf tampered >"$2"\n')
+            (root / "uname").write_text('#!/bin/sh\ncase "$1" in -s) echo Linux;; -m) echo x86_64;; esac\n')
+            (root / "curl").write_text('#!/bin/sh\ntouch "$DOWNLOAD_MARKER"\n'
+                                       'while [ "$1" != -o ]; do shift; done\nprintf tampered >"$2"\n')
+            (root / "sha256sum").write_text('#!/bin/sh\ntouch "$HASH_MARKER"\nexit 1\n')
             (root / "tar").write_text('#!/bin/sh\ntouch "$EXTRACT_MARKER"\n')
-            for name in ("curl", "tar"):
+            for name in ("uname", "curl", "sha256sum", "tar"):
                 (root / name).chmod(0o755)
             result = subprocess.run(["sh", str(SCRIPTS / "ci_tools.sh"), "go", str(root / "destination")],
                                     env={**os.environ, "PATH": str(root) + os.pathsep + os.environ["PATH"],
+                                         "DOWNLOAD_MARKER": str(root / "downloaded"),
+                                         "HASH_MARKER": str(root / "hashed"),
                                          "EXTRACT_MARKER": str(root / "extracted")}, capture_output=True, timeout=30)
-            self.assertNotEqual(result.returncode, 0)
+            self.assertTrue((root / "downloaded").exists())
+            self.assertTrue((root / "hashed").exists())
+            self.assertEqual(result.returncode, 1)
             self.assertFalse((root / "extracted").exists())
 
 
@@ -3170,3 +3372,7 @@ class SignedVulnerabilityWatchTests(unittest.TestCase):
             (self.root / "download" / name).write_bytes(raw)
             with self.assertRaises(ValueError):
                 self.watch.module_queries(self.root / "download", manifest)
+
+
+if __name__ == "__main__":
+    unittest.main()
