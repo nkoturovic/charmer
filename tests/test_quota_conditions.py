@@ -83,6 +83,47 @@ class QuotaConditionTests(test_cli.OperatorCommandCase):
                 self.assertEqual((code, err.getvalue()), (0, ""))
                 self.assertIn(quota.condition_line(name), out.getvalue().splitlines())
 
+    def test_unavailable_cli_and_cm_name_nix_and_doctor_but_json_stays_structured(self) -> None:
+        notice = ("Quota readings are available only in the Nix package in this release; "
+                  "use charmer doctor for per-model 429/402/403 counts and /cm fallback <provider>.")
+        for name, pool in POOLS.items():
+            with self.subTest(condition=name), self.pool(name):
+                code, text, err = self.op(["quota"])
+                self.assertEqual(code, quota.CONDITION_EXIT[name])
+                self.assertEqual(text.splitlines().count(notice), int(pool.state != "ok"))
+                self.assertEqual(err, "")
+                out = io.StringIO()
+                code = cli.main(["lineup", "--session", SESSION, "quota"], runtime=self.runtime,
+                                output_stream=out)
+                self.assertEqual(code, 0)
+                self.assertEqual(out.getvalue().splitlines().count(notice), int(pool.state != "ok"))
+                code, text, err = self.op(["quota", "--json"])
+                self.assertEqual((code, err), (quota.CONDITION_EXIT[name], ""))
+                document = json.loads(text)
+                expected = quota.report(pool, NOW).document()
+                # The original typed condition is still the only extra fact;
+                # no presentation hint or diagnostic enters the JSON schema.
+                condition = document["facts"].pop()
+                self.assertEqual(condition["code"], "quota-condition")
+                self.assertEqual(condition["value"], name)
+                expected["status"] = "ready" if name == "available" else "attention"
+                self.assertEqual(document, expected)
+                self.assertNotIn("Nix package", text)
+
+    def test_requested_pages_name_the_quota_boundary_and_bundle_remedy(self) -> None:
+        from _layout import REPO_ROOT
+
+        for page in ("providers/claude-account.md", "providers/chatgpt-account.md",
+                     "CHEATSHEET.md", "reference/tasks.md"):
+            with self.subTest(page=page):
+                text = " ".join((REPO_ROOT / "docs" / page).read_text().split())
+                self.assertIn("only in the Nix package in this release", text)
+                if page.startswith("providers/"):
+                    row = next(line for line in (REPO_ROOT / "docs" / page).read_text().splitlines()
+                               if "requests fail with a usage-limit message" in line)
+                    for phrase in ("bundle", "charmer doctor", "429/402/403", "/cm fallback"):
+                        self.assertIn(phrase, row)
+
     def test_the_tui_shows_each_condition(self) -> None:
         shown: list[tuple[str, list[str]]] = []
         real = tui.TextView

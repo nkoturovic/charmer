@@ -978,15 +978,49 @@ class ResolveRuntimeTests(V4TestCase):
         self.assertEqual(self.store.resolve_runtime(RUNTIME), self.record)
         self.assertEqual(self.store.resolve_runtime(ALIAS), self.record)
 
-    def test_managed_id_is_refused_with_the_runtime_id(self) -> None:
-        with self.assertRaises(SessionError) as caught:
-            self.store.resolve_runtime(MID)
-        self.assertEqual(
-            str(caught.exception),
-            f"{MID} is a stable session id; lineup --session takes the runtime id "
-            f"({RUNTIME}) — /cm passes it automatically",
-        )
-        self.assertEqual(self.store.resolve(MID), self.record)  # the alias path keeps it
+    def test_managed_runtime_and_alias_ids_and_prefixes_resolve(self) -> None:
+        for identifier in (MID, RUNTIME, ALIAS):
+            for value in (identifier, identifier[:8], identifier[:13]):
+                with self.subTest(value=value):
+                    self.assertEqual(self.store.resolve_runtime(value), self.record)
+        self.assertEqual(self.store.resolve(MID), self.record)
+
+    def test_all_matching_namespaces_are_checked_even_for_a_full_id(self) -> None:
+        other = copy.deepcopy(self.record)
+        other.update(managed_id=OTHER, runtime_session_id=MID, runtime_aliases=[], pending_forks=[],
+                     identity_state=sessions.IDENTITY_AUTHORITATIVE)
+        self.store.save(other)
+        for value in (MID, MID[:8]):
+            with self.subTest(value=value), self.assertRaises(sessions.AmbiguousSessionError) as caught:
+                self.store.resolve_runtime(value)
+            self.assertEqual(caught.exception.candidates, (MID, OTHER))
+
+    def test_same_record_matches_are_deduplicated(self) -> None:
+        record = copy.deepcopy(self.record)
+        record["runtime_session_id"] = MID
+        self.store.save(record)
+        self.assertEqual(self.store.resolve_runtime(MID[:8]), record)
+
+    def test_a_fork_prefix_refuses_until_its_runtime_is_adopted(self) -> None:
+        with self.assertRaises(sessions.PendingForkError):
+            self.store.resolve_runtime(FORK[:8])
+        adopted = copy.deepcopy(self.record)
+        adopted.update(managed_id=OTHER, runtime_session_id=FORK, runtime_aliases=[], pending_forks=[],
+                       identity_state=sessions.IDENTITY_AUTHORITATIVE)
+        self.store.save(adopted)
+        self.assertEqual(self.store.resolve_runtime(FORK[:8]), adopted)
+
+    def test_a_prefix_shared_with_an_unadopted_fork_refuses(self) -> None:
+        record = copy.deepcopy(self.record)
+        record["runtime_session_id"] = FORK[:8] + RUNTIME[8:]
+        self.store.save(record)
+        with self.assertRaises(SessionError):
+            self.store.resolve_runtime(FORK[:8])
+
+    def test_short_and_invalid_prefixes_refuse(self) -> None:
+        for value in (MID[:7], "not-a-session", "", "../sessions", None):
+            with self.subTest(value=value), self.assertRaises(SessionError):
+                self.store.resolve_runtime(value)
 
     def test_pending_fork_and_unknown(self) -> None:
         with self.assertRaises(sessions.PendingForkError) as caught:
@@ -995,14 +1029,20 @@ class ResolveRuntimeTests(V4TestCase):
         self.assertEqual(str(caught.exception), sessions.pending_fork_message(self.record))
         with self.assertRaises(SessionError) as caught:
             self.store.resolve_runtime(THIRD)
-        self.assertEqual(str(caught.exception), f"no charmer session has runtime id {THIRD}")
+        self.assertEqual(str(caught.exception), f"no managed session matches {THIRD!r}; available sessions: {MID}")
 
     def test_unreadable_record_claiming_it_fails_closed(self) -> None:
         state.atomic_write(self.store.sessions_dir / f"{OTHER}.json",
                            strict_json.canonical_file_bytes({"version": 4, "runtime_session_id": THIRD}))
-        with self.assertRaises(SessionError) as caught:
-            self.store.resolve_runtime(THIRD)
-        self.assertIn(f"unreadable session record {OTHER} may claim runtime", str(caught.exception))
+        for value in (THIRD, THIRD[:8]):
+            with self.subTest(value=value), self.assertRaises(SessionError) as caught:
+                self.store.resolve_runtime(value)
+            self.assertIn(f"unreadable session record {OTHER} may claim session", str(caught.exception))
+        # Even an exact managed id cannot bypass an unreadable possible owner.
+        state.atomic_write(self.store.sessions_dir / f"{OTHER}.json",
+                           strict_json.canonical_file_bytes({"version": 4, "runtime_session_id": MID}))
+        with self.assertRaisesRegex(SessionError, "unreadable session record"):
+            self.store.resolve_runtime(MID)
 
 
 # -------------------------------------------------------------------- pointers

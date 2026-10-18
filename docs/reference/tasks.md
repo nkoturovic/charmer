@@ -4,6 +4,19 @@ Every task charmer offers, and where you reach it: the launcher's
 screens (TUI), the command line, and `/cm` inside a session. When a task
 has no form on one surface, the table says why.
 
+`lineup --session` accepts a managed or runtime id, a historical runtime alias,
+or a unique prefix of at least 8 characters. Ambiguous or unknown ids refuse
+and list candidates; `/cm` still passes its runtime id automatically.
+
+Quota readings are available only in the Nix package in this release. Bundle
+users can check `charmer doctor` for per-model 429/402/403 counts and move
+affected roles with `/cm fallback <provider>`. When the pool cannot be read,
+`charmer quota` and `/cm quota` add this availability hint in plain text.
+`charmer quota --json` is unchanged: schema version 1, the same facts and
+`quota-condition` value, no extra hint field or diagnostic. Its exit status
+is 0 for `available`, `stale` or `exhausted`, 1 for `management-disabled`,
+`unavailable` or `not-ours`; `/cm quota` always exits 0.
+
 <!-- generated: tasks (tools/docs_gen.py) -->
 
 ## The launcher's screens
@@ -246,7 +259,7 @@ In full: [troubleshooting.md](../troubleshooting.md).
 | check this installation and its sessions | card → H; charmer -r → H: the resume card | `charmer doctor`; `charmer doctor --verbose` | not a `/cm` request | asks nothing |
 | the first-run checks in order, one fix each | card → H: nothing is connected yet | `charmer doctor --first-run` | not a `/cm` request | asks nothing |
 | the structured report with its environment block | not in the launcher: a machine-readable report for scripts and issue reports; the screens show the same facts | `charmer doctor --json` | not a `/cm` request | for scripts; asks nothing |
-| account quota and credential health (one local read) | card → G (the quota column and Q details): an account provider | `charmer quota`; `charmer quota --json` | `/cm quota` | asks nothing |
+| account quota and credential health (readings only in the Nix package in this release) | card → G (the quota column and Q details): an account provider | `charmer quota`; `charmer quota --json` | `/cm quota` | asks nothing |
 | a session's recorded bindings and observed routing | card → S → V: a session row | `charmer explain [<id>]` | not a `/cm` request | asks nothing |
 | observed requests per model and session | card → S → V (the last 24 hours): a session row | `charmer usage` | not a `/cm` request | asks nothing |
 | what the gateway would serve after pending changes | not in the launcher: served-change inspection for review; the provider and model flows show each change's effect before it is written | `charmer plan` | not a `/cm` request | asks nothing |

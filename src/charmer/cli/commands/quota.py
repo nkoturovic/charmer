@@ -23,6 +23,12 @@ if TYPE_CHECKING:
     import charmer.cli.runtime as runtime_mod
 
 
+QUOTA_AVAILABILITY = (
+    "Quota readings are available only in the Nix package in this release; "
+    "use charmer doctor for per-model 429/402/403 counts and /cm fallback <provider>."
+)
+
+
 def _backend(runtime: runtime_mod.Runtime) -> str:
     """The gateway backend that names where credential health is read."""
 
@@ -49,6 +55,8 @@ def _cmd_quota(runtime: runtime_mod.Runtime, output_stream: TextIO, *, json_outp
         pool, provider_by_pool=runtime.pool_providers(), login_commands=gateway_facts._OAUTH_LOGIN_COMMANDS,
         restart_hint=gateway_facts.gateway_service_hint("restart"), now=now, backend=_backend(runtime),
     )
+    if pool.state != "ok":
+        lines.append(QUOTA_AVAILABILITY)
     for message in runtime.gateway_attention:
         print(f"Attention: {termtext.visible_message(message)}", file=output_stream)
     print("\n".join(lines), file=output_stream)
@@ -66,5 +74,7 @@ def session_quota_text(runtime: runtime_mod.Runtime) -> tuple[int, str]:
         restart_hint=gateway_facts.gateway_service_hint("restart"), now=quota._now(), surface="session",
         backend=_backend(runtime),
     )
+    if pool.state != "ok":
+        lines.append(QUOTA_AVAILABILITY)
     attention = [f"Attention: {termtext.visible_message(message)}" for message in runtime.gateway_attention]
     return code, "\n".join([*attention, *lines])

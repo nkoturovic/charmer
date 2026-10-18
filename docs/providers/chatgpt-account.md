@@ -56,10 +56,13 @@ serves is up to OpenAI; a model the account cannot use fails its requests.
 Your plan's usage limits apply and vary by plan and workload; charmer
 cannot tell you your allowance. This sign-in reaches OpenAI's Codex
 service, so the relevant limits are your plan's Codex usage limits, which
-it shares with your other Codex use. `charmer quota`
+it shares with your other Codex use. Quota readings are available only in
+the Nix package in this release. There, `charmer quota` (or `/cm quota`)
 shows what the gateway observed from recent traffic, with its age; no
-reading is not zero use. A profile that runs several agents on one
-account spends its limits faster.
+reading is not zero use. With a release bundle, use `charmer doctor` for
+per-model 429/402/403 counts and `/cm fallback <provider>` to move affected
+roles; those counts are not a remaining balance or a reset time. A profile
+that runs several agents on one account spends its limits faster.
 
 OpenAI's own pages, checked on 2026-10-04:
 
@@ -97,4 +100,4 @@ route with its own availability: see [openai-compatible.md](openai-compatible.md
 | --- | --- |
 | doctor: the codex OAuth pool has no credential record | sign in: `charmer providers sign-in openai` |
 | doctor counts `invalid_grant` lines since the sign-in | sign in again |
-| requests fail with a usage-limit message | wait for the reset, or move agents with `/cm fallback <provider>` |
+| requests fail with a usage-limit message | with a bundle, check `charmer doctor` for per-model 429/402/403 counts, then move affected roles with `/cm fallback <provider>`; with Nix, `charmer quota` can also show an observed reset |

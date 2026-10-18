@@ -1921,8 +1921,8 @@ class SessionStore:
         Matches are deduplicated by managed id; several refuse with
         :class:`AmbiguousSessionError` (never the newest), none with
         :class:`SessionError`. An unreadable record that may match refuses
-        too (fail closed). Protocol positions (``/cm --session``, hooks)
-        stay runtime-UUID-only: they use :meth:`resolve_runtime`.
+        too (fail closed). ``lineup --session`` uses :meth:`resolve_runtime`
+        instead: it also checks pending forks and never accepts a name.
         """
 
         if not isinstance(value, str) or not value:
@@ -2004,28 +2004,56 @@ class SessionStore:
         return False
 
     def resolve_runtime(self, identifier: str) -> dict[str, Any]:
-        """Runtime ids and runtime aliases only (``lineup --session``).
+        """``lineup --session``: a managed/runtime id, alias or unique prefix.
 
-        Never the managed-id file shortcut of :meth:`resolve`: a managed id
-        that is not also a runtime id is refused with the runtime id to use;
-        a pending fork raises :class:`PendingForkError`. Unreadable records
-        that may claim the id fail closed, as in ``resolve``.
+        Every spelling scans all owners (even an exact managed id): never
+        prefer one namespace over another. Matches are deduplicated by
+        managed id. Pending forks are not aliases; an unadopted fork refuses
+        rather than selecting its parent. Unreadable possible owners fail
+        closed, including when their runtime id only matches a prefix.
         """
 
-        if not isinstance(identifier, str) or not UUID4.fullmatch(identifier):
-            raise SessionError(f"session identifier {identifier!r} is not a UUIDv4")
-        matches, fork_owner, stable_owner = self._scan_runtime(identifier)
-        if matches:
-            return matches[0]
-        if fork_owner is not None:
-            raise PendingForkError(fork_owner)
-        if stable_owner is not None:
-            raise SessionError(
-                f"{identifier} is a stable session id; lineup --session takes the "
-                f"runtime id ({stable_owner['runtime_session_id']}) — /cm passes it "
-                "automatically"
-            )
-        raise SessionError(f"no charmer session has runtime id {identifier}")
+        if (not isinstance(identifier, str) or len(identifier) < HUMAN_PREFIX_MIN
+                or not UUID_PREFIX.fullmatch(identifier.lower())):
+            raise SessionError(f"session identifier {identifier!r} is not a UUID or a prefix of at least "
+                               f"{HUMAN_PREFIX_MIN} characters")
+        prefix = identifier.lower()
+        found: dict[str, dict[str, Any]] = {}
+        records: dict[str, dict[str, Any]] = {}
+        owned: set[str] = set()
+        forks: list[tuple[str, dict[str, Any]]] = []
+        for path in self.scan_uuid_records():
+            try:
+                record = self.load(path.stem)
+            except SessionError as exc:
+                if path.stem.startswith(prefix) or self._unreadable_record_mentions(path, identifier, prefix=prefix):
+                    raise SessionError(f"unreadable session record {path.stem} may claim session {identifier!r}; "
+                                       "repair or forget that record first") from exc
+                continue
+            mid = managed_id(record)
+            records[mid] = record
+            ids = {mid, record["runtime_session_id"],
+                   *(item["session_id"] for item in record.get("runtime_aliases", []))}
+            owned.update(ids)
+            if any(item.startswith(prefix) for item in ids):
+                found[mid] = record
+            forks.extend((item["session_id"], record) for item in record.get("pending_forks", [])
+                         if item["session_id"].startswith(prefix))
+        unadopted = {rid: record for rid, record in forks if rid not in owned}
+        if len(found) + len(unadopted) > 1:
+            candidates = sorted(set(found) | {managed_id(record) for record in unadopted.values()})
+            if len(candidates) > 1:
+                raise AmbiguousSessionError(identifier, candidates)
+        if unadopted:
+            raise PendingForkError(next(iter(unadopted.values())))
+        if found:
+            return next(iter(found.values()))
+        candidates = sorted(records)
+        shown = ", ".join(candidates[:HUMAN_CANDIDATES_SHOWN]) or "none"
+        more = len(candidates) - HUMAN_CANDIDATES_SHOWN
+        if more > 0:
+            shown += f" and {more} more (charmer sessions list)"
+        raise SessionError(f"no managed session matches {identifier!r}; available sessions: {shown}")
 
     def reconcile_runtime(
         self,

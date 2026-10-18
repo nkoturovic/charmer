@@ -24,6 +24,7 @@ from unittest import mock
 from charmer import cli, hooks, lineup, lineup_files, lineup_log, migrate, profile, scope, sessions, state, strict_json, transition
 from charmer import quota as quota_mod
 from charmer import catalog
+from charmer.cli.commands import quota as quota_cmd
 from _catalog import FIXTURE_ROOT, GOLDENS_ROOT
 from _golden import assertGolden
 from _v4 import V4Case
@@ -96,7 +97,8 @@ class QuotaEntryInitializationTests(unittest.TestCase):
                                 output_stream=output, interactive=False)
             self.assertEqual(code, 0)
             # Skill mode returns 0 even on a swallowed error: pin the exact output.
-            self.assertEqual(output.getvalue(), "quota: the local gateway is down\nQuota condition: unavailable — no reading can be made here now\n")
+            self.assertEqual(output.getvalue(), "quota: the local gateway is down\nQuota condition: unavailable — no reading can be made here now\n"
+                             + quota_cmd.QUOTA_AVAILABILITY + "\n")
             self.assertEqual(len(constructed), 1)
             self.assertEqual({str(p.relative_to(home)): (p.stat().st_mtime_ns,
                               p.read_bytes() if p.is_file() else None) for p in home.rglob("*")}, before)
@@ -425,14 +427,51 @@ class InterceptTests(LineupCase):
 
 
 class ResolutionTests(LineupCase):
-    def test_a_managed_id_that_is_not_the_runtime_id_is_refused_with_the_runtime_id(self) -> None:
-        self.mutate(self.mid, runtime_session_id=OTHER)  # a runtime id that never was the managed id
-        with mock.patch.object(self, "rid", self.mid):
-            code, out, _ = self.request("")
-        self.assertIn(f"lineup --session takes the runtime id ({OTHER})", out)
-        with mock.patch.object(self, "rid", OTHER):
-            code, out, _ = self.request("")
-        self.assertTrue(out.startswith("charmer · profile balanced"), out)
+    def test_managed_runtime_and_alias_prefixes_select_the_same_session(self) -> None:
+        alias = "abcdef01-2222-4222-8222-222222222222"
+        self.mutate(self.mid, runtime_session_id=OTHER,
+                    runtime_aliases=[{"session_id": alias, "source": "clear", "observed_at": NOW}])
+        before = self.tree(self.store.root)
+        for identifier in (self.mid, self.mid[:8], OTHER, OTHER[:8], OTHER[:13], alias, alias[:8].upper()):
+            with self.subTest(identifier=identifier), mock.patch.object(self, "rid", identifier):
+                code, out, err = self.request("")
+                self.assertEqual((code, err), (0, ""))
+                self.assertTrue(out.startswith("charmer · profile balanced"), out)
+                code, equals, err = self.lineup(f"--session={identifier}", "show", skill=False)
+                self.assertEqual((code, equals, err), (0, out, ""))
+        self.assertEqual(self.tree(self.store.root), before)
+
+    def test_a_managed_prefix_can_apply_a_change(self) -> None:
+        self.mutate(self.mid, runtime_session_id=OTHER)
+        with mock.patch.object(self, "rid", self.mid[:8]):
+            code, out, err = self.request("pin")
+        self.assertEqual((code, err), (0, ""))
+        self.assertIn(f"session {self.mid[:8]} is now pinned", out)
+        self.assertFalse(self.store.load(self.mid)["follow"])
+
+    def test_ambiguous_and_unknown_prefixes_list_candidates_without_writing(self) -> None:
+        # One prefix matches a managed id and another session's runtime id.
+        with _fixed_id(OTHER):
+            other = self.launch_fresh(self.profile_target("balanced"))
+        self.mutate(OTHER, runtime_session_id="11111111-2222-4222-8222-222222222222")
+        before = self.tree(self.store.root)
+        for identifier, phrase in ((FIXED[:8], "matches 2 sessions"), ("ffffffff", "no managed session matches")):
+            with self.subTest(identifier=identifier), mock.patch.object(self, "rid", identifier):
+                code, out, err = self.request("pin")
+                self.assertEqual((code, err), (0, ""))  # /cm transport is unchanged
+                self.assertIn(phrase, out)
+                self.assertIn(FIXED, out)
+                self.assertIn(other["managed_id"], out)
+        self.assertEqual(self.tree(self.store.root), before)
+
+    def test_a_pending_fork_prefix_is_not_a_parent_session_selector(self) -> None:
+        self.mutate(self.mid, pending_forks=[{"session_id": OTHER, "observed_at": NOW}],
+                    identity_state=sessions.IDENTITY_PENDING_FORK)
+        with mock.patch.object(self, "rid", OTHER[:8]):
+            code, out, err = self.request("pin")
+        self.assertEqual((code, err), (0, ""))
+        self.assertIn("is an unadopted native fork", out)
+        self.assertTrue(self.store.load(self.mid)["follow"])
 
     def test_a_pending_fork_is_r8(self) -> None:
         record = self.store.load(self.mid)
@@ -1800,7 +1839,8 @@ class FallbackTests(LineupCase):
         self.runtime.environ["CLAUDE_CODE_SESSION_ID"] = self.rid
         with mock.patch.object(self.runtime, "pool_status", return_value=quota_mod.PoolStatus("down")):
             code, out, err = self.lineup("quota", skill=False, interactive=False)
-        self.assertEqual((code, out), (1, "quota: the local gateway is down\nQuota condition: unavailable — no reading can be made here now\n"))
+        self.assertEqual((code, out), (1, "quota: the local gateway is down\nQuota condition: unavailable — no reading can be made here now\n"
+                             + quota_cmd.QUOTA_AVAILABILITY + "\n"))
 
     def test_fallback_three_outcomes_and_follow_remedy(self) -> None:
         with _fixed_clock():

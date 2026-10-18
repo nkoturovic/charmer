@@ -48,7 +48,7 @@ _LINEUP_ERRORS = (
 
 # The options of ``charmer lineup`` (the request follows them).
 LINEUP_OPTIONS = (
-    ("--session ID", "the session's runtime id (/cm passes it; charmer sessions show SESSION names it)"),
+    ("--session ID", "managed or runtime id, or a unique prefix of at least 8 characters (/cm passes its runtime id)"),
     ("--relaunch", "relaunch the session with the change instead of a live apply"),
     ("--its-exited", "the session has exited: relaunch it without asking"),
     ("--preview", "with fallback: show the plan and change nothing"),

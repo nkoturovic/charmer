@@ -291,7 +291,7 @@ def render_text(
 PREFIX = "charmer: "
 R1 = "lineup: unknown option {opt!r} (options: --session ID, --relaunch, --its-exited, --preview)"
 R2 = "lineup needs --session <runtime-id> (or run /cm inside a charmer session)"
-R3 = "lineup: session id {value!r} is not a UUID"
+R3 = "lineup: session id {value!r} is not a UUID or a prefix of at least 8 characters"
 R4 = (
     "/cm received {n} arguments; write the request without quotes (balanced "
     "apostrophes split it), e.g. /cm set implementer=opus:high"
@@ -610,6 +610,12 @@ def _split_element(element: str) -> list[str]:
         raise LineupRefusal(R6.format(text=element, exc=exc)) from exc
 
 
+def _session_identifier(value: str) -> bool:
+    """A person's managed/runtime id or prefix (the environment stays a UUID)."""
+
+    return len(value) >= sessions.HUMAN_PREFIX_MIN and bool(sessions.UUID_PREFIX.fullmatch(value.lower()))
+
+
 def parse_cli(argv: Sequence[str], environ: Mapping[str, str]) -> LineupArgs:
     """``charmer lineup`` argv (the tail after ``lineup``; §7.1 rules 1-4).
 
@@ -659,7 +665,7 @@ def parse_cli(argv: Sequence[str], environ: Mapping[str, str]) -> LineupArgs:
             value = token[len("--session=") :]
             if value == "":
                 from_env = True
-            elif sessions.UUID4.fullmatch(value):
+            elif _session_identifier(value):
                 session = value
             else:
                 raise LineupRefusal(R3.format(value=value))
@@ -675,7 +681,7 @@ def parse_cli(argv: Sequence[str], environ: Mapping[str, str]) -> LineupArgs:
                 break
             value = args[index + 1]
             if index + 2 >= n:  # 2a: nothing after the value
-                if sessions.UUID4.fullmatch(value):
+                if _session_identifier(value):
                     session = value
                     decided = []
                 else:
@@ -685,7 +691,7 @@ def parse_cli(argv: Sequence[str], environ: Mapping[str, str]) -> LineupArgs:
                 break
             if value == "":  # 2b
                 from_env = True
-            elif sessions.UUID4.fullmatch(value):
+            elif _session_identifier(value):
                 session = value
             else:
                 raise LineupRefusal(R3.format(value=value))

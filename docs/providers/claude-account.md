@@ -69,11 +69,14 @@ after you agree.
 
 Your plan's usage limits apply, and Anthropic does not publish them as
 fixed numbers for this use; charmer cannot tell you what your
-account is entitled to. `charmer quota` (or `/cm quota` in a
+account is entitled to. Quota readings are available only in the Nix
+package in this release. There, `charmer quota` (or `/cm quota` in a
 session) shows what the gateway observed from recent traffic: the
 condition and reset time when the provider reported them, with their age.
-No reading means no data yet, not zero use. A profile that runs several
-agents on one account spends its limits faster.
+No reading means no data yet, not zero use. With a release bundle, use
+`charmer doctor` for per-model 429/402/403 counts and `/cm fallback <provider>`
+to move affected roles; those counts are not a remaining balance or a reset
+time. A profile that runs several agents on one account spends its limits faster.
 
 Anthropic counts your use of Claude, Claude Code and Claude Desktop
 against one shared limit, and requests through this sign-in draw on your
@@ -98,7 +101,7 @@ an Anthropic API key is billed separately, per token
 | --- | --- |
 | doctor: the claude OAuth pool has no credential record | sign in: `charmer providers sign-in anthropic` |
 | doctor counts `invalid_grant` lines since the sign-in | the sign-in expired or was revoked: sign in again |
-| requests fail with a usage-limit message | wait for the reset `charmer quota` shows, or move agents with `/cm fallback <provider>` |
+| requests fail with a usage-limit message | with a bundle, check `charmer doctor` for per-model 429/402/403 counts, then move affected roles with `/cm fallback <provider>`; with Nix, `charmer quota` can also show an observed reset |
 | “Not signed in — type personal to continue (nothing changed).” | type the word `personal` (case and spaces around it do not matter) |
 
 ## 8. The API-key alternative
