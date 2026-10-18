@@ -749,23 +749,28 @@ class JournalProbeTests(unittest.TestCase):
                 run, _calls = self.runner(answer)
                 self.assertIs(linux_service.journal_reaches(unit="u", at=self.AT, runner=run), expected)
 
-    def notice(self, moment, dropped):
+    def notice(self, moment, dropped, user_unit=None):
         item = {"__REALTIME_TIMESTAMP": str(int(moment.timestamp() * 1_000_000))}
         if dropped is not None:
             item["N_DROPPED"] = dropped
+        if user_unit is not None:
+            item["OBJECT_SYSTEMD_USER_UNIT"] = user_unit
         return json.dumps(item).encode() + b"\n"
 
     def test_drops(self):
         probe = (0, self.stamp(self.AT))
-        run, calls = self.runner(probe, (0, self.notice(self.AT, "5") + self.notice(self.AT, None)))
-        self.assertEqual(linux_service.journal_drops(since=self.AT, uid=1234, runner=run),
+        # Revert-failing: a notice naming another user unit stood for gateway lines.
+        run, calls = self.runner(probe, (0, self.notice(self.AT, "5", "charmer-gateway.service")
+                                         + self.notice(self.AT, None)
+                                         + self.notice(self.AT, "9", "app-Alacritty@0123.service")))
+        self.assertEqual(linux_service.journal_drops(since=self.AT, uid=1234, unit="charmer-gateway", runner=run),
                          ((self.AT, 5), (self.AT, None)))
         self.assertEqual(calls[0][0], ["journalctl", "--system", "-n", "1", "--no-pager", "-o", "json",
                                        "--output-fields=__REALTIME_TIMESTAMP"])
         self.assertEqual(calls[1][0], [
             "journalctl", "--system", "MESSAGE_ID=a596d6fe7bfa4994828e72309e95d61e", "_UID=0", "OBJECT_UID=1234",
             "OBJECT_SYSTEMD_UNIT=user@1234.service", "--since", f"@{int(self.AT.timestamp())}", "-n", "256",
-            "--no-pager", "-o", "json", "--output-fields=__REALTIME_TIMESTAMP,N_DROPPED"])
+            "--no-pager", "-o", "json", "--output-fields=__REALTIME_TIMESTAMP,N_DROPPED,OBJECT_SYSTEMD_USER_UNIT"])
         cases = {
             "an unreadable system journal": ((0, b""), None, None),
             "a failing probe": ((1, b""), None, None),
@@ -778,7 +783,8 @@ class JournalProbeTests(unittest.TestCase):
         for label, (first, second, expected) in cases.items():
             with self.subTest(label):
                 run, calls = self.runner(first, *(() if second is None else (second,)))
-                self.assertEqual(linux_service.journal_drops(since=self.AT, uid=1234, runner=run), expected)
+                self.assertEqual(linux_service.journal_drops(since=self.AT, uid=1234, unit="charmer-gateway",
+                                                             runner=run), expected)
                 if second is None:
                     self.assertEqual(len(calls), 1)
 
@@ -786,9 +792,9 @@ class JournalProbeTests(unittest.TestCase):
         with mock.patch.object(linux_service, "journal_drops", return_value=()) as drops, \
                 mock.patch.object(linux_service, "journal_reaches", return_value=True) as reaches, \
                 mock.patch.object(linux_service, "read_hold_journal", return_value=events.LogWindow()) as read:
-            service.journal_drops(since=self.AT)
+            service.journal_drops(since=self.AT, unit="u")
             service.journal_reaches(unit="u", at=self.AT)
             service.read_hold_journal(unit="u", since="@1", evidence="e", marker=None, max_bytes=1)
-        drops.assert_called_once_with(since=self.AT, uid=os.getuid())
+        drops.assert_called_once_with(since=self.AT, uid=os.getuid(), unit="u")
         reaches.assert_called_once_with(unit="u", at=self.AT)
         read.assert_called_once_with(unit="u", since="@1", evidence="e", marker=None, max_bytes=1)

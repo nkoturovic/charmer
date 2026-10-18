@@ -342,7 +342,7 @@ def journal_sources(unit: str, marker: str | None) -> tuple[
     """The unit journal's ``(reader, reaches, drops)`` for
     :func:`evaluate_journal`: the evidence read (credential-save lines and
     the start line ``marker``), the reach-back probe and journald's drop
-    notices for the user's services."""
+    notices that can stand for the unit's lines."""
 
     def reader(since: datetime.datetime) -> observation.LogWindow:
         return service.read_hold_journal(unit=unit, since=f"@{int(since.timestamp())}",
@@ -353,7 +353,7 @@ def journal_sources(unit: str, marker: str | None) -> tuple[
         return service.journal_reaches(unit=unit, at=at)
 
     def drops(since: datetime.datetime) -> Drops | None:
-        return service.journal_drops(since=since)
+        return service.journal_drops(since=since, unit=unit)
 
     return reader, reaches, drops
 
@@ -433,9 +433,8 @@ def evaluate_journal(state_root: Path, providers: Iterable[str], *,
             total = ("some" if any(count is None for count in counts)
                      else str(sum(count for count in counts if count is not None)))
             last = _utc(max(moment for moment, _count in notices)).isoformat(timespec="seconds")
-            coverage.append(f"service journal: journald's rate limit for your user services, which the gateway "
-                            f"shares, dropped {total} log lines (last notice {last}); a credential save among them "
-                            "cannot be ruled out")
+            coverage.append(f"service journal: journald's rate limit dropped {total} log lines of the gateway's "
+                            f"service (last notice {last}); a credential save among them cannot be ruled out")
     if cutoff is not None:
         window = observation.LogWindow(
             tuple(record for record in window.records

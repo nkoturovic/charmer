@@ -593,16 +593,18 @@ def journal_reaches(*, unit: str, at: datetime.datetime, timeout: float = PROBE_
     return True
 
 
-def journal_drops(*, since: datetime.datetime, uid: int, timeout: float = PROBE_TIMEOUT,
+def journal_drops(*, since: datetime.datetime, uid: int, unit: str, timeout: float = PROBE_TIMEOUT,
                   runner: Callable = subprocess.run) -> tuple[tuple[datetime.datetime, int | None], ...] | None:
-    """journald's rate-limit drop notices for the user's services since
-    ``since``: ``(time, lines dropped or None)`` each, the newest
-    :data:`DROPS_MAX` at most. journald limits all of a user's services
-    together, as ``user@<uid>.service``, so a notice naming another of the
-    user's units may stand for gateway lines too. None when the system
-    journal, where journald writes them, cannot be read here (an ordinary
-    user's account) or the query fails."""
+    """journald's rate-limit drop notices since ``since`` that can stand for
+    lines of the user unit ``unit``: ``(time, lines dropped or None)`` each,
+    the newest :data:`DROPS_MAX` at most. journald limits each unit's cgroup
+    on its own and names the unit whose lines it dropped
+    (``OBJECT_SYSTEMD_USER_UNIT``), so a notice naming another of the user's
+    units never stands for gateway lines; a notice naming no user unit
+    counts. None when the system journal, where journald writes them, cannot
+    be read here (an ordinary user's account) or the query fails."""
 
+    name = unit if "." in unit else unit + ".service"
     probe = _probe(["journalctl", "--system", "-n", "1", "--no-pager", "-o", "json",
                     "--output-fields=__REALTIME_TIMESTAMP"], runner, timeout)
     if probe is None or len(probe) != 1 or _entry(probe[0]) is None:
@@ -610,7 +612,7 @@ def journal_drops(*, since: datetime.datetime, uid: int, timeout: float = PROBE_
     lines = _probe(["journalctl", "--system", f"MESSAGE_ID={DROPPED_MESSAGE_ID}", "_UID=0", f"OBJECT_UID={uid}",
                     f"OBJECT_SYSTEMD_UNIT=user@{uid}.service", "--since", f"@{math.floor(since.timestamp())}",
                     "-n", str(DROPS_MAX), "--no-pager", "-o", "json",
-                    "--output-fields=__REALTIME_TIMESTAMP,N_DROPPED"], runner, timeout)
+                    "--output-fields=__REALTIME_TIMESTAMP,N_DROPPED,OBJECT_SYSTEMD_USER_UNIT"], runner, timeout)
     if lines is None:
         return None
     notices = []
@@ -619,6 +621,9 @@ def journal_drops(*, since: datetime.datetime, uid: int, timeout: float = PROBE_
         micros = item.get("__REALTIME_TIMESTAMP") if item is not None else None
         if not isinstance(micros, str) or not _MICROS.fullmatch(micros):
             return None
+        owner = item.get("OBJECT_SYSTEMD_USER_UNIT")
+        if isinstance(owner, str) and owner and owner != name:
+            continue
         try:
             moment = datetime.datetime.fromtimestamp(int(micros) / 1_000_000, datetime.timezone.utc)
         except (ValueError, OverflowError, OSError):
