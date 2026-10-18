@@ -6,7 +6,25 @@ follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Security
+
+- The four bundled CPython 3.14.8 runtimes come from python-build-standalone
+  20261013 (Expat 2.9.0, libffi 3.8.0), with matching archive provenance,
+  licence inventories, notices and SBOM inputs.
+- Build and CI dependencies refreshed and verified: setuptools 84.0.0,
+  govulncheck v1.9.0, zizmor 1.31.1, install-nix-action v31.11.2,
+  upload-artifact v7.0.2, download-artifact v8.0.2 and the Linux container
+  digests; the CI Go compiler and ShellCheck are pinned by publisher digest.
+- A weekly vulnerability watch checks the latest signed release: govulncheck
+  over each bundle's gateway against that release's dispositions, and OSV
+  over its Go modules and CPython. CPython advisories are accepted only by
+  explicit, expiring reviews bound to the advisory revision and runtime
+  version; one issue tracks the findings.
+
 ### Changed
+
+- CI tests Python 3.15 beside 3.11 and 3.14, and Ubuntu 26.04 beside 24.04
+  in the WSL lane.
 
 - When this build cannot read quota, `charmer quota` and `/cm quota` add
   one line: readings are available only in the Nix package in this
