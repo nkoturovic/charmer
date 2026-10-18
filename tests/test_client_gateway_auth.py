@@ -1,4 +1,4 @@
-"""Client checks S11 and S12 against the pinned Claude Code.
+"""Client checks S11, S12 and S16 against the pinned Claude Code.
 
 S11 — helper-only gateway auth: with no
 credential in the child environment, does the ``apiKeyHelper`` token rotate
@@ -9,6 +9,15 @@ S12 — ``[1m]`` GPT-6 selectors: what window the pinned client assumes for a
 ``gpt-multi-<key>-<effort>[1m]`` selector and what it puts on the wire, and
 what the currently packaged CLIProxyAPI forwards for that alias to a
 loopback fake Codex upstream.
+
+S16 — auxiliary destinations: does the gateway token (a synthetic token from
+the fixture ``apiKeyHelper``) reach any host other than the gateway? Every
+HTTPS request through the client's proxy goes to a local non-forwarding
+tripwire that terminates TLS for any host with a fixture CA; the token must
+appear on the fake gateway's requests and on none of the tripwire's, with
+the compiled policy and with the client's defaults. A self-test proves the
+detector; the previous release's pin, when retained, is its real-client
+control.
 
 Real-binary runs go only through the probe harness (trusted path+sha256
 from ``catalog/native-contract.json``, fixture HOME/CLAUDE_CONFIG_DIR,
@@ -41,6 +50,7 @@ import re
 import shlex
 import shutil
 import socket
+import ssl
 import subprocess
 import tempfile
 import threading
@@ -49,6 +59,7 @@ import unittest
 import urllib.parse
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
+from unittest import mock
 
 from charmer import catalog, composition, probe, render, state, strict_json
 from charmer.probe import ProbeError
@@ -870,3 +881,348 @@ class S12GptContextTests(_SpikeCase):
         if binary is None:
             with self.subTest("S12 gateway half"):
                 self.skipTest(f"BOUNDARY: {version}; S12 gateway half skipped")
+
+
+# ------------------------------------------------------------------ S16
+
+# A fixed non-secret synthetic gateway token: the fixture helper prints it.
+_S16_TOKEN = "s16-synthetic-gateway-token"
+_S16_HOST = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?:443$")
+_S16_MAX_BODY = 16 * 1024 * 1024
+# The previous release's pin, the control that shows the detector catching a
+# client that sent the gateway key to Anthropic (the 2.1.299 upstream fix).
+_S16_PREVIOUS = ("2.1.292", "a967e7b1d8b4e47ee421d5433027880347952b0c0857abf880e2c942a4ec93b3")
+
+
+def _s16_path_class(path: str) -> str:
+    """A request path with id-shaped segments replaced by ``<id>`` (never printed raw)."""
+
+    route = urllib.parse.urlsplit(path).path
+    return "/".join("<id>" if re.search(r"\d|^sdk-", segment) else segment for segment in route.split("/"))
+
+
+def _s16_openssl(*args: str) -> None:
+    subprocess.run(["openssl", *args], check=True, capture_output=True, timeout=60,
+                   env={"PATH": "/usr/bin:/bin"})
+
+
+class _DestinationTripwire(probe.FakeAnthropicProvider):
+    """The fake gateway plus a non-forwarding CONNECT tripwire for every host.
+
+    A CONNECT to ``<host>:443`` is answered 200 and TLS-terminated with a
+    leaf certificate for that host signed by the fixture CA (the client
+    trusts it through ``NODE_EXTRA_CA_CERTS``); every inner request is
+    answered 404. Only the host, method, an id-redacted path and whether the
+    synthetic token appears in a header value, the path or the body are
+    kept. Nothing is forwarded, resolved or dialled; a CONNECT to any other
+    port or a malformed host is refused with 403 and recorded."""
+
+    def __init__(self, *, responder, ca: tuple[Path, Path], directory: Path):
+        super().__init__(responder=responder, known_tokens={_S16_TOKEN: "S16"})
+        self.lock = threading.Lock()
+        self.connects: list[str] = []
+        self.refused: list[str] = []
+        self.inner: list[tuple[str, str, str, bool]] = []  # (host, method, path class, token seen)
+        self._ca = ca
+        self._directory = directory
+        self._contexts: dict[str, ssl.SSLContext] = {}
+
+    def start(self):
+        started = super().start()
+        self._server.RequestHandlerClass = _TripwireHandler  # type: ignore[union-attr]
+        return started
+
+    def unix_socket(self, directory: Path | str) -> Path:
+        path = super().unix_socket(directory)
+        self._unix_servers[path][0].RequestHandlerClass = _TripwireHandler
+        return path
+
+    def context(self, host: str) -> ssl.SSLContext:
+        with self.lock:
+            cached = self._contexts.get(host)
+            if cached is not None:
+                return cached
+            index = len(self._contexts)
+            key, cert = self._directory / f"leaf-{index}-key.pem", self._directory / f"leaf-{index}.pem"
+            _s16_openssl("req", "-x509", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:prime256v1", "-nodes",
+                         "-days", "1", "-subj", f"/CN={host}", "-addext", f"subjectAltName=DNS:{host}",
+                         "-addext", "basicConstraints=critical,CA:FALSE",
+                         "-addext", "extendedKeyUsage=serverAuth",
+                         "-CA", str(self._ca[0]), "-CAkey", str(self._ca[1]), "-keyout", str(key), "-out", str(cert))
+            context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            context.load_cert_chain(str(cert), str(key))
+            self._contexts[host] = context
+            return context
+
+    def summary(self) -> dict:
+        with self.lock:
+            inner = list(self.inner)
+            connects, refused = sorted(set(self.connects)), sorted(set(self.refused))
+        gateway = [record for record in self.requests if record.auth == "S16"]
+        return {
+            "connects": connects, "refused": refused,
+            "destinations": sorted({f"{host} {method} {path}" for host, method, path, _seen in inner}),
+            "token_destinations": sorted({f"{host} {method} {path}" for host, method, path, seen in inner if seen}),
+            "gateway_with_token": len(gateway),
+        }
+
+
+class _TripwireHandler(probe._ProviderHandler):
+    inner_host: str | None = None
+
+    @property
+    def owner(self) -> _DestinationTripwire:
+        return self.server.provider  # type: ignore[attr-defined]
+
+    def do_CONNECT(self) -> None:
+        owner = self.owner
+        with owner.lock:
+            owner.connects.append(self.path)
+        if self.inner_host is not None or not _S16_HOST.fullmatch(self.path):
+            with owner.lock:
+                owner.refused.append(self.path)
+            self.send_error(403)
+            return
+        host = self.path.rsplit(":", 1)[0].lower()
+        try:
+            context = owner.context(host)
+        except (OSError, subprocess.SubprocessError, ssl.SSLError):
+            with owner.lock:
+                owner.refused.append(self.path)
+            self.send_error(403)
+            return
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.flush()
+        try:
+            with context.wrap_socket(self.connection, server_side=True) as connection:
+                handler = type("_Inner", (_TripwireHandler,), {"inner_host": host})
+                handler(connection, self.client_address, self.server)
+        except (OSError, ssl.SSLError):
+            pass
+        self.close_connection = True
+
+    def _body(self) -> bytes:
+        if (self.headers.get("Transfer-Encoding") or "").lower() == "chunked":
+            data = b""
+            while len(data) <= _S16_MAX_BODY:
+                size = int((self.rfile.readline(64).split(b";", 1)[0].strip() or b"0"), 16)
+                if size == 0:
+                    self.rfile.readline(64)
+                    break
+                data += self.rfile.read(size)
+                self.rfile.readline(64)
+            return data
+        length = int(self.headers.get("Content-Length") or 0)
+        return self.rfile.read(min(max(length, 0), _S16_MAX_BODY)) if length else b""
+
+    def _inner(self, method: str) -> None:
+        owner = self.owner
+        body = self._body()
+        token = _S16_TOKEN.encode()
+        seen = (any(_S16_TOKEN in str(value) for value in self.headers.values())
+                or token in self.path.encode("utf-8", "replace") or token in body)
+        with owner.lock:
+            owner.inner.append((str(self.inner_host), method, _s16_path_class(self.path), seen))
+        self.close_connection = True
+        self._error(404, "not_found_error", "s16 tripwire: not served")
+
+    def do_GET(self) -> None:
+        if self.inner_host is not None:
+            self._inner("GET")
+            return
+        super().do_GET()
+
+    def do_POST(self) -> None:
+        if self.inner_host is not None:
+            self._inner("POST")
+            return
+        super().do_POST()
+
+    def do_PUT(self) -> None:
+        self._inner("PUT") if self.inner_host is not None else self.send_error(405)
+
+    def do_PATCH(self) -> None:
+        self._inner("PATCH") if self.inner_host is not None else self.send_error(405)
+
+    def do_DELETE(self) -> None:
+        self._inner("DELETE") if self.inner_host is not None else self.send_error(405)
+
+    def do_HEAD(self) -> None:
+        self._inner("HEAD") if self.inner_host is not None else self.send_error(405)
+
+
+def _s16_ca(directory: Path) -> tuple[Path, Path]:
+    cert, key = directory / "s16-ca.pem", directory / "s16-ca-key.pem"
+    _s16_openssl("req", "-x509", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:prime256v1", "-nodes", "-days", "1",
+                 "-subj", "/CN=charmer-s16-fixture-ca", "-addext", "basicConstraints=critical,CA:TRUE",
+                 "-addext", "keyUsage=critical,keyCertSign,cRLSign", "-keyout", str(key), "-out", str(cert))
+    return cert, key
+
+
+class _S16Reply:
+    def __init__(self, marker: str):
+        self.marker = marker
+
+    def respond(self, document, path, context):
+        if _route(path) == _COUNT_TOKENS:
+            return 200, {"input_tokens": 1}
+        text = f"{self.marker}-ACK" if self.marker in json.dumps(document.get("messages")) else "PROBE-OK"
+        payload = probe._message_payload([{"type": "text", "text": text}], model=document.get("model"),
+                                         stop_reason="end_turn", message_id=f"msg_s16_{context.ordinal:04d}")
+        return 200, probe._sse_message(payload) if document.get("stream") else payload
+
+
+class S16TripwireSelfTests(unittest.TestCase):
+    """The S16 detector itself, without a client: a token in a header, the
+    path or the body of a request through the tripwire is seen; a request
+    without it is not; a CONNECT to another port is refused."""
+
+    def test_the_tripwire_sees_the_token_wherever_it_is(self) -> None:
+        if shutil.which("openssl", path="/usr/bin:/bin") is None:
+            self.skipTest("BOUNDARY: openssl is needed for the fixture TLS tripwire")
+        root = Path(tempfile.mkdtemp(prefix="charmer-s16-self-"))
+        self.addCleanup(shutil.rmtree, root, True)
+        ca = _s16_ca(root)
+        client_context = ssl.create_default_context(cafile=str(ca[0]))
+        cases = (("header", {"x-api-key": _S16_TOKEN}, "/api/claude_cli/bootstrap", b""),
+                 ("bearer", {"Authorization": f"Bearer {_S16_TOKEN}"}, "/api/eval/sdk-1a2b", b""),
+                 ("path", {}, f"/api/x?key={_S16_TOKEN}", b""),
+                 ("body", {}, "/api/event_logging/v2/batch", json.dumps({"k": _S16_TOKEN}).encode()),
+                 ("absent", {"x-api-key": "another-value"}, "/api/oauth/profile", b"{}"))
+        with _DestinationTripwire(responder=_S16Reply("S16-SELF"), ca=ca, directory=root) as provider:
+            port = int(urllib.parse.urlsplit(provider.base_url).port)
+            for label, headers, path, body in cases:
+                with socket.create_connection(("127.0.0.1", port), timeout=10) as raw:
+                    raw.sendall(b"CONNECT api.anthropic.com:443 HTTP/1.1\r\nHost: api.anthropic.com:443\r\n\r\n")
+                    self.assertIn(b" 200 ", raw.recv(4096), label)
+                    with client_context.wrap_socket(raw, server_hostname="api.anthropic.com") as tls:
+                        lines = [f"POST {path} HTTP/1.1", "Host: api.anthropic.com",
+                                 f"Content-Length: {len(body)}", *(f"{k}: {v}" for k, v in headers.items())]
+                        tls.sendall(("\r\n".join(lines) + "\r\n\r\n").encode() + body)
+                        self.assertIn(b" 404 ", tls.recv(4096), label)
+            with socket.create_connection(("127.0.0.1", port), timeout=10) as raw:
+                raw.sendall(b"CONNECT api.anthropic.com:80 HTTP/1.1\r\n\r\n")
+                self.assertIn(b" 403 ", raw.recv(4096))
+            summary = provider.summary()
+        self.assertEqual(summary["token_destinations"], [
+            "api.anthropic.com POST /api/claude_cli/bootstrap", "api.anthropic.com POST /api/eval/<id>",
+            "api.anthropic.com POST /api/event_logging/<id>/batch", "api.anthropic.com POST /api/x"])
+        self.assertIn("api.anthropic.com POST /api/oauth/profile", summary["destinations"])
+        self.assertEqual(summary["refused"], ["api.anthropic.com:80"])
+
+
+class S16AuxiliaryDestinationTests(_SpikeCase):
+    """S16: the gateway token never reaches a host other than the gateway.
+
+    Every HTTPS request the client sends through its proxy goes to a local
+    non-forwarding tripwire that terminates TLS for any host
+    (:class:`_DestinationTripwire`): interactive sessions with the compiled
+    flag-settings policy (fast mode off, feedback drafts off) and with the
+    client's own defaults (fast mode on with a cached organization
+    enablement, so it would prefetch), and a headless run. The synthetic
+    token from the fixture ``apiKeyHelper`` reaches the fake gateway on
+    loopback (the positive control) and no tripwire destination. The
+    previous release's pin, when retained next to the pin, is the
+    detector's real-client control: it sent the key to ``api.anthropic.com``
+    (fixed upstream in 2.1.299). Residual: a request that ignores the proxy
+    fails inside the loopback-only namespace and is not observed."""
+
+    def _seeded(self, name: str, *, fast_mode: bool) -> tuple[probe.ProbeFixture, Path]:
+        fixture = self._fixture(name)
+        config = fixture.claude_config_dir / ".claude.json"
+        document = strict_json.loads(config.read_bytes())
+        if fast_mode:
+            document["penguinModeOrgEnabled"] = True
+        state.atomic_write(config, strict_json.canonical_file_bytes(document))
+        bin_dir = state.ensure_private_dir(fixture.root / "bin")
+        helper = probe.write_fixture_executable(fixture, bin_dir, "s16-helper", f"#!/bin/sh\necho {_S16_TOKEN}\n")
+        return fixture, helper
+
+    def _observe(self, name: str, *, trusted: probe.TrustedExecutable, flag_env: dict | None,
+                 fast_mode: bool, interactive: bool) -> dict:
+        fixture, helper = self._seeded(name, fast_mode=fast_mode)
+        tls = state.ensure_private_dir(fixture.root / "tls")
+        ca = _s16_ca(tls)
+        marker = f"S16-{name.upper()}"
+        settings: dict = {"model": "s16-opus-5-fixture", "apiKeyHelper": str(helper)}
+        if fast_mode:
+            settings["fastMode"] = True
+        if flag_env:
+            settings["env"] = dict(flag_env)
+        path = probe.write_fixture_settings(fixture, f"scope/settings-{name}.json", settings)
+        provider = _DestinationTripwire(responder=_S16Reply(marker), ca=ca, directory=tls)
+        original = probe.ProbeFixture.environ
+
+        def environ(fixture_self, **kwargs):
+            env = original(fixture_self, **kwargs)
+            env.update({"HTTPS_PROXY": provider.base_url, "NO_PROXY": "127.0.0.1,localhost",
+                        "NODE_EXTRA_CA_CERTS": str(ca[0])})
+            return env
+
+        step = probe.PTYInteraction
+        steps = (step(b"Choose", b"2\r"), step(b"Press", b"\r"),
+                 step("❯".encode("utf-8"), marker.encode("ascii") + b"\r"),
+                 step(f"{marker}-ACK".encode("ascii"), b"/exit\r"))
+        try:
+            with provider, mock.patch.object(probe.ProbeFixture, "environ", environ):
+                if interactive:
+                    result = probe.run_native_pty(
+                        ("--settings", str(path), "--model", settings["model"]), steps, trusted=trusted,
+                        fixture=fixture, provider=provider, timeout=90, allow_real=True,
+                        environ=self.environ, token=None)
+                else:
+                    result = probe.run_native(
+                        ("-p", marker, "--settings", str(path), "--model", settings["model"]), trusted=trusted,
+                        fixture=fixture, provider=provider, timeout=90, allow_real=True,
+                        environ=self.environ, token=None)
+        except ProbeError as exc:
+            if _LIVE_TOUCHED in str(exc):
+                print("client check S16: INCONCLUSIVE live daemon domain touched (tripwire failed closed)")
+                self.skipTest(f"BOUNDARY: INCONCLUSIVE S16: {exc}")
+            raise
+        self.assertFalse(result.timed_out, name)
+        self.assertEqual(result.returncode, 0, name)
+        return provider.summary()
+
+    def test_s16_gateway_token_stays_on_the_gateway(self) -> None:
+        if shutil.which("openssl", path="/usr/bin:/bin") is None:
+            self.skipTest("BOUNDARY: openssl is needed for the fixture TLS tripwire")
+        import test_compiler_v2  # the production compile (module import: no tests re-exported)
+        from charmer import scope
+
+        _lineup, compiled = test_compiler_v2._seed_launch("balanced")
+        compiled_env = compiled.scope_plan.settings["env"]
+        policy = {key: compiled_env[key] for key in (scope.FAST_MODE_ENV, scope.FEEDBACK_ENV)}
+        self.assertEqual(policy, {scope.FAST_MODE_ENV: "1", scope.FEEDBACK_ENV: "false"})
+        observed = {
+            "compiled": self._observe("compiled", trusted=self.trusted, flag_env=policy, fast_mode=True,
+                                      interactive=True),
+            "defaults": self._observe("defaults", trusted=self.trusted, flag_env=None, fast_mode=True,
+                                      interactive=True),
+            "headless": self._observe("headless", trusted=self.trusted, flag_env=policy, fast_mode=True,
+                                      interactive=False),
+        }
+        for label, summary in observed.items():
+            self.assertGreaterEqual((label, summary["gateway_with_token"] > 0), (label, True), summary)
+            self.assertEqual((label, summary["token_destinations"]), (label, []), summary)
+        self.assertTrue(any(summary["destinations"] for summary in observed.values()), observed)
+        previous_path = self.trusted.resolved_path.parent / _S16_PREVIOUS[0]
+        if (previous_path != self.trusted.resolved_path and previous_path.is_file()
+                and probe._sha256_file(previous_path) == _S16_PREVIOUS[1]):
+            previous = self._observe("previous", trusted=probe.TrustedExecutable(previous_path, _S16_PREVIOUS[1]),
+                                     flag_env=policy, fast_mode=True, interactive=True)
+            self.assertTrue(previous["token_destinations"], previous)
+            control = f"previous pin {_S16_PREVIOUS[0]} sends it to {previous['token_destinations']}"
+        else:
+            control = f"previous-pin control unavailable ({_S16_PREVIOUS[0]} not retained next to the pin)"
+        hosts = sorted({entry.split(" ", 1)[0] for summary in observed.values() for entry in summary["destinations"]})
+        print(
+            "client check S16: PASS synthetic helper token on gateway requests only "
+            f"(compiled {observed['compiled']['gateway_with_token']}, defaults "
+            f"{observed['defaults']['gateway_with_token']}, headless {observed['headless']['gateway_with_token']}); "
+            f"0 tripwire requests carry it; tripwire hosts {hosts}; requests "
+            f"{sorted({entry for summary in observed.values() for entry in summary['destinations']})}; "
+            f"refused CONNECTs {sorted({r for summary in observed.values() for r in summary['refused']})}; "
+            f"detector self-test S16TripwireSelfTests; {control} ({self._pin()})"
+        )

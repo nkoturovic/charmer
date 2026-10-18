@@ -417,6 +417,9 @@ class EssentialEvidencePrefixTests(unittest.TestCase):
                 "client probe S14-typed: PASS class=S14-typed-run ",
                 "client probe FM: PASS class=FM-prefetch-off ",
                 "client probe FM-layers: PASS class=FM-flag-settings ",
+                "client check S10-precedence: PASS ",
+                "client check S15: PASS ",
+                "client check S16: PASS ",
             ),
         )
         # A fail-closed or BOUNDARY print never matches a prefix.
@@ -623,6 +626,41 @@ class RunRepinTests(UpgradeTestCase):
                     self.repin(checkout_root=product, native_contract=self.contract,
                                today="2026-07-24", runner=self._runner(0, output))
                 self.assertIn(repr(skipped), str(raised.exception))
+
+    def test_policy_and_token_check_skips_refuse_promotion(self) -> None:
+        """The workflow-model precedence (S10-precedence), fork-subagent deny
+        (S15) and gateway-token destination (S16) checks each need their own
+        PASS record: omitted, INCONCLUSIVE with a BOUNDARY skip, a BOUNDARY
+        skip alone (S16 without openssl) or not at a line start, a zero-exit
+        suite refuses promotion and restores the checkout."""
+
+        for check in ("S10-precedence", "S15", "S16"):
+            required = f"client check {check}: PASS "
+            others = [prefix + "ok" for prefix in upgrade.ESSENTIAL_EVIDENCE_PREFIXES if prefix != required]
+            for label, lines in (
+                ("missing", ["Ran 42 tests", "OK"]),
+                ("inconclusive", [
+                    f"client check {check}: INCONCLUSIVE live daemon domain touched bin=fixture",
+                    f"test_{check} (fixture.Check) ... skipped 'BOUNDARY: INCONCLUSIVE {check}: fixture'",
+                    "Ran 42 tests", "OK (skipped=1)"]),
+                ("boundary", [
+                    f"test_{check} (fixture.Check) ... skipped 'BOUNDARY: openssl is needed for the fixture "
+                    "TLS tripwire'", "Ran 42 tests", "OK (skipped=1)"]),
+                ("unanchored", [f"note {required}fixture", "Ran 42 tests", "OK"]),
+            ):
+                with self.subTest(check=check, case=label):
+                    product = self._product_tree(f"repo-{check}-{label}")
+                    pinned = product / "tests" / "test_native_contract.py"
+                    pinned.write_text('validated = "2.1.217"\n', encoding="utf-8")
+                    before = {path: path.read_bytes() for path in (
+                        product / RESOURCES_RELATIVE / "catalog" / "native-contract.json",
+                        product / RESOURCES_RELATIVE / "version.json", pinned)}
+                    with self.assertRaisesRegex(UpgradeError, "completion evidence is missing") as raised:
+                        self.repin(checkout_root=product, native_contract=self.contract, today="2026-07-24",
+                                   runner=self._runner(0, "\n".join([*others, *lines]) + "\n"))
+                    self.assertIn(repr(required), str(raised.exception))
+                    for path, data in before.items():
+                        self.assertEqual(path.read_bytes(), data, path)
 
     def test_nonzero_exit_rejects_even_with_all_completion_records(self) -> None:
         product = self._product_tree()

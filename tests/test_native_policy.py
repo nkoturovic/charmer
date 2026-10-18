@@ -45,7 +45,7 @@ class PolicyMatrixTests(unittest.TestCase):
                     self.assertIn("Agent(general-purpose)", denies)
                 else:
                     self.assertNotIn("Agent(general-purpose)", denies)
-                # stable deny order: Explore, Plan, general-purpose, aliases
+                # stable deny order: Explore, Plan, general-purpose, fork, aliases
                 expected: list[str] = []
                 if not both_non_native and explore != "native":
                     expected.append("Agent(Explore)")
@@ -53,6 +53,7 @@ class PolicyMatrixTests(unittest.TestCase):
                     expected.append("Agent(Plan)")
                 if gp == "off":
                     expected.append("Agent(general-purpose)")
+                expected.append("Agent(fork)")
                 expected.append("Agent(claude)")
                 self.assertEqual(denies, expected)
 
@@ -61,21 +62,21 @@ class PolicyMatrixTests(unittest.TestCase):
             {"explore": "native", "plan": "native", "general_purpose": "on"},
             ["claude", "beta", "claude"],
         )
-        self.assertEqual(denies, ["Agent(beta)", "Agent(claude)"])
+        self.assertEqual(denies, ["Agent(fork)", "Agent(beta)", "Agent(claude)"])
 
     def test_generic_alias_never_duplicates_builtin_deny(self) -> None:
         _, denies = compiler.compile_native_policy(
             {"explore": "replace", "plan": "native", "general_purpose": "off"},
-            ["general-purpose", "Explore"],
+            ["general-purpose", "Explore", "fork"],
         )
-        self.assertEqual(denies, ["Agent(Explore)", "Agent(general-purpose)"])
+        self.assertEqual(denies, ["Agent(Explore)", "Agent(general-purpose)", "Agent(fork)"])
 
     def test_no_aliases_preserves_builtin_only_order(self) -> None:
         env, denies = compiler.compile_native_policy(
             {"explore": "replace", "plan": "native", "general_purpose": "off"}
         )
         self.assertEqual(env, {})
-        self.assertEqual(denies, ["Agent(Explore)", "Agent(general-purpose)"])
+        self.assertEqual(denies, ["Agent(Explore)", "Agent(general-purpose)", "Agent(fork)"])
 
     def test_default_seed_policy(self) -> None:
         env, denies = compiler.compile_native_policy(
@@ -84,7 +85,7 @@ class PolicyMatrixTests(unittest.TestCase):
         )
         self.assertEqual(env, {})
         self.assertEqual(
-            denies, ["Agent(Explore)", "Agent(general-purpose)", "Agent(claude)"]
+            denies, ["Agent(Explore)", "Agent(general-purpose)", "Agent(fork)", "Agent(claude)"]
         )
 
     def test_both_disabled_uses_env_var(self) -> None:
@@ -92,7 +93,8 @@ class PolicyMatrixTests(unittest.TestCase):
             {"explore": "off", "plan": "off", "general_purpose": "on"}
         )
         self.assertEqual(env, {"CLAUDE_CODE_DISABLE_EXPLORE_PLAN_AGENTS": "1"})
-        self.assertEqual(denies, [])
+        # The fork subagent is denied whatever the native policy.
+        self.assertEqual(denies, ["Agent(fork)"])
 
     def test_no_same_name_shadowing(self) -> None:
         # The generated agent ids of every fixture seed

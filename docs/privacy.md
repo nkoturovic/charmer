@@ -23,12 +23,15 @@ Model listings and the public feed go directly from the launcher, not
 through the gateway. The launcher also contacts loopback for gateway
 status, quota and lifecycle checks; those do not send a provider request.
 
-Isolated Linux x86_64 testing of the pinned Claude Code observed that the
-fast-mode setting stopped the fast-mode prefetch in the tested scenario,
-but other requests addressed to `api.anthropic.com` still carried the test
-client key. The observed paths included `/api/claude_cli/bootstrap` and
-`/api/eval/<id>`. These requests were intercepted locally, not sent to
-Anthropic.
+Isolated Linux x86_64 testing of the pinned Claude Code sent every request
+the client made through its proxy to a local interceptor that accepted any
+host. The test client key reached the local gateway and nothing else: none
+of the requests to `api.anthropic.com`, `downloads.claude.ai` or
+`raw.githubusercontent.com` carried it, with the managed settings or with
+the client's defaults. The previous pin still sent it with requests to
+`api.anthropic.com` (paths including `/api/claude_cli/bootstrap` and
+`/api/eval/<id>`). These requests were intercepted locally, not sent to
+anyone; a request that does not use the proxy was not observed.
 
 This is not an exhaustive list of Claude Code's destinations. Equivalent
 traffic observations are not available for Linux aarch64, macOS or WSL2.

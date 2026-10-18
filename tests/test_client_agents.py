@@ -22,6 +22,11 @@ Design questions:
   offline; it stays user acceptance, like U1.
 - S3: does a SendMessage-resumed agent keep its original model after a
   reload? (shapes the lead-prompt wording)
+- S15: do the compiled permissions refuse fork subagents
+  (``subagent_type: "fork"``, the caller's own context and model), the
+  lead's and a cm agent's, headless and in a terminal, against competing
+  settings layers and on ``--resume``? (PASS => the ``Agent(fork)`` deny
+  holds; the controls without it show forks running)
 
 Hermetic: every real run executes inside a loopback-only network namespace
 (the harness's bwrap isolation, fake provider bridged over a fixture unix
@@ -41,6 +46,7 @@ response, or transcript text.
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import re
 import shutil
@@ -52,6 +58,7 @@ import urllib.parse
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from unittest import mock
 
 from charmer import probe, scope, state, strict_json
 from charmer.probe import ProbeError
@@ -832,6 +839,251 @@ class SendMessageResumeSpikeTests(_SpikeRealBinaryTestCase):
             f"no-reload-control={control_resumed.model}/def-"
             f"{control_resumed.definition} "
             f"{self.evidence_label}"
+        )
+
+
+# ------------------------------------------------------------------ S15
+
+
+_FORK_WAIT = 30.0
+
+
+def _fork_result_class(content: Any) -> str:
+    """The class of one Agent tool result (its text never leaves memory)."""
+
+    text = json.dumps(content)
+    if "has been denied by permission rule 'Agent(fork)'" in text:
+        return "denied"
+    if "Agent type 'fork' not found" in text:
+        return "unavailable"
+    if "Fork started" in text or "[Subagent hand-back]" in text:
+        return "started"
+    return "other"
+
+
+def _newest_user(messages: Any) -> dict[str, Any]:
+    """The newest user message (the client may append a system-role one)."""
+
+    users = [message for message in messages if isinstance(message, dict) and message.get("role") == "user"] \
+        if isinstance(messages, list) else []
+    return users[-1] if users else {}
+
+
+def _last_results(message: dict[str, Any]) -> dict[str, Any]:
+    """The tool results of one message (in memory only)."""
+
+    blocks = message.get("content")
+    return {block.get("tool_use_id"): block.get("content") for block in blocks if isinstance(block, dict)
+            and block.get("type") == "tool_result"} if isinstance(blocks, list) else {}
+
+
+class _ForkResponder:
+    """The lead's new turn calls ``Agent`` twice: a fork, and (``spawn``) a
+    spawn of the fixture cm agent; that agent's first request calls a fork
+    itself. Every
+    run has its own prompt marker and tool ids (a resumed history carries
+    the earlier run's). Fork requests are recognised by the client's
+    agent-type hint; only models, counts and result classes are kept. A
+    started fork's caller waits (bounded) for the fork's request, so a
+    background fork is seen before the turn ends."""
+
+    def __init__(self, run: str, *, spawn: bool = True) -> None:
+        self.spawn = spawn
+        self.prompt = f"S15-LEAD-PROMPT-{run}"
+        self.mark = f"S15-AGENT-MARK-{run}"
+        self.ids = {name: f"toolu_s15_{run}_{name}" for name in ("lead", "spawn", "agent")}
+        self.lock = threading.Lock()
+        self.lead_called = False
+        self.agent_called = False
+        self.forks: list[str | None] = []  # the fork requests' models
+        self.results: dict[str, str] = {}
+        self.fork_seen = threading.Event()
+        self.offered = False
+
+    def _fork(self, name: str) -> dict[str, Any]:
+        return {"type": "tool_use", "id": self.ids[name], "name": "Agent",
+                "input": {"description": "client check S15", "prompt": f"Reply S15-{name.upper()}-FORK",
+                          "subagent_type": "fork", "run_in_background": False}}
+
+    def respond(self, document: dict[str, Any], path: str, context: probe.RequestContext) -> tuple[int, Any]:
+        if urllib.parse.urlsplit(path).path.endswith("/count_tokens"):
+            return 200, {"input_tokens": 1}
+        hints = dict(context.record.hint_header_values)
+        names = {tool.get("name") for tool in document.get("tools") or () if isinstance(tool, dict)}
+        newest = _newest_user(document.get("messages"))
+        last = json.dumps(newest)
+        agent = _BODY_MARKER in json.dumps(document.get("system"))
+        results = {call_id: _fork_result_class(content)
+                   for call_id, content in _last_results(newest).items() if call_id in self.ids.values()}
+        content: list[dict[str, Any]] = [{"type": "text", "text": "PROBE-OK"}]
+        with self.lock:
+            if hints.get("x-claude-code-agent-type") == "fork":
+                self.forks.append(document.get("model"))
+                self.fork_seen.set()
+            elif not agent and self.prompt in last and not results:
+                self.offered = self.offered or "Agent" in names
+                if "Agent" in names and not self.lead_called:
+                    self.lead_called = True
+                    content = [self._fork("lead")]
+                    if self.spawn:
+                        content.append({"type": "tool_use", "id": self.ids["spawn"], "name": "Agent",
+                                        "input": {"description": "client check S15", "prompt": self.mark,
+                                                  "subagent_type": _AGENT_TYPE, "run_in_background": False}})
+            elif agent and self.mark in last and "Agent" in names and not self.agent_called and not results:
+                self.agent_called = True
+                content = [self._fork("agent")]
+            for call_id, outcome in results.items():
+                self.results.setdefault(call_id, outcome)
+        if content[0]["type"] == "text" and any(
+                outcome == "started" and call_id != self.ids["spawn"] for call_id, outcome in results.items()):
+            self.fork_seen.wait(_FORK_WAIT)
+        stop = "tool_use" if content[0]["type"] == "tool_use" else "end_turn"
+        payload = probe._message_payload(content, model=document.get("model"), stop_reason=stop,
+                                         message_id=f"msg_s15_{context.ordinal:04d}")
+        return 200, probe._sse_message(payload) if document.get("stream") else payload
+
+    def outcome(self) -> dict[str, Any]:
+        return {"lead": self.results.get(self.ids["lead"], "no-result"),
+                "agent": self.results.get(self.ids["agent"], "no-result" if self.spawn else "not-attempted"),
+                "fork_requests": len(self.forks), "fork_models": sorted({str(m) for m in self.forks})}
+
+
+class ForkSubagentPolicyTests(_SpikeRealBinaryTestCase):
+    """S15: fork subagents (``subagent_type: "fork"``) against the compiled
+    ``Agent(fork)`` deny.
+
+    Negative controls without the deny: the lead's fork and a cm agent's fork
+    both run, on the caller's own model, headless (on by default since
+    2.1.302) and in a terminal session. With the production compile's
+    permissions the client refuses both forks naming the rule, headless and
+    in a terminal; with competing user, project and local settings
+    (``CLAUDE_CODE_FORK_SUBAGENT=1`` in ``env``, an ``Agent(fork)`` allow) and
+    the same variable in the process environment, on a fresh start and on
+    ``--resume``; ``--no-subagents`` offers no Agent tool at all."""
+
+    def _settings(self, label: str, permissions: dict[str, Any]) -> Path:
+        path = self.scope / f"settings-s15-{label}.json"
+        state.atomic_write(path, strict_json.canonical_file_bytes(
+            {"availableModels": [_LEAD, _MODEL_A, _MODEL_B], "model": _LEAD, "permissions": permissions}))
+        return path
+
+    def _competing_layers(self) -> None:
+        layer = {"env": {"CLAUDE_CODE_FORK_SUBAGENT": "1"}, "permissions": {"allow": ["Agent(fork)"]}}
+        user = {"availableModels": [_LEAD, _MODEL_A, _MODEL_B], "model": _LEAD,
+                "permissions": {"defaultMode": scope.PERMISSION_DEFAULT_MODE, "allow": ["Agent(fork)"]},
+                "env": layer["env"]}
+        state.atomic_write(self.fixture.claude_config_dir / "settings.json", strict_json.canonical_file_bytes(user))
+        project = state.ensure_private_dir(self.fixture.project_dir / ".claude")
+        for name in ("settings.json", "settings.local.json"):
+            state.atomic_write(project / name, strict_json.canonical_file_bytes(layer))
+
+    def _headless(self, label: str, settings: Path, *, process: str | None = None,
+                  extra: tuple[str, ...] = ()) -> _ForkResponder:
+        responder = _ForkResponder(label)
+        original = probe.ProbeFixture.environ
+
+        def environ(fixture_self: probe.ProbeFixture, **kwargs: Any) -> dict[str, str]:
+            env = original(fixture_self, **kwargs)
+            if process is not None:
+                env["CLAUDE_CODE_FORK_SUBAGENT"] = process
+            return env
+
+        try:
+            with probe.FakeAnthropicProvider(responder=responder) as provider, \
+                    mock.patch.object(probe.ProbeFixture, "environ", environ):
+                result = probe.run_native(
+                    ("-p", responder.prompt, "--settings", str(settings), "--model", _LEAD,
+                     "--add-dir", str(self.scope), "--dangerously-skip-permissions", *extra),
+                    trusted=self.trusted, fixture=self.fixture, provider=provider, timeout=150,
+                    allow_real=True, environ=self.environ, child_env={"CLAUDE_CODE_GATEWAY_HINT_HEADERS": "1"},
+                )
+        except ProbeError as exc:
+            self._boundary_if_live_domain("S15", exc)
+            raise
+        self.assertFalse(result.timed_out, label)
+        self.assertEqual(result.returncode, 0, label)
+        return responder
+
+    def _terminal(self, label: str, settings: Path) -> _ForkResponder:
+        # The lead's fork only (a terminal runs every agent in the
+        # background); a started fork gets a moment to finish before /exit.
+        responder = _ForkResponder(label, spawn=False)
+
+        def settle() -> None:
+            if responder.fork_seen.is_set():
+                time.sleep(3)
+
+        steps = [*self._onboarding(),
+                 probe.PTYInteraction("❯".encode(), responder.prompt.encode() + b"\r"),
+                 probe.PTYInteraction(b"PROBE-OK", b"", preserve_after_wait=True),
+                 probe.PTYInteraction("❯".encode(), b"/exit\r", before_send=settle)]
+        try:
+            with probe.FakeAnthropicProvider(responder=responder) as provider:
+                result = probe.run_native_pty(
+                    ("--settings", str(settings), "--model", _LEAD, "--add-dir", str(self.scope)),
+                    steps, trusted=self.trusted, fixture=self.fixture, provider=provider, timeout=150,
+                    allow_real=True, environ=self.environ, child_env={"CLAUDE_CODE_GATEWAY_HINT_HEADERS": "1"},
+                )
+        except ProbeError as exc:
+            self._boundary_if_live_domain("S15", exc)
+            raise
+        self.assertFalse(result.timed_out, label)
+        self.assertEqual(result.returncode, 0, label)
+        return responder
+
+    def test_s15_fork_subagents_are_denied(self) -> None:
+        import test_compiler_v2  # the production compile (module import: no tests re-exported)
+
+        _lineup, compiled = test_compiler_v2._seed_launch("balanced", default_mode=scope.PERMISSION_DEFAULT_MODE)
+        permissions = json.loads(json.dumps(compiled.scope_plan.settings["permissions"]))
+        self.assertIn("Agent(fork)", permissions["deny"])
+        control_permissions = {**permissions, "deny": [d for d in permissions["deny"] if d != "Agent(fork)"]}
+        _lineup, alone = test_compiler_v2._seed_launch(
+            "balanced", no_subagents=True, default_mode=scope.PERMISSION_DEFAULT_MODE)
+        no_subagents = json.loads(json.dumps(alone.scope_plan.settings["permissions"]))
+        observed: dict[str, dict[str, Any]] = {}
+
+        control = self._headless("control", self._settings("control", control_permissions)).outcome()
+        self.assertEqual((control["lead"], control["agent"]), ("started", "started"), control)
+        self.assertEqual(control["fork_requests"], 2, control)
+        self.assertEqual(control["fork_models"], sorted([_LEAD, _MODEL_A]), control)
+        observed["control"] = control
+        compiled_path = self._settings("compiled", permissions)
+        observed["compiled"] = self._headless("compiled", compiled_path).outcome()
+        alone_run = self._headless("no-subagents", self._settings("no-subagents", no_subagents))
+        self.assertFalse(alone_run.offered)
+        observed["no-subagents"] = {**alone_run.outcome(), "agent_tool": alone_run.offered}
+
+        self._competing_layers()
+        session = "5e15c0de-5e15-4c0d-8e15-5e15c0de0a01"
+        observed["layers-fresh"] = self._headless(
+            "layers-fresh", compiled_path, process="1", extra=("--session-id", session)).outcome()
+        observed["layers-resume"] = self._headless(
+            "layers-resume", compiled_path, process="1", extra=("--resume", session)).outcome()
+
+        # A terminal session (forks on by default there before 2.1.302 too),
+        # each in a fresh fixture so the first-run screens are the same.
+        self._prepare_fixture("fixture-terminal-control")
+        terminal_control = self._terminal("terminal-control", self._settings("t-control", control_permissions))
+        observed["terminal-control"] = terminal_control.outcome()
+        self._prepare_fixture("fixture-terminal")
+        observed["terminal"] = self._terminal("terminal", self._settings("t-compiled", permissions)).outcome()
+
+        self.assertEqual(observed["terminal-control"]["lead"], "started", observed)
+        self.assertGreaterEqual(observed["terminal-control"]["fork_requests"], 1, observed)
+        for label in ("compiled", "layers-fresh", "layers-resume"):
+            self.assertEqual((label, observed[label]["lead"], observed[label]["agent"],
+                              observed[label]["fork_requests"]), (label, "denied", "denied", 0), observed[label])
+        self.assertEqual((observed["terminal"]["lead"], observed["terminal"]["fork_requests"]), ("denied", 0),
+                         observed)
+        self.assertEqual(observed["no-subagents"]["fork_requests"], 0, observed)
+        print(
+            "client check S15: PASS fork subagents: control without Agent(fork) -> lead and cm-agent forks "
+            f"start on the caller's model (headless {control['fork_models']}; terminal lead fork "
+            f"{observed['terminal-control']['fork_requests']} request(s)); the compiled deny refuses both "
+            "headless, and the lead's in a terminal (0 fork requests), against user/project/local env "
+            "CLAUDE_CODE_FORK_SUBAGENT=1 + Agent(fork) allow + process env on a fresh start and --resume; "
+            f"--no-subagents offers no Agent tool {self.evidence_label}"
         )
 
 

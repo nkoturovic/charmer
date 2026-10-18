@@ -16,7 +16,10 @@ pin ``PREVIOUS_CLIENT`` (the comparison baseline):
 
 - (a) nothing configured -> compiled ``default`` -> ``default``, for the
   profile, ad-hoc direct and no-subagent scopes, fresh and resume; the
-  omitted control (nothing compiled) shows why;
+  omitted control (nothing compiled) starts in ``default`` too on 2.1.302
+  (an upstream change for third-party providers) and in ``auto`` on the
+  previous pin when it is retained, so the compiled key keeps the mode
+  independent of the client's own default;
 - (b) user ``bypassPermissions`` (+ ``skipDangerousModePermissionPrompt``)
   -> nothing compiled -> ``bypassPermissions``;
 - (c) a project or local layer -> nothing compiled -> that mode;
@@ -63,10 +66,10 @@ from charmer import compiler, managed, probe, profile, scope, state, strict_json
 
 _CONTRACT_PATH = RESOURCES_ROOT / "catalog" / "native-contract.json"
 _LIVE_DOMAIN_TOUCHED = "live daemon domain touched"
-# The comparison baseline: the pin 2.1.286 replaced (both were measured).
+# The comparison baseline: the pin 2.1.302 replaced (both were measured).
 # Located next to the pinned binary and hash-verified before every exec; an
 # absent baseline drops only the comparison runs (never the pinned proof).
-PREVIOUS_CLIENT = ("2.1.281", "56fe3da88458465fb27d7e9299dddb3fead55750fb9c2de795f233b5eea6dce1")
+PREVIOUS_CLIENT = ("2.1.292", "a967e7b1d8b4e47ee421d5433027880347952b0c0857abf880e2c942a4ec93b3")
 LEAD_MODEL = "pd-lead"
 TURN = "PD-TURN"
 # Every --permission-mode value the pinned client accepts (S14's matrix).
@@ -363,9 +366,13 @@ class PermissionDefaultsTests(_PermissionCase):
                     with self.subTest(client=client.label, shape=shape, resume=resume):
                         mode, _ = self.run_turn(client, fixture, permissions, session=session, resume=resume)
                         self.assertEqual(mode, "default")
-        # The compiled key is load-bearing on the pinned client: without it
-        # an unconfigured session starts in another mode (2.1.284+: auto).
-        self.assertNotEqual(omitted[self.clients[0].label], "default", omitted)
+        # Without the compiled key an unconfigured session behind a
+        # third-party provider starts in default on 2.1.302 (an upstream
+        # change) and in auto on 2.1.284-2.1.301: the key keeps the mode
+        # independent of the client's own default.
+        self.assertEqual(omitted[self.clients[0].label], "default", omitted)
+        if len(self.clients) > 1:
+            self.assertEqual(omitted[self.clients[1].label], "auto", omitted)
         self.record("(a) compiled default -> default on profile/direct/no-subagents fresh+resume; omitted control "
                     + " ".join(f"{label}->{mode}" for label, mode in omitted.items()))
 

@@ -21,6 +21,13 @@ memory from the agent request's environment block) are recorded per agent;
 and outside the ``availableModels`` fence. A gate test pins which settings
 and env keys switch the Workflow tool off.
 
+S10-precedence — ``CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL`` (2.1.296+) set in
+the settings layers or the process environment replaces every workflow
+agent's model, cm-* frontmatter and per-call model included (negative
+controls); the compiled flag settings state it neutral (``inherit``), and
+the lineup precedence holds against every layer on a fresh start and on
+``--resume``.
+
 S13 — agent-spawning skills: agents compiled
 by the production agent-file compiler from the shipped read-only roles
 (explorer, reviewer, reviewer-strong) get no ``Skill`` tool and no skill
@@ -65,7 +72,9 @@ import unittest
 import urllib.parse
 from pathlib import Path
 from typing import Any
+from unittest import mock
 
+import test_compiler_v2  # module import: no test classes re-exported
 from charmer import catalog, probe, profile, scope, state, strict_json
 from charmer.probe import ProbeError
 
@@ -492,7 +501,10 @@ _WF_CALLS = {
     "typed": "{label: 'wb', agentType: 'cm-spike-w'}",
     "typed-isolated": "{label: 'wc', agentType: 'cm-spike-w', isolation: 'worktree'}",
     "frontmatter-isolation": "{label: 'wd', agentType: 'cm-spike-wi'}",
+    # S10-precedence: a per-call model on a cm-* agentType.
+    "typed-model": "{label: 'we', agentType: 'cm-spike-w', model: 'spike-sub-w'}",
 }
+_S10_CALLS = ("default", "typed", "typed-isolated", "frontmatter-isolation")
 _WF_MARKERS = {
     name: f"CHECK-WF-{index:02d}-{name.upper()}"
     for index, name in enumerate(_WF_CALLS, start=1)
@@ -684,7 +696,7 @@ class S10WorkflowAgentTests(_SpikeTestCase):
     def test_s10_workflow_agent_type_model_and_cwd(self) -> None:
         # (1) Production-shaped fence, no workflow default binding. The
         # Workflow tool is on by default: no enable key is set anywhere.
-        base, _ = self._run_workflow(self._settings("base"), tuple(_WF_CALLS))
+        base, _ = self._run_workflow(self._settings("base"), _S10_CALLS)
         self.assertEqual(
             base.agents["default"],
             {
@@ -789,6 +801,121 @@ class S10WorkflowAgentTests(_SpikeTestCase):
             self.assertTrue(main, f"{name}: no main-loop request")
             observed[name] = any("Workflow" in record.tool_names for record in main)
         self.assertEqual(observed, {name: expected for name, _, _, expected in cases})
+
+
+# ------------------------------------------------------- S10-precedence
+
+
+_WF_MODEL = "spike-wfm-w"  # a competing workflow model, inside the fence
+_WF_PRECEDENCE_CALLS = ("default", "typed", "typed-model")
+
+
+class WorkflowModelPrecedenceTests(S10WorkflowAgentTests):
+    """S10-precedence: ``CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL`` (Claude Code
+    2.1.296+) against the lineup.
+
+    Negative controls: set in the user settings ``env`` or in the process
+    environment, it replaces the model of every workflow agent — a cm-*
+    agentType's frontmatter model and a per-call ``model`` included. The
+    compiled flag settings state it ``inherit`` (``scope.WORKFLOW_MODEL_ENV``,
+    taken from the production compile): with the same variable set in the
+    user, project and local settings ``env`` and in the process
+    environment, workflow agents keep the lineup precedence (per-call model,
+    then the cm-* frontmatter, then the compiled ``CLAUDE_CODE_SUBAGENT_MODEL``
+    workflow default) on a fresh start and on ``--resume``. Not exercised:
+    the ``agent.spawn`` mod hook (2.1.300), whose installed modules are
+    behind a rollout switch that reads off for a third-party provider; its
+    rewrite is a per-call model, so the ``availableModels`` fence still
+    bounds it."""
+
+    test_s10_workflow_agent_type_model_and_cwd = None
+    test_s10_workflow_gate_keys = None
+
+    def _settings(self, name: str, extra: dict[str, Any] | None = None) -> Path:
+        document: dict[str, Any] = {
+            "availableModels": sorted([_LEAD, _AGENT_MODEL, _SUB_MODEL, _WF_MODEL]),
+            "model": _LEAD,
+        }
+        document.update(extra or {})
+        path = self.scope / f"settings-{name}.json"
+        state.atomic_write(path, strict_json.canonical_file_bytes(document))
+        return path
+
+    def _layers(self, env: dict[str, str] | None) -> None:
+        """User, project and local settings ``env`` (or none)."""
+
+        document = {"env": dict(env)} if env else {}
+        probe.write_fixture_settings(self.fixture, "claude-config/settings.json", document)
+        project = self.fixture.project_dir.relative_to(self.fixture.root)
+        for name in ("settings.json", "settings.local.json"):
+            probe.write_fixture_settings(self.fixture, str(project / ".claude" / name), document)
+
+    def _precedence_run(self, settings: Path, *, process: str | None,
+                        extra: tuple[str, ...] = ()) -> dict[str, str | None]:
+        responder = _WorkflowResponder(_workflow_script(_WF_PRECEDENCE_CALLS), self.fixture.project_dir)
+        original = probe.ProbeFixture.environ
+
+        def environ(fixture_self: probe.ProbeFixture, **kwargs: Any) -> dict[str, str]:
+            env = original(fixture_self, **kwargs)
+            if process is not None:
+                env[scope.WORKFLOW_MODEL_ENV] = process
+            return env
+
+        def run() -> probe.NativeRunResult:
+            with probe.FakeAnthropicProvider(responder=responder) as provider, \
+                    mock.patch.object(probe.ProbeFixture, "environ", environ):
+                return probe.run_native(
+                    ("-p", "client check S10 precedence", "--settings", str(settings),
+                     "--add-dir", str(self.scope), "--dangerously-skip-permissions", *extra),
+                    trusted=self.trusted, fixture=self.fixture, provider=provider, timeout=150,
+                    allow_real=True, environ=self.environ,
+                    child_env={"CLAUDE_CODE_GATEWAY_HINT_HEADERS": "1"},
+                )
+
+        result = self._guard_live_domain("S10-precedence", run)
+        self.assertFalse(result.timed_out)
+        self.assertEqual(result.returncode, 0)
+        self.assertTrue(responder.workflow_offered, "Workflow tool not offered")
+        self.assertEqual(sorted(responder.agents), sorted(_WF_PRECEDENCE_CALLS), "workflow agents missing")
+        return {name: responder.agents[name]["model"] for name in _WF_PRECEDENCE_CALLS}
+
+    def test_s10_workflow_model_precedence(self) -> None:
+        _lineup, compiled = test_compiler_v2._seed_launch("balanced")
+        neutral = compiled.scope_plan.settings["env"].get(scope.WORKFLOW_MODEL_ENV)
+        self.assertEqual(neutral, "inherit")
+        self.assertIn(scope.WORKFLOW_MODEL_ENV, compiled.env_unset)
+        default_binding = {"CLAUDE_CODE_SUBAGENT_MODEL": _SUB_MODEL}
+        competing = {scope.WORKFLOW_MODEL_ENV: _WF_MODEL}
+        lineup_precedence = {"default": _SUB_MODEL, "typed": _AGENT_MODEL, "typed-model": _SUB_MODEL}
+        overridden = {name: _WF_MODEL for name in _WF_PRECEDENCE_CALLS}
+
+        # Before the compiled policy: the baseline, then each layer alone.
+        self._layers(None)
+        baseline = self._precedence_run(self._settings("p-base", {"env": default_binding}), process=None)
+        self.assertEqual(baseline, lineup_precedence)
+        self._layers(competing)
+        user_layers = self._precedence_run(self._settings("p-user", {"env": default_binding}), process=None)
+        self.assertEqual(user_layers, overridden)
+        self._layers(None)
+        process_env = self._precedence_run(self._settings("p-proc", {"env": default_binding}), process=_WF_MODEL)
+        self.assertEqual(process_env, overridden)
+
+        # The compiled neutral value against every layer, fresh and resumed.
+        self._layers(competing)
+        compiled_settings = self._settings("p-compiled", {"env": {**default_binding, scope.WORKFLOW_MODEL_ENV: neutral}})
+        session = "5e10c0de-5e10-4c0d-8e10-5e10c0de0a01"
+        fresh = self._precedence_run(compiled_settings, process=_WF_MODEL, extra=("--session-id", session))
+        resumed = self._precedence_run(compiled_settings, process=_WF_MODEL, extra=("--resume", session))
+        self.assertEqual(fresh, lineup_precedence)
+        self.assertEqual(resumed, lineup_precedence)
+        print(
+            "client check S10-precedence: PASS CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL in user settings env "
+            f"-> {user_layers}; in process env -> {process_env} (cm-* frontmatter and per-call model "
+            f"replaced); compiled flag settings {scope.WORKFLOW_MODEL_ENV}={neutral} against "
+            f"user/project/local env and process env -> fresh {fresh}, --resume {resumed} "
+            f"(= baseline {baseline}: per-call model > cm-* frontmatter > CLAUDE_CODE_SUBAGENT_MODEL); "
+            f"agent.spawn mod rewrite not exercised (rollout switch off offline) {self.binary_label}"
+        )
 
 
 # ------------------------------------------------------------------ S13

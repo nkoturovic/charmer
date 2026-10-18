@@ -160,6 +160,8 @@ def oracle_denies(native: dict[str, str], aliases, no_subagents: bool) -> list[s
             denies.append("Agent(Plan)")
     if native["general_purpose"] == "off":
         denies.append("Agent(general-purpose)")
+    # Fork subagents are no lineup agent: denied in every scope (2.1.302 pin).
+    denies.append("Agent(fork)")
     for alias in sorted(set(aliases)):
         if f"Agent({alias})" not in denies:
             denies.append(f"Agent({alias})")
@@ -424,6 +426,8 @@ class FixturePropertyTests(unittest.TestCase):
         if case.workflow_selector is not None:
             self.assertIn(case.workflow_selector, available)
         self.assertNotIn("CLAUDE_CODE_SUBAGENT_MODEL_FORCE", env)
+        # Every scope states the 2.1.296+ workflow-wide model neutral.
+        self.assertEqual(env["CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL"], "inherit")
         self.assertEqual(env["CLAUDE_CODE_RETRY_WATCHDOG"], "1")
         # Both layers pin fast mode off; settings env wins over
         # user/project settings, and process env covers the launch boundary.

@@ -1588,9 +1588,25 @@ FEEDBACK_DRAFTS_VALUES = settings_mod.FEEDBACK_DRAFTS_VALUES
 FAST_MODE_ENV = "CLAUDE_CODE_DISABLE_FAST_MODE"
 
 
-# Claude Code 2.1.284+ starts a session whose settings configure no
-# permission mode in ``auto`` (2.1.281 started in ``default``; both
-# measured). A managed launch compiles ``permissions.defaultMode:
+# Claude Code 2.1.296+ runs every workflow agent on
+# CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL when it is set, over a cm-* agentType's
+# frontmatter model and the agent() model (spawns a workflow agent makes
+# included); the value "inherit" leaves it unset. Any settings layer could
+# set it (a project file before trust, too), so the flag settings, which
+# outrank the user, project and local layers, state it neutral in every
+# scope: workflow agents keep the lineup precedence (a per-call model, then
+# cm-* frontmatter, then the compiled CLAUDE_CODE_SUBAGENT_MODEL workflow
+# default, then the lead).
+# The real-binary proof is tests/test_client_skill_workflow
+# WorkflowModelPrecedenceTests (client check S10-precedence).
+WORKFLOW_MODEL_ENV = "CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL"
+WORKFLOW_MODEL_NEUTRAL = "inherit"
+
+
+# Claude Code 2.1.284-2.1.301 start a session whose settings configure no
+# permission mode in ``auto`` (2.1.281 started in ``default``, and 2.1.302
+# does again behind a third-party provider; all measured), so the mode
+# follows no client default. A managed launch compiles ``permissions.defaultMode:
 # "default"`` into the flag settings ONLY when no layer the client reads
 # configures one (``managed.permission_mode_configured``); a configured layer
 # or an explicit ``--permission-mode`` wins. Decided at launch and resume;
@@ -1700,6 +1716,7 @@ def compile_lineup_scope(
         env["CLAUDE_CODE_DISABLE_EXPLORE_INHERIT_CAP"] = "1"
     if workflow_default is not None:
         env["CLAUDE_CODE_SUBAGENT_MODEL"] = workflow_default
+    env[WORKFLOW_MODEL_ENV] = WORKFLOW_MODEL_NEUTRAL
     env.update(feedback_drafts_env(feedback_drafts))
     env[FAST_MODE_ENV] = "1"
 
@@ -2301,6 +2318,34 @@ def skill_policy_drift(live: Path, plan: ScopePlan, drifted: Sequence[str]) -> b
         if skill not in known or plan.other_files.get(SKILL_RELPATH) not in known:
             return False
     return True
+
+
+def fork_policy_drift(live: Path, plan: ScopePlan, drifted: Sequence[str]) -> bool:
+    """True when the ONLY drift of a live scope is the fork-subagent deny
+    (``compiler.FORK_AGENT_DENY``) of another release: ``settings.json`` with
+    or without that one rule where ``plan`` has the other, and otherwise equal
+    to ``plan`` (a scope compiled before the 2.1.302 pin, or one with the rule
+    under a rollback compile) — lazy state that resume or ``doctor --repair``
+    resolves. A ``permissions.defaultMode`` difference alongside is lazy too
+    (:func:`default_mode_differs` reports it). Any other difference is not:
+    doctor keeps it BLOCK. Read-only."""
+
+    if list(drifted) != [f"{SETTINGS_RELPATH} content differs"]:
+        return False
+
+    def fork_split(document: Any) -> tuple[Any, bool] | None:
+        """``(document without the fork deny and defaultMode, whether it denies forks)``."""
+
+        permissions = document.get("permissions") if isinstance(document, Mapping) else None
+        if not isinstance(permissions, Mapping) or not isinstance(permissions.get("deny"), list):
+            return None
+        deny = [rule for rule in permissions["deny"] if rule != compiler.FORK_AGENT_DENY]
+        rest = _without_default_mode({**document, "permissions": {**permissions, "deny": deny}})
+        return rest, compiler.FORK_AGENT_DENY in permissions["deny"]
+
+    on_disk, expected = fork_split(_live_settings(live)), fork_split(plan.settings)
+    return (on_disk is not None and expected is not None
+            and on_disk[0] == expected[0] and on_disk[1] != expected[1])
 
 
 def read_disk_plan(live: Path, expected: ScopePlan) -> ScopePlan | None:

@@ -415,6 +415,50 @@ class EnvTests(unittest.TestCase):
         errors = catalog.validate_catalog(raw)
         self.assertTrue(any(key in error and "compiler-owned and reserved" in error for error in errors), errors)
 
+    def test_workflow_model_is_compiled_neutral_in_every_scope(self) -> None:
+        """Claude Code 2.1.296+ runs every workflow agent on
+        CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL over a cm-* agentType's
+        frontmatter; every scope states it neutral in the flag settings
+        (which outrank the user, project and local layers), the launch unsets
+        it, and a lead env can never set it. The workflow default binding
+        keeps CLAUDE_CODE_SUBAGENT_MODEL. The real-client proof is S10-precedence
+        in ``test_client_skill_workflow``."""
+
+        key = scope.WORKFLOW_MODEL_ENV
+        self.assertEqual((key, scope.WORKFLOW_MODEL_NEUTRAL), ("CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL", "inherit"))
+        self.assertIn(key, catalog.RESERVED_LEAD_ENV_KEYS)
+        for seed in ("balanced", "direct"):
+            for no_subagents in (False, True):
+                _lineup, result = _seed_launch(seed, no_subagents=no_subagents)
+                with self.subTest(seed=seed, no_subagents=no_subagents):
+                    self.assertEqual(result.scope_plan.settings["env"][key], "inherit")
+                    self.assertIn(key, result.env_unset)
+                    self.assertNotIn(key, result.env_set)
+        bundle, _l, eff, lineup = _seed("balanced")
+        bad = dataclasses.replace(lineup, lead=dataclasses.replace(lineup.lead, env={key: "x"}))
+        with self.assertRaisesRegex(CompilerError, "compiler-owned and reserved"):
+            _launch(bad, eff, bundle=bundle)
+
+    def test_fork_subagents_are_denied_in_every_scope(self) -> None:
+        """Fork subagents run outside the lineup on the caller's own model;
+        every scope denies Agent(fork) (--no-subagents denies Agent itself).
+        The fork gate itself is left alone: CLAUDE_CODE_FORK_SUBAGENT is never
+        compiled. The real-client proof is S15 in ``test_client_agents``."""
+
+        self.assertEqual(compiler.FORK_AGENT_DENY, "Agent(fork)")
+        for seed in ("balanced", "direct"):
+            for no_subagents in (False, True):
+                _lineup, result = _seed_launch(seed, no_subagents=no_subagents)
+                with self.subTest(seed=seed, no_subagents=no_subagents):
+                    deny = result.scope_plan.settings["permissions"]["deny"]
+                    if no_subagents:
+                        self.assertEqual(deny[0], "Agent")
+                        self.assertNotIn(compiler.FORK_AGENT_DENY, deny)
+                    else:
+                        self.assertEqual(deny.count(compiler.FORK_AGENT_DENY), 1)
+                    self.assertNotIn("CLAUDE_CODE_FORK_SUBAGENT", result.scope_plan.settings["env"])
+                    self.assertNotIn("CLAUDE_CODE_FORK_SUBAGENT", result.env_set)
+
     def test_no_subagents_belt(self) -> None:
         lineup, result = _seed_launch(no_subagents=True)
         self.assertEqual(result.env_set["CLAUDE_CODE_DISABLE_EXPLORE_PLAN_AGENTS"], "1")
