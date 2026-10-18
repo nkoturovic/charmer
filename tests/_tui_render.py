@@ -432,6 +432,18 @@ def onboarding_actions(keys: list[str], *, listing: Callable[..., bytes] | None 
         case.doCleanups()
 
 
+def openrouter_family_golden(root: Path) -> str:
+    """Production family prefill and its editable namespace hint, at 80×24."""
+
+    import charmer.cli.onboarding as onboarding
+
+    with onboarding_actions(["\n"] * 6 + [ESC]) as (case, action, win):
+        draft = onboarding.line_draft(case.runtime, "openrouter", {
+            "id": "deepseek/fixture-reviewer", "context_length": 200000, "openrouter": True})
+        action.model_form("openrouter", draft)
+        return last_frame(win, "Model family label")
+
+
 def _two_models(url, headers, **caps) -> bytes:
     import json
     return json.dumps({"data": [{"id": "vendor/fixture-reviewer", "context_length": 200000},
@@ -862,6 +874,7 @@ GOLDENS: dict[str, Callable[[Path], str]] = {
     "operator-changed-readmit": lambda root: operator_lifecycle_golden(root, state="changed"),
     "operator-route-unapproved": lambda root: operator_lifecycle_golden(root, state="unapproved"),
     "model-declaration": model_form_golden,
+    "openrouter-family": openrouter_family_golden,
     "pool-declaration": lambda root: model_form_golden(root, pool=True),
     "qualification-consent": qualification_consent_golden,
     "pool-qualification-consent": lambda root: qualification_consent_golden(root, pool=True),

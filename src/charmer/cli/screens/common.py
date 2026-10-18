@@ -373,6 +373,17 @@ class _ProviderForm(tui.OnboardingForm):
         super()._draw(win)
 
 
+class _ModelForm(tui.OnboardingForm):
+    """Keep a namespace suggestion beside its editable family field."""
+
+    family_hint = ""
+
+    def _draw(self, win):
+        self.footer = (self.family_hint if self.family_hint and self.fields[self.index][0] == "family"
+                       else self.DRAFT_FOOTER)
+        super()._draw(win)
+
+
 class OnboardingActions:
     """Curses form/action adapter. Draft navigation never writes or calls a provider."""
 
@@ -483,10 +494,14 @@ class OnboardingActions:
         if not line.get("efforts"):
             efforts, default = discovery.declaration_efforts(provider, None, None, self.runtime.catalog.agent_efforts)
             line.update(efforts=efforts, default_effort=default)
-        family = provider.get("independence_family", "unknown")
+        suggestion = (discovery.openrouter_family_suggestion(
+            provider_id, line.get("wire_model", ""), operator.t1_families(self.runtime.catalog.docs))
+            if not edit and "family" not in line else None)
+        family = suggestion or provider.get("independence_family", "unknown")
         fields = views.model_form_fields(line, key=key, family=family, edit=edit)
-        values = tui.OnboardingForm("edit model" if edit else "declare model", fields,
-                                   palette=self.palette, help_text=(
+        form_type = _ModelForm if suggestion is not None else tui.OnboardingForm
+        form = form_type("edit model" if edit else "declare model", fields,
+                         palette=self.palette, help_text=(
             "models add PROVIDER WIRE --as custom-NAME --context N --source docs --source-ref 'URL, date'\n"
             "custom- reserves local ids against future catalog keys; choose your display name freely.\n"
             "A blank new key derives from the wire id; editing keeps the key immutable.\n"
@@ -495,7 +510,11 @@ class OnboardingActions:
             "Optional: models admit KEY; models qualify KEY --agents --tool-choice forced|auto.\n"
             "Editing can stale admission/evidence. A smaller declared bound is not a per-agent window:\n"
             "the client may still use its 200K class and overflow that bound. No silent protocol fallback."
-        )).run(self.win)
+        ))
+        if suggestion is not None:
+            prefix = line["wire_model"].split("/", 1)[0]
+            form.family_hint = f"suggested from the {prefix}/ prefix — edit to change"
+        values = form.run(self.win)
         if values is None:
             return
         output = io.StringIO()
@@ -535,6 +554,10 @@ class OnboardingActions:
                 if "output" in drafted:
                     drafted["output"].pop("source_ref", None)
             drafted["family"] = values["family"]
+            if suggestion is not None and values["family"] == suggestion and values["wire"] == line["wire_model"]:
+                note = discovery.family_suggestion_note(values["wire"])
+                existing = drafted.get("notes", "")[:512 - len(note) - 2]
+                drafted["notes"] = "; ".join(filter(None, (existing, note)))
             agents = values["capabilities"] == "agents"
             drafted["capabilities"] = ["lead", "agents"] if agents else ["lead"]
             drafted["roles"] = ("all" if values["roles"] == "all" else
