@@ -9,7 +9,8 @@ include docs/providers/api-keys.md docs/providers/openrouter.md docs/providers/c
 include docs/providers/chatgpt-account.md docs/providers/anthropic-compatible.md
 include docs/providers/openai-compatible.md docs/providers/lan.md docs/guides/profiles.md
 include docs/guides/models.md docs/guides/sessions.md docs/guides/lineup.md docs/guides/gateway.md
-include docs/guides/networking.md docs/guides/move-machines.md docs/reference/cli.md
+include docs/guides/networking.md docs/guides/move-machines.md docs/guides/legacy-migration.md
+include docs/reference/cli.md
 include docs/reference/tasks.md docs/reference/settings.md docs/reference/compatibility.md
 include docs/reference/licenses.md
 graft src/charmer

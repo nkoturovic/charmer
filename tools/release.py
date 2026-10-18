@@ -275,6 +275,25 @@ def previous_release(repo: Path, version: str, runner: Runner = run) -> str | No
     return max(tags, key=lambda tag: version_key(tag[1:]), default=None)
 
 
+def legacy_names():
+    """``charmer.legacy`` (a standard-library leaf), loaded from this tree."""
+
+    return _load(REPO_ROOT / "src" / "charmer" / "legacy.py", "charmer_release_legacy")
+
+
+def release_resources(repo: Path, ref: str, runner: Runner = run) -> Path:
+    """Where the release ``ref`` keeps its packaged resources: the current
+    layout, or the earlier name's (``charmer.legacy.LEGACY_RESOURCES``) for
+    a release made before the rename."""
+
+    for resources in (RESOURCES, legacy_names().LEGACY_RESOURCES):
+        found = runner(["git", "-C", str(repo), "cat-file", "-e", f"{ref}:{(resources / 'version.json').as_posix()}"],
+                       cwd=repo)
+        if found.returncode == 0:
+            return resources
+    raise ReleaseError(f"{ref} has no version.json under {RESOURCES.as_posix()} or the earlier name's layout")
+
+
 def check_version_bump(repo: Path, previous: str | None, runner: Runner = run) -> Check:
     version, catalog = release_version(repo)
     own = git(repo, "tag", "--list", f"v{version}", runner=runner).strip()
@@ -288,9 +307,10 @@ def check_version_bump(repo: Path, previous: str | None, runner: Runner = run) -
     if version_key(previous[1:]) >= version_key(version):
         return Check("version-bump", False, f"{version} is not newer than the previous release {previous} "
                                             "(name another with --previous, or none for a first release)")
-    old = json.loads(git(repo, "show", f"{previous}:{(RESOURCES / 'version.json').as_posix()}", runner=runner))
-    changed = runner(["git", "-C", str(repo), "diff", "--quiet", previous, "HEAD", "--",
-                      (RESOURCES / "catalog").as_posix()], cwd=repo).returncode != 0
+    resources = release_resources(repo, previous, runner)
+    old = json.loads(git(repo, "show", f"{previous}:{(resources / 'version.json').as_posix()}", runner=runner))
+    changed = runner(["git", "-C", str(repo), "diff", "--quiet", f"{previous}:{(resources / 'catalog').as_posix()}",
+                      f"HEAD:{(RESOURCES / 'catalog').as_posix()}"], cwd=repo).returncode != 0
     if changed and old.get("catalog_version") == catalog:
         return Check("version-bump", False, f"the catalog changed since {previous}, but catalog_version is still "
                                             f"{catalog}")

@@ -500,10 +500,16 @@ class ReleaseBuildTests(unittest.TestCase):
         self.assertIn(f"\nRELEASE_SIGNERS='{signers[0]}'\n", shell)
         base = json.loads(PRODUCT_JSON.read_text())["release_base_url"]
         self.assertIn(f"\nRELEASE_BASE_URL='{base}'\n", shell)  # install.sh fills in {version} itself
+        # The earlier name's Nix release link, from charmer.legacy (below ~/.local/share).
+        from charmer import legacy
+
+        earlier = legacy.LEGACY_NIX_RELEASE_LINK.relative_to(Path(".local") / "share").as_posix()
+        self.assertIn(f"\nLEGACY_NIX_RELEASE='{earlier}'\n", shell)
         self.assertEqual(shell.replace(f"RELEASE_VERSION='{self.version}'", "RELEASE_VERSION=''")
                          .replace(f"RELEASE_SUMS='{sums}'", "RELEASE_SUMS=''")
                          .replace(f"RELEASE_SIGNERS='{signers[0]}'", "RELEASE_SIGNERS=''")
-                         .replace(f"RELEASE_BASE_URL='{base}'", "RELEASE_BASE_URL=''"),
+                         .replace(f"RELEASE_BASE_URL='{base}'", "RELEASE_BASE_URL=''")
+                         .replace(f"LEGACY_NIX_RELEASE='{earlier}'", "LEGACY_NIX_RELEASE=''"),
                          (REPO_ROOT / "packaging" / "install.sh").read_text())
         self.assertTrue(os.access(self.out / "install.sh", os.X_OK))
         powershell = (self.out / "install.ps1").read_text()

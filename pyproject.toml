@@ -68,6 +68,7 @@ charmer = ["data/**/*"]
 "share/charmer/guides" = [
     "docs/guides/profiles.md", "docs/guides/models.md", "docs/guides/sessions.md", "docs/guides/lineup.md",
     "docs/guides/gateway.md", "docs/guides/networking.md", "docs/guides/move-machines.md",
+    "docs/guides/legacy-migration.md",
 ]
 "share/charmer/reference" = [
     "docs/reference/cli.md", "docs/reference/tasks.md", "docs/reference/settings.md",

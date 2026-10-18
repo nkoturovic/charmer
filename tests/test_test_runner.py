@@ -56,6 +56,12 @@ MODULES = {
                 for name in ("XDG_STATE_HOME", "XDG_CONFIG_HOME", "CLAUDE_CONFIG_DIR", "CHARMER_ASSETS"):
                     self.assertNotIn(name, os.environ)
                 self.assertEqual(os.environ["CM_TEST_TIER"], os.environ.get("EXPECT_TIER", "full"))
+                self.assertEqual([name for name in os.environ
+                                  if name.startswith("CHARMER_") and not name.startswith("CHARMER_TEST_")], [])
+                for name in filter(None, os.environ.get("EXPECT_ABSENT", "").split(",")):
+                    self.assertNotIn(name, os.environ)
+                for name in filter(None, os.environ.get("EXPECT_KEPT", "").split(",")):
+                    self.assertIn(name, os.environ)
     """,
     "test_tripwire_hit": """
         import socket, unittest
@@ -136,6 +142,20 @@ class RunnerTests(unittest.TestCase):
         self.assertIn("ran 3 tests", result.stdout)
         self.assertIn("skipped 1: BOUNDARY", result.stdout)
         self.assertFalse(list(self.base.glob("charmer-tests-*")))  # the private HOME/TMPDIR is removed
+
+    def test_runtime_and_earlier_variables_never_reach_a_run(self) -> None:
+        # A shell inside a session carries charmer's runtime variables (and
+        # one of the earlier name's); the run sees neither, but keeps the
+        # runner's own lane selections.
+        from charmer import legacy
+
+        absent = ["CHARMER_GATEWAY", "CHARMER_SESSION_ID", "CHARMER_MANAGED_ID", "CHARMER_SECRET_ENV",
+                  legacy.LEGACY_MANAGED_ID_ENV, legacy.ENVIRONMENT[0]]
+        env = {name: "set-outside" for name in absent}
+        result = self.run_runner("tests/test_env.py", CHARMER_TEST_KEEP="1", EXPECT_ABSENT=",".join(absent),
+                                 EXPECT_KEPT="CHARMER_TEST_KEEP", **env)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("ran 1 test", result.stdout)
 
     def test_marker_selects_on_the_named_platform(self) -> None:
         result = self.run_runner("tests.test_marked", "--platform", "windows")

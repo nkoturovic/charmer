@@ -22,10 +22,13 @@ umask 077
 #   RELEASE_BASE_URL  https download location; {version} is substituted
 #   RELEASE_SIGNERS   allowed_signers lines of the release signing key
 #   RELEASE_SUMS      the release's SHA256SUMS, used only when ssh-keygen is missing
+#   LEGACY_NIX_RELEASE the exec link the Nix setups of charmer's earlier name kept,
+#                     relative to ~/.local/share (from charmer.legacy)
 RELEASE_VERSION=''
 RELEASE_BASE_URL=''
 RELEASE_SIGNERS=''
 RELEASE_SUMS=''
+LEGACY_NIX_RELEASE=''
 
 NAMESPACE='charmer-release'
 PRINCIPAL='release@charmer'
@@ -137,8 +140,9 @@ install_root=$data_home/charmer/install
 bin_dir=$HOME/.local/bin
 state_root=$state_base/charmer
 lock_dir=$install_root/.lock
-nix_link_legacy=$data_home/charmer-release/current
 nix_link=$data_home/charmer/nix/current
+nix_link_legacy=''
+[ -n "$LEGACY_NIX_RELEASE" ] && nix_link_legacy=$data_home/$LEGACY_NIX_RELEASE
 
 work=''
 staging=''
@@ -526,9 +530,9 @@ check_links() {
 	fi
 	[ "$migrate" = yes ] && return 0
 	for link in "$nix_link_legacy" "$nix_link"; do
-		if [ -L "$link" ]; then
+		if [ -n "$link" ] && [ -L "$link" ]; then
 			case $(readlink "$link" || true) in
-			/nix/store/*) die "a Nix-managed charmer is installed ($link). Keep updating it through Nix, or run the installer again with --migrate-from-nix to switch this account to the installer." ;;
+			/nix/store/*) die "a Nix-managed installation is on this account ($link). Keep updating it through Nix, or run the installer again with --migrate-from-nix to switch this account to the installer." ;;
 			esac
 		fi
 	done
@@ -636,6 +640,9 @@ write_receipt() {
 }
 
 hand_off() {
+	# An installation of the product's earlier name is moved, not set up
+	# again: the bundle says so (and how), and setup does not start.
+	if bundle_python "$txn_bundle" "$TXN" legacy; then return 0; fi
 	[ "$run_setup" = yes ] || return 0
 	if tty_available; then
 		say "starting charmer setup"

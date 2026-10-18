@@ -2009,7 +2009,8 @@ TRUST_PRINCIPAL = "release@charmer"
 _VERSION_TEXT = re.compile(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-dev)?")
 # The installer lines the release build fills in (packaging/install.sh and
 # packaging/install.ps1 leave them empty).
-INSTALL_SH_FIELDS = ("RELEASE_VERSION", "RELEASE_BASE_URL", "RELEASE_SIGNERS", "RELEASE_SUMS")
+INSTALL_SH_FIELDS = ("RELEASE_VERSION", "RELEASE_BASE_URL", "RELEASE_SIGNERS", "RELEASE_SUMS",
+                     "LEGACY_NIX_RELEASE")
 INSTALL_PS1_FIELDS = ("Version", "InstallerUrl", "InstallerSha256")
 
 
@@ -2645,6 +2646,21 @@ def release_location(ctx: "ReleaseContext") -> dict[str, str | None]:
     return {"base_url": base, "latest_url": latest}
 
 
+def legacy_nix_release(repo: Path = REPO_ROOT) -> str:
+    """The exec link the Nix setups of the earlier name kept, relative to
+    ``~/.local/share`` (``charmer.legacy.LEGACY_NIX_RELEASE_LINK``, read from
+    the tree): the installer's probe of another installation."""
+
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("_charmer_build_legacy", repo / "src" / "charmer" / "legacy.py")
+    if spec is None or spec.loader is None:
+        raise BuildError("cannot load src/charmer/legacy.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.LEGACY_NIX_RELEASE_LINK.relative_to(Path(".local") / "share").as_posix()
+
+
 def fill_shell_fields(text: str, values: dict[str, str]) -> str:
     """packaging/install.sh with its release metadata lines filled in."""
 
@@ -2717,7 +2733,8 @@ def write_release_files(ctx: ReleaseContext, out: Path, assets: list[dict[str, A
             raise BuildError("--base-url must be an https URL")
         shell = fill_shell_fields((ctx.installers / "install.sh").read_text(encoding="utf-8"), {
             "RELEASE_VERSION": ctx.version, "RELEASE_BASE_URL": base or "",
-            "RELEASE_SIGNERS": "\n".join(trust["signers"]), "RELEASE_SUMS": bundles.rstrip("\n")})
+            "RELEASE_SIGNERS": "\n".join(trust["signers"]), "RELEASE_SUMS": bundles.rstrip("\n"),
+            "LEGACY_NIX_RELEASE": legacy_nix_release()})
         (out / "install.sh").write_text(shell, encoding="utf-8")
         os.chmod(out / "install.sh", 0o755)
         shell_sha256 = hashlib.sha256(shell.encode("utf-8")).hexdigest()

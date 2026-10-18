@@ -47,6 +47,8 @@ MIN_PYTHON = (3, 11)
 CLEARED_ENV = ("XDG_CONFIG_HOME", "XDG_STATE_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_RUNTIME_DIR",
                "CLAUDE_CONFIG_DIR", "CHARMER_ASSETS", "CHARMER_MANAGED_ID", "CLAUDECODE",
                "PYTHONHOME", "PYTHONSTARTUP")
+# Every charmer runtime variable is cleared too, except the runner's own.
+RUNTIME_PREFIX, TEST_PREFIX = "CHARMER_", "CHARMER_TEST_"
 EXIT_OK, EXIT_FAILED, EXIT_USAGE = 0, 1, 2
 # Test modules that need the pinned Claude Code once the named variable is
 # set (it selects their real-client lane).
@@ -139,6 +141,15 @@ def legacy_environment(repo: Path) -> tuple[str, ...]:
     raise UsageError(f"{path} defines no ENVIRONMENT")
 
 
+def runtime_environment(environ: dict[str, str] | os._Environ) -> tuple[str, ...]:
+    """charmer's own runtime variables in ``environ`` (``CHARMER_*``): a shell
+    inside a session, or an operator's, must not leak them into a run. The
+    runner's lane selections (``CHARMER_TEST_*``) stay."""
+
+    return tuple(sorted(name for name in environ
+                        if name.startswith(RUNTIME_PREFIX) and not name.startswith(TEST_PREFIX)))
+
+
 def prepare_environment(work: Path, *, repo: Path, home: str, tier: str) -> Path:
     """Set this process's environment (inherited by every child); returns the guard log."""
 
@@ -146,7 +157,7 @@ def prepare_environment(work: Path, *, repo: Path, home: str, tier: str) -> Path
     guard_dir.mkdir()
     (guard_dir / "sitecustomize.py").write_text(guard_source(repo / "tests"), encoding="utf-8")
     guard_log = work / "guard.log"
-    for name in (*CLEARED_ENV, *legacy_environment(repo)):
+    for name in (*CLEARED_ENV, *legacy_environment(repo), *runtime_environment(os.environ)):
         os.environ.pop(name, None)
     tmp = work / "tmp"
     tmp.mkdir()

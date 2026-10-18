@@ -20,7 +20,8 @@ from pathlib import Path
 
 from charmer import install_receipt, service
 from _fake_release import SSH_KEYGEN, FakeRelease, make_key, needs_ssh_keygen, signers_line
-from _release import INSTALL_SH, requires_release_tree
+from _layout import REPO_ROOT
+from _release import INSTALL_SH, load_tool, requires_release_tree
 
 UNAME = """#!/bin/sh
 case $1 in
@@ -181,6 +182,21 @@ class InstallTests(InstallerTestCase):
                                     "--no-modify-path")
         self.assertInstalled(result, "1.0.0")
         self.assertIn("next: run 'charmer setup'", result.stdout)
+        self.assertFalse((self.home / "launcher.log").exists())
+
+    def test_an_installation_of_the_earlier_name_hands_off_to_the_migration(self) -> None:
+        # Setup is not started (not even without --no-setup): the bundle
+        # names the move instead.
+        from charmer import legacy
+
+        (self.home / ".local/state" / legacy.LEGACY_DIR).mkdir(parents=True)
+        release = self.release("1.0.0")
+        result = self.run_installer("--from-dir", str(release.dir), "--allowed-signers", str(self.signers),
+                                    "--no-modify-path")
+        self.assertInstalled(result, "1.0.0")
+        self.assertIn(f"an installation of {legacy.NAME} exists; run `charmer migrate from-legacy` instead of "
+                      "`charmer setup`", result.stdout)
+        self.assertNotIn("next: run 'charmer setup'", result.stdout)
         self.assertFalse((self.home / "launcher.log").exists())
 
     def test_updates_keep_one_previous_version(self) -> None:
@@ -437,16 +453,32 @@ class ChannelTests(InstallerTestCase):
         self.assertIn("it was 'nix'", moved.stdout)
 
     def test_a_nix_store_link_refuses_without_the_migration_flag(self) -> None:
-        legacy = self.home / ".local/share/charmer-release"
-        legacy.mkdir(parents=True)
-        (legacy / "current").symlink_to("/nix/store/00000000000000000000000000000000-charmer-1.0.0")
-        release = self.release("1.0.0")
-        refused = self.install(release)
-        self.assertEqual(refused.returncode, 1)
-        self.assertIn("Nix-managed charmer is installed", refused.stderr)
-        self.assertNothingInstalled()
-        self.assertInstalled(self.install(release, "--migrate-from-nix"), "1.0.0")
-        self.assertTrue((legacy / "current").is_symlink())  # never touched
+        # The exec link the earlier name's Nix setups kept, probed by the
+        # installer the release build fills in (charmer.legacy), and
+        # charmer's own Nix link, probed by every installer.
+        from charmer import installs, legacy
+
+        build = load_tool(REPO_ROOT / "tools" / "build.py", "build")
+        filled = self.tmp / "install.sh"
+        filled.write_text(build.fill_shell_fields(INSTALL_SH.read_text(), {
+            "LEGACY_NIX_RELEASE": build.legacy_nix_release()}))
+        self.assertEqual(Path(".local/share") / build.legacy_nix_release(), legacy.LEGACY_NIX_RELEASE_LINK)
+        for link, target in ((self.home / legacy.LEGACY_NIX_RELEASE_LINK, f"{legacy.NAME}-1.0.0"),
+                             (self.home / ".local/share/charmer" / installs.NIX_LINK, "charmer-2.0.0")):
+            with self.subTest(link=link.name):
+                link.parent.mkdir(parents=True, exist_ok=True)
+                link.symlink_to(f"/nix/store/00000000000000000000000000000000-{target}")
+                release = self.release("1.0.0")
+                refused = self.install(release, script=filled)
+                self.assertEqual(refused.returncode, 1)
+                self.assertIn(f"a Nix-managed installation is on this account ({link})", refused.stderr)
+                self.assertNothingInstalled()
+                self.assertInstalled(self.install(release, "--migrate-from-nix", script=filled), "1.0.0")
+                self.assertTrue(link.is_symlink())  # never touched
+                link.unlink()
+                shutil.rmtree(self.root)
+                shutil.rmtree(self.bin, ignore_errors=True)
+                shutil.rmtree(self.state, ignore_errors=True)
 
     def test_a_current_link_into_the_nix_store_always_refuses(self) -> None:
         self.root.mkdir(parents=True)
@@ -908,7 +940,7 @@ class StaticTests(InstallerTestCase):
 
     def test_release_placeholders_are_empty_in_the_tree(self) -> None:
         text = INSTALL_SH.read_text()
-        for name in ("RELEASE_VERSION", "RELEASE_BASE_URL", "RELEASE_SIGNERS", "RELEASE_SUMS"):
+        for name in ("RELEASE_VERSION", "RELEASE_BASE_URL", "RELEASE_SIGNERS", "RELEASE_SUMS", "LEGACY_NIX_RELEASE"):
             self.assertEqual(text.count(f"\n{name}=''\n"), 1, name)
         self.assertTrue(text.startswith("#!/bin/sh\n"))
         self.assertIn("umask 077", text)
@@ -924,9 +956,12 @@ class StaticTests(InstallerTestCase):
         text = INSTALL_SH.read_text()
         self.assertIn("\ndata_home=$HOME/.local/share\n", text)
         links = {name: Path(".local/share") / path for name, path in
-                 re.findall(r"(?m)^(nix_link(?:_legacy)?)=\$data_home/(\S+)$", text)}
-        self.assertEqual(links, {"nix_link_legacy": installs.NIX_RELEASE_LINK,
-                                 "nix_link": Path(".local/share/charmer") / installs.NIX_LINK})
+                 re.findall(r"(?m)^(nix_link\w*)=\$data_home/(\S+)$", text)}
+        self.assertEqual(links, {"nix_link": Path(".local/share/charmer") / installs.NIX_LINK})
+        # The earlier name's link: the field the release build fills in.
+        self.assertIn('\n[ -n "$LEGACY_NIX_RELEASE" ] && nix_link_legacy=$data_home/$LEGACY_NIX_RELEASE\n', text)
+        build = load_tool(REPO_ROOT / "tools" / "build.py", "build")
+        self.assertEqual(Path(".local/share") / build.legacy_nix_release(), installs.NIX_RELEASE_LINK)
 
 
 if __name__ == "__main__":

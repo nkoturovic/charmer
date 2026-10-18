@@ -140,6 +140,61 @@ class PreflightCheckTests(unittest.TestCase):
         commit(repo, "moved on")
         self.assertIn("names another commit", self.tool.check_version_bump(repo, None).detail)
 
+    @needs_git
+    def test_version_bump_after_a_release_of_the_earlier_name(self) -> None:
+        # The previous release keeps its resources under the earlier name's
+        # layout (charmer.legacy.LEGACY_RESOURCES); this one under charmer's.
+        from charmer import legacy
+
+        repo = git_repo(self.tmp, version="1.0.0")
+        (repo / "src" / "charmer").rename(self.tmp / "moved")
+        (repo / legacy.LEGACY_RESOURCES).parent.mkdir(parents=True)
+        (self.tmp / "moved" / "data").rename(repo / legacy.LEGACY_RESOURCES)
+        commit(repo, "the earlier layout")
+        tag(repo, "v1.0.0")
+        self.assertEqual(self.tool.release_resources(repo, "v1.0.0"), legacy.LEGACY_RESOURCES)
+        (repo / "src" / "charmer").mkdir()
+        (repo / legacy.LEGACY_RESOURCES).rename(repo / "src" / "charmer" / "data")
+        version = repo / "src" / "charmer" / "data" / "version.json"
+        version.write_text(json.dumps({"catalog_version": 7, "launcher_version": "2.0.0", "version": 1}))
+        commit(repo, "renamed")
+        self.assertEqual(self.tool.release_resources(repo, "HEAD"), self.tool.RESOURCES)
+        check = self.tool.check_version_bump(repo, "v1.0.0")
+        self.assertTrue(check.ok, check.detail)
+        self.assertIn("catalog unchanged", check.detail)
+        (repo / "src" / "charmer" / "data" / "catalog" / "models.json").write_text('{"changed": true}\n')
+        commit(repo, "catalog")
+        check = self.tool.check_version_bump(repo, "v1.0.0")
+        self.assertFalse(check.ok)
+        self.assertIn("catalog changed", check.detail)
+        version.write_text(json.dumps({"catalog_version": 8, "launcher_version": "2.0.0", "version": 1}))
+        commit(repo, "bump")
+        self.assertIn("catalog 7 -> 8", self.tool.check_version_bump(repo, "v1.0.0").detail)
+
+    def test_the_current_layout_wins_when_both_exist(self) -> None:
+        runner = FakeRunner([])
+        self.assertEqual(self.tool.release_resources(Path("/nowhere"), "v9.9.9", runner), self.tool.RESOURCES)
+        self.assertEqual(len(runner.calls), 1)
+        self.assertIn(f"v9.9.9:{(self.tool.RESOURCES / 'version.json').as_posix()}", runner.calls[0])
+        with self.assertRaises(self.tool.ReleaseError):
+            self.tool.release_resources(Path("/nowhere"), "v9.9.9", FakeRunner([(("cat-file",), (1,))]))
+
+    @needs_git
+    def test_version_bump_after_the_real_1_1_0_tag(self) -> None:
+        # The real tag of the last release made under the earlier name.
+        from charmer import legacy
+
+        probe = subprocess.run(["git", "-C", str(REPO_ROOT), "cat-file", "-e",
+                                f"v1.1.0:{(legacy.LEGACY_RESOURCES / 'version.json').as_posix()}"],
+                               capture_output=True, timeout=60)
+        if probe.returncode != 0:
+            self.skipTest("BOUNDARY: the v1.1.0 tag is not in this checkout (shallow or exported tree)")
+        self.assertEqual(self.tool.release_resources(REPO_ROOT, "v1.1.0"), legacy.LEGACY_RESOURCES)
+        version, catalog = self.tool.release_version(REPO_ROOT)
+        check = self.tool.check_version_bump(REPO_ROOT, "v1.1.0")
+        self.assertTrue(check.ok, check.detail)
+        self.assertIn(f"catalog 38 -> {catalog}", check.detail)
+
     def test_repository_checks_on_this_tree(self) -> None:
         self.assertTrue(self.tool.check_contract(REPO_ROOT).ok, self.tool.check_contract(REPO_ROOT).detail)
         parity = self.tool.check_gateway_parity(REPO_ROOT)
