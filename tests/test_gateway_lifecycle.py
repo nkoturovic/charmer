@@ -2057,13 +2057,9 @@ class ServiceHoldScaleTests(_ServiceBackend):
         after, before = micros(NOW - datetime.timedelta(hours=2)), micros(cleared - datetime.timedelta(hours=5))
         cases = {
             "a notice after the clear": ([fake.drop_notice(after, uid=uid, dropped="5")], "dropped 5 log lines"),
-            # journald limits each unit's cgroup on its own and names it: another
-            # unit's notice never stands for gateway lines; an unnamed one does.
             "attributed to another user unit": (
-                [fake.drop_notice(after, uid=uid, dropped="7", user_unit="pipewire.service")], None),
-            "attributed to no user unit": (
-                [fake.drop_notice(after, uid=uid, dropped="7", user_unit="")], "dropped 7 log lines"),
-            "a count journald did not give": ([fake.drop_notice(after, uid=uid, dropped=None)], "dropped some log lines"),
+                [fake.drop_notice(after, uid=uid, dropped="7", user_unit="pipewire.service")], "dropped 7 log lines"),
+            "a count journald did not give": ([fake.drop_notice(after, uid=uid, dropped=None)], "dropped some log"),
             "a notice before the clear": ([fake.drop_notice(before, uid=uid, dropped="5")], None),
             "another user's services": ([fake.drop_notice(after, uid=uid + 1, dropped="5")], None),
         }
@@ -2075,8 +2071,8 @@ class ServiceHoldScaleTests(_ServiceBackend):
                 if held is not None:
                     self.assertTrue(report.coverage_only)
                     text = "; ".join(report.reasons)
-                    self.assertIn("service journal: journald's rate limit " + held + " of the gateway's service",
-                                  text)
+                    self.assertIn("service journal: journald's rate limit for your user services, which the gateway "
+                                  "shares, " + held, text)
                     self.assertIn(f"(last notice {(NOW - datetime.timedelta(hours=2)).isoformat(timespec='seconds')})"
                                   "; a credential save among them cannot be ruled out", text)
                 else:

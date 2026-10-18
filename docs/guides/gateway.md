@@ -140,8 +140,8 @@ evidence is missing, and the reason says which: the journal no longer
 reaches back to the gateway's start or to the last clear-hold (journald
 keeps less than the gateway's run; `SystemMaxUse=` and `MaxRetentionSec=`
 in journald.conf set how much it keeps), journald's rate
-limit dropped lines of the gateway's service (a notice naming another of
-your services does not count), a read did not finish within 30 seconds, or a credential-save line does
+limit for your user services, which the gateway shares, dropped log lines,
+a read did not finish within 30 seconds, or a credential-save line does
 not parse. charmer sees journald's rate-limit notices only when your account
 may read the system journal (for example in the `systemd-journal`, `adm` or
 `wheel` group); otherwise `charmer gateway status` and `charmer doctor` say
