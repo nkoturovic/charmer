@@ -29,6 +29,10 @@ CONTROL_VERBS = ("start", "stop", "restart")
 CONTROL_TIMEOUT = 120
 
 
+# What a person runs to make the service manager read changed unit files.
+RELOAD_HINT = "systemctl --user daemon-reload"
+
+
 def hint(verb: str, *, unit: str) -> str:
     if verb in VERBS:
         return f"systemctl --user {verb} {unit}"
@@ -101,6 +105,16 @@ def enable_now(unit: str, runner: Callable) -> bool:
 
 def disable_now(unit: str, runner: Callable) -> bool:
     return _manager_ok(["disable", "--now", f"{unit}.service"], runner)
+
+
+def enable(unit: str, runner: Callable, *, runtime: bool = False) -> bool:
+    """Enable without starting (``runtime``: until the next reboot only)."""
+
+    return _manager_ok(["enable", *(["--runtime"] if runtime else []), f"{unit}.service"], runner)
+
+
+def start(unit: str, runner: Callable) -> bool:
+    return _manager_ok(["start", f"{unit}.service"], runner)
 
 
 def reload_unit(unit: str, runner: Callable) -> bool:

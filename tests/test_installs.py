@@ -20,7 +20,7 @@ from unittest import mock
 from _catalog import FIXTURE_ROOT
 from _layout import REPO_ROOT
 from _layout import checkout_replica
-from charmer import cli, endpoint, installs, state
+from charmer import cli, endpoint, installs, legacy, state
 
 
 class _Home(unittest.TestCase):
@@ -210,9 +210,11 @@ class InstallRootTests(_Home):
         version.mkdir(parents=True)
         (version / "charmer-proxy").write_text("#!/bin/sh\n")
         (data / "install/current").symlink_to("versions/1.0.0")
-        release = self.home / ".local/share/charmer-release"
-        release.mkdir()
-        (release / "current").symlink_to("/nix/store/0000-charmer")
+        # The exec link the earlier name's Nix setups kept (charmer.legacy).
+        release = self.home / installs.NIX_RELEASE_LINK
+        self.assertEqual(installs.NIX_RELEASE_LINK, legacy.LEGACY_NIX_RELEASE_LINK)
+        release.parent.mkdir(parents=True)
+        release.symlink_to(f"/nix/store/0000-{legacy.NAME}")
         found = installs.discover(env)
         self.assertEqual([item.channel for item in found], ["bundle", "nix"])
         self.assertTrue(found[0].line(env).startswith("bundle: ~/.local/share/charmer/install/current -> "))

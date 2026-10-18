@@ -172,6 +172,41 @@ class ExportTests(PortabilityCase):
         self.assertEqual((code, out), (1, ""))
         self.assertIn("export refused: providers.d has problems", err)
 
+    def test_an_export_of_the_earlier_name_is_read(self) -> None:
+        # An export the release of the earlier name wrote: the same document
+        # under its earlier format identifier, read as it is: only the
+        # identifier changes (no member of the format holds a product
+        # selector), never an operator's own names.
+        from charmer import legacy
+
+        self.admitted_source()
+        document, _raw, _err = self.export_json()
+        earlier = {**document, "format": legacy.LEGACY_OPERATOR_EXPORT_FORMAT}
+        self.assertEqual(portability.load_export(json.dumps(earlier).encode(), asset_root=FIXTURE_ROOT).document,
+                         document)
+        with self.assertRaisesRegex(portability.PortabilityError, "format must be"):
+            portability.load_export(json.dumps({**document, "format": "another-export"}).encode(),
+                                    asset_root=FIXTURE_ROOT)
+        self.assertEqual(portability.EARLIER_SELECTOR_MEMBERS, ())
+        # An upstream model genuinely named with the earlier prefix keeps its
+        # name: the wire model, the line key and the provider id are the
+        # operator's, not product selectors. It is a name the active catalog
+        # renames, so a translation of every value would change it.
+        from charmer import catalog
+
+        renamed = catalog.load_catalog(FIXTURE_ROOT).renamed
+        wire = next(name for name in renamed if name.startswith(legacy.LEGACY_SELECTOR_PREFIX))
+        self.assertNotEqual(catalog.renamed_selector(renamed, wire), wire)
+        named = copy.deepcopy(earlier)
+        lines = named["providers"]["acme"]["lines"]
+        key = next(iter(lines))
+        lines[key]["wire_model"] = wire
+        loaded = portability.load_export(json.dumps(named).encode(), asset_root=FIXTURE_ROOT).document
+        self.assertEqual(loaded["format"], portability.FORMAT)
+        self.assertEqual(loaded["providers"]["acme"]["lines"][key]["wire_model"], wire)
+        self.assertEqual({name: value for name, value in loaded.items() if name != "format"},
+                         {name: value for name, value in named.items() if name != "format"})
+
     def test_export_stdout_has_no_side_effects(self) -> None:
         self.admitted_source()
         before = inventory(self.root)

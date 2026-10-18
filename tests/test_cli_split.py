@@ -174,6 +174,7 @@ class DoctorSplitTests(unittest.TestCase):
         "_doctor_config_dir_report", "_provider_secret_names", "_doctor_env_keep_report",
         "_doctor_new_lines_report", "_diagnostic", "_health_backend",  # doctor facts: new checks, not moves
         "DOCTOR_SUMMARY", "DETAIL_PREFIXES", "detail_line", "repair_offer",  # the report's shared rendering
+        "_earlier_shim", "_compiled_by_earlier_release",  # scopes the earlier release compiled
     })
 
     def test_every_moved_definition_resolves_once_in_its_owner(self):

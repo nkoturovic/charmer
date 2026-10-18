@@ -101,6 +101,33 @@ def main(
         state_path = (
             runtime.session_store.root if runtime is not None else sessions.state_root()
         )
+        environ = runtime.environ if runtime is not None else os.environ
+        if args.command == "migrate" and getattr(args, "migrate_source", None) == "from-legacy":
+            # Before any Runtime or session store: it moves the roots those
+            # would create, and it is the one command an unfinished
+            # migration lets run.
+            if passthrough:
+                _refuse_passthrough()
+            import charmer.cli.commands.migration as commands_migration
+
+            return commands_migration._migrate_from_legacy(
+                args, output, input_stream=input_stream, environ=environ)
+        if args.command != "session-event":
+            from charmer import legacy_migration
+
+            unfinished = legacy_migration.pending(environ)
+            if unfinished is not None and not legacy_migration.runs_while_pending(
+                    unfinished, args.command, getattr(args, "gateway_command", None)):
+                message, remedy = legacy_migration.pending_refusal(unfinished)
+                raise cli_errors.CLIError(message, remedy=remedy)
+            if (args.command is None or (args.command == "setup" and not getattr(args, "setup_status", False))) \
+                    and legacy_migration.fresh_with_legacy(environ):
+                # Before any Runtime: a fresh setup here would give charmer
+                # roots of its own, and the earlier installation could no
+                # longer move into them.
+                sys.stderr.write(f"charmer: {legacy_migration.first_run_hint(environ)}\n")
+                sys.stderr.flush()
+                return 1
         if args.command == "restore-2x":
             if passthrough:
                 _refuse_passthrough()

@@ -134,6 +134,15 @@ def _lineup_main(
         return code
 
     environ = runtime.environ if runtime is not None else dict(os.environ)
+    # While a move from the earlier installation is unfinished nothing runs
+    # (lineup requests write records), as for every other command: before
+    # any guard, Runtime or write.
+    from charmer import legacy_migration
+
+    unfinished = legacy_migration.pending(environ)
+    if unfinished is not None:
+        message, remedy = legacy_migration.pending_refusal(unfinished)
+        return refuse(f"{message}\n  fix: {remedy}")
     try:
         # A request or option the grammar rejects is a usage error.
         args = lineup_mod.parse_cli(tail, environ)

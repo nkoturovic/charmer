@@ -82,7 +82,8 @@ COMMAND_GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
     )),
     ("Recovery and earlier formats", (
         ("migrate", "convert legacy session records to the current format (backups are kept for "
-                    "restore-2x); --dry-run writes nothing"),
+                    "restore-2x); --dry-run writes nothing; migrate from-legacy moves an installation of the "
+                    "earlier name onto charmer"),
         ("restore-2x", "put back the legacy session records a migration backed up, before running an "
                        "earlier launcher"),
         ("custom", "the earlier custom-model registry (move it to providers: charmer providers "
@@ -465,6 +466,24 @@ def build_parser() -> argparse.ArgumentParser:
         "--json", action="store_true", dest="json_output",
         help="print the report as canonical JSON",
     )
+    sources = migrate_parser.add_subparsers(dest="migrate_source", required=False, metavar="SOURCE",
+                                            help="what to migrate from (default: legacy session records)")
+    from_legacy = sources.add_parser(
+        "from-legacy", help="move an installation of charmer's earlier name onto charmer",
+        description="Move an installation of charmer's earlier name onto charmer: its "
+        "configuration, state and data roots, provider keys, sign-in records, Claude Code copies, session "
+        "records and the supervised gateway. Run it from a plain terminal with every managed session closed. "
+        "Journaled: a rerun finishes an interrupted run, and --back moves everything back until --purge.",
+    )
+    legacy_mode = from_legacy.add_mutually_exclusive_group()
+    legacy_mode.add_argument("--dry-run", action="store_true", dest="legacy_dry_run",
+                             help="list every move, rewrite, unit action and removal; change nothing")
+    legacy_mode.add_argument("--status", action="store_true", dest="legacy_status",
+                             help="show the recorded migration and its progress")
+    legacy_mode.add_argument("--back", action="store_true", dest="legacy_back",
+                             help="move everything back, so the earlier installation works again")
+    legacy_mode.add_argument("--purge", action="store_true", dest="legacy_purge",
+                             help="after a completed migration, remove the kept earlier installation for good")
     restore_parser = _add_command(commands, "restore-2x")
     restore_parser.add_argument("--check", action="store_true", help="check rollback metadata without writes")
     restore_parser.add_argument("--json", action="store_true", dest="json_output", help="JSON metadata check (requires --check)")

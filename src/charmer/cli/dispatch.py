@@ -66,6 +66,9 @@ def handle_command(
         )
 
     if args.command == "migrate":
+        if getattr(args, "migrate_source", None) == "from-legacy":
+            return commands_migration._migrate_from_legacy(
+                args, output_stream, input_stream=input_stream, environ=runtime.environ)
         return commands_migration._migrate_command(runtime, args, output_stream)
 
     if args.command == "session-event":

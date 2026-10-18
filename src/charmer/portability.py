@@ -33,7 +33,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping, Sequence
 
-from . import assets, errors, state, strict_json
+from . import assets, errors, legacy, state, strict_json
 from . import operator as operator_mod
 from . import profile as profile_mod
 from . import settings as settings_mod
@@ -194,6 +194,27 @@ def _secret_paths(document: Any) -> list[str]:
     return operator_mod._secret_hits(document, "$", ())
 
 
+# The members of an export (format version 1) that hold a saved product
+# selector, which an export of the earlier name would spell under its
+# earlier prefix: none. Profiles, bindings, the workflow default and the
+# admissions name model keys, and every other member names what the
+# operator chose (provider ids and declarations, wire models, profile
+# names, key names), which keeps its bytes. A member that came to hold a
+# selector would be listed here and translated through the catalog's
+# renamed map.
+EARLIER_SELECTOR_MEMBERS: tuple[str, ...] = ()
+
+
+def _from_earlier_name(document: dict[str, Any]) -> dict[str, Any]:
+    """An export the release of the earlier name wrote (``charmer.legacy``):
+    the same document (format version 1) under its earlier identifier. Only
+    the format identifier changes (:data:`EARLIER_SELECTOR_MEMBERS` names
+    the members a selector translation would apply to: none), never an
+    operator's own name or a wire model."""
+
+    return {**document, "format": FORMAT}
+
+
 def _check_document(document: Any, asset_root: Path | str | None = None) -> dict[str, Any]:
     """Closed schema, bounded counts, safe names and each member's own
     store validation (profiles parse, bindings shape, Settings policy)."""
@@ -205,6 +226,8 @@ def _check_document(document: Any, asset_root: Path | str | None = None) -> dict
                                + " (reference credentials as env:NAME)")
     if not isinstance(document, dict):
         raise PortabilityError("not an operator export: the top level must be an object")
+    if document.get("format") == legacy.LEGACY_OPERATOR_EXPORT_FORMAT:
+        document = _from_earlier_name(document)
     if document.get("format") != FORMAT:
         raise PortabilityError(f"not an operator export: format must be {FORMAT!r}")
     if document.get("version") != VERSION or isinstance(document.get("version"), bool):

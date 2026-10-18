@@ -830,6 +830,28 @@ class UserSettingsTests(_DoctorCase):
         _problems, _info, attention = _doctor(self)
         self.assertTrue([line for line in attention if line.startswith(f"{path}: model holds")], attention)
 
+    def test_a_selector_of_the_earlier_name_is_flagged_as_such(self) -> None:
+        """A /model choice saved inside a session of the earlier release
+        names a selector under its prefix: reported, never ignored, whether
+        catalog 39 renamed it or not."""
+
+        from charmer import legacy
+
+        renamed = legacy.LEGACY_SELECTOR_PREFIX + "kimi-k3[1m]"
+        unknown = legacy.LEGACY_SELECTOR_PREFIX + "no-such-line-high"
+        # One the catalog's renamed map names (the fixture catalog renamed
+        # it), one no catalog knows.
+        self.assertIn(renamed, self.runtime.catalog.renamed)
+        self.assertIsNone(self.runtime.catalog.resolve_selector(unknown))
+        path = self._user_settings({"model": renamed, "modelSettings": {unknown: {}}})
+        _problems, _info, attention = _doctor(self)
+        self.assertIn(
+            f"{path}: model holds the {legacy.NAME} selector {renamed!r} (saved by a /model choice "
+            f"inside a {legacy.NAME} session); plain claude cannot use it. Revert: remove model from {path}",
+            attention,
+        )
+        self.assertTrue(any(f"modelSettings[\"{unknown}\"]" in line for line in attention), attention)
+
     def test_a_canonical_anthropic_model_is_not_flagged(self) -> None:
         self._user_settings({"model": "claude-opus-4-8[1m]"})
         _problems, _info, attention = _doctor(self)
@@ -2380,7 +2402,7 @@ class CarryInPolicyTests(V4Case):
         with self.assertRaisesRegex(launch.LaunchError, "compiled hook target .* missing or not executable"):
             self.runtime.perform(prepared)
         self.assertEqual(before, (self.tree(self.live(mid)), self.record_bytes(mid), self.store.last(self.runtime.cwd)))
-        problems, info = cli._doctor_hook_targets(self.runtime, [record])
+        problems, _attention, info = cli._doctor_hook_targets(self.runtime, [record])
         self.assertIn("compiled hook target", str(problems))
         self.assertEqual(info, [])
         self.assertIn("compiled hook target", str(_doctor(self)[0]))
@@ -2406,9 +2428,33 @@ class CarryInPolicyTests(V4Case):
         record = self.launch_fresh()
         target = self.runtime.home / "missing-hook"
         with mock.patch.object(scope, "missing_hook_targets", return_value=[target]):
-            problems, _ = cli._doctor_hook_targets(self.runtime, [record])
+            problems, _attention, _info = cli._doctor_hook_targets(self.runtime, [record])
         self.assertIn("compiled hook target ~/missing-hook", problems[0])
         self.assertNotIn(str(self.runtime.home), problems[0])
+
+    def test_a_scope_compiled_by_the_earlier_release_is_attention_not_block(self):
+        """After ``migrate from-legacy`` the scopes still name the earlier
+        release's shims in its (moved) state root: recompiled at the next
+        resume, so Attention with the resume command; any other missing
+        target stays BLOCKED."""
+
+        from charmer import legacy
+
+        record = self.launch_fresh()
+        earlier = legacy.state_root(self.runtime.environ) / "bin"
+        stale = [earlier / name for name in legacy.LEGACY_SHIMS[1:]]
+        with mock.patch.object(scope, "missing_hook_targets", return_value=stale):
+            problems, attention, info = cli._doctor_hook_targets(self.runtime, [record])
+        self.assertEqual(problems, [])
+        self.assertEqual(len(attention), 1)
+        self.assertIn(f"compiled by {legacy.NAME}", attention[0])
+        self.assertIn(f"charmer -r {record['managed_id']}", attention[0])
+        self.assertIn("every compiled hook command exists (0 session(s))", str(info))
+        with mock.patch.object(scope, "missing_hook_targets",
+                               return_value=[*stale, self.runtime.home / "missing-hook"]):
+            problems, attention, _info = cli._doctor_hook_targets(self.runtime, [record])
+        self.assertEqual(attention, [])
+        self.assertEqual(len(problems), 3)
 
     def test_hook_targets_are_executable_files_and_doctor_reports_success(self):
         record = self.launch_fresh()
@@ -2416,7 +2462,7 @@ class CarryInPolicyTests(V4Case):
         targets = scope.hook_targets(settings)
         self.assertEqual(len(targets), 2)  # six hooks use one shim, plus apiKeyHelper
         self.assertEqual(scope.missing_hook_targets(settings), [])
-        self.assertIn("every compiled hook command exists (1 session(s))", str(cli._doctor_hook_targets(self.runtime, [record])[1]))
+        self.assertIn("every compiled hook command exists (1 session(s))", str(cli._doctor_hook_targets(self.runtime, [record])[2]))
         targets[0].chmod(0o600)
         self.assertEqual(scope.missing_hook_targets(settings), [targets[0]])
         targets[0].unlink()

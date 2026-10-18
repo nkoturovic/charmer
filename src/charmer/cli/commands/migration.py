@@ -248,3 +248,337 @@ def _transcript_presence(runtime: runtime_mod.Runtime, view: dict[str, Any]) -> 
         return ("present", Path(detail).stat().st_mtime)
     except OSError:
         return ("missing", None)
+
+
+# ------------------------------------------------------------ migrate from-legacy
+
+def _legacy_mode(args: argparse.Namespace) -> str:
+    if getattr(args, "legacy_status", False):
+        return "status"
+    if getattr(args, "legacy_back", False):
+        return "back"
+    if getattr(args, "legacy_purge", False):
+        return "purge"
+    if getattr(args, "legacy_dry_run", False) or getattr(args, "dry_run", False):
+        return "dry-run"
+    return "run"
+
+
+def _migrate_from_legacy(
+    args: argparse.Namespace,
+    output_stream: TextIO,
+    *,
+    input_stream: TextIO | None = None,
+    error_stream: TextIO | None = None,
+    environ: Mapping[str, str] | None = None,
+    seams: Any = None,
+) -> int:
+    """``charmer migrate from-legacy [--dry-run | --status | --back | --purge]``
+    (dispatched before any Runtime or session store: it moves the roots
+    those would create). ``seams`` (a ``legacy_migration.Seams``) replaces
+    the live effects in tests."""
+
+    from charmer import legacy_migration as moving
+    import charmer.cli.consent as consent
+
+    errors_out = error_stream or sys.stderr
+    env = dict(os.environ if environ is None else environ)
+    if getattr(args, "json_output", False):
+        errors_out.write("charmer: --json does not apply to migrate from-legacy\n")
+        return 2
+    mode = _legacy_mode(args)
+    try:
+        if mode == "status":
+            for line in moving.status_lines(env):
+                output_stream.write(f"{line}\n")
+            return 0
+        live = seams if seams is not None else _live_seams(env)
+        if mode == "dry-run":
+            lines, ready = moving.dry_run(env, live)
+            for line in lines:
+                output_stream.write(f"{line}\n")
+            output_stream.write(("Ready: " + moving.COMMAND if ready
+                                 else "Not ready: fix what the preconditions name, then run this again") + "\n")
+            return 0 if ready else 1
+        consent.require_human(moving.COMMAND + ("" if mode == "run" else f" --{mode}"), env)
+        if mode == "purge":
+            layout = moving.Layout.of(env)
+            targets = moving.purge_targets(layout)
+            if not targets:
+                output_stream.write("Nothing of the earlier installation is left to remove.\n")
+                return 0
+            # Refused before the question, and again under the lock.
+            problems = moving.purge_problems(layout, targets)
+            if problems:
+                raise moving.purge_refusal(problems, layout)
+            output_stream.write("This removes, for good (no --back afterwards):\n")
+            for line in moving.purge_listing(layout, targets):
+                output_stream.write(f"  {line}\n")
+            output_stream.flush()
+            if not consent.confirm("Remove them? [y/N] ", input_stream=input_stream):
+                output_stream.write("Nothing was removed.\n")
+                return 3
+            report = moving.purge(env, live, confirmed=[target.path for target in targets])
+        elif mode == "back":
+            report = moving.back(env, live)
+        else:
+            report = moving.migrate(env, live)
+    except moving.MigrationError as exc:
+        errors_out.write(f"charmer: {exc}\n")
+        for line in exc.lines[1:]:
+            errors_out.write(f"  also: {line}\n")
+        if exc.remedy:
+            errors_out.write(f"  fix: {exc.remedy}\n")
+        return 1
+    for line in report.lines:
+        output_stream.write(f"{line}\n")
+    if mode == "run":
+        output_stream.write(f"Done. The earlier installation is kept for {moving.BACK}; once you are content, "
+                            f"{moving.PURGE} removes it.\n")
+    elif mode == "back":
+        output_stream.write("Done. The earlier installation works as before; charmer stays installed.\n")
+    output_stream.flush()
+    return 0
+
+
+def _live_seams(environ: Mapping[str, str]) -> Any:
+    """The live effects of ``migrate from-legacy`` (``legacy_migration.Seams``)."""
+
+    from charmer import legacy_migration as moving
+
+    return moving.Seams(installed=_installed_problem, liveness=_live_sessions, hold=_legacy_hold,
+                        shims=_write_shims, gateway=_start_gateway, verify=_verify, repair=_repair_earlier,
+                        charmer_hold=_charmer_hold, stop_gateway=_stop_gateway)
+
+
+def _installed_problem(environ: Mapping[str, str]) -> str | None:
+    from charmer import endpoint, installs
+
+    if endpoint.channel(environ) != "bundle":
+        return "this charmer does not run from an installed release bundle"
+    if not os.path.lexists(installs.bundle_link(environ)):
+        return f"no installed release was found ({product_paths.display(installs.bundle_link(environ), environ)})"
+    return None
+
+
+def _live_sessions(root: Path) -> list[str]:
+    """The managed sessions under ``root`` that run now, by the daemon and
+    ``/proc`` inventories (unknown refuses), as ``restore-2x`` tells them."""
+
+    from charmer import legacy_migration as moving
+
+    daemon = sessions.background_liveness()
+    if not daemon.known:
+        raise moving.LivenessUnknown(f"the background daemon cannot be read: {daemon.reason}")
+    scan = sessions.proc_session_scan("/proc")
+    if not scan.known:
+        raise moving.LivenessUnknown(f"the process table is unreadable: {scan.reason}")
+    store = sessions.SessionStore(root, sessions.default_schema(), read_only=True)
+    live = []
+    for path in store.scan_uuid_records():
+        try:
+            view = store.load(path.stem)
+        except (sessions.SessionError, OSError, ValueError) as exc:
+            raise moving.LivenessUnknown(f"the session record {path.name} cannot be read ({exc})") from exc
+        if session_facts._record_view_is_live(view, prefixes=daemon.prefixes, proc_ids=scan.ids):
+            live.append(path.stem)
+    return live
+
+
+def _legacy_hold(layout: Any) -> list[str]:
+    """The earlier gateway's persistence hold, as its own stop would see it:
+    the recorded holds, then the earlier unit's journal read from the
+    running instance's start (its exec stamp) and searched for the earlier
+    start line, or its instance logs when it runs on demand. Nothing is
+    recorded: ``persistence-hold.json`` keeps its bytes."""
+
+    from charmer import legacy
+
+    unit = dict(layout.legacy_units())[legacy.LEGACY_UNIT]
+    return _gateway_hold(layout.legacy_state, legacy.LEGACY_UNIT, os.path.lexists(unit), legacy.legacy_start_marker)
+
+
+def _charmer_hold(layout: Any) -> list[str]:
+    """charmer's own gateway's persistence hold on charmer's state root, as
+    its own stop would see it: the recorded holds, then (supervised:
+    ``endpoint.json`` says so or a charmer unit file exists) its unit's
+    journal from the running instance's start, searched for charmer's start
+    line, or its instance logs (on demand). Evidence that cannot be read
+    holds. Nothing is recorded."""
+
+    from charmer import endpoint, service
+    from charmer import legacy_migration as moving
+
+    document = moving._endpoint_document(layout.gateway) or {}
+    supervised = document.get("backend") == endpoint.SYSTEMD or any(
+        os.path.lexists(unit) for _name, unit in layout.charmer_units())
+    unit = document.get("unit") if isinstance(document.get("unit"), str) else moving.CHARMER_UNIT
+    return _gateway_hold(layout.state, unit, supervised, service.start_marker_prefix)
+
+
+def _gateway_hold(state_root: Path, unit: str, supervised: bool, marker: Callable[[str], str]) -> list[str]:
+    """The persistence hold's reasons for the gateway of ``state_root``
+    (empty: it may stop), never recorded. A supervised gateway's journal is
+    read over the window its own stop reads: from the running instance's
+    start (its exec stamp) when the unit is active or the instance lock is
+    held. Evidence that cannot be told (the unit's state unreadable, or a
+    running instance without a readable start) holds."""
+
+    import datetime
+    import subprocess
+
+    from charmer import assets, catalog, gateway_hold, service
+    from charmer.platform import linux_service, posix_fs
+
+    try:
+        document = gateway_hold.read_document(state_root)
+    except gateway_hold.HoldError as exc:
+        return [str(exc)]
+    reasons = [str(item.get("reason") or "a recorded hold") for item in document["holds"]]
+    if reasons:
+        return reasons
+    providers = set(catalog.load_catalog(assets.default_asset_root()).docs["providers"]["providers"])
+    if not supervised:
+        report = gateway_hold.evaluate_files(state_root, providers)
+        return list(report.reasons) if report.held else []
+    properties = linux_service.unit_properties(unit, subprocess.run)
+    if properties is None:
+        return [f"the service manager's state of {unit}.service cannot be read, so the running instance's "
+                "credential saves cannot be evaluated"]
+    workdir = service.gateway_workdir(state_root)
+    running = None
+    if properties.get("ActiveState") in ("active", "activating", "reloading") \
+            or posix_fs.lock_held(workdir / service.INSTANCE_LOCK) is not False:
+        stamp = service.read_exec_stamp(workdir)
+        started = None
+        if stamp is not None:
+            try:
+                started = datetime.datetime.fromisoformat(stamp.started_at)
+            except ValueError:
+                started = None
+        if stamp is None or started is None or started.tzinfo is None:
+            return [f"{unit}.service runs, but its running instance's start cannot be read, so its credential "
+                    "saves cannot be evaluated"]
+        running = (stamp.instance, started)
+    report = gateway_hold.evaluate_journal(
+        state_root, providers, running=running, marker=marker, record=False,
+        reader=lambda since: service.read_gateway_journal(
+            max_bytes=gateway_hold.JOURNAL_BUDGET, unit=unit, since=f"@{int(since.timestamp())}"))
+    return list(report.reasons) if report.held else []
+
+
+def _stop_gateway(environ: Mapping[str, str]) -> tuple[bool, str]:
+    """charmer's own gateway stop under this run's inhibition: its
+    persistence hold again, then a stop proven for its backend (the
+    service's stop and the process's exit, or the on-demand process's
+    exit). ``(ok, message)``; a stop that cannot be made or told is not ok."""
+
+    from charmer import errors as product_errors
+    from charmer import gateway_inhibition
+
+    try:
+        runtime = _runtime(environ, refresh_shims=False, initialize_session_store=False)
+        gateway = runtime.gateway()
+        gateway.inhibition_token = environ.get(gateway_inhibition.TOKEN_ENV) or None
+        outcome = gateway.stop()
+    except (product_errors.CharmerError, OSError) as exc:
+        return False, str(exc)
+    return outcome.ok, outcome.message + (f" (fix: {outcome.remedy})" if outcome.remedy else "")
+
+
+# The earlier repair's ceiling (it converges every session scope once).
+REPAIR_TIMEOUT = 900
+
+
+def _repair_earlier(environ: Mapping[str, str]) -> tuple[bool, list[str]]:
+    """The retained earlier launcher's own ``doctor --repair-all
+    --include-live``, from its install tree, without this run's inhibition
+    token and without a terminal (it never asks): ``(ok, its output lines)``.
+    The one call ``--back`` makes to the earlier release."""
+
+    import subprocess
+
+    from charmer import gateway_inhibition, legacy
+    from charmer import legacy_migration as moving
+
+    launcher = legacy.data_root(environ) / legacy.LEGACY_INSTALL_DIR / moving.EARLIER_LAUNCHER
+    shown = product_paths.display(launcher, environ)
+    if not os.access(launcher, os.X_OK):
+        return False, [f"{shown} is missing or not executable"]
+    env = {name: value for name, value in environ.items() if name != gateway_inhibition.TOKEN_ENV}
+    try:
+        done = subprocess.run([str(launcher), *moving.REPAIR_ARGS], env=env, stdin=subprocess.DEVNULL,
+                              capture_output=True, text=True, timeout=REPAIR_TIMEOUT, check=False)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return False, [f"{shown} did not finish ({exc})"]
+    output = [line for line in (done.stdout + done.stderr).splitlines() if line.strip()]
+    return done.returncode == 0, output
+
+
+def _runtime(environ: Mapping[str, str], **kwargs: Any) -> Any:
+    from charmer import assets
+    import charmer.cli.runtime as runtime_mod
+
+    return runtime_mod.Runtime(asset_root=assets.default_asset_root(), environ=dict(environ), **kwargs)
+
+
+def _write_shims(environ: Mapping[str, str]) -> None:
+    runtime = _runtime(environ, refresh_shims=True, initialize_session_store=True)
+    if runtime.shims_withheld is not None:
+        from charmer import legacy_migration as moving
+
+        raise moving.MigrationError(f"charmer's shims were not written ({runtime.shims_withheld})",
+                                    remedy=f"{moving.COMMAND} again")
+
+
+def _start_gateway(environ: Mapping[str, str]) -> tuple[bool, str]:
+    """``gateway service install`` as ``charmer-gateway`` under this run's
+    inhibition, then the unit enabled and started, and the gateway proven
+    ready on the recorded endpoint."""
+
+    from charmer import gateway_inhibition
+    from charmer import legacy_migration as moving
+    from charmer.platform import linux_service
+
+    token = environ.get(gateway_inhibition.TOKEN_ENV) or None
+    runtime = _runtime(environ, refresh_shims=False, initialize_session_store=False)
+    manager = runtime.gateway_service()
+    manager.gateway.inhibition_token = token
+    outcome = manager.install(moving.CHARMER_UNIT)
+    if not outcome.ok:
+        return False, outcome.message + (f" (fix: {outcome.remedy})" if outcome.remedy else "")
+    if not linux_service.enable_now(moving.CHARMER_UNIT, manager.seams.runner):
+        return False, f"the service manager did not enable and start {moving.CHARMER_UNIT}"
+    gateway = runtime.gateway()
+    gateway.inhibition_token = token
+    ready = gateway.ensure(destination=gateway.base_url)
+    return ready.ok, ready.message
+
+
+def _verify(environ: Mapping[str, str], since: Any) -> list[str]:
+    """``gateway ensure`` on the recorded loopback endpoint, the proof that
+    the gateway's configuration and its preparation receipt were rendered
+    again by charmer since ``since`` (the move's start: neither is ever
+    edited, the gateway's own preparation writes both), and a doctor pass:
+    the BLOCK lines (none: verified)."""
+
+    import datetime
+
+    from charmer import proxy
+    import charmer.cli.doctor as doctor
+
+    runtime = _runtime(environ, initialize_session_store=False)
+    gateway = runtime.gateway()
+    ensured = gateway.ensure(destination=gateway.base_url)
+    problems = [] if ensured.ok else [f"gateway ensure: {ensured.message}"]
+    directory = product_paths.gateway_config_dir(environ)
+    for name in ("config.yaml", proxy.PREPARED_STAMP):
+        try:
+            written = datetime.datetime.fromtimestamp(os.stat(directory / name).st_mtime, datetime.timezone.utc)
+        except OSError:
+            written = None
+        if written is None or written < since:
+            problems.append(f"{product_paths.display(directory / name, environ)} was not rendered again by the "
+                            "gateway's preparation; restart it: charmer gateway restart")
+    blocks, _info, _attention = doctor._collect_doctor_reports(runtime)
+    return problems + [str(line) for line in blocks]

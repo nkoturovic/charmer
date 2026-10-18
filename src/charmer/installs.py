@@ -35,14 +35,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Mapping
 
-from charmer import endpoint, errors, layout, paths, state
+from charmer import endpoint, errors, layout, legacy, paths, state
 
 MARKER = "channel"
 CHANNELS = endpoint.CHANNELS
 BUNDLE_DIR = "install"
 NIX_LINK = Path("nix") / "current"
-# An exec link some Nix setups keep outside the data root.
-NIX_RELEASE_LINK = Path(".local") / "share" / "charmer-release" / "current"
+# The exec link the Nix setups of the earlier name kept outside the data
+# root (charmer.legacy): an installation on this account, never charmer's own.
+NIX_RELEASE_LINK = legacy.LEGACY_NIX_RELEASE_LINK
 PROXY_ENTRY = Path("bin") / "charmer-proxy"
 STORE_PREFIX = "/nix/store/"
 GC_ROOT_TIMEOUT = 60

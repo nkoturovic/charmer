@@ -192,13 +192,13 @@ def _object(document: Mapping[str, object], key: str, where: str) -> Mapping[str
     return value
 
 
-def _common(document: object, where: str) -> tuple[Mapping[str, object], str, str, int, str]:
+def _common(document: object, where: str, name: str = "charmer") -> tuple[Mapping[str, object], str, str, int, str]:
     """``(document, version, release_date, state_format, claude_code)``."""
 
     if not isinstance(document, dict):
         raise UpdateError(f"{where}: not a JSON object")
-    if document.get("format") != 1 or document.get("name") != "charmer":
-        raise UpdateError(f"{where}: not a charmer manifest (format 1)")
+    if document.get("format") != 1 or document.get("name") != name:
+        raise UpdateError(f"{where}: not a {name} manifest (format 1)")
     release_date = _text(document, "release_date", where)
     if not _DATE.fullmatch(release_date):
         raise UpdateError(f"{where}: release_date must be YYYY-MM-DD")
@@ -207,15 +207,18 @@ def _common(document: object, where: str) -> tuple[Mapping[str, object], str, st
             _count(document, "state_format", where), claude)
 
 
-def read_bundle_manifest(path: Path, *, version: str | None = None, target: str | None = None) -> InstalledVersion:
-    """Validate ``<bundle>/MANIFEST.json`` (extra keys are allowed)."""
+def read_bundle_manifest(path: Path, *, version: str | None = None, target: str | None = None,
+                         name: str = "charmer") -> InstalledVersion:
+    """Validate ``<bundle>/MANIFEST.json`` (extra keys are allowed); ``name``
+    is the product the manifest names (the earlier name's bundles are read
+    only for the pins they keep)."""
 
     where = str(path / MANIFEST)
     try:
         document = strict_json.load(path / MANIFEST)
     except (OSError, strict_json.StrictJSONError) as exc:
         raise UpdateError(f"{where}: unreadable ({exc})") from exc
-    document, found_version, release_date, state_format, claude = _common(document, where)
+    document, found_version, release_date, state_format, claude = _common(document, where, name)
     if _VERSION.fullmatch(found_version) is None:
         raise UpdateError(f"{where}: invalid version {found_version!r}")
     found_target = document.get("target")
@@ -280,19 +283,19 @@ def _link_version(root: Path, name: str) -> str | None:
     return version
 
 
-def read_installation(root: Path) -> Installation | None:
+def read_installation(root: Path, *, name: str = "charmer") -> Installation | None:
     """The installation under ``root``; None when nothing is installed there."""
 
     current = _link_version(root, CURRENT)
     if current is None:
         return None
-    installed = read_bundle_manifest(root / VERSIONS / current, version=current)
+    installed = read_bundle_manifest(root / VERSIONS / current, version=current, name=name)
     previous_version = _link_version(root, PREVIOUS)
     previous = None
     if previous_version is not None and previous_version != current:
         try:
             previous = read_bundle_manifest(root / VERSIONS / previous_version, version=previous_version,
-                                            target=installed.target)
+                                            target=installed.target, name=name)
         except UpdateError:
             previous = None  # a damaged previous version cannot be rolled back to
     return Installation(root, installed, previous)
@@ -303,25 +306,40 @@ def installed_pins(environ: Mapping[str, str], *,
     """``{Claude Code version: why}`` for the pins the installed release keeps:
     the ``current`` and ``previous`` bundles' pins (as the links say, whatever
     the version order) and the pin of the version a running gateway executes
-    from. Empty when no release is installed; :class:`UpdateError` when the
-    installation or the running gateway's version cannot be read (then no
-    owned copy may be pruned)."""
+    from; while the earlier name's install tree stays (``charmer.legacy``,
+    kept for ``migrate from-legacy --back``), its releases' pins too. Empty
+    when no release is installed; :class:`UpdateError` when an installation
+    or the running gateway's version cannot be read (then no owned copy may
+    be pruned)."""
 
+    from charmer import legacy
+
+    keep: dict[str, str] = {}
     root = install_root(environ)
     installation = read_installation(root)
-    if installation is None:
-        return {}
-    keep = {installation.current.claude_code: f"the installed release's pin ({installation.current.version})"}
-    if installation.previous is not None:
-        keep.setdefault(installation.previous.claude_code,
-                        f"the previous installed release's pin ({installation.previous.version})")
-    if protected is not None:
-        running = protected(root)
-        if running is None:
-            raise UpdateError("whether a running gateway uses an installed release cannot be checked")
-        for version in sorted(running):
-            bundle = read_bundle_manifest(root / VERSIONS / version, version=version)
-            keep.setdefault(bundle.claude_code, f"the running gateway's release pins it ({version})")
+    if installation is not None:
+        keep[installation.current.claude_code] = f"the installed release's pin ({installation.current.version})"
+        if installation.previous is not None:
+            keep.setdefault(installation.previous.claude_code,
+                            f"the previous installed release's pin ({installation.previous.version})")
+        if protected is not None:
+            running = protected(root)
+            if running is None:
+                raise UpdateError("whether a running gateway uses an installed release cannot be checked")
+            for version in sorted(running):
+                bundle = read_bundle_manifest(root / VERSIONS / version, version=version)
+                keep.setdefault(bundle.claude_code, f"the running gateway's release pins it ({version})")
+    earlier = legacy.data_root(environ) / legacy.LEGACY_INSTALL_DIR
+    if os.path.isdir(earlier):
+        try:
+            kept = read_installation(earlier, name=legacy.NAME)
+        except UpdateError as exc:
+            raise UpdateError(f"the earlier installation's pins cannot be read ({exc})") from exc
+        if kept is not None:
+            for found in (kept.current, kept.previous):
+                if found is not None:
+                    keep.setdefault(found.claude_code, f"the earlier installation's release pin ({found.version}), "
+                                                       "kept for migrate from-legacy --back")
     return keep
 
 

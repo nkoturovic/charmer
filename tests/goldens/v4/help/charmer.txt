@@ -40,7 +40,8 @@ Manage:
 
 Recovery and earlier formats:
   migrate         convert legacy session records to the current format (backups are kept for
-                  restore-2x); --dry-run writes nothing
+                  restore-2x); --dry-run writes nothing; migrate from-legacy moves an installation
+                  of the earlier name onto charmer
   restore-2x      put back the legacy session records a migration backed up, before running an
                   earlier launcher
   custom          the earlier custom-model registry (move it to providers: charmer providers

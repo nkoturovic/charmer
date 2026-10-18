@@ -3193,6 +3193,20 @@ class DoctorServedCrossCheckTests(CLITestCase):
         self.assertEqual(len(info), 1)
         self.assertIn("charmer-retired-max", info[0])
 
+    def test_a_stale_selector_under_the_earlier_prefix_is_reported_too(self) -> None:
+        """A gateway of the earlier release still serving one of its own
+        selectors that the current render no longer has: the same Info,
+        never an uncataloged discovery id."""
+
+        from charmer import legacy
+
+        stale = legacy.LEGACY_SELECTOR_PREFIX + "retired-max"
+        problems, info = self._report(set(self._expected()) | {stale})
+        self.assertEqual(problems, [])
+        self.assertEqual(len(info), 1, info)
+        self.assertIn("absent from the current render", info[0])
+        self.assertIn(stale, info[0])
+
     def test_registry_extras_are_never_problems_only_discovery_info(self) -> None:
         # Extras are never drift or damage; doctor counts
         # the unique routable, uncataloged ids as Info (no registry in this

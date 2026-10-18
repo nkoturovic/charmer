@@ -56,6 +56,7 @@ itself through ``charmer.gateway_inhibition``'s command the same way
     install_txn claim --state-root S [--migrate]         (token from the environment)
     install_txn prune-copies --version V                 (Claude Code copies)
     install_txn receipt --install-root R --launcher PATH ... [--path-line FILE LINE]
+    install_txn legacy                                   (an earlier installation: say so; exit 1 when none)
     install_txn switch --install-root R --current V [--previous V]
     install_txn finish-switch --install-root R            (prints what it put back)
 
@@ -445,6 +446,7 @@ def _parser() -> argparse.ArgumentParser:
     links.add_argument("--previous", help="the version that becomes previous (default: previous stays)")
     finish = commands.add_parser("finish-switch")
     finish.add_argument("--install-root", required=True)
+    commands.add_parser("legacy", help="say how to move an installation of the earlier name (exit 1: none)")
     return parser
 
 
@@ -529,6 +531,16 @@ def main(argv: Sequence[str] | None = None, *, environ: Mapping[str, str] | None
             done = self_update.finish_switch(root)
             if done:
                 out.write(f"{termtext.visible_text(done)}\n")
+            return EXIT_OK
+        if args.command == "legacy":
+            # The installer's hand-off: an installation of the earlier name
+            # is moved (charmer migrate from-legacy), not set up again.
+            from charmer import legacy, legacy_migration
+
+            if not legacy_migration.Layout.of(env).legacy_present():
+                return EXIT_REFUSED
+            out.write(f"charmer: an installation of {legacy.NAME} exists; run `{legacy_migration.COMMAND}` "
+                      f"instead of `charmer setup` (preview: `{legacy_migration.DRY_RUN}`)\n")
             return EXIT_OK
         if args.command == "receipt":
             from charmer import install_receipt

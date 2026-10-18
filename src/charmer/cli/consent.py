@@ -27,10 +27,14 @@ import sys
 from typing import Any, Callable, Mapping, TextIO
 
 from charmer import errors as cli_errors
+from charmer import legacy
 import charmer.cli.streams as streams
 
 
-SESSION_MARKERS = ("CHARMER_MANAGED_ID", "CLAUDECODE")
+# A session the release of the earlier name started marks itself with its
+# own variable (``charmer.legacy``): inside one, a person is no more at a
+# plain terminal than inside a charmer session.
+SESSION_MARKERS = ("CHARMER_MANAGED_ID", legacy.LEGACY_MANAGED_ID_ENV, "CLAUDECODE")
 _TTY_NAME = "/dev/tty"
 
 

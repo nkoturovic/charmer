@@ -254,14 +254,19 @@ def evaluate_files(state_root: Path, providers: Iterable[str], *,
 def evaluate_journal(state_root: Path, providers: Iterable[str], *,
                      reader: Callable[[datetime.datetime], observation.LogWindow],
                      now: Callable[[], str] = service.utc_now,
-                     running: tuple[str | None, datetime.datetime] | None = None) -> HoldReport:
+                     running: tuple[str | None, datetime.datetime] | None = None,
+                     marker: Callable[[str], str] = service.start_marker_prefix,
+                     record: bool = True) -> HoldReport:
     """The systemd backend's hold over the unit journal.
 
     ``reader(since)`` reads the journal from ``since``: the earlier of 24
     hours ago and the start of the ``running`` instance (``(nonce, started)``),
     never before the last clear. When the running instance started after the
-    last clear, its start marker must be in the window; without it the
-    journal does not cover the instance (rotated or vacuumed) and that holds.
+    last clear, its start marker (``marker(nonce)``: the start line the
+    gateway's launcher wrote) must be in the window; without it the journal
+    does not cover the instance (rotated or vacuumed) and that holds.
+    ``record`` False evaluates without writing the hold document (an
+    unresolved failure then holds as seen, unrecorded).
     """
 
     allowed = frozenset(providers)
@@ -282,8 +287,8 @@ def evaluate_journal(state_root: Path, providers: Iterable[str], *,
     coverage: list[str] = []
     if running is not None and running[0] and (cutoff is None or cutoff < running[1]) \
             and window.coverage == "bounded":
-        marker = service.start_marker_prefix(running[0])
-        if not any(record.message.startswith(marker) for record in window.records):
+        start = marker(running[0])
+        if not any(line.message.startswith(start) for line in window.records):
             coverage.append(f"service journal: the start of the running instance {running[0]} is not in the "
                             "journal (rotated or vacuumed); its credential saves cannot be evaluated completely")
     if cutoff is not None:
@@ -305,7 +310,10 @@ def evaluate_journal(state_root: Path, providers: Iterable[str], *,
     resolved = {key for key in (_evidence(event) for event in saves.events if event.result == "failed")
                 if key is not None and key not in open_keys}
     observed = [_journal_hold(event, at) for event in unrepaired]
-    if observed or any(item.get("evidence") in resolved for item in recorded):
+    if observed and not record:
+        reasons = [*map(_recorded_reason, recorded), *coverage, _failure_reason("service journal", saves)]
+        return HoldReport(True, tuple(reasons), "journal", {}, at, recorded)
+    if record and (observed or any(item.get("evidence") in resolved for item in recorded)):
         try:
             recorded = _record_journal_evidence(state_root, observed, resolved)
         except (OSError, errors.CharmerError) as exc:

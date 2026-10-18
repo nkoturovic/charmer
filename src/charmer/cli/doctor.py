@@ -13,6 +13,7 @@ from charmer import custom
 from charmer import endpoint
 from charmer import errors as cli_errors
 from charmer import hooks
+from charmer import legacy
 from charmer import gateway_events
 from charmer import launch
 from charmer import managed
@@ -292,7 +293,9 @@ def _doctor_served_checks(
     stale = [
         selector
         for selector in sorted(snap.served - snap.expected)
-        if selector.startswith(("charmer-", "gpt-multi-"))
+        # charmer's two prefixes, and the one its selectors had before
+        # catalog 39 renamed them (an older gateway may still serve those).
+        if selector.startswith(("charmer-", "gpt-multi-", legacy.LEGACY_SELECTOR_PREFIX))
         and not selector.startswith(render.SENTINEL_PREFIX)
     ]
     if stale:
@@ -445,8 +448,31 @@ def _doctor_gateway_workdir(runtime: runtime_mod.Runtime) -> list[str]:
     ]
 
 
-def _doctor_hook_targets(runtime: runtime_mod.Runtime, records: list[dict[str, Any]]) -> tuple[list[str], list[str]]:
+def _earlier_shim(path: Path, environ: Mapping[str, str]) -> bool:
+    """Whether ``path`` is one of the earlier release's hook shims in its
+    state root (``charmer.legacy``): what a scope compiled before ``migrate
+    from-legacy`` moved the roots names."""
+
+    return path.parent == legacy.state_root(environ) / "bin" and path.name in legacy.LEGACY_SHIMS
+
+
+def _compiled_by_earlier_release(settings: Mapping[str, Any], environ: Mapping[str, str]) -> bool:
+    """Whether a scope's hooks all name the earlier release's shims."""
+
+    targets = scope_mod.hook_targets(settings)
+    return bool(targets) and all(_earlier_shim(path, environ) for path in targets)
+
+
+def _doctor_hook_targets(
+    runtime: runtime_mod.Runtime, records: list[dict[str, Any]],
+) -> tuple[list[str], list[str], list[str]]:
+    """``(problems, attention, info)``: a compiled hook command that is
+    missing is BLOCKED, except the earlier release's own shims in its state
+    root (``charmer.legacy``): a scope compiled before ``migrate
+    from-legacy`` moved the roots, recompiled at its next resume (Attention)."""
+
     problems: list[str] = []
+    stale: list[str] = []
     checked = 0
     for record in records:
         if record.get("version") != 4 or record.get("lineup_generation", 0) < 1:
@@ -456,14 +482,24 @@ def _doctor_hook_targets(runtime: runtime_mod.Runtime, records: list[dict[str, A
         if not settings:
             continue  # the scope-integrity report owns unreadable settings
         checked += 1
-        for path in scope_mod.missing_hook_targets(settings):
+        missing = scope_mod.missing_hook_targets(settings)
+        if missing and all(_earlier_shim(path, runtime.environ) for path in missing):
+            stale.append(mid)
+            continue
+        for path in missing:
             problems.append(
                 f"session {mid[:8]}: compiled hook target {paths.display(path, runtime.environ)} is missing or not executable — "
                 "its /model fence and lineup hooks silently do not run; restore it: "
                 f"charmer doctor --repair {mid}"
             )
-    info = [] if problems else [f"Hook targets: every compiled hook command exists ({checked} session(s))."]
-    return problems, info
+    attention = [gateway_facts.Finding(
+        f"{len(stale)} session scope(s) were compiled by {legacy.NAME} (their hooks name its shims, which the move "
+        f"to charmer replaced); each is recompiled at its next resume: charmer -r {stale[0]}",
+        code="earlier-scopes", public="session scopes compiled by charmer's earlier name wait for their next resume",
+        remedy=f"charmer -r {stale[0]}")] if stale else []
+    info = [] if problems else [f"Hook targets: every compiled hook command exists ({checked - len(stale)} "
+                                f"session(s))."]
+    return problems, attention, info
 
 
 def _doctor_managed_report(runtime: runtime_mod.Runtime) -> tuple[list[str], list[str]]:
@@ -506,9 +542,15 @@ def _doctor_install_report(runtime: runtime_mod.Runtime) -> tuple[list[str], lis
         release_info = [f"Installed release: unknown ({exc})"]
     release_info = [_trust_line(runtime) if line.startswith("HTTPS trust (") else line for line in release_info]
     held, holding, held_info = gateway_facts.inhibition_report(runtime)
+    from charmer import legacy_migration
+
+    remnants = [gateway_facts.Finding(f"{text} — {remedy}", code="earlier-installation",
+                                      public="the installation of charmer's earlier name left files here",
+                                      remedy=remedy)
+                for text, remedy in legacy_migration.remnants(runtime.environ)]
     return (
         [*problems, *held],
-        [*attention, *holding],
+        [*attention, *holding, *remnants],
         [*info, *release_info, *service_info, *held_info],
     )
 
@@ -808,8 +850,9 @@ def _collect_doctor_report_lines(
     scope_attention.extend(marker_attention)
     scope_attention.extend(scope_attention_extra)
     records = session_facts._session_records(runtime)
-    hook_problems, hook_info = _doctor_hook_targets(runtime, records)
+    hook_problems, hook_attention, hook_info = _doctor_hook_targets(runtime, records)
     problems.extend(hook_problems)
+    scope_attention.extend(hook_attention)
     info_lines.extend(hook_info)
     scope_attention.extend(_doctor_client_report(runtime, records))
     record_attention, record_info = _doctor_record_report(runtime, records)
@@ -1436,7 +1479,8 @@ def _settings_radar(runtime: runtime_mod.Runtime, records: list[dict[str, Any]])
 
 
 def _charmer_selector_set(runtime: runtime_mod.Runtime) -> frozenset[str]:
-    """Normalised selectors of every non-Anthropic catalog/custom/retired line (§13.7)."""
+    """Normalised selectors of every non-Anthropic catalog/custom/retired
+    line (§13.7), and the earlier names of the renamed ones."""
 
     docs = runtime.ordinary_docs
     lines = (docs["models-v2"] if "models-v2" in docs else docs["models"])["models"]
@@ -1451,6 +1495,7 @@ def _charmer_selector_set(runtime: runtime_mod.Runtime) -> frozenset[str]:
     for entry in runtime.catalog.retired.values():
         if isinstance(entry, dict) and entry.get("provider") != "anthropic":
             selectors.update(entry.get("selectors", {}))
+    selectors.update(runtime.catalog.renamed)
     return frozenset(scope_mod.normalize_model(selector) for selector in selectors)
 
 
@@ -1458,7 +1503,9 @@ def _is_charmer_selector(value: Any, known: frozenset[str]) -> bool:
     if not isinstance(value, str) or not value:
         return False
     norm = scope_mod.normalize_model(value)
-    return norm in known or norm.startswith(("charmer-", "gpt-multi-"))
+    # A /model choice inside an older session may have saved a selector under
+    # the prefix catalog 39 renamed.
+    return norm in known or norm.startswith(("charmer-", "gpt-multi-", legacy.LEGACY_SELECTOR_PREFIX))
 
 
 def _doctor_user_settings_report(
@@ -1487,10 +1534,12 @@ def _doctor_user_settings_report(
                 if _is_charmer_selector(key, known):
                     hits.append((f"modelSettings[{json.dumps(key)}]", key))
         for json_path, value in hits:
+            if str(value).startswith(legacy.LEGACY_SELECTOR_PREFIX):
+                held = f"holds the {legacy.NAME} selector {value!r} (saved by a /model choice inside a {legacy.NAME} session)"
+            else:
+                held = f"holds the charmer selector {value!r} (saved by a /model choice inside a charmer session)"
             attention.append(
-                f"{path}: {json_path} holds the charmer selector {value!r} (saved by a "
-                "/model choice inside a charmer session); plain claude cannot use it. "
-                f"Revert: remove {json_path} from {path}"
+                f"{path}: {json_path} {held}; plain claude cannot use it. Revert: remove {json_path} from {path}"
             )
     cwds = [runtime.cwd] + [
         record["cwd"]
@@ -1977,6 +2026,14 @@ def _check_scope_integrity(
     mid = sessions.managed_id(record)
     m8 = mid[:8]
     live = scope_mod.scope_dir(runtime.session_store.root, mid)
+    earlier = managed.read_settings(live / "settings.json") if live.is_dir() else None
+    if earlier and _compiled_by_earlier_release(earlier, runtime.environ):
+        # Compiled by the earlier release before migrate from-legacy moved
+        # the roots: every file of it is recompiled at the next resume.
+        return [], [
+            f"session {m8}: scope compiled by {legacy.NAME} before the move to charmer (stale; its hooks name "
+            f"the earlier shims); it is recompiled at the next resume (charmer -r {mid})"
+        ], []
     transition = runtime_mod._transition_module()
     parts = runtime.converge_parts()
     try:
