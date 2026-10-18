@@ -1,18 +1,18 @@
 {
   "client": {
-    "native_contract_file_sha256": "24e69f91ccf80ec5b19194c34d879273644922d659d807ac89f7448416be6557",
-    "sha256": "a967e7b1d8b4e47ee421d5433027880347952b0c0857abf880e2c942a4ec93b3",
-    "version": "2.1.292"
+    "native_contract_file_sha256": "8bb508536fabe3e6bdbbdb3783172efaa7f060ff8c1e5c3a1683cb7d75ec4d0b",
+    "sha256": "60d7eb7f12fbb28a52533fe8be5884097403562aa02dc73991a021c7067e29a5",
+    "version": "2.1.302"
   },
   "evidence": {
     "directory": "tests/fixtures",
     "files": {
       "inventory.json": {
         "document": {
-          "client_sha256": "a967e7b1d8b4e47ee421d5433027880347952b0c0857abf880e2c942a4ec93b3",
+          "client_sha256": "60d7eb7f12fbb28a52533fe8be5884097403562aa02dc73991a021c7067e29a5",
           "errors": 0,
           "failures": 0,
-          "head": "ddcf1798632370961d59915340e6e5ce257f5eea",
+          "head": "edb4cde8d76520ea1d1f4c1562f2f6c7a7c5738e",
           "inventory": {
             "J1": {
               "count": 9,
@@ -79,10 +79,10 @@
           },
           "journey_tests": 9,
           "keyed_client_budget_seconds": 900,
-          "keyed_client_seconds": 12.127,
+          "keyed_client_seconds": 12.173,
           "keyed_client_tests": 10,
           "keyed_identity": {
-            "client_contract_sha256": "24e69f91ccf80ec5b19194c34d879273644922d659d807ac89f7448416be6557",
+            "client_contract_sha256": "8bb508536fabe3e6bdbbdb3783172efaa7f060ff8c1e5c3a1683cb7d75ec4d0b",
             "gateway": "/nix/store/hk0hzg46h9mbsh13sbjqxwg870rq9qjq-cli-proxy-api-linux-amd64-7.3.15/bin/cli-proxy-api",
             "gateway_patch_names": [
               "cli-proxy-api-loopback-oauth.patch",
@@ -115,16 +115,16 @@
               "schemas/operator-ledger.schema.json": "19e3b4b472ea01ec4110bdcb4be3667e7c2b078dd22f09566cbe6f137aa652e2",
               "schemas/operator-provider.schema.json": "bab1eb96832c3e06789a5bf9d566749b733056a53aadceb1aefac444f0c9f972",
               "schemas/providers.schema.json": "c13f85f84a1d2de669d930b81f26815c96295d55ee19ca5339cb802dbd5e5ff4",
-              "src/charmer/catalog.py": "7a6dfc9398825ea5b15da0694fd25a403d06c834788d8c284a59b5f0983c023c",
+              "src/charmer/catalog.py": "3835dac1bdcf089743fda93dc674b9536fe4f7d74e8b83f3ca50bc59a933308d",
               "src/charmer/cli/commands/models.py": "aae44015e8424d584132b8a1514ac46df7e30be2fd866dbf4a5c08f8cd5271dd",
               "src/charmer/cli/commands/providers.py": "d1a2611225a03586b1b68c1334638d9163dc3c5928cd36f7e0edcee13685da4b",
-              "src/charmer/compiler.py": "0ea294c2fabb14659f392fe90bec1d096f313d149173fc505e36b39636befb0f",
+              "src/charmer/compiler.py": "61a295ca1644a1d48420cf54fc87d16030d226c532f9bcff1a35f254367ede24",
               "src/charmer/discovery.py": "685e2c4373c607362ccad637802040e76fa087ac99c987eda1144d3c7a1d0a50",
               "src/charmer/operator.py": "b706fb1f53a218d68532e525aa5dea99aa38421a3778b09af9cbbdd52baec5e0",
               "src/charmer/profile.py": "8e0be317eb5addd8930f59d673dc5c25bd4ea702fb7fb43ccecef975ef287f71",
               "src/charmer/qualify.py": "65f09078f97ace0818c8d7d6057a59c827a9b0a1f983eefa04edc2b82eba4421",
               "src/charmer/render.py": "167bb58c27a76d2cee277f965b618b4317c4de7f11c43ede81de4bb55ae15c32",
-              "src/charmer/scope.py": "2d5fddbd19aaa5172b73762741ec5af070aa436d39fbbc2a8db1b401dbe62ade",
+              "src/charmer/scope.py": "198720cdfe473497008926f15fdd469508a2ebb7dc72706155487ca3472834e5",
               "src/charmer/served_plan.py": "affcc823cb55f250d07f6252211803f33d3f3a688a4438b2a31e3a6409715c8a"
             }
           },
@@ -133,7 +133,7 @@
           "relevant_sources": [
             {
               "path": "src/charmer/catalog.py",
-              "sha256": "7a6dfc9398825ea5b15da0694fd25a403d06c834788d8c284a59b5f0983c023c"
+              "sha256": "3835dac1bdcf089743fda93dc674b9536fe4f7d74e8b83f3ca50bc59a933308d"
             },
             {
               "path": "src/charmer/operator.py",
@@ -161,11 +161,11 @@
             },
             {
               "path": "src/charmer/compiler.py",
-              "sha256": "0ea294c2fabb14659f392fe90bec1d096f313d149173fc505e36b39636befb0f"
+              "sha256": "61a295ca1644a1d48420cf54fc87d16030d226c532f9bcff1a35f254367ede24"
             },
             {
               "path": "src/charmer/scope.py",
-              "sha256": "2d5fddbd19aaa5172b73762741ec5af070aa436d39fbbc2a8db1b401dbe62ade"
+              "sha256": "198720cdfe473497008926f15fdd469508a2ebb7dc72706155487ca3472834e5"
             },
             {
               "path": "src/charmer/cli/commands/models.py",
@@ -200,7 +200,7 @@
           "skipped": 0,
           "status": "passed"
         },
-        "sha256": "b6a854b86d24afe519ed25716dcd08c656baf21932553188b68cbba6f245ebda"
+        "sha256": "996dca408447c2a1a3c207c8a68840d13ff416dd18c11954806f49491dfb5d81"
       },
       "tests.keyed_journeys.json": {
         "document": {
@@ -217,54 +217,54 @@
           "tables": {
             "J1": [
               {
-                "head": "ddcf1798632370961d59915340e6e5ce257f5eea",
+                "head": "edb4cde8d76520ea1d1f4c1562f2f6c7a7c5738e",
                 "row": "tests.test_onboarding_isolation.KeyedJourneyTests.test_keyed_cli_changes_and_failed_qualification_remain_selectable_with_warnings",
                 "status": "passed"
               },
               {
-                "head": "ddcf1798632370961d59915340e6e5ce257f5eea",
+                "head": "edb4cde8d76520ea1d1f4c1562f2f6c7a7c5738e",
                 "row": "tests.test_onboarding_isolation.KeyedJourneyTests.test_keyed_cli_declare_approve_apply_admit_qualify_bind",
                 "status": "passed"
               },
               {
-                "head": "ddcf1798632370961d59915340e6e5ce257f5eea",
+                "head": "edb4cde8d76520ea1d1f4c1562f2f6c7a7c5738e",
                 "row": "tests.test_packaging.PackageSourceTests.test_package_payload_excludes_operator_credentials_and_grants",
                 "status": "passed"
               },
               {
-                "head": "ddcf1798632370961d59915340e6e5ce257f5eea",
+                "head": "edb4cde8d76520ea1d1f4c1562f2f6c7a7c5738e",
                 "row": "tests.test_portability.KeyedPortabilityTests.test_keyed_import_closed_target_refuses_audit",
                 "status": "passed"
               },
               {
-                "head": "ddcf1798632370961d59915340e6e5ce257f5eea",
+                "head": "edb4cde8d76520ea1d1f4c1562f2f6c7a7c5738e",
                 "row": "tests.test_portability.KeyedPortabilityTests.test_keyed_import_open_target_requires_local_route_and_key_not_admission",
                 "status": "passed"
               },
               {
-                "head": "ddcf1798632370961d59915340e6e5ce257f5eea",
+                "head": "edb4cde8d76520ea1d1f4c1562f2f6c7a7c5738e",
                 "row": "tests.test_portability.KeyedPortabilityTests.test_keyed_import_rechecks_headers_origins_collisions",
                 "status": "passed"
               },
               {
-                "head": "ddcf1798632370961d59915340e6e5ce257f5eea",
+                "head": "edb4cde8d76520ea1d1f4c1562f2f6c7a7c5738e",
                 "row": "tests.test_portability.KeyedPortabilityTests.test_keyed_import_uses_existing_single_commit_barrier",
                 "status": "passed"
               },
               {
-                "head": "ddcf1798632370961d59915340e6e5ce257f5eea",
+                "head": "edb4cde8d76520ea1d1f4c1562f2f6c7a7c5738e",
                 "row": "tests.test_portability.KeyedPortabilityTests.test_keyed_json_export_has_logical_refs_and_no_store_reads",
                 "status": "passed"
               },
               {
-                "head": "ddcf1798632370961d59915340e6e5ce257f5eea",
+                "head": "edb4cde8d76520ea1d1f4c1562f2f6c7a7c5738e",
                 "row": "tests.test_tui_pty.KeyedJourneyPTYTests.test_keyed_tui_optional_admission_qualification_and_binding",
                 "status": "passed"
               }
             ]
           }
         },
-        "sha256": "be27165da7621454cacd2f923999449dd95d552b4302622357f0cc180c5b8094"
+        "sha256": "41b6cf5d098f0ab74a8ed9ee006a964911abd1ba982541bdd7cb68b542d57d55"
       },
       "tests.test_gateway_keyed_compat.json": {
         "document": {
@@ -273,7 +273,7 @@
             "version": "7.3.15"
           },
           "keyed_identity": {
-            "client_contract_sha256": "24e69f91ccf80ec5b19194c34d879273644922d659d807ac89f7448416be6557",
+            "client_contract_sha256": "8bb508536fabe3e6bdbbdb3783172efaa7f060ff8c1e5c3a1683cb7d75ec4d0b",
             "gateway": "/nix/store/hk0hzg46h9mbsh13sbjqxwg870rq9qjq-cli-proxy-api-linux-amd64-7.3.15/bin/cli-proxy-api",
             "gateway_patch_names": [
               "cli-proxy-api-loopback-oauth.patch",
@@ -306,16 +306,16 @@
               "schemas/operator-ledger.schema.json": "19e3b4b472ea01ec4110bdcb4be3667e7c2b078dd22f09566cbe6f137aa652e2",
               "schemas/operator-provider.schema.json": "bab1eb96832c3e06789a5bf9d566749b733056a53aadceb1aefac444f0c9f972",
               "schemas/providers.schema.json": "c13f85f84a1d2de669d930b81f26815c96295d55ee19ca5339cb802dbd5e5ff4",
-              "src/charmer/catalog.py": "7a6dfc9398825ea5b15da0694fd25a403d06c834788d8c284a59b5f0983c023c",
+              "src/charmer/catalog.py": "3835dac1bdcf089743fda93dc674b9536fe4f7d74e8b83f3ca50bc59a933308d",
               "src/charmer/cli/commands/models.py": "aae44015e8424d584132b8a1514ac46df7e30be2fd866dbf4a5c08f8cd5271dd",
               "src/charmer/cli/commands/providers.py": "d1a2611225a03586b1b68c1334638d9163dc3c5928cd36f7e0edcee13685da4b",
-              "src/charmer/compiler.py": "0ea294c2fabb14659f392fe90bec1d096f313d149173fc505e36b39636befb0f",
+              "src/charmer/compiler.py": "61a295ca1644a1d48420cf54fc87d16030d226c532f9bcff1a35f254367ede24",
               "src/charmer/discovery.py": "685e2c4373c607362ccad637802040e76fa087ac99c987eda1144d3c7a1d0a50",
               "src/charmer/operator.py": "b706fb1f53a218d68532e525aa5dea99aa38421a3778b09af9cbbdd52baec5e0",
               "src/charmer/profile.py": "8e0be317eb5addd8930f59d673dc5c25bd4ea702fb7fb43ccecef975ef287f71",
               "src/charmer/qualify.py": "65f09078f97ace0818c8d7d6057a59c827a9b0a1f983eefa04edc2b82eba4421",
               "src/charmer/render.py": "167bb58c27a76d2cee277f965b618b4317c4de7f11c43ede81de4bb55ae15c32",
-              "src/charmer/scope.py": "2d5fddbd19aaa5172b73762741ec5af070aa436d39fbbc2a8db1b401dbe62ade",
+              "src/charmer/scope.py": "198720cdfe473497008926f15fdd469508a2ebb7dc72706155487ca3472834e5",
               "src/charmer/served_plan.py": "affcc823cb55f250d07f6252211803f33d3f3a688a4438b2a31e3a6409715c8a"
             }
           },
@@ -470,7 +470,7 @@
             ]
           }
         },
-        "sha256": "7a122a9b7a1db8ab427307ba06d8f1437f6bff95c1807c900b50358d7a994351"
+        "sha256": "6fe77c1240b6297d42c27a1bf2e11bfa84dfeec95343c95b157515981adee037"
       },
       "tests.test_keyed_compat_client.json": {
         "document": {
@@ -479,7 +479,7 @@
             "version": "7.3.15"
           },
           "keyed_identity": {
-            "client_contract_sha256": "24e69f91ccf80ec5b19194c34d879273644922d659d807ac89f7448416be6557",
+            "client_contract_sha256": "8bb508536fabe3e6bdbbdb3783172efaa7f060ff8c1e5c3a1683cb7d75ec4d0b",
             "gateway": "/nix/store/hk0hzg46h9mbsh13sbjqxwg870rq9qjq-cli-proxy-api-linux-amd64-7.3.15/bin/cli-proxy-api",
             "gateway_patch_names": [
               "cli-proxy-api-loopback-oauth.patch",
@@ -512,16 +512,16 @@
               "schemas/operator-ledger.schema.json": "19e3b4b472ea01ec4110bdcb4be3667e7c2b078dd22f09566cbe6f137aa652e2",
               "schemas/operator-provider.schema.json": "bab1eb96832c3e06789a5bf9d566749b733056a53aadceb1aefac444f0c9f972",
               "schemas/providers.schema.json": "c13f85f84a1d2de669d930b81f26815c96295d55ee19ca5339cb802dbd5e5ff4",
-              "src/charmer/catalog.py": "7a6dfc9398825ea5b15da0694fd25a403d06c834788d8c284a59b5f0983c023c",
+              "src/charmer/catalog.py": "3835dac1bdcf089743fda93dc674b9536fe4f7d74e8b83f3ca50bc59a933308d",
               "src/charmer/cli/commands/models.py": "aae44015e8424d584132b8a1514ac46df7e30be2fd866dbf4a5c08f8cd5271dd",
               "src/charmer/cli/commands/providers.py": "d1a2611225a03586b1b68c1334638d9163dc3c5928cd36f7e0edcee13685da4b",
-              "src/charmer/compiler.py": "0ea294c2fabb14659f392fe90bec1d096f313d149173fc505e36b39636befb0f",
+              "src/charmer/compiler.py": "61a295ca1644a1d48420cf54fc87d16030d226c532f9bcff1a35f254367ede24",
               "src/charmer/discovery.py": "685e2c4373c607362ccad637802040e76fa087ac99c987eda1144d3c7a1d0a50",
               "src/charmer/operator.py": "b706fb1f53a218d68532e525aa5dea99aa38421a3778b09af9cbbdd52baec5e0",
               "src/charmer/profile.py": "8e0be317eb5addd8930f59d673dc5c25bd4ea702fb7fb43ccecef975ef287f71",
               "src/charmer/qualify.py": "65f09078f97ace0818c8d7d6057a59c827a9b0a1f983eefa04edc2b82eba4421",
               "src/charmer/render.py": "167bb58c27a76d2cee277f965b618b4317c4de7f11c43ede81de4bb55ae15c32",
-              "src/charmer/scope.py": "2d5fddbd19aaa5172b73762741ec5af070aa436d39fbbc2a8db1b401dbe62ade",
+              "src/charmer/scope.py": "198720cdfe473497008926f15fdd469508a2ebb7dc72706155487ca3472834e5",
               "src/charmer/served_plan.py": "affcc823cb55f250d07f6252211803f33d3f3a688a4438b2a31e3a6409715c8a"
             }
           },
@@ -537,7 +537,7 @@
           "tables": {
             "client": [
               {
-                "client_sha256": "a967e7b1d8b4e47ee421d5433027880347952b0c0857abf880e2c942a4ec93b3",
+                "client_sha256": "60d7eb7f12fbb28a52533fe8be5884097403562aa02dc73991a021c7067e29a5",
                 "compact_events": 1,
                 "count_tokens_ingress": 0,
                 "genuine_compact_image_sdk_hits": 0,
@@ -548,7 +548,7 @@
                 "transport_requests": 1
               },
               {
-                "client_sha256": "a967e7b1d8b4e47ee421d5433027880347952b0c0857abf880e2c942a4ec93b3",
+                "client_sha256": "60d7eb7f12fbb28a52533fe8be5884097403562aa02dc73991a021c7067e29a5",
                 "distinct_wire": true,
                 "intended_effort": "max",
                 "requests": 4,
@@ -557,7 +557,7 @@
                 "thinking_type_present": true
               },
               {
-                "client_sha256": "a967e7b1d8b4e47ee421d5433027880347952b0c0857abf880e2c942a4ec93b3",
+                "client_sha256": "60d7eb7f12fbb28a52533fe8be5884097403562aa02dc73991a021c7067e29a5",
                 "default_child_dispatched": true,
                 "explicit_auto_child_hits": 0,
                 "requests": 12,
@@ -566,7 +566,7 @@
                 "thinking_type_present": true
               },
               {
-                "client_sha256": "a967e7b1d8b4e47ee421d5433027880347952b0c0857abf880e2c942a4ec93b3",
+                "client_sha256": "60d7eb7f12fbb28a52533fe8be5884097403562aa02dc73991a021c7067e29a5",
                 "requests": 2,
                 "row": "C1-lead",
                 "status": "passed",
@@ -574,7 +574,7 @@
                 "tool_continuation": true
               },
               {
-                "client_sha256": "a967e7b1d8b4e47ee421d5433027880347952b0c0857abf880e2c942a4ec93b3",
+                "client_sha256": "60d7eb7f12fbb28a52533fe8be5884097403562aa02dc73991a021c7067e29a5",
                 "requests": 2,
                 "returned_thinking_history": true,
                 "returned_tool_history": true,
@@ -583,7 +583,7 @@
                 "thinking_type_present": true
               },
               {
-                "client_sha256": "a967e7b1d8b4e47ee421d5433027880347952b0c0857abf880e2c942a4ec93b3",
+                "client_sha256": "60d7eb7f12fbb28a52533fe8be5884097403562aa02dc73991a021c7067e29a5",
                 "fast_speed": false,
                 "requests": 2,
                 "row": "C1-policy",
@@ -592,7 +592,7 @@
                 "thinking_type_present": true
               },
               {
-                "client_sha256": "a967e7b1d8b4e47ee421d5433027880347952b0c0857abf880e2c942a4ec93b3",
+                "client_sha256": "60d7eb7f12fbb28a52533fe8be5884097403562aa02dc73991a021c7067e29a5",
                 "intended_effort": "high",
                 "requests": 4,
                 "row": "C1-workflow",
@@ -601,7 +601,7 @@
                 "workflow_distinct_wire": true
               },
               {
-                "client_sha256": "a967e7b1d8b4e47ee421d5433027880347952b0c0857abf880e2c942a4ec93b3",
+                "client_sha256": "60d7eb7f12fbb28a52533fe8be5884097403562aa02dc73991a021c7067e29a5",
                 "forbidden_wire_hits": 0,
                 "lead_wire_child_hits": 0,
                 "permission_modes": 2,
@@ -612,7 +612,7 @@
                 "workflow_default_child_hits": 1
               },
               {
-                "client_sha256": "a967e7b1d8b4e47ee421d5433027880347952b0c0857abf880e2c942a4ec93b3",
+                "client_sha256": "60d7eb7f12fbb28a52533fe8be5884097403562aa02dc73991a021c7067e29a5",
                 "compact_events": 1,
                 "count_tokens_ingress": 0,
                 "genuine_compact_image_sdk_hits": 0,
@@ -625,7 +625,7 @@
             ]
           }
         },
-        "sha256": "7716251d9054f96fd17551b7a36807df8c60d2c7017d9dc54709a27db0d695fb"
+        "sha256": "adc209ef2fbecfc5bd95a8d87f051b9491954471db8e838450099637edc5633b"
       }
     },
     "validated_exit": 0
@@ -834,11 +834,11 @@
   "source_report": {
     "document": {
       "evidence_dir": "tests/fixtures",
-      "head": "ddcf1798632370961d59915340e6e5ce257f5eea",
+      "head": "edb4cde8d76520ea1d1f4c1562f2f6c7a7c5738e",
       "relevant_sources": [
         {
           "path": "src/charmer/catalog.py",
-          "sha256": "7a6dfc9398825ea5b15da0694fd25a403d06c834788d8c284a59b5f0983c023c"
+          "sha256": "3835dac1bdcf089743fda93dc674b9536fe4f7d74e8b83f3ca50bc59a933308d"
         },
         {
           "path": "src/charmer/operator.py",
@@ -866,11 +866,11 @@
         },
         {
           "path": "src/charmer/compiler.py",
-          "sha256": "0ea294c2fabb14659f392fe90bec1d096f313d149173fc505e36b39636befb0f"
+          "sha256": "61a295ca1644a1d48420cf54fc87d16030d226c532f9bcff1a35f254367ede24"
         },
         {
           "path": "src/charmer/scope.py",
-          "sha256": "2d5fddbd19aaa5172b73762741ec5af070aa436d39fbbc2a8db1b401dbe62ade"
+          "sha256": "198720cdfe473497008926f15fdd469508a2ebb7dc72706155487ca3472834e5"
         },
         {
           "path": "src/charmer/cli/commands/models.py",
@@ -902,7 +902,7 @@
         }
       ]
     },
-    "sha256": "7430d89c477d9de9fb2345aeabc7cc4a798fa237ff25d981c89bcb7bcf7c5c4c"
+    "sha256": "022183d9c220bb81c9b195f1ffdba6394878d5ea87b4749cecc11b6aceece658"
   },
   "version": 1
 }
