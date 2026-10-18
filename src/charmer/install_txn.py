@@ -376,15 +376,13 @@ def hold_reason(state_root: Path | str, environ: Mapping[str, str], *,
 
 
 def _packaged_gateway(state_root: Path | str, environ: Mapping[str, str]):
-    from charmer import catalog, gateway_lifecycle, resources_root
+    from charmer import catalog, gateway_hold, gateway_lifecycle, resources_root
 
     try:
         docs = catalog.load_raw(resources_root())["docs"]
     except (OSError, KeyError, errors.CharmerError) as exc:
         raise TransactionError(f"the packaged catalog cannot be read ({exc})") from exc
-    providers = docs["providers"]["providers"]
-    names = {*providers, *(entry["transport"]["pool"] for entry in providers.values()
-                           if entry.get("transport", {}).get("kind") == "oauth-pool")}
+    names = gateway_hold.credential_save_providers(docs["providers"])
     return gateway_lifecycle.Gateway(home=paths.home(environ), state_root=Path(state_root), environ=environ,
                                      gateway_document=docs["gateway"], providers=names)
 

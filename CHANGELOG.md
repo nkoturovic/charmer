@@ -4,6 +4,15 @@ All notable changes are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions
 follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- `charmer migrate from-legacy` and `--back` recognize credential-save
+  receipts logged under the Claude and ChatGPT account pool names.
+  Persisted token refreshes no longer cause a false unsaved-credential
+  hold; unknown providers and unresolved save failures still block the move.
+
 ## [2.0.1] — 2026-10-18
 
 The first release under the name charmer. 2.0.0 was tagged but never

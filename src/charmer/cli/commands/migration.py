@@ -437,7 +437,8 @@ def _gateway_hold(state_root: Path, unit: str, supervised: bool, marker: Callabl
     reasons = [str(item.get("reason") or "a recorded hold") for item in document["holds"]]
     if reasons:
         return reasons
-    providers = set(catalog.load_catalog(assets.default_asset_root()).docs["providers"]["providers"])
+    providers = gateway_hold.credential_save_providers(
+        catalog.load_catalog(assets.default_asset_root()).docs["providers"])
     if not supervised:
         report = gateway_hold.evaluate_files(state_root, providers)
         return list(report.reasons) if report.held else []

@@ -111,6 +111,15 @@ def describe(report: HoldReport) -> str:
     return f"{COVERAGE_ONLY}: {reasons}" if getattr(report, "coverage_only", False) else reasons
 
 
+def credential_save_providers(document: Mapping[str, Any]) -> set[str]:
+    """The names the gateway logs credential saves under, from a providers
+    document: catalog provider ids plus the OAuth transports' pool names."""
+
+    providers = document["providers"]
+    return {*providers, *(entry["transport"]["pool"] for entry in providers.values()
+                          if entry.get("transport", {}).get("kind") == "oauth-pool")}
+
+
 def _coverage_text(coverage: str) -> str:
     return f"the log could not be evaluated completely (coverage {coverage})"
 

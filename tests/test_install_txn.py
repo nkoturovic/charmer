@@ -343,6 +343,22 @@ class HoldTests(TxnTestCase):
         self.assertEqual(gateway.state_root, self.state)
         self.assertTrue(gateway.providers())
 
+    def test_the_packaged_gateway_keeps_its_exact_credential_save_providers(self) -> None:
+        from _catalog import FIXTURE_ROOT
+        from charmer import catalog, resources_root
+
+        docs = catalog.load_raw(FIXTURE_ROOT)["docs"]
+        expected = {*docs["providers"]["providers"], "claude", "codex", "extra-account", "extra-pool", "bare", "keyed"}
+        docs["providers"]["providers"].update({
+            "extra-account": {"transport": {"kind": "oauth-pool", "pool": "extra-pool"}},
+            "bare": {},
+            "keyed": {"transport": {"kind": "direct", "pool": "not-an-oauth-pool"}},
+        })
+        with mock.patch.object(catalog, "load_raw", return_value={"docs": docs}) as load:
+            gateway = install_txn._packaged_gateway(self.state, self.environ)
+        load.assert_called_once_with(resources_root())
+        self.assertEqual(gateway.providers(), frozenset(expected))
+
 
 class CommandTests(TxnTestCase):
     def run_main(self, *argv: str, **environ: str) -> tuple[int, str, str]:

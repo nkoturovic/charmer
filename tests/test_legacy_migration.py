@@ -1174,6 +1174,80 @@ class GuardContentionTests(unittest.TestCase):
                 self.assertEqual(harness.journal().status, lm.DONE)
 
 
+class OAuthRefreshHoldTests(unittest.TestCase):
+    """Migration and --back evaluate account refreshes under the gateway's
+    pool names, without widening the credential-save parser's allowlist."""
+
+    def journal_hold(self, *, back: bool, providers: tuple[str, ...] = ("claude", "codex"),
+                     result: str = "persisted") -> tuple[list[str], set[str]]:
+        import datetime
+
+        import charmer.cli.commands.migration as command
+        from charmer import service
+        from charmer.platform import observation
+        from test_gateway_lifecycle import save_line
+
+        harness = Harness(self)
+        if back:
+            harness.migrate()
+        layout = harness.layout
+        root = layout.state if back else layout.legacy_state
+        unit = lm.CHARMER_UNIT if back else OLD_UNIT
+        marker = service.start_marker_prefix if back else legacy.legacy_start_marker
+        started = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0) - datetime.timedelta(minutes=1)
+        instance = "0123456789abcdef"
+        service.write_exec_stamp(service.gateway_workdir(root), service.ExecStamp(
+            launcher_version="2.0.0" if back else "1.1.0", signature="test", pid=4242,
+            binary="/nonexistent/cli-proxy-api", started_at=started.isoformat(), instance=instance))
+        records = [observation.LogRecord(marker(instance) + " (pid 4242)", started, "boot:invocation", "c0")]
+        for index, provider in enumerate(providers, 1):
+            at = started + datetime.timedelta(seconds=index)
+            message = save_line(result, at=at.strftime("%Y-%m-%d %H:%M:%S")).replace(
+                "provider=claude", f"provider={provider}")
+            records.append(observation.LogRecord(message, at, "boot:invocation", f"c{index}"))
+        hold = gateway_hold.hold_path(root)
+        recorded = hold.read_bytes()
+        with mock.patch.object(assets, "default_asset_root", return_value=FIXTURE_ROOT), \
+                mock.patch("charmer.platform.linux_service.unit_properties",
+                           return_value={"ActiveState": "active"}) as properties, \
+                mock.patch.object(service, "read_gateway_journal",
+                                  return_value=observation.LogWindow(tuple(records), "bounded")) as reader, \
+                mock.patch.object(gateway_hold, "evaluate_journal", wraps=gateway_hold.evaluate_journal) as evaluate:
+            reasons = command._charmer_hold(layout) if back else command._legacy_hold(layout)
+        properties.assert_called_once_with(unit, subprocess.run)
+        reader.assert_called_once()
+        self.assertEqual(reader.call_args.kwargs["unit"], unit)
+        self.assertEqual(evaluate.call_args.kwargs["running"], (instance, started))
+        self.assertEqual(hold.read_bytes(), recorded)  # the precondition records nothing
+        return reasons, set(evaluate.call_args.args[1])
+
+    def assert_account_refreshes_clear(self, *, back: bool) -> None:
+        reasons, providers = self.journal_hold(back=back)
+        self.assertEqual(reasons, [])
+        self.assertEqual(providers, {*catalog.load_catalog(FIXTURE_ROOT).providers, "claude", "codex"})
+
+    def test_legacy_journal_accepts_persisted_account_refreshes(self) -> None:
+        self.assert_account_refreshes_clear(back=False)
+
+    def test_back_journal_accepts_persisted_account_refreshes(self) -> None:
+        self.assert_account_refreshes_clear(back=True)
+
+    def test_unknown_journal_provider_still_holds_with_incomplete_coverage(self) -> None:
+        for back in (False, True):
+            with self.subTest(back=back):
+                reasons, _providers = self.journal_hold(back=back, providers=("claude", "codex", "unknown-provider"))
+                self.assertEqual(reasons, ["service journal: the log could not be evaluated completely "
+                                           "(coverage incomplete)"])
+
+    def test_failed_account_refresh_still_holds(self) -> None:
+        for back in (False, True):
+            with self.subTest(back=back):
+                reasons, _providers = self.journal_hold(back=back, result="failed")
+                self.assertEqual(len(reasons), 1)
+                self.assertIn("a credential save failed", reasons[0])
+                self.assertNotIn("coverage", reasons[0])
+
+
 class BackGatewayTests(unittest.TestCase):
     """--back stops charmer's gateway through its own stop, after its own
     persistence hold, and proves it stopped before a root moves."""
