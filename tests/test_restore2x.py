@@ -511,7 +511,7 @@ class SelfAssumeDeadTests(RestoreTestCase):
     def test_g_ancestor_pids_walks_a_fake_proc_tree(self) -> None:
         root = self.proc_root
         # comm may hold spaces and parentheses: field 4 is read after the last ")"
-        _write_stat(root, 300, b"300 (claude multi) S 200 300 300 0 -1 4194560\n")
+        _write_stat(root, 300, b"300 (charmer worker) S 200 300 300 0 -1 4194560\n")
         _write_stat(root, 200, b"200 (cm) S 7 (x) S 100 200 200 0 -1 4194560\n")
         _write_stat(root, 100, b"100 ((bash)) S 1 100 100 0 -1 4194304\n")
         _write_stat(root, 1, b"1 (systemd) S 0 1 1 0 -1 4194560\n")

@@ -308,6 +308,22 @@ class PublicPageRuleTests(unittest.TestCase):
         for name in vocab.PKG_DOCS:
             self.assertIn("former-name", vocab.page_rules(name), name)
 
+    def test_the_former_name_rule_reads_every_help_text(self) -> None:
+        # The root, subparser, gateway and maintainer help texts: none names
+        # the earlier product, and one sentence that does is caught in each.
+        import dataclasses
+
+        from charmer import legacy
+
+        targets = [target for target in vocab.in_tree_targets() if target.label.startswith(("<help", "<doc"))]
+        self.assertGreater(len(targets), 20)
+        for target in targets:
+            with self.subTest(target=target.label):
+                self.assertIn("former-name", target.rules)
+                self.assertFalse([hit for hit in vocab.scan_target(target) if hit.rule == "former-name"])
+                appended = dataclasses.replace(target, text=target.read() + f"\nSee also {legacy.NAME} doctor.\n")
+                self.assertTrue([hit for hit in vocab.scan_target(appended) if hit.rule == "former-name"])
+
     def test_the_release_line_pattern_is_the_lineage_gate_s(self) -> None:
         import test_hygiene
 

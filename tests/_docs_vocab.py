@@ -77,11 +77,13 @@ Rules:
   private input's ``operator-skill`` entries, :func:`operator_skills`).
 - R15 ``release-lineage`` (the user pages): no earlier release line of
   this product (``RELEASE_LINE``), never a version of another program.
-- R16 ``former-name`` (every public page): the product's earlier name, in
-  any of its spellings (``charmer.legacy.SPELLINGS``), appears only in the
-  sections ``FORMER_NAME_SECTIONS`` lists: the release notes' release
-  sections, the released ones kept verbatim and 2.0.0's record of the
-  rename. An explicit list of headings, never a pattern.
+- R16 ``former-name`` (every public page and every help text): the
+  product's earlier name, in any form (``charmer.legacy.NAME_PATTERN``: any
+  case or separator, split across a line, half renamed), appears only where
+  the name census allows it (``tests/test_name_census.py``): the release
+  notes' released sections and the exact lines of 2.0.0's record of the
+  rename, and the pages ``FORMER_NAME_PAGES`` lists (the migration guide).
+  Explicit lists, never a pattern.
 
 Also here: the ``--help`` walk (``help_pages``), the command-span checker
 (``command_spans``/``check_span``: every form of a span, each optional
@@ -297,11 +299,10 @@ OPERATOR_SKILL_LABEL = "operator-skill"
 # CLIProxyAPI 7.3.15, Python 3.11), a schema, a path or a number.
 # test_docs_vocabulary checks it against test_hygiene's lineage pattern.
 RELEASE_LINE = re.compile(r"(?<![\w./+\\-])(?:pre-)?(?:2\.(?:x|2\d)|3\.[0-3](?:\.(?:x|\d+))?)(?![\w%]|\.\d)")
-# R16: the sections of a public page where the earlier product name may
-# appear (each ``## `` heading, up to the next one): the release notes of
-# the releases made under that name, verbatim, and 2.0.0's record of the
-# rename. Nothing else names it.
-FORMER_NAME_SECTIONS = {"CHANGELOG.md": ("## [2.0.0] ", "## [1.1.0] ", "## [1.0.0] ")}
+# R16: the public pages about the earlier product name, whole (the name
+# census counts every occurrence in them); the release notes' places come
+# from the census itself. Nothing else names it.
+FORMER_NAME_PAGES = ("guides/legacy-migration.md",)
 
 # R9 beyond the identifiers (the user pages): store paths and a machine's
 # generation numbers.
@@ -355,7 +356,7 @@ RULES_MD = RULES_TERMS | {
 # contributor pages (AGENTS, CONTRIBUTING) describe store paths and section
 # numbers that would trip them.
 RULES_USER_DOC = RULES_MD | {"machine-path-extended", "release-lineage"}
-RULES_TEXT = RULES_TERMS | {"secret-read", "machine-path", "profile-migrate-flags", "journal-auth"}
+RULES_TEXT = RULES_TERMS | {"secret-read", "machine-path", "profile-migrate-flags", "journal-auth", "former-name"}
 
 # The five root pages (source-only: never installed).
 ROOT_PAGES = ("README.md", "AGENTS.md", "CONTRIBUTING.md", "SECURITY.md", "CHANGELOG.md")
@@ -1041,23 +1042,33 @@ def operator_skill_hits(unit: Unit, *, label: str) -> list[Hit]:
 
 @functools.lru_cache(maxsize=1)
 def former_name() -> re.Pattern[str]:
-    """R16: every spelling of the product's earlier name."""
+    """R16: every form of the product's earlier name."""
 
     from charmer import legacy
 
-    return re.compile("|".join(re.escape(spelling) for spelling in legacy.SPELLINGS))
+    return re.compile(legacy.NAME_PATTERN)
 
 
 def former_name_lines(label: str, text: str) -> frozenset[int]:
-    """The 1-based lines of ``text`` inside the ``FORMER_NAME_SECTIONS`` of ``label``."""
+    """The 1-based lines of ``text`` where ``label`` may name the earlier
+    product: every line of a ``FORMER_NAME_PAGES`` page; in the release notes
+    the released sections and the exact rename lines of 2.0.0 (the name
+    census's lists); none elsewhere."""
 
-    headings = FORMER_NAME_SECTIONS.get(label, ())
+    lines = text.split("\n")
+    if label in FORMER_NAME_PAGES:
+        return frozenset(range(1, len(lines) + 1))
+    if label != "CHANGELOG.md":
+        return frozenset()
+    import test_name_census as census
+
     allowed: set[int] = set()
-    inside = False
-    for number, line in enumerate(text.split("\n"), 1):
+    released = rename = False
+    for number, line in enumerate(lines, 1):
         if line.startswith("## "):
-            inside = line.startswith(headings) if headings else False
-        if inside:
+            released = line.startswith(tuple(census.RELEASED_SECTIONS))
+            rename = line.startswith(census.RENAME_SECTION)
+        if released or (rename and line in census.RENAME_LINES):
             allowed.add(number)
     return frozenset(allowed)
 
@@ -2707,15 +2718,20 @@ def self_test() -> list[str]:
             failures.append(f"release-lineage flags {text!r}")
     from charmer import legacy
 
-    for spelling in legacy.SPELLINGS:
+    first, second = legacy.NAME.split("-")
+    for spelling in (*legacy.SPELLINGS, legacy.NAME.upper(), f"{first} {second}".title(), f"{first}-\n{second}",
+                     legacy.LEGACY_NIX_ATTRIBUTES[0], f"charmer-{second}", f"{first}-charmer"):
         if not any(h.rule == "former-name" for h in _fixture_hits(f"run `{spelling} doctor`\n")):
             failures.append(f"former-name misses {spelling!r}")
     if any(h.rule == "former-name" for h in _fixture_hits("run `charmer doctor` (Claude Code, `claude`)\n")):
         failures.append("former-name flags the current name or the client's")
-    release_notes = f"# Changelog\n\n## [2.0.0] — x\n\nRenamed from {legacy.NAME}.\n\n## Other\n\n{legacy.NAME}\n"
+    import test_name_census as census
+
+    release_notes = (f"# Changelog\n\n## [2.0.0] — x\n\n{census.RENAME_LINES[0]}\nAlso {legacy.NAME}.\n\n"
+                     f"## Other\n\n{legacy.NAME}\n")
     hits = [h for h in _fixture_hits(release_notes, label="CHANGELOG.md") if h.rule == "former-name"]
-    if [h.line for h in hits] != [9]:
-        failures.append(f"former-name allows exactly the listed sections, got lines {[h.line for h in hits]}")
+    if [h.line for h in hits] != [6, 10]:
+        failures.append(f"former-name allows exactly the census's lines, got lines {[h.line for h in hits]}")
     if not any(h.rule == "lineup-session-id" for h in _fixture_hits("`charmer lineup --session <id> show`\n")):
         failures.append("lineup-session-id misses <id>")
     if any(h.rule == "lineup-session-id" for h in _fixture_hits("`charmer lineup --session <runtime-id> show`\n")):

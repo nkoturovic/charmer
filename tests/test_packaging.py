@@ -24,6 +24,7 @@ from pathlib import Path
 
 from _layout import FLAKE_NIX as _FLAKE, NIX_DIR, PATCH_DIR, REPO_ROOT, RESOURCES_ROOT
 from _layout import UPSTREAM_JSON, installed_paths, logical_path, pyproject, tree_files
+from charmer import legacy
 
 # None inside the Nix sandbox tree, which stages no flake.nix/flake.lock.
 FLAKE_REPO = REPO_ROOT if _FLAKE.is_file() else None
@@ -32,9 +33,7 @@ FLAKE_NIX = FLAKE_REPO / "flake.nix" if FLAKE_REPO else None
 
 REMOVED_IDENTIFIERS = (
     "charmer-plugin",
-    "claudeMultiPlugin",
-    "claudeMultiLauncher",
-    "claudeMultiProxy",
+    *legacy.LEGACY_NIX_ATTRIBUTES,
     "conserve-opus",
     "conserve-kimi",
     "fable-specialist",
@@ -137,7 +136,7 @@ class KeyedAuditInvariantTests(unittest.TestCase):
         manifest = {"version": 1, "upstream_version": version, "patches": identities}
         self.assertEqual(build["ordered_manifest"], manifest)
         # Series order numbers the patches; 11 (the never-admitted Retry-After
-        # candidate) is skipped, so 21 admitted patches are numbered 1-10, 12-22.
+        # candidate) is skipped, so 22 admitted patches are numbered 1-10, 12-23.
         numbers = [*range(1, 11), *range(12, len(identities) + 2)]
         self.assertEqual(build["numbered_to_shipped"], [
             {"number": number, "identity": identity} for number, identity in zip(numbers, identities)])
@@ -479,7 +478,7 @@ class ManagementPinWiringTests(unittest.TestCase):
         text = (NIX_DIR / "gateway.nix").read_text()
         names = admitted_names()
         manifest = json.loads((RESOURCES_ROOT / "catalog" / "gateway.json").read_text())["gateway"]["patches"]
-        self.assertEqual(len(names), 21)
+        self.assertEqual(len(names), 22)
         self.assertEqual(names, manifest)
         # The applied series and the passthru export are the recipe's admitted
         # series, in order; gateway.nix carries no patch list of its own.
@@ -654,6 +653,7 @@ class CliProxyApiDerivationTests(unittest.TestCase):
                 "cli-proxy-api-codex-api-key-safety.patch",
                 "cli-proxy-api-refresh-shutdown-join.patch",
                 "cli-proxy-api-openai-content-chunks.patch",
+                "cli-proxy-api-charmer-model-ids.patch",
             ],
         )
         manifest = json.loads((RESOURCES_ROOT / "catalog" / "gateway.json").read_text())
@@ -743,12 +743,7 @@ class ModuleWiringTests(unittest.TestCase):
 
     def test_flake_drops_v1_identifiers(self) -> None:
         text = FLAKE_NIX.read_text()
-        for identifier in (
-            "claudeMultiPlugin",
-            "claudeMultiLauncher",
-            "claudeMultiProxy",
-            "writeShellApplication",
-        ):
+        for identifier in (*legacy.LEGACY_NIX_ATTRIBUTES, "writeShellApplication"):
             self.assertNotIn(identifier, text)
         # The flake builds the gateway through nix/gateway.nix only and
         # carries no unit: the product renders it (gateway service install).
@@ -1094,11 +1089,14 @@ class CutoverTests(unittest.TestCase):
             REPO_ROOT / "tests/gateway-check.nix",
             FLAKE_NIX,
         ]
+        # charmer.legacy names the earlier Nix attributes only to keep them
+        # out of everything else (its constants carry their lifetimes).
+        legacy_module = REPO_ROOT / "src" / "charmer" / "legacy.py"
         blob = ""
         for path in scanned:
             if path.is_dir():
                 for child in sorted(path.rglob("*")):
-                    if child.is_file():
+                    if child.is_file() and child != legacy_module and "__pycache__" not in child.parts:
                         blob += child.read_text(errors="replace")
             else:
                 blob += path.read_text(errors="replace")
@@ -1118,8 +1116,8 @@ class CutoverTests(unittest.TestCase):
         for retained in (
             "claude-fable-5",
             "claude-opus-4-8",
-            legacy.SELECTOR_PREFIX + "kimi-k3",
-            legacy.SELECTOR_PREFIX + "opus-4-8",
+            legacy.LEGACY_SELECTOR_PREFIX + "kimi-k3",
+            legacy.LEGACY_SELECTOR_PREFIX + "opus-4-8",
             "gpt-multi-sol-high",
             "gpt-multi-sol-xhigh",
             "gpt-multi-gpt55-high",

@@ -32,10 +32,11 @@ DOCS = vocab.PKG_DOCS  # every public page, by label
 docs_gen = load_tool("docs_gen")
 SRC = REPO_ROOT / "src" / "charmer"
 
-# The proposed tree: five root pages and these 32 pages under docs/.
+# The proposed tree: five root pages and these 33 pages under docs/.
 DOCS_TREE = (
     "CHEATSHEET.md", "STANDALONE.md", "USAGE.md",
-    "guides/gateway.md", "guides/lineup.md", "guides/models.md", "guides/move-machines.md",
+    "guides/gateway.md", "guides/legacy-migration.md", "guides/lineup.md", "guides/models.md",
+    "guides/move-machines.md",
     "guides/networking.md", "guides/profiles.md", "guides/sessions.md",
     "install/linux.md", "install/macos.md", "install/nix.md", "install/windows-wsl2.md",
     "privacy.md",
@@ -346,7 +347,7 @@ class TreeTests(unittest.TestCase):
 
     def test_the_page_tree(self) -> None:
         self.assertEqual(vocab.docs_pages(), tuple(sorted(DOCS_TREE)))
-        self.assertEqual(len(DOCS_TREE), 32)
+        self.assertEqual(len(DOCS_TREE), 33)
         for name in vocab.ROOT_PAGES:
             self.assertTrue((REPO_ROOT / name).is_file(), name)
         # One source of notices: no root notices file.
