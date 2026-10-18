@@ -11,7 +11,9 @@ and the workflows in agreement: a pin that changes in a workflow needs its
 row here, re-verified, with the new date.
 
 Pins follow reviewed releases, not moving runner defaults. The CI compiler
-stays on the supported Go 1.26 line; setuptools follows `pyproject.toml`.
+is the gateway's own (`gateway/UPSTREAM.json`), so a gateway toolchain
+update reaches the scanners with no second pin; setuptools follows
+`pyproject.toml`.
 Every JavaScript action runs on Node.js 24 (`runs.using: node24` in
 the pinned commit's `action.yml`; a composite action's own steps are
 pinned by its maintainers). The inputs the workflows pass were checked
@@ -46,7 +48,8 @@ each is the repository's latest release (not a draft or prerelease).
 | Pester | 6.2.0 | PowerShell Gallery Pester 6.2.0 (latest, not a prerelease); github.com/pester/Pester tag 6.2.0 = 98e56d65da1642a7158992b50ded240c42a3ac18 | 2026-10-03 |
 | setuptools | 84.0.0 | PyPI setuptools 84.0.0, not yanked; the build backend and CI wheel move together; Python >=3.10 (below the supported 3.11 floor) | 2026-10-18 |
 | ShellCheck | 0.11.0 | koalaman/shellcheck v0.11.0, Linux x86_64 archive verified against the GitHub release asset digest | 2026-10-18 |
-| Go (CI tools) | 1.26.9 | go.dev download metadata, Linux amd64 archive; `GOTOOLCHAIN=local` disables automatic toolchain replacement | 2026-10-18 |
+| Go (CI tools) | gateway/UPSTREAM.json | the gateway's toolchain pin: its go.dev linux-amd64 archive and sha256, verified there; `GOTOOLCHAIN=local` disables automatic toolchain replacement | 2026-10-19 |
+| bubblewrap | 0.13.1 | github.com/containers/bubblewrap tag v0.13.1 (latest release, 2026-10-14), source archive verified against the GitHub release asset digest and the release notes' sha256; built unprivileged | 2026-10-19 |
 
 ## Tool artifacts (pinned by sha256)
 
@@ -55,11 +58,28 @@ each is the repository's latest release (not a draft or prerelease).
 | zizmor | zizmor-1.31.1-py3-none-manylinux_2_28_x86_64.whl | 58e878eb2dbd2c6183c105e1ac28c14f7dd1eca44a783f1fe2a69647d012c410 | 2026-10-18 |
 | setuptools | setuptools-84.0.0-py3-none-any.whl | 51a52592b3b99e102b609654876bd65f19f999935166d1352678931132b0c670 | 2026-10-18 |
 | ShellCheck | shellcheck-v0.11.0.linux.x86_64.tar.xz | 8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198 | 2026-10-18 |
-| Go (CI tools) | go1.26.9.linux-amd64.tar.gz | 42d158b4d8f7b61ac0a830567c940a86098fb7aac52e467a5ebec03ef5cc2f8d | 2026-10-18 |
+| bubblewrap | bubblewrap-0.13.1.tar.xz | 0e85c8702248b8dd64144f594147553650cdd0e4c951690345faace79c217c4d | 2026-10-19 |
 
-`ci_tools.sh` verifies these two archives before extracting them into fresh
-runner-temporary directories. The Go module installs retain checksum-database
-verification; neither compiler selection nor ShellCheck depends on PATH defaults.
+`ci_tools.sh` verifies these archives, and the Go archive named by
+`gateway/UPSTREAM.json`'s `toolchain` (its linux-amd64 file and sha256), before
+extracting them into fresh runner-temporary directories. The Go module installs
+retain checksum-database verification and print the compiler and module
+versions they were built with (`go version -m`); neither compiler selection nor
+ShellCheck depends on PATH defaults.
+
+bubblewrap is built from its source release (meson, ninja, libcap from the
+runner's Ubuntu archive; no SELinux, man pages, completions or tests; never
+setuid, which 0.12 no longer builds) and installed root-owned in root-owned
+directories, as the isolated tests require of the `bwrap` they run.
+`bubblewrap_floor.sh` then checks the first `bwrap` on PATH: bubblewrap 0.12
+or later (GHSA-pxhw-h44j-8pfx, CVE-2026-87766, is fixed there), not setuid
+or setgid, its version, path and sha256 printed and added to the job
+summary. Nothing passes `--not-a-security-boundary`. The CI lanes take the
+newest release, 0.13.1; the Nix lane holds nixpkgs' 0.12.0 (the locked
+nixos-unstable ships no newer one; the development shell refuses older).
+Before the pin, 0.13.1 passed the isolated test classes that run without the
+pinned client or gateway on a local build (its source archive by the same
+hash).
 
 The CI fast lane installs zizmor with `pip install --require-hashes`
 against this digest (the one PyPI records for the wheel), so it runs the
@@ -153,6 +173,21 @@ digest and the release's SHA256SUMS. The regenerated inventories supply the
 per-target notices and CycloneDX components, including Expat 2.9.0 and libffi
 3.8.0; Tcl/Tk and Berkeley DB remain pruned.
 
+On 2026-10-19 the bundled runtime moved to CPython 3.15.0 from the same
+20261013 release, after the CI battery passed on 3.15. The four
+`install_only_stripped` archives and their four `pgo+lto-full` archives were
+downloaded again and matched GitHub's asset digest (read from the release API
+that day) and the release's SHA256SUMS; `pythonbuild/downloads.json` kept its
+recorded sha256. The licence inventory was regenerated from those full
+archives; the library versions and texts are unchanged, `_remote_debugging`
+newly links zstd. Each full archive's `PYTHON.json` describes the default
+build: `Py_GIL_DISABLED` 0 with no `t` ABI flag (not free-threaded),
+`--enable-experimental-jit=yes-off` (built, off unless enabled at run time)
+except on Intel macOS, which has no JIT; the inventory records both and
+refuses anything else. The prune list names `lib/python{python_minor}`, so its
+entries follow the pin; all four prepared runtimes keep no `.pth` or `.start`
+file and no `sitecustomize` or `usercustomize` (the build refuses one).
+
 The vulnerability watch downloads the latest published release from public
 URLs, verifies its signature with the packaged release trust, then verifies
 every bundle against the signed checksums. It never runs downloaded code.
@@ -185,3 +220,20 @@ available. No release, pin or disposition changes.
 Local lint of this refresh used actionlint 1.7.12 with ShellCheck 0.11.0 and
 zizmor 1.31.1 (`--offline`): both passed with no new findings. The existing
 informational job-name suppressions remain; no new suppression was added.
+
+## Online workflow audit
+
+`zizmor-online.yml` (weekly while `CM_SCHEDULES` is `on`, or by hand) runs the
+same hash-installed zizmor 1.31.1 without `--offline`, so the audits that read
+GitHub's API run too (impostor commits, ref confusion, stale action refs,
+known-vulnerable actions): the default persona, then the pedantic persona at
+`--min-severity low` (its informational `anonymous-definition` notes are the
+exception recorded above). The workflow grants nothing; its one job reads the
+repository (`contents: read`) and passes the workflow token to zizmor only.
+It opens no issue and fixes nothing: a finding fails the run. The pull request
+lint stays `--offline`; `pin-watch.yml` keeps its version watch and issue.
+
+On 2026-10-19, with the bubblewrap, compiler and runtime changes and this
+workflow, actionlint 1.7.12 (ShellCheck 0.11.0 on the path) and zizmor 1.31.1
+(`--offline`, default persona, and pedantic at `--min-severity low`) ran over
+`.github/` locally: no findings.

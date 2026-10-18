@@ -42,7 +42,7 @@ from _layout import REPO_ROOT, RESOURCES_ROOT
 from _release import (NO_BUNDLE_GUARD, TOOLS_DIR, WORKFLOWS_DIR, load_tool, process_running,
                       requires_checkout, requires_release_tree)
 
-WORKFLOWS = ("ci.yml", "release.yml", "pin-watch.yml", "vulnerability-watch.yml")
+WORKFLOWS = ("ci.yml", "release.yml", "pin-watch.yml", "vulnerability-watch.yml", "zizmor-online.yml")
 JOURNEY = REPO_ROOT / ".github" / "scripts" / "journey.sh"
 JOURNEY_FIXTURE = REPO_ROOT / ".github" / "scripts" / "journey_fixture.py"
 SCRIPTS = REPO_ROOT / ".github" / "scripts"
@@ -54,6 +54,8 @@ PIN_WATCH = TOOLS_DIR / "_build" / "pin_watch.py"
 PENDING_PATHS: set[str] = set()
 _USES = re.compile(r"^\s*(?:- )?uses: ([\w.-]+/[\w./-]+)@(\S+)(.*)$")
 PINS = REPO_ROOT / ".github" / "PINS.md"
+BUBBLEWRAP_FLOOR = SCRIPTS / "bubblewrap_floor.sh"
+UPSTREAM = REPO_ROOT / "gateway" / "UPSTREAM.json"
 
 
 def _pin_tables(text: str) -> dict[str, list[list[str]]]:
@@ -151,7 +153,7 @@ class WorkflowTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.texts = {name: (WORKFLOWS_DIR / name).read_text() for name in WORKFLOWS}
 
-    def test_the_four_workflows_exist(self) -> None:
+    def test_the_five_workflows_exist(self) -> None:
         self.assertEqual(sorted(p.name for p in WORKFLOWS_DIR.glob("*.yml")), sorted(WORKFLOWS))
 
     def test_permissions_and_triggers(self) -> None:
@@ -206,7 +208,9 @@ class WorkflowTests(unittest.TestCase):
             "Pester": re.findall(r"Pester -RequiredVersion (\S+)", workflows),
             "setuptools": re.findall(r"'setuptools==([^' ]+)[ ']", workflows),
             "ShellCheck": re.findall(r"shellcheck\)\n    version=(\S+)", tool_script),
-            "Go (CI tools)": re.findall(r"go\)\n    version=(\S+)", tool_script),
+            "bubblewrap": re.findall(r"bubblewrap\)\n    version=(\S+)", tool_script),
+            # The compiler is the gateway's: the recipe is its only pin.
+            "Go (CI tools)": ["gateway/UPSTREAM.json"] if "/gateway/UPSTREAM.json" in tool_script else [],
         }
         self.assertEqual(set(tools), set(found))
         for tool, versions in found.items():
@@ -232,21 +236,25 @@ class WorkflowTests(unittest.TestCase):
         tables = _pin_tables(PINS.read_text())
         version = {row[0]: row[1] for row in tables["Tools (pinned by version)"]}["zizmor"]
         artifacts = {row[0]: row for row in tables["Tool artifacts (pinned by sha256)"]}
-        self.assertEqual(set(artifacts), {"zizmor", "setuptools", "ShellCheck", "Go (CI tools)"})
+        self.assertEqual(set(artifacts), {"zizmor", "setuptools", "ShellCheck", "bubblewrap"})
         _tool, wheel, digest, _verified = artifacts["zizmor"]
         self.assertRegex(digest, r"^[0-9a-f]{64}$")
         self.assertRegex(wheel, rf"^zizmor-{re.escape(version)}-py3-none-manylinux_[0-9_]+_x86_64\.whl$")
         self.assertIn(f"`{wheel}`", PINS.read_text())  # the local lint's record names the same file
-        lint = next(step for step in _steps(_jobs(self.texts["ci.yml"])["fast"]) if "zizmor" in step)
-        commands = [line for block in _run_blocks(lint) for line in block]
-        requirement = [line for line in commands if "zizmor==" in line]
-        self.assertEqual(len(requirement), 1, requirement)
-        self.assertIn(f"'zizmor=={version} --hash=sha256:{digest}' >\"$RUNNER_TEMP/zizmor.txt\"", requirement[0])
-        install = [line for line in commands if "pip install" in line]
-        self.assertEqual(len(install), 1, install)
-        for option in ("--require-hashes", "--no-deps", "--only-binary=:all:", '-r "$RUNNER_TEMP/zizmor.txt"'):
-            self.assertIn(option, install[0])
-        self.assertEqual(re.findall(r"zizmor==\S+", "\n".join(self.texts.values())), [f"zizmor=={version}"])
+        # The pull request lint and the online audit install the same file.
+        for workflow, job in (("ci.yml", "fast"), ("zizmor-online.yml", "audit")):
+            with self.subTest(workflow):
+                lint = next(step for step in _steps(_jobs(self.texts[workflow])[job]) if "zizmor==" in step)
+                commands = [line for block in _run_blocks(lint) for line in block]
+                requirement = [line for line in commands if "zizmor==" in line]
+                self.assertEqual(len(requirement), 1, requirement)
+                self.assertIn(f"'zizmor=={version} --hash=sha256:{digest}' >\"$RUNNER_TEMP/zizmor.txt\"",
+                              requirement[0])
+                install = [line for line in commands if "pip install" in line]
+                self.assertEqual(len(install), 1, install)
+                for option in ("--require-hashes", "--no-deps", "--only-binary=:all:", '-r "$RUNNER_TEMP/zizmor.txt"'):
+                    self.assertIn(option, install[0])
+        self.assertEqual(re.findall(r"zizmor==\S+", "\n".join(self.texts.values())), [f"zizmor=={version}"] * 2)
 
     def test_security_refresh_and_tool_compilers_are_explicit(self) -> None:
         tables = _pin_tables(PINS.read_text())
@@ -259,9 +267,15 @@ class WorkflowTests(unittest.TestCase):
             self.assertEqual(actions[action], tag)
         script = (SCRIPTS / "ci_tools.sh").read_text()
         for row in tables["Tool artifacts (pinned by sha256)"]:
-            if row[0] in ("Go (CI tools)", "ShellCheck"):
+            if row[0] in ("ShellCheck", "bubblewrap"):
                 self.assertIn("sha256=" + row[2], script)
         self.assertLess(script.index("sha256sum --check"), script.index("tar -xf"))
+        # No compiler pin of its own: neither the gateway's version nor its digest.
+        toolchain = json.loads(UPSTREAM.read_text())["toolchain"]
+        self.assertNotIn(toolchain["version"], script)
+        self.assertNotIn(toolchain["archives"]["linux-amd64"]["sha256"], script)
+        self.assertEqual({row[0]: row[1] for row in tables["Tools (pinned by version)"]}["Go (CI tools)"],
+                         "gateway/UPSTREAM.json")
         for workflow, job in (("ci.yml", "fast"), ("release.yml", "vulnerabilities"),
                               ("vulnerability-watch.yml", "watch")):
             body = _jobs(self.texts[workflow])[job]
@@ -2031,7 +2045,8 @@ class ScheduleTests(unittest.TestCase):
                         scheduled.append(f"{name}:{job}")
                         self.assertTrue(dispatch, "a scheduled job also runs on a manual run")
         self.assertEqual(sorted(scheduled), ["ci.yml:battery", "ci.yml:gateway", "ci.yml:nix", "ci.yml:pty",
-                                             "pin-watch.yml:watch", "vulnerability-watch.yml:watch"])
+                                             "pin-watch.yml:watch", "vulnerability-watch.yml:watch",
+                                             "zizmor-online.yml:audit"])
 
     def test_the_evaluator_reads_the_guard(self) -> None:
         guard = "(github.event_name == 'schedule' && vars.CM_SCHEDULES == 'on') || github.event_name == 'workflow_dispatch'"
@@ -3383,6 +3398,261 @@ class SignedVulnerabilityWatchTests(unittest.TestCase):
             (self.root / "download" / name).write_bytes(raw)
             with self.assertRaises(ValueError):
                 self.watch.module_queries(self.root / "download", manifest)
+
+
+@requires_release_tree
+class SupplyChainLaneTests(unittest.TestCase):
+    """The CI compiler is the gateway's toolchain pin; the lanes that run the
+    isolated classes use bubblewrap 0.12 or later (built from its pinned
+    release, never setuid) and record it; the launcher bytecode path comes
+    from the runtime pin; one govulncheck version; the online audit is
+    read-only; the bundled runtime's version also runs under a non-UTF-8
+    locale."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.texts = {name: (WORKFLOWS_DIR / name).read_text() for name in WORKFLOWS}
+
+    def setUp(self) -> None:
+        self.tmp = Path(tempfile.mkdtemp(prefix="charmer-supply-lanes-"))
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+
+    def stub_dir(self, name: str, **scripts: str) -> Path:
+        directory = self.tmp / name
+        directory.mkdir()
+        for tool, body in scripts.items():
+            (directory / tool).write_text("#!/bin/sh\n" + body)
+            (directory / tool).chmod(0o755)
+        return directory
+
+    def ci_tools(self, tool: str, recipe: dict | None = None) -> tuple[subprocess.CompletedProcess, Path]:
+        """ci_tools.sh in a scratch tree with this gateway recipe, under
+        stubs: curl records its arguments, sha256sum the line it checks
+        (then refuses it), meson, ninja and tar record that they ran."""
+
+        run = self.tmp / f"run-{len(list(self.tmp.iterdir()))}"
+        tree = run / "tree"
+        (tree / ".github" / "scripts").mkdir(parents=True)
+        shutil.copyfile(SCRIPTS / "ci_tools.sh", tree / ".github" / "scripts" / "ci_tools.sh")
+        (tree / "gateway").mkdir()
+        (tree / "gateway" / "UPSTREAM.json").write_text(json.dumps(recipe or json.loads(UPSTREAM.read_text())))
+        stubs = self.stub_dir(f"{run.name}/stubs",
+                              uname='case "$1" in -s) echo Linux;; -m) echo x86_64;; esac\n',
+                              curl='printf "%s\\n" "$@" >"$MARKERS/curl"\n'
+                                   'while [ "$1" != -o ]; do shift; done\nprintf archive >"$2"\n',
+                              sha256sum='cat >"$MARKERS/sha256sum"\nexit 1\n',
+                              tar='touch "$MARKERS/tar"\n', meson='touch "$MARKERS/meson"\n',
+                              ninja='touch "$MARKERS/ninja"\n')
+        markers = run / "markers"
+        markers.mkdir()
+        result = subprocess.run(["sh", str(tree / ".github" / "scripts" / "ci_tools.sh"), tool,
+                                 str(run / "destination")], capture_output=True, text=True, timeout=60,
+                                env={**os.environ, "PATH": str(stubs) + os.pathsep + os.environ["PATH"],
+                                     "MARKERS": str(markers)}, stdin=subprocess.DEVNULL)
+        return result, markers
+
+    def test_the_ci_compiler_is_the_gateways_toolchain(self) -> None:
+        """Go comes from gateway/UPSTREAM.json's linux-amd64 archive and
+        sha256, so the next toolchain there reaches the scanners with no
+        second pin."""
+
+        upstream = json.loads(UPSTREAM.read_text())
+        toolchain = upstream["toolchain"]
+        result, markers = self.ci_tools("go")
+        self.assertEqual(result.returncode, 1, result.stderr)  # the stub refused the digest
+        archive = toolchain["archives"]["linux-amd64"]
+        self.assertIn(toolchain["url_prefix"] + archive["file"], (markers / "curl").read_text().split())
+        self.assertTrue((markers / "sha256sum").read_text().startswith(archive["sha256"] + "  "))
+        self.assertFalse((markers / "tar").exists())
+        moved = json.loads(json.dumps(upstream))
+        moved["toolchain"].update(version="1.27.2")
+        moved["toolchain"]["archives"]["linux-amd64"] = {"file": "go1.27.2.linux-amd64.tar.gz", "sha256": "ab" * 32}
+        result, markers = self.ci_tools("go", moved)
+        self.assertIn("https://go.dev/dl/go1.27.2.linux-amd64.tar.gz", (markers / "curl").read_text().split())
+        self.assertTrue((markers / "sha256sum").read_text().startswith("ab" * 32 + "  "))
+        for change in (lambda t: t.update(url_prefix="http://go.dev/dl/"),
+                       lambda t: t["archives"]["linux-amd64"].update(file="go1.27.1.linux-amd64.tar.gz"),
+                       lambda t: t["archives"]["linux-amd64"].update(sha256="not a digest"),
+                       lambda t: t.update(version="go1.27.2")):
+            broken = json.loads(json.dumps(moved))
+            change(broken["toolchain"])
+            with self.subTest(toolchain=broken["toolchain"]):
+                result, markers = self.ci_tools("go", broken)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse((markers / "curl").exists())  # refused before any download
+                self.assertIn("names no pinned linux-amd64 Go toolchain", result.stderr)
+
+    def test_a_bubblewrap_archive_that_fails_its_hash_is_never_built(self) -> None:
+        result, markers = self.ci_tools("bubblewrap")
+        self.assertEqual(result.returncode, 1, result.stderr)
+        script = (SCRIPTS / "ci_tools.sh").read_text()
+        version = re.search(r"bubblewrap\)\n    version=(\S+)", script).group(1)
+        self.assertIn(f"https://github.com/containers/bubblewrap/releases/download/v{version}/bubblewrap-{version}.tar.xz",
+                      (markers / "curl").read_text().split())
+        digest = {row[0]: row[2] for row in _pin_tables(PINS.read_text())["Tool artifacts (pinned by sha256)"]}
+        self.assertTrue((markers / "sha256sum").read_text().startswith(digest["bubblewrap"] + "  "))
+        for tool in ("tar", "meson", "ninja"):
+            self.assertFalse((markers / tool).exists(), tool)
+
+    def floor(self, version_output: str | None, *, mode: int = 0o755,
+              exit_code: int = 0) -> subprocess.CompletedProcess[str]:
+        scripts = {} if version_output is None else {
+            "bwrap": f"printf '%s\\n' '{version_output}'\nexit {exit_code}\n"}
+        directory = self.stub_dir(f"floor-{len(list(self.tmp.iterdir()))}", **scripts)
+        if version_output is not None:
+            (directory / "bwrap").chmod(mode)
+        (directory / "sha256sum").symlink_to(shutil.which("sha256sum"))
+        summary = directory / "summary.md"
+        return subprocess.run(["/bin/sh", str(BUBBLEWRAP_FLOOR)], capture_output=True, text=True, timeout=30,
+                              env={"PATH": str(directory), "GITHUB_STEP_SUMMARY": str(summary)},
+                              stdin=subprocess.DEVNULL)
+
+    @unittest.skipUnless(shutil.which("sha256sum"), "BOUNDARY: sha256sum is not installed")
+    def test_the_bubblewrap_floor(self) -> None:
+        for output in ("bubblewrap 0.12.0", "bubblewrap 0.13.1", "bubblewrap 0.12", "bubblewrap 1.0.0"):
+            with self.subTest(output):
+                result = self.floor(output)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertRegex(result.stdout, rf"^bubblewrap: {re.escape(output)} \(/\S+/bwrap, sha256 [0-9a-f]{{64}}\)\n$")
+                summary = Path(re.search(r"\((\S+)/bwrap", result.stdout).group(1)) / "summary.md"
+                self.assertEqual(summary.read_text(), result.stdout)
+        for output, needle in (("bubblewrap 0.11.2", "0.12 or later"), ("bubblewrap 0.9.0", "0.12 or later"),
+                               ("bubblewrap", "does not report a bubblewrap version"),
+                               ("bubblewrap x.y", "does not report a bubblewrap version"),
+                               ("bwrap 0.13.1", "does not report a bubblewrap version"),
+                               (None, "not on PATH")):
+            with self.subTest(output):
+                result = self.floor(output)
+                self.assertEqual(result.returncode, 1, result.stdout)
+                self.assertIn(needle, result.stderr)
+        failing = self.floor("bubblewrap 0.13.1", exit_code=1)
+        self.assertEqual(failing.returncode, 1)
+        self.assertIn("--version failed", failing.stderr)
+
+    @unittest.skipUnless(shutil.which("sha256sum"), "BOUNDARY: sha256sum is not installed")
+    def test_a_setuid_bubblewrap_is_refused(self) -> None:
+        directory = self.tmp / "probe"
+        directory.mkdir()
+        (directory / "file").write_text("")
+        try:
+            os.chmod(directory / "file", 0o4755)
+        except OSError as exc:
+            self.skipTest(f"BOUNDARY: this filesystem refuses a setuid mode ({exc})")
+        if not os.stat(directory / "file").st_mode & 0o4000:
+            self.skipTest("BOUNDARY: this filesystem drops the setuid mode")
+        for mode in (0o4755, 0o2755):
+            with self.subTest(oct(mode)):
+                result = self.floor("bubblewrap 0.13.1", mode=mode)
+                self.assertEqual(result.returncode, 1, result.stdout)
+                self.assertIn("setuid or setgid", result.stderr)
+
+    def test_bubblewrap_in_every_lane_that_runs_the_isolated_classes(self) -> None:
+        lanes = {("ci.yml", "battery"), ("release.yml", "evidence")}
+        for workflow, job in sorted(lanes):
+            with self.subTest(f"{workflow}: {job}"):
+                steps = _steps(_jobs(self.texts[workflow])[job])
+                install = next(i for i, step in enumerate(steps) if "ci_tools.sh bubblewrap" in step)
+                commands = [line for block in _run_blocks(steps[install]) for line in block]
+                self.assertIn('sh .github/scripts/ci_tools.sh bubblewrap "$RUNNER_TEMP/ci-bubblewrap"', "\n".join(commands))
+                self.assertIn("sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0", "\n".join(commands))
+                self.assertIn("sudo install -d -o root -g root -m 0755 /opt/charmer-ci /opt/charmer-ci/bin", "\n".join(commands))
+                self.assertIn('sudo install -o root -g root -m 0755 "$RUNNER_TEMP/ci-bubblewrap/bwrap" '
+                              "/opt/charmer-ci/bin/bwrap", "\n".join(commands))
+                self.assertIn("printf '%s\\n' /opt/charmer-ci/bin >>\"$GITHUB_PATH\"", "\n".join(commands))
+                floor = next(i for i, step in enumerate(steps) if "bubblewrap_floor.sh" in step)
+                tests = next(i for i, step in enumerate(steps) if "tools/test.py" in step)
+                self.assertLess(install, floor)  # GITHUB_PATH applies from the next step on
+                self.assertLess(floor, tests)
+        everything = "\n".join(self.texts.values())
+        self.assertNotRegex(everything, r"apt-get install[^\n]*\bbubblewrap\b")  # the unversioned package
+        self.assertNotRegex(everything, r"u\+s|\b[24]755\b|chmod [ug]\+s")
+        isolated = {(name, job) for name, text in self.texts.items() for job, body in _jobs(text).items()
+                    if "--tier full" in body or "tests.test_scope_probe" in body}
+        self.assertEqual(isolated, lanes)
+        flag = "--not-a-security" + "-boundary"
+        offenders = [str(path.relative_to(REPO_ROOT)) for top in ("src", "tools", "tests", "packaging", "nix", ".github")
+                     for path in (REPO_ROOT / top).rglob("*") if path.is_file() and path.suffix in
+                     (".py", ".sh", ".yml", ".nix", ".ps1", ".json") and flag in path.read_text(errors="replace")]
+        self.assertEqual(offenders, [])
+
+    def test_the_launcher_bytecode_path_comes_from_the_runtime_pin(self) -> None:
+        release = self.texts["release.yml"]
+        self.assertNotRegex(release, r"python3\.\d")
+        self.assertNotIn("--ddir", release)
+        jobs = _jobs(release)
+        for job in ("build", "bytecode"):
+            compile_lines = [line for line in _commands(jobs[job]) if "python_runtime.py compile" in line]
+            self.assertEqual(len(compile_lines), 1, (job, compile_lines))
+            self.assertIn("--bundle-site", compile_lines[0])
+        identity = next(step for step in _steps(jobs["build"]) if "Launcher bytecode identity" in step)
+        for needle in ('python3 - dist/MANIFEST.json dist/bytecode-linux.json', 'manifest["launcher"]["bytecode_sha256"]',
+                       'linux["pyc_sha256"]'):
+            self.assertIn(needle, identity)
+        macos = next(step for step in _steps(jobs["bytecode"]) if "python_runtime.py compile" in step)
+        self.assertIn('linux["ddir"] != macos["ddir"]', macos)
+        self.assertIn('linux["pyc_sha256"] != macos["pyc_sha256"]', macos)
+
+    def test_one_govulncheck_version(self) -> None:
+        vulncheck = load_tool(VULNCHECK, "vulncheck")
+        pinned = {row[0]: row[1] for row in _pin_tables(PINS.read_text())["Tools (pinned by version)"]}["govulncheck"]
+        installed = re.findall(r"golang\.org/x/vuln/cmd/govulncheck@(\S+)", "\n".join(self.texts.values()))
+        self.assertEqual(len(installed), 2)  # the release scan and the vulnerability watch
+        self.assertEqual({vulncheck.SCANNER_VERSION, pinned, *installed}, {vulncheck.SCANNER_VERSION})
+        for workflow, job in (("release.yml", "vulnerabilities"), ("vulnerability-watch.yml", "watch")):
+            self.assertIn('version -m "$RUNNER_TEMP/bin/govulncheck"', _jobs(self.texts[workflow])[job])
+        self.assertIn('go version -m "$RUNNER_TEMP/bin/actionlint"', _jobs(self.texts["ci.yml"])["fast"])
+
+    def test_the_online_audit_is_read_only(self) -> None:
+        text = self.texts["zizmor-online.yml"]
+        trigger = text.split("\njobs:\n", 1)[0]
+        self.assertRegex(trigger, r"\non:\n  schedule:\n    - cron: \"[\d *]+\"\n  workflow_dispatch:\n\n")
+        self.assertRegex(text, r"(?m)^permissions: \{\}$")
+        jobs = _jobs(text)
+        self.assertEqual(list(jobs), ["audit"])
+        audit = jobs["audit"]
+        self.assertEqual(re.findall(r"(?m)^      (\w[\w-]*): (\w+)", audit.split("\n    permissions:\n", 1)[1]
+                                    .split("\n    steps:", 1)[0]), [("contents", "read")])
+        self.assertIn("if: github.event_name != 'schedule' || vars.CM_SCHEDULES == 'on'", audit)
+        commands = [line for line in _commands(audit) if "bin/zizmor\" --cache-dir" in line]
+        self.assertEqual(len(commands), 2, commands)
+        self.assertTrue(commands[0].endswith(" .github"))
+        self.assertIn("--persona pedantic --min-severity low", commands[1])
+        steps = text.split("\njobs:\n", 1)[1]
+        for forbidden in ("--offline", "--fix", "--no-online-audits", "issues:", "gh issue", "write", "secrets."):
+            self.assertNotIn(forbidden, steps)
+        self.assertIn("GH_TOKEN: ${{ github.token }}", audit)
+        # The pull request lint stays offline; the pin watch keeps its issue.
+        self.assertIn('"$RUNNER_TEMP/zizmor/bin/zizmor" --offline .github', _jobs(self.texts["ci.yml"])["fast"])
+        self.assertIn("issues: write", self.texts["pin-watch.yml"])
+
+    def test_the_bundled_runtime_version_runs_under_a_non_utf8_locale(self) -> None:
+        runtime = load_tool(TOOLS_DIR / "_build" / "python_runtime.py", "python_runtime").load(
+            REPO_ROOT / "packaging" / "python-runtimes.json")
+        battery = _jobs(self.texts["ci.yml"])["battery"]
+        self.assertIn(f'"{runtime.minor}"', re.search(r"python: \[([^\]]+)\]", battery).group(1))
+        steps = _steps(battery)
+        step = next(step for step in steps if "localedef" in step)
+        self.assertIn(f"if: matrix.python == '{runtime.minor}'", step)
+        # Before the pinned client leaves the runner temporary directory.
+        self.assertLess(steps.index(step), next(i for i, s in enumerate(steps) if 'rm -f "$RUNNER_TEMP/claude"' in s))
+        for needle in ("sudo localedef -i en_US -f ISO-8859-1 en_US.ISO-8859-1",
+                       "export LANG=en_US.ISO-8859-1 LC_ALL=en_US.ISO-8859-1",
+                       'e.replace("-", "").lower() == "iso88591"',
+                       "python3 tools/test.py --tier fast --list | grep -v -E '^tests\\.test_tui_(input_)?pty$'",
+                       "python3 -X warn_default_encoding -c",
+                       'tools/test.py --tier fast --claude "$RUNNER_TEMP/claude" "${modules[@]}" || status=$?',
+                       "EncodingWarning", '"$GITHUB_STEP_SUMMARY"', 'exit "$status"'):
+            self.assertIn(needle, step)
+        # The warnings go to their own file, the run's exit status stays.
+        program = re.search(r"python3 -X warn_default_encoding -c '([^']+)'", step).group(1)
+        script = self.tmp / "implicit.py"
+        script.write_text("import sys\nopen(sys.argv[1], 'w').close()\nprint('ran')\nraise SystemExit(3)\n")
+        log = self.tmp / "warnings.log"
+        result = subprocess.run([sys.executable, "-X", "warn_default_encoding", "-c", program, str(log), str(script),
+                                 str(self.tmp / "written")], capture_output=True, text=True, timeout=60,
+                                stdin=subprocess.DEVNULL)
+        self.assertEqual((result.returncode, result.stdout, result.stderr), (3, "ran\n", ""))
+        self.assertRegex(log.read_text(), rf"(?m)^{re.escape(str(script))}:2: EncodingWarning: ")
 
 
 if __name__ == "__main__":
