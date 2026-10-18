@@ -92,7 +92,7 @@ installation (a source tree, or the prefix of an installed package: its
                                  # charmer-gateway.service by default)
 ```
 
-Release: the version in `version.json` (2.0.0; catalog 39).
+Release: the version in `version.json` (2.0.1; catalog 39).
 Current default: the **`balanced` seed profile**
 (`catalog/profiles/balanced.json`): Opus 5.5 lead at ultracode, Sol high
 explorer/xhigh analyst, Opus analyst-strong, Luna max / Sol xhigh / Sol max
@@ -1412,8 +1412,12 @@ On memory-tight hosts the suite's tmpfs fixture copies can fail with
 - **Gateway build:** `python3 tools/build.py gateway` (stdlib Python ≥ 3.11, no
   Nix) builds the patched gateway from `gateway/UPSTREAM.json`: `fetch`
   (upstream source at its commit and the official Go toolchain archive for
-  the host, both sha256-verified), `vendor` (`go mod vendor`, normalised
-  vendor-tree hash), `apply` (the admitted series, no fuzz or offset),
+  the host, both sha256-verified), `vendor` (first the recipe's
+  `vendor.modules_patch` when it names one: a sha256-pinned patch to go.mod
+  and go.sum only, such as a dependency moved to a fixed release, applied
+  with no fuzz and listed first in `MODIFICATIONS.txt`, not part of the
+  series or the contract; then `go mod vendor`, normalised vendor-tree hash),
+  `apply` (the admitted series, no fuzz or offset),
   `build` (`CGO_ENABLED=0 -trimpath -buildvcs=false -mod=vendor`, upstream
   version in `main.Version`; four shipped targets plus a windows-amd64
   compile canary into `dist/gateway/<target>/`; like `gates`, `record` and

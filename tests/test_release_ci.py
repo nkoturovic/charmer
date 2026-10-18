@@ -1322,7 +1322,7 @@ class VulncheckTests(unittest.TestCase):
                         "db": "file:///synthetic-db", "db_last_modified": "2026-10-01T20:24:15Z",
                         "scan_level": "symbol", "scan_mode": "binary"}},
             {"progress": {"message": "Checking the binary against the vulnerabilities..."}},
-            {"SBOM": {"go_version": "go1.26.8", "modules": [
+            {"SBOM": {"go_version": "go1.26.9", "modules": [
                 {"path": module, "version": version} for module, version in sorted({
                     (entry["module"], entry["version"]) for entry in self.policy["dispositions"]})]}},
         ]

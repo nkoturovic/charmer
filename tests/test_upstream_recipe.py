@@ -110,8 +110,14 @@ class SeriesIdentityTests(unittest.TestCase):
                                  entry["sha256"])
 
     def test_patch_directories_hold_exactly_the_recipe(self):
+        # The series, and the module-requirements patch the vendor step applies.
+        modules = self.recipe["vendor"].get("modules_patch")
         self.assertEqual(sorted(path.name for path in PATCH_DIR.iterdir()),
-                         sorted(entry["basename"] for entry in self.recipe["series"]))
+                         sorted([entry["basename"] for entry in self.recipe["series"]]
+                                + ([modules["basename"]] if modules else [])))
+        if modules:
+            self.assertEqual(hashlib.sha256((PATCH_DIR / modules["basename"]).read_bytes()).hexdigest(),
+                             modules["sha256"])
         self.assertEqual(sorted(path.name for path in CANDIDATE_DIR.iterdir()),
                          sorted(entry["basename"] for entry in self.recipe["candidates"]))
 

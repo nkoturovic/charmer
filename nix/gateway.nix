@@ -55,6 +55,23 @@ let
     inherit (toolchain) sha256;
   };
 
+  # The recipe's module-requirements patch (go.mod and go.sum), which the
+  # vendor step applies before it vendors; its bytes must match the recipe.
+  modulesEntry = upstream.vendor.modules_patch or null;
+  modulesPatch =
+    if modulesEntry == null then
+      null
+    else
+      let
+        path = ../gateway/patches + "/${modulesEntry.basename}";
+      in
+      assert lib.assertMsg (builtins.hashFile "sha256" path == modulesEntry.sha256)
+        "gateway/patches/${modulesEntry.basename} does not match its sha256 in gateway/UPSTREAM.json";
+      path;
+  # Links the module-requirements patch into an --inputs directory.
+  linkModulesPatch =
+    dir: lib.optionalString (modulesPatch != null) "ln -s ${modulesPatch} ${dir}/${modulesEntry.basename}";
+
   # The same archive unpacked as-is (GOROOT is the output; the official
   # binaries are used unmodified, so no fixup).
   go = pkgs.stdenvNoCC.mkDerivation {
@@ -88,6 +105,7 @@ let
       mkdir -p inputs
       ln -s ${src} inputs/source
       ln -s ${goArchive} inputs/${toolchain.file}
+      ${linkModulesPatch "inputs"}
       python3 ${buildTool} gateway fetch vendor --upstream ${recipe} --inputs "$PWD/inputs" \
         --cache "$PWD/cache" --work "$PWD/work" --dist "$PWD/dist"
     '';
@@ -152,6 +170,7 @@ let
       ln -s "$src" cm-inputs/source
       ln -s "$goModules" cm-inputs/vendor
       ln -s "$goArchive" cm-inputs/${toolchain.file}
+      ${linkModulesPatch "cm-inputs"}
       gatewayBuild() {
         python3 ${buildTool} gateway "$@" --upstream ${recipe} --inputs "$buildRoot/cm-inputs" --offline \
           --cache "$buildRoot/cm-cache" --work "$buildRoot/cm-work" --dist "$buildRoot/cm-dist"
@@ -268,6 +287,7 @@ let
         ln -s ${src} inputs/source
         ln -s ${goModules} inputs/vendor
         ln -s ${goArchive} inputs/${toolchain.file}
+        ${linkModulesPatch "inputs"}
         python3 ${buildTool} gateway repro --upstream ${recipe} --patches ${patchDir} \
           --inputs "$PWD/inputs" --offline --cache "$PWD/cache" --scratch "$PWD/scratch" \
           --target linux-amd64 > report.json

@@ -1,7 +1,7 @@
 {
   "bomFormat": "CycloneDX",
   "specVersion": "1.6",
-  "serialNumber": "urn:uuid:c60ac771-9253-5809-8afc-5e0cc2335e26",
+  "serialNumber": "urn:uuid:c935c585-b285-5997-92c0-26c6d745f9cd",
   "version": 1,
   "metadata": {
     "tools": {
@@ -217,7 +217,7 @@
         },
         {
           "name": "charmer:gateway:toolchain",
-          "value": "go1.26.8"
+          "value": "go1.26.9"
         },
         {
           "name": "charmer:gateway:build-env",
@@ -237,11 +237,11 @@
         },
         {
           "name": "charmer:gateway:vendor-tree-sha256",
-          "value": "1b8ef48ef1676d97d6f5db5debabc04663b1beafb01dc2c687eb05163987f096"
+          "value": "655b7a43a5ac4e9112dcb733e1033d71801c3c1b79d45f6db6a9802a273ae784"
         },
         {
           "name": "charmer:gateway:post-apply-tree-sha256",
-          "value": "6ce5ab3cab8ea78ccbf75c6208b8e1a441b50d35306ecdd8518a2c7fe4b0bda7"
+          "value": "cf48615592f0059039d9210dc123320a458e35de4c3aecc88429f1befa87f756"
         },
         {
           "name": "charmer:gateway:patch",
@@ -2111,14 +2111,14 @@
     },
     {
       "type": "library",
-      "bom-ref": "pkg:golang/golang.org/x/crypto@v0.54.0",
+      "bom-ref": "pkg:golang/golang.org/x/crypto@v0.57.0",
       "name": "golang.org/x/crypto",
-      "version": "v0.54.0",
-      "purl": "pkg:golang/golang.org/x/crypto@v0.54.0",
+      "version": "v0.57.0",
+      "purl": "pkg:golang/golang.org/x/crypto@v0.57.0",
       "hashes": [
         {
           "alg": "SHA-256",
-          "content": "60b200e7d2b87e23731f38e766ddad50942342d5167d66de1c1a8ab64dde49cc"
+          "content": "dd95428dff06833ef39de47f107455c7af02b5ffb6a6620c3f6505861f5c0ba3"
         }
       ],
       "licenses": [
@@ -2131,14 +2131,14 @@
     },
     {
       "type": "library",
-      "bom-ref": "pkg:golang/golang.org/x/net@v0.57.0",
+      "bom-ref": "pkg:golang/golang.org/x/net@v0.60.0",
       "name": "golang.org/x/net",
-      "version": "v0.57.0",
-      "purl": "pkg:golang/golang.org/x/net@v0.57.0",
+      "version": "v0.60.0",
+      "purl": "pkg:golang/golang.org/x/net@v0.60.0",
       "hashes": [
         {
           "alg": "SHA-256",
-          "content": "2b9fb70e58ef22e0c6f7f26ff6bbf2332c18345090f5149463a38e4d3913fad1"
+          "content": "efda79d2d7d9966d09f587e80ec4a2eb7f6a49734657013338f2c2c4cd85b185"
         }
       ],
       "licenses": [
@@ -2171,14 +2171,14 @@
     },
     {
       "type": "library",
-      "bom-ref": "pkg:golang/golang.org/x/sync@v0.22.0",
+      "bom-ref": "pkg:golang/golang.org/x/sync@v0.23.0",
       "name": "golang.org/x/sync",
-      "version": "v0.22.0",
-      "purl": "pkg:golang/golang.org/x/sync@v0.22.0",
+      "version": "v0.23.0",
+      "purl": "pkg:golang/golang.org/x/sync@v0.23.0",
       "hashes": [
         {
           "alg": "SHA-256",
-          "content": "4998e96de2e6ac2938c614526453595b980551e09e1608de92f23ffa07d271e9"
+          "content": "29a99e1087dcd48925b99c9758b9f7f56778b5445ce866c28884868999b66d09"
         }
       ],
       "licenses": [
@@ -2191,14 +2191,14 @@
     },
     {
       "type": "library",
-      "bom-ref": "pkg:golang/golang.org/x/sys@v0.47.0",
+      "bom-ref": "pkg:golang/golang.org/x/sys@v0.48.0",
       "name": "golang.org/x/sys",
-      "version": "v0.47.0",
-      "purl": "pkg:golang/golang.org/x/sys@v0.47.0",
+      "version": "v0.48.0",
+      "purl": "pkg:golang/golang.org/x/sys@v0.48.0",
       "hashes": [
         {
           "alg": "SHA-256",
-          "content": "a3b5c63af6500800c1410e18ed536ad9d456411ec998e516f0ac71e19b0d816b"
+          "content": "6db5ff8bfe8c813f4154b33d453d6d866c4bd38c9e4c085b133e12c9a75b5e8a"
         }
       ],
       "licenses": [
@@ -2211,14 +2211,14 @@
     },
     {
       "type": "library",
-      "bom-ref": "pkg:golang/golang.org/x/text@v0.40.0",
+      "bom-ref": "pkg:golang/golang.org/x/text@v0.42.0",
       "name": "golang.org/x/text",
-      "version": "v0.40.0",
-      "purl": "pkg:golang/golang.org/x/text@v0.40.0",
+      "version": "v0.42.0",
+      "purl": "pkg:golang/golang.org/x/text@v0.42.0",
       "hashes": [
         {
           "alg": "SHA-256",
-          "content": "51bd99ebfc63805d56ad8433da7b884ce11e80a16d888cbeae279127994764ab"
+          "content": "25b3995e07de08f53d81a715b5896226a3a10fece1ac4a8ae0b7dda6695466a2"
         }
       ],
       "licenses": [
@@ -2329,10 +2329,10 @@
     },
     {
       "type": "library",
-      "bom-ref": "pkg:golang/std@go1.26.8",
+      "bom-ref": "pkg:golang/std@go1.26.9",
       "name": "std",
-      "version": "go1.26.8",
-      "purl": "pkg:golang/std@go1.26.8",
+      "version": "go1.26.9",
+      "purl": "pkg:golang/std@go1.26.9",
       "description": "the Go standard library and runtime",
       "licenses": [
         {
@@ -2436,18 +2436,18 @@
         "pkg:golang/github.com/wlynxg/anet@v0.0.5",
         "pkg:golang/github.com/xo/terminfo@v0.0.0-20220910002029-abceb7e1c41e",
         "pkg:golang/go.uber.org/atomic@v1.11.0",
-        "pkg:golang/golang.org/x/crypto@v0.54.0",
-        "pkg:golang/golang.org/x/net@v0.57.0",
+        "pkg:golang/golang.org/x/crypto@v0.57.0",
+        "pkg:golang/golang.org/x/net@v0.60.0",
         "pkg:golang/golang.org/x/oauth2@v0.30.0",
-        "pkg:golang/golang.org/x/sync@v0.22.0",
-        "pkg:golang/golang.org/x/sys@v0.47.0",
-        "pkg:golang/golang.org/x/text@v0.40.0",
+        "pkg:golang/golang.org/x/sync@v0.23.0",
+        "pkg:golang/golang.org/x/sys@v0.48.0",
+        "pkg:golang/golang.org/x/text@v0.42.0",
         "pkg:golang/golang.org/x/time@v0.14.0",
         "pkg:golang/google.golang.org/protobuf@v1.34.1",
         "pkg:golang/gopkg.in/ini.v1@v1.67.0",
         "pkg:golang/gopkg.in/natefinch/lumberjack.v2@v2.2.1",
         "pkg:golang/gopkg.in/yaml.v3@v3.0.1",
-        "pkg:golang/std@go1.26.8"
+        "pkg:golang/std@go1.26.9"
       ]
     }
   ]

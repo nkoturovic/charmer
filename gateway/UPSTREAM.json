@@ -19,29 +19,33 @@
     "nix_hash": "sha256-s6Vdpcl7Hr85azsZ2DpkEQyod9eE9UQizKiYAJtguwY="
   },
   "vendor": {
-    "tree_sha256": "1b8ef48ef1676d97d6f5db5debabc04663b1beafb01dc2c687eb05163987f096",
-    "nix_hash": "sha256-r3yWkdMcM40G9jV7MxW/qNv3E9WrHavFilW24quEf+8="
+    "tree_sha256": "655b7a43a5ac4e9112dcb733e1033d71801c3c1b79d45f6db6a9802a273ae784",
+    "nix_hash": "sha256-EwaxCvKJdzUbhzu7wJAViaHcsGfA5y6FXpWInhvDkxU=",
+    "modules_patch": {
+      "basename": "cli-proxy-api-module-requirements.patch",
+      "sha256": "b7c3cb25251445494f6582ad158ed4874ee21b97c41d3dfd7d02b3c6dabe5876"
+    }
   },
   "toolchain": {
-    "version": "1.26.8",
+    "version": "1.26.9",
     "source": "https://go.dev/dl/?mode=json&include=all",
     "url_prefix": "https://go.dev/dl/",
     "archives": {
       "linux-amd64": {
-        "file": "go1.26.8.linux-amd64.tar.gz",
-        "sha256": "d0f743b33e8d8945e6b1f432edd15785c70507121d6e2a723b21285eddf8b57b"
+        "file": "go1.26.9.linux-amd64.tar.gz",
+        "sha256": "42d158b4d8f7b61ac0a830567c940a86098fb7aac52e467a5ebec03ef5cc2f8d"
       },
       "linux-arm64": {
-        "file": "go1.26.8.linux-arm64.tar.gz",
-        "sha256": "211ffced9dcb9633a55eac6364816ec0ddd951389a740e88fa8b3337971bdda0"
+        "file": "go1.26.9.linux-arm64.tar.gz",
+        "sha256": "4a97373d49fcacdcf3694fea368a500b00ee3e963974f3e7514132717632f052"
       },
       "darwin-arm64": {
-        "file": "go1.26.8.darwin-arm64.tar.gz",
-        "sha256": "a012b25b571bd0138a03dcd25375ceba866fe5ca822f426d2c66a4de56fd3f4b"
+        "file": "go1.26.9.darwin-arm64.tar.gz",
+        "sha256": "f9bb7c0a02506c5d9bf0d1eb1f7ee6c7684f844ae49558308a0427b830e022cc"
       },
       "darwin-amd64": {
-        "file": "go1.26.8.darwin-amd64.tar.gz",
-        "sha256": "186be014105aa6542b767d2c6ed5cca10a0214bdff809ef1724022a8c7894150"
+        "file": "go1.26.9.darwin-amd64.tar.gz",
+        "sha256": "00c29e3d4c8562f547410daa18d2959b641bd691ab00c4a525ea817a0253d4bd"
       }
     }
   },

@@ -148,9 +148,16 @@ class InventoryTests(unittest.TestCase):
         series = [{"basename": entry["basename"], "sha256": entry["sha256"],
                    "files": tool.patch_files((PATCH_DIR / entry["basename"]).read_text(encoding="utf-8"))}
                   for entry in admitted()]
-        expected = tool.render_modifications(recipe(), series)
+        pinned = recipe()["vendor"].get("modules_patch")
+        modules = None if pinned is None else {
+            **pinned, "files": tool.patch_files((PATCH_DIR / pinned["basename"]).read_text(encoding="utf-8"))}
+        expected = tool.render_modifications(recipe(), series, modules)
         self.assertEqual(tree().files[tree().inventory["upstream"]["modifications"]["path"]], expected)
         text = expected.decode()
+        if modules is not None:
+            # The module-requirements patch comes first and names go.mod and go.sum only.
+            self.assertLess(text.index(modules["basename"]), text.index(admitted()[0]["basename"]))
+            self.assertEqual([item["path"] for item in modules["files"]], ["go.mod", "go.sum"])
         positions = [text.index(entry["basename"]) for entry in admitted()]
         self.assertEqual(positions, sorted(positions))
         for entry in admitted():

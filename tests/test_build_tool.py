@@ -681,6 +681,77 @@ class EndToEndTests(unittest.TestCase):
         _, err = self.run_tool("env", "build", expect=1)
         self.assertIn("run alone", err)
 
+    def modules_patch(self, *, extra=""):
+        """A module-requirements patch (go.mod and go.sum), pinned in the recipe."""
+
+        text = (unified("go.mod", 1, [], ["", "require example.dep v1.0.0"],
+                        ["module example.test/m", "", "go 1.26.0"])
+                + unified("go.sum", 3, [], ["example.dep v1.1.0/go.mod h1:BBBB"],
+                          [f"example.dep/inner v0.1.0 {MODULE_SUM}"]) + extra)
+        patch = self.patches / "cli-proxy-api-modules.patch"
+        patch.write_text(text)
+        self.recipe["vendor"]["modules_patch"] = {
+            "basename": patch.name, "sha256": hashlib.sha256(patch.read_bytes()).hexdigest()}
+        self.write_recipe()
+        return patch
+
+    def test_the_module_requirements_patch_applies_before_vendoring(self):
+        patch = self.modules_patch()
+        self.seed_vendor_cache()
+        self.run_tool("fetch", "vendor", "apply", "build")
+        self.assertIn("require example.dep v1.0.0", (self.work / "src" / "go.mod").read_text())
+        state = json.loads((self.work / "state.json").read_text())
+        self.assertEqual(state["vendor"]["modules_patch"]["basename"], patch.name)
+        self.assertEqual([item["path"] for item in state["vendor"]["modules_patch"]["files"]], ["go.mod", "go.sum"])
+        # The source identity stays the pinned upstream tree; the record names the patch.
+        self.assertEqual(state["source"]["tree_sha256"], self.recipe["source"]["tree_sha256"])
+        self.run_tool("notices")
+        self.run_tool("inspect", "record")
+        record = json.loads((self.dist / "BUILD.json").read_text())
+        self.assertEqual(record["vendor"]["modules_patch"], self.recipe["vendor"]["modules_patch"])
+        modifications = (self.licenses / "CLIProxyAPI" / "MODIFICATIONS.txt").read_text()
+        self.assertLess(modifications.index(patch.name), modifications.index("cli-proxy-api-first.patch"))
+        self.assertIn("modified  go.mod", modifications)
+        # Not part of the series: the contract lists the admitted patches only.
+        contract = json.loads((self.dist / "gateway-contract.json").read_bytes())
+        self.assertNotIn(patch.name, "".join(contract["patches"]))
+
+    def test_the_module_requirements_patch_is_pinned_and_limited_to_the_module_files(self):
+        patch = self.modules_patch()
+        self.seed_vendor_cache()
+        patch.write_text(patch.read_text() + "\n")
+        self.run_tool("fetch")
+        _, err = self.run_tool("vendor", expect=1)
+        self.assertIn("differs from the pinned", err)
+        self.modules_patch(extra=unified("cmd/server/main.go", 3, ['\tprintln("upstream")'], ['\tprintln("other")'],
+                                         ["func main() {"], ["}"]))
+        self.run_tool("fetch")
+        _, err = self.run_tool("vendor", expect=1)
+        self.assertIn("must modify go.mod and go.sum and nothing else", err)
+        patch.unlink()
+        self.run_tool("fetch")
+        _, err = self.run_tool("vendor", expect=1)
+        self.assertIn("module-requirements patch not found", err)
+
+    def test_the_module_requirements_patch_comes_from_the_inputs_when_offline(self):
+        patch = self.modules_patch()
+        inputs = self.root / "inputs"
+        inputs.mkdir()
+        os.symlink(self.vendor, inputs / "vendor")
+        os.symlink(self.downloads / f"go9.9.9.{self.host}.tar.gz", inputs / f"go9.9.9.{self.host}.tar.gz")
+        os.symlink(self.downloads / "src.tar.gz", inputs / self.recipe["source"]["archive_file"])
+        moved = self.root / "elsewhere.patch"
+        patch.rename(moved)  # not in --patches: only --inputs holds it
+        os.symlink(moved, inputs / patch.name)
+        self.run_tool("fetch", "vendor", "--offline", "--inputs", str(inputs))
+        self.assertIn("require example.dep v1.0.0", (self.work / "src" / "go.mod").read_text())
+
+    def test_a_modules_patch_named_like_a_series_patch_is_refused(self):
+        self.recipe["vendor"]["modules_patch"] = {"basename": "cli-proxy-api-first.patch", "sha256": "0" * 64}
+        self.write_recipe()
+        _, err = self.run_tool("fetch", expect=1)
+        self.assertIn("a patch basename is listed twice", err)
+
     def test_changed_recipe_or_patch_bytes_refuse(self):
         self.seed_vendor_cache()
         self.run_tool("fetch", "vendor")
@@ -958,7 +1029,7 @@ class PatchFileTests(unittest.TestCase):
                 tool.patch_files(text)
 
 
-def buildinfo_blob(modinfo, version="go1.26.8", inline=True):
+def buildinfo_blob(modinfo, version="go1.26.9", inline=True):
     def varint(value):
         out = b""
         while value >= 0x80:
@@ -979,7 +1050,7 @@ class BuildInfoTests(unittest.TestCase):
     def test_module_information_is_read_like_go_version_m(self):
         data = b"\0" * 100 + b"\xff Go buildinf: decoy" + b"\0" * 64 + buildinfo_blob(self.MODINFO) + b"tail"
         version, modinfo = tool.go_buildinfo(data)
-        self.assertEqual(version, "go1.26.8")
+        self.assertEqual(version, "go1.26.9")
         self.assertEqual(tool.linked_modules(modinfo),
                          [("github.com/example/long-module-path-" + "x" * 200, "v1.2.3"), ("golang.org/x/sys", "v0.30.0")])
 

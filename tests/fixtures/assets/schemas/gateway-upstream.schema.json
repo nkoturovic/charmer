@@ -39,7 +39,16 @@
       "additionalProperties": false,
       "properties": {
         "tree_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
-        "nix_hash": { "type": "string", "pattern": "^sha256-[A-Za-z0-9+/]{43}=$" }
+        "nix_hash": { "type": "string", "pattern": "^sha256-[A-Za-z0-9+/]{43}=$" },
+        "modules_patch": {
+          "type": "object",
+          "required": ["basename", "sha256"],
+          "additionalProperties": false,
+          "properties": {
+            "basename": { "type": "string", "pattern": "^cli-proxy-api-[a-z0-9-]+\\.patch$" },
+            "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+          }
+        }
       }
     },
     "toolchain": {

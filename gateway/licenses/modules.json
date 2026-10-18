@@ -1,7 +1,7 @@
 {
   "format": 1,
   "inputs": {
-    "post_apply_tree_sha256": "6ce5ab3cab8ea78ccbf75c6208b8e1a441b50d35306ecdd8518a2c7fe4b0bda7",
+    "post_apply_tree_sha256": "cf48615592f0059039d9210dc123320a458e35de4c3aecc88429f1befa87f756",
     "series": [
       "cli-proxy-api-loopback-oauth.patch@2eb510b85f5204820d7a3d70c9b9a7bce283b1a7f23ead305ddfe28d500163a5",
       "cli-proxy-api-kimi-claude-compat.patch@135dadb71406136dc6e2ef1c46baa548d27cbf023c19dddce2e7d9de0f7ef9ae",
@@ -27,7 +27,7 @@
       "cli-proxy-api-charmer-model-ids.patch@dca1642ceec36e49ce975522696011081c1a7fe549e3d8009f7e667dff7c29e3"
     ],
     "source_tree_sha256": "8e16856693412a7d1ebc0e7fec2c659f13bc90f740f9e1f641804aa597120b3c",
-    "vendor_tree_sha256": "1b8ef48ef1676d97d6f5db5debabc04663b1beafb01dc2c687eb05163987f096"
+    "vendor_tree_sha256": "655b7a43a5ac4e9112dcb733e1033d71801c3c1b79d45f6db6a9802a273ae784"
   },
   "modules": [
     {
@@ -1776,14 +1776,14 @@
       ],
       "license": "BSD-3-Clause",
       "path": "golang.org/x/crypto",
-      "sum": "h1:YLIA59K4fiNzHzjnZt2tUJQjQtUWfWbeHBqKtk3eScw=",
+      "sum": "h1:3ZVCjf8Ggz7zneR/EHRVx68Ctf+2pmIMP2UFhh9cC6M=",
       "targets": [
         "darwin-amd64",
         "darwin-arm64",
         "linux-amd64",
         "linux-arm64"
       ],
-      "version": "v0.54.0"
+      "version": "v0.57.0"
     },
     {
       "files": [
@@ -1800,14 +1800,14 @@
       ],
       "license": "BSD-3-Clause",
       "path": "golang.org/x/net",
-      "sum": "h1:K5+3DljvIuDG9/Jv9rvyMywYNFCQ9RSUY6OOTTkT+tE=",
+      "sum": "h1:79p50tfZlm0J9YfoDsSi639qSXNGVwEzOPLCxM2FsYU=",
       "targets": [
         "darwin-amd64",
         "darwin-arm64",
         "linux-amd64",
         "linux-arm64"
       ],
-      "version": "v0.57.0"
+      "version": "v0.60.0"
     },
     {
       "files": [
@@ -1843,14 +1843,14 @@
       ],
       "license": "BSD-3-Clause",
       "path": "golang.org/x/sync",
-      "sum": "h1:SZjpbeLmrCk4xhRSZFNZW5gFUeCeFgjekvI/+gfScek=",
+      "sum": "h1:KameEIfc1IkluZyXWLn39Wd4tURc6GbCiISGiZm2bQk=",
       "targets": [
         "darwin-amd64",
         "darwin-arm64",
         "linux-amd64",
         "linux-arm64"
       ],
-      "version": "v0.22.0"
+      "version": "v0.23.0"
     },
     {
       "files": [
@@ -1867,14 +1867,14 @@
       ],
       "license": "BSD-3-Clause",
       "path": "golang.org/x/sys",
-      "sum": "h1:o7XGOvZQCADBQQ4Y7VNq2dRWQR7JmOUW8Kxx4ZsNgWs=",
+      "sum": "h1:bbX/i/6MgT9BVLM9RT1thmxL04yeTAhbEz4SyadbXoo=",
       "targets": [
         "darwin-amd64",
         "darwin-arm64",
         "linux-amd64",
         "linux-arm64"
       ],
-      "version": "v0.47.0"
+      "version": "v0.48.0"
     },
     {
       "files": [
@@ -1891,14 +1891,14 @@
       ],
       "license": "BSD-3-Clause",
       "path": "golang.org/x/text",
-      "sum": "h1:Ub2Z6/xjgF1WrYQz2nuITOEegKFtiIy+rieRJ5lHZKs=",
+      "sum": "h1:JbOZXgfeCPU9gacVtYliJqOhD+zhrEqK4LfdpmlUZqI=",
       "targets": [
         "darwin-amd64",
         "darwin-arm64",
         "linux-amd64",
         "linux-arm64"
       ],
-      "version": "v0.40.0"
+      "version": "v0.42.0"
     },
     {
       "files": [
@@ -2032,7 +2032,7 @@
     ],
     "license": "BSD-3-Clause",
     "name": "Go",
-    "version": "1.26.8"
+    "version": "1.26.9"
   },
   "upstream": {
     "commit": "673131f57484517c3a1eae7e36c4cfa7b9bb4efc",
@@ -2046,7 +2046,7 @@
     "license": "MIT",
     "modifications": {
       "path": "CLIProxyAPI/MODIFICATIONS.txt",
-      "sha256": "4131e8dc04bb0da642d88c5d8fc3af399f710b89dafb0b46e567b056a5418b39"
+      "sha256": "19ddb5ff2391653ac6f806e4977f82fa9ecc96e48c4b4df8e85fb6c97c635d19"
     },
     "name": "CLIProxyAPI",
     "repository": "https://github.com/router-for-me/CLIProxyAPI",

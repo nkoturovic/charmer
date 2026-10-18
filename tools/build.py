@@ -5,7 +5,9 @@
     python3 tools/build.py bundle|release [OPTIONS]   (see `build.py release --help`)
 
 ``gateway/UPSTREAM.json`` is the recipe: the upstream source at its commit,
-the vendored Go modules (a normalised tree hash), the official Go toolchain
+the vendored Go modules (a normalised tree hash, and optionally a hash-pinned
+patch to go.mod and go.sum that moves a module to a fixed release before it
+is vendored), the official Go toolchain
 archive for each build host, the ordered patch series, the build flags, the
 targets and the typed Go test gates. The Nix flake runs this same tool
 offline over the same inputs (fixed-output derivations), so a Nix build and a
@@ -17,9 +19,10 @@ build inspect record):
   fetch    take the upstream source archive and the Go toolchain archive for
            this host from the cache (downloading what is missing) or from
            --inputs, verify their sha256 and unpack both into the work dir
-  vendor   vendor the Go modules with the pinned toolchain (`go mod vendor`;
-           offline: copy a pre-fetched tree) and verify the normalised
-           vendor-tree sha256
+  vendor   apply the recipe's module-requirements patch (vendor.modules_patch,
+           go.mod and go.sum only) when it names one, vendor the Go modules
+           with the pinned toolchain (`go mod vendor`; offline: copy a
+           pre-fetched tree) and verify the normalised vendor-tree sha256
   apply    apply the admitted patch series in order: `git apply --check`, then
            apply; any reject, offset or reduced context fails (a diagnostic
            omission build may pass --omission-offsets, see its help)
@@ -57,7 +60,8 @@ Commands run alone:
 
 Pre-fetched inputs (--inputs DIR): DIR holds the toolchain archive under its
 official file name, the upstream source as ``source/`` (an unpacked tree) or
-as its archive file, and optionally the vendored modules as ``vendor/``;
+as its archive file, optionally the vendored modules as ``vendor/`` and the
+module-requirements patch under its basename (else it is read from --patches);
 nothing in DIR is downloaded. With --offline nothing is downloaded at all
 (`--offline --inputs DIR` builds from DIR alone). Fetched inputs are cached in
 ~/.cache/charmer-build (or $CHARMER_BUILD_CACHE, or --cache).
@@ -169,11 +173,20 @@ def check_upstream(doc: Any) -> None:
     _require(re.fullmatch(r"[0-9a-f]{40}", str(upstream.get("commit", ""))) is not None, "commit is not a full sha")
     for section, key in (("source", "archive_sha256"), ("source", "tree_sha256"), ("vendor", "tree_sha256")):
         _require(SHA256_HEX.match(str(doc[section].get(key, ""))) is not None, f"{section}.{key} is not a sha256")
+    modules = doc["vendor"].get("modules_patch")
+    if modules is not None:
+        _require(isinstance(modules, dict) and set(modules) == {"basename", "sha256"},
+                 "vendor.modules_patch needs exactly a basename and a sha256")
+        _require(SHA256_HEX.match(str(modules["sha256"])) is not None, "vendor.modules_patch sha256")
+        _require(PurePosixPath(str(modules["basename"])).name == modules["basename"],
+                 "vendor.modules_patch is not a basename")
     archives = doc["toolchain"].get("archives")
     _require(isinstance(archives, dict) and archives, "toolchain.archives is empty")
     for name, archive in archives.items():
         _require(SHA256_HEX.match(str(archive.get("sha256", ""))) is not None, f"toolchain {name} sha256")
     names = [entry["basename"] for entry in doc["series"] + doc["candidates"]]
+    if modules is not None:
+        names.append(modules["basename"])
     _require(len(names) == len(set(names)), "a patch basename is listed twice")
     for entry in doc["series"] + doc["candidates"]:
         _require(SHA256_HEX.match(str(entry.get("sha256", ""))) is not None, f"{entry.get('basename')} sha256")
@@ -615,6 +628,24 @@ def step_fetch(ctx: Context) -> None:
     })
 
 
+def modules_patch(ctx: Context) -> tuple[Path, dict[str, Any]] | None:
+    """The recipe's module-requirements patch and its entry (None when it
+    names none): from --inputs when it holds the file, else from the patch
+    directory, its bytes verified against the pinned sha256."""
+
+    entry = ctx.doc["vendor"].get("modules_patch")
+    if entry is None:
+        return None
+    places = ([ctx.inputs / entry["basename"]] if ctx.inputs is not None else []) + [ctx.patch_dir / entry["basename"]]
+    path = next((place for place in places if place.is_file()), None)
+    if path is None:
+        raise BuildError(f"module-requirements patch not found: {entry['basename']}")
+    digest = sha256_file(path)
+    if digest != entry["sha256"]:
+        raise BuildError(f"{entry['basename']}: sha256 {digest} differs from the pinned {entry['sha256']}")
+    return path, entry
+
+
 def step_vendor(ctx: Context) -> None:
     state = ctx.load_state("fetch")
     if "vendor" in state["done"]:
@@ -622,6 +653,21 @@ def step_vendor(ctx: Context) -> None:
     pinned = ctx.doc["vendor"]["tree_sha256"]
     vendor = ctx.src / "vendor"
     remove_tree(vendor)
+    # The module requirements first: the vendored tree (pre-fetched or made
+    # here) must match go.mod and go.sum as the build will read them.
+    requirements = modules_patch(ctx)
+    modules = None
+    if requirements is not None:
+        path, entry = requirements
+        text = path.read_text(encoding="utf-8")
+        files = patch_files(text)
+        if sorted(item["path"] for item in files) != ["go.mod", "go.sum"] or \
+                any(item["change"] != "modified" for item in files):
+            raise BuildError(f"{entry['basename']} must modify go.mod and go.sum and nothing else")
+        log(f"updating the module requirements ({entry['basename']})")
+        apply_patch(ctx.src, path, entry["basename"])
+        modules = {"basename": entry["basename"], "sha256": entry["sha256"], "files": files}
+    required_tree = tree_sha256(ctx.src, exclude_top=("vendor",))
     provided = ctx.inputs / "vendor" if ctx.inputs is not None else None
     cached = ctx.cache / "vendor" / pinned
     if provided is not None and provided.is_dir():
@@ -641,7 +687,7 @@ def step_vendor(ctx: Context) -> None:
             result = run([ctx.go, "mod", "vendor"], cwd=ctx.src, env=env)
             if result.returncode:
                 raise BuildError("go mod vendor failed")
-            if tree_sha256(ctx.src, exclude_top=("vendor",)) != state["source"]["tree_sha256"]:
+            if tree_sha256(ctx.src, exclude_top=("vendor",)) != required_tree:
                 raise BuildError("go mod vendor changed the upstream sources (go.mod or go.sum)")
             mode = "go mod vendor"
     tree = tree_sha256(vendor)
@@ -650,6 +696,8 @@ def step_vendor(ctx: Context) -> None:
     if mode == "go mod vendor":
         make_writable_copy(vendor, ctx.cache / "vendor" / pinned)
     state["vendor"] = {"tree_sha256": tree, "origin": mode}
+    if modules is not None:
+        state["vendor"]["modules_patch"] = modules
     state["done"].append("vendor")
     ctx.save_state(state)
 
@@ -1155,7 +1203,9 @@ def build_record(ctx: Context, state: dict[str, Any], targets: dict[str, Any]) -
         "toolchain": state["toolchain"],
         "source": {"tree_sha256": state["source"]["tree_sha256"],
                    "archive_sha256": doc["source"]["archive_sha256"]},
-        "vendor": {"tree_sha256": state["vendor"]["tree_sha256"]},
+        "vendor": {"tree_sha256": state["vendor"]["tree_sha256"],
+                   **({"modules_patch": {key: state["vendor"]["modules_patch"][key] for key in ("basename", "sha256")}}
+                      if state["vendor"].get("modules_patch") else {})},
         "series": [{"basename": entry["basename"], "sha256": entry["sha256"]} for entry in state["series"]],
         "admitted_series": state["admitted_series"],
         "post_apply_tree_sha256": state["post_apply_tree_sha256"],
@@ -1447,8 +1497,11 @@ def _series_identities(series: list[dict[str, Any]]) -> list[str]:
     return [f"{entry['basename']}@{entry['sha256']}" for entry in series]
 
 
-def render_modifications(doc: dict[str, Any], series: list[dict[str, Any]]) -> bytes:
-    """The modified-files notice for CLIProxyAPI: each patch and its files."""
+def render_modifications(doc: dict[str, Any], series: list[dict[str, Any]],
+                         modules: dict[str, Any] | None = None) -> bytes:
+    """The modified-files notice for CLIProxyAPI: the module-requirements
+    patch (``modules``, when the recipe names one), then each patch of the
+    series, each with its files."""
 
     upstream = doc["upstream"]
     lines = [
@@ -1458,6 +1511,13 @@ def render_modifications(doc: dict[str, Any], series: list[dict[str, Any]]) -> b
         "in this order; each lists the files it modifies, adds or deletes.",
         "",
     ]
+    if modules is not None:
+        lines.append("Before the modules are vendored, this patch updates the module requirements:")
+        lines.append(f"    {modules['basename']}")
+        lines.append(f"    sha256 {modules['sha256']}")
+        for item in modules["files"]:
+            lines.append(f"      {item['change']:<8}  {item['path']}")
+        lines.append("")
     width = len(str(len(series)))
     for number, entry in enumerate(series, 1):
         lines.append(f"{number:>{width}}. {entry['basename']}")
@@ -1544,7 +1604,7 @@ def collect_notices(ctx: Context, state: dict[str, Any], targets: list[str]) -> 
         raise BuildError("the Go toolchain or the upstream source ships no licence file")
     if license_of(upstream_files, files) != doc["upstream"]["license"]:
         raise BuildError(f"the upstream licence file is not the recipe's {doc['upstream']['license']}")
-    modifications = render_modifications(doc, state["series"])
+    modifications = render_modifications(doc, state["series"], state["vendor"].get("modules_patch"))
     files[f"CLIProxyAPI/{MODIFICATIONS_FILE}"] = modifications
     upstream = doc["upstream"]
     inventory = {

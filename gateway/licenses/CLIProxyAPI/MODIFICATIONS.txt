@@ -3,6 +3,12 @@ commit 673131f57484517c3a1eae7e36c4cfa7b9bb4efc), distributed under the MIT lice
 in LICENSE next to this file, modified by the patches below. They are applied
 in this order; each lists the files it modifies, adds or deletes.
 
+Before the modules are vendored, this patch updates the module requirements:
+    cli-proxy-api-module-requirements.patch
+    sha256 b7c3cb25251445494f6582ad158ed4874ee21b97c41d3dfd7d02b3c6dabe5876
+      modified  go.mod
+      modified  go.sum
+
  1. cli-proxy-api-loopback-oauth.patch
     sha256 2eb510b85f5204820d7a3d70c9b9a7bce283b1a7f23ead305ddfe28d500163a5
       modified  internal/auth/claude/oauth_server.go
