@@ -367,17 +367,19 @@ def _declare(
             line = discovery.declaration_line(
                 item.entry, provider=provider, agent_efforts=agent_efforts, source_ref=source_ref,
                 context_override=args.discover_context, over_listed=args.over_listed,
-                registry_model=model, registry_ref=registry_ref)
+                registry_model=model, registry_ref=registry_ref, provider_id=call.provider_id,
+                known_families=operator_mod.t1_families(runtime.catalog.docs), family=args.discover_family)
         except discovery.DeclarationRefusal as exc:
             if "the listing states no context" in str(exc):
                 code = fail(missing_context_text(call.provider_id, wire))
                 continue
             code = fail(f"{verb}: {wire}: {exc} — nothing declared")
             continue
-        if args.discover_family is not None:
-            line["family"] = args.discover_family
         result = models_cmd.declare_line(runtime, call.provider_id, key, line, verb=verb,
                                          output_stream=output_stream)
+        if result == 0 and args.discover_family is None and line.get("family") not in (None, "unknown"):
+            prefix = wire.split("/", 1)[0]
+            report(output_stream, f"family: {line['family']} (suggested from {prefix}/; --family LABEL to change)")
         code = code or result
     return code
 

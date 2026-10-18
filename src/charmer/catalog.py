@@ -125,6 +125,9 @@ RESERVED_LEAD_ENV_KEYS = frozenset(
         *CREDENTIAL_ENV_KEYS,
         "CLAUDE_CODE_SUBAGENT_MODEL",
         "CLAUDE_CODE_SUBAGENT_MODEL_FORCE",
+        # Claude Code 2.1.296+: one model for every workflow agent, over a
+        # cm-* agentType's frontmatter; compiled neutral ("inherit").
+        "CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL",
         "CLAUDE_CODE_MAX_OUTPUT_TOKENS",
         "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY",
         "CLAUDE_CODE_MAX_CONTEXT_TOKENS",

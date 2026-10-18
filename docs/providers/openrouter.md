@@ -67,6 +67,17 @@ and so on). Reviews are routed by family, so an OpenRouter profile can
 still get an independent review from another family. The card and
 `charmer profile show <name>` show each slot's family.
 
+When you add a listed OpenRouter model, charmer suggests a family from a
+small set of vendor namespaces: `anthropic/` → `anthropic`, `openai/` →
+`openai`, `google/` → `google`, `deepseek/` → `deepseek`, `x-ai/` → `x-ai`,
+`moonshotai/` → `moonshot`, `qwen/` → `alibaba`, and `meta-llama/` → `meta`.
+A suggestion is used only if the installed catalog already recognizes that
+family. This is an **editable suggestion from the id**, not verified model
+provenance. Unknown vendors, `stealth/`, `openrouter/` routers and ids
+without a vendor prefix stay `unknown`; an unknown family cannot establish
+review independence. Providers you declare yourself do not get these
+OpenRouter suggestions, even if their endpoint looks similar.
+
 ## 4. Other OpenRouter models
 
 List models with **G** Providers → OpenRouter → **A** → **List models**, or
@@ -91,6 +102,22 @@ prompt/completion prices per token; missing or malformed facts are **unknown**.
 Zero prompt and completion prices are marked **free (advertised)**, not a
 promise that every feature or request is free. **?** in the TUI listing shows
 the full facts when a row is wider than the terminal.
+
+To declare a listed model, use `charmer discover openrouter --add <wire>`.
+For a recognized vendor prefix, the result explains the default, for example:
+
+```text
+family: deepseek (suggested from deepseek/; --family LABEL to change)
+```
+
+`--family LABEL` always wins, including `--family unknown`, and adds no
+family-suggestion note. In the TUI, the declaration form prefills the
+family and shows **suggested from the deepseek/ prefix — edit to change**
+on its family step. Review or edit it before saving. Accepted suggestions
+are recorded in the declaration's notes. Existing model lines are not
+relabelled automatically; editing, export and import never infer a family.
+Manual `models add` remains a no-lookup path with an explicit `--family`
+when you want one.
 
 ### Stealth models and add by id
 

@@ -97,6 +97,14 @@ ESSENTIAL_EVIDENCE_PREFIXES = (
     # The flag-settings disable wins over a competing
     # user/project/local settings env on a fresh start and on --resume.
     "client probe FM-layers: PASS class=FM-flag-settings ",
+    # The 2.1.302 policy and token checks: a workflow agent keeps its lineup
+    # model against CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL in any layer
+    # (S10-precedence), the compiled Agent(fork) deny refuses fork subagents
+    # (S15), and the helper's gateway token reaches the gateway only (S16; a
+    # host without openssl is a BOUNDARY skip, never a pass).
+    "client check S10-precedence: PASS ",
+    "client check S15: PASS ",
+    "client check S16: PASS ",
 )
 
 # Named alternative completion lines that satisfy an essential prefix. The

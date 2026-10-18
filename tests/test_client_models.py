@@ -1099,7 +1099,11 @@ class NativeAgentWireProbe(_SpikeTestCase):
                 "claude-code-guide", _LEAD_GPT, cap_off=True, fence=(_SONNET,), pty=True
             ),
         }
-        self.assertTrue(str(observed["nofence"]).startswith("claude-haiku-4-5"))
+        # Unfenced, the guide's "haiku" is the client's default Haiku: Haiku
+        # 5.5 since 2.1.293 (re-measured on 2.1.302; 4.5 before). A fence
+        # without a Haiku selector (every compiled scope: the catalog has no
+        # Haiku line) still runs it on the lead.
+        self.assertTrue(str(observed["nofence"]).startswith("claude-haiku-5-5"))
         self.assertEqual(observed["fence+sonnet"], _LEAD_GPT)
         return observed
 

@@ -1,0 +1,24 @@
+
+  declare model
+  ─────────────────────────────────────────────────────────────────────────────
+
+  Step 7/12 — Model family label (unknown if unsure)
+
+  deepseek_
+
+
+
+
+
+
+
+
+
+
+
+
+
+  suggested from the deepseek/ prefix — edit to change
+
+
+  Enter next · Backspace previous · F1 help · Esc cancel

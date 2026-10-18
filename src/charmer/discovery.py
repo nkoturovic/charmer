@@ -865,6 +865,36 @@ def entry_text(marked: MarkedEntry, *, codex: Mapping[str, Any] | None = None) -
 # ------------------------------------------------------------ declaration planning
 KEY_MAX = 48
 OVER_LISTED_MAX = 200
+# Namespace labels are editable defaults, not verified model provenance.
+OPENROUTER_FAMILY_PREFIXES = {
+    "anthropic/": "anthropic",
+    "openai/": "openai",
+    "google/": "google",
+    "deepseek/": "deepseek",
+    "x-ai/": "x-ai",
+    "moonshotai/": "moonshot",
+    "qwen/": "alibaba",
+    "meta-llama/": "meta",
+}
+
+
+def openrouter_family_suggestion(provider_id: str | None, wire: str, known_families: Iterable[str]) -> str | None:
+    """Suggest only reviewed namespace labels already trusted by this catalog.
+
+    Provider identity, not a similar endpoint URL or a listing's shape,
+    scopes this to OpenRouter. Routers, stealth and unknown namespaces do
+    not identify a vendor family.
+    """
+
+    if provider_id != "openrouter":
+        return None
+    prefix, separator, name = wire.partition("/")
+    family = OPENROUTER_FAMILY_PREFIXES.get(prefix + separator) if name else None
+    return family if family in known_families else None
+
+
+def family_suggestion_note(wire: str) -> str:
+    return f"family suggested from the {wire.split('/', 1)[0]}/ prefix"
 
 
 class DeclarationRefusal(ValueError):
@@ -931,13 +961,16 @@ def declaration_line(
     entry: Mapping[str, Any], *, provider: Mapping[str, Any], agent_efforts: Iterable[str],
     source_ref: str, context_override: int | None = None, over_listed: str | None = None,
     registry_model: catalog_mod.RegistryModel | None = None, registry_ref: str | None = None,
+    provider_id: str | None = None, known_families: Iterable[str] = (), family: str | None = None,
 ) -> dict[str, Any]:
     """One New · not admitted operator line document from a listed model.
 
     Context: the listing value, else the registry value, else the explicit
     ``--context``; raising above a listing-stated value needs
     ``over_listed``. Capabilities and roles stay the lead-only defaults;
-    listing context is provenance, never validation.
+    listing context is provenance, never validation. An explicit family wins;
+    otherwise only OpenRouter gets a namespace suggestion, bounded by the
+    caller's current trusted catalog families (never inferred from the URL).
     """
 
     listed = entry.get("context_length")
@@ -963,8 +996,14 @@ def declaration_line(
     line: dict[str, Any] = {"wire_model": entry["id"], "display": display, "efforts": efforts,
                             "default_effort": default, "context": context}
     notes = []
+    suggestion = openrouter_family_suggestion(provider_id, entry["id"], known_families) if family is None else None
+    if family is not None:
+        line["family"] = family
+    elif suggestion is not None:
+        line["family"] = suggestion
+        notes.append(family_suggestion_note(entry["id"]))
     if entry.get("openrouter") and entry["id"].startswith("stealth/"):
-        line["family"] = "unknown"
+        line.setdefault("family", "unknown")
         tools = entry.get("tools")
         notes.append(STEALTH_CAUTION)
         notes.append(f"Listing-stated modality: {entry.get('modality') or 'unknown'}; "

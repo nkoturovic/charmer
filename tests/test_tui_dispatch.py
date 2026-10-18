@@ -136,7 +136,7 @@ class GatewayDialogTests(test_gateway_doctor._GatewayDoctor):
 
     def test_restart_now_restarts_a_proven_gateway(self) -> None:
         self.world.become_ready("ffffffffffffffff")
-        message, win, printed = self.dialog([ENTER])  # Restart now is the first button
+        message, win, printed = self.dialog([ENTER], tty_in="y\n\n")  # Restart now (the first button), then y
         self.assertIn("[ Restart now ]", win.frames[0])
         self.assertNotIn("Start now", win.frames[0])
         self.assertEqual(self.world.terminated, [4242])

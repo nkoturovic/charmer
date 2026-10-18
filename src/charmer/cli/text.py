@@ -882,6 +882,14 @@ SKILL_POLICY_DRIFT = (
     "{mid}) — or charmer doctor --repair {mid} now (a repaired live scope is written, "
     "not yet proven active in the running client)"
 )
+# A live scope whose only difference is the fork-subagent deny (Agent(fork),
+# compiled from the 2.1.302 pin on) is lazy, like the skill policy above.
+FORK_POLICY_DRIFT = (
+    "session {m8}: its fork-subagent deny (Agent(fork)) differs from this release (a scope "
+    "another release compiled; lazy state); applies at the next resume (charmer -r {mid}) — or "
+    "charmer doctor --repair {mid} now (a repaired live scope is written, not yet proven active "
+    "in the running client)"
+)
 # The permission default mode is decided once per launch/resume;
 # a live scope whose only difference is ``permissions.defaultMode`` is lazy.
 DEFAULT_MODE_DRIFT = (

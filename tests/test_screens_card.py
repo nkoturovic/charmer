@@ -1119,9 +1119,10 @@ class CardKeyTests(_CardCase):
 
     def test_h_then_r_restarts_a_proven_gateway(self) -> None:
         view = fx.GatewayViewStub(restart=True)
-        acted, printed = self._h_gateway_action("r", view)
+        acted, printed = self._h_gateway_action("r\ny", view)  # r, then y at the restart question
         self.assertEqual(acted, [(view, "restart")])
         self.assertIn("r  restart it now", printed)
+        self.assertIn("No managed session runs now.\nRestart the gateway now? [y/N] ", printed)
         self.assertIn("gateway restart: fixture done", printed)
         self.assertEqual(self.runtime.launches, [])
 

@@ -111,6 +111,17 @@ def skill_policy_bypass_flags(argv: Iterable[str]) -> tuple[str, ...]:
     return tuple(found)
 
 
+# The native fork subagent (``subagent_type: "fork"``: the caller's own
+# context, model and effort) is no lineup agent. It is on by default in a
+# terminal session and, from Claude Code 2.1.302, headless too. Every scope
+# denies it: the client then reports forks unavailable and refuses a fork
+# call naming this rule. CLAUDE_CODE_FORK_SUBAGENT=0 is not used: it turns
+# off the whole fork gate, which also decides whether a terminal session runs
+# every subagent in the background. The real-binary proof is
+# tests/test_client_agents ForkSubagentPolicyTests (client check S15).
+FORK_AGENT_DENY = "Agent(fork)"
+
+
 FORK_UNVERIFIED_GUIDANCE = (
     "fork with --resume OLD --fork-session --session-id NEW is unverified for "
     "the pinned Claude CLI; fork natively (`claude --resume OLD "
@@ -159,7 +170,8 @@ def compile_native_policy(
 ) -> tuple[dict[str, str], list[str]]:
     """Compile built-in policy plus contract-recorded generic native aliases.
 
-    Deny order is deterministic: built-ins (Explore, Plan, general-purpose)
+    Deny order is deterministic: built-ins (Explore, Plan, general-purpose),
+    then the fork subagent (:data:`FORK_AGENT_DENY`, whatever the policy),
     followed by the sorted unique contract generic aliases (e.g.
     ``Agent(claude)``). Recording an alias compiles a deny only; it asserts no
     functional verification beyond policy compilation.
@@ -178,6 +190,7 @@ def compile_native_policy(
             denies.append("Agent(Plan)")
     if policy["general_purpose"] == "off":
         denies.append("Agent(general-purpose)")
+    denies.append(FORK_AGENT_DENY)
     for alias in sorted(set(generic_aliases)):
         deny = f"Agent({alias})"
         if deny not in denies:
@@ -652,7 +665,8 @@ def generate_session_appendix(
 # Moved keys (family defaults and the Explore inherit cap live in the
 # flag settings env) are unset so an inherited value never leaks when the
 # settings omit them; CLAUDE_CODE_SUBAGENT_MODEL(_FORCE) stay unset (the
-# compiled workflow default lives only in flag settings).
+# compiled workflow default lives only in flag settings), and so does
+# CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL (the flag settings state it neutral).
 V2_ENV_UNSET = (
     *catalog_mod.CREDENTIAL_ENV_KEYS,
     "ANTHROPIC_DEFAULT_FABLE_MODEL",
@@ -661,6 +675,7 @@ V2_ENV_UNSET = (
     "ANTHROPIC_DEFAULT_SONNET_MODEL",
     "CLAUDE_CODE_SUBAGENT_MODEL",
     "CLAUDE_CODE_SUBAGENT_MODEL_FORCE",
+    "CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL",
     "CLAUDE_CODE_MAX_OUTPUT_TOKENS",
     "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY",
     "CLAUDE_CODE_AUTO_COMPACT_WINDOW",

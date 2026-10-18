@@ -1042,6 +1042,27 @@ def _cells(routing: profile.Routing) -> list[tuple]:
 
 
 class RoutingTests(ProfileTestCase):
+    def test_declared_openrouter_reviewer_has_an_independent_vendor_family(self) -> None:
+        from charmer import discovery, operator
+
+        docs = _docs()
+        known = operator.t1_families(docs)
+        provider = docs["providers"]["providers"]["openrouter"]
+        for wire, independent in (("deepseek/deepseek-v4", True), ("mistralai/x", False),
+                                  ("stealth/space-bunny-alpha", False), ("openrouter/auto", False)):
+            with self.subTest(wire=wire):
+                line = discovery.declaration_line(
+                    {"id": wire, "context_length": 200000, "openrouter": True}, provider=provider,
+                    agent_efforts=_BUNDLE.agent_efforts, source_ref="fixture listing",
+                    provider_id="openrouter", known_families=known)
+                routing = profile.derive_routing(
+                    {"cm-lead": "openai"}, {"cm-reviewer": line.get("family", "unknown")}, known)
+                self.assertEqual(routing.rows[0].normal.reviewer, "cm-reviewer")
+                self.assertEqual(routing.independence_unknown, not independent)
+                self.assertFalse(routing.rows[0].normal.same_family)
+                self.assertEqual(profile.independent_families("openai", line.get("family", "unknown"), known),
+                                 independent)
+
     def test_unknown_family_never_counts_cross_family_or_same_family(self) -> None:
         known = {"anthropic", "openai"}
         for left, right in (("unknown", "anthropic"), ("anthropic", "unknown"),
