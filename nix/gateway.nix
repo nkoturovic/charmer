@@ -57,6 +57,9 @@ let
 
   # The recipe's module-requirements patch (go.mod and go.sum), which the
   # vendor step applies before it vendors; its bytes must match the recipe.
+  # Both derivations that run the vendor step (goModules and every prepared
+  # build) apply it through tools/build.py, which admits text edits to go.mod
+  # and go.sum only, so the Nix path enforces the same rule.
   modulesEntry = upstream.vendor.modules_patch or null;
   modulesPatch =
     if modulesEntry == null then
@@ -90,10 +93,14 @@ let
   };
 
   # The vendored module tree: `go mod vendor` with the pinned toolchain, run
-  # by the same tool, which also checks the normalised tree hash.
+  # by the same tool, which also checks the normalised tree hash. git applies
+  # the module-requirements patch first.
   goModules = pkgs.stdenvNoCC.mkDerivation {
     name = "cli-proxy-api-${version}-go-modules";
-    nativeBuildInputs = [ pkgs.python3 ];
+    nativeBuildInputs = [
+      pkgs.python3
+      pkgs.git
+    ];
     dontUnpack = true;
     dontConfigure = true;
     dontFixup = true;
