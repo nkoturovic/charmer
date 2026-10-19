@@ -1179,7 +1179,7 @@ class OAuthRefreshHoldTests(unittest.TestCase):
     pool names, without widening the credential-save parser's allowlist."""
 
     def journal_hold(self, *, back: bool, providers: tuple[str, ...] = ("claude", "codex"),
-                     result: str = "persisted") -> tuple[list[str], set[str]]:
+                     result: str = "persisted", journald: str = "before") -> tuple[list[str], set[str]]:
         import datetime
 
         import charmer.cli.commands.migration as command
@@ -1207,6 +1207,8 @@ class OAuthRefreshHoldTests(unittest.TestCase):
             records.append(observation.LogRecord(message, at, "boot:invocation", f"c{index}"))
         hold = gateway_hold.hold_path(root)
         recorded = hold.read_bytes()
+        journald_at = {"before": started - datetime.timedelta(days=1), "equal": started,
+                       "restarted": started + datetime.timedelta(seconds=30), "unavailable": None}[journald]
         with mock.patch.object(assets, "default_asset_root", return_value=FIXTURE_ROOT), \
                 mock.patch("charmer.platform.linux_service.unit_properties",
                            return_value={"ActiveState": "active"}) as properties, \
@@ -1214,6 +1216,7 @@ class OAuthRefreshHoldTests(unittest.TestCase):
                                   return_value=observation.LogWindow(tuple(records), "bounded")) as reader, \
                 mock.patch.object(service, "journal_reaches", return_value=None) as reaches, \
                 mock.patch.object(service, "journal_drops", return_value=()) as drops, \
+                mock.patch.object(service, "journald_start", return_value=journald_at) as journald_start, \
                 mock.patch.object(gateway_hold, "evaluate_journal", wraps=gateway_hold.evaluate_journal) as evaluate:
             reasons = command._charmer_hold(layout) if back else command._legacy_hold(layout)
         properties.assert_called_once_with(unit, subprocess.run)
@@ -1227,6 +1230,8 @@ class OAuthRefreshHoldTests(unittest.TestCase):
         self.assertLessEqual(abs(since - day_ago), 60)
         reaches.assert_not_called()  # the start line is in the read
         drops.assert_called_once()
+        journald_start.assert_called_once_with()
+        self.assertIs(evaluate.call_args.kwargs["journald_start"], journald_start)
         self.assertEqual(evaluate.call_args.kwargs["running"], (instance, started))
         self.assertEqual(hold.read_bytes(), recorded)  # the precondition records nothing
         return reasons, set(evaluate.call_args.args[1])
@@ -1241,6 +1246,57 @@ class OAuthRefreshHoldTests(unittest.TestCase):
 
     def test_back_journal_accepts_persisted_account_refreshes(self) -> None:
         self.assert_account_refreshes_clear(back=True)
+
+    def test_journald_restart_risk_vetoes_both_migration_directions(self) -> None:
+        for back in (False, True):
+            with self.subTest(back=back):
+                reasons, _providers = self.journal_hold(back=back, journald="restarted")
+                self.assertEqual(reasons, ["service journal: journald restarted; "
+                                           "credential-save evidence may be missing"])
+
+    def test_equal_journald_start_does_not_veto_either_migration_direction(self) -> None:
+        for back in (False, True):
+            with self.subTest(back=back):
+                reasons, _providers = self.journal_hold(back=back, journald="equal")
+                self.assertEqual(reasons, [])
+
+    def test_unavailable_journald_requires_restored_visibility_in_both_directions(self) -> None:
+        for back in (False, True):
+            with self.subTest(back=back):
+                reasons, _providers = self.journal_hold(back=back, journald="unavailable")
+                self.assertEqual(len(reasons), 1)
+                self.assertIn("journald's current process start could not be observed", reasons[0])
+                self.assertIn("observation access and availability must be restored", reasons[0])
+
+    def test_failed_saves_still_hold_alongside_journald_risk_in_both_directions(self) -> None:
+        for back in (False, True):
+            for journald in ("restarted", "unavailable"):
+                with self.subTest(back=back, journald=journald):
+                    reasons, _providers = self.journal_hold(back=back, result="failed", journald=journald)
+                    self.assertEqual(len(reasons), 2)
+                    self.assertTrue(any("a credential save failed" in reason for reason in reasons))
+
+    def test_supervised_absent_instance_does_not_query_journald(self) -> None:
+        import charmer.cli.commands.migration as command
+        from charmer import service
+        from charmer.platform import observation
+
+        for back in (False, True):
+            with self.subTest(back=back):
+                harness = Harness(self)
+                if back:
+                    harness.migrate()
+                with mock.patch.object(assets, "default_asset_root", return_value=FIXTURE_ROOT), \
+                        mock.patch("charmer.platform.linux_service.unit_properties",
+                                   return_value={"ActiveState": "inactive"}), \
+                        mock.patch("charmer.platform.posix_fs.lock_held", return_value=False), \
+                        mock.patch.object(service, "read_hold_journal", return_value=observation.LogWindow((), "bounded")), \
+                        mock.patch.object(service, "journal_reaches", side_effect=AssertionError("reach probe")), \
+                        mock.patch.object(service, "journal_drops", return_value=()), \
+                        mock.patch.object(service, "journald_start", side_effect=AssertionError("process probe")) as probe:
+                    reasons = command._charmer_hold(harness.layout) if back else command._legacy_hold(harness.layout)
+                self.assertEqual(reasons, [])
+                probe.assert_not_called()
 
     def test_unknown_journal_provider_still_holds_with_incomplete_coverage(self) -> None:
         for back in (False, True):
@@ -1286,6 +1342,7 @@ class OAuthRefreshHoldTests(unittest.TestCase):
         with mock.patch.dict(os.environ, {"PATH": str(bindir)}), \
                 mock.patch.object(assets, "default_asset_root", return_value=FIXTURE_ROOT), \
                 mock.patch("charmer.platform.linux_service.unit_properties", return_value={"ActiveState": "active"}), \
+                mock.patch.object(service, "journald_start", return_value=started - datetime.timedelta(days=1)), \
                 mock.patch.object(gateway_hold, "JOURNAL_BUDGET", 256 << 10):
             reasons = command._legacy_hold(layout)
         self.assertEqual(reasons, [])
@@ -1313,9 +1370,11 @@ class OAuthRefreshHoldTests(unittest.TestCase):
         hold = gateway_hold.hold_path(layout.state)
         recorded = hold.read_bytes()
         with mock.patch.object(assets, "default_asset_root", return_value=FIXTURE_ROOT), \
-                mock.patch("charmer.platform.linux_service.unit_properties") as properties:
+                mock.patch("charmer.platform.linux_service.unit_properties") as properties, \
+                mock.patch.object(service, "journald_start", side_effect=AssertionError("process probe")) as probe:
             self.assertEqual(command._charmer_hold(layout), [])
         properties.assert_not_called()  # on demand: the instance logs, never the service manager
+        probe.assert_not_called()
         self.assertEqual(hold.read_bytes(), recorded)
 
 
@@ -1513,7 +1572,8 @@ class BackGatewayTests(unittest.TestCase):
             with mock.patch("charmer.platform.linux_service.unit_properties", return_value=properties), \
                     mock.patch.object(service, "read_hold_journal", side_effect=journal), \
                     mock.patch.object(service, "journal_reaches", return_value=None), \
-                    mock.patch.object(service, "journal_drops", return_value=None):
+                    mock.patch.object(service, "journal_drops", return_value=None), \
+                    mock.patch.object(service, "journald_start", return_value=started - datetime.timedelta(days=1)):
                 cases[name] = command._charmer_hold(layout)
         self.assertIn("cannot be read", cases["unreadable"][0])
         # The same window the stop reads: from the instance's start, so the

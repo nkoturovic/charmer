@@ -272,7 +272,7 @@ def present_report(problems: list[str], attention: list[str]) -> Presentation:
             text = first.summary.replace("{n}", str(len(subjects) or len(lines))) + " — " + _listed(subjects)
         else:
             text = getattr(first, "short", None) or str(first)
-        hold = getattr(first, "action", None) in ("hold", "hold-coverage")
+        hold = group == ("gateway", "persistence-hold") or getattr(first, "action", None) in ("hold", "hold-coverage")
         # The command any member names (a group's lines may come from collectors that name it once),
         # else the command of an advisory model row's optional next step.
         remedy = next((line.remedy for line in lines if getattr(line, "remedy", None)), None)

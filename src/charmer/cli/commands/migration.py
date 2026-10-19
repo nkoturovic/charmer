@@ -465,7 +465,7 @@ def _gateway_hold(state_root: Path, unit: str, supervised: bool, marker: Callabl
         unit, marker(running[0]) if running is not None and running[0] else None)
     report = gateway_hold.evaluate_journal(
         state_root, providers, running=running, marker=marker, record=False,
-        reader=reader, reaches=reaches, drops=drops)
+        reader=reader, reaches=reaches, drops=drops, journald_start=service.journald_start)
     return list(report.reasons) if report.held else []
 
 

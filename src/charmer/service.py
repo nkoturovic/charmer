@@ -144,6 +144,13 @@ def journal_drops(*, since: datetime.datetime) -> tuple[tuple[datetime.datetime,
     return linux_service.journal_drops(since=since, uid=os.getuid())
 
 
+def journald_start(*, runner: Callable = subprocess.run) -> datetime.datetime | None:
+    """The system manager's current default-namespace journald process start
+    (None: unavailable, inactive or invalid)."""
+
+    return linux_service.journald_start(runner)
+
+
 def unit_control(verb: str, unit: str, *, runner: Callable = subprocess.run, timeout: float | None = None,
                  no_block: bool = False) -> bool:
     """Run one start/stop/restart of ``unit``; True when the manager accepted it.

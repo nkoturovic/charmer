@@ -489,6 +489,7 @@ class _JournalHold(unittest.TestCase):
                             self.STARTED + timedelta(seconds=n), f"c{n}") for n in range(start, start + count)]
 
     def evaluate(self, records, *, coverage="bounded", record=True, **probes):
+        probes.setdefault("journald_start", lambda: self.STARTED - timedelta(days=1))
         window = events.LogWindow(tuple(records), coverage)
         return gateway_hold.evaluate_journal(
             self.state_root, ("claude",), reader=lambda _since: window, now=lambda: NOW.isoformat(),

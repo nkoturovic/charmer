@@ -103,6 +103,7 @@ class World:
             terminate=self.terminate,
             models_get=lambda _base, _token, _verdict: self.models,
             runner=mock.Mock(side_effect=AssertionError("service manager")),
+            journald_start=lambda: NOW - datetime.timedelta(days=30),
             port_probe=lambda _port: True,
             clock=self.clock, sleep=self.clock.sleep, now=lambda: self.now,
             proc_root=self.case.root / "no-proc",
@@ -2453,7 +2454,8 @@ class HoldDocumentCompatibilityTests(_Lifecycle):
 
         report = gateway_hold.evaluate_journal(self.state_root, ("claude",), reader=reader,
                                                now=lambda: "2026-10-25T12:00:00+00:00",
-                                               running=("d26721e6b9c12dfb", started), drops=lambda _since: ())
+                                               running=("d26721e6b9c12dfb", started), drops=lambda _since: (),
+                                               journald_start=lambda: started - datetime.timedelta(days=1))
         self.assertFalse(report.held, report.reasons)
         self.assertEqual(asked, [started - gateway_hold.START_MARGIN])
 

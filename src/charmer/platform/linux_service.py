@@ -1,4 +1,4 @@
-"""Linux service-manager backend: systemd user units.
+"""Linux service-manager backend: user units and the system journald observation.
 
 The only module besides the ``service`` facade that names the manager's
 commands. It builds argv and hint text, reads unit properties, runs the
@@ -203,6 +203,57 @@ def manager_property(name: str, unit: str, runner: Callable, *, timeout: float =
     if completed.returncode != 0:
         return None
     return completed.stdout.strip() or None
+
+
+JOURNALD_UNIT = "systemd-journald.service"
+JOURNALD_PROPERTIES = ("LoadState", "ActiveState", "MainPID", "ExecMainStartTimestamp")
+_WEEKDAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+_US_UTC = re.compile(r"(Mon|Tue|Wed|Thu|Fri|Sat|Sun) ([0-9]{4}-[0-9]{2}-[0-9]{2} "
+                     r"[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{6}) UTC")
+
+
+def journald_start(runner: Callable, *, timeout: float = QUERY_TIMEOUT) -> datetime.datetime | None:
+    """PID 1's current default-namespace journald process start, or unknown.
+
+    One read-only query, never the user manager. systemctl's ``us+utc``
+    style (since systemd 248) prints six fractional digits even for zero
+    microseconds. Pin the command's locale and parse numeric fields only:
+    Python's own locale need not be C. Loaded, active and a positive MainPID
+    distinguish a current process from the timestamps retained after exit.
+    """
+
+    try:
+        completed = runner(
+            ["systemctl", "--system", "--no-ask-password", "--no-pager", "show", "--timestamp=us+utc",
+             *(f"--property={name}" for name in JOURNALD_PROPERTIES), JOURNALD_UNIT],
+            stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=timeout,
+            env={**os.environ, "LC_ALL": "C", "TZ": "UTC"},
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if completed.returncode != 0 or not isinstance(completed.stdout, str):
+        return None
+    properties: dict[str, str] = {}
+    for line in completed.stdout.splitlines():
+        key, separator, value = line.partition("=")
+        if not separator or key not in JOURNALD_PROPERTIES or key in properties:
+            return None
+        properties[key] = value
+    if set(properties) != set(JOURNALD_PROPERTIES):
+        return None
+    if properties["LoadState"] != "loaded" or properties["ActiveState"] != "active":
+        return None
+    pid = properties["MainPID"]
+    if not re.fullmatch(r"[1-9][0-9]{0,9}", pid) or int(pid) > 2**32 - 1:
+        return None
+    match = _US_UTC.fullmatch(properties["ExecMainStartTimestamp"])
+    if match is None:
+        return None
+    try:
+        started = datetime.datetime.fromisoformat(match[2]).replace(tzinfo=datetime.timezone.utc)
+    except ValueError:
+        return None
+    return started if _WEEKDAYS[started.weekday()] == match[1] else None
 
 
 def manager_time(value: str) -> datetime.datetime:
