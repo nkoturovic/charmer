@@ -810,15 +810,20 @@ class HookTests(unittest.TestCase):
                 group = hooks[name][0]
                 self.assertEqual(set(group), {"hooks"})
                 (hook,) = group["hooks"]
-                self.assertEqual(
-                    hook,
-                    {
-                        "type": "command",
-                        "command": f"{HOOK3} session-event {event} --managed-id "
-                        f"{FIXED_SESSION} --launch-epoch 7 --hook-protocol 3",
-                        "timeout": 5,
-                    },
-                )
+                expected = {
+                    "type": "command",
+                    "command": f"{HOOK3} session-event {event} --managed-id "
+                    f"{FIXED_SESSION} --launch-epoch 7 --hook-protocol 3",
+                    "timeout": 5,
+                }
+                # Only the model fence blocks when its shim cannot answer,
+                # with its own budget; lifecycle and prompt hooks stay
+                # fail-open on the shared one.
+                if name == "PreModelSwitch":
+                    expected.update(onFailure="block", timeout=15)
+                self.assertEqual(hook, expected)
+        self.assertEqual(scope.FAIL_CLOSED_HOOK_EVENTS, frozenset({"PreModelSwitch"}))
+        self.assertEqual((scope.HOOK_TIMEOUT_SECONDS, scope.FENCE_HOOK_TIMEOUT_SECONDS), (5, 15))
         self.assertEqual(plan.settings["env"]["CHARMER_LAUNCH_EPOCH"], "7")
         self.assertNotIn("transcript", strict_json.canonical_bytes(plan.settings).decode())
 
@@ -911,6 +916,65 @@ class ForkPolicyDriftTests(unittest.TestCase):
         moved["permissions"]["deny"].append(compiler.FORK_AGENT_DENY)
         self.assertNotEqual(moved, settings)
         self.assertFalse(self.drift(self.plan, moved)[1])
+
+    @staticmethod
+    def fence_policy(settings: dict[str, Any], value: str | None, timeout: int,
+                     event: str = "PreModelSwitch") -> dict[str, Any]:
+        document = copy.deepcopy(settings)
+        hook = document["hooks"][event][0]["hooks"][0]
+        hook["timeout"] = timeout
+        if value is None:
+            hook.pop("onFailure", None)
+        else:
+            hook["onFailure"] = value
+        return document
+
+    def test_the_model_fence_failure_policy_of_another_release_is_lazy(self) -> None:
+        settings = self.plan.settings
+        fence = settings["hooks"]["PreModelSwitch"][0]["hooks"][0]
+        self.assertEqual((fence["onFailure"], fence["timeout"]), ("block", 15))
+        lazy = [f"{scope.SETTINGS_RELPATH} content differs"]
+        # A scope compiled before the policy (no onFailure, the shared 5 s),
+        # alone or with the fork deny it also predates (the 2.0.x scope).
+        earlier = self.fence_policy(settings, None, 5)
+        self.assertEqual(self.drift(self.plan, earlier), (lazy, True))
+        both = self.fence_policy(self.without(settings, compiler.FORK_AGENT_DENY), None, 5)
+        self.assertEqual(self.drift(self.plan, both), (lazy, True))
+        # A rollback compile without it over a scope that has it.
+        rollback = dataclasses.replace(self.plan, settings=earlier)
+        self.assertTrue(self.drift(rollback, copy.deepcopy(settings))[1])
+        # A policy no release compiled (half of one, another value, another
+        # budget), the policy on another hook, or anything else alongside
+        # stays BLOCK.
+        for value, timeout in (("block", 5), (None, 15), ("continue", 15), (None, 30), ("block", 30)):
+            with self.subTest(value=value, timeout=timeout):
+                self.assertFalse(self.drift(self.plan, self.fence_policy(settings, value, timeout))[1])
+        self.assertFalse(self.drift(self.plan, self.fence_policy(earlier, "block", 15, "SessionStart"))[1])
+        edited = copy.deepcopy(earlier)
+        edited["env"]["CLAUDE_CODE_SUBAGENT_MODEL"] = "charmer-opus-5[1m]"
+        self.assertFalse(self.drift(self.plan, edited)[1])
+
+    def test_a_fence_failure_policy_of_another_type_is_drift_never_an_error(self) -> None:
+        """A readable settings.json whose fence hook states its policy as a
+        list, an object, a boolean or a string is ordinary drift (doctor
+        BLOCK), on the live scope or in the plan; nothing raises."""
+
+        settings = self.plan.settings
+        for value, timeout in (("block", []), ("block", {}), ({}, 15), (["block"], 15), ("block", True),
+                               ("block", "15"), (None, None), ("block", 15.5)):
+            with self.subTest(value=value, timeout=timeout):
+                malformed = self.fence_policy(settings, None, 15)
+                hook = malformed["hooks"]["PreModelSwitch"][0]["hooks"][0]
+                hook["timeout"] = timeout
+                if value is not None:
+                    hook["onFailure"] = value
+                if timeout is None:
+                    del hook["timeout"]
+                self.assertEqual(self.drift(self.plan, malformed), ([f"{scope.SETTINGS_RELPATH} content differs"],
+                                                                    False))
+                self.assertIsNone(scope._fence_failure_split(malformed))
+                self.assertFalse(self.drift(dataclasses.replace(self.plan, settings=malformed),
+                                            copy.deepcopy(settings))[1])
 
 
 class DenyTests(unittest.TestCase):

@@ -65,24 +65,27 @@ def wire(selector: str) -> str:
 # ------------------------------------------------------------ the compile
 
 
-def production_compile(*, provider_tokens: int | None = None) -> dict:
+def production_compile(*, provider_tokens: int | None = None, lead_tokens: int | None = None) -> dict:
     """The production compile of a fixture lineup: the direct seed's 1M-class
     lead (its lead set kept to the lead's provider) and ``cm-analyst`` on a
     1M-class gateway-effort line. ``provider_tokens`` lowers that line's
     provider bound (``BELOW`` the session window: the agent keeps the 200K
-    class). Returns the lineup, the scope plan, the session policy and each
-    role's window."""
+    class); ``lead_tokens`` lowers the lead line's (the lead set's smallest
+    bound, so the session window). Returns the lineup, the scope plan, the
+    session policy and each role's window."""
 
     bundle = catalog.load_catalog(FIXTURE_ROOT)
     docs = copy.deepcopy(bundle.docs)
     key = codex_line(docs)
     if provider_tokens is not None:
         docs = bounded(docs, key, provider_tokens)
+    lead_key, lead_provider = seed_lead(bundle)
+    if lead_tokens is not None:
+        docs = bounded(docs, lead_key, lead_tokens)
     lcat = profile.LineupCatalog.from_docs(docs)
     eff = settings.effective({"version": 1}, provider_ids=lcat.providers, line_keys=lcat.lines)
     document = copy.deepcopy(bundle.seed_profiles["direct"])
     document.pop("seed", None)
-    lead_key, lead_provider = seed_lead(bundle)
     document.update(name="agent-window", lead_providers=[lead_provider])
     document["lead"]["model"] = lead_key
     document["agents"] = {_AGENT: {"model": key, "effort": docs["models"]["models"][key]["default_effort"]}}

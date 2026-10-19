@@ -547,6 +547,28 @@ class ScopeIntegrityTests(_DoctorCase):
                 problems, _info, attention = _doctor(self)
                 self.assertEqual((problems, attention), ([], []))
 
+    def test_a_malformed_fence_failure_policy_blocks_without_an_error(self) -> None:
+        """A fence hook whose timeout or onFailure is a list or an object is
+        scope damage doctor reports, never an exception and never lazy."""
+
+        live = self.live(self.mid)
+        launch_bytes = self._launch_bytes()
+        for field, value in (("timeout", []), ("onFailure", {"block": True})):
+            with self.subTest(field=field):
+                doc = strict_json.loads((live / "settings.json").read_bytes())
+                doc["hooks"]["PreModelSwitch"][0]["hooks"][0][field] = value
+                state.atomic_write(live / "settings.json", strict_json.canonical_file_bytes(doc))
+                problems, _info, attention = _doctor(self)
+                self.assertTrue(
+                    any(p.startswith(f"session {self.m8}: scope differs from the record-authoritative compile")
+                        for p in problems),
+                    problems,
+                )
+                self.assertFalse([line for line in attention if self.m8 in line], attention)
+                code, output = _run_doctor(self, "--repair", self.mid)
+                self.assertEqual(code, 0, output)
+                self.assertEqual(self._launch_bytes(), launch_bytes)
+
     def test_a_fence_gap_blocks(self) -> None:
         live = self.live(self.mid)
         doc = strict_json.loads((live / "settings.json").read_bytes())

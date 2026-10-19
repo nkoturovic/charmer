@@ -364,8 +364,10 @@ def _source_locks(source: PolicySource) -> list[ManagedLock]:
     if isinstance(env, dict):
         for key in sorted(env):
             # A policy env outranks the compiled flag settings, so a workflow
-            # model there replaces the neutral value every scope compiles.
-            if (key in ("ANTHROPIC_BASE_URL", "ANTHROPIC_MODEL", "CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL")
+            # model there replaces the neutral value every scope compiles; an
+            # auto-mode classifier model there picks a model for every session.
+            if (key in ("ANTHROPIC_BASE_URL", "ANTHROPIC_MODEL", "CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL",
+                        "CLAUDE_CODE_AUTO_MODE_MODEL")
                 or key.startswith("ANTHROPIC_DEFAULT_") and key.endswith("_MODEL")
                 or key.startswith("CLAUDE_CODE_SUBAGENT_MODEL")):
                 locks.append(ManagedLock(origin.get("env." + key, origin["env"]), "env." + key, "model"))

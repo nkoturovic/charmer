@@ -15,7 +15,12 @@ client probe SX: PASS class=SX-open-continue-dies
 client probe SF: PASS class=SF-lead-heavy
 client probe RL: PASS class=RL-none
 client probe RET: PASS class=RET-ok
-client probe R19: PASS class=R19-open
+client probe R19: PASS class=R19-closed
+# R19: the compiled PreModelSwitch hook carries onFailure "block": a missing,
+# non-executable, crashing or timed-out shim keeps the lead (without it the
+# first three switch); deny and allow answers are unchanged. A shim exiting 0
+# with a non-JSON answer gives no decision and the switch proceeds (the real
+# shim answers its own deny on every failure).
 client probe SK: PASS class=SK-kept
 client probe OC: PASS class=OC-untouched
 client probe FL: PASS class=FL-ok
@@ -29,3 +34,45 @@ client probe SL: BOUNDARY class=unavailable
 # SL: no newer-than-pin client retained; not a successful resume observation.
 # Supervisor takeover and staged marketplace-plugin updates remain INCONCLUSIVE
 # offline. Signed real-provider behavior is not established by these fixtures.
+#
+# The receipts below: signed client 2.1.302 linux-x64 (binary sha256
+# 60d7eb7f12fbb28a52533fe8be5884097403562aa02dc73991a021c7067e29a5, release
+# manifest sha256 d7d4f193bfebb48733027b0dc43d6996d99f5335d152961a729730e55bbd5aa1),
+# 2026-10-19.
+#
+# The session window's representation (tests/test_compaction_window_probe.py),
+# session window 800000 at 90 %:
+compaction window probe: PASS class=env-window-holds
+# The compiled window variable: the lead compacts at 702000 fresh, on
+# --resume, against user, project and local top-level, per-model and env
+# values of 300000 and a process env of 300000, after /autocompact 300000
+# (which saves nothing under the variable) and with a native --autocompact
+# 1000000 (a launch refuses the flag; the variable outranks it anyway); a
+# 128000-bound agent shares its 200K class's window (162000). A lead set bound
+# at 80000 compacts at the client's 100K floor (67000; charmer compiles and
+# shows 47000), never at the model's own default.
+# Per-agent windows are not compiled: under the variable a 128000 agent
+# window is ignored (162000). Recorded, never gating: a top-level
+# autoCompactWindow with the variable "0" in the flag-settings env lowers an
+# agent to its own window (95000 for 128000, 252000 for 300000 on a 1M agent;
+# one above the class or below 100K is ignored) and holds the lead against the
+# same user layers, /autocompact, --resume and --agent, but a native
+# --autocompact 1000000 replaces it (no compaction by 800000) and an 80000
+# lead set falls back to the model's own window (no compaction by 180000). Its
+# survival of a supervisor takeover, a same-process /autocompact and a
+# workflow agent's window are not measured offline, so it is not compiled.
+# --autocompact as the representation passes the lead, user-layer and agent
+# cases; /autocompact in a running session replaces it (read from the build).
+#
+# The auto-mode classifier's model (tests/test_auto_mode_model_probe.py):
+client check auto-mode-model: PASS class=AM-owned
+# Under --permission-mode auto offline the classifier never answers; the
+# client's refusal names the model it chose. A CLAUDE_CODE_AUTO_MODE_MODEL in
+# the user, project or local settings env, fresh and on --resume, picks that
+# model without the compiled neutral value (the control) and the lead's own
+# model with it ("" in the flag-settings env).
+#
+# The fence's cold start (protocol-3 shim plus a launcher answering premodel,
+# 300 runs each, bytecode warm, 16 CPUs): CPython 3.14.6 p99 0.13 / 0.26 /
+# 0.43 / 2.57 s at 0, 16, 32 and 64 CPU burners (max 3.33 s); CPython 3.15.0
+# p99 0.17 / 0.45 / 1.75 / 3.47 s (max 4.31 s). Its budget is 15 s.

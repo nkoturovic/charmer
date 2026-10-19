@@ -1,9 +1,12 @@
 """Recorded 1.0.0 scopes survive presentation-only compiler changes.
 
-The one executable change since is the fork-subagent deny (``Agent(fork)``,
-compiled from the 2.1.302 pin on): a baseline scope differs from the current
-compile by exactly that rule, which doctor reports as lazy state (Attention,
-applied at the next resume or by repair) and repair writes, nothing else.
+The executable changes since are the fork-subagent deny (``Agent(fork)``,
+compiled from the 2.1.302 pin on) and the model fence's failure policy
+(``onFailure: block`` and the fence's own timeout on the PreModelSwitch
+hook): a baseline scope differs
+from the current compile by exactly those, which doctor reports as lazy state
+(Attention, applied at the next resume or by repair) and repair writes,
+nothing else.
 
 The two frozen outputs were built with the actual source compiler at
 BASELINE_REF (git archive of src/, private HOME, no Runtime or execution).
@@ -143,11 +146,17 @@ def renamed_baseline(scenario):
 
 
 def without_fork_deny(settings):
-    """``settings`` without the fork-subagent deny (its only executable change since 1.0.0)."""
+    """``settings`` without the fork-subagent deny and the model fence's
+    failure policy (its executable changes since 1.0.0)."""
 
     permissions = settings["permissions"]
     deny = [rule for rule in permissions["deny"] if rule != compiler.FORK_AGENT_DENY]
-    return {**settings, "permissions": {**permissions, "deny": deny}}
+    hooks = copy.deepcopy(settings["hooks"])
+    for group in hooks["PreModelSwitch"]:
+        for hook in group["hooks"]:
+            hook.pop("onFailure", None)
+            hook["timeout"] = scope.HOOK_TIMEOUT_SECONDS
+    return {**settings, "permissions": {**permissions, "deny": deny}, "hooks": hooks}
 
 
 class ScopeCompatibilityTests(unittest.TestCase):
