@@ -15,12 +15,14 @@ follow [Semantic Versioning](https://semver.org/).
 - The isolated test lanes run bubblewrap 0.13.1, built from its release by
   hash, and refuse one older than 0.12 (GHSA-pxhw-h44j-8pfx) or one that is
   setuid; the Nix development shell requires 0.12 or later.
-- With Claude Code 2.1.302 the gateway key reaches only the gateway. A
-  client check proves this on every release; the previous pin also sent it
-  with start-up and feature-flag requests.
-- The four bundled CPython 3.14.8 runtimes come from python-build-standalone
-  20261013 (Expat 2.9.0, libffi 3.8.0), with matching archive provenance,
-  licence inventories, notices and SBOM inputs.
+- Isolated checks on Claude Code 2.1.302 observe the synthetic gateway key
+  only at the gateway in the tested request paths, including a gateway URL
+  from managed settings and a key-helper refresh after a 401. The previous
+  pin also sent it with start-up and feature-flag requests.
+- Managed scopes disable the fork-subagent gate
+  (`CLAUDE_CODE_FORK_SUBAGENT=0`) as well as denying `Agent(fork)`; the
+  launch clears inherited gate values. User, project and local settings
+  cannot re-enable that gate in a managed session.
 - Build and CI dependencies refreshed and verified: setuptools 84.0.0,
   govulncheck v1.9.0, zizmor 1.31.1, install-nix-action v31.11.2,
   upload-artifact v7.0.2, download-artifact v8.0.2 and the Linux container
@@ -33,6 +35,23 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Doctor groups findings by area, puts a persistence hold first among
+  Attention findings, and separates optional-evidence advisories from the
+  verdict. Repeated findings are collapsed with counts; `doctor -v` keeps
+  the full detail and JSON findings include their area.
+- **H** on the launch card opens a findings list with fixed, guarded
+  actions and confirmations. It offers housekeeping only when session
+  liveness and records can be checked safely; other rows show their details
+  and exact remedy commands.
+- If a gateway-changing update is followed by a failed gateway start,
+  the failure and doctor name `charmer update --rollback`, then
+  `charmer gateway start`, when the retained release is a valid rollback
+  with a different gateway.
+- Re-pinning requires five additional client checks: fork gate, spawn-mod
+  fence membership, MCP policy, token destinations and fence substitution.
+  The release evidence job runs every required producer, including the
+  compaction-window, auto-mode-model and debug-diagnostics checks.
+
 - When you add an OpenRouter model (`charmer discover openrouter --add`, or
   the TUI declaration form), charmer suggests its vendor family from the
   model's namespace (`deepseek/` → deepseek, `qwen/` → alibaba, …), so
@@ -41,6 +60,20 @@ follow [Semantic Versioning](https://semver.org/).
   existing lines are never rewritten.
 
 ### Changed
+
+- Managed terminal sessions may run a subagent in the foreground;
+  background remains the default.
+- The launch card shows gateway holds, describes **U** as checking for an
+  update rather than promising one, and opens Get started on Enter when
+  nothing is connected. **L** launches anyway.
+- Scopes compiled under the earlier product name appear as one doctor
+  finding. Repair recompiles stopped sessions; running sessions pick up
+  the current scope at their next resume.
+- Installed `agent.spawn` mods can redirect a fresh workflow agent to
+  another model within the lineup fence. Exact per-agent binding is not
+  guaranteed against that code. The separate binding probe retains this
+  as an expected failure; the required spawn-mod check proves fence
+  membership, not exact binding.
 
 - Release bundles run CPython 3.15.0 (python-build-standalone 20261013) in
   its default build: the GIL enabled, the experimental JIT off. The runtime
@@ -63,8 +96,8 @@ follow [Semantic Versioning](https://semver.org/).
   leads and agents; the privacy page states the new traffic observation.
 - `charmer gateway status` and `charmer doctor` show where the persistence
   hold's evaluation started and how many credential saves it read.
-- The launcher's gateway actions (**H**, and **W** on Providers and Direct)
-  show the persistence hold: a coverage-only hold reads "held — log coverage
+- The gateway actions (**G** from the findings list, and **W** on Providers
+  and Direct) show the persistence hold: a coverage-only hold reads "held — log coverage
   incomplete, not a failed save", otherwise the failure is shown. While held,
   no restart is offered and the clear-hold command is named. A restart there
   first lists the managed sessions running now and asks y/N.
@@ -79,6 +112,9 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Gateway restart confirmation uses the shared session scan. When a record
+  is unreadable it names the live sessions it can identify and says whether
+  other sessions may be running, rather than claiming none run.
 - A managed session refuses a model switch when its fence hook cannot answer:
   the compiled PreModelSwitch hook fails closed, so a missing, non-executable,
   crashing or slow shim keeps the lead model. The fence alone gets 15 seconds;
@@ -115,9 +151,9 @@ follow [Semantic Versioning](https://semver.org/).
   the log for a later start instead of holding.
 - `charmer gateway stop` on the supervised service refuses when the gateway
   restarted while its hold was being evaluated.
-- Workflow agents keep their lineup models: `CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL`
-  (Claude Code 2.1.296+) set in a user, project or local settings file or in
-  the environment no longer rebinds a managed session's workflow agents; a
+- `CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL` (Claude Code 2.1.296+) set in a
+  user, project or local settings file or in the environment no longer
+  rebinds a managed session's workflow agents; a
   model's lead environment cannot set it, and a managed policy that sets it is
   reported as a model lock.
 - Managed sessions deny fork subagents (`Agent(fork)`), which Claude Code
