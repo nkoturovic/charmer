@@ -114,6 +114,19 @@ ESSENTIAL_EVIDENCE_PREFIXES = (
     "compaction window probe: PASS class=env-window-holds ",
     "client check auto-mode-model: PASS class=AM-owned ",
     "client check debug-diagnostics: PASS ",
+    # The fence and security checks: the compiled flag settings turn the
+    # fork gate off against every layer; an agent.spawn mod never puts a
+    # model outside the fence on the wire, a resumed agent keeps its model
+    # and a managed allowManagedHooksOnly keeps mods out; MCP rules name one
+    # server and a managed MCP deny precedes every start; the gateway token
+    # stays on the gateway under a managed-settings base URL and a helper
+    # refresh after a 401; and the client's own resends, compactions,
+    # switches and fallbacks stay on the models the session chose.
+    "client check fork-gate: PASS class=FG-off ",
+    "client check spawn-mod: PASS class=SM-fenced ",
+    "client check mcp-policy: PASS class=MCP-named-deny-first ",
+    "client check token-destinations: PASS ",
+    "client check fence-substitution: PASS class=FS-fenced ",
 )
 
 # Named alternative completion lines that satisfy an essential prefix. The

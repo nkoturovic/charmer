@@ -76,3 +76,61 @@ client check auto-mode-model: PASS class=AM-owned
 # 300 runs each, bytecode warm, 16 CPUs): CPython 3.14.6 p99 0.13 / 0.26 /
 # 0.43 / 2.57 s at 0, 16, 32 and 64 CPU burners (max 3.33 s); CPython 3.15.0
 # p99 0.17 / 0.45 / 1.75 / 3.47 s (max 4.31 s). Its budget is 15 s.
+#
+# The fence and security checks, same client and receipts, 2026-10-19. A
+# managed-settings file is mounted at /etc/claude-code inside the namespace
+# (tests/_client_policy.py); the client ignores CLAUDE_CODE_MANAGED_SETTINGS_PATH.
+#
+# The fork gate (tests/test_client_agents.py ForkGateTests):
+client check fork-gate: PASS class=FG-off
+# Against CLAUDE_CODE_FORK_SUBAGENT=1 and an Agent(fork) allow in the user,
+# project and local settings and the variable in the process environment:
+# with the compiled deny alone the gate is on and every fork is refused
+# naming the rule; with the compiled CLAUDE_CODE_FORK_SUBAGENT=0 no fork is
+# offered (headless fresh and --resume, lead and cm agent; terminal), and a
+# terminal session offers run_in_background again (forced into the
+# background with the gate on). Client 2.1.292 (the 2.0.1 pin): with the
+# 2.0.1 permissions a terminal lead fork starts (the gap); the variable alone
+# closes it. Its revert: without the compiled variable every run is
+# "denied" (FG-gate-on).
+#
+# An agent.spawn mod (tests/test_client_spawn_mod.py):
+client check spawn-mod: PASS class=SM-fenced
+# A mod rewriting every spawn to a model outside the fence: fresh, resumed
+# and workflow agents land on the lead's model, never the rewritten one. A
+# rewrite of a resumed agent only: ignored ("a hook can only refuse a
+# resumed agent's run"). A managed allowManagedHooksOnly: the mod is not
+# loaded. The trust boundary: an unmanaged mod rewriting to another lineup
+# model moves fresh and workflow agents onto it (a resumed agent keeps its
+# spawn's model); the compiled --settings scope keeps hooks enabled for
+# charmer's own hooks, so only managed settings keep mods out.
+#
+# MCP rules and policy (tests/test_client_mcp_policy.py):
+client check mcp-policy: PASS class=MCP-named-deny-first
+# Servers fx, fx_ and fx__x: allow mcp__<server>__* grants each; allow
+# mcp__fx__* or mcp__fx grants fx alone; deny mcp__fx__x removes that whole
+# server (fx still runs). The bare allows mcp__fx_ and mcp__fx__x grant
+# nothing (observed while building the check): whole-server access is
+# mcp__<server>__*. A managed deniedMcpServers keeps a user server from
+# starting at launch, on --resume and in a terminal session with
+# /reload-plugins, and an agent's own server from starting at its spawn
+# (each starts without the policy). A user-settings deniedMcpServers did the
+# same at launch.
+#
+# Token destinations (tests/test_client_gateway_auth.py TokenDestinationPolicyTests):
+client check token-destinations: PASS
+# ANTHROPIC_BASE_URL only in the managed settings env: the helper token
+# reaches the gateway through it and no tripwire host. A helper refresh after
+# a 401 (the first token refused): both tokens only on the gateway, in a
+# terminal and headless.
+#
+# Client-side model changes (tests/test_client_fence_substitution.py):
+client check fence-substitution: PASS class=FS-fenced
+# A refused context-1m beta is resent once without it on the same model; an
+# unknown gateway name past 200K tokens compacts and answers on the same
+# model; responses naming another model change nothing (one request per
+# turn, never that model); a terminal /model to a smaller lead-set model
+# fires both switch hooks and stays on the two models (it compacted on the
+# new model; no previous-model summary offline); a 404 for claude-fable-5-1
+# (by id and by best) is retried on the same model and reported, never moved
+# to claude-fable-5 behind the gateway, even with it inside the fence.
