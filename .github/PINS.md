@@ -237,3 +237,23 @@ On 2026-10-19, with the bubblewrap, compiler and runtime changes and this
 workflow, actionlint 1.7.12 (ShellCheck 0.11.0 on the path) and zizmor 1.31.1
 (`--offline`, default persona, and pedantic at `--min-severity low`) ran over
 `.github/` locally: no findings.
+
+## Nix inputs (flake.lock)
+
+`nixpkgs` follows `nixos-unstable`, locked on 2026-10-18 to
+`fe13242281a67641c0102cdb1087f0ebe586c7df` (2026-10-15,
+`sha256-zp8ToDMnqZcu4o4IH9pdwXFXGp7yLm/M0dEnNWnyd7I=`), the newest revision
+of the channel. It supplies the Nix channel's Python and the development
+shell's tools only: the gateway is built from the recipe's pinned Go archive
+and vendored modules, and the release bundles carry their own runtime, so
+none of these versions reaches a bundle. The evaluated closure was checked,
+not the channel name: the package and the development shell build on it.
+
+| Package | Version in the lock | Newest upstream | Disposition | Verified |
+| --- | --- | --- | --- | --- |
+| bubblewrap | 0.12.0 | 0.13.1 | required floor 0.12.0 (GHSA-pxhw-h44j-8pfx), asserted by `nix/devshell.nix`; 0.13.1 follows the channel | 2026-10-19 |
+| python3 | 3.14.7 | 3.14.8 | channel version; the bundles ship python-build-standalone instead | 2026-10-19 |
+| openssl (default) | 3.5.8 | 3.5.9 / 3.6.5 | channel default, linked by the Nix Python's `ssl`; overriding it rebuilds Python from source, so it follows the channel and is re-checked at each release candidate | 2026-10-19 |
+| git | 2.55.0 | 2.56.0 | channel version (development shell and tests only) | 2026-10-19 |
+| gnupg | 2.4.9 (FreePG) | 2.5.24 | channel version (tests only); release trust stays SSH signatures | 2026-10-19 |
+| cacert | 3.126 | 3.126 | current | 2026-10-19 |
