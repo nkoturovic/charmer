@@ -1,0 +1,52 @@
+# Weekly online audit of the workflows with zizmor.
+#
+# The pull request lint (ci.yml) runs zizmor --offline; the audits that need
+# GitHub's API run here: impostor commits, ref confusion, stale action refs
+# and known-vulnerable actions, with the default persona, then the pedantic
+# persona at low severity and above (its informational anonymous-definition
+# notes are the exception recorded in .github/PINS.md). Read-only: the
+# workflow token can only read the repository; it opens no issue and fixes
+# nothing, and a finding fails the run. The weekly schedule runs only while
+# the repository variable CM_SCHEDULES is "on"; a manual run is not
+# affected.
+
+name: zizmor-online
+
+on:
+  schedule:
+    - cron: "37 4 * * 3"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: zizmor-online
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    if: github.event_name != 'schedule' || vars.CM_SCHEDULES == 'on'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14"
+      - name: zizmor by the hash of its wheel (.github/PINS.md)
+        run: |
+          umask 077
+          printf '%s\n' 'zizmor==1.31.1 --hash=sha256:58e878eb2dbd2c6183c105e1ac28c14f7dd1eca44a783f1fe2a69647d012c410' >"$RUNNER_TEMP/zizmor.txt"
+          python3 -m pip install --disable-pip-version-check --no-deps --only-binary=:all: --require-hashes --target "$RUNNER_TEMP/zizmor" -r "$RUNNER_TEMP/zizmor.txt"
+          "$RUNNER_TEMP/zizmor/bin/zizmor" --version
+      - name: Online audit, default and pedantic personas
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          umask 077
+          "$RUNNER_TEMP/zizmor/bin/zizmor" --cache-dir "$RUNNER_TEMP/zizmor-cache" .github
+          "$RUNNER_TEMP/zizmor/bin/zizmor" --cache-dir "$RUNNER_TEMP/zizmor-cache" --persona pedantic --min-severity low .github

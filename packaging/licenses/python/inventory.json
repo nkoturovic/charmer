@@ -1,6 +1,6 @@
 {
   "format": 1,
-  "python": "3.14.8",
+  "python": "3.15.0",
   "release": "20261013",
   "source": {
     "flavor": "pgo+lto-full",
@@ -8,17 +8,22 @@
   },
   "targets": {
     "darwin-arm64": {
+      "build": {
+        "gil": "enabled",
+        "jit": "built, off by default",
+        "options": "pgo+lto"
+      },
       "extensions_without_libraries": [
         "_ctypes_test"
       ],
       "full_archive": {
-        "filename": "cpython-3.14.8+20261013-aarch64-apple-darwin-pgo+lto-full.tar.zst",
-        "sha256": "5806ddb9d95d73796c87e1aeb45bf7ec984d08ae9eb94f9020436052b32ce498",
-        "size": 63467413
+        "filename": "cpython-3.15.0+20261013-aarch64-apple-darwin-pgo+lto-full.tar.zst",
+        "sha256": "08b94dbdc1d64613ddc832c6db205d8ae76aa183ff1bc767501e7780841a8484",
+        "size": 69004263
       },
       "install_only": {
-        "filename": "cpython-3.14.8+20261013-aarch64-apple-darwin-install_only_stripped.tar.gz",
-        "sha256": "994adadc202c5df0b4570192cc9a70e3f2c131e512f4a125c56efa8562f44b28"
+        "filename": "cpython-3.15.0+20261013-aarch64-apple-darwin-install_only_stripped.tar.gz",
+        "sha256": "b4ab2009803cef142e4ebf2ebef225f6875f83cc35caf4eefb437aa9b2b76783"
       },
       "libraries": [
         {
@@ -127,6 +132,7 @@
         },
         {
           "extensions": [
+            "_remote_debugging",
             "_zstd"
           ],
           "name": "zstd",
@@ -143,43 +149,43 @@
         {
           "extension": "_dbm",
           "libraries": [],
-          "pattern": "lib/python3.14/lib-dynload/_dbm*",
+          "pattern": "lib/python3.15/lib-dynload/_dbm*",
           "reason": "on the runtime's delete-only list"
         },
         {
           "extension": "_testbuffer",
           "libraries": [],
-          "pattern": "lib/python3.14/lib-dynload/_test*",
+          "pattern": "lib/python3.15/lib-dynload/_test*",
           "reason": "on the runtime's delete-only list"
         },
         {
           "extension": "_testcapi",
           "libraries": [],
-          "pattern": "lib/python3.14/lib-dynload/_test*",
+          "pattern": "lib/python3.15/lib-dynload/_test*",
           "reason": "on the runtime's delete-only list"
         },
         {
           "extension": "_testimportmultiple",
           "libraries": [],
-          "pattern": "lib/python3.14/lib-dynload/_test*",
+          "pattern": "lib/python3.15/lib-dynload/_test*",
           "reason": "on the runtime's delete-only list"
         },
         {
           "extension": "_testlimitedcapi",
           "libraries": [],
-          "pattern": "lib/python3.14/lib-dynload/_test*",
+          "pattern": "lib/python3.15/lib-dynload/_test*",
           "reason": "on the runtime's delete-only list"
         },
         {
           "extension": "_testmultiphase",
           "libraries": [],
-          "pattern": "lib/python3.14/lib-dynload/_test*",
+          "pattern": "lib/python3.15/lib-dynload/_test*",
           "reason": "on the runtime's delete-only list"
         },
         {
           "extension": "_testsinglephase",
           "libraries": [],
-          "pattern": "lib/python3.14/lib-dynload/_test*",
+          "pattern": "lib/python3.15/lib-dynload/_test*",
           "reason": "on the runtime's delete-only list"
         },
         {
@@ -200,7 +206,7 @@
               "version": "9.0.4"
             }
           ],
-          "pattern": "lib/python3.14/lib-dynload/_tkinter*",
+          "pattern": "lib/python3.15/lib-dynload/_tkinter*",
           "reason": "on the runtime's delete-only list"
         }
       ],
@@ -211,21 +217,26 @@
           "CNRI-Python"
         ],
         "text": "LICENSE.txt",
-        "version": "3.14.8"
+        "version": "3.15.0"
       }
     },
     "darwin-x86_64": {
+      "build": {
+        "gil": "enabled",
+        "jit": "not built",
+        "options": "pgo+lto"
+      },
       "extensions_without_libraries": [
         "_ctypes_test"
       ],
       "full_archive": {
-        "filename": "cpython-3.14.8+20261013-x86_64-apple-darwin-pgo+lto-full.tar.zst",
-        "sha256": "193223f1380c93f62dda1d2b1f08ac46c0de5a57e51ab9946598d5d88e10742b",
-        "size": 63077377
+        "filename": "cpython-3.15.0+20261013-x86_64-apple-darwin-pgo+lto-full.tar.zst",
+        "sha256": "ebd19979a55f81883b345ffedc4de90ef2e0b01397a447dd5b03a875ee23fa04",
+        "size": 68006103
       },
       "install_only": {
-        "filename": "cpython-3.14.8+20261013-x86_64-apple-darwin-install_only_stripped.tar.gz",
-        "sha256": "f0137337ecf6234b30c9c955219dae2d71e1a00387c4d204d6c6929e24bf9a90"
+        "filename": "cpython-3.15.0+20261013-x86_64-apple-darwin-install_only_stripped.tar.gz",
+        "sha256": "4760e8fb2821441c0dbc72be49a25400c6ae90be4daa7e2a49617ed09f6a2919"
       },
       "libraries": [
         {
@@ -334,6 +345,7 @@
         },
         {
           "extensions": [
+            "_remote_debugging",
             "_zstd"
           ],
           "name": "zstd",
@@ -350,43 +362,43 @@
         {
           "extension": "_dbm",
           "libraries": [],
-          "pattern": "lib/python3.14/lib-dynload/_dbm*",
+          "pattern": "lib/python3.15/lib-dynload/_dbm*",
           "reason": "on the runtime's delete-only list"
         },
         {
           "extension": "_testbuffer",
           "libraries": [],
-          "pattern": "lib/python3.14/lib-dynload/_test*",
+          "pattern": "lib/python3.15/lib-dynload/_test*",
           "reason": "on the runtime's delete-only list"
         },
         {
           "extension": "_testcapi",
           "libraries": [],
-          "pattern": "lib/python3.14/lib-dynload/_test*",
+          "pattern": "lib/python3.15/lib-dynload/_test*",
           "reason": "on the runtime's delete-only list"
         },
         {
           "extension": "_testimportmultiple",
           "libraries": [],
-          "pattern": "lib/python3.14/lib-dynload/_test*",
+          "pattern": "lib/python3.15/lib-dynload/_test*",
           "reason": "on the runtime's delete-only list"
         },
         {
           "extension": "_testlimitedcapi",
           "libraries": [],
-          "pattern": "lib/python3.14/lib-dynload/_test*",
+          "pattern": "lib/python3.15/lib-dynload/_test*",
           "reason": "on the runtime's delete-only list"
         },
         {
           "extension": "_testmultiphase",
           "libraries": [],
-          "pattern": "lib/python3.14/lib-dynload/_test*",
+          "pattern": "lib/python3.15/lib-dynload/_test*",
           "reason": "on the runtime's delete-only list"
         },
         {
           "extension": "_testsinglephase",
           "libraries": [],
-          "pattern": "lib/python3.14/lib-dynload/_test*",
+          "pattern": "lib/python3.15/lib-dynload/_test*",
           "reason": "on the runtime's delete-only list"
         },
         {
@@ -407,7 +419,7 @@
               "version": "9.0.4"
             }
           ],
-          "pattern": "lib/python3.14/lib-dynload/_tkinter*",
+          "pattern": "lib/python3.15/lib-dynload/_tkinter*",
           "reason": "on the runtime's delete-only list"
         }
       ],
@@ -418,21 +430,26 @@
           "CNRI-Python"
         ],
         "text": "LICENSE.txt",
-        "version": "3.14.8"
+        "version": "3.15.0"
       }
     },
     "linux-aarch64": {
+      "build": {
+        "gil": "enabled",
+        "jit": "built, off by default",
+        "options": "pgo+lto"
+      },
       "extensions_without_libraries": [
         "_ctypes_test"
       ],
       "full_archive": {
-        "filename": "cpython-3.14.8+20261013-aarch64-unknown-linux-gnu-pgo+lto-full.tar.zst",
-        "sha256": "45fe97bf0d07d7cef3fee5f1cab6e4a7d7e99a22e0d5f842e005ef61a9656c73",
-        "size": 99477000
+        "filename": "cpython-3.15.0+20261013-aarch64-unknown-linux-gnu-pgo+lto-full.tar.zst",
+        "sha256": "0d471dde53ea01fc68ac72b3dc698521a4c9e705bfa7e71bde1eccf4ed896585",
+        "size": 105830401
       },
       "install_only": {
-        "filename": "cpython-3.14.8+20261013-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz",
-        "sha256": "d8ae14f303d3971431184cf423ae5467202de2bc19bf6491a490250b87647d4b"
+        "filename": "cpython-3.15.0+20261013-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz",
+        "sha256": "064778ca701efc4c8366d0b235a2a0f5dbe14d921aeb2ef4f5c7b93e5a75cbd0"
       },
       "libraries": [
         {
@@ -583,6 +600,7 @@
         },
         {
           "extensions": [
+            "_remote_debugging",
             "_zstd"
           ],
           "name": "zstd",
@@ -607,43 +625,43 @@
               "version": "6.0.19"
             }
           ],
-          "pattern": "lib/python3.14/lib-dynload/_dbm*",
+          "pattern": "lib/python3.15/lib-dynload/_dbm*",
           "reason": "strong copyleft; charmer never imports it"
         },
         {
           "extension": "_testbuffer",
           "libraries": [],
-          "pattern": "lib/python3.14/lib-dynload/_test*",
+          "pattern": "lib/python3.15/lib-dynload/_test*",
           "reason": "on the runtime's delete-only list"
         },
         {
           "extension": "_testcapi",
           "libraries": [],
-          "pattern": "lib/python3.14/lib-dynload/_test*",
+          "pattern": "lib/python3.15/lib-dynload/_test*",
           "reason": "on the runtime's delete-only list"
         },
         {
           "extension": "_testimportmultiple",
           "libraries": [],
-          "pattern": "lib/python3.14/lib-dynload/_test*",
+          "pattern": "lib/python3.15/lib-dynload/_test*",
           "reason": "on the runtime's delete-only list"
         },
         {
           "extension": "_testlimitedcapi",
           "libraries": [],
-          "pattern": "lib/python3.14/lib-dynload/_test*",
+          "pattern": "lib/python3.15/lib-dynload/_test*",
           "reason": "on the runtime's delete-only list"
         },
         {
           "extension": "_testmultiphase",
           "libraries": [],
-          "pattern": "lib/python3.14/lib-dynload/_test*",
+          "pattern": "lib/python3.15/lib-dynload/_test*",
           "reason": "on the runtime's delete-only list"
         },
         {
           "extension": "_testsinglephase",
           "libraries": [],
-          "pattern": "lib/python3.14/lib-dynload/_test*",
+          "pattern": "lib/python3.15/lib-dynload/_test*",
           "reason": "on the runtime's delete-only list"
         },
         {
@@ -693,7 +711,7 @@
               "version": "1.3.2"
             }
           ],
-          "pattern": "lib/python3.14/lib-dynload/_tkinter*",
+          "pattern": "lib/python3.15/lib-dynload/_tkinter*",
           "reason": "on the runtime's delete-only list"
         }
       ],
@@ -704,21 +722,26 @@
           "CNRI-Python"
         ],
         "text": "LICENSE.txt",
-        "version": "3.14.8"
+        "version": "3.15.0"
       }
     },
     "linux-x86_64": {
+      "build": {
+        "gil": "enabled",
+        "jit": "built, off by default",
+        "options": "pgo+lto"
+      },
       "extensions_without_libraries": [
         "_ctypes_test"
       ],
       "full_archive": {
-        "filename": "cpython-3.14.8+20261013-x86_64-unknown-linux-gnu-pgo+lto-full.tar.zst",
-        "sha256": "6ea47477c59736c51914214a1608cc4fceb37a238e5b0ba6bb351bb665d6aca6",
-        "size": 113542267
+        "filename": "cpython-3.15.0+20261013-x86_64-unknown-linux-gnu-pgo+lto-full.tar.zst",
+        "sha256": "97e5094002d453f777236a0545e34ae39588c1a69708187eac117e4afb00db31",
+        "size": 121292208
       },
       "install_only": {
-        "filename": "cpython-3.14.8+20261013-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz",
-        "sha256": "d8faa1b588506b9e3e5a3f57807bb056d534a1641a6b10d15b6ea3f0b413b960"
+        "filename": "cpython-3.15.0+20261013-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz",
+        "sha256": "69740dcd9b3480b3d53760f2d3b75582adb14fa54434628dea32480ddede542a"
       },
       "libraries": [
         {
@@ -869,6 +892,7 @@
         },
         {
           "extensions": [
+            "_remote_debugging",
             "_zstd"
           ],
           "name": "zstd",
@@ -893,43 +917,43 @@
               "version": "6.0.19"
             }
           ],
-          "pattern": "lib/python3.14/lib-dynload/_dbm*",
+          "pattern": "lib/python3.15/lib-dynload/_dbm*",
           "reason": "strong copyleft; charmer never imports it"
         },
         {
           "extension": "_testbuffer",
           "libraries": [],
-          "pattern": "lib/python3.14/lib-dynload/_test*",
+          "pattern": "lib/python3.15/lib-dynload/_test*",
           "reason": "on the runtime's delete-only list"
         },
         {
           "extension": "_testcapi",
           "libraries": [],
-          "pattern": "lib/python3.14/lib-dynload/_test*",
+          "pattern": "lib/python3.15/lib-dynload/_test*",
           "reason": "on the runtime's delete-only list"
         },
         {
           "extension": "_testimportmultiple",
           "libraries": [],
-          "pattern": "lib/python3.14/lib-dynload/_test*",
+          "pattern": "lib/python3.15/lib-dynload/_test*",
           "reason": "on the runtime's delete-only list"
         },
         {
           "extension": "_testlimitedcapi",
           "libraries": [],
-          "pattern": "lib/python3.14/lib-dynload/_test*",
+          "pattern": "lib/python3.15/lib-dynload/_test*",
           "reason": "on the runtime's delete-only list"
         },
         {
           "extension": "_testmultiphase",
           "libraries": [],
-          "pattern": "lib/python3.14/lib-dynload/_test*",
+          "pattern": "lib/python3.15/lib-dynload/_test*",
           "reason": "on the runtime's delete-only list"
         },
         {
           "extension": "_testsinglephase",
           "libraries": [],
-          "pattern": "lib/python3.14/lib-dynload/_test*",
+          "pattern": "lib/python3.15/lib-dynload/_test*",
           "reason": "on the runtime's delete-only list"
         },
         {
@@ -979,7 +1003,7 @@
               "version": "1.3.2"
             }
           ],
-          "pattern": "lib/python3.14/lib-dynload/_tkinter*",
+          "pattern": "lib/python3.15/lib-dynload/_tkinter*",
           "reason": "on the runtime's delete-only list"
         }
       ],
@@ -990,7 +1014,7 @@
           "CNRI-Python"
         ],
         "text": "LICENSE.txt",
-        "version": "3.14.8"
+        "version": "3.15.0"
       }
     }
   },

@@ -132,16 +132,20 @@ class Fixture:
             stored = self.cache / "python-runtimes" / entry["sha256"] / entry["filename"]
             stored.parent.mkdir(parents=True)
             stored.write_bytes(data)
-        shipped["prune"] = sorted(set(shipped["prune"]) | {f"lib/python{MINOR}/ensurepip"})
+        # The shipped prune entries name lib/python{python_minor}: they follow
+        # the version set here (ensurepip among them).
         self.runtimes = root / "python-runtimes.json"
         self.runtimes.write_text(json.dumps(shipped, indent=2))
         # The checked-in licence inventory, describing the synthetic runtimes.
         self.runtime_licenses = root / "runtime-licenses"
         shutil.copytree(RUNTIME_LICENSES, self.runtime_licenses)
         inventory = json.loads((self.runtime_licenses / "inventory.json").read_text())
+        pinned_minor = ".".join(inventory["python"].split(".")[:2])
         inventory["python"] = PYTHON_VERSION
         for target, entry in shipped["targets"].items():
             inventory["targets"][target]["install_only"] = {"filename": entry["filename"], "sha256": entry["sha256"]}
+            for pruned in inventory["targets"][target]["pruned"]:
+                pruned["pattern"] = pruned["pattern"].replace(f"lib/python{pinned_minor}/", f"lib/python{MINOR}/")
         (self.runtime_licenses / "inventory.json").write_text(json.dumps(inventory, indent=2))
         self.dist = root / "dist-gateway"
         self.write_gateway_dist(tool)
