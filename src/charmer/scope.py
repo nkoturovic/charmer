@@ -2343,7 +2343,8 @@ _FENCE_POLICIES = frozenset({(None, HOOK_TIMEOUT_SECONDS), (HOOK_ON_FAILURE_BLOC
 def _fence_failure_split(document: Mapping[str, Any]) -> tuple[Any, Any] | None:
     """``(document without the PreModelSwitch hooks' failure policy, that
     policy)``; None when the policy is not one a release compiled
-    (:data:`_FENCE_POLICIES`, the same on every PreModelSwitch hook)."""
+    (:data:`_FENCE_POLICIES`, the same on every PreModelSwitch hook),
+    including a value of another type (a list or an object)."""
 
     hooks = document.get("hooks")
     if not isinstance(hooks, Mapping) or not isinstance(hooks.get("PreModelSwitch"), list):
@@ -2355,7 +2356,11 @@ def _fence_failure_split(document: Mapping[str, Any]) -> tuple[Any, Any] | None:
         entries = []
         for hook in group["hooks"]:
             if isinstance(hook, Mapping):
-                values.add((hook.get("onFailure"), hook.get("timeout")))
+                on_failure, timeout = hook.get("onFailure"), hook.get("timeout")
+                if not (on_failure is None or isinstance(on_failure, str)) or not (
+                        isinstance(timeout, int) and not isinstance(timeout, bool)):
+                    return None
+                values.add((on_failure, timeout))
                 hook = {key: value for key, value in hook.items() if key not in ("onFailure", "timeout")}
             entries.append(hook)
         groups.append({**group, "hooks": entries})

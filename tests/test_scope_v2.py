@@ -954,6 +954,28 @@ class ForkPolicyDriftTests(unittest.TestCase):
         edited["env"]["CLAUDE_CODE_SUBAGENT_MODEL"] = "charmer-opus-5[1m]"
         self.assertFalse(self.drift(self.plan, edited)[1])
 
+    def test_a_fence_failure_policy_of_another_type_is_drift_never_an_error(self) -> None:
+        """A readable settings.json whose fence hook states its policy as a
+        list, an object, a boolean or a string is ordinary drift (doctor
+        BLOCK), on the live scope or in the plan; nothing raises."""
+
+        settings = self.plan.settings
+        for value, timeout in (("block", []), ("block", {}), ({}, 15), (["block"], 15), ("block", True),
+                               ("block", "15"), (None, None), ("block", 15.5)):
+            with self.subTest(value=value, timeout=timeout):
+                malformed = self.fence_policy(settings, None, 15)
+                hook = malformed["hooks"]["PreModelSwitch"][0]["hooks"][0]
+                hook["timeout"] = timeout
+                if value is not None:
+                    hook["onFailure"] = value
+                if timeout is None:
+                    del hook["timeout"]
+                self.assertEqual(self.drift(self.plan, malformed), ([f"{scope.SETTINGS_RELPATH} content differs"],
+                                                                    False))
+                self.assertIsNone(scope._fence_failure_split(malformed))
+                self.assertFalse(self.drift(dataclasses.replace(self.plan, settings=malformed),
+                                            copy.deepcopy(settings))[1])
+
 
 class DenyTests(unittest.TestCase):
     def test_seed_denies(self) -> None:
