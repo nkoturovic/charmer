@@ -10,7 +10,8 @@ Ordinary commands share one exit table: 0 success, 1 a failure, a refusal or
 an unavailable result, 2 an invalid command line, 3 a change the person
 declined, 130 an interrupt. Human errors go to stderr; results to stdout.
 The hooks, ``/cm`` (skill mode) and the gateway tool keep their own protocol
-statuses.
+statuses. ``update --verify`` uses 0 complete, 1 mismatch and 3 incomplete
+or unsupported, rather than the ordinary failure/decline meanings.
 """
 
 from __future__ import annotations
@@ -87,6 +88,9 @@ def main(
             return 0
         raise
 
+    problem = parser_mod.update_mode_problem(args)
+    if problem is not None:
+        parser.error(problem)
     output = output_stream or sys.stdout
     # Refuse the retired flag before constructing Runtime (which refreshes
     # shims and creates store directories), including picker/print launches.
@@ -98,6 +102,18 @@ def main(
     tty_in: TextIO | None = None
     tty_out: TextIO | None = None
     try:
+        if args.command == "update" and args.update_verify:
+            # An integrity report needs no Runtime, stores, channel claim,
+            # migration recovery, shim refresh, token or terminal acquisition.
+            if passthrough:
+                _refuse_passthrough()
+            import charmer.cli.commands.update as commands_update
+
+            return commands_update._verify_command(
+                args, environ=runtime.environ if runtime is not None else os.environ,
+                output_stream=output, error_stream=sys.stderr,
+                state_root=runtime._session_store_root if runtime is not None else None,
+            )
         state_path = (
             runtime.session_store.root if runtime is not None else sessions.state_root()
         )

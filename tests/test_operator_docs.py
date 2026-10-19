@@ -1286,7 +1286,7 @@ class PageAnchorTests(unittest.TestCase):
                 self.assertIn("running the script does not authenticate it first", flat)
                 self.assertNotIn("not covered by the release signature", flat)
 
-    def test_doctor_discloses_housekeeping_and_the_read_only_mode(self) -> None:
+    def test_doctor_discloses_passive_reports_and_explicit_mutations(self) -> None:
         from charmer.cli.parser import build_parser
 
         parser = build_parser()
@@ -1295,7 +1295,8 @@ class PageAnchorTests(unittest.TestCase):
         for name, text in (("help", help_text), ("troubleshooting", _flat(_text("troubleshooting.md"))),
                            ("reference", _flat(_text("reference/cli.md")))):
             with self.subTest(surface=name):
-                self.assertIn("refreshes the helper shims", text)
+                self.assertNotIn("refreshes the helper shims", text)
+                self.assertIn("release metadata", text)
                 self.assertIn("doctor --json", text)
                 self.assertIn("read-only report", text)
                 self.assertNotIn("never changes anything", text)

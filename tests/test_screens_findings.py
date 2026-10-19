@@ -141,8 +141,9 @@ class FindingsListTests(_FindingsCase):
         gateway_rows = texts[texts.index("Gateway (2)") + 1:texts.index("Gateway (2)") + 3]
         # Collected last, listed first: the persistence hold leads the Gateway area.
         self.assertTrue(gateway_rows[0].startswith("! gateway persistence hold: HELD"), gateway_rows)
-        self.assertEqual(kinds[-1][0], "toggle")
-        self.assertIn(doctor.ADVISORIES_TITLE, kinds[-1][1])
+        self.assertEqual(kinds[-2][0], "toggle")
+        self.assertIn(doctor.ADVISORIES_TITLE, kinds[-2][1])
+        self.assertEqual(kinds[-1][0], "verify")
 
     def test_cli_and_h_share_ordering_totals_and_targets(self) -> None:
         problems, info, attention = mixed_report()
@@ -164,13 +165,31 @@ class FindingsListTests(_FindingsCase):
     def test_advisories_are_one_row_closed_until_enter_opens_them(self) -> None:
         screen = self.screen()
         self.assertFalse(any(item.row is not None and item.row.level == doctor.ADVISORY for item in screen.lines))
-        keys = [DOWN] * (len(screen.selectable) - 1) + [ENTER, ESC]
+        keys = _steps_to(screen, lambda item: item.kind == "toggle") + [ENTER, ESC]
         _result, win = self.drive(screen, keys)
         opened = [item for item in screen.lines if item.row is not None and item.row.level == doctor.ADVISORY]
         self.assertEqual(len(opened), 1)
         self.assertIn("(3 profiles, 12 slots)", opened[0].text)
         self.assertEqual(len(opened[0].row.originals), 12)
         self.assertIn("▾ " + doctor.ADVISORIES_TITLE, win.frames[-1])
+
+    def test_plain_doctor_and_opening_h_never_fetch_release_metadata(self) -> None:
+        from charmer import install_verify, release_update
+        from charmer.cli import entry
+        from test_install_verification_cli import snapshot
+
+        before = snapshot(self.tmp)
+        with mock.patch.object(install_verify, "verify_current", side_effect=AssertionError("passive verify")), \
+                mock.patch.object(release_update, "HttpsTransport", side_effect=AssertionError("passive fetch")):
+            output = io.StringIO()
+            entry.main(["doctor"], runtime=self.runtime, output_stream=output, interactive=False)
+            screen = findings.FindingsScreen(self.runtime, palette=tui.MONO_PALETTE,
+                                             tty_in=io.StringIO(), tty_out=io.StringIO())
+            _result, win = self.drive(screen, [ESC])
+        self.assertEqual(snapshot(self.tmp), before)
+        self.assertIn("charmer doctor", win.frames[-1])
+        self.assertTrue(any(item.kind == "verify" for item in screen.lines))
+        self.assertNotIn("Verified against the signed release", output.getvalue())
 
     def test_v_shows_every_original_line(self) -> None:
         screen = self.screen()
@@ -206,7 +225,7 @@ class FindingsListTests(_FindingsCase):
 
     def test_nothing_to_report(self) -> None:
         screen = self.screen(([], ["Sessions: 0 recorded."], []))
-        _result, win = self.drive(screen, [ENTER, ESC])
+        _result, win = self.drive(screen, [ENTER, ESC, ESC])
         self.assertIn(f"{cli_text.FINDINGS_TITLE} — Ready", win.frames[-1])
         self.assertIn(cli_text.FINDINGS_NONE, win.frames[-1])
 

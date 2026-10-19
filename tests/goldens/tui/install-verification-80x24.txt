@@ -1,0 +1,24 @@
+
+  Verify this installation
+  ─────────────────────────────────────────────────────────────────────────────
+  signed-release: match — signature and outer release manifest authenticated
+  for exact installed version
+  inner-manifest: match — installed inner manifest authenticated by selected
+  asset
+  bundle-content: match — 6 regular files; content matches
+  gateway: match — libexec/charmer/cli-proxy-api: matches authenticated
+  identity
+  managed-client: match — Claude Code 2.1.300: matches authenticated identity
+  running-gateway: stopped — gateway is stopped; no running executable to
+  verify
+  Verified against the signed release using installed trust.
+  Nothing was changed.
+
+
+
+
+
+
+
+
+  Up/Down scroll · PgUp/PgDn page · Home/End  · Esc back

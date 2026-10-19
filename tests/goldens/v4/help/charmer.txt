@@ -34,7 +34,7 @@ Manage:
   window-ceiling  show, set or reset the context window ceiling of the lead and every agent (200K to
                   800K, default 800K; applies at the next launch or resume)
   gateway         the local gateway: status, logs, start, stop, restart and the supervised service
-  update          update charmer itself, or roll back to the previously installed version
+  update          update charmer, verify this installation, or roll back to the previous version
   export          write your configuration as a portable file (no keys, sessions, logs or evidence)
   import          preview an exported configuration on this computer; --apply writes the ready items
 

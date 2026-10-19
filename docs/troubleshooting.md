@@ -2,9 +2,10 @@
 
 Start with `charmer doctor`. It reports **Ready**, **Attention**
 (a warning to assess, with a remedy) or **BLOCKED** (something is
-broken, and what). Plain `doctor` refreshes the helper shims as routine
-housekeeping; repair, pruning and token rotation require their explicit
-options. Use `charmer doctor --json` for a read-only report.
+broken, and what). Plain `doctor` is read-only; repair, pruning and token
+rotation require their explicit options. Use `charmer doctor --json` for a
+machine-readable, read-only report. Neither plain doctor nor opening **H** fetches
+release metadata.
 The tables below go from a symptom to the doctor finding, the safest fix
 and how to check it worked. [CHEATSHEET.md](CHEATSHEET.md) has the short
 version.
@@ -30,12 +31,17 @@ that do not run and have no recorded end: mark-ended for each; sessions
 that need a lead: Sessions; a newer shipped profile: reseed; an advisory
 model: its optional diagnostics, **M** → **Q**). Any other row shows its exact
 command. **V** shows the full report as `doctor -v` prints it, **G** the
-gateway's actions (start, restart, log).
+gateway's actions (start, restart, log). The separate **Verify this installation**
+row runs only when selected: choose downloaded release files for fully offline
+verification, or confirm the exact-version online fetch (Cancel is focused).
+It cannot repair or restart anything; [verification](update.md#verify-an-installation)
+is not the doctor's readiness verdict.
 
 An installation from before the rename is moved with
 `charmer migrate from-legacy` ([the migration guide](guides/legacy-migration.md));
-while that move is unfinished, every other command refuses and names it (but
-for `charmer gateway status`, `logs` and `clear-hold` from when its folders
+while that move is unfinished, other commands refuse and name it (read-only
+`update --verify` remains available, as do `charmer gateway status`, `logs`
+and `clear-hold` from when its folders
 are in place until `--back` changes them, so a persistence hold can be
 resolved).
 
@@ -47,6 +53,24 @@ Two rules come first:
   before any restart, update or uninstall.
 - Never delete files under `~/.claude` to fix a session, never edit
   generated files or records by hand, and never turn TLS verification off.
+
+## Installation verification
+
+Run `charmer update --verify` explicitly, or add `--from-dir <dir>` to use
+downloaded signed metadata with no network. See [what it verifies](update.md#verify-an-installation).
+
+| Result | Meaning | Safest next step |
+| --- | --- | --- |
+| `mismatch` (exit 1) | signed metadata, installed content or a component differs | assess the named component; use the signed release installer or a compatible rollback, never hand-edit the manifest or ignore a file |
+| `different-running-build` (exit 1) | installed links changed but the running gateway is not that build | between turns, explicit `charmer gateway restart`, then status, verify and doctor; never bypass a held stop |
+| `stopped` with `verified` (exit 0) | installed files verified, no running gateway | not ready: start only through the supported guarded path, then check status and doctor |
+| `unavailable` / incomplete (exit 3) | signed files, ownership or process bytes cannot be proved, or the install/platform is unsupported | follow the stated limit; a downloaded exact-release directory can replace an unavailable online fetch, not a missing process proof |
+
+The 2.0.1 updater leaves the old gateway running after switching links. After
+rollback to 2.0.1, `--verify` is unavailable, not successful. Running-byte
+verification is Linux-only; before updating a Mac, check the **macOS 13** floor
+because the old updater does not guarantee refusal. [The update sequence](update.md#updating-from-201)
+keeps restart, integrity and readiness checks separate.
 
 ## The gateway
 

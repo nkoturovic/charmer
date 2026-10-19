@@ -1169,15 +1169,20 @@ class CardKeyTests(_CardCase):
 
         from charmer.cli import doctor as doctor_mod
         from charmer.cli import gateway_facts
+        from charmer.cli.screens import launch_sessions
 
         line = gateway_facts.tagged("1 session(s) need a profile or model choice (lead removed): resume "
                                     "interactively — 1111aaaa", area="Sessions", action="needs-choice")
         screen = self.card()
         intent = ("perform", object(), None)
         with mock.patch.object(doctor_mod, "_collect_doctor_reports", return_value=([], [], [line])), \
-                mock.patch.object(screen, "_open_sessions", return_value=intent) as sessions_screen:
+                mock.patch.object(launch_sessions, "_SessionsScreen") as sessions_screen:
+            sessions_screen.return_value.records = [object()]
+            sessions_screen.return_value._needs_menu.return_value = intent
             result, _win = self.run_card(screen, ["h", ENTER])
         sessions_screen.assert_called_once()
+        self.assertEqual(sessions_screen.return_value.filter_mode, "needs a choice")
+        sessions_screen.return_value._needs_menu.assert_called_once()
         self.assertIs(result, intent)
 
     def test_help_modal_shows_quick_help_and_the_guarantee_panel_without_launching(self) -> None:
@@ -1281,7 +1286,7 @@ class CardKeyTests(_CardCase):
         with mock.patch.dict(self.runtime.environ, {"CHARMER_CHANNEL": "bundle"}), \
                 mock.patch.object(release_update, "run", side_effect=AssertionError("not checked")):
             screen = self.card(update_hint=("1.0.0", "released 2026-10-15"), tty_in=tty_in, tty_out=tty_out)
-            self.run_card(screen, ["u", ESC])
+            self.run_card(screen, ["u", RIGHT, ENTER, ESC])
         self.assertIn("Check the release server for a newer charmer now? [y/N]", tty_out.getvalue())
         self.assertIn("Nothing was checked.", tty_out.getvalue())
         calls = []
@@ -1290,8 +1295,27 @@ class CardKeyTests(_CardCase):
                 mock.patch.object(release_update, "run", side_effect=lambda journey, **kw: calls.append(
                     (journey.channel, kw["mode"])) or 0):
             screen = self.card(update_hint=("1.0.0", "released 2026-10-15"), tty_in=tty_in, tty_out=tty_out)
-            self.run_card(screen, ["u", ESC])
+            self.run_card(screen, ["u", RIGHT, ENTER, ESC])
         self.assertEqual(calls, [("bundle", "update")])
+
+    def test_u_verify_is_separate_from_latest_release_and_cancel_is_read_only(self) -> None:
+        from charmer import release_update
+        from charmer.cli.screens import findings
+        from test_install_verification_cli import snapshot
+
+        before = snapshot(self.tmp)
+        calls = []
+        with mock.patch.dict(self.runtime.environ, {"CHARMER_CHANNEL": "bundle"}), \
+                mock.patch.object(release_update, "journey_for", side_effect=AssertionError("no update journey")), \
+                mock.patch.object(findings, "run_install_verification", side_effect=lambda *a, **kw: calls.append(a)):
+            screen = self.card(update_hint=("2.1.0", "installed"))
+            self.run_card(screen, ["u", ENTER, ESC])
+            self.assertEqual(calls, [])
+            screen = self.card(update_hint=("2.1.0", "installed"))
+            self.run_card(screen, ["u", RIGHT, RIGHT, ENTER, ESC])
+        self.assertEqual(len(calls), 1)
+        self.assertIs(calls[0][0], self.runtime)
+        self.assertEqual(snapshot(self.tmp), before)
 
     def test_default_card_never_shows_the_update_badge(self) -> None:
         screen = cli._LaunchCardScreen(

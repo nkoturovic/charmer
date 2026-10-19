@@ -42,8 +42,9 @@ STREAMS = ("stdout", "terminal")
 # The exit contract of a surface: the ordinary user-command table (0 ok, 1
 # failed, refused or unavailable, 2 usage, 3 declined, 130 interrupted), the
 # gateway tool's documented statuses, the hooks' fail-open/fail-closed
-# protocol, or the /cm skill transport (status 0 with the text).
-EXITS = ("user", "proxy", "hook", "skill")
+# protocol, the /cm skill transport (status 0 with the text), or installed
+# verification (0 complete, 1 mismatch, 3 incomplete/unsupported; 2 usage, 130 interrupted).
+EXITS = ("user", "proxy", "hook", "skill", "verification")
 # How a destructive operation is confirmed.
 CONFIRMS = (
     "y/N, default No; --yes off a terminal",
@@ -299,6 +300,17 @@ OPERATIONS: tuple[Op, ...] = (
        audience="maintenance", cli=("update --from-dir", "update --base-url"),
        absent={"tui": "an explicit release source is a maintainer's input; U uses the release's own location"},
        confirm="y/N, default No; --yes off a terminal", stream="stdout", exit="user"),
+    Op("install.verify", "install", "verify the exact installed release and running gateway; never repair or restart",
+       cli=("update --verify", "update --verify --from-dir"),
+       tui=(_t("card.update", "card → U → Verify installed", "an installed release",
+               f"{T_CARD}.CardKeyTests.test_u_verify_is_separate_from_latest_release_and_cancel_is_read_only"),
+            _t("findings.act", "H → Verify this installation → Enter", ALWAYS,
+               "tests.test_screens_install_verification.VerificationScreenTests."
+               "test_h_enter_downloaded_directory_uses_shared_core_offline")),
+       confirm="dialog with Cancel focused first", stream="stdout", exit="verification"),
+    Op("install.verify-json", "install", "the installation verification as one JSON object",
+       audience="scripting", cli=("update --verify --json",), absent={"tui": MACHINE_TUI},
+       stream="stdout", exit="verification"),
     Op("install.rollback", "install", "switch back to the previously installed version",
        cli=("update --rollback",), absent={"tui": INSTALL_TUI}, destructive=True,
        confirm="y/N, default No; --yes off a terminal", stream="stdout", exit="user"),
@@ -1184,7 +1196,7 @@ REQUIRED: tuple[str, ...] = (
     "setup.gateway", "setup.providers", "setup.test", "setup.profile", "setup.check", "setup.answers",
     "setup.keys-file", "setup.proxy",
     "install.identity", "install.update-check", "install.update", "install.update-nix", "install.update-local",
-    "install.rollback", "install.uninstall-preview", "install.uninstall",
+    "install.verify", "install.verify-json", "install.rollback", "install.uninstall-preview", "install.uninstall",
     "gateway.status", "gateway.start", "gateway.ensure", "gateway.restart", "gateway.stop", "gateway.logs",
     "gateway.logs-instance", "gateway.clear-hold",
     "gateway-service.status", "gateway-service.install", "gateway-service.uninstall",

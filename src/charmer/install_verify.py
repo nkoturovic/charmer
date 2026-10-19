@@ -26,7 +26,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Callable, Mapping, TYPE_CHECKING
 
-from . import bundle_content, pin, self_update, service, strict_json, trust
+from . import bundle_content, errors, pin, self_update, service, strict_json, trust
 
 if TYPE_CHECKING:
     from .gateway_lifecycle import Observation
@@ -402,7 +402,10 @@ def verify_installation(*, environ: Mapping[str, str], channel: str | None, runn
     component = "installation"
     descriptors: list[int] = []
     try:
-        client_platform = client_platform or pin.host_platform()
+        try:
+            client_platform = client_platform or pin.host_platform()
+        except errors.CharmerError:
+            raise _Problem("unsupported", "this platform has no supported signed bundle") from None
         expected_target = _TARGETS.get(client_platform)
         if expected_target is None:
             raise _Problem("unsupported", "this platform has no supported signed bundle")
@@ -492,6 +495,38 @@ def verify_installation(*, environ: Mapping[str, str], channel: str | None, runn
     return Verification(version, target, tuple(checks))
 
 
+def verify_current(*, environ: Mapping[str, str], from_dir: Path | None = None,
+                   disclose: Callable[[str], None] | None = None,
+                   state_root: Path | None = None) -> Verification:
+    """CLI/TUI adapter with no Runtime or transaction preparation.
+
+    The actual package location identifies the running launcher, never an
+    assets or hook-command override. Only Linux's metadata-only observation
+    runs here: other platforms' ownership probes can connect to local TCP.
+    """
+    from . import endpoint, layout, paths, resources_root
+
+    gateway = None
+
+    def observe() -> Observation:
+        nonlocal gateway
+        from .gateway_lifecycle import Gateway
+
+        try:
+            if gateway is None:
+                gateway = Gateway(home=paths.home(environ),
+                                  state_root=state_root if state_root is not None else paths.state_root(dict(environ)),
+                                  environ=environ,
+                                  gateway_document=strict_json.load(resources_root() / "catalog/gateway.json"))
+            return gateway.observe()
+        except errors.CharmerError:
+            raise OSError("gateway observation is unavailable") from None
+
+    return verify_installation(environ=environ, channel=endpoint.channel(environ), running=layout.installation(),
+                               observe=observe if sys.platform.startswith("linux") else None,
+                               from_dir=from_dir, disclose=disclose, platform=sys.platform)
+
+
 def _process_identity(proc_root: Path, pid: int) -> tuple:
     """Identity around the opened executable: namespace, proc inode, start ticks."""
     namespace = os.readlink(proc_root / "self/ns/pid")
@@ -527,7 +562,9 @@ def verify_running_gateway(observe: Callable[[], Observation] | None, expected: 
     """
     component = "running-gateway"
     if observe is None:
-        return Check(component, "unavailable", "gateway ownership observation is unavailable")
+        detail = ("gateway ownership observation is unavailable" if platform.startswith("linux") else
+                  "running executable bytes can only be verified on Linux; gateway was not probed")
+        return Check(component, "unavailable", detail)
     try:
         first = observe()
         if first.state == "stopped":

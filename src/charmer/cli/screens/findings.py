@@ -21,6 +21,8 @@ diagnostics (M → Q); sessions that need a lead open Sessions. Each one asks
 first (Cancel focused, or the preview's y/N) and refreshes the report after.
 Any other row shows its exact command. Finding text is data: it is drawn,
 never parsed or run. Opening the list runs doctor's local checks only.
+A separate explicit verification row offers offline signed metadata or an
+online fetch confirmed before it starts; it never refreshes the doctor report.
 """
 
 from __future__ import annotations
@@ -48,14 +50,14 @@ class Item:
     """One line of the list: a section or area header, the advisories'
     header (``toggle``), a finding, or the empty report's line."""
 
-    kind: str  # section | area | toggle | finding | none
+    kind: str  # section | area | toggle | finding | none | verify
     text: str
     role: str = "normal"
     row: doctor.Row | None = None
 
     @property
     def selectable(self) -> bool:
-        return self.kind in ("finding", "toggle")
+        return self.kind in ("finding", "toggle", "verify")
 
 
 def items(presentation: doctor.Presentation, *, expanded: bool,
@@ -87,6 +89,7 @@ def items(presentation: doctor.Presentation, *, expanded: bool,
             findings(advisories, "  ")
     if not out:
         out.append(Item("none", cli_text.FINDINGS_NONE, "ok"))
+    out.append(Item("verify", "Verify this installation (explicit; signed release)", "accent"))
     return out
 
 
@@ -196,6 +199,9 @@ class FindingsScreen:
         item = self.item()
         if item is None:
             return []
+        if item.kind == "verify":
+            return ["Read-only integrity check; never repairs or restarts.",
+                    "Choose downloaded release files, or confirm an exact-version fetch."]
         if item.row is None:
             return textwrap.wrap(cli_text.FINDINGS_ADVISORIES_NOTE, max(20, width - 3))[:_INFO_LINES]
         if len(item.row.originals) > 1:
@@ -249,8 +255,9 @@ class FindingsScreen:
             tui.safe_add(win, y, 2, line, palette.attr("dim"))
         item = self.item()
         if item is not None:
-            hint = action_hint(item.row) if item.row is not None else (
-                cli_text.FINDINGS_ADVISORIES_OPEN if self.expanded else cli_text.FINDINGS_ADVISORIES_CLOSED)
+            hint = ("Enter: verify this installation" if item.kind == "verify" else
+                    action_hint(item.row) if item.row is not None else
+                    cli_text.FINDINGS_ADVISORIES_OPEN if self.expanded else cli_text.FINDINGS_ADVISORIES_CLOSED)
             tui.safe_add(win, hint_row, 2, views.clip(hint, width - 3), palette.attr("accent"))
         if self.message:
             tui.safe_add(win, message_row, 2, views.clip(self.message.replace("\n", " "), width - 3),
@@ -309,6 +316,9 @@ class FindingsScreen:
     def _enter(self, win: Any) -> tuple | None:
         item = self.item()
         if item is None:
+            return None
+        if item.kind == "verify":
+            run_install_verification(self.runtime, win, self.palette, background=self._draw)
             return None
         if item.kind == "toggle":
             self.expanded = not self.expanded
@@ -542,6 +552,52 @@ class FindingsScreen:
             return result
         self._collect()
         return None
+
+
+class _VerificationCancelled(Exception):
+    """The explicit online disclosure was declined, before any fetch."""
+
+
+def run_install_verification(runtime: Any, win: Any, palette: tui.Palette, *,
+                             background: Callable | None = None) -> None:
+    """The update pane and H share this explicit, read-only verification flow."""
+    from pathlib import Path
+    from charmer import install_verify
+
+    title = "Verify this installation"
+    mode = tui.Modal(title, screens_common.modal_lines(
+        "Verify the exact installed release with installed trust. Downloaded files are fully offline. "
+        "Online verification asks before fetching. No repair or restart.", win),
+        buttons=(("Cancel", None), ("Downloaded files", "local"), ("Online", "online")), default=None).run(
+            win, palette, background=background)
+    if mode is None:
+        return
+    directory = None
+    if mode == "local":
+        values = tui.OnboardingForm(title, (("directory", "Downloaded release directory", "", ()),),
+                                    palette=palette, footer="Read-only, fully offline; nothing is changed.",
+                                    help_text="Use the installed exact version's MANIFEST.json, SHA256SUMS and "
+                                              "SHA256SUMS.sshsig. Trust comes from the installation, not this folder.",
+                                    checks={"directory": lambda value: None if value else
+                                            "Enter a downloaded release directory, or Esc to cancel."}).run(win)
+        if values is None:
+            return
+        directory = Path(values["directory"]).expanduser()
+
+    def disclose(text: str) -> None:
+        if not tui.Modal("Fetch signed release metadata?",
+                         screens_common.modal_lines(termtext.visible_text(text), win),
+                         buttons=(("Cancel", False), ("Verify", True)), default=False).run(
+                             win, palette, background=background):
+            raise _VerificationCancelled
+
+    try:
+        result = install_verify.verify_current(environ={**runtime.environ, "HOME": str(runtime.home)},
+                                               state_root=runtime._session_store_root,
+                                               from_dir=directory, disclose=disclose)
+    except _VerificationCancelled:
+        return
+    tui.TextView(title, [termtext.visible_text(line) for line in result.lines()], palette=palette).run(win)
 
 
 def run_findings_screen(runtime: Any, win: Any, palette: tui.Palette, *, tty_in: TextIO, tty_out: TextIO,

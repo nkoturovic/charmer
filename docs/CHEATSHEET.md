@@ -56,6 +56,7 @@ or unknown ids refuse and list candidates instead of choosing a session.
 | the gateway | G → W; D → W → Start now; H → G → r, l | `charmer gateway status`; `charmer gateway start`; `charmer gateway restart`; `charmer gateway logs` | not a `/cm` request | [guides/gateway.md](guides/gateway.md) |
 | the gateway as a user service (Linux) | H → G → i; G → W | `charmer gateway service install`; `charmer gateway service status` | not a `/cm` request | unit `charmer-gateway` |
 | update | U | `charmer update --check`; `charmer update` | not a `/cm` request | shows its plan, then asks |
+| verify this installation | U → Verify installed | `charmer update --verify`; `charmer update --verify --from-dir <dir>`; `charmer update --verify --json` | not a `/cm` request | read-only signed integrity, not readiness; `--from-dir` is fully offline |
 | roll back, uninstall | not in the launcher: it replaces or removes the running installation, so it runs from a terminal where the launcher starts again cleanly | `charmer update --rollback`; `charmer uninstall --dry-run` | not a `/cm` request | [update.md](update.md), [uninstall.md](uninstall.md) |
 | export, import | not in the launcher: portable-file input and output: the file is written for, or read from, another computer | `charmer export --out <file>`; `charmer import <file>` | not a `/cm` request | no keys travel |
 

@@ -328,9 +328,12 @@ locks, inhibition or failed-save evidence, and never clear a failed save just
 to start the restored gateway. Missing old journal evidence can still hold;
 recovery does not manufacture it.
 
-Before resuming sessions, use the installed-file verification described in
-[Update](../update.md), against the same release's signed files when available,
-and check `charmer doctor` after the supported gateway/service start. A **Ready**
+Before resuming sessions, if the restored release supports it, use
+`charmer update --verify --from-dir <dir>` with that exact release's downloaded
+signed metadata ([verification and limits](../update.md#verify-an-installation));
+without `--from-dir` verification discloses and fetches that exact version.
+Older releases without `--verify` cannot perform this check. Check
+`charmer doctor` after the supported gateway/service start. A **Ready**
 health report is not a signature or full restore test. Require both installation
 identity verification and healthy recovery; account credentials may need fresh
 sign-in. A session without its separately retained Claude Code transcript

@@ -18,7 +18,7 @@
     Profiles (1)
       ! profile alpha: next launch: lead: no OAuth credential record (readiness; never a block)
   ▸ Advisories (optional evidence; does not change the verdict) (1)
-
+  Verify this installation (explicit; signed release)
 
 
 

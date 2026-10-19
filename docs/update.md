@@ -9,8 +9,11 @@ charmer update --from-dir <path>   # use release files you downloaded
 charmer update --rollback # switch back to the previous version
 ```
 
-On the launch card, **U** runs the same steps. The card's release row is
-local information, not a background check for a newer version: it shows
+On the launch card, **U** offers **Newer release** (the same update steps)
+and the separate **Verify installed** action. **H** also has an explicit
+**Verify this installation** row. Neither opening H nor plain doctor
+fetches release metadata. The card's release row is local information,
+not a background check for a newer version: it shows
 the installed version and release date and says that U checks for a newer
 release. At 30 days it shows the release's age and suggests
 `charmer update --check`.
@@ -39,6 +42,106 @@ the card show how old the installed release is.
 A running gateway keeps the version it started from until you restart it
 between turns (`charmer gateway restart`); while its persistence hold
 is active, a switch that changes the gateway waits.
+
+### Updating from 2.0.1
+
+The 2.0.1 updater switches the installation links, but the **old gateway
+continues running**. An installed new version does not prove that its gateway
+is running. Between turns, in a terminal outside Claude Code, update first,
+then explicitly restart through the guarded command and inspect the result:
+
+```bash
+charmer update
+charmer gateway restart
+charmer gateway status
+charmer update --verify
+charmer doctor
+```
+
+Run the next step only after assessing the previous result. If restart is
+held, keep the gateway running and follow [the persistence hold](guides/gateway.md#the-persistence-hold);
+never bypass a held stop with a service-manager stop or a signal. Verification
+cannot restart or repair it for you. On macOS, running-byte verification is
+unavailable (exit 3); status and doctor remain separate health checks, not a
+substitute for a running-byte match.
+
+**macOS 13 or newer is required by this release.** Check your OS before
+updating: the old updater does not guarantee refusal on an older macOS.
+
+## Verify an installation
+
+```bash
+charmer update --verify                 # installed exact version, not latest
+charmer update --verify --json          # one JSON result; disclosure on stderr
+charmer update --verify --from-dir <dir> # fully offline, downloaded metadata
+```
+
+This is a read-only integrity snapshot, not an update or health test. Online
+verification discloses the release host and installed exact version before
+fetching only `SHA256SUMS`, `SHA256SUMS.sshsig` and the outer release
+`MANIFEST.json`. It never asks for latest, contacts a provider or probes the
+gateway over TCP. The TUI asks before that fetch, with **Cancel** focused.
+Choose **Downloaded files** there to enter a directory instead: just like
+`--from-dir`, this makes no network attempt or transport. That directory
+must contain those three files from the installed exact release; it cannot
+supply replacement trust keys. Archives are not downloaded for verification.
+
+The authentication chain is:
+
+1. The **installed trust** verifies the signature on `SHA256SUMS`.
+2. Those signed sums authenticate the **outer release manifest**.
+3. The selected target's `manifest_sha256` authenticates the **installed
+   inner bundle manifest**. These two manifests are different files.
+4. The canonical `bundle-content-v1` hash and regular-file count are
+   recomputed for the completed `versions/<version>` tree and compared
+   with the authenticated content identity.
+5. The gateway and the separately stored managed client are checked against
+   their authenticated identities, including executable mode and size.
+
+The **only excluded path inside the version tree is `MANIFEST.json`**, to
+avoid a digest cycle. The installer adds no files there after extraction.
+There are no wildcard cache exclusions: missing or extra files, including
+an unexpected `__pycache__`, count as changes. Receipts, locks, staging,
+`current`/`previous` links, stable outer launchers/shims and managed-client
+storage are outside that tree, not exclusions from it. The managed client
+gets its own check; outer launcher receipts and shims are not authenticated
+by the bundle-content hash. An aggregate content mismatch cannot locate the
+individual changed files.
+
+On **Linux only**, verification hashes an opened `/proc/PID/exe` of the
+observed owned gateway, then rechecks process identity. It never hashes the
+stamp's pathname as a substitute for running bytes. The component statuses
+stay distinct:
+
+| Running gateway | Meaning |
+| --- | --- |
+| `current-match` | opened running bytes match the authenticated installed gateway |
+| `different-running-build` | bytes match a retained bundle's local identity, not the authenticated installed build; that retained comparison is not signed evidence |
+| `stopped` | no running executable to verify; **not ready**, even when installed files verify |
+| `unavailable` | ownership, process identity or bytes cannot be proved, or the platform is not Linux |
+| `mismatch` | running bytes differ from the authenticated gateway |
+
+CLI text, JSON and the TUI show the same component statuses. Verification's
+exit contract is mode-specific: **0** complete (`verified`), **1** mismatch
+(including a different running build), **3** incomplete or unsupported;
+**2** invalid arguments, **130** interrupted. A proven stopped gateway can
+have verified installed files (0); that is never a readiness claim. Use
+`charmer gateway status` and `charmer doctor` separately. JSON contains
+`status`, `exit_code`, `version`, `target` and `checks`, never credentials or
+absolute local paths.
+
+`--verify`, `--check` and `--rollback` are mutually exclusive. `--json`
+requires `--verify`; verification refuses `--yes` and `--base-url`.
+`--check` also refuses `--yes`; rollback takes neither download-source flag.
+Choose `--from-dir` or `--base-url`, not both, for an update or check.
+
+Verification does not refresh shims, create stores, acquire a client,
+read gateway tokens, repair, recover an interrupted update or restart.
+Source and Nix installations report unsupported (3), never signed-bundle
+success; verify the checkout or use `nix store verify` instead. This check
+uses installed code and trust, not independent attestation of a hostile
+host or an atomic filesystem snapshot. Observed concurrent changes leave
+verification incomplete; retry after the installation is stable.
 
 ## An installation from before the rename
 
@@ -70,6 +173,13 @@ replace the program the launcher runs. A rollback goes only to the
 version it showed you: if the installation changed while it waited for
 your answer, it refuses. Afterwards `previous` is the version you left,
 so a second rollback undoes the first.
+
+When the selected older release supports `update --verify`, it verifies
+that exact older version, not the newest release. **After rollback to
+2.0.1 the `--verify` flag does not exist**: use its supported status and
+doctor commands, and do not describe their result as signed verification.
+A still-running gateway may also need an explicit guarded restart after
+rollback; keep the persistence hold in force.
 
 When the gateway does not start after an update that changed it (`gateway
 start`, `gateway restart`, a launch, or the TUI's start and restart), the

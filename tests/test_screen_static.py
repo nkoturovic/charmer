@@ -64,6 +64,7 @@ SCREEN_REGIONS: dict[str, tuple[str, ...]] = {
         "_CardHealthActions",
         "FindingsScreen",
         "run_findings_screen",
+        "run_install_verification",
         "_LaunchCardScreen",
         "launch_card",
         "_perform_card_result",
@@ -178,7 +179,8 @@ SCREEN_OWNERS = {'_ModelsScreen': 'charmer.cli.screens.models',
  '_ProfilesScreen': 'charmer.cli.screens.profiles',
  'run_profiles_screen': 'charmer.cli.screens.profiles',
  'FindingsScreen': 'charmer.cli.screens.findings',
- 'run_findings_screen': 'charmer.cli.screens.findings'}
+ 'run_findings_screen': 'charmer.cli.screens.findings',
+ 'run_install_verification': 'charmer.cli.screens.findings'}
 
 def _regions(tree: ast.Module) -> list[ast.AST]:
     found = []

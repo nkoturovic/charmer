@@ -93,7 +93,7 @@ COMMAND_GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
         ("window-ceiling", "show, set or reset the context window ceiling of the lead and every agent "
                            "(200K to 800K, default 800K; applies at the next launch or resume)"),
         ("gateway", "the local gateway: status, logs, start, stop, restart and the supervised service"),
-        ("update", "update charmer itself, or roll back to the previously installed version"),
+        ("update", "update charmer, verify this installation, or roll back to the previous version"),
         ("export", "write your configuration as a portable file (no keys, sessions, logs or evidence)"),
         ("import", "preview an exported configuration on this computer; --apply writes the ready items"),
     )),
@@ -581,19 +581,25 @@ def build_parser() -> argparse.ArgumentParser:
     update_parser = _add_command(
         commands, "update",
         description="Update charmer itself: check, show the plan, ask, install (installed releases), "
-        "or switch back to the previously installed version.",
+        "or switch back to the previously installed version. --verify instead checks the exact installed "
+        "release against signed metadata without changing anything (online unless --from-dir is given). "
+        "Verification exits: 0 complete, 1 mismatch, 3 incomplete or unsupported; 2 usage, 130 interrupted.",
     )
     update_modes = update_parser.add_mutually_exclusive_group()
     update_modes.add_argument("--check", dest="update_check", action="store_true",
                               help="only check whether a newer release exists")
     update_modes.add_argument("--rollback", dest="update_rollback", action="store_true",
                               help="switch back to the previously installed version")
+    update_modes.add_argument("--verify", dest="update_verify", action="store_true",
+                              help="verify this exact installed release; no repair, restart or state writes")
+    update_parser.add_argument("--json", action="store_true",
+                               help="--verify only: one verification object on stdout; disclosure on stderr")
     update_parser.add_argument("--yes", "-y", dest="update_yes", action="store_true",
-                               help="apply without asking (needed without a terminal)")
+                               help="apply without asking (needed without a terminal; not with --check or --verify)")
     update_parser.add_argument("--from-dir", dest="update_from_dir", metavar="DIR",
                                help="use the release files in a local directory instead of downloading")
     update_parser.add_argument("--base-url", dest="update_base_url", metavar="URL",
-                               help="download from this https location instead of the release's own")
+                               help="update/check only: download from this https location instead of the release's own")
     _add_setup_parser(commands)
     _add_window_ceiling_parser(commands)
     show = commands.add_parser("show", help="earlier spelling of profile show")
@@ -645,7 +651,7 @@ def build_parser() -> argparse.ArgumentParser:
     doctor_parser = _add_command(
         commands, "doctor",
         description="Check this installation and its sessions. The verdict is Ready, Attention or BLOCKED; "
-        "each finding names one fix. Plain doctor refreshes the helper shims as routine housekeeping; "
+        "each finding names one fix. Plain doctor is read-only and does not fetch release metadata; "
         "use doctor --json for a read-only report. --repair, --prune and --rotate-token act.",
     )
     doctor_actions = doctor_parser.add_mutually_exclusive_group()
@@ -942,6 +948,25 @@ def _add_models_commands(parser: argparse.ArgumentParser) -> None:
                          "also run the offline exact-client check")
 
 
+def update_mode_problem(args: argparse.Namespace) -> str | None:
+    """Meaningless update flags refuse before any Runtime or installation I/O."""
+
+    if args.command != "update":
+        return None
+    verify = bool(args.update_verify)
+    if args.json and not verify:
+        return "update --json requires --verify"
+    if args.update_yes and (verify or args.update_check):
+        return "update --yes is only for an update or rollback, not --check or --verify"
+    if args.update_base_url is not None and (verify or args.update_rollback):
+        return "update --base-url is only for an update or --check"
+    if args.update_from_dir is not None and args.update_rollback:
+        return "update --from-dir cannot be used with --rollback"
+    if args.update_from_dir is not None and args.update_base_url is not None:
+        return "choose --from-dir or --base-url, not both"
+    return None
+
+
 _PROVIDERS_REPORT = frozenset({"list", "show", "validate", "template", "test"})
 _MODELS_REPORT = frozenset({"list", "show"})
 
@@ -949,7 +974,7 @@ _MODELS_REPORT = frozenset({"list", "show"})
 def _read_only_listing(args: argparse.Namespace) -> bool:
     """The lists, shows and other reports that change nothing, under every
     spelling (the earlier ``compose``, root ``show`` and ``custom list``
-    included), ``--print-launch`` and ``update --check``: they read, never
+    included), ``--print-launch`` and ``update --check/--verify``: they read, never
     record the channel, create a directory, refresh a shim, install a seed
     or take a write lock."""
 
@@ -960,9 +985,9 @@ def _read_only_listing(args: argparse.Namespace) -> bool:
         # The earlier spelling of `profile show`: the same report.
         return True
     if command == "update":
-        # Only checking, from the release server or --from-dir; installing
-        # and rolling back write.
-        return bool(getattr(args, "update_check", False))
+        # Checking or verifying, from the release server or --from-dir;
+        # installing and rolling back write.
+        return bool(getattr(args, "update_check", False) or getattr(args, "update_verify", False))
     if command == "sessions":
         return args.sessions_command in ("list", "show")
     if command == "profile":

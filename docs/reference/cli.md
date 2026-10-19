@@ -13,6 +13,9 @@ reviewed catalog changes; it is not part of an installation.
 Every command's `--help` lists its options, examples and exit behaviour.
 Exit statuses of the user commands: 0 done, 1 failed, refused or
 unavailable, 2 usage, 3 you declined, 130 interrupted.
+Exception: `update --verify` uses 0 complete, 1 mismatch, 3 incomplete or
+unsupported (2 usage, 130 interrupted). A verified installation with a
+stopped gateway is not ready; see [verification](../update.md#verify-an-installation).
 
 <!-- generated: cli-reference (tools/docs_gen.py) -->
 
@@ -68,7 +71,7 @@ charmer direct [--model <model>] [--no-subagents] [--force] [--print-launch] [-c
 
 ### charmer doctor
 
-Check this installation and its sessions. The verdict is Ready, Attention or BLOCKED; each finding names one fix. Plain doctor refreshes the helper shims as routine housekeeping; use doctor --json for a read-only report. --repair, --prune and --rotate-token act.
+Check this installation and its sessions. The verdict is Ready, Attention or BLOCKED; each finding names one fix. Plain doctor is read-only and does not fetch release metadata; use doctor --json for a read-only report. --repair, --prune and --rotate-token act.
 
 ```text
 charmer doctor [--json | --repair <id> | --repair-all | --prune | --rotate-token | --prune-aliases [<alias>…]] [-v] [--first-run] [--preview] [--include-live]
@@ -986,19 +989,21 @@ charmer gateway service status
 
 ### charmer update
 
-Update charmer itself: check, show the plan, ask, install (installed releases), or switch back to the previously installed version.
+Update charmer itself: check, show the plan, ask, install (installed releases), or switch back to the previously installed version. --verify instead checks the exact installed release against signed metadata without changing anything (online unless --from-dir is given). Verification exits: 0 complete, 1 mismatch, 3 incomplete or unsupported; 2 usage, 130 interrupted.
 
 ```text
-charmer update [--check | --rollback] [--yes] [--from-dir <dir>] [--base-url <url>]
+charmer update [--check | --rollback | --verify] [--json] [--yes] [--from-dir <dir>] [--base-url <url>]
 ```
 
 | Argument | What it does |
 | --- | --- |
 | `--check` | only check whether a newer release exists |
 | `--rollback` | switch back to the previously installed version |
-| `--yes`, `-y` | apply without asking (needed without a terminal) |
+| `--verify` | verify this exact installed release; no repair, restart or state writes |
+| `--json` | --verify only: one verification object on stdout; disclosure on stderr |
+| `--yes`, `-y` | apply without asking (needed without a terminal; not with --check or --verify) |
 | `--from-dir <dir>` | use the release files in a local directory instead of downloading |
-| `--base-url <url>` | download from this https location instead of the release's own |
+| `--base-url <url>` | update/check only: download from this https location instead of the release's own |
 
 ### charmer export
 

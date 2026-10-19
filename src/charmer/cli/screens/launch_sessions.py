@@ -168,18 +168,31 @@ class _CardHealthActions:
                 pass
 
     def _run_update(self, win: Any) -> None:
-        """U: the ``charmer update`` journey (an installed release checks,
-        plans, asks and applies; the Nix package says to update the flake).
-        Rollback stays a command-line action (``charmer update --rollback``)."""
+        """U: choose the update journey or explicit read-only verification.
+        The Nix package says to update the flake; rollback stays a
+        command-line action (``charmer update --rollback``)."""
 
-        from charmer import release_update
+        from charmer import endpoint, release_update
+        import charmer.cli.screens.findings as screens_findings
 
-        journey = release_update.journey_for(self.runtime)
-        if journey.channel != "bundle":
-            lines = [*release_update.channel_lines(journey.channel),
-                     "To roll back an installed release: charmer update --rollback"]
+        channel = endpoint.channel(self.runtime.environ)
+        if channel != "bundle":
+            lines = [*release_update.channel_lines(channel),
+                     "To roll back an installed release: charmer update --rollback",
+                     "H → Verify this installation explains signed-bundle verification limits."]
             tui.TextView("Update charmer", lines, palette=self.palette).run(win)
             return
+        mode = tui.Modal("Update charmer", screens_common.modal_lines(
+            "Check for a newer release, or verify this installation against its exact signed release. "
+            "Verification never installs, repairs or restarts.", win),
+            buttons=(("Cancel", None), ("Newer release", "update"), ("Verify installed", "verify")),
+            default=None).run(win, self.palette, background=self._draw)
+        if mode is None:
+            return
+        if mode == "verify":
+            screens_findings.run_install_verification(self.runtime, win, self.palette, background=self._draw)
+            return
+        journey = release_update.journey_for(self.runtime)
         with tui.suspended_curses(win):
             self.tty_out.write("Update charmer\n")
             ask = release_update.terminal_ask(self.tty_in, self.tty_out, interactive=True)

@@ -785,6 +785,21 @@ def findings_refresh_golden(root: Path) -> str:
     return findings.findings_refresh_golden(root)
 
 
+def install_verification_golden(root: Path) -> str:
+    """Presentation fixture only: signed integration is exercised by the verifier tests."""
+    from charmer.install_verify import Check, Verification
+
+    result = Verification("2.1.0", "linux-x86_64", (
+        Check("signed-release", "match", "signature and outer release manifest authenticated for exact installed version"),
+        Check("inner-manifest", "match", "installed inner manifest authenticated by selected asset"),
+        Check("bundle-content", "match", "6 regular files; content matches"),
+        Check("gateway", "match", "libexec/charmer/cli-proxy-api: matches authenticated identity"),
+        Check("managed-client", "match", "Claude Code 2.1.300: matches authenticated identity"),
+        Check("running-gateway", "stopped", "gateway is stopped; no running executable to verify"),
+    ))
+    return render(lambda: tui.TextView("Verify this installation", result.lines(), palette=tui.MONO_PALETTE))
+
+
 def gateway_rollback_golden(root: Path) -> str:
     import test_screens_findings as findings
 
@@ -930,6 +945,7 @@ GOLDENS: dict[str, Callable[[Path], str]] = {
     "findings": findings_golden,
     "findings-advisories": findings_advisories_golden,
     "findings-refresh": findings_refresh_golden,
+    "install-verification": install_verification_golden,
     "gateway-rollback": gateway_rollback_golden,
     "candidates-registry-detail": lambda root: candidates_detail_golden(root, kind="registry"),
     "candidates-gateway-down": lambda root: candidates_detail_golden(root, kind="down"),
