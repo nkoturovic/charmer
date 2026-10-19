@@ -8,6 +8,13 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Security
 
+- The release build refuses a bundled runtime archive whose links resolve
+  outside the runtime or that names a member twice, and a prepared runtime
+  that keeps a file Python runs at startup (`.pth`, `.start`,
+  `sitecustomize`, `usercustomize`).
+- The isolated test lanes run bubblewrap 0.13.1, built from its release by
+  hash, and refuse one older than 0.12 (GHSA-pxhw-h44j-8pfx) or one that is
+  setuid; the Nix development shell requires 0.12 or later.
 - With Claude Code 2.1.302 the gateway key reaches only the gateway. A
   client check proves this on every release; the previous pin also sent it
   with start-up and feature-flag requests.
@@ -35,6 +42,14 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- Release bundles run CPython 3.15.0 (python-build-standalone 20261013) in
+  its default build: the GIL enabled, the experimental JIT off. The runtime
+  licence notices and SBOM components were regenerated from the matching full
+  archives.
+- The Nix flake follows nixos-unstable of 2026-10-15.
+- CI builds its Go tools with the gateway's pinned Go toolchain, runs a weekly
+  read-only online zizmor audit, and runs the 3.15 battery leg also under an
+  ISO-8859-1 locale.
 - Claude Code's own `--autocompact` flag after `--` is refused, in both its
   separate and equals forms: the session compaction window is charmer's (set it
   with `charmer window-ceiling`). `charmer doctor` reports a scope compiled by an
