@@ -137,12 +137,12 @@
     },
     {
       "basename": "cli-proxy-api-codex-api-key-safety.patch",
-      "sha256": "61cd5aa93b4cbab270a3736127774e1febc59722c3c0bc73fa3a8e91357216dd",
+      "sha256": "fa02ebceb0549b732664abbd5034a53d4e514c0f54697406e95a47ae59337ee5",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-refresh-shutdown-join.patch",
-      "sha256": "836245d4d6908ceb4319a9857ba326881aded46efdf68dcffe229d287a9e6724",
+      "sha256": "102e0be3ef3a546d672461a08b7a8d0e53588525cd93735c741f2f0aa077c05f",
       "admitted": true
     },
     {
@@ -700,7 +700,7 @@
       "packages": [
         "./internal/runtime/executor"
       ],
-      "run": "^(TestCodexKeyStatusFailureIsLocal|TestCodexKeyTerminalFailureIsLocal|TestCodexKeyTransportErrorIsLocal|TestCodexKeyErrorBodyReadIsBounded|TestCodexPlainKeyIdentity)$",
+      "run": "^(TestCodexKeyStatusFailureIsLocal|TestCodexKeyTerminalFailureIsLocal|TestCodexKeyTransportErrorIsLocal|TestCodexKeyErrorBodyReadIsBounded|TestCodexPlainKeyIdentity|TestCodexKeyTerminalFailureCapture|TestCodexKeySuccessAndAccountCapture)$",
       "platforms": "portable",
       "race": false,
       "count": null,
@@ -709,7 +709,9 @@
         "TestCodexKeyTerminalFailureIsLocal",
         "TestCodexKeyTransportErrorIsLocal",
         "TestCodexKeyErrorBodyReadIsBounded",
-        "TestCodexPlainKeyIdentity"
+        "TestCodexPlainKeyIdentity",
+        "TestCodexKeyTerminalFailureCapture",
+        "TestCodexKeySuccessAndAccountCapture"
       ]
     },
     {
@@ -727,9 +729,12 @@
         "TestRefreshShutdownCanceledAuthLockWaitDoesNotStartRefresh",
         "TestRefreshShutdownDeadline",
         "TestRefreshShutdownRepeatedStop",
-        "TestRefreshShutdownPreviousRunIsJoined"
+        "TestRefreshShutdownPreviousRunIsJoined",
+        "TestRefreshShutdownFencesRequestAdmission",
+        "TestRefreshShutdownRequestAdmissionRace",
+        "TestRefreshShutdownBackgroundStopKeepsRequest"
       ],
-      "run": "^(TestRefreshShutdownWaitsForExecutor|TestRefreshShutdownWaitsForDurableSave|TestRefreshShutdownSkipsQueuedJobs|TestRefreshShutdownCanceledAuthLockWaitDoesNotStartRefresh|TestRefreshShutdownDeadline|TestRefreshShutdownRepeatedStop|TestRefreshShutdownPreviousRunIsJoined)$"
+      "run": "^(TestRefreshShutdownWaitsForExecutor|TestRefreshShutdownWaitsForDurableSave|TestRefreshShutdownSkipsQueuedJobs|TestRefreshShutdownCanceledAuthLockWaitDoesNotStartRefresh|TestRefreshShutdownDeadline|TestRefreshShutdownRepeatedStop|TestRefreshShutdownPreviousRunIsJoined|TestRefreshShutdownFencesRequestAdmission|TestRefreshShutdownRequestAdmissionRace|TestRefreshShutdownBackgroundStopKeepsRequest)$"
     },
     {
       "name": "race-refresh-shutdown",
@@ -746,9 +751,12 @@
         "TestRefreshShutdownCanceledAuthLockWaitDoesNotStartRefresh",
         "TestRefreshShutdownDeadline",
         "TestRefreshShutdownRepeatedStop",
-        "TestRefreshShutdownPreviousRunIsJoined"
+        "TestRefreshShutdownPreviousRunIsJoined",
+        "TestRefreshShutdownFencesRequestAdmission",
+        "TestRefreshShutdownRequestAdmissionRace",
+        "TestRefreshShutdownBackgroundStopKeepsRequest"
       ],
-      "run": "^(TestRefreshShutdownWaitsForExecutor|TestRefreshShutdownWaitsForDurableSave|TestRefreshShutdownSkipsQueuedJobs|TestRefreshShutdownCanceledAuthLockWaitDoesNotStartRefresh|TestRefreshShutdownDeadline|TestRefreshShutdownRepeatedStop|TestRefreshShutdownPreviousRunIsJoined)$"
+      "run": "^(TestRefreshShutdownWaitsForExecutor|TestRefreshShutdownWaitsForDurableSave|TestRefreshShutdownSkipsQueuedJobs|TestRefreshShutdownCanceledAuthLockWaitDoesNotStartRefresh|TestRefreshShutdownDeadline|TestRefreshShutdownRepeatedStop|TestRefreshShutdownPreviousRunIsJoined|TestRefreshShutdownFencesRequestAdmission|TestRefreshShutdownRequestAdmissionRace|TestRefreshShutdownBackgroundStopKeepsRequest)$"
     },
     {
       "name": "service-refresh-shutdown",
@@ -759,9 +767,10 @@
       "race": false,
       "count": null,
       "expected_tests": [
-        "TestServiceShutdownJoinsRefresh"
+        "TestServiceShutdownJoinsRefresh",
+        "TestServiceShutdownJoinsRequestRefresh"
       ],
-      "run": "^(TestServiceShutdownJoinsRefresh)$"
+      "run": "^(TestServiceShutdownJoinsRefresh|TestServiceShutdownJoinsRequestRefresh)$"
     },
     {
       "name": "race-service-refresh-shutdown",
@@ -772,9 +781,10 @@
       "race": true,
       "count": 100,
       "expected_tests": [
-        "TestServiceShutdownJoinsRefresh"
+        "TestServiceShutdownJoinsRefresh",
+        "TestServiceShutdownJoinsRequestRefresh"
       ],
-      "run": "^(TestServiceShutdownJoinsRefresh)$"
+      "run": "^(TestServiceShutdownJoinsRefresh|TestServiceShutdownJoinsRequestRefresh)$"
     },
     {
       "name": "refresh-shutdown-file-store",

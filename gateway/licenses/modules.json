@@ -1,7 +1,7 @@
 {
   "format": 1,
   "inputs": {
-    "post_apply_tree_sha256": "5fdb7f9dbbd71bb420938015d65fbfd315a63a59937ba2ac5974b67ead03688c",
+    "post_apply_tree_sha256": "f75c00c79b8d87d48e70b73ef3eeadb9b81336fce8f530921a992f55e26d1665",
     "series": [
       "cli-proxy-api-loopback-oauth.patch@244e68528cbc72a636d112d4350c9e2e9aeb0c4b55c9097e08ee42a201fa22f4",
       "cli-proxy-api-kimi-claude-compat.patch@41a25ab3e9572c867234fe9d457ac89417f25de4719acbe7cc7e605dc4b3c234",
@@ -20,8 +20,8 @@
       "cli-proxy-api-no-antigravity-egress.patch@106e865c8062c903bf25cc523e26089b2b710227808fe1e3d8f5532920efb5b0",
       "cli-proxy-api-codex-client-identity.patch@405f95472837d9ed335baf99e8f39f61934c453d8aa3bf04e0670b9144018dc2",
       "cli-proxy-api-antigravity-loopback-callback.patch@0594e27c8978fb6f354317622fc66b477635164d56aef429e58f6590e0616d8b",
-      "cli-proxy-api-codex-api-key-safety.patch@61cd5aa93b4cbab270a3736127774e1febc59722c3c0bc73fa3a8e91357216dd",
-      "cli-proxy-api-refresh-shutdown-join.patch@836245d4d6908ceb4319a9857ba326881aded46efdf68dcffe229d287a9e6724",
+      "cli-proxy-api-codex-api-key-safety.patch@fa02ebceb0549b732664abbd5034a53d4e514c0f54697406e95a47ae59337ee5",
+      "cli-proxy-api-refresh-shutdown-join.patch@102e0be3ef3a546d672461a08b7a8d0e53588525cd93735c741f2f0aa077c05f",
       "cli-proxy-api-openai-content-chunks.patch@d167b000dee94c28296e6c62fc6a41989b4e90441743757a8956232d54769186",
       "cli-proxy-api-charmer-model-ids.patch@00c2e621498482021d12902d2fccc2e2d59a71482eded48581d1dd511a34e48c",
       "cli-proxy-api-access-log-path-quoting.patch@d06758cdb11c5dd4d5f088ecb1d1cf5ce6137c8c1eb24bcab0c6431de128fb31",
@@ -2047,7 +2047,7 @@
     "license": "MIT",
     "modifications": {
       "path": "CLIProxyAPI/MODIFICATIONS.txt",
-      "sha256": "9fd4f702f44d0c2aa87a29f9ca85e9fc181840b5b13ef867d4c9aa9ddd772cd9"
+      "sha256": "e6e2271055d25d3cbdc4ed80a78045df51c94ee53e8d00a15da3e8d4380672a2"
     },
     "name": "CLIProxyAPI",
     "repository": "https://github.com/router-for-me/CLIProxyAPI",

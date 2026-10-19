@@ -1308,8 +1308,11 @@ class AdmittedPatchGateTests(unittest.TestCase):
             "TestRefreshShutdownWaitsForExecutor", "TestRefreshShutdownWaitsForDurableSave",
             "TestRefreshShutdownSkipsQueuedJobs", "TestRefreshShutdownCanceledAuthLockWaitDoesNotStartRefresh",
             "TestRefreshShutdownDeadline", "TestRefreshShutdownRepeatedStop", "TestRefreshShutdownPreviousRunIsJoined",
+            "TestRefreshShutdownFencesRequestAdmission", "TestRefreshShutdownRequestAdmissionRace",
+            "TestRefreshShutdownBackgroundStopKeepsRequest",
         ]),
-        "race-service-refresh-shutdown": ("./sdk/cliproxy", ["TestServiceShutdownJoinsRefresh"]),
+        "race-service-refresh-shutdown": ("./sdk/cliproxy", ["TestServiceShutdownJoinsRefresh",
+                                                             "TestServiceShutdownJoinsRequestRefresh"]),
         "race-refresh-shutdown-file-store": ("./sdk/auth", ["TestRefreshShutdownFileTokenStore"]),
     }
 
@@ -1545,7 +1548,7 @@ class CodexApiKeySafetyGateTests(unittest.TestCase):
     NAME = "cli-proxy-api-codex-api-key-safety.patch"
     TESTS = ("TestCodexKeyStatusFailureIsLocal", "TestCodexKeyTerminalFailureIsLocal",
              "TestCodexKeyTransportErrorIsLocal", "TestCodexKeyErrorBodyReadIsBounded",
-             "TestCodexPlainKeyIdentity")
+             "TestCodexPlainKeyIdentity", "TestCodexKeyTerminalFailureCapture", "TestCodexKeySuccessAndAccountCapture")
     PREREQUISITES = ("cli-proxy-api-credentialed-redirects.patch", "cli-proxy-api-openai-compat-keyed-safety.patch",
                      "cli-proxy-api-codex-client-identity.patch")
 

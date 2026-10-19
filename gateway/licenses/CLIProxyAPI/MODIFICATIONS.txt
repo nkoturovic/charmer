@@ -266,7 +266,7 @@ Before the modules are vendored, this patch updates the module requirements:
       added     sdk/auth/antigravity_callback_loopback_test.go
 
 18. cli-proxy-api-codex-api-key-safety.patch
-    sha256 61cd5aa93b4cbab270a3736127774e1febc59722c3c0bc73fa3a8e91357216dd
+    sha256 fa02ebceb0549b732664abbd5034a53d4e514c0f54697406e95a47ae59337ee5
       modified  internal/runtime/executor/codex_executor_execute.go
       modified  internal/runtime/executor/codex_executor_request.go
       modified  internal/runtime/executor/codex_executor_stream.go
@@ -274,9 +274,10 @@ Before the modules are vendored, this patch updates the module requirements:
       added     internal/runtime/executor/codex_key_safety.go
       added     internal/runtime/executor/codex_key_safety_test.go
       modified  internal/runtime/executor/codex_websockets_request.go
+      added     internal/runtime/executor/codex_key_capture_test.go
 
 19. cli-proxy-api-refresh-shutdown-join.patch
-    sha256 836245d4d6908ceb4319a9857ba326881aded46efdf68dcffe229d287a9e6724
+    sha256 102e0be3ef3a546d672461a08b7a8d0e53588525cd93735c741f2f0aa077c05f
       added     sdk/auth/refresh_shutdown_test.go
       modified  sdk/cliproxy/auth/auto_refresh_loop.go
       added     sdk/cliproxy/auth/auto_refresh_shutdown_test.go
@@ -284,6 +285,9 @@ Before the modules are vendored, this patch updates the module requirements:
       modified  sdk/cliproxy/auth/conductor_refresh.go
       modified  sdk/cliproxy/service_lifecycle.go
       added     sdk/cliproxy/service_shutdown_test.go
+      added     sdk/cliproxy/auth/request_refresh_shutdown_test.go
+      added     sdk/cliproxy/service_request_refresh_shutdown_test.go
+      modified  sdk/cliproxy/service.go
 
 20. cli-proxy-api-openai-content-chunks.patch
     sha256 d167b000dee94c28296e6c62fc6a41989b4e90441743757a8956232d54769186
