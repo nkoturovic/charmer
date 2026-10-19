@@ -20,6 +20,7 @@ from pathlib import Path
 
 from _catalog import FIXTURE_ROOT
 from _layout import REPO_ROOT
+from _pty_diagnostics import InputDiagnostics
 
 
 # Child scripts load the frozen fixture asset root; their PYTHONPATH is the
@@ -47,7 +48,10 @@ class PTYProcess:
         columns: int = 80,
         extra_env=None,
         extra_pythonpath=(),
+        diagnostics: bool = False,
     ):
+        self.diagnostics = InputDiagnostics() if diagnostics else None
+        self.timeout_diagnostics = None
         self.master, self.slave = pty.openpty()
         _set_size(self.slave, rows, columns)
         self.before = termios.tcgetattr(self.slave)
@@ -63,14 +67,24 @@ class PTYProcess:
         )
         if extra_env:
             env.update(extra_env)
-        self.process = subprocess.Popen(
-            [sys.executable, "-c", code],
-            stdin=self.slave,
-            stdout=self.slave,
-            stderr=self.slave,
-            close_fds=True,
-            env=env,
-        )
+        if self.diagnostics is not None:
+            code = self.diagnostics.child_setup() + code
+        try:
+            self.process = subprocess.Popen(
+                [sys.executable, "-c", code],
+                stdin=self.slave,
+                stdout=self.slave,
+                stderr=self.slave,
+                close_fds=True,
+                pass_fds=self.diagnostics.pass_fds() if self.diagnostics is not None else (),
+                env=env,
+            )
+        except BaseException:
+            os.close(self.master)
+            os.close(self.slave)
+            if self.diagnostics is not None:
+                self.diagnostics.close()
+            raise
         self.output = bytearray()
 
     def send(self, data: bytes) -> None:
@@ -113,9 +127,19 @@ class PTYProcess:
                 if chunk:
                     self.output.extend(chunk)
         if self.process.poll() is None:
-            self.process.kill()
-            self.process.wait(timeout=2)
-            raise AssertionError(f"PTY child timed out; output={bytes(self.output)!r}")
+            try:
+                if self.diagnostics is not None:
+                    try:
+                        self.timeout_diagnostics = self.diagnostics.on_timeout(self)
+                    except Exception as exc:
+                        self.timeout_diagnostics = {"diagnostic_error": type(exc).__name__}
+            finally:
+                # Crossing the original deadline is irrevocably a failure,
+                # even if a diagnostic signal/wake lets the child exit 130.
+                self.process.kill()
+                self.process.wait(timeout=2)
+            detail = f"; diagnostics={json.dumps(self.timeout_diagnostics)}" if self.diagnostics is not None else ""
+            raise AssertionError(f"PTY child timed out; output={bytes(self.output)!r}{detail}")
         # Drain bytes available after exit.
         while True:
             ready, _, _ = select.select([self.master], [], [], 0)
@@ -134,11 +158,15 @@ class PTYProcess:
         return self.process.returncode, bytes(self.output), after
 
     def close(self) -> None:
-        if self.process.poll() is None:
-            self.process.kill()
-            self.process.wait(timeout=2)
-        os.close(self.master)
-        os.close(self.slave)
+        try:
+            if self.process.poll() is None:
+                self.process.kill()
+                self.process.wait(timeout=2)
+        finally:
+            os.close(self.master)
+            os.close(self.slave)
+            if self.diagnostics is not None:
+                self.diagnostics.close()
 
 
 class DumbTerminalPTYTests(unittest.TestCase):
@@ -746,6 +774,81 @@ print('KEY=' + result.kind + ':' + result.ch, flush=True)
 if result.kind == 'ctrl' and result.ch == 's':
     print('GOT-CTRL-S', flush=True)
 """
+
+
+class PTYInputDiagnosticTests(unittest.TestCase):
+    def blocked_child(self) -> PTYProcess:
+        # A synthetic read, not a reproduction of ncurses' SIGINT behaviour.
+        code = """
+import os, termios, tty
+before = termios.tcgetattr(0)
+try:
+    tty.setcbreak(0)
+    print('DIAGNOSTIC-WAIT', flush=True)
+    os.read(0, 1)
+finally:
+    termios.tcsetattr(0, termios.TCSANOW, before)
+raise SystemExit(130)
+"""
+        child = PTYProcess(code, extra_pythonpath=(TESTS_ROOT,), diagnostics=True)
+        self.addCleanup(child.close)
+        child.read_until(b"DIAGNOSTIC-WAIT")
+        return child
+
+    def test_first_native_entry_and_return_do_not_change_success_or_terminal_restore(self) -> None:
+        dispositions = {sig: signal.getsignal(sig) for sig in (signal.SIGINT, signal.SIGUSR1)}
+        child = PTYProcess(_probe_code(exit_on="s"), extra_pythonpath=(TESTS_ROOT,), diagnostics=True)
+        self.addCleanup(child.close)
+        child.read_until(b"PROBE-READY")
+        child.send(b"x\x13")  # two reads; only the first C-call boundary is recorded
+        code, output, after = child.finish()
+        self.assertEqual(code, 0, output)
+        self.assertIn(b"GOT-CTRL-S", output)
+        _restored(self, child, after)
+        events = child.diagnostics.phases()
+        self.assertEqual([event["phase"] for event in events],
+                         ["installed", "read-key-enter", "get-wch-enter", "get-wch-return"])
+        for event in events:
+            self.assertEqual(event["sigint"], events[0]["sigint"])
+            self.assertEqual(event["blocked_signals"], events[0]["blocked_signals"])
+            self.assertNotIn("value", event)
+        self.assertIsNone(child.timeout_diagnostics)
+        self.assertEqual(dispositions, {sig: signal.getsignal(sig) for sig in dispositions})
+
+    def test_timeout_still_fails_when_diagnostic_wake_allows_exit_130(self) -> None:
+        child = self.blocked_child()
+        with self.assertRaisesRegex(AssertionError, "PTY child timed out;.*diagnostics="):
+            child.finish(timeout=0)
+        report = child.timeout_diagnostics
+        self.assertIsNone(report["before_diagnostics"]["returncode"])
+        self.assertEqual(report["dump_signal"], signal.SIGUSR1)
+        self.assertIn('File "<string>"', report["stack"])
+        self.assertEqual(report["wake"], "one-nul-byte")
+        self.assertEqual(report["after_wake"]["returncode"], 130)
+        self.assertEqual(child.process.returncode, 130)
+        _restored(self, child, termios.tcgetattr(child.slave))
+
+    def test_no_diagnostic_signal_without_the_child_registration_record(self) -> None:
+        from unittest import mock
+
+        child = self.blocked_child()
+        with mock.patch.object(child.diagnostics, "phases", return_value=[]), \
+                mock.patch.object(child.process, "send_signal", wraps=child.process.send_signal) as send_signal:
+            with self.assertRaisesRegex(AssertionError, "PTY child timed out"):
+                child.finish(timeout=0)
+        self.assertNotIn(mock.call(signal.SIGUSR1), send_signal.call_args_list)
+        self.assertEqual(child.timeout_diagnostics["dump_signal"], "not-registered")
+        self.assertIsNotNone(child.process.poll())
+
+    def test_diagnostic_error_still_fails_and_reaps_the_child(self) -> None:
+        from unittest import mock
+
+        child = self.blocked_child()
+        with mock.patch.object(child.diagnostics, "on_timeout", side_effect=OSError("fixture diagnostic I/O")):
+            with self.assertRaisesRegex(AssertionError, "PTY child timed out"):
+                child.finish(timeout=0)
+        self.assertEqual(child.timeout_diagnostics, {"diagnostic_error": "OSError"})
+        self.assertIsNotNone(child.process.poll())
 
 
 class EscDelayPTYTests(unittest.TestCase):
