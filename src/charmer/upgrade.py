@@ -117,8 +117,11 @@ ESSENTIAL_EVIDENCE_PREFIXES = (
     # The fence and security checks: the compiled flag settings turn the
     # fork gate off against every layer; an agent.spawn mod never puts a
     # model outside the fence on the wire, a resumed agent keeps its model
-    # and a managed allowManagedHooksOnly keeps mods out; MCP rules name one
-    # server and a managed MCP deny precedes every start; the gateway token
+    # and a managed allowManagedHooksOnly keeps mods out (fence membership
+    # only: the compiled binding, which a mod's in-fence rewrite moves, is
+    # the separate spawn-mod-binding record, a known failure and no gate);
+    # MCP rules name one server and a managed MCP deny precedes every start
+    # (launch, spawn, resume, a terminal start and a reload); the gateway token
     # stays on the gateway under a managed-settings base URL and a helper
     # refresh after a 401; and the client's own resends, compactions,
     # switches and fallbacks stay on the models the session chose.

@@ -825,7 +825,8 @@ class WorkflowModelPrecedenceTests(S10WorkflowAgentTests):
     workflow default) on a fresh start and on ``--resume``. A mod's
     ``agent.spawn`` rewrite of a workflow agent's model (2.1.300) is the
     spawn-mod check (``tests/test_client_spawn_mod.py``): the fence bounds it
-    to the lineup's models."""
+    to the lineup's models, but the compiled binding does not survive it
+    (client check spawn-mod-binding, a known failure)."""
 
     test_s10_workflow_agent_type_model_and_cwd = None
     test_s10_workflow_gate_keys = None
@@ -913,7 +914,7 @@ class WorkflowModelPrecedenceTests(S10WorkflowAgentTests):
             f"replaced); compiled flag settings {scope.WORKFLOW_MODEL_ENV}={neutral} against "
             f"user/project/local env and process env -> fresh {fresh}, --resume {resumed} "
             f"(= baseline {baseline}: per-call model > cm-* frontmatter > CLAUDE_CODE_SUBAGENT_MODEL); "
-            f"agent.spawn mod rewrites: client check spawn-mod {self.binary_label}"
+            f"agent.spawn mod rewrites: client checks spawn-mod and spawn-mod-binding {self.binary_label}"
         )
 
 
