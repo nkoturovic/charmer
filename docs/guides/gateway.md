@@ -125,9 +125,10 @@ replace it are refused, because restarting could lose the only good copy.
 Keep it running, free disk space if that was the cause, and wait for a
 confirmed save; sign in again only if none comes. Once you have checked
 the credentials (`charmer providers list`),
-`charmer gateway clear-hold` lifts the hold (a terminal outside
-Claude Code, typed confirmation). A generic restart is never the fix for a
-held gateway.
+`charmer gateway clear-hold` acknowledges the evidence you checked (a terminal
+outside Claude Code, typed confirmation). It cannot waive an unavailable
+journald process observation: restore that observation first, as described
+below. A generic restart is never the fix for a held gateway.
 
 The hold reads only what it needs, over the gateway's whole run: on the
 supervised service, the credential-save lines and the running gateway's
@@ -147,16 +148,51 @@ may read the system journal (for example in the `systemd-journal`, `adm` or
 `wheel` group); otherwise `charmer gateway status` and `charmer doctor` say
 that they were not checked, and that alone does not hold.
 
-What to do depends on the reason. When it says part of the log could not be
-evaluated, no failed save was seen: check the credentials
-(`charmer providers list`), then run `charmer gateway clear-hold` once.
-When it says a credential save failed, clearing is not the fix: keep the
-gateway running and wait for a persisted save of that credential (sign in
-again only if none comes), and clear only after that. `charmer gateway status`
-shows where a hold-free evaluation started and how many credential saves it
-read. In the launcher, **H** and the gateway dialog (**W** on Providers and
-Direct) show the hold and offer no restart while it holds; a restart there
-first lists the managed sessions running now and asks.
+After the journal read, a known running supervised gateway also needs one
+read-only observation from the **system** service manager of the default
+journal namespace's `systemd-journald.service`: loaded, active, a positive
+main PID and a valid process start time. A journald start strictly after
+the later of the gateway's start and the last explicit clear holds with
+“journald restarted; credential-save evidence may be missing”, even if the
+gateway's start line survived and older journal entries are still readable.
+Equality is not later. This is restart risk, not a report that credentials
+were lost. A routine journald restart can hold even when no evidence was lost.
+On-demand logging and an absent running instance do not make this query.
+
+What to do depends on the reason:
+
+- **Known journald restart or other incomplete log coverage, with no failed
+  save seen:** check the credentials (`charmer providers list`), then run
+  `charmer gateway clear-hold` once. A clear later than a known restart
+  acknowledges it; another restart after the clear holds again.
+- **Journald's process start could not be observed:** keep the gateway running
+  and restore system-manager observation access and journald availability,
+  then retry the hold check. A missing tool or system bus, denied access,
+  timeout, inactive service or invalid properties all hold. Clearing refuses
+  without writing; repeated clears cannot waive an unavailable observation.
+  This differs from unreadable system-journal drop notices, which remain
+  advisory as described above.
+- **A credential save failed:** keep the gateway running and wait for a
+  persisted save of that credential (sign in again only if none comes),
+  and clear only after checking it. A restart-risk or observation problem
+  never turns a failed save into a coverage-only hold.
+
+The process observation requests the system manager's properties with
+`--timestamp=us+utc`, `LC_ALL=C` and `TZ=UTC`: the documented
+`Day YYYY-MM-DD HH:MM:SS.UUUUUU UTC` format, including six zero digits for
+whole seconds. That style is available since systemd 248; the timestamp
+property's formatting path was checked in systemd 252 and 262.1 sources.
+An unsupported format is unknown, never guessed from a PID or a startup
+message. This check covers charmer's default journal namespace only.
+It does not solve silent loss without restart, other collectors, realtime
+clock discontinuities or a restart after the final observation. A successful
+observation is not an atomic safety or journal-completeness guarantee.
+The persistence-hold document format is unchanged.
+
+`charmer gateway status` shows where a hold-free evaluation started and how
+many credential saves it read. In the launcher, **H** and the gateway dialog
+(**W** on Providers and Direct) show the hold and offer no restart while it
+holds; a restart there first lists the managed sessions running now and asks.
 
 ## When gateway changes are paused
 

@@ -122,7 +122,7 @@ def _evaluate_resume_gate(
     # else (pure: catalog + record); the card wires the "Choose & resume" modal.
     if record.get("version") == sessions.RECORD_VERSION:
         lcat = runtime.lineup_catalog()
-        if sessions.lead_needs_choice(record, lcat):
+        if runtime.resume_choice(record, lcat=lcat).needs_choice:
             return ResumeGate(
                 kind="needs-choice",
                 title="Session needs a lead choice",

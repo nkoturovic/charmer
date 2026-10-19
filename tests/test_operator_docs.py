@@ -32,10 +32,10 @@ DOCS = vocab.PKG_DOCS  # every public page, by label
 docs_gen = load_tool("docs_gen")
 SRC = REPO_ROOT / "src" / "charmer"
 
-# The proposed tree: five root pages and these 33 pages under docs/.
+# The proposed tree: five root pages and these 34 pages under docs/.
 DOCS_TREE = (
     "CHEATSHEET.md", "STANDALONE.md", "USAGE.md",
-    "guides/gateway.md", "guides/legacy-migration.md", "guides/lineup.md", "guides/models.md",
+    "guides/backup.md", "guides/gateway.md", "guides/legacy-migration.md", "guides/lineup.md", "guides/models.md",
     "guides/move-machines.md",
     "guides/networking.md", "guides/profiles.md", "guides/sessions.md",
     "install/linux.md", "install/macos.md", "install/nix.md", "install/windows-wsl2.md",
@@ -364,7 +364,7 @@ class TreeTests(unittest.TestCase):
 
     def test_the_page_tree(self) -> None:
         self.assertEqual(vocab.docs_pages(), tuple(sorted(DOCS_TREE)))
-        self.assertEqual(len(DOCS_TREE), 33)
+        self.assertEqual(len(DOCS_TREE), 34)
         for name in vocab.ROOT_PAGES:
             self.assertTrue((REPO_ROOT / name).is_file(), name)
         # One source of notices: no root notices file.
@@ -583,7 +583,8 @@ class CheatsheetStructureTests(unittest.TestCase):
                 self.assertIn(f"**{match[1]}** ", card, line)
         sessions = next(row for row in _rows(keys) if row.startswith("| sessions"))
         for key, _word in cli.SESSIONS_KEYBAR:
-            self.assertIn(f"**{key}** ", sessions)
+            escaped = key.replace("*", r"\*")
+            self.assertIn(f"**{escaped}** ", sessions)
         for key in ("E", "M", "P", "L"):
             self.assertIn(f"**{key}** ", sessions)
         marks = _flat(cli.SESSIONS_HELP.replace(tui.CHEATSHEET_HINT, "")).split("Marks: ", 1)[1]

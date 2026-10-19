@@ -46,6 +46,7 @@ from charmer import sessions
 from charmer import settings as settings_mod
 from charmer import state
 from charmer import strict_json
+from charmer import termtext
 import sys
 import time
 from charmer import views
@@ -148,6 +149,16 @@ class CompositionStore:
         return sorted(names)
 
 
+@dataclass(frozen=True)
+class ResumeChoice:
+    """Actionable choice and a currently valid next-resume intent, distinct from applied."""
+
+    needs_choice: bool
+    document: dict[str, Any] | None = None
+    lineup: profile_mod.ResolvedLineup | None = None
+    problem: str | None = None
+
+
 class Runtime:
     """Bound command APIs with injectable compile/launch/doctor effects."""
 
@@ -182,6 +193,7 @@ class Runtime:
         allow_state_writes: bool = True,
         refresh_shims: bool = True,
         initialize_session_store: bool = True,
+        defer_session_batch: bool = False,
         execve: Callable[[str, list[str], dict[str, str]], Any] | None = None,
         qualify_transport: Callable[[str, str, str], operator_mod.SmokeOutcome] | None = None,
         lan_probe: Callable[[str], Any] | None = None,
@@ -201,7 +213,8 @@ class Runtime:
         self.release_version = _pkg_version if release_version is None else str(release_version)
         self.allow_state_writes = bool(allow_state_writes)
         self._report_cache: dict | None = None
-        self._read_only_store = not initialize_session_store
+        self._deferred_session_batch = bool(defer_session_batch)
+        self._read_only_store = not initialize_session_store or self._deferred_session_batch
         # None = posix_fs.exec_replace, i.e. os.execve (tests capture argv/env here).
         self.execve = execve
         self.environ = dict(os.environ if environ is None else environ)
@@ -226,7 +239,7 @@ class Runtime:
             # and report (doctor names the file to remove).
             packaged_catalog = catalog.load_catalog(self.asset_root)
             removal = None
-            if allow_state_writes:
+            if allow_state_writes and not defer_session_batch:
                 # A legacy (effort_vocabulary) override can never
                 # load again; remove it unconditionally, with a notice. The
                 # helper never raises and skips anything unsafe to touch
@@ -290,7 +303,7 @@ class Runtime:
         #   root that owns its gateway (and could be inhibited) is unknown.
         self.shims_withheld: str | None = None
         self._shims_refreshed = False
-        if marker_ok and refresh_shims:
+        if marker_ok and refresh_shims and not defer_session_batch:
             self._shims_refreshed = self._refresh_shims(state_path)
         if not self._shims_refreshed:
             # Read-only commands must not repoint the shims the launcher keeps
@@ -307,7 +320,7 @@ class Runtime:
         self._session_store: sessions.SessionStore | None = None
         # SessionStore creates its directories. Keep existing commands eager,
         # but quota never needs the store, even with an entirely empty HOME.
-        if initialize_session_store:
+        if initialize_session_store and not defer_session_batch:
             self._session_store = self.session_store
         self.compile_callback = compile_callback
         self.launch_callback = launch_callback
@@ -595,6 +608,69 @@ class Runtime:
     @session_store.setter
     def session_store(self, store: sessions.SessionStore) -> None:
         self._session_store = store
+
+    def resume_choice(
+        self, record: dict[str, Any], *, lcat: profile_mod.LineupCatalog | None = None,
+        effective: settings_mod.Effective | None = None,
+    ) -> ResumeChoice:
+        """One read-only pending evaluation for resume, listings, the TUI and doctor.
+
+        Profiles and bindings are read again on every evaluation. An invalid
+        pending intent never hides a missing applied lead and is never applied.
+        """
+        lcat = lcat or self.lineup_catalog()
+        missing = sessions.lead_key_needs_choice(sessions.lead_identity(record)[0], lcat)
+        pending = record.get("pending") if record.get("version") == sessions.RECORD_VERSION else None
+        if not pending:
+            return ResumeChoice(missing)
+        try:
+            document = (self.profiles.load(pending["profile"]) if pending["kind"] == "profile"
+                        else copy.deepcopy(pending["document"]))
+            candidate = profile_mod.evaluate(document, lcat, bindings=self._bindings_map(),
+                                             effective=effective if effective is not None else self.current_effective(),
+                                             ad_hoc=pending.get("profile") is None)
+            if candidate.errors:
+                return ResumeChoice(missing, problem="; ".join(candidate.errors))
+            if candidate.lineup is None or sessions.lead_key_needs_choice(candidate.lineup.lead.binding.key, lcat):
+                return ResumeChoice(missing, problem="pending lead still needs a choice")
+        except (cli_errors.CharmerError, OSError, ValueError, KeyError, TypeError) as exc:
+            return ResumeChoice(missing, problem=termtext.visible_message(exc))
+        return ResumeChoice(False, document, candidate.lineup)
+
+    def pending_resolves_lead(self, record: dict[str, Any]) -> bool:
+        return self.resume_choice(record).lineup is not None
+
+    def begin_session_batch(self) -> None:
+        """After confirmation, enable only an explicitly deferred session writer.
+
+        A dry-run or a genuinely read-only Runtime cannot be upgraded. No
+        shim, setting or scope is refreshed; mutation APIs keep their locks.
+        """
+        from charmer import installs
+
+        if not self.allow_state_writes or (self._read_only_store and not self._deferred_session_batch):
+            raise cli_errors.CLIError("session changes are read-only in this command")
+        root = self._session_store_root
+        sessions.check_state_marker(root)
+        with sessions.launcher_write_guard(root):
+            installs.guard(root, self.environ, writes=True)
+            if self._deferred_session_batch:
+                schema = self.session_store.schema
+                self._session_store = sessions.SessionStore(root, schema)
+                self._read_only_store = False
+                self._deferred_session_batch = False
+
+    def session_batch_problem(self, record: dict[str, Any]) -> str | None:
+        """Revalidate each record under its mutation phase, not only at batch start."""
+        from charmer import installs
+
+        sessions.check_state_marker(self._session_store_root)
+        channel = installs.check(self._session_store_root, self.environ, record=False)
+        if not channel.ok:
+            return str(channel.problem) + (f" — {channel.remedy}" if channel.remedy else "")
+        return sessions.nonrunning_problem(record, background=self.background_liveness(),
+                                           process=sessions.proc_session_scan(self.proc_root),
+                                           self_id=self.environ.get("CHARMER_MANAGED_ID"))
 
     @property
     def home(self) -> Path:
@@ -1691,29 +1767,20 @@ class Runtime:
                 )
                 profile_name, follow = target.profile, target.follow
                 source_kind = "relaunch"
-            if document is None and record.get("pending"):
-                pending = record["pending"]
-                reasons = "; ".join(pending.get("reasons") or ())
-                try:
-                    if pending["kind"] == "profile":
-                        document = self.profiles.load(pending["profile"])
-                    else:
-                        document = copy.deepcopy(pending["document"])
-                    candidate = profile_mod.evaluate(
-                        document,
-                        lcat,
-                        bindings=self._bindings_map(),
-                        effective=eff,
-                        ad_hoc=pending.get("profile") is None,
-                    )
-                    if candidate.errors:
-                        raise profile_mod.ProfileError("; ".join(candidate.errors))
-                except (profile_mod.ProfileError, profile_mod.BindingError) as exc:
-                    notices.append(f"pending relaunch change dropped: {exc} ({reasons})")
-                    document = None
-                else:
-                    profile_name, follow = pending.get("profile"), bool(pending.get("follow"))
-                    source_kind = "pending"
+            if document is None:
+                choice = self.resume_choice(record, lcat=lcat, effective=eff)
+                pending = record.get("pending")
+                if pending:
+                    reasons = "; ".join(pending.get("reasons") or ())
+                    if choice.problem:
+                        notices.append(f"pending relaunch change dropped: {choice.problem} ({reasons})")
+                    elif choice.document is not None:
+                        document = choice.document
+                        profile_name, follow = pending.get("profile"), bool(pending.get("follow"))
+                        source_kind = "pending"
+                if choice.needs_choice:
+                    key = record["applied"]["lead"]["key"]
+                    raise cli_types.NeedsChoiceError(record, key, sessions.lead_choice_notice(record, lcat))
             if document is None:
                 if record["follow"] and record["profile"] and self.profiles.contains(
                     record["profile"]

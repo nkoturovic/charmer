@@ -442,7 +442,8 @@ def _choose_session_line(
     lcat = runtime.lineup_catalog()
     for index, record in enumerate(records, start=1):
         summary = sessions.record_summary(
-            record, lcat if record.get("version") == sessions.RECORD_VERSION else None
+            record, lcat if record.get("version") == sessions.RECORD_VERSION else None,
+            needs_choice=runtime.resume_choice(record, lcat=lcat).needs_choice,
         )
         follow = "-" if summary.follow is None else ("follow" if summary.follow else "pinned")
         output_stream.write(

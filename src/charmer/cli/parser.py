@@ -19,6 +19,23 @@ def split_passthrough(argv: list[str]) -> tuple[list[str], list[str]]:
     return list(argv[:separator]), list(argv[separator + 1 :])
 
 
+def _session_days(value: str) -> int:
+    digits = value[:-1] if value.endswith("d") else value
+    if not digits.isascii() or not digits.isdecimal() or len(digits) > 6:
+        raise argparse.ArgumentTypeError("use a number of days, for example 30d")
+    return int(digits)
+
+
+def _session_filters(parser: argparse.ArgumentParser) -> None:
+    directories = parser.add_mutually_exclusive_group()
+    directories.add_argument("--here", action="store_true", help="sessions recorded in this directory")
+    directories.add_argument("--all", action="store_true", dest="all_sessions", help="sessions in every directory")
+    parser.add_argument("--ended", action="store_true", help="sessions whose last event is end")
+    parser.add_argument("--needs-choice", action="store_true", help="sessions that need a lead choice")
+    parser.add_argument("--older-than", type=_session_days, metavar="Nd",
+                        help="last_seen_at older than N days (unknown or malformed times excluded)")
+
+
 class _VersionAction(argparse.Action):
     """``--version``: the release identity line the launchers print
     (version, catalog, gateway and Claude Code pins), read from the
@@ -354,15 +371,27 @@ def build_parser() -> argparse.ArgumentParser:
     session_commands = sessions_parser.add_subparsers(dest="sessions_command", required=True, help="command to run")
     sessions_list = session_commands.add_parser(
         "list", help="list managed sessions (a report; pick one to resume with charmer -r)")
+    _session_filters(sessions_list)
     sessions_list.add_argument("--json", action="store_true", dest="json_output",
                                help="one JSON document (stable fields; no transcript content)")
     show_session = session_commands.add_parser("show", help="show a managed session's record (JSON)")
     show_session.add_argument("uuid", metavar="SESSION", help=SESSION_ARGUMENT)
     forget = session_commands.add_parser(
         "forget", help="forget a managed session: its record and generated scope (the transcript is kept)")
-    forget.add_argument("uuid", metavar="SESSION", help=SESSION_ARGUMENT)
+    forget.add_argument("uuid", nargs="*", metavar="SESSION", help=SESSION_ARGUMENT + "; or omit SESSION and select with filters")
+    _session_filters(forget)
+    forget.add_argument("--dry-run", action="store_true", help="preview the frozen selection; write nothing")
     forget.add_argument("--force", action="store_true", help="forget even when background liveness cannot be determined")
     forget.add_argument("--yes", action="store_true", help="skip the y/N confirmation (required without a terminal)")
+    choose = session_commands.add_parser("choose", help="save lead choices for the next resume, without launching")
+    choose.add_argument("uuid", nargs="*", metavar="SESSION", help=SESSION_ARGUMENT + "; or omit SESSION and select with filters")
+    _session_filters(choose)
+    choose_target = choose.add_mutually_exclusive_group(required=True)
+    choose_target.add_argument("--profile", dest="choose_profile", metavar="NAME", help="follow this profile at the next resume")
+    choose_target.add_argument("--direct", dest="choose_direct", metavar="MODEL", help="use this direct lead at the next resume")
+    choose.add_argument("--effort", dest="choose_effort", metavar="LEVEL", help="direct lead effort (default: ultracode)")
+    choose.add_argument("--dry-run", action="store_true", help="preview pending choices; write nothing and never launch")
+    choose.add_argument("--yes", action="store_true", help="skip the y/N confirmation (required without a terminal)")
     link = session_commands.add_parser(
         "link", help="adopt a native session (must exist in local Claude metadata)"
     )

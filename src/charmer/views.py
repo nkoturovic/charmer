@@ -1807,6 +1807,7 @@ def session_rows(
     cwd: str | None = None,
     forks: frozenset[str] = frozenset(),
     native_count: int = 0,
+    marked: frozenset[str] | None = None,
 ) -> SessionsModel:
     """The sessions table (§4.7): columns by width tier, marks, the banner.
 
@@ -1829,10 +1830,15 @@ def session_rows(
         "mid": ("state", "profile", "lead", "last seen", "title"),
         "narrow": ("state", "profile", "title"),
     }[tier]
+    if marked is not None:
+        keep = ("*", *keep)
     rows: list[SessionRow] = []
     needs_total = 0
     for summary in summaries:
-        lead, needs = _lead_cell(summary.lead_key, lcat)
+        lead, lead_error = _lead_cell(summary.lead_key, lcat)
+        needs = lead_error if summary.needs_choice is None else summary.needs_choice
+        if lead_error and not needs:
+            lead = summary.lead_key  # still applied; the pending target is a separate next-resume intent
         needs_total += needs
         state = states.get(summary.managed_id, "unknown")
         v4 = summary.version == sessions.RECORD_VERSION
@@ -1852,6 +1858,7 @@ def session_rows(
         if summary.pending:
             title = "↻ " + title
         full = {
+            "*": "*" if marked is not None and summary.managed_id in marked else " ",
             "state": _STATE_MARKS.get(state, "◐ unknown"),
             "profile": clip(summary.profile_label, name_w),
             "lead": clip(lead, name_w),
@@ -1866,20 +1873,22 @@ def session_rows(
                 cells=tuple(full[c] for c in keep),
                 role="error" if needs else "normal",
                 needs=needs,
-                lead_error=needs,
+                lead_error=lead_error,
                 version=summary.version,
             )
         )
     total = len(summaries)
     where = "all directories" if cwd is None else f"{PurePath(cwd).name or cwd} (cwd)"
     title = f"sessions — {where} · {total} total"
+    if marked is not None:
+        title += f" · {len(marked)} marked"
     banner = (
         f"! {needs_total} session(s) need a profile choice (lead model removed)"
         if needs_total
         else None
     )
     native = f"native (not managed): {native_count} — L links one" if native_count else None
-    mins = {"state": 9, "profile": 8, "lead": 8, "agents": 6, "follow": 6, "last seen": 9, "title": 5}
+    mins = {"*": 1, "state": 9, "profile": 8, "lead": 8, "agents": 6, "follow": 6, "last seen": 9, "title": 5}
     return SessionsModel(
         title=title,
         columns=keep,

@@ -1008,11 +1008,23 @@ class ShowTests(LineupCase):
                             interactive=False)
         self.assertEqual(code, 0)
         self.assertEqual(strict_json.loads(out.getvalue()), self.store.load(self.mid))
-        self.assertIn(
-            f"needs a lead choice: lead gone-lead: unknown to catalog", err.getvalue()
-        )
-        self.assertIn(f"charmer lineup --session {self.rid} --relaunch --its-exited "
-                      "profile <name>", err.getvalue())
+        # A valid pending target resolves the actionable choice without
+        # pretending the applied lead has changed.
+        self.assertNotIn("needs a lead choice:", err.getvalue())
+        self.assertIn("pending relaunch change:", err.getvalue())
+        self.assertEqual(self.store.load(self.mid)["applied"]["lead"]["key"], "gone-lead")
+        changed = self.store.load(self.mid)
+        changed["pending"]["profile"] = "missing-profile-fixture"
+        changed["pending"]["kind"] = "profile"
+        changed["pending"]["follow"] = True
+        changed["pending"]["document"] = None
+        self.store.save(changed)
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            code = cli.main(["sessions", "show", self.mid], runtime=self.runtime, output_stream=io.StringIO(),
+                            interactive=False)
+        self.assertEqual(code, 0)
+        self.assertIn("needs a lead choice: lead gone-lead: unknown to catalog", err.getvalue())
 
     def test_resolve_fork_names_the_v4_adopt_command(self) -> None:
         self.mutate(

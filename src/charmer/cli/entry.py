@@ -281,14 +281,16 @@ def main(
                                           or bool(getattr(args, "doctor_first_run", False)))) or (
             args.command == "export" and getattr(args, "export_out", None) is None) or (
             args.command == "import" and not getattr(args, "import_apply", False))
-        read_only = quota_read or migrate_dry or profile_dry or bool(getattr(args, "print_launch", False))
+        session_batch = args.command == "sessions" and args.sessions_command in {"forget", "choose"}
+        session_dry = session_batch and bool(getattr(args, "dry_run", False))
+        read_only = quota_read or migrate_dry or profile_dry or session_dry or bool(getattr(args, "print_launch", False))
         # One state root serves one release channel (installs.check): another
         # channel's launcher refuses, except a plain doctor run, which then
         # writes nothing and reports both installations.
         from charmer import installs
 
         channel_check = installs.check(
-            state_path, runtime.environ if runtime is not None else os.environ, record=not read_only)
+            state_path, runtime.environ if runtime is not None else os.environ, record=not (read_only or session_batch))
         if not channel_check.ok:
             if args.command != "doctor" or parser_mod._writes_versioned_state(args):
                 raise cli_errors.CLIError(str(channel_check.problem), remedy=channel_check.remedy)
@@ -305,6 +307,7 @@ def main(
                     ),
                     refresh_shims=not read_only,
                     initialize_session_store=not (read_only or plain_doctor),
+                    defer_session_batch=session_batch,
                 )
             except (errors.CharmerError, OSError) as exc:
                 if not plain_doctor or not isinstance(exc, OSError):

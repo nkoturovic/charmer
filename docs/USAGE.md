@@ -91,8 +91,8 @@ want.
 ## Recovery
 
 - [Troubleshooting](troubleshooting.md): symptom, doctor finding, fix.
-- `charmer doctor` reports Ready, Attention or BLOCKED with one fix
-  for each finding.
+- `charmer doctor` reports Ready, Attention or BLOCKED, with a fix for each finding.
+- [Backup and restore](guides/backup.md): cold recovery, not configuration export or transcript recovery.
 
 ## Update, move, uninstall
 

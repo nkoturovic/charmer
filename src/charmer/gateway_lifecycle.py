@@ -231,11 +231,13 @@ class Seams:
     runner: Callable = subprocess.run
     # The unit journal's hold evidence from an instant on: ``journal(unit,
     # since)``; with it injected, the reach-back probe ``journal_reaches(unit,
-    # at)`` and the drop notices ``journal_drops(unit, since)`` are seams too
-    # (a missing one answers None) and the host journal is never read.
+    # at)``, drop notices ``journal_drops(unit, since)`` and system-manager
+    # observation ``journald_start()`` are seams too (a missing one answers
+    # None); none falls through to the host from an injected journal.
     journal: Callable[[str, datetime.datetime], observation.LogWindow] | None = None
     journal_reaches: Callable[[str, datetime.datetime], bool | None] | None = None
     journal_drops: Callable[[str, datetime.datetime], gateway_hold.Drops | None] | None = None
+    journald_start: Callable[[], datetime.datetime | None] | None = None
     port_probe: Callable[[int], bool] = endpoint.port_free
     clock: Callable[[], float] = time.monotonic
     sleep: Callable[[float], None] = time.sleep
@@ -1011,8 +1013,12 @@ class Gateway:
             else:
                 marker = service.start_marker_prefix(running[0]) if running is not None and running[0] else None
                 reader, reaches, drops = gateway_hold.journal_sources(unit, marker)
+            journald_start = seams.journald_start
+            if journald_start is None and seams.journal is None:
+                journald_start = lambda: service.journald_start(runner=seams.runner)
             return gateway_hold.evaluate_journal(self.state_root, self.providers(), reader=reader,
-                                                 running=running, now=self._now_text, reaches=reaches, drops=drops)
+                                                 running=running, now=self._now_text, reaches=reaches, drops=drops,
+                                                 journald_start=journald_start)
         return gateway_hold.evaluate_files(self.state_root, self.providers(), now=self._now_text)
 
     def _now_text(self) -> str:

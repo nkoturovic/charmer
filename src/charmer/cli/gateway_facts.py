@@ -1455,7 +1455,16 @@ def gateway_runtime_report(runtime: runtime_mod.Runtime) -> tuple[list[str], lis
         info.append(f"Gateway logs: the {gateway.unit} journal (24 h window)")
     if live or gateway.backend == endpoint_mod.ON_DEMAND:
         hold = gateway.persistence_hold()
-        if hold.held and hold.coverage_only:
+        if hold.held and hold.journald_unavailable:
+            # The group gives this passive row hold-first priority without
+            # making Enter append the clear-hold route: clearing cannot
+            # waive an unavailable observation.
+            detail = " (no failed credential save was seen in the part read)" if hold.coverage_only else ""
+            attention.append(tagged("gateway persistence hold: HELD" + detail + " — "
+                                    + "; ".join(hold.reasons) + "; stop, restart, update and uninstall are "
+                                    "refused — " + gateway_hold.remedy(hold), area="Gateway", action=None,
+                                    group=("gateway", "persistence-hold")))
+        elif hold.held and hold.coverage_only:
             attention.append(tagged(HOLD_COVERAGE_TEXT.format(reasons="; ".join(hold.reasons)),
                                     area="Gateway", action="hold-coverage"))
         elif hold.held:

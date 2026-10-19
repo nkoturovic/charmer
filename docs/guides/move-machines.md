@@ -5,6 +5,14 @@
 ready. Credentials, sign-ins and approvals do not travel: you reconnect
 them on the new computer, deliberately.
 
+This is a configuration move, not a clone of an installation. For same-home
+recovery after disk loss, use [Backup and restore](backup.md): a separate,
+encrypted cold copy of charmer-owned files. It excludes user-owned Claude
+Code files and cannot recover conversations from session records alone.
+Never start a restored OAuth sign-in on a second host while the old one can
+still use it; rotating refresh tokens can invalidate both copies. Use fresh
+sign-in on the new computer instead.
+
 ## What travels, and what does not
 
 | In the export | Not in the export |

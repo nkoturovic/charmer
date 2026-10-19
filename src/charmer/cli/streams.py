@@ -99,6 +99,7 @@ _STDOUT_REPORT_COMMANDS = frozenset(
         ("sessions", "list"),
         ("sessions", "show"),
         ("sessions", "forget"),
+        ("sessions", "choose"),
         ("sessions", "link"),
         ("sessions", "relink-runtime"),
         ("sessions", "mark-ended"),

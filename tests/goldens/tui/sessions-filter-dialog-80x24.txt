@@ -1,0 +1,24 @@
+  Session filters — AND
+
+    [x] This directory (otherwise all)
+    [x] Ended
+    [x] Needs a lead choice
+  > Older than: 45d
+    Apply filters (AND)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  Enter toggle/edit/apply · ? help · Esc cancel
