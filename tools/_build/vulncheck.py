@@ -42,7 +42,9 @@ class CheckError(Exception):
 
 def _run(argv: list[str]) -> subprocess.CompletedProcess[str]:
     try:
-        return subprocess.run(argv, capture_output=True, text=True, timeout=TIMEOUT, stdin=subprocess.DEVNULL)
+        # The scanner writes UTF-8 JSON; output that does not decode fails the check.
+        return subprocess.run(argv, capture_output=True, text=True, encoding="utf-8", timeout=TIMEOUT,
+                              stdin=subprocess.DEVNULL)
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise CheckError(f"{argv[0]} could not run: {exc}") from exc
 

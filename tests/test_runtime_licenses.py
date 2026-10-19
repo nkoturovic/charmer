@@ -15,6 +15,8 @@ import hashlib
 import io
 import json
 import shutil
+import subprocess
+import sys
 import tarfile
 import tempfile
 import unittest
@@ -300,6 +302,24 @@ class DeriveTests(unittest.TestCase):
             tool.write(out, document, texts)
             loaded = tool.load(out)
             self.assertEqual(loaded.document, json.loads(json.dumps(document)))
+
+    def test_the_inventory_is_written_as_utf8(self) -> None:
+        """Non-ASCII stays as written (ensure_ascii=False) and the file is
+        UTF-8 whatever the locale: load() reads it as UTF-8."""
+
+        tool, _ = tools()
+        with tempfile.TemporaryDirectory() as raw:
+            out = Path(raw) / "out"
+            program = ("import importlib.util, sys\n"
+                       "spec = importlib.util.spec_from_file_location('runtime_licenses', sys.argv[1])\n"
+                       "tool = sys.modules[spec.name] = importlib.util.module_from_spec(spec); spec.loader.exec_module(tool)\n"
+                       "tool.write(__import__('pathlib').Path(sys.argv[2]), {'format': 1, 'source': 'gr\\u00fc\\u00df'},"
+                       " {})\n")
+            result = subprocess.run([sys.executable, "-X", "warn_default_encoding", "-W", "error::EncodingWarning",
+                                     "-c", program, str(RUNTIME_LICENSES_TOOL), str(out)], capture_output=True,
+                                    text=True, timeout=60, stdin=subprocess.DEVNULL)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn('"source": "gr\u00fc\u00df"'.encode(), (out / tool.INVENTORY).read_bytes())
 
     def test_only_the_default_build_of_the_pinned_version_is_described(self) -> None:
         """A free-threaded build, the JIT on by default or a full archive of

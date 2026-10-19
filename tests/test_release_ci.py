@@ -1492,6 +1492,35 @@ if mode == "fail":
         self.assertEqual(code, 1)
         self.assertTrue(all(identifier in entry["unreviewed_findings"] for entry in report["targets"]))
 
+    def test_scanner_output_is_decoded_as_utf8(self) -> None:
+        """govulncheck writes UTF-8 JSON: it is decoded as UTF-8 whatever the
+        locale, and output that does not decode fails the check."""
+
+        program = ("import importlib.util, sys\n"
+                   "spec = importlib.util.spec_from_file_location('vulncheck', sys.argv[1])\n"
+                   "tool = importlib.util.module_from_spec(spec); spec.loader.exec_module(tool)\n"
+                   "out = tool._run([sys.executable, '-c', 'import sys; sys.stdout.buffer.write(\"\\u00fc\".encode())'])\n"
+                   "assert out.stdout == '\\u00fc', out.stdout\n")
+        result = subprocess.run([sys.executable, "-X", "warn_default_encoding", "-W", "error::EncodingWarning", "-c",
+                                 program, str(VULNCHECK)], capture_output=True, text=True, timeout=60,
+                                stdin=subprocess.DEVNULL)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.stream_file.write_bytes(b"\xff not utf-8\n")
+        self.policy_file.write_text(json.dumps(self.policy))
+        out = self.tmp / "evidence" / "undecodable.json"
+        with mock.patch.dict(os.environ, {"STUB_MODE": "reviewed", "STUB_STREAM": str(self.stream_file)}), \
+                contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            stub = self.tmp / "raw-stub"
+            stub.write_text(f"#!{sys.executable}\nimport os, sys\nfrom pathlib import Path\n"
+                            "if '-version' in sys.argv:\n    print('DB: file:///synthetic-db'); sys.exit(0)\n"
+                            "sys.stdout.buffer.write(Path(os.environ['STUB_STREAM']).read_bytes())\n")
+            os.chmod(stub, 0o755)
+            code = self.tool.main(["--dist", str(self.release.dir), "--out", str(out), "--govulncheck", str(stub),
+                                   "--dispositions", str(self.policy_file)])
+        self.assertEqual(code, 1)
+        report = json.loads(out.read_text())
+        self.assertTrue(all(entry["result"] == "error" for entry in report["targets"]), report["targets"])
+
     def test_scanner_version_is_exact_not_just_protocol_compatible(self) -> None:
         self.assertEqual(self.run_check()[0], 0)
         for version in ("v1.8.0", "v1.10.0", "v1.9.0-dev", "", None):

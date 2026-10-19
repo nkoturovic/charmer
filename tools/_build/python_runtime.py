@@ -497,7 +497,8 @@ def prepare(runtimes: Runtimes, target: str, dest: Path, *, cache: Path | None =
 def interpreter_version(python: Path | str) -> str:
     result = subprocess.run(
         [str(python), "-I", "-c", "import platform; print(platform.python_version())"],
-        capture_output=True, text=True, timeout=60, env=_clean_env(), stdin=subprocess.DEVNULL,
+        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60, env=_clean_env(),
+        stdin=subprocess.DEVNULL,
     )
     if result.returncode != 0:
         raise BuildError(f"{python} does not run: {result.stderr.strip()[:200]}")
@@ -539,7 +540,8 @@ def _clean_env(extra: dict[str, str] | None = None) -> dict[str, str]:
 def _cache_tag(python: Path | str) -> str:
     result = subprocess.run(
         [str(python), "-I", "-c", "import sys; print(sys.implementation.cache_tag)"],
-        capture_output=True, text=True, timeout=60, env=_clean_env(), stdin=subprocess.DEVNULL,
+        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60, env=_clean_env(),
+        stdin=subprocess.DEVNULL,
     )
     if result.returncode != 0 or not result.stdout.strip():
         raise BuildError(f"{python} does not report a bytecode cache tag")
@@ -567,8 +569,8 @@ def compile_tree(python: Path | str, tree: Path, ddir: str, epoch: int, *,
             shutil.rmtree(cache_dir)
     command = [str(python), "-I", "-m", "compileall", "-q", "-f",
                "--invalidation-mode", "unchecked-hash", "-d", ddir, str(tree)]
-    result = subprocess.run(command, capture_output=True, text=True, timeout=600, stdin=subprocess.DEVNULL,
-                            env=_clean_env({"SOURCE_DATE_EPOCH": str(int(epoch))}))
+    result = subprocess.run(command, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=600,
+                            stdin=subprocess.DEVNULL, env=_clean_env({"SOURCE_DATE_EPOCH": str(int(epoch))}))
     if result.returncode != 0:
         raise BuildError(f"compileall failed: {(result.stdout + result.stderr).strip()[:400]}")
     tag = _cache_tag(python)

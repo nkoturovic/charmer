@@ -457,6 +457,23 @@ class BytecodeTests(RuntimeTestCase):
         self.assertEqual(refused.returncode, 1)
         self.assertIn("offline", refused.stderr)
 
+    def test_no_implicit_text_encoding(self) -> None:
+        """The interpreter probes and compileall's output are decoded as
+        UTF-8, never in the locale's encoding (the build hosts run any
+        Python 3.11 or newer, under any locale)."""
+
+        tree = self._tree("encoding")
+        program = (
+            "import importlib.util, sys\n"
+            "spec = importlib.util.spec_from_file_location('python_runtime', sys.argv[1])\n"
+            "tool = sys.modules[spec.name] = importlib.util.module_from_spec(spec); spec.loader.exec_module(tool)\n"
+            "tool.interpreter_version(sys.executable); tool._cache_tag(sys.executable)\n"
+            "tool.compile_tree(sys.executable, sys.argv[2], 'lib/python3.0/site-packages', 0)\n")
+        result = subprocess.run([sys.executable, "-X", "warn_default_encoding", "-W", "error::EncodingWarning", "-c",
+                                 program, str(PYTHON_RUNTIME), str(tree)], capture_output=True, text=True,
+                                timeout=120, stdin=subprocess.DEVNULL, cwd=self.tmp)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def running_manifest(self) -> Path:
         """The shipped manifest pinned to the interpreter running the tests."""
 

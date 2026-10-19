@@ -453,7 +453,8 @@ def write(out: Path, document: Mapping[str, Any], texts: Mapping[str, bytes]) ->
             stale.unlink()
     for name, data in texts.items():
         (out / name).write_bytes(data)
-    (out / INVENTORY).write_text(json.dumps(document, indent=2, sort_keys=True, ensure_ascii=False) + "\n")
+    (out / INVENTORY).write_text(json.dumps(document, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+                                 encoding="utf-8")
 
 
 def main(argv: list[str] | None = None) -> int:
