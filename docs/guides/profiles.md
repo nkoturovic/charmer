@@ -189,6 +189,10 @@ guarantees about workflows (the card's `?` panel):
 - no cm-role contract; ≤16 concurrent / 1000 per run
 - a cm-* agentType keeps its model and effort, but isolation is per call: a workflow writer must pass isolation:'worktree' itself
 
+The model-preservation claim excludes user-installed `agent.spawn` mods:
+these can redirect a fresh workflow agent to another lineup model. See the
+[fence boundary and resumed-agent limits](../reference/compatibility.md#verified-behavior-and-limits).
+
 A workflow default uses the same permissive model rules, but a one-selector
 client-effort line can supply only its default effort: a separately chosen
 nondefault effort cannot be represented there. Missing forced-tool or

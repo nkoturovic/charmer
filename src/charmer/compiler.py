@@ -117,13 +117,23 @@ def skill_policy_bypass_flags(argv: Iterable[str]) -> tuple[str, ...]:
 
 # The native fork subagent (``subagent_type: "fork"``: the caller's own
 # context, model and effort) is no lineup agent. It is on by default in a
-# terminal session and, from Claude Code 2.1.302, headless too. Every scope
-# denies it: the client then reports forks unavailable and refuses a fork
-# call naming this rule. CLAUDE_CODE_FORK_SUBAGENT=0 is not used: it turns
-# off the whole fork gate, which also decides whether a terminal session runs
-# every subagent in the background. The real-binary proof is
-# tests/test_client_agents ForkSubagentPolicyTests (client check S15).
+# terminal session (Claude Code 2.1.232 and later) and, from 2.1.302,
+# headless too. Every scope denies it: the client refuses a fork call naming
+# this rule. The real-binary proof is tests/test_client_agents
+# ForkSubagentPolicyTests (client check S15).
 FORK_AGENT_DENY = "Agent(fork)"
+# Beside the deny, every scope turns the fork gate off in the flag settings
+# env, which outrank the user, project and local settings env and the
+# process environment (a launch also clears the inherited variable): the
+# client then offers no fork at all, so a policy layer that allows
+# Agent(fork) or a client whose rule matching changes still has no fork to
+# start. A side effect: a terminal session no longer forces every subagent
+# into the background, so the Agent tool offers run_in_background again (its
+# default stays the background). The real-binary proof is
+# tests/test_client_agents ForkGateTests (client check fork-gate), on the
+# previous pin too when it is retained.
+FORK_SUBAGENT_ENV = "CLAUDE_CODE_FORK_SUBAGENT"
+FORK_SUBAGENT_OFF = "0"
 
 
 FORK_UNVERIFIED_GUIDANCE = (
@@ -673,6 +683,7 @@ def generate_session_appendix(
 # CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL (the flag settings state it neutral).
 # CLAUDE_CODE_AUTO_MODE_MODEL (the auto-mode classifier's model) is cleared
 # too: an inherited value would pick a lineup model the lineup never chose.
+# So is CLAUDE_CODE_FORK_SUBAGENT (the flag settings turn the fork gate off).
 V2_ENV_UNSET = (
     *catalog_mod.CREDENTIAL_ENV_KEYS,
     "ANTHROPIC_DEFAULT_FABLE_MODEL",
@@ -683,6 +694,7 @@ V2_ENV_UNSET = (
     "CLAUDE_CODE_SUBAGENT_MODEL_FORCE",
     "CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL",
     "CLAUDE_CODE_AUTO_MODE_MODEL",
+    FORK_SUBAGENT_ENV,
     "CLAUDE_CODE_MAX_OUTPUT_TOKENS",
     "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY",
     "CLAUDE_CODE_AUTO_COMPACT_WINDOW",

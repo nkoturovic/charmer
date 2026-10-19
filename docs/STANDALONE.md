@@ -43,6 +43,21 @@ affect it:
   Settings that would defeat a managed session's policy (hooks turned
   off, a model or credential override) are reported by doctor, never
   edited.
+- **Installed mods.** A managed session can also load your installed mods.
+  An `agent.spawn` mod is your code inside Claude Code: it can redirect a
+  fresh workflow agent to another lineup model. The fence still limits
+  which models reach the wire; exact per-agent binding is not protected
+  against these mods. See the [mod boundary and resumed-agent
+  limits](reference/compatibility.md#verified-behavior-and-limits).
+- **MCP names.** A permission rule `mcp__<server>__*` grants that server's
+  tools, not those of a neighboring name. A managed `deniedMcpServers`
+  rule for a plugin's server must name `plugin:<plugin>:<server>`; the bare
+  server name does not cover it. Claude Code checks the deny before
+  starting the server, including on subagent spawn, resume and plugin
+  reload.
+- **Terminal subagents.** Managed sessions turn off fork subagents, but
+  ordinary agents can run in the foreground; the background remains the
+  default. This does not change how plain `claude` is configured.
 - **`CLAUDE_CONFIG_DIR`.** Managed sessions unset it: they always use
   `~/.claude`. If you run plain `claude` with another configuration
   directory, managed sessions do not see that directory's settings, MCP

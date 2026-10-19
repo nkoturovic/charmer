@@ -87,21 +87,41 @@ contexts or signed reasoning history.
 - Claude Code can run every workflow agent on one model
   (`CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL`), replacing the models of `cm-*`
   agents too. Managed sessions set it to `inherit` in their own settings,
-  which outrank your user, project and local settings, so workflow agents
-  keep their lineup models; a value you set elsewhere has no effect there.
-  A managed policy that sets it is reported like any policy model lock.
+  which outrank your user, project and local settings, so that environment
+  override cannot replace their lineup models. A managed policy that sets
+  it is reported like any policy model lock. Installed mods are a separate
+  boundary, described below.
+- User-installed `agent.spawn` mods can move a fresh workflow agent to
+  another model of the lineup. Against these mods, charmer guarantees fence
+  membership, **not the exact per-agent model binding**: no outside-fence
+  model reaches the wire. A resumed agent ignores a mod's model rewrite
+  and keeps the model it started with, even if a mod redirected that fresh
+  spawn. A managed `allowManagedHooksOnly` policy keeps mods out, but also
+  disables charmer's hooks; charmer reports it as a managed lock, not a
+  protection its session scope can supply. On 2.1.302, the client checks
+  retain both the passing fence check (`spawn-mod: PASS class=SM-fenced`)
+  and the known binding failure (`spawn-mod-binding: FAIL class=SB-rebound`).
 - Fork subagents (a copy of the calling agent on its own model and context)
-  are not lineup agents: managed sessions deny them (`Agent(fork)`), and the
-  client refuses a fork naming that rule. Other agents keep running in the
-  background as before.
+  are not lineup agents: managed sessions deny them (`Agent(fork)`) and
+  set `CLAUDE_CODE_FORK_SUBAGENT=0` in their settings, while clearing any
+  inherited value at launch. This turns the fork gate off even against
+  user, project or local settings that enable it. In a terminal, ordinary
+  subagents may run in the foreground; the background remains the default.
+- An MCP permission rule `mcp__<server>__*` grants only that named server,
+  not neighboring names that overlap after normalization or contain `__`.
+  For a plugin server, a managed `deniedMcpServers` rule uses
+  `plugin:<plugin>:<server>`, not the bare server name. The isolated checks
+  verify denial before server startup at launch, subagent spawn, resume
+  and plugin reload.
 - The client's built-in helper agents run on their own model only when the
   session's model list allows it. `claude-code-guide` asks for the default
   Haiku (now Haiku 5.5); no managed lineup includes a Haiku model, so it
   runs on the lead.
 - In isolated testing the gateway key reached only the gateway: none of the
   client's requests to Anthropic or its other hosts carried it, with the
-  managed settings or without them. The previous pin sent it with its
-  start-up and feature-flag requests to Anthropic. See
+  managed settings or without them, including a managed-settings gateway
+  URL and a token-helper refresh after a 401. The previous pin sent it
+  with its start-up and feature-flag requests to Anthropic. See
   [privacy.md](../privacy.md#data-flows).
 - A synthetic session made by 2.1.302, including a tool turn and manual
   compaction, resumes on the previous pin, 2.1.292, from its summary without

@@ -43,6 +43,7 @@ printed. The module skips off the operator host with a BOUNDARY message.
 
 from __future__ import annotations
 
+import contextlib
 import copy
 import json
 import os
@@ -64,6 +65,7 @@ from unittest import mock
 from charmer import catalog, composition, probe, render, state, strict_json
 from charmer.probe import ProbeError
 
+from _client_policy import managed_settings
 from _tier import real_binary_gate
 from _layout import RESOURCES_ROOT  # the one root source
 
@@ -887,6 +889,10 @@ class S12GptContextTests(_SpikeCase):
 
 # A fixed non-secret synthetic gateway token: the fixture helper prints it.
 _S16_TOKEN = "s16-synthetic-gateway-token"
+# The refresh case: the helper first prints a token the gateway refuses (401),
+# then the one it accepts.
+_S16_REFUSED = "s16-synthetic-refused-token"
+_S16_REFRESHED = "s16-synthetic-refreshed-token"
 _S16_HOST = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?:443$")
 _S16_MAX_BODY = 16 * 1024 * 1024
 # The previous release's pin, the control that shows the detector catching a
@@ -917,8 +923,12 @@ class _DestinationTripwire(probe.FakeAnthropicProvider):
     kept. Nothing is forwarded, resolved or dialled; a CONNECT to any other
     port or a malformed host is refused with 403 and recorded."""
 
-    def __init__(self, *, responder, ca: tuple[Path, Path], directory: Path):
-        super().__init__(responder=responder, known_tokens={_S16_TOKEN: "S16"})
+    def __init__(self, *, responder, ca: tuple[Path, Path], directory: Path,
+                 tokens: dict[str, str] | None = None, auth_policy=None):
+        tokens = dict(tokens or {_S16_TOKEN: "S16"})
+        super().__init__(responder=responder, known_tokens=tokens, auth_policy=auth_policy)
+        self.tokens = tuple(tokens)
+        self.labels = frozenset(tokens.values())
         self.lock = threading.Lock()
         self.connects: list[str] = []
         self.refused: list[str] = []
@@ -958,12 +968,17 @@ class _DestinationTripwire(probe.FakeAnthropicProvider):
         with self.lock:
             inner = list(self.inner)
             connects, refused = sorted(set(self.connects)), sorted(set(self.refused))
-        gateway = [record for record in self.requests if record.auth == "S16"]
+        gateway = [record for record in self.requests if record.auth in self.labels]
+        labels: dict[str, int] = {}
+        for record in gateway:
+            labels[record.auth] = labels.get(record.auth, 0) + 1
         return {
             "connects": connects, "refused": refused,
             "destinations": sorted({f"{host} {method} {path}" for host, method, path, _seen in inner}),
             "token_destinations": sorted({f"{host} {method} {path}" for host, method, path, seen in inner if seen}),
             "gateway_with_token": len(gateway),
+            "gateway_labels": labels,
+            "gateway_rejected": sum(1 for record in gateway if record.auth_rejected_status),
         }
 
 
@@ -1019,9 +1034,9 @@ class _TripwireHandler(probe._ProviderHandler):
     def _inner(self, method: str) -> None:
         owner = self.owner
         body = self._body()
-        token = _S16_TOKEN.encode()
-        seen = (any(_S16_TOKEN in str(value) for value in self.headers.values())
-                or token in self.path.encode("utf-8", "replace") or token in body)
+        path = self.path.encode("utf-8", "replace")
+        seen = any(any(token in str(value) for value in self.headers.values())
+                   or token.encode() in path or token.encode() in body for token in owner.tokens)
         with owner.lock:
             owner.inner.append((str(self.inner_host), method, _s16_path_class(self.path), seen))
         self.close_connection = True
@@ -1128,7 +1143,7 @@ class S16AuxiliaryDestinationTests(_SpikeCase):
     (fixed upstream in 2.1.299). Residual: a request that ignores the proxy
     fails inside the loopback-only namespace and is not observed."""
 
-    def _seeded(self, name: str, *, fast_mode: bool) -> tuple[probe.ProbeFixture, Path]:
+    def _seeded(self, name: str, *, fast_mode: bool, refresh: bool = False) -> tuple[probe.ProbeFixture, Path]:
         fixture = self._fixture(name)
         config = fixture.claude_config_dir / ".claude.json"
         document = strict_json.loads(config.read_bytes())
@@ -1136,12 +1151,19 @@ class S16AuxiliaryDestinationTests(_SpikeCase):
             document["penguinModeOrgEnabled"] = True
         state.atomic_write(config, strict_json.canonical_file_bytes(document))
         bin_dir = state.ensure_private_dir(fixture.root / "bin")
-        helper = probe.write_fixture_executable(fixture, bin_dir, "s16-helper", f"#!/bin/sh\necho {_S16_TOKEN}\n")
+        body = f"#!/bin/sh\necho {_S16_TOKEN}\n"
+        if refresh:
+            # The first run prints the token the gateway refuses, every later
+            # run the one it accepts (the refresh after a 401).
+            ran = fixture.root / "s16-helper-ran"
+            body = (f"#!/bin/sh\nif [ -e {ran} ]; then echo {_S16_REFRESHED}; "
+                    f"else : > {ran}; echo {_S16_REFUSED}; fi\n")
+        helper = probe.write_fixture_executable(fixture, bin_dir, "s16-helper", body)
         return fixture, helper
 
     def _observe(self, name: str, *, trusted: probe.TrustedExecutable, flag_env: dict | None,
-                 fast_mode: bool, interactive: bool) -> dict:
-        fixture, helper = self._seeded(name, fast_mode=fast_mode)
+                 fast_mode: bool, interactive: bool, managed_base_url: bool = False, refresh: bool = False) -> dict:
+        fixture, helper = self._seeded(name, fast_mode=fast_mode, refresh=refresh)
         tls = state.ensure_private_dir(fixture.root / "tls")
         ca = _s16_ca(tls)
         marker = f"S16-{name.upper()}"
@@ -1151,13 +1173,18 @@ class S16AuxiliaryDestinationTests(_SpikeCase):
         if flag_env:
             settings["env"] = dict(flag_env)
         path = probe.write_fixture_settings(fixture, f"scope/settings-{name}.json", settings)
-        provider = _DestinationTripwire(responder=_S16Reply(marker), ca=ca, directory=tls)
+        tokens = {_S16_REFUSED: "S16-REFUSED", _S16_REFRESHED: "S16-REFRESHED"} if refresh else None
+        provider = _DestinationTripwire(responder=_S16Reply(marker), ca=ca, directory=tls, tokens=tokens,
+                                        auth_policy=probe.reject_auth_labels("S16-REFUSED") if refresh else None)
         original = probe.ProbeFixture.environ
 
         def environ(fixture_self, **kwargs):
             env = original(fixture_self, **kwargs)
             env.update({"HTTPS_PROXY": provider.base_url, "NO_PROXY": "127.0.0.1,localhost",
                         "NODE_EXTRA_CA_CERTS": str(ca[0])})
+            if managed_base_url:
+                # The gateway comes from the managed settings alone.
+                env.pop("ANTHROPIC_BASE_URL", None)
             return env
 
         step = probe.PTYInteraction
@@ -1165,7 +1192,11 @@ class S16AuxiliaryDestinationTests(_SpikeCase):
                  step("❯".encode("utf-8"), marker.encode("ascii") + b"\r"),
                  step(f"{marker}-ACK".encode("ascii"), b"/exit\r"))
         try:
-            with provider, mock.patch.object(probe.ProbeFixture, "environ", environ):
+            with contextlib.ExitStack() as stack:
+                stack.enter_context(provider)
+                stack.enter_context(mock.patch.object(probe.ProbeFixture, "environ", environ))
+                if managed_base_url:
+                    stack.enter_context(managed_settings(fixture, {"env": {"ANTHROPIC_BASE_URL": provider.base_url}}))
                 if interactive:
                     result = probe.run_native_pty(
                         ("--settings", str(path), "--model", settings["model"]), steps, trusted=trusted,
@@ -1225,4 +1256,59 @@ class S16AuxiliaryDestinationTests(_SpikeCase):
             f"{sorted({entry for summary in observed.values() for entry in summary['destinations']})}; "
             f"refused CONNECTs {sorted({r for summary in observed.values() for r in summary['refused']})}; "
             f"detector self-test S16TripwireSelfTests; {control} ({self._pin()})"
+        )
+
+
+class TokenDestinationPolicyTests(S16AuxiliaryDestinationTests):
+    """Token destinations under two more sources of the gateway route.
+
+    Through the same tripwire as S16, with the compiled flag-settings policy
+    (fast mode off, feedback drafts off) and a fixture ``apiKeyHelper``:
+
+    * ``managed-url``: ``ANTHROPIC_BASE_URL`` only in the managed settings env
+      (the process environment carries none; the managed file is mounted
+      inside the namespace, ``tests/_client_policy.py``): the helper's token
+      reaches the gateway through it and no tripwire destination;
+    * ``refresh`` (terminal) and ``refresh-headless``: the helper first prints
+      a token the gateway refuses with a 401, then the one it accepts; the
+      client re-runs the helper and retries (Claude Code 2.1.299), and
+      neither token reaches a tripwire destination.
+
+    The output line: ``client check token-destinations: <STATUS> <detail>``."""
+
+    test_s16_gateway_token_stays_on_the_gateway = None
+
+    def test_token_destinations_under_a_managed_url_and_a_refresh(self) -> None:
+        if shutil.which("openssl", path="/usr/bin:/bin") is None:
+            self.skipTest("BOUNDARY: openssl is needed for the fixture TLS tripwire")
+        import test_compiler_v2  # the production compile (module import: no tests re-exported)
+        from charmer import scope
+
+        _lineup, compiled = test_compiler_v2._seed_launch("balanced")
+        compiled_env = compiled.scope_plan.settings["env"]
+        policy = {key: compiled_env[key] for key in (scope.FAST_MODE_ENV, scope.FEEDBACK_ENV)}
+        observed = {
+            "managed-url": self._observe("managed-url", trusted=self.trusted, flag_env=policy, fast_mode=True,
+                                         interactive=True, managed_base_url=True),
+            "refresh": self._observe("refresh", trusted=self.trusted, flag_env=policy, fast_mode=True,
+                                     interactive=True, refresh=True),
+            "refresh-headless": self._observe("refresh-headless", trusted=self.trusted, flag_env=policy,
+                                              fast_mode=True, interactive=False, refresh=True),
+        }
+        for label, summary in observed.items():
+            self.assertEqual((label, summary["token_destinations"]), (label, []), summary)
+        self.assertGreater(observed["managed-url"]["gateway_with_token"], 0, observed)
+        for label in ("refresh", "refresh-headless"):
+            labels = observed[label]["gateway_labels"]
+            self.assertGreaterEqual(observed[label]["gateway_rejected"], 1, observed)
+            self.assertGreaterEqual(labels.get("S16-REFUSED", 0), 1, observed)
+            self.assertGreaterEqual(labels.get("S16-REFRESHED", 0), 1, observed)
+        hosts = sorted({entry.split(" ", 1)[0] for summary in observed.values() for entry in summary["destinations"]})
+        print(
+            "client check token-destinations: PASS managed-settings ANTHROPIC_BASE_URL -> helper token on "
+            f"{observed['managed-url']['gateway_with_token']} gateway request(s); helper refresh after a 401 -> "
+            f"terminal {observed['refresh']['gateway_labels']} (401s {observed['refresh']['gateway_rejected']}), "
+            f"headless {observed['refresh-headless']['gateway_labels']} "
+            f"(401s {observed['refresh-headless']['gateway_rejected']}); 0 tripwire requests carry a token; "
+            f"tripwire hosts {hosts} ({self._pin()})"
         )

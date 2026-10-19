@@ -332,6 +332,17 @@ Profile lineups and direct lineups, one compile path:
    managed sessions auto-recover transient upstream errors instead
    of dying for lack of a typed "continue" (mid-stream-after-content errors
    remain unrecoverable at the pinned client — documented).
+   Managed scopes deny `Agent(fork)` and set `CLAUDE_CODE_FORK_SUBAGENT=0`
+   in flag settings; the launch also unsets the inherited variable. Ordinary
+   terminal subagents may run in the foreground; background stays the default.
+   User-installed `agent.spawn` mods can redirect a fresh workflow agent to
+   another lineup model: fence membership is guaranteed, exact per-agent
+   binding against user code is not. Resumed-agent rewrites are ignored.
+   Managed `allowManagedHooksOnly` keeps mods out but also disables charmer's
+   hooks; it is a managed lock, not a session-scope mitigation. Keep the
+   passing `spawn-mod: PASS class=SM-fenced` evidence separate from the known
+   `spawn-mod-binding: FAIL class=SB-rebound` record. The canonical limits
+   and plugin-qualified MCP policy names are in `docs/reference/compatibility.md`.
 9. **Simplicity budget.** No new mode/schema/daemon/state without a
    demonstrated failure case. Prefer deletion over addition.
 10. **Upstream `claude` is never configured or hijacked.** No global

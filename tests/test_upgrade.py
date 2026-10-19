@@ -424,6 +424,11 @@ class EssentialEvidencePrefixTests(unittest.TestCase):
                 "compaction window probe: PASS class=env-window-holds ",
                 "client check auto-mode-model: PASS class=AM-owned ",
                 "client check debug-diagnostics: PASS ",
+                "client check fork-gate: PASS class=FG-off ",
+                "client check spawn-mod: PASS class=SM-fenced ",
+                "client check mcp-policy: PASS class=MCP-named-deny-first ",
+                "client check token-destinations: PASS ",
+                "client check fence-substitution: PASS class=FS-fenced ",
             ),
         )
         # A fail-closed or BOUNDARY print never matches a prefix.
@@ -633,12 +638,12 @@ class RunRepinTests(UpgradeTestCase):
 
     def test_policy_and_token_check_skips_refuse_promotion(self) -> None:
         """The workflow-model precedence (S10-precedence), fork-subagent deny
-        (S15) and gateway-token destination (S16) checks each need their own
-        PASS record: omitted, INCONCLUSIVE with a BOUNDARY skip, a BOUNDARY
+        (S15) and gateway-token destination (S16, token-destinations) checks
+        each need their own PASS record: omitted, INCONCLUSIVE with a BOUNDARY skip, a BOUNDARY
         skip alone (S16 without openssl) or not at a line start, a zero-exit
         suite refuses promotion and restores the checkout."""
 
-        for check in ("S10-precedence", "S15", "S16"):
+        for check in ("S10-precedence", "S15", "S16", "token-destinations"):
             required = f"client check {check}: PASS "
             others = [prefix + "ok" for prefix in upgrade.ESSENTIAL_EVIDENCE_PREFIXES if prefix != required]
             for label, lines in (
