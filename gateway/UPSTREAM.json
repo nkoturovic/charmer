@@ -20,7 +20,7 @@
   },
   "vendor": {
     "tree_sha256": "7cb61e9f98783c718e8f534af7a4811134c34ffca658740327fb7bce209be63c",
-    "nix_hash": "sha256-EwaxCvKJdzUbhzu7wJAViaHcsGfA5y6FXpWInhvDkxU=",
+    "nix_hash": "sha256-qbfl57bA06AhjdAjsU0ae2fAWTLCCAPTfE8K1lLKifo=",
     "modules_patch": {
       "basename": "cli-proxy-api-module-requirements.patch",
       "sha256": "e4a58250cbb0c9521ac8d04d6651389c2ff4c2b58c515f35796a0d763d5d23b2"
