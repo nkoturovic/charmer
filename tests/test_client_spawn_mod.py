@@ -130,7 +130,9 @@ def _controls(observed: dict[str, dict[str, Any]]) -> None:
     for phase in _PHASES:
         if observed["control"][phase] != [_AGENT]:
             raise _Inconclusive(f"control {phase}: {observed['control'][phase]} (the compiled model did not run)")
-    if observed["control"].get("rewrites", 0) or not observed["resume-rewrite"].get("resume_ignored"):
+    if observed["control"].get("rewrites", 0):
+        raise _Inconclusive("control: a rewrite was logged without a mod")
+    if not observed["resume-rewrite"].get("resume_ignored"):
         raise _Inconclusive("resume-rewrite: the client never ignored a resumed rewrite (the mod did not load?)")
     for phase in ("fresh", "workflow"):
         if observed["resume-rewrite"][phase] != [_AGENT]:
