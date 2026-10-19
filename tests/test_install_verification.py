@@ -286,13 +286,13 @@ class InstallationVerificationTests(unittest.TestCase):
         self.assertEqual(result.exit_code, 0, result.document())
         self.assertIn("exact version", events[0])
         self.assertEqual([e[0] for e in events[1:]], ["SHA256SUMS", "SHA256SUMS.sshsig", "MANIFEST.json"])
-        self.assertEqual(make.call_args.args, (LOCATION["base_url"],))
+        canonical = json.loads((REPO_ROOT / "packaging/product.json").read_text())["release_base_url"]
+        self.assertEqual(make.call_args.args, (canonical.replace("{version}", "2.1.0"),))
         transport.download.assert_not_called()
 
     def test_online_transport_uses_exact_urls_and_refuses_foreign_redirects(self):
         events = []
-        transport = release_update.verification_transport(LOCATION["base_url"], "2.0.1",
-                                                          environ={}, disclose=events.append)
+        transport = release_update.verification_transport("2.0.1", environ={}, disclose=events.append)
         seen = []
         def opener(url, **kwargs):
             self.assertIn("2.0.1", events[0])
@@ -300,7 +300,8 @@ class InstallationVerificationTests(unittest.TestCase):
             return io.BytesIO(b"fixture metadata")
         transport._opener = opener
         self.assertEqual(transport.fetch("MANIFEST.json", "2.0.1", 1024), b"fixture metadata")
-        self.assertEqual(seen, ["https://example.invalid/releases/download/v2.0.1/MANIFEST.json"])
+        canonical = json.loads((REPO_ROOT / "packaging/product.json").read_text())["release_base_url"]
+        self.assertEqual(seen, [canonical.replace("{version}", "2.0.1") + "/MANIFEST.json"])
         response = io.BytesIO(b"foreign")
         response.geturl = lambda: "https://other.invalid/MANIFEST.json"
         transport._opener = lambda *args, **kwargs: response
@@ -308,13 +309,7 @@ class InstallationVerificationTests(unittest.TestCase):
             transport.fetch("MANIFEST.json", "2.0.1", 1024)
         self.assertTrue(response.closed)
 
-    def test_no_exact_release_location_and_no_signature_are_incomplete(self):
-        self.fixture.inner["release"] = {"latest_url": LOCATION["latest_url"]}
-        self.fixture.authenticate_inner()
-        with mock.patch.object(release_update, "HttpsTransport") as transport:
-            result = self.fixture.run(from_dir=None, disclose=lambda text: None)
-            transport.assert_not_called()
-        self.assertEqual(result.exit_code, 3)
+    def test_no_signature_is_incomplete(self):
         (self.fixture.dir / "SHA256SUMS.sshsig").unlink()
         self.assertEqual(self.fixture.run().exit_code, 3)
 

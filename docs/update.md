@@ -79,8 +79,13 @@ charmer update --verify --from-dir <dir> # fully offline, downloaded metadata
 This is a read-only integrity snapshot, not an update or health test. Online
 verification discloses the release host and installed exact version before
 fetching only `SHA256SUMS`, `SHA256SUMS.sshsig` and the outer release
-`MANIFEST.json`. It never asks for latest, contacts a provider or probes the
-gateway over TCP. The TUI asks before that fetch, with **Cancel** focused.
+`MANIFEST.json`. The canonical GitHub origin and exact-version download path
+come from installed code, **not a URL in the manifest being checked**. GitHub's
+release-asset hosts may serve a redirected download; redirects to latest,
+another release page or another host are refused. Custom or test release
+locations use `--from-dir` for verification; the updater's `--base-url` option
+is unchanged. Verification never asks for latest, contacts a provider or
+probes the gateway over TCP. The TUI asks before that fetch, with **Cancel** focused.
 Choose **Downloaded files** there to enter a directory instead: just like
 `--from-dir`, this makes no network attempt or transport. That directory
 must contain those three files from the installed exact release; it cannot

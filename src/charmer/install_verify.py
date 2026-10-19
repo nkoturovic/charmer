@@ -18,6 +18,7 @@ claimed. There are no repairs, locks created, token reads or executable runs.
 from __future__ import annotations
 
 import hashlib
+import http.client
 import os
 import re
 import stat
@@ -217,7 +218,8 @@ def _unchanged(fd: int, identities: dict) -> None:
 def _json(raw: bytes) -> dict:
     try:
         document = strict_json.loads(raw)
-    except (strict_json.StrictJSONError, RecursionError):
+    except (ValueError, RecursionError):
+        # JSON's integer-conversion bound raises ValueError, not JSONDecodeError.
         _mismatch("manifest is not valid strict JSON")
     if not isinstance(document, dict):
         _mismatch("manifest is not an object")
@@ -259,7 +261,7 @@ class _LocalMetadata:
             raise _Problem("unavailable", "offline signed metadata could not be safely read") from None
 
 
-def _release(inner: dict, version: str, target: str, *, environ: Mapping[str, str],
+def _release(version: str, target: str, *, environ: Mapping[str, str],
              from_dir: Path | None, disclose: Callable[[str], None] | None) -> self_update.Release:
     # Installed trust only: neither the offline directory nor fetched metadata
     # supplies allowed_signers. No CLI trust override is accepted.
@@ -273,18 +275,14 @@ def _release(inner: dict, version: str, target: str, *, environ: Mapping[str, st
         if disclose is None:
             raise _Problem("unavailable", "online verification requires an explicit network disclosure")
         from . import release_update
-        location = inner.get("release", {})
-        base = location.get("base_url") if isinstance(location, dict) else None
-        if not isinstance(base, str):
-            base = None
         try:
-            transport = release_update.verification_transport(base, version, environ=environ, disclose=disclose)
+            transport = release_update.verification_transport(version, environ=environ, disclose=disclose)
         except self_update.UpdateError:
             raise _Problem("unavailable", "exact-version release location unavailable; use --from-dir") from None
     try:
         sums = transport.fetch(self_update.SUMS, version, self_update.METADATA_LIMIT)
         signature = transport.fetch(self_update.SIGNATURE, version, self_update.METADATA_LIMIT)
-    except self_update.UpdateError:
+    except (self_update.UpdateError, OSError, http.client.HTTPException):
         raise _Problem("unavailable", "signed release metadata could not be read") from None
     try:
         trust.verify(sums, signature, signers)
@@ -293,11 +291,11 @@ def _release(inner: dict, version: str, target: str, *, environ: Mapping[str, st
         _mismatch("SHA256SUMS or its signature does not verify with installed trust")
     try:
         outer = transport.fetch(self_update.MANIFEST, version, self_update.METADATA_LIMIT)
-    except self_update.UpdateError:
+    except (self_update.UpdateError, OSError, http.client.HTTPException):
         raise _Problem("unavailable", "the outer release manifest could not be read") from None
     try:
         release = self_update.parse_release(outer, listed, target)
-    except self_update.UpdateError:
+    except (self_update.UpdateError, ValueError, RecursionError):
         _mismatch("the outer release manifest does not match the signed checksums or selected target")
     if release.version != version:
         _mismatch("signed release metadata names a different version than installed")
@@ -432,7 +430,7 @@ def verify_installation(*, environ: Mapping[str, str], channel: str | None, runn
             target = expected_target  # never report an arbitrary local manifest value
             _mismatch("installed inner manifest names the wrong target for this host")
         component = "signed-release"
-        release = _release(inner, version, target, environ=environ, from_dir=from_dir, disclose=disclose)
+        release = _release(version, target, environ=environ, from_dir=from_dir, disclose=disclose)
         checks.append(Check(component, "match", "signature and outer release manifest authenticated for exact installed version"))
         component = "inner-manifest"
         if inner_hash != release.asset.manifest_sha256:
@@ -514,12 +512,16 @@ def verify_current(*, environ: Mapping[str, str], from_dir: Path | None = None,
 
         try:
             if gateway is None:
+                document = strict_json.load(resources_root() / "catalog/gateway.json")
+                config = document.get("gateway") if isinstance(document, dict) else None
+                if (not isinstance(config, dict) or not isinstance(config.get("base_url"), str)
+                        or not 0 < endpoint.port_of(config["base_url"]) < 65536):
+                    raise OSError("packaged gateway observation metadata is invalid")
                 gateway = Gateway(home=paths.home(environ),
                                   state_root=state_root if state_root is not None else paths.state_root(dict(environ)),
-                                  environ=environ,
-                                  gateway_document=strict_json.load(resources_root() / "catalog/gateway.json"))
+                                  environ=environ, gateway_document=document)
             return gateway.observe()
-        except errors.CharmerError:
+        except (errors.CharmerError, ValueError, RecursionError):
             raise OSError("gateway observation is unavailable") from None
 
     return verify_installation(environ=environ, channel=endpoint.channel(environ), running=layout.installation(),

@@ -151,7 +151,8 @@ class VerificationEntryTests(_VerificationCase):
         class Metadata:
             def __init__(self, base_url, latest_url=None, **kwargs):
                 owner.assertIsNone(latest_url)
-                owner.assertIn("{version}", base_url)
+                owner.assertNotIn("{version}", base_url)
+                owner.assertTrue(base_url.endswith("/releases/download/v" + owner.fixture.version))
 
             def fetch(self, name, version, limit):
                 owner.assertIn("contacting", owner.err.getvalue())

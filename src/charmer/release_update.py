@@ -188,22 +188,77 @@ def release_location(bundle: Path) -> tuple[str | None, str | None]:
             latest if isinstance(latest, str) and latest else None)
 
 
-def verification_transport(base_url: str | None, version: str, *, environ: Mapping[str, str],
+# Verification authority belongs to installed code, never to the manifest
+# under examination. Custom/test release locations use --from-dir instead.
+_VERIFICATION_ORIGIN = "https://github.com"
+_VERIFICATION_PATH = "/nkoturovic/charmer/releases/download"
+_VERIFICATION_FILES = (self_update.SUMS, self_update.SIGNATURE, self_update.MANIFEST)
+
+
+def _verification_location(url: str, version: str) -> None:
+    """Require the canonical exact-version directory before making a transport."""
+    try:
+        parts = urllib.parse.urlsplit(url)
+    except ValueError:
+        raise TransportError("the exact-version verification location is invalid") from None
+    if (parts.scheme != "https" or parts.netloc != "github.com"
+            or parts.path != f"{_VERIFICATION_PATH}/v{version}" or parts.query or parts.fragment
+            or parts.geturl() != url):
+        raise TransportError("the verification location is not the canonical exact-version release")
+
+
+def _verification_response_url(url: str, expected: str) -> None:
+    """A redirect may reach GitHub's asset CDN, never a latest/other release page."""
+    if url == expected:
+        return
+    try:
+        parts = urllib.parse.urlsplit(url)
+    except ValueError:
+        raise TransportError("the verification response location is invalid") from None
+    if (parts.scheme != "https" or parts.netloc not in REDIRECT_HOSTS["github.com"]
+            or not parts.path.startswith("/") or parts.fragment
+            or any(ord(char) < 0x20 or ord(char) == 0x7f for char in url)):
+        raise TransportError("verification redirected outside the exact release file and its asset hosts")
+
+
+class _VerificationRedirects(urllib.request.HTTPRedirectHandler):
+    def __init__(self, expected: str) -> None:
+        super().__init__()
+        self.expected = expected
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        _verification_response_url(newurl, self.expected)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def verification_transport(version: str, *, environ: Mapping[str, str],
                            disclose: Callable[[str], None]) -> HttpsTransport:
-    """Read-only exact-version metadata transport; never the latest location.
+    """Code-owned exact-version metadata transport, disclosed before any fetch.
 
-    The verification caller must display this disclosure before any fetch
-    (and a TUI must have obtained confirmation before calling). No transaction,
-    ownership claim, token read, pin acquisition or recovery runs here.
+    The strict opener is verifier-only; the updater's selectable locations,
+    transport and redirect behavior are unchanged. Neither installed manifest
+    URLs nor downloaded metadata select a verification host or path.
     """
-
     self_update._release_version(version, "installed version")
-    if base_url is None or "{version}" not in base_url:
-        raise self_update.UpdateError("the installation names no exact-version release location; "
-                                      "use --from-dir with that release's signed metadata")
-    transport = HttpsTransport(base_url, environ=environ)
-    host = urllib.parse.urlsplit(base_url).hostname
-    disclose(f"Verifying installed charmer {version}: contacting {host} for this exact version's "
+    base_url = f"{_VERIFICATION_ORIGIN}{_VERIFICATION_PATH}/v{version}"
+    _verification_location(base_url, version)
+
+    def open_metadata(url: str, *, timeout: float):
+        if url not in {f"{base_url}/{name}" for name in _VERIFICATION_FILES}:
+            raise TransportError("verification requested a file outside the exact installed release")
+        opener = urllib.request.build_opener(
+            urllib.request.HTTPSHandler(context=tls.context(environ)), _VerificationRedirects(url),
+            urllib.request.ProxyHandler(urllib.request.getproxies_environment()))
+        response = opener.open(urllib.request.Request(url, headers={"User-Agent": "charmer-update"}), timeout=timeout)
+        try:
+            _verification_response_url(response.geturl() if hasattr(response, "geturl") else url, url)
+        except TransportError:
+            response.close()
+            raise
+        return response
+
+    transport = HttpsTransport(base_url, environ=environ, opener=open_metadata)
+    disclose(f"Verifying installed charmer {version}: contacting github.com for this exact version's "
              "MANIFEST.json, SHA256SUMS and signature; never latest or a provider. Nothing is changed.")
     return transport
 
