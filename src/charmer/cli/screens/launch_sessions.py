@@ -1012,6 +1012,8 @@ class _SessionsScreen:
         # (the first screen) out of charmer.
         self.way_back = way_back or _WayBack(1, card=not root)
         self.cwd_filter = True
+        self.filter_mode = "here"
+        self.marked: set[str] = set()
         self.selected = 0
         self.offset = 0
         self.message = ""
@@ -1042,6 +1044,19 @@ class _SessionsScreen:
         else:
             records, native = every, native_all
             self.empty_elsewhere = False
+        selected = sessions.SessionFilter(here=self.cwd_filter, ended=self.filter_mode == "ended",
+                                          needs_choice=self.filter_mode == "needs a choice",
+                                          older_than=30 if self.filter_mode == "older than 30 days" else None,
+                                          exited=self.filter_mode == "exited without an end")
+        background, process = runtime.background_liveness(), sessions.proc_session_scan()
+        records = [record for record in records if selected.matches(
+            record, cwd=runtime.cwd,
+            needs_choice=lambda record: sessions.lead_key_needs_choice(sessions.lead_identity(record)[0], self.lcat),
+            is_dead=lambda record: sessions.nonrunning_problem(record, background=background, process=process) is None,
+            now=self._clock())]
+        if self.filter_mode not in ("all", "here"):
+            native = []
+        self.marked.intersection_update(sessions.managed_id(record) for record in records)
         # Every eligible native session is listed (the picker scrolls).
         self.native = native
         self.native_overflow = 0
@@ -1079,7 +1094,10 @@ class _SessionsScreen:
                 cwd=self.runtime.cwd if self.cwd_filter else None,
                 forks=self.forks,
                 native_count=len(self.native) + self.native_overflow,
+                marked=frozenset(self.marked),
             )
+            if self.filter_mode not in ("all", "here"):
+                model = dataclasses.replace(model, title=model.title + f" · {self.filter_mode}")
             self._model_cache[width] = model
         return model
 
@@ -1123,6 +1141,8 @@ class _SessionsScreen:
         """The selected row's conditional keys: E (running in the
         background), M (no end event and not running), P (a scope to repair)."""
 
+        if self.marked:
+            return (cli_text.SESSIONS_MARK_BINDING,)
         record = self._record()
         if record is None or self._on_banner():
             return ()
@@ -1579,6 +1599,58 @@ class _SessionsScreen:
                      palette=self.palette).run(win)
         self._say(cli_text.FORGET_DONE.format(short=short, runtime_id=runtime_id))
 
+    def _batch_check(self, record: dict[str, Any]) -> str | None:
+        return sessions.nonrunning_problem(record, background=self.runtime.background_liveness(),
+                                           process=sessions.proc_session_scan(),
+                                           self_id=self.runtime.environ.get("CHARMER_MANAGED_ID"))
+
+    def _batch_items(self, records: Sequence[dict[str, Any]]) -> tuple[sessions.BatchItem, ...]:
+        background, process = self.runtime.background_liveness(), sessions.proc_session_scan()
+        return sessions.batch_plan(self.runtime.session_store, [sessions.managed_id(record) for record in records],
+                                   names=session_facts._record_resume_names,
+                                   check=lambda record: sessions.nonrunning_problem(
+                                       record, background=background, process=process,
+                                       self_id=self.runtime.environ.get("CHARMER_MANAGED_ID")))
+
+    def _batch_confirm(self, win: Any, items: Sequence[sessions.BatchItem], verb: str,
+                       extra: Sequence[str] = ()) -> bool:
+        width = max(20, win.getmaxyx()[1] - 8)
+        lines = ["Selected IDs are frozen; each is checked again under its lock."]
+        for item in items[:10]:
+            if item.problem:
+                text = f"{item.identifier[:8]} refused: {item.problem}"
+            else:
+                record = item.record
+                summary = sessions.record_summary(record)
+                text = f"{item.identifier[:8]}  {summary.profile_label}  {record.get('last_seen_at', '?')}  {Path(summary.cwd).name}"
+            lines.append(views.clip(termtext.visible_text(text), width))
+        if len(items) > 10:
+            lines.append(f"…and {len(items) - 10} more")
+        lines += list(extra)
+        lines.append("Live or unknown liveness refuses; transcripts are never touched.")
+        return bool(tui.Modal(f"{verb} {len(items)} session(s)?", lines,
+                              buttons=(("Cancel", False), (verb, True)), default=False).run(
+                                  win, self.palette, background=self._draw))
+
+    def _batch_housekeeping(self, win: Any, records: Sequence[dict[str, Any]], *, mark_ended: bool = False) -> None:
+        items = self._batch_items(records)
+        verb = "Mark ended" if mark_ended else "Forget"
+        if not self._batch_confirm(win, items, verb):
+            self._say(f"{verb} cancelled; nothing changed.")
+            return
+        try:
+            self.runtime.begin_session_batch()
+            results = sessions.housekeeping_batch(self.runtime.session_store, items,
+                                                  check=self._batch_check, mark_ended=mark_ended)
+        except (cli_errors.CharmerError, OSError) as exc:
+            self._say(termtext.visible_message(exc), "warn")
+            return
+        self.marked.clear()
+        self._reload()
+        lines = sessions.batch_result_lines(results)
+        tui.TextView(f"{verb} results", lines, palette=self.palette).run(win)
+        self._say(lines[-1], "warn" if any(item.status != "succeeded" for item in results) else "accent")
+
     def _typed_confirmation(self, win: Any, verb: str, record: dict[str, Any], reason: str) -> bool:
         """A forget or stop whose liveness cannot be checked: the person
         types the full session id (Cancel is focused first); False on
@@ -1732,14 +1804,38 @@ class _SessionsScreen:
             items = self._items()
             if ch == "?":
                 self._help(win)
+            elif ch == "/":
+                modes = ("all", "here", "exited without an end", "ended", "needs a choice", "older than 30 days")
+                self.filter_mode = modes[(modes.index(self.filter_mode) + 1) % len(modes)]
+                self.cwd_filter = self.filter_mode == "here"
+                self.marked.clear()
+                self.selected = self.offset = 0
+                self._reload()
+                self._say(f"filter: {self.filter_mode}")
             elif ch in ("c", "C"):
                 self.cwd_filter = not self.cwd_filter
+                self.filter_mode = "here" if self.cwd_filter else "all"
+                self.marked.clear()
                 self.selected = 0
                 self.offset = 0
                 self._reload()
                 self._say("showing only this directory" if self.cwd_filter else "showing all directories")
             elif ch in ("l", "L"):
                 self._link_native(win)
+            elif ch == "*":
+                visible = {sessions.managed_id(record) for record in self.records}
+                self.marked = set() if self.marked == visible else visible
+                self._model_cache.clear()
+            elif ch == " " and self._record() is not None:
+                mid = sessions.managed_id(self._record())
+                if mid in self.marked:
+                    self.marked.remove(mid)
+                else:
+                    self.marked.add(mid)
+                self._model_cache.clear()
+            elif self.marked and ch in ("x", "X", "m", "M"):
+                self._batch_housekeeping(win, [record for record in self.records if sessions.managed_id(record) in self.marked],
+                                         mark_ended=ch in ("m", "M"))
             elif not items:
                 continue
             elif key.kind == "up" or ch == "k":

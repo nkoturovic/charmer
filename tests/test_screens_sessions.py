@@ -372,8 +372,9 @@ class SessionsRowTests(_SessionsCase):
     def test_keybar_and_help(self) -> None:
         self.assertEqual(
             cli.SESSIONS_KEYBAR,
-            (("Enter", "resume"), ("V", "details"), ("T", "lineup"), ("F", "follow/pin"), ("R", "rename"),
-             ("X", "forget"), ("L", "link"), ("C", "all dirs"), ("?", "help"), ("Esc", "back")),
+            (("Enter", "resume"), ("Space", "mark"), ("*", "all"), ("/", "filter"), ("X", "forget"),
+             ("C", "all dirs"), ("V", "details"), ("T", "lineup"), ("F", "follow/pin"), ("R", "rename"),
+             ("L", "link"), ("?", "help"), ("Esc", "back")),
         )
         self.record()
         result, win = self.run_screen(self.screen(), ["?", END, ESC, ESC], height=30, width=120)
@@ -385,9 +386,9 @@ class SessionsRowTests(_SessionsCase):
         # The selected row (no end event, not running, a v4 record) adds M and P.
         self.assertEqual(
             self.screen()._keybar().text(),
-            "Enter resume · V details · T lineup · F follow/pin · R rename · X forget · M mark ended "
-            "· P repair · L link · C all dirs · ? help · Esc back")
-        self.assertIn("Enter resume · V details · T lineup", win.frames[0])
+            "Enter resume · Space mark · * all · / filter · X forget · C all dirs · V details · T lineup "
+            "· F follow/pin · R rename · M mark ended · P repair · L link · ? help · Esc back")
+        self.assertIn("Enter resume · Space mark · * all · / filter", win.frames[0])
 
     def test_the_root_screen_quits_with_esc(self) -> None:
         self.record()

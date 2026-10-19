@@ -1002,6 +1002,179 @@ def record_summary(record: dict[str, Any], cat: Any = None) -> RecordSummary:
     )
 
 
+# ------------------------------------------------------------ batch selection
+
+
+@dataclass(frozen=True)
+class SessionFilter:
+    """Shared CLI/TUI filters. Age is strictly the recorded last_seen_at."""
+
+    here: bool = False
+    ended: bool = False
+    needs_choice: bool = False
+    older_than: int | None = None
+    exited: bool = False
+
+    def matches(
+        self, record: dict[str, Any], *, cwd: str,
+        needs_choice: Callable[[dict[str, Any]], bool],
+        is_dead: Callable[[dict[str, Any]], bool] | None = None,
+        now: datetime | None = None,
+    ) -> bool:
+        if self.here and record.get("cwd") != cwd:
+            return False
+        if self.ended and record.get("last_event_source") != "end":
+            return False
+        if self.needs_choice and not needs_choice(record):
+            return False
+        if self.exited and (record.get("last_event_source") == "end" or is_dead is None or not is_dead(record)):
+            return False
+        if self.older_than is not None:
+            try:
+                stamp = datetime.strptime(record["last_seen_at"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+            except (KeyError, TypeError, ValueError):
+                return False
+            if stamp.strftime("%Y-%m-%dT%H:%M:%SZ") != record["last_seen_at"]:
+                return False
+            current = now or datetime.now(timezone.utc)
+            if (current - stamp).total_seconds() <= self.older_than * 86400:
+                return False
+        return True
+
+
+def nonrunning_problem(
+    record: dict[str, Any], *, background: BackgroundLiveness, process: ProcessScan,
+    self_id: str | None = None,
+) -> str | None:
+    """Fail-closed batch mutation guard; observations must be fresh under the lock."""
+
+    mid = managed_id(record)
+    if mid == self_id:
+        return "refusing to change the session you are running inside — exit it first"
+    if record.get("version") != RECORD_VERSION:
+        return f"legacy record; resume it (charmer -r {mid}) or run charmer migrate first"
+    if record.get("pending_forks"):
+        return "pending fork; resolve it before a bulk change"
+    if not background.known:
+        return f"background liveness unknown ({background.reason}); no bulk force bypass"
+    if not process.known:
+        return f"process liveness unknown ({process.reason}); no bulk force bypass"
+    ids = [mid, runtime_session_id(record), *(item["session_id"] for item in record.get("runtime_aliases", []))]
+    if any(value.startswith(prefix) for value in ids for prefix in background.prefixes) or record_is_proc_live(record, process.ids):
+        return f"session is live — stop it first (charmer sessions stop {mid})"
+    return None
+
+
+@dataclass(frozen=True)
+class BatchItem:
+    identifier: str
+    record: dict[str, Any] | None
+    problem: str | None = None
+
+
+@dataclass(frozen=True)
+class BatchResult:
+    identifier: str
+    status: str  # succeeded | refused | failed
+    message: str
+
+
+def batch_plan(
+    store: SessionStore, identifiers: Iterable[str], *,
+    names: Callable[[dict[str, Any]], Iterable[str]],
+    check: Callable[[dict[str, Any]], str | None],
+) -> tuple[BatchItem, ...]:
+    """Resolve once, deduplicate and freeze a preview. Never writes or takes a lock."""
+
+    items = []
+    seen: set[str] = set()
+    for value in identifiers:
+        try:
+            record = store.resolve_human(value, names=names)
+            mid = managed_id(record)
+            if mid in seen:
+                items.append(BatchItem(mid, None, "duplicate session; selected only once"))
+                continue
+            seen.add(mid)
+            items.append(BatchItem(mid, copy.deepcopy(record), check(record)))
+        except SessionError as exc:
+            items.append(BatchItem(value, None, str(exc)))
+    return tuple(items)
+
+
+def batch_recheck(
+    item: BatchItem, current: dict[str, Any] | None,
+    check: Callable[[dict[str, Any]], str | None],
+) -> str | None:
+    """The reviewed record must still match, then liveness is proved again."""
+
+    if current is None:
+        return "record is unreadable; bulk change refused"
+    if current != item.record:
+        return "record changed after preview; review a fresh preview"
+    return check(current)
+
+
+def batch_preview_lines(items: Sequence[BatchItem], *, limit: int | None = None) -> list[str]:
+    lines = []
+    shown = items if limit is None else items[:limit]
+    for item in shown:
+        record = item.record
+        if record is None:
+            detail = ""
+        else:
+            summary = record_summary(record)
+            detail = f"  {summary.profile_label}  {record.get('last_seen_at', '?')}  {summary.cwd}"
+        lines.append(f"{item.identifier}{detail}" + (f" — refused: {item.problem}" if item.problem else ""))
+    if limit is not None and len(items) > limit:
+        lines.append(f"…and {len(items) - limit} more")
+    return lines
+
+
+def batch_result_lines(results: Sequence[BatchResult]) -> list[str]:
+    lines = [f"{item.identifier}  {item.status}: {item.message}" for item in results]
+    lines.append(" · ".join(f"{sum(item.status == status for item in results)} {status}"
+                            for status in ("succeeded", "refused", "failed")))
+    return lines
+
+
+def housekeeping_batch(
+    store: SessionStore, items: Sequence[BatchItem], *,
+    check: Callable[[dict[str, Any]], str | None], mark_ended: bool = False,
+) -> list[BatchResult]:
+    """Independent guarded store operations; failures do not roll back other sessions."""
+
+    results = []
+    for item in items:
+        if item.problem:
+            results.append(BatchResult(item.identifier, "refused", item.problem))
+            continue
+        try:
+            def guard(current: dict[str, Any] | None) -> str | None:
+                return batch_recheck(item, current, check)
+
+            with launcher_write_guard(store.root):
+                if mark_ended:
+                    def is_live(current: dict[str, Any]) -> bool:
+                        problem = guard(current)
+                        if problem:
+                            raise SessionError(problem)
+                        return False
+                    changed = store.mark_ended(item.identifier, is_live=is_live)
+                    message = "marked ended" if changed else "already ended"
+                else:
+                    removed, _scope_removed = store.forget_session(item.identifier, pre_delete_check=guard)
+                    if not removed:
+                        raise SessionError("record disappeared after preview; nothing forgotten")
+                    message = "forgot record and generated files; transcripts never touched"
+            results.append(BatchResult(item.identifier, "succeeded", message))
+        except SessionError as exc:
+            results.append(BatchResult(item.identifier, "refused", str(exc)))
+        except (errors.CharmerError, OSError) as exc:
+            results.append(BatchResult(item.identifier, "failed", str(exc)))
+    return results
+
+
 # ------------------------------------------------------------ v4 builders
 
 LAUNCH_TIME_SETTINGS_KEYS = ("availableModels", "modelPicker", "model", "env")

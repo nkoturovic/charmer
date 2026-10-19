@@ -61,9 +61,12 @@ shows each move, for example "agent class 200K → 1M".
 | T | change its lineup ([lineup.md](lineup.md)) |
 | F | follow its profile, or pin its lineup |
 | R | rename (shown here only) |
-| X | forget its record and generated files (the transcript stays) |
+| Space | mark or unmark a row; the header shows the marked count |
+| * | mark every visible row, or clear the marks |
+| / | cycle all, this directory, exited without an end, ended, needs a choice, older than 30 days |
+| X | forget the marked rows (or the selected row) with one preview; the transcript stays |
 | E | stop a session running in the background |
-| M | mark ended |
+| M | mark the marked sessions ended, or the selected row when nothing is marked |
 | P | repair its generated files |
 | L | link a native session to a profile or a direct model |
 | C | this directory, or all directories |
@@ -104,6 +107,45 @@ When liveness cannot be determined (a background process or a daemon
 entry cannot be read), forget and stop ask you to type the session id;
 `--force` is the command-line form, only for when you know it is safe.
 Mark ended has no override.
+
+## Clean up many sessions
+
+```bash
+charmer sessions list --here
+charmer sessions list --ended --older-than 30d --json
+charmer sessions forget --ended --older-than 30d --dry-run
+charmer sessions forget --ended --older-than 30d --yes
+charmer sessions forget <id> <id> --dry-run
+```
+
+Filters combine with AND: `--here` selects the recorded current directory,
+`--all` every directory, `--ended` a last event of `end`, and
+`--needs-choice` a lead that needs a choice. `--older-than 30d` (or `30`)
+uses **last_seen_at only**, never creation time or a transcript's age.
+Unknown or malformed timestamps are excluded from age selections.
+Without filters, the list keeps showing every managed session.
+
+Forget accepts several ids, unambiguous prefixes or names, **or** filters,
+not both. An explicit `--all` is needed to select everything without ids.
+The preview lists each target and its refusals before one y/N question
+(default No). `--dry-run` writes nothing; `--yes` skips the question and is
+required without a terminal. Cancellation writes nothing.
+
+Bulk changes accept only current-format records proved not running by both
+the background and process checks. Live, unknown, corrupt, unsafe, legacy
+and pending-fork records are refused individually. There is no bulk force
+bypass; the single-session forget retains its explicit `--force` route for
+unknown background liveness. The preview freezes the ids and record state:
+each is checked again under its lock, and a changed record is refused until
+you review a fresh preview. Results distinguish **succeeded**, **refused**
+and **failed**. Exit status is 1 if any record was refused or failed;
+successes are not rolled back. No transcript is read or deleted.
+
+In **S**, **Space** marks rows, **\*** marks every visible row (again clears
+the marks), and **X** opens one forget dialog with Cancel focused first.
+Changing the filter clears marks so hidden rows are not changed. To mark
+every dead session ended: **/** to “exited without an end”, **\***, **M**.
+Each marked record is checked again before its end is recorded.
 
 ## Native forks
 

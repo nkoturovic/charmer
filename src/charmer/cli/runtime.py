@@ -182,6 +182,7 @@ class Runtime:
         allow_state_writes: bool = True,
         refresh_shims: bool = True,
         initialize_session_store: bool = True,
+        defer_session_batch: bool = False,
         execve: Callable[[str, list[str], dict[str, str]], Any] | None = None,
         qualify_transport: Callable[[str, str, str], operator_mod.SmokeOutcome] | None = None,
         lan_probe: Callable[[str], Any] | None = None,
@@ -201,7 +202,8 @@ class Runtime:
         self.release_version = _pkg_version if release_version is None else str(release_version)
         self.allow_state_writes = bool(allow_state_writes)
         self._report_cache: dict | None = None
-        self._read_only_store = not initialize_session_store
+        self._deferred_session_batch = bool(defer_session_batch)
+        self._read_only_store = not initialize_session_store or self._deferred_session_batch
         # None = posix_fs.exec_replace, i.e. os.execve (tests capture argv/env here).
         self.execve = execve
         self.environ = dict(os.environ if environ is None else environ)
@@ -226,7 +228,7 @@ class Runtime:
             # and report (doctor names the file to remove).
             packaged_catalog = catalog.load_catalog(self.asset_root)
             removal = None
-            if allow_state_writes:
+            if allow_state_writes and not defer_session_batch:
                 # A legacy (effort_vocabulary) override can never
                 # load again; remove it unconditionally, with a notice. The
                 # helper never raises and skips anything unsafe to touch
@@ -290,7 +292,7 @@ class Runtime:
         #   root that owns its gateway (and could be inhibited) is unknown.
         self.shims_withheld: str | None = None
         self._shims_refreshed = False
-        if marker_ok and refresh_shims:
+        if marker_ok and refresh_shims and not defer_session_batch:
             self._shims_refreshed = self._refresh_shims(state_path)
         if not self._shims_refreshed:
             # Read-only commands must not repoint the shims the launcher keeps
@@ -307,7 +309,7 @@ class Runtime:
         self._session_store: sessions.SessionStore | None = None
         # SessionStore creates its directories. Keep existing commands eager,
         # but quota never needs the store, even with an entirely empty HOME.
-        if initialize_session_store:
+        if initialize_session_store and not defer_session_batch:
             self._session_store = self.session_store
         self.compile_callback = compile_callback
         self.launch_callback = launch_callback
@@ -595,6 +597,26 @@ class Runtime:
     @session_store.setter
     def session_store(self, store: sessions.SessionStore) -> None:
         self._session_store = store
+
+    def begin_session_batch(self) -> None:
+        """After confirmation, enable only an explicitly deferred session writer.
+
+        A dry-run or a genuinely read-only Runtime cannot be upgraded. No
+        shim, setting or scope is refreshed; mutation APIs keep their locks.
+        """
+        from charmer import installs
+
+        if not self.allow_state_writes or (self._read_only_store and not self._deferred_session_batch):
+            raise cli_errors.CLIError("session changes are read-only in this command")
+        root = self._session_store_root
+        sessions.check_state_marker(root)
+        with sessions.launcher_write_guard(root):
+            installs.guard(root, self.environ, writes=True)
+            if self._deferred_session_batch:
+                schema = self.session_store.schema
+                self._session_store = sessions.SessionStore(root, schema)
+                self._read_only_store = False
+                self._deferred_session_batch = False
 
     @property
     def home(self) -> Path:

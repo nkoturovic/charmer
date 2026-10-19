@@ -331,6 +331,23 @@ def sessions_golden(root: Path) -> str:
         return render(lambda: cli._SessionsScreen(runtime, palette=tui.MONO_PALETTE, now=fx.FIXED_NOW))
 
 
+def sessions_bulk_golden(root: Path, kind: str) -> str:
+    with golden_runtime(root) as runtime:
+        runtime.profiles.install_seeds()
+        for mid in (fx.FIXED_ID, fx.OTHER_ID, fx.THIRD_ID):
+            fx.v4_record(runtime, catalog.DEFAULT_SEED, managed_id=mid, ended=True,
+                         last_seen=timedelta(days=60), scope=False)
+        screen = cli._SessionsScreen(runtime, palette=tui.MONO_PALETTE, now=fx.FIXED_NOW)
+        width, height = current_size()
+        if kind == "forget":
+            win = FakeWindow(["*", "X", "\x1b", "\x1b"], width=width, height=height)
+            screen.run(win)
+            return last_frame(win, "Forget 3 session(s)?")
+        screen.run(FakeWindow(["*", "\x1b"] if kind == "marks" else ["/", "/", "\x1b"],
+                              width=width, height=height))
+        return render(lambda: screen)
+
+
 def _lineup_golden(root: Path, target: Callable[[cli.Runtime], str]) -> str:
     with golden_runtime(root) as runtime:
         runtime.profiles.install_seeds()
@@ -943,6 +960,9 @@ GOLDENS: dict[str, Callable[[Path], str]] = {
     "card-resume-diff": card_resume_diff_golden,
     "direct": direct_golden,
     "sessions": sessions_golden,
+    "sessions-marked": lambda root: sessions_bulk_golden(root, "marks"),
+    "sessions-filter-ended": lambda root: sessions_bulk_golden(root, "filter"),
+    "sessions-forget-many": lambda root: sessions_bulk_golden(root, "forget"),
     "lineup-live": lineup_live_golden,
     "lineup-relaunch": lineup_relaunch_golden,
     "lineup-keep": lambda root: lineup_target_golden(root, "keep"),

@@ -175,13 +175,16 @@ RESUME_QUICK_HELP = (
 # (``_SessionsScreen._keybar``). `?` sits before Esc.
 SESSIONS_KEYBAR = (
     ("Enter", "resume"),
+    ("Space", "mark"),
+    ("*", "all"),
+    ("/", "filter"),
+    ("X", "forget"),
+    ("C", "all dirs"),
     ("V", "details"),
     ("T", "lineup"),
     ("F", "follow/pin"),
     ("R", "rename"),
-    ("X", "forget"),
     ("L", "link"),
-    ("C", "all dirs"),
     ("?", "help"),
     ("Esc", "back"),
 )
@@ -205,6 +208,10 @@ SESSIONS_HELP = (
     "change the lineup and pinning drops a pending change: F previews that, and y applies it.\n"
     "R — rename (the title is shown here only). X — forget: deletes the record and its generated scope;\n"
     "Claude Code's transcript stays, and L links it again.\n"
+    "Space — mark a row; * — mark every visible row (again clears marks). X forgets the marked rows\n"
+    "with one preview; M marks them ended. Live, unreadable and legacy records are refused in bulk.\n"
+    "/ — cycle all, this directory, exited without an end, ended, needs a choice, older than 30 days.\n"
+    "Age uses last_seen_at only; unknown or malformed timestamps are never selected by age.\n"
     "E — stop a session running in the background (claude stop; the conversation is kept).\n"
     "M — mark ended: record the end of a session that exited without one.\n"
     "P — repair: rebuild the session's generated scope from its record.\n"

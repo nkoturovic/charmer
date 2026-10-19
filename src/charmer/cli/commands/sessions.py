@@ -28,17 +28,95 @@ import charmer.cli.types as cli_types
 SESSIONS_LIST_SCHEMA = 1
 
 
-def sessions_list_document(runtime: runtime_mod.Runtime) -> dict[str, Any]:
+def _selection(args: argparse.Namespace) -> sessions.SessionFilter:
+    return sessions.SessionFilter(
+        here=bool(getattr(args, "here", False)), ended=bool(getattr(args, "ended", False)),
+        needs_choice=bool(getattr(args, "needs_choice", False)), older_than=getattr(args, "older_than", None),
+    )
+
+
+def _has_selection(args: argparse.Namespace) -> bool:
+    return bool(getattr(args, "here", False) or getattr(args, "all_sessions", False)
+                or getattr(args, "ended", False) or getattr(args, "needs_choice", False)
+                or getattr(args, "older_than", None) is not None)
+
+
+def _needs_choice(runtime: runtime_mod.Runtime, record: dict[str, Any]) -> bool:
+    return sessions.lead_key_needs_choice(sessions.lead_identity(record)[0], runtime.lineup_catalog())
+
+
+def _selected_records(runtime: runtime_mod.Runtime, selected: sessions.SessionFilter | None = None) -> list[dict[str, Any]]:
+    selected = selected or sessions.SessionFilter()
+    return [record for record in sorted(session_facts._session_records(runtime),
+                                       key=session_facts._record_sort_key_last_used, reverse=True)
+            if selected.matches(record, cwd=runtime.cwd, needs_choice=lambda record: _needs_choice(runtime, record))]
+
+
+def _batch_identifiers(runtime: runtime_mod.Runtime, args: argparse.Namespace) -> list[str]:
+    values = args.uuid if isinstance(args.uuid, list) else [args.uuid]
+    if values and _has_selection(args):
+        raise cli_types.UsageError("give SESSION arguments or filters, not both")
+    if values:
+        return values
+    if not _has_selection(args):
+        raise cli_types.UsageError("select SESSION arguments or an explicit filter (use --all for every session)")
+    selected = _selection(args)
+    records, _problems, ids = session_facts._session_record_scan(runtime)
+    readable = {sessions.managed_id(record) for record in records}
+    # Unreadable records cannot be silently classified out of a mutation.
+    return [sessions.managed_id(record) for record in _selected_records(runtime, selected)] + sorted(ids - readable)
+
+
+def _batch_check(runtime: runtime_mod.Runtime, record: dict[str, Any]) -> str | None:
+    return sessions.nonrunning_problem(record, background=runtime.background_liveness(),
+                                       process=sessions.proc_session_scan(),
+                                       self_id=runtime.environ.get("CHARMER_MANAGED_ID"))
+
+
+def _batch_confirmed(verb: str, count: int, *, yes: bool, interactive: bool, input_stream: TextIO) -> bool:
+    if yes:
+        return True
+    if not interactive:
+        raise cli_errors.CLIError(f"sessions {verb} needs --yes when there is no terminal to ask in")
+    sys.stderr.write(f"{verb.capitalize()} the {count} previewed session(s)? [y/N] ")
+    sys.stderr.flush()
+    return (input_stream.readline() or "").strip().lower() in ("y", "yes")
+
+
+def _forget_many(runtime: runtime_mod.Runtime, args: argparse.Namespace, *, input_stream: TextIO,
+                 output_stream: TextIO, interactive: bool) -> int:
+    identifiers = _batch_identifiers(runtime, args)
+    if args.force:
+        raise cli_types.UsageError("--force is single-session only; a bulk forget has no liveness bypass")
+    background, process = runtime.background_liveness(), sessions.proc_session_scan()
+    items = sessions.batch_plan(runtime.session_store, identifiers, names=session_facts._record_resume_names,
+                                check=lambda record: sessions.nonrunning_problem(
+                                    record, background=background, process=process,
+                                    self_id=runtime.environ.get("CHARMER_MANAGED_ID")))
+    lines = ["Forget preview (record and generated files only; transcripts never touched):",
+             *sessions.batch_preview_lines(items)]
+    output_stream.write("\n".join(termtext.visible_text(line) for line in lines) + "\n")
+    ready = sum(item.problem is None for item in items)
+    if args.dry_run:
+        output_stream.write("Dry run: nothing written.\n")
+        return int(any(item.problem for item in items))
+    if ready and not _batch_confirmed("forget", ready, yes=args.yes, interactive=interactive, input_stream=input_stream):
+        output_stream.write("Nothing was forgotten.\n")
+        return 3
+    if ready:
+        runtime.begin_session_batch()
+    results = sessions.housekeeping_batch(runtime.session_store, items, check=lambda record: _batch_check(runtime, record))
+    output_stream.write("\n".join(termtext.visible_text(line) for line in sessions.batch_result_lines(results)) + "\n")
+    return int(any(item.status != "succeeded" for item in results))
+
+
+def sessions_list_document(runtime: runtime_mod.Runtime, selected: sessions.SessionFilter | None = None) -> dict[str, Any]:
     """``sessions list --json``: every managed session, most recently used
     first. ``live`` is true, false, or null when the background liveness
     cannot be read; ``follow`` is null for a legacy record; no transcript
     content and no native-session metadata."""
 
-    records = sorted(
-        session_facts._session_records(runtime),
-        key=session_facts._record_sort_key_last_used,
-        reverse=True,
-    )
+    records = _selected_records(runtime, selected)
     # Unknown daemon liveness (unreadable metadata, a network filesystem) is
     # null, never false.
     try:
@@ -65,20 +143,19 @@ def sessions_list_document(runtime: runtime_mod.Runtime) -> dict[str, Any]:
             "pending_fork": bool(record.get("pending_forks")),
             "needs_attention": marker == "!",
             "pending_change": bool(summary.pending),
+            "ended": record.get("last_event_source") == "end",
+            "needs_choice": _needs_choice(runtime, record),
             "last_used": session_facts._record_last_seen(record),
             "cwd": summary.cwd,
         })
     return {"schema_version": SESSIONS_LIST_SCHEMA, "list": "sessions", "sessions": rows}
 
 
-def _print_sessions_listing(runtime: runtime_mod.Runtime, output_stream: TextIO) -> None:
+def _print_sessions_listing(runtime: runtime_mod.Runtime, output_stream: TextIO,
+                            selected: sessions.SessionFilter | None = None) -> None:
     """The text sessions listing (``sessions list``, bare ``-r`` without a terminal)."""
 
-    records = sorted(
-        session_facts._session_records(runtime),
-        key=session_facts._record_sort_key_last_used,
-        reverse=True,
-    )
+    records = _selected_records(runtime, selected)
     output_stream.write("sessions\n")
     output_stream.write("----------------------------------------\n")
     live = session_facts._live_background_prefixes()
@@ -118,7 +195,7 @@ def _print_sessions_listing(runtime: runtime_mod.Runtime, output_stream: TextIO)
         "are listed — adopt native ones with `charmer sessions link <fork> "
         "--profile NAME | --direct MODEL` (run it bare for the discovery guide)\n"
     )
-    native = session_facts._discover_native_sessions(runtime)
+    native = session_facts._discover_native_sessions(runtime) if selected in (None, sessions.SessionFilter()) else []
     if native:
         live = session_facts._live_background_prefixes()
         output_stream.write("native (unmanaged, discovered names+times only)\n")
@@ -351,9 +428,9 @@ def _sessions_command(
     command = args.sessions_command
     if command == "list":
         if getattr(args, "json_output", False):
-            output_stream.write(strict_json.pretty_file_bytes(sessions_list_document(runtime)).decode("utf-8"))
+            output_stream.write(strict_json.pretty_file_bytes(sessions_list_document(runtime, _selection(args))).decode("utf-8"))
             return 0
-        _print_sessions_listing(runtime, output_stream)
+        _print_sessions_listing(runtime, output_stream, _selection(args))
         return 0
     if command == "mark-ended":
         return _sessions_mark_ended(runtime, args, output_stream)
@@ -368,6 +445,11 @@ def _sessions_command(
         output_stream.write(strict_json.canonical_file_bytes(record).decode("utf-8"))
         return 0
     if command == "forget":
+        values = args.uuid if isinstance(args.uuid, list) else [args.uuid]
+        if len(values) != 1 or _has_selection(args) or args.dry_run:
+            return _forget_many(runtime, args, input_stream=input_stream, output_stream=output_stream,
+                                interactive=interactive)
+        args.uuid = values[0]
         record: dict[str, Any] | None = None
         try:
             if sessions.UUID4.fullmatch(args.uuid):
@@ -413,6 +495,7 @@ def _sessions_command(
         # The live guard runs UNDER the lifecycle lock with a fresh prefix
         # scan: a liveness verdict taken before blocking on the lock would be
         # stale by the time deletion happens.
+        runtime.begin_session_batch()
         removed, scope_removed = runtime.session_store.forget_session(
             stable_id,
             pre_delete_check=session_actions._forget_liveness_guard(runtime, stable_id, force=args.force),

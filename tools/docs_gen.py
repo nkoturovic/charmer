@@ -64,6 +64,7 @@ VALUES: dict[tuple[str, str], str] = {
     ("profile duplicate", "target"): "new", ("profile reseed", "name"): "name", ("profile default", "name"): "name",
     ("profile starter", "starter_name"): "name",
     ("sessions show", "uuid"): "id", ("sessions forget", "uuid"): "id", ("sessions link", "uuid"): "runtime-id",
+    ("sessions list", "older_than"): "n", ("sessions forget", "older_than"): "n",
     ("sessions link", "link_profile"): "name", ("sessions link", "link_direct"): "model",
     ("sessions link", "link_cwd"): "dir", ("sessions relink-runtime", "uuid"): "id",
     ("sessions relink-runtime", "runtime_uuid"): "runtime-id", ("sessions relink-runtime", "repair_cwd"): "dir",

@@ -228,7 +228,8 @@ def hermetic(runtime: ScreenRuntime) -> Iterator[ScreenRuntime]:
     """
 
     with mock.patch('charmer.cli.session_facts._live_background_prefixes', lambda root=None: runtime.live_prefixes
-    ), mock.patch('charmer.compiler.git_work_tree', lambda _cwd: False):
+    ), mock.patch('charmer.compiler.git_work_tree', lambda _cwd: False
+    ), mock.patch('charmer.sessions.proc_session_scan', lambda root="/proc": sessions.ProcessScan(True, runtime.proc_ids)):
         # The fixture directory is never a Git repository, wherever the
         # temporary directory lives.
         yield runtime
