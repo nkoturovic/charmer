@@ -88,6 +88,11 @@ REPRESENTATIONS = ("env", "settings", "flag")
 PASS_CLASS = "env-window-holds"
 
 
+
+# The completion record the re-pin gate requires (charmer.upgrade); release
+# evidence finds this module as its producer by this literal.
+ESSENTIAL_RECORD = "compaction window probe: PASS class=env-window-holds "
+
 def line(status: str, observed: str, detail: str) -> str:
     return f"{LINE_PREFIX} {status} class={observed} {detail}".rstrip()
 
@@ -445,6 +450,14 @@ class CompactionWindowProbe(client_probe._ProbeCase, unittest.TestCase):
         finally:
             fixture = self._fixture()
             probe.write_evidence(fixture, self.probe_id, self.evidence)
+
+
+class EssentialRecordTests(unittest.TestCase):
+    def test_the_pass_line_is_the_gate_record(self) -> None:
+        from charmer import upgrade
+
+        self.assertIn(ESSENTIAL_RECORD, upgrade.ESSENTIAL_EVIDENCE_PREFIXES)
+        self.assertTrue((line("PASS", PASS_CLASS, "") + " ").startswith(ESSENTIAL_RECORD))
 
 
 if __name__ == "__main__":

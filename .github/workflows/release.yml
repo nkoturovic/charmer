@@ -387,9 +387,10 @@ jobs:
           modules=(tests.test_scope_probe tests.test_scope_probe_client tests.test_scope_probe_seeds
             tests.test_managed_skill_policy tests.test_client_agents tests.test_client_gateway_auth
             tests.test_client_hooks tests.test_client_models tests.test_client_skill_workflow
-            tests.test_agent_window_probe)
+            tests.test_agent_window_probe tests.test_compaction_window_probe tests.test_auto_mode_model_probe
+            tests.test_client_debug_diagnostics)
           printf '%s\n' "${modules[@]}" >"$RUNNER_TEMP/modules"
-          required='test_client_(agents|gateway_auth|hooks|models|skill_workflow)\b|RealPinnedBinaryTests(?!\.(test_real_takeover_probe_stop_gate|test_real_adoption_onto_newer_plain_claude)$)'
+          required='test_client_(agents|gateway_auth|hooks|models|skill_workflow|debug_diagnostics)\b|test_(compaction_window|auto_mode_model)_probe\b|RealPinnedBinaryTests(?!\.(test_real_takeover_probe_stop_gate|test_real_adoption_onto_newer_plain_claude)$)'
           python3 tools/test.py --verbose --claude "$RUNNER_TEMP/claude" --require "$required" \
             "${modules[@]}" 2>&1 | tee "$RUNNER_TEMP/battery.log"
           status=${PIPESTATUS[0]}

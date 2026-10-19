@@ -45,6 +45,11 @@ AGENT_COMPLAINTS = (
 )
 
 
+
+# The completion record the re-pin gate requires (charmer.upgrade); release
+# evidence finds this module as its producer by this literal.
+ESSENTIAL_RECORD = "client check debug-diagnostics: PASS "
+
 def line(status: str, detail: str) -> str:
     return f"{LINE_PREFIX} {status} {detail}".rstrip()
 
@@ -226,6 +231,14 @@ class DebugDiagnosticsProbe(client_probe._ProbeCase, unittest.TestCase):
             self.fail("probe execution unavailable (stdio deliberately not retained)")
         finally:
             probe.write_evidence(self._fixture(), self.probe_id, self.evidence)
+
+
+class EssentialRecordTests(unittest.TestCase):
+    def test_the_pass_line_is_the_gate_record(self) -> None:
+        from charmer import upgrade
+
+        self.assertIn(ESSENTIAL_RECORD, upgrade.ESSENTIAL_EVIDENCE_PREFIXES)
+        self.assertTrue((line("PASS", "") + " ").startswith(ESSENTIAL_RECORD))
 
 
 if __name__ == "__main__":
