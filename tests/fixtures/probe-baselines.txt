@@ -79,7 +79,9 @@ client check auto-mode-model: PASS class=AM-owned
 #
 # The fence and security checks, same client and receipts, 2026-10-19. A
 # managed-settings file is mounted at /etc/claude-code inside the namespace
-# (tests/_client_policy.py); the client ignores CLAUDE_CODE_MANAGED_SETTINGS_PATH.
+# (tests/_client_policy.py: /etc rebuilt entry by entry over a tmpfs with
+# bwrap options bubblewrap 0.9 has); the client ignores
+# CLAUDE_CODE_MANAGED_SETTINGS_PATH.
 #
 # The fork gate (tests/test_client_agents.py ForkGateTests):
 client check fork-gate: PASS class=FG-off
@@ -96,14 +98,23 @@ client check fork-gate: PASS class=FG-off
 #
 # An agent.spawn mod (tests/test_client_spawn_mod.py):
 client check spawn-mod: PASS class=SM-fenced
-# A mod rewriting every spawn to a model outside the fence: fresh, resumed
-# and workflow agents land on the lead's model, never the rewritten one. A
-# rewrite of a resumed agent only: ignored ("a hook can only refuse a
-# resumed agent's run"). A managed allowManagedHooksOnly: the mod is not
-# loaded. The trust boundary: an unmanaged mod rewriting to another lineup
-# model moves fresh and workflow agents onto it (a resumed agent keeps its
-# spawn's model); the compiled --settings scope keeps hooks enabled for
-# charmer's own hooks, so only managed settings keep mods out.
+# Fence membership. A mod rewriting every spawn to a model outside the
+# fence: fresh, resumed and workflow agents land on the lead's model, never
+# the rewritten one. A rewrite of a resumed agent only: ignored ("a hook can
+# only refuse a resumed agent's run"). A managed allowManagedHooksOnly: the
+# mod is not loaded (no rewrite logged).
+client check spawn-mod-binding: FAIL class=SB-rebound
+# The compiled binding, a known failure (expectedFailure; no gate): the
+# outside mod moves every agent to the lead's model, an unmanaged mod
+# rewriting to another lineup model moves fresh and workflow agents onto it
+# (a resumed agent keeps its spawn's model). A deny Agent(model:*) refuses
+# the rewritten Agent-tool spawn but not the workflow agent's; it would also
+# refuse the lead's own per-call model override, and a Workflow script's own
+# model option moves a workflow agent with or without it. The compiled
+# --settings scope keeps hooks enabled for charmer's own hooks, so only
+# managed settings (allowManagedHooksOnly, which stops those hooks too) keep
+# mods out. Whether to compile the partial deny, or to state the weaker
+# fence-membership guarantee, is open.
 #
 # MCP rules and policy (tests/test_client_mcp_policy.py):
 client check mcp-policy: PASS class=MCP-named-deny-first
@@ -112,10 +123,14 @@ client check mcp-policy: PASS class=MCP-named-deny-first
 # server (fx still runs). The bare allows mcp__fx_ and mcp__fx__x grant
 # nothing (observed while building the check): whole-server access is
 # mcp__<server>__*. A managed deniedMcpServers keeps a user server from
-# starting at launch, on --resume and in a terminal session with
-# /reload-plugins, and an agent's own server from starting at its spawn
-# (each starts without the policy). A user-settings deniedMcpServers did the
-# same at launch.
+# starting at launch, on --resume and at a terminal session's start, an
+# agent's own server from starting at its spawn, and a plugin server added
+# after the terminal start (plugin:mcpfix:fxreload) from starting on
+# /reload-plugins (each starts without the policy, the reload's only after
+# the command). A plugin server's policy name is plugin:<plugin>:<server>: a
+# managed deny of the bare server name does not cover it (observed while
+# building the check). A user-settings deniedMcpServers did the same at
+# launch.
 #
 # Token destinations (tests/test_client_gateway_auth.py TokenDestinationPolicyTests):
 client check token-destinations: PASS
