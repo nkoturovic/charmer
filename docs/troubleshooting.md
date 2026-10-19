@@ -26,6 +26,7 @@ persistence hold: why it holds and the clear-hold command, which stays a
 typed confirmation outside Claude Code; a missing key: **G** → **K**; scopes
 to repair: repair-all, stopped sessions only; an unused alias:
 prune-aliases; generated leftovers: the prune preview, then y/N; sessions
+that do not run and have no recorded end: mark-ended for each; sessions
 that need a lead: Sessions; a newer shipped profile: reseed; an advisory
 model: its optional diagnostics, **M** → **Q**). Any other row shows its exact
 command. **V** shows the full report as `doctor -v` prints it, **G** the
@@ -160,6 +161,8 @@ report it.
 | ⚠ fork waiting; “has an unresolved native fork” | Enter on the row (adopt or discard), or `charmer sessions resolve-fork <id> <fork-id>` |
 | ! repair needed; “identity is repair-needed” | `charmer -r <id>`, or `charmer sessions relink-runtime <id> <runtime-id>` |
 | ● or ◐ but the session is gone | `charmer sessions mark-ended <id>` (all: `--all-dead`) |
+| “<n> sessions do not run and have no recorded end”, or “session <id>: does not run and has no recorded end” | each exited without its end being recorded, so commands that refuse while a session may run count it (migration and uninstall among them): `charmer sessions mark-ended --all-dead` (one: `charmer sessions mark-ended <id>`); **H** → Enter on the row marks every one after a confirmation, and each mark checks again that the session does not run. Doctor names none while whether sessions run cannot be told (the process table or the background daemon unreadable, a state root on a network filesystem) |
+| “<n> generated files left by forgotten or ended sessions” | scopes, lead prompts, notice markers or lineup logs no record owns any more: `charmer doctor --prune --preview` lists them, `charmer doctor --prune` removes them (**H** → Enter on the row shows the preview, then asks y/N); records, transcripts and backups are never among them. Doctor names none while a record cannot be read |
 | “scope differs from the record-authoritative compile” | `charmer doctor --repair <id>` |
 | “<n> session(s) need a profile or model choice (lead removed)” | the lead each was bound to left the catalog: resume one interactively (`charmer -r <id>`, which asks for a profile or model), or `charmer lineup --session <runtime-id> --relaunch profile <name>`; **H** → Enter on the row opens Sessions. Doctor names the first three ids; `doctor -v` lists every one |
 | “<n> session scope(s) were compiled by <earlier name>” | the scopes of sessions from before the rename: `charmer doctor --repair-all` recompiles every stopped one now (**H** → Enter on the row, after a confirmation); a running one is recompiled at its next resume. Doctor shows one line for all of them |
@@ -205,7 +208,7 @@ and shortens the middle, so an 80-column terminal still shows what to do.
 | a new model is not admitted | the badge is optional: bind it on a usable route, or **M** → Enter to attest locally; see any separate route/credential remedy |
 | “implementers unavailable: not a Git repository here (git init enables them)” | launch from a Git work tree, or `git init` |
 | “! nothing is connected yet — Enter opens Get started” | Enter opens Get started (a session could not work yet); **L** launches anyway |
-| “! gateway held: …” with “gateway ok, held” | the persistence hold: see [the gateway](#the-gateway); **H** lists it first and Enter on it shows why and the clear-hold command |
+| “! gateway held: …” with “gateway ok, held” | the persistence hold: see [the gateway](#the-gateway). The card names the cause only when every reason is log coverage (“no failed save”); any other hold says “a credential save may be unresolved” (a failed save, an unreadable hold record or an evaluation that failed): **H** lists it first and Enter on it shows the reasons and the clear-hold command |
 | the release row says “U checks for a newer release” | the card checks nothing by itself; **U** checks, shows the plan and asks |
 | the lead or agents with “no <pool> OAuth credential record” | sign in where the row says: **G**, then **L** on the account provider (on a resume card, the row names the way back to a launch card first) |
 | **H**: a key to save, “G (providers) → K on <provider>” | **G**, then **K** on that provider (from a terminal: `charmer providers set-key <provider>`); on a resume card, the report first names the way back to a launch card, then **S** resumes |

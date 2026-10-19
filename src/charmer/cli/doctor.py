@@ -66,7 +66,7 @@ if TYPE_CHECKING:
 # the area doctor lists them under, an action code for the findings the TUI
 # findings list acts on, ``advisory`` for optional evidence, and the
 # identity repeated lines share. Plain doctor and H present the same rows
-# (:func:`present`); nothing here reads a line's text to decide anything.
+# (:func:`present_report`); nothing here reads a line's text to decide anything.
 
 # The areas, in report order (a held gateway leads Gateway).
 AREAS = ("Gateway", "Installation", "Providers", "Sessions", "Profiles", "Models")
@@ -161,35 +161,78 @@ def _plural(count: int, noun: str) -> str:
     return f"{count} {noun}" + ("" if count == 1 else "s")
 
 
+def advisory_command(code: str, key: str | None) -> str | None:
+    """The command of an advisory model finding's optional next step, or
+    None when it has none (a recommendation, a lineup-wide finding)."""
+
+    if not key:
+        return None
+    if code == "admission":
+        return f"charmer models admit {key}"
+    if code in _QUALIFY_CODES:
+        return f"charmer models qualify {key} {_QUALIFY_CODES[code]}"
+    return None
+
+
 def advisory_remedy(code: str, key: str | None) -> str:
     """The optional next step of an advisory model finding."""
 
-    if key is None:
+    command = advisory_command(code, key)
+    if not key:
         return "optional; nothing to do"
     if code == "admission":
-        return f"optional: charmer models admit {key}, or M → Enter (sends no request)"
-    if code in _QUALIFY_CODES:
-        return (f"optional diagnostics: charmer models qualify {key} {_QUALIFY_CODES[code]}, or M → Q "
-                f"({cli_text.OPTIONAL_DIAGNOSTICS})")
+        return f"optional: {command}, or M → Enter (sends no request)"
+    if command is not None:
+        return f"optional diagnostics: {command}, or M → Q ({cli_text.OPTIONAL_DIAGNOSTICS})"
     return "a recommendation; the explicit binding stays allowed"
 
 
+def _shared_wording(messages: list[str]) -> str:
+    """One wording for the variants of one model finding (one per slot or
+    effort, say): the words they all begin and end with, the differing
+    middle as "…"; the first variant when they share too little."""
+
+    words = [message.split(" ") for message in messages]
+    shortest = min(len(split) for split in words)
+    start = 0
+    while start < shortest and all(split[start] == words[0][start] for split in words):
+        start += 1
+    end = 0
+    while end < shortest - start and all(split[-1 - end] == words[0][-1 - end] for split in words):
+        end += 1
+    if start + end < 3:
+        return f"{messages[0]}; and {_plural(len(messages) - 1, 'other wording')}"
+    head, tail = " ".join(words[0][:start]), " ".join(words[0][len(words[0]) - end:]) if end else ""
+    return " ".join(part for part in (head, "…", tail) if part)
+
+
 def _model_text(level: str, members: list[str]) -> str:
-    """One row per (model, code): the finding with how many profiles and
-    slots bind it and, for an advisory, its optional next step."""
+    """One row per (model, code): the finding (its variants' shared wording
+    when they differ, by slot or effort) with how many profiles and slots
+    bind the model and, for an advisory, its optional next step."""
 
     first = members[0]
-    message = first.short or str(first)
-    profiles = {member.owner for member in members if getattr(member, "owner", None)}
-    slots = sum(1 for member in members if getattr(member, "owner", None) and getattr(member, "slot", None))
+    key = first.subject if first.group[2] else None
+    messages = list(dict.fromkeys(getattr(member, "short", None) or str(member) for member in members))
+    text = messages[0] if len(messages) == 1 else _shared_wording(messages)
+    if key and not text.startswith(f"{key}:"):
+        text = f"{key}: {text}"
+    # Distinct bindings: a profile slot that words the finding twice counts once.
+    bindings = {(member.owner, getattr(member, "slot", None)) for member in members
+                if getattr(member, "owner", None)}
     counts = []
-    if profiles:
-        counts.append(_plural(len(profiles), "profile"))
+    if bindings:
+        counts.append(_plural(len({owner for owner, _slot in bindings}), "profile"))
+    slots = sum(1 for _owner, slot in bindings if slot)
     if slots:
         counts.append(_plural(slots, "slot"))
-    text = message + (f" ({', '.join(counts)})" if counts else "")
+    notes = [", ".join(counts)] if counts else []
+    if len(messages) > 1:
+        notes.append(VERBOSE_HINT.strip("()"))
+    if notes:
+        text += f" ({'; '.join(notes)})"
     if level == ADVISORY:
-        text += " — " + advisory_remedy(first.group[1], first.subject)
+        text += " — " + advisory_remedy(first.group[1], key)
     return text
 
 
@@ -230,8 +273,11 @@ def present_report(problems: list[str], attention: list[str]) -> Presentation:
         else:
             text = getattr(first, "short", None) or str(first)
         hold = getattr(first, "action", None) in ("hold", "hold-coverage")
-        # The command any member names (a group's lines may come from collectors that name it once).
+        # The command any member names (a group's lines may come from collectors that name it once),
+        # else the command of an advisory model row's optional next step.
         remedy = next((line.remedy for line in lines if getattr(line, "remedy", None)), None)
+        if remedy is None and level == ADVISORY and group and group[0] == "model" and group[2]:
+            remedy = advisory_command(group[1], getattr(first, "subject", None))
         rows.append((_LEVEL_ORDER[level], _area_index(area), 0 if hold else 1, index,
                      Row(level, area, text, tuple(map(str, lines)), getattr(first, "action", None),
                          getattr(first, "subject", None), remedy)))
@@ -281,12 +327,14 @@ def _tag_model(line: str, finding: Any, *, key: str | None, owner: str | None = 
                slot: str | None = None) -> gateway_facts.Line:
     """A model finding (``profile.Finding``) of one profile slot, or of a
     declared line: listed under Models, advisory for optional evidence, one
-    row per (model, code)."""
+    row per (model, code) whatever each slot's wording. A lineup-wide
+    finding (no model: ``key`` None) is one row per (code, wording)."""
 
     code = finding.code
     advisory = code in ADVISORY_CODES
+    identity = ("model", code, key) if key else ("model", code, "", finding.message)
     return gateway_facts.tagged(
-        line, area="Models", level=ADVISORY if advisory else None, group=("model", code, finding.message),
+        line, area="Models", level=ADVISORY if advisory else None, group=identity,
         short=finding.message, subject=key, owner=owner, slot=slot,
         action="advisory-model" if advisory and code in _QUALIFY_CODES and key is not None else None)
 
@@ -1102,6 +1150,7 @@ def _collect_doctor_report_lines(
     scope_attention.extend(area(marker_attention, SESSIONS))
     scope_attention.extend(scope_attention_extra)
     records = session_facts._session_records(runtime)
+    liveness = _session_liveness(runtime)
     hook_problems, hook_attention, hook_info = _doctor_hook_targets(runtime, records)
     problems.extend(area(hook_problems, SESSIONS))
     scope_attention.extend(area(hook_attention, SESSIONS))
@@ -1110,6 +1159,7 @@ def _collect_doctor_report_lines(
     record_attention, record_info = _doctor_record_report(runtime, records)
     scope_attention.extend(area(record_attention, SESSIONS))
     info_lines.extend(record_info)
+    scope_attention.extend(area(_doctor_dead_sessions(records, liveness), SESSIONS))
     # The settings radar (user + every record cwd's project
     # and local settings) replaces _subagent_model_override_paths; the
     # accepted CLAUDE_CODE_SUBAGENT_MODEL wording is kept below.
@@ -1147,6 +1197,7 @@ def _collect_doctor_report_lines(
     scope_attention.extend(area(_doctor_new_lines_report(runtime), MODELS))
     scope_attention.extend(area(_doctor_retirement_radar(runtime), MODELS))
     scope_attention.extend(area(_doctor_hook_errors(runtime, records), SESSIONS))
+    scope_attention.extend(area(_doctor_leftovers(runtime, liveness), SESSIONS))
     # User/project settings are merged after process-environment cleanup, so
     # both subagent-model controls need a read-only radar. Agent
     # frontmatter wins over CLAUDE_CODE_SUBAGENT_MODEL on the pinned client
@@ -2160,6 +2211,163 @@ def _hook_error_observation(runtime, records):
 
 def _doctor_hook_errors(runtime: runtime_mod.Runtime, records: list[dict[str, Any]]) -> list[str]:
     return _hook_error_observation(runtime, records)[1]
+
+
+def _session_liveness(runtime: runtime_mod.Runtime) -> tuple[Any, Any]:
+    """Daemon and process-table liveness, each with its uncertainty (the
+    forms ``sessions mark-ended`` and the prune use), read once per report."""
+
+    return runtime.report_value("session-liveness", lambda: (
+        runtime.background_liveness(), sessions.proc_session_scan(runtime.proc_root)))
+
+
+DEAD_SESSIONS_SUMMARY = ("{n} sessions do not run and have no recorded end (each exited without one), so commands "
+                         "that refuse while a session may run count them: charmer sessions mark-ended --all-dead")
+
+
+def dead_session_ids(records: list[dict[str, Any]], liveness: tuple[Any, Any]) -> list[str]:
+    """The managed ids of the sessions without a recorded end that no check
+    finds running (the ones ``sessions mark-ended --all-dead`` marks); none
+    while whether sessions run cannot be told."""
+
+    daemon, scan = liveness
+    if not daemon.known or not scan.known:
+        return []
+    dead: list[str] = []
+    for record in records:
+        if record.get("last_event_source") == "end":
+            continue
+        try:
+            mid = sessions.managed_id(record)
+            if session_facts._record_view_is_live(record, prefixes=daemon.prefixes, proc_ids=scan.ids):
+                continue
+        except (KeyError, TypeError, sessions.SessionError):
+            continue
+        dead.append(mid)
+    return dead
+
+
+def _doctor_dead_sessions(records: list[dict[str, Any]], liveness: tuple[Any, Any]) -> list[str]:
+    """One line per session :func:`dead_session_ids` names, collapsed into one row."""
+
+    return [_per_session(
+        f"session {mid[:8]}: does not run and has no recorded end (it exited without one), so commands that "
+        f"refuse while a session may run count it: charmer sessions mark-ended {mid}",
+        mid, "dead", DEAD_SESSIONS_SUMMARY, action="dead-sessions") for mid in dead_session_ids(records, liveness)]
+
+
+# The kinds of generated file the cleanup preview names, as doctor counts them.
+LEFTOVER_KINDS = (("scope", "scope"), ("prompt", "lead prompt"), ("notice", "notice marker"),
+                  ("lineup-log", "lineup log"))
+LEFTOVERS_REMEDY = "charmer doctor --prune --preview, then charmer doctor --prune"
+
+
+@dataclass(frozen=True)
+class Leftovers:
+    """The generated files ``doctor --prune --preview`` names, each
+    ``(path, kind, reason)`` (``LEFTOVER_KINDS``); ``protected`` is the line
+    the preview prints instead when ownership or metadata cannot be told."""
+
+    candidates: tuple[tuple[Path, str, str], ...] = ()
+    protected: str | None = None
+
+
+def prune_candidates(runtime: runtime_mod.Runtime, *, liveness: tuple[Any, Any] | None = None) -> Leftovers:
+    """The cleanup preview's inventory: recognized charmer-generated files
+    of forgotten records (scopes and staging, lead prompts, notice markers,
+    lineup logs) and the superseded lead prompts of ended, process-absent
+    records. Metadata only: no lock, chmod, directory creation or I/O
+    outside generated state; existing records are protected, not garbage.
+    ``liveness`` is :func:`_session_liveness`'s pair (read here when None)."""
+
+    root = runtime.session_store.root
+    try:
+        sessions.check_state_marker(root)
+        # Resolve no symlinked directory: even a listing must not wander into a
+        # transcript-bearing or backup root supplied as a generated directory.
+        for directory in (root, root / "sessions", root / "scopes", root / "notice", root / "lineup-log"):
+            try:
+                info = directory.lstat()
+            except FileNotFoundError:
+                continue
+            if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid():
+                raise state.StateError("unsafe generated-state directory")
+        records, problems, ids = session_facts._session_record_scan(runtime)
+        if problems:
+            return Leftovers(protected="Protected: unreadable records; ownership is unknown.")
+        runtime_ids = {rid for record in records for rid in sessions.record_session_ids(record)}
+        candidates: list[tuple[Path, str, str]] = []
+        scopes = root / "scopes"
+        if scopes.exists():
+            for entry in sorted(scopes.iterdir()):
+                name = entry.name
+                mid = name
+                for suffix in (".new", ".prev"):
+                    if name.startswith(".") and name.endswith(suffix):
+                        mid = name[1:-len(suffix)]
+                if sessions.UUID4.fullmatch(mid) and mid not in ids and not entry.is_symlink():
+                    candidates.append((entry, "scope", "scope/staging for forgotten record; recheck at commit"))
+        for entry in sorted(root.glob("lead-prompt-*.md")):
+            stem = entry.name.removeprefix("lead-prompt-").removesuffix(".md")
+            mid = stem[-36:]
+            digest = stem[:-37] if sessions.UUID4.fullmatch(mid) else stem
+            if len(digest) == 16 and all(c in "0123456789abcdef" for c in digest):
+                if "-" not in stem or mid not in ids:
+                    candidates.append((entry, "prompt", "obsolete generated lead prompt"))
+        # Superseded prompts are candidates only for ended, process-absent
+        # records with a readable fence. This is a lock-free preview; the
+        # action revalidates under runtime-index -> lifecycle before unlink.
+        if records:
+            daemon, scan = liveness if liveness is not None else (
+                runtime.background_liveness(), sessions.proc_session_scan(runtime.proc_root))
+            unreadable = set(continuity_mod.scan_records(root).fence_unreadable)
+            if daemon.known and scan.known:
+                for record in records:
+                    mid = sessions.managed_id(record)
+                    if (record.get("last_event_source") != "end" or mid in unreadable or
+                            session_facts._record_view_is_live(record, prefixes=daemon.prefixes, proc_ids=scan.ids)):
+                        continue
+                    prompts = sorted((p for p in root.glob(f"lead-prompt-*-{mid}.md") if not p.is_symlink()),
+                                     key=lambda p: (p.stat().st_mtime, p.name))
+                    candidates.extend((p, "prompt", "superseded generated lead prompt; recheck at commit")
+                                      for p in prompts[:-1])
+        notice = root / "notice"
+        if notice.exists():
+            for entry in sorted(notice.iterdir()):
+                rid = entry.name.removesuffix(".seen")
+                if entry.name.endswith(".seen") and sessions.UUID4.fullmatch(rid) and rid not in runtime_ids:
+                    candidates.append((entry, "notice", "unknown runtime notice; recheck at commit"))
+        logs = root / "lineup-log"
+        if logs.exists():
+            for entry in sorted(logs.iterdir()):
+                mid = entry.name.split(".log", 1)[0]
+                if entry.name in {mid + ".log", mid + ".log.1"} and sessions.UUID4.fullmatch(mid) and mid not in ids:
+                    candidates.append((entry, "lineup-log", "forgotten session lineup log"))
+        return Leftovers(tuple(item for item in candidates if not item[0].is_symlink()))
+    except (OSError, state.StateError, sessions.SessionError):
+        return Leftovers(protected="Protected: metadata unavailable or unsafe; no cleanup inferred.")
+
+
+def _doctor_leftovers(runtime: runtime_mod.Runtime, liveness: tuple[Any, Any]) -> list[str]:
+    """One line for the generated files the cleanup preview names, by kind
+    (none while ownership or metadata cannot be told: the record and state
+    checks report that)."""
+
+    found = prune_candidates(runtime, liveness=liveness)
+    if not found.candidates:
+        return []
+    counts: dict[str, int] = {}
+    for _path, kind, _reason in found.candidates:
+        counts[kind] = counts.get(kind, 0) + 1
+    detail = ", ".join(_plural(counts[kind], noun) for kind, noun in LEFTOVER_KINDS if kind in counts)
+    total = len(found.candidates)
+    head, them = ((f"{total} generated files left by forgotten or ended sessions", "them") if total != 1 else
+                  ("1 generated file left by a forgotten or ended session", "it"))
+    text = (f"{head} ({detail}): charmer doctor --prune --preview lists {them}, charmer doctor --prune removes "
+            f"{them} (records, transcripts and backups are never among them)")
+    return [gateway_facts.tagged(gateway_facts.Finding(text, code="generated-leftovers", public=text,
+                                                       remedy=LEFTOVERS_REMEDY),
+                                 area=SESSIONS, action="prune")]
 
 
 def doctor_report(runtime, lines):

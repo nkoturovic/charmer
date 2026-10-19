@@ -30,7 +30,7 @@ import textwrap
 from dataclasses import dataclass
 from typing import Any, Callable, Sequence, TextIO
 
-from charmer import errors, sessions, termtext, tui, views
+from charmer import errors, termtext, tui, views
 import charmer.cli.doctor as doctor
 import charmer.cli.doctor_actions as doctor_actions
 import charmer.cli.screens.common as screens_common
@@ -372,9 +372,13 @@ class FindingsScreen:
         self._collect()
 
     def _command(self, win: Any, row: doctor.Row) -> None:
-        """A row without an action: the finding and its exact command."""
+        """A row without an action: the finding and its exact command. A
+        row that stands for its lines in other words (a collapsed row, a
+        model row with its counts and optional next step) shows that row
+        first, then every line it stands for."""
 
-        lines = [self.say(line) for line in row.originals]
+        lines = [self.say(row.text), ""] if row.collapsed else []
+        lines += [self.say(line) for line in row.originals]
         if row.remedy:
             lines += ["", cli_text.FINDINGS_COMMAND.format(command=row.remedy)]
         tui.TextView(cli_text.FINDINGS_COMMAND_TITLE, [termtext.visible_text(line) for line in lines],
@@ -450,16 +454,14 @@ class FindingsScreen:
 
         if not self._writable():
             return
-        daemon = self.runtime.background_liveness()
-        scan = sessions.proc_session_scan(getattr(self.runtime, "proc_root", "/proc"))
+        liveness = doctor._session_liveness(self.runtime)  # read now: no report snapshot is open here
+        daemon, scan = liveness
         if not daemon.known or not scan.known:
             reason = daemon.reason if not daemon.known else scan.reason
             self._say(f"whether sessions run cannot be told ({reason}); nothing was marked", "warn")
             return
-        records, _problems, _ids = session_facts._session_record_scan(self.runtime)
-        dead = [sessions.managed_id(record) for record in records
-                if record.get("last_event_source") != "end"
-                and not session_facts._record_view_is_live(record, prefixes=daemon.prefixes, proc_ids=scan.ids)]
+        # The sessions doctor names: the same records and the same checks.
+        dead = doctor.dead_session_ids(session_facts._session_records(self.runtime), liveness)
         if not dead:
             self._say(cli_text.FINDINGS_DEAD_NONE)
             return
@@ -470,7 +472,8 @@ class FindingsScreen:
             return
 
         def mark(out: TextIO) -> int:
-            results = session_actions._mark_ended_ids(self.runtime, dead)
+            # Each mark decides again under the session's lock, on the same process table.
+            results = session_actions._mark_ended_ids(self.runtime, dead, proc_root=self.runtime.proc_root)
             for managed, status in results:
                 out.write(f"{managed}  {status}\n")
             return 0

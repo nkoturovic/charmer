@@ -182,6 +182,8 @@ restart.
 | ⚠; doctor: “has an unresolved native fork” | Enter on the row (adopt or discard), or `charmer sessions resolve-fork <id> <fork-id>` |
 | !; doctor: “identity is repair-needed” | `charmer -r <id>`, or `charmer sessions relink-runtime <id> <runtime-id>` |
 | ● or ◐ but the session is gone | `charmer sessions mark-ended <id>` (all: `charmer sessions mark-ended --all-dead`) |
+| doctor: “sessions do not run and have no recorded end” | `charmer sessions mark-ended --all-dead`, or H → Enter on the row |
+| doctor: “generated files left by forgotten or ended sessions” | `charmer doctor --prune --preview`, then `charmer doctor --prune`; or H → Enter on the row |
 | doctor: “session(s) need a profile or model choice (lead removed)” | `charmer -r <id>` asks for one; or `charmer lineup --session <runtime-id> --relaunch profile <name>` |
 | doctor: “session scope(s) were compiled by <earlier name>” | `charmer doctor --repair-all` (stopped sessions); a running one recompiles at its next resume |
 | doctor: “Advisories (optional evidence; does not change the verdict)” | nothing is required; optional: `charmer models qualify <line> --agents` or M → Q |

@@ -698,9 +698,12 @@ CARD_UPDATE_CHECK = "U checks for a newer release"
 CARD_NIX_NOTE = "updated through your Nix flake"
 CARD_UPDATE_NIX = "U says how"
 # The persistence hold, evaluated with the card's health check: its kind,
-# and the row that says it and names the clear-hold route.
+# and the row that says it and names the clear-hold route. Only a hold whose
+# every reason is incomplete log coverage has a kind of its own; any other
+# (a failed save, an unreadable hold record, an evaluation that failed) is
+# held: a credential save may be unresolved, and H shows which reason.
 CARD_HOLD_COVERAGE_KIND = "coverage"
-CARD_HOLD_FAILURE_KIND = "failure"
+CARD_HOLD_HELD_KIND = "held"
 CARD_HOLD_ROWS = {
     CARD_HOLD_COVERAGE_KIND: (
         "! persistence hold: held — log coverage incomplete, not a failed save; check the credentials, then "
@@ -709,12 +712,12 @@ CARD_HOLD_ROWS = {
         "(H shows why)",
         "! gateway held (log coverage, no failed save) — H shows the clear-hold route",
     ),
-    CARD_HOLD_FAILURE_KIND: (
-        "! persistence hold: held — a credential save failed; keep the gateway running, then clear it outside "
-        "Claude Code: charmer gateway clear-hold (H shows the fix)",
-        "! gateway held: a credential save failed — keep it running; H shows the fix and charmer gateway "
-        "clear-hold",
-        "! gateway held (a failed save) — H shows the fix and the clear-hold route",
+    CARD_HOLD_HELD_KIND: (
+        "! persistence hold: held — a credential save may be unresolved; keep the gateway running, then clear "
+        "it outside Claude Code: charmer gateway clear-hold (H shows why and the fix)",
+        "! gateway held: a credential save may be unresolved — keep it running; H shows why and charmer "
+        "gateway clear-hold",
+        "! gateway held (a save may be unresolved) — H shows the clear-hold route",
     ),
 }
 # The resume card's bar after Enter (and U when an update applies).
@@ -823,7 +826,7 @@ def card_model(
     catalog_version)`` or None (line mode: no loopback call); a down row
     names ``start_hint`` (the caller's ``cli.gateway_service_hint("start")``).
     ``hold`` is the persistence hold the health check found
-    (``CARD_HOLD_COVERAGE_KIND`` or ``CARD_HOLD_FAILURE_KIND``; None when
+    (``CARD_HOLD_COVERAGE_KIND`` or ``CARD_HOLD_HELD_KIND``; None when
     none holds or it is not observed): its row says which and names the
     clear-hold route, and the card is Attention.
     ``update_hint`` is the installed release's ``(version,

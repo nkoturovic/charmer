@@ -104,6 +104,68 @@ class CollapseIdentityTests(unittest.TestCase):
         self.assertIn("    - provider x has no credential (set X in ~/{odd}/f); 2 profiles — p0, p1", text)
 
 
+class ModelIdentityTests(unittest.TestCase):
+    """A model row's identity is the model and the finding code, never the
+    wording: the real warning builders word some findings without the model
+    (an unverified effort) and others per slot (a role recommendation)."""
+
+    ENTRY = {"capabilities": ["agents", "lead"], "roles": ["cm-explorer"], "efforts": ["medium"]}
+
+    def tag(self, finding, *, key, owner, slot):
+        return doctor._tag_model(f"profile {owner}: {finding.message}", finding, key=key, owner=owner, slot=slot)
+
+    def test_the_same_wording_on_two_models_is_two_rows_each_naming_its_model(self) -> None:
+        from charmer import profile
+
+        lines = [self.tag(finding, key=key, owner=owner, slot="cm-reviewer")
+                 for key, owner in (("model-a", "p1"), ("model-b", "p2"))
+                 for finding in profile.effort_warnings(self.ENTRY, "high", slot="cm-reviewer")]
+        self.assertEqual(lines[0].short, lines[1].short)  # the builder's text names no model
+        rows = doctor.present_report([], lines).of(doctor.ADVISORY)
+        self.assertEqual([row.subject for row in rows], ["model-a", "model-b"])
+        self.assertTrue(rows[0].text.startswith("model-a: effort 'high' unverified for this line (not declared) "
+                                                "(1 profile, 1 slot)"), rows[0].text)
+        self.assertTrue(rows[1].text.startswith("model-b: effort 'high' unverified"), rows[1].text)
+
+    def test_one_model_worded_per_slot_is_one_row_with_its_distinct_bindings(self) -> None:
+        from charmer import profile
+
+        lines = []
+        for owner, slot in (("p1", "cm-reviewer"), ("p1", "cm-analyst"), ("p2", "cm-reviewer"),
+                            ("p2", "cm-reviewer")):  # the last binding twice: counted once
+            lines += [self.tag(finding, key="model-a", owner=owner, slot=slot)
+                      for finding in profile.binding_warnings(self.ENTRY, key="model-a", slot=slot, effort="medium",
+                                                              family="acme", known_families=("acme",))]
+        self.assertEqual({line.group[1] for line in lines}, {"role-recommendation"})
+        self.assertEqual(len({line.short for line in lines}), 2)  # one wording per slot
+        rows = doctor.present_report([], lines).of(doctor.ADVISORY)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].text, "model-a: explicit binding overrides the recommendation against … "
+                                       "(2 profiles, 3 slots; doctor -v lists them) — a recommendation; the "
+                                       "explicit binding stays allowed")
+        verbose = _text([], [], lines, verbose=True)
+        for slot in ("cm-reviewer", "cm-analyst"):
+            self.assertIn(f"  - profile p1: model-a: explicit binding overrides the recommendation against {slot}",
+                          verbose)
+
+    def test_a_lineup_wide_finding_is_one_row_per_wording(self) -> None:
+        from charmer import profile
+
+        same = profile.Finding("independence-unknown", None, "review independence unknown", "x")
+        other = profile.Finding("independence-unknown", None, "review independence unknown for cm-analyst", "x")
+        lines = [self.tag(same, key=None, owner="p1", slot=None), self.tag(same, key=None, owner="p2", slot=None),
+                 self.tag(other, key=None, owner="p3", slot=None)]
+        rows = doctor.present_report([], lines).of(doctor.ADVISORY)
+        self.assertEqual([row.text.split(" — ")[0] for row in rows],
+                         ["review independence unknown (2 profiles)",
+                          "review independence unknown for cm-analyst (1 profile)"])
+
+    def test_variants_that_share_too_little_keep_the_first_wording(self) -> None:
+        self.assertEqual(doctor._shared_wording(["k: alpha one", "k: beta two"]), "k: alpha one; and 1 other wording")
+        self.assertEqual(doctor._shared_wording(["effort 'high' unverified here", "effort 'max' unverified here"]),
+                         "effort … unverified here")
+
+
 class AdvisoryTests(test_operator_agents.AgentCase):
     """3 profiles × 4 slots bound to one model whose qualification predates
     the current pins: one advisory line with the counts, the verdict

@@ -533,7 +533,10 @@ class CardHealthKeyRemedyTests(_CardCase):
 
 class CardHoldRowTests(_CardCase):
     """A held gateway shows on the card's health row: which hold (log
-    coverage only, or a failed save) and the clear-hold route. The hold is
+    coverage only, or held: a credential save may be unresolved) and the
+    clear-hold route. Only a coverage-only hold has its own words; a failed
+    save, an unreadable hold record and an evaluation that failed are all
+    held, and none of them claims a failed save on the card. The hold is
     evaluated with the card's one health check, never on each render."""
 
     def held_card(self, *, coverage_only: bool):
@@ -562,14 +565,50 @@ class CardHoldRowTests(_CardCase):
         self.assertIn(rows[0], self.frame(screen, width=200, height=40))
         self.assertEqual(len(calls), 1)
 
-    def test_a_failed_save_hold_names_the_fix(self) -> None:
+    def test_a_failed_save_hold_says_a_save_may_be_unresolved(self) -> None:
         screen, calls = self.held_card(coverage_only=False)
         _result, win = self.run_card(screen, ["z", ESC])
         self.assertEqual(len(calls), 1)
-        rows = views.CARD_HOLD_ROWS[views.CARD_HOLD_FAILURE_KIND]
+        rows = views.CARD_HOLD_ROWS[views.CARD_HOLD_HELD_KIND]
         self.assertIn(rows[2], win.frames[-1])
         self.assertNotIn("log coverage", win.frames[-1])
         self.assertIn(rows[1], self.frame(screen, width=120, height=40))
+
+    def assert_held_not_failed(self, report) -> None:
+        self.assertTrue(report.held)
+        self.assertFalse(report.coverage_only)
+        screen = self.card(gateway_checked=False, gateway_check=lambda: None, hold_check=lambda: report)
+        _result, win = self.run_card(screen, [ESC])  # the card's one health check
+        rows = views.CARD_HOLD_ROWS[views.CARD_HOLD_HELD_KIND]
+        for width, height, form in ((80, 24, rows[2]), (120, 40, rows[1]), (200, 40, rows[0])):
+            frame = win.frames[-1] if width == 80 else self.frame(screen, width=width, height=height)
+            self.assertIn("gateway ok, held ·", frame)
+            self.assertIn(form, frame)
+            # Nothing was seen to fail: the card never says a save failed.
+            self.assertNotIn("save failed", frame)
+            self.assertNotIn("failed save", frame)
+
+    def test_an_unreadable_hold_record_is_held_never_a_failed_save(self) -> None:
+        from charmer import gateway_hold, state
+
+        root = self.runtime.session_store.root
+        path = gateway_hold.hold_path(root)
+        state.ensure_private_dir(path.parent)
+        state.atomic_write(path, b"{not json")
+        report = gateway_hold.evaluate_files(root, ())
+        self.assertIn("persistence hold record is not valid JSON", report.reasons[0])
+        self.assert_held_not_failed(report)
+
+    def test_a_hold_that_cannot_be_evaluated_is_held_never_a_failed_save(self) -> None:
+        import charmer.cli.screens.gateway_actions as gateway_actions
+
+        class Unreadable:
+            def persistence_hold(self, _seen):
+                raise OSError("the journal cannot be read")
+
+        report = gateway_actions._hold(Unreadable(), None)
+        self.assertEqual(report.source, "unknown")
+        self.assert_held_not_failed(report)
 
     def test_every_form_fits_its_width(self) -> None:
         for kind, forms in views.CARD_HOLD_ROWS.items():

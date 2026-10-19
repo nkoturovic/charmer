@@ -2362,7 +2362,7 @@ class _LaunchCardScreen(_CardHealthActions):
             health=health,
             hold=(None if hold is None or not getattr(hold, "held", False)
                   else views.CARD_HOLD_COVERAGE_KIND if getattr(hold, "coverage_only", False)
-                  else views.CARD_HOLD_FAILURE_KIND),
+                  else views.CARD_HOLD_HELD_KIND),
             quota_row=self._quota_summary(lineup),
             start_hint=gateway_facts.gateway_service_hint("start", runtime),
             update_hint=self.update_hint,

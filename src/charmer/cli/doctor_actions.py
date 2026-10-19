@@ -697,81 +697,18 @@ def _doctor_prune_preview(runtime: runtime_mod.Runtime, output_stream: TextIO) -
     """Non-authoritative inventory: no locks, chmod, directory creation or I/O
     outside generated state. Existing records are protected, not garbage.
     """
-    root = runtime.session_store.root
     output_stream.write(
         "Generated-state cleanup preview — no files removed.\n"
         "Only recognized charmer-generated files are candidates.\n"
         "Unadmitted declarations, session records, credentials and rollback backups are not garbage.\n"
     )
-    try:
-        sessions.check_state_marker(root)
-        # Resolve no symlinked directory: even a listing must not wander into a
-        # transcript-bearing or backup root supplied as a generated directory.
-        for directory in (root, root / "sessions", root / "scopes", root / "notice", root / "lineup-log"):
-            try:
-                info = directory.lstat()
-            except FileNotFoundError:
-                continue
-            if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid():
-                raise state.StateError("unsafe generated-state directory")
-        records, problems, ids = session_facts._session_record_scan(runtime)
-        if problems:
-            output_stream.write("Protected: unreadable records; ownership is unknown.\n")
-            return 2
-        runtime_ids = {rid for record in records for rid in sessions.record_session_ids(record)}
-        candidates: list[tuple[Path, str]] = []
-        scopes = root / "scopes"
-        if scopes.exists():
-            for entry in sorted(scopes.iterdir()):
-                name = entry.name
-                mid = name
-                for suffix in (".new", ".prev"):
-                    if name.startswith(".") and name.endswith(suffix):
-                        mid = name[1:-len(suffix)]
-                if sessions.UUID4.fullmatch(mid) and mid not in ids and not entry.is_symlink():
-                    candidates.append((entry, "scope/staging for forgotten record; recheck at commit"))
-        for entry in sorted(root.glob("lead-prompt-*.md")):
-            stem = entry.name.removeprefix("lead-prompt-").removesuffix(".md")
-            mid = stem[-36:]
-            digest = stem[:-37] if sessions.UUID4.fullmatch(mid) else stem
-            if len(digest) == 16 and all(c in "0123456789abcdef" for c in digest):
-                if "-" not in stem or mid not in ids:
-                    candidates.append((entry, "obsolete generated lead prompt"))
-        # Superseded prompts are candidates only for ended, process-absent
-        # records with a readable fence. This is a lock-free preview; the
-        # action revalidates under runtime-index -> lifecycle before unlink.
-        if records:
-            from charmer import continuity
-            daemon = runtime.background_liveness()
-            scan = sessions.proc_session_scan(runtime.proc_root)
-            unreadable = set(continuity.scan_records(root).fence_unreadable)
-            if daemon.known and scan.known:
-                for record in records:
-                    mid = sessions.managed_id(record)
-                    if (record.get("last_event_source") != "end" or mid in unreadable or
-                            session_facts._record_view_is_live(record, prefixes=daemon.prefixes, proc_ids=scan.ids)):
-                        continue
-                    prompts = sorted((p for p in root.glob(f"lead-prompt-*-{mid}.md") if not p.is_symlink()),
-                                     key=lambda p: (p.stat().st_mtime, p.name))
-                    candidates.extend((p, "superseded generated lead prompt; recheck at commit") for p in prompts[:-1])
-        notice = root / "notice"
-        if notice.exists():
-            for entry in sorted(notice.iterdir()):
-                rid = entry.name.removesuffix(".seen")
-                if entry.name.endswith(".seen") and sessions.UUID4.fullmatch(rid) and rid not in runtime_ids:
-                    candidates.append((entry, "unknown runtime notice; recheck at commit"))
-        logs = root / "lineup-log"
-        if logs.exists():
-            for entry in sorted(logs.iterdir()):
-                mid = entry.name.split(".log", 1)[0]
-                if entry.name in {mid + ".log", mid + ".log.1"} and sessions.UUID4.fullmatch(mid) and mid not in ids:
-                    candidates.append((entry, "forgotten session lineup log"))
-        for path, reason in candidates:
-            if not path.is_symlink():
-                output_stream.write(f"Candidate: {termtext.visible_text(str(path))} — {reason}\n")
-        output_stream.write("Protected: existing session scopes/prompts; .v3 backups; quarantine-3x; restored-2x; auth.pre-*; native Claude roots.\n")
-        output_stream.write("Advisory snapshot only; a preview is not deletion authorization.\n")
-        return 0
-    except (OSError, state.StateError, sessions.SessionError):
-        output_stream.write("Protected: metadata unavailable or unsafe; no cleanup inferred.\n")
+    # The inventory is doctor's (its leftover line counts the same files).
+    found = doctor.prune_candidates(runtime)
+    if found.protected is not None:
+        output_stream.write(found.protected + "\n")
         return 2
+    for path, _kind, reason in found.candidates:
+        output_stream.write(f"Candidate: {termtext.visible_text(str(path))} — {reason}\n")
+    output_stream.write("Protected: existing session scopes/prompts; .v3 backups; quarantine-3x; restored-2x; auth.pre-*; native Claude roots.\n")
+    output_stream.write("Advisory snapshot only; a preview is not deletion authorization.\n")
+    return 0

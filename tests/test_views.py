@@ -727,7 +727,7 @@ class CardModelTests(_RuntimeCase):
 
     def test_a_held_gateway_says_so_with_the_clear_hold_route(self) -> None:
         for kind, cause in ((views.CARD_HOLD_COVERAGE_KIND, "log coverage incomplete, not a failed save"),
-                            (views.CARD_HOLD_FAILURE_KIND, "a credential save failed")):
+                            (views.CARD_HOLD_HELD_KIND, "a credential save may be unresolved")):
             with self.subTest(kind=kind):
                 _p, held = self.card(health=(None, True, "9.9.9", "packaged", 7), hold=kind)
                 text = views.card_text(held, 200)

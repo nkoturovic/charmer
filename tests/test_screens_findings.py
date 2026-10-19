@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import os
 import shutil
 import tempfile
 import unittest
@@ -328,6 +329,8 @@ class FindingsActionTests(_FindingsCase):
 
     def test_enter_on_dead_sessions_marks_them_after_a_confirmation(self) -> None:
         dead = fx.v4_record(self.runtime, catalog.DEFAULT_SEED, managed_id=fx.FIXED_ID)
+        self.runtime.proc_root = self.tmp / "proc"
+        self.runtime.proc_root.mkdir()
         line = gateway_facts.tagged("1 session(s) have no recorded end and do not run", area="Sessions",
                                     action="dead-sessions")
         screen = self.screen(([], [], [line]))
@@ -338,7 +341,7 @@ class FindingsActionTests(_FindingsCase):
             _result, win = self.drive(screen, [ENTER, ENTER, ESC])
             mark.assert_not_called()
             _result, win = self.drive(screen, [ENTER, RIGHT, ENTER, ESC, ESC])
-        mark.assert_called_once_with(self.runtime, [sessions.managed_id(dead)])
+        mark.assert_called_once_with(self.runtime, [sessions.managed_id(dead)], proc_root=self.runtime.proc_root)
         self.assertIn("marked ended", _flat(win.frames))
 
     def test_enter_on_a_newer_shipped_profile_reseeds_it(self) -> None:
@@ -369,6 +372,31 @@ class FindingsActionTests(_FindingsCase):
             _result, _win = self.drive(screen, [ENTER, DOWN, ENTER, ESC])  # open the advisories, Enter on the row
         qualify.assert_called_once_with("fixture-op-model")
 
+    def test_enter_on_an_admission_advisory_shows_its_next_step_and_command(self) -> None:
+        from charmer import profile
+
+        finding = next(item for item in profile.qualification_warnings("operator-model", None, slot="cm-reviewer")
+                       if item.code == "admission")
+        line = doctor._tag_model(f"profile p: {finding.message}", finding, key="operator-model", owner="p",
+                                 slot="cm-reviewer")
+        screen = self.screen(([], [], [line]))
+        shown: list = []
+        real = tui.TextView
+
+        class Recording(real):
+            def run(self, win):
+                shown.append((self.title, list(self.lines)))
+                return super().run(win)
+
+        with mock.patch.object(tui, "TextView", Recording):
+            _result, _win = self.drive(screen, [ENTER, DOWN, ENTER, ESC, ESC])  # open the advisories, Enter on it
+        title, lines = shown[0]
+        self.assertEqual(title, cli_text.FINDINGS_COMMAND_TITLE)
+        self.assertTrue(lines[0].startswith("operator-model: not admitted"), lines)
+        self.assertIn("optional: charmer models admit operator-model, or M → Enter (sends no request)", lines[0])
+        self.assertIn(f"profile p: {finding.message}", lines)  # every line the row stands for
+        self.assertEqual(lines[-1], cli_text.FINDINGS_COMMAND.format(command="charmer models admit operator-model"))
+
     def test_enter_on_a_needs_choice_row_opens_sessions(self) -> None:
         opened: list = []
 
@@ -393,6 +421,140 @@ class FindingsActionTests(_FindingsCase):
                 mock.patch.object(doctor_actions, "_doctor_repair_all", side_effect=AssertionError("wrote")):
             _result, win = self.drive(screen, [*keys, ENTER, ESC])
         self.assertIn(cli_text.FINDINGS_READ_ONLY, win.frames[-1])
+
+
+# ================================================================ from doctor's own collection
+
+
+FORGOTTEN_ID = "66666666-6666-4666-8666-666666666666"
+
+
+class FindingsCollectedTests(_FindingsCase):
+    """The housekeeping rows come from doctor's own checks on the fixture
+    home, and H acts on them with the same services and guards: a session
+    that exited without an end, and generated files of a forgotten session
+    while the hook-error log is empty."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        # A process table this test owns: listable (known), with only the
+        # processes a test writes.
+        self.runtime.proc_root = self.tmp / "proc"
+        self.runtime.proc_root.mkdir()
+        self.root = self.runtime.session_store.root
+
+    def running(self, managed: str) -> None:
+        process = self.runtime.proc_root / "4242"
+        process.mkdir()
+        (process / "cmdline").write_bytes(b"claude\0--session-id\0" + managed.encode() + b"\0")
+
+    def collected_rows(self, action: str) -> list:
+        problems, _info, attention = doctor._collect_doctor_reports(self.runtime)
+        return [row for row in doctor.present_report(problems, attention).rows if row.action == action]
+
+    def real_screen(self) -> findings.FindingsScreen:
+        return findings.FindingsScreen(self.runtime, palette=tui.MONO_PALETTE, tty_in=io.StringIO(),
+                                       tty_out=io.StringIO())
+
+    def test_an_exited_session_without_an_end_is_a_row_that_marks_it_ended(self) -> None:
+        dead = fx.v4_record(self.runtime, catalog.DEFAULT_SEED, managed_id=fx.FIXED_ID)
+        fx.v4_record(self.runtime, catalog.DEFAULT_SEED, managed_id=fx.OTHER_ID)
+        fx.v4_record(self.runtime, catalog.DEFAULT_SEED, managed_id=fx.THIRD_ID, ended=True)
+        self.running(fx.OTHER_ID)
+        rows = self.collected_rows("dead-sessions")
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].area, "Sessions")
+        self.assertIn(f"charmer sessions mark-ended {fx.FIXED_ID}", rows[0].text)
+        self.assertNotIn(fx.OTHER_ID[:8], " ".join(rows[0].originals))  # running
+        self.assertNotIn(fx.THIRD_ID[:8], " ".join(rows[0].originals))  # ended
+        screen = self.real_screen()
+        keys = self.select(screen, "dead-sessions")
+        _result, win = self.drive(screen, [*keys, ENTER, ENTER, ESC])  # Cancel is focused first
+        self.assertNotEqual(self.store_record(fx.FIXED_ID).get("last_event_source"), "end")
+        self.assertIn(cli_text.FINDINGS_CANCELLED, win.frames[-1])
+        _result, win = self.drive(screen, [HOME, *keys, ENTER, RIGHT, ENTER, ESC, ESC])
+        self.assertIn(f"{fx.FIXED_ID}  marked ended", _flat(win.frames))
+        self.assertEqual(self.store_record(fx.FIXED_ID)["last_event_source"], "end")
+        self.assertNotEqual(self.store_record(fx.OTHER_ID).get("last_event_source"), "end")
+        self.assertEqual(sessions.managed_id(dead), fx.FIXED_ID)
+        # The report is read again after the action: the row is gone.
+        self.assertFalse([item for item in screen.lines if item.row is not None
+                          and item.row.action == "dead-sessions"])
+
+    def test_several_dead_sessions_are_one_row_with_the_first_three(self) -> None:
+        for managed in (fx.FIXED_ID, fx.OTHER_ID, fx.THIRD_ID, fx.FOURTH_ID):
+            fx.v4_record(self.runtime, catalog.DEFAULT_SEED, managed_id=managed)
+        rows = self.collected_rows("dead-sessions")
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(len(rows[0].originals), 4)
+        self.assertTrue(rows[0].text.startswith("4 sessions do not run and have no recorded end"), rows[0].text)
+        self.assertIn("charmer sessions mark-ended --all-dead", rows[0].text)
+        self.assertTrue(rows[0].text.endswith(f"11111111, 22222222, 33333333… {doctor.VERBOSE_HINT}"), rows[0].text)
+
+    def test_no_dead_session_row_while_whether_sessions_run_cannot_be_told(self) -> None:
+        fx.v4_record(self.runtime, catalog.DEFAULT_SEED, managed_id=fx.FIXED_ID)
+        self.runtime.proc_root = self.tmp / "no-proc"  # unlistable: unknown
+        self.assertEqual(self.collected_rows("dead-sessions"), [])
+        self.runtime.proc_root = self.tmp / "proc"
+        with mock.patch.object(self.runtime, "background_liveness",
+                               lambda: sessions.BackgroundLiveness(False, frozenset(), "fixture: unknown")):
+            self.assertEqual(self.collected_rows("dead-sessions"), [])
+
+    def leftovers(self) -> list:
+        from charmer import state
+
+        scope = state.ensure_private_dir(self.root / "scopes" / FORGOTTEN_ID)
+        state.atomic_write(scope / "settings.json", b"{}\n")
+        prompt = self.root / f"lead-prompt-{'a' * 16}-{FORGOTTEN_ID}.md"
+        state.atomic_write(prompt, b"generated\n")
+        notice = state.ensure_private_dir(self.root / "notice") / f"{FORGOTTEN_ID}.seen"
+        state.atomic_write(notice, b"")
+        log = state.ensure_private_dir(self.root / "lineup-log") / f"{FORGOTTEN_ID}.log"
+        state.atomic_write(log, b"{}\n")
+        return [scope, prompt, notice, log]
+
+    def test_generated_leftovers_are_a_row_that_previews_then_prunes(self) -> None:
+        from charmer import hooks
+
+        files = self.leftovers()
+        self.assertFalse((self.root / hooks.HOOK_ERRORS_LOG).exists())  # no hook failure names the prune
+        rows = self.collected_rows("prune")
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].area, "Sessions")
+        self.assertTrue(rows[0].text.startswith("4 generated files left by forgotten or ended sessions (1 scope, 1 "
+                                                "lead prompt, 1 notice marker, 1 lineup log)"), rows[0].text)
+        self.assertEqual(rows[0].remedy, doctor.LEFTOVERS_REMEDY)
+        screen = self.real_screen()
+        keys = self.select(screen, "prune")
+        _result, win = self.drive(screen, [*keys, ENTER, "n", ESC])
+        self.assertTrue(all(os.path.lexists(path) for path in files))  # a cancel removes nothing
+        shown = _flat(win.frames)
+        self.assertEqual(shown.count("Candidate: "), 4)  # the preview names what the row counts
+        self.assertIn("scope/staging for forgotten record", shown)
+        _result, win = self.drive(screen, [HOME, *keys, ENTER, "y", ESC, ESC])
+        self.assertIn(f"scope for forgotten session {FORGOTTEN_ID}", _flat(win.frames))
+        self.assertFalse([path for path in files if os.path.lexists(path)])
+        self.assertFalse([item for item in screen.lines if item.row is not None and item.row.action == "prune"])
+
+    def test_one_leftover_is_worded_as_one(self) -> None:
+        from charmer import state
+
+        state.atomic_write(state.ensure_private_dir(self.root / "lineup-log") / f"{FORGOTTEN_ID}.log", b"{}\n")
+        rows = self.collected_rows("prune")
+        self.assertEqual(len(rows), 1)
+        self.assertTrue(rows[0].text.startswith("1 generated file left by a forgotten or ended session (1 lineup "
+                                                "log): charmer doctor --prune --preview lists it,"), rows[0].text)
+
+    def test_no_leftover_row_while_a_record_cannot_be_read(self) -> None:
+        self.leftovers()
+        (self.root / "sessions" / f"{FIXED_ID_BROKEN}.json").write_text("{not json")
+        self.assertEqual([row for row in self.collected_rows("prune") if "generated file" in row.text], [])
+
+    def store_record(self, managed: str) -> dict:
+        return self.runtime.session_store.load(managed)
+
+
+FIXED_ID_BROKEN = "77777777-7777-4777-8777-777777777777"
 
 
 # ================================================================ the gateway's actions

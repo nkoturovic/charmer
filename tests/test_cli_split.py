@@ -178,7 +178,10 @@ class DoctorSplitTests(unittest.TestCase):
         "ACTIONS", "ADVISORIES_TITLE", "ADVISORY", "ADVISORY_CODES", "AREAS", "OTHER_AREA", "SHOWN_IDS",
         "VERBOSE_HINT", "EARLIER_SCOPES", "_EARLIER_SCOPES_SUMMARY", "_LEVEL_ORDER", "_QUALIFY_CODES",
         "Row", "Presentation", "present_report", "report_lines", "_area_index", "_listed", "_plural",
-        "_model_text", "advisory_remedy", "DoctorDiagnostic",
+        "_model_text", "advisory_remedy", "advisory_command", "_shared_wording", "DoctorDiagnostic",
+        # Sessions without a recorded end and generated leftovers, as doctor findings.
+        "_session_liveness", "DEAD_SESSIONS_SUMMARY", "dead_session_ids", "_doctor_dead_sessions",
+        "LEFTOVER_KINDS", "LEFTOVERS_REMEDY", "Leftovers", "prune_candidates", "_doctor_leftovers",
         "_per_session", "_tag_model", "_slot_key", "_workflow_key", "_keyed_provider", "_operator_agent_warnings",
         "Line", "tagged", "in_area",  # tagged doctor lines (area, action, group)
         "rollback_remedy",  # the way back after a gateway-changing update
