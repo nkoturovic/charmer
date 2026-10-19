@@ -961,6 +961,8 @@ class ForkSubagentPolicyTests(_SpikeRealBinaryTestCase):
     the same variable in the process environment, on a fresh start and on
     ``--resume``; ``--no-subagents`` offers no Agent tool at all."""
 
+    responder_class = _ForkResponder
+
     def _settings(self, label: str, permissions: dict[str, Any]) -> Path:
         path = self.scope / f"settings-s15-{label}.json"
         state.atomic_write(path, strict_json.canonical_file_bytes(
@@ -979,7 +981,7 @@ class ForkSubagentPolicyTests(_SpikeRealBinaryTestCase):
 
     def _headless(self, label: str, settings: Path, *, process: str | None = None,
                   extra: tuple[str, ...] = ()) -> _ForkResponder:
-        responder = _ForkResponder(label)
+        responder = self.responder_class(label)
         original = probe.ProbeFixture.environ
 
         def environ(fixture_self: probe.ProbeFixture, **kwargs: Any) -> dict[str, str]:
@@ -1007,7 +1009,7 @@ class ForkSubagentPolicyTests(_SpikeRealBinaryTestCase):
     def _terminal(self, label: str, settings: Path) -> _ForkResponder:
         # The lead's fork only (a terminal runs every agent in the
         # background); a started fork gets a moment to finish before /exit.
-        responder = _ForkResponder(label, spawn=False)
+        responder = self.responder_class(label, spawn=False)
 
         def settle() -> None:
             if responder.fork_seen.is_set():
@@ -1085,6 +1087,206 @@ class ForkSubagentPolicyTests(_SpikeRealBinaryTestCase):
             "CLAUDE_CODE_FORK_SUBAGENT=1 + Agent(fork) allow + process env on a fresh start and --resume; "
             f"--no-subagents offers no Agent tool {self.evidence_label}"
         )
+
+
+# ------------------------------------------------------------- fork gate
+
+FORK_GATE_PREFIX = "client check fork-gate:"
+FORK_GATE_PASS = "FG-off"
+_FORK_ENV = "CLAUDE_CODE_FORK_SUBAGENT"
+# The release before the 2.1.302 pin: its interactive sessions had the gap
+# (no Agent(fork) deny; the fork gate on in a terminal since 2.1.232).
+_FORK_PREVIOUS = ("2.1.292", "a967e7b1d8b4e47ee421d5433027880347952b0c0857abf880e2c942a4ec93b3")
+
+
+def fork_gate_class(observed: dict[str, dict[str, Any]]) -> str:
+    """The fork-gate class from each run's outcome.
+
+    ``control*`` runs carry the compiled deny without the compiled gate
+    variable, against the competing layers: the gate is on there, so the
+    deny must be what refuses (``denied``), or the stimulus is not real
+    (INCONCLUSIVE). ``compiled*`` runs carry both: every fork must be
+    ``unavailable`` (the gate is off) with no fork request; a ``denied``
+    one is the gate left on (``FG-gate-on``), a ``started`` one a fork
+    that ran (``FG-fork-runs``). The previous pin's runs, when present,
+    must show the gap (``previous-gap`` started) and its closing
+    (``previous-off`` unavailable)."""
+
+    def outcomes(row: dict[str, Any]) -> set[str]:
+        return {row[key] for key in ("lead", "agent") if row.get(key) not in (None, "not-attempted")}
+
+    for name, row in observed.items():
+        if name.startswith("control") and outcomes(row) != {"denied"}:
+            raise _ForkGateInconclusive(f"{name}: the competing layers did not turn the gate on ({row})")
+    if "previous-gap" in observed and outcomes(observed["previous-gap"]) != {"started"}:
+        raise _ForkGateInconclusive(f"previous-gap: the previous pin's fork did not start ({observed['previous-gap']})")
+    compiled = {name: row for name, row in observed.items() if name.startswith(("compiled", "previous-off"))}
+    if any("started" in outcomes(row) or row.get("fork_requests") for row in compiled.values()):
+        return "FG-fork-runs"
+    if any(outcomes(row) != {"unavailable"} for row in compiled.values()):
+        return "FG-gate-on"
+    return FORK_GATE_PASS
+
+
+class _ForkGateInconclusive(AssertionError):
+    """A control did not show the gate on: no class can be chosen."""
+
+
+class _ForkGateResponder(_ForkResponder):
+    """S15's responder, also keeping whether the lead's Agent tool offers
+    ``run_in_background`` (a terminal session with the fork gate on forces
+    every subagent into the background and drops the parameter)."""
+
+    def __init__(self, run: str, *, spawn: bool = True) -> None:
+        super().__init__(run, spawn=spawn)
+        self.background_offered: bool | None = None
+
+    def respond(self, document: dict[str, Any], path: str, context: probe.RequestContext) -> tuple[int, Any]:
+        agent = next((tool for tool in document.get("tools") or () if isinstance(tool, dict)
+                      and tool.get("name") == "Agent"), None)
+        if agent is not None and _BODY_MARKER not in json.dumps(document.get("system")):
+            with self.lock:
+                if self.background_offered is None:
+                    properties = (agent.get("input_schema") or {}).get("properties") or {}
+                    self.background_offered = "run_in_background" in properties
+        return super().respond(document, path, context)
+
+    def outcome(self) -> dict[str, Any]:
+        return {**super().outcome(), "background_offered": self.background_offered}
+
+
+class ForkGateVerdictTests(unittest.TestCase):
+    def test_the_class_needs_every_compiled_fork_unavailable(self) -> None:
+        def row(lead: str, agent: str = "not-attempted", requests: int = 0) -> dict[str, Any]:
+            return {"lead": lead, "agent": agent, "fork_requests": requests}
+
+        rows = {"control": row("denied", "denied"), "compiled-fresh": row("unavailable", "unavailable"),
+                "compiled-resume": row("unavailable", "unavailable"), "control-terminal": row("denied"),
+                "compiled-terminal": row("unavailable")}
+        self.assertEqual(fork_gate_class(rows), FORK_GATE_PASS)
+        self.assertEqual(fork_gate_class({**rows, "compiled-resume": row("denied", "denied")}), "FG-gate-on")
+        self.assertEqual(fork_gate_class({**rows, "compiled-terminal": row("started", requests=1)}), "FG-fork-runs")
+        with self.assertRaises(_ForkGateInconclusive):
+            fork_gate_class({**rows, "control": row("unavailable", "unavailable")})
+        previous = {"previous-gap": row("started", requests=1), "previous-off": row("unavailable")}
+        self.assertEqual(fork_gate_class({**rows, **previous}), FORK_GATE_PASS)
+        self.assertEqual(fork_gate_class({**rows, **previous, "previous-off": row("started", requests=1)}),
+                         "FG-fork-runs")
+        with self.assertRaises(_ForkGateInconclusive):
+            fork_gate_class({**rows, **previous, "previous-gap": row("unavailable")})
+
+
+class ForkGateTests(ForkSubagentPolicyTests):
+    """Fork gate: the compiled flag settings env turns the fork gate off
+    (``CLAUDE_CODE_FORK_SUBAGENT=0`` beside the ``Agent(fork)`` deny).
+
+    Every run competes with ``CLAUDE_CODE_FORK_SUBAGENT=1`` and an
+    ``Agent(fork)`` allow in the user, project and local settings, and with
+    the same variable in the process environment (a launch clears it; the
+    flag settings must outrank it anyway). Controls: the compiled deny
+    without the compiled gate variable leaves the gate on and refuses each
+    fork naming the rule, headless and in a terminal. With the compiled
+    variable the client offers no fork at all (``Agent type 'fork' not
+    found``), headless on a fresh start and on ``--resume`` and in a
+    terminal, and a terminal session offers ``run_in_background`` again
+    (subagents are no longer forced into the background; recorded). The
+    previous pin, when retained next to the pin, is the revert proof of the
+    2.0.1 gap: with the 2.0.1 permissions (no fork deny) its terminal fork
+    starts, and the compiled variable alone closes it."""
+
+    test_s15_fork_subagents_are_denied = None
+    responder_class = _ForkGateResponder
+    verdict: tuple[str, str, str] = ("INCONCLUSIVE", "unavailable", "check did not complete")
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        status, observed, detail = cls.verdict if cls.boundary_skip is None else (
+            "BOUNDARY", "unavailable", cls.boundary_skip)
+        print(f"{FORK_GATE_PREFIX} {status} class={observed} {detail}".rstrip(), flush=True)
+        super().tearDownClass()
+
+    def _gate_settings(self, label: str, permissions: dict[str, Any], env: dict[str, str]) -> Path:
+        path = self.scope / f"settings-fg-{label}.json"
+        document: dict[str, Any] = {"availableModels": [_LEAD, _MODEL_A, _MODEL_B], "model": _LEAD,
+                                    "permissions": permissions}
+        if env:
+            document["env"] = dict(env)
+        state.atomic_write(path, strict_json.canonical_file_bytes(document))
+        return path
+
+    def _gate_headless(self, label: str, settings: Path, extra: tuple[str, ...] = ()) -> dict[str, Any]:
+        return self._headless(label, settings, process="1", extra=extra).outcome()
+
+    def _gate_terminal(self, label: str, settings: Path) -> dict[str, Any]:
+        return self._terminal(label, settings).outcome()
+
+    def test_fork_gate_is_off_against_every_layer(self) -> None:
+        import test_compiler_v2  # the production compile (module import: no tests re-exported)
+
+        _lineup, compiled = test_compiler_v2._seed_launch("balanced", default_mode=scope.PERMISSION_DEFAULT_MODE)
+        permissions = json.loads(json.dumps(compiled.scope_plan.settings["permissions"]))
+        # The compiled gate variable as the production compile states it
+        # (absent from a compile that does not own it: the runs then show
+        # the gate on, and the class fails).
+        gate_env = {key: value for key, value in compiled.scope_plan.settings["env"].items() if key == _FORK_ENV}
+        observed: dict[str, dict[str, Any]] = {}
+        try:
+            self._competing_layers()
+            observed["control"] = self._gate_headless("fg-control", self._gate_settings("control", permissions, {}))
+            compiled_path = self._gate_settings("compiled", permissions, gate_env)
+            session = "f06ec0de-f06e-4c0d-8f06-f06ec0de0a01"
+            observed["compiled-fresh"] = self._gate_headless("fg-fresh", compiled_path, ("--session-id", session))
+            observed["compiled-resume"] = self._gate_headless("fg-resume", compiled_path, ("--resume", session))
+            self._prepare_fixture("fixture-fg-terminal-control")
+            self._competing_layers()
+            observed["control-terminal"] = self._gate_terminal(
+                "fg-terminal-control", self._gate_settings("t-control", permissions, {}))
+            self._prepare_fixture("fixture-fg-terminal")
+            self._competing_layers()
+            observed["compiled-terminal"] = self._gate_terminal(
+                "fg-terminal", self._gate_settings("t-compiled", permissions, gate_env))
+            previous_note = self._previous_pin(observed, permissions, gate_env)
+            observed_class = fork_gate_class(observed)
+        except _ForkGateInconclusive as exc:
+            type(self).verdict = ("INCONCLUSIVE", "unavailable", str(exc))
+            raise
+        detail = (
+            f"gate env {gate_env or 'absent'}; "
+            + "; ".join(f"{name}: lead={row['lead']} agent={row['agent']} fork_requests={row['fork_requests']} "
+                        f"run_in_background={'offered' if row['background_offered'] else 'not offered'}"
+                        for name, row in observed.items())
+            + f"; {previous_note} {self.evidence_label}"
+        )
+        type(self).verdict = ("PASS" if observed_class == FORK_GATE_PASS else "FAIL", observed_class, detail)
+        self.assertEqual(observed_class, FORK_GATE_PASS, detail)
+        # The terminal trade-off, recorded so a client change is noticed:
+        # with the gate on a terminal forces subagents into the background
+        # and drops the parameter; with it off the parameter is offered.
+        self.assertIs(observed["control-terminal"]["background_offered"], False, detail)
+        self.assertIs(observed["compiled-terminal"]["background_offered"], True, detail)
+
+    def _previous_pin(self, observed: dict[str, dict[str, Any]], permissions: dict[str, Any],
+                      gate_env: dict[str, str]) -> str:
+        """The previous pin's terminal runs, when it is retained next to the
+        pin: the 2.0.1 permissions (no fork deny) without and with the gate
+        variable, no competing layers."""
+
+        path = self.trusted.resolved_path.parent / _FORK_PREVIOUS[0]
+        if path == self.trusted.resolved_path or not path.is_file() or probe._sha256_file(path) != _FORK_PREVIOUS[1]:
+            return f"previous pin {_FORK_PREVIOUS[0]} not retained next to the pin (its revert proof not run)"
+        released = {**permissions, "deny": [rule for rule in permissions["deny"] if rule != "Agent(fork)"]}
+        pinned = self.trusted
+        type(self).trusted = probe.TrustedExecutable(path, _FORK_PREVIOUS[1])
+        try:
+            self._prepare_fixture("fixture-fg-previous-gap")
+            observed["previous-gap"] = self._gate_terminal(
+                "fg-previous-gap", self._gate_settings("p-gap", released, {}))
+            self._prepare_fixture("fixture-fg-previous-off")
+            observed["previous-off"] = self._gate_terminal(
+                "fg-previous-off", self._gate_settings("p-off", released, gate_env))
+        finally:
+            type(self).trusted = pinned
+        return f"previous pin {_FORK_PREVIOUS[0]} run"
 
 
 if __name__ == "__main__":

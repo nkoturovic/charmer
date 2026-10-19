@@ -497,14 +497,20 @@ class EnvTests(unittest.TestCase):
 
     def test_fork_subagents_are_denied_in_every_scope(self) -> None:
         """Fork subagents run outside the lineup on the caller's own model;
-        every scope denies Agent(fork) (--no-subagents denies Agent itself).
-        The fork gate itself is left alone: CLAUDE_CODE_FORK_SUBAGENT is never
-        compiled. The real-client proof is S15 in ``test_client_agents``."""
+        every scope denies Agent(fork) (--no-subagents denies Agent itself)
+        and turns the fork gate off in the flag settings env
+        (CLAUDE_CODE_FORK_SUBAGENT=0), whatever the launching environment
+        says: the launch clears an inherited value and never sets one. The
+        real-client proofs are S15 in ``test_client_agents`` and the fork-gate
+        check in ``test_client_fork_gate``."""
 
+        key = "CLAUDE_CODE_FORK_SUBAGENT"
         self.assertEqual(compiler.FORK_AGENT_DENY, "Agent(fork)")
+        self.assertEqual((compiler.FORK_SUBAGENT_ENV, compiler.FORK_SUBAGENT_OFF), (key, "0"))
+        self.assertIn(key, compiler.V2_ENV_UNSET)
         for seed in ("balanced", "direct"):
             for no_subagents in (False, True):
-                _lineup, result = _seed_launch(seed, no_subagents=no_subagents)
+                _lineup, result = _seed_launch(seed, no_subagents=no_subagents, launch_environ={key: "1"})
                 with self.subTest(seed=seed, no_subagents=no_subagents):
                     deny = result.scope_plan.settings["permissions"]["deny"]
                     if no_subagents:
@@ -512,8 +518,9 @@ class EnvTests(unittest.TestCase):
                         self.assertNotIn(compiler.FORK_AGENT_DENY, deny)
                     else:
                         self.assertEqual(deny.count(compiler.FORK_AGENT_DENY), 1)
-                    self.assertNotIn("CLAUDE_CODE_FORK_SUBAGENT", result.scope_plan.settings["env"])
-                    self.assertNotIn("CLAUDE_CODE_FORK_SUBAGENT", result.env_set)
+                    self.assertEqual(result.scope_plan.settings["env"].get(key), "0")
+                    self.assertIn(key, result.env_unset)
+                    self.assertNotIn(key, result.env_set)
 
     def test_no_subagents_belt(self) -> None:
         lineup, result = _seed_launch(no_subagents=True)

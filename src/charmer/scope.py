@@ -1745,6 +1745,7 @@ def compile_lineup_scope(
         env["CLAUDE_CODE_SUBAGENT_MODEL"] = workflow_default
     env[WORKFLOW_MODEL_ENV] = WORKFLOW_MODEL_NEUTRAL
     env[AUTO_MODE_MODEL_ENV] = AUTO_MODE_MODEL_NEUTRAL
+    env[compiler.FORK_SUBAGENT_ENV] = compiler.FORK_SUBAGENT_OFF
     env.update(feedback_drafts_env(feedback_drafts))
     env[FAST_MODE_ENV] = "1"
 
