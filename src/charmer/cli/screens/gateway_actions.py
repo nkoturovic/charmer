@@ -12,7 +12,11 @@ persistence hold is evaluated for a live view as ``charmer gateway status``
 does: the view shows it (a coverage-only hold as such, otherwise the
 failure), offers no restart while it holds and names the clear-hold route;
 clearing stays a typed confirmation in a terminal outside Claude Code. A
-restart first lists the managed sessions running now and asks y/N.
+restart first lists the managed sessions running now and asks y/N; while a
+session record cannot be read it says that whether sessions run is unknown,
+never that none does. A stopped gateway of an installed release whose
+rollback would bring back another gateway shows that way back
+(``charmer update --rollback``, a command-line action).
 Stopping and removing the service stay CLI verbs (:data:`CLI_ONLY`). The log
 tail opens in a ``TextView``. After an action the runtime's catalog view is
 reloaded (:func:`refresh_endpoint`), so a port the action recorded is what
@@ -59,6 +63,10 @@ class GatewayView:
     runtime: Any | None = None  # the runtime the view was observed for (refreshed after an action)
     inhibition: str | None = None  # the inhibited text (with its remedy) while one is recorded
     hold: gateway_hold.HoldReport | None = None  # the persistence hold (live views only)
+    # The way back after a gateway-changing update, while the gateway is
+    # stopped (``gateway_lifecycle.rollback_remedy``); rollback itself
+    # stays a command-line action, so the view shows its command.
+    rollback: str | None = None
 
     @property
     def can_install_service(self) -> bool:
@@ -139,7 +147,32 @@ def observe(runtime: Any) -> GatewayView:
         manager = status = None
     seen = gateway.observe()
     return GatewayView(gateway, seen, service=manager, service_status=status, runtime=runtime,
-                       inhibition=_inhibition_text(gateway), hold=_hold(gateway, seen))
+                       inhibition=_inhibition_text(gateway), hold=_hold(gateway, seen),
+                       rollback=_rollback(gateway) if seen.state == gateway_lifecycle.STOPPED else None)
+
+
+def _rollback(gateway: Any) -> str | None:
+    try:
+        return gateway.rollback_remedy()
+    except (OSError, errors.CharmerError):
+        return None
+
+
+def observe_hold(runtime: Any) -> gateway_hold.HoldReport | None:
+    """The persistence hold alone, as :func:`observe` evaluates it, for the
+    card's health check (a live runtime only; None when it is not observed
+    here)."""
+
+    live = runtime.gateway_seams is not None or (
+        runtime.health_get is None and runtime.served_models_callback is None)
+    if not live:
+        return None
+    try:
+        gateway = runtime.gateway()
+        seen = gateway.observe()
+    except (errors.CharmerError, OSError):
+        return None
+    return _hold(gateway, seen)
 
 
 def _hold(gateway: Any, seen: gateway_lifecycle.Observation) -> gateway_hold.HoldReport:
@@ -154,9 +187,11 @@ def _hold(gateway: Any, seen: gateway_lifecycle.Observation) -> gateway_hold.Hol
 
 
 def running_sessions(runtime: Any) -> tuple[list[str], str | None]:
-    """The managed sessions that run now (labels), and why that cannot be
-    told (None when it can): a daemon pty socket or a ``/proc`` argv names
-    them, as the Sessions screen's ● does."""
+    """The managed sessions that run now (labels), and why it cannot be
+    told whether others run too (None when it can): a daemon pty socket or a
+    ``/proc`` argv names them, as the Sessions screen's ● does. A record
+    that cannot be read leaves it unknown; the readable live ones are still
+    listed."""
 
     if runtime is None:
         return [], None
@@ -164,7 +199,7 @@ def running_sessions(runtime: Any) -> tuple[list[str], str | None]:
     import charmer.cli.session_facts as session_facts
 
     try:
-        records = session_facts._session_records(runtime)
+        records, problems, _ids = session_facts._session_record_scan(runtime)
         prefixes, proc_ids = runtime._live_prefixes(), runtime._proc_ids()
     except (errors.CharmerError, OSError) as exc:
         return [], termtext.visible_message(exc)
@@ -177,20 +212,27 @@ def running_sessions(runtime: Any) -> tuple[list[str], str | None]:
         except (KeyError, TypeError, errors.CharmerError):
             label = str(record.get("managed_id") or record.get("runtime_session_id") or "a session")
         labels.append(termtext.visible_text(label))
-    return labels, None
+    unknown = None
+    if problems:
+        unknown = (f"{len(problems)} session record(s) cannot be read" if len(problems) > 1
+                   else termtext.visible_text(problems[0]))
+    return labels, unknown
 
 
 def confirm_restart(view: GatewayView, tty_in: TextIO, tty_out: TextIO) -> bool:
-    """List the managed sessions running now, then ask y/N (default No)."""
+    """List the managed sessions running now, then ask y/N (default No).
+    When the records cannot all be read it says so (never "no session"),
+    after the live ones it can name."""
 
     labels, unknown = running_sessions(view.runtime)
-    if unknown is not None:
-        tty_out.write(f"Whether managed sessions run now cannot be told ({unknown}).\n")
-    elif labels:
+    if labels:
         tty_out.write(f"{len(labels)} managed session(s) run now; a restart fails their requests in flight:\n")
         for label in labels:
             tty_out.write(f"  - {label}\n")
-    else:
+    if unknown is not None:
+        more = "other " if labels else ""
+        tty_out.write(f"Whether {more}managed sessions run now cannot be told ({unknown}).\n")
+    elif not labels:
         tty_out.write("No managed session runs now.\n")
     tty_out.write(f"{RESTART_QUESTION} [y/N] ")
     tty_out.flush()
@@ -308,6 +350,8 @@ def dialog(runtime: Any, win: Any, palette: tui.Palette, *, background: Callable
     if view.inhibition is not None:
         lines.append(view.inhibition)
     lines.extend(view.hold_summary())
+    if view.rollback is not None:
+        lines.append(view.rollback)
     lines.append("Stop it from a terminal: charmer gateway stop.")
     # Wrapped to the box, so no remedy is cut off (the inhibition's above all).
     body = [piece for line in lines for piece in screens_common.modal_lines(line, win)]
@@ -335,6 +379,8 @@ def health_prompt(runtime: Any, tty_in: TextIO, tty_out: TextIO) -> str | None:
         tty_out.write(termtext.visible_text(view.inhibition) + "\n")
     for line in view.hold_lines():
         tty_out.write(termtext.visible_text(line) + "\n")
+    if view.rollback is not None:
+        tty_out.write(termtext.visible_text(view.rollback) + "\n")
     offers = []
     if view.can_start:
         offers.append("s  start it now")

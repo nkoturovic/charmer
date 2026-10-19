@@ -37,6 +37,7 @@ from charmer import sessions
 from charmer import settings as settings_mod
 from charmer import state
 from charmer import strict_json
+from charmer import termtext
 from charmer import tls
 from charmer import views
 from dataclasses import dataclass
@@ -57,6 +58,246 @@ from typing import Mapping
 if TYPE_CHECKING:
     from typing import Any
     from typing import Callable
+
+
+# ------------------------------------------------------------------ presentation
+#
+# Each collector tags its lines (``gateway_facts.Line``) where it makes them:
+# the area doctor lists them under, an action code for the findings the TUI
+# findings list acts on, ``advisory`` for optional evidence, and the
+# identity repeated lines share. Plain doctor and H present the same rows
+# (:func:`present`); nothing here reads a line's text to decide anything.
+
+# The areas, in report order (a held gateway leads Gateway).
+AREAS = ("Gateway", "Installation", "Providers", "Sessions", "Profiles", "Models")
+# The area names as the collectors pass them to ``gateway_facts.in_area``.
+GATEWAY, INSTALLATION, PROVIDERS, SESSIONS, PROFILES, MODELS = AREAS
+# A line no collector tagged (an injected check) is listed last.
+OTHER_AREA = "Other"
+# The findings list's fixed actions (``cli.screens.findings``); every other
+# row shows its exact command.
+ACTIONS = frozenset({
+    "hold", "hold-coverage", "missing-key", "earlier-scopes", "scope-repair", "unused-alias", "prune",
+    "dead-sessions", "seed-update", "advisory-model", "needs-choice",
+})
+ADVISORY = "advisory"
+# Optional evidence: it never changes the verdict (Ready can stand beside
+# it). Admission and qualification attest a definition; the rest are
+# recommendations an explicit binding overrides. A context overflow risk
+# and an ignored lead-only environment stay Attention (they change what a
+# session can do).
+ADVISORY_CODES = frozenset({
+    "admission", "qualification", "exact-client", "tool-evidence", "capability-recommendation",
+    "role-recommendation", "effort-unverified", "family-unknown", "independence-unknown", "companion-grade",
+    "explore-replacement-unbound",
+})
+# The model finding codes the optional diagnostics (M → Q) answer.
+_QUALIFY_CODES = {"qualification": "--agents", "exact-client": "--agents", "tool-evidence": "--tools"}
+ADVISORIES_TITLE = "Advisories (optional evidence; does not change the verdict)"
+# How many session ids a collapsed row names before "(doctor -v lists them)".
+SHOWN_IDS = 3
+VERBOSE_HINT = "(doctor -v lists them)"
+_LEVEL_ORDER = {"block": 0, "attention": 1, ADVISORY: 2}
+# Scopes the earlier name compiled: the count line and each session's line
+# are one row.
+EARLIER_SCOPES = ("session", "earlier-scope")
+_EARLIER_SCOPES_SUMMARY = (f"{{n}} session scope(s) were compiled by {legacy.NAME} (their hooks name its shims, "
+                           f"which the move to charmer replaced): {cli_text.EARLIER_SCOPES_FIX}")
+
+
+def _area_index(area: str | None) -> int:
+    return AREAS.index(area) if area in AREAS else len(AREAS)
+
+
+@dataclass(frozen=True)
+class Row:
+    """One finding as plain doctor and H show it: its level (``block``,
+    ``attention`` or ``advisory``), its area, the text, every original line
+    it stands for (``-v`` prints them), its action code and target, and the
+    exact command a typed finding names."""
+
+    level: str
+    area: str
+    text: str
+    originals: tuple[str, ...]
+    action: str | None = None
+    subject: str | None = None
+    remedy: str | None = None
+
+    @property
+    def collapsed(self) -> bool:
+        return self.originals != (self.text,)
+
+
+@dataclass(frozen=True)
+class Presentation:
+    """The rows in report order: BLOCKED, then Attention by area (a held
+    gateway first), then the advisories."""
+
+    rows: tuple[Row, ...]
+
+    def of(self, level: str) -> tuple[Row, ...]:
+        return tuple(row for row in self.rows if row.level == level)
+
+    @property
+    def status(self) -> str:
+        return observations.status_of(row.level for row in self.rows)
+
+    def areas(self, level: str) -> list[tuple[str, tuple[Row, ...]]]:
+        """``(area, rows)`` of one level, in area order."""
+
+        found: dict[str, list[Row]] = {}
+        for row in self.of(level):
+            found.setdefault(row.area, []).append(row)
+        return [(area, tuple(rows)) for area, rows in found.items()]
+
+
+def _listed(subjects: tuple[str, ...]) -> str:
+    shown = ", ".join(subjects[:SHOWN_IDS])
+    return shown + (f"… {VERBOSE_HINT}" if len(subjects) > SHOWN_IDS else "")
+
+
+def _plural(count: int, noun: str) -> str:
+    return f"{count} {noun}" + ("" if count == 1 else "s")
+
+
+def advisory_remedy(code: str, key: str | None) -> str:
+    """The optional next step of an advisory model finding."""
+
+    if key is None:
+        return "optional; nothing to do"
+    if code == "admission":
+        return f"optional: charmer models admit {key}, or M → Enter (sends no request)"
+    if code in _QUALIFY_CODES:
+        return (f"optional diagnostics: charmer models qualify {key} {_QUALIFY_CODES[code]}, or M → Q "
+                f"({cli_text.OPTIONAL_DIAGNOSTICS})")
+    return "a recommendation; the explicit binding stays allowed"
+
+
+def _model_text(level: str, members: list[str]) -> str:
+    """One row per (model, code): the finding with how many profiles and
+    slots bind it and, for an advisory, its optional next step."""
+
+    first = members[0]
+    message = first.short or str(first)
+    profiles = {member.owner for member in members if getattr(member, "owner", None)}
+    slots = sum(1 for member in members if getattr(member, "owner", None) and getattr(member, "slot", None))
+    counts = []
+    if profiles:
+        counts.append(_plural(len(profiles), "profile"))
+    if slots:
+        counts.append(_plural(slots, "slot"))
+    text = message + (f" ({', '.join(counts)})" if counts else "")
+    if level == ADVISORY:
+        text += " — " + advisory_remedy(first.group[1], first.subject)
+    return text
+
+
+def present_report(problems: list[str], attention: list[str]) -> Presentation:
+    """The rows plain doctor and H show, from the collected lines.
+
+    Lines collapse only when they share a known identity: the group a
+    collector gave them (one row per (model, code) with its profile and
+    slot counts; per-session kinds with a count and the first ids), or the
+    exact same text. A line's ``short`` form stands for it; ``-v`` prints
+    every original. Order: BLOCKED, Attention, advisories; by area inside
+    each (the persistence hold first in Gateway), then as collected."""
+
+    order: list[tuple[str, str, tuple]] = []
+    members: dict[tuple[str, str, tuple], list[str]] = {}
+    for level, line in [*(("block", line) for line in problems),
+                        *((getattr(line, "level", None) or "attention", line) for line in attention)]:
+        level = level if level in _LEVEL_ORDER else "attention"
+        area = getattr(line, "area", None) or OTHER_AREA
+        group = getattr(line, "group", None)
+        key = (level, area, ("group", *group) if group else ("text", str(line)))
+        if key not in members:
+            members[key] = []
+            order.append(key)
+        members[key].append(line)
+    rows = []
+    for index, key in enumerate(order):
+        level, area, _identity = key
+        lines = members[key]
+        first = lines[0]
+        group = getattr(first, "group", None)
+        subjects = tuple(dict.fromkeys(subject for line in lines for subject in getattr(line, "subjects", ())))
+        if group and group[0] == "model":
+            text = _model_text(level, lines)
+        elif len(lines) > 1 and getattr(first, "summary", None):
+            # A literal placeholder: the summary may name a path or a value.
+            text = first.summary.replace("{n}", str(len(subjects) or len(lines))) + " — " + _listed(subjects)
+        else:
+            text = getattr(first, "short", None) or str(first)
+        hold = getattr(first, "action", None) in ("hold", "hold-coverage")
+        # The command any member names (a group's lines may come from collectors that name it once).
+        remedy = next((line.remedy for line in lines if getattr(line, "remedy", None)), None)
+        rows.append((_LEVEL_ORDER[level], _area_index(area), 0 if hold else 1, index,
+                     Row(level, area, text, tuple(map(str, lines)), getattr(first, "action", None),
+                         getattr(first, "subject", None), remedy)))
+    return Presentation(tuple(row for *_order, row in sorted(rows, key=lambda item: item[:4])))
+
+
+def report_lines(problems: list[str], info_lines: list[str], attention: list[str], *, verbose: bool,
+                 say: Callable[[str], str] = str) -> list[tuple[str, str]]:
+    """``(role, line)`` of the report as plain doctor prints it (and H's
+    ``v``): BLOCKED, Attention by area, the advisories, Ready, the detail
+    lines (``-v`` only), the hidden-detail hint and the closing line.
+    ``say`` words each finding for its surface (the card's key route)."""
+
+    presentation = present_report(problems, attention)
+    status = presentation.status
+    out: list[tuple[str, str]] = []
+
+    def items(rows: tuple[Row, ...], indent: str, role: str) -> None:
+        for row in rows:
+            for text in (row.originals if verbose else (row.text,)):
+                out.append((role, f"{indent}- {termtext.visible_text(say(text))}"))
+
+    if presentation.of("block"):
+        out.append(("error", "BLOCKED"))
+        items(presentation.of("block"), "  ", "error")
+    if presentation.of("attention"):
+        out.append(("warn", "Attention"))
+        for area, rows in presentation.areas("attention"):
+            count = sum(len(row.originals) for row in rows) if verbose else len(rows)
+            out.append(("warn", f"  {area} ({count})"))
+            items(rows, "    ", "warn")
+    if presentation.of(ADVISORY):
+        out.append(("dim", ADVISORIES_TITLE))
+        items(presentation.of(ADVISORY), "  ", "dim")
+    if status == "ready":
+        out.append(("ok", "Ready"))
+    shown = info_lines if verbose else [line for line in info_lines if not detail_line(line)]
+    out.extend(("normal", termtext.visible_text(say(line))) for line in shown)
+    hidden = len(info_lines) - len(shown)
+    if hidden:
+        out.append(("normal", cli_text.CARD_DOCTOR_HIDDEN.format(n=hidden, s="s" if hidden != 1 else "")))
+    out.append(("normal", DOCTOR_SUMMARY[status].rstrip("\n")))
+    return out
+
+
+def _tag_model(line: str, finding: Any, *, key: str | None, owner: str | None = None,
+               slot: str | None = None) -> gateway_facts.Line:
+    """A model finding (``profile.Finding``) of one profile slot, or of a
+    declared line: listed under Models, advisory for optional evidence, one
+    row per (model, code)."""
+
+    code = finding.code
+    advisory = code in ADVISORY_CODES
+    return gateway_facts.tagged(
+        line, area="Models", level=ADVISORY if advisory else None, group=("model", code, finding.message),
+        short=finding.message, subject=key, owner=owner, slot=slot,
+        action="advisory-model" if advisory and code in _QUALIFY_CODES and key is not None else None)
+
+
+def _per_session(line: str, mid: str, kind: str, summary: str, *, action: str | None = None,
+                 area: str = "Sessions") -> gateway_facts.Line:
+    """A per-session line of one kind: collapsed with the others of its kind
+    into ``summary`` (``{n}`` sessions) and their first ids."""
+
+    return gateway_facts.tagged(line, area=area, group=("session", kind), summary=summary, subjects=(mid[:8],),
+                                action=action)
 
 
 def _doctor_served_report(runtime: runtime_mod.Runtime, token: str) -> tuple[list[str], list[str]]:
@@ -247,11 +488,12 @@ def _doctor_served_checks(
         ):
             # A continuity alias only keeps old sessions resumable; its
             # upstream may be gone for good. Lazy state, never damage.
-            attention.append(
+            attention.append(gateway_facts.tagged(
                 f"continuity alias {selector} is not served (its upstream "
                 "route may be gone); once no live session uses it: "
-                f"charmer doctor --prune-aliases {selector}"
-            )
+                f"charmer doctor --prune-aliases {selector}",
+                area="Gateway", action="unused-alias", subject=selector,
+            ))
         else:
             missing.append(selector)
     oauth_missing: dict[str, list[str]] = {}
@@ -487,16 +729,18 @@ def _doctor_hook_targets(
             stale.append(mid)
             continue
         for path in missing:
-            problems.append(
+            problems.append(gateway_facts.tagged(
                 f"session {mid[:8]}: compiled hook target {paths.display(path, runtime.environ)} is missing or not executable — "
                 "its /model fence and lineup hooks silently do not run; restore it: "
-                f"charmer doctor --repair {mid}"
-            )
-    attention = [gateway_facts.Finding(
+                f"charmer doctor --repair {mid}",
+                area="Sessions", action="scope-repair", subjects=(mid[:8],),
+            ))
+    attention = [gateway_facts.tagged(gateway_facts.Finding(
         f"{len(stale)} session scope(s) were compiled by {legacy.NAME} (their hooks name its shims, which the move "
-        f"to charmer replaced); each is recompiled at its next resume: charmer -r {stale[0]}",
+        f"to charmer replaced): {cli_text.EARLIER_SCOPES_FIX} — {_listed(tuple(mid[:8] for mid in stale))}",
         code="earlier-scopes", public="session scopes compiled by charmer's earlier name wait for their next resume",
-        remedy=f"charmer -r {stale[0]}")] if stale else []
+        remedy="charmer doctor --repair-all"), area="Sessions", action="earlier-scopes", group=EARLIER_SCOPES,
+        summary=_EARLIER_SCOPES_SUMMARY, subjects=tuple(mid[:8] for mid in stale))] if stale else []
     info = [] if problems else [f"Hook targets: every compiled hook command exists ({checked - len(stale)} "
                                 f"session(s))."]
     return problems, attention, info
@@ -548,9 +792,10 @@ def _doctor_install_report(runtime: runtime_mod.Runtime) -> tuple[list[str], lis
                                       public="the installation of charmer's earlier name left files here",
                                       remedy=remedy)
                 for text, remedy in legacy_migration.remnants(runtime.environ)]
+    area = gateway_facts.in_area
     return (
-        [*problems, *held],
-        [*attention, *holding, *remnants],
+        [*area(problems, INSTALLATION), *area(held, GATEWAY)],
+        [*area(attention, GATEWAY), *area(holding, GATEWAY), *area(remnants, INSTALLATION)],
         [*info, *release_info, *service_info, *held_info],
     )
 
@@ -698,62 +943,63 @@ def _collect_doctor_report_lines(
         # The census counts UUID records only, never the
         # sessions/<id>.v3.json backups.
         count = len(runtime.session_store.scan_uuid_records())
-        return [f"state marker: {exc}"], [
+        return [gateway_facts.tagged(f"state marker: {exc}", area=SESSIONS)], [
             f"Sessions: {count} recorded; not inspected by this launcher."
         ], []
 
+    area = gateway_facts.in_area
     problems: list[str] = []
     if runtime.init_problem is not None:
-        problems.append(_init_problem_line(runtime.init_problem))
+        problems.extend(area([_init_problem_line(runtime.init_problem)], INSTALLATION))
     custom_conflicts = runtime.custom_conflicts()
     if custom_conflicts:
         # Ignored by the merge (catalog wins) but a real misconfiguration:
         # attention with the exact fix, never silent.
-        scope_attention_extra = [
+        scope_attention_extra = area([
             "custom registry entries shadow catalog ids and were IGNORED: "
             + ", ".join(custom_conflicts)
             + f" — remove or rename them in {paths.display(custom.registry_path(runtime.environ), runtime.environ)}"
-        ]
+        ], PROVIDERS)
     else:
         scope_attention_extra = []
     registry = paths.display(custom.registry_path(runtime.environ), runtime.environ)
     for provider, header in runtime.custom_header_violations():
-        scope_attention_extra.append(
+        scope_attention_extra.extend(area([
             f"custom provider {provider} was IGNORED: auth header {header!r} — this gateway build "
             f'honors only x-api-key (set "header": "x-api-key" in {registry}, or remove it: '
             f"charmer custom remove-provider {provider}); its models are not served"
-        )
+        ], PROVIDERS))
     if runtime.broken_override_error is not None:
         # The operator contract override could not be removed and was
         # ignored (the packaged contract is in effect): remove the file.
         override = paths.display(sessions.config_root(runtime.environ) / "native-contract.json", runtime.environ)
-        problems.append(
+        problems.extend(area([
             "the contract override is invalid and was IGNORED (packaged "
             f"contract in effect): {runtime.broken_override_error}; remove it: rm {override}"
-        )
+        ], INSTALLATION))
     # The config and state roots and the secret files first (before the pin
     # and the gateway): a damaged root otherwise surfaces as a later error
     # (a gateway key error, say) whose remedy cannot work.
     files_problems, flagged_files = gateway_facts.local_files_report(runtime)
-    problems.extend(files_problems)
+    problems.extend(area(files_problems, INSTALLATION))
     # Profiles and named bindings replace the legacy composition
     # loop (the composition store is not read by doctor).
     profile_problems, profile_attention = _doctor_profile_report(runtime)
-    problems.extend(profile_problems)
-    scope_attention_extra.extend(profile_attention)
+    problems.extend(area(profile_problems, PROFILES))
+    scope_attention_extra.extend(area(profile_attention, PROFILES))
     binary_problems, binary_info = runtime.doctor_binary_callback(
         runtime.catalog.docs["native-contract"]
     )
-    problems.extend(binary_problems)
+    problems.extend(area(binary_problems, INSTALLATION))
     retained_attention, retained_info = retention.retention_report(
         runtime.catalog.docs["native-contract"], runtime_mod._packaged_contract(runtime), runtime.environ
     )
-    scope_attention_extra.extend(retained_attention)
+    scope_attention_extra.extend(area(retained_attention, INSTALLATION))
     binary_info.extend(retained_info)
     pin_attention, pin_info = _doctor_pin_report(runtime)
-    scope_attention_extra.extend(pin_attention)
+    scope_attention_extra.extend(area(pin_attention, INSTALLATION))
     binary_info.extend(pin_info)
-    scope_attention_extra.extend(runtime.settings_skew(runtime.cwd))
+    scope_attention_extra.extend(area(runtime.settings_skew(runtime.cwd), INSTALLATION))
     daemon = runtime.doctor_daemon_callback()
     info_lines = [*binary_info, f"Shared daemon: {daemon.summary}."]
     from charmer import pin as pin_mod
@@ -765,31 +1011,36 @@ def _collect_doctor_report_lines(
     )
     # Before the readiness branch: the line matters most while the gateway
     # refuses to start because of it.
-    scope_attention_extra.extend(_doctor_gateway_workdir(runtime))
+    scope_attention_extra.extend(area(_doctor_gateway_workdir(runtime), GATEWAY))
     managed_problems, managed_attention = _doctor_managed_report(runtime)
-    problems.extend(managed_problems)
-    scope_attention_extra.extend(managed_attention)
+    problems.extend(area(managed_problems, INSTALLATION))
+    scope_attention_extra.extend(area(managed_attention, INSTALLATION))
     operator_token: str | None = None
     platform_problems, platform_info = gateway_facts.platform_report(runtime)
-    problems.extend(platform_problems)
+    problems.extend(area(platform_problems, INSTALLATION))
     info_lines.extend(platform_info)
     install_problems, install_attention, install_info = _doctor_install_report(runtime)
     problems.extend(install_problems)
     scope_attention_extra.extend(install_attention)
     info_lines.extend(install_info)
     if runtime.doctor_callback is not None:
-        problems.extend(runtime.doctor_callback(runtime))
+        problems.extend(area(runtime.doctor_callback(runtime), GATEWAY))
     else:
         refresh_failures = frozenset()
         try:
             gateway_token = runtime.check_readiness()
         except launch.GatewayKeyError as exc:
             if not flagged_files & {proxy_mod.config_dir(runtime.home), proxy_mod.config_dir(runtime.home) / "api-key"}:
-                problems.append(f"local gateway key file: {exc} — {exc.remedy}")
+                problems.extend(area([f"local gateway key file: {exc} — {exc.remedy}"], GATEWAY))
         except launch.LaunchError as exc:
-            problems.append(f"local gateway: {exc} — {exc.remedy or launch.gateway_unit_remedy(runtime.home)}")
+            # While it is stopped or failed after a gateway-changing update,
+            # the way back too.
+            rollback = gateway_facts.rollback_remedy(runtime)
+            problems.extend(area([f"local gateway: {exc} — {exc.remedy or launch.gateway_unit_remedy(runtime.home)}"
+                                  + (f"; {rollback}" if rollback and rollback not in str(exc.remedy) else "")],
+                                 GATEWAY))
         else:
-            scope_attention_extra.extend(service.pending_restart_lines(
+            scope_attention_extra.extend(area(service.pending_restart_lines(
                 proxy_mod.gateway_workdir(runtime.session_store.root),
                 signature=proxy_mod.exec_signature(), launcher_version=runtime.launcher_version,
                 reload_failed=(reload_failed if reload_failed is not None else
@@ -797,11 +1048,11 @@ def _collect_doctor_report_lines(
                                else lambda: False),
                 # The manager is asked about the recorded unit only (none on demand).
                 backend=service.backend_of(runtime.home),
-            ))
+            ), GATEWAY))
             operator_token = gateway_token
             runtime.gateway_attention = []
             quota_attention, quota_info, refresh_failures = _doctor_quota_report(runtime)
-            scope_attention_extra.extend(quota_attention)
+            scope_attention_extra.extend(area(quota_attention, PROVIDERS))
             info_lines.extend(quota_info)
             try:
                 launch.check_listener(endpoint.gateway_endpoint(runtime.catalog.docs["gateway"]).base_url,
@@ -816,60 +1067,61 @@ def _collect_doctor_report_lines(
                     served_attention: list[str] = []
                 else:
                     served_problems, served_info, served_attention = _doctor_served_checks(runtime, gateway_token)
-                problems.extend(served_problems)
+                problems.extend(area(served_problems, GATEWAY))
                 info_lines.extend(served_info)
-                scope_attention_extra.extend(served_attention)
-            scope_attention_extra.extend(dict.fromkeys(runtime.gateway_attention))
+                scope_attention_extra.extend(area(served_attention, GATEWAY))
+            scope_attention_extra.extend(area(dict.fromkeys(runtime.gateway_attention), GATEWAY))
         # One bounded journal read, even when readiness failed: a save failure's
         # keep-running hold must not disappear behind an unrelated key/health error.
-        scope_attention_extra.extend(_doctor_journal_report(
+        scope_attention_extra.extend(area(_doctor_journal_report(
             runtime, refresh_failures=refresh_failures, info_lines=info_lines,
-        ))
+        ), PROVIDERS))
         facts_attention, facts_info = gateway_facts.gateway_runtime_report(runtime)
-        scope_attention_extra.extend(facts_attention)
+        scope_attention_extra.extend(area(facts_attention, GATEWAY))
         info_lines.extend(facts_info)
     # The operator layer (B01-B05 / A01-A08 / I01-I02).
     operator_blocks, operator_attention, operator_info = _doctor_operator_report(runtime, operator_token)
-    problems.extend(operator_blocks)
-    scope_attention_extra.extend(operator_attention)
+    problems.extend(area(operator_blocks, PROVIDERS))
+    scope_attention_extra.extend(area(operator_attention, PROVIDERS))
     info_lines.extend(operator_info)
     lan_attention: list[str] = []
     lan_observed: dict[str, gateway_facts.LanReachability] = {}
     info_lines.extend(_doctor_lan_report(runtime, lan_attention, lan_observed))
-    scope_attention_extra.extend(lan_attention)
+    scope_attention_extra.extend(area(lan_attention, PROVIDERS))
     readiness_attention, readiness_info = _doctor_readiness_report(
         runtime, operator_token is not None, lan_observed,
     )
-    scope_attention_extra.extend(readiness_attention)
+    scope_attention_extra.extend(area(readiness_attention, PROFILES))
     info_lines.extend(readiness_info)
     scope_info, scope_problems, scope_attention = _doctor_scope_report(runtime)
+    scope_attention = area(scope_attention, SESSIONS)
     info_lines.extend(scope_info)
-    problems.extend(scope_problems)
+    problems.extend(area(scope_problems, SESSIONS))
     marker_info, marker_attention = _doctor_marker_report(runtime, marker)
     info_lines.extend(marker_info)
-    scope_attention.extend(marker_attention)
+    scope_attention.extend(area(marker_attention, SESSIONS))
     scope_attention.extend(scope_attention_extra)
     records = session_facts._session_records(runtime)
     hook_problems, hook_attention, hook_info = _doctor_hook_targets(runtime, records)
-    problems.extend(hook_problems)
-    scope_attention.extend(hook_attention)
+    problems.extend(area(hook_problems, SESSIONS))
+    scope_attention.extend(area(hook_attention, SESSIONS))
     info_lines.extend(hook_info)
-    scope_attention.extend(_doctor_client_report(runtime, records))
+    scope_attention.extend(area(_doctor_client_report(runtime, records), SESSIONS))
     record_attention, record_info = _doctor_record_report(runtime, records)
-    scope_attention.extend(record_attention)
+    scope_attention.extend(area(record_attention, SESSIONS))
     info_lines.extend(record_info)
     # The settings radar (user + every record cwd's project
     # and local settings) replaces _subagent_model_override_paths; the
     # accepted CLAUDE_CODE_SUBAGENT_MODEL wording is kept below.
     proxy_problems, proxy_info = _doctor_proxy_report(runtime, records)
-    problems.extend(proxy_problems)
+    problems.extend(area(proxy_problems, INSTALLATION))
     info_lines.extend(proxy_info)
     radar = _settings_radar(runtime, records)
-    scope_attention.extend(radar.attention)
+    scope_attention.extend(area(radar.attention, INSTALLATION))
     info_lines.extend(radar.info)
     parity = custom.registry_parity(runtime.environ)
     if parity is not None:
-        scope_attention.append(parity)
+        scope_attention.extend(area([parity], PROVIDERS))
     if runtime.environ.get("CHARMER_SECRET_ENV"):
         try:
             service_file = paths.display(secret_store.service_key_file(runtime.environ).path, runtime.environ)
@@ -881,20 +1133,20 @@ def _collect_doctor_report_lines(
         )
     _feedback, preferences_problem = settings_mod.feedback_drafts_preference(runtime.environ)
     if preferences_problem is not None:
-        scope_attention.append(
+        scope_attention.extend(area([
             f"{preferences_problem}: managed sessions use the default claude_feedback_drafts "
             f"{settings_mod.FEEDBACK_DRAFTS_DEFAULT}; fix or remove {settings_mod.preferences_path(runtime.environ)}"
-        )
+        ], INSTALLATION))
     user_attention, user_info = _doctor_user_settings_report(runtime, records)
-    scope_attention.extend(user_attention)
+    scope_attention.extend(area(user_attention, INSTALLATION))
     info_lines.extend(user_info)
-    scope_attention.extend(_doctor_config_dir_report(runtime))
+    scope_attention.extend(area(_doctor_config_dir_report(runtime), INSTALLATION))
     keep_attention, keep_info = _doctor_env_keep_report(runtime)
-    scope_attention.extend(keep_attention)
+    scope_attention.extend(area(keep_attention, INSTALLATION))
     info_lines.extend(keep_info)
-    scope_attention.extend(_doctor_new_lines_report(runtime))
-    scope_attention.extend(_doctor_retirement_radar(runtime))
-    scope_attention.extend(_doctor_hook_errors(runtime, records))
+    scope_attention.extend(area(_doctor_new_lines_report(runtime), MODELS))
+    scope_attention.extend(area(_doctor_retirement_radar(runtime), MODELS))
+    scope_attention.extend(area(_doctor_hook_errors(runtime, records), SESSIONS))
     # User/project settings are merged after process-environment cleanup, so
     # both subagent-model controls need a read-only radar. Agent
     # frontmatter wins over CLAUDE_CODE_SUBAGENT_MODEL on the pinned client
@@ -902,6 +1154,7 @@ def _collect_doctor_report_lines(
     # an agentType and native general-purpose spawns, never native Explore or
     # Plan (the settings-environment placement probe); the compiled Settings
     # workflow_default_binding replaces it.
+    installation_from = len(scope_attention)
     default_override_paths = list(radar.subagent_paths["CLAUDE_CODE_SUBAGENT_MODEL"])
     if default_override_paths:
         scope_attention.append(
@@ -929,12 +1182,13 @@ def _collect_doctor_report_lines(
     if runtime.contract_notice is not None:
         # The legacy override removal healed the state; say so, never BLOCK.
         scope_attention.append(f"contract override removed: {runtime.contract_notice}")
+    scope_attention[installation_from:] = area(scope_attention[installation_from:], INSTALLATION)
     rotation_attention = _token_rotation_attention(runtime)
     if rotation_attention is not None:
-        scope_attention.append(rotation_attention)
+        scope_attention.extend(area([rotation_attention], GATEWAY))
     key_attention, key_info = _management_key_attention(runtime)
     if key_attention is not None:
-        scope_attention.append(key_attention)
+        scope_attention.extend(area([key_attention], GATEWAY))
     if key_info is not None:
         info_lines.append(key_info)
     # The confirmed-export Info line (read-only; only
@@ -947,7 +1201,7 @@ def _collect_doctor_report_lines(
         info_lines.append(portability.receipt_error_line(exc))
     collision_info, collision_problems = _doctor_collision_report(runtime)
     info_lines.append(collision_info)
-    problems.extend(collision_problems)
+    problems.extend(area(collision_problems, INSTALLATION))
     info_lines.append(f"Evidence: {cli_text.EVIDENCE_ADD_DIR_CARRY}")
     return problems, info_lines, scope_attention
 
@@ -1026,7 +1280,45 @@ def _doctor_operator_report(
         legacy_sha=legacy_sha, marker_doc=marker_doc, marker_error=marker_error, overlay_conflicts=conflicts,
         unset_secrets=unset, agent_eligible=agent_eligible, agent_qualified=agent_qualified,
     )
-    return list(findings.blocks), [*findings.attention, *agent_attention], list(findings.info)
+    warnings = _operator_agent_warnings(runtime, snapshot, gate)
+    agent_lines = [_tag_model(message, warnings[message][0], key=warnings[message][1]) if message in warnings
+                   else gateway_facts.tagged(message, area="Models") for message in agent_attention]
+    return list(findings.blocks), [*findings.attention, *agent_lines], list(findings.info)
+
+
+def _operator_agent_warnings(
+    runtime: runtime_mod.Runtime, snapshot: operator_mod.OperatorSnapshot, gate: Any,
+) -> dict[str, tuple[Any, str]]:
+    """message -> (finding, line key) of the warnings
+    ``Runtime.operator_agent_findings`` words, from the same gate and
+    eligibility evaluation (each declared line at its default effort, and
+    each live session's recorded agent effort), so its lines keep their
+    codes."""
+
+    found: dict[str, tuple[Any, str]] = {}
+    try:
+        agent_efforts = tuple(runtime.catalog.docs["native-contract"]["agent_efforts"]["values"])
+    except (KeyError, TypeError):
+        return found
+    for key, facts in sorted(gate.facts.items()):
+        line = snapshot.layer.lines.get(key)
+        if line is None:
+            continue
+        entry = line.core_entry
+        efforts = {entry.get("default_effort")}
+        for record in session_facts._session_records(runtime):
+            for binding in ((record.get("applied") or {}).get("agents") or {}).values():
+                if isinstance(binding, dict) and binding.get("key") == key:
+                    efforts.add(binding.get("effort"))
+        for effort in efforts:
+            try:
+                verdict = profile_mod.agent_eligibility(entry, key=key, slot=None, effort=str(effort), facts=facts,
+                                                        agent_efforts=agent_efforts)
+            except (KeyError, TypeError, ValueError):
+                continue
+            for finding in verdict.warnings:
+                found.setdefault(finding.message, (finding, key))
+    return found
 
 
 def _doctor_client_report(runtime: runtime_mod.Runtime, records: list[dict[str, Any]]) -> list[str]:
@@ -1052,11 +1344,14 @@ def _doctor_client_report(runtime: runtime_mod.Runtime, records: list[dict[str, 
         for client in mismatches:
             mid = sessions.managed_id(record)
             m8 = mid[:8]
-            attention.append(
+            attention.append(_per_session(
                 f"session {m8} runs Claude {client}, not the pinned {version} "
                 "(it started before a re-pin, or the daemon adopted it after an auto-update); "
-                f"resume it with charmer -r {mid} after it exits"
-            )
+                f"resume it with charmer -r {mid} after it exits",
+                mid, f"client:{client}",
+                f"{{n}} sessions run Claude {client}, not the pinned {version} (they started before a re-pin, or "
+                "the daemon adopted them after an auto-update); resume each with charmer -r <id> after it exits",
+            ))
     return attention
 
 
@@ -1097,12 +1392,16 @@ def _doctor_marker_report(runtime: runtime_mod.Runtime, marker: int) -> tuple[li
             code="legacy-records", public="legacy session records remain", remedy="charmer migrate",
         ))
     for managed in missed:
-        attention.append(
+        attention.append(_per_session(
             f"session {managed[:8]} was live while it was migrated and no session "
             "event has reached it since; if it was /clear-ed or resumed then, check "
             f"its runtime id (charmer sessions show {managed}; charmer "
-            f"sessions relink-runtime {managed} <runtime-id>)"
-        )
+            f"sessions relink-runtime {managed} <runtime-id>)",
+            managed, "missed-migration",
+            "{n} sessions were live while they were migrated and no session event has reached them since; if one "
+            "was /clear-ed or resumed then, check its runtime id (charmer sessions show <id>; charmer sessions "
+            "relink-runtime <id> <runtime-id>)",
+        ))
     if hooks.migration_lock_held(root):
         info.append("migration or restore in progress (session hooks skip record writes)")
     backups = len(list(store.sessions_dir.glob(f"*{sessions.BACKUP_SUFFIX}")))
@@ -1192,31 +1491,39 @@ def _doctor_profile_report(runtime: runtime_mod.Runtime) -> tuple[list[str], lis
         if evaluation.errors or evaluation.lineup is None:
             problems.extend(f"profile {name}: {error}" for error in evaluation.errors)
             continue
-        for finding in evaluation.lineup.notices:
+        lineup = evaluation.lineup
+        for finding in lineup.notices:
             if finding.code in {"retired-successor", "retired-unbound"}:
                 attention.append(f"profile {name}: {finding.message}")
-        attention.extend(f"profile {name}: {finding.message}" for finding in evaluation.lineup.warnings
-                         if finding.code in profile_mod.MODEL_WARNING_CODES)
+        attention.extend(_tag_model(f"profile {name}: {finding.message}", finding, key=_slot_key(lineup, finding.slot),
+                                    owner=name, slot=finding.slot)
+                         for finding in lineup.warnings if finding.code in profile_mod.MODEL_WARNING_CODES)
         try:
             workflow_warnings = scope_mod.workflow_default_warnings(
-                lcat, eff, policy=evaluation.lineup.policy or profile_mod.default_policy(eff))
+                lcat, eff, policy=lineup.policy or profile_mod.default_policy(eff))
         except scope_mod.ScopeError as exc:
             problems.append(f"profile {name}: {exc}")
         else:
-            attention.extend(f"profile {name}: {finding.message}" for finding in workflow_warnings)
-        gaps = _provider_credential_gaps(runtime, evaluation.lineup)
+            workflow_key = _workflow_key(lcat, eff)
+            attention.extend(_tag_model(f"profile {name}: {finding.message}", finding, key=workflow_key, owner=name,
+                                        slot="workflow default") for finding in workflow_warnings)
+        gaps = _provider_credential_gaps(runtime, lineup)
         # A shipped profile for providers not set up at all is simply not
         # connected here, not a credential gap to fix.
         from charmer.setup import defaults as setup_defaults
 
-        if gaps and setup_defaults.seed_not_in_use(runtime, name, evaluation.lineup,
+        if gaps and setup_defaults.seed_not_in_use(runtime, name, lineup,
                                                    {provider_id for provider_id, _problem in gaps}):
             continue
         for provider_id, _problem in gaps:
-            attention.append(
-                f"profile {name}: provider {provider_id} has no credential "
-                f"({gateway_facts._connect_hint(runtime, provider_id)})"
-            )
+            hint = gateway_facts._connect_hint(runtime, provider_id)
+            keyed = _keyed_provider(runtime, provider_id)
+            attention.append(gateway_facts.tagged(
+                f"profile {name}: provider {provider_id} has no credential ({hint})",
+                area="Providers", action="missing-key" if keyed else None, subject=provider_id,
+                group=("profiles", "credential", provider_id), subjects=(name,),
+                summary=f"provider {provider_id} has no credential ({hint}); {{n}} profiles use it",
+            ))
     # The card and the editor already show a newer shipped seed;
     # doctor names it too, so a script-only operator sees it.
     try:
@@ -1224,12 +1531,45 @@ def _doctor_profile_report(runtime: runtime_mod.Runtime) -> tuple[list[str], lis
     except (profile_mod.ProfileError, OSError):
         seed_updates = []
     for name, installed, shipped in seed_updates:
-        attention.append(
+        attention.append(gateway_facts.tagged(
             f"profile {name}: a newer shipped version of this seed exists "
             f"(v{installed if installed is not None else '?'} → v{shipped}): "
-            f"charmer profile reseed {name} (your version is kept as a backup)"
-        )
+            f"charmer profile reseed {name} (your version is kept as a backup)",
+            action="seed-update", subject=name,
+        ))
     return problems, attention
+
+
+def _slot_key(lineup: profile_mod.ResolvedLineup, slot: str | None) -> str | None:
+    """The line key bound to ``slot`` (the lead or an agent), or None for a
+    lineup-wide finding."""
+
+    if slot is None:
+        return None
+    if slot == catalog.LEAD_ROLE:
+        return lineup.lead.binding.key
+    agent = lineup.agents.get(slot)
+    return agent.binding.key if agent is not None else None
+
+
+def _workflow_key(lcat: profile_mod.LineupCatalog, eff: settings_mod.Effective) -> str | None:
+    binding = eff.workflow_default_binding
+    if not isinstance(binding, dict) or not isinstance(binding.get("model"), str):
+        return None
+    try:
+        return lcat.resolve_key(binding["model"]).key
+    except catalog.CatalogError:
+        return None
+
+
+def _keyed_provider(runtime: runtime_mod.Runtime, provider_id: str) -> bool:
+    """Whether ``provider_id`` connects with an API key (G → K sets it)."""
+
+    try:
+        transport = runtime.effective_transport_docs()["providers"]["providers"][provider_id]["transport"]
+    except (KeyError, TypeError, cli_errors.CharmerError):
+        return False
+    return isinstance(transport.get("auth"), dict) and str(transport["auth"].get("secret_ref", "")).startswith("env:")
 
 
 def _doctor_record_report(
@@ -1269,7 +1609,8 @@ def _doctor_record_report(
         else:
             note = views.retired_lead_note(lcat, lead_key)
             if note is not None:
-                attention.append(f"session {m8}: {note}")
+                attention.append(_per_session(f"session {m8}: {note}", mid, f"lead-note:{note}",
+                                              f"{{n}} sessions: {note}"))
         for agent_id, binding in applied["agents"].items():
             key = binding.get("key")
             try:
@@ -1277,10 +1618,9 @@ def _doctor_record_report(
             except catalog.CatalogError:
                 removed = True
             if removed:
-                attention.append(
-                    f"session {m8}: {profile_mod.label(agent_id)} {key} was removed — "
-                    "unbound at the next resume"
-                )
+                what = f"{profile_mod.label(agent_id)} {key} was removed — unbound at the next resume"
+                attention.append(_per_session(f"session {m8}: {what}", mid, f"removed-agent:{agent_id}:{key}",
+                                              f"{{n}} sessions: {what}"))
         profile_name = record.get("profile")
         if (
             record.get("follow")
@@ -1312,12 +1652,13 @@ def _doctor_record_report(
                 "not switched yet (/model in the session, or the next resume)"
             )
     if needs_choice:
-        attention.append(
-            f"{len(needs_choice)} session(s) need a profile or model choice (lead removed): "
-            "resume interactively with charmer -r <id>, or charmer lineup --session "
-            "<runtime-id> --relaunch profile <name> | direct <model> — "
-            + ", ".join(needs_choice)
-        )
+        head = (f"{len(needs_choice)} session(s) need a profile or model choice (lead removed): "
+                "resume interactively with charmer -r <id>, or charmer lineup --session "
+                "<runtime-id> --relaunch profile <name> | direct <model> — ")
+        attention.append(gateway_facts.tagged(
+            head + ", ".join(needs_choice), action="needs-choice", subjects=tuple(needs_choice),
+            short=head + _listed(tuple(needs_choice)) if len(needs_choice) > SHOWN_IDS else None,
+        ))
     for provider_id, ids in sorted(externalized.items()):
         attention.append(
             f"{len(ids)} session(s) lead on provider {provider_id}, which left the catalog: to keep it, "
@@ -1705,9 +2046,10 @@ def _doctor_journal_report(runtime: runtime_mod.Runtime, text: str | gateway_eve
                                       "gateway instance — no re-authentication needed; retain auth.pre-* backups")
             elif event.result == "failed":
                 remedy = gateway_facts._OAUTH_LOGIN_COMMANDS.get(event.provider) or "the provider's login command"
-                lines.append(line + "; keep the gateway running, free space, then wait for a persisted save "
-                             f"of this credential; re-authenticate with {remedy} only if none appears, "
-                             "before any restart or rollback; retain auth.pre-* backups")
+                lines.append(gateway_facts.tagged(
+                    line + "; keep the gateway running, free space, then wait for a persisted save "
+                    f"of this credential; re-authenticate with {remedy} only if none appears, "
+                    "before any restart or rollback; retain auth.pre-* backups", area="Gateway"))
             elif info_lines is not None:
                 info_lines.append(line + ("; verified save observed" if event.result == "persisted"
                                           else "; not a verified save"))
@@ -1740,12 +2082,11 @@ def _doctor_journal_report(runtime: runtime_mod.Runtime, text: str | gateway_eve
                "a foreground agent then blocks its lead" if code == "429" else "")
         )
     for substitution in facts.substitutions:
-        lines.append(
+        lines.append(gateway_facts.tagged(
             f"gateway substitution: {substitution.label} was answered by {substitution.served} "
             f"({substitution.count}× in 24 h{qualifier}, a lower bound: logged at most once per credential "
             "and model pair per 10 min); the provider serves another model under this wire — "
-            "check the line (charmer models) and move agents off it if that matters"
-        )
+            "check the line (charmer models) and move agents off it if that matters", area="Models"))
     return lines
 
 
@@ -1809,8 +2150,9 @@ def _hook_error_observation(runtime, records):
         lines = []
         if count:
             detail = ", ".join(f"{event} {n}" for event, n in sorted(events.items()))
-            lines.append(f"{count} protocol-3 hook failure(s) logged since the last launch ({detail}) in {path} "
-                         "(metadata only); charmer doctor --prune rotates the log once read")
+            lines.append(gateway_facts.tagged(
+                f"{count} protocol-3 hook failure(s) logged since the last launch ({detail}) in {path} "
+                "(metadata only); charmer doctor --prune rotates the log once read", action="prune"))
         return fact("known", count, "malformed-lines" if damaged else "observed",
                     "attention" if count else "info", coverage="partial"), lines
     return runtime.report_value("hook-errors", collect)
@@ -2029,11 +2371,13 @@ def _check_scope_integrity(
     earlier = managed.read_settings(live / "settings.json") if live.is_dir() else None
     if earlier and _compiled_by_earlier_release(earlier, runtime.environ):
         # Compiled by the earlier release before migrate from-legacy moved
-        # the roots: every file of it is recompiled at the next resume.
-        return [], [
+        # the roots: every file of it is recompiled at the next resume (or
+        # by repair-all, while it is stopped).
+        return [], [_per_session(
             f"session {m8}: scope compiled by {legacy.NAME} before the move to charmer (stale; its hooks name "
-            f"the earlier shims); it is recompiled at the next resume (charmer -r {mid})"
-        ], []
+            f"the earlier shims); it is recompiled at the next resume (charmer -r {mid}) — or charmer doctor "
+            f"--repair-all now, while it is stopped",
+            mid, EARLIER_SCOPES[1], _EARLIER_SCOPES_SUMMARY, action="earlier-scopes")], []
     transition = runtime_mod._transition_module()
     parts = runtime.converge_parts()
     try:
@@ -2064,72 +2408,95 @@ def _check_scope_integrity(
     problems: list[str] = []
     attention: list[str] = []
     info: list[str] = []
+
+    def repair(text: str) -> gateway_facts.Line:
+        return gateway_facts.tagged(text, area="Sessions", action="scope-repair", subjects=(m8,))
+
+    def lazy(text: str, kind: str, summary: str, *, repairable: bool = False) -> gateway_facts.Line:
+        return _per_session(text, mid, kind, summary, action="scope-repair" if repairable else None)
+
+    default_mode = (cli_text.DEFAULT_MODE_DRIFT.format(m8=m8, mid=mid), "default-mode", cli_text.DEFAULT_MODE_DRIFTS)
     disk = scope_mod.read_disk_plan(live, ep.plan) if live.is_dir() else None
     if disk is None:
-        problems.append(f"session {m8}: scope unreadable; charmer doctor --repair {mid}")
+        problems.append(repair(f"session {m8}: scope unreadable; charmer doctor --repair {mid}"))
     elif scope_mod.plan_hash(disk) != scope_mod.plan_hash(ep.plan):
         drifted = scope_mod.live_drift(live, ep.plan)
         agent_files = _catalog_agent_drift(runtime, record, live, drifted)
         if scope_mod.skill_policy_drift(live, ep.plan, drifted):
             # The managed skill policy of another
             # release (with or without the skill deny): lazy, Attention, with the repair path.
-            attention.append(
-                cli_text.SKILL_POLICY_DRIFT.format(m8=m8, mid=mid)
-            )
+            attention.append(lazy(cli_text.SKILL_POLICY_DRIFT.format(m8=m8, mid=mid), "skill-policy",
+                                  cli_text.SKILL_POLICY_DRIFTS, repairable=True))
             if scope_mod.default_mode_differs(live, ep.plan):
-                attention.append(cli_text.DEFAULT_MODE_DRIFT.format(m8=m8, mid=mid))
+                attention.append(lazy(*default_mode))
         elif scope_mod.fork_policy_drift(live, ep.plan, drifted):
-            # The fork-subagent deny of another release: lazy, Attention, with the repair path.
-            attention.append(cli_text.FORK_POLICY_DRIFT.format(m8=m8, mid=mid))
+            # The fork deny and the model fence's failure policy of another
+            # release: lazy, Attention, with the repair path.
+            attention.append(lazy(cli_text.FORK_POLICY_DRIFT.format(m8=m8, mid=mid), "fork-policy",
+                                  cli_text.FORK_POLICY_DRIFTS, repairable=True))
             if scope_mod.default_mode_differs(live, ep.plan):
-                attention.append(cli_text.DEFAULT_MODE_DRIFT.format(m8=m8, mid=mid))
+                attention.append(lazy(*default_mode))
         elif scope_mod.default_mode_drift(live, ep.plan, drifted):
             # Decided once per launch; never BLOCK, repair never
             # adds or removes the key (the plan keeps the on-disk presence).
-            attention.append(cli_text.DEFAULT_MODE_DRIFT.format(m8=m8, mid=mid))
+            attention.append(lazy(*default_mode))
         elif agent_files:
             # Only validated agent content moved,
             # and only because the installed catalog did: lazy, Attention.
-            attention.append(
+            attention.append(lazy(
                 f"session {m8}: agent definitions differ from the installed catalog "
                 f"({', '.join(agent_files)}; catalog content changed since launch, bindings "
                 f"unchanged); applies at the next resume (charmer -r {mid}) — or "
-                f"charmer doctor --repair {mid} now"
-            )
+                f"charmer doctor --repair {mid} now",
+                "agent-definitions",
+                "{n} sessions: agent definitions differ from the installed catalog (catalog content changed since "
+                "launch, bindings unchanged); each applies at its next resume — or charmer doctor --repair-all "
+                "now (stopped sessions)",
+                repairable=True))
         elif (deny_note := _deny_drift_note(runtime, live, ep.plan, m8, mid, drifted)) is not None:
             attention.append(deny_note)
         else:
             drift = "; ".join(drifted) or "content differs"
-            problems.append(
+            problems.append(repair(
                 f"session {m8}: scope differs from the record-authoritative compile ({drift}); "
                 f"run charmer doctor --repair {mid}"
-            )
+            ))
     else:
         info.append(
             f"Scope: {m8} OK (lineup generation {record['lineup_generation']})."
         )
         if not ep.launch_files_kept and ep.rebuilt_fence_matches is False:
-            attention.append(
+            attention.append(lazy(
                 f"session {m8}: launch-time files were rebuilt from the installed catalog "
                 f"after launch; live agent changes need a relaunch — charmer -r {mid} "
-                "after it exits"
-            )
+                "after it exits",
+                "launch-files-rebuilt",
+                "{n} sessions: launch-time files were rebuilt from the installed catalog after launch; live agent "
+                "changes need a relaunch — charmer -r <id> after it exits",
+            ))
     if ep.diagnostics_kept:
-        attention.append(
+        attention.append(lazy(
             f"session {m8}: review labels and model diagnostics changed since launch; "
-            "the proven scope is kept until the next resume"
-        )
+            "the proven scope is kept until the next resume",
+            "diagnostics-kept",
+            "{n} sessions: review labels and model diagnostics changed since launch; the proven scope is kept "
+            "until the next resume",
+        ))
     if ep.launch_files_kept and ep.preference_launch_differs:
         # A preference-only launch-item difference is lazy
         # state with its own wording, never BLOCK and never "catalog changed".
-        attention.append(
-            f"session {m8}: managed-session preference changed; applies at the next resume"
-        )
+        attention.append(lazy(
+            f"session {m8}: managed-session preference changed; applies at the next resume",
+            "preference", "{n} sessions: managed-session preference changed; each applies at its next resume",
+        ))
     elif ep.launch_files_kept and ep.catalog_launch_differs:
-        attention.append(
+        attention.append(lazy(
             f"session {m8}: fence/picker differ from the installed catalog (catalog "
-            "changed since launch); applies at the next resume"
-        )
+            "changed since launch); applies at the next resume",
+            "catalog-launch",
+            "{n} sessions: fence/picker differ from the installed catalog (catalog changed since launch); each "
+            "applies at its next resume",
+        ))
     if ep.lead_switched:
         info.append(
             f"session {m8}: lead switched with /model since the last compile; restated "
@@ -2166,11 +2533,11 @@ def _check_scope_integrity(
             )
             for label, selector in selectors:
                 if selector in gaps:
-                    problems.append(
+                    problems.append(repair(
                         f"session {m8}: {label} is bound to {selector}, which the compiled "
                         "fence does not admit — the agent would silently run on the lead "
                         f"model; run charmer doctor --repair {mid}"
-                    )
+                    ))
     return problems, attention, info
 
 
@@ -2197,11 +2564,11 @@ def _doctor_scope_report(runtime: runtime_mod.Runtime) -> tuple[list[str], list[
         if state_label not in {sessions.IDENTITY_REPAIR_NEEDED, sessions.IDENTITY_PENDING_FORK}:
             return
         if sessions.drop_resolved_pending_forks(record) is not None:
-            attention.append(
+            attention.append(gateway_facts.tagged(
                 f"session {sessions.managed_id(record)} holds a fork marker its live "
                 "runtime already resolved; `charmer doctor --repair-all` clears it "
-                "in place"
-            )
+                "in place", area="Sessions", action="scope-repair",
+            ))
         elif state_label == sessions.IDENTITY_PENDING_FORK:
             problems.append(
                 f"session {sessions.managed_id(record)} identity is {state_label}; "
@@ -2243,10 +2610,11 @@ def _doctor_scope_report(runtime: runtime_mod.Runtime) -> tuple[list[str], list[
         attention.extend(scope_attention)
         info.extend(scope_info)
     if scope_mismatch:
-        problems.append(
+        problems.append(gateway_facts.tagged(
             f"{scope_mismatch} scope(s) diverged from record authority; run "
-            "`charmer doctor --repair-all` to converge them in one pass"
-        )
+            "`charmer doctor --repair-all` to converge them in one pass",
+            area="Sessions", action="scope-repair",
+        ))
     return info, problems, attention
 
 
@@ -2443,24 +2811,54 @@ def _doctor_new_lines_report(runtime: runtime_mod.Runtime) -> list[str]:
         line = lines[key]
         if line.get("status") != "new" or key in admitted:
             continue
-        found.append(gateway_facts.Finding(
+        # The optional admission badge: an advisory, like every optional attestation.
+        found.append(gateway_facts.tagged(gateway_facts.Finding(
             f"New model: {line.get('display', key)} ({key}) — not admitted (optional badge): "
             f"charmer models admit {key} (or Models, then Enter; use does not require it)",
             code="model-newly-available", subject_id=key if observations.identifier(key) else None,
             public="a new model is available and not admitted", remedy=f"charmer models admit {key}",
-        ))
+        ), area="Models", level=ADVISORY, subject=key))
     return found
 
 
-def _diagnostic(severity: str, line: str) -> observations.Diagnostic:
-    """A typed finding's own fields; every other line the redacted fallback."""
+@dataclass(frozen=True)
+class DoctorDiagnostic(observations.Diagnostic):
+    """A doctor finding in the JSON report: the shared diagnostic and the
+    area doctor lists it under. Its severity may also be ``advisory``
+    (optional evidence), which the report's status ignores."""
 
+    area: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.severity == ADVISORY:
+            # Every other field is checked as any diagnostic's is.
+            observations.Diagnostic("info", self.code, self.text, self.subject_id, self.remedy)
+        else:
+            super().__post_init__()
+        if self.area is not None and self.area not in (*AREAS, OTHER_AREA):
+            raise ValueError("invalid diagnostic area")
+
+
+def _diagnostic(severity: str, line: str) -> observations.Diagnostic:
+    """A typed finding's own fields; every other line the redacted fallback,
+    coded by its action or model finding code when it has one. An advisory
+    line has the ``advisory`` severity; every finding carries its area."""
+
+    level = ADVISORY if severity == "attention" and getattr(line, "level", None) == ADVISORY else severity
+    area = getattr(line, "area", None)
     if isinstance(line, gateway_facts.Finding):
         try:
-            return observations.Diagnostic(severity, line.code, line.public, line.subject_id, line.remedy)
+            return DoctorDiagnostic(level, line.code, line.public, line.subject_id, line.remedy, area)
         except ValueError:
             pass
-    return observations.legacy_diagnostic(severity, line)
+    fallback = observations.legacy_diagnostic("info" if level == ADVISORY else severity, line)
+    text = fallback.text.replace(": info;", f": {ADVISORY};", 1) if level == ADVISORY else fallback.text
+    group = getattr(line, "group", None) or ()
+    code = getattr(line, "action", None) or (group[1] if len(group) > 1 and group[0] == "model" else fallback.code)
+    try:
+        return DoctorDiagnostic(level, code, text, area=area)
+    except ValueError:
+        return DoctorDiagnostic(level, fallback.code, text, area=area)
 
 
 def _health_backend(runtime: runtime_mod.Runtime) -> str | None:
@@ -2495,10 +2893,3 @@ def detail_line(line: str) -> bool:
     """A routine detail line (shown with ``doctor -v``)."""
 
     return line.startswith(DETAIL_PREFIXES)
-
-
-def repair_offer(problems: list[str], attention: list[str]) -> int:
-    """How many findings name a session scope repair (``doctor --repair``):
-    the only findings a bulk repair fixes."""
-
-    return sum(1 for line in (*problems, *attention) if "doctor --repair" in line)

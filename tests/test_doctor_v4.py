@@ -2470,7 +2470,11 @@ class CarryInPolicyTests(V4Case):
         self.assertEqual(problems, [])
         self.assertEqual(len(attention), 1)
         self.assertIn(f"compiled by {legacy.NAME}", attention[0])
-        self.assertIn(f"charmer -r {record['managed_id']}", attention[0])
+        # The stopped ones are recompiled by repair-all now (H offers it), the
+        # running ones at their next resume; the line names the session.
+        self.assertIn("charmer doctor --repair-all recompiles the stopped ones now", attention[0])
+        self.assertIn(record["managed_id"][:8], attention[0])
+        self.assertEqual((attention[0].action, attention[0].remedy), ("earlier-scopes", "charmer doctor --repair-all"))
         self.assertIn("every compiled hook command exists (0 session(s))", str(info))
         with mock.patch.object(scope, "missing_hook_targets",
                                return_value=[*stale, self.runtime.home / "missing-hook"]):

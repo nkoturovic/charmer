@@ -418,8 +418,17 @@ class SelectedTransportKeyTests(CredentialCase):
         card = launch_sessions._LaunchCardScreen(
             self.runtime, target, palette=tui.MONO_PALETTE, gateway_checked=True, hint_detector=lambda _c: None,
             tty_in=io.StringIO("\n\n\n"), tty_out=out, passthrough=[])
-        self.assertIsNone(card.run(FakeWindow(["h", ESC], height=24, width=80)))
-        report = out.getvalue()
+        shown: list[str] = []
+
+        class Recording(tui.TextView):
+            def run(self, win):
+                shown.extend(self.lines)
+                return super().run(win)
+
+        # H, then V: the full report as the findings list words it for the card.
+        with mock.patch.object(tui, "TextView", Recording):
+            self.assertIsNone(card.run(FakeWindow(["h", "v", ESC, ESC, ESC], height=24, width=80)))
+        report = "\n".join(shown)
         block = next(line for line in report.splitlines() if "provider anthropic transport api-key" in line)
         self.assertNotIn("providers set-key", report)
         route = cli_text.CARD_SET_KEY.format(route=cli_text.CARD_SET_KEY_FRESH.format(display="Anthropic"))

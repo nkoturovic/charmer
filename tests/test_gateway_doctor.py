@@ -562,15 +562,41 @@ class HoldViewTests(_GatewayDoctor):
         self.assertIsNone(unknown)
         self.assertEqual(len(labels), 1)
         self.assertTrue(labels[0].startswith(mid), labels)
-        with mock.patch("charmer.cli.session_facts._session_records", side_effect=OSError("unreadable")):
+        with mock.patch("charmer.cli.session_facts._session_record_scan", side_effect=OSError("unreadable")):
             labels, unknown = gateway_actions.running_sessions(self.runtime)
         self.assertEqual(labels, [])
         self.assertIn("unreadable", unknown)
         out = io.StringIO()
-        with mock.patch("charmer.cli.session_facts._session_records", side_effect=OSError("unreadable")):
+        with mock.patch("charmer.cli.session_facts._session_record_scan", side_effect=OSError("unreadable")):
             self.assertFalse(gateway_actions.confirm_restart(gateway_actions.observe(self.runtime),
                                                              io.StringIO(""), out))
         self.assertIn("Whether managed sessions run now cannot be told (unreadable).", out.getvalue())
+
+    def test_an_unreadable_record_leaves_the_running_sessions_unknown(self) -> None:
+        """A record that fails to load is never "no session": the restart
+        question says it cannot be told, after the live ones it can name."""
+
+        record = self.launch_fresh()
+        mid = sessions.managed_id(record)
+        broken = self.runtime.session_store.sessions_dir / "0f0f0f0f-0000-4000-8000-000000000000.json"
+        broken.write_bytes(b"{ not a record")
+        broken.chmod(0o600)
+        labels, unknown = gateway_actions.running_sessions(self.runtime)
+        self.assertEqual(labels, [])
+        self.assertIsNotNone(unknown)
+        self.assertIn("0f0f0f0f-0000-4000-8000-000000000000", unknown)
+        out = io.StringIO()
+        self.assertFalse(gateway_actions.confirm_restart(gateway_actions.observe(self.runtime), io.StringIO(""), out))
+        printed = out.getvalue()
+        self.assertNotIn("No managed session runs now", printed)
+        self.assertIn("Whether managed sessions run now cannot be told", printed)
+        # The readable live session is still named, and the rest stays unknown.
+        self.runtime.live_prefixes = frozenset({mid[:8]})
+        out = io.StringIO()
+        self.assertFalse(gateway_actions.confirm_restart(gateway_actions.observe(self.runtime), io.StringIO(""), out))
+        printed = out.getvalue()
+        self.assertIn(f"1 managed session(s) run now; a restart fails their requests in flight:\n  - {mid}", printed)
+        self.assertIn("Whether other managed sessions run now cannot be told", printed)
 
     def test_the_doctor_none_line_says_what_was_evaluated(self) -> None:
         self.ready(self.NONCE)

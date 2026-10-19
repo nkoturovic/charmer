@@ -722,6 +722,30 @@ def card_not_connected_golden(root: Path) -> str:
     return onboarding.card_not_connected_golden(root)
 
 
+def findings_golden(root: Path) -> str:
+    import test_screens_findings as findings
+
+    return findings.findings_golden(root)
+
+
+def findings_advisories_golden(root: Path) -> str:
+    import test_screens_findings as findings
+
+    return findings.findings_advisories_golden(root)
+
+
+def findings_refresh_golden(root: Path) -> str:
+    import test_screens_findings as findings
+
+    return findings.findings_refresh_golden(root)
+
+
+def gateway_rollback_golden(root: Path) -> str:
+    import test_screens_findings as findings
+
+    return findings.gateway_rollback_golden(root)
+
+
 def _pending_record(runtime: cli.Runtime, *, follow: bool = True) -> dict:
     """The default seed's record with a recorded change waiting (pinned or following)."""
 
@@ -842,6 +866,7 @@ WIDE_SCREENS: dict[str, Callable[[Path], str]] = {
     "editor-balanced-wide": editor_golden,
     "lineup-live-wide": lineup_live_golden,
     "card-resume-diff-wide": card_resume_diff_golden,
+    "findings-wide": findings_golden,
 }
 
 # Goldens drawn at another size than 80x24 (their file names say so).
@@ -857,6 +882,10 @@ GOLDENS: dict[str, Callable[[Path], str]] = {
     "profiles": profiles_golden,
     "profiles-unloadable": profiles_unloadable_golden,
     "card-not-connected": card_not_connected_golden,
+    "findings": findings_golden,
+    "findings-advisories": findings_advisories_golden,
+    "findings-refresh": findings_refresh_golden,
+    "gateway-rollback": gateway_rollback_golden,
     "candidates-registry-detail": lambda root: candidates_detail_golden(root, kind="registry"),
     "candidates-gateway-down": lambda root: candidates_detail_golden(root, kind="down"),
     "candidates-served-extras": lambda root: candidates_detail_golden(root, kind="extras"),

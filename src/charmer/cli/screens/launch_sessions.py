@@ -85,8 +85,9 @@ class _CardHealthActions:
 
     ``_LaunchCardScreen`` is the one class that inherits them.  They
     read only ``runtime``, ``palette``, ``update_hint``, ``gateway_problem``,
-    ``gateway_checked``, ``gateway_check``, ``hint_detector``, ``tty_in``,
-    ``tty_out``, ``way_back`` and ``self._draw``.
+    ``gateway_checked``, ``gateway_check``, ``gateway_hold``, ``hold_check``,
+    ``hint_detector``, ``tty_in``, ``tty_out``, ``way_back``, ``self._draw``
+    and ``self._open_sessions``.
     """
 
     runtime: "Runtime"
@@ -95,6 +96,8 @@ class _CardHealthActions:
     gateway_problem: str | None
     gateway_checked: bool
     gateway_check: Any | None
+    gateway_hold: Any | None
+    hold_check: Any | None
     hint_detector: Any
     tty_in: Any
     tty_out: Any
@@ -121,6 +124,28 @@ class _CardHealthActions:
             return f"gateway check failed: {exc} — {launch.gateway_unit_remedy(self.runtime.home)}"
         return None
 
+    def _hold_status(self) -> Any | None:
+        """The persistence hold as ``charmer gateway status`` evaluates it
+        (``gateway_hold.HoldReport``), once per health check: never per
+        render. None when it is not observed here (an injected gateway check
+        without a hold check, a fixture runtime)."""
+
+        if self.hold_check is not None:
+            return self.hold_check()
+        if self.gateway_check is not None:
+            return None
+        try:
+            return screens_gateway.observe_hold(self.runtime)
+        except Exception:  # never let a health hint break the card
+            return None
+
+    def _check_health(self) -> None:
+        """The card's one loopback check and its hold, cached for every render."""
+
+        self.gateway_problem = self._gateway_status()
+        self.gateway_hold = self._hold_status()
+        self.gateway_checked = True
+
     def _refresh_health(self) -> None:
         """Recompute pin/gateway state (after an in-TUI update)."""
 
@@ -128,14 +153,9 @@ class _CardHealthActions:
         self.update_hint = self.hint_detector(
             self.runtime.catalog.docs["native-contract"]
         )
-        self.gateway_problem = self._gateway_status()
-        self.gateway_checked = True
+        self._check_health()
 
     # -- health / update actions ----------------------------------------------
-
-    def _pause_for_lines(self, win: Any, header: str) -> None:
-        with tui.suspended_curses(win):
-            self.tty_out.write(header + "\n")
 
     def _resume_note(self, win: Any) -> None:
         with tui.suspended_curses(win):
@@ -170,57 +190,23 @@ class _CardHealthActions:
         self._resume_note(win)
         self._refresh_health()
 
-    def _run_health(self, win: Any) -> None:
-        """H: doctor's report as ``charmer doctor`` prints it (detail
-        lines folded behind ``doctor -v``, the same closing line; a key a
-        finding says to save is named by the card's route, G → K, as the
-        card's other remedies are), a bulk repair offered only when a
-        finding names a session repair, then the gateway's own actions."""
+    def _run_health(self, win: Any) -> tuple | None:
+        """H: doctor's findings as a list (``screens.findings``): the rows
+        ``charmer doctor`` prints, each finding worded the card's way (a key
+        to save is the card's route, G → K, as the card's other remedies
+        are), a fixed set of actions on them and the gateway's own actions.
+        Returns the perform intent of a resume chosen in Sessions there, or
+        None; the card's health is checked again after it."""
 
-        self._pause_for_lines(win, "charmer doctor")
-        problems, info_lines, attention = doctor._collect_doctor_reports(self.runtime)
-        status = "blocked" if problems else ("attention" if attention else "ready")
-        shown = [line for line in info_lines if not doctor.detail_line(line)]
+        import charmer.cli.screens.findings as screens_findings
 
-        def said(line: str) -> str:
-            # The card's way to save a key (G → K), never the command.
-            return termtext.visible_text(_card_doctor_line(self.runtime, line, self.way_back))
-
-        with tui.suspended_curses(win):
-            if problems:
-                self.tty_out.write("BLOCKED\n")
-                for line in problems:
-                    self.tty_out.write(f"  - {said(line)}\n")
-            if attention:
-                self.tty_out.write("Attention\n")
-                for line in attention:
-                    self.tty_out.write(f"  - {said(line)}\n")
-            if status == "ready":
-                self.tty_out.write("Ready\n")
-            for line in shown:
-                self.tty_out.write(f"{said(line)}\n")
-            hidden = len(info_lines) - len(shown)
-            if hidden:
-                self.tty_out.write(cli_text.CARD_DOCTOR_HIDDEN.format(n=hidden, s="s" if hidden != 1 else "") + "\n")
-            self.tty_out.write(doctor.DOCTOR_SUMMARY[status])
-            repairs = doctor.repair_offer(problems, attention)
-            if repairs:
-                self.tty_out.write(cli_text.CARD_DOCTOR_REPAIR.format(n=repairs))
-                self.tty_out.flush()
-                try:
-                    answer = self.tty_in.readline().strip().lower()
-                except KeyboardInterrupt:
-                    answer = ""
-                if answer in ("y", "yes"):
-                    code = doctor_actions._doctor_repair_all(self.runtime, self.tty_out)
-                    self.tty_out.write(f"(repair-all exit {code})\n")
-        # The gateway's own actions: start (stopped), restart (proven
-            # yours) and the log tail, which opens once curses is back.
-            follow = screens_gateway.health_prompt(self.runtime, self.tty_in, self.tty_out)
+        result = screens_findings.run_findings_screen(
+            self.runtime, win, self.palette, tty_in=self.tty_in, tty_out=self.tty_out,
+            say=lambda line: _card_doctor_line(self.runtime, line, self.way_back),
+            open_sessions=self._open_sessions,
+        )
         self._refresh_health()
-        if follow == "log":
-            title, lines = screens_gateway.log_view(screens_gateway.observe(self.runtime))
-            tui.TextView(title, lines, palette=self.palette).run(win)
+        return result
 
 
 def _resume_card_result(
@@ -2122,7 +2108,9 @@ class _LaunchCardScreen(_CardHealthActions):
     G/M/O/E/H/U/W/P, :meth:`_plan` evaluates and prepares the target (a
     resume card uses the ``prepared`` its caller made) and builds the
     ``views.card_model``.  Enter on a Ready card returns ``("perform",
-    prepared[, decision])``; D (Direct) and S (sessions) may return the same
+    prepared[, decision])``; while nothing is connected a fresh card's Enter
+    opens Get started instead, and L launches all the same. D (Direct), S
+    (sessions) and H (a resume chosen in its Sessions) may return the same
     shape.  Esc returns None.  The card holds no lock and writes nothing
     itself: the editor, Get started, Profiles, Models, Providers and
     Settings write through the setup layer and the store APIs.
@@ -2161,6 +2149,7 @@ class _LaunchCardScreen(_CardHealthActions):
         explicit: bool = False,
         auto_setup: bool = False,
         way_back: _WayBack | None = None,
+        hold_check: Callable[[], Any] | None = None,
     ):
         if action != "fresh" and prepared is None:
             raise ValueError("a resume card is built with the prepared launch of its caller")
@@ -2179,6 +2168,10 @@ class _LaunchCardScreen(_CardHealthActions):
         self.gateway_problem = gateway_problem
         self.gateway_checked = gateway_checked
         self.gateway_check = gateway_check
+        # The persistence hold, evaluated with each health check (a test
+        # seam replaces the live evaluation).
+        self.hold_check = hold_check
+        self.gateway_hold: Any | None = None
         # The U row: an installed release (its version and age; U runs the
         # update) or the Nix package (U says to update the flake); a source
         # checkout shows none.
@@ -2354,6 +2347,7 @@ class _LaunchCardScreen(_CardHealthActions):
             load_path = product_paths.display(load_error.path, runtime.environ)
         elif unloadable and load_error is None:
             errors.append(f"cannot load profile {target.profile!r}")
+        hold = self.gateway_hold
         card = views.card_model(
             target=target,
             action=self.action,
@@ -2366,6 +2360,9 @@ class _LaunchCardScreen(_CardHealthActions):
             secret_problems=prepared.secret_problems if prepared is not None else (),
             collisions=collisions,
             health=health,
+            hold=(None if hold is None or not getattr(hold, "held", False)
+                  else views.CARD_HOLD_COVERAGE_KIND if getattr(hold, "coverage_only", False)
+                  else views.CARD_HOLD_FAILURE_KIND),
             quota_row=self._quota_summary(lineup),
             start_hint=gateway_facts.gateway_service_hint("start", runtime),
             update_hint=self.update_hint,
@@ -2871,11 +2868,18 @@ class _LaunchCardScreen(_CardHealthActions):
             win, self.palette, background=self._draw
         )
 
-    def _enter(self, win: Any) -> tuple | None:
+    def _enter(self, win: Any, *, anyway: bool = False) -> tuple | None:
+        """Enter: the launch (a resume card: the resume). While nothing is
+        connected, Enter leads into Get started instead of a session that
+        cannot work; ``anyway`` (L) launches all the same."""
+
         card = self.card
         if not self.resume and self.target.kind == "unloadable":
             # Profiles, with the file that cannot be loaded selected.
             self._open_profiles(win, selected=self.target.profile)
+            return None
+        if self.not_connected and not self.resume and not anyway:
+            self._get_started(win)
             return None
         if card.ready and self.prepared is not None:
             if self.resume:
@@ -2898,10 +2902,9 @@ class _LaunchCardScreen(_CardHealthActions):
 
         tui.hide_cursor()
         if not self.gateway_checked:
-            # One loopback check and one update hint per card open (§4.1).
+            # One loopback check (with the hold) and one update hint per card open (§4.1).
             self.update_hint = self.hint_detector(self.runtime.catalog.docs["native-contract"])
-            self.gateway_problem = self._gateway_status()
-            self.gateway_checked = True
+            self._check_health()
             self._refresh_pool()
             self._replan()
         if self.auto_setup:
@@ -2938,9 +2941,15 @@ class _LaunchCardScreen(_CardHealthActions):
                 if self.not_connected and not self.resume:
                     self._first_run(win)
                 else:
-                    self._run_health(win)
+                    outcome = self._run_health(win)
+                    if outcome is not None:
+                        return outcome
                 self._observe_setup()
                 self._replan()
+            elif ch == "l" and self.not_connected and not self.resume:
+                outcome = self._enter(win, anyway=True)
+                if outcome is not None:
+                    return outcome
             elif ch == "w":
                 self._get_started(win)
             elif ch == "u" and self.update_hint is not None:

@@ -1,9 +1,13 @@
 """The ``doctor`` command: action selection and report rendering.
 
 The report's headline is the one health reduction of the JSON report
-(``observations.status_of``): BLOCKED, else Attention, else Ready. Blocking
-reasons and attention items are always shown; routine detail lines (one per
-session, the gateway's counters, the evidence notes) only with ``-v``.
+(``observations.status_of``): BLOCKED, else Attention, else Ready; the
+advisories (optional evidence) never change it. The rows are
+``doctor.present_report``'s, the ones H lists: blocking reasons first, then the
+attention items grouped by area (a held gateway first), then the
+advisories, each repeated finding collapsed into one row. Routine detail
+lines (one per session, the gateway's counters, the evidence notes) and
+every collapsed row's original lines show only with ``-v``.
 Exit statuses: 0 ready or attention, 1 blocked, 2 usage.
 """
 
@@ -16,7 +20,6 @@ import platform
 import sys
 from typing import Any, TextIO
 
-from charmer import observations
 from charmer import sessions
 from charmer import strict_json
 from charmer import termtext
@@ -101,24 +104,9 @@ def _doctor_command(
     from charmer.cli.screens.common import _output_palette
 
     palette = _output_palette(input_stream, output_stream, no_color)
-    status = observations.status_of(["block"] * bool(problems) + ["attention"] * bool(scope_attention))
-    shown = info_lines if verbose else [line for line in info_lines if not doctor.detail_line(line)]
-    if problems:
-        output_stream.write(palette.ansi("BLOCKED", "error") + "\n")
-        for problem in problems:
-            output_stream.write(palette.ansi(f"  - {termtext.visible_text(problem)}", "error") + "\n")
-    if scope_attention:
-        output_stream.write(palette.ansi("Attention", "warn") + "\n")
-        for line in scope_attention:
-            output_stream.write(palette.ansi(f"  - {termtext.visible_text(line)}", "warn") + "\n")
-    if status == "ready":
-        output_stream.write(palette.ansi("Ready", "ok") + "\n")
-    for line in shown:
-        output_stream.write(f"{termtext.visible_text(line)}\n")
-    hidden = len(info_lines) - len(shown)
-    if hidden:
-        output_stream.write(f"({hidden} more detail line{'s' if hidden != 1 else ''}: charmer doctor -v)\n")
-    output_stream.write(doctor.DOCTOR_SUMMARY[status])
+    status = doctor.present_report(problems, scope_attention).status
+    for role, line in doctor.report_lines(problems, info_lines, scope_attention, verbose=verbose):
+        output_stream.write((palette.ansi(line, role) if role != "normal" else line) + "\n")
     return 1 if status == "blocked" else 0
 
 

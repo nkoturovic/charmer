@@ -11,8 +11,9 @@ charmer update --rollback # switch back to the previous version
 
 On the launch card, **U** runs the same steps. The card's release row is
 local information, not a background check for a newer version: it shows
-the installed version and release date. At 30 days it shows the release's
-age and suggests `charmer update --check`.
+the installed version and release date and says that U checks for a newer
+release. At 30 days it shows the release's age and suggests
+`charmer update --check`.
 
 `update` downloads the latest release's signed checksums and verifies
 their signature with the release key this installation carries (it never
@@ -26,7 +27,9 @@ newer one shows `Update plan: <installed-version> -> <new-version>` first:
   the switch; a state-format upgrade on first run prevents rollback to
   the old format;
 - whether the gateway changes and needs a restart, or only the launcher
-  changes and new sessions use it while the running gateway keeps running.
+  changes and new sessions use it while the running gateway keeps running;
+  for a gateway that changes, the way back: “if the new gateway does not
+  start: charmer update --rollback”.
 
 It asks before it installs; without a terminal it needs `--yes`, and
 inside a Claude Code session it refuses. Exit statuses: 0 done or nothing
@@ -67,6 +70,15 @@ replace the program the launcher runs. A rollback goes only to the
 version it showed you: if the installation changed while it waited for
 your answer, it refuses. Afterwards `previous` is the version you left,
 so a second rollback undoes the first.
+
+When the gateway does not start after an update that changed it (`gateway
+start`, `gateway restart`, a launch, or the TUI's start and restart), the
+failure adds a second remedy: “if this began after charmer update: charmer
+update --rollback, then charmer gateway start (returns to <version>'s
+gateway; sessions keep their records)”; doctor's Gateway finding and the
+TUI's gateway dialog show it too while the gateway is stopped. It appears
+only for an installed release whose previous version has another gateway
+and still reads the state on disk, never on the Nix or source channels.
 
 ## State only moves forward
 

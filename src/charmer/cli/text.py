@@ -14,6 +14,10 @@ EVIDENCE_ADD_DIR_CARRY = (
     "acceptance-pending(U1)"
 )
 
+# What optional diagnostics cost, in the same words wherever they are offered
+# (doctor's advisories, the findings list, the card's help, Models).
+OPTIONAL_DIAGNOSTICS = "may cost provider calls; never run automatically"
+
 # Retire argv-only launches, not the durable resume of legacy records.
 LEGACY_REFUSAL = (
     "--legacy was retired: every launch is durable, and gateway auth "
@@ -90,9 +94,9 @@ _HELP_MODEL = (
     "profile whose lead is that model.\n"
 )
 _HELP_DOCTOR = (
-    "H — doctor: the report charmer doctor prints (Ready / Attention / BLOCKED), then the\n"
-    "gateway's own actions (start, restart, log).\n"
-    "U — update charmer, shown when an update applies: an installed release checks, asks and\n"
+    "H — doctor: its findings as a list (BLOCKED, Attention by area, then the advisories);\n"
+    "Enter acts on a row or shows its command, V the full report, G the gateway's actions.\n"
+    "U — check for and install a newer charmer: an installed release checks, asks and\n"
     "applies; a Nix install updates through its flake. Claude Code itself: W → Claude Code.\n"
 )
 # The terms and the in-session /cm guidance: the help (?) and the card's
@@ -380,7 +384,8 @@ MODELS_HELP = (
     "Enter records or revokes an optional local admission badge on a New line,\n"
     "even with an unavailable route; neither changes use availability or evidence.\n"
     "On any other line Enter inspects its provider, selectors, context and evidence.\n"
-    "Q runs optional diagnostics on a model you added (chosen checks, default-No consent);\n"
+    "Q runs optional diagnostics on a model you added (chosen checks, default-No consent;\n"
+    "they " + OPTIONAL_DIAGNOSTICS + ");\n"
     "E edits its declaration (an edit invalidates admission); V shows details.\n"
     "X removes a model you added; where profiles use it you choose a replacement first.\n"
     "Use availability, admission, qualification and family independence are separate facts.\n"
@@ -818,9 +823,8 @@ CARD_DETAILS_MANAGED = (
     "  Models are served through the local gateway; the session is recorded and resumable "
     "(charmer -r).",
 )
-# The card's H (doctor's report in the terminal).
+# Doctor's hidden-detail hint (plain doctor and the card's H).
 CARD_DOCTOR_HIDDEN = "({n} more detail line{s}: charmer doctor -v)"
-CARD_DOCTOR_REPAIR = "\n{n} session finding(s) above name a repair. Repair every stopped session now? [y/N] "
 CARD_ONE_PROFILE = "only one profile"
 CARD_SECRET_TITLE = "Provider credential missing"
 CARD_SECRET_HINT = "Set it in G (providers) → K, or sign in with L."
@@ -882,13 +886,15 @@ SKILL_POLICY_DRIFT = (
     "{mid}) — or charmer doctor --repair {mid} now (a repaired live scope is written, "
     "not yet proven active in the running client)"
 )
-# A live scope whose only difference is the fork-subagent deny (Agent(fork),
-# compiled from the 2.1.302 pin on) is lazy, like the skill policy above.
+# A live scope whose only difference is the managed fork and model-fence
+# policy (the fork-subagent deny, Agent(fork), and the fence hook's failure
+# policy, both compiled from the 2.1.302 pin on) is lazy, like the skill
+# policy above.
 FORK_POLICY_DRIFT = (
-    "session {m8}: its fork-subagent deny (Agent(fork)) differs from this release (a scope "
-    "another release compiled; lazy state); applies at the next resume (charmer -r {mid}) — or "
-    "charmer doctor --repair {mid} now (a repaired live scope is written, not yet proven active "
-    "in the running client)"
+    "session {m8}: its fork-subagent deny (Agent(fork)) or model-fence failure policy differs from "
+    "this release (a scope another release compiled; lazy state); applies at the next resume "
+    "(charmer -r {mid}) — or charmer doctor --repair {mid} now (a repaired live scope is written, "
+    "not yet proven active in the running client)"
 )
 # The permission default mode is decided once per launch/resume;
 # a live scope whose only difference is ``permissions.defaultMode`` is lazy.
@@ -896,6 +902,24 @@ DEFAULT_MODE_DRIFT = (
     "session {m8}: the compiled permission default mode differs from this launch's decision "
     "(lazy state); applies at the next resume (charmer -r {mid})"
 )
+# The same lazy scope states, one doctor row for every session of a kind
+# (``{n}`` sessions; doctor lists their first ids).
+SKILL_POLICY_DRIFTS = (
+    "{n} sessions: the managed skill policy or /cm skill differs from this release (lazy state); each "
+    "applies at its next resume — or charmer doctor --repair-all now (stopped sessions)"
+)
+FORK_POLICY_DRIFTS = (
+    "{n} sessions: the fork-subagent deny (Agent(fork)) or model-fence failure policy differs from this "
+    "release (lazy state); each applies at its next resume — or charmer doctor --repair-all now (stopped "
+    "sessions)"
+)
+DEFAULT_MODE_DRIFTS = (
+    "{n} sessions: the compiled permission default mode differs from this launch's decision (lazy "
+    "state); each applies at its next resume"
+)
+# What a scope the earlier name compiled needs (doctor's one row for them).
+EARLIER_SCOPES_FIX = ("charmer doctor --repair-all recompiles the stopped ones now (H offers it); a running "
+                      "one is recompiled at its next resume")
 # A passthrough surface S14 proved to defeat the deny gets exactly
 # this one stderr line at launch (``compiler.SKILL_POLICY_BYPASS_FLAGS``).
 SKILL_POLICY_BYPASS_NOTICE = (
@@ -1146,3 +1170,71 @@ RAW_EDIT_KEPT = "your edit is kept at {tmp}"
 RAW_EDIT_TITLE = "profile {name} — not saved"
 SETTINGS_DEFAULT_TITLE = "default profile"
 SETTINGS_DEFAULT_CONNECTED = "connected"
+
+
+# ---------------------------------------------------------------- H: the findings list
+
+FINDINGS_TITLE = "charmer doctor"
+FINDINGS_KEYBAR = (("Enter", "act"), ("V", "details"), ("G", "gateway"), ("?", "help"), ("Esc", "back"))
+FINDINGS_MIN_COLS = 60
+# The top margin, title and rule; under the list its rule, two info lines,
+# the action line and the message row.
+FINDINGS_CHROME = 8
+FINDINGS_NONE = "Nothing blocks a launch and nothing needs a look."
+FINDINGS_ADVISORIES_CLOSED = "Enter: show them"
+FINDINGS_ADVISORIES_OPEN = "Enter: hide them"
+FINDINGS_ADVISORIES_NOTE = ("Optional evidence: it never changes the verdict. Its diagnostics run only when you "
+                            "start them (" + OPTIONAL_DIAGNOSTICS + ").")
+FINDINGS_MORE = "{n} findings in this row — V lists every one"
+# What Enter does on a row, by its action code; every other row shows its command.
+FINDINGS_ACTIONS = {
+    "hold": "Enter: why it holds, the fix and the clear-hold command",
+    "hold-coverage": "Enter: why it holds and the clear-hold command",
+    "missing-key": "Enter: set the key (G → K)",
+    "earlier-scopes": "Enter: repair every stopped session (asks first)",
+    "scope-repair": "Enter: repair every stopped session (asks first)",
+    "unused-alias": "Enter: prune the alias (asks first)",
+    "prune": "Enter: preview the cleanup of generated files, then confirm",
+    "dead-sessions": "Enter: record the end of every session that is not running (asks first)",
+    "seed-update": "Enter: the shipped changes, then reseed (asks first)",
+    "advisory-model": "Enter: optional diagnostics for this model (M → Q; " + OPTIONAL_DIAGNOSTICS + ")",
+    "needs-choice": "Enter: open Sessions to choose a lead",
+}
+FINDINGS_COMMAND_HINT = "Enter: what to do (its exact command)"
+FINDINGS_COMMAND_TITLE = "What to do"
+FINDINGS_COMMAND = "Its command: {command}"
+FINDINGS_HOLD_TITLE = "Persistence hold"
+FINDINGS_HOLD_CLEAR = ("Clearing it stays on the command line, with a typed confirmation, in a terminal outside "
+                       "Claude Code: charmer gateway clear-hold")
+FINDINGS_READ_ONLY = "this run is read-only; nothing was done"
+FINDINGS_CANCELLED = "nothing was done"
+FINDINGS_REPAIR_TITLE = "Repair every stopped session?"
+FINDINGS_REPAIR_BODY = ("charmer doctor --repair-all: every stopped session's generated scope is rebuilt from its "
+                        "record. Running sessions and sessions whose state cannot be told are skipped.")
+FINDINGS_REPAIR_BUTTONS = (("Cancel", False), ("Repair", True))
+FINDINGS_PRUNE_ALIAS_TITLE = "Prune alias {alias}?"
+FINDINGS_PRUNE_ALIAS_BODY = ("charmer doctor --prune-aliases {alias}: the gateway stops serving the alias; it is "
+                             "refused while a live session uses it.")
+FINDINGS_PRUNE_ALIAS_BUTTONS = (("Cancel", False), ("Prune", True))
+FINDINGS_PRUNE_TITLE = "Generated-state cleanup (charmer doctor --prune)"
+FINDINGS_PRUNE_QUESTION = "Prune these now? Only generated files with no living record are removed."
+FINDINGS_DEAD_TITLE = "Record the end of {n} session(s)?"
+FINDINGS_DEAD_BODY = ("charmer sessions mark-ended --all-dead: these sessions have no recorded end and are not "
+                      "running by every check: {ids}")
+FINDINGS_DEAD_BUTTONS = (("Cancel", False), ("Mark ended", True))
+FINDINGS_DEAD_NONE = "no session without a recorded end is dead by every check"
+FINDINGS_RESULT_TITLE = "{what} — result"
+FINDINGS_HELP_TITLE = "doctor findings — help"
+FINDINGS_HELP = (
+    "H lists charmer doctor's findings: BLOCKED first, then Attention by area (Gateway — a\n"
+    "persistence hold first —, Installation, Providers, Sessions, Profiles, Models), then the\n"
+    "advisories: optional evidence that never changes the verdict (Enter on their header shows them).\n"
+    "Repeated findings are one row; V shows every original line, as charmer doctor -v does.\n"
+    "Enter acts on the rows it knows: the persistence hold (why, and the clear-hold command),\n"
+    "a missing key (G → K), scopes to repair (repair-all, stopped sessions only), an unused alias\n"
+    "(prune-aliases), generated leftovers (the prune preview), sessions that need a lead (Sessions),\n"
+    "a newer shipped profile (reseed) and a model's optional diagnostics (M → Q; they\n"
+    + OPTIONAL_DIAGNOSTICS + "). Every action asks first and reuses the command's own checks;\n"
+    "any other row shows its exact command. Nothing here runs on its own.\n"
+    "G — the gateway's actions (start, restart, log). Esc — back to the card."
+)

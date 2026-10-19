@@ -50,8 +50,8 @@ or unknown ids refuse and list candidates instead of choosing a session.
 | health | H; S → P | `charmer doctor`; `charmer doctor --first-run`; `charmer doctor --repair <id>` | not a `/cm` request | Ready / Attention / BLOCKED |
 | quota | G (the quota column and Q details) | `charmer quota` | `/cm quota` | readings only in the Nix package in this release; an observation, not a balance |
 | review by another model family | not in the launcher: it runs inside a managed session, where the lead asks for it | no command: it runs inside a managed session, where the lead asks for it | `/cm review [high-stakes] [<range>]` | report only |
-| the gateway | G → W; D → W → Start now; H → r, l | `charmer gateway status`; `charmer gateway start`; `charmer gateway restart`; `charmer gateway logs` | not a `/cm` request | [guides/gateway.md](guides/gateway.md) |
-| the gateway as a user service (Linux) | H → i; G → W | `charmer gateway service install`; `charmer gateway service status` | not a `/cm` request | unit `charmer-gateway` |
+| the gateway | G → W; D → W → Start now; H → G → r, l | `charmer gateway status`; `charmer gateway start`; `charmer gateway restart`; `charmer gateway logs` | not a `/cm` request | [guides/gateway.md](guides/gateway.md) |
+| the gateway as a user service (Linux) | H → G → i; G → W | `charmer gateway service install`; `charmer gateway service status` | not a `/cm` request | unit `charmer-gateway` |
 | update | U | `charmer update --check`; `charmer update` | not a `/cm` request | shows its plan, then asks |
 | roll back, uninstall | not in the launcher: it replaces or removes the running installation, so it runs from a terminal where the launcher starts again cleanly | `charmer update --rollback`; `charmer uninstall --dry-run` | not a `/cm` request | [update.md](update.md), [uninstall.md](uninstall.md) |
 | export, import | not in the launcher: portable-file input and output: the file is written for, or read from, another computer | `charmer export --out <file>`; `charmer import <file>` | not a `/cm` request | no keys travel |
@@ -76,9 +76,10 @@ exit status; the availability hint is text-only ([tasks](reference/tasks.md)).
 
 | Screen | Keys |
 | --- | --- |
-| launch card (`charmer`) | **Enter** launch the profile on the card · **U** update charmer (shown when an update applies) · **W** open Get started · **E** edit the profile on the card · **Tab** show the next profile (Shift-Tab: the previous one) · **P** open Profiles · **D** open Direct · **V** every card row in full, the /model lead set and the kept environment · **S** open Sessions · **G** open Providers · **M** open Models · **O** open Settings · **H** run doctor here, then the gateway's actions · **?** this screen's help · **Esc** leave without launching |
-| resume card (`charmer -r <id>`) | **Enter** resume the session with the lineup shown · **U** update charmer (shown when an update applies) · **V** every card row in full, the /model lead set and the kept environment · **S** open Sessions · **H** run doctor here, then the gateway's actions · **?** this screen's help · **Esc** go back without resuming |
+| launch card (`charmer`) | **Enter** launch the profile on the card (while nothing is connected: open Get started) · **L** launch while nothing is connected yet · **U** check for and install a newer charmer · **W** open Get started · **E** edit the profile on the card · **Tab** show the next profile (Shift-Tab: the previous one) · **P** open Profiles · **D** open Direct · **V** every card row in full, the /model lead set and the kept environment · **S** open Sessions · **G** open Providers · **M** open Models · **O** open Settings · **H** doctor's findings: act on a row, the full report, the gateway's actions · **?** this screen's help · **Esc** leave without launching |
+| resume card (`charmer -r <id>`) | **Enter** resume the session with the lineup shown · **U** check for and install a newer charmer · **V** every card row in full, the /model lead set and the kept environment · **S** open Sessions · **H** doctor's findings: act on a row, the full report, the gateway's actions · **?** this screen's help · **Esc** go back without resuming |
 | sessions (S) | **Enter** resume the selected session · **V** identity, directory, lineup, pending change, drift and usage · **T** change the session's lineup, with its effect first · **F** follow the session's profile or pin its lineup · **R** rename the session (shown here only) · **X** forget the record and its generated scope · **E** stop a session running in the background · **M** record the end of a session that exited without one · **P** rebuild the session's generated scope · **L** manage a native session · **C** this directory or all directories · **?** this screen's help · **Esc** back |
+| doctor findings (H) | **Enter** act on the finding (its fixed action, asked first) or show its exact command · **V** the full report, every original line · **G** the gateway's actions: start, restart, service install, log · **?** this screen's help · **Esc** back to the card |
 | lineup dialog (S → T) | **Enter** apply the previewed change · **Tab** move to the next kind of change · **← →** cycle the profiles or fallback providers · **Space** list the choices of the current target · **?** this screen's help · **Esc** close without writing |
 | direct (D) | **Enter** launch the model as a direct session · **Tab** save the choice as a lead-only profile · **G** open Providers · **← →** choose the effort of a gateway-effort model · **W** start the local gateway or read its log · **?** this screen's help · **Esc** back |
 | providers (G) | **Enter** the row's main action: set a key, sign in, connect, approve or details · **P** make the gateway serve your changes · **K** set or replace an API key · **X** remove the key, the sign-in or a provider you added · **L** sign in or out of an account provider · **T** test the provider · **A** add models to the provider · **Space** turn the provider on or off · **Q** the provider's details · **E** edit a provider you added · **N** add a provider · **R** read the gateway again · **W** start the local gateway or read its log · **?** this screen's help · **Esc** back |
@@ -112,10 +113,14 @@ Inside a session: `/model` offers the lead set only (press `s` to change it for 
 ## Troubleshooting (symptom → command)
 
 The first command is the one to try. Text in curly quotes is what
-charmer prints. A held gateway comes first: when doctor reports a
-gateway credential save that failed or is unconfirmed, keep the gateway
-running and follow [the persistence hold](guides/gateway.md#the-persistence-hold)
-before any restart.
+charmer prints. A held gateway comes first, and doctor lists it first:
+BLOCKED, then Attention by area (Gateway with the hold first, Installation,
+Providers, Sessions, Profiles, Models), then the advisories, optional
+evidence that never changes the verdict; `doctor -v` prints every repeated
+line. When doctor reports a gateway credential save that failed or is
+unconfirmed, keep the gateway running and follow
+[the persistence hold](guides/gateway.md#the-persistence-hold) before any
+restart.
 
 ### Gateway
 
@@ -137,6 +142,9 @@ before any restart.
 | want it supervised (Linux) | `charmer gateway service install`; back to on demand: `charmer gateway service uninstall` |
 | one provider's agents stall; doctor counts 429, 402 or 403 for a model | `/cm fallback <provider>`, then `/reload-plugins`; new launches: P → F |
 | HTTP 400 `prompt_cache_retention is not supported on this model` | the running gateway predates the release: `charmer gateway restart` between turns |
+| doctor: “gateway persistence hold: HELD because part of the log could not be evaluated” | keep it running; `charmer providers list`, then `charmer gateway clear-hold` in a terminal outside Claude Code |
+| the gateway does not start after `charmer update`; doctor: “if this began after charmer update” | `charmer update --rollback`, then `charmer gateway start` |
+| doctor: “continuity alias <alias> is not served” or “has no line — prune when unused” | once no live session uses it: `charmer doctor --prune-aliases <alias>` |
 
 ### Providers and models
 
@@ -174,6 +182,9 @@ before any restart.
 | ⚠; doctor: “has an unresolved native fork” | Enter on the row (adopt or discard), or `charmer sessions resolve-fork <id> <fork-id>` |
 | !; doctor: “identity is repair-needed” | `charmer -r <id>`, or `charmer sessions relink-runtime <id> <runtime-id>` |
 | ● or ◐ but the session is gone | `charmer sessions mark-ended <id>` (all: `charmer sessions mark-ended --all-dead`) |
+| doctor: “session(s) need a profile or model choice (lead removed)” | `charmer -r <id>` asks for one; or `charmer lineup --session <runtime-id> --relaunch profile <name>` |
+| doctor: “session scope(s) were compiled by <earlier name>” | `charmer doctor --repair-all` (stopped sessions); a running one recompiles at its next resume |
+| doctor: “Advisories (optional evidence; does not change the verdict)” | nothing is required; optional: `charmer models qualify <line> --agents` or M → Q |
 | doctor: “scope differs from the record-authoritative compile”, “scope unreadable” or “scope(s) diverged from record authority” | `charmer doctor --repair <id>`; all stopped sessions: `charmer doctor --repair-all` |
 | doctor: “compiled hook target” | `charmer doctor --repair <id>` |
 | doctor: “session record <id> is unreadable” | `charmer sessions show <id>` names the error; never edit the record |
@@ -201,7 +212,7 @@ before any restart.
 
 | You see | Do |
 |---|---|
-| the update badge on the card | `U`, or `charmer update` |
+| the card's release row: “U checks for a newer release” | `U` checks (or `charmer update`); the card itself checks nothing |
 | “this account's charmer state belongs to the <channel> installation” | use that installation, or follow the printed fix |
 | an install or update was interrupted | `sh install.sh --repair`, or run `charmer update` again |
 | uninstall refuses: sessions may still run | end them (`charmer -r` shows ● and ◐), then run it again |

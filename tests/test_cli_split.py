@@ -173,7 +173,15 @@ class DoctorSplitTests(unittest.TestCase):
         "CONFIG_DIR_IGNORED",
         "_doctor_config_dir_report", "_provider_secret_names", "_doctor_env_keep_report",
         "_doctor_new_lines_report", "_diagnostic", "_health_backend",  # doctor facts: new checks, not moves
-        "DOCTOR_SUMMARY", "DETAIL_PREFIXES", "detail_line", "repair_offer",  # the report's shared rendering
+        "DOCTOR_SUMMARY", "DETAIL_PREFIXES", "detail_line",  # the report's shared rendering
+        # Areas, action codes, advisories and the grouped rows plain doctor and H share.
+        "ACTIONS", "ADVISORIES_TITLE", "ADVISORY", "ADVISORY_CODES", "AREAS", "OTHER_AREA", "SHOWN_IDS",
+        "VERBOSE_HINT", "EARLIER_SCOPES", "_EARLIER_SCOPES_SUMMARY", "_LEVEL_ORDER", "_QUALIFY_CODES",
+        "Row", "Presentation", "present_report", "report_lines", "_area_index", "_listed", "_plural",
+        "_model_text", "advisory_remedy", "DoctorDiagnostic",
+        "_per_session", "_tag_model", "_slot_key", "_workflow_key", "_keyed_provider", "_operator_agent_warnings",
+        "Line", "tagged", "in_area",  # tagged doctor lines (area, action, group)
+        "rollback_remedy",  # the way back after a gateway-changing update
         "_earlier_shim", "_compiled_by_earlier_release",  # scopes the earlier release compiled
     })
 

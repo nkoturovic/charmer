@@ -23,8 +23,9 @@ is 0 for `available`, `stale` or `exhausted`, 1 for `management-disabled`,
 
 | Key on the card | What it does |
 | --- | --- |
-| Enter | launch the profile on the card |
-| U | update charmer (shown when an update applies) |
+| Enter | launch the profile on the card (while nothing is connected: open Get started) |
+| L | launch while nothing is connected yet |
+| U | check for and install a newer charmer |
 | W | open Get started |
 | E | edit the profile on the card |
 | Tab | show the next profile (Shift-Tab: the previous one) |
@@ -35,7 +36,7 @@ is 0 for `available`, `stale` or `exhausted`, 1 for `management-disabled`,
 | G | open Providers |
 | M | open Models |
 | O | open Settings |
-| H | run doctor here, then the gateway's actions |
+| H | doctor's findings: act on a row, the full report, the gateway's actions |
 | ? | this screen's help |
 | Esc | leave without launching |
 
@@ -45,7 +46,7 @@ In full: [quickstart.md](../quickstart.md).
 
 | Task | TUI | CLI | In-session | Notes |
 | --- | --- | --- | --- | --- |
-| launch the profile shown on the card | card → Enter: the card's profile can launch | `charmer` | not a `/cm` request | asks nothing |
+| launch the profile shown on the card | card → Enter: the card's profile can launch; card → L: nothing is connected yet | `charmer` | not a `/cm` request | asks nothing |
 | choose the profile to launch | card → Tab: more than one profile; card → P → Enter: a profile that can be loaded | `charmer --profile <name>` | not a `/cm` request | asks nothing |
 | launch one model as the lead (choose the model and its effort) | card → D; card → D → Enter: a lead-capable model is offered; card → D → ← →: a model whose gateway serves several efforts | `charmer direct [--model <model>]` | not a `/cm` request | asks nothing |
 | continue the last session in this directory | card → S → Enter on this directory's newest session: a session here | `charmer -c`; `charmer direct -c` | not a `/cm` request | asks nothing |
@@ -64,7 +65,7 @@ In full: [quickstart.md](../quickstart.md).
 
 | Task | TUI | CLI | In-session | Notes |
 | --- | --- | --- | --- | --- |
-| show the setup steps and what is done | card → W; card → P → W | `charmer setup --status` | not a `/cm` request | asks nothing |
+| show the setup steps and what is done | card → W; card → Enter: nothing is connected yet; card → P → W | `charmer setup --status` | not a `/cm` request | asks nothing |
 | run the steps not done yet, in order | card → W → Enter on the first open step: a step not done | `charmer setup` | not a `/cm` request | asks nothing |
 | run one step again, done or not | card → W → Enter on any step | `charmer setup --step <step>`; `charmer setup --redo` | not a `/cm` request | asks nothing |
 | check this computer before anything is installed | card → W → this computer | `charmer setup --step preflight` | not a `/cm` request | asks nothing |
@@ -85,7 +86,7 @@ In full: [update.md](../update.md).
 
 | Task | TUI | CLI | In-session | Notes |
 | --- | --- | --- | --- | --- |
-| show the release identity (launcher, catalog, gateway, Claude Code) | not in the launcher: a one-line report for issue reports; the card's U names an available update | `charmer --version` | not a `/cm` request | asks nothing |
+| show the release identity (launcher, catalog, gateway, Claude Code) | not in the launcher: a one-line report for issue reports; the card's release row names the installed version and U checks for a newer one | `charmer --version` | not a `/cm` request | asks nothing |
 | check whether a newer release exists | card → U: the update badge is shown; charmer -r → U: the update badge is shown | `charmer update --check` | not a `/cm` request | asks nothing |
 | update an installed release (plan, confirm, install) | card → U: an installed release with an update | `charmer update`; `charmer update --yes` | not a `/cm` request | asks first: y/N, default No; --yes off a terminal |
 | update the Nix package (the flake names the update) | card → U: the Nix package | `charmer update` | not a `/cm` request | asks nothing |
@@ -100,12 +101,12 @@ In full: [guides/gateway.md](../guides/gateway.md).
 
 | Task | TUI | CLI | In-session | Notes |
 | --- | --- | --- | --- | --- |
-| the gateway's backend, endpoint, instance and hold | card → G → W: the gateway is not reachable; card → H | `charmer gateway status` | not a `/cm` request | asks nothing |
+| the gateway's backend, endpoint, instance and hold | card → G → W: the gateway is not reachable; card → H → G | `charmer gateway status` | not a `/cm` request | asks nothing |
 | start the gateway and wait until it is ready | card → D → W → Start now: the gateway is stopped; card → G → W → Start now: the gateway is stopped | `charmer gateway start` | not a `/cm` request | asks nothing |
 | exit 0 only when the gateway runs and is ready (for scripts) | not in the launcher: the readiness contract of scripts and the token helper; every launch ensures it | `charmer gateway ensure`; `charmer gateway ensure --quiet` | not a `/cm` request | for scripts; asks nothing |
-| stop, then start your gateway | card → H → r: the gateway is proven yours | `charmer gateway restart` | not a `/cm` request | asks nothing |
+| stop, then start your gateway | card → H → G → r: the gateway is proven yours | `charmer gateway restart` | not a `/cm` request | asks nothing |
 | stop your gateway | not in the launcher: a launch never needs it and it is refused while the persistence hold is active; run charmer gateway stop in a terminal | `charmer gateway stop` | not a `/cm` request | asks nothing |
-| the newest gateway log lines | card → H → l; card → G → W → Show log: the gateway is not reachable | `charmer gateway logs` | not a `/cm` request | asks nothing |
+| the newest gateway log lines | card → H → G → l; card → G → W → Show log: the gateway is not reachable | `charmer gateway logs` | not a `/cm` request | asks nothing |
 | the log of one earlier gateway instance | not in the launcher: historical inspection of an earlier instance by its id; the TUI shows the current instance's log | `charmer gateway logs --instance <nonce>` | not a `/cm` request | maintenance; asks nothing |
 | clear the persistence hold after verifying the credentials | not in the launcher: it needs a typed confirmation in a terminal outside Claude Code: charmer gateway clear-hold | `charmer gateway clear-hold` | not a `/cm` request | asks first: typed confirmation |
 
@@ -116,7 +117,7 @@ In full: [guides/gateway.md](../guides/gateway.md).
 | Task | TUI | CLI | In-session | Notes |
 | --- | --- | --- | --- | --- |
 | whether the supervised service is installed | card → G → W: the gateway is not reachable | `charmer gateway service status` | not a `/cm` request | asks nothing |
-| install or refresh the supervised service | card → H → i: a user service manager and no service (or a stale one) | `charmer gateway service install` | not a `/cm` request | asks nothing |
+| install or refresh the supervised service | card → H → G → i: a user service manager and no service (or a stale one) | `charmer gateway service install` | not a `/cm` request | asks nothing |
 | hand the gateway back to the on-demand start | not in the launcher: it reverses a deliberate choice and changes the service manager; run charmer gateway service uninstall in a terminal | `charmer gateway service uninstall` | not a `/cm` request | asks nothing |
 
 ## Providers
@@ -144,7 +145,7 @@ In full: [providers/api-keys.md](../providers/api-keys.md).
 
 | Task | TUI | CLI | In-session | Notes |
 | --- | --- | --- | --- | --- |
-| set or replace a provider's API key (a key other providers share is replaced for each of them, after a question naming them) | card → G → K: a provider with an API key; card → G → Enter: a provider whose key is missing; card → G → K on OpenAI: OpenAI with its API key in use; card → G → K on Anthropic: Anthropic's API key in use and not saved; card → G → K on a shared key: another provider uses the saved key | `charmer providers set-key <provider>`; `charmer providers set-key <provider> --yes` | not a `/cm` request | asks first: y/N, default No |
+| set or replace a provider's API key (a key other providers share is replaced for each of them, after a question naming them) | card → G → K: a provider with an API key; card → G → Enter: a provider whose key is missing; card → H → Enter on a missing key: doctor names a provider without its key; card → G → K on OpenAI: OpenAI with its API key in use; card → G → K on Anthropic: Anthropic's API key in use and not saved; card → G → K on a shared key: another provider uses the saved key | `charmer providers set-key <provider>`; `charmer providers set-key <provider> --yes` | not a `/cm` request | asks first: y/N, default No |
 | after a key for a provider with no models, add one and optionally record an admission badge | card → G → K on a provider with no models → add models: no model lines | `charmer models add <provider> <wire> --context <n> --source docs\|operator\|registry`; `charmer models admit <line>` | not a `/cm` request | asks nothing |
 | remove a provider's saved API key | card → G → X: a shipped provider with a key set | `charmer providers remove-key <provider>` | not a `/cm` request | asks first: y/N, default No |
 | remove a key kept after its provider was removed | not in the launcher: a key without a provider has no row to select; removing the provider (X) offers its key at that moment | `charmer providers remove-key <provider> --name <key-name>` | not a `/cm` request | asks first: y/N, default No |
@@ -173,7 +174,7 @@ In full: [guides/models.md](../guides/models.md).
 | remove only the admission badge (use and evidence unchanged) | card → M → Enter: an admitted line | `charmer models revoke <line>`; `charmer models revoke <line> --yes` | not a `/cm` request | asks first: y/N, default No; --yes off a terminal |
 | remove a line you added | card → M → X: a model you declared | `charmer models rm <line>` | not a `/cm` request | asks first: y/N, default No |
 | remove a line and rewrite what uses it to a successor | card → M → X → choose a replacement: a model a profile uses | `charmer models rm <line> --successor <line>` | not a `/cm` request | asks first: y/N, default No |
-| optional model diagnostics (consented, bounded checks) | card → M → Q: a model you declared | `charmer models qualify <line>`; `charmer models qualify <line> --smoke`; `charmer models qualify <line> --efforts`; `charmer models qualify <line> --tools`; `charmer models qualify <line> --stream`; `charmer models qualify <line> --context <n>`; `charmer models qualify <line> --agents` | not a `/cm` request | asks first: consent naming every request |
+| optional model diagnostics (consented, bounded checks) | card → M → Q: a model you declared; card → H → Enter on an advisory model: an advisory names a model you declared | `charmer models qualify <line>`; `charmer models qualify <line> --smoke`; `charmer models qualify <line> --efforts`; `charmer models qualify <line> --tools`; `charmer models qualify <line> --stream`; `charmer models qualify <line> --context <n>`; `charmer models qualify <line> --agents` | not a `/cm` request | asks first: consent naming every request |
 
 ## Model listings
 
@@ -201,7 +202,7 @@ In full: [guides/profiles.md](../guides/profiles.md).
 | preview where reviews route in a profile | profile editor → R: the editor | `charmer profile show [<name>]` | not a `/cm` request | asks nothing |
 | rename a profile (the default and followers move with it) | card → P → R: a profile of yours | `charmer profile rename <name> <new>` | not a `/cm` request | asks nothing |
 | remove a profile of yours (a copy is kept) | card → P → X: a profile of yours | `charmer profile rm <name>`; `charmer profile rm <name> --yes` | not a `/cm` request | asks first: y/N, default No; --yes off a terminal |
-| restore or update a shipped profile (your version is kept) | card → P → U: a shipped profile that changed | `charmer profile reseed <name>`; `charmer profile reseed <name> --yes` | not a `/cm` request | asks first: y/N, default No; --yes off a terminal |
+| restore or update a shipped profile (your version is kept) | card → P → U: a shipped profile that changed; card → H → Enter on a newer shipped profile: doctor names a newer shipped profile | `charmer profile reseed <name>`; `charmer profile reseed <name> --yes` | not a `/cm` request | asks first: y/N, default No; --yes off a terminal |
 | list only the fallback profiles | card → P → F | `charmer profile list` | not a `/cm` request | asks nothing |
 | show or set the default profile | card → P → D: a profile that can be loaded; card → O → default profile → Enter | `charmer profile default [<name>]` | not a `/cm` request | asks nothing |
 | go back to choosing the default automatically | card → P → D on the default: the default profile; card → O → default profile → R: a default is set | `charmer profile default [<name>] --clear` | not a `/cm` request | asks nothing |
@@ -213,7 +214,7 @@ In full: [guides/sessions.md](../guides/sessions.md).
 
 | Task | TUI | CLI | In-session | Notes |
 | --- | --- | --- | --- | --- |
-| list managed sessions | card → S; charmer -r → S: the resume card | `charmer sessions list`; `charmer sessions list --json` | not a `/cm` request | asks nothing |
+| list managed sessions | card → S; charmer -r → S: the resume card; card → H → Enter on sessions that need a lead: sessions need a lead choice | `charmer sessions list`; `charmer sessions list --json` | not a `/cm` request | asks nothing |
 | this directory's sessions or every directory's | card → S → C | `charmer sessions list` | not a `/cm` request | asks nothing |
 | a session's identity, directory, lineup, pending change and usage | card → S → V: a session row | `charmer sessions show <id>` | not a `/cm` request | asks nothing |
 | name a session (shown in the TUI) | card → S → R: a current-format session | no command: a session's name is a label of the TUI's list; commands take its id, a prefix or the name | not a `/cm` request | asks nothing |
@@ -222,9 +223,9 @@ In full: [guides/sessions.md](../guides/sessions.md).
 | stop a session running in the background | card → S → E: a running session | `charmer sessions stop <id>` | not a `/cm` request | asks first: y/N, default No; --yes off a terminal |
 | stop a session whose liveness cannot be determined | card → S → E → type the id: liveness unknown | `charmer sessions stop <id> --force` | not a `/cm` request | asks first: typed session id when liveness is unknown |
 | record the end of a session that exited without one | card → S → M: a session that exited without an end | `charmer sessions mark-ended <id>` | not a `/cm` request | asks first: dialog with Cancel focused first |
-| record the end of every session that exited without one | not in the launcher: bulk maintenance over every record; M marks one session after showing it | `charmer sessions mark-ended --all-dead` | not a `/cm` request | maintenance; asks nothing |
+| record the end of every session that exited without one | card → H → Enter on sessions without a recorded end → Mark ended: doctor names sessions without a recorded end | `charmer sessions mark-ended --all-dead` | not a `/cm` request | maintenance; asks first: dialog with Cancel focused first |
 | rebuild one session's generated scope | card → S → P: a current-format session | `charmer doctor --repair <id>` | not a `/cm` request | asks first: dialog with Cancel focused first |
-| rebuild every session's generated scope | card → H → repair all: a finding names it | `charmer doctor --repair-all`; `charmer doctor --repair-all --include-live` | not a `/cm` request | asks nothing |
+| rebuild every session's generated scope | card → H → Enter on a scope to repair → Repair: a finding names a scope repair | `charmer doctor --repair-all`; `charmer doctor --repair-all --include-live` | not a `/cm` request | asks first: dialog with Cancel focused first |
 | adopt a native session | card → S → L: a native session here | `charmer sessions link <runtime-id> [--profile <name> \| --direct <model>]` | not a `/cm` request | asks nothing |
 | repair a record with the native runtime id | card → S → Enter → Relink: the resume gate finds another runtime id | `charmer sessions relink-runtime <id> <runtime-id>` | not a `/cm` request | asks nothing |
 | point a session at its moved project directory | card → S → Enter → Relink to …: the project directory moved; card → S → Enter → Relink to… → a directory: the transcript is filed under a directory that cannot be told apart or no longer exists | `charmer sessions relink-runtime <id> <runtime-id> --cwd <dir>` | not a `/cm` request | asks nothing |
@@ -256,7 +257,7 @@ In full: [troubleshooting.md](../troubleshooting.md).
 
 | Task | TUI | CLI | In-session | Notes |
 | --- | --- | --- | --- | --- |
-| check this installation and its sessions | card → H; charmer -r → H: the resume card | `charmer doctor`; `charmer doctor --verbose` | not a `/cm` request | asks nothing |
+| check this installation and its sessions | card → H; charmer -r → H: the resume card; card → H → V | `charmer doctor`; `charmer doctor --verbose` | not a `/cm` request | asks nothing |
 | the first-run checks in order, one fix each | card → H: nothing is connected yet | `charmer doctor --first-run` | not a `/cm` request | asks nothing |
 | the structured report with its environment block | not in the launcher: a machine-readable report for scripts and issue reports; the screens show the same facts | `charmer doctor --json` | not a `/cm` request | for scripts; asks nothing |
 | account quota and credential health (readings only in the Nix package in this release) | card → G (the quota column and Q details): an account provider | `charmer quota`; `charmer quota --json` | `/cm quota` | asks nothing |
@@ -311,9 +312,9 @@ In full: [troubleshooting.md](../troubleshooting.md).
 
 | Task | TUI | CLI | In-session | Notes |
 | --- | --- | --- | --- | --- |
-| preview removing stale staging and orphan scopes | not in the launcher: guarded maintenance of generated state, run deliberately from a terminal | `charmer doctor --preview` | not a `/cm` request | maintenance; asks nothing |
-| remove stale staging and scopes whose records are gone | not in the launcher: guarded maintenance of generated state, run deliberately from a terminal | `charmer doctor --prune` | not a `/cm` request | maintenance; asks nothing |
-| remove continuity aliases no live session uses | not in the launcher: guarded maintenance of generated state, run deliberately from a terminal | `charmer doctor --prune-aliases [<alias>…]` | not a `/cm` request | maintenance; asks nothing |
+| preview removing stale staging and orphan scopes | card → H → Enter on generated leftovers: doctor names leftovers to prune | `charmer doctor --preview` | not a `/cm` request | maintenance; asks nothing |
+| remove stale staging and scopes whose records are gone | card → H → Enter on generated leftovers → y: doctor names leftovers to prune | `charmer doctor --prune` | not a `/cm` request | maintenance; asks first: y/N, default No |
+| remove continuity aliases no live session uses | card → H → Enter on an unused alias → Prune: doctor names an alias nothing serves | `charmer doctor --prune-aliases [<alias>…]` | not a `/cm` request | maintenance; asks first: dialog with Cancel focused first |
 
 ## Reviews
 
