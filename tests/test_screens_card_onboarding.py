@@ -368,9 +368,45 @@ class HealthKeyTests(CardOnboardingCase):
     def test_h_is_doctor_once_something_is_connected(self) -> None:
         screen = self.card()
         self.assertFalse(screen.not_connected)
-        with mock.patch.object(launch_sessions._LaunchCardScreen, "_run_health") as doctor:
+        with mock.patch.object(launch_sessions._LaunchCardScreen, "_run_health", return_value=None) as doctor:
             self.run_card(screen, ["h", ESC])
         doctor.assert_called_once()
+
+
+class NotConnectedEnterTests(CardOnboardingCase):
+    """Enter while nothing is connected leads into Get started, never into
+    a session that cannot work; L launches all the same (line mode's "no"
+    to setup)."""
+
+    def test_enter_opens_get_started_instead_of_a_launch(self) -> None:
+        disconnect(self.runtime)
+        screen = self.card()
+        self.assertTrue(screen.not_connected)
+        self.assertTrue(screen.card.ready)  # a launch would start, and every request fail
+        with self.get_started() as calls:
+            result, win = self.run_card(screen, [ENTER, ESC])
+        self.assertIsNone(result)
+        self.assertEqual(len(calls), 1)
+        self.assertFalse(calls[0]["resume"])
+        self.assertEqual(self.runtime.launches, [])
+        self.assertIn("Enter get started · L launch anyway", win.frames[0])
+
+    def test_l_launches_anyway(self) -> None:
+        disconnect(self.runtime)
+        screen = self.card()
+        with self.get_started() as calls:
+            result, _win = self.run_card(screen, ["l"])
+        self.assertEqual(calls, [])
+        self.assertEqual(result[0], "perform")
+        self.assertIs(result[1], screen.prepared)
+
+    def test_once_connected_enter_launches_and_l_does_nothing(self) -> None:
+        screen = self.card()
+        self.assertFalse(screen.not_connected)
+        with self.get_started() as calls:
+            result, _win = self.run_card(screen, ["l", ENTER])
+        self.assertEqual(calls, [])
+        self.assertEqual(result[0], "perform")
 
 
 # ================================================================ rows and bars
@@ -385,7 +421,7 @@ class CardRowsTests(CardOnboardingCase):
         update = (views.CARD_KEYS_FRESH[0], ("U", "update"), *views.CARD_KEYS_FRESH[1:])
         self.assertEqual(tui.KeyBar(update).rows(80), 2)
 
-    def test_not_connected_bar_offers_w(self) -> None:
+    def test_not_connected_bar_offers_get_started_on_enter(self) -> None:
         disconnect(self.runtime)
         screen = self.card()
         self.assertEqual(screen.card.keys, views.CARD_KEYS_NOT_CONNECTED)

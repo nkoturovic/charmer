@@ -678,18 +678,48 @@ SECRET_REMEDY = "set a key: G (providers) → K"
 SECRET_REMEDY_RESUME = "set a key: {way}, G → K, then S to resume"
 # A resume card that charmer -r opened: Esc ends charmer.
 RESUME_WAY_DIRECT = "Esc, run charmer"
-CARD_NOT_CONNECTED = "! nothing is connected yet — W opens Get started"
+CARD_NOT_CONNECTED = "! nothing is connected yet — Enter opens Get started"
 CARD_SEED_UPDATES = "! {n} shipped profile(s) have updates: {names} — P → U (your edits are kept as a backup)"
 CARD_UNLOADABLE = "profile {name} cannot be loaded: {path} line {line}: {detail}"
 CARD_UNLOADABLE_NO_LINE = "profile {name} cannot be loaded: {path}: {detail}"
 CARD_UNLOADABLE_FIX = "P opens Profiles: E edits the file, X deletes it (a copy is kept) · Tab picks another"
 CARD_DEFAULT_MARK = " (default)"
 EDITOR_SEED_NAG = "a newer shipped version exists — P → U shows the changes (your version is kept as a backup)"
+# While nothing is connected Enter opens Get started (a session could not
+# work yet); L launches all the same, as line mode's "no" to setup does.
 CARD_KEYS_NOT_CONNECTED = (
-    ("Enter", "launch"), ("W", "get started"), ("P", "profiles"), ("D", "direct"), ("V", "details"),
+    ("Enter", "get started"), ("L", "launch anyway"), ("P", "profiles"), ("D", "direct"), ("V", "details"),
     ("S", "sessions"), ("G", "providers"), ("M", "models"), ("O", "settings"), ("H", "doctor"), ("?", "help"),
     ("Esc", ""),
 )
+# The release row's key: a check, never a claim that an update exists (the
+# card checks nothing in the background).
+CARD_UPDATE_CHECK = "U checks for a newer release"
+CARD_NIX_NOTE = "updated through your Nix flake"
+CARD_UPDATE_NIX = "U says how"
+# The persistence hold, evaluated with the card's health check: its kind,
+# and the row that says it and names the clear-hold route. Only a hold whose
+# every reason is incomplete log coverage has a kind of its own; any other
+# (a failed save, an unreadable hold record, an evaluation that failed) is
+# held: a credential save may be unresolved, and H shows which reason.
+CARD_HOLD_COVERAGE_KIND = "coverage"
+CARD_HOLD_HELD_KIND = "held"
+CARD_HOLD_ROWS = {
+    CARD_HOLD_COVERAGE_KIND: (
+        "! persistence hold: held — log coverage incomplete, not a failed save; check the credentials, then "
+        "clear it outside Claude Code: charmer gateway clear-hold (H shows why)",
+        "! gateway held: log coverage only, no failed save — charmer gateway clear-hold outside Claude Code "
+        "(H shows why)",
+        "! gateway held (log coverage, no failed save) — H shows the clear-hold route",
+    ),
+    CARD_HOLD_HELD_KIND: (
+        "! persistence hold: held — a credential save may be unresolved; keep the gateway running, then clear "
+        "it outside Claude Code: charmer gateway clear-hold (H shows why and the fix)",
+        "! gateway held: a credential save may be unresolved — keep it running; H shows why and charmer "
+        "gateway clear-hold",
+        "! gateway held (a save may be unresolved) — H shows the clear-hold route",
+    ),
+}
 # The resume card's bar after Enter (and U when an update applies).
 CARD_KEYS_RESUME = (("V", "details"), ("S", "sessions"), ("H", "doctor"), ("?", "help"), ("Esc", "cancel"))
 CARD_KEYS_FRESH = (
@@ -767,6 +797,7 @@ def card_model(
     secret_problems: Sequence[str] = (),
     collisions: Sequence[str] = (),
     health: Sequence[Any] | None = None,
+    hold: str | None = None,
     quota_row: tuple[str, str] | None = None,
     start_hint: str = "",
     update_hint: tuple[str, str] | None = None,
@@ -794,9 +825,13 @@ def card_model(
     ``(gateway_problem, gateway_checked, pin, contract_source,
     catalog_version)`` or None (line mode: no loopback call); a down row
     names ``start_hint`` (the caller's ``cli.gateway_service_hint("start")``).
+    ``hold`` is the persistence hold the health check found
+    (``CARD_HOLD_COVERAGE_KIND`` or ``CARD_HOLD_HELD_KIND``; None when
+    none holds or it is not observed): its row says which and names the
+    clear-hold route, and the card is Attention.
     ``update_hint`` is the installed release's ``(version,
     note)`` (``release_update.card_hint``); a note about an old release
-    warns.  ``project`` is ``(project agent count, collision
+    warns, and the row says U checks (never that an update exists).  ``project`` is ``(project agent count, collision
     texts)``; ``collisions`` are the BLOCKED collision lines.
     ``claude_row`` is the pinned Claude Code's fact line or None.  With
     ``lineup`` None the lineup-derived rows (3–10, 13–15, 17, 18) are
@@ -914,12 +949,16 @@ def card_model(
             )
         elif checked:
             note = " (operator override)" if contract_source == "override" else ""
+            state = "gateway ok, held" if hold in CARD_HOLD_ROWS else "gateway ok"
             rows.append(
                 CardRow(
                     "health", "health",
-                    f"gateway ok · Claude {pin}{note} · catalog {catalog_version}", "dim", 1,
+                    f"{state} · Claude {pin}{note} · catalog {catalog_version}", "dim", 1,
                 )
             )
+        if hold in CARD_HOLD_ROWS:
+            text, *shorter = CARD_HOLD_ROWS[hold]
+            rows.append(CardRow("hold", "", text, "warn", 1, col=2, short_forms=tuple(shorter)))
     if quota_row is not None:
         text, role = quota_row
         rows.append(CardRow("quota", "quota", text, role, 1))
@@ -930,10 +969,11 @@ def card_model(
     if update_hint is not None:
         installed, note = update_hint
         old_release = " days old" in note
+        key = CARD_UPDATE_NIX if note == CARD_NIX_NOTE else CARD_UPDATE_CHECK
         rows.append(
             CardRow(
                 "update", "update",
-                f"charmer {installed} · {note} · press U to update",
+                f"charmer {installed} · {note} · {key}",
                 "warn" if old_release else "dim", 1 if old_release else 6,
                 label_role="warn" if old_release else "dim",
             )
@@ -1148,7 +1188,7 @@ CARD_WORKTREE_SHORT = (
     "implementers unavailable: not a Git repository here (git init enables them)",
 )
 # Rows that make a launchable card Attention rather than Ready.
-CARD_ATTENTION_KINDS = frozenset({"not-connected", "readiness", "config-dir"})
+CARD_ATTENTION_KINDS = frozenset({"not-connected", "readiness", "config-dir", "hold"})
 # Notice rows: (role, fit priority). Their rows are kept ahead of the
 # review row and the agent table, so a short card still shows them.
 _CARD_NOTICE_STYLE = {"config-dir": ("warn", 1), "new-lines": ("dim", 2), "worktree": ("dim", 2)}
@@ -1175,8 +1215,8 @@ def card_with_notices(model: CardModel, notices: Sequence[tuple[str, ...]]) -> C
 def card_status(model: CardModel) -> str:
     """The card's health in doctor's words: ``blocked`` when the launch is
     refused, ``attention`` when it can launch but something needs a look
-    (nothing connected, a slot not ready, an unreachable gateway, a quota
-    warning, an ignored CLAUDE_CONFIG_DIR), else ``ready``. Launch eligibility stays ``model.ready``."""
+    (nothing connected, a slot not ready, an unreachable or held gateway, a
+    quota warning, an ignored CLAUDE_CONFIG_DIR), else ``ready``. Launch eligibility stays ``model.ready``."""
 
     if not model.ready:
         return "blocked"
@@ -1237,7 +1277,7 @@ def card_text(
     widths = card_widths(model, width)
     lines: list[str] = []
     if line_mode:
-        skip = {"health", "update", "notice", "outsider", "diff", "notes", "readiness", "not-connected"}
+        skip = {"health", "hold", "update", "notice", "outsider", "diff", "notes", "readiness", "not-connected"}
         for row in model.rows:
             if row.kind not in skip:
                 lines.append(card_row_text(row, width, widths))

@@ -58,6 +58,7 @@ refused.
 
 from __future__ import annotations
 
+import dataclasses
 import datetime
 import os
 import secrets
@@ -145,6 +146,28 @@ class Observation:
         return self.stamp.pid if self.stamp is not None else None
 
 
+ROLLBACK_REMEDY = ("if this began after charmer update: charmer update --rollback, then charmer gateway start "
+                   "(returns to {version}'s gateway; sessions keep their records)")
+# The start failures the way back applies to: the gateway did not become
+# ready, the service manager did not start it, or it exited early.
+ROLLBACK_STATUSES = frozenset({"failed", "timeout"})
+
+
+def rollback_remedy(environ: Mapping[str, str], home: Path | str, state_root: Path | str) -> str | None:
+    """:data:`ROLLBACK_REMEDY` for an installed release whose rollback
+    would bring back another gateway (``self_update.rollback_restores_gateway``),
+    else None: never on the Nix or source channels, for a previous version
+    with the same gateway, or when the rollback would be refused. Read-only."""
+
+    from charmer import self_update
+
+    environ = {**environ, "HOME": str(home)}
+    if endpoint.channel(environ) != "bundle":
+        return None
+    previous = self_update.rollback_restores_gateway(installs.bundle_root(environ), Path(state_root))
+    return ROLLBACK_REMEDY.format(version=previous) if previous is not None else None
+
+
 @dataclass(frozen=True)
 class Outcome:
     status: str  # ready | stopped | refused | blocked | failed | timeout | busy | held | inhibited
@@ -152,6 +175,10 @@ class Outcome:
     remedy: str | None = None
     log_tail: tuple[str, ...] = ()
     notes: tuple[str, ...] = ()
+    # A second way out (the rollback after a gateway-changing update). It
+    # is folded into ``remedy`` too, so a caller that names only the remedy
+    # (a launch's refusal) names it as well.
+    rollback: str | None = None
 
     def __post_init__(self) -> None:
         # Gateway log lines reach a person only redacted, whichever backend
@@ -167,10 +194,23 @@ class Outcome:
     def exit_code(self) -> int:
         return EXIT_CODES[self.status]
 
+    def with_rollback(self, rollback: str | None) -> "Outcome":
+        """This outcome with the rollback remedy as its second way out."""
+
+        if rollback is None or self.rollback is not None:
+            return self
+        remedy = f"{self.remedy}; {rollback}" if self.remedy else rollback
+        return dataclasses.replace(self, remedy=remedy, rollback=rollback)
+
     def lines(self) -> list[str]:
         result = [self.message, *(f"  {note}" for note in self.notes)]
-        if self.remedy:
-            result.append(f"  fix: {self.remedy}")
+        first = self.remedy
+        if self.rollback and first:
+            first = first.removesuffix(self.rollback).removesuffix("; ") or None
+        if first:
+            result.append(f"  fix: {first}")
+        if self.rollback:
+            result.append(f"  {self.rollback}")
         if self.log_tail:
             result.append("  log tail:")
             result.extend(f"    {termtext.visible_text(line)}" for line in self.log_tail)
@@ -576,10 +616,29 @@ class Gateway:
             return unlocked or Outcome("busy", "another start of this gateway is still in progress",
                                        "retry in a moment, or check: charmer gateway status")
         try:
-            return self.ensure_locked(deadline, max_wait, explicit=explicit, destination=destination,
-                                      choose_port=choose_port)
+            outcome = self.ensure_locked(deadline, max_wait, explicit=explicit, destination=destination,
+                                         choose_port=choose_port)
         finally:
             lock.release()
+        return self.with_way_back(outcome)
+
+    def rollback_remedy(self) -> str | None:
+        """:func:`rollback_remedy` for this gateway's home and state root."""
+
+        return rollback_remedy(self.environ, self.home, self.state_root)
+
+    def with_way_back(self, outcome: Outcome) -> Outcome:
+        """A failed start (``ROLLBACK_STATUSES``) with the rollback remedy
+        when a rollback would bring back another gateway; anything else as
+        it is."""
+
+        if outcome.status not in ROLLBACK_STATUSES:
+            return outcome
+        try:
+            remedy = self.rollback_remedy()
+        except (OSError, errors.CharmerError):
+            remedy = None
+        return outcome.with_rollback(remedy)
 
     def _ensure_unlocked(self, deadline: float, max_wait: float, *, choose_port: bool,
                          destination: str | None) -> Outcome | None:

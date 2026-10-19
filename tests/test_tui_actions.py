@@ -17,7 +17,10 @@ def _keys(*bars) -> set[str]:
 
 # Every bar a screen can draw (the row-dependent bindings included).
 BARS = {
-    "card": _keys(views.CARD_KEYS_FRESH, views.CARD_KEYS_NOT_CONNECTED, ("U", "update")),
+    # U shows while a release row does; W opens Get started on every fresh
+    # card (the help's first line), and the not-connected bar names it as Enter.
+    "card": _keys(views.CARD_KEYS_FRESH, views.CARD_KEYS_NOT_CONNECTED, ("U", "update"), ("W", "get started")),
+    "findings": _keys(cli_text.FINDINGS_KEYBAR),
     "resume-card": _keys((("Enter", "resume"),), views.CARD_KEYS_RESUME, ("U", "update")),
     "sessions": _keys(cli_text.SESSIONS_KEYBAR, cli_text.SESSIONS_KEYBAR_ALL, cli_text.SESSIONS_STOP_BINDING,
                       cli_text.SESSIONS_MARK_BINDING, cli_text.SESSIONS_REPAIR_BINDING),

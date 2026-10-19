@@ -8,7 +8,7 @@
   the scanned code, except ``$EDITOR``: the editor's ``^G`` runs it in
   ``tui.ProfileEditorScreen._default_opener``, the one process call the
   tui editor stack (:data:`TUI_REGIONS`) may make.  The update flow and
-  the doctor repair offer (``_CardHealthActions._run_health`` →
+  the findings list's repair (H: ``FindingsScreen._repair_all`` →
   ``_doctor_repair_all``), token rotation
   (``_SettingsScreen._rotate`` → ``_doctor_rotate_token``) and the journal
   read (``_read_gateway_journal``: captured, bounded, metadata-only) are
@@ -62,6 +62,8 @@ SCREEN_REGIONS: dict[str, tuple[str, ...]] = {
     ),
     "card": (
         "_CardHealthActions",
+        "FindingsScreen",
+        "run_findings_screen",
         "_LaunchCardScreen",
         "launch_card",
         "_perform_card_result",
@@ -174,7 +176,9 @@ SCREEN_OWNERS = {'_ModelsScreen': 'charmer.cli.screens.models',
  'sign_out_flow': 'charmer.cli.screens.signin',
  'account_modal': 'charmer.cli.screens.signin',
  '_ProfilesScreen': 'charmer.cli.screens.profiles',
- 'run_profiles_screen': 'charmer.cli.screens.profiles'}
+ 'run_profiles_screen': 'charmer.cli.screens.profiles',
+ 'FindingsScreen': 'charmer.cli.screens.findings',
+ 'run_findings_screen': 'charmer.cli.screens.findings'}
 
 def _regions(tree: ast.Module) -> list[ast.AST]:
     found = []

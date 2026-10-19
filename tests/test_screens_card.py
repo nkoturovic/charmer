@@ -493,18 +493,20 @@ class CardHealthKeyRemedyTests(_CardCase):
                 "anthropic oauth-pool)")
 
     def h_report(self, screen) -> str:
+        """H, then Enter on the finding (it has no action: its text in full)."""
+
         from charmer.cli import doctor as doctor_mod
 
         with mock.patch.object(doctor_mod, "_collect_doctor_reports", return_value=([self.block()], [], [])):
-            result, _win = self.run_card(screen, ["h", ESC])
+            result, win = self.run_card(screen, ["h", ENTER, ESC, ESC, ESC])
         self.assertIsNone(result)
-        return screen.tty_out.getvalue()
+        return "\n".join(_flat(frame) for frame in win.frames)
 
     def assert_route(self, report: str, route: str) -> None:
         self.assertNotIn("providers set-key", report)
         expected = self.block().replace("charmer providers set-key anthropic",
                                         cli_text.CARD_SET_KEY.format(route=route))
-        self.assertIn(f"  - {expected}\n", report)
+        self.assertIn(expected, report)
 
     def test_the_fresh_card_names_k_on_the_provider(self) -> None:
         report = self.h_report(self.card(tty_in=io.StringIO("\n\n\n"), tty_out=io.StringIO()))
@@ -527,6 +529,101 @@ class CardHealthKeyRemedyTests(_CardCase):
                                                                           "set-key nobody", None),
                          "X is not set — " + cli_text.CARD_SET_KEY.format(
                              route=cli_text.CARD_SET_KEY_FRESH.format(display="nobody")))
+
+
+class CardHoldRowTests(_CardCase):
+    """A held gateway shows on the card's health row: which hold (log
+    coverage only, or held: a credential save may be unresolved) and the
+    clear-hold route. Only a coverage-only hold has its own words; a failed
+    save, an unreadable hold record and an evaluation that failed are all
+    held, and none of them claims a failed save on the card. The hold is
+    evaluated with the card's one health check, never on each render."""
+
+    def held_card(self, *, coverage_only: bool):
+        from charmer import gateway_hold
+
+        calls = []
+
+        def hold_check():
+            calls.append(1)
+            return gateway_hold.HoldReport(True, ("fixture reason",), "journal", coverage_only=coverage_only)
+
+        screen = self.card(gateway_checked=False, gateway_check=lambda: None, hold_check=hold_check)
+        return screen, calls
+
+    def test_a_coverage_only_hold_says_it_is_not_a_failed_save(self) -> None:
+        screen, calls = self.held_card(coverage_only=True)
+        _result, win = self.run_card(screen, ["z", "z", ESC])
+        self.assertEqual(len(calls), 1)  # one evaluation for every frame the card drew
+        self.assertGreaterEqual(len(win.frames), 3)
+        rows = views.CARD_HOLD_ROWS[views.CARD_HOLD_COVERAGE_KIND]
+        self.assertIn("gateway ok, held ·", win.frames[-1])
+        self.assertIn(rows[2], win.frames[-1])  # whole, not cut, at 80 columns
+        self.assertNotIn("a credential save failed", win.frames[-1])
+        # Wider, the row names the command itself.
+        self.assertIn(rows[1], self.frame(screen, width=120, height=40))
+        self.assertIn(rows[0], self.frame(screen, width=200, height=40))
+        self.assertEqual(len(calls), 1)
+
+    def test_a_failed_save_hold_says_a_save_may_be_unresolved(self) -> None:
+        screen, calls = self.held_card(coverage_only=False)
+        _result, win = self.run_card(screen, ["z", ESC])
+        self.assertEqual(len(calls), 1)
+        rows = views.CARD_HOLD_ROWS[views.CARD_HOLD_HELD_KIND]
+        self.assertIn(rows[2], win.frames[-1])
+        self.assertNotIn("log coverage", win.frames[-1])
+        self.assertIn(rows[1], self.frame(screen, width=120, height=40))
+
+    def assert_held_not_failed(self, report) -> None:
+        self.assertTrue(report.held)
+        self.assertFalse(report.coverage_only)
+        screen = self.card(gateway_checked=False, gateway_check=lambda: None, hold_check=lambda: report)
+        _result, win = self.run_card(screen, [ESC])  # the card's one health check
+        rows = views.CARD_HOLD_ROWS[views.CARD_HOLD_HELD_KIND]
+        for width, height, form in ((80, 24, rows[2]), (120, 40, rows[1]), (200, 40, rows[0])):
+            frame = win.frames[-1] if width == 80 else self.frame(screen, width=width, height=height)
+            self.assertIn("gateway ok, held ·", frame)
+            self.assertIn(form, frame)
+            # Nothing was seen to fail: the card never says a save failed.
+            self.assertNotIn("save failed", frame)
+            self.assertNotIn("failed save", frame)
+
+    def test_an_unreadable_hold_record_is_held_never_a_failed_save(self) -> None:
+        from charmer import gateway_hold, state
+
+        root = self.runtime.session_store.root
+        path = gateway_hold.hold_path(root)
+        state.ensure_private_dir(path.parent)
+        state.atomic_write(path, b"{not json")
+        report = gateway_hold.evaluate_files(root, ())
+        self.assertIn("persistence hold record is not valid JSON", report.reasons[0])
+        self.assert_held_not_failed(report)
+
+    def test_a_hold_that_cannot_be_evaluated_is_held_never_a_failed_save(self) -> None:
+        import charmer.cli.screens.gateway_actions as gateway_actions
+
+        class Unreadable:
+            def persistence_hold(self, _seen):
+                raise OSError("the journal cannot be read")
+
+        report = gateway_actions._hold(Unreadable(), None)
+        self.assertEqual(report.source, "unknown")
+        self.assert_held_not_failed(report)
+
+    def test_every_form_fits_its_width(self) -> None:
+        for kind, forms in views.CARD_HOLD_ROWS.items():
+            with self.subTest(kind):
+                self.assertLessEqual(len(forms[2]), 80 - 3)  # the card at 80 columns, at column 2
+                self.assertLessEqual(len(forms[1]), 120 - 3)
+
+    def test_no_hold_row_without_a_hold(self) -> None:
+        from charmer import gateway_hold
+
+        screen = self.card(gateway_checked=False, gateway_check=lambda: None,
+                           hold_check=lambda: gateway_hold.HoldReport(False, (), "journal"))
+        _result, win = self.run_card(screen, [ESC], width=120, height=40)
+        self.assertNotIn("held", win.frames[-1])
+        self.assertIn("gateway ok ·", win.frames[-1])
 
 
 # ================================================================ rows
@@ -656,7 +753,9 @@ class CardRowTests(_CardCase):
             "  health    gateway unreachable — launches will fail: boom",
             text.splitlines(),
         )
-        self.assertIn("  update    charmer 1.0.0 · 1.0.1 · press U to update", text.splitlines())
+        # The row says U checks: the card never claims that an update exists.
+        self.assertIn("  update    charmer 1.0.0 · 1.0.1 · U checks for a newer release", text.splitlines())
+        self.assertNotIn("press U", text)
         self.assertIn("Enter launch · U update · E edit", text)
 
     def test_notices_outsiders_radar_and_seed_lines(self) -> None:
@@ -1014,7 +1113,7 @@ class CardKeyTests(_CardCase):
                 mock.patch('charmer.cli.screens.direct.run_direct_screen', return_value=None) as direct, \
                 mock.patch('charmer.cli.screens.launch_sessions._SessionsScreen') as sessions_screen, \
                 mock.patch.object(charmer.tui, "ProfileEditorScreen") as editor, \
-                mock.patch.object(screen, "_run_health") as health, \
+                mock.patch.object(screen, "_run_health", return_value=None) as health, \
                 mock.patch.object(screen, "_details") as details:
             sessions_screen.return_value.run.return_value = None
             result, win = self.run_card(screen, ["g", "m", "o", "d", "s", "e", "h", "v", ESC])
@@ -1047,91 +1146,39 @@ class CardKeyTests(_CardCase):
         self.assertEqual(prepared.record["applied"]["agents"], {})
         self.assertIn("--verbose", prepared.result.argv)
 
-    def test_h_runs_doctor_in_place_and_prints_its_sections(self) -> None:
-        out = io.StringIO()
-        screen = self.card(tty_in=io.StringIO("\n\n\n"), tty_out=out)
-        problems, info, attention = cli._collect_doctor_reports(self.runtime)
-        result, _win = self.run_card(screen, ["h", ESC])
+    def test_h_opens_the_findings_list(self) -> None:
+        from charmer.cli import doctor as doctor_mod
+
+        screen = self.card()
+        problems, _info, attention = cli._collect_doctor_reports(self.runtime)
+        presentation = doctor_mod.present_report(problems, attention)
+        result, win = self.run_card(screen, ["h", ESC, ESC])
         self.assertIsNone(result)
-        printed = out.getvalue()
-        self.assertIn("charmer doctor\n", printed)
-        self.assertIn("BLOCKED\n" if problems else "Ready\n", printed)
-        if attention:
-            self.assertIn("Attention\n", printed)
-        from charmer.cli import doctor as doctor_mod
-
-        hidden = [line for line in info if doctor_mod.detail_line(line)]
-        for line in info:
-            if line in hidden:
-                self.assertNotIn(tui.visible_text(line) + "\n", printed)
-            else:
-                self.assertIn(tui.visible_text(line), printed)
-        if hidden:
-            self.assertIn(f"({len(hidden)} more detail line", printed)
-        status = "blocked" if problems else ("attention" if attention else "ready")
-        self.assertIn(doctor_mod.DOCTOR_SUMMARY[status], printed)
-        self.assertNotIn("--repair-all", printed)
-        self.assertIn("Press Enter to return to charmer.", printed)
+        listed = next(frame for frame in win.frames if cli_text.FINDINGS_TITLE in frame)
+        self.assertIn(f"{cli_text.FINDINGS_TITLE} — {views.CARD_STATUS_TEXT[presentation.status]}",
+                      listed.splitlines()[1])
+        self.assertIn("Enter act · V details · G gateway · ? help · Esc back", listed)
+        # Nothing is printed outside curses any more, and nothing launched.
+        self.assertEqual(screen.tty_out.getvalue(), "")
         self.assertEqual(self.runtime.launches, [])
+        self.assertIn(f"profile: {catalog.DEFAULT_SEED}", win.frames[-1])
 
-    def test_h_offers_a_bulk_repair_only_for_session_repair_findings(self) -> None:
-        from charmer.cli import doctor as doctor_mod
-
-        cases = (
-            ([], ["gateway: not running — charmer gateway start"], [], False),
-            (["session 1234abcd: scope drift — charmer doctor --repair 1234abcd"], [], [], True),
-        )
-        for problems, attention, info, offered in cases:
-            out = io.StringIO()
-            screen = self.card(tty_in=io.StringIO("n\n\n\n"), tty_out=out)
-            with self.subTest(offered=offered), \
-                    mock.patch.object(doctor_mod, "_collect_doctor_reports",
-                                      return_value=(problems, info, attention)), \
-                    mock.patch("charmer.cli.doctor_actions._doctor_repair_all",
-                               side_effect=AssertionError("answered no")):
-                self.run_card(screen, ["h", ESC])
-                printed = out.getvalue()
-                self.assertEqual("Repair every stopped session now? [y/N]" in printed, offered)
-                status = "blocked" if problems else "attention"
-                self.assertIn(doctor_mod.DOCTOR_SUMMARY[status], printed)
-
-    def test_h_offers_the_gateway_log_after_the_report(self) -> None:
-        screen = self.card(tty_in=io.StringIO("l\n\n\n"), tty_out=io.StringIO())
-        with mock.patch("charmer.cli.screens.gateway_actions.health_prompt", return_value="log") as prompt, \
-                mock.patch("charmer.cli.screens.gateway_actions.log_view",
-                           return_value=("gateway log — fixture", ["fixture log line"])):
-            _result, win = self.run_card(screen, ["h", ESC, ESC])
-        prompt.assert_called_once_with(self.runtime, screen.tty_in, screen.tty_out)
-        self.assertTrue(any("fixture log line" in frame for frame in win.frames))
-
-    def _h_gateway_action(self, answer: str, view) -> tuple[list, str]:
-        """H on the card with a clean report, then ``answer`` at the gateway line."""
+    def test_h_returns_a_resume_chosen_in_its_sessions(self) -> None:
+        """Enter on the sessions that need a lead opens Sessions; a resume
+        chosen there is the card's own result."""
 
         from charmer.cli import doctor as doctor_mod
+        from charmer.cli import gateway_facts
 
-        out = io.StringIO()
-        screen = self.card(tty_in=io.StringIO(f"{answer}\n\n\n"), tty_out=out)
-        with mock.patch.object(doctor_mod, "_collect_doctor_reports", return_value=([], [], [])), \
-                fx.gateway_actions_seam(view) as acted:
-            result, _win = self.run_card(screen, ["h", ESC])
-        self.assertIsNone(result)
-        return acted, out.getvalue()
-
-    def test_h_then_r_restarts_a_proven_gateway(self) -> None:
-        view = fx.GatewayViewStub(restart=True)
-        acted, printed = self._h_gateway_action("r\ny", view)  # r, then y at the restart question
-        self.assertEqual(acted, [(view, "restart")])
-        self.assertIn("r  restart it now", printed)
-        self.assertIn("No managed session runs now.\nRestart the gateway now? [y/N] ", printed)
-        self.assertIn("gateway restart: fixture done", printed)
-        self.assertEqual(self.runtime.launches, [])
-
-    def test_h_then_i_installs_the_gateway_service(self) -> None:
-        view = fx.GatewayViewStub(service=True)
-        acted, printed = self._h_gateway_action("i", view)
-        self.assertEqual(acted, [(view, "service")])
-        self.assertIn("i  install the gateway service", printed)
-        self.assertIn("gateway service: fixture done", printed)
+        line = gateway_facts.tagged("1 session(s) need a profile or model choice (lead removed): resume "
+                                    "interactively — 1111aaaa", area="Sessions", action="needs-choice")
+        screen = self.card()
+        intent = ("perform", object(), None)
+        with mock.patch.object(doctor_mod, "_collect_doctor_reports", return_value=([], [], [line])), \
+                mock.patch.object(screen, "_open_sessions", return_value=intent) as sessions_screen:
+            result, _win = self.run_card(screen, ["h", ENTER])
+        sessions_screen.assert_called_once()
+        self.assertIs(result, intent)
 
     def test_help_modal_shows_quick_help_and_the_guarantee_panel_without_launching(self) -> None:
         # At 80x24 the wrapped help is longer than the Modal: End scrolls to the panel.
@@ -1275,7 +1322,7 @@ class CardKeyTests(_CardCase):
         self.assertTrue(named)
         self.assertLessEqual(named, set(lineup_files.CM_VERB_NAMES))
         self.assertEqual(named, set(lineup_files.CM_VERB_NAMES))
-        for needle in ("Terms", "In a charmer session", "U — update charmer",
+        for needle in ("Terms", "In a charmer session", "U — check for and install a newer charmer",
                        "a Nix install updates through its flake", "H — doctor", "Git worktree",
                        "CLAUDE_CONFIG_DIR", "kept environment"):
             self.assertIn(needle, cli.QUICK_HELP)

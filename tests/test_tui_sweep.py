@@ -392,6 +392,7 @@ INVENTORY: tuple[str, ...] = (
     f"{_SCREENS}.common:_ProviderForm",
     f"{_SCREENS}.common:_ModelForm",
     f"{_SCREENS}.direct:_DirectScreen",
+    f"{_SCREENS}.findings:FindingsScreen",
     f"{_SCREENS}.get_started:_StepView",
     f"{_SCREENS}.get_started:_ProviderPicker",
     f"{_SCREENS}.get_started:_GetStartedScreen",

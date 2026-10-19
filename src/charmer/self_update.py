@@ -343,6 +343,28 @@ def installed_pins(environ: Mapping[str, str], *,
     return keep
 
 
+def rollback_restores_gateway(install_root: Path, state_root: Path) -> str | None:
+    """The previous version when ``charmer update --rollback`` would bring
+    back another gateway: ``previous`` is installed, its ``MANIFEST.json``
+    names a gateway sha256 other than ``current``'s, and the rollback's own
+    state check allows the switch (the state format on disk is one the
+    previous version reads). None otherwise, and whenever that cannot be
+    read. Read-only: links, the two manifests and the state marker."""
+
+    try:
+        installation = read_installation(Path(install_root))
+        if installation is None or installation.previous is None:
+            return None
+        previous = installation.previous
+        if previous.gateway_sha256 == installation.current.gateway_sha256:
+            return None
+        if state_version(Path(state_root)) > previous.state_format:
+            return None
+    except (UpdateError, OSError, ValueError):
+        return None
+    return previous.version
+
+
 def state_version(state_root: Path) -> int:
     """The state format on disk (a missing marker is the unmarked format)."""
 
@@ -733,7 +755,9 @@ def plan(installation: Installation, release: Release, *, state: int, platform: 
         steps.append(f"the first run of {release.version} upgrades the state format from {state_change[0]} "
                      f"to {state_change[1]}; after that, rolling back to {current.version} is refused")
     if restart == RESTART_GATEWAY:
-        steps.append("the gateway changes: restart it when no session needs it (charmer gateway restart)")
+        # The way back while the state format stays one the current version reads.
+        back = "" if state_change is not None else "; if the new gateway does not start: charmer update --rollback"
+        steps.append(f"the gateway changes: restart it when no session needs it (charmer gateway restart){back}")
     else:
         steps.append("only the launcher changes: new sessions use it; the running gateway keeps running")
     return Plan(current.version, release.version, release.asset.name, release.asset.size, restart,

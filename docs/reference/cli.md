@@ -1060,3 +1060,24 @@ charmer uninstall [--dry-run] [--keep-setup] [--keep-credentials] [--yes] [--for
 `/cm` passes everything after it as one request; `charmer lineup --session <runtime-id> <request>` runs the same request from a terminal.
 
 <!-- end of generated: cli-reference -->
+
+## The doctor report
+
+`charmer doctor --json` writes one read-only document (`schema_version`
+1): its `status` (`ready`, `attention` or `blocked`), `coverage`, `facts`,
+`diagnostics` and the `environment` block of allowlisted facts. Each
+diagnostic has:
+
+| Field | What it is |
+| --- | --- |
+| `severity` | `block`, `attention`, `info` or `advisory`: optional evidence (an admission badge, qualification, a recommendation an explicit binding overrides), which the status ignores, so a report whose only findings are advisories is `ready` |
+| `code` | a stable kebab-case code: a typed finding's own; otherwise the action code of a finding the TUI's findings list acts on (`hold`, `hold-coverage`, `missing-key`, `earlier-scopes`, `scope-repair`, `unused-alias`, `prune`, `dead-sessions`, `seed-update`, `advisory-model`, `needs-choice`) or a model finding's code (`admission`, `qualification`, …), else `legacy-line` |
+| `text` | what it is about, without a path, a value or an error body (plain `charmer doctor` prints the full line and its fix) |
+| `subject_id` | the session, model or alias it names, when that is a safe identifier, or null |
+| `remedy` | its one-line command, or null |
+| `area` | where plain doctor lists it: `Gateway`, `Installation`, `Providers`, `Sessions`, `Profiles`, `Models` or `Other`, or null |
+
+Plain `charmer doctor` prints the same findings: BLOCKED, then Attention by
+area (a persistence hold first), then **Advisories (optional evidence; does
+not change the verdict)**, each repeated finding collapsed into one line;
+`-v` prints every original line ([troubleshooting](../troubleshooting.md)).

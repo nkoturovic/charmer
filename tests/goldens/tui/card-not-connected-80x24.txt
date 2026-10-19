@@ -13,12 +13,12 @@
   implementer-strong   GPT-5.6 Sol   xhigh    openai      (worktree)
   … 2 more agents (E shows all)
   review    writers(openai)→reviewer-strong · lead→reviewer   all cross-family…
-  ! nothing is connected yet — W opens Get started
+  ! nothing is connected yet — Enter opens Get started
   health    gateway ok · Claude 2.1.281 · catalog 31
   ! explorer and every implementer are on openai (codex quota shared)
   implementers unavailable: not a Git repository here (git init enables them)
 
   Status  Attention
 
-  Enter launch · W get started · P profiles · D direct · V details
+  Enter get started · L launch anyway · P profiles · D direct · V details
   S sessions · G providers · M models · O settings · H doctor · ? help · Esc

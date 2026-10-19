@@ -1,0 +1,24 @@
+
+  providers — local status
+  ─────────────────────────────────────────────────────────────────────────────
+  credential: API key or sign-in · served: models the local gateway serves now
+  (not a test of the provider)
+    provider   on credential      quota models served src route
+  +--------------------------------------------------------------------------+
+  | Local gateway                                                            |
+  | Gateway: stopped — the gateway is not running                            |
+  | endpoint http://127.0.0.1:8317 · backend on-demand                       |
+  | if this began after charmer update: charmer update --rollback, then      |
+  | charmer gateway start (returns to 2.0.1's gateway; sessions keep their   |
+  | records)                                                                 |
+  | Stop it from a terminal: charmer gateway stop.                           |
+  |                                                                          |
+  |                                                                          |
+  | [ Start now ] [ Show log ] [ Close ]                                     |
+  +--------------------------------------------------------------------------+
+
+
+
+
+  Enter connect · L sign in/out · T test · Space on/off · Q details · N new
+  ? help · Esc back

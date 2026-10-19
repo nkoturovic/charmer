@@ -1,0 +1,24 @@
+
+  charmer doctor — BLOCKED · 1 blocking, 4 attention, 1 advisory
+  ─────────────────────────────────────────────────────────────────────────────
+  BLOCKED (1)
+›   ✗ session 3333cccc: scope differs from the record-authoritative compile
+      (settings.json content differs); run charmer doctor --repair
+      3333cccc-0000-4000-8000-000000000000
+  Attention (4)
+    Gateway (2)
+      ! gateway persistence hold: HELD because part of the log could not be
+        evaluated (no failed credential save was seen in the part read) —
+        journald retention is shorter; stop, restart, update and uninstall are
+        refused. Keep it running; after checking the credentials (charmer
+        providers list), clear it on the command line (charmer gateway
+        clear-hold: it records that you checked them and evaluates the logs
+        again from there on)
+      ! continuity alias charmer-old is not served (its upstream route may be
+        gone); once no live session uses it: charmer doctor --prune-aliases
+  ↓ more ──────────────────────────────────────────────────────────────────────
+
+
+  Enter: repair every stopped session (asks first)
+
+  Enter act · V details · G gateway · ? help · Esc back

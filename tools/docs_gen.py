@@ -780,6 +780,7 @@ def region_cheatsheet_tasks() -> str:
 
 SCREEN_TITLES: dict[str, str] = {
     "card": "launch card (`charmer`)", "resume-card": "resume card (`charmer -r <id>`)",
+    "findings": "doctor findings (H)",
     "sessions": "sessions (S)", "lineup-dialog": "lineup dialog (S → T)", "direct": "direct (D)",
     "providers": "providers (G)", "models": "models (M)", "settings": "settings (O)", "profiles": "profiles (P)",
     "get-started": "get started (W)", "editor": "profile editor (E)",

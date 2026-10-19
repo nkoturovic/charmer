@@ -706,12 +706,17 @@ class CardModelTests(_RuntimeCase):
     def test_update_badge_key_placement_and_resume_keys(self) -> None:
         _prepared, card = self.card(update_hint=("1.0.0", "released 2026-10-15"))
         self.assertEqual(card.keys[:2], (("Enter", "launch"), ("U", "update")))
+        # A check, never a claim that a newer release exists.
         self.assertIn(
-            "  update    charmer 1.0.0 · released 2026-10-15 · press U to update",
+            "  update    charmer 1.0.0 · released 2026-10-15 · U checks for a newer release",
             views.card_text(card, 80).splitlines(),
         )
+        self.assertNotIn("press U", views.card_text(card, 200))
         row = next(row for row in card.rows if row.kind == "update")
         self.assertEqual((row.role, row.priority), ("dim", 6))
+        _prepared, nix = self.card(update_hint=("1.0.0", views.CARD_NIX_NOTE))
+        self.assertIn("  update    charmer 1.0.0 · updated through your Nix flake · U says how",
+                      views.card_text(nix, 80).splitlines())
         _prepared, old = self.card(update_hint=("1.0.0", "this release is 61 days old — charmer update --check"))
         row = next(row for row in old.rows if row.kind == "update")
         self.assertEqual((row.role, row.priority, row.label_role), ("warn", 1, "warn"))
@@ -719,6 +724,24 @@ class CardModelTests(_RuntimeCase):
         self.assertEqual(
             resume.keys, (("Enter", "resume"), ("V", "details"), ("S", "sessions"), ("H", "doctor"), ("?", "help"), ("Esc", "cancel"))
         )
+
+    def test_a_held_gateway_says_so_with_the_clear_hold_route(self) -> None:
+        for kind, cause in ((views.CARD_HOLD_COVERAGE_KIND, "log coverage incomplete, not a failed save"),
+                            (views.CARD_HOLD_HELD_KIND, "a credential save may be unresolved")):
+            with self.subTest(kind=kind):
+                _p, held = self.card(health=(None, True, "9.9.9", "packaged", 7), hold=kind)
+                text = views.card_text(held, 200)
+                self.assertIn("  health    gateway ok, held · Claude 9.9.9 · catalog 7", text.splitlines())
+                self.assertNotIn("gateway ok · ", text)
+                row = next(row for row in held.rows if row.kind == "hold")
+                self.assertIn(cause, row.text)
+                self.assertIn("charmer gateway clear-hold", row.text)
+                self.assertEqual(views.card_status(held), "attention")
+                # Every shorter form keeps the cause and the way to the route.
+                for short in row.short_forms:
+                    self.assertIn("H shows", short)
+        _p, free = self.card(health=(None, True, "9.9.9", "packaged", 7))
+        self.assertFalse(any(row.kind == "hold" for row in free.rows))
 
     def test_health_rows(self) -> None:
         _p, ok = self.card(health=(None, True, "9.9.9", "override", 7))
@@ -864,8 +887,10 @@ class OnboardingCardRowsTests(_RuntimeCase):
         _prepared, fresh = self.card()
         self.assertEqual(fresh.keys, views.CARD_KEYS_FRESH)
         self.assertFalse(any(row.kind == "not-connected" for row in fresh.rows))
+        # Enter leads into Get started; L launches all the same.
+        self.assertEqual(card.keys[:2], (("Enter", "get started"), ("L", "launch anyway")))
         _prepared, badge = self.card(not_connected=True, update_hint=("1.0.0", "1.0.1"))
-        self.assertEqual(badge.keys[:3], (("Enter", "launch"), ("U", "update"), ("W", "get started")))
+        self.assertEqual(badge.keys[:3], (("Enter", "get started"), ("U", "update"), ("L", "launch anyway")))
 
     def test_an_unloadable_target_is_blocked_with_its_fix(self) -> None:
         error = SimpleNamespace(name="broken", path="/x/profiles/broken.json", line=3, detail="Expecting ','")
