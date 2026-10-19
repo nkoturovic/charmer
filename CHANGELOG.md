@@ -59,6 +59,11 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Under a terminal encoding that is not UTF-8 (on Python 3.11–3.14, as in
+  Nix and source installations), `charmer --help`, `charmer sessions list`
+  and other output no longer fail on charmer's markers: characters the
+  encoding cannot show are replaced. Text files and tool output charmer reads
+  name their encoding.
 - A gateway that has run for days no longer holds every stop, restart,
   update and uninstall because its log coverage is incomplete. The
   persistence hold reads only the gateway's credential-save lines and its
