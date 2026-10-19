@@ -318,7 +318,7 @@ def verify_signature(manifest: bytes, signature: bytes, *, gpg: str,
             (root / "release.asc").write_text(RELEASE_KEY, encoding="ascii")
             argv = [gpg, "--no-options", "--homedir", directory, "--batch", "--no-tty",
                     "--no-auto-key-retrieve", "--no-autostart"]
-            kwargs = dict(capture_output=True, text=True, timeout=30,
+            kwargs = dict(capture_output=True, text=True, encoding="utf-8", timeout=30,
                           env={"PATH": os.defpath, "HOME": directory, "GNUPGHOME": directory})
             imported = runner([*argv, "--import", str(root / "release.asc")], **kwargs)
             if imported.returncode != 0:

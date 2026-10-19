@@ -117,7 +117,7 @@ def listener_owner(
     unreadable = False
     for name, family in (("tcp", socket.AF_INET), ("tcp6", socket.AF_INET6)):
         try:
-            lines = (proc_root / "net" / name).read_text().splitlines()[1:]
+            lines = (proc_root / "net" / name).read_text(encoding="utf-8").splitlines()[1:]
             for line in lines:
                 fields = line.split()
                 if len(fields) < 10 or fields[3] != "0A":

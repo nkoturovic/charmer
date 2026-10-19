@@ -58,7 +58,7 @@ def _computer(runtime: Any) -> Check:
     if not sys.platform.startswith(SUPPORTED_PLATFORMS):
         problems.append((f"{system} is not supported", _fix("see Supported systems in the charmer guide")))
     try:
-        release = (Path(runtime.proc_root) / "sys/kernel/osrelease").read_text(errors="replace")
+        release = (Path(runtime.proc_root) / "sys/kernel/osrelease").read_text(encoding="utf-8", errors="replace")
     except (OSError, TypeError):
         release = ""
     if facts.get("wsl") and "Microsoft" in release and "WSL2" not in release and "microsoft-standard" not in release:

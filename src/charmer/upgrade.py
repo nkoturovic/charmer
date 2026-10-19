@@ -285,7 +285,7 @@ def _changed_paths_report(repo: Path, paths: list[str], git: Callable) -> list[s
     try:
         result = git(
             ["git", "-C", str(repo), "status", "--short", "--", *paths],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True, text=True, encoding="utf-8", timeout=10,
             env={"PATH": "/usr/bin:/bin", "HOME": os.environ.get("HOME", "/"),
                  "GIT_OPTIONAL_LOCKS": "0"},
         )
@@ -438,6 +438,7 @@ def inspect_candidate(
             [str(path), "--version"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
             timeout=30,
             env={"PATH": "/usr/bin:/bin", "HOME": os.environ.get("HOME", "/")},
         )
@@ -453,6 +454,7 @@ def inspect_candidate(
             [str(path), "--help"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
             timeout=30,
             env={"PATH": "/usr/bin:/bin", "HOME": os.environ.get("HOME", "/")},
         )
@@ -1184,6 +1186,7 @@ def _run_repin_locked(
                 },
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
                 timeout=1800,
             )
         tail = (evidence.stdout or "") + (evidence.stderr or "")
