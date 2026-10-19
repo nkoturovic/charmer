@@ -28,6 +28,13 @@ build's startup-only baseline, so startup execution cannot stand in for the
 reload phase. Otherwise the observation is recorded as incomplete
 (inconclusive). A genuine detector reproduction is always retained.
 
+D217's explicit --matrix-runs 100 uses 100 independent invocations per cell,
+with every required root executed once in each invocation. Inner workloads
+stay fixed (accepted reloads: 20 writes; rejected reloads: one write; both
+B108 HTTP shapes: 8 credentials x 16 requests). Normal nonmatrix bounds stay
+compatible. Incomplete attempts stop the cell and are retained, never retried
+away; an incomplete matrix cannot publish a valid observation report.
+
 Every executable runs through probe.start_isolated_process (bwrap
 --unshare-net); the fake upstream is a unix socket. No provider calls, no live
 state, no activation. A negative bounded run means "not reproduced within the
@@ -105,6 +112,18 @@ SCENARIOS = {
     "manager-http-b108-config-empty-metadata": ("manager-http-config-empty-metadata", ("b108",), ("b108",),
                                                 ("series",)),
 }
+MATRIX_RUNS = 100
+MATRIX_UNIT_ROOTS = {
+    "unit-pair1-reconcile-clone": ("TestGatewayPair1ReconcileCloneUnit",),
+    "unit-pairs23-reload-handlers": ("TestGatewayReloadHandlersUnit",),
+    "unit-plugin-host-retained": RETAINED_PLUGIN_HOST,
+    "direct-b108-setup-token": ("TestGatewayB108DirectSetupToken",),
+    "direct-b108-retained-upstream": RETAINED_B108,
+}
+TARGET_LABELS = frozenset(("reconcile", "reconcile_write", "update_internal", "clone_after_unlock",
+                          "update_clients", "config_write", "set_plugin_host", "interceptor_host",
+                          "unified_models", "heartbeat", "setup_token", "executor_prepare",
+                          "profile_fetch", "manager_prepare"))
 GORACE = "halt_on_error=0 atexit_sleep_ms=0 history_size=2"
 SECRETS = (FIXTURE_GATEWAY_TOKEN, "dummy-gwtest", "sk-ant-oat", "gwtesthint-")
 RACE_START = "WARNING: DATA RACE"
@@ -248,9 +267,23 @@ def test_outcomes(text: str) -> dict:
         else:
             failed.append(name)
     return {"passed": passed, "race_only_failures": sorted(set(race_only)),
+            "skipped": sorted(set(re.findall(r"^\s*--- SKIP: (\S+)", text, re.M))),
             "other_failures": sorted(set(failed)),
             "runtime_fatal": sorted({message for _, message in fatal_messages(lines)}),
             "panics": len(re.findall(r"^panic: ", text, re.M))}
+
+
+def root_test_counts(text: str) -> dict:
+    """Count root attempts/completions, never deduplicate repeated -test.count runs."""
+    counts = {}
+    for line in text.splitlines():
+        started = re.fullmatch(r"=== RUN\s+(Test\w+)\s*", line)
+        ended = re.match(r"^--- (PASS|FAIL|SKIP): (Test\w+) \(", line)
+        if started or ended:
+            name = started.group(1) if started else ended.group(2)
+            row = counts.setdefault(name, {"attempted": 0, "passed": 0, "failed": 0, "skipped": 0})
+            row["attempted" if started else {"PASS": "passed", "FAIL": "failed", "SKIP": "skipped"}[ended.group(1)]] += 1
+    return counts
 
 
 def load_targets(diagnostics: Path) -> dict:
@@ -390,6 +423,17 @@ def validate_report(document: dict) -> None:
         raise AssertionError("incorrect race evidence identity")
     if document.get("negative_meaning") != NEGATIVE:
         raise AssertionError("a negative bounded run must never read as race absent")
+    matrix_runs = document.get("matrix_runs")
+    if matrix_runs is not None and (type(matrix_runs) is not int or matrix_runs != MATRIX_RUNS):
+        raise AssertionError("matrix mode requires exactly 100 runs")
+    if matrix_runs is not None:
+        targets = document.get("targets", {}).get("series", {})
+        if set(targets) != TARGET_LABELS:
+            raise AssertionError("matrix requires all fourteen target extents")
+        for extent in targets.values():
+            if (not isinstance(extent, (list, tuple)) or len(extent) != 3 or not isinstance(extent[0], str)
+                    or type(extent[1]) is not int or type(extent[2]) is not int or not 0 < extent[1] <= extent[2]):
+                raise AssertionError("invalid matrix target extent")
     omitted = document.get("omitted", [])
     validate_omissions(omitted)
     expected_patches = [name for name in harness.PATCH_ROWS if name not in omitted]
@@ -410,6 +454,7 @@ def validate_report(document: dict) -> None:
     if labels != ["series"]:
         raise AssertionError("unexpected race build labels")
     scenarios, seen = document.get("scenarios", []), set()
+    seen_invocations = set()
     for scenario in scenarios:
         row = SCENARIOS.get(scenario.get("id"))
         if scenario.get("build") not in labels or row is None or scenario.get("label") != row[0] \
@@ -428,6 +473,12 @@ def validate_report(document: dict) -> None:
         if not isinstance(scenario.get("prerequisites"), dict) or not scenario["prerequisites"] \
                 or scenario.get("prerequisites_met") is not all(scenario["prerequisites"].values()):
             raise AssertionError("race scenario prerequisites missing: " + scenario["id"])
+        if matrix_runs is not None:
+            validate_matrix_cell(scenario)
+            for run in scenario["runs"]:
+                if run["invocation_id"] in seen_invocations:
+                    raise AssertionError("matrix invocation receipt reused across cells")
+                seen_invocations.add(run["invocation_id"])
     # The required inventory per build.
     for label in labels:
         for sid, row in SCENARIOS.items():
@@ -559,6 +610,7 @@ def isolated_run(binary: Path, args: list[str], root: Path, *, env=None, timeout
     log_path, profile = root / "probe.log", run_dir / "cover.out"
     started = time.monotonic()
     process, observed = None, {}
+    invocation_id, process_error, cleanup_error = uuid.uuid4().hex, None, None
     try:
         with log_path.open("wb") as log:
             process = probe.start_isolated_process(
@@ -574,18 +626,35 @@ def isolated_run(binary: Path, args: list[str], root: Path, *, env=None, timeout
                     # the scenario is recorded as not executed.
                     observed = {"driver_error": type(error).__name__}
             process.wait(timeout=timeout + 30)
+    except (OSError, ValueError, probe.ProbeError, subprocess.SubprocessError) as error:
+        process_error = type(error).__name__
     finally:
         if process is not None:
-            probe.stop_isolated_process(process)
-    text = log_path.read_text(errors="replace")
+            try:
+                probe.stop_isolated_process(process)
+            except (OSError, RuntimeError, probe.ProbeError, subprocess.SubprocessError) as error:
+                cleanup_error = type(error).__name__
+    text = log_path.read_text(errors="replace") if log_path.is_file() else ""
     if KEEP_LOGS:
         # Raw local diagnostics for a human, never evidence (may hold fixture values).
         state.ensure_private_dir(KEEP_LOGS)
         state.atomic_write(KEEP_LOGS / f"{time.time_ns()}-{binary.name}.log", text.encode())
     reports = parse_races(text)
-    results = [json.loads(line) for line in re.findall(r"^GWTEST_RACE_RESULT=(.+)$", text, re.M)]
-    return {"exit_status": process.returncode, "seconds": round(time.monotonic() - started, 3),
-            "tests": test_outcomes(text), "results": results, "detector": signatures(reports),
+    results = []
+    for line in re.findall(r"^GWTEST_RACE_RESULT=(.+)$", text, re.M):
+        try:
+            result = json.loads(line)
+            if not isinstance(result, dict):
+                raise ValueError("result is not an object")
+            results.append(result)
+        except ValueError as error:
+            process_error = process_error or type(error).__name__
+    return {"exit_status": process.returncode if process is not None else None,
+            "invocation_id": invocation_id, "process_started": process is not None,
+            "process_pid": process.pid if process is not None else None, "process_error": process_error,
+            "cleanup_error": cleanup_error,
+            "seconds": round(time.monotonic() - started, 3),
+            "tests": test_outcomes(text), "root_tests": root_test_counts(text), "results": results, "detector": signatures(reports),
             "test_pass_counts": {name: len(re.findall(r"^--- PASS: " + re.escape(name) + r" \(", text, re.M))
                                  for name in RETAINED_PLUGIN_HOST},
             "runtime_fatal": parse_fatal(text),
@@ -608,6 +677,8 @@ def run_executed(run: dict, expected: tuple[str, ...], *, result_line: bool) -> 
     """Completed (pass, or race-only failure), or ended by a Go runtime
     concurrency crash, which is itself an observation. Anything else is not."""
     tests = run["tests"]
+    if run.get("process_error") or run.get("cleanup_error") or tests.get("skipped"):
+        return False
     if run.get("runtime_fatal"):
         return (run["exit_status"] == 2 and not tests["other_failures"]
                 and all(crash["message"].startswith("concurrent map") for crash in run["runtime_fatal"]))
@@ -679,7 +750,164 @@ def service_prerequisites(kind: str, runs: list[dict], baseline: dict | None = N
     raise ValueError(kind)
 
 
-def unit_scenarios(build_label: str, diagnostics: Path, targets: dict) -> list[dict]:
+def matrix_roots(sid):
+    if sid not in SCENARIOS:
+        raise AssertionError("unknown matrix cell")
+    return MATRIX_UNIT_ROOTS.get(sid, ("TestGatewayRaceService",))
+
+
+def matrix_workload(sid, run, baseline):
+    """D217's inner work, checked for EACH independent invocation."""
+    result = result_of(run)
+    if sid == "unit-pair1-reconcile-clone":
+        return result.get("rounds") == result.get("reconciles") == result.get("updates") == 2000
+    if sid == "unit-pairs23-reload-handlers":
+        return result.get("rounds") == result.get("applied") == 300 and result.get("requests", 0) > 0
+    if sid == "direct-b108-setup-token":
+        return (result.get("rounds") == 200 and result.get("goroutines") == 32 and result.get("prepared", 0) > 0
+                and result.get("errors") == result.get("profile_fetches") == 0)
+    if sid in ("unit-plugin-host-retained", "direct-b108-retained-upstream"):
+        return run_executed(run, matrix_roots(sid), result_line=False)
+    if sid == "service-startup-overlap":
+        return all(service_prerequisites("startup", [run]).values())
+    if sid == "service-reload-traffic":
+        return (run.get("config_writes") == run.get("accepted_reloads") == run.get("auth_updates") == 20
+                and run.get("rejected_reload_control") is False
+                and all(service_prerequisites("reload", [run], baseline).values()))
+    if sid == "control-rejected-reload":
+        return (run.get("config_writes") == run.get("auth_updates") == run.get("reloads_not_observed") == 1
+                and run.get("accepted_reloads") == 0 and run.get("rejected_reload_control") is True
+                and served(run, "GET /v1/models") > 0 and served(run, "POST /v1/messages") > 0)
+    mode = "file" if sid == "manager-http-b108-file-auth" else "config"
+    return (run.get("credential_shape") == mode and run.get("credentials") == run.get("armed") == 8
+            and run.get("credentials_completed") == 8 and run.get("concurrent_per_credential") == 16
+            and served(run, "POST /v1/messages b108 json") == 8 * 16
+            and sum(run.get("request_outcomes", {}).values()) == 8 * 16
+            and all(service_prerequisites(mode, [run]).values()))
+
+
+def matrix_target_window(sid, run, baseline):
+    # Record the control's observed targets too. Its failed acceptance
+    # prerequisite still prevents a race-absence/negative verdict.
+    path = phase_path([run], baseline) if sid in ("service-reload-traffic", "control-rejected-reload") else run.get("target_path", {})
+    return all(target_executed(pair, path) for pair in SCENARIOS[sid][2])
+
+
+def matrix_accounting(sid, runs, baseline=None):
+    roots = matrix_roots(sid)
+    total = {name: {"attempted": 0, "passed": 0, "failed": 0, "skipped": 0} for name in roots}
+    completed, targets, workloads, other_failures, race_failures = 0, 0, 0, 0, 0
+    identities = []
+    for run in runs:
+        ident = run.get("invocation_id")
+        pid = run.get("process_pid")
+        if run.get("process_started") is True and isinstance(ident, str) and re.fullmatch(r"[0-9a-f]{32}", ident) \
+                and type(pid) is int and pid > 0:
+            identities.append(ident)  # PID reuse is legitimate; receipt reuse is not.
+        observed = run.get("root_tests", {})
+        root_complete = set(observed) == set(roots)
+        for name in roots:
+            row = observed.get(name, {})
+            values = {key: row.get(key, 0) for key in total[name]}
+            if any(type(value) is not int or value < 0 for value in values.values()):
+                raise AssertionError("invalid matrix root count")
+            for key, value in values.items():
+                total[name][key] += value
+            root_complete &= (values["attempted"] == values["passed"] + values["failed"] == 1
+                              and values["skipped"] == 0)
+            if name in run.get("tests", {}).get("race_only_failures", []):
+                race_failures += values["failed"]
+            else:
+                other_failures += values["failed"]
+        result_line = sid not in ("unit-plugin-host-retained", "direct-b108-retained-upstream")
+        root_complete &= len(run.get("results", [])) == (1 if result_line else 0)
+        completed += bool(root_complete and run_executed(run, roots, result_line=result_line))
+        targets += bool(matrix_target_window(sid, run, baseline or {}))
+        workloads += bool(matrix_workload(sid, run, baseline or {}))
+    return {"requested_processes": MATRIX_RUNS, "attempted_processes": len(runs),
+            "started_processes": len(identities), "distinct_invocations": len(set(identities)),
+            "completed_processes": completed, "required_roots": total,
+            "workload_windows": workloads, "target_reaching_windows": targets,
+            "race_only_root_failures": race_failures, "other_root_failures": other_failures,
+            "runtime_fatal_processes": sum(bool(run.get("runtime_fatal")) for run in runs),
+            "process_errors": sum(bool(run.get("process_error") or run.get("driver_error") or run.get("cleanup_error")) for run in runs),
+            "processes_with_skips": sum(bool(run.get("tests", {}).get("skipped")) for run in runs)}
+
+
+def validate_matrix_cell(scenario):
+    sid, runs = scenario["id"], scenario["runs"]
+    measured = matrix_accounting(sid, runs, scenario.get("startup_baseline"))
+    bound = scenario.get("bound", {})
+    if bound.get("processes") != MATRIX_RUNS:
+        raise AssertionError("matrix requires 100 independent processes per cell")
+    if sid in ("service-reload-traffic", "control-rejected-reload"):
+        if bound.get("config_writes") != (20 if sid == "service-reload-traffic" else 1):
+            raise AssertionError("matrix reload inner bound changed")
+    if sid in ("manager-http-b108-file-auth", "manager-http-b108-config-empty-metadata"):
+        if bound.get("credentials") != 8 or bound.get("concurrent_per_credential") != 16:
+            raise AssertionError("matrix B108 inner bound changed")
+    if scenario.get("matrix") != measured:
+        raise AssertionError("stored matrix counts differ from invocation receipts: " + sid)
+    classified, crashes = {}, {}
+    for run in runs:
+        for report in run.get("detector", []):
+            key = report["classification"]
+            classified[key] = classified.get(key, 0) + report["count"]
+        for crash in run.get("runtime_fatal", []):
+            key = crash["classification"]
+            crashes[key] = crashes.get(key, 0) + 1
+    if scenario.get("classified") != classified or scenario.get("runtime_fatal") != crashes:
+        raise AssertionError("matrix discarded an observed race or runtime failure: " + sid)
+    for key in ("attempted_processes", "started_processes", "distinct_invocations", "completed_processes", "workload_windows"):
+        if measured[key] != MATRIX_RUNS:
+            raise AssertionError(f"matrix {sid}: {key}={measured[key]}, want {MATRIX_RUNS}")
+    for name, counts in measured["required_roots"].items():
+        if counts["attempted"] != MATRIX_RUNS or counts["passed"] + counts["failed"] != MATRIX_RUNS or counts["skipped"]:
+            raise AssertionError("matrix missing root executions: " + name)
+    if sid != "control-rejected-reload" and measured["target_reaching_windows"] != MATRIX_RUNS:
+        raise AssertionError("matrix required target window missing: " + sid)
+    if sid == "control-rejected-reload" and scenario.get("prerequisites_met") is not False:
+        raise AssertionError("matrix rejected reload must remain inconclusive")
+
+
+def matrix_invocations(sid, invoke, *, baseline=None, on_attempt=None):
+    """Exactly the requested attempts unless a recorded incomplete attempt stops the cell.
+
+    A race-only completion remains an observation and does not trigger a retry.
+    An early stop is explicitly underfilled and cannot pass matrix validation.
+    """
+    runs = []
+    for index in range(MATRIX_RUNS):
+        try:
+            run = invoke()
+        except (AssertionError, OSError, ValueError, RuntimeError, probe.ProbeError, subprocess.SubprocessError) as error:
+            run = {"invocation_id": uuid.uuid4().hex, "process_started": False, "process_pid": None,
+                   "process_error": type(error).__name__, "exit_status": None, "seconds": 0,
+                   "tests": test_outcomes(""), "root_tests": {}, "results": [], "detector": [],
+                   "runtime_fatal": [], "target_path": {}, "target_counts": {}}
+        runs.append(run)
+        if on_attempt is not None:
+            on_attempt(sid, index + 1, run)
+        measured = matrix_accounting(sid, [run], baseline)
+        complete = (measured["started_processes"] == measured["completed_processes"] == measured["workload_windows"] == 1
+                    and (sid == "control-rejected-reload" or measured["target_reaching_windows"] == 1))
+        print(f"matrix {sid}: attempt={index + 1}/{MATRIX_RUNS} completed={measured['completed_processes']} "
+              f"workload_windows={measured['workload_windows']} target_windows={measured['target_reaching_windows']}", flush=True)
+        if not complete:
+            print(f"matrix {sid}: incomplete attempt retained; stopping, not retrying or counting unattempted work", flush=True)
+            break
+    return runs
+
+
+def matrix_complete(cell):
+    try:
+        validate_matrix_cell(cell)
+    except AssertionError:
+        return False
+    return True
+
+
+def unit_scenarios(build_label: str, diagnostics: Path, targets: dict, *, matrix_runs=None, on_attempt=None) -> list[dict]:
     out = []
 
     def one(name, test, rounds, extra_args=()):
@@ -688,6 +916,26 @@ def unit_scenarios(build_label: str, diagnostics: Path, targets: dict) -> list[d
             return isolated_run(diagnostics / "bin" / ("gwtest-race-" + name),
                                 [f"-test.run=^({test})$", *extra_args], root,
                                 env={"GWTEST_ROUNDS": str(rounds)}, targets=targets, timeout=120)
+    if matrix_runs is not None:
+        if matrix_runs != MATRIX_RUNS:
+            raise ValueError("matrix runs must be 100")
+        for sid, binary, rounds, inner in (
+                ("unit-pair1-reconcile-clone", "auth", 2000, {"rounds": 2000}),
+                ("unit-pairs23-reload-handlers", "api", 300, {"rounds": 300, "request_workers": 4}),
+                ("unit-plugin-host-retained", "handlers", 0, {"count": 100, "count_per_process": 1, "tests": list(RETAINED_PLUGIN_HOST)}),
+                ("direct-b108-setup-token", "executor", 200, {"rounds": 200, "goroutines": 32}),
+                ("direct-b108-retained-upstream", "executor", 0, {"count": 100, "count_per_process": 1, "tests": list(RETAINED_B108)})):
+            roots = matrix_roots(sid)
+            runs = matrix_invocations(sid, lambda: one(binary, "|".join(roots), rounds, ("-test.count=1",)),
+                                      on_attempt=on_attempt)
+            cell = scenario(sid, build_label, runs, {**inner, "processes": MATRIX_RUNS}, roots,
+                result_line=sid not in ("unit-plugin-host-retained", "direct-b108-retained-upstream"),
+                prerequisites={"each_inner_workload_complete": bool(runs) and all(matrix_workload(sid, run, {}) for run in runs)})
+            cell["matrix"] = matrix_accounting(sid, runs)
+            out.append(cell)
+            if not matrix_complete(cell):
+                break
+        return out
     run = one("auth", "TestGatewayPair1ReconcileCloneUnit", 2000)
     done = result_of(run)
     out.append(scenario("unit-pair1-reconcile-clone", build_label, [run],
@@ -918,6 +1166,7 @@ def service_run(diagnostics: Path, targets: dict, scenario_id: str, drive, *, b1
         if b108_mode == "file":
             # Loopback inside the unshared namespace: the egress bridge to the fake upstream.
             env["GWTEST_FILE_UPSTREAM"] = f"http://127.0.0.1:{fixture.egress}/{FILE_ROUTE}"
+        run = None
         try:
             def driver(process, log_path):
                 try:
@@ -931,7 +1180,12 @@ def service_run(diagnostics: Path, targets: dict, scenario_id: str, drive, *, b1
             run.update(upstream_summary(fixture))
             return run
         finally:
-            fixture.close()
+            try:
+                fixture.close()
+            except (OSError, RuntimeError) as error:
+                if run is None:
+                    raise
+                run["cleanup_error"] = type(error).__name__
 
 
 def drive_startup(fixture, process, log_path):
@@ -1027,9 +1281,49 @@ def drive_b108(bursts):
     return drive
 
 
-def service_scenarios(build_label, diagnostics, targets, *, startups=3, reloads=12, http_runs=3) -> list[dict]:
+def service_scenarios(build_label, diagnostics, targets, *, startups=3, reloads=12, http_runs=3,
+                      matrix_runs=None, on_attempt=None) -> list[dict]:
     out = []
     expected = ("TestGatewayRaceService",)
+    if matrix_runs is not None:
+        if matrix_runs != MATRIX_RUNS:
+            raise ValueError("matrix runs must be 100")
+        sid = "service-startup-overlap"
+        runs = matrix_invocations(sid, lambda: service_run(diagnostics, targets, "service-startup", drive_startup),
+                                  on_attempt=on_attempt)
+        cell = scenario(sid, build_label, runs,
+                        {"processes": MATRIX_RUNS, "traffic_workers": 4, "post_ready_seconds": 1.5}, expected,
+                        prerequisites=service_prerequisites("startup", runs), coverage="process lifetime")
+        cell["matrix"] = matrix_accounting(sid, runs)
+        out.append(cell)
+        if not matrix_complete(cell):
+            return out
+        baseline = startup_baseline(runs)
+        for sid, count, reject in (("service-reload-traffic", 20, False), ("control-rejected-reload", 1, True)):
+            runs = matrix_invocations(sid, lambda: service_run(diagnostics, targets, sid, drive_reload(count, reject=reject)),
+                                      baseline=baseline, on_attempt=on_attempt)
+            bound = {"processes": MATRIX_RUNS, "config_writes": count, "traffic_workers": 6, "reload_observation_seconds": 15}
+            if reject:
+                bound["reload"] = "drops every client key (refused by the gateway)"
+            cell = scenario(sid, build_label, runs, bound, expected,
+                            prerequisites=service_prerequisites("reload", runs, baseline),
+                            coverage="reload phase: writer counts above the startup-only baseline",
+                            startup_baseline=baseline, phase_path=phase_path(runs, baseline))
+            cell["matrix"] = matrix_accounting(sid, runs, baseline)
+            out.append(cell)
+            if not matrix_complete(cell):
+                return out
+        for sid, mode in (("manager-http-b108-file-auth", "file"), ("manager-http-b108-config-empty-metadata", "config")):
+            runs = matrix_invocations(sid, lambda: service_run(diagnostics, targets, sid, drive_b108(16), b108=8, b108_mode=mode),
+                                      on_attempt=on_attempt)
+            cell = scenario(sid, build_label, runs,
+                            {"processes": MATRIX_RUNS, "credentials": 8, "concurrent_per_credential": 16, "credential_shape": mode},
+                            expected, prerequisites=service_prerequisites(mode, runs), coverage="process lifetime")
+            cell["matrix"] = matrix_accounting(sid, runs)
+            out.append(cell)
+            if not matrix_complete(cell):
+                break
+        return out
     runs = [service_run(diagnostics, targets, "service-startup", drive_startup) for _ in range(startups)]
     out.append(scenario("service-startup-overlap", build_label, runs,
                         {"processes": startups, "traffic_workers": 4, "post_ready_seconds": 1.5}, expected,
@@ -1112,6 +1406,9 @@ def run_all(args) -> int:
                             "fake_upstream": "unix socket via egress PortBridge", "provider_calls": 0},
                 "started": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
                 "builds": [], "scenarios": []}
+    matrix_runs = getattr(args, "matrix_runs", None)
+    if matrix_runs is not None:
+        document["matrix_runs"] = matrix_runs
     label, given = "series", args.series_diagnostics
     print(f"race diagnostics: {label}: " + ("reusing " + str(given) if given else "building"), flush=True)
     identity = describe(Path(given).resolve(), label) if given else build(worktree, label, args.omit_patch)
@@ -1121,20 +1418,53 @@ def run_all(args) -> int:
     diagnostics = Path(identity["diagnostics"])
     targets = load_targets(diagnostics)
     document.setdefault("targets", {})[label] = {k: list(v) for k, v in targets.items()}
-    for item in unit_scenarios(label, diagnostics, targets) + service_scenarios(
-            label, diagnostics, targets, startups=args.startups, reloads=args.reloads, http_runs=args.http_runs):
-        print(f"  {item['id']}: executed={item['executed']} prerequisites={item['prerequisites']} "
-              f"classified={item['classified']} "
-              f"seconds={item['seconds']} target_path={item['target_path']}", flush=True)
-        for run in item["runs"]:
-            print("    run: " + json.dumps({k: v for k, v in run.items() if k not in (
-                "detector", "target_path")}, sort_keys=True), flush=True)
-        document["scenarios"].append(item)
-    document["verdicts"] = {build["label"]: verdicts_for(build["label"], document["scenarios"])
-                            for build in document["builds"]}
-    document["controls"] = control_verdicts(document["scenarios"])
+    on_attempt = None
+    if matrix_runs is not None:
+        if set(targets) != TARGET_LABELS:
+            raise AssertionError("matrix requires all fourteen target extents before execution")
+        state.ensure_private_dir(args.out)
+        attempts = args.out / "matrix-attempts.jsonl"
+        if attempts.exists() or (args.out / "races.json").exists() or (args.out / "races-incomplete.json").exists():
+            raise ValueError("matrix evidence directory must be fresh")
+        state.atomic_write(attempts, b"")
+        def on_attempt(sid, index, run):
+            row = {"cell": sid, "attempt": index, "run": run}
+            scrub(row)
+            # Preserve actual attempts before the next process starts, even
+            # when an incomplete cell cannot produce a valid final report.
+            with attempts.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps(row, sort_keys=True) + "\n")
+
+    def append_cells(items):
+        for item in items:
+            print(f"  {item['id']}: executed={item['executed']} prerequisites={item['prerequisites']} "
+                  f"classified={item['classified']} "
+                  f"seconds={item['seconds']} target_path={item['target_path']}", flush=True)
+            for run in item["runs"]:
+                print("    run: " + json.dumps({k: v for k, v in run.items() if k not in (
+                    "detector", "target_path")}, sort_keys=True), flush=True)
+            document["scenarios"].append(item)
+
+    append_cells(unit_scenarios(label, diagnostics, targets, matrix_runs=matrix_runs, on_attempt=on_attempt))
+    if matrix_runs is None or (len(document["scenarios"]) == len(MATRIX_UNIT_ROOTS)
+                               and all(matrix_complete(cell) for cell in document["scenarios"])):
+        append_cells(service_scenarios(label, diagnostics, targets, startups=args.startups, reloads=args.reloads,
+                                       http_runs=args.http_runs, matrix_runs=matrix_runs, on_attempt=on_attempt))
     document["duration_seconds"] = round(time.monotonic() - began, 3)
-    path = publish(args.out, document)
+    try:
+        document["verdicts"] = {build["label"]: verdicts_for(build["label"], document["scenarios"])
+                                for build in document["builds"]}
+        document["controls"] = control_verdicts(document["scenarios"])
+        path = publish(args.out, document)
+    except (AssertionError, ValueError, TypeError, KeyError) as error:
+        if matrix_runs is None:
+            raise
+        partial = {"schema": "gwtest-races-incomplete-v1", "product_gate": False,
+                   "validation_error": str(error), "observations": document}
+        scrub(partial)
+        state.atomic_write(args.out / "races-incomplete.json", (json.dumps(partial, indent=2, sort_keys=True) + "\n").encode())
+        print("matrix incomplete: retained attempts and observations; no acceptance report published", file=sys.stderr)
+        return 1
     print(json.dumps(document["verdicts"], indent=2, sort_keys=True))
     print(f"race diagnostics wall time: {document['duration_seconds']}s (observation only) -> {path}")
     return 0
@@ -1183,6 +1513,29 @@ class SelfTests(unittest.TestCase):
         outcome = test_outcomes(SAMPLE)
         self.assertEqual(outcome["race_only_failures"], ["TestGatewayRaceService"])
         self.assertEqual(outcome["other_failures"], [])
+
+    def test_incomplete_process_keeps_race_observations(self):
+        for bad_result, stop_error in ((None, None), ("{", None), ("[]", None), (None, RuntimeError("fixture cleanup"))):
+            with self.subTest(result=bad_result, cleanup=bool(stop_error)), tempfile.TemporaryDirectory() as directory:
+                process = mock.Mock(pid=123, returncode=1)
+
+                def start(_argv, **kwargs):
+                    kwargs["stdout"].write((SAMPLE + "GWTEST_RACE_RESULT=" + (bad_result or "{}") + "\n").encode())
+                    kwargs["stdout"].flush()
+                    return process
+
+                with mock.patch.object(probe, "start_isolated_process", side_effect=start), \
+                        mock.patch.object(probe, "stop_isolated_process", side_effect=stop_error), \
+                        mock.patch(__name__ + ".KEEP_LOGS", None):
+                    run = isolated_run(Path("/fixture/probe"), [], Path(directory))
+                self.assertEqual(run["detector"][0]["classification"], "pair1")
+                self.assertEqual(run["detector"][0]["count"], 1)
+                self.assertEqual(run["root_tests"]["TestGatewayRaceService"]["failed"], 1)
+                self.assertEqual(run["tests"]["race_only_failures"], ["TestGatewayRaceService"])
+                self.assertEqual(run_executed(run, ("TestGatewayRaceService",), result_line=True),
+                                 bad_result is None and stop_error is None)
+                self.assertEqual(bool(run["cleanup_error"]), stop_error is not None)
+                self.assertEqual(bool(run["process_error"]), bad_result is not None)
 
     def test_other_failure_is_not_an_executed_scenario(self):
         text = "=== RUN   TestX\n    x_test.go:9: service stopped\n--- FAIL: TestX (0.1s)\n"
@@ -1464,6 +1817,215 @@ class SelfTests(unittest.TestCase):
         self.assertEqual(summary["runtime_fatal"], {"other": 1})
         self.assertEqual(summary["runs_ended_by_runtime_fatal"], 1)
 
+    def matrix_document(self):
+        document = self.document()
+        document["matrix_runs"] = MATRIX_RUNS
+        document["targets"] = {"series": {name: ["fixture.go", 1, 2] for name in TARGET_LABELS}}
+        for cell_index, cell in enumerate(document["scenarios"], 1):
+            sid = cell["id"]
+            roots = matrix_roots(sid)
+            cell["bound"] = {"processes": 100}
+            if "reload" in sid:
+                cell["startup_baseline"] = {name: 1 for name in PHASE_WRITERS}
+                cell["bound"]["config_writes"] = 1 if sid.startswith("control-") else 20
+            if sid.startswith("manager-http-"):
+                cell["bound"].update(credentials=8, concurrent_per_credential=16)
+            runs = []
+            for index in range(100):
+                run = {"invocation_id": f"{cell_index:02x}{index:030x}", "process_pid": 123,
+                       "process_started": True, "exit_status": 0, "seconds": 0,
+                       "tests": {"passed": list(roots), "race_only_failures": [], "other_failures": [], "runtime_fatal": [], "panics": 0},
+                       "root_tests": {name: {"attempted": 1, "passed": 1, "failed": 0, "skipped": 0} for name in roots},
+                       "results": [] if sid in ("unit-plugin-host-retained", "direct-b108-retained-upstream") else [{}],
+                       "runtime_fatal": [], "detector": [],
+                       "target_path": {name: True for name in TARGET_LABELS},
+                       "target_counts": {name: 21 for name in TARGET_LABELS}}
+                if sid == "unit-pair1-reconcile-clone":
+                    run["results"] = [{"rounds": 2000, "updates": 2000, "reconciles": 2000}]
+                elif sid == "unit-pairs23-reload-handlers":
+                    run["results"] = [{"rounds": 300, "applied": 300, "requests": 10}]
+                elif sid == "direct-b108-setup-token":
+                    run["results"] = [{"rounds": 200, "goroutines": 32, "prepared": 6400, "errors": 0, "profile_fetches": 0}]
+                elif sid == "service-startup-overlap":
+                    run["request_outcomes"] = {"pre-listen transport": 1, "GET /v1/models 200": 1, "POST /v1/messages 200": 1}
+                    run["target_counts"] = {name: 1 for name in TARGET_LABELS}
+                elif "reload" in sid:
+                    rejected = sid.startswith("control-")
+                    run.update(config_writes=1 if rejected else 20, auth_updates=1 if rejected else 20,
+                               accepted_reloads=0 if rejected else 20, reloads_not_observed=1 if rejected else 0,
+                               rejected_reload_control=rejected,
+                               request_outcomes={"GET /v1/models 200": 10, "POST /v1/messages 200": 10})
+                    if rejected:
+                        run["target_counts"] = {name: 1 for name in TARGET_LABELS}
+                elif sid.startswith("manager-http-"):
+                    mode = "file" if sid.endswith("file-auth") else "config"
+                    run.update(credential_shape=mode, credentials=8, armed=8, credentials_completed=8,
+                               concurrent_per_credential=16, request_outcomes={"POST /v1/messages b108 json 200": 128},
+                               upstream_hits={FILE_ROUTE: 128}, results=[{"b108_armed": 8, "file_prepared": 8,
+                                   "file_upstream_answered": 128, "file_upstream_refused": 0}])
+                runs.append(run)
+            cell["runs"] = runs
+            cell["seconds"] = 0
+            if "reload" in sid:
+                cell["phase_path"] = phase_path(runs, cell["startup_baseline"])
+            cell["matrix"] = matrix_accounting(sid, runs, cell.get("startup_baseline"))
+        document["verdicts"] = {"series": verdicts_for("series", document["scenarios"])}
+        document["controls"] = control_verdicts(document["scenarios"])
+        return document
+
+    def test_matrix_counts_preserve_each_root_and_allow_pid_reuse(self):
+        counts = root_test_counts("=== RUN   TestA\n=== RUN   TestA/sub\n    --- PASS: TestA/sub (0.0s)\n"
+                                  "--- PASS: TestA (0.0s)\n=== RUN   TestA\n--- FAIL: TestA (0.0s)\n"
+                                  "=== RUN   TestB\n--- SKIP: TestB (0.0s)\n")
+        self.assertEqual(counts, {"TestA": {"attempted": 2, "passed": 1, "failed": 1, "skipped": 0},
+                                  "TestB": {"attempted": 1, "passed": 0, "failed": 0, "skipped": 1}})
+        document = self.matrix_document()
+        validate_report(document)  # every PID is deliberately equal, every invocation distinct
+        for cell in document["scenarios"]:
+            self.assertEqual(cell["matrix"]["completed_processes"], 100)
+            self.assertEqual(cell["matrix"]["distinct_invocations"], 100)
+        self.assertTrue(all(value["verdict"] == INCOMPLETE for value in document["controls"]["rejected_reload"].values()))
+
+    def test_matrix_rejects_underfilled_roots_processes_workloads_and_targets(self):
+        def cell(doc, sid):
+            return next(row for row in doc["scenarios"] if row["id"] == sid)
+        def first(doc, sid):
+            return cell(doc, sid)["runs"][0]
+        mutations = {
+            "99 processes": lambda d: cell(d, "service-startup-overlap")["runs"].pop(),
+            "missing root": lambda d: first(d, "unit-plugin-host-retained")["root_tests"].pop(RETAINED_PLUGIN_HOST[0]),
+            "99 completions": lambda d: first(d, "direct-b108-retained-upstream")["root_tests"][RETAINED_B108[0]].update(passed=0),
+            "duplicated receipt": lambda d: cell(d, "service-startup-overlap")["runs"].__setitem__(1, copy.deepcopy(first(d, "service-startup-overlap"))),
+            "one process 100 writes": lambda d: cell(d, "service-reload-traffic").update(runs=[{**first(d, "service-reload-traffic"), "config_writes": 100, "accepted_reloads": 100}]),
+            "missing target window": lambda d: first(d, "unit-pair1-reconcile-clone")["target_path"].update(clone_after_unlock=False),
+            "short unit workload": lambda d: first(d, "unit-pairs23-reload-handlers")["results"][0].update(applied=299),
+            "duplicate workload receipt": lambda d: first(d, "unit-pair1-reconcile-clone")["results"].append(
+                copy.deepcopy(first(d, "unit-pair1-reconcile-clone")["results"][0])),
+            "127 HTTP requests": lambda d: first(d, "manager-http-b108-file-auth")["request_outcomes"].update({"POST /v1/messages b108 json 200": 127}),
+            "wrong config burst": lambda d: first(d, "manager-http-b108-config-empty-metadata").update(concurrent_per_credential=15),
+            "accepted control": lambda d: first(d, "control-rejected-reload").update(accepted_reloads=1, reloads_not_observed=0),
+            "missing extent": lambda d: d["targets"]["series"].pop("profile_fetch"),
+        }
+        for label, mutate in mutations.items():
+            with self.subTest(label=label):
+                document = self.matrix_document()
+                mutate(document)
+                # Recompute stored counters, so rejection cannot depend only
+                # on stale aggregate metadata hiding the underlying failure.
+                for row in document["scenarios"]:
+                    row["matrix"] = matrix_accounting(row["id"], row["runs"], row.get("startup_baseline"))
+                with self.assertRaises(AssertionError):
+                    validate_report(document)
+
+    def test_matrix_drivers_make_independent_invocations_and_keep_inner_work(self):
+        templates = {cell["id"]: cell["runs"] for cell in self.matrix_document()["scenarios"]}
+        indices, attempts = {}, []
+        def take(sid):
+            index = indices.get(sid, 0)
+            indices[sid] = index + 1
+            return copy.deepcopy(templates[sid][index])
+        def unit(binary, argv, root, **kwargs):
+            sid = next(sid for sid, roots in MATRIX_UNIT_ROOTS.items()
+                       if argv[0] == "-test.run=^(" + "|".join(roots) + ")$")
+            self.assertEqual(argv[1:], ["-test.count=1"])
+            rounds = {"unit-pair1-reconcile-clone": "2000", "unit-pairs23-reload-handlers": "300",
+                      "direct-b108-setup-token": "200"}.get(sid, "0")
+            self.assertEqual(kwargs["env"]["GWTEST_ROUNDS"], rounds)
+            return take(sid)
+        def service(_diagnostics, _targets, sid, _drive, **kwargs):
+            sid = "service-startup-overlap" if sid == "service-startup" else sid
+            if sid.startswith("manager-http-"):
+                self.assertEqual(kwargs, {"b108": 8, "b108_mode": "file" if sid.endswith("file-auth") else "config"})
+            return take(sid)
+        record = lambda sid, index, run: attempts.append((sid, index, run["invocation_id"]))
+        with mock.patch(__name__ + ".isolated_run", side_effect=unit) as units, \
+                mock.patch(__name__ + ".service_run", side_effect=service) as services, \
+                mock.patch(__name__ + ".drive_reload", wraps=drive_reload) as reload_driver, \
+                mock.patch(__name__ + ".drive_b108", wraps=drive_b108) as http_driver, mock.patch("sys.stdout"):
+            cells = unit_scenarios("series", Path("/fixture"), {}, matrix_runs=100, on_attempt=record)
+            cells += service_scenarios("series", Path("/fixture"), {}, matrix_runs=100, on_attempt=record)
+        self.assertEqual(units.call_count, 500)
+        self.assertEqual(services.call_count, 500)
+        self.assertEqual(indices, {sid: 100 for sid in SCENARIOS})
+        self.assertEqual(len(attempts), 1000)
+        self.assertEqual(len({row[2] for row in attempts}), 1000)
+        self.assertEqual(reload_driver.call_args_list, [mock.call(20, reject=False)] * 100 + [mock.call(1, reject=True)] * 100)
+        self.assertEqual(http_driver.call_args_list, [mock.call(16)] * 200)
+        for cell in cells:
+            validate_matrix_cell(cell)
+
+    def test_matrix_keeps_races_but_stops_incomplete_attempts_without_retry(self):
+        template = self.matrix_document()["scenarios"][0]
+        runs = copy.deepcopy(template["runs"])
+        root = matrix_roots(template["id"])[0]
+        runs[0]["tests"].update(passed=[], race_only_failures=[root])
+        runs[0]["root_tests"][root].update(passed=0, failed=1)
+        runs[0].update(exit_status=1, detector=[{"classification": "pair1", "count": 1, "frames": []}])
+        with mock.patch("sys.stdout"):
+            invoke = mock.Mock(side_effect=runs)
+            observed = matrix_invocations(template["id"], invoke)
+        self.assertEqual(invoke.call_count, 100)
+        cell = scenario(template["id"], "series", observed, {"processes": 100}, (root,), prerequisites={"workload": True})
+        cell["matrix"] = matrix_accounting(cell["id"], observed)
+        validate_matrix_cell(cell)
+        self.assertEqual(cell["matrix"]["race_only_root_failures"], 1)
+        self.assertEqual(pair_verdict("pair1", [cell])["verdict"], "reproduced")
+        hidden = copy.deepcopy(cell)
+        hidden["classified"] = {}
+        with self.assertRaisesRegex(AssertionError, "discarded"):
+            validate_matrix_cell(hidden)
+        fatal = copy.deepcopy(runs[0])
+        fatal["root_tests"][root].update(failed=0)
+        fatal.update(exit_status=2, runtime_fatal=[{"classification": "pair1", "message": "concurrent map writes"}])
+        attempts = []
+        with mock.patch("sys.stdout"):
+            invoke = mock.Mock(return_value=fatal)
+            observed = matrix_invocations(template["id"], invoke, on_attempt=lambda sid, index, run: attempts.append(run))
+        self.assertEqual(invoke.call_count, 1)
+        self.assertEqual(len(observed), 1)
+        self.assertEqual(attempts[0]["runtime_fatal"], fatal["runtime_fatal"])
+        self.assertEqual(matrix_accounting(template["id"], observed)["completed_processes"], 0)
+
+    def test_incomplete_matrix_retains_attempt_receipts_and_never_publishes_acceptance(self):
+        document = self.matrix_document()
+        cell = document["scenarios"][0]
+        cell["runs"] = cell["runs"][:1]
+        root = matrix_roots(cell["id"])[0]
+        cell["runs"][0]["root_tests"][root]["passed"] = 0
+        cell["matrix"] = matrix_accounting(cell["id"], cell["runs"])
+        def units(*_args, on_attempt=None, **_kwargs):
+            on_attempt(cell["id"], 1, cell["runs"][0])
+            return [cell]
+        with tempfile.TemporaryDirectory() as directory:
+            out = Path(directory) / "matrix"
+            args = parse_args(["--matrix-runs", "100", "--series-diagnostics", "/nix/store/fixture", "--out", str(out)])
+            with mock.patch.object(probe, "network_isolation_available", return_value=None), \
+                    mock.patch.object(subprocess, "check_output", side_effect=["fixture-head\n", ""]), \
+                    mock.patch(__name__ + ".describe", return_value=document["builds"][0]), \
+                    mock.patch(__name__ + ".load_targets", return_value=document["targets"]["series"]), \
+                    mock.patch(__name__ + ".unit_scenarios", side_effect=units), \
+                    mock.patch(__name__ + ".service_scenarios") as services, mock.patch("sys.stdout"), mock.patch("sys.stderr"):
+                self.assertEqual(run_all(args), 1)
+            services.assert_not_called()
+            self.assertFalse((out / "races.json").exists())
+            rows = [json.loads(line) for line in (out / "matrix-attempts.jsonl").read_text().splitlines()]
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["run"]["root_tests"][root]["passed"], 0)
+            partial = json.loads((out / "races-incomplete.json").read_text())
+            self.assertEqual(partial["schema"], "gwtest-races-incomplete-v1")
+            self.assertFalse(partial["product_gate"])
+            self.assertEqual(partial["observations"]["scenarios"][0]["matrix"]["requested_processes"], 100)
+
+    def test_matrix_mode_is_explicit_and_does_not_silently_override_bounds(self):
+        normal = parse_args([])
+        self.assertEqual((normal.matrix_runs, normal.startups, normal.reloads, normal.http_runs), (None, 10, 20, 3))
+        matrix = parse_args(["--matrix-runs", "100"])
+        self.assertEqual((matrix.matrix_runs, matrix.startups, matrix.reloads, matrix.http_runs), (100, 100, 20, 100))
+        for argv in (["--matrix-runs", "99"], ["--matrix-runs", "100", "--reloads", "100"], ["--matrix-runs100"]):
+            with self.subTest(argv=argv), mock.patch("sys.stderr"), self.assertRaises(SystemExit) as error:
+                parse_args(argv)
+            self.assertEqual(error.exception.code, 2)
+
     def test_expression_pins_vendor_modules(self):
         expression = build_expression(Path("/w"))
         self.assertIn(PINNED_GO_MODULES, expression)
@@ -1473,19 +2035,34 @@ class SelfTests(unittest.TestCase):
         self.assertNotIn("gateway-check.nix", expression)
 
 
-def main(argv=None):
+def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--out", type=Path, default=Path.home() / ".cache/charmer-gateway-races" /
                         datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ"))
     parser.add_argument("--omit-patch", action="append", default=[], choices=list(harness.PATCH_ROWS),
                         help="diagnostic-only omission; must be dependency closed")
     parser.add_argument("--series-diagnostics", help="reuse a built gateway-race.nix output (series)")
-    parser.add_argument("--startups", type=int, default=10)
-    parser.add_argument("--reloads", type=int, default=20)
-    parser.add_argument("--http-runs", type=int, default=3)
+    parser.add_argument("--matrix-runs", type=int, choices=(MATRIX_RUNS,),
+                        help="D217: 100 independent invocations per cell; fixed inner workloads")
+    parser.add_argument("--startups", type=int)
+    parser.add_argument("--reloads", type=int)
+    parser.add_argument("--http-runs", type=int)
     parser.add_argument("--self-test", action="store_true", help="pure parser/verdict/evidence tests only")
     parser.add_argument("--keep-logs", type=Path, help="private directory for raw local logs (not evidence)")
     args = parser.parse_args(argv)
+    if args.matrix_runs is not None:
+        if any(getattr(args, name) is not None for name in ("startups", "reloads", "http_runs")):
+            parser.error("--matrix-runs fixes every bound; do not combine it with --startups/--reloads/--http-runs")
+        args.startups, args.reloads, args.http_runs = MATRIX_RUNS, 20, MATRIX_RUNS
+    else:
+        for name, default in (("startups", 10), ("reloads", 20), ("http_runs", 3)):
+            if getattr(args, name) is None:
+                setattr(args, name, default)
+    return args
+
+
+def main(argv=None):
+    args = parse_args(argv)
     global KEEP_LOGS
     KEEP_LOGS = args.keep_logs
     if args.self_test:

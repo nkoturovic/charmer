@@ -4,14 +4,23 @@ package cliproxy
 import (
 	"bytes"
 	"context"
+	"errors"
+	"fmt"
+	"io"
+	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/gin-gonic/gin"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/api"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
+	sdkaccess "github.com/router-for-me/CLIProxyAPI/v8/sdk/access"
 	sdkauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/auth"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	log "github.com/sirupsen/logrus"
@@ -194,5 +203,192 @@ func TestOmissionCodexRefreshLead(t *testing.T) {
 		"type": "codex", "refresh_token": "dummy-omission", "expired": time.Now().Add(95 * time.Hour).Format(time.RFC3339)}}
 	if _, has, need := coreauth.CodexOuterNeedsRefresh(auth, time.Now()); !has || !need {
 		t.Fatalf("codex credential 95h from expiry: has=%t need=%t, want a refresh", has, need)
+	}
+}
+
+// D217 counts only actors and sockets this fixture owns, not a noisy global
+// goroutine total. The existing durable-save/join probes remain separate.
+type d217ServiceResources struct {
+	watchers, handlers, readers, servers, connections atomic.Int32
+}
+
+func (r *d217ServiceResources) snapshot() [5]int32 {
+	return [5]int32{r.watchers.Load(), r.handlers.Load(), r.readers.Load(), r.servers.Load(), r.connections.Load()}
+}
+
+func d217ServiceReleased(value [5]int32) bool { return value == [5]int32{} }
+
+func d217ServiceJoin(ctx context.Context, done <-chan struct{}) bool {
+	select {
+	case <-done:
+		return true
+	default:
+	}
+	select {
+	case <-done:
+		return true
+	case <-ctx.Done():
+		return false
+	}
+}
+
+func TestGatewayShutdownResources(t *testing.T) {
+	for index := 0; index < 5; index++ {
+		retained := [5]int32{}
+		retained[index] = 1
+		if d217ServiceReleased(retained) {
+			t.Fatal("resource accounting accepted a retained fixture actor or connection")
+		}
+	}
+	for _, retainWatcher := range []bool{false, true} {
+		t.Run(fmt.Sprintf("retained-control=%t", retainWatcher), func(t *testing.T) {
+			root := t.TempDir()
+			listener, err := net.Listen("tcp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			port := listener.Addr().(*net.TCPAddr).Port
+			listener.Close()
+			cfg, err := config.ParseConfigBytes([]byte(fmt.Sprintf("host: 127.0.0.1\nport: %d\nauth-dir: %q\napi-keys: [dummy-d217]\ndiscovery: {enabled: false}\nremote-management: {disable-control-panel: true}\n", port, root)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var resources d217ServiceResources
+			watcherCtx, watcherCancel := context.WithCancel(context.Background())
+			watcherDone, handlerDone, entered, readerDone := make(chan struct{}), make(chan struct{}), make(chan struct{}), make(chan struct{})
+			release, releaseWatcher := omissionShutdownRelease()
+			watcher := &WatcherWrapper{stop: func() error {
+				if retainWatcher {
+					return nil
+				} // fault control: falsely claims it stopped
+				select {
+				case <-watcherDone:
+					return nil
+				case <-time.After(time.Second):
+					return errors.New("fixture watcher did not stop")
+				}
+			}}
+			manager := coreauth.NewManager(nil, nil, nil)
+			server := api.NewServer(cfg, manager, sdkaccess.NewManager(), filepath.Join(root, "config.yaml"), api.WithMiddleware(func(c *gin.Context) {
+				if c.Request.URL.Path != "/healthz" || c.GetHeader("X-D217-Hold") != "1" {
+					return
+				}
+				resources.handlers.Add(1)
+				defer close(handlerDone)
+				defer resources.handlers.Add(-1)
+				close(entered)
+				<-c.Request.Context().Done()
+				c.Abort()
+			}))
+			service := &Service{cfg: cfg, coreManager: manager, server: server, watcher: watcher, watcherCancel: watcherCancel}
+			serverDone := make(chan struct{})
+			serverError := make(chan error, 1)
+			var connection net.Conn
+			readerStarted := false
+			t.Cleanup(func() {
+				// These are cleanup fallbacks, not evidence of successful shutdown.
+				releaseWatcher()
+				watcherCancel()
+				if connection != nil {
+					connection.Close()
+				}
+				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+				defer cancel()
+				_ = server.Stop(ctx)
+				if !d217ServiceJoin(ctx, watcherDone) || !d217ServiceJoin(ctx, serverDone) {
+					t.Error("fixture cleanup could not join owned actors")
+				}
+				if readerStarted && !d217ServiceJoin(ctx, readerDone) {
+					t.Error("fixture cleanup could not join reader")
+				}
+				select {
+				case <-entered:
+					if !d217ServiceJoin(ctx, handlerDone) {
+						t.Error("fixture cleanup could not join handler")
+					}
+				default:
+				}
+			})
+			// Register fallback joins before starting any fixture-owned worker.
+			resources.watchers.Add(1)
+			go func() {
+				defer close(watcherDone)
+				defer resources.watchers.Add(-1)
+				if retainWatcher {
+					<-release
+				} else {
+					<-watcherCtx.Done()
+				}
+			}()
+			resources.servers.Add(1)
+			go func() {
+				defer close(serverDone)
+				defer resources.servers.Add(-1)
+				serverError <- server.Start()
+			}()
+			deadline := time.Now().Add(3 * time.Second)
+			for time.Now().Before(deadline) {
+				connection, err = net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), 50*time.Millisecond)
+				if err == nil {
+					break
+				}
+				select {
+				case <-serverDone:
+					t.Fatal("API server exited before listening")
+				default:
+				}
+				time.Sleep(time.Millisecond)
+			}
+			if err != nil {
+				t.Fatal("fixture listener did not start")
+			}
+			resources.connections.Add(1)
+			resources.readers.Add(1)
+			readerStarted = true
+			go func() {
+				defer close(readerDone)
+				defer resources.readers.Add(-1)
+				defer resources.connections.Add(-1)
+				defer connection.Close()
+				_, _ = io.ReadAll(connection)
+			}()
+			_, err = fmt.Fprintf(connection, "GET /healthz HTTP/1.1\r\nHost: 127.0.0.1:%d\r\nX-D217-Hold: 1\r\nConnection: close\r\n\r\n", port)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			if !d217ServiceJoin(ctx, entered) {
+				t.Fatal("fixture request did not enter its barrier")
+			}
+			if err := service.Shutdown(ctx); err != nil {
+				t.Fatalf("shutdown: %v", err)
+			}
+			if !d217ServiceJoin(ctx, serverDone) || !d217ServiceJoin(ctx, handlerDone) || !d217ServiceJoin(ctx, readerDone) {
+				t.Fatal("shutdown retained a server, request worker, reader or connection")
+			}
+			if err := <-serverError; err != nil && !errors.Is(err, http.ErrServerClosed) {
+				t.Fatalf("server stop: %v", err)
+			}
+			if retainWatcher {
+				select {
+				case <-watcherDone:
+					t.Fatal("retained watcher control exited early")
+				case <-time.After(50 * time.Millisecond):
+				}
+				if resources.watchers.Load() != 1 || d217ServiceReleased(resources.snapshot()) {
+					t.Fatal("resource accounting accepted false shutdown completion")
+				}
+				releaseWatcher()
+			}
+			if !d217ServiceJoin(ctx, watcherDone) || !d217ServiceReleased(resources.snapshot()) {
+				t.Fatalf("owned resources remain before cleanup: %v", resources.snapshot())
+			}
+			if next, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), 100*time.Millisecond); err == nil {
+				next.Close()
+				t.Fatal("shutdown listener still accepts connections")
+			}
+			t.Logf("D217 shutdown retained_control=%t owned_resources=%v", retainWatcher, resources.snapshot())
+		})
 	}
 }

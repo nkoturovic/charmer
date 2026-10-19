@@ -87,7 +87,7 @@
     },
     {
       "basename": "cli-proxy-api-credential-save-report.patch",
-      "sha256": "05e2fa1aecf49383c91791798aff7066671c5f8536bf5977525f4d3dc9cf1627",
+      "sha256": "2425f556aab2d6263cc2ed5530bb7d62e5bc1f6386d16d4dffd8a1671b982707",
       "admitted": true
     },
     {
@@ -390,7 +390,12 @@
       "platforms": "portable",
       "race": false,
       "count": null,
-      "expected_tests": []
+      "expected_tests": [
+        "TestCM053CredentialSaveFullWriteReceipt",
+        "TestCM053CredentialSaveLineEndsAtEpoch",
+        "TestCM053CredentialSaveLiteralJSONControl",
+        "TestCM053CredentialSaveLiteralEventControl"
+      ]
     },
     {
       "name": "sdk-service",

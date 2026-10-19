@@ -1114,6 +1114,39 @@ class GatewayCheckWiringTests(unittest.TestCase):
         self.assertNotIn("__noChroot = true", text)
 
 
+class Go127DiagnosticWiringTests(unittest.TestCase):
+    def test_roots_are_built_called_and_required_as_evidence(self):
+        from unittest import mock
+        import _gateway_harness as harness
+        from tests import test_gateway_contracts as contracts
+
+        cases = (
+            ("test_concurrent_response_read_close", "response-read-close", "executor", "TestGatewayResponseReadClose"),
+            ("test_slow_non2xx_body_release", "slow-non2xx-release", "executor", "TestGatewaySlowNon2xxBodyRelease"),
+            ("test_abandoned_executor_sse", "executor-sse-abandon", "executor", "TestGatewayAbandonedExecutorSSE"),
+            ("test_shutdown_resource_accounting", "shutdown-resources", "service", "TestGatewayShutdownResources"),
+        )
+        diagnostic = (REPO_ROOT / "tests/gateway-startup-probe.nix").read_text()
+        for method, row, package, root in cases:
+            with self.subTest(row=row):
+                source = f"gateway_{package}_probe_test.go"
+                destination = "sdk/cliproxy" if package == "service" else "internal/runtime/executor"
+                self.assertIn(f"cp ${{./{source}}} {destination}/gwtest_omission_probe_test.go", diagnostic)
+                text = (REPO_ROOT / "tests" / source).read_text()
+                self.assertEqual(len(re.findall(rf"^func {root}\(t \*testing\.T\)", text, re.MULTILINE)), 1)
+                with mock.patch.object(harness, "run_codex_diagnostic", return_value="fixture-diagnostic") as run, \
+                        mock.patch.object(harness.EVIDENCE, "record") as record:
+                    getattr(contracts.Go127DiagnosticTests(method), method)()
+                run.assert_called_once_with(root, package=package)
+                record.assert_called_once_with(contracts.MODULE, "go127", {
+                    "row": row, "package": package, "root": root, "diagnostic": "fixture-diagnostic"})
+        self.assertEqual(harness.REQUIRED_EVIDENCE[contracts.MODULE]["go127"],
+                         {case[1] for case in cases} | {"headers-500", "headers-501",
+                             "downstream-abandon", "downstream-retained-control"})
+        self.assertIn("go test -mod=vendor -c -o gwtest-startup-probe ./sdk/cliproxy", diagnostic)
+        self.assertIn("go test -mod=vendor -race -c -o gwtest-executor-probe ./internal/runtime/executor", diagnostic)
+
+
 class CutoverTests(unittest.TestCase):
     def setUp(self) -> None:
         if FLAKE_REPO is None:
@@ -1393,6 +1426,37 @@ class AdmittedPatchGateTests(unittest.TestCase):
         row = f"tests.test_packaging.NoAntigravityEgressTests.{name}"
         self.assertIn(row, harness.gateway_check_selections())
         self.assertEqual(harness.PATCH_ROWS["cli-proxy-api-no-antigravity-egress.patch"], (row,))
+
+    def test_credential_literal_goldens_are_required_by_existing_gate(self):
+        roots = {
+            "sdk/auth/filestore_cm053_test.go": (
+                "TestCM053CredentialSaveFullWriteReceipt", "TestCM053CredentialSaveLiteralJSONControl"),
+            "sdk/cliproxy/auth/credential_save_line_test.go": (
+                "TestCM053CredentialSaveLineEndsAtEpoch", "TestCM053CredentialSaveLiteralEventControl"),
+        }
+        record = gate("credential-store")
+        self.assertFalse(record.get("run"), "retain the complete existing package selection")
+        self.assertEqual(set(record["expected_tests"]), {root for group in roots.values() for root in group})
+        patch = (PATCH_DIR / "cli-proxy-api-credential-save-report.patch").read_text()
+        sources = {}
+        for path, names in roots.items():
+            chunk = patch.split("+++ b/" + path + "\n", 1)[1].split("\ndiff --git ", 1)[0]
+            sources[path] = "\n".join(line[1:] for line in chunk.splitlines() if line.startswith("+"))
+            for name in names:
+                self.assertIn("func " + name + "(t *testing.T)", sources[path])
+        stored = sources["sdk/auth/filestore_cm053_test.go"]
+        receipt = stored.split("func TestCM053CredentialSaveFullWriteReceipt(", 1)[1].split("\nfunc ", 1)[0]
+        self.assertIn("want := []byte(fxFullWriteJSONGolden)", receipt)
+        self.assertNotIn("json.Marshal", receipt)
+        self.assertIn('const fxFullWriteJSONGolden = `{"access_token":', stored)
+        self.assertIn("return bytes.Equal(got, want)", stored)
+        events = sources["sdk/cliproxy/auth/credential_save_line_test.go"]
+        self.assertIn('auth.Index = "0123456789abcdef"', events)
+        self.assertIn("fxLiteralEventMatches(raw, fxLiteralEventBodies[index])", events)
+        for operation, result in (("refresh", "persisted"), ("result", "failed")):
+            self.assertIn(f'"credential_save_v1 operation={operation} result={result} provider=claude '
+                          "auth_index=0123456789abcdef", events)
+        self.assertIn('bytes.Replace(line, []byte("epoch=7"), []byte("epoch=8"), 1)', events)
 
     def test_credential_receipt_format_is_pinned(self):
         self.assertEqual(gate("credential-store")["packages"], ["./sdk/auth", "./sdk/cliproxy/auth"])

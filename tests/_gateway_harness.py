@@ -313,6 +313,8 @@ REQUIRED_EVIDENCE["tests.test_gateway_contracts"] = {
     "reasoning_blocks": stream_rows("F9"),
     "retention": stream_rows("R1", "R2", "R3", "R4-codex", "R4-compat"),
     "observations": {"O2-B088"} | stream_rows("B081"),
+    "go127": {"headers-500", "headers-501", "downstream-abandon", "downstream-retained-control",
+              "response-read-close", "slow-non2xx-release", "executor-sse-abandon", "shutdown-resources"},
 }
 
 
