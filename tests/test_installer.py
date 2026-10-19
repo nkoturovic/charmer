@@ -32,7 +32,8 @@ case $1 in
 esac
 """
 # Every external command the installer may run for a --from-dir install
-# (shell builtins aside). A new dependency must be added here on purpose.
+# (shell builtins and mocked platform commands aside). A new dependency
+# must be added here on purpose.
 INSTALLER_TOOLS = ("awk", "cat", "chmod", "cp", "cut", "getconf", "grep", "gzip", "id", "ldd", "ln", "ls",
                    "mkdir", "mktemp", "mv", "readlink", "rm", "sed", "sha256sum", "sort", "tail", "tar", "tr")
 SHELLS = [("sh",)] + ([("busybox", "sh")] if shutil.which("busybox") else [])
@@ -922,6 +923,221 @@ class PlatformTests(InstallerTestCase):
             self.assertIn("not through sudo", self.refused(SUDO_USER="someone"))
         else:
             self.assertEqual(self.run_installer("--help", SUDO_USER="someone").returncode, 0)
+
+
+class MacOSVersionTests(InstallerTestCase):
+    """Synthetic platform commands only; no native macOS probe or gateway."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.tools = self.tmp / "platform-bin"
+        self.tools.mkdir()
+        # No host PATH fallback: even a missing sw_vers is synthetic on macOS.
+        for tool in INSTALLER_TOOLS + ("sh", "ssh-keygen"):
+            if found := shutil.which(tool):
+                (self.tools / tool).symlink_to(found)
+        shutil.copy2(self.fakebin / "uname", self.tools / "uname")
+        self.command("sysctl", "exit 1\n")
+        self.command("sw_vers", 'printf "%s\\n" "$*" >>"$VERSION_LOG"\n'
+                     'if [ "${SYSTEM_VERSION_COMPAT:-}" = 1 ]; then printf "10.16\\n"; '
+                     'else printf "%s\\n" "$FAKE_SW_VERSION"; fi\n'
+                     'printf "%s\\n" "fixture-version-detail" >&2\nexit "$FAKE_SW_STATUS"\n')
+        self.version_log = self.tmp / "version.log"
+        self.effect_log = self.tmp / "effects.log"
+        (self.home / ".profile").write_text("# user profile\n")
+
+    def command(self, name: str, body: str) -> None:
+        path = self.tools / name
+        if path.is_symlink():
+            path.unlink()
+        path.write_text("#!/bin/sh\n" + body)
+        path.chmod(0o755)
+
+    def block_effects(self) -> None:
+        for tool in ("mktemp", "cp", "curl", "wget"):
+            self.command(tool, 'printf "%s\\n" "$0" >>"$EFFECT_LOG"\nexit 99\n')
+
+    def run_platform(self, *args: str, shell: tuple[str, ...] = ("sh",), script: Path = INSTALL_SH,
+                     **env: str) -> subprocess.CompletedProcess[str]:
+        environ = {"FAKE_UNAME_S": "Darwin", "FAKE_UNAME_M": "arm64", "FAKE_SW_VERSION": "12.7.6",
+                   "FAKE_SW_STATUS": "0", "VERSION_LOG": str(self.version_log), "EFFECT_LOG": str(self.effect_log)}
+        environ.update(env)
+        executable = shutil.which(shell[0])
+        self.assertIsNotNone(executable)
+        return self.run_installer(*args, shell=(executable, *shell[1:]), script=script,
+                                  path=str(self.tools), **environ)
+
+    def install_platform(self, release: FakeRelease, *args: str, **kwargs) -> subprocess.CompletedProcess[str]:
+        return self.run_platform("--from-dir", str(release.dir), "--allowed-signers", str(self.signers),
+                                 "--no-setup", "--no-modify-path", *args, **kwargs)
+
+    def versioned_installer(self) -> Path:
+        script = self.tmp / "install-versioned.sh"
+        script.write_text(INSTALL_SH.read_text().replace("RELEASE_VERSION=''", "RELEASE_VERSION='2.1.0'"))
+        return script
+
+    def assertFloorRefused(self, result: subprocess.CompletedProcess[str], before: dict) -> None:
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("macOS 13 or newer", result.stderr)
+        self.assertIn("compatible older release", result.stderr)
+        self.assertIn("nothing was installed", result.stderr)
+        self.assertNotIn("fixture-version-detail", result.stdout + result.stderr)
+        self.assertEqual(self.snapshot(), before)
+        self.assertFalse(self.effect_log.exists(), "refusal must precede temporary files and downloads")
+
+    def test_unsupported_macos_refuses_before_effects(self) -> None:
+        self.block_effects()
+        before = self.snapshot()
+        for shell in SHELLS:
+            for version in ("2.1.0", "2.1.0-dev", "2.1.1", "2.10.0", "3.0.0"):
+                for macos in ("9.9.9", "10.15.7", "12.7.6"):
+                    with self.subTest(shell=shell, version=version, macos=macos):
+                        result = self.run_platform("--version", version, "--from-dir", str(self.tmp),
+                                                   "--modify-path", shell=shell, FAKE_SW_VERSION=macos)
+                        self.assertFloorRefused(result, before)
+        self.assertTrue(self.version_log.read_text().splitlines())
+        self.assertEqual(set(self.version_log.read_text().splitlines()), {"-productVersion"})
+
+    def test_unreadable_or_malformed_macos_refuses_before_effects(self) -> None:
+        self.block_effects()
+        before = self.snapshot()
+        for shell in SHELLS:
+            for version, status in (("13.0", "1"), ("", "0"), ("fixture-version-detail", "0"), ("13x", "0"),
+                                    ("13.x", "0"), ("+13.0", "0"), ("13.-1", "0"), ("13..0", "0"),
+                                    (".13", "0"), ("13.", "0"), ("13.0.0.1", "0"), (" 13.0", "0"),
+                                    ("13.0\n12.0", "0"), ("13.0\nunknown", "0"), ("9" * 80, "0")):
+                with self.subTest(shell=shell, version=version, status=status):
+                    result = self.run_platform("--version", "2.1.0", "--from-dir", str(self.tmp), shell=shell,
+                                               FAKE_SW_VERSION=version, FAKE_SW_STATUS=status)
+                    self.assertFloorRefused(result, before)
+
+    def test_missing_sw_vers_refuses_before_effects(self) -> None:
+        (self.tools / "sw_vers").unlink()
+        self.block_effects()
+        before = self.snapshot()
+        for shell in SHELLS:
+            with self.subTest(shell=shell):
+                result = self.run_platform("--version", "2.1.0", "--base-url", "https://example.invalid/releases",
+                                           shell=shell)
+                self.assertFloorRefused(result, before)
+                self.assertIn("cannot read the macOS version", result.stderr)
+
+    def test_default_and_inferred_new_releases_are_guarded(self) -> None:
+        self.block_effects()
+        before = self.snapshot()
+        # A published installer's default and a source installer's local filename inference.
+        (self.tmp / "charmer-2.1.0-darwin-arm64.tar.gz").touch()
+        for script in (self.versioned_installer(), INSTALL_SH):
+            with self.subTest(script=script.name):
+                self.assertFloorRefused(self.run_platform("--from-dir", str(self.tmp), script=script), before)
+
+    def test_supported_macos_and_linux_reach_the_existing_download_checks(self) -> None:
+        before = self.snapshot()
+        for shell in SHELLS:
+            for arch in ("arm64", "x86_64"):
+                for version in ("13", "13.0", "13.6.9", "14.0", "26.1", "100.0"):
+                    with self.subTest(shell=shell, arch=arch, version=version):
+                        result = self.run_platform("--version", "2.1.0", "--from-dir", str(self.tmp), shell=shell,
+                                                   FAKE_UNAME_M=arch, FAKE_SW_VERSION=version)
+                        self.assertEqual(result.returncode, 1, result.stderr)
+                        self.assertIn("the release has no SHA256SUMS", result.stderr)
+        self.version_log.unlink()
+        result = self.run_platform("--version", "2.1.0", "--from-dir", str(self.tmp),
+                                   FAKE_UNAME_S="Linux", FAKE_UNAME_M="x86_64", FAKE_SW_STATUS="1")
+        self.assertIn("the release has no SHA256SUMS", result.stderr)
+        self.assertFalse(self.version_log.exists())
+        self.assertEqual(self.snapshot(), before)
+
+    def test_system_version_compat_is_disabled_only_for_the_version_query(self) -> None:
+        after_query = self.tmp / "after-query.log"
+        self.command("mktemp", 'printf "%s\\n" "${SYSTEM_VERSION_COMPAT:-unset}" >>"$AFTER_QUERY_LOG"\n'
+                     'exec "$REAL_MKTEMP" "$@"\n')
+        before = self.snapshot()
+        for shell in SHELLS:
+            for version in ("13.0", "14.6.1", "26.1"):
+                with self.subTest(shell=shell, version=version):
+                    result = self.run_platform("--version", "2.1.0", "--from-dir", str(self.tmp), shell=shell,
+                                               FAKE_SW_VERSION=version, SYSTEM_VERSION_COMPAT="1",
+                                               AFTER_QUERY_LOG=str(after_query), REAL_MKTEMP=shutil.which("mktemp"))
+                    self.assertEqual(result.returncode, 1, result.stderr)
+                    self.assertIn("the release has no SHA256SUMS", result.stderr)
+        self.assertEqual(after_query.read_text().splitlines(), ["1"] * (len(SHELLS) * 3))
+        self.assertEqual(self.snapshot(), before)
+        self.block_effects()
+        refused = self.run_platform("--version", "2.1.0", "--from-dir", str(self.tmp), SYSTEM_VERSION_COMPAT="1")
+        self.assertFloorRefused(refused, before)
+
+    @needs_ssh_keygen()
+    def test_supported_macos_and_linux_install_verified_fake_bundles(self) -> None:
+        for system, arch, version, target in (("Darwin", "arm64", "13.0", "darwin-arm64"),
+                                               ("Darwin", "x86_64", "14.6.1", "darwin-x86_64"),
+                                               ("Linux", "x86_64", "unknown", "linux-x86_64")):
+            with self.subTest(system=system, arch=arch):
+                self.setUp()
+                release = self.release("2.1.0", targets=(target,))
+                result = self.install_platform(release, FAKE_UNAME_S=system, FAKE_UNAME_M=arch, FAKE_SW_VERSION=version)
+                self.assertInstalled(result, "2.1.0")
+                self.assertIn("verified the SHA256SUMS signature", result.stdout)
+                self.assertEqual(self.version_log.exists(), system == "Darwin")
+
+    @needs_ssh_keygen()
+    def test_older_release_override_can_be_installed_and_reinstalled_on_macos12(self) -> None:
+        script = self.versioned_installer()
+        release = self.release("2.0.1", targets=("darwin-arm64",))
+        for _ in range(2):
+            result = self.install_platform(release, "--version", "2.0.1", script=script, FAKE_SW_STATUS="1")
+            self.assertInstalled(result, "2.0.1")
+            self.assertEqual(self.launcher("--version").stdout.strip(), "charmer 2.0.1")
+            (self.root / "versions/2.0.1/bin/charmer").write_text("broken")
+        self.assertFalse(self.version_log.exists())
+
+    @needs_ssh_keygen()
+    def test_existing_older_repair_and_moved_aside_recovery_do_not_probe_macos(self) -> None:
+        from charmer import gateway_inhibition
+
+        self.assertInstalled(self.install_platform(self.release("2.0.1", targets=("darwin-arm64",))), "2.0.1")
+        script = self.versioned_installer()
+        (self.bin / "charmer").unlink()
+        (self.root / "current").unlink()
+        self.assertInstalled(self.run_platform("--repair", "--no-modify-path", script=script, FAKE_SW_STATUS="1"), "2.0.1")
+        versions = self.root / "versions"
+        os.rename(versions / "2.0.1", versions / ".replaced.2.0.1.4242")
+        gateway_inhibition.begin(self.state, owner="installer", purpose="install charmer 2.0.1", phase="replace",
+                                 remedy="sh install.sh --repair", expiry=gateway_inhibition.owner_process(2 ** 22 + 1))
+        repaired = self.run_platform("--repair", "--no-modify-path", script=script, FAKE_SW_STATUS="1")
+        self.assertInstalled(repaired, "2.0.1")
+        self.assertIn("put back 2.0.1", repaired.stdout)
+        self.assertIsNone(gateway_inhibition.read(self.state))
+        self.assertFalse(self.version_log.exists())
+
+    @needs_ssh_keygen()
+    def test_first_install_repair_guards_new_bytes_and_can_recover_an_older_release(self) -> None:
+        from charmer import gateway_inhibition
+
+        gateway_inhibition.begin(self.state, owner="installer", purpose="install charmer 2.0.1", phase="replace",
+                                 remedy="sh install.sh --repair", expiry=gateway_inhibition.owner_process(2 ** 22 + 1))
+        release = self.release("2.1.0", targets=("darwin-arm64",))
+        before = self.snapshot()
+        self.block_effects()
+        refused = self.install_platform(release, "--repair", script=self.versioned_installer())
+        self.assertFloorRefused(refused, before)
+        for tool in ("mktemp", "cp"):
+            (self.tools / tool).unlink()
+            (self.tools / tool).symlink_to(shutil.which(tool))
+        older = self.release("2.0.1", targets=("darwin-arm64",))
+        self.assertInstalled(self.install_platform(older, "--repair"), "2.0.1")
+        self.assertIsNone(gateway_inhibition.read(self.state))
+
+    @needs_ssh_keygen()
+    def test_rollback_does_not_probe_macos_or_apply_the_new_floor(self) -> None:
+        for version in ("2.0.1", "2.1.0"):
+            release = self.release(version, targets=("darwin-arm64",))
+            self.assertInstalled(self.install_platform(release, FAKE_SW_VERSION="13.0"), version)
+        (self.tools / "sw_vers").unlink()
+        self.version_log.unlink()
+        for version in ("2.0.1", "2.1.0"):
+            self.assertInstalled(self.run_platform("--rollback", script=self.versioned_installer()), version)
+        self.assertFalse(self.version_log.exists())
 
 
 class StaticTests(InstallerTestCase):
