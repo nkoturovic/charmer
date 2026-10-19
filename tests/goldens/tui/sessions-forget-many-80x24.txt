@@ -1,0 +1,24 @@
+
+  sessions — project (cwd) · 3 total · 3 marked
+  ─────────────────────────────────────────────────────────────────────────────
+    *  state    profile   lead      agents  follow  last seen   title
+  › *  ○ ended  balanced  Opus 5.5  8       follow  2026-07-03  —
+    *  ○ ended  balanced  Opus 5.5  8       follow  2026-07-03  —
+    *+--------------------------------------------------------------------+
+     | Forget 3 session(s)?                                               |
+     | Selected IDs are frozen; each is checked again under its lock.     |
+     | 11111111  balanced  2026-07-03T12:00:00Z  project                  |
+     | 22222222  balanced  2026-07-03T12:00:00Z  project                  |
+     | 33333333  balanced  2026-07-03T12:00:00Z  project                  |
+     | Live or unknown liveness refuses; transcripts are never touched.   |
+     |                                                                    |
+     |                                                                    |
+     | [ Cancel ] [ Forget ]                                              |
+     +--------------------------------------------------------------------+
+
+
+
+  lineup gen 1 · 8 agents · follow
+
+  Enter resume · Space mark · * all · / filter · X forget · C all dirs
+  … · ? help · Esc back

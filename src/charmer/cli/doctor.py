@@ -1640,6 +1640,7 @@ def _doctor_record_report(
     except cli_errors.CLIError:
         eff = None  # the profile report BLOCKs on unreadable Settings
     needs_choice: list[str] = []
+    pending_choices: dict[str, int] = {}
     # Sessions on an externalized provider's retired key (its sample
     # is not declared) — a notice only while something references it.
     externalized: dict[str, list[str]] = {}
@@ -1655,9 +1656,10 @@ def _doctor_record_report(
         if (isinstance(retired_entry, dict) and isinstance(retired_entry.get("externalized"), dict)
                 and retired_entry.get("provider") not in lcat.providers):
             externalized.setdefault(retired_entry["provider"], []).append(m8)
-        if sessions.lead_needs_choice(record, lcat):
+        choice = runtime.resume_choice(record, lcat=lcat, effective=eff)
+        if choice.needs_choice:
             needs_choice.append(m8)
-        else:
+        elif not sessions.lead_needs_choice(record, lcat):
             note = views.retired_lead_note(lcat, lead_key)
             if note is not None:
                 attention.append(_per_session(f"session {m8}: {note}", mid, f"lead-note:{note}",
@@ -1689,11 +1691,16 @@ def _doctor_record_report(
                 info.append(f"session {m8}: settings drift: {line}")
         pending = record.get("pending")
         if isinstance(pending, dict):
-            reasons = pending.get("reasons")
-            text = ", ".join(reasons) if isinstance(reasons, list) and reasons else "relaunch-only"
-            info.append(
-                f"session {m8}: pending relaunch change ({text}); applies at the next resume"
-            )
+            if choice.problem:
+                info.append(f"session {m8}: pending relaunch change is invalid ({choice.problem}); not applied")
+            else:
+                reasons = pending.get("reasons")
+                text = ", ".join(reasons) if isinstance(reasons, list) and reasons else "relaunch-only"
+                info.append(f"session {m8}: pending relaunch change ({text}); applies at the next resume")
+                if choice.lineup is not None:
+                    target = (f"profile {pending['profile']}" if pending.get("profile")
+                              else f"direct {choice.lineup.lead.binding.key}")
+                    pending_choices[target] = pending_choices.get(target, 0) + 1
         target = record.get("lead_target")
         if isinstance(target, dict):
             entry = lcat.lines.get(target.get("key")) or lcat.retired.get(target.get("key")) or {}
@@ -1704,12 +1711,14 @@ def _doctor_record_report(
             )
     if needs_choice:
         head = (f"{len(needs_choice)} session(s) need a profile or model choice (lead removed): "
-                "resume interactively with charmer -r <id>, or charmer lineup --session "
-                "<runtime-id> --relaunch profile <name> | direct <model> — ")
+                "save without launching: charmer sessions choose --needs-choice --profile <name> "
+                "(S banner), or resume interactively with charmer -r <id> — ")
         attention.append(gateway_facts.tagged(
             head + ", ".join(needs_choice), action="needs-choice", subjects=tuple(needs_choice),
             short=head + _listed(tuple(needs_choice)) if len(needs_choice) > SHOWN_IDS else None,
         ))
+    for target, count in sorted(pending_choices.items()):
+        info.append(f"{count} session(s) switch to {target} at their next resume")
     for provider_id, ids in sorted(externalized.items()):
         attention.append(
             f"{len(ids)} session(s) lead on provider {provider_id}, which left the catalog: to keep it, "
@@ -2799,7 +2808,7 @@ def _doctor_scope_report(runtime: runtime_mod.Runtime) -> tuple[list[str], list[
     scope_mismatch = 0
     for record in v4_records:
         summary = sessions.record_summary(record, lcat)
-        choice = " (needs a lead choice)" if summary.needs_choice else ""
+        choice = " (needs a lead choice)" if runtime.resume_choice(record, lcat=lcat).needs_choice else ""
         info.append(
             f"Session {session_facts._record_identity_label(record)}: profile {summary.profile_label} · "
             f"lead {summary.lead_key}{choice} · lineup generation "

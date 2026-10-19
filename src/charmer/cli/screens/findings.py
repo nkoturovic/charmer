@@ -526,10 +526,18 @@ class FindingsScreen:
         self._collect()
 
     def _sessions(self, win: Any, row: doctor.Row) -> tuple | None:
-        if self.open_sessions is None:
-            self._command(win, row)
+        import charmer.cli.screens.launch_sessions as launch_sessions
+
+        screen = launch_sessions._SessionsScreen(self.runtime, palette=self.palette,
+                                                 tty_in=self.tty_in, tty_out=self.tty_out)
+        screen.cwd_filter = False
+        screen.filter_mode = "needs a choice"
+        screen._reload()
+        if not screen.records:
+            self._say("No session needs a lead choice now.")
+            self._collect()
             return None
-        result = self.open_sessions(win)
+        result = screen._needs_menu(win, screen.records)
         if result is not None:
             return result
         self._collect()

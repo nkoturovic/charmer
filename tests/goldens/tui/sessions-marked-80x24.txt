@@ -1,0 +1,24 @@
+
+  sessions — project (cwd) · 3 total · 3 marked
+  ─────────────────────────────────────────────────────────────────────────────
+    *  state    profile   lead      agents  follow  last seen   title
+  › *  ○ ended  balanced  Opus 5.5  8       follow  2026-07-03  —
+    *  ○ ended  balanced  Opus 5.5  8       follow  2026-07-03  —
+    *  ○ ended  balanced  Opus 5.5  8       follow  2026-07-03  —
+
+
+
+
+
+
+
+
+
+
+
+
+
+  lineup gen 1 · 8 agents · follow
+
+  Enter resume · Space mark · * all · / filter · X forget · C all dirs
+  … · ? help · Esc back

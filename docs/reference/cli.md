@@ -317,11 +317,16 @@ charmer sessions <command>
 List managed sessions (a report; pick one to resume with charmer -r).
 
 ```text
-charmer sessions list [--json]
+charmer sessions list [--here | --all] [--ended] [--needs-choice] [--older-than <n>] [--json]
 ```
 
 | Argument | What it does |
 | --- | --- |
+| `--here` | sessions recorded in this directory |
+| `--all` | sessions in every directory |
+| `--ended` | sessions whose last event is end |
+| `--needs-choice` | sessions that need a lead choice |
+| `--older-than <n>` | last_seen_at older than N days (unknown or malformed times excluded) |
 | `--json` | one JSON document (stable fields; no transcript content) |
 
 #### charmer sessions show
@@ -341,13 +346,41 @@ charmer sessions show <id>
 Forget a managed session: its record and generated scope (the transcript is kept).
 
 ```text
-charmer sessions forget <id> [--force] [--yes]
+charmer sessions forget [<id>…] [--here | --all] [--ended] [--needs-choice] [--older-than <n>] [--dry-run] [--force] [--yes]
 ```
 
 | Argument | What it does |
 | --- | --- |
-| `<id>` | its id, an id prefix of 8 or more characters, or its name |
+| `[<id>…]` | its id, an id prefix of 8 or more characters, or its name; or omit SESSION and select with filters |
+| `--here` | sessions recorded in this directory |
+| `--all` | sessions in every directory |
+| `--ended` | sessions whose last event is end |
+| `--needs-choice` | sessions that need a lead choice |
+| `--older-than <n>` | last_seen_at older than N days (unknown or malformed times excluded) |
+| `--dry-run` | preview the frozen selection; write nothing |
 | `--force` | forget even when background liveness cannot be determined |
+| `--yes` | skip the y/N confirmation (required without a terminal) |
+
+#### charmer sessions choose
+
+Save lead choices for the next resume, without launching.
+
+```text
+charmer sessions choose [<id>…] [--here | --all] [--ended] [--needs-choice] [--older-than <n>] (--profile <name> | --direct <model>) [--effort <effort>] [--dry-run] [--yes]
+```
+
+| Argument | What it does |
+| --- | --- |
+| `[<id>…]` | its id, an id prefix of 8 or more characters, or its name; or omit SESSION and select with filters |
+| `--here` | sessions recorded in this directory |
+| `--all` | sessions in every directory |
+| `--ended` | sessions whose last event is end |
+| `--needs-choice` | sessions that need a lead choice |
+| `--older-than <n>` | last_seen_at older than N days (unknown or malformed times excluded) |
+| `--profile <name>` | follow this profile at the next resume |
+| `--direct <model>` | use this direct lead at the next resume |
+| `--effort <effort>` | direct lead effort (default: ultracode) |
+| `--dry-run` | preview pending choices; write nothing and never launch |
 | `--yes` | skip the y/N confirmation (required without a terminal) |
 
 #### charmer sessions link

@@ -370,7 +370,8 @@ class RecordReportTests(_DoctorCase):
         _problems, _info, attention = _doctor(self)
         line = next(a for a in attention if "need a profile or model choice" in a)
         self.assertTrue(line.startswith("2 session(s) need a profile or model choice (lead removed): "))
-        self.assertIn("charmer lineup --session <runtime-id> --relaunch profile <name> | direct <model>", line)
+        self.assertIn("charmer sessions choose --needs-choice --profile <name>", line)
+        self.assertIn("save without launching", line)
         self.assertIn(self.m8, line)
         self.assertIn(second[:8], line)
 

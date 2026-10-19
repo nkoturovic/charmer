@@ -26,6 +26,7 @@ from charmer.cli import doctor, gateway_facts
 import charmer.cli.doctor_actions as doctor_actions
 import charmer.cli.screens.findings as findings
 import charmer.cli.screens.gateway_actions as gateway_actions
+import charmer.cli.screens.launch_sessions as launch_sessions
 import charmer.cli.text as cli_text
 
 import _tui_fixture as fx
@@ -398,20 +399,20 @@ class FindingsActionTests(_FindingsCase):
         self.assertEqual(lines[-1], cli_text.FINDINGS_COMMAND.format(command="charmer models admit operator-model"))
 
     def test_enter_on_a_needs_choice_row_opens_sessions(self) -> None:
-        opened: list = []
-
-        def open_sessions(win):
-            opened.append(win)
-            return None
-
-        screen = self.screen(open_sessions=open_sessions)
+        fx.v4_record(self.runtime, catalog.DEFAULT_SEED, managed_id=fx.FIXED_ID,
+                     needs_choice=True, scope=False, generation=0)
+        fx.v4_record(self.runtime, catalog.DEFAULT_SEED, managed_id=fx.OTHER_ID,
+                     scope=False, generation=0)
+        screen = self.screen(open_sessions=lambda _win: self.fail("opened an unfiltered sessions screen"))
         keys = self.select(screen, "needs-choice")
-        result, _win = self.drive(screen, [*keys, ENTER, ESC])
+        with mock.patch.object(launch_sessions._SessionsScreen, "_needs_menu", return_value=None) as menu:
+            result, _win = self.drive(screen, [*keys, ENTER, ESC])
         self.assertIsNone(result)
-        self.assertEqual(len(opened), 1)
-        intent = ("perform", object())
-        screen = self.screen(open_sessions=lambda _win: intent)
-        result, _win = self.drive(screen, [*self.select(screen, "needs-choice"), ENTER])
+        self.assertEqual([record["managed_id"] for record in menu.call_args.args[1]], [fx.FIXED_ID])
+        intent = ("perform", object())  # the explicit per-session-resume option can still return an intent
+        screen = self.screen()
+        with mock.patch.object(launch_sessions._SessionsScreen, "_needs_menu", return_value=intent):
+            result, _win = self.drive(screen, [*self.select(screen, "needs-choice"), ENTER])
         self.assertIs(result, intent)
 
     def test_a_read_only_run_does_nothing(self) -> None:

@@ -175,13 +175,18 @@ RESUME_QUICK_HELP = (
 # (``_SessionsScreen._keybar``). `?` sits before Esc.
 SESSIONS_KEYBAR = (
     ("Enter", "resume"),
+    ("Space", "mark"),
+    ("*", "all"),
+    ("/", "filter"),
+    ("X", "forget"),
+    ("C", "all dirs"),
+    ("Q", "save"),
     ("V", "details"),
     ("T", "lineup"),
     ("F", "follow/pin"),
     ("R", "rename"),
-    ("X", "forget"),
     ("L", "link"),
-    ("C", "all dirs"),
+    ("B", "filters"),
     ("?", "help"),
     ("Esc", "back"),
 )
@@ -205,6 +210,15 @@ SESSIONS_HELP = (
     "change the lineup and pinning drops a pending change: F previews that, and y applies it.\n"
     "R — rename (the title is shown here only). X — forget: deletes the record and its generated scope;\n"
     "Claude Code's transcript stays, and L links it again.\n"
+    "Space — mark a row; * — mark every visible row (again clears marks). X forgets the marked rows\n"
+    "with one preview; M marks them ended. Live, unreadable and legacy records are refused in bulk.\n"
+    "Q — save a profile or direct lead for the marked sessions (or this row), without launching.\n"
+    "The needs-choice banner offers one choice for all, per-session resume, or bulk forget. A valid\n"
+    "pending choice shows ↻ instead of !; its applied lead stays as it was until the next resume.\n"
+    "/ — cycle all, this directory, exited without an end, ended, needs a choice, older than 30 days.\n"
+    "B — combine directory, ended, needs-choice and any age (Nd) with AND; apply or cancel in memory.\n"
+    "C also toggles the directory while keeping other filters. Applying a changed filter clears marks;\n"
+    "cancelling keeps them. Age uses last_seen_at only; unknown or malformed times are excluded.\n"
     "E — stop a session running in the background (claude stop; the conversation is kept).\n"
     "M — mark ended: record the end of a session that exited without one.\n"
     "P — repair: rebuild the session's generated scope from its record.\n"
@@ -218,13 +232,14 @@ SESSIONS_HELP = (
 SESSIONS_HELP_TITLE = "sessions — help"
 SESSIONS_EMPTY = "(no recorded sessions)"
 SESSIONS_EMPTY_FILTERED = "(no sessions in this directory — press C to see all)"
+SESSIONS_EMPTY_SELECTION = "(no sessions match these filters — B changes them)"
 SESSIONS_MIN_COLS = 44
 # Top, title, rule, header, banner, actions row, message.
 SESSIONS_CHROME = 7
 SESSIONS_V3_LINEUP = "legacy record — resume it once (Enter) to change its lineup"
 SESSIONS_V3_TITLE = "a legacy record has no title; resume it once to migrate it"
 SESSIONS_RENAME_TITLE = "rename {m8} — title:"
-SESSIONS_BANNER_ACTIONS = "Enter — choose a lineup for each session whose lead model was removed"
+SESSIONS_BANNER_ACTIONS = "Enter — save choices for all, resume one, or forget"
 SESSIONS_NATIVE_TITLE = "native (not managed) — link one · newest first"
 SESSIONS_NATIVE_NONE = "no native (unmanaged) session here — C shows all directories"
 SESSIONS_LINK_TITLE = "link {short} to a profile · most recent first"
@@ -1198,7 +1213,7 @@ FINDINGS_ACTIONS = {
     "dead-sessions": "Enter: record the end of every session that is not running (asks first)",
     "seed-update": "Enter: the shipped changes, then reseed (asks first)",
     "advisory-model": "Enter: optional diagnostics for this model (M → Q; " + OPTIONAL_DIAGNOSTICS + ")",
-    "needs-choice": "Enter: open Sessions to choose a lead",
+    "needs-choice": "Enter: save lead choices for the filtered sessions, without launching",
 }
 FINDINGS_COMMAND_HINT = "Enter: what to do (its exact command)"
 FINDINGS_COMMAND_TITLE = "What to do"

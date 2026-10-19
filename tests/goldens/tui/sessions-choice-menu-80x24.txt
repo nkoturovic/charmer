@@ -1,0 +1,24 @@
+  Sessions that need a lead choice
+
+  > Choose one profile for all 2…
+    Choose a model for all 2…
+    Choose per session and resume…
+    Forget all 2…
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  Enter choose · ? help · Esc back
