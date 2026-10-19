@@ -106,6 +106,16 @@ class BuildExtractionTests(unittest.TestCase):
                 self.assertEqual(sorted(p.name for p in case.iterdir()), ["dest", "runtime.tar.gz"])
                 self.assertEqual(list((case / "dest").iterdir()), [])
 
+    def test_a_member_named_twice_is_refused(self) -> None:
+        # A file replaced by a symlink of the same name, then a hard link to
+        # that name: judged by its first entry, the link would pass.
+        entries = [("bin", "dir", None), ("bin/python3", "file", b"x"), ("a", "file", b"x"),
+                   ("a", "symlink", "bin/python3"), ("h", "hardlink", "a")]
+        source = archive(self.tmp / "runtime.tar.gz", "python", entries)
+        with self.assertRaisesRegex(self.tool.BuildError, "appears more than once"):
+            self.tool.extract(source, self.tmp / "dest")
+        self.assertEqual(list((self.tmp / "dest").iterdir()), [])
+
     def test_links_inside_extract(self) -> None:
         root = self.tool.extract(archive(self.tmp / "runtime.tar.gz", "python", BENIGN), self.tmp / "dest")
         self.assertEqual((root / "share/1/1178").read_bytes(), b"terminfo")

@@ -323,18 +323,24 @@ def _resolve_link(path: str, links: dict[str, str]) -> str | None:
 
 
 def _check_members(members: list[tarfile.TarInfo]) -> None:
-    """Every member inside ``python/``, nothing below a symlink, every
+    """Every member inside ``python/`` and named once, nothing below a symlink, every
     symlink resolving inside ``python/`` through the archive's other
     symlinks (whatever their order), every hard link naming an earlier
     regular file, and nothing else than files, directories and links."""
 
     links: dict[str, str] = {}
+    seen: set[str] = set()
     for member in members:
         name = member.name
         normal = posixpath.normpath(name)
         if (name.startswith("/") or normal != name.rstrip("/") or normal.startswith("..")
                 or not _inside(normal)):
             raise BuildError(f"archive member {name!r} is outside {ROOT_DIR}/")
+        # A later member of the same name replaces the earlier one on
+        # extraction, so the checks below could judge the wrong one.
+        if normal in seen:
+            raise BuildError(f"archive member {name!r} appears more than once")
+        seen.add(normal)
         if member.issym():
             links[normal] = member.linkname
     files: set[str] = set()
