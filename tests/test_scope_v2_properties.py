@@ -394,15 +394,10 @@ class FixturePropertyTests(unittest.TestCase):
         percent = lineup.settings_overrides.get("compaction_percent", eff.compaction_percent)
         expected_context = oracle_context(lines, rows, percent)
         self.assertEqual(lead_set["context"], expected_context)
-        # The scope carries the window as its settings key (the variable
-        # neutral there and cleared in the process); the launch process env
-        # carries the same percent.
+        # The launch process env carries the same context numbers.
         launch = compile_launch(self.bundle, lcat, eff, lineup, no_subagents=case.no_subagents)
         env_set = launch.env_set
-        self.assertEqual(settings_doc["autoCompactWindow"], expected_context["window"])
-        self.assertEqual(settings_doc["env"]["CLAUDE_CODE_AUTO_COMPACT_WINDOW"], "0")
-        self.assertNotIn("CLAUDE_CODE_AUTO_COMPACT_WINDOW", env_set)
-        self.assertIn("CLAUDE_CODE_AUTO_COMPACT_WINDOW", launch.env_unset)
+        self.assertEqual(env_set["CLAUDE_CODE_AUTO_COMPACT_WINDOW"], str(expected_context["window"]))
         self.assertEqual(env_set["CLAUDE_AUTOCOMPACT_PCT_OVERRIDE"], str(percent))
         self.assertEqual(
             env_set.get("CLAUDE_CODE_MAX_CONTEXT_TOKENS"),

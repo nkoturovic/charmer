@@ -809,14 +809,14 @@ def exact_client_input(runtime: runtime_mod.Runtime, ctx: providers_cmd.Operator
     plan = scope_mod.compile_lineup_scope(lineup, lcat, eff, runtime.catalog.prompt_bodies,
                                           scope_mod.catalog_meta_v2(docs), lineup_generation=1)
     selector = lineup.lead.binding.selector
-    compiled = plan.settings.get(scope_mod.AGENT_WINDOW_KEY)
+    compiled = plan.settings.get("env", {}).get("CLAUDE_CODE_AUTO_COMPACT_WINDOW")
     client = entry["context"]["client_tokens"]
     client_effort = qualify_mod.is_client_effort(entry)
     efforts = qualify_mod.line_levels(entry) if client_effort else (entry["default_effort"],)
     return qualify_mod.ExactClientInput(
         key=key, selector=selector, wire=selector.removesuffix("[1m]"), efforts=tuple(efforts),
         client_effort=client_effort, output_limit=line.output_tokens,
-        expected_window={"client": client, "compiled": compiled if compiled is not None else client},
+        expected_window={"client": client, "compiled": int(compiled) if compiled is not None else client},
         settings=plan.settings, plan=plan,
     )
 

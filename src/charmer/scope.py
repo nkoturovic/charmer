@@ -94,9 +94,6 @@ COMPILED_SETTINGS_KEYS = frozenset(
         "env",
         "hooks",
         "autoCompactEnabled",
-        # The session window. Failure case without it: the window variable
-        # in the environment outranks every agent's own window.
-        "autoCompactWindow",
         "disableAllHooks",
         "apiKeyHelper",
     }
@@ -1516,12 +1513,8 @@ def lead_set_bytes(
     return strict_json.canonical_file_bytes(document)
 
 
-def _agent_file_v2_bytes(agent: profile.ResolvedAgent, prompt_bodies: Mapping[str, bytes],
-                         agent_window: int | None = None) -> bytes:
-    """§3.1: ``name, description, model, effort[, autoCompactWindow][, isolation][, disallowedTools]``.
-
-    ``autoCompactWindow`` is the agent's own window (``profile.RoleWindow.agent_window``),
-    only for an agent whose provider bound is below the window it would share."""
+def _agent_file_v2_bytes(agent: profile.ResolvedAgent, prompt_bodies: Mapping[str, bytes]) -> bytes:
+    """§3.1: ``name, description, model, effort[, isolation][, disallowedTools]``."""
 
     binding, role = agent.binding, agent.role
     if binding.effort == profile.ULTRACODE:
@@ -1539,8 +1532,6 @@ def _agent_file_v2_bytes(agent: profile.ResolvedAgent, prompt_bodies: Mapping[st
         f"model: {binding.selector}",
         f"effort: {binding.effort}",
     ]
-    if agent_window is not None:
-        lines.append(f"{AGENT_WINDOW_KEY}: {agent_window}")
     if role.isolation is not None:
         lines.append(f"isolation: {role.isolation}")
     if role.disallowed_tools:
@@ -1638,34 +1629,6 @@ WORKFLOW_MODEL_NEUTRAL = "inherit"
 PERMISSION_DEFAULT_MODE = "default"
 
 
-# The session's compaction window. The pinned client takes a valid
-# CLAUDE_CODE_AUTO_COMPACT_WINDOW in its environment over every other source
-# and over a cm-* agent's own ``autoCompactWindow``. So the compiled flag
-# settings carry the window as ``autoCompactWindow`` (the last settings source
-# with that top-level key replaces every earlier source's per-model values,
-# so a user's /autocompact or modelSettings cannot move it) and state the
-# variable "0", which the client refuses as a window and skips, in their env
-# (which outranks the user, project and local env and the process
-# environment); the launch clears the variable too. A cm-* agent's own window
-# then lowers its window. The real-binary proof is
-# tests/test_compaction_window_probe (the lead, agents with and without their
-# own window, a user's layers, /autocompact, resume, --agent).
-WINDOW_ENV = "CLAUDE_CODE_AUTO_COMPACT_WINDOW"
-WINDOW_ENV_NEUTRAL = "0"
-AGENT_WINDOW_KEY = "autoCompactWindow"
-
-
-def agent_window(agent: profile.ResolvedAgent, policy: profile.WindowPolicy) -> int | None:
-    """The own window of a bound cm-* agent under ``policy`` (its agent
-    file's ``autoCompactWindow``), or None when it shares its class window."""
-
-    binding = agent.binding
-    return profile.role_window(
-        binding.selector, client_tokens=binding.client_context_tokens,
-        provider_tokens=binding.provider_context_tokens, policy=policy, decide=False, own=True,
-    ).agent_window
-
-
 def feedback_drafts_env(value: str) -> dict[str, str]:
     """The scope env entries of a ``claude_feedback_drafts`` value."""
 
@@ -1747,7 +1710,7 @@ def compile_lineup_scope(
     agent_files: dict[str, bytes] = {}
     for rid, agent in lineup.agents.items():
         agent_files[str(_AGENT_DIR_RELPATH / f"{rid}.md")] = _agent_file_v2_bytes(
-            agent, prompt_bodies, agent_window(agent, context.policy)
+            agent, prompt_bodies
         )
 
     try:
@@ -1758,10 +1721,8 @@ def compile_lineup_scope(
         raise ScopeError(str(exc)) from exc
     env: dict[str, str] = dict(family_env)
     env.update(proxy_env or {})
-    # Flag settings win over user/project env and survive takeover. The
-    # window is the settings key, the window variable stated neutral (see
-    # WINDOW_ENV_NEUTRAL): set, the variable outranks every agent's own window.
-    env[WINDOW_ENV] = WINDOW_ENV_NEUTRAL
+    # Flag settings win over user/project env and survive takeover.
+    env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] = str(context.window)
     env["CLAUDE_AUTOCOMPACT_PCT_OVERRIDE"] = str(context.percent)
     if context.scalar is not None:
         env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] = str(context.scalar)
@@ -1799,7 +1760,6 @@ def compile_lineup_scope(
         "replaceBuiltInOptions": True,
     }
     settings["autoCompactEnabled"] = True
-    settings[AGENT_WINDOW_KEY] = context.window
     # Keep the model fence and lifecycle hooks enabled.
     settings["disableAllHooks"] = False
     settings["worktree"] = {"baseRef": "head"}
@@ -2404,84 +2364,24 @@ def _fence_failure_split(document: Mapping[str, Any]) -> tuple[Any, Any] | None:
     return {**document, "hooks": {**hooks, "PreModelSwitch": groups}}, next(iter(values))
 
 
-def _window_split(document: Mapping[str, Any]) -> tuple[Any, tuple[str, int]] | None:
-    """``(document without the session window, (its form, the window))``:
-    ``env`` (the window variable alone, as earlier releases compiled it),
-    ``settings`` (``autoCompactWindow`` with the variable stated neutral) or
-    ``mixed`` (both stating one window: a live earlier scope's kept env under
-    this release's compile). None for any other shape."""
-
-    env = document.get("env")
-    if not isinstance(env, Mapping):
-        return None
-    variable, value = env.get(WINDOW_ENV), document.get(AGENT_WINDOW_KEY)
-    if isinstance(value, int) and not isinstance(value, bool):
-        if variable == WINDOW_ENV_NEUTRAL:
-            form = "settings"
-        elif variable == str(value):
-            form = "mixed"
-        else:
-            return None
-    elif value is None and isinstance(variable, str) and variable.isdigit():
-        form, value = "env", int(variable)
-    else:
-        return None
-    rest = {key: item for key, item in document.items() if key != AGENT_WINDOW_KEY}
-    rest["env"] = {key: item for key, item in env.items() if key != WINDOW_ENV}
-    return rest, (form, value)
-
-
-_AGENT_DRIFT_LINE = re.compile(r"(\.claude/agents/cm-[a-z-]+\.md) content differs")
-
-
-def _agent_window_split(data: bytes) -> tuple[bytes, bool]:
-    """``(an agent file without its own-window frontmatter line, whether it
-    had one)``."""
-
-    head, sep, body = data.partition(b"\n---\n")
-    lines = head.split(b"\n")
-    kept = [line for line in lines if not line.startswith(AGENT_WINDOW_KEY.encode() + b": ")]
-    return b"\n".join(kept) + sep + body, len(kept) != len(lines)
-
-
 def fork_policy_drift(live: Path, plan: ScopePlan, drifted: Sequence[str]) -> bool:
     """True when the ONLY drift of a live scope is the managed policy another
-    release compiled: the fork-subagent deny (``compiler.FORK_AGENT_DENY``),
-    the model fence's failure policy (``onFailure: block`` and the fence's
-    own timeout on the PreModelSwitch hook) and the form of the session
-    window (the window variable, or ``autoCompactWindow`` with the variable
-    neutral; one window either way), each in the form one release compiled
-    where ``plan`` has another, ``settings.json`` otherwise equal to ``plan``
-    (a scope compiled before the 2.1.302 pin, or one with the rules under a
-    rollback compile), and agent files that differ only by an agent's own
-    window — lazy state that resume or ``doctor --repair`` resolves. A
-    ``permissions.defaultMode`` difference alongside is lazy too
-    (:func:`default_mode_differs` reports it). Any other difference is not:
-    doctor keeps it BLOCK. Read-only."""
+    release compiled: the fork-subagent deny (``compiler.FORK_AGENT_DENY``)
+    and the model fence's failure policy (``onFailure: block`` and the
+    fence's own timeout on the PreModelSwitch hook), each in the form one
+    release compiled where ``plan`` has the other, ``settings.json``
+    otherwise equal to ``plan`` (a scope compiled before the 2.1.302 pin, or
+    one with the rules under a rollback compile) — lazy state that resume or
+    ``doctor --repair`` resolves. A ``permissions.defaultMode`` difference
+    alongside is lazy too (:func:`default_mode_differs` reports it). Any
+    other difference is not: doctor keeps it BLOCK. Read-only."""
 
-    settings_line = f"{SETTINGS_RELPATH} content differs"
-    if settings_line not in drifted:
+    if list(drifted) != [f"{SETTINGS_RELPATH} content differs"]:
         return False
-    for line in drifted:
-        if line == settings_line:
-            continue
-        match = _AGENT_DRIFT_LINE.fullmatch(line)
-        if match is None or match.group(1) not in plan.agent_files:
-            return False
-        try:
-            on_disk = _agent_window_split(state.read_private(Path(live) / match.group(1)))
-        except (OSError, state.StateError):
-            return False
-        expected_file = _agent_window_split(plan.agent_files[match.group(1)])
-        # The same file, with its own window where the plan has none or the
-        # other way round (a window of another value is no release form).
-        if on_disk[0] != expected_file[0] or on_disk[1] == expected_file[1]:
-            return False
 
-    def policy_split(document: Any) -> tuple[Any, tuple[bool, Any, str]] | None:
+    def policy_split(document: Any) -> tuple[Any, tuple[bool, Any]] | None:
         """``(document without those rules and defaultMode, (whether it
-        denies forks, the fence's failure policy, the window's form))``,
-        the window itself kept in the document."""
+        denies forks, the fence's failure policy))``."""
 
         permissions = document.get("permissions") if isinstance(document, Mapping) else None
         if not isinstance(permissions, Mapping) or not isinstance(permissions.get("deny"), list):
@@ -2489,17 +2389,13 @@ def fork_policy_drift(live: Path, plan: ScopePlan, drifted: Sequence[str]) -> bo
         deny = [rule for rule in permissions["deny"] if rule != compiler.FORK_AGENT_DENY]
         rest = _without_default_mode({**document, "permissions": {**permissions, "deny": deny}})
         fence = _fence_failure_split(rest)
-        window = _window_split(fence[0]) if fence is not None else None
-        if fence is None or window is None:
+        if fence is None:
             return None
-        form, value = window[1]
-        return {**window[0], AGENT_WINDOW_KEY: value}, (compiler.FORK_AGENT_DENY in permissions["deny"],
-                                                         fence[1], form)
+        return fence[0], (compiler.FORK_AGENT_DENY in permissions["deny"], fence[1])
 
     on_disk, expected = policy_split(_live_settings(live)), policy_split(plan.settings)
-    if on_disk is None or expected is None or on_disk[0] != expected[0]:
-        return False
-    return on_disk[1] != expected[1] or len(drifted) > 1
+    return (on_disk is not None and expected is not None
+            and on_disk[0] == expected[0] and on_disk[1] != expected[1])
 
 
 def read_disk_plan(live: Path, expected: ScopePlan) -> ScopePlan | None:

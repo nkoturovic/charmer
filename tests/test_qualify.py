@@ -1092,7 +1092,6 @@ class ExactClientCommandTests(test_cli.OperatorCommandCase):
         self.assertEqual((request.selector, request.wire), ("claude-fixture-agent-9[1m]", "claude-fixture-agent-9"))
         self.assertEqual((request.efforts, request.client_effort, request.output_limit), (("high", "max"), True, 64000))
         self.assertEqual(request.expected_window["client"], 1000000)
-        self.assertEqual(request.expected_window["compiled"], request.plan.settings["autoCompactWindow"])
         self.assertEqual(request.plan.settings["model"], request.selector)
         self.assertNotIn("exact", " ".join(label for label, _ in self.http_calls))
         record = operator_mod.load_evidence(self.runtime.gateway_environ(),

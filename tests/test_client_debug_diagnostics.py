@@ -2,16 +2,17 @@
 
 Network-hermetic like every real-binary probe (``bwrap --unshare-net``,
 loopback fake provider, fixture homes). One headless run of the production
-compile of a full lineup (every role's generated agent file, one with its
-own window) and its six compiled hooks, answered by a fixture stand-in for
-``bin/charmer-hook-3``, with ``--debug-file`` inside the fixture. The debug
-log is read in memory only: it keeps counts, hook event names, outcomes and
-durations, never a line's text.
+compile of a full lineup (every role's generated agent file, one on a line
+bound below its class) and its six compiled hooks, answered by a fixture
+stand-in for ``bin/charmer-hook-3``, with ``--debug-file`` inside the fixture.
+The debug log is read in memory only: it keeps counts, hook event names,
+outcomes and durations, never a line's text.
 
 It checks that the client names no generated agent file as having an
-invalid ``autoCompactWindow`` or a frontmatter key it does not recognize or
-apply, and records each hook's outcome and duration. Debug output is a
-fixture-only check: it is never enabled in a managed session.
+invalid frontmatter value (``autoCompactWindow``, which no generated file
+carries, effort, permission mode, turns) or a frontmatter key it does not
+recognize or apply, and records each hook's outcome and duration. Debug
+output is a fixture-only check: it is never enabled in a managed session.
 
 The output line: ``client check debug-diagnostics: <STATUS> <detail>``.
 """
@@ -50,8 +51,8 @@ def line(status: str, detail: str) -> str:
 
 def compile_lineup(shim) -> tuple[profile.ResolvedLineup, scope.ScopePlan, dict]:
     """The balanced fixture seed with ``cm-analyst`` on a line bound below
-    the 200K class (its agent file carries its own window): the production
-    scope (fake-provider settings) and the compiled hooks naming ``shim``."""
+    the 200K class (it shares that class's window): the production scope
+    (fake-provider settings) and the compiled hooks naming ``shim``."""
 
     bundle = catalog.load_catalog(FIXTURE_ROOT)
     key = codex_line(bundle.docs)
@@ -184,7 +185,7 @@ class DebugDiagnosticsProbe(client_probe._ProbeCase, unittest.TestCase):
             document["env"] = dict(document["env"], **_HINTS)
             document["hooks"] = hooks
             live = scope.write_scope(fixture.root / "state", str(uuid.uuid4()), plan)
-            self.assertIn(b"autoCompactWindow: ", plan.agent_files[f".claude/agents/{_AGENT}.md"])
+            self.assertNotIn(b"autoCompactWindow", b"".join(plan.agent_files.values()))
             responder = _SpawnOnce()
             result, responder = self._run(fixture, responder=responder, model=lineup.lead.binding.selector,
                                           extra=("--add-dir", str(live), "--debug-file", str(debug)),

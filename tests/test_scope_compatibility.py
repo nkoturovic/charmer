@@ -146,10 +146,8 @@ def renamed_baseline(scenario):
 
 
 def without_fork_deny(settings):
-    """``settings`` without the fork-subagent deny, the model fence's
-    failure policy and the window settings key (its executable changes since
-    1.0.0; a proven live scope keeps its own env, where the window variable
-    states the same window)."""
+    """``settings`` without the fork-subagent deny and the model fence's
+    failure policy (its executable changes since 1.0.0)."""
 
     permissions = settings["permissions"]
     deny = [rule for rule in permissions["deny"] if rule != compiler.FORK_AGENT_DENY]
@@ -158,10 +156,7 @@ def without_fork_deny(settings):
         for hook in group["hooks"]:
             hook.pop("onFailure", None)
             hook["timeout"] = scope.HOOK_TIMEOUT_SECONDS
-    rest = {key: value for key, value in settings.items() if key != scope.AGENT_WINDOW_KEY}
-    if scope.AGENT_WINDOW_KEY in settings:
-        assert settings["env"][scope.WINDOW_ENV] == str(settings[scope.AGENT_WINDOW_KEY])
-    return {**rest, "permissions": {**permissions, "deny": deny}, "hooks": hooks}
+    return {**settings, "permissions": {**permissions, "deny": deny}, "hooks": hooks}
 
 
 class ScopeCompatibilityTests(unittest.TestCase):

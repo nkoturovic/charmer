@@ -1,5 +1,5 @@
-"""Exact-client probe: which representation of the session window lets a
-``cm-*`` agent's own ``autoCompactWindow`` lower its window.
+"""Exact-client probe: the session window's representation, and why a ``cm-*``
+agent's own window is not compiled.
 
 Network-hermetic like every real-binary probe (``bwrap --unshare-net``,
 loopback fake provider, fixture homes, fixture lines chosen by shape).
@@ -9,34 +9,41 @@ text.
 
 The pinned client resolves a role's compaction window in this order: a valid
 ``CLAUDE_CODE_AUTO_COMPACT_WINDOW`` in the process environment (a settings
-``env`` value lands there too), then a ``--autocompact`` session value, then
-the ``autoCompactWindow`` settings (the last settings source that sets the
-top-level key replaces every earlier source's per-model values), then the
-model's own default. A subagent's frontmatter ``autoCompactWindow`` only
-lowers the window it would otherwise inherit, and never under the
-environment variable. Three representations of the same session window are
-run on the production compile:
+``env`` value lands there too; a value below 100K counts as 100K), then a
+``--autocompact`` session value, then the ``autoCompactWindow`` settings
+(100K to 1M; another value is ignored), then the model's own default. A
+subagent's frontmatter ``autoCompactWindow`` only lowers the window it would
+otherwise inherit, and never under the environment variable.
 
-* ``env``: the earlier compile (the variable in the process environment and
-  in the compiled flag settings);
-* ``settings``: the production compile, a top-level ``autoCompactWindow`` in
-  the compiled flag settings, the variable neutralised
-  (:data:`NEUTRAL_WINDOW_ENV`) in the flag-settings environment and absent
-  from the process environment;
-* ``flag``: a ``--autocompact`` launch flag, the variable neutralised the
-  same way.
+The production compile (``env``) states the window as the variable in the
+compiled flag settings and the launch environment. Its cases gate the probe:
+the lead compacts at the session window's trigger fresh, on ``--resume``,
+against a user's top-level, per-model and env values in the user, project
+and local settings and the process environment, after ``/autocompact``
+(which saves nothing under the variable), and with a native ``--autocompact``
+flag passed straight to the client (the variable outranks it); a
+``[1m]`` agent on a line bound below the window shares its 200K class's
+window; a lead set bound below 100K compacts at the client's 100K floor,
+never at the model's own default.
 
-A ``cm-*`` agent's own window comes from the production compile too (a line
-bound below the 200K class); the other cases add one by hand. The ``flag``
-form is measured, not compiled: ``/autocompact`` in a running session puts
-the settings back in place of a ``--autocompact`` value.
+Per-agent windows (an agent file's ``autoCompactWindow``) are not compiled:
+under the variable the client ignores them (``env-agent-window``, measured).
+The other representations are measured for the record, never gating:
+
+* ``settings``: a top-level ``autoCompactWindow`` in the flag settings, the
+  variable stated "0" (refused, skipped) there and absent from the process
+  environment: an agent's own window lowers its window and the lead holds
+  against the user's layers, a saved ``/autocompact``, resume and ``--agent``
+  offline, but a native ``--autocompact`` replaces it and a window below 100K
+  is ignored; survival of a supervisor takeover cannot be measured offline;
+* ``flag``: a ``--autocompact`` launch flag (``/autocompact`` in a running
+  session puts the settings back in its place; read from the build).
 
 Each case names the trigger the role must compact at; every run must reach
 its intended model (an agent that fell back to the lead is never evidence).
-``PASS`` needs every ``settings`` case (class
-:data:`CLASS_SETTINGS`, the production form); any other class fails. The
-output line is a stable interface that release evidence reads:
-``compaction window probe: <STATUS> class=<class> <detail>``.
+``PASS`` (class :data:`PASS_CLASS`) needs every gating case; the output line
+is a stable interface that release evidence reads: ``compaction window probe:
+<STATUS> class=<class> <detail>``.
 """
 
 from __future__ import annotations
@@ -53,14 +60,19 @@ from charmer import probe, profile, scope, settings
 from test_agent_window_probe import _AGENT, _HINTS, _WindowResponder, production_compile, wire
 
 LINE_PREFIX = "compaction window probe:"
-WINDOW_ENV = scope.WINDOW_ENV
-# The client takes the variable only when it is set to a valid count: "0"
-# is invalid (it is not positive), so resolution moves on to the settings.
-NEUTRAL_WINDOW_ENV = scope.WINDOW_ENV_NEUTRAL
-# A provider bound below the 200K class (the overflow the agent window is
-# for) and an agent window above the client's 100K floor.
+WINDOW_ENV = "CLAUDE_CODE_AUTO_COMPACT_WINDOW"
+# The settings representation's key, and the value that makes the client
+# skip the variable ("0" is not a positive count).
+WINDOW_KEY = "autoCompactWindow"
+NEUTRAL_WINDOW_ENV = "0"
+# The client's smallest session window: the variable below it counts as it.
+CLIENT_FLOOR = 100_000
+# A provider bound below the 200K class (the overflow an agent window is
+# for) and an agent window above the client's floor.
 SMALL_BOUND = 128_000
 AGENT_WINDOW = 128_000
+# A lead set bound below the client's floor (an accepted operator line).
+SMALL_LEAD = 80_000
 # Below the client's floor (100K): invalid, ignored.
 BELOW_FLOOR = 64_000
 # Above the 200K class: never raises the agent's window.
@@ -69,11 +81,10 @@ ABOVE_CLASS = 500_000
 WIDE_AGENT_WINDOW = 300_000
 # What a user's own layers try to set.
 USER_WINDOW = 300_000
-# A case's agent file without the own window the compile gave it.
-NO_AGENT_WINDOW = 0
+# A native --autocompact value larger than the session window.
+FLAG_WINDOW = 1_000_000
 REPRESENTATIONS = ("env", "settings", "flag")
-CLASS_SETTINGS = "settings-window-lowers-agents"
-CLASS_FLAG = "flag-window-lowers-agents"
+PASS_CLASS = "env-window-holds"
 
 
 def line(status: str, observed: str, detail: str) -> str:
@@ -85,42 +96,34 @@ def trigger(window: int, percent: int = settings.COMPACTION_PERCENT_DEFAULT) -> 
 
 
 def with_agent_window(agent_file: bytes, value: int) -> bytes:
-    """``agent_file`` with ``autoCompactWindow: value`` after its effort line
-    (in place of the one it has)."""
+    """``agent_file`` with ``autoCompactWindow: value`` after its effort line."""
 
     text = agent_file.decode("utf-8")
     head, sep, rest = text.partition("\neffort: ")
     effort, newline, tail = rest.partition("\n")
     if not sep or not newline:
         raise AssertionError("the agent file has no effort line")
-    if tail.startswith(f"{scope.AGENT_WINDOW_KEY}: "):
-        tail = tail.partition("\n")[2]
-    return f"{head}{sep}{effort}\nautoCompactWindow: {value}\n{tail}".encode("utf-8")
-
-
-def without_agent_window(agent_file: bytes) -> bytes:
-    """``agent_file`` without its own window."""
-
-    lines = agent_file.decode("utf-8").split("\n")
-    return "\n".join(line for line in lines if not line.startswith(f"{scope.AGENT_WINDOW_KEY}: ")).encode("utf-8")
+    if WINDOW_KEY.encode() in agent_file:
+        raise AssertionError("the compiled agent file already carries a window")
+    return f"{head}{sep}{effort}\n{WINDOW_KEY}: {value}\n{tail}".encode("utf-8")
 
 
 def represent(document: dict, representation: str, window: int) -> tuple[dict, tuple[str, ...], bool]:
     """``(flag settings, extra argv, whether the process env carries the
-    window)`` of ``document`` (the production compile) under
-    ``representation``."""
+    window)`` of ``document`` (the production compile: the variable in the
+    flag settings) under ``representation``."""
 
     document = copy.deepcopy(document)
     env = dict(document.get("env") or {})
-    if document.get(scope.AGENT_WINDOW_KEY) != window or env.get(WINDOW_ENV) != NEUTRAL_WINDOW_ENV:
-        raise AssertionError("the production compile no longer carries the window as its settings key")
-    if representation == "settings":
-        return document, (), False
-    del document[scope.AGENT_WINDOW_KEY]
+    if env.get(WINDOW_ENV) != str(window) or WINDOW_KEY in document:
+        raise AssertionError("the production compile no longer carries the window as the variable")
     if representation == "env":
-        env[WINDOW_ENV] = str(window)
-        document["env"] = env
         return document, (), True
+    env[WINDOW_ENV] = NEUTRAL_WINDOW_ENV
+    document["env"] = env
+    if representation == "settings":
+        document[WINDOW_KEY] = window
+        return document, (), False
     if representation == "flag":
         return document, ("--autocompact", str(window)), False
     raise ValueError(representation)
@@ -142,48 +145,63 @@ class Case:
     name: str
     representation: str
     target: str  # "lead" or "agent"
-    narrow: bool  # the agent's line bound below the 200K class
+    compile: str  # "base", "narrow" (the agent's line below the 200K class) or "small" (the lead set below 100K)
     expected: int
     agent_window: int | None = None
     user_overrides: bool = False
     resume: bool = False
-    # A user's ``/autocompact`` in the first run (it saves the window into the
-    # user settings), the scripted work after a resume.
+    # A user's ``/autocompact`` in a first run (it saves the window into the
+    # user settings), the scripted work in the next.
     autocompact_command: bool = False
     main_agent: bool = False
     extra_argv: tuple[str, ...] = field(default=())
+    gating: bool = False
 
 
 def cases(window: int) -> tuple[Case, ...]:
     lead = trigger(window)
     narrow = trigger(profile.CLASS_STANDARD)
+    floor = trigger(CLIENT_FLOOR)
     return (
-        # Today's representation: the variable wins over every frontmatter.
-        Case("env-agent-window", "env", "agent", True, trigger(AGENT_WINDOW)),
-        Case("settings-lead", "settings", "lead", False, lead),
-        Case("settings-agent-window", "settings", "agent", True, trigger(AGENT_WINDOW)),
-        Case("settings-agent", "settings", "agent", True, narrow, NO_AGENT_WINDOW),
-        Case("settings-1m-agent", "settings", "agent", False, lead),
-        Case("settings-1m-agent-window", "settings", "agent", False, trigger(WIDE_AGENT_WINDOW),
+        # The production representation: these gate.
+        Case("env-lead", "env", "lead", "base", lead, gating=True),
+        Case("env-lead-user-layers", "env", "lead", "base", lead, user_overrides=True, gating=True),
+        Case("env-lead-resume", "env", "lead", "base", lead, resume=True, gating=True),
+        Case("env-lead-autocompact-command", "env", "lead", "base", lead, autocompact_command=True, gating=True),
+        Case("env-lead-autocompact-flag", "env", "lead", "base", lead,
+             extra_argv=("--autocompact", str(FLAG_WINDOW)), gating=True),
+        Case("env-agent", "env", "agent", "narrow", narrow, gating=True),
+        Case("env-small-lead", "env", "lead", "small", floor, gating=True),
+        # Recorded, never gating: an own window under the variable (what a
+        # per-agent window would need), and the other representations.
+        Case("env-agent-window", "env", "agent", "narrow", trigger(AGENT_WINDOW), AGENT_WINDOW),
+        Case("settings-lead", "settings", "lead", "base", lead),
+        Case("settings-agent-window", "settings", "agent", "narrow", trigger(AGENT_WINDOW), AGENT_WINDOW),
+        Case("settings-agent", "settings", "agent", "narrow", narrow),
+        Case("settings-1m-agent", "settings", "agent", "base", lead),
+        Case("settings-1m-agent-window", "settings", "agent", "base", trigger(WIDE_AGENT_WINDOW),
              WIDE_AGENT_WINDOW),
-        Case("settings-agent-window-above-class", "settings", "agent", True, narrow, ABOVE_CLASS),
-        Case("settings-agent-window-below-floor", "settings", "agent", True, narrow, BELOW_FLOOR),
-        Case("settings-lead-user-layers", "settings", "lead", False, lead, user_overrides=True),
-        Case("settings-agent-window-user-layers", "settings", "agent", True, trigger(AGENT_WINDOW),
-             user_overrides=True),
-        Case("settings-lead-resume", "settings", "lead", False, lead, resume=True),
-        Case("settings-lead-autocompact-command", "settings", "lead", False, lead, autocompact_command=True),
-        Case("settings-main-thread-agent", "settings", "lead", True, lead, main_agent=True),
-        Case("flag-lead", "flag", "lead", False, lead),
-        Case("flag-lead-user-layers", "flag", "lead", False, lead, user_overrides=True),
-        Case("flag-agent-window", "flag", "agent", True, trigger(AGENT_WINDOW)),
+        Case("settings-agent-window-above-class", "settings", "agent", "narrow", narrow, ABOVE_CLASS),
+        Case("settings-agent-window-below-floor", "settings", "agent", "narrow", narrow, BELOW_FLOOR),
+        Case("settings-lead-user-layers", "settings", "lead", "base", lead, user_overrides=True),
+        Case("settings-agent-window-user-layers", "settings", "agent", "narrow", trigger(AGENT_WINDOW),
+             AGENT_WINDOW, user_overrides=True),
+        Case("settings-lead-resume", "settings", "lead", "base", lead, resume=True),
+        Case("settings-lead-autocompact-command", "settings", "lead", "base", lead, autocompact_command=True),
+        Case("settings-main-thread-agent", "settings", "lead", "narrow", lead, AGENT_WINDOW, main_agent=True),
+        Case("settings-lead-autocompact-flag", "settings", "lead", "base", lead,
+             extra_argv=("--autocompact", str(FLAG_WINDOW))),
+        Case("settings-small-lead", "settings", "lead", "small", trigger(SMALL_LEAD)),
+        Case("flag-lead", "flag", "lead", "base", lead),
+        Case("flag-lead-user-layers", "flag", "lead", "base", lead, user_overrides=True),
+        Case("flag-agent-window", "flag", "agent", "narrow", trigger(AGENT_WINDOW), AGENT_WINDOW),
     )
 
 
-def verdict(observed: dict, expected: dict) -> tuple[str, dict]:
-    """``(class, per-representation outcome)`` from the cases' rows. Every
-    run must reach its intended model and have done its scripted work; a case
-    passes when the role first compacts exactly at its expected trigger."""
+def outcomes(observed: dict, expected: dict) -> dict[str, str]:
+    """Each case's outcome: ``ok`` when the role first compacts exactly at
+    its expected trigger. Every run must reach its intended model and have
+    done its scripted work."""
 
     outcome: dict[str, str] = {}
     for name, row in observed.items():
@@ -200,17 +218,17 @@ def verdict(observed: dict, expected: dict) -> tuple[str, dict]:
             outcome[name] = f"compacted-at-{row['first_summary_after']}"
         else:
             outcome[name] = "never-compacted"
-    by = {rep: all(value == "ok" for name, value in outcome.items() if expected[name]["representation"] == rep)
-          for rep in REPRESENTATIONS}
-    if outcome.get("env-agent-window") == "ok":
-        observed_class = "env-window-lowers-agents"
-    elif by["settings"]:
-        observed_class = CLASS_SETTINGS
-    elif by["flag"]:
-        observed_class = CLASS_FLAG
-    else:
-        observed_class = "no-representation-lowers-agents"
-    return observed_class, outcome
+    return outcome
+
+
+def verdict(outcome: dict[str, str], gating: set[str]) -> str:
+    """:data:`PASS_CLASS` when every gating case is ``ok``; otherwise the
+    first failing gating case's class."""
+
+    for name in sorted(gating):
+        if outcome.get(name) != "ok":
+            return f"{name}-{outcome.get(name, 'missing')}"
+    return PASS_CLASS
 
 
 class ScheduleTests(unittest.TestCase):
@@ -224,6 +242,8 @@ class ScheduleTests(unittest.TestCase):
         self.assertEqual(trigger(800_000), 702_000)
         self.assertEqual(trigger(200_000), 162_000)
         self.assertEqual(trigger(128_000), 95_000)
+        self.assertEqual(trigger(CLIENT_FLOOR), 67_000)
+        self.assertEqual(trigger(SMALL_LEAD), 47_000)
 
     def test_the_agent_window_line_follows_the_effort_line(self) -> None:
         source = b"---\nname: cm-x\ndescription: \"d\"\nmodel: m\neffort: high\n---\nbody\n"
@@ -232,50 +252,61 @@ class ScheduleTests(unittest.TestCase):
                          b"autoCompactWindow: 128000\n---\nbody\n")
 
     def test_representations(self) -> None:
-        document = {"env": {WINDOW_ENV: "0", "OTHER": "1"}, "autoCompactWindow": 800_000}
-        self.assertEqual(represent(document, "settings", 800_000), (document, (), False))
-        flag_settings, argv, process = represent(document, "env", 800_000)
-        self.assertEqual(flag_settings, {"env": {WINDOW_ENV: "800000", "OTHER": "1"}})
-        self.assertEqual((argv, process), ((), True))
+        document = {"env": {WINDOW_ENV: "800000", "OTHER": "1"}}
+        self.assertEqual(represent(document, "env", 800_000), (document, (), True))
+        flag_settings, argv, process = represent(document, "settings", 800_000)
+        self.assertEqual(flag_settings, {"env": {WINDOW_ENV: "0", "OTHER": "1"}, WINDOW_KEY: 800_000})
+        self.assertEqual((argv, process), ((), False))
         flag_settings, argv, process = represent(document, "flag", 800_000)
         self.assertEqual(flag_settings, {"env": {WINDOW_ENV: "0", "OTHER": "1"}})
         self.assertEqual((argv, process), (("--autocompact", "800000"), False))
         with self.assertRaises(AssertionError):
-            represent({"env": {WINDOW_ENV: "800000"}}, "settings", 800_000)
+            represent({"env": {WINDOW_ENV: "0"}, WINDOW_KEY: 800_000}, "env", 800_000)
 
-    def test_the_production_compile_gives_a_small_bound_agent_its_own_window(self) -> None:
-        narrow = production_compile(provider_tokens=SMALL_BOUND)
-        agent = narrow["agent"]
-        self.assertEqual((agent.client_class, agent.window, agent.agent_window), (200_000, SMALL_BOUND, SMALL_BOUND))
-        self.assertEqual(agent.trigger, trigger(SMALL_BOUND))
-        agent_file = narrow["plan"].agent_files[f".claude/agents/{_AGENT}.md"]
-        self.assertIn(f"\nautoCompactWindow: {SMALL_BOUND}\n".encode(), agent_file)
-        self.assertEqual(with_agent_window(without_agent_window(agent_file), SMALL_BOUND), agent_file)
-        base = production_compile()
-        self.assertIsNone(base["agent"].agent_window)
-        self.assertNotIn(b"autoCompactWindow", base["plan"].agent_files[f".claude/agents/{_AGENT}.md"])
+    def test_the_production_compile_is_the_env_representation(self) -> None:
+        """The window is the variable; no agent file carries its own window,
+        a small-bound agent's included; a lead set below the client's floor
+        states its own bound (the client counts it as 100K)."""
 
-    def test_the_class_needs_every_case_of_a_representation(self) -> None:
+        for compiled in (production_compile(), production_compile(provider_tokens=SMALL_BOUND),
+                         production_compile(lead_tokens=SMALL_LEAD)):
+            plan, context = compiled["plan"], compiled["context"]
+            self.assertEqual(represent(plan.settings, "env", context.window)[0], plan.settings)
+            self.assertNotIn(WINDOW_KEY, plan.settings)
+            for agent_file in plan.agent_files.values():
+                self.assertNotIn(WINDOW_KEY.encode(), agent_file)
+        narrow = production_compile(provider_tokens=SMALL_BOUND)["agent"]
+        self.assertEqual((narrow.client_class, narrow.window), (profile.CLASS_STANDARD, profile.CLASS_STANDARD))
+        small = production_compile(lead_tokens=SMALL_LEAD)["context"]
+        self.assertEqual((small.window, small.trigger), (SMALL_LEAD, trigger(SMALL_LEAD)))
+
+    def test_only_the_gating_cases_decide_the_class(self) -> None:
         names = cases(800_000)
+        gating = {case.name for case in names if case.gating}
+        self.assertEqual({case.representation for case in names if case.gating}, {"env"})
+        self.assertNotIn("env-agent-window", gating)
         expected = {case.name: {"target": case.target, "wire": "w", "trigger": case.expected,
                                 "representation": case.representation} for case in names}
         rows = {case.name: {"work": 3, "spawned": True, "target_models": ["w"], "summaries": 1,
                             "first_summary_after": case.expected} for case in names}
-        # Today's representation ignores the agent's window.
+        # The variable ignores an agent's own window: recorded, not gating.
         rows["env-agent-window"]["first_summary_after"] = 162_000
-        self.assertEqual(verdict(rows, expected)[0], CLASS_SETTINGS)
+        rows["settings-lead-autocompact-flag"]["summaries"] = 0
+        outcome = outcomes(rows, expected)
+        self.assertEqual(outcome["env-agent-window"], "compacted-at-162000")
+        self.assertEqual(outcome["settings-lead-autocompact-flag"], "never-compacted")
+        self.assertEqual(verdict(outcome, gating), PASS_CLASS)
         broken = copy.deepcopy(rows)
-        broken["settings-lead-user-layers"]["first_summary_after"] = trigger(USER_WINDOW)
-        self.assertEqual(verdict(broken, expected)[0], CLASS_FLAG)
-        broken["flag-agent-window"]["target_models"] = ["lead"]
-        observed_class, outcome = verdict(broken, expected)
-        self.assertEqual(observed_class, "no-representation-lowers-agents")
-        self.assertEqual(outcome["flag-agent-window"], "model-wrong")
-        never = copy.deepcopy(rows)
-        never["settings-lead"]["summaries"] = 0
-        self.assertEqual(verdict(never, expected)[1]["settings-lead"], "never-compacted")
+        broken["env-lead-autocompact-flag"]["summaries"] = 0
+        self.assertEqual(verdict(outcomes(broken, expected), gating), "env-lead-autocompact-flag-never-compacted")
+        broken = copy.deepcopy(rows)
+        broken["env-small-lead"]["first_summary_after"] = 162_000
+        self.assertEqual(verdict(outcomes(broken, expected), gating), "env-small-lead-compacted-at-162000")
+        broken = copy.deepcopy(rows)
+        broken["env-agent"]["target_models"] = ["lead"]
+        self.assertEqual(verdict(outcomes(broken, expected), gating), "env-agent-model-wrong")
         with self.assertRaises(client_probe._Inconclusive):
-            verdict(dict(rows, **{"settings-agent": {**rows["settings-agent"], "spawned": False}}), expected)
+            outcomes(dict(rows, **{"env-agent": {**rows["env-agent"], "spawned": False}}), expected)
 
 
 class CompactionWindowProbe(client_probe._ProbeCase, unittest.TestCase):
@@ -299,10 +330,8 @@ class CompactionWindowProbe(client_probe._ProbeCase, unittest.TestCase):
         """A user's own window everywhere it can be written: the user,
         project and local settings (top level, per model and env)."""
 
-        per_model = {lead_selector: {"autoCompactWindow": USER_WINDOW},
-                     wire(lead_selector): {"autoCompactWindow": USER_WINDOW}}
-        layer = {"autoCompactWindow": USER_WINDOW, "modelSettings": per_model,
-                 "env": {WINDOW_ENV: str(USER_WINDOW)}}
+        per_model = {lead_selector: {WINDOW_KEY: USER_WINDOW}, wire(lead_selector): {WINDOW_KEY: USER_WINDOW}}
+        layer = {WINDOW_KEY: USER_WINDOW, "modelSettings": per_model, "env": {WINDOW_ENV: str(USER_WINDOW)}}
         for target in (fixture.claude_config_dir / "settings.json",
                        fixture.project_dir / ".claude/settings.json",
                        fixture.project_dir / ".claude/settings.local.json"):
@@ -314,37 +343,46 @@ class CompactionWindowProbe(client_probe._ProbeCase, unittest.TestCase):
         flag_settings["env"] = dict(flag_settings["env"], **_HINTS)
         agent_files = dict(plan.agent_files)
         relpath = f".claude/agents/{_AGENT}.md"
-        if case.agent_window == NO_AGENT_WINDOW:
-            agent_files[relpath] = without_agent_window(agent_files[relpath])
-        elif case.agent_window is not None:
+        if case.agent_window is not None:
             agent_files[relpath] = with_agent_window(agent_files[relpath], case.agent_window)
         fixture = self._fixture()
         live = scope.write_scope(fixture.root / "state", str(uuid.uuid4()),
                                  scope.ScopePlan(agent_files, plan.settings, plan.other_files))
         if case.user_overrides:
             self._user_layers(fixture, compiled["lead"].selector)
-        policy = probe.ProbeCompactionPolicy(context.window, context.percent) if process_env else None
+        # The launch's own process environment (the probe harness admits a
+        # window from 100K; below it the flag settings alone carry it).
+        policy = (probe.ProbeCompactionPolicy(context.window, context.percent)
+                  if process_env and context.window >= CLIENT_FLOOR else None)
         if case.user_overrides:
-            # The user's own process environment, too (a launch clears it; the
-            # neutral flag-settings value must win anyway).
+            # The user's own process environment, too (a launch replaces it;
+            # the flag settings' value must win anyway).
             policy = probe.ProbeCompactionPolicy(USER_WINDOW, context.percent)
         alternatives = {case.expected, trigger(context.window), trigger(profile.CLASS_STANDARD),
-                        trigger(AGENT_WINDOW), trigger(USER_WINDOW), trigger(WIDE_AGENT_WINDOW)}
-        top = 180_000 if (case.narrow and case.target == "agent") else context.window
+                        trigger(AGENT_WINDOW), trigger(USER_WINDOW), trigger(WIDE_AGENT_WINDOW),
+                        trigger(CLIENT_FLOOR), trigger(SMALL_LEAD)}
+        top = 180_000 if case.compile == "small" or (case.compile == "narrow" and case.target == "agent") \
+            else context.window
         responder = _WindowResponder(case.target, schedule(alternatives, top))
         extra = ("--add-dir", str(live), *argv, *case.extra_argv)
         if case.main_agent:
             extra += ("--agent", _AGENT)
         if case.autocompact_command:
-            # A local command: no model request. It saves the user's window
-            # into the user settings, which every later start reads.
+            # A local command: no model request. Without the variable it
+            # saves the user's window into the user settings, which every
+            # later start reads; under the variable it saves none.
             warm, _ = self._run(fixture, model=compiled["lead"].selector, extra=extra, document=flag_settings,
                                 compaction=policy, prompt=f"/autocompact {USER_WINDOW}", timeout=120)
             if warm.timed_out or warm.returncode != 0:
                 raise probe.ProbeError("the /autocompact run did not complete")
-            saved = json.loads((fixture.claude_config_dir / "settings.json").read_text())
-            if not any(isinstance(entry, dict) and entry.get("autoCompactWindow") == USER_WINDOW
-                       for entry in (saved.get("modelSettings") or {}).values()):
+            if any(row.tool_count for row in warm.requests):
+                raise client_probe._Inconclusive(f"{case.name}: /autocompact reached the model as a prompt")
+            path = fixture.claude_config_dir / "settings.json"
+            saved = json.loads(path.read_text()) if path.is_file() else {}
+            saved = any(isinstance(entry, dict) and entry.get(WINDOW_KEY) == USER_WINDOW
+                        for entry in (saved.get("modelSettings") or {}).values())
+            self.evidence[f"{case.name}-saved"] = saved
+            if case.representation != "env" and not saved:
                 raise client_probe._Inconclusive(f"{case.name}: /autocompact saved no window")
         if case.resume:
             session = str(uuid.uuid4())
@@ -360,20 +398,25 @@ class CompactionWindowProbe(client_probe._ProbeCase, unittest.TestCase):
         return row
 
     def _probe(self):
-        base = production_compile()
-        narrow = production_compile(provider_tokens=SMALL_BOUND)
-        window = base["context"].window
-        observed, expected = {}, {}
+        compiles = {"base": production_compile(), "narrow": production_compile(provider_tokens=SMALL_BOUND),
+                    "small": production_compile(lead_tokens=SMALL_LEAD)}
+        window = compiles["base"]["context"].window
+        observed, expected, gating = {}, {}, set()
         for case in cases(window):
-            compiled = narrow if case.narrow else base
+            compiled = compiles[case.compile]
             role = compiled["agent"] if case.target == "agent" else compiled["lead"]
             expected[case.name] = {"target": case.target, "wire": wire(role.selector), "trigger": case.expected,
                                    "representation": case.representation}
+            if case.gating:
+                gating.add(case.name)
             observed[case.name] = self._case(case, compiled)
         self.evidence["expected"] = expected
-        observed_class, outcome = verdict(observed, expected)
-        detail = (f"window={window} percent={base['context'].percent} agent_window={AGENT_WINDOW} "
-                  f"bound={narrow['bound']} neutral={NEUTRAL_WINDOW_ENV!r} "
+        outcome = outcomes(observed, expected)
+        observed_class = verdict(outcome, gating)
+        small = compiles["small"]["context"]
+        detail = (f"window={window} percent={compiles['base']['context'].percent} "
+                  f"small_lead={SMALL_LEAD} small_lead_compiled_trigger={small.trigger} "
+                  f"agent_window={AGENT_WINDOW} bound={compiles['narrow']['bound']} "
                   + " ".join(f"{name}={value}@{observed[name]['first_summary_after']}/{expected[name]['trigger']}"
                              for name, value in outcome.items()))
         return observed_class, detail
@@ -394,9 +437,7 @@ class CompactionWindowProbe(client_probe._ProbeCase, unittest.TestCase):
             self.__class__.verdict = ("INCONCLUSIVE", "unavailable", "probe execution unavailable")
             self.fail("probe execution unavailable (stdio deliberately not retained)")
         else:
-            # The production compile is the settings representation: any
-            # other class is a failure (an agent's own window is ignored).
-            if observed != CLASS_SETTINGS:
+            if observed != PASS_CLASS:
                 self.__class__.verdict = ("FAIL", observed, detail)
                 self.fail(f"{observed}: {detail}")
             self.__class__.verdict = ("PASS", observed, detail)

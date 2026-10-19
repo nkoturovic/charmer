@@ -1822,8 +1822,8 @@ def _xc_expected_window(plan, client_tokens):
     """The window the compiled scope books: the client window a canonical
     ``[1m]`` selector declares, capped by the compiled operating window."""
 
-    compiled = plan.settings.get(scope.AGENT_WINDOW_KEY)
-    return {"client": client_tokens, "compiled": compiled if compiled is not None else client_tokens}
+    compiled = plan.settings["env"].get("CLAUDE_CODE_AUTO_COMPACT_WINDOW")
+    return {"client": client_tokens, "compiled": int(compiled) if compiled is not None else client_tokens}
 
 
 class _ExactClientResponder(_Recorder):
@@ -1867,12 +1867,12 @@ class ProductionExactClientTests(unittest.TestCase):
         line, _projection, lineup, plan = _xc_compile()
         entry = line.core_entry
         selector = lineup.lead.binding.selector
-        compiled = plan.settings.get(scope.AGENT_WINDOW_KEY)
+        compiled = plan.settings["env"].get("CLAUDE_CODE_AUTO_COMPACT_WINDOW")
         request = qualify.ExactClientInput(
             key=_XC_KEY, selector=selector, wire=selector.removesuffix("[1m]"), efforts=("high", "max"),
             client_effort=True, output_limit=line.output_tokens,
             expected_window={"client": entry["context"]["client_tokens"],
-                             "compiled": compiled if compiled is not None else entry["context"]["client_tokens"]},
+                             "compiled": int(compiled) if compiled else entry["context"]["client_tokens"]},
             settings=plan.settings, plan=plan,
         )
         outcome = probe.run_exact_client_check(request, native_contract=self.gate.contract)

@@ -79,7 +79,6 @@ __all__ = [
     "short_label",
     "table_widths",
     "used_by",
-    "window_cell",
     "workflow_text",
     "workflow_window",
     "zero_model_providers",
@@ -569,7 +568,6 @@ class RoleWindowRow:
     class_label: str  # "1M" / "200K"
     window: int  # the effective compaction window
     trigger: int
-    own: bool = False  # a cm-* agent's own window (its provider bound)
 
 
 def role_window_rows(
@@ -583,7 +581,7 @@ def role_window_rows(
 
     rows = [
         RoleWindowRow(profile.label(slot), window.selector, profile.format_tokens(window.client_class),
-                      window.window, window.trigger, window.agent_window is not None)
+                      window.window, window.trigger)
         for slot, window in profile.lineup_windows(lineup)
     ]
     if workflow_default is not None:
@@ -611,14 +609,6 @@ def workflow_window(
         return None
     label = f"{short_label(lcat.lines[key].get('display', key))} · {eff.workflow_default_binding['effort']}"
     return label, role
-
-
-def window_cell(role: profile.RoleWindow) -> str:
-    """The card's window cell of an agent: its window, ``own`` marking an
-    agent's own window (its provider bound)."""
-
-    text = profile.format_tokens(role.window)
-    return f"{text} own" if role.agent_window is not None else text
 
 
 def workflow_text(label: str, role: profile.RoleWindow) -> str:
@@ -900,7 +890,7 @@ def card_model(
                         "agent", "", "", "normal", 0 if index == 0 else 5, col=2,
                         cells=(profile.label(rid), short_label(ab.display), ab.effort,
                                provider_cell(ab.provider, ab.family, providers),
-                               *((window_cell(windows[rid]),) if mixed else ()), note),
+                               *((profile.format_tokens(windows[rid].window),) if mixed else ()), note),
                     )
                 )
         if workflow_default is not None:
@@ -1595,11 +1585,7 @@ def picker_rows(
             if enabled and initial in effort_reasons:
                 initial = next(e for e in shown if e not in effort_reasons)
             if 0 < row.provider_tokens < 200000:
-                if slot not in catalog.AGENT_ROLE_IDS:
-                    warnings.append("provider bound below the 200K client class; no per-agent window")
-                elif row.provider_tokens < profile.AGENT_WINDOW_MIN:
-                    warnings.append("provider bound below the 200K client class and below the 100K "
-                                    "smallest agent window")
+                warnings.append("provider bound below the 200K client class; no per-agent window")
             if enabled and warnings:
                 note = "Attention: " + warnings[0] + " — V details"
             cycle = tuple(shown)

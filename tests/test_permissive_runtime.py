@@ -269,19 +269,16 @@ class PermissiveScopeTests(unittest.TestCase):
         document = profile.ad_hoc_direct("opus", "high")
         document["agents"] = {"cm-reviewer": {"model": "gpt55", "effort": "high"}}
         lineup = profile.resolve(document, lcat, effective=eff)
-        # The agent compacts in its own window (its bound), so it does not warn.
         role = dict(profile.lineup_windows(lineup))["cm-reviewer"]
-        self.assertEqual((role.window, role.agent_window), (175000, 175000))
         self.assertLess(role.trigger, 175000)
-        self.assertNotIn("context-risk", {f.code for f in lineup.warnings})
-        scope_fixtures._compile(lineup, lcat, eff, bundle)
-        # The workflow default shares the 200K class window, whose 162000
-        # trigger fits the bound, and still warns.
-        workflow = dataclasses.replace(eff, workflow_default_binding={"model": "gpt55", "effort": "high"})
-        findings = scope.workflow_default_warnings(lcat, workflow, policy=lineup.policy)
-        warning = next(f.message for f in findings if f.code == "context-risk")
+        self.assertGreater(role.window, 175000)
+        warning = next(f.message for f in lineup.warnings if f.code == "context-risk")
         for text in ("200000", "175000", "162000", "effective client window exceeds"):
             self.assertIn(text, warning)
+        scope_fixtures._compile(lineup, lcat, eff, bundle)
+        workflow = dataclasses.replace(eff, workflow_default_binding={"model": "gpt55", "effort": "high"})
+        findings = scope.workflow_default_warnings(lcat, workflow, policy=lineup.policy)
+        self.assertTrue(any(f.code == "context-risk" and "175000" in f.message for f in findings))
         scope_fixtures._compile(lineup, lcat, workflow, bundle)
 
     def test_every_mutable_warning_is_excluded_from_scope_identity(self):

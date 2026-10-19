@@ -8,7 +8,6 @@ from charmer import errors as cli_errors
 from charmer import launch
 from charmer import lineup as lineup_mod
 from charmer import profile as profile_mod
-from charmer import scope as scope_mod
 from charmer import sessions
 from charmer import termtext
 from charmer import tui
@@ -151,9 +150,8 @@ _COMPACTION_ENV = ("CLAUDE_CODE_AUTO_COMPACT_WINDOW", "CLAUDE_AUTOCOMPACT_PCT_OV
 
 
 def _print_launch_windows(prepared: cli_types.PreparedLaunch, output_stream: TextIO) -> None:
-    """--print-launch: each role's selector, class and effective window (an
-    agent's own window marked), the session window the scope settings carry
-    and the compaction values the process env and the scope settings carry."""
+    """--print-launch: each role's selector, class and effective window, and
+    the compaction values the process env and the scope settings carry."""
 
     lineup = getattr(prepared, "lineup", None)
     if lineup is None:
@@ -167,14 +165,10 @@ def _print_launch_windows(prepared: cli_types.PreparedLaunch, output_stream: Tex
     output_stream.write(head + ":\n")
     width = max(len(row.role) for row in rows)
     for row in rows:
-        own = " (own)" if row.own else ""
         output_stream.write(
             f"  {row.role:<{width}}  {termtext.visible_text(row.selector)} · {row.class_label} class · "
-            f"window {row.window}{own} · compacts at {row.trigger}\n"
+            f"window {row.window} · compacts at {row.trigger}\n"
         )
-    window = prepared.result.scope_plan.settings.get(scope_mod.AGENT_WINDOW_KEY)
-    if isinstance(window, int):
-        output_stream.write(f"compaction window (scope settings): {scope_mod.AGENT_WINDOW_KEY}={window}\n")
     env = prepared.result.env_set
     shown = [f"{key}={env[key]}" for key in _COMPACTION_ENV if key in env]
     if shown:

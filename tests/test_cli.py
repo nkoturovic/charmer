@@ -4248,7 +4248,7 @@ class SessionEventAndDirectModeTests(CLITestCase):
             prepared.record["applied"]["lead"]["selector"],
         )
         self.assertEqual(
-            prepared.result.scope_plan.settings["autoCompactWindow"], 800000
+            prepared.result.env_set["CLAUDE_CODE_AUTO_COMPACT_WINDOW"], "800000"
         )
         self.assertEqual(
             prepared.result.env_set["CLAUDE_AUTOCOMPACT_PCT_OVERRIDE"], "90"
@@ -6967,7 +6967,7 @@ class NewProviderDirectLaunchTests(CLITestCase):
         self.assertEqual(prepared.record["applied"]["lead"]["key"], "qwen38")
         self.assertEqual(prepared.record["lead_class"], "large")
         self.assertEqual(
-            prepared.result.scope_plan.settings["autoCompactWindow"], 800000
+            prepared.result.env_set["CLAUDE_CODE_AUTO_COMPACT_WINDOW"], "800000"
         )
 
     def test_deepseek_pro_direct_launch_defaults_high_in_large_profile(self) -> None:
@@ -6976,7 +6976,7 @@ class NewProviderDirectLaunchTests(CLITestCase):
         self.assertEqual(prepared.record["lead_class"], "large")
         self.assertIn("charmer-kimi-k3[1m]", prepared.result.argv)
         self.assertEqual(
-            prepared.result.scope_plan.settings["autoCompactWindow"], 800000
+            prepared.result.env_set["CLAUDE_CODE_AUTO_COMPACT_WINDOW"], "800000"
         )
 
     def test_grok46_direct_launch_uses_xhigh_500k_window(self) -> None:
@@ -6984,8 +6984,7 @@ class NewProviderDirectLaunchTests(CLITestCase):
         self.assertEqual(prepared.record["applied"]["lead"]["key"], "grok46")
         self.assertEqual(prepared.record["lead_class"], "grok")
         env_set = prepared.result.env_set
-        self.assertEqual(prepared.result.scope_plan.settings["autoCompactWindow"], 500000)
-        self.assertNotIn("CLAUDE_CODE_AUTO_COMPACT_WINDOW", env_set)
+        self.assertEqual(env_set["CLAUDE_CODE_AUTO_COMPACT_WINDOW"], "500000")
         # The 500K window must never come from a [1m] selector.
         argv = prepared.result.argv
         self.assertIn("charmer-grok46-xhigh", argv)
@@ -7280,7 +7279,7 @@ class Grok46DiscoveryAndMigrationTests(CLITestCase):
         self.assertEqual(prepared.record["lead_class"], "grok")
         self.assertIn("charmer-grok46-xhigh", prepared.result.argv)
         self.assertEqual(
-            prepared.result.scope_plan.settings["autoCompactWindow"], 500000
+            prepared.result.env_set["CLAUDE_CODE_AUTO_COMPACT_WINDOW"], "500000"
         )
 
 class NewLineListingFilterTests(CLITestCase):
