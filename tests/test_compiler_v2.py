@@ -501,8 +501,8 @@ class EnvTests(unittest.TestCase):
         and turns the fork gate off in the flag settings env
         (CLAUDE_CODE_FORK_SUBAGENT=0), whatever the launching environment
         says: the launch clears an inherited value and never sets one. The
-        real-client proofs are S15 in ``test_client_agents`` and the fork-gate
-        check in ``test_client_fork_gate``."""
+        real-client proofs are S15 and the fork-gate check (ForkGateTests) in
+        ``test_client_agents``."""
 
         key = "CLAUDE_CODE_FORK_SUBAGENT"
         self.assertEqual(compiler.FORK_AGENT_DENY, "Agent(fork)")

@@ -130,8 +130,8 @@ FORK_AGENT_DENY = "Agent(fork)"
 # start. A side effect: a terminal session no longer forces every subagent
 # into the background, so the Agent tool offers run_in_background again (its
 # default stays the background). The real-binary proof is
-# tests/test_client_fork_gate (client check fork-gate), on the previous pin
-# too when it is retained.
+# tests/test_client_agents ForkGateTests (client check fork-gate), on the
+# previous pin too when it is retained.
 FORK_SUBAGENT_ENV = "CLAUDE_CODE_FORK_SUBAGENT"
 FORK_SUBAGENT_OFF = "0"
 

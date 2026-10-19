@@ -822,11 +822,10 @@ class WorkflowModelPrecedenceTests(S10WorkflowAgentTests):
     user, project and local settings ``env`` and in the process
     environment, workflow agents keep the lineup precedence (per-call model,
     then the cm-* frontmatter, then the compiled ``CLAUDE_CODE_SUBAGENT_MODEL``
-    workflow default) on a fresh start and on ``--resume``. Not exercised:
-    the ``agent.spawn`` mod hook (2.1.300), whose installed modules are
-    behind a rollout switch that reads off for a third-party provider; its
-    rewrite is a per-call model, so the ``availableModels`` fence still
-    bounds it."""
+    workflow default) on a fresh start and on ``--resume``. A mod's
+    ``agent.spawn`` rewrite of a workflow agent's model (2.1.300) is the
+    spawn-mod check (``tests/test_client_spawn_mod.py``): the fence bounds it
+    to the lineup's models."""
 
     test_s10_workflow_agent_type_model_and_cwd = None
     test_s10_workflow_gate_keys = None
@@ -914,7 +913,7 @@ class WorkflowModelPrecedenceTests(S10WorkflowAgentTests):
             f"replaced); compiled flag settings {scope.WORKFLOW_MODEL_ENV}={neutral} against "
             f"user/project/local env and process env -> fresh {fresh}, --resume {resumed} "
             f"(= baseline {baseline}: per-call model > cm-* frontmatter > CLAUDE_CODE_SUBAGENT_MODEL); "
-            f"agent.spawn mod rewrite not exercised (rollout switch off offline) {self.binary_label}"
+            f"agent.spawn mod rewrites: client check spawn-mod {self.binary_label}"
         )
 
 
