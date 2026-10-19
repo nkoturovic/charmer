@@ -44,6 +44,19 @@ def facts(gateway, case, **values):
         "gateway": harness.binary_identity(gateway.binary, gateway.version), **values}, sort_keys=True))
 
 
+def initial_message(payload):
+    """Copy a completed fixture message into a nonterminal stream start."""
+    return {**copy.deepcopy(payload), "content": [], "stop_reason": None, "stop_sequence": None,
+            "usage": {**copy.deepcopy(payload["usage"]), "output_tokens": 0}}
+
+
+def initial_fields(message):
+    """Bounded wire facts; missing fields must not masquerade as explicit null."""
+    return {"stop_reason": message.get("stop_reason", "missing"),
+            "stop_sequence": message.get("stop_sequence", "missing"),
+            "output_tokens": message.get("usage", {}).get("output_tokens", "missing")}
+
+
 def message_reply(body, *, cache=0, thinking=False):
     content = ([{"type": "thinking", "thinking": "fixture reasoning", "signature": SIGNATURE}]
                if thinking else []) + [{"type": "text", "text": "PROBE-OK"}]
@@ -53,7 +66,7 @@ def message_reply(body, *, cache=0, thinking=False):
         return 200, json.dumps(payload).encode(), "application/json"
     # The shared text/tool responder intentionally omits thinking. Emit its
     # real delta/signature wire shape here, rather than injecting replay data.
-    events = [("message_start", {"type": "message_start", "message": {**payload, "content": []}})]
+    events = [("message_start", {"type": "message_start", "message": initial_message(payload)})]
     for index, block in enumerate(content):
         kind = block["type"]
         events.append(("content_block_start", {"type": "content_block_start", "index": index,
@@ -64,10 +77,21 @@ def message_reply(body, *, cache=0, thinking=False):
             events.append(("content_block_delta", {"type": "content_block_delta", "index": index,
                            "delta": {"type": "signature_delta", "signature": SIGNATURE}}))
         events.append(("content_block_stop", {"type": "content_block_stop", "index": index}))
-    events.extend((("message_delta", {"type": "message_delta", "delta": {"stop_reason": "end_turn"},
-                                     "usage": {"output_tokens": 1}}),
+    events.extend((("message_delta", {"type": "message_delta", "delta": {
+                       "stop_reason": payload["stop_reason"], "stop_sequence": payload["stop_sequence"]},
+                                     "usage": {"output_tokens": payload["usage"]["output_tokens"]}}),
                    ("message_stop", {"type": "message_stop"})))
     return 200, b"".join(harness.sse_frame(kind, value) for kind, value in events), "text/event-stream"
+
+
+def text_tool_events(payload):
+    """The L4 text/tool fixture's SSE events; the shared helper stays untouched."""
+    events = list(probe._sse_message(payload).events)
+    events[0] = ("message_start", {"type": "message_start", "message": initial_message(payload)})
+    events[-2] = ("message_delta", {"type": "message_delta", "delta": {
+        "stop_reason": payload["stop_reason"], "stop_sequence": payload["stop_sequence"]},
+        "usage": {"output_tokens": payload["usage"]["output_tokens"]}})
+    return events
 
 
 def direct_reply(_route, body, _raw, _headers):
@@ -82,6 +106,76 @@ def post(gateway, body, *, timeout=45):
 
 def request_body(model="claude-opus-5-5", **extra):
     return {"model": model, "max_tokens": 128, "messages": [{"role": "user", "content": "fixture turn"}], **extra}
+
+
+class StreamFixtureTests(unittest.TestCase):
+    def check_frames(self, events, payload):
+        self.assertEqual(events[0]["type"], "message_start")
+        start = events[0]["message"]
+        self.assertEqual(start["content"], [])
+        self.assertIsNone(start["stop_reason"])
+        self.assertIsNone(start["stop_sequence"])
+        self.assertEqual(start["usage"]["output_tokens"], 0)
+        terminal = events[-2]
+        self.assertEqual(terminal["type"], "message_delta")
+        self.assertEqual(terminal["delta"].get("stop_reason"), payload["stop_reason"])
+        self.assertEqual(terminal["delta"].get("stop_sequence"), payload["stop_sequence"])
+        self.assertEqual(terminal["usage"]["output_tokens"], payload["usage"]["output_tokens"])
+        self.assertEqual(events[-1]["type"], "message_stop")
+
+    def test_thinking_stream_starts_nonterminal_and_json_stays_complete(self):
+        for thinking in (False, True):
+            with self.subTest(thinking=thinking):
+                body = request_body()
+                _, completed, _ = message_reply(body, cache=13, thinking=thinking)
+                payload = json.loads(completed)
+                self.assertEqual(payload["stop_reason"], "end_turn")
+                self.assertEqual(payload["usage"]["output_tokens"], 1)
+                _, wire, _ = message_reply({**body, "stream": True}, cache=13, thinking=thinking)
+                events = harness.Reply(200, {}, wire).events()
+                self.check_frames(events, payload)
+                self.assertEqual(events[0]["message"]["usage"]["cache_read_input_tokens"], 13)
+
+    def test_text_tool_stream_preserves_terminal_payload_and_actual_usage(self):
+        for stop, sequence, output in (("end_turn", None, 1), ("tool_use", None, 7),
+                                       ("stop_sequence", "fixture stop", 9)):
+            with self.subTest(stop=stop):
+                content = ([{"type": "tool_use", "id": "toolu_fixture", "name": "fixture", "input": {}}]
+                           if stop == "tool_use" else [{"type": "text", "text": "fixture"}])
+                payload = probe._message_payload(content, model="fixture", stop_reason=stop, message_id="msg_fixture")
+                payload["stop_sequence"] = sequence
+                payload["usage"]["output_tokens"] = output
+                before = copy.deepcopy(payload)
+                events = text_tool_events(payload)
+                self.assertEqual(payload, before, "fixture construction mutated the intended terminal payload")
+                self.check_frames([value for _kind, value in events], payload)
+
+
+class WebSearchReceiptTests(unittest.TestCase):
+    def test_duplicate_upstream_hits_are_rejected_in_json_and_sse(self):
+        expected = [
+            {"type": "server_tool_use", "id": "ws_fixture", "name": "web_search", "input": {"query": "fixture query"}},
+            {"type": "web_search_tool_result", "tool_use_id": "ws_fixture", "content": [
+                {"type": "web_search_result", "title": "Fixture", "url": "https://example.invalid/result", "page_age": None}]},
+            {"type": "text", "text": "FIXTURE-SEARCH"}]
+        for duplicate_stream in (False, True):
+            with self.subTest(stream=duplicate_stream):
+                gateway = mock.Mock()
+                def request(_alias, *, stream, body):
+                    raw = (b"".join(harness.sse_frame("content_block_start", {"type": "content_block_start",
+                            "index": index, "content_block": block}) for index, block in enumerate(expected))
+                           if stream else json.dumps({"content": expected}).encode())
+                    return harness.Reply(200, {}, raw, hits=[object()] * (2 if stream == duplicate_stream else 1))
+                gateway.request.side_effect = request
+                case = CodexGoldenTests("test_web_search_response_golden")
+                try:
+                    with mock.patch.object(harness, "GatewayHarness", return_value=gateway), \
+                            mock.patch(__name__ + ".facts") as receipt:
+                        with self.assertRaisesRegex(AssertionError, "WebSearch upstream request count"):
+                            case.test_web_search_response_golden()
+                        self.assertTrue(all(call.kwargs["provider_requests"] == 1 for call in receipt.call_args_list))
+                finally:
+                    case.doCleanups()
 
 
 class BindingClassifierTests(unittest.TestCase):
@@ -242,12 +336,14 @@ class CodexGoldenTests(unittest.TestCase):
             reply = gateway.request("gwtest-codex-reasoning-effort-high", stream=stream,
                 body={"tools": [{"type": "web_search_20250305", "name": "web_search"}]})
             self.assertEqual(reply.status, 200)
+            self.assertEqual(len(reply.hits), 1, "WebSearch upstream request count")
             blocks = reconstructed_blocks(reply) if stream else reply.json()["content"]
             for block in blocks:
                 if "partial_json" in block:
                     block["input"] = json.loads(block.pop("partial_json"))
             self.assertEqual(blocks, expected)
-            facts(gateway, "codex-web-search-response-golden", stream=stream, content=blocks, provider_requests=1)
+            facts(gateway, "codex-web-search-response-golden", stream=stream, content=blocks,
+                  provider_requests=len(reply.hits))
 
     def test_mcp_integer_bounds_and_web_search_request(self):
         gateway = harness.GatewayHarness()
@@ -425,6 +521,8 @@ class TrafficRelay(recognition._GatewayRelay):
             self.rows[-1]["reply_errors"] = sum(kind == "error" for kind, _value in response.events)
             self.rows[-1]["reply_stops"] = sum(kind == "message_stop" for kind, _value in response.events)
             self.rows[-1]["reply_event_order"] = [kind for kind, _value in response.events]
+            self.rows[-1]["reply_initial_fields"] = [initial_fields(value["message"])
+                for kind, value in response.events if kind == "message_start"]
             self.rows[-1]["reply_stop_reasons"] = [value.get("delta", {}).get("stop_reason")
                 for kind, value in response.events if kind == "message_delta"]
         else:
@@ -557,8 +655,9 @@ class NativeReplayTests(unittest.TestCase):
                 gateway.close()
 
     def test_d216_known_negative_late_terminal_after_completed_text_or_tool(self):
-        # D216 KNOWN-NEGATIVE, not recovery: this exact client can accept a
-        # terminal delta before noticing the gateway's missing-stop error.
+        # Revalidate the proposed D216 KNOWN-NEGATIVE with conformant starts.
+        # Acceptance is suspended pending this corrected evidence and review;
+        # retain the expected observation, never weaken it to force a pass.
         # Changes (including improvement) require explicit reconciliation.
         # Buffered complete-SSE reconstruction establishes ordered content and
         # bounded execution counts, NOT eager timing or general exactly-once
@@ -599,11 +698,15 @@ class NativeReplayTests(unittest.TestCase):
                         payload = probe._message_payload(content, model=body["model"], stop_reason=stop,
                             message_id="msg_v8_impact", input_tokens=7, cache_creation_input_tokens=11,
                             cache_read_input_tokens=13)
-                        events = list(probe._sse_message(payload).events)
+                        terminal_payload = copy.deepcopy(payload)
+                        events = text_tool_events(payload)
+                        self.assertEqual(payload, terminal_payload, "fixture construction changed the terminal payload")
+                        start = initial_fields(events[0][1]["message"])
+                        self.assertEqual(start, {"stop_reason": None, "stop_sequence": None, "output_tokens": 0})
                         if cut and first:
                             self.assertEqual(events[-1][0], "message_stop")
                             events.pop()
-                        upstream_rows.append({"attempt": len(upstream_rows) + 1, "stop_reason": stop,
+                        upstream_rows.append({"attempt": len(upstream_rows) + 1, "stop_reason": stop, "initial_fields": start,
                             "event_order": [kind for kind, _ in events], "content_types": [item["type"] for item in content],
                             "text": [item["text"] for item in content if item["type"] == "text"],
                             "usage": payload["usage"], "stream": bool(body.get("stream"))})
@@ -620,18 +723,23 @@ class NativeReplayTests(unittest.TestCase):
                                 trusted=self.trusted, fixture=fixture, provider=relay, allow_real=True, environ=environ, timeout=45)
                             outcome = json.loads(result.stdout)
                             calls = (counter.read_text().splitlines().count("call v8counter") if counter.exists() else 0)
-                            facts(gateway, "D216-known-negative" if cut else "D216-healthy-control",
+                            facts(gateway, "D216-corrected-late" if cut else "D216-corrected-healthy",
                                 client_version=self.version, client_sha256=self.trusted.sha256,
                                 tool=tool, cut=cut, returncode=result.returncode,
                                 timed_out=result.timed_out, is_error=outcome.get("is_error"), final_text=outcome.get("result"),
                                 client_usage=outcome.get("usage"), tool_executions=calls, upstream=upstream_rows,
                                 downstream=relay.rows, ordinary_tool_continuations=sum(row["tool_result_count"] > 0 for row in relay.rows),
                                 relay="buffered complete SSE reconstruction; no eager timing claim",
-                                disposition="D216: known-negative, NOT recovery" if cut else "healthy positive control")
+                                disposition="corrected-fixture observation; D216 acceptance suspended pending review" if cut
+                                            else "healthy positive control")
+                            paired_usage[cut] = outcome["usage"]
                             self.assertFalse(result.timed_out)
                             self.assertTrue(result.daemon and result.daemon.unchanged)
                             self.assertEqual(relay.completion_errors(), [])
                             self.assertEqual(gateway.version, "8.0.33", "re-earn/reconcile D216 for a changed gateway")
+                            expected_start = {"stop_reason": None, "stop_sequence": None, "output_tokens": 0}
+                            self.assertTrue(all(row["initial_fields"] == expected_start for row in upstream_rows))
+                            self.assertTrue(all(row.get("reply_initial_fields") == [expected_start] for row in relay.rows))
                             self.assertEqual(upstream_rows[0]["stop_reason"], "tool_use" if tool else "end_turn")
                             order = ["message_start", "content_block_start", "content_block_delta", "content_block_stop", "message_delta"]
                             self.assertEqual(upstream_rows[0]["event_order"], order + ([] if cut else ["message_stop"]))
@@ -656,10 +764,11 @@ class NativeReplayTests(unittest.TestCase):
                             for key, value in {"input_tokens": 7, "output_tokens": 1, "cache_creation_input_tokens": 11,
                                                "cache_read_input_tokens": 13}.items():
                                 self.assertEqual(outcome["usage"][key], value * turns)
-                            paired_usage[cut] = outcome["usage"]
                     finally:
                         gateway.close()
-            self.assertEqual(paired_usage[False], paired_usage[True], "healthy/late client usage changed")
+            with self.subTest(tool=tool, paired_usage=True):
+                self.assertEqual(set(paired_usage), {False, True}, "missing paired client outcomes")
+                self.assertEqual(paired_usage[False], paired_usage[True], "healthy/late client usage changed")
 
     def test_early_cut_streams_recover_with_watchdog_enabled(self):
         # The later cut after an end_turn delta is the separate D216 negative,
@@ -673,6 +782,14 @@ class NativeReplayTests(unittest.TestCase):
                 def respond(route, body, raw, _headers):
                     count[0] += 1
                     status, kind, data = harness.fake_reply(route, body, raw)
+                    if family.startswith("claude") and body.get("stream"):
+                        # Keep the shared responder unchanged. This L4 control
+                        # owns a conformant start and leaves its terminal usage
+                        # and completed content untouched before making the cut.
+                        frames = harness.Reply(status, {}, data).events()
+                        self.assertEqual(frames[0]["type"], "message_start")
+                        frames[0]["message"] = initial_message(frames[0]["message"])
+                        data = b"".join(harness.sse_frame(frame["type"], frame) for frame in frames)
                     if count[0] == 1:
                         if family.startswith("claude"):
                             terminal = b"message_delta" if family == "claude-before-delta" else b"message_stop"
@@ -687,6 +804,8 @@ class NativeReplayTests(unittest.TestCase):
                     frames = [json.loads(line[6:]) for line in data.splitlines() if line.startswith(b"data: {")]
                     upstream_rows.append({"attempt": count[0], "stream": bool(body.get("stream")),
                         "bytes": len(data), "event_types": [frame.get("type", "chat-chunk") for frame in frames],
+                        "initial_fields": [initial_fields(frame["message"]) for frame in frames
+                                           if frame.get("type") == "message_start"],
                         "stop_reasons": [frame["delta"].get("stop_reason") for frame in frames
                                          if frame.get("type") == "message_delta"],
                         "finish_reasons": [choice.get("finish_reason") for frame in frames
@@ -720,6 +839,10 @@ class NativeReplayTests(unittest.TestCase):
                         self.assertFalse(result.timed_out)
                         self.assertTrue(result.daemon and result.daemon.unchanged)
                         self.assertEqual(relay.completion_errors(), [])
+                        if family.startswith("claude"):
+                            expected_start = [{"stop_reason": None, "stop_sequence": None, "output_tokens": 0}]
+                            self.assertTrue(all(row["initial_fields"] == expected_start for row in upstream_rows))
+                            self.assertTrue(all(row.get("reply_initial_fields") == expected_start for row in relay.rows))
                         self.assertEqual(len(terminal), 1)
                         self.assertFalse(terminal[0].get("is_error"))
                         self.assertGreaterEqual(count[0], 2, "cut stream was silently accepted without recovery")
