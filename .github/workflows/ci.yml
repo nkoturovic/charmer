@@ -243,9 +243,9 @@ jobs:
           sh .github/scripts/ci_tools.sh bubblewrap "$RUNNER_TEMP/ci-bubblewrap"
           # Root-owned in root-owned directories, as the isolated tests
           # require of the bwrap they run; never setuid.
-          sudo install -d -o root -g root -m 0755 /opt/charmer-ci /opt/charmer-ci/bin
-          sudo install -o root -g root -m 0755 "$RUNNER_TEMP/ci-bubblewrap/bwrap" /opt/charmer-ci/bin/bwrap
-          printf '%s\n' /opt/charmer-ci/bin >>"$GITHUB_PATH"
+          sudo install -d -o root -g root -m 0755 /usr/lib/charmer-ci /usr/lib/charmer-ci/bin
+          sudo install -o root -g root -m 0755 "$RUNNER_TEMP/ci-bubblewrap/bwrap" /usr/lib/charmer-ci/bin/bwrap
+          printf '%s\n' /usr/lib/charmer-ci/bin >>"$GITHUB_PATH"
       - name: The bubblewrap on PATH is 0.12 or later (recorded)
         run: |
           umask 077

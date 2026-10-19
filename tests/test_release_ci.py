@@ -3584,10 +3584,10 @@ class SupplyChainLaneTests(unittest.TestCase):
                 commands = [line for block in _run_blocks(steps[install]) for line in block]
                 self.assertIn('sh .github/scripts/ci_tools.sh bubblewrap "$RUNNER_TEMP/ci-bubblewrap"', "\n".join(commands))
                 self.assertIn("sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0", "\n".join(commands))
-                self.assertIn("sudo install -d -o root -g root -m 0755 /opt/charmer-ci /opt/charmer-ci/bin", "\n".join(commands))
+                self.assertIn("sudo install -d -o root -g root -m 0755 /usr/lib/charmer-ci /usr/lib/charmer-ci/bin", "\n".join(commands))
                 self.assertIn('sudo install -o root -g root -m 0755 "$RUNNER_TEMP/ci-bubblewrap/bwrap" '
-                              "/opt/charmer-ci/bin/bwrap", "\n".join(commands))
-                self.assertIn("printf '%s\\n' /opt/charmer-ci/bin >>\"$GITHUB_PATH\"", "\n".join(commands))
+                              "/usr/lib/charmer-ci/bin/bwrap", "\n".join(commands))
+                self.assertIn("printf '%s\\n' /usr/lib/charmer-ci/bin >>\"$GITHUB_PATH\"", "\n".join(commands))
                 floor = next(i for i, step in enumerate(steps) if "bubblewrap_floor.sh" in step)
                 tests = next(i for i, step in enumerate(steps) if "tools/test.py" in step)
                 self.assertLess(install, floor)  # GITHUB_PATH applies from the next step on
