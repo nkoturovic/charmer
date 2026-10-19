@@ -40,6 +40,10 @@ LINE_CONFIRM = "Enter launch · q quit: ".encode()
 
 
 class PTYProcess:
+    # Subclasses may own initialization without enabling optional diagnostics.
+    diagnostics: InputDiagnostics | None = None
+    timeout_diagnostics: dict | None = None
+
     def __init__(
         self,
         code: str,
@@ -167,6 +171,66 @@ class PTYProcess:
             os.close(self.slave)
             if self.diagnostics is not None:
                 self.diagnostics.close()
+
+
+class PTYProcessSubclassTests(unittest.TestCase):
+    def child(self) -> PTYProcess:
+        class WithoutBaseInit(PTYProcess):
+            def __init__(self):
+                self.master, self.slave = pty.openpty()
+                self.output = bytearray()
+                self.process = subprocess.Popen(
+                    [sys.executable, "-c", "import time; print('SUBCLASS-WAIT', flush=True); time.sleep(60)"],
+                    stdin=self.slave, stdout=self.slave, stderr=self.slave, close_fds=True,
+                )
+
+        child = WithoutBaseInit()
+
+        def cleanup() -> None:
+            try:
+                if child.process.poll() is None:
+                    child.process.kill()
+                    child.process.wait(timeout=2)
+            finally:
+                for fd in (child.master, child.slave):
+                    try:
+                        os.close(fd)
+                    except OSError as exc:
+                        if exc.errno != errno.EBADF:
+                            raise
+
+        self.addCleanup(cleanup)
+        child.read_until(b"SUBCLASS-WAIT")
+        return child
+
+    def test_close_without_base_init_reaps_the_child_with_a_bounded_wait(self) -> None:
+        from unittest import mock
+
+        child = self.child()
+        with mock.patch.object(child.process, "wait", wraps=child.process.wait) as wait:
+            try:
+                child.close()
+            except AttributeError as exc:
+                self.fail(f"close requires optional base initialization: {exc}")
+        wait.assert_called_once_with(timeout=2)
+        self.assertEqual(child.process.returncode, -signal.SIGKILL)
+        self.assertIsNone(child.diagnostics)
+        self.assertIsNone(child.timeout_diagnostics)
+
+    def test_timeout_without_base_init_still_fails_and_reaps_with_a_bounded_wait(self) -> None:
+        from unittest import mock
+
+        child = self.child()
+        with mock.patch.object(child.process, "wait", wraps=child.process.wait) as wait:
+            try:
+                with self.assertRaisesRegex(AssertionError, "PTY child timed out"):
+                    child.finish(timeout=0)
+            except AttributeError as exc:
+                self.fail(f"timeout requires optional base initialization: {exc}")
+        wait.assert_called_once_with(timeout=2)
+        self.assertEqual(child.process.returncode, -signal.SIGKILL)
+        self.assertIsNone(child.diagnostics)
+        self.assertIsNone(child.timeout_diagnostics)
 
 
 class DumbTerminalPTYTests(unittest.TestCase):
