@@ -236,6 +236,21 @@ class ArgvTests(unittest.TestCase):
         with self.assertRaisesRegex(CompilerError, "requires a value"):
             _launch(lineup, eff, bundle=bundle, passthrough=["--add-dir"])
 
+    def test_a_native_autocompact_flag_is_launcher_owned(self) -> None:
+        """Claude Code takes a --autocompact window over every settings
+        source (only the compiled window variable outranks it). The session
+        window is charmer's: both forms are refused, on every lineup kind,
+        with the owning control, so the scope, record and explanation are
+        never contradicted by an argv window."""
+
+        for name in ("balanced", "direct"):
+            lineup, result = _seed_launch(name)
+            for passthrough in (["--autocompact", "1000000"], ["--autocompact=1000000"],
+                                ["--verbose", "--autocompact", result.env_set["CLAUDE_CODE_AUTO_COMPACT_WINDOW"]]):
+                with self.subTest(seed=name, passthrough=passthrough):
+                    with self.assertRaisesRegex(CompilerError, "launcher-owned .*charmer window-ceiling"):
+                        _seed_launch(name, passthrough=passthrough)
+
 
 # ---------------------------------------------------------------------- env
 

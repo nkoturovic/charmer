@@ -47,7 +47,7 @@ compaction window probe: PASS class=env-window-holds
 # --resume, against user, project and local top-level, per-model and env
 # values of 300000 and a process env of 300000, after /autocompact 300000
 # (which saves nothing under the variable) and with a native --autocompact
-# 1000000 (the variable outranks it); a
+# 1000000 (a launch refuses the flag; the variable outranks it anyway); a
 # 128000-bound agent shares its 200K class's window (162000). A lead set bound
 # at 80000 compacts at the client's 100K floor (67000; charmer compiles and
 # shows 47000), never at the model's own default.

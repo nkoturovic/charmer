@@ -21,7 +21,8 @@ the lead compacts at the session window's trigger fresh, on ``--resume``,
 against a user's top-level, per-model and env values in the user, project
 and local settings and the process environment, after ``/autocompact``
 (which saves nothing under the variable), and with a native ``--autocompact``
-flag passed straight to the client (the variable outranks it); a
+flag passed straight to the client (a launch refuses one; the variable
+outranks it anyway); a
 ``[1m]`` agent on a line bound below the window shares its 200K class's
 window; a lead set bound below 100K compacts at the client's 100K floor,
 never at the model's own default.

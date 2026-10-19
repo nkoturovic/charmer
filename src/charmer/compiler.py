@@ -57,6 +57,7 @@ _LONG_BLOCKED_BASE = frozenset(
         "--fallback-model",
         "--continue",
         "--disable-slash-commands",
+        "--autocompact",
     }
 )
 # Contingency lead delivery (the only mode) owns the prompt flags.
@@ -83,6 +84,9 @@ _FLAG_OWNERS = {
     # Sessions started with --disable-slash-commands never watch agent
     # dirs — a silent durability loss for managed sessions.
     "--disable-slash-commands": "agent-directory watching is load-bearing for managed sessions",
+    # Claude Code takes a --autocompact window over every settings source;
+    # only the compiled window variable outranks it. The window is charmer's.
+    "--autocompact": "the session compaction window; set it with charmer window-ceiling",
     "--system-prompt": "contingency lead delivery",
     "--append-system-prompt": "contingency lead delivery",
     "--append-system-prompt-file": "contingency lead delivery",
