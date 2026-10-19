@@ -148,9 +148,9 @@ class BackupShellTests(unittest.TestCase):
     def run_shell(self, text: str, *, env: dict[str, str] | None = None) -> subprocess.CompletedProcess:
         self.script_number += 1
         script = self.scripts / f"example-{self.script_number}.sh"
-        script.write_text("set -euo pipefail\numask 077\n" + text + "\n")
+        script.write_text(text + "\n")
         return subprocess.run([self.tools["bash"], str(script)], env=env or self.env, cwd=self.scripts,
-                              stdin=subprocess.DEVNULL, capture_output=True, timeout=45)
+                              stdin=subprocess.DEVNULL, capture_output=True, timeout=45, umask=0o022)
 
     def assert_ok(self, result: subprocess.CompletedProcess) -> None:
         # Captured diagnostics contain only this test's synthetic paths/data.
@@ -161,6 +161,64 @@ class BackupShellTests(unittest.TestCase):
         path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         path.write_bytes(content)
         path.chmod(mode)
+
+    def test_fresh_shell_has_no_hidden_safety_prologue(self) -> None:
+        result = self.run_shell('printf "%s\\n" "$SHELLOPTS"; umask')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        options, mask = result.stdout.decode().splitlines()
+        self.assertTrue({"errexit", "nounset", "pipefail"}.isdisjoint(options.split(":")))
+        self.assertEqual(int(mask, 8), 0o022)
+
+    def test_restore_missing_inputs_abort_without_extraction_or_copy(self) -> None:
+        for name in ("backup-unpack", "backup-copy"):
+            with self.subTest(example=name):
+                result = self.run_shell(example(name))
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(result.stdout, b"")
+                self.assertEqual(list(self.restores.iterdir()), [])
+                self.assertEqual(list(self.home.iterdir()), [])
+
+    def test_copy_refuses_existing_key_without_changing_it(self) -> None:
+        destination = self.home / "private keys/provider-keys.env"
+        self.write(destination, b"EXAMPLE_API_KEY=dummy-existing\n")
+        restored = self.restores / "fixture staging"
+        saved = restored / str(destination).lstrip("/")
+        self.write(saved, b"EXAMPLE_API_KEY=dummy-replacement\n")
+        before = (destination.read_bytes(), destination.stat())
+        result = self.run_shell(example("backup-copy"), env={
+            **self.env, "destination": str(destination), "restore_root": str(restored)})
+        self.assertNotEqual(result.returncode, 0, "the exact copy block overwrote an existing key")
+        self.assertEqual(destination.read_bytes(), before[0])
+        self.assertEqual(destination.stat().st_mode, before[1].st_mode)
+        self.assertEqual(destination.stat().st_ino, before[1].st_ino)
+
+    def test_corrupt_ciphertext_is_not_extracted_or_copied(self) -> None:
+        destination = self.home / "private keys/provider-keys.env"
+        self.write(destination, b"EXAMPLE_API_KEY=dummy-fixture\n")
+        script = f"sources=({shlex.quote(str(destination))})\n" + example("backup-archive")
+        self.assert_ok(self.run_shell(script))
+        work, = self.backups.glob("charmer-cold.*")
+        crypto_home = work / "gnupg"
+        self.crypto_homes.append(crypto_home)
+        # Damage the final integrity bytes, not the header: GnuPG can emit
+        # plaintext before it discovers this failure. It must not reach tar.
+        ciphertext = bytearray((work / "charmer.tar.gpg").read_bytes())
+        ciphertext[-1] ^= 1
+        corrupt = work / "corrupt.tar.gpg"
+        self.write(corrupt, ciphertext)
+        destination.rename(destination.with_name(destination.name + ".before-restore"))
+        result = self.run_shell(example("backup-unpack") + "\n" + example("backup-copy"), env={
+            **self.env, "archive": str(corrupt), "crypto_home": str(crypto_home),
+            "destination": str(destination)})
+        self.assertNotEqual(result.returncode, 0, "integrity failure was masked and the copy ran")
+        self.assertFalse(destination.exists(), "unauthenticated credentials were copied")
+        restore_work, = self.restores.glob("charmer-restore.*")
+        self.assertFalse((restore_work / "files").exists(), "extraction began before authentication")
+        self.assertEqual(stat.S_IMODE(restore_work.stat().st_mode), 0o700)
+        plaintext = restore_work / "charmer.tar"
+        if plaintext.exists():
+            self.assertEqual(stat.S_IMODE(plaintext.stat().st_mode), 0o600)
+        self.assertFalse(any(path.name == destination.name for path in restore_work.rglob("*")))
 
     def test_documented_path_selection_matches_the_root_constructors(self) -> None:
         cases = ({}, {"XDG_CONFIG_HOME": "relative", "XDG_STATE_HOME": "relative"},
@@ -253,7 +311,10 @@ class BackupShellTests(unittest.TestCase):
         self.assertFalse((work / "charmer.tar").exists())
         self.env.update(archive=str(archive), crypto_home=str(crypto_home))
         self.assert_ok(self.run_shell(example("backup-unpack")))
-        restored, = self.restores.glob("charmer-restore.*")
+        restore_work, = self.restores.glob("charmer-restore.*")
+        restored = restore_work / "files"
+        self.assertEqual(stat.S_IMODE(restore_work.stat().st_mode), 0o700)
+        self.assertEqual(stat.S_IMODE((restore_work / "charmer.tar").stat().st_mode), 0o600)
         self.assertEqual(stat.S_IMODE(restored.stat().st_mode), 0o700)
         # Inspect only the disposable extraction, never native transcripts.
         self.assertFalse(any(path.name == ".claude" for path in restored.rglob("*")))

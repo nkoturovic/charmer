@@ -165,6 +165,8 @@ fresh home below uses no existing keys, configuration or agent.
 
 <!-- example: backup-archive -->
 ```bash
+set -euo pipefail
+umask 077
 : "${backup_parent:?Choose an existing private backup directory}"
 backup_parent=$(realpath -e -- "$backup_parent")
 relative_sources=()
@@ -218,20 +220,53 @@ restore the archived `install/` for the same platform and verify it against the
 trusted signed release before use. Reinstalling `install/` or `claude/` is an
 alternative to restoring those program trees, not an overlay with mixed versions.
 
-Decrypt **your own authenticated backup** into a fresh private staging directory,
-not `/` or the live home. Set `restore_parent` to private encrypted storage
-outside every destination. In a new terminal, set `archive` to the encrypted
-file and `crypto_home` to a new empty 0700 GnuPG home, as above.
+Decrypt **your own backup** to a private temporary archive, not `/` or the
+live home. GnuPG can emit plaintext before it discovers an integrity failure:
+**do not pipe decryption into extraction**. Set `restore_parent` to an existing
+private 0700 directory on encrypted storage, outside every destination. In a
+new Bash terminal, set `archive` to the encrypted file and `crypto_home` to a
+new empty 0700 GnuPG home, as above. Each restore block sets its own shell
+safety options; run it as a block and stop if it fails.
 
 <!-- example: backup-unpack -->
 ```bash
+set -euo pipefail
+umask 077
 : "${restore_parent:?Choose an existing private restore directory}"
-restore_root=$(mktemp -d "$restore_parent/charmer-restore.XXXXXXXX")
-gpg --no-options --homedir "$crypto_home" --no-symkey-cache \
-    --pinentry-mode loopback --decrypt "$archive" |
-  "${TAR:-tar}" --extract --preserve-permissions --no-same-owner \
-      --file - --directory "$restore_root"
+: "${archive:?Choose your encrypted backup}"
+: "${crypto_home:?Choose the new isolated GnuPG home}"
+unset restore_root
+[[ "$restore_parent" == /* && -d "$restore_parent" && ! -L "$restore_parent" ]] || {
+  printf '%s\n' 'Refused: restore parent must be a real absolute directory.' >&2; exit 1;
+}
+[[ -f "$archive" && -d "$crypto_home" ]] || {
+  printf '%s\n' 'Refused: encrypted archive or isolated GnuPG home is missing.' >&2; exit 1;
+}
+restore_work=$(mktemp -d "$restore_parent/charmer-restore.XXXXXXXX") || exit 1
+plaintext=$restore_work/charmer.tar
+if ! gpg --no-options --homedir "$crypto_home" --no-symkey-cache \
+    --pinentry-mode loopback --output "$plaintext" --decrypt "$archive"; then
+  printf '%s\n' 'Decryption/integrity check failed: do not extract or copy this workspace.' >&2
+  exit 1
+fi
+chmod 600 -- "$plaintext" || exit 1
+extract_root=$restore_work/files
+mkdir -m 700 -- "$extract_root" || exit 1
+if ! "${TAR:-tar}" --extract --preserve-permissions --no-same-owner \
+    --file "$plaintext" --directory "$extract_root"; then
+  printf '%s\n' 'Extraction failed: do not copy from this workspace.' >&2
+  exit 1
+fi
+restore_root=$extract_root
 ```
+
+Extraction starts only after GnuPG returns success. `restore_work` is private
+0700 staging; its temporary plaintext archive is 0600 and contains secrets.
+On decryption failure, a partial plaintext file may remain there, but no
+extraction is attempted. Protect failed workspaces too and retire them only
+under your private-data retention policy. Never continue or copy from a failed
+workspace: a directory, file or marker inside it is not proof of authentication.
+`restore_root` is assigned only after authentication and extraction succeed.
 
 Keep scripts and tools outside the extracted tree. Do not execute its programs,
 source files or run an interpreter from there. Review its **path and mode
@@ -243,18 +278,32 @@ Restore configuration and external keys, then data, then state, at their origina
 absolute locations. If a destination already exists (even an installer's newly
 created scaffold), move that exact root aside to a private sibling on the same
 filesystem first; retain it. Do not merge roots, overwrite evidence or use
-recursive removal commands. For each inventoried root, use this checked copy,
-setting `destination` to its original absolute path; its parent must be a real,
-private directory you own.
+recursive removal commands. Only after the entire unpack block succeeded and
+you reviewed the inventory, use this checked copy for each inventoried root.
+Keep `restore_root` from that successful step and set `destination` to the
+original absolute path; its parent must be a real, private directory you own.
+Every failed precondition explicitly aborts before `cp`; do not skip a refusal.
 
 <!-- example: backup-copy -->
 ```bash
+set -euo pipefail
+umask 077
+: "${restore_root:?Complete the authenticated unpack step first}"
 : "${destination:?Choose one inventoried absolute destination}"
-[[ "$destination" == /* && "$destination" != / && "$destination" != "$HOME" ]]
-[[ ! -e "$destination" && ! -L "$destination" ]]
+[[ "$restore_root" == /* && -d "$restore_root" && ! -L "$restore_root" ]] || {
+  printf '%s\n' 'Refused: the successful restore staging directory is missing.' >&2; exit 1;
+}
+[[ "$destination" == /* && "$destination" != / && "$destination" != "$HOME" ]] || {
+  printf '%s\n' 'Refused: choose one inventoried absolute destination, not a whole home.' >&2; exit 1;
+}
+[[ ! -e "$destination" && ! -L "$destination" ]] || {
+  printf '%s\n' 'Refused: destination already exists; keep it and move that root aside first.' >&2; exit 1;
+}
 saved=$restore_root/${destination#/}
-[[ -e "$saved" || -L "$saved" ]]
-cp -a -- "$saved" "$destination"
+[[ -e "$saved" || -L "$saved" ]] || {
+  printf '%s\n' 'Refused: inventoried source is missing from restore staging.' >&2; exit 1;
+}
+cp -a -- "$saved" "$destination" || exit 1
 ```
 
 Preserve **original modes, including executable bits** on launchers, installed
@@ -312,5 +361,7 @@ your own retention policy, never by deleting the original roots.
 
 <!-- example: backup-crypto-close -->
 ```bash
+set -euo pipefail
+: "${crypto_home:?Choose only the isolated GnuPG home created above}"
 gpgconf --homedir "$crypto_home" --kill gpg-agent
 ```
