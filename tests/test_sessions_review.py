@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import contextlib
+import copy
 import io
 from unittest import mock
 
-from charmer import catalog, cli, installs, sessions, state
+from charmer import catalog, cli, installs, lineup, profile, sessions, state
 from charmer.cli import selection
 import _tui_fixture as fx
 import test_sessions_bulk as bulk
@@ -118,3 +119,106 @@ class PerRecordChannelTests(_SessionsCase):
 
     def test_tui_choose_refuses_channel_change_between_commits(self):
         self.exercise("choose", tui=True)
+
+
+class ResumePolicyChoiceTests(_SessionsCase):
+    def setUp(self):
+        super().setUp()
+        record = self.record(ended=True, needs_choice=True, scope=False, generation=0)
+        self.key = self.default_lead()
+        self.provider = self.lcat.lines[self.key]["provider"]
+        applied = copy.deepcopy(record["applied"])
+        applied["settings"]["providers_enabled"][self.provider] = False
+        self.record_before = sessions.with_applied(record, applied)
+        self.runtime.session_store.save(self.record_before)
+        self.runtime.settings_store.set_provider_enabled(self.provider, True, catalog=self.runtime.catalog)
+        self.profile_name = "current-resume-policy"
+        document = profile.ad_hoc_direct(self.key)
+        document["name"] = self.profile_name
+        self.runtime.profiles.new(document)
+
+    def request(self, kind):
+        return (lineup.Request("profile", name=self.profile_name, text=f"profile {self.profile_name}") if kind == "profile"
+                else lineup.Request("direct", model=self.key, text=f"direct {self.key}"))
+
+    def preview(self, kind):
+        items = sessions.batch_plan(self.runtime.session_store, [fx.FIXED_ID], names=lambda _record: (),
+                                    check=self.runtime.session_batch_problem)
+        return lineup.choice_previews(self.runtime, items, self.request(kind))
+
+    def exercise(self, kind, *, tui=False):
+        candidate = copy.deepcopy(self.record_before)
+        candidate["pending"] = {
+            "requested_at": fx.iso(fx.FIXED_NOW), "kind": "profile" if kind == "profile" else "lineup",
+            "profile": self.profile_name if kind == "profile" else None, "follow": kind == "profile",
+            "document": None if kind == "profile" else profile.ad_hoc_direct(self.key), "reasons": ["fixture choice"],
+        }
+        self.assertTrue(self.runtime.pending_resolves_lead(candidate))
+        if tui:
+            screen = self.screen()
+            if kind == "profile":
+                names = selection.profile_pick_order(self.runtime)
+                keys = ["Q", ENTER, *([DOWN] * names.index(self.profile_name)), ENTER, RIGHT, ENTER, ESC, ESC]
+                screen.run(FakeWindow(keys, width=120, height=40))
+            else:
+                with mock.patch("charmer.cli.screens.direct.run_direct_screen", return_value=(self.key, "ultracode")):
+                    screen.run(FakeWindow(["Q", DOWN, ENTER, RIGHT, ENTER, ESC, ESC], width=120, height=40))
+            self.assertEqual(screen.message, "1 succeeded · 0 refused · 0 failed")
+        else:
+            flag, value = ("--profile", self.profile_name) if kind == "profile" else ("--direct", self.key)
+            out, err = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stderr(err):
+                code = cli.main(["sessions", "choose", fx.FIXED_ID, flag, value, "--yes"], runtime=self.runtime,
+                                output_stream=out, interactive=False)
+            self.assertEqual(code, 0, out.getvalue() + err.getvalue())
+        current = self.runtime.session_store.load(fx.FIXED_ID)
+        self.assertTrue(self.runtime.pending_resolves_lead(current))
+        for field in ("applied", "applied_hash", "lineup_generation", "profile", "follow"):
+            self.assertEqual(current[field], self.record_before[field])
+        self.assertFalse((self.runtime.session_store.root / "scopes").exists())
+        self.assertEqual(self.runtime.launches, [])
+
+    def test_cli_profile_saved_choice_uses_current_resume_policy(self):
+        self.exercise("profile")
+
+    def test_cli_direct_saved_choice_uses_current_resume_policy(self):
+        self.exercise("direct")
+
+    def test_tui_profile_saved_choice_uses_current_resume_policy(self):
+        self.exercise("profile", tui=True)
+
+    def test_tui_direct_saved_choice_uses_current_resume_policy(self):
+        self.exercise("direct", tui=True)
+
+    def test_current_provider_disable_before_commit_refuses_saved_choices(self):
+        for kind in ("profile", "direct"):
+            with self.subTest(kind=kind):
+                self.runtime.settings_store.set_provider_enabled(self.provider, True, catalog=self.runtime.catalog)
+                previews = self.preview(kind)
+                self.assertIsNone(previews[0].item.problem)
+                before = self.runtime.session_store.load_raw(fx.FIXED_ID)[1]
+                self.runtime.settings_store.set_provider_enabled(self.provider, False, catalog=self.runtime.catalog)
+                results = lineup.save_choice_batch(self.runtime, previews, check=self.runtime.session_batch_problem)
+                self.assertEqual(results[0].status, "refused")
+                self.assertIn("disabled", results[0].message)
+                self.assertEqual(self.runtime.session_store.load_raw(fx.FIXED_ID)[1], before)
+
+    def test_valid_resume_policy_change_refuses_stale_saved_choice(self):
+        for kind in ("profile", "direct"):
+            with self.subTest(kind=kind):
+                self.runtime.settings_store.update(lambda document: document.update(compaction_percent=90),
+                                                   catalog=self.runtime.catalog)
+                previews = self.preview(kind)
+                self.assertIsNone(previews[0].item.problem)
+                before = self.runtime.session_store.load_raw(fx.FIXED_ID)[1]
+                self.runtime.settings_store.update(lambda document: document.update(compaction_percent=80),
+                                                   catalog=self.runtime.catalog)
+                results = lineup.save_choice_batch(self.runtime, previews, check=self.runtime.session_batch_problem)
+                self.assertEqual(results[0].status, "refused")
+                self.assertIn(lineup.PREVIEW_STALE, results[0].message)
+                self.assertEqual(self.runtime.session_store.load_raw(fx.FIXED_ID)[1], before)
+
+    def test_ordinary_lineup_preview_keeps_historical_policy(self):
+        with self.assertRaisesRegex(lineup.LineupRefusal, "disabled"):
+            lineup.preview(self.runtime, self.record_before, self.request("profile"))
+        self.assertEqual(self.runtime.session_store.load(fx.FIXED_ID)["applied"], self.record_before["applied"])

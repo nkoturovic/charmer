@@ -1372,7 +1372,8 @@ def decide_locked(
     here, and when that evaluation's fingerprint differs nothing is written
     and the decision is ``stale`` with the current preview; otherwise the
     evaluation that passed the comparison is the one applied. ``pending_only``
-    refuses a LIVE outcome before any write (the save-without-launch contract).
+    evaluates and fingerprints current resume policy, and refuses a LIVE
+    outcome before any write (the save-without-launch contract).
     """
 
     store = runtime.session_store
@@ -1434,12 +1435,12 @@ def decide_locked(
         return Decision("record", text="\n".join(lines) + "\n", managed_id=mid, generation=generation)
 
     target = build_target(record, request, runtime)
-    eff = _record_eff(record)
-    # Unchanged agent slots keep the record's grant (its Settings
-    # snapshot); a new or changed operator agent slot is evaluated
-    # with the current gate (admission, route, evidence) and, when it passes,
-    # is relaunch-class by design (the fence is a launch-time key).
-    lcat = _record_gate(lcat, record, eff)
+    eff = runtime.current_effective() if pending_only else _record_eff(record)
+    # LIVE decisions keep unchanged grants from the recorded policy. A
+    # save-only decision instead uses the current policy and gate an
+    # ordinary resume will evaluate, without rewriting the applied snapshot.
+    if not pending_only:
+        lcat = _record_gate(lcat, record, eff)
     bindings = _bindings_map(runtime)
     lineup = _evaluate(
         runtime, target.document or {}, eff, lcat, profile_name=target.profile, bindings=bindings
@@ -1447,7 +1448,8 @@ def decide_locked(
     # An unchanged (key, effort) agent keeps its recorded context class
     # until resume; only new or changed slots take the class the installed
     # catalog and the session window decide.
-    lineup = profile.keep_recorded_agent_class(lineup, applied["agents"], lcat)
+    if not pending_only:
+        lineup = profile.keep_recorded_agent_class(lineup, applied["agents"], lcat)
     if request.verb == "follow" and _applied_matches(lineup, applied):
         fingerprint = _target_fingerprint(target, lineup, (EFFECT_RECORD,))
         if preview_only or (expected_target is not None and fingerprint != expected_target):
@@ -1505,7 +1507,9 @@ def decide_locked(
     preview: list[str] = []
     if request.verb == "fallback":
         preview = _fallback_preview(lcat, record, request, target, lineup, reasons)
-    fingerprint = _target_fingerprint(target, lineup, reasons or (EFFECT_LIVE,))
+    resume_policy = ({"settings": settings_mod.snapshot(eff), "window_ceiling": profile.window_ceiling(eff)}
+                     if pending_only else None)
+    fingerprint = _target_fingerprint(target, lineup, reasons or (EFFECT_LIVE,), resume_policy=resume_policy)
     if preview_only or (expected_target is not None and fingerprint != expected_target):
         if request.verb == "fallback":
             text = "\n".join([*preview, FALLBACK_PREVIEW_ONLY.format(provider=request.provider)])
@@ -1616,12 +1620,16 @@ def _preview_decision(
                     generation=int(record.get("lineup_generation", 0)), reasons=tuple(reasons))
 
 
-def _target_fingerprint(target: Target, lineup: profile.ResolvedLineup | None, effect: Sequence[str]) -> str:
+def _target_fingerprint(
+    target: Target, lineup: profile.ResolvedLineup | None, effect: Sequence[str], *,
+    resume_policy: Mapping[str, Any] | None = None,
+) -> str:
     """What a preview shows beyond the record identity: the resolved target
     (its document as read now, the profile and follow after it, a
     fallback's recipe), the lineup it evaluates to and its effect (record
     only, LIVE, or the relaunch reasons). A profile or binding edited while
-    a preview waits for its confirmation changes it."""
+    a preview waits for its confirmation changes it. Save-only previews also
+    bind the current resume policy, without changing ordinary LIVE previews."""
 
     evaluated = None
     if lineup is not None:
@@ -1630,10 +1638,13 @@ def _target_fingerprint(target: Target, lineup: profile.ResolvedLineup | None, e
             "workflows": lineup.workflows, "lead_providers": list(lineup.lead_providers or ()),
             "settings_overrides": dict(lineup.settings_overrides),
         }
-    return strict_json.bundle_digest({
+    content = {
         "kind": target.kind, "profile": target.profile, "follow": target.follow, "recipe": target.recipe,
         "document": target.document, "lineup": evaluated, "effect": list(effect),
-    })
+    }
+    if resume_policy is not None:
+        content["resume_policy"] = dict(resume_policy)
+    return strict_json.bundle_digest(content)
 
 
 def _shown_or_stale(shown: Decision, fingerprint: str, preview_only: bool) -> Decision:
@@ -1674,14 +1685,17 @@ class Preview:
     reasons: tuple[str, ...] = ()
 
 
-def preview(runtime: Any, record: Mapping[str, Any], request: Request, *, now: str | None = None) -> Preview:
+def preview(
+    runtime: Any, record: Mapping[str, Any], request: Request, *, now: str | None = None,
+    pending_only: bool = False,
+) -> Preview:
     """The read-only preview of ``request`` on ``record`` (no lock, no
     write): what a T, F, pin or fallback action shows before it applies."""
 
     if request.verb not in lineup_files.CM_VERB_NAMES or not request.writes:
         raise LineupRefusal(f"lineup: {request.verb} changes nothing to preview")
     decision = decide_locked(runtime, dict(record), request, forced=False, exec_ok=False, now=now,
-                             preview_only=True)
+                             preview_only=True, pending_only=pending_only)
     return Preview(sessions.managed_id(record), request, decision.text, record_identity(record),
                    decision.fingerprint, decision.reasons)
 
@@ -1724,14 +1738,12 @@ class ChoicePreview:
     shown: Preview | None = None
 
 
-def _choice_target(runtime: Any, record: dict[str, Any], request: Request) -> None:
-    """A saved target must evaluate under the policy an ordinary resume uses."""
+def _choice_target(runtime: Any, record: dict[str, Any]) -> None:
+    """Only a missing applied lead is eligible; decide evaluates its pending target."""
     lcat = runtime.lineup_catalog()
     if not sessions.lead_needs_choice(record, lcat):
         raise LineupRefusal("the applied lead does not need a choice; use charmer lineup --session "
                             f"{sessions.runtime_session_id(record)} to change its lineup")
-    target = build_target(record, request, runtime)
-    _evaluate(runtime, target.document or {}, runtime.current_effective(), lcat, profile_name=target.profile)
 
 
 def choice_previews(
@@ -1746,8 +1758,8 @@ def choice_previews(
         if problem is None:
             try:
                 record = item.record
-                _choice_target(runtime, record, request)
-                shown = preview(runtime, record, request, now=now)
+                _choice_target(runtime, record)
+                shown = preview(runtime, record, request, now=now, pending_only=True)
                 if not shown.fingerprint or not shown.reasons:
                     raise LineupRefusal("this change would apply live; use charmer lineup --session "
                                         f"{sessions.runtime_session_id(record)} instead")
@@ -1792,12 +1804,12 @@ def save_choice_batch(
                 if problem is not None:
                     if current != item.record:
                         try:
-                            fresh = preview(runtime, current, shown.request, now=now)
+                            fresh = preview(runtime, current, shown.request, now=now, pending_only=True)
                             problem += "\nCurrent preview:\n" + fresh.text
                         except errors.CharmerError as exc:
                             problem += "\nCurrent target refused: " + str(exc)
                     raise LineupRefusal(problem)
-                _choice_target(runtime, current, shown.request)
+                _choice_target(runtime, current)
                 return decide_locked(runtime, current, shown.request, forced=False, exec_ok=False,
                                      expected_target=shown.fingerprint, now=now, pending_only=True)
 
