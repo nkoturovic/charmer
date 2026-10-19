@@ -1,7 +1,7 @@
 {
   "bomFormat": "CycloneDX",
   "specVersion": "1.6",
-  "serialNumber": "urn:uuid:ffdb5174-be79-516c-9d0f-317cf259d805",
+  "serialNumber": "urn:uuid:372dd7a4-4a69-5636-81fc-3bfc25aef719",
   "version": 1,
   "metadata": {
     "tools": {
@@ -247,7 +247,7 @@
         },
         {
           "name": "charmer:gateway:post-apply-tree-sha256",
-          "value": "f75c00c79b8d87d48e70b73ef3eeadb9b81336fce8f530921a992f55e26d1665"
+          "value": "e1e1f30aaeb74823c82a3609a62b5bd7acd9e16b0d9b20cdf3a1c979270c5586"
         },
         {
           "name": "charmer:gateway:build-godebug",
@@ -283,7 +283,7 @@
         },
         {
           "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-credential-save-report.patch@05e2fa1aecf49383c91791798aff7066671c5f8536bf5977525f4d3dc9cf1627"
+          "value": "cli-proxy-api-credential-save-report.patch@2425f556aab2d6263cc2ed5530bb7d62e5bc1f6386d16d4dffd8a1671b982707"
         },
         {
           "name": "charmer:gateway:patch",
