@@ -1529,6 +1529,9 @@ class CodexIdentityGateTests(unittest.TestCase):
         self.assertEqual(record["expected_tests"], list(names))
         diagnostic = (REPO_ROOT / "tests/gateway-startup-probe.nix").read_text()
         self.assertIn("cp ${./gateway_codex_identity_probe_test.go} sdk/cliproxy/gwtest_codex_probe_test.go", diagnostic)
+        self.assertIn("cp ${./gateway_v8_traffic_probe_test.go} sdk/cliproxy/gwtest_v8_traffic_probe_test.go", diagnostic)
+        traffic = (REPO_ROOT / "tests/gateway_v8_traffic_probe_test.go").read_text()
+        self.assertIn("func TestGatewayV8NativeConfigurationUpdateBoundary(", traffic)
         source = (REPO_ROOT / "tests/gateway_codex_identity_probe_test.go").read_text()
         self.assertIn("func TestOmissionCodexIdentity(", source)
         # 8.x's routing hint is part of the final-header inventory.

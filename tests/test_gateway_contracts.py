@@ -224,6 +224,9 @@ class PayloadContractTests(GatewayTests):
                     self.assertIsNone(dotted(hit.body, path), path)
 
     def test_a7_forced_tool_choice_contract_exceptions(self):
+        # Own the existing cache breakpoint so this case can compare the whole
+        # tool definition exactly, independently of auto-cache placement.
+        tool = {**copy.deepcopy(TOOL), "cache_control": {"type": "ephemeral"}}
         for alias, info, contract in override_cases(self.gateway.aliases):
             if info.adapter != harness.CLAUDE:
                 continue
@@ -231,16 +234,49 @@ class PayloadContractTests(GatewayTests):
                 for stream in (False, True):
                     with self.subTest(contract=info.contract, choice=choice["type"], stream=stream):
                         reply = self.gateway.request(alias, stream=stream, body={
-                            **conflicting(contract), "tools": [TOOL], "tool_choice": choice})
+                            **conflicting(contract), "tools": [tool], "tool_choice": choice})
                         self.record("contract_exceptions", harness.contract_row(info.adapter, info.contract, stream, choice["type"]),
                                     reply, classification="observation", contract=info.contract,
                                     choice=choice["type"], stream=stream)
                         hit = self.hit(reply, alias)
                         if "output_config.effort" in contract["params"]:
-                            self.assertIsNone(dotted(hit.body, "output_config.effort"))
+                            # v8 applies explicit payload rules after forced-tool
+                            # normalization. Effort is independent of thinking
+                            # (public Claude effort contract); this is wire
+                            # evidence, not proof of any provider's acceptance.
+                            self.assertEqual(dotted(hit.body, "output_config.effort"),
+                                             contract["params"]["output_config.effort"])
                             self.assertNotIn("thinking", hit.body)
                         else:
                             self.assertEqual(hit.body["reasoning_effort"], contract["params"]["reasoning_effort"])
+                        self.assertEqual(hit.body["tools"], [tool])
+                        self.assertEqual(hit.body["tool_choice"], choice)
+
+    def test_a7_without_override_removes_caller_thinking_and_effort(self):
+        tool = {**copy.deepcopy(TOOL), "cache_control": {"type": "ephemeral"}}
+        def document(*args):
+            doc, aliases, info = harness.build_document(*args)
+            doc["payload"] = {}
+            doc["openai-compatibility"] = [section for section in doc["openai-compatibility"]
+                                           if section["name"] != render.SENTINEL_NAME]
+            return render.finalize_document(doc), aliases, info
+
+        gateway = harness.GatewayHarness(document_factory=document)
+        self.addCleanup(gateway.close)
+        for choice in ({"type": "any"}, {"type": "tool", "name": TOOL["name"]}):
+            for stream in (False, True):
+                reply = gateway.request("gwtest-cc-output-config-high", stream=stream, body={
+                    "thinking": {"type": "adaptive"}, "output_config": {"effort": "high"},
+                    "tools": [tool], "tool_choice": choice})
+                self.assertEqual(reply.status, 200)
+                self.assertEqual(len(reply.hits), 1)
+                sent = reply.hits[0].body
+                self.assertNotIn("thinking", sent)
+                self.assertIsNone(dotted(sent, "output_config.effort"))
+                self.assertEqual(sent["tools"], [tool])
+                self.assertEqual(sent["tool_choice"], choice)
+                self.record("contract_exceptions", streamed_row("A7-no-override-" + choice["type"], stream),
+                            reply, classification="wire-only", thinking_removed=True, effort_removed=True)
 
     def test_a8_continuity_overrides(self):
         for alias, info in self.gateway.aliases.items():
@@ -666,6 +702,11 @@ class SolOverlayCapabilityTests(unittest.TestCase):
         codex_id, codex_provider = pools["codex"]
         sol = copy.deepcopy(self.sol)
         sol["provider"] = codex_id
+        # The fixture provider ordinarily enables only high/xhigh. This probe
+        # copies the shipped five-effort Sol line, so carry all of that line's
+        # explicit contracts too; otherwise the no-level final-barrier test
+        # silently exercises unconfigured low/medium/max aliases.
+        codex_provider["payload_contracts"] = [item["proxy_contract"] for item in sol["efforts"].values()]
         # The catalog owns Sonnet's real generation/floor. This synthetic T1 instance
         # exercises its client-effort overlay shape without publishing it.
         sonnet = copy.deepcopy(next(e for e in bundle.lines.values() if e["provider"] == claude_id))
@@ -693,6 +734,12 @@ class SolOverlayCapabilityTests(unittest.TestCase):
             self.assertEqual(row["max-context-length"], entry["context"]["provider_tokens"])
             self.assertEqual(row["max-completion-tokens"], entry["output"]["declared_tokens"])
             self.assertEqual(row["thinking"]["levels"], [level for level in catalog.OVERLAY_THINKING_LEVELS if level in entry["efforts"]])
+        for effort, entry in sol["efforts"].items():
+            alias = entry["selector"].removesuffix("[1m]")
+            matching = [rule for rule in document["payload"]["override"]
+                        if any(model["name"] == alias for model in rule["models"])]
+            self.assertEqual(len(matching), 1, "each copied Sol alias needs its actual explicit override")
+            self.assertEqual(matching[0]["params"], {"reasoning.effort": effort})
         if not levels:
             del document[render.OVERLAY_KEY]["codex"][0]["thinking"]
         document["disable-image-generation"] = True
@@ -713,14 +760,18 @@ class SolOverlayCapabilityTests(unittest.TestCase):
             return
         binary = harness.run_codex_diagnostic("TestCodexProbeSolEfforts", fixture=self.fixture())
         harness.EVIDENCE.record(MODULE, "sol_overlay", {"row": "SO1", "diagnostic": binary,
-            "efforts": 5, "paths": "HTTP,stream,tool-setup,tool-continuation", "summary": True, "encrypted_include": True})
+            "efforts": 5, "paths": "HTTP,stream,tool-setup,tool-continuation,translated-HTTP,translated-stream",
+            "layer": "full-pipeline", "summary": True, "encrypted_include": True})
 
-    def test_missing_levels_strips_reasoning_summary(self):
+    def test_missing_levels_separates_capability_and_payload_barriers(self):
         if not self.applicable:  # not applicable: asserted in setUp
             return
         binary = harness.run_codex_diagnostic("TestCodexProbeSolEfforts", fixture=self.fixture(levels=False))
         harness.EVIDENCE.record(MODULE, "sol_overlay", {"row": "SO2", "diagnostic": binary,
-            "efforts": 5, "summary_stripped": True, "encrypted_include": True})
+            "efforts": 5, "summary_preserved": True, "encrypted_include": True,
+            "capability_only_payload_rules": 0, "capability_only_effort_stripped": True,
+            "full_pipeline_override_retained": True, "full_pipeline_effort_restored": True,
+            "paths": "native-HTTP,native-stream,tool-continuation,translated-HTTP,translated-stream"})
 
     def test_production_overlay_loader_parity_and_bare_aliases(self):
         if not self.applicable:  # not applicable: asserted in setUp

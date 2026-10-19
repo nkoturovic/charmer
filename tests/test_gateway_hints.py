@@ -11,6 +11,7 @@ import json
 import unittest
 import uuid
 from unittest import mock
+from types import SimpleNamespace
 
 from charmer import catalog
 from _catalog import FIXTURE_ROOT, SHIPPED_ROOT, uses_shipped_catalog
@@ -21,9 +22,9 @@ PREFIX = "x-claude-code-"
 IDENTITY_NAMES = {PREFIX + name for name in ("session-id", "agent-id", "parent-agent-id")}
 DROPPED_NAMES = {PREFIX + name for name in ("request-class", "agent-type", "prev-tool-durations")}
 PRECONDITION = (
-    "H1 precondition: the fixture pinned version must be in the gateway baseline's release line "
-    "(same major.minor, patch >= baseline: P claude_device_profile.go:23,218-222); "
-    "a gateway or fixture re-pin broke it; see HV1/HV2 and H6"
+    "H1 precondition: the fixture version and complete native signals must satisfy the pinned "
+    "Claude Code detector; confirmed native hints are preserved, unconfirmed custom-route "
+    "hints are not. Browser-header presence is not a detector verdict; see HV1/HV2 and H6"
 )
 
 
@@ -86,6 +87,16 @@ class HintShapeTests(unittest.TestCase):
             self.assertEqual((row["status"], row["hits"], row["branch"]), (502, 0, "unresolved"))
             self.assertEqual(row["hint_names"], [])
 
+    def test_expected_policy_does_not_follow_observed_header_set(self):
+        for expected, observed in (("preserve", IDENTITY_NAMES), ("allowlist", IDENTITY_NAMES | DROPPED_NAMES)):
+            case = HintTests()
+            hit = SimpleNamespace(header_names=sorted(observed), hint_markers=frozenset(), route="fixture")
+            case.gateway = mock.Mock(aliases={"gwtest-cc-output-config-high": SimpleNamespace(route="fixture")})
+            case.gateway.request.return_value = harness.Reply(200, {}, b"{}", hits=[hit])
+            with self.subTest(expected=expected), mock.patch.object(harness, "EVIDENCE", harness.Evidence()):
+                with self.assertRaises(AssertionError):
+                    case.check("policy-negative", "2.1.302", expected)
+
     def test_all_hint_cells_are_required_for_publication(self):
         required = harness.REQUIRED_EVIDENCE[MODULE]["H"]
         self.assertEqual(len(required), 13)
@@ -118,8 +129,11 @@ class HintTests(unittest.TestCase):
         reply = self.gateway.request(alias, stream=stream, headers={**headers, **sent}, body=body)
         hit = reply.hits[0] if len(reply.hits) == 1 else None
         names = {name for name in hit.header_names if name.startswith(PREFIX)} if hit else set()
-        branch = (("identity" if "anthropic-dangerous-direct-browser-access" in hit.header_names
-                   else "preserve") if family == "claude" else "allowlist") if hit else "unresolved"
+        # Classify the observed output only for evidence. The expected policy
+        # below comes from each fixture's independently specified detector
+        # inputs, never from this observation or the browser header.
+        branch = ("preserve" if names == IDENTITY_NAMES | DROPPED_NAMES else
+                  "allowlist" if not names else "unexpected") if hit else "unresolved"
         markers = hit.hint_markers if hit else frozenset()
         dropped_leak = any(sent[name] in marker for name in DROPPED_NAMES for marker in markers)
         any_leak = any(value in marker for value in sent.values() for marker in markers)
@@ -135,24 +149,24 @@ class HintTests(unittest.TestCase):
         self.assertEqual(len(reply.hits), 1)
         self.assertEqual(hit.route, self.gateway.aliases[alias].route)
         self.assertEqual(branch, expected, PRECONDITION if row.startswith("H1-") else row)
-        self.assertEqual(names, IDENTITY_NAMES if expected == "identity" else
-                         IDENTITY_NAMES | DROPPED_NAMES if expected == "preserve" else set())
-        if expected == "identity":
-            self.assertFalse(dropped_leak, "dropped hint value leaked into upstream headers/body")
-        elif expected == "allowlist":
+        self.assertIn(expected, ("preserve", "allowlist"))
+        self.assertEqual(names, IDENTITY_NAMES | DROPPED_NAMES if expected == "preserve" else set())
+        if expected == "allowlist":
             self.assertFalse(any_leak, "hint value leaked into upstream headers/body")
+            self.assertFalse(dropped_leak, "dropped hint value leaked into upstream headers/body")
         else:
             self.assertTrue(dropped_leak)
+            self.assertEqual({name: hit.header_values.get(name) for name in sent}, sent)
 
 
 class HintBranchTests(HintTests):
     def test_h1_h2_h3_h8_per_request_branches_stream_and_json(self):
         for stream in (False, True):
             for row, version, expected, options in (
-                ("H1", self.version, "identity", {}),
-                ("H2", next_minor(self.version), "preserve", {}),
-                ("H3", self.version, "preserve", {"omit_app": True}),
-                ("H8", self.version, "preserve", {"helper": True}),
+                ("H1", self.version, "preserve", {}),
+                ("H2", next_minor(self.version), "allowlist", {}),
+                ("H3", self.version, "allowlist", {"omit_app": True}),
+                ("H8", self.version, "allowlist", {"helper": True}),
             ):
                 with self.subTest(row=row, stream=stream):
                     self.check(row + ("-stream" if stream else "-json"), version, expected, stream=stream, **options)
@@ -167,7 +181,7 @@ class HintBranchTests(HintTests):
 class HintShippedVersionTests(HintTests):
     def test_h6_shipped_version_precondition_not_policy_verdict(self):
         version = catalog.load_catalog(SHIPPED_ROOT).docs["native-contract"]["verified"][0]["version"]
-        self.check("H6", version, "identity")
+        self.check("H6", version, "preserve")
 
 
 class HintVariantBaselineTests(HintTests):
@@ -178,8 +192,8 @@ class HintVariantBaselineTests(HintTests):
         cls.version = catalog.load_catalog(FIXTURE_ROOT).docs["native-contract"]["verified"][0]["version"]
 
     def test_hv1_hv2_user_agent_default_changes_baseline(self):
-        self.check("HV1", next_minor(self.version), "identity")
-        self.check("HV2", self.version, "preserve")
+        self.check("HV1", next_minor(self.version), "preserve")
+        self.check("HV2", self.version, "allowlist")
 
 
 if __name__ == "__main__":

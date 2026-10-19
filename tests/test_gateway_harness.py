@@ -442,6 +442,7 @@ class GateAndEvidenceTests(unittest.TestCase):
         self.assertEqual(harness.GATEWAY_CHECK_EXCLUSIONS, {
             "test_gateway_seam", "test_gateway_auth_tools", "test_gateway_hint_client",
             "test_gateway_regressions", "test_gateway_retry_after", "test_gateway_keyed_compat",
+            "test_gateway_v8_traffic",  # Exact native client and separately timed TLS traffic
             "test_gateway_lifecycle", "test_gateway_doctor", "test_gateway_service",
         })
         modules = {"tests." + p.stem for p in (REPO_ROOT / "tests").glob("test_gateway_*.py")

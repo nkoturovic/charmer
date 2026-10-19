@@ -180,6 +180,24 @@ func TestCodexProbeOverlayLoaderParity(t *testing.T) {
 
 func TestCodexProbeSolEfforts(t *testing.T) {
 	cfg, spec := codexProbeLoadFixture(t)
+	if len(cfg.Payload.Override) == 0 {
+		t.Fatal("full-pipeline fixture must retain its rendered effort overrides")
+	}
+	t.Run("full-pipeline", func(t *testing.T) { codexProbeSolEfforts(t, cfg, spec, true) })
+	if !spec.Levels {
+		capabilityOnly := *cfg
+		capabilityOnly.Payload = config.PayloadConfig{}
+		t.Run("capability-only", func(t *testing.T) {
+			if !reflect.DeepEqual(capabilityOnly.Payload, config.PayloadConfig{}) {
+				t.Fatal("capability-only fixture must have no payload rules")
+			}
+			codexProbeSolEfforts(t, &capabilityOnly, spec, false)
+		})
+	}
+}
+
+func codexProbeSolEfforts(t *testing.T, cfg *config.Config, spec codexProbeOverlaySpec, overrides bool) {
+	t.Helper()
 	captured := make(chan []byte, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
@@ -199,22 +217,53 @@ func TestCodexProbeSolEfforts(t *testing.T) {
 	}))
 	defer server.Close()
 	manager := codexProbePipeline(t, cfg, "codex", server.URL)
+	found := false
+	for _, model := range GlobalModelRegistry().GetModelsForClient("codexprobe-codex") {
+		if model.ID == spec.Wire || model.MetadataModelID == spec.Wire {
+			found = true
+			if model.UserDefined || model.SupportConfigurationUpdate || (model.Thinking != nil) != spec.Levels {
+				t.Fatal("fixture capability precondition changed; do not manufacture the target branch")
+			}
+		}
+	}
+	if !found {
+		t.Fatal("actual overlay definition absent")
+	}
 	for effort, alias := range spec.Aliases {
 		// The setup is separately counted, and the continuation is built from its
 		// returned function call (not an invented pre-existing provider response).
-		for _, mode := range []string{"http", "stream", "tool"} {
+		for _, mode := range []string{"http", "stream", "tool", "chat-http", "chat-stream"} {
 			t.Run(effort+"/"+mode, func(t *testing.T) {
+				translated := strings.HasPrefix(mode, "chat-")
 				input := []any{map[string]any{"role": "user", "content": "fixture"}}
 				send := func(stream bool, items []any) []byte {
 					t.Helper()
+					defer func() {
+						// An assertion must not leave the fixture channel full and
+						// turn later independent cases into deadline failures.
+						select {
+						case <-captured:
+						default:
+						}
+					}()
 					payload, _ := json.Marshal(map[string]any{"model": alias, "input": items,
 						"reasoning": map[string]any{"effort": effort, "summary": "concise"}, "include": []string{"reasoning.encrypted_content"},
 						"tools": []any{map[string]any{"type": "function", "name": "codexprobe_tool", "parameters": map[string]any{"type": "object", "properties": map[string]any{}}}}})
 					ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 					defer cancel()
 					req := cliproxyexecutor.Request{Model: alias, Payload: payload}
-					opts := cliproxyexecutor.Options{SourceFormat: sdktranslator.FormatOpenAIResponse, Stream: stream}
+					// The HTTP handlers preserve the client's alias in this metadata
+					// before manager resolution; final payload rules match that alias.
+					opts := cliproxyexecutor.Options{SourceFormat: sdktranslator.FormatOpenAIResponse, Stream: stream,
+						Metadata: map[string]any{cliproxyexecutor.RequestedModelMetadataKey: alias}}
+					if translated {
+						opts.SourceFormat = sdktranslator.FormatOpenAI
+						req.Payload, _ = json.Marshal(map[string]any{"model": alias,
+							"messages":         []any{map[string]any{"role": "user", "content": "translated fixture"}},
+							"reasoning_effort": effort, "reasoning": map[string]any{"summary": "concise"}})
+					}
 					var response []byte
+					translatedFinished := false
 					if stream {
 						res, err := manager.ExecuteStream(ctx, []string{"codex"}, req, opts)
 						if err != nil {
@@ -225,8 +274,13 @@ func TestCodexProbeSolEfforts(t *testing.T) {
 								t.Fatal(chunk.Err)
 							}
 							response = append(response, chunk.Payload...)
+							if gjson.GetBytes(chunk.Payload, "choices.0.finish_reason").String() == "stop" {
+								translatedFinished = true
+							}
 						}
-						if !strings.Contains(string(response), "response.completed") {
+						// Executor chunks precede HTTP framing: Chat's handler adds
+						// [DONE], while its executor emits the finish_reason chunk.
+						if translated && !translatedFinished || !translated && !strings.Contains(string(response), "response.completed") {
 							t.Fatal("stream completion absent")
 						}
 					} else {
@@ -235,7 +289,11 @@ func TestCodexProbeSolEfforts(t *testing.T) {
 							t.Fatal(err)
 						}
 						response = res.Payload
-						if !gjson.GetBytes(response, "output").IsArray() {
+						output := "output"
+						if translated {
+							output = "choices"
+						}
+						if !gjson.GetBytes(response, output).IsArray() {
 							t.Fatal("HTTP completion absent")
 						}
 					}
@@ -248,16 +306,18 @@ func TestCodexProbeSolEfforts(t *testing.T) {
 					if gjson.GetBytes(upstream, "model").String() != spec.Wire {
 						t.Fatal("alias retargeted")
 					}
-					if spec.Levels && gjson.GetBytes(upstream, "reasoning.effort").String() != effort {
-						t.Fatal("effort lost")
-					}
-					summary := gjson.GetBytes(upstream, "reasoning.summary")
-					if spec.Levels {
-						if summary.String() != "concise" {
-							t.Fatal("source summary lost")
+					gotEffort := gjson.GetBytes(upstream, "reasoning.effort")
+					if spec.Levels || overrides {
+						if gotEffort.String() != effort {
+							t.Fatal("capability or explicit payload effort lost")
 						}
-					} else if summary.Exists() {
-						t.Fatal("no-level negative control retained summary")
+					} else if gotEffort.Exists() {
+						t.Fatal("capability-only no-level control retained effort")
+					}
+					// v8 treats summary visibility independently of effort. The old
+					// assertion that no levels strips summary is intentionally retired.
+					if gjson.GetBytes(upstream, "reasoning.summary").String() != "concise" {
+						t.Fatal("source summary lost")
 					}
 					if gjson.GetBytes(upstream, "include").Raw != `["reasoning.encrypted_content"]` {
 						t.Fatal("encrypted include lost")
@@ -277,7 +337,7 @@ func TestCodexProbeSolEfforts(t *testing.T) {
 					}
 					input = append(setup, item, map[string]any{"type": "function_call_output", "call_id": call.Get("call_id").String(), "output": "fixture result"})
 				}
-				send(mode == "stream", input)
+				send(mode == "stream" || mode == "chat-stream", input)
 			})
 		}
 	}

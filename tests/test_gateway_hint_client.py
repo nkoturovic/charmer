@@ -443,7 +443,7 @@ class RealClientHintBranchTests(unittest.TestCase):
                              "daemon_unchanged": result.daemon is not None and result.daemon.unchanged})
         errors = completion_errors(runs, relay.rows) + relay.completion_errors()
         evidence = harness.Evidence()
-        evidence.binary = {"realpath": gateway.binary, "version": gateway.version}
+        evidence.binary = dict(harness.binary_identity(gateway.binary, gateway.version))
         for row in runs:
             evidence.record(MODULE, "runs", row)
         for index, row in enumerate(relay.rows):
@@ -494,11 +494,13 @@ D11_UNRESOLVED = "unresolved-capture"
 # OAuth pool (ApplyClaudeCredentialMetadata): the selected credential's
 # identity inside metadata.user_id (device_id/account_uuid), a subagent's
 # per-agent conversation session_id derived exactly from the client's own
-# session_id and X-Claude-Code-Agent-Id (every other member preserved), and
-# the billing block's cch= attestation.
+# session_id and X-Claude-Code-Agent-Id (every other member preserved), the
+# billing block's cch= attestation, and D212's exact preserved-thinking replay
+# block_binding addition (not cloaking; its beta is tested on the actual wire).
 D11_AGENT_SESSION = "metadata.user_id.session_id:agent-conversation"
+D11_THINKING_BINDING = "thinking:block-binding"
 D11_PERMITTED = frozenset({"metadata.user_id.device_id", "metadata.user_id.account_uuid", D11_AGENT_SESSION,
-                           "system:cch"})
+                           "system:cch", D11_THINKING_BINDING})
 # Silently answered by another model, on another pool or another endpoint.
 D11_RETARGET = frozenset({"model", "pool", "route"})
 # Cosmetic or advisory output (title/rename, token counting).
@@ -691,6 +693,9 @@ def d11_body_delta(client_raw: bytes, upstream_raw: bytes, agent_id: str | None 
         if key == "system":
             delta.append(_system_delta(client.get(key), upstream.get(key)))
             continue
+        if key == "thinking" and _binding_only_delta(client, upstream):
+            delta.append(D11_THINKING_BINDING)
+            continue
         if key == "metadata" and isinstance(client.get(key), dict) and isinstance(upstream.get(key), dict):
             changed = sorted(name for name in set(client[key]) | set(upstream[key])
                              if client[key].get(name) != upstream[key].get(name))
@@ -707,6 +712,32 @@ def d11_body_delta(client_raw: bytes, upstream_raw: bytes, agent_id: str | None 
     if names(client) != names(upstream):
         delta.append("tool-names")
     return tuple(delta)
+
+
+def _binding_only_delta(client, upstream) -> bool:
+    """D212: not cloaked; a preserved-thinking replay may gain block_binding.
+
+    Match the exact pinned executor operation, not any thinking change. The
+    traffic probe separately asserts the accompanying beta on the real wire.
+    """
+    model = str(client.get("model", "")).removesuffix("[1m]")
+    if model not in {"claude-opus-5-5", "claude-fable-5-1", "claude-sonnet-5-5", "claude-haiku-5-5"}:
+        return False
+    if (client.get("tool_choice") or {}).get("type") in {"any", "tool"}:
+        return False
+    before = client.get("thinking", {"type": "adaptive"})
+    if not isinstance(before, dict) or "block_binding" in before:
+        return False
+    modes = {"adaptive"} if model in {"claude-sonnet-5-5", "claude-haiku-5-5"} else {"adaptive", "enabled"}
+    if before.get("type") not in modes:
+        return False
+    signed = any(isinstance(block, dict) and (
+        block.get("type") == "thinking" and isinstance(block.get("signature"), str) and block["signature"].strip()
+        or block.get("type") == "redacted_thinking" and isinstance(block.get("data"), str) and block["data"].strip())
+        for message in client.get("messages", ()) if message.get("role") == "assistant"
+        for block in message.get("content", ()) if isinstance(message.get("content"), list))
+    return bool(signed) and upstream.get("thinking") == {
+        **before, "block_binding": {"prefix_mismatch_behavior": "drop_block"}}
 
 
 def _user_id_delta(client, upstream, agent_id=None) -> list[str]:
