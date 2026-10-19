@@ -42,7 +42,7 @@ def _has_selection(args: argparse.Namespace) -> bool:
 
 
 def _needs_choice(runtime: runtime_mod.Runtime, record: dict[str, Any]) -> bool:
-    return sessions.lead_key_needs_choice(sessions.lead_identity(record)[0], runtime.lineup_catalog())
+    return runtime.resume_choice(record).needs_choice
 
 
 def _selected_records(runtime: runtime_mod.Runtime, selected: sessions.SessionFilter | None = None) -> list[dict[str, Any]]:
@@ -69,7 +69,7 @@ def _batch_identifiers(runtime: runtime_mod.Runtime, args: argparse.Namespace) -
 
 def _batch_check(runtime: runtime_mod.Runtime, record: dict[str, Any]) -> str | None:
     return sessions.nonrunning_problem(record, background=runtime.background_liveness(),
-                                       process=sessions.proc_session_scan(),
+                                       process=sessions.proc_session_scan(runtime.proc_root),
                                        self_id=runtime.environ.get("CHARMER_MANAGED_ID"))
 
 
@@ -88,13 +88,15 @@ def _forget_many(runtime: runtime_mod.Runtime, args: argparse.Namespace, *, inpu
     identifiers = _batch_identifiers(runtime, args)
     if args.force:
         raise cli_types.UsageError("--force is single-session only; a bulk forget has no liveness bypass")
-    background, process = runtime.background_liveness(), sessions.proc_session_scan()
+    background, process = runtime.background_liveness(), sessions.proc_session_scan(runtime.proc_root)
     items = sessions.batch_plan(runtime.session_store, identifiers, names=session_facts._record_resume_names,
                                 check=lambda record: sessions.nonrunning_problem(
                                     record, background=background, process=process,
                                     self_id=runtime.environ.get("CHARMER_MANAGED_ID")))
     lines = ["Forget preview (record and generated files only; transcripts never touched):",
              *sessions.batch_preview_lines(items)]
+    lines += [f"  Only after verifying it is not running, a single-session retry: charmer sessions forget {item.identifier} --force"
+              for item in items if (item.problem or "").startswith("background liveness unknown")]
     output_stream.write("\n".join(termtext.visible_text(line) for line in lines) + "\n")
     ready = sum(item.problem is None for item in items)
     if args.dry_run:
@@ -106,6 +108,38 @@ def _forget_many(runtime: runtime_mod.Runtime, args: argparse.Namespace, *, inpu
     if ready:
         runtime.begin_session_batch()
     results = sessions.housekeeping_batch(runtime.session_store, items, check=lambda record: _batch_check(runtime, record))
+    output_stream.write("\n".join(termtext.visible_text(line) for line in sessions.batch_result_lines(results)) + "\n")
+    return int(any(item.status != "succeeded" for item in results))
+
+
+def _choose_many(runtime: runtime_mod.Runtime, args: argparse.Namespace, *, input_stream: TextIO,
+                 output_stream: TextIO, interactive: bool) -> int:
+    identifiers = _batch_identifiers(runtime, args)
+    if args.choose_profile is not None:
+        if args.choose_effort is not None:
+            raise cli_types.UsageError("--effort is an input of --direct, not --profile")
+        request = lineup_mod.Request("profile", name=args.choose_profile, text=f"profile {args.choose_profile}")
+    else:
+        request = lineup_mod.Request("direct", model=args.choose_direct, effort=args.choose_effort,
+                                     text=f"direct {args.choose_direct}")
+    background, process = runtime.background_liveness(), sessions.proc_session_scan(runtime.proc_root)
+    items = sessions.batch_plan(runtime.session_store, identifiers, names=session_facts._record_resume_names,
+                                check=lambda record: sessions.nonrunning_problem(
+                                    record, background=background, process=process,
+                                    self_id=runtime.environ.get("CHARMER_MANAGED_ID")))
+    previews = lineup_mod.choice_previews(runtime, items, request)
+    output_stream.write("Save lead choices (pending only; nothing launches):\n")
+    output_stream.write("\n".join(termtext.visible_text(line) for line in lineup_mod.choice_preview_lines(previews)) + "\n")
+    ready = sum(choice.item.problem is None for choice in previews)
+    if args.dry_run:
+        output_stream.write("Dry run: nothing written.\n")
+        return int(any(choice.item.problem for choice in previews))
+    if ready and not _batch_confirmed("choose", ready, yes=args.yes, interactive=interactive, input_stream=input_stream):
+        output_stream.write("No lead choice was recorded.\n")
+        return 3
+    if ready:
+        runtime.begin_session_batch()
+    results = lineup_mod.save_choice_batch(runtime, previews, check=lambda record: _batch_check(runtime, record))
     output_stream.write("\n".join(termtext.visible_text(line) for line in sessions.batch_result_lines(results)) + "\n")
     return int(any(item.status != "succeeded" for item in results))
 
@@ -128,7 +162,8 @@ def sessions_list_document(runtime: runtime_mod.Runtime, selected: sessions.Sess
     rows = []
     for record in records:
         summary = sessions.record_summary(
-            record, lcat if record.get("version") == sessions.RECORD_VERSION else None
+            record, lcat if record.get("version") == sessions.RECORD_VERSION else None,
+            needs_choice=runtime.resume_choice(record, lcat=lcat).needs_choice,
         )
         marker = launch_flow._session_row_marker(record, summary, live).strip()
         rows.append({
@@ -144,7 +179,7 @@ def sessions_list_document(runtime: runtime_mod.Runtime, selected: sessions.Sess
             "needs_attention": marker == "!",
             "pending_change": bool(summary.pending),
             "ended": record.get("last_event_source") == "end",
-            "needs_choice": _needs_choice(runtime, record),
+            "needs_choice": bool(summary.needs_choice),
             "last_used": session_facts._record_last_seen(record),
             "cwd": summary.cwd,
         })
@@ -162,7 +197,8 @@ def _print_sessions_listing(runtime: runtime_mod.Runtime, output_stream: TextIO,
     lcat = runtime.lineup_catalog()
     for record in records:
         summary = sessions.record_summary(
-            record, lcat if record.get("version") == sessions.RECORD_VERSION else None
+            record, lcat if record.get("version") == sessions.RECORD_VERSION else None,
+            needs_choice=runtime.resume_choice(record, lcat=lcat).needs_choice,
         )
         follow = "-" if summary.follow is None else ("follow" if summary.follow else "pinned")
         # Record fields (cwd, profile) are external text; the whole row is
@@ -289,7 +325,8 @@ def _session_show_lines(runtime: runtime_mod.Runtime, record: dict[str, Any]) ->
     rid = sessions.runtime_session_id(record)
     lines: list[str] = []
     lcat = runtime.lineup_catalog()
-    if sessions.lead_needs_choice(record, lcat):
+    choice = runtime.resume_choice(record, lcat=lcat)
+    if choice.needs_choice:
         lines.append(
             f"needs a lead choice: {sessions.lead_choice_notice(record, lcat)} — "
             f"charmer -r {mid} (interactive) or charmer lineup --session {rid} "
@@ -297,10 +334,13 @@ def _session_show_lines(runtime: runtime_mod.Runtime, record: dict[str, Any]) ->
         )
     pending = record.get("pending")
     if pending:
-        lines.append(
-            f"pending relaunch change: {'; '.join(pending.get('reasons') or ())} — applies "
-            f"at the next resume (charmer -r {mid})"
-        )
+        if choice.problem:
+            lines.append(f"pending relaunch change is invalid: {choice.problem} — not applied")
+        else:
+            lines.append(
+                f"pending relaunch change: {'; '.join(pending.get('reasons') or ())} — applies "
+                f"at the next resume (charmer -r {mid})"
+            )
     target = record.get("lead_target")
     if target:
         lines.append(
@@ -336,7 +376,7 @@ def _sessions_mark_ended(
             return _refused("cannot tell which sessions are live in the background "
                             f"({daemon.reason}); nothing marked")
         prefixes = daemon.prefixes
-        scan = sessions.proc_session_scan()
+        scan = sessions.proc_session_scan(runtime.proc_root)
         if not scan.known:
             return _refused("cannot tell which sessions are running (the process table is unreadable: "
                             f"{scan.reason}); nothing marked")
@@ -432,6 +472,8 @@ def _sessions_command(
             return 0
         _print_sessions_listing(runtime, output_stream, _selection(args))
         return 0
+    if command == "choose":
+        return _choose_many(runtime, args, input_stream=input_stream, output_stream=output_stream, interactive=interactive)
     if command == "mark-ended":
         return _sessions_mark_ended(runtime, args, output_stream)
     if command == "show":

@@ -1,0 +1,24 @@
+
+  sessions — project (cwd) · 2 total · 0 marked
+  ─────────────────────────────────────────────────────────────────────────────
+    *  state    profile   lead        agents  follow  last seen  title
+  ›    ○ ended  balanced  muse-spark  8       follow  2 min      ↻ —
+       ○ ended  balanced  muse-spark  8       follow  2 min      ↻ —
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  lineup gen 0 · 8 agents · follow · pending relaunch: this session still runs…
+  2 succeeded · 0 refused · 0 failed
+  Enter resume · Space mark · * all · / filter · X forget · C all dirs
+  … · ? help · Esc back

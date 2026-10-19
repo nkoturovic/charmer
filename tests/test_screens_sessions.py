@@ -373,8 +373,8 @@ class SessionsRowTests(_SessionsCase):
         self.assertEqual(
             cli.SESSIONS_KEYBAR,
             (("Enter", "resume"), ("Space", "mark"), ("*", "all"), ("/", "filter"), ("X", "forget"),
-             ("C", "all dirs"), ("V", "details"), ("T", "lineup"), ("F", "follow/pin"), ("R", "rename"),
-             ("L", "link"), ("?", "help"), ("Esc", "back")),
+             ("C", "all dirs"), ("Q", "save"), ("V", "details"), ("T", "lineup"), ("F", "follow/pin"), ("R", "rename"),
+             ("L", "link"), ("B", "filters"), ("?", "help"), ("Esc", "back")),
         )
         self.record()
         result, win = self.run_screen(self.screen(), ["?", END, ESC, ESC], height=30, width=120)
@@ -386,8 +386,8 @@ class SessionsRowTests(_SessionsCase):
         # The selected row (no end event, not running, a v4 record) adds M and P.
         self.assertEqual(
             self.screen()._keybar().text(),
-            "Enter resume · Space mark · * all · / filter · X forget · C all dirs · V details · T lineup "
-            "· F follow/pin · R rename · M mark ended · P repair · L link · ? help · Esc back")
+            "Enter resume · Space mark · * all · / filter · X forget · C all dirs · Q save · V details · T lineup "
+            "· F follow/pin · R rename · M mark ended · P repair · L link · B filters · ? help · Esc back")
         self.assertIn("Enter resume · Space mark · * all · / filter", win.frames[0])
 
     def test_the_root_screen_quits_with_esc(self) -> None:
@@ -1320,7 +1320,7 @@ class NeedsChoiceChooserTests(_SessionsCase):
         first = cli.profile_pick_order(self.runtime)[0]
         with self.healthy_card(), mock.patch('charmer.cli.screens.launch_sessions._LaunchCardScreen._gateway_status', lambda _s: None), \
                 mock.patch.object(self.runtime, "prepare", wraps=self.runtime.prepare) as prepare:
-            result, win = self.run_screen(self.screen(), [END, ENTER, ENTER, ENTER])
+            result, win = self.run_screen(self.screen(), [END, ENTER, DOWN, DOWN, ENTER, ENTER, ENTER])
         target = prepare.call_args.args[0]
         self.assertEqual(target, cli.LaunchTarget("relaunch", None, first, True, "Relaunch 11111111"))
         self.assertEqual(prepare.call_args.kwargs["action"], "resume")
@@ -1333,7 +1333,7 @@ class NeedsChoiceChooserTests(_SessionsCase):
     def test_several_records_are_listed_first(self) -> None:
         self.record(managed_id=fx.FIXED_ID, needs_choice=True)
         self.record(managed_id=fx.OTHER_ID, needs_choice=True, last_seen=timedelta(hours=1))
-        result, win = self.run_screen(self.screen(), [END, ENTER, ESC, ESC])
+        result, win = self.run_screen(self.screen(), [END, ENTER, DOWN, DOWN, ENTER, ESC, ESC])
         self.assertIsNone(result)
         listing = "\n".join(win.frames)
         self.assertIn(cli.NEEDS_CHOICE_LIST_TITLE, listing)

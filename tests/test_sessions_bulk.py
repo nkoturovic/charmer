@@ -17,7 +17,7 @@ from charmer.cli.commands import sessions as commands
 import _tui_fixture as fx
 from _catalog import FIXTURE_ROOT
 from test_screens_sessions import _SessionsCase
-from test_tui import DOWN, RIGHT, FakeWindow
+from test_tui import DOWN, END, RIGHT, FakeWindow
 
 ESC, ENTER, SPACE = "\x1b", "\n", " "
 
@@ -157,6 +157,20 @@ class BulkHousekeepingTests(_SessionsCase):
         self.assertTrue(self.runtime.session_store.exists(fx.FIXED_ID))
         self.assertFalse(self.runtime.session_store.exists(fx.OTHER_ID))
 
+    def test_mark_ended_batch_rechecks_even_an_already_ended_noop(self):
+        record = self.record(ended=True, scope=False)
+        check = lambda current: sessions.nonrunning_problem(current, background=self.runtime.background_liveness(),
+                                                             process=sessions.proc_session_scan())
+        items = sessions.batch_plan(self.runtime.session_store, [fx.FIXED_ID],
+                                    names=lambda _record: (), check=check)
+        self.runtime.proc_ids = frozenset({fx.FIXED_ID})
+        before = self.runtime.session_store.load_raw(fx.FIXED_ID)[1]
+        results = sessions.housekeeping_batch(self.runtime.session_store, items, check=check, mark_ended=True)
+        self.assertEqual(results[0].status, "refused")
+        self.assertIn("live", results[0].message)
+        self.assertEqual(self.runtime.session_store.load_raw(fx.FIXED_ID)[1], before)
+        self.assertEqual(record["last_event_source"], "end")
+
     def test_partial_failure_does_not_claim_atomicity_or_lose_other_records(self):
         for mid in (fx.FIXED_ID, fx.OTHER_ID, fx.THIRD_ID):
             self.record(managed_id=mid, ended=True, scope=False)
@@ -213,6 +227,65 @@ class BulkHousekeepingTests(_SessionsCase):
         screen.run(FakeWindow(["/", "/", ESC]))
         self.assertEqual(screen.filter_mode, "ended")
         self.assertEqual({record["managed_id"] for record in screen.records}, wanted)
+
+    def test_b_combines_all_filters_and_arbitrary_days_with_cli_selection_parity(self):
+        records = self.population()
+        for record in records[3:5]:
+            applied = copy.deepcopy(record["applied"])
+            applied["lead"]["key"] = fx.needs_choice_key(self.runtime)
+            record = sessions.with_applied(record, applied)
+            if record["managed_id"] == records[4]["managed_id"]:
+                record["last_seen_at"] = "2000-99-99T00:00:00Z"
+                record["created_at"] = "2000-01-01T00:00:00Z"
+            self.runtime.session_store.save(record)
+        code, out, err = self.run_cli(["sessions", "list", "--here", "--ended", "--needs-choice", "--older-than", "45d", "--json"])
+        self.assertEqual((code, err), (0, ""))
+        wanted = {row["managed_id"] for row in json.loads(out)["sessions"]}
+        self.assertEqual(wanted, {records[3]["managed_id"]})
+        before = snapshot(self.tmp)
+        screen = self.screen()
+        screen.run(FakeWindow([SPACE, "B", DOWN, ENTER, DOWN, ENTER, DOWN, ENTER,
+                               "4", "5", "d", ENTER, RIGHT, ENTER, DOWN, ENTER, ESC]))
+        self.assertEqual({record["managed_id"] for record in screen.records}, wanted)
+        self.assertEqual(screen._filter(), sessions.SessionFilter(here=True, ended=True, needs_choice=True, older_than=45))
+        self.assertEqual(screen.marked, set())
+        self.assertEqual(snapshot(self.tmp), before)
+        # C composes with the other filters rather than discarding them.
+        screen.run(FakeWindow(["C", ESC]))
+        self.assertFalse(screen._filter().here)
+        self.assertTrue(screen._filter().ended and screen._filter().needs_choice)
+        self.assertEqual(screen._filter().older_than, 45)
+
+    def test_b_cancel_or_unchanged_apply_preserves_marks_and_all_state(self):
+        self.record(ended=True, scope=False)
+        for keys in ([SPACE, "B", DOWN, ENTER, ESC, ESC], [SPACE, "B", END, ENTER, ESC]):
+            with self.subTest(keys=keys):
+                screen = self.screen()
+                original = screen._filter()
+                before = snapshot(self.tmp)
+                screen.run(FakeWindow(keys))
+                self.assertEqual(screen._filter(), original)
+                self.assertEqual(screen.marked, {fx.FIXED_ID})
+                self.assertEqual(snapshot(self.tmp), before)
+
+    def test_b_rejects_invalid_days_and_obeys_small_terminal_floor(self):
+        self.record(ended=True, scope=False)
+        before = snapshot(self.tmp)
+        for text in ("bad", "-1d", "1h", "１２d", "1000000d"):
+            with self.subTest(text=text):
+                screen = self.screen()
+                win = FakeWindow([SPACE, "B", DOWN, DOWN, DOWN, ENTER, *text,
+                                  ENTER, RIGHT, ENTER, ESC, ESC], width=44, height=24)
+                screen.run(win)
+                self.assertIn("use a number of days", "\n".join(win.frames))
+                self.assertIsNone(screen._filter().older_than)
+                self.assertEqual(screen.marked, {fx.FIXED_ID})
+                self.assertEqual(snapshot(self.tmp), before)
+        screen = self.screen()
+        rows, cols = screen.min_size(44)
+        with mock.patch.object(screen, "_filter_dialog", side_effect=AssertionError("acted below floor")):
+            screen.run(FakeWindow(["B", ESC], width=cols - 1, height=rows))
+        self.assertEqual(snapshot(self.tmp), before)
 
     def test_space_marks_three_then_x_forgets_with_one_confirmation(self):
         for mid in (fx.FIXED_ID, fx.OTHER_ID, fx.THIRD_ID):

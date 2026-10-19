@@ -1835,7 +1835,10 @@ def session_rows(
     rows: list[SessionRow] = []
     needs_total = 0
     for summary in summaries:
-        lead, needs = _lead_cell(summary.lead_key, lcat)
+        lead, lead_error = _lead_cell(summary.lead_key, lcat)
+        needs = lead_error if summary.needs_choice is None else summary.needs_choice
+        if lead_error and not needs:
+            lead = summary.lead_key  # still applied; the pending target is a separate next-resume intent
         needs_total += needs
         state = states.get(summary.managed_id, "unknown")
         v4 = summary.version == sessions.RECORD_VERSION
@@ -1870,7 +1873,7 @@ def session_rows(
                 cells=tuple(full[c] for c in keep),
                 role="error" if needs else "normal",
                 needs=needs,
-                lead_error=needs,
+                lead_error=lead_error,
                 version=summary.version,
             )
         )

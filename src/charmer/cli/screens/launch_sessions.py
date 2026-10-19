@@ -44,6 +44,7 @@ import textwrap
 import charmer.cli.doctor as doctor
 import charmer.cli.doctor_actions as doctor_actions
 import charmer.cli.gateway_facts as gateway_facts
+import charmer.cli.parser as parser_mod
 import charmer.cli.resume_checks as resume_checks
 import charmer.cli.runtime as runtime_mod
 import charmer.cli.screens.common as screens_common
@@ -1013,6 +1014,7 @@ class _SessionsScreen:
         self.way_back = way_back or _WayBack(1, card=not root)
         self.cwd_filter = True
         self.filter_mode = "here"
+        self.combined_filter: sessions.SessionFilter | None = None
         self.marked: set[str] = set()
         self.selected = 0
         self.offset = 0
@@ -1024,6 +1026,23 @@ class _SessionsScreen:
 
     def _clock(self) -> datetime:
         return self.now or datetime.now(timezone.utc)
+
+    def _filter(self) -> sessions.SessionFilter:
+        if self.combined_filter is not None:
+            return dataclasses.replace(self.combined_filter, here=self.cwd_filter)
+        return sessions.SessionFilter(here=self.cwd_filter, ended=self.filter_mode == "ended",
+                                      needs_choice=self.filter_mode == "needs a choice",
+                                      older_than=30 if self.filter_mode == "older than 30 days" else None,
+                                      exited=self.filter_mode == "exited without an end")
+
+    def _filter_label(self) -> str:
+        selected = self._filter()
+        if self.filter_mode != "custom":
+            return self.filter_mode
+        parts = [label for enabled, label in ((selected.ended, "ended"), (selected.needs_choice, "needs a choice")) if enabled]
+        if selected.older_than is not None:
+            parts.append(f"older than {selected.older_than}d")
+        return " AND ".join(parts) or "all"
 
     def _reload(self) -> None:
         runtime = self.runtime
@@ -1044,15 +1063,13 @@ class _SessionsScreen:
         else:
             records, native = every, native_all
             self.empty_elsewhere = False
-        selected = sessions.SessionFilter(here=self.cwd_filter, ended=self.filter_mode == "ended",
-                                          needs_choice=self.filter_mode == "needs a choice",
-                                          older_than=30 if self.filter_mode == "older than 30 days" else None,
-                                          exited=self.filter_mode == "exited without an end")
-        background, process = runtime.background_liveness(), sessions.proc_session_scan()
+        selected = self._filter()
+        background, process = runtime.background_liveness(), sessions.proc_session_scan(self.runtime.proc_root)
         records = [record for record in records if selected.matches(
             record, cwd=runtime.cwd,
-            needs_choice=lambda record: sessions.lead_key_needs_choice(sessions.lead_identity(record)[0], self.lcat),
-            is_dead=lambda record: sessions.nonrunning_problem(record, background=background, process=process) is None,
+            needs_choice=lambda record: runtime.resume_choice(record, lcat=self.lcat, effective=self.eff).needs_choice,
+            is_dead=lambda record: background.known and process.known and not session_facts._record_view_is_live(
+                record, prefixes=background.prefixes, proc_ids=process.ids),
             now=self._clock())]
         if self.filter_mode not in ("all", "here"):
             native = []
@@ -1066,7 +1083,8 @@ class _SessionsScreen:
         self.summaries = [
             dataclasses.replace(
                 sessions.record_summary(
-                    record, self.lcat if record.get("version") == sessions.RECORD_VERSION else None
+                    record, self.lcat if record.get("version") == sessions.RECORD_VERSION else None,
+                    needs_choice=runtime.resume_choice(record, lcat=self.lcat, effective=self.eff).needs_choice,
                 ),
                 last_seen_at=session_facts._record_last_seen(record),
             )
@@ -1097,7 +1115,7 @@ class _SessionsScreen:
                 marked=frozenset(self.marked),
             )
             if self.filter_mode not in ("all", "here"):
-                model = dataclasses.replace(model, title=model.title + f" · {self.filter_mode}")
+                model = dataclasses.replace(model, title=model.title + f" · {self._filter_label()}")
             self._model_cache[width] = model
         return model
 
@@ -1106,7 +1124,7 @@ class _SessionsScreen:
 
         return [
             index for index, summary in enumerate(self.summaries)
-            if sessions.lead_key_needs_choice(summary.lead_key, self.lcat)
+            if summary.needs_choice
         ]
 
     def _items(self) -> int:
@@ -1188,7 +1206,7 @@ class _SessionsScreen:
                 entry = self.lcat.lines.get(target["key"]) or self.lcat.retired.get(target["key"])
                 lead_target = lineup_mod.binding_label(entry, target["effort"], key=target["key"])
             needs_notice = sessions.lead_choice_notice(record, self.lcat)
-        needs = sessions.lead_key_needs_choice(summary.lead_key, self.lcat)
+        needs = bool(summary.needs_choice)
         repair = record.get("identity_state") == sessions.IDENTITY_REPAIR_NEEDED and (
             "observed_cwd" in record or "observed_model" not in record
         )
@@ -1219,7 +1237,8 @@ class _SessionsScreen:
         tui.safe_add(win, 2, 2, views.rule(width), palette.attr("dim"))
         y = 3
         if not self.records:
-            empty = cli_text.SESSIONS_EMPTY_FILTERED if self.empty_elsewhere else cli_text.SESSIONS_EMPTY
+            empty = (cli_text.SESSIONS_EMPTY_SELECTION if self.filter_mode not in ("all", "here") else
+                     cli_text.SESSIONS_EMPTY_FILTERED if self.empty_elsewhere else cli_text.SESSIONS_EMPTY)
             tui.safe_add(win, y, 2, views.clip(empty, width - 3), palette.attr("dim"))
             y += 1
         else:
@@ -1281,7 +1300,7 @@ class _SessionsScreen:
         if record.get("pending_forks"):
             self._resolve_fork(win, record)
             return None
-        if sessions.lead_key_needs_choice(self.summaries[self.selected].lead_key, self.lcat):
+        if runtime.resume_choice(record, lcat=self.lcat).needs_choice:
             return self._chooser(win, [record])
         gate = resume_checks._evaluate_resume_gate(runtime, record, live_prefixes=self.prefixes)
         decision: str | None = None
@@ -1601,11 +1620,11 @@ class _SessionsScreen:
 
     def _batch_check(self, record: dict[str, Any]) -> str | None:
         return sessions.nonrunning_problem(record, background=self.runtime.background_liveness(),
-                                           process=sessions.proc_session_scan(),
+                                           process=sessions.proc_session_scan(self.runtime.proc_root),
                                            self_id=self.runtime.environ.get("CHARMER_MANAGED_ID"))
 
     def _batch_items(self, records: Sequence[dict[str, Any]]) -> tuple[sessions.BatchItem, ...]:
-        background, process = self.runtime.background_liveness(), sessions.proc_session_scan()
+        background, process = self.runtime.background_liveness(), sessions.proc_session_scan(self.runtime.proc_root)
         return sessions.batch_plan(self.runtime.session_store, [sessions.managed_id(record) for record in records],
                                    names=session_facts._record_resume_names,
                                    check=lambda record: sessions.nonrunning_problem(
@@ -1613,7 +1632,7 @@ class _SessionsScreen:
                                        self_id=self.runtime.environ.get("CHARMER_MANAGED_ID")))
 
     def _batch_confirm(self, win: Any, items: Sequence[sessions.BatchItem], verb: str,
-                       extra: Sequence[str] = ()) -> bool:
+                       extra: Sequence[str] = (), details: Sequence[str] = ()) -> bool:
         width = max(20, win.getmaxyx()[1] - 8)
         lines = ["Selected IDs are frozen; each is checked again under its lock."]
         for item in items[:10]:
@@ -1628,9 +1647,13 @@ class _SessionsScreen:
             lines.append(f"…and {len(items) - 10} more")
         lines += list(extra)
         lines.append("Live or unknown liveness refuses; transcripts are never touched.")
-        return bool(tui.Modal(f"{verb} {len(items)} session(s)?", lines,
-                              buttons=(("Cancel", False), (verb, True)), default=False).run(
-                                  win, self.palette, background=self._draw))
+        buttons = (("Cancel", False), (verb, True)) + ((("Details", "details"),) if details else ())
+        while True:
+            answer = tui.Modal(f"{verb} {len(items)} session(s)?", lines, buttons=buttons, default=False).run(
+                win, self.palette, background=self._draw)
+            if answer != "details":
+                return bool(answer)
+            tui.TextView("Pending choices — full preview", details, palette=self.palette).run(win)
 
     def _batch_housekeeping(self, win: Any, records: Sequence[dict[str, Any]], *, mark_ended: bool = False) -> None:
         items = self._batch_items(records)
@@ -1650,6 +1673,124 @@ class _SessionsScreen:
         lines = sessions.batch_result_lines(results)
         tui.TextView(f"{verb} results", lines, palette=self.palette).run(win)
         self._say(lines[-1], "warn" if any(item.status != "succeeded" for item in results) else "accent")
+
+    def _filter_dialog(self, win: Any) -> None:
+        """B drafts an AND filter in memory; cancel keeps the filter and marks."""
+        original = self._filter()
+        draft = dataclasses.replace(original, exited=False)
+        selected, message = 0, ""
+        while True:
+            labels = [f"[{'x' if draft.here else ' '}] This directory (otherwise all)",
+                      f"[{'x' if draft.ended else ' '}] Ended",
+                      f"[{'x' if draft.needs_choice else ' '}] Needs a lead choice",
+                      f"Older than: {str(draft.older_than) + 'd' if draft.older_than is not None else 'off'}",
+                      "Apply filters (AND)"]
+            index = screens_common._run_choice_list(
+                win, self.palette, "Session filters — AND", labels, selected=selected, message=message,
+                help_title=cli_text.SESSIONS_HELP_TITLE, help_text=cli_text.SESSIONS_HELP,
+                footer=(("Enter", "toggle/edit/apply"), ("?", "help"), ("Esc", "cancel")))
+            if index is None:
+                self._say("Filter cancelled; marks kept.")
+                return
+            selected, message = index, ""
+            if index < 3:
+                field = ("here", "ended", "needs_choice")[index]
+                draft = dataclasses.replace(draft, **{field: not getattr(draft, field)})
+            elif index == 3:
+                field = tui.TextInput("", max_length=8)
+                accepted = tui.Modal("Last seen older than…", screens_common.modal_lines(
+                    "Days, for example 30d or 30. Empty turns age off. Uses last_seen_at only; unknown timestamps are excluded.", win),
+                    input=field, buttons=(("Cancel", False), ("Use", True)), default=False).run(
+                        win, self.palette, background=self._draw)
+                if accepted:
+                    try:
+                        days = parser_mod._session_days(field.value.strip()) if field.value.strip() else None
+                    except argparse.ArgumentTypeError as exc:
+                        message = str(exc)
+                    else:
+                        draft = dataclasses.replace(draft, older_than=days)
+            else:
+                if draft == original:
+                    self._say("Filters unchanged; marks kept.")
+                    return
+                self.combined_filter = draft
+                self.filter_mode = "custom"
+                self.cwd_filter = draft.here
+                self.marked.clear()
+                self.selected = self.offset = 0
+                self._reload()
+                self._say("filter: " + self._filter_label())
+                return
+
+    def _save_choices(self, win: Any, records: Sequence[dict[str, Any]], *, kind: str | None = None) -> None:
+        """Q: profile or direct, preview, one default-Cancel save. Never a launch intent."""
+        if not records:
+            self._say("No session selected.")
+            return
+        if kind is None:
+            picked = screens_common._run_choice_list(
+                win, self.palette, "Save lead choices — no launch", ["Follow a profile…", "Choose a direct model…"],
+                help_title=cli_text.SESSIONS_HELP_TITLE, help_text=cli_text.SESSIONS_HELP)
+            if picked is None:
+                self._say("Save choice cancelled; nothing changed.")
+                return
+            kind = "profile" if picked == 0 else "direct"
+        if kind == "profile":
+            labels, choices = selection._profile_choice_items(self.runtime)
+            profiles = [(label, name) for label, (target, name) in zip(labels, choices) if target == "profile"]
+            index = screens_common._run_choice_list(
+                win, self.palette, "Save one profile for the next resume", [label for label, _name in profiles],
+                help_title=cli_text.SESSIONS_HELP_TITLE, help_text=cli_text.SESSIONS_HELP)
+            if index is None:
+                self._say("Save choice cancelled; nothing changed.")
+                return
+            name = profiles[index][1]
+            request = lineup_mod.Request("profile", name=name, text=f"profile {name}")
+            label = f"profile {name}"
+        else:
+            picked = screens_direct.run_direct_screen(self.runtime, win, self.palette, purpose="save a lead choice")
+            if picked is None:
+                self._say("Save choice cancelled; nothing changed.")
+                return
+            model, effort = picked
+            request = lineup_mod.Request("direct", model=model, effort=effort, text=f"direct {model}")
+            label = f"direct {model} · {effort or profile_mod.ULTRACODE}"
+        previews = lineup_mod.choice_previews(self.runtime, self._batch_items(records), request)
+        items = [choice.item for choice in previews]
+        replacements = sum(bool(item.record and item.record.get("pending")) for item in items if not item.problem)
+        extra = [f"Next resume: {label}.", "Applied lineup and scope generation stay unchanged."]
+        if replacements:
+            extra.append(f"Replaces {replacements} existing pending target(s); Details shows each old target.")
+        if not self._batch_confirm(win, items, "Save choice", extra, lineup_mod.choice_preview_lines(previews)):
+            self._say("Save choice cancelled; nothing changed.")
+            return
+        try:
+            if any(item.problem is None for item in items):
+                self.runtime.begin_session_batch()
+            results = lineup_mod.save_choice_batch(self.runtime, previews, check=self._batch_check)
+        except (cli_errors.CharmerError, OSError) as exc:
+            self._say(termtext.visible_message(exc), "warn")
+            return
+        self.marked.clear()
+        self._reload()
+        lines = sessions.batch_result_lines(results)
+        tui.TextView("Saved lead choices — results", lines, palette=self.palette).run(win)
+        self._say(lines[-1], "warn" if any(item.status != "succeeded" for item in results) else "accent")
+
+    def _needs_menu(self, win: Any, records: Sequence[dict[str, Any]]) -> tuple | None:
+        count = len(records)
+        index = screens_common._run_choice_list(
+            win, self.palette, "Sessions that need a lead choice", [
+                f"Choose one profile for all {count}…", f"Choose a model for all {count}…",
+                "Choose per session and resume…", f"Forget all {count}…"],
+            help_title=cli_text.SESSIONS_HELP_TITLE, help_text=cli_text.SESSIONS_HELP)
+        if index == 0 or index == 1:
+            self._save_choices(win, records, kind="profile" if index == 0 else "direct")
+        elif index == 2:
+            return self._chooser(win, records)
+        elif index == 3:
+            self._batch_housekeeping(win, records)
+        return None
 
     def _typed_confirmation(self, win: Any, verb: str, record: dict[str, Any], reason: str) -> bool:
         """A forget or stop whose liveness cannot be checked: the person
@@ -1804,17 +1945,24 @@ class _SessionsScreen:
             items = self._items()
             if ch == "?":
                 self._help(win)
+            elif ch in ("b", "B"):
+                self._filter_dialog(win)
             elif ch == "/":
+                original = self._filter()
                 modes = ("all", "here", "exited without an end", "ended", "needs a choice", "older than 30 days")
-                self.filter_mode = modes[(modes.index(self.filter_mode) + 1) % len(modes)]
+                index = modes.index(self.filter_mode) if self.filter_mode in modes else -1
+                self.filter_mode = modes[(index + 1) % len(modes)]
+                self.combined_filter = None
                 self.cwd_filter = self.filter_mode == "here"
-                self.marked.clear()
+                if self._filter() != original:
+                    self.marked.clear()
                 self.selected = self.offset = 0
                 self._reload()
                 self._say(f"filter: {self.filter_mode}")
             elif ch in ("c", "C"):
                 self.cwd_filter = not self.cwd_filter
-                self.filter_mode = "here" if self.cwd_filter else "all"
+                if self.filter_mode in ("here", "all"):
+                    self.filter_mode = "here" if self.cwd_filter else "all"
                 self.marked.clear()
                 self.selected = 0
                 self.offset = 0
@@ -1836,6 +1984,10 @@ class _SessionsScreen:
             elif self.marked and ch in ("x", "X", "m", "M"):
                 self._batch_housekeeping(win, [record for record in self.records if sessions.managed_id(record) in self.marked],
                                          mark_ended=ch in ("m", "M"))
+            elif ch in ("q", "Q"):
+                chosen = [record for record in self.records if sessions.managed_id(record) in self.marked]
+                self._save_choices(win, chosen or ([self._record()] if self._record() is not None else
+                                                  [self.records[index] for index in self._needs()]))
             elif not items:
                 continue
             elif key.kind == "up" or ch == "k":
@@ -1853,7 +2005,7 @@ class _SessionsScreen:
             elif self._on_banner():
                 if key.kind == "enter":
                     needing = [self.records[i] for i in self._needs()]
-                    outcome = self._chooser(win, needing)
+                    outcome = self._needs_menu(win, needing)
                     if outcome is not None:
                         return outcome
                     self._reload()

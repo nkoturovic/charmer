@@ -348,6 +348,34 @@ def sessions_bulk_golden(root: Path, kind: str) -> str:
         return render(lambda: screen)
 
 
+def sessions_choices_golden(root: Path, kind: str) -> str:
+    with golden_runtime(root) as runtime:
+        runtime.profiles.install_seeds()
+        for mid in (fx.FIXED_ID, fx.OTHER_ID):
+            fx.v4_record(runtime, catalog.DEFAULT_SEED, managed_id=mid, ended=True,
+                         needs_choice=True, scope=False, generation=0,
+                         pending=kind == "preview" and mid == fx.OTHER_ID)
+        screen = cli._SessionsScreen(runtime, palette=tui.MONO_PALETTE, now=fx.FIXED_NOW)
+        width, height = current_size()
+        if kind == "menu":
+            win = FakeWindow([tui.curses.KEY_END, "\n", "\x1b", "\x1b"], width=width, height=height)
+            screen.run(win)
+            return last_frame(win, "Sessions that need a lead choice")
+        if kind == "filters":
+            win = FakeWindow(["B", tui.curses.KEY_DOWN, "\n", tui.curses.KEY_DOWN, "\n", tui.curses.KEY_DOWN,
+                              "\n", "4", "5", "d", "\n", tui.curses.KEY_RIGHT, "\n", "\x1b", "\x1b"],
+                             width=width, height=height)
+            screen.run(win)
+            return last_frame(win, "Session filters — AND")
+        names = cli.profile_pick_order(runtime)
+        pick = [tui.curses.KEY_DOWN] * names.index(catalog.DEFAULT_SEED)
+        keys = ["*", "Q", "\n", *pick, "\n"]
+        keys += [tui.curses.KEY_RIGHT, "\n", "\x1b", "\x1b"] if kind == "saved" else ["\x1b", "\x1b"]
+        win = FakeWindow(keys, width=width, height=height)
+        screen.run(win)
+        return render(lambda: screen) if kind == "saved" else last_frame(win, "Save choice 2 session(s)?")
+
+
 def _lineup_golden(root: Path, target: Callable[[cli.Runtime], str]) -> str:
     with golden_runtime(root) as runtime:
         runtime.profiles.install_seeds()
@@ -963,6 +991,10 @@ GOLDENS: dict[str, Callable[[Path], str]] = {
     "sessions-marked": lambda root: sessions_bulk_golden(root, "marks"),
     "sessions-filter-ended": lambda root: sessions_bulk_golden(root, "filter"),
     "sessions-forget-many": lambda root: sessions_bulk_golden(root, "forget"),
+    "sessions-choice-preview": lambda root: sessions_choices_golden(root, "preview"),
+    "sessions-choice-saved": lambda root: sessions_choices_golden(root, "saved"),
+    "sessions-choice-menu": lambda root: sessions_choices_golden(root, "menu"),
+    "sessions-filter-dialog": lambda root: sessions_choices_golden(root, "filters"),
     "lineup-live": lineup_live_golden,
     "lineup-relaunch": lineup_relaunch_golden,
     "lineup-keep": lambda root: lineup_target_golden(root, "keep"),

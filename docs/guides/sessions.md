@@ -64,7 +64,9 @@ shows each move, for example "agent class 200K → 1M".
 | Space | mark or unmark a row; the header shows the marked count |
 | * | mark every visible row, or clear the marks |
 | / | cycle all, this directory, exited without an end, ended, needs a choice, older than 30 days |
+| B | combine directory, ended, needs-choice and any age with AND; apply or cancel without writing state |
 | X | forget the marked rows (or the selected row) with one preview; the transcript stays |
+| Q | save a profile or direct lead for the marked sessions (or this row), without launching |
 | E | stop a session running in the background |
 | M | mark the marked sessions ended, or the selected row when nothing is marked |
 | P | repair its generated files |
@@ -143,9 +145,54 @@ successes are not rolled back. No transcript is read or deleted.
 
 In **S**, **Space** marks rows, **\*** marks every visible row (again clears
 the marks), and **X** opens one forget dialog with Cancel focused first.
-Changing the filter clears marks so hidden rows are not changed. To mark
+**B** combines the same filters as the command line with AND, including any
+age in days (`45d` or `45`, for example). **C** changes the directory while
+keeping other filters. Applying a changed filter clears marks so hidden
+rows are not changed; cancelling or applying an unchanged filter keeps the
+marks. Filter changes are view-only and are not saved between runs. To mark
 every dead session ended: **/** to “exited without an end”, **\***, **M**.
 Each marked record is checked again before its end is recorded.
+
+## Choose a lead for many sessions
+
+```bash
+charmer sessions choose --needs-choice --profile balanced --dry-run
+charmer sessions choose --needs-choice --profile balanced --yes
+charmer sessions choose <id> <id> --direct <model> --dry-run
+```
+
+Choose accepts the same ids, prefixes, names and combined filters as bulk
+forget, and exactly one of `--profile <name>` or `--direct <model>`.
+`--effort <effort>` is optional for a direct lead. Each target must be a
+current-format record whose **applied** lead needs a choice; other records
+are refused with the `charmer lineup --session` route for changing them.
+As with bulk forget, live or unknown-liveness sessions are refused and
+there is no bulk force bypass.
+
+The preview shows the lineup change and any existing pending target it
+would replace. One default-No confirmation saves the existing **pending**
+intent for each eligible session. It never launches Claude Code, changes
+the applied lineup or rewrites the scope or its generation. Results
+separate succeeded, refused and failed records; this is not an atomic
+cross-session transaction. `--dry-run` and cancellation write nothing.
+An existing saved choice can be replaced by explicitly naming its session.
+
+A currently valid pending profile or direct lead resolves the actionable
+choice warning: **↻** replaces **!**, and doctor counts it as a switch at
+the next resume. The applied lead is still shown separately. A later
+ordinary `charmer -r <id>` consumes the pending choice and shows its diff,
+without another lead chooser. A removed or invalid pending profile or
+model does **not** hide the needs-choice warning; choose a valid target
+again. Other resume checks, including transcript and identity checks,
+still apply.
+
+In **S**, mark rows with **Space** or **\***, then **Q** to save a profile or
+direct lead. The preview focuses Cancel first; Details shows every
+session's lineup preview and replaced pending target. Enter on the
+needs-choice banner offers one profile for all, one direct model for all,
+the explicit per-session choose-and-resume path, or bulk forget. **H**'s
+needs-choice row opens the same chooser filtered to sessions that still
+need a lead choice, across all directories. The save paths never launch.
 
 ## Native forks
 

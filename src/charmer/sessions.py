@@ -952,7 +952,7 @@ class RecordSummary:
     cwd: str
 
 
-def record_summary(record: dict[str, Any], cat: Any = None) -> RecordSummary:
+def record_summary(record: dict[str, Any], cat: Any = None, *, needs_choice: bool | None = None) -> RecordSummary:
     """Summarise a loaded record (v3 view or v4). Pure; never raises for a valid record."""
 
     if record.get("version") == RECORD_VERSION:
@@ -966,7 +966,7 @@ def record_summary(record: dict[str, Any], cat: Any = None) -> RecordSummary:
             lead_key=applied["lead"]["key"],
             agent_count=len(applied["agents"]),
             lineup_generation=record["lineup_generation"],
-            needs_choice=None if cat is None else lead_needs_choice(record, cat),
+            needs_choice=needs_choice if needs_choice is not None else (None if cat is None else lead_needs_choice(record, cat)),
             pending="pending" in record,
             lead_target="lead_target" in record,
             title=record.get("title"),
@@ -991,7 +991,7 @@ def record_summary(record: dict[str, Any], cat: Any = None) -> RecordSummary:
         lead_key=key,
         agent_count=0 if ordinary else len(view["snapshot"].get("variants", [])),
         lineup_generation=None,
-        needs_choice=None,
+        needs_choice=needs_choice,
         pending=False,
         lead_target=False,
         title=None,
@@ -1155,12 +1155,7 @@ def housekeeping_batch(
 
             with launcher_write_guard(store.root):
                 if mark_ended:
-                    def is_live(current: dict[str, Any]) -> bool:
-                        problem = guard(current)
-                        if problem:
-                            raise SessionError(problem)
-                        return False
-                    changed = store.mark_ended(item.identifier, is_live=is_live)
+                    changed = store.mark_ended(item.identifier, pre_write_check=guard)
                     message = "marked ended" if changed else "already ended"
                 else:
                     removed, _scope_removed = store.forget_session(item.identifier, pre_delete_check=guard)
@@ -2510,6 +2505,7 @@ class SessionStore:
         stable_id: str,
         *,
         is_live: Callable[[dict[str, Any]], bool] | None = None,
+        pre_write_check: Callable[[dict[str, Any]], str | None] | None = None,
         reason: str = MARKED_ENDED_REASON,
         now: str | None = None,
     ) -> bool:
@@ -2520,7 +2516,8 @@ class SessionStore:
         the record keeps its version and its mutation
         token (a lifecycle patch, like a real SessionEnd). ``is_live(view)``
         runs under the lock: a session live in the daemon or in ``/proc``
-        refuses. False when the last event already is ``end``.
+        refuses. ``pre_write_check`` revalidates a batch preview before even
+        an already-ended no-op. False when the last event already is ``end``.
         """
         self._require_writable()
 
@@ -2530,6 +2527,10 @@ class SessionStore:
             try:
                 raw, _raw_bytes = self.load_raw(stable_id)
                 view = _lifecycle_view(raw)
+                if pre_write_check is not None:
+                    refusal = pre_write_check(view)
+                    if refusal is not None:
+                        raise SessionError(refusal)
                 if view.get("last_event_source") == "end":
                     return False
                 if is_live is not None and is_live(view):

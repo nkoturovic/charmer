@@ -281,7 +281,7 @@ def main(
                                           or bool(getattr(args, "doctor_first_run", False)))) or (
             args.command == "export" and getattr(args, "export_out", None) is None) or (
             args.command == "import" and not getattr(args, "import_apply", False))
-        session_batch = args.command == "sessions" and args.sessions_command == "forget"
+        session_batch = args.command == "sessions" and args.sessions_command in {"forget", "choose"}
         session_dry = session_batch and bool(getattr(args, "dry_run", False))
         read_only = quota_read or migrate_dry or profile_dry or session_dry or bool(getattr(args, "print_launch", False))
         # One state root serves one release channel (installs.check): another

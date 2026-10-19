@@ -46,6 +46,7 @@ from charmer import sessions
 from charmer import settings as settings_mod
 from charmer import state
 from charmer import strict_json
+from charmer import termtext
 import sys
 import time
 from charmer import views
@@ -146,6 +147,16 @@ class CompositionStore:
                 continue
             names.add(name)
         return sorted(names)
+
+
+@dataclass(frozen=True)
+class ResumeChoice:
+    """Actionable choice and a currently valid next-resume intent, distinct from applied."""
+
+    needs_choice: bool
+    document: dict[str, Any] | None = None
+    lineup: profile_mod.ResolvedLineup | None = None
+    problem: str | None = None
 
 
 class Runtime:
@@ -597,6 +608,37 @@ class Runtime:
     @session_store.setter
     def session_store(self, store: sessions.SessionStore) -> None:
         self._session_store = store
+
+    def resume_choice(
+        self, record: dict[str, Any], *, lcat: profile_mod.LineupCatalog | None = None,
+        effective: settings_mod.Effective | None = None,
+    ) -> ResumeChoice:
+        """One read-only pending evaluation for resume, listings, the TUI and doctor.
+
+        Profiles and bindings are read again on every evaluation. An invalid
+        pending intent never hides a missing applied lead and is never applied.
+        """
+        lcat = lcat or self.lineup_catalog()
+        missing = sessions.lead_key_needs_choice(sessions.lead_identity(record)[0], lcat)
+        pending = record.get("pending") if record.get("version") == sessions.RECORD_VERSION else None
+        if not pending:
+            return ResumeChoice(missing)
+        try:
+            document = (self.profiles.load(pending["profile"]) if pending["kind"] == "profile"
+                        else copy.deepcopy(pending["document"]))
+            candidate = profile_mod.evaluate(document, lcat, bindings=self._bindings_map(),
+                                             effective=effective if effective is not None else self.current_effective(),
+                                             ad_hoc=pending.get("profile") is None)
+            if candidate.errors:
+                return ResumeChoice(missing, problem="; ".join(candidate.errors))
+            if candidate.lineup is None or sessions.lead_key_needs_choice(candidate.lineup.lead.binding.key, lcat):
+                return ResumeChoice(missing, problem="pending lead still needs a choice")
+        except (cli_errors.CharmerError, OSError, ValueError, KeyError, TypeError) as exc:
+            return ResumeChoice(missing, problem=termtext.visible_message(exc))
+        return ResumeChoice(False, document, candidate.lineup)
+
+    def pending_resolves_lead(self, record: dict[str, Any]) -> bool:
+        return self.resume_choice(record).lineup is not None
 
     def begin_session_batch(self) -> None:
         """After confirmation, enable only an explicitly deferred session writer.
@@ -1713,29 +1755,20 @@ class Runtime:
                 )
                 profile_name, follow = target.profile, target.follow
                 source_kind = "relaunch"
-            if document is None and record.get("pending"):
-                pending = record["pending"]
-                reasons = "; ".join(pending.get("reasons") or ())
-                try:
-                    if pending["kind"] == "profile":
-                        document = self.profiles.load(pending["profile"])
-                    else:
-                        document = copy.deepcopy(pending["document"])
-                    candidate = profile_mod.evaluate(
-                        document,
-                        lcat,
-                        bindings=self._bindings_map(),
-                        effective=eff,
-                        ad_hoc=pending.get("profile") is None,
-                    )
-                    if candidate.errors:
-                        raise profile_mod.ProfileError("; ".join(candidate.errors))
-                except (profile_mod.ProfileError, profile_mod.BindingError) as exc:
-                    notices.append(f"pending relaunch change dropped: {exc} ({reasons})")
-                    document = None
-                else:
-                    profile_name, follow = pending.get("profile"), bool(pending.get("follow"))
-                    source_kind = "pending"
+            if document is None:
+                choice = self.resume_choice(record, lcat=lcat, effective=eff)
+                pending = record.get("pending")
+                if pending:
+                    reasons = "; ".join(pending.get("reasons") or ())
+                    if choice.problem:
+                        notices.append(f"pending relaunch change dropped: {choice.problem} ({reasons})")
+                    elif choice.document is not None:
+                        document = choice.document
+                        profile_name, follow = pending.get("profile"), bool(pending.get("follow"))
+                        source_kind = "pending"
+                if choice.needs_choice:
+                    key = record["applied"]["lead"]["key"]
+                    raise cli_types.NeedsChoiceError(record, key, sessions.lead_choice_notice(record, lcat))
             if document is None:
                 if record["follow"] and record["profile"] and self.profiles.contains(
                     record["profile"]

@@ -378,11 +378,20 @@ def build_parser() -> argparse.ArgumentParser:
     show_session.add_argument("uuid", metavar="SESSION", help=SESSION_ARGUMENT)
     forget = session_commands.add_parser(
         "forget", help="forget a managed session: its record and generated scope (the transcript is kept)")
-    forget.add_argument("uuid", nargs="*", metavar="SESSION", help=SESSION_ARGUMENT)
+    forget.add_argument("uuid", nargs="*", metavar="SESSION", help=SESSION_ARGUMENT + "; or omit SESSION and select with filters")
     _session_filters(forget)
     forget.add_argument("--dry-run", action="store_true", help="preview the frozen selection; write nothing")
     forget.add_argument("--force", action="store_true", help="forget even when background liveness cannot be determined")
     forget.add_argument("--yes", action="store_true", help="skip the y/N confirmation (required without a terminal)")
+    choose = session_commands.add_parser("choose", help="save lead choices for the next resume, without launching")
+    choose.add_argument("uuid", nargs="*", metavar="SESSION", help=SESSION_ARGUMENT + "; or omit SESSION and select with filters")
+    _session_filters(choose)
+    choose_target = choose.add_mutually_exclusive_group(required=True)
+    choose_target.add_argument("--profile", dest="choose_profile", metavar="NAME", help="follow this profile at the next resume")
+    choose_target.add_argument("--direct", dest="choose_direct", metavar="MODEL", help="use this direct lead at the next resume")
+    choose.add_argument("--effort", dest="choose_effort", metavar="LEVEL", help="direct lead effort (default: ultracode)")
+    choose.add_argument("--dry-run", action="store_true", help="preview pending choices; write nothing and never launch")
+    choose.add_argument("--yes", action="store_true", help="skip the y/N confirmation (required without a terminal)")
     link = session_commands.add_parser(
         "link", help="adopt a native session (must exist in local Claude metadata)"
     )
