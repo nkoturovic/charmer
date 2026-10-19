@@ -2046,8 +2046,10 @@ class ScheduleTests(unittest.TestCase):
 def _module_produces(source: str, prefix: str, index: int | None) -> bool:
     """Whether a test module's source prints the essential completion line
     ``prefix``: literally, through ``ESSENTIAL_EVIDENCE_PREFIXES[index]``,
-    or through a probe class's line template (``probe_id`` and, for a class
-    line, the class name as a literal)."""
+    through a probe class's line template (``probe_id`` and, for a class
+    line, the class name as a literal) or through a module's own
+    ``LINE_PREFIX`` constant naming the line's check (and the class name as
+    a literal)."""
 
     if prefix in source or (index is not None and f"ESSENTIAL_EVIDENCE_PREFIXES[{index}]" in source):
         return True
@@ -2055,6 +2057,8 @@ def _module_produces(source: str, prefix: str, index: int | None) -> bool:
     if parsed is None:
         return False
     family, probe_id, observed = parsed.groups()
+    if re.search(rf'(?m)^LINE_PREFIX = "{re.escape(f"{family} {probe_id}:")}"$', source):
+        return observed is None or f'"{observed}"' in source
     if not re.search(re.escape(family) + r" \{(?:cls|self)\.probe_id\}: ", source):
         return False
     if not re.search(rf'(?m)^\s+probe_id = "{re.escape(probe_id)}"$', source):
@@ -2104,7 +2108,8 @@ class EvidenceJobTests(unittest.TestCase):
                         upgrade.ESSENTIAL_EVIDENCE_PREFIXES[0]: ("an unprinted alternative ",)}
         self.assertEqual(_unproduced(self.modules, alternatives=alternatives), ["an unprinted alternative "])
         for dropped in ("tests.test_scope_probe_seeds", "tests.test_scope_probe_client", "tests.test_managed_skill_policy",
-                        "tests.test_client_hooks"):
+                        "tests.test_client_hooks", "tests.test_compaction_window_probe", "tests.test_client_spawn_mod",
+                        "tests.test_client_mcp_policy", "tests.test_client_fence_substitution"):
             with self.subTest(dropped=dropped):
                 self.assertNotEqual(_unproduced([m for m in self.modules if m != dropped]), [])
 
