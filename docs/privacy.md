@@ -92,9 +92,20 @@ use your prompts and completions to train future Meta models
 Backup tools, sync clients and desktop search indexers may copy files from
 your home folder, these included. Exclude `~/.config/charmer/` and
 `~/.local/share/charmer/` from them if you do not want credentials
-copied.
+copied. Account for XDG-selected configuration/state roots and any external
+key file too; the table shows default locations, not a complete inventory
+of custom paths.
 
-charmer never reads Claude Code's transcripts.
+A [cold backup](guides/backup.md) deliberately copies credentials and
+refresh tokens, unlike configuration export. Encrypt it, keep it outside
+every source tree and source-code checkout, and restrict its archive to
+mode 0600 in a private 0700 directory. Do not share the archive, its
+plaintext contents or raw logs. Restore workspaces are sensitive too.
+Never run a restored OAuth sign-in on two hosts at once.
+
+charmer never reads Claude Code's transcripts. User-owned Claude Code
+files and transcripts are excluded from the cold-backup procedure; it
+cannot recover conversation history from charmer records.
 
 ## Inside managed sessions
 
