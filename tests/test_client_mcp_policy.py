@@ -15,17 +15,26 @@ their names overlap after normalisation and carry ``__``. Every run carries
 the production compile's permissions with a fixture fence as flag settings.
 
 * ``match-control``: user allow rules ``mcp__<server>__*`` for ``fx``, ``fx_``
-  and ``fx__x``: each server's ``probe`` tool runs (the stimulus is real);
+  and ``fx__x``: each server's ``probe`` tool runs once (the stimulus is
+  real);
 * ``match-wild``: user allow ``mcp__fx__*`` alone: only ``fx``'s tool runs;
 * ``match``: user allow ``mcp__fx`` and deny ``mcp__fx__x``: only ``fx``'s
   tool runs; ``fx_``'s waits for a permission ``-p`` cannot give, and
   ``fx__x``'s is not offered (the deny names that whole server);
 * ``counter-control``: no MCP policy: the user server ``fxdenied`` starts at
-  launch, on ``--resume`` and in a terminal session that runs
-  ``/reload-plugins``, and an agent's own server ``fxdeniedagent`` starts
-  when the agent is spawned;
-* ``counter``: a managed ``deniedMcpServers`` naming both: neither ever
-  starts (launch, subagent spawn, resume, reload).
+  launch, on ``--resume`` and at a terminal session's start, an agent's own
+  server ``fxdeniedagent`` starts when the agent is spawned, and a plugin
+  server added to a ``--plugin-dir`` fixture once the terminal session read
+  the plugin's MCP config (its never-denied ``fxready`` started)
+  (``plugin:mcpfix:fxreload``) starts on ``/reload-plugins`` and not before
+  it;
+* ``counter``: a managed ``deniedMcpServers`` naming the three: none ever
+  starts (launch, subagent spawn, resume, terminal start, reload).
+
+Each matching case must give every tool a classified result (ran, not
+granted, not offered) and ``fx``'s must run once; each start the policy
+case refuses must happen in the control; a missing stimulus is
+INCONCLUSIVE, never a pass.
 
 Hermetic like every real-client check; the managed file is mounted inside
 the namespace only (``tests/_client_policy.py``). Only tool-result classes,
@@ -40,6 +49,7 @@ import os
 import shutil
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 from typing import Any
@@ -47,7 +57,7 @@ from typing import Any
 from charmer import probe, scope, state, strict_json
 from charmer.probe import ProbeError
 
-from _client_policy import managed_settings
+from _client_policy import etc_view, managed_settings
 from _layout import RESOURCES_ROOT
 from _tier import real_binary_gate
 
@@ -59,6 +69,15 @@ _AGENT_TYPE = "cm-mcp-policy"
 _BODY = "MCP-POLICY-AGENT-BODY"
 _MATCH_SERVERS = ("fx", "fx_", "fx__x")
 _DENIED, _DENIED_AGENT = "fxdenied", "fxdeniedagent"
+# The fixture plugin's servers: fxready (never denied) from the start, and
+# fxreload, written once fxready has started in the terminal session (the
+# plugin's MCP config was read: a server written before that would start
+# with the session, not on the reload). A plugin server's policy name is
+# plugin:<plugin>:<server> (a managed deny of the bare "fxreload" does not
+# cover it: observed while building the check).
+_PLUGIN, _READY, _RELOADED = "mcpfix", "fxready", "fxreload"
+_RELOADED_POLICY_NAME = f"plugin:{_PLUGIN}:{_RELOADED}"
+_CLASSIFIED = frozenset({"ran", "not-granted", "unavailable"})
 _SERVER = r'''import json, sys
 name, log = sys.argv[1], sys.argv[2]
 def note(line):
@@ -113,25 +132,48 @@ class _Inconclusive(AssertionError):
     """A control did not hold: no class can be chosen."""
 
 
+# The starts the control must show, per phase; the policy case refuses each.
+_EXPECTED_STARTS = {"launch": (_DENIED, _DENIED_AGENT), "resume": (_DENIED,), "terminal": (_DENIED,),
+                    "reload": (_RELOADED,)}
+
+
 def verdict(observed: dict[str, Any]) -> str:
     """The class from the matching results and the start counts."""
 
+    for case in ("match-control", "match-wild", "match"):
+        rows = observed[case]
+        unclassified = {server: rows["results"].get(server, "no-result") for server in _MATCH_SERVERS
+                        if rows["results"].get(server) not in _CLASSIFIED}
+        if unclassified:
+            raise _Inconclusive(f"{case}: {unclassified} (a tool call got no classified result)")
+        ran = [server for server in _MATCH_SERVERS if rows["results"][server] == "ran"]
+        if any(rows["calls"].get(server) != 1 for server in ran):
+            raise _Inconclusive(f"{case}: results {rows['results']} calls {rows['calls']} "
+                                "(a tool that ran was not called once)")
     control = observed["match-control"]
-    if any(control["results"].get(server) != "ran" for server in _MATCH_SERVERS):
+    if any(control["results"][server] != "ran" for server in _MATCH_SERVERS):
         raise _Inconclusive(f"match-control: {control['results']} (a named server's tool did not run)")
+    for case in ("counter-control", "counter"):
+        if set(observed[case]["starts"]) != set(_EXPECTED_STARTS):
+            raise _Inconclusive(f"{case}: phases {sorted(observed[case]['starts'])} (a phase did not run)")
+        if not observed[case]["starts"]["terminal"].get(_READY):
+            raise _Inconclusive(f"{case}: the fixture plugin's {_READY} never started in the terminal session "
+                                "(its MCP config was not read before the change)")
     starts = observed["counter-control"]["starts"]
-    if not all(starts.get(phase, {}).get(_DENIED) for phase in ("launch", "resume", "reload")) \
-            or not starts.get("launch", {}).get(_DENIED_AGENT):
-        raise _Inconclusive(f"counter-control: {starts} (an unmanaged server did not start)")
-    match = observed["match"]
-    if match["results"].get("fx") != "ran" or match["calls"].get("fx") != 1:
+    if any(not starts[phase].get(name) for phase, names in _EXPECTED_STARTS.items() for name in names) \
+            or starts["terminal"].get(_RELOADED):
+        raise _Inconclusive(f"counter-control: {starts} (an unmanaged server did not start in its phase)")
+    if observed["match"]["results"]["fx"] != "ran":
         return "MCP-deny-overlaps"
+    if observed["match-wild"]["results"]["fx"] != "ran":
+        return "MCP-allow-lost"
     for case in ("match", "match-wild"):
         rows = observed[case]
         if rows["calls"].get("fx_") or rows["calls"].get("fx__x") or \
-                any(rows["results"].get(server) == "ran" for server in ("fx_", "fx__x")):
+                any(rows["results"][server] == "ran" for server in ("fx_", "fx__x")):
             return "MCP-allow-broad"
-    if any(counts.get(_DENIED) or counts.get(_DENIED_AGENT) for counts in observed["counter"]["starts"].values()):
+    denied = {name for names in _EXPECTED_STARTS.values() for name in names}
+    if any(counts.get(name) for counts in observed["counter"]["starts"].values() for name in denied):
         return "MCP-denied-started"
     return PASS_CLASS
 
@@ -181,26 +223,100 @@ class _Caller:
 
 
 class VerdictTests(unittest.TestCase):
-    def test_the_class_needs_named_matching_and_no_denied_start(self) -> None:
+    def setUp(self) -> None:
         ran = {server: "ran" for server in _MATCH_SERVERS}
-        counts = {"launch": {_DENIED: 1, _DENIED_AGENT: 1}, "resume": {_DENIED: 1}, "reload": {_DENIED: 1}}
-        named = {"results": {"fx": "ran", "fx_": "not-granted", "fx__x": "not-granted"}, "calls": {"fx": 1}}
-        rows = {"match-control": {"results": ran, "calls": dict.fromkeys(_MATCH_SERVERS, 1)}, "match-wild": named,
-                "match": {"results": {"fx": "ran", "fx_": "not-granted", "fx__x": "unavailable"}, "calls": {"fx": 1}},
-                "counter-control": {"starts": counts},
-                "counter": {"starts": {"launch": {}, "resume": {}, "reload": {}}}}
+        self.counts = {"launch": {_DENIED: 1, _DENIED_AGENT: 1}, "resume": {_DENIED: 1},
+                       "terminal": {_DENIED: 1, _READY: 1}, "reload": {_RELOADED: 1, _READY: 1}}
+        self.named = {"results": {"fx": "ran", "fx_": "not-granted", "fx__x": "not-granted"}, "calls": {"fx": 1}}
+        self.rows = {"match-control": {"results": ran, "calls": dict.fromkeys(_MATCH_SERVERS, 1)},
+                     "match-wild": self.named,
+                     "match": {"results": {"fx": "ran", "fx_": "not-granted", "fx__x": "unavailable"},
+                               "calls": {"fx": 1}},
+                     "counter-control": {"starts": self.counts},
+                     "counter": {"starts": {**dict.fromkeys(_EXPECTED_STARTS, {}), "terminal": {_READY: 1}}}}
+
+    def test_the_class_needs_named_matching_and_no_denied_start(self) -> None:
+        rows = self.rows
         self.assertEqual(verdict(rows), PASS_CLASS)
         broad = {"results": {"fx": "ran", "fx_": "ran", "fx__x": "unavailable"}, "calls": {"fx": 1, "fx_": 1}}
         self.assertEqual(verdict({**rows, "match": broad}), "MCP-allow-broad")
-        self.assertEqual(verdict({**rows, "match-wild": {**named, "calls": {"fx": 1, "fx__x": 1}}}), "MCP-allow-broad")
+        self.assertEqual(verdict({**rows, "match-wild": {**self.named, "calls": {"fx": 1, "fx__x": 1}}}),
+                         "MCP-allow-broad")
         overlap = {"results": {"fx": "unavailable", "fx_": "not-granted", "fx__x": "unavailable"}, "calls": {}}
         self.assertEqual(verdict({**rows, "match": overlap}), "MCP-deny-overlaps")
-        started = {"starts": {"launch": {_DENIED_AGENT: 1}, "resume": {}, "reload": {}}}
-        self.assertEqual(verdict({**rows, "counter": started}), "MCP-denied-started")
+        lost = {"results": {"fx": "not-granted", "fx_": "not-granted", "fx__x": "not-granted"}, "calls": {}}
+        self.assertEqual(verdict({**rows, "match-wild": lost}), "MCP-allow-lost")
+        for phase, name in (("launch", _DENIED_AGENT), ("terminal", _DENIED), ("reload", _RELOADED)):
+            started = {"starts": {**rows["counter"]["starts"]}}
+            started["starts"][phase] = {**started["starts"][phase], name: 1}
+            self.assertEqual(verdict({**rows, "counter": started}), "MCP-denied-started", phase)
+        ready_again = {"starts": {**rows["counter"]["starts"], "reload": {_READY: 1}}}
+        self.assertEqual(verdict({**rows, "counter": ready_again}), PASS_CLASS)  # the allowed server may restart
+
+    def test_a_missing_stimulus_is_inconclusive(self) -> None:
+        rows = self.rows
+        silent = {"results": dict.fromkeys(_MATCH_SERVERS, "no-result"), "calls": {}}
+        for case in ("match-control", "match-wild", "match"):
+            with self.subTest(case=case, shape="no results"), self.assertRaises(_Inconclusive):
+                verdict({**rows, case: silent})
+            for server in _MATCH_SERVERS:
+                results = {**rows[case]["results"], server: "other"}
+                with self.subTest(case=case, server=server), self.assertRaises(_Inconclusive):
+                    verdict({**rows, case: {**rows[case], "results": results}})
+            with self.subTest(case=case, shape="ran, never called"), self.assertRaises(_Inconclusive):
+                verdict({**rows, case: {**rows[case], "calls": {}}})
         with self.assertRaises(_Inconclusive):
-            verdict({**rows, "match-control": {"results": {**ran, "fx_": "not-granted"}, "calls": {}}})
-        with self.assertRaises(_Inconclusive):
-            verdict({**rows, "counter-control": {"starts": {**counts, "reload": {}}}})
+            verdict({**rows, "match-control": {"results": {**rows["match-control"]["results"], "fx_": "not-granted"},
+                                               "calls": {"fx": 1, "fx__x": 1}}})
+        for phase, names in _EXPECTED_STARTS.items():
+            for name in names:
+                counts = {**self.counts, phase: {key: value for key, value in self.counts[phase].items()
+                                                 if key != name}}
+                with self.subTest(phase=phase, name=name), self.assertRaises(_Inconclusive):
+                    verdict({**rows, "counter-control": {"starts": counts}})
+        early = {**self.counts, "terminal": {_DENIED: 1, _READY: 1, _RELOADED: 1}}
+        with self.assertRaises(_Inconclusive):  # started before the reload: not the reload's start
+            verdict({**rows, "counter-control": {"starts": early}})
+        for case in ("counter-control", "counter"):
+            unread = {**rows[case]["starts"], "terminal": {key: value for key, value in
+                                                           rows[case]["starts"]["terminal"].items() if key != _READY}}
+            with self.subTest(case=case, missing=_READY), self.assertRaises(_Inconclusive):
+                verdict({**rows, case: {"starts": unread}})
+        for case in ("counter-control", "counter"):
+            phases = {key: value for key, value in rows[case]["starts"].items() if key != "reload"}
+            with self.subTest(case=case, missing="reload"), self.assertRaises(_Inconclusive):
+                verdict({**rows, case: {"starts": phases}})
+
+
+class ManagedViewTests(unittest.TestCase):
+    """The managed-settings view (``tests/_client_policy.py``): every host
+    ``/etc`` entry back in place, the fixture folder at ``/etc/claude-code``
+    and only bwrap options bubblewrap 0.9 (the release runner's) has."""
+
+    def test_the_view_rebuilds_etc_with_old_bwrap_options(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            etc = Path(raw) / "etc"
+            (etc / "ssl").mkdir(parents=True)
+            (etc / "passwd").write_text("fixture\n")
+            os.symlink("../usr/share/zoneinfo/UTC", etc / "localtime")
+            (etc / "claude-code").mkdir()  # a host policy is replaced, never shown
+            os.mkfifo(etc / "initctl")
+            argv = etc_view("/fixture/managed-policy", etc)
+        self.assertEqual(argv, ["--tmpfs", "/etc", "--symlink", "../usr/share/zoneinfo/UTC", "/etc/localtime",
+                                "--ro-bind", str(etc / "passwd"), "/etc/passwd",
+                                "--ro-bind", str(etc / "ssl"), "/etc/ssl",
+                                "--ro-bind", "/fixture/managed-policy", "/etc/claude-code"])
+        self.assertLessEqual({part for part in argv if part.startswith("--")}, {"--tmpfs", "--ro-bind", "--symlink"})
+
+    def test_the_host_view_keeps_every_entry(self) -> None:
+        argv = etc_view("/fixture/managed-policy")
+        shown = {argv[index + 2] for index, part in enumerate(argv) if part in ("--ro-bind", "--symlink")}
+        with os.scandir("/etc") as entries:
+            expected = {f"/etc/{entry.name}" for entry in entries if entry.name != "claude-code"
+                        and (entry.is_symlink() or entry.is_dir(follow_symlinks=False)
+                             or entry.is_file(follow_symlinks=False))}
+        self.assertEqual(shown - {"/etc/claude-code"}, expected)
+        self.assertEqual(argv[-3:], ["--ro-bind", "/fixture/managed-policy", "/etc/claude-code"])
 
 
 class McpPolicyProbe(unittest.TestCase):
@@ -235,12 +351,11 @@ class McpPolicyProbe(unittest.TestCase):
         self.count += 1
         fixture = probe.build_fixture(self.root / f"run-{self.count}", environ=self.environ)
         probe.seed_fixture_project_trust(fixture, fixture.project_dir)
-        script = state.ensure_private_dir(fixture.root / "bin") / "fake_mcp.py"
-        state.atomic_write(script, _SERVER.encode("utf-8"))
+        state.atomic_write(state.ensure_private_dir(fixture.root / "bin") / "fake_mcp.py", _SERVER.encode("utf-8"))
         log = fixture.root / "mcp.log"
 
         def server(name: str) -> dict[str, Any]:
-            return {"type": "stdio", "command": "/usr/bin/python3", "args": [str(script), name, str(log)]}
+            return self._server(fixture, name)
 
         config = fixture.claude_config_dir / ".claude.json"
         document = strict_json.loads(state.read_private(config))
@@ -255,16 +370,33 @@ class McpPolicyProbe(unittest.TestCase):
         return fixture, log
 
     @staticmethod
+    def _server(fixture: probe.ProbeFixture, name: str) -> dict[str, Any]:
+        """The stdio config of the fake server ``name`` (it logs to the fixture's ``mcp.log``)."""
+
+        return {"type": "stdio", "command": "/usr/bin/python3",
+                "args": [str(fixture.root / "bin" / "fake_mcp.py"), name, str(fixture.root / "mcp.log")]}
+
+    @staticmethod
     def _log(log: Path) -> list[tuple[str, str]]:
         rows = log.read_text(encoding="utf-8").splitlines() if log.exists() else []
         return [tuple(row.split(" ", 1)) for row in rows if " " in row]  # type: ignore[misc]
 
-    def _counts(self, log: Path, kind: str, since: int = 0) -> dict[str, int]:
+    def _counts(self, log: Path, kind: str, since: int = 0, until: int | None = None) -> dict[str, int]:
         counts: dict[str, int] = {}
-        for event, name in self._log(log)[since:]:
+        for event, name in self._log(log)[since:until]:
             if event == kind:
                 counts[name] = counts.get(name, 0) + 1
         return counts
+
+    def _plugin(self, fixture: probe.ProbeFixture, *names: str) -> Path:
+        """The ``--plugin-dir`` fixture plugin with the fake servers ``names``."""
+
+        plugin = state.ensure_private_dir(fixture.root / "mods" / _PLUGIN)
+        state.atomic_write(state.ensure_private_dir(plugin / ".claude-plugin") / "plugin.json", json.dumps(
+            {"name": _PLUGIN, "version": "0.1.0", "description": "client check fixture"}).encode("utf-8"))
+        state.atomic_write(plugin / ".mcp.json", json.dumps(
+            {"mcpServers": {name: self._server(fixture, name) for name in names}}).encode("utf-8"))
+        return plugin
 
     def _settings(self, fixture: probe.ProbeFixture, permissions: dict[str, Any]) -> Path:
         return probe.write_fixture_settings(fixture, "scope/settings.json", {
@@ -278,16 +410,43 @@ class McpPolicyProbe(unittest.TestCase):
         if result.timed_out or result.returncode != 0:
             raise _Inconclusive("a headless run did not complete")
 
-    def _reload(self, fixture: probe.ProbeFixture, settings: Path) -> None:
+    def _reload(self, fixture: probe.ProbeFixture, settings: Path, log: Path, expect_start: bool) -> int:
+        """A terminal session with the fixture plugin (its server ``fxready``
+        only): once ``fxready`` has started (the plugin's MCP config was
+        read), the plugin gains ``fxreload``; a few seconds later (nothing
+        may start it yet) ``/reload-plugins`` runs. The log position just
+        before the reload command."""
+
+        since = len(self._log(log))
+        plugin = self._plugin(fixture, _READY)
+        marks: dict[str, int] = {}
+
+        def add_server() -> None:
+            deadline = time.monotonic() + 20
+            while time.monotonic() < deadline and not self._counts(log, "start", since).get(_READY):
+                time.sleep(0.25)
+            time.sleep(2)
+            self._plugin(fixture, _READY, _RELOADED)
+            time.sleep(3)
+            marks["reload"] = len(self._log(log))
+
+        def settle() -> None:
+            deadline = time.monotonic() + (12 if expect_start else 5)
+            while time.monotonic() < deadline:
+                if self._counts(log, "start", marks["reload"]).get(_RELOADED) and expect_start:
+                    return
+                time.sleep(0.25)
+
         steps = [probe.PTYInteraction(b"Choose", b"2\r"), probe.PTYInteraction(b"Press", b"\r"),
-                 probe.PTYInteraction("❯".encode(), b"/reload-plugins\r"),
-                 probe.PTYInteraction(b"Reloaded", b"/exit\r")]
+                 probe.PTYInteraction("❯".encode(), b"/reload-plugins\r", before_send=add_server),
+                 probe.PTYInteraction(b"Reloaded", b"/exit\r", before_send=settle)]
         with probe.FakeAnthropicProvider(responder=_Caller()) as provider:
-            result = probe.run_native_pty(("--settings", str(settings), "--model", _LEAD), steps,
-                                          trusted=self.trusted, fixture=fixture, provider=provider, timeout=150,
-                                          allow_real=True, environ=self.environ)
-        if result.timed_out or result.returncode != 0:
+            result = probe.run_native_pty(("--settings", str(settings), "--model", _LEAD, "--plugin-dir", str(plugin)),
+                                          steps, trusted=self.trusted, fixture=fixture, provider=provider,
+                                          timeout=150, allow_real=True, environ=self.environ)
+        if result.timed_out or result.returncode != 0 or "reload" not in marks:
             raise _Inconclusive("the terminal reload run did not complete")
+        return marks["reload"]
 
     def _match(self, permissions: dict[str, Any], allow: list[str], deny: list[str]) -> dict[str, Any]:
         user = {"permissions": {"defaultMode": scope.PERMISSION_DEFAULT_MODE, "allow": allow, "deny": deny}}
@@ -311,8 +470,9 @@ class McpPolicyProbe(unittest.TestCase):
             self._headless(fixture, settings, _Caller(), "--resume", session)
             starts["resume"] = self._counts(log, "start", mark)
             mark = len(self._log(log))
-            self._reload(fixture, settings)
-            starts["reload"] = self._counts(log, "start", mark)
+            reload_mark = self._reload(fixture, settings, log, expect_start=policy is None)
+            starts["terminal"] = self._counts(log, "start", mark, reload_mark)
+            starts["reload"] = self._counts(log, "start", reload_mark)
 
         if policy is None:
             phases()
@@ -334,8 +494,8 @@ class McpPolicyProbe(unittest.TestCase):
             observed["match-wild"] = self._match(permissions, ["mcp__fx__*"], [])
             observed["match"] = self._match(permissions, ["mcp__fx"], ["mcp__fx__x"])
             observed["counter-control"] = self._counter(permissions, None)
-            observed["counter"] = self._counter(
-                permissions, {"deniedMcpServers": [{"serverName": _DENIED}, {"serverName": _DENIED_AGENT}]})
+            observed["counter"] = self._counter(permissions, {"deniedMcpServers": [
+                {"serverName": _DENIED}, {"serverName": _DENIED_AGENT}, {"serverName": _RELOADED_POLICY_NAME}]})
             observed_class = verdict(observed)
         except _Inconclusive as exc:
             type(self).verdict = ("INCONCLUSIVE", "unavailable", str(exc))
@@ -352,6 +512,8 @@ class McpPolicyProbe(unittest.TestCase):
                   f"calls={observed['match']['calls']} "
                   f"starts-without-policy={observed['counter-control']['starts']} "
                   f"starts-under-managed-deniedMcpServers={observed['counter']['starts']} "
+                  f"(reload: {_RELOADED_POLICY_NAME} added once the session started the plugin's {_READY}, "
+                  "never started before the command) "
                   f"client={self.gate.version} sha256={self.trusted.sha256[:12]}")
         type(self).verdict = ("PASS" if observed_class == PASS_CLASS else "FAIL", observed_class, detail)
         self.assertEqual(observed_class, PASS_CLASS, detail)
