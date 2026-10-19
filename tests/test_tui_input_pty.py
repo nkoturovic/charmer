@@ -13,6 +13,7 @@ from __future__ import annotations
 import shutil
 import signal
 import tempfile
+import termios
 import time
 import unittest
 from pathlib import Path
@@ -84,11 +85,11 @@ print('UNCHANGED=' + str(after is not None and fx.canonical(after) == before), f
 
 
 class _InputCase(unittest.TestCase):
-    def child(self, prefix: str, argv=(), *, env=None, **kwargs) -> PTYProcess:
+    def child(self, prefix: str, argv=(), *, env=None, diagnostics: bool = False, **kwargs) -> PTYProcess:
         temp = tempfile.mkdtemp(prefix=prefix)
         self.addCleanup(shutil.rmtree, temp, True)
         child = PTYProcess(_child_code(temp, list(argv), **kwargs), extra_pythonpath=(TESTS_ROOT,),
-                           extra_env={**LOCAL, **(env or {})})
+                           extra_env={**LOCAL, **(env or {})}, diagnostics=diagnostics)
         self.addCleanup(child.close)
         return child
 
@@ -207,10 +208,12 @@ class TerminalTypeTests(_InputCase):
 
 class InterruptTests(_InputCase):
     def test_ctrl_c_on_the_card_exits_130_and_restores_the_terminal(self) -> None:
-        child = self.child("charmer-pty-ctrl-c-")
+        child = self.child("charmer-pty-ctrl-c-", diagnostics=True)
         child.read_until(CARD_STATUS, FIXTURE_TIMEOUT)
         # The test terminal is not the child's controlling terminal, so the
-        # interrupt Ctrl-C raises is delivered as the signal itself.
+        # interrupt Ctrl-C raises is delivered as the signal itself. The
+        # sideband records phases but adds no input-readiness wait.
+        child.diagnostics.mark_sigint()
         child.process.send_signal(signal.SIGINT)
         code, output, after = child.finish()
         self.assertEqual(code, 130, output)
@@ -218,6 +221,32 @@ class InterruptTests(_InputCase):
         self.assertNotIn(b"FAKE_LAUNCH", output)
         self.assertNotIn(b"Traceback", output)
         _restored(self, child, after)
+
+
+class InterruptDiagnosticContractTests(unittest.TestCase):
+    def test_diagnostics_add_no_readiness_wait_and_keep_the_exit_and_restore_assertions(self) -> None:
+        case = InterruptTests("test_ctrl_c_on_the_card_exits_130_and_restores_the_terminal")
+        child = mock.Mock()
+        child.before = [termios.IXON, 0, 0, termios.ECHO | termios.ICANON]
+        output = b"nothing was launched"
+        child.finish.return_value = (130, output, child.before[:])
+        with mock.patch.object(case, "child", return_value=child) as make_child:
+            case.test_ctrl_c_on_the_card_exits_130_and_restores_the_terminal()
+        make_child.assert_called_once_with("charmer-pty-ctrl-c-", diagnostics=True)
+        self.assertEqual(child.method_calls, [mock.call.read_until(CARD_STATUS, FIXTURE_TIMEOUT),
+                                             mock.call.diagnostics.mark_sigint(),
+                                             mock.call.process.send_signal(signal.SIGINT), mock.call.finish()])
+        # Diagnostics must not mask a bad normal exit, a launch, a traceback,
+        # a missing cancellation message, or either terminal-restore failure.
+        for code, text, after in ((0, output, child.before), (130, b"", child.before),
+                                  (130, output + b" FAKE_LAUNCH", child.before),
+                                  (130, output + b" Traceback", child.before),
+                                  (130, output, [0, 0, 0, child.before[3]]),
+                                  (130, output, [child.before[0], 0, 0, 0])):
+            with self.subTest(code=code, text=text, after=after):
+                child.finish.return_value = (code, text, after)
+                with mock.patch.object(case, "child", return_value=child), self.assertRaises(AssertionError):
+                    case.test_ctrl_c_on_the_card_exits_130_and_restores_the_terminal()
 
 
 class CardKeyTests(_InputCase):

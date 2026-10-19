@@ -453,6 +453,26 @@ check_libc() {
 	fi
 }
 
+check_macos_version() {
+	[ "$os" = Darwin ] || return 0
+	# Older release targets keep their original requirements. Repairing an
+	# installed bundle and rolling back do not install new bytes.
+	release_major=${version%%.*}
+	release_minor=${version#*.}
+	release_minor=${release_minor%%.*}
+	if { [ "$release_major" -lt 2 ] || { [ "$release_major" -eq 2 ] && [ "$release_minor" -eq 0 ]; }; } 2>/dev/null; then
+		return 0
+	fi
+	macos_required="charmer 2.1.0 and newer need macOS 13 or newer; upgrade macOS or use a compatible older release; nothing was installed"
+	# The compatibility view can report 10.16 even on newer macOS.
+	macos_version=$(SYSTEM_VERSION_COMPAT=0 sw_vers -productVersion 2>/dev/null) || die "cannot read the macOS version; $macos_required"
+	case $macos_version in
+	'' | *[!0-9.]* | .* | *. | *..* | *.*.*.*) die "cannot parse the macOS version; $macos_required" ;;
+	esac
+	macos_major=${macos_version%%.*}
+	[ "$macos_major" -ge 13 ] 2>/dev/null || die "$macos_required"
+}
+
 mount_type() {
 	[ -r /proc/mounts ] || return 0
 	awk -v p="$1" '
@@ -814,6 +834,7 @@ do_install() {
 	check_links
 	check_shim_paths
 	resolve_source
+	check_macos_version
 	work=$(mktemp -d "${TMPDIR:-/tmp}/charmer-install.XXXXXX")
 	verify_download
 	unpack_bundle
