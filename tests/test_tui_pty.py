@@ -816,13 +816,47 @@ raise SystemExit(130)
         self.assertEqual(dispositions, {sig: signal.getsignal(sig) for sig in dispositions})
 
     def test_timeout_still_fails_when_diagnostic_wake_allows_exit_130(self) -> None:
-        child = self.blocked_child()
+        # Only this dump control requires a default disposition; the helper
+        # must leave an inherited ignored signal alone in every other child.
+        previous = signal.signal(signal.SIGUSR1, signal.SIG_DFL)
+        try:
+            child = self.blocked_child()
+        finally:
+            signal.signal(signal.SIGUSR1, previous)
+        self.assertEqual(signal.getsignal(signal.SIGUSR1), previous)
         with self.assertRaisesRegex(AssertionError, "PTY child timed out;.*diagnostics="):
             child.finish(timeout=0)
         report = child.timeout_diagnostics
         self.assertIsNone(report["before_diagnostics"]["returncode"])
         self.assertEqual(report["dump_signal"], signal.SIGUSR1)
         self.assertIn('File "<string>"', report["stack"])
+        self.assertEqual(report["wake"], "one-nul-byte")
+        self.assertEqual(report["after_wake"]["returncode"], 130)
+        self.assertEqual(child.process.returncode, 130)
+        _restored(self, child, termios.tcgetattr(child.slave))
+
+    def test_inherited_ignored_dump_signal_still_fails_when_wake_allows_exit_130(self) -> None:
+        from unittest import mock
+
+        previous = signal.signal(signal.SIGUSR1, signal.SIG_IGN)
+        try:
+            child = self.blocked_child()
+        finally:
+            signal.signal(signal.SIGUSR1, previous)
+        self.assertEqual(signal.getsignal(signal.SIGUSR1), previous)
+        events = child.diagnostics.phases()
+        self.assertEqual([event["phase"] for event in events], ["installed"])
+        self.assertEqual(events[0]["pid"], child.process.pid)
+        self.assertIsNone(events[0]["dump_signal"])
+        with mock.patch.object(child.process, "send_signal", wraps=child.process.send_signal) as send_signal:
+            with self.assertRaisesRegex(AssertionError, "PTY child timed out;.*diagnostics="):
+                child.finish(timeout=0)
+        self.assertNotIn(mock.call(signal.SIGUSR1), send_signal.call_args_list)
+        report = child.timeout_diagnostics
+        self.assertIsNone(report["before_diagnostics"]["returncode"])
+        self.assertEqual(report["dump_signal"], "not-registered")
+        self.assertIsNone(report["after_dump_signal"]["returncode"])
+        self.assertEqual(report["stack"], "")
         self.assertEqual(report["wake"], "one-nul-byte")
         self.assertEqual(report["after_wake"]["returncode"], 130)
         self.assertEqual(child.process.returncode, 130)
