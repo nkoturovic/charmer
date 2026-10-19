@@ -188,6 +188,26 @@ def release_location(bundle: Path) -> tuple[str | None, str | None]:
             latest if isinstance(latest, str) and latest else None)
 
 
+def verification_transport(base_url: str | None, version: str, *, environ: Mapping[str, str],
+                           disclose: Callable[[str], None]) -> HttpsTransport:
+    """Read-only exact-version metadata transport; never the latest location.
+
+    The verification caller must display this disclosure before any fetch
+    (and a TUI must have obtained confirmation before calling). No transaction,
+    ownership claim, token read, pin acquisition or recovery runs here.
+    """
+
+    self_update._release_version(version, "installed version")
+    if base_url is None or "{version}" not in base_url:
+        raise self_update.UpdateError("the installation names no exact-version release location; "
+                                      "use --from-dir with that release's signed metadata")
+    transport = HttpsTransport(base_url, environ=environ)
+    host = urllib.parse.urlsplit(base_url).hostname
+    disclose(f"Verifying installed charmer {version}: contacting {host} for this exact version's "
+             "MANIFEST.json, SHA256SUMS and signature; never latest or a provider. Nothing is changed.")
+    return transport
+
+
 # ------------------------------------------------------------ the journey
 
 

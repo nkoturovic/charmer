@@ -150,6 +150,10 @@ class Asset:
     sha256: str
     tar_sha256: str
     gateway_sha256: str
+    # Older metadata may omit these. Installation verification requires both;
+    # the updater still authenticates its complete archive with sha256.
+    manifest_sha256: str | None = None
+    content_sha256: str | None = None
 
 
 @dataclass(frozen=True)
@@ -262,7 +266,12 @@ def parse_release(manifest: bytes, sums: Mapping[str, str], target: str) -> Rele
     if platforms is not None and not (isinstance(platforms, dict) and all(
             isinstance(key, str) and isinstance(value, dict) for key, value in platforms.items())):
         raise UpdateError(f"release {MANIFEST}: claude_code.platforms is malformed")
-    return Release(version, release_date, state_format, claude, Asset(name, target, size, *digests), platforms)
+    identities = [entry.get(key) for key in ("manifest_sha256", "content_sha256")]
+    if any(value is not None and (not isinstance(value, str) or not _HEX64.fullmatch(value))
+           for value in identities):
+        raise UpdateError(f"{where}: malformed bundle identity")
+    return Release(version, release_date, state_format, claude,
+                   Asset(name, target, size, *digests, *identities), platforms)
 
 
 # ------------------------------------------------------------------ installation

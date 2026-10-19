@@ -56,6 +56,51 @@ def build_tool():
     return load_tool(BUILD_TOOL, "build")
 
 
+class ContentDigestTests(unittest.TestCase):
+    """The pre-existing archive digest bytes are a compatibility contract."""
+
+    def test_canonical_bytes_and_safe_installed_reader_are_identical(self):
+        from charmer import bundle_content, install_verify
+
+        bundle = load_tool(REPO_ROOT / "tools/_build/bundle.py", "digest_bundle")
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "d").mkdir(mode=0o700)
+            (root / "empty").mkdir()
+            (root / "d/z").write_bytes(b"payload\x00\xff")
+            (root / "d/z").chmod(0o600)
+            (root / "d-a").write_bytes(b"execute\n")
+            (root / "d-a").chmod(0o710)
+            (root / "link").symlink_to("d/z")
+            (root / "dirlink").symlink_to("d")
+            (root / "MANIFEST.json").write_bytes(b"excluded manifest")
+            # Frozen bundle-content-v1 encoding: tuple path order, not string
+            # order; no root row; only execute bits affect a file's mode.
+            canonical = ("bundle-content-v1\nD d\n"
+                         f"F 0644 {hashlib.sha256(b'payload' + bytes([0, 255])).hexdigest()} d/z\n"
+                         f"F 0755 {hashlib.sha256(b'execute' + bytes([10])).hexdigest()} d-a\n"
+                         "L d dirlink\nD empty\nL d/z link\n").encode()
+            expected = (hashlib.sha256(canonical).hexdigest(), 2)
+            self.assertEqual(bundle.content_digest(root, exclude=("MANIFEST.json",)), expected)
+            self.assertEqual(install_verify.content_digest(root), expected)
+            self.assertEqual(bundle.CONTENT_FORMAT, bundle_content.CONTENT_FORMAT)
+            # Both readers call the same encoder source, even when the build
+            # loads its stdlib-only leaf without importing the whole package.
+            self.assertEqual(Path(bundle._content.__file__), Path(bundle_content.__file__))
+
+    def test_shared_encoder_preserves_unicode_link_targets_and_exact_exclusions(self):
+        from charmer.bundle_content import content_digest
+
+        entries = [(("é",), "link", 0o777, "folder/file"),
+                   (("folder", "file"), "file", 0o640, "a" * 64),
+                   (("folder",), "dir", 0o700, "")]
+        raw = ("bundle-content-v1\nD folder\nF 0644 " + "a" * 64 + " folder/file\nL folder/file é\n").encode()
+        self.assertEqual(content_digest(entries), (hashlib.sha256(raw).hexdigest(), 1))
+        # Excluding a directory name never implicitly excludes its children.
+        raw = ("bundle-content-v1\nF 0644 " + "a" * 64 + " folder/file\nL folder/file é\n").encode()
+        self.assertEqual(content_digest(entries, exclude=("folder",)), (hashlib.sha256(raw).hexdigest(), 1))
+
+
 # ------------------------------------------------------------------ synthetic inputs
 
 

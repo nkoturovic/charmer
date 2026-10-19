@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import gzip
 import hashlib
+import importlib.util
 import json
 import os
 import shutil
@@ -53,7 +54,14 @@ GATEWAY_PATH = "libexec/charmer/cli-proxy-api"
 DOCS_DIR = "share/charmer"
 LICENSES_DIR = "share/licenses"
 SBOM_DIR = "share/sbom"
-CONTENT_FORMAT = "bundle-content-v1"
+# Load the stdlib-only leaf from this checkout, not an installed package or
+# the caller's PYTHONPATH. Build tools also run without an editable install.
+_content_spec = importlib.util.spec_from_file_location(
+    "_charmer_bundle_content", Path(__file__).resolve().parents[2] / "src/charmer/bundle_content.py")
+assert _content_spec is not None and _content_spec.loader is not None
+_content = importlib.util.module_from_spec(_content_spec)
+_content_spec.loader.exec_module(_content)
+CONTENT_FORMAT = _content.CONTENT_FORMAT
 _CHUNK = 1 << 20
 _IGNORED_SOURCES = ("__pycache__",)
 _IGNORED_SUFFIXES = (".pyc", ".pyo")
@@ -321,21 +329,10 @@ def content_digest(root: Path, *, exclude: Iterable[str] = ()) -> tuple[str, int
     with its kind, normalised mode and content hash (or link target)."""
 
     skipped = set(exclude)
-    total = hashlib.sha256(CONTENT_FORMAT.encode() + b"\n")
-    files = 0
-    for parts, kind, path in _entries(root):
-        relative = "/".join(parts)
-        if relative in skipped:
-            continue
-        if kind == "file":
-            files += 1
-            line = f"F {_mode(kind, path):04o} {sha256_file(path)} {relative}\n"
-        elif kind == "link":
-            line = f"L {os.readlink(path)} {relative}\n"
-        else:
-            line = f"D {relative}\n"
-        total.update(line.encode())
-    return total.hexdigest(), files
+    entries = ((parts, kind, _mode(kind, path),
+                sha256_file(path) if kind == "file" else os.readlink(path) if kind == "link" else "")
+               for parts, kind, path in _entries(root) if "/".join(parts) not in skipped)
+    return _content.content_digest(entries)
 
 
 def manifest_bytes(document: dict) -> bytes:
