@@ -92,11 +92,17 @@ class ResumeCardDispatchTests(test_screens_card._CardCase):
         screen = self.resume_card(prepared, tty_in=io.StringIO("\n\n\n"), tty_out=out)
         with mock.patch.object(doctor_mod, "_collect_doctor_reports",
                                return_value=([], ["fixture info line"], [])) as collect:
-            result, _win = self.run_card(screen, ["h", ESC])
+            result, win = self.run_card(screen, ["h", "v", ESC, ESC, ESC])
         self.assertIsNone(result)
         collect.assert_called_once()
-        self.assertIn("charmer doctor\n", out.getvalue())
-        self.assertIn(doctor_mod.DOCTOR_SUMMARY["ready"], out.getvalue())
+        listed = next(frame for frame in win.frames if cli_text.FINDINGS_TITLE in frame)
+        self.assertIn(f"{cli_text.FINDINGS_TITLE} — Ready", listed)
+        self.assertIn(cli_text.FINDINGS_NONE, listed)
+        # V: the report as doctor -v prints it.
+        details = next(frame for frame in win.frames if f"{cli_text.FINDINGS_TITLE} -v" in frame)
+        self.assertIn("fixture info line", details)
+        self.assertIn(doctor_mod.DOCTOR_SUMMARY["ready"].strip(), details)
+        self.assertEqual(out.getvalue(), "")
         self.assertEqual(self.runtime.launches, [])
 
 

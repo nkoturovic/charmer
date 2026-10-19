@@ -19,6 +19,7 @@ import signal
 import socket
 import subprocess
 import sys
+import tarfile
 import tempfile
 import textwrap
 import time
@@ -1437,6 +1438,133 @@ class RuntimeEnsureTests(_Lifecycle):
             self.runtime(gateway_seams=self.world.seams()).ensure_gateway()
         self.assertIn("local gateway: port", str(ctx.exception))
         self.assertIn(f"free port {self.port}", ctx.exception.remedy)
+
+
+GATEWAY_OLD, GATEWAY_NEW = "a" * 64, "b" * 64
+WAY_BACK = gl.ROLLBACK_REMEDY.format(version="2.0.1")
+
+
+class RollbackRemedyTests(_Lifecycle):
+    """A failed start after a gateway-changing update names the way back:
+    a fixture installed release (current 2.1.0, previous 2.0.1) under the
+    temporary HOME's data root, and a fake gateway that never becomes ready."""
+
+    def environ(self, channel: str | None = "bundle") -> dict[str, str]:
+        return self.wrapper_env(**({endpoint.CHANNEL_ENV: channel} if channel else {}))
+
+    def install(self, *, previous_gateway: str = GATEWAY_OLD, previous_state: int = 4) -> Path:
+        from _fake_release import FakeRelease
+        from charmer import installs
+
+        root = installs.bundle_root(self.environ())
+        versions = root / "versions"
+        versions.mkdir(parents=True)
+        for version, gateway, state_format in (("2.0.1", previous_gateway, previous_state),
+                                               ("2.1.0", GATEWAY_NEW, 4)):
+            release = FakeRelease(self.root / f"release-{version}", version, gateway=gateway,
+                                  state_format=state_format)
+            with tarfile.open(release.asset()) as tar:
+                tar.extractall(versions, filter="data")
+            (versions / f"charmer-{version}-linux-x86_64").rename(versions / version)
+        (root / "current").symlink_to("versions/2.1.0")
+        (root / "previous").symlink_to("versions/2.0.1")
+        state.atomic_write(self.state_root / "state-version", b"4\n")
+        return root
+
+    def never_ready(self) -> None:
+        self.world.on_spawn = lambda instance: (self.world.become_ready(instance),
+                                                setattr(self.world, "listener", "none"))
+
+    def runtime(self, channel: str | None = "bundle", **kwargs) -> cli.Runtime:
+        return cli.Runtime(asset_root=FIXTURE_ROOT, environ=self.environ(channel), cwd=self.root,
+                           managed_root=self.root / "managed", gateway_seams=self.world.seams(), **kwargs)
+
+    def run_cli(self, argv, channel: str | None = "bundle"):
+        out, err = io.StringIO(), io.StringIO()
+        with redirect_stderr(err):
+            code = cli.main(argv, runtime=self.runtime(channel), input_stream=io.StringIO(""),
+                            output_stream=out, interactive=False)
+        return code, out.getvalue(), err.getvalue()
+
+    def test_a_start_that_never_becomes_ready_names_the_rollback(self) -> None:
+        self.install()
+        self.never_ready()
+        code, out, err = self.run_cli(["gateway", "start"])
+        self.assertEqual((code, out), (1, ""))
+        self.assertIn("not ready after", err)
+        self.assertIn(f"\n  {WAY_BACK}\n", err)
+        # The first remedy keeps its own line; the way back is the second.
+        lines = err.splitlines()
+        fix = next(index for index, line in enumerate(lines) if line.startswith("  fix: "))
+        self.assertEqual(lines[fix + 1], f"  {WAY_BACK}")
+        self.assertNotIn("charmer update --rollback", lines[fix])
+
+    def test_restart_and_an_early_exit_name_it_too(self) -> None:
+        self.install()
+        self.never_ready()
+        outcome = self.runtime().gateway().restart()
+        self.assertEqual((outcome.status, outcome.rollback), ("timeout", WAY_BACK))
+        self.world.lock, self.world.listener, self.world.alive = False, "none", False
+        self.world.spawn_code = 1
+        outcome = self.runtime().gateway().ensure(explicit=True)
+        self.assertEqual((outcome.status, outcome.rollback), ("failed", WAY_BACK))
+        self.assertIn(f"  {WAY_BACK}", outcome.lines())
+
+    def test_a_launch_refused_by_the_failed_start_carries_it(self) -> None:
+        self.install()
+        self.world.spawn_code = 1
+        with self.assertRaises(launch.LaunchError) as ctx:
+            self.runtime().ensure_gateway()
+        self.assertIn(WAY_BACK, ctx.exception.remedy)
+
+    def test_nothing_when_the_rollback_would_not_bring_another_gateway_back(self) -> None:
+        from charmer import installs
+
+        self.never_ready()
+        for label, install in (("same gateway digest", {"previous_gateway": GATEWAY_NEW}),
+                               ("state format past previous", {"previous_state": 3})):
+            with self.subTest(label):
+                shutil.rmtree(installs.bundle_root(self.environ()), ignore_errors=True)
+                self.install(**install)
+                self.world.lock, self.world.listener, self.world.alive = False, "none", False
+                code, _out, err = self.run_cli(["gateway", "start"])
+                self.assertEqual(code, 1)
+                self.assertIn("not ready after", err)
+                self.assertNotIn("charmer update --rollback", err)
+        # Another channel: the bundle links on disk are not this charmer's installation.
+        shutil.rmtree(installs.bundle_root(self.environ()), ignore_errors=True)
+        self.install()
+        for channel in ("nix", "source", None):
+            with self.subTest(channel=channel):
+                self.world.lock, self.world.listener, self.world.alive = False, "none", False
+                outcome = self.gateway(environ=self.environ(channel)).ensure(explicit=True)
+                self.assertEqual((outcome.status, outcome.rollback), ("timeout", None))
+                self.assertFalse(any("charmer update --rollback" in line for line in outcome.lines()))
+        self.assertEqual(len(self.world.spawned), 5)
+
+    def test_a_ready_start_reads_no_installation(self) -> None:
+        from charmer import self_update
+
+        self.install()
+        with mock.patch.object(self_update, "rollback_restores_gateway") as helper:
+            outcome = self.runtime().gateway().ensure(explicit=True)
+        self.assertEqual((outcome.status, outcome.rollback), ("ready", None))
+        helper.assert_not_called()
+
+    def test_the_gateway_dialog_and_doctor_show_it_while_stopped(self) -> None:
+        from charmer.cli.screens import gateway_actions
+
+        self.install()
+        view = gateway_actions.observe(self.runtime())
+        self.assertEqual(view.rollback, WAY_BACK)
+        self.assertIsNone(gateway_actions.observe(self.runtime("nix")).rollback)
+        problems, _info, _attention = cli._collect_doctor_reports(self.runtime())
+        gateway = [line for line in problems if line.startswith("local gateway: ")]
+        self.assertEqual(len(gateway), 1, problems)
+        self.assertTrue(gateway[0].endswith(f"; {WAY_BACK}"), gateway[0])
+        self.assertEqual(getattr(gateway[0], "area", None), "Gateway")
+        self.running()
+        self.assertIsNone(gateway_actions.observe(self.runtime()).rollback)  # running: nothing to go back for
 
 
 class PruneTests(_Lifecycle):

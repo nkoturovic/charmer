@@ -173,6 +173,7 @@ PTY_SENDS = frozenset({"send", "feed", "keys"})
 # prepared resume.
 SCREEN_ENTRY_POINTS: dict[str, frozenset[str]] = {
     "card": frozenset({"_LaunchCardScreen", "launch_card"}),
+    "findings": frozenset({"FindingsScreen", "run_findings_screen"}),
     "resume-card": frozenset({"_LaunchCardScreen", "launch_card", "_resume_card_result"}),
     "sessions": frozenset({"_SessionsScreen", "_sessions_list_tui"}),
     "lineup-dialog": frozenset({"_LineupDialog"}),

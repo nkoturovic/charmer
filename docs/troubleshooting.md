@@ -1,13 +1,36 @@
 # Troubleshooting
 
 Start with `charmer doctor`. It reports **Ready**, **Attention**
-(a warning to assess, with a remedy or optional diagnostic) or **BLOCKED** (something is
+(a warning to assess, with a remedy) or **BLOCKED** (something is
 broken, and what). Plain `doctor` refreshes the helper shims as routine
 housekeeping; repair, pruning and token rotation require their explicit
 options. Use `charmer doctor --json` for a read-only report.
-In the launcher, **H** shows the same report. The tables below go from a
-symptom to the doctor finding, the safest fix and how to check it worked.
-[CHEATSHEET.md](CHEATSHEET.md) has the short version.
+The tables below go from a symptom to the doctor finding, the safest fix
+and how to check it worked. [CHEATSHEET.md](CHEATSHEET.md) has the short
+version.
+
+Doctor lists the blocking items first, then the attention items grouped by
+area, in this order: **Gateway** (a persistence hold always first),
+**Installation**, **Providers**, **Sessions**, **Profiles** and **Models**.
+A finding that repeats is one line: a model finding says how many profiles
+and slots bind the model (`kimi-k3: … (3 profiles, 12 slots)`), and a kind
+of session finding says how many sessions it concerns and names the first
+three, then “(doctor -v lists them)”. `charmer doctor -v` prints every
+original line. After Attention comes **Advisories (optional evidence; does
+not change the verdict)**: doctor can say Ready while advisories are listed
+(see [the advisories](#models-evidence-and-bindings)).
+
+In the launcher, **H** shows the same findings as a list, in the same
+order: Enter on a row does what it says, after asking first (the
+persistence hold: why it holds and the clear-hold command, which stays a
+typed confirmation outside Claude Code; a missing key: **G** → **K**; scopes
+to repair: repair-all, stopped sessions only; an unused alias:
+prune-aliases; generated leftovers: the prune preview, then y/N; sessions
+that do not run and have no recorded end: mark-ended for each; sessions
+that need a lead: Sessions; a newer shipped profile: reseed; an advisory
+model: its optional diagnostics, **M** → **Q**). Any other row shows its exact
+command. **V** shows the full report as `doctor -v` prints it, **G** the
+gateway's actions (start, restart, log).
 
 An installation from before the rename is moved with
 `charmer migrate from-legacy` ([the migration guide](guides/legacy-migration.md));
@@ -43,6 +66,9 @@ Two rules come first:
 | the gateway service keeps restarting | “gateway working directory <path> holds a .env file” | move that `.env` aside, then `charmer gateway restart` | `charmer gateway service status` |
 | doctor: the installed service unit differs, or a restart is pending | the unit or the package it runs changed | `charmer gateway service install` (refreshes it), then follow its line | `charmer gateway service status` |
 | a held gateway refuses stop, restart, update | “gateway persistence hold” (a failed save, or part of the log could not be evaluated: the reason says which) | keep it running; part of the log not evaluated: check the credentials (`charmer providers list`), then `charmer gateway clear-hold`; a failed save: wait for a persisted save (sign in again only if none comes) before clearing; if the journal no longer reaches back, see [the persistence hold](guides/gateway.md#the-persistence-hold) | `charmer gateway status` shows no hold |
+| the card says “gateway held (log coverage, no failed save)”; doctor lists it first | “gateway persistence hold: HELD because part of the log could not be evaluated (no failed credential save was seen in the part read)” | keep the gateway running; check the credentials (`charmer providers list`), then, in a terminal outside Claude Code, `charmer gateway clear-hold` (a typed confirmation; **H** → Enter on the hold shows why and the command); it can come back when the log again cannot be read in full | `charmer gateway status` shows no hold |
+| the gateway does not start after `charmer update` | “local gateway: …”, with “if this began after charmer update: charmer update --rollback, then charmer gateway start (returns to <version>'s gateway; sessions keep their records)” | read why (`charmer gateway logs`); to go back to the previous release's gateway: `charmer update --rollback`, then `charmer gateway start`. Shown only for an installed release whose previous version has another gateway and accepts the state on disk | `charmer gateway status` says ready |
+| a continuity alias is not served, or an alias has no line | “continuity alias <alias> is not served … charmer doctor --prune-aliases <alias>”, or “alias <alias> … has no line — prune when unused” | once no live session uses it: `charmer doctor --prune-aliases <alias>` (**H** → Enter on the row prunes it after a confirmation); it is refused while a live session uses the alias | doctor no longer lists it |
 | HTTP 400 `prompt_cache_retention is not supported on this model` | the running gateway predates the installed release | `charmer gateway restart` between turns | the next request succeeds |
 | continuity set unreadable | “gateway continuity set unreadable” | move `~/.config/charmer/continuity.json` aside, then `charmer-proxy init` (it re-seeds the set) | doctor |
 
@@ -76,10 +102,28 @@ Route availability, the optional admission badge and optional qualification
 are separate. Local readiness means configured and served, not upstream
 verified. Doctor never sends model qualification requests automatically.
 
+These findings are **advisories**: optional evidence, listed after Attention,
+that never change doctor's verdict (Ready can stand beside them, and
+`--json` gives them the level `advisory`, which its status ignores): a
+model not admitted (also a New model without its badge), qualification not
+run, failed, stale for the definition or older than the current pins,
+exact-client evidence, forced-tool evidence for the workflow default, a
+capability or role recommendation an explicit binding overrides, an effort
+not verified, an unknown family, unknown review independence, a missing
+companion grade and an unbound Explore replacement. Each is one line per
+model and finding with how many profiles and slots bind it, and the
+optional next step (`charmer models admit <line>`, or
+`charmer models qualify <line> --agents` / **M** → **Q**: optional diagnostics,
+which may cost provider calls and never run automatically). A context
+overflow risk and an ignored lead-only environment stay Attention: they
+change what a session can do. A release that re-pins Claude Code or
+changes the gateway makes every qualification older than the pins, so
+expect these advisories after an update; they ask for nothing.
+
 | Symptom | Meaning | What to do |
 | --- | --- | --- |
 | New · not admitted, or stale admission | the optional definition-bound badge is absent or stale; not a use block | bind the model on its usable route, or optionally use **M** → Enter / `charmer models admit <line>`; admission sends no inference request |
-| qualification not run, failed or stale; exact-client evidence unavailable | Attention, not a lead/agent/workflow ban; the failed check remains a failure | assess the named limitation; optionally run `charmer models qualify <line> --agents` at a terminal outside Claude Code, with explicit human consent to the plan, default No |
+| qualification not run, failed or stale; exact-client evidence unavailable | an advisory, not a lead/agent/workflow ban; the failed check remains a failure | assess the named limitation; optionally run `charmer models qualify <line> --agents` at a terminal outside Claude Code, with explicit human consent to the plan, default No |
 | tools evidence covers auto but not forced | automatic tool use is not evidence of forced-tool support | keep the warning or explicitly test forced tools; no automatic weaker-contract retry |
 | a model remains usable after `models revoke` | expected: revoke removes only the badge, leaving qualification evidence unchanged | remove its binding/declaration or disable the provider if you want to stop using it |
 | a model is disabled or its route is unavailable | a real configuration restriction, not missing qualification | enable the provider deliberately or approve/fix the exact route named; there is no implicit transport or credential fallback |
@@ -117,7 +161,11 @@ report it.
 | ⚠ fork waiting; “has an unresolved native fork” | Enter on the row (adopt or discard), or `charmer sessions resolve-fork <id> <fork-id>` |
 | ! repair needed; “identity is repair-needed” | `charmer -r <id>`, or `charmer sessions relink-runtime <id> <runtime-id>` |
 | ● or ◐ but the session is gone | `charmer sessions mark-ended <id>` (all: `--all-dead`) |
+| “<n> sessions do not run and have no recorded end”, or “session <id>: does not run and has no recorded end” | each exited without its end being recorded, so commands that refuse while a session may run count it (migration and uninstall among them): `charmer sessions mark-ended --all-dead` (one: `charmer sessions mark-ended <id>`); **H** → Enter on the row marks every one after a confirmation, and each mark checks again that the session does not run. Doctor names none while whether sessions run cannot be told (the process table or the background daemon unreadable, a state root on a network filesystem) |
+| “<n> generated files left by forgotten or ended sessions” | scopes, lead prompts, notice markers or lineup logs no record owns any more: `charmer doctor --prune --preview` lists them, `charmer doctor --prune` removes them (**H** → Enter on the row shows the preview, then asks y/N); records, transcripts and backups are never among them. Doctor names none while a record cannot be read |
 | “scope differs from the record-authoritative compile” | `charmer doctor --repair <id>` |
+| “<n> session(s) need a profile or model choice (lead removed)” | the lead each was bound to left the catalog: resume one interactively (`charmer -r <id>`, which asks for a profile or model), or `charmer lineup --session <runtime-id> --relaunch profile <name>`; **H** → Enter on the row opens Sessions. Doctor names the first three ids; `doctor -v` lists every one |
+| “<n> session scope(s) were compiled by <earlier name>” | the scopes of sessions from before the rename: `charmer doctor --repair-all` recompiles every stopped one now (**H** → Enter on the row, after a confirmation); a running one is recompiled at its next resume. Doctor shows one line for all of them |
 | “session record <id> is unreadable” | `charmer sessions show <id>` names the error; never edit the record; forget a disposable session with `charmer sessions forget <id>` |
 | resume says the session does not exist | `charmer -r <id>` (it resumes from the recorded directory) |
 | a session is missing from the list | **C** on the sessions screen (all directories) |
@@ -159,6 +207,9 @@ and shortens the middle, so an 80-column terminal still shows what to do.
 | “! CLAUDE_CONFIG_DIR ignored: settings, MCP, memory, resume use ~/.claude — V” | managed sessions read settings, MCP servers, memory and resume from `~/.claude`; **V** says which values that affects. Unset the variable, or keep it for your own `claude` |
 | a new model is not admitted | the badge is optional: bind it on a usable route, or **M** → Enter to attest locally; see any separate route/credential remedy |
 | “implementers unavailable: not a Git repository here (git init enables them)” | launch from a Git work tree, or `git init` |
+| “! nothing is connected yet — Enter opens Get started” | Enter opens Get started (a session could not work yet); **L** launches anyway |
+| “! gateway held: …” with “gateway ok, held” | the persistence hold: see [the gateway](#the-gateway). The card names the cause only when every reason is log coverage (“no failed save”); any other hold says “a credential save may be unresolved” (a failed save, an unreadable hold record or an evaluation that failed): **H** lists it first and Enter on it shows the reasons and the clear-hold command |
+| the release row says “U checks for a newer release” | the card checks nothing by itself; **U** checks, shows the plan and asks |
 | the lead or agents with “no <pool> OAuth credential record” | sign in where the row says: **G**, then **L** on the account provider (on a resume card, the row names the way back to a launch card first) |
 | **H**: a key to save, “G (providers) → K on <provider>” | **G**, then **K** on that provider (from a terminal: `charmer providers set-key <provider>`); on a resume card, the report first names the way back to a launch card, then **S** resumes |
 | the profile editor: what a role is for | the row of the selected lead or agent shows its role, grade and description; the model picker shows it as its subtitle and in **V** |

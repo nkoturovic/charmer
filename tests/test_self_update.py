@@ -232,6 +232,14 @@ class CheckAndPlanTests(SelfUpdateTestCase):
         self.assertIn("before anything is switched", text)
         self.assertIn("rolling back to 1.0.0 is refused", text)
         self.assertIn("charmer gateway restart", text)
+        # The rollback is refused after the state upgrade, so the plan does not offer it.
+        self.assertNotIn("if the new gateway does not start", text)
+
+    def test_plan_for_a_gateway_change_names_the_way_back(self) -> None:
+        planned = self._plan(self.release("1.0.1", gateway=GATEWAY_B))
+        self.assertEqual(planned.restart, "gateway")
+        self.assertIn("charmer gateway restart); if the new gateway does not start: charmer update --rollback",
+                      planned.steps[-1])
 
     def test_plan_refusals(self) -> None:
         older = self.release("0.9.0")
@@ -626,6 +634,22 @@ class RollbackTests(SelfUpdateTestCase):
                 self.assertIn("it is now 1.0.2 -> 1.0.1", str(caught.exception))
                 self.assertIn("update --rollback again", caught.exception.remedy)
                 self.assertEqual(self.links(), ("versions/1.0.2", "versions/1.0.1"))
+
+    def test_the_previous_gateway_is_named_only_when_a_rollback_restores_another(self) -> None:
+        self.assertIsNone(su.rollback_restores_gateway(self.root, self.state))  # no previous version
+        self.update_to(self.release("1.0.1", gateway=GATEWAY_B))
+        self.assertEqual(su.rollback_restores_gateway(self.root, self.state), "1.0.0")
+        self.update_to(self.release("1.0.2", gateway=GATEWAY_B))  # previous 1.0.1: the same gateway
+        self.assertIsNone(su.rollback_restores_gateway(self.root, self.state))
+        self.assertIsNone(su.rollback_restores_gateway(self.tmp / "nowhere", self.state))
+
+    def test_no_previous_gateway_once_the_state_moved_past_it(self) -> None:
+        self.update_to(self.release("1.1.0", gateway=GATEWAY_B, state_format=5))
+        self.assertEqual(su.rollback_restores_gateway(self.root, self.state), "1.0.0")
+        self.write_state("5\n")
+        self.assertIsNone(su.rollback_restores_gateway(self.root, self.state))
+        self.write_state("damaged")
+        self.assertIsNone(su.rollback_restores_gateway(self.root, self.state))
 
     def test_rollback_refusals(self) -> None:
         safe = {"hold": clear, "inhibit": contextlib.nullcontext}

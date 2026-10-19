@@ -2498,6 +2498,40 @@ class ResumeAfterMigrationTests(V4Case):
         self.assertIn(f"scope compiled by {legacy.NAME} before the move to charmer", text)
         self.assertIn(f"charmer -r {self.mid}", text)
 
+    def test_the_earlier_scopes_are_one_line_that_repair_all_clears(self) -> None:
+        import charmer.cli.doctor as doctor
+        from charmer.cli import doctor_actions
+
+        def earlier_rows() -> list:
+            problems, _info, attention = doctor._collect_doctor_reports(self.runtime)
+            return [row for row in doctor.present_report(problems, attention).rows if row.action == "earlier-scopes"]
+
+        rows = earlier_rows()
+        self.assertEqual(len(rows), 1, rows)
+        self.assertEqual((rows[0].level, rows[0].area, rows[0].remedy),
+                         ("attention", "Sessions", "charmer doctor --repair-all"))
+        self.assertIn(self.mid[:8], rows[0].text)
+        self.assertIn("charmer doctor --repair-all recompiles the stopped ones now", rows[0].text)
+        self.assertGreaterEqual(len(rows[0].originals), 2)  # the hook-target and scope-integrity lines
+        # The moved record has no recorded end: live or unknown, so repair-all leaves it.
+        out = io.StringIO()
+        self.assertEqual(doctor_actions._doctor_repair_all(self.runtime, out), 0, out.getvalue())
+        self.assertIn("Repair-all: 0 session(s) converged", out.getvalue())
+        self.assertIn(f"skipped {self.mid[:8]}: last event none (live or unknown)", out.getvalue())
+        self.assertEqual(len(earlier_rows()), 1)
+        from charmer.cli import session_actions
+
+        no_proc = self.root / "no-proc"
+        no_proc.mkdir()
+        self.assertEqual(session_actions._mark_ended_ids(self.runtime, [self.mid], proc_root=no_proc),
+                         [(self.mid, "marked ended")])
+        out = io.StringIO()
+        self.assertEqual(doctor_actions._doctor_repair_all(self.runtime, out), 0, out.getvalue())
+        self.assertIn("Repair-all: 1 session(s) converged", out.getvalue())
+        settings = json.loads((self.live(self.mid) / "settings.json").read_bytes())
+        self.assertEqual({path.parent for path in scope.hook_targets(settings)}, {self.layout.state / "bin"})
+        self.assertEqual(earlier_rows(), [])
+
     def test_converge_recompiles_the_stale_scope_on_the_same_routes(self) -> None:
         from charmer import transition
 

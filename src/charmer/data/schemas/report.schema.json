@@ -158,7 +158,8 @@
             "enum": [
               "block",
               "attention",
-              "info"
+              "info",
+              "advisory"
             ]
           },
           "code": {
@@ -166,6 +167,30 @@
           },
           "text": {
             "type": "string"
+          },
+          "subject_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "remedy": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "area": {
+            "enum": [
+              "Gateway",
+              "Installation",
+              "Providers",
+              "Sessions",
+              "Profiles",
+              "Models",
+              "Other",
+              null
+            ]
           }
         }
       }

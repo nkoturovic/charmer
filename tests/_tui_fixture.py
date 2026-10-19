@@ -443,9 +443,10 @@ class GatewayViewStub:
     held = False
 
     def __init__(self, *, start: bool = False, restart: bool = False, service: bool = False,
-                 service_line: str | None = None) -> None:
+                 service_line: str | None = None, rollback: str | None = None) -> None:
         self.can_start, self.can_restart, self.can_install_service = start, restart, service
         self._service_line = service_line
+        self.rollback = rollback
 
     def headline(self) -> str:
         return "Gateway: fixture view"

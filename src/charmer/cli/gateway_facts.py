@@ -29,6 +29,7 @@ from dataclasses import field
 from datetime import datetime
 from datetime import timezone
 from pathlib import Path
+from typing import Iterable
 from typing import Mapping
 import charmer.cli.text as cli_text
 import json
@@ -1256,7 +1257,35 @@ def local_files_report(runtime: runtime_mod.Runtime) -> tuple[list[str], set[Pat
     return problems, flagged
 
 
-class Finding(str):
+class Line(str):
+    """A doctor line with the tags its collector gave it; as a ``str`` it is
+    the line itself, so every list of lines keeps working.
+
+    ``area`` is where doctor lists it (``doctor.AREAS``); ``action`` one of
+    the small fixed set of codes the findings list acts on
+    (``doctor.ACTIONS``); ``level`` ``advisory`` marks optional evidence
+    (otherwise the list it is in decides); ``group`` is the identity rows
+    share when they collapse into one, ``summary`` that row's text (with
+    ``{n}``, the number of sessions) and ``subjects`` the session ids a line
+    names; ``subject`` is what an action targets (a model key, an alias, a
+    provider or profile); ``owner`` and ``slot`` the profile and slot of a
+    profile finding; ``short`` the form plain doctor prints instead of the
+    line (``-v`` prints the line)."""
+
+    TAGS = ("area", "action", "level", "group", "summary", "subjects", "subject", "owner", "slot", "short")
+    area: str | None = None
+    action: str | None = None
+    level: str | None = None
+    group: tuple[str, ...] | None = None
+    summary: str | None = None
+    subjects: tuple[str, ...] = ()
+    subject: str | None = None
+    owner: str | None = None
+    slot: str | None = None
+    short: str | None = None
+
+
+class Finding(Line):
     """A doctor line that carries its typed fields: as a ``str`` it is the
     line plain doctor prints; ``code`` (stable, kebab-case), ``public`` (the
     text the JSON report may carry: no path, value or exception body), an
@@ -1273,6 +1302,30 @@ class Finding(str):
         line = super().__new__(cls, text)
         line.code, line.public, line.subject_id, line.remedy = code, public, subject_id, remedy
         return line
+
+
+def tagged(line: str, **tags: Any) -> Line:
+    """``line`` with ``tags`` (``Line.TAGS``) added to the ones it has: a new
+    line, so a shared one is never changed. A typed finding stays one."""
+
+    if isinstance(line, Finding):
+        copy: Line = Finding(str(line), code=line.code, public=line.public, subject_id=line.subject_id,
+                             remedy=line.remedy)
+    else:
+        copy = Line(str(line))
+    for name in Line.TAGS:
+        if name in tags:
+            setattr(copy, name, tags[name])
+        elif isinstance(line, Line) and name in vars(line):
+            setattr(copy, name, getattr(line, name))
+    return copy
+
+
+def in_area(lines: Iterable[str], area: str, **tags: Any) -> list[Line]:
+    """Every line of one collector, listed under ``area`` unless a finer
+    collector inside it already chose one; ``tags`` apply to each."""
+
+    return [tagged(line, area=getattr(line, "area", None) or area, **tags) for line in lines]
 
 
 WSL_SEPARATE_CONFIG = ("WSL: the Windows-side and WSL-side Claude configurations are separate — sign-ins, "
@@ -1316,6 +1369,19 @@ HOLD_COVERAGE_TEXT = (
     "(charmer gateway clear-hold: it records that you checked them and evaluates the logs again from "
     "there on)"
 )
+
+
+def rollback_remedy(runtime: runtime_mod.Runtime) -> str | None:
+    """The way back after a gateway-changing update
+    (``gateway_lifecycle.rollback_remedy``) for doctor's Gateway findings
+    while the gateway is stopped or failed; None when it does not apply."""
+
+    from charmer import gateway_lifecycle
+
+    try:
+        return gateway_lifecycle.rollback_remedy(runtime.environ, runtime.home, runtime.session_store.root)
+    except (cli_errors.CharmerError, OSError):
+        return None
 
 
 GATEWAY_NOT_SET_UP = ("Gateway: not set up yet in this home — no port is recorded, so nothing was observed on "
@@ -1390,10 +1456,12 @@ def gateway_runtime_report(runtime: runtime_mod.Runtime) -> tuple[list[str], lis
     if live or gateway.backend == endpoint_mod.ON_DEMAND:
         hold = gateway.persistence_hold()
         if hold.held and hold.coverage_only:
-            attention.append(HOLD_COVERAGE_TEXT.format(reasons="; ".join(hold.reasons)))
+            attention.append(tagged(HOLD_COVERAGE_TEXT.format(reasons="; ".join(hold.reasons)),
+                                    area="Gateway", action="hold-coverage"))
         elif hold.held:
-            attention.append("gateway persistence hold: HELD — stop, restart, update and uninstall are refused: "
-                             + "; ".join(hold.reasons) + " — " + gateway_hold.REMEDY)
+            attention.append(tagged("gateway persistence hold: HELD — stop, restart, update and uninstall are "
+                                    "refused: " + "; ".join(hold.reasons) + " — " + gateway_hold.REMEDY,
+                                    area="Gateway", action="hold"))
         else:
             detail = f" — {hold.evaluated}" if hold.evaluated else ""
             info.append(f"Gateway persistence hold: none ({hold.source} evaluated completely){detail}")

@@ -280,6 +280,36 @@ class ScopeCompatibilityTests(unittest.TestCase):
                 self.assertTrue(any("scope differs" in line for line in problems), problems)
                 self.assertNotIn(cli_text.FORK_POLICY_DRIFT.format(m8=MID[:8], mid=MID), attention)
 
+    def test_a_fence_failure_policy_difference_alone_is_the_same_lazy_row(self):
+        """A scope that has the fork deny but another release's model-fence
+        failure policy gets the same Attention line, which names both, and
+        groups with the fork-deny sessions under one row."""
+
+        self.load()
+        parts = transition.RuntimeParts(
+            docs=self.docs, prompt_bodies=self.prompts, hook_command=HOOK,
+            token_helper_command=HELPER, environ={}, managed_root=self.root / "managed")
+        reader = SimpleNamespace(
+            session_store=SimpleNamespace(root=self.root), converge_parts=lambda: parts,
+            catalog=SimpleNamespace(bundle_sha256=self.record["catalog_hash"]), environ={})
+        document = strict_json.loads((self.live / scope.SETTINGS_RELPATH).read_bytes())
+        document["permissions"]["deny"].append(compiler.FORK_AGENT_DENY)  # the deny as this release compiles it
+        state.atomic_write(self.live / scope.SETTINGS_RELPATH, strict_json.canonical_file_bytes(document))
+        with mock.patch.object(compiler, "git_work_tree", return_value=True):
+            problems, attention, _info = doctor._check_scope_integrity(reader, self.record)
+        self.assertEqual(problems, [])
+        expected = cli_text.FORK_POLICY_DRIFT.format(m8=MID[:8], mid=MID)
+        self.assertIn("fork-subagent deny (Agent(fork)) or model-fence failure policy", expected)
+        line = next(line for line in attention if line == expected)
+        self.assertEqual((line.area, line.group, line.summary),
+                         ("Sessions", ("session", "fork-policy"), cli_text.FORK_POLICY_DRIFTS))
+        other = doctor._per_session(expected.replace(MID[:8], "22222222"), "2" * 36, "fork-policy",
+                                    cli_text.FORK_POLICY_DRIFTS)
+        rows = doctor.present_report([], [line, other]).rows
+        self.assertEqual(len(rows), 1)
+        self.assertTrue(rows[0].text.startswith("2 sessions: the fork-subagent deny (Agent(fork)) or "
+                                                "model-fence failure policy differs"), rows[0].text)
+
     def test_converge_leaves_proven_baseline_files_and_record_unchanged(self):
         self.load()
         store = sessions.SessionStore(self.root, strict_json.load(FIXTURE_ROOT / "schemas" / "session.schema.json"))

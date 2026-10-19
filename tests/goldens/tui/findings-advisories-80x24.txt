@@ -1,0 +1,24 @@
+
+  charmer doctor — BLOCKED · 1 blocking, 4 attention, 1 advisory
+  ─────────────────────────────────────────────────────────────────────────────
+        journald retention is shorter; stop, restart, update and uninstall are
+        refused. Keep it running; after checking the credentials (charmer
+        providers list), clear it on the command line (charmer gateway
+        clear-hold: it records that you checked them and evaluates the logs
+        again from there on)
+      ! continuity alias charmer-old is not served (its upstream route may be
+        gone); once no live session uses it: charmer doctor --prune-aliases
+        charmer-old
+    Sessions (1)
+      ! 2 session(s) need a profile or model choice (lead removed): resume
+        interactively with charmer -r <id> — 1111aaaa, 2222bbbb
+    Profiles (1)
+      ! profile alpha: next launch: lead: no OAuth credential record
+        (readiness; never a block)
+› ▾ Advisories (optional evidence; does not change the verdict) (1)
+  ↓ more ──────────────────────────────────────────────────────────────────────
+  Optional evidence: it never changes the verdict. Its diagnostics run only
+  when you start them (may cost provider calls; never run automatically).
+  Enter: hide them
+
+  Enter act · V details · G gateway · ? help · Esc back
