@@ -35,6 +35,11 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- Claude Code's own `--autocompact` flag after `--` is refused, in both its
+  separate and equals forms: the session compaction window is charmer's (set it
+  with `charmer window-ceiling`). `charmer doctor` reports a scope compiled by an
+  earlier release (no fork-subagent deny, a fence hook without its failure
+  policy) as lazy state, applied at the next resume or by `doctor --repair`.
 - Managed sessions run Claude Code 2.1.302 (was 2.1.292), catalog 40. Every
   platform build is checked against Anthropic's signed release manifest. The
   client starts an unconfigured session in default mode again; charmer's
@@ -59,6 +64,15 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- A managed session refuses a model switch when its fence hook cannot answer:
+  the compiled PreModelSwitch hook fails closed, so a missing, non-executable,
+  crashing or slow shim keeps the lead model. The fence alone gets 15 seconds;
+  every other hook keeps 5 seconds and stays fail-open.
+- A managed session owns Claude Code's auto-mode classifier model
+  (`CLAUDE_CODE_AUTO_MODE_MODEL`): the launch clears it, the compiled settings
+  state it empty so no user, project or local settings file can set it, a
+  model's lead environment cannot set it, and a managed policy that sets it is
+  reported as a model lock. The retry watchdog's wait caps stay yours to set.
 - Under a terminal encoding that is not UTF-8 (on Python 3.11–3.14, as in
   Nix and source installations), `charmer --help`, `charmer sessions list`
   and other output no longer fail on charmer's markers: characters the
