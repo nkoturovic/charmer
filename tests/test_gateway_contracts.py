@@ -640,7 +640,7 @@ class SolOverlayCapabilityTests(unittest.TestCase):
     """
     def setUp(self):
         bundle = catalog.load_catalog(SHIPPED_ROOT)
-        self.sol = bundle.lines["sol"]
+        self.sol = copy.deepcopy(bundle.lines["sol"])
         self.applicable = self.sol["generation"] != "6"
         if not self.applicable:
             # Reverted: sol is back on GPT-6 and the Sol 6.1 overlay proof
@@ -651,6 +651,12 @@ class SolOverlayCapabilityTests(unittest.TestCase):
             return
         self.assertEqual(self.sol["registry_overlay"], {"channel": "codex"})
         self.assertEqual(set(self.sol["efforts"]), {"low", "medium", "high", "xhigh", "max"})
+        # Sol is now static. Keep exercising the catalog's overlay capability
+        # shape on an absent synthetic wire, never claim this overrides the
+        # static Sol metadata (which wins, independently of trusted bounds).
+        self.sol["wire_model"] = "gpt-probe-overlay-fixture"
+        registry = catalog.load_pinned_registry(SHIPPED_ROOT / "registry")
+        self.assertTrue(all(self.sol["wire_model"] not in wires for wires in registry.sections.values()))
 
     def document(self, bundle, _egress, port, home, *, levels=True):
         docs = copy.deepcopy(bundle.docs)

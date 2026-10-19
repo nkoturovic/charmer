@@ -854,7 +854,7 @@
         "declared_tokens": 1000000,
         "ordinary_profile": "large",
         "provider_tokens": 1000000,
-        "qualification": "Sonnet 5.5 on the canonical 1M selector: Anthropic docs declare 1M context (no context beta, no 200K variant) and 128K synchronous output; the pinned 7.3.15 registry lacks claude-sonnet-5-5, so the claude-pool overlay registers it from this entry, and the pinned client 2.1.286 knows it (offline exact-client probes). The window is documented plus selector-classified, not near-limit measured, so validated_tokens stays at the conservative 200,000 floor until a consent-gated live acceptance call.",
+        "qualification": "Sonnet 5.5 on the canonical 1M selector: Anthropic docs declare 1M context (no context beta, no 200K variant) and 128K synchronous output; the pinned 8.0.33 registry includes claude-sonnet-5-5 with 1M context, 128K output and between_tools thinking disablement, so its static entry wins over the retained overlay marker. Client recognition was proven on 2.1.286 (offline exact-client probes). The window is documented plus selector-classified, not near-limit measured, so validated_tokens stays at the conservative 200,000 floor until a consent-gated live acceptance call.",
         "scalar_tokens": null,
         "validated_tokens": 200000
       },

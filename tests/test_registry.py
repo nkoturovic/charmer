@@ -43,8 +43,8 @@ def _oauth_lines(raw_docs):
 # that source byte for byte). A gateway re-pin regenerates it and updates
 # these recorded identities in the same change.
 REGISTRY_SNAPSHOT_SHA256 = {
-    "models.json": "ca457e5269f67068fcd13de77a4eb55da603917cd77309e61e4661ef4327c85b",
-    "codex_client_models.json": "7b15fec55ed279c2a0f4b6dfd1f7d2617d7c9f22e94d385242a8cd9534411d38",
+    "models.json": "202d50ff901832d8ed915db9a4f852e957ea5c2370b5f8bbfac7db226ba8b7d9",
+    "codex_client_models.json": "73fc4da198317b8ef2462b532d3870b2824232eb008fd10ca8926f36f67afb55",
 }
 
 
@@ -79,6 +79,7 @@ class RegistryDirTests(unittest.TestCase):
                          REGISTRY_FIXTURE)
 
 
+@uses_shipped_catalog
 class RegistrySnapshotTests(unittest.TestCase):
     """The checked-in snapshot keeps its recorded identity (one content
     authority: the pinned upstream source, through the build tool)."""
@@ -90,6 +91,39 @@ class RegistrySnapshotTests(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertEqual(hashlib.sha256((REGISTRY_SNAPSHOT / name).read_bytes()).hexdigest(), digest)
         self.assertEqual(set(REGISTRY_SNAPSHOT_SHA256), set(catalog.REGISTRY_FILES))
+
+    def test_reviewed_static_thinking_facts(self) -> None:
+        models = json.loads((REGISTRY_SNAPSHOT / "models.json").read_bytes())
+        claude = {entry["id"]: entry for entry in models["claude"]}
+        for wire in ("claude-opus-5-5", "claude-fable-5", "claude-fable-5-1"):
+            with self.subTest(wire=wire):
+                self.assertEqual(claude[wire]["thinking"], {
+                    "zero_allowed": False, "dynamic_allowed": True,
+                    "levels": ["low", "medium", "high", "xhigh", "max"]})
+        for wire in ("claude-sonnet-5-5", "claude-haiku-5-5"):
+            self.assertEqual((claude[wire]["context_length"], claude[wire]["max_completion_tokens"]),
+                             (1000000, 128000))
+            self.assertIs(claude[wire]["thinking"]["zero_allowed"], True)
+            self.assertIs(claude[wire]["thinking"]["dynamic_allowed"], True)
+        self.assertEqual(claude["claude-sonnet-5-5"]["thinking"]["disable_type"], "between_tools")
+        self.assertNotIn("disable_type", claude["claude-haiku-5-5"]["thinking"])
+
+    def test_sol_static_listing_does_not_rewrite_trusted_bounds(self) -> None:
+        from _catalog import SHIPPED_ROOT
+
+        models = json.loads((REGISTRY_SNAPSHOT / "models.json").read_bytes())
+        wire = "gpt-6.1-sol"
+        sections = {section: next((m for m in rows if m["id"] == wire), None)
+                    for section, rows in models.items()}
+        self.assertEqual({section for section, entry in sections.items() if entry},
+                         {"codex-team", "codex-plus", "codex-pro"})
+        for entry in (entry for entry in sections.values() if entry):
+            self.assertEqual((entry["context_length"], entry["max_completion_tokens"]), (272000, 128000))
+        # Registry data is advisory. The trusted route bound and its measured
+        # floor must not be silently replaced by a static listing's number.
+        line = next(line for line in catalog.load_catalog(SHIPPED_ROOT).lines.values() if line["wire_model"] == wire)
+        self.assertEqual(line["context"]["provider_tokens"], 872000)
+        self.assertEqual(line["context"]["validated_tokens"], 200000)
 
     def test_the_build_tool_and_the_package_name_the_same_files(self) -> None:
         from _layout import BUILD_TOOL, NIX_DIR, load_tool

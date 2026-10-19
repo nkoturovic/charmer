@@ -132,14 +132,16 @@ let
       "gateway/patches/${entry.basename} does not match its sha256 in gateway/UPSTREAM.json";
     path;
   gatewayPatches = map patchFile admitted;
-  # The packaged gateway contract: the upstream version and the ordered
-  # basename@sha256 identity of every applied patch. Every channel ships the
+  # The packaged gateway contract binds the upstream, ordered patch content,
+  # exact Go version and compiled GODEBUG defaults. Every channel ships the
   # checked-in package resource src/charmer/data/gateway-contract.json,
   # which must be its exact bytes.
   contract = {
-    version = 1;
+    version = 2;
     upstream_version = version;
     patches = map (entry: "${entry.basename}@${entry.sha256}") admitted;
+    go_version = upstream.toolchain.version;
+    godebug = upstream.build.godebug;
   };
   gatewayContract =
     assert lib.assertMsg (builtins.toJSON contract == builtins.readFile ../src/charmer/data/gateway-contract.json)

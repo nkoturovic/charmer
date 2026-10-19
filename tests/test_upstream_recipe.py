@@ -152,7 +152,9 @@ class BuildRecordTests(unittest.TestCase):
                          f"-X main.Version={upstream['version']} -X main.Commit={upstream['commit']} "
                          "-X main.BuildDate=1970-01-01T00:00:00Z")
         self.assertEqual(self.recipe["build"]["flags"], ["-trimpath", "-buildvcs=false", "-mod=vendor"])
-        self.assertEqual(self.recipe["build"]["env"], {"CGO_ENABLED": "0"})
+        self.assertEqual(self.recipe["build"]["env"], {"CGO_ENABLED": "0", "GOTOOLCHAIN": "local"})
+        self.assertEqual(self.recipe["toolchain"]["version"], "1.27.2")
+        self.assertEqual(self.recipe["build"]["godebug"], ["tracebacklabels=0", "x509sslcertoverrideplatform=1"])
 
     def test_targets_ship_four_and_compile_a_windows_canary(self):
         targets = {target["name"]: target for target in self.recipe["targets"]}
@@ -342,7 +344,41 @@ class UpstreamReviewTests(unittest.TestCase):
         def release(version):
             return tuple(int(part) for part in version.split("."))
 
-        self.assertGreater(release(upstream["reviewed_through"]["version"]), release(pinned["version"]))
+        self.assertGreaterEqual(release(upstream["reviewed_through"]["version"]), release(pinned["version"]))
+        if upstream["reviewed_through"]["version"] == pinned["version"]:
+            # A frozen tag plus individually reviewed tails is not a newer tag.
+            # Do not move the pin merely to make an interval strictly positive.
+            self.assertEqual(upstream["reviewed_through"]["commit"], pinned["commit"])
+            target = self.review["target"]
+            self.assertEqual((target["tag"], target["commit"]), (pinned["tag"], pinned["commit"]))
+            self.assertTrue(target["rule_check"].strip())
+            tails = [pick.split(":", 1)[0] for pick in target["cherry_picks"]
+                     if re.match(r"^[0-9a-f]{40}:", pick)]
+            self.assertTrue(tails, "a frozen tag needs its separately reviewed tails")
+            admitted = set(admitted_names(self.recipe))
+            for tail in tails:
+                fixes = [fix for fix in self.review["fixes"]
+                         if any(tail.startswith(commit) for commit in fix["commits"])]
+                self.assertEqual(len(fixes), 1)
+                self.assertEqual(fixes[0]["disposition"], "backport")
+                self.assertIn(fixes[0].get("patch"), admitted)
+
+    def test_frozen_review_accepts_admitted_tails_but_not_missing_provenance(self):
+        self.test_review_starts_at_the_pinned_upstream()
+        original = copy.deepcopy(self.review)
+        for mutate in (
+                lambda r: r["upstream"]["reviewed_through"].update(version="0.0.1"),
+                lambda r: r["upstream"]["reviewed_through"].update(commit="0" * 40),
+                lambda r: r["target"].update(cherry_picks=[]),
+                lambda r: r["target"].update(rule_check=""),
+                lambda r: r["target"].update(cherry_picks=["0" * 40 + ": unreviewed"]),
+                lambda r: r.update(fixes=[f for f in r["fixes"] if f["disposition"] != "backport"])):
+            self.review = copy.deepcopy(original)
+            mutate(self.review)
+            with self.subTest(review=self.review["upstream"]["reviewed_through"]):
+                with self.assertRaises(AssertionError):
+                    self.test_review_starts_at_the_pinned_upstream()
+        self.review = original
 
     def test_reviewed_target_has_a_closed_shape_and_a_selection_record(self):
         target = self.review["target"]
@@ -386,12 +422,16 @@ class ContractTests(unittest.TestCase):
         admitted = [entry for entry in recipe["series"] if entry["admitted"]]
         contract = tool.contract_document(recipe, admitted)
         self.assertEqual(contract, {
-            "version": 1, "upstream_version": recipe["upstream"]["version"],
+            "version": 2, "upstream_version": recipe["upstream"]["version"],
+            "go_version": recipe["toolchain"]["version"], "godebug": recipe["build"]["godebug"],
             "patches": [f"{entry['basename']}@{entry['sha256']}" for entry in admitted]})
         # builtins.toJSON: sorted keys, no whitespace, no trailing newline.
         raw = tool.contract_bytes(contract)
-        self.assertTrue(raw.startswith(b'{"patches":["cli-proxy-api-'))
-        self.assertTrue(raw.endswith(b'"upstream_version":"' + recipe["upstream"]["version"].encode() + b'","version":1}'))
+        self.assertTrue(raw.startswith(b'{"go_version":"'))
+        self.assertTrue(raw.endswith(b'"upstream_version":"' + recipe["upstream"]["version"].encode() + b'","version":2}'))
+        from charmer.qualify import parse_gateway_contract
+        self.assertEqual(parse_gateway_contract(raw), contract)
+        self.assertEqual(raw, (RESOURCES_ROOT / "gateway-contract.json").read_bytes())
         self.assertNotIn(b" ", raw)
         self.assertEqual(json.loads(raw), contract)
 

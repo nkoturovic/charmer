@@ -103,15 +103,16 @@
     },
     "build": {
       "type": "object",
-      "required": ["env", "flags", "ldflags"],
+      "required": ["env", "flags", "ldflags", "godebug"],
       "additionalProperties": false,
       "properties": {
         "env": {
           "type": "object",
-          "required": ["CGO_ENABLED"],
+          "required": ["CGO_ENABLED", "GOTOOLCHAIN"],
           "additionalProperties": false,
-          "properties": { "CGO_ENABLED": { "const": "0" } }
+          "properties": { "CGO_ENABLED": { "const": "0" }, "GOTOOLCHAIN": { "const": "local" } }
         },
+        "godebug": { "type": "array", "minItems": 1, "maxItems": 64, "uniqueItems": true, "items": { "type": "string", "pattern": "^[a-z][a-z0-9]*=[0-9]+$" } },
         "flags": { "const": ["-trimpath", "-buildvcs=false", "-mod=vendor"] },
         "ldflags": {
           "type": "array",

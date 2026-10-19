@@ -83,13 +83,17 @@ PAIR_TARGETS = {
 RETAINED_B108 = ("TestClaudeExecutorPrepareRequestAuthIsRaceFreeOnSharedCredential",
                  "TestClaudeExecutorSharedCredentialMetadataMixedAccess",
                  "TestClaudeExecutorSharedCredentialMetadataReadersUseOneLock")
-BINARIES = ("executor", "auth", "api", "service")
+RETAINED_PLUGIN_HOST = ("TestGatewayPluginHostConcurrentModelInterception",
+                        "TestGatewayPluginHostConcurrentExecutorLookup",
+                        "TestGatewayPluginHostTypedNilAndReentrantCallback")
+BINARIES = ("executor", "auth", "api", "service", "handlers")
 ALL_PAIRS = ("pair1", "pair2", "pair3")
 B108_KINDS = ("direct-executor", "manager-http", "manager-http-config-empty-metadata")
 # id -> (label, pairs observed, pairs whose bounded negative REQUIRES it, builds)
 SCENARIOS = {
     "unit-pair1-reconcile-clone": ("unit", ("pair1",), ("pair1",), ("series",)),
     "unit-pairs23-reload-handlers": ("unit", ("pair2", "pair3"), ("pair2", "pair3"), ("series",)),
+    "unit-plugin-host-retained": ("unit", ("pair3",), ("pair3",), ("series",)),
     "direct-b108-setup-token": ("direct-executor", ("b108",), ("b108",), ("series",)),
     "direct-b108-retained-upstream": ("direct-executor", ("b108",), ("b108",), ("series",)),
     # Startup overlap is an additional reader for pairs 2/3 (reproductions
@@ -140,9 +144,9 @@ def parse_races(text: str) -> list[dict]:
 # The accessed memory is a Claude credential's Metadata map when an access's
 # own top frames are the claude metadata helpers or the executor's unlocked
 # setup-token reads (deeper executor frames alone say nothing about the map).
-CLAUDE_METADATA = re.compile(r"CLIProxyAPI/v7/internal/auth/claude\.|executor\.(isClaudeSetupToken|claudeCreds|getCloakConfigFromAuth)$")
+CLAUDE_METADATA = re.compile(r"CLIProxyAPI/v8/internal/auth/claude\.|executor\.(isClaudeSetupToken|claudeCreds|getCloakConfigFromAuth)$")
 TOP_FRAMES = 3
-HANDLER_SIDE = re.compile(r"CLIProxyAPI/v7/(internal/api|sdk/api/handlers)[./]")
+HANDLER_SIDE = re.compile(r"CLIProxyAPI/v8/(internal/api|sdk/api/handlers)[./]")
 
 
 def classify(report: dict) -> str:
@@ -262,7 +266,7 @@ def coverage(profile: Path, targets: dict) -> dict:
     hit = {label: False for label in targets}
     if not profile.is_file():
         return {label: None for label in targets}
-    prefix = "github.com/router-for-me/CLIProxyAPI/v7/"
+    prefix = "github.com/router-for-me/CLIProxyAPI/v8/"
     for line in profile.read_text().splitlines()[1:]:
         match = re.fullmatch(r"(\S+):(\d+)\.\d+,(\d+)\.\d+ \d+ (\d+)", line)
         if not match or int(match.group(4)) == 0 or not match.group(1).startswith(prefix):
@@ -279,7 +283,7 @@ def coverage_counts(profile: Path, targets: dict) -> dict:
     counts = {label: 0 for label in targets}
     if not profile.is_file():
         return {}
-    prefix = "github.com/router-for-me/CLIProxyAPI/v7/"
+    prefix = "github.com/router-for-me/CLIProxyAPI/v8/"
     for line in profile.read_text().splitlines()[1:]:
         match = re.fullmatch(r"(\S+):(\d+)\.\d+,(\d+)\.\d+ \d+ (\d+)", line)
         if not match or not match.group(1).startswith(prefix):
@@ -582,6 +586,8 @@ def isolated_run(binary: Path, args: list[str], root: Path, *, env=None, timeout
     results = [json.loads(line) for line in re.findall(r"^GWTEST_RACE_RESULT=(.+)$", text, re.M)]
     return {"exit_status": process.returncode, "seconds": round(time.monotonic() - started, 3),
             "tests": test_outcomes(text), "results": results, "detector": signatures(reports),
+            "test_pass_counts": {name: len(re.findall(r"^--- PASS: " + re.escape(name) + r" \(", text, re.M))
+                                 for name in RETAINED_PLUGIN_HOST},
             "runtime_fatal": parse_fatal(text),
             "target_path": coverage(profile, targets) if targets else {},
             "target_counts": coverage_counts(profile, targets) if targets else {}, **observed}
@@ -693,6 +699,11 @@ def unit_scenarios(build_label: str, diagnostics: Path, targets: dict) -> list[d
                         {"rounds": 300, "request_workers": 4, "processes": 1}, ("TestGatewayReloadHandlersUnit",),
                         prerequisites={"all_reloads_applied": done.get("applied") == 300,
                                        "concurrent_requests": done.get("requests", 0) > 0}))
+    run = one("handlers", "|".join(RETAINED_PLUGIN_HOST), 0, ("-test.count=100",))
+    out.append(scenario("unit-plugin-host-retained", build_label, [run],
+                        {"count": 100, "tests": list(RETAINED_PLUGIN_HOST), "processes": 1}, RETAINED_PLUGIN_HOST,
+                        result_line=False, prerequisites={"all_tests_completed_100_times": all(
+                            run.get("test_pass_counts", {}).get(name) == 100 for name in RETAINED_PLUGIN_HOST)}))
     run = one("executor", "TestGatewayB108DirectSetupToken", 200)
     done = result_of(run)
     out.append(scenario("direct-b108-setup-token", build_label, [run],
@@ -1135,13 +1146,13 @@ SAMPLE = """=== RUN   TestGatewayRaceService
 ==================
 WARNING: DATA RACE
 Write at 0x00c000 by goroutine 7:
-  github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/auth.(*Manager).ReconcileRegistryModelStates()
+  github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth.(*Manager).ReconcileRegistryModelStates()
       /build/source/sdk/cliproxy/auth/conductor_selection.go:340 +0x1
-  github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy.(*Service).completeModelRegistrationForAuthWithCache()
+  github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy.(*Service).completeModelRegistrationForAuthWithCache()
       /build/source/sdk/cliproxy/service_auth.go:536 +0x1
 
 Previous read at 0x00c000 by goroutine 9:
-  github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/auth.(*Auth).Clone()
+  github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth.(*Auth).Clone()
       /build/source/sdk/cliproxy/auth/types.go:304 +0x1
 
 Goroutine 7 (running) created at:
@@ -1187,37 +1198,37 @@ class SelfTests(unittest.TestCase):
             return {"frames": [a, b]}
         self.assertEqual(classify(report(["x.(*BaseAPIHandler).SetPluginHost", "api.(*Server).UpdateClientsContext"],
                                          ["x.(*BaseAPIHandler).interceptorHost", "gin.(*Engine).ServeHTTP"])), "pair3")
-        api = "github.com/router-for-me/CLIProxyAPI/v7/internal/api."
+        api = "github.com/router-for-me/CLIProxyAPI/v8/internal/api."
         self.assertEqual(classify(report([api + "(*Server).UpdateClientsContext"],
                                          [api + "NewServer.(*Server).homeHeartbeatMiddleware.func6"])), "pair2")
         self.assertEqual(classify(report([api + "effectiveSDKConfig", api + "(*Server).UpdateClientsContext"],
-                                         ["github.com/router-for-me/CLIProxyAPI/v7/sdk/api/handlers.PassthroughHeadersEnabled"])), "pair2")
-        auth = "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/auth."
-        self.assertEqual(classify(report(["runtime.mapassign_faststr", "github.com/router-for-me/CLIProxyAPI/v7/internal/auth/claude.StoreMetadataString"],
+                                         ["github.com/router-for-me/CLIProxyAPI/v8/sdk/api/handlers.PassthroughHeadersEnabled"])), "pair2")
+        auth = "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth."
+        self.assertEqual(classify(report(["runtime.mapassign_faststr", "github.com/router-for-me/CLIProxyAPI/v8/internal/auth/claude.StoreMetadataString"],
                                          ["runtime.mapaccess1_faststr", auth + "authMetadataString"])), "b108")
         self.assertEqual(classify(report([auth + "(*Manager).MarkResult"],
                                          [auth + "(*Auth).Clone", auth + "(*Manager).updateInternal"])), "auth-clone-other-writer")
         # A deeper executor frame is not a metadata access (observed signature).
         self.assertEqual(classify(report(
             [auth + "resetModelState", auth + "(*Manager).MarkResult", auth + "(*Manager).executeMixedOnce",
-             "github.com/router-for-me/CLIProxyAPI/v7/internal/runtime/executor.(*ClaudeExecutor).Execute"],
+             "github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor.(*ClaudeExecutor).Execute"],
             [auth + "(*ModelState).Clone", auth + "(*Auth).Clone", auth + "(*Manager).updateInternal"])),
             "auth-clone-other-writer")
-        self.assertEqual(classify(report(["runtime.mapassign_faststr", "github.com/router-for-me/CLIProxyAPI/v7/internal/auth/claude.ensureDeviceIDPoolLocked"],
+        self.assertEqual(classify(report(["runtime.mapassign_faststr", "github.com/router-for-me/CLIProxyAPI/v8/internal/auth/claude.ensureDeviceIDPoolLocked"],
                                          ["runtime.mapiternext", auth + "(*Auth).Clone", auth + "cloneAuthSlice"])), "b108")
-        self.assertEqual(classify(report(["runtime.mapaccess1_faststr", "github.com/router-for-me/CLIProxyAPI/v7/internal/runtime/executor.isClaudeSetupToken"],
-                                         ["github.com/router-for-me/CLIProxyAPI/v7/internal/auth/claude.StoreMetadataString"])), "b108")
+        self.assertEqual(classify(report(["runtime.mapaccess1_faststr", "github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor.isClaudeSetupToken"],
+                                         ["github.com/router-for-me/CLIProxyAPI/v8/internal/auth/claude.StoreMetadataString"])), "b108")
         self.assertEqual(classify(report(["a.f"], ["b.g"])), "other")
 
     def test_runtime_fatal_is_an_observed_crash(self):
         text = ("=== RUN   TestGatewayRaceService\nfatal error: time=x level=info msg=interleaved\n"
                 "concurrent map read and map write\n\n"
                 "goroutine 3 [running]:\ninternal/runtime/maps.fatal({0x1?, 0x2?})\n\t/x.go:1 +0x1\n"
-                "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/auth.authMetadataString(0xc0, {0x1, 0x9})\n"
+                "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth.authMetadataString(0xc0, {0x1, 0x9})\n"
                 "\t/y.go:2 +0x2\n\ngoroutine 4 [select]:\n")
         crashes = parse_fatal(text)
         self.assertEqual(crashes[0]["classification"], "b108")
-        self.assertEqual(crashes[0]["frames"][1], "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/auth.authMetadataString")
+        self.assertEqual(crashes[0]["frames"][1], "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth.authMetadataString")
         run = {"tests": test_outcomes(text), "results": [], "exit_status": 2, "runtime_fatal": crashes}
         self.assertTrue(run_executed(run, ("TestGatewayRaceService",), result_line=True))
         run["exit_status"] = 1
@@ -1317,8 +1328,8 @@ class SelfTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             profile = Path(directory) / "cover.out"
             profile.write_text("mode: atomic\n"
-                               "github.com/router-for-me/CLIProxyAPI/v7/a/b.go:10.1,12.2 1 3\n"
-                               "github.com/router-for-me/CLIProxyAPI/v7/a/b.go:20.1,22.2 1 0\n")
+                               "github.com/router-for-me/CLIProxyAPI/v8/a/b.go:10.1,12.2 1 3\n"
+                               "github.com/router-for-me/CLIProxyAPI/v8/a/b.go:20.1,22.2 1 0\n")
             hit = coverage(profile, {"x": ("a/b.go", 11, 11), "y": ("a/b.go", 21, 21), "z": ("a/c.go", 1, 99)})
             self.assertEqual(hit, {"x": True, "y": False, "z": False})
             self.assertEqual(coverage(Path(directory) / "absent", {"x": ("a/b.go", 1, 2)}), {"x": None})

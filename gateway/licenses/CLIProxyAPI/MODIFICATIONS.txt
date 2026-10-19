@@ -5,7 +5,7 @@ in this order; each lists the files it modifies, adds or deletes.
 
 Before the modules are vendored, this patch updates the module requirements:
     cli-proxy-api-module-requirements.patch
-    sha256 b7c3cb25251445494f6582ad158ed4874ee21b97c41d3dfd7d02b3c6dabe5876
+    sha256 e4a58250cbb0c9521ac8d04d6651389c2ff4c2b58c515f35796a0d763d5d23b2
       modified  go.mod
       modified  go.sum
 

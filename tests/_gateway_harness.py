@@ -1861,8 +1861,8 @@ class GatewayHarness:
                 )
             self.await_ready()
             match = re.search(r"CLIProxyAPI Version:\s*v?(\d+)\.(\d+)\.(\d+)", self.log_path.read_text(errors="replace"))
-            if not match or tuple(map(int, match.groups())) < (7, 3, 15):
-                boundary("BOUNDARY: launched gateway version unknown or predates 7.3.15")
+            if not match or tuple(map(int, match.groups())) < (8, 0, 33):
+                boundary("BOUNDARY: launched gateway version unknown or predates 8.0.33")
             self.version = ".".join(match.groups())
             EVIDENCE.binary = dict(binary_identity(self.binary, self.version))
         except BaseException:

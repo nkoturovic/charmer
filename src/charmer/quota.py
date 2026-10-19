@@ -26,6 +26,22 @@ REASONS = {
     "transient upstream error": "transient", "request failed": "request_failed",
     "cloudflare challenge": "cloudflare",
 }
+# Refresh messages may append upstream detail; keep only the known prefix.
+# The specific disabled-invalid-grant case must precede generic disabled.
+REASON_PREFIXES = (("unauthorized", "unauthorized"), ("invalid grant", "invalid_grant"),
+                   ("disabled (invalid grant)", "invalid_grant"), ("disabled", "disabled"))
+
+
+def status_reason(message: object) -> str | None:
+    if not isinstance(message, str) or not message.strip():
+        return None
+    message = message.strip().casefold()
+    for prefix, reason in REASON_PREFIXES:
+        if message == prefix or message.startswith((prefix + " ", prefix + ":")):
+            return reason
+    return REASONS.get(message, "other")
+
+
 STATES = frozenset({"ok", "no-key", "disabled", "key-unusable", "pending",
                     "management-off", "mismatch", "refused", "malformed",
                     "error", "down", "not-ours", "seam", "unavailable"})
@@ -249,9 +265,7 @@ def parse_auth_files(body: bytes) -> tuple[Credential, ...]:
             "active", "pending", "refreshing", "error", "disabled", "unknown"
         }:
             status = "other"
-        message = entry.get("status_message")
-        message = message.strip().casefold() if isinstance(message, str) else ""
-        reason = REASONS.get(message, "other") if message else None
+        reason = status_reason(entry.get("status_message"))
         raw_quota = entry.get("quota")
         raw_quota = raw_quota if isinstance(raw_quota, dict) else {}
         observed = parse_time(raw_quota.get("observed_at"))

@@ -1344,7 +1344,7 @@ class RequiredReleaseTestsTests(unittest.TestCase):
 class VulncheckTests(unittest.TestCase):
     """Exact dispositions over a fake release and a hermetic scanner stub."""
 
-    IDS = {"GO-2026-5841", "GO-2026-5932", "GO-2026-6213", "GO-2026-6214"}
+    IDS = {"GO-2026-5932"}
     TARGETS = ("linux-x86_64", "linux-aarch64", "darwin-x86_64", "darwin-arm64")
 
     @classmethod
@@ -1465,7 +1465,7 @@ if mode == "fail":
             code, report, output = self.run_check()
             self.assertEqual(code, 0, report)
             self.assertIn("WARNING", output)
-            self.assertIn("GO-2026-5841", output)
+            self.assertIn(self.policy["dispositions"][0]["id"], output)
             self.assertIn(self.policy["dispositions"][0]["advisory_modified"], output)
             self.assertIn(self.messages[3]["osv"]["modified"], output)
             for entry in report["targets"]:
@@ -1476,8 +1476,9 @@ if mode == "fail":
 
     def test_reported_symbols_are_bound_but_trace_order_is_not(self) -> None:
         identifier = self.policy["dispositions"][0]["id"]
-        trace = [{"module": "github.com/klauspost/compress", "version": "v1.17.4",
-                  "package": "github.com/klauspost/compress/s2", "function": "NewDict"}]
+        entry = self.policy["dispositions"][0]
+        trace = [{"module": entry["module"], "version": entry["version"],
+                  "package": entry["module"] + "/fixture", "function": "SyntheticFunction"}]
         self.messages.append({"finding": {"osv": identifier, "trace": trace}})
         traces = [self.messages[4]["finding"]["trace"], trace]
         canonical = sorted(json.dumps(value, sort_keys=True, separators=(",", ":")) for value in traces)
@@ -1533,7 +1534,7 @@ if mode == "fail":
     def test_malformed_or_incomplete_scans_never_pass(self) -> None:
         streams = ["", "not json", "[]", '{"config":{}}', '{"finding":null}',
                    '{"finding":{"osv":"GO-2026-5841","trace":[]}}', '{"error":{"message":"failed"}}']
-        ends = (1, 2, 3, 4, 5, len(self.messages) - 3, len(self.messages) - 1)
+        ends = range(1, len(self.messages))
         streams.extend("\n".join(json.dumps(m) for m in self.messages[:end]) for end in ends)
         for index in (0, 1, 2, 3):
             streams.append("\n".join(json.dumps(m) for i, m in enumerate(self.messages) if i != index))
@@ -1615,25 +1616,25 @@ if mode == "fail":
         policy = self.tool.dispositions(REPO_ROOT / "gateway/vulnerability-dispositions.json")
         entry = next(entry for entry in policy["dispositions"] if entry["id"] == "GO-2026-5932")
         expected = {
-            "id": "GO-2026-5932", "module": "golang.org/x/crypto", "version": "v0.57.0",
+            "id": "GO-2026-5932", "module": "golang.org/x/crypto", "version": "v0.58.0",
             "class": "component-absent", "advisory_modified": "2026-07-07T22:15:29Z",
             "advisory_sha256": "6a685f52c906f24f2b6f96eebaade65cbba74ed674e8c54ba0c4f7a9da1c25d3",
             "trace_count": 15,
-            "trace_sha256": "75cd55d48a93450cc7cdba43f30637bee36c1f860dbbfd0614d443d02a19924c",
+            "trace_sha256": "4413ed75d58bde5ac0c16b8ecf71c8961d6a06be72d8e73d07317a8e1e1fcf18",
         }
         self.assertEqual({key: entry[key] for key in expected}, expected)
         self.assertEqual(policy["gateway"]["targets"], {
-            "darwin-arm64": "08e58bb6d9453979bc69e8f93ee47e184036e68e886465a604df25b99a073af6",
-            "darwin-x86_64": "bb4022dc2cbcdce73c3dbefabf0e824e188192a21b7129c1ba25d74c228fda9a",
-            "linux-aarch64": "f9940a2bb470596792a907a8aef27e7b6ea7daaa1a757842899fd125c7d3fd14",
-            "linux-x86_64": "2ff8c1362c554420028e10dcdaf869f080ad89f879111ea764e725dc999257ac",
+            "darwin-arm64": "a4927e1f90f9bb1cda0db3ccc2f9e3addf3568ff70ee2a0f935ae0b75a6e99a8",
+            "darwin-x86_64": "9969746f4adb0ae96886331f1ceb26d195e629303255814ca0ec43c4eec68600",
+            "linux-aarch64": "c0a155e70624d8b669b3a4d7cbd344d0a18e556973571fdd331ae234bea0d27d",
+            "linux-x86_64": "55e1b80ccc87e36ccd4a67b16836bc4b5f1de73be77c4209f7e937e391c0a6ed",
         })
         for fact in ("golang.org/x/crypto/openpgp", "not imported", "ProtonMail", "component is absent"):
             self.assertIn(fact, entry["reason"])
         triggers = " ".join(entry["re_review"])
         for trigger in ("OpenPGP", "Git-store crypto", "dependency", "toolchain", "patch"):
             self.assertIn(trigger, triggers)
-        self.assertIn("v0.57.0", entry["evidence"][-1])
+        self.assertIn("v0.58.0", entry["evidence"][-1])
         self.assertIn("no golang.org/x/crypto/openpgp package", entry["evidence"][-1])
 
     def test_workflow_fetches_review_controls_without_changing_the_product_checkout(self) -> None:

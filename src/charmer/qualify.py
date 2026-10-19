@@ -129,7 +129,7 @@ STALE_SEND_TEXT = ("qualify {key}: configuration changed during qualification â€
                    "sent; evidence not recorded; retry")
 
 GATEWAY_CONTRACT_NAME = "gateway-contract.json"
-GATEWAY_CONTRACT_VERSION = 1
+GATEWAY_CONTRACT_VERSION = 2
 _PATCH_IDENTITY = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}\.patch@[0-9a-f]{64}$")
 _VERSION = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
 
@@ -180,10 +180,23 @@ def parse_gateway_contract(raw: bytes) -> dict[str, Any]:
         document = strict_json.loads(raw, strict_json.JSONLimits(max_bytes=65536))
     except strict_json.StrictJSONError as exc:
         raise QualifyError(f"{GATEWAY_CONTRACT_NAME}: {exc}") from exc
-    if not isinstance(document, dict) or set(document) != {"version", "upstream_version", "patches"}:
-        raise QualifyError(f"{GATEWAY_CONTRACT_NAME}: expected exactly version, upstream_version and patches")
-    if document["version"] != GATEWAY_CONTRACT_VERSION:
+    if (not isinstance(document, dict) or type(document.get("version")) is not int
+            or document["version"] not in (1, GATEWAY_CONTRACT_VERSION)):
         raise QualifyError(f"{GATEWAY_CONTRACT_NAME}: unsupported version")
+    fields = {"version", "upstream_version", "patches"}
+    if document["version"] == 2:
+        fields |= {"go_version", "godebug"}
+    if set(document) != fields:
+        raise QualifyError(f"{GATEWAY_CONTRACT_NAME}: unexpected or missing fields")
+    if document["version"] == 2:
+        if not isinstance(document["go_version"], str) or not _VERSION.fullmatch(document["go_version"]):
+            raise QualifyError(f"{GATEWAY_CONTRACT_NAME}: go_version is not a version")
+        policy = document["godebug"]
+        if not isinstance(policy, list) or not 1 <= len(policy) <= 64 or not all(
+                isinstance(item, str) and re.fullmatch(r"[a-z][a-z0-9]*=[0-9]+", item) for item in policy):
+            raise QualifyError(f"{GATEWAY_CONTRACT_NAME}: godebug must be explicit key=value settings")
+        if policy != sorted(policy) or len({item.split("=", 1)[0] for item in policy}) != len(policy):
+            raise QualifyError(f"{GATEWAY_CONTRACT_NAME}: godebug settings must be sorted and unique")
     if not isinstance(document["upstream_version"], str) or not _VERSION.fullmatch(document["upstream_version"]):
         raise QualifyError(f"{GATEWAY_CONTRACT_NAME}: upstream_version is not a version")
     patches = document["patches"]
@@ -196,11 +209,13 @@ def parse_gateway_contract(raw: bytes) -> dict[str, Any]:
 
 
 def gateway_contract_digest(document: Mapping[str, Any]) -> str:
-    """Upstream version + the ordered patch content identities (never sorted)."""
+    """Preserve v1 identities; v2 also binds the compiled Go defaults."""
 
-    return _digest("cm-gateway-contract", {
-        "upstream_version": document["upstream_version"], "patches": list(document["patches"]),
-    })
+    parsed = parse_gateway_contract(strict_json.canonical_bytes(dict(document)))
+    identity = {"upstream_version": parsed["upstream_version"], "patches": parsed["patches"]}
+    if parsed["version"] == 2:
+        identity.update(version=2, go_version=parsed["go_version"], godebug=parsed["godebug"])
+    return _digest("cm-gateway-contract", identity)
 
 
 def load_gateway_contract(asset_root: Path | str) -> dict[str, Any] | None:

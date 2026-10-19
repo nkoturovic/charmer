@@ -86,7 +86,7 @@ func codexProbeLoadFixture(t *testing.T) (*config.Config, codexProbeOverlaySpec)
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg, err := config.LoadConfig(path)
+	cfg, err := config.LoadConfigBytes(data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,8 +94,9 @@ func codexProbeLoadFixture(t *testing.T) (*config.Config, codexProbeOverlaySpec)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Both public loaders must preserve exactly the same capability/alias/payload
-	// document; no dependence on #16 Go types, so its RC omission still compiles.
+	// Parsing is effect-free; the byte loader only adds the source identity.
+	// No second filesystem read or migration write is needed to validate a render.
+	parsed.SourceHash = cfg.SourceHash
 	if !reflect.DeepEqual(cfg, parsed) {
 		t.Fatal("file/payload config loaders differ")
 	}
@@ -138,6 +139,18 @@ func codexProbePipeline(t *testing.T, cfg *config.Config, channel, baseURL strin
 
 func TestCodexProbeOverlayLoaderParity(t *testing.T) {
 	cfg, spec := codexProbeLoadFixture(t)
+	if cfg.TLSHandshakeTimeout() != 20*time.Second {
+		t.Fatalf("rendered TLS handshake timeout = %s, want 20s", cfg.TLSHandshakeTimeout())
+	}
+	if cfg.GitHubToken != "" || cfg.Streaming.SendKeepAliveBeforeFT || cfg.Claude.ToolSearch ||
+		cfg.MaxRequestBodyBytes != 0 || cfg.Routing.SessionAffinityRebindOn != "" ||
+		!reflect.DeepEqual(cfg.Models, config.ModelCatalogs{}) ||
+		!reflect.DeepEqual(cfg.ClaudeHeaderDefaults, config.ClaudeHeaderDefaults{}) {
+		t.Fatal("unrendered upstream options no longer have their reviewed defaults")
+	}
+	if cfg.Claude.SessionDatePinRetention() != 7*24*time.Hour {
+		t.Fatal("unrendered session date pin default changed")
+	}
 	for channel, expected := range spec.Channels {
 		codexProbePipeline(t, cfg, channel, "http://127.0.0.1:1") // registration only, no request
 		models := GlobalModelRegistry().GetModelsForClient("codexprobe-" + channel)

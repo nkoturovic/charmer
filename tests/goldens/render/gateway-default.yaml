@@ -26,6 +26,7 @@ commercial-mode: true
 logging-to-file: false
 usage-statistics-enabled: false
 proxy-url: ""
+tls-handshake-timeout-seconds: 20
 passthrough-headers: false
 request-retry: 0
 max-retry-credentials: 1
@@ -223,7 +224,7 @@ openai-compatibility:
     base-url: "http://127.0.0.1:9/v1"
     models:
       - name: "charmer-render"
-        alias: "charmer-render-6bb62d81"
+        alias: "charmer-render-604037f9"
         force-mapping: true
 payload:
   override:

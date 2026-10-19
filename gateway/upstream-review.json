@@ -3,16 +3,16 @@
   "upstream": {
     "repository": "https://github.com/router-for-me/CLIProxyAPI",
     "pinned": {
-      "version": "7.3.15",
-      "commit": "673131f57484517c3a1eae7e36c4cfa7b9bb4efc"
+      "version": "8.0.33",
+      "commit": "2422c6b0f5fe16495320fa29456493874c1977a0"
     },
     "reviewed_through": {
       "version": "8.0.33",
       "commit": "2422c6b0f5fe16495320fa29456493874c1977a0"
     },
     "reviewed_on": "2026-10-18",
-    "releases": 39,
-    "commits": 362
+    "releases": 0,
+    "commits": 0
   },
   "target": {
     "tag": "v8.0.33",
@@ -25,7 +25,7 @@
     ],
     "rule_check": "Target selection rule checked on 2026-10-18 at 19:22Z against a fresh public clone, now removed. (1) Stable tags. gh release list shows no prerelease and nothing beyond 8.0.x. The newest are v8.0.33 (2422c6b0, published 2026-10-18T13:06:35Z) and v8.0.32 (2026-10-16T18:57:27Z). (2) The rule needs 4337f1f0. No tag contains it. It is only on origin/dev, whose tip 904ec710 is 18 commits past v8.0.33. The three candidate fixes were committed on dev at 13:37Z (4337f1f0), 16:03Z (7484a521) and 17:41Z (feb63984) on 2026-10-18. (3) Age at L1 start on 2026-10-21. v8.0.33 turns 72 h old at 2026-10-21T13:06:35Z and v8.0.32 at 2026-10-19T18:57:27Z. Any tag containing 4337f1f0 would be published after this check, so it cannot reach 72 h before 2026-10-21T19:22Z, and it would also be unreviewed. No tag meets all three conditions, so the fallback applies: v8.0.33 plus reviewed cherry-picks. (4) Regressions. I searched open issues created since 2026-09-26, plus searches for 8.0.32, 8.0.33, regression, OAuth claude and codex 401. No open issue reports a regression introduced by a v8 tag on the Claude OAuth or Codex paths. The open issues on those paths, and why none blocks: #6742, Codex credentials invalidated about 7 days after issue. The 24 h lead behind it is also in 7.3.15; reported on v8.0.31; mitigated by the feb63984 lead. #6749, encrypted reasoning items cannot move between Codex API-key and OAuth credentials. This is by design and charmer never mixes the two. #6469, Codex SSE streams ending early since v8.0.5. The cause is not established; a network or proxy is suspected. #6702, the listener opens before the initial auth load. Present since 7.x (#3953) and covered by cli-proxy-api-serve-after-initial-auth-load.patch. #6750 and #6746, CPU cost of Claude-format translation to non-Claude upstreams. Performance only. #6744, ABBA deadlock. It needs plugin records; with plugins disabled, activeRecordsFromSnapshot returns before Host.mu (internal/pluginhost/snapshot.go:57-60). #6734, a scan during an in-place write. Not reachable after the credential-save rewrite. Recently closed regressions fixed in v8.0.33: #6709, #6718, #6720, #6722, #6692, #6697, #6698. (5) Admission. 4337f1f0 is required by the target selection rule and reachable without authentication: every request path is access-logged, and a %0A splits the line. feb63984 is admitted for the lead only. 7484a521 is not admitted. All three cherry-pick cleanly onto v8.0.33. The 22-patch series, with /v7 rewritten to /v8, measures 144 rejected hunks and 139 offsets on v8.0.33, on v8.0.33 plus 4337f1f0, on plus feb63984 and on plus all three; dev 904ec710 measures 144/140. (6) Repeat the issue scan at L1 start (after 2026-10-21T13:07Z) and at the RC. A regression found then becomes one more reviewed cherry-pick; the base moves only if upstream has no fix."
   },
-  "admission": "A fix is backported now, as an admitted patch with its own failing-without-the-fix tests and a gate record, only when it is reachable in the configuration charmer renders and it protects stored credentials or the availability of sign-in or API-key routes. Everything else is carried by the rebase onto the 8.x line or needs no action.",
+  "admission": "The completed rebase review covered 39 releases and 362 commits from 7.3.15 through the frozen 8.0.33 tag; those fix dispositions remain below as review history. The pinned-to-reviewed tag interval is now empty, with the two admitted post-tag tails recorded separately under target.cherry_picks. A fix is backported now, as an admitted patch with its own failing-without-the-fix tests and a gate record, only when it is reachable in the configuration charmer renders and it protects stored credentials or the availability of sign-in or API-key routes. Everything else is carried by the rebase onto the 8.x line or needs no action.",
   "rendered_configuration": [
     "listener on 127.0.0.1 only, every client authenticated by the gateway API key",
     "plugins.enabled false, Home off, discovery off, pprof off",
@@ -42,20 +42,20 @@
     "max-request-body-bytes absent (effective 0, unlimited); not adopted in 2.1.0 without a large-context body probe",
     "streaming.send-keepalive-before-ft absent (effective false); refused for 2.1.0, not emitted by the rendered-key allowlist",
     "upstream.claude.tool-search and claude-api-key native-tool-search absent (effective false); not adopted or rendered in 2.1.0",
-    "tls-handshake-timeout-seconds currently absent (effective 0, off); planned 2.1.0 value 20 makes the configured timeout and retry reachable, dropped if L4 or the proxy-url lane shows slow but healthy handshakes are rejected",
+    "tls-handshake-timeout-seconds 20 makes the configured handshake timeout and retry reachable; the healthy-slow-handshake decision remains pending traffic and HTTP/1.1 proxy validation, and the setting is dropped if that validation rejects healthy slow handshakes",
     "claude-header-defaults overrides and client-request-id absent (effective empty client-request-id means on); no such overrides rendered in 2.1.0",
     "oauth-excluded-models: {pool: [\"*\"]} for pools moved to a reviewed keyed transport (render.py:1210-1218); charmer writes no per-credential excluded_models but records may contain it; 2.1.0 keeps global exclusions authoritative via the additive P15 hunk, including after reload",
     "These are current-render assumptions plus explicitly planned 2.1.0 changes, not a claim that the planned ports have shipped. Any rendered-configuration change reopens the affected reachability reasons before it is merged."
   ],
   "dependencies": {
-    "go_mod": "only the module path changes (/v7 to /v8); the go directive stays 1.26.0",
-    "go_sum": "byte-identical between the pinned and the reviewed release"
+    "go_mod": "The frozen source uses the /v8 module path and retains go 1.26.0. The module-requirements patch pins Go-compatible x/net 0.61.0, x/crypto 0.58.0, x/sys 0.49.0, x/text 0.43.0, x/sync 0.24.0, compress 1.20.3 and go-git v6.0.0-beta.1. All four plain shipped builds and typed Go gates pass with Go 1.27.2; no alpha fallback is needed. Compiled GODEBUG is tracebacklabels=0,x509sslcertoverrideplatform=1, bound in contract v2.",
+    "go_sum": "The module-requirements patch updates checksums through Go's verified module download and tidy; the verified fresh vendor-tree identity and its module sums are recorded in UPSTREAM.json and licenses/modules.json."
   },
   "vulncheck": {
     "tool": "govulncheck",
     "mode": "binary",
     "status": "reviewed",
-    "reason": "Re-reviewed 2026-10-07 on the final four target builds with govulncheck v1.8.0 and https://vuln.go.dev: seven reviewed dispositions per target, no unreviewed findings. Source-mode traces still reach affected Git and SSH operations only through the managed-excluded Git token store; OpenPGP remains absent and its unfixed disposition is retained. Binary hashes and trace bindings are in gateway/vulnerability-dispositions.json.",
+    "reason": "Re-reviewed 2026-10-19 on all four shipped target builds with govulncheck v1.9.0 built by Go 1.27.2 and the online https://vuln.go.dev database. Each binary reports one reviewed component-absent exception, GO-2026-5932 (15 identical traces for the present x/crypto v0.58.0 module), and no unreviewed finding. All four source scans report only its module-level trace, and the vulnerable deprecated openpgp packages are absent from the verified vendor tree. The compress and go-git findings are fixed by the new dependency versions, not waived. Exact target hashes, advisory revision and trace bindings are in gateway/vulnerability-dispositions.json.",
     "run": "tools/_build/vulncheck.py verifies each shipped gateway against gateway/vulnerability-dispositions.json; source-mode govulncheck -show traces ./cmd/server rechecks reachability for all four target GOOS/GOARCH pairs"
   },
   "fixes": [
@@ -91,9 +91,9 @@
       "commits": ["759c57c2"],
       "release": "7.3.17",
       "subject": "fix(api): immediately close connections on stop and guard state access",
-      "disposition": "backport",
-      "patch": "cli-proxy-api-refresh-shutdown-join.patch",
-      "reason": "While the pin is 7.3.15, the partial backport stays in cli-proxy-api-refresh-shutdown-join.patch. On v8.0.33 the listener locking and immediate connection close arrive with the tag. Service.Run already creates its 30 s shutdown context inside the deferred function (sdk/cliproxy/service_lifecycle.go:69-74), so the patch drops that sub-hunk. Shutdown still only cancels refresh workers (StopAutoRefresh, :327-329), so the worker join through durable save and receipt is kept, re-based on the 81756a57 epoch model. When the pin moves, this entry becomes rebase."
+      "disposition": "rebase",
+      "covered_by": "cli-proxy-api-refresh-shutdown-join.patch",
+      "reason": "The v8.0.33 tag supplies listener locking, immediate connection close and the shutdown context created at exit. The local patch retains only the refresh-worker join through durable save and receipt, rebased on the epoch-checked job model; the tagged shutdown-context hunk is no longer a local change."
     },
     {
       "commits": ["1dffddf4"],
@@ -676,7 +676,7 @@
       "release": "8.0.29",
       "subject": "feat(claude): timeout and retry for silent TLS handshakes; tls-handshake-timeout-seconds at the root",
       "disposition": "rebase",
-      "reason": "Reachability changes for 2.1.0: the current render omits tls-handshake-timeout-seconds, whose effective default 0 leaves the context unbounded (helps/utls_handshake_timeout.go:22-39). L0 retains the planned value 20, so the configured handshake timeout and its retry become reachable; they are not dormant in the release being rebased. The bound starts after dialing and proxy CONNECT and ends with TLS establishment, not inference or SSE. L4 and the proxy-url lane must cover silent handshakes, cancellation, slow but healthy handshakes and the HTTP/1.1-only intercepting proxy; drop the 20 s bound if those lanes show it rejecting healthy handshakes. The credentialed-redirects port must cover the timeout wrapper and retry path. No contrary L0 evidence justifies keeping 0."
+      "reason": "Reachability changes for 2.1.0: the render sets tls-handshake-timeout-seconds to 20 rather than the upstream default 0 (unbounded). The configured handshake timeout and its retry are reachable, not dormant. The bound starts after dialing and proxy CONNECT and ends with TLS establishment, not inference or SSE. L4 and the proxy-url lane must cover silent handshakes, cancellation, slow but healthy handshakes and the HTTP/1.1-only intercepting proxy; drop the 20 s bound if those lanes show it rejecting healthy handshakes. The credentialed-redirects port must cover the timeout wrapper and retry path. No contrary L0 evidence justifies keeping 0."
     },
     {
       "commits": ["5fc580b1"],
@@ -766,14 +766,16 @@
       "commits": ["4337f1f0"],
       "release": "dev (after 8.0.33)",
       "subject": "fix(logging): escape request path in access log to prevent log injection",
-      "disposition": "rebase",
-      "reason": "Admitted cherry-pick (access-log integrity). It ships verbatim with its test as series patch cli-proxy-api-access-log-path-quoting.patch in the 8.0.33 rebase, and becomes backport with that patch name when the pin moves. Reachable: every request, authenticated or not, is access-logged, and %0A in the path splits the line (#6731). It protects the persistence-hold evidence that gates gateway stops and restarts. Applies cleanly to v8.0.33; port size unchanged (144/139)."
+      "disposition": "backport",
+      "patch": "cli-proxy-api-access-log-path-quoting.patch",
+      "reason": "Admitted cherry-pick (access-log integrity). It ships verbatim with its test as series patch cli-proxy-api-access-log-path-quoting.patch in the 8.0.33 rebase, as a backport beyond the frozen tag. Reachable: every request, authenticated or not, is access-logged, and %0A in the path splits the line (#6731). It protects the persistence-hold evidence that gates gateway stops and restarts. Applies cleanly to v8.0.33; port size unchanged (144/139)."
     },
     {
       "commits": ["feb63984"],
       "release": "dev (after 8.0.33)",
       "subject": "feat(auth): increase Codex proactive refresh lead to 96 hours and improve rejected token handling",
-      "disposition": "rebase",
+      "disposition": "backport",
+      "patch": "cli-proxy-api-codex-refresh-lead.patch",
       "reason": "Admitted as a partial cherry-pick, shipped as cli-proxy-api-codex-refresh-lead.patch. Only the 96 h CodexOuterRefreshLead is taken: sdk/auth/codex.go RefreshLead, plus the constant and the codex default in sdk/cliproxy/auth/types.go. Meets the admission rule: Codex OAuth refresh runs in the rendered loop, and with a 24 h lead, tokens invalidated about 7 days after issue stay selected under disable-cooling + fill-first (#6742, open). The existing refresh-on-401 in conductor_execution.go and conductor_stream.go does not prevent this. The rejected-token half (credential-scoped 401 in MarkResult, scheduler blocking of expired tokens, markRejectedAccessToken) changes selection for every OAuth provider, including Claude. It is under a day old and unsoaked, so it waits for the next re-pin. The codex_executor_auth.go lead hunk is inside homeEnabled && !hasOuter, so it is Home-only and unreachable with Home off; it is not taken."
     },
     {

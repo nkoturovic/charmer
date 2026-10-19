@@ -52,9 +52,9 @@ Commands run alone:
            files, modules.json) and gateway/sbom (a CycloneDX SBOM per
            shipped target) from a work dir that built every shipped target
   contract write src/charmer/data/gateway-contract.json (or --out) from
-           the recipe: the upstream version and the ordered basename@sha256
-           identity of every admitted patch, byte-equal to the Nix package's
-           contract
+           the recipe: the upstream version, ordered basename@sha256 patch
+           identities, exact Go version and explicit compiled GODEBUG policy,
+           byte-equal to the Nix package's contract
   registry copy the pinned upstream model registry (the files the launcher
            reads) from a work dir prepared by the fetch step alone into
            src/charmer/data/registry (or --out DIR); the Nix package
@@ -120,6 +120,8 @@ SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
 OFFSET_REPORT = re.compile(r"^Hunk #\d+ succeeded at \d+|Context reduced", re.MULTILINE)
 CONTEXT_REDUCED = re.compile(r"Context reduced")
 TEST_NAME = re.compile(r"^(Test|Example|Fuzz)[A-Za-z0-9_]*$")
+# These legacy TLS compatibility switches no longer have an implementation.
+REMOVED_TLS_SWITCHES = frozenset({"tlsunsafeekm", "tlsrsakex", "tls3des", "tls10server", "tlskyber"})
 PATCH_HUNK = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 LIST_STATUS = re.compile(r"^(?:\?\s|(?:ok|FAIL|PASS|---|panic:|exit status)\b)")
 
@@ -186,6 +188,17 @@ def check_upstream(doc: Any) -> None:
     _require(isinstance(archives, dict) and archives, "toolchain.archives is empty")
     for name, archive in archives.items():
         _require(SHA256_HEX.match(str(archive.get("sha256", ""))) is not None, f"toolchain {name} sha256")
+    if "godebug" in doc["build"]:
+        policy = doc["build"]["godebug"]
+        _require(isinstance(policy, list) and 1 <= len(policy) <= 64 and all(
+            isinstance(item, str) and re.fullmatch(r"[a-z][a-z0-9]*=[0-9]+", item) for item in policy),
+            "build.godebug needs explicit key=value settings")
+        keys = [item.split("=", 1)[0] for item in policy]
+        _require(policy == sorted(policy) and len(keys) == len(set(keys)), "build.godebug must be sorted and unique")
+        _require(not set(keys) & REMOVED_TLS_SWITCHES, "build.godebug names a removed TLS switch")
+        _require("x509sslcertoverrideplatform=1" in policy, "build.godebug must honour explicit certificate roots")
+        _require(doc["build"]["env"] == {"CGO_ENABLED": "0", "GOTOOLCHAIN": "local"},
+                 "build.env must pin CGO_ENABLED=0 and GOTOOLCHAIN=local only")
     names = [entry["basename"] for entry in doc["series"] + doc["candidates"]]
     if modules is not None:
         names.append(modules["basename"])
@@ -221,11 +234,14 @@ def binary_name(doc: dict[str, Any], target: dict[str, Any]) -> str:
 
 
 def contract_document(doc: dict[str, Any], series: list[dict[str, Any]]) -> dict[str, Any]:
-    return {
+    contract = {
         "version": 1,
         "upstream_version": doc["upstream"]["version"],
         "patches": [f"{entry['basename']}@{entry['sha256']}" for entry in series],
     }
+    if "godebug" in doc["build"]:
+        contract.update(version=2, go_version=doc["toolchain"]["version"], godebug=doc["build"]["godebug"])
+    return contract
 
 
 def contract_bytes(contract: dict[str, Any]) -> bytes:
@@ -957,6 +973,36 @@ def ldflags(doc: dict[str, Any]) -> str:
     return " ".join(doc["build"]["ldflags"])
 
 
+def verify_go_policy(ctx: Context) -> None:
+    """Check the actual compiler and its compiled defaults, not the shell's env.
+
+    The module patch owns the godebug directives. The recipe rejects removed
+    TLS switches and Go rejects unsupported directives. DefaultGODEBUG also
+    catches main-package overrides and changed compatibility defaults.
+    """
+
+    if "godebug" not in ctx.doc["build"]:
+        return  # Earlier recipes keep their original contract.
+    env = go_environment(ctx.work)
+    for args, expected, label in (
+            (["env", "GOVERSION"], "go" + ctx.doc["toolchain"]["version"], "Go version"),
+            (["list", "-f", "{{.DefaultGODEBUG}}", ctx.doc["upstream"]["main_package"]],
+             ",".join(ctx.doc["build"]["godebug"]), "compiled GODEBUG")):
+        result = run([ctx.go, *args], cwd=ctx.src, env=env, capture=True)
+        if result.returncode or result.stdout.strip() != expected:
+            raise BuildError(f"{label} differs from the recipe: expected {expected!r}, got {result.stdout.strip()!r}")
+
+
+def verify_binary_go_policy(path: Path, doc: dict[str, Any]) -> None:
+    if "godebug" not in doc["build"]:
+        return
+    version, modinfo = go_buildinfo(path.read_bytes())
+    settings = [line.removeprefix("build\tDefaultGODEBUG=") for line in modinfo.splitlines()
+                if line.startswith("build\tDefaultGODEBUG=")]
+    if version != "go" + doc["toolchain"]["version"] or settings != [",".join(doc["build"]["godebug"])]:
+        raise BuildError(f"{path.name}: embedded Go version or GODEBUG differs from the recipe")
+
+
 def build_target(ctx: Context, target: dict[str, Any]) -> dict[str, Any]:
     out_dir = ctx.dist / target["name"]
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -971,6 +1017,7 @@ def build_target(ctx: Context, target: dict[str, Any]) -> dict[str, Any]:
     if run(argv, cwd=ctx.src, env=env).returncode:
         partial.unlink(missing_ok=True)
         raise BuildError(f"go build failed for {target['name']}")
+    verify_binary_go_policy(partial, ctx.doc)
     os.chmod(partial, 0o755)
     os.replace(partial, binary)
     return {"file": f"{target['name']}/{binary.name}", "sha256": sha256_file(binary),
@@ -980,6 +1027,7 @@ def build_target(ctx: Context, target: dict[str, Any]) -> dict[str, Any]:
 def step_build(ctx: Context) -> None:
     state = ctx.load_state("apply")
     verify_prepared_trees(ctx, state, "build")
+    verify_go_policy(ctx)
     built = state.setdefault("built", {})
     for target in ctx.targets(["all"]):
         built[target["name"]] = build_target(ctx, target)
@@ -1075,6 +1123,7 @@ def check_source_pins(doc: dict[str, Any], src: Path) -> list[str]:
 def step_gates(ctx: Context) -> None:
     state = ctx.load_state("apply")
     verify_prepared_trees(ctx, state, "gates")
+    verify_go_policy(ctx)
     pins = check_source_pins(ctx.doc, ctx.src)
     if pins:
         raise BuildError("; ".join(pins))
@@ -1242,6 +1291,10 @@ def step_inspect(ctx: Context) -> None:
             failures.append(f"{target['name']}: {path} is missing")
             continue
         problems = inspect_binary(path, target, markers_for(ctx.doc, series), forbidden)
+        try:
+            verify_binary_go_policy(path, ctx.doc)
+        except BuildError as exc:
+            problems.append(str(exc))
         if target["shipped"] and applied != admitted:
             problems.append("was not built from the admitted series")
         failures += [f"{target['name']}: {problem}" for problem in problems]
@@ -1271,8 +1324,7 @@ def build_record(ctx: Context, state: dict[str, Any], targets: dict[str, Any]) -
         "series": [{"basename": entry["basename"], "sha256": entry["sha256"]} for entry in state["series"]],
         "admitted_series": state["admitted_series"],
         "post_apply_tree_sha256": state["post_apply_tree_sha256"],
-        "build": {"env": doc["build"]["env"], "flags": doc["build"]["flags"], "ldflags": doc["build"]["ldflags"],
-                  "main_package": doc["upstream"]["main_package"]},
+        "build": {**doc["build"], "main_package": doc["upstream"]["main_package"]},
         "targets": targets,
     }
 
@@ -1817,6 +1869,8 @@ def render_sbom(doc: dict[str, Any], inventory: dict[str, Any], target: dict[str
                   ("source-tree-sha256", inputs["source_tree_sha256"]),
                   ("vendor-tree-sha256", inputs["vendor_tree_sha256"]),
                   ("post-apply-tree-sha256", inputs["post_apply_tree_sha256"])]
+    if "godebug" in doc["build"]:
+        properties.append(("build-godebug", ",".join(doc["build"]["godebug"])))
     properties += [("patch", identity) for identity in inputs["series"]]
     ancestor_purl = _purl(upstream["module"], "v" + upstream["version"])
     bom = {
@@ -2446,9 +2500,7 @@ def check_gateway_dist(ctx: ReleaseContext, dist: Path, gateway_targets: list[st
     expect("admitted_series", record.get("admitted_series"), True)
     expect("series", record.get("series"), [{"basename": entry["basename"], "sha256": entry["sha256"]}
                                            for entry in admitted])
-    expect("build", record.get("build"), {"env": doc["build"]["env"], "flags": doc["build"]["flags"],
-                                          "ldflags": doc["build"]["ldflags"],
-                                          "main_package": doc["upstream"]["main_package"]})
+    expect("build", record.get("build"), {**doc["build"], "main_package": doc["upstream"]["main_package"]})
     contract = contract_bytes(contract_document(doc, admitted))
     contract_path = dist / "gateway-contract.json"
     if not contract_path.is_file() or contract_path.read_bytes() != contract:
@@ -2488,6 +2540,10 @@ def check_gateway_dist(ctx: ReleaseContext, dist: Path, gateway_targets: list[st
             problems.append(f"{name}: {path} is not the binary BUILD.json records")
             continue
         problems += [f"{name}: {problem}" for problem in inspect_binary(path, target, markers)]
+        try:
+            verify_binary_go_policy(path, doc)
+        except BuildError as exc:
+            problems.append(f"{name}: {exc}")
         sbom = dist / name / (binary + SBOM_SUFFIX)
         expected = ctx.sbom_dir / (name + SBOM_SUFFIX)
         if not sbom.is_file() or not expected.is_file() or sbom.read_bytes() != expected.read_bytes():

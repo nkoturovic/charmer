@@ -375,10 +375,11 @@ class InspectTests(unittest.TestCase):
 class EnvironmentTests(unittest.TestCase):
     def test_inherited_go_settings_never_reach_the_toolchain(self):
         base = {"PATH": "/usr/bin", "GOFLAGS": "-tags=evil", "GOAMD64": "v3", "GOEXPERIMENT": "x",
-                "CGO_CFLAGS": "-O3", "XDG_CONFIG_HOME": "/real", "HOME": "/home/someone", "KEEP": "1"}
+                "CGO_CFLAGS": "-O3", "XDG_CONFIG_HOME": "/real", "HOME": "/home/someone", "KEEP": "1",
+                "GODEBUG": "x509sslcertoverrideplatform=0,tlsrsakex=1"}
         env = tool.go_environment(Path("/w"), goos="linux", goarch="arm64", base=base)
         self.assertEqual(env["GOFLAGS"], "-mod=vendor")
-        for key in ("GOAMD64", "GOEXPERIMENT", "CGO_CFLAGS", "XDG_CONFIG_HOME"):
+        for key in ("GOAMD64", "GOEXPERIMENT", "CGO_CFLAGS", "XDG_CONFIG_HOME", "GODEBUG"):
             self.assertNotIn(key, env)
         self.assertEqual(env["HOME"], "/w/home")
         self.assertEqual((env["GOTOOLCHAIN"], env["GOPROXY"], env["CGO_ENABLED"]), ("local", "off", "0"))
@@ -1162,6 +1163,57 @@ class BuildInfoTests(unittest.TestCase):
                 tool.go_buildinfo(data)
         with self.assertRaises(tool.BuildError):
             tool.linked_modules("dep\tgithub.com/a/b\tv1.0.0\t\n=>\t../local\t\t\n")
+
+    def test_compiled_go_policy_matches_the_recipe_and_binary(self):
+        from types import SimpleNamespace
+        from _layout import UPSTREAM_JSON
+
+        doc = tool.load_json(UPSTREAM_JSON)
+        ctx = SimpleNamespace(doc=doc, work=Path("/fixture"), src=Path("/fixture/src"), go="/fixture/go/bin/go")
+        policy = ",".join(doc["build"]["godebug"])
+        answers = [subprocess.CompletedProcess([], 0, "go" + doc["toolchain"]["version"] + "\n"),
+                   subprocess.CompletedProcess([], 0, policy + "\n")]
+        with mock.patch.object(tool, "run", side_effect=answers) as run:
+            tool.verify_go_policy(ctx)
+        self.assertEqual(run.call_args_list[-1].args[0][1:4], ["list", "-f", "{{.DefaultGODEBUG}}"])
+        self.assertNotIn("GODEBUG", run.call_args.kwargs["env"])
+        for version, defaults, status in (("go0.0.1", policy, 0),
+                                          ("go" + doc["toolchain"]["version"], "x509sslcertoverrideplatform=0", 0),
+                                          ("go" + doc["toolchain"]["version"], policy, 1)):
+            with mock.patch.object(tool, "run", side_effect=[subprocess.CompletedProcess([], 0, version),
+                    subprocess.CompletedProcess([], status, defaults)]), self.assertRaises(tool.BuildError):
+                tool.verify_go_policy(ctx)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "gateway"
+            for version, defaults, passes in (("go" + doc["toolchain"]["version"], policy, True),
+                                               ("go1.26.9", policy, False),
+                                               ("go" + doc["toolchain"]["version"], "x509sslcertoverrideplatform=0", False)):
+                path.write_bytes(buildinfo_blob("path\texample.test/gateway\nbuild\tDefaultGODEBUG=" + defaults + "\n", version=version))
+                if passes:
+                    tool.verify_binary_go_policy(path, doc)
+                else:
+                    with self.assertRaises(tool.BuildError):
+                        tool.verify_binary_go_policy(path, doc)
+
+    def test_removed_tls_switches_and_ambiguous_policies_fail_before_build(self):
+        from _layout import UPSTREAM_JSON
+        for name in sorted(tool.REMOVED_TLS_SWITCHES):
+            for value in ("0", "1"):
+                doc = tool.load_json(UPSTREAM_JSON)
+                doc["build"]["godebug"] = sorted([name + "=" + value, "x509sslcertoverrideplatform=1"])
+                with self.subTest(name=name, value=value), self.assertRaisesRegex(tool.BuildError, "removed TLS"):
+                    tool.check_upstream(doc)
+        for policy in ([], "x=1", ["x=1", "x=0"], ["z=1", "a=0"], ["x=1,y=2"], ["x=1\n"],
+                       ["tracebacklabels=0"], ["x509sslcertoverrideplatform=0"]):
+            doc = tool.load_json(UPSTREAM_JSON)
+            doc["build"]["godebug"] = policy
+            with self.subTest(policy=policy), self.assertRaises(tool.BuildError):
+                tool.check_upstream(doc)
+        for key, value in (("GODEBUG", "tlsrsakex=1"), ("CGO_ENABLED", "1"), ("GOTOOLCHAIN", "auto")):
+            doc = tool.load_json(UPSTREAM_JSON)
+            doc["build"]["env"][key] = value
+            with self.subTest(key=key), self.assertRaisesRegex(tool.BuildError, "build.env"):
+                tool.check_upstream(doc)
 
     def test_go_sum_and_module_hashes(self):
         sums = tool.go_sum_hashes(f"a v1.0.0 {MODULE_SUM}\na v1.0.0/go.mod h1:x\n")

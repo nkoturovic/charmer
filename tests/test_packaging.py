@@ -138,8 +138,11 @@ class KeyedAuditInvariantTests(unittest.TestCase):
         names = admitted_names(upstream)
         self.assertEqual(gateway["gateway"]["patches"], names)
         identities = [name + "@" + digest("gateway/patches/" + name) for name in names]
-        manifest = {"version": 1, "upstream_version": version, "patches": identities}
+        manifest = {"version": 2, "upstream_version": version, "patches": identities,
+                    "go_version": upstream["toolchain"]["version"], "godebug": upstream["build"]["godebug"]}
         self.assertEqual(build["ordered_manifest"], manifest)
+        from charmer import qualify
+        self.assertEqual(qualify.parse_gateway_contract(content("gateway-contract.json")), manifest)
         # Series order numbers the patches with their stable admission ids.
         # Retired ids are skipped: 11 (the never-admitted Retry-After
         # candidate) and 14 (plugin-host-locking, redundant since 8.0.28), so
@@ -514,7 +517,9 @@ class ManagementPinWiringTests(unittest.TestCase):
         # Each patch file must carry its recipe sha256 at evaluation time.
         self.assertIn('assert lib.assertMsg (builtins.hashFile "sha256" path == entry.sha256)', text)
         contract = text.split("  contract = {", 1)[1].split("};", 1)[0]
-        self.assertIn("version = 1;", contract)
+        self.assertIn("version = 2;", contract)
+        self.assertIn("go_version = upstream.toolchain.version;", contract)
+        self.assertIn("godebug = upstream.build.godebug;", contract)
         # The passthru is the checked-in package resource's exact bytes
         # (every channel ships that file inside the package).
         self.assertIn("builtins.toJSON contract == builtins.readFile ../src/charmer/data/gateway-contract.json",
@@ -534,7 +539,8 @@ class ManagementPinWiringTests(unittest.TestCase):
         # The manifest Nix would produce parses, in the applied order.
         names = admitted_names()
         root = PATCH_DIR
-        manifest = {"version": 1, "upstream_version": recipe()["upstream"]["version"],
+        manifest = {"version": 2, "upstream_version": recipe()["upstream"]["version"],
+                    "go_version": recipe()["toolchain"]["version"], "godebug": recipe()["build"]["godebug"],
                     "patches": [f"{name}@{hashlib.sha256((root / name).read_bytes()).hexdigest()}" for name in names]}
         parsed = qualify.parse_gateway_contract(json.dumps(manifest, sort_keys=True).encode())
         self.assertEqual([item.split("@", 1)[0] for item in parsed["patches"]], names)

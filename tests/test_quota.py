@@ -76,6 +76,25 @@ class ParseAllowlistTests(unittest.TestCase):
         c, = parse({"success": 2**53-1})
         self.assertEqual(c.success, 2**53-1)
 
+    def test_refresh_status_prefixes_are_minimized_before_all_reports(self):
+        cases = {"unauthorized (refresh token invalid)": "unauthorized",
+                 "invalid grant (retrying)": "invalid_grant",
+                 "disabled (invalid grant)": "invalid_grant", "disabled": "disabled"}
+        for message, expected in cases.items():
+            with self.subTest(message=message):
+                c, = parse({"provider": "codex", "status": "error", "status_message":
+                            message.upper() + ": private upstream body SENTINEL"})
+                self.assertEqual(c.reason, expected)
+                pool = quota.PoolStatus("ok", read_at=NOW, credentials=(c,))
+                self.assertNotIn("SENTINEL", repr((c, command(pool), doctor(pool))))
+                if expected in {"unauthorized", "invalid_grant"}:
+                    self.assertEqual(quota.classify(c, NOW).level, "login")
+        for message in ("not unauthorized", "unauthorizedness", "invalid grants", "disabledness"):
+            self.assertEqual(parse({"status_message": message})[0].reason, "other")
+        c, = parse({"status": "disabled", "disabled": True, "status_message": "disabled (invalid grant)"})
+        self.assertEqual(c.reason, "invalid_grant")
+        self.assertEqual(quota.classify(c, NOW).level, "disabled")
+
     def test_closed_reason_and_status_enums(self):
         for raw, expected in quota.REASONS.items():
             c, = parse({"status_message": " " + raw.upper() + " "})

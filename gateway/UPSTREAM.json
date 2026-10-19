@@ -19,33 +19,33 @@
     "nix_hash": "sha256-HpsmjjMzVTnP+KcK6hy3cq3AHRsaCAVvgJdb9PKL7QU="
   },
   "vendor": {
-    "tree_sha256": "655b7a43a5ac4e9112dcb733e1033d71801c3c1b79d45f6db6a9802a273ae784",
+    "tree_sha256": "7cb61e9f98783c718e8f534af7a4811134c34ffca658740327fb7bce209be63c",
     "nix_hash": "sha256-EwaxCvKJdzUbhzu7wJAViaHcsGfA5y6FXpWInhvDkxU=",
     "modules_patch": {
       "basename": "cli-proxy-api-module-requirements.patch",
-      "sha256": "b7c3cb25251445494f6582ad158ed4874ee21b97c41d3dfd7d02b3c6dabe5876"
+      "sha256": "e4a58250cbb0c9521ac8d04d6651389c2ff4c2b58c515f35796a0d763d5d23b2"
     }
   },
   "toolchain": {
-    "version": "1.26.9",
+    "version": "1.27.2",
     "source": "https://go.dev/dl/?mode=json&include=all",
     "url_prefix": "https://go.dev/dl/",
     "archives": {
       "linux-amd64": {
-        "file": "go1.26.9.linux-amd64.tar.gz",
-        "sha256": "42d158b4d8f7b61ac0a830567c940a86098fb7aac52e467a5ebec03ef5cc2f8d"
+        "file": "go1.27.2.linux-amd64.tar.gz",
+        "sha256": "ecbadb99091a3f46e31f5f934b068b1864eafa7995211b39eaddf76996045fe5"
       },
       "linux-arm64": {
-        "file": "go1.26.9.linux-arm64.tar.gz",
-        "sha256": "4a97373d49fcacdcf3694fea368a500b00ee3e963974f3e7514132717632f052"
+        "file": "go1.27.2.linux-arm64.tar.gz",
+        "sha256": "94f3e30b8e374bc285e7dadc11e0865726b9bc6e85b841ccceaabc0214c6b7c8"
       },
       "darwin-arm64": {
-        "file": "go1.26.9.darwin-arm64.tar.gz",
-        "sha256": "f9bb7c0a02506c5d9bf0d1eb1f7ee6c7684f844ae49558308a0427b830e022cc"
+        "file": "go1.27.2.darwin-arm64.tar.gz",
+        "sha256": "76812b213b1b2302c978d28fa52fa92d541704b9e7d9d5db8002c50e4018c4c5"
       },
       "darwin-amd64": {
-        "file": "go1.26.9.darwin-amd64.tar.gz",
-        "sha256": "00c29e3d4c8562f547410daa18d2959b641bd691ab00c4a525ea817a0253d4bd"
+        "file": "go1.27.2.darwin-amd64.tar.gz",
+        "sha256": "587b59182488b23aa6e5fc25110405a3e0e5b38ed2f5b2f46ed13c32aee356fe"
       }
     }
   },
@@ -169,7 +169,8 @@
   "candidates": [],
   "build": {
     "env": {
-      "CGO_ENABLED": "0"
+      "CGO_ENABLED": "0",
+      "GOTOOLCHAIN": "local"
     },
     "flags": [
       "-trimpath",
@@ -186,6 +187,10 @@
       "main.Commit=2422c6b0f5fe16495320fa29456493874c1977a0",
       "-X",
       "main.BuildDate=1970-01-01T00:00:00Z"
+    ],
+    "godebug": [
+      "tracebacklabels=0",
+      "x509sslcertoverrideplatform=1"
     ]
   },
   "targets": [

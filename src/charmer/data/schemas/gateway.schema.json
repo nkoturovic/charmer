@@ -88,6 +88,7 @@
             "logging-to-file": { "type": "boolean" },
             "usage-statistics-enabled": { "const": false },
             "proxy-url": { "type": "string" },
+            "tls-handshake-timeout-seconds": { "const": 20 },
             "passthrough-headers": { "type": "boolean" },
             "request-retry": { "type": "integer", "minimum": 0 },
             "max-retry-credentials": { "type": "integer", "minimum": 0 },

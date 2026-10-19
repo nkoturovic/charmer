@@ -288,6 +288,26 @@ class VendorInputTests(unittest.TestCase):
 class RaceToolSelfTests(check_gateway_races.SelfTests):
     """The race tool's pure verdict/evidence self-tests, in the ordinary suite."""
 
+    def test_retired_plugin_host_tests_are_built_and_run_100_times(self):
+        tool = check_gateway_races
+        nix = (REPO_ROOT / "tests/gateway-race.nix").read_text()
+        self.assertIn("gateway_go/handlers_plugin_host_race_test.go", nix)
+        self.assertIn("race handlers ./sdk/api/handlers ./sdk/api/handlers", nix)
+        self.assertIn("gwtest-race-handlers", nix)
+        self.assertIn("handlers", tool.BINARIES)
+        for count in (100, 99):
+            run = {"tests": {"passed": [], "race_only_failures": []}, "results": [],
+                   "test_pass_counts": {name: count for name in tool.RETAINED_PLUGIN_HOST}}
+            with mock.patch.object(tool, "isolated_run", return_value=run) as execute, \
+                    mock.patch.object(tool, "result_of", return_value={}), \
+                    mock.patch.object(tool, "scenario", side_effect=lambda *args, **kw: (args, kw)):
+                rows = tool.unit_scenarios("series", Path("/fixture"), {})
+            selected = next(call for call in execute.call_args_list if call.args[0].name == "gwtest-race-handlers")
+            self.assertEqual(selected.args[1], ["-test.run=^(" + "|".join(tool.RETAINED_PLUGIN_HOST) + ")$",
+                                               "-test.count=100"])
+            row = next(row for row in rows if row[0][0] == "unit-plugin-host-retained")
+            self.assertEqual(row[1]["prerequisites"]["all_tests_completed_100_times"], count == 100)
+
 
 class DocumentTests(unittest.TestCase):
     def setUp(self):
@@ -320,6 +340,7 @@ class DocumentTests(unittest.TestCase):
         self.assertEqual(self.document["host"], "127.0.0.1")
         self.assertFalse({self.egress, self.port} & PORTS)
         self.assertEqual(self.document["request-retry"], 0)
+        self.assertEqual(self.document["tls-handshake-timeout-seconds"], 20)
         self.assertEqual(self.document["max-retry-credentials"], 1)
         self.assertTrue(self.document["disable-cooling"])
         for section in self.document["claude-api-key"] + self.document["codex-api-key"]:
@@ -713,7 +734,7 @@ class HarnessSmokeTests(unittest.TestCase):
         self.assertIn(harness.WATCHER_READY, gateway.log_path.read_text())
         self.assertIn(render.document_sentinel(gateway.document), {row["id"] for row in gateway.served_listing().json()["data"]})
         self.record("readiness", alive=True, health=200, watcher=True, sentinel=True)
-        self.assertGreaterEqual(tuple(map(int, gateway.version.split("."))), (7, 3, 15))
+        self.assertGreaterEqual(tuple(map(int, gateway.version.split("."))), (8, 0, 33))
         self.record("version", version=gateway.version)
 
     def test_one_request_per_family(self):

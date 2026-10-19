@@ -380,14 +380,14 @@ class FrozenSelectorCoverageTests(unittest.TestCase):
     def test_no_trusted_wire_has_static_header_override(self) -> None:
         # Complete config.override_header census of the
         # pinned pre-patch registry/models/models.json (sha256
-        # ca457e5269f67068fcd13de77a4eb55da603917cd77309e61e4661ef4327c85b).
+        # 202d50ff901832d8ed915db9a4f852e957ea5c2370b5f8bbfac7db226ba8b7d9).
         # All four entries (codex-free/team/plus/pro) name this same wire.
         # Keep this small, audited projection hermetic: a source-pin change
         # fails closed and requires re-cutting the census, not a store lookup
         # or a skip in standalone/sandbox tests. It is not a T1 route claim.
         pin = json.loads(UPSTREAM_JSON.read_text())
-        self.assertEqual(pin["upstream"]["version"], "7.3.15")
-        self.assertEqual(pin["source"]["nix_hash"], "sha256-s6Vdpcl7Hr85azsZ2DpkEQyod9eE9UQizKiYAJtguwY=")
+        self.assertEqual(pin["upstream"]["version"], "8.0.33")
+        self.assertEqual(pin["source"]["nix_hash"], "sha256-HpsmjjMzVTnP+KcK6hy3cq3AHRsaCAVvgJdb9PKL7QU=")
         override_wires = {"gpt-5.6-luna"}
         bundle = catalog.load_catalog(SHIPPED_ROOT)
         trusted = {line["wire_model"] for line in bundle.lines.values()}
@@ -2012,7 +2012,6 @@ class GatewayManifestConsistencyTests(unittest.TestCase):
                 "cli-proxy-api-openai-compat-keyed-safety.patch",
                 "cli-proxy-api-auth-snapshot-locking.patch",
                 "cli-proxy-api-server-config-snapshot.patch",
-                "cli-proxy-api-plugin-host-locking.patch",
                 "cli-proxy-api-claude-metadata-locking.patch",
                 "cli-proxy-api-oauth-model-overlay.patch",
                 "cli-proxy-api-no-antigravity-egress.patch",
@@ -2022,6 +2021,8 @@ class GatewayManifestConsistencyTests(unittest.TestCase):
                 "cli-proxy-api-refresh-shutdown-join.patch",
                 "cli-proxy-api-openai-content-chunks.patch",
                 "cli-proxy-api-charmer-model-ids.patch",
+                "cli-proxy-api-access-log-path-quoting.patch",
+                "cli-proxy-api-codex-refresh-lead.patch",
             ],
         )
 
