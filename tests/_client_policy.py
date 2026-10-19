@@ -12,7 +12,10 @@ written to the host's ``/etc``) and binds the folder read-only over
 from __future__ import annotations
 
 import contextlib
+import functools
 import json
+import subprocess
+import unittest
 from pathlib import Path
 from typing import Any, Iterator
 from unittest import mock
@@ -20,10 +23,23 @@ from unittest import mock
 from charmer import probe, state
 
 
+@functools.lru_cache(maxsize=1)
+def _overlay_supported() -> bool:
+    try:
+        shown = subprocess.run([str(probe._resolve_bwrap()), "--help"], capture_output=True, text=True,
+                               timeout=30, env={"PATH": "/usr/bin:/bin"})
+    except (OSError, subprocess.SubprocessError, probe.ProbeError):
+        return False
+    return "--tmp-overlay" in shown.stdout + shown.stderr
+
+
 @contextlib.contextmanager
 def managed_settings(fixture: probe.ProbeFixture, document: dict[str, Any]) -> Iterator[Path]:
     """Real runs started inside the block read ``document`` as managed settings."""
 
+    if not _overlay_supported():
+        raise unittest.SkipTest("BOUNDARY: this bwrap has no --tmp-overlay (bubblewrap 0.10 or newer mounts "
+                                "the fixture managed settings)")
     folder = state.ensure_private_dir(Path(fixture.root) / "managed-policy")
     state.atomic_write(folder / "managed-settings.json", json.dumps(document, sort_keys=True).encode("utf-8"))
     original = probe._isolation_prefix

@@ -1091,7 +1091,6 @@ class ForkSubagentPolicyTests(_SpikeRealBinaryTestCase):
 
 # ------------------------------------------------------------- fork gate
 
-FORK_GATE_PREFIX = "client check fork-gate:"
 FORK_GATE_PASS = "FG-off"
 _FORK_ENV = "CLAUDE_CODE_FORK_SUBAGENT"
 # The release before the 2.1.302 pin: its interactive sessions had the gap
@@ -1195,6 +1194,7 @@ class ForkGateTests(ForkSubagentPolicyTests):
     starts, and the compiled variable alone closes it."""
 
     test_s15_fork_subagents_are_denied = None
+    probe_id = "fork-gate"
     responder_class = _ForkGateResponder
     verdict: tuple[str, str, str] = ("INCONCLUSIVE", "unavailable", "check did not complete")
 
@@ -1202,7 +1202,7 @@ class ForkGateTests(ForkSubagentPolicyTests):
     def tearDownClass(cls) -> None:
         status, observed, detail = cls.verdict if cls.boundary_skip is None else (
             "BOUNDARY", "unavailable", cls.boundary_skip)
-        print(f"{FORK_GATE_PREFIX} {status} class={observed} {detail}".rstrip(), flush=True)
+        print(f"client check {cls.probe_id}: {status} class={observed} {detail}".rstrip(), flush=True)
         super().tearDownClass()
 
     def _gate_settings(self, label: str, permissions: dict[str, Any], env: dict[str, str]) -> Path:

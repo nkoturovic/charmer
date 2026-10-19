@@ -51,16 +51,11 @@ from charmer.probe import ProbeError
 from _layout import RESOURCES_ROOT
 from _tier import real_binary_gate
 
-LINE_PREFIX = "client check fence-substitution:"
 PASS_CLASS = "FS-fenced"
 _CONTRACT = RESOURCES_ROOT / "catalog" / "native-contract.json"
 _BETA = "context-1m-2025-08-07"
 _FABLE, _PREVIOUS_FABLE = "claude-fable-5-1", "claude-fable-5"
 _RESPONSE_MODEL = "fence-upstream-substituted"
-
-
-def line(status: str, observed: str, detail: str) -> str:
-    return f"{LINE_PREFIX} {status} class={observed} {detail}".rstrip()
 
 
 def wire(selector: str) -> str:
@@ -193,6 +188,7 @@ class VerdictTests(unittest.TestCase):
 
 
 class FenceSubstitutionProbe(unittest.TestCase):
+    probe_id = "fence-substitution"
     verdict: tuple[str, str, str] = ("INCONCLUSIVE", "unavailable", "check did not complete")
 
     @classmethod
@@ -203,7 +199,8 @@ class FenceSubstitutionProbe(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls) -> None:
-        print(line(*cls.verdict), flush=True)
+        status, observed, detail = cls.verdict
+        print(f"client check {cls.probe_id}: {status} class={observed} {detail}".rstrip(), flush=True)
 
     def setUp(self) -> None:
         if self.gate.boundary:

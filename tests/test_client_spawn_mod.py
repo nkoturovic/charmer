@@ -61,7 +61,6 @@ from _client_policy import managed_settings
 from _layout import RESOURCES_ROOT
 from _tier import real_binary_gate
 
-LINE_PREFIX = "client check spawn-mod:"
 PASS_CLASS = "SM-fenced"
 _CONTRACT = RESOURCES_ROOT / "catalog" / "native-contract.json"
 _LEAD = "spawn-mod-lead"
@@ -82,10 +81,6 @@ _REWRITE_RESUMED = """export const register = (on) => {
   on('agent.spawn', ($, e, next) => (e.resume ? next({ ...e, model: '%s' }) : next(e)))
 }
 """
-
-
-def line(status: str, observed: str, detail: str) -> str:
-    return f"{LINE_PREFIX} {status} class={observed} {detail}".rstrip()
 
 
 class _Inconclusive(AssertionError):
@@ -204,6 +199,7 @@ class VerdictTests(unittest.TestCase):
 
 
 class SpawnModProbe(unittest.TestCase):
+    probe_id = "spawn-mod"
     verdict: tuple[str, str, str] = ("INCONCLUSIVE", "unavailable", "check did not complete")
 
     @classmethod
@@ -214,7 +210,8 @@ class SpawnModProbe(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls) -> None:
-        print(line(*cls.verdict), flush=True)
+        status, observed, detail = cls.verdict
+        print(f"client check {cls.probe_id}: {status} class={observed} {detail}".rstrip(), flush=True)
 
     def setUp(self) -> None:
         if self.gate.boundary:

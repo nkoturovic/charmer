@@ -51,7 +51,6 @@ from _client_policy import managed_settings
 from _layout import RESOURCES_ROOT
 from _tier import real_binary_gate
 
-LINE_PREFIX = "client check mcp-policy:"
 PASS_CLASS = "MCP-named-deny-first"
 _CONTRACT = RESOURCES_ROOT / "catalog" / "native-contract.json"
 _LEAD = "mcp-policy-lead"
@@ -91,10 +90,6 @@ for raw in sys.stdin:
     sys.stdout.write(json.dumps({"jsonrpc": "2.0", "id": ident, "result": result}) + "\n")
     sys.stdout.flush()
 '''
-
-
-def line(status: str, observed: str, detail: str) -> str:
-    return f"{LINE_PREFIX} {status} class={observed} {detail}".rstrip()
 
 
 def tool_name(server: str) -> str:
@@ -209,6 +204,7 @@ class VerdictTests(unittest.TestCase):
 
 
 class McpPolicyProbe(unittest.TestCase):
+    probe_id = "mcp-policy"
     verdict: tuple[str, str, str] = ("INCONCLUSIVE", "unavailable", "check did not complete")
 
     @classmethod
@@ -219,7 +215,8 @@ class McpPolicyProbe(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls) -> None:
-        print(line(*cls.verdict), flush=True)
+        status, observed, detail = cls.verdict
+        print(f"client check {cls.probe_id}: {status} class={observed} {detail}".rstrip(), flush=True)
 
     def setUp(self) -> None:
         if self.gate.boundary:
