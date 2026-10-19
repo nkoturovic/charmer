@@ -454,21 +454,26 @@ class EnvTests(unittest.TestCase):
         with self.assertRaisesRegex(CompilerError, "compiler-owned and reserved"):
             _launch(bad, eff, bundle=bundle)
 
-    def test_the_auto_mode_classifier_model_is_cleared_and_reserved(self) -> None:
+    def test_the_auto_mode_classifier_model_is_owned_on_every_layer(self) -> None:
         """Claude Code 2.1.302 picks the auto-mode classifier's model from
         CLAUDE_CODE_AUTO_MODE_MODEL: the launch unsets it (an inherited value
-        never picks a lineup model the lineup did not choose) and a lead env
-        can never set it."""
+        never picks a lineup model the lineup did not choose), the flag
+        settings state it neutral (the empty value, which the client skips,
+        over a user, project or local settings env) and a lead env can never
+        set it."""
 
-        key = "CLAUDE_CODE_AUTO_MODE_MODEL"
+        key = scope.AUTO_MODE_MODEL_ENV
+        self.assertEqual((key, scope.AUTO_MODE_MODEL_NEUTRAL), ("CLAUDE_CODE_AUTO_MODE_MODEL", ""))
         self.assertIn(key, catalog.RESERVED_LEAD_ENV_KEYS)
         self.assertIn(key, compiler.V2_ENV_UNSET)
         for seed in ("balanced", "direct"):
-            _lineup, result = _seed_launch(seed)
-            with self.subTest(seed=seed):
-                self.assertIn(key, result.env_unset)
-                self.assertNotIn(key, result.env_set)
-                self.assertNotIn(key, result.scope_plan.settings["env"])
+            for no_subagents in (False, True):
+                _lineup, result = _seed_launch(seed, launch_environ={key: "claude-opus-5"},
+                                               no_subagents=no_subagents)
+                with self.subTest(seed=seed, no_subagents=no_subagents):
+                    self.assertIn(key, result.env_unset)
+                    self.assertNotIn(key, result.env_set)
+                    self.assertEqual(result.scope_plan.settings["env"][key], scope.AUTO_MODE_MODEL_NEUTRAL)
         bundle, _l, eff, lineup = _seed("balanced")
         bad = dataclasses.replace(lineup, lead=dataclasses.replace(lineup.lead, env={key: "x"}))
         with self.assertRaisesRegex(CompilerError, "compiler-owned and reserved"):

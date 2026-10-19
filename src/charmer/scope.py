@@ -1617,6 +1617,19 @@ WORKFLOW_MODEL_ENV = "CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL"
 WORKFLOW_MODEL_NEUTRAL = "inherit"
 
 
+# Claude Code 2.1.302 picks the auto-mode classifier's model from
+# CLAUDE_CODE_AUTO_MODE_MODEL when it names a model the session allows, over
+# its default (the session's own model). A user, project or local settings
+# env sets it as readily as the launching environment (which the launch
+# clears), so the flag settings, which outrank those layers, state it
+# neutral in every scope: the empty value, which the client skips. A managed
+# policy setting it outranks the flag settings (``managed`` reports it as a
+# model lock). The real-binary proof is tests/test_auto_mode_model_probe
+# (client check auto-mode-model).
+AUTO_MODE_MODEL_ENV = "CLAUDE_CODE_AUTO_MODE_MODEL"
+AUTO_MODE_MODEL_NEUTRAL = ""
+
+
 # Claude Code 2.1.284-2.1.301 start a session whose settings configure no
 # permission mode in ``auto`` (2.1.281 started in ``default``, and 2.1.302
 # does again behind a third-party provider; all measured), so the mode
@@ -1731,6 +1744,7 @@ def compile_lineup_scope(
     if workflow_default is not None:
         env["CLAUDE_CODE_SUBAGENT_MODEL"] = workflow_default
     env[WORKFLOW_MODEL_ENV] = WORKFLOW_MODEL_NEUTRAL
+    env[AUTO_MODE_MODEL_ENV] = AUTO_MODE_MODEL_NEUTRAL
     env.update(feedback_drafts_env(feedback_drafts))
     env[FAST_MODE_ENV] = "1"
 
