@@ -68,9 +68,7 @@ def _batch_identifiers(runtime: runtime_mod.Runtime, args: argparse.Namespace) -
 
 
 def _batch_check(runtime: runtime_mod.Runtime, record: dict[str, Any]) -> str | None:
-    return sessions.nonrunning_problem(record, background=runtime.background_liveness(),
-                                       process=sessions.proc_session_scan(runtime.proc_root),
-                                       self_id=runtime.environ.get("CHARMER_MANAGED_ID"))
+    return runtime.session_batch_problem(record)
 
 
 def _batch_confirmed(verb: str, count: int, *, yes: bool, interactive: bool, input_stream: TextIO) -> bool:

@@ -660,6 +660,18 @@ class Runtime:
                 self._read_only_store = False
                 self._deferred_session_batch = False
 
+    def session_batch_problem(self, record: dict[str, Any]) -> str | None:
+        """Revalidate each record under its mutation phase, not only at batch start."""
+        from charmer import installs
+
+        sessions.check_state_marker(self._session_store_root)
+        channel = installs.check(self._session_store_root, self.environ, record=False)
+        if not channel.ok:
+            return str(channel.problem) + (f" — {channel.remedy}" if channel.remedy else "")
+        return sessions.nonrunning_problem(record, background=self.background_liveness(),
+                                           process=sessions.proc_session_scan(self.proc_root),
+                                           self_id=self.environ.get("CHARMER_MANAGED_ID"))
+
     @property
     def home(self) -> Path:
         """The runtime HOME (never the process HOME when environ carries one)."""

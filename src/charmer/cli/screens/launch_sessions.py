@@ -1619,9 +1619,7 @@ class _SessionsScreen:
         self._say(cli_text.FORGET_DONE.format(short=short, runtime_id=runtime_id))
 
     def _batch_check(self, record: dict[str, Any]) -> str | None:
-        return sessions.nonrunning_problem(record, background=self.runtime.background_liveness(),
-                                           process=sessions.proc_session_scan(self.runtime.proc_root),
-                                           self_id=self.runtime.environ.get("CHARMER_MANAGED_ID"))
+        return self.runtime.session_batch_problem(record)
 
     def _batch_items(self, records: Sequence[dict[str, Any]]) -> tuple[sessions.BatchItem, ...]:
         background, process = self.runtime.background_liveness(), sessions.proc_session_scan(self.runtime.proc_root)
