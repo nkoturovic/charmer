@@ -1,0 +1,965 @@
+diff --git a/internal/api/server_config_snapshot.go b/internal/api/server_config_snapshot.go
+new file mode 100644
+index 00000000..7f43f6e4
+--- /dev/null
++++ b/internal/api/server_config_snapshot.go
+@@ -0,0 +1,47 @@
++package api
++
++// charmer local patch (server-config-snapshot): the
++// server configuration is one published, server-owned snapshot, read under
++// cfgMu (getConfig). A request reads one snapshot from its first reader to
++// its end (requestConfig), so a reload in the middle of a request never mixes
++// two configurations in one request. cfgMu guards only the pointer: it is
++// never held across c.Next(), network or filesystem I/O, or plugin callbacks.
++
++import (
++	"github.com/gin-gonic/gin"
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
++)
++
++// serverConfigSnapshotKey pins the server config snapshot a request uses in its
++// gin context.
++const serverConfigSnapshotKey = "cliproxy.cm053.serverConfigSnapshot"
++
++// currentConfig returns the published server configuration snapshot.
++func (s *Server) currentConfig() *config.Config {
++	return s.getConfig()
++}
++
++// requestConfig returns the one snapshot a request uses: the first reader of
++// the request (the home heartbeat middleware, which runs for every route)
++// pins the snapshot current at that moment in the gin context, and later
++// readers of the same request get it even when a reload publishes a new one.
++func (s *Server) requestConfig(c *gin.Context) *config.Config {
++	if c != nil {
++		if value, ok := c.Get(serverConfigSnapshotKey); ok {
++			if cfg, okCfg := value.(*config.Config); okCfg {
++				return cfg
++			}
++		}
++	}
++	cfg := s.currentConfig()
++	if c != nil {
++		c.Set(serverConfigSnapshotKey, cfg)
++	}
++	return cfg
++}
++
++// requestHomeEnabled reports Home mode from the request's snapshot.
++func (s *Server) requestHomeEnabled(c *gin.Context) bool {
++	cfg := s.requestConfig(c)
++	return cfg != nil && cfg.Home.Enabled
++}
+diff --git a/internal/api/server_config_snapshot_cm053_test.go b/internal/api/server_config_snapshot_cm053_test.go
+new file mode 100644
+index 00000000..db73e78e
+--- /dev/null
++++ b/internal/api/server_config_snapshot_cm053_test.go
+@@ -0,0 +1,259 @@
++package api
++
++// charmer local patch (server-config-snapshot) gates.
++// In-process gin engine only: no listener, no network. The concurrency gates
++// are repeat-safe and run under -race -count=100.
++
++import (
++	"context"
++	"net/http"
++	"net/http/httptest"
++	"sync"
++	"sync/atomic"
++	"testing"
++	"time"
++
++	"github.com/gin-gonic/gin"
++	proxyconfig "github.com/router-for-me/CLIProxyAPI/v8/internal/config"
++	"github.com/router-for-me/CLIProxyAPI/v8/sdk/api/handlers"
++	"github.com/router-for-me/CLIProxyAPI/v8/sdk/api/handlers/claude"
++	"github.com/router-for-me/CLIProxyAPI/v8/sdk/api/handlers/openai"
++	sdkconfig "github.com/router-for-me/CLIProxyAPI/v8/sdk/config"
++)
++
++const (
++	cm053ClientKey     = "cm053-snapshot-client"
++	cm053ReloadRounds  = 40
++	cm053RequestWorker = 4
++)
++
++// cm053NextConfig builds a genuinely changed, freshly allocated configuration
++// for one accepted reload (every container is new, as a watcher reload's is).
++func cm053NextConfig(base *proxyconfig.Config, round int) *proxyconfig.Config {
++	next := &proxyconfig.Config{
++		SDKConfig: sdkconfig.SDKConfig{
++			APIKeys:                    []string{cm053ClientKey},
++			PassthroughHeaders:         round%2 == 0,
++			NonStreamKeepAliveInterval: 0,
++		},
++	}
++	next.Port = base.Port
++	next.AuthDir = base.AuthDir
++	next.Debug = base.Debug
++	next.LoggingToFile = base.LoggingToFile
++	next.UsageStatisticsEnabled = base.UsageStatisticsEnabled
++	next.RequestRetry = round%3 + 1
++	next.ClaudeCode.DisableCloakingModelList = round%2 == 1
++	next.OAuthModelAlias = map[string][]proxyconfig.OAuthModelAlias{
++		"claude": {{Name: "cm053-upstream", Alias: "cm053-alias"}},
++	}
++	return next
++}
++
++func cm053SnapshotServer(t *testing.T) (*Server, *proxyconfig.Config) {
++	t.Helper()
++	t.Setenv("MANAGEMENT_PASSWORD", "")
++	cfg := &proxyconfig.Config{SDKConfig: sdkconfig.SDKConfig{APIKeys: []string{cm053ClientKey}}}
++	server := newTestServerWithConfig(t, cfg)
++	return server, cfg
++}
++
++// cm053ReloadWhileServing applies rounds genuinely changed reloads while
++// workers send the given requests through the real engine; afterReload runs
++// after each accepted reload on the reloading goroutine.
++func cm053ReloadWhileServing(t *testing.T, server *Server, base *proxyconfig.Config, request func(worker, n int) *http.Request, okStatus func(*http.Request, int) bool, afterReload func()) {
++	t.Helper()
++	var served, unexpected atomic.Int64
++	stop := make(chan struct{})
++	var wg sync.WaitGroup
++	for worker := 0; worker < cm053RequestWorker; worker++ {
++		wg.Add(1)
++		go func(worker int) {
++			defer wg.Done()
++			for n := 0; ; n++ {
++				select {
++				case <-stop:
++					return
++				default:
++				}
++				req := request(worker, n)
++				recorder := httptest.NewRecorder()
++				server.engine.ServeHTTP(recorder, req)
++				served.Add(1)
++				if !okStatus(req, recorder.Code) {
++					unexpected.Add(1)
++				}
++			}
++		}(worker)
++	}
++	applied := 0
++	for round := 0; round < cm053ReloadRounds; round++ {
++		if server.UpdateClientsContext(context.Background(), cm053NextConfig(base, round)) {
++			applied++
++		}
++		if afterReload != nil {
++			afterReload()
++		}
++	}
++	close(stop)
++	wg.Wait()
++	if applied != cm053ReloadRounds {
++		t.Fatalf("accepted reloads = %d, want %d", applied, cm053ReloadRounds)
++	}
++	if served.Load() == 0 {
++		t.Fatal("no request overlapped the reloads")
++	}
++	if unexpected.Load() != 0 {
++		t.Fatalf("%d of %d requests returned an unexpected status", unexpected.Load(), served.Load())
++	}
++}
++
++func TestCM053ReloadConcurrentHomeHeartbeat(t *testing.T) {
++	server, base := cm053SnapshotServer(t)
++	cm053ReloadWhileServing(t, server, base, func(int, int) *http.Request {
++		// Every route passes homeHeartbeatMiddleware; /healthz needs no auth.
++		return httptest.NewRequest(http.MethodGet, "/healthz", nil)
++	}, func(_ *http.Request, code int) bool { return code == http.StatusOK }, nil)
++}
++
++func TestCM053ReloadConcurrentUnifiedModels(t *testing.T) {
++	server, base := cm053SnapshotServer(t)
++	// The production /v1/models route's model handlers write through
++	// s.handlers, whose plugin-host field every reload also rewrites
++	// (SetPluginHost, which 8.x locks itself). This gate keeps to
++	// the config: the same unifiedModelsHandler (Server.cfg reads) behind the same
++	// middleware chain, over model handlers whose SDK config is republished
++	// from the server snapshot after every reload (UpdateClients vs
++	// ClaudeModels/OpenAIModels), without a plugin-host writer.
++	side := handlers.NewBaseAPIHandlers(effectiveSDKConfig(server.currentConfig()), server.handlers.AuthManager)
++	v1 := server.engine.Group("/cm053/v1")
++	v1.Use(AuthMiddleware(server.accessManager))
++	v1.GET("/models", server.unifiedModelsHandler(openai.NewOpenAIAPIHandler(side), claude.NewClaudeCodeAPIHandler(side)))
++	cm053ReloadWhileServing(t, server, base, func(worker, n int) *http.Request {
++		req := httptest.NewRequest(http.MethodGet, "/cm053/v1/models", nil)
++		req.Header.Set("Authorization", "Bearer "+cm053ClientKey)
++		if (worker+n)%2 == 0 {
++			// Anthropic request: unifiedModelsHandler -> ClaudeModels.
++			req.Header.Set("Anthropic-Version", "2023-06-01")
++		}
++		return req
++	}, func(_ *http.Request, code int) bool { return code == http.StatusOK }, func() {
++		side.UpdateClients(effectiveSDKConfig(server.currentConfig()))
++	})
++}
++
++func TestCM053ServerConfigSnapshotOwnership(t *testing.T) {
++	server, callerCfg := cm053SnapshotServer(t)
++
++	// NewServer publishes a server-owned copy, not the caller's object.
++	initial := server.currentConfig()
++	if initial == nil || initial == callerCfg {
++		t.Fatal("NewServer must publish a server-owned snapshot, not the caller's config")
++	}
++	callerCfg.APIKeys[0] = "mutated-by-caller"
++	if initial.APIKeys[0] != cm053ClientKey {
++		t.Fatal("the initial snapshot shares the caller's api-keys backing array")
++	}
++	if sdk := server.handlers.CurrentConfig(); sdk == nil || sdk.APIKeys[0] != cm053ClientKey {
++		t.Fatal("the initial SDK handler config shares the caller's api-keys backing array")
++	}
++
++	// A reload publishes a deep, server-owned copy and derives the SDK
++	// handler config from it.
++	next := cm053NextConfig(callerCfg, 1)
++	if !server.UpdateClientsContext(context.Background(), next) {
++		t.Fatal("reload was not accepted")
++	}
++	published := server.currentConfig()
++	if published == nil || published == next || published == initial {
++		t.Fatal("reload must publish a new server-owned snapshot")
++	}
++	if published.RequestRetry != next.RequestRetry || !published.ClaudeCode.DisableCloakingModelList {
++		t.Fatal("the published snapshot does not carry the reloaded values")
++	}
++	next.APIKeys[0] = "mutated-after-reload"
++	next.OAuthModelAlias["claude"][0].Alias = "mutated-alias"
++	next.OAuthModelAlias["codex"] = nil
++	if published.APIKeys[0] != cm053ClientKey {
++		t.Fatal("the published snapshot shares the reload source's api-keys")
++	}
++	if aliases := published.OAuthModelAlias; len(aliases) != 1 || aliases["claude"][0].Alias != "cm053-alias" {
++		t.Fatal("the published snapshot shares the reload source's nested containers")
++	}
++	sdk := server.handlers.CurrentConfig()
++	if sdk == nil || sdk.APIKeys[0] != cm053ClientKey || sdk.PassthroughHeaders != next.PassthroughHeaders {
++		t.Fatal("the SDK handler config is not derived from the published snapshot")
++	}
++
++	// One captured snapshot per request: the first reader pins it, a later
++	// reload does not change what the same request sees.
++	recorder := httptest.NewRecorder()
++	c, _ := gin.CreateTestContext(recorder)
++	c.Request = httptest.NewRequest(http.MethodGet, "/v1/models", nil)
++	pinnedServer := server.requestConfig(c)
++	pinnedSDK := server.handlers.RequestConfig(c)
++	if pinnedServer != published || pinnedSDK != sdk {
++		t.Fatal("the first reader must pin the current snapshots")
++	}
++	if !server.UpdateClientsContext(context.Background(), cm053NextConfig(callerCfg, 2)) {
++		t.Fatal("second reload was not accepted")
++	}
++	if server.currentConfig() == published || server.handlers.CurrentConfig() == sdk {
++		t.Fatal("the second reload did not publish new snapshots")
++	}
++	if server.requestConfig(c) != pinnedServer || server.handlers.RequestConfig(c) != pinnedSDK {
++		t.Fatal("a request changed snapshots mid-request")
++	}
++	fresh, _ := gin.CreateTestContext(httptest.NewRecorder())
++	if server.requestConfig(fresh) != server.currentConfig() {
++		t.Fatal("a new request must use the newest snapshot")
++	}
++
++	// No publication or reload lock is held across c.Next(): a reload
++	// completes while a request is parked inside its handler chain, and that
++	// request still reads its own pinned snapshot afterwards.
++	entered := make(chan struct{})
++	release := make(chan struct{})
++	var parkedSnapshot, afterSnapshot *proxyconfig.Config
++	server.engine.GET("/cm053-parked", func(c *gin.Context) {
++		parkedSnapshot = server.requestConfig(c)
++		close(entered)
++		<-release
++		afterSnapshot = server.requestConfig(c)
++		c.Status(http.StatusNoContent)
++	})
++	done := make(chan int, 1)
++	go func() {
++		recorder := httptest.NewRecorder()
++		server.engine.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/cm053-parked", nil))
++		done <- recorder.Code
++	}()
++	<-entered
++	reloaded := make(chan bool, 1)
++	go func() { reloaded <- server.UpdateClientsContext(context.Background(), cm053NextConfig(callerCfg, 3)) }()
++	select {
++	case ok := <-reloaded:
++		if !ok {
++			t.Fatal("reload during a parked request was not accepted")
++		}
++	case <-time.After(10 * time.Second):
++		close(release)
++		t.Fatal("reload blocked behind a request parked in c.Next()")
++	}
++	if server.currentConfig() == parkedSnapshot {
++		t.Fatal("the reload did not publish while the request was parked")
++	}
++	close(release)
++	if code := <-done; code != http.StatusNoContent {
++		t.Fatalf("parked request status = %d", code)
++	}
++	if afterSnapshot != parkedSnapshot {
++		t.Fatal("the parked request changed snapshots across the reload")
++	}
++
++	// Environment-only management is preserved through the reloads: no
++	// MANAGEMENT_PASSWORD, so management stays disabled.
++	if server.managementRoutesEnabled.Load() {
++		t.Fatal("management routes enabled without MANAGEMENT_PASSWORD")
++	}
++}
+diff --git a/internal/api/server_middleware.go b/internal/api/server_middleware.go
+index f3f73d53..2f51b915 100644
+--- a/internal/api/server_middleware.go
++++ b/internal/api/server_middleware.go
+@@ -76,7 +76,7 @@ func (s *Server) maxRequestBodyBytesMiddleware() gin.HandlerFunc {
+ 
+ func (s *Server) homeHeartbeatMiddleware() gin.HandlerFunc {
+ 	return func(c *gin.Context) {
+-		cfg := s.getConfig()
++		cfg := s.requestConfig(c)
+ 		if s == nil || cfg == nil || !cfg.Home.Enabled {
+ 			c.Next()
+ 			return
+@@ -131,7 +131,7 @@ func (s *Server) exampleAPIKeySafeModeMiddleware() gin.HandlerFunc {
+ }
+ 
+ func (s *Server) serveExampleAPIKeyWarningPage(c *gin.Context) {
+-	cfg := s.getConfig()
++	cfg := s.requestConfig(c)
+ 	var keys []string
+ 	if cfg != nil {
+ 		keys = safemode.ExampleAPIKeys(cfg.APIKeys)
+diff --git a/internal/api/server_routes.go b/internal/api/server_routes.go
+index 8113a815..ee87fa07 100644
+--- a/internal/api/server_routes.go
++++ b/internal/api/server_routes.go
+@@ -158,7 +158,7 @@ func (s *Server) setupRoutes() {
+ 			errStr = c.Query("error_description")
+ 		}
+ 		if state != "" {
+-			if cfg := s.getConfig(); cfg != nil {
++			if cfg := s.requestConfig(c); cfg != nil {
+ 				_, _ = managementHandlers.WriteOAuthCallbackFileForPendingSession(cfg.AuthDir, "anthropic", state, code, errStr)
+ 			}
+ 		}
+@@ -174,7 +174,7 @@ func (s *Server) setupRoutes() {
+ 			errStr = c.Query("error_description")
+ 		}
+ 		if state != "" {
+-			if cfg := s.getConfig(); cfg != nil {
++			if cfg := s.requestConfig(c); cfg != nil {
+ 				_, _ = managementHandlers.WriteOAuthCallbackFileForPendingSession(cfg.AuthDir, "codex", state, code, errStr)
+ 			}
+ 		}
+@@ -190,7 +190,7 @@ func (s *Server) setupRoutes() {
+ 			errStr = c.Query("error_description")
+ 		}
+ 		if state != "" {
+-			if cfg := s.getConfig(); cfg != nil {
++			if cfg := s.requestConfig(c); cfg != nil {
+ 				_, _ = managementHandlers.WriteOAuthCallbackFileForPendingSession(cfg.AuthDir, "antigravity", state, code, errStr)
+ 			}
+ 		}
+@@ -210,7 +210,7 @@ func (s *Server) setupRoutes() {
+ 			c.JSON(http.StatusBadRequest, gin.H{"error": "code or error is required"})
+ 			return
+ 		}
+-		cfg := s.getConfig()
++		cfg := s.requestConfig(c)
+ 		authDir := ""
+ 		if cfg != nil {
+ 			authDir = cfg.AuthDir
+@@ -478,7 +478,7 @@ func (s *Server) codexAlphaSearch(c *gin.Context) {
+ 			return nil, errRequest
+ 		}
+ 		authType, authValue := current.AccountInfo()
+-		helps.RecordAPIRequest(ctx, s.getConfig(), helps.UpstreamRequestLog{
++		helps.RecordAPIRequest(ctx, s.requestConfig(c), helps.UpstreamRequestLog{
+ 			URL:       upstreamURL,
+ 			Method:    http.MethodPost,
+ 			Headers:   req.Header.Clone(),
+@@ -499,7 +499,7 @@ func (s *Server) codexAlphaSearch(c *gin.Context) {
+ 		c.JSON(clienterror.HTTPStatusFromErrorOr(errCtx, http.StatusRequestTimeout), gin.H{"error": errCtx.Error()})
+ 		return
+ 	}
+-	cfg := s.getConfig()
++	cfg := s.requestConfig(c)
+ 	resp, err := performRequest(selected)
+ 	if err != nil {
+ 		if errors.Is(err, errMissingBaseURL) {
+@@ -617,7 +617,7 @@ func (s *Server) unifiedModelsHandler(openaiHandler *openai.OpenAIAPIHandler, cl
+ 			return
+ 		}
+ 
+-		cfg := s.getConfig()
++		cfg := s.requestConfig(c)
+ 		if _, ok := c.Request.URL.Query()["client_version"]; ok {
+ 			clientVersion := c.Query("client_version")
+ 			if cfg != nil && cfg.Home.Enabled {
+@@ -675,7 +675,7 @@ func grokModelsFromRegistryInfos(infos []*registry.ModelInfo) []grokbuild.ModelI
+ 
+ func (s *Server) handleGrokModels(c *gin.Context) {
+ 	var models []grokbuild.ModelInfo
+-	if cfg := s.getConfig(); cfg != nil && cfg.Home.Enabled {
++	if cfg := s.requestConfig(c); cfg != nil && cfg.Home.Enabled {
+ 		entries, ok := s.loadHomeModelEntries(c)
+ 		if !ok {
+ 			return
+@@ -703,7 +703,7 @@ func (s *Server) handleHomeCodexClientModels(c *gin.Context, clientVersion strin
+ 		return
+ 	}
+ 
+-	cfg := s.getConfig()
++	cfg := s.requestConfig(c)
+ 	models := make([]map[string]any, 0, len(entries))
+ 	for _, entry := range entries {
+ 		models = append(models, formatHomeCodexModelWithSettings(entry, cfg))
+@@ -868,7 +868,7 @@ func formatHomeCodexModelWithSettings(entry homeModelEntry, cfg *config.Config)
+ 
+ func (s *Server) geminiModelsHandler(geminiHandler *gemini.GeminiAPIHandler) gin.HandlerFunc {
+ 	return func(c *gin.Context) {
+-		if cfg := s.getConfig(); cfg != nil && cfg.Home.Enabled {
++		if cfg := s.requestConfig(c); cfg != nil && cfg.Home.Enabled {
+ 			s.handleHomeGeminiModels(c)
+ 			return
+ 		}
+@@ -879,7 +879,7 @@ func (s *Server) geminiModelsHandler(geminiHandler *gemini.GeminiAPIHandler) gin
+ 
+ func (s *Server) geminiGetHandler(geminiHandler *gemini.GeminiAPIHandler) gin.HandlerFunc {
+ 	return func(c *gin.Context) {
+-		if cfg := s.getConfig(); cfg != nil && cfg.Home.Enabled {
++		if cfg := s.requestConfig(c); cfg != nil && cfg.Home.Enabled {
+ 			s.handleHomeGeminiModel(c)
+ 			return
+ 		}
+@@ -910,7 +910,7 @@ func (s *Server) handleHomeModels(c *gin.Context) {
+ 	isClaude := isAnthropicModelsRequest(c)
+ 
+ 	if isClaude {
+-		cfg := s.getConfig()
++		cfg := s.requestConfig(c)
+ 		disableCloaking := cfg != nil && cfg.ClaudeCode.DisableCloakingModelList
+ 		s.writeModelListResponse(c, "claude", claudemodels.BuildResponse(formatHomeClaudeModels(entries), disableCloaking))
+ 		return
+diff --git a/sdk/api/handlers/claude/code_handlers.go b/sdk/api/handlers/claude/code_handlers.go
+index 823decd6..18ce0e23 100644
+--- a/sdk/api/handlers/claude/code_handlers.go
++++ b/sdk/api/handlers/claude/code_handlers.go
+@@ -157,7 +157,7 @@ func rewriteClaudeDDModelInBody(rawJSON []byte) []byte {
+ // Parameters:
+ //   - c: The Gin context for the request.
+ func (h *ClaudeCodeAPIHandler) ClaudeModels(c *gin.Context) {
+-	cfg := h.CurrentConfig()
++	cfg := h.RequestConfig(c)
+ 	disableCloaking := cfg != nil && cfg.ClaudeCode.DisableCloakingModelList
+ 	h.WriteModelListResponse(c, h.HandlerType(), claudemodels.BuildResponse(h.Models(), disableCloaking))
+ }
+@@ -262,7 +262,7 @@ func (h *ClaudeCodeAPIHandler) handleStreamingResponse(c *gin.Context, rawJSON [
+ 		flusher.Flush()
+ 		return true
+ 	}
+-	keepAliveC, stopKeepAlive := handlers.NewPreFirstTokenKeepAliveTicker(h.CurrentConfig())
++	keepAliveC, stopKeepAlive := handlers.NewPreFirstTokenKeepAliveTicker(h.RequestConfig(c))
+ 	defer stopKeepAlive()
+ 
+ 	dataChan, resolvedHeaders, errChan, okBootstrap := h.ExecuteStreamWithPreFTKeepAlive(
+@@ -597,7 +597,7 @@ func (h *ClaudeCodeAPIHandler) WriteErrorResponse(c *gin.Context, msg *interface
+ 			c.Writer.Header().Add("Retry-After", value)
+ 		}
+ 	}
+-	if msg != nil && msg.Addon != nil && handlers.PassthroughHeadersEnabled(h.CurrentConfig()) {
++	if msg != nil && msg.Addon != nil && handlers.PassthroughHeadersEnabled(h.RequestConfig(c)) {
+ 		for key, values := range msg.Addon {
+ 			if len(values) == 0 || handlers.IsCPAReservedResponseHeader(key) {
+ 				continue
+diff --git a/sdk/api/handlers/config_snapshot_cm053_test.go b/sdk/api/handlers/config_snapshot_cm053_test.go
+new file mode 100644
+index 00000000..6e79fc6f
+--- /dev/null
++++ b/sdk/api/handlers/config_snapshot_cm053_test.go
+@@ -0,0 +1,220 @@
++package handlers_test
++
++// charmer local patch (server-config-snapshot): the SDK
++// handler configuration publication (BaseAPIHandler.UpdateClients) against its
++// runtime readers. In-process only: a stub executor, gin test contexts, no
++// listener and no network. Repeat-safe; runs under -race -count=100.
++
++import (
++	"context"
++	"errors"
++	"net/http"
++	"net/http/httptest"
++	"runtime"
++	"sync"
++	"sync/atomic"
++	"testing"
++	"time"
++
++	"github.com/gin-gonic/gin"
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/interfaces"
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
++	"github.com/router-for-me/CLIProxyAPI/v8/sdk/api/handlers"
++	"github.com/router-for-me/CLIProxyAPI/v8/sdk/api/handlers/claude"
++	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
++	coreexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
++	sdkconfig "github.com/router-for-me/CLIProxyAPI/v8/sdk/config"
++)
++
++const (
++	cm053SDKModel  = "cm053-sdk-config-model"
++	cm053SDKAuthID = "cm053-sdk-config-auth"
++	cm053SDKRounds = 40
++)
++
++type cm053ConfigExecutor struct{}
++
++func (cm053ConfigExecutor) Identifier() string { return "codex" }
++
++func (cm053ConfigExecutor) Execute(context.Context, *coreauth.Auth, coreexecutor.Request, coreexecutor.Options) (coreexecutor.Response, error) {
++	return coreexecutor.Response{Payload: []byte("ok"), Headers: http.Header{"X-Cm053-Upstream": {"1"}}}, nil
++}
++
++func (cm053ConfigExecutor) ExecuteStream(context.Context, *coreauth.Auth, coreexecutor.Request, coreexecutor.Options) (*coreexecutor.StreamResult, error) {
++	chunks := make(chan coreexecutor.StreamChunk, 1)
++	chunks <- coreexecutor.StreamChunk{Payload: []byte("ok")}
++	close(chunks)
++	return &coreexecutor.StreamResult{Headers: http.Header{"X-Cm053-Upstream": {"1"}}, Chunks: chunks}, nil
++}
++
++func (cm053ConfigExecutor) Refresh(_ context.Context, auth *coreauth.Auth) (*coreauth.Auth, error) {
++	return auth, nil
++}
++
++func (cm053ConfigExecutor) CountTokens(context.Context, *coreauth.Auth, coreexecutor.Request, coreexecutor.Options) (coreexecutor.Response, error) {
++	return coreexecutor.Response{}, &coreauth.Error{Code: "not_implemented", Message: "CountTokens not implemented"}
++}
++
++func (cm053ConfigExecutor) HttpRequest(context.Context, *coreauth.Auth, *http.Request) (*http.Response, error) {
++	return nil, &coreauth.Error{Code: "not_implemented", Message: "HttpRequest not implemented", HTTPStatus: http.StatusNotImplemented}
++}
++
++// cm053SDKConfig is a genuinely changed, freshly allocated SDK config per round.
++func cm053SDKConfig(round int) *sdkconfig.SDKConfig {
++	cfg := &sdkconfig.SDKConfig{
++		PassthroughHeaders:         round%2 == 0,
++		RequestLog:                 round%3 == 0,
++		NonStreamKeepAliveInterval: round % 2,
++	}
++	cfg.Streaming.KeepAliveSeconds = 5 + round%4
++	cfg.Streaming.BootstrapRetries = round % 2
++	cfg.ClaudeCode.DisableCloakingModelList = round%2 == 1
++	return cfg
++}
++
++func cm053SDKHandler(t *testing.T) *handlers.BaseAPIHandler {
++	t.Helper()
++	gin.SetMode(gin.TestMode)
++	manager := coreauth.NewManager(nil, nil, nil)
++	manager.RegisterExecutor(cm053ConfigExecutor{})
++	auth := &coreauth.Auth{ID: cm053SDKAuthID, Provider: "codex", Status: coreauth.StatusActive, Metadata: map[string]any{"email": "cm053@example.invalid"}}
++	if _, err := manager.Register(context.Background(), auth); err != nil {
++		t.Fatalf("manager.Register: %v", err)
++	}
++	registry.GetGlobalRegistry().RegisterClient(auth.ID, auth.Provider, []*registry.ModelInfo{{ID: cm053SDKModel}})
++	t.Cleanup(func() { registry.GetGlobalRegistry().UnregisterClient(auth.ID) })
++	return handlers.NewBaseAPIHandlers(cm053SDKConfig(0), manager)
++}
++
++func cm053GinContext() (*gin.Context, *httptest.ResponseRecorder) {
++	recorder := httptest.NewRecorder()
++	c, _ := gin.CreateTestContext(recorder)
++	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
++	return c, recorder
++}
++
++// cm053ServeOnce runs the SDK config readers one request goes through.
++func cm053ServeOnce(h *handlers.BaseAPIHandler, claudeHandler *claude.ClaudeCodeAPIHandler) error {
++	c, _ := cm053GinContext()
++	ctx, cancel := h.GetContextWithCancel(nil, c, context.Background())
++	pinned := h.RequestConfig(c)
++	stopKeepAlive := h.StartNonStreamingKeepAlive(c, ctx)
++	stopKeepAlive()
++	if _, _, errMsg := h.ExecuteWithAuthManager(ctx, "openai", cm053SDKModel, []byte(`{"model":"`+cm053SDKModel+`"}`), ""); errMsg != nil {
++		cancel(errMsg.Error)
++		return errors.New("execute failed")
++	}
++	data, _, errs := h.ExecuteStreamWithAuthManager(ctx, "openai", cm053SDKModel, []byte(`{"model":"`+cm053SDKModel+`","stream":true}`), "")
++	for range data {
++	}
++	for errMsg := range errs {
++		if errMsg != nil {
++			cancel(errMsg.Error)
++			return errors.New("stream failed")
++		}
++	}
++	h.WriteErrorResponse(c, &interfaces.ErrorMessage{StatusCode: http.StatusBadGateway, Error: errors.New("cm053"), Addon: http.Header{"X-Cm053-Addon": {"1"}}})
++	closed := make(chan []byte)
++	close(closed)
++	h.ForwardStream(c, c.Writer, func(error) {}, closed, nil, handlers.StreamForwardOptions{})
++	models, _ := cm053GinContext()
++	claudeHandler.ClaudeModels(models)
++	cancel([]byte("done"))
++	if h.RequestConfig(c) != pinned {
++		return errors.New("request changed SDK config snapshots mid-request")
++	}
++	return nil
++}
++
++func TestCM053ReloadConcurrentSDKHandlerConfig(t *testing.T) {
++	h := cm053SDKHandler(t)
++	claudeHandler := claude.NewClaudeCodeAPIHandler(h)
++	var served atomic.Int64
++	var failures sync.Map
++	stop := make(chan struct{})
++	var wg sync.WaitGroup
++	for worker := 0; worker < 4; worker++ {
++		wg.Add(1)
++		go func() {
++			defer wg.Done()
++			for {
++				select {
++				case <-stop:
++					return
++				default:
++				}
++				if err := cm053ServeOnce(h, claudeHandler); err != nil {
++					failures.Store(err.Error(), true)
++				}
++				served.Add(1)
++			}
++		}()
++	}
++	// Interleave: each publication waits until requests have run since the
++	// previous one, so every round overlaps live readers.
++	deadline := time.Now().Add(30 * time.Second)
++	for round := 1; round <= cm053SDKRounds; round++ {
++		h.UpdateClients(cm053SDKConfig(round))
++		for want := served.Load() + 2; served.Load() < want && time.Now().Before(deadline); {
++			runtime.Gosched()
++		}
++	}
++	close(stop)
++	wg.Wait()
++	if served.Load() < 2*cm053SDKRounds {
++		t.Fatalf("only %d requests overlapped %d SDK config publications", served.Load(), cm053SDKRounds)
++	}
++	failures.Range(func(key, _ any) bool {
++		t.Errorf("request failure: %v", key)
++		return true
++	})
++
++	// One captured snapshot per request: the snapshot GetContextWithCancel
++	// pins survives a publication; a new request sees the new snapshot.
++	c, _ := cm053GinContext()
++	_, cancel := h.GetContextWithCancel(nil, c, context.Background())
++	defer cancel()
++	pinned := h.RequestConfig(c)
++	if pinned == nil || pinned != h.CurrentConfig() {
++		t.Fatal("GetContextWithCancel must pin the current snapshot")
++	}
++	next := cm053SDKConfig(cm053SDKRounds + 1)
++	h.UpdateClients(next)
++	if h.CurrentConfig() != next {
++		t.Fatal("UpdateClients did not publish the new snapshot")
++	}
++	if h.RequestConfig(c) != pinned {
++		t.Fatal("a request changed SDK config snapshots mid-request")
++	}
++	fresh, _ := cm053GinContext()
++	if h.RequestConfig(fresh) != next {
++		t.Fatal("a new request must use the newest SDK config snapshot")
++	}
++}
++
++// The served readers use the request snapshot, not the newest one: a request that
++// pinned a configuration with passthrough headers on keeps them on its error
++// response after a reload turned them off, and a new request sees the reload.
++func TestCM053ServedReadersUseRequestSnapshot(t *testing.T) {
++	h := cm053SDKHandler(t)
++	on := cm053SDKConfig(2)
++	off := cm053SDKConfig(3)
++	if !on.PassthroughHeaders || off.PassthroughHeaders {
++		t.Fatal("fixture configurations do not differ in passthrough headers")
++	}
++	h.UpdateClients(on)
++	inFlight, inFlightRecorder := cm053GinContext()
++	_, cancel := h.GetContextWithCancel(nil, inFlight, context.Background())
++	defer cancel()
++	h.UpdateClients(off)
++	addon := &interfaces.ErrorMessage{StatusCode: http.StatusBadGateway, Error: errors.New("cm053"), Addon: http.Header{"X-Cm053-Addon": {"1"}}}
++	h.WriteErrorResponse(inFlight, addon)
++	if inFlightRecorder.Header().Get("X-Cm053-Addon") != "1" {
++		t.Fatal("the in-flight request read the reloaded configuration (passthrough headers off)")
++	}
++	fresh, freshRecorder := cm053GinContext()
++	h.WriteErrorResponse(fresh, addon)
++	if freshRecorder.Header().Get("X-Cm053-Addon") != "" {
++		t.Fatal("a new request did not see the reloaded configuration")
++	}
++}
+diff --git a/sdk/api/handlers/handlers.go b/sdk/api/handlers/handlers.go
+index 5e8df3a7..43df61d6 100644
+--- a/sdk/api/handlers/handlers.go
++++ b/sdk/api/handlers/handlers.go
+@@ -583,6 +583,8 @@ func (h *BaseAPIHandler) GetContextWithCancel(handler interfaces.APIHandler, c *
+ 		}
+ 	}
+ 	newCtx, cancel := context.WithCancel(parentCtx)
++	// charmer (server-config-snapshot): the request's one snapshot.
++	requestCfg := h.RequestConfig(c)
+ 
+ 	endpoint := ""
+ 	if c != nil && c.Request != nil {
+@@ -632,7 +634,7 @@ func (h *BaseAPIHandler) GetContextWithCancel(handler interfaces.APIHandler, c *
+ 		if c != nil {
+ 			logging.SetResponseStatus(cancelCtx, c.Writer.Status())
+ 		}
+-		if cfg := h.CurrentConfig(); cfg != nil && cfg.RequestLog && len(params) == 1 {
++		if requestCfg != nil && requestCfg.RequestLog && len(params) == 1 {
+ 			if captured, exists := c.Get(logging.APIResponseCapturedContextKey); exists {
+ 				if capturedBool, ok := captured.(bool); ok && capturedBool {
+ 					cancel()
+@@ -684,7 +686,7 @@ func (h *BaseAPIHandler) StartNonStreamingKeepAlive(c *gin.Context, ctx context.
+ 	if h == nil || c == nil {
+ 		return func() {}
+ 	}
+-	interval := NonStreamingKeepAliveInterval(h.CurrentConfig())
++	interval := NonStreamingKeepAliveInterval(h.RequestConfig(c))
+ 	if interval <= 0 {
+ 		return func() {}
+ 	}
+diff --git a/sdk/api/handlers/handlers_config_snapshot.go b/sdk/api/handlers/handlers_config_snapshot.go
+new file mode 100644
+index 00000000..3d1d819c
+--- /dev/null
++++ b/sdk/api/handlers/handlers_config_snapshot.go
+@@ -0,0 +1,47 @@
++package handlers
++
++// charmer local patch (server-config-snapshot): the SDK
++// handler configuration is one published snapshot. UpdateClients replaces the
++// pointer under runtimeMu and CurrentConfig reads it; a request reads one
++// snapshot from its first reader to its end (RequestConfig), so a reload in the
++// middle of a request never mixes two configurations in one request.
++
++import (
++	"github.com/gin-gonic/gin"
++	"github.com/router-for-me/CLIProxyAPI/v8/sdk/config"
++	"golang.org/x/net/context"
++)
++
++// sdkConfigSnapshotKey pins the SDK config snapshot a request uses in its gin
++// context.
++const sdkConfigSnapshotKey = "cliproxy.cm053.sdkConfigSnapshot"
++
++// RequestConfig returns the one SDK configuration snapshot a request uses: the
++// first reader of the request (GetContextWithCancel, or an earlier handler
++// read) pins the snapshot current at that moment in the gin context, and every
++// later reader of the same request gets that snapshot, even across a reload.
++// Without a gin context it returns the current snapshot.
++func (h *BaseAPIHandler) RequestConfig(c *gin.Context) *config.SDKConfig {
++	if c != nil {
++		if value, ok := c.Get(sdkConfigSnapshotKey); ok {
++			if cfg, okCfg := value.(*config.SDKConfig); okCfg {
++				return cfg
++			}
++		}
++	}
++	cfg := h.CurrentConfig()
++	if c != nil {
++		c.Set(sdkConfigSnapshotKey, cfg)
++	}
++	return cfg
++}
++
++// requestConfigFromContext resolves the request's snapshot through the gin
++// context GetContextWithCancel stores in ctx.
++func (h *BaseAPIHandler) requestConfigFromContext(ctx context.Context) *config.SDKConfig {
++	var c *gin.Context
++	if ctx != nil {
++		c, _ = ctx.Value("gin").(*gin.Context)
++	}
++	return h.RequestConfig(c)
++}
+diff --git a/sdk/api/handlers/handlers_errors.go b/sdk/api/handlers/handlers_errors.go
+index 7893da08..91e9ac59 100644
+--- a/sdk/api/handlers/handlers_errors.go
++++ b/sdk/api/handlers/handlers_errors.go
+@@ -128,7 +128,7 @@ func (h *BaseAPIHandler) WriteErrorResponse(c *gin.Context, msg *interfaces.Erro
+ 			c.Writer.Header().Add("Retry-After", value)
+ 		}
+ 	}
+-	if msg != nil && msg.Addon != nil && PassthroughHeadersEnabled(h.CurrentConfig()) {
++	if msg != nil && msg.Addon != nil && PassthroughHeadersEnabled(h.RequestConfig(c)) {
+ 		for key, values := range msg.Addon {
+ 			if len(values) == 0 || IsCPAReservedResponseHeader(key) {
+ 				continue
+@@ -196,7 +196,7 @@ func writeDirectErrorResponse(c *gin.Context, status int, msg *interfaces.ErrorM
+ }
+ 
+ func (h *BaseAPIHandler) LoggingAPIResponseError(ctx context.Context, err *interfaces.ErrorMessage) {
+-	if cfg := h.CurrentConfig(); cfg != nil && cfg.RequestLog {
++	if cfg := h.requestConfigFromContext(ctx); cfg != nil && cfg.RequestLog {
+ 		if ginContext, ok := ctx.Value("gin").(*gin.Context); ok {
+ 			if apiResponseErrors, isExist := ginContext.Get("API_RESPONSE_ERROR"); isExist {
+ 				if slicesAPIResponseError, isOk := apiResponseErrors.([]*interfaces.ErrorMessage); isOk {
+diff --git a/sdk/api/handlers/handlers_execution.go b/sdk/api/handlers/handlers_execution.go
+index 5e4c1962..08c93ef4 100644
+--- a/sdk/api/handlers/handlers_execution.go
++++ b/sdk/api/handlers/handlers_execution.go
+@@ -112,7 +112,7 @@ func (h *BaseAPIHandler) executeWithAuthManagerFormats(ctx context.Context, entr
+ 	executedReq, executedOpts := afterAuthCapture.apply(req, opts)
+ 	ctx = enrichContextWithSessionHierarchy(ctx, executedOpts.Headers, executedReq.Payload, executedOpts.Metadata)
+ 	rawResponseHeaders := cloneHeader(resp.Headers)
+-	passthroughHeaders := executionPassthroughHeaders(h.CurrentConfig(), execOptions.InternalSource)
++	passthroughHeaders := executionPassthroughHeaders(h.requestConfigFromContext(ctx), execOptions.InternalSource)
+ 	responseHeaders := downstreamHeadersFromExecutor(rawResponseHeaders, passthroughHeaders)
+ 	body, responseHeaders := h.applyResponseInterceptors(ctx, lifecycle.requestID(), responseProtocol, normalizedModel, originalRequestedModel, executedOpts, rawResponseHeaders, responseHeaders, executedOpts.OriginalRequest, executedReq.Payload, resp.Payload, http.StatusOK, execOptions.SkipInterceptorPluginID, passthroughHeaders)
+ 	lifecycle.complete(pluginapi.RequestCompletionSucceeded, http.StatusOK, nil)
+@@ -182,7 +182,7 @@ func (h *BaseAPIHandler) executeCountWithAuthManager(ctx context.Context, handle
+ 	executedReq, executedOpts := afterAuthCapture.apply(req, opts)
+ 	ctx = enrichContextWithSessionHierarchy(ctx, executedOpts.Headers, executedReq.Payload, executedOpts.Metadata)
+ 	rawResponseHeaders := cloneHeader(resp.Headers)
+-	passthroughHeaders := executionPassthroughHeaders(h.CurrentConfig(), execOptions.InternalSource)
++	passthroughHeaders := executionPassthroughHeaders(h.requestConfigFromContext(ctx), execOptions.InternalSource)
+ 	responseHeaders := downstreamHeadersFromExecutor(rawResponseHeaders, passthroughHeaders)
+ 	body, responseHeaders := h.applyResponseInterceptors(ctx, lifecycle.requestID(), handlerType, normalizedModel, originalRequestedModel, executedOpts, rawResponseHeaders, responseHeaders, executedOpts.OriginalRequest, executedReq.Payload, resp.Payload, http.StatusOK, execOptions.SkipInterceptorPluginID, passthroughHeaders)
+ 	lifecycle.complete(pluginapi.RequestCompletionSucceeded, http.StatusOK, nil)
+@@ -232,7 +232,7 @@ func (h *BaseAPIHandler) executeWithPluginExecutor(ctx context.Context, entryPro
+ 		reporter.EnsurePublished(execCtx)
+ 	}
+ 	rawResponseHeaders := cloneHeader(resp.Headers)
+-	passthroughHeaders := executionPassthroughHeaders(h.CurrentConfig(), execOptions.InternalSource)
++	passthroughHeaders := executionPassthroughHeaders(h.requestConfigFromContext(ctx), execOptions.InternalSource)
+ 	responseHeaders := downstreamHeadersFromExecutor(rawResponseHeaders, passthroughHeaders)
+ 	body, responseHeaders := h.applyResponseInterceptors(execCtx, lifecycle.requestID(), responseProtocol, modelName, originalRequestedModel, opts, rawResponseHeaders, responseHeaders, opts.OriginalRequest, req.Payload, resp.Payload, http.StatusOK, execOptions.SkipInterceptorPluginID, passthroughHeaders)
+ 	lifecycle.complete(pluginapi.RequestCompletionSucceeded, http.StatusOK, nil)
+@@ -268,7 +268,7 @@ func (h *BaseAPIHandler) countWithPluginExecutor(ctx context.Context, handlerTyp
+ 		return nil, nil, errMsg
+ 	}
+ 	rawResponseHeaders := cloneHeader(resp.Headers)
+-	passthroughHeaders := executionPassthroughHeaders(h.CurrentConfig(), execOptions.InternalSource)
++	passthroughHeaders := executionPassthroughHeaders(h.requestConfigFromContext(ctx), execOptions.InternalSource)
+ 	responseHeaders := downstreamHeadersFromExecutor(rawResponseHeaders, passthroughHeaders)
+ 	body, responseHeaders := h.applyResponseInterceptors(ctx, lifecycle.requestID(), handlerType, modelName, originalRequestedModel, opts, rawResponseHeaders, responseHeaders, opts.OriginalRequest, req.Payload, resp.Payload, http.StatusOK, execOptions.SkipInterceptorPluginID, passthroughHeaders)
+ 	lifecycle.complete(pluginapi.RequestCompletionSucceeded, http.StatusOK, nil)
+diff --git a/sdk/api/handlers/handlers_stream.go b/sdk/api/handlers/handlers_stream.go
+index 6f0bfbc9..d9b0a9b7 100644
+--- a/sdk/api/handlers/handlers_stream.go
++++ b/sdk/api/handlers/handlers_stream.go
+@@ -92,7 +92,7 @@ func (h *BaseAPIHandler) streamWithPluginExecutor(ctx context.Context, entryProt
+ 		return nil, nil, errChan
+ 	}
+ 
+-	passthroughHeadersEnabled := executionPassthroughHeaders(h.CurrentConfig(), execOptions.InternalSource)
++	passthroughHeadersEnabled := executionPassthroughHeaders(h.requestConfigFromContext(ctx), execOptions.InternalSource)
+ 	interceptorHost := h.interceptorHost()
+ 	streamInterceptorsActive := streamInterceptorsEnabled(interceptorHost)
+ 	rawStreamHeaders := cloneHeader(streamResult.Headers)
+@@ -375,7 +375,7 @@ func (h *BaseAPIHandler) executeStreamWithAuthManagerFormats(ctx context.Context
+ 	if executedReq, executedOpts := executedRequest(); len(executedOpts.Headers) > 0 || len(executedReq.Payload) > 0 || len(executedOpts.Metadata) > 0 {
+ 		ctx = enrichContextWithSessionHierarchy(ctx, executedOpts.Headers, executedReq.Payload, executedOpts.Metadata)
+ 	}
+-	passthroughHeadersEnabled := executionPassthroughHeaders(h.CurrentConfig(), execOptions.InternalSource)
++	passthroughHeadersEnabled := executionPassthroughHeaders(h.requestConfigFromContext(ctx), execOptions.InternalSource)
+ 	interceptorHost := h.interceptorHost()
+ 	streamInterceptorsActive := streamInterceptorsEnabled(interceptorHost)
+ 	// Resolve bootstrap retries and header initialization before returning so the
+@@ -539,7 +539,7 @@ func (h *BaseAPIHandler) executeStreamWithAuthManagerFormats(ctx context.Context
+ 		}
+ 	}
+ 
+-	maxBootstrapRetries := StreamingBootstrapRetries(h.CurrentConfig())
++	maxBootstrapRetries := StreamingBootstrapRetries(h.requestConfigFromContext(ctx))
+ 	if h.AuthManager.HomeEnabled() {
+ 		maxBootstrapRetries = 0
+ 	}
+diff --git a/sdk/api/handlers/openai/openai_handlers.go b/sdk/api/handlers/openai/openai_handlers.go
+index f5114e54..af3bd81b 100644
+--- a/sdk/api/handlers/openai/openai_handlers.go
++++ b/sdk/api/handlers/openai/openai_handlers.go
+@@ -507,7 +507,7 @@ func (h *OpenAIAPIHandler) handleStreamingResponse(c *gin.Context, rawJSON []byt
+ 		flusher.Flush()
+ 		return true
+ 	}
+-	keepAliveC, stopKeepAlive := handlers.NewPreFirstTokenKeepAliveTicker(h.CurrentConfig())
++	keepAliveC, stopKeepAlive := handlers.NewPreFirstTokenKeepAliveTicker(h.RequestConfig(c))
+ 	defer stopKeepAlive()
+ 
+ 	dataChan, resolvedHeaders, errChan, okBootstrap := h.ExecuteStreamWithPreFTKeepAlive(
+@@ -666,7 +666,7 @@ func (h *OpenAIAPIHandler) handleCompletionsStreamingResponse(c *gin.Context, ra
+ 		flusher.Flush()
+ 		return true
+ 	}
+-	keepAliveC, stopKeepAlive := handlers.NewPreFirstTokenKeepAliveTicker(h.CurrentConfig())
++	keepAliveC, stopKeepAlive := handlers.NewPreFirstTokenKeepAliveTicker(h.RequestConfig(c))
+ 	defer stopKeepAlive()
+ 
+ 	dataChan, resolvedHeaders, errChan, okBootstrap := h.ExecuteStreamWithPreFTKeepAlive(
+diff --git a/sdk/api/handlers/openai/openai_responses_handlers.go b/sdk/api/handlers/openai/openai_responses_handlers.go
+index e32e2523..33349c39 100644
+--- a/sdk/api/handlers/openai/openai_responses_handlers.go
++++ b/sdk/api/handlers/openai/openai_responses_handlers.go
+@@ -554,7 +554,7 @@ func (h *OpenAIResponsesAPIHandler) prepareCodexMultiAgentV2Tools(c *gin.Context
+ 	if h == nil {
+ 		return payload
+ 	}
+-	cfg := h.CurrentConfig()
++	cfg := h.RequestConfig(c)
+ 	if cfg == nil {
+ 		return payload
+ 	}
+@@ -587,7 +587,7 @@ func (h *OpenAIResponsesAPIHandler) prepareCodexOrphanDelegation(c *gin.Context,
+ 	if h == nil {
+ 		return payload
+ 	}
+-	cfg := h.CurrentConfig()
++	cfg := h.RequestConfig(c)
+ 	if cfg == nil || !cfg.CodexOrphanDelegationCompatibility {
+ 		return payload
+ 	}
+@@ -762,7 +762,7 @@ func (h *OpenAIResponsesAPIHandler) handleStreamingResponse(c *gin.Context, rawJ
+ 		}
+ 		return true
+ 	}
+-	keepAliveC, stopKeepAlive := handlers.NewPreFirstTokenKeepAliveTicker(h.CurrentConfig())
++	keepAliveC, stopKeepAlive := handlers.NewPreFirstTokenKeepAliveTicker(h.RequestConfig(c))
+ 	defer stopKeepAlive()
+ 
+ 	dataChan, resolvedHeaders, errChan, okBootstrap := h.ExecuteStreamWithPreFTKeepAlive(
+diff --git a/sdk/api/handlers/openai/openai_responses_websocket.go b/sdk/api/handlers/openai/openai_responses_websocket.go
+index 2b5ab5e0..25881ad0 100644
+--- a/sdk/api/handlers/openai/openai_responses_websocket.go
++++ b/sdk/api/handlers/openai/openai_responses_websocket.go
+@@ -281,7 +281,7 @@ func (h *OpenAIResponsesAPIHandler) ResponsesWebsocket(c *gin.Context) {
+ 	requestLogEnabled := false
+ 	codexResponseSteering := false
+ 	if h != nil {
+-		if cfg := h.CurrentConfig(); cfg != nil {
++		if cfg := h.RequestConfig(c); cfg != nil {
+ 			requestLogEnabled = cfg.RequestLog
+ 			codexResponseSteering = cfg.CodexResponseSteering
+ 		}
+diff --git a/sdk/api/handlers/stream_forwarder.go b/sdk/api/handlers/stream_forwarder.go
+index fb5828fc..90972b50 100644
+--- a/sdk/api/handlers/stream_forwarder.go
++++ b/sdk/api/handlers/stream_forwarder.go
+@@ -148,7 +148,7 @@ func (h *BaseAPIHandler) ForwardStream(c *gin.Context, flusher http.Flusher, can
+ 		}
+ 	}
+ 
+-	keepAliveInterval := StreamingKeepAliveInterval(h.CurrentConfig())
++	keepAliveInterval := StreamingKeepAliveInterval(h.RequestConfig(c))
+ 	if opts.KeepAliveInterval != nil {
+ 		keepAliveInterval = *opts.KeepAliveInterval
+ 	}

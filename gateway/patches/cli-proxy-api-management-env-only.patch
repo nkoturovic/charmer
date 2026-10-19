@@ -70,7 +70,7 @@ index cf802eb0..aeb5024d 100644
  
  // persistLocked saves the current in-memory config to disk.
 diff --git a/internal/api/server.go b/internal/api/server.go
-index a11c3b81..8e187c90 100644
+index 25a1aa43..87908aad 100644
 --- a/internal/api/server.go
 +++ b/internal/api/server.go
 @@ -247,9 +247,11 @@ func NewServer(cfg *config.Config, authManager *auth.Manager, accessManager *sdk

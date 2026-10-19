@@ -1,0 +1,128 @@
+diff --git a/internal/client/claude/models/models.go b/internal/client/claude/models/models.go
+index 60e09baf..1d07d331 100644
+--- a/internal/client/claude/models/models.go
++++ b/internal/client/claude/models/models.go
+@@ -8,6 +8,11 @@ import (
+ 
+ const claudeDDModelPrefix = "claude-fable-5-dd-"
+ 
++// charmerModelIDPrefix starts charmer's model selectors and its render
++// sentinels (charmer-render-*). Like "claude-" IDs they are listed as they
++// are, so the Anthropic listing names the selector a request routes with.
++const charmerModelIDPrefix = "charmer-"
++
+ // BuildResponse builds an Anthropic model response from available models.
+ func BuildResponse(availableModels []map[string]any, disableCloaking bool) map[string]any {
+ 	models := make([]map[string]any, len(availableModels))
+@@ -45,10 +50,11 @@ func BuildResponse(availableModels []map[string]any, disableCloaking bool) map[s
+ }
+ 
+ // EnsureClaudeModelIDPrefix rewrites model IDs for Anthropic model listings.
+-// IDs that already start with "claude-" are returned unchanged; all other IDs
+-// become "claude-fable-5-dd-" plus the original ID with its characters reversed.
++// IDs that already start with "claude-" or "charmer-" are returned unchanged;
++// all other IDs become "claude-fable-5-dd-" plus the original ID with its
++// characters reversed.
+ func EnsureClaudeModelIDPrefix(id string) string {
+-	if id == "" || strings.HasPrefix(id, "claude-") {
++	if id == "" || strings.HasPrefix(id, "claude-") || strings.HasPrefix(id, charmerModelIDPrefix) {
+ 		return id
+ 	}
+ 	return claudeDDModelPrefix + reverseModelID(id)
+diff --git a/internal/client/claude/models/models_charmer_test.go b/internal/client/claude/models/models_charmer_test.go
+new file mode 100644
+index 00000000..7c3c200b
+--- /dev/null
++++ b/internal/client/claude/models/models_charmer_test.go
+@@ -0,0 +1,91 @@
++package models
++
++import "testing"
++
++// charmer's selectors and render sentinels stay literal in the Anthropic
++// model listing; every other ID outside "claude-" keeps the upstream cloaking.
++
++func TestCharmerModelIDsListedLiterally(t *testing.T) {
++	for _, id := range []string{
++		"charmer-kimi-k3",
++		"charmer-grok46-xhigh",
++		"charmer-fable-5-1[1m]",
++		"charmer-render-0123456789abcdef",
++		"charmer-",
++	} {
++		if got := EnsureClaudeModelIDPrefix(id); got != id {
++			t.Fatalf("EnsureClaudeModelIDPrefix(%q) = %q, want it unchanged", id, got)
++		}
++		if got := ResolveClaudeModelIDPrefix(id); got != id {
++			t.Fatalf("ResolveClaudeModelIDPrefix(%q) = %q, want it unchanged", id, got)
++		}
++	}
++}
++
++func TestOtherModelIDsStayCloaked(t *testing.T) {
++	tests := []struct {
++		name string
++		id   string
++		want string
++	}{
++		{"gpt-multi selector", "gpt-multi-sol-high", "claude-fable-5-dd-hgih-los-itlum-tpg"},
++		{"gpt model", "gpt-4o", "claude-fable-5-dd-o4-tpg"},
++		{"custom selector", "custom-model-x", "claude-fable-5-dd-x-ledom-motsuc"},
++		{"prefix is case-sensitive", "Charmer-kimi-k3", "claude-fable-5-dd-3k-imik-remrahC"},
++		{"charmer mid-string is no prefix", "my-charmer-kimi", "claude-fable-5-dd-imik-remrahc-ym"},
++		{"prefix includes the dash", "charmer", "claude-fable-5-dd-remrahc"},
++	}
++
++	for _, tt := range tests {
++		t.Run(tt.name, func(t *testing.T) {
++			if got := EnsureClaudeModelIDPrefix(tt.id); got != tt.want {
++				t.Fatalf("EnsureClaudeModelIDPrefix(%q) = %q, want %q", tt.id, got, tt.want)
++			}
++			if got := ResolveClaudeModelIDPrefix(tt.want); got != tt.id {
++				t.Fatalf("ResolveClaudeModelIDPrefix(%q) = %q, want %q", tt.want, got, tt.id)
++			}
++			if got := ResolveClaudeModelIDPrefix(tt.want + "(high)"); got != tt.id+"(high)" {
++				t.Fatalf("ResolveClaudeModelIDPrefix(%q) = %q, want %q", tt.want+"(high)", got, tt.id+"(high)")
++			}
++		})
++	}
++}
++
++func TestBuildResponseListsCharmerIDsLiterally(t *testing.T) {
++	availableModels := []map[string]any{
++		{"id": "charmer-kimi-k3", "display_name": "Kimi K3", "owned_by": "moonshot", "max_input_tokens": 1000000},
++		{"id": "charmer-render-0123456789abcdef", "display_name": "charmer-render-0123456789abcdef"},
++		{"id": "gpt-multi-sol-high", "display_name": "Sol"},
++		{"id": "claude-opus-5-5", "display_name": "Opus 5.5"},
++	}
++
++	response := BuildResponse(availableModels, false)
++	models, ok := response["data"].([]map[string]any)
++	if !ok {
++		t.Fatalf("data type = %T, want []map[string]any", response["data"])
++	}
++	listed := make(map[string]map[string]any, len(models))
++	for _, model := range models {
++		id, _ := model["id"].(string)
++		listed[id] = model
++	}
++	if len(listed) != len(availableModels) {
++		t.Fatalf("len(listing) = %d, want %d", len(listed), len(availableModels))
++	}
++	for _, id := range []string{"charmer-kimi-k3", "charmer-render-0123456789abcdef",
++		"claude-fable-5-dd-hgih-los-itlum-tpg", "claude-opus-5-5"} {
++		if _, ok := listed[id]; !ok {
++			t.Fatalf("listing = %v, want id %q", listed, id)
++		}
++	}
++	if _, ok := listed["gpt-multi-sol-high"]; ok {
++		t.Fatalf("gpt-multi-sol-high is listed uncloaked")
++	}
++	kimi := listed["charmer-kimi-k3"]
++	if kimi["owned_by"] != "moonshot" || kimi["max_input_tokens"] != 1000000 {
++		t.Fatalf("charmer-kimi-k3 = %v, want owned_by and max_input_tokens kept", kimi)
++	}
++	if got := availableModels[0]["id"]; got != "charmer-kimi-k3" {
++		t.Fatalf("BuildResponse mutated input id to %v", got)
++	}
++}

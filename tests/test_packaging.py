@@ -73,6 +73,11 @@ def gate(name, document=None):
 # The files whose bytes define the gateway build: the recipe and the tool.
 RECIPE_FILES = ("gateway/UPSTREAM.json", "tools/build.py")
 
+# Admission ids are stable: a retired id is never reused. 11 is the
+# Retry-After candidate (never admitted), 14 plugin-host-locking (retired with
+# the 8.0.33 rebase); the tail patches are 24 and 25.
+RETIRED_PATCH_NUMBERS = (11, 14)
+
 
 class KeyedAuditInvariantTests(unittest.TestCase):
     """Reviewed evidence, not runtime policy; valid in a copied/sandbox tree.
@@ -135,14 +140,17 @@ class KeyedAuditInvariantTests(unittest.TestCase):
         identities = [name + "@" + digest("gateway/patches/" + name) for name in names]
         manifest = {"version": 1, "upstream_version": version, "patches": identities}
         self.assertEqual(build["ordered_manifest"], manifest)
-        # Series order numbers the patches; 11 (the never-admitted Retry-After
-        # candidate) is skipped, so 22 admitted patches are numbered 1-10, 12-23.
-        numbers = [*range(1, 11), *range(12, len(identities) + 2)]
+        # Series order numbers the patches with their stable admission ids.
+        # Retired ids are skipped: 11 (the never-admitted Retry-After
+        # candidate) and 14 (plugin-host-locking, redundant since 8.0.28), so
+        # 23 admitted patches are numbered 1-10, 12, 13, 15-25.
+        numbers = [number for number in range(1, len(identities) + len(RETIRED_PATCH_NUMBERS) + 1)
+                   if number not in RETIRED_PATCH_NUMBERS]
         self.assertEqual(build["numbered_to_shipped"], [
             {"number": number, "identity": identity} for number, identity in zip(numbers, identities)])
         self.assertEqual(len(identities), len(numbers))
         self.assertEqual(fixture["required_patch_numbers"], [3, 9, 10])
-        self.assertEqual(fixture["excluded_patch_numbers"], [11])
+        self.assertEqual(fixture["excluded_patch_numbers"], list(RETIRED_PATCH_NUMBERS))
         for index, name in ((2, "non-claude-cache-retention"), (8, "credentialed-redirects"),
                             (9, "openai-compat-keyed-safety")):
             self.assertEqual(names[index], "cli-proxy-api-" + name + ".patch")
@@ -478,7 +486,7 @@ class ManagementPinWiringTests(unittest.TestCase):
         text = (NIX_DIR / "gateway.nix").read_text()
         names = admitted_names()
         manifest = json.loads((RESOURCES_ROOT / "catalog" / "gateway.json").read_text())["gateway"]["patches"]
-        self.assertEqual(len(names), 22)
+        self.assertEqual(len(names), 23)
         self.assertEqual(names, manifest)
         # The applied series and the passthru export are the recipe's admitted
         # series, in order; gateway.nix carries no patch list of its own.
@@ -644,7 +652,6 @@ class CliProxyApiDerivationTests(unittest.TestCase):
                 "cli-proxy-api-openai-compat-keyed-safety.patch",
                 "cli-proxy-api-auth-snapshot-locking.patch",
                 "cli-proxy-api-server-config-snapshot.patch",
-                "cli-proxy-api-plugin-host-locking.patch",
                 "cli-proxy-api-claude-metadata-locking.patch",
                 "cli-proxy-api-oauth-model-overlay.patch",
                 "cli-proxy-api-no-antigravity-egress.patch",
@@ -654,6 +661,8 @@ class CliProxyApiDerivationTests(unittest.TestCase):
                 "cli-proxy-api-refresh-shutdown-join.patch",
                 "cli-proxy-api-openai-content-chunks.patch",
                 "cli-proxy-api-charmer-model-ids.patch",
+                "cli-proxy-api-access-log-path-quoting.patch",
+                "cli-proxy-api-codex-refresh-lead.patch",
             ],
         )
         manifest = json.loads((RESOURCES_ROOT / "catalog" / "gateway.json").read_text())
@@ -812,6 +821,28 @@ class ManagementAllowlistGateTests(unittest.TestCase):
         "TestIssue5190ModelDetailLifecycle",
         "TestIssue5190ModelDetailUsesVisibleCatalog",
         "TestIssue5190ModelDetailHomeVisibility",
+        # The other open 8.x surfaces, default-denied: alpha search (Home and
+        # direct), live, realtime, videos and interactions.
+        "TestAuditHomeCodexSearchBusyReturnsTrustedRetryAfter",
+        "TestAuditHomeCodexSearchBodyCloseBeforeRelease",
+        "TestHomeCodexAlphaSearchReportsUnauthorizedBeforeEarlyReturn",
+        "TestHomeCodexAlphaSearchEndsSelectionAcrossDirectHTTPPaths",
+        "TestCodexLiveRoutesRequireAuthAndAreRegistered",
+        "TestRealtimeStandardRoutesAndClientSecretAuth",
+        "TestCodexAlphaSearchForwardsRequest",
+        "TestCodexAlphaSearchUsesPluginProviderTargetModel",
+        "TestCodexAlphaSearchFallsBackWhenPluginDoesNotHandleRoute",
+        "TestCodexAlphaSearchRejectsUnsupportedPluginRouteTarget",
+        "TestCodexAlphaSearchSanitizesResponsesOnlyFields",
+        "TestCodexAlphaSearchCredentialPolicy",
+        "TestCodexAlphaSearchOptInAPIKeyUsesConfiguredEndpoint",
+        "TestCodexAlphaSearchOptInAPIKeyStripsCredentialPrefix",
+        "TestCodexAlphaSearchOptInAPIKeyResolvesModelAlias",
+        "TestCodexAlphaSearchOptInAPIKeyWithoutBaseURLFailsClosed",
+        "TestCodexAlphaSearchPassesGinContextToAuthSelection",
+        "TestCodexAlphaSearchUsesRequestIDForSessionAffinity",
+        "TestVideosRoutesKeepXAINativeAndExposeOpenAIPrefix",
+        "TestInteractionsRouteRegistered",
     )
 
     def _patch_text(self) -> str:
@@ -1030,7 +1061,8 @@ class ManagementEnvOnlyGateTests(unittest.TestCase):
 
     def test_gate_runs_every_env_only_test_and_follows_the_byte_loader(self) -> None:
         names = admitted_names()
-        self.assertEqual(names[names.index(self.PATCH.name) - 1], "cli-proxy-api-watcher-parentdir.patch")
+        self.assertEqual(names[6], self.PATCH.name)
+        self.assertLess(names.index("cli-proxy-api-watcher-parentdir.patch"), names.index(self.PATCH.name))
         record = gate("management-env-only")
         self.assertEqual(record["packages"], ["./internal/config", "./internal/api"])
         match = re.fullmatch(r"\^\(([^()]*)\)\$", record["run"])
@@ -1226,7 +1258,8 @@ class AdmittedPatchGateTests(unittest.TestCase):
                                      'TestCM053SetupTokenMetadataLockNotHeldAcrossProfileFetch',
                                      'TestCM053ManagerPrepareConcurrentReaders'],
      './internal/runtime/executor/helps': ['TestCM053HelpsClientFactoriesCarrySameOriginPolicy',
-                                           'TestCM053UsageWrapperPreservesRedirectPolicy'],
+                                           'TestCM053UsageWrapperPreservesRedirectPolicy',
+                                           'TestCM053DecoratedClientsKeepRedirectPolicy'],
      './internal/auth/claude': ['TestCM053OAuthRefreshRefusesCrossOriginRedirect'],
      './internal/auth/codex': ['TestCM053OAuthRefreshRefusesCrossOriginRedirect'],
      './internal/compatsafe': ['TestCM053CompatSafeKindsFixed',
@@ -1239,11 +1272,7 @@ class AdmittedPatchGateTests(unittest.TestCase):
                         'TestCM053ReloadConcurrentUnifiedModels',
                         'TestCM053ServerConfigSnapshotOwnership'],
      './sdk/api/handlers': ['TestCM053ReloadConcurrentSDKHandlerConfig',
-                            'TestCM053PluginHostConcurrentModelInterception',
-                            'TestCM053PluginHostConcurrentExecutorLookup',
-                            'TestCM053PluginHostTypedNilAndReentrantCallback'],
-     './sdk/api/handlers/openai': ['TestCM053ImagesKeepAliveUsesRequestSnapshot',
-                                   'TestCM053VideoBindingTTLUsesRequestSnapshot']}
+                            'TestCM053ServedReadersUseRequestSnapshot']}
 
     # Pin all overlay tests by owning package; a prefix-only go test may exit
     # successfully when one of these packages has no matching tests.
@@ -1260,6 +1289,7 @@ class AdmittedPatchGateTests(unittest.TestCase):
             "TestCM053OverlayAbsentNoEffect",
             "TestCM053OverlayStaticWins",
             "TestCM053OverlayExclusionsApply",
+            "TestCM053OverlayGlobalExclusionsAuthoritativeForSeededRecord",
             "TestCM053OverlayCapabilityThroughAlias",
             "TestCM053OverlayPassThroughClaude",
             "TestCM053OverlayPassThroughCodex",
@@ -1306,14 +1336,20 @@ class AdmittedPatchGateTests(unittest.TestCase):
         names = ("TestCM053NoAntigravityEgressLocalModel",
                  "TestCM053NoAntigravityEgressRemoteModel",
                  "TestLocalModeNoEgressSDKLocalModel",
-                 "TestLocalModeNoEgressSDKRemoteModel")
+                 "TestLocalModeNoEgressSDKRemoteModel",
+                 "TestCM053LocalModeStartModelsUpdaterReadsEmbedded",
+                 "TestCM053LocalModeRefusesRemoteCatalogSources")
         record = gate("no-antigravity-egress")
-        self.assertEqual(record["packages"], ["./cmd/server", "./sdk/cliproxy"])
+        self.assertEqual(record["packages"], ["./cmd/server", "./sdk/cliproxy", "./internal/registry"])
         self.assertEqual(record["run"], f"^({'|'.join(names)})$")
         self.assertEqual(record["expected_tests"], list(names))
         patch = (PATCH_DIR / "cli-proxy-api-no-antigravity-egress.patch").read_text()
-        self.assertEqual(set(re.findall(r"^\+func (Test\w*NoAntigravityEgress\w+|Test\w*NoEgress\w+)\(",
+        self.assertEqual(set(re.findall(r"^\+func (Test\w*NoAntigravityEgress\w+|Test\w*NoEgress\w+|TestCM053LocalMode\w+)\(",
                                        patch, re.MULTILINE)), set(names))
+        # The SDK path's catalog updaters read the same policy (L1 review R1),
+        # and an explicit remote catalog source is refused in local mode.
+        self.assertIn("+func ReplaceCatalogFetchers(", patch)
+        self.assertIn("+func refuseRemoteCatalogSources(sources CatalogSources) CatalogSources {", patch)
         # One policy, set once from --local-model before any updater starts.
         self.assertIn("+++ b/internal/localmode/localmode.go", patch)
         self.assertEqual(patch.count("+\tlocalmode.Set(localModel)\n"), 1)
@@ -1327,7 +1363,8 @@ class AdmittedPatchGateTests(unittest.TestCase):
         # asset updater and the latest-version lookup.
         for path in ("internal/misc/antigravity_version.go", "internal/runtime/executor/helps/xai_version.go",
                      "internal/managementasset/updater.go", "sdk/cliproxy/service_lifecycle.go",
-                     "internal/api/handlers/management/config_basic.go", "cmd/server/main.go"):
+                     "internal/api/handlers/management/config_basic.go", "cmd/server/main.go",
+                     "internal/registry/catalog_sources.go", "internal/registry/model_updater.go"):
             with self.subTest(path=path):
                 chunk = patch.split("+++ b/" + path + "\n", 1)[1].split("\ndiff --git ", 1)[0]
                 self.assertIn("+\tif localmode.NoEgress() {", chunk)
@@ -1473,7 +1510,7 @@ class CodexIdentityGateTests(unittest.TestCase):
         patch = (PATCH_DIR / "cli-proxy-api-codex-client-identity.patch").read_text()
         names = tuple("TestCM055CodexIdentity" + suffix for suffix in (
             "HTTPFinalHeaders", "WebsocketFinalHeaders", "VersionDefault",
-            "CloakingPrecedence", "StaticOverrideException"))
+            "CloakingPrecedence", "RoutingHintFinal", "StaticOverrideException"))
         self.assertEqual(set(re.findall(r"^\+func (TestCM055\w+)\(", patch, re.M)), set(names))
         # The build tool lists the selection before running it and fails
         # unless it equals expected_tests (go test accepts an empty selection).
@@ -1485,6 +1522,9 @@ class CodexIdentityGateTests(unittest.TestCase):
         self.assertIn("cp ${./gateway_codex_identity_probe_test.go} sdk/cliproxy/gwtest_codex_probe_test.go", diagnostic)
         source = (REPO_ROOT / "tests/gateway_codex_identity_probe_test.go").read_text()
         self.assertIn("func TestOmissionCodexIdentity(", source)
+        # 8.x's routing hint is part of the final-header inventory.
+        self.assertIn('"X-Codex-Routing-Hint": "model=codexprobe-omission",', source)
+        self.assertIn('"X-Codex-Routing-Hint": hint}', patch)
         self.assertNotIn("func TestOmissionCodexIdentity(", patch)
         from charmer import proxy
         self.assertIn('"Version", "' + proxy.CODEX_CLIENT_VERSION + '"', patch)
@@ -1503,14 +1543,15 @@ class CodexApiKeySafetyGateTests(unittest.TestCase):
     PREREQUISITES = ("cli-proxy-api-credentialed-redirects.patch", "cli-proxy-api-openai-compat-keyed-safety.patch",
                      "cli-proxy-api-codex-client-identity.patch")
 
-    def test_patch_is_nineteenth_after_its_prerequisites_and_carries_its_tests(self):
+    def test_patch_is_eighteenth_after_its_prerequisites_and_carries_its_tests(self):
         patch = (PATCH_DIR / self.NAME).read_text()
         names = admitted_names()
-        self.assertEqual(names[18], self.NAME)
-        self.assertTrue(all(name in names[:18] for name in self.PREREQUISITES))
+        # Eighteenth since the plugin-host-locking patch (admission id 14) retired.
+        self.assertEqual(names[17], self.NAME)
+        self.assertTrue(all(name in names[:17] for name in self.PREREQUISITES))
         self.assertEqual(re.findall(r"^\+func (Test\w+)\(", patch, re.MULTILINE), list(self.TESTS))
         self.assertIn("+++ b/internal/runtime/executor/codex_key_safety.go", patch)
-        self.assertIn('+\t"github.com/router-for-me/CLIProxyAPI/v7/internal/compatsafe"', patch)
+        self.assertIn('+\t"github.com/router-for-me/CLIProxyAPI/v8/internal/compatsafe"', patch)
         # The codex client Version default is replaced, never removed for accounts.
         self.assertIn('-\tmisc.EnsureHeader(r.Header, ginHeaders, "Version", "0.159.1")', patch)
         self.assertIn('+\tmisc.EnsureHeader(r.Header, ginHeaders, "Version", codexVersionDefault(cfg, auth))', patch)

@@ -539,7 +539,7 @@ index 3b4cfc9b..7dc4d6ee 100644
  }
  
 diff --git a/sdk/cliproxy/service_oauth_model_alias_test.go b/sdk/cliproxy/service_oauth_model_alias_test.go
-index c7fb5551..15abf2c3 100644
+index c7fb5551..a6647123 100644
 --- a/sdk/cliproxy/service_oauth_model_alias_test.go
 +++ b/sdk/cliproxy/service_oauth_model_alias_test.go
 @@ -3,6 +3,7 @@ package cliproxy
@@ -555,7 +555,7 @@ index c7fb5551..15abf2c3 100644
  	}
  }
 +
-+// The static "codex" channel resolves to the codex-pro tier. On 7.3.15 that
++// The static "codex" channel resolves to the codex-pro tier. On 8.0.33 that
 +// tier lists gpt-5.6-sol at 921000/128000 and gpt-6-sol at 272000/128000;
 +// charmer's OAuth aliases must advertise exactly the registry limits.
 +func TestApplyOAuthModelAlias_CodexSolPreservesTokenLimits(t *testing.T) {

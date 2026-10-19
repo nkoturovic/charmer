@@ -130,10 +130,10 @@ index 00000000..fd7bed22
 +	}
 +}
 diff --git a/sdk/cliproxy/auth/types.go b/sdk/cliproxy/auth/types.go
-index cb815e48..a601d993 100644
+index c6d8cfb7..a73af388 100644
 --- a/sdk/cliproxy/auth/types.go
 +++ b/sdk/cliproxy/auth/types.go
-@@ -841,6 +841,11 @@ func (a *Auth) ExpirationTime() (time.Time, bool) {
+@@ -879,6 +879,11 @@ func (a *Auth) ExpirationTime() (time.Time, bool) {
  	return a.OuterExpirationTime()
  }
  
@@ -145,7 +145,7 @@ index cb815e48..a601d993 100644
  // CodexSIWCRefreshLead is the minimum remaining validity required before refreshing
  // a Sign in with ChatGPT (SIWC) token, matching pi's DEFAULT_OAUTH_MINIMUM_VALIDITY_MS (5 minutes).
  const CodexSIWCRefreshLead = 5 * time.Minute
-@@ -910,7 +915,7 @@ func CodexOuterNeedsRefresh(a *Auth, now time.Time) (dueAt time.Time, hasRefresh
+@@ -948,7 +953,7 @@ func CodexOuterNeedsRefresh(a *Auth, now time.Time) (dueAt time.Time, hasRefresh
  	}
  	lead := ProviderRefreshLead(provider, a.Runtime)
  	if lead == nil && provider == "codex" {

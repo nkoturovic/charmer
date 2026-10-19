@@ -217,7 +217,11 @@ class GateRecordTests(unittest.TestCase):
 
     def test_source_pins_name_patched_or_upstream_files(self):
         pins = {pin["name"]: pin for pin in self.recipe["source_pins"]}
-        self.assertEqual(set(pins), {"substitution-log-format", "log-line-format", "log-report-caller"})
+        self.assertEqual(set(pins), {"substitution-log-format", "credential-save-format", "log-line-format",
+                                     "log-report-caller"})
+        # The save line the hold recognises is emitted by the credential-save
+        # patch; the line format and report-caller pins frame it.
+        self.assertEqual(pins["credential-save-format"]["path"], "sdk/cliproxy/auth/credential_save.go")
         # gateway_events reads "[time] [request] [level] [file:line] message":
         # the formatter's caller branch, which report-caller selects.
         self.assertEqual(pins["log-line-format"], {

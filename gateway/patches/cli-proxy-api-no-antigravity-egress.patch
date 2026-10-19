@@ -61,7 +61,7 @@ index 00000000..ee7bef8f
 +	}
 +}
 diff --git a/cmd/server/main.go b/cmd/server/main.go
-index 960d5e53..365cc38d 100644
+index a1cf06cc..ade49cf5 100644
 --- a/cmd/server/main.go
 +++ b/cmd/server/main.go
 @@ -26,6 +26,7 @@ import (
@@ -72,7 +72,7 @@ index 960d5e53..365cc38d 100644
  	"github.com/router-for-me/CLIProxyAPI/v8/internal/logging"
  	"github.com/router-for-me/CLIProxyAPI/v8/internal/managementasset"
  	"github.com/router-for-me/CLIProxyAPI/v8/internal/misc"
-@@ -201,6 +202,8 @@ func main() {
+@@ -205,6 +206,8 @@ func main() {
  
  	// Parse the command-line flags.
  	flag.Parse()
@@ -81,7 +81,7 @@ index 960d5e53..365cc38d 100644
  
  	if discoverGateways || discoverJSON {
  		cfgInclude, cfgExclude := cmd.LoadDiscoveryScanFilters(configPath)
-@@ -754,9 +757,7 @@ func main() {
+@@ -758,9 +761,7 @@ func main() {
  		if tuiMode {
  			if standalone {
  				// Standalone mode: start an embedded local server and connect TUI client to it.
@@ -92,7 +92,7 @@ index 960d5e53..365cc38d 100644
  				hook := tui.NewLogHook(2000)
  				hook.SetFormatter(&logging.LogFormatter{})
  				log.AddHook(hook)
-@@ -829,14 +830,39 @@ func main() {
+@@ -833,14 +834,39 @@ func main() {
  			}
  		} else {
  			// Start the main proxy service
@@ -160,10 +160,10 @@ index a6c02c4d..08e5d26f 100644
  	if h != nil && h.cfg != nil {
 diff --git a/internal/localmode/localmode.go b/internal/localmode/localmode.go
 new file mode 100644
-index 00000000..9f7d2086
+index 00000000..28f3c9eb
 --- /dev/null
 +++ b/internal/localmode/localmode.go
-@@ -0,0 +1,24 @@
+@@ -0,0 +1,25 @@
 +// Package localmode holds the process-wide local-mode no-egress policy.
 +//
 +// charmer local patch (no-antigravity-egress): --local-model sets the policy
@@ -171,8 +171,9 @@ index 00000000..9f7d2086
 +// starter reads it. Under it nothing refreshes from the network in the
 +// background: the Antigravity version updater, the Grok CLI (npm) version
 +// updater and the management asset updater do not start, the management
-+// latest-version lookup answers without a request, and model catalogs stay
-+// embedded unless a catalog source is configured explicitly.
++// latest-version lookup answers without a request, and the model catalogs stay
++// embedded: an explicit remote catalog source is refused (never read); only an
++// absolute local catalog file may replace an embedded one.
 +package localmode
 +
 +import "sync/atomic"
@@ -234,6 +235,229 @@ index b416c556..78840469 100644
  	antigravityUpdaterOnce.Do(func() {
  		go runAntigravityVersionUpdater(ctx)
  	})
+diff --git a/internal/registry/catalog_localmode_test.go b/internal/registry/catalog_localmode_test.go
+new file mode 100644
+index 00000000..aed91d08
+--- /dev/null
++++ b/internal/registry/catalog_localmode_test.go
+@@ -0,0 +1,96 @@
++package registry
++
++// charmer local patch (no-antigravity-egress) gate: under the local-mode
++// no-egress policy the catalog readers read only embedded catalogs, also through
++// the legacy StartModelsUpdater and a reload, and an explicit remote source is
++// refused while an absolute local file is kept. The readers are injected, so
++// nothing is read.
++
++import (
++	"context"
++	"sync"
++	"testing"
++	"time"
++
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/localmode"
++)
++
++type fxCatalogReads struct {
++	mu    sync.Mutex
++	reads []string
++}
++
++func (r *fxCatalogReads) fetch(_ context.Context, catalog, source string) ([]byte, error) {
++	r.mu.Lock()
++	defer r.mu.Unlock()
++	r.reads = append(r.reads, catalog+"="+source)
++	return nil, context.Canceled
++}
++
++func (r *fxCatalogReads) waitFor(t *testing.T, want string) {
++	t.Helper()
++	deadline := time.Now().Add(10 * time.Second)
++	for {
++		r.mu.Lock()
++		for _, read := range r.reads {
++			if read == want {
++				r.mu.Unlock()
++				return
++			}
++		}
++		reads := append([]string(nil), r.reads...)
++		r.mu.Unlock()
++		if time.Now().After(deadline) {
++			t.Fatalf("no catalog read %q; reads: %v", want, reads)
++		}
++		time.Sleep(time.Millisecond)
++	}
++}
++
++func fxWithPolicy(t *testing.T, local bool) (*fxCatalogReads, context.Context) {
++	t.Helper()
++	previous := localmode.NoEgress()
++	reads := &fxCatalogReads{}
++	restore := ReplaceCatalogFetchers(reads.fetch)
++	ctx, cancel := context.WithCancel(context.Background())
++	t.Cleanup(func() {
++		cancel()
++		restore()
++		localmode.Set(previous)
++	})
++	localmode.Set(local)
++	return reads, ctx
++}
++
++func TestCM053LocalModeStartModelsUpdaterReadsEmbedded(t *testing.T) {
++	reads, ctx := fxWithPolicy(t, true)
++	StartModelsUpdater(ctx)
++	reads.waitFor(t, "catalog=embed")
++}
++
++func TestCM053LocalModeRefusesRemoteCatalogSources(t *testing.T) {
++	local := t.TempDir() + "/codex.json"
++	got := refuseRemoteCatalogSources(CatalogSources{
++		Catalog:      "https://catalog.invalid/models.json",
++		CodexCatalog: local,
++		DevinCatalog: "",
++	})
++	if got.Catalog != "" || got.CodexCatalog != local || got.DevinCatalog != "" {
++		t.Fatalf("refuseRemoteCatalogSources = %+v, want the remote source dropped and the local file kept", got)
++	}
++
++	reads, ctx := fxWithPolicy(t, true)
++	StartModelCatalogUpdaters(ctx, CatalogSources{}, false)
++	reads.waitFor(t, "catalog=embed")
++	// A reload that names a remote source keeps reading the embedded catalog;
++	// a local file replaces it.
++	UpdateModelCatalogSources(CatalogSources{Catalog: "https://catalog.invalid/models.json", CodexCatalog: local}, false)
++	reads.waitFor(t, "codex-catalog="+local)
++	reads.mu.Lock()
++	defer reads.mu.Unlock()
++	for _, read := range reads.reads {
++		if read == "catalog=https://catalog.invalid/models.json" {
++			t.Fatalf("local mode read a remote catalog source: %v", reads.reads)
++		}
++	}
++}
+diff --git a/internal/registry/catalog_sources.go b/internal/registry/catalog_sources.go
+index f89a153f..6cdd5e0e 100644
+--- a/internal/registry/catalog_sources.go
++++ b/internal/registry/catalog_sources.go
+@@ -11,6 +11,7 @@ import (
+ 	"sync"
+ 	"time"
+ 
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/localmode"
+ 	log "github.com/sirupsen/logrus"
+ )
+ 
+@@ -68,7 +69,10 @@ func (u *catalogUpdater) configure(ctx context.Context, source string) {
+ }
+ 
+ func (u *catalogUpdater) refresh(ctx context.Context, source string, generation uint64) {
+-	data, errFetch := u.fetch(ctx, source)
++	u.mu.Lock()
++	fetch := u.fetch
++	u.mu.Unlock()
++	data, errFetch := fetch(ctx, source)
+ 	if errFetch != nil {
+ 		if ctx.Err() == nil {
+ 			log.Warn("model catalog refresh failed; keeping last valid catalog")
+@@ -237,6 +241,13 @@ func configureCatalogs(ctx context.Context, sources CatalogSources, local, home
+ 		log.WithError(errValidate).Warn("invalid catalog sources")
+ 		return
+ 	}
++	// charmer local patch (no-antigravity-egress): under the local-mode
++	// no-egress policy the catalogs are embedded, whatever default the caller
++	// passed, and an explicit remote source is refused (never read).
++	if localmode.NoEgress() {
++		sources = refuseRemoteCatalogSources(sources)
++		local = true
++	}
+ 	sources = effectiveCatalogSources(sources, local, home)
+ 	generalCatalogUpdater.configure(ctx, sources.Catalog)
+ 	codexCatalogUpdater.configure(ctx, sources.CodexCatalog)
+@@ -259,6 +270,55 @@ func effectiveCatalogSources(sources CatalogSources, local, home bool) CatalogSo
+ 	return CatalogSources{Catalog: general, CodexCatalog: selectSource(sources.CodexCatalog), DevinCatalog: devin}
+ }
+ 
++// refuseRemoteCatalogSources (charmer local patch, no-antigravity-egress)
++// drops every explicit remote (http or https) catalog source, so it falls back
++// to the embedded catalog; an absolute local file is kept. Validate admits only
++// those two forms besides the empty default.
++func refuseRemoteCatalogSources(sources CatalogSources) CatalogSources {
++	refuse := func(name, source string) string {
++		if source == "" || filepath.IsAbs(source) {
++			return source
++		}
++		log.Warnf("models.%s is a remote catalog source; refused in local mode (no egress), using the embedded catalog", name)
++		return ""
++	}
++	return CatalogSources{
++		Catalog:      refuse("catalog", sources.Catalog),
++		CodexCatalog: refuse("codex-catalog", sources.CodexCatalog),
++		DevinCatalog: refuse("devin-catalog", sources.DevinCatalog),
++	}
++}
++
++// ReplaceCatalogFetchers (charmer local patch, no-antigravity-egress) replaces
++// the readers of the three catalogs with fetch, which receives the catalog name
++// ("catalog", "codex-catalog", "devin-catalog") and the source it was asked to
++// read ("" is the official remote default, "embed" the embedded catalog). It
++// returns the function that restores the readers. Tests use it to observe which
++// sources a start or a reload reads without reading any.
++func ReplaceCatalogFetchers(fetch func(ctx context.Context, catalog, source string) ([]byte, error)) (restore func()) {
++	updaters := []struct {
++		name    string
++		updater *catalogUpdater
++	}{{"catalog", generalCatalogUpdater}, {"codex-catalog", codexCatalogUpdater}, {"devin-catalog", devinCatalogUpdater}}
++	previous := make([]func(context.Context, string) ([]byte, error), len(updaters))
++	for index, entry := range updaters {
++		name := entry.name
++		entry.updater.mu.Lock()
++		previous[index] = entry.updater.fetch
++		entry.updater.fetch = func(ctx context.Context, source string) ([]byte, error) {
++			return fetch(ctx, name, source)
++		}
++		entry.updater.mu.Unlock()
++	}
++	return func() {
++		for index, entry := range updaters {
++			entry.updater.mu.Lock()
++			entry.updater.fetch = previous[index]
++			entry.updater.mu.Unlock()
++		}
++	}
++}
++
+ func validateDevinCatalogBytes(data []byte) error {
+ 	_, errValidate := ValidateDevinModelsJSON(data)
+ 	return errValidate
+diff --git a/internal/registry/model_updater.go b/internal/registry/model_updater.go
+index 59a0329b..c514edc4 100644
+--- a/internal/registry/model_updater.go
++++ b/internal/registry/model_updater.go
+@@ -10,6 +10,7 @@ import (
+ 	"sync"
+ 	"time"
+ 
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/localmode"
+ 	log "github.com/sirupsen/logrus"
+ )
+ 
+@@ -69,7 +70,14 @@ func init() {
+ // StartModelsUpdater starts a background updater that fetches models
+ // immediately on startup and then refreshes the model catalog every 3 hours.
+ // Safe to call multiple times; only one updater will run.
++//
++// charmer local patch (no-antigravity-egress): under the local-mode no-egress
++// policy it serves the embedded catalog and reads nothing.
+ func StartModelsUpdater(ctx context.Context) {
++	if localmode.NoEgress() {
++		generalCatalogUpdater.configure(ctx, embeddedCatalogSource)
++		return
++	}
+ 	generalCatalogUpdater.configure(ctx, "")
+ }
+ 
 diff --git a/internal/runtime/executor/helps/xai_version.go b/internal/runtime/executor/helps/xai_version.go
 index f6d1e83f..7b27b5be 100644
 --- a/internal/runtime/executor/helps/xai_version.go
@@ -258,51 +482,129 @@ index f6d1e83f..7b27b5be 100644
  	}
 diff --git a/sdk/cliproxy/local_mode_egress_test.go b/sdk/cliproxy/local_mode_egress_test.go
 new file mode 100644
-index 00000000..ad07a4d0
+index 00000000..d666b9f3
 --- /dev/null
 +++ b/sdk/cliproxy/local_mode_egress_test.go
-@@ -0,0 +1,39 @@
+@@ -0,0 +1,117 @@
 +package cliproxy
 +
 +import (
 +	"context"
++	"sort"
++	"sync"
 +	"testing"
++	"time"
 +
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 +	"github.com/router-for-me/CLIProxyAPI/v8/internal/localmode"
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
 +)
 +
 +// charmer local patch (no-antigravity-egress) gate: the SDK service path reads
-+// the same local-mode no-egress policy and does not start the Grok CLI (npm)
-+// version updater under it.
++// the same local-mode no-egress policy. Under it the service does not start the
++// Grok CLI (npm) version updater, and its model catalog updaters read only the
++// embedded catalogs: with a non-nil config, with empty model sources and with
++// explicit remote sources (refused). The catalog readers are injected, so no
++// test reads the network.
 +
-+func runServiceCatalogUpdaters(t *testing.T, local bool) int {
++type catalogReads struct {
++	mu    sync.Mutex
++	reads map[string]string
++}
++
++func (r *catalogReads) fetch(_ context.Context, catalog, source string) ([]byte, error) {
++	r.mu.Lock()
++	defer r.mu.Unlock()
++	r.reads[catalog] = source
++	return nil, context.Canceled
++}
++
++func (r *catalogReads) wait(t *testing.T, want int) map[string]string {
++	t.Helper()
++	deadline := time.Now().Add(10 * time.Second)
++	for {
++		r.mu.Lock()
++		if len(r.reads) >= want {
++			out := make(map[string]string, len(r.reads))
++			for catalog, source := range r.reads {
++				out[catalog] = source
++			}
++			r.mu.Unlock()
++			return out
++		}
++		r.mu.Unlock()
++		if time.Now().After(deadline) {
++			t.Fatalf("catalog readers ran %d times, want %d", len(r.reads), want)
++		}
++		time.Sleep(time.Millisecond)
++	}
++}
++
++func runServiceCatalogUpdaters(t *testing.T, local bool, sources registry.CatalogSources) (int, map[string]string) {
 +	t.Helper()
 +	previousPolicy := localmode.NoEgress()
 +	previousStarter := startXAIVersionUpdater
++	reads := &catalogReads{reads: map[string]string{}}
++	restoreFetchers := registry.ReplaceCatalogFetchers(reads.fetch)
++	ctx, cancel := context.WithCancel(context.Background())
 +	t.Cleanup(func() {
++		cancel()
++		restoreFetchers()
 +		localmode.Set(previousPolicy)
 +		startXAIVersionUpdater = previousStarter
 +	})
 +	localmode.Set(local)
 +	started := 0
 +	startXAIVersionUpdater = func(context.Context, string) { started++ }
-+	(&Service{}).startModelCatalogUpdaters(context.Background())
-+	return started
++	(&Service{cfg: &config.Config{Models: sources}}).startModelCatalogUpdaters(ctx)
++	return started, reads.wait(t, 3)
++}
++
++func catalogReadSources(reads map[string]string) []string {
++	out := make([]string, 0, len(reads))
++	for catalog, source := range reads {
++		out = append(out, catalog+"="+source)
++	}
++	sort.Strings(out)
++	return out
 +}
 +
 +func TestLocalModeNoEgressSDKLocalModel(t *testing.T) {
-+	if started := runServiceCatalogUpdaters(t, true); started != 0 {
-+		t.Fatalf("local mode started the npm version updater %d times", started)
++	remote := registry.CatalogSources{
++		Catalog:      "https://catalog.invalid/models.json",
++		CodexCatalog: "https://catalog.invalid/codex.json",
++		DevinCatalog: "http://catalog.invalid/devin.json",
++	}
++	for name, sources := range map[string]registry.CatalogSources{"empty sources": {}, "remote sources": remote} {
++		t.Run(name, func(t *testing.T) {
++			started, reads := runServiceCatalogUpdaters(t, true, sources)
++			if started != 0 {
++				t.Fatalf("local mode started the npm version updater %d times", started)
++			}
++			for catalog, source := range reads {
++				if source != "embed" {
++					t.Fatalf("local mode read %s from %q, want only the embedded catalog: %v", catalog, source, catalogReadSources(reads))
++				}
++			}
++		})
 +	}
 +}
 +
 +func TestLocalModeNoEgressSDKRemoteModel(t *testing.T) {
-+	if started := runServiceCatalogUpdaters(t, false); started != 1 {
++	started, reads := runServiceCatalogUpdaters(t, false, registry.CatalogSources{})
++	if started != 1 {
 +		t.Fatalf("ordinary service start ran the npm version updater %d times, want 1", started)
++	}
++	// Positive control: without the policy an empty source is the official
++	// remote default ("").
++	for catalog, source := range reads {
++		if source != "" {
++			t.Fatalf("ordinary service start read %s from %q, want the remote default: %v", catalog, source, catalogReadSources(reads))
++		}
 +	}
 +}
 diff --git a/sdk/cliproxy/service_lifecycle.go b/sdk/cliproxy/service_lifecycle.go
-index f08eb1b4..4fa34a5e 100644
+index 118388d7..0e813610 100644
 --- a/sdk/cliproxy/service_lifecycle.go
 +++ b/sdk/cliproxy/service_lifecycle.go
 @@ -9,6 +9,7 @@ import (
@@ -313,7 +615,7 @@ index f08eb1b4..4fa34a5e 100644
  	"github.com/router-for-me/CLIProxyAPI/v8/internal/redisqueue"
  	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
  	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor"
-@@ -427,5 +428,12 @@ func (s *Service) startModelCatalogUpdaters(ctx context.Context) {
+@@ -446,5 +447,12 @@ func (s *Service) startModelCatalogUpdaters(ctx context.Context) {
  		registry.StartModelCatalogUpdaters(ctx, cfg.Models, cfg.Home.Enabled)
  		proxyURL = cfg.ProxyURL
  	}

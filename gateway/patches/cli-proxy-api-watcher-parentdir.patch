@@ -1,3 +1,187 @@
+diff --git a/cmd/server/main.go b/cmd/server/main.go
+index 960d5e53..a1cf06cc 100644
+--- a/cmd/server/main.go
++++ b/cmd/server/main.go
+@@ -192,8 +192,12 @@ func main() {
+ 	}
+ 
+ 	pluginHost := pluginhost.New()
++	// charmer: the config file is read once at startup; plugin bootstrap and
++	// the runtime config parse the same immutable bytes.
++	var startupConfig *startupConfigSnapshot
+ 	if !isDiscoverMode {
+-		if bootstrapCfg := loadPluginBootstrapConfig(pluginBootstrapConfigPath(os.Args[1:], DefaultConfigPath)); bootstrapCfg != nil {
++		startupConfig = readStartupConfigSnapshot(pluginBootstrapConfigPath(os.Args[1:], DefaultConfigPath))
++		if bootstrapCfg := loadPluginBootstrapConfig(startupConfig); bootstrapCfg != nil {
+ 			pluginHost.ApplyConfig(context.Background(), bootstrapCfg)
+ 			pluginHost.RegisterCommandLineFlags(context.Background(), flag.CommandLine)
+ 		}
+@@ -586,7 +590,7 @@ func main() {
+ 		}
+ 	} else if configPath != "" {
+ 		configFilePath = configPath
+-		cfg, err = config.LoadConfigOptional(configPath, isCloudDeploy)
++		cfg, err = startupConfig.load(configPath, isCloudDeploy)
+ 	} else {
+ 		wd, err = os.Getwd()
+ 		if err != nil {
+@@ -594,7 +598,7 @@ func main() {
+ 			return
+ 		}
+ 		configFilePath = filepath.Join(wd, "config.yaml")
+-		cfg, err = config.LoadConfigOptional(configFilePath, isCloudDeploy)
++		cfg, err = startupConfig.load(configFilePath, isCloudDeploy)
+ 	}
+ 	if err != nil {
+ 		log.Errorf("failed to load config: %v", err)
+@@ -902,8 +906,40 @@ func defaultPluginBootstrapConfigPath(defaultPath string) string {
+ 	return filepath.Join(wd, "config.yaml")
+ }
+ 
+-func loadPluginBootstrapConfig(path string) *config.Config {
+-	raw, errReadFile := os.ReadFile(path)
++// startupConfigSnapshot is the config file as startup read it, once: the
++// plugin bootstrap and the runtime config load both parse these bytes, so a
++// file replaced in between cannot give them different configurations.
++type startupConfigSnapshot struct {
++	path string
++	data []byte
++	err  error
++}
++
++// readStartupConfigFile is the startup read of the config file; tests count it.
++var readStartupConfigFile = os.ReadFile
++
++func readStartupConfigSnapshot(path string) *startupConfigSnapshot {
++	data, err := readStartupConfigFile(path)
++	return &startupConfigSnapshot{path: path, data: data, err: err}
++}
++
++// load returns the runtime config of path: from the snapshot's bytes when
++// path is the file the snapshot read, otherwise from one read of path.
++func (s *startupConfigSnapshot) load(path string, optional bool) (*config.Config, error) {
++	if s != nil && s.path == path {
++		return config.LoadConfigOptionalBytes(s.data, s.err, optional)
++	}
++	data, err := readStartupConfigFile(path)
++	return config.LoadConfigOptionalBytes(data, err, optional)
++}
++
++func loadPluginBootstrapConfig(snapshot *startupConfigSnapshot) *config.Config {
++	if snapshot == nil {
++		cfg := &config.Config{}
++		cfg.NormalizePluginsConfig()
++		return cfg
++	}
++	raw, errReadFile := snapshot.data, snapshot.err
+ 	if errReadFile != nil {
+ 		if !errors.Is(errReadFile, os.ErrNotExist) {
+ 			log.Warnf("failed to read plugin bootstrap config: %v", errReadFile)
+diff --git a/cmd/server/startup_config_snapshot_test.go b/cmd/server/startup_config_snapshot_test.go
+new file mode 100644
+index 00000000..d50ad1be
+--- /dev/null
++++ b/cmd/server/startup_config_snapshot_test.go
+@@ -0,0 +1,99 @@
++package main
++
++import (
++	"os"
++	"path/filepath"
++	"testing"
++
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
++)
++
++// charmer local patch (watcher-parentdir): startup reads the config file
++// once. The plugin bootstrap and the runtime config load parse the same
++// snapshot, so the file is opened once and a replacement in between changes
++// neither. The read is counted through the startup read seam.
++
++func countStartupConfigReads(t *testing.T) *int {
++	t.Helper()
++	reads := 0
++	previous := readStartupConfigFile
++	readStartupConfigFile = func(name string) ([]byte, error) {
++		reads++
++		return previous(name)
++	}
++	t.Cleanup(func() { readStartupConfigFile = previous })
++	return &reads
++}
++
++func TestStartupConfigReadOnceForPluginBootstrapAndRuntime(t *testing.T) {
++	path := filepath.Join(t.TempDir(), "config.yaml")
++	first := []byte("port: 8317\napi-keys:\n  - client-key\n")
++	if err := os.WriteFile(path, first, 0o600); err != nil {
++		t.Fatal(err)
++	}
++	reads := countStartupConfigReads(t)
++
++	snapshot := readStartupConfigSnapshot(pluginBootstrapConfigPath([]string{"-config", path, "--local-model"}, ""))
++	if bootstrap := loadPluginBootstrapConfig(snapshot); bootstrap == nil {
++		t.Fatal("plugin bootstrap config is nil")
++	}
++	// A replacement between the bootstrap and the runtime load must reach
++	// neither: both parse the bytes startup read.
++	if err := os.WriteFile(path, []byte("port: 9999\n"), 0o600); err != nil {
++		t.Fatal(err)
++	}
++	cfg, err := snapshot.load(path, false)
++	if err != nil {
++		t.Fatalf("runtime load: %v", err)
++	}
++	if *reads != 1 {
++		t.Fatalf("startup read the config file %d times, want 1", *reads)
++	}
++	if cfg.Port != 8317 || cfg.SourceHash != config.ComputeSourceHash(first) {
++		t.Fatalf("runtime config port %d hash %s, want the snapshot (8317, %s)", cfg.Port, cfg.SourceHash, config.ComputeSourceHash(first))
++	}
++}
++
++// Positive control for the seam: a runtime config at another path is a
++// second, counted read of that file.
++func TestStartupConfigSnapshotOfAnotherPathReadsThatFile(t *testing.T) {
++	dir := t.TempDir()
++	bootstrapPath := filepath.Join(dir, "bootstrap.yaml")
++	runtimePath := filepath.Join(dir, "config.yaml")
++	if err := os.WriteFile(bootstrapPath, []byte("port: 8317\n"), 0o600); err != nil {
++		t.Fatal(err)
++	}
++	if err := os.WriteFile(runtimePath, []byte("port: 8318\n"), 0o600); err != nil {
++		t.Fatal(err)
++	}
++	reads := countStartupConfigReads(t)
++	snapshot := readStartupConfigSnapshot(bootstrapPath)
++	cfg, err := snapshot.load(runtimePath, false)
++	if err != nil {
++		t.Fatalf("runtime load: %v", err)
++	}
++	if *reads != 2 || cfg.Port != 8318 {
++		t.Fatalf("reads %d port %d, want 2 reads and the runtime file's port 8318", *reads, cfg.Port)
++	}
++}
++
++// A missing config keeps upstream's startup semantics: the bootstrap gets an
++// empty plugin config, a required runtime load fails and an optional one is
++// the empty config.
++func TestStartupConfigSnapshotOfMissingFileKeepsOptionalSemantics(t *testing.T) {
++	path := filepath.Join(t.TempDir(), "absent.yaml")
++	reads := countStartupConfigReads(t)
++	snapshot := readStartupConfigSnapshot(path)
++	if bootstrap := loadPluginBootstrapConfig(snapshot); bootstrap == nil {
++		t.Fatal("plugin bootstrap config is nil for a missing file")
++	}
++	if _, err := snapshot.load(path, false); err == nil {
++		t.Fatal("required runtime load of a missing file succeeded")
++	}
++	if cfg, err := snapshot.load(path, true); err != nil || cfg == nil {
++		t.Fatalf("optional runtime load of a missing file: cfg=%v err=%v", cfg, err)
++	}
++	if *reads != 1 {
++		t.Fatalf("startup read the missing config %d times, want 1", *reads)
++	}
++}
 diff --git a/internal/api/handlers/management/config_v8_test.go b/internal/api/handlers/management/config_v8_test.go
 index a9d9eb97..0534a399 100644
 --- a/internal/api/handlers/management/config_v8_test.go
@@ -26,10 +210,10 @@ index a9d9eb97..0534a399 100644
  	}
 diff --git a/internal/config/config_bytes_loader_linux_test.go b/internal/config/config_bytes_loader_linux_test.go
 new file mode 100644
-index 00000000..019a01c1
+index 00000000..6de68288
 --- /dev/null
 +++ b/internal/config/config_bytes_loader_linux_test.go
-@@ -0,0 +1,79 @@
+@@ -0,0 +1,103 @@
 +//go:build linux
 +
 +package config
@@ -45,7 +229,10 @@ index 00000000..019a01c1
 +)
 +
 +// configFileAccess counts the inotify opens and writes one action caused on a
-+// file. The kernel queues each event before the causing syscall returns.
++// file. The kernel queues each event before the causing syscall returns. The
++// mask includes IN_CLOSE_NOWRITE: inotify merges an event identical to the
++// last queued one, so without the close between them two separate read-only
++// opens would arrive as one IN_OPEN. Read-only closes are not writes.
 +func configFileAccess(t *testing.T, path string, action func()) (opens, writes int) {
 +	t.Helper()
 +	fd, err := unix.InotifyInit1(unix.IN_CLOEXEC | unix.IN_NONBLOCK)
@@ -53,7 +240,7 @@ index 00000000..019a01c1
 +		t.Fatalf("inotify_init1: %v", err)
 +	}
 +	defer func() { _ = unix.Close(fd) }()
-+	const mask = unix.IN_OPEN | unix.IN_MODIFY | unix.IN_CLOSE_WRITE | unix.IN_ATTRIB | unix.IN_MOVE_SELF | unix.IN_DELETE_SELF
++	const mask = unix.IN_OPEN | unix.IN_CLOSE_NOWRITE | unix.IN_MODIFY | unix.IN_CLOSE_WRITE | unix.IN_ATTRIB | unix.IN_MOVE_SELF | unix.IN_DELETE_SELF
 +	if _, err = unix.InotifyAddWatch(fd, path, mask); err != nil {
 +		t.Fatalf("inotify_add_watch %s: %v", path, err)
 +	}
@@ -69,13 +256,34 @@ index 00000000..019a01c1
 +		}
 +		for offset := 0; offset+unix.SizeofInotifyEvent <= n; {
 +			event := (*unix.InotifyEvent)(unsafe.Pointer(&buf[offset]))
-+			if event.Mask&unix.IN_OPEN != 0 {
++			switch {
++			case event.Mask&unix.IN_OPEN != 0:
 +				opens++
-+			} else {
++			case event.Mask&unix.IN_CLOSE_NOWRITE != 0:
++			default:
 +				writes++
 +			}
 +			offset += unix.SizeofInotifyEvent + int(event.Len)
 +		}
++	}
++}
++
++// Positive control for the counter: two separate reads are two opens, never
++// merged into one, and reading writes nothing.
++func TestConfigFileAccessCountsEverySeparateRead(t *testing.T) {
++	path := filepath.Join(t.TempDir(), "config.yaml")
++	if err := os.WriteFile(path, []byte("port: 8317\n"), 0o600); err != nil {
++		t.Fatal(err)
++	}
++	opens, writes := configFileAccess(t, path, func() {
++		for i := 0; i < 2; i++ {
++			if _, err := os.ReadFile(path); err != nil {
++				t.Fatal(err)
++			}
++		}
++	})
++	if opens != 2 || writes != 0 {
++		t.Fatalf("two reads: %d opens and %d writes counted, want 2 and 0", opens, writes)
 +	}
 +}
 +
@@ -198,7 +406,7 @@ index 00000000..6b5bd4b0
 +	}
 +}
 diff --git a/internal/config/config_load.go b/internal/config/config_load.go
-index baca01e9..f911474f 100644
+index baca01e9..3d65f835 100644
 --- a/internal/config/config_load.go
 +++ b/internal/config/config_load.go
 @@ -7,10 +7,8 @@ import (
@@ -212,7 +420,7 @@ index baca01e9..f911474f 100644
  	"gopkg.in/yaml.v3"
  )
  
-@@ -154,6 +152,10 @@ func managementSecretKeyPath(data []byte) []string {
+@@ -154,17 +152,26 @@ func managementSecretKeyPath(data []byte) []string {
  // LoadConfigOptional reads YAML from configFile.
  // If optional is true and the file is missing, it returns an empty Config.
  // If optional is true and the file is empty or invalid, it returns an empty Config.
@@ -223,7 +431,15 @@ index baca01e9..f911474f 100644
  func LoadConfigOptional(configFile string, optional bool) (*Config, error) {
  	// Read the entire configuration file into memory.
  	data, err := os.ReadFile(configFile)
-@@ -161,10 +163,7 @@ func LoadConfigOptional(configFile string, optional bool) (*Config, error) {
++	return LoadConfigOptionalBytes(data, err, optional)
++}
++
++// LoadConfigOptionalBytes is LoadConfigOptional on a read made earlier: data
++// and err are what reading the config file once returned. A startup that has
++// already read the file for another consumer loads the same bytes instead of
++// reading it again.
++func LoadConfigOptionalBytes(data []byte, err error, optional bool) (*Config, error) {
+ 	if err != nil {
  		if optional {
  			if os.IsNotExist(err) || errors.Is(err, syscall.EISDIR) {
  				// Missing and optional: return empty config (cloud deploy standby).
@@ -235,7 +451,7 @@ index baca01e9..f911474f 100644
  			}
  		}
  		return nil, fmt.Errorf("failed to read config file: %w", err)
-@@ -172,188 +171,42 @@ func LoadConfigOptional(configFile string, optional bool) (*Config, error) {
+@@ -172,188 +179,42 @@ func LoadConfigOptional(configFile string, optional bool) (*Config, error) {
  
  	// In cloud deploy mode (optional=true), if file is empty or contains only whitespace, return empty config.
  	if optional && len(bytes.TrimSpace(data)) == 0 {
@@ -283,17 +499,9 @@ index baca01e9..f911474f 100644
 -			cfgOptional.NormalizePluginsConfig()
 -			cfgOptional.NormalizeClaudeConfig()
 -			return cfgOptional, nil
-+		return emptyOptionalConfig(), nil
-+	}
-+	if optional {
-+		// In cloud deploy mode, a document that fails the weight check or does
-+		// not parse as YAML yields the empty config instead of an error.
-+		var probe Config
-+		if validateCredentialWeightYAML(data) != nil || yaml.Unmarshal(data, &probe) != nil {
-+			return emptyOptionalConfig(), nil
- 		}
+-		}
 -		return nil, fmt.Errorf("failed to parse config file: %w", err)
- 	}
+-	}
 -	if errValidate := validateTrustedProxies(cfg.TrustedProxies); errValidate != nil {
 -		return nil, errValidate
 -	}
@@ -321,7 +529,15 @@ index baca01e9..f911474f 100644
 -		hashed, errHash := hashSecret(cfg.RemoteManagement.SecretKey)
 -		if errHash != nil {
 -			return nil, fmt.Errorf("failed to hash remote management key: %w", errHash)
--		}
++		return emptyOptionalConfig(), nil
++	}
++	if optional {
++		// In cloud deploy mode, a document that fails the weight check or does
++		// not parse as YAML yields the empty config instead of an error.
++		var probe Config
++		if validateCredentialWeightYAML(data) != nil || yaml.Unmarshal(data, &probe) != nil {
++			return emptyOptionalConfig(), nil
+ 		}
 -		cfg.RemoteManagement.SecretKey = hashed
 -
 -		// Persist the hashed value back to the config file to avoid re-hashing on next startup.
@@ -352,8 +568,10 @@ index baca01e9..f911474f 100644
 -	} else if cfg.RedisUsageQueueRetentionSeconds > 3600 {
 -		log.WithField("value", cfg.RedisUsageQueueRetentionSeconds).Warn("redis-usage-queue-retention-seconds too large; clamping to 3600")
 -		cfg.RedisUsageQueueRetentionSeconds = 3600
--	}
--
+ 	}
++	return LoadConfigBytes(data)
++}
+ 
 -	if cfg.MaxRetryCredentials < 0 {
 -		cfg.MaxRetryCredentials = 0
 -	}
@@ -408,9 +626,7 @@ index baca01e9..f911474f 100644
 -
 -	// Validate raw payload rules and drop invalid entries.
 -	cfg.SanitizePayloadRules()
-+	return LoadConfigBytes(data)
-+}
- 
+-
 -	// Only conflicting legacy fields are removed on load. A legacy-only document
 -	// stays legacy until a v8 configuration write explicitly migrates it.
 -	current, errRead := os.ReadFile(configFile)
@@ -595,10 +811,10 @@ index 7c188dac..00734e6b 100644
 +}
 diff --git a/internal/watcher/config_bytes_reload_linux_test.go b/internal/watcher/config_bytes_reload_linux_test.go
 new file mode 100644
-index 00000000..f020bceb
+index 00000000..5d0f6f6e
 --- /dev/null
 +++ b/internal/watcher/config_bytes_reload_linux_test.go
-@@ -0,0 +1,180 @@
+@@ -0,0 +1,204 @@
 +//go:build linux
 +
 +package watcher
@@ -624,8 +840,11 @@ index 00000000..f020bceb
 +// counts, not just through the watcher's own code.
 +
 +// fileAccess counts the inotify events one action caused on a file.
++// Read-only closes are observed (closeReads) so that inotify, which merges an
++// event identical to the last queued one, cannot fold two separate read-only
++// opens into one IN_OPEN; they are not writes.
 +type fileAccess struct {
-+	opens, modifies, closeWrites, attribs, moves int
++	opens, closeReads, modifies, closeWrites, attribs, moves int
 +}
 +
 +func (a fileAccess) writes() int { return a.modifies + a.closeWrites + a.attribs + a.moves }
@@ -640,7 +859,7 @@ index 00000000..f020bceb
 +		t.Fatalf("inotify_init1: %v", err)
 +	}
 +	defer func() { _ = unix.Close(fd) }()
-+	const mask = unix.IN_OPEN | unix.IN_MODIFY | unix.IN_CLOSE_WRITE | unix.IN_ATTRIB | unix.IN_MOVE_SELF | unix.IN_DELETE_SELF
++	const mask = unix.IN_OPEN | unix.IN_CLOSE_NOWRITE | unix.IN_MODIFY | unix.IN_CLOSE_WRITE | unix.IN_ATTRIB | unix.IN_MOVE_SELF | unix.IN_DELETE_SELF
 +	if _, err = unix.InotifyAddWatch(fd, path, mask); err != nil {
 +		t.Fatalf("inotify_add_watch %s: %v", path, err)
 +	}
@@ -660,6 +879,8 @@ index 00000000..f020bceb
 +			switch {
 +			case event.Mask&unix.IN_OPEN != 0:
 +				counts.opens++
++			case event.Mask&unix.IN_CLOSE_NOWRITE != 0:
++				counts.closeReads++
 +			case event.Mask&unix.IN_MODIFY != 0:
 +				counts.modifies++
 +			case event.Mask&unix.IN_CLOSE_WRITE != 0:
@@ -671,6 +892,25 @@ index 00000000..f020bceb
 +			}
 +			offset += unix.SizeofInotifyEvent + int(event.Len)
 +		}
++	}
++}
++
++// Positive control for observeFileAccess: two separate reads are counted as
++// two opens with two read-only closes and no write.
++func TestObserveFileAccessCountsEverySeparateRead(t *testing.T) {
++	path := filepath.Join(t.TempDir(), "config.yaml")
++	if err := os.WriteFile(path, []byte("port: 8317\n"), 0o600); err != nil {
++		t.Fatal(err)
++	}
++	counts := observeFileAccess(t, path, func() {
++		for i := 0; i < 2; i++ {
++			if _, err := os.ReadFile(path); err != nil {
++				t.Fatal(err)
++			}
++		}
++	})
++	if counts.opens != 2 || counts.closeReads != 2 || counts.writes() != 0 {
++		t.Fatalf("two reads observed as %+v, want 2 opens, 2 read-only closes, no writes", counts)
 +	}
 +}
 +

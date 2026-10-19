@@ -47,6 +47,8 @@ func TestOmissionCodexIdentity(t *testing.T) {
 		for key, want := range map[string]string{
 			"User-Agent": "codex-tui/0.159.1 (Mac OS 26.5.2; arm64) iTerm.app/3.6.11 (codex-tui; 0.159.1)",
 			"Originator": "codex-tui", "Version": "0.159.1",
+			// 8.x's routing hint: the resolved model, no tier in this body.
+			"X-Codex-Routing-Hint": "model=codexprobe-omission",
 		} {
 			if got := h.Get(key); got != want {
 				t.Errorf("%s %s = %q, want %q", path, key, got, want)

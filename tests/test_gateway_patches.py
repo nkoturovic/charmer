@@ -154,17 +154,30 @@ class ManagementAllowlistTests(unittest.TestCase):
         # The v8 namespace is refused whole, its read twin of the allowlist too.
         statuses = {}
         for method, path in (("GET", "/v8/management/credentials"), ("GET", "/v8/management/config"),
-                             ("GET", "/v8/management/oauth/callback"), ("POST", "/v8/management/requests/api-call")):
+                             ("GET", "/v8/management/oauth/callback"), ("POST", "/v8/management/requests/api-call"),
+                             # Trailing-slash spellings: the same bare 404, never Gin's redirect.
+                             ("GET", "/v8/management/credentials/"),
+                             ("GET", "/v8/management/server/latest-version/")):
             reply = self.request(method, path)
             self.assertEqual((reply.status, len(reply.raw)), (404, 0), method + " " + path)
+            self.assertNotIn("location", reply.headers, method + " " + path)
+            self.assertNotIn("access-control-allow-origin", reply.headers, method + " " + path)
             statuses[method + " " + path] = reply.status
         record("M5", refused=len(statuses))
 
     def test_refused_api_surfaces_are_404(self):
-        # Model detail and the speech routes are refused with the API key too.
+        # Model detail, the speech routes and every other 8.x surface charmer
+        # does not serve (realtime, live, videos, images, alpha search,
+        # interactions, the top-level OAuth redirect pages) are refused with
+        # the API key too.
         headers = {"Authorization": "Bearer " + harness.FIXTURE_GATEWAY_TOKEN}
         statuses = {}
-        for method, path in (("GET", "/v1/models/gwtest-detail"), ("POST", "/v1/audio/speech"), ("POST", "/v1/tts")):
+        for method, path in (("GET", "/v1/models/gwtest-detail"), ("POST", "/v1/audio/speech"), ("POST", "/v1/tts"),
+                             ("GET", "/v1/realtime"), ("POST", "/v1/realtime/client_secrets"), ("GET", "/v1/live"),
+                             ("POST", "/v1/videos"), ("POST", "/openai/v1/videos"),
+                             ("POST", "/v1/images/generations"), ("POST", "/v1/alpha/search"),
+                             ("POST", "/backend-api/codex/alpha/search"), ("POST", "/v1beta/interactions"),
+                             ("GET", "/callback"), ("GET", "/codex/callback"), ("GET", "/anthropic/callback")):
             reply = self.request(method, path, key=False, **headers)
             self.assertEqual((reply.status, len(reply.raw)), (404, 0), method + " " + path)
             self.assertNotIn("access-control-allow-origin", reply.headers, method + " " + path)
@@ -304,9 +317,6 @@ class PatchOmissionProbeTests(unittest.TestCase):
     def test_config_snapshot(self):
         self.check_probe("handlers", "TestOmissionConfigSnapshot", "SC1")
 
-    def test_plugin_host_lock(self):
-        self.check_probe("handlers", "TestOmissionPluginHostLock", "PH1")
-
     def test_metadata_lock(self):
         self.check_probe("executor", "TestOmissionMetadataLock", "ML1")
 
@@ -328,20 +338,21 @@ class CodexIdentityTests(unittest.TestCase):
                test="TestOmissionCodexIdentity")
 
     def test_final_header_precedence_matrix(self):
-        # Five explicit, nonempty tests on the diagnostic of the selected build.
+        # Six explicit, nonempty tests on the diagnostic of the selected build;
+        # the final-header inventory includes 8.x's X-Codex-Routing-Hint.
         names = ("HTTPFinalHeaders", "WebsocketFinalHeaders", "VersionDefault",
-                 "CloakingPrecedence", "StaticOverrideException")
+                 "CloakingPrecedence", "RoutingHintFinal", "StaticOverrideException")
         passed = {}
         for name in names:
             with self.subTest(name=name):
                 passed[name] = harness.run_codex_diagnostic("TestCM055CodexIdentity" + name, package="executor")
         # A failed (or boundary-skipped) subTest does not stop the loop: the
-        # evidence row is recorded only after all five diagnostics succeeded.
+        # evidence row is recorded only after all six diagnostics succeeded.
         if len(passed) != len(names):
             if passed:
                 self.fail("final-header matrix incomplete: " + ", ".join(n for n in names if n not in passed))
             return
-        self.assertEqual(len(set(passed.values())), 1, "the five diagnostics ran on different builds")
+        self.assertEqual(len(set(passed.values())), 1, "the six diagnostics ran on different builds")
         record("CI2", status="passed", diagnostic=passed[names[0]], tests=len(names),
                static_exception="gpt-5.6-luna")
 
@@ -447,8 +458,17 @@ class CharmerModelListingTests(unittest.TestCase):
         for alias in (sentinel, CHARMER_SELECTOR, GPT_MULTI_SELECTOR, "gwtest-compat-plain"):
             self.assertIn(alias, openai)
             self.assertNotIn(cloaked(alias), openai)
+        # No model detail route: the literal ids listed above are refused as
+        # model detail like any other id, in both formats.
+        for literal in (sentinel, CHARMER_SELECTOR):
+            for detail_headers in (headers, {name: value for name, value in headers.items()
+                                             if name != "anthropic-version"}):
+                reply = harness.unix_request(self.gateway.socket, "GET", "/v1/models/" + literal,
+                                             headers=detail_headers)
+                self.assertEqual((reply.status, len(reply.raw)), (404, 0), literal)
         record("CL1", status="passed", anthropic_literal=[sentinel, CHARMER_SELECTOR],
-               anthropic_cloaked=[GPT_MULTI_SELECTOR, "gwtest-compat-plain"], openai_literal=True)
+               anthropic_cloaked=[GPT_MULTI_SELECTOR, "gwtest-compat-plain"], openai_literal=True,
+               detail_refused=True)
 
 
 @uses_shipped_catalog
