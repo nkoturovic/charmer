@@ -222,3 +222,55 @@ class ResumePolicyChoiceTests(_SessionsCase):
         with self.assertRaisesRegex(lineup.LineupRefusal, "disabled"):
             lineup.preview(self.runtime, self.record_before, self.request("profile"))
         self.assertEqual(self.runtime.session_store.load(fx.FIXED_ID)["applied"], self.record_before["applied"])
+
+
+class BufferedPreviewTests(_SessionsCase):
+    def exercise(self, operation):
+        for mid in (fx.FIXED_ID, fx.OTHER_ID):
+            self.record(managed_id=mid, ended=True, needs_choice=operation == "choose", scope=False, generation=0)
+        store = self.runtime.session_store
+        items = sessions.batch_plan(store, [fx.FIXED_ID, fx.OTHER_ID], names=lambda _record: (),
+                                    check=self.runtime.session_batch_problem)
+        if operation == "forget":
+            lines = ["Forget preview (record and generated files only; transcripts never touched):",
+                     *sessions.batch_preview_lines(items)]
+        else:
+            request = lineup.Request("profile", name=catalog.DEFAULT_SEED, text=f"profile {catalog.DEFAULT_SEED}")
+            previews = lineup.choice_previews(self.runtime, items, request)
+            lines = ["Save lead choices (pending only; nothing launches):", *lineup.choice_preview_lines(previews)]
+        expected = "\n".join(lines) + "\n"
+        before = bulk.snapshot(self.tmp)
+        raw, errors = io.BytesIO(), io.StringIO()
+        output = io.TextIOWrapper(raw, encoding="utf-8", line_buffering=False, write_through=False)
+        case, observed = self, []
+
+        class Confirm(io.StringIO):
+            def readline(self, *args, **kwargs):
+                delivered = raw.getvalue().decode("utf-8")
+                case.assertEqual(delivered, expected, "complete preview must be delivered before reading confirmation")
+                case.assertIn("[y/N]", errors.getvalue())
+                case.assertNotIn("[y/N]", delivered)
+                observed.append(True)
+                return super().readline(*args, **kwargs)
+
+        argv = ["sessions", operation, fx.FIXED_ID, fx.OTHER_ID]
+        if operation == "choose":
+            argv += ["--profile", catalog.DEFAULT_SEED]
+        try:
+            with contextlib.redirect_stderr(errors):
+                code = cli.main(argv, runtime=self.runtime, input_stream=Confirm("n\n"),
+                                output_stream=output, interactive=True)
+            self.assertEqual(code, 3)
+            self.assertEqual(observed, [True])
+            output.flush()
+            self.assertNotIn("[y/N]", raw.getvalue().decode("utf-8"))
+            self.assertEqual(bulk.snapshot(self.tmp), before)
+            self.assertEqual(self.runtime.launches, [])
+        finally:
+            output.detach()
+
+    def test_forget_preview_reaches_buffered_stdout_before_confirmation(self):
+        self.exercise("forget")
+
+    def test_choose_preview_reaches_buffered_stdout_before_confirmation(self):
+        self.exercise("choose")

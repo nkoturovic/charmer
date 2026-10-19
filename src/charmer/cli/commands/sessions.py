@@ -96,6 +96,7 @@ def _forget_many(runtime: runtime_mod.Runtime, args: argparse.Namespace, *, inpu
     lines += [f"  Only after verifying it is not running, a single-session retry: charmer sessions forget {item.identifier} --force"
               for item in items if (item.problem or "").startswith("background liveness unknown")]
     output_stream.write("\n".join(termtext.visible_text(line) for line in lines) + "\n")
+    output_stream.flush()
     ready = sum(item.problem is None for item in items)
     if args.dry_run:
         output_stream.write("Dry run: nothing written.\n")
@@ -128,6 +129,7 @@ def _choose_many(runtime: runtime_mod.Runtime, args: argparse.Namespace, *, inpu
     previews = lineup_mod.choice_previews(runtime, items, request)
     output_stream.write("Save lead choices (pending only; nothing launches):\n")
     output_stream.write("\n".join(termtext.visible_text(line) for line in lineup_mod.choice_preview_lines(previews)) + "\n")
+    output_stream.flush()
     ready = sum(choice.item.problem is None for choice in previews)
     if args.dry_run:
         output_stream.write("Dry run: nothing written.\n")
