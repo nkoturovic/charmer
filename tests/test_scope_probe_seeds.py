@@ -33,12 +33,14 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shlex
 import shutil
 import subprocess
 import sys
 import tempfile
 import threading
+import time
 import unittest
 import uuid
 from pathlib import Path
@@ -120,6 +122,61 @@ def _workflow_use(markers: dict[str, str]) -> dict[str, Any]:
     }
 
 
+def _seed_safe_id(value: Any) -> str | None:
+    """Only bounded identifiers, never arbitrary tool-result or hook text."""
+
+    if (isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9_.:-]{1,128}", value)
+            and not value.startswith(("sk-", "pk-"))):
+        return value
+    return None
+
+
+def _seed_tool_metadata(
+    blocks: list[dict[str, Any]], marker_names: tuple[str, ...], ordinal: int | None = None
+) -> list[dict[str, Any]]:
+    rows = []
+    for block in blocks:
+        if block.get("type") != "tool_use":
+            continue
+        inputs = block.get("input")
+        agent_type = _seed_safe_id(inputs.get("subagent_type")) if isinstance(inputs, dict) else None
+        rows.append({
+            "request_ordinal": ordinal,
+            "tool_use_id": _seed_safe_id(block.get("id")),
+            "tool_name": _seed_safe_id(block.get("name")),
+            "agent_type": agent_type,
+            "role_marker": agent_type if agent_type in marker_names else None,
+        })
+    return rows
+
+
+def _seed_parent_results(document: dict[str, Any]) -> list[dict[str, Any]]:
+    rows = []
+    messages = document.get("messages")
+    for message in messages if isinstance(messages, list) else []:
+        if not isinstance(message, dict) or message.get("role") != "user":
+            continue
+        content = message.get("content")
+        for block in content if isinstance(content, list) else []:
+            if isinstance(block, dict) and block.get("type") == "tool_result":
+                rows.append({
+                    "tool_use_id": _seed_safe_id(block.get("tool_use_id")),
+                    "is_error": block.get("is_error") is True,
+                })
+    return rows
+
+
+def _seed_start_metadata(row: dict[str, Any]) -> dict[str, Any]:
+    observed = row.get("observed_monotonic_ns")
+    return {
+        "hook_event_name": "SubagentStart" if row.get("hook_event_name") == "SubagentStart" else None,
+        "agent_type": _seed_safe_id(row.get("agent_type")),
+        "agent_id": _seed_safe_id(row.get("agent_id")),
+        "has_agent_id": row.get("has_agent_id") is True,
+        "observed_monotonic_ns": observed if type(observed) is int and observed >= 0 else None,
+    }
+
+
 class _ScriptedResponder:
     """Forces one tool-use step per main-loop request; keeps metadata rows.
 
@@ -138,12 +195,16 @@ class _ScriptedResponder:
         steps: list[tuple[str, Callable[[], list[dict[str, Any]]]]] | None = None,
         *,
         substrings: dict[str, str] | None = None,
+        marker_names: tuple[str, ...] = (),
     ):
         self._steps = list(steps or [])
         self._substrings = dict(substrings or {})
+        self._marker_names = marker_names
         self._lock = threading.Lock()
         self.rows: list[dict[str, Any]] = []
         self.step_tools_missing: list[str] = []
+        self._diagnostic_requests: list[dict[str, Any]] = []
+        self._emitted_tool_uses: list[dict[str, Any]] = []
 
     @staticmethod
     def is_main(row: dict[str, Any]) -> bool:
@@ -155,13 +216,6 @@ class _ScriptedResponder:
 
     def respond(self, document: dict[str, Any], path: str, context: probe.RequestContext) -> Any:
         route = _route(path)
-        if route.endswith("/count_tokens"):
-            return 200, {"input_tokens": 1}
-        if not route.endswith("/messages"):
-            return 404, {
-                "type": "error",
-                "error": {"type": "not_found_error", "message": "probe: unknown path"},
-            }
         record = context.record
         hints = dict(record.hint_header_values)
         text = json.dumps(document) if self._substrings else ""
@@ -177,6 +231,34 @@ class _ScriptedResponder:
             "agent_type": hints.get("x-claude-code-agent-type"),
             "found": tuple(sorted(n for n, s in self._substrings.items() if s in text)),
         }
+        # Explicit field projection: never serialize document, context, headers,
+        # RequestRecord.__dict__, or tool-result content into this record.
+        diagnostic = {
+            "ordinal": context.ordinal,
+            "route": record.path,
+            "request_class": row["request_class"],
+            "agent_type": row["agent_type"],
+            "markers": list(row["markers"]),
+            "model": row["model"],
+            "effort": row["effort"],
+            "max_tokens": row["max_tokens"],
+            "tool_names": list(row["tool_names"]),
+            "tool_names_truncated": row["tool_names_truncated"],
+            "is_main": self.is_main(row),
+            "parent_tool_results": _seed_parent_results(document) if self.is_main(row) else [],
+            "received_monotonic_ns": time.monotonic_ns(),
+            "response_status": None,
+            "response_ready_monotonic_ns": None,
+        }
+        with self._lock:
+            self._diagnostic_requests.append(diagnostic)
+        if route.endswith("/count_tokens"):
+            return self._response_ready(diagnostic, 200, {"input_tokens": 1})
+        if not route.endswith("/messages"):
+            return self._response_ready(diagnostic, 404, {
+                "type": "error",
+                "error": {"type": "not_found_error", "message": "probe: unknown path"},
+            })
         content: list[dict[str, Any]] | None = None
         with self._lock:
             self.rows.append(row)
@@ -185,11 +267,34 @@ class _ScriptedResponder:
                 if tool in record.tool_names:
                     self._steps.pop(0)
                     content = make()
+                    self._emitted_tool_uses.extend(
+                        _seed_tool_metadata(content, self._marker_names, context.ordinal)
+                    )
                 else:
                     self.step_tools_missing.append(tool)
         if content is None:
             content = [{"type": "text", "text": "PROBE-OK"}]
-        return 200, _reply(document, content, f"msg_seed_probe_{context.ordinal:04d}")
+        return self._response_ready(
+            diagnostic, 200, _reply(document, content, f"msg_seed_probe_{context.ordinal:04d}")
+        )
+
+    def _response_ready(self, row: dict[str, Any], status: int, payload: Any) -> Any:
+        # Selected status / payload-ready time, not proof of transport delivery.
+        with self._lock:
+            row["response_status"] = status
+            row["response_ready_monotonic_ns"] = time.monotonic_ns()
+        return status, payload
+
+    def diagnostics(self) -> dict[str, Any]:
+        with self._lock:
+            return {
+                "requests": sorted(
+                    (dict(row) for row in self._diagnostic_requests), key=lambda row: row["ordinal"]
+                ),
+                "emitted_tool_uses": list(self._emitted_tool_uses),
+                "remaining_scripted_steps": [_seed_safe_id(tool) for tool, _make in self._steps],
+                "step_tools_missing": list(self.step_tools_missing),
+            }
 
     def main_rows(self) -> list[dict[str, Any]]:
         return [row for row in self.rows if self.is_main(row)]
@@ -202,6 +307,109 @@ class _ScriptedResponder:
             for row in self.rows
             if not self.is_main(row) and row["markers"] == (name,)
         ]
+
+
+def _seed_start_rows(events_path: Path) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Keep valid rows through malformed JSON/UTF-8 and partial read failures."""
+
+    rows = []
+    observation: dict[str, Any] = {"read_status": "read", "invalid_rows": 0}
+    try:
+        stream = events_path.open("rb")
+    except FileNotFoundError:
+        observation["read_status"] = "absent"
+        return rows, observation
+    except OSError:
+        observation["read_status"] = "unreadable"
+        return rows, observation
+    try:
+        with stream:
+            for line in stream:
+                if not line.strip():
+                    continue
+                try:
+                    event = json.loads(line)
+                except (ValueError, RecursionError):
+                    observation["invalid_rows"] += 1
+                    continue
+                if not isinstance(event, dict):
+                    observation["invalid_rows"] += 1
+                    continue
+                rows.append(_seed_start_metadata(event))
+    except OSError:
+        observation["read_status"] = "unreadable"
+    return rows, observation
+
+
+def _write_seed_diagnostics(
+    directory: Path,
+    *,
+    seed: str,
+    client: str,
+    fixture: probe.ProbeFixture,
+    responder: _ScriptedResponder,
+    events_path: Path,
+    planned_tool_uses: list[dict[str, Any]],
+    result: probe.NativeRunResult | None,
+    provider: probe.FakeAnthropicProvider,
+    started_ns: int | None,
+    finished_ns: int | None,
+) -> Path:
+    """Pre-verdict metadata, kept outside the disposable seed fixture.
+
+    CHARMER_TEST_SEED_EVIDENCE can select a directory outside the runner's
+    temp root; otherwise tools/test.py --keep retains the sibling directory.
+    Each capture atomically allocates a new attempt directory, so a later
+    attempt never replaces earlier evidence. Partial hook reads are recorded
+    before reporting capture failure. The exit time is an observation after
+    run_native reaped the process, not the kernel's exit timestamp. Response
+    times precede transport delivery.
+    """
+
+    events, hook_metadata = _seed_start_rows(events_path)
+    metadata = responder.diagnostics()
+    record = {
+        "version": 1,
+        "seed": seed,
+        "client": client,
+        "planned_tool_uses": [
+            {key: row[key] for key in (
+                "request_ordinal", "tool_use_id", "tool_name", "agent_type", "role_marker"
+            )}
+            for row in planned_tool_uses
+        ],
+        **metadata,
+        "provider_recorded_requests": len(provider.requests),
+        "provider_dropped_requests": provider.dropped_requests,
+        "subagent_start": events,
+        "hook_metadata": hook_metadata,
+        "run": {
+            "limit_seconds": _RUN_TIMEOUT,
+            "started_monotonic_ns": started_ns,
+            "finished_monotonic_ns": finished_ns,
+            "process_exit_observed_monotonic_ns": finished_ns if result is not None else None,
+            "result_available": result is not None,
+            "returncode": result.returncode if result is not None else None,
+            "timed_out": result.timed_out if result is not None else None,
+            "daemon_unchanged": result.daemon.unchanged if result is not None and result.daemon else None,
+        },
+        "layout_bytes": {
+            key: len(str(value).encode("utf-8"))
+            for key, value in (
+                ("root", fixture.root), ("home", fixture.home),
+                ("project", fixture.project_dir), ("tmp", fixture.tmp_dir),
+                ("runtime", fixture.xdg_runtime_dir),
+            )
+        },
+    }
+    directory = state.ensure_private_dir(directory)
+    attempt = Path(tempfile.mkdtemp(prefix=f"seed-{state.check_name(seed)}-", dir=directory))
+    path = attempt / "diagnostics.json"
+    state.atomic_write(path, strict_json.canonical_file_bytes(record))
+    print(f"per-seed diagnostics: {seed} {path}")
+    if hook_metadata["read_status"] == "unreadable" or hook_metadata["invalid_rows"]:
+        raise ProbeError("seed hook metadata capture incomplete")
+    return path
 
 
 class _ProbeCase(unittest.TestCase):
@@ -276,23 +484,41 @@ class _ProbeCase(unittest.TestCase):
         responder: Any,
         markers: dict[str, str] | None = None,
         child_env: dict[str, str] | None = None,
+        diagnostics: Callable[[probe.NativeRunResult | None, probe.FakeAnthropicProvider,
+                               int | None, int | None], None] | None = None,
     ) -> tuple[probe.NativeRunResult, probe.FakeAnthropicProvider]:
         provider = probe.FakeAnthropicProvider(responder=responder, content_markers=markers)
-        with provider:
-            try:
-                result = probe.run_native(
-                    argv,
-                    trusted=self.trusted,
-                    fixture=fixture,
-                    provider=provider,
-                    timeout=_RUN_TIMEOUT,
-                    allow_real=True,
-                    environ=self.environ,
-                    child_env=child_env,
-                )
-            except ProbeError as exc:
-                self._boundary(exc)
-                raise
+        result = None
+        started_ns = finished_ns = None
+        try:
+            with provider:
+                try:
+                    started_ns = time.monotonic_ns()
+                    try:
+                        result = probe.run_native(
+                            argv,
+                            trusted=self.trusted,
+                            fixture=fixture,
+                            provider=provider,
+                            timeout=_RUN_TIMEOUT,
+                            allow_real=True,
+                            environ=self.environ,
+                            child_env=child_env,
+                        )
+                    finally:
+                        finished_ns = time.monotonic_ns()
+                except ProbeError as exc:
+                    self._boundary(exc)
+                    raise
+        finally:
+            if diagnostics is not None:
+                try:
+                    diagnostics(result, provider, started_ns, finished_ns)
+                except Exception:
+                    # Keep the original execution exception / assertions intact.
+                    # unittest reports capture failure separately during cleanup;
+                    # never retain the capture exception's text or traceback.
+                    self.addCleanup(self.fail, "seed diagnostic capture failed")
         self.assertFalse(result.timed_out, "the pinned client timed out")
         self.assertIsNotNone(result.daemon)
         assert result.daemon is not None
@@ -329,12 +555,19 @@ You are the {_CANARY} fixture agent.
 """
 
 _SUBAGENT_RECORDER = """\
-import json, os, sys
+import json, os, re, sys, time
+def safe_id(value):
+    if (isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9_.:-]{1,128}", value)
+            and not value.startswith(("sk-", "pk-"))):
+        return value
+    return None
 event = json.load(sys.stdin)
 row = {
-    "hook_event_name": event.get("hook_event_name"),
-    "agent_type": event.get("agent_type"),
+    "hook_event_name": "SubagentStart" if event.get("hook_event_name") == "SubagentStart" else None,
+    "agent_type": safe_id(event.get("agent_type")),
+    "agent_id": safe_id(event.get("agent_id")),
     "has_agent_id": isinstance(event.get("agent_id"), str) and bool(event.get("agent_id")),
+    "observed_monotonic_ns": time.monotonic_ns(),
 }
 fd = os.open(sys.argv[1], os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
 try:
@@ -420,8 +653,24 @@ class SeedDelegationProbe(_ProbeCase):
                         for index, sid in enumerate(spawns)
                     ],
                 )
-            ]
+            ],
+            marker_names=tuple(markers),
         )
+        evidence_directory = Path(os.environ.get("CHARMER_TEST_SEED_EVIDENCE") or
+                                  self.root.with_name(f"{self.root.name}-evidence"))
+
+        def capture(result: probe.NativeRunResult | None, provider: probe.FakeAnthropicProvider,
+                    started_ns: int | None, finished_ns: int | None) -> None:
+            _write_seed_diagnostics(
+                evidence_directory, seed=name, client=self.version, fixture=fixture,
+                responder=responder, events_path=events_path,
+                planned_tool_uses=_seed_tool_metadata(
+                    [_agent_use(index, sid, markers[sid]) for index, sid in enumerate(spawns)],
+                    tuple(markers),
+                ),
+                result=result, provider=provider, started_ns=started_ns, finished_ns=finished_ns,
+            )
+
         lead_selector = lineup.lead.binding.selector
         lead_model = _request_model(lead_selector)
         result, _provider = self._run(
@@ -442,6 +691,7 @@ class SeedDelegationProbe(_ProbeCase):
             responder=responder,
             markers=markers,
             child_env=dict(_HINT_ENV),
+            diagnostics=capture,
         )
         self.assertEqual(result.returncode, 0, f"{name}: client exit status")
         self.assertEqual(responder.step_tools_missing, [], f"{name}: Agent never offered")
