@@ -236,6 +236,21 @@ class ArgvTests(unittest.TestCase):
         with self.assertRaisesRegex(CompilerError, "requires a value"):
             _launch(lineup, eff, bundle=bundle, passthrough=["--add-dir"])
 
+    def test_a_native_autocompact_flag_is_launcher_owned(self) -> None:
+        """Claude Code takes a --autocompact window over every settings
+        source (only the compiled window variable outranks it). The session
+        window is charmer's: both forms are refused, on every lineup kind,
+        with the owning control, so the scope, record and explanation are
+        never contradicted by an argv window."""
+
+        for name in ("balanced", "direct"):
+            lineup, result = _seed_launch(name)
+            for passthrough in (["--autocompact", "1000000"], ["--autocompact=1000000"],
+                                ["--verbose", "--autocompact", result.env_set["CLAUDE_CODE_AUTO_COMPACT_WINDOW"]]):
+                with self.subTest(seed=name, passthrough=passthrough):
+                    with self.assertRaisesRegex(CompilerError, "launcher-owned .*charmer window-ceiling"):
+                        _seed_launch(name, passthrough=passthrough)
+
 
 # ---------------------------------------------------------------------- env
 
@@ -438,6 +453,47 @@ class EnvTests(unittest.TestCase):
         bad = dataclasses.replace(lineup, lead=dataclasses.replace(lineup.lead, env={key: "x"}))
         with self.assertRaisesRegex(CompilerError, "compiler-owned and reserved"):
             _launch(bad, eff, bundle=bundle)
+
+    def test_the_auto_mode_classifier_model_is_owned_on_every_layer(self) -> None:
+        """Claude Code 2.1.302 picks the auto-mode classifier's model from
+        CLAUDE_CODE_AUTO_MODE_MODEL: the launch unsets it (an inherited value
+        never picks a lineup model the lineup did not choose), the flag
+        settings state it neutral (the empty value, which the client skips,
+        over a user, project or local settings env) and a lead env can never
+        set it."""
+
+        key = scope.AUTO_MODE_MODEL_ENV
+        self.assertEqual((key, scope.AUTO_MODE_MODEL_NEUTRAL), ("CLAUDE_CODE_AUTO_MODE_MODEL", ""))
+        self.assertIn(key, catalog.RESERVED_LEAD_ENV_KEYS)
+        self.assertIn(key, compiler.V2_ENV_UNSET)
+        for seed in ("balanced", "direct"):
+            for no_subagents in (False, True):
+                _lineup, result = _seed_launch(seed, launch_environ={key: "claude-opus-5"},
+                                               no_subagents=no_subagents)
+                with self.subTest(seed=seed, no_subagents=no_subagents):
+                    self.assertIn(key, result.env_unset)
+                    self.assertNotIn(key, result.env_set)
+                    self.assertEqual(result.scope_plan.settings["env"][key], scope.AUTO_MODE_MODEL_NEUTRAL)
+        bundle, _l, eff, lineup = _seed("balanced")
+        bad = dataclasses.replace(lineup, lead=dataclasses.replace(lineup.lead, env={key: "x"}))
+        with self.assertRaisesRegex(CompilerError, "compiler-owned and reserved"):
+            _launch(bad, eff, bundle=bundle)
+
+    def test_the_retry_watchdog_caps_stay_the_users(self) -> None:
+        """The watchdog is pinned on; its wait caps (Claude Code 2.1.295 and
+        2.1.301) bound its silent waits and stay user-settable: never
+        reserved, cleared or compiled."""
+
+        for key in ("CLAUDE_CODE_RETRY_WATCHDOG_MAX_WAIT_MS", "CLAUDE_CODE_RETRY_WATCHDOG_MAX_USAGE_LIMIT_WAIT_MS"):
+            with self.subTest(key=key):
+                self.assertNotIn(key, catalog.RESERVED_LEAD_ENV_KEYS)
+                self.assertNotIn(key, compiler.V2_ENV_UNSET)
+                _lineup, result = _seed_launch("balanced", launch_environ={key: "1800000"})
+                self.assertNotIn(key, result.env_unset)
+                self.assertNotIn(key, result.env_set)
+                self.assertNotIn(key, result.scope_plan.settings["env"])
+        _lineup, result = _seed_launch("balanced")
+        self.assertEqual(result.scope_plan.settings["env"]["CLAUDE_CODE_RETRY_WATCHDOG"], "1")
 
     def test_fork_subagents_are_denied_in_every_scope(self) -> None:
         """Fork subagents run outside the lineup on the caller's own model;

@@ -54,6 +54,16 @@ class ManagedSettingsTests(unittest.TestCase):
                          [("env.CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL", "model")])
         self.assertNotIn("DO-NOT-REPORT-VALUE", repr(locks))
 
+    def test_a_policy_auto_mode_classifier_model_is_a_model_lock(self):
+        # The launch clears it from the process environment; a policy env
+        # sets it for every session anyway.
+        self.write(self.root / "managed-settings.json", {
+            "env": {"CLAUDE_CODE_AUTO_MODE_MODEL": "DO-NOT-REPORT-VALUE"}})
+        locks = managed.read_locks(self.root)
+        self.assertEqual([(lock.key, lock.kind) for lock in locks],
+                         [("env.CLAUDE_CODE_AUTO_MODE_MODEL", "model")])
+        self.assertNotIn("DO-NOT-REPORT-VALUE", repr(locks))
+
     def test_false_hook_flags_are_not_locks(self):
         self.write(self.root / "managed-settings.json", {
             "disableAllHooks": False, "allowManagedHooksOnly": False,

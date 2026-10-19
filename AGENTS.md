@@ -1487,7 +1487,12 @@ On memory-tight hosts the suite's tmpfs fixture copies can fail with
   first; `BUILD.json`, the contract, binaries, notices and SBOMs are checked
   against the recipe and `gateway/licenses`/`gateway/sbom`, the Windows
   canary never ships), the pinned python-build-standalone runtimes
-  (`packaging/python-runtimes.json`, delete-only prune), their licence
+  (`packaging/python-runtimes.json`, delete-only prune with `lib/python{python_minor}`
+  templates derived from the pin; the archive check refuses members outside
+  `python/`, named twice or below a symlink, links that resolve outside, and
+  hard links to anything but an earlier regular file; a prepared runtime that
+  keeps a file the site module runs at startup — `.pth`, `.start`,
+  `sitecustomize`, `usercustomize` — is refused), their licence
   inventory (`packaging/licenses/python/`: `inventory.json` and the texts,
   read once from the same release's `pgo+lto-full` archives by
   `tools/_build/runtime_licenses.py derive`; per target the full archive's
@@ -1500,7 +1505,7 @@ On memory-tight hosts the suite's tmpfs fixture copies can fail with
   as `_dbm` (Berkeley DB) is, and the launcher never imports one; weak
   copyleft ships with its text), the package in
   `src/`. A bundle is an installation prefix: the package in
-  `lib/python3.14/site-packages/charmer` (resources in its `data/`),
+  `lib/python3.X/site-packages/charmer` (X the pinned runtime's minor version; resources in its `data/`),
   the documents in `share/charmer`, the runtime in `runtime/python`,
   the gateway in `libexec/charmer/cli-proxy-api`, `share/licenses`
   (the runtime's in `share/licenses/python/`: CPython's `LICENSE.txt`, the
@@ -1622,9 +1627,14 @@ On memory-tight hosts the suite's tmpfs fixture copies can fail with
   accepted only by explicit entries in
   `.github/vulnerability-watch-reviewed.json` bound to the advisory id,
   aliases, modified time, runtime version and an expiry — never a blanket
-  exemption). CI-only Go and ShellCheck come from
-  `.github/scripts/ci_tools.sh` (publisher digest verified before
-  extraction, a fresh runner-temporary directory). Every action, tool and
+  exemption), and `zizmor-online.yml` (a weekly read-only online zizmor
+  audit; the pull-request lint stays `--offline`). CI-only Go (the gateway
+  recipe's toolchain archive and digest from `gateway/UPSTREAM.json`, with
+  `GOTOOLCHAIN=local`) and ShellCheck come from `.github/scripts/ci_tools.sh`
+  (publisher digest verified before extraction, a fresh runner-temporary
+  directory); bubblewrap is built from its pinned source release and
+  `.github/scripts/bubblewrap_floor.sh` refuses one older than 0.12 or
+  setuid/setgid. Every action, tool and
   container image they use is pinned (actions by commit, images by index
   digest; zizmor also by its wheel's sha256, installed with
   `--require-hashes`) to its newest release (JavaScript actions on

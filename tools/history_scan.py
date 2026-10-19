@@ -819,7 +819,7 @@ def _write_private(directory: Path, name: str, doc: object) -> None:
     target = directory / name
     tmp = directory / f".{name}.{os.getpid()}.tmp"
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    with os.fdopen(fd, "w") as handle:
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
         handle.write(json.dumps(doc, indent=1, sort_keys=True) + "\n")
     os.replace(tmp, target)
 

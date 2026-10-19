@@ -8,6 +8,13 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Security
 
+- The release build refuses a bundled runtime archive whose links resolve
+  outside the runtime or that names a member twice, and a prepared runtime
+  that keeps a file Python runs at startup (`.pth`, `.start`,
+  `sitecustomize`, `usercustomize`).
+- The isolated test lanes run bubblewrap 0.13.1, built from its release by
+  hash, and refuse one older than 0.12 (GHSA-pxhw-h44j-8pfx) or one that is
+  setuid; the Nix development shell requires 0.12 or later.
 - With Claude Code 2.1.302 the gateway key reaches only the gateway. A
   client check proves this on every release; the previous pin also sent it
   with start-up and feature-flag requests.
@@ -35,6 +42,19 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- Release bundles run CPython 3.15.0 (python-build-standalone 20261013) in
+  its default build: the GIL enabled, the experimental JIT off. The runtime
+  licence notices and SBOM components were regenerated from the matching full
+  archives.
+- The Nix flake follows nixos-unstable of 2026-10-15.
+- CI builds its Go tools with the gateway's pinned Go toolchain, runs a weekly
+  read-only online zizmor audit, and runs the 3.15 battery leg also under an
+  ISO-8859-1 locale.
+- Claude Code's own `--autocompact` flag after `--` is refused, in both its
+  separate and equals forms: the session compaction window is charmer's (set it
+  with `charmer window-ceiling`). `charmer doctor` reports a scope compiled by an
+  earlier release (no fork-subagent deny, a fence hook without its failure
+  policy) as lazy state, applied at the next resume or by `doctor --repair`.
 - Managed sessions run Claude Code 2.1.302 (was 2.1.292), catalog 40. Every
   platform build is checked against Anthropic's signed release manifest. The
   client starts an unconfigured session in default mode again; charmer's
@@ -59,6 +79,20 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- A managed session refuses a model switch when its fence hook cannot answer:
+  the compiled PreModelSwitch hook fails closed, so a missing, non-executable,
+  crashing or slow shim keeps the lead model. The fence alone gets 15 seconds;
+  every other hook keeps 5 seconds and stays fail-open.
+- A managed session owns Claude Code's auto-mode classifier model
+  (`CLAUDE_CODE_AUTO_MODE_MODEL`): the launch clears it, the compiled settings
+  state it empty so no user, project or local settings file can set it, a
+  model's lead environment cannot set it, and a managed policy that sets it is
+  reported as a model lock. The retry watchdog's wait caps stay yours to set.
+- Under a terminal encoding that is not UTF-8 (on Python 3.11–3.14, as in
+  Nix and source installations), `charmer --help`, `charmer sessions list`
+  and other output no longer fail on charmer's markers: characters the
+  encoding cannot show are replaced. Text files and tool output charmer reads
+  name their encoding.
 - A gateway that has run for days no longer holds every stop, restart,
   update and uninstall because its log coverage is incomplete. The
   persistence hold reads only the gateway's credential-save lines and its

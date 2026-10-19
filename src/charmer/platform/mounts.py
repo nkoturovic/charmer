@@ -35,7 +35,7 @@ def linux_mounts(mountinfo: Path = MOUNTINFO) -> list[tuple[str, str]] | None:
     """``(mount point, fstype)`` rows, or None when the table is unreadable."""
 
     try:
-        text = mountinfo.read_text(errors="replace")
+        text = mountinfo.read_text(encoding="utf-8", errors="surrogateescape")
     except OSError:
         return None
     rows = []
@@ -53,7 +53,8 @@ def darwin_mounts(runner: Callable = subprocess.run) -> list[tuple[str, str]] | 
 
     try:
         completed = runner(["/sbin/mount"], stdin=subprocess.DEVNULL, capture_output=True,
-                           text=True, timeout=5, env={"PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "LC_ALL": "C"})
+                           text=True, encoding="utf-8", errors="replace", timeout=5,
+                           env={"PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "LC_ALL": "C"})
     except (OSError, subprocess.SubprocessError):
         return None
     if completed.returncode != 0:
@@ -97,7 +98,7 @@ def wsl(environ: Mapping[str, str], *, proc_root: Path = Path("/proc")) -> str |
     if (proc_root / "sys/fs/binfmt_misc/WSLInterop").exists():
         return "WSL"
     try:
-        release = (proc_root / "sys/kernel/osrelease").read_text(errors="replace").lower()
+        release = (proc_root / "sys/kernel/osrelease").read_text(encoding="utf-8", errors="replace").lower()
     except OSError:
         return None
     return "WSL" if "microsoft" in release or "wsl" in release else None

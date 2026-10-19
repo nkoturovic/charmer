@@ -9,11 +9,13 @@ licence texts in ``python/licenses/``. They are read once, by hash, and the
 result is checked in under ``packaging/licenses/python/``::
 
   inventory.json      per target: the full archive (file, sha256, size) and
-                      the install-only archive it describes, every library
-                      linked into the shipped runtime (name, version, SPDX
-                      licences, the texts that cover it, the extension
-                      modules that link it) and every extension pruned from
-                      it with its libraries
+                      the install-only archive it describes, how it was
+                      built (the GIL enabled, never a free-threaded build;
+                      the experimental JIT off by default or not built),
+                      every library linked into the shipped runtime (name,
+                      version, SPDX licences, the texts that cover it, the
+                      extension modules that link it) and every extension
+                      pruned from it with its libraries
   LICENSE.<name>.txt  the texts the shipped libraries need
 
 so a release build stays offline: ``tools/build.py`` copies the target's
@@ -72,6 +74,10 @@ LINK_COMPONENTS = {
 }
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 _TEXT = re.compile(r"LICENSE\.[A-Za-z0-9.+_-]+\.txt")
+# The experimental JIT as configured: compiled in but off unless enabled at
+# run time, or not compiled at all (python-build-standalone omits it on
+# some targets).
+JIT_MODES = {"yes-off": "built, off by default", None: "not built"}
 
 
 class LicenseError(Exception):
@@ -149,6 +155,10 @@ def _check_target(path: Path, target: str, entry: Any, texts: Mapping[str, Any])
     runtime = entry.get("runtime")
     _require(isinstance(runtime, dict) and isinstance(runtime.get("version"), str)
              and isinstance(runtime.get("spdx"), list) and runtime["spdx"], f"{where}: runtime")
+    build = entry.get("build")
+    _require(isinstance(build, dict) and set(build) == {"options", "gil", "jit"}
+             and isinstance(build["options"], str) and build["gil"] == "enabled"
+             and build["jit"] in JIT_MODES.values(), f"{where}: build (the GIL enabled, the JIT off or not built)")
     libraries = entry.get("libraries")
     _require(isinstance(libraries, list) and libraries, f"{where}: no libraries")
     names = []
@@ -326,6 +336,25 @@ def _read_members(archive: Path, wanted: Iterable[str]) -> dict[str, bytes]:
     return found
 
 
+def build_facts(target: str, meta: Mapping[str, Any], python: str) -> dict[str, str]:
+    """How the runtime was built, from its full archive's ``PYTHON.json``:
+    CPython ``python`` with the GIL (never a free-threaded build) and the
+    experimental JIT off by default or not built at all."""
+
+    config = meta.get("python_config_vars")
+    _require(isinstance(config, dict), f"{target}: PYTHON.json has no python_config_vars")
+    _require(meta.get("python_version") == python,
+             f"{target}: the full archive is CPython {meta.get('python_version')}, the pin is {python}")
+    _require(str(config.get("Py_GIL_DISABLED")) == "0" and "t" not in str(config.get("ABIFLAGS", "")),
+             f"{target}: a free-threaded build; the bundles ship the build with the GIL")
+    configured = re.findall(r"--enable-experimental-jit(?:=([\w-]*))?", str(config.get("CONFIG_ARGS", "")))
+    _require(len(configured) <= 1 and (configured[0] if configured else None) in JIT_MODES,
+             f"{target}: the experimental JIT is configured {configured!r}; the bundles ship it off or not at all")
+    _require(isinstance(meta.get("build_options"), str), f"{target}: PYTHON.json names no build_options")
+    return {"options": meta["build_options"], "gil": "enabled",
+            "jit": JIT_MODES[configured[0] if configured else None]}
+
+
 def _sqlite_version(value: str) -> str:
     """downloads.json records SQLite as XYYZZ00 (3530100 = 3.53.1)."""
 
@@ -347,6 +376,7 @@ def derive(archives: Mapping[str, Path], install_only: Mapping[str, Mapping[str,
         data = archive.read_bytes()
         members = _read_members(archive, ("python/PYTHON.json", "python/licenses/"))
         meta = json.loads(members["python/PYTHON.json"])
+        build = build_facts(target, meta, python)
         available = {PurePosixPath(name).name: raw for name, raw in members.items() if name.startswith("python/licenses/")}
         libraries: dict[str, dict[str, Any]] = {}
         pruned: list[dict[str, Any]] = []
@@ -395,6 +425,7 @@ def derive(archives: Mapping[str, Path], install_only: Mapping[str, Mapping[str,
             "full_archive": {"filename": archive.name, "sha256": sha256_bytes(data), "size": len(data)},
             "install_only": dict(install_only[target]),
             "runtime": {"name": "cpython", "version": python, "spdx": list(meta["licenses"]), "text": "LICENSE.txt"},
+            "build": build,
             "libraries": [libraries[name] for name in sorted(libraries)],
             "pruned": pruned,
             **({"extensions_without_libraries": sorted(without)} if without else {}),
@@ -422,7 +453,8 @@ def write(out: Path, document: Mapping[str, Any], texts: Mapping[str, bytes]) ->
             stale.unlink()
     for name, data in texts.items():
         (out / name).write_bytes(data)
-    (out / INVENTORY).write_text(json.dumps(document, indent=2, sort_keys=True, ensure_ascii=False) + "\n")
+    (out / INVENTORY).write_text(json.dumps(document, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+                                 encoding="utf-8")
 
 
 def main(argv: list[str] | None = None) -> int:

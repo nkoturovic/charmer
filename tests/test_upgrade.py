@@ -420,6 +420,10 @@ class EssentialEvidencePrefixTests(unittest.TestCase):
                 "client check S10-precedence: PASS ",
                 "client check S15: PASS ",
                 "client check S16: PASS ",
+                "client probe R19: PASS class=R19-closed ",
+                "compaction window probe: PASS class=env-window-holds ",
+                "client check auto-mode-model: PASS class=AM-owned ",
+                "client check debug-diagnostics: PASS ",
             ),
         )
         # A fail-closed or BOUNDARY print never matches a prefix.

@@ -510,7 +510,7 @@ def _repair_earlier(environ: Mapping[str, str]) -> tuple[bool, list[str]]:
     env = {name: value for name, value in environ.items() if name != gateway_inhibition.TOKEN_ENV}
     try:
         done = subprocess.run([str(launcher), *moving.REPAIR_ARGS], env=env, stdin=subprocess.DEVNULL,
-                              capture_output=True, text=True, timeout=REPAIR_TIMEOUT, check=False)
+                              capture_output=True, text=True, encoding="utf-8", timeout=REPAIR_TIMEOUT, check=False)
     except (OSError, subprocess.SubprocessError) as exc:
         return False, [f"{shown} did not finish ({exc})"]
     output = [line for line in (done.stdout + done.stderr).splitlines() if line.strip()]

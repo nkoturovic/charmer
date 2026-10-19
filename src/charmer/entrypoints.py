@@ -130,6 +130,15 @@ def run(name: str, argv: Sequence[str] | None = None) -> int:
     arguments) in the environment as it stands."""
 
     program = PROGRAMS[name]
+    if not sys.flags.utf8_mode:
+        for stream in (sys.stdout, sys.stderr):
+            encoding = getattr(stream, "encoding", None)
+            if encoding and hasattr(stream, "reconfigure"):
+                try:
+                    "●".encode(encoding)
+                except UnicodeEncodeError:
+                    # Keep the user's encoding; unsupported UI markers are lossy, not fatal.
+                    stream.reconfigure(errors="replace")
     return program(list(sys.argv[1:] if argv is None else argv))
 
 

@@ -208,8 +208,9 @@ charmer window-ceiling 400K       # set it (applies at the next launch or resume
 charmer window-ceiling --reset    # back to 800K
 ```
 
-Settings (**O**) has the same row. A session's process window is the smaller
-of the ceiling and the smallest provider bound among its lead set. A
+Settings (**O**) has the same row. Claude Code's own `--autocompact` flag is
+refused after `--`: the window is charmer's. A session's process window is
+the smaller of the ceiling and the smallest provider bound among its lead set. A
 1M-class agent whose provider bound reaches that window keeps the 1M class
 and shares that window; one whose bound falls below it uses the existing
 200K fallback. In scalar-window sessions, agents share that process policy.

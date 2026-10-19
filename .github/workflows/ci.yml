@@ -7,10 +7,13 @@
 #            diagnostic probes (tools/build.py, .github/scripts/
 #            gateway_probes.py), for the battery.
 # battery    nightly and on demand: the full Linux suite (Python 3.11,
-#            3.14 and 3.15), bubblewrap for the isolated classes, the
-#            candidate gateway and its probes (bound to the build record),
-#            the pinned Claude Code, and the pinned setuptools for the
-#            distribution tests, which must run.
+#            3.14 and 3.15), bubblewrap 0.12 or later for the isolated
+#            classes (built from its pinned release, its version recorded),
+#            the candidate gateway and its probes (bound to the build
+#            record), the pinned Claude Code, and the pinned setuptools for
+#            the distribution tests, which must run; on 3.15 (the bundled
+#            runtime's version) also the fast tier under an ISO-8859-1
+#            locale with EncodingWarning shown and recorded.
 # pty        nightly and on demand: the terminal journeys, one job per OS,
 #            run serially on their own.
 # nix        nightly and on demand: the flake checks, the Nix gateway bytes
@@ -149,7 +152,7 @@ jobs:
           umask 077
           python3 -I -c 'import sys; sys.path.insert(0, "src"); import charmer.cli.entry, charmer.proxy, charmer.trust, charmer.self_update, charmer.release_update, charmer.install_txn'
           python3 bin/charmer --version
-      - name: Pinned CI compiler and shell linter (by hash)
+      - name: Pinned CI compiler (the gateway's, by hash) and shell linter (by hash)
         run: |
           umask 077
           sh .github/scripts/ci_tools.sh go "$RUNNER_TEMP/ci-go"
@@ -158,17 +161,21 @@ jobs:
       - name: Shell lint
         run: |
           umask 077
-          shellcheck -s sh packaging/install.sh .github/scripts/journey.sh .github/scripts/wsl_prepare.sh .github/scripts/ci_tools.sh
+          shellcheck -s sh packaging/install.sh .github/scripts/journey.sh .github/scripts/wsl_prepare.sh .github/scripts/ci_tools.sh \
+            .github/scripts/bubblewrap_floor.sh
       - name: Workflow lint
         run: |
           umask 077
           export GOTOOLCHAIN=local GOPATH="$RUNNER_TEMP/go-tools" GOCACHE="$RUNNER_TEMP/go-build"
           GOBIN="$RUNNER_TEMP/bin" go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+          go version -m "$RUNNER_TEMP/bin/actionlint"
+          "$RUNNER_TEMP/bin/actionlint" -version
           # zizmor by the hash of its manylinux x86_64 wheel (.github/PINS.md),
           # the file the local lint ran. The wheel ships an executable, not a
           # Python module.
           printf '%s\n' 'zizmor==1.31.1 --hash=sha256:58e878eb2dbd2c6183c105e1ac28c14f7dd1eca44a783f1fe2a69647d012c410' >"$RUNNER_TEMP/zizmor.txt"
           python3 -m pip install --disable-pip-version-check --no-deps --only-binary=:all: --require-hashes --target "$RUNNER_TEMP/zizmor" -r "$RUNNER_TEMP/zizmor.txt"
+          "$RUNNER_TEMP/zizmor/bin/zizmor" --version
           "$RUNNER_TEMP/bin/actionlint"
           "$RUNNER_TEMP/zizmor/bin/zizmor" --offline .github
 
@@ -227,11 +234,22 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python }}
-      - name: Unprivileged user namespaces for bubblewrap
+      - name: bubblewrap from its pinned release (by hash, .github/PINS.md) and unprivileged user namespaces
         run: |
           umask 077
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-          sudo apt-get install --yes --no-install-recommends bubblewrap
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends meson ninja-build pkg-config libcap-dev
+          sh .github/scripts/ci_tools.sh bubblewrap "$RUNNER_TEMP/ci-bubblewrap"
+          # Root-owned in root-owned directories, as the isolated tests
+          # require of the bwrap they run; never setuid.
+          sudo install -d -o root -g root -m 0755 /usr/lib/charmer-ci /usr/lib/charmer-ci/bin
+          sudo install -o root -g root -m 0755 "$RUNNER_TEMP/ci-bubblewrap/bwrap" /usr/lib/charmer-ci/bin/bwrap
+          printf '%s\n' /usr/lib/charmer-ci/bin >>"$GITHUB_PATH"
+      - name: The bubblewrap on PATH is 0.12 or later (recorded)
+        run: |
+          umask 077
+          sh .github/scripts/bubblewrap_floor.sh
       - name: The pinned build backend for the distribution tests (by hash, .github/PINS.md)
         run: |
           umask 077
@@ -270,6 +288,31 @@ jobs:
           python3 tools/test.py --tier full --list | grep -v '^tests.test_tui_pty$' >"$RUNNER_TEMP/modules"
           mapfile -t modules <"$RUNNER_TEMP/modules"
           python3 tools/test.py --tier full --claude "$RUNNER_TEMP/claude" --require 'DistributionTests' "${modules[@]}"
+      # The bundled runtime's version under a locale that is neither UTF-8
+      # nor C. -X warn_default_encoding reports every implicit text
+      # encoding in the runner's process (where the tests import the
+      # launcher); the warnings go to a file of their own (tests that
+      # check stderr stay unaffected) and are recorded, they do not fail
+      # the step. The terminal journeys expect a UTF-8 terminal: they run
+      # in the full suite above and in the pty lane.
+      - name: The fast tier under ISO-8859-1 with EncodingWarning (CPython 3.15)
+        if: matrix.python == '3.15'
+        timeout-minutes: 60
+        run: |
+          umask 077
+          sudo localedef -i en_US -f ISO-8859-1 en_US.ISO-8859-1
+          export LANG=en_US.ISO-8859-1 LC_ALL=en_US.ISO-8859-1
+          python3 -c 'import locale, sys; e = locale.getencoding(); print(f"locale encoding {e}, UTF-8 mode {sys.flags.utf8_mode}"); sys.exit(None if e.replace("-", "").lower() == "iso88591" else "the locale is not ISO-8859-1")'
+          python3 tools/test.py --tier fast --list | grep -v -E '^tests\.test_tui_(input_)?pty$' >"$RUNNER_TEMP/locale-modules"
+          mapfile -t modules <"$RUNNER_TEMP/locale-modules"
+          status=0
+          python3 -X warn_default_encoding -c 'import runpy, sys, warnings; log = open(sys.argv[1], "a", encoding="utf-8"); warnings.showwarning = lambda message, category, filename, lineno, file=None, line=None: log.write(warnings.formatwarning(message, category, filename, lineno, line)); sys.argv = sys.argv[2:]; runpy.run_path(sys.argv[0], run_name="__main__")' \
+            "$RUNNER_TEMP/encoding-warnings.log" tools/test.py --tier fast --claude "$RUNNER_TEMP/claude" "${modules[@]}" || status=$?
+          touch "$RUNNER_TEMP/encoding-warnings.log"
+          grep -o '^[^ ]*: EncodingWarning' "$RUNNER_TEMP/encoding-warnings.log" | sed "s|^$PWD/||" | sort | uniq -c | sort -rn >"$RUNNER_TEMP/encoding-warnings.txt" || true
+          printf 'EncodingWarning sites under ISO-8859-1: %s\n' "$(wc -l <"$RUNNER_TEMP/encoding-warnings.txt")" | tee -a "$GITHUB_STEP_SUMMARY"
+          cat "$RUNNER_TEMP/encoding-warnings.txt"
+          exit "$status"
       - name: No Claude Code bytes in the workspace
         if: always()
         run: |

@@ -148,8 +148,8 @@ def trust_module(repo: Path):
 def run(argv: Sequence[str], *, cwd: Path, env: dict[str, str] | None = None,
         timeout: float = 3600, process_group: bool = False) -> subprocess.CompletedProcess:
     if not process_group:
-        return subprocess.run(list(argv), cwd=cwd, env=env, text=True, capture_output=True, timeout=timeout,
-                              stdin=subprocess.DEVNULL, check=False)
+        return subprocess.run(list(argv), cwd=cwd, env=env, text=True, encoding="utf-8", capture_output=True,
+                              timeout=timeout, stdin=subprocess.DEVNULL, check=False)
     # Wait for the shell, not EOF on a pipe held by one of its descendants.
     # Regular files also bound collection if a descendant escapes the group.
     with tempfile.TemporaryDirectory(prefix="journey-helpers-") as helpers, \
@@ -577,8 +577,8 @@ def build(repo: Path, out: Path, *, extra: Sequence[str] = (), runner: Runner = 
     argv = [sys.executable, str(repo / "tools" / "build.py"), "release", "--out", str(out),
             "--source-date-epoch", str(epoch), *extra]
     say(f"building the release into {out} (source date {epoch})")
-    result = subprocess.run(argv, cwd=repo, text=True, stdout=subprocess.PIPE, stdin=subprocess.DEVNULL,
-                            check=False) if runner is run else runner(argv, cwd=repo)
+    result = subprocess.run(argv, cwd=repo, text=True, encoding="utf-8", stdout=subprocess.PIPE,
+                            stdin=subprocess.DEVNULL, check=False) if runner is run else runner(argv, cwd=repo)
     if result.returncode != 0:
         raise ReleaseError(f"the release build failed (exit {result.returncode})")
     check_listing(out, read_sums(out))

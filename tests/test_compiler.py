@@ -48,6 +48,12 @@ class PassthroughFlagTests(unittest.TestCase):
                 ):
                     compiler.validate_passthrough([token])
 
+    def test_autocompact_is_blocked(self) -> None:
+        for args in (["--autocompact"], ["--autocompact", "1000000"], ["--autocompact=1000000"]):
+            with self.subTest(args=args):
+                with self.assertRaisesRegex(compiler.CompilerError, "session compaction window"):
+                    compiler.validate_passthrough(args)
+
 
 class EnvironmentTests(unittest.TestCase):
 

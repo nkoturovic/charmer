@@ -383,6 +383,22 @@ HOOK_EVENTS_V3 = (
     ("PostModelSwitch", "postmodel"),
     ("SubagentStart", "subagent"),
 )
+# The budget of every compiled hook but the model fence.
+HOOK_TIMEOUT_SECONDS = 5
+# The model fence fails closed when its shim cannot answer at all (missing,
+# not executable, a crash, a timeout): Claude Code 2.1.295+ then refuses the
+# switch instead of letting it through. A shim that does start already answers
+# a deny of its own on every failure. The other events stay fail-open: a
+# lifecycle or prompt hook that cannot run must never stop the session or the
+# user's prompt. The real-binary proof is
+# tests/test_scope_probe_client MissingHookProbe (client probe R19).
+FAIL_CLOSED_HOOK_EVENTS = frozenset({"PreModelSwitch"})
+HOOK_ON_FAILURE_BLOCK = "block"
+# A timed-out fence refuses the switch, so its budget is the one raised: the
+# shim and a launcher answering ``premodel`` measured up to 4.3 s (p99 3.5 s)
+# on a CPU oversubscribed four times, under 5 s but without margin; a healthy
+# answer takes a fraction of a second, and only a hung shim waits this long.
+FENCE_HOOK_TIMEOUT_SECONDS = 15
 
 # Every v2 scope denies the Read/Edit
 # tools on charmer's operator config (its key files included), the
@@ -1548,18 +1564,16 @@ def _lifecycle_settings_v2(
     )
     quoted = shlex.quote(hook_command)
 
-    def entry(event: str) -> list[dict[str, Any]]:
-        return [
-            {
-                "hooks": [
-                    {
-                        "type": "command",
-                        "command": f"{quoted} session-event {event} {tail}",
-                        "timeout": 5,
-                    }
-                ]
-            }
-        ]
+    def entry(name: str, event: str) -> list[dict[str, Any]]:
+        hook: dict[str, Any] = {
+            "type": "command",
+            "command": f"{quoted} session-event {event} {tail}",
+            "timeout": HOOK_TIMEOUT_SECONDS,
+        }
+        if name in FAIL_CLOSED_HOOK_EVENTS:
+            hook["onFailure"] = HOOK_ON_FAILURE_BLOCK
+            hook["timeout"] = FENCE_HOOK_TIMEOUT_SECONDS
+        return [{"hooks": [hook]}]
 
     return {
         "env": {
@@ -1569,7 +1583,7 @@ def _lifecycle_settings_v2(
             "CHARMER_MANAGED_ID": managed_id,
             "CHARMER_SESSION_ID": managed_id,
         },
-        "hooks": {name: entry(event) for name, event in HOOK_EVENTS_V3},
+        "hooks": {name: entry(name, event) for name, event in HOOK_EVENTS_V3},
     }
 
 
@@ -1601,6 +1615,19 @@ FAST_MODE_ENV = "CLAUDE_CODE_DISABLE_FAST_MODE"
 # WorkflowModelPrecedenceTests (client check S10-precedence).
 WORKFLOW_MODEL_ENV = "CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL"
 WORKFLOW_MODEL_NEUTRAL = "inherit"
+
+
+# Claude Code 2.1.302 picks the auto-mode classifier's model from
+# CLAUDE_CODE_AUTO_MODE_MODEL when it names a model the session allows, over
+# its default (the session's own model). A user, project or local settings
+# env sets it as readily as the launching environment (which the launch
+# clears), so the flag settings, which outrank those layers, state it
+# neutral in every scope: the empty value, which the client skips. A managed
+# policy setting it outranks the flag settings (``managed`` reports it as a
+# model lock). The real-binary proof is tests/test_auto_mode_model_probe
+# (client check auto-mode-model).
+AUTO_MODE_MODEL_ENV = "CLAUDE_CODE_AUTO_MODE_MODEL"
+AUTO_MODE_MODEL_NEUTRAL = ""
 
 
 # Claude Code 2.1.284-2.1.301 start a session whose settings configure no
@@ -1717,6 +1744,7 @@ def compile_lineup_scope(
     if workflow_default is not None:
         env["CLAUDE_CODE_SUBAGENT_MODEL"] = workflow_default
     env[WORKFLOW_MODEL_ENV] = WORKFLOW_MODEL_NEUTRAL
+    env[AUTO_MODE_MODEL_ENV] = AUTO_MODE_MODEL_NEUTRAL
     env.update(feedback_drafts_env(feedback_drafts))
     env[FAST_MODE_ENV] = "1"
 
@@ -2320,30 +2348,71 @@ def skill_policy_drift(live: Path, plan: ScopePlan, drifted: Sequence[str]) -> b
     return True
 
 
+# The model fence's failure policy, ``(onFailure, timeout)``, as each release
+# compiled it: earlier releases (none, the shared budget), this one (block,
+# the fence's own budget).
+_FENCE_POLICIES = frozenset({(None, HOOK_TIMEOUT_SECONDS), (HOOK_ON_FAILURE_BLOCK, FENCE_HOOK_TIMEOUT_SECONDS)})
+
+
+def _fence_failure_split(document: Mapping[str, Any]) -> tuple[Any, Any] | None:
+    """``(document without the PreModelSwitch hooks' failure policy, that
+    policy)``; None when the policy is not one a release compiled
+    (:data:`_FENCE_POLICIES`, the same on every PreModelSwitch hook),
+    including a value of another type (a list or an object)."""
+
+    hooks = document.get("hooks")
+    if not isinstance(hooks, Mapping) or not isinstance(hooks.get("PreModelSwitch"), list):
+        return document, None
+    groups, values = [], set()
+    for group in hooks["PreModelSwitch"]:
+        if not isinstance(group, Mapping) or not isinstance(group.get("hooks"), list):
+            return document, None
+        entries = []
+        for hook in group["hooks"]:
+            if isinstance(hook, Mapping):
+                on_failure, timeout = hook.get("onFailure"), hook.get("timeout")
+                if not (on_failure is None or isinstance(on_failure, str)) or not (
+                        isinstance(timeout, int) and not isinstance(timeout, bool)):
+                    return None
+                values.add((on_failure, timeout))
+                hook = {key: value for key, value in hook.items() if key not in ("onFailure", "timeout")}
+            entries.append(hook)
+        groups.append({**group, "hooks": entries})
+    if len(values) != 1 or not values <= _FENCE_POLICIES:
+        return None
+    return {**document, "hooks": {**hooks, "PreModelSwitch": groups}}, next(iter(values))
+
+
 def fork_policy_drift(live: Path, plan: ScopePlan, drifted: Sequence[str]) -> bool:
-    """True when the ONLY drift of a live scope is the fork-subagent deny
-    (``compiler.FORK_AGENT_DENY``) of another release: ``settings.json`` with
-    or without that one rule where ``plan`` has the other, and otherwise equal
-    to ``plan`` (a scope compiled before the 2.1.302 pin, or one with the rule
-    under a rollback compile) — lazy state that resume or ``doctor --repair``
-    resolves. A ``permissions.defaultMode`` difference alongside is lazy too
-    (:func:`default_mode_differs` reports it). Any other difference is not:
-    doctor keeps it BLOCK. Read-only."""
+    """True when the ONLY drift of a live scope is the managed policy another
+    release compiled: the fork-subagent deny (``compiler.FORK_AGENT_DENY``)
+    and the model fence's failure policy (``onFailure: block`` and the
+    fence's own timeout on the PreModelSwitch hook), each in the form one
+    release compiled where ``plan`` has the other, ``settings.json``
+    otherwise equal to ``plan`` (a scope compiled before the 2.1.302 pin, or
+    one with the rules under a rollback compile) — lazy state that resume or
+    ``doctor --repair`` resolves. A ``permissions.defaultMode`` difference
+    alongside is lazy too (:func:`default_mode_differs` reports it). Any
+    other difference is not: doctor keeps it BLOCK. Read-only."""
 
     if list(drifted) != [f"{SETTINGS_RELPATH} content differs"]:
         return False
 
-    def fork_split(document: Any) -> tuple[Any, bool] | None:
-        """``(document without the fork deny and defaultMode, whether it denies forks)``."""
+    def policy_split(document: Any) -> tuple[Any, tuple[bool, Any]] | None:
+        """``(document without those rules and defaultMode, (whether it
+        denies forks, the fence's failure policy))``."""
 
         permissions = document.get("permissions") if isinstance(document, Mapping) else None
         if not isinstance(permissions, Mapping) or not isinstance(permissions.get("deny"), list):
             return None
         deny = [rule for rule in permissions["deny"] if rule != compiler.FORK_AGENT_DENY]
         rest = _without_default_mode({**document, "permissions": {**permissions, "deny": deny}})
-        return rest, compiler.FORK_AGENT_DENY in permissions["deny"]
+        fence = _fence_failure_split(rest)
+        if fence is None:
+            return None
+        return fence[0], (compiler.FORK_AGENT_DENY in permissions["deny"], fence[1])
 
-    on_disk, expected = fork_split(_live_settings(live)), fork_split(plan.settings)
+    on_disk, expected = policy_split(_live_settings(live)), policy_split(plan.settings)
     return (on_disk is not None and expected is not None
             and on_disk[0] == expected[0] and on_disk[1] != expected[1])
 
