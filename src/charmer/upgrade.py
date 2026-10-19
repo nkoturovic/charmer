@@ -105,6 +105,15 @@ ESSENTIAL_EVIDENCE_PREFIXES = (
     "client check S10-precedence: PASS ",
     "client check S15: PASS ",
     "client check S16: PASS ",
+    # The re-pin hardening: the model-switch fence fails closed (R19: a
+    # missing, non-executable, crashing or slow shim keeps the lead model),
+    # the session window holds as compiled, the auto-mode classifier model
+    # stays the session's own, and the compiled scope draws no unknown-field
+    # or invalid-setting line from the client's debug log.
+    "client probe R19: PASS class=R19-closed ",
+    "compaction window probe: PASS class=env-window-holds ",
+    "client check auto-mode-model: PASS class=AM-owned ",
+    "client check debug-diagnostics: PASS ",
 )
 
 # Named alternative completion lines that satisfy an essential prefix. The
@@ -136,7 +145,7 @@ def _diagnostic_notes(output: str, version: str) -> tuple[str, ...]:
 
     notes: dict[str, str] = {}
     for match in re.finditer(
-        r"(?m)^client probe (U1|X5|RL|R19|RET|SC|SX|SF|SK|OC|FL|SL): \w+ class=([\w-]+)([^\n]*)$", output
+        r"(?m)^client probe (U1|X5|RL|RET|SC|SX|SF|SK|OC|FL|SL): \w+ class=([\w-]+)([^\n]*)$", output
     ):
         probe_id, observed, detail = match.groups()
         recorded = re.search(r"\bchanged recorded=([\w-]+)", detail)
