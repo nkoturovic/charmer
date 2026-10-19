@@ -29,8 +29,11 @@ charmer tells you in the session and doctor offers the revert.
 - Everything after `/cm` is one argument: write it without quotes.
 - `/cm` runs charmer's `lineup` command, so `charmer` must be on
   the session's PATH.
-- Every change ends with one next step: `next: type /reload-plugins`, a
-  line about the lead, recorded for the next resume, or no change.
+- Read each result's next step: `next: type /reload-plugins` means reload
+  before starting fresh agents. `relaunch needed`, or a `pending` change
+  with `nothing in the running session changed`, means exit the session,
+  then `charmer -r <id>`; reload alone does not apply it. A lead-only result
+  may instead name `/model` or the next resume; no change needs no action.
 
 ## LIVE and RELAUNCH
 
@@ -55,9 +58,13 @@ a small provider bound is not a per-agent window control
 ([context windows](models.md#context-windows)). A family-change prompt is
 about cache/history cost, not permission to use that family.
 
-`/reload-plugins` is yours to type: no hook can observe it, so until you
-do, new agents keep the previous bindings. Start fresh agents afterwards;
-`SendMessage` continuation keeps the old agent's binding.
+`/reload-plugins` is yours to type when the result calls for it: no hook
+can observe it, so until you do, new agents keep the previous bindings.
+Start fresh agents afterwards; running agents keep their binding, and
+`SendMessage` continuation does not move an old agent to the new model.
+User-installed spawn mods can redirect fresh agents: the lineup describes
+charmer's bindings, not an exact-binding guarantee against those mods
+([compatibility limits](../reference/compatibility.md)).
 
 ## From a terminal and the sessions screen
 
@@ -81,11 +88,17 @@ pending change) or a fallback provider, each with its effect shown first.
 
 ## Switch profile inside a session
 
-1. `/cm` (the `*` row is the current profile).
-2. `/cm profile <name>`: the agents change now; if the new lead is in the
-   lead set, switch it with `/model` (press `s`), otherwise it changes at
-   the next resume.
-3. `/reload-plugins`.
+1. `/cm show` (the `*` row is the current profile).
+2. `/cm profile <name>`, then read what it reports; do not assume it changed
+   the running session.
+3. If the result asks for `/reload-plugins`, type it and start fresh
+   agents. If it also names `/model`, follow that instruction (press `s`)
+   to switch the lead, or resume instead. Running agents keep their binding;
+   do not `SendMessage`-continue them expecting the new model.
+4. If it says `relaunch needed`, or records a `pending` change with
+   `nothing in the running session changed`, exit, then `charmer -r <id>`.
+   A result naming only `/model` or the next resume needs that step instead;
+   a no-change result needs no action.
 
 A resume refuses `--profile` with another profile: record the change
 first (`/cm profile <name>`, or the `--relaunch profile` form above), then

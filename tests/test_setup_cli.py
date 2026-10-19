@@ -163,11 +163,19 @@ class StepTests(SetupCase):
                 self.assertEqual(code, 1)
                 self.assertIn("CLAUDECODE set", err)
 
-    def test_test_step_asks_once_and_a_no_is_not_a_failure(self) -> None:
+    def test_test_step_defaults_to_no_and_needs_explicit_consent_to_send(self) -> None:
         self.apply_and_serve()
-        code, out, err = self.op(["setup", "--step", "test"], "n\n")
-        self.assertEqual(code, 0, err)
-        self.assertEqual(self.calls, [])
+        for answers, expected in (("n\n", 0), ("\n", 0), ("y\n\n", 3)):
+            with self.subTest(answers=answers):
+                code, out, err = self.op(["setup", "--step", "test"], answers)
+                self.assertEqual(code, expected, out + err)
+                self.assertIn(texts.SETUP_TEST_QUESTION, out + err)
+                self.assertIn("may be billed", out + err)
+                if answers.startswith("y"):
+                    self.assertIn("Providers may bill these requests.", err)
+                    self.assertIn("Proceed? [y/N]", err)
+                self.assertEqual(self.calls, [])
+                self.assertEqual(self.http_calls, [])
         linked = status.connected(self.runtime)
         self.assertIn("kimi", [item.provider_id for item in linked])
         code, out, err = self.op(["setup", "--step", "test"], "y\ny\n")

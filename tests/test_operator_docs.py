@@ -85,6 +85,14 @@ def _section(text: str, heading: str) -> str:
     raise AssertionError(f"no heading {heading!r}")
 
 
+def _quickstart_step(verb: str) -> str:
+    text = _text("quickstart.md")
+    heading = re.search(rf"(?m)^## ((?:\d+\. )?{re.escape(verb)}[^\n]*)$", text)
+    if heading is None:
+        raise AssertionError(f"no quickstart task starting with {verb!r}")
+    return _section(text, heading[1])
+
+
 def _rows(text: str) -> list[str]:
     """Markdown table body rows (header and separator rows dropped)."""
 
@@ -414,6 +422,103 @@ class TreeTests(unittest.TestCase):
             with self.subTest(name):
                 self.assertTrue(any(target.endswith("reference/licenses.md") for target in _links(name))
                                 or "docs/reference/licenses.md" in _text(name), name)
+
+
+class QuickstartJourneyTests(unittest.TestCase):
+    """A reader can select and launch without optional evidence work, then
+    follow the change command's actual next step rather than guessing it."""
+
+    def test_the_tasks_are_in_order_without_internal_switch_rules(self) -> None:
+        text = _text("quickstart.md")
+        tasks = ("Connect", "Choose", "Launch", "Change", "Exit and resume")
+        headings = re.findall(r"(?m)^## (?:\d+\. )?([^\n]+)$", text)
+        positions = []
+        for task in tasks:
+            matches = [i for i, heading in enumerate(headings) if heading.startswith(task)]
+            self.assertEqual(len(matches), 1, f"one {task.lower()} task in the journey")
+            positions.append(matches[0])
+        self.assertEqual(positions, sorted(positions))
+        for task in tasks:
+            self.assertTrue(_quickstart_step(task).strip())
+        for internal in ("launch fence", "class/process", "process policy", "LIVE", "RELAUNCH"):
+            self.assertNotIn(internal, text)
+
+    def test_selection_needs_no_admission_or_diagnostic_command(self) -> None:
+        text = _text("quickstart.md")
+        connect = _flat(_quickstart_step("Connect"))
+        self.assertIn("admission is optional", connect.lower())
+        self.assertIn("zero inference requests", connect)
+        self.assertIn("not route approval", connect)
+        self.assertIn("default **No**", connect)
+        self.assertIn("may be billed", connect)
+        self.assertIn("never run automatically", connect)
+        self.assertIn("guides/models.md", text)
+        self.assertNotIn("charmer models admit", text)
+        self.assertNotIn("charmer models qualify", text)
+        self.assertIn("route approval", connect)
+
+    def test_profile_selection_saving_and_default_are_different(self) -> None:
+        choose = _flat(_quickstart_step("Choose"))
+        for anchor in ("Enter", "for this launch", "**D**", "default", "charmer setup --step profile",
+                       "charmer profile starter", "preview", "--apply", "charmer --profile starter"):
+            self.assertIn(anchor, choose)
+        self.assertRegex(choose, r"--apply[^.]*does not[^.]*default")
+        self.assertRegex(choose, r"setup --step profile[^.]*saves[^.]*default")
+        launch = _flat(_quickstart_step("Launch"))
+        self.assertIn("lead and every bound agent", launch)
+        self.assertIn("bill separately", launch)
+        self.assertIn("spending limits", launch)
+
+    def test_agent_guidance_branches_on_the_reported_outcome(self) -> None:
+        from charmer.cli import text as cli_text
+
+        for label, text in (("quickstart", _quickstart_step("Change")),
+                            ("card", "\n".join(cli_text.CARD_CM_GUIDANCE))):
+            with self.subTest(surface=label):
+                flat = _flat(text)
+                for command in ("/cm show", "/cm set <agent>=<model>[:<effort>]", "charmer -r <id>"):
+                    self.assertIn(command, flat)
+                self.assertRegex(flat, r"If .*next:.*?/reload-plugins")
+                self.assertIn("fresh agents", flat)
+                self.assertRegex(flat.lower(), r"(?:existing|running) agents keep their (?:binding|model)")
+                self.assertIn("SendMessage", flat)
+                self.assertRegex(flat, r"If .*relaunch needed.*?exit.*?charmer -r <id>")
+                self.assertIn("pending", flat)
+                self.assertIn("nothing in the running session changed", flat)
+                self.assertNotIn("A change applies after /reload-plugins", flat)
+        change = _flat(_quickstart_step("Change"))
+        self.assertIn("Only you can run", change)
+        self.assertIn("spawn mods", change)
+        self.assertIn("reference/compatibility.md", change)
+
+    def test_onboarding_explains_selection_and_optional_paid_diagnostics(self) -> None:
+        from charmer.cli import text as cli_text
+
+        help_text = _flat(cli_text.GS_HELP)
+        for anchor in ("Admission is an optional badge, not route approval", "default No", "may be billed",
+                       "never run automatically", "Enter selects for this launch", "D makes", "default"):
+            self.assertIn(anchor, help_text)
+        for text in (cli_text.NO_MODELS_NOT_ADMITTED, cli_text.NO_MODELS_ADMITTED):
+            with self.subTest(message=text):
+                for anchor in ("badge only", "Return to the launch card", "P (Profiles)", "for this launch",
+                               "provider/route restrictions still apply", "explicit consent", "may be billed"):
+                    self.assertIn(anchor, text)
+        self.assertIn("default", cli_text.PROFILE_STEP_STARTER_BUTTONS[0][0])
+
+    def test_lineup_profile_example_follows_the_result_instead_of_always_reloading(self) -> None:
+        text = _flat(_section(_text("guides/lineup.md"), "Switch profile inside a session"))
+        for anchor in ("/cm show", "/cm profile <name>", "/reload-plugins", "fresh agents", "SendMessage",
+                       "relaunch needed", "pending", "nothing in the running session changed", "charmer -r <id>"):
+            self.assertIn(anchor, text)
+        self.assertNotIn("the agents change now", text)
+        self.assertNotRegex(text, r"3\. `/reload-plugins`\.")
+
+    def test_resume_keeps_the_recorded_lineup(self) -> None:
+        resume = _flat(_quickstart_step("Exit and resume"))
+        for anchor in ("charmer -c", "last managed session in this directory", "charmer -r",
+                       "charmer -r <id>", "at least 8 characters", "name", "ambiguous", "--profile"):
+            self.assertIn(anchor, resume)
+        self.assertRegex(resume, r"--profile[^.]*cannot override[^.]*lineup")
 
 
 class DraftingMarkerTests(unittest.TestCase):
@@ -1533,7 +1638,7 @@ class ProviderRouteDocsTests(unittest.TestCase):
 
         gateway = json.loads((RESOURCES_ROOT / "catalog" / "gateway.json").read_text())
         presets = _flat(_section(_text("providers/openai-compatible.md"), "Presets"))
-        quickstart = _flat(_section(_text("quickstart.md"), "4. Connect one provider"))
+        quickstart = _flat(_quickstart_step("Connect"))
         if catalog.keyed_compat_audited(gateway):
             self.assertNotIn("not available in this release", presets)
         else:
@@ -1568,7 +1673,7 @@ class ProviderRouteDocsTests(unittest.TestCase):
         self.assertIn("https://developers.openai.com/api/docs/guides/spend-limits", _text("quickstart.md"))
 
     def test_the_quickstart_matrix_covers_every_route_class(self) -> None:
-        text = _section(_text("quickstart.md"), "4. Connect one provider")
+        text = _quickstart_step("Connect")
         flat = _flat(text)
         self.assertIn("| Route | Credential | In the launcher | From a terminal | Alone gives you |", text)
         self.assertIn("Every route is optional", flat)
@@ -1585,12 +1690,14 @@ class ProviderRouteDocsTests(unittest.TestCase):
         self.assertIn("Anthropic-compatible", routes[own[0]])
         self.assertIn("OpenAI-compatible", routes[own[1]])
         # One singleton example per route class, each a complete journey.
-        examples = _section(text, "One provider, start to finish")
+        examples = _section(_text("quickstart.md"), "One provider, start to finish")
         for anchor in ("charmer providers set-key deepseek", "charmer providers sign-in anthropic",
                        "charmer setup --answers <file>", "charmer providers add --preset zai",
-                       "charmer models admit custom-example", "charmer profile starter --apply",
-                       "charmer doctor --first-run"):
+                       "charmer setup --step profile", "charmer profile starter --apply",
+                       "charmer --profile starter"):
             self.assertIn(anchor, examples)
+        self.assertNotIn("charmer models admit", examples)
+        self.assertNotIn("charmer models qualify", examples)
 
     def test_cost_references_are_official_and_dated(self) -> None:
         for name, heading in (("providers/api-keys.md", "6. Costs and limits"),

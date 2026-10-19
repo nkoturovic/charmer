@@ -114,7 +114,11 @@ CARD_CM_GUIDANCE = (
     "  /cm show — this session's lineup; /cm profiles and /cm profile <name> switch profiles.",
     "  /cm set <agent>=<model>[:<effort>] and /cm unset <agent> bind or unbind one agent.",
     "  /cm direct, /cm pin, /cm follow, /cm fallback <provider>, /cm review, /cm quota.",
-    "  A change applies after /reload-plugins in that session; running agents keep their model.",
+    "  If output says next: type /reload-plugins, type it yourself, then start fresh agents.",
+    "  Running agents keep their model; do not SendMessage-continue an old agent to use the change.",
+    "  If it says relaunch needed or pending ... nothing in the running session changed:",
+    "    exit the session, then charmer -r <id>. Reload alone does not apply that change.",
+    "  Only you can run /cm; the model cannot invoke it.",
 )
 _HELP_SESSION = (
     "\n"
@@ -695,11 +699,13 @@ PRESET_FORM_HELP = (
 ADD_MODELS_TITLE = "add models for {id}?"
 NO_MODELS_HEAD = "{id} has no models yet; declare one to select in a profile. Admission is optional."
 NO_MODELS_LATER = "{id} has no models yet — A on Providers adds them (charmer discover {id} --add WIRE)"
-NO_MODELS_NOT_ADMITTED = ("P (Profiles) selects normally. Optional diagnostics: M → Q. "
-                          "{id}: added {keys}, not admitted; provider/route restrictions still apply. "
-                          "CLI diagnostics: charmer models qualify KEY --smoke.")
-NO_MODELS_ADMITTED = ("{id}: admitted {keys} (badge only) — P (Profiles) selects it normally; "
-                     "provider/route restrictions still apply. Optional diagnostics: M → Q.")
+NO_MODELS_NOT_ADMITTED = ("{id}: added {keys}, not admitted (optional badge only). "
+                          "Return to the launch card, then P (Profiles) selects for this launch; "
+                          "provider/route restrictions still apply. Optional diagnostics: M → Q "
+                          "(explicit consent; may be billed).")
+NO_MODELS_ADMITTED = ("{id}: admitted {keys} (badge only). Return to the launch card, then P (Profiles) "
+                     "selects for this launch; provider/route restrictions still apply. "
+                     "Optional diagnostics: M → Q (explicit consent; may be billed).")
 ADMIT_NOW_TITLE = "Admit {key} now?"
 ADMIT_NOW_BODY = ("Record an optional local admission badge for {key}? No test request is sent. "
                   "Skip to select it normally in Profiles; provider/route restrictions still apply. "
@@ -1000,7 +1006,10 @@ GS_HELP = (
     "A connects a provider: an API key, a Claude or ChatGPT account sign-in, your own Anthropic- or\n"
     "OpenAI-compatible endpoint, or a server on your network.\n"
     "Nothing is written until you confirm, and nothing is sent to a provider without asking first.\n"
-    "Keys are typed masked and never shown. P opens Profiles. Esc goes to the launch card."
+    "Keys are typed masked and never shown. Admission is an optional badge, not route approval.\n"
+    "Connection tests and diagnostics are optional, default No, may be billed and never run automatically.\n"
+    "The profile step can save a starter and make it your default. P opens Profiles: Enter selects for\n"
+    "this launch; D makes a profile the default. Esc goes to the launch card."
 )
 GS_HELP_TITLE = "Get started — help"
 GS_RESUME_READONLY = "Get started is read-only on a resume card — Esc, then W on the launch card."
@@ -1042,7 +1051,7 @@ PROFILE_STEP_WHY = {"seed": "chosen automatically: the first shipped profile tha
 PROFILE_STEP_KEEP_BUTTONS = (("Keep it", "keep"), ("Other profiles (P)", "profiles"))
 PROFILE_STEP_STARTER_INTRO = ("Nothing shipped fits {connected}. charmer can build a profile from what is "
                               "connected (no request is sent; nothing is saved yet):")
-PROFILE_STEP_STARTER_BUTTONS = (("Save as starter and use it", "save"), ("Profiles (P)", "profiles"),
+PROFILE_STEP_STARTER_BUTTONS = (("Save starter and make default", "save"), ("Profiles (P)", "profiles"),
                                 ("Not now", None))
 PROFILE_STEP_SAVED = "Saved {name} and made it your default profile."
 PROFILE_STEP_WAITING = "Connect a provider first: A adds one."

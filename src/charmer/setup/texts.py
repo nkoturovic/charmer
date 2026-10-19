@@ -35,8 +35,8 @@ SETUP_STARTER_NO_LEAD = ("No connected provider has a model that can lead yet �
 # A connected provider without models: the command-line steps that make it
 # usable (the TUI's Providers screen walks the same steps after a key).
 NO_MODELS_NEXT = ("next: {id} has no models yet — list them (charmer discover {id}), add one "
-                  "(charmer discover {id} --add WIRE, or charmer models add {id} WIRE …), admit it "
-                  "(charmer models admit KEY), then make a profile (charmer setup --step profile)")
+                  "(charmer discover {id} --add WIRE, or charmer models add {id} WIRE …), then choose a "
+                  "profile (charmer setup --step profile). Admission is optional (badge only, not route approval).")
 SETUP_PROFILE_FIT = "Your profile: {name} ({why})"
 SETUP_PROFILE_WAITING = "Connect a provider first: charmer setup --step providers"
 SETUP_NOT_INTERACTIVE_STEP = "{step}: skipped — needs a terminal outside Claude Code sessions"

@@ -122,7 +122,7 @@ def modelless_copy(target: Path) -> tuple[Path, str]:
 class SyntheticModellessProviderTests(test_cli.OperatorCommandCase):
     """A keyed provider with no model on the shipped assets, alone: its key,
     the steps the command line and the profile step name, a model added by
-    hand and admitted, then a usable starter profile."""
+    hand, then a usable starter without admission or diagnostics."""
 
     def setUp(self) -> None:
         super().setUp()
@@ -130,6 +130,13 @@ class SyntheticModellessProviderTests(test_cli.OperatorCommandCase):
         self.addCleanup(shutil.rmtree, temporary, True)
         self.runtime.asset_root, self.pid = modelless_copy(temporary)
         self.runtime.reload_catalog()
+        for name in ("smoke", "qualify_post"):
+            patcher = mock.patch.object(self.runtime, name, side_effect=AssertionError("unexpected inference"))
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        patcher = mock.patch.object(discover_cmd, "_fetch", side_effect=AssertionError("unexpected listing"))
+        patcher.start()
+        self.addCleanup(patcher.stop)
         state.atomic_write(self.secret_file, b"")
         for pid in sorted(self.runtime.catalog.docs["providers"]["providers"]):
             if pid != self.pid:
@@ -141,8 +148,7 @@ class SyntheticModellessProviderTests(test_cli.OperatorCommandCase):
         key_file = self.root / "provider.key"
         state.atomic_write(key_file, b"cli-dummy-key\n")
         steps = (f"charmer discover {pid})", f"charmer discover {pid} --add WIRE",
-                 f"charmer models add {pid} WIRE", "charmer models admit KEY",
-                 "charmer setup --step profile")
+                 f"charmer models add {pid} WIRE", "charmer setup --step profile")
         for argv, answers in ((["providers", "set-key", pid, "--secret-file", str(key_file)], ""),
                               (["setup", "--step", "profile"], "\n")):
             with self.subTest(argv=argv[:2]):
@@ -151,9 +157,12 @@ class SyntheticModellessProviderTests(test_cli.OperatorCommandCase):
                 positions = [line.find(step) for step in steps]
                 self.assertNotIn(-1, positions, line)
                 self.assertEqual(positions, sorted(positions), line)
+                self.assertNotIn("charmer models admit", line)
+                self.assertIn("admission is optional", line.lower())
+                self.assertIn("not route approval", line)
                 self.assertNotIn("cli-dummy-key", out + err)
 
-    def test_the_key_continues_through_adding_and_admitting_to_a_profile(self) -> None:
+    def test_the_key_reaches_a_launch_selection_without_admission_or_diagnostics(self) -> None:
         pid = self.pid
         entry = next(item for item in setup_providers.picker_entries(self.runtime) if item.id == f"{pid}:api-key")
         self.assertEqual((entry.note, entry.available), (texts.NO_MODELS_NOTE, True))
@@ -174,11 +183,7 @@ class SyntheticModellessProviderTests(test_cli.OperatorCommandCase):
                                    "--source", "operator", "--effort", "high"])
         self.assertEqual(code, 0, err)
         self.serve_current()
-        code, out, err = self.op(["models", "admit", key], "y\n")
-        self.assertEqual(code, 0, out + err)
-        self.assertEqual(self.calls, [])
-        self.assertEqual(self.http_calls, [])
-        self.assertIn(key, self.runtime.current_effective().admitted_lines)
+        self.assertNotIn(key, self.runtime.current_effective().admitted_lines)
         self.assertEqual(setup_status.without_models(self.runtime, (pid,)), ())
         plan, _warnings = self.runtime.starter_plan("starter")
         self.assertIsNotNone(plan.document, plan.refusal)
@@ -189,7 +194,7 @@ class SyntheticModellessProviderTests(test_cli.OperatorCommandCase):
         self.assertEqual(code, 0, out + err)
         self.assertIn(texts.SETUP_STARTER_SAVED.format(name="starter"), out + err)
         # Read back from disk (the catalog reloaded, a new store): saved,
-        # selected, its lead the admitted model, and ready.
+        # selected, its lead the unadmitted model, and ready.
         self.runtime.reload_catalog()
         reloaded = self.runtime
         self.assertTrue(reloaded.profiles.has_user("starter"))
@@ -207,6 +212,17 @@ class SyntheticModellessProviderTests(test_cli.OperatorCommandCase):
         code, out, err = self.op(["setup", "--step", "profile"], "\n")
         self.assertEqual(code, 0, out + err)
         self.assertIn(texts.SETUP_PROFILE_FIT.format(name="starter", why=choice.reason_text), out + err)
+        code, out, err = self.op(["--print-launch"])
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("record: profile starter", out)
+        self.assertIn("would launch", out)
+        self.assertNotIn(key, reloaded.current_effective().admitted_lines)
+        ledger = self.ledger()
+        self.assertTrue(ledger is None or key not in ledger.admissions, "no admission badge was made")
+        self.assertFalse(operator_mod.evidence_path(self.env).exists(), "no diagnostic evidence was made")
+        self.assertEqual(self.calls, [])
+        self.assertEqual(self.http_calls, [])
+        self.assertEqual(self.launches, [], "print-launch selects without starting a client")
 
 
 class _JourneyCase(_ShippedCase):
