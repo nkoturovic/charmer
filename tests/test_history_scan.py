@@ -419,8 +419,16 @@ class GoPatchContextTests(unittest.TestCase):
         self.assertNotIn(key[3:], repr(hits))
         # Even a vendor shape that is also a syntactically valid selector
         # remains specific: generic source context never changes its verdict.
-        body = _unmarked(lambda: "Q" + secrets.token_hex(32))
-        for value in (opaque, f'"{opaque}"', "ya29" + "." + body):
+        # Hex plus a non-hex sentinel can miss the broader alphabet's entropy floor.
+        alphabet = string.ascii_letters + string.digits
+        body = _unmarked(lambda: "Q" + "".join(secrets.SystemRandom().sample(alphabet, len(alphabet))))
+        self.assertEqual(set(body[1:]), set(alphabet))
+        vendor = "ya29" + "." + body
+        patch = _go_add_patch(_go_unit(f"\tSecretKey: {vendor},\n"))
+        baseline = list(history_scan.credential_hits(patch.encode()))
+        self.assertEqual([(hit[0], hit[4]) for hit in baseline], [("vendor-key", "candidate")])
+        self.assertEqual(self._hits(patch), baseline)
+        for value in (opaque, f'"{opaque}"', vendor):
             self._assert_candidates(_go_add_patch(_go_unit(f"\tSecretKey: {value},\n")))
 
     def test_valid_mixed_sections_frame_but_do_not_broaden_go_source_context(self) -> None:
