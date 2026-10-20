@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import errno
 import fcntl
 import json
@@ -15,6 +16,7 @@ import sys
 import tempfile
 import termios
 import time
+import types
 import unittest
 from pathlib import Path
 
@@ -30,6 +32,147 @@ SRC_ROOT = REPO_ROOT / "src"
 TIMEOUT = 6.0
 # Exit waits are load-tolerant: the full suite starves PTY children.
 FINISH_TIMEOUT = 30.0
+PLATFORMS = ("linux", "darwin")
+
+# Darwin's pending-input state, not Linux's differently numbered PENDIN.
+_DARWIN_PENDIN = 0x20000000
+
+
+def _same_terminal_attrs(before, after) -> bool:
+    """Compare the entire native vector without Python's numeric/type coercions."""
+
+    if type(before) is not list or type(after) is not list or len(before) != 7 or len(after) != 7:
+        return False
+    if any(type(a) is not int or type(b) is not int or a != b for a, b in zip(before[:6], after[:6])):
+        return False
+    a, b = before[6], after[6]
+    return (type(a) is list and type(b) is list and len(a) == len(b)
+            and all(type(x) in (bytes, int) and type(x) is type(y) and x == y for x, y in zip(a, b)))
+
+
+def _terminal_readback(before, after, *, platform: str = sys.platform) -> str:
+    if _same_terminal_attrs(before, after):
+        return "exact"
+    if (platform == "darwin" and _same_terminal_attrs(before, before)
+            and before[3] & termios.ICANON and not before[3] & _DARWIN_PENDIN):
+        canonical = before.copy()
+        canonical[3] |= _DARWIN_PENDIN
+        if _same_terminal_attrs(canonical, after):
+            return "darwin-pendin-added"
+    return "mismatch"
+
+
+class _TerminalRestoration:
+    """Observe only the existing product save/restore calls, never query a tty.
+
+    Caller code identities exclude admission/health getters and the IXON setter.
+    Copies freeze observations; original arguments, results and exceptions pass
+    through unchanged. Verification and metadata emission happen after teardown.
+    """
+
+    def __init__(self, before):
+        self.before = copy.deepcopy(before)
+        self.snapshots = []
+        self.requests = []
+
+    def install(self, tui) -> None:
+        self._tui = tui
+        self._get_attrs = tui._terminal_attrs
+        self._set_attrs = tui.termios.tcsetattr
+        self._save_code = tui.run_curses_on_streams.__code__
+        restores = [code for code in self._save_code.co_consts
+                    if isinstance(code, types.CodeType) and code.co_name == "restore_attrs"]
+        assert len(restores) == 1, "product restoration caller identity"
+        self._restore_code = restores[0]
+        tui._terminal_attrs = self._snapshot
+        tui.termios.tcsetattr = self._request
+
+    def uninstall(self) -> None:
+        self._tui._terminal_attrs = self._get_attrs
+        self._tui.termios.tcsetattr = self._set_attrs
+
+    def _snapshot(self, fd):
+        attrs = self._get_attrs(fd)
+        if sys._getframe(1).f_code is self._save_code:
+            self.snapshots.append((fd, copy.deepcopy(attrs)))
+        return attrs
+
+    def _request(self, fd, when, attrs):
+        if sys._getframe(1).f_code is not self._restore_code:
+            return self._set_attrs(fd, when, attrs)
+        request = [fd, when, copy.deepcopy(attrs), None]
+        self.requests.append(request)
+        try:
+            return self._set_attrs(fd, when, attrs)
+        except BaseException as error:
+            request[3] = error
+            raise
+
+    @staticmethod
+    def _outcome(error) -> str:
+        if error is None:
+            return "ok"
+        if isinstance(error, termios.error) and error.args and type(error.args[0]) is int:
+            return {errno.EBADF: "failed-ebadf", errno.EIO: "failed-eio",
+                    errno.ENXIO: "failed-enxio"}.get(error.args[0], "failed-other")
+        return "failed-other"
+
+    def check_requests(self, *, expected=("ok", "ok")) -> None:
+        assert len(self.before) == 2, "fixture baseline count"
+        assert [fd for fd, _ in self.snapshots] == [0, 1], "product snapshot count/order"
+        assert [request[0] for request in self.requests] == [0, 1], "restoration attempt count/order"
+        assert len(expected) == 2, "expected setter outcome count"
+        for slot, ((fd, snapshot), request, outcome) in enumerate(zip(self.snapshots, self.requests, expected)):
+            assert type(fd) is int, "product snapshot descriptor type"
+            assert _same_terminal_attrs(self.before[slot], snapshot), "fixture baseline/product snapshot mismatch"
+            assert type(request[0]) is int and type(request[1]) is int, "restoration descriptor/timing type"
+            assert request[1] == termios.TCSANOW, "original restoration timing"
+            assert _same_terminal_attrs(self.before[slot], request[2]), "fixture baseline/restoration request mismatch"
+            actual = self._outcome(request[3])
+            if outcome == "ok":
+                assert actual == "ok", "unexpected restoration setter failure"
+            elif outcome == "closed-fd":
+                assert actual == "failed-ebadf", "closed fd0 restoration must fail with EBADF"
+                assert slot == 0, "only fd0 is deliberately closed"
+            else:
+                assert outcome == "hangup", "unknown expected setter outcome"
+                # A hung-up tty can accept the request or reject it as unavailable;
+                # neither a successful setter nor a readback is assumed here.
+                assert actual in ("ok", "failed-eio", "failed-enxio"), "unexpected hung-up setter outcome"
+
+    def check(self, after, *, platform: str = sys.platform, expected=("ok", "ok")) -> None:
+        self.check_requests(expected=expected)
+        assert type(after) is list and len(after) == 2, "readback slot structure"
+        assert all(_terminal_readback(before, attrs, platform=platform) != "mismatch"
+                   for before, attrs in zip(self.before, after)), "terminal configuration readback mismatch"
+
+    def metadata(self, after=None, *, platform: str = sys.platform) -> dict:
+        # Fixed-size classifications only: no vectors, c_cc values or exception text.
+        return {
+            "snapshot_count": len(self.snapshots),
+            "attempt_count": len(self.requests),
+            "snapshots": ["exact" if _same_terminal_attrs(before, snapshot) else "mismatch"
+                          for before, (_, snapshot) in zip(self.before, self.snapshots[:2])],
+            "requests": ["exact" if _same_terminal_attrs(before, request[2]) else "mismatch"
+                         for before, request in zip(self.before, self.requests[:2])],
+            "setters": [self._outcome(request[3]) for request in self.requests[:2]],
+            "readback": (["not-observed"] * 2 if after is None else
+                         [_terminal_readback(before, attrs, platform=platform)
+                          for before, attrs in zip(self.before, after[:2])]),
+        }
+
+
+def _report_terminal_restore(case: unittest.TestCase, output: bytes, *, readback=None) -> dict:
+    report = json.loads(_line_of(output, b"TTY_RESTORE="))
+    if readback is not None:
+        report["readback"] = readback
+    print("TTY_RESTORE " + json.dumps(dict(case=case.id(), **report), sort_keys=True), file=sys.stderr)
+    case.assertEqual(report["snapshot_count"], 2)
+    case.assertEqual(report["attempt_count"], 2)
+    case.assertEqual(report["snapshots"], ["exact", "exact"])
+    case.assertEqual(report["requests"], ["exact", "exact"])
+    case.assertNotIn("mismatch", report["readback"])
+    return report
 
 
 def _set_size(fd: int, rows: int, columns: int) -> None:
@@ -53,6 +196,7 @@ class PTYProcess:
         extra_env=None,
         extra_pythonpath=(),
         diagnostics: bool = False,
+        restoration: bool = False,
     ):
         self.diagnostics = InputDiagnostics() if diagnostics else None
         self.timeout_diagnostics = None
@@ -71,6 +215,20 @@ class PTYProcess:
         )
         if extra_env:
             env.update(extra_env)
+        if restoration:
+            # This ordinary-return probe shares one slave on fd0/fd1. Reuse
+            # the parent's existing baseline/readback, without child getters.
+            code = (
+                "import json\n"
+                "from charmer import tui as _restore_tui\n"
+                "from test_tui_pty import _TerminalRestoration\n"
+                f"_restoration = _TerminalRestoration([{self.before!r}, {self.before!r}])\n"
+                "_restoration.install(_restore_tui)\n"
+            ) + code + (
+                "\n_restoration.uninstall()\n"
+                "print('TTY_RESTORE=' + json.dumps(_restoration.metadata()))\n"
+                "_restoration.check_requests()\n"
+            )
         if self.diagnostics is not None:
             code = self.diagnostics.child_setup() + code
         try:
@@ -813,8 +971,9 @@ class BareLaunchAutoDetectionPTYTests(unittest.TestCase):
 # descriptor identities dynamically, never by an inherited fixture fd number
 # or the platform's device ids.
 _ALIAS_TTY_SNAPSHOT = """
-import os, termios
+import json, os, termios
 from charmer import tui
+from test_tui_pty import _TerminalRestoration
 
 def fd_identity(fd):
     info = os.fstat(fd)
@@ -825,10 +984,15 @@ alias_streams = (open('/dev/tty', 'r', encoding='utf-8', buffering=1),
                  open('/dev/tty', 'w', encoding='utf-8', buffering=1))
 alias_before = [termios.tcgetattr(stream.fileno()) for stream in alias_streams]
 stdio_before = [fd_identity(fd) for fd in (0, 1)]
+restoration = _TerminalRestoration(alias_before)
+restoration.install(tui)
 
-def assert_alias_restored():
+def assert_alias_restored(*, expected=('ok', 'ok')):
+    restoration.uninstall()
     assert [fd_identity(fd) for fd in (0, 1)] == stdio_before, 'stdio descriptor restoration'
-    assert [termios.tcgetattr(stream.fileno()) for stream in alias_streams] == alias_before, 'exact alias attributes'
+    alias_after = [termios.tcgetattr(stream.fileno()) for stream in alias_streams]
+    print('TTY_RESTORE=' + json.dumps(restoration.metadata(alias_after)))
+    restoration.check(alias_after, expected=expected)
     assert tui._INPUT_STATE is None, 'input state cleanup'
     print('ALIAS_RESTORED=True', flush=True)
 """
@@ -881,7 +1045,11 @@ try:
     assert tui._INPUT_STATE is None, 'input state cleanup'
     print('STDIO_RESTORED=True', flush=True)
     if not {ignore_hup!r}:
-        assert_alias_restored()
+        assert_alias_restored(expected={('closed-fd', 'ok') if close_input else ('ok', 'ok')!r})
+    else:
+        restoration.uninstall()
+        print('TTY_RESTORE=' + json.dumps(restoration.metadata()))
+        restoration.check_requests(expected=('hangup', 'hangup'))
     print('KEYS=' + json.dumps(keys), flush=True)
     print('EXIT=' + str(code), flush=True)
 finally:
@@ -911,6 +1079,7 @@ class AliasInputHealthPTYTests(unittest.TestCase):
     def finish_keys(self, child: _CttyPipesChild, expected: list) -> None:
         code, tty_output, pipe_output = child.finish(TIMEOUT)
         output = tty_output + pipe_output
+        _report_terminal_restore(self, pipe_output)
         self.assertEqual(code, 0, output)
         self.assertEqual(json.loads(_line_of(pipe_output, b"KEYS=")), expected)
         self.assertIn(b"ALIAS_RESTORED=True", pipe_output)
@@ -929,6 +1098,7 @@ class AliasInputHealthPTYTests(unittest.TestCase):
         except subprocess.TimeoutExpired:
             self.fail("hung-up alias reader did not fail within the bound; a timeout is not input-loss evidence")
         pipe_output = child.process.stdout.read()
+        _report_terminal_restore(self, pipe_output)
         self.assertEqual(child.process.returncode, 1, pipe_output)
         self.assertIn(b"PRIMARY_INPUT_ERROR=", pipe_output)
         self.assertIn(_line_of(pipe_output, b"PRIMARY_INPUT_ERROR="),
@@ -947,14 +1117,19 @@ class AliasInputHealthPTYTests(unittest.TestCase):
         self.assertEqual(code, 1, output)
         # A teardown failure alone is not evidence that the reader rejected
         # the closed active fd: require its original error on the pipe.
+        report = _report_terminal_restore(self, pipe_output)
+        self.assertEqual(report["setters"], ["failed-ebadf", "ok"])
         self.assertIn(b"PRIMARY_INPUT_ERROR=", pipe_output)
         self.assertEqual(_line_of(pipe_output, b"PRIMARY_INPUT_ERROR="), tui.INPUT_UNAVAILABLE)
+        self.assertEqual(_line_of(pipe_output, b"\nINPUT_ERROR="), tui.INPUT_UNAVAILABLE)
         self.assertIn(b"ALIAS_RESTORED=True", pipe_output)
         self.assertEqual(json.loads(_line_of(pipe_output, b"KEYS=")), [])
         self.assertNotIn(b"FAKE_LAUNCH", output)
         self.assertNotIn(b"Traceback", output)
 
     def test_interrupt_waiting_on_alias_exits_130_without_wake_and_restores_exactly(self) -> None:
+        # Exact requests/configuration; Darwin's qualified PENDIN readback is
+        # reported separately, not asserted to be full-vector equality.
         temp = tempfile.mkdtemp(prefix="charmer-pty-alias-interrupt-")
         self.addCleanup(__import__("shutil").rmtree, temp, True)
         child = self.child(_fixture_card_code(
@@ -966,6 +1141,7 @@ class AliasInputHealthPTYTests(unittest.TestCase):
         child.process.send_signal(signal.SIGINT)  # the only wake; no input bytes
         code, tty_output, pipe_output = child.finish(TIMEOUT)
         output = tty_output + pipe_output
+        _report_terminal_restore(self, pipe_output)
         self.assertEqual(code, 130, output)
         self.assertIn(b"EXIT=130", pipe_output)
         self.assertIn(b"nothing was launched", output)
@@ -987,6 +1163,369 @@ class AliasInputHealthPTYTests(unittest.TestCase):
         child.read_until(b"STEP=1", FIXTURE_TIMEOUT)  # Esc's peek has expired
         child.send(b"\xb6")
         self.finish_keys(child, [["esc", ""], ["char", "ö"]])
+
+
+class TerminalRestorationContractTests(unittest.TestCase):
+    """Pure vectors and mocked existing calls; no PTY or native input needed."""
+
+    def observation(self) -> _TerminalRestoration:
+        attrs = [1 << 70, 3, termios.CS8, termios.ICANON | termios.ECHO | (1 << 70), 13, 13,
+                 [bytes((i,)) if i % 2 else i for i in range(termios.NCCS)]]
+        other = copy.deepcopy(attrs)
+        other[1] ^= 0x80  # Distinct terminals must not exchange their snapshots.
+        observed = _TerminalRestoration([attrs, other])
+        observed.snapshots = [(fd, copy.deepcopy(before)) for fd, before in enumerate(observed.before)]
+        observed.requests = [[fd, termios.TCSANOW, copy.deepcopy(before), None]
+                             for fd, before in enumerate(observed.before)]
+        return observed
+
+    def test_exact_vectors_remain_valid_on_linux_and_darwin(self) -> None:
+        for platform in ("linux", "darwin"):
+            for canonical in (False, True):
+                for pending in (False, True):
+                    with self.subTest(platform=platform, canonical=canonical, pending=pending):
+                        before = self.observation().before[0]
+                        before[3] = (before[3] | termios.ICANON) if canonical else (before[3] & ~termios.ICANON)
+                        if pending:
+                            before[3] |= _DARWIN_PENDIN
+                        self.assertEqual(_terminal_readback(before, copy.deepcopy(before), platform=platform), "exact")
+
+    def test_only_new_darwin_canonical_pendin_is_qualified(self) -> None:
+        observed = self.observation()
+        after = copy.deepcopy(observed.before)
+        for attrs in after:
+            attrs[3] |= _DARWIN_PENDIN
+        observed.check(after, platform="darwin")
+        self.assertEqual(observed.metadata(after, platform="darwin")["readback"], ["darwin-pendin-added"] * 2)
+        for platform in ("linux", "freebsd", "win32"):
+            with self.subTest(platform=platform), self.assertRaisesRegex(AssertionError, "readback mismatch"):
+                observed.check(after, platform=platform)
+
+    def test_pendin_removal_and_noncanonical_addition_are_rejected(self) -> None:
+        for platform in ("linux", "darwin"):
+            before = self.observation().before[0]
+            after = copy.deepcopy(before)
+            before[3] |= _DARWIN_PENDIN
+            self.assertEqual(_terminal_readback(before, after, platform=platform), "mismatch")
+            before[3] &= ~(_DARWIN_PENDIN | termios.ICANON)
+            after = copy.deepcopy(before)
+            after[3] |= _DARWIN_PENDIN
+            self.assertEqual(_terminal_readback(before, after, platform=platform), "mismatch")
+
+    def test_every_other_flag_bit_including_unknown_bits_is_rejected(self) -> None:
+        before = self.observation().before[0]
+        for pending in (0, _DARWIN_PENDIN):
+            for slot in range(4):
+                for bit in (*range(64), 70, 127):
+                    if slot == 3 and 1 << bit == _DARWIN_PENDIN:
+                        continue
+                    with self.subTest(pending=bool(pending), slot=slot, bit=bit):
+                        after = copy.deepcopy(before)
+                        after[3] |= pending
+                        after[slot] ^= 1 << bit
+                        self.assertEqual(_terminal_readback(before, after, platform="darwin"), "mismatch")
+
+    def test_both_speeds_and_all_scalar_types_are_exact(self) -> None:
+        before = self.observation().before[0]
+        for slot in range(6):
+            for value in (float(before[slot]), before[slot] + 1):
+                with self.subTest(slot=slot, kind=type(value).__name__):
+                    after = copy.deepcopy(before)
+                    after[3] |= _DARWIN_PENDIN
+                    after[slot] = value
+                    self.assertEqual(_terminal_readback(before, after, platform="darwin"), "mismatch")
+
+    def test_each_control_character_value_and_type_are_exact(self) -> None:
+        before = self.observation().before[0]
+        for slot, value in enumerate(before[6]):
+            changed = bytes((value[0] ^ 1,)) if type(value) is bytes else value ^ 1
+            equal_other_type = bytearray(value) if type(value) is bytes else float(value)
+            for replacement in (changed, equal_other_type, [value]):
+                with self.subTest(slot=slot, kind=type(replacement).__name__):
+                    after = copy.deepcopy(before)
+                    after[3] |= _DARWIN_PENDIN
+                    after[6][slot] = replacement
+                    self.assertEqual(_terminal_readback(before, after, platform="darwin"), "mismatch")
+
+    def test_full_vector_and_control_character_structure_are_exact(self) -> None:
+        class ListSubclass(list):
+            pass
+
+        before = self.observation().before[0]
+        pending = copy.deepcopy(before)
+        pending[3] |= _DARWIN_PENDIN
+        variants = [tuple(pending), ListSubclass(pending), pending[:-1], pending + [0]]
+        for cc in (tuple(before[6]), ListSubclass(before[6]), before[6][:-1], before[6] + [b"x"], None):
+            after = copy.deepcopy(pending)
+            after[6] = cc
+            variants.append(after)
+        for after in variants:
+            with self.subTest(kind=type(after).__name__):
+                self.assertEqual(_terminal_readback(before, after, platform="darwin"), "mismatch")
+
+    def test_python_equal_but_differently_typed_readback_is_not_exact(self) -> None:
+        class IntSubclass(int):
+            pass
+
+        class BytesSubclass(bytes):
+            pass
+
+        class ListSubclass(list):
+            pass
+
+        before = self.observation().before[0]
+        variants = [ListSubclass(before)]
+        for slot in range(6):
+            after = copy.deepcopy(before)
+            after[slot] = IntSubclass(after[slot])
+            variants.append(after)
+        for slot, value in enumerate(before[6]):
+            after = copy.deepcopy(before)
+            after[6][slot] = BytesSubclass(value) if type(value) is bytes else float(value)
+            variants.append(after)
+        after = copy.deepcopy(before)
+        after[6] = ListSubclass(after[6])
+        variants.append(after)
+        for after in variants:
+            self.assertEqual(before, after)  # Plain list equality would wrongly accept these.
+            for platform in ("linux", "darwin"):
+                self.assertEqual(_terminal_readback(before, after, platform=platform), "mismatch")
+
+    def test_fixture_snapshot_and_request_must_each_match_exactly(self) -> None:
+        for slot in (0, 1):
+            for field in ("baseline", "snapshot", "request"):
+                observed = self.observation()
+                attrs = (observed.before[slot] if field == "baseline" else
+                         observed.snapshots[slot][1] if field == "snapshot" else observed.requests[slot][2])
+                attrs[3] |= _DARWIN_PENDIN  # The readback exception never applies to these.
+                with self.subTest(slot=slot, field=field), self.assertRaisesRegex(AssertionError, "mismatch"):
+                    observed.check_requests()
+        observed = self.observation()
+        for slot in (0, 1):
+            observed.snapshots[slot][1][0] ^= 1 << 127
+            observed.requests[slot][2][0] ^= 1 << 127
+        with self.assertRaisesRegex(AssertionError, "baseline/product snapshot mismatch"):
+            observed.check_requests()  # S == R alone cannot establish the fixture baseline.
+
+    def test_wrong_baseline_snapshot_and_request_types_are_rejected(self) -> None:
+        for field in ("baseline", "snapshot", "request"):
+            for slot in (0, 1):
+                for part in ("scalar", "cc-value", "cc-type", "cc-structure", "vector"):
+                    observed = self.observation()
+                    attrs = (observed.before[slot] if field == "baseline" else
+                             observed.snapshots[slot][1] if field == "snapshot" else observed.requests[slot][2])
+                    if part == "scalar":
+                        attrs[4] = float(attrs[4])
+                    elif part == "cc-value":
+                        attrs[6][-1] = b"different"
+                    elif part == "cc-type":
+                        attrs[6][0] = False  # Numerically equal to the saved integer zero.
+                    elif part == "cc-structure":
+                        attrs[6] = tuple(attrs[6])
+                    elif field == "baseline":
+                        observed.before[slot] = tuple(attrs)
+                    elif field == "snapshot":
+                        observed.snapshots[slot] = (slot, tuple(attrs))
+                    else:
+                        observed.requests[slot][2] = tuple(attrs)
+                    with self.subTest(field=field, slot=slot, part=part), self.assertRaisesRegex(AssertionError, "mismatch"):
+                        observed.check_requests()
+
+    def test_missing_extra_reordered_attempts_snapshots_and_wrong_timing_fail(self) -> None:
+        for field in ("snapshots", "requests"):
+            for change in ("missing", "extra", "reordered"):
+                observed = self.observation()
+                records = getattr(observed, field)
+                if change == "missing":
+                    records.pop()
+                elif change == "extra":
+                    records.append(copy.deepcopy(records[-1]))
+                else:
+                    records.reverse()
+                with self.subTest(field=field, change=change), self.assertRaises(AssertionError):
+                    observed.check_requests()
+        for when in (termios.TCSADRAIN, float(termios.TCSANOW)):
+            observed = self.observation()
+            observed.requests[0][1] = when
+            with self.assertRaises(AssertionError):
+                observed.check_requests()
+
+    def test_unexpected_setter_failures_never_pass_even_with_exact_readback(self) -> None:
+        for slot in (0, 1):
+            for error in (termios.error(errno.EBADF, "fixture"), termios.error(errno.EIO, "fixture"),
+                          OSError(errno.EIO, "fixture"), KeyboardInterrupt()):
+                observed = self.observation()
+                observed.requests[slot][3] = error
+                with self.subTest(slot=slot, kind=type(error).__name__), self.assertRaisesRegex(AssertionError, "setter failure"):
+                    observed.check(copy.deepcopy(observed.before), platform="darwin")
+                self.assertNotEqual(observed.metadata()["setters"][slot], "ok")
+
+    def test_closed_fd_requires_real_ebadf_and_successful_remaining_restore(self) -> None:
+        observed = self.observation()
+        observed.requests[0][3] = termios.error(errno.EBADF, "fixture")
+        observed.check(copy.deepcopy(observed.before), expected=("closed-fd", "ok"))
+        self.assertEqual(observed.metadata()["setters"], ["failed-ebadf", "ok"])
+        for error in (None, termios.error(errno.EIO, "fixture"), OSError(errno.EBADF, "fixture")):
+            observed.requests[0][3] = error
+            with self.assertRaisesRegex(AssertionError, "must fail with EBADF"):
+                observed.check_requests(expected=("closed-fd", "ok"))
+        observed.requests[0][3] = termios.error(errno.EBADF, "fixture")
+        observed.requests[1][3] = termios.error(errno.EBADF, "fixture")
+        with self.assertRaisesRegex(AssertionError, "setter failure"):
+            observed.check_requests(expected=("closed-fd", "ok"))
+        observed.requests[0][2][3] |= _DARWIN_PENDIN
+        with self.assertRaisesRegex(AssertionError, "request mismatch"):
+            observed.check_requests(expected=("closed-fd", "ok"))
+
+    def test_hangup_outcomes_are_explicit_and_readback_is_not_claimed(self) -> None:
+        observed = self.observation()
+        observed.requests[0][3] = termios.error(errno.EIO, "fixture")
+        observed.requests[1][3] = termios.error(errno.ENXIO, "fixture")
+        observed.check_requests(expected=("hangup", "hangup"))
+        self.assertEqual(observed.metadata()["setters"], ["failed-eio", "failed-enxio"])
+        self.assertEqual(observed.metadata()["readback"], ["not-observed"] * 2)
+        observed.requests[0][3] = termios.error(errno.EBADF, "fixture")
+        with self.assertRaisesRegex(AssertionError, "hung-up setter outcome"):
+            observed.check_requests(expected=("hangup", "hangup"))
+
+    def observed_product_run(self, *, primary=None, setter_error=None):
+        from unittest import mock
+        from charmer import tui
+
+        before = self.observation().before
+        observed = _TerminalRestoration(before)
+        streams = [mock.Mock(), mock.Mock(), mock.Mock()]
+        streams[0].fileno.return_value, streams[1].fileno.return_value = 0, 1
+        getter = mock.Mock(side_effect=lambda fd: before[fd])
+        result, state = object(), mock.Mock()
+
+        def set_attrs(fd, when, attrs):
+            self.assertIs(attrs, before[fd])
+            if fd == 0 and setter_error is not None:
+                raise setter_error
+
+        setter = mock.Mock(side_effect=set_attrs)
+
+        def wrapper(app):
+            if primary is not None:
+                raise primary
+            return result
+
+        with mock.patch.object(tui, "sys", types.SimpleNamespace(stdin=streams[0], stdout=streams[1], stderr=streams[2])), \
+                mock.patch.object(tui, "curses", types.SimpleNamespace(wrapper=wrapper)), \
+                mock.patch.object(tui, "_terminal_attrs", getter), \
+                mock.patch.object(tui.termios, "tcsetattr", setter), \
+                mock.patch.object(tui, "_input_mode_supported", return_value=True), \
+                mock.patch.object(tui, "_screen_admitted", return_value=True), \
+                mock.patch.object(tui, "InputState", return_value=state), \
+                mock.patch.object(tui, "_INPUT_STATE", None), \
+                mock.patch.object(tui, "_SCREEN_PROVENANCE", "new"), \
+                mock.patch.object(tui, "_REPLY_TAIL", []), mock.patch.object(tui, "_REPLY_SINCE", []):
+            observed.install(tui)
+            returned = caught = None
+            try:
+                returned = tui.run_curses_on_streams(object(), streams[0], streams[1])
+            except BaseException as error:
+                caught = error
+            finally:
+                observed.uninstall()
+            self.assertIsNone(tui._INPUT_STATE)
+        self.assertEqual(getter.call_args_list, [mock.call(0), mock.call(1)])
+        self.assertEqual([call.args[:2] for call in setter.call_args_list], [(0, termios.TCSANOW), (1, termios.TCSANOW)])
+        state.clear.assert_called_once_with()
+        return observed, result, returned, caught
+
+    def test_observer_records_actual_consumed_snapshots_and_original_requests(self) -> None:
+        observed, result, returned, caught = self.observed_product_run()
+        self.assertIsNone(caught)
+        self.assertIs(returned, result)
+        observed.check_requests()
+        observed.requests[0][2][6][0] = 99
+        self.assertEqual(observed.snapshots[0][1][6][0], 0)  # Frozen, not aliased to the request.
+        self.assertEqual(observed.before[0][6][0], 0)
+
+    def test_primary_input_failure_and_interrupt_keep_identity_despite_failed_restore(self) -> None:
+        from charmer import tui
+
+        for primary in (tui.CursesError(tui.INPUT_UNAVAILABLE), KeyboardInterrupt()):
+            failure = termios.error(errno.EBADF, "fixture")
+            observed, _, _, caught = self.observed_product_run(primary=primary, setter_error=failure)
+            self.assertIs(caught, primary)
+            self.assertIs(observed.requests[0][3], failure)
+            observed.check_requests(expected=("closed-fd", "ok"))
+
+    def test_restore_failure_without_primary_is_still_observable(self) -> None:
+        from charmer import tui
+
+        failure = termios.error(errno.EBADF, "fixture")
+        observed, _, _, caught = self.observed_product_run(setter_error=failure)
+        self.assertIsInstance(caught, tui.CursesError)
+        self.assertEqual(str(caught), "terminal attributes could not be restored")
+        self.assertIs(observed.requests[0][3], failure)
+        with self.assertRaisesRegex(AssertionError, "setter failure"):
+            observed.check_requests()
+
+    def test_observer_forwards_objects_results_and_exceptions_without_extra_calls(self) -> None:
+        from unittest import mock
+
+        attrs, result, when = self.observation().before[0], object(), object()
+        getter, setter = mock.Mock(return_value=attrs), mock.Mock(return_value=result)
+        owner = types.SimpleNamespace(_terminal_attrs=getter, termios=types.SimpleNamespace(tcsetattr=setter))
+
+        def run_curses_on_streams():
+            def restore_attrs():
+                return owner.termios.tcsetattr(0, when, saved)
+            saved = owner._terminal_attrs(0)
+            return saved, restore_attrs()
+
+        owner.run_curses_on_streams = run_curses_on_streams
+        observed = _TerminalRestoration([attrs, attrs])
+        observed.install(owner)
+        try:
+            self.assertIs(owner._terminal_attrs(1), attrs)  # A non-save caller is not counted.
+            self.assertIs(owner.termios.tcsetattr(1, when, attrs), result)
+            self.assertEqual(observed.snapshots, [])
+            self.assertEqual(observed.requests, [])
+            saved, returned = owner.run_curses_on_streams()
+            self.assertIs(saved, attrs)
+            self.assertIs(returned, result)
+            self.assertIs(setter.call_args.args[1], when)
+            self.assertIs(setter.call_args.args[2], attrs)
+            attrs[6][0] = 99
+            self.assertEqual(observed.snapshots[0][1][6][0], 0)
+            self.assertEqual(observed.requests[0][2][6][0], 0)
+            error = KeyboardInterrupt()
+            setter.side_effect = error
+            with self.assertRaises(KeyboardInterrupt) as raised:
+                owner.run_curses_on_streams()
+            self.assertIs(raised.exception, error)
+            self.assertIs(observed.requests[-1][3], error)
+            self.assertEqual(getter.call_count, 3)
+            self.assertEqual(setter.call_count, 3)
+            error = OSError(errno.EIO, "fixture getter failure")
+            getter.side_effect = error
+            with self.assertRaises(OSError) as raised:
+                owner.run_curses_on_streams()
+            self.assertIs(raised.exception, error)
+            self.assertEqual(getter.call_count, 4)
+            self.assertEqual(setter.call_count, 3)
+            self.assertEqual(len(observed.snapshots), 2)
+            self.assertEqual(len(observed.requests), 2)
+        finally:
+            observed.uninstall()
+        self.assertIs(owner._terminal_attrs, getter)
+        self.assertIs(owner.termios.tcsetattr, setter)
+
+    def test_metadata_is_bounded_classification_not_a_tty_dump(self) -> None:
+        observed = self.observation()
+        observed.requests[0][3] = termios.error(errno.EBADF, "exception text must not be emitted" * 100)
+        report = observed.metadata(copy.deepcopy(observed.before), platform="darwin")
+        self.assertEqual(set(report), {"snapshot_count", "attempt_count", "snapshots", "requests", "setters", "readback"})
+        self.assertLess(len(json.dumps(report)), 512)
+        self.assertNotIn("exception text", json.dumps(report))
+        self.assertEqual(report["readback"], ["exact", "exact"])
+        for kwargs in ({}, {"close_input": True}, {"ignore_hup": True}):
+            compile(_alias_reader_code(**kwargs), "<alias-restore-fixture>", "exec")
 
 
 # ---------------------------------------------------------------------------
@@ -1167,7 +1706,7 @@ class IxonRestorePTYTests(unittest.TestCase):
     """^S reaches the screen; IXON restored after."""
 
     def test_ctrl_s_reaches_the_screen_and_flow_control_is_restored(self) -> None:
-        child = PTYProcess(_probe_code(exit_on="s"))
+        child = PTYProcess(_probe_code(exit_on="s"), extra_pythonpath=(TESTS_ROOT,), restoration=True)
         self.addCleanup(child.close)
         self.assertTrue(
             child.before[0] & termios.IXON,
@@ -1181,6 +1720,7 @@ class IxonRestorePTYTests(unittest.TestCase):
         self.assertEqual(child.before[0] & termios.IXON, after[0] & termios.IXON)
         mask = termios.ECHO | termios.ICANON
         self.assertEqual(child.before[3] & mask, after[3] & mask)
+        _report_terminal_restore(self, output, readback=[_terminal_readback(child.before, after)] * 2)
 
 
 class CursesAbsentPTYTests(unittest.TestCase):
