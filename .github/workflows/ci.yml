@@ -1,49 +1,10 @@
-# charmer CI.
-#
-# fast       every push and pull request: goldens, whitespace, the secret
-#            and identifier scan of exactly the new commits, hygiene, import
-#            smoke, shell and workflow lint.
-# gateway    nightly and on demand: the gateway for this host and its
-#            diagnostic probes (tools/build.py, .github/scripts/
-#            gateway_probes.py), for the battery.
-# battery    nightly and on demand: the full Linux suite (Python 3.11,
-#            3.14 and 3.15), bubblewrap 0.12 or later for the isolated
-#            classes (built from its pinned release, its version recorded),
-#            the candidate gateway and its probes (bound to the build
-#            record), the pinned Claude Code, and the pinned setuptools for
-#            the distribution tests, which must run; on 3.15 (the bundled
-#            runtime's version) also the fast tier under an ISO-8859-1
-#            locale with EncodingWarning shown and recorded.
-# pty        nightly and on demand: the terminal journeys, one job per OS,
-#            run serially on their own.
-# nix        nightly and on demand: the flake checks, the Nix gateway bytes
-#            compared with the native build, and the product's indirect
-#            garbage-collector root in this disposable Nix store.
-#
-# The nightly schedule runs only while the repository variable
-# CM_SCHEDULES is "on" (every job a schedule reaches checks it); a manual
-# run is not affected.
-#
-# Scan policy (fast lane): a pull request scans BASE..HEAD of the pull
-# request; a push scans before..after; a push that creates a branch (no
-# "before") or rewrites history (its "before" is not in the clone) scans the
-# whole history. A pull request whose base or head is missing from the
-# clone fails, as does every candidate the scanner reports.
-#
-# Hardening: actions pinned by commit, no permissions unless a job grants
-# them, no privileged pull-request trigger, no credentials kept after
-# checkout, umask 077 in every step, no provider calls (the test tripwire
-# is always on through tools/test.py), and one secret only: the private
-# identifier list of the fast lane's identifier checks, when the repository
-# has it.
-
-name: ci
+# Diagnostic branch only: never merge this replacement into the product.
+# One hosted R19 Python 3.15 battery observation, not a fix or acceptance.
+# Scheduling and matrix coverage are restricted; build and test bodies stay canonical.
+# Both jobs check out the literal product source so tests read canonical CI contracts.
+name: Hosted R19 Python 3.15 diagnostic (not a fix or acceptance)
 
 on:
-  push:
-  pull_request:
-  schedule:
-    - cron: "23 3 * * *"
   workflow_dispatch:
 
 permissions: {}
@@ -60,125 +21,6 @@ env:
   CHARMER_TEST_REQUIRE_RELEASE: "1"
 
 jobs:
-  fast:
-    if: github.event_name == 'push' || github.event_name == 'pull_request'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.14"
-      - name: Goldens are current
-        run: |
-          umask 077
-          python3 tests/bless.py --check
-      - name: Revision range (the scan policy above)
-        id: range
-        env:
-          EVENT: ${{ github.event_name }}
-          PR_BASE: ${{ github.event.pull_request.base.sha }}
-          PR_HEAD: ${{ github.event.pull_request.head.sha }}
-          PUSH_BEFORE: ${{ github.event.before }}
-          PUSH_AFTER: ${{ github.sha }}
-        run: |
-          umask 077
-          if [ "$EVENT" = pull_request ]; then
-            for rev in "$PR_BASE" "$PR_HEAD"; do
-              if ! git cat-file -e "$rev^{commit}" 2>/dev/null; then
-                echo "::error::the pull request revision $rev is not in the clone"
-                exit 1
-              fi
-            done
-            echo "range=$PR_BASE..$PR_HEAD" >>"$GITHUB_OUTPUT"
-          elif [ -z "$PUSH_BEFORE" ] || [ "$PUSH_BEFORE" = 0000000000000000000000000000000000000000 ] ||
-            ! git cat-file -e "$PUSH_BEFORE^{commit}" 2>/dev/null; then
-            echo "range=" >>"$GITHUB_OUTPUT"
-          else
-            echo "range=$PUSH_BEFORE..$PUSH_AFTER" >>"$GITHUB_OUTPUT"
-          fi
-      - name: Whitespace
-        env:
-          RANGE: ${{ steps.range.outputs.range }}
-        run: |
-          umask 077
-          if [ -n "$RANGE" ]; then
-            git diff --check "${RANGE%%..*}" "${RANGE##*..}"
-          else
-            git diff --check "$(git hash-object -t tree /dev/null)" HEAD
-          fi
-      - name: Private identifier list
-        # The exact identifiers of the repository's people and computers are
-        # not published: an Actions secret, when present, adds them to the
-        # scan and the hygiene gates below (a 0600 file the environment
-        # names); without it (a fork, a pull request) the generic checks run.
-        env:
-          PRIVATE_IDENTIFIERS: ${{ secrets.CHARMER_PRIVATE_IDENTIFIERS }}
-        run: |
-          umask 077
-          if [ -n "$PRIVATE_IDENTIFIERS" ]; then
-            list="$RUNNER_TEMP/private-identifiers.tsv"
-            printf '%s\n' "$PRIVATE_IDENTIFIERS" >"$list"
-            chmod 600 "$list"
-            echo "CHARMER_PRIVATE_IDENTIFIERS=$list" >>"$GITHUB_ENV"
-          else
-            echo "no private identifier list (secret CHARMER_PRIVATE_IDENTIFIERS is not set): the generic identifier checks run"
-          fi
-      - name: Secret and identifier scan of the new commits
-        env:
-          RANGE: ${{ steps.range.outputs.range }}
-        run: |
-          umask 077
-          if [ -n "$RANGE" ]; then
-            python3 tools/history_scan.py --repo . --range "$RANGE"
-          else
-            python3 tools/history_scan.py --repo .
-          fi
-      - name: Hygiene
-        run: |
-          umask 077
-          python3 tools/test.py tests.test_hygiene tests.test_docs_vocabulary tests.test_history_scan
-      - name: Generated documentation
-        run: |
-          umask 077
-          python3 tools/docs_gen.py --check
-      - name: Import smoke
-        run: |
-          umask 077
-          python3 -I -c 'import sys; sys.path.insert(0, "src"); import charmer.cli.entry, charmer.proxy, charmer.trust, charmer.self_update, charmer.release_update, charmer.install_txn'
-          python3 bin/charmer --version
-      - name: Pinned CI compiler (the gateway's, by hash) and shell linter (by hash)
-        run: |
-          umask 077
-          sh .github/scripts/ci_tools.sh go "$RUNNER_TEMP/ci-go"
-          sh .github/scripts/ci_tools.sh shellcheck "$RUNNER_TEMP/ci-shellcheck"
-          printf '%s\n' "$RUNNER_TEMP/ci-go/bin" "$RUNNER_TEMP/ci-shellcheck" >>"$GITHUB_PATH"
-      - name: Shell lint
-        run: |
-          umask 077
-          shellcheck -s sh packaging/install.sh .github/scripts/journey.sh .github/scripts/wsl_prepare.sh .github/scripts/ci_tools.sh \
-            .github/scripts/bubblewrap_floor.sh
-      - name: Workflow lint
-        run: |
-          umask 077
-          export GOTOOLCHAIN=local GOPATH="$RUNNER_TEMP/go-tools" GOCACHE="$RUNNER_TEMP/go-build"
-          GOBIN="$RUNNER_TEMP/bin" go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
-          go version -m "$RUNNER_TEMP/bin/actionlint"
-          "$RUNNER_TEMP/bin/actionlint" -version
-          # zizmor by the hash of its manylinux x86_64 wheel (.github/PINS.md),
-          # the file the local lint ran. The wheel ships an executable, not a
-          # Python module.
-          printf '%s\n' 'zizmor==1.31.1 --hash=sha256:58e878eb2dbd2c6183c105e1ac28c14f7dd1eca44a783f1fe2a69647d012c410' >"$RUNNER_TEMP/zizmor.txt"
-          python3 -m pip install --disable-pip-version-check --no-deps --only-binary=:all: --require-hashes --target "$RUNNER_TEMP/zizmor" -r "$RUNNER_TEMP/zizmor.txt"
-          "$RUNNER_TEMP/zizmor/bin/zizmor" --version
-          "$RUNNER_TEMP/bin/actionlint"
-          "$RUNNER_TEMP/zizmor/bin/zizmor" --offline .github
-
   gateway:
     if: (github.event_name == 'schedule' && vars.CM_SCHEDULES == 'on') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
@@ -188,7 +30,14 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: fc8af526793917b87ddbe29855f39077336017a8
           persist-credentials: false
+      - name: Bind product source and diagnostic workflow identities
+        run: |
+          umask 077
+          product_source_sha=$(git rev-parse HEAD)
+          printf 'product_source_sha=%s\nworkflow_github_sha=%s\n' "$product_source_sha" "$GITHUB_SHA"
+          test "$product_source_sha" = fc8af526793917b87ddbe29855f39077336017a8
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.14"
@@ -226,11 +75,18 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python: ["3.11", "3.14", "3.15"]
+        python: ["3.15"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: fc8af526793917b87ddbe29855f39077336017a8
           persist-credentials: false
+      - name: Bind product source and diagnostic workflow identities
+        run: |
+          umask 077
+          product_source_sha=$(git rev-parse HEAD)
+          printf 'product_source_sha=%s\nworkflow_github_sha=%s\n' "$product_source_sha" "$GITHUB_SHA"
+          test "$product_source_sha" = fc8af526793917b87ddbe29855f39077336017a8
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python }}
@@ -326,58 +182,3 @@ jobs:
           umask 077
           rm -f "$RUNNER_TEMP/claude"
           python3 tools/_build/no_bundle_guard.py .
-
-  pty:
-    # Load-sensitive terminal journeys: their own job, one runner at a time.
-    if: (github.event_name == 'schedule' && vars.CM_SCHEDULES == 'on') || github.event_name == 'workflow_dispatch'
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
-    permissions:
-      contents: read
-    strategy:
-      fail-fast: false
-      max-parallel: 1
-      matrix:
-        os: [ubuntu-24.04, macos-15]
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.14"
-      - name: Terminal journeys, serially
-        timeout-minutes: 20
-        run: |
-          umask 077
-          python3 tools/test.py tests.test_tui_pty
-
-  nix:
-    if: (github.event_name == 'schedule' && vars.CM_SCHEDULES == 'on') || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 120
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: cachix/install-nix-action@448cde739abec1eaf0646249e3d25bb8d9bc7702 # v31.11.2
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.14"
-      - name: Flake checks (the sandbox suite)
-        run: |
-          umask 077
-          nix build --no-link -L .#checks.x86_64-linux.charmer
-      - name: Nix and native gateway bytes are identical
-        run: |
-          umask 077
-          nix_out=$(nix build --no-link --print-out-paths .#gateway-linux-amd64)
-          python3 tools/build.py gateway --target linux-amd64 --dist "$RUNNER_TEMP/native"
-          cmp "$nix_out/bin/cli-proxy-api" "$RUNNER_TEMP/native/linux-amd64/cli-proxy-api"
-      - name: The product's indirect garbage-collector root in this disposable Nix store
-        run: |
-          umask 077
-          package=$(nix build --no-link --print-out-paths .#charmer)
-          python3 .github/scripts/nix_roots.py "$package"
