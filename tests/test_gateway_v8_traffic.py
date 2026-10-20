@@ -425,8 +425,12 @@ class HTTP1Proxy:
 
 
 def proxy_gateway(root, delay):
+    openssl = shutil.which("openssl")
+    if openssl is None:
+        raise RuntimeError("proxy gateway fixture requires openssl on the test runner PATH")
+    openssl = str(Path(openssl).absolute())
     cert, key = root / "ca.pem", root / "key.pem"
-    subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",
+    subprocess.run([openssl, "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",
                     "-subj", "/CN=api.anthropic.com", "-addext", "subjectAltName=DNS:api.anthropic.com",
                     "-keyout", str(key), "-out", str(cert)], check=True, capture_output=True,
                    timeout=60, env={"PATH": "/usr/bin:/bin"})
@@ -453,6 +457,49 @@ def proxy_gateway(root, delay):
     with mock.patch.object(probe, "start_isolated_process", start):
         return harness.GatewayHarness(document_factory=document,
             upstream_factory=lambda path: HTTP1Proxy(path, cert, key, delay))
+
+
+class ProxyGatewayFixtureTests(unittest.TestCase):
+    def test_resolves_openssl_once_with_exact_isolated_subprocess_call(self):
+        root = Path("/fixture/proxy")
+        sentinels = {"ANTHROPIC_API_KEY": "fixture-ambient-credential",
+                     "OPENAI_API_KEY": "fixture-ambient-credential",
+                     "HTTP_PROXY": "http://fixture-proxy.example.invalid:8080",
+                     "HTTPS_PROXY": "http://fixture-proxy.example.invalid:8080",
+                     "https_proxy": "http://fixture-proxy.example.invalid:8080",
+                     "HOME": "/fixture/ambient/home",
+                     "OPENSSL_CONF": "/fixture/ambient/openssl.cnf"}
+        for openssl in ("/nix/store/fixture-openssl/bin/openssl", "relative/bin/openssl"):
+            expected_openssl = str(Path.cwd() / openssl)
+            with self.subTest(openssl=openssl), \
+                    mock.patch.dict("os.environ", {"PATH": str(Path(openssl).parent), **sentinels}, clear=True), \
+                    mock.patch.object(shutil, "which", return_value=openssl) as which, \
+                    mock.patch.object(subprocess, "run") as run, \
+                    mock.patch.object(harness, "GatewayHarness") as gateway_factory:
+                gateway = proxy_gateway(root, 12.0)
+                which.assert_called_once_with("openssl")
+                run.assert_called_once_with(
+                    [expected_openssl, "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",
+                     "-subj", "/CN=api.anthropic.com", "-addext", "subjectAltName=DNS:api.anthropic.com",
+                     "-keyout", str(root / "key.pem"), "-out", str(root / "ca.pem")],
+                    check=True, capture_output=True, timeout=60, env={"PATH": "/usr/bin:/bin"})
+                self.assertTrue(Path(run.call_args.args[0][0]).is_absolute())
+                child_env = run.call_args.kwargs["env"]
+                for name, value in sentinels.items():
+                    self.assertNotIn(name, child_env)
+                    self.assertNotIn(value, child_env.values())
+                gateway_factory.assert_called_once()
+                self.assertIs(gateway, gateway_factory.return_value)
+
+    def test_missing_openssl_fails_before_subprocess_and_gateway_harness(self):
+        with mock.patch.object(shutil, "which", return_value=None) as which, \
+                mock.patch.object(subprocess, "run") as run, \
+                mock.patch.object(harness, "GatewayHarness") as gateway_factory:
+            with self.assertRaisesRegex(RuntimeError, "requires openssl on the test runner PATH"):
+                proxy_gateway(Path("/fixture/proxy"), 12.0)
+            which.assert_called_once_with("openssl")
+            run.assert_not_called()
+            gateway_factory.assert_not_called()
 
 
 class ProxyTimeoutTests(unittest.TestCase):
