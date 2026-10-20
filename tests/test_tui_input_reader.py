@@ -79,6 +79,15 @@ class ReaderTests(unittest.TestCase):
         self.addCleanup(state.clear)
         return win, state
 
+    def darwin_nval(self):
+        self.enterContext(mock.patch.object(tui.sys, "platform", "darwin"))
+        attrs = self.enterContext(mock.patch.object(
+            tui, "_terminal_attrs", return_value=[0, 0, termios.CS8, 0, 0, 0, []]))
+        selector = self.enterContext(mock.patch.object(
+            tui.select, "select", return_value=([], [], [])))
+        self.poll.poll.return_value = [(0, select.POLLNVAL)]
+        return attrs, selector
+
     def test_split_utf8_across_multiple_slices_has_no_idle_key(self):
         win, state = self.window([(0xe7, 0), (IDLE, 0), (IDLE, 0), (0x95, 0), (0x8c, 0)])
         self.assertEqual(tui.read_key(win), tui.Key("char", "界"))
@@ -191,13 +200,20 @@ class ReaderTests(unittest.TestCase):
         self.assertTrue(all(seconds <= 0.080001 for seconds in self.clock.sleeps))
 
     def test_poll_failure_flags_and_invalid_registration_fail_closed(self):
-        for flags in (select.POLLHUP, select.POLLERR, select.POLLNVAL,
-                      select.POLLIN | select.POLLHUP):
-            with self.subTest(flags=flags):
-                win, _ = self.window([(IDLE, 0)])
-                self.poll.poll.return_value = [(0, flags)]
-                with self.assertRaisesRegex(tui.CursesError, "terminal input is unavailable"):
-                    tui._next_value(win)
+        # NVAL stays fatal outside the qualified Darwin tty case, even when
+        # independent tty/select checks would succeed.
+        with mock.patch.object(tui.sys, "platform", "linux"), \
+                mock.patch.object(tui, "_terminal_attrs", return_value=[0]) as attrs, \
+                mock.patch.object(tui.select, "select", return_value=([], [], [])) as selector:
+            for flags in (select.POLLHUP, select.POLLERR, select.POLLNVAL,
+                          select.POLLIN | select.POLLHUP, select.POLLIN | select.POLLNVAL):
+                with self.subTest(flags=flags):
+                    win, _ = self.window([(IDLE, 0)])
+                    self.poll.poll.return_value = [(0, flags)]
+                    with self.assertRaisesRegex(tui.CursesError, "terminal input is unavailable"):
+                        tui._next_value(win)
+            attrs.assert_not_called()
+            selector.assert_not_called()
         self.poll.register.side_effect = ValueError("invalid descriptor")
         with self.assertRaisesRegex(tui.CursesError, "terminal input is unavailable"):
             tui.InputState(-1)
@@ -211,16 +227,215 @@ class ReaderTests(unittest.TestCase):
             tui._next_value(win)
 
     def test_poll_oserror_is_fixed_but_interrupt_propagates(self):
-        for error in (OSError("fixture descriptor error"), KeyboardInterrupt()):
+        for error in (OSError("fixture descriptor error"), ValueError("fixture descriptor error"),
+                      KeyboardInterrupt()):
             with self.subTest(error=type(error).__name__):
                 win, _ = self.window([(-1, 0)])
                 self.poll.poll.side_effect = error
-                with self.assertRaises(tui.CursesError if isinstance(error, OSError) else KeyboardInterrupt) as raised:
+                fixed = isinstance(error, (OSError, ValueError))
+                with self.assertRaises(tui.CursesError if fixed else KeyboardInterrupt) as raised:
                     tui._next_value(win)
-                if isinstance(error, OSError):
+                if fixed:
                     self.assertEqual(str(raised.exception), tui.INPUT_UNAVAILABLE)
+                    self.assertIsNone(raised.exception.__cause__)
                 else:
                     self.assertIs(raised.exception, error)
+
+    def test_darwin_nval_valid_tty_keeps_ordinary_idle_slices(self):
+        attrs, selector = self.darwin_nval()
+        win, state = self.window([(IDLE, 0)] * 3 + bytes_of(b"x"))
+        self.assertEqual(tui._next_value(win), "x")
+        self.assertEqual(win.waits, [100] * 4)
+        self.assertEqual(state.early_errors, 0)
+        self.assertAlmostEqual(self.clock.now, 10.3)
+        self.assertEqual(attrs.call_args_list, [mock.call(0)] * 3)
+        self.assertEqual(selector.call_args_list, [mock.call([0], [], [], 0)] * 3)
+        self.assertEqual(self.poll.poll.call_args_list, [mock.call(0)] * 3)
+        self.poll.register.assert_called_once_with(0, select.POLLIN)
+
+    def test_darwin_nval_after_escape_keeps_one_peek_budget(self):
+        attrs, selector = self.darwin_nval()
+        win, _ = self.window([(27, 0), (IDLE, 0)])
+        self.assertEqual(tui.read_key(win), tui.Key("esc"))
+        self.assertEqual(win.calls, 2)
+        self.assertEqual(win.waits[0], 100)
+        self.assertLessEqual(win.waits[1], tui.OSC_GAP_MS)
+        self.assertAlmostEqual(self.clock.now, 10.08)
+        attrs.assert_called_once_with(0)
+        selector.assert_called_once_with([0], [], [], 0)
+
+    def test_darwin_nval_peek_deadline_is_shared_across_partial_utf8(self):
+        attrs, selector = self.darwin_nval()
+        win, state = self.window([(0xc3, 0.03), (IDLE, 0)])
+        self.assertIsNone(tui._peek(win))
+        self.assertAlmostEqual(self.clock.now, 10.08)
+        self.assertEqual(win.calls, 2)
+        self.assertLessEqual(win.waits[1], 50)
+        self.assertEqual(state.decoder.getstate()[0], b"\xc3")
+        win.events += bytes_of(b"\xb6")
+        self.assertEqual(tui._next_value(win), "ö")
+        attrs.assert_called_once_with(0)
+        selector.assert_called_once_with([0], [], [], 0)
+
+    def test_darwin_nval_revalidates_instead_of_disabling_poll(self):
+        attrs, selector = self.darwin_nval()
+        attrs.side_effect = [attrs.return_value, None]
+        win, _ = self.window([(IDLE, 0)] * 2 + bytes_of(b"x"))
+        with self.assertRaises(tui.CursesError) as raised:
+            tui._next_value(win)
+        self.assertEqual(str(raised.exception), tui.INPUT_UNAVAILABLE)
+        self.assertEqual(win.calls, 2)
+        self.assertEqual(attrs.call_args_list, [mock.call(0)] * 2)
+        self.assertEqual(self.poll.poll.call_args_list, [mock.call(0)] * 2)
+        selector.assert_called_once_with([0], [], [], 0)
+
+    def test_darwin_nval_closed_nonterminal_and_unavailable_attrs_fail_closed(self):
+        self.poll.poll.return_value = [(0, select.POLLNVAL)]
+        with mock.patch.object(tui.sys, "platform", "darwin"), \
+                mock.patch.object(tui.select, "select") as selector:
+            for mode, tty_result, attr_error in (
+                    ("closed", OSError(9, "fixture closed descriptor"), None),
+                    ("nonterminal", False, None),
+                    ("unavailable", True, termios.error(5, "fixture attributes unavailable")),
+                    ("invalid", True, ValueError("fixture attributes unavailable"))):
+                with self.subTest(mode=mode), \
+                        mock.patch.object(tui.os, "isatty") as isatty, \
+                        mock.patch.object(tui.termios, "tcgetattr", side_effect=attr_error) as getattrs:
+                    if isinstance(tty_result, OSError):
+                        isatty.side_effect = tty_result
+                    else:
+                        isatty.return_value = tty_result
+                    win, _ = self.window([(IDLE, 0)])
+                    with self.assertRaises(tui.CursesError) as raised:
+                        tui._peek(win)
+                    self.assertEqual(str(raised.exception), tui.INPUT_UNAVAILABLE)
+                    self.assertIsNone(raised.exception.__cause__)
+                    self.assertEqual(win.calls, 1)
+                    isatty.assert_called_once_with(0)
+                    if tty_result is True:
+                        getattrs.assert_called_once_with(0)
+                    else:
+                        getattrs.assert_not_called()
+            with mock.patch.object(tui, "termios", None):
+                win, _ = self.window([(IDLE, 0)])
+                with self.assertRaisesRegex(tui.CursesError, "terminal input is unavailable"):
+                    tui._peek(win)
+            selector.assert_not_called()
+        self.assertEqual(self.clock.sleeps, [])
+
+    def test_darwin_nval_select_errors_have_only_fixed_text(self):
+        self.darwin_nval()
+        for error in (OSError(9, "fixture selector failure"), ValueError("fixture selector failure")):
+            with self.subTest(error=type(error).__name__), \
+                    mock.patch.object(tui.select, "select", side_effect=error) as selector:
+                win, _ = self.window([(IDLE, 0)])
+                with self.assertRaises(tui.CursesError) as raised:
+                    tui._next_value(win)
+                self.assertEqual(str(raised.exception), tui.INPUT_UNAVAILABLE)
+                self.assertIsNone(raised.exception.__cause__)
+                self.assertEqual(win.calls, 1)
+                selector.assert_called_once_with([0], [], [], 0)
+        self.assertEqual(self.clock.sleeps, [])
+
+    def test_darwin_hup_and_err_stay_fatal_even_combined_with_nval(self):
+        attrs, selector = self.darwin_nval()
+        masks = [bad | extra for bad in (select.POLLHUP, select.POLLERR)
+                 for extra in (0, select.POLLIN, select.POLLNVAL, select.POLLIN | select.POLLNVAL)]
+        masks.append(select.POLLIN | select.POLLHUP | select.POLLERR | select.POLLNVAL)
+        events = [[(0, flags)] for flags in masks]
+        events += [[(0, select.POLLNVAL), (0, bad)] for bad in (select.POLLHUP, select.POLLERR)]
+        for observed in events:
+            with self.subTest(events=observed):
+                self.poll.poll.return_value = observed
+                win, _ = self.window([(IDLE, 0)])
+                with self.assertRaises(tui.CursesError) as raised:
+                    tui._peek(win)
+                self.assertEqual(str(raised.exception), tui.INPUT_UNAVAILABLE)
+                self.assertEqual(win.calls, 1)
+        attrs.assert_not_called()
+        selector.assert_not_called()
+        self.assertEqual(self.clock.sleeps, [])
+
+    def test_darwin_nval_select_readiness_fabricates_neither_key_nor_eof(self):
+        _, selector = self.darwin_nval()
+        self.poll.poll.return_value = [(0, select.POLLIN | select.POLLNVAL)]
+        selector.return_value = ([0], [], [])
+        win, state = self.window([(IDLE, 0)])
+        self.assertIsNone(tui._peek(win))
+        self.assertEqual((state.pending, state.pushback, state.early_errors), ([], [], 0))
+        win.events += [(-1, 0)] * 5
+        with self.assertRaises(tui.CursesError) as raised:
+            tui._next_value(win)
+        self.assertEqual(str(raised.exception), tui.INPUT_EARLY_ERROR)
+        self.assertEqual(win.calls, 6)
+        self.assertEqual(selector.call_args_list, [mock.call([0], [], [], 0)] * 6)
+        self.assertAlmostEqual(sum(self.clock.sleeps), 0.5)
+
+    def test_darwin_nval_fifth_early_error_survives_peeks_and_short_tails(self):
+        attrs, selector = self.darwin_nval()
+        win, state = self.window([(-1, 0)] * 6)
+        for expected in range(1, 5):
+            self.assertIsNone(tui._peek(win))
+            self.assertEqual(state.early_errors, expected)
+        self.assertIsNone(state.read(win, deadline=self.clock() + 0.009))
+        self.assertEqual(state.early_errors, 4)
+        with self.assertRaises(tui.CursesError) as raised:
+            tui._peek(win)
+        self.assertEqual(str(raised.exception), tui.INPUT_EARLY_ERROR)
+        self.assertEqual(state.early_errors, 5)
+        self.assertEqual(win.calls, 6)
+        self.assertEqual(attrs.call_count, 6)
+        self.assertEqual(selector.call_args_list, [mock.call([0], [], [], 0)] * 6)
+        self.assertTrue(all(seconds <= 0.080001 for seconds in self.clock.sleeps))
+
+    def test_darwin_nval_full_native_wait_still_resets_the_streak(self):
+        self.darwin_nval()
+        win, state = self.window([(-1, 0)] * 4 + [(-1, 0.096)] + [(-1, 0)] * 4 + bytes_of(b"x"))
+        self.assertEqual(tui._next_value(win), "x")
+        self.assertEqual(state.early_errors, 0)
+        self.assertAlmostEqual(sum(self.clock.sleeps), 0.804)
+
+    def test_darwin_nval_fallback_time_cannot_mask_native_early_errors(self):
+        _, selector = self.darwin_nval()
+        def checked(*_args):
+            self.clock.now += 0.1
+            return [], [], []
+        selector.side_effect = checked
+        win, state = self.window([(-1, 0)] * 5)
+        with self.assertRaises(tui.CursesError) as raised:
+            tui._next_value(win)
+        self.assertEqual(str(raised.exception), tui.INPUT_EARLY_ERROR)
+        self.assertEqual(state.early_errors, 5)
+        self.assertEqual(win.calls, 5)
+
+    def test_darwin_nval_validation_interrupts_propagate_unchanged(self):
+        attrs, selector = self.darwin_nval()
+        for stage in (attrs, selector):
+            with self.subTest(stage="attrs" if stage is attrs else "select"):
+                error = KeyboardInterrupt()
+                attrs.side_effect = error if stage is attrs else None
+                selector.side_effect = error if stage is selector else None
+                win, _ = self.window([(IDLE, 0)])
+                with self.assertRaises(KeyboardInterrupt) as raised:
+                    tui._peek(win)
+                self.assertIs(raised.exception, error)
+                self.assertEqual(win.calls, 1)
+        self.assertEqual(self.clock.sleeps, [])
+
+    def test_darwin_nval_peek_preserves_partial_utf8_and_pushback_order(self):
+        attrs, selector = self.darwin_nval()
+        win, state = self.window(bytes_of(b"\x1b\xc3") + [(IDLE, 0)])
+        self.assertEqual(tui.read_key(win), tui.Key("esc"))
+        self.assertEqual(state.decoder.getstate()[0], b"\xc3")
+        tui._push_back(win, ["a", "b"])
+        tui._push_back(win, ["z"])
+        self.assertEqual([tui._peek(win), tui._next_value(win), tui._next_value(win)], ["z", "a", "b"])
+        self.assertEqual(win.calls, 3)
+        win.events += bytes_of(b"\xb6")
+        self.assertEqual(tui.read_key(win), tui.Key("char", "ö"))
+        self.assertEqual(state.decoder.getstate()[0], b"")
+        attrs.assert_called_once_with(0)
+        selector.assert_called_once_with([0], [], [], 0)
 
     def test_native_read_and_timeout_errors_are_not_idle(self):
         for error in (tui.CursesError("fixture read failure"), KeyboardInterrupt()):
