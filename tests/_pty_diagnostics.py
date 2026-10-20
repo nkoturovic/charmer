@@ -1,6 +1,6 @@
 """Test-only, content-free input phases and timeout observations for one PTY child.
 
-The profile callback observes the first get_wch C-call boundary, not entry to
+The profile callback observes the first getch C-call boundary, not entry to
 its kernel wait. Instrumentation can perturb signal timing; it is not a
 readiness handshake or evidence that an unobserved failure has been fixed.
 """
@@ -65,9 +65,9 @@ def install(events_fd: int, stack_fd: int) -> None:
         previous = sys.getprofile()
 
         def profile(frame, event, function):
-            if event in ("c_call", "c_return", "c_exception") and getattr(function, "__name__", "") == "get_wch":
-                emit({"c_call": "get-wch-enter", "c_return": "get-wch-return",
-                      "c_exception": "get-wch-raise"}[event])
+            if event in ("c_call", "c_return", "c_exception") and getattr(function, "__name__", "") == "getch":
+                emit({"c_call": "getch-enter", "c_return": "getch-return",
+                      "c_exception": "getch-raise"}[event])
                 if event != "c_call":
                     sys.setprofile(previous)
 
@@ -117,7 +117,7 @@ class InputDiagnostics:
 
     def snapshot(self, process: subprocess.Popen) -> dict:
         phases = self.phases()
-        native = [event["phase"] for event in phases if event["phase"].startswith("get-wch-")]
+        native = [event["phase"] for event in phases if event["phase"].startswith("getch-")]
         result = {"at_ns": time.monotonic_ns(), "returncode": process.poll(),
                   "native_phase": native[-1] if native else "not-observed"}
         if result["returncode"] is not None or not sys.platform.startswith("linux"):

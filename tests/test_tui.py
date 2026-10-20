@@ -1,7 +1,7 @@
 """Widget-layer tests for charmer's TUI (curses test double, no terminal).
 
 The :class:`FakeWindow` double implements the exact window protocol the
-widgets use (``getmaxyx``/``addstr``/``erase``/``refresh``/``get_wch``/
+widgets use (``getmaxyx``/``addstr``/``erase``/``refresh``/``getch``/
 ``move``/``keypad``) against an in-memory cell grid, so screens and widgets
 are driven with scripted keys and asserted on rendered text and attributes.
 """
@@ -15,11 +15,14 @@ import pty
 import threading
 import unittest
 import unittest.mock
+from functools import wraps
+from inspect import unwrap
 
 from charmer import tui
 
-# Scripted key helpers: characters are fed to get_wch verbatim; special keys
-# use the real curses constants (available without initscr).
+# Logical screen scripts encode text as UTF-8 and Esc plus an explicit idle
+# event. Raw input/OSC tests bypass that encoder and specify every event.
+# Special keys use the real curses constants (available without initscr).
 ENTER = "\n"
 ESC = "\x1b"
 TAB = "\t"
@@ -36,13 +39,58 @@ BTAB = curses.KEY_BTAB
 DELETE = curses.KEY_DC
 
 
+IDLE = object()
+
+
+class FakeInputState(tui.InputState):
+    def __init__(self):
+        with unittest.mock.patch.object(tui.select, "poll") as poll, \
+                unittest.mock.patch.object(tui.locale, "getencoding", return_value="utf-8"):
+            poll.return_value.poll.return_value = []
+            super().__init__(0)
+        self.now = tui._clock()
+
+    def advance(self, seconds):
+        self.now += seconds
+
+    def read(self, win, *, deadline=None):
+        # Give peek's absolute deadline the same clock as the scripted wait.
+        now = tui._clock()
+        if deadline is not None:
+            deadline = self.now + max(0, deadline - now)
+        with unittest.mock.patch.object(tui, "_clock", lambda: self.now), \
+                unittest.mock.patch.object(tui.time, "sleep", self.advance):
+            return super().read(win, deadline=deadline)
+
+
+# Both test_tui and tests.test_tui may be imported in one test process.
+_real_input_state = unwrap(tui._input_state)
+
+
+@wraps(_real_input_state)
+def _registered_fake_input(win):
+    # Only standalone widgets register here. Context windows never fall
+    # back to fake state, even after teardown or lost active registration.
+    if tui._INPUT_STATE is None and getattr(win, "_standalone_input", False):
+        return win.input_state
+    return _real_input_state(win)
+
+
+tui._input_state = _registered_fake_input
+
+
 class FakeWindow:
     """In-memory curses window: records cells + attrs, replays scripted keys."""
 
-    def __init__(self, keys=(), *, height=30, width=90):
+    def __init__(self, keys=(), *, height=30, width=90, raw=False, standalone=True):
+        self._standalone_input = standalone and tui._INPUT_STATE is None
         self.height = height
         self.width = width
         self.keys = list(keys)
+        self.raw = raw
+        self._bytes = []
+        self.input_state = FakeInputState()
+        self.input_state.window = self
         self.grid: dict[tuple[int, int], tuple[str, int]] = {}
         self.frames: list[str] = []
         self.cursor_pos: tuple[int, int] | None = None
@@ -65,17 +113,31 @@ class FakeWindow:
     def refresh(self):
         self.frames.append(self.text())
 
-    def get_wch(self):
-        if not self.keys:
-            if getattr(self, "_timeout_armed", False):
-                raise curses.error("no input")
-            raise AssertionError("FakeWindow key script exhausted")
-        return self.keys.pop(0)
+    def getch(self):
+        if not self._bytes:
+            if not self.keys:
+                raise AssertionError("FakeWindow key script exhausted")
+            value = self.keys.pop(0)
+            if isinstance(value, str):
+                if self.raw:
+                    raise AssertionError("raw input scripts require byte integers")
+                self._bytes.extend(value.encode("utf-8"))
+                if value == ESC:
+                    self._bytes.append(IDLE)
+            else:
+                self._bytes.append(value)
+        value = self._bytes.pop(0)
+        if value is IDLE:
+            self.input_state.advance(self.wait / 1000)
+            return -1
+        if isinstance(value, BaseException):
+            raise value
+        return value
 
     def timeout(self, ms):
-        # Model curses: with a timeout armed, an empty queue raises
-        # curses.error instead of blocking forever; -1 blocks again.
-        self._timeout_armed = ms >= 0
+        if ms <= 0:
+            raise AssertionError("input waits must be finite and positive")
+        self.wait = ms
 
     def move(self, y, x):
         if y < 0 or y >= self.height or x < 0 or x >= self.width:
@@ -151,75 +213,73 @@ class ColourReplyTests(unittest.TestCase):
         self.addCleanup(tui._carry_reply, None)
 
     def keys(self, values, win=None):
-        win = win or FakeWindow(values)
+        win = win or FakeWindow(values, raw=True)
         out = []
         while win.keys or tui._pending(win):
             out.append((lambda key: (key.kind, key.ch))(tui.read_key(win)))
         return out
 
     def test_a_bel_terminated_reply_disappears(self):
-        reply = list("\x1b]11;rgb:0000/0000/0000\x07")
-        self.assertEqual(self.keys([*reply, "q"]), [("char", "q")])
+        self.assertEqual(self.keys(b"\x1b]11;rgb:0000/0000/0000\x07q"), [("char", "q")])
 
     def test_an_st_terminated_reply_disappears(self):
-        reply = list("\x1b]11;rgba:ffff/ffff/ffff/ffff\x1b\\")
-        self.assertEqual(self.keys([*reply, "?"]), [("char", "?")])
+        self.assertEqual(self.keys(b"\x1b]11;rgba:ffff/ffff/ffff/ffff\x1b\\?"), [("char", "?")])
 
     def test_a_foreground_reply_disappears_too(self):
-        self.assertEqual(self.keys([*"\x1b]10;rgb:1/2/3\x07", ESC]), [("esc", "")])
+        self.assertEqual(self.keys([*b"\x1b]10;rgb:1/2/3\x07\x1b", IDLE]), [("esc", "")])
 
     def test_a_lone_escape_stays_an_escape(self):
-        self.assertEqual(self.keys([ESC]), [("esc", "")])
+        self.assertEqual(self.keys([27, IDLE]), [("esc", "")])
 
     def test_escape_then_a_letter_is_two_keys(self):
-        self.assertEqual(self.keys([ESC, "x"]), [("esc", ""), ("char", "x")])
+        self.assertEqual(self.keys(b"\x1bx"), [("esc", ""), ("char", "x")])
 
     def test_escape_then_a_bracket_that_is_not_a_reply_is_delivered(self):
-        self.assertEqual(self.keys([ESC, "]", "a"]), [("esc", ""), ("char", "]"), ("char", "a")])
+        self.assertEqual(self.keys(b"\x1b]a"), [("esc", ""), ("char", "]"), ("char", "a")])
 
     def test_a_key_inside_a_reply_ends_it_and_is_delivered(self):
-        self.assertEqual(self.keys([*"\x1b]11;rgb:00", "q"]), [("char", "q")])
+        self.assertEqual(self.keys(b"\x1b]11;rgb:00q"), [("char", "q")])
 
     def test_a_reply_cut_short_is_bounded(self):
-        win = FakeWindow([*"\x1b]11;", *("0" * (tui.OSC_MAX_CHARS + 5)), "z"])
+        win = FakeWindow(b"\x1b]11;" + b"0" * (tui.OSC_MAX_CHARS + 5) + b"z", raw=True)
         first = tui.read_key(win)
         # The bound stops the read: what is left is delivered as keys.
         self.assertEqual(first, tui.Key("char", "0"))
 
     def test_an_escape_that_does_not_terminate_ends_the_reply(self):
-        self.assertEqual(self.keys([*"\x1b]11;rgb:0000/0000/0000", ESC, "x"]), [("char", "x")])
+        self.assertEqual(self.keys(b"\x1b]11;rgb:0000/0000/0000\x1bx"), [("char", "x")])
 
     def test_two_escapes_are_two_escapes(self):
-        self.assertEqual(self.keys([ESC, ESC]), [("esc", ""), ("esc", "")])
+        self.assertEqual(self.keys([27, 27, IDLE]), [("esc", ""), ("esc", "")])
 
     # The query stopped waiting before the reply ended: its rest arrives at
     # the key reader, after the screen is drawn.
 
     def test_a_late_st_terminator_is_part_of_the_reply(self):
         tui._carry_reply("]11;rgb:1e1e/1e1e/1e1e")
-        self.assertEqual(self.keys([ESC, "\\", "?"]), [("char", "?")])
+        self.assertEqual(self.keys(b"\x1b\\?"), [("char", "?")])
         self.assertEqual(tui._REPLY_TAIL, [])
 
     def test_a_late_body_and_bel_are_part_of_the_reply(self):
         tui._carry_reply("]11;rgb:1e")
-        self.assertEqual(self.keys([*"1e/1e1e/1e1e\x07", "q"]), [("char", "q")])
+        self.assertEqual(self.keys(b"1e/1e1e/1e1e\x07q"), [("char", "q")])
 
     def test_the_rest_of_a_cut_prefix_is_part_of_the_reply(self):
         tui._carry_reply("")
-        self.assertEqual(self.keys([*"]11;rgb:0/0/0\x1b\\", "j"]), [("char", "j")])
+        self.assertEqual(self.keys(b"]11;rgb:0/0/0\x1b\\j"), [("char", "j")])
 
     def test_a_key_that_cannot_continue_the_reply_is_delivered(self):
         tui._carry_reply("]11;rgb:1e1e/1e1e/1e1e")
-        self.assertEqual(self.keys(["q", ESC]), [("char", "q"), ("esc", "")])
+        self.assertEqual(self.keys([*b"q\x1b", IDLE]), [("char", "q"), ("esc", "")])
         self.assertEqual(tui._REPLY_TAIL, [])
 
     def test_an_escape_without_its_backslash_stays_an_escape(self):
         tui._carry_reply("]11;rgb:1e1e/1e1e/1e1e")
-        self.assertEqual(self.keys([ESC]), [("esc", "")])
+        self.assertEqual(self.keys([27, IDLE, IDLE]), [("esc", "")])
 
     def test_a_resize_before_the_terminator_keeps_the_reply_open(self):
         tui._carry_reply("]11;rgb:1e1e/1e1e/1e1e")
-        self.assertEqual(self.keys([curses.KEY_RESIZE, ESC, "\\", "q"]), [("resize", ""), ("char", "q")])
+        self.assertEqual(self.keys([curses.KEY_RESIZE, *b"\x1b\\q"]), [("resize", ""), ("char", "q")])
 
     def test_body_keys_paused_before_the_terminator_stay_part_of_the_reply(self):
         # A second gap inside the reply (its rest after the card is drawn,
@@ -227,11 +287,11 @@ class ColourReplyTests(unittest.TestCase):
         # replayed as keys (an "e" in it would open the editor), and the
         # terminator after the pause still closes it.
         tui._carry_reply("]11;rgb:1e1e/1e1e/")
-        win = FakeWindow(list("1e1e"))
+        win = FakeWindow([*b"1e1e", IDLE], raw=True)
         tui._finish_carried_reply(win)
         self.assertEqual(tui._pending(win), [])
         self.assertEqual(tui._REPLY_TAIL, ["]11;rgb:1e1e/1e1e/1e1e"])
-        win.keys += [ESC, "\\", "?"]
+        win.keys += b"\x1b\\?"
         self.assertEqual(self.keys([], win=win), [("char", "?")])
         self.assertEqual(tui._REPLY_TAIL, [])
 
@@ -239,25 +299,25 @@ class ColourReplyTests(unittest.TestCase):
         # ESC ]11;rgb:0000/0000/ in the query's wait, 0000 at the key reader,
         # a pause, then ESC backslash.
         tui._carry_reply(tui._unfinished_reply(b"\x1b]11;rgb:0000/0000/"))
-        win = FakeWindow(list("0000"))
+        win = FakeWindow([*b"0000", IDLE], raw=True)
         tui._finish_carried_reply(win)
         self.assertEqual(tui._pending(win), [])
-        win.keys += [ESC, "\\", "q"]
+        win.keys += b"\x1b\\q"
         self.assertEqual(self.keys([], win=win), [("char", "q")])
 
     def test_an_escape_after_a_paused_reply_stays_an_escape(self):
         tui._carry_reply("]11;rgb:1e1e/1e1e/")
-        win = FakeWindow(list("1e1e"))
+        win = FakeWindow([*b"1e1e", IDLE], raw=True)
         tui._finish_carried_reply(win)
-        win.keys += [ESC]
+        win.keys += [27, IDLE, IDLE]
         self.assertEqual(self.keys([], win=win), [("esc", "")])
         self.assertEqual(tui._REPLY_TAIL, [])
 
     def test_a_key_after_a_paused_reply_is_delivered_alone(self):
         tui._carry_reply("]11;rgb:1e1e/1e1e/")
-        win = FakeWindow(list("1e1e"))
+        win = FakeWindow([*b"1e1e", IDLE], raw=True)
         tui._finish_carried_reply(win)
-        win.keys += ["q", "j"]
+        win.keys += b"qj"
         self.assertEqual(self.keys([], win=win), [("char", "q"), ("char", "j")])
         self.assertEqual(tui._REPLY_TAIL, [])
 
@@ -269,34 +329,35 @@ class ColourReplyTests(unittest.TestCase):
                           (ESC, ("esc", "")), ("0", ("char", "0"))):
             with self.subTest(key=repr(key)):
                 tui._carry_reply(tui._unfinished_reply(b"\x1b]11;rgb:0000/0000/"))
-                self.assertEqual(self.keys([ESC, key]), [("esc", ""), kind])
+                events = [27, *key.encode("ascii"), *([IDLE] if key == ESC else [])]
+                self.assertEqual(self.keys(events), [("esc", ""), kind])
                 self.assertEqual(tui._REPLY_TAIL, [])
         tui._carry_reply("]11;rgb:1e1e/1e1e/")
-        self.assertEqual(self.keys([*"1e1e", ESC, curses.KEY_RESIZE]), [("esc", ""), ("resize", "")])
+        self.assertEqual(self.keys([*b"1e1e\x1b", curses.KEY_RESIZE]), [("esc", ""), ("resize", "")])
 
     def test_a_carried_escape_is_a_key_unless_a_backslash_follows(self):
         # The query's read (or the key reader's gap) stopped right after an
         # Esc: a backslash next closes the reply, any other key follows the Esc.
         tui._carry_reply(tui._unfinished_reply(b"\x1b]11;rgb:0000/0000/0000\x1b"))
-        self.assertEqual(self.keys(["\\", "q"]), [("char", "q")])
+        self.assertEqual(self.keys(b"\\q"), [("char", "q")])
         tui._carry_reply(tui._unfinished_reply(b"\x1b]11;rgb:0000/0000/0000\x1b"))
-        self.assertEqual(self.keys(["\r"]), [("esc", ""), ("enter", "")])
+        self.assertEqual(self.keys(b"\r"), [("esc", ""), ("enter", "")])
         tui._carry_reply("]11;rgb:0000/0000/0000\x1b", since=tui._clock() - tui.OSC_CARRY_SECONDS - 1)
-        self.assertEqual(self.keys(["\r"]), [("esc", ""), ("enter", "")])
+        self.assertEqual(self.keys(b"\r"), [("esc", ""), ("enter", "")])
         self.assertEqual(tui._REPLY_TAIL, [])
 
     def test_body_keys_long_after_an_unfinished_reply_are_delivered(self):
         # A reply that never finished is not waited for: keys typed later are input.
         tui._carry_reply("]11;rgb:1e1e/1e1e/1e1e", since=tui._clock() - tui.OSC_CARRY_SECONDS - 1)
-        self.assertEqual(self.keys(["a", "b"]), [("char", "a"), ("char", "b")])
+        self.assertEqual(self.keys(b"ab"), [("char", "a"), ("char", "b")])
         self.assertEqual(tui._REPLY_TAIL, [])
 
     def test_a_reply_paused_inside_its_body_keeps_its_terminator(self):
-        win = FakeWindow(list("\x1b]11;rgb:1e1e/1e1e/1e1e"))
+        win = FakeWindow([*b"\x1b]11;rgb:1e1e/1e1e/1e1e", IDLE], raw=True)
         self.assertEqual(tui._next_value(win), ESC)
         self.assertTrue(tui._swallow_osc_reply(win))
         self.assertEqual(tui._REPLY_TAIL, ["]11;rgb:1e1e/1e1e/1e1e"])
-        win.keys += [ESC, "\\", "?"]
+        win.keys += b"\x1b\\?"
         self.assertEqual(self.keys([], win=win), [("char", "?")])
 
     def test_the_unfinished_part_of_a_query_read(self):
@@ -1212,6 +1273,10 @@ class _FakeTermios:
     """Records termios calls (and interleaves them with fd events)."""
 
     IXON = 0o2000
+    ISTRIP = 0o40
+    CSIZE = 0o60
+    CS7 = 0o40
+    CS8 = 0o60
     ECHO = 0o10
     ICANON = 0o2
     TCSANOW = 0
@@ -1220,19 +1285,22 @@ class _FakeTermios:
     def __init__(self, events, iflag):
         self.events = events
         self.iflag = iflag
+        self.cflag = self.CS8
 
     def tcgetattr(self, fd):
         self.events.append(("tcgetattr", fd))
-        return [self.iflag, 0, 0, self.ECHO | self.ICANON, 0, 0, []]
+        return [self.iflag, 0, self.cflag, self.ECHO | self.ICANON, 0, 0, []]
 
     def tcsetattr(self, fd, when, attrs):
         self.events.append(("tcsetattr", fd, attrs[0]))
         if fd == 0:
             self.iflag = attrs[0]
+            self.cflag = attrs[2]
 
 
-class _FdStream:
+class _FdStream(io.StringIO):
     def __init__(self, fd):
+        super().__init__()
         self.fd = fd
 
     def fileno(self):
@@ -1246,6 +1314,7 @@ class _SessionHarness:
         self.events: list[tuple] = []
         self.termios = _FakeTermios(self.events, iflag) if termios_module else None
         self.escdelay_calls: list[int] = []
+        self.initialized = False
         events = self.events
         next_dup = iter(range(100, 200))
 
@@ -1254,14 +1323,32 @@ class _SessionHarness:
             events.append(("dup", fd, new))
             return new
 
+        def initialized():
+            if not self.initialized:
+                raise tui.CursesError("must call initscr() first")
+            return True
+
+        def wrapper(func):
+            events.append(("wrapper",))
+            self.initialized = True
+            try:
+                return func(FakeWindow(standalone=False))
+            finally:
+                events.append(("teardown",))
+
         patches = [
+            unittest.mock.patch.object(tui, "_input_state", _real_input_state),
+            unittest.mock.patch.object(tui, "_SCREEN_PROVENANCE", "new"),
+            unittest.mock.patch.object(tui, "_INPUT_STATE", None),
+            unittest.mock.patch.object(tui.select, "poll"),
+            unittest.mock.patch.object(tui.curses, "isendwin", initialized),
             unittest.mock.patch.object(tui, "termios", self.termios),
             unittest.mock.patch.object(tui.os, "dup", fake_dup),
             unittest.mock.patch.object(tui.os, "dup2", lambda a, b: events.append(("dup2", a, b))),
             unittest.mock.patch.object(tui.os, "close", lambda fd: events.append(("close", fd))),
             unittest.mock.patch.object(tui.os, "isatty", lambda fd: True),
             unittest.mock.patch.dict(tui.os.environ, environ, clear=False),
-            unittest.mock.patch.object(tui.curses, "wrapper", lambda func: func(FakeWindow())),
+            unittest.mock.patch.object(tui.curses, "wrapper", wrapper),
             unittest.mock.patch.object(
                 tui.curses, "set_escdelay", lambda ms: self.escdelay_calls.append(ms), create=True
             ),
@@ -1285,7 +1372,7 @@ class EscDelayTests(unittest.TestCase):
     """25 ms unless ESCDELAY is set; never written."""
 
     def test_sets_25_ms_when_the_environment_lacks_escdelay(self) -> None:
-        harness = _SessionHarness(self, iflag=0, environ={}, termios_module=False)
+        harness = _SessionHarness(self, iflag=0, environ={})
         self.assertEqual(harness.run(lambda win: "done"), "done")
         self.assertEqual(harness.escdelay_calls, [tui.ESC_DELAY_MS])
         self.assertEqual(tui.ESC_DELAY_MS, 25)
@@ -1293,7 +1380,7 @@ class EscDelayTests(unittest.TestCase):
 
     def test_environment_escdelay_wins_and_is_not_overridden(self) -> None:
         harness = _SessionHarness(
-            self, iflag=0, environ={"ESCDELAY": "600"}, termios_module=False
+            self, iflag=0, environ={"ESCDELAY": "600"}
         )
         harness.run(lambda win: None)
         self.assertEqual(harness.escdelay_calls, [])
@@ -1323,13 +1410,14 @@ class IxonTests(unittest.TestCase):
         self.assertEqual(seen["iflag"] & _FakeTermios.IXON, 0)
         self.assertIn(("tcsetattr", 0, 0o1), events)
         self.assertIn(("def_prog_mode",), events)
-        # Restore targets fd 0, before fd 0 is pointed back at the saved dup.
-        restore = max(
-            i for i, event in enumerate(events) if event[0] == "tcsetattr"
-        )
-        self.assertEqual(events[restore], ("tcsetattr", 0, _FakeTermios.IXON | 0o1))
+        # Both tty snapshots are restored before fd 0 is pointed back.
+        restores = [max(i for i, event in enumerate(events)
+                        if event[:2] == ("tcsetattr", fd)) for fd in (0, 1)]
+        self.assertLess(*restores)
+        for fd, restore in enumerate(restores):
+            self.assertEqual(events[restore], ("tcsetattr", fd, _FakeTermios.IXON | 0o1))
         (saved_dup,) = [event[2] for event in events if event[0] == "dup" and event[1] == 0]
-        self.assertLess(restore, events.index(("dup2", saved_dup, 0)), events)
+        self.assertLess(restores[-1], events.index(("dup2", saved_dup, 0)), events)
         self.assertEqual(harness.termios.iflag, _FakeTermios.IXON | 0o1)
 
     def test_restore_runs_when_the_app_raises(self) -> None:
@@ -1341,7 +1429,8 @@ class IxonTests(unittest.TestCase):
         with self.assertRaises(KeyboardInterrupt):
             harness.run(app)
         self.assertEqual(harness.termios.iflag, _FakeTermios.IXON)
-        self.assertEqual(harness.events[-1], ("tcsetattr", 0, _FakeTermios.IXON))
+        self.assertEqual(harness.events[-2:], [("tcsetattr", 0, _FakeTermios.IXON),
+                                               ("tcsetattr", 1, _FakeTermios.IXON)])
 
     def test_ixon_already_off_is_left_alone_in_the_session(self) -> None:
         harness = _SessionHarness(self, iflag=0o1, environ={})
@@ -1349,13 +1438,15 @@ class IxonTests(unittest.TestCase):
         in_session = [
             event for event in harness.events if event[0] == "tcsetattr"
         ]
-        # Only the finally-restore writes the attributes back.
-        self.assertEqual(in_session, [("tcsetattr", 0, 0o1)])
+        # Only the finally-restore writes both tty snapshots back.
+        self.assertEqual(in_session, [("tcsetattr", 0, 0o1), ("tcsetattr", 1, 0o1)])
         self.assertNotIn(("def_prog_mode",), harness.events)
 
-    def test_without_termios_the_session_still_runs(self) -> None:
+    def test_without_termios_input_cannot_be_admitted(self) -> None:
         harness = _SessionHarness(self, iflag=0, environ={}, termios_module=False)
-        self.assertEqual(harness.run(lambda win: 5), 5)
+        with self.assertRaisesRegex(tui.CursesError, "verified CS8"):
+            harness.run(lambda win: self.fail("app must not run"))
+        self.assertNotIn(("wrapper",), harness.events)
 
 
 class TooSmallTextTests(unittest.TestCase):

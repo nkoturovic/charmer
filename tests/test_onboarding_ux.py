@@ -175,12 +175,12 @@ class CursorTests(unittest.TestCase):
                     self.assertIn(mock.call(0), cursor.call_args_list[2:-1])
         form = self.form()
         win = FakeWindow([curses.KEY_RESIZE, ENTER, curses.KEY_RESIZE, ENTER])
-        read = win.get_wch
+        read = win.getch
         sizes = iter((5, 5, 24, 24))
         def resize():
             win.height = next(sizes)
             return read()
-        with mock.patch.object(win, "get_wch", side_effect=resize), \
+        with mock.patch.object(win, "getch", side_effect=resize), \
                 mock.patch.object(tui.curses, "curs_set") as cursor:
             self.assertEqual(form.run(win), {"text": "abcd"})
             self.assertIn("Terminal too small", "\n".join(win.frames))

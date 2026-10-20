@@ -154,6 +154,43 @@ the release's evidence. A cross-build or a test on another platform does
 not establish support. These native journeys exercise release bundles;
 listing Nix as a channel does not claim a Nix installation journey.
 
+## Full-screen terminal input
+
+The full-screen interface requires both input and output to be terminals with
+verifiable eight-bit settings: `CS8` set and `ISTRIP` clear before its first
+curses initialization. They may be different terminals; both must qualify.
+The input terminal controls incoming bytes, while curses can derive its byte-input
+meta mode from the output terminal. charmer checks both again on entry and after
+returning from an external editor. It does not change those flags or enable
+terminal meta mode, which can change Alt-key behavior. This is a compatibility
+restriction: a terminal initially using
+`CS7` with `ISTRIP` clear could work with the previous wide-character reader.
+An already initialized curses screen must have been initialized by charmer;
+a failed or partial initialization is not reused as a verified screen.
+
+When this requirement cannot be verified, charmer prints a notice before
+starting the full-screen interface and does not automatically query the
+terminal's background color. Launch and resume paths retain their line flows;
+profile new/edit retains its external-editor fallback. Direct callers of the
+curses wrapper can receive an error instead. An input failure after a screen
+starts keeps that operation's existing cancellation and saved-change behavior.
+
+Text is decoded strictly using the active locale encoding. Incomplete characters
+survive timed waits, resize and an external-editor suspension; malformed input
+fails rather than inserting replacement characters. Idle waits do not redraw.
+Five consecutive materially early native input errors stop the screen after
+paced retries. This is a finite recovery policy, not an EOF diagnosis: repeated
+indistinguishable benign interruptions can also exhaust it.
+
+Ordinary input waits use 100 ms slices and lookahead uses an 80 ms budget. These
+are not universal native-call deadlines: curses can wait for each missing byte
+of a function-key sequence using `ESCDELAY`. The default remains 25 ms, and an
+explicit `ESCDELAY` is honored rather than clamped. Alt chords remain Esc followed
+by their character. Both terminals' attributes are snapshotted after stream
+redirection and restored before either redirected file descriptor. Cleanup
+attempts the remaining restorations even if an earlier step raises, preserving
+the original failure. No native or kernel input queue is flushed during cleanup.
+
 ## Transports
 
 | Route | Status |

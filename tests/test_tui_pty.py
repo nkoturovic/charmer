@@ -871,7 +871,7 @@ raise SystemExit(130)
         _restored(self, child, after)
         events = child.diagnostics.phases()
         self.assertEqual([event["phase"] for event in events],
-                         ["installed", "read-key-enter", "get-wch-enter", "get-wch-return"])
+                         ["installed", "read-key-enter", "getch-enter", "getch-return"])
         for event in events:
             self.assertEqual(event["sigint"], events[0]["sigint"])
             self.assertEqual(event["blocked_signals"], events[0]["blocked_signals"])
@@ -1122,7 +1122,7 @@ class ProfileEditorPTYTests(unittest.TestCase):
         child = self.child()
         child.read_until(EDITOR_READY, FIXTURE_TIMEOUT)
         child.resize(8, 35)
-        child.send(b"j")  # wake get_wch; the next draw sees the resized PTY
+        child.send(b"j")  # wake getch; the next draw sees the resized PTY
         child.read_until(b"Terminal too small")
         child.send(b"\x1b")
         self.assertCancelled(child)

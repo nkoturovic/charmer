@@ -25,9 +25,11 @@ from __future__ import annotations
 
 from .termtext import CHEATSHEET_HINT, visible_text, visible_message
 
+import codecs
 import contextlib
 import copy
 import dataclasses
+import locale
 import os
 import re
 import select
@@ -362,7 +364,8 @@ def detect_palette(
             fd_out = tty_out.fileno()
         except (AttributeError, OSError):
             fd_in = fd_out = None
-        if fd_in is not None and fd_out is not None:
+        if (fd_in is not None and fd_out is not None
+                and _input_terminals_supported(fd_in, fd_out) and _screen_admitted()):
             background = query_background_osc11(fd_in, fd_out)
     if background == "light":
         return LIGHT_PALETTE
@@ -530,50 +533,132 @@ OSC_MAX_CHARS = 64
 OSC_CARRY_SECONDS = 2.0
 _OSC_PREFIXES = ("]11;", "]10;")
 _OSC_BODY = frozenset("rgbaRGBA:/0123456789abcdefABCDEF")
-# Keys read ahead while checking for a reply, per window (held with the
-# window itself, so an id is never reused while keys wait), delivered next.
-_PUSHBACK: dict[int, tuple[Any, list[Any]]] = {}
+INPUT_SLICE_MS = 100
+INPUT_EARLY_LIMIT = 5
+INPUT_UNAVAILABLE = "terminal input is unavailable"
+INPUT_ENCODING_ERROR = "terminal input is invalid for the locale encoding"
+INPUT_EARLY_ERROR = "terminal input repeatedly returned early errors"
+
+
+class InputState:
+    """One curses context's byte decoder, logical queues and ERR recovery."""
+
+    def __init__(self, fd: int):
+        self.fd = fd
+        self.window: Any = None
+        self.suspended = False
+        self.pending: list[str] = []
+        self.pushback: list[Any] = []
+        self.early_errors = 0
+        try:
+            self.decoder = codecs.getincrementaldecoder(locale.getencoding())(errors="strict")
+        except LookupError:
+            raise CursesError(INPUT_ENCODING_ERROR) from None
+        try:
+            self.poll = select.poll()
+            self.poll.register(fd, select.POLLIN)
+        except (OSError, ValueError):
+            raise CursesError(INPUT_UNAVAILABLE) from None
+
+    def clear(self) -> None:
+        try:
+            self.decoder.reset()
+        finally:
+            self.pending.clear()
+            self.pushback.clear()
+            self.early_errors = 0
+            self.window = None
+            self.suspended = False
+
+    def read(self, win: Any, *, deadline: float | None = None) -> Any:
+        while True:
+            if self.pending:
+                return self.pending.pop(0)
+            wait = INPUT_SLICE_MS
+            if deadline is not None:
+                remaining = deadline - _clock()
+                if remaining <= 0:
+                    return None
+                wait = min(wait, int(remaining * 1000))
+                if wait < 2:
+                    time.sleep(remaining)
+                    return None
+            win.timeout(wait)
+            started = _clock()
+            value = win.getch()
+            elapsed = _clock() - started
+            if value == -1:
+                try:
+                    events = self.poll.poll(0)
+                except (OSError, ValueError):
+                    raise CursesError(INPUT_UNAVAILABLE) from None
+                if any(fd == self.fd and flags & (select.POLLHUP | select.POLLERR | select.POLLNVAL)
+                       for fd, flags in events):
+                    raise CursesError(INPUT_UNAVAILABLE)
+                # POLLIN alone proves neither a decoded key nor EOF. Short
+                # ERRs are ambiguous; bound recovery rather than diagnose EOF.
+                if wait >= 10:
+                    if elapsed >= (wait - 5) / 1000:
+                        self.early_errors = 0
+                    else:
+                        self.early_errors += 1
+                until = started + wait / 1000
+                if deadline is not None:
+                    until = min(until, deadline)
+                remaining = until - _clock()
+                if remaining > 0:
+                    time.sleep(remaining)
+                if self.early_errors >= INPUT_EARLY_LIMIT:
+                    raise CursesError(INPUT_EARLY_ERROR)
+                continue
+            self.early_errors = 0
+            if not 0 <= value <= 255:
+                return value
+            try:
+                self.pending.extend(self.decoder.decode(bytes((value,)), final=False))
+            except UnicodeError:
+                raise CursesError(INPUT_ENCODING_ERROR) from None
+            # Deliver a returned key even if keypad's ESCDELAY waits ran past
+            # the Python budget. Only an incomplete character waits again.
+
+
+_INPUT_STATE: InputState | None = None
+
+
+def _input_state(win: Any) -> InputState:
+    state = _INPUT_STATE
+    if state is None or state.window is not win or state.suspended:
+        raise CursesError("terminal input has no active curses context")
+    return state
 
 
 def _pending(win: Any) -> list[Any]:
-    entry = _PUSHBACK.get(id(win))
-    return entry[1] if entry is not None and entry[0] is win else []
+    return _input_state(win).pushback
 
 
 def _next_value(win: Any) -> Any:
-    pending = _pending(win)
-    if pending:
-        value = pending.pop(0)
-        if not pending:
-            _PUSHBACK.pop(id(win), None)
-        return value
-    return win.get_wch()
+    state = _input_state(win)
+    if state.pushback:
+        return state.pushback.pop(0)
+    return state.read(win)
 
 
 def _push_back(win: Any, values: Sequence[Any]) -> None:
     if values:
-        pending = _pending(win)
-        _PUSHBACK[id(win)] = (win, [*values, *pending])
+        _pending(win)[:0] = values
 
 
 def _peek(win: Any) -> Any:
-    """The next input within :data:`OSC_GAP_MS`, or None."""
+    """One logical value within one :data:`OSC_GAP_MS` budget, or None.
 
-    if _pending(win):
-        return _next_value(win)
-    try:
-        win.timeout(OSC_GAP_MS)
-    except (AttributeError, CursesError):
-        return None
-    try:
-        return win.get_wch()
-    except CursesError:
-        return None
-    finally:
-        try:
-            win.timeout(-1)
-        except CursesError:
-            pass
+    Ncurses keypad continuation has its own per-byte ESCDELAY waits: this
+    budget is not a universal native call deadline.
+    """
+
+    state = _input_state(win)
+    if state.pushback:
+        return state.pushback.pop(0)
+    return state.read(win, deadline=_clock() + OSC_GAP_MS / 1000)
 
 
 def _swallow_osc_reply(win: Any) -> bool:
@@ -595,17 +680,19 @@ def _swallow_osc_reply(win: Any) -> bool:
     # belong to the reply ends it and is delivered as input. A reply whose
     # rest is late is remembered, so its terminator is never read as Esc.
     text = "".join(read)
+    since = _clock()
     for _count in range(OSC_MAX_CHARS):
         value = _peek(win)
         if value is None:
-            _carry_reply(text)
+            _carry_reply(text, since=since)
             return True
+        since = _clock()
         if value == "\x07":
             return True
         if value == "\x1b":
             after = _peek(win)
             if after is None:
-                _carry_reply(text + "\x1b")
+                _carry_reply(text + "\x1b", since=since)
             elif after != "\\":
                 _push_back(win, [after])
             return True
@@ -678,12 +765,8 @@ def _finish_carried_reply(win: Any) -> None:
     if text is None:
         return
     since = _REPLY_SINCE[0] if _REPLY_SINCE else _clock()
+    value = _next_value(win)
     _carry_reply(None)
-    try:
-        value = _next_value(win)
-    except BaseException:
-        _carry_reply(text, since=since)
-        raise
     # An Esc read inside the reply, kept aside until the next key shows
     # whether it starts the terminator.
     escape = text.endswith("\x1b")
@@ -711,17 +794,21 @@ def _finish_carried_reply(win: Any) -> None:
             escape = True
         else:
             text += value
+        since = _clock()
         value = _peek(win)
         if value is None:
             if escape:
                 _push_back(win, ["\x1b"])  # an Esc no backslash follows is a key
             else:
-                _carry_reply(text, since=_clock())  # paused inside its body: read on at the next key
+                _carry_reply(text, since=since)  # paused inside its body: read on at the next key
             return
 
 
 def read_key(win: Any) -> Key:
-    """Read one key via ``get_wch`` (unicode-safe) and normalize it.
+    """Read one key via finite byte waits and strict locale decoding.
+
+    Idle slices stay inside the reader; partial characters survive slices,
+    lookahead, resize and suspension of the same curses context.
 
     Note: ncurses deliberately delivers an Alt-chord as ESC followed by its
     tail character (ESCDELAY disambiguation applies only to keypad function
@@ -1644,6 +1731,43 @@ def _fileno(stream: Any) -> int | None:
         return None
 
 
+INPUT_MODE_ERROR = ("full-screen input requires verified CS8 with ISTRIP off on both input and output "
+                    "terminals and a charmer-owned curses screen")
+INPUT_MODE_NOTICE = "charmer: " + INPUT_MODE_ERROR
+# endwin does not destroy SCREEN; repeated initscr can reuse its meta mode.
+_SCREEN_PROVENANCE = "new"  # new | owned | uncertain (initialization did not finish)
+
+
+def _terminal_attrs(fd: int) -> list[Any] | None:
+    if termios is None:
+        return None
+    try:
+        return termios.tcgetattr(fd) if os.isatty(fd) else None
+    except (termios.error, OSError, ValueError):
+        return None
+
+
+def _input_mode_supported(attrs: list[Any] | None) -> bool:
+    return (termios is not None and attrs is not None
+            and attrs[2] & termios.CSIZE == termios.CS8 and not attrs[0] & termios.ISTRIP)
+
+
+def _input_terminals_supported(fd_in: int, fd_out: int) -> bool:
+    # The input tty controls byte delivery; ncurses initializes SCREEN's
+    # meta flag from the output tty. Neither predicate can stand for both.
+    return all(_input_mode_supported(_terminal_attrs(fd)) for fd in (fd_in, fd_out))
+
+
+def _screen_admitted() -> bool:
+    if curses is None:
+        return False
+    try:
+        curses.isendwin()  # Public initialization check, including an ended SCREEN.
+    except CursesError:
+        return _SCREEN_PROVENANCE == "new"
+    return _SCREEN_PROVENANCE == "owned"
+
+
 def run_curses_on_streams(
     app: Callable[[Any], Any],
     input_stream: Any,
@@ -1661,42 +1785,51 @@ def run_curses_on_streams(
     Inside the session the escape delay is 25 ms (unless the
     environment sets ``ESCDELAY``; the environment is never written) and
     terminal flow control (``IXON``) is off, so ``^S`` reaches the screens
-    instead of freezing output.  The caller's terminal attributes are
-    snapshotted after the dup2 block and restored on fd 0 before the fds
-    are restored, so ``IXON`` comes back exactly as it was.
+    instead of freezing output. Both input and output must be eight-bit
+    terminals. Their attributes are snapshotted after the dup2 block and
+    restored on fds 0/1 before the fds are restored, even when the streams
+    use different terminals.
     """
 
-    if curses is None:
-        # Unreachable through streams_curses_capable; OSError is what every
-        # caller already treats as "fall back to the line flow".
-        raise OSError("curses is not available in this Python")
-    in_fd = _fileno(input_stream)
-    out_fd = _fileno(output_stream)
-    if in_fd is None or out_fd is None:
-        raise OSError("curses requires streams backed by real file descriptors")
-    for stream in (sys.stdin, sys.stdout, sys.stderr):
-        try:
-            stream.flush()
-        except (AttributeError, OSError, ValueError):
-            pass
+    global _INPUT_STATE, _SCREEN_PROVENANCE
+    if _INPUT_STATE is not None:
+        raise CursesError("a curses input context is already active")
     saved: list[tuple[int, int]] = []
-    saved_attrs: list[Any] | None = None
+    saved_attrs: list[tuple[int, list[Any] | None]] = []
+    state: InputState | None = None
+    failure: BaseException | None = None
     try:
+        if curses is None:
+            raise OSError("curses is not available in this Python")
+        in_fd = _fileno(input_stream)
+        out_fd = _fileno(output_stream)
+        if in_fd is None or out_fd is None:
+            raise OSError("curses requires streams backed by real file descriptors")
+        for stream in (sys.stdin, sys.stdout, sys.stderr):
+            try:
+                stream.flush()
+            except (AttributeError, OSError, ValueError):
+                pass
         if in_fd != 0:
             saved.append((0, os.dup(0)))
             os.dup2(in_fd, 0)
         if out_fd != 1:
             saved.append((1, os.dup(1)))
             os.dup2(out_fd, 1)
-        # cf[10]: snapshot the caller's terminal only now that fd 0 is it.
-        if termios is not None:
-            try:
-                if os.isatty(0):
-                    saved_attrs = termios.tcgetattr(0)
-            except termios.error:
-                saved_attrs = None
+        for fd in (0, 1):
+            saved_attrs.append((fd, _terminal_attrs(fd)))
+        if not all(_input_mode_supported(attrs) for _, attrs in saved_attrs) or not _screen_admitted():
+            print(INPUT_MODE_NOTICE, file=output_stream, flush=True)
+            raise CursesError(INPUT_MODE_ERROR)
+        state = InputState(0)
+        _INPUT_STATE = state
 
         def _wrapped(stdscr: Any) -> Any:
+            global _SCREEN_PROVENANCE
+            _SCREEN_PROVENANCE = "owned"
+            state.window = stdscr
+            if not _input_terminals_supported(0, 1):
+                raise CursesError(INPUT_MODE_ERROR)
             if palette is not None:
                 init_curses_colors(palette)
             if "ESCDELAY" not in os.environ:
@@ -1704,29 +1837,62 @@ def run_curses_on_streams(
                     curses.set_escdelay(ESC_DELAY_MS)
                 except (AttributeError, CursesError):
                     pass
-            if termios is not None:
-                try:
-                    attrs = termios.tcgetattr(0)
-                    if attrs[0] & termios.IXON:
-                        attrs[0] &= ~termios.IXON
-                        termios.tcsetattr(0, termios.TCSANOW, attrs)
-                        # suspended_curses/reset_prog_mode keep IXON off.
-                        curses.def_prog_mode()
-                except (termios.error, CursesError):
-                    pass
+            try:
+                attrs = termios.tcgetattr(0)
+                if attrs[0] & termios.IXON:
+                    attrs[0] &= ~termios.IXON
+                    termios.tcsetattr(0, termios.TCSANOW, attrs)
+                    # suspended_curses/reset_prog_mode keep IXON off.
+                    curses.def_prog_mode()
+            except (termios.error, CursesError):
+                pass
             stdscr.keypad(True)
             return app(stdscr)
 
+        _SCREEN_PROVENANCE = "uncertain"
         return curses.wrapper(_wrapped)
+    except BaseException as exc:
+        failure = exc
+        raise
     finally:
-        if saved_attrs is not None:
+        # Preserve the first failure while attempting every remaining
+        # cleanup stage, including both ttys before either fd is restored.
+        def cleanup(function: Callable[..., Any], *args: Any) -> None:
+            nonlocal failure
             try:
-                termios.tcsetattr(0, termios.TCSANOW, saved_attrs)
+                function(*args)
+            except BaseException as exc:
+                if failure is None:
+                    failure = exc
+
+        def restore_attrs(fd: int, attrs: list[Any]) -> None:
+            try:
+                termios.tcsetattr(fd, termios.TCSANOW, attrs)
             except termios.error:
-                pass
-        for fd, duplicate in saved:
-            os.dup2(duplicate, fd)
-            os.close(duplicate)
+                raise CursesError("terminal attributes could not be restored") from None
+
+        try:
+            try:
+                if state is not None:
+                    cleanup(state.clear)
+            finally:
+                _INPUT_STATE = None
+                try:
+                    cleanup(_carry_reply, None)
+                finally:
+                    cleanup(_REPLY_TAIL.clear)
+                    cleanup(_REPLY_SINCE.clear)
+        finally:
+            try:
+                for fd, attrs in saved_attrs:
+                    if attrs is not None:
+                        cleanup(restore_attrs, fd, attrs)
+            finally:
+                for fd, duplicate in saved:
+                    cleanup(os.dup2, duplicate, fd)
+                    cleanup(os.close, duplicate)
+        if failure is not None:
+            raise failure
 
 
 @contextlib.contextmanager
@@ -1741,16 +1907,25 @@ def suspended_curses(win: Any) -> Iterator[None]:
     if curses is None:
         yield
         return
+    state = _input_state(win) if _INPUT_STATE is not None else None
+    if state is not None:
+        state.suspended = True
     try:
         curses.def_prog_mode()
         curses.endwin()
     except CursesError:
+        if state is not None:
+            raise
         yield
         return
     try:
         yield
     finally:
         curses.reset_prog_mode()
+        if state is not None:
+            if not _input_terminals_supported(state.fd, 1):
+                raise CursesError(INPUT_MODE_ERROR)
+            state.suspended = False
         try:
             win.refresh()
         except CursesError:

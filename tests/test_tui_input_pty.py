@@ -10,6 +10,7 @@ actions and W on Providers and Direct are driven key by key.
 
 from __future__ import annotations
 
+import json
 import shutil
 import signal
 import tempfile
@@ -421,6 +422,157 @@ class SessionPreviewTests(_InputCase):
         self.press(child, b"x", b"Forget session")
         self.press(child, b"\r", b"Forget cancelled.")
         self.finish_unchanged(child)
+
+
+class ByteReaderPTYTests(unittest.TestCase):
+    def child(self, count, *, env=None, cycles=1):
+        code = f"""
+import codecs, curses, json, locale, os, sys
+from charmer import tui
+for name in ('C.UTF-8', 'en_US.UTF-8', 'UTF-8'):
+    try:
+        locale.setlocale(locale.LC_CTYPE, name)
+        break
+    except locale.Error:
+        continue
+assert codecs.lookup(locale.getencoding()).name == 'utf-8'
+keys = []
+def app(win):
+    tui.safe_add(win, 0, 2, 'BYTE-INPUT-READY')
+    win.refresh()
+    os.write(1, ('DELAY=' + str(curses.get_escdelay()) + '\\n').encode())
+    for _ in range({count}):
+        key = tui.read_key(win)
+        keys.append([key.kind, key.ch])
+        os.write(1, ('STEP=' + str(len(keys)) + '\\n').encode())
+try:
+    for cycle in range({cycles}):
+        tui.run_curses_on_streams(app, sys.stdin, sys.stdout, palette=tui.MONO_PALETTE)
+        print('CYCLE=' + str(cycle + 1), flush=True)
+except tui.CursesError as error:
+    print('INPUT_ERROR=' + str(error), flush=True)
+    raise SystemExit(2)
+print('KEYS=' + json.dumps(keys), flush=True)
+"""
+        child = PTYProcess(code, extra_env=env)
+        self.addCleanup(child.close)
+        child.read_until(b"BYTE-INPUT-READY", FIXTURE_TIMEOUT)
+        return child
+
+    def finish_keys(self, child, expected):
+        code, output, after = child.finish()
+        self.assertEqual(code, 0, output)
+        self.assertEqual(json.loads(_line_of(output, b"KEYS=")), expected)
+        self.assertNotIn(b"Traceback", output)
+        self.assertEqual(after, child.before)
+
+    def test_split_utf8_past_slice_and_across_resize(self):
+        child = self.child(2)
+        child.send(b"\xe7")
+        time.sleep(0.16)
+        child.resize(25, 81)
+        child.read_until(b"STEP=1", FIXTURE_TIMEOUT)
+        child.send(b"\x95\x8c")
+        self.finish_keys(child, [["resize", ""], ["char", "界"]])
+
+    def test_alt_unicode_tail_survives_peek_expiration(self):
+        child = self.child(2)
+        child.send(b"\x1b\xc3")
+        child.read_until(b"STEP=1", FIXTURE_TIMEOUT)
+        child.send(b"\xb6")
+        self.finish_keys(child, [["esc", ""], ["char", "ö"]])
+
+    def test_explicit_long_escdelay_keeps_native_keypad_continuation(self):
+        child = self.child(3, env={"ESCDELAY": "600"})
+        child.read_until(b"DELAY=600", FIXTURE_TIMEOUT)
+        child.send(b"\x1bO")
+        # Keypad's continuation wait is independent of the 100 ms slice.
+        time.sleep(0.16)
+        child.send(b"A")
+        child.read_until(b"STEP=1", FIXTURE_TIMEOUT)
+        child.send(b"\x1bx")
+        self.finish_keys(child, [["up", ""], ["esc", ""], ["char", "x"]])
+
+    def test_reentry_reuses_owned_screen_without_losing_eight_bit_input(self):
+        child = self.child(1, cycles=2)
+        child.send(b"\xc3\xb6")
+        child.read_until(b"CYCLE=1", FIXTURE_TIMEOUT)
+        child.send(b"\xc3\xb6")
+        self.finish_keys(child, [["char", "ö"], ["char", "ö"]])
+
+    def test_independent_output_tty_with_istrip_is_refused_and_restored(self):
+        code = """
+import copy, os, pty, select, sys, termios
+from charmer import tui
+
+def identity(fd):
+    info = os.fstat(fd)
+    return info.st_dev, info.st_ino, info.st_rdev
+
+master, slave = pty.openpty()
+try:
+    original_fds = [identity(fd) for fd in (0, 1)]
+    original_attrs = [termios.tcgetattr(fd) for fd in (0, 1)]
+    assert all(os.isatty(fd) for fd in (0, 1, slave)), 'fixture requires owned ttys'
+    assert all(attrs[2] & termios.CSIZE == termios.CS8 and not attrs[0] & termios.ISTRIP
+               for attrs in original_attrs), 'fixture input/output A must be eight-bit'
+    output_attrs = copy.deepcopy(termios.tcgetattr(slave))
+    assert output_attrs[2] & termios.CSIZE == termios.CS8, 'fixture output B must be CS8'
+    output_attrs[0] |= termios.ISTRIP
+    termios.tcsetattr(slave, termios.TCSANOW, output_attrs)
+    output_attrs = termios.tcgetattr(slave)
+    assert output_attrs[0] & termios.ISTRIP, 'fixture output B did not retain ISTRIP'
+    assert identity(slave) != original_fds[0], 'fixture requires independent ttys'
+    entered = []
+    wrappers = []
+    original_wrapper = tui.curses.wrapper
+    def wrapper(func):
+        wrappers.append(True)
+        return original_wrapper(func)
+    def app(win):
+        entered.append(True)
+        raise AssertionError('incompatible output reached app')
+    with os.fdopen(os.dup(slave), 'w', buffering=1) as output:
+        tui.curses.wrapper = wrapper
+        refused = False
+        try:
+            try:
+                tui.run_curses_on_streams(app, sys.stdin, output, palette=tui.MONO_PALETTE)
+            except tui.CursesError as error:
+                assert str(error) == tui.INPUT_MODE_ERROR, 'unexpected refusal'
+                refused = True
+        finally:
+            tui.curses.wrapper = original_wrapper
+        assert refused and not wrappers and not entered, 'refusal must precede curses'
+        assert [identity(fd) for fd in (0, 1)] == original_fds, 'descriptor restoration'
+        assert [termios.tcgetattr(fd) for fd in (0, 1)] == original_attrs, 'tty A restoration'
+        assert termios.tcgetattr(slave) == output_attrs, 'tty B restoration'
+        assert tui._INPUT_STATE is None, 'input state cleanup'
+        assert select.select([master], [], [], 1)[0], 'notice missing on tty B'
+        notice = os.read(master, 4096).replace(b'\\r\\n', b'\\n')
+        assert notice == (tui.INPUT_MODE_NOTICE + '\\n').encode(), 'notice destination'
+finally:
+    os.close(master)
+    os.close(slave)
+print('INDEPENDENT_TTYS_REFUSED_AND_RESTORED', flush=True)
+"""
+        child = PTYProcess(code)
+        self.addCleanup(child.close)
+        status, output, after = child.finish()
+        self.assertEqual(status, 0, output)
+        self.assertIn(b"INDEPENDENT_TTYS_REFUSED_AND_RESTORED", output)
+        self.assertNotIn(b"full-screen input requires", output)
+        self.assertNotIn(b"Traceback", output)
+        self.assertEqual(after, child.before)
+
+    def test_malformed_input_fails_and_restores_exact_attributes(self):
+        child = self.child(1)
+        child.send(b"\xff")
+        code, output, after = child.finish()
+        self.assertEqual(code, 2, output)
+        self.assertIn(b"INPUT_ERROR=terminal input is invalid for the locale encoding", output)
+        self.assertNotIn(b"Traceback", output)
+        self.assertEqual(after, child.before)
 
 
 if __name__ == "__main__":

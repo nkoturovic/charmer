@@ -562,6 +562,46 @@ Profile lineups and direct lineups, one compile path:
 | `portability.py` | operator-state export document, import planner, export receipt | a semantic projection, never a file archive or a secret; imported route approvals and admissions are inert re-approval requests (no source-host trust) |
 | `cli/commands/explain.py`, `usage.py`, `plan.py`, `portability.py` | the report and portability command adapters | `explain`, `usage` and `plan` are read-only (report snapshot, no store creation or shim refresh); `plan` also owns the installer-facing application boundary (`application_refusal`, `plan_application`); `export`/`import --apply` run the guarded command service inside one served-change phase |
 
+**Shared TUI input.** `tui.InputState` belongs to one `run_curses_on_streams`
+context and its window: fd 0 (after redirection), a non-consuming poll, strict
+incremental decoding with `locale.getencoding()`, decoded pending characters,
+separate logical pushback and an early-error streak. Byte `getch` uses 100 ms
+ordinary slices; `_peek` has one monotonic 80 ms budget across a character's
+bytes. Idle slices produce no key or redraw. Partial characters survive slices,
+peek expiry, special/resize keys and same-context suspension. Keypad parsing and
+25 ms `ESCDELAY` (or its explicit override) stay native: its per-missing-byte waits
+can overrun those Python budgets, and a returned key is never discarded. After
+ERR, poll HUP/ERR/NVAL or an invalid fd fails with fixed `CursesError`; POLLIN
+alone proves neither a complete key nor EOF. Reads of at least the requested
+wait minus 5 ms reset the streak; materially shorter waits of at least 10 ms
+increment it; sub-10 ms tails do neither. Early ERR recovery sleeps out the
+scheduled slice, capped by the peek deadline, and fails on the fifth consecutive
+early error. This finite policy can also reject indistinguishable benign
+interruptions; it does not diagnose EOF. Invalid encoding fails with fixed text;
+input and timeout exceptions, including `KeyboardInterrupt`, propagate.
+
+Full-screen admission verifies that both actual redirected fds 0/1 are ttys
+with CS8 and ISTRIP clear before the first product-owned initialization, on
+reentry and after program-mode restoration. Input and output may be independent
+terminals: the input flags control kernel byte delivery, while ncurses 6.6 derives
+SCREEN's initial meta flag from the output terminal's saved attributes. Requiring
+fd 1 to be a tty also prevents its non-tty fallback to fd 2. The gate never
+changes those flags or emits `meta(True)`. This deliberately narrows support:
+CS7 with ISTRIP clear could work through the wide reader. Public
+`isendwin()` initialization status plus product provenance rejects an unowned
+initialized SCREEN; endwin does not destroy it, and a failed/partial
+initialization remains uncertain and cannot be retried as owned. Public Python
+curses exposes no SCREEN identity: product ownership assumes no other component
+replaces an already-owned SCREEN. Automatic colour queries check both supplied
+stream fds and SCREEN provenance; known admission refusals skip queries and print
+a fixed notice before wrapper. Callers keep their own existing fallback/error
+flows, not a universal line fallback. Admitted pre-query OSC carry survives entry.
+Context exit/failure/interrupt clears Python-owned input and OSC state without
+flushing native or kernel input. Both tty snapshots are taken after redirection;
+teardown precedes restoration on fd 0 then fd 1, before either fd is restored.
+Cleanup failures cannot skip later restoration attempts or replace the original
+failure. Suspension retains the decoder and queues.
+
 ### 3.1 The `charmer.cli` package
 
 The dependency direction is **entry → commands and launch flows → screens
