@@ -328,10 +328,13 @@ Profile lineups and direct lineups, one compile path:
    never hidden, never drift. Compaction env is computed over the lead set
    only: one window (min(window ceiling, the lead set's smallest provider
    bound)) and percent for the lead and every 1M-class agent.
-   `CLAUDE_CODE_RETRY_WATCHDOG=1` is pinned in the durable settings env:
-   managed sessions auto-recover transient upstream errors instead
-   of dying for lack of a typed "continue" (mid-stream-after-content errors
-   remain unrecoverable at the pinned client — documented).
+   `CLAUDE_CODE_RETRY_WATCHDOG=1` is pinned in the durable settings env.
+   Earlier-cut recovery remains a required gate. With client 2.1.302 and the
+   tested 8.0.33 gateway candidate, missing `message_stop` after completed
+   content and terminal `message_delta` can instead produce client
+   false-success without recovery, despite the gateway’s SSE error. This
+   disclosed known negative is not recovery or proof of harmlessness; see
+   [the late-stream limit](docs/troubleshooting.md#late-stream-completion-limit).
    Managed scopes deny `Agent(fork)` and set `CLAUDE_CODE_FORK_SUBAGENT=0`
    in flag settings; the launch also unsets the inherited variable. Ordinary
    terminal subagents may run in the foreground; background stays the default.

@@ -702,8 +702,8 @@ class NativeReplayTests(unittest.TestCase):
                 gateway.close()
 
     def test_d216_known_negative_late_terminal_after_completed_text_or_tool(self):
-        # Revalidate the proposed KNOWN-NEGATIVE with conformant starts.
-        # Acceptance is suspended pending this corrected evidence and review;
+        # Revalidate the known-negative expectation with conformant starts.
+        # Late client false-success is not recovery or proof of harmlessness;
         # retain the expected observation, never weaken it to force a pass.
         # Changes (including improvement) require explicit reconciliation.
         # Buffered complete-SSE reconstruction establishes ordered content and
@@ -777,7 +777,7 @@ class NativeReplayTests(unittest.TestCase):
                                 client_usage=outcome.get("usage"), tool_executions=calls, upstream=upstream_rows,
                                 downstream=relay.rows, ordinary_tool_continuations=sum(row["tool_result_count"] > 0 for row in relay.rows),
                                 relay="buffered complete SSE reconstruction; no eager timing claim",
-                                disposition="corrected-fixture observation; late-terminal acceptance suspended pending review" if cut
+                                disposition="known-negative expectation: late client false-success without recovery" if cut
                                             else "healthy positive control")
                             paired_usage[cut] = outcome["usage"]
                             self.assertFalse(result.timed_out)
