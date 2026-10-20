@@ -295,7 +295,7 @@ jobs:
           umask 077
           python3 tools/test.py --tier full --list | grep -v '^tests.test_tui_pty$' >"$RUNNER_TEMP/modules"
           mapfile -t modules <"$RUNNER_TEMP/modules"
-          python3 tools/test.py --tier full --claude "$RUNNER_TEMP/claude" --require 'DistributionTests' "${modules[@]}"
+          python3 tools/test.py --tier full --verbose --claude "$RUNNER_TEMP/claude" --require 'DistributionTests' "${modules[@]}"
       # The bundled runtime's version under a locale that is neither UTF-8
       # nor C. -X warn_default_encoding reports every implicit text
       # encoding in the runner's process (where the tests import the

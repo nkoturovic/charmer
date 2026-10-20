@@ -467,6 +467,16 @@ class WorkflowTests(unittest.TestCase):
                 with self.subTest(f"{name}: {job}"):
                     self.assertRegex(body, r"timeout-minutes: \d+")
 
+    def test_full_battery_reports_test_ids_and_skip_reasons(self) -> None:
+        battery = _jobs(self.texts["ci.yml"])["battery"]
+        full = [step for step in _steps(battery)
+                if "- name: Full suite except the terminal journeys (" in step]
+        self.assertEqual(len(full), 1)
+        command = ('python3 tools/test.py --tier full --verbose --claude "$RUNNER_TEMP/claude" '
+                   "--require 'DistributionTests' "
+                   '"${modules[@]}"')
+        self.assertIn(command, _commands(full[0]))
+
     def test_referenced_repository_paths_exist(self) -> None:
         referenced = set()
         for text in self.texts.values():
