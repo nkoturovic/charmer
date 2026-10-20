@@ -1235,7 +1235,7 @@ class CutoverTests(unittest.TestCase):
 
 
 class AdmittedPatchGateTests(unittest.TestCase):
-    """Exact package selections from the approved lane reports; no patch 11."""
+    """Exact package selections for admitted patches; no patch 11."""
 
     GATES = {'./sdk/cliproxy/auth': ['TestCM053CredentialSaveGenerationOrdering',
                              'TestCM053CredentialSaveFailedOncePerTransition',
@@ -1388,7 +1388,7 @@ class AdmittedPatchGateTests(unittest.TestCase):
         patch = (PATCH_DIR / "cli-proxy-api-no-antigravity-egress.patch").read_text()
         self.assertEqual(set(re.findall(r"^\+func (Test\w*NoAntigravityEgress\w+|Test\w*NoEgress\w+|TestCM053LocalMode\w+)\(",
                                        patch, re.MULTILINE)), set(names))
-        # The SDK path's catalog updaters read the same policy (L1 review R1),
+        # The SDK path's catalog updaters read the same policy,
         # and an explicit remote catalog source is refused in local mode.
         self.assertIn("+func ReplaceCatalogFetchers(", patch)
         self.assertIn("+func refuseRemoteCatalogSources(sources CatalogSources) CatalogSources {", patch)

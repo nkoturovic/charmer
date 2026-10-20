@@ -1,4 +1,4 @@
-"""D212 traffic through the actual gateway and disposable upstreams only.
+"""Traffic through the actual gateway and disposable upstreams only.
 
 Cache counts are fixture values: this proves transport/replay, not provider cache
 accuracy or a live qualification. Native runs use the pinned client and netns
@@ -85,7 +85,7 @@ def message_reply(body, *, cache=0, thinking=False):
 
 
 def text_tool_events(payload):
-    """The L4 text/tool fixture's SSE events; the shared helper stays untouched."""
+    """The text/tool fixture's SSE events; the shared helper stays untouched."""
     events = list(probe._sse_message(payload).events)
     events[0] = ("message_start", {"type": "message_start", "message": initial_message(payload)})
     events[-2] = ("message_delta", {"type": "message_delta", "delta": {
@@ -655,14 +655,14 @@ class NativeReplayTests(unittest.TestCase):
                 gateway.close()
 
     def test_d216_known_negative_late_terminal_after_completed_text_or_tool(self):
-        # Revalidate the proposed D216 KNOWN-NEGATIVE with conformant starts.
+        # Revalidate the proposed KNOWN-NEGATIVE with conformant starts.
         # Acceptance is suspended pending this corrected evidence and review;
         # retain the expected observation, never weaken it to force a pass.
         # Changes (including improvement) require explicit reconciliation.
         # Buffered complete-SSE reconstruction establishes ordered content and
         # bounded execution counts, NOT eager timing or general exactly-once
         # behavior. No previous-version baseline has been established.
-        self.assertEqual(self.version, "2.1.302", "re-earn/reconcile D216 for a changed client")
+        self.assertEqual(self.version, "2.1.302", "requalify late-terminal evidence for a changed client")
         for tool in (False, True):
             paired_usage = {}
             for cut in (False, True):
@@ -723,20 +723,20 @@ class NativeReplayTests(unittest.TestCase):
                                 trusted=self.trusted, fixture=fixture, provider=relay, allow_real=True, environ=environ, timeout=45)
                             outcome = json.loads(result.stdout)
                             calls = (counter.read_text().splitlines().count("call v8counter") if counter.exists() else 0)
-                            facts(gateway, "D216-corrected-late" if cut else "D216-corrected-healthy",
+                            facts(gateway, "corrected-late-terminal" if cut else "corrected-healthy-control",
                                 client_version=self.version, client_sha256=self.trusted.sha256,
                                 tool=tool, cut=cut, returncode=result.returncode,
                                 timed_out=result.timed_out, is_error=outcome.get("is_error"), final_text=outcome.get("result"),
                                 client_usage=outcome.get("usage"), tool_executions=calls, upstream=upstream_rows,
                                 downstream=relay.rows, ordinary_tool_continuations=sum(row["tool_result_count"] > 0 for row in relay.rows),
                                 relay="buffered complete SSE reconstruction; no eager timing claim",
-                                disposition="corrected-fixture observation; D216 acceptance suspended pending review" if cut
+                                disposition="corrected-fixture observation; late-terminal acceptance suspended pending review" if cut
                                             else "healthy positive control")
                             paired_usage[cut] = outcome["usage"]
                             self.assertFalse(result.timed_out)
                             self.assertTrue(result.daemon and result.daemon.unchanged)
                             self.assertEqual(relay.completion_errors(), [])
-                            self.assertEqual(gateway.version, "8.0.33", "re-earn/reconcile D216 for a changed gateway")
+                            self.assertEqual(gateway.version, "8.0.33", "requalify late-terminal evidence for a changed gateway")
                             expected_start = {"stop_reason": None, "stop_sequence": None, "output_tokens": 0}
                             self.assertTrue(all(row["initial_fields"] == expected_start for row in upstream_rows))
                             self.assertTrue(all(row.get("reply_initial_fields") == [expected_start] for row in relay.rows))
@@ -771,7 +771,7 @@ class NativeReplayTests(unittest.TestCase):
                 self.assertEqual(paired_usage[False], paired_usage[True], "healthy/late client usage changed")
 
     def test_early_cut_streams_recover_with_watchdog_enabled(self):
-        # The later cut after an end_turn delta is the separate D216 negative,
+        # The later cut after an end_turn delta is the separate late-terminal negative,
         # never counted as recovery here.
         for family, alias in (("claude-before-delta", "gwtest-cc-output-config-high"),
                               ("codex", "gwtest-codex-reasoning-effort-high"),
@@ -783,7 +783,7 @@ class NativeReplayTests(unittest.TestCase):
                     count[0] += 1
                     status, kind, data = harness.fake_reply(route, body, raw)
                     if family.startswith("claude") and body.get("stream"):
-                        # Keep the shared responder unchanged. This L4 control
+                        # Keep the shared responder unchanged. This control
                         # owns a conformant start and leaves its terminal usage
                         # and completed content untouched before making the cut.
                         frames = harness.Reply(status, {}, data).events()

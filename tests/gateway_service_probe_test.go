@@ -206,7 +206,7 @@ func TestOmissionCodexRefreshLead(t *testing.T) {
 	}
 }
 
-// D217 counts only actors and sockets this fixture owns, not a noisy global
+// The fixture counts only actors and sockets it owns, not a noisy global
 // goroutine total. The existing durable-save/join probes remain separate.
 type d217ServiceResources struct {
 	watchers, handlers, readers, servers, connections atomic.Int32
@@ -388,7 +388,7 @@ func TestGatewayShutdownResources(t *testing.T) {
 				next.Close()
 				t.Fatal("shutdown listener still accepts connections")
 			}
-			t.Logf("D217 shutdown retained_control=%t owned_resources=%v", retainWatcher, resources.snapshot())
+			t.Logf("shutdown retained_control=%t owned_resources=%v", retainWatcher, resources.snapshot())
 		})
 	}
 }

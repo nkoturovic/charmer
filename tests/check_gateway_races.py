@@ -28,7 +28,7 @@ build's startup-only baseline, so startup execution cannot stand in for the
 reload phase. Otherwise the observation is recorded as incomplete
 (inconclusive). A genuine detector reproduction is always retained.
 
-D217's explicit --matrix-runs 100 uses 100 independent invocations per cell,
+Explicit --matrix-runs 100 uses 100 independent invocations per cell,
 with every required root executed once in each invocation. Inner workloads
 stay fixed (accepted reloads: 20 writes; rejected reloads: one write; both
 B108 HTTP shapes: 8 credentials x 16 requests). Normal nonmatrix bounds stay
@@ -757,7 +757,7 @@ def matrix_roots(sid):
 
 
 def matrix_workload(sid, run, baseline):
-    """D217's inner work, checked for EACH independent invocation."""
+    """Inner work, checked for EACH independent invocation."""
     result = result_of(run)
     if sid == "unit-pair1-reconcile-clone":
         return result.get("rounds") == result.get("reconciles") == result.get("updates") == 2000
@@ -2043,7 +2043,7 @@ def parse_args(argv=None):
                         help="diagnostic-only omission; must be dependency closed")
     parser.add_argument("--series-diagnostics", help="reuse a built gateway-race.nix output (series)")
     parser.add_argument("--matrix-runs", type=int, choices=(MATRIX_RUNS,),
-                        help="D217: 100 independent invocations per cell; fixed inner workloads")
+                        help="100 independent invocations per cell; fixed inner workloads")
     parser.add_argument("--startups", type=int)
     parser.add_argument("--reloads", type=int)
     parser.add_argument("--http-runs", type=int)
