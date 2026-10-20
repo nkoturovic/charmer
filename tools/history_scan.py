@@ -39,6 +39,14 @@ ends must name commits present in the repository (a shallow clone without
 the base is an error, never an empty scan). Without ``--range`` everything
 reachable from every ref is scanned.
 
+One additional synthetic classification applies only to generic bare-key
+assignments in established Go source: a complete ASCII selector-valued
+field in a validated, complete new-file section of a plain Git patch.
+The hit and its location, length and entropy are retained. Context is
+eligible only for blobs whose known selected-history aliases are all
+``.patch`` files, with commit-rooted selection; ordinary source files and
+commit/tag messages cannot opt in by content alone.
+
 ``--out`` writes ``summary.json``, ``credentials.json`` and
 ``identifiers.json`` (directory 0700, files 0600). Exit 0: no candidate
 credential; 1: candidates found; 2: usage or git error (a missing revision
@@ -49,6 +57,7 @@ included). Stdlib only.
 from __future__ import annotations
 
 import argparse
+import bisect
 import collections
 import functools
 import json
@@ -75,6 +84,23 @@ found, not that no secret is present. Known blind spots:
   - a passphrase made only of words looks like an identifier and is
     reported synthetic;
   - only the shapes the module documentation lists are recognised.
+Source-context classification is deliberately narrow: plain Git patches,
+LF framing, unquoted ASCII paths, regular new Go files, one full addition
+hunk with exact counts, a Go package/declaration prefix and completely
+known lexical state with balanced delimiters. Only complete bare ASCII
+selector fields ending in a comma or closing brace qualify, never specific
+credential shapes. This is not a Go compiler. Every outer section must have
+consistent headers and exact old/new hunk counts and positions before any
+Go context is authorized. Unsupported or malformed outer framing disables
+context for the whole blob: preambles, renames/copies, binary or mode-change
+metadata, no-newline markers and sections without hunks are unsupported.
+Valid midfile/multiple-hunk sections can frame other files but cannot prove
+complete Go source themselves. Ordinary source, unsupported Go syntax,
+unknown aliases and non-commit or uncertain ref roots leave verdicts
+unchanged. A tag is known
+commit-rooted only when Git reports its peeled type as commit; this may
+include recursively peeled nested tags. A reported tag, unknown type or
+non-commit type cannot establish source context.
 """
 
 # --------------------------------------------------------------- identifiers
@@ -470,9 +496,268 @@ class CredentialHit:
     occurrences: int = 1  # commits whose tree introduced this blob at some path
 
 
-def credential_hits(data: bytes) -> Iterator[tuple[str, int, int, float, str, str]]:
-    """``(shape, line, length, entropy, verdict, reason)`` per hit; never the value."""
+# This is a bounded recognizer, not a Go parser. Every outer patch section
+# must validate before any complete new Go file can establish source context;
+# an arbitrary diff-looking header never resynchronizes malformed contents.
+_PATCH_HEADER = re.compile(rb"diff --git a/([A-Za-z0-9_./-]+) b/([A-Za-z0-9_./-]+)\n")
+_PATCH_INDEX = re.compile(rb"index ([0-9a-f]{7,64})\.\.([0-9a-f]{7,64})(?: (100644|100755))?\n")
+_PATCH_NUMBER = rb"(?:0|[1-9][0-9]{0,18})"
+_PATCH_HUNK = re.compile(
+    rb"@@ -(" + _PATCH_NUMBER + rb")(?:,(" + _PATCH_NUMBER + rb"))? \+("
+    + _PATCH_NUMBER + rb")(?:,(" + _PATCH_NUMBER + rb"))? @@(?: [^\r\n]*)?\n")
+_NEW_FILE_INDEX = re.compile(rb"index (0{7,64})\.\.([0-9a-f]{7,64})\n")
+_FULL_NEW_HUNK = re.compile(rb"@@ -0,0 \+1,([1-9][0-9]*) @@\n")
+_GO_IDENT = rb"[A-Za-z_][A-Za-z0-9_]*"
+_GO_PACKAGE = re.compile(rb"\A[ \t\r\n]*package[ \t]+(" + _GO_IDENT + rb")[ \t]*(?:\r?\n|;)")
+_GO_FIELD = re.compile(
+    rb"(?<![A-Za-z0-9_])" + _GO_IDENT + rb"[ \t]*:[ \t]*("
+    + _GO_IDENT + rb"(?:\." + _GO_IDENT + rb")+)[ \t]*[,}]")
+_GO_KEYWORDS = frozenset(
+    b"break case chan const continue default defer else fallthrough for func go goto if import "
+    b"interface map package range return select struct switch type var".split())
+_GO_ESCAPE = rb"\\(?:[abfnrtv\\]|[0-3][0-7]{2}|x[0-9a-fA-F]{2}|u[0-9a-fA-F]{4}|U[0-9a-fA-F]{8})"
+_GO_STRING = rb'"(?:[^"\\\r\n]|' + _GO_ESCAPE + rb'|\\")*"'
+_GO_RUNE = rb"'(?:[^'\\\r\n]|" + _GO_ESCAPE + rb"|\\')'"
+_GO_QUOTED = re.compile(_GO_STRING + b"|" + _GO_RUNE)
 
+
+def _go_code(source: bytes) -> bytes | None:
+    """Mask literals/comments, preserving offsets and literal openers.
+
+    Keeping an opener prevents a quoted value or intervening literal from
+    becoming whitespace that the bare-field recognizer could skip over.
+    Only ASCII code is supported; comments and strings may contain UTF-8.
+    """
+
+    if b"\0" in source:
+        return None
+    try:
+        source.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+    code = bytearray(source)
+    index = 0
+    while index < len(source):
+        literal = False
+        if source.startswith(b"//", index):
+            end = source.find(b"\n", index + 2)
+            end = len(source) if end < 0 else end
+        elif source.startswith(b"/*", index):
+            end = source.find(b"*/", index + 2)
+            if end < 0:
+                return None
+            end += 2
+        elif source[index] == ord("`"):
+            literal = True
+            end = source.find(b"`", index + 1)
+            if end < 0:
+                return None
+            end += 1
+        elif source[index] in (ord('"'), ord("'")):
+            literal = True
+            quoted = _GO_QUOTED.match(source, index)
+            if quoted is None:
+                return None
+            end = quoted.end()
+        else:
+            byte = source[index]
+            if (byte >= 127 or (byte < 32 and byte not in (9, 10, 13)) or byte == ord("\\")
+                    or source.startswith(b"*/", index)):
+                return None
+            index += 1
+            continue
+        code[index:end] = re.sub(rb"[^\r\n]", b" ", source[index:end])
+        if literal:
+            code[index] = source[index]
+        index = end
+    return bytes(code)
+
+
+def _go_selector_spans(source: bytes) -> set[tuple[int, int]]:
+    """Complete bare selector-valued fields in lexically established Go code."""
+
+    code = _go_code(source)
+    if code is None:
+        return set()
+    package = _GO_PACKAGE.match(code)
+    if (package is None or package.group(1) == b"_" or package.group(1) in _GO_KEYWORDS
+            or re.match(rb"[ \t\r\n]*(?:import|const|type|var|func)\b", code[package.end():]) is None):
+        return set()
+    fields = {match.start(): match for match in _GO_FIELD.finditer(code)}
+    spans: set[tuple[int, int]] = set()
+    stack: list[int] = []
+    pairs = {ord("}"): ord("{"), ord(")"): ord("("), ord("]"): ord("[")}
+    previous = None
+    for offset, byte in enumerate(code):
+        field = fields.get(offset)
+        if field is not None and stack and stack[-1] == ord("{") and previous in (ord("{"), ord(",")):
+            parts = field.group(1).split(b".")
+            if all(part != b"_" and part not in _GO_KEYWORDS for part in parts):
+                spans.add(field.span(1))
+        if byte in (ord("{"), ord("("), ord("[")):
+            stack.append(byte)
+        elif byte in pairs:
+            if not stack or stack.pop() != pairs[byte]:
+                return set()
+        if byte not in (ord(" "), 9, 10, 13):
+            previous = byte
+    return set() if stack else spans
+
+
+def _valid_patch_section(section: Sequence[bytes], header: re.Match) -> bool:
+    """Validate a regular add/delete/modify section, including every hunk.
+
+    Renames, copies, binary/mode-change metadata, no-newline markers and
+    other unsupported contents are deliberately not synchronization points.
+    """
+
+    target = header.group(2)
+    if (header.group(1) != target or any(part in (b"", b".", b"..") for part in target.split(b"/"))
+            or len(section) < 4):
+        return False
+    cursor = 1
+    new_file = deleted_file = False
+    if section[cursor].startswith(b"new file mode "):
+        if section[cursor] not in (b"new file mode 100644\n", b"new file mode 100755\n"):
+            return False
+        new_file = True
+        cursor += 1
+    elif section[cursor].startswith(b"deleted file mode "):
+        if section[cursor] not in (b"deleted file mode 100644\n", b"deleted file mode 100755\n"):
+            return False
+        deleted_file = True
+        cursor += 1
+    if cursor < len(section) and section[cursor].startswith(b"index "):
+        index = _PATCH_INDEX.fullmatch(section[cursor])
+        if (index is None or len(index.group(1)) != len(index.group(2))
+                or index.group(1) == index.group(2)
+                or (index.group(3) is not None and (new_file or deleted_file))):
+            return False
+        old_zero = set(index.group(1)) == {ord("0")}
+        new_zero = set(index.group(2)) == {ord("0")}
+        if old_zero != new_file or new_zero != deleted_file:
+            return False
+        cursor += 1
+    old_path = b"/dev/null" if new_file else b"a/" + target
+    new_path = b"/dev/null" if deleted_file else b"b/" + target
+    if (len(section) <= cursor + 2 or section[cursor] != b"--- " + old_path + b"\n"
+            or section[cursor + 1] != b"+++ " + new_path + b"\n"):
+        return False
+    cursor += 2
+    hunks = delta = old_end = new_end = 0
+    while cursor < len(section):
+        hunk = _PATCH_HUNK.fullmatch(section[cursor])
+        if hunk is None:
+            return False
+        old_start, new_start = int(hunk.group(1)), int(hunk.group(3))
+        old_count, new_count = int(hunk.group(2) or b"1"), int(hunk.group(4) or b"1")
+        if (not (old_count or new_count) or (old_count and old_start == 0)
+                or (new_count and new_start == 0)):
+            return False
+        # Zero-count ranges name the line before an insertion/deletion;
+        # nonempty ranges name their first line. Gaps must be unchanged and
+        # ordered in both files, accounting for the preceding hunks' delta.
+        old_before = old_start - (1 if old_count else 0)
+        new_before = new_start - (1 if new_count else 0)
+        if (old_before < old_end or new_before < new_end or new_before - old_before != delta
+                or (new_file and (old_start != 0 or old_count != 0 or new_start != 1))
+                or (deleted_file and (old_start != 1 or new_start != 0 or new_count != 0))):
+            return False
+        cursor += 1
+        seen_old = seen_new = 0
+        changed = False
+        while cursor < len(section) and not section[cursor].startswith(b"@@ "):
+            line = section[cursor]
+            if not line.endswith(b"\n"):
+                return False
+            if line[:1] == b" ":
+                seen_old += 1
+                seen_new += 1
+            elif line[:1] == b"-":
+                seen_old += 1
+                changed = True
+            elif line[:1] == b"+":
+                seen_new += 1
+                changed = True
+            else:
+                return False
+            if seen_old > old_count or seen_new > new_count:
+                return False
+            cursor += 1
+        if not changed or seen_old != old_count or seen_new != new_count:
+            return False
+        old_end, new_end = old_before + old_count, new_before + new_count
+        delta += new_count - old_count
+        hunks += 1
+    return hunks > 0 and (not (new_file or deleted_file) or hunks == 1)
+
+
+def _go_patch_selector_spans(data: bytes) -> set[tuple[int, int]]:
+    """Map selectors only after validating the entire outer patch container."""
+
+    lines = data.splitlines(keepends=True)
+    offsets = [0]
+    for line in lines:
+        offsets.append(offsets[-1] + len(line))
+    boundaries = [index for index, line in enumerate(lines) if line.startswith(b"diff --git ")]
+    if not boundaries or boundaries[0] != 0:
+        return set()  # No preamble, mail, fenced, quoted or other wrapper.
+    headers = [_PATCH_HEADER.fullmatch(lines[index]) for index in boundaries]
+    if any(header is None for header in headers):
+        return set()
+    targets = collections.Counter(header.group(2) for header in headers if header is not None)
+    if len(targets) != len(headers):
+        return set()  # Repeated file sections are not one unambiguous patch.
+    sections: list[tuple[int, list[bytes], re.Match]] = []
+    for start, end, header in zip(boundaries, [*boundaries[1:], len(lines)], headers):
+        assert header is not None
+        section = lines[start:end]
+        if not _valid_patch_section(section, header):
+            return set()  # Never resynchronize after unknown content, even in another file.
+        sections.append((start, section, header))
+    # No spans are authorized until every section, including non-Go files
+    # and midfile changes, has passed outer header/hunk validation.
+    spans: set[tuple[int, int]] = set()
+    for start, section, header in sections:
+        target = header.group(2)
+        if (not target.endswith(b".go") or len(section) < 6
+                or section[1] not in (b"new file mode 100644\n", b"new file mode 100755\n")):
+            continue
+        cursor = 2
+        if section[cursor].startswith(b"index "):
+            index = _NEW_FILE_INDEX.fullmatch(section[cursor])
+            if (index is None or len(index.group(1)) != len(index.group(2))
+                    or set(index.group(2)) == {ord("0")}):
+                continue
+            cursor += 1
+        if (len(section) <= cursor + 3 or section[cursor] != b"--- /dev/null\n"
+                or section[cursor + 1] != b"+++ b/" + target + b"\n"):
+            continue
+        hunk = _FULL_NEW_HUNK.fullmatch(section[cursor + 2])
+        additions = section[cursor + 3:]
+        if (hunk is None or hunk.group(1) != str(len(additions)).encode()
+                or any(not line.startswith(b"+") or not line.endswith(b"\n") for line in additions)):
+            continue
+        source = b"".join(line[1:] for line in additions)
+        line_starts = [0]
+        for line in additions:
+            line_starts.append(line_starts[-1] + len(line) - 1)
+        body_start = offsets[start + cursor + 3]
+        for left, right in _go_selector_spans(source):
+            prefixes = bisect.bisect_right(line_starts, left)
+            spans.add((body_start + left + prefixes, body_start + right + prefixes))
+    return spans
+
+
+def credential_hits(data: bytes, *, patch_source_eligible: bool = False) -> Iterator[tuple[str, int, int, float, str, str]]:
+    """``(shape, line, length, entropy, verdict, reason)`` per hit; never the value.
+
+    ``patch_source_eligible`` requires established, exclusively ``.patch``
+    aliases from the selected commit history. Ordinary callers and object
+    messages cannot establish source context from their content alone.
+    """
+
+    selectors = _go_patch_selector_spans(data) if patch_source_eligible else set()
     claimed: list[tuple[int, int]] = []  # value spans of the specific shapes
     for shape in SHAPES:
         for match in shape.pattern.finditer(data):
@@ -497,6 +782,8 @@ def credential_hits(data: bytes) -> Iterator[tuple[str, int, int, float, str, st
                            "synthetic", "header only, no key body")
                     continue
             verdict, reason = classify(value, context)
+            if shape.generic and (start, end) in selectors:
+                verdict, reason = "synthetic", "nonliteral Go selector expression in established source context"
             yield (shape.name, data.count(b"\n", 0, start) + 1, len(value), round(entropy(value), 2),
                    verdict, reason)
 
@@ -701,10 +988,18 @@ def scan(repo: Path, revision_range: str | None = None, private: PrivateInput | 
     result = ScanResult()
     revisions = resolve_range(repo, revision_range) if revision_range is not None else None
     refs = [] if revisions is not None else [
-        line for line in _git(repo, "for-each-ref", "--format=%(refname)").splitlines() if line]
+        line.split(b"\0") for line in _git(
+            repo, "for-each-ref", "--format=%(refname)%00%(objecttype)%00%(*objecttype)").splitlines() if line]
+    # The alias walk covers commit trees, not arbitrary tree/blob roots.
+    # Git's reported peeled type can include recursively peeled nested tags;
+    # only a reported commit proves the root, never tag/unknown/non-commit
+    # results. Do not broaden the walk to resolve uncertain roots.
+    commit_rooted = revisions is not None or bool(refs) and all(
+        len(ref) == 3 and ref[0].startswith(b"refs/")
+        and ref[1:] in ([b"commit", b""], [b"tag", b"commit"]) for ref in refs)
     result.refs = len(refs)
     for ref in refs:
-        for name in identifier_counts(ref, private):
+        for name in identifier_counts(ref[0], private):
             result.ref_identifiers[name] += 1
     paths: set[str] = set()
     objects = reachable_objects(repo, paths, revisions)
@@ -721,12 +1016,16 @@ def scan(repo: Path, revision_range: str | None = None, private: PrivateInput | 
     result.tags = sum(1 for kind in objects.values() if kind == "tag")
     for object_id, _kind, data in read_objects(repo, blobs):
         result.blob_bytes += len(data)
-        commit, path, introductions, _paths = locations.get(object_id, (None, None, 0, set()))
+        commit, path, introductions, blob_paths = locations.get(object_id, (None, None, 0, set()))
         if commit is None:
             result.unattributed_blobs += 1
         if uninspected(data):
             result.uninspected_blobs += 1
-        for shape, line, length, bits, verdict, reason in credential_hits(data):
+        patch_source_eligible = bool(
+            commit_rooted and commit and path and introductions > 0 and blob_paths and path in blob_paths
+            and all(alias.endswith(".patch") and "�" not in alias for alias in blob_paths))
+        for shape, line, length, bits, verdict, reason in credential_hits(
+                data, patch_source_eligible=patch_source_eligible):
             result.credentials.append(CredentialHit(shape, verdict, reason, object_id, line, length, bits,
                                                      "blob", commit, path, introductions))
         _note_identifiers(result, data, path or f"<unattributed blob {object_id[:12]}>", commit, private)

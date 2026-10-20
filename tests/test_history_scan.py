@@ -21,6 +21,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import gzip
 import hashlib
@@ -174,6 +175,35 @@ def _identifier_samples() -> dict[str, str]:
             "macos-home-path": "/Users/" + "sampleperson"}
 
 
+def _selector_expression() -> str:
+    return ".".join(("cfg", "RemoteManagement", "SecretKey"))
+
+
+def _go_unit(fields: str) -> str:
+    return "package config\n\nvar current = Config{\n" + fields + "}\n"
+
+
+def _go_add_patch(source: str, target: str = "internal/config/control.go") -> str:
+    lines = source.splitlines(keepends=True)
+    return (f"diff --git a/{target} b/{target}\n"
+            "new file mode 100644\n"
+            f"index {'0' * 7}..{'1' * 7}\n"
+            "--- /dev/null\n"
+            f"+++ b/{target}\n"
+            f"@@ -0,0 +1,{len(lines)} @@\n"
+            + "".join("+" + line for line in lines))
+
+
+def _modified_patch(target: str = "notes") -> str:
+    return (f"diff --git a/{target} b/{target}\n"
+            "index 2222222..3333333 100644\n"
+            f"--- a/{target}\n+++ b/{target}\n"
+            "@@ -4,3 +4,4 @@ section\n"
+            " before\n-old\n+new\n+extra\n after\n"
+            "@@ -12,2 +13,2 @@\n"
+            " stable\n-prior\n+later\n")
+
+
 class ClassifyTests(unittest.TestCase):
     def test_generated_key_is_a_candidate_and_placeholders_are_synthetic(self) -> None:
         key = _real_looking_key().encode()
@@ -278,6 +308,326 @@ class ClassifyTests(unittest.TestCase):
         # Neutral identities are not personal.
         for name in history_scan.NEUTRAL_USERS:
             self.assertEqual(history_scan.identifier_counts(f"/home/{name}/.config /Users/{name}/x".encode()), {})
+
+
+class GoPatchContextTests(unittest.TestCase):
+    reason = "nonliteral Go selector expression in established source context"
+
+    def _hits(self, text: str) -> list[tuple]:
+        return list(history_scan.credential_hits(text.encode(), patch_source_eligible=True))
+
+    def _assert_candidates(self, text: str) -> None:
+        hits = self._hits(text)
+        self.assertTrue(hits)
+        self.assertEqual({hit[4] for hit in hits}, {"candidate"}, hits)
+
+    def test_complete_selector_fields_keep_hits_and_only_change_the_verdict(self) -> None:
+        selectors = (_selector_expression(), ".".join(("state", "AdminOptions", "CipherCode")),
+                     ".".join(("runtime", "SecuritySettings", "AccessCode")))
+        for selector in selectors:
+            for source in (_go_unit(f"\tSecretKey: {selector},\n"),
+                           "package config\n\nvar current = Config{" + f"SecretKey: {selector}" + "}\n"):
+                with self.subTest(selector=selector, source=source):
+                    patch = _go_add_patch(source)
+                    before = list(history_scan.credential_hits(patch.encode()))
+                    self.assertEqual([(hit[0], hit[4]) for hit in before], [("secret-assignment", "candidate")])
+                    after = self._hits(patch)
+                    self.assertEqual(after, [(*before[0][:4], "synthetic", self.reason)])
+                    self.assertNotIn(selector, repr(after))
+
+    def test_complete_187_line_new_file_inside_a_multifile_patch(self) -> None:
+        source = _go_unit(f"\tSecretKey: {_selector_expression()},\n")
+        source += "\n" * (187 - len(source.splitlines()))
+        # A synthetic framing replica: the Go section occupies lines 704–896.
+        patch = (_go_add_patch("text\n" * 697, "README")
+                 + _go_add_patch(source, "internal/config/management_env_only_test.go"))
+        hits = self._hits(patch)
+        self.assertEqual([(hit[0], hit[1], hit[4], hit[5]) for hit in hits],
+                         [("secret-assignment", 713, "synthetic", self.reason)])
+        self.assertEqual(len(patch.splitlines()), 896)
+
+    def test_distinct_complete_sections_and_regular_modes(self) -> None:
+        source = _go_unit(f"\tSecretKey: {_selector_expression()},\n")
+        patch = _go_add_patch(source, "one.go") + _go_add_patch(source, "two.go")
+        self.assertEqual([hit[4] for hit in self._hits(patch)], ["synthetic", "synthetic"])
+        for text in (_go_add_patch(source).replace("100644", "100755"),
+                     _go_add_patch(source).replace(f"index {'0' * 7}..{'1' * 7}\n", "")):
+            self.assertEqual([hit[4] for hit in self._hits(text)], ["synthetic"])
+
+    def test_configuration_and_go_looking_flow_maps_are_not_source_context(self) -> None:
+        selector = _selector_expression()
+        for text in (f"SecretKey: {selector}\n", f'SecretKey: "{selector}"\n',
+                     f"SECRET_KEY={selector}\n", f"SECRET_KEY='{selector}'\n",
+                     json.dumps({"secret": selector}) + "\n", f"{{SecretKey: {selector},}}\n",
+                     f"Config{{SecretKey: {selector},}}\n",
+                     "package config\n" + f"{{SecretKey: {selector},}}\n",
+                     "package config\n" + f"Config{{SecretKey: {selector},}}\n"):
+            with self.subTest(text=text):
+                self._assert_candidates(text)
+                self._assert_candidates(_go_add_patch(text))
+        # A real compilation-unit prefix still cannot authorize standalone Go.
+        self._assert_candidates(_go_unit(f"\tSecretKey: {selector},\n"))
+
+    def test_strings_runes_and_comments_never_establish_code_spans(self) -> None:
+        field = f"SecretKey: {_selector_expression()},"
+        for declaration in (f'var text = "{field}"\n', f'var text = "escaped \\" {field}"\n',
+                            f"var text = `\n{field}\n`\n", f"var ch = '{field}'\n",
+                            f"// {field}\nvar n = 1\n", f"/*\n{field}\n*/\nvar n = 1\n"):
+            with self.subTest(declaration=declaration):
+                self._assert_candidates(_go_add_patch("package config\n\n" + declaration))
+
+    def test_closed_literals_escapes_and_comments_do_not_hide_later_code(self) -> None:
+        for prefix in ('var quoted = "\\\"\\\\\\x2f\\u002f\\U0000002f"\n',
+                       "var raw = `\"'\\/*//`\n", "var rune = '\\''\n", "var rune = '\\x2f'\n",
+                       "// \"`' /*\n", "/* \"`' // */\n"):
+            source = ("package config\n\n" + prefix + "var current = Config{\n"
+                      + f"\tSecretKey: {_selector_expression()},\n" + "}\n")
+            with self.subTest(prefix=prefix):
+                self.assertEqual([hit[4] for hit in self._hits(_go_add_patch(source))], ["synthetic"])
+
+    def test_unknown_lexical_states_and_unbalanced_source_fail_closed(self) -> None:
+        source = _go_unit(f"\tSecretKey: {_selector_expression()},\n")
+        for suffix in ('var text = "open\n', "var text = `open\n", "var ch = 'x\n", "/* open\n",
+                       'var text = "bad\\q"\n', "var ch = '\\q'\n", "var n = (1\n", "var n = ]\n", "\\\n",
+                       "/* " + chr(0) + " */\n", 'var text = "' + chr(0) + '"\n'):
+            with self.subTest(suffix=suffix):
+                self._assert_candidates(_go_add_patch(source + suffix))
+        for prefix in ('"not a prefix"\n', "`not a prefix`\n", "package _\n", "package return\n"):
+            self._assert_candidates(_go_add_patch(prefix + source))
+
+    def test_partial_selectors_operators_calls_and_suffixes_fail_closed(self) -> None:
+        selector = _selector_expression()
+        for suffix in (" + other", "-other", "()", "[0]", ".More()", " .More", "/*x*/.More",
+                       ":other", "|other", "~other", "<<other", "++", "é", ".return", "._"):
+            with self.subTest(suffix=suffix):
+                self._assert_candidates(_go_add_patch(_go_unit(f"\tSecretKey: {selector}{suffix},\n")))
+        # A quoted RHS must not be skipped as whitespace, nor may a quoted key
+        # or a partial key be confused with a complete bare Go field.
+        for field in (f'\tSecretKey: "{selector}",\n', f'\t"secret": "{selector}",\n',
+                      f"\tSecretKey: '{selector}',\n", f"\tother.SecretKey: {selector},\n",
+                      f"\tSecret-Key: {selector},\n", f"\tSecretKey = {selector},\n"):
+            self._assert_candidates(_go_add_patch(_go_unit(field)))
+
+    def test_generated_opaque_and_specific_credentials_survive_beside_expressions(self) -> None:
+        opaque = _unmarked(lambda: secrets.token_hex(32))
+        key = _real_looking_key()
+        source = _go_unit(f"\tSecretKey: {_selector_expression()}, Token: {opaque}, Password: \"{key}\",\n")
+        hits = self._hits(_go_add_patch(source))
+        self.assertEqual(sum(hit[4] == "synthetic" for hit in hits), 1)
+        self.assertEqual(sorted(hit[0] for hit in hits if hit[4] == "candidate"), ["secret-assignment", "sk-key"])
+        self.assertNotIn(opaque, repr(hits))
+        self.assertNotIn(key[3:], repr(hits))
+        # Even a vendor shape that is also a syntactically valid selector
+        # remains specific: generic source context never changes its verdict.
+        body = _unmarked(lambda: "Q" + secrets.token_hex(32))
+        for value in (opaque, f'"{opaque}"', "ya29" + "." + body):
+            self._assert_candidates(_go_add_patch(_go_unit(f"\tSecretKey: {value},\n")))
+
+    def test_valid_mixed_sections_frame_but_do_not_broaden_go_source_context(self) -> None:
+        selector = _selector_expression()
+        go = _go_add_patch(_go_unit(f"\tSecretKey: {selector},\n"))
+        added = _go_add_patch("text\n", "README")
+        modified = _modified_patch()
+        deleted = ("diff --git a/obsolete b/obsolete\n"
+                   "deleted file mode 100644\n"
+                   "index 4444444..0000000\n"
+                   "--- a/obsolete\n+++ /dev/null\n"
+                   "@@ -1,2 +0,0 @@\n-one\n-two\n")
+        for patch in (added + modified + go + deleted, go + modified + added + deleted,
+                      modified + deleted + go,
+                      modified.replace("index 2222222..3333333 100644\n", "") + go):
+            with self.subTest(patch=patch):
+                before = list(history_scan.credential_hits(patch.encode()))
+                after = self._hits(patch)
+                self.assertEqual(len(before), 1)
+                self.assertEqual(after, [(*before[0][:4], "synthetic", self.reason)])
+        modified_go = ("diff --git a/existing.go b/existing.go\n"
+                       "index 2222222..3333333 100644\n"
+                       "--- a/existing.go\n+++ b/existing.go\n"
+                       "@@ -9 +9 @@\n"
+                       "-\tSecretKey: prior,\n" + f"+\tSecretKey: {selector},\n")
+        for patch in (modified_go + go, go + modified_go):
+            before, after = list(history_scan.credential_hits(patch.encode())), self._hits(patch)
+            self.assertEqual(len(before), 2)
+            self.assertEqual([hit[:4] for hit in after], [hit[:4] for hit in before])
+            self.assertEqual(sorted(hit[4] for hit in after), ["candidate", "synthetic"])
+
+    def test_diff_headers_cannot_resynchronize_a_markdown_wrapper(self) -> None:
+        go = _go_add_patch(_go_unit(f"\tSecretKey: {_selector_expression()},\n"))
+        opening = "diff --git a/notes b/notes\n```diff\n"
+        closing = "diff --git a/end b/end\n```\n"
+        # The reviewer's exact wrapper, plus either malformed neighbor alone.
+        for patch in (opening + go + closing, opening + go, go + closing):
+            with self.subTest(patch=patch):
+                before = list(history_scan.credential_hits(patch.encode()))
+                self.assertEqual([(hit[0], hit[4]) for hit in before], [("secret-assignment", "candidate")])
+                self.assertEqual(self._hits(patch), before)
+
+    def test_any_malformed_outer_neighbor_disables_context_for_the_whole_blob(self) -> None:
+        go = _go_add_patch(_go_unit(f"\tSecretKey: {_selector_expression()},\n"))
+        modified = _modified_patch()
+        added = _go_add_patch("text\n", "README")
+        cases = {
+            "bare header": "diff --git a/notes b/notes\n",
+            "header pair without hunk": modified.split("@@", 1)[0],
+            "old path mismatch": modified.replace("--- a/notes", "--- a/other"),
+            "new path mismatch": modified.replace("+++ b/notes", "+++ b/other"),
+            "different diff paths": modified.replace("a/notes b/notes", "a/other b/notes"),
+            "unsafe path": _modified_patch("../notes"),
+            "quoted path": modified.replace("diff --git a/", 'diff --git "a/'),
+            "old count too large": modified.replace("-4,3", "-4,4"),
+            "old count too small": modified.replace("-4,3", "-4,2"),
+            "new count too large": modified.replace("+4,4", "+4,5"),
+            "new count too small": modified.replace("+4,4", "+4,3"),
+            "first hunk offset": modified.replace("+4,4", "+5,4"),
+            "inconsistent gap": modified.replace("+13,2", "+14,2"),
+            "overlap": modified.replace("-12,2 +13,2", "-5,2 +6,2"),
+            "backwards hunk": modified.replace("-12,2 +13,2", "-1,2 +2,2"),
+            "zero nonempty start": modified.replace("-4,3 +4,4", "-0,3 +0,4"),
+            "unbounded number": modified.replace("-4,3", "-" + "9" * 100 + ",3"),
+            "missing body line": modified.replace("+extra\n", ""),
+            "extra body line": modified + "+overflow\n",
+            "truncated final line": modified[:-1],
+            "unprefixed fence": modified.replace("+extra\n", "```diff\n"),
+            "text between hunks": modified.replace("@@ -12", "```\n@@ -12"),
+            "trailing wrapper": modified + "```\n",
+            "trailing blank": modified + "\n",
+            "unknown metadata": modified.replace("index ", "similarity index 100%\nindex "),
+            "nonregular index mode": modified.replace("100644", "120000"),
+            "nonzero new-file old index": added.replace("index 0000000", "index 2222222"),
+            "missing new-file mode": added.replace("new file mode 100644\n", ""),
+            "modified zero old index": modified.replace("index 2222222", "index 0000000"),
+            "modified zero new index": modified.replace("..3333333", "..0000000"),
+            "index width mismatch": modified.replace("..3333333", "..33333333"),
+            "unchanged index": modified.replace("..3333333", "..2222222"),
+            "no-newline marker": modified + "\\ No newline at end of file\n",
+            "unsupported format": modified.replace("diff --git", "diff --cc"),
+            "CRLF headers": modified.replace("\n", "\r\n"),
+        }
+        for label, neighbor in cases.items():
+            for patch in (neighbor + go, go + neighbor):
+                with self.subTest(case=label, precedes=patch.startswith(neighbor)):
+                    before = list(history_scan.credential_hits(patch.encode()))
+                    self.assertEqual([(hit[0], hit[4]) for hit in before], [("secret-assignment", "candidate")])
+                    self.assertEqual(self._hits(patch), before)
+        # Repeated non-Go sections are ambiguous too, even if each one has
+        # individually valid framing and the Go section lies between them.
+        patch = modified + go + modified
+        self.assertEqual(self._hits(patch), list(history_scan.credential_hits(patch.encode())))
+
+    def test_malformed_gapped_truncated_and_ambiguous_patch_sections_fail_closed(self) -> None:
+        source = _go_unit(f"\tSecretKey: {_selector_expression()},\n")
+        patch = _go_add_patch(source)
+        count = len(source.splitlines())
+        hunk = f"@@ -0,0 +1,{count} @@"
+        cases = {
+            "missing mode": patch.replace("new file mode 100644\n", ""),
+            "nonregular mode": patch.replace("100644", "120000"),
+            "not new": patch.replace("--- /dev/null", "--- a/internal/config/control.go"),
+            "different target": patch.replace("+++ b/internal/config/control.go", "+++ b/other.go"),
+            "renamed target": patch.replace("a/internal/config/control.go b/", "a/other.go b/"),
+            "non-Go target": _go_add_patch(source, "control.yaml"),
+            "unsafe target": _go_add_patch(source, "../control.go"),
+            "old midfile": patch.replace(hunk, f"@@ -8,0 +1,{count} @@"),
+            "new midfile": patch.replace(hunk, f"@@ -0,0 +8,{count} @@"),
+            "count too large": patch.replace(hunk, f"@@ -0,0 +1,{count + 1} @@"),
+            "count too small": patch.replace(hunk, f"@@ -0,0 +1,{count - 1} @@"),
+            "context gap": patch.replace("+var current", " var current"),
+            "deletion": patch.replace("+package", "-package"),
+            "multiple hunks": patch + "@@ -0,0 +9,1 @@\n+}\n",
+            "truncation": patch.rsplit("\n", 2)[0] + "\n",
+            "unterminated patch line": patch[:-1],
+            "no-newline marker": patch + "\\ No newline at end of file\n",
+            "unknown metadata": patch.replace("--- /dev/null", "similarity index 100%\n--- /dev/null"),
+            "nonzero old index": patch.replace("index " + "0" * 7, "index " + "2" * 7),
+            "unknown format": patch.replace("diff --git", "diff --cc"),
+            "quoted path": patch.replace("diff --git a/", 'diff --git "a/'),
+            "wrapped": "```diff\n" + patch + "```\n",
+            "CRLF framing": patch.replace("\n", "\r\n"),
+            "duplicate target": patch + patch,
+        }
+        for label, text in cases.items():
+            with self.subTest(case=label):
+                self._assert_candidates(text)
+
+
+class GoPatchAliasTests(unittest.TestCase):
+    def _scan(self, aliases: set[str], *, first_path: str | None = "change.patch", attributed: bool = True,
+              refs: bytes = b"refs/heads/main\0commit\0\n", ranged: bool = False, data: bytes | None = None):
+        repo, blob, commit = Path("unused-repository"), "b" * 40, "c" * 40
+        revisions = ("a" * 40, commit) if ranged else None
+        content = data if data is not None else _go_add_patch(
+            _go_unit(f"\tSecretKey: {_selector_expression()},\n")).encode()
+        locations = {blob: (commit, first_path, 1, aliases)} if attributed else {}
+        with mock.patch.object(history_scan, "_git", return_value=refs) as git, \
+                mock.patch.object(history_scan, "resolve_range", return_value=revisions) as resolve, \
+                mock.patch.object(history_scan, "reachable_objects", return_value={blob: "blob"}) as objects, \
+                mock.patch.object(history_scan, "blob_locations", return_value=locations) as lookup, \
+                mock.patch.object(history_scan, "read_objects", side_effect=lambda _repo, ids: iter(
+                    (object_id, "blob", content) for object_id in ids)):
+            result = history_scan.scan(repo, "base..head" if ranged else None)
+        objects.assert_called_once_with(repo, mock.ANY, revisions)
+        lookup.assert_called_once_with(repo, revisions)
+        if ranged:
+            resolve.assert_called_once_with(repo, "base..head")
+            git.assert_not_called()  # No ref query or new walk outside the selected commits.
+        else:
+            resolve.assert_not_called()
+            git.assert_called_once_with(repo, "for-each-ref",
+                                        "--format=%(refname)%00%(objecttype)%00%(*objecttype)")
+        return result
+
+    def test_every_selected_alias_must_be_a_known_patch_in_either_order(self) -> None:
+        for first_path, aliases, verdict in (
+            ("change.patch", {"change.patch"}, "synthetic"),
+            ("later.patch", {"change.patch", "later.patch"}, "synthetic"),
+            ("change.patch", {"change.patch", "config.env"}, "candidate"),
+            ("config.env", {"config.env", "change.patch"}, "candidate"),
+            ("change.patch", set(), "candidate"),
+            ("change.patch", {"change.patch", ""}, "candidate"),
+            ("change.patch", {"change.patch", "unknown\ufffd.patch"}, "candidate"),
+            ("unknown.patch", {"change.patch"}, "candidate"),
+            (None, {"change.patch"}, "candidate"),
+            ("control.go", {"control.go"}, "candidate"),
+        ):
+            with self.subTest(first_path=first_path, aliases=aliases):
+                result = self._scan(aliases, first_path=first_path)
+                self.assertEqual([hit.verdict for hit in result.credentials], [verdict])
+        result = self._scan({"change.patch"}, attributed=False)
+        self.assertEqual([hit.verdict for hit in result.credentials], ["candidate"])
+        self.assertEqual(result.unattributed_blobs, 1)
+        source = _go_unit(f"\tSecretKey: {_selector_expression()},\n").encode()
+        self.assertEqual([hit.verdict for hit in self._scan({"control.go"}, first_path="control.go",
+                                                         data=source).credentials], ["candidate"])
+
+    def test_full_scan_requires_known_commit_roots(self) -> None:
+        for refs, verdict in (
+            (b"refs/heads/main\0commit\0\n", "synthetic"),
+            (b"refs/tags/v1\0tag\0commit\n", "synthetic"),
+            (b"refs/tags/nested\0tag\0commit\n", "synthetic"),
+            (b"refs/tags/blob\0blob\0\n", "candidate"),
+            (b"refs/tags/tree\0tree\0\n", "candidate"),
+            (b"refs/tags/nested\0tag\0tag\n", "candidate"),
+            (b"refs/tags/tree\0tag\0tree\n", "candidate"),
+            (b"refs/tags/blob\0tag\0blob\n", "candidate"),
+            (b"refs/tags/unknown\0tag\0\n", "candidate"),
+            (b"refs/heads/main\n", "candidate"),
+            (b"\0commit\0\n", "candidate"),
+            (b"refs/heads/main\0commit\0extra\n", "candidate"),
+            (b"", "candidate"),
+            (b"refs/heads/main\0commit\0\nrefs/tags/tree\0tree\0\n", "candidate"),
+        ):
+            with self.subTest(refs=refs):
+                self.assertEqual([hit.verdict for hit in self._scan({"change.patch"}, refs=refs).credentials],
+                                 [verdict])
+
+    def test_resolved_range_uses_the_same_selection_and_single_existing_alias_query(self) -> None:
+        # Ref metadata is intentionally unsuitable: a resolved commit range
+        # uses only its selected aliases and never consults those refs at all.
+        result = self._scan({"change.patch"}, refs=b"refs/tags/tree\0tree\0\n", ranged=True)
+        self.assertEqual([hit.verdict for hit in result.credentials], ["synthetic"])
+        result = self._scan({"change.patch", "config.env"}, ranged=True)
+        self.assertEqual([hit.verdict for hit in result.credentials], ["candidate"])
 
 
 class PrivateInputTests(unittest.TestCase):
@@ -640,6 +990,141 @@ class HistoryScanGitTests(unittest.TestCase):
                 self.assertEqual(code, 2, text)
                 self.assertIn("history scan: private identifier input:", text)
                 self.assertNotIn("zz-private-value", text)
+
+    def test_go_patch_context_retains_locations_and_mixed_aliases_fail_the_gate(self) -> None:
+        selector = _selector_expression()
+        patch = _go_add_patch(_go_unit(f"\tSecretKey: {selector},\n"))
+        first = self.commit({"change.patch": patch}, "add")
+        code, text, out = self.run_scan()
+        self.assertEqual(code, 0, text)
+        hits = json.loads((out / "credentials.json").read_text())
+        self.assertEqual(len(hits), 1)
+        hit = hits[0]
+        original = list(history_scan.credential_hits(patch.encode()))[0]
+        self.assertEqual((hit["shape"], hit["line"], hit["length"], hit["entropy"]), original[:4])
+        self.assertEqual((hit["path"], hit["commit"], hit["introductions"], hit["verdict"], hit["reason"]),
+                         ("change.patch", first, 1, "synthetic", GoPatchContextTests.reason))
+        self.assertNotIn(selector, text + "".join(path.read_text() for path in out.iterdir()))
+        self.commit({"copy.env": patch}, "copy")
+        code, text, out = self.run_scan()
+        self.assertEqual(code, 1, text)
+        hits = json.loads((out / "credentials.json").read_text())
+        self.assertEqual([(hit["path"], hit["commit"], hit["introductions"], hit["verdict"]) for hit in hits],
+                         [("change.patch", first, 2, "candidate")])
+
+    def test_go_patch_range_uses_only_selected_aliases_and_one_existing_lookup(self) -> None:
+        patch = _go_add_patch(_go_unit(f"\tSecretKey: {_selector_expression()},\n"))
+        base = self.commit({"README": "words\n"}, "base")
+        added = self.commit({"first.patch": patch}, "add")
+        head = self.commit({"first.patch": None, "second.patch": patch}, "rename")
+        # This alias is reachable from the current ref but outside BASE..HEAD.
+        self.commit({"outside.env": patch}, "outside")
+        with mock.patch.object(history_scan, "blob_locations", wraps=history_scan.blob_locations) as lookup:
+            code, text, out = self.run_scan("--range", f"{base}..{head}")
+        self.assertEqual(code, 0, text)
+        lookup.assert_called_once_with(self.repo, (base, head))
+        hits = json.loads((out / "credentials.json").read_text())
+        self.assertEqual([(hit["path"], hit["commit"], hit["introductions"], hit["verdict"]) for hit in hits],
+                         [("first.patch", added, 2, "synthetic")])
+
+    def test_malformed_outer_patch_retains_the_candidate_and_exits_one(self) -> None:
+        selector = _selector_expression()
+        go = _go_add_patch(_go_unit(f"\tSecretKey: {selector},\n"))
+        patch = ("diff --git a/notes b/notes\n```diff\n" + go
+                 + "diff --git a/end b/end\n```\n")
+        first = self.commit({"change.patch": patch}, "add")
+        code, text, out = self.run_scan()
+        self.assertEqual(code, 1, text)
+        hits = json.loads((out / "credentials.json").read_text())
+        original = list(history_scan.credential_hits(patch.encode()))
+        self.assertEqual(len(original), 1)
+        self.assertEqual(len(hits), 1)
+        hit = hits[0]
+        self.assertEqual((hit["shape"], hit["line"], hit["length"], hit["entropy"], hit["verdict"], hit["reason"]),
+                         original[0])
+        self.assertEqual((hit["commit"], hit["path"], hit["introductions"]), (first, "change.patch", 1))
+        self.assertNotIn(selector, text + "".join(path.read_text() for path in out.iterdir()))
+        self.assertEqual(json.loads((out / "summary.json").read_text())["credentials"]["candidate"], 1)
+
+    def test_go_patch_with_any_surviving_candidate_exits_one_without_values(self) -> None:
+        selector, opaque, key = _selector_expression(), _unmarked(lambda: secrets.token_hex(32)), _real_looking_key()
+        source = _go_unit(f'\tSecretKey: {selector}, Token: "{opaque}", Password: "{key}",\n')
+        self.commit({"change.patch": _go_add_patch(source)}, "add")
+        code, text, out = self.run_scan()
+        self.assertEqual(code, 1, text)
+        hits = json.loads((out / "credentials.json").read_text())
+        self.assertEqual(sum(hit["verdict"] == "synthetic" for hit in hits), 1)
+        self.assertEqual(sum(hit["verdict"] == "candidate" for hit in hits), 2)
+        produced = text + "".join(path.read_text() for path in out.iterdir())
+        for value in (selector, opaque, key, key[3:]):
+            self.assertNotIn(value, produced)
+        self.assertEqual(json.loads((out / "summary.json").read_text())["credentials"]["candidate"], 2)
+
+    def test_patch_content_in_commit_and_tag_messages_cannot_authorize_itself(self) -> None:
+        patch = _go_add_patch(_go_unit(f"\tSecretKey: {_selector_expression()},\n"))
+        self.commit({"change.patch": patch}, patch)
+        self.git("tag", "-a", "v1", "-m", patch)
+        code, text, out = self.run_scan()
+        self.assertEqual(code, 1, text)
+        hits = json.loads((out / "credentials.json").read_text())
+        self.assertEqual(sorted((hit["kind"], hit["verdict"]) for hit in hits),
+                         [("blob", "synthetic"), ("commit-message", "candidate"), ("tag-message", "candidate")])
+
+    def test_ref_roots_require_a_proven_commit_type_in_a_real_repository(self) -> None:
+        def peeled_type(tag: str) -> str:
+            fields = self.git("for-each-ref", "--format=%(objecttype)%00%(*objecttype)",
+                              f"refs/tags/{tag}").split("\0")
+            self.assertEqual(len(fields), 2)
+            self.assertEqual(fields[0], "tag")
+            return fields[1]
+
+        def assert_nested(inner: str, outer: str) -> None:
+            header = self.git("cat-file", "-p", f"refs/tags/{outer}").partition("\n\n")[0].splitlines()
+            self.assertIn("type tag", header)
+            inner_id = self.git("rev-parse", f"refs/tags/{inner}")
+            self.assertIn(f"object {inner_id}", header)
+
+        patch = _go_add_patch(_go_unit(f"\tSecretKey: {_selector_expression()},\n"))
+        self.commit({"change.patch": patch}, "add")
+        self.assertEqual(self.run_scan()[0], 0)
+        for kind, revision in (("blob", "HEAD:change.patch"), ("tree", "HEAD^{tree}")):
+            with self.subTest(root=kind):
+                ref = f"refs/tags/{kind}"
+                self.git("update-ref", ref, self.git("rev-parse", revision))
+                code, text, _out = self.run_scan()
+                self.assertEqual(code, 1, text)
+                self.git("update-ref", "-d", ref)
+        self.git("tag", "-a", "inner", "-m", "inner")
+        inner_type = peeled_type("inner")
+        code, text, _out = self.run_scan()
+        self.assertEqual(code, 0 if inner_type == "commit" else 1, text)
+        self.git("tag", "-a", "outer", "inner", "-m", "outer")
+        assert_nested("inner", "outer")
+        # Measured Git 2.54 recursively peels both tags to commit here. Other
+        # versions may report tag/unknown: only reported commits authorize
+        # context, not the mere existence of an ultimately commit-rooted tag.
+        outer_type = peeled_type("outer")
+        known_commit = inner_type == "commit" and outer_type == "commit"
+        code, text, out = self.run_scan()
+        self.assertEqual(code, 0 if known_commit else 1, text)
+        hits = json.loads((out / "credentials.json").read_text())
+        self.assertEqual([(hit["shape"], hit["verdict"]) for hit in hits],
+                         [("secret-assignment", "synthetic" if known_commit else "candidate")])
+        self.git("tag", "-d", "outer", "inner")
+        for kind, revision in (("blob", "HEAD:change.patch"), ("tree", "HEAD^{tree}")):
+            with self.subTest(nested_root=kind):
+                inner, outer = f"inner-{kind}", f"outer-{kind}"
+                self.git("tag", "-a", inner, self.git("rev-parse", revision), "-m", inner)
+                self.git("tag", "-a", outer, inner, "-m", outer)
+                assert_nested(inner, outer)
+                self.assertNotEqual(peeled_type(inner), "commit")
+                self.assertNotEqual(peeled_type(outer), "commit")
+                code, text, out = self.run_scan()
+                self.assertEqual(code, 1, text)
+                hits = json.loads((out / "credentials.json").read_text())
+                self.assertEqual([(hit["shape"], hit["verdict"]) for hit in hits],
+                                 [("secret-assignment", "candidate")])
+                self.git("tag", "-d", outer, inner)
 
     def test_only_synthetic_sentinels_exit_zero(self) -> None:
         self.commit({"t.py": "KEY = 'sk-" + "fake-value-for-tests-only'\n"}, "fixture")
