@@ -1,6 +1,6 @@
 # Diagnostic branch only: never merge this replacement into the product.
-# Qualification-only observation, not product acceptance or a retry workflow.
-name: Darwin qualification diagnostic (not acceptance)
+# Read-only prerequisite inventory, not a qualification attempt or retry.
+name: Darwin prerequisite metadata, not qualification
 
 on:
   workflow_dispatch:
@@ -8,7 +8,7 @@ on:
 permissions: {}
 
 jobs:
-  darwin-qualification:
+  darwin-prerequisite-metadata:
     runs-on: macos-15
     timeout-minutes: 15
     permissions:
@@ -21,16 +21,29 @@ jobs:
         with:
           python-version: "3.15.0"
           architecture: arm64
-      - name: Limited OS, image and interpreter metadata
+      - name: Prerequisite metadata, not qualification
         run: |
           umask 077
-          python3 -I -B - <<'PY'
+          python3 -I -S -B - <<'PY'
+          import hashlib
+          import importlib.util
           import json
           import os
           import platform
+          import re
+          import select
+          import stat
+          import subprocess
           import sys
+          import time
+          from pathlib import Path
 
-          print(json.dumps({
+          def emit(record):
+              print(json.dumps(record, sort_keys=True), flush=True)
+
+          emit({
+              "record": "controller",
+              "experiment": "prerequisite metadata, not qualification",
               "os": platform.system(),
               "macos": platform.mac_ver()[0],
               "kernel": platform.release(),
@@ -40,61 +53,166 @@ jobs:
               "python": platform.python_version(),
               "executable": sys.executable,
               "realpath": os.path.realpath(sys.executable),
-          }, sort_keys=True), flush=True)
+          })
           if (sys.platform != "darwin" or platform.machine() != "arm64"
                   or sys.version_info != (3, 15, 0, "final", 0)):
               raise SystemExit("diagnostic requires Darwin arm64 and Python 3.15.0 final")
-          PY
-      - name: One qualification-only run, no product execution
-        run: |
-          umask 077
-          python3 -I -B .github/scripts/darwin_journey_isolation.py \
-            --out "$RUNNER_TEMP/darwin-qualification-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" --qualify-only
-      - name: Bounded byte-exact evidence capture, not acceptance
-        if: always()
-        run: |
-          umask 077
-          python3 -I -B - "$RUNNER_TEMP/darwin-qualification-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" <<'PY'
-          import base64
-          import hashlib
-          import json
-          import os
-          import stat
-          import sys
 
-          failed = False
-          for filename in ("qualification.json", "network.sb", "controls.py"):
-              record = {"filename": filename, "size": None, "sha256": None, "base64": None}
+          helper_path = Path(".github/scripts/darwin_journey_isolation.py")
+          for path in (helper_path, Path(".github/workflows/ci.yml")):
+              with path.open("rb") as source:
+                  digest = hashlib.file_digest(source, "sha256").hexdigest()
+              emit({"record": "source", "path": str(path), "sha256": digest})
+
+          # A module name other than __main__ leaves the qualifier's entry point uncalled.
+          spec = importlib.util.spec_from_file_location("darwin_metadata_helper", helper_path)
+          helper = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(helper)
+
+          # Preserve guard markers without inheriting authentication or proxy variables.
+          child_env = {"PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "LANG": "C", "LC_ALL": "C",
+                       **{key: os.environ[key] for key in helper.GUARD_MARKERS if key in os.environ}}
+
+          def version_metadata(path):
+              result = {"status": "not-started", "timeout_seconds": 10,
+                        "stdout_limit": 1024, "at_least_3_11": None}
+              child = None
+              output = bytearray()
+              deadline = time.monotonic() + 10
               try:
-                  # Nonblocking open lets the regular-file check refuse a FIFO without waiting.
-                  descriptor = os.open(os.path.join(sys.argv[1], filename),
-                                       os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-                  try:
-                      info = os.fstat(descriptor)
-                      if not stat.S_ISREG(info.st_mode):
-                          record["status"] = "not-regular"
-                          failed = True
-                      else:
-                          with os.fdopen(descriptor, "rb", closefd=False) as source:
-                              data = source.read(65536 + 1)
-                          record["size"] = info.st_size
-                          if len(data) > 65536:
-                              record["status"] = "oversize"
-                              failed = True
-                          else:
-                              record.update(status="captured", size=len(data),
-                                            sha256=hashlib.sha256(data).hexdigest(),
-                                            base64=base64.b64encode(data).decode("ascii"))
-                  finally:
-                      os.close(descriptor)
+                  child = subprocess.Popen(
+                      [path, "-I", "-S", "-B", "-c", "import sys; print(*sys.version_info)"],
+                      stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                      env=child_env, close_fds=True)
+                  result["status"] = "complete"
+                  while True:
+                      remaining = deadline - time.monotonic()
+                      if remaining <= 0 or not select.select([child.stdout], [], [], remaining)[0]:
+                          result["status"] = "timeout"
+                          break
+                      chunk = os.read(child.stdout.fileno(), 1025 - len(output))
+                      if not chunk:
+                          break
+                      output.extend(chunk)
+                      if len(output) > 1024:
+                          result["status"] = "oversize"
+                          break
+                  if result["status"] == "complete":
+                      child.wait(timeout=max(0, deadline - time.monotonic()))
+              except subprocess.TimeoutExpired:
+                  result["status"] = "timeout"
+              except OSError as exc:
+                  result.update(status="unavailable", error=type(exc).__name__, errno=exc.errno)
+              finally:
+                  if child is not None:
+                      try:
+                          if child.poll() is None:
+                              child.kill()
+                          child.wait(timeout=1)
+                      except (OSError, subprocess.TimeoutExpired):
+                          result["status"] = "cleanup-incomplete"
+                      finally:
+                          child.stdout.close()
+              result["exit_code"] = child.returncode if child is not None else None
+              result["captured_bytes"] = len(output)
+              if result["status"] != "complete":
+                  return result
+              if result["exit_code"] != 0:
+                  result["status"] = "nonzero-exit"
+                  return result
+              match = re.fullmatch(rb"(\d+) (\d+) (\d+) (alpha|beta|candidate|final) (\d+)\n", output)
+              if match is None:
+                  result["status"] = "invalid-version-metadata"
+                  return result
+              version = (int(match[1]), int(match[2]), int(match[3]),
+                         match[4].decode("ascii"), int(match[5]))
+              result.update(status="observed", version_info=list(version),
+                            at_least_3_11=version[:2] >= (3, 11))
+              return result
+
+          def candidate_metadata(label, value):
+              result = {"record": "candidate", "candidate": label, "requested": value,
+                        "helper_refusal": None, "components": [], "first_failed_check": None,
+                        "version_probe": {"status": "not-run-untrusted", "at_least_3_11": None}}
+              try:
+                  resolved = Path(value).resolve(strict=True)
               except FileNotFoundError:
-                  # Missing optional files are incomplete evidence, never passing controls.
-                  record["status"] = "missing"
-                  if filename == "qualification.json":
-                      failed = True
-              except OSError:
-                  record["status"] = "unreadable"
-                  failed = True
-              print(json.dumps(record, sort_keys=True), flush=True)
-          raise SystemExit(1 if failed else 0)
+                  result.update(trust="missing", version_probe={"status": "not-run-missing",
+                                                               "at_least_3_11": None})
+                  return result, True
+              except (OSError, RuntimeError) as exc:
+                  result.update(trust="resolve-error", error=type(exc).__name__)
+                  return result, False
+              result["resolved"] = str(resolved)
+              complete = True
+              first_metadata_failure = None
+              # Match the helper's root-to-leaf order and type, UID, combined mode predicate.
+              for component in (*reversed(resolved.parents), resolved):
+                  row = {"path": str(component)}
+                  try:
+                      info = component.lstat()
+                      kind = stat.S_ISREG(info.st_mode) if component == resolved else stat.S_ISDIR(info.st_mode)
+                      predicate = ("type" if not kind else "uid" if info.st_uid != 0 else
+                                   "write/setid" if info.st_mode & (0o022 | stat.S_ISUID | stat.S_ISGID) else None)
+                      row.update(type=stat.S_IFMT(info.st_mode), uid=info.st_uid, gid=info.st_gid,
+                                 mode=oct(stat.S_IMODE(info.st_mode)),
+                                 write_bits=oct(info.st_mode & 0o022),
+                                 setid_bits=oct(info.st_mode & (stat.S_ISUID | stat.S_ISGID)),
+                                 failed_predicate=predicate)
+                  except OSError as exc:
+                      predicate = "lstat"
+                      row.update(error=type(exc).__name__, errno=exc.errno, failed_predicate=predicate)
+                      complete = False
+                  result["components"].append(row)
+                  if first_metadata_failure is None and predicate is not None:
+                      first_metadata_failure = {"component": str(component), "predicate": predicate}
+
+              trusted = None
+              try:
+                  # Only this unchanged check can authorize the fixed version-only subprocess.
+                  trusted = helper.trusted_executable(value, interpreter=True)
+                  result.update(trust="accepted", trusted_executable=trusted)
+              except helper.Refusal as exc:
+                  category = str(exc)
+                  result.update(trust="refused", helper_refusal=category)
+                  if category == "untrusted-executable-path":
+                      result["first_failed_check"] = {"component": str(resolved), "predicate": "interpreter-path"}
+                  elif category == "untrusted-executable-metadata":
+                      result["first_failed_check"] = first_metadata_failure
+                      if first_metadata_failure is None:
+                          result["metadata_refusal_reproduced"] = False
+                          complete = False
+                  elif category == "inaccessible-executable":
+                      result["first_failed_check"] = {"component": str(resolved), "predicate": "read/execute-access"}
+              except FileNotFoundError:
+                  result["trust"] = "missing-during-check"
+                  complete = False
+              except (OSError, RuntimeError, ValueError) as exc:
+                  result.update(trust="check-error", error=type(exc).__name__)
+                  complete = False
+
+              if trusted is not None:
+                  if not complete or first_metadata_failure is not None or trusted["path"] != str(resolved):
+                      result["version_probe"] = {"status": "not-run-metadata-changed", "at_least_3_11": None}
+                      complete = False
+                  else:
+                      result["version_probe"] = version_metadata(trusted["path"])
+                      complete = result["version_probe"]["status"] == "observed"
+              return result, complete
+
+          # Inventory every fixed candidate; never stop at or select an accepted replacement.
+          candidates = (
+              ("current-python", sys.executable),
+              ("system-python", "/usr/bin/python3"),
+              ("command-line-tools-python", "/Library/Developer/CommandLineTools/usr/bin/python3"),
+              ("framework-3.14-python", "/Library/Frameworks/Python.framework/Versions/3.14/bin/python3.14"),
+          )
+          measurement_complete = True
+          for label, value in candidates:
+              record, complete = candidate_metadata(label, value)
+              emit(record)
+              measurement_complete = measurement_complete and complete
+          emit({"record": "summary", "measurement_complete": measurement_complete,
+                "qualification": "not-run", "replacement_selected": False})
+          raise SystemExit(0 if measurement_complete else 1)
           PY
