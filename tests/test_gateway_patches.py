@@ -186,6 +186,33 @@ class ManagementAllowlistTests(unittest.TestCase):
         self.assertEqual(listing.status, 200)
         record("M6", refused=len(statuses), listing=listing.status)
 
+    def test_listed_model_details_are_refused_in_both_formats(self):
+        gateway = harness.GatewayHarness(document_factory=charmer_listing_document)
+        self.addCleanup(gateway.close)
+        sentinel = render.document_sentinel(gateway.document)
+        self.assertTrue(sentinel.startswith(render.SENTINEL_PREFIX), sentinel)
+        models = (sentinel, CHARMER_SELECTOR)
+        headers = gateway.headers()
+        self.assertIn("anthropic-version", headers)
+        formats = (("anthropic", headers), ("openai", {
+            name: value for name, value in headers.items() if name != "anthropic-version"}))
+        # The OpenAI listing is independent of the Anthropic literal-id patch.
+        listing = harness.unix_request(gateway.socket, "GET", "/v1/models", headers=formats[1][1])
+        self.assertEqual(listing.status, 200)
+        listed = {row["id"] for row in listing.json()["data"]}
+        for literal in models:
+            self.assertIn(literal, listed)
+        refused = 0
+        for literal in models:
+            for _, detail_headers in formats:
+                reply = harness.unix_request(gateway.socket, "GET", "/v1/models/" + literal,
+                                             headers=detail_headers)
+                self.assertEqual((reply.status, len(reply.raw)), (404, 0), literal)
+                refused += 1
+        self.assertEqual(refused, 4)
+        record("M7", status="passed", refused=refused, models=list(models),
+               formats=[name for name, _ in formats], listing=listing.status, detail_refused=True)
+
 
 class AccessLogQuotingTests(unittest.TestCase):
     def test_encoded_newline_cannot_forge_a_log_line(self):
@@ -458,17 +485,8 @@ class CharmerModelListingTests(unittest.TestCase):
         for alias in (sentinel, CHARMER_SELECTOR, GPT_MULTI_SELECTOR, "gwtest-compat-plain"):
             self.assertIn(alias, openai)
             self.assertNotIn(cloaked(alias), openai)
-        # No model detail route: the literal ids listed above are refused as
-        # model detail like any other id, in both formats.
-        for literal in (sentinel, CHARMER_SELECTOR):
-            for detail_headers in (headers, {name: value for name, value in headers.items()
-                                             if name != "anthropic-version"}):
-                reply = harness.unix_request(self.gateway.socket, "GET", "/v1/models/" + literal,
-                                             headers=detail_headers)
-                self.assertEqual((reply.status, len(reply.raw)), (404, 0), literal)
         record("CL1", status="passed", anthropic_literal=[sentinel, CHARMER_SELECTOR],
-               anthropic_cloaked=[GPT_MULTI_SELECTOR, "gwtest-compat-plain"], openai_literal=True,
-               detail_refused=True)
+               anthropic_cloaked=[GPT_MULTI_SELECTOR, "gwtest-compat-plain"], openai_literal=True)
 
 
 @uses_shipped_catalog

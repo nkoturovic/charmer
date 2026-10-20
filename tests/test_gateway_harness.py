@@ -77,6 +77,19 @@ class ListenerHelperTests(unittest.TestCase):
 
 
 class RevertToolTests(unittest.TestCase):
+    def test_listing_and_detail_rows_have_independent_patch_owners(self):
+        import check_gateway_patch_revert as tool
+        listing = "tests.test_gateway_patches.CharmerModelListingTests.test_both_listing_formats"
+        detail = "tests.test_gateway_patches.ManagementAllowlistTests.test_listed_model_details_are_refused_in_both_formats"
+        allowlist_patch = "cli-proxy-api-management-readonly-allowlist.patch"
+        listing_patch = "cli-proxy-api-charmer-model-ids.patch"
+        for row, patch in ((detail, allowlist_patch), (listing, listing_patch)):
+            self.assertEqual([owner for owner, rows in harness.PATCH_ROWS.items() if row in rows], [patch])
+            self.assertIn(row, tool.test_ids())
+        self.assertEqual(harness.PATCH_ROWS[listing_patch], (listing,))
+        self.assertIn("tests.test_gateway_patches", harness.gateway_check_selections())
+        self.assertTrue({"M7", "CL1"} <= harness.REQUIRED_EVIDENCE["tests.test_gateway_patches"]["patches"])
+
     def test_outcomes_include_subtest_and_fixture_failures(self):
         import check_gateway_patch_revert as tool
 

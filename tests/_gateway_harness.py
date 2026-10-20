@@ -90,6 +90,7 @@ PATCH_ROWS = {
         "tests.test_gateway_patches.ManagementAllowlistTests.test_browser_origin_is_404_on_allowlisted_route",
         "tests.test_gateway_patches.ManagementAllowlistTests.test_v8_management_is_404_with_valid_key",
         "tests.test_gateway_patches.ManagementAllowlistTests.test_refused_api_surfaces_are_404",
+        "tests.test_gateway_patches.ManagementAllowlistTests.test_listed_model_details_are_refused_in_both_formats",
     ),
     "cli-proxy-api-watcher-parentdir.patch": (
         "tests.test_gateway_hot_reload.GatewayHotReloadTests.test_repeated_atomic_replaces_with_old_inode_open",
@@ -341,7 +342,7 @@ REQUIRED_EVIDENCE["tests.test_gateway_clamp"] = {
 
 
 REQUIRED_EVIDENCE["tests.test_gateway_patches"] = {
-    "patches": {"LO1", "LO2", "LO1-A", "LO3", "LO4", "M0", "M1", "M2", "M3", "M4", "M5", "M6", "AL1", "RL1", "ME1", "S1", "P1", "CS1", "CR1", "KS1", "AS1", "SC1", "ML1", "OM1", "CI1", "CI2", "CK1", "RS1", "MC1", "MC2", "MG1", "MG2", "CL1"},
+    "patches": {"LO1", "LO2", "LO1-A", "LO3", "LO4", "M0", "M1", "M2", "M3", "M4", "M5", "M6", "M7", "AL1", "RL1", "ME1", "S1", "P1", "CS1", "CR1", "KS1", "AS1", "SC1", "ML1", "OM1", "CI1", "CI2", "CK1", "RS1", "MC1", "MC2", "MG1", "MG2", "CL1"},
 }
 
 
