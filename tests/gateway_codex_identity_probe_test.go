@@ -1,8 +1,9 @@
 package cliproxy
 
-// Independent of patch #18: copied into every omission build by the diagnostic
-// derivation. Use only APIs that predate #18, so omitting #18 still builds and goes red.
+// Copied into every omission build by the diagnostic derivation. Use only
+// upstream APIs, so omitting a patch still builds and can go red on its own rows.
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -75,30 +76,53 @@ type codexProbeOverlaySpec struct {
 	} `json:"channels"`
 }
 
+// The file loader may reread or rewrite its input. Give it only a disposable,
+// byte-identical copy; the payload parser independently consumes the original
+// snapshot. The loader argument lets the regression controls exercise each guard.
+func codexProbeLoadConfig(path, copyDir string, loadConfig func(string) (*config.Config, error)) (*config.Config, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	copyPath := filepath.Join(copyDir, "config.yaml")
+	if err = os.WriteFile(copyPath, data, 0o600); err != nil {
+		return nil, err
+	}
+	cfg, err := loadConfig(copyPath)
+	if err != nil {
+		return nil, err
+	}
+	after, err := os.ReadFile(copyPath)
+	if err != nil {
+		return nil, err
+	}
+	if !bytes.Equal(after, data) {
+		return nil, fmt.Errorf("fixture file loader rewrote its copy")
+	}
+	if cfg.SourceHash != config.ComputeSourceHash(data) {
+		return nil, fmt.Errorf("fixture file loader source hash differs from original bytes")
+	}
+	parsed, err := config.ParseConfigBytes(data)
+	if err != nil {
+		return nil, err
+	}
+	// Only the file loader adds the source identity; every other field must agree.
+	parsed.SourceHash = cfg.SourceHash
+	if !reflect.DeepEqual(cfg, parsed) {
+		return nil, fmt.Errorf("file/payload config loaders differ")
+	}
+	return cfg, nil
+}
+
 func codexProbeLoadFixture(t *testing.T) (*config.Config, codexProbeOverlaySpec) {
 	t.Helper()
 	root := os.Getenv("CODEX_PROBE_FIXTURE_DIR")
 	if root == "" {
 		t.Fatal("CODEX_PROBE_FIXTURE_DIR required; no empty test selection")
 	}
-	path := filepath.Join(root, "config.yaml")
-	data, err := os.ReadFile(path)
+	cfg, err := codexProbeLoadConfig(filepath.Join(root, "config.yaml"), t.TempDir(), config.LoadConfig)
 	if err != nil {
 		t.Fatal(err)
-	}
-	cfg, err := config.LoadConfigBytes(data)
-	if err != nil {
-		t.Fatal(err)
-	}
-	parsed, err := config.ParseConfigBytes(data)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Parsing is effect-free; the byte loader only adds the source identity.
-	// No second filesystem read or migration write is needed to validate a render.
-	parsed.SourceHash = cfg.SourceHash
-	if !reflect.DeepEqual(cfg, parsed) {
-		t.Fatal("file/payload config loaders differ")
 	}
 	specBytes, err := os.ReadFile(filepath.Join(root, "spec.json"))
 	if err != nil {
@@ -138,6 +162,84 @@ func codexProbePipeline(t *testing.T, cfg *config.Config, channel, baseURL strin
 }
 
 func TestCodexProbeOverlayLoaderParity(t *testing.T) {
+	t.Run("fixture-loader-controls", func(t *testing.T) {
+		for _, tc := range []struct {
+			name      string
+			wantError string
+		}{
+			{"unchanged", ""},
+			{"copy-rewritten", "fixture file loader rewrote its copy"},
+			{"source-hash-mismatch", "fixture file loader source hash differs from original bytes"},
+			{"payload-mismatch", "file/payload config loaders differ"},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				original := []byte("# preserve fixture bytes\nhost: 127.0.0.1\nport: 18317\nerror-logs-max-files: -1\n")
+				path := filepath.Join(t.TempDir(), "config.yaml")
+				if err := os.WriteFile(path, original, 0o600); err != nil {
+					t.Fatal(err)
+				}
+				copyDir := t.TempDir()
+				loads := 0
+				cfg, err := codexProbeLoadConfig(path, copyDir, func(copyPath string) (*config.Config, error) {
+					loads++
+					if copyPath == path || copyPath != filepath.Join(copyDir, "config.yaml") {
+						t.Fatal("file loader must receive only the disposable copy")
+					}
+					copied, err := os.ReadFile(copyPath)
+					if err != nil {
+						return nil, err
+					}
+					if !bytes.Equal(copied, original) {
+						t.Fatal("file loader did not receive byte-identical fixture data")
+					}
+					info, err := os.Stat(copyPath)
+					if err != nil {
+						return nil, err
+					}
+					if info.Mode().Perm() != 0o600 {
+						t.Fatal("fixture copy must be private")
+					}
+					loaded, err := config.LoadConfig(copyPath)
+					if err != nil {
+						return nil, err
+					}
+					// Mutate one fact after the real file load, so each guard is
+					// tested independently of optional patch behavior.
+					switch tc.name {
+					case "copy-rewritten":
+						err = os.WriteFile(copyPath, append(copied, []byte("# changed copy\n")...), 0o600)
+					case "source-hash-mismatch":
+						loaded.SourceHash = ""
+					case "payload-mismatch":
+						loaded.Port++
+					}
+					return loaded, err
+				})
+				if loads != 1 {
+					t.Fatalf("file loader calls = %d, want 1", loads)
+				}
+				after, readErr := os.ReadFile(path)
+				if readErr != nil {
+					t.Fatal(readErr)
+				}
+				if !bytes.Equal(after, original) {
+					t.Fatal("loading or rejecting a fixture changed its original bytes")
+				}
+				if tc.wantError != "" {
+					if err == nil || err.Error() != tc.wantError || cfg != nil {
+						t.Fatalf("fixture guard: config returned = %t, err = %v, want %q", cfg != nil, err, tc.wantError)
+					}
+					return
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				if cfg.Port != 18317 || cfg.ErrorLogsMaxFiles != 10 || cfg.SourceHash != config.ComputeSourceHash(original) {
+					t.Fatal("fixture load lost its parsed values, normalization or source identity")
+				}
+			})
+		}
+	})
 	cfg, spec := codexProbeLoadFixture(t)
 	if cfg.TLSHandshakeTimeout() != 20*time.Second {
 		t.Fatalf("rendered TLS handshake timeout = %s, want 20s", cfg.TLSHandshakeTimeout())
