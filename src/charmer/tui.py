@@ -570,6 +570,24 @@ class InputState:
             self.window = None
             self.suspended = False
 
+    def _check_health(self) -> None:
+        try:
+            flags = 0
+            for fd, event in self.poll.poll(0):
+                if fd == self.fd:
+                    flags |= event
+            if flags & (select.POLLHUP | select.POLLERR):
+                raise CursesError(INPUT_UNAVAILABLE)
+            if flags & select.POLLNVAL:
+                # Darwin's /dev/tty alias can report NVAL on a valid tty.
+                # Revalidate every time; success only makes NVAL inconclusive,
+                # not proof of a key or EOF. Native timing still decides ERRs.
+                if sys.platform != "darwin" or _terminal_attrs(self.fd) is None:
+                    raise CursesError(INPUT_UNAVAILABLE)
+                select.select([self.fd], [], [], 0)
+        except (OSError, ValueError):
+            raise CursesError(INPUT_UNAVAILABLE) from None
+
     def read(self, win: Any, *, deadline: float | None = None) -> Any:
         while True:
             if self.pending:
@@ -588,13 +606,7 @@ class InputState:
             value = win.getch()
             elapsed = _clock() - started
             if value == -1:
-                try:
-                    events = self.poll.poll(0)
-                except (OSError, ValueError):
-                    raise CursesError(INPUT_UNAVAILABLE) from None
-                if any(fd == self.fd and flags & (select.POLLHUP | select.POLLERR | select.POLLNVAL)
-                       for fd, flags in events):
-                    raise CursesError(INPUT_UNAVAILABLE)
+                self._check_health()
                 # POLLIN alone proves neither a decoded key nor EOF. Short
                 # ERRs are ambiguous; bound recovery rather than diagnose EOF.
                 if wait >= 10:

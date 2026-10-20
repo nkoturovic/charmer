@@ -571,8 +571,12 @@ bytes. Idle slices produce no key or redraw. Partial characters survive slices,
 peek expiry, special/resize keys and same-context suspension. Keypad parsing and
 25 ms `ESCDELAY` (or its explicit override) stay native: its per-missing-byte waits
 can overrun those Python budgets, and a returned key is never discarded. After
-ERR, poll HUP/ERR/NVAL or an invalid fd fails with fixed `CursesError`; POLLIN
-alone proves neither a complete key nor EOF. Reads of at least the requested
+ERR, poll HUP/ERR or an invalid fd fails with fixed `CursesError` on every
+platform; NVAL does too outside Darwin. Darwin NVAL without HUP/ERR requires
+accessible terminal attributes and a successful zero-time `select.select()` check
+on every occurrence; failure gives the same fixed error. Success only makes NVAL
+inconclusive, not proof of readiness, a key, EOF or liveness. POLLIN alone proves
+neither a complete key nor EOF. Reads of at least the requested
 wait minus 5 ms reset the streak; materially shorter waits of at least 10 ms
 increment it; sub-10 ms tails do neither. Early ERR recovery sleeps out the
 scheduled slice, capped by the peek deadline, and fails on the fifth consecutive

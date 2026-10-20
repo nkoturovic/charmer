@@ -809,6 +809,186 @@ class BareLaunchAutoDetectionPTYTests(unittest.TestCase):
         self.assertNotIn(b"FAKE_LAUNCH", output)
 
 
+# These children really open the /dev/tty alias, with piped stdio. Compare
+# descriptor identities dynamically, never by an inherited fixture fd number
+# or the platform's device ids.
+_ALIAS_TTY_SNAPSHOT = """
+import os, termios
+from charmer import tui
+
+def fd_identity(fd):
+    info = os.fstat(fd)
+    return info.st_dev, info.st_ino, info.st_rdev, info.st_mode
+
+assert not os.isatty(0) and not os.isatty(1), 'fixture requires piped stdio'
+alias_streams = (open('/dev/tty', 'r', encoding='utf-8', buffering=1),
+                 open('/dev/tty', 'w', encoding='utf-8', buffering=1))
+alias_before = [termios.tcgetattr(stream.fileno()) for stream in alias_streams]
+stdio_before = [fd_identity(fd) for fd in (0, 1)]
+
+def assert_alias_restored():
+    assert [fd_identity(fd) for fd in (0, 1)] == stdio_before, 'stdio descriptor restoration'
+    assert [termios.tcgetattr(stream.fileno()) for stream in alias_streams] == alias_before, 'exact alias attributes'
+    assert tui._INPUT_STATE is None, 'input state cleanup'
+    print('ALIAS_RESTORED=True', flush=True)
+"""
+
+
+def _alias_reader_code(*, count: int = 1, close_input: bool = False, ignore_hup: bool = False) -> str:
+    """A native alias reader; the original stdout pipe keeps primary failures observable."""
+
+    return f"""
+import codecs, json, locale, signal, sys
+{_ALIAS_TTY_SNAPSHOT}
+for name in ('C.UTF-8', 'en_US.UTF-8', 'UTF-8'):
+    try:
+        locale.setlocale(locale.LC_CTYPE, name)
+        break
+    except locale.Error:
+        continue
+assert codecs.lookup(locale.getencoding()).name == 'utf-8'
+if {ignore_hup!r}:
+    # Only this owned hangup fixture ignores SIGHUP: death by that signal
+    # would prove nothing about the reader's handling of a hung-up alias.
+    signal.signal(signal.SIGHUP, signal.SIG_IGN)
+report_fd = os.dup(1)
+keys = []
+def app(win):
+    state = tui._input_state(win)
+    assert state.fd == 0
+    assert [fd_identity(fd) for fd in (0, 1)] == [fd_identity(stream.fileno()) for stream in alias_streams]
+    tui.safe_add(win, 0, 2, 'ALIAS-INPUT-READY')
+    win.refresh()
+    if {close_input!r}:
+        os.close(state.fd)
+    for _ in range({count}):
+        try:
+            key = tui.read_key(win)
+        except tui.CursesError as error:
+            # Teardown can itself fail on a closed or hung-up terminal.
+            os.write(report_fd, ('PRIMARY_INPUT_ERROR=' + str(error) + '\\n').encode())
+            raise
+        keys.append([key.kind, key.ch])
+        os.write(1, ('STEP=' + str(len(keys)) + '\\n').encode())
+code = 0
+try:
+    try:
+        tui.run_curses_on_streams(app, *alias_streams, palette=tui.MONO_PALETTE)
+    except tui.CursesError as error:
+        print('INPUT_ERROR=' + str(error), flush=True)
+        code = 1
+    assert [fd_identity(fd) for fd in (0, 1)] == stdio_before, 'stdio descriptor restoration'
+    assert tui._INPUT_STATE is None, 'input state cleanup'
+    print('STDIO_RESTORED=True', flush=True)
+    if not {ignore_hup!r}:
+        assert_alias_restored()
+    print('KEYS=' + json.dumps(keys), flush=True)
+    print('EXIT=' + str(code), flush=True)
+finally:
+    os.close(report_fd)
+    for stream in alias_streams:
+        stream.close()
+raise SystemExit(code)
+"""
+
+
+class AliasInputHealthPTYTests(unittest.TestCase):
+    """Real alias idle, loss and cancellation controls; no synthetic poll events."""
+
+    def child(self, code: str) -> _CttyPipesChild:
+        child = _CttyPipesChild(code, extra_env={
+            "TERM": "xterm-256color", "ESCDELAY": "25", "NO_COLOR": "1",
+            "PYTHONPATH": os.pathsep.join([str(SRC_ROOT), str(TESTS_ROOT)]),
+        })
+        self.addCleanup(child.close)
+        return child
+
+    def reader(self, **kwargs) -> _CttyPipesChild:
+        child = self.child(_alias_reader_code(**kwargs))
+        child.read_until(b"ALIAS-INPUT-READY", FIXTURE_TIMEOUT)
+        return child
+
+    def finish_keys(self, child: _CttyPipesChild, expected: list) -> None:
+        code, tty_output, pipe_output = child.finish(TIMEOUT)
+        output = tty_output + pipe_output
+        self.assertEqual(code, 0, output)
+        self.assertEqual(json.loads(_line_of(pipe_output, b"KEYS=")), expected)
+        self.assertIn(b"ALIAS_RESTORED=True", pipe_output)
+        self.assertNotIn(b"PRIMARY_INPUT_ERROR=", output)
+        self.assertNotIn(b"FAKE_LAUNCH", output)
+        self.assertNotIn(b"Traceback", output)
+
+    def test_hung_up_alias_fails_in_the_reader_not_by_sighup_or_timeout(self) -> None:
+        from charmer import tui
+
+        child = self.reader(ignore_hup=True)
+        os.close(child.master)
+        child.master = -1  # cleanup must not close a subsequently reused fd
+        try:
+            child.process.wait(timeout=TIMEOUT)
+        except subprocess.TimeoutExpired:
+            self.fail("hung-up alias reader did not fail within the bound; a timeout is not input-loss evidence")
+        pipe_output = child.process.stdout.read()
+        self.assertEqual(child.process.returncode, 1, pipe_output)
+        self.assertIn(b"PRIMARY_INPUT_ERROR=", pipe_output)
+        self.assertIn(_line_of(pipe_output, b"PRIMARY_INPUT_ERROR="),
+                      (tui.INPUT_UNAVAILABLE, tui.INPUT_EARLY_ERROR))
+        self.assertIn(b"STDIO_RESTORED=True", pipe_output)
+        self.assertEqual(json.loads(_line_of(pipe_output, b"KEYS=")), [])
+        self.assertNotIn(b"FAKE_LAUNCH", pipe_output)
+        self.assertNotIn(b"Traceback", pipe_output)
+
+    def test_closed_active_alias_fd_reports_primary_input_failure(self) -> None:
+        from charmer import tui
+
+        child = self.reader(close_input=True)
+        code, tty_output, pipe_output = child.finish(TIMEOUT)
+        output = tty_output + pipe_output
+        self.assertEqual(code, 1, output)
+        # A teardown failure alone is not evidence that the reader rejected
+        # the closed active fd: require its original error on the pipe.
+        self.assertIn(b"PRIMARY_INPUT_ERROR=", pipe_output)
+        self.assertEqual(_line_of(pipe_output, b"PRIMARY_INPUT_ERROR="), tui.INPUT_UNAVAILABLE)
+        self.assertIn(b"ALIAS_RESTORED=True", pipe_output)
+        self.assertEqual(json.loads(_line_of(pipe_output, b"KEYS=")), [])
+        self.assertNotIn(b"FAKE_LAUNCH", output)
+        self.assertNotIn(b"Traceback", output)
+
+    def test_interrupt_waiting_on_alias_exits_130_without_wake_and_restores_exactly(self) -> None:
+        temp = tempfile.mkdtemp(prefix="charmer-pty-alias-interrupt-")
+        self.addCleanup(__import__("shutil").rmtree, temp, True)
+        child = self.child(_fixture_card_code(
+            temp, [], streams=False, setup=_ALIAS_TTY_SNAPSHOT,
+            after="assert_alias_restored()\nfor stream in alias_streams:\n    stream.close()"))
+        child.read_until(CARD_READY, FIXTURE_TIMEOUT)
+        time.sleep(0.25)  # ordinary idle slices on the alias, not another key
+        self.assertIsNone(child.process.poll(), bytes(child.output))
+        child.process.send_signal(signal.SIGINT)  # the only wake; no input bytes
+        code, tty_output, pipe_output = child.finish(TIMEOUT)
+        output = tty_output + pipe_output
+        self.assertEqual(code, 130, output)
+        self.assertIn(b"EXIT=130", pipe_output)
+        self.assertIn(b"nothing was launched", output)
+        self.assertIn(b"ALIAS_RESTORED=True", pipe_output)
+        self.assertNotIn(b"FAKE_LAUNCH", output)
+        self.assertNotIn(b"Traceback", output)
+
+    def test_split_utf8_across_alias_idle_slices_preserves_the_character(self) -> None:
+        child = self.reader()
+        child.send(b"\xe7")
+        time.sleep(0.25)
+        self.assertIsNone(child.process.poll(), bytes(child.output))
+        child.send(b"\x95\x8c")
+        self.finish_keys(child, [["char", "界"]])
+
+    def test_alt_unicode_across_alias_peek_expiry_keeps_order(self) -> None:
+        child = self.reader(count=2)
+        child.send(b"\x1b\xc3")
+        child.read_until(b"STEP=1", FIXTURE_TIMEOUT)  # Esc's peek has expired
+        child.send(b"\xb6")
+        self.finish_keys(child, [["esc", ""], ["char", "ö"]])
+
+
 # ---------------------------------------------------------------------------
 # Escdelay, ^S flow control and the
 # curses-less line fallback on a real PTY.  The probe apps need no Runtime;
