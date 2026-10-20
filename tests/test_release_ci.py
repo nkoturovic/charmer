@@ -2694,7 +2694,14 @@ class GatewayProbesScriptTests(unittest.TestCase):
 
     def test_the_recipe_follows_the_store_expression(self) -> None:
         copies, probes = self.tool.recipe()
-        self.assertEqual(len(copies), 5)
+        self.assertEqual(copies, [
+            ("gateway_startup_probe_test.go", "sdk/cliproxy/gwtest_startup_probe_test.go"),
+            ("gateway_service_probe_test.go", "sdk/cliproxy/gwtest_omission_probe_test.go"),
+            ("gateway_codex_identity_probe_test.go", "sdk/cliproxy/gwtest_codex_probe_test.go"),
+            ("gateway_v8_traffic_probe_test.go", "sdk/cliproxy/gwtest_v8_traffic_probe_test.go"),
+            ("gateway_executor_probe_test.go", "internal/runtime/executor/gwtest_omission_probe_test.go"),
+            ("gateway_handlers_probe_test.go", "sdk/api/handlers/gwtest_omission_probe_test.go"),
+        ])
         for source, destination in copies:
             self.assertTrue((REPO_ROOT / "tests" / source).is_file(), source)
             self.assertTrue(destination.endswith("_test.go"), destination)
@@ -3682,8 +3689,10 @@ class SupplyChainLaneTests(unittest.TestCase):
         steps = _steps(battery)
         localedef = "sudo localedef -i en_US -f ISO-8859-1 en_US.ISO-8859-1"
         prepare = next(step for step in steps if localedef in step)
+        readonly = next(i for i, step in enumerate(steps) if "Read-only interpreter for isolated probes" in step)
         full = next(i for i, step in enumerate(steps) if "--require 'DistributionTests'" in step)
-        self.assertLess(steps.index(prepare), full)
+        self.assertLess(steps.index(prepare), readonly)
+        self.assertLess(readonly, full)
         self.assertNotRegex(prepare, r"(?m)^\s+if:")  # every Python leg needs the locale fixtures
         self.assertEqual(battery.count(localedef), 1)
         self.assertNotIn("GITHUB_ENV", prepare)
