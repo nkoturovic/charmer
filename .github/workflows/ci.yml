@@ -282,7 +282,12 @@ jobs:
           # setup-python's toolcache executable can be group-writable;
           # isolated probes deliberately refuse group/other-writable programs.
           python3 -c 'import os, sys; os.chmod(os.path.realpath(sys.executable), 0o555)'
+          # Full-suite locale fixtures need this on every Python leg, without
+          # changing the job's locale. The dedicated 3.15 step reuses it.
+          sudo localedef -i en_US -f ISO-8859-1 en_US.ISO-8859-1
       - name: Full suite except the terminal journeys (tests skipped for a missing boundary say so; the distribution tests must run)
+        env:
+          CHARMER_TEST_DIST_GATEWAY: ${{ runner.temp }}/gateway-dist
         run: |
           umask 077
           python3 tools/test.py --tier full --list | grep -v '^tests.test_tui_pty$' >"$RUNNER_TEMP/modules"
@@ -300,7 +305,6 @@ jobs:
         timeout-minutes: 60
         run: |
           umask 077
-          sudo localedef -i en_US -f ISO-8859-1 en_US.ISO-8859-1
           export LANG=en_US.ISO-8859-1 LC_ALL=en_US.ISO-8859-1
           python3 -c 'import locale, sys; e = locale.getencoding(); print(f"locale encoding {e}, UTF-8 mode {sys.flags.utf8_mode}"); sys.exit(None if e.replace("-", "").lower() == "iso88591" else "the locale is not ISO-8859-1")'
           python3 tools/test.py --tier fast --list | grep -v -E '^tests\.test_tui_(input_)?pty$' >"$RUNNER_TEMP/locale-modules"

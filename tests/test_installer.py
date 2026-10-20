@@ -12,6 +12,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -928,6 +929,8 @@ class PlatformTests(InstallerTestCase):
 class MacOSVersionTests(InstallerTestCase):
     """Synthetic platform commands only; no native macOS probe or gateway."""
 
+    PLATFORM_COMMANDS = ("uname", "mktemp", "sw_vers", "sysctl", "cp", "curl", "wget")
+
     def setUp(self) -> None:
         super().setUp()
         self.tools = self.tmp / "platform-bin"
@@ -964,8 +967,78 @@ class MacOSVersionTests(InstallerTestCase):
         environ.update(env)
         executable = shutil.which(shell[0])
         self.assertIsNotNone(executable)
-        return self.run_installer(*args, shell=(executable, *shell[1:]), script=script,
-                                  path=str(self.tools), **environ)
+        # BusyBox standalone shells can resolve applets before PATH. Functions
+        # win first, and an absent fixture must fail rather than reach the host.
+        functions = "\n".join(f'{name}() {{ {shlex.quote(str(self.tools / name))} "$@"; }}'
+                              for name in self.PLATFORM_COMMANDS)
+        # -c sets $0 to the script path run_installer appends and keeps its argv.
+        # Source it in this selected shell: execing another would lose functions.
+        trampoline = (executable, *shell[1:], "-c", functions + '\n. "$0"\n')
+        return self.run_installer(*args, shell=trampoline, script=script, path=str(self.tools), **environ)
+
+    def fallback_path(self) -> str:
+        directory = self.tmp / "fallback-bin"
+        directory.mkdir()
+        for name in self.PLATFORM_COMMANDS:
+            path = directory / name
+            path.write_text('#!/bin/sh\nprintf "ambient command must not run\\n"\nexit 98\n', encoding="utf-8")
+            path.chmod(0o755)
+        return f"{directory}{os.pathsep}{self.tools}"
+
+    def test_platform_functions_run_every_fixture_and_preserve_script_argv(self) -> None:
+        # Both fixture paths and arguments need shell quoting, independently of
+        # whether this host's BusyBox actually bypasses PATH for bare commands.
+        tools = self.tmp / "platform bin's"
+        self.tools.rename(tools)
+        self.tools = tools
+        for name in self.PLATFORM_COMMANDS:
+            self.command(name, 'printf "<%s>\\n" "$0" "$@"\n')
+        script = self.tmp / "dispatch script's.sh"
+        script.write_text('set -eu\nprintf "<%s>\\n" "$0" "$@"\n' +
+                          "\n".join(f'{name} "$@"' for name in self.PLATFORM_COMMANDS) + "\n", encoding="utf-8")
+        args = ("argument with spaces", "literal'quote", "")
+        expected = [f"<{script}>", *(f"<{arg}>" for arg in args)]
+        for name in self.PLATFORM_COMMANDS:
+            expected.extend([f"<{self.tools / name}>", *(f"<{arg}>" for arg in args)])
+        path = self.fallback_path()
+        if busybox := shutil.which("busybox"):
+            version = subprocess.run([busybox, "--help"], cwd=self.tmp, capture_output=True, text=True,
+                                     timeout=10, stdin=subprocess.DEVNULL,
+                                     env={"HOME": str(self.home), "PATH": str(self.tools), "LC_ALL": "C"})
+            self.assertEqual(version.returncode, 0, version.stdout + version.stderr)
+            banner = (version.stdout + version.stderr).splitlines()[0]
+            print(f"installer BusyBox: path={os.path.realpath(busybox)} version={banner}", flush=True)
+        else:
+            print("installer BusyBox: unavailable on PATH", flush=True)
+        for shell in SHELLS:
+            with self.subTest(shell=shell):
+                executable = shutil.which(shell[0])
+                self.assertIsNotNone(executable)
+                # Record actual bare dispatch, not an inference about CI's
+                # BusyBox compile flags from an emulation on another host.
+                for name in ("uname", "mktemp"):
+                    bare = self.run_installer("--charmer-fixture-dispatch", script=script, path=str(self.tools),
+                                              shell=(executable, *shell[1:], "-c", f'{name} "$@"'))
+                    fixture = bare.stdout == f"<{self.tools / name}>\n<--charmer-fixture-dispatch>\n"
+                    print(f"installer bare dispatch: shell={' '.join(shell)} path={executable} "
+                          f"command={name} fixture={fixture} status={bare.returncode}", flush=True)
+                result = self.run_platform(*args, shell=shell, script=script, PATH=path)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(result.stdout.splitlines(), expected)
+                self.assertEqual(result.stderr, "")
+
+    def test_absent_platform_fixtures_never_fall_through_to_path_or_applets(self) -> None:
+        path = self.fallback_path()
+        script = self.tmp / "missing-fixture.sh"
+        for name in self.PLATFORM_COMMANDS:
+            (self.tools / name).unlink(missing_ok=True)
+            script.write_text(f'set -eu\n{name} "$@"\n', encoding="utf-8")
+            for shell in SHELLS:
+                with self.subTest(shell=shell, command=name):
+                    result = self.run_platform("--charmer-fixture-dispatch", shell=shell, script=script, PATH=path)
+                    self.assertEqual(result.returncode, 127, result.stdout + result.stderr)
+                    self.assertEqual(result.stdout, "")
+                    self.assertIn(str(self.tools / name), result.stderr)
 
     def install_platform(self, release: FakeRelease, *args: str, **kwargs) -> subprocess.CompletedProcess[str]:
         return self.run_platform("--from-dir", str(release.dir), "--allowed-signers", str(self.signers),

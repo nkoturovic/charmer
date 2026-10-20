@@ -1,7 +1,8 @@
 """The qualification battery through the real pinned gateway, offline.
 
-The built cli-proxy-api (``CHARMER_TEST_CLI_PROXY_API``, a /nix/store
-path) runs inside ``bwrap --unshare-net`` with a rendered fixture config;
+The built cli-proxy-api (a Nix store executable, or an explicit portable
+build bound to ``CHARMER_TEST_GATEWAY_BUILD`` by the shared test selector)
+runs inside ``bwrap --unshare-net`` with a rendered fixture config;
 its only upstream is a unix-socket fake that counts every attempt. The
 production transport (``qualify.loopback_post``) reaches the gateway through
 the ingress bridge. Proves the claim a design could not assume:
@@ -25,7 +26,9 @@ import unittest
 import urllib.parse
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
+from unittest import mock
 
+import _gateway
 from _catalog import FIXTURE_ROOT
 from _gateway_harness import boundary
 from charmer import catalog, probe, qualify, render, service, state
@@ -43,18 +46,97 @@ def _free_port() -> int:
 
 
 def _binary() -> str | None:
-    override = os.environ.get(TEST_BINARY_ENV)
-    if override:
-        real = os.path.realpath(override)
-        if not real.startswith("/nix/store/") or not Path(real).is_file():
-            boundary(f"boundary: {TEST_BINARY_ENV}={override} is not a /nix/store cli-proxy-api file")
-        return real
-    from _gateway import _wrapper_gateway
+    binary, reason = _gateway._gateway_binary()
+    if binary is None and os.environ.get(TEST_BINARY_ENV):
+        boundary(reason)
+    return binary
 
-    for candidate in (_wrapper_gateway(), shutil.which("cli-proxy-api")):
-        if candidate and Path(candidate).is_file():
-            return candidate
-    return None
+
+class QualifyBinarySelectionTests(unittest.TestCase):
+    """Pure selector integration: validate fixture bytes, never execute them."""
+
+    def setUp(self) -> None:
+        temporary = tempfile.TemporaryDirectory(prefix="charmer-qualify-selector-")
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name).resolve()
+        self.root.chmod(0o700)
+        self.home = self.root / "home"
+        self.home.mkdir(mode=0o700)
+        self.binary = self.root / "gateway" / "cli-proxy-api"
+        self.binary.parent.mkdir(mode=0o700)
+        self.binary.write_bytes(b"synthetic gateway fixture; never execute\n")
+        self.binary.chmod(0o700)
+        self.record = self.root / "BUILD.json"
+        self.document = {"format": 1, "admitted_series": True, "series": _gateway.admitted_series(),
+                         "targets": {"linux-amd64": {"sha256": _gateway.sha256_file(self.binary)}}}
+        self.write_record()
+        self.enterContext(mock.patch.dict(os.environ, {
+            "HOME": str(self.home), "CHARMER_TEST_REQUIRE_GATEWAY": "1",
+            TEST_BINARY_ENV: str(self.binary), _gateway.BUILD_RECORD_ENV: str(self.record),
+        }, clear=True))
+        self.enterContext(mock.patch.object(_gateway, "host_target", return_value="linux-amd64"))
+        self.wrapper = self.enterContext(mock.patch.object(_gateway, "_wrapper_gateway", return_value=None))
+        self.which = self.enterContext(mock.patch.object(_gateway.shutil, "which", return_value=None))
+        self.version = self.enterContext(mock.patch.object(
+            _gateway, "_version", return_value=(str(self.binary), "fixture-version")))
+
+    def write_record(self) -> None:
+        self.record.write_text(json.dumps(self.document), encoding="utf-8")
+        self.record.chmod(0o600)
+
+    def assertRefused(self, reason: str) -> None:
+        with self.assertRaisesRegex(AssertionError, reason) as raised:
+            _binary()
+        self.assertIn("CHARMER_TEST_REQUIRE_GATEWAY=1:", str(raised.exception))
+        self.version.assert_not_called()
+        self.wrapper.assert_not_called()
+        self.which.assert_not_called()
+
+    def test_valid_explicit_portable_build_is_validated_before_version(self) -> None:
+        with mock.patch.object(_gateway, "bound_gateway_problem", wraps=_gateway.bound_gateway_problem) as validate:
+            def version(real):
+                validate.assert_called_once_with(str(self.binary), str(self.record))
+                self.assertEqual(real, self.binary)
+                return str(real), "fixture-version"
+
+            self.version.side_effect = version
+            self.assertEqual(_binary(), str(self.binary))
+        self.version.assert_called_once_with(self.binary)
+        self.wrapper.assert_not_called()
+        self.which.assert_not_called()
+
+    def test_missing_build_record_and_changed_hash_or_series_are_refused(self) -> None:
+        with mock.patch.dict(os.environ, {_gateway.BUILD_RECORD_ENV: ""}):
+            self.assertRefused("set " + _gateway.BUILD_RECORD_ENV)
+        with mock.patch.dict(os.environ, {_gateway.BUILD_RECORD_ENV: str(self.root / "missing-BUILD.json")}):
+            self.assertRefused("cannot be read")
+        self.document["targets"]["linux-amd64"]["sha256"] = "0" * 64
+        self.write_record()
+        self.assertRefused("sha256 differs")
+        self.document["targets"]["linux-amd64"]["sha256"] = _gateway.sha256_file(self.binary)
+        self.assertGreater(len(self.document["series"]), 1)
+        self.document["series"].reverse()
+        self.write_record()
+        self.assertRefused("another patch series")
+
+    def test_invalid_explicit_selection_never_falls_back(self) -> None:
+        os.environ[TEST_BINARY_ENV] = str(self.root / "missing-cli-proxy-api")
+        self.wrapper.return_value = self.which.return_value = str(self.binary)
+        self.assertRefused("missing-cli-proxy-api")
+
+    def test_ambient_portable_binary_is_not_accepted_without_an_explicit_selection(self) -> None:
+        os.environ.pop(TEST_BINARY_ENV)
+        self.which.return_value = str(self.binary)
+        self.assertIsNone(_binary())
+        self.version.assert_not_called()
+
+    def test_optional_absence_returns_none(self) -> None:
+        os.environ.pop(TEST_BINARY_ENV)
+        os.environ.pop("CHARMER_TEST_REQUIRE_GATEWAY")
+        self.assertIsNone(_binary())
+        self.version.assert_not_called()
+        self.wrapper.assert_called_once_with()
+        self.which.assert_called_once_with("cli-proxy-api")
 
 
 class _Upstream(BaseHTTPRequestHandler):

@@ -2267,6 +2267,9 @@ class EvidenceJobTests(unittest.TestCase):
         positions = [battery.index(needle) for needle in order]
         self.assertEqual(positions, sorted(positions))
         self.assertNotIn("--home inherit", battery)
+        full = next(step for step in _steps(battery) if "--require 'DistributionTests'" in step)
+        self.assertIn("\n        env:\n          CHARMER_TEST_DIST_GATEWAY: ${{ runner.temp }}/gateway-dist\n", full)
+        self.assertNotRegex(full, r"(?m)^\s+if:")
 
     def test_the_distribution_tests_get_the_pinned_backend_by_hash(self) -> None:
         tables = _pin_tables(PINS.read_text())
@@ -3676,12 +3679,21 @@ class SupplyChainLaneTests(unittest.TestCase):
         battery = _jobs(self.texts["ci.yml"])["battery"]
         self.assertIn(f'"{runtime.minor}"', re.search(r"python: \[([^\]]+)\]", battery).group(1))
         steps = _steps(battery)
-        step = next(step for step in steps if "localedef" in step)
+        localedef = "sudo localedef -i en_US -f ISO-8859-1 en_US.ISO-8859-1"
+        prepare = next(step for step in steps if localedef in step)
+        full = next(i for i, step in enumerate(steps) if "--require 'DistributionTests'" in step)
+        self.assertLess(steps.index(prepare), full)
+        self.assertNotRegex(prepare, r"(?m)^\s+if:")  # every Python leg needs the locale fixtures
+        self.assertEqual(battery.count(localedef), 1)
+        self.assertNotIn("GITHUB_ENV", prepare)
+        before_full = self.texts["ci.yml"].split("\njobs:\n", 1)[0] + "\n".join(steps[:full + 1])
+        self.assertNotRegex(before_full, r"(?m)^\s*(?:export )?(?:LANG|LC_ALL)[=:]")
+        step = next(step for step in steps if "export LANG=en_US.ISO-8859-1" in step)
         self.assertIn(f"if: matrix.python == '{runtime.minor}'", step)
+        self.assertLess(full, steps.index(step))
         # Before the pinned client leaves the runner temporary directory.
         self.assertLess(steps.index(step), next(i for i, s in enumerate(steps) if 'rm -f "$RUNNER_TEMP/claude"' in s))
-        for needle in ("sudo localedef -i en_US -f ISO-8859-1 en_US.ISO-8859-1",
-                       "export LANG=en_US.ISO-8859-1 LC_ALL=en_US.ISO-8859-1",
+        for needle in ("export LANG=en_US.ISO-8859-1 LC_ALL=en_US.ISO-8859-1",
                        'e.replace("-", "").lower() == "iso88591"',
                        "python3 tools/test.py --tier fast --list | grep -v -E '^tests\\.test_tui_(input_)?pty$'",
                        "python3 -X warn_default_encoding -c",
