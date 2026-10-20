@@ -440,6 +440,28 @@ class ContractIdentityTests(unittest.TestCase):
             with self.assertRaises(qualify.QualifyError):
                 qualify.parse_gateway_contract(json.dumps(bad).encode())
 
+    def test_v2_binds_the_toolchain_and_explicit_compiled_defaults(self) -> None:
+        old = {"version": 1, "upstream_version": "8.0.33", "patches": ["a.patch@" + "1" * 64]}
+        # v1's hash input and domain remain exactly the old contract, so old
+        # fixture/evidence identities are readable, not silently rewritten.
+        self.assertEqual(qualify.gateway_contract_digest(old), qualify._digest("cm-gateway-contract", {
+            "upstream_version": old["upstream_version"], "patches": old["patches"]}))
+        base = {**old, "version": 2, "go_version": "1.27.2",
+                "godebug": ["tracebacklabels=0", "x509sslcertoverrideplatform=1"]}
+        self.assertEqual(qualify.parse_gateway_contract(json.dumps(base).encode()), base)
+        digest = qualify.gateway_contract_digest(base)
+        self.assertNotEqual(digest, qualify.gateway_contract_digest(old))
+        for change in ({"go_version": "1.27.3"}, {"godebug": ["x509sslcertoverrideplatform=1"]},
+                       {"godebug": ["tracebacklabels=0", "x509sslcertoverrideplatform=0"]}):
+            self.assertNotEqual(digest, qualify.gateway_contract_digest({**base, **change}))
+        for change in ({"version": True}, {"version": 3}, {"go_version": "1.27"}, {"go_version": 1272},
+                       {"godebug": []}, {"godebug": "x509sslcertoverrideplatform=1"},
+                       {"godebug": ["x509sslcertoverrideplatform=1", "x509sslcertoverrideplatform=0"]},
+                       {"godebug": list(reversed(base["godebug"]))}, {"godebug": ["x509sslcertoverrideplatform=1,foo=1"]},
+                       {"godebug": ["foo=1\n"]}, {"unexpected": True}):
+            with self.subTest(change=change), self.assertRaises(qualify.QualifyError):
+                qualify.gateway_contract_digest({**base, **change})
+
     def test_manifest_under_the_asset_root_or_none(self) -> None:
         with _tempdir() as root:
             contract = catalog.load_catalog(FIXTURE_ROOT).docs["native-contract"]

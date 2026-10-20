@@ -9,14 +9,17 @@ compaction margins; this harness cannot settle that uncertainty.
 import copy
 import json
 import re
+import socket
+import threading
 import time
 import unittest
 import uuid
 from collections import Counter
+from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from charmer import catalog, operator, render, state
+from charmer import catalog, operator, probe, render, state
 from _catalog import FIXTURE_ROOT, SHIPPED_ROOT, uses_shipped_catalog
 import _gateway_harness as harness
 
@@ -26,7 +29,11 @@ TOOL = {"name": "gwtest_tool", "description": "fixture tool",
 
 
 def tearDownModule():
-    harness.EVIDENCE.finalize_module(MODULE)
+    try:
+        harness.EVIDENCE.finalize_module(MODULE)
+    finally:
+        # Join this module's fixture before tools/test.py removes its private HOME.
+        harness.close_main_harness()
 
 
 def dotted(body, path):
@@ -70,6 +77,84 @@ def reconstructed_blocks(reply):
                 if delta["type"] == kind:
                     block[key] = block.get(key, "") + delta[key]
     return [blocks[index] for index in sorted(blocks)]
+
+
+def physical_header_inventory(gateway, payload, total):
+    # putrequest below suppresses its automatic Host/Accept-Encoding. Every
+    # physical value, including auth and fixture headers, is counted here.
+    headers = [*gateway.headers().items(), ("Content-Length", str(len(payload))), ("Connection", "close")]
+    if total < len(headers):
+        raise ValueError("header count is smaller than the explicit base inventory")
+    return headers + [("X-Gwtest-Physical", "v")] * (total - len(headers))
+
+
+def require_header_observation(total, status, hits):
+    expected = (200, 1) if total <= 500 else (431, 0)
+    if (status, hits) != expected:
+        raise AssertionError(f"physical header boundary {total}: status/hits={(status, hits)}, want {expected}")
+
+
+def require_fixture_released(snapshot):
+    if snapshot != {"workers": 0, "connections": 0, "peer_closed": True, "sender_done": True}:
+        raise AssertionError("fixture-owned resources are still retained")
+
+
+class RuntimeContractSelfTests(unittest.TestCase):
+    def test_header_inventory_counts_physical_values_and_rejects_duplicate_hits(self):
+        class Gateway:
+            def headers(self):
+                return {"Host": "fixture.invalid", "Authorization": "Bearer fixture", "Content-Type": "application/json",
+                        "anthropic-version": "2023-06-01", "User-Agent": "fixture"}
+        for total in (500, 501):
+            headers = physical_header_inventory(Gateway(), b"{}", total)
+            self.assertEqual(len(headers), total)
+            self.assertEqual(headers.count(("Host", "fixture.invalid")), 1)
+            self.assertEqual(headers.count(("Authorization", "Bearer fixture")), 1)
+            self.assertEqual(headers.count(("Content-Length", "2")), 1)
+            self.assertEqual(headers.count(("X-Gwtest-Physical", "v")), total - 7)
+            self.assertTrue(all("," not in value for _key, value in headers))
+        require_header_observation(500, 200, 1)
+        require_header_observation(501, 431, 0)
+        for observed in ((500, 200, 2), (500, 200, 0), (501, 431, 1), (501, 200, 0)):
+            with self.subTest(observed=observed), self.assertRaises(AssertionError):
+                require_header_observation(*observed)
+
+    def test_resource_snapshot_requires_actual_worker_join(self):
+        # A premature "done" acknowledgement cannot hide a retained thread.
+        fixture = AbandonUpstream.__new__(AbandonUpstream)
+        fixture.lock = threading.Lock()
+        fixture.connections = set()
+        fixture.peer_closed, fixture.done = threading.Event(), threading.Event()
+        fixture.peer_closed.set()
+        fixture.done.set()
+        entered, release = threading.Event(), threading.Event()
+
+        def retained():
+            entered.set()
+            release.wait(5)
+
+        worker = threading.Thread(target=retained, daemon=True)
+        fixture.workers = {worker}
+        worker.start()
+        try:
+            self.assertTrue(entered.wait(1))
+            self.assertFalse(fixture.join_workers(0))
+            with self.assertRaises(AssertionError):
+                require_fixture_released(fixture.snapshot())
+            release.set()
+            self.assertTrue(fixture.join_workers(1))
+            require_fixture_released(fixture.snapshot())
+        finally:
+            release.set()
+            worker.join(timeout=1)
+            self.assertFalse(worker.is_alive())
+
+    def test_retained_worker_sender_or_connection_never_counts_as_release(self):
+        quiet = {"workers": 0, "connections": 0, "peer_closed": True, "sender_done": True}
+        require_fixture_released(quiet)
+        for key, value in (("workers", 1), ("connections", 1), ("peer_closed", False), ("sender_done", False)):
+            with self.subTest(key=key), self.assertRaises(AssertionError):
+                require_fixture_released({**quiet, key: value})
 
 
 class ContractCompletenessTests(unittest.TestCase):
@@ -190,6 +275,193 @@ class GatewayTests(unittest.TestCase):
             self.assertNotIn("reasoning_effort", hit.body)
 
 
+class Go127DiagnosticTests(unittest.TestCase):
+    def check(self, row, package, root):
+        binary = harness.run_codex_diagnostic(root, package=package)
+        harness.EVIDENCE.record(MODULE, "go127", {"row": row, "package": package,
+                                                "root": root, "diagnostic": binary})
+
+    def test_concurrent_response_read_close(self):
+        self.check("response-read-close", "executor", "TestGatewayResponseReadClose")
+
+    def test_slow_non2xx_body_release(self):
+        self.check("slow-non2xx-release", "executor", "TestGatewaySlowNon2xxBodyRelease")
+
+    def test_abandoned_executor_sse(self):
+        self.check("executor-sse-abandon", "executor", "TestGatewayAbandonedExecutorSSE")
+
+    def test_shutdown_resource_accounting(self):
+        self.check("shutdown-resources", "service", "TestGatewayShutdownResources")
+
+
+class PhysicalHeaderBoundaryTests(GatewayTests):
+    def test_go127_physical_header_count_rejects_before_upstream(self):
+        for total in (500, 501):
+            nonce = "gwtest-case-" + uuid.uuid4().hex[:12]
+            body = json.dumps({"model": "gwtest-cc-output-config-high", "max_tokens": 64,
+                               "messages": [{"role": "user", "content": nonce}]}).encode()
+            headers = physical_header_inventory(self.gateway, body, total)
+            base_count = len(self.gateway.headers()) + 2
+            self.assertEqual(base_count, 7)
+            self.assertEqual(len(headers), total)
+            header_bytes = len(b"POST /v1/messages HTTP/1.1\r\n\r\n") + sum(
+                len(f"{name}: {value}\r\n".encode()) for name, value in headers)
+            self.assertLess(header_bytes, 64 * 1024, "must test count, not the byte limit")
+            before = len(self.gateway.upstream.hits)
+            connection = probe.UnixHTTPConnection(self.gateway.socket, timeout=5)
+            try:
+                connection.putrequest("POST", "/v1/messages", skip_host=True, skip_accept_encoding=True)
+                for name, value in headers:
+                    connection.putheader(name, value)  # one physical line each; never comma-joined
+                connection.endheaders(body)
+                response = connection.getresponse()
+                status = response.status
+                response.read()
+            finally:
+                connection.close()
+            hits = len(self.gateway.upstream.hits) - before
+            require_header_observation(total, status, hits)
+            harness.EVIDENCE.record(MODULE, "go127", {"row": "headers-" + str(total), "status": status,
+                "physical_values": len(headers), "base_headers": base_count, "fixture_header_values": total - base_count,
+                "base_names": [name.lower() for name, _value in headers[:base_count]],
+                "header_bytes": header_bytes, "upstream_hits": hits})
+
+
+class AbandonUpstream:
+    """An owned upstream sender waits for the gateway's actual peer close."""
+    def __init__(self, path):
+        self.hits, self.unexpected, self.worker_errors = [], 0, 0
+        self.lock = threading.Lock()
+        self.connections, self.workers = set(), set()
+        self.sent, self.peer_closed, self.done = threading.Event(), threading.Event(), threading.Event()
+        owner = self
+
+        class Handler(BaseHTTPRequestHandler):
+            protocol_version = "HTTP/1.1"
+
+            def log_message(self, *_args):
+                pass
+
+            def do_POST(self):
+                body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                with owner.lock:
+                    owner.hits.append(self.path)
+                    owner.connections.add(self.connection)
+                    owner.workers.add(threading.current_thread())
+                try:
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/event-stream")
+                    self.send_header("Connection", "close")
+                    self.end_headers()
+                    start = {"type": "message_start", "message": {"id": "msg_d217", "type": "message",
+                        "role": "assistant", "model": body["model"], "content": [], "stop_reason": None,
+                        "stop_sequence": None, "usage": {"input_tokens": 1, "output_tokens": 0}}}
+                    data = harness.sse_frame("message_start", start)
+                    data += harness.sse_frame("content_block_start", {"type": "content_block_start", "index": 0,
+                        "content_block": {"type": "text", "text": ""}})
+                    data += harness.sse_frame("content_block_delta", {"type": "content_block_delta", "index": 0,
+                        "delta": {"type": "text_delta", "text": "fixture"}})
+                    self.wfile.write(data)
+                    self.wfile.flush()
+                    owner.sent.set()
+                    self.connection.settimeout(5)
+                    if self.connection.recv(1) == b"":
+                        owner.peer_closed.set()
+                except (OSError, TimeoutError):
+                    pass  # the parent asserts the observed close, never treats silence as success
+                finally:
+                    self.close_connection = True
+
+            def finish(self):
+                try:
+                    # BaseHTTPRequestHandler flushes after do_POST returns.
+                    # Close files only in its normal completion hook.
+                    super().finish()
+                finally:
+                    self.connection.close()
+                    owner.done.set()
+
+        class Server(probe.UnixHTTPServer):
+            def handle_error(self, request, client_address):
+                with owner.lock:
+                    owner.worker_errors += 1
+                super().handle_error(request, client_address)
+
+        self.server = Server(str(path), Handler)
+        self.thread = threading.Thread(target=self.server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
+        self.thread.start()
+
+    def snapshot(self):
+        with self.lock:
+            return {"workers": sum(worker.is_alive() for worker in self.workers),
+                    "connections": sum(conn.fileno() >= 0 for conn in self.connections),
+                    "peer_closed": self.peer_closed.is_set(), "sender_done": self.done.is_set()}
+
+    def join_workers(self, timeout):
+        deadline = time.monotonic() + timeout
+        with self.lock:
+            workers = list(self.workers)
+        for worker in workers:
+            worker.join(timeout=max(0, deadline - time.monotonic()))
+        return not any(worker.is_alive() for worker in workers)
+
+    def close(self):
+        # Cleanup is deliberately AFTER the assertions, including failed ones.
+        with self.lock:
+            connections = list(self.connections)
+        for conn in connections:
+            try:
+                conn.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+        self.server.shutdown()
+        self.server.server_close()
+        self.thread.join(timeout=2)
+        if not self.join_workers(2) or self.thread.is_alive():
+            raise AssertionError("fixture cleanup could not join its owned threads")
+
+
+class DownstreamAbandonTests(unittest.TestCase):
+    def test_abandon_releases_upstream_sender_and_connection_before_cleanup(self):
+        for retain in (False, True):
+            gateway = harness.GatewayHarness(upstream_factory=AbandonUpstream)
+            connection = probe.UnixHTTPConnection(gateway.socket, timeout=5)
+            response = None
+            try:
+                body = json.dumps({"model": "gwtest-cc-output-config-high", "max_tokens": 64, "stream": True,
+                                   "messages": [{"role": "user", "content": "fixture downstream abandonment"}]}).encode()
+                connection.request("POST", "/v1/messages", headers=gateway.headers(), body=body)
+                response = connection.getresponse()
+                self.assertEqual(response.status, 200)
+                self.assertTrue(response.read(1), "stream payload never reached the downstream")
+                self.assertTrue(gateway.upstream.sent.wait(2), "upstream did not reach the send barrier")
+                if retain:
+                    self.assertFalse(gateway.upstream.done.wait(0.1), "retained control already exited")
+                    retained = gateway.upstream.snapshot()
+                    self.assertEqual((retained["workers"], retained["connections"]), (1, 1))
+                    with self.assertRaises(AssertionError):
+                        require_fixture_released(retained)
+                response.close()
+                connection.close()
+                self.assertTrue(gateway.upstream.peer_closed.wait(3), "gateway retained the upstream connection")
+                self.assertTrue(gateway.upstream.done.wait(3), "upstream sender did not finish")
+                self.assertTrue(gateway.upstream.join_workers(2), "upstream worker did not join")
+                self.assertEqual(gateway.upstream.worker_errors, 0, "upstream fixture worker failed")
+                observed = gateway.upstream.snapshot()
+                require_fixture_released(observed)
+                self.assertEqual(len(gateway.upstream.hits), 1, "duplicate upstream request")
+                harness.EVIDENCE.record(MODULE, "go127", {"row": "downstream-retained-control" if retain else "downstream-abandon",
+                    "upstream_hits": len(gateway.upstream.hits), "workers": observed["workers"],
+                    "connections": observed["connections"], "peer_closed": observed["peer_closed"],
+                    "sender_done": observed["sender_done"], "worker_errors": gateway.upstream.worker_errors,
+                    "retained_control_detected": retain})
+            finally:
+                if response is not None:
+                    response.close()
+                connection.close()
+                gateway.close()
+
+
 class PayloadContractTests(GatewayTests):
     def test_a1_a4_generated_overrides_and_shared_wire_siblings(self):
         observed = {}
@@ -224,6 +496,9 @@ class PayloadContractTests(GatewayTests):
                     self.assertIsNone(dotted(hit.body, path), path)
 
     def test_a7_forced_tool_choice_contract_exceptions(self):
+        # Own the existing cache breakpoint so this case can compare the whole
+        # tool definition exactly, independently of auto-cache placement.
+        tool = {**copy.deepcopy(TOOL), "cache_control": {"type": "ephemeral"}}
         for alias, info, contract in override_cases(self.gateway.aliases):
             if info.adapter != harness.CLAUDE:
                 continue
@@ -231,16 +506,49 @@ class PayloadContractTests(GatewayTests):
                 for stream in (False, True):
                     with self.subTest(contract=info.contract, choice=choice["type"], stream=stream):
                         reply = self.gateway.request(alias, stream=stream, body={
-                            **conflicting(contract), "tools": [TOOL], "tool_choice": choice})
+                            **conflicting(contract), "tools": [tool], "tool_choice": choice})
                         self.record("contract_exceptions", harness.contract_row(info.adapter, info.contract, stream, choice["type"]),
                                     reply, classification="observation", contract=info.contract,
                                     choice=choice["type"], stream=stream)
                         hit = self.hit(reply, alias)
                         if "output_config.effort" in contract["params"]:
-                            self.assertIsNone(dotted(hit.body, "output_config.effort"))
+                            # v8 applies explicit payload rules after forced-tool
+                            # normalization. Effort is independent of thinking
+                            # (public Claude effort contract); this is wire
+                            # evidence, not proof of any provider's acceptance.
+                            self.assertEqual(dotted(hit.body, "output_config.effort"),
+                                             contract["params"]["output_config.effort"])
                             self.assertNotIn("thinking", hit.body)
                         else:
                             self.assertEqual(hit.body["reasoning_effort"], contract["params"]["reasoning_effort"])
+                        self.assertEqual(hit.body["tools"], [tool])
+                        self.assertEqual(hit.body["tool_choice"], choice)
+
+    def test_a7_without_override_removes_caller_thinking_and_effort(self):
+        tool = {**copy.deepcopy(TOOL), "cache_control": {"type": "ephemeral"}}
+        def document(*args):
+            doc, aliases, info = harness.build_document(*args)
+            doc["payload"] = {}
+            doc["openai-compatibility"] = [section for section in doc["openai-compatibility"]
+                                           if section["name"] != render.SENTINEL_NAME]
+            return render.finalize_document(doc), aliases, info
+
+        gateway = harness.GatewayHarness(document_factory=document)
+        self.addCleanup(gateway.close)
+        for choice in ({"type": "any"}, {"type": "tool", "name": TOOL["name"]}):
+            for stream in (False, True):
+                reply = gateway.request("gwtest-cc-output-config-high", stream=stream, body={
+                    "thinking": {"type": "adaptive"}, "output_config": {"effort": "high"},
+                    "tools": [tool], "tool_choice": choice})
+                self.assertEqual(reply.status, 200)
+                self.assertEqual(len(reply.hits), 1)
+                sent = reply.hits[0].body
+                self.assertNotIn("thinking", sent)
+                self.assertIsNone(dotted(sent, "output_config.effort"))
+                self.assertEqual(sent["tools"], [tool])
+                self.assertEqual(sent["tool_choice"], choice)
+                self.record("contract_exceptions", streamed_row("A7-no-override-" + choice["type"], stream),
+                            reply, classification="wire-only", thinking_removed=True, effort_removed=True)
 
     def test_a8_continuity_overrides(self):
         for alias, info in self.gateway.aliases.items():
@@ -640,7 +948,7 @@ class SolOverlayCapabilityTests(unittest.TestCase):
     """
     def setUp(self):
         bundle = catalog.load_catalog(SHIPPED_ROOT)
-        self.sol = bundle.lines["sol"]
+        self.sol = copy.deepcopy(bundle.lines["sol"])
         self.applicable = self.sol["generation"] != "6"
         if not self.applicable:
             # Reverted: sol is back on GPT-6 and the Sol 6.1 overlay proof
@@ -651,6 +959,12 @@ class SolOverlayCapabilityTests(unittest.TestCase):
             return
         self.assertEqual(self.sol["registry_overlay"], {"channel": "codex"})
         self.assertEqual(set(self.sol["efforts"]), {"low", "medium", "high", "xhigh", "max"})
+        # Sol is now static. Keep exercising the catalog's overlay capability
+        # shape on an absent synthetic wire, never claim this overrides the
+        # static Sol metadata (which wins, independently of trusted bounds).
+        self.sol["wire_model"] = "gpt-probe-overlay-fixture"
+        registry = catalog.load_pinned_registry(SHIPPED_ROOT / "registry")
+        self.assertTrue(all(self.sol["wire_model"] not in wires for wires in registry.sections.values()))
 
     def document(self, bundle, _egress, port, home, *, levels=True):
         docs = copy.deepcopy(bundle.docs)
@@ -660,6 +974,11 @@ class SolOverlayCapabilityTests(unittest.TestCase):
         codex_id, codex_provider = pools["codex"]
         sol = copy.deepcopy(self.sol)
         sol["provider"] = codex_id
+        # The fixture provider ordinarily enables only high/xhigh. This probe
+        # copies the shipped five-effort Sol line, so carry all of that line's
+        # explicit contracts too; otherwise the no-level final-barrier test
+        # silently exercises unconfigured low/medium/max aliases.
+        codex_provider["payload_contracts"] = [item["proxy_contract"] for item in sol["efforts"].values()]
         # The catalog owns Sonnet's real generation/floor. This synthetic T1 instance
         # exercises its client-effort overlay shape without publishing it.
         sonnet = copy.deepcopy(next(e for e in bundle.lines.values() if e["provider"] == claude_id))
@@ -687,6 +1006,12 @@ class SolOverlayCapabilityTests(unittest.TestCase):
             self.assertEqual(row["max-context-length"], entry["context"]["provider_tokens"])
             self.assertEqual(row["max-completion-tokens"], entry["output"]["declared_tokens"])
             self.assertEqual(row["thinking"]["levels"], [level for level in catalog.OVERLAY_THINKING_LEVELS if level in entry["efforts"]])
+        for effort, entry in sol["efforts"].items():
+            alias = entry["selector"].removesuffix("[1m]")
+            matching = [rule for rule in document["payload"]["override"]
+                        if any(model["name"] == alias for model in rule["models"])]
+            self.assertEqual(len(matching), 1, "each copied Sol alias needs its actual explicit override")
+            self.assertEqual(matching[0]["params"], {"reasoning.effort": effort})
         if not levels:
             del document[render.OVERLAY_KEY]["codex"][0]["thinking"]
         document["disable-image-generation"] = True
@@ -707,14 +1032,18 @@ class SolOverlayCapabilityTests(unittest.TestCase):
             return
         binary = harness.run_codex_diagnostic("TestCodexProbeSolEfforts", fixture=self.fixture())
         harness.EVIDENCE.record(MODULE, "sol_overlay", {"row": "SO1", "diagnostic": binary,
-            "efforts": 5, "paths": "HTTP,stream,tool-setup,tool-continuation", "summary": True, "encrypted_include": True})
+            "efforts": 5, "paths": "HTTP,stream,tool-setup,tool-continuation,translated-HTTP,translated-stream",
+            "layer": "full-pipeline", "summary": True, "encrypted_include": True})
 
-    def test_missing_levels_strips_reasoning_summary(self):
+    def test_missing_levels_separates_capability_and_payload_barriers(self):
         if not self.applicable:  # not applicable: asserted in setUp
             return
         binary = harness.run_codex_diagnostic("TestCodexProbeSolEfforts", fixture=self.fixture(levels=False))
         harness.EVIDENCE.record(MODULE, "sol_overlay", {"row": "SO2", "diagnostic": binary,
-            "efforts": 5, "summary_stripped": True, "encrypted_include": True})
+            "efforts": 5, "summary_preserved": True, "encrypted_include": True,
+            "capability_only_payload_rules": 0, "capability_only_effort_stripped": True,
+            "full_pipeline_override_retained": True, "full_pipeline_effort_restored": True,
+            "paths": "native-HTTP,native-stream,tool-continuation,translated-HTTP,translated-stream"})
 
     def test_production_overlay_loader_parity_and_bare_aliases(self):
         if not self.applicable:  # not applicable: asserted in setUp

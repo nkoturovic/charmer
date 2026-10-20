@@ -1,6 +1,6 @@
 diff --git a/internal/runtime/executor/claude_manager_prepare_cm053_test.go b/internal/runtime/executor/claude_manager_prepare_cm053_test.go
 new file mode 100644
-index 0000000..6cf0e65
+index 00000000..b5394cf9
 --- /dev/null
 +++ b/internal/runtime/executor/claude_manager_prepare_cm053_test.go
 @@ -0,0 +1,154 @@
@@ -22,12 +22,12 @@ index 0000000..6cf0e65
 +	"sync/atomic"
 +	"testing"
 +
-+	claudeauth "github.com/router-for-me/CLIProxyAPI/v7/internal/auth/claude"
-+	"github.com/router-for-me/CLIProxyAPI/v7/internal/config"
-+	"github.com/router-for-me/CLIProxyAPI/v7/internal/registry"
-+	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/auth"
-+	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/executor"
-+	sdktranslator "github.com/router-for-me/CLIProxyAPI/v7/sdk/translator"
++	claudeauth "github.com/router-for-me/CLIProxyAPI/v8/internal/auth/claude"
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
++	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
++	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
++	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
 +)
 +
 +type cm053OwnUpstream struct{ calls atomic.Int64 }
@@ -160,7 +160,7 @@ index 0000000..6cf0e65
 +}
 diff --git a/sdk/cliproxy/auth/auth_snapshot_cm053_test.go b/sdk/cliproxy/auth/auth_snapshot_cm053_test.go
 new file mode 100644
-index 0000000..90c2016
+index 00000000..71e85830
 --- /dev/null
 +++ b/sdk/cliproxy/auth/auth_snapshot_cm053_test.go
 @@ -0,0 +1,260 @@
@@ -181,7 +181,7 @@ index 0000000..90c2016
 +	"testing"
 +	"time"
 +
-+	"github.com/router-for-me/CLIProxyAPI/v7/internal/registry"
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
 +)
 +
 +const cm053SnapshotRounds = 200
@@ -424,95 +424,49 @@ index 0000000..90c2016
 +	auth.Metadata["cm053_prepared"] = "yes"
 +	return auth, nil
 +}
-diff --git a/sdk/cliproxy/auth/conductor_lifecycle.go b/sdk/cliproxy/auth/conductor_lifecycle.go
-index 2716fcc..b0cd2a0 100644
---- a/sdk/cliproxy/auth/conductor_lifecycle.go
-+++ b/sdk/cliproxy/auth/conductor_lifecycle.go
-@@ -115,12 +115,15 @@ func (m *Manager) Register(ctx context.Context, auth *Auth) (*Auth, error) {
- 	auth.Generation = 1
- 	authClone := auth.Clone()
- 	m.auths[auth.ID] = authClone
-+	// The published credential is read and written only under m.mu (reconcile,
-+	// MarkResult): detach the scheduler's copy before the lock is released.
-+	schedulerSnapshot := m.schedulerSnapshotLocked(authClone)
- 	m.mu.Unlock()
- 	if !shouldDeferAPIKeyModelAliasRebuild(ctx) {
- 		m.rebuildAPIKeyModelAliasFromRuntimeConfig()
- 	}
--	if m.scheduler != nil {
--		m.scheduler.upsertAuth(authClone.Clone())
-+	if schedulerSnapshot != nil {
-+		m.scheduler.upsertAuth(schedulerSnapshot)
- 	}
- 	m.structuralEpoch.Add(1)
- 	m.queueRefreshReschedule(auth.ID)
-@@ -132,6 +135,15 @@ func (m *Manager) Register(ctx context.Context, auth *Auth) (*Auth, error) {
- 	return auth.Clone(), nil
- }
- 
-+// schedulerSnapshotLocked returns the scheduler's detached copy of a credential
-+// just published in m.auths, or nil without a scheduler. m.mu must be held.
-+func (m *Manager) schedulerSnapshotLocked(published *Auth) *Auth {
-+	if m.scheduler == nil || published == nil {
-+		return nil
-+	}
-+	return published.Clone()
-+}
-+
- type updateAuthMode int
- 
- const (
-@@ -269,12 +281,15 @@ func (m *Manager) updateInternal(ctx context.Context, base, auth *Auth, mode upd
- 	}
- 	authClone := auth.Clone()
- 	m.auths[auth.ID] = authClone
-+	// The published credential is read and written only under m.mu (reconcile,
-+	// MarkResult): detach the scheduler's copy before the lock is released.
-+	schedulerSnapshot := m.schedulerSnapshotLocked(authClone)
- 	m.mu.Unlock()
- 	if !shouldDeferAPIKeyModelAliasRebuild(ctx) {
- 		m.rebuildAPIKeyModelAliasFromRuntimeConfig()
- 	}
--	if m.scheduler != nil {
--		m.scheduler.upsertAuth(authClone.Clone())
-+	if schedulerSnapshot != nil {
-+		m.scheduler.upsertAuth(schedulerSnapshot)
- 	}
- 	m.structuralEpoch.Add(1)
- 	m.queueRefreshReschedule(auth.ID)
 diff --git a/sdk/cliproxy/auth/types.go b/sdk/cliproxy/auth/types.go
-index 7791230..51d0bc1 100644
+index cb815e48..c6d8cfb7 100644
 --- a/sdk/cliproxy/auth/types.go
 +++ b/sdk/cliproxy/auth/types.go
-@@ -291,19 +291,22 @@ func (a *Auth) Clone() *Auth {
+@@ -425,6 +425,9 @@ func (a *Auth) Clone() *Auth {
  	}
  	copyAuth := *a
  	copyAuth.Quota = a.Quota.Clone()
--	if len(a.Attributes) > 0 {
 +	// A clone owns every map it carries, empty ones included: a request path that
 +	// fills an empty map of its copy must never write into the manager's published
 +	// credential. nil stays nil.
-+	if a.Attributes != nil {
+ 	if a.Attributes != nil {
  		copyAuth.Attributes = make(map[string]string, len(a.Attributes))
  		for key, value := range a.Attributes {
- 			copyAuth.Attributes[key] = value
- 		}
- 	}
--	if len(a.Metadata) > 0 {
-+	if a.Metadata != nil {
- 		copyAuth.Metadata = make(map[string]any, len(a.Metadata))
- 		for key, value := range a.Metadata {
--			copyAuth.Metadata[key] = value
-+			copyAuth.Metadata[key] = cloneMetadataValue(value)
- 		}
- 	}
--	if len(a.ModelStates) > 0 {
-+	if a.ModelStates != nil {
- 		copyAuth.ModelStates = make(map[string]*ModelState, len(a.ModelStates))
- 		for key, state := range a.ModelStates {
- 			copyAuth.ModelStates[key] = state.Clone()
-@@ -313,6 +316,52 @@ func (a *Auth) Clone() *Auth {
+@@ -444,30 +447,65 @@ func (a *Auth) Clone() *Auth {
  	return &copyAuth
+ }
+ 
++// cloneMetadataMap copies credential metadata deeply (cloneMetadataValue), so a
++// clone never shares a mutable container with its source.
+ func cloneMetadataMap(src map[string]any) map[string]any {
+ 	if src == nil {
+ 		return nil
+ 	}
+ 	dst := make(map[string]any, len(src))
+ 	for key, value := range src {
+-		switch typed := value.(type) {
+-		case map[string]any:
+-			dst[key] = cloneMetadataMap(typed)
+-		case []string:
+-			s := make([]string, len(typed))
+-			copy(s, typed)
+-			dst[key] = s
+-		case []any:
+-			s := make([]any, len(typed))
+-			copy(s, typed)
+-			dst[key] = s
+-		default:
+-			dst[key] = value
+-		}
++		dst[key] = cloneMetadataValue(value)
+ 	}
+ 	return dst
  }
  
 +// cloneMetadataValue copies the JSON container shapes credential metadata holds

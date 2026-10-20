@@ -14,6 +14,7 @@ let diagnostic = cliProxyApi.overrideAttrs (old: {
     cp ${./gateway_go/auth_race_test.go} sdk/cliproxy/auth/gwtest_race_test.go
     cp ${./gateway_go/api_race_test.go} internal/api/gwtest_race_test.go
     cp ${./gateway_go/service_race_test.go} sdk/cliproxy/gwtest_race_test.go
+    cp ${./gateway_go/handlers_plugin_host_race_test.go} sdk/api/handlers/gwtest_plugin_host_race_test.go
   '';
   buildPhase = ''
     runHook preBuild
@@ -25,12 +26,13 @@ let diagnostic = cliProxyApi.overrideAttrs (old: {
     race executor ./internal/runtime/executor ./internal/runtime/executor,./internal/auth/claude
     race auth ./sdk/cliproxy/auth ./sdk/cliproxy/auth
     race api ./internal/api ./internal/api,./sdk/api/handlers
+    race handlers ./sdk/api/handlers ./sdk/api/handlers
     race service ./sdk/cliproxy ./internal/api,./sdk/api/handlers,./sdk/cliproxy,./sdk/cliproxy/auth,./internal/runtime/executor,./internal/auth/claude
     runHook postBuild
   '';
   installPhase = ''
     mkdir -p "$out/bin" "$out/share"
-    cp gwtest-race-executor gwtest-race-auth gwtest-race-api gwtest-race-service "$out/bin/"
+    cp gwtest-race-executor gwtest-race-auth gwtest-race-api gwtest-race-service gwtest-race-handlers "$out/bin/"
     # Target extents in THIS patched source: label, file, first, last line.
     # A func ends at its first column-0 brace (gofmt); a stmt is one line.
     # An optional 5th argument anchors a stmt inside the named func.
@@ -52,7 +54,7 @@ let diagnostic = cliProxyApi.overrideAttrs (old: {
     target reconcile sdk/cliproxy/auth/conductor_selection.go func '^func \(m \*Manager\) ReconcileRegistryModelStates\('
     target reconcile_write sdk/cliproxy/auth/conductor_selection.go stmt '^[[:space:]]+auth\.ModelStates = candidateAuth\.ModelStates$' '^func \(m \*Manager\) ReconcileRegistryModelStates\('
     target update_internal sdk/cliproxy/auth/conductor_lifecycle.go func '^func \(m \*Manager\) updateInternal\('
-    target clone_after_unlock sdk/cliproxy/auth/conductor_lifecycle.go stmt 'm\.scheduler\.upsertAuth\((authClone\.Clone\(\)|schedulerSnapshot)\)' '^func \(m \*Manager\) updateInternal\('
+    target clone_after_unlock sdk/cliproxy/auth/conductor_lifecycle.go stmt 'm\.scheduler\.upsertAuth\(committed\.Clone\(\)\)' '^func \(m \*Manager\) finishAuthUpdate\('
     target update_clients internal/api/server_reload.go func '^func \(s \*Server\) UpdateClientsContext\('
     target config_write internal/api/server_reload.go stmt '^[[:space:]]+s\.cfg = (cfg|snapshot)$' '^func \(s \*Server\) UpdateClientsContext\('
     target set_plugin_host sdk/api/handlers/handlers.go func '^func \(h \*BaseAPIHandler\) SetPluginHost\('

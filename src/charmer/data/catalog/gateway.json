@@ -9,7 +9,7 @@
     "token_file": ".config/charmer/api-key",
     "auth_dir": ".local/share/charmer/auth",
     "service": "cli-proxy-api",
-    "cliproxyapi_baseline": "7.3.15",
+    "cliproxyapi_baseline": "8.0.33",
     "patches": [
       "cli-proxy-api-loopback-oauth.patch",
       "cli-proxy-api-kimi-claude-compat.patch",
@@ -23,7 +23,6 @@
       "cli-proxy-api-openai-compat-keyed-safety.patch",
       "cli-proxy-api-auth-snapshot-locking.patch",
       "cli-proxy-api-server-config-snapshot.patch",
-      "cli-proxy-api-plugin-host-locking.patch",
       "cli-proxy-api-claude-metadata-locking.patch",
       "cli-proxy-api-oauth-model-overlay.patch",
       "cli-proxy-api-no-antigravity-egress.patch",
@@ -32,7 +31,9 @@
       "cli-proxy-api-codex-api-key-safety.patch",
       "cli-proxy-api-refresh-shutdown-join.patch",
       "cli-proxy-api-openai-content-chunks.patch",
-      "cli-proxy-api-charmer-model-ids.patch"
+      "cli-proxy-api-charmer-model-ids.patch",
+      "cli-proxy-api-access-log-path-quoting.patch",
+      "cli-proxy-api-codex-refresh-lead.patch"
     ],
     "model_discovery": "disabled",
     "renderer": "restricted-yaml-v1",
@@ -65,6 +66,7 @@
       "logging-to-file": false,
       "usage-statistics-enabled": false,
       "proxy-url": "",
+      "tls-handshake-timeout-seconds": 20,
       "passthrough-headers": false,
       "request-retry": 0,
       "max-retry-credentials": 1,

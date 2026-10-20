@@ -1,18 +1,18 @@
 diff --git a/internal/api/handlers/management/handler.go b/internal/api/handlers/management/handler.go
-index 87063aa..c7f363d 100644
+index cf802eb0..aeb5024d 100644
 --- a/internal/api/handlers/management/handler.go
 +++ b/internal/api/handlers/management/handler.go
 @@ -21,7 +21,6 @@ import (
- 	sdkAuth "github.com/router-for-me/CLIProxyAPI/v7/sdk/auth"
- 	coreauth "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/auth"
+ 	sdkAuth "github.com/router-for-me/CLIProxyAPI/v8/sdk/auth"
+ 	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
  	log "github.com/sirupsen/logrus"
 -	"golang.org/x/crypto/bcrypt"
  )
  
  type attemptInfo struct {
-@@ -307,13 +306,9 @@ func (h *Handler) AuthenticateManagementKey(clientIP string, localClient bool, p
- 	}
+@@ -333,13 +332,9 @@ func (h *Handler) AuthenticateManagementKey(clientIP string, localClient bool, p
  
+ 	h.mu.Lock()
  	cfg := h.cfg
 -	var (
 -		allowRemote bool
@@ -23,9 +23,9 @@ index 87063aa..c7f363d 100644
  		allowRemote = cfg.RemoteManagement.AllowRemote
 -		secretHash = cfg.RemoteManagement.SecretKey
  	}
+ 	h.mu.Unlock()
  	if h.allowRemoteOverride {
- 		allowRemote = true
-@@ -364,7 +359,11 @@ func (h *Handler) AuthenticateManagementKey(clientIP string, localClient bool, p
+@@ -391,7 +386,11 @@ func (h *Handler) AuthenticateManagementKey(clientIP string, localClient bool, p
  		h.attemptsMu.Unlock()
  	}
  
@@ -38,7 +38,7 @@ index 87063aa..c7f363d 100644
  		return false, http.StatusForbidden, "remote management key not set"
  	}
  
-@@ -373,28 +372,13 @@ func (h *Handler) AuthenticateManagementKey(clientIP string, localClient bool, p
+@@ -400,28 +399,13 @@ func (h *Handler) AuthenticateManagementKey(clientIP string, localClient bool, p
  		return false, http.StatusUnauthorized, "missing management key"
  	}
  
@@ -68,12 +68,12 @@ index 87063aa..c7f363d 100644
 +	return false, http.StatusUnauthorized, "invalid management key"
  }
  
- // persist saves the current in-memory config to disk.
+ // persistLocked saves the current in-memory config to disk.
 diff --git a/internal/api/server.go b/internal/api/server.go
-index 990c18a..f3a2343 100644
+index 25a1aa43..87908aad 100644
 --- a/internal/api/server.go
 +++ b/internal/api/server.go
-@@ -238,9 +238,11 @@ func NewServer(cfg *config.Config, authManager *auth.Manager, accessManager *sdk
+@@ -247,9 +247,11 @@ func NewServer(cfg *config.Config, authManager *auth.Manager, accessManager *sdk
  		optionState.routerConfigurator(engine, s.handlers, cfg)
  	}
  
@@ -90,10 +90,10 @@ index 990c18a..f3a2343 100644
  	if hasManagementSecret {
 diff --git a/internal/api/server_management_env_only_test.go b/internal/api/server_management_env_only_test.go
 new file mode 100644
-index 0000000..b780552
+index 00000000..f5edeeff
 --- /dev/null
 +++ b/internal/api/server_management_env_only_test.go
-@@ -0,0 +1,497 @@
+@@ -0,0 +1,504 @@
 +package api
 +
 +import (
@@ -107,12 +107,12 @@ index 0000000..b780552
 +	"time"
 +
 +	"github.com/gin-gonic/gin"
-+	managementHandlers "github.com/router-for-me/CLIProxyAPI/v7/internal/api/handlers/management"
-+	proxyconfig "github.com/router-for-me/CLIProxyAPI/v7/internal/config"
-+	"github.com/router-for-me/CLIProxyAPI/v7/internal/pluginhost"
-+	"github.com/router-for-me/CLIProxyAPI/v7/internal/watcher"
-+	sdkaccess "github.com/router-for-me/CLIProxyAPI/v7/sdk/access"
-+	"github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/auth"
++	managementHandlers "github.com/router-for-me/CLIProxyAPI/v8/internal/api/handlers/management"
++	proxyconfig "github.com/router-for-me/CLIProxyAPI/v8/internal/config"
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/pluginhost"
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/watcher"
++	sdkaccess "github.com/router-for-me/CLIProxyAPI/v8/sdk/access"
++	"github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 +	"golang.org/x/crypto/bcrypt"
 +)
 +
@@ -310,7 +310,14 @@ index 0000000..b780552
 +	}
 +	for _, key := range []string{envOnlyConfigKey, envOnlyLocalKey, "wrong", ""} {
 +		rr := serveAllowlist(s, allowlistRequest(http.MethodGet, "/v0/management/auth-files", key, ""))
-+		assertRefused(t, rr, fmt.Sprintf("%s: key %q", label, key))
++		// The allowlist lets the request through; the unavailable management
++		// API answers the bare 404 (after CORS, so no CORS assertion here).
++		if problem := refusalProblem(rr); problem != "" && !strings.Contains(problem, "CORS ran") {
++			t.Fatalf("%s: key %q: %s", label, key, problem)
++		}
++		if rr.Code != http.StatusNotFound || rr.Body.Len() != 0 || rr.Header().Get("X-CPA-VERSION") != "" {
++			t.Fatalf("%s: key %q: status = %d body=%q, want the bare 404 of an unavailable management API", label, key, rr.Code, rr.Body.String())
++		}
 +	}
 +}
 +
@@ -591,11 +598,45 @@ index 0000000..b780552
 +	}
 +	assertManagementOff(t, s, "keep-alive server without MANAGEMENT_PASSWORD")
 +}
+diff --git a/internal/api/server_management_v8_test.go b/internal/api/server_management_v8_test.go
+index 09c20b18..8115e4ad 100644
+--- a/internal/api/server_management_v8_test.go
++++ b/internal/api/server_management_v8_test.go
+@@ -18,6 +18,9 @@ import (
+ )
+ 
+ func TestManagementV8RoutesShareAccessControl(t *testing.T) {
++	// charmer: management authenticates only with MANAGEMENT_PASSWORD; the
++	// config secret-key and the local password are ignored.
++	t.Setenv("MANAGEMENT_PASSWORD", "test-password")
+ 	gin.SetMode(gin.TestMode)
+ 	for _, tc := range []struct {
+ 		name                      string
+@@ -62,6 +65,9 @@ func TestManagementV8RoutesShareAccessControl(t *testing.T) {
+ }
+ 
+ func TestManagementV8IndependentContract(t *testing.T) {
++	// charmer: management authenticates only with MANAGEMENT_PASSWORD; the
++	// config secret-key and the local password are ignored.
++	t.Setenv("MANAGEMENT_PASSWORD", "test-password")
+ 	path := filepath.Join(t.TempDir(), "config.yaml")
+ 	raw := "port: 8317\nrequest-retry: 3\ndebug: false\napi-keys: [client]\nremote-management: {secret-key: test-password}\n"
+ 	if err := os.WriteFile(path, []byte(raw), 0600); err != nil {
+@@ -180,6 +186,9 @@ func TestManagementV8IndependentContract(t *testing.T) {
+ }
+ 
+ func TestManagementV8PluginOperationMigratesConfiguration(t *testing.T) {
++	// charmer: management authenticates only with MANAGEMENT_PASSWORD; the
++	// config secret-key and the local password are ignored.
++	t.Setenv("MANAGEMENT_PASSWORD", "test-password")
+ 	dir := t.TempDir()
+ 	path := filepath.Join(dir, "config.yaml")
+ 	raw := fmt.Sprintf("codex: {disable-codex-cloaking: true}\nremote-management: {secret-key: test-password}\nplugins:\n  dir: %q\n  configs: {test-plugin: {enabled: false}}\n", filepath.ToSlash(dir))
 diff --git a/internal/api/server_reload.go b/internal/api/server_reload.go
-index c875ce8..a79a604 100644
+index 36c8e1ce..b886d46d 100644
 --- a/internal/api/server_reload.go
 +++ b/internal/api/server_reload.go
-@@ -126,11 +126,9 @@ func (s *Server) UpdateClientsContext(ctx context.Context, cfg *config.Config) b
+@@ -133,11 +133,9 @@ func (s *Server) UpdateClientsContext(ctx context.Context, cfg *config.Config) b
  		util.SetLogLevel(cfg)
  	}
  
@@ -610,7 +651,7 @@ index c875ce8..a79a604 100644
  	if s.envManagementSecret {
  		s.registerManagementRoutes()
  		if s.managementRoutesEnabled.CompareAndSwap(false, true) {
-@@ -139,23 +137,7 @@ func (s *Server) UpdateClientsContext(ctx context.Context, cfg *config.Config) b
+@@ -146,23 +144,7 @@ func (s *Server) UpdateClientsContext(ctx context.Context, cfg *config.Config) b
  			s.managementRoutesEnabled.Store(true)
  		}
  	} else {
@@ -635,69 +676,43 @@ index c875ce8..a79a604 100644
  	}
  	redisqueue.SetEnabled(s.managementRoutesEnabled.Load() || (cfg != nil && cfg.Home.Enabled))
  
-diff --git a/internal/config/config_load.go b/internal/config/config_load.go
-index 552567c..ac5d0e1 100644
---- a/internal/config/config_load.go
-+++ b/internal/config/config_load.go
-@@ -122,21 +122,9 @@ func loadConfigBytes(configFile string, data []byte, optional bool) (*Config, er
- 		return nil, errValidate
- 	}
- 
--	// Hash remote management key if plaintext is detected (nested)
--	// We consider a value to be already hashed if it looks like a bcrypt hash ($2a$, $2b$, or $2y$ prefix).
--	if cfg.RemoteManagement.SecretKey != "" && !looksLikeBcrypt(cfg.RemoteManagement.SecretKey) {
--		hashed, errHash := hashSecret(cfg.RemoteManagement.SecretKey)
--		if errHash != nil {
--			return nil, fmt.Errorf("failed to hash remote management key: %w", errHash)
--		}
--		cfg.RemoteManagement.SecretKey = hashed
--
--		// Persist the hashed value back to the config file to avoid re-hashing on next startup.
--		// Preserve YAML comments and ordering; update only the nested key.
--		if configFile != "" {
--			_ = SaveConfigPreserveCommentsUpdateNestedScalar(configFile, []string{"remote-management", "secret-key"}, hashed)
--		}
--	}
-+	// charmer local patch (management-env-only): a config secret-key is
-+	// dropped, never hashed and never written back.
-+	dropConfigManagementSecret(&cfg)
- 
- 	cfg.RemoteManagement.PanelGitHubRepository = strings.TrimSpace(cfg.RemoteManagement.PanelGitHubRepository)
- 	if cfg.RemoteManagement.PanelGitHubRepository == "" {
 diff --git a/internal/config/management_env_only.go b/internal/config/management_env_only.go
 new file mode 100644
-index 0000000..98fd5f5
+index 00000000..2437574a
 --- /dev/null
 +++ b/internal/config/management_env_only.go
-@@ -0,0 +1,17 @@
+@@ -0,0 +1,19 @@
 +package config
 +
 +import log "github.com/sirupsen/logrus"
 +
 +// charmer local patch (management-env-only): the management API
 +// authenticates only with the MANAGEMENT_PASSWORD environment secret. A
-+// remote-management secret-key from a config file or payload, plaintext or
-+// bcrypt, is dropped at every load (start and hot reload): it never enables
-+// the management API, never authenticates, is never hashed and is never
-+// written back. The value itself is never logged.
++// management secret-key from a config file or payload, under either spelling
++// (remote-management.secret-key or the v8 management.secret-key, which the
++// layout loader maps to the same field), plaintext or bcrypt, is dropped at
++// every load (start and hot reload): it never enables the management API,
++// never authenticates, is never hashed and is never written back. The value
++// itself is never logged.
 +func dropConfigManagementSecret(cfg *Config) {
 +	if cfg == nil || cfg.RemoteManagement.SecretKey == "" {
 +		return
 +	}
 +	cfg.RemoteManagement.SecretKey = ""
-+	log.Warn("remote-management.secret-key is ignored: management authenticates only with MANAGEMENT_PASSWORD")
++	log.Warn("remote-management.secret-key and management.secret-key are ignored: management authenticates only with MANAGEMENT_PASSWORD")
 +}
 diff --git a/internal/config/management_env_only_test.go b/internal/config/management_env_only_test.go
 new file mode 100644
-index 0000000..ef0025c
+index 00000000..5657410e
 --- /dev/null
 +++ b/internal/config/management_env_only_test.go
-@@ -0,0 +1,79 @@
+@@ -0,0 +1,187 @@
 +package config
 +
 +import (
 +	"os"
 +	"path/filepath"
++	"strings"
 +	"testing"
 +
 +	"golang.org/x/crypto/bcrypt"
@@ -772,8 +787,115 @@ index 0000000..ef0025c
 +		})
 +	}
 +}
++
++// Both spellings of the management secret, plaintext or bcrypt, alone or
++// together, are dropped by every load, and the file is never touched.
++func TestManagementEnvOnly_BothSpellingsIgnoredFileUntouched(t *testing.T) {
++	for name, secret := range envOnlyConfigSecrets(t) {
++		for spelling, raw := range map[string]string{
++			"remote-management": "port: 8317\napi-keys: [client-key]\nremote-management:\n  allow-remote: false\n  secret-key: \"" + secret + "\"\n",
++			"management":        "port: 8317\naccess: {api-keys: [client-key]}\nmanagement:\n  allow-remote: false\n  secret-key: \"" + secret + "\"\n",
++			"both":              "port: 8317\napi-keys: [client-key]\nremote-management:\n  secret-key: \"" + secret + "\"\nmanagement:\n  secret-key: \"" + secret + "\"\n",
++		} {
++			t.Run(name+"/"+spelling, func(t *testing.T) {
++				path := filepath.Join(t.TempDir(), "config.yaml")
++				if err := os.WriteFile(path, []byte(raw), 0o400); err != nil {
++					t.Fatalf("write config: %v", err)
++				}
++				before, err := os.Stat(path)
++				if err != nil {
++					t.Fatal(err)
++				}
++				loaded, err := LoadConfig(path)
++				if err != nil {
++					t.Fatalf("LoadConfig: %v", err)
++				}
++				fromBytes, err := LoadConfigBytes([]byte(raw))
++				if err != nil {
++					t.Fatalf("LoadConfigBytes: %v", err)
++				}
++				parsed, err := ParseConfigBytes([]byte(raw))
++				if err != nil {
++					t.Fatalf("ParseConfigBytes: %v", err)
++				}
++				for label, cfg := range map[string]*Config{"LoadConfig": loaded, "LoadConfigBytes": fromBytes, "ParseConfigBytes": parsed} {
++					if cfg.RemoteManagement.SecretKey != "" {
++						t.Fatalf("%s kept a %s secret-key under %s", label, name, spelling)
++					}
++					if cfg.Port != 8317 || len(cfg.APIKeys) != 1 {
++						t.Fatalf("%s did not load the rest of the config: port=%d api-keys=%d", label, cfg.Port, len(cfg.APIKeys))
++					}
++				}
++				after, err := os.ReadFile(path)
++				if err != nil {
++					t.Fatal(err)
++				}
++				info, err := os.Stat(path)
++				if err != nil {
++					t.Fatal(err)
++				}
++				if string(after) != raw || !info.ModTime().Equal(before.ModTime()) {
++					t.Fatalf("loading rewrote config.yaml:\n%s", after)
++				}
++			})
++		}
++	}
++}
++
++// Migrating a charmer-shaped legacy config to the v8 layout drops no security
++// setting and re-enables none; the migrated management secret is still
++// ignored.
++func TestManagementEnvOnly_V8MigrationKeepsSecuritySettings(t *testing.T) {
++	legacy := []byte("host: \"127.0.0.1\"\nport: 8317\ntls:\n  enable: false\n" +
++		"remote-management:\n  allow-remote: false\n  secret-key: \"" + envOnlyConfigTestKey + "\"\n  disable-control-panel: true\n  disable-auto-update-panel: true\n" +
++		"api-keys:\n  - \"client-key\"\npprof:\n  enable: false\n  addr: \"127.0.0.1:8316\"\n" +
++		"plugins:\n  enabled: false\ndiscovery:\n  enabled: false\ncommercial-mode: true\nws-auth: true\ndisable-cooling: true\n")
++	migrated, changed, err := NormalizeConfigLayout(legacy, true)
++	if err != nil {
++		t.Fatalf("NormalizeConfigLayout(migrate): %v", err)
++	}
++	if !changed || !strings.Contains(string(migrated), "management:") {
++		t.Fatalf("the probe did not migrate the layout:\n%s", migrated)
++	}
++	before, err := LoadConfigBytes(legacy)
++	if err != nil {
++		t.Fatalf("load legacy: %v", err)
++	}
++	after, err := LoadConfigBytes(migrated)
++	if err != nil {
++		t.Fatalf("load migrated: %v", err)
++	}
++	type security struct {
++		host                               string
++		port                               int
++		tls, allowRemote, panelOff         bool
++		panelUpdateOff, pprof, secretSet   bool
++		pprofAddr                          string
++		apiKeys                            string
++		plugins, discovery, commercial, ws bool
++		cooling                            bool
++	}
++	pick := func(cfg *Config) security {
++		return security{
++			host: cfg.Host, port: cfg.Port, tls: cfg.TLS.Enable,
++			allowRemote: cfg.RemoteManagement.AllowRemote, panelOff: cfg.RemoteManagement.DisableControlPanel,
++			panelUpdateOff: cfg.RemoteManagement.DisableAutoUpdatePanel, pprof: cfg.Pprof.Enable,
++			pprofAddr: cfg.Pprof.Addr, secretSet: cfg.RemoteManagement.SecretKey != "", apiKeys: strings.Join(cfg.APIKeys, ","),
++			plugins: cfg.Plugins.Enabled, discovery: cfg.Discovery.Enabled, commercial: cfg.CommercialMode,
++			ws: cfg.WebsocketAuth, cooling: cfg.DisableCooling,
++		}
++	}
++	want := security{host: "127.0.0.1", port: 8317, panelOff: true, panelUpdateOff: true, pprofAddr: "127.0.0.1:8316",
++		apiKeys: "client-key", commercial: true, ws: true, cooling: true}
++	if got := pick(before); got != want {
++		t.Fatalf("legacy security settings = %+v, want %+v", got, want)
++	}
++	if got := pick(after); got != want {
++		t.Fatalf("migration changed security settings: %+v, want %+v\n%s", got, want, migrated)
++	}
++}
 diff --git a/internal/config/parse.go b/internal/config/parse.go
-index 86b5e75..8b2f22a 100644
+index c3442be1..69c724e6 100644
 --- a/internal/config/parse.go
 +++ b/internal/config/parse.go
 @@ -5,7 +5,6 @@ import (
@@ -784,7 +906,7 @@ index 86b5e75..8b2f22a 100644
  	"gopkg.in/yaml.v3"
  )
  
-@@ -62,14 +61,9 @@ func ParseConfigBytes(data []byte) (*Config, error) {
+@@ -65,14 +64,9 @@ func ParseConfigBytes(data []byte) (*Config, error) {
  		cfg.Discovery.Subtypes = []string{"_chat-completions", "_responses", "_messages", "_generate-content", "_interactions"}
  	}
  

@@ -30,6 +30,7 @@ from unittest import mock
 from charmer import catalog, custom, endpoint, probe, proxy, render, sessions, state
 from charmer.proxy import ProxyError
 from _catalog import FIXTURE_ROOT
+import _gateway
 from _gateway_harness import boundary
 
 
@@ -57,32 +58,147 @@ DUMMY_KIMI = "dummy-kimi-key"
 DUMMY_OPENROUTER = "dummy-openrouter-key"
 
 
-# Point the disposable rig at a not-yet-installed gateway build (e.g.
-# the 7.3.15 store path before activation). Narrow on purpose: an absolute
-# /nix/store path only; anything else is refused, never silently ignored.
+# Select through the shared validator: a Nix store executable, or an explicit
+# portable build bound by hash and current ordered series to its BUILD record.
+# Invalid explicit selections are boundaries, never ambient-binary fallbacks.
 TEST_BINARY_ENV = "CHARMER_TEST_CLI_PROXY_API"
 
 
 def _find_binary() -> str | None:
-    override = os.environ.get(TEST_BINARY_ENV)
-    if override:
-        real = os.path.realpath(override)
-        if not real.startswith("/nix/store/") or not Path(real).is_file():
-            boundary(
-                f"boundary: {TEST_BINARY_ENV}={override} is not a /nix/store "
-                "cli-proxy-api file; disposable proxy contract skipped"
-            )
-        return real
-    from _gateway import _wrapper_gateway
+    binary, reason = _gateway._gateway_binary()
+    if binary is None and os.environ.get(TEST_BINARY_ENV):
+        boundary(reason)
+    return binary
 
-    for candidate in (
-        _wrapper_gateway(),
-        shutil.which("cli-proxy-api"),
-        str(Path.home() / ".nix-profile" / "bin" / "cli-proxy-api"),
-    ):
-        if candidate and Path(candidate).is_file():
-            return candidate
-    return None
+
+class ProxyBinarySelectionTests(unittest.TestCase):
+    """Pure selector integration: private fixtures, never native execution."""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory(prefix="charmer-proxy-selector-")
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name).resolve()
+        self.root.chmod(0o700)
+        self.home = self.root / "home"
+        self.home.mkdir(mode=0o700)
+        self.binary = self.root / "gateway" / "cli-proxy-api"
+        self.binary.parent.mkdir(mode=0o700)
+        self.binary.write_bytes(b"synthetic gateway fixture; never execute\n")
+        self.binary.chmod(0o700)
+        self.record = self.root / "records" / "BUILD.json"
+        self.record.parent.mkdir(mode=0o700)
+        self.document = {
+            "format": 1,
+            "admitted_series": True,
+            "series": _gateway.admitted_series(),
+            "targets": {_gateway.host_target(): {"sha256": _gateway.sha256_file(self.binary)}},
+        }
+        self._write_record()
+        self.enterContext(mock.patch.dict(os.environ, {
+            "HOME": str(self.home),
+            "CHARMER_TEST_REQUIRE_GATEWAY": "1",
+            TEST_BINARY_ENV: str(self.binary),
+            _gateway.BUILD_RECORD_ENV: str(self.record),
+        }, clear=True))
+        self.wrapper = self.enterContext(mock.patch.object(_gateway, "_wrapper_gateway", return_value=None))
+        self.which = self.enterContext(mock.patch.object(_gateway.shutil, "which", return_value=None))
+        self.version = self.enterContext(mock.patch.object(
+            _gateway, "_version", return_value=(str(self.binary), "fixture-version")))
+
+    def _write_record(self) -> None:
+        self.record.write_text(json.dumps(self.document), encoding="utf-8")
+        self.record.chmod(0o600)
+
+    def _assert_refused(self, reason: str) -> None:
+        with self.assertRaisesRegex(AssertionError, reason) as raised:
+            _find_binary()
+        self.assertIn("CHARMER_TEST_REQUIRE_GATEWAY=1:", str(raised.exception))
+        self.version.assert_not_called()
+        self.wrapper.assert_not_called()
+        self.which.assert_not_called()
+
+    def test_valid_explicit_portable_binary_is_accepted_after_validation(self) -> None:
+        with mock.patch.object(_gateway, "bound_gateway_problem", wraps=_gateway.bound_gateway_problem) as validate:
+            def version(real):
+                validate.assert_called_once_with(str(self.binary), str(self.record))
+                self.assertEqual(real, self.binary)
+                return str(real), "fixture-version"
+
+            self.version.side_effect = version
+            self.assertEqual(_find_binary(), str(self.binary))
+        self.version.assert_called_once_with(self.binary)
+        self.wrapper.assert_not_called()
+        self.which.assert_not_called()
+
+    def test_approved_nix_resolver_result_is_delegated(self) -> None:
+        approved = "/nix/store/fixture-cli-proxy-api/bin/cli-proxy-api"
+        os.environ[TEST_BINARY_ENV] = approved
+        with mock.patch.object(_gateway, "_gateway_binary", return_value=(approved, "fixture-version")) as resolve:
+            self.assertEqual(_find_binary(), approved)
+        resolve.assert_called_once_with()
+        self.version.assert_not_called()
+        self.wrapper.assert_not_called()
+        self.which.assert_not_called()
+
+    def test_missing_build_record_is_refused_before_version(self) -> None:
+        for record in (None, str(self.root / "missing-BUILD.json")):
+            with self.subTest(record=record):
+                if record is None:
+                    os.environ.pop(_gateway.BUILD_RECORD_ENV)
+                    reason = "set " + _gateway.BUILD_RECORD_ENV
+                else:
+                    os.environ[_gateway.BUILD_RECORD_ENV] = record
+                    reason = "cannot be read"
+                self._assert_refused(reason)
+
+    def test_hash_drift_is_refused_before_version(self) -> None:
+        self.binary.write_bytes(b"changed synthetic gateway fixture; never execute\n")
+        self._assert_refused("sha256 differs")
+
+    def test_wrong_ordered_series_is_refused_before_version(self) -> None:
+        self.assertGreater(len(self.document["series"]), 1)
+        self.document["series"].reverse()
+        self._write_record()
+        self._assert_refused("another patch series")
+
+    def test_unsafe_executable_path_is_refused_before_version(self) -> None:
+        for path in (self.binary, self.binary.parent):
+            with self.subTest(path=path.name):
+                mode = stat.S_IMODE(path.stat().st_mode)
+                path.chmod(mode | 0o022)
+                try:
+                    self._assert_refused("group- or other-writable")
+                finally:
+                    path.chmod(mode)
+
+    def test_unsafe_record_path_is_refused_before_version(self) -> None:
+        for path in (self.record, self.record.parent):
+            with self.subTest(path=path.name):
+                mode = stat.S_IMODE(path.stat().st_mode)
+                path.chmod(mode | 0o022)
+                try:
+                    self._assert_refused("the build record: .*group- or other-writable")
+                finally:
+                    path.chmod(mode)
+
+    def test_explicit_invalid_selection_never_falls_back(self) -> None:
+        os.environ[TEST_BINARY_ENV] = str(self.root / "missing-cli-proxy-api")
+        self.wrapper.return_value = self.which.return_value = str(self.binary)
+        self._assert_refused("missing-cli-proxy-api")
+
+    def test_ambient_portable_binary_without_override_is_unavailable(self) -> None:
+        os.environ.pop(TEST_BINARY_ENV)
+        for source in ("wrapper", "PATH"):
+            with self.subTest(source=source):
+                self.wrapper.return_value = str(self.binary) if source == "wrapper" else None
+                self.which.return_value = str(self.binary) if source == "PATH" else None
+                self.assertIsNone(_find_binary())
+                self.version.assert_not_called()
+
+    def test_no_override_and_no_usable_build_returns_none(self) -> None:
+        os.environ.pop(TEST_BINARY_ENV)
+        self.assertIsNone(_find_binary())
+        self.version.assert_not_called()
 
 
 def _free_port() -> int:

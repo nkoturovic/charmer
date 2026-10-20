@@ -77,7 +77,8 @@ class RecipeSchemaTests(unittest.TestCase):
             "extra top-level key": lambda doc: doc.update({"patches": []}),
             "extra series key": lambda doc: doc["series"][0].update({"number": 1}),
             "short commit": lambda doc: doc["upstream"].update({"commit": "673131f5"}),
-            "candidate admitted": lambda doc: doc["candidates"][0].update({"admitted": True}),
+            "candidate admitted": lambda doc: doc["candidates"].append(
+                {"basename": "cli-proxy-api-example.patch", "sha256": "0" * 64, "admitted": True}),
             "series not admitted": lambda doc: doc["series"][0].update({"admitted": False}),
             "cgo build": lambda doc: doc["build"]["env"].update({"CGO_ENABLED": "1"}),
             "missing host archive": lambda doc: doc["toolchain"]["archives"].pop("darwin-arm64"),
@@ -118,8 +119,8 @@ class SeriesIdentityTests(unittest.TestCase):
         if modules:
             self.assertEqual(hashlib.sha256((PATCH_DIR / modules["basename"]).read_bytes()).hexdigest(),
                              modules["sha256"])
-        self.assertEqual(sorted(path.name for path in CANDIDATE_DIR.iterdir()),
-                         sorted(entry["basename"] for entry in self.recipe["candidates"]))
+        candidates = sorted(path.name for path in CANDIDATE_DIR.iterdir()) if CANDIDATE_DIR.exists() else []
+        self.assertEqual(candidates, sorted(entry["basename"] for entry in self.recipe["candidates"]))
 
     def test_catalog_patch_list_equals_the_admitted_series(self):
         catalog = json.loads((RESOURCES_ROOT / "catalog" / "gateway.json").read_text())["gateway"]
@@ -151,7 +152,9 @@ class BuildRecordTests(unittest.TestCase):
                          f"-X main.Version={upstream['version']} -X main.Commit={upstream['commit']} "
                          "-X main.BuildDate=1970-01-01T00:00:00Z")
         self.assertEqual(self.recipe["build"]["flags"], ["-trimpath", "-buildvcs=false", "-mod=vendor"])
-        self.assertEqual(self.recipe["build"]["env"], {"CGO_ENABLED": "0"})
+        self.assertEqual(self.recipe["build"]["env"], {"CGO_ENABLED": "0", "GOTOOLCHAIN": "local"})
+        self.assertEqual(self.recipe["toolchain"]["version"], "1.27.2")
+        self.assertEqual(self.recipe["build"]["godebug"], ["tracebacklabels=0", "x509sslcertoverrideplatform=1"])
 
     def test_targets_ship_four_and_compile_a_windows_canary(self):
         targets = {target["name"]: target for target in self.recipe["targets"]}
@@ -201,7 +204,8 @@ class GateRecordTests(unittest.TestCase):
                     self.assertEqual(gate["platforms"], "linux")
                     self.assertEqual(gate["count"], 100)
                 else:
-                    self.assertEqual(gate["platforms"], "portable")
+                    linux_only = gate["name"] in {"config-bytes-loader"}
+                    self.assertEqual(gate["platforms"], "linux" if linux_only else "portable")
                     self.assertIsNone(gate["count"])
 
     def test_patch_owned_gate_tests_exist_in_the_admitted_patches(self):
@@ -215,9 +219,19 @@ class GateRecordTests(unittest.TestCase):
 
     def test_source_pins_name_patched_or_upstream_files(self):
         pins = {pin["name"]: pin for pin in self.recipe["source_pins"]}
-        self.assertEqual(set(pins), {"substitution-log-format", "credential-save-format"})
-        patch = (PATCH_DIR / "cli-proxy-api-credential-save-report.patch").read_text()
-        self.assertIn(pins["credential-save-format"]["text"], "\n".join(added_lines(patch)))
+        self.assertEqual(set(pins), {"substitution-log-format", "credential-save-format", "log-line-format",
+                                     "log-report-caller"})
+        # The save line the hold recognises is emitted by the credential-save
+        # patch; the line format and report-caller pins frame it.
+        self.assertEqual(pins["credential-save-format"]["path"], "sdk/cliproxy/auth/credential_save.go")
+        # gateway_events reads "[time] [request] [level] [file:line] message":
+        # the formatter's caller branch, which report-caller selects.
+        self.assertEqual(pins["log-line-format"], {
+            "name": "log-line-format", "path": "internal/logging/global_logger.go",
+            "text": "[%s] [%s] [%s] [%s:%d] %s%s"})
+        self.assertEqual(pins["log-report-caller"], {
+            "name": "log-report-caller", "path": "internal/logging/global_logger.go",
+            "text": "log.SetReportCaller(true)"})
 
 
 class MarkerTests(unittest.TestCase):
@@ -330,7 +344,41 @@ class UpstreamReviewTests(unittest.TestCase):
         def release(version):
             return tuple(int(part) for part in version.split("."))
 
-        self.assertGreater(release(upstream["reviewed_through"]["version"]), release(pinned["version"]))
+        self.assertGreaterEqual(release(upstream["reviewed_through"]["version"]), release(pinned["version"]))
+        if upstream["reviewed_through"]["version"] == pinned["version"]:
+            # A frozen tag plus individually reviewed tails is not a newer tag.
+            # Do not move the pin merely to make an interval strictly positive.
+            self.assertEqual(upstream["reviewed_through"]["commit"], pinned["commit"])
+            target = self.review["target"]
+            self.assertEqual((target["tag"], target["commit"]), (pinned["tag"], pinned["commit"]))
+            self.assertTrue(target["rule_check"].strip())
+            tails = [pick.split(":", 1)[0] for pick in target["cherry_picks"]
+                     if re.match(r"^[0-9a-f]{40}:", pick)]
+            self.assertTrue(tails, "a frozen tag needs its separately reviewed tails")
+            admitted = set(admitted_names(self.recipe))
+            for tail in tails:
+                fixes = [fix for fix in self.review["fixes"]
+                         if any(tail.startswith(commit) for commit in fix["commits"])]
+                self.assertEqual(len(fixes), 1)
+                self.assertEqual(fixes[0]["disposition"], "backport")
+                self.assertIn(fixes[0].get("patch"), admitted)
+
+    def test_frozen_review_accepts_admitted_tails_but_not_missing_provenance(self):
+        self.test_review_starts_at_the_pinned_upstream()
+        original = copy.deepcopy(self.review)
+        for mutate in (
+                lambda r: r["upstream"]["reviewed_through"].update(version="0.0.1"),
+                lambda r: r["upstream"]["reviewed_through"].update(commit="0" * 40),
+                lambda r: r["target"].update(cherry_picks=[]),
+                lambda r: r["target"].update(rule_check=""),
+                lambda r: r["target"].update(cherry_picks=["0" * 40 + ": unreviewed"]),
+                lambda r: r.update(fixes=[f for f in r["fixes"] if f["disposition"] != "backport"])):
+            self.review = copy.deepcopy(original)
+            mutate(self.review)
+            with self.subTest(review=self.review["upstream"]["reviewed_through"]):
+                with self.assertRaises(AssertionError):
+                    self.test_review_starts_at_the_pinned_upstream()
+        self.review = original
 
     def test_reviewed_target_has_a_closed_shape_and_a_selection_record(self):
         target = self.review["target"]
@@ -374,12 +422,16 @@ class ContractTests(unittest.TestCase):
         admitted = [entry for entry in recipe["series"] if entry["admitted"]]
         contract = tool.contract_document(recipe, admitted)
         self.assertEqual(contract, {
-            "version": 1, "upstream_version": recipe["upstream"]["version"],
+            "version": 2, "upstream_version": recipe["upstream"]["version"],
+            "go_version": recipe["toolchain"]["version"], "godebug": recipe["build"]["godebug"],
             "patches": [f"{entry['basename']}@{entry['sha256']}" for entry in admitted]})
         # builtins.toJSON: sorted keys, no whitespace, no trailing newline.
         raw = tool.contract_bytes(contract)
-        self.assertTrue(raw.startswith(b'{"patches":["cli-proxy-api-'))
-        self.assertTrue(raw.endswith(b'"upstream_version":"' + recipe["upstream"]["version"].encode() + b'","version":1}'))
+        self.assertTrue(raw.startswith(b'{"go_version":"'))
+        self.assertTrue(raw.endswith(b'"upstream_version":"' + recipe["upstream"]["version"].encode() + b'","version":2}'))
+        from charmer.qualify import parse_gateway_contract
+        self.assertEqual(parse_gateway_contract(raw), contract)
+        self.assertEqual(raw, (RESOURCES_ROOT / "gateway-contract.json").read_bytes())
         self.assertNotIn(b" ", raw)
         self.assertEqual(json.loads(raw), contract)
 

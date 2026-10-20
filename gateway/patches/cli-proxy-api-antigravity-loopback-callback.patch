@@ -1,4 +1,5 @@
 diff --git a/sdk/auth/antigravity.go b/sdk/auth/antigravity.go
+index aaafb708..e7c08c7c 100644
 --- a/sdk/auth/antigravity.go
 +++ b/sdk/auth/antigravity.go
 @@ -209,7 +209,9 @@ func startAntigravityCallbackServer(port int) (*http.Server, int, <-chan callbac
@@ -24,6 +25,7 @@ diff --git a/sdk/auth/antigravity.go b/sdk/auth/antigravity.go
  			log.Warnf("antigravity callback server error: %v", errServe)
 diff --git a/sdk/auth/antigravity_callback_loopback_test.go b/sdk/auth/antigravity_callback_loopback_test.go
 new file mode 100644
+index 00000000..280c835b
 --- /dev/null
 +++ b/sdk/auth/antigravity_callback_loopback_test.go
 @@ -0,0 +1,106 @@

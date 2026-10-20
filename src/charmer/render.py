@@ -1175,6 +1175,8 @@ def build_config_document(
     if problem is not None:
         raise RenderError(f"gateway.json proxy-url refused: {problem}")
     document["proxy-url"] = static["proxy-url"]
+    if "tls-handshake-timeout-seconds" in static:
+        document["tls-handshake-timeout-seconds"] = static["tls-handshake-timeout-seconds"]
     document["passthrough-headers"] = static["passthrough-headers"]
     document["request-retry"] = static["request-retry"]
     document["max-retry-credentials"] = static["max-retry-credentials"]

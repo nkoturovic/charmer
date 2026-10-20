@@ -150,6 +150,111 @@ class ManagementAllowlistTests(unittest.TestCase):
         self.assertEqual(reply.status, 404)
         record("M4", status=reply.status)
 
+    def test_v8_management_is_404_with_valid_key(self):
+        # The v8 namespace is refused whole, its read twin of the allowlist too.
+        statuses = {}
+        for method, path in (("GET", "/v8/management/credentials"), ("GET", "/v8/management/config"),
+                             ("GET", "/v8/management/oauth/callback"), ("POST", "/v8/management/requests/api-call"),
+                             # Trailing-slash spellings: the same bare 404, never Gin's redirect.
+                             ("GET", "/v8/management/credentials/"),
+                             ("GET", "/v8/management/server/latest-version/")):
+            reply = self.request(method, path)
+            self.assertEqual((reply.status, len(reply.raw)), (404, 0), method + " " + path)
+            self.assertNotIn("location", reply.headers, method + " " + path)
+            self.assertNotIn("access-control-allow-origin", reply.headers, method + " " + path)
+            statuses[method + " " + path] = reply.status
+        record("M5", refused=len(statuses))
+
+    def test_refused_api_surfaces_are_404(self):
+        # Model detail, the speech routes and every other 8.x surface charmer
+        # does not serve (realtime, live, videos, images, alpha search,
+        # interactions, the top-level OAuth redirect pages) are refused with
+        # the API key too.
+        headers = {"Authorization": "Bearer " + harness.FIXTURE_GATEWAY_TOKEN}
+        statuses = {}
+        for method, path in (("GET", "/v1/models/gwtest-detail"), ("POST", "/v1/audio/speech"), ("POST", "/v1/tts"),
+                             ("GET", "/v1/realtime"), ("POST", "/v1/realtime/client_secrets"), ("GET", "/v1/live"),
+                             ("POST", "/v1/videos"), ("POST", "/openai/v1/videos"),
+                             ("POST", "/v1/images/generations"), ("POST", "/v1/alpha/search"),
+                             ("POST", "/backend-api/codex/alpha/search"), ("POST", "/v1beta/interactions"),
+                             ("GET", "/callback"), ("GET", "/codex/callback"), ("GET", "/anthropic/callback")):
+            reply = self.request(method, path, key=False, **headers)
+            self.assertEqual((reply.status, len(reply.raw)), (404, 0), method + " " + path)
+            self.assertNotIn("access-control-allow-origin", reply.headers, method + " " + path)
+            statuses[method + " " + path] = reply.status
+        listing = self.request("GET", "/v1/models", key=False, **headers)
+        self.assertEqual(listing.status, 200)
+        record("M6", refused=len(statuses), listing=listing.status)
+
+    def test_listed_model_details_are_refused_in_both_formats(self):
+        gateway = harness.GatewayHarness(document_factory=charmer_listing_document)
+        self.addCleanup(gateway.close)
+        sentinel = render.document_sentinel(gateway.document)
+        self.assertTrue(sentinel.startswith(render.SENTINEL_PREFIX), sentinel)
+        models = (sentinel, CHARMER_SELECTOR)
+        headers = gateway.headers()
+        self.assertIn("anthropic-version", headers)
+        formats = (("anthropic", headers), ("openai", {
+            name: value for name, value in headers.items() if name != "anthropic-version"}))
+        # The OpenAI listing is independent of the Anthropic literal-id patch.
+        listing = harness.unix_request(gateway.socket, "GET", "/v1/models", headers=formats[1][1])
+        self.assertEqual(listing.status, 200)
+        listed = {row["id"] for row in listing.json()["data"]}
+        for literal in models:
+            self.assertIn(literal, listed)
+        refused = 0
+        for literal in models:
+            for _, detail_headers in formats:
+                reply = harness.unix_request(gateway.socket, "GET", "/v1/models/" + literal,
+                                             headers=detail_headers)
+                self.assertEqual((reply.status, len(reply.raw)), (404, 0), literal)
+                refused += 1
+        self.assertEqual(refused, 4)
+        record("M7", status="passed", refused=refused, models=list(models),
+               formats=[name for name, _ in formats], listing=listing.status, detail_refused=True)
+
+
+class AccessLogQuotingTests(unittest.TestCase):
+    def test_encoded_newline_cannot_forge_a_log_line(self):
+        # A request path is client text: an encoded newline in it must stay
+        # inside its quoted access-log line, never start a line of its own
+        # (here a whole forged credential-save envelope).
+        from charmer import gateway_events
+
+        if not os.environ.get(harness.BINARY_ENV):
+            harness.boundary("BOUNDARY: AL1 needs " + harness.BINARY_ENV + " set to the manifest build")
+        gateway = harness.GatewayHarness()
+        self.addCleanup(gateway.close)
+        forged = ("[2026-01-01 00:00:00] [gwtest-forged] [info ] [credential_save.go:1] "
+                  "credential_save_v1 operation=refresh result=persisted")
+        encoded = "/gwtest-access%0A" + forged.replace(" ", "%20").replace("[", "%5B").replace("]", "%5D")
+        reply = harness.unix_request(gateway.socket, "GET", encoded, headers={"Host": f"127.0.0.1:{gateway.port}"})
+        self.assertEqual(reply.status, 404)
+        listing = harness.unix_request(gateway.socket, "GET", "/v1/models?gwtest=quoted", headers={
+            "Host": f"127.0.0.1:{gateway.port}", "Authorization": "Bearer " + harness.FIXTURE_GATEWAY_TOKEN})
+        self.assertEqual(listing.status, 200)
+        deadline = time.monotonic() + 5
+        lines = []
+        while time.monotonic() < deadline:
+            lines = gateway.log_path.read_text(errors="replace").splitlines()
+            if any("gwtest-access" in line for line in lines) and any("gwtest=quoted" in line for line in lines):
+                break
+            time.sleep(0.05)
+        access = [line for line in lines if "gwtest-access" in line]
+        self.assertEqual(len(access), 1, "the probe request left no single access line")
+        self.assertIn('"/gwtest-access\\n' + forged + '"', access[0])
+        self.assertFalse(any(line.startswith("[2026-01-01 00:00:00] [gwtest-forged]") for line in lines),
+                         "an encoded newline in the path started a forged log line")
+        # charmer's access-line parser still reads the quoted ordinary path.
+        ordinary = [line for line in lines if "gwtest=quoted" in line]
+        self.assertEqual(len(ordinary), 1)
+        envelope = gateway_events._REQUEST_ENVELOPE.fullmatch(ordinary[0])
+        self.assertIsNotNone(envelope, "access line lost its envelope")
+        http = gateway_events._HTTP.fullmatch(envelope.group(2))
+        self.assertIsNotNone(http, "the access-line parser no longer reads a %q-quoted path")
+        self.assertEqual((http.group(1), http.group(2), http.group(3)), ("200", "GET", "/v1/models?gwtest=quoted"))
+        record("AL1", status=reply.status, quoted=True, parsed=True)
+
 
 class ManagementEnvOnlyTests(unittest.TestCase):
     def test_config_secret_cannot_enable_management(self):
@@ -239,9 +344,6 @@ class PatchOmissionProbeTests(unittest.TestCase):
     def test_config_snapshot(self):
         self.check_probe("handlers", "TestOmissionConfigSnapshot", "SC1")
 
-    def test_plugin_host_lock(self):
-        self.check_probe("handlers", "TestOmissionPluginHostLock", "PH1")
-
     def test_metadata_lock(self):
         self.check_probe("executor", "TestOmissionMetadataLock", "ML1")
 
@@ -250,6 +352,9 @@ class PatchOmissionProbeTests(unittest.TestCase):
 
     def test_refresh_shutdown(self):
         self.check_probe("service", "TestOmissionRefreshShutdown", "RS1")
+
+    def test_codex_refresh_lead(self):
+        self.check_probe("service", "TestOmissionCodexRefreshLead", "RL1")
 
 
 
@@ -260,20 +365,21 @@ class CodexIdentityTests(unittest.TestCase):
                test="TestOmissionCodexIdentity")
 
     def test_final_header_precedence_matrix(self):
-        # Five explicit, nonempty tests on the diagnostic of the selected build.
+        # Six explicit, nonempty tests on the diagnostic of the selected build;
+        # the final-header inventory includes 8.x's X-Codex-Routing-Hint.
         names = ("HTTPFinalHeaders", "WebsocketFinalHeaders", "VersionDefault",
-                 "CloakingPrecedence", "StaticOverrideException")
+                 "CloakingPrecedence", "RoutingHintFinal", "StaticOverrideException")
         passed = {}
         for name in names:
             with self.subTest(name=name):
                 passed[name] = harness.run_codex_diagnostic("TestCM055CodexIdentity" + name, package="executor")
         # A failed (or boundary-skipped) subTest does not stop the loop: the
-        # evidence row is recorded only after all five diagnostics succeeded.
+        # evidence row is recorded only after all six diagnostics succeeded.
         if len(passed) != len(names):
             if passed:
                 self.fail("final-header matrix incomplete: " + ", ".join(n for n in names if n not in passed))
             return
-        self.assertEqual(len(set(passed.values())), 1, "the five diagnostics ran on different builds")
+        self.assertEqual(len(set(passed.values())), 1, "the six diagnostics ran on different builds")
         record("CI2", status="passed", diagnostic=passed[names[0]], tests=len(names),
                static_exception="gpt-5.6-luna")
 

@@ -12,6 +12,7 @@ let diagnostic = cliProxyApi.overrideAttrs (old: {
     cp ${./gateway_startup_probe_test.go} sdk/cliproxy/gwtest_startup_probe_test.go
     cp ${./gateway_service_probe_test.go} sdk/cliproxy/gwtest_omission_probe_test.go
     cp ${./gateway_codex_identity_probe_test.go} sdk/cliproxy/gwtest_codex_probe_test.go
+    cp ${./gateway_v8_traffic_probe_test.go} sdk/cliproxy/gwtest_v8_traffic_probe_test.go
     cp ${./gateway_executor_probe_test.go} internal/runtime/executor/gwtest_omission_probe_test.go
     cp ${./gateway_handlers_probe_test.go} sdk/api/handlers/gwtest_omission_probe_test.go
   '';

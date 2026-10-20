@@ -1,17 +1,18 @@
 diff --git a/internal/runtime/executor/claude_executor_execute.go b/internal/runtime/executor/claude_executor_execute.go
-index 14b3d022..09b1503a 100644
+index 928fc392..293d05bf 100644
 --- a/internal/runtime/executor/claude_executor_execute.go
 +++ b/internal/runtime/executor/claude_executor_execute.go
-@@ -275,6 +275,20 @@ func (e *ClaudeExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, r
- 		matcher := helps.BuildSensitiveWordMatcher(wireSettings.sensitiveWords)
- 		bodyForUpstream = helps.ObfuscateSensitiveWords(bodyForUpstream, matcher)
+@@ -253,6 +253,21 @@ func (e *ClaudeExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, r
  	}
+ 	extraBetas, bodyForUpstream = extractAndRemoveBetas(bodyForUpstream)
+ 	bodyForUpstream = stripPromptCacheOptions(bodyForUpstream)
 +	// Final outbound boundary for third-party Claude-compatible upstreams:
 +	// strip the unsupported OpenAI-platform TTL control after translation,
-+	// payload rules, cloaking, Claude-message normalization, CLI identity and
-+	// sensitive-word obfuscation, and before CCH signing, so the signature
-+	// covers the sanitized body and no later transformation can reintroduce
-+	// retention. Official Anthropic transport (default base URL or resolved
++	// cloaking, Claude-message normalization, CLI identity, sensitive-word
++	// obfuscation and the user payload rules (an override rule can write the
++	// field back), and before CCH signing, so the signature covers the
++	// sanitized body and no later transformation can reintroduce retention.
++	// Official Anthropic transport (default base URL or resolved
 +	// https://api.anthropic.com) is preserved untouched; a custom or malformed
 +	// base URL fails closed as third-party.
 +	if claudeUpstreamRequiresRetentionStrip(baseURL) {
@@ -20,23 +21,24 @@ index 14b3d022..09b1503a 100644
 +			return resp, fmt.Errorf("claude executor: %w", err)
 +		}
 +	}
- 	cchBilling := ""
  	if cchSigning {
- 		if !claudeCodeDetection.HelperProfile || claudeBodyNeedsBillingFallback(bodyForUpstream) {
+ 		bodyForUpstream, err = signAnthropicMessagesBody(bodyForUpstream)
+ 		if err != nil {
 diff --git a/internal/runtime/executor/claude_executor_stream.go b/internal/runtime/executor/claude_executor_stream.go
-index 8a8e3244..988b095f 100644
+index 74cf3230..4291d2ac 100644
 --- a/internal/runtime/executor/claude_executor_stream.go
 +++ b/internal/runtime/executor/claude_executor_stream.go
-@@ -267,6 +267,20 @@ func (e *ClaudeExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.A
- 		matcher := helps.BuildSensitiveWordMatcher(wireSettings.sensitiveWords)
- 		bodyForUpstream = helps.ObfuscateSensitiveWords(bodyForUpstream, matcher)
+@@ -245,6 +245,21 @@ func (e *ClaudeExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.A
  	}
+ 	extraBetas, bodyForUpstream = extractAndRemoveBetas(bodyForUpstream)
+ 	bodyForUpstream = stripPromptCacheOptions(bodyForUpstream)
 +	// Final outbound boundary for third-party Claude-compatible upstreams:
 +	// strip the unsupported OpenAI-platform TTL control after translation,
-+	// payload rules, cloaking, Claude-message normalization, CLI identity and
-+	// sensitive-word obfuscation, and before CCH signing, so the signature
-+	// covers the sanitized body and no later transformation can reintroduce
-+	// retention. Official Anthropic transport (default base URL or resolved
++	// cloaking, Claude-message normalization, CLI identity, sensitive-word
++	// obfuscation and the user payload rules (an override rule can write the
++	// field back), and before CCH signing, so the signature covers the
++	// sanitized body and no later transformation can reintroduce retention.
++	// Official Anthropic transport (default base URL or resolved
 +	// https://api.anthropic.com) is preserved untouched; a custom or malformed
 +	// base URL fails closed as third-party.
 +	if claudeUpstreamRequiresRetentionStrip(baseURL) {
@@ -45,24 +47,24 @@ index 8a8e3244..988b095f 100644
 +			return nil, fmt.Errorf("claude executor: %w", err)
 +		}
 +	}
- 	cchBilling := ""
  	if cchSigning {
- 		if !claudeCodeDetection.HelperProfile || claudeBodyNeedsBillingFallback(bodyForUpstream) {
+ 		bodyForUpstream, err = signAnthropicMessagesBody(bodyForUpstream)
+ 		if err != nil {
 diff --git a/internal/runtime/executor/claude_executor_tokens.go b/internal/runtime/executor/claude_executor_tokens.go
-index 9e1d6b83..7ef0a372 100644
+index a474ce7c..4953b697 100644
 --- a/internal/runtime/executor/claude_executor_tokens.go
 +++ b/internal/runtime/executor/claude_executor_tokens.go
-@@ -211,6 +211,20 @@ func (e *ClaudeExecutor) countTokensUpstream(ctx context.Context, auth *cliproxy
- 	if alignCLICountTokensShape {
- 		body = util.StripClaudeCodeAttributionSystem(body)
+@@ -243,6 +243,20 @@ func (e *ClaudeExecutor) countTokensUpstream(ctx context.Context, auth *cliproxy
  	}
+ 	body = helps.NewPayloadFinalizer(e.cfg, e.Identifier(), baseModel, to.String(), "", originalTranslatedForPayload, req, opts)(body)
+ 	body = stripPromptCacheOptions(body)
 +	// Final outbound boundary for third-party Claude-compatible upstreams:
 +	// keep count_tokens payloads consistent with the messages paths. This
 +	// upstream count path is reached by official Anthropic transport (which is
 +	// preserved untouched) and by delegated providers such as Kimi, whose base
 +	// URL is third-party; a custom or malformed base URL fails closed as
 +	// third-party. count_tokens has no signing step, so this runs after its
-+	// final body transformation.
++	// final body transformation, the user payload rules included.
 +	if claudeUpstreamRequiresRetentionStrip(baseURL) {
 +		var errStrip error
 +		body, errStrip = stripPromptCacheRetention(body)
@@ -70,73 +72,73 @@ index 9e1d6b83..7ef0a372 100644
 +			return cliproxyexecutor.Response{}, fmt.Errorf("claude executor: %w", errStrip)
 +		}
 +	}
- 	// Runs on the finished body: payload rules can rewrite model and messages
- 	// long after translation, so an earlier check would not describe the request
- 	// that is about to be sent.
+ 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+ 	if err != nil {
+ 		return cliproxyexecutor.Response{}, err
 diff --git a/internal/runtime/executor/codex_executor_request.go b/internal/runtime/executor/codex_executor_request.go
-index 49f6ccbc..4f50a859 100644
+index bfb6cef7..df4abfbb 100644
 --- a/internal/runtime/executor/codex_executor_request.go
 +++ b/internal/runtime/executor/codex_executor_request.go
-@@ -146,6 +146,16 @@ func (e *CodexExecutor) cacheHelper(ctx context.Context, from sdktranslator.Form
- 	if identityState.promptCacheKey != "" {
- 		cache.ID = identityState.promptCacheKey
+@@ -141,6 +141,16 @@ func (e *CodexExecutor) cacheHelper(ctx context.Context, from sdktranslator.Form
  	}
+ 	rawJSON = helps.SanitizeCodexInputItemIDs(rawJSON)
+ 	rawJSON = helps.FinalizePayload(ctx, rawJSON)
 +	// Final outbound boundary: strip prompt_cache_retention after cache-key
-+	// insertion, input-ID sanitization and identity rewriting so no earlier
-+	// transformation (payload rules, replay injection, identity confusion) can
-+	// leak the unsupported TTL control to the Codex backend. Covers ordinary
++	// insertion, input-ID sanitization and payload finalization so no earlier
++	// transformation (payload rules, replay injection) can leak the
++	// unsupported TTL control to the Codex backend. Covers ordinary
 +	// /responses (execute and stream), /responses/compact (which has no early
 +	// strip upstream) and the image paths. Fails closed.
 +	rawJSON, err := stripPromptCacheRetention(rawJSON)
 +	if err != nil {
-+		return nil, nil, codexIdentityConfuseState{}, fmt.Errorf("codex executor: %w", err)
++		return nil, nil, fmt.Errorf("codex executor: %w", err)
 +	}
  	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(rawJSON))
  	if err != nil {
- 		return nil, nil, codexIdentityConfuseState{}, err
+ 		return nil, nil, err
 diff --git a/internal/runtime/executor/codex_websockets_execute.go b/internal/runtime/executor/codex_websockets_execute.go
-index 94829bd0..72d8f145 100644
+index a5aef073..633b25e5 100644
 --- a/internal/runtime/executor/codex_websockets_execute.go
 +++ b/internal/runtime/executor/codex_websockets_execute.go
-@@ -86,6 +86,14 @@ func (e *CodexWebsocketsExecutor) Execute(ctx context.Context, auth *cliproxyaut
- 	clientBody := body
- 	var identityState codexIdentityConfuseState
- 	upstreamBody, identityState := applyCodexIdentityConfuseBody(e.cfg, auth, originalPayloadSource, body)
-+	// Final outbound boundary: strip prompt_cache_retention after identity
-+	// rewriting and before request logging/frame transmission. Every
+@@ -100,6 +100,14 @@ func (e *CodexWebsocketsExecutor) Execute(ctx context.Context, auth *cliproxyaut
+ 		body = applyCodexSIWCWebsocketBodyRules(body, hasExplicitInstructions, cliproxyexecutor.Options{KeepTopLevelEffort: thinking.HasThinkingSuffix(req.Model)})
+ 	}
+ 	body = finalizePayload(body)
++	// Final outbound boundary: strip prompt_cache_retention after payload
++	// finalization and before request logging/frame transmission. Every
 +	// response.create frame of this request (first send and retries) is built
-+	// from upstreamBody.
-+	upstreamBody, err = stripPromptCacheRetention(upstreamBody)
++	// from this body.
++	body, err = stripPromptCacheRetention(body)
 +	if err != nil {
 +		return resp, fmt.Errorf("codex websockets executor: %w", err)
 +	}
- 	reporter.SetTranslatedReasoningEffort(clientBody, to.String())
+ 	reporter.SetTranslatedReasoningEffort(body, to.String())
  	wsHeaders = applyCodexWebsocketHeaders(ctx, wsHeaders, auth, apiKey, e.cfg, nativeRequest, opts.Headers)
- 	applyModelHeaderOverrides(wsHeaders, baseModel)
+ 	applyCodexRoutingHint(ctx, wsHeaders, auth, baseModel, body, opts.Headers)
 diff --git a/internal/runtime/executor/codex_websockets_stream.go b/internal/runtime/executor/codex_websockets_stream.go
-index e42cfe11..a5a631b2 100644
+index ce199297..84544cc2 100644
 --- a/internal/runtime/executor/codex_websockets_stream.go
 +++ b/internal/runtime/executor/codex_websockets_stream.go
-@@ -815,6 +815,14 @@ func (e *CodexWebsocketsExecutor) prepareCodexWebsocketStream(ctx context.Contex
- 	clientBody := body
- 	var identityState codexIdentityConfuseState
- 	upstreamBody, identityState := applyCodexIdentityConfuseBody(e.cfg, auth, originalPayloadSource, body)
-+	// Final outbound boundary: strip prompt_cache_retention after identity
-+	// rewriting and before request logging/frame transmission. The stream
+@@ -828,6 +828,14 @@ func (e *CodexWebsocketsExecutor) prepareCodexWebsocketStream(ctx context.Contex
+ 		body = applyCodexSIWCWebsocketBodyRules(body, hasExplicitInstructions, cliproxyexecutor.Options{KeepTopLevelEffort: thinking.HasThinkingSuffix(req.Model)})
+ 	}
+ 	body = finalizePayload(body)
++	// Final outbound boundary: strip prompt_cache_retention after payload
++	// finalization and before request logging/frame transmission. The stream
 +	// path, its retries, and every duplex response.create/append continuation
-+	// build their frames from this prepared upstreamBody.
-+	upstreamBody, err = stripPromptCacheRetention(upstreamBody)
++	// build their frames from this prepared body.
++	body, err = stripPromptCacheRetention(body)
 +	if err != nil {
 +		return nil, fmt.Errorf("codex websockets executor: %w", err)
 +	}
  	wsHeaders = applyCodexWebsocketHeaders(ctx, wsHeaders, auth, apiKey, e.cfg, preserveNativeOutput, opts.Headers)
+ 	applyCodexRoutingHint(ctx, wsHeaders, auth, baseModel, body, opts.Headers)
  	applyModelHeaderOverrides(wsHeaders, baseModel)
- 	applyCodexIdentityConfuseHeaders(wsHeaders, &identityState)
 diff --git a/internal/runtime/executor/meta_executor_execute.go b/internal/runtime/executor/meta_executor_execute.go
-index 914b88a3..f7c2b50c 100644
+index bbc7cd6b..635cb1f6 100644
 --- a/internal/runtime/executor/meta_executor_execute.go
 +++ b/internal/runtime/executor/meta_executor_execute.go
-@@ -57,12 +57,19 @@ func (e *MetaExecutor) prepareResponsesRequest(ctx context.Context, req cliproxy
+@@ -60,7 +60,6 @@ func (e *MetaExecutor) prepareResponsesRequest(ctx context.Context, req cliproxy
  	body = helps.SetStringIfDifferent(body, "model", baseModel)
  	body = helps.SetBoolIfDifferent(body, "stream", stream)
  	body, _ = sjson.DeleteBytes(body, "generate")
@@ -144,25 +146,27 @@ index 914b88a3..f7c2b50c 100644
  	body, _ = sjson.DeleteBytes(body, "safety_identifier")
  	body, _ = sjson.DeleteBytes(body, "stream_options")
  	body, _ = sjson.DeleteBytes(body, "client_metadata")
- 	body = normalizeCodexInstructions(body)
- 	body = sanitizeOpenAIResponsesReasoningEncryptedContent(ctx, "meta executor", body)
+@@ -76,6 +75,14 @@ func (e *MetaExecutor) prepareResponsesRequest(ctx context.Context, req cliproxy
+ 	body = helps.NormalizeCodexToolIntegerTypes(body, opts.Headers)
+ 
+ 	body = helps.ApplyPayloadConfigWithRequest(e.cfg, baseModel, e.Identifier(), from.String(), "", body, originalTranslated, requestedModel, requestPath, opts.Headers)
 +	// Final outbound boundary: the former early retention cleanup (a single
 +	// sjson delete, which leaves duplicate top-level keys behind) is folded
 +	// into this invariant at the end of the shared preparation used by the
-+	// HTTP execute and stream paths. Fails closed.
++	// HTTP execute and stream paths, after payload rules. Fails closed.
 +	body, errStrip := stripPromptCacheRetention(body)
 +	if errStrip != nil {
 +		return nil, fmt.Errorf("meta executor: %w", errStrip)
 +	}
- 
  	return &metaPreparedRequest{
+ 		applyPatch:      applyPatch,
  		baseModel:       baseModel,
 diff --git a/internal/runtime/executor/non_claude_cache_retention.go b/internal/runtime/executor/non_claude_cache_retention.go
 new file mode 100644
-index 00000000..4247bf95
+index 00000000..b67f6115
 --- /dev/null
 +++ b/internal/runtime/executor/non_claude_cache_retention.go
-@@ -0,0 +1,106 @@
+@@ -0,0 +1,132 @@
 +// Package executor provides runtime execution capabilities for various AI service providers.
 +// This file implements the final outbound-boundary sanitizer for prompt_cache_retention,
 +// the OpenAI Responses-platform cache TTL control that non-Claude upstreams reject.
@@ -170,10 +174,12 @@ index 00000000..4247bf95
 +
 +import (
 +	"encoding/json"
++	"errors"
 +	"fmt"
 +	"net/url"
 +	"strings"
 +
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
 +	"github.com/tidwall/gjson"
 +)
 +
@@ -225,6 +231,30 @@ index 00000000..4247bf95
 +	return updated, nil
 +}
 +
++// errRetentionUnverified is returned by a call site of
++// retentionStrippingFinalizer when the finalized body could not be proven free
++// of prompt_cache_retention: the request is refused before it is built, so no
++// body (and no empty body) is sent.
++var errRetentionUnverified = errors.New("strip prompt_cache_retention: finalized body is not valid JSON; request not sent")
++
++// retentionStrippingFinalizer runs the payload rules and then the final
++// outbound boundary, for executors whose rules are applied at each call site
++// right before transmission. A body that cannot be proven retention-free is
++// replaced by nil; every call site checks for an empty result and returns
++// errRetentionUnverified instead of sending anything.
++func retentionStrippingFinalizer(finalize helps.PayloadFinalizer) helps.PayloadFinalizer {
++	return func(body []byte) []byte {
++		if finalize != nil {
++			body = finalize(body)
++		}
++		stripped, err := stripPromptCacheRetention(body)
++		if err != nil {
++			return nil
++		}
++		return stripped
++	}
++}
++
 +// claudeUpstreamRequiresRetentionStrip reports whether a Claude-messages
 +// request is headed to a third-party Claude-compatible upstream that does not
 +// support prompt_cache_retention.
@@ -269,12 +299,333 @@ index 00000000..4247bf95
 +	}
 +	return false
 +}
+diff --git a/internal/runtime/executor/non_claude_cache_retention_payload_rules_test.go b/internal/runtime/executor/non_claude_cache_retention_payload_rules_test.go
+new file mode 100644
+index 00000000..bacff06d
+--- /dev/null
++++ b/internal/runtime/executor/non_claude_cache_retention_payload_rules_test.go
+@@ -0,0 +1,315 @@
++package executor
++
++import (
++	"bytes"
++	"context"
++	"errors"
++	"io"
++	"net/http"
++	"net/http/httptest"
++	"strings"
++	"sync/atomic"
++	"testing"
++
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
++	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
++	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
++	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
++	"github.com/tidwall/gjson"
++)
++
++// The user payload rules run late on the Claude paths: after cloaking and CLI
++// identity, right before CCH signing (and, for count_tokens, right before the
++// request is built). An override rule that writes prompt_cache_retention back
++// must still be stripped for a third-party base URL, and the CCH must cover
++// the sanitized body. These tests configure such a rule; the fakes are loopback
++// servers or injected round-trippers.
++
++func retentionOverrideConfig(params map[string]any) *config.Config {
++	return &config.Config{Payload: config.PayloadConfig{Override: []config.PayloadRule{{
++		Models: []config.PayloadModelRule{{Name: "*"}},
++		Params: params,
++	}}}}
++}
++
++func claudeMessageServer(t *testing.T, gotBody *[]byte) *httptest.Server {
++	t.Helper()
++	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		body, errRead := io.ReadAll(r.Body)
++		if errRead != nil {
++			t.Errorf("read body: %v", errRead)
++		}
++		*gotBody = bytes.Clone(body)
++		w.Header().Set("Content-Type", "application/json")
++		_, _ = w.Write([]byte(`{"id":"msg_1","type":"message","model":"kimi-k2.5","role":"assistant","content":[{"type":"text","text":"ok"}],"usage":{"input_tokens":1,"output_tokens":1}}`))
++	}))
++}
++
++const retentionCCHPayload = `{"system":[{"type":"text","text":"x-anthropic-billing-header: cc_version=2.1.63.0; cc_entrypoint=claude_code; cch=00000;"}],"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]}`
++
++func TestClaudeExecutorExecutePayloadOverrideRetentionStrippedBeforeSigning(t *testing.T) {
++	var gotBody []byte
++	server := claudeMessageServer(t, &gotBody)
++	defer server.Close()
++
++	executor := NewClaudeExecutor(retentionOverrideConfig(map[string]any{"prompt_cache_retention": "24h"}))
++	auth := &cliproxyauth.Auth{
++		Attributes: map[string]string{"api_key": "sk-ant-oat-test-token", "base_url": server.URL},
++		Metadata:   retentionTestClaudeOAuthIdentity(),
++	}
++	if _, err := executor.Execute(context.Background(), auth, cliproxyexecutor.Request{
++		Model:   "kimi-k2.5",
++		Payload: []byte(retentionCCHPayload),
++	}, cliproxyexecutor.Options{SourceFormat: sdktranslator.FromString("claude")}); err != nil {
++		t.Fatalf("Execute() error = %v", err)
++	}
++	if len(gotBody) == 0 {
++		t.Fatal("expected captured upstream body")
++	}
++	assertRetentionStripped(t, gotBody)
++	assertCCHMatchesSanitizedBody(t, gotBody)
++}
++
++func TestClaudeExecutorExecuteStreamPayloadOverrideRetentionStrippedBeforeSigning(t *testing.T) {
++	var gotBody []byte
++	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		body, errRead := io.ReadAll(r.Body)
++		if errRead != nil {
++			t.Errorf("read body: %v", errRead)
++		}
++		gotBody = bytes.Clone(body)
++		w.Header().Set("Content-Type", "text/event-stream")
++		_, _ = w.Write([]byte(strings.Join([]string{
++			`event: message_start`,
++			`data: {"type":"message_start","message":{"id":"msg_123","model":"kimi-k2.5"}}`,
++			``,
++			`event: message_delta`,
++			`data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"input_tokens":2,"output_tokens":1}}`,
++			``,
++			`event: message_stop`,
++			`data: {"type":"message_stop"}`,
++			``,
++		}, "\n")))
++	}))
++	defer server.Close()
++
++	executor := NewClaudeExecutor(retentionOverrideConfig(map[string]any{"prompt_cache_retention": "24h"}))
++	auth := &cliproxyauth.Auth{
++		Attributes: map[string]string{"api_key": "sk-ant-oat-test-token", "base_url": server.URL},
++		Metadata:   retentionTestClaudeOAuthIdentity(),
++	}
++	result, err := executor.ExecuteStream(context.Background(), auth, cliproxyexecutor.Request{
++		Model:   "kimi-k2.5",
++		Payload: []byte(retentionCCHPayload),
++	}, cliproxyexecutor.Options{SourceFormat: sdktranslator.FromString("claude")})
++	if err != nil {
++		t.Fatalf("ExecuteStream() error = %v", err)
++	}
++	for chunk := range result.Chunks {
++		if chunk.Err != nil {
++			t.Fatalf("stream chunk error = %v", chunk.Err)
++		}
++	}
++	if len(gotBody) == 0 {
++		t.Fatal("expected captured upstream body")
++	}
++	assertRetentionStripped(t, gotBody)
++	assertCCHMatchesSanitizedBody(t, gotBody)
++}
++
++func TestKimiExecutorCountTokensPayloadOverrideRetentionStripped(t *testing.T) {
++	var gotBody []byte
++	ctx := context.WithValue(context.Background(), "cliproxy.roundtripper", kimiRoundTripperFunc(func(req *http.Request) (*http.Response, error) {
++		var errRead error
++		gotBody, errRead = io.ReadAll(req.Body)
++		if errRead != nil {
++			return nil, errRead
++		}
++		return &http.Response{
++			StatusCode: http.StatusOK,
++			Header:     http.Header{"Content-Type": []string{"application/json"}},
++			Body:       io.NopCloser(strings.NewReader(`{"input_tokens":42}`)),
++		}, nil
++	}))
++
++	executor := NewKimiExecutor(retentionOverrideConfig(map[string]any{"prompt_cache_retention": "24h"}))
++	auth := &cliproxyauth.Auth{Attributes: map[string]string{}, Metadata: map[string]any{"access_token": "test-token"}}
++	if _, err := executor.CountTokens(ctx, auth, cliproxyexecutor.Request{
++		Model:   "kimi-k3",
++		Payload: []byte(`{"model":"kimi-k3","messages":[{"role":"user","content":"hello"}]}`),
++	}, cliproxyexecutor.Options{SourceFormat: sdktranslator.FormatClaude}); err != nil {
++		t.Fatalf("CountTokens() error = %v", err)
++	}
++	if len(gotBody) == 0 {
++		t.Fatal("expected captured upstream body")
++	}
++	assertRetentionStripped(t, gotBody)
++}
++
++// An override on the official endpoint is the caller's choice: the boundary
++// keeps it there, so the third-party strip above is endpoint-scoped, not a
++// global filter.
++func TestClaudeExecutorExecutePayloadOverrideRetentionKeptForOfficialAnthropicEndpoint(t *testing.T) {
++	var gotBody []byte
++	rt := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
++		body, errRead := io.ReadAll(req.Body)
++		if errRead != nil {
++			return nil, errRead
++		}
++		gotBody = bytes.Clone(body)
++		return &http.Response{
++			StatusCode: 200,
++			Header:     http.Header{"Content-Type": []string{"application/json"}},
++			Body:       io.NopCloser(strings.NewReader(`{"id":"msg_1","type":"message","model":"claude-sonnet-4-5","role":"assistant","content":[{"type":"text","text":"ok"}],"usage":{"input_tokens":1,"output_tokens":1}}`)),
++		}, nil
++	})
++	ctx := context.WithValue(context.Background(), "cliproxy.roundtripper", rt)
++	executor := NewClaudeExecutor(retentionOverrideConfig(map[string]any{"prompt_cache_retention": "24h"}))
++	auth := &cliproxyauth.Auth{
++		Attributes: map[string]string{"api_key": "sk-ant-oat-test-token", "base_url": "https://api.anthropic.com"},
++		Metadata:   retentionTestClaudeOAuthIdentity(),
++	}
++	if _, err := executor.Execute(ctx, auth, cliproxyexecutor.Request{
++		Model:   "claude-sonnet-4-5",
++		Payload: []byte(`{"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]}`),
++	}, cliproxyexecutor.Options{SourceFormat: sdktranslator.FromString("claude")}); err != nil {
++		t.Fatalf("Execute() error = %v", err)
++	}
++	assertRetentionPresent(t, gotBody)
++}
++
++// prompt_cache_options is removed by upstream on every Claude route, also
++// after the payload rules. The retention boundary sits next to that removal
++// and must not disturb it: a third-party body leaves with neither field, the
++// official endpoint keeps retention and still loses the options.
++func TestClaudeExecutorPromptCacheOptionsAndRetentionAtFinalBoundary(t *testing.T) {
++	cfg := retentionOverrideConfig(map[string]any{
++		"prompt_cache_retention": "24h",
++		"prompt_cache_options":   map[string]any{"scope": "global"},
++	})
++	payload := []byte(`{"prompt_cache_retention":"1h","prompt_cache_options":{"scope":"user"},"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]}`)
++
++	t.Run("third-party", func(t *testing.T) {
++		var gotBody []byte
++		server := claudeMessageServer(t, &gotBody)
++		defer server.Close()
++		executor := NewClaudeExecutor(cfg)
++		auth := &cliproxyauth.Auth{Attributes: map[string]string{"api_key": "key-123", "base_url": server.URL}}
++		if _, err := executor.Execute(context.Background(), auth, cliproxyexecutor.Request{
++			Model: "kimi-k2.5", Payload: payload,
++		}, cliproxyexecutor.Options{SourceFormat: sdktranslator.FromString("claude")}); err != nil {
++			t.Fatalf("Execute() error = %v", err)
++		}
++		assertRetentionStripped(t, gotBody)
++		if gjson.GetBytes(gotBody, "prompt_cache_options").Exists() {
++			t.Fatalf("prompt_cache_options reached a third-party upstream: %s", gotBody)
++		}
++	})
++	t.Run("official", func(t *testing.T) {
++		var gotBody []byte
++		rt := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
++			body, errRead := io.ReadAll(req.Body)
++			if errRead != nil {
++				return nil, errRead
++			}
++			gotBody = bytes.Clone(body)
++			return &http.Response{
++				StatusCode: 200,
++				Header:     http.Header{"Content-Type": []string{"application/json"}},
++				Body:       io.NopCloser(strings.NewReader(`{"id":"msg_1","type":"message","model":"claude-sonnet-4-5","role":"assistant","content":[{"type":"text","text":"ok"}],"usage":{"input_tokens":1,"output_tokens":1}}`)),
++			}, nil
++		})
++		ctx := context.WithValue(context.Background(), "cliproxy.roundtripper", rt)
++		executor := NewClaudeExecutor(cfg)
++		auth := &cliproxyauth.Auth{Attributes: map[string]string{"api_key": "key-123", "base_url": "https://api.anthropic.com"}}
++		if _, err := executor.Execute(ctx, auth, cliproxyexecutor.Request{
++			Model: "claude-sonnet-4-5", Payload: payload,
++		}, cliproxyexecutor.Options{SourceFormat: sdktranslator.FromString("claude")}); err != nil {
++			t.Fatalf("Execute() error = %v", err)
++		}
++		assertRetentionPresent(t, gotBody)
++		if gjson.GetBytes(gotBody, "prompt_cache_options").Exists() {
++			t.Fatalf("prompt_cache_options reached the official upstream: %s", gotBody)
++		}
++	})
++}
++
++// A raw override can leave the xAI body unparseable after the payload rules.
++// The retention finalizer then cannot prove the field gone, and every call
++// site must refuse the request instead of sending an empty (or partial) body.
++func TestXAIExecutorRefusesRequestWhenRetentionCannotBeProvenStripped(t *testing.T) {
++	var hits atomic.Int32
++	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		hits.Add(1)
++		w.Header().Set("Content-Type", "text/event-stream")
++		_, _ = w.Write([]byte("data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_1\",\"object\":\"response\",\"status\":\"completed\",\"model\":\"grok-4.3\",\"output\":[]}}\n\n"))
++	}))
++	defer server.Close()
++
++	cfg := &config.Config{Payload: config.PayloadConfig{OverrideRaw: []config.PayloadRule{{
++		Models: []config.PayloadModelRule{{Name: "*"}},
++		Params: map[string]any{"prompt_cache_retention": `{"unterminated":`},
++	}}}}
++	exec := NewXAIExecutor(cfg)
++	auth := &cliproxyauth.Auth{
++		ID:         "xai-auth",
++		Provider:   "xai",
++		Attributes: map[string]string{"base_url": server.URL, "auth_kind": "oauth"},
++		Metadata:   map[string]any{"access_token": "xai-token"},
++	}
++	request := cliproxyexecutor.Request{
++		Model:   "grok-4.3",
++		Payload: []byte(`{"model":"grok-4.3","input":[{"role":"user","content":"hello"}]}`),
++	}
++	for _, tc := range []struct {
++		name string
++		run  func() error
++	}{
++		{"execute", func() error {
++			_, err := exec.Execute(context.Background(), auth, request, cliproxyexecutor.Options{SourceFormat: sdktranslator.FormatOpenAIResponse})
++			return err
++		}},
++		{"compact", func() error {
++			_, err := exec.Execute(context.Background(), auth, request, cliproxyexecutor.Options{SourceFormat: sdktranslator.FormatOpenAIResponse, Alt: "responses/compact"})
++			return err
++		}},
++		{"stream", func() error {
++			result, err := exec.ExecuteStream(context.Background(), auth, request, cliproxyexecutor.Options{SourceFormat: sdktranslator.FormatOpenAIResponse, Stream: true})
++			if err == nil && result != nil {
++				for range result.Chunks {
++				}
++			}
++			return err
++		}},
++		{"count_tokens", func() error {
++			_, err := exec.CountTokens(context.Background(), auth, request, cliproxyexecutor.Options{SourceFormat: sdktranslator.FormatOpenAIResponse})
++			return err
++		}},
++	} {
++		t.Run(tc.name, func(t *testing.T) {
++			before := hits.Load()
++			err := tc.run()
++			if !errors.Is(err, errRetentionUnverified) {
++				t.Fatalf("error = %v, want errRetentionUnverified", err)
++			}
++			if got := hits.Load() - before; got != 0 {
++				t.Fatalf("upstream received %d request(s) for an unprovable body", got)
++			}
++		})
++	}
++}
++
++func TestXAIWebsocketRequestBodyRefusedWhenFinalizerRefuses(t *testing.T) {
++	refusing := retentionStrippingFinalizer(func(body []byte) []byte {
++		return append(bytes.Clone(body), []byte(`,"prompt_cache_retention":"24h"`)...)
++	})
++	if got := buildXAIWebsocketRequestBody([]byte(`{"model":"grok-4.3","input":"hello"}`), refusing); got != nil {
++		t.Fatalf("buildXAIWebsocketRequestBody() = %s, want nil (no frame) for an unprovable body", got)
++	}
++	passing := retentionStrippingFinalizer(func(body []byte) []byte { return body })
++	got := buildXAIWebsocketRequestBody([]byte(`{"model":"grok-4.3","prompt_cache_retention":"24h","input":"hello"}`), passing)
++	if gjson.GetBytes(got, "type").String() != "response.create" {
++		t.Fatalf("frame type = %q, want response.create; frame=%s", gjson.GetBytes(got, "type").String(), got)
++	}
++	assertRetentionStripped(t, got)
++}
 diff --git a/internal/runtime/executor/non_claude_cache_retention_test.go b/internal/runtime/executor/non_claude_cache_retention_test.go
 new file mode 100644
-index 0000000..732f123
+index 00000000..382ec80d
 --- /dev/null
 +++ b/internal/runtime/executor/non_claude_cache_retention_test.go
-@@ -0,0 +1,1791 @@
+@@ -0,0 +1,1749 @@
 +package executor
 +
 +import (
@@ -290,11 +641,11 @@ index 0000000..732f123
 +
 +	"github.com/gorilla/websocket"
 +	"github.com/pierrec/xxHash/xxHash64"
-+	"github.com/router-for-me/CLIProxyAPI/v7/internal/config"
-+	_ "github.com/router-for-me/CLIProxyAPI/v7/internal/translator"
-+	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/auth"
-+	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/executor"
-+	sdktranslator "github.com/router-for-me/CLIProxyAPI/v7/sdk/translator"
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
++	_ "github.com/router-for-me/CLIProxyAPI/v8/internal/translator"
++	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
++	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
++	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
 +	"github.com/tidwall/gjson"
 +	"github.com/tidwall/sjson"
 +)
@@ -496,13 +847,11 @@ index 0000000..732f123
 +		nil,
 +	} {
 +		executor := &CodexExecutor{}
-+		_, _, _, err := executor.cacheHelper(
++		_, _, err := executor.cacheHelper(
 +			context.Background(),
 +			sdktranslator.FromString("openai-response"),
 +			"https://example.com/responses",
-+			nil,
 +			req,
-+			req.Payload,
 +			rawJSON,
 +		)
 +		if err == nil {
@@ -718,54 +1067,6 @@ index 0000000..732f123
 +		t.Fatal("expected captured upstream body")
 +	}
 +	assertRetentionStripped(t, gotBody)
-+}
-+
-+// Codex HTTP: identity confusion. The boundary must run after identity
-+// rewriting and must not clobber the rewritten cache key.
-+
-+func TestCodexExecutorExecuteIdentityConfuseStripsRetentionAtFinalBoundary(t *testing.T) {
-+	var gotBody []byte
-+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-+		body, errRead := io.ReadAll(r.Body)
-+		if errRead != nil {
-+			t.Fatalf("read body: %v", errRead)
-+		}
-+		gotBody = bytes.Clone(body)
-+		w.Header().Set("Content-Type", "text/event-stream")
-+		_, _ = w.Write([]byte(`data: {"type":"response.completed","response":{"id":"resp_1","object":"response","created_at":0,"status":"completed","model":"gpt-5.6-sol","output":[],"usage":{"input_tokens":1,"output_tokens":0,"total_tokens":1}}}` + "\n\n"))
-+	}))
-+	defer server.Close()
-+
-+	executor := NewCodexExecutor(&config.Config{
-+		Routing: config.RoutingConfig{Strategy: "fill-first"},
-+		Codex:   config.CodexConfig{IdentityConfuse: true},
-+	})
-+	auth := &cliproxyauth.Auth{
-+		ID: "auth-confuse-1",
-+		Attributes: map[string]string{
-+			"base_url": server.URL,
-+			"api_key":  "sk-test",
-+		},
-+	}
-+	payload := []byte(`{"model":"gpt-5.6-sol","prompt_cache_retention":"24h","prompt_cache_key":"cache-123","input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"hello"}]}]}`)
-+	if _, err := executor.Execute(context.Background(), auth, cliproxyexecutor.Request{
-+		Model:   "gpt-5.6-sol",
-+		Payload: payload,
-+	}, cliproxyexecutor.Options{
-+		SourceFormat: sdktranslator.FromString("openai-response"),
-+		Stream:       false,
-+	}); err != nil {
-+		t.Fatalf("Execute() error = %v", err)
-+	}
-+	if len(gotBody) == 0 {
-+		t.Fatal("expected captured upstream body")
-+	}
-+	assertRetentionStripped(t, gotBody)
-+	// The identity rewrite happened before the boundary and must survive it:
-+	// the cache key is the confused UUID, never the client-declared one.
-+	if got := gjson.GetBytes(gotBody, "prompt_cache_key").String(); got == "" || got == "cache-123" {
-+		t.Fatalf("prompt_cache_key = %q, want identity-confused UUID; body=%s", got, string(gotBody))
-+	}
 +}
 +
 +// Codex WebSocket: response.create frames (non-stream and stream). The
@@ -1073,10 +1374,13 @@ index 0000000..732f123
 +		_, _ = w.Write([]byte(strings.Join([]string{
 +			`event: message_start`,
 +			`data: {"type":"message_start","message":{"id":"msg_123","model":"kimi-k2.5"}}`,
++			``,
 +			`event: content_block_delta`,
 +			`data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ok"}}`,
++			``,
 +			`event: message_delta`,
 +			`data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"input_tokens":2,"output_tokens":1}}`,
++			``,
 +			`event: message_stop`,
 +			`data: {"type":"message_stop"}`,
 +			``,
@@ -1181,10 +1485,13 @@ index 0000000..732f123
 +		_, _ = w.Write([]byte(strings.Join([]string{
 +			`event: message_start`,
 +			`data: {"type":"message_start","message":{"id":"msg_123","model":"kimi-k2.5"}}`,
++			``,
 +			`event: content_block_delta`,
 +			`data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ok"}}`,
++			``,
 +			`event: message_delta`,
 +			`data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"input_tokens":2,"output_tokens":1}}`,
++			``,
 +			`event: message_stop`,
 +			`data: {"type":"message_stop"}`,
 +			``,
@@ -2032,8 +2339,10 @@ index 0000000..732f123
 +			Body: io.NopCloser(strings.NewReader(strings.Join([]string{
 +				`event: message_start`,
 +				`data: {"type":"message_start","message":{"id":"msg_123","model":"claude-sonnet-4-5"}}`,
++				``,
 +				`event: message_delta`,
 +				`data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"input_tokens":2,"output_tokens":1}}`,
++				``,
 +				`event: message_stop`,
 +				`data: {"type":"message_stop"}`,
 +				``,
@@ -2068,7 +2377,7 @@ index 0000000..732f123
 +}
 diff --git a/internal/runtime/executor/openai_compat_chat_retention_cm053_test.go b/internal/runtime/executor/openai_compat_chat_retention_cm053_test.go
 new file mode 100644
-index 0000000..109d54c
+index 00000000..66f4f3f4
 --- /dev/null
 +++ b/internal/runtime/executor/openai_compat_chat_retention_cm053_test.go
 @@ -0,0 +1,335 @@
@@ -2084,10 +2393,10 @@ index 0000000..109d54c
 +	"sync"
 +	"testing"
 +
-+	"github.com/router-for-me/CLIProxyAPI/v7/internal/config"
-+	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/auth"
-+	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/executor"
-+	sdktranslator "github.com/router-for-me/CLIProxyAPI/v7/sdk/translator"
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
++	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
++	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
++	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
 +	"github.com/tidwall/gjson"
 +)
 +
@@ -2408,47 +2717,78 @@ index 0000000..109d54c
 +	})
 +}
 diff --git a/internal/runtime/executor/openai_compat_executor.go b/internal/runtime/executor/openai_compat_executor.go
-index 7dc4a02..de57044 100644
+index 31ac21db..b931915d 100644
 --- a/internal/runtime/executor/openai_compat_executor.go
 +++ b/internal/runtime/executor/openai_compat_executor.go
-@@ -136,6 +136,16 @@ func (e *OpenAICompatExecutor) Execute(ctx context.Context, auth *cliproxyauth.A
- 		if err != nil {
- 			return resp, err
- 		}
+@@ -149,6 +149,18 @@ func (e *OpenAICompatExecutor) Execute(ctx context.Context, auth *cliproxyauth.A
+ 
+ 	url := strings.TrimSuffix(baseURL, "/") + endpoint
+ 	translated = helps.ApplyPayloadConfigWithRequest(e.cfg, baseModel, to.String(), from.String(), "", translated, originalTranslated, requestedModel, requestPath, opts.Headers)
++	if opts.Alt != "responses/compact" {
 +		// Final outbound boundary for OpenAI-compatible chat completions: strip
-+		// prompt_cache_retention after translation, payload rules, tool-result and
-+		// max-tokens normalization and prompt-cache-key insertion, and before the
-+		// request is built, so a late payload override cannot send it upstream.
-+		// Keyed and keyless chat alike; only the genuine non-stream
-+		// /responses/compact request (the branch below) keeps the field.
++		// prompt_cache_retention after translation, tool-result and max-tokens
++		// normalization, prompt-cache-key insertion and payload rules, and
++		// before the request is built, so a late payload override cannot send
++		// it upstream. Keyed and keyless chat alike; only the genuine
++		// non-stream /responses/compact request keeps the field.
 +		translated, err = stripPromptCacheRetention(translated)
 +		if err != nil {
 +			return resp, fmt.Errorf("openai compat executor: %w", err)
 +		}
- 	}
- 	if opts.Alt == "responses/compact" {
- 		if updated, errDelete := sjson.DeleteBytes(translated, "stream"); errDelete == nil {
-@@ -359,6 +369,15 @@ func (e *OpenAICompatExecutor) ExecuteStream(ctx context.Context, auth *cliproxy
- 	// Request usage data in the final streaming chunk so that token statistics
- 	// are captured even when the upstream is an OpenAI-compatible provider.
- 	translated = helps.SetBoolIfDifferent(translated, "stream_options.include_usage", true)
++	}
+ 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(translated))
+ 	if err != nil {
+ 		return resp, err
+@@ -374,6 +386,15 @@ func (e *OpenAICompatExecutor) ExecuteStream(ctx context.Context, auth *cliproxy
+ 
+ 	url := strings.TrimSuffix(baseURL, "/") + "/chat/completions"
+ 	translated = helps.ApplyPayloadConfigWithRequest(e.cfg, baseModel, to.String(), from.String(), "", translated, originalTranslated, requestedModel, requestPath, opts.Headers)
 +	// Final outbound boundary for OpenAI-compatible streaming chat: the stream
 +	// always targets /chat/completions, including when its Alt is
 +	// "responses/compact", so this strip is unconditional. It runs after every
-+	// body mutation (translation, payload rules, normalization, prompt-cache-key
-+	// insertion, include_usage) and before the request is built.
++	// body mutation (translation, normalization, prompt-cache-key insertion,
++	// include_usage, payload rules) and before the request is built.
 +	translated, err = stripPromptCacheRetention(translated)
 +	if err != nil {
 +		return nil, fmt.Errorf("openai compat executor: %w", err)
 +	}
- 	reporter.SetTranslatedReasoningEffort(translated, to.String())
+ 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(translated))
+ 	if err != nil {
+ 		return nil, err
+diff --git a/internal/runtime/executor/xai_executor_execute.go b/internal/runtime/executor/xai_executor_execute.go
+index be546f86..fe9cd359 100644
+--- a/internal/runtime/executor/xai_executor_execute.go
++++ b/internal/runtime/executor/xai_executor_execute.go
+@@ -48,6 +48,9 @@ func (e *XAIExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, req
  
- 	url := strings.TrimSuffix(baseURL, "/") + "/chat/completions"
+ 	url := strings.TrimSuffix(baseURL, "/") + "/responses"
+ 	prepared.body = prepared.finalizePayload(prepared.body)
++	if len(prepared.body) == 0 {
++		return resp, fmt.Errorf("xai executor: %w", errRetentionUnverified)
++	}
+ 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(prepared.body))
+ 	if err != nil {
+ 		return resp, err
+@@ -213,6 +216,9 @@ func (e *XAIExecutor) executeCompactRequest(ctx context.Context, auth *cliproxya
+ 
+ 	requestURL := strings.TrimSuffix(baseURL, "/") + "/responses/compact"
+ 	prepared.body = prepared.finalizePayload(prepared.body)
++	if len(prepared.body) == 0 {
++		return nil, nil, nil, nil, fmt.Errorf("xai executor: %w", errRetentionUnverified)
++	}
+ 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, requestURL, bytes.NewReader(prepared.body))
+ 	if err != nil {
+ 		return nil, nil, nil, nil, err
 diff --git a/internal/runtime/executor/xai_executor_request.go b/internal/runtime/executor/xai_executor_request.go
-index 7eeb96c3..738454e3 100644
+index 98f3651d..38e924e7 100644
 --- a/internal/runtime/executor/xai_executor_request.go
 +++ b/internal/runtime/executor/xai_executor_request.go
-@@ -86,7 +86,6 @@ func (e *XAIExecutor) prepareResponsesRequestTo(ctx context.Context, req cliprox
+@@ -84,11 +84,10 @@ func (e *XAIExecutor) prepareResponsesRequestTo(ctx context.Context, req cliprox
+ 		return nil, err
+ 	}
+ 
+-	finalizePayload := helps.NewPayloadFinalizer(e.cfg, e.Identifier(), baseModel, to.String(), "", originalTranslated, req, opts)
++	finalizePayload := retentionStrippingFinalizer(helps.NewPayloadFinalizer(e.cfg, e.Identifier(), baseModel, to.String(), "", originalTranslated, req, opts))
  	body = helps.SetStringIfDifferent(body, "model", baseModel)
  	body = helps.SetBoolIfDifferent(body, "stream", stream)
  	body, _ = sjson.DeleteBytes(body, "previous_response_id")
@@ -2456,7 +2796,7 @@ index 7eeb96c3..738454e3 100644
  	body, _ = sjson.DeleteBytes(body, "safety_identifier")
  	body, _ = sjson.DeleteBytes(body, "stream_options")
  	body = helps.RewriteCodexMultiAgentV2Input(ctx, opts.Headers, body, e.cfg)
-@@ -143,6 +142,16 @@ func (e *XAIExecutor) prepareResponsesRequestTo(ctx context.Context, req cliprox
+@@ -158,6 +157,16 @@ func (e *XAIExecutor) prepareResponsesRequestTo(ctx context.Context, req cliprox
  		body = helps.SetStringIfDifferent(body, "prompt_cache_key", sessionID)
  	}
  
@@ -2471,5 +2811,81 @@ index 7eeb96c3..738454e3 100644
 +	}
 +
  	return &xaiPreparedRequest{
- 		baseModel:             baseModel,
- 		from:                  from,
+ 		finalizePayload:       finalizePayload,
+ 		applyPatch:            applyPatch,
+diff --git a/internal/runtime/executor/xai_executor_stream.go b/internal/runtime/executor/xai_executor_stream.go
+index f6aad351..97a85659 100644
+--- a/internal/runtime/executor/xai_executor_stream.go
++++ b/internal/runtime/executor/xai_executor_stream.go
+@@ -4,6 +4,7 @@ import (
+ 	"bufio"
+ 	"bytes"
+ 	"context"
++	"fmt"
+ 	"io"
+ 	"net/http"
+ 	"strings"
+@@ -42,6 +43,9 @@ func (e *XAIExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Auth
+ 
+ 	url := strings.TrimSuffix(baseURL, "/") + "/responses"
+ 	prepared.body = prepared.finalizePayload(prepared.body)
++	if len(prepared.body) == 0 {
++		return nil, fmt.Errorf("xai executor: %w", errRetentionUnverified)
++	}
+ 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(prepared.body))
+ 	if err != nil {
+ 		return nil, err
+diff --git a/internal/runtime/executor/xai_executor_tokens.go b/internal/runtime/executor/xai_executor_tokens.go
+index 2a3b5c9d..ecfc5b37 100644
+--- a/internal/runtime/executor/xai_executor_tokens.go
++++ b/internal/runtime/executor/xai_executor_tokens.go
+@@ -23,6 +23,9 @@ func (e *XAIExecutor) CountTokens(ctx context.Context, auth *cliproxyauth.Auth,
+ 		return cliproxyexecutor.Response{}, fmt.Errorf("xai executor: tokenizer init failed: %w", err)
+ 	}
+ 	prepared.body = prepared.finalizePayload(prepared.body)
++	if len(prepared.body) == 0 {
++		return cliproxyexecutor.Response{}, fmt.Errorf("xai executor: %w", errRetentionUnverified)
++	}
+ 	count, err := countXAIInputTokens(enc, prepared.body)
+ 	if err != nil {
+ 		return cliproxyexecutor.Response{}, fmt.Errorf("xai executor: token counting failed: %w", err)
+diff --git a/internal/runtime/executor/xai_websockets_executor.go b/internal/runtime/executor/xai_websockets_executor.go
+index 6fa16db3..46d6e5c6 100644
+--- a/internal/runtime/executor/xai_websockets_executor.go
++++ b/internal/runtime/executor/xai_websockets_executor.go
+@@ -521,6 +521,10 @@ func (e *XAIWebsocketsExecutor) ExecuteStream(ctx context.Context, auth *cliprox
+ 
+ 	wsHeaders := applyXAIWebsocketHeaders(ctx, http.Header{}, auth, token, prepared.sessionID, opts.Headers)
+ 	wsReqBody := buildXAIWebsocketRequestBody(prepared.body, prepared.finalizePayload)
++	if len(wsReqBody) == 0 {
++		unlockStreamSession()
++		return nil, fmt.Errorf("xai websockets executor: %w", errRetentionUnverified)
++	}
+ 	requestType := strings.TrimSpace(gjson.GetBytes(req.Payload, "type").String())
+ 	transcriptReset := strings.TrimSpace(gjson.GetBytes(wsReqBody, "previous_response_id").String()) == "" &&
+ 		(requestType != "response.append" || (idMapper != nil && idMapper.replayedCompactedTranscript))
+@@ -630,6 +634,12 @@ func (e *XAIWebsocketsExecutor) ExecuteStream(ctx context.Context, auth *cliprox
+ 			}
+ 			readCh = sess.activate(conn)
+ 			wsReqBodyRetry := buildXAIWebsocketRequestBody(prepared.body, prepared.finalizePayload)
++			if len(wsReqBodyRetry) == 0 {
++				e.invalidateUpstreamConn(sess, connRetry, "send_error", errRetentionUnverified)
++				sess.clearActive(conn, readCh)
++				sess.reqMu.Unlock()
++				return nil, fmt.Errorf("xai websockets executor: %w", errRetentionUnverified)
++			}
+ 			helps.RecordAPIWebsocketRequest(ctx, e.cfg, helps.UpstreamRequestLog{
+ 				URL:       wsURL,
+ 				Method:    "WEBSOCKET",
+@@ -1620,6 +1630,11 @@ func buildXAIWebsocketRequestBody(body []byte, finalizers ...helps.PayloadFinali
+ 	}
+ 	if len(finalizers) > 0 && finalizers[0] != nil {
+ 		wsReqBody = finalizers[0](wsReqBody)
++		if len(wsReqBody) == 0 {
++			// The finalizer refused the body (retention not provably
++			// stripped); the caller sends no frame.
++			return nil
++		}
+ 	}
+ 	wsReqBody, _ = sjson.SetBytes(wsReqBody, "type", "response.create")
+ 	return wsReqBody

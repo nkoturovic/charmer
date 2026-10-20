@@ -203,7 +203,8 @@ class SbomTests(unittest.TestCase):
                 self.assertEqual(values["post-apply-tree-sha256"], inventory["inputs"]["post_apply_tree_sha256"])
                 self.assertEqual(values["target"], target["name"])
                 self.assertEqual(values["ldflags"], " ".join(doc["build"]["ldflags"]))
-                self.assertEqual(values["build-env"], "CGO_ENABLED=0")
+                self.assertEqual(values["build-env"], "CGO_ENABLED=0 GOTOOLCHAIN=local")
+                self.assertEqual(values["build-godebug"], ",".join(doc["build"]["godebug"]))
 
     def test_serial_number_follows_the_content(self):
         doc, inventory = recipe(), tree().inventory
@@ -224,7 +225,8 @@ class ContractTests(unittest.TestCase):
         doc = recipe()
         for entry in admitted():
             self.assertEqual(hashlib.sha256((PATCH_DIR / entry["basename"]).read_bytes()).hexdigest(), entry["sha256"])
-        expected = {"version": 1, "upstream_version": doc["upstream"]["version"],
+        expected = {"version": 2, "upstream_version": doc["upstream"]["version"],
+                    "go_version": doc["toolchain"]["version"], "godebug": doc["build"]["godebug"],
                     "patches": [f"{entry['basename']}@{entry['sha256']}" for entry in admitted()]}
         # builtins.toJSON: sorted keys, no whitespace, no trailing newline.
         self.assertEqual(raw, json.dumps(expected, sort_keys=True, separators=(",", ":")).encode())

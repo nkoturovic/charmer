@@ -1,276 +1,6 @@
-diff --git a/internal/translator/openai/claude/openai_claude_response.go b/internal/translator/openai/claude/openai_claude_response.go
---- a/internal/translator/openai/claude/openai_claude_response.go
-+++ b/internal/translator/openai/claude/openai_claude_response.go
-@@ -230,79 +230,29 @@
- 			// Don't send content_block_start for text here - wait for actual content
- 		}
- 
--		// Handle reasoning content delta
-+		// Handle reasoning content delta; its precedence is independent of content.
- 		for _, reasoningText := range collectOpenAIObjectReasoningTexts(delta) {
--			if reasoningText == "" {
--				continue
--			}
--			if param.OpenToolCallIndex != -1 {
--				if n := len(param.InterleavedContentChunks); n > 0 && param.InterleavedContentChunks[n-1].Type == "thinking" {
--					param.InterleavedContentChunks[n-1].Text += reasoningText
--				} else {
--					param.InterleavedContentChunks = append(param.InterleavedContentChunks, InterleavedContentChunk{
--						Type: "thinking",
--						Text: reasoningText,
--					})
-+			if reasoningText != "" {
-+				emitOpenAIThinkingDelta(param, &results, reasoningText)
-+			}
-+		}
-+
-+		// Only arrays use chunk decoding. Strings, null and absent content keep
-+		// the same emission path, including the raw fallback for unknown arrays.
-+		if content := delta.Get("content"); content.Exists() && content.String() != "" {
-+			if chunks, ok := decodeOpenAIContentChunks(content); ok {
-+				for _, chunk := range chunks {
-+					if chunk.Text == "" {
-+						continue
-+					}
-+					if chunk.Type == "thinking" {
-+						emitOpenAIThinkingDelta(param, &results, chunk.Text)
-+					} else {
-+						emitOpenAITextDelta(param, &results, chunk.Text)
-+					}
- 				}
- 			} else {
--				stopTextContentBlock(param, &results)
--				if !param.ThinkingContentBlockStarted {
--					if param.ThinkingContentBlockIndex == -1 {
--						param.ThinkingContentBlockIndex = param.NextContentBlockIndex
--						param.NextContentBlockIndex++
--					}
--					contentBlockStartJSON := `{"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":""}}`
--					contentBlockStartJSONBytes := []byte(contentBlockStartJSON)
--					contentBlockStartJSONBytes, _ = sjson.SetBytes(contentBlockStartJSONBytes, "index", param.ThinkingContentBlockIndex)
--					results = append(results, translatorcommon.AppendSSEEventBytes(nil, "content_block_start", contentBlockStartJSONBytes, 2))
--					param.ThinkingContentBlockStarted = true
--				}
--
--				thinkingDeltaJSON := `{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":""}}`
--				thinkingDeltaJSONBytes := []byte(thinkingDeltaJSON)
--				thinkingDeltaJSONBytes, _ = sjson.SetBytes(thinkingDeltaJSONBytes, "index", param.ThinkingContentBlockIndex)
--				thinkingDeltaJSONBytes, _ = sjson.SetBytes(thinkingDeltaJSONBytes, "delta.thinking", reasoningText)
--				results = append(results, translatorcommon.AppendSSEEventBytes(nil, "content_block_delta", thinkingDeltaJSONBytes, 2))
--			}
--		}
--
--		// Handle content delta
--		if content := delta.Get("content"); content.Exists() && content.String() != "" {
--			if param.OpenToolCallIndex != -1 {
--				// Tool call content block is currently active on the wire.
--				// Buffer this text so content blocks remain strictly sequential.
--				if n := len(param.InterleavedContentChunks); n > 0 && param.InterleavedContentChunks[n-1].Type == "text" {
--					param.InterleavedContentChunks[n-1].Text += content.String()
--				} else {
--					param.InterleavedContentChunks = append(param.InterleavedContentChunks, InterleavedContentChunk{
--						Type: "text",
--						Text: content.String(),
--					})
--				}
--				param.ContentAccumulator.WriteString(content.String())
--			} else {
--				// Send content_block_start for text if not already sent
--				if !param.TextContentBlockStarted {
--					stopThinkingContentBlock(param, &results)
--					if param.TextContentBlockIndex == -1 {
--						param.TextContentBlockIndex = param.NextContentBlockIndex
--						param.NextContentBlockIndex++
--					}
--					contentBlockStartJSON := `{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`
--					contentBlockStartJSONBytes := []byte(contentBlockStartJSON)
--					contentBlockStartJSONBytes, _ = sjson.SetBytes(contentBlockStartJSONBytes, "index", param.TextContentBlockIndex)
--					results = append(results, translatorcommon.AppendSSEEventBytes(nil, "content_block_start", contentBlockStartJSONBytes, 2))
--					param.TextContentBlockStarted = true
--				}
--
--				contentDeltaJSON := `{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":""}}`
--				contentDeltaJSONBytes := []byte(contentDeltaJSON)
--				contentDeltaJSONBytes, _ = sjson.SetBytes(contentDeltaJSONBytes, "index", param.TextContentBlockIndex)
--				contentDeltaJSONBytes, _ = sjson.SetBytes(contentDeltaJSONBytes, "delta.text", content.String())
--				results = append(results, translatorcommon.AppendSSEEventBytes(nil, "content_block_delta", contentDeltaJSONBytes, 2))
--
--				// Accumulate content
--				param.ContentAccumulator.WriteString(content.String())
-+				emitOpenAITextDelta(param, &results, content.String())
- 			}
- 		}
- 
-@@ -418,6 +368,126 @@
- 	return results
- }
- 
-+// decodeOpenAIContentChunks accepts only the text/thinking array shape. If any
-+// chunk is unsupported or malformed, callers retain their original array path
-+// instead of consuming part of an unfamiliar provider response.
-+func decodeOpenAIContentChunks(content gjson.Result) ([]InterleavedContentChunk, bool) {
-+	if !content.IsArray() {
-+		return nil, false
-+	}
-+	var chunks []InterleavedContentChunk
-+	for _, item := range content.Array() {
-+		if !item.IsObject() {
-+			return nil, false
-+		}
-+		switch item.Get("type").String() {
-+		case "text":
-+			text := item.Get("text")
-+			if text.Type != gjson.String {
-+				return nil, false
-+			}
-+			chunks = append(chunks, InterleavedContentChunk{Type: "text", Text: text.String()})
-+		case "thinking":
-+			text, ok := openAIThinkingChunkText(item)
-+			if !ok {
-+				return nil, false
-+			}
-+			chunks = append(chunks, InterleavedContentChunk{Type: "thinking", Text: text})
-+		default:
-+			return nil, false
-+		}
-+	}
-+	return chunks, true
-+}
-+
-+func openAIThinkingChunkText(item gjson.Result) (string, bool) {
-+	thinking := item.Get("thinking")
-+	if !thinking.IsArray() {
-+		return "", false
-+	}
-+	var text strings.Builder
-+	for _, nested := range thinking.Array() {
-+		if !nested.IsObject() || nested.Get("type").String() != "text" || nested.Get("text").Type != gjson.String {
-+			return "", false
-+		}
-+		text.WriteString(nested.Get("text").String())
-+	}
-+	// closed describes a chunk, not the end of the reasoning block. Signatures
-+	// cannot be manufactured from this unsigned response representation.
-+	return text.String(), true
-+}
-+
-+func emitOpenAIThinkingDelta(param *ConvertOpenAIResponseToAnthropicParams, results *[][]byte, reasoningText string) {
-+	if param.OpenToolCallIndex != -1 {
-+		if n := len(param.InterleavedContentChunks); n > 0 && param.InterleavedContentChunks[n-1].Type == "thinking" {
-+			param.InterleavedContentChunks[n-1].Text += reasoningText
-+		} else {
-+			param.InterleavedContentChunks = append(param.InterleavedContentChunks, InterleavedContentChunk{
-+				Type: "thinking",
-+				Text: reasoningText,
-+			})
-+		}
-+	} else {
-+		stopTextContentBlock(param, results)
-+		if !param.ThinkingContentBlockStarted {
-+			if param.ThinkingContentBlockIndex == -1 {
-+				param.ThinkingContentBlockIndex = param.NextContentBlockIndex
-+				param.NextContentBlockIndex++
-+			}
-+			contentBlockStartJSON := `{"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":""}}`
-+			contentBlockStartJSONBytes := []byte(contentBlockStartJSON)
-+			contentBlockStartJSONBytes, _ = sjson.SetBytes(contentBlockStartJSONBytes, "index", param.ThinkingContentBlockIndex)
-+			*results = append(*results, translatorcommon.AppendSSEEventBytes(nil, "content_block_start", contentBlockStartJSONBytes, 2))
-+			param.ThinkingContentBlockStarted = true
-+		}
-+
-+		thinkingDeltaJSON := `{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":""}}`
-+		thinkingDeltaJSONBytes := []byte(thinkingDeltaJSON)
-+		thinkingDeltaJSONBytes, _ = sjson.SetBytes(thinkingDeltaJSONBytes, "index", param.ThinkingContentBlockIndex)
-+		thinkingDeltaJSONBytes, _ = sjson.SetBytes(thinkingDeltaJSONBytes, "delta.thinking", reasoningText)
-+		*results = append(*results, translatorcommon.AppendSSEEventBytes(nil, "content_block_delta", thinkingDeltaJSONBytes, 2))
-+	}
-+}
-+
-+func emitOpenAITextDelta(param *ConvertOpenAIResponseToAnthropicParams, results *[][]byte, text string) {
-+	if param.OpenToolCallIndex != -1 {
-+		// Tool call content block is currently active on the wire.
-+		// Buffer this text so content blocks remain strictly sequential.
-+		if n := len(param.InterleavedContentChunks); n > 0 && param.InterleavedContentChunks[n-1].Type == "text" {
-+			param.InterleavedContentChunks[n-1].Text += text
-+		} else {
-+			param.InterleavedContentChunks = append(param.InterleavedContentChunks, InterleavedContentChunk{
-+				Type: "text",
-+				Text: text,
-+			})
-+		}
-+		param.ContentAccumulator.WriteString(text)
-+	} else {
-+		// Send content_block_start for text if not already sent
-+		if !param.TextContentBlockStarted {
-+			stopThinkingContentBlock(param, results)
-+			if param.TextContentBlockIndex == -1 {
-+				param.TextContentBlockIndex = param.NextContentBlockIndex
-+				param.NextContentBlockIndex++
-+			}
-+			contentBlockStartJSON := `{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`
-+			contentBlockStartJSONBytes := []byte(contentBlockStartJSON)
-+			contentBlockStartJSONBytes, _ = sjson.SetBytes(contentBlockStartJSONBytes, "index", param.TextContentBlockIndex)
-+			*results = append(*results, translatorcommon.AppendSSEEventBytes(nil, "content_block_start", contentBlockStartJSONBytes, 2))
-+			param.TextContentBlockStarted = true
-+		}
-+
-+		contentDeltaJSON := `{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":""}}`
-+		contentDeltaJSONBytes := []byte(contentDeltaJSON)
-+		contentDeltaJSONBytes, _ = sjson.SetBytes(contentDeltaJSONBytes, "index", param.TextContentBlockIndex)
-+		contentDeltaJSONBytes, _ = sjson.SetBytes(contentDeltaJSONBytes, "delta.text", text)
-+		*results = append(*results, translatorcommon.AppendSSEEventBytes(nil, "content_block_delta", contentDeltaJSONBytes, 2))
-+
-+		// Accumulate content
-+		param.ContentAccumulator.WriteString(text)
-+	}
-+}
-+
- // convertOpenAIDoneToAnthropic handles the [DONE] marker and sends final events
- func convertOpenAIDoneToAnthropic(param *ConvertOpenAIResponseToAnthropicParams) [][]byte {
- 	var results [][]byte
-@@ -457,9 +527,21 @@
- 
- 		// Handle text content
- 		if content := choice.Get("message.content"); content.Exists() && content.String() != "" {
--			block := []byte(`{"type":"text","text":""}`)
--			block, _ = sjson.SetBytes(block, "text", content.String())
--			contentBlocks = append(contentBlocks, block)
-+			if chunks, ok := decodeOpenAIContentChunks(content); ok {
-+				for _, chunk := range chunks {
-+					if chunk.Text == "" {
-+						continue
-+					}
-+					block := []byte(`{"type":""}`)
-+					block, _ = sjson.SetBytes(block, "type", chunk.Type)
-+					block, _ = sjson.SetBytes(block, chunk.Type, chunk.Text)
-+					contentBlocks = append(contentBlocks, block)
-+				}
-+			} else {
-+				block := []byte(`{"type":"text","text":""}`)
-+				block, _ = sjson.SetBytes(block, "text", content.String())
-+				contentBlocks = append(contentBlocks, block)
-+			}
- 		}
- 
- 		// Handle tool calls
-@@ -864,6 +946,15 @@
- 									return true
- 								})
- 							}
-+						case "thinking":
-+							if text, ok := openAIThinkingChunkText(item); ok {
-+								flushText()
-+								thinkingBuilder.WriteString(text)
-+							} else {
-+								// Malformed chunks keep the unknown-type behavior.
-+								flushThinking()
-+								flushText()
-+							}
- 						case "reasoning":
- 							flushText()
- 							if thinking := item.Get("text"); thinking.Exists() {
 diff --git a/internal/translator/openai/claude/openai_claude_content_chunks_test.go b/internal/translator/openai/claude/openai_claude_content_chunks_test.go
 new file mode 100644
+index 00000000..b4a5ce89
 --- /dev/null
 +++ b/internal/translator/openai/claude/openai_claude_content_chunks_test.go
 @@ -0,0 +1,242 @@
@@ -518,6 +248,7 @@ new file mode 100644
 +}
 diff --git a/internal/translator/openai/claude/openai_claude_content_goldens_test.go b/internal/translator/openai/claude/openai_claude_content_goldens_test.go
 new file mode 100644
+index 00000000..1a47581e
 --- /dev/null
 +++ b/internal/translator/openai/claude/openai_claude_content_goldens_test.go
 @@ -0,0 +1,47 @@
@@ -568,3 +299,271 @@ new file mode 100644
 +		})
 +	}
 +}
+diff --git a/internal/translator/openai/claude/openai_claude_response.go b/internal/translator/openai/claude/openai_claude_response.go
+index d416d416..617f08ae 100644
+--- a/internal/translator/openai/claude/openai_claude_response.go
++++ b/internal/translator/openai/claude/openai_claude_response.go
+@@ -230,79 +230,29 @@ func convertOpenAIStreamingChunkToAnthropic(rawJSON []byte, param *ConvertOpenAI
+ 			// Don't send content_block_start for text here - wait for actual content
+ 		}
+ 
+-		// Handle reasoning content delta
++		// Handle reasoning content delta; its precedence is independent of content.
+ 		for _, reasoningText := range collectOpenAIObjectReasoningTexts(delta) {
+-			if reasoningText == "" {
+-				continue
+-			}
+-			if param.OpenToolCallIndex != -1 {
+-				if n := len(param.InterleavedContentChunks); n > 0 && param.InterleavedContentChunks[n-1].Type == "thinking" {
+-					param.InterleavedContentChunks[n-1].Text += reasoningText
+-				} else {
+-					param.InterleavedContentChunks = append(param.InterleavedContentChunks, InterleavedContentChunk{
+-						Type: "thinking",
+-						Text: reasoningText,
+-					})
+-				}
+-			} else {
+-				stopTextContentBlock(param, &results)
+-				if !param.ThinkingContentBlockStarted {
+-					if param.ThinkingContentBlockIndex == -1 {
+-						param.ThinkingContentBlockIndex = param.NextContentBlockIndex
+-						param.NextContentBlockIndex++
+-					}
+-					contentBlockStartJSON := `{"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":""}}`
+-					contentBlockStartJSONBytes := []byte(contentBlockStartJSON)
+-					contentBlockStartJSONBytes, _ = sjson.SetBytes(contentBlockStartJSONBytes, "index", param.ThinkingContentBlockIndex)
+-					results = append(results, translatorcommon.AppendSSEEventBytes(nil, "content_block_start", contentBlockStartJSONBytes, 2))
+-					param.ThinkingContentBlockStarted = true
+-				}
+-
+-				thinkingDeltaJSON := `{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":""}}`
+-				thinkingDeltaJSONBytes := []byte(thinkingDeltaJSON)
+-				thinkingDeltaJSONBytes, _ = sjson.SetBytes(thinkingDeltaJSONBytes, "index", param.ThinkingContentBlockIndex)
+-				thinkingDeltaJSONBytes, _ = sjson.SetBytes(thinkingDeltaJSONBytes, "delta.thinking", reasoningText)
+-				results = append(results, translatorcommon.AppendSSEEventBytes(nil, "content_block_delta", thinkingDeltaJSONBytes, 2))
++			if reasoningText != "" {
++				emitOpenAIThinkingDelta(param, &results, reasoningText)
+ 			}
+ 		}
+ 
+-		// Handle content delta
++		// Only arrays use chunk decoding. Strings, null and absent content keep
++		// the same emission path, including the raw fallback for unknown arrays.
+ 		if content := delta.Get("content"); content.Exists() && content.String() != "" {
+-			if param.OpenToolCallIndex != -1 {
+-				// Tool call content block is currently active on the wire.
+-				// Buffer this text so content blocks remain strictly sequential.
+-				if n := len(param.InterleavedContentChunks); n > 0 && param.InterleavedContentChunks[n-1].Type == "text" {
+-					param.InterleavedContentChunks[n-1].Text += content.String()
+-				} else {
+-					param.InterleavedContentChunks = append(param.InterleavedContentChunks, InterleavedContentChunk{
+-						Type: "text",
+-						Text: content.String(),
+-					})
+-				}
+-				param.ContentAccumulator.WriteString(content.String())
+-			} else {
+-				// Send content_block_start for text if not already sent
+-				if !param.TextContentBlockStarted {
+-					stopThinkingContentBlock(param, &results)
+-					if param.TextContentBlockIndex == -1 {
+-						param.TextContentBlockIndex = param.NextContentBlockIndex
+-						param.NextContentBlockIndex++
++			if chunks, ok := decodeOpenAIContentChunks(content); ok {
++				for _, chunk := range chunks {
++					if chunk.Text == "" {
++						continue
++					}
++					if chunk.Type == "thinking" {
++						emitOpenAIThinkingDelta(param, &results, chunk.Text)
++					} else {
++						emitOpenAITextDelta(param, &results, chunk.Text)
+ 					}
+-					contentBlockStartJSON := `{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`
+-					contentBlockStartJSONBytes := []byte(contentBlockStartJSON)
+-					contentBlockStartJSONBytes, _ = sjson.SetBytes(contentBlockStartJSONBytes, "index", param.TextContentBlockIndex)
+-					results = append(results, translatorcommon.AppendSSEEventBytes(nil, "content_block_start", contentBlockStartJSONBytes, 2))
+-					param.TextContentBlockStarted = true
+ 				}
+-
+-				contentDeltaJSON := `{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":""}}`
+-				contentDeltaJSONBytes := []byte(contentDeltaJSON)
+-				contentDeltaJSONBytes, _ = sjson.SetBytes(contentDeltaJSONBytes, "index", param.TextContentBlockIndex)
+-				contentDeltaJSONBytes, _ = sjson.SetBytes(contentDeltaJSONBytes, "delta.text", content.String())
+-				results = append(results, translatorcommon.AppendSSEEventBytes(nil, "content_block_delta", contentDeltaJSONBytes, 2))
+-
+-				// Accumulate content
+-				param.ContentAccumulator.WriteString(content.String())
++			} else {
++				emitOpenAITextDelta(param, &results, content.String())
+ 			}
+ 		}
+ 
+@@ -420,6 +370,126 @@ func convertOpenAIStreamingChunkToAnthropic(rawJSON []byte, param *ConvertOpenAI
+ 	return results
+ }
+ 
++// decodeOpenAIContentChunks accepts only the text/thinking array shape. If any
++// chunk is unsupported or malformed, callers retain their original array path
++// instead of consuming part of an unfamiliar provider response.
++func decodeOpenAIContentChunks(content gjson.Result) ([]InterleavedContentChunk, bool) {
++	if !content.IsArray() {
++		return nil, false
++	}
++	var chunks []InterleavedContentChunk
++	for _, item := range content.Array() {
++		if !item.IsObject() {
++			return nil, false
++		}
++		switch item.Get("type").String() {
++		case "text":
++			text := item.Get("text")
++			if text.Type != gjson.String {
++				return nil, false
++			}
++			chunks = append(chunks, InterleavedContentChunk{Type: "text", Text: text.String()})
++		case "thinking":
++			text, ok := openAIThinkingChunkText(item)
++			if !ok {
++				return nil, false
++			}
++			chunks = append(chunks, InterleavedContentChunk{Type: "thinking", Text: text})
++		default:
++			return nil, false
++		}
++	}
++	return chunks, true
++}
++
++func openAIThinkingChunkText(item gjson.Result) (string, bool) {
++	thinking := item.Get("thinking")
++	if !thinking.IsArray() {
++		return "", false
++	}
++	var text strings.Builder
++	for _, nested := range thinking.Array() {
++		if !nested.IsObject() || nested.Get("type").String() != "text" || nested.Get("text").Type != gjson.String {
++			return "", false
++		}
++		text.WriteString(nested.Get("text").String())
++	}
++	// closed describes a chunk, not the end of the reasoning block. Signatures
++	// cannot be manufactured from this unsigned response representation.
++	return text.String(), true
++}
++
++func emitOpenAIThinkingDelta(param *ConvertOpenAIResponseToAnthropicParams, results *[][]byte, reasoningText string) {
++	if param.OpenToolCallIndex != -1 {
++		if n := len(param.InterleavedContentChunks); n > 0 && param.InterleavedContentChunks[n-1].Type == "thinking" {
++			param.InterleavedContentChunks[n-1].Text += reasoningText
++		} else {
++			param.InterleavedContentChunks = append(param.InterleavedContentChunks, InterleavedContentChunk{
++				Type: "thinking",
++				Text: reasoningText,
++			})
++		}
++	} else {
++		stopTextContentBlock(param, results)
++		if !param.ThinkingContentBlockStarted {
++			if param.ThinkingContentBlockIndex == -1 {
++				param.ThinkingContentBlockIndex = param.NextContentBlockIndex
++				param.NextContentBlockIndex++
++			}
++			contentBlockStartJSON := `{"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":""}}`
++			contentBlockStartJSONBytes := []byte(contentBlockStartJSON)
++			contentBlockStartJSONBytes, _ = sjson.SetBytes(contentBlockStartJSONBytes, "index", param.ThinkingContentBlockIndex)
++			*results = append(*results, translatorcommon.AppendSSEEventBytes(nil, "content_block_start", contentBlockStartJSONBytes, 2))
++			param.ThinkingContentBlockStarted = true
++		}
++
++		thinkingDeltaJSON := `{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":""}}`
++		thinkingDeltaJSONBytes := []byte(thinkingDeltaJSON)
++		thinkingDeltaJSONBytes, _ = sjson.SetBytes(thinkingDeltaJSONBytes, "index", param.ThinkingContentBlockIndex)
++		thinkingDeltaJSONBytes, _ = sjson.SetBytes(thinkingDeltaJSONBytes, "delta.thinking", reasoningText)
++		*results = append(*results, translatorcommon.AppendSSEEventBytes(nil, "content_block_delta", thinkingDeltaJSONBytes, 2))
++	}
++}
++
++func emitOpenAITextDelta(param *ConvertOpenAIResponseToAnthropicParams, results *[][]byte, text string) {
++	if param.OpenToolCallIndex != -1 {
++		// Tool call content block is currently active on the wire.
++		// Buffer this text so content blocks remain strictly sequential.
++		if n := len(param.InterleavedContentChunks); n > 0 && param.InterleavedContentChunks[n-1].Type == "text" {
++			param.InterleavedContentChunks[n-1].Text += text
++		} else {
++			param.InterleavedContentChunks = append(param.InterleavedContentChunks, InterleavedContentChunk{
++				Type: "text",
++				Text: text,
++			})
++		}
++		param.ContentAccumulator.WriteString(text)
++	} else {
++		// Send content_block_start for text if not already sent
++		if !param.TextContentBlockStarted {
++			stopThinkingContentBlock(param, results)
++			if param.TextContentBlockIndex == -1 {
++				param.TextContentBlockIndex = param.NextContentBlockIndex
++				param.NextContentBlockIndex++
++			}
++			contentBlockStartJSON := `{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`
++			contentBlockStartJSONBytes := []byte(contentBlockStartJSON)
++			contentBlockStartJSONBytes, _ = sjson.SetBytes(contentBlockStartJSONBytes, "index", param.TextContentBlockIndex)
++			*results = append(*results, translatorcommon.AppendSSEEventBytes(nil, "content_block_start", contentBlockStartJSONBytes, 2))
++			param.TextContentBlockStarted = true
++		}
++
++		contentDeltaJSON := `{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":""}}`
++		contentDeltaJSONBytes := []byte(contentDeltaJSON)
++		contentDeltaJSONBytes, _ = sjson.SetBytes(contentDeltaJSONBytes, "index", param.TextContentBlockIndex)
++		contentDeltaJSONBytes, _ = sjson.SetBytes(contentDeltaJSONBytes, "delta.text", text)
++		*results = append(*results, translatorcommon.AppendSSEEventBytes(nil, "content_block_delta", contentDeltaJSONBytes, 2))
++
++		// Accumulate content
++		param.ContentAccumulator.WriteString(text)
++	}
++}
++
+ // convertOpenAIDoneToAnthropic handles the [DONE] marker and sends final events
+ func convertOpenAIDoneToAnthropic(param *ConvertOpenAIResponseToAnthropicParams) [][]byte {
+ 	var results [][]byte
+@@ -459,9 +529,21 @@ func convertOpenAINonStreamingToAnthropic(rawJSON []byte) [][]byte {
+ 
+ 		// Handle text content
+ 		if content := choice.Get("message.content"); content.Exists() && content.String() != "" {
+-			block := []byte(`{"type":"text","text":""}`)
+-			block, _ = sjson.SetBytes(block, "text", content.String())
+-			contentBlocks = append(contentBlocks, block)
++			if chunks, ok := decodeOpenAIContentChunks(content); ok {
++				for _, chunk := range chunks {
++					if chunk.Text == "" {
++						continue
++					}
++					block := []byte(`{"type":""}`)
++					block, _ = sjson.SetBytes(block, "type", chunk.Type)
++					block, _ = sjson.SetBytes(block, chunk.Type, chunk.Text)
++					contentBlocks = append(contentBlocks, block)
++				}
++			} else {
++				block := []byte(`{"type":"text","text":""}`)
++				block, _ = sjson.SetBytes(block, "text", content.String())
++				contentBlocks = append(contentBlocks, block)
++			}
+ 		}
+ 
+ 		// Handle tool calls
+@@ -866,6 +948,15 @@ func ConvertOpenAIResponseToClaudeNonStream(_ context.Context, _ string, origina
+ 									return true
+ 								})
+ 							}
++						case "thinking":
++							if text, ok := openAIThinkingChunkText(item); ok {
++								flushText()
++								thinkingBuilder.WriteString(text)
++							} else {
++								// Malformed chunks keep the unknown-type behavior.
++								flushThinking()
++								flushText()
++							}
+ 						case "reasoning":
+ 							flushText()
+ 							if thinking := item.Get("text"); thinking.Exists() {

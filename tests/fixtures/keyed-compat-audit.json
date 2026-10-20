@@ -12,7 +12,7 @@
           "client_sha256": "60d7eb7f12fbb28a52533fe8be5884097403562aa02dc73991a021c7067e29a5",
           "errors": 0,
           "failures": 0,
-          "head": "a37208ac48f6a77ede0dc0b41df9538b85f47989",
+          "head": "6def7bfa1c231da491b9e6970bf4b378fee6444f",
           "inventory": {
             "J1": {
               "count": 9,
@@ -79,11 +79,11 @@
           },
           "journey_tests": 9,
           "keyed_client_budget_seconds": 900,
-          "keyed_client_seconds": 12.65,
+          "keyed_client_seconds": 11.789,
           "keyed_client_tests": 10,
           "keyed_identity": {
             "client_contract_sha256": "8bb508536fabe3e6bdbbdb3783172efaa7f060ff8c1e5c3a1683cb7d75ec4d0b",
-            "gateway": "/nix/store/cwvl244yljx14kbgkxqjslv1zplhicff-cli-proxy-api-linux-amd64-7.3.15/bin/cli-proxy-api",
+            "gateway": "/nix/store/k1jiwjnycq6jkv1g27agpgnf55wg8ar0-cli-proxy-api-linux-amd64-8.0.33/bin/cli-proxy-api",
             "gateway_patch_names": [
               "cli-proxy-api-loopback-oauth.patch",
               "cli-proxy-api-kimi-claude-compat.patch",
@@ -97,7 +97,6 @@
               "cli-proxy-api-openai-compat-keyed-safety.patch",
               "cli-proxy-api-auth-snapshot-locking.patch",
               "cli-proxy-api-server-config-snapshot.patch",
-              "cli-proxy-api-plugin-host-locking.patch",
               "cli-proxy-api-claude-metadata-locking.patch",
               "cli-proxy-api-oauth-model-overlay.patch",
               "cli-proxy-api-no-antigravity-egress.patch",
@@ -106,11 +105,13 @@
               "cli-proxy-api-codex-api-key-safety.patch",
               "cli-proxy-api-refresh-shutdown-join.patch",
               "cli-proxy-api-openai-content-chunks.patch",
-              "cli-proxy-api-charmer-model-ids.patch"
+              "cli-proxy-api-charmer-model-ids.patch",
+              "cli-proxy-api-access-log-path-quoting.patch",
+              "cli-proxy-api-codex-refresh-lead.patch"
             ],
-            "gateway_sha256": "2ff8c1362c554420028e10dcdaf869f080ad89f879111ea764e725dc999257ac",
+            "gateway_sha256": "a1d34777e864d4ec2df8cb22e0b764a920e6e6f1cd57e439c934637c529dcbe0",
             "sources": {
-              "schemas/gateway.schema.json": "e047fd635b3d9b351d7390f9c6d9ece244c42f50902049844cb10cd592ff8533",
+              "schemas/gateway.schema.json": "1bbc13e6ac6b35b1cff4b4e1d0a992f53101a975763a55f31b22d1bf7d553364",
               "schemas/models.schema.json": "1d6f195db3b0aec05fda7164a241c1941ed5c9ff9c53aaa957159811c83639d6",
               "schemas/operator-ledger.schema.json": "19e3b4b472ea01ec4110bdcb4be3667e7c2b078dd22f09566cbe6f137aa652e2",
               "schemas/operator-provider.schema.json": "bab1eb96832c3e06789a5bf9d566749b733056a53aadceb1aefac444f0c9f972",
@@ -122,8 +123,8 @@
               "src/charmer/discovery.py": "685e2c4373c607362ccad637802040e76fa087ac99c987eda1144d3c7a1d0a50",
               "src/charmer/operator.py": "b706fb1f53a218d68532e525aa5dea99aa38421a3778b09af9cbbdd52baec5e0",
               "src/charmer/profile.py": "8e0be317eb5addd8930f59d673dc5c25bd4ea702fb7fb43ccecef975ef287f71",
-              "src/charmer/qualify.py": "65f09078f97ace0818c8d7d6057a59c827a9b0a1f983eefa04edc2b82eba4421",
-              "src/charmer/render.py": "167bb58c27a76d2cee277f965b618b4317c4de7f11c43ede81de4bb55ae15c32",
+              "src/charmer/qualify.py": "9726b3c404d88f3211cb652d5c7cd94af6d99420b1fa92034651bea7106a11db",
+              "src/charmer/render.py": "c26c37507f43b5aaf59d06ffa23fff8797c94a3f22933e46874262424ad1c060",
               "src/charmer/scope.py": "c80089b423823f7972332277cefc5eea5530d992bf0db46ac3eb6b29ccd1dd31",
               "src/charmer/served_plan.py": "affcc823cb55f250d07f6252211803f33d3f3a688a4438b2a31e3a6409715c8a"
             }
@@ -141,7 +142,7 @@
             },
             {
               "path": "src/charmer/render.py",
-              "sha256": "167bb58c27a76d2cee277f965b618b4317c4de7f11c43ede81de4bb55ae15c32"
+              "sha256": "c26c37507f43b5aaf59d06ffa23fff8797c94a3f22933e46874262424ad1c060"
             },
             {
               "path": "src/charmer/served_plan.py",
@@ -149,7 +150,7 @@
             },
             {
               "path": "src/charmer/qualify.py",
-              "sha256": "65f09078f97ace0818c8d7d6057a59c827a9b0a1f983eefa04edc2b82eba4421"
+              "sha256": "9726b3c404d88f3211cb652d5c7cd94af6d99420b1fa92034651bea7106a11db"
             },
             {
               "path": "src/charmer/discovery.py",
@@ -177,7 +178,7 @@
             },
             {
               "path": "src/charmer/data/schemas/gateway.schema.json",
-              "sha256": "e047fd635b3d9b351d7390f9c6d9ece244c42f50902049844cb10cd592ff8533"
+              "sha256": "1bbc13e6ac6b35b1cff4b4e1d0a992f53101a975763a55f31b22d1bf7d553364"
             },
             {
               "path": "src/charmer/data/schemas/providers.schema.json",
@@ -200,13 +201,13 @@
           "skipped": 0,
           "status": "passed"
         },
-        "sha256": "654a5b6fb0712c7ca8f85b132552b47003d4eb200abdef6390a2789d444df4d7"
+        "sha256": "aff263ea545964433860e077782be9fe4c6b4b7dbcf622339603dd4881a5922a"
       },
       "tests.keyed_journeys.json": {
         "document": {
           "binary": {
-            "realpath": "/nix/store/cwvl244yljx14kbgkxqjslv1zplhicff-cli-proxy-api-linux-amd64-7.3.15/bin/cli-proxy-api",
-            "version": "7.3.15"
+            "realpath": "/nix/store/k1jiwjnycq6jkv1g27agpgnf55wg8ar0-cli-proxy-api-linux-amd64-8.0.33/bin/cli-proxy-api",
+            "version": "8.0.33"
           },
           "module": "tests.keyed_journeys",
           "sandbox": {
@@ -217,64 +218,64 @@
           "tables": {
             "J1": [
               {
-                "head": "a37208ac48f6a77ede0dc0b41df9538b85f47989",
+                "head": "6def7bfa1c231da491b9e6970bf4b378fee6444f",
                 "row": "tests.test_onboarding_isolation.KeyedJourneyTests.test_keyed_cli_changes_and_failed_qualification_remain_selectable_with_warnings",
                 "status": "passed"
               },
               {
-                "head": "a37208ac48f6a77ede0dc0b41df9538b85f47989",
+                "head": "6def7bfa1c231da491b9e6970bf4b378fee6444f",
                 "row": "tests.test_onboarding_isolation.KeyedJourneyTests.test_keyed_cli_declare_approve_apply_admit_qualify_bind",
                 "status": "passed"
               },
               {
-                "head": "a37208ac48f6a77ede0dc0b41df9538b85f47989",
+                "head": "6def7bfa1c231da491b9e6970bf4b378fee6444f",
                 "row": "tests.test_packaging.PackageSourceTests.test_package_payload_excludes_operator_credentials_and_grants",
                 "status": "passed"
               },
               {
-                "head": "a37208ac48f6a77ede0dc0b41df9538b85f47989",
+                "head": "6def7bfa1c231da491b9e6970bf4b378fee6444f",
                 "row": "tests.test_portability.KeyedPortabilityTests.test_keyed_import_closed_target_refuses_audit",
                 "status": "passed"
               },
               {
-                "head": "a37208ac48f6a77ede0dc0b41df9538b85f47989",
+                "head": "6def7bfa1c231da491b9e6970bf4b378fee6444f",
                 "row": "tests.test_portability.KeyedPortabilityTests.test_keyed_import_open_target_requires_local_route_and_key_not_admission",
                 "status": "passed"
               },
               {
-                "head": "a37208ac48f6a77ede0dc0b41df9538b85f47989",
+                "head": "6def7bfa1c231da491b9e6970bf4b378fee6444f",
                 "row": "tests.test_portability.KeyedPortabilityTests.test_keyed_import_rechecks_headers_origins_collisions",
                 "status": "passed"
               },
               {
-                "head": "a37208ac48f6a77ede0dc0b41df9538b85f47989",
+                "head": "6def7bfa1c231da491b9e6970bf4b378fee6444f",
                 "row": "tests.test_portability.KeyedPortabilityTests.test_keyed_import_uses_existing_single_commit_barrier",
                 "status": "passed"
               },
               {
-                "head": "a37208ac48f6a77ede0dc0b41df9538b85f47989",
+                "head": "6def7bfa1c231da491b9e6970bf4b378fee6444f",
                 "row": "tests.test_portability.KeyedPortabilityTests.test_keyed_json_export_has_logical_refs_and_no_store_reads",
                 "status": "passed"
               },
               {
-                "head": "a37208ac48f6a77ede0dc0b41df9538b85f47989",
+                "head": "6def7bfa1c231da491b9e6970bf4b378fee6444f",
                 "row": "tests.test_tui_pty.KeyedJourneyPTYTests.test_keyed_tui_optional_admission_qualification_and_binding",
                 "status": "passed"
               }
             ]
           }
         },
-        "sha256": "351be29d73fca95f23e5978122aafac6889e8f27a9c297b47a0bbd036b8e0179"
+        "sha256": "5e81de484333ba40d73db4dc6847563fe76f9235ad40c67a038631da4a946109"
       },
       "tests.test_gateway_keyed_compat.json": {
         "document": {
           "binary": {
-            "realpath": "/nix/store/cwvl244yljx14kbgkxqjslv1zplhicff-cli-proxy-api-linux-amd64-7.3.15/bin/cli-proxy-api",
-            "version": "7.3.15"
+            "realpath": "/nix/store/k1jiwjnycq6jkv1g27agpgnf55wg8ar0-cli-proxy-api-linux-amd64-8.0.33/bin/cli-proxy-api",
+            "version": "8.0.33"
           },
           "keyed_identity": {
             "client_contract_sha256": "8bb508536fabe3e6bdbbdb3783172efaa7f060ff8c1e5c3a1683cb7d75ec4d0b",
-            "gateway": "/nix/store/cwvl244yljx14kbgkxqjslv1zplhicff-cli-proxy-api-linux-amd64-7.3.15/bin/cli-proxy-api",
+            "gateway": "/nix/store/k1jiwjnycq6jkv1g27agpgnf55wg8ar0-cli-proxy-api-linux-amd64-8.0.33/bin/cli-proxy-api",
             "gateway_patch_names": [
               "cli-proxy-api-loopback-oauth.patch",
               "cli-proxy-api-kimi-claude-compat.patch",
@@ -288,7 +289,6 @@
               "cli-proxy-api-openai-compat-keyed-safety.patch",
               "cli-proxy-api-auth-snapshot-locking.patch",
               "cli-proxy-api-server-config-snapshot.patch",
-              "cli-proxy-api-plugin-host-locking.patch",
               "cli-proxy-api-claude-metadata-locking.patch",
               "cli-proxy-api-oauth-model-overlay.patch",
               "cli-proxy-api-no-antigravity-egress.patch",
@@ -297,11 +297,13 @@
               "cli-proxy-api-codex-api-key-safety.patch",
               "cli-proxy-api-refresh-shutdown-join.patch",
               "cli-proxy-api-openai-content-chunks.patch",
-              "cli-proxy-api-charmer-model-ids.patch"
+              "cli-proxy-api-charmer-model-ids.patch",
+              "cli-proxy-api-access-log-path-quoting.patch",
+              "cli-proxy-api-codex-refresh-lead.patch"
             ],
-            "gateway_sha256": "2ff8c1362c554420028e10dcdaf869f080ad89f879111ea764e725dc999257ac",
+            "gateway_sha256": "a1d34777e864d4ec2df8cb22e0b764a920e6e6f1cd57e439c934637c529dcbe0",
             "sources": {
-              "schemas/gateway.schema.json": "e047fd635b3d9b351d7390f9c6d9ece244c42f50902049844cb10cd592ff8533",
+              "schemas/gateway.schema.json": "1bbc13e6ac6b35b1cff4b4e1d0a992f53101a975763a55f31b22d1bf7d553364",
               "schemas/models.schema.json": "1d6f195db3b0aec05fda7164a241c1941ed5c9ff9c53aaa957159811c83639d6",
               "schemas/operator-ledger.schema.json": "19e3b4b472ea01ec4110bdcb4be3667e7c2b078dd22f09566cbe6f137aa652e2",
               "schemas/operator-provider.schema.json": "bab1eb96832c3e06789a5bf9d566749b733056a53aadceb1aefac444f0c9f972",
@@ -313,8 +315,8 @@
               "src/charmer/discovery.py": "685e2c4373c607362ccad637802040e76fa087ac99c987eda1144d3c7a1d0a50",
               "src/charmer/operator.py": "b706fb1f53a218d68532e525aa5dea99aa38421a3778b09af9cbbdd52baec5e0",
               "src/charmer/profile.py": "8e0be317eb5addd8930f59d673dc5c25bd4ea702fb7fb43ccecef975ef287f71",
-              "src/charmer/qualify.py": "65f09078f97ace0818c8d7d6057a59c827a9b0a1f983eefa04edc2b82eba4421",
-              "src/charmer/render.py": "167bb58c27a76d2cee277f965b618b4317c4de7f11c43ede81de4bb55ae15c32",
+              "src/charmer/qualify.py": "9726b3c404d88f3211cb652d5c7cd94af6d99420b1fa92034651bea7106a11db",
+              "src/charmer/render.py": "c26c37507f43b5aaf59d06ffa23fff8797c94a3f22933e46874262424ad1c060",
               "src/charmer/scope.py": "c80089b423823f7972332277cefc5eea5530d992bf0db46ac3eb6b29ccd1dd31",
               "src/charmer/served_plan.py": "affcc823cb55f250d07f6252211803f33d3f3a688a4438b2a31e3a6409715c8a"
             }
@@ -470,17 +472,17 @@
             ]
           }
         },
-        "sha256": "8272e5aad92e094c1b63e789f8f6cf723144156ef0ddc4bc3f938ce265eb6387"
+        "sha256": "5ff4c1bf36e19c626841b3708a62b169766136a52fcf16fa150e36ce2b9221a5"
       },
       "tests.test_keyed_compat_client.json": {
         "document": {
           "binary": {
-            "realpath": "/nix/store/cwvl244yljx14kbgkxqjslv1zplhicff-cli-proxy-api-linux-amd64-7.3.15/bin/cli-proxy-api",
-            "version": "7.3.15"
+            "realpath": "/nix/store/k1jiwjnycq6jkv1g27agpgnf55wg8ar0-cli-proxy-api-linux-amd64-8.0.33/bin/cli-proxy-api",
+            "version": "8.0.33"
           },
           "keyed_identity": {
             "client_contract_sha256": "8bb508536fabe3e6bdbbdb3783172efaa7f060ff8c1e5c3a1683cb7d75ec4d0b",
-            "gateway": "/nix/store/cwvl244yljx14kbgkxqjslv1zplhicff-cli-proxy-api-linux-amd64-7.3.15/bin/cli-proxy-api",
+            "gateway": "/nix/store/k1jiwjnycq6jkv1g27agpgnf55wg8ar0-cli-proxy-api-linux-amd64-8.0.33/bin/cli-proxy-api",
             "gateway_patch_names": [
               "cli-proxy-api-loopback-oauth.patch",
               "cli-proxy-api-kimi-claude-compat.patch",
@@ -494,7 +496,6 @@
               "cli-proxy-api-openai-compat-keyed-safety.patch",
               "cli-proxy-api-auth-snapshot-locking.patch",
               "cli-proxy-api-server-config-snapshot.patch",
-              "cli-proxy-api-plugin-host-locking.patch",
               "cli-proxy-api-claude-metadata-locking.patch",
               "cli-proxy-api-oauth-model-overlay.patch",
               "cli-proxy-api-no-antigravity-egress.patch",
@@ -503,11 +504,13 @@
               "cli-proxy-api-codex-api-key-safety.patch",
               "cli-proxy-api-refresh-shutdown-join.patch",
               "cli-proxy-api-openai-content-chunks.patch",
-              "cli-proxy-api-charmer-model-ids.patch"
+              "cli-proxy-api-charmer-model-ids.patch",
+              "cli-proxy-api-access-log-path-quoting.patch",
+              "cli-proxy-api-codex-refresh-lead.patch"
             ],
-            "gateway_sha256": "2ff8c1362c554420028e10dcdaf869f080ad89f879111ea764e725dc999257ac",
+            "gateway_sha256": "a1d34777e864d4ec2df8cb22e0b764a920e6e6f1cd57e439c934637c529dcbe0",
             "sources": {
-              "schemas/gateway.schema.json": "e047fd635b3d9b351d7390f9c6d9ece244c42f50902049844cb10cd592ff8533",
+              "schemas/gateway.schema.json": "1bbc13e6ac6b35b1cff4b4e1d0a992f53101a975763a55f31b22d1bf7d553364",
               "schemas/models.schema.json": "1d6f195db3b0aec05fda7164a241c1941ed5c9ff9c53aaa957159811c83639d6",
               "schemas/operator-ledger.schema.json": "19e3b4b472ea01ec4110bdcb4be3667e7c2b078dd22f09566cbe6f137aa652e2",
               "schemas/operator-provider.schema.json": "bab1eb96832c3e06789a5bf9d566749b733056a53aadceb1aefac444f0c9f972",
@@ -519,8 +522,8 @@
               "src/charmer/discovery.py": "685e2c4373c607362ccad637802040e76fa087ac99c987eda1144d3c7a1d0a50",
               "src/charmer/operator.py": "b706fb1f53a218d68532e525aa5dea99aa38421a3778b09af9cbbdd52baec5e0",
               "src/charmer/profile.py": "8e0be317eb5addd8930f59d673dc5c25bd4ea702fb7fb43ccecef975ef287f71",
-              "src/charmer/qualify.py": "65f09078f97ace0818c8d7d6057a59c827a9b0a1f983eefa04edc2b82eba4421",
-              "src/charmer/render.py": "167bb58c27a76d2cee277f965b618b4317c4de7f11c43ede81de4bb55ae15c32",
+              "src/charmer/qualify.py": "9726b3c404d88f3211cb652d5c7cd94af6d99420b1fa92034651bea7106a11db",
+              "src/charmer/render.py": "c26c37507f43b5aaf59d06ffa23fff8797c94a3f22933e46874262424ad1c060",
               "src/charmer/scope.py": "c80089b423823f7972332277cefc5eea5530d992bf0db46ac3eb6b29ccd1dd31",
               "src/charmer/served_plan.py": "affcc823cb55f250d07f6252211803f33d3f3a688a4438b2a31e3a6409715c8a"
             }
@@ -625,13 +628,14 @@
             ]
           }
         },
-        "sha256": "4f9acc29587ec90fe2e73c67baa1721ac046b9913e89fc4ff5b0006c369cf428"
+        "sha256": "ec0542bfde4df0c9572c38066bcae16dda1fc1a40fdb904fa2a1b455464a93cc"
       }
     },
     "validated_exit": 0
   },
   "excluded_patch_numbers": [
-    11
+    11,
+    14
   ],
   "gateway": {
     "base_inputs": {
@@ -662,144 +666,154 @@
       "version": 7
     },
     "binary_sha256": {
-      "/nix/store/cwvl244yljx14kbgkxqjslv1zplhicff-cli-proxy-api-linux-amd64-7.3.15/bin/cli-proxy-api": "2ff8c1362c554420028e10dcdaf869f080ad89f879111ea764e725dc999257ac",
-      "/nix/store/r8vwwi6nbdi0m7l9p275xw48zd8ikkf6-gwtest-startup-probe-7.3.15/bin/gwtest-executor-probe": "87e80d0a9a0219d6369aaffb6243ebb53c23c674d35f4639e932eaee4161837e",
-      "/nix/store/r8vwwi6nbdi0m7l9p275xw48zd8ikkf6-gwtest-startup-probe-7.3.15/bin/gwtest-handlers-probe": "74de35fc6599877b828ac8d60ac6de36ae66e7e62a2212176468bd7a41ddd5e1",
-      "/nix/store/r8vwwi6nbdi0m7l9p275xw48zd8ikkf6-gwtest-startup-probe-7.3.15/bin/gwtest-startup-probe": "b442c4624a10650596f4ca8ce8d838e3b81c7250bf67c72ac1f0c9ef7cad5987"
+      "/nix/store/k1jiwjnycq6jkv1g27agpgnf55wg8ar0-cli-proxy-api-linux-amd64-8.0.33/bin/cli-proxy-api": "a1d34777e864d4ec2df8cb22e0b764a920e6e6f1cd57e439c934637c529dcbe0",
+      "/nix/store/m17cdd4x55dn3j55yrz2mhh16a3s6k81-gwtest-startup-probe-8.0.33/bin/gwtest-executor-probe": "322e111a1658331f45f305da563bae1fd3c091fc13aa2f5dbb97663fee6da528",
+      "/nix/store/m17cdd4x55dn3j55yrz2mhh16a3s6k81-gwtest-startup-probe-8.0.33/bin/gwtest-handlers-probe": "c07cec82b1bc9cebe4f26762f6336d502228d6ea1129b47c3c0d40dce8a09c0f",
+      "/nix/store/m17cdd4x55dn3j55yrz2mhh16a3s6k81-gwtest-startup-probe-8.0.33/bin/gwtest-startup-probe": "2c142949b9ea9c1a1073603f2f742316a0e126ba0b62c44ce8383cc9bd01f104"
     },
-    "build_definition_sha256": "63934c6a7177e46668f9fc5b3aad9cfe8429dba87e883dad8e6b0a37c66d418e",
-    "consumed_go_modules": "/nix/store/k5sxp95pxcy66q9hqljia6cl2xsnil6h-cli-proxy-api-7.3.15-go-modules",
-    "derivation": "/nix/store/5g15h78q11h0f0xhx88chnq0w0nnfwrz-cli-proxy-api-linux-amd64-7.3.15.drv",
-    "executor_omission": "/nix/store/r8vwwi6nbdi0m7l9p275xw48zd8ikkf6-gwtest-startup-probe-7.3.15/bin/gwtest-executor-probe",
-    "gateway": "/nix/store/cwvl244yljx14kbgkxqjslv1zplhicff-cli-proxy-api-linux-amd64-7.3.15/bin/cli-proxy-api",
-    "handlers_omission": "/nix/store/r8vwwi6nbdi0m7l9p275xw48zd8ikkf6-gwtest-startup-probe-7.3.15/bin/gwtest-handlers-probe",
+    "build_definition_sha256": "7c365b0fdd3608bafec49c3076900e9447153f333ee32c0faff870d170ac3cb6",
+    "consumed_go_modules": "/nix/store/50vxxcvvskqp25si8ka5n5ryaf4cddiv-cli-proxy-api-8.0.33-go-modules",
+    "derivation": "/nix/store/yk6zzjmiaxl307krgc0gqsw7cgik80lk-cli-proxy-api-linux-amd64-8.0.33.drv",
+    "executor_omission": "/nix/store/m17cdd4x55dn3j55yrz2mhh16a3s6k81-gwtest-startup-probe-8.0.33/bin/gwtest-executor-probe",
+    "gateway": "/nix/store/k1jiwjnycq6jkv1g27agpgnf55wg8ar0-cli-proxy-api-linux-amd64-8.0.33/bin/cli-proxy-api",
+    "handlers_omission": "/nix/store/m17cdd4x55dn3j55yrz2mhh16a3s6k81-gwtest-startup-probe-8.0.33/bin/gwtest-handlers-probe",
     "numbered_to_shipped": [
       {
-        "identity": "cli-proxy-api-loopback-oauth.patch@2eb510b85f5204820d7a3d70c9b9a7bce283b1a7f23ead305ddfe28d500163a5",
+        "identity": "cli-proxy-api-loopback-oauth.patch@244e68528cbc72a636d112d4350c9e2e9aeb0c4b55c9097e08ee42a201fa22f4",
         "number": 1
       },
       {
-        "identity": "cli-proxy-api-kimi-claude-compat.patch@135dadb71406136dc6e2ef1c46baa548d27cbf023c19dddce2e7d9de0f7ef9ae",
+        "identity": "cli-proxy-api-kimi-claude-compat.patch@41a25ab3e9572c867234fe9d457ac89417f25de4719acbe7cc7e605dc4b3c234",
         "number": 2
       },
       {
-        "identity": "cli-proxy-api-non-claude-cache-retention.patch@6e022c54355322e5a307156ec1301710d50faff3f75dfc058506b17c6145128b",
+        "identity": "cli-proxy-api-non-claude-cache-retention.patch@76fa4ad35ff93795c44a3bebfcbf4d0ef4cb856732c542f58572f972699d20c3",
         "number": 3
       },
       {
-        "identity": "cli-proxy-api-management-readonly-allowlist.patch@f1320679a8dbb7254a94a9bdb6c0a2aba37d74ba9166dc3ca5caac36b76d133d",
+        "identity": "cli-proxy-api-management-readonly-allowlist.patch@457427db7f9ddcdf7f42a92ce77260d974a86c18a4145246ad30afabb6ed62bc",
         "number": 4
       },
       {
-        "identity": "cli-proxy-api-watcher-parentdir.patch@c890605c3d4627f40fa214b9f564c6680b475e70644a30e289ff5e27a02c8d5a",
+        "identity": "cli-proxy-api-watcher-parentdir.patch@1402747fd59c576cfd5e42899e3654c132d5059c588ad9938bad6f732aad6815",
         "number": 5
       },
       {
-        "identity": "cli-proxy-api-serve-after-initial-auth-load.patch@600f4c5bc0cf90dbd11ad5a48b84c007050a948efcc754b30648856f4e8bba70",
+        "identity": "cli-proxy-api-serve-after-initial-auth-load.patch@24bb8e3c6169457fe6e44985d02f6a0c60ab76d3643b8d30c49d1a2aee1b75b2",
         "number": 6
       },
       {
-        "identity": "cli-proxy-api-management-env-only.patch@34174189f296f54022abbfffe2bd50275339e25189b0981e64013dcde8258fd8",
+        "identity": "cli-proxy-api-management-env-only.patch@5874d2a7af548595443026f0b02d2f793200ff0cad1aa11b94c7637dda8528d7",
         "number": 7
       },
       {
-        "identity": "cli-proxy-api-credential-save-report.patch@c04cc0fc0af41dca57a801e87ee8cf4e4aba8377c716a8ca2ff1621d0f8d5107",
+        "identity": "cli-proxy-api-credential-save-report.patch@2425f556aab2d6263cc2ed5530bb7d62e5bc1f6386d16d4dffd8a1671b982707",
         "number": 8
       },
       {
-        "identity": "cli-proxy-api-credentialed-redirects.patch@bd5bb7fd5877a078ddeeb3287378c8dab8d201f1eaf9daa1e51b36e4ae310d44",
+        "identity": "cli-proxy-api-credentialed-redirects.patch@d9b4842f8fcde2ce7dd9c38d67d8e6f68e1b8801a3f927100ac2af31a81601ee",
         "number": 9
       },
       {
-        "identity": "cli-proxy-api-openai-compat-keyed-safety.patch@3325d838983fa8d89a139ef63c4e395f81688e379fb3203be90fc39360c9e00e",
+        "identity": "cli-proxy-api-openai-compat-keyed-safety.patch@d47a5deb330bc62b0191fc791f866862d990a47553290686a3b2dc502c7c7ef0",
         "number": 10
       },
       {
-        "identity": "cli-proxy-api-auth-snapshot-locking.patch@a6ecd426d45d91d74ef4c830982c1b0ad3b6f7dfcad3c0f1ff6123fbfe29dbfd",
+        "identity": "cli-proxy-api-auth-snapshot-locking.patch@66610b574c8cc480451d9399c7cc88d5a0b183da2ddb114d0ae48508a512341b",
         "number": 12
       },
       {
-        "identity": "cli-proxy-api-server-config-snapshot.patch@dba871bd4822226c8471ce55c7a70d16aeb6c9e723feb388dcd3bf0df311dd95",
+        "identity": "cli-proxy-api-server-config-snapshot.patch@4ecd0ee369bfd32a6515ed2403a0f0d3870d326ea21f6d644a224607b7bb2d1f",
         "number": 13
       },
       {
-        "identity": "cli-proxy-api-plugin-host-locking.patch@be26b87f742a3667ea11c6f6cb558efbeb77ee6fcd904ad838f16da4ca3ab165",
-        "number": 14
-      },
-      {
-        "identity": "cli-proxy-api-claude-metadata-locking.patch@2ef3f4369652b6f5947facd1954674a2844e70fea7c242d0d3d63b83e4ddcadd",
+        "identity": "cli-proxy-api-claude-metadata-locking.patch@48122ca2d4e9086e8fac89bdcf61d3b1f3f3647a69d1589d8fac9bf4bf65f1cb",
         "number": 15
       },
       {
-        "identity": "cli-proxy-api-oauth-model-overlay.patch@f3e1ff09984a5b8e3beb173a1e122e2a4ce14646ba1915df08344586cf6d6cd9",
+        "identity": "cli-proxy-api-oauth-model-overlay.patch@49b822a4ccabcf35f2a3e395e61366104c9e314000f38500b467bcf123510c95",
         "number": 16
       },
       {
-        "identity": "cli-proxy-api-no-antigravity-egress.patch@233443d22a411ee935b4c0776c26992543a5b97d1241784db5bf726ca80464c6",
+        "identity": "cli-proxy-api-no-antigravity-egress.patch@106e865c8062c903bf25cc523e26089b2b710227808fe1e3d8f5532920efb5b0",
         "number": 17
       },
       {
-        "identity": "cli-proxy-api-codex-client-identity.patch@b4ffbda891ee82dbd0441dfa6a6b1d154fd82be33dc4c5e2edb2526eeb041c65",
+        "identity": "cli-proxy-api-codex-client-identity.patch@405f95472837d9ed335baf99e8f39f61934c453d8aa3bf04e0670b9144018dc2",
         "number": 18
       },
       {
-        "identity": "cli-proxy-api-antigravity-loopback-callback.patch@f728ba3eb999266d30137cd7d4501d54cdb9613c2cc33579194a6d7b9a23a523",
+        "identity": "cli-proxy-api-antigravity-loopback-callback.patch@0594e27c8978fb6f354317622fc66b477635164d56aef429e58f6590e0616d8b",
         "number": 19
       },
       {
-        "identity": "cli-proxy-api-codex-api-key-safety.patch@b656f4cdfe4dfbe0d5d47f33f419d3a1416d9bff88f94b54deba2126dbb61628",
+        "identity": "cli-proxy-api-codex-api-key-safety.patch@fa02ebceb0549b732664abbd5034a53d4e514c0f54697406e95a47ae59337ee5",
         "number": 20
       },
       {
-        "identity": "cli-proxy-api-refresh-shutdown-join.patch@6474a404f9ecba94c07fc9415ffee3601059941101cbf944a17a623e5b80c8e3",
+        "identity": "cli-proxy-api-refresh-shutdown-join.patch@102e0be3ef3a546d672461a08b7a8d0e53588525cd93735c741f2f0aa077c05f",
         "number": 21
       },
       {
-        "identity": "cli-proxy-api-openai-content-chunks.patch@f2db67071e99b3c106ea262502c04be887f6fb17277a848d0cdd6810f9b03025",
+        "identity": "cli-proxy-api-openai-content-chunks.patch@d167b000dee94c28296e6c62fc6a41989b4e90441743757a8956232d54769186",
         "number": 22
       },
       {
-        "identity": "cli-proxy-api-charmer-model-ids.patch@dca1642ceec36e49ce975522696011081c1a7fe549e3d8009f7e667dff7c29e3",
+        "identity": "cli-proxy-api-charmer-model-ids.patch@00c2e621498482021d12902d2fccc2e2d59a71482eded48581d1dd511a34e48c",
         "number": 23
+      },
+      {
+        "identity": "cli-proxy-api-access-log-path-quoting.patch@d06758cdb11c5dd4d5f088ecb1d1cf5ce6137c8c1eb24bcab0c6431de128fb31",
+        "number": 24
+      },
+      {
+        "identity": "cli-proxy-api-codex-refresh-lead.patch@dfd433f757e0dd22eb423f51e6bc4ed7049caa3dc358c54bbae9330e13e15a1c",
+        "number": 25
       }
     ],
     "ordered_manifest": {
-      "patches": [
-        "cli-proxy-api-loopback-oauth.patch@2eb510b85f5204820d7a3d70c9b9a7bce283b1a7f23ead305ddfe28d500163a5",
-        "cli-proxy-api-kimi-claude-compat.patch@135dadb71406136dc6e2ef1c46baa548d27cbf023c19dddce2e7d9de0f7ef9ae",
-        "cli-proxy-api-non-claude-cache-retention.patch@6e022c54355322e5a307156ec1301710d50faff3f75dfc058506b17c6145128b",
-        "cli-proxy-api-management-readonly-allowlist.patch@f1320679a8dbb7254a94a9bdb6c0a2aba37d74ba9166dc3ca5caac36b76d133d",
-        "cli-proxy-api-watcher-parentdir.patch@c890605c3d4627f40fa214b9f564c6680b475e70644a30e289ff5e27a02c8d5a",
-        "cli-proxy-api-serve-after-initial-auth-load.patch@600f4c5bc0cf90dbd11ad5a48b84c007050a948efcc754b30648856f4e8bba70",
-        "cli-proxy-api-management-env-only.patch@34174189f296f54022abbfffe2bd50275339e25189b0981e64013dcde8258fd8",
-        "cli-proxy-api-credential-save-report.patch@c04cc0fc0af41dca57a801e87ee8cf4e4aba8377c716a8ca2ff1621d0f8d5107",
-        "cli-proxy-api-credentialed-redirects.patch@bd5bb7fd5877a078ddeeb3287378c8dab8d201f1eaf9daa1e51b36e4ae310d44",
-        "cli-proxy-api-openai-compat-keyed-safety.patch@3325d838983fa8d89a139ef63c4e395f81688e379fb3203be90fc39360c9e00e",
-        "cli-proxy-api-auth-snapshot-locking.patch@a6ecd426d45d91d74ef4c830982c1b0ad3b6f7dfcad3c0f1ff6123fbfe29dbfd",
-        "cli-proxy-api-server-config-snapshot.patch@dba871bd4822226c8471ce55c7a70d16aeb6c9e723feb388dcd3bf0df311dd95",
-        "cli-proxy-api-plugin-host-locking.patch@be26b87f742a3667ea11c6f6cb558efbeb77ee6fcd904ad838f16da4ca3ab165",
-        "cli-proxy-api-claude-metadata-locking.patch@2ef3f4369652b6f5947facd1954674a2844e70fea7c242d0d3d63b83e4ddcadd",
-        "cli-proxy-api-oauth-model-overlay.patch@f3e1ff09984a5b8e3beb173a1e122e2a4ce14646ba1915df08344586cf6d6cd9",
-        "cli-proxy-api-no-antigravity-egress.patch@233443d22a411ee935b4c0776c26992543a5b97d1241784db5bf726ca80464c6",
-        "cli-proxy-api-codex-client-identity.patch@b4ffbda891ee82dbd0441dfa6a6b1d154fd82be33dc4c5e2edb2526eeb041c65",
-        "cli-proxy-api-antigravity-loopback-callback.patch@f728ba3eb999266d30137cd7d4501d54cdb9613c2cc33579194a6d7b9a23a523",
-        "cli-proxy-api-codex-api-key-safety.patch@b656f4cdfe4dfbe0d5d47f33f419d3a1416d9bff88f94b54deba2126dbb61628",
-        "cli-proxy-api-refresh-shutdown-join.patch@6474a404f9ecba94c07fc9415ffee3601059941101cbf944a17a623e5b80c8e3",
-        "cli-proxy-api-openai-content-chunks.patch@f2db67071e99b3c106ea262502c04be887f6fb17277a848d0cdd6810f9b03025",
-        "cli-proxy-api-charmer-model-ids.patch@dca1642ceec36e49ce975522696011081c1a7fe549e3d8009f7e667dff7c29e3"
+      "go_version": "1.27.2",
+      "godebug": [
+        "tracebacklabels=0",
+        "x509sslcertoverrideplatform=1"
       ],
-      "upstream_version": "7.3.15",
-      "version": 1
+      "patches": [
+        "cli-proxy-api-loopback-oauth.patch@244e68528cbc72a636d112d4350c9e2e9aeb0c4b55c9097e08ee42a201fa22f4",
+        "cli-proxy-api-kimi-claude-compat.patch@41a25ab3e9572c867234fe9d457ac89417f25de4719acbe7cc7e605dc4b3c234",
+        "cli-proxy-api-non-claude-cache-retention.patch@76fa4ad35ff93795c44a3bebfcbf4d0ef4cb856732c542f58572f972699d20c3",
+        "cli-proxy-api-management-readonly-allowlist.patch@457427db7f9ddcdf7f42a92ce77260d974a86c18a4145246ad30afabb6ed62bc",
+        "cli-proxy-api-watcher-parentdir.patch@1402747fd59c576cfd5e42899e3654c132d5059c588ad9938bad6f732aad6815",
+        "cli-proxy-api-serve-after-initial-auth-load.patch@24bb8e3c6169457fe6e44985d02f6a0c60ab76d3643b8d30c49d1a2aee1b75b2",
+        "cli-proxy-api-management-env-only.patch@5874d2a7af548595443026f0b02d2f793200ff0cad1aa11b94c7637dda8528d7",
+        "cli-proxy-api-credential-save-report.patch@2425f556aab2d6263cc2ed5530bb7d62e5bc1f6386d16d4dffd8a1671b982707",
+        "cli-proxy-api-credentialed-redirects.patch@d9b4842f8fcde2ce7dd9c38d67d8e6f68e1b8801a3f927100ac2af31a81601ee",
+        "cli-proxy-api-openai-compat-keyed-safety.patch@d47a5deb330bc62b0191fc791f866862d990a47553290686a3b2dc502c7c7ef0",
+        "cli-proxy-api-auth-snapshot-locking.patch@66610b574c8cc480451d9399c7cc88d5a0b183da2ddb114d0ae48508a512341b",
+        "cli-proxy-api-server-config-snapshot.patch@4ecd0ee369bfd32a6515ed2403a0f0d3870d326ea21f6d644a224607b7bb2d1f",
+        "cli-proxy-api-claude-metadata-locking.patch@48122ca2d4e9086e8fac89bdcf61d3b1f3f3647a69d1589d8fac9bf4bf65f1cb",
+        "cli-proxy-api-oauth-model-overlay.patch@49b822a4ccabcf35f2a3e395e61366104c9e314000f38500b467bcf123510c95",
+        "cli-proxy-api-no-antigravity-egress.patch@106e865c8062c903bf25cc523e26089b2b710227808fe1e3d8f5532920efb5b0",
+        "cli-proxy-api-codex-client-identity.patch@405f95472837d9ed335baf99e8f39f61934c453d8aa3bf04e0670b9144018dc2",
+        "cli-proxy-api-antigravity-loopback-callback.patch@0594e27c8978fb6f354317622fc66b477635164d56aef429e58f6590e0616d8b",
+        "cli-proxy-api-codex-api-key-safety.patch@fa02ebceb0549b732664abbd5034a53d4e514c0f54697406e95a47ae59337ee5",
+        "cli-proxy-api-refresh-shutdown-join.patch@102e0be3ef3a546d672461a08b7a8d0e53588525cd93735c741f2f0aa077c05f",
+        "cli-proxy-api-openai-content-chunks.patch@d167b000dee94c28296e6c62fc6a41989b4e90441743757a8956232d54769186",
+        "cli-proxy-api-charmer-model-ids.patch@00c2e621498482021d12902d2fccc2e2d59a71482eded48581d1dd511a34e48c",
+        "cli-proxy-api-access-log-path-quoting.patch@d06758cdb11c5dd4d5f088ecb1d1cf5ce6137c8c1eb24bcab0c6431de128fb31",
+        "cli-proxy-api-codex-refresh-lead.patch@dfd433f757e0dd22eb423f51e6bc4ed7049caa3dc358c54bbae9330e13e15a1c"
+      ],
+      "upstream_version": "8.0.33",
+      "version": 2
     },
     "recipe_sha256": {
-      "gateway/UPSTREAM.json": "d9a41cae9d990bfc34cdb9697e34e6505f1ceda93df89ddfed98bf7c66730b78",
-      "tools/build.py": "04a8a95bbfd84a4bb97865ebf9e5db6b97851ccd8b1cdf7f96032e9518e7f47a"
+      "gateway/UPSTREAM.json": "26e87d6458b5455ee5fff46e22909c5dd2910cf6a53cf231099604f3c2ab7c37",
+      "tools/build.py": "93825c5e233f545677a881f18c3a86b8c39ad7c6ca5ce135f8c73161fad9f6a7"
     },
-    "source_hash": "sha256-s6Vdpcl7Hr85azsZ2DpkEQyod9eE9UQizKiYAJtguwY=",
-    "source_tag": "v7.3.15",
-    "startup": "/nix/store/r8vwwi6nbdi0m7l9p275xw48zd8ikkf6-gwtest-startup-probe-7.3.15/bin/gwtest-startup-probe",
-    "upstream_version": "7.3.15",
-    "vendor_hash": "sha256-EwaxCvKJdzUbhzu7wJAViaHcsGfA5y6FXpWInhvDkxU="
+    "source_hash": "sha256-HpsmjjMzVTnP+KcK6hy3cq3AHRsaCAVvgJdb9PKL7QU=",
+    "source_tag": "v8.0.33",
+    "startup": "/nix/store/m17cdd4x55dn3j55yrz2mhh16a3s6k81-gwtest-startup-probe-8.0.33/bin/gwtest-startup-probe",
+    "upstream_version": "8.0.33",
+    "vendor_hash": "sha256-qbfl57bA06AhjdAjsU0ae2fAWTLCCAPTfE8K1lLKifo="
   },
   "package_root": ".",
   "required_patch_numbers": [
@@ -834,7 +848,7 @@
   "source_report": {
     "document": {
       "evidence_dir": "tests/fixtures",
-      "head": "a37208ac48f6a77ede0dc0b41df9538b85f47989",
+      "head": "6def7bfa1c231da491b9e6970bf4b378fee6444f",
       "relevant_sources": [
         {
           "path": "src/charmer/catalog.py",
@@ -846,7 +860,7 @@
         },
         {
           "path": "src/charmer/render.py",
-          "sha256": "167bb58c27a76d2cee277f965b618b4317c4de7f11c43ede81de4bb55ae15c32"
+          "sha256": "c26c37507f43b5aaf59d06ffa23fff8797c94a3f22933e46874262424ad1c060"
         },
         {
           "path": "src/charmer/served_plan.py",
@@ -854,7 +868,7 @@
         },
         {
           "path": "src/charmer/qualify.py",
-          "sha256": "65f09078f97ace0818c8d7d6057a59c827a9b0a1f983eefa04edc2b82eba4421"
+          "sha256": "9726b3c404d88f3211cb652d5c7cd94af6d99420b1fa92034651bea7106a11db"
         },
         {
           "path": "src/charmer/discovery.py",
@@ -882,7 +896,7 @@
         },
         {
           "path": "src/charmer/data/schemas/gateway.schema.json",
-          "sha256": "e047fd635b3d9b351d7390f9c6d9ece244c42f50902049844cb10cd592ff8533"
+          "sha256": "1bbc13e6ac6b35b1cff4b4e1d0a992f53101a975763a55f31b22d1bf7d553364"
         },
         {
           "path": "src/charmer/data/schemas/providers.schema.json",
@@ -902,7 +916,7 @@
         }
       ]
     },
-    "sha256": "d2ae9568ca63fcf6b7f619c00e2b61d76c9b9c85e2a7d3d0db373cf00bb31b42"
+    "sha256": "1cb5bb9dc42d9a4b3a825ca8d16bab8d5818dc44b7070b3e4ee5dea9dbd43278"
   },
   "version": 1
 }

@@ -1,0 +1,156 @@
+diff --git a/sdk/auth/codex.go b/sdk/auth/codex.go
+index 53b9cab1..2d56fa07 100644
+--- a/sdk/auth/codex.go
++++ b/sdk/auth/codex.go
+@@ -32,7 +32,7 @@ func (a *CodexAuthenticator) Provider() string {
+ }
+ 
+ func (a *CodexAuthenticator) RefreshLead() *time.Duration {
+-	return new(24 * time.Hour)
++	return new(coreauth.CodexOuterRefreshLead)
+ }
+ 
+ func (a *CodexAuthenticator) Login(ctx context.Context, cfg *config.Config, opts *LoginOptions) (*coreauth.Auth, error) {
+diff --git a/sdk/auth/codex_refresh_lead_test.go b/sdk/auth/codex_refresh_lead_test.go
+new file mode 100644
+index 00000000..2f7ac5a6
+--- /dev/null
++++ b/sdk/auth/codex_refresh_lead_test.go
+@@ -0,0 +1,39 @@
++package auth
++
++import (
++	"testing"
++	"time"
++
++	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
++)
++
++// With the production lead registry, Codex refreshes 96 h ahead and Claude
++// keeps its 4 h lead.
++func TestCodexRefreshLeadRegistry96HoursClaudeUnchanged(t *testing.T) {
++	for provider, want := range map[string]time.Duration{"codex": 96 * time.Hour, "claude": 4 * time.Hour} {
++		lead := coreauth.ProviderRefreshLead(provider, nil)
++		if lead == nil || *lead != want {
++			t.Fatalf("ProviderRefreshLead(%q) = %v, want %v", provider, lead, want)
++		}
++	}
++	for _, tc := range []struct {
++		left time.Duration
++		want bool
++	}{
++		{95 * time.Hour, true},
++		{97 * time.Hour, false},
++	} {
++		auth := &coreauth.Auth{
++			ID:       "codex-lead",
++			Provider: "codex",
++			Metadata: map[string]any{
++				"type":          "codex",
++				"refresh_token": "refresh-token",
++				"expired":       time.Now().Add(tc.left).Format(time.RFC3339),
++			},
++		}
++		if _, has, need := coreauth.CodexOuterNeedsRefresh(auth, time.Now()); !has || need != tc.want {
++			t.Fatalf("CodexOuterNeedsRefresh %v before expiry = has %v need %v, want need %v", tc.left, has, need, tc.want)
++		}
++	}
++}
+diff --git a/sdk/auth/refresh_registry_test.go b/sdk/auth/refresh_registry_test.go
+index 428ce014..402ef69a 100644
+--- a/sdk/auth/refresh_registry_test.go
++++ b/sdk/auth/refresh_registry_test.go
+@@ -12,7 +12,7 @@ func TestProviderRefreshLeads(t *testing.T) {
+ 		want          time.Duration
+ 		wantNil       bool
+ 	}{
+-		{name: "codex", authenticator: NewCodexAuthenticator(), want: 24 * time.Hour},
++		{name: "codex", authenticator: NewCodexAuthenticator(), want: 96 * time.Hour},
+ 		{name: "claude", authenticator: NewClaudeAuthenticator(), want: 4 * time.Hour},
+ 		{name: "antigravity", authenticator: NewAntigravityAuthenticator(), want: 30 * time.Minute},
+ 		{name: "kimi", authenticator: NewKimiAuthenticator(), want: 5 * time.Minute},
+diff --git a/sdk/cliproxy/auth/codex_refresh_lead_test.go b/sdk/cliproxy/auth/codex_refresh_lead_test.go
+new file mode 100644
+index 00000000..fd7bed22
+--- /dev/null
++++ b/sdk/cliproxy/auth/codex_refresh_lead_test.go
+@@ -0,0 +1,54 @@
++package auth
++
++import (
++	"testing"
++	"time"
++)
++
++// The proactive Codex refresh lead is 96 h: a Codex OAuth credential is
++// refreshed 95 h before its expiry and not yet 97 h before it.
++func TestCodexRefreshLeadShouldRefreshAt96Hours(t *testing.T) {
++	refreshLeadMu.Lock()
++	previous, hadPrevious := refreshLeadFactories["codex"]
++	refreshLeadMu.Unlock()
++	t.Cleanup(func() {
++		refreshLeadMu.Lock()
++		defer refreshLeadMu.Unlock()
++		if hadPrevious {
++			refreshLeadFactories["codex"] = previous
++		} else {
++			delete(refreshLeadFactories, "codex")
++		}
++	})
++	RegisterRefreshLeadProvider("codex", func() *time.Duration {
++		lead := CodexOuterRefreshLead
++		return &lead
++	})
++	if CodexOuterRefreshLead != 96*time.Hour {
++		t.Fatalf("CodexOuterRefreshLead = %v, want 96h", CodexOuterRefreshLead)
++	}
++	m := NewManager(nil, nil, nil)
++	for _, tc := range []struct {
++		left time.Duration
++		want bool
++	}{
++		{95 * time.Hour, true},
++		{97 * time.Hour, false},
++	} {
++		auth := &Auth{
++			ID:       "codex-lead",
++			Provider: "codex",
++			Metadata: map[string]any{
++				"type":          "codex",
++				"refresh_token": "refresh-token",
++				"expired":       time.Now().Add(tc.left).Format(time.RFC3339),
++			},
++		}
++		if got := m.shouldRefresh(auth, time.Now()); got != tc.want {
++			t.Fatalf("shouldRefresh %v before expiry = %v, want %v", tc.left, got, tc.want)
++		}
++		if _, has, need := CodexOuterNeedsRefresh(auth, time.Now()); !has || need != tc.want {
++			t.Fatalf("CodexOuterNeedsRefresh %v before expiry = has %v need %v, want need %v", tc.left, has, need, tc.want)
++		}
++	}
++}
+diff --git a/sdk/cliproxy/auth/types.go b/sdk/cliproxy/auth/types.go
+index c6d8cfb7..a73af388 100644
+--- a/sdk/cliproxy/auth/types.go
++++ b/sdk/cliproxy/auth/types.go
+@@ -879,6 +879,11 @@ func (a *Auth) ExpirationTime() (time.Time, bool) {
+ 	return a.OuterExpirationTime()
+ }
+ 
++// CodexOuterRefreshLead is the conservative proactive refresh lead time before
++// the nominal 10-day Codex OAuth JWT expiration, refreshing tokens well ahead
++// of early upstream access-token invalidation.
++const CodexOuterRefreshLead = 96 * time.Hour
++
+ // CodexSIWCRefreshLead is the minimum remaining validity required before refreshing
+ // a Sign in with ChatGPT (SIWC) token, matching pi's DEFAULT_OAUTH_MINIMUM_VALIDITY_MS (5 minutes).
+ const CodexSIWCRefreshLead = 5 * time.Minute
+@@ -948,7 +953,7 @@ func CodexOuterNeedsRefresh(a *Auth, now time.Time) (dueAt time.Time, hasRefresh
+ 	}
+ 	lead := ProviderRefreshLead(provider, a.Runtime)
+ 	if lead == nil && provider == "codex" {
+-		d := 24 * time.Hour
++		d := CodexOuterRefreshLead
+ 		lead = &d
+ 	}
+ 	if lead == nil {

@@ -1,8 +1,8 @@
 diff --git a/internal/watcher/dispatcher.go b/internal/watcher/dispatcher.go
-index 89b4aae..320c460 100644
+index 29d5a755..c453ac49 100644
 --- a/internal/watcher/dispatcher.go
 +++ b/internal/watcher/dispatcher.go
-@@ -270,6 +270,45 @@ func (w *Watcher) dispatchAuthUpdates(updates []AuthUpdate) {
+@@ -272,6 +272,45 @@ func (w *Watcher) dispatchAuthUpdates(updates []AuthUpdate) {
  	w.dispatchMu.Unlock()
  }
  
@@ -50,7 +50,7 @@ index 89b4aae..320c460 100644
  		return update.ID
 diff --git a/internal/watcher/dispatcher_barrier_test.go b/internal/watcher/dispatcher_barrier_test.go
 new file mode 100644
-index 0000000..dcbc703
+index 00000000..dcbc7031
 --- /dev/null
 +++ b/internal/watcher/dispatcher_barrier_test.go
 @@ -0,0 +1,66 @@
@@ -121,10 +121,10 @@ index 0000000..dcbc703
 +	}
 +}
 diff --git a/internal/watcher/watcher.go b/internal/watcher/watcher.go
-index a3dfccb..b91115e 100644
+index 064b6129..fb056f21 100644
 --- a/internal/watcher/watcher.go
 +++ b/internal/watcher/watcher.go
-@@ -76,6 +76,9 @@ const (
+@@ -77,6 +77,9 @@ const (
  	AuthUpdateActionAdd    AuthUpdateAction = "add"
  	AuthUpdateActionModify AuthUpdateAction = "modify"
  	AuthUpdateActionDelete AuthUpdateAction = "delete"
@@ -134,14 +134,19 @@ index a3dfccb..b91115e 100644
  )
  
  // AuthUpdate describes an incremental change to auth configuration.
-@@ -84,6 +87,23 @@ type AuthUpdate struct {
- 	ID       string
- 	Auth     *coreauth.Auth
- 	revision uint64 // Watcher-local ordering, independent of runtime auth generations.
+@@ -86,6 +89,8 @@ type AuthUpdate struct {
+ 	Auth        *coreauth.Auth
+ 	revision    uint64 // Watcher-local ordering, independent of runtime auth generations.
+ 	fileRemoval bool   // The source file was removed, not just an ID from its content.
 +	// barrier is set only on DispatchAuthBarrier markers, which carry no auth.
 +	barrier *authBarrier
-+}
-+
+ }
+ 
+ // IsFileRemoval reports whether this delete was observed as a whole-file removal.
+@@ -100,6 +105,21 @@ func (u *AuthUpdate) SetFileRemoval(fileRemoval bool) {
+ 	}
+ }
+ 
 +// IsBarrier reports whether u is a completion marker queued by DispatchAuthBarrier.
 +// A marker carries no auth and must never be applied as an auth change.
 +func (u AuthUpdate) IsBarrier() bool {
@@ -155,10 +160,12 @@ index a3dfccb..b91115e 100644
 +	if u.barrier != nil {
 +		u.barrier.release()
 +	}
- }
- 
++}
++
  // Revision returns the monotonic watcher revision assigned to this update.
-@@ -192,6 +212,14 @@ func (w *Watcher) DispatchPersistedAuthUpdateWithRevision(update *AuthUpdate) (b
+ func (u AuthUpdate) Revision() uint64 {
+ 	return u.revision
+@@ -207,6 +227,14 @@ func (w *Watcher) DispatchPersistedAuthUpdateWithRevision(update *AuthUpdate) (b
  	return w.dispatchPersistedAuthUpdateWithRevision(update)
  }
  
@@ -174,7 +181,7 @@ index a3dfccb..b91115e 100644
  func (w *Watcher) SnapshotCoreAuths() []*coreauth.Auth {
  	w.clientsMutex.RLock()
 diff --git a/sdk/cliproxy/service.go b/sdk/cliproxy/service.go
-index 840c7a3..ab1b322 100644
+index b64c3e05..7e709ca7 100644
 --- a/sdk/cliproxy/service.go
 +++ b/sdk/cliproxy/service.go
 @@ -6,6 +6,7 @@ package cliproxy
@@ -184,7 +191,7 @@ index 840c7a3..ab1b322 100644
 +	"sync/atomic"
  	"time"
  
- 	"github.com/router-for-me/CLIProxyAPI/v7/internal/api"
+ 	"github.com/router-for-me/CLIProxyAPI/v8/internal/api"
 @@ -87,6 +88,14 @@ type Service struct {
  	// authQueueStop cancels the auth update queue processing.
  	authQueueStop context.CancelFunc
@@ -201,10 +208,10 @@ index 840c7a3..ab1b322 100644
  	authManager *sdkAuth.Manager
  
 diff --git a/sdk/cliproxy/service_auth.go b/sdk/cliproxy/service_auth.go
-index 8553299..59200e9 100644
+index cce2773e..a732a9fa 100644
 --- a/sdk/cliproxy/service_auth.go
 +++ b/sdk/cliproxy/service_auth.go
-@@ -43,7 +43,12 @@ func (s *Service) ensureAuthUpdateQueue(ctx context.Context) {
+@@ -45,7 +45,12 @@ func (s *Service) ensureAuthUpdateQueue(ctx context.Context) {
  	}
  	queueCtx, cancel := context.WithCancel(ctx)
  	s.authQueueStop = cancel
@@ -218,7 +225,7 @@ index 8553299..59200e9 100644
  }
  
  func (s *Service) consumeAuthUpdates(ctx context.Context) {
-@@ -66,9 +71,31 @@ func (s *Service) consumeAuthUpdates(ctx context.Context) {
+@@ -68,9 +73,31 @@ func (s *Service) consumeAuthUpdates(ctx context.Context) {
  					break labelDrain
  				}
  			}
@@ -252,46 +259,46 @@ index 8553299..59200e9 100644
  
  func (s *Service) emitAuthUpdate(ctx context.Context, update watcher.AuthUpdate) {
 diff --git a/sdk/cliproxy/service_lifecycle.go b/sdk/cliproxy/service_lifecycle.go
-index 9195a30..096cb7e 100644
+index f08eb1b4..118388d7 100644
 --- a/sdk/cliproxy/service_lifecycle.go
 +++ b/sdk/cliproxy/service_lifecycle.go
-@@ -51,7 +51,9 @@ func (s *Service) Run(ctx context.Context) error {
- 
+@@ -58,7 +58,9 @@ func (s *Service) Run(ctx context.Context) error {
  	usage.StartDefault(ctx)
- 	homeEnabled := s.cfg != nil && s.cfg.Home.Enabled
+ 	cfg := s.currentConfig()
+ 	homeEnabled := cfg != nil && cfg.Home.Enabled
 +	gate := s.armStartupGate(ctx)
  	if homeEnabled {
 +		gate.open(startupGateNotApplicable) // no file watcher, nothing to wait for
+ 		s.cfgMu.Lock()
  		forceHomeRuntimeConfig(s.cfg)
- 		redisqueue.SetUsageStatisticsEnabled(true)
- 	}
-@@ -78,6 +80,7 @@ func (s *Service) Run(ctx context.Context) error {
+ 		cfg = s.cfg
+@@ -88,6 +90,7 @@ func (s *Service) Run(ctx context.Context) error {
  		if errLoad := s.coreManager.Load(ctx); errLoad != nil {
  			log.Warnf("failed to load auth store: %v", errLoad)
  		}
 +		gate.storedAuths.Store(int64(len(s.coreManager.List())))
- 		s.registerConfigAPIKeyAuths(coreauth.WithSkipPersist(ctx), s.cfg)
- 		if s.cfg.SaveCooldownStatus {
+ 		s.registerConfigAPIKeyAuths(coreauth.WithSkipPersist(ctx), cfg)
+ 		if cfg != nil && cfg.SaveCooldownStatus {
  			if errRestoreCooldown := s.coreManager.RestoreCooldownStates(ctx); errRestoreCooldown != nil {
-@@ -123,7 +126,8 @@ func (s *Service) Run(ctx context.Context) error {
+@@ -133,7 +136,8 @@ func (s *Service) Run(ctx context.Context) error {
  	}
  
  	// handlers no longer depend on legacy clients; pass nil slice initially
--	s.server = api.NewServer(s.cfg, s.coreManager, s.accessManager, s.configPath, s.serverOptions...)
+-	s.server = api.NewServer(cfg, s.coreManager, s.accessManager, s.configPath, s.serverOptions...)
 +	serverOptions := append(append([]api.ServerOption(nil), s.serverOptions...), api.WithMiddleware(gate.middleware(s.websocketGatewayPath())))
-+	s.server = api.NewServer(s.cfg, s.coreManager, s.accessManager, s.configPath, serverOptions...)
++	s.server = api.NewServer(cfg, s.coreManager, s.accessManager, s.configPath, serverOptions...)
  	s.syncPluginRuntimeConfig(ctx)
  	if homeEnabled {
- 		s.syncPluginModelRuntime(ctx)
-@@ -202,6 +206,7 @@ func (s *Service) Run(ctx context.Context) error {
+ 		s.configRuntimeMu.Lock()
+@@ -225,6 +229,7 @@ func (s *Service) Run(ctx context.Context) error {
  			return fmt.Errorf("cliproxy: failed to start watcher: %w", errStart)
  		}
  		log.Info("file watcher started for config and auth directory changes")
 +		gate.awaitBarrier(watcherWrapper.DispatchAuthBarrier())
+ 		s.configRuntimeMu.Lock()
  		s.syncPluginModelRuntime(ctx)
- 	}
- 
-@@ -234,6 +239,10 @@ func (s *Service) Shutdown(ctx context.Context) error {
+ 		s.configRuntimeMu.Unlock()
+@@ -262,6 +267,10 @@ func (s *Service) Shutdown(ctx context.Context) error {
  		if ctx == nil {
  			ctx = context.Background()
  		}
@@ -300,9 +307,9 @@ index 9195a30..096cb7e 100644
 +			gate.open(startupGateCancelled)
 +		}
  
- 		s.homeLifecycleMu.Lock()
- 		if supervisor := s.homeSupervisor; supervisor != nil {
-@@ -335,6 +344,16 @@ func (s *Service) Shutdown(ctx context.Context) error {
+ 		s.homeMu.Lock()
+ 		runCancel := s.runCancel
+@@ -371,6 +380,16 @@ func (s *Service) Shutdown(ctx context.Context) error {
  			}
  		}
  
@@ -321,7 +328,7 @@ index 9195a30..096cb7e 100644
  			sdkAuth.RegisterPluginAuthParser(nil)
 diff --git a/sdk/cliproxy/startup_gate.go b/sdk/cliproxy/startup_gate.go
 new file mode 100644
-index 0000000..7898832
+index 00000000..78988329
 --- /dev/null
 +++ b/sdk/cliproxy/startup_gate.go
 @@ -0,0 +1,165 @@
@@ -492,10 +499,10 @@ index 0000000..7898832
 +}
 diff --git a/sdk/cliproxy/startup_gate_test.go b/sdk/cliproxy/startup_gate_test.go
 new file mode 100644
-index 0000000..93ec8b3
+index 00000000..107f9249
 --- /dev/null
 +++ b/sdk/cliproxy/startup_gate_test.go
-@@ -0,0 +1,827 @@
+@@ -0,0 +1,831 @@
 +package cliproxy
 +
 +import (
@@ -514,10 +521,10 @@ index 0000000..93ec8b3
 +	"testing"
 +	"time"
 +
-+	internalregistry "github.com/router-for-me/CLIProxyAPI/v7/internal/registry"
-+	"github.com/router-for-me/CLIProxyAPI/v7/internal/util"
-+	coreauth "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/auth"
-+	"github.com/router-for-me/CLIProxyAPI/v7/sdk/config"
++	internalregistry "github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
++	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
++	"github.com/router-for-me/CLIProxyAPI/v8/sdk/config"
 +	log "github.com/sirupsen/logrus"
 +)
 +
@@ -528,8 +535,9 @@ index 0000000..93ec8b3
 +// drains the server and joins the auth update consumer, so once Run returned no
 +// request or registration goroutine reads the test hooks any more.
 +//
-+// The harness sidesteps two data races that unpatched 7.3.15 has at every start, so
-+// that -race reports only what this patch could add:
++// The harness sidesteps two data races that unpatched 7.3.15 had at every start (8.x
++// locks the server configuration itself), so that -race reports only what this
++// patch could add:
 +//   - api.Server.Start and every request read api.Server.cfg, which the watcher's
 +//     initial reload rewrites without synchronization (UpdateClientsContext):
 +//     OnAfterStart waits until the listener answers, and tests whose gate opens at
@@ -1244,8 +1252,9 @@ index 0000000..93ec8b3
 +	}
 +}
 +
-+// blockingGateTestStore blocks List (which auth.Manager.Load calls with the manager
-+// lock held) until released.
++// blockingGateTestStore blocks List (which auth.Manager.Load calls holding the
++// manager's auth load gate, which every credential mutation waits for) until
++// released.
 +type blockingGateTestStore struct {
 +	entered chan struct{}
 +	release chan struct{}
@@ -1264,9 +1273,11 @@ index 0000000..93ec8b3
 +
 +func (s *blockingGateTestStore) Delete(context.Context, string) error { return nil }
 +
-+// TestStartupGateDeadlineIgnoresManagerLock: while a store operation holds the auth
-+// manager's lock, the deadline still opens the gate, the warning is logged, and a
-+// second open returns at once. The gate never takes the manager lock.
++// TestStartupGateDeadlineIgnoresManagerLock: while a store operation inside
++// Manager.Load holds the auth manager's load gate (the manager releases its mutex
++// around store I/O, so the load gate is what a stalled store holds), the deadline
++// still opens the gate, the warning is logged, and a second open returns at once.
++// The gate never waits on the auth manager.
 +func TestStartupGateDeadlineIgnoresManagerLock(t *testing.T) {
 +	store := &blockingGateTestStore{entered: make(chan struct{}), release: make(chan struct{})}
 +	manager := coreauth.NewManager(store, nil, nil)
@@ -1285,11 +1296,11 @@ index 0000000..93ec8b3
 +	waitClosed(t, store.entered, "the store to block inside Manager.Load")
 +	go func() {
 +		defer close(listDone)
-+		_ = manager.List()
++		_, _ = manager.Register(context.Background(), &coreauth.Auth{ID: "gate-probe", Provider: "gate-probe"})
 +	}()
 +	select {
 +	case <-listDone:
-+		t.Fatal("Manager.List returned while Load held the manager lock; the probe is not holding it")
++		t.Fatal("Manager.Register returned while Load held the auth load gate; the probe is not holding it")
 +	case <-time.After(100 * time.Millisecond):
 +	}
 +
@@ -1324,10 +1335,10 @@ index 0000000..93ec8b3
 +	}
 +}
 diff --git a/sdk/cliproxy/types.go b/sdk/cliproxy/types.go
-index 917b7f8..5c24927 100644
+index 84bf1a1a..b8c641e2 100644
 --- a/sdk/cliproxy/types.go
 +++ b/sdk/cliproxy/types.go
-@@ -112,6 +112,7 @@ type WatcherWrapper struct {
+@@ -114,6 +114,7 @@ type WatcherWrapper struct {
  	dispatchPersistedAuthWithRev func(update *watcher.AuthUpdate) (bool, uint64)
  	setPluginAuthParser          func(parser PluginAuthParser)
  	reloadConfigIfChanged        func()
@@ -1335,7 +1346,7 @@ index 917b7f8..5c24927 100644
  }
  
  // Start proxies to the underlying watcher Start implementation.
-@@ -196,6 +197,15 @@ func (w *WatcherWrapper) DispatchPersistedAuthUpdateWithRevision(update *watcher
+@@ -198,6 +199,15 @@ func (w *WatcherWrapper) DispatchPersistedAuthUpdateWithRevision(update *watcher
  	return false, 0
  }
  
@@ -1352,10 +1363,10 @@ index 917b7f8..5c24927 100644
  // SetClients and SetAPIKeyClients removed; watcher manages its own caches
  
 diff --git a/sdk/cliproxy/watcher.go b/sdk/cliproxy/watcher.go
-index b75d116..b505ae7 100644
+index 4635659e..ec5f9d89 100644
 --- a/sdk/cliproxy/watcher.go
 +++ b/sdk/cliproxy/watcher.go
-@@ -43,5 +43,8 @@ func defaultWatcherFactory(configPath, authDir string, reload func(*config.Confi
+@@ -46,5 +46,8 @@ func defaultWatcherFactory(configPath, authDir string, reload func(*config.Confi
  		reloadConfigIfChanged: func() {
  			w.ReloadConfigIfChanged()
  		},

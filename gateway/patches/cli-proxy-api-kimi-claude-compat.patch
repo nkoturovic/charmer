@@ -1,6 +1,6 @@
 diff --git a/internal/config/claude_compat_fields_test.go b/internal/config/claude_compat_fields_test.go
 new file mode 100644
-index 00000000..c9248f39
+index 00000000..00138ef3
 --- /dev/null
 +++ b/internal/config/claude_compat_fields_test.go
 @@ -0,0 +1,76 @@
@@ -81,10 +81,10 @@ index 00000000..c9248f39
 +	}
 +}
 diff --git a/internal/config/config_types.go b/internal/config/config_types.go
-index c746aa5e..639b2a57 100644
+index 5205bf2f..16d25964 100644
 --- a/internal/config/config_types.go
 +++ b/internal/config/config_types.go
-@@ -485,6 +485,10 @@ type ClaudeKey struct {
+@@ -606,6 +606,10 @@ type ClaudeKey struct {
  	// If empty, the default Claude API URL will be used.
  	BaseURL string `yaml:"base-url" json:"base-url"`
  
@@ -95,7 +95,7 @@ index c746aa5e..639b2a57 100644
  	// ProxyURL overrides the global proxy setting for this API key if provided.
  	ProxyURL string `yaml:"proxy-url" json:"proxy-url"`
  
-@@ -566,16 +570,28 @@ type ClaudeModel struct {
+@@ -692,16 +696,28 @@ type ClaudeModel struct {
  
  	// Thinking configures the thinking/reasoning capability for this model.
  	Thinking *registry.ThinkingSupport `yaml:"thinking,omitempty" json:"thinking,omitempty"`
@@ -129,10 +129,10 @@ index c746aa5e..639b2a57 100644
  func (m ClaudeModel) GetThinking() *registry.ThinkingSupport { return m.Thinking }
  
 diff --git a/internal/runtime/executor/claude_executor.go b/internal/runtime/executor/claude_executor.go
-index 2aa1250e..63a7fcbd 100644
+index c4b2776a..a7c44b6f 100644
 --- a/internal/runtime/executor/claude_executor.go
 +++ b/internal/runtime/executor/claude_executor.go
-@@ -217,9 +217,10 @@ func (e *ClaudeExecutor) PrepareRequest(req *http.Request, auth *cliproxyauth.Au
+@@ -325,9 +325,10 @@ func (e *ClaudeExecutor) PrepareRequest(req *http.Request, auth *cliproxyauth.Au
  	}
  	apiKey, _ := claudeCreds(auth)
  	useAPIKey := auth != nil && (auth.AuthKind() == cliproxyauth.AuthKindAPIKey || (auth.Attributes != nil && strings.TrimSpace(auth.Attributes["api_key"]) != ""))
@@ -144,7 +144,7 @@ index 2aa1250e..63a7fcbd 100644
  			req.Header.Del("Authorization")
  			req.Header.Set("x-api-key", apiKey)
  		} else {
-@@ -235,9 +236,28 @@ func (e *ClaudeExecutor) PrepareRequest(req *http.Request, auth *cliproxyauth.Au
+@@ -343,9 +344,28 @@ func (e *ClaudeExecutor) PrepareRequest(req *http.Request, auth *cliproxyauth.Au
  		attrs = auth.Attributes
  	}
  	util.ApplyCustomHeadersFromAttrs(req, attrs)
@@ -175,7 +175,7 @@ index 2aa1250e..63a7fcbd 100644
  	if req == nil {
 diff --git a/internal/runtime/executor/claude_executor_auth_header_test.go b/internal/runtime/executor/claude_executor_auth_header_test.go
 new file mode 100644
-index 00000000..78ee2310
+index 00000000..00607cd2
 --- /dev/null
 +++ b/internal/runtime/executor/claude_executor_auth_header_test.go
 @@ -0,0 +1,227 @@
@@ -189,11 +189,11 @@ index 00000000..78ee2310
 +	"strings"
 +	"testing"
 +
-+	"github.com/router-for-me/CLIProxyAPI/v7/internal/config"
-+	"github.com/router-for-me/CLIProxyAPI/v7/internal/runtime/executor/helps"
-+	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/auth"
-+	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/executor"
-+	sdktranslator "github.com/router-for-me/CLIProxyAPI/v7/sdk/translator"
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
++	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
++	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
++	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
 +)
 +
 +// The auth-header override (claude-api-key "auth-header: x-api-key", carried
@@ -407,10 +407,10 @@ index 00000000..78ee2310
 +	}
 +}
 diff --git a/internal/runtime/executor/claude_executor_request.go b/internal/runtime/executor/claude_executor_request.go
-index 40704c62..30225cc2 100644
+index 3c92af6b..a98315e1 100644
 --- a/internal/runtime/executor/claude_executor_request.go
 +++ b/internal/runtime/executor/claude_executor_request.go
-@@ -1057,8 +1057,9 @@ func applyClaudeHeadersWithNativeProfile(
+@@ -1225,8 +1225,9 @@ func applyClaudeHeadersWithNativeProfile(
  	preserveCallerFingerprint := !applyCLIFingerprint && !confirmedClaudeCode
  	useOAuthBetas := fp.UseOAuthBetas
  	isAnthropicBase := isAnthropicUpstreamURL(r.URL)
@@ -421,7 +421,7 @@ index 40704c62..30225cc2 100644
  			r.Header.Del("Authorization")
  			r.Header.Set("x-api-key", apiKey)
  		} else {
-@@ -1237,6 +1238,7 @@ func applyClaudeHeadersWithNativeProfile(
+@@ -1440,6 +1441,7 @@ func applyClaudeHeadersWithNativeProfile(
  			attrs = auth.Attributes
  		}
  		util.ApplyCustomHeadersFromAttrs(r, attrs, incomingHeaders)
@@ -429,7 +429,7 @@ index 40704c62..30225cc2 100644
  		// Scope the custom-header escape hatch exactly like the CLI path below, which
  		// claws overrides back on api.anthropic.com (an operator Anthropic-Beta reaches
  		// a first-party API that rejects unknown values) and on any streaming request
-@@ -1374,6 +1376,7 @@ func applyClaudeHeadersWithNativeProfile(
+@@ -1599,6 +1601,7 @@ func applyClaudeHeadersWithNativeProfile(
  		attrs = auth.Attributes
  	}
  	util.ApplyCustomHeadersFromAttrs(r, attrs, incomingHeaders)
@@ -438,10 +438,10 @@ index 40704c62..30225cc2 100644
  	// gateways, so they keep the last word there. On api.anthropic.com they must
  	// not rewrite the reconstructed identity: an overridden Anthropic-Beta yields a
 diff --git a/internal/watcher/synthesizer/config.go b/internal/watcher/synthesizer/config.go
-index 6f8ea61c..ab8bcf8b 100644
+index 14de2a3f..0c5ea8d9 100644
 --- a/internal/watcher/synthesizer/config.go
 +++ b/internal/watcher/synthesizer/config.go
-@@ -149,6 +149,7 @@ func (s *ConfigSynthesizer) synthesizeClaudeKeys(ctx *SynthesisContext) []*corea
+@@ -148,6 +148,7 @@ func (s *ConfigSynthesizer) synthesizeClaudeKeys(ctx *SynthesisContext) []*corea
  		}
  		prefix := strings.TrimSpace(ck.Prefix)
  		proxyURL := strings.TrimSpace(ck.ProxyURL)
@@ -449,7 +449,7 @@ index 6f8ea61c..ab8bcf8b 100644
  		id, token := idGen.Next("claude:apikey", key, base, proxyURL, prefix, config.FormatSortedHeaders(ck.Headers))
  		attrs := map[string]string{
  			"source":       fmt.Sprintf("config:claude[%s]", token),
-@@ -157,6 +158,9 @@ func (s *ConfigSynthesizer) synthesizeClaudeKeys(ctx *SynthesisContext) []*corea
+@@ -156,6 +157,9 @@ func (s *ConfigSynthesizer) synthesizeClaudeKeys(ctx *SynthesisContext) []*corea
  		if key != "" {
  			attrs["api_key"] = key
  		}
@@ -460,10 +460,10 @@ index 6f8ea61c..ab8bcf8b 100644
  		if ck.DisableCooling != nil {
  			metadata["disable_cooling"] = *ck.DisableCooling
 diff --git a/internal/watcher/synthesizer/config_test.go b/internal/watcher/synthesizer/config_test.go
-index 9a8c8ee4..6246ecde 100644
+index 8e407191..0fba2e59 100644
 --- a/internal/watcher/synthesizer/config_test.go
 +++ b/internal/watcher/synthesizer/config_test.go
-@@ -278,6 +278,34 @@ func TestConfigSynthesizer_ClaudeKeys(t *testing.T) {
+@@ -296,6 +296,34 @@ func TestConfigSynthesizer_ClaudeKeys_NativeToolSearchDefaultOff(t *testing.T) {
  	}
  }
  
@@ -499,10 +499,10 @@ index 9a8c8ee4..6246ecde 100644
  	synth := NewConfigSynthesizer()
  	ctx := &SynthesisContext{
 diff --git a/sdk/cliproxy/service_models.go b/sdk/cliproxy/service_models.go
-index 76693ee8..c264fc89 100644
+index 3b4cfc9b..7dc4d6ee 100644
 --- a/sdk/cliproxy/service_models.go
 +++ b/sdk/cliproxy/service_models.go
-@@ -725,6 +725,15 @@ type modelCompatEntry interface {
+@@ -805,6 +805,15 @@ type modelCompatEntry interface {
  	GetIsCompat() bool
  }
  
@@ -518,7 +518,7 @@ index 76693ee8..c264fc89 100644
  func buildConfiguredModelInfo(model modelEntry, ownedBy, modelType string, created int64, fallbackDisplayName string, userDefined bool) *ModelInfo {
  	name := strings.TrimSpace(model.GetName())
  	alias := strings.TrimSpace(model.GetAlias())
-@@ -764,6 +773,19 @@ func buildConfiguredModelInfo(model modelEntry, ownedBy, modelType string, creat
+@@ -844,6 +853,19 @@ func buildConfiguredModelInfo(model modelEntry, ownedBy, modelType string, creat
  	if compatModel, okCompat := any(model).(modelCompatEntry); okCompat {
  		info.IsCompat = compatModel.GetIsCompat()
  	}
@@ -539,23 +539,23 @@ index 76693ee8..c264fc89 100644
  }
  
 diff --git a/sdk/cliproxy/service_oauth_model_alias_test.go b/sdk/cliproxy/service_oauth_model_alias_test.go
-index 463d7fb5..6183b83e 100644
+index c7fb5551..a6647123 100644
 --- a/sdk/cliproxy/service_oauth_model_alias_test.go
 +++ b/sdk/cliproxy/service_oauth_model_alias_test.go
 @@ -3,6 +3,7 @@ package cliproxy
  import (
  	"testing"
  
-+	internalconfig "github.com/router-for-me/CLIProxyAPI/v7/internal/config"
- 	"github.com/router-for-me/CLIProxyAPI/v7/internal/registry"
- 	"github.com/router-for-me/CLIProxyAPI/v7/sdk/config"
++	internalconfig "github.com/router-for-me/CLIProxyAPI/v8/internal/config"
+ 	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
+ 	"github.com/router-for-me/CLIProxyAPI/v8/sdk/config"
  )
 @@ -298,3 +299,98 @@ func TestApplyModelPrefixes_PreservesMetadataModelID(t *testing.T) {
  		}
  	}
  }
 +
-+// The static "codex" channel resolves to the codex-pro tier. On 7.3.15 that
++// The static "codex" channel resolves to the codex-pro tier. On 8.0.33 that
 +// tier lists gpt-5.6-sol at 921000/128000 and gpt-6-sol at 272000/128000;
 +// charmer's OAuth aliases must advertise exactly the registry limits.
 +func TestApplyOAuthModelAlias_CodexSolPreservesTokenLimits(t *testing.T) {

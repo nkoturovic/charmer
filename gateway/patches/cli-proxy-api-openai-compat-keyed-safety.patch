@@ -1,6 +1,6 @@
 diff --git a/internal/compatsafe/compatsafe.go b/internal/compatsafe/compatsafe.go
 new file mode 100644
-index 0000000..f19277f
+index 00000000..2f8bdaf3
 --- /dev/null
 +++ b/internal/compatsafe/compatsafe.go
 @@ -0,0 +1,878 @@
@@ -884,7 +884,7 @@ index 0000000..f19277f
 +}
 diff --git a/internal/compatsafe/compatsafe_cm053_test.go b/internal/compatsafe/compatsafe_cm053_test.go
 new file mode 100644
-index 0000000..f9776bf
+index 00000000..f6a1c62c
 --- /dev/null
 +++ b/internal/compatsafe/compatsafe_cm053_test.go
 @@ -0,0 +1,315 @@
@@ -1204,18 +1204,18 @@ index 0000000..f9776bf
 +	}
 +}
 diff --git a/internal/runtime/executor/helps/usage_helpers.go b/internal/runtime/executor/helps/usage_helpers.go
-index 77b66d2..724bd2a 100644
+index 8348d6e7..c01ef153 100644
 --- a/internal/runtime/executor/helps/usage_helpers.go
 +++ b/internal/runtime/executor/helps/usage_helpers.go
-@@ -15,6 +15,7 @@ import (
- 
+@@ -16,6 +16,7 @@ import (
  	"github.com/gin-gonic/gin"
- 	"github.com/router-for-me/CLIProxyAPI/v7/internal/clienterror"
-+	"github.com/router-for-me/CLIProxyAPI/v7/internal/compatsafe"
- 	internallogging "github.com/router-for-me/CLIProxyAPI/v7/internal/logging"
- 	"github.com/router-for-me/CLIProxyAPI/v7/internal/thinking"
- 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/auth"
-@@ -105,6 +106,11 @@ func NewUsageReporter(ctx context.Context, provider, model string, auth *cliprox
+ 	"github.com/google/uuid"
+ 	"github.com/router-for-me/CLIProxyAPI/v8/internal/clienterror"
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/compatsafe"
+ 	internallogging "github.com/router-for-me/CLIProxyAPI/v8/internal/logging"
+ 	"github.com/router-for-me/CLIProxyAPI/v8/internal/thinking"
+ 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
+@@ -117,6 +118,11 @@ func NewUsageReporter(ctx context.Context, provider, model string, auth *cliprox
  				baseURL = strings.TrimSpace(v)
  			}
  		}
@@ -1225,9 +1225,9 @@ index 77b66d2..724bd2a 100644
 +			baseURL = compatsafe.RequestURL(baseURL)
 +		}
  	}
- 	reporter := &UsageReporter{
- 		provider:        provider,
-@@ -763,6 +769,14 @@ func APIKeyFromContext(ctx context.Context) string {
+ 	traceID := usage.TraceIDFromContext(ctx)
+ 	if traceID == "" {
+@@ -822,6 +828,14 @@ func AccessProviderFromContext(ctx context.Context) string {
  
  func resolveUsageSource(auth *cliproxyauth.Auth, ctxAPIKey string) string {
  	if auth != nil {
@@ -1243,18 +1243,18 @@ index 77b66d2..724bd2a 100644
  		if strings.EqualFold(provider, "vertex") {
  			if auth.Metadata != nil {
 diff --git a/internal/runtime/executor/openai_compat_executor.go b/internal/runtime/executor/openai_compat_executor.go
-index 3ef8d34..89ec8f4 100644
+index 6aa58364..8ae379f7 100644
 --- a/internal/runtime/executor/openai_compat_executor.go
 +++ b/internal/runtime/executor/openai_compat_executor.go
 @@ -16,6 +16,7 @@ import (
  	"time"
  
  	"github.com/google/uuid"
-+	"github.com/router-for-me/CLIProxyAPI/v7/internal/compatsafe"
- 	"github.com/router-for-me/CLIProxyAPI/v7/internal/config"
- 	"github.com/router-for-me/CLIProxyAPI/v7/internal/runtime/executor/helps"
- 	"github.com/router-for-me/CLIProxyAPI/v7/internal/thinking"
-@@ -176,7 +177,11 @@ func (e *OpenAICompatExecutor) Execute(ctx context.Context, auth *cliproxyauth.A
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/compatsafe"
+ 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
+ 	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
+ 	"github.com/router-for-me/CLIProxyAPI/v8/internal/thinking"
+@@ -181,7 +182,11 @@ func (e *OpenAICompatExecutor) Execute(ctx context.Context, auth *cliproxyauth.A
  		authLabel = auth.Label
  		authType, authValue = auth.AccountInfo()
  	}
@@ -1267,7 +1267,7 @@ index 3ef8d34..89ec8f4 100644
  		URL:       url,
  		Method:    http.MethodPost,
  		Headers:   httpReq.Header.Clone(),
-@@ -186,22 +191,33 @@ func (e *OpenAICompatExecutor) Execute(ctx context.Context, auth *cliproxyauth.A
+@@ -191,22 +196,33 @@ func (e *OpenAICompatExecutor) Execute(ctx context.Context, auth *cliproxyauth.A
  		AuthLabel: authLabel,
  		AuthType:  authType,
  		AuthValue: authValue,
@@ -1308,7 +1308,7 @@ index 3ef8d34..89ec8f4 100644
  		b, _ := io.ReadAll(httpResp.Body)
  		helps.AppendAPIResponseChunk(ctx, e.cfg, b)
  		helps.LogWithRequestID(ctx).Debugf("request error, error status: %d, error message: %s", httpResp.StatusCode, helps.SummarizeErrorBody(httpResp.Header.Get("Content-Type"), b))
-@@ -210,9 +226,19 @@ func (e *OpenAICompatExecutor) Execute(ctx context.Context, auth *cliproxyauth.A
+@@ -215,9 +231,19 @@ func (e *OpenAICompatExecutor) Execute(ctx context.Context, auth *cliproxyauth.A
  	}
  	body, err := io.ReadAll(httpResp.Body)
  	if err != nil {
@@ -1327,8 +1327,8 @@ index 3ef8d34..89ec8f4 100644
 +	}
  	helps.AppendAPIResponseChunk(ctx, e.cfg, body)
  	reporter.ObserveResponseModel(body)
- 	reporter.Publish(ctx, helps.ParseOpenAIUsage(body))
-@@ -224,7 +250,7 @@ func (e *OpenAICompatExecutor) Execute(ctx context.Context, auth *cliproxyauth.A
+ 	// Ensure we at least record the request even if upstream doesn't return usage
+@@ -231,7 +257,7 @@ func (e *OpenAICompatExecutor) Execute(ctx context.Context, auth *cliproxyauth.A
  	if responseFormat == sdktranslator.FormatOpenAIResponse {
  		out = helps.EnsureResponsesUsageDetails(out)
  	}
@@ -1337,7 +1337,7 @@ index 3ef8d34..89ec8f4 100644
  	return resp, nil
  }
  
-@@ -403,7 +429,11 @@ func (e *OpenAICompatExecutor) ExecuteStream(ctx context.Context, auth *cliproxy
+@@ -417,7 +443,11 @@ func (e *OpenAICompatExecutor) ExecuteStream(ctx context.Context, auth *cliproxy
  		authLabel = auth.Label
  		authType, authValue = auth.AccountInfo()
  	}
@@ -1350,7 +1350,7 @@ index 3ef8d34..89ec8f4 100644
  		URL:       url,
  		Method:    http.MethodPost,
  		Headers:   httpReq.Header.Clone(),
-@@ -413,15 +443,38 @@ func (e *OpenAICompatExecutor) ExecuteStream(ctx context.Context, auth *cliproxy
+@@ -427,16 +457,41 @@ func (e *OpenAICompatExecutor) ExecuteStream(ctx context.Context, auth *cliproxy
  		AuthLabel: authLabel,
  		AuthType:  authType,
  		AuthValue: authValue,
@@ -1362,7 +1362,8 @@ index 3ef8d34..89ec8f4 100644
 +	helps.RecordAPIRequest(ctx, e.cfg, requestLog)
  
  	httpClient, redirectMode := e.newHTTPClient(ctx, auth, httpReq)
- 	httpClient = reporter.TrackHTTPClient(httpClient)
+ 	// Early role/empty frames are only first-packet fallbacks, not effective tokens.
+ 	httpClient = reporter.TrackHTTPClientRoundTripOnly(httpClient)
  	httpResp, err := redirectMode.Result(httpClient.Do(httpReq))
  	if err != nil {
 +		if keyed {
@@ -1380,18 +1381,20 @@ index 3ef8d34..89ec8f4 100644
 +			return nil, err
 +		}
 +		claudeInputTokens := helps.NewClaudeInputTokenState(from, to, responseFormat, originalPayload)
-+		var param any
-+		translate := func(line []byte) [][]byte {
-+			return helps.TranslateStreamWithClaudeInputTokens(ctx, to, responseFormat, req.Model, opts.OriginalRequest, translated, line, &param, claudeInputTokens)
++		originalRequest := helps.ApplyPatchOriginalRequest(req, opts)
++		state := &openAICompatKeyedStreamState{responseFormat: responseFormat}
++		helps.InitializeApplyPatchStream(ctx, to, responseFormat, req.Model, originalRequest, translated, &state.param)
++		state.translate = func(line []byte) [][]byte {
++			return helps.TranslateStreamWithClaudeInputTokens(ctx, to, responseFormat, req.Model, originalRequest, translated, line, &state.param, claudeInputTokens)
 +		}
-+		chunks := e.openAICompatKeyedStream(ctx, httpResp.Body, reporter, responseFormat, translate)
++		chunks := e.openAICompatKeyedStream(ctx, httpResp.Body, reporter, state)
 +		return &cliproxyexecutor.StreamResult{Headers: responseHeaders.Clone(), Chunks: chunks}, nil
 +	}
  	helps.RecordAPIResponseMetadata(ctx, e.cfg, httpResp.StatusCode, httpResp.Header.Clone())
  	if httpResp.StatusCode < 200 || httpResp.StatusCode >= 300 {
  		b, _ := io.ReadAll(httpResp.Body)
 diff --git a/internal/runtime/executor/openai_compat_executor_compact_test.go b/internal/runtime/executor/openai_compat_executor_compact_test.go
-index 287f7af..04eddae 100644
+index ce5922f1..339ab0e5 100644
 --- a/internal/runtime/executor/openai_compat_executor_compact_test.go
 +++ b/internal/runtime/executor/openai_compat_executor_compact_test.go
 @@ -826,45 +826,79 @@ func TestRewriteOpenAICompatImagesMultipartPayloadPreservesStreamAndFileContentT
@@ -1723,10 +1726,10 @@ index 287f7af..04eddae 100644
  
 diff --git a/internal/runtime/executor/openai_compat_keyed_safety.go b/internal/runtime/executor/openai_compat_keyed_safety.go
 new file mode 100644
-index 0000000..1803768
+index 00000000..63e647f1
 --- /dev/null
 +++ b/internal/runtime/executor/openai_compat_keyed_safety.go
-@@ -0,0 +1,291 @@
+@@ -0,0 +1,353 @@
 +package executor
 +
 +import (
@@ -1740,13 +1743,13 @@ index 0000000..1803768
 +	"strings"
 +	"time"
 +
-+	"github.com/router-for-me/CLIProxyAPI/v7/internal/compatsafe"
-+	"github.com/router-for-me/CLIProxyAPI/v7/internal/config"
-+	"github.com/router-for-me/CLIProxyAPI/v7/internal/runtime/executor/helps"
-+	"github.com/router-for-me/CLIProxyAPI/v7/internal/upstreamredirect"
-+	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/auth"
-+	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/executor"
-+	sdktranslator "github.com/router-for-me/CLIProxyAPI/v7/sdk/translator"
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/compatsafe"
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/upstreamredirect"
++	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
++	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
++	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
 +	log "github.com/sirupsen/logrus"
 +)
 +
@@ -1858,19 +1861,38 @@ index 0000000..1803768
 +	return compatsafe.Inspect(body, false)
 +}
 +
++// openAICompatKeyedStreamState is the translation state of one keyed stream: the
++// response format, the translator parameter (it also carries the apply_patch
++// bridge) and the translation of one "data: <payload>" line.
++type openAICompatKeyedStreamState struct {
++	responseFormat sdktranslator.Format
++	param          any
++	translate      func(line []byte) [][]byte
++}
++
++// openAICompatApplyPatchFailure is the apply_patch bridge failure: a fixed local
++// text, the same on the keyed and the keyless route.
++func openAICompatApplyPatchFailure() error {
++	return statusErr{code: http.StatusBadGateway, msg: helps.ApplyPatchUpstreamErrorMessage}
++}
++
 +// openAICompatKeyedStream runs the keyed chat stream: it classifies every
 +// complete SSE frame before any capture or observation and returns only
-+// safe failures. translate converts one "data: <payload>" line.
-+func (e *OpenAICompatExecutor) openAICompatKeyedStream(ctx context.Context, body io.ReadCloser, reporter *helps.UsageReporter, responseFormat sdktranslator.Format, translate func(line []byte) [][]byte) <-chan cliproxyexecutor.StreamChunk {
++// safe failures. Its end-of-stream rules are the keyless stream's: a Claude
++// stream completes on EOF after a finish_reason, a Responses stream only on a
++// terminal state the translator confirms, and a failed stream keeps the usage
++// it buffered.
++func (e *OpenAICompatExecutor) openAICompatKeyedStream(ctx context.Context, body io.ReadCloser, reporter *helps.UsageReporter, state *openAICompatKeyedStreamState) <-chan cliproxyexecutor.StreamChunk {
 +	out := make(chan cliproxyexecutor.StreamChunk)
 +	limits := openAICompatKeyedStreamLimits
++	responseFormat := state.responseFormat
 +	go func() {
 +		defer close(out)
 +		defer closeOpenAICompatBody(body, true)
 +		scanner := bufio.NewScanner(body)
 +		scanner.Buffer(nil, limits.line)
 +		var streamUsage helps.StreamUsageBuffer
-+		var seenDone, streamFailed, streamAborted bool
++		var seenDone, sawFinishReason, streamFailed, streamAborted bool
 +		var upstreamEvent string
 +		var frameData [][]byte
 +		var frameBytes, frameLines int
@@ -1924,6 +1946,9 @@ index 0000000..1803768
 +					fail(failure)
 +					return true
 +				}
++				if !sawFinishReason && openAICompatChunkHasFinishReason(dataPayload) {
++					sawFinishReason = true
++				}
 +			}
 +
 +			// The frame is classified: only now is it captured and observed.
@@ -1932,14 +1957,21 @@ index 0000000..1803768
 +			if !isDone {
 +				reporter.ObserveResponseModel(streamLine)
 +				streamUsage.ObserveOpenAIStream(streamLine)
++				helps.ObserveChatTokenEvent(reporter, dataPayload)
 +			}
-+			for _, chunk := range translate(streamLine) {
++			chunks := state.translate(streamLine)
++			helps.RecordApplyPatchStreamFailure(ctx, state.param, reporter, openAICompatApplyPatchFailure())
++			for _, chunk := range chunks {
 +				select {
 +				case out <- cliproxyexecutor.StreamChunk{Payload: chunk}:
 +				case <-ctx.Done():
 +					streamAborted = true
 +					return true
 +				}
++			}
++			if helps.ApplyPatchTranslationError(state.param) != nil {
++				fail(openAICompatApplyPatchFailure())
++				return true
 +			}
 +			if isDone {
 +				seenDone = true
@@ -1987,6 +2019,25 @@ index 0000000..1803768
 +		if errScan == nil && !seenDone && !streamFailed && !streamAborted && (len(frameData) > 0 || upstreamEvent != "") {
 +			_ = processFrame()
 +		}
++		if !streamFailed && !streamAborted && helps.EndApplyPatchStream(ctx, state.param, reporter, out, openAICompatApplyPatchFailure()) {
++			return
++		}
++		if !streamFailed && !streamAborted && !seenDone && errScan == nil && responseFormat == sdktranslator.FormatOpenAIResponse && ctx.Err() == nil && helps.CanFinalizeResponseStream(state.param) {
++			finalChunks := state.translate([]byte("data: [DONE]"))
++			for _, finalChunk := range finalChunks {
++				select {
++				case out <- cliproxyexecutor.StreamChunk{Payload: finalChunk}:
++				case <-ctx.Done():
++					streamAborted = true
++				}
++				if streamAborted {
++					break
++				}
++			}
++			if len(finalChunks) > 0 && !streamAborted {
++				seenDone = true
++			}
++		}
 +		if streamFailed || streamAborted {
 +			return
 +		}
@@ -1999,13 +2050,27 @@ index 0000000..1803768
 +			return
 +		}
 +		if !seenDone {
-+			// Responses clients require an explicit terminal event; other
-+			// protocols keep the compatibility [DONE] for providers that omit it.
-+			if responseFormat == sdktranslator.FormatOpenAIResponse {
-+				failKind(compatsafe.KindStreamClosedBeforeDone)
++			// Without a translator-confirmed terminal state, a clean Responses or
++			// Claude EOF without [DONE] (and, for Claude, without a finish_reason)
++			// is a failed stream that keeps the usage it buffered; other protocols
++			// keep the compatibility [DONE] for providers that omit it.
++			if responseFormat == sdktranslator.FormatOpenAIResponse || (responseFormat == sdktranslator.FormatClaude && !sawFinishReason) {
++				streamErr := compatsafe.NewError(compatsafe.KindStreamClosedBeforeDone, http.StatusBadGateway, nil)
++				helps.RecordAPIResponseError(ctx, e.cfg, streamErr)
++				if !helps.RecordApplyPatchStreamFailureWithUsage(ctx, state.param, reporter, &streamUsage, streamErr) {
++					if !streamUsage.PublishFailure(ctx, reporter, streamErr) {
++						reporter.PublishFailure(ctx, streamErr)
++					}
++				}
++				select {
++				case out <- cliproxyexecutor.StreamChunk{Err: streamErr}:
++				case <-ctx.Done():
++				}
 +				return
 +			}
-+			for _, chunk := range translate([]byte("data: [DONE]")) {
++			chunks := state.translate([]byte("data: [DONE]"))
++			helps.RecordApplyPatchStreamFailure(ctx, state.param, reporter, openAICompatApplyPatchFailure())
++			for _, chunk := range chunks {
 +				select {
 +				case out <- cliproxyexecutor.StreamChunk{Payload: chunk}:
 +				case <-ctx.Done():
@@ -2020,7 +2085,7 @@ index 0000000..1803768
 +}
 diff --git a/internal/runtime/executor/openai_compat_keyed_safety_cm053_test.go b/internal/runtime/executor/openai_compat_keyed_safety_cm053_test.go
 new file mode 100644
-index 0000000..a87da20
+index 00000000..ad4a6435
 --- /dev/null
 +++ b/internal/runtime/executor/openai_compat_keyed_safety_cm053_test.go
 @@ -0,0 +1,1257 @@
@@ -2055,14 +2120,14 @@ index 0000000..a87da20
 +	"time"
 +
 +	"github.com/gin-gonic/gin"
-+	"github.com/router-for-me/CLIProxyAPI/v7/internal/clienterror"
-+	"github.com/router-for-me/CLIProxyAPI/v7/internal/compatsafe"
-+	"github.com/router-for-me/CLIProxyAPI/v7/internal/config"
-+	"github.com/router-for-me/CLIProxyAPI/v7/internal/logging"
-+	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/auth"
-+	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/executor"
-+	coreusage "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/usage"
-+	sdktranslator "github.com/router-for-me/CLIProxyAPI/v7/sdk/translator"
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/clienterror"
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/compatsafe"
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/logging"
++	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
++	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
++	coreusage "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/usage"
++	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
 +	log "github.com/sirupsen/logrus"
 +)
 +
@@ -3282,10 +3347,10 @@ index 0000000..a87da20
 +	})
 +}
 diff --git a/sdk/cliproxy/auth/conductor_execution.go b/sdk/cliproxy/auth/conductor_execution.go
-index b365f5d..7ded5fa 100644
+index 17a1b458..99759f7a 100644
 --- a/sdk/cliproxy/auth/conductor_execution.go
 +++ b/sdk/cliproxy/auth/conductor_execution.go
-@@ -1833,6 +1833,10 @@ func debugLogAuthSelection(entry *log.Entry, auth *Auth, provider string, model
+@@ -1857,6 +1857,10 @@ func debugLogAuthSelection(entry *log.Entry, auth *Auth, provider string, model
  	}
  	switch accountType {
  	case "api_key":
@@ -3296,7 +3361,7 @@ index b365f5d..7ded5fa 100644
  		entry.Debugf("Use API key %s for model %s%s", util.HideAPIKey(accountInfo), model, suffix)
  	case "oauth":
  		ident := formatOauthIdentity(auth, provider, accountInfo)
-@@ -1871,6 +1875,27 @@ func formatOauthIdentity(auth *Auth, provider string, accountInfo string) string
+@@ -1895,6 +1899,27 @@ func formatOauthIdentity(auth *Auth, provider string, accountInfo string) string
  	return strings.Join(parts, " ")
  }
  
@@ -3324,7 +3389,7 @@ index b365f5d..7ded5fa 100644
  func formatAuthIdentity(auth *Auth, provider string) string {
  	if auth == nil {
  		return "auth=nil"
-@@ -1878,6 +1903,9 @@ func formatAuthIdentity(auth *Auth, provider string) string {
+@@ -1902,6 +1927,9 @@ func formatAuthIdentity(auth *Auth, provider string) string {
  	accountType, accountInfo := auth.AccountInfo()
  	switch accountType {
  	case "api_key":
@@ -3336,7 +3401,7 @@ index b365f5d..7ded5fa 100644
  		return formatOauthIdentity(auth, provider, accountInfo)
 diff --git a/sdk/cliproxy/auth/openai_compat_keyed_cm053_test.go b/sdk/cliproxy/auth/openai_compat_keyed_cm053_test.go
 new file mode 100644
-index 0000000..84e6d9f
+index 00000000..38979ff0
 --- /dev/null
 +++ b/sdk/cliproxy/auth/openai_compat_keyed_cm053_test.go
 @@ -0,0 +1,190 @@
@@ -3355,8 +3420,8 @@ index 0000000..84e6d9f
 +	"testing"
 +	"time"
 +
-+	"github.com/router-for-me/CLIProxyAPI/v7/internal/compatsafe"
-+	"github.com/router-for-me/CLIProxyAPI/v7/internal/util"
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/compatsafe"
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
 +	log "github.com/sirupsen/logrus"
 +)
 +

@@ -4,63 +4,39 @@ package handlers
 // dependency-closed omission.
 import (
 	"context"
+	"errors"
+	"net/http"
 	"net/http/httptest"
-	"sync"
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	"github.com/router-for-me/CLIProxyAPI/v7/sdk/config"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/interfaces"
+	"github.com/router-for-me/CLIProxyAPI/v8/sdk/config"
 )
 
+// 8.x locks the configuration pointer itself; what the patch adds is one
+// snapshot per request. A request that started under passthrough headers keeps
+// them on its error response after a reload turned them off.
 func TestOmissionConfigSnapshot(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	h := NewBaseAPIHandlers(&config.SDKConfig{}, nil)
-	start := make(chan struct{})
-	var wg sync.WaitGroup
-	wg.Add(2)
-	go func() {
-		defer wg.Done()
-		<-start
-		for i := 0; i < 4000; i++ {
-			h.UpdateClients(&config.SDKConfig{})
-		}
-	}()
-	go func() {
-		defer wg.Done()
-		<-start
-		for i := 0; i < 4000; i++ {
-			c, _ := gin.CreateTestContext(httptest.NewRecorder())
-			c.Request = httptest.NewRequest("POST", "/v1/messages", nil)
-			stop := h.StartNonStreamingKeepAlive(c, context.Background())
-			stop()
-		}
-	}()
-	close(start)
-	wg.Wait()
-}
-
-func TestOmissionPluginHostLock(t *testing.T) {
-	h := NewBaseAPIHandlers(&config.SDKConfig{}, nil)
-	start := make(chan struct{})
-	var wg sync.WaitGroup
-	wg.Add(2)
-	go func() {
-		defer wg.Done()
-		<-start
-		for i := 0; i < 10000; i++ {
-			h.SetPluginHost(nil)
-		}
-	}()
-	go func() {
-		defer wg.Done()
-		<-start
-		for i := 0; i < 10000; i++ {
-			if h.interceptorHost() != nil {
-				t.Error("unexpected host")
-				return
-			}
-		}
-	}()
-	close(start)
-	wg.Wait()
+	h := NewBaseAPIHandlers(&config.SDKConfig{PassthroughHeaders: true}, nil)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+	_, cancel := h.GetContextWithCancel(nil, c, context.Background())
+	defer cancel()
+	h.UpdateClients(&config.SDKConfig{})
+	h.WriteErrorResponse(c, &interfaces.ErrorMessage{StatusCode: http.StatusBadGateway, Error: errors.New("gwtest"),
+		Addon: http.Header{"X-Gwtest-Addon": {"1"}}})
+	if recorder.Header().Get("X-Gwtest-Addon") != "1" {
+		t.Fatal("an in-flight request read the reloaded configuration")
+	}
+	fresh := httptest.NewRecorder()
+	next, _ := gin.CreateTestContext(fresh)
+	next.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+	h.WriteErrorResponse(next, &interfaces.ErrorMessage{StatusCode: http.StatusBadGateway, Error: errors.New("gwtest"),
+		Addon: http.Header{"X-Gwtest-Addon": {"1"}}})
+	if fresh.Header().Get("X-Gwtest-Addon") != "" {
+		t.Fatal("a new request did not read the reloaded configuration")
+	}
 }

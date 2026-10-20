@@ -198,7 +198,11 @@ class Fixture:
     def write_gateway_dist(self, tool) -> None:
         doc = json.loads(UPSTREAM_JSON.read_text())
         admitted = [entry for entry in doc["series"] if entry["admitted"]]
+        from test_build_tool import buildinfo_blob
+
         payload = b"".join(marker["text"].encode() + b"\0" for marker in doc["markers"])
+        payload += buildinfo_blob("path\texample.test/gateway\nbuild\tDefaultGODEBUG=" + ",".join(doc["build"]["godebug"]) + "\n",
+                                  version="go" + doc["toolchain"]["version"])
         binaries = {"linux-amd64": elf(62, payload), "linux-arm64": elf(183, payload),
                     "darwin-arm64": macho(0x0100000C, payload, signed=True),
                     "darwin-amd64": macho(0x01000007, payload, signed=False)}
@@ -221,8 +225,7 @@ class Fixture:
             "series": [{"basename": entry["basename"], "sha256": entry["sha256"]} for entry in admitted],
             "admitted_series": True,
             "post_apply_tree_sha256": "0" * 64,
-            "build": {"env": doc["build"]["env"], "flags": doc["build"]["flags"], "ldflags": doc["build"]["ldflags"],
-                      "main_package": doc["upstream"]["main_package"]},
+            "build": {**doc["build"], "main_package": doc["upstream"]["main_package"]},
             "targets": targets,
         }
         (self.dist / "BUILD.json").write_text(json.dumps(record, indent=2, sort_keys=True) + "\n")

@@ -1,7 +1,8 @@
 diff --git a/internal/client/claude/models/models.go b/internal/client/claude/models/models.go
+index 60e09baf..1d07d331 100644
 --- a/internal/client/claude/models/models.go
 +++ b/internal/client/claude/models/models.go
-@@ -8,6 +8,11 @@
+@@ -8,6 +8,11 @@ import (
  
  const claudeDDModelPrefix = "claude-fable-5-dd-"
  
@@ -13,7 +14,7 @@ diff --git a/internal/client/claude/models/models.go b/internal/client/claude/mo
  // BuildResponse builds an Anthropic model response from available models.
  func BuildResponse(availableModels []map[string]any, disableCloaking bool) map[string]any {
  	models := make([]map[string]any, len(availableModels))
-@@ -45,10 +50,11 @@
+@@ -45,10 +50,11 @@ func BuildResponse(availableModels []map[string]any, disableCloaking bool) map[s
  }
  
  // EnsureClaudeModelIDPrefix rewrites model IDs for Anthropic model listings.
@@ -30,6 +31,7 @@ diff --git a/internal/client/claude/models/models.go b/internal/client/claude/mo
  	return claudeDDModelPrefix + reverseModelID(id)
 diff --git a/internal/client/claude/models/models_charmer_test.go b/internal/client/claude/models/models_charmer_test.go
 new file mode 100644
+index 00000000..7c3c200b
 --- /dev/null
 +++ b/internal/client/claude/models/models_charmer_test.go
 @@ -0,0 +1,91 @@

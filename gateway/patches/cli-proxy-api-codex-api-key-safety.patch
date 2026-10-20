@@ -1,15 +1,15 @@
 diff --git a/internal/runtime/executor/codex_executor_execute.go b/internal/runtime/executor/codex_executor_execute.go
 --- a/internal/runtime/executor/codex_executor_execute.go
 +++ b/internal/runtime/executor/codex_executor_execute.go
-@@ -86,6 +86,7 @@ func (e *CodexExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, re
+@@ -95,6 +95,7 @@
  	applyCodexHeaders(httpReq, auth, apiKey, true, e.cfg, opts.Headers)
+ 	applyCodexRoutingHint(ctx, httpReq.Header, auth, baseModel, upstreamBody, opts.Headers)
  	applyModelHeaderOverrides(httpReq.Header, baseModel)
- 	applyCodexIdentityConfuseHeaders(httpReq.Header, &identityState)
 +	dropCodexPlainKeySession(httpReq.Header, e.cfg, auth)
  	var authID, authLabel, authType, authValue string
  	if auth != nil {
  		authID = auth.ID
-@@ -107,6 +108,9 @@ func (e *CodexExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, re
+@@ -116,6 +117,9 @@
  	httpClient = reporter.TrackHTTPClient(httpClient)
  	httpResp, err := upstreamredirect.Result(httpClient.Do(httpReq))
  	if err != nil {
@@ -19,7 +19,7 @@ diff --git a/internal/runtime/executor/codex_executor_execute.go b/internal/runt
  		helps.RecordAPIResponseError(ctx, e.cfg, err)
  		return resp, err
  	}
-@@ -117,6 +121,14 @@ func (e *CodexExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, re
+@@ -126,6 +130,14 @@
  	}()
  	helps.RecordAPIResponseMetadata(ctx, e.cfg, httpResp.StatusCode, httpResp.Header.Clone())
  	if httpResp.StatusCode < 200 || httpResp.StatusCode >= 300 {
@@ -32,37 +32,58 @@ diff --git a/internal/runtime/executor/codex_executor_execute.go b/internal/runt
 +			return resp, err
 +		}
  		b, _ := io.ReadAll(httpResp.Body)
- 		b = applyCodexIdentityConfuseResponsePayload(b, identityState)
  		if errClearReplay := clearCodexReasoningReplayOnInvalidSignature(ctx, replayScope, httpResp.StatusCode, b); errClearReplay != nil {
-@@ -153,6 +165,9 @@ func (e *CodexExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, re
+ 			return resp, errClearReplay
+@@ -136,7 +148,9 @@
+ 		return resp, err
+ 	}
+ 	data, errRead := io.ReadAll(httpResp.Body)
+-	helps.AppendAPIResponseChunk(ctx, e.cfg, data)
++	if !codexKeySafe(auth) {
++		helps.AppendAPIResponseChunk(ctx, e.cfg, data)
++	}
+ 
+ 	events := helps.NewCodexSSEScanner(ctx, bytes.NewReader(data), len(data)+1)
+ 	outputItemsByIndex := make(map[int64][]byte)
+@@ -144,6 +158,9 @@
+ 	sawOutputDelta := false
+ 	for events.Scan() {
+ 		line := events.Bytes()
++		if codexKeySafe(auth) {
++			codexCaptureKeyEvent(ctx, e.cfg, line, e.modelLevelCooling())
++		}
+ 		if !bytes.HasPrefix(line, dataTag) {
+ 			continue
+ 		}
+@@ -160,6 +177,9 @@
+ 		if streamErr, terminalBody, ok := codexTerminalFailureErrWithCooling(eventData, e.modelLevelCooling()); ok {
  			if errClearReplay := clearCodexReasoningReplayOnInvalidSignature(ctx, replayScope, streamErr.StatusCode(), terminalBody); errClearReplay != nil {
  				return resp, errClearReplay
- 			}
++			}
 +			if codexKeySafe(auth) {
 +				streamErr = codexKeyTerminalFailure(streamErr, terminalBody)
-+			}
+ 			}
  			err = streamErr
  			return resp, err
- 		}
-@@ -205,6 +220,9 @@ func (e *CodexExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, re
+@@ -213,6 +233,9 @@
+ 			helps.RecordAPIResponseError(ctx, e.cfg, errCtx)
  			err = errCtx
  			return resp, err
- 		}
++		}
 +		if codexKeySafe(auth) {
 +			errRead = codexKeyTransportError(errRead)
-+		}
+ 		}
  		helps.RecordAPIResponseError(ctx, e.cfg, errRead)
  	}
- 	err = newCodexIncompleteStreamError()
-@@ -259,6 +277,7 @@ func (e *CodexExecutor) executeCompact(ctx context.Context, auth *cliproxyauth.A
+@@ -276,6 +299,7 @@
  	applyCodexHeaders(httpReq, auth, apiKey, false, e.cfg, opts.Headers)
+ 	applyCodexRoutingHint(ctx, httpReq.Header, auth, baseModel, upstreamBody, opts.Headers)
  	applyModelHeaderOverrides(httpReq.Header, baseModel)
- 	applyCodexIdentityConfuseHeaders(httpReq.Header, &identityState)
 +	dropCodexPlainKeySession(httpReq.Header, e.cfg, auth)
  	var authID, authLabel, authType, authValue string
  	if auth != nil {
  		authID = auth.ID
-@@ -280,6 +299,9 @@ func (e *CodexExecutor) executeCompact(ctx context.Context, auth *cliproxyauth.A
+@@ -297,6 +321,9 @@
  	httpClient = reporter.TrackHTTPClient(httpClient)
  	httpResp, err := upstreamredirect.Result(httpClient.Do(httpReq))
  	if err != nil {
@@ -72,7 +93,7 @@ diff --git a/internal/runtime/executor/codex_executor_execute.go b/internal/runt
  		helps.RecordAPIResponseError(ctx, e.cfg, err)
  		return resp, err
  	}
-@@ -290,6 +312,10 @@ func (e *CodexExecutor) executeCompact(ctx context.Context, auth *cliproxyauth.A
+@@ -307,6 +334,10 @@
  	}()
  	helps.RecordAPIResponseMetadata(ctx, e.cfg, httpResp.StatusCode, httpResp.Header.Clone())
  	if httpResp.StatusCode < 200 || httpResp.StatusCode >= 300 {
@@ -81,9 +102,9 @@ diff --git a/internal/runtime/executor/codex_executor_execute.go b/internal/runt
 +			return resp, err
 +		}
  		b, _ := io.ReadAll(httpResp.Body)
- 		b = applyCodexIdentityConfuseResponsePayload(b, identityState)
  		helps.AppendAPIResponseChunk(ctx, e.cfg, b)
-@@ -299,6 +325,9 @@ func (e *CodexExecutor) executeCompact(ctx context.Context, auth *cliproxyauth.A
+ 		helps.LogWithRequestID(ctx).Debugf("request error, error status: %d, error message: %s", httpResp.StatusCode, helps.SummarizeErrorBody(httpResp.Header.Get("Content-Type"), b))
+@@ -315,6 +346,9 @@
  	}
  	data, err := io.ReadAll(httpResp.Body)
  	if err != nil {
@@ -96,7 +117,7 @@ diff --git a/internal/runtime/executor/codex_executor_execute.go b/internal/runt
 diff --git a/internal/runtime/executor/codex_executor_request.go b/internal/runtime/executor/codex_executor_request.go
 --- a/internal/runtime/executor/codex_executor_request.go
 +++ b/internal/runtime/executor/codex_executor_request.go
-@@ -341,7 +341,7 @@ func applyCodexHeadersFromSources(r *http.Request, auth *cliproxyauth.Auth, toke
+@@ -282,7 +282,7 @@
  	if ginHeaders != nil && ginHeaders.Get("X-Codex-Beta-Features") != "" {
  		r.Header.Set("X-Codex-Beta-Features", ginHeaders.Get("X-Codex-Beta-Features"))
  	}
@@ -108,15 +129,15 @@ diff --git a/internal/runtime/executor/codex_executor_request.go b/internal/runt
 diff --git a/internal/runtime/executor/codex_executor_stream.go b/internal/runtime/executor/codex_executor_stream.go
 --- a/internal/runtime/executor/codex_executor_stream.go
 +++ b/internal/runtime/executor/codex_executor_stream.go
-@@ -94,6 +94,7 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
+@@ -102,6 +102,7 @@
  	applyCodexHeaders(httpReq, auth, apiKey, true, e.cfg, opts.Headers)
+ 	applyCodexRoutingHint(ctx, httpReq.Header, auth, baseModel, upstreamBody, opts.Headers)
  	applyModelHeaderOverrides(httpReq.Header, baseModel)
- 	applyCodexIdentityConfuseHeaders(httpReq.Header, &identityState)
 +	dropCodexPlainKeySession(httpReq.Header, e.cfg, auth)
  	var authID, authLabel, authType, authValue string
  	if auth != nil {
  		authID = auth.ID
-@@ -116,11 +117,25 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
+@@ -124,11 +125,25 @@
  	httpClient = reporter.TrackHTTPClientRoundTripOnly(httpClient)
  	httpResp, err := upstreamredirect.Result(httpClient.Do(httpReq))
  	if err != nil {
@@ -142,7 +163,32 @@ diff --git a/internal/runtime/executor/codex_executor_stream.go b/internal/runti
  		data, readErr := io.ReadAll(httpResp.Body)
  		if errClose := httpResp.Body.Close(); errClose != nil {
  			log.Errorf("codex executor: close response body error: %v", errClose)
-@@ -207,6 +222,9 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
+@@ -160,9 +175,11 @@
+ 	exhaustedReason := ""
+ 
+ 	scanner := helps.NewCodexSSEScanner(ctx, httpResp.Body, 52_428_800) // 50MB
+-	scanner.SetOnLine(func(rawLine []byte) {
+-		helps.AppendAPIResponseChunk(ctx, e.cfg, rawLine)
+-	})
++	if !codexKeySafe(auth) {
++		scanner.SetOnLine(func(rawLine []byte) {
++			helps.AppendAPIResponseChunk(ctx, e.cfg, rawLine)
++		})
++	}
+ 	if buffering {
+ 		scanner.SetBudgetChecker(func(line []byte, heldLines, heldBytes int) bool {
+ 			timeSinceStart := nowCodexBootstrap().Sub(bootstrapStart)
+@@ -208,6 +225,9 @@
+ 	if buffering {
+ 		for scanner.Scan() {
+ 			line := scanner.Bytes()
++			if codexKeySafe(auth) {
++				codexCaptureKeyEvent(ctx, e.cfg, line, e.modelLevelCooling())
++			}
+ 			if budgetExhausted {
+ 				helps.LogWithRequestID(ctx).Debugf("codex executor: bootstrap %s exhausted after %d lines / %d bytes / %v, releasing stream without overload probing", exhaustedReason, bufferedFrames, bufferedBytes, nowCodexBootstrap().Sub(bootstrapStart))
+ 				initialChunks = nil
+@@ -234,6 +254,9 @@
  						reporter.PublishFailure(ctx, errClearReplay)
  						return nil, errClearReplay
  					}
@@ -152,7 +198,7 @@ diff --git a/internal/runtime/executor/codex_executor_stream.go b/internal/runti
  					helps.RecordAPIResponseError(ctx, e.cfg, streamErr)
  					reporter.PublishFailure(ctx, streamErr)
  					if isCodexOverloadBootstrapFailure(terminalBody) {
-@@ -218,7 +236,7 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
+@@ -245,7 +268,7 @@
  							// transparently retry on another credential, and report the status the
  							// upstream refused to put on the wire.
  							helps.LogWithRequestID(ctx).Debugf("codex executor: bootstrap overload rejection after %d buffered lines, failing over", bufferedFrames)
@@ -161,7 +207,7 @@ diff --git a/internal/runtime/executor/codex_executor_stream.go b/internal/runti
  						}
  						helps.LogWithRequestID(ctx).Debugf("codex executor: bootstrap overload rejection after %d lines / %v, time budget exhausted; delivering in-stream", bufferedFrames, timeSinceStart)
  					}
-@@ -313,6 +331,9 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
+@@ -345,6 +368,9 @@
  				if ctx.Err() != nil {
  					return nil, ctx.Err()
  				}
@@ -171,7 +217,17 @@ diff --git a/internal/runtime/executor/codex_executor_stream.go b/internal/runti
  				helps.RecordAPIResponseError(ctx, e.cfg, errScan)
  				reporter.PublishFailure(ctx, errScan)
  				return nil, errScan
-@@ -382,6 +403,9 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
+@@ -411,6 +437,9 @@
+ 		}()
+ 		for scanner.Scan() {
+ 			line := scanner.Bytes()
++			if codexKeySafe(auth) {
++				codexCaptureKeyEvent(ctx, e.cfg, line, e.modelLevelCooling())
++			}
+ 			var translatedLine []byte
+ 			terminalSuccess := false
+ 
+@@ -432,6 +461,9 @@
  						}
  						return
  					}
@@ -181,7 +237,7 @@ diff --git a/internal/runtime/executor/codex_executor_stream.go b/internal/runti
  					helps.RecordAPIResponseError(ctx, e.cfg, streamErr)
  					reporter.PublishFailure(ctx, streamErr)
  					select {
-@@ -444,6 +468,9 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
+@@ -496,6 +528,9 @@
  			if ctx.Err() != nil {
  				return
  			}
@@ -190,34 +246,38 @@ diff --git a/internal/runtime/executor/codex_executor_stream.go b/internal/runti
 +			}
  			helps.RecordAPIResponseError(ctx, e.cfg, errScan)
  		}
- 		streamErr := newCodexIncompleteStreamError()
+ 		if emittedCount == 0 {
 diff --git a/internal/runtime/executor/codex_executor_stream_output_test.go b/internal/runtime/executor/codex_executor_stream_output_test.go
 --- a/internal/runtime/executor/codex_executor_stream_output_test.go
 +++ b/internal/runtime/executor/codex_executor_stream_output_test.go
-@@ -99,10 +99,11 @@ func TestCodexExecutorExecuteSurfacesTerminalStreamError(t *testing.T) {
+@@ -99,10 +99,11 @@
  	defer server.Close()
  
  	executor := NewCodexExecutor(&config.Config{})
-+	// A ChatGPT account keeps the provider's error text; an API key gets
-+	// fixed local text instead (codex_key_safety_test.go).
- 	auth := &cliproxyauth.Auth{Attributes: map[string]string{
- 		"base_url": server.URL,
+-	auth := &cliproxyauth.Auth{Attributes: map[string]string{
+-		"base_url": server.URL,
 -		"api_key":  "test",
 -	}}
++	// A ChatGPT account keeps the provider's error text; an API key gets
++	// fixed local text instead (codex_key_safety_test.go).
++	auth := &cliproxyauth.Auth{Attributes: map[string]string{
++		"base_url": server.URL,
 +	}, Metadata: map[string]any{"access_token": "test"}}
  
  	_, err := executor.Execute(context.Background(), auth, cliproxyexecutor.Request{
  		Model:   "gpt-5.5",
-@@ -474,10 +475,11 @@ func TestCodexExecutorExecuteStreamSurfacesTerminalStreamError(t *testing.T) {
+@@ -474,10 +475,11 @@
  	defer server.Close()
  
  	executor := NewCodexExecutor(&config.Config{})
-+	// A ChatGPT account keeps the provider's error text; an API key gets
-+	// fixed local text instead (codex_key_safety_test.go).
- 	auth := &cliproxyauth.Auth{Attributes: map[string]string{
- 		"base_url": server.URL,
+-	auth := &cliproxyauth.Auth{Attributes: map[string]string{
+-		"base_url": server.URL,
 -		"api_key":  "test",
 -	}}
++	// A ChatGPT account keeps the provider's error text; an API key gets
++	// fixed local text instead (codex_key_safety_test.go).
++	auth := &cliproxyauth.Auth{Attributes: map[string]string{
++		"base_url": server.URL,
 +	}, Metadata: map[string]any{"access_token": "test"}}
  
  	result, err := executor.ExecuteStream(context.Background(), auth, cliproxyexecutor.Request{
@@ -226,18 +286,20 @@ diff --git a/internal/runtime/executor/codex_key_safety.go b/internal/runtime/ex
 new file mode 100644
 --- /dev/null
 +++ b/internal/runtime/executor/codex_key_safety.go
-@@ -0,0 +1,151 @@
+@@ -0,0 +1,178 @@
 +package executor
 +
 +import (
++	"bytes"
 +	"context"
++	"encoding/json"
 +	"net/http"
 +
-+	"github.com/router-for-me/CLIProxyAPI/v7/internal/compatsafe"
-+	"github.com/router-for-me/CLIProxyAPI/v7/internal/config"
-+	"github.com/router-for-me/CLIProxyAPI/v7/internal/runtime/executor/helps"
-+	"github.com/router-for-me/CLIProxyAPI/v7/internal/upstreamredirect"
-+	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/auth"
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/compatsafe"
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/upstreamredirect"
++	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 +)
 +
 +// Codex API-key failure safety and the plain API-key client identity.
@@ -263,10 +325,10 @@ new file mode 100644
 +//
 +// An API-key auth with codex cloaking disabled is a plain API client: its
 +// requests carry no default codex client Version and no session header (the
-+// prompt cache key still travels in the body). ChatGPT-account auths, and
-+// API-key auths that keep cloaking on, keep the codex client identity and the
-+// upstream failure text. Image requests, websockets and the SDK HttpRequest
-+// are outside these promises.
++// prompt cache key still travels in the body). Account auths and cloaked API
++// keys keep the codex client identity, but only account auths keep upstream
++// failure text. Keyed failure safety is independent of cloaking. Image requests,
++// websockets and the SDK HttpRequest are outside these promises.
 +
 +// codexClientVersion is the Version header a codex client request carries
 +// when its client sends none.
@@ -339,6 +401,31 @@ new file mode 100644
 +	return codexKeyFailure(classified, codexKeyKind(classified.code, body))
 +}
 +
++// codexCaptureKeyEvent captures only assembled data events, after classification.
++// A physical-line callback would expose a terminal failure (or its fragments)
++// before its error could be rebuilt locally. Non-data framing is not captured
++// on keyed paths; successful data and downstream delivery remain unchanged.
++func codexCaptureKeyEvent(ctx context.Context, cfg *config.Config, line []byte, modelLevelCooling bool) {
++	if cfg == nil || !cfg.RequestLog || cfg.CommercialMode || !bytes.HasPrefix(line, dataTag) {
++		return
++	}
++	data := bytes.TrimSpace(line[len(dataTag):])
++	if bytes.Equal(data, []byte("[DONE]")) {
++		helps.AppendAPIResponseChunk(ctx, cfg, line)
++		return
++	}
++	if !json.Valid(data) {
++		helps.AppendAPIResponseChunk(ctx, cfg, []byte(compatsafe.KindMalformedResponse.Body()))
++		return
++	}
++	if classified, body, failed := codexTerminalFailureErrWithCooling(data, modelLevelCooling); failed {
++		failure := codexKeyTerminalFailure(classified, body)
++		helps.AppendAPIResponseChunk(ctx, cfg, []byte(failure.msg))
++		return
++	}
++	helps.AppendAPIResponseChunk(ctx, cfg, line)
++}
++
 +// codexKeyHTTPFailure reads and classifies a non-2xx response of an API-key
 +// auth. It returns the safe failure and the body the caller may still
 +// examine locally (nil when the body overflowed the bound or could not be
@@ -396,11 +483,11 @@ new file mode 100644
 +	"testing"
 +	"time"
 +
-+	"github.com/router-for-me/CLIProxyAPI/v7/internal/compatsafe"
-+	"github.com/router-for-me/CLIProxyAPI/v7/internal/config"
-+	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/auth"
-+	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/executor"
-+	sdktranslator "github.com/router-for-me/CLIProxyAPI/v7/sdk/translator"
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/compatsafe"
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
++	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
++	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
++	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
 +	"github.com/tidwall/gjson"
 +)
 +
@@ -786,7 +873,7 @@ new file mode 100644
 diff --git a/internal/runtime/executor/codex_websockets_request.go b/internal/runtime/executor/codex_websockets_request.go
 --- a/internal/runtime/executor/codex_websockets_request.go
 +++ b/internal/runtime/executor/codex_websockets_request.go
-@@ -88,7 +88,7 @@ func applyCodexWebsocketHeaders(ctx context.Context, headers http.Header, auth *
+@@ -114,7 +114,7 @@
  	misc.EnsureHeader(headers, ginHeaders, "x-codex-turn-metadata", "")
  	misc.EnsureHeader(headers, ginHeaders, "x-client-request-id", "")
  	misc.EnsureHeader(headers, ginHeaders, "x-responsesapi-include-timing-metrics", "")
@@ -795,3 +882,184 @@ diff --git a/internal/runtime/executor/codex_websockets_request.go b/internal/ru
  	if nativeRequest {
  		misc.EnsureHeader(headers, ginHeaders, codexResponsesLiteHeader, "")
  	}
+diff --git a/internal/runtime/executor/codex_key_capture_test.go b/internal/runtime/executor/codex_key_capture_test.go
+new file mode 100644
+--- /dev/null
++++ b/internal/runtime/executor/codex_key_capture_test.go
+@@ -0,0 +1,176 @@
++package executor
++
++import (
++	"bytes"
++	"context"
++	"fmt"
++	"io"
++	"net/http"
++	"net/http/httptest"
++	"strings"
++	"testing"
++	"time"
++
++	"github.com/gin-gonic/gin"
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/logging"
++	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
++	coreexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
++	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
++)
++
++// Observe the real request-log sinks, not a shadow callback or the returned
++// error alone. FileBodySource appends bytes to actual temporary capture files.
++func codexCapturedRequest(t *testing.T, cfg *config.Config, auth *coreauth.Auth, mode string, fileBacked bool) ([]byte, []byte, error) {
++	t.Helper()
++	gin.SetMode(gin.TestMode)
++	ginCtx, _ := gin.CreateTestContext(httptest.NewRecorder())
++	ginCtx.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
++	var source *logging.FileBodySource
++	if fileBacked {
++		var err error
++		source, err = logging.NewFileBodySourceInDir(t.TempDir(), "response-capture")
++		if err != nil {
++			t.Fatal(err)
++		}
++		t.Cleanup(func() {
++			if err := source.Cleanup(); err != nil {
++				t.Error(err)
++			}
++		})
++		ginCtx.Set(logging.APIResponseSourceContextKey, source)
++	}
++	ctx, cancel := context.WithTimeout(context.WithValue(context.Background(), "gin", ginCtx), 10*time.Second)
++	defer cancel()
++	cfg.RequestLog = true
++	cfg.CommercialMode = false
++	cfg.Codex.StreamBootstrapBuffering = mode == "buffered"
++	exec := NewCodexExecutor(cfg)
++	req := coreexecutor.Request{Model: "gpt-5.5", Payload: []byte(`{"model":"gpt-5.5","input":[{"role":"user","content":"fixture"}]}`)}
++	opts := coreexecutor.Options{SourceFormat: sdktranslator.FormatOpenAIResponse}
++	var payload []byte
++	var failure error
++	if mode == "execute" {
++		response, err := exec.Execute(ctx, auth, req, opts)
++		payload, failure = response.Payload, err
++	} else {
++		opts.Stream = true
++		response, err := exec.ExecuteStream(ctx, auth, req, opts)
++		failure = err
++		if response != nil {
++			for chunk := range response.Chunks {
++				payload = append(payload, chunk.Payload...)
++				if failure == nil && chunk.Err != nil {
++					failure = chunk.Err
++				}
++			}
++		}
++	}
++	var captured []byte
++	if source != nil {
++		var err error
++		captured, err = source.Bytes()
++		if err != nil {
++			t.Fatal(err)
++		}
++	} else {
++		value, ok := ginCtx.Get("API_RESPONSE")
++		if !ok {
++			t.Fatal("request logging produced no response capture")
++		}
++		captured, ok = value.([]byte)
++		if !ok {
++			t.Fatal("unexpected response capture type")
++		}
++	}
++	if len(captured) == 0 {
++		t.Fatal("response capture is empty")
++	}
++	return payload, captured, failure
++}
++
++func TestCodexKeyTerminalFailureCapture(t *testing.T) {
++	events := map[string]string{
++		"failed":   `{"type":"response.failed","response":{"id":"capture","error":{"code":"server_error","message":"failure for ` + codexKeyTestSecret + `"}}}`,
++		"error":    `{"type":"error","error":{"code":"invalid_api_key","type":"authentication_error","message":"bad key ` + codexKeyTestSecret + `"}}`,
++		"overload": `{"type":"error","error":{"code":"server_is_overloaded","type":"service_unavailable_error","message":"overload for ` + codexKeyTestSecret + `"}}`,
++	}
++	for eventName, event := range events {
++		for _, split := range []bool{false, true} {
++			wire := "data: " + event + "\n\n"
++			if split {
++				cut := strings.Index(event, ",") + 1
++				wire = "data: " + event[:cut] + "\ndata: " + event[cut:] + "\n\n"
++			}
++			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++				_, _ = io.Copy(io.Discard, r.Body)
++				w.Header().Set("Content-Type", "text/event-stream")
++				_, _ = io.WriteString(w, "event: response.created\ndata: {\"type\":\"response.created\",\"response\":{\"id\":\"capture\"}}\n\n"+wire)
++			}))
++			for _, mode := range []string{"execute", "stream", "buffered"} {
++				for _, fileBacked := range []bool{false, true} {
++					for _, plain := range []bool{false, true} {
++						t.Run(fmt.Sprintf("%s/split=%t/%s/file=%t/plain=%t", eventName, split, mode, fileBacked, plain), func(t *testing.T) {
++							cfg := &config.Config{}
++							cfg.Codex.DisableCodexCloaking = plain
++							payload, captured, err := codexCapturedRequest(t, cfg, codexKeyTestAuth(server.URL, true), mode, fileBacked)
++							if err == nil {
++								t.Fatal("terminal failure was not returned")
++							}
++							for _, value := range [][]byte{captured, payload, []byte(err.Error())} {
++								if bytes.Contains(value, []byte(codexKeyTestSecret)) {
++									t.Fatal("credential-bearing terminal event escaped into capture or output")
++								}
++							}
++							if !bytes.Contains(captured, []byte(err.Error())) {
++								t.Fatal("capture does not contain the fixed local failure")
++							}
++						})
++					}
++				}
++			}
++			server.Close()
++		}
++	}
++}
++
++func TestCodexKeySuccessAndAccountCapture(t *testing.T) {
++	completed := "data: " + codexKeyTestCompleted() + "\n\n"
++	failure := "data: {\"type\":\"response.failed\",\"response\":{\"error\":{\"message\":\"" + codexKeyTestSecret + "\"}}}\n\n"
++	for _, success := range []bool{false, true} {
++		wire := failure
++		if success {
++			wire = completed
++		}
++		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++			_, _ = io.Copy(io.Discard, r.Body)
++			w.Header().Set("Content-Type", "text/event-stream")
++			_, _ = io.WriteString(w, wire)
++		}))
++		for _, apiKey := range []bool{false, true} {
++			if !success && apiKey {
++				continue
++			}
++			for _, mode := range []string{"execute", "stream", "buffered"} {
++				for _, fileBacked := range []bool{false, true} {
++					t.Run(fmt.Sprintf("success=%t/key=%t/%s/file=%t", success, apiKey, mode, fileBacked), func(t *testing.T) {
++						payload, captured, err := codexCapturedRequest(t, &config.Config{}, codexKeyTestAuth(server.URL, apiKey), mode, fileBacked)
++						if success {
++							if err != nil {
++								t.Fatal(err)
++							}
++							if !bytes.Contains(payload, []byte("ok")) || !bytes.Contains(captured, []byte(codexKeyTestCompleted())) {
++								t.Fatal("successful response or its capture changed")
++							}
++						} else {
++							if err == nil || !strings.Contains(err.Error(), codexKeyTestSecret) || !bytes.Contains(captured, []byte(codexKeyTestSecret)) {
++								t.Fatal("account failure/capture positive control changed")
++							}
++						}
++					})
++				}
++			}
++		}
++		server.Close()
++	}
++}

@@ -1,5 +1,5 @@
 diff --git a/internal/auth/claude/identity.go b/internal/auth/claude/identity.go
-index 3e4bde7..6aa13fd 100644
+index 3e4bde72..6aa13fd6 100644
 --- a/internal/auth/claude/identity.go
 +++ b/internal/auth/claude/identity.go
 @@ -189,6 +189,24 @@ func ReadMetadataString(metadata *map[string]any, key string) string {
@@ -28,7 +28,7 @@ index 3e4bde7..6aa13fd 100644
  // lock, initializing the map when needed. Empty values are skipped so callers can
  // forward optional fields without erasing a previously resolved value.
 diff --git a/internal/runtime/executor/claude_executor_auth.go b/internal/runtime/executor/claude_executor_auth.go
-index 0bc2a89..4dc4fff 100644
+index bffc428c..fdb2c67b 100644
 --- a/internal/runtime/executor/claude_executor_auth.go
 +++ b/internal/runtime/executor/claude_executor_auth.go
 @@ -34,13 +34,13 @@ func isClaudeSetupToken(auth *cliproxyauth.Auth, apiKey string) bool {
@@ -50,7 +50,7 @@ index 0bc2a89..4dc4fff 100644
  	if kind := strings.ToLower(auth.Attributes["auth_kind"]); kind == "setup_token" || kind == "setup-token" {
 diff --git a/internal/runtime/executor/claude_executor_auth_cm053_test.go b/internal/runtime/executor/claude_executor_auth_cm053_test.go
 new file mode 100644
-index 0000000..bc561bc
+index 00000000..fa1e1bbd
 --- /dev/null
 +++ b/internal/runtime/executor/claude_executor_auth_cm053_test.go
 @@ -0,0 +1,219 @@
@@ -65,10 +65,10 @@ index 0000000..bc561bc
 +	"testing"
 +	"time"
 +
-+	claudeauth "github.com/router-for-me/CLIProxyAPI/v7/internal/auth/claude"
-+	"github.com/router-for-me/CLIProxyAPI/v7/internal/config"
-+	"github.com/router-for-me/CLIProxyAPI/v7/internal/runtime/executor/helps"
-+	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/auth"
++	claudeauth "github.com/router-for-me/CLIProxyAPI/v8/internal/auth/claude"
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
++	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 +)
 +
 +// charmer: the setup-token flags are read through the typed

@@ -3,174 +3,174 @@
   "upstream": {
     "name": "CLIProxyAPI",
     "repository": "https://github.com/router-for-me/CLIProxyAPI",
-    "tag": "v7.3.15",
-    "version": "7.3.15",
-    "commit": "673131f57484517c3a1eae7e36c4cfa7b9bb4efc",
+    "tag": "v8.0.33",
+    "version": "8.0.33",
+    "commit": "2422c6b0f5fe16495320fa29456493874c1977a0",
     "license": "MIT",
-    "module": "github.com/router-for-me/CLIProxyAPI/v7",
+    "module": "github.com/router-for-me/CLIProxyAPI/v8",
     "main_package": "./cmd/server",
     "binary": "cli-proxy-api"
   },
   "source": {
-    "archive_url": "https://github.com/router-for-me/CLIProxyAPI/archive/673131f57484517c3a1eae7e36c4cfa7b9bb4efc.tar.gz",
-    "archive_file": "CLIProxyAPI-673131f57484517c3a1eae7e36c4cfa7b9bb4efc.tar.gz",
-    "archive_sha256": "66c1727f5447d5dd7eeec5a7b25e6e81c40a6516ff4778d423e2688e1161e71b",
-    "tree_sha256": "8e16856693412a7d1ebc0e7fec2c659f13bc90f740f9e1f641804aa597120b3c",
-    "nix_hash": "sha256-s6Vdpcl7Hr85azsZ2DpkEQyod9eE9UQizKiYAJtguwY="
+    "archive_url": "https://github.com/router-for-me/CLIProxyAPI/archive/2422c6b0f5fe16495320fa29456493874c1977a0.tar.gz",
+    "archive_file": "CLIProxyAPI-2422c6b0f5fe16495320fa29456493874c1977a0.tar.gz",
+    "archive_sha256": "6e7d5e1ec706a262f0a19223b9122ac876d2601c1ef44cc79b9aa64793995b8f",
+    "tree_sha256": "81b3a85fa058bd7e887b95a21670d13b10fa451ebe510ffdcd1fa84788230281",
+    "nix_hash": "sha256-HpsmjjMzVTnP+KcK6hy3cq3AHRsaCAVvgJdb9PKL7QU="
   },
   "vendor": {
-    "tree_sha256": "655b7a43a5ac4e9112dcb733e1033d71801c3c1b79d45f6db6a9802a273ae784",
-    "nix_hash": "sha256-EwaxCvKJdzUbhzu7wJAViaHcsGfA5y6FXpWInhvDkxU=",
+    "tree_sha256": "7cb61e9f98783c718e8f534af7a4811134c34ffca658740327fb7bce209be63c",
+    "nix_hash": "sha256-qbfl57bA06AhjdAjsU0ae2fAWTLCCAPTfE8K1lLKifo=",
     "modules_patch": {
       "basename": "cli-proxy-api-module-requirements.patch",
-      "sha256": "b7c3cb25251445494f6582ad158ed4874ee21b97c41d3dfd7d02b3c6dabe5876"
+      "sha256": "e4a58250cbb0c9521ac8d04d6651389c2ff4c2b58c515f35796a0d763d5d23b2"
     }
   },
   "toolchain": {
-    "version": "1.26.9",
+    "version": "1.27.2",
     "source": "https://go.dev/dl/?mode=json&include=all",
     "url_prefix": "https://go.dev/dl/",
     "archives": {
       "linux-amd64": {
-        "file": "go1.26.9.linux-amd64.tar.gz",
-        "sha256": "42d158b4d8f7b61ac0a830567c940a86098fb7aac52e467a5ebec03ef5cc2f8d"
+        "file": "go1.27.2.linux-amd64.tar.gz",
+        "sha256": "ecbadb99091a3f46e31f5f934b068b1864eafa7995211b39eaddf76996045fe5"
       },
       "linux-arm64": {
-        "file": "go1.26.9.linux-arm64.tar.gz",
-        "sha256": "4a97373d49fcacdcf3694fea368a500b00ee3e963974f3e7514132717632f052"
+        "file": "go1.27.2.linux-arm64.tar.gz",
+        "sha256": "94f3e30b8e374bc285e7dadc11e0865726b9bc6e85b841ccceaabc0214c6b7c8"
       },
       "darwin-arm64": {
-        "file": "go1.26.9.darwin-arm64.tar.gz",
-        "sha256": "f9bb7c0a02506c5d9bf0d1eb1f7ee6c7684f844ae49558308a0427b830e022cc"
+        "file": "go1.27.2.darwin-arm64.tar.gz",
+        "sha256": "76812b213b1b2302c978d28fa52fa92d541704b9e7d9d5db8002c50e4018c4c5"
       },
       "darwin-amd64": {
-        "file": "go1.26.9.darwin-amd64.tar.gz",
-        "sha256": "00c29e3d4c8562f547410daa18d2959b641bd691ab00c4a525ea817a0253d4bd"
+        "file": "go1.27.2.darwin-amd64.tar.gz",
+        "sha256": "587b59182488b23aa6e5fc25110405a3e0e5b38ed2f5b2f46ed13c32aee356fe"
       }
     }
   },
   "series": [
     {
       "basename": "cli-proxy-api-loopback-oauth.patch",
-      "sha256": "2eb510b85f5204820d7a3d70c9b9a7bce283b1a7f23ead305ddfe28d500163a5",
+      "sha256": "244e68528cbc72a636d112d4350c9e2e9aeb0c4b55c9097e08ee42a201fa22f4",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-kimi-claude-compat.patch",
-      "sha256": "135dadb71406136dc6e2ef1c46baa548d27cbf023c19dddce2e7d9de0f7ef9ae",
+      "sha256": "41a25ab3e9572c867234fe9d457ac89417f25de4719acbe7cc7e605dc4b3c234",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-non-claude-cache-retention.patch",
-      "sha256": "6e022c54355322e5a307156ec1301710d50faff3f75dfc058506b17c6145128b",
+      "sha256": "76fa4ad35ff93795c44a3bebfcbf4d0ef4cb856732c542f58572f972699d20c3",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-management-readonly-allowlist.patch",
-      "sha256": "f1320679a8dbb7254a94a9bdb6c0a2aba37d74ba9166dc3ca5caac36b76d133d",
+      "sha256": "457427db7f9ddcdf7f42a92ce77260d974a86c18a4145246ad30afabb6ed62bc",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-watcher-parentdir.patch",
-      "sha256": "c890605c3d4627f40fa214b9f564c6680b475e70644a30e289ff5e27a02c8d5a",
+      "sha256": "1402747fd59c576cfd5e42899e3654c132d5059c588ad9938bad6f732aad6815",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-serve-after-initial-auth-load.patch",
-      "sha256": "600f4c5bc0cf90dbd11ad5a48b84c007050a948efcc754b30648856f4e8bba70",
+      "sha256": "24bb8e3c6169457fe6e44985d02f6a0c60ab76d3643b8d30c49d1a2aee1b75b2",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-management-env-only.patch",
-      "sha256": "34174189f296f54022abbfffe2bd50275339e25189b0981e64013dcde8258fd8",
+      "sha256": "5874d2a7af548595443026f0b02d2f793200ff0cad1aa11b94c7637dda8528d7",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-credential-save-report.patch",
-      "sha256": "c04cc0fc0af41dca57a801e87ee8cf4e4aba8377c716a8ca2ff1621d0f8d5107",
+      "sha256": "2425f556aab2d6263cc2ed5530bb7d62e5bc1f6386d16d4dffd8a1671b982707",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-credentialed-redirects.patch",
-      "sha256": "bd5bb7fd5877a078ddeeb3287378c8dab8d201f1eaf9daa1e51b36e4ae310d44",
+      "sha256": "d9b4842f8fcde2ce7dd9c38d67d8e6f68e1b8801a3f927100ac2af31a81601ee",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-openai-compat-keyed-safety.patch",
-      "sha256": "3325d838983fa8d89a139ef63c4e395f81688e379fb3203be90fc39360c9e00e",
+      "sha256": "d47a5deb330bc62b0191fc791f866862d990a47553290686a3b2dc502c7c7ef0",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-auth-snapshot-locking.patch",
-      "sha256": "a6ecd426d45d91d74ef4c830982c1b0ad3b6f7dfcad3c0f1ff6123fbfe29dbfd",
+      "sha256": "66610b574c8cc480451d9399c7cc88d5a0b183da2ddb114d0ae48508a512341b",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-server-config-snapshot.patch",
-      "sha256": "dba871bd4822226c8471ce55c7a70d16aeb6c9e723feb388dcd3bf0df311dd95",
-      "admitted": true
-    },
-    {
-      "basename": "cli-proxy-api-plugin-host-locking.patch",
-      "sha256": "be26b87f742a3667ea11c6f6cb558efbeb77ee6fcd904ad838f16da4ca3ab165",
+      "sha256": "4ecd0ee369bfd32a6515ed2403a0f0d3870d326ea21f6d644a224607b7bb2d1f",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-claude-metadata-locking.patch",
-      "sha256": "2ef3f4369652b6f5947facd1954674a2844e70fea7c242d0d3d63b83e4ddcadd",
+      "sha256": "48122ca2d4e9086e8fac89bdcf61d3b1f3f3647a69d1589d8fac9bf4bf65f1cb",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-oauth-model-overlay.patch",
-      "sha256": "f3e1ff09984a5b8e3beb173a1e122e2a4ce14646ba1915df08344586cf6d6cd9",
+      "sha256": "49b822a4ccabcf35f2a3e395e61366104c9e314000f38500b467bcf123510c95",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-no-antigravity-egress.patch",
-      "sha256": "233443d22a411ee935b4c0776c26992543a5b97d1241784db5bf726ca80464c6",
+      "sha256": "106e865c8062c903bf25cc523e26089b2b710227808fe1e3d8f5532920efb5b0",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-codex-client-identity.patch",
-      "sha256": "b4ffbda891ee82dbd0441dfa6a6b1d154fd82be33dc4c5e2edb2526eeb041c65",
+      "sha256": "405f95472837d9ed335baf99e8f39f61934c453d8aa3bf04e0670b9144018dc2",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-antigravity-loopback-callback.patch",
-      "sha256": "f728ba3eb999266d30137cd7d4501d54cdb9613c2cc33579194a6d7b9a23a523",
+      "sha256": "0594e27c8978fb6f354317622fc66b477635164d56aef429e58f6590e0616d8b",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-codex-api-key-safety.patch",
-      "sha256": "b656f4cdfe4dfbe0d5d47f33f419d3a1416d9bff88f94b54deba2126dbb61628",
+      "sha256": "fa02ebceb0549b732664abbd5034a53d4e514c0f54697406e95a47ae59337ee5",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-refresh-shutdown-join.patch",
-      "sha256": "6474a404f9ecba94c07fc9415ffee3601059941101cbf944a17a623e5b80c8e3",
+      "sha256": "102e0be3ef3a546d672461a08b7a8d0e53588525cd93735c741f2f0aa077c05f",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-openai-content-chunks.patch",
-      "sha256": "f2db67071e99b3c106ea262502c04be887f6fb17277a848d0cdd6810f9b03025",
+      "sha256": "d167b000dee94c28296e6c62fc6a41989b4e90441743757a8956232d54769186",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-charmer-model-ids.patch",
-      "sha256": "dca1642ceec36e49ce975522696011081c1a7fe549e3d8009f7e667dff7c29e3",
+      "sha256": "00c2e621498482021d12902d2fccc2e2d59a71482eded48581d1dd511a34e48c",
+      "admitted": true
+    },
+    {
+      "basename": "cli-proxy-api-access-log-path-quoting.patch",
+      "sha256": "d06758cdb11c5dd4d5f088ecb1d1cf5ce6137c8c1eb24bcab0c6431de128fb31",
+      "admitted": true
+    },
+    {
+      "basename": "cli-proxy-api-codex-refresh-lead.patch",
+      "sha256": "dfd433f757e0dd22eb423f51e6bc4ed7049caa3dc358c54bbae9330e13e15a1c",
       "admitted": true
     }
   ],
-  "candidates": [
-    {
-      "basename": "cli-proxy-api-retry-after.patch",
-      "sha256": "549689030c364a9ad27727daa439fad130d2f4ccb07a624d61cc968e07130a63",
-      "admitted": false
-    }
-  ],
+  "candidates": [],
   "build": {
     "env": {
-      "CGO_ENABLED": "0"
+      "CGO_ENABLED": "0",
+      "GOTOOLCHAIN": "local"
     },
     "flags": [
       "-trimpath",
@@ -182,11 +182,15 @@
       "-w",
       "-buildid=",
       "-X",
-      "main.Version=7.3.15",
+      "main.Version=8.0.33",
       "-X",
-      "main.Commit=673131f57484517c3a1eae7e36c4cfa7b9bb4efc",
+      "main.Commit=2422c6b0f5fe16495320fa29456493874c1977a0",
       "-X",
       "main.BuildDate=1970-01-01T00:00:00Z"
+    ],
+    "godebug": [
+      "tracebacklabels=0",
+      "x509sslcertoverrideplatform=1"
     ]
   },
   "targets": [
@@ -274,11 +278,12 @@
       "packages": [
         "./internal/api/..."
       ],
-      "skip": "^(TestRedisProtocol_SUBSCRIBE_UsageSendsSupportRefresh|TestRedisProtocol_SUBSCRIBE_ErrorsReceivesErrorEvents|TestRedisProtocol_AUTH_And_PopContracts|TestOAuthCallbackRouteSkipsManagementKeyMiddleware|TestManagementUsageRequiresManagementAuthAndPopsArray|TestManagementPluginsRouteRegistered|TestManagementResponseExposesPluginSupportHeaderForCORS)$",
+      "skip": "^(TestRedisProtocol_SUBSCRIBE_UsageSendsSupportRefresh|TestRedisProtocol_SUBSCRIBE_ErrorsReceivesErrorEvents|TestRedisProtocol_AUTH_And_PopContracts|TestOAuthCallbackRouteSkipsManagementKeyMiddleware|TestManagementUsageRequiresManagementAuthAndPopsArray|TestManagementPluginsRouteRegistered|TestManagementResponseExposesPluginSupportHeaderForCORS|TestConfigV8ETagExposedForCORS|TestIssue5190ModelDetailLifecycle|TestIssue5190ModelDetailUsesVisibleCatalog|TestIssue5190ModelDetailHomeVisibility|TestAuditHomeCodexSearchBusyReturnsTrustedRetryAfter|TestAuditHomeCodexSearchBodyCloseBeforeRelease|TestHomeCodexAlphaSearchReportsUnauthorizedBeforeEarlyReturn|TestHomeCodexAlphaSearchEndsSelectionAcrossDirectHTTPPaths|TestCodexLiveRoutesRequireAuthAndAreRegistered|TestRealtimeStandardRoutesAndClientSecretAuth|TestCodexAlphaSearchForwardsRequest|TestCodexAlphaSearchUsesPluginProviderTargetModel|TestCodexAlphaSearchFallsBackWhenPluginDoesNotHandleRoute|TestCodexAlphaSearchRejectsUnsupportedPluginRouteTarget|TestCodexAlphaSearchSanitizesResponsesOnlyFields|TestCodexAlphaSearchCredentialPolicy|TestCodexAlphaSearchOptInAPIKeyUsesConfiguredEndpoint|TestCodexAlphaSearchOptInAPIKeyStripsCredentialPrefix|TestCodexAlphaSearchOptInAPIKeyResolvesModelAlias|TestCodexAlphaSearchOptInAPIKeyWithoutBaseURLFailsClosed|TestCodexAlphaSearchPassesGinContextToAuthSelection|TestCodexAlphaSearchUsesRequestIDForSessionAffinity|TestVideosRoutesKeepXAINativeAndExposeOpenAIPrefix|TestInteractionsRouteRegistered)$",
       "platforms": "portable",
       "race": false,
       "count": null,
       "expected_tests": [
+        "TestManagementAllowlist_RouteTableMatchesReview",
         "TestManagementAllowlist_EveryRegisteredRouteRefusedUnlessAllowlisted",
         "TestManagementAllowlist_KeyMiddlewareRunsOnlyOnAllowlistedRoutes",
         "TestManagementAllowlist_UnregisteredManagementPathsNeverReachKeyMiddleware",
@@ -291,6 +296,7 @@
         "TestManagementAllowlist_NonLoopbackHostRefusedAndNeverCounts",
         "TestManagementAllowlist_RemoteOverrideForcedOff",
         "TestManagementAllowlist_OAuthCallbackWithPendingSessionWritesNothing",
+        "TestManagementAllowlist_RefusedAPISurfaces",
         "TestManagementAllowlist_RESPSurfaceClosedWithoutKeyCheck"
       ]
     },
@@ -303,6 +309,30 @@
       "race": false,
       "count": null,
       "expected_tests": []
+    },
+    {
+      "name": "config-bytes-loader",
+      "packages": [
+        "./internal/config",
+        "./internal/watcher",
+        "./cmd/server"
+      ],
+      "run": "^(TestConfigBytesLoaderMatchesLoadConfigOptional|TestConfigBytesLoaderOptionalModeKeepsEmptyConfigs|TestConfigFileAccessCountsEverySeparateRead|TestConfigBytesLoaderStartupReadsOnceAndNeverWrites|TestObserveFileAccessCountsEverySeparateRead|TestConfigBytesReloadReadsOnceAndNeverWrites|TestConfigBytesReloadOfReadOnlyFileKeepsBytesAndMtime|TestStartupConfigReadOnceForPluginBootstrapAndRuntime|TestStartupConfigSnapshotOfAnotherPathReadsThatFile|TestStartupConfigSnapshotOfMissingFileKeepsOptionalSemantics)$",
+      "platforms": "linux",
+      "race": false,
+      "count": null,
+      "expected_tests": [
+        "TestConfigBytesLoaderMatchesLoadConfigOptional",
+        "TestConfigBytesLoaderOptionalModeKeepsEmptyConfigs",
+        "TestConfigFileAccessCountsEverySeparateRead",
+        "TestConfigBytesLoaderStartupReadsOnceAndNeverWrites",
+        "TestObserveFileAccessCountsEverySeparateRead",
+        "TestConfigBytesReloadReadsOnceAndNeverWrites",
+        "TestConfigBytesReloadOfReadOnlyFileKeepsBytesAndMtime",
+        "TestStartupConfigReadOnceForPluginBootstrapAndRuntime",
+        "TestStartupConfigSnapshotOfAnotherPathReadsThatFile",
+        "TestStartupConfigSnapshotOfMissingFileKeepsOptionalSemantics"
+      ]
     },
     {
       "name": "startup-gate",
@@ -330,13 +360,15 @@
         "./internal/config",
         "./internal/api"
       ],
-      "run": "^(TestManagementEnvOnly_LoadConfigDropsSecretKeyWithoutWriteBack|TestManagementEnvOnly_ReloadAndPayloadLoadsDropSecretKey|TestManagementEnvOnly_InitialConfigSecretDoesNotEnableManagement|TestManagementEnvOnly_ServerIgnoresConfigSecretAtStart|TestManagementEnvOnly_HotReloadedConfigSecretDoesNotEnableManagement|TestManagementEnvOnly_ReloadIgnoresConfigSecret|TestManagementEnvOnly_EnvSecretIsTheOnlyKey|TestManagementEnvOnly_AuthenticateManagementKeyIgnoresConfigSecret|TestManagementEnvOnly_EnvOnlyManagementUnchanged|TestManagementEnvOnly_LocalPasswordNeverAuthenticates|TestManagementEnvOnly_AuthenticateManagementKeyIgnoresLocalPassword|TestManagementEnvOnly_LocalPasswordStillGuardsKeepAlive)$",
+      "run": "^(TestManagementEnvOnly_LoadConfigDropsSecretKeyWithoutWriteBack|TestManagementEnvOnly_ReloadAndPayloadLoadsDropSecretKey|TestManagementEnvOnly_BothSpellingsIgnoredFileUntouched|TestManagementEnvOnly_V8MigrationKeepsSecuritySettings|TestManagementEnvOnly_InitialConfigSecretDoesNotEnableManagement|TestManagementEnvOnly_ServerIgnoresConfigSecretAtStart|TestManagementEnvOnly_HotReloadedConfigSecretDoesNotEnableManagement|TestManagementEnvOnly_ReloadIgnoresConfigSecret|TestManagementEnvOnly_EnvSecretIsTheOnlyKey|TestManagementEnvOnly_AuthenticateManagementKeyIgnoresConfigSecret|TestManagementEnvOnly_EnvOnlyManagementUnchanged|TestManagementEnvOnly_LocalPasswordNeverAuthenticates|TestManagementEnvOnly_AuthenticateManagementKeyIgnoresLocalPassword|TestManagementEnvOnly_LocalPasswordStillGuardsKeepAlive)$",
       "platforms": "portable",
       "race": false,
       "count": null,
       "expected_tests": [
         "TestManagementEnvOnly_LoadConfigDropsSecretKeyWithoutWriteBack",
         "TestManagementEnvOnly_ReloadAndPayloadLoadsDropSecretKey",
+        "TestManagementEnvOnly_BothSpellingsIgnoredFileUntouched",
+        "TestManagementEnvOnly_V8MigrationKeepsSecuritySettings",
         "TestManagementEnvOnly_InitialConfigSecretDoesNotEnableManagement",
         "TestManagementEnvOnly_ServerIgnoresConfigSecretAtStart",
         "TestManagementEnvOnly_HotReloadedConfigSecretDoesNotEnableManagement",
@@ -358,7 +390,28 @@
       "platforms": "portable",
       "race": false,
       "count": null,
-      "expected_tests": []
+      "expected_tests": [
+        "TestCM053CredentialSaveFullWriteReceipt",
+        "TestCM053CredentialSaveLineEndsAtEpoch",
+        "TestCM053CredentialSaveLiteralJSONControl",
+        "TestCM053CredentialSaveLiteralEventControl"
+      ]
+    },
+    {
+      "name": "sdk-service",
+      "packages": [
+        "./sdk/cliproxy"
+      ],
+      "skip": "^(TestEndToEndStatusPatch_RestoresModelsThroughServerPipeline|TestEndToEndAuthFileReplacement_RestoresModelsInV1ModelsWithoutRestart|TestEndToEndAuthFilePatch_RestoresModelsInV1ModelsWithoutRestart|TestManagementSequentialWritesSurviveStaleReload_Issue6631|TestManagementWriteDuringReloadReachesRuntime_Issue6631|TestPutOpenAICompatConcurrentWithAuthFieldsPatch_Issue6559|TestPutOpenAICompatConcurrentWithConfigReloadAndAuthUpdate_Issue6559|TestRegisterModelsForAuth_CredentialExcludedModelsOverrideGlobal|TestCodexExcludedModelsCredentialPriorityAfterPatchAndReload|TestRegisterModelsForAuth_PluginStaticModelsFollowExclusions|TestAntigravityModelsForHints_PluginStaticModelsFollowExclusions|TestPluginStaticModelAvailabilityFollowsCredentials|TestModelRegistrationAllowsIrrelevantConfigReload)$",
+      "platforms": "portable",
+      "race": false,
+      "count": null,
+      "expected_tests": [
+        "TestCM053OverlayGlobalExclusionsAuthoritativeForSeededRecord",
+        "TestLocalModeNoEgressSDKLocalModel",
+        "TestServiceShutdownJoinsRefresh",
+        "TestStartupGateDeadlineIgnoresManagerLock"
+      ]
     },
     {
       "name": "redirect-metadata",
@@ -484,13 +537,14 @@
       "packages": [
         "./internal/runtime/executor/helps"
       ],
-      "run": "^(TestCM053HelpsClientFactoriesCarrySameOriginPolicy|TestCM053UsageWrapperPreservesRedirectPolicy)$",
+      "run": "^(TestCM053HelpsClientFactoriesCarrySameOriginPolicy|TestCM053UsageWrapperPreservesRedirectPolicy|TestCM053DecoratedClientsKeepRedirectPolicy)$",
       "platforms": "linux",
       "race": true,
       "count": 100,
       "expected_tests": [
         "TestCM053HelpsClientFactoriesCarrySameOriginPolicy",
-        "TestCM053UsageWrapperPreservesRedirectPolicy"
+        "TestCM053UsageWrapperPreservesRedirectPolicy",
+        "TestCM053DecoratedClientsKeepRedirectPolicy"
       ]
     },
     {
@@ -557,29 +611,13 @@
       "packages": [
         "./sdk/api/handlers"
       ],
-      "run": "^(TestCM053ReloadConcurrentSDKHandlerConfig|TestCM053PluginHostConcurrentModelInterception|TestCM053PluginHostConcurrentExecutorLookup|TestCM053PluginHostTypedNilAndReentrantCallback)$",
+      "run": "^(TestCM053ReloadConcurrentSDKHandlerConfig|TestCM053ServedReadersUseRequestSnapshot)$",
       "platforms": "linux",
       "race": true,
       "count": 100,
       "expected_tests": [
         "TestCM053ReloadConcurrentSDKHandlerConfig",
-        "TestCM053PluginHostConcurrentModelInterception",
-        "TestCM053PluginHostConcurrentExecutorLookup",
-        "TestCM053PluginHostTypedNilAndReentrantCallback"
-      ]
-    },
-    {
-      "name": "race-handlers-openai",
-      "packages": [
-        "./sdk/api/handlers/openai"
-      ],
-      "run": "^(TestCM053ImagesKeepAliveUsesRequestSnapshot|TestCM053VideoBindingTTLUsesRequestSnapshot)$",
-      "platforms": "linux",
-      "race": true,
-      "count": 100,
-      "expected_tests": [
-        "TestCM053ImagesKeepAliveUsesRequestSnapshot",
-        "TestCM053VideoBindingTTLUsesRequestSnapshot"
+        "TestCM053ServedReadersUseRequestSnapshot"
       ]
     },
     {
@@ -603,6 +641,7 @@
         "TestCM053OverlayAbsentNoEffect",
         "TestCM053OverlayStaticWins",
         "TestCM053OverlayExclusionsApply",
+        "TestCM053OverlayGlobalExclusionsAuthoritativeForSeededRecord",
         "TestCM053OverlayCapabilityThroughAlias",
         "TestCM053OverlayPassThroughClaude",
         "TestCM053OverlayPassThroughCodex",
@@ -612,15 +651,21 @@
     {
       "name": "no-antigravity-egress",
       "packages": [
-        "./cmd/server"
+        "./cmd/server",
+        "./sdk/cliproxy",
+        "./internal/registry"
       ],
-      "run": "^(TestCM053NoAntigravityEgressLocalModel|TestCM053NoAntigravityEgressRemoteModel)$",
+      "run": "^(TestCM053NoAntigravityEgressLocalModel|TestCM053NoAntigravityEgressRemoteModel|TestLocalModeNoEgressSDKLocalModel|TestLocalModeNoEgressSDKRemoteModel|TestCM053LocalModeStartModelsUpdaterReadsEmbedded|TestCM053LocalModeRefusesRemoteCatalogSources)$",
       "platforms": "portable",
       "race": false,
       "count": null,
       "expected_tests": [
         "TestCM053NoAntigravityEgressLocalModel",
-        "TestCM053NoAntigravityEgressRemoteModel"
+        "TestCM053NoAntigravityEgressRemoteModel",
+        "TestLocalModeNoEgressSDKLocalModel",
+        "TestLocalModeNoEgressSDKRemoteModel",
+        "TestCM053LocalModeStartModelsUpdaterReadsEmbedded",
+        "TestCM053LocalModeRefusesRemoteCatalogSources"
       ]
     },
     {
@@ -628,7 +673,7 @@
       "packages": [
         "./internal/runtime/executor"
       ],
-      "run": "^(TestCM055CodexIdentityHTTPFinalHeaders|TestCM055CodexIdentityWebsocketFinalHeaders|TestCM055CodexIdentityVersionDefault|TestCM055CodexIdentityCloakingPrecedence|TestCM055CodexIdentityStaticOverrideException)$",
+      "run": "^(TestCM055CodexIdentityHTTPFinalHeaders|TestCM055CodexIdentityWebsocketFinalHeaders|TestCM055CodexIdentityVersionDefault|TestCM055CodexIdentityCloakingPrecedence|TestCM055CodexIdentityRoutingHintFinal|TestCM055CodexIdentityStaticOverrideException)$",
       "platforms": "portable",
       "race": false,
       "count": null,
@@ -637,6 +682,7 @@
         "TestCM055CodexIdentityWebsocketFinalHeaders",
         "TestCM055CodexIdentityVersionDefault",
         "TestCM055CodexIdentityCloakingPrecedence",
+        "TestCM055CodexIdentityRoutingHintFinal",
         "TestCM055CodexIdentityStaticOverrideException"
       ]
     },
@@ -659,7 +705,7 @@
       "packages": [
         "./internal/runtime/executor"
       ],
-      "run": "^(TestCodexKeyStatusFailureIsLocal|TestCodexKeyTerminalFailureIsLocal|TestCodexKeyTransportErrorIsLocal|TestCodexKeyErrorBodyReadIsBounded|TestCodexPlainKeyIdentity)$",
+      "run": "^(TestCodexKeyStatusFailureIsLocal|TestCodexKeyTerminalFailureIsLocal|TestCodexKeyTransportErrorIsLocal|TestCodexKeyErrorBodyReadIsBounded|TestCodexPlainKeyIdentity|TestCodexKeyTerminalFailureCapture|TestCodexKeySuccessAndAccountCapture)$",
       "platforms": "portable",
       "race": false,
       "count": null,
@@ -668,7 +714,9 @@
         "TestCodexKeyTerminalFailureIsLocal",
         "TestCodexKeyTransportErrorIsLocal",
         "TestCodexKeyErrorBodyReadIsBounded",
-        "TestCodexPlainKeyIdentity"
+        "TestCodexPlainKeyIdentity",
+        "TestCodexKeyTerminalFailureCapture",
+        "TestCodexKeySuccessAndAccountCapture"
       ]
     },
     {
@@ -686,9 +734,12 @@
         "TestRefreshShutdownCanceledAuthLockWaitDoesNotStartRefresh",
         "TestRefreshShutdownDeadline",
         "TestRefreshShutdownRepeatedStop",
-        "TestRefreshShutdownPreviousRunIsJoined"
+        "TestRefreshShutdownPreviousRunIsJoined",
+        "TestRefreshShutdownFencesRequestAdmission",
+        "TestRefreshShutdownRequestAdmissionRace",
+        "TestRefreshShutdownBackgroundStopKeepsRequest"
       ],
-      "run": "^(TestRefreshShutdownWaitsForExecutor|TestRefreshShutdownWaitsForDurableSave|TestRefreshShutdownSkipsQueuedJobs|TestRefreshShutdownCanceledAuthLockWaitDoesNotStartRefresh|TestRefreshShutdownDeadline|TestRefreshShutdownRepeatedStop|TestRefreshShutdownPreviousRunIsJoined)$"
+      "run": "^(TestRefreshShutdownWaitsForExecutor|TestRefreshShutdownWaitsForDurableSave|TestRefreshShutdownSkipsQueuedJobs|TestRefreshShutdownCanceledAuthLockWaitDoesNotStartRefresh|TestRefreshShutdownDeadline|TestRefreshShutdownRepeatedStop|TestRefreshShutdownPreviousRunIsJoined|TestRefreshShutdownFencesRequestAdmission|TestRefreshShutdownRequestAdmissionRace|TestRefreshShutdownBackgroundStopKeepsRequest)$"
     },
     {
       "name": "race-refresh-shutdown",
@@ -705,9 +756,12 @@
         "TestRefreshShutdownCanceledAuthLockWaitDoesNotStartRefresh",
         "TestRefreshShutdownDeadline",
         "TestRefreshShutdownRepeatedStop",
-        "TestRefreshShutdownPreviousRunIsJoined"
+        "TestRefreshShutdownPreviousRunIsJoined",
+        "TestRefreshShutdownFencesRequestAdmission",
+        "TestRefreshShutdownRequestAdmissionRace",
+        "TestRefreshShutdownBackgroundStopKeepsRequest"
       ],
-      "run": "^(TestRefreshShutdownWaitsForExecutor|TestRefreshShutdownWaitsForDurableSave|TestRefreshShutdownSkipsQueuedJobs|TestRefreshShutdownCanceledAuthLockWaitDoesNotStartRefresh|TestRefreshShutdownDeadline|TestRefreshShutdownRepeatedStop|TestRefreshShutdownPreviousRunIsJoined)$"
+      "run": "^(TestRefreshShutdownWaitsForExecutor|TestRefreshShutdownWaitsForDurableSave|TestRefreshShutdownSkipsQueuedJobs|TestRefreshShutdownCanceledAuthLockWaitDoesNotStartRefresh|TestRefreshShutdownDeadline|TestRefreshShutdownRepeatedStop|TestRefreshShutdownPreviousRunIsJoined|TestRefreshShutdownFencesRequestAdmission|TestRefreshShutdownRequestAdmissionRace|TestRefreshShutdownBackgroundStopKeepsRequest)$"
     },
     {
       "name": "service-refresh-shutdown",
@@ -718,9 +772,10 @@
       "race": false,
       "count": null,
       "expected_tests": [
-        "TestServiceShutdownJoinsRefresh"
+        "TestServiceShutdownJoinsRefresh",
+        "TestServiceShutdownJoinsRequestRefresh"
       ],
-      "run": "^(TestServiceShutdownJoinsRefresh)$"
+      "run": "^(TestServiceShutdownJoinsRefresh|TestServiceShutdownJoinsRequestRefresh)$"
     },
     {
       "name": "race-service-refresh-shutdown",
@@ -731,9 +786,10 @@
       "race": true,
       "count": 100,
       "expected_tests": [
-        "TestServiceShutdownJoinsRefresh"
+        "TestServiceShutdownJoinsRefresh",
+        "TestServiceShutdownJoinsRequestRefresh"
       ],
-      "run": "^(TestServiceShutdownJoinsRefresh)$"
+      "run": "^(TestServiceShutdownJoinsRefresh|TestServiceShutdownJoinsRequestRefresh)$"
     },
     {
       "name": "refresh-shutdown-file-store",
@@ -804,6 +860,36 @@
         "TestOtherModelIDsStayCloaked",
         "TestBuildResponseListsCharmerIDsLiterally"
       ]
+    },
+    {
+      "name": "access-log-quoting",
+      "packages": [
+        "./internal/logging"
+      ],
+      "run": "^(TestGinLogrusLoggerEscapesEncodedNewlineInPath|TestGinLogrusLoggerKeepsMaskedQueryReadable)$",
+      "platforms": "portable",
+      "race": false,
+      "count": null,
+      "expected_tests": [
+        "TestGinLogrusLoggerEscapesEncodedNewlineInPath",
+        "TestGinLogrusLoggerKeepsMaskedQueryReadable"
+      ]
+    },
+    {
+      "name": "codex-refresh-lead",
+      "packages": [
+        "./sdk/auth",
+        "./sdk/cliproxy/auth"
+      ],
+      "run": "^(TestProviderRefreshLeads|TestCodexRefreshLeadRegistry96HoursClaudeUnchanged|TestCodexRefreshLeadShouldRefreshAt96Hours)$",
+      "platforms": "portable",
+      "race": false,
+      "count": null,
+      "expected_tests": [
+        "TestProviderRefreshLeads",
+        "TestCodexRefreshLeadRegistry96HoursClaudeUnchanged",
+        "TestCodexRefreshLeadShouldRefreshAt96Hours"
+      ]
     }
   ],
   "source_pins": [
@@ -816,6 +902,16 @@
       "name": "credential-save-format",
       "path": "sdk/cliproxy/auth/credential_save.go",
       "text": "credential_save_v1 operation=%s result=%s provider=%s auth_index=%s credentials_changed=%t stage=%s errno=%d category=%s bytes=%d size=%d generation=%d epoch=%d"
+    },
+    {
+      "name": "log-line-format",
+      "path": "internal/logging/global_logger.go",
+      "text": "[%s] [%s] [%s] [%s:%d] %s%s"
+    },
+    {
+      "name": "log-report-caller",
+      "path": "internal/logging/global_logger.go",
+      "text": "log.SetReportCaller(true)"
     }
   ],
   "markers": [
@@ -837,7 +933,7 @@
     },
     {
       "patch": "cli-proxy-api-management-env-only.patch",
-      "text": "remote-management.secret-key is ignored: management authenticates only with MANAGEMENT_PASSWORD"
+      "text": "remote-management.secret-key and management.secret-key are ignored: management authenticates only with MANAGEMENT_PASSWORD"
     },
     {
       "patch": "cli-proxy-api-credential-save-report.patch",
