@@ -2274,7 +2274,7 @@ class EvidenceJobTests(unittest.TestCase):
         self.assertIn("gateway_probes.py compile", gateway)
         self.assertIn("needs: gateway", battery)
         order = ["setuptools==84.0.0", "name: gateway-dist", "name: gateway-probes", "gateway_probes.py provision",
-                 "curl --proto", "tools/test.py --tier full --claude \"$RUNNER_TEMP/claude\" --require 'DistributionTests'"]
+                 "curl --proto", "tools/test.py --tier full --verbose --claude \"$RUNNER_TEMP/claude\" --require 'DistributionTests'"]
         positions = [battery.index(needle) for needle in order]
         self.assertEqual(positions, sorted(positions))
         self.assertNotIn("--home inherit", battery)
