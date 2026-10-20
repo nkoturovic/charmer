@@ -492,6 +492,8 @@ class _CttyPipesChild:
     PTY master (the child's controlling terminal), never over the pipes.
     """
 
+    metadata_only_failures = False  # Selected diagnostic only; no extra capture I/O.
+
     def __init__(self, code: str, *, extra_env=None):
         self.master, slave = pty.openpty()
         _set_size(slave, 24, 80)
@@ -538,7 +540,9 @@ class _CttyPipesChild:
                 break
             self.output.extend(chunk)
         if needle not in self.output:
-            raise AssertionError(f"did not observe {needle!r}; output={bytes(self.output)!r}")
+            detail = (f"tty_bytes={len(self.output)}" if self.metadata_only_failures
+                      else f"output={bytes(self.output)!r}")
+            raise AssertionError(f"did not observe {needle!r}; {detail}")
         return bytes(self.output)
 
     def send(self, data: bytes) -> None:
@@ -561,7 +565,9 @@ class _CttyPipesChild:
         if self.process.poll() is None:
             self.process.kill()
             self.process.wait(timeout=2)
-            raise AssertionError(f"child timed out; output={bytes(self.output)!r}")
+            detail = (f"tty_bytes={len(self.output)}" if self.metadata_only_failures
+                      else f"output={bytes(self.output)!r}")
+            raise AssertionError(f"child timed out; {detail}")
         while True:
             ready, _, _ = select.select([self.master], [], [], 0.2)
             if not ready:
@@ -815,6 +821,7 @@ class BareLaunchAutoDetectionPTYTests(unittest.TestCase):
 _ALIAS_TTY_SNAPSHOT = """
 import os, termios
 from charmer import tui
+_alias_attrs_observer = None  # Enabled only by the selected diagnostic reader.
 
 def fd_identity(fd):
     info = os.fstat(fd)
@@ -828,18 +835,27 @@ stdio_before = [fd_identity(fd) for fd in (0, 1)]
 
 def assert_alias_restored():
     assert [fd_identity(fd) for fd in (0, 1)] == stdio_before, 'stdio descriptor restoration'
-    assert [termios.tcgetattr(stream.fileno()) for stream in alias_streams] == alias_before, 'exact alias attributes'
+    alias_after = [(_alias_attrs_observer.final_getattr(stream.fileno()) if _alias_attrs_observer is not None
+                    else termios.tcgetattr(stream.fileno())) for stream in alias_streams]
+    if _alias_attrs_observer is not None:
+        _alias_attrs_observer.emit()
+    assert alias_after == alias_before, 'exact alias attributes'
     assert tui._INPUT_STATE is None, 'input state cleanup'
     print('ALIAS_RESTORED=True', flush=True)
 """
 
 
-def _alias_reader_code(*, count: int = 1, close_input: bool = False, ignore_hup: bool = False) -> str:
+def _alias_reader_code(
+    *, count: int = 1, close_input: bool = False, ignore_hup: bool = False, attrs_diagnostics: bool = False,
+) -> str:
     """A native alias reader; the original stdout pipe keeps primary failures observable."""
 
+    setup = ("from _tty_attrs_diagnostics import install\n"
+             "_alias_attrs_observer = install(tui, alias_streams, alias_before)\n" if attrs_diagnostics else "")
     return f"""
 import codecs, json, locale, signal, sys
 {_ALIAS_TTY_SNAPSHOT}
+{setup}
 for name in ('C.UTF-8', 'en_US.UTF-8', 'UTF-8'):
     try:
         locale.setlocale(locale.LC_CTYPE, name)
@@ -905,18 +921,35 @@ class AliasInputHealthPTYTests(unittest.TestCase):
 
     def reader(self, **kwargs) -> _CttyPipesChild:
         child = self.child(_alias_reader_code(**kwargs))
+        child.metadata_only_failures = kwargs.get("attrs_diagnostics", False)
         child.read_until(b"ALIAS-INPUT-READY", FIXTURE_TIMEOUT)
         return child
 
-    def finish_keys(self, child: _CttyPipesChild, expected: list) -> None:
+    def finish_keys(self, child: _CttyPipesChild, expected: list, *, attrs_diagnostics: bool = False) -> None:
         code, tty_output, pipe_output = child.finish(TIMEOUT)
         output = tty_output + pipe_output
-        self.assertEqual(code, 0, output)
-        self.assertEqual(json.loads(_line_of(pipe_output, b"KEYS=")), expected)
-        self.assertIn(b"ALIAS_RESTORED=True", pipe_output)
-        self.assertNotIn(b"PRIMARY_INPUT_ERROR=", output)
-        self.assertNotIn(b"FAKE_LAUNCH", output)
-        self.assertNotIn(b"Traceback", output)
+        detail = output
+        if attrs_diagnostics:
+            from _tty_attrs_diagnostics import pipe_summary
+
+            detail = pipe_summary(pipe_output)
+            print("TTY_ATTRS_PIPE " + detail, flush=True)  # Retain metadata on a nonreproduction too.
+        self.assertEqual(code, 0, detail)
+        previous_long_message = self.longMessage
+        if attrs_diagnostics:
+            # Keep every original predicate/assertion, but do not let unittest
+            # append an unbounded repr of the compared pipe or combined TTY bytes.
+            self.longMessage = False
+        try:
+            message = detail if attrs_diagnostics else None
+            self.assertEqual(json.loads(_line_of(pipe_output, b"KEYS=")), expected, message)
+            self.assertIn(b"ALIAS_RESTORED=True", pipe_output, message)
+            self.assertNotIn(b"PRIMARY_INPUT_ERROR=", output, message)
+            self.assertNotIn(b"FAKE_LAUNCH", output, message)
+            self.assertNotIn(b"Traceback", output, message)
+        finally:
+            if attrs_diagnostics:
+                self.longMessage = previous_long_message
 
     def test_hung_up_alias_fails_in_the_reader_not_by_sighup_or_timeout(self) -> None:
         from charmer import tui
@@ -974,12 +1007,12 @@ class AliasInputHealthPTYTests(unittest.TestCase):
         self.assertNotIn(b"Traceback", output)
 
     def test_split_utf8_across_alias_idle_slices_preserves_the_character(self) -> None:
-        child = self.reader()
+        child = self.reader(attrs_diagnostics=True)
         child.send(b"\xe7")
         time.sleep(0.25)
-        self.assertIsNone(child.process.poll(), bytes(child.output))
+        self.assertIsNone(child.process.poll(), f"tty_bytes={len(child.output)}")
         child.send(b"\x95\x8c")
-        self.finish_keys(child, [["char", "界"]])
+        self.finish_keys(child, [["char", "界"]], attrs_diagnostics=True)
 
     def test_alt_unicode_across_alias_peek_expiry_keeps_order(self) -> None:
         child = self.reader(count=2)
