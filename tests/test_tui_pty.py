@@ -492,13 +492,20 @@ class _CttyPipesChild:
     PTY master (the child's controlling terminal), never over the pipes.
     """
 
-    def __init__(self, code: str, *, extra_env=None):
+    # Opt-in diagnostic target only; called after the existing reap, before
+    # stdout closes. Cleared at readiness so finish's normal report stays once.
+    pipe_failure_report = None
+
+    def __init__(self, code: str, *, extra_env=None, expose_slave_fd: bool = False):
         self.master, slave = pty.openpty()
         _set_size(slave, 24, 80)
         env = dict(os.environ)
         env.update({"PYTHONDONTWRITEBYTECODE": "1", "PYTHONPATH": str(SRC_ROOT), "TERM": "dumb"})
         if extra_env:
             env.update(extra_env)
+        if expose_slave_fd:
+            # Diagnostic target only; pass_fds and the terminal lifetime stay unchanged.
+            env["CHARMER_TEST_CTTY_SLAVE_FD"] = str(slave)
 
         def _attach_ctty() -> None:
             os.setsid()
@@ -538,7 +545,9 @@ class _CttyPipesChild:
                 break
             self.output.extend(chunk)
         if needle not in self.output:
-            raise AssertionError(f"did not observe {needle!r}; output={bytes(self.output)!r}")
+            detail = (f"tty_bytes={len(self.output)}" if self.pipe_failure_report is not None
+                      else f"output={bytes(self.output)!r}")
+            raise AssertionError(f"did not observe {needle!r}; {detail}")
         return bytes(self.output)
 
     def send(self, data: bytes) -> None:
@@ -594,6 +603,12 @@ class _CttyPipesChild:
         if self.process.stdin is not None:
             self.process.stdin.close()
         if self.process.stdout is not None:
+            report, self.pipe_failure_report = self.pipe_failure_report, None
+            if report is not None:
+                try:
+                    report(self.process.stdout, tty_bytes=len(self.output))
+                except Exception:
+                    pass  # Diagnostic reporting must not replace the original failure.
             self.process.stdout.close()
 
 
@@ -768,22 +783,33 @@ class BareLaunchAutoDetectionPTYTests(unittest.TestCase):
         # A capable TERM gets the card, on
         # /dev/tty (the PTY master), never on the pipes.
         from charmer import catalog
+        from _ctty_diagnostics import pipe_summary, report_unready_pipe
 
         temp = tempfile.mkdtemp(prefix="charmer-pty-ctty-curses-")
         self.addCleanup(__import__("shutil").rmtree, temp, True)
         child = _CttyPipesChild(
-            _fixture_card_code(temp, [], streams=False),
+            _fixture_card_code(
+                temp, [], streams=False,
+                setup=("import os\n"
+                       "from _ctty_diagnostics import install\n"
+                       "install(int(os.environ['CHARMER_TEST_CTTY_SLAVE_FD']))\n"),
+            ),
             extra_env={
                 "TERM": "xterm-256color",
                 "PYTHONPATH": os.pathsep.join([str(SRC_ROOT), str(TESTS_ROOT)]),
             },
+            expose_slave_fd=True,
         )
         self.addCleanup(child.close)
+        child.pipe_failure_report = report_unready_pipe
         profile_line = f"profile: {_expected_default(self)}".encode()
         child.read_until(CARD_READY, FIXTURE_TIMEOUT)
+        child.pipe_failure_report = None
         child.send(b"\x1b")
         returncode, tty_output, pipe_output = child.finish(FIXTURE_TIMEOUT)
-        self.assertEqual(returncode, 0, tty_output)
+        detail = pipe_summary(pipe_output, tty_bytes=len(tty_output))
+        print("CTTY_DIAGNOSTIC " + detail, flush=True)  # Keep observations even on a pass.
+        self.assertEqual(returncode, 0, detail)
         self.assertIn(profile_line, tty_output)
         self.assertNotIn(profile_line, pipe_output)
         self.assertNotIn(b"FAKE_LAUNCH", tty_output + pipe_output)
