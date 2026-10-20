@@ -953,6 +953,43 @@ with os.fdopen(fd, "w") as out: out.write(json.dumps({{"mode": {mode!r}}}) + "\\
     return source.encode()
 
 
+def _r19_timeout_record(case, run, completed_cases, error, hook_log_records, requests, lead, second):
+    """Only timeout metadata and recorded-request facts, never responses or UI acknowledgement."""
+
+    def count(value):
+        return value if type(value) is int and value >= 0 else None
+
+    models = None
+    if type(requests) is list:
+        models = []
+        for request in requests:
+            model = request.get("model") if type(request) is dict else None
+            models.append(model if type(model) is str and model else None)
+
+    def seen(selector):
+        if models is None or type(selector) is not str or not selector.removesuffix("[1m]"):
+            return None
+        if selector.removesuffix("[1m]") in models:
+            return True
+        return False if all(model is not None for model in models) else None
+
+    phase = getattr(error, "phase", None)
+    elapsed = getattr(error, "elapsed_seconds", None)
+    return {
+        "case": case if type(case) is str and case in _R19_CASES else "unknown",
+        "run": run if type(run) is str and re.fullmatch(r"run-[1-9][0-9]*", run) else None,
+        "completed_cases": count(completed_cases),
+        "phase": phase if type(phase) is str and phase in ("marker", "client-exit") else "unknown",
+        "completed_interactions": count(getattr(error, "completed_interactions", None)),
+        "total_interactions": count(getattr(error, "total_interactions", None)),
+        "elapsed_seconds": elapsed if type(elapsed) in (int, float) and 0 <= elapsed < float("inf") else None,
+        "hook_log_records": count(hook_log_records),
+        "recorded_requests": len(requests) if type(requests) is list else None,
+        "lead_model_seen": seen(lead),
+        "second_model_seen": seen(second),
+    }
+
+
 class MissingHookProbe(_ProbeCase, unittest.TestCase):
     """R19: the compiled PreModelSwitch fence when its shim cannot answer.
 
@@ -962,6 +999,36 @@ class MissingHookProbe(_ProbeCase, unittest.TestCase):
     removed or made non-executable just before ``/model``."""
 
     probe_id = "R19"
+
+    def _run_case(self, case, fixture, *, log, completed_cases, lead, second, **options):
+        # The outer observation finally creates another fixture. Capture this
+        # synthetic label before running, rather than looking at the later count.
+        run = f"run-{self.count}" if type(self.count) is int and self.count > 0 else None
+        try:
+            return self._run(fixture, model=lead, **options)
+        except probe.PTYTimeoutError as error:
+            try:
+                hook_log_records = requests = None
+                try:
+                    events = self._events(log)
+                    if type(events) is list:
+                        hook_log_records = len(events)
+                except Exception:
+                    pass  # Unavailable observations stay unknown, not zero.
+                try:
+                    saved = self.evidence.get(run)
+                    if type(saved) is dict:
+                        requests = saved.get("requests")
+                except Exception:
+                    pass
+                record = _r19_timeout_record(case, run, completed_cases, error,
+                                             hook_log_records, requests, lead, second)
+                print("client probe R19 timeout: " + json.dumps(record, sort_keys=True, allow_nan=False), flush=True)
+            except Exception:
+                # Diagnostic extraction/serialization/output cannot replace the
+                # timeout. BaseException is deliberately not caught: cancel wins.
+                pass
+            raise
 
     def _probe(self):
         outcomes = {}
@@ -1016,8 +1083,9 @@ class MissingHookProbe(_ProbeCase, unittest.TestCase):
                 probe.PTYInteraction(b"PROBE-OK", b"", preserve_after_wait=True),
                 probe.PTYInteraction(_PROMPT, b"/exit\r"),
             ]
-            result, _ = self._run(fixture, model=lead, document=document, steps=steps,
-                                  extra=("--add-dir", str(scope_path)), timeout=90)
+            result, _ = self._run_case(case, fixture, log=log, completed_cases=len(outcomes),
+                                       lead=lead, second=second, document=document, steps=steps,
+                                       extra=("--add-dir", str(scope_path)), timeout=90)
             self._complete(result)
             outcomes[case] = (any(row.model == second.removesuffix("[1m]") for row in result.requests),
                               len(self._events(log)))
@@ -1028,6 +1096,252 @@ class MissingHookProbe(_ProbeCase, unittest.TestCase):
                   + " ".join(f"{case}={'switched' if outcomes[case][0] else 'kept'}/{outcomes[case][1]}"
                              for case in _R19_CASES))
         return observed, detail
+
+
+class MissingHookTimeoutDiagnosticTests(unittest.TestCase):
+    """Pure failure-local controls; _run and mode-log reads are mocked."""
+
+    def setUp(self):
+        self.case = MissingHookProbe("test_observation")
+        self.case.count = 3
+        self.lead, self.second = "fixture-lead[1m]", "fixture-second[1m]"
+        self.fixture, self.log = object(), object()
+        self.options = {"document": {"private": "PRIVATE-DOCUMENT"}, "steps": [object()],
+                        "extra": ("--add-dir", "PRIVATE-FIXTURE-PATH"), "timeout": 90}
+        self.error = probe.PTYTimeoutError("marker", 4, 6, 90.0)
+        self.saved = {"requests": [
+            {"model": "fixture-lead", "headers": "PRIVATE-HEADERS", "body": "PRIVATE-BODY"},
+            {"model": "fixture-second", "sha256": "PRIVATE-HASH"}],
+            "stdout": "PRIVATE-STDIO", "response": "PRIVATE-RESPONSE"}
+        self.case.evidence = {"run-3": self.saved}
+        self.case._run = mock.Mock(side_effect=self.error)
+        self.case._events = mock.Mock(return_value=[{"mode": "missing"}])
+        output = mock.patch("builtins.print")
+        self.emit = output.start()
+        self.addCleanup(output.stop)
+
+    def invoke(self, case="missing", completed_cases=2):
+        return self.case._run_case(case, self.fixture, log=self.log, completed_cases=completed_cases,
+                                   lead=self.lead, second=self.second, **self.options)
+
+    def record(self):
+        self.emit.assert_called_once()
+        self.assertEqual(self.emit.call_args.kwargs, {"flush": True})
+        text, = self.emit.call_args.args
+        prefix = "client probe R19 timeout: "
+        self.assertTrue(text.startswith(prefix))
+        self.assertNotIn("\n", text)
+        return json.loads(text[len(prefix):])
+
+    def assert_original_timeout(self, **kwargs):
+        with self.assertRaises(probe.PTYTimeoutError) as raised:
+            self.invoke(**kwargs)
+        self.assertIs(raised.exception, self.error)
+        self.case._run.assert_called_once_with(self.fixture, model=self.lead, **self.options)
+
+    def test_one_flushed_timeout_line_has_exact_allowlist(self):
+        saved = copy.deepcopy(self.case.evidence)
+        self.assert_original_timeout()
+        self.assertEqual(self.record(), {
+            "case": "missing", "run": "run-3", "completed_cases": 2,
+            "phase": "marker", "completed_interactions": 4, "total_interactions": 6,
+            "elapsed_seconds": 90.0, "hook_log_records": 1, "recorded_requests": 2,
+            "lead_model_seen": True, "second_model_seen": True,
+        })
+        self.case._events.assert_called_once_with(self.log)
+        self.assertEqual(self.case.evidence, saved)
+        text = self.emit.call_args.args[0]
+        self.assertNotIn("PRIVATE-", text)
+        self.assertNotIn("fixture-lead", text)
+        self.assertNotIn("fixture-second", text)
+
+    def test_each_fixed_case_is_identified_without_an_extra_run(self):
+        self.assertEqual(_R19_CASES, ("deny", "allow", "missing", "not-executable", "crash", "invalid-json", "timeout"))
+        for index, case in enumerate(_R19_CASES, 1):
+            with self.subTest(case=case):
+                self.case.count = index
+                self.case.evidence = {f"run-{index}": self.saved}
+                self.case._run.reset_mock()
+                self.emit.reset_mock()
+                self.assert_original_timeout(case=case, completed_cases=index - 1)
+                record = self.record()
+                self.assertEqual((record["case"], record["run"], record["completed_cases"]),
+                                 (case, f"run-{index}", index - 1))
+
+    def test_run_label_is_captured_before_any_later_count_change(self):
+        self.case.evidence["run-4"] = {"requests": []}
+
+        def fail(*args, **kwargs):
+            self.case.count += 1
+            raise self.error
+
+        self.case._run.side_effect = fail
+        self.assert_original_timeout()
+        record = self.record()
+        self.assertEqual(record["run"], "run-3")
+        self.assertEqual(record["recorded_requests"], 2)
+        self.assertIs(record["second_model_seen"], True)
+
+    def test_success_and_non_timeout_failures_emit_nothing(self):
+        result = (SimpleNamespace(timed_out=True, returncode=1), object())
+        for error in (None, probe.ProbeError("PRIVATE-ERROR"), AssertionError("PRIVATE-ERROR"),
+                      OSError("PRIVATE-ERROR"), KeyboardInterrupt(), SystemExit(130)):
+            with self.subTest(kind=type(error).__name__):
+                self.case._run.reset_mock()
+                self.case._events.reset_mock()
+                self.emit.reset_mock()
+                self.case._run.side_effect = error
+                self.case._run.return_value = result
+                if error is None:
+                    self.assertIs(self.invoke(), result)
+                else:
+                    with self.assertRaises(type(error)) as raised:
+                        self.invoke()
+                    self.assertIs(raised.exception, error)
+                self.case._run.assert_called_once_with(self.fixture, model=self.lead, **self.options)
+                self.case._events.assert_not_called()
+                self.emit.assert_not_called()
+
+    def test_unknown_cases_and_unavailable_metadata_are_not_zero_or_false(self):
+        self.case.evidence = {}
+        self.case._events.side_effect = OSError("PRIVATE-LOG-ERROR")
+        for case in (None, "PRIVATE-CASE", {"case": "deny"}, ("deny",)):
+            self.case._run.reset_mock()
+            self.emit.reset_mock()
+            self.assert_original_timeout(case=case, completed_cases=None)
+            record = self.record()
+            self.assertEqual(record["case"], "unknown")
+            for key in ("completed_cases", "hook_log_records", "recorded_requests", "lead_model_seen", "second_model_seen"):
+                self.assertIsNone(record[key])
+            self.assertNotIn("PRIVATE-", self.emit.call_args.args[0])
+
+    def test_observed_empty_logs_and_requests_are_known_zero(self):
+        self.case.evidence = {"run-3": {"requests": []}}
+        self.case._events.return_value = []
+        self.assert_original_timeout()
+        record = self.record()
+        self.assertEqual(record["hook_log_records"], 0)
+        self.assertEqual(record["recorded_requests"], 0)
+        self.assertIs(record["lead_model_seen"], False)
+        self.assertIs(record["second_model_seen"], False)
+
+    def test_flags_use_recorded_requests_not_responses_or_unrelated_runs(self):
+        self.case.evidence = {
+            "run-2": self.saved, "run-4": self.saved,
+            "run-3": {"requests": [{"model": "fixture-other"}],
+                      "response": {"model": "fixture-second", "text": "PROBE-OK"}},
+        }
+        self.assert_original_timeout()
+        record = self.record()
+        self.assertEqual(record["recorded_requests"], 1)
+        self.assertIs(record["lead_model_seen"], False)
+        self.assertIs(record["second_model_seen"], False)
+
+    def test_missing_request_models_stay_unknown_unless_positively_seen(self):
+        variants = [
+            (None, None, None, None), ({}, None, None, None),
+            ([{}], 1, None, None), ([{"model": None}], 1, None, None),
+            ([{"model": ""}], 1, None, None),
+            ([{"model": "fixture-lead"}, {}], 2, True, None),
+            ([{"model": "fixture-second"}, object()], 2, None, True),
+        ]
+        for requests, count, lead, second in variants:
+            self.case.evidence = {"run-3": {"requests": requests}}
+            self.case._run.reset_mock()
+            self.emit.reset_mock()
+            self.assert_original_timeout()
+            record = self.record()
+            self.assertEqual((record["recorded_requests"], record["lead_model_seen"], record["second_model_seen"]),
+                             (count, lead, second))
+
+    def test_unrecognized_timeout_fields_and_run_labels_are_not_serialized(self):
+        self.case.count = "PRIVATE-RUN"
+        self.error.phase = "PRIVATE-PHASE\nPRIVATE-STDIO"
+        self.error.completed_interactions = True
+        self.error.total_interactions = "PRIVATE-TOTAL"
+        self.error.args = ("PRIVATE-ERROR-REPR",)
+        self.error.stdout = "PRIVATE-STDIO"
+        self.case._events.return_value = None
+        for elapsed in (None, "PRIVATE-ELAPSED", -1, float("nan"), float("inf")):
+            self.error.elapsed_seconds = elapsed
+            self.case._run.reset_mock()
+            self.emit.reset_mock()
+            self.assert_original_timeout(completed_cases=False)
+            record = self.record()
+            self.assertIsNone(record["run"])
+            self.assertEqual(record["phase"], "unknown")
+            for key in ("completed_cases", "completed_interactions", "total_interactions", "elapsed_seconds",
+                        "hook_log_records", "recorded_requests", "lead_model_seen", "second_model_seen"):
+                self.assertIsNone(record[key])
+            self.assertNotIn("PRIVATE-", self.emit.call_args.args[0])
+
+    def test_diagnostic_extraction_serialization_and_output_failures_keep_timeout_identity(self):
+        for target in ("events", "evidence", "record", "serialization", "output"):
+            with self.subTest(target=target):
+                self.case._run.reset_mock()
+                self.emit.reset_mock()
+                failure = ValueError("PRIVATE-DIAGNOSTIC-ERROR")
+                if target == "events":
+                    patch = mock.patch.object(self.case, "_events", side_effect=failure)
+                elif target == "evidence":
+                    patch = mock.patch.object(self.case, "evidence", None)
+                elif target == "record":
+                    patch = mock.patch(__name__ + "._r19_timeout_record", side_effect=failure)
+                elif target == "serialization":
+                    patch = mock.patch.object(json, "dumps", side_effect=failure)
+                else:
+                    patch = mock.patch("builtins.print", side_effect=OSError("PRIVATE-OUTPUT-ERROR"))
+                with patch as replaced:
+                    self.assert_original_timeout()
+                    if target == "output":
+                        replaced.assert_called_once()
+                if target in ("events", "evidence"):
+                    record = self.record()
+                    self.assertIsNone(record["hook_log_records" if target == "events" else "recorded_requests"])
+                else:
+                    self.emit.assert_not_called()
+
+    def test_cancellation_during_diagnostics_is_not_swallowed(self):
+        for target in ("events", "serialization", "output"):
+            for cancellation in (KeyboardInterrupt(), SystemExit(130)):
+                with self.subTest(target=target, kind=type(cancellation).__name__):
+                    self.case._run.reset_mock()
+                    self.emit.reset_mock()
+                    if target == "events":
+                        patch = mock.patch.object(self.case, "_events", side_effect=cancellation)
+                    elif target == "serialization":
+                        patch = mock.patch.object(json, "dumps", side_effect=cancellation)
+                    else:
+                        patch = mock.patch("builtins.print", side_effect=cancellation)
+                    with patch, self.assertRaises(type(cancellation)) as raised:
+                        self.invoke()
+                    self.assertIs(raised.exception, cancellation)
+                    self.case._run.assert_called_once_with(self.fixture, model=self.lead, **self.options)
+                    self.emit.assert_not_called()
+
+    def test_outer_finally_increment_does_not_relabel_failure_or_turn_it_into_a_pass(self):
+        previous = getattr(MissingHookProbe, "verdict", None)
+
+        def final_fixture():
+            self.case.count += 1
+            return self.fixture
+
+        try:
+            with mock.patch.object(self.case, "_probe", side_effect=self.invoke), \
+                    mock.patch.object(self.case, "_fixture", side_effect=final_fixture), \
+                    mock.patch.object(probe, "write_evidence") as write:
+                with self.assertRaisesRegex(AssertionError, "stdio deliberately not retained") as raised:
+                    self.case.test_observation()
+            self.assertIs(raised.exception.__context__, self.error)
+            self.case._run.assert_called_once_with(self.fixture, model=self.lead, **self.options)
+            self.assertEqual(self.case.count, 4)
+            self.assertEqual(self.record()["run"], "run-3")
+            self.assertNotEqual(MissingHookProbe.verdict[0], "PASS")
+            self.assertNotIn("R19", _DIAGNOSTICS)
+            self.assertEqual(_ESSENTIAL_CLASSES["R19"], ("R19-closed",))
+            write.assert_called_once_with(self.fixture, "r19", self.case.evidence)
+        finally:
+            MissingHookProbe.verdict = previous
 
 
 class _ToolsRecorder(_Recorder):
