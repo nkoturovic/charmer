@@ -495,7 +495,7 @@ D11_UNRESOLVED = "unresolved-capture"
 # identity inside metadata.user_id (device_id/account_uuid), a subagent's
 # per-agent conversation session_id derived exactly from the client's own
 # session_id and X-Claude-Code-Agent-Id (every other member preserved), the
-# billing block's cch= attestation, and D212's exact preserved-thinking replay
+# billing block's cch= attestation, and the exact preserved-thinking replay
 # block_binding addition (not cloaking; its beta is tested on the actual wire).
 D11_AGENT_SESSION = "metadata.user_id.session_id:agent-conversation"
 D11_THINKING_BINDING = "thinking:block-binding"
@@ -715,7 +715,7 @@ def d11_body_delta(client_raw: bytes, upstream_raw: bytes, agent_id: str | None 
 
 
 def _binding_only_delta(client, upstream) -> bool:
-    """D212: not cloaked; a preserved-thinking replay may gain block_binding.
+    """Not cloaked; a preserved-thinking replay may gain block_binding.
 
     Match the exact pinned executor operation, not any thinking change. The
     traffic probe separately asserts the accompanying beta on the real wire.

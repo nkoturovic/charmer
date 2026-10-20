@@ -125,7 +125,7 @@ func TestOmissionMetadataLock(t *testing.T) {
 	wg.Wait()
 }
 
-// D217 uses real response bodies and the shipped transport selection. A fresh
+// These probes use real response bodies and the shipped transport selection. A fresh
 // test process owns its CA before crypto/x509 caches roots; no transport or
 // global keepalive policy is changed to make the uTLS cases pass.
 func d217FreshTLSProcess(t *testing.T) bool {
@@ -138,7 +138,7 @@ func d217FreshTLSProcess(t *testing.T) bool {
 	if err != nil {
 		t.Fatal(err)
 	}
-	template := &x509.Certificate{SerialNumber: big.NewInt(217), Subject: pkix.Name{CommonName: "D217 fixture"},
+	template := &x509.Certificate{SerialNumber: big.NewInt(217), Subject: pkix.Name{CommonName: "gateway transport fixture"},
 		DNSNames: []string{"chatgpt.com"}, NotBefore: time.Now().Add(-time.Minute), NotAfter: time.Now().Add(time.Hour),
 		KeyUsage:    x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature,
 		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}, BasicConstraintsValid: true, IsCA: true}
