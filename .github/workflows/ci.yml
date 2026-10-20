@@ -276,15 +276,18 @@ jobs:
           url=$(python3 -c 'import sys; sys.path.insert(0, "src"); from charmer import acquire, pin, strict_json; c = strict_json.load("src/charmer/data/catalog/native-contract.json"); print(acquire.download_url(pin.version(c), pin.host_platform()))')
           curl --proto '=https' --tlsv1.2 -fsSL --retry 3 -o "$RUNNER_TEMP/claude" "$url"
           chmod 755 "$RUNNER_TEMP/claude"
+      - name: ISO-8859-1 locale for the full-suite fixtures
+        run: |
+          umask 077
+          # Full-suite locale fixtures need this on every Python leg, without
+          # changing the job's locale. The dedicated 3.15 step reuses it.
+          sudo localedef -i en_US -f ISO-8859-1 en_US.ISO-8859-1
       - name: Read-only interpreter for isolated probes
         run: |
           umask 077
           # setup-python's toolcache executable can be group-writable;
           # isolated probes deliberately refuse group/other-writable programs.
           python3 -c 'import os, sys; os.chmod(os.path.realpath(sys.executable), 0o555)'
-          # Full-suite locale fixtures need this on every Python leg, without
-          # changing the job's locale. The dedicated 3.15 step reuses it.
-          sudo localedef -i en_US -f ISO-8859-1 en_US.ISO-8859-1
       - name: Full suite except the terminal journeys (tests skipped for a missing boundary say so; the distribution tests must run)
         env:
           CHARMER_TEST_DIST_GATEWAY: ${{ runner.temp }}/gateway-dist
