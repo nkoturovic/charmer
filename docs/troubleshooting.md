@@ -209,6 +209,23 @@ More: [guides/sessions.md](guides/sessions.md).
 | implementers “unavailable here” | start the session in a Git repository (`git init`) |
 | Remote Control, `/schedule` or claude.ai connectors are missing | expected in managed sessions; use plain `claude` for these |
 
+### Late-stream completion limit
+
+With Claude Code 2.1.302 and the tested CLIProxyAPI 8.0.33 gateway candidate,
+a stream missing `message_stop` after completed content and a terminal
+`message_delta` can make the client report success without recovery, despite
+the gateway's SSE error. A successful client result is not proof of complete
+stream framing.
+
+The corrected paired fixtures preserved final text and reported usage, with
+one fixture-tool call per tool case. This is a bounded known negative, not
+recovery or proof of harmlessness. The fixtures use buffered SSE
+reconstruction: they do not establish eager delivery, timing, general
+exactly-once behavior, broader no-loss behavior or a prior-version baseline.
+
+Earlier-cut recovery remains a separate required gate. Changed client or
+gateway bytes require fresh qualification.
+
 ## Platforms and files
 
 | Symptom | Fix |
