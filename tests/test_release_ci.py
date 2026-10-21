@@ -557,7 +557,7 @@ exit "$FIXTURE_STATUS"
     CHMOD_STUB = r"""set -e
 [ "$#" -eq 2 ] && [ "$1" = 600 ] && [ "$2" = "$RUNNER_TEMP/private-identifiers.tsv" ] || exit 64
 [ "$FIXTURE_CHMOD_STATUS" -eq 0 ] || exit "$FIXTURE_CHMOD_STATUS"
-exec "$FIXTURE_CHMOD" "$@"
+exec -a chmod "$FIXTURE_CHMOD" "$@"
 """
 
     @staticmethod
@@ -666,6 +666,26 @@ exec "$FIXTURE_CHMOD" "$@"
         self.assertEqual(self.github_env.read_bytes(), f"CHARMER_PRIVATE_IDENTIFIERS={target}\n".encode("utf-8"))
         self.assertNotIn(str(target), result.stdout + result.stderr)
         self.assertFalse(self.argv.exists())
+
+    def test_guarded_chmod_changes_only_the_materialization_file(self) -> None:
+        target = self.runner / "private-identifiers.tsv"
+        sibling = self.tmp / "outside-sibling.tsv"
+        content = b"fixture chmod content\n"
+        for path in (target, sibling):
+            path.write_bytes(content)
+            path.chmod(0o644)
+            self.assertEqual(path.stat().st_mode & 0o777, 0o644)
+        for mode, path, status in (("600", target, 0), ("644", target, 64), ("600", sibling, 64)):
+            with self.subTest(mode=mode, target=path.name):
+                result = subprocess.run([str(self.bash), "--noprofile", "--norc", "-e", "-o", "pipefail",
+                                         str(self.bin / "chmod"), mode, str(path)],
+                                        cwd=self.tmp, env=self.env, stdin=subprocess.DEVNULL,
+                                        capture_output=True, text=True, encoding="utf-8", timeout=10)
+                self.assertEqual((result.returncode, result.stdout, result.stderr), (status, "", ""))
+                self.assertEqual(target.stat().st_mode & 0o777, 0o600)
+                self.assertEqual(sibling.stat().st_mode & 0o777, 0o644)
+                self.assertEqual(target.read_bytes(), content)
+                self.assertEqual(sibling.read_bytes(), content)
 
     def test_empty_or_unavailable_input_creates_no_list(self) -> None:
         for changes in ({}, {"PRIVATE_IDENTIFIERS": ""}):
