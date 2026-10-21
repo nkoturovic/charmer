@@ -23,7 +23,7 @@ from pathlib import Path
 
 
 from _layout import FLAKE_NIX as _FLAKE, NIX_DIR, PATCH_DIR, REPO_ROOT, RESOURCES_ROOT
-from _layout import UPSTREAM_JSON, installed_paths, logical_path, pyproject, tree_files
+from _layout import UPSTREAM_JSON, installed_paths, load_tool, logical_path, pyproject, tree_files
 from charmer import legacy
 
 # None inside the Nix sandbox tree, which stages no flake.nix/flake.lock.
@@ -1427,36 +1427,328 @@ class AdmittedPatchGateTests(unittest.TestCase):
         self.assertIn(row, harness.gateway_check_selections())
         self.assertEqual(harness.PATCH_ROWS["cli-proxy-api-no-antigravity-egress.patch"], (row,))
 
-    def test_credential_literal_goldens_are_required_by_existing_gate(self):
-        roots = {
-            "sdk/auth/filestore_cm053_test.go": (
-                "TestCM053CredentialSaveFullWriteReceipt", "TestCM053CredentialSaveLiteralJSONControl"),
-            "sdk/cliproxy/auth/credential_save_line_test.go": (
-                "TestCM053CredentialSaveLineEndsAtEpoch", "TestCM053CredentialSaveLiteralEventControl"),
-        }
-        record = gate("credential-store")
-        self.assertFalse(record.get("run"), "retain the complete existing package selection")
-        self.assertEqual(set(record["expected_tests"]), {root for group in roots.values() for root in group})
-        patch = (PATCH_DIR / "cli-proxy-api-credential-save-report.patch").read_text()
-        sources = {}
-        for path, names in roots.items():
-            chunk = patch.split("+++ b/" + path + "\n", 1)[1].split("\ndiff --git ", 1)[0]
-            sources[path] = "\n".join(line[1:] for line in chunk.splitlines() if line.startswith("+"))
+    CREDENTIAL_GOLDEN_ROOTS = {
+        "sdk/auth": (
+            "TestCM053CredentialSaveFullWriteReceipt", "TestCM053CredentialSaveLiteralJSONControl"),
+        "sdk/cliproxy/auth": (
+            "TestCM053CredentialSaveLineEndsAtEpoch", "TestCM053CredentialSaveLiteralEventControl"),
+    }
+
+    # Refuse Go filename platform constraints, including historical port names,
+    # rather than infer eligibility from this test runner's host platform.
+    CREDENTIAL_GO_FILE_TAGS = frozenset((
+        "aix android darwin dragonfly freebsd hurd illumos ios js linux nacl netbsd openbsd "
+        "plan9 solaris wasip1 windows zos 386 amd64 amd64p32 arm armbe arm64 arm64be loong64 "
+        "mips mipsle mips64 mips64le mips64p32 mips64p32le ppc ppc64 ppc64le riscv riscv64 "
+        "s390 s390x sparc sparc64 wasm"
+    ).split())
+
+    def _credential_golden_sources(self, patch):
+        """Unique ordinary declarations in complete, unconditional owning files.
+
+        This replaces a basename pin with a declaration-based static contract:
+        legal neutral filenames may change. It is not a general Go parser;
+        compilation/listing in the unchanged two-package gate remains authoritative.
+        Return the original added text, never the lexical mask, for the goldens.
+        """
+        build = load_tool("build")
+        scan = load_tool("history_scan")
+        try:
+            files = build.patch_files(patch)
+        except build.BuildError as exc:
+            self.fail(f"invalid credential patch: {exc}")
+        paths = [entry["path"] for entry in files]
+        self.assertEqual(len(paths), len(set(paths)), "repeated patch file sections")
+        lines = patch.encode("utf-8").splitlines(keepends=True)
+        boundaries = [index for index, line in enumerate(lines) if line.startswith(b"diff --git ")]
+        self.assertTrue(boundaries, "credential patch has no sections")
+        self.assertEqual(boundaries[0], 0, "credential patch must not have a wrapper")
+        self.assertEqual(len(boundaries), len(files))
+        owners = {name: directory for directory, names in self.CREDENTIAL_GOLDEN_ROOTS.items() for name in names}
+        declarations = re.compile(rb"(?m)^[ \t]*func[ \t]+(" + b"|".join(name.encode("ascii") for name in owners) + rb")\b")
+        found = {name: [] for name in owners}
+        raw_sources = {}
+        for entry, start, end in zip(files, boundaries, [*boundaries[1:], len(lines)]):
+            section = lines[start:end]
+            header = scan._PATCH_HEADER.fullmatch(section[0])
+            self.assertIsNotNone(header, "invalid outer patch header")
+            self.assertTrue(scan._valid_patch_section(section, header), "incomplete or unsupported patch section")
+            path = entry["path"]
+            self.assertEqual(header.group(2).decode("ascii"), path)
+            if entry["change"] != "added" or not path.endswith(".go"):
+                continue
+            # The section validator requires one full, addition-only hunk for
+            # a new file, so every byte below belongs to its original source.
+            hunk, = [index for index, line in enumerate(section) if line.startswith(b"@@ ")]
+            source = b"".join(line[1:] for line in section[hunk + 1:])
+            if not any(name.encode("ascii") in source for name in owners):
+                continue
+            code = scan._go_code(source)
+            self.assertIsNotNone(code, "required roots need lexically established Go code")
+            matches = list(declarations.finditer(code))
+            if not matches:
+                continue
+            directory, _, basename = path.rpartition("/")
+            self.assertTrue(basename.endswith("_test.go") and not basename.startswith((".", "_")),
+                            "required roots must be in eligible Go test files")
+            # Go examines the part before the first dot, then strips a final
+            # _test before checking OS/architecture suffixes after an underscore.
+            suffixes = basename.split(".", 1)[0].split("_")[1:]
+            if suffixes and suffixes[-1] == "test":
+                suffixes.pop()
+            self.assertFalse(suffixes and suffixes[-1] in self.CREDENTIAL_GO_FILE_TAGS,
+                             "required roots must not have filename build constraints")
+            package = scan._GO_PACKAGE.match(code)
+            self.assertIsNotNone(package, "required roots need a real package declaration")
+            self.assertEqual(package.group(1), b"auth", "required roots belong to package auth")
+            self.assertIsNone(re.search(rb"(?m)^[ \t]*//[ \t]*(?:go:build|\+build)\b",
+                                        source[:package.start(1)]), "required roots must be unconditional")
+            # Only top-level ordinary functions with the required test signature
+            # count. Masked comments/literals cannot introduce declarations or
+            # alter delimiter depth; no Go syntax/type checking is claimed here.
+            starts = {match.start() for match in matches}
+            stack = []
+            closing = {ord("}"): ord("{"), ord(")"): ord("("), ord("]"): ord("[")}
+            for offset, byte in enumerate(code):
+                if offset in starts:
+                    self.assertFalse(stack, "required roots must be top-level ordinary functions")
+                if byte in (ord("{"), ord("("), ord("[")):
+                    stack.append(byte)
+                elif byte in closing:
+                    self.assertTrue(stack and stack.pop() == closing[byte], "unbalanced Go source")
+            self.assertFalse(stack, "incomplete Go source")
+            for match in matches:
+                name = match.group(1).decode("ascii")
+                self.assertEqual(directory, owners[name], f"{name}: wrong owning directory")
+                self.assertIsNotNone(re.match(rb"[ \t]*\([ \t]*t[ \t]+\*[ \t]*testing\.T[ \t]*\)[ \t]*\{",
+                                              code[match.end():]), f"{name}: require an ordinary func(t *testing.T)")
+                found[name].append(path)
+            raw_sources[path] = source.decode("utf-8")
+        selected = {}
+        for directory, names in self.CREDENTIAL_GOLDEN_ROOTS.items():
             for name in names:
-                self.assertIn("func " + name + "(t *testing.T)", sources[path])
-        stored = sources["sdk/auth/filestore_cm053_test.go"]
+                self.assertEqual(len(found[name]), 1, f"{name}: require exactly one declaration")
+            locations = {path for name in names for path in found[name]}
+            self.assertEqual(len(locations), 1, f"{directory}: both roots must share one unique file")
+            path, = locations
+            selected[path] = raw_sources[path]
+        return selected
+
+    def _assert_credential_golden_gate(self, record):
+        self.assertEqual(record["packages"], ["./sdk/auth", "./sdk/cliproxy/auth"])
+        self.assertFalse(record.get("run"), "retain the complete existing package selection")
+        self.assertFalse(record.get("skip"), "do not narrow the complete package selection")
+        expected = {root for group in self.CREDENTIAL_GOLDEN_ROOTS.values() for root in group}
+        self.assertEqual(set(record["expected_tests"]), expected)
+        self.assertEqual(len(record["expected_tests"]), len(expected))
+
+    def _assert_credential_literal_goldens(self, sources):
+        # These source tripwires are not a proof of every golden byte. The
+        # unchanged Go tests own persisted-byte/event comparisons and mutations.
+        stored, = (source for path, source in sources.items() if path.rpartition("/")[0] == "sdk/auth")
         receipt = stored.split("func TestCM053CredentialSaveFullWriteReceipt(", 1)[1].split("\nfunc ", 1)[0]
         self.assertIn("want := []byte(fxFullWriteJSONGolden)", receipt)
         self.assertNotIn("json.Marshal", receipt)
         self.assertIn('const fxFullWriteJSONGolden = `{"access_token":', stored)
         self.assertIn("return bytes.Equal(got, want)", stored)
-        events = sources["sdk/cliproxy/auth/credential_save_line_test.go"]
+        events, = (source for path, source in sources.items() if path.rpartition("/")[0] == "sdk/cliproxy/auth")
         self.assertIn('auth.Index = "0123456789abcdef"', events)
         self.assertIn("fxLiteralEventMatches(raw, fxLiteralEventBodies[index])", events)
         for operation, result in (("refresh", "persisted"), ("result", "failed")):
             self.assertIn(f'"credential_save_v1 operation={operation} result={result} provider=claude '
                           "auth_index=0123456789abcdef", events)
         self.assertIn('bytes.Replace(line, []byte("epoch=7"), []byte("epoch=8"), 1)', events)
+
+    def test_credential_literal_goldens_are_required_by_existing_gate(self):
+        self._assert_credential_golden_gate(gate("credential-store"))
+        patch = (PATCH_DIR / "cli-proxy-api-credential-save-report.patch").read_bytes().decode("utf-8")
+        self._assert_credential_literal_goldens(self._credential_golden_sources(patch))
+
+    def _credential_file_patch(self, path, source):
+        """One synthetic complete new file; never writes or changes the real patch."""
+        self.assertTrue(source.endswith("\n"))
+        lines = source.splitlines(keepends=True)
+        return (f"diff --git a/{path} b/{path}\nnew file mode 100644\n"
+                f"--- /dev/null\n+++ b/{path}\n@@ -0,0 +1,{len(lines)} @@\n"
+                + "".join("+" + line for line in lines))
+
+    def _credential_fixture_files(self):
+        patch = (PATCH_DIR / "cli-proxy-api-credential-save-report.patch").read_bytes().decode("utf-8")
+        sources = self._credential_golden_sources(patch)
+        self._assert_credential_literal_goldens(sources)  # intact positive before mutation controls
+        renamed = patch
+        files = {}
+        for path, source in sources.items():
+            neutral = path.rpartition("/")[0] + "/credential_golden_test.go"
+            # Rename only these added-file headers in the complete public patch;
+            # the selected source and every other section stay byte-for-byte.
+            for before, after in (
+                (f"diff --git a/{path} b/{path}\n", f"diff --git a/{neutral} b/{neutral}\n"),
+                (f"+++ b/{path}\n", f"+++ b/{neutral}\n"),
+            ):
+                self.assertEqual(renamed.count(before), 1)
+                renamed = renamed.replace(before, after, 1)
+            self.assertNotIn(neutral, files)
+            files[neutral] = source
+        self.assertEqual(self._credential_golden_sources(renamed), files)
+        synthetic = "".join(self._credential_file_patch(path, source) for path, source in files.items())
+        self.assertEqual(self._credential_golden_sources(synthetic), files)
+        return files
+
+    def test_credential_golden_selection_accepts_neutral_filenames(self):
+        files = self._credential_fixture_files()
+        patch = "".join(self._credential_file_patch(path, source) for path, source in files.items())
+        selected = self._credential_golden_sources(patch)
+        self.assertEqual(selected, files)
+        self._assert_credential_literal_goldens(selected)
+
+    def test_credential_golden_selection_rejects_wrong_ownership(self):
+        files = self._credential_fixture_files()
+        for path, source in files.items():
+            directory = path.rpartition("/")[0]
+            others = "".join(self._credential_file_patch(name, text) for name, text in files.items() if name != path)
+            cases = (
+                ("nested", directory + "/nested/credential_golden_test.go", source),
+                ("other-directory", "sdk/other_auth/credential_golden_test.go", source),
+                ("external-package", path, source.replace("package auth\n", "package auth_test\n", 1)),
+                ("wrong-package", path, source.replace("package auth\n", "package other\n", 1)),
+                ("comment-package", path, source.replace("package auth\n", "// package auth\npackage other\n", 1)),
+            )
+            for label, changed_path, changed_source in cases:
+                with self.subTest(path=path, case=label), self.assertRaises(AssertionError):
+                    self._credential_golden_sources(others + self._credential_file_patch(changed_path, changed_source))
+
+    def test_credential_golden_selection_rejects_missing_or_fake_declarations(self):
+        files = self._credential_fixture_files()
+        for path, source in files.items():
+            directory = path.rpartition("/")[0]
+            others = "".join(self._credential_file_patch(name, text) for name, text in files.items() if name != path)
+            with self.subTest(path=path, case="missing-file"), self.assertRaises(AssertionError):
+                self._credential_golden_sources(others)
+            for name in self.CREDENTIAL_GOLDEN_ROOTS[directory]:
+                declaration = f"func {name}(t *testing.T) {{"
+                self.assertEqual(source.count(declaration), 1)
+                renamed = source.replace(declaration, f"func Renamed{name}(t *testing.T) {{", 1)
+                fake = declaration + "}\n"
+                cases = (
+                    ("renamed", renamed),
+                    ("line-comment", renamed + "\n// " + fake),
+                    ("block-comment", renamed + "\n/*\n" + fake + "*/\n"),
+                    ("raw-string", renamed + "\nvar fixtureDeclarationText = `\n" + fake + "`\n"),
+                    ("quoted-string", renamed + f'\nvar fixtureDeclarationText = "{fake.rstrip()}"\n'),
+                    ("wrong-signature", source.replace(declaration, f"func {name}(b *testing.B) {{", 1)),
+                    ("generic", source.replace(declaration, f"func {name}[T any](t *testing.T) {{", 1)),
+                    ("receiver", renamed + f"\ntype fixtureReceiver struct{{}}\nfunc (fixtureReceiver) {name}(t *testing.T) {{}}\n"),
+                    ("nested", renamed + "\nfunc fixtureNested() {\n" + fake + "}\n"),
+                )
+                for label, changed in cases:
+                    with self.subTest(name=name, case=label), self.assertRaises(AssertionError):
+                        self._credential_golden_sources(others + self._credential_file_patch(path, changed))
+
+    def test_credential_golden_selection_rejects_ambiguity_and_split_pairs(self):
+        files = self._credential_fixture_files()
+        patch = "".join(self._credential_file_patch(path, source) for path, source in files.items())
+        for path, source in files.items():
+            directory = path.rpartition("/")[0]
+            first, second = self.CREDENTIAL_GOLDEN_ROOTS[directory]
+            others = "".join(self._credential_file_patch(name, text) for name, text in files.items() if name != path)
+            split = others + "".join(self._credential_file_patch(directory + f"/part_{index}_test.go",
+                f'package auth\n\nimport "testing"\n\nfunc {name}(t *testing.T) {{}}\n')
+                for index, name in enumerate((first, second)))
+            cases = (
+                ("duplicate-declaration", others + self._credential_file_patch(path,
+                    source + f"\nfunc {first}(t *testing.T) {{}}\n")),
+                ("duplicate-wrong-signature", others + self._credential_file_patch(path,
+                    source + f"\nfunc {first}(b *testing.B) {{}}\n")),
+                ("ambiguous-file", patch + self._credential_file_patch(directory + "/other_golden_test.go", source)),
+                ("repeated-section", patch + self._credential_file_patch(path, source)),
+                ("split-pair", split),
+            )
+            for label, changed in cases:
+                with self.subTest(path=path, case=label), self.assertRaises(AssertionError):
+                    self._credential_golden_sources(changed)
+
+    def test_credential_golden_selection_rejects_incomplete_patch_sections(self):
+        files = self._credential_fixture_files()
+        patch = "".join(self._credential_file_patch(path, source) for path, source in files.items())
+        extra = self._credential_file_patch("other/fixture.txt", "synthetic\n")
+        cases = (
+            ("missing-newline", patch[:-1]),
+            ("truncated-hunk", patch.rsplit("\n", 2)[0] + "\n"),
+            ("late-truncated-non-go", patch + extra.rsplit("\n", 2)[0] + "\n"),
+            ("late-incomplete-header", patch + "diff --git a/other/fixture.txt b/other/fixture.txt\n"),
+            ("repeated-non-go", patch + extra + extra),
+            ("wrapper", "synthetic wrapper\n" + patch),
+        )
+        for label, changed in cases:
+            with self.subTest(case=label), self.assertRaises(AssertionError):
+                self._credential_golden_sources(changed)
+
+    def test_credential_golden_selection_rejects_ineligible_or_constrained_files(self):
+        files = self._credential_fixture_files()
+        for path, source in files.items():
+            directory = path.rpartition("/")[0]
+            others = "".join(self._credential_file_patch(name, text) for name, text in files.items() if name != path)
+            for basename in ("credential_golden.go", "credential_golden_test.go.txt", "_credential_golden_test.go",
+                             ".credential_golden_test.go", "credential_golden_linux_test.go",
+                             "credential_golden_windows_test.go", "credential_golden_aix_test.go",
+                             "credential_golden_amd64_test.go", "credential_golden_386_test.go",
+                             "credential_golden_linux_arm64_test.go", "credential_golden_mips64le_test.go",
+                             "credential_golden_wasm_test.go", "credential_linux.extra_test.go"):
+                with self.subTest(path=path, filename=basename), self.assertRaises(AssertionError):
+                    self._credential_golden_sources(others + self._credential_file_patch(directory + "/" + basename, source))
+            for constraint in ("//go:build linux\n\n", "// +build ignore\n\n", "//go:build !ignore\n\n"):
+                with self.subTest(path=path, constraint=constraint), self.assertRaises(AssertionError):
+                    self._credential_golden_sources(others + self._credential_file_patch(path, constraint + source))
+            modified = self._credential_file_patch(path, source).replace("new file mode 100644\n", "", 1)
+            modified = modified.replace("--- /dev/null\n", f"--- a/{path}\n", 1)
+            with self.subTest(path=path, case="not-added"), self.assertRaises(AssertionError):
+                self._credential_golden_sources(others + modified)
+
+    def test_credential_literal_golden_tripwires_reject_bad_wiring(self):
+        files = self._credential_fixture_files()
+        mutations = (
+            ("sdk/auth", "want := []byte(fxFullWriteJSONGolden)", 'want := []byte("changed")'),
+            ("sdk/auth", "func TestCM053CredentialSaveFullWriteReceipt(t *testing.T) {\n",
+             "func TestCM053CredentialSaveFullWriteReceipt(t *testing.T) {\n\t_ = json.Marshal\n"),
+            ("sdk/auth", 'const fxFullWriteJSONGolden = `{"access_token":',
+             'const fxFullWriteJSONGolden = `{"changed_token":'),
+            ("sdk/auth", "return bytes.Equal(got, want)", "return true"),
+            ("sdk/cliproxy/auth", 'auth.Index = "0123456789abcdef"', 'auth.Index = "fedcba9876543210"'),
+            ("sdk/cliproxy/auth", "fxLiteralEventMatches(raw, fxLiteralEventBodies[index])",
+             'fxLiteralEventMatches(raw, "changed")'),
+            ("sdk/cliproxy/auth", '"credential_save_v1 operation=refresh result=persisted provider=claude auth_index=0123456789abcdef',
+             '"credential_save_v1 operation=refresh result=persisted provider=claude auth_index=fedcba9876543210'),
+            ("sdk/cliproxy/auth", '"credential_save_v1 operation=result result=failed provider=claude auth_index=0123456789abcdef',
+             '"credential_save_v1 operation=result result=failed provider=claude auth_index=fedcba9876543210'),
+            ("sdk/cliproxy/auth", 'bytes.Replace(line, []byte("epoch=7"), []byte("epoch=8"), 1)',
+             'bytes.Replace(line, []byte("epoch=7"), []byte("epoch=9"), 1)'),
+        )
+        for directory, before, after in mutations:
+            path = directory + "/credential_golden_test.go"
+            self.assertIn(before, files[path])
+            changed = {**files, path: files[path].replace(before, after)}
+            patch = "".join(self._credential_file_patch(name, source) for name, source in changed.items())
+            sources = self._credential_golden_sources(patch)  # ownership must still pass
+            with self.subTest(directory=directory, mutation=before), self.assertRaises(AssertionError):
+                self._assert_credential_literal_goldens(sources)
+
+    def test_credential_literal_golden_gate_rejects_narrowed_selection(self):
+        record = gate("credential-store")
+        self._assert_credential_golden_gate(record)
+        changes = [
+            ("first-package-only", {"packages": record["packages"][:1]}),
+            ("second-package-only", {"packages": record["packages"][1:]}),
+            ("package-glob", {"packages": ["./sdk/auth/...", "./sdk/cliproxy/auth"]}),
+            ("run-filter", {"run": "^TestCM053CredentialSave"}),
+            ("skip-filter", {"skip": "TestCM053CredentialSaveLiteralJSONControl"}),
+            ("duplicate-root", {"expected_tests": record["expected_tests"] + record["expected_tests"][:1]}),
+        ]
+        changes.extend(("missing-" + name, {"expected_tests": [root for root in record["expected_tests"] if root != name]})
+                       for name in record["expected_tests"])
+        for label, change in changes:
+            with self.subTest(case=label), self.assertRaises(AssertionError):
+                self._assert_credential_golden_gate({**record, **change})
 
     def test_credential_receipt_format_is_pinned(self):
         self.assertEqual(gate("credential-store")["packages"], ["./sdk/auth", "./sdk/cliproxy/auth"])
