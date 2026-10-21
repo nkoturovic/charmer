@@ -126,23 +126,38 @@ jobs:
             printf '%s\n' "$PRIVATE_IDENTIFIERS" >"$list"
             chmod 600 "$list"
             echo "CHARMER_PRIVATE_IDENTIFIERS=$list" >>"$GITHUB_ENV"
+            echo "private_input=supplied"
           else
-            echo "no private identifier list (secret CHARMER_PRIVATE_IDENTIFIERS is not set): the generic identifier checks run"
+            echo "private_input=unavailable; generic checks only"
           fi
       - name: Secret and identifier scan of the new commits
         env:
           RANGE: ${{ steps.range.outputs.range }}
         run: |
           umask 077
-          if [ -n "$RANGE" ]; then
-            python3 tools/history_scan.py --repo . --range "$RANGE"
-          else
-            python3 tools/history_scan.py --repo .
+          private_input=unavailable
+          if [ -n "${CHARMER_PRIVATE_IDENTIFIERS:-}" ]; then
+            private_input=supplied
           fi
+          status=0
+          if [ -n "$RANGE" ]; then
+            python3 tools/history_scan.py --repo . --range "$RANGE" >/dev/null 2>&1 || status=$?
+          else
+            python3 tools/history_scan.py --repo . >/dev/null 2>&1 || status=$?
+          fi
+          printf 'private_check=history status=%s private_input=%s\n' "$status" "$private_input"
+          exit "$status"
       - name: Hygiene
         run: |
           umask 077
-          python3 tools/test.py tests.test_hygiene tests.test_docs_vocabulary tests.test_history_scan
+          private_input=unavailable
+          if [ -n "${CHARMER_PRIVATE_IDENTIFIERS:-}" ]; then
+            private_input=supplied
+          fi
+          status=0
+          python3 tools/test.py tests.test_hygiene tests.test_docs_vocabulary tests.test_history_scan >/dev/null 2>&1 || status=$?
+          printf 'private_check=hygiene status=%s private_input=%s\n' "$status" "$private_input"
+          exit "$status"
       - name: Generated documentation
         run: |
           umask 077

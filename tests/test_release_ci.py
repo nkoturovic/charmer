@@ -373,7 +373,7 @@ class WorkflowTests(unittest.TestCase):
         for needle in ("PRIVATE_IDENTIFIERS: ${{ secrets.CHARMER_PRIVATE_IDENTIFIERS }}", "umask 077",
                        'if [ -n "$PRIVATE_IDENTIFIERS" ]; then', 'chmod 600 "$list"',
                        'echo "CHARMER_PRIVATE_IDENTIFIERS=$list" >>"$GITHUB_ENV"',
-                       "the generic identifier checks run"):
+                       'echo "private_input=supplied"', 'echo "private_input=unavailable; generic checks only"'):
             self.assertIn(needle, step)
         run = step.split("run: |", 1)[1]
         self.assertNotIn("${{", run)  # the secret reaches the shell only through the environment
@@ -498,6 +498,216 @@ class WorkflowTests(unittest.TestCase):
         result = subprocess.run(["actionlint", *(str(WORKFLOWS_DIR / n) for n in WORKFLOWS)], capture_output=True,
                                 text=True, timeout=120, stdin=subprocess.DEVNULL, cwd=REPO_ROOT)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+
+@requires_release_tree
+class PrivateCheckOutputTests(unittest.TestCase):
+    """Only three closed fast-lane bodies run, with synthetic input and
+    fixture-only commands; consumer diagnostics must never escape them."""
+
+    BODIES = {
+        "Private identifier list": r"""umask 077
+if [ -n "$PRIVATE_IDENTIFIERS" ]; then
+  list="$RUNNER_TEMP/private-identifiers.tsv"
+  printf '%s\n' "$PRIVATE_IDENTIFIERS" >"$list"
+  chmod 600 "$list"
+  echo "CHARMER_PRIVATE_IDENTIFIERS=$list" >>"$GITHUB_ENV"
+  echo "private_input=supplied"
+else
+  echo "private_input=unavailable; generic checks only"
+fi
+""",
+        "Secret and identifier scan of the new commits": r"""umask 077
+private_input=unavailable
+if [ -n "${CHARMER_PRIVATE_IDENTIFIERS:-}" ]; then
+  private_input=supplied
+fi
+status=0
+if [ -n "$RANGE" ]; then
+  python3 tools/history_scan.py --repo . --range "$RANGE" >/dev/null 2>&1 || status=$?
+else
+  python3 tools/history_scan.py --repo . >/dev/null 2>&1 || status=$?
+fi
+printf 'private_check=history status=%s private_input=%s\n' "$status" "$private_input"
+exit "$status"
+""",
+        "Hygiene": r"""umask 077
+private_input=unavailable
+if [ -n "${CHARMER_PRIVATE_IDENTIFIERS:-}" ]; then
+  private_input=supplied
+fi
+status=0
+python3 tools/test.py tests.test_hygiene tests.test_docs_vocabulary tests.test_history_scan >/dev/null 2>&1 || status=$?
+printf 'private_check=hygiene status=%s private_input=%s\n' "$status" "$private_input"
+exit "$status"
+""",
+    }
+    INPUT = "identifier\tfixture-only\nidentifier\tfixture-second $value 'quoted' $(printf fixture-only)\n"
+    PYTHON_STUB = r"""set -e
+printf '%s\0' "$@" >"$FIXTURE_ARGV"
+if [ "${CHARMER_PRIVATE_IDENTIFIERS+x}" = x ]; then
+  printf 'present\0%s' "$CHARMER_PRIVATE_IDENTIFIERS" >"$FIXTURE_CHILD_ENV"
+else
+  printf 'absent\0' >"$FIXTURE_CHILD_ENV"
+fi
+printf 'fixture-private-stdout\nidentifier label count location\n%s\n' "${CHARMER_PRIVATE_IDENTIFIERS:-fixture-unavailable}"
+printf 'fixture-private-stderr\norigin ceiling path\n%s\n' "${CHARMER_PRIVATE_IDENTIFIERS:-fixture-unavailable}" >&2
+exit "$FIXTURE_STATUS"
+"""
+    CHMOD_STUB = r"""set -e
+[ "$#" -eq 2 ] && [ "$1" = 600 ] && [ "$2" = "$RUNNER_TEMP/private-identifiers.tsv" ] || exit 64
+[ "$FIXTURE_CHMOD_STATUS" -eq 0 ] || exit "$FIXTURE_CHMOD_STATUS"
+exec "$FIXTURE_CHMOD" "$@"
+"""
+
+    @staticmethod
+    def trusted_program(name: str) -> Path:
+        found = shutil.which(name)
+        if found is None:
+            if name == "bash":
+                raise unittest.SkipTest("BOUNDARY: bash is not installed")
+            raise AssertionError(f"the private-output fixture requires {name}")
+        program = Path(found).resolve(strict=True)
+        stored = program.is_relative_to("/nix/store")
+        paths = (program,) if stored else (program, *program.parents)
+        if not program.is_file() or any(path.stat().st_mode & 0o022 or
+                                       (not stored and path.stat().st_uid != 0) for path in paths):
+            raise AssertionError(f"the private-output fixture requires a trusted {name}")
+        return program
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.bash = cls.trusted_program("bash")
+        cls.chmod = cls.trusted_program("chmod")
+
+    def setUp(self) -> None:
+        temporary = tempfile.TemporaryDirectory(prefix="charmer-ci-private-output-", dir="/tmp")
+        self.addCleanup(temporary.cleanup)
+        self.tmp = Path(temporary.name)
+        self.home, self.runner, self.bin = (self.tmp / name for name in ("home", "runner", "bin"))
+        for directory in (self.home, self.runner, self.bin):
+            directory.mkdir(mode=0o700)
+        self.github_env = self.tmp / "github-env"
+        self.github_env.write_bytes(b"")
+        self.argv = self.tmp / "argv"
+        self.child_env = self.tmp / "child-env"
+        self.private_path = self.tmp / "fixture private input.tsv"
+        self.private_path.write_bytes(b"fixture input only\n")
+        for name, body in (("python3", self.PYTHON_STUB), ("chmod", self.CHMOD_STUB)):
+            stub = self.bin / name
+            stub.write_text(f"#!{self.bash}\n" + body, encoding="utf-8")
+            stub.chmod(0o700)
+        # No inherited environment or search path: python3 is only the stub,
+        # and chmod can reach only the known fixture file through its guard.
+        self.env = {"HOME": str(self.home), "PATH": str(self.bin), "LC_ALL": "C", "TMPDIR": str(self.tmp),
+                    "RUNNER_TEMP": str(self.runner), "GITHUB_ENV": str(self.github_env), "RANGE": "",
+                    "FIXTURE_ARGV": str(self.argv), "FIXTURE_CHILD_ENV": str(self.child_env),
+                    "FIXTURE_STATUS": "0", "FIXTURE_CHMOD": str(self.chmod), "FIXTURE_CHMOD_STATUS": "0"}
+        fast = _jobs((WORKFLOWS_DIR / "ci.yml").read_text(encoding="utf-8"))["fast"]
+        self.steps = {}
+        for name in self.BODIES:
+            matches = [step for step in _steps(fast) if re.search(rf"(?m)^      - name: {re.escape(name)}$", step)]
+            self.assertEqual(len(matches), 1, f"expected exactly one step named {name}")
+            self.steps[name] = matches[0]
+
+    @classmethod
+    def admit_body(cls, name: str, step: str) -> str:
+        blocks = _run_blocks(step)
+        if len(blocks) != 1:
+            raise AssertionError("private check body is outside the closed contract")
+        body = "\n".join(line.removeprefix("          ") for line in blocks[0]).rstrip("\n") + "\n"
+        if body != cls.BODIES.get(name):
+            raise AssertionError("private check body is outside the closed contract")
+        return body
+
+    def run_step(self, name: str, *, step: str | None = None, **changes: str) -> subprocess.CompletedProcess[str]:
+        # Admission precedes every subprocess, including mutation controls.
+        body = self.admit_body(name, self.steps[name] if step is None else step)
+        return subprocess.run([str(self.bash), "--noprofile", "--norc", "-e", "-o", "pipefail", "-c", body],
+                              cwd=self.tmp, env={**self.env, **changes}, stdin=subprocess.DEVNULL,
+                              capture_output=True, text=True, encoding="utf-8", timeout=10)
+
+    def check_consumer(self, name: str, stage: str, argv: list[str], range_: str = "") -> None:
+        for private in (None, "", str(self.private_path)):
+            for status in (0, 1, 2, 17, 125, 130, 143):
+                with self.subTest(stage=stage, range=range_, supplied=bool(private), present=private is not None,
+                                  status=status):
+                    changes = {"FIXTURE_STATUS": str(status), "RANGE": range_}
+                    if private is not None:
+                        changes["CHARMER_PRIVATE_IDENTIFIERS"] = private
+                    result = self.run_step(name, **changes)
+                    mode = "supplied" if private else "unavailable"
+                    self.assertEqual(result.returncode, status)
+                    self.assertEqual(result.stdout, f"private_check={stage} status={status} private_input={mode}\n")
+                    self.assertEqual(result.stderr, "")
+                    self.assertEqual(self.argv.read_bytes().split(b"\0"), [arg.encode("utf-8") for arg in argv] + [b""])
+                    expected = b"absent\0" if private is None else b"present\0" + private.encode("utf-8")
+                    self.assertEqual(self.child_env.read_bytes(), expected)
+                    for hidden in ("fixture-private-stdout", "fixture-private-stderr", str(self.private_path), self.INPUT):
+                        self.assertNotIn(hidden, result.stdout + result.stderr)
+        self.assertEqual(self.github_env.read_bytes(), b"")
+        self.assertEqual(list(self.runner.iterdir()), [])  # no retained raw diagnostics
+
+    def test_history_range_and_whole_history_keep_argv_status_and_private_output(self) -> None:
+        for range_ in ("", "fixture-base..fixture-head with spaces"):
+            argv = ["tools/history_scan.py", "--repo", "."] + (["--range", range_] if range_ else [])
+            self.check_consumer("Secret and identifier scan of the new commits", "history", argv, range_)
+
+    def test_hygiene_keeps_exact_selection_status_and_private_output(self) -> None:
+        self.check_consumer("Hygiene", "hygiene", ["tools/test.py", "tests.test_hygiene",
+                                                  "tests.test_docs_vocabulary", "tests.test_history_scan"])
+
+    def test_materialization_writes_exact_bytes_private_mode_and_path_only_export(self) -> None:
+        result = self.run_step("Private identifier list", PRIVATE_IDENTIFIERS=self.INPUT)
+        self.assertEqual((result.returncode, result.stdout, result.stderr), (0, "private_input=supplied\n", ""))
+        target = self.runner / "private-identifiers.tsv"
+        self.assertEqual(target.read_bytes(), (self.INPUT + "\n").encode("utf-8"))
+        self.assertEqual(target.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(self.github_env.read_bytes(), f"CHARMER_PRIVATE_IDENTIFIERS={target}\n".encode("utf-8"))
+        self.assertNotIn(str(target), result.stdout + result.stderr)
+        self.assertFalse(self.argv.exists())
+
+    def test_empty_or_unavailable_input_creates_no_list(self) -> None:
+        for changes in ({}, {"PRIVATE_IDENTIFIERS": ""}):
+            with self.subTest(present=bool(changes)):
+                result = self.run_step("Private identifier list", **changes)
+                self.assertEqual((result.returncode, result.stdout, result.stderr),
+                                 (0, "private_input=unavailable; generic checks only\n", ""))
+                self.assertEqual(list(self.runner.iterdir()), [])
+                self.assertEqual(self.github_env.read_bytes(), b"")
+                self.assertFalse(self.argv.exists())
+
+    def test_materialization_failure_is_not_masked_or_reported_as_supplied(self) -> None:
+        for status in (1, 17, 125):
+            with self.subTest(status=status):
+                result = self.run_step("Private identifier list", PRIVATE_IDENTIFIERS=self.INPUT,
+                                       FIXTURE_CHMOD_STATUS=str(status))
+                self.assertEqual((result.returncode, result.stdout, result.stderr), (status, "", ""))
+                self.assertEqual(self.github_env.read_bytes(), b"")
+        # The success marker also follows the environment export, not just chmod.
+        result = self.run_step("Private identifier list", PRIVATE_IDENTIFIERS=self.INPUT, GITHUB_ENV=str(self.home))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, "")
+        self.assertNotIn(self.INPUT, result.stderr)
+        self.assertEqual(self.github_env.read_bytes(), b"")
+
+    def test_changed_bodies_are_rejected_before_any_execution(self) -> None:
+        for name, step in self.steps.items():
+            variants = [step + "          sudo fixture-only\n",
+                        step + "        run: |\n          sudo fixture-only\n",
+                        step.replace("umask 077", "umask 077\n          echo '${{ github.event_name }}'", 1)]
+            if name == "Private identifier list":
+                variants.append(step.replace('            chmod 600 "$list"\n', "", 1))
+            else:
+                variants.extend([step.replace(" >/dev/null 2>&1", "", 1),
+                                 step.replace(" 2>&1", "", 1),
+                                 step.replace("|| status=$?", "|| true", 1),
+                                 step.replace('exit "$status"', "exit 0", 1)])
+            for index, changed in enumerate(variants):
+                with self.subTest(step=name, mutation=index), mock.patch.object(subprocess, "run") as execute:
+                    with self.assertRaisesRegex(AssertionError, "outside the closed contract"):
+                        self.run_step(name, step=changed)
+                    execute.assert_not_called()
 
 
 @requires_release_tree
