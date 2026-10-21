@@ -1,383 +1,476 @@
-# charmer CI.
-#
-# fast       every push and pull request: goldens, whitespace, the secret
-#            and identifier scan of exactly the new commits, hygiene, import
-#            smoke, shell and workflow lint.
-# gateway    nightly and on demand: the gateway for this host and its
-#            diagnostic probes (tools/build.py, .github/scripts/
-#            gateway_probes.py), for the battery.
-# battery    nightly and on demand: the full Linux suite (Python 3.11,
-#            3.14 and 3.15), bubblewrap 0.12 or later for the isolated
-#            classes (built from its pinned release, its version recorded),
-#            the candidate gateway and its probes (bound to the build
-#            record), the pinned Claude Code, and the pinned setuptools for
-#            the distribution tests, which must run; on 3.15 (the bundled
-#            runtime's version) also the fast tier under an ISO-8859-1
-#            locale with EncodingWarning shown and recorded.
-# pty        nightly and on demand: the terminal journeys, one job per OS,
-#            run serially on their own.
-# nix        nightly and on demand: the flake checks, the Nix gateway bytes
-#            compared with the native build, and the product's indirect
-#            garbage-collector root in this disposable Nix store.
-#
-# The nightly schedule runs only while the repository variable
-# CM_SCHEDULES is "on" (every job a schedule reaches checks it); a manual
-# run is not affected.
-#
-# Scan policy (fast lane): a pull request scans BASE..HEAD of the pull
-# request; a push scans before..after; a push that creates a branch (no
-# "before") or rewrites history (its "before" is not in the clone) scans the
-# whole history. A pull request whose base or head is missing from the
-# clone fails, as does every candidate the scanner reports.
-#
-# Hardening: actions pinned by commit, no permissions unless a job grants
-# them, no privileged pull-request trigger, no credentials kept after
-# checkout, umask 077 in every step, no provider calls (the test tripwire
-# is always on through tools/test.py), and one secret only: the private
-# identifier list of the fast lane's identifier checks, when the repository
-# has it.
-
-name: ci
+# TEMPORARY MANUAL DIAGNOSTIC HARNESS ONLY. NEVER MERGE into canonical CI.
+# Source preparation is not dispatch approval. Compatibility remains UNPROVEN.
+# The lead must accept fresh disposable GitHub-hosted VM teardown before dispatch:
+# even info may initialize a store/pause process. No product or qualifier runs.
+name: ARM engine metadata
 
 on:
-  push:
-  pull_request:
-  schedule:
-    - cron: "23 3 * * *"
   workflow_dispatch:
 
-permissions: {}
+permissions:
+  contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
-env:
-  PYTHONDONTWRITEBYTECODE: "1"
-  PYTHONPATH: src:tests
-  # The release integration tests (installer, update, journey, release
-  # tool) must run: without ssh-keygen they fail instead of skipping.
-  CHARMER_TEST_REQUIRE_RELEASE: "1"
+  group: charmer-arm-engine-metadata-210
+  cancel-in-progress: false
 
 jobs:
-  fast:
-    if: github.event_name == 'push' || github.event_name == 'pull_request'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    permissions:
-      contents: read
+  metadata:
+    name: ARM local rootless engine metadata
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0
+          ref: 81a266801b11569e6e8873ddebed16eb1d162356
           persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.14"
-      - name: Goldens are current
+      - name: Bind product HEAD and separately record workflow identity
+        shell: bash
         run: |
           umask 077
-          python3 tests/bless.py --check
-      - name: Revision range (the scan policy above)
-        id: range
-        env:
-          EVENT: ${{ github.event_name }}
-          PR_BASE: ${{ github.event.pull_request.base.sha }}
-          PR_HEAD: ${{ github.event.pull_request.head.sha }}
-          PUSH_BEFORE: ${{ github.event.before }}
-          PUSH_AFTER: ${{ github.sha }}
-        run: |
-          umask 077
-          if [ "$EVENT" = pull_request ]; then
-            for rev in "$PR_BASE" "$PR_HEAD"; do
-              if ! git cat-file -e "$rev^{commit}" 2>/dev/null; then
-                echo "::error::the pull request revision $rev is not in the clone"
-                exit 1
-              fi
-            done
-            echo "range=$PR_BASE..$PR_HEAD" >>"$GITHUB_OUTPUT"
-          elif [ -z "$PUSH_BEFORE" ] || [ "$PUSH_BEFORE" = 0000000000000000000000000000000000000000 ] ||
-            ! git cat-file -e "$PUSH_BEFORE^{commit}" 2>/dev/null; then
-            echo "range=" >>"$GITHUB_OUTPUT"
-          else
-            echo "range=$PUSH_BEFORE..$PUSH_AFTER" >>"$GITHUB_OUTPUT"
+          product_source_sha="$(git rev-parse --verify HEAD 2>/dev/null)" || {
+            printf '%s\n' '::error::product source binding unavailable'
+            exit 1
+          }
+          if [[ "$product_source_sha" != 81a266801b11569e6e8873ddebed16eb1d162356 ]]; then
+            printf '%s\n' '::error::product source binding mismatch'
+            exit 1
           fi
-      - name: Whitespace
-        env:
-          RANGE: ${{ steps.range.outputs.range }}
-        run: |
-          umask 077
-          if [ -n "$RANGE" ]; then
-            git diff --check "${RANGE%%..*}" "${RANGE##*..}"
-          else
-            git diff --check "$(git hash-object -t tree /dev/null)" HEAD
+          if [[ ! "$GITHUB_SHA" =~ ^[0-9a-fA-F]{40}$ ]]; then
+            printf '%s\n' '::error::workflow identity unavailable'
+            exit 1
           fi
-      - name: Private identifier list
-        # The exact identifiers of the repository's people and computers are
-        # not published: an Actions secret, when present, adds them to the
-        # scan and the hygiene gates below (a 0600 file the environment
-        # names); without it (a fork, a pull request) the generic checks run.
-        env:
-          PRIVATE_IDENTIFIERS: ${{ secrets.CHARMER_PRIVATE_IDENTIFIERS }}
+          printf 'product_source_sha=%s\nworkflow_GITHUB_SHA=%s\n' "$product_source_sha" "$GITHUB_SHA"
+      - name: Closed local rootless engine metadata only (VM teardown pending)
+        id: engine_metadata
+        shell: bash
         run: |
           umask 077
-          if [ -n "$PRIVATE_IDENTIFIERS" ]; then
-            list="$RUNNER_TEMP/private-identifiers.tsv"
-            printf '%s\n' "$PRIVATE_IDENTIFIERS" >"$list"
-            chmod 600 "$list"
-            echo "CHARMER_PRIVATE_IDENTIFIERS=$list" >>"$GITHUB_ENV"
-          else
-            echo "no private identifier list (secret CHARMER_PRIVATE_IDENTIFIERS is not set): the generic identifier checks run"
-          fi
-      - name: Secret and identifier scan of the new commits
-        env:
-          RANGE: ${{ steps.range.outputs.range }}
-        run: |
-          umask 077
-          if [ -n "$RANGE" ]; then
-            python3 tools/history_scan.py --repo . --range "$RANGE"
-          else
-            python3 tools/history_scan.py --repo .
-          fi
-      - name: Hygiene
-        run: |
-          umask 077
-          python3 tools/test.py tests.test_hygiene tests.test_docs_vocabulary tests.test_history_scan
-      - name: Generated documentation
-        run: |
-          umask 077
-          python3 tools/docs_gen.py --check
-      - name: Import smoke
-        run: |
-          umask 077
-          python3 -I -c 'import sys; sys.path.insert(0, "src"); import charmer.cli.entry, charmer.proxy, charmer.trust, charmer.self_update, charmer.release_update, charmer.install_txn'
-          python3 bin/charmer --version
-      - name: Pinned CI compiler (the gateway's, by hash) and shell linter (by hash)
-        run: |
-          umask 077
-          sh .github/scripts/ci_tools.sh go "$RUNNER_TEMP/ci-go"
-          sh .github/scripts/ci_tools.sh shellcheck "$RUNNER_TEMP/ci-shellcheck"
-          printf '%s\n' "$RUNNER_TEMP/ci-go/bin" "$RUNNER_TEMP/ci-shellcheck" >>"$GITHUB_PATH"
-      - name: Shell lint
-        run: |
-          umask 077
-          shellcheck -s sh packaging/install.sh .github/scripts/journey.sh .github/scripts/wsl_prepare.sh .github/scripts/ci_tools.sh \
-            .github/scripts/bubblewrap_floor.sh
-      - name: Workflow lint
-        run: |
-          umask 077
-          export GOTOOLCHAIN=local GOPATH="$RUNNER_TEMP/go-tools" GOCACHE="$RUNNER_TEMP/go-build"
-          GOBIN="$RUNNER_TEMP/bin" go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
-          go version -m "$RUNNER_TEMP/bin/actionlint"
-          "$RUNNER_TEMP/bin/actionlint" -version
-          # zizmor by the hash of its manylinux x86_64 wheel (.github/PINS.md),
-          # the file the local lint ran. The wheel ships an executable, not a
-          # Python module.
-          printf '%s\n' 'zizmor==1.31.1 --hash=sha256:58e878eb2dbd2c6183c105e1ac28c14f7dd1eca44a783f1fe2a69647d012c410' >"$RUNNER_TEMP/zizmor.txt"
-          python3 -m pip install --disable-pip-version-check --no-deps --only-binary=:all: --require-hashes --target "$RUNNER_TEMP/zizmor" -r "$RUNNER_TEMP/zizmor.txt"
-          "$RUNNER_TEMP/zizmor/bin/zizmor" --version
-          "$RUNNER_TEMP/bin/actionlint"
-          "$RUNNER_TEMP/zizmor/bin/zizmor" --offline .github
+          metadata_status=0
+          /usr/bin/python3 -I -S -B - <<'PY_ARM_ENGINE_METADATA' || metadata_status=$?
+          # BEGIN ARM_ENGINE_METADATA_PROGRAM
+          import json
+          import os
+          import re
+          import selectors
+          import signal
+          import stat
+          import subprocess
+          import sys
+          import time
 
-  gateway:
-    if: (github.event_name == 'schedule' && vars.CM_SCHEDULES == 'on') || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 60
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+          TOOL = "/usr/bin/podman"
+          OUTPUT_NAME = "arm-engine-metadata-210.json"
+          TREE_NAME = "arm-engine-metadata-210"
+          REMOTE_MARKERS = ("CONTAINER_HOST", "CONTAINER_CONNECTION", "DOCKER_HOST")
+          GUARD_MARKERS = ("CLAUDECODE", "CHARMER_MANAGED_ID", "CHARMER_SESSION_ID",
+                           "CHARMER_LAUNCH_EPOCH", "CHARMER_GATEWAY")
+          STATUS_FIELDS = ("Uid", "CapEff", "CapPrm", "CapInh", "CapAmb", "CapBnd", "NoNewPrivs")
+          DIRECTORY_NAMES = ("home", "config", "data", "cache", "runtime", "tmp",
+                             "graphroot", "runroot", "podman-tmp")
+          ENGINE_SECONDS = 30
+          MAX_OUTPUT = 262144
+          SUCCESS = "ENGINE_METADATA_OK_VM_TEARDOWN_PENDING"
+          OUTCOMES = (
+              "HELD_ADMISSION", "HELD_TOOL_PATH", "HELD_OWNED_DIR",
+              "HELD_ENGINE_UNAVAILABLE_VM_TEARDOWN_PENDING",
+              "HELD_ENGINE_NONZERO_VM_TEARDOWN_PENDING",
+              "HELD_ENGINE_TIMEOUT_VM_TEARDOWN_PENDING",
+              "HELD_ENGINE_OUTPUT_LIMIT_VM_TEARDOWN_PENDING",
+              "HELD_ENGINE_SCHEMA_VM_TEARDOWN_PENDING",
+              "HELD_ENGINE_IDENTITY_STORE_VM_TEARDOWN_PENDING",
+              "HELD_INTERNAL_VM_TEARDOWN_PENDING",
+              "HELD_METADATA_OUTPUT_VM_TEARDOWN_PENDING",
+              "ENGINE_METADATA_OK_VM_TEARDOWN_PENDING",
+          )
+
+          def result(outcome="HELD_ADMISSION"):
+              return {"version": None, "native_arch": None, "rootless": None,
+                      "owned_store_match": None, "localness": None, "outcome": outcome}
+
+          def parse_status(text):
+              """Missing, malformed or duplicate fixed fields remain unknown."""
+              parsed = dict.fromkeys(STATUS_FIELDS)
+              if not isinstance(text, str) or len(text) > 16384:
+                  return parsed
+              seen = set()
+              for line in text.splitlines():
+                  key, separator, value = line.partition(":")
+                  if not separator or key not in parsed:
+                      continue
+                  if key in seen:
+                      parsed[key] = None
+                      continue
+                  seen.add(key)
+                  value = value.strip()
+                  if key == "Uid":
+                      parts = value.split()
+                      if len(parts) == 4 and all(re.fullmatch(r"[0-9]{1,10}", part) for part in parts):
+                          uids = [int(part) for part in parts]
+                          if all(uid < 2**32 for uid in uids):
+                              parsed[key] = uids
+                  elif key == "NoNewPrivs":
+                      if value in ("0", "1"):
+                          parsed[key] = int(value)
+                  elif re.fullmatch(r"[0-9a-fA-F]{16}", value):
+                      parsed[key] = int(value, 16)
+              return parsed
+
+          def parse_elf(header):
+              """Reuse the validated ELF type, version and header-size predicates."""
+              unknown = {"class_bits": None, "endianness": None, "e_machine": None}
+              if not isinstance(header, (bytes, bytearray)) or len(header) < 64 or header[:4] != b"\x7fELF":
+                  return unknown
+              if header[4] not in (1, 2) or header[5] not in (1, 2) or header[6] != 1:
+                  return unknown
+              endian = "little" if header[5] == 1 else "big"
+              size_offset, expected_size = (40, 52) if header[4] == 1 else (52, 64)
+              if (int.from_bytes(header[16:18], endian) not in (2, 3)
+                      or int.from_bytes(header[20:24], endian) != 1
+                      or int.from_bytes(header[size_offset:size_offset + 2], endian) != expected_size):
+                  return unknown
+              return {"class_bits": 32 if header[4] == 1 else 64, "endianness": endian,
+                      "e_machine": int.from_bytes(header[18:20], endian)}
+
+          def read_small_ascii(path, limit):
+              try:
+                  with open(path, "rb") as stream:
+                      value = stream.read(limit + 1)
+                  return value.decode("ascii") if len(value) <= limit else None
+              except (OSError, UnicodeError):
+                  return None
+
+          def read_interpreter_header():
+              # The running interpreter, not a PATH candidate or a replacement file.
+              try:
+                  with open("/proc/self/exe", "rb") as stream:
+                      return stream.read(64)
+              except OSError:
+                  return None
+
+          def runtime_admitted():
+              return (sys.platform == "linux" and sys.flags.isolated == 1
+                      and sys.flags.ignore_environment == 1 and sys.flags.no_site == 1
+                      and sys.flags.no_user_site == 1 and sys.flags.dont_write_bytecode == 1
+                      and sys.dont_write_bytecode is True)
+
+          def caller_uid():
+              status = parse_status(read_small_ascii("/proc/self/status", 16384))
+              uids = os.getresuid()
+              if (len(uids) != 3 or any(type(uid) is not int or not 0 < uid < 2**32 for uid in uids)
+                      or status["Uid"] is None or list(uids) != status["Uid"][:3]
+                      or len(set((*uids, *status["Uid"]))) != 1):
+                  return None
+              if any(status[name] != 0 for name in ("CapEff", "CapPrm", "CapInh", "CapAmb")):
+                  return None
+              if signal.getsignal(signal.SIGCHLD) != signal.SIG_DFL or os.uname().machine != "aarch64":
+                  return None
+              if parse_elf(read_interpreter_header()) != {
+                      "class_bits": 64, "endianness": "little", "e_machine": 183}:
+                  return None
+              # Bounding capabilities and NoNewPrivs are deliberately NOT admissions.
+              return uids[0]
+
+          def self_pidfd_admitted():
+              try:
+                  descriptor = os.pidfd_open(os.getpid(), 0)
+              except (AttributeError, NotImplementedError, OSError):
+                  return False
+              try:
+                  os.close(descriptor)
+              except OSError:
+                  return False
+              return True
+
+          def tool_snapshot():
+              """Fixed executable and real ancestors only; no content or executable probe."""
+              snapshot = []
+              for path in ("/", "/usr", "/usr/bin", TOOL):
+                  info = os.lstat(path)
+                  if path == TOOL:
+                      valid = stat.S_ISREG(info.st_mode) and stat.S_IMODE(info.st_mode) == 0o755
+                  else:
+                      valid = stat.S_ISDIR(info.st_mode) and not info.st_mode & 0o022
+                  if not valid or info.st_uid != 0:
+                      raise ValueError
+                  # Exclude access time, which is not identity/permission metadata.
+                  snapshot.append((info.st_dev, info.st_ino, info.st_mode, info.st_uid,
+                                   info.st_gid, info.st_nlink, info.st_size,
+                                   info.st_mtime_ns, info.st_ctime_ns))
+              return tuple(snapshot)
+
+          def validate_runner_temp(directory, uid):
+              if (not isinstance(directory, str) or not directory or len(directory) > 4096
+                      or not os.path.isabs(directory) or directory == "/"
+                      or os.path.normpath(directory) != directory
+                      or os.path.realpath(directory) != directory):
+                  raise ValueError
+              info = os.lstat(directory)
+              if not stat.S_ISDIR(info.st_mode) or info.st_uid != uid or info.st_mode & 0o022:
+                  raise ValueError
+              return directory
+
+          def owned_paths(directory):
+              tree = os.path.join(directory, TREE_NAME)
+              paths = {name: os.path.join(tree, name) for name in DIRECTORY_NAMES}
+              paths.update(base=directory, tree=tree)
+              return paths
+
+          def validate_owned_paths(paths, uid):
+              base = validate_runner_temp(paths["base"], uid)
+              if paths != owned_paths(base):
+                  raise ValueError
+              for path in (paths["tree"], *(paths[name] for name in DIRECTORY_NAMES)):
+                  info = os.lstat(path)
+                  if (not stat.S_ISDIR(info.st_mode) or info.st_uid != uid
+                          or stat.S_IMODE(info.st_mode) != 0o700
+                          or os.path.realpath(path) != path):
+                      raise ValueError
+
+          def create_owned_paths(directory, uid):
+              base = validate_runner_temp(directory, uid)
+              paths = owned_paths(base)
+              # Exclusive mkdir, no reuse or repair. Retain partial trees on failure.
+              for path in (paths["tree"], *(paths[name] for name in DIRECTORY_NAMES)):
+                  os.mkdir(path, 0o700)
+              validate_owned_paths(paths, uid)
+              return paths
+
+          def engine_environment(paths, original):
+              environment = {
+                  "HOME": paths["home"], "XDG_CONFIG_HOME": paths["config"],
+                  "XDG_DATA_HOME": paths["data"], "XDG_CACHE_HOME": paths["cache"],
+                  "XDG_RUNTIME_DIR": paths["runtime"], "TMPDIR": paths["tmp"],
+                  "PATH": "/usr/bin:/bin", "LANG": "C", "LC_ALL": "C",
+              }
+              # Membership preserves even empty guard values. Never print them.
+              for name in GUARD_MARKERS:
+                  if name in original:
+                      environment[name] = original[name]
+              return environment
+
+          def observe_engine(process):
+              """Bounded pipe observation only. Never kill, wait for, or clean up an engine."""
+              streams = (process.stdout, process.stderr)
+              observer = None
+              outcome = "HELD_ENGINE_UNAVAILABLE_VM_TEARDOWN_PENDING"
+              payload = b""
+              buffers = (bytearray(), bytearray())
+              total = 0
+              try:
+                  observer = selectors.DefaultSelector()
+                  for index, stream in enumerate(streams):
+                      os.set_blocking(stream.fileno(), False)
+                      observer.register(stream, selectors.EVENT_READ, index)
+                  deadline = time.monotonic() + ENGINE_SECONDS
+                  while True:
+                      code = process.poll()
+                      if code is not None and code != 0:
+                          outcome = "HELD_ENGINE_NONZERO_VM_TEARDOWN_PENDING"
+                          break
+                      if not observer.get_map() and code == 0:
+                          outcome, payload = None, bytes(buffers[0])
+                          break
+                      remaining = deadline - time.monotonic()
+                      if remaining <= 0:
+                          outcome = "HELD_ENGINE_TIMEOUT_VM_TEARDOWN_PENDING"
+                          break
+                      for key, unused_events in observer.select(min(remaining, 0.1)):
+                          try:
+                              chunk = os.read(key.fd, min(65536, MAX_OUTPUT - total + 1))
+                          except BlockingIOError:
+                              continue
+                          if not chunk:
+                              observer.unregister(key.fileobj)
+                              continue
+                          total += len(chunk)
+                          if total > MAX_OUTPUT:
+                              outcome = "HELD_ENGINE_OUTPUT_LIMIT_VM_TEARDOWN_PENDING"
+                              break
+                          buffers[key.data].extend(chunk)
+                      if outcome == "HELD_ENGINE_OUTPUT_LIMIT_VM_TEARDOWN_PENDING":
+                          break
+              except Exception:
+                  outcome, payload = "HELD_ENGINE_UNAVAILABLE_VM_TEARDOWN_PENDING", b""
+              finally:
+                  # These are owned observer FDs, not engine/pause-process teardown.
+                  for stream in streams:
+                      try:
+                          stream.close()
+                      except Exception:
+                          outcome, payload = "HELD_ENGINE_UNAVAILABLE_VM_TEARDOWN_PENDING", b""
+                  if observer is not None:
+                      try:
+                          observer.close()
+                      except Exception:
+                          outcome, payload = "HELD_ENGINE_UNAVAILABLE_VM_TEARDOWN_PENDING", b""
+              return outcome, payload
+
+          def run_engine(paths, environment, expected_tool):
+              argv = [TOOL, "--remote=false", "--log-level=error",
+                      "--root=" + paths["graphroot"], "--runroot=" + paths["runroot"],
+                      "--tmpdir=" + paths["podman-tmp"], "--storage-driver=vfs",
+                      "--cgroup-manager=cgroupfs", "--events-backend=none", "info", "--format=json"]
+              try:
+                  # Revalidate identity/permissions immediately before the sole spawn.
+                  if tool_snapshot() != expected_tool:
+                      return "HELD_TOOL_PATH", b""
+              except Exception:
+                  return "HELD_TOOL_PATH", b""
+              try:
+                  process = subprocess.Popen(
+                      argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                      env=environment, cwd=paths["home"], shell=False, close_fds=True, restore_signals=True)
+              except Exception:
+                  return "HELD_ENGINE_UNAVAILABLE_VM_TEARDOWN_PENDING", b""
+              return observe_engine(process)
+
+          def unique_object(pairs):
+              value = {}
+              for key, item in pairs:
+                  if key in value:
+                      raise ValueError
+                  value[key] = item
+              return value
+
+          def reject_constant(unused_value):
+              raise ValueError
+
+          def validate_info(payload, paths):
+              if not isinstance(payload, bytes) or len(payload) > MAX_OUTPUT:
+                  raise ValueError
+              info = json.loads(payload.decode("utf-8"), object_pairs_hook=unique_object,
+                                parse_constant=reject_constant)
+              if type(info) is not dict:
+                  raise ValueError
+              host, store, version = info["host"], info["store"], info["version"]
+              if any(type(value) is not dict for value in (host, store, version)):
+                  raise ValueError
+              security = host["security"]
+              if type(security) is not dict:
+                  raise ValueError
+              strings = (host["os"], host["arch"], host["cgroupManager"], host["eventLogger"],
+                         store["graphDriverName"], store["graphRoot"], store["runRoot"],
+                         store["volumePath"], store["imageCopyTmpDir"], version["Version"])
+              if (any(type(value) is not str for value in strings)
+                      or type(security["rootless"]) is not bool
+                      or type(host["serviceIsRemote"]) is not bool
+                      or re.fullmatch(r"[0-9]{1,6}\.[0-9]{1,6}\.[0-9]{1,6}", version["Version"]) is None):
+                  raise ValueError
+              store_match = (store["graphDriverName"] == "vfs"
+                             and store["graphRoot"] == paths["graphroot"]
+                             and store["runRoot"] == paths["runroot"]
+                             and store["volumePath"] == paths["graphroot"] + "/volumes"
+                             and store["imageCopyTmpDir"] == paths["tmp"])
+              identity_match = (host["os"] == "linux" and host["arch"] == "arm64"
+                                and security["rootless"] is True and host["serviceIsRemote"] is False
+                                and host["cgroupManager"] == "cgroupfs" and host["eventLogger"] == "none")
+              return {"version": version["Version"], "rootless": security["rootless"],
+                      "owned_store_match": store_match, "localness": not host["serviceIsRemote"],
+                      "outcome": SUCCESS if identity_match and store_match else
+                      "HELD_ENGINE_IDENTITY_STORE_VM_TEARDOWN_PENDING"}
+
+          def collect_metadata():
+              data = result()
+              # Inspect original presence BEFORE any filtering, pidfd, mkdir or spawn.
+              original = {name: os.environ[name] for name in
+                          (*REMOTE_MARKERS, *GUARD_MARKERS, "RUNNER_TEMP", "GITHUB_ACTIONS",
+                           "RUNNER_ENVIRONMENT") if name in os.environ}
+              if any(name in original for name in REMOTE_MARKERS):
+                  return data
+              # Hosted selection evidence only, not hardware or completed teardown proof.
+              if (original.get("GITHUB_ACTIONS") != "true"
+                      or original.get("RUNNER_ENVIRONMENT") != "github-hosted"):
+                  return data
+              try:
+                  if not runtime_admitted():
+                      return data
+                  uid = caller_uid()
+                  if uid is None or not self_pidfd_admitted():
+                      return data
+              except Exception:
+                  return data
+              data["native_arch"] = "arm64"
+              data["outcome"] = "HELD_TOOL_PATH"
+              try:
+                  expected_tool = tool_snapshot()
+              except Exception:
+                  return data
+              data["outcome"] = "HELD_OWNED_DIR"
+              try:
+                  paths = create_owned_paths(original.get("RUNNER_TEMP"), uid)
+                  environment = engine_environment(paths, original)
+                  validate_owned_paths(paths, uid)
+              except Exception:
+                  return data
+              data["outcome"] = "HELD_ENGINE_UNAVAILABLE_VM_TEARDOWN_PENDING"
+              try:
+                  outcome, payload = run_engine(paths, environment, expected_tool)
+              except Exception:
+                  return data
+              if outcome is not None:
+                  data["outcome"] = outcome
+                  return data
+              data["outcome"] = "HELD_ENGINE_SCHEMA_VM_TEARDOWN_PENDING"
+              try:
+                  checked = validate_info(payload, paths)
+              except Exception:
+                  return data
+              data.update(checked)
+              return data
+
+          def safe_json(data):
+              return json.dumps(data, sort_keys=True, separators=(",", ":")) + "\n"
+
+          def write_metadata(data):
+              payload = safe_json(data)
+              base = validate_runner_temp(os.environ.get("RUNNER_TEMP"), os.getuid())
+              descriptor = os.open(os.path.join(base, OUTPUT_NAME),
+                                   os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+              try:
+                  with os.fdopen(descriptor, "w", encoding="ascii") as output:
+                      descriptor = None
+                      if output.write(payload) != len(payload):
+                          raise OSError
+              finally:
+                  if descriptor is not None:
+                      os.close(descriptor)
+
+          def main():
+              # Only 0/10 certify exclusive creation, a complete write and successful close.
+              try:
+                  data = collect_metadata()
+              except Exception:
+                  sys.stdout.write(safe_json(result("HELD_INTERNAL_VM_TEARDOWN_PENDING")))
+                  return 20
+              try:
+                  write_metadata(data)
+              except Exception:
+                  sys.stdout.write(safe_json(result("HELD_METADATA_OUTPUT_VM_TEARDOWN_PENDING")))
+                  return 20
+              sys.stdout.write(safe_json(data))
+              return 0 if data["outcome"] == SUCCESS else 10
+
+          if __name__ == "__main__":
+              try:
+                  exit_code = main()
+              except Exception:
+                  # No traceback, raw exception, raw engine output, path or guard value.
+                  exit_code = 20
+              raise SystemExit(exit_code)
+          # END ARM_ENGINE_METADATA_PROGRAM
+          PY_ARM_ENGINE_METADATA
+          case "$metadata_status" in
+            0|10)
+              printf '%s\n' 'metadata_complete=true' 2>/dev/null >>"$GITHUB_OUTPUT"
+              ;;
+          esac
+          exit "$metadata_status"
+      - name: Retain only the safe metadata JSON if present
+        if: ${{ always() && steps.engine_metadata.outputs.metadata_complete == 'true' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.14"
-      - name: The gateway for this host and its diagnostic probes (from the same prepared tree)
-        run: |
-          umask 077
-          python3 tools/build.py gateway fetch vendor apply build inspect record --target host \
-            --work "$RUNNER_TEMP/gateway-work" --dist gateway-dist
-          python3 .github/scripts/gateway_probes.py compile --work "$RUNNER_TEMP/gateway-work" \
-            --dist gateway-dist --out gateway-probes
-      - name: No Claude Code bytes
-        run: |
-          umask 077
-          python3 tools/_build/no_bundle_guard.py gateway-dist gateway-probes
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: gateway-dist
-          path: gateway-dist
+          name: arm-engine-metadata-210
+          path: ${{ runner.temp }}/arm-engine-metadata-210.json
           retention-days: 3
-          if-no-files-found: error
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: gateway-probes
-          path: gateway-probes
-          retention-days: 3
-          if-no-files-found: error
-
-  battery:
-    needs: gateway
-    if: (github.event_name == 'schedule' && vars.CM_SCHEDULES == 'on') || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 120
-    permissions:
-      contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        python: ["3.11", "3.14", "3.15"]
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: ${{ matrix.python }}
-      - name: bubblewrap from its pinned release (by hash, .github/PINS.md) and unprivileged user namespaces
-        run: |
-          umask 077
-          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-          sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends meson ninja-build pkg-config libcap-dev
-          sh .github/scripts/ci_tools.sh bubblewrap "$RUNNER_TEMP/ci-bubblewrap"
-          # Root-owned in root-owned directories, as the isolated tests
-          # require of the bwrap they run; never setuid.
-          sudo install -d -o root -g root -m 0755 /usr/lib/charmer-ci /usr/lib/charmer-ci/bin
-          sudo install -o root -g root -m 0755 "$RUNNER_TEMP/ci-bubblewrap/bwrap" /usr/lib/charmer-ci/bin/bwrap
-          printf '%s\n' /usr/lib/charmer-ci/bin >>"$GITHUB_PATH"
-      - name: The bubblewrap on PATH is 0.12 or later (recorded)
-        run: |
-          umask 077
-          sh .github/scripts/bubblewrap_floor.sh
-      - name: The pinned build backend for the distribution tests (by hash, .github/PINS.md)
-        run: |
-          umask 077
-          printf '%s\n' 'setuptools==84.0.0 --hash=sha256:51a52592b3b99e102b609654876bd65f19f999935166d1352678931132b0c670' >"$RUNNER_TEMP/setuptools.txt"
-          python3 -m pip install --disable-pip-version-check --no-deps --only-binary=:all: --require-hashes -r "$RUNNER_TEMP/setuptools.txt"
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: gateway-dist
-          path: ${{ runner.temp }}/gateway-dist
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: gateway-probes
-          path: ${{ runner.temp }}/gateway-probes
-      - name: The candidate gateway and its diagnostic probes, bound to the build record
-        run: |
-          umask 077
-          python3 .github/scripts/gateway_probes.py provision --dist "$RUNNER_TEMP/gateway-dist" \
-            --probes "$RUNNER_TEMP/gateway-probes" >"$RUNNER_TEMP/gateway.env"
-          cat "$RUNNER_TEMP/gateway.env"
-          cat "$RUNNER_TEMP/gateway.env" >>"$GITHUB_ENV"
-      - name: The exact pinned Claude Code (outside the workspace; verified when the runner places it)
-        run: |
-          umask 077
-          url=$(python3 -c 'import sys; sys.path.insert(0, "src"); from charmer import acquire, pin, strict_json; c = strict_json.load("src/charmer/data/catalog/native-contract.json"); print(acquire.download_url(pin.version(c), pin.host_platform()))')
-          curl --proto '=https' --tlsv1.2 -fsSL --retry 3 -o "$RUNNER_TEMP/claude" "$url"
-          chmod 755 "$RUNNER_TEMP/claude"
-      - name: ISO-8859-1 locale for the full-suite fixtures
-        run: |
-          umask 077
-          # Full-suite locale fixtures need this on every Python leg, without
-          # changing the job's locale. The dedicated 3.15 step reuses it.
-          sudo localedef -i en_US -f ISO-8859-1 en_US.ISO-8859-1
-      - name: Read-only interpreter for isolated probes
-        run: |
-          umask 077
-          # setup-python's toolcache executable can be group-writable;
-          # isolated probes deliberately refuse group/other-writable programs.
-          python3 -c 'import os, sys; os.chmod(os.path.realpath(sys.executable), 0o555)'
-      - name: Full suite except the terminal journeys (tests skipped for a missing boundary say so; the distribution tests must run)
-        env:
-          CHARMER_TEST_DIST_GATEWAY: ${{ runner.temp }}/gateway-dist
-        run: |
-          umask 077
-          python3 tools/test.py --tier full --list | grep -v '^tests.test_tui_pty$' >"$RUNNER_TEMP/modules"
-          mapfile -t modules <"$RUNNER_TEMP/modules"
-          python3 tools/test.py --tier full --verbose --claude "$RUNNER_TEMP/claude" --require 'DistributionTests' "${modules[@]}"
-      # The bundled runtime's version under a locale that is neither UTF-8
-      # nor C. -X warn_default_encoding reports every implicit text
-      # encoding in the runner's process (where the tests import the
-      # launcher); the warnings go to a file of their own (tests that
-      # check stderr stay unaffected) and are recorded, they do not fail
-      # the step. The terminal journeys expect a UTF-8 terminal: they run
-      # in the full suite above and in the pty lane.
-      - name: The fast tier under ISO-8859-1 with EncodingWarning (CPython 3.15)
-        if: matrix.python == '3.15'
-        timeout-minutes: 60
-        run: |
-          umask 077
-          export LANG=en_US.ISO-8859-1 LC_ALL=en_US.ISO-8859-1
-          python3 -c 'import locale, sys; e = locale.getencoding(); print(f"locale encoding {e}, UTF-8 mode {sys.flags.utf8_mode}"); sys.exit(None if e.replace("-", "").lower() == "iso88591" else "the locale is not ISO-8859-1")'
-          python3 tools/test.py --tier fast --list | grep -v -E '^tests\.test_tui_(input_)?pty$' >"$RUNNER_TEMP/locale-modules"
-          mapfile -t modules <"$RUNNER_TEMP/locale-modules"
-          status=0
-          python3 -X warn_default_encoding -c 'import runpy, sys, warnings; log = open(sys.argv[1], "a", encoding="utf-8"); warnings.showwarning = lambda message, category, filename, lineno, file=None, line=None: log.write(warnings.formatwarning(message, category, filename, lineno, line)); sys.argv = sys.argv[2:]; runpy.run_path(sys.argv[0], run_name="__main__")' \
-            "$RUNNER_TEMP/encoding-warnings.log" tools/test.py --tier fast --claude "$RUNNER_TEMP/claude" "${modules[@]}" || status=$?
-          touch "$RUNNER_TEMP/encoding-warnings.log"
-          grep -o '^[^ ]*: EncodingWarning' "$RUNNER_TEMP/encoding-warnings.log" | sed "s|^$PWD/||" | sort | uniq -c | sort -rn >"$RUNNER_TEMP/encoding-warnings.txt" || true
-          printf 'EncodingWarning sites under ISO-8859-1: %s\n' "$(wc -l <"$RUNNER_TEMP/encoding-warnings.txt")" | tee -a "$GITHUB_STEP_SUMMARY"
-          cat "$RUNNER_TEMP/encoding-warnings.txt"
-          exit "$status"
-      - name: No Claude Code bytes in the workspace
-        if: always()
-        run: |
-          umask 077
-          rm -f "$RUNNER_TEMP/claude"
-          python3 tools/_build/no_bundle_guard.py .
-
-  pty:
-    # Load-sensitive terminal journeys: their own job, one runner at a time.
-    if: (github.event_name == 'schedule' && vars.CM_SCHEDULES == 'on') || github.event_name == 'workflow_dispatch'
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
-    permissions:
-      contents: read
-    strategy:
-      fail-fast: false
-      max-parallel: 1
-      matrix:
-        os: [ubuntu-24.04, macos-15]
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.14"
-      - name: Terminal journeys, serially
-        timeout-minutes: 20
-        run: |
-          umask 077
-          python3 tools/test.py tests.test_tui_pty
-
-  nix:
-    if: (github.event_name == 'schedule' && vars.CM_SCHEDULES == 'on') || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 120
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: cachix/install-nix-action@448cde739abec1eaf0646249e3d25bb8d9bc7702 # v31.11.2
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.14"
-      - name: Flake checks (the sandbox suite)
-        run: |
-          umask 077
-          nix build --no-link -L .#checks.x86_64-linux.charmer
-      - name: Nix and native gateway bytes are identical
-        run: |
-          umask 077
-          nix_out=$(nix build --no-link --print-out-paths .#gateway-linux-amd64)
-          python3 tools/build.py gateway --target linux-amd64 --dist "$RUNNER_TEMP/native"
-          cmp "$nix_out/bin/cli-proxy-api" "$RUNNER_TEMP/native/linux-amd64/cli-proxy-api"
-      - name: The product's indirect garbage-collector root in this disposable Nix store
-        run: |
-          umask 077
-          package=$(nix build --no-link --print-out-paths .#charmer)
-          python3 .github/scripts/nix_roots.py "$package"
+          if-no-files-found: ignore
