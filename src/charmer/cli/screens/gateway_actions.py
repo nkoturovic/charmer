@@ -105,9 +105,6 @@ class GatewayView:
             return []
         if not hold.held:
             return ["persistence hold: none" + (f" — {hold.evaluated}" if hold.evaluated else "")]
-        if hold.journald_unavailable:
-            return ["persistence hold: " + gateway_hold.describe(hold),
-                    "Restart is not offered while it holds. Fix: " + gateway_hold.remedy(hold)]
         if hold.coverage_only:
             return [f"persistence hold: {HOLD_COVERAGE}", HOLD_COVERAGE_ROUTE]
         first = hold.reasons[0] if hold.reasons else "the persistence hold"

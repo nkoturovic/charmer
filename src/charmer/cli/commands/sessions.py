@@ -45,10 +45,11 @@ def _needs_choice(runtime: runtime_mod.Runtime, record: dict[str, Any]) -> bool:
     return runtime.resume_choice(record).needs_choice
 
 
-def _selected_records(runtime: runtime_mod.Runtime, selected: sessions.SessionFilter | None = None) -> list[dict[str, Any]]:
+def _selected_records(runtime: runtime_mod.Runtime, selected: sessions.SessionFilter | None = None, *,
+                      records: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     selected = selected or sessions.SessionFilter()
-    return [record for record in sorted(session_facts._session_records(runtime),
-                                       key=session_facts._record_sort_key_last_used, reverse=True)
+    records = session_facts._session_records(runtime) if records is None else records
+    return [record for record in sorted(records, key=session_facts._record_sort_key_last_used, reverse=True)
             if selected.matches(record, cwd=runtime.cwd, needs_choice=lambda record: _needs_choice(runtime, record))]
 
 
@@ -61,10 +62,12 @@ def _batch_identifiers(runtime: runtime_mod.Runtime, args: argparse.Namespace) -
     if not _has_selection(args):
         raise cli_types.UsageError("select SESSION arguments or an explicit filter (use --all for every session)")
     selected = _selection(args)
-    records, _problems, ids = session_facts._session_record_scan(runtime)
+    records, problems, ids = session_facts._session_record_scan(runtime)
+    if problems and not ids:
+        raise cli_errors.CLIError("; ".join(problems))
     readable = {sessions.managed_id(record) for record in records}
-    # Unreadable records cannot be silently classified out of a mutation.
-    return [sessions.managed_id(record) for record in _selected_records(runtime, selected)] + sorted(ids - readable)
+    # Filter the same scan; unreadable records cannot be silently classified out of a mutation.
+    return [sessions.managed_id(record) for record in _selected_records(runtime, selected, records=records)] + sorted(ids - readable)
 
 
 def _batch_check(runtime: runtime_mod.Runtime, record: dict[str, Any]) -> str | None:
@@ -488,7 +491,7 @@ def _sessions_command(
         return 0
     if command == "forget":
         values = args.uuid if isinstance(args.uuid, list) else [args.uuid]
-        if len(values) != 1 or _has_selection(args) or args.dry_run:
+        if len(values) != 1 or _has_selection(args):
             return _forget_many(runtime, args, input_stream=input_stream, output_stream=output_stream,
                                 interactive=interactive)
         args.uuid = values[0]
@@ -528,8 +531,15 @@ def _sessions_command(
             stable_id = args.uuid
             sys.stderr.write(
                 f"note: record {stable_id} is unreadable ({termtext.visible_message(exc)}); "
-                "forgetting it load-free.\n"
+                + ("would forget it load-free.\n" if args.dry_run else "forgetting it load-free.\n")
             )
+        if args.dry_run:
+            problem = session_actions._forget_liveness_guard(runtime, stable_id, force=args.force)(record)
+            lines = ["Forget preview (record and generated files only; transcripts never touched):",
+                     *sessions.batch_preview_lines([sessions.BatchItem(stable_id, record, problem)]),
+                     "Dry run: nothing written."]
+            output_stream.write("\n".join(termtext.visible_text(line) for line in lines) + "\n")
+            return int(problem is not None)
         if not _forget_confirmed(record, stable_id, yes=bool(getattr(args, "yes", False)),
                                  interactive=interactive, input_stream=input_stream):
             output_stream.write("Nothing was forgotten.\n")

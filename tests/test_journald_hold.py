@@ -165,31 +165,40 @@ class JournaldHoldTests(saves_fixture._JournalHold):
         self.assertFalse(self.check(self.STARTED).held)
         self.assertTrue(self.check(self.STARTED + MICROSECOND).held)
 
-    def test_unknown_observation_is_nonwaivable_until_visibility_is_restored(self):
+    def test_unavailable_observation_can_be_acknowledged_for_the_running_instance(self):
         for started in (None, self.STARTED.replace(tzinfo=None), "not a timestamp"):
             with self.subTest(started=started):
+                # A clear predating this instance acknowledges none of its missing evidence.
+                gateway_hold.clear(self.state_root, gateway_hold.HoldReport(
+                    False, (), "journal", evaluated_at=(self.STARTED - DAY).isoformat()))
                 report = self.check(started)
                 self.assertTrue(report.held)
                 self.assertTrue(report.coverage_only)
                 self.assertTrue(report.journald_unavailable)
-                self.assertEqual(gateway_hold.remedy(report), gateway_hold.JOURNALD_REMEDY)
-                with self.assertRaisesRegex(gateway_hold.HoldError, "restore read-only system-manager access"):
-                    gateway_hold.clear(self.state_root, report)
-                self.assertFalse(gateway_hold.hold_path(self.state_root).exists())
-                self.assertTrue(self.check(started).held)
+                self.assertEqual(gateway_hold.remedy(report), gateway_hold.COVERAGE_REMEDY)
+                gateway_hold.clear(self.state_root, report)
+                after = self.check(started)
+                self.assertFalse(after.held)
+                self.assertIn("journald's current process start remains unavailable", after.evaluated)
+                self.assertTrue(lifecycle._valid_201(gateway_hold.read_document(self.state_root)))
         self.assertFalse(self.check(self.STARTED - DAY).held)
-        self.assertTrue(self.check(self.STARTED + DAY).held)  # restored visibility still detects restart risk
+        self.assertTrue(self.check(saves_fixture.NOW + MICROSECOND).held)
+        with mock.patch.object(self, "STARTED", saves_fixture.NOW + DAY):
+            self.assertTrue(self.check(None, at=saves_fixture.NOW + DAY).held)
 
-    def test_unknown_observation_cannot_advance_an_existing_clear_document(self):
-        gateway_hold.clear(self.state_root, gateway_hold.HoldReport(
-            False, (), "journal", evaluated_at=(self.STARTED + DAY).isoformat()))
-        path = gateway_hold.hold_path(self.state_root)
-        before = path.read_bytes()
+    def test_unavailable_acknowledgement_never_hides_a_later_failed_save(self):
         report = self.check(None)
-        with self.assertRaises(gateway_hold.HoldError):
-            gateway_hold.clear(self.state_root, report)
-        self.assertEqual(path.read_bytes(), before)
-        self.assertTrue(self.check(None).held)
+        gateway_hold.clear(self.state_root, report)
+        failed = self.record(saves_fixture.ENVELOPE + saves_fixture.FAILED,
+                             saves_fixture.NOW + MICROSECOND, "later-failure")
+        report = self.check(None, records=[self.marker(), failed], at=saves_fixture.NOW + DAY)
+        self.assertTrue(report.held)
+        self.assertFalse(report.coverage_only)
+        self.assertIn(gateway_hold.REMEDY, gateway_hold.remedy(report))
+        self.assertTrue(any("evidence" in item for item in report.recorded))
+        lost = self.check(None, at=saves_fixture.NOW + DAY)
+        self.assertTrue(lost.held)
+        self.assertFalse(lost.coverage_only)
 
     def test_no_running_instance_does_not_observe_journald(self):
         self.assertFalse(self.check(None, records=[], running=False).held)
@@ -209,7 +218,7 @@ class JournaldHoldTests(saves_fixture._JournalHold):
         report = self.check(None)
         self.assertFalse(report.coverage_only)
         self.assertIn("a credential save failed", "; ".join(report.reasons))
-        self.assertIn(gateway_hold.JOURNALD_REMEDY, gateway_hold.remedy(report))
+        self.assertEqual(gateway_hold.REMEDY, gateway_hold.remedy(report))
 
     def test_unrecorded_failures_and_record_write_errors_keep_unavailable_flag_and_failure_priority(self):
         failed = self.record(saves_fixture.ENVELOPE + saves_fixture.FAILED, self.STARTED + MICROSECOND, "failed")
@@ -301,29 +310,38 @@ class JournaldLifecycleTests(lifecycle._ServiceBackend):
                         lambda since: self.journal()("charmer-gateway", since), lambda _at: True, lambda _since: ())):
                     outcome = gateway.stop()
                 self.assertEqual(outcome.status, "held", outcome.lines())
-                self.assertIn(gateway_hold.JOURNALD_REMEDY, outcome.remedy)
+                self.assertEqual(gateway_hold.COVERAGE_REMEDY, outcome.remedy)
                 runner.assert_called_once()
                 self.assertEqual(runner.call_args.args[0][-1], "systemd-journald.service")
 
-    def test_unavailable_clear_refuses_before_prompt_or_write_and_keeps_gateway_running(self):
+    def test_unavailable_clear_requires_typed_confirmation_then_allows_guarded_stop(self):
         gateway, _probe = self.running_gateway()
-        report = gateway.persistence_hold()
+        prompt, out = io.StringIO(), io.StringIO()
         with mock.patch.object(gateway_commands.consent, "require_human") as human, \
-                mock.patch.object(gateway_commands.consent, "prompt_stream", return_value=io.StringIO()) as prompt, \
-                mock.patch.object(gateway_commands.consent, "_answer_stream", side_effect=lambda stream: stream), \
-                mock.patch.object(gateway, "clear_hold", return_value=()) as clear, \
-                mock.patch.object(gateway_commands.sys, "stderr", new_callable=io.StringIO) as err:
-            code = gateway_commands._clear_hold(gateway, SimpleNamespace(environ={}), io.StringIO("clear-hold\n"),
-                                               io.StringIO())
-        human.assert_called_once_with("charmer gateway clear-hold", {})
-        prompt.assert_not_called()
-        clear.assert_not_called()
-        self.assertEqual(code, 1)
-        self.assertIn(gateway_hold.JOURNALD_REMEDY, err.getvalue())
-        self.assertNotIn("Stop and restart are allowed again", err.getvalue())
-        self.assertTrue(report.journald_unavailable)
-        self.assertFalse(gateway_hold.hold_path(self.state_root).exists())
+                mock.patch.object(gateway_commands.consent, "prompt_stream", return_value=prompt), \
+                mock.patch.object(gateway_commands.consent, "_answer_stream", side_effect=lambda stream: stream):
+            self.assertEqual(gateway_commands._clear_hold(
+                gateway, SimpleNamespace(environ={}), io.StringIO("yes\n"), out), 3)
+            self.assertFalse(gateway_hold.hold_path(self.state_root).exists())
+            self.assertTrue(gateway.persistence_hold().held)
+            self.assertEqual(gateway_commands._clear_hold(
+                gateway, SimpleNamespace(environ={}), io.StringIO("clear-hold\n"), out), 0)
+        human.assert_called_with("charmer gateway clear-hold", {})
+        self.assertIn("Type clear-hold to confirm", prompt.getvalue())
+        self.assertFalse(gateway.persistence_hold().held)
         self.assertEqual(gateway.observe().state, lifecycle.gl.OURS)
+        self.assertEqual(gateway.stop().status, "stopped")
+
+    def test_old_systemd_observation_can_clear_without_restoring_unsupported_timestamp_style(self):
+        gateway, _probe = self.running_gateway()
+        runner = mock.Mock(return_value=subprocess.CompletedProcess([], 1, "", "unsupported timestamp style"))
+        gateway.seams.journald_start = lambda: service.journald_start(runner=runner)
+        report = gateway.persistence_hold()
+        self.assertTrue(report.held)
+        self.assertTrue(report.coverage_only)
+        gateway.clear_hold(report)
+        self.assertFalse(gateway.persistence_hold().held)
+        self.assertTrue(all("--timestamp=us+utc" in call.args[0] for call in runner.call_args_list))
 
     def test_known_restart_keeps_the_typed_confirmation_and_a_later_restart_holds_again(self):
         gateway, probe = self.running_gateway(lifecycle.NOW + datetime.timedelta(hours=1))
@@ -342,7 +360,7 @@ class JournaldLifecycleTests(lifecycle._ServiceBackend):
         self.world.now += DAY
         self.assertTrue(gateway.persistence_hold().held)
 
-    def test_doctor_and_findings_use_the_passive_restore_access_remedy_without_reobservation(self):
+    def test_doctor_and_findings_offer_coverage_acknowledgement_without_reobservation(self):
         gateway, probe = self.running_gateway()
         runtime = SimpleNamespace(endpoint_error=None, gateway=lambda: gateway, gateway_seams=gateway.seams,
                                   environ={}, home=self.home, health_get=None, served_models_callback=None)
@@ -358,9 +376,9 @@ class JournaldLifecycleTests(lifecycle._ServiceBackend):
         self.assertIn("gateway restart pending", attention[0])
         row = doctor.present_report([], attention).rows[0]
         self.assertIn("gateway persistence hold", row.text)
-        self.assertIsNone(row.action)
-        self.assertIn(gateway_hold.JOURNALD_REMEDY, row.text)
-        self.assertNotIn("then clear it", row.text)
+        self.assertEqual(row.action, "hold-coverage")
+        self.assertIn("after checking the credentials", row.text)
+        self.assertIn("charmer gateway clear-hold", row.text)
         self.assertEqual(probe.call_count, 1)
         screen = findings.FindingsScreen(runtime, palette=tui.MONO_PALETTE, tty_in=io.StringIO(),
                                          tty_out=io.StringIO(), report=lambda: ([], info, attention))
@@ -376,8 +394,7 @@ class JournaldLifecycleTests(lifecycle._ServiceBackend):
             screen.run(FakeWindow(["\n", "\x1b", "\x1b"], height=24, width=100))
         self.assertEqual(len(shown), 1)
         text = "\n".join(shown[0][1])
-        self.assertIn(gateway_hold.JOURNALD_REMEDY, text)
-        self.assertNotIn(gateway_actions.HOLD_COVERAGE_ROUTE, text)
+        self.assertIn(gateway_actions.HOLD_COVERAGE_ROUTE, text)
         self.assertNotIn(gateway_actions.HOLD_FAILURE_ROUTE, text)
         self.assertEqual(probe.call_count, 1)
         self.assertEqual(self.calls, [])
@@ -390,13 +407,12 @@ class JournaldLifecycleTests(lifecycle._ServiceBackend):
                                   environ={}, home=self.home, health_get=None, served_models_callback=None)
         attention, _info = gateway_facts.gateway_runtime_report(runtime)
         row = doctor.present_report([], attention).rows[0]
-        self.assertIsNone(row.action)
+        self.assertEqual(row.action, "hold")
         self.assertIn("a credential save failed", row.text)
         self.assertIn(gateway_hold.REMEDY, row.text)
-        self.assertIn(gateway_hold.JOURNALD_REMEDY, row.text)
         self.assertNotIn("no failed credential save", row.text)
 
-    def test_gateway_view_preserves_failure_priority_and_never_offers_clear_as_the_fix_for_unknown(self):
+    def test_gateway_view_preserves_failure_priority_with_unavailable_observation(self):
         gateway, _probe = self.running_gateway()
         for failed in (False, True):
             report = gateway.persistence_hold()
@@ -407,8 +423,8 @@ class JournaldLifecycleTests(lifecycle._ServiceBackend):
             view = gateway_actions.GatewayView(gateway, gateway.observe(), hold=report)
             text = "\n".join(view.hold_lines())
             self.assertFalse(view.can_restart)
-            self.assertIn(gateway_hold.JOURNALD_REMEDY, text)
-            self.assertNotIn("then clear it", text)
             if failed:
-                self.assertIn(gateway_hold.REMEDY, text)
+                self.assertIn(gateway_actions.HOLD_FAILURE_ROUTE, text)
                 self.assertNotIn("no failed credential save", text)
+            else:
+                self.assertIn(gateway_actions.HOLD_COVERAGE_ROUTE, text)

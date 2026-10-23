@@ -64,7 +64,7 @@ class BackupGuideTests(unittest.TestCase):
             "running sessions": ("all managed sessions", "background sessions", "Unknown liveness means"),
             "failed save": ("failed save", "confirmed durable save", "not merely clearing a flag"),
             "journald visibility": ("known journald restart", "unavailable journald observation",
-                                    "clear cannot waive it", "not proof of complete journal history"),
+                                    "clear can acknowledge after credential inspection", "not proof of complete journal history"),
             "incompatible state": ("never lower `state-version`", "uncertain compatibility means stop"),
             "destination": ("outside every source tree", "not a synced or publicly shared folder"),
             "OAuth clone": ("Never run a restored OAuth sign-in on two hosts at once", "invalid_grant"),

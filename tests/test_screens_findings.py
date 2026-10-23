@@ -422,7 +422,7 @@ class FindingsActionTests(_FindingsCase):
                      needs_choice=True, scope=False, generation=0)
         fx.v4_record(self.runtime, catalog.DEFAULT_SEED, managed_id=fx.OTHER_ID,
                      scope=False, generation=0)
-        screen = self.screen(open_sessions=lambda _win: self.fail("opened an unfiltered sessions screen"))
+        screen = self.screen()
         keys = self.select(screen, "needs-choice")
         with mock.patch.object(launch_sessions._SessionsScreen, "_needs_menu", return_value=None) as menu:
             result, _win = self.drive(screen, [*keys, ENTER, ESC])

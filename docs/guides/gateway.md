@@ -126,9 +126,9 @@ Keep it running, free disk space if that was the cause, and wait for a
 confirmed save; sign in again only if none comes. Once you have checked
 the credentials (`charmer providers list`),
 `charmer gateway clear-hold` acknowledges the evidence you checked (a terminal
-outside Claude Code, typed confirmation). It cannot waive an unavailable
-journald process observation: restore that observation first, as described
-below. A generic restart is never the fix for a held gateway.
+outside Claude Code, typed confirmation). An unavailable journald process
+observation is a coverage gap that this confirmation can acknowledge for the
+running gateway. A generic restart is never the fix for a held gateway.
 
 The hold reads only what it needs, over the gateway's whole run: on the
 supervised service, the credential-save lines and the running gateway's
@@ -165,25 +165,24 @@ What to do depends on the reason:
   save seen:** check the credentials (`charmer providers list`), then run
   `charmer gateway clear-hold` once. A clear later than a known restart
   acknowledges it; another restart after the clear holds again.
-- **Journald's process start could not be observed:** keep the gateway running
-  and restore system-manager observation access and journald availability,
-  then retry the hold check. A missing tool or system bus, denied access,
-  timeout, inactive service or invalid properties all hold. Clearing refuses
-  without writing; repeated clears cannot waive an unavailable observation.
-  This differs from unreadable system-journal drop notices, which remain
-  advisory as described above.
+- **Journald's process start could not be observed:** keep the gateway running,
+  check the credentials, then run `charmer gateway clear-hold`. A missing tool
+  or system bus, denied access, timeout, inactive service, invalid properties
+  or an older systemd can leave this observation unavailable. The clear
+  acknowledges the coverage gap for this running gateway; it does not restore
+  the observation, which remains visible in status and doctor. A new gateway
+  instance needs a new check, and later failed saves still hold. Unreadable
+  system-journal drop notices remain advisory as described above.
 - **A credential save failed:** keep the gateway running and wait for a
   persisted save of that credential (sign in again only if none comes),
   and clear only after checking it. A restart-risk or observation problem
   never turns a failed save into a coverage-only hold.
 
-The process observation requests the system manager's properties with
-`--timestamp=us+utc`, `LC_ALL=C` and `TZ=UTC`: the documented
-`Day YYYY-MM-DD HH:MM:SS.UUUUUU UTC` format, including six zero digits for
-whole seconds. That style is available since systemd 248; the timestamp
-property's formatting path was checked in systemd 252 and 262.1 sources.
-An unsupported format is unknown, never guessed from a PID or a startup
-message. This check covers charmer's default journal namespace only.
+The process-start observation needs systemd 248 or newer. On older systemd,
+its unavailability is a coverage gap you can acknowledge after checking the
+credentials. An unsupported timestamp format is unknown, never guessed from
+a PID or a startup message. This check covers charmer's default journal
+namespace only.
 It does not solve silent loss without restart, other collectors, realtime
 clock discontinuities or a restart after the final observation. A successful
 observation is not an atomic safety or journal-completeness guarantee.

@@ -76,6 +76,63 @@ class BulkHousekeepingTests(_SessionsCase):
         self.assertTrue(all(not self.runtime.session_store.exists(mid) for mid in wanted))
         self.assertEqual(native.read_bytes(), b"synthetic conversation kept byte for byte\n")
 
+    def test_bulk_filter_unreadable_directory_refuses_without_writes(self):
+        self.record(ended=True, scope=False)
+        directory = self.runtime.session_store.sessions_dir
+        real = Path.iterdir
+
+        def entries(path):
+            if path == directory:
+                raise PermissionError("fixture directory unavailable")
+            return real(path)
+
+        before = snapshot(self.tmp)
+        for verb in (["forget", "--all"], ["choose", "--all", "--profile", catalog.DEFAULT_SEED]):
+            for flags in (["--dry-run"], ["--yes"]):
+                with self.subTest(verb=verb, flags=flags), mock.patch.object(Path, "iterdir", entries):
+                    code, out, err = self.run_cli(["sessions", *verb, *flags])
+                    self.assertEqual(code, 1, out + err)
+                    self.assertIn("session record directory is unavailable", out + err)
+        self.assertEqual(snapshot(self.tmp), before)
+
+    def test_bulk_selection_filters_first_scan_without_rescanning(self):
+        one = self.record(ended=True, scope=False)
+        two = self.record(managed_id=fx.OTHER_ID, ended=False, scope=False)
+        args = cli.build_parser().parse_args(["sessions", "forget", "--ended", "--dry-run"])
+        with mock.patch.object(commands.session_facts, "_session_record_scan", side_effect=[
+                ([one, two], [], {fx.FIXED_ID, fx.OTHER_ID}), ([], [], set())]) as scan:
+            identifiers = commands._batch_identifiers(self.runtime, args)
+        self.assertEqual(identifiers, [fx.FIXED_ID])
+        scan.assert_called_once_with(self.runtime)
+
+    def test_single_forget_dry_run_uses_single_session_guards(self):
+        self.record(ended=True, scope=False)
+        self.v3_record(managed_id=fx.OTHER_ID)
+        before = snapshot(self.tmp)
+        for value in (fx.FIXED_ID, fx.FIXED_ID[:8], catalog.DEFAULT_SEED, fx.OTHER_ID):
+            with self.subTest(value=value):
+                code, out, err = self.run_cli(["sessions", "forget", value, "--dry-run"])
+                self.assertEqual(code, 0, out + err)
+                self.assertIn("Dry run: nothing written.", out)
+        self.assertEqual(snapshot(self.tmp), before)
+        state.atomic_write(self.runtime.session_store.sessions_dir / f"{fx.THIRD_ID}.json", b"not-json\n")
+        before = snapshot(self.tmp)
+        code, out, err = self.run_cli(["sessions", "forget", fx.THIRD_ID, "--dry-run"])
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("Dry run: nothing written.", out)
+        with mock.patch.object(self.runtime, "background_liveness", return_value=
+                sessions.BackgroundLiveness(False, frozenset(), "fixture unknown")):
+            code, out, err = self.run_cli(["sessions", "forget", fx.FIXED_ID, "--dry-run", "--force"])
+            self.assertEqual(code, 0, out + err)
+            code, out, err = self.run_cli(["sessions", "forget", fx.FIXED_ID, "--dry-run"])
+            self.assertEqual(code, 1, out + err)
+            self.assertIn("cannot tell whether", out + err)
+        self.runtime.live_prefixes = frozenset({fx.FIXED_ID[:8]})
+        code, out, err = self.run_cli(["sessions", "forget", fx.FIXED_ID, "--dry-run", "--force"])
+        self.assertEqual(code, 1, out + err)
+        self.assertIn("live in the background", out + err)
+        self.assertEqual(snapshot(self.tmp), before)
+
     def test_age_never_uses_created_or_falls_back_from_unknown_last_seen(self):
         selected = sessions.SessionFilter(older_than=30)
         record = {"cwd": self.runtime.cwd, "created_at": "2000-01-01T00:00:00Z"}
@@ -117,9 +174,9 @@ class BulkHousekeepingTests(_SessionsCase):
         one = self.record(managed_id=fx.FIXED_ID, ended=True, scope=False)
         twin = "11111111-2222-4222-8222-222222222222"
         self.record(managed_id=twin, ended=True, scope=False)
-        code, out, _ = self.run_cli(["sessions", "forget", "11111111", "--dry-run"])
+        code, out, err = self.run_cli(["sessions", "forget", "11111111", "--dry-run"])
         self.assertEqual(code, 1)
-        self.assertIn("matches 2 sessions", out)
+        self.assertIn("matches 2 managed sessions", err)
         self.v3_record(managed_id=fx.OTHER_ID)
         corrupt = self.runtime.session_store.sessions_dir / f"{fx.THIRD_ID}.json"
         state.atomic_write(corrupt, b"not-json\n")
@@ -343,6 +400,17 @@ class BatchInitializationTests(_SessionsCase):
             with self.subTest(flags=flags):
                 code, out, err = self.actual_entry(["sessions", "forget", "--all", *flags])
                 self.assertEqual(code, expected, out + err)
+                self.assertEqual(snapshot(self.tmp), before)
+
+    def test_actual_entry_single_session_dry_run_writes_nothing(self):
+        self.v3_record(managed_id=fx.FIXED_ID)
+        state.atomic_write(self.runtime.session_store.sessions_dir / f"{fx.OTHER_ID}.json", b"not-json\n")
+        before = snapshot(self.tmp)
+        for mid in (fx.FIXED_ID, fx.OTHER_ID):
+            with self.subTest(mid=mid):
+                code, out, err = self.actual_entry(["sessions", "forget", mid, "--dry-run", "--force"])
+                self.assertEqual(code, 0, out + err)
+                self.assertIn("Dry run: nothing written.", out)
                 self.assertEqual(snapshot(self.tmp), before)
 
     def test_changed_marker_or_channel_after_confirmation_refuses(self):

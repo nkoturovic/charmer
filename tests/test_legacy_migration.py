@@ -1260,13 +1260,12 @@ class OAuthRefreshHoldTests(unittest.TestCase):
                 reasons, _providers = self.journal_hold(back=back, journald="equal")
                 self.assertEqual(reasons, [])
 
-    def test_unavailable_journald_requires_restored_visibility_in_both_directions(self) -> None:
+    def test_unavailable_journald_reports_missing_coverage_in_both_directions(self) -> None:
         for back in (False, True):
             with self.subTest(back=back):
                 reasons, _providers = self.journal_hold(back=back, journald="unavailable")
-                self.assertEqual(len(reasons), 1)
-                self.assertIn("journald's current process start could not be observed", reasons[0])
-                self.assertIn("observation access and availability must be restored", reasons[0])
+                self.assertEqual(reasons, ["service journal: journald's current process start could not be observed; "
+                                           "credential-save evidence may be missing"])
 
     def test_failed_saves_still_hold_alongside_journald_risk_in_both_directions(self) -> None:
         for back in (False, True):

@@ -110,6 +110,12 @@ entry cannot be read), forget and stop ask you to type the session id;
 `--force` is the command-line form, only for when you know it is safe.
 Mark ended has no override.
 
+`charmer sessions forget <id> --dry-run` previews the same single-session
+operation without a confirmation or writes. One id, prefix or name remains a
+single-session selection, including its `--force` option; adding `--dry-run`
+does not turn it into a bulk operation. An exact managed id can preview
+forgetting an unreadable record, and legacy records can be previewed too.
+
 ## Clean up many sessions
 
 ```bash
@@ -141,7 +147,9 @@ unknown background liveness. The preview freezes the ids and record state:
 each is checked again under its lock, and a changed record is refused until
 you review a fresh preview. Results distinguish **succeeded**, **refused**
 and **failed**. Exit status is 1 if any record was refused or failed;
-successes are not rolled back. No transcript is read or deleted.
+successes are not rolled back. If the sessions directory cannot be read, a
+filtered batch refuses with exit 1 before changing anything rather than
+selecting from an incomplete list. No transcript is read or deleted.
 
 In **S**, **Space** marks rows, **\*** marks every visible row (again clears
 the marks), and **X** opens one forget dialog with Cancel focused first.
