@@ -742,7 +742,7 @@ CHEAT_ROWS: tuple[CheatRow, ...] = (
     CheatRow("health", ("diagnostics.doctor", "diagnostics.first-run", "sessions.repair"),
              "Ready / Attention / BLOCKED", ("doctor", "doctor --first-run", "doctor --repair")),
     CheatRow("quota", ("diagnostics.quota",),
-             "readings only in the Nix package in this release; an observation, not a balance", ("quota",)),
+             "release bundles and the Nix package; an observation, not a balance", ("quota",)),
     CheatRow("review by another model family", ("review.request",), "report only"),
     CheatRow("the gateway", ("gateway.status", "gateway.start", "gateway.restart", "gateway.logs"),
              "[guides/gateway.md](guides/gateway.md)"),

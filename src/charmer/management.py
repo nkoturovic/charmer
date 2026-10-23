@@ -50,7 +50,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Mapping
 
-from . import errors, quota, service, state
+from . import errors, quota, resources_root, service, state
 from .platform import posix_fs
 
 KEY_FILE = "management-key"
@@ -60,16 +60,14 @@ PREPARED_FILE = "management-key.prepared"
 ALLOWLIST_PATCH = "cli-proxy-api-management-readonly-allowlist.patch"
 PINNED_BIN_ENV = "CHARMER_PROXY_BIN"
 PATCHES_ENV = "CHARMER_PROXY_PATCHES"
-# The install channel every wrapper sets. Management is a channel policy:
-# only the Nix channel, whose wrapper pins the gateway binary and attests its
-# patch list, enables it; a bundle, a source checkout or no channel keeps it
-# off, whatever binary or patch list the environment names.
+# Installed wrappers pin the gateway and attest its patch list. Source and
+# unwrapped entry points never enable management, regardless of the backend.
 CHANNEL_ENV = "CHARMER_CHANNEL"
 MANAGEMENT_CHANNEL = "nix"
 UNAVAILABLE = "management is unavailable in this build"
 _KEY_SHAPE = re.compile(r"^[0-9a-f]{64}$")
 # Public, value-free policy input to proxy.exec_signature.
-EXEC_POLICY = "047-v1:private-selected-key;stopped-prepare-start-only;allowlist-build;after-scrub"
+EXEC_POLICY = "private-selected-key;stopped-prepare-start-only;allowlist-build-nix-bundle;after-scrub"
 
 
 class ManagementKeyError(errors.CharmerError, RuntimeError):
@@ -120,17 +118,27 @@ def key_dir(home: Path) -> Path:
 
 
 def management_channel(environ: Mapping[str, str]) -> bool:
-    """True only on the channel that may enable management (exact value)."""
-    return environ.get(CHANNEL_ENV) == MANAGEMENT_CHANNEL
+    """Whether this channel's build permits management, including status views."""
+    return allowlist_build(environ)
 
 
 def allowlist_build(environ: Mapping[str, str]) -> bool:
-    """Management may be enabled: the Nix channel, a pinned gateway binary
-    and the read-only allowlist patch in the attested patch list. The patch
-    list alone never enables it (a bundle ships the same series)."""
-    return management_channel(environ) and bool(environ.get(PINNED_BIN_ENV, "").strip()) and ALLOWLIST_PATCH in {
-        name.strip() for name in environ.get(PATCHES_ENV, "").split(",")
-    }
+    """One policy for preparation, injection and reads; no key access here.
+
+    Nix attests bare basenames from its derivation. A bundle attests the full
+    ordered basename@sha256 identities of its packaged contract. Never use
+    selected assets (or a checkout) to authorize an installed bundle.
+    """
+    if environ.get(CHANNEL_ENV) not in (MANAGEMENT_CHANNEL, "bundle") or not environ.get(PINNED_BIN_ENV, "").strip():
+        return False
+    attested = environ.get(PATCHES_ENV, "")
+    if environ[CHANNEL_ENV] == MANAGEMENT_CHANNEL:
+        return ALLOWLIST_PATCH in {name.strip() for name in attested.split(",")}
+    from .qualify import load_gateway_contract
+
+    contract = load_gateway_contract(resources_root())
+    return (contract is not None and attested == ",".join(contract["patches"])
+            and ALLOWLIST_PATCH in {item.split("@", 1)[0] for item in contract["patches"]})
 
 
 def _directory(home: Path, *, create: bool = False) -> Path:
@@ -385,10 +393,10 @@ def pool_status(home: Path, gateway: Mapping, *, get: ManagementGetter | None = 
                 owner_check=None, attention=None, environ: Mapping[str, str] | None = None) -> quota.PoolStatus:
     """Read only a selected active key, then make at most one authenticated read.
 
-    Outside the management channel nothing is read or sent: quota is
-    unavailable in this build, whatever key files the home holds.
+    Without an attested management build no key is read and nothing is sent:
+    quota is unavailable, whatever key files the home holds.
     """
-    if not management_channel(os.environ if environ is None else environ):
+    if not allowlist_build(os.environ if environ is None else environ):
         return quota.PoolStatus("unavailable")
     info = key_state(home)
     if info.disabled:

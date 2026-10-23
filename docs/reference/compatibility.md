@@ -205,6 +205,16 @@ the original failure. No native or kernel input queue is flushed during cleanup.
 Anthropic and OpenAI use either their account sign-in or their API key,
 never both at once, and never fall back from one to the other.
 
+## Quota readings
+
+Release bundles and the Nix package provide the same passive account-quota
+readings in `charmer quota`, `/cm quota` and the Providers screen. They use
+the matching gateway shipped with the installation; source checkouts do not
+provide readings. Updating a bundle leaves the running gateway unchanged:
+use the guarded `charmer gateway restart` before expecting readings. Disabled
+readings stay disabled. Quota is an observation, not a remaining balance;
+missing data never means zero use. See [quota readings](../guides/gateway.md#quota-readings).
+
 ## Managed policy
 
 A Claude Code managed policy (`/etc/claude-code`, `/Library/Application

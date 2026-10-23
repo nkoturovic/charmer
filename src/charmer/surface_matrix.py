@@ -881,7 +881,7 @@ OPERATIONS: tuple[Op, ...] = (
     Op("diagnostics.json", "diagnostics", "the structured report with its environment block",
        audience="scripting", cli=("doctor --json",), absent={"tui": MACHINE_TUI}, stream="stdout", exit="user"),
     Op("diagnostics.quota", "diagnostics",
-       "account quota and credential health (readings only in the Nix package in this release)",
+       "account quota and credential health (release bundles and the Nix package)",
        cli=("quota", "quota --json"), cm=("quota",),
        tui=(_t("card.providers", "card → G (the quota column and Q details)", "an account provider",
                f"{T_CARD}.CardKeyTests.test_every_key_dispatches_and_the_keybar_lists_it"),),

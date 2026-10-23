@@ -1044,8 +1044,8 @@ class ProviderQuotaScreenTests(_ScreenCase):
                 self.assertIn("Attention:", text)
 
     def test_quota_is_unavailable_off_the_management_channel_without_a_remedy(self):
-        # A bundle or source install: even a selected key is never read or
-        # sent, and the screen offers no command that could not help.
+        # A bundle without its matching attestation: even a selected key
+        # is never read or sent, and the screen offers no ineffective remedy.
         runtime = self.make_runtime(self.tmp / "bundle", management=fx.quota_body(),
                                     environ_extra={charmer.management.CHANNEL_ENV: "bundle"})
         screen = cli._ProvidersScreen(runtime, palette=tui.MONO_PALETTE)
@@ -1064,7 +1064,9 @@ class ProviderQuotaScreenTests(_ScreenCase):
         # Inject the management transport without prepare_start: unlike the
         # default fixture's seam state, production without a key is no-key.
         runtime = self.make_runtime(self.tmp / "no-key")
-        runtime.environ[charmer.management.CHANNEL_ENV] = charmer.management.MANAGEMENT_CHANNEL
+        runtime.environ.update({charmer.management.CHANNEL_ENV: "nix",
+            charmer.management.PINNED_BIN_ENV: "/fixture/gateway",
+            charmer.management.PATCHES_ENV: charmer.management.ALLOWLIST_PATCH})
         runtime.management_callback = mock.Mock(side_effect=AssertionError("no key must not make a request"))
         screen = cli._ProvidersScreen(runtime, palette=tui.MONO_PALETTE)
         self.assertEqual(screen.pool.state, "no-key")

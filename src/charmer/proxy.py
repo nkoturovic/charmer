@@ -3245,7 +3245,7 @@ def _init_management(home: Path, environ: dict[str, str] | None, *, prepare_star
                      pid_get: Callable | None, instance_locked: bool = True) -> None:
     """Optional key trouble cannot change init's readiness result or stamps."""
     if not management.allowlist_build(os.environ if environ is None else environ):
-        if management.key_state(home).active != "absent":
+        if os.path.lexists(management.key_dir(home) / management.KEY_FILE):
             print(f"management key: not used ({management.UNAVAILABLE})")
         return
     try:
@@ -3754,7 +3754,7 @@ def _exec_gateway(home: Path, environ: dict[str, str] | None, workdir: Path, tar
             env["MANAGEMENT_PASSWORD"] = key
             print("gateway management: MANAGEMENT_PASSWORD from management-key "
                   "(read-only allowlist build)", file=sys.stderr)
-    elif management.key_state(home).active != "absent":
+    elif os.path.lexists(management.key_dir(home) / management.KEY_FILE):
         print(f"gateway management: management-key present but {management.UNAVAILABLE}; "
               "MANAGEMENT_PASSWORD not passed", file=sys.stderr)
     try:
