@@ -1,0 +1,40 @@
+diff --git a/sdk/cliproxy/service_auth.go b/sdk/cliproxy/service_auth.go
+index a732a9fa..b5169a7b 100644
+--- a/sdk/cliproxy/service_auth.go
++++ b/sdk/cliproxy/service_auth.go
+@@ -208,7 +208,6 @@ func (s *Service) handleAuthUpdates(ctx context.Context, updates []watcher.AuthU
+ 			}
+ 			needsAliasRebuild = true
+ 			authForRegistration := auth
+-			expectedGeneration := authForRegistration.Generation
+ 			expectedDisabled := authForRegistration.Disabled
+ 			authID := authForRegistration.ID
+ 			wait := startedWaitByID[authID]
+@@ -216,7 +215,7 @@ func (s *Service) handleAuthUpdates(ctx context.Context, updates []watcher.AuthU
+ 				phase:    modelRegistrationPhase(authForRegistration),
+ 				category: modelRegistrationCategory(authForRegistration),
+ 				run: func(compatCache *openAICompatibilityRegistrationCache) {
+-					if s.shouldSkipModelRegistration(authID, expectedGeneration, expectedDisabled) {
++					if s.shouldSkipModelRegistration(authID, expectedDisabled) {
+ 						return
+ 					}
+ 					s.completeModelRegistrationForAuthWithCache(registrationCtx, authForRegistration, compatCache)
+@@ -571,7 +570,7 @@ func waitAuthRegistrations(waits []chan struct{}) {
+ 	}
+ }
+ 
+-func (s *Service) shouldSkipModelRegistration(authID string, expectedGeneration uint64, expectedDisabled bool) bool {
++func (s *Service) shouldSkipModelRegistration(authID string, expectedDisabled bool) bool {
+ 	if s == nil || s.coreManager == nil || strings.TrimSpace(authID) == "" {
+ 		return true
+ 	}
+@@ -579,9 +578,6 @@ func (s *Service) shouldSkipModelRegistration(authID string, expectedGeneration
+ 	if !ok || current == nil {
+ 		return !expectedDisabled
+ 	}
+-	if expectedGeneration > 0 && current.Generation > expectedGeneration {
+-		return true
+-	}
+ 	return current.Disabled != expectedDisabled
+ }
+ 

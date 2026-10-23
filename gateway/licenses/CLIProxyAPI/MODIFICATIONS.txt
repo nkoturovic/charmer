@@ -312,3 +312,13 @@ Before the modules are vendored, this patch updates the module requirements:
       modified  sdk/auth/refresh_registry_test.go
       added     sdk/cliproxy/auth/codex_refresh_lead_test.go
       modified  sdk/cliproxy/auth/types.go
+
+24. cli-proxy-api-tool-call-integrity.patch
+    sha256 6e76f133e2d913baab2d0b2c5bd57f4e6c113c861e83497ae564e3cb5275846a
+      modified  internal/translator/openai/claude/openai_claude_content_goldens_test.go
+      modified  internal/translator/openai/claude/openai_claude_response.go
+      added     internal/translator/openai/claude/openai_claude_tool_integrity_test.go
+
+25. cli-proxy-api-initial-registration.patch
+    sha256 6d054fbed1eb42ac34dd2f60c47047b6e2db293028d9825a2ec6f919061dffa8
+      modified  sdk/cliproxy/service_auth.go

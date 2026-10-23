@@ -185,8 +185,11 @@ class PresetPickerTests(test_cli.OperatorCommandCase):
         with shipped_presets():
             return setup_providers.picker_entries(self.runtime, **kwargs)
 
-    def test_shipped_build_offers_keyed_endpoint_and_presets(self) -> None:
-        gateway = catalog.load_catalog(SHIPPED_ROOT).docs["gateway"]
+    def test_an_audited_build_offers_keyed_endpoint_and_presets(self) -> None:
+        # The shipped gateway document with its keyed audit open, as a build
+        # with a current compatibility proof ships it.
+        shipped_gateway = catalog.load_catalog(SHIPPED_ROOT).docs["gateway"]
+        gateway = {**shipped_gateway, catalog.AUDITS_KEY: {catalog.KEYED_COMPAT_AUDIT: True}}
         self.assertTrue(catalog.keyed_compat_audited(gateway))
         self.runtime.catalog.docs["gateway"] = gateway
         presets = {f"preset:{name}" for name, info in shipped().items()

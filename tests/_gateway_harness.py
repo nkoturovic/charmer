@@ -155,6 +155,9 @@ PATCH_ROWS = {
         "tests.test_gateway_patches.ToolCallIntegrityTests.test_announced_tool_identity_is_stable",
         "tests.test_gateway_patches.ToolCallIntegrityTests.test_nonstream_converted_tools_override_ordinary_or_absent_finish",
     ),
+    "cli-proxy-api-initial-registration.patch": (
+        "tests.test_gateway_patches.PatchOmissionProbeTests.test_initial_registration",
+    ),
 }
 
 
@@ -361,7 +364,7 @@ REQUIRED_EVIDENCE["tests.test_gateway_clamp"] = {
 
 
 REQUIRED_EVIDENCE["tests.test_gateway_patches"] = {
-    "patches": {"LO1", "LO2", "LO1-A", "LO3", "LO4", "M0", "M1", "M2", "M3", "M4", "M5", "M6", "M7", "AL1", "RL1", "ME1", "S1", "P1", "CS1", "CR1", "KS1", "AS1", "SC1", "ML1", "OM1", "CI1", "CI2", "CK1", "RS1", "MC1", "MC2", "MG1", "MG2", "CL1", "TI1", "TI2", "TI3", "TIC1", "TIC2"},
+    "patches": {"LO1", "LO2", "LO1-A", "LO3", "LO4", "M0", "M1", "M2", "M3", "M4", "M5", "M6", "M7", "AL1", "RL1", "ME1", "S1", "P1", "CS1", "CR1", "KS1", "AS1", "SC1", "ML1", "OM1", "CI1", "CI2", "CK1", "RS1", "MC1", "MC2", "MG1", "MG2", "CL1", "TI1", "TI2", "TI3", "TIC1", "TIC2", "IR1"},
 }
 
 
@@ -1888,8 +1891,13 @@ class GatewayHarness:
                 boundary("BOUNDARY: launched gateway version unknown or predates 8.0.33")
             self.version = ".".join(match.groups())
             EVIDENCE.binary = dict(binary_identity(self.binary, self.version))
-        except BaseException:
-            self.close()
+        except BaseException as error:
+            # The setup error is the verdict (a boundary stays a boundary);
+            # a failing cleanup is reported with it, never instead of it.
+            try:
+                self.close()
+            except Exception as cleanup:
+                error.add_note(f"gateway fixture cleanup also failed: {type(cleanup).__name__}: {cleanup}")
             raise
 
     def diagnostic(self, message):

@@ -73,310 +73,25 @@ def gate(name, document=None):
 # The files whose bytes define the gateway build: the recipe and the tool.
 RECIPE_FILES = ("gateway/UPSTREAM.json", "tools/build.py")
 
-# Admission ids are stable. 11 was never admitted; 14 retired with 8.0.33.
-# 26-28 are reservations, not retired ids. Only reviewed series shapes count.
+# Admission ids are stable and never inferred from a patch's position or the
+# series length: 11 was never admitted, 14 retired with the 8.0.33 rebase and
+# 26-28 are reserved. The keyed proof numbers each shipped patch by this map.
 RETIRED_PATCH_NUMBERS = (11, 14)
-PATCH_NAMES = {
-    1: "loopback-oauth", 2: "kimi-claude-compat", 3: "non-claude-cache-retention",
-    4: "management-readonly-allowlist", 5: "watcher-parentdir",
-    6: "serve-after-initial-auth-load", 7: "management-env-only",
-    8: "credential-save-report", 9: "credentialed-redirects", 10: "openai-compat-keyed-safety",
-    12: "auth-snapshot-locking", 13: "server-config-snapshot", 14: "plugin-host-locking",
-    15: "claude-metadata-locking", 16: "oauth-model-overlay", 17: "no-antigravity-egress",
-    18: "codex-client-identity", 19: "antigravity-loopback-callback", 20: "codex-api-key-safety",
-    21: "refresh-shutdown-join", 22: "openai-content-chunks", 23: "charmer-model-ids",
-    24: "access-log-path-quoting", 25: "codex-refresh-lead", 26: "output-cap",
-    29: "tool-call-integrity",
+PATCH_IDS = {
+    "cli-proxy-api-loopback-oauth.patch": 1, "cli-proxy-api-kimi-claude-compat.patch": 2,
+    "cli-proxy-api-non-claude-cache-retention.patch": 3, "cli-proxy-api-management-readonly-allowlist.patch": 4,
+    "cli-proxy-api-watcher-parentdir.patch": 5, "cli-proxy-api-serve-after-initial-auth-load.patch": 6,
+    "cli-proxy-api-management-env-only.patch": 7, "cli-proxy-api-credential-save-report.patch": 8,
+    "cli-proxy-api-credentialed-redirects.patch": 9, "cli-proxy-api-openai-compat-keyed-safety.patch": 10,
+    "cli-proxy-api-auth-snapshot-locking.patch": 12, "cli-proxy-api-server-config-snapshot.patch": 13,
+    "cli-proxy-api-claude-metadata-locking.patch": 15, "cli-proxy-api-oauth-model-overlay.patch": 16,
+    "cli-proxy-api-no-antigravity-egress.patch": 17, "cli-proxy-api-codex-client-identity.patch": 18,
+    "cli-proxy-api-antigravity-loopback-callback.patch": 19, "cli-proxy-api-codex-api-key-safety.patch": 20,
+    "cli-proxy-api-refresh-shutdown-join.patch": 21, "cli-proxy-api-openai-content-chunks.patch": 22,
+    "cli-proxy-api-charmer-model-ids.patch": 23, "cli-proxy-api-access-log-path-quoting.patch": 24,
+    "cli-proxy-api-codex-refresh-lead.patch": 25, "cli-proxy-api-tool-call-integrity.patch": 29,
+    "cli-proxy-api-initial-registration.patch": 31,
 }
-PATCH_SHAPES = {
-    "7.3.15": (tuple([*range(1, 11), *range(12, 24)]),),
-    "8.0.33": (
-        tuple([*range(1, 11), 12, 13, *range(15, 26)]),
-        tuple([*range(1, 11), 12, 13, *range(15, 27)]),
-        tuple([*range(1, 11), 12, 13, *range(15, 26), 29]),
-    ),
-}
-TOOL_INTEGRITY_SHA256 = "914a4c538e0a2ff8464e22141d75ccfcd371fcec10afee09f45aa94f9467436f"
-
-
-def numbered_patch_identities(upstream, gateway, content, numbered_to_shipped):
-    """Check reviewed order/ids, recipe hashes, actual bytes and packaged contract.
-
-    This pure binding check grants no audit evidence. In particular a coherent
-    rehash cannot substitute another tool-integrity candidate for admission 29.
-    """
-    from charmer import qualify
-
-    version = upstream["upstream"]["version"]
-    if upstream["upstream"].get("tag") != "v" + version:
-        raise AssertionError("upstream tag/version mismatch")
-    series = upstream["series"]
-    if not series or any(set(entry) != {"basename", "sha256", "admitted"} or entry.get("admitted") is not True
-                         for entry in series):
-        raise AssertionError("series must contain only explicitly admitted patches with basename/sha256")
-    names = [entry["basename"] for entry in series]
-    numbers = next((shape for shape in PATCH_SHAPES.get(version, ())
-                    if names == ["cli-proxy-api-" + PATCH_NAMES[n] + ".patch" for n in shape]), None)
-    if numbers is None:
-        raise AssertionError("unexpected, duplicate or misordered patch series")
-    if gateway["gateway"]["patches"] != names:
-        raise AssertionError("recipe and catalog patch order differ")
-    identities = []
-    for number, entry in zip(numbers, series):
-        digest = entry.get("sha256")
-        if (not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest)
-                or hashlib.sha256(content("gateway/patches/" + entry["basename"])).hexdigest() != digest):
-            raise AssertionError("patch content differs from recipe: " + entry["basename"])
-        if number == 29 and digest != TOOL_INTEGRITY_SHA256:
-            raise AssertionError("tool-integrity digest differs from reviewed admission 29")
-        identities.append(entry["basename"] + "@" + digest)
-    manifest = {"version": 1, "upstream_version": version, "patches": identities}
-    if version == "8.0.33":
-        manifest.update(version=2, go_version=upstream["toolchain"]["version"], godebug=upstream["build"]["godebug"])
-    try:
-        contract = qualify.parse_gateway_contract(content("gateway-contract.json"))
-    except qualify.QualifyError as error:
-        raise AssertionError("packaged gateway contract is invalid") from error
-    if contract != manifest:
-        raise AssertionError("packaged gateway contract differs from recipe/patch identities")
-    expected = [{"number": number, "identity": identity} for number, identity in zip(numbers, identities)]
-    if (not isinstance(numbered_to_shipped, list) or any(
-            not isinstance(row, dict) or type(row.get("number")) is not int for row in numbered_to_shipped)
-            or numbered_to_shipped != expected):
-        raise AssertionError("numbered patch identities differ from reviewed order")
-    return expected
-
-
-class PatchAdmissionMappingTests(unittest.TestCase):
-    """Cheap source bindings, independent of the full (possibly stale) audit."""
-
-    BASE = [*range(1, 11), 12, 13, *range(15, 26)]
-    REVIEWED_TOOL_SHA256 = "914a4c538e0a2ff8464e22141d75ccfcd371fcec10afee09f45aa94f9467436f"
-
-    def setUp(self):
-        self.upstream = recipe()
-        self.gateway = json.loads((RESOURCES_ROOT / "catalog/gateway.json").read_text())
-        self.contents = {"gateway/patches/" + entry["basename"]: (PATCH_DIR / entry["basename"]).read_bytes()
-                         for entry in self.upstream["series"]}
-        self.contents["gateway-contract.json"] = (RESOURCES_ROOT / "gateway-contract.json").read_bytes()
-        self.rows = [{"number": number, "identity": entry["basename"] + "@" + entry["sha256"]}
-                     for number, entry in zip([*self.BASE, 29], self.upstream["series"])]
-
-    def check_mapping(self, *, upstream=None, gateway=None, contents=None, rows=None):
-        return numbered_patch_identities(
-            self.upstream if upstream is None else upstream, self.gateway if gateway is None else gateway,
-            (self.contents if contents is None else contents).__getitem__, self.rows if rows is None else rows)
-
-    def coherent_series(self, series):
-        import copy
-
-        upstream, gateway = copy.deepcopy(self.upstream), copy.deepcopy(self.gateway)
-        upstream["series"] = series
-        gateway["gateway"]["patches"] = [entry["basename"] for entry in series]
-        manifest = {"version": 2, "upstream_version": "8.0.33", "go_version": upstream["toolchain"]["version"],
-                    "godebug": upstream["build"]["godebug"],
-                    "patches": [entry["basename"] + "@" + entry["sha256"] for entry in series]}
-        contents = {**self.contents, "gateway-contract.json": json.dumps(manifest).encode()}
-        return upstream, gateway, contents
-
-    def test_staged_patch_29_has_the_reviewed_digest_and_sparse_id(self):
-        rows = self.check_mapping()
-        self.assertEqual([row["number"] for row in rows], [*self.BASE, 29])
-        self.assertEqual(rows[-1], {"number": 29,
-            "identity": "cli-proxy-api-tool-call-integrity.patch@" + self.REVIEWED_TOOL_SHA256})
-        self.assertEqual(len(rows), 24)
-        self.assertEqual(RETIRED_PATCH_NUMBERS, (11, 14))
-        fixture = json.loads((REPO_ROOT / "tests/fixtures/keyed-compat-audit.json").read_text())
-        self.assertEqual(fixture["required_patch_numbers"], [3, 9, 10])
-        self.assertEqual(fixture["excluded_patch_numbers"], [11, 14])
-
-    def test_reviewed_baseline_and_planned_26_shape_are_distinct_from_29(self):
-        for tail in (None, 26):
-            series = self.upstream["series"][:-1]
-            contents = dict(self.contents)
-            if tail:
-                name, data = "cli-proxy-api-output-cap.patch", b"synthetic output cap"
-                series = [*series, {"basename": name, "admitted": True, "sha256": hashlib.sha256(data).hexdigest()}]
-                contents["gateway/patches/" + name] = data
-            upstream, gateway, bound = self.coherent_series(series)
-            contents["gateway-contract.json"] = bound["gateway-contract.json"]
-            numbers = [*self.BASE, tail] if tail else self.BASE
-            rows = [{"number": number, "identity": entry["basename"] + "@" + entry["sha256"]}
-                    for number, entry in zip(numbers, series)]
-            with self.subTest(tail=tail):
-                self.assertEqual(self.check_mapping(upstream=upstream, gateway=gateway, contents=contents, rows=rows), rows)
-                if tail:
-                    self.assertEqual(len(rows), len(self.rows))
-                    rows[-1]["number"] = 29
-                    with self.assertRaisesRegex(AssertionError, "numbered patch"):
-                        self.check_mapping(upstream=upstream, gateway=gateway, contents=contents, rows=rows)
-
-    def test_unreviewed_series_shapes_fail_even_with_coherent_catalog_and_contract(self):
-        import copy
-
-        base = self.upstream["series"][:-1]
-        extra = lambda name: {"basename": "cli-proxy-api-" + name + ".patch", "admitted": True, "sha256": "0" * 64}
-        variants = {
-            "missing": base[:-1], "duplicate": [*base[:-1], base[-2]],
-            "unknown": [*base[:-1], extra("unknown")],
-            "swapped": [base[1], base[0], *base[2:]],
-            "26+29": [*base, extra("output-cap"), self.upstream["series"][-1]],
-            "29+26": [*self.upstream["series"], extra("output-cap")],
-            "27": [*base, extra("context-error-normalization")],
-            "28": [*base, extra("log-reduction")],
-        }
-        for label, series in variants.items():
-            upstream, gateway, contents = self.coherent_series(copy.deepcopy(series))
-            with self.subTest(shape=label), self.assertRaisesRegex(AssertionError, "patch series"):
-                self.check_mapping(upstream=upstream, gateway=gateway, contents=contents)
-
-    def test_numbered_rows_must_match_exactly_not_just_their_count_or_ids(self):
-        import copy
-
-        for label in ("missing", "duplicate", "swapped", "identity", "boolean", "extra", 26, 27, 28):
-            rows = copy.deepcopy(self.rows)
-            if label == "missing":
-                rows.pop()
-            elif label == "duplicate":
-                rows[-1] = dict(rows[-2])
-            elif label == "swapped":
-                rows[-1], rows[-2] = rows[-2], rows[-1]
-            elif label == "identity":
-                rows[-1]["identity"] = rows[-2]["identity"]
-            elif label == "boolean":
-                rows[0]["number"] = True
-            elif label == "extra":
-                rows[-1]["label"] = "caller supplied"
-            else:
-                rows[-1]["number"] = label
-            with self.subTest(change=label), self.assertRaisesRegex(AssertionError, "numbered patch"):
-                self.check_mapping(rows=rows)
-
-    def test_recipe_digest_and_actual_patch_bytes_must_agree(self):
-        import copy
-
-        for value in (None, 29, "bad", "A" * 64, "0" * 64):
-            upstream = copy.deepcopy(self.upstream)
-            upstream["series"][-1]["sha256"] = value
-            with self.subTest(digest=value), self.assertRaisesRegex(AssertionError, "content differs"):
-                self.check_mapping(upstream=upstream)
-        for name, data in self.contents.items():
-            if name.startswith("gateway/patches/"):
-                with self.subTest(patch=name), self.assertRaisesRegex(AssertionError, "content differs"):
-                    self.check_mapping(contents={**self.contents, name: data + b"\n"})
-
-    def test_coherent_baseline_content_rehash_cannot_match_existing_numbered_proof(self):
-        import copy
-
-        series = copy.deepcopy(self.upstream["series"])
-        name = "gateway/patches/" + series[0]["basename"]
-        changed = self.contents[name] + b"\n"
-        series[0]["sha256"] = hashlib.sha256(changed).hexdigest()
-        upstream, gateway, contents = self.coherent_series(series)
-        contents[name] = changed
-        with self.assertRaisesRegex(AssertionError, "numbered patch"):
-            self.check_mapping(upstream=upstream, gateway=gateway, contents=contents)
-
-    def test_coherently_rehashed_tool_candidate_is_not_the_reviewed_admission(self):
-        import copy
-
-        series = copy.deepcopy(self.upstream["series"])
-        name = "gateway/patches/" + series[-1]["basename"]
-        changed = self.contents[name] + b"\n"
-        series[-1]["sha256"] = hashlib.sha256(changed).hexdigest()
-        upstream, gateway, contents = self.coherent_series(series)
-        contents[name] = changed
-        rows = copy.deepcopy(self.rows)
-        rows[-1]["identity"] = series[-1]["basename"] + "@" + series[-1]["sha256"]
-        with self.assertRaisesRegex(AssertionError, "reviewed admission 29"):
-            self.check_mapping(upstream=upstream, gateway=gateway, contents=contents, rows=rows)
-
-    def test_catalog_order_and_packaged_contract_are_independent_bindings(self):
-        import copy
-
-        gateway = copy.deepcopy(self.gateway)
-        gateway["gateway"]["patches"].reverse()
-        with self.assertRaisesRegex(AssertionError, "catalog patch order"):
-            self.check_mapping(gateway=gateway)
-        contract = json.loads(self.contents["gateway-contract.json"])
-        for key, value in (("patches", contract["patches"][:-1]), ("patches", list(reversed(contract["patches"]))),
-                           ("go_version", "1.26.9"), ("godebug", []), ("extra", "caller label"),
-                           ("version", True), ("patches", [*contract["patches"], contract["patches"][-1]])):
-            contents = {**self.contents, "gateway-contract.json": json.dumps({**contract, key: value}).encode()}
-            with self.subTest(field=key, value=value), self.assertRaisesRegex(AssertionError, "packaged gateway contract"):
-                self.check_mapping(contents=contents)
-        for raw in (b"{malformed", self.contents["gateway-contract.json"][:-1] + b',"version":2}'):
-            with self.subTest(raw=raw[:30]), self.assertRaisesRegex(AssertionError, "packaged gateway contract"):
-                self.check_mapping(contents={**self.contents, "gateway-contract.json": raw})
-
-    def test_sparse_mapping_does_not_waive_source_or_build_proof_bindings(self):
-        import copy
-        from unittest import mock
-        import _gateway_harness as harness
-
-        audit = KeyedAuditInvariantTests()
-        audit.setUp()
-        # An open flag and valid number mapping cannot bless a stale recipe.
-        stale = copy.deepcopy(audit.fixture)
-        stale["gateway"]["recipe_sha256"]["gateway/UPSTREAM.json"] = "0" * 64
-        with self.assertRaises(AssertionError):
-            audit.validate_audit(fixture=stale, gateway=audit.opened)
-
-        # A synthetic prefix fixture isolates the existing source assertions
-        # from earlier stale-recipe failures. It is never written or accepted:
-        # the sentinel stops the control before any evidence/binary proof.
-        fixture = copy.deepcopy(audit.fixture)
-        digest = lambda name: hashlib.sha256(logical_path(name).read_bytes()).hexdigest()
-        build = fixture["gateway"]
-        build.update(build_definition_sha256=digest("nix/gateway.nix"),
-            recipe_sha256={name: digest(name) for name in RECIPE_FILES}, upstream_version="8.0.33",
-            source_tag="v8.0.33", source_hash=self.upstream["source"]["nix_hash"],
-            vendor_hash=self.upstream["vendor"]["nix_hash"], consumed_go_modules=harness.PINNED_GO_MODULES,
-            ordered_manifest=json.loads(self.contents["gateway-contract.json"]), numbered_to_shipped=self.rows)
-        client = json.loads((RESOURCES_ROOT / "catalog/native-contract.json").read_text())["verified"][0]
-        fixture["client"] = {"version": client["version"], "sha256": client["platforms"]["linux-x64"]["sha256"],
-                             "native_contract_file_sha256": digest("catalog/native-contract.json")}
-        report = fixture["source_report"]["document"]
-        report["relevant_sources"] = [{"path": logical_path(name).relative_to(REPO_ROOT).as_posix(), "sha256": digest(name)}
-                                      for name in harness.KEYED_RELEVANT_SOURCES]
-        fixture["source_report"]["sha256"] = hashlib.sha256(
-            (json.dumps(report, indent=2, sort_keys=True) + "\n").encode()).hexdigest()
-
-        class PrefixChecked(Exception):
-            pass
-
-        real_bound_document = audit.bound_document
-        def stop_before_evidence(entry):
-            if entry is fixture["source_report"]:
-                return real_bound_document(entry)
-            raise PrefixChecked("source assertions reached; no proof accepted")
-
-        with mock.patch.object(audit, "bound_document", side_effect=stop_before_evidence):
-            with self.assertRaises(PrefixChecked):
-                audit.validate_audit(fixture=fixture, gateway=audit.opened)
-            for name in (*harness.KEYED_RELEVANT_SOURCES, *RECIPE_FILES, "nix/gateway.nix"):
-                with self.subTest(source=name), self.assertRaises(AssertionError):
-                    audit.validate_audit(fixture=fixture, gateway=audit.opened,
-                                         changed_bytes={name: logical_path(name).read_bytes() + b"\n"})
-            report["relevant_sources"][0]["sha256"] = "0" * 64
-            fixture["source_report"]["sha256"] = hashlib.sha256(
-                (json.dumps(report, indent=2, sort_keys=True) + "\n").encode()).hexdigest()
-            with self.assertRaises(AssertionError):
-                audit.validate_audit(fixture=fixture, gateway=audit.opened)
-
-    def test_admission_and_upstream_version_remain_explicit(self):
-        import copy
-
-        for change in (lambda doc: doc["series"][0].update(admitted=False),
-                       lambda doc: doc["series"][-1].update(number=26),
-                       lambda doc: doc["series"][-1].update(number=27),
-                       lambda doc: doc["series"][-1].update(number=28),
-                       lambda doc: doc["upstream"].update(tag="v7.3.15"),
-                       lambda doc: doc["upstream"].update(version="8.0.34", tag="v8.0.34")):
-            upstream = copy.deepcopy(self.upstream)
-            change(upstream)
-            with self.assertRaises(AssertionError):
-                self.check_mapping(upstream=upstream)
 
 
 class KeyedAuditInvariantTests(unittest.TestCase):
@@ -384,8 +99,9 @@ class KeyedAuditInvariantTests(unittest.TestCase):
 
     Source paths are repository-relative; immutable store identities remain
     exact. All current source checks use REPO_ROOT; neither operator state
-    nor host evidence is read. An open flag requires the complete current
-    proof, not just a matching gateway version or patch basename list.
+    nor host evidence is read. The shipped flag is true only with a current
+    proof, otherwise false: an open flag requires the complete current proof,
+    not just a matching gateway version or patch basename list.
     """
 
     def setUp(self):
@@ -436,11 +152,18 @@ class KeyedAuditInvariantTests(unittest.TestCase):
         self.assertEqual(build["vendor_hash"], upstream["vendor"]["nix_hash"])
         self.assertEqual(build["consumed_go_modules"], harness.PINNED_GO_MODULES)
         names = admitted_names(upstream)
-        numbered = numbered_patch_identities(upstream, gateway, content, build["numbered_to_shipped"])
-        identities = [row["identity"] for row in numbered]
+        self.assertEqual(gateway["gateway"]["patches"], names)
+        identities = [name + "@" + digest("gateway/patches/" + name) for name in names]
         manifest = {"version": 2, "upstream_version": version, "patches": identities,
                     "go_version": upstream["toolchain"]["version"], "godebug": upstream["build"]["godebug"]}
         self.assertEqual(build["ordered_manifest"], manifest)
+        from charmer import qualify
+        self.assertEqual(qualify.parse_gateway_contract(content("gateway-contract.json")), manifest)
+        # Each shipped patch carries its reviewed admission id, never one
+        # inferred from its position or the series length.
+        self.assertLessEqual(set(names), set(PATCH_IDS))
+        self.assertEqual(build["numbered_to_shipped"], [
+            {"number": PATCH_IDS[name], "identity": identity} for name, identity in zip(names, identities)])
         self.assertEqual(fixture["required_patch_numbers"], [3, 9, 10])
         self.assertEqual(fixture["excluded_patch_numbers"], list(RETIRED_PATCH_NUMBERS))
         for index, name in ((2, "non-claude-cache-retention"), (8, "credentialed-redirects"),
@@ -778,7 +501,6 @@ class ManagementPinWiringTests(unittest.TestCase):
         text = (NIX_DIR / "gateway.nix").read_text()
         names = admitted_names()
         manifest = json.loads((RESOURCES_ROOT / "catalog" / "gateway.json").read_text())["gateway"]["patches"]
-        self.assertEqual(len(names), 24)
         self.assertEqual(names, manifest)
         # The applied series and the passthru export are the recipe's admitted
         # series, in order; gateway.nix carries no patch list of its own.
@@ -931,38 +653,8 @@ class CliProxyApiDerivationTests(unittest.TestCase):
         # retention patch's hunks are pinned to the sequentially patched
         # source, so the order is part of the contract. The gateway.json
         # manifest must carry the same ordered list (manifest parity).
-        applied = names
-        self.assertEqual(
-            applied,
-            [
-                "cli-proxy-api-loopback-oauth.patch",
-                "cli-proxy-api-kimi-claude-compat.patch",
-                "cli-proxy-api-non-claude-cache-retention.patch",
-                "cli-proxy-api-management-readonly-allowlist.patch",
-                "cli-proxy-api-watcher-parentdir.patch",
-                "cli-proxy-api-serve-after-initial-auth-load.patch",
-                "cli-proxy-api-management-env-only.patch",
-                "cli-proxy-api-credential-save-report.patch",
-                "cli-proxy-api-credentialed-redirects.patch",
-                "cli-proxy-api-openai-compat-keyed-safety.patch",
-                "cli-proxy-api-auth-snapshot-locking.patch",
-                "cli-proxy-api-server-config-snapshot.patch",
-                "cli-proxy-api-claude-metadata-locking.patch",
-                "cli-proxy-api-oauth-model-overlay.patch",
-                "cli-proxy-api-no-antigravity-egress.patch",
-                "cli-proxy-api-codex-client-identity.patch",
-                "cli-proxy-api-antigravity-loopback-callback.patch",
-                "cli-proxy-api-codex-api-key-safety.patch",
-                "cli-proxy-api-refresh-shutdown-join.patch",
-                "cli-proxy-api-openai-content-chunks.patch",
-                "cli-proxy-api-charmer-model-ids.patch",
-                "cli-proxy-api-access-log-path-quoting.patch",
-                "cli-proxy-api-codex-refresh-lead.patch",
-                "cli-proxy-api-tool-call-integrity.patch",
-            ],
-        )
         manifest = json.loads((RESOURCES_ROOT / "catalog" / "gateway.json").read_text())
-        self.assertEqual(manifest["gateway"]["patches"], applied)
+        self.assertEqual(manifest["gateway"]["patches"], names)
         # The network-free regression gates are recipe records; the build
         # tool runs them in the flake's gate checks (never in the shipped
         # build), so the patched tests run inside a sandboxed build.

@@ -167,7 +167,12 @@
     },
     {
       "basename": "cli-proxy-api-tool-call-integrity.patch",
-      "sha256": "914a4c538e0a2ff8464e22141d75ccfcd371fcec10afee09f45aa94f9467436f",
+      "sha256": "6e76f133e2d913baab2d0b2c5bd57f4e6c113c861e83497ae564e3cb5275846a",
+      "admitted": true
+    },
+    {
+      "basename": "cli-proxy-api-initial-registration.patch",
+      "sha256": "6d054fbed1eb42ac34dd2f60c47047b6e2db293028d9825a2ec6f919061dffa8",
       "admitted": true
     }
   ],
@@ -894,6 +899,20 @@
         "TestProviderRefreshLeads",
         "TestCodexRefreshLeadRegistry96HoursClaudeUnchanged",
         "TestCodexRefreshLeadShouldRefreshAt96Hours"
+      ]
+    },
+    {
+      "name": "tool-call-integrity",
+      "packages": [
+        "./internal/translator/openai/claude"
+      ],
+      "run": "^(TestToolCallIntegrityStreamGoldens|TestToolCallIntegrityNonStreamGoldens)$",
+      "platforms": "portable",
+      "race": false,
+      "count": null,
+      "expected_tests": [
+        "TestToolCallIntegrityStreamGoldens",
+        "TestToolCallIntegrityNonStreamGoldens"
       ]
     }
   ],

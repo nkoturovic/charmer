@@ -151,7 +151,7 @@ three response paths into text and unsigned thinking blocks, ignores
 `closed:true` as a block terminator, and keeps string, null and absent
 content byte-identical; unsupported chunks keep each path's earlier
 behavior (omission rows MC1/MC2). Signed Mistral history replay stays
-unsupported. The last patch, #23, keeps charmer's own names literal in the
+unsupported. #23 keeps charmer's own names literal in the
 Anthropic-format `/v1/models` listing (the one an `Anthropic-Version`
 request gets): upstream's `EnsureClaudeModelIDPrefix` lists every id outside
 `claude-` as `claude-fable-5-dd-` plus the id reversed, and now also leaves
@@ -159,7 +159,19 @@ request gets): upstream's `EnsureClaudeModelIDPrefix` lists every id outside
 its own selectors under their earlier prefix; every other id (`gpt-multi-*` included)
 stays cloaked, requests resolve either form as before, and the
 OpenAI-format listing is unchanged (Go gate `charmer-model-ids`,
-built-gateway row `CharmerModelListingTests` CL1). Refused
+built-gateway row `CharmerModelListingTests` CL1). #29 repairs tool calls on
+the keyed and keyless Messages-to-chat routes: calls whose upstream omits
+their index stay distinct (interleaved fragments follow their call's ID), an
+announced call keeps its ID, and a reply that converts tool calls ends with
+`tool_use`, streamed or not, unless the finish reason is `length` or
+`content_filter` (Go gate `tool-call-integrity`,
+built-gateway rows `ToolCallIntegrityTests` TI1–TI3 with controls TIC1/TIC2;
+it edits a golden file of #22, a declared `PATCH_DEPENDENCIES` edge). #31
+keeps a newly loaded credential's queued model registration when ordinary
+bookkeeping (a request result, refresh scheduling, cooldown or quota state)
+advances its generation first: it drops the generation-only skip and keeps the
+disabled and removed checks (omission row IR1, probe
+`TestOmissionInitialRegistration` in `tests/gateway_service_probe_test.go`). Refused
 credentialed redirects yield fixed local 502 `upstream redirect refused`, with
 no upstream body/Location or path-bearing refusal log. Keyed-compat safety is
 route-scoped to Claude `/v1/messages` → chat; compact, images and SDK
@@ -2647,41 +2659,22 @@ use-max-completion-tokens are not exposed. `docs/providers/openai-compatible.md`
 states the user-facing caveats.
 
 Audit=true is guarded by `tests/fixtures/keyed-compat-audit.json` and
-`test_packaging.KeyedAuditInvariantTests`: full ordered basename@sha256 manifest,
-explicit reviewed admission ids, mandatory 3/9/10, exclusions 11/14 on 8.0.33,
-build definition, recipe and build tool, source/vendor, client and exact
-whole-file relevant-source identities plus complete core/audit/client/`J1` proof.
-`PatchAdmissionMappingTests` checks those source mappings independently of stale
-full proof. The historical 7.3.15 shape is 1–10, 12–23. The 8.0.33 baseline is
-B = 1–10, 12, 13, 15–25; the only additional supported helper shapes are B+26
-(the separately planned output-cap tail) or B+29, never both. 26–28 remain
-reservations, not retired ids. Caller labels or equal series lengths cannot
-substitute identities. Recipe hashes must match actual patch bytes, ordered
-catalog and packaged contract; admission 29 also pins its reviewed SHA256
-`914a4c538e0a2ff8464e22141d75ccfcd371fcec10afee09f45aa94f9467436f`.
-
-The current source set stages `cli-proxy-api-tool-call-integrity.patch` as 29
-on the unchanged 8.0.33 source/toolchain/vendor pins. It repairs distinct
-omitted-index calls, announced call identity and non-stream converted-tool
-terminal reasons on keyed and keyless Messages-to-chat routes. Ownership:
-`ToolCallIntegrityTests` TI1/TI2/TI3 in `tests/test_gateway_patches.py`, with
-explicit/mixed continuation and terminal-precedence controls TIC1/TIC2 and
-existing MC1/MC2/MG1/MG2 content-chunk controls. Its golden hunk edits
-`internal/translator/openai/claude/openai_claude_content_goldens_test.go`, created
-by 22: `_gateway_harness.PATCH_DEPENDENCIES` declares 29→22. Omission of 22 uses
-{22,29} compared with dependent-only {29}; failed application is not own-red.
-No production patch was changed to add these serving tests.
-
-This is source staging, not fresh gateway execution or release acceptance.
-Fresh preparation/builds, notices/inventory/SBOM derivation, complete behavioral
-omission/dependency proof and keyed proof remain required. The audit flag stays
-true during staging; stale proof is not rewritten or hidden by closing the flag.
-The existing 34-row proof (5 core, 11 audit, 9 client and 9 journeys) describes
-the earlier 22-patch release, not this source set. The fixture is test provenance,
-never runtime policy. Closed and absent flags remain regression inputs; changing
-the flag creates no operator state. Any listed-source change requires fresh
-complete keyed proof and fixture refresh; basenames/version equality alone are
-insufficient. Source paths in the fixture are repository-relative; immutable
+`test_packaging.KeyedAuditInvariantTests`: the full ordered basename@sha256
+manifest (equal to the actual patch bytes, the catalog order and the packaged
+contract), each shipped patch numbered by its reviewed admission id
+(`test_packaging.PATCH_IDS`, never inferred from position or series length; 11
+and 14 are excluded, 26–28 reserved), mandatory 3/9/10, build definition,
+recipe and build tool, source/vendor, client and exact whole-file
+relevant-source identities plus complete core/audit/client/`J1` proof (34 rows:
+5 core, 11 audit, 9 client and 9 journeys). The shipped flag is true only with
+a current proof, otherwise false: any listed-source change requires a fresh
+complete keyed proof and fixture refresh, or audit=false; basenames/version
+equality alone are insufficient, and a stale proof is never rebound. Reopening
+the flag also restores the open-route wording of
+`docs/providers/openai-compatible.md` and `docs/quickstart.md`, which the docs
+tests check against the flag. The fixture is test provenance, never runtime
+policy. Closed and absent flags remain regression inputs; changing the flag
+creates no operator state. Source paths in the fixture are repository-relative; immutable
 store paths and binary digests remain exact. The package-containment journey
 checks that the standalone package payload excludes operator credentials and
 grants. It replaces the removed module-export surface, not any route-safety row.

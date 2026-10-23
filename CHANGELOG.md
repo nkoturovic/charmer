@@ -61,6 +61,12 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- Keyed generic OpenAI-compatible endpoints are unavailable in this build,
+  and so are the five presets that use them (Cerebras, Google Gemini, Groq,
+  Mistral AI, xAI): declaring one stops with a message that the route is
+  closed. Built-in providers, Anthropic-compatible endpoints and presets, and
+  keyless network servers are unaffected
+  ([availability](docs/providers/openai-compatible.md#availability-in-this-build)).
 - Managed terminal sessions may run a subagent in the foreground;
   background remains the default.
 - The launch card shows gateway holds, describes **U** as checking for an
@@ -112,11 +118,14 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
-- The staged OpenAI-compatible converter repair separates distinct tool calls
-  with omitted indexes, preserves an announced call identity and uses `tool_use`
-  for converted tools with ordinary or missing non-stream finish reasons. Explicit
-  truncation and filtering retain their existing precedence. Fresh built-gateway
-  verification and release acceptance for this source set remain pending.
+- OpenAI-compatible endpoints: tool calls whose index the endpoint omits stay
+  separate, also when their fragments interleave; a call keeps the ID it was
+  announced with; and a reply that carries tool calls ends with `tool_use`,
+  streamed or not, unless the endpoint reports truncation (`length`) or
+  filtering (`content_filter`).
+- A credential the gateway loads is no longer left without models when a
+  request result or refresh bookkeeping updates it while its first model
+  registration is still queued.
 - Gateway restart confirmation uses the shared session scan. When a record
   is unreadable it names the live sessions it can identify and says whether
   other sessions may be running, rather than claiming none run.

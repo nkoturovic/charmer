@@ -1,7 +1,21 @@
+diff --git a/internal/translator/openai/claude/openai_claude_content_goldens_test.go b/internal/translator/openai/claude/openai_claude_content_goldens_test.go
+index 1a47581e..65846153 100644
+--- a/internal/translator/openai/claude/openai_claude_content_goldens_test.go
++++ b/internal/translator/openai/claude/openai_claude_content_goldens_test.go
+@@ -21,7 +21,7 @@ var contentChunksLegacyGoldens = []struct{ name, message, stream, helper, regist
+ 	{"unknown-mixed", "{\"content\":[{\"type\":\"text\",\"text\":\"answer\"},{\"type\":\"unknown\",\"text\":\"do not reinterpret\"}]}", "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":0,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"[{\\\"type\\\":\\\"text\\\",\\\"text\\\":\\\"answer\\\"},{\\\"type\\\":\\\"unknown\\\",\\\"text\\\":\\\"do not reinterpret\\\"}]\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n", "{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[{\"type\":\"text\",\"text\":\"[{\\\"type\\\":\\\"text\\\",\\\"text\\\":\\\"answer\\\"},{\\\"type\\\":\\\"unknown\\\",\\\"text\\\":\\\"do not reinterpret\\\"}]\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}", "{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[{\"type\":\"text\",\"text\":\"answer\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}"},
+ 	{"malformed", "{\"content\":[null,{\"type\":\"text\",\"text\":7}]}", "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":0,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"[null,{\\\"type\\\":\\\"text\\\",\\\"text\\\":7}]\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n", "{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[{\"type\":\"text\",\"text\":\"[null,{\\\"type\\\":\\\"text\\\",\\\"text\\\":7}]\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}", "{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[{\"type\":\"text\",\"text\":\"7\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}"},
+ 	{"malformed-thinking", "{\"content\":[{\"type\":\"thinking\",\"thinking\":null}]}", "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":0,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"[{\\\"type\\\":\\\"thinking\\\",\\\"thinking\\\":null}]\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n", "{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[{\"type\":\"text\",\"text\":\"[{\\\"type\\\":\\\"thinking\\\",\\\"thinking\\\":null}]\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}", "{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}"},
+-	{"legacy-tool-reasoning", "{\"content\":[{\"type\":\"reasoning\",\"text\":\"thought\"},{\"type\":\"tool_calls\",\"tool_calls\":[{\"id\":\"fixture\",\"function\":{\"name\":\"fixture\",\"arguments\":\"{}\"}}]},{\"type\":\"text\",\"text\":\"answer\"}]}", "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":0,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"[{\\\"type\\\":\\\"reasoning\\\",\\\"text\\\":\\\"thought\\\"},{\\\"type\\\":\\\"tool_calls\\\",\\\"tool_calls\\\":[{\\\"id\\\":\\\"fixture\\\",\\\"function\\\":{\\\"name\\\":\\\"fixture\\\",\\\"arguments\\\":\\\"{}\\\"}}]},{\\\"type\\\":\\\"text\\\",\\\"text\\\":\\\"answer\\\"}]\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n", "{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[{\"type\":\"text\",\"text\":\"[{\\\"type\\\":\\\"reasoning\\\",\\\"text\\\":\\\"thought\\\"},{\\\"type\\\":\\\"tool_calls\\\",\\\"tool_calls\\\":[{\\\"id\\\":\\\"fixture\\\",\\\"function\\\":{\\\"name\\\":\\\"fixture\\\",\\\"arguments\\\":\\\"{}\\\"}}]},{\\\"type\\\":\\\"text\\\",\\\"text\\\":\\\"answer\\\"}]\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}", "{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[{\"type\":\"thinking\",\"thinking\":\"thought\"},{\"type\":\"tool_use\",\"id\":\"fixture\",\"name\":\"fixture\",\"input\":{}},{\"type\":\"text\",\"text\":\"answer\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}"},
++	{"legacy-tool-reasoning", "{\"content\":[{\"type\":\"reasoning\",\"text\":\"thought\"},{\"type\":\"tool_calls\",\"tool_calls\":[{\"id\":\"fixture\",\"function\":{\"name\":\"fixture\",\"arguments\":\"{}\"}}]},{\"type\":\"text\",\"text\":\"answer\"}]}", "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":0,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"[{\\\"type\\\":\\\"reasoning\\\",\\\"text\\\":\\\"thought\\\"},{\\\"type\\\":\\\"tool_calls\\\",\\\"tool_calls\\\":[{\\\"id\\\":\\\"fixture\\\",\\\"function\\\":{\\\"name\\\":\\\"fixture\\\",\\\"arguments\\\":\\\"{}\\\"}}]},{\\\"type\\\":\\\"text\\\",\\\"text\\\":\\\"answer\\\"}]\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n", "{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[{\"type\":\"text\",\"text\":\"[{\\\"type\\\":\\\"reasoning\\\",\\\"text\\\":\\\"thought\\\"},{\\\"type\\\":\\\"tool_calls\\\",\\\"tool_calls\\\":[{\\\"id\\\":\\\"fixture\\\",\\\"function\\\":{\\\"name\\\":\\\"fixture\\\",\\\"arguments\\\":\\\"{}\\\"}}]},{\\\"type\\\":\\\"text\\\",\\\"text\\\":\\\"answer\\\"}]\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}", "{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[{\"type\":\"thinking\",\"thinking\":\"thought\"},{\"type\":\"tool_use\",\"id\":\"fixture\",\"name\":\"fixture\",\"input\":{}},{\"type\":\"text\",\"text\":\"answer\"}],\"stop_reason\":\"tool_use\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}"},
+ }
+ 
+ func TestContentChunksLegacyGoldens(t *testing.T) {
 diff --git a/internal/translator/openai/claude/openai_claude_response.go b/internal/translator/openai/claude/openai_claude_response.go
+index 617f08ae..55d73a72 100644
 --- a/internal/translator/openai/claude/openai_claude_response.go
 +++ b/internal/translator/openai/claude/openai_claude_response.go
-@@ -37,6 +37,9 @@
+@@ -37,6 +37,9 @@ type ConvertOpenAIResponseToAnthropicParams struct {
  	ContentAccumulator strings.Builder
  	// Tool calls accumulator for streaming
  	ToolCallsAccumulator map[int]*ToolCallAccumulator
@@ -11,7 +25,7 @@ diff --git a/internal/translator/openai/claude/openai_claude_response.go b/inter
  	// Track if text content block has been started
  	TextContentBlockStarted bool
  	// Track if thinking content block has been started
-@@ -84,6 +87,9 @@
+@@ -84,6 +87,9 @@ type ToolCallAccumulator struct {
  	// StartEmitted tracks whether content_block_start has already been sent
  	// for this tool index.
  	StartEmitted bool
@@ -21,7 +35,7 @@ diff --git a/internal/translator/openai/claude/openai_claude_response.go b/inter
  }
  
  // ConvertOpenAIResponseToClaude converts OpenAI streaming response format to Anthropic API format.
-@@ -108,6 +114,8 @@
+@@ -108,6 +114,8 @@ func ConvertOpenAIResponseToClaude(_ context.Context, _ string, originalRequestR
  			SawToolCall:                 false,
  			ContentAccumulator:          strings.Builder{},
  			ToolCallsAccumulator:        nil,
@@ -30,7 +44,7 @@ diff --git a/internal/translator/openai/claude/openai_claude_response.go b/inter
  			TextContentBlockStarted:     false,
  			ThinkingContentBlockStarted: false,
  			FinishReason:                "",
-@@ -263,22 +271,23 @@
+@@ -263,22 +271,23 @@ func convertOpenAIStreamingChunkToAnthropic(rawJSON []byte, param *ConvertOpenAI
  			}
  
  			toolCalls.ForEach(func(arrayIndex, toolCall gjson.Result) bool {
@@ -61,7 +75,7 @@ diff --git a/internal/translator/openai/claude/openai_claude_response.go b/inter
  					if idStr := id.String(); idStr != "" {
  						accumulator.ID = idStr
  					}
-@@ -517,6 +526,7 @@
+@@ -517,6 +526,7 @@ func convertOpenAINonStreamingToAnthropic(rawJSON []byte) [][]byte {
  	if choices := root.Get("choices"); choices.Exists() && choices.IsArray() && len(choices.Array()) > 0 {
  		choice := choices.Array()[0] // Take first choice
  		var contentBlocks [][]byte
@@ -69,7 +83,7 @@ diff --git a/internal/translator/openai/claude/openai_claude_response.go b/inter
  
  		for _, reasoningText := range collectOpenAIObjectReasoningTexts(choice.Get("message")) {
  			if reasoningText == "" {
-@@ -566,6 +576,7 @@
+@@ -566,6 +576,7 @@ func convertOpenAINonStreamingToAnthropic(rawJSON []byte) [][]byte {
  				}
  
  				contentBlocks = append(contentBlocks, toolUseBlock)
@@ -77,7 +91,7 @@ diff --git a/internal/translator/openai/claude/openai_claude_response.go b/inter
  				return true
  			})
  		}
-@@ -575,8 +586,8 @@
+@@ -575,8 +586,8 @@ func convertOpenAINonStreamingToAnthropic(rawJSON []byte) [][]byte {
  		}
  
  		// Set stop reason
@@ -88,14 +102,14 @@ diff --git a/internal/translator/openai/claude/openai_claude_response.go b/inter
  		}
  	}
  
-@@ -596,6 +607,15 @@
+@@ -596,6 +607,15 @@ func convertOpenAINonStreamingToAnthropic(rawJSON []byte) [][]byte {
  	return [][]byte{out}
  }
  
-+// Converted tools override ordinary or missing finish reasons, not explicit
-+// truncation, filtering or other existing mappings.
++// As in the streaming path, converted tools report tool_use unless the finish
++// reason is an explicit truncation or filter.
 +func mapOpenAINonStreamingFinishReasonToAnthropic(openAIReason string, hasToolCall bool) string {
-+	if hasToolCall && (openAIReason == "" || openAIReason == "stop") {
++	if hasToolCall && openAIReason != "length" && openAIReason != "content_filter" {
 +		return "tool_use"
 +	}
 +	return mapOpenAIFinishReasonToAnthropic(openAIReason)
@@ -104,7 +118,7 @@ diff --git a/internal/translator/openai/claude/openai_claude_response.go b/inter
  // mapOpenAIFinishReasonToAnthropic maps OpenAI finish reasons to Anthropic equivalents
  func mapOpenAIFinishReasonToAnthropic(openAIReason string) string {
  	switch openAIReason {
-@@ -614,6 +634,62 @@
+@@ -614,6 +634,78 @@ func mapOpenAIFinishReasonToAnthropic(openAIReason string) string {
  	}
  }
  
@@ -145,9 +159,25 @@ diff --git a/internal/translator/openai/claude/openai_claude_response.go b/inter
 +		p.OmittedToolCallIndexes[arrayIndex] = index
 +		return index
 +	}
-+	index := p.nextToolCallAccumulatorIndex()
++	// An ID a call already holds continues that call; any other ID starts one.
++	index, ok := p.toolCallAccumulatorIndexByID(id)
++	if !ok {
++		index = p.nextToolCallAccumulatorIndex()
++	}
 +	p.OmittedToolCallIndexes[arrayIndex] = index
 +	return index
++}
++
++func (p *ConvertOpenAIResponseToAnthropicParams) toolCallAccumulatorIndexByID(id gjson.Result) (int, bool) {
++	found := -1
++	if id.Type == gjson.String && id.String() != "" {
++		for index, accumulator := range p.ToolCallsAccumulator {
++			if accumulator != nil && accumulator.ID == id.String() && (found == -1 || index < found) {
++				found = index
++			}
++		}
++	}
++	return found, found != -1
 +}
 +
 +func toolCallIDCompatible(accumulator *ToolCallAccumulator, id gjson.Result) bool {
@@ -167,7 +197,7 @@ diff --git a/internal/translator/openai/claude/openai_claude_response.go b/inter
  func (p *ConvertOpenAIResponseToAnthropicParams) toolContentBlockIndex(openAIToolIndex int) int {
  	if idx, ok := p.ToolCallBlockIndexes[openAIToolIndex]; ok {
  		return idx
-@@ -731,7 +807,7 @@
+@@ -731,7 +823,7 @@ func emitBelatedToolUseStart(param *ConvertOpenAIResponseToAnthropicParams, open
  		return false
  	}
  	if accumulator.Name == "" {
@@ -176,7 +206,7 @@ diff --git a/internal/translator/openai/claude/openai_claude_response.go b/inter
  	}
  	emitToolUseStart(param, openAIToolIndex, accumulator, results)
  	return true
-@@ -855,7 +931,20 @@
+@@ -855,7 +947,20 @@ func toolCallAccumulatorIndexes(accumulators map[int]*ToolCallAccumulator) []int
  	for index := range accumulators {
  		indexes = append(indexes, index)
  	}
@@ -198,7 +228,7 @@ diff --git a/internal/translator/openai/claude/openai_claude_response.go b/inter
  	return indexes
  }
  
-@@ -879,16 +968,12 @@
+@@ -879,16 +984,12 @@ func ConvertOpenAIResponseToClaudeNonStream(_ context.Context, _ string, origina
  	out, _ = sjson.SetBytes(out, "model", root.Get("model").String())
  
  	hasToolCall := false
@@ -217,7 +247,7 @@ diff --git a/internal/translator/openai/claude/openai_claude_response.go b/inter
  
  		if message := choice.Get("message"); message.Exists() {
  			if contentResult := message.Get("content"); contentResult.Exists() {
-@@ -1031,13 +1116,7 @@
+@@ -1031,13 +1132,7 @@ func ConvertOpenAIResponseToClaudeNonStream(_ context.Context, _ string, origina
  		}
  	}
  
@@ -232,15 +262,188 @@ diff --git a/internal/translator/openai/claude/openai_claude_response.go b/inter
  
  	return out
  }
-diff --git a/internal/translator/openai/claude/openai_claude_content_goldens_test.go b/internal/translator/openai/claude/openai_claude_content_goldens_test.go
---- a/internal/translator/openai/claude/openai_claude_content_goldens_test.go
-+++ b/internal/translator/openai/claude/openai_claude_content_goldens_test.go
-@@ -21,7 +21,7 @@
- 	{"unknown-mixed", "{\"content\":[{\"type\":\"text\",\"text\":\"answer\"},{\"type\":\"unknown\",\"text\":\"do not reinterpret\"}]}", "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":0,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"[{\\\"type\\\":\\\"text\\\",\\\"text\\\":\\\"answer\\\"},{\\\"type\\\":\\\"unknown\\\",\\\"text\\\":\\\"do not reinterpret\\\"}]\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n", "{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[{\"type\":\"text\",\"text\":\"[{\\\"type\\\":\\\"text\\\",\\\"text\\\":\\\"answer\\\"},{\\\"type\\\":\\\"unknown\\\",\\\"text\\\":\\\"do not reinterpret\\\"}]\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}", "{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[{\"type\":\"text\",\"text\":\"answer\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}"},
- 	{"malformed", "{\"content\":[null,{\"type\":\"text\",\"text\":7}]}", "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":0,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"[null,{\\\"type\\\":\\\"text\\\",\\\"text\\\":7}]\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n", "{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[{\"type\":\"text\",\"text\":\"[null,{\\\"type\\\":\\\"text\\\",\\\"text\\\":7}]\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}", "{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[{\"type\":\"text\",\"text\":\"7\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}"},
- 	{"malformed-thinking", "{\"content\":[{\"type\":\"thinking\",\"thinking\":null}]}", "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":0,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"[{\\\"type\\\":\\\"thinking\\\",\\\"thinking\\\":null}]\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n", "{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[{\"type\":\"text\",\"text\":\"[{\\\"type\\\":\\\"thinking\\\",\\\"thinking\\\":null}]\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}", "{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}"},
--	{"legacy-tool-reasoning", "{\"content\":[{\"type\":\"reasoning\",\"text\":\"thought\"},{\"type\":\"tool_calls\",\"tool_calls\":[{\"id\":\"fixture\",\"function\":{\"name\":\"fixture\",\"arguments\":\"{}\"}}]},{\"type\":\"text\",\"text\":\"answer\"}]}", "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":0,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"[{\\\"type\\\":\\\"reasoning\\\",\\\"text\\\":\\\"thought\\\"},{\\\"type\\\":\\\"tool_calls\\\",\\\"tool_calls\\\":[{\\\"id\\\":\\\"fixture\\\",\\\"function\\\":{\\\"name\\\":\\\"fixture\\\",\\\"arguments\\\":\\\"{}\\\"}}]},{\\\"type\\\":\\\"text\\\",\\\"text\\\":\\\"answer\\\"}]\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n", "{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[{\"type\":\"text\",\"text\":\"[{\\\"type\\\":\\\"reasoning\\\",\\\"text\\\":\\\"thought\\\"},{\\\"type\\\":\\\"tool_calls\\\",\\\"tool_calls\\\":[{\\\"id\\\":\\\"fixture\\\",\\\"function\\\":{\\\"name\\\":\\\"fixture\\\",\\\"arguments\\\":\\\"{}\\\"}}]},{\\\"type\\\":\\\"text\\\",\\\"text\\\":\\\"answer\\\"}]\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}", "{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[{\"type\":\"thinking\",\"thinking\":\"thought\"},{\"type\":\"tool_use\",\"id\":\"fixture\",\"name\":\"fixture\",\"input\":{}},{\"type\":\"text\",\"text\":\"answer\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}"},
-+	{"legacy-tool-reasoning", "{\"content\":[{\"type\":\"reasoning\",\"text\":\"thought\"},{\"type\":\"tool_calls\",\"tool_calls\":[{\"id\":\"fixture\",\"function\":{\"name\":\"fixture\",\"arguments\":\"{}\"}}]},{\"type\":\"text\",\"text\":\"answer\"}]}", "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":0,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"[{\\\"type\\\":\\\"reasoning\\\",\\\"text\\\":\\\"thought\\\"},{\\\"type\\\":\\\"tool_calls\\\",\\\"tool_calls\\\":[{\\\"id\\\":\\\"fixture\\\",\\\"function\\\":{\\\"name\\\":\\\"fixture\\\",\\\"arguments\\\":\\\"{}\\\"}}]},{\\\"type\\\":\\\"text\\\",\\\"text\\\":\\\"answer\\\"}]\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n", "{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[{\"type\":\"text\",\"text\":\"[{\\\"type\\\":\\\"reasoning\\\",\\\"text\\\":\\\"thought\\\"},{\\\"type\\\":\\\"tool_calls\\\",\\\"tool_calls\\\":[{\\\"id\\\":\\\"fixture\\\",\\\"function\\\":{\\\"name\\\":\\\"fixture\\\",\\\"arguments\\\":\\\"{}\\\"}}]},{\\\"type\\\":\\\"text\\\",\\\"text\\\":\\\"answer\\\"}]\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}", "{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[{\"type\":\"thinking\",\"thinking\":\"thought\"},{\"type\":\"tool_use\",\"id\":\"fixture\",\"name\":\"fixture\",\"input\":{}},{\"type\":\"text\",\"text\":\"answer\"}],\"stop_reason\":\"tool_use\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}"},
- }
- 
- func TestContentChunksLegacyGoldens(t *testing.T) {
+diff --git a/internal/translator/openai/claude/openai_claude_tool_integrity_test.go b/internal/translator/openai/claude/openai_claude_tool_integrity_test.go
+new file mode 100644
+index 00000000..53269482
+--- /dev/null
++++ b/internal/translator/openai/claude/openai_claude_tool_integrity_test.go
+@@ -0,0 +1,179 @@
++package claude
++
++import (
++	"bytes"
++	"context"
++	"testing"
++)
++
++// Exact converted bytes. Omitted indexes name array positions, never explicit
++// indexes; an announced call keeps its ID; interleaved fragments stay with
++// their own call, by explicit index or, without one, by ID.
++const (
++	toolIntegrityStreamStart = "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":0,\"output_tokens\":0}}}\n\n"
++	toolIntegrityStreamA     = "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"tool_use\",\"id\":\"call_a\",\"name\":\"tool_a\",\"input\":{}}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"k\\\":\\\"a\\\"}\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n"
++	toolIntegrityStreamB     = "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"tool_use\",\"id\":\"call_b\",\"name\":\"tool_b\",\"input\":{}}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"k\\\":\\\"b\\\"}\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":1}\n\n"
++	toolIntegrityStreamEnd   = "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
++	toolIntegrityTwoCalls    = toolIntegrityStreamStart + toolIntegrityStreamA + toolIntegrityStreamB + toolIntegrityStreamEnd
++	toolIntegrityOneCall     = toolIntegrityStreamStart + toolIntegrityStreamA + toolIntegrityStreamEnd
++)
++
++var toolIntegrityStreamGoldens = []struct{ name, want string }{
++	{"omitted-index", toolIntegrityTwoCalls},
++	{"mixed-forward", toolIntegrityTwoCalls},
++	{"mixed-reverse", toolIntegrityTwoCalls},
++	{"stable-id", toolIntegrityTwoCalls},
++	{"interleaved", toolIntegrityTwoCalls},
++	{"omitted-interleaved", toolIntegrityTwoCalls},
++	{"explicit-continue", toolIntegrityOneCall},
++	{"omitted-continue", toolIntegrityOneCall},
++	{"omit-to-explicit", toolIntegrityOneCall},
++	{"explicit-to-omit", toolIntegrityOneCall},
++}
++
++const (
++	toolIntegrityCallA       = `{"id":"call_a","type":"function","function":{"name":"tool_a","arguments":"{\"k\":\"a\"}"}}`
++	toolIntegrityMessageA    = `{"role":"assistant","content":null,"tool_calls":[` + toolIntegrityCallA + `]}`
++	toolIntegrityContentA    = `{"role":"assistant","content":[{"type":"tool_calls","tool_calls":[` + toolIntegrityCallA + `]}]}`
++	toolIntegrityMessageText = `{"role":"assistant","content":"answer"}`
++	toolIntegrityBlockA      = `{"type":"tool_use","id":"call_a","name":"tool_a","input":{"k":"a"}}`
++	toolIntegrityBlockText   = `{"type":"text","text":"answer"}`
++	// The helper keeps the content array as text, as before.
++	toolIntegrityBlockArray = `{"type":"text","text":"[{\"type\":\"tool_calls\",\"tool_calls\":[{\"id\":\"call_a\",\"type\":\"function\",\"function\":{\"name\":\"tool_a\",\"arguments\":\"{\\\"k\\\":\\\"a\\\"}\"}}]}]"}`
++)
++
++func toolIntegrityWant(block, stopReason string) string {
++	return `{"id":"fixture","type":"message","role":"assistant","model":"fixture","content":[` + block +
++		`],"stop_reason":` + stopReason + `,"stop_sequence":null,"usage":{"input_tokens":11,"output_tokens":4}}`
++}
++
++// Converted tool calls report tool_use unless the finish reason is length or
++// content_filter, as in the streaming path; text-only replies keep their mapping.
++var toolIntegrityNonStreamGoldens = []struct{ name, message, finish, helper, registered string }{
++	{"tool-stop", toolIntegrityMessageA, `"stop"`, toolIntegrityWant(toolIntegrityBlockA, `"tool_use"`), toolIntegrityWant(toolIntegrityBlockA, `"tool_use"`)},
++	{"tool-missing", toolIntegrityMessageA, "", toolIntegrityWant(toolIntegrityBlockA, `"tool_use"`), toolIntegrityWant(toolIntegrityBlockA, `"tool_use"`)},
++	{"tool-empty", toolIntegrityMessageA, `""`, toolIntegrityWant(toolIntegrityBlockA, `"tool_use"`), toolIntegrityWant(toolIntegrityBlockA, `"tool_use"`)},
++	{"tool-null", toolIntegrityMessageA, "null", toolIntegrityWant(toolIntegrityBlockA, `"tool_use"`), toolIntegrityWant(toolIntegrityBlockA, `"tool_use"`)},
++	{"tool-tool-calls", toolIntegrityMessageA, `"tool_calls"`, toolIntegrityWant(toolIntegrityBlockA, `"tool_use"`), toolIntegrityWant(toolIntegrityBlockA, `"tool_use"`)},
++	{"tool-other", toolIntegrityMessageA, `"other"`, toolIntegrityWant(toolIntegrityBlockA, `"tool_use"`), toolIntegrityWant(toolIntegrityBlockA, `"tool_use"`)},
++	{"tool-length", toolIntegrityMessageA, `"length"`, toolIntegrityWant(toolIntegrityBlockA, `"max_tokens"`), toolIntegrityWant(toolIntegrityBlockA, `"max_tokens"`)},
++	{"tool-content-filter", toolIntegrityMessageA, `"content_filter"`, toolIntegrityWant(toolIntegrityBlockA, `"end_turn"`), toolIntegrityWant(toolIntegrityBlockA, `"end_turn"`)},
++	{"content-array-missing", toolIntegrityContentA, "", toolIntegrityWant(toolIntegrityBlockArray, "null"), toolIntegrityWant(toolIntegrityBlockA, `"tool_use"`)},
++	{"text-stop", toolIntegrityMessageText, `"stop"`, toolIntegrityWant(toolIntegrityBlockText, `"end_turn"`), toolIntegrityWant(toolIntegrityBlockText, `"end_turn"`)},
++	{"text-missing", toolIntegrityMessageText, "", toolIntegrityWant(toolIntegrityBlockText, "null"), toolIntegrityWant(toolIntegrityBlockText, `"end_turn"`)},
++	{"text-other", toolIntegrityMessageText, `"other"`, toolIntegrityWant(toolIntegrityBlockText, `"end_turn"`), toolIntegrityWant(toolIntegrityBlockText, `"end_turn"`)},
++	{"text-length", toolIntegrityMessageText, `"length"`, toolIntegrityWant(toolIntegrityBlockText, `"max_tokens"`), toolIntegrityWant(toolIntegrityBlockText, `"max_tokens"`)},
++}
++
++func toolIntegrityCall(id, name, arguments, index string) string {
++	call := `{`
++	if index != "" {
++		call += `"index":` + index + `,`
++	}
++	if id != "" {
++		call += `"id":"` + id + `","type":"function",`
++	}
++	call += `"function":{`
++	if name != "" {
++		call += `"name":"` + name + `",`
++	}
++	return call + `"arguments":"` + arguments + `"}}`
++}
++
++// The tool-call deltas of each stream case; "" is an omitted index.
++func toolIntegrityDeltas(name string) []string {
++	delta := func(calls ...string) string {
++		joined := `{"tool_calls":[`
++		for i, call := range calls {
++			if i > 0 {
++				joined += ","
++			}
++			joined += call
++		}
++		return joined + `]}`
++	}
++	a := func(index string) string { return toolIntegrityCall("call_a", "tool_a", `{\"k\":\"a\"}`, index) }
++	b := func(index string) string { return toolIntegrityCall("call_b", "tool_b", `{\"k\":\"b\"}`, index) }
++	switch name {
++	case "omitted-index":
++		return []string{delta(a("")), delta(b(""))}
++	case "mixed-forward":
++		// Array position 1 and explicit index 1 name different calls.
++		return []string{delta(a("1"), b(""))}
++	case "mixed-reverse":
++		return []string{delta(a("")), delta(b("0"))}
++	case "stable-id":
++		// The continuation may not rewrite the announced ID, and that attempt
++		// must not make the later omitted call join the first one.
++		return []string{delta(toolIntegrityCall("call_a", "tool_a", `{\"k\":`, "0")),
++			delta(toolIntegrityCall("call_b", "", `\"a\"}`, "0")), delta(b(""))}
++	case "interleaved":
++		return []string{delta(toolIntegrityCall("call_a", "tool_a", `{\"k\":`, "0")),
++			delta(toolIntegrityCall("call_b", "tool_b", `{\"k\":`, "1")),
++			delta(toolIntegrityCall("", "", `\"a\"}`, "0")), delta(toolIntegrityCall("", "", `\"b\"}`, "1"))}
++	case "omitted-interleaved":
++		// Every fragment is at array position 0; the IDs name the calls.
++		return []string{delta(toolIntegrityCall("call_a", "tool_a", `{\"k\":`, "")),
++			delta(toolIntegrityCall("call_b", "tool_b", `{\"k\":`, "")),
++			delta(toolIntegrityCall("call_a", "", `\"a\"}`, "")), delta(toolIntegrityCall("call_b", "", `\"b\"}`, ""))}
++	}
++	indexes := map[string][2]string{"explicit-continue": {"0", "0"}, "omitted-continue": {"", ""},
++		"omit-to-explicit": {"", "0"}, "explicit-to-omit": {"0", ""}}[name]
++	return []string{delta(toolIntegrityCall("call_a", "tool_a", `{\"k\":`, indexes[0])),
++		delta(toolIntegrityCall("", "", `\"a\"}`, indexes[1]))}
++}
++
++func toolIntegrityStream(deltas []string) []byte {
++	var param any
++	var out [][]byte
++	feed := func(chunk string) {
++		out = append(out, ConvertOpenAIResponseToClaude(context.Background(), "", []byte(`{"stream":true}`), nil,
++			[]byte("data: "+chunk), &param)...)
++	}
++	feed(`{"id":"fixture","model":"fixture","choices":[{"index":0,"delta":{"role":"assistant"}}]}`)
++	for _, delta := range deltas {
++		feed(`{"id":"fixture","model":"fixture","choices":[{"index":0,"delta":` + delta + `}]}`)
++	}
++	feed(`{"choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}`)
++	feed(`{"choices":[],"usage":{"prompt_tokens":11,"completion_tokens":4}}`)
++	feed(`[DONE]`)
++	return bytes.Join(out, nil)
++}
++
++func toolIntegrityResponse(message, finish string) []byte {
++	choice := `{"index":0,"message":` + message
++	if finish != "" {
++		choice += `,"finish_reason":` + finish
++	}
++	return []byte(`{"id":"fixture","model":"fixture","choices":[` + choice + `}],"usage":{"prompt_tokens":11,"completion_tokens":4}}`)
++}
++
++func TestToolCallIntegrityStreamGoldens(t *testing.T) {
++	for _, tc := range toolIntegrityStreamGoldens {
++		t.Run(tc.name, func(t *testing.T) {
++			if got := toolIntegrityStream(toolIntegrityDeltas(tc.name)); !bytes.Equal(got, []byte(tc.want)) {
++				t.Errorf("stream bytes changed: got %q, want %q", got, tc.want)
++			}
++		})
++	}
++}
++
++func TestToolCallIntegrityNonStreamGoldens(t *testing.T) {
++	for _, tc := range toolIntegrityNonStreamGoldens {
++		t.Run(tc.name, func(t *testing.T) {
++			raw := toolIntegrityResponse(tc.message, tc.finish)
++			for _, result := range []struct {
++				name string
++				got  []byte
++				want string
++			}{
++				{"helper", convertOpenAINonStreamingToAnthropic(raw)[0], tc.helper},
++				{"registered", ConvertOpenAIResponseToClaudeNonStream(context.Background(), "", nil, nil, raw, nil), tc.registered},
++			} {
++				if !bytes.Equal(result.got, []byte(result.want)) {
++					t.Errorf("%s bytes changed: got %q, want %q", result.name, result.got, result.want)
++				}
++			}
++		})
++	}
++}
