@@ -74,7 +74,7 @@ class Verification:
         return {"status": self.status, "exit_code": self.exit_code, "version": self.version,
                 "target": self.target, "checks": [asdict(check) for check in self.checks]}
 
-    def lines(self) -> tuple[str, ...]:
+    def lines(self, *, surface: str = "cli") -> tuple[str, ...]:
         lines = [f"{check.component}: {check.status} — {check.detail}" for check in self.checks]
         summary = {"verified": "Verified against the signed release using installed trust.",
                    "mismatch": "Mismatch. Reinstall with the release installer or use charmer update --rollback.",
@@ -88,6 +88,8 @@ class Verification:
             summary = "Release metadata authentication failed. Do not use these files; " + _METADATA_REMEDY + "."
         lines.append(summary)
         lines.append("Nothing was changed.")
+        if surface == "tui":
+            lines = [line.replace("--from-dir", "Verify this installation → Downloaded files") for line in lines]
         return tuple(lines)
 
 

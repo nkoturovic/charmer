@@ -98,10 +98,13 @@ requires a later confirmed durable save of that credential (free space first
 if needed; fresh sign-in only if no save comes), not merely clearing a flag.
 For a coverage-only hold, check credentials with `charmer providers list`
 before considering the explicit, confirmed `charmer gateway clear-hold`.
-A **known journald restart** after the gateway start or latest clear, or an
-**unavailable journald observation**, is a coverage risk that an explicit
-clear can acknowledge after credential inspection. An unavailable observation
-remains visible after the clear; another gateway instance needs its own check.
+A **known journald restart** after the gateway start or latest clear is a
+coverage risk that an explicit clear can acknowledge after credential inspection.
+An **unavailable journald observation** is acknowledged only by a clear whose
+report showed the observation as unavailable, for the same running gateway
+instance. A clear made while it was available does not create an acknowledgement.
+An unavailable observation remains visible after the clear; another gateway
+instance needs its own check.
 Later failed saves still hold. The separate advisory that system-journal drop
 notices could not be read does not hold by itself. Even a successful
 observation is not proof of complete journal history.

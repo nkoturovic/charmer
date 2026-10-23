@@ -1464,7 +1464,7 @@ def gateway_runtime_report(runtime: runtime_mod.Runtime) -> tuple[list[str], lis
                                     area="Gateway", action="hold"))
         else:
             detail = f" — {hold.evaluated}" if hold.evaluated else ""
-            checked = "checked with an acknowledged coverage gap" if hold.journald_unavailable else "evaluated completely"
+            checked = "checked with an acknowledged coverage gap" if hold.journald_acknowledged else "evaluated completely"
             info.append(f"Gateway persistence hold: none ({hold.source} {checked}){detail}")
     return attention, info
 

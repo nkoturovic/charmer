@@ -106,6 +106,39 @@ class GatewayFactsTests(_GatewayDoctor):
                       "confinement tmpfs+TierB (systemd)", text)
         self.assertIn(f"Gateway logs: the {endpoint.DEFAULT_UNIT} journal (24 h window)", text)
 
+    def test_journald_gap_wording_requires_an_instance_acknowledgement(self) -> None:
+        nonce = "aaaaaaaaaaaaaaaa"
+        endpoint.write_config(self.runtime.home, endpoint.EndpointConfig(port=18317, backend=endpoint.SYSTEMD))
+        self.ready(nonce)
+        self.world.now = NOW + datetime.timedelta(hours=2)
+        probe = mock.Mock(return_value=NOW + datetime.timedelta(hours=1))
+        window = gateway_hold.observation.LogWindow((gateway_hold.observation.LogRecord(
+            service.start_marker_prefix(nonce), NOW),), "bounded")
+        runtime = self.make_runtime(gateway_seams=self.world.seams(
+            journal=lambda _unit, _since: window, journald_start=probe))
+        gateway = runtime.gateway()
+        gateway.clear_hold(gateway.persistence_hold())  # Known restart, observation still available.
+        probe.return_value = None
+
+        def assert_held():
+            attention, info = gateway_facts.gateway_runtime_report(runtime)
+            self.assertTrue(any("current process start could not be observed" in line for line in attention))
+            self.assertFalse(any("acknowledged coverage gap" in line or "coverage gap acknowledged" in line
+                                 for line in info))
+            self.assertTrue(any(getattr(line, "action", None) == "hold-coverage" for line in attention))
+
+        assert_held()
+        gateway.clear_hold(gateway.persistence_hold())
+        attention, info = gateway_facts.gateway_runtime_report(runtime)
+        self.assertFalse(any("persistence hold" in line for line in attention))
+        self.assertIn("checked with an acknowledged coverage gap", "\n".join(info))
+        self.assertIn("coverage gap acknowledged for this instance", "\n".join(info))
+        path = gateway_hold.hold_path(self.state_root).with_name("journald-unavailable-ack.json")
+        state.atomic_write(path, b"{broken")
+        assert_held()
+        path.unlink()
+        assert_held()
+
     def test_a_home_without_a_gateway_is_not_observed(self) -> None:
         with mock.patch.object(endpoint, "set_up", return_value=False), \
                 mock.patch.object(gl.Gateway, "observe", side_effect=AssertionError("live observation")):

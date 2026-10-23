@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import datetime
 import io
+import json
 import subprocess
 import unittest
 from types import SimpleNamespace
@@ -165,9 +166,104 @@ class JournaldHoldTests(saves_fixture._JournalHold):
         self.assertFalse(self.check(self.STARTED).held)
         self.assertTrue(self.check(self.STARTED + MICROSECOND).held)
 
+    def acknowledgement_path(self):
+        return gateway_hold.hold_path(self.state_root).with_name("journald-unavailable-ack.json")
+
+    def assert_unavailable_held(self, report):
+        self.assertTrue(report.held)
+        self.assertTrue(report.coverage_only)
+        self.assertTrue(report.journald_unavailable)
+        self.assertIn("current process start could not be observed", "; ".join(report.reasons))
+        self.assertNotIn("coverage gap acknowledged", report.evaluated)
+        self.assertEqual(gateway_hold.remedy(report), gateway_hold.COVERAGE_REMEDY)
+
+    def test_unrelated_clear_does_not_acknowledge_later_unavailable_observation(self):
+        # Clear a known restart while the observation works, then lose visibility.
+        first = self.check(self.STARTED + DAY)
+        self.assertTrue(first.held)
+        self.assertFalse(first.journald_unavailable)
+        gateway_hold.clear(self.state_root, first)
+        self.assertFalse(self.acknowledgement_path().exists())
+        self.assert_unavailable_held(self.check(None, at=saves_fixture.NOW + DAY))
+
+    def test_unavailable_clear_writes_private_acknowledgement_without_changing_hold_format(self):
+        gateway_hold.clear(self.state_root, self.check(None))
+        path = self.acknowledgement_path()
+        self.assertTrue(path.is_file())
+        self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(path.parent.stat().st_mode & 0o777, 0o700)
+        self.assertEqual(json.loads(path.read_bytes()), {
+            "instance": self.NONCE, "started_at": self.STARTED.isoformat()})
+        document = gateway_hold.read_document(self.state_root)
+        self.assertTrue(lifecycle._valid_201(document))
+        self.assertEqual(set(document), {"version", "cleared", "cleared_through", "holds"})
+        self.assertFalse(self.check(None).held)
+        self.assertIn("coverage gap acknowledged for this instance", self.check(None).evaluated)
+
+    def test_unavailable_acknowledgement_requires_both_nonce_and_exact_start(self):
+        gateway_hold.clear(self.state_root, self.check(None))
+        for nonce, started in (("fedcba9876543210", self.STARTED),
+                               (self.NONCE, self.STARTED + MICROSECOND),
+                               ("fedcba9876543210", self.STARTED + MICROSECOND)):
+            with self.subTest(nonce=nonce, started=started), \
+                    mock.patch.object(self, "NONCE", nonce), mock.patch.object(self, "STARTED", started):
+                # All starts precede the clear, so timestamp-only waivers fail this test.
+                self.assert_unavailable_held(self.check(None))
+
+    def test_unavailable_without_nonce_is_acknowledged_only_for_the_exact_start(self):
+        with mock.patch.object(self, "NONCE", None):
+            gateway_hold.clear(self.state_root, self.check(None, records=[]))
+            self.assertFalse(self.check(None, records=[]).held)
+            with mock.patch.object(self, "STARTED", self.STARTED + MICROSECOND):
+                self.assert_unavailable_held(self.check(None, records=[]))
+        self.assert_unavailable_held(self.check(None))
+
+    def test_missing_unavailable_acknowledgement_holds(self):
+        gateway_hold.clear(self.state_root, self.check(None))
+        self.acknowledgement_path().unlink(missing_ok=True)
+        self.assert_unavailable_held(self.check(None))
+
+    def test_malformed_unavailable_acknowledgement_holds(self):
+        gateway_hold.clear(self.state_root, self.check(None))
+        path = self.acknowledgement_path()
+        for raw in (b"{broken", b"[]", b"null", b"{}", b'\xff',
+                    b'{"instance": null, "started_at": null}',
+                    json.dumps({"instance": self.NONCE, "started_at": self.STARTED.isoformat(),
+                                "extra": True}).encode(),
+                    b'{"instance": "other", "instance": "' + self.NONCE.encode() + b'"}'):
+            with self.subTest(raw=raw):
+                lifecycle.state.atomic_write(path, raw)
+                self.assert_unavailable_held(self.check(None))
+
+    def test_unreadable_unavailable_acknowledgement_holds(self):
+        gateway_hold.clear(self.state_root, self.check(None))
+        path = self.acknowledgement_path()
+        real = lifecycle.state.read_private
+
+        def read(candidate):
+            if candidate == path:
+                raise PermissionError("fixture acknowledgement denied")
+            return real(candidate)
+
+        with mock.patch.object(lifecycle.state, "read_private", side_effect=read):
+            self.assert_unavailable_held(self.check(None))
+
+    def test_later_available_clear_keeps_an_existing_unavailable_acknowledgement(self):
+        gateway_hold.clear(self.state_root, self.check(None))
+        path = self.acknowledgement_path()
+        self.assertTrue(path.is_file())
+        before = path.read_bytes()
+        later = self.check(saves_fixture.NOW + MICROSECOND, at=saves_fixture.NOW + DAY)
+        self.assertTrue(later.held)
+        self.assertFalse(later.journald_unavailable)
+        gateway_hold.clear(self.state_root, later)
+        self.assertEqual(path.read_bytes(), before)
+        self.assertFalse(self.check(None, at=saves_fixture.NOW + DAY).held)
+
     def test_unavailable_observation_can_be_acknowledged_for_the_running_instance(self):
         for started in (None, self.STARTED.replace(tzinfo=None), "not a timestamp"):
             with self.subTest(started=started):
+                self.acknowledgement_path().unlink(missing_ok=True)
                 # A clear predating this instance acknowledges none of its missing evidence.
                 gateway_hold.clear(self.state_root, gateway_hold.HoldReport(
                     False, (), "journal", evaluated_at=(self.STARTED - DAY).isoformat()))
@@ -253,6 +349,39 @@ class JournaldLifecycleTests(lifecycle._ServiceBackend):
         self.assertFalse(gateway.persistence_hold().held)
         self.assertEqual(gateway.stop().status, "stopped")
         self.assertIn(["systemctl", "--user", "--no-ask-password", "stop", "charmer-gateway"], self.calls)
+
+    def test_unrelated_clear_does_not_waive_unavailable_on_status_doctor_tui_or_stop(self):
+        gateway, probe = self.running_gateway(lifecycle.NOW + datetime.timedelta(hours=1))
+        gateway.clear_hold(gateway.persistence_hold())
+        probe.return_value = None
+        self.world.now += DAY
+        status = gateway.status()
+        self.assertTrue(status.hold.held)
+        text = "\n".join(status.lines({}))
+        self.assertIn("current process start could not be observed", text)
+        self.assertIn(gateway_hold.COVERAGE_REMEDY, text)
+        self.assertNotIn("coverage gap acknowledged", text)
+        runtime = SimpleNamespace(endpoint_error=None, gateway=lambda: gateway, gateway_seams=gateway.seams,
+                                  environ={}, home=self.home, health_get=None, served_models_callback=None)
+        attention, info = gateway_facts.gateway_runtime_report(runtime)
+        self.assertEqual(doctor.present_report([], attention).rows[0].action, "hold-coverage")
+        self.assertNotIn("acknowledged coverage gap", "\n".join(info))
+        view = gateway_actions.GatewayView(gateway, status.observation, hold=status.hold)
+        self.assertFalse(view.can_restart)
+        self.assertIn(gateway_actions.HOLD_COVERAGE_ROUTE, view.hold_lines())
+        for action in (gateway.stop, gateway.restart):
+            self.assertEqual(action().status, "held")
+        self.assertEqual(self.calls, [])
+        gateway.clear_hold(status.hold)
+        status = gateway.status()
+        self.assertFalse(status.hold.held)
+        self.assertIn("coverage gap acknowledged for this instance", "\n".join(status.lines({})))
+        attention, info = gateway_facts.gateway_runtime_report(runtime)
+        self.assertFalse(any("persistence hold" in line for line in attention))
+        self.assertIn("checked with an acknowledged coverage gap", "\n".join(info))
+        view = gateway_actions.GatewayView(gateway, status.observation, hold=status.hold)
+        self.assertTrue(view.can_restart)
+        self.assertIn("coverage gap acknowledged for this instance", "\n".join(view.hold_lines()))
 
     def test_absent_or_unproven_instance_and_on_demand_make_zero_probe_queries(self):
         probe = mock.Mock(side_effect=AssertionError("journald query"))

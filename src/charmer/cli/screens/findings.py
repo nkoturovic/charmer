@@ -601,7 +601,7 @@ def run_install_verification(runtime: Any, win: Any, palette: tui.Palette, *,
                                                from_dir=directory, disclose=disclose)
     except _VerificationCancelled:
         return
-    tui.TextView(title, [termtext.visible_text(line) for line in result.lines()], palette=palette).run(win)
+    tui.TextView(title, [termtext.visible_text(line) for line in result.lines(surface="tui")], palette=palette).run(win)
 
 
 def run_findings_screen(runtime: Any, win: Any, palette: tui.Palette, *, tty_in: TextIO, tty_out: TextIO,
