@@ -159,7 +159,30 @@ request gets): upstream's `EnsureClaudeModelIDPrefix` lists every id outside
 its own selectors under their earlier prefix; every other id (`gpt-multi-*` included)
 stays cloaked, requests resolve either form as before, and the
 OpenAI-format listing is unchanged (Go gate `charmer-model-ids`,
-built-gateway row `CharmerModelListingTests` CL1). #29 repairs tool calls on
+built-gateway row `CharmerModelListingTests` CL1). #26 forwards the
+client's output cap on the codex API-key route (above; Go gate
+`codex-output-cap`, rows in `tests/test_openai_key_route.py` and the
+pinned-client journey). #27 marks a Claude-format request's failure on the
+codex HTTP Execute/ExecuteStream paths (account and key) when the upstream
+reports a context-window overflow (HTTP 400/413 or a terminal `error` /
+`response.failed` event whose `error.code` is exactly
+`context_length_exceeded` or whose message is exactly the Codex
+context-window message); the mark leaves status, text, retry and credential
+handling unchanged, and the Claude handler presents it as the native
+`invalid_request_error` "prompt is too long" (HTTP 400 before headers, the
+SSE `error` event after), with no token counts. Other routes and formats,
+compact, images and websockets are unchanged (Go gate
+`context-error-normalization`; pinned-client rows recover before and after
+headers, control: an unidentified context error is not compacted; it
+edits #20's key-safety branches, a declared `PATCH_DEPENDENCIES` edge). #28
+drops the credential from the routing line (`session-affinity:` keeps
+`provider=`/`model=` at info), moves the websocket lines to debug without
+the auth ID, names an account by `auth_index` and an API key as
+`[redacted]` in selection/failure lines, and logs `auth_index=nil` for an
+API key in the unthrottled substitution warning (`Auth.LogIndex`); the
+auth-file watcher and other lines can still name account files (Go gate
+`log-reduction`, built-gateway row `LogReductionTests` LR1; it edits #10's
+keyed identity branches, a declared edge). #29 repairs tool calls on
 the keyed and keyless Messages-to-chat routes: calls whose upstream omits
 their index stay distinct (interleaved fragments follow their call's ID), an
 announced call keeps its ID, and a reply that converts tool calls ends with
@@ -1046,11 +1069,16 @@ gateway config). T2 **selects** T0/T1 vocabulary and never extends it.
   codex account pool serves nothing while the key is selected, so the
   account route keeps its request shape. On the pinned gateway one client
   turn on the key route is one Responses request (no retry when it
-  succeeds), and the client's `max_tokens` is not forwarded: the Claude →
-  codex translation sets no `max_output_tokens`, so the model's own output
-  limit applies (`PinnedGatewayKeyRouteTurnTests`; `/responses/compact`,
-  multi-turn continuation and encrypted-reasoning replay with the pinned
-  client are not exercised). In the TUI, Enter (and K) on an account
+  succeeds), and the client's `max_tokens` (or a native Responses
+  `max_output_tokens`) reaches it as `max_output_tokens`, applied after
+  payload rules (patch #26; every positive plain integer is forwarded as
+  supplied, with no gateway floor, and any other value is not forwarded);
+  the account route sets none (`PinnedGatewayKeyRouteTurnTests`,
+  `PinnedGatewayAccountRouteTurnTests`; the pinned client's own journey in
+  `tests/test_openai_key_route_client.py` compares every ingress
+  `max_tokens` with the egress limit, its `/model` switch validation
+  included, which sends `max_tokens: 1`; `/responses/compact` and
+  encrypted-reasoning replay with the pinned client are not exercised). In the TUI, Enter (and K) on an account
   provider whose key this build offers opens its account-or-key chooser
   (`ConnectActions.chooser`, `screens.providers.key_choice`; the key route
   names its reviewed models; Anthropic's consent keeps its title,

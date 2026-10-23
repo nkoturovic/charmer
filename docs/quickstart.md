@@ -50,9 +50,9 @@ lists the same choices.
 | your own OpenAI-compatible endpoint | the vendor's API key | **G** → **N** → OpenAI-compatible | `charmer providers add <name> --kind openai-compatible <options>` | not available in this release: the route is closed in this build; where it is open, the valid models you add on its approved route, through Messages-to-chat translation ([limits](providers/openai-compatible.md#translation-limits)) |
 | a server on your network (Ollama, LM Studio, vLLM, llama.cpp, any OpenAI-compatible server) | none | **G** → **N** → the server | `charmer providers add --preset ollama` | the valid models you add, as leads or agents; no key required |
 
-On the OpenAI API key, Claude Code's per-request output cap is not
-applied: one answer can run up to the model's own output limit, billed
-per token. Set a hard spend limit on the key's OpenAI project first
+On the OpenAI API key, Claude Code's per-request output cap is passed
+on: an answer stops at that cap, reasoning included, and is billed per
+token. Set a hard spend limit on the key's OpenAI project first
 ([OpenAI's spend limits](https://developers.openai.com/api/docs/guides/spend-limits);
 [details](providers/api-keys.md#openai)).
 

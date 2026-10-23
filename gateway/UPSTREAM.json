@@ -166,6 +166,21 @@
       "admitted": true
     },
     {
+      "basename": "cli-proxy-api-output-cap.patch",
+      "sha256": "253b97c700370d63d9de711e75eceb75a6dd192c8337b18ec960ec65976a951a",
+      "admitted": true
+    },
+    {
+      "basename": "cli-proxy-api-context-error-normalization.patch",
+      "sha256": "35847df8aaf3ce696bb608e0625455e19e911a707e9f10b83abfe9a007c5c579",
+      "admitted": true
+    },
+    {
+      "basename": "cli-proxy-api-log-reduction.patch",
+      "sha256": "aa97dbed6bbe7e6bc8411444e15c0ddf3ec30a1608ff14918ec1e0682c1497bc",
+      "admitted": true
+    },
+    {
       "basename": "cli-proxy-api-tool-call-integrity.patch",
       "sha256": "6e76f133e2d913baab2d0b2c5bd57f4e6c113c861e83497ae564e3cb5275846a",
       "admitted": true
@@ -902,6 +917,57 @@
       ]
     },
     {
+      "name": "codex-output-cap",
+      "packages": [
+        "./internal/runtime/executor"
+      ],
+      "run": "^(TestCodexKeyOutputCapForwardsClientCap|TestCodexKeyOutputCapAfterPayloadRules|TestCodexKeyOutputCapAbsentOrInvalid|TestCodexKeyOutputCapLeavesOtherRoutes)$",
+      "platforms": "portable",
+      "race": false,
+      "count": null,
+      "expected_tests": [
+        "TestCodexKeyOutputCapForwardsClientCap",
+        "TestCodexKeyOutputCapAfterPayloadRules",
+        "TestCodexKeyOutputCapAbsentOrInvalid",
+        "TestCodexKeyOutputCapLeavesOtherRoutes"
+      ]
+    },
+    {
+      "name": "context-error-normalization",
+      "packages": [
+        "./internal/runtime/executor"
+      ],
+      "run": "^(TestCodexContextOverflowClaudePreHeader|TestCodexContextOverflowClaudePostHeader|TestCodexContextOverflowNegativesUnchanged|TestCodexContextOverflowMarksOnlyClaudeRequests)$",
+      "platforms": "portable",
+      "race": false,
+      "count": null,
+      "expected_tests": [
+        "TestCodexContextOverflowClaudePreHeader",
+        "TestCodexContextOverflowClaudePostHeader",
+        "TestCodexContextOverflowNegativesUnchanged",
+        "TestCodexContextOverflowMarksOnlyClaudeRequests"
+      ]
+    },
+    {
+      "name": "log-reduction",
+      "packages": [
+        "./sdk/cliproxy/auth",
+        "./internal/runtime/executor"
+      ],
+      "run": "^(TestLogReductionInventory|TestSessionAffinityLinesNameNoCredential|TestCredentialIdentityNamesNoAccountOrKey|TestConfigKeyWritesNoCredentialReceipt|TestSubstitutionWarningPerAttemptWithholdsKeyIndex|TestWebsocketDiagnosticsLogAtDebugWithoutAuthID)$",
+      "platforms": "portable",
+      "race": false,
+      "count": null,
+      "expected_tests": [
+        "TestLogReductionInventory",
+        "TestSessionAffinityLinesNameNoCredential",
+        "TestCredentialIdentityNamesNoAccountOrKey",
+        "TestConfigKeyWritesNoCredentialReceipt",
+        "TestSubstitutionWarningPerAttemptWithholdsKeyIndex",
+        "TestWebsocketDiagnosticsLogAtDebugWithoutAuthID"
+      ]
+    },
+    {
       "name": "tool-call-integrity",
       "packages": [
         "./internal/translator/openai/claude"
@@ -982,6 +1048,14 @@
     {
       "patch": "cli-proxy-api-refresh-shutdown-join.patch",
       "text": "credential refresh workers still running at shutdown deadline; persistence unverified"
+    },
+    {
+      "patch": "cli-proxy-api-context-error-normalization.patch",
+      "text": "prompt is too long"
+    },
+    {
+      "patch": "cli-proxy-api-log-reduction.patch",
+      "text": "Use API key [redacted] for model %s%s"
     }
   ]
 }

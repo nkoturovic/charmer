@@ -63,7 +63,9 @@ use. See [quota readings](../guides/gateway.md#quota-readings) for availability
 after an update. Use `charmer doctor` for per-model 429/402/403 counts and
 `/cm fallback <provider>` to move affected
 roles; those counts are not a remaining balance or a reset time. A profile
-that runs several agents on one account spends its limits faster.
+that runs several agents on one account spends its limits faster. The
+account route does not pass Claude Code's per-request output cap on: the
+model's own output limit applies to each answer.
 
 OpenAI's own pages, checked on 2026-10-04:
 

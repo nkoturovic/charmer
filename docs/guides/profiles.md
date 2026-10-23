@@ -220,7 +220,7 @@ Without a bound reviewer, review remains the lead-only path.
 On pay-per-token providers the lead and every agent bill separately: a
 profile with many agents can cost several times a single-model session.
 The card and the starter preview show a spend note per provider; set
-limits with each provider. On the OpenAI API key, Claude Code's
-per-request output cap does not apply, so each answer can run up to the
-model's own output limit. Prices and spending controls per provider:
+limits with each provider. On the OpenAI API key each answer stops at
+Claude Code's per-request output cap; on the ChatGPT account the model's
+own output limit applies. Prices and spending controls per provider:
 [providers/api-keys.md](../providers/api-keys.md#6-costs-and-limits).

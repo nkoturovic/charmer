@@ -196,7 +196,7 @@ the original failure. No native or kernel input queue is flushed during cleanup.
 | Route | Status |
 | --- | --- |
 | Anthropic Messages to the built-in keyed providers (Anthropic API key, DeepSeek, Kimi, Meta, OpenRouter, Qwen) | supported |
-| the OpenAI Platform API key, through the gateway's route to OpenAI's Responses API | supported for the models reviewed for it; the client's per-request output cap is not applied ([providers/api-keys.md](../providers/api-keys.md#openai)) |
+| the OpenAI Platform API key, through the gateway's route to OpenAI's Responses API | supported for the models reviewed for it; the client's per-request output cap is passed on as the request's output limit ([providers/api-keys.md](../providers/api-keys.md#openai)) |
 | Claude and ChatGPT account sign-ins | supported, for personal use |
 | Anthropic-compatible endpoints of your own, and the Anthropic-compatible presets | supported; a preset is the vendor's documented endpoint, not tested by charmer |
 | keyless OpenAI-compatible servers on your network, and their presets | supported, for leads and agents |

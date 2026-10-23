@@ -34,6 +34,9 @@
       "cli-proxy-api-charmer-model-ids.patch",
       "cli-proxy-api-access-log-path-quoting.patch",
       "cli-proxy-api-codex-refresh-lead.patch",
+      "cli-proxy-api-output-cap.patch",
+      "cli-proxy-api-context-error-normalization.patch",
+      "cli-proxy-api-log-reduction.patch",
       "cli-proxy-api-tool-call-integrity.patch",
       "cli-proxy-api-initial-registration.patch"
     ],

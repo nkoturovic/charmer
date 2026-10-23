@@ -1,7 +1,7 @@
 {
   "bomFormat": "CycloneDX",
   "specVersion": "1.6",
-  "serialNumber": "urn:uuid:534570f5-651c-569e-995e-54e43b90e833",
+  "serialNumber": "urn:uuid:7313da77-b83a-5b70-8070-252c0d228fea",
   "version": 1,
   "metadata": {
     "tools": {
@@ -208,6 +208,24 @@
           {
             "type": "unofficial",
             "diff": {
+              "url": "gateway/patches/cli-proxy-api-output-cap.patch"
+            }
+          },
+          {
+            "type": "unofficial",
+            "diff": {
+              "url": "gateway/patches/cli-proxy-api-context-error-normalization.patch"
+            }
+          },
+          {
+            "type": "unofficial",
+            "diff": {
+              "url": "gateway/patches/cli-proxy-api-log-reduction.patch"
+            }
+          },
+          {
+            "type": "unofficial",
+            "diff": {
               "url": "gateway/patches/cli-proxy-api-tool-call-integrity.patch"
             }
           },
@@ -259,7 +277,7 @@
         },
         {
           "name": "charmer:gateway:post-apply-tree-sha256",
-          "value": "40ca16c916f659e10c87b89776bed5737a793412379b2161ca22608f1225cbee"
+          "value": "ff0d2678ef4f6e7b0690a48f688e634564afcada672484921f172d86a68a3699"
         },
         {
           "name": "charmer:gateway:build-godebug",
@@ -356,6 +374,18 @@
         {
           "name": "charmer:gateway:patch",
           "value": "cli-proxy-api-codex-refresh-lead.patch@dfd433f757e0dd22eb423f51e6bc4ed7049caa3dc358c54bbae9330e13e15a1c"
+        },
+        {
+          "name": "charmer:gateway:patch",
+          "value": "cli-proxy-api-output-cap.patch@253b97c700370d63d9de711e75eceb75a6dd192c8337b18ec960ec65976a951a"
+        },
+        {
+          "name": "charmer:gateway:patch",
+          "value": "cli-proxy-api-context-error-normalization.patch@35847df8aaf3ce696bb608e0625455e19e911a707e9f10b83abfe9a007c5c579"
+        },
+        {
+          "name": "charmer:gateway:patch",
+          "value": "cli-proxy-api-log-reduction.patch@aa97dbed6bbe7e6bc8411444e15c0ddf3ec30a1608ff14918ec1e0682c1497bc"
         },
         {
           "name": "charmer:gateway:patch",

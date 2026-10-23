@@ -229,12 +229,10 @@ it), and the switch is refused while no line is reviewed. With the key in
 use, **M** Models shows a reviewed line's key-route evidence: its
 documented bounds and the date they were checked.
 
-**The output limit is the model's.** Each client turn is one request to
-OpenAI's Responses API (with no retry when it succeeds). Claude Code's
-per-request output cap is not applied on this route: the gateway does
-not pass it on, so one answer can run up to the model's documented
-maximum output, at the published price. Set a spend limit before long or
-multi-agent sessions.
+**The output limit is the client's.** Each client turn is one request to
+OpenAI's Responses API (with no retry when it succeeds), carrying Claude
+Code's per-request output cap as its output limit; reasoning tokens count
+toward it. Set a spend limit before long or multi-agent sessions.
 
 **Spending controls.** OpenAI's
 [spend limits](https://developers.openai.com/api/docs/guides/spend-limits)

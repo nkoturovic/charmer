@@ -11,9 +11,10 @@ harness against a fake Responses upstream (no provider request), including
 one that quotes the key in its failures: the client gets fixed local text,
 and the request carries no account client identity. One client turn is
 one Responses request (no retry when it succeeds), the client's output cap
-is not passed on, and no hosted image tool is added while the key is
-selected (the rendered image-generation setting, compared with a render
-without it).
+reaches it as its output limit, and no hosted image tool is added while the
+key is selected (the rendered image-generation setting, compared with a
+render without it). The ChatGPT account route, with a real account
+credential behind a fixture TLS endpoint, passes no output cap on.
 """
 
 from __future__ import annotations
@@ -23,12 +24,16 @@ import dataclasses
 import datetime
 import json
 import shutil
+import ssl
+import subprocess
 import tempfile
+import threading
 import unittest
+from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from unittest import mock
 
-from charmer import catalog, operator, render, secret_store, served_plan, strict_json
+from charmer import catalog, operator, probe, render, secret_store, served_plan, state, strict_json
 from charmer import validate as schema_validate
 import _gateway_harness as harness
 from charmer.setup import model, providers as setup_providers, texts
@@ -910,9 +915,9 @@ class PinnedGatewayKeyRouteTurnTests(unittest.TestCase):
     def tearDownClass(cls) -> None:
         cls.gateway.close()
 
-    def turn(self, gateway, *, stream: bool):
+    def turn(self, gateway, *, stream: bool, body=CLIENT_TURN):
         alias = sorted(gateway.info["reviewed"])[0]
-        reply = gateway.request(alias, stream=stream, body=CLIENT_TURN)
+        reply = gateway.request(alias, stream=stream, body=body)
         self.assertEqual(reply.status, 200, reply.raw[:300])
         return reply
 
@@ -925,14 +930,16 @@ class PinnedGatewayKeyRouteTurnTests(unittest.TestCase):
                 self.assertEqual(reply.hits[0].path, UPSTREAM_PATH + "/responses")
                 self.assertIn(b"FAKE_OK", reply.raw)
 
-    def test_the_clients_output_cap_does_not_reach_the_responses_request(self) -> None:
-        # The pinned translation from the client's Messages request drops its
-        # max_tokens and sets no Responses limit: the model's own output
-        # limit applies to every turn on this route.
-        for stream in (False, True):
-            with self.subTest(stream=stream):
-                body = self.turn(self.gateway, stream=stream).hits[0].body
-                self.assertFalse({"max_output_tokens", "max_tokens", "max_completion_tokens"} & set(body))
+    def test_the_clients_output_cap_reaches_the_responses_request(self) -> None:
+        # The client's Messages max_tokens becomes the Responses request's
+        # max_output_tokens on the key route, streaming or not, however
+        # small: the gateway forwards the cap as the client set it.
+        for cap in (CLIENT_TURN["max_tokens"], 1):
+            for stream in (False, True):
+                with self.subTest(cap=cap, stream=stream):
+                    body = self.turn(self.gateway, stream=stream, body={**CLIENT_TURN, "max_tokens": cap}).hits[0].body
+                    self.assertEqual(body.get("max_output_tokens"), cap)
+                    self.assertFalse({"max_tokens", "max_completion_tokens"} & set(body))
 
     def test_no_hosted_image_tool_is_added(self) -> None:
         self.assertEqual(self.gateway.document[render.IMAGE_GENERATION_KEY], render.IMAGE_GENERATION_PASSTHROUGH)
@@ -979,6 +986,167 @@ class PinnedGatewayKeyRouteSafetyTests(unittest.TestCase):
         self.assertFalse({"version", "session-id", "session_id"} & set(reply.hits[0].header_names))
         # The prompt cache key still travels in the body.
         self.assertTrue(reply.hits[0].body.get("prompt_cache_key"))
+
+
+# ------------------------------------------------------------ the account route
+ACCOUNT_HOST = "chatgpt.com"
+# A synthetic address: the account file's name and metadata carry it, as a
+# signed-in ChatGPT account's do.
+ACCOUNT_EMAIL = "gwtest.account@example.invalid"
+ACCOUNT_FILE = f"codex-{ACCOUNT_EMAIL}-pro.json"
+ACCOUNT_TOKEN = "dummy-gwtest-account-access"
+
+
+class CodexAccountUpstream:
+    """The ChatGPT account route's upstream, offline: a CONNECT endpoint for
+    exactly ``chatgpt.com:443`` (the gateway reaches it through the rendered
+    ``proxy-url`` seam) that terminates TLS with a fixture certificate the
+    gateway trusts through ``SSL_CERT_FILE``, then answers exactly like
+    ``harness.FakeUpstream`` (``respond(path, body, raw, headers)``; hits are
+    ``harness.Hit`` records in memory only). A plain request (a section
+    rendered with ``proxy-url: direct``) is answered the same way."""
+
+    def __init__(self, path, tls, respond=None):
+        self.fake = harness.FakeUpstream(Path(str(path) + ".tls"), respond=respond)
+        self.hits = self.fake.hits
+        self.connects = []
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.load_cert_chain(str(tls[0]), str(tls[1]))
+        owner = self
+        inner: type[BaseHTTPRequestHandler] = self.fake.server.RequestHandlerClass
+
+        class Outer(inner):
+            def do_CONNECT(self):
+                owner.connects.append(self.path)
+                if self.path != ACCOUNT_HOST + ":443":
+                    self.send_error(403)
+                    return
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.flush()
+                try:
+                    with context.wrap_socket(self.connection, server_side=True) as connection:
+                        inner(connection, self.client_address, owner.fake.server)
+                except (OSError, ssl.SSLError):
+                    pass
+                self.close_connection = True
+
+        self.server = probe.UnixHTTPServer(str(path), Outer)
+        self.thread = threading.Thread(target=self.server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
+        self.thread.start()
+
+    @property
+    def unexpected(self):
+        return self.fake.unexpected
+
+    def close(self):
+        self.server.shutdown()
+        self.server.server_close()
+        self.thread.join(timeout=2)
+        self.fake.close()
+
+
+def account_document(bundle, egress: int, port: int, home: Path):
+    """The real render of the ChatGPT account route (no key selected; every
+    codex effort of the reviewed line declared, as in ``gateway_document``),
+    one account credential file, and the account's HTTPS client reaching the
+    fixture endpoint through ``proxy-url``. Other routes point at the egress."""
+
+    docs = copy.deepcopy(bundle.docs)
+    docs["providers"]["providers"]["openai"]["payload_contracts"] = list(CODEX_CONTRACTS)
+    key = reviewable(docs)
+    entry = docs["models-v2"]["models"][key]
+    base = next(iter(entry["efforts"].values()))["selector"].rsplit("-", 1)[0]
+    entry["efforts"] = {contract.rsplit("-", 1)[1]: {"selector": f"{base}-{contract.rsplit('-', 1)[1]}",
+                                                      "proxy_contract": contract} for contract in CODEX_CONTRACTS}
+    plan = operator.render_plan(docs, operator.empty_layer(), None)
+    gateway = copy.deepcopy(plan.docs["gateway"])
+    gateway["gateway"]["base_url"] = f"http://127.0.0.1:{port}"
+    document, available, _unavailable, _info = render.build_config_document(
+        gateway, plan.docs["providers"]["providers"], plan.docs["models-v2"]["models"], home=home,
+        gateway_token=FIXTURE_GATEWAY_TOKEN, resolve_secret=lambda name: f"dummy-{name.lower()}",
+        continuity={}, captures=plan.captures, provider_headers=plan.headers, oauth_overlay=plan.overlay)
+    if "openai" not in available or document.get(render.CODEX_KEY_SECTION):
+        raise AssertionError("the account route was not rendered")
+    for section in document["claude-api-key"]:
+        section["base-url"] = f"http://127.0.0.1:{egress}/other-route"
+    for section in document["openai-compatibility"]:
+        section["base-url"] = f"http://127.0.0.1:{egress}/other-route"
+    document["proxy-url"] = f"http://127.0.0.1:{egress}"
+    auth = Path(document["auth-dir"])
+    state.ensure_private_dir(auth)
+    state.atomic_write(auth / ACCOUNT_FILE, json.dumps({
+        "type": "codex", "email": ACCOUNT_EMAIL, "access_token": ACCOUNT_TOKEN, "refresh_token": "",
+        "account_id": "gwtest-account-id", "plan_type": "pro", "expired": "2099-01-01T00:00:00Z"}).encode())
+    reviewed = {item["alias"]: item for item in document["oauth-model-alias"]["codex"]
+                if item["name"] == entry["wire_model"]}
+    return document, {}, {"line": key, "wire": entry["wire_model"], "reviewed": reviewed, "unreviewed": []}
+
+
+def account_gateway(root: Path, respond=None, document_factory=account_document):
+    """A gateway on the ChatGPT account route, offline: the fixture TLS
+    endpoint for chatgpt.com, trusted by the gateway process only."""
+
+    openssl = shutil.which("openssl")
+    if openssl is None:
+        raise RuntimeError("the account route fixture requires openssl on the test runner PATH")
+    tls = state.ensure_private_dir(root / "tls")
+    cert, key = tls / "upstream.pem", tls / "upstream-key.pem"
+    subprocess.run([str(Path(openssl).absolute()), "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1", "-subj",
+                    "/CN=" + ACCOUNT_HOST, "-addext", "subjectAltName=DNS:" + ACCOUNT_HOST,
+                    "-keyout", str(key), "-out", str(cert)],
+                   check=True, capture_output=True, timeout=60, env={"PATH": "/usr/bin:/bin"})
+    holder = {}
+
+    def document(bundle, egress, port, home):
+        trust = home / ".config/charmer/gwtest-account-ca.pem"
+        state.atomic_write(trust, cert.read_bytes())
+        holder["trust"] = str(trust)
+        return document_factory(bundle, egress, port, home)
+
+    original = probe.start_isolated_process
+
+    def start(argv, **kwargs):
+        if "trust" in holder:  # the gateway itself, not the --version banner probe
+            kwargs["env"] = {**kwargs["env"], "SSL_CERT_FILE": holder["trust"]}
+        return original(argv, **kwargs)
+
+    with mock.patch.object(probe, "start_isolated_process", start):
+        return harness.GatewayHarness(document_factory=document,
+                                      upstream_factory=lambda path: CodexAccountUpstream(path, (cert, key), respond))
+
+
+class PinnedGatewayAccountRouteTurnTests(unittest.TestCase):
+    """The same client turn on the ChatGPT account route (a real account
+    credential, not a key alias): the output cap is not passed on."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.root = Path(tempfile.mkdtemp(prefix="gwtest-account-"))
+        try:
+            cls.gateway = account_gateway(cls.root)
+        except BaseException:
+            shutil.rmtree(cls.root, ignore_errors=True)
+            raise
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls.gateway.close()
+        shutil.rmtree(cls.root, ignore_errors=True)
+
+    def test_the_clients_output_cap_does_not_reach_the_account_route(self) -> None:
+        alias = sorted(self.gateway.info["reviewed"])[0]
+        for stream in (False, True):
+            with self.subTest(stream=stream):
+                reply = self.gateway.request(alias, stream=stream, body=CLIENT_TURN)
+                self.assertEqual(reply.status, 200, reply.raw[:300])
+                self.assertEqual(len(reply.hits), 1)
+                hit = reply.hits[0]
+                self.assertEqual(hit.path, "/backend-api/codex/responses")
+                self.assertEqual(hit.header_values.get("authorization"), "Bearer " + ACCOUNT_TOKEN)
+                self.assertFalse({"max_output_tokens", "max_tokens", "max_completion_tokens"} & set(hit.body))
+        self.assertTrue(self.gateway.upstream.connects)
+        self.assertEqual(set(self.gateway.upstream.connects), {ACCOUNT_HOST + ":443"})
 
 
 if __name__ == "__main__":

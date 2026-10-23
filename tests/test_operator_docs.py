@@ -1654,7 +1654,7 @@ class ProviderRouteDocsTests(unittest.TestCase):
         for anchor in (f"`{alternative.secret_name}`", f"`{alternative.base_url}`",
                        "charmer providers transport openai api-key",
                        "charmer providers transport openai oauth-pool",
-                       "per-request output cap is not applied", "the model's documented maximum output",
+                       "per-request output cap as its output limit", "reasoning tokens count toward it",
                        "https://developers.openai.com/api/docs/guides/spend-limits",
                        "never both", "fixed local text", "refuses `api.openai.com`"):
             self.assertIn(anchor, section)
@@ -1666,10 +1666,13 @@ class ProviderRouteDocsTests(unittest.TestCase):
         for key in reviewed:
             self.assertIn(f"(`{key}`)", section)
         self.assertIn("api-keys.md#openai", _text("providers/chatgpt-account.md"))
-        # The route matrix and the transports table say it too.
+        # The route matrix and the transports table say it too; the account
+        # page says its route does not pass the cap on.
         for name in ("quickstart.md", "reference/compatibility.md"):
             with self.subTest(name):
-                self.assertRegex(_flat(_text(name)), r"per-request output cap is not\s+applied")
+                self.assertRegex(_flat(_text(name)), r"per-request output cap is passed\s+on")
+        self.assertRegex(_flat(_text("providers/chatgpt-account.md")),
+                         r"does not pass Claude Code's per-request output cap on")
         self.assertIn("https://developers.openai.com/api/docs/guides/spend-limits", _text("quickstart.md"))
 
     def test_the_quickstart_matrix_covers_every_route_class(self) -> None:

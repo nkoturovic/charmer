@@ -313,12 +313,44 @@ Before the modules are vendored, this patch updates the module requirements:
       added     sdk/cliproxy/auth/codex_refresh_lead_test.go
       modified  sdk/cliproxy/auth/types.go
 
-24. cli-proxy-api-tool-call-integrity.patch
+24. cli-proxy-api-output-cap.patch
+    sha256 253b97c700370d63d9de711e75eceb75a6dd192c8337b18ec960ec65976a951a
+      modified  internal/runtime/executor/codex_executor_execute.go
+      modified  internal/runtime/executor/codex_executor_stream.go
+      added     internal/runtime/executor/codex_key_output_cap.go
+      added     internal/runtime/executor/codex_key_output_cap_test.go
+
+25. cli-proxy-api-context-error-normalization.patch
+    sha256 35847df8aaf3ce696bb608e0625455e19e911a707e9f10b83abfe9a007c5c579
+      added     internal/runtime/executor/codex_context_error_normalization.go
+      added     internal/runtime/executor/codex_context_error_normalization_test.go
+      modified  internal/runtime/executor/codex_executor_execute.go
+      modified  internal/runtime/executor/codex_executor_stream.go
+      modified  sdk/api/handlers/claude/code_handlers.go
+      added     sdk/api/handlers/claude/prompt_too_long.go
+
+26. cli-proxy-api-log-reduction.patch
+    sha256 aa97dbed6bbe7e6bc8411444e15c0ddf3ec30a1608ff14918ec1e0682c1497bc
+      modified  internal/runtime/executor/codex_websockets_duplex.go
+      modified  internal/runtime/executor/codex_websockets_session.go
+      modified  internal/runtime/executor/helps/usage_helpers.go
+      added     internal/runtime/executor/log_reduction_test.go
+      modified  internal/runtime/executor/xai_websockets_executor.go
+      modified  sdk/cliproxy/auth/conductor_execution.go
+      modified  sdk/cliproxy/auth/conductor_warn_logging_test.go
+      modified  sdk/cliproxy/auth/home_execution_paths_test.go
+      added     sdk/cliproxy/auth/log_identity.go
+      added     sdk/cliproxy/auth/log_identity_test.go
+      added     sdk/cliproxy/auth/log_reduction_inventory_test.go
+      modified  sdk/cliproxy/auth/openai_compat_keyed_cm053_test.go
+      modified  sdk/cliproxy/auth/selector.go
+
+27. cli-proxy-api-tool-call-integrity.patch
     sha256 6e76f133e2d913baab2d0b2c5bd57f4e6c113c861e83497ae564e3cb5275846a
       modified  internal/translator/openai/claude/openai_claude_content_goldens_test.go
       modified  internal/translator/openai/claude/openai_claude_response.go
       added     internal/translator/openai/claude/openai_claude_tool_integrity_test.go
 
-25. cli-proxy-api-initial-registration.patch
+28. cli-proxy-api-initial-registration.patch
     sha256 6d054fbed1eb42ac34dd2f60c47047b6e2db293028d9825a2ec6f919061dffa8
       modified  sdk/cliproxy/service_auth.go
