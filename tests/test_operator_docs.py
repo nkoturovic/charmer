@@ -610,7 +610,7 @@ class QuotaDocumentationTests(unittest.TestCase):
     def test_quota_is_documented_as_an_observation_with_its_limits(self) -> None:
         text = _flat(_section(_text("guides/gateway.md"), "Quota readings"))
         for anchor in ("charmer quota", "/cm quota", "no provider call", "not zero use",
-                       "exits 1 when no reading was made", "only the Nix package enables",
+                       "exits 1 when no reading was made", "available in release bundles and the Nix package",
                        "unavailable in this build", "not a balance", "not billed tokens",
                        "not on whether the gateway is on demand or supervised",
                        "Stale or exhausted readings still exit 0",
@@ -1654,7 +1654,7 @@ class ProviderRouteDocsTests(unittest.TestCase):
         for anchor in (f"`{alternative.secret_name}`", f"`{alternative.base_url}`",
                        "charmer providers transport openai api-key",
                        "charmer providers transport openai oauth-pool",
-                       "per-request output cap is not applied", "the model's documented maximum output",
+                       "per-request output cap as its output limit", "reasoning tokens count toward it",
                        "https://developers.openai.com/api/docs/guides/spend-limits",
                        "never both", "fixed local text", "refuses `api.openai.com`"):
             self.assertIn(anchor, section)
@@ -1666,10 +1666,13 @@ class ProviderRouteDocsTests(unittest.TestCase):
         for key in reviewed:
             self.assertIn(f"(`{key}`)", section)
         self.assertIn("api-keys.md#openai", _text("providers/chatgpt-account.md"))
-        # The route matrix and the transports table say it too.
+        # The route matrix and the transports table say it too; the account
+        # page says its route does not pass the cap on.
         for name in ("quickstart.md", "reference/compatibility.md"):
             with self.subTest(name):
-                self.assertRegex(_flat(_text(name)), r"per-request output cap is not\s+applied")
+                self.assertRegex(_flat(_text(name)), r"per-request output cap is passed\s+on")
+        self.assertRegex(_flat(_text("providers/chatgpt-account.md")),
+                         r"does not pass Claude Code's per-request output cap on")
         self.assertIn("https://developers.openai.com/api/docs/guides/spend-limits", _text("quickstart.md"))
 
     def test_the_quickstart_matrix_covers_every_route_class(self) -> None:

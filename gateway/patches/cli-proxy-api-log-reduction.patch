@@ -1,0 +1,1158 @@
+diff --git a/internal/runtime/executor/codex_websockets_duplex.go b/internal/runtime/executor/codex_websockets_duplex.go
+index 6e79dfe1..805a8e76 100644
+--- a/internal/runtime/executor/codex_websockets_duplex.go
++++ b/internal/runtime/executor/codex_websockets_duplex.go
+@@ -43,7 +43,7 @@ func (e *CodexWebsocketsExecutor) streamCodexDuplex(
+ 	streamCtx, cancel := context.WithCancel(ctx)
+ 	out := make(chan cliproxyexecutor.StreamChunk)
+ 	// This first frame was successfully written by ExecuteStream before handoff.
+-	log.Infof("codex websockets: request forwarded session=%s auth=%s url=%s event=response.create", sess.sessionID, auth.ID, initial.wsURL)
++	log.Debugf("codex websockets: request forwarded session=%s url=%s event=response.create", sess.sessionID, initial.wsURL)
+ 	writeErrors := make(chan error, 1)
+ 	// Explicit creates have their own request settings. Automatic successors
+ 	// inherit the preceding response settings, just as they do upstream.
+@@ -224,7 +224,7 @@ func (e *CodexWebsocketsExecutor) streamCodexDuplex(
+ 				fail(mapCodexWebsocketWriteError(sess, conn, errWrite))
+ 				return false
+ 			}
+-			log.Infof("codex websockets: request forwarded session=%s auth=%s url=%s event=%s", sess.sessionID, auth.ID, initial.wsURL, gjson.GetBytes(payload, "type").String())
++			log.Debugf("codex websockets: request forwarded session=%s url=%s event=%s", sess.sessionID, initial.wsURL, gjson.GetBytes(payload, "type").String())
+ 			return true
+ 		}
+ 		flushPendingCreates := func() bool {
+@@ -318,7 +318,7 @@ func (e *CodexWebsocketsExecutor) streamCodexDuplex(
+ 						fail(mapCodexWebsocketWriteError(sess, conn, errWrite))
+ 						return
+ 					}
+-					log.Infof("codex websockets: request forwarded session=%s auth=%s url=%s event=response.steer", sess.sessionID, auth.ID, initial.wsURL)
++					log.Debugf("codex websockets: request forwarded session=%s url=%s event=response.steer", sess.sessionID, initial.wsURL)
+ 					continue
+ 
+ 				case "response.create", "response.append":
+diff --git a/internal/runtime/executor/codex_websockets_session.go b/internal/runtime/executor/codex_websockets_session.go
+index a4157629..85295dec 100644
+--- a/internal/runtime/executor/codex_websockets_session.go
++++ b/internal/runtime/executor/codex_websockets_session.go
+@@ -1000,6 +1000,10 @@ func sessionObjectKind(sess *codexWebsocketSession) string {
+ 	return "ephemeral"
+ }
+ 
++// The connection lines below are per-connection diagnostics, so they log at
++// debug level, and they never name the credential: an account's auth ID is its
++// credential file name, which carries its e-mail address, and an API key's is a
++// hash over the key.
+ func logCodexWebsocketConnected(sessionID string, authID string, wsURL string) {
+ 	logCodexWebsocketConnectedWithReused(nil, sessionID, authID, wsURL, false)
+ }
+@@ -1008,10 +1012,10 @@ func logCodexWebsocketConnectedWithReused(sess *codexWebsocketSession, sessionID
+ 	sessionStr := strings.TrimSpace(sessionID)
+ 	sessionKind := sessionObjectKind(sess)
+ 	if reused {
+-		log.Infof("codex websockets: upstream connected session=%s auth=%s url=%s session_object=%s reused=true", sessionStr, strings.TrimSpace(authID), strings.TrimSpace(wsURL), sessionKind)
++		log.Debugf("codex websockets: upstream connected session=%s url=%s session_object=%s reused=true", sessionStr, strings.TrimSpace(wsURL), sessionKind)
+ 		return
+ 	}
+-	log.Infof("codex websockets: upstream connected session=%s auth=%s url=%s session_object=%s reused=false", sessionStr, strings.TrimSpace(authID), strings.TrimSpace(wsURL), sessionKind)
++	log.Debugf("codex websockets: upstream connected session=%s url=%s session_object=%s reused=false", sessionStr, strings.TrimSpace(wsURL), sessionKind)
+ }
+ 
+ func logCodexWebsocketDisconnected(sessionID string, authID string, wsURL string, reason string, err error) {
+@@ -1033,17 +1037,17 @@ func logCodexWebsocketDisconnectedWithLastEvent(sess *codexWebsocketSession, ses
+ 	terminalStatus := isTerminalEvent(lastEvent)
+ 	if err != nil {
+ 		if lastEvent != "" {
+-			log.Infof("codex websockets: upstream disconnected session=%s auth=%s url=%s session_object=%s reason=%s last_event=%s is_terminal=%t err=%v", sessionStr, strings.TrimSpace(authID), strings.TrimSpace(wsURL), sessionKind, strings.TrimSpace(reason), lastEvent, terminalStatus, err)
++			log.Debugf("codex websockets: upstream disconnected session=%s url=%s session_object=%s reason=%s last_event=%s is_terminal=%t err=%v", sessionStr, strings.TrimSpace(wsURL), sessionKind, strings.TrimSpace(reason), lastEvent, terminalStatus, err)
+ 			return
+ 		}
+-		log.Infof("codex websockets: upstream disconnected session=%s auth=%s url=%s session_object=%s reason=%s is_terminal=false err=%v", sessionStr, strings.TrimSpace(authID), strings.TrimSpace(wsURL), sessionKind, strings.TrimSpace(reason), err)
++		log.Debugf("codex websockets: upstream disconnected session=%s url=%s session_object=%s reason=%s is_terminal=false err=%v", sessionStr, strings.TrimSpace(wsURL), sessionKind, strings.TrimSpace(reason), err)
+ 		return
+ 	}
+ 	if lastEvent != "" {
+-		log.Infof("codex websockets: upstream disconnected session=%s auth=%s url=%s session_object=%s reason=%s last_event=%s is_terminal=%t", sessionStr, strings.TrimSpace(authID), strings.TrimSpace(wsURL), sessionKind, strings.TrimSpace(reason), lastEvent, terminalStatus)
++		log.Debugf("codex websockets: upstream disconnected session=%s url=%s session_object=%s reason=%s last_event=%s is_terminal=%t", sessionStr, strings.TrimSpace(wsURL), sessionKind, strings.TrimSpace(reason), lastEvent, terminalStatus)
+ 		return
+ 	}
+-	log.Infof("codex websockets: upstream disconnected session=%s auth=%s url=%s session_object=%s reason=%s is_terminal=false", sessionStr, strings.TrimSpace(authID), strings.TrimSpace(wsURL), sessionKind, strings.TrimSpace(reason))
++	log.Debugf("codex websockets: upstream disconnected session=%s url=%s session_object=%s reason=%s is_terminal=false", sessionStr, strings.TrimSpace(wsURL), sessionKind, strings.TrimSpace(reason))
+ }
+ 
+ // CloseCodexWebsocketSessionsForAuthID closes all active Codex upstream websocket sessions
+diff --git a/internal/runtime/executor/helps/usage_helpers.go b/internal/runtime/executor/helps/usage_helpers.go
+index c01ef153..e852d525 100644
+--- a/internal/runtime/executor/helps/usage_helpers.go
++++ b/internal/runtime/executor/helps/usage_helpers.go
+@@ -36,6 +36,7 @@ type UsageReporter struct {
+ 	alias               string
+ 	authID              string
+ 	authIndex           string
++	logAuthIndex        string
+ 	authMu              sync.RWMutex
+ 	accessTokenHash     string
+ 	authType            string
+@@ -151,6 +152,7 @@ func NewUsageReporter(ctx context.Context, provider, model string, auth *cliprox
+ 	if auth != nil {
+ 		reporter.authID = auth.ID
+ 		reporter.authIndex = auth.EnsureIndex()
++		reporter.logAuthIndex = auth.LogIndex()
+ 		reporter.accessTokenHash = authAccessTokenSHA256(auth)
+ 	}
+ 	return reporter
+@@ -305,12 +307,13 @@ func (r *UsageReporter) warnModelSubstitution(ctx context.Context) {
+ 	LogWithRequestID(ctx).Warnf("%s executor: upstream served model %q for requested model %q (auth_index=%s)", providerName, served, r.model, r.authIndexForLog())
+ }
+ 
+-// authIndexForLog labels the credential without exposing its file name or account.
++// authIndexForLog labels the credential without exposing its file name or
++// account; an API key shows "nil", since its index is a hash over the key.
+ func (r *UsageReporter) authIndexForLog() string {
+ 	if r == nil {
+ 		return "nil"
+ 	}
+-	if authIndex := strings.TrimSpace(r.authIndex); authIndex != "" {
++	if authIndex := strings.TrimSpace(r.logAuthIndex); authIndex != "" {
+ 		return authIndex
+ 	}
+ 	return "nil"
+diff --git a/internal/runtime/executor/log_reduction_test.go b/internal/runtime/executor/log_reduction_test.go
+new file mode 100644
+index 00000000..004370ea
+--- /dev/null
++++ b/internal/runtime/executor/log_reduction_test.go
+@@ -0,0 +1,149 @@
++package executor
++
++import (
++	"bytes"
++	"context"
++	"errors"
++	"fmt"
++	"io"
++	"net/http"
++	"net/http/httptest"
++	"strings"
++	"testing"
++	"time"
++
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
++	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
++	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
++	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
++	log "github.com/sirupsen/logrus"
++)
++
++const (
++	logReductionEmail = "fixture.user@example.invalid"
++	logReductionFile  = "codex-fixture.user@example.invalid-plus.json"
++	logReductionKey   = "sk-fixture-key-0123456789abcdef"
++)
++
++// captureExecutorLogs records every log line at level and above.
++func captureExecutorLogs(t *testing.T, level log.Level) *bytes.Buffer {
++	t.Helper()
++	var out bytes.Buffer
++	logger := log.StandardLogger()
++	previousOut, previousLevel, previousFormatter := logger.Out, logger.GetLevel(), logger.Formatter
++	logger.SetOutput(&out)
++	logger.SetLevel(level)
++	logger.SetFormatter(&log.TextFormatter{DisableTimestamp: true, DisableColors: true})
++	t.Cleanup(func() {
++		logger.SetOutput(previousOut)
++		logger.SetLevel(previousLevel)
++		logger.SetFormatter(previousFormatter)
++	})
++	return &out
++}
++
++func assertNoAccountOrKeyInLogs(t *testing.T, logs string, keyAuth *cliproxyauth.Auth) {
++	t.Helper()
++	keyIndex := keyAuth.Clone().EnsureIndex()
++	for _, leak := range []string{logReductionEmail, "fixture.user", logReductionKey, util.HideAPIKey(logReductionKey), keyAuth.ID, keyIndex} {
++		if strings.Contains(logs, leak) {
++			t.Fatalf("logs carry %q:\n%s", leak, logs)
++		}
++	}
++}
++
++// Every attempt that an upstream answers with another model logs its own
++// substitution warning with both models quoted; it names an account by its
++// credential index and withholds an API key's, which is a hash over the key.
++// Both indexes are derived from the credentials, as at registration.
++func TestSubstitutionWarningPerAttemptWithholdsKeyIndex(t *testing.T) {
++	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		_, _ = io.Copy(io.Discard, r.Body)
++		w.Header().Set("Content-Type", "text/event-stream")
++		_, _ = io.WriteString(w, `data: {"type":"response.completed","response":{"id":"resp_sub","object":"response","created_at":1700000000,"status":"completed","model":"gpt-5.4-mini","output":[{"type":"message","id":"msg_sub","role":"assistant","status":"completed","content":[{"type":"output_text","text":"ok","annotations":[]}]}],"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}}}`+"\n\n")
++	}))
++	defer server.Close()
++	keyAuth := func() *cliproxyauth.Auth {
++		return &cliproxyauth.Auth{ID: "codex:apikey:fixture-key-id", Provider: "codex",
++			Attributes: map[string]string{"api_key": logReductionKey, "base_url": server.URL, "source": "config:codex[fixture]"}}
++	}
++	accountAuth := func() *cliproxyauth.Auth {
++		return &cliproxyauth.Auth{ID: logReductionFile, Provider: "codex", FileName: "/auths/" + logReductionFile,
++			Attributes: map[string]string{"base_url": server.URL, "path": "/auths/" + logReductionFile},
++			Metadata:   map[string]any{"type": "codex", "email": logReductionEmail, "access_token": "fixture-access-token", "account_id": "fixture-account"}}
++	}
++	accountIndex := accountAuth().EnsureIndex()
++	if accountIndex == "" || accountIndex == keyAuth().EnsureIndex() {
++		t.Fatalf("derived indexes: account %q, key %q", accountIndex, keyAuth().EnsureIndex())
++	}
++	const attempts = 3
++	for _, tc := range []struct {
++		name  string
++		auth  func() *cliproxyauth.Auth
++		index string
++	}{{"key", keyAuth, "nil"}, {"account", accountAuth, accountIndex}} {
++		t.Run(tc.name, func(t *testing.T) {
++			logs := captureExecutorLogs(t, log.DebugLevel)
++			executor := NewCodexExecutor(&config.Config{})
++			for attempt := 0; attempt < attempts; attempt++ {
++				for _, stream := range []bool{false, true} {
++					ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
++					req := cliproxyexecutor.Request{Model: "gpt-5.5", Payload: []byte(`{"model":"gpt-5.5","max_tokens":1024,"messages":[{"role":"user","content":"fixture"}]}`)}
++					opts := cliproxyexecutor.Options{SourceFormat: sdktranslator.FormatClaude, Stream: stream}
++					if stream {
++						result, err := executor.ExecuteStream(ctx, tc.auth(), req, opts)
++						if err != nil {
++							t.Fatalf("ExecuteStream: %v", err)
++						}
++						for chunk := range result.Chunks {
++							if chunk.Err != nil {
++								t.Fatalf("stream chunk: %v", chunk.Err)
++							}
++						}
++					} else if _, err := executor.Execute(ctx, tc.auth(), req, opts); err != nil {
++						t.Fatalf("Execute: %v", err)
++					}
++					cancel()
++				}
++			}
++			want := fmt.Sprintf(`codex executor: upstream served model \"gpt-5.4-mini\" for requested model \"gpt-5.5\" (auth_index=%s)`, tc.index)
++			if got := strings.Count(logs.String(), "level=warning msg=\""+want+"\""); got != 2*attempts {
++				t.Fatalf("substitution warnings = %d, want %d (%s):\n%s", got, 2*attempts, want, logs)
++			}
++			assertNoAccountOrKeyInLogs(t, logs.String(), keyAuth())
++		})
++	}
++}
++
++// The websocket request, response and connection lines are per-request
++// diagnostics: nothing at info level, and at debug level no auth ID.
++func TestWebsocketDiagnosticsLogAtDebugWithoutAuthID(t *testing.T) {
++	const url = "wss://upstream.example.invalid/v1/responses"
++	payload := []byte(`{"type":"response.create","input":[],"response":{"id":"resp_ws","previous_response_id":"resp_prev"}}`)
++	emit := func() {
++		logCodexWebsocketConnected("session-1", logReductionFile, url)
++		logCodexWebsocketConnectedWithReused(nil, "session-1", logReductionFile, url, true)
++		logCodexWebsocketDisconnected("session-1", logReductionFile, url, "closed", nil)
++		logCodexWebsocketDisconnectedWithLastEvent(nil, "session-1", logReductionFile, url, "closed", "response.completed", errors.New("eof"))
++		logXAIWebsocketRequest("session-1", logReductionFile, url, nil)
++		logXAIWebsocketRequest("session-1", logReductionFile, url, payload)
++		logXAIWebsocketWarmupCompleted("session-1", logReductionFile, url, payload)
++		logXAIWebsocketTerminalResponse("session-1", logReductionFile, url, "response.completed", payload)
++		logXAIWebsocketConnected("session-1", logReductionFile, url)
++		logXAIWebsocketDisconnected("session-1", logReductionFile, url, "closed", errors.New("eof"))
++	}
++	info := captureExecutorLogs(t, log.InfoLevel)
++	emit()
++	if info.Len() != 0 {
++		t.Fatalf("websocket diagnostics at info level:\n%s", info)
++	}
++	debug := captureExecutorLogs(t, log.DebugLevel)
++	emit()
++	if lines := strings.Count(debug.String(), "level=debug"); lines != 10 {
++		t.Fatalf("debug lines = %d, want 10:\n%s", lines, debug)
++	}
++	if strings.Contains(debug.String(), "fixture.user") || strings.Contains(debug.String(), "auth=") {
++		t.Fatalf("websocket diagnostics name the credential:\n%s", debug)
++	}
++}
+diff --git a/internal/runtime/executor/xai_websockets_executor.go b/internal/runtime/executor/xai_websockets_executor.go
+index 46d6e5c6..f3d42b17 100644
+--- a/internal/runtime/executor/xai_websockets_executor.go
++++ b/internal/runtime/executor/xai_websockets_executor.go
+@@ -994,14 +994,9 @@ func (e *XAIWebsocketsExecutor) executeCompactionTriggerFromWebsocketContext(ctx
+ 			}
+ 		}
+ 	}
+-	authID := ""
+-	if auth != nil {
+-		authID = auth.ID
+-	}
+-	log.Infof(
+-		"xai websockets: compact fallback session=%s auth=%s input_items=%d keep_previous_response_id=%t",
++	log.Debugf(
++		"xai websockets: compact fallback session=%s input_items=%d keep_previous_response_id=%t",
+ 		xaiExecutionSessionID(req, opts),
+-		strings.TrimSpace(authID),
+ 		inputItemsCount,
+ 		keepPreviousResponseID,
+ 	)
+@@ -1687,19 +1682,22 @@ func applyXAIWebsocketHeaders(ctx context.Context, headers http.Header, auth *cl
+ 	return headers
+ }
+ 
++// The request, response and connection lines below are per-request
++// diagnostics, so they log at debug level, and they never name the credential:
++// an account's auth ID is its credential file name, which carries its e-mail
++// address, and an API key's is a hash over the key.
+ func logXAIWebsocketRequest(sessionID string, authID string, wsURL string, payload []byte) {
+ 	if len(payload) == 0 {
+-		log.Infof("xai websockets: upstream request sent session=%s auth=%s url=%s", strings.TrimSpace(sessionID), strings.TrimSpace(authID), strings.TrimSpace(wsURL))
++		log.Debugf("xai websockets: upstream request sent session=%s url=%s", strings.TrimSpace(sessionID), strings.TrimSpace(wsURL))
+ 		return
+ 	}
+ 	generateValue := "default"
+ 	if generate := gjson.GetBytes(payload, "generate"); generate.Exists() {
+ 		generateValue = strings.TrimSpace(generate.Raw)
+ 	}
+-	log.Infof(
+-		"xai websockets: upstream request sent session=%s auth=%s url=%s event=%s previous_response_id=%s generate=%s input_items=%d",
++	log.Debugf(
++		"xai websockets: upstream request sent session=%s url=%s event=%s previous_response_id=%s generate=%s input_items=%d",
+ 		strings.TrimSpace(sessionID),
+-		strings.TrimSpace(authID),
+ 		strings.TrimSpace(wsURL),
+ 		strings.TrimSpace(gjson.GetBytes(payload, "type").String()),
+ 		strings.TrimSpace(gjson.GetBytes(payload, "previous_response_id").String()),
+@@ -1709,20 +1707,18 @@ func logXAIWebsocketRequest(sessionID string, authID string, wsURL string, paylo
+ }
+ 
+ func logXAIWebsocketWarmupCompleted(sessionID string, authID string, wsURL string, payload []byte) {
+-	log.Infof(
+-		"xai websockets: upstream warmup completed session=%s auth=%s url=%s response_id=%s",
++	log.Debugf(
++		"xai websockets: upstream warmup completed session=%s url=%s response_id=%s",
+ 		strings.TrimSpace(sessionID),
+-		strings.TrimSpace(authID),
+ 		strings.TrimSpace(wsURL),
+ 		strings.TrimSpace(gjson.GetBytes(payload, "response.id").String()),
+ 	)
+ }
+ 
+ func logXAIWebsocketTerminalResponse(sessionID string, authID string, wsURL string, eventType string, payload []byte) {
+-	log.Infof(
+-		"xai websockets: upstream terminal response session=%s auth=%s url=%s event=%s response_id=%s previous_response_id=%s",
++	log.Debugf(
++		"xai websockets: upstream terminal response session=%s url=%s event=%s response_id=%s previous_response_id=%s",
+ 		strings.TrimSpace(sessionID),
+-		strings.TrimSpace(authID),
+ 		strings.TrimSpace(wsURL),
+ 		strings.TrimSpace(eventType),
+ 		strings.TrimSpace(gjson.GetBytes(payload, "response.id").String()),
+@@ -1738,10 +1734,10 @@ func logXAIWebsocketConnectedWithReused(sess *codexWebsocketSession, sessionID s
+ 	sessionStr := strings.TrimSpace(sessionID)
+ 	sessionKind := sessionObjectKind(sess)
+ 	if reused {
+-		log.Infof("xai websockets: upstream connected session=%s auth=%s url=%s session_object=%s reused=true", sessionStr, strings.TrimSpace(authID), strings.TrimSpace(wsURL), sessionKind)
++		log.Debugf("xai websockets: upstream connected session=%s url=%s session_object=%s reused=true", sessionStr, strings.TrimSpace(wsURL), sessionKind)
+ 		return
+ 	}
+-	log.Infof("xai websockets: upstream connected session=%s auth=%s url=%s session_object=%s reused=false", sessionStr, strings.TrimSpace(authID), strings.TrimSpace(wsURL), sessionKind)
++	log.Debugf("xai websockets: upstream connected session=%s url=%s session_object=%s reused=false", sessionStr, strings.TrimSpace(wsURL), sessionKind)
+ }
+ 
+ func logXAIWebsocketDisconnected(sessionID string, authID string, wsURL string, reason string, err error) {
+@@ -1754,17 +1750,17 @@ func logXAIWebsocketDisconnectedWithLastEvent(sess *codexWebsocketSession, sessi
+ 	terminalStatus := isTerminalEvent(lastEvent)
+ 	if err != nil {
+ 		if lastEvent != "" {
+-			log.Infof("xai websockets: upstream disconnected session=%s auth=%s url=%s session_object=%s reason=%s last_event=%s is_terminal=%t err=%v", sessionStr, strings.TrimSpace(authID), strings.TrimSpace(wsURL), sessionKind, strings.TrimSpace(reason), lastEvent, terminalStatus, err)
++			log.Debugf("xai websockets: upstream disconnected session=%s url=%s session_object=%s reason=%s last_event=%s is_terminal=%t err=%v", sessionStr, strings.TrimSpace(wsURL), sessionKind, strings.TrimSpace(reason), lastEvent, terminalStatus, err)
+ 			return
+ 		}
+-		log.Infof("xai websockets: upstream disconnected session=%s auth=%s url=%s session_object=%s reason=%s is_terminal=false err=%v", sessionStr, strings.TrimSpace(authID), strings.TrimSpace(wsURL), sessionKind, strings.TrimSpace(reason), err)
++		log.Debugf("xai websockets: upstream disconnected session=%s url=%s session_object=%s reason=%s is_terminal=false err=%v", sessionStr, strings.TrimSpace(wsURL), sessionKind, strings.TrimSpace(reason), err)
+ 		return
+ 	}
+ 	if lastEvent != "" {
+-		log.Infof("xai websockets: upstream disconnected session=%s auth=%s url=%s session_object=%s reason=%s last_event=%s is_terminal=%t", sessionStr, strings.TrimSpace(authID), strings.TrimSpace(wsURL), sessionKind, strings.TrimSpace(reason), lastEvent, terminalStatus)
++		log.Debugf("xai websockets: upstream disconnected session=%s url=%s session_object=%s reason=%s last_event=%s is_terminal=%t", sessionStr, strings.TrimSpace(wsURL), sessionKind, strings.TrimSpace(reason), lastEvent, terminalStatus)
+ 		return
+ 	}
+-	log.Infof("xai websockets: upstream disconnected session=%s auth=%s url=%s session_object=%s reason=%s is_terminal=false", sessionStr, strings.TrimSpace(authID), strings.TrimSpace(wsURL), sessionKind, strings.TrimSpace(reason))
++	log.Debugf("xai websockets: upstream disconnected session=%s url=%s session_object=%s reason=%s is_terminal=false", sessionStr, strings.TrimSpace(wsURL), sessionKind, strings.TrimSpace(reason))
+ }
+ 
+ // CloseXAIWebsocketSessionsForAuthID closes all active xAI upstream websocket sessions
+diff --git a/sdk/cliproxy/auth/conductor_execution.go b/sdk/cliproxy/auth/conductor_execution.go
+index 99759f7a..6880a139 100644
+--- a/sdk/cliproxy/auth/conductor_execution.go
++++ b/sdk/cliproxy/auth/conductor_execution.go
+@@ -8,7 +8,6 @@ import (
+ 	"io"
+ 	"maps"
+ 	"net/http"
+-	"path/filepath"
+ 	"sort"
+ 	"strconv"
+ 	"strings"
+@@ -1861,14 +1860,14 @@ func debugLogAuthSelection(entry *log.Entry, auth *Auth, provider string, model
+ 			entry.Debugf("Use API key %s for model %s%s", openAICompatAuthLogIdentity(auth), model, suffix)
+ 			return
+ 		}
+-		entry.Debugf("Use API key %s for model %s%s", util.HideAPIKey(accountInfo), model, suffix)
++		entry.Debugf("Use API key [redacted] for model %s%s", model, suffix)
+ 	case "oauth":
+ 		ident := formatOauthIdentity(auth, provider, accountInfo)
+ 		entry.Debugf("Use OAuth %s for model %s%s", ident, model, suffix)
+ 	}
+ }
+ 
+-func formatOauthIdentity(auth *Auth, provider string, accountInfo string) string {
++func formatOauthIdentity(auth *Auth, provider string, _ string) string {
+ 	if auth == nil {
+ 		return ""
+ 	}
+@@ -1877,26 +1876,13 @@ func formatOauthIdentity(auth *Auth, provider string, accountInfo string) string
+ 	if providerName == "" {
+ 		providerName = strings.TrimSpace(provider)
+ 	}
+-	// Only log the basename to avoid leaking host paths.
+-	// FileName may be unset for some auth backends; fall back to ID.
+-	authFile := strings.TrimSpace(auth.FileName)
+-	if authFile == "" {
+-		authFile = strings.TrimSpace(auth.ID)
+-	}
+-	if authFile != "" {
+-		authFile = filepath.Base(authFile)
+-	}
+-	parts := make([]string, 0, 3)
++	// The account is named by its credential index, never by its e-mail
++	// address or credential file name.
++	identity := "auth_index=" + auth.LogIndex()
+ 	if providerName != "" {
+-		parts = append(parts, "provider="+providerName)
+-	}
+-	if authFile != "" {
+-		parts = append(parts, "auth_file="+authFile)
+-	}
+-	if len(parts) == 0 {
+-		return accountInfo
++		identity = "provider=" + providerName + " " + identity
+ 	}
+-	return strings.Join(parts, " ")
++	return identity
+ }
+ 
+ // isOpenAICompatAuthForLog reports an OpenAI-compatible provider auth
+@@ -1930,20 +1916,11 @@ func formatAuthIdentity(auth *Auth, provider string) string {
+ 		if isOpenAICompatAuthForLog(auth) {
+ 			return "api_key=" + openAICompatAuthLogIdentity(auth)
+ 		}
+-		return fmt.Sprintf("api_key=%s", util.HideAPIKey(accountInfo))
++		return "api_key=[redacted]"
+ 	case "oauth":
+ 		return formatOauthIdentity(auth, provider, accountInfo)
+ 	default:
+-		if auth.FileName != "" {
+-			return fmt.Sprintf("auth_file=%s", filepath.Base(auth.FileName))
+-		}
+-		if auth.ID != "" {
+-			return fmt.Sprintf("auth_id=%s", auth.ID)
+-		}
+-		if accountInfo != "" {
+-			return accountInfo
+-		}
+-		return "unknown"
++		return "auth_index=" + auth.LogIndex()
+ 	}
+ }
+ 
+diff --git a/sdk/cliproxy/auth/conductor_warn_logging_test.go b/sdk/cliproxy/auth/conductor_warn_logging_test.go
+index babf7691..019aec8c 100644
+--- a/sdk/cliproxy/auth/conductor_warn_logging_test.go
++++ b/sdk/cliproxy/auth/conductor_warn_logging_test.go
+@@ -220,9 +220,10 @@ func TestWarnLogOnAuthUnavailable_SingleProvider(t *testing.T) {
+ 	for _, entry := range hook.AllEntries() {
+ 		if entry.Level == log.WarnLevel && strings.Contains(entry.Message, "auth unavailable") {
+ 			warnCount++
+-			if !strings.Contains(entry.Message, "claude-key-1.json") ||
++			if !strings.Contains(entry.Message, "auth_index="+auth1.EnsureIndex()) ||
+ 				!strings.Contains(entry.Message, "rate_limit_exceeded") ||
+-				!strings.Contains(entry.Message, "claude-key-2.json") ||
++				!strings.Contains(entry.Message, "auth_index="+auth2.EnsureIndex()) ||
++				strings.Contains(entry.Message, "claude-key-") ||
+ 				!strings.Contains(entry.Message, "quota_exceeded") ||
+ 				!strings.Contains(entry.Message, "remaining=") {
+ 				t.Fatalf("unexpected Warn log content: %s", entry.Message)
+@@ -289,7 +290,8 @@ func TestWarnLogOnAuthUnavailable_SessionAffinityLegacyPath(t *testing.T) {
+ 	for _, entry := range hook.AllEntries() {
+ 		if entry.Level == log.WarnLevel && strings.Contains(entry.Message, "auth unavailable") {
+ 			warnCount++
+-			if !strings.Contains(entry.Message, "claude-legacy.json") ||
++			if !strings.Contains(entry.Message, "auth_index="+auth1.EnsureIndex()) ||
++				strings.Contains(entry.Message, "claude-legacy") ||
+ 				!strings.Contains(entry.Message, "rate_limit_exceeded") {
+ 				t.Fatalf("unexpected Warn log content: %s", entry.Message)
+ 			}
+@@ -368,8 +370,9 @@ func TestWarnLogOnAuthUnavailable_MixedProviders(t *testing.T) {
+ 	for _, entry := range hook.AllEntries() {
+ 		if entry.Level == log.WarnLevel && strings.Contains(entry.Message, "auth unavailable") {
+ 			warnCount++
+-			if !strings.Contains(entry.Message, "claude.json") ||
+-				!strings.Contains(entry.Message, "codex.json") ||
++			if !strings.Contains(entry.Message, "auth_index="+auth1.EnsureIndex()) ||
++				!strings.Contains(entry.Message, "auth_index="+auth2.EnsureIndex()) ||
++				strings.Contains(entry.Message, ".json") ||
+ 				!strings.Contains(entry.Message, "providers=claude,codex") {
+ 				t.Fatalf("unexpected mixed Warn log: %s", entry.Message)
+ 			}
+@@ -430,7 +433,8 @@ func TestWarnLogOnUpstreamFailure_NonStream(t *testing.T) {
+ 		if entry.Level == log.WarnLevel && strings.Contains(entry.Message, "upstream execution failed") {
+ 			if strings.Contains(entry.Message, "provider=codex") &&
+ 				strings.Contains(entry.Message, "model=gpt-4o") &&
+-				strings.Contains(entry.Message, "codex-prod.json") &&
++				strings.Contains(entry.Message, "auth_index="+auth.EnsureIndex()) &&
++				!strings.Contains(entry.Message, "codex-prod") &&
+ 				strings.Contains(entry.Message, "duration=") &&
+ 				strings.Contains(entry.Message, "upstream timeout") {
+ 				foundWarn = true
+@@ -605,7 +609,8 @@ func TestWarnLogOnStreamUpstreamFailure(t *testing.T) {
+ 		if entry.Level == log.WarnLevel && strings.Contains(entry.Message, "upstream execution failed") {
+ 			if strings.Contains(entry.Message, "provider=claude") &&
+ 				strings.Contains(entry.Message, "model=claude-sonnet-4") &&
+-				strings.Contains(entry.Message, "claude-stream.json") &&
++				strings.Contains(entry.Message, "auth_index="+auth.EnsureIndex()) &&
++				!strings.Contains(entry.Message, "claude-stream") &&
+ 				strings.Contains(entry.Message, "duration=") &&
+ 				strings.Contains(entry.Message, "connection dropped") {
+ 				foundWarn = true
+@@ -677,7 +682,8 @@ func TestWarnLogOnStreamBootstrapFailure(t *testing.T) {
+ 		if entry.Level == log.WarnLevel && strings.Contains(entry.Message, "upstream execution failed") {
+ 			if strings.Contains(entry.Message, "provider=claude") &&
+ 				strings.Contains(entry.Message, "model=claude-sonnet-4") &&
+-				strings.Contains(entry.Message, "claude-bootstrap.json") &&
++				strings.Contains(entry.Message, "auth_index="+auth.EnsureIndex()) &&
++				!strings.Contains(entry.Message, "claude-bootstrap") &&
+ 				strings.Contains(entry.Message, "ttfb timeout") {
+ 				foundWarn = true
+ 				break
+diff --git a/sdk/cliproxy/auth/home_execution_paths_test.go b/sdk/cliproxy/auth/home_execution_paths_test.go
+index e45b9b09..3f3de780 100644
+--- a/sdk/cliproxy/auth/home_execution_paths_test.go
++++ b/sdk/cliproxy/auth/home_execution_paths_test.go
+@@ -147,7 +147,7 @@ func TestHomeNonStreamingExecutionLogsSelectedOAuthAuth(t *testing.T) {
+ 				t.Fatalf("execution error = %v", errRun)
+ 			}
+ 
+-			const expected = "Use OAuth provider=home-execution auth_file=home-auth for model model-a via socks5 proxy"
++			expected := "Use OAuth provider=home-execution auth_index=" + (&Auth{ID: "home-auth"}).EnsureIndex() + " for model model-a via socks5 proxy"
+ 			for _, entry := range hook.AllEntries() {
+ 				if entry.Level == log.DebugLevel && entry.Message == expected {
+ 					if got := entry.Data["request_id"]; got != "req-home-log" {
+diff --git a/sdk/cliproxy/auth/log_identity.go b/sdk/cliproxy/auth/log_identity.go
+new file mode 100644
+index 00000000..b2511070
+--- /dev/null
++++ b/sdk/cliproxy/auth/log_identity.go
+@@ -0,0 +1,18 @@
++package auth
++
++import "strings"
++
++// LogIndex returns the credential index a log line may show: the stable
++// index of an account or credential file, or "nil" for an API key, whose
++// index, like its ID, is a hash over the key. Neither an account's e-mail
++// address nor its credential file name (which usually carries the address)
++// belongs in a log line.
++func (a *Auth) LogIndex() string {
++	if a == nil || a.AuthKind() == AuthKindAPIKey {
++		return "nil"
++	}
++	if index := strings.TrimSpace(a.Index); index != "" {
++		return index
++	}
++	return "nil"
++}
+diff --git a/sdk/cliproxy/auth/log_identity_test.go b/sdk/cliproxy/auth/log_identity_test.go
+new file mode 100644
+index 00000000..688d04d1
+--- /dev/null
++++ b/sdk/cliproxy/auth/log_identity_test.go
+@@ -0,0 +1,204 @@
++package auth
++
++import (
++	"bytes"
++	"context"
++	"errors"
++	"net/http"
++	"strings"
++	"sync"
++	"testing"
++	"time"
++
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
++	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
++	log "github.com/sirupsen/logrus"
++)
++
++const (
++	logIdentityEmail = "fixture.user@example.invalid"
++	logIdentityFile  = "codex-fixture.user@example.invalid-plus.json"
++	logIdentityKey   = "sk-fixture-key-0123456789abcdef"
++)
++
++// logIdentityAccount is a credential-file account; its index is derived from
++// its file, as at registration.
++func logIdentityAccount() *Auth {
++	return &Auth{ID: logIdentityFile, Provider: "codex", FileName: "/auths/" + logIdentityFile, Status: StatusActive,
++		Attributes: map[string]string{"path": "/auths/" + logIdentityFile},
++		Metadata:   map[string]any{"type": "codex", "email": logIdentityEmail, "access_token": "fixture-access-token"}}
++}
++
++// logIdentityKeyAuth is a configured API key; like its ID, its index is a hash
++// over the key.
++func logIdentityKeyAuth() *Auth {
++	return &Auth{ID: "codex:apikey:fixture-key-id", Provider: "codex", Status: StatusActive,
++		Attributes: map[string]string{"api_key": logIdentityKey, "base_url": "https://codex.example.invalid/v1", "source": "config:codex[fixture]"}}
++}
++
++// captureLogs records every log line at every level, as the gateway's log
++// file would with debug enabled.
++func captureLogs(t *testing.T) *bytes.Buffer {
++	t.Helper()
++	var out bytes.Buffer
++	logger := log.StandardLogger()
++	previousOut, previousLevel, previousFormatter := logger.Out, logger.GetLevel(), logger.Formatter
++	logger.SetOutput(&out)
++	logger.SetLevel(log.DebugLevel)
++	logger.SetFormatter(&log.TextFormatter{DisableTimestamp: true, DisableColors: true})
++	t.Cleanup(func() {
++		logger.SetOutput(previousOut)
++		logger.SetLevel(previousLevel)
++		logger.SetFormatter(previousFormatter)
++	})
++	return &out
++}
++
++// assertNoCredentialIdentity fails when logs name an account's e-mail address
++// or credential file, or carry any part of a key or a key-derived identifier.
++func assertNoCredentialIdentity(t *testing.T, logs string) {
++	t.Helper()
++	keyIndex := logIdentityKeyAuth().EnsureIndex()
++	for _, leak := range []string{logIdentityEmail, "fixture.user", logIdentityKey, util.HideAPIKey(logIdentityKey),
++		"codex:apikey:fixture-key-id", keyIndex, "fixture-access-token"} {
++		if strings.Contains(logs, leak) {
++			t.Fatalf("logs carry %q:\n%s", leak, logs)
++		}
++	}
++}
++
++// Each selection logs one info line that keeps its provider and model and
++// names no credential, for an account and for an API key.
++func TestSessionAffinityLinesNameNoCredential(t *testing.T) {
++	logs := captureLogs(t)
++	selector := NewSessionAffinitySelector(&FillFirstSelector{})
++	defer selector.Stop()
++	payload := []byte(`{"metadata":{"user_id":"user_xxx_account__session_ac980658-63bd-4fb3-97ba-8da64cb1e344"}}`)
++	opts := cliproxyexecutor.Options{OriginalRequest: payload}
++	picks := 0
++	for _, auths := range [][]*Auth{{logIdentityAccount()}, {logIdentityKeyAuth()}} {
++		for i := 0; i < 2; i++ {
++			if _, err := selector.Pick(context.Background(), "codex", "gpt-5.5", opts, auths); err != nil {
++				t.Fatalf("Pick: %v", err)
++			}
++			picks++
++		}
++	}
++	var routing []string
++	for _, line := range strings.Split(strings.TrimSpace(logs.String()), "\n") {
++		if strings.Contains(line, "session-affinity:") && strings.HasPrefix(line, "level=info") {
++			routing = append(routing, line)
++		}
++	}
++	if len(routing) != picks {
++		t.Fatalf("routing info lines = %d, want one per selection (%d):\n%s", len(routing), picks, logs)
++	}
++	for _, line := range routing {
++		if !strings.Contains(line, "provider=codex model=gpt-5.5") || strings.Contains(line, "auth=") {
++			t.Fatalf("routing line = %s", line)
++		}
++	}
++	assertNoCredentialIdentity(t, logs.String())
++}
++
++type logIdentityStore struct {
++	mu    sync.Mutex
++	saves int
++}
++
++func (s *logIdentityStore) List(context.Context) ([]*Auth, error) { return nil, nil }
++
++func (s *logIdentityStore) Save(_ context.Context, auth *Auth) (string, error) {
++	s.mu.Lock()
++	defer s.mu.Unlock()
++	s.saves++
++	return auth.ID, nil
++}
++
++func (s *logIdentityStore) Delete(context.Context, string) error { return nil }
++
++// Control: a configured key is never persisted, so no credential receipt
++// carries its key-derived index while it serves requests.
++func TestConfigKeyWritesNoCredentialReceipt(t *testing.T) {
++	logs := captureLogs(t)
++	store := &logIdentityStore{}
++	manager := NewManager(store, nil, nil)
++	manager.RegisterExecutor(&mockCustomErrorExecutor{identifier: "codex"})
++	key := logIdentityKeyAuth()
++	registry.GetGlobalRegistry().RegisterClient(key.ID, "codex", []*registry.ModelInfo{{ID: "gpt-5.5"}})
++	t.Cleanup(func() { registry.GetGlobalRegistry().UnregisterClient(key.ID) })
++	if _, err := manager.Register(context.Background(), key); err != nil {
++		t.Fatalf("Register: %v", err)
++	}
++	if strings.Contains(logs.String(), "credential_save_v1") {
++		t.Fatalf("registering a configured key wrote a receipt:\n%s", logs)
++	}
++	// Registration's own diagnostics are outside the request path checked below.
++	logs.Reset()
++	for i := 0; i < 3; i++ {
++		if _, err := manager.Execute(context.Background(), []string{"codex"}, cliproxyexecutor.Request{Model: "gpt-5.5"}, cliproxyexecutor.Options{}); err != nil {
++			t.Fatalf("Execute: %v", err)
++		}
++	}
++	store.mu.Lock()
++	saves := store.saves
++	store.mu.Unlock()
++	if saves != 0 || strings.Contains(logs.String(), "credential_save_v1") {
++		t.Fatalf("configured key persisted %d time(s):\n%s", saves, logs)
++	}
++	assertNoCredentialIdentity(t, logs.String())
++}
++
++// The selected credential and execution failures name an account by provider
++// and credential index and an API key by fixed redaction, at debug and warning
++// level alike.
++func TestCredentialIdentityNamesNoAccountOrKey(t *testing.T) {
++	account, key := logIdentityAccount(), logIdentityKeyAuth()
++	account.EnsureIndex()
++	key.EnsureIndex()
++	other := &Auth{ID: "fixture-other.user@example.invalid.json", FileName: "/auths/fixture-other.user@example.invalid.json", Provider: "vertex"}
++	other.EnsureIndex()
++	cases := []struct {
++		auth *Auth
++		want string
++	}{
++		{account, "provider=codex auth_index=" + account.Index},
++		{key, "api_key=[redacted]"},
++		{other, "auth_index=" + other.Index},
++	}
++	for _, tc := range cases {
++		if got := formatAuthIdentity(tc.auth, tc.auth.Provider); got != tc.want {
++			t.Fatalf("formatAuthIdentity(%s) = %q, want %q", tc.auth.Provider, got, tc.want)
++		}
++	}
++	if account.Index == "" || account.Index == key.Index {
++		t.Fatalf("fixture indexes = %q, %q", account.Index, key.Index)
++	}
++
++	logs := captureLogs(t)
++	entry := log.NewEntry(log.StandardLogger())
++	failure := statusErrorLogTestError{message: "upstream unavailable", statusCode: http.StatusServiceUnavailable}
++	for _, auth := range []*Auth{account, key, other} {
++		debugLogAuthSelection(entry, auth, auth.Provider, "gpt-5.5")
++		warnLogUpstreamFailure(context.Background(), entry, auth.Provider, "gpt-5.5", auth, time.Second, failure)
++		warnLogUpstreamFailure(context.Background(), entry, auth.Provider, "gpt-5.5", auth, time.Second, errors.New("transport closed"))
++		warnLogHomeCredentialFailure(context.Background(), "refresh", auth.Provider, auth, failure)
++	}
++	text := logs.String()
++	for _, want := range []string{
++		"Use OAuth provider=codex auth_index=" + account.Index + " for model gpt-5.5",
++		"Use API key [redacted] for model gpt-5.5",
++		"upstream execution failed: provider=codex model=gpt-5.5 auth=provider=codex auth_index=" + account.Index,
++		"upstream execution failed: provider=codex model=gpt-5.5 auth=api_key=[redacted]",
++		"upstream execution failed: provider=vertex model=gpt-5.5 auth=auth_index=" + other.Index,
++	} {
++		if !strings.Contains(text, want) {
++			t.Fatalf("logs lack %q:\n%s", want, text)
++		}
++	}
++	assertNoCredentialIdentity(t, text)
++	if strings.Contains(text, "fixture-other") {
++		t.Fatalf("logs carry a credential file name:\n%s", text)
++	}
++}
+diff --git a/sdk/cliproxy/auth/log_reduction_inventory_test.go b/sdk/cliproxy/auth/log_reduction_inventory_test.go
+new file mode 100644
+index 00000000..fa80b0a4
+--- /dev/null
++++ b/sdk/cliproxy/auth/log_reduction_inventory_test.go
+@@ -0,0 +1,238 @@
++package auth
++
++import (
++	"bytes"
++	"fmt"
++	"go/ast"
++	"go/parser"
++	"go/printer"
++	"go/token"
++	"path/filepath"
++	"sort"
++	"strconv"
++	"strings"
++	"testing"
++)
++
++// logSite is one reviewed log call: its file, enclosing function, logrus
++// method and format.
++type logSite struct {
++	file, function, method, format string
++}
++
++// The routing, websocket and execution log sites with their reviewed
++// dispositions. A new call, a changed format or a changed level in these files
++// fails until it is reviewed here, and no call's arguments may carry a
++// credential identity (logIdentityArgument).
++var reviewedLogSites = []logSite{
++	// Routing: one info line per selection. Request accounting attributes each
++	// request's provider and model from it, so it stays at info level, without
++	// the auth ID (an account's credential file name or a hash over a key).
++	{"sdk/cliproxy/auth/selector.go", "SessionAffinitySelector.Pick", "Infof", "session-affinity: cache hit | session=%s provider=%s model=%s"},
++	{"sdk/cliproxy/auth/selector.go", "SessionAffinitySelector.Pick", "Infof", "session-affinity: cache hit but auth transiently unavailable, failover without rebinding | session=%s provider=%s model=%s"},
++	{"sdk/cliproxy/auth/selector.go", "SessionAffinitySelector.Pick", "Infof", "session-affinity: cache hit but auth unavailable, reselected | session=%s provider=%s model=%s"},
++	{"sdk/cliproxy/auth/selector.go", "SessionAffinitySelector.Pick", "Infof", "session-affinity: fork cache hit | session=%s parent=%s provider=%s model=%s"},
++	{"sdk/cliproxy/auth/selector.go", "SessionAffinitySelector.Pick", "Infof", "session-affinity: fallback cache hit | session=%s fallback=%s provider=%s model=%s"},
++	{"sdk/cliproxy/auth/selector.go", "SessionAffinitySelector.Pick", "Infof", "session-affinity: fallback cache hit but auth transiently unavailable, failover without rebinding | session=%s fallback=%s provider=%s model=%s"},
++	{"sdk/cliproxy/auth/selector.go", "SessionAffinitySelector.Pick", "Infof", "session-affinity: fork bound to new auth | session=%s parent=%s provider=%s model=%s"},
++	{"sdk/cliproxy/auth/selector.go", "SessionAffinitySelector.Pick", "Infof", "session-affinity: cache miss, new binding | session=%s provider=%s model=%s"},
++	{"sdk/cliproxy/auth/selector.go", "SessionAffinitySelector.pickLCP", "Infof", "session-affinity: LCP fork hit | session=%s parent=%s prefix=%d provider=%s model=%s"},
++	{"sdk/cliproxy/auth/selector.go", "SessionAffinitySelector.pickLCP", "Infof", "session-affinity: LCP compaction hit | session=%s parent=%s prefix=%d provider=%s model=%s"},
++	{"sdk/cliproxy/auth/selector.go", "SessionAffinitySelector.pickLCP", "Infof", "session-affinity: LCP cache hit | session=%s prefix=%d provider=%s model=%s"},
++	{"sdk/cliproxy/auth/selector.go", "SessionAffinitySelector.pickLCP", "Infof", "session-affinity: LCP cache hit but auth transiently unavailable, failover without rebinding | session=%s provider=%s model=%s"},
++	{"sdk/cliproxy/auth/selector.go", "SessionAffinitySelector.pickLCP", "Infof", "session-affinity: LCP fork bound to new auth | session=%s parent=%s provider=%s model=%s"},
++	{"sdk/cliproxy/auth/selector.go", "SessionAffinitySelector.pickLCP", "Infof", "session-affinity: LCP compaction bound to new auth | session=%s parent=%s provider=%s model=%s"},
++	{"sdk/cliproxy/auth/selector.go", "SessionAffinitySelector.pickLCP", "Infof", "session-affinity: LCP cache miss, new binding | session=%s provider=%s model=%s"},
++	{"sdk/cliproxy/auth/selector.go", "SessionAffinitySelector.Pick", "Debugf", "session-affinity: no session ID extracted, falling back to default selector | provider=%s model=%s"},
++
++	// The selected credential (debug) and execution failures (warning), named
++	// by formatAuthIdentity: provider and credential index for an account,
++	// "[redacted]" for an API key; never an e-mail address, a credential file
++	// name or a fragment of a key.
++	{"sdk/cliproxy/auth/conductor_execution.go", "debugLogAuthSelection", "Debugf", "Use API key %s for model %s%s"},
++	{"sdk/cliproxy/auth/conductor_execution.go", "debugLogAuthSelection", "Debugf", "Use API key [redacted] for model %s%s"},
++	{"sdk/cliproxy/auth/conductor_execution.go", "debugLogAuthSelection", "Debugf", "Use OAuth %s for model %s%s"},
++	{"sdk/cliproxy/auth/conductor_execution.go", "warnLogHomeCredentialFailure", "Warnf", "Home credential operation failed: err=%s"},
++	{"sdk/cliproxy/auth/conductor_execution.go", "warnLogUpstreamFailure", "Warnf", "%3d | %13v | upstream execution failed: provider=%s model=%s auth=%s err=%s"},
++	{"sdk/cliproxy/auth/conductor_execution.go", "warnLogUpstreamFailure", "Warnf", "upstream execution failed: provider=%s model=%s auth=%s duration=%s err=%s"},
++
++	// Websocket request, response and connection lines, the four multiline xAI
++	// calls included: routine per-request diagnostics, at debug level and
++	// without the auth ID.
++	{"internal/runtime/executor/codex_websockets_duplex.go", "CodexWebsocketsExecutor.streamCodexDuplex", "Debugf", "codex websockets: request forwarded session=%s url=%s event=response.create"},
++	{"internal/runtime/executor/codex_websockets_duplex.go", "CodexWebsocketsExecutor.streamCodexDuplex", "Debugf", "codex websockets: request forwarded session=%s url=%s event=%s"},
++	{"internal/runtime/executor/codex_websockets_duplex.go", "CodexWebsocketsExecutor.streamCodexDuplex", "Debugf", "codex websockets: request forwarded session=%s url=%s event=response.steer"},
++	{"internal/runtime/executor/codex_websockets_session.go", "logCodexWebsocketConnectedWithReused", "Debugf", "codex websockets: upstream connected session=%s url=%s session_object=%s reused=true"},
++	{"internal/runtime/executor/codex_websockets_session.go", "logCodexWebsocketConnectedWithReused", "Debugf", "codex websockets: upstream connected session=%s url=%s session_object=%s reused=false"},
++	{"internal/runtime/executor/codex_websockets_session.go", "logCodexWebsocketDisconnectedWithLastEvent", "Debugf", "codex websockets: upstream disconnected session=%s url=%s session_object=%s reason=%s last_event=%s is_terminal=%t err=%v"},
++	{"internal/runtime/executor/codex_websockets_session.go", "logCodexWebsocketDisconnectedWithLastEvent", "Debugf", "codex websockets: upstream disconnected session=%s url=%s session_object=%s reason=%s is_terminal=false err=%v"},
++	{"internal/runtime/executor/codex_websockets_session.go", "logCodexWebsocketDisconnectedWithLastEvent", "Debugf", "codex websockets: upstream disconnected session=%s url=%s session_object=%s reason=%s last_event=%s is_terminal=%t"},
++	{"internal/runtime/executor/codex_websockets_session.go", "logCodexWebsocketDisconnectedWithLastEvent", "Debugf", "codex websockets: upstream disconnected session=%s url=%s session_object=%s reason=%s is_terminal=false"},
++	{"internal/runtime/executor/xai_websockets_executor.go", "XAIWebsocketsExecutor.executeCompactionTriggerFromWebsocketContext", "Debugf", "xai websockets: compact fallback session=%s input_items=%d keep_previous_response_id=%t"},
++	{"internal/runtime/executor/xai_websockets_executor.go", "logXAIWebsocketRequest", "Debugf", "xai websockets: upstream request sent session=%s url=%s"},
++	{"internal/runtime/executor/xai_websockets_executor.go", "logXAIWebsocketRequest", "Debugf", "xai websockets: upstream request sent session=%s url=%s event=%s previous_response_id=%s generate=%s input_items=%d"},
++	{"internal/runtime/executor/xai_websockets_executor.go", "logXAIWebsocketWarmupCompleted", "Debugf", "xai websockets: upstream warmup completed session=%s url=%s response_id=%s"},
++	{"internal/runtime/executor/xai_websockets_executor.go", "logXAIWebsocketTerminalResponse", "Debugf", "xai websockets: upstream terminal response session=%s url=%s event=%s response_id=%s previous_response_id=%s"},
++	{"internal/runtime/executor/xai_websockets_executor.go", "logXAIWebsocketConnectedWithReused", "Debugf", "xai websockets: upstream connected session=%s url=%s session_object=%s reused=true"},
++	{"internal/runtime/executor/xai_websockets_executor.go", "logXAIWebsocketConnectedWithReused", "Debugf", "xai websockets: upstream connected session=%s url=%s session_object=%s reused=false"},
++	{"internal/runtime/executor/xai_websockets_executor.go", "logXAIWebsocketDisconnectedWithLastEvent", "Debugf", "xai websockets: upstream disconnected session=%s url=%s session_object=%s reason=%s last_event=%s is_terminal=%t err=%v"},
++	{"internal/runtime/executor/xai_websockets_executor.go", "logXAIWebsocketDisconnectedWithLastEvent", "Debugf", "xai websockets: upstream disconnected session=%s url=%s session_object=%s reason=%s is_terminal=false err=%v"},
++	{"internal/runtime/executor/xai_websockets_executor.go", "logXAIWebsocketDisconnectedWithLastEvent", "Debugf", "xai websockets: upstream disconnected session=%s url=%s session_object=%s reason=%s last_event=%s is_terminal=%t"},
++	{"internal/runtime/executor/xai_websockets_executor.go", "logXAIWebsocketDisconnectedWithLastEvent", "Debugf", "xai websockets: upstream disconnected session=%s url=%s session_object=%s reason=%s is_terminal=false"},
++
++	// Keepalive and close failures: unchanged; they name no credential.
++	{"internal/runtime/executor/codex_websockets_session.go", "codexWebsocketSession.configureConn", "Debugf", "codex websockets: upstream ping received session=%s session_object=%s ping_bytes=%d"},
++	{"internal/runtime/executor/codex_websockets_session.go", "codexWebsocketSession.configureConn", "Debugf", "codex websockets: upstream pong write started session=%s session_object=%s"},
++	{"internal/runtime/executor/codex_websockets_session.go", "codexWebsocketSession.configureConn", "Warnf", "codex websockets: upstream pong write failed session=%s session_object=%s duration=%v err=%v"},
++	{"internal/runtime/executor/codex_websockets_session.go", "codexWebsocketSession.configureConn", "Debugf", "codex websockets: upstream pong replied session=%s session_object=%s duration=%v"},
++	{"internal/runtime/executor/codex_websockets_session.go", "closeWebsocketAfterBindFailure", "Errorf", "websockets executor: close lifecycle bind failure connection error: %v"},
++	{"internal/runtime/executor/codex_websockets_session.go", "configureRawCodexWebsocketConn", "Debugf", "codex websockets: upstream ping received session= session_object=none ping_bytes=%d"},
++	{"internal/runtime/executor/codex_websockets_session.go", "configureRawCodexWebsocketConn", "Debugf", "codex websockets: upstream pong write started session= session_object=none"},
++	{"internal/runtime/executor/codex_websockets_session.go", "configureRawCodexWebsocketConn", "Warnf", "codex websockets: upstream pong write failed session= session_object=none duration=%v err=%v"},
++	{"internal/runtime/executor/codex_websockets_session.go", "configureRawCodexWebsocketConn", "Debugf", "codex websockets: upstream pong replied session= session_object=none duration=%v"},
++	{"internal/runtime/executor/codex_websockets_session.go", "CodexWebsocketsExecutor.ensureUpstreamConn", "Errorf", "codex websockets executor: close stale websocket error: %v"},
++	{"internal/runtime/executor/codex_websockets_session.go", "CodexWebsocketsExecutor.ensureUpstreamConn", "Errorf", "codex websockets executor: close websocket error: %v"},
++	{"internal/runtime/executor/codex_websockets_session.go", "CodexWebsocketsExecutor.invalidateUpstreamConnWithNotify", "Errorf", "codex websockets executor: close websocket error: %v"},
++	{"internal/runtime/executor/codex_websockets_session.go", "closeCodexWebsocketSession", "Errorf", "codex websockets executor: close websocket error: %v"},
++	{"internal/runtime/executor/xai_websockets_executor.go", "XAIWebsocketsExecutor.ExecuteStream", "Errorf", "xai websockets executor: close websocket error: %v"},
++	{"internal/runtime/executor/xai_websockets_executor.go", "XAIWebsocketsExecutor.ExecuteStream", "Errorf", "xai websockets executor: close websocket error: %v"},
++	{"internal/runtime/executor/xai_websockets_executor.go", "XAIWebsocketsExecutor.ensureUpstreamConn", "Errorf", "xai websockets executor: close stale websocket error: %v"},
++	{"internal/runtime/executor/xai_websockets_executor.go", "XAIWebsocketsExecutor.ensureUpstreamConn", "Errorf", "xai websockets executor: close websocket error: %v"},
++	{"internal/runtime/executor/xai_websockets_executor.go", "configureXAIWebsocketConn", "Debugf", "xai websockets: upstream ping received session=%s session_object=%s ping_bytes=%d"},
++	{"internal/runtime/executor/xai_websockets_executor.go", "configureXAIWebsocketConn", "Debugf", "xai websockets: upstream pong write started session=%s session_object=%s"},
++	{"internal/runtime/executor/xai_websockets_executor.go", "configureXAIWebsocketConn", "Warnf", "xai websockets: upstream pong write failed session=%s session_object=%s duration=%v err=%v"},
++	{"internal/runtime/executor/xai_websockets_executor.go", "configureXAIWebsocketConn", "Debugf", "xai websockets: upstream pong replied session=%s session_object=%s duration=%v"},
++	{"internal/runtime/executor/xai_websockets_executor.go", "XAIWebsocketsExecutor.invalidateUpstreamConnWithNotify", "Errorf", "xai websockets executor: close websocket error: %v"},
++	{"internal/runtime/executor/xai_websockets_executor.go", "closeXAIWebsocketSession", "Errorf", "xai websockets executor: close websocket error: %v"},
++}
++
++var logMethods = map[string]bool{
++	"Trace": true, "Tracef": true, "Traceln": true,
++	"Debug": true, "Debugf": true, "Debugln": true,
++	"Info": true, "Infof": true, "Infoln": true,
++	"Print": true, "Printf": true, "Println": true,
++	"Warn": true, "Warnf": true, "Warnln": true,
++	"Warning": true, "Warningf": true, "Warningln": true,
++	"Error": true, "Errorf": true, "Errorln": true,
++	"Fatal": true, "Fatalf": true, "Fatalln": true,
++	"Panic": true, "Panicf": true, "Panicln": true,
++}
++
++// logIdentityArgument names an argument that would put a credential identity
++// in a log line: an auth ID, label or file name (an account's carries its
++// e-mail address, an API key's is a hash over the key), the account details
++// AccountInfo returns (e-mail address or key) and masked key fragments.
++func logIdentityArgument(arg ast.Expr) string {
++	found := ""
++	ast.Inspect(arg, func(node ast.Node) bool {
++		switch n := node.(type) {
++		case *ast.SelectorExpr:
++			switch n.Sel.Name {
++			case "ID", "Label", "FileName", "AccountInfo", "HideAPIKey", "authID":
++				found = n.Sel.Name
++			}
++		case *ast.Ident:
++			switch n.Name {
++			case "authID", "cachedAuthID", "preservedAuthID", "accountInfo", "authFile":
++				found = n.Name
++			}
++		}
++		return found == ""
++	})
++	return found
++}
++
++func functionName(decl *ast.FuncDecl) string {
++	if decl.Recv == nil || len(decl.Recv.List) == 0 {
++		return decl.Name.Name
++	}
++	recv := decl.Recv.List[0].Type
++	if star, ok := recv.(*ast.StarExpr); ok {
++		recv = star.X
++	}
++	if ident, ok := recv.(*ast.Ident); ok {
++		return ident.Name + "." + decl.Name.Name
++	}
++	return decl.Name.Name
++}
++
++// logSitesIn parses one source file and returns its log calls, failing the
++// test for any call whose arguments carry a credential identity.
++func logSitesIn(t *testing.T, root, file string) []logSite {
++	t.Helper()
++	fset := token.NewFileSet()
++	parsed, err := parser.ParseFile(fset, filepath.Join(root, file), nil, parser.SkipObjectResolution)
++	if err != nil {
++		t.Fatal(err)
++	}
++	var sites []logSite
++	for _, decl := range parsed.Decls {
++		fn, ok := decl.(*ast.FuncDecl)
++		if !ok || fn.Body == nil {
++			continue
++		}
++		ast.Inspect(fn.Body, func(node ast.Node) bool {
++			call, ok := node.(*ast.CallExpr)
++			if !ok || len(call.Args) == 0 {
++				return true
++			}
++			sel, ok := call.Fun.(*ast.SelectorExpr)
++			if !ok || !logMethods[sel.Sel.Name] {
++				return true
++			}
++			if pkg, ok := sel.X.(*ast.Ident); ok && (pkg.Name == "fmt" || pkg.Name == "errors") {
++				return true
++			}
++			format := ""
++			if lit, ok := call.Args[0].(*ast.BasicLit); ok && lit.Kind == token.STRING {
++				format, _ = strconv.Unquote(lit.Value)
++			} else {
++				var text bytes.Buffer
++				_ = printer.Fprint(&text, fset, call.Args[0])
++				format = "<" + text.String() + ">"
++			}
++			site := logSite{file, functionName(fn), sel.Sel.Name, format}
++			for _, arg := range call.Args {
++				if name := logIdentityArgument(arg); name != "" {
++					t.Errorf("%s:%d: %s %q logs a credential identity (%s)", file, fset.Position(call.Pos()).Line, site.function, format, name)
++				}
++			}
++			sites = append(sites, site)
++			return true
++		})
++	}
++	return sites
++}
++
++func TestLogReductionInventory(t *testing.T) {
++	root := filepath.Join("..", "..", "..")
++	files := []string{
++		"sdk/cliproxy/auth/selector.go",
++		"sdk/cliproxy/auth/conductor_execution.go",
++		"internal/runtime/executor/codex_websockets_duplex.go",
++		"internal/runtime/executor/codex_websockets_session.go",
++		"internal/runtime/executor/xai_websockets_executor.go",
++	}
++	count := map[logSite]int{}
++	for _, file := range files {
++		for _, site := range logSitesIn(t, root, file) {
++			count[site]++
++		}
++	}
++	for _, site := range reviewedLogSites {
++		count[site]--
++	}
++	var differences []string
++	for site, n := range count {
++		switch {
++		case n > 0:
++			differences = append(differences, fmt.Sprintf("unreviewed (%d): {%q, %q, %q, %q},", n, site.file, site.function, site.method, site.format))
++		case n < 0:
++			differences = append(differences, fmt.Sprintf("missing (%d): {%q, %q, %q, %q},", -n, site.file, site.function, site.method, site.format))
++		}
++	}
++	sort.Strings(differences)
++	if len(differences) > 0 {
++		t.Errorf("log sites differ from the reviewed inventory:\n%s", strings.Join(differences, "\n"))
++	}
++}
+diff --git a/sdk/cliproxy/auth/openai_compat_keyed_cm053_test.go b/sdk/cliproxy/auth/openai_compat_keyed_cm053_test.go
+index 38979ff0..1fa9d9f0 100644
+--- a/sdk/cliproxy/auth/openai_compat_keyed_cm053_test.go
++++ b/sdk/cliproxy/auth/openai_compat_keyed_cm053_test.go
+@@ -182,9 +182,9 @@ func TestCM053KeyedCompatAuthIdentityRedacted(t *testing.T) {
+ 		}
+ 	}
+ 
+-	// Control: a non-compat API-key auth keeps upstream's masked identity.
++	// Control: a non-compat API-key auth shows no part of its key either.
+ 	other := &Auth{Provider: "gemini", Attributes: map[string]string{AttributeAPIKey: "gemini-key-0123456789"}}
+-	if got := formatAuthIdentity(other, "gemini"); got != "api_key="+util.HideAPIKey("gemini-key-0123456789") {
++	if got := formatAuthIdentity(other, "gemini"); got != "api_key=[redacted]" {
+ 		t.Fatalf("non-compat identity = %q", got)
+ 	}
+ }
+diff --git a/sdk/cliproxy/auth/selector.go b/sdk/cliproxy/auth/selector.go
+index 90107433..5d41f57d 100644
+--- a/sdk/cliproxy/auth/selector.go
++++ b/sdk/cliproxy/auth/selector.go
+@@ -1187,7 +1187,7 @@ func (s *SessionAffinitySelector) Pick(ctx context.Context, provider, model stri
+ 		for _, auth := range available {
+ 			if auth.ID == cachedAuthID {
+ 				bind(auth.ID)
+-				entry.Infof("session-affinity: cache hit | session=%s auth=%s provider=%s model=%s", truncateSessionID(primaryID), auth.ID, provider, model)
++				entry.Infof("session-affinity: cache hit | session=%s provider=%s model=%s", truncateSessionID(primaryID), provider, model)
+ 				return auth, nil
+ 			}
+ 		}
+@@ -1201,11 +1201,11 @@ func (s *SessionAffinitySelector) Pick(ctx context.Context, provider, model stri
+ 		}
+ 		if s.shouldPreserveBindingWhenUnavailable(ctx, availabilityCandidates, model, cachedAuthID, now) {
+ 			bind(cachedAuthID)
+-			entry.Infof("session-affinity: cache hit but auth transiently unavailable, failover without rebinding | session=%s bound_auth=%s failover_auth=%s provider=%s model=%s", truncateSessionID(primaryID), cachedAuthID, auth.ID, provider, model)
++			entry.Infof("session-affinity: cache hit but auth transiently unavailable, failover without rebinding | session=%s provider=%s model=%s", truncateSessionID(primaryID), provider, model)
+ 			return auth, nil
+ 		}
+ 		bind(auth.ID)
+-		entry.Infof("session-affinity: cache hit but auth unavailable, reselected | session=%s auth=%s provider=%s model=%s", truncateSessionID(primaryID), auth.ID, provider, model)
++		entry.Infof("session-affinity: cache hit but auth unavailable, reselected | session=%s provider=%s model=%s", truncateSessionID(primaryID), provider, model)
+ 		return auth, nil
+ 	}
+ 
+@@ -1216,9 +1216,9 @@ func (s *SessionAffinitySelector) Pick(ctx context.Context, provider, model stri
+ 					if !isSubagent || s.subagentAffinity {
+ 						bind(auth.ID)
+ 						if isFork {
+-							entry.Infof("session-affinity: fork cache hit | session=%s parent=%s auth=%s provider=%s model=%s", truncateSessionID(primaryID), truncateSessionID(fallbackID), auth.ID, provider, model)
++							entry.Infof("session-affinity: fork cache hit | session=%s parent=%s provider=%s model=%s", truncateSessionID(primaryID), truncateSessionID(fallbackID), provider, model)
+ 						} else {
+-							entry.Infof("session-affinity: fallback cache hit | session=%s fallback=%s auth=%s provider=%s model=%s", truncateSessionID(primaryID), truncateSessionID(fallbackID), auth.ID, provider, model)
++							entry.Infof("session-affinity: fallback cache hit | session=%s fallback=%s provider=%s model=%s", truncateSessionID(primaryID), truncateSessionID(fallbackID), provider, model)
+ 						}
+ 						return auth, nil
+ 					}
+@@ -1233,7 +1233,7 @@ func (s *SessionAffinitySelector) Pick(ctx context.Context, provider, model stri
+ 					return nil, nil
+ 				}
+ 				bind(cachedAuthID)
+-				entry.Infof("session-affinity: fallback cache hit but auth transiently unavailable, failover without rebinding | session=%s fallback=%s bound_auth=%s failover_auth=%s provider=%s model=%s", truncateSessionID(primaryID), truncateSessionID(fallbackID), cachedAuthID, auth.ID, provider, model)
++				entry.Infof("session-affinity: fallback cache hit but auth transiently unavailable, failover without rebinding | session=%s fallback=%s provider=%s model=%s", truncateSessionID(primaryID), truncateSessionID(fallbackID), provider, model)
+ 				return auth, nil
+ 			}
+ 		}
+@@ -1248,9 +1248,9 @@ func (s *SessionAffinitySelector) Pick(ctx context.Context, provider, model stri
+ 	}
+ 	bind(auth.ID)
+ 	if isFork && fallbackID != "" {
+-		entry.Infof("session-affinity: fork bound to new auth | session=%s parent=%s auth=%s provider=%s model=%s", truncateSessionID(primaryID), truncateSessionID(fallbackID), auth.ID, provider, model)
++		entry.Infof("session-affinity: fork bound to new auth | session=%s parent=%s provider=%s model=%s", truncateSessionID(primaryID), truncateSessionID(fallbackID), provider, model)
+ 	} else {
+-		entry.Infof("session-affinity: cache miss, new binding | session=%s auth=%s provider=%s model=%s", truncateSessionID(primaryID), auth.ID, provider, model)
++		entry.Infof("session-affinity: cache miss, new binding | session=%s provider=%s model=%s", truncateSessionID(primaryID), provider, model)
+ 	}
+ 	return auth, nil
+ }
+@@ -1312,21 +1312,21 @@ func (s *SessionAffinitySelector) pickLCP(ctx context.Context, provider, model s
+ 					delete(opts.Metadata, cliproxyexecutor.IsCompactionMetadataKey)
+ 					opts.Metadata[cliproxyexecutor.NodeKindMetadataKey] = "fork"
+ 				}
+-				entry.Infof("session-affinity: LCP fork hit | session=%s parent=%s prefix=%d auth=%s provider=%s model=%s", truncateSessionID(match.SessionID), truncateSessionID(match.ParentSessionID), match.PrefixLength, auth.ID, provider, model)
++				entry.Infof("session-affinity: LCP fork hit | session=%s parent=%s prefix=%d provider=%s model=%s", truncateSessionID(match.SessionID), truncateSessionID(match.ParentSessionID), match.PrefixLength, provider, model)
+ 			} else if match.IsCompaction {
+ 				if opts.Metadata != nil {
+ 					opts.Metadata[cliproxyexecutor.IsCompactionMetadataKey] = true
+ 					delete(opts.Metadata, cliproxyexecutor.IsForkMetadataKey)
+ 					opts.Metadata[cliproxyexecutor.NodeKindMetadataKey] = "compaction"
+ 				}
+-				entry.Infof("session-affinity: LCP compaction hit | session=%s parent=%s prefix=%d auth=%s provider=%s model=%s", truncateSessionID(match.SessionID), truncateSessionID(match.ParentSessionID), match.PrefixLength, auth.ID, provider, model)
++				entry.Infof("session-affinity: LCP compaction hit | session=%s parent=%s prefix=%d provider=%s model=%s", truncateSessionID(match.SessionID), truncateSessionID(match.ParentSessionID), match.PrefixLength, provider, model)
+ 			} else {
+ 				if opts.Metadata != nil {
+ 					delete(opts.Metadata, cliproxyexecutor.IsForkMetadataKey)
+ 					delete(opts.Metadata, cliproxyexecutor.IsCompactionMetadataKey)
+ 					delete(opts.Metadata, cliproxyexecutor.NodeKindMetadataKey)
+ 				}
+-				entry.Infof("session-affinity: LCP cache hit | session=%s prefix=%d auth=%s provider=%s model=%s", truncateSessionID(match.SessionID), match.PrefixLength, auth.ID, provider, model)
++				entry.Infof("session-affinity: LCP cache hit | session=%s prefix=%d provider=%s model=%s", truncateSessionID(match.SessionID), match.PrefixLength, provider, model)
+ 			}
+ 			return auth, true, nil
+ 		}
+@@ -1370,28 +1370,28 @@ func (s *SessionAffinitySelector) pickLCP(ctx context.Context, provider, model s
+ 				delete(opts.Metadata, cliproxyexecutor.IsCompactionMetadataKey)
+ 				delete(opts.Metadata, cliproxyexecutor.NodeKindMetadataKey)
+ 			}
+-			entry.Infof("session-affinity: LCP cache hit but auth transiently unavailable, failover without rebinding | session=%s bound_auth=%s failover_auth=%s provider=%s model=%s", truncateSessionID(bindRes.SessionID), preservedAuthID, auth.ID, provider, model)
++			entry.Infof("session-affinity: LCP cache hit but auth transiently unavailable, failover without rebinding | session=%s provider=%s model=%s", truncateSessionID(bindRes.SessionID), provider, model)
+ 		} else if bindRes.IsFork {
+ 			if opts.Metadata != nil {
+ 				opts.Metadata[cliproxyexecutor.IsForkMetadataKey] = true
+ 				delete(opts.Metadata, cliproxyexecutor.IsCompactionMetadataKey)
+ 				opts.Metadata[cliproxyexecutor.NodeKindMetadataKey] = "fork"
+ 			}
+-			entry.Infof("session-affinity: LCP fork bound to new auth | session=%s parent=%s auth=%s provider=%s model=%s", truncateSessionID(bindRes.SessionID), truncateSessionID(bindRes.ParentSessionID), auth.ID, provider, model)
++			entry.Infof("session-affinity: LCP fork bound to new auth | session=%s parent=%s provider=%s model=%s", truncateSessionID(bindRes.SessionID), truncateSessionID(bindRes.ParentSessionID), provider, model)
+ 		} else if bindRes.IsCompaction {
+ 			if opts.Metadata != nil {
+ 				opts.Metadata[cliproxyexecutor.IsCompactionMetadataKey] = true
+ 				delete(opts.Metadata, cliproxyexecutor.IsForkMetadataKey)
+ 				opts.Metadata[cliproxyexecutor.NodeKindMetadataKey] = "compaction"
+ 			}
+-			entry.Infof("session-affinity: LCP compaction bound to new auth | session=%s parent=%s auth=%s provider=%s model=%s", truncateSessionID(bindRes.SessionID), truncateSessionID(bindRes.ParentSessionID), auth.ID, provider, model)
++			entry.Infof("session-affinity: LCP compaction bound to new auth | session=%s parent=%s provider=%s model=%s", truncateSessionID(bindRes.SessionID), truncateSessionID(bindRes.ParentSessionID), provider, model)
+ 		} else {
+ 			if opts.Metadata != nil {
+ 				delete(opts.Metadata, cliproxyexecutor.IsForkMetadataKey)
+ 				delete(opts.Metadata, cliproxyexecutor.IsCompactionMetadataKey)
+ 				delete(opts.Metadata, cliproxyexecutor.NodeKindMetadataKey)
+ 			}
+-			entry.Infof("session-affinity: LCP cache miss, new binding | session=%s auth=%s provider=%s model=%s", truncateSessionID(bindRes.SessionID), auth.ID, provider, model)
++			entry.Infof("session-affinity: LCP cache miss, new binding | session=%s provider=%s model=%s", truncateSessionID(bindRes.SessionID), provider, model)
+ 		}
+ 	}
+ 	return auth, true, nil

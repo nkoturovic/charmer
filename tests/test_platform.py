@@ -584,7 +584,9 @@ class OwnerBeforeCredentialTests(_Private):
                     return 404, b""
 
                 management.pool_status(home, gateway, get=get, owner_check=owner, attention=lambda _m: None,
-                                       environ={management.CHANNEL_ENV: management.MANAGEMENT_CHANNEL})
+                                       environ={management.CHANNEL_ENV: "nix",
+                                                management.PINNED_BIN_ENV: "/fixture/gateway",
+                                                management.PATCHES_ENV: management.ALLOWLIST_PATCH})
                 self.assertEqual(events, ["owner"] + ["get"] * reads)
 
 

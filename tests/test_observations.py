@@ -330,7 +330,8 @@ class ManagementReportTests(V4Case):
     def enable(self, code, body):
         from charmer import management, service
         management.prepare_start(self.runtime.home, stopped=True)
-        self.runtime.environ[management.CHANNEL_ENV] = management.MANAGEMENT_CHANNEL
+        self.runtime.environ.update({management.CHANNEL_ENV: "nix",
+            management.PINNED_BIN_ENV: "/fixture/gateway", management.PATCHES_ENV: management.ALLOWLIST_PATCH})
         self.runtime.management_callback = mock.Mock(return_value=(code, body))
         self.runtime.listener_owner = lambda _base: service.OwnerVerdict("ours", "fixture")
         self.runtime._pool_cache = None

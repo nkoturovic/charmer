@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 
 
 QUOTA_AVAILABILITY = (
-    "Quota readings are available only in the Nix package in this release; "
+    "Quota readings require a release bundle or the Nix package with its matching gateway; "
     "use charmer doctor for per-model 429/402/403 counts and /cm fallback <provider>."
 )
 

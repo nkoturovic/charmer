@@ -1,0 +1,443 @@
+diff --git a/internal/runtime/executor/codex_executor_execute.go b/internal/runtime/executor/codex_executor_execute.go
+index edd42e41..240af6ce 100644
+--- a/internal/runtime/executor/codex_executor_execute.go
++++ b/internal/runtime/executor/codex_executor_execute.go
+@@ -60,6 +60,7 @@ func (e *CodexExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, re
+ 	}
+ 
+ 	ctx = helps.WithPayloadFinalizer(ctx, helps.NewPayloadFinalizer(e.cfg, e.Identifier(), baseModel, to.String(), "", originalTranslated, req, opts))
++	ctx = withCodexKeyOutputCap(ctx, auth, from, req.Payload)
+ 	body = helps.SetStringIfDifferent(body, "model", baseModel)
+ 	body = helps.SetBoolIfDifferent(body, "stream", true)
+ 	body, _ = sjson.DeleteBytes(body, "previous_response_id")
+diff --git a/internal/runtime/executor/codex_executor_stream.go b/internal/runtime/executor/codex_executor_stream.go
+index 28b750fd..2715a97d 100644
+--- a/internal/runtime/executor/codex_executor_stream.go
++++ b/internal/runtime/executor/codex_executor_stream.go
+@@ -64,6 +64,7 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
+ 	}
+ 
+ 	ctx = helps.WithPayloadFinalizer(ctx, helps.NewPayloadFinalizer(e.cfg, e.Identifier(), baseModel, to.String(), "", originalTranslated, req, opts))
++	ctx = withCodexKeyOutputCap(ctx, auth, from, req.Payload)
+ 	body, _ = sjson.DeleteBytes(body, "previous_response_id")
+ 	body, _ = sjson.DeleteBytes(body, "generate")
+ 	body, _ = sjson.DeleteBytes(body, "prompt_cache_retention")
+diff --git a/internal/runtime/executor/codex_key_output_cap.go b/internal/runtime/executor/codex_key_output_cap.go
+new file mode 100644
+index 00000000..77a23dc5
+--- /dev/null
++++ b/internal/runtime/executor/codex_key_output_cap.go
+@@ -0,0 +1,87 @@
++package executor
++
++import (
++	"context"
++	"strconv"
++
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
++	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
++	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
++	"github.com/tidwall/gjson"
++	"github.com/tidwall/sjson"
++)
++
++// codexMinOutputTokens is the smallest max_output_tokens the OpenAI
++// Responses API accepts (a smaller value is refused with
++// integer_below_min_value).
++const codexMinOutputTokens = 16
++
++// withCodexKeyOutputCap carries the client's own output cap into the final
++// body of an ordinary Codex API-key request (Execute and ExecuteStream).
++//
++// The Claude Messages and OpenAI Responses translations to Codex drop the
++// client's limit (max_tokens, max_output_tokens), which leaves an API-key
++// request bounded only by the model's own maximum. The cap is applied as the
++// last step of payload finalization, after the configured payload rules, so a
++// rule can lower it but never remove it: the final max_output_tokens is the
++// client's cap unless the body already holds a smaller valid limit. A limit
++// below the upstream minimum (a client cap, or a smaller limit in the body)
++// is raised to codexMinOutputTokens, so a small cap such as Claude Code's
++// model check (max_tokens 1) stays bounded instead of being refused; every
++// other valid cap is sent as supplied. A client value that is absent or not
++// a positive plain integer adds nothing, as before, and an invalid limit
++// already in the body is left to the upstream. Accounts and Sign in with
++// ChatGPT credentials (whose backend refuses the field) keep their behavior;
++// compact and image requests never pass through here.
++func withCodexKeyOutputCap(ctx context.Context, auth *cliproxyauth.Auth, from sdktranslator.Format, payload []byte) context.Context {
++	if !codexAuthUsesAPIKey(auth) || codexUseSIWC(auth) {
++		return ctx
++	}
++	var field string
++	switch {
++	case sourceFormatEqual(from, sdktranslator.FormatClaude):
++		field = "max_tokens"
++	case sourceFormatEqual(from, sdktranslator.FormatOpenAIResponse):
++		field = "max_output_tokens"
++	default:
++		return ctx
++	}
++	limit, ok := codexOutputLimit(gjson.GetBytes(payload, field))
++	if !ok {
++		return ctx
++	}
++	rules := ctx
++	return helps.WithPayloadFinalizer(ctx, func(body []byte) []byte {
++		return capCodexOutputTokens(helps.FinalizePayload(rules, body), limit)
++	})
++}
++
++// codexOutputLimit reads a valid output limit: a positive plain JSON integer,
++// the Messages rule for max_tokens. No upstream minimum is applied here.
++func codexOutputLimit(value gjson.Result) (int64, bool) {
++	if value.Type != gjson.Number {
++		return 0, false
++	}
++	limit, err := strconv.ParseInt(value.Raw, 10, 64)
++	if err != nil || limit < 1 {
++		return 0, false
++	}
++	return limit, true
++}
++
++// capCodexOutputTokens bounds the body's max_output_tokens by limit, never
++// below the upstream minimum.
++func capCodexOutputTokens(body []byte, limit int64) []byte {
++	if current := gjson.GetBytes(body, "max_output_tokens"); current.Exists() && current.Type != gjson.Null {
++		explicit, valid := codexOutputLimit(current)
++		if !valid {
++			return body
++		}
++		limit = min(limit, explicit)
++	}
++	capped, err := sjson.SetBytes(body, "max_output_tokens", max(limit, codexMinOutputTokens))
++	if err != nil {
++		return body
++	}
++	return capped
++}
+diff --git a/internal/runtime/executor/codex_key_output_cap_test.go b/internal/runtime/executor/codex_key_output_cap_test.go
+new file mode 100644
+index 00000000..2a6b83ae
+--- /dev/null
++++ b/internal/runtime/executor/codex_key_output_cap_test.go
+@@ -0,0 +1,320 @@
++package executor
++
++import (
++	"context"
++	"fmt"
++	"io"
++	"net/http"
++	"net/http/httptest"
++	"strings"
++	"sync"
++	"testing"
++	"time"
++
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
++	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
++	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
++	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
++	"github.com/tidwall/gjson"
++)
++
++const (
++	codexOutputCapKey     = "codex-output-cap-fixture-key"
++	codexOutputCapAccount = "codex-output-cap-fixture-account"
++	codexOutputCapMessage = `"messages":[{"role":"user","content":"fixture"}]`
++	codexOutputCapInput   = `"input":[{"role":"user","content":"fixture"}]`
++)
++
++const codexOutputCapCompleted = `{"type":"response.completed","response":{"id":"resp_cap","object":"response","created_at":1700000000,"status":"completed","model":"gpt-5.5","output":[{"type":"message","id":"msg_cap","role":"assistant","status":"completed","content":[{"type":"output_text","text":"ok","annotations":[]}]}],"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}}}`
++
++type codexOutputCapHit struct {
++	path   string
++	header http.Header
++	body   []byte
++}
++
++func codexOutputCapKeyAuth(baseURL string) *cliproxyauth.Auth {
++	return &cliproxyauth.Auth{ID: "codex-output-cap-key", Provider: "codex",
++		Attributes: map[string]string{"base_url": baseURL, "api_key": codexOutputCapKey}}
++}
++
++func codexOutputCapAccountAuth(baseURL string) *cliproxyauth.Auth {
++	return &cliproxyauth.Auth{ID: "codex-output-cap-account", Provider: "codex",
++		Attributes: map[string]string{"base_url": baseURL},
++		Metadata:   map[string]any{"access_token": "codex-output-cap-fixture-token", "account_id": codexOutputCapAccount}}
++}
++
++// codexOutputCapSIWCAuth is a Sign in with ChatGPT credential that also
++// carries an api_key attribute, so the API-key predicate alone accepts it.
++func codexOutputCapSIWCAuth(baseURL string) *cliproxyauth.Auth {
++	return &cliproxyauth.Auth{ID: "codex-output-cap-siwc", Provider: "codex",
++		Attributes: map[string]string{"base_url": baseURL, "api_key": codexOutputCapKey, "use_siwc": "true"},
++		Metadata:   map[string]any{"siwc": map[string]any{"access_token": "codex-output-cap-fixture-siwc"}}}
++}
++
++// codexOutputCapRequest sends one request through the real executor to a fake
++// upstream and returns every upstream request it received.
++func codexOutputCapRequest(t *testing.T, cfg *config.Config, makeAuth func(string) *cliproxyauth.Auth, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) []codexOutputCapHit {
++	t.Helper()
++	var mu sync.Mutex
++	var hits []codexOutputCapHit
++	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		body, _ := io.ReadAll(r.Body)
++		mu.Lock()
++		hits = append(hits, codexOutputCapHit{path: r.URL.Path, header: r.Header.Clone(), body: body})
++		mu.Unlock()
++		switch {
++		case strings.HasSuffix(r.URL.Path, "/responses/compact"):
++			w.Header().Set("Content-Type", "application/json")
++			_, _ = io.WriteString(w, `{"id":"resp_cap","object":"response.compaction","usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}}`)
++		case strings.HasSuffix(r.URL.Path, "/images/generations") && gjson.GetBytes(body, "stream").Bool():
++			w.Header().Set("Content-Type", "text/event-stream")
++			_, _ = io.WriteString(w, "event: image_generation.completed\ndata: {\"type\":\"image_generation.completed\",\"b64_json\":\"AA==\"}\n\n")
++		case strings.HasSuffix(r.URL.Path, "/images/generations"):
++			w.Header().Set("Content-Type", "application/json")
++			_, _ = io.WriteString(w, `{"created":1700000000,"data":[{"b64_json":"AA=="}]}`)
++		default:
++			w.Header().Set("Content-Type", "text/event-stream")
++			_, _ = io.WriteString(w, "data: "+codexOutputCapCompleted+"\n\n")
++		}
++	}))
++	defer server.Close()
++	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
++	defer cancel()
++	executor := NewCodexExecutor(cfg)
++	auth := makeAuth(server.URL)
++	if opts.Stream {
++		result, err := executor.ExecuteStream(ctx, auth, req, opts)
++		if err != nil {
++			t.Fatalf("ExecuteStream: %v", err)
++		}
++		for chunk := range result.Chunks {
++			if chunk.Err != nil {
++				t.Fatalf("stream chunk: %v", chunk.Err)
++			}
++		}
++	} else if _, err := executor.Execute(ctx, auth, req, opts); err != nil {
++		t.Fatalf("Execute: %v", err)
++	}
++	mu.Lock()
++	defer mu.Unlock()
++	return hits
++}
++
++// codexOutputCapTurn sends one ordinary request and returns its single
++// upstream request.
++func codexOutputCapTurn(t *testing.T, cfg *config.Config, makeAuth func(string) *cliproxyauth.Auth, from, payload string, stream bool) codexOutputCapHit {
++	t.Helper()
++	req := cliproxyexecutor.Request{Model: "gpt-5.5", Payload: []byte(payload)}
++	opts := cliproxyexecutor.Options{SourceFormat: sdktranslator.FromString(from), Stream: stream}
++	hits := codexOutputCapRequest(t, cfg, makeAuth, req, opts)
++	if len(hits) != 1 {
++		t.Fatalf("upstream requests = %d, want 1", len(hits))
++	}
++	if hits[0].path != "/responses" {
++		t.Fatalf("upstream path = %q, want /responses", hits[0].path)
++	}
++	return hits[0]
++}
++
++// codexOutputCapWant checks the final upstream limit: want is the raw JSON
++// value of max_output_tokens, or "" when the body must carry none. No other
++// output-limit spelling ever reaches the Responses request.
++func codexOutputCapWant(t *testing.T, body []byte, want string) {
++	t.Helper()
++	got := gjson.GetBytes(body, "max_output_tokens")
++	if want == "" && got.Exists() {
++		t.Fatalf("max_output_tokens = %s, want none; body=%s", got.Raw, body)
++	}
++	if want != "" && got.Raw != want {
++		t.Fatalf("max_output_tokens = %q, want %s; body=%s", got.Raw, want, body)
++	}
++	for _, other := range []string{"max_tokens", "max_completion_tokens"} {
++		if gjson.GetBytes(body, other).Exists() {
++			t.Fatalf("%s reached the Responses request: %s", other, body)
++		}
++	}
++}
++
++func codexOutputCapPayloadConfig(kind string, value any) *config.Config {
++	cfg := &config.Config{}
++	models := []config.PayloadModelRule{{Name: "*"}}
++	switch kind {
++	case "override":
++		cfg.Payload.Override = []config.PayloadRule{{Models: models, Params: map[string]any{"max_output_tokens": value}}}
++	case "default":
++		cfg.Payload.Default = []config.PayloadRule{{Models: models, Params: map[string]any{"max_output_tokens": value}}}
++	case "filter":
++		cfg.Payload.Filter = []config.PayloadFilterRule{{Models: models, Params: []string{"max_output_tokens"}}}
++	}
++	return cfg
++}
++
++// An API key forwards the client's valid Messages max_tokens, or a native
++// Responses max_output_tokens, as the final max_output_tokens of both
++// execution modes, whatever the codex cloaking setting. A cap below the
++// Responses minimum (16) is sent as 16, never dropped; 16 and above as
++// supplied.
++func TestCodexKeyOutputCapForwardsClientCap(t *testing.T) {
++	cases := []struct {
++		name, from, payload, want string
++	}{
++		{"messages", "claude", `{"model":"gpt-5.5","max_tokens":32000,` + codexOutputCapMessage + `}`, "32000"},
++		{"messages one", "claude", `{"model":"gpt-5.5","max_tokens":1,` + codexOutputCapMessage + `}`, "16"},
++		{"messages fifteen", "claude", `{"model":"gpt-5.5","max_tokens":15,` + codexOutputCapMessage + `}`, "16"},
++		{"messages sixteen", "claude", `{"model":"gpt-5.5","max_tokens":16,` + codexOutputCapMessage + `}`, "16"},
++		{"messages seventeen", "claude", `{"model":"gpt-5.5","max_tokens":17,` + codexOutputCapMessage + `}`, "17"},
++		{"messages with tools", "claude", `{"model":"gpt-5.5","max_tokens":32000,` + codexOutputCapMessage +
++			`,"tools":[{"name":"cm_lookup","description":"Look a value up.","input_schema":{"type":"object","properties":{"k":{"type":"string"}}}}]}`, "32000"},
++		{"messages thinking disabled", "claude", `{"model":"gpt-5.5","max_tokens":32000,"thinking":{"type":"disabled"},` + codexOutputCapMessage + `}`, "32000"},
++		{"messages thinking budget zero", "claude", `{"model":"gpt-5.5","max_tokens":32000,"thinking":{"type":"enabled","budget_tokens":0},` + codexOutputCapMessage + `}`, "32000"},
++		{"messages thinking budget", "claude", `{"model":"gpt-5.5","max_tokens":32000,"thinking":{"type":"enabled","budget_tokens":4096},` + codexOutputCapMessage + `}`, "32000"},
++		{"responses", "openai-response", `{"model":"gpt-5.5","max_output_tokens":2048,` + codexOutputCapInput + `}`, "2048"},
++		{"responses one", "openai-response", `{"model":"gpt-5.5","max_output_tokens":1,` + codexOutputCapInput + `}`, "16"},
++		{"responses sixteen", "openai-response", `{"model":"gpt-5.5","max_output_tokens":16,` + codexOutputCapInput + `}`, "16"},
++		{"responses seventeen", "openai-response", `{"model":"gpt-5.5","max_output_tokens":17,` + codexOutputCapInput + `}`, "17"},
++	}
++	for _, tc := range cases {
++		for _, plain := range []bool{false, true} {
++			for _, stream := range []bool{false, true} {
++				t.Run(fmt.Sprintf("%s/plain=%t/stream=%t", tc.name, plain, stream), func(t *testing.T) {
++					cfg := &config.Config{}
++					cfg.Codex.DisableCodexCloaking = plain
++					hit := codexOutputCapTurn(t, cfg, codexOutputCapKeyAuth, tc.from, tc.payload, stream)
++					if hit.header.Get("Authorization") != "Bearer "+codexOutputCapKey || hit.header.Get("Chatgpt-Account-Id") != "" {
++						t.Fatalf("request did not take the API-key route: %v", hit.header)
++					}
++					codexOutputCapWant(t, hit.body, tc.want)
++					if strings.Contains(tc.name, "tools") && gjson.GetBytes(hit.body, `tools.#(name=="cm_lookup").type`).String() != "function" {
++						t.Fatalf("client tool missing: %s", hit.body)
++					}
++				})
++			}
++		}
++	}
++}
++
++// Configured payload rules run first and may lower the client's cap, never
++// remove it or take it below the Responses minimum (16); with no client cap
++// the gateway adds no limit of its own.
++func TestCodexKeyOutputCapAfterPayloadRules(t *testing.T) {
++	withCap := `{"model":"gpt-5.5","max_tokens":32000,` + codexOutputCapMessage + `}`
++	withSmallCap := `{"model":"gpt-5.5","max_tokens":8,` + codexOutputCapMessage + `}`
++	withoutCap := `{"model":"gpt-5.5",` + codexOutputCapMessage + `}`
++	cases := []struct {
++		name, kind string
++		value      any
++		payload    string
++		want       string
++	}{
++		{"larger override is capped", "override", 64000, withCap, "32000"},
++		{"larger override is capped to a small cap, raised to the minimum", "override", 64000, withSmallCap, "16"},
++		{"smaller override is kept", "override", 1000, withCap, "1000"},
++		{"small override is raised to the minimum", "override", 8, withCap, "16"},
++		{"override fifteen is raised to the minimum", "override", 15, withCap, "16"},
++		{"override sixteen is kept", "override", 16, withCap, "16"},
++		{"override seventeen is kept", "override", 17, withCap, "17"},
++		{"equal override is kept", "override", 32000, withCap, "32000"},
++		{"invalid override is left to the upstream", "override", 0, withCap, "0"},
++		{"larger default is capped", "default", 64000, withCap, "32000"},
++		{"smaller default is kept", "default", 4096, withCap, "4096"},
++		{"filter cannot remove the cap", "filter", nil, withCap, "32000"},
++		{"no client cap keeps the configured default", "default", 4096, withoutCap, "4096"},
++		{"no client cap keeps the configured override", "override", 64000, withoutCap, "64000"},
++	}
++	for _, tc := range cases {
++		for _, stream := range []bool{false, true} {
++			t.Run(fmt.Sprintf("%s/stream=%t", tc.name, stream), func(t *testing.T) {
++				hit := codexOutputCapTurn(t, codexOutputCapPayloadConfig(tc.kind, tc.value), codexOutputCapKeyAuth, "claude", tc.payload, stream)
++				codexOutputCapWant(t, hit.body, tc.want)
++			})
++		}
++	}
++}
++
++// An absent client value, or one that is not a positive plain integer, keeps
++// the established result: the Responses request carries no limit, and the
++// request is still sent.
++func TestCodexKeyOutputCapAbsentOrInvalid(t *testing.T) {
++	cases := []struct{ name, from, field, value string }{
++		{"messages absent", "claude", "", ""},
++		{"messages zero", "claude", "max_tokens", "0"},
++		{"messages negative", "claude", "max_tokens", "-1"},
++		{"messages fraction", "claude", "max_tokens", "1024.5"},
++		{"messages exponent", "claude", "max_tokens", "1e4"},
++		{"messages overflow", "claude", "max_tokens", "92233720368547758070"},
++		{"messages string", "claude", "max_tokens", `"32000"`},
++		{"messages null", "claude", "max_tokens", "null"},
++		{"messages bool", "claude", "max_tokens", "true"},
++		{"messages object", "claude", "max_tokens", `{"value":32000}`},
++		{"responses absent", "openai-response", "", ""},
++		{"responses string", "openai-response", "max_output_tokens", `"2048"`},
++		{"responses zero", "openai-response", "max_output_tokens", "0"},
++		{"responses null", "openai-response", "max_output_tokens", "null"},
++	}
++	for _, tc := range cases {
++		for _, stream := range []bool{false, true} {
++			t.Run(fmt.Sprintf("%s/stream=%t", tc.name, stream), func(t *testing.T) {
++				content := codexOutputCapMessage
++				if tc.from == "openai-response" {
++					content = codexOutputCapInput
++				}
++				payload := `{"model":"gpt-5.5",` + content + `}`
++				if tc.field != "" {
++					payload = `{"model":"gpt-5.5","` + tc.field + `":` + tc.value + `,` + content + `}`
++				}
++				hit := codexOutputCapTurn(t, &config.Config{}, codexOutputCapKeyAuth, tc.from, payload, stream)
++				codexOutputCapWant(t, hit.body, "")
++			})
++		}
++	}
++}
++
++// Negative controls: an account, a Sign in with ChatGPT credential, compact
++// and image requests keep their earlier limits.
++func TestCodexKeyOutputCapLeavesOtherRoutes(t *testing.T) {
++	withCap := `{"model":"gpt-5.5","max_tokens":32000,` + codexOutputCapMessage + `}`
++	for _, stream := range []bool{false, true} {
++		t.Run(fmt.Sprintf("account/stream=%t", stream), func(t *testing.T) {
++			hit := codexOutputCapTurn(t, &config.Config{}, codexOutputCapAccountAuth, "claude", withCap, stream)
++			if hit.header.Get("Chatgpt-Account-Id") != codexOutputCapAccount {
++				t.Fatalf("request did not take the account route: %v", hit.header)
++			}
++			codexOutputCapWant(t, hit.body, "")
++		})
++		t.Run(fmt.Sprintf("account override/stream=%t", stream), func(t *testing.T) {
++			hit := codexOutputCapTurn(t, codexOutputCapPayloadConfig("override", 64000), codexOutputCapAccountAuth, "claude", withCap, stream)
++			codexOutputCapWant(t, hit.body, "64000")
++		})
++		t.Run(fmt.Sprintf("siwc/stream=%t", stream), func(t *testing.T) {
++			hit := codexOutputCapTurn(t, &config.Config{}, codexOutputCapSIWCAuth, "claude", withCap, stream)
++			if hit.header.Get("Authorization") != "Bearer codex-output-cap-fixture-siwc" {
++				t.Fatalf("request did not take the SIWC route: %v", hit.header)
++			}
++			codexOutputCapWant(t, hit.body, "")
++		})
++		t.Run(fmt.Sprintf("image/stream=%t", stream), func(t *testing.T) {
++			req := cliproxyexecutor.Request{Model: "gpt-image-2", Payload: []byte(`{"model":"gpt-image-2","prompt":"fixture","max_output_tokens":1000}`)}
++			opts := cliproxyexecutor.Options{SourceFormat: sdktranslator.FromString(codexOpenAIImageSourceFormat), Stream: stream,
++				Metadata: map[string]any{cliproxyexecutor.RequestPathMetadataKey: codexImagesGenerationsPath}}
++			hits := codexOutputCapRequest(t, codexOutputCapPayloadConfig("override", 64000), codexOutputCapKeyAuth, req, opts)
++			if len(hits) != 1 || hits[0].path != "/images/generations" {
++				t.Fatalf("image upstream requests = %d (%v), want one /images/generations", len(hits), hits)
++			}
++			if got := gjson.GetBytes(hits[0].body, "max_output_tokens").Raw; got != "64000" {
++				t.Fatalf("image max_output_tokens = %q, want 64000; body=%s", got, hits[0].body)
++			}
++		})
++	}
++	t.Run("compact", func(t *testing.T) {
++		req := cliproxyexecutor.Request{Model: "gpt-5.5", Payload: []byte(`{"model":"gpt-5.5","max_output_tokens":1000,` + codexOutputCapInput + `}`)}
++		opts := cliproxyexecutor.Options{SourceFormat: sdktranslator.FormatOpenAIResponse, Alt: "responses/compact"}
++		hits := codexOutputCapRequest(t, codexOutputCapPayloadConfig("override", 64000), codexOutputCapKeyAuth, req, opts)
++		if len(hits) != 1 || hits[0].path != "/responses/compact" {
++			t.Fatalf("compact upstream requests = %d, want one /responses/compact", len(hits))
++		}
++		if got := gjson.GetBytes(hits[0].body, "max_output_tokens").Raw; got != "64000" {
++			t.Fatalf("compact max_output_tokens = %q, want 64000; body=%s", got, hits[0].body)
++		}
++	})
++}

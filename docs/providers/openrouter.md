@@ -199,6 +199,7 @@ sessions can spend.
 | 402 in doctor's gateway lines | the account is out of credit: add credit, or move agents with `/cm fallback <provider>` |
 | one model refuses requests while others work | that model's upstream vendor may be unavailable on OpenRouter; bind another line with `/cm set <agent>=<model>` |
 | a model of your own fails qualification | the check names the failing part; choose another model, never a weaker tool contract |
+| a long session stops with a context-length error | the provider's context-window error does not start Claude Code's automatic compaction on this route: run `/compact`, then continue |
 
 ## 8. Terms
 

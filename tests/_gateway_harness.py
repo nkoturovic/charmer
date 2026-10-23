@@ -150,6 +150,17 @@ PATCH_ROWS = {
     "cli-proxy-api-codex-refresh-lead.patch": (
         "tests.test_gateway_patches.PatchOmissionProbeTests.test_codex_refresh_lead",
     ),
+    "cli-proxy-api-output-cap.patch": (
+        "tests.test_openai_key_route.PinnedGatewayKeyRouteTurnTests.test_the_clients_output_cap_reaches_the_responses_request",
+        "tests.test_openai_key_route_client.PinnedClientKeyRouteTests.test_the_actual_clients_output_cap_reaches_the_key_route",
+    ),
+    "cli-proxy-api-context-error-normalization.patch": (
+        "tests.test_openai_key_route_client.PinnedClientKeyRouteTests.test_the_actual_client_compacts_on_an_overflow_before_headers",
+        "tests.test_openai_key_route_client.PinnedClientKeyRouteTests.test_the_actual_client_compacts_on_an_overflow_after_headers",
+    ),
+    "cli-proxy-api-log-reduction.patch": (
+        "tests.test_gateway_patches.LogReductionTests.test_request_lines_name_no_credential",
+    ),
     "cli-proxy-api-tool-call-integrity.patch": (
         "tests.test_gateway_patches.ToolCallIntegrityTests.test_distinct_omitted_index_calls",
         "tests.test_gateway_patches.ToolCallIntegrityTests.test_announced_tool_identity_is_stable",
@@ -164,6 +175,13 @@ PATCH_ROWS = {
 # Regression controls travel with a patch's omission proof, but are not its
 # discriminating rows: their bytes must stay green even when it is omitted.
 PATCH_CONTROL_ROWS = {
+    "cli-proxy-api-output-cap.patch": (
+        "tests.test_openai_key_route.PinnedGatewayAccountRouteTurnTests.test_the_clients_output_cap_does_not_reach_the_account_route",
+        "tests.test_openai_key_route_client.PinnedClientAccountRouteTests.test_the_actual_clients_output_cap_does_not_reach_the_account_route",
+    ),
+    "cli-proxy-api-context-error-normalization.patch": (
+        "tests.test_openai_key_route_client.PinnedClientKeyRouteTests.test_an_unidentified_context_error_is_not_compacted",
+    ),
     "cli-proxy-api-openai-content-chunks.patch": (
         "tests.test_gateway_patches.ContentChunkGoldenTests.test_legacy_chat_bytes",
         "tests.test_gateway_patches.ContentChunkGoldenTests.test_native_route_bytes",
@@ -241,11 +259,17 @@ def run_codex_diagnostic(name, *, package="service", fixture=None):
     return str(binary)
 
 
+# Patch rows that also run the pinned Claude Code: the host lane
+# (tools/test.py --claude) and the omission proof run them; the sandboxed
+# gateway check has no client.
+PINNED_CLIENT_ROW_MODULES = ("tests.test_openai_key_route_client",)
+
+
 def gateway_check_selections():
     # A leased patch discriminator may live outside the ordinary modules.
     # Run those rows too, without importing all unrelated packaging checks.
     return (*GATEWAY_CHECK_MODULES, "tests.test_gateway_keyed_compat.KeyedGatewayCoreTests", *(row for rows in PATCH_ROWS.values() for row in rows
-             if not any(row.startswith(module + ".") for module in GATEWAY_CHECK_MODULES)))
+             if not any(row.startswith(module + ".") for module in (*GATEWAY_CHECK_MODULES, *PINNED_CLIENT_ROW_MODULES))))
 
 
 # Declared application dependencies, companion metadata to PATCH_ROWS:
@@ -256,6 +280,19 @@ def gateway_check_selections():
 # longer compiles, when only the prerequisite is omitted (8.0.33 omission
 # matrix); "hunk" is that hunk's start line, 0 for a file the dependent adds.
 PATCH_DEPENDENCIES = {
+    "cli-proxy-api-context-error-normalization.patch": {
+        "cli-proxy-api-codex-api-key-safety.patch": {
+            "file": "internal/runtime/executor/codex_executor_execute.go", "hunk": 136,
+            "reason": "the key route's overflow is marked where 20 rebuilds its failures (also the stream)",
+        },
+    },
+    "cli-proxy-api-log-reduction.patch": {
+        "cli-proxy-api-openai-compat-keyed-safety.patch": {
+            "file": "sdk/cliproxy/auth/conductor_execution.go", "hunk": 1861,
+            "reason": "the redacted key and account identities replace the masked branches beside the keyed "
+                      "compat identity, and the patch updates that identity test's control",
+        },
+    },
     "cli-proxy-api-tool-call-integrity.patch": {
         "cli-proxy-api-openai-content-chunks.patch": {
             "file": "internal/translator/openai/claude/openai_claude_content_goldens_test.go", "hunk": 21,
@@ -364,7 +401,7 @@ REQUIRED_EVIDENCE["tests.test_gateway_clamp"] = {
 
 
 REQUIRED_EVIDENCE["tests.test_gateway_patches"] = {
-    "patches": {"LO1", "LO2", "LO1-A", "LO3", "LO4", "M0", "M1", "M2", "M3", "M4", "M5", "M6", "M7", "AL1", "RL1", "ME1", "S1", "P1", "CS1", "CR1", "KS1", "AS1", "SC1", "ML1", "OM1", "CI1", "CI2", "CK1", "RS1", "MC1", "MC2", "MG1", "MG2", "CL1", "TI1", "TI2", "TI3", "TIC1", "TIC2", "IR1"},
+    "patches": {"LO1", "LO2", "LO1-A", "LO3", "LO4", "M0", "M1", "M2", "M3", "M4", "M5", "M6", "M7", "AL1", "RL1", "ME1", "S1", "P1", "CS1", "CR1", "KS1", "AS1", "SC1", "ML1", "OM1", "CI1", "CI2", "CK1", "RS1", "MC1", "MC2", "MG1", "MG2", "CL1", "TI1", "TI2", "TI3", "TIC1", "TIC2", "IR1", "LR1"},
 }
 
 

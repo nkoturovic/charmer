@@ -75,9 +75,23 @@ class ManagementClientTests(unittest.TestCase):
         mock.patch.object(quota, "_now", return_value=NOW).start()
 
     def read(self, **kwargs):
-        kwargs.setdefault("environ", {management.CHANNEL_ENV: management.MANAGEMENT_CHANNEL})
+        kwargs.setdefault("environ", {management.CHANNEL_ENV: "nix",
+                                      management.PINNED_BIN_ENV: "/fixture/gateway",
+                                      management.PATCHES_ENV: management.ALLOWLIST_PATCH})
         return management.pool_status(self.home, self.gateway, owner_check=self.owner,
                                       attention=self.attention, **kwargs)
+
+    def test_every_read_requires_the_build_policy_before_keys_or_transport(self):
+        for channel in ("nix", "bundle", "source", "", "Bundle"):
+            for patches in ("", management.ALLOWLIST_PATCH + ".other"):
+                with self.subTest(channel=channel, patches=patches), \
+                     mock.patch.object(management, "key_state", side_effect=AssertionError("key read")):
+                    result = self.read(environ={management.CHANNEL_ENV: channel,
+                                               management.PINNED_BIN_ENV: "/fixture/gateway",
+                                               management.PATCHES_ENV: patches})
+                    self.assertEqual(result.state, "unavailable")
+        self.owner.assert_not_called()
+        self.assertEqual(self.server.accepts, 0)
 
     def test_exact_request_status_map_no_retries_and_no_proxy_env(self):
         with mock.patch.dict(os.environ, {"HTTP_PROXY": "http://127.0.0.1:1", "ALL_PROXY": "http://127.0.0.1:1"}):
@@ -192,6 +206,36 @@ class ManagementClientTests(unittest.TestCase):
             self.assertNotIn(key, repr(result))
             self.assertNotIn(key, quota.state_text(result, restart_hint="RESTART"))
             getter.assert_called_once()
+
+
+class BundleManagementClientTests(ManagementClientTests):
+    """The same transport, ownership and key-state guarantees on a bundle."""
+
+    def read(self, **kwargs):
+        from _layout import GATEWAY_CONTRACT
+
+        kwargs.setdefault("environ", {management.CHANNEL_ENV: "bundle",
+                                      management.PINNED_BIN_ENV: "/fixture/gateway",
+                                      management.PATCHES_ENV: ",".join(json.loads(GATEWAY_CONTRACT.read_bytes())["patches"])})
+        return super().read(**kwargs)
+
+    def test_rotation_keeps_the_selected_key_until_a_stopped_preparation(self):
+        first = management.read_active(self.home)
+        management.stage_rotation(self.home)
+        self.assertEqual(self.read().state, "ok")
+        self.assertEqual(dict(self.server.requests[-1][1])["X-Management-Key"], first)
+        management.prepare_start(self.home, stopped=False)
+        self.assertEqual(self.read().state, "pending")
+        self.assertEqual(self.server.accepts, 1)
+        management.prepare_start(self.home, stopped=True)
+        self.assertEqual(self.read().state, "ok")
+        self.assertNotEqual(dict(self.server.requests[-1][1])["X-Management-Key"], first)
+
+    def test_malformed_and_too_many_entries_are_not_readings(self):
+        for body in (b"not-json", b'{"files":{}}', json.dumps({"files": [{}] * 257}).encode()):
+            self.server.body = body
+            self.assertEqual(self.read().state, "malformed")
+        self.assertEqual(self.server.accepts, 3)
 
 
 class ImportBoundaryTests(unittest.TestCase):

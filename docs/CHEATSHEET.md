@@ -51,7 +51,7 @@ or unknown ids refuse and list candidates instead of choosing a session.
 | stop, mark ended, forget | S → E, M, X | `charmer sessions stop <id>`; `charmer sessions mark-ended <id>`; `charmer sessions forget <id>` | not a `/cm` request | transcripts are never touched |
 | forks and adoption | S → Enter on a forked session → Adopt, Discard | `charmer sessions link <fork-id> --profile <name>`; `charmer sessions resolve-fork <id> <fork-id>` | not a `/cm` request | the fork transcript is kept either way |
 | health | H; S → P | `charmer doctor`; `charmer doctor --first-run`; `charmer doctor --repair <id>` | not a `/cm` request | Ready / Attention / BLOCKED |
-| quota | G (the quota column and Q details) | `charmer quota` | `/cm quota` | readings only in the Nix package in this release; an observation, not a balance |
+| quota | G (the quota column and Q details) | `charmer quota` | `/cm quota` | release bundles and the Nix package; an observation, not a balance |
 | review by another model family | not in the launcher: it runs inside a managed session, where the lead asks for it | no command: it runs inside a managed session, where the lead asks for it | `/cm review [high-stakes] [<range>]` | report only |
 | the gateway | G → W; D → W → Start now; H → G → r, l | `charmer gateway status`; `charmer gateway start`; `charmer gateway restart`; `charmer gateway logs` | not a `/cm` request | [guides/gateway.md](guides/gateway.md) |
 | the gateway as a user service (Linux) | H → G → i; G → W | `charmer gateway service install`; `charmer gateway service status` | not a `/cm` request | unit `charmer-gateway` |
@@ -66,10 +66,10 @@ Lineup changes: LIVE (agents only, inside the session's fence) apply after
 you type `/reload-plugins`; RELAUNCH changes are recorded (↻) and apply at
 the next `charmer -r <id>`.
 
-Quota readings are available only in the Nix package in this release. With a
-bundle, use `charmer doctor` for per-model 429/402/403 counts and
-`/cm fallback <provider>` to move affected roles. The counts are observations,
-not a remaining balance. `quota --json` keeps its structured condition and
+Quota readings are available in release bundles and the Nix package. After
+updating a bundle, use the guarded `charmer gateway restart` to enable readings.
+Use `charmer doctor` for per-model 429/402/403 counts and `/cm fallback <provider>`
+to move affected roles. The readings and counts are observations, not a remaining balance. `quota --json` keeps its structured condition and
 exit status; the availability hint is text-only ([tasks](reference/tasks.md)).
 
 `/cm` grammar: `/cm show · /cm profiles · /cm profile <name> · /cm set <agent>=<model>[:<effort>] · /cm unset <agent> · /cm direct [<model>[:<effort>]] · /cm pin · /cm follow · /cm fallback <provider> [--preview] · /cm review [high-stakes] [<range>] · /cm quota`

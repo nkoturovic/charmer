@@ -1,7 +1,7 @@
 {
   "format": 1,
   "inputs": {
-    "post_apply_tree_sha256": "40ca16c916f659e10c87b89776bed5737a793412379b2161ca22608f1225cbee",
+    "post_apply_tree_sha256": "b93483c2a0c67d4d15a127d24adad84f8c8b824ff7016d0fcec357660944a3b6",
     "series": [
       "cli-proxy-api-loopback-oauth.patch@244e68528cbc72a636d112d4350c9e2e9aeb0c4b55c9097e08ee42a201fa22f4",
       "cli-proxy-api-kimi-claude-compat.patch@41a25ab3e9572c867234fe9d457ac89417f25de4719acbe7cc7e605dc4b3c234",
@@ -26,6 +26,9 @@
       "cli-proxy-api-charmer-model-ids.patch@00c2e621498482021d12902d2fccc2e2d59a71482eded48581d1dd511a34e48c",
       "cli-proxy-api-access-log-path-quoting.patch@d06758cdb11c5dd4d5f088ecb1d1cf5ce6137c8c1eb24bcab0c6431de128fb31",
       "cli-proxy-api-codex-refresh-lead.patch@dfd433f757e0dd22eb423f51e6bc4ed7049caa3dc358c54bbae9330e13e15a1c",
+      "cli-proxy-api-output-cap.patch@9ba554fc81f3432a89fe4d75ac0b38f7b5137bd605d26b3caef9c224a41b7a67",
+      "cli-proxy-api-context-error-normalization.patch@35847df8aaf3ce696bb608e0625455e19e911a707e9f10b83abfe9a007c5c579",
+      "cli-proxy-api-log-reduction.patch@aa97dbed6bbe7e6bc8411444e15c0ddf3ec30a1608ff14918ec1e0682c1497bc",
       "cli-proxy-api-tool-call-integrity.patch@6e76f133e2d913baab2d0b2c5bd57f4e6c113c861e83497ae564e3cb5275846a",
       "cli-proxy-api-initial-registration.patch@6d054fbed1eb42ac34dd2f60c47047b6e2db293028d9825a2ec6f919061dffa8"
     ],
@@ -2049,7 +2052,7 @@
     "license": "MIT",
     "modifications": {
       "path": "CLIProxyAPI/MODIFICATIONS.txt",
-      "sha256": "189740e6b71b388ad4a9a34876cf726449e73502d4c489c07aa9fe179fdc7ba4"
+      "sha256": "da25002f5c80e12efd394394658c4cbb936c997dae291f2b4bcbc6c513c97e75"
     },
     "name": "CLIProxyAPI",
     "repository": "https://github.com/router-for-me/CLIProxyAPI",

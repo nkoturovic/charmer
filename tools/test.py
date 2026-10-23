@@ -55,7 +55,8 @@ KEPT_RUNTIME = ("CHARMER_PRIVATE_IDENTIFIERS",)
 EXIT_OK, EXIT_FAILED, EXIT_USAGE = 0, 1, 2
 # Test modules that need the pinned Claude Code once the named variable is
 # set (it selects their real-client lane).
-PINNED_CLIENT_LANES = {"tests.test_keyed_compat_client": "CHARMER_TEST_CLI_PROXY_API"}
+PINNED_CLIENT_LANES = {"tests.test_keyed_compat_client": "CHARMER_TEST_CLI_PROXY_API",
+                       "tests.test_openai_key_route_client": "CHARMER_TEST_CLI_PROXY_API"}
 
 
 class UsageError(Exception):

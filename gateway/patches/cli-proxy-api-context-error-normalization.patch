@@ -1,0 +1,503 @@
+diff --git a/internal/runtime/executor/codex_context_error_normalization.go b/internal/runtime/executor/codex_context_error_normalization.go
+new file mode 100644
+index 00000000..8a75fff2
+--- /dev/null
++++ b/internal/runtime/executor/codex_context_error_normalization.go
+@@ -0,0 +1,73 @@
++package executor
++
++import (
++	"net/http"
++
++	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
++	"github.com/tidwall/gjson"
++)
++
++// Context-window overflow on the Codex routes, for Claude clients.
++//
++// A Claude client compacts its conversation and retries when a request is
++// refused because its prompt is too long, in the Messages API's own words
++// (HTTP 400, invalid_request_error, "prompt is too long"); it does not
++// recognise OpenAI's wording for the same refusal. When the Codex upstream (a
++// ChatGPT account or an OpenAI API key, on the HTTP Execute and ExecuteStream
++// paths) positively reports that a Claude-format request exceeds the model's
++// context window, the failure is marked: an HTTP 400 or 413 response, or a
++// terminal stream event (error, response.failed), whose error code is exactly
++// context_length_exceeded or whose message is exactly the Codex context-window
++// message. Every other failure, a generic 413 and a loose mention of context
++// included, is left as it is.
++//
++// The mark changes nothing else: the failure keeps its status, text, retry
++// delay and credential scope, so retry, rotation and credential handling are
++// those of the unmarked failure. The Claude handler presents a marked failure
++// in the native shape (sdk/api/handlers/claude): before the response headers
++// as HTTP 400, after them as the stream's error event. It carries no token
++// counts, since the upstream reports none the gateway keeps. Compact, image,
++// websocket and other source formats are unchanged.
++
++// codexContextWindowMessage is the Codex upstream's message for a request
++// whose input exceeds the model's context window.
++const codexContextWindowMessage = "Your input exceeds the context window of this model. Please adjust your input and try again."
++
++// codexPromptTooLongError is a failure of a Claude-format request that the
++// upstream positively reported as a context-window overflow.
++type codexPromptTooLongError struct {
++	statusErr
++}
++
++// PromptTooLong marks the failure for the Claude handler.
++func (codexPromptTooLongError) PromptTooLong() bool { return true }
++
++// Unwrap returns the failure as the executor classified it.
++func (e codexPromptTooLongError) Unwrap() error { return e.statusErr }
++
++// codexContextWindowExceeded reports whether a failure with this status and
++// upstream error body (a non-2xx body, or a terminal event's error as
++// codexTerminalFailureBody builds it) is a context-window overflow.
++func codexContextWindowExceeded(status int, body []byte) bool {
++	if status != http.StatusBadRequest && status != http.StatusRequestEntityTooLarge {
++		return false
++	}
++	failure := gjson.GetBytes(body, "error")
++	if !failure.IsObject() {
++		return false
++	}
++	if code := failure.Get("code"); code.Type == gjson.String && code.Str == "context_length_exceeded" {
++		return true
++	}
++	message := failure.Get("message")
++	return message.Type == gjson.String && message.Str == codexContextWindowMessage
++}
++
++// codexClaudeFailure returns failure, marked when from is the Claude format
++// and the upstream body reports a context-window overflow.
++func codexClaudeFailure(from sdktranslator.Format, failure statusErr, body []byte) error {
++	if from != sdktranslator.FormatClaude || !codexContextWindowExceeded(failure.code, body) {
++		return failure
++	}
++	return codexPromptTooLongError{statusErr: failure}
++}
+diff --git a/internal/runtime/executor/codex_context_error_normalization_test.go b/internal/runtime/executor/codex_context_error_normalization_test.go
+new file mode 100644
+index 00000000..f9ecd325
+--- /dev/null
++++ b/internal/runtime/executor/codex_context_error_normalization_test.go
+@@ -0,0 +1,287 @@
++package executor
++
++import (
++	"context"
++	"encoding/json"
++	"errors"
++	"fmt"
++	"net/http"
++	"net/http/httptest"
++	"strings"
++	"sync/atomic"
++	"testing"
++	"time"
++
++	"github.com/gin-gonic/gin"
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
++	_ "github.com/router-for-me/CLIProxyAPI/v8/internal/translator"
++	"github.com/router-for-me/CLIProxyAPI/v8/sdk/api/handlers"
++	claudehandlers "github.com/router-for-me/CLIProxyAPI/v8/sdk/api/handlers/claude"
++	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
++	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
++	sdkconfig "github.com/router-for-me/CLIProxyAPI/v8/sdk/config"
++	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
++)
++
++// The native body a Claude client compacts and retries on.
++const codexContextNativeBody = `{"type":"error","error":{"type":"invalid_request_error","message":"prompt is too long"}}`
++
++const codexContextModel = "gpt-5.5"
++
++// codexContextReply is one upstream answer: a status and body, an SSE stream
++// when the status is 200.
++type codexContextReply struct {
++	status int
++	body   string
++}
++
++func codexContextEvents(events ...string) codexContextReply {
++	var stream strings.Builder
++	for _, event := range events {
++		stream.WriteString("data: " + event + "\n\n")
++	}
++	return codexContextReply{status: http.StatusOK, body: stream.String()}
++}
++
++const (
++	codexContextCreated   = `{"type":"response.created","response":{"id":"resp_ctx","model":"gpt-5.5","status":"in_progress","output":[]}}`
++	codexContextFailed    = `{"type":"response.failed","response":{"id":"resp_ctx","status":"failed","error":{"code":"context_length_exceeded","message":"Your input exceeds the context window of this model. Please adjust your input and try again."}}}`
++	codexContextErrorEvt  = `{"type":"error","error":{"type":"invalid_request_error","code":"context_length_exceeded","message":"Your input exceeds the context window of this model. Please adjust your input and try again.","param":"input"},"sequence_number":2}`
++	codexContextTopLevel  = `{"type":"error","code":"context_length_exceeded","message":"Your input exceeds the context window of this model. Please adjust your input and try again.","sequence_number":2}`
++	codexContextServerEvt = `{"type":"response.failed","response":{"id":"resp_ctx","status":"failed","error":{"code":"server_error","message":"The model context window service failed."}}}`
++)
++
++// Upstream reports the gateway positively identifies as a context-window
++// overflow: the exact code, or the exact Codex message, on a non-2xx
++// response or in a terminal stream event.
++var codexContextPositives = map[string]codexContextReply{
++	"http-400-code":           {http.StatusBadRequest, `{"error":{"message":"Your input exceeds the context window of this model. Please adjust your input and try again.","type":"invalid_request_error","param":"input","code":"context_length_exceeded"}}`},
++	"http-400-openai-wording": {http.StatusBadRequest, `{"error":{"message":"This model's maximum context length is 128000 tokens. However, your messages resulted in 250000 tokens.","type":"invalid_request_error","param":"messages","code":"context_length_exceeded"}}`},
++	"http-400-codex-message":  {http.StatusBadRequest, `{"error":{"message":"Your input exceeds the context window of this model. Please adjust your input and try again.","type":"invalid_request_error"}}`},
++	"http-413-code":           {http.StatusRequestEntityTooLarge, `{"error":{"message":"Request too large.","type":"invalid_request_error","code":"context_length_exceeded"}}`},
++	"event-failed-first":      codexContextEvents(codexContextFailed),
++	"event-error-first":       codexContextEvents(codexContextErrorEvt, codexContextFailed),
++	"event-top-level-first":   codexContextEvents(codexContextTopLevel),
++}
++
++// Every other failure keeps its status and text: generic 413, loose context
++// wording, other request faults, credential and rate-limit failures, an
++// invalid thinking signature and a server failure in the stream.
++var codexContextNegatives = map[string]codexContextReply{
++	"http-413-generic":        {http.StatusRequestEntityTooLarge, `{"error":{"message":"Request Entity Too Large","type":"invalid_request_error"}}`},
++	"http-400-loose-wording":  {http.StatusBadRequest, `{"error":{"message":"context length exceeded for this request","type":"invalid_request_error"}}`},
++	"http-400-context-window": {http.StatusBadRequest, `{"error":{"message":"Your input exceeds the context window of this model.","type":"invalid_request_error"}}`},
++	"http-400-other-code":     {http.StatusBadRequest, `{"error":{"message":"Invalid value for input.","type":"invalid_request_error","code":"invalid_value"}}`},
++	"http-400-signature":      {http.StatusBadRequest, `{"error":{"message":"Invalid signature in thinking block","type":"invalid_request_error"}}`},
++	"http-401":                {http.StatusUnauthorized, `{"error":{"message":"Incorrect API key provided.","type":"invalid_request_error","code":"invalid_api_key"}}`},
++	"http-429-code":           {http.StatusTooManyRequests, `{"error":{"message":"Rate limit reached.","type":"rate_limit_error","code":"context_length_exceeded"}}`},
++	"http-500-code":           {http.StatusInternalServerError, `{"error":{"message":"Server failure.","type":"server_error","code":"context_length_exceeded"}}`},
++	"event-server-error":      codexContextEvents(codexContextCreated, codexContextServerEvt),
++}
++
++type codexContextGateway struct {
++	router *gin.Engine
++	hits   *atomic.Int64
++}
++
++// codexContextServe runs the real Codex executor behind the auth manager and
++// the Claude handler, against an upstream that answers every request with
++// reply. apiKey selects the OpenAI API key, otherwise a ChatGPT account.
++func codexContextServe(t *testing.T, name string, apiKey bool, reply codexContextReply) codexContextGateway {
++	t.Helper()
++	gin.SetMode(gin.TestMode)
++	hits := &atomic.Int64{}
++	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		hits.Add(1)
++		if reply.status == http.StatusOK {
++			w.Header().Set("Content-Type", "text/event-stream")
++		} else {
++			w.Header().Set("Content-Type", "application/json")
++		}
++		w.WriteHeader(reply.status)
++		_, _ = w.Write([]byte(reply.body))
++	}))
++	t.Cleanup(upstream.Close)
++
++	manager := cliproxyauth.NewManager(nil, nil, nil)
++	manager.RegisterExecutor(NewCodexExecutor(&config.Config{}))
++	auth := &cliproxyauth.Auth{ID: "codex-context-" + name, Provider: "codex", Status: cliproxyauth.StatusActive,
++		Attributes: map[string]string{"base_url": upstream.URL}}
++	if apiKey {
++		auth.ID += "-key"
++		auth.Attributes["api_key"] = "codex-context-fixture-key"
++	} else {
++		auth.ID += "-account"
++		auth.Metadata = map[string]any{"access_token": "codex-context-fixture-token", "account_id": "codex-context-account"}
++	}
++	if _, errRegister := manager.Register(context.Background(), auth); errRegister != nil {
++		t.Fatalf("register auth: %v", errRegister)
++	}
++	registry.GetGlobalRegistry().RegisterClient(auth.ID, auth.Provider, []*registry.ModelInfo{{ID: codexContextModel}})
++	t.Cleanup(func() { registry.GetGlobalRegistry().UnregisterClient(auth.ID) })
++
++	h := claudehandlers.NewClaudeCodeAPIHandler(handlers.NewBaseAPIHandlers(&sdkconfig.SDKConfig{}, manager))
++	router := gin.New()
++	router.POST("/v1/messages", h.ClaudeMessages)
++	return codexContextGateway{router: router, hits: hits}
++}
++
++// send posts one Claude Messages request and returns the status and body.
++func (g codexContextGateway) send(t *testing.T, stream bool) (int, string) {
++	t.Helper()
++	body := fmt.Sprintf(`{"model":%q,"max_tokens":1024,"messages":[{"role":"user","content":"fixture"}],"stream":%t}`, codexContextModel, stream)
++	request := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(body))
++	request.Header.Set("Content-Type", "application/json")
++	recorder := httptest.NewRecorder()
++	g.router.ServeHTTP(recorder, request)
++	return recorder.Code, recorder.Body.String()
++}
++
++// codexContextSSEErrors returns the data of every SSE error event in body.
++func codexContextSSEErrors(body string) []string {
++	var errorsData []string
++	for _, frame := range strings.Split(body, "\n\n") {
++		if !strings.Contains(frame, "event: error\n") {
++			continue
++		}
++		for _, line := range strings.Split(frame, "\n") {
++			if strings.HasPrefix(line, "data: ") {
++				errorsData = append(errorsData, strings.TrimPrefix(line, "data: "))
++			}
++		}
++	}
++	return errorsData
++}
++
++func codexContextJSONEqual(t *testing.T, got, want string) bool {
++	t.Helper()
++	var gotValue, wantValue any
++	if json.Unmarshal([]byte(got), &gotValue) != nil || json.Unmarshal([]byte(want), &wantValue) != nil {
++		return false
++	}
++	return fmt.Sprint(gotValue) == fmt.Sprint(wantValue)
++}
++
++// Before the response headers, a positively identified overflow reaches the
++// Claude client as HTTP 400 with the native body, streaming or not, on the
++// account and on the API key; one upstream request each, and the credential
++// stays selectable (the next request reaches the upstream again).
++func TestCodexContextOverflowClaudePreHeader(t *testing.T) {
++	for name, reply := range codexContextPositives {
++		for _, apiKey := range []bool{false, true} {
++			t.Run(fmt.Sprintf("%s/key=%t", name, apiKey), func(t *testing.T) {
++				gateway := codexContextServe(t, name, apiKey, reply)
++				for index, stream := range []bool{false, true} {
++					status, body := gateway.send(t, stream)
++					if status != http.StatusBadRequest || !codexContextJSONEqual(t, body, codexContextNativeBody) {
++						t.Fatalf("stream=%t: status %d body %s, want 400 %s", stream, status, body, codexContextNativeBody)
++					}
++					if got := gateway.hits.Load(); got != int64(index+1) {
++						t.Fatalf("stream=%t: upstream requests %d, want %d", stream, got, index+1)
++					}
++				}
++			})
++		}
++	}
++}
++
++// After the response headers (the stream started with response.created), a
++// streaming request gets the native body as the stream's error event; the
++// same overflow on a non-streaming request is still a native 400.
++func TestCodexContextOverflowClaudePostHeader(t *testing.T) {
++	for name, events := range map[string][]string{
++		"error-then-failed": {codexContextCreated, codexContextErrorEvt, codexContextFailed},
++		"failed":            {codexContextCreated, codexContextFailed},
++		"top-level-error":   {codexContextCreated, codexContextTopLevel},
++	} {
++		reply := codexContextEvents(events...)
++		for _, apiKey := range []bool{false, true} {
++			t.Run(fmt.Sprintf("%s/key=%t", name, apiKey), func(t *testing.T) {
++				gateway := codexContextServe(t, "post-"+name, apiKey, reply)
++				status, body := gateway.send(t, true)
++				if status != http.StatusOK || !strings.Contains(body, "event: message_start\n") {
++					t.Fatalf("stream: status %d body %s, want a started stream", status, body)
++				}
++				errorsData := codexContextSSEErrors(body)
++				if len(errorsData) != 1 || !codexContextJSONEqual(t, errorsData[0], codexContextNativeBody) {
++					t.Fatalf("stream error events %q, want one %s", errorsData, codexContextNativeBody)
++				}
++				status, body = gateway.send(t, false)
++				if status != http.StatusBadRequest || !codexContextJSONEqual(t, body, codexContextNativeBody) {
++					t.Fatalf("non-stream: status %d body %s, want 400 %s", status, body, codexContextNativeBody)
++				}
++				if got := gateway.hits.Load(); got != 2 {
++					t.Fatalf("upstream requests %d, want 2", got)
++				}
++			})
++		}
++	}
++}
++
++// Every other failure keeps its status and its text, before and after headers
++// (a fresh credential per request: some of these cool it down).
++func TestCodexContextOverflowNegativesUnchanged(t *testing.T) {
++	for name, reply := range codexContextNegatives {
++		for _, apiKey := range []bool{false, true} {
++			t.Run(fmt.Sprintf("%s/key=%t", name, apiKey), func(t *testing.T) {
++				for _, stream := range []bool{false, true} {
++					gateway := codexContextServe(t, fmt.Sprintf("%s-%t", name, stream), apiKey, reply)
++					status, body := gateway.send(t, stream)
++					if strings.Contains(body, "prompt is too long") {
++						t.Fatalf("stream=%t: status %d body %s presents an overflow", stream, status, body)
++					}
++					if reply.status != http.StatusOK && status != reply.status {
++						t.Fatalf("stream=%t: status %d, want the upstream's %d", stream, status, reply.status)
++					}
++				}
++			})
++		}
++	}
++}
++
++// Only Claude-format requests are marked; the marked failure keeps the
++// executor's status, text, retry delay and credential scope, and other
++// formats get the failure exactly as before.
++func TestCodexContextOverflowMarksOnlyClaudeRequests(t *testing.T) {
++	reply := codexContextPositives["http-400-code"]
++	for _, apiKey := range []bool{false, true} {
++		upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++			w.Header().Set("Content-Type", "application/json")
++			w.WriteHeader(reply.status)
++			_, _ = w.Write([]byte(reply.body))
++		}))
++		auth := &cliproxyauth.Auth{ID: "codex-context-format", Provider: "codex", Attributes: map[string]string{"base_url": upstream.URL}}
++		if apiKey {
++			auth.Attributes["api_key"] = "codex-context-fixture-key"
++		} else {
++			auth.Metadata = map[string]any{"access_token": "codex-context-fixture-token"}
++		}
++		formats := map[sdktranslator.Format]string{
++			sdktranslator.FormatClaude:         `{"model":"gpt-5.5","max_tokens":64,"messages":[{"role":"user","content":"fixture"}]}`,
++			sdktranslator.FormatOpenAIResponse: `{"model":"gpt-5.5","input":"fixture"}`,
++			sdktranslator.FormatOpenAI:         `{"model":"gpt-5.5","messages":[{"role":"user","content":"fixture"}]}`,
++		}
++		for format, payload := range formats {
++			t.Run(fmt.Sprintf("%s/key=%t", format, apiKey), func(t *testing.T) {
++				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
++				defer cancel()
++				_, err := NewCodexExecutor(&config.Config{}).Execute(ctx, auth, cliproxyexecutor.Request{Model: codexContextModel, Payload: []byte(payload)},
++					cliproxyexecutor.Options{SourceFormat: format})
++				var marked interface{ PromptTooLong() bool }
++				isMarked := errors.As(err, &marked)
++				if isMarked != (format == sdktranslator.FormatClaude) {
++					t.Fatalf("marked = %t for %s: %v", isMarked, format, err)
++				}
++				var classified statusErr
++				if !errors.As(err, &classified) || classified.code != http.StatusBadRequest || classified.retryAfter != nil || classified.credentialScoped {
++					t.Fatalf("classified failure changed: %#v (%v)", classified, err)
++				}
++				if err.Error() != classified.Error() {
++					t.Fatalf("failure text %q differs from the classified failure %q", err.Error(), classified.Error())
++				}
++			})
++		}
++		upstream.Close()
++	}
++}
+diff --git a/internal/runtime/executor/codex_executor_execute.go b/internal/runtime/executor/codex_executor_execute.go
+index 240af6ce..121b6df6 100644
+--- a/internal/runtime/executor/codex_executor_execute.go
++++ b/internal/runtime/executor/codex_executor_execute.go
+@@ -136,7 +136,7 @@ func (e *CodexExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, re
+ 			if errClearReplay := clearCodexReasoningReplayOnInvalidSignature(ctx, replayScope, httpResp.StatusCode, examined); errClearReplay != nil {
+ 				return resp, errClearReplay
+ 			}
+-			err = failure
++			err = codexClaudeFailure(from, failure, examined)
+ 			return resp, err
+ 		}
+ 		b, _ := io.ReadAll(httpResp.Body)
+@@ -145,7 +145,7 @@ func (e *CodexExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, re
+ 		}
+ 		helps.AppendAPIResponseChunk(ctx, e.cfg, b)
+ 		helps.LogWithRequestID(ctx).Debugf("request error, error status: %d, error message: %s", httpResp.StatusCode, helps.SummarizeErrorBody(httpResp.Header.Get("Content-Type"), b))
+-		err = newCodexStatusErrWithCooling(httpResp.StatusCode, b, e.modelLevelCooling())
++		err = codexClaudeFailure(from, newCodexStatusErrWithCooling(httpResp.StatusCode, b, e.modelLevelCooling()), b)
+ 		return resp, err
+ 	}
+ 	data, errRead := io.ReadAll(httpResp.Body)
+@@ -182,7 +182,7 @@ func (e *CodexExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, re
+ 			if codexKeySafe(auth) {
+ 				streamErr = codexKeyTerminalFailure(streamErr, terminalBody)
+ 			}
+-			err = streamErr
++			err = codexClaudeFailure(from, streamErr, terminalBody)
+ 			return resp, err
+ 		}
+ 
+diff --git a/internal/runtime/executor/codex_executor_stream.go b/internal/runtime/executor/codex_executor_stream.go
+index 2715a97d..3e35ff80 100644
+--- a/internal/runtime/executor/codex_executor_stream.go
++++ b/internal/runtime/executor/codex_executor_stream.go
+@@ -142,7 +142,7 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
+ 			if errClearReplay := clearCodexReasoningReplayOnInvalidSignature(ctx, replayScope, httpResp.StatusCode, examined); errClearReplay != nil {
+ 				return nil, errClearReplay
+ 			}
+-			err = failure
++			err = codexClaudeFailure(from, failure, examined)
+ 			return nil, err
+ 		}
+ 		data, readErr := io.ReadAll(httpResp.Body)
+@@ -158,7 +158,7 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
+ 		}
+ 		helps.AppendAPIResponseChunk(ctx, e.cfg, data)
+ 		helps.LogWithRequestID(ctx).Debugf("request error, error status: %d, error message: %s", httpResp.StatusCode, helps.SummarizeErrorBody(httpResp.Header.Get("Content-Type"), data))
+-		err = newCodexStatusErrWithCooling(httpResp.StatusCode, data, e.modelLevelCooling())
++		err = codexClaudeFailure(from, newCodexStatusErrWithCooling(httpResp.StatusCode, data, e.modelLevelCooling()), data)
+ 		return nil, err
+ 	}
+ 
+@@ -273,7 +273,7 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
+ 						}
+ 						helps.LogWithRequestID(ctx).Debugf("codex executor: bootstrap overload rejection after %d lines / %v, time budget exhausted; delivering in-stream", bufferedFrames, timeSinceStart)
+ 					}
+-					bootstrapTerminalErr = streamErr
++					bootstrapTerminalErr = codexClaudeFailure(from, streamErr, terminalBody)
+ 					break
+ 				}
+ 				if helps.HasMeaningfulCodexOutputDelta(data) {
+@@ -468,7 +468,7 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
+ 					helps.RecordAPIResponseError(ctx, e.cfg, streamErr)
+ 					reporter.PublishFailure(ctx, streamErr)
+ 					select {
+-					case out <- cliproxyexecutor.StreamChunk{Err: streamErr}:
++					case out <- cliproxyexecutor.StreamChunk{Err: codexClaudeFailure(from, streamErr, terminalBody)}:
+ 					case <-ctx.Done():
+ 					}
+ 					return
+diff --git a/sdk/api/handlers/claude/code_handlers.go b/sdk/api/handlers/claude/code_handlers.go
+index 18ce0e23..6994e903 100644
+--- a/sdk/api/handlers/claude/code_handlers.go
++++ b/sdk/api/handlers/claude/code_handlers.go
+@@ -533,6 +533,9 @@ type claudeErrorResponse struct {
+ }
+ 
+ func (h *ClaudeCodeAPIHandler) toClaudeError(msg *interfaces.ErrorMessage) claudeErrorResponse {
++	if isPromptTooLong(msg) {
++		return promptTooLongError()
++	}
+ 	status := http.StatusInternalServerError
+ 	errText := http.StatusText(status)
+ 	if msg != nil {
+@@ -565,6 +568,9 @@ func (h *ClaudeCodeAPIHandler) WriteErrorResponse(c *gin.Context, msg *interface
+ 	if msg != nil && msg.StatusCode > 0 {
+ 		status = msg.StatusCode
+ 	}
++	if isPromptTooLong(msg) {
++		status = http.StatusBadRequest
++	}
+ 	if msg != nil && msg.DirectResponse {
+ 		for key, values := range handlers.FilterUpstreamHeaders(msg.Headers) {
+ 			if len(values) == 0 || handlers.IsCPAReservedResponseHeader(key) {
+diff --git a/sdk/api/handlers/claude/prompt_too_long.go b/sdk/api/handlers/claude/prompt_too_long.go
+new file mode 100644
+index 00000000..22d3fa81
+--- /dev/null
++++ b/sdk/api/handlers/claude/prompt_too_long.go
+@@ -0,0 +1,30 @@
++package claude
++
++import (
++	"errors"
++
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/interfaces"
++)
++
++// promptTooLongMessage is the Messages API's wording for a request whose
++// prompt exceeds the model's context window. Claude clients compact their
++// conversation and retry when a request is refused with it.
++const promptTooLongMessage = "prompt is too long"
++
++// isPromptTooLong reports whether an executor positively identified the
++// failure as a context-window overflow of the request (it marks such a
++// failure with PromptTooLong; see the Codex executor). Unmarked failures and
++// direct responses keep their own status and body.
++func isPromptTooLong(msg *interfaces.ErrorMessage) bool {
++	if msg == nil || msg.Error == nil || msg.DirectResponse {
++		return false
++	}
++	var marked interface{ PromptTooLong() bool }
++	return errors.As(msg.Error, &marked) && marked.PromptTooLong()
++}
++
++// promptTooLongError is the native error body of a marked failure: HTTP 400
++// before the response headers, the stream's error event after them.
++func promptTooLongError() claudeErrorResponse {
++	return claudeErrorResponse{Type: "error", Error: claudeErrorDetail{Type: "invalid_request_error", Message: promptTooLongMessage}}
++}

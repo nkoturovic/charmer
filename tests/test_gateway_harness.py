@@ -46,6 +46,16 @@ class PatchCoverageTests(unittest.TestCase):
                 self.assertFalse(loader.errors, name)
                 self.assertEqual(suite.countTestCases(), 1, name)
 
+    def test_pinned_client_rows_run_outside_the_sandboxed_check(self):
+        # The sandboxed gateway check has no Claude Code; the host lane and
+        # the omission proof run these rows.
+        selections = harness.gateway_check_selections()
+        client_rows = [row for rows in harness.PATCH_ROWS.values() for row in rows
+                       if row.startswith(tuple(module + "." for module in harness.PINNED_CLIENT_ROW_MODULES))]
+        self.assertTrue(client_rows)
+        self.assertFalse(set(client_rows) & set(selections))
+        self.assertFalse(set(harness.PINNED_CLIENT_ROW_MODULES) & set(harness.GATEWAY_CHECK_MODULES))
+
     def test_control_rows_resolve_and_are_never_their_patch_rows(self):
         import check_gateway_patch_revert as tool
 

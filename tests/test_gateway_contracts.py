@@ -611,14 +611,14 @@ class CompositionTests(GatewayTests):
         self.assertEqual(len(reply.hits), 0)
 
     def test_c6_substitution_is_hidden_but_logged(self):
-        # One substitution per credential/model pair: the gateway throttles
-        # this warning, so repeating the same pair in stream mode is not an
-        # independent log discriminator. C1-C3 cover both response forms.
+        # Every attempt that is answered by another model logs its own
+        # warning (no throttling): the same credential/model pair twice
+        # gives two. C1-C3 cover both response forms.
         for alias in self.family_aliases():
             info = self.gateway.aliases[alias]
             with self.subTest(family=info.family):
                 offset = self.gateway.log_path.stat().st_size
-                reply = self.gateway.request(alias, mode="substitute")
+                replies = [self.gateway.request(alias, mode="substitute") for _ in range(2)]
                 pattern = re.compile(r'executor: upstream served model \\?"gwtest-served-other\\?" for requested model \\?"'
                                      + re.escape(info.wire) + r'\\?"')
                 deadline = time.monotonic() + 2
@@ -626,13 +626,14 @@ class CompositionTests(GatewayTests):
                     with self.gateway.log_path.open("rb") as log:
                         log.seek(offset)
                         matches = pattern.findall(log.read().decode(errors="replace"))
-                    if matches or time.monotonic() >= deadline:
+                    if len(matches) >= 2 or time.monotonic() >= deadline:
                         break
                     time.sleep(0.01)
-                self.record("composition", "C6-" + info.family, reply, log_matches=len(matches))
-                self.hit(reply, alias)
-                self.assert_client_alias(reply, alias, False)
-                self.assertEqual(len(matches), 1)
+                self.record("composition", "C6-" + info.family, replies[0], log_matches=len(matches))
+                for reply in replies:
+                    self.hit(reply, alias)
+                    self.assert_client_alias(reply, alias, False)
+                self.assertEqual(len(matches), 2)
 
 
 class KimiCompatAuthTests(GatewayTests):

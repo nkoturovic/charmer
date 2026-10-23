@@ -7,6 +7,10 @@ Nix derivations with doCheck=false; the shipped derivation is never changed.
 An omission build applies the rest of the admitted series with full context;
 only the omitted patches' line shifts may move a later hunk (build.py's
 --omission-offsets), and each variant records the hunks that moved.
+Rows of the pinned-client modules (``PINNED_CLIENT_ROW_MODULES``) also run the
+pinned Claude Code, found where the probes look for it (for a file outside
+those places, ``CHARMER_REPIN_CANDIDATE``); without it they cannot run and the
+proof is blocked, never passed.
 """
 from __future__ import annotations
 

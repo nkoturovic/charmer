@@ -2,11 +2,13 @@
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
 import time
 import unittest
+import uuid
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -432,6 +434,84 @@ class CodexApiKeySafetyTests(unittest.TestCase):
                    session_header=False)
         finally:
             gateway.close()
+
+
+LOG_KEY = "gwlogkey-q8w3e5r7t9y2"
+LOG_KEY_ALIAS = "gwtest-log-key"
+
+
+class LogReductionTests(unittest.TestCase):
+    """The gateway's per-request lines on charmer's routing (fill-first with
+    session affinity): a ChatGPT account whose credential file name and
+    metadata carry an address, and an OpenAI API key, each answered by
+    another model. Each request logs one routing line with its provider and
+    model and one substitution warning (the account by its credential index,
+    the key as auth_index=nil), and no line names the file, the address, the
+    key, a fragment of it or its index."""
+
+    def test_request_lines_name_no_credential(self):
+        if not os.environ.get(harness.BINARY_ENV):
+            harness.boundary("BOUNDARY: LR1 needs " + harness.BINARY_ENV + " set to the manifest build")
+        import test_openai_key_route as route
+
+        def document(bundle, egress, port, home):
+            document, aliases, info = route.account_document(bundle, egress, port, home)
+            document[render.CODEX_KEY_SECTION] = [{
+                "api-key": LOG_KEY, "base-url": f"http://127.0.0.1:{egress}/gwtest-log-key", "proxy-url": "direct",
+                "models": [{"name": info["wire"], "alias": LOG_KEY_ALIAS}]}]
+            return document, aliases, info
+
+        root = Path(tempfile.mkdtemp(prefix="gwtest-log-"))
+        gateway = route.account_gateway(root, document_factory=document)
+        try:
+            account_alias = sorted(gateway.info["reviewed"])[0]
+            lines = {}
+            for credential, alias in (("account", account_alias), ("key", LOG_KEY_ALIAS)):
+                offset = gateway.log_path.stat().st_size
+                reply = gateway.request(alias, mode="substitute", headers={"X-Claude-Code-Session-Id": str(uuid.uuid4())})
+                self.assertEqual(reply.status, 200, credential)
+                self.assertEqual(len(reply.hits), 1, credential)
+                path = reply.hits[0].path
+                self.assertEqual(path, "/backend-api/codex/responses" if credential == "account"
+                                 else "/gwtest-log-key/responses")
+                warning = re.compile(r'executor: upstream served model \\?"gwtest-served-other\\?" for requested model '
+                                     r'\\?"' + re.escape(gateway.info["wire"]) + r'\\?" \(auth_index=([^)]*)\)')
+                deadline = time.monotonic() + 2
+                while True:
+                    with gateway.log_path.open("rb") as log:
+                        log.seek(offset)
+                        new = log.read().decode(errors="replace").splitlines()
+                    if any(warning.search(line) for line in new) or time.monotonic() >= deadline:
+                        break
+                    time.sleep(0.01)
+                routing = [line for line in new if "session-affinity:" in line and "[info" in line]
+                self.assertEqual(len(routing), 1, credential)
+                self.assertIn("model=", routing[0])
+                self.assertIn("provider=", routing[0])
+                self.assertNotIn("auth=", routing[0])
+                indexes = [match.group(1) for line in new for match in [warning.search(line)] if match]
+                self.assertEqual(len(indexes), 1, credential)
+                if credential == "key":
+                    self.assertEqual(indexes, ["nil"])
+                else:
+                    self.assertRegex(indexes[0], r"^[0-9a-f]{16}$")
+                # The request's own lines (those carrying its request id).
+                lines[credential] = [line for line in new if re.match(r"^\[[^]]+\] \[[0-9a-f]{8}\] ", line)]
+                self.assertIn(routing[0], lines[credential])
+            for credential, request_lines in lines.items():
+                for needle in (route.ACCOUNT_FILE, route.ACCOUNT_EMAIL, LOG_KEY, LOG_KEY[:4], LOG_KEY[-4:]):
+                    with self.subTest(credential=credential, needle=needle):
+                        self.assertNotIn(needle, "\n".join(request_lines))
+            # The key never appears at all; other gateway lines (the auth-file
+            # watcher's) can still name the account file.
+            log = gateway.log_path.read_text(errors="replace")
+            for needle in (LOG_KEY, LOG_KEY[:4], LOG_KEY[-4:]):
+                self.assertNotIn(needle, log)
+            record("LR1", status="passed", requests=2, routing_lines=2, key_index="nil",
+                   account_index=True, credential_named=False)
+        finally:
+            gateway.close()
+            shutil.rmtree(root, ignore_errors=True)
 
 
 CHARMER_SELECTOR = "charmer-gwtest-listed"

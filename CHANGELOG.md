@@ -32,6 +32,14 @@ follow [Semantic Versioning](https://semver.org/).
   over its Go modules and CPython. CPython advisories are accepted only by
   explicit, expiring reviews bound to the advisory revision and runtime
   version; one issue tracks the findings.
+- The gateway's per-request routing line keeps its provider and model but no
+  longer names the credential (an account's file name, which carries its
+  e-mail address, or an identifier derived from a key). Websocket
+  connection and request lines move to debug level without it. Selection and
+  failure lines name an account by its credential index and an API key as
+  `[redacted]`, with no part of the key, and a model-substitution warning
+  shows `auth_index=nil` for an API key. Other gateway lines can still name
+  account files.
 
 ### Added
 
@@ -115,8 +123,23 @@ follow [Semantic Versioning](https://semver.org/).
   release; `charmer doctor` shows per-model 429/402/403 counts and
   `/cm fallback <provider>` moves affected roles. `--json` output and exit
   statuses are unchanged.
+- On the OpenAI API key, Claude Code's per-request output cap now reaches
+  OpenAI as the request's output limit, streaming or not, so an answer stops
+  at the cap Claude Code set. A cap below OpenAI's minimum of 16 tokens is
+  raised to 16, so switching to such a model with `/model` (which checks the
+  model with a one-token request) keeps working. On the ChatGPT account the
+  model's own output limit still applies.
 
 ### Fixed
+
+- On OpenAI (the API key and the ChatGPT account), a request whose input
+  exceeds the model's context window now reaches Claude Code as Anthropic's
+  own "prompt is too long" refusal, whether OpenAI refuses it before the
+  answer starts or after, so Claude Code compacts the conversation and
+  retries instead of stopping with an error. Other errors reach Claude Code
+  as before. On OpenRouter and other OpenAI-compatible providers a
+  context-window error is still shown as the provider's error and does not
+  start automatic compaction; run `/compact`.
 
 - OpenAI-compatible endpoints: tool calls whose index the endpoint omits stay
   separate, also when their fragments interleave; a call keeps the ID it was

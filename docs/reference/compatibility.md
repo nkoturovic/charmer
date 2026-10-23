@@ -196,7 +196,7 @@ the original failure. No native or kernel input queue is flushed during cleanup.
 | Route | Status |
 | --- | --- |
 | Anthropic Messages to the built-in keyed providers (Anthropic API key, DeepSeek, Kimi, Meta, OpenRouter, Qwen) | supported |
-| the OpenAI Platform API key, through the gateway's route to OpenAI's Responses API | supported for the models reviewed for it; the client's per-request output cap is not applied ([providers/api-keys.md](../providers/api-keys.md#openai)) |
+| the OpenAI Platform API key, through the gateway's route to OpenAI's Responses API | supported for the models reviewed for it; the client's per-request output cap is passed on as the request's output limit ([providers/api-keys.md](../providers/api-keys.md#openai)) |
 | Claude and ChatGPT account sign-ins | supported, for personal use |
 | Anthropic-compatible endpoints of your own, and the Anthropic-compatible presets | supported; a preset is the vendor's documented endpoint, not tested by charmer |
 | keyless OpenAI-compatible servers on your network, and their presets | supported, for leads and agents |
@@ -204,6 +204,16 @@ the original failure. No native or kernel input queue is flushed during cleanup.
 
 Anthropic and OpenAI use either their account sign-in or their API key,
 never both at once, and never fall back from one to the other.
+
+## Quota readings
+
+Release bundles and the Nix package provide the same passive account-quota
+readings in `charmer quota`, `/cm quota` and the Providers screen. They use
+the matching gateway shipped with the installation; source checkouts do not
+provide readings. Updating a bundle leaves the running gateway unchanged:
+use the guarded `charmer gateway restart` before expecting readings. Disabled
+readings stay disabled. Quota is an observation, not a remaining balance;
+missing data never means zero use. See [quota readings](../guides/gateway.md#quota-readings).
 
 ## Managed policy
 

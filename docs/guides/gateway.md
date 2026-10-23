@@ -231,9 +231,16 @@ after pending changes and writes nothing.
   client version or session header), adds no hosted tool the client did
   not ask for, and replaces any error the provider returns with fixed
   local text, so an error that quotes the key never reaches a session.
-- On both OpenAI routes (the API key and the ChatGPT account), Claude
-  Code's per-request output cap is not passed on: the model's own output
-  limit applies ([providers/api-keys.md](../providers/api-keys.md#openai)).
+- On the API key, Claude Code's per-request output cap reaches OpenAI as
+  the request's output limit, as Claude Code set it; a cap below OpenAI's
+  minimum of 16 tokens is raised to 16. On the ChatGPT account it is not
+  passed on: the model's own output limit applies
+  ([providers/api-keys.md](../providers/api-keys.md#openai)).
+- On both OpenAI routes, when OpenAI reports that a request exceeds the
+  model's context window, Claude Code gets the refusal in Anthropic's own
+  form ("prompt is too long"), so it compacts the conversation and retries,
+  whether the refusal comes before the answer starts or after. Other errors
+  reach Claude Code as before.
 
 ## Thinking from content chunks
 
@@ -275,10 +282,13 @@ column for signed-in accounts) reports what the gateway observed in recent
 responses: one local read, no provider call, nothing stored. No reading
 means no data yet, not zero use; a reset time is shown only when the
 provider sent one. The command exits 1 when no reading was made. Quota
-readings need the gateway's read-only management access, which only the
-Nix package enables in this release; a release bundle or a source
-checkout reports the reading as unavailable in this build, and there is
-nothing to fix.
+readings are available in release bundles and the Nix package, using the
+matching gateway shipped with the installation. A source checkout reports
+quota as unavailable in this build.
+
+After updating a bundle, run `charmer gateway restart` to enable readings
+in the running gateway; follow any restart hold's guidance first. An update
+alone does not restart it. Disabled readings stay disabled.
 
 This depends on the installation channel, not on whether the gateway is
 on demand or supervised. Stale or exhausted readings still exit 0;

@@ -75,7 +75,7 @@ RECIPE_FILES = ("gateway/UPSTREAM.json", "tools/build.py")
 
 # Admission ids are stable and never inferred from a patch's position or the
 # series length: 11 was never admitted, 14 retired with the 8.0.33 rebase and
-# 26-28 are reserved. The keyed proof numbers each shipped patch by this map.
+# 30 was withdrawn. The keyed proof numbers each shipped patch by this map.
 RETIRED_PATCH_NUMBERS = (11, 14)
 PATCH_IDS = {
     "cli-proxy-api-loopback-oauth.patch": 1, "cli-proxy-api-kimi-claude-compat.patch": 2,
@@ -89,8 +89,9 @@ PATCH_IDS = {
     "cli-proxy-api-antigravity-loopback-callback.patch": 19, "cli-proxy-api-codex-api-key-safety.patch": 20,
     "cli-proxy-api-refresh-shutdown-join.patch": 21, "cli-proxy-api-openai-content-chunks.patch": 22,
     "cli-proxy-api-charmer-model-ids.patch": 23, "cli-proxy-api-access-log-path-quoting.patch": 24,
-    "cli-proxy-api-codex-refresh-lead.patch": 25, "cli-proxy-api-tool-call-integrity.patch": 29,
-    "cli-proxy-api-initial-registration.patch": 31,
+    "cli-proxy-api-codex-refresh-lead.patch": 25, "cli-proxy-api-output-cap.patch": 26,
+    "cli-proxy-api-context-error-normalization.patch": 27, "cli-proxy-api-log-reduction.patch": 28,
+    "cli-proxy-api-tool-call-integrity.patch": 29, "cli-proxy-api-initial-registration.patch": 31,
 }
 
 
