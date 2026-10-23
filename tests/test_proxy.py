@@ -2926,12 +2926,10 @@ class ManagementTestCase(ProxyControlTestCase):
 
 
 class ManagementChannelPolicyTests(ManagementTestCase):
-    """Management is a channel policy: only the Nix channel enables it.
+    """Unattested bundles and source/unwrapped launches cannot use management.
 
-    A bundle-style wrapper names its own channel and the bundled gateway
-    (CHARMER_PROXY_BIN) and attests nothing; even a patch list inherited
-    from a parent environment, or key files a Nix install left in the home,
-    never make it create, inject or send a management key.
+    An inherited Nix basename list is not a bundle contract attestation,
+    even with a selected key from an earlier installation in the same home.
     """
 
     def setUp(self):
@@ -3142,7 +3140,9 @@ class ManagementInjectionTests(ManagementTestCase):
         proxy.management.stage_rotation(self.home)
         self.prepare()
         self.assertEqual(proxy.exec_signature(), before)
-        with mock.patch.object(proxy.management, "EXEC_POLICY", "different-policy"):
+        nix_only_policy = ("047-v1:private-selected-key;stopped-prepare-start-only;"
+                           "allowlist-build;after-scrub")
+        with mock.patch.object(proxy.management, "EXEC_POLICY", nix_only_policy):
             self.assertNotEqual(proxy.exec_signature(), before)
 
     def test_generation_rollback_keeps_captured_secret_until_process_replacement(self):
@@ -3227,6 +3227,33 @@ class ManagementInjectionTests(ManagementTestCase):
             self.prepare()
             self.run_capture(prepared=False)
         self.assertEqual(held, set())
+
+
+class BundleManagementInjectionTests(ManagementInjectionTests):
+    """Bundle attestation keeps the same restart/selection/injection contract."""
+
+    def setUp(self):
+        super().setUp()
+        from _layout import GATEWAY_CONTRACT
+
+        self.environ[proxy.management.CHANNEL_ENV] = "bundle"
+        self.environ[proxy.management.PATCHES_ENV] = ",".join(json.loads(GATEWAY_CONTRACT.read_bytes())["patches"])
+
+    def test_mismatched_attestation_refuses_preparation_injection_and_reads(self):
+        self.prepare()
+        proxy.management.stage_rotation(self.home)
+        before = {path.name: path.read_bytes() for path in self.directory.glob("management-key*")}
+        self.environ[proxy.management.PATCHES_ENV] += ",other.patch@" + "0" * 64
+        with mock.patch.object(proxy.management, "key_state", side_effect=AssertionError("key read")), \
+             mock.patch.object(proxy.management, "prepare_start", side_effect=AssertionError("prepare")), \
+             mock.patch.object(proxy.management, "prepare_for_exec", side_effect=AssertionError("injection")):
+            self.prepare()
+            captured, _ = self.run_capture()
+            self.assertNotIn("MANAGEMENT_PASSWORD", captured["env"])
+            result = proxy.management.pool_status(self.home, {}, environ=self.environ,
+                                                 get=lambda *_: self.fail("management request"))
+            self.assertEqual(result.state, "unavailable")
+        self.assertEqual({path.name: path.read_bytes() for path in self.directory.glob("management-key*")}, before)
 
 
 class ManagementKeyCommandTests(ManagementTestCase):

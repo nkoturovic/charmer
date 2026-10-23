@@ -1313,8 +1313,9 @@ class QuotaDoctorTests(_DoctorCase):
         self.runtime.doctor_served_callback = mock.Mock(return_value=([], ["fixture served check"]))
         self.get = mock.Mock(return_value=(200, (QUOTA_FIXTURES / "auth-files-mixed.json").read_bytes()))
         self.runtime.management_callback = self.get
-        # Quota reads exist only on the management channel (the Nix wrapper's).
-        self.runtime.environ[management.CHANNEL_ENV] = management.MANAGEMENT_CHANNEL
+        # Supply the pinned binary and attestation as an installed wrapper does.
+        self.runtime.environ.update({management.CHANNEL_ENV: "nix",
+            management.PINNED_BIN_ENV: "/fixture/gateway", management.PATCHES_ENV: management.ALLOWLIST_PATCH})
         self.now = QUOTA_NOW
         self.addCleanup(mock.patch.stopall)
         mock.patch.object(quota, "_now", return_value=self.now).start()
@@ -1711,7 +1712,7 @@ class QuotaDoctorTests(_DoctorCase):
             self.report()
 
     def test_off_the_management_channel_quota_is_unavailable_info_without_remedy(self):
-        # A bundle (or source) install: key files a Nix install left behind
+        # An unattested bundle or unwrapped launch: key files left behind
         # are neither read nor sent, and doctor offers no command for quota.
         self.enable()
         management.stage_rotation(self.runtime.home)

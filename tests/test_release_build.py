@@ -1189,6 +1189,22 @@ class DocumentLayoutTests(unittest.TestCase):
                       "elsewhere", stderr)
 
 
+class LauncherAttestationTests(unittest.TestCase):
+    def test_wrapper_attests_only_the_supplied_packaged_contract(self):
+        bundle = load_tool(REPO_ROOT / "tools/_build/bundle.py", "bundle")
+        patches = ["fixture-first.patch@" + "1" * 64, "fixture-next.patch@" + "2" * 64]
+        text = bundle.launcher_text("charmer", PYTHON_VERSION, {"patches": patches}).decode()
+        self.assertIn("CHARMER_PROXY_PATCHES='" + ",".join(patches) + "'\n", text)
+        self.assertNotIn("cli-proxy-api-management-readonly-allowlist.patch", text)
+        # The shell must never interpret a contract entry as shell syntax or
+        # silently treat bare Nix basenames as hashed bundle identities.
+        for entries in (None, "fixture.patch", ["fixture.patch"], patches + patches,
+                        ["fixture.patch@" + "g" * 64], ["fixture.patch'; false #"],
+                        [patches[0], "fixture-first.patch@" + "3" * 64]):
+            with self.subTest(entries=entries), self.assertRaises(bundle.BundleError):
+                bundle.launcher_text("charmer", PYTHON_VERSION, {"patches": entries})
+
+
 @requires_release_tree
 class BundleLauncherTests(unittest.TestCase):
     """The generated launchers, run as an installation runs them: through
@@ -1304,7 +1320,7 @@ class BundleLauncherTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn(self.version, result.stdout)
 
-    def test_gateway_exec_keeps_management_off_with_a_hostile_environment(self) -> None:
+    def test_gateway_exec_injects_only_the_selected_key_with_a_hostile_environment(self) -> None:
         # Control (its own HOME): the inherited channel and patch list,
         # without the launcher, enable management and inject the key.
         control_home = Path(tempfile.mkdtemp(prefix="charmer-launch-control-", dir=self.tmp))
@@ -1319,8 +1335,8 @@ class BundleLauncherTests(unittest.TestCase):
         self.assertEqual(control.returncode, 0, control.stderr)
         recorded = json.loads((control_home / "gateway.json").read_text())
         self.assertEqual(recorded["env"].get("MANAGEMENT_PASSWORD"), control_key)
-        # The launcher, with a selected key in its HOME too.
-        self.selected_key(self.home)
+        # The launcher overrides inherited authority with its own contract.
+        selected = self.selected_key(self.home)
         before = self.files()
         result = self.run_launcher([str(self.install / "current" / "bin" / "charmer-proxy"), "run"],
                                    self.hostile())
@@ -1330,10 +1346,11 @@ class BundleLauncherTests(unittest.TestCase):
         current = self.install / "current"
         self.assertEqual(Path(recorded["argv"][1]).resolve(),
                          (self.bundle / "libexec" / "charmer" / "cli-proxy-api").resolve())
-        self.assertNotIn("MANAGEMENT_PASSWORD", {name.upper() for name in env})
+        self.assertEqual(env["MANAGEMENT_PASSWORD"], selected)
         self.assertNotIn("CHARMER_PROXY_PATCHES", env)
         self.assertNotIn("INHERITED-VALUE", result.stdout + result.stderr + json.dumps(env))
-        self.assertIn("management is unavailable in this build", result.stderr)
+        self.assertNotIn(selected, result.stdout + result.stderr)
+        self.assertIn("MANAGEMENT_PASSWORD from management-key", result.stderr)
         self.assertEqual(env["CHARMER_CHANNEL"], "bundle")
         self.assertEqual(env["CHARMER_PROXY_BIN"], str(current / "libexec" / "charmer" / "cli-proxy-api"))
         self.assertEqual(env["CHARMER_HOOK_COMMAND"], str(current / "bin" / "charmer"))
@@ -1370,7 +1387,8 @@ class BundleLauncherTests(unittest.TestCase):
         self.assertEqual((env["SSL_CERT_FILE"], env["SSL_CERT_DIR"]), ("/etc/ssl/custom.pem", "/etc/ssl/custom"))
         self.assertEqual(env["XDG_STATE_HOME"], str(self.home / "state"))  # the state root the user selected
         self.assertEqual(env["CHARMER_REGISTRY_DIR"], str(current / SITE / "charmer" / "data" / "registry"))
-        self.assertNotIn("CHARMER_PROXY_PATCHES", env)
+        packaged = json.loads((self.bundle / SITE / "charmer" / "data" / "gateway-contract.json").read_bytes())
+        self.assertEqual(env["CHARMER_PROXY_PATCHES"], ",".join(packaged["patches"]))
 
 
 if __name__ == "__main__":

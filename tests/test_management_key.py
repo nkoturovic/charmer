@@ -1,6 +1,7 @@
 """Management key: file-only lifecycle, installation boundary and secret hygiene."""
 
 import io
+import json
 import os
 import stat
 import tempfile
@@ -264,7 +265,46 @@ class GateTests(unittest.TestCase):
         with mock.patch.dict(os.environ, {**nix, m.PINNED_BIN_ENV: "/fixture/bin", m.PATCHES_ENV: m.ALLOWLIST_PATCH}):
             self.assertFalse(m.allowlist_build({}))
 
-    def test_only_the_nix_channel_enables_management(self):
+    def test_bundle_requires_the_exact_packaged_contract_not_selected_assets(self):
+        from _layout import GATEWAY_CONTRACT
+
+        contract = json.loads(GATEWAY_CONTRACT.read_bytes())
+        patches = contract["patches"]
+        attested = {m.CHANNEL_ENV: "bundle", m.PINNED_BIN_ENV: "/fixture/bin",
+                    m.PATCHES_ENV: ",".join(patches), "CHARMER_ASSETS": "/nonexistent/assets"}
+        self.assertTrue(m.allowlist_build(attested))
+        self.assertTrue(m.management_channel(attested))
+        for value in ("", m.ALLOWLIST_PATCH, ",".join(item.split("@")[0] for item in patches),
+                      ",".join(reversed(patches)), ",".join(patches[:-1]),
+                      ",".join(patches) + ",extra.patch@" + "0" * 64,
+                      ",".join(patches).replace("@", "@0", 1)):
+            with self.subTest(attestation=value):
+                self.assertFalse(m.allowlist_build({**attested, m.PATCHES_ENV: value}))
+        for channel in ("source", "", "Bundle", " bundle", "bundle "):
+            self.assertFalse(m.allowlist_build({**attested, m.CHANNEL_ENV: channel}))
+        for missing in (m.CHANNEL_ENV, m.PINNED_BIN_ENV, m.PATCHES_ENV):
+            self.assertFalse(m.allowlist_build({k: v for k, v in attested.items() if k != missing}))
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            with mock.patch.object(m, "resources_root", return_value=root):
+                self.assertFalse(m.allowlist_build(attested))
+                path = root / "gateway-contract.json"
+                for data in (b"{}", b"not-json", b'{"version": 1, "patches": []}'):
+                    path.write_bytes(data)
+                    self.assertFalse(m.allowlist_build(attested))
+                with self.subTest(contract="matching but without read-only allowlist"):
+                    without_allowlist = [item for item in patches
+                                         if item.split("@", 1)[0] != m.ALLOWLIST_PATCH]
+                    path.write_text(json.dumps({**contract, "patches": without_allowlist}))
+                    environ = {**attested, m.PATCHES_ENV: ",".join(without_allowlist)}
+                    self.assertFalse(m.allowlist_build(environ))
+                    self.assertFalse(m.management_channel(environ))
+                # Even a well-formed but different packaged hash withdraws authority.
+                contract["patches"][0] = patches[0].split("@")[0] + "@" + "0" * 64
+                path.write_text(json.dumps(contract))
+                self.assertFalse(m.allowlist_build(attested))
+
+    def test_only_the_exact_packaged_channels_enable_management(self):
         attested = {m.PINNED_BIN_ENV: "/fixture/bin", m.PATCHES_ENV: m.ALLOWLIST_PATCH}
         for channel, expected in ((None, False), ("nix", True), ("bundle", False), ("source", False),
                                   ("", False), ("NIX", False), (" nix", False), ("nix ", False)):

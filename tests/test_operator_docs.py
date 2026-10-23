@@ -610,7 +610,7 @@ class QuotaDocumentationTests(unittest.TestCase):
     def test_quota_is_documented_as_an_observation_with_its_limits(self) -> None:
         text = _flat(_section(_text("guides/gateway.md"), "Quota readings"))
         for anchor in ("charmer quota", "/cm quota", "no provider call", "not zero use",
-                       "exits 1 when no reading was made", "only the Nix package enables",
+                       "exits 1 when no reading was made", "available in release bundles and the Nix package",
                        "unavailable in this build", "not a balance", "not billed tokens",
                        "not on whether the gateway is on demand or supervised",
                        "Stale or exhausted readings still exit 0",

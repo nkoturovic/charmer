@@ -176,8 +176,10 @@ def fixture_runtime(
     management_calls = []
     if management is not None:
         management_mod.prepare_start(Path(environ["HOME"]), stopped=True)
-        # Quota reads exist only on the management channel (the Nix wrapper's).
+        # Inject the same authority an installed Nix wrapper supplies.
         environ.setdefault(management_mod.CHANNEL_ENV, management_mod.MANAGEMENT_CHANNEL)
+        environ.setdefault(management_mod.PINNED_BIN_ENV, "/fixture/gateway")
+        environ.setdefault(management_mod.PATCHES_ENV, management_mod.ALLOWLIST_PATCH)
 
     def management_get(_base_url: str, _key: str) -> tuple[int, bytes]:
         management_calls.append(True)  # count only, never retain credentials

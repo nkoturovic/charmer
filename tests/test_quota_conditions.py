@@ -83,8 +83,8 @@ class QuotaConditionTests(test_cli.OperatorCommandCase):
                 self.assertEqual((code, err.getvalue()), (0, ""))
                 self.assertIn(quota.condition_line(name), out.getvalue().splitlines())
 
-    def test_unavailable_cli_and_cm_name_nix_and_doctor_but_json_stays_structured(self) -> None:
-        notice = ("Quota readings are available only in the Nix package in this release; "
+    def test_unavailable_cli_and_cm_name_supported_installs_but_json_stays_structured(self) -> None:
+        notice = ("Quota readings require a release bundle or the Nix package with its matching gateway; "
                   "use charmer doctor for per-model 429/402/403 counts and /cm fallback <provider>.")
         for name, pool in POOLS.items():
             with self.subTest(condition=name), self.pool(name):
@@ -117,12 +117,60 @@ class QuotaConditionTests(test_cli.OperatorCommandCase):
                      "CHEATSHEET.md", "reference/tasks.md"):
             with self.subTest(page=page):
                 text = " ".join((REPO_ROOT / "docs" / page).read_text().split())
-                self.assertIn("only in the Nix package in this release", text)
+                self.assertIn("available in release bundles and the Nix package", text)
                 if page.startswith("providers/"):
                     row = next(line for line in (REPO_ROOT / "docs" / page).read_text().splitlines()
                                if "requests fail with a usage-limit message" in line)
-                    for phrase in ("bundle", "charmer doctor", "429/402/403", "/cm fallback"):
+                    for phrase in ("charmer quota", "charmer doctor", "429/402/403", "/cm fallback"):
                         self.assertIn(phrase, row)
+
+    def test_bundle_cli_cm_and_tui_share_the_failure_inclusive_collector_cache(self) -> None:
+        from _layout import GATEWAY_CONTRACT
+        from test_quota import FIXTURES
+        from charmer import management
+
+        management.prepare_start(self.runtime.home, stopped=True)
+        self.runtime.environ.update({management.CHANNEL_ENV: "bundle",
+            management.PINNED_BIN_ENV: "/fixture/gateway",
+            management.PATCHES_ENV: ",".join(json.loads(GATEWAY_CONTRACT.read_bytes())["patches"])})
+        mixed = json.loads((FIXTURES / "auth-files-mixed.json").read_bytes())
+        body = json.dumps({"files": [row for row in mixed["files"] if row["provider"] == "claude"]}).encode()
+        getter = mock.Mock(return_value=(200, body))
+        self.runtime.management_callback = getter
+        ticks = [100.0]
+        self.runtime.pool_clock = lambda: ticks[0]
+        shown = []
+        real = tui.TextView
+
+        class RecordingView(real):
+            def __init__(self, title, lines, **kwargs):
+                shown.extend(lines)
+                super().__init__(title, lines, **kwargs)
+
+        for status, expected_state in ((200, "ok"), (401, "mismatch")):
+            getter.return_value = status, body
+            getter.reset_mock()
+            self.runtime._pool_cache = None
+            _, text, _ = self.op(["quota", "--json"])
+            facts = {row["code"]: row for row in json.loads(text)["facts"]}
+            self.assertEqual(facts["management-state"]["value"], expected_state)
+            condition_line = quota.condition_line(facts["quota-condition"]["value"])
+            ticks[0] += 59
+            out = io.StringIO()
+            self.assertEqual(cli.main(["lineup", "--session", SESSION, "quota"], runtime=self.runtime,
+                                      output_stream=out), 0)
+            self.assertIn(condition_line, out.getvalue().splitlines())
+            shown.clear()
+            with mock.patch.object(charmer.tui, "TextView", RecordingView):
+                screen = providers_screen._ProvidersScreen(self.runtime, palette=tui.MONO_PALETTE,
+                                                           journal=lambda: None, now=NOW, tz=timezone.utc)
+                screen.selected = [row.id for row in screen.rows].index("anthropic")
+                screen.run(FakeWindow(["q", ESC, ESC], height=24, width=80))
+            self.assertIn(condition_line, shown)
+            getter.assert_called_once()
+            ticks[0] += 2
+            self.assertEqual(self.runtime.pool_status().state, expected_state)
+            self.assertEqual(getter.call_count, 2)
 
     def test_the_tui_shows_each_condition(self) -> None:
         shown: list[tuple[str, list[str]]] = []

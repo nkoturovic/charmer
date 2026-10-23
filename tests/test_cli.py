@@ -8155,7 +8155,8 @@ class RuntimePoolStatusTests(CLITestCase):
         from charmer import management
         from tests.test_quota import FIXTURES
         management.prepare_start(self.runtime.home, stopped=True)
-        self.runtime.environ[management.CHANNEL_ENV] = management.MANAGEMENT_CHANNEL
+        self.runtime.environ.update({management.CHANNEL_ENV: "nix",
+            management.PINNED_BIN_ENV: "/fixture/gateway", management.PATCHES_ENV: management.ALLOWLIST_PATCH})
         self.body = (FIXTURES / "auth-files-mixed.json").read_bytes()
         self.getter = mock.Mock(return_value=(200, self.body))
 
@@ -8208,7 +8209,8 @@ class QuotaCommandTests(CLITestCase):
         from charmer import management
         from tests.test_quota import FIXTURES
         management.prepare_start(self.runtime.home, stopped=True)
-        self.runtime.environ[management.CHANNEL_ENV] = management.MANAGEMENT_CHANNEL
+        self.runtime.environ.update({management.CHANNEL_ENV: "nix",
+            management.PINNED_BIN_ENV: "/fixture/gateway", management.PATCHES_ENV: management.ALLOWLIST_PATCH})
         self.getter = mock.Mock(return_value=(200, (FIXTURES / "auth-files-mixed.json").read_bytes()))
         self.runtime.management_callback = self.getter
         self.runtime.served_models_callback = mock.Mock(side_effect=AssertionError("models read"))
@@ -8306,6 +8308,9 @@ class QuotaCommandTests(CLITestCase):
                        "XDG_STATE_HOME": str(home / "state"), "TERM": "dumb"}
                 if channel is not None:
                     env["CHARMER_CHANNEL"] = channel
+                if channel == "nix":
+                    env.update({charmer.management.PINNED_BIN_ENV: "/fixture/gateway",
+                                charmer.management.PATCHES_ENV: charmer.management.ALLOWLIST_PATCH})
                 output = io.StringIO()
                 with mock.patch.dict(os.environ, env, clear=True), \
                         mock.patch('charmer.assets.default_asset_root', return_value=FIXTURE_ROOT), \

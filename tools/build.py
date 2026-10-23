@@ -2729,8 +2729,10 @@ def assemble_target(ctx: ReleaseContext, target: str, *, python: Path, epoch: in
     for document, installed in documents(ctx.repo):
         bundle.install_file(document, root / installed)
     bundle.install_file(gateway["path"], root / bundle.GATEWAY_PATH, executable=True)
+    gateway_contract = load_json(root / site_relative / "charmer" / "data" / "gateway-contract.json")
     for name in ctx.product["launchers"]:
-        bundle.write_file(root / "bin" / name, bundle.launcher_text(name, ctx.runtimes.python), executable=True)
+        bundle.write_file(root / "bin" / name, bundle.launcher_text(name, ctx.runtimes.python, gateway_contract),
+                          executable=True)
     licenses = root / bundle.LICENSES_DIR
     bundle.install_file(ctx.repo / "LICENSE", licenses / "charmer" / "LICENSE")
     notices = read_notice_tree(ctx.licenses)

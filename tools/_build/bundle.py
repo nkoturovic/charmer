@@ -39,6 +39,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import re
 import shutil
 import stat
 import tarfile
@@ -189,8 +190,8 @@ CHARMER_ASSETS="$site/charmer/data"
 CHARMER_REGISTRY_DIR="$site/charmer/data/registry"
 CHARMER_HOOK_COMMAND="$root/bin/charmer"
 CHARMER_PROXY_BIN="$root/{gateway}"
-export CHARMER_CHANNEL CHARMER_ASSETS CHARMER_REGISTRY_DIR CHARMER_HOOK_COMMAND CHARMER_PROXY_BIN
-unset CHARMER_PROXY_PATCHES
+CHARMER_PROXY_PATCHES='{patches}'
+export CHARMER_CHANNEL CHARMER_ASSETS CHARMER_REGISTRY_DIR CHARMER_HOOK_COMMAND CHARMER_PROXY_BIN CHARMER_PROXY_PATCHES
 if [ -d "$root/{runtime}/share/terminfo" ]; then
 	TERMINFO_DIRS="${{TERMINFO_DIRS:-}}:$root/{runtime}/share/terminfo"
 	export TERMINFO_DIRS
@@ -204,11 +205,18 @@ BOOTSTRAP = ("import sys; sys.path.insert(0, sys.argv.pop(1)); "
              "from charmer.entrypoints import main; raise SystemExit(main())")
 
 
-def launcher_text(name: str, python_version: str) -> bytes:
+def launcher_text(name: str, python_version: str, gateway_contract: dict) -> bytes:
     if not name or any(char not in "abcdefghijklmnopqrstuvwxyz0123456789-" for char in name):
         raise BundleError(f"not a launcher name: {name!r}")
+    # Unlike Nix's basename list, retain the packaged contract's hashes and
+    # order. Validate before quoting in shell; no checkout or recipe lookup.
+    patches = gateway_contract.get("patches")
+    if (not isinstance(patches, list) or len(patches) > 64 or not all(
+            isinstance(item, str) and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._+-]{0,127}\.patch@[0-9a-f]{64}", item)
+            for item in patches) or len({item.split("@", 1)[0] for item in patches}) != len(patches)):
+        raise BundleError("gateway contract patches must be ordered, unique basename@sha256 identities")
     return LAUNCHER_TEMPLATE.format(name=name, site=site_dir(python_version), gateway=GATEWAY_PATH,
-                                    runtime=RUNTIME_DIR, bootstrap=BOOTSTRAP).encode()
+                                    runtime=RUNTIME_DIR, bootstrap=BOOTSTRAP, patches=",".join(patches)).encode()
 
 
 # --------------------------------------------------------------- SBOMs

@@ -272,10 +272,13 @@ column for signed-in accounts) reports what the gateway observed in recent
 responses: one local read, no provider call, nothing stored. No reading
 means no data yet, not zero use; a reset time is shown only when the
 provider sent one. The command exits 1 when no reading was made. Quota
-readings need the gateway's read-only management access, which only the
-Nix package enables in this release; a release bundle or a source
-checkout reports the reading as unavailable in this build, and there is
-nothing to fix.
+readings are available in release bundles and the Nix package, using the
+matching gateway shipped with the installation. A source checkout reports
+quota as unavailable in this build.
+
+After updating a bundle, run `charmer gateway restart` to enable readings
+in the running gateway; follow any restart hold's guidance first. An update
+alone does not restart it. Disabled readings stay disabled.
 
 This depends on the installation channel, not on whether the gateway is
 on demand or supervised. Stale or exhausted readings still exit 0;
