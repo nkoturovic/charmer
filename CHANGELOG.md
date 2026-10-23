@@ -112,6 +112,11 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- The staged OpenAI-compatible converter repair separates distinct tool calls
+  with omitted indexes, preserves an announced call identity and uses `tool_use`
+  for converted tools with ordinary or missing non-stream finish reasons. Explicit
+  truncation and filtering retain their existing precedence. Fresh built-gateway
+  verification and release acceptance for this source set remain pending.
 - Gateway restart confirmation uses the shared session scan. When a record
   is unreadable it names the live sessions it can identify and says whether
   other sessions may be running, rather than claiming none run.

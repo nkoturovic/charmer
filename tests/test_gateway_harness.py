@@ -46,6 +46,105 @@ class PatchCoverageTests(unittest.TestCase):
                 self.assertFalse(loader.errors, name)
                 self.assertEqual(suite.countTestCases(), 1, name)
 
+    def test_tool_integrity_has_resolvable_controls_and_required_evidence(self):
+        import check_gateway_patch_revert as tool
+
+        patch = "cli-proxy-api-tool-call-integrity.patch"
+        self.assertEqual(len(harness.PATCH_ROWS[patch]), 3)
+        self.assertEqual(len(harness.PATCH_CONTROL_ROWS[patch]), 6)
+        for control in harness.PATCH_CONTROL_ROWS[patch]:
+            loader = unittest.TestLoader()
+            self.assertEqual(loader.loadTestsFromName(control).countTestCases(), 1)
+            self.assertFalse(loader.errors, control)
+            self.assertIn(control, tool.test_ids())
+            self.assertNotIn(control, harness.PATCH_ROWS[patch])
+        self.assertTrue({"TI1", "TI2", "TI3", "TIC1", "TIC2"}
+                        <= harness.REQUIRED_EVIDENCE["tests.test_gateway_patches"]["patches"])
+        self.assertIn("tests.test_gateway_patches", harness.gateway_check_selections())
+
+    def test_tool_integrity_dependency_uses_closure_and_dependent_only_control(self):
+        import check_gateway_patch_revert as tool
+
+        chunks = "cli-proxy-api-openai-content-chunks.patch"
+        integrity = "cli-proxy-api-tool-call-integrity.patch"
+        manifest = json.loads((RESOURCES_ROOT / "catalog/gateway.json").read_text())["gateway"]["patches"]
+        closure = tool.omission_closure(chunks, manifest, harness.PATCH_DEPENDENCIES)
+        self.assertEqual(closure, (chunks, integrity))
+        self.assertEqual(tuple(name for name in closure if name != chunks), (integrity,))
+        self.assertEqual(tool.omission_closure(integrity, manifest, harness.PATCH_DEPENDENCIES), (integrity,))
+        self.assertEqual(harness.PATCH_DEPENDENCIES[integrity][chunks], {
+            "file": "internal/translator/openai/claude/openai_claude_content_goldens_test.go", "hunk": 21,
+            "reason": "the registered tool-reasoning golden adapted by 29 is in the test file created by 22",
+        })
+        # Pure attribution controls only, not an executed omission or a failed
+        # patch application converted to row outcomes.
+        green = dict.fromkeys(tool.test_ids(), "ok")
+        without_dependent = {**green, **dict.fromkeys(harness.PATCH_ROWS[integrity], "FAIL")}
+        without_both = {**without_dependent, **dict.fromkeys(harness.PATCH_ROWS[chunks], "FAIL")}
+        proof = tool.attribute({"omitted": list(closure), "outcomes": without_both}, chunks,
+                               {"outcomes": without_dependent})
+        self.assertEqual(proof["own_red"], sorted(harness.PATCH_ROWS[chunks]))
+        self.assertEqual(proof["expected_dependency_cross_red"], sorted(harness.PATCH_ROWS[integrity]))
+        self.assertEqual(proof["cross_red"], [])
+        self.assertTrue(tool.proof_passed(proof, 1))
+        proof = tool.attribute({"omitted": list(closure), "outcomes": without_both}, chunks,
+                               {"outcomes": without_both})
+        self.assertFalse(proof["own_red"])
+        self.assertFalse(tool.proof_passed(proof, 1))
+
+    def test_tool_fixture_requires_explicit_selection_before_gateway_creation(self):
+        from tests.test_gateway_patches import ToolCallIntegrityTests
+
+        for required in (False, True):
+            with self.subTest(required=required), mock.patch.dict(os.environ, {}, clear=True), \
+                    mock.patch.object(harness, "GatewayHarness") as create:
+                if required:
+                    os.environ[harness.REQUIRE_ENV] = "1"
+                with self.assertRaises(AssertionError if required else unittest.SkipTest):
+                    ToolCallIntegrityTests.setUpClass()
+                create.assert_not_called()
+
+    def test_tool_wire_stimuli_preserve_the_discriminating_differences(self):
+        from tests.test_gateway_patches import tool_integrity_deltas, tool_integrity_reply
+
+        omitted = tool_integrity_deltas("omitted")
+        self.assertEqual([row["tool_calls"][0]["id"] for row in omitted], ["call_gwtest_a", "call_gwtest_b"])
+        self.assertTrue(all("index" not in row["tool_calls"][0] for row in omitted))
+        mixed = tool_integrity_deltas("mixed_forward")[0]["tool_calls"]
+        self.assertEqual(mixed[0]["index"], 1)
+        self.assertNotIn("index", mixed[1])
+        stable = [row["tool_calls"][0] for row in tool_integrity_deltas("stable_id")]
+        self.assertEqual([row["id"] for row in stable], ["call_gwtest_a", "call_gwtest_b", "call_gwtest_b"])
+        self.assertEqual([row.get("index") for row in stable], [0, 0, None])
+        self.assertEqual(stable[0]["function"]["arguments"] + stable[1]["function"]["arguments"], '{"k":"a"}')
+        for mode in ("omitted", "mixed_forward", "mixed_reverse", "stable_id", "explicit_continue",
+                     "omitted_continue", "omit_to_explicit", "explicit_to_omit"):
+            status, kind, raw = tool_integrity_reply("/fixture/chat/completions", {"model": "fixture", "stream": True},
+                                                    ("gwtest-mode=" + mode).encode())
+            self.assertEqual((status, kind), (200, "text/event-stream"))
+            self.assertTrue(raw.endswith(b"data: [DONE]\n\n"))
+            frames = [json.loads(line[6:]) for line in raw.splitlines() if line.startswith(b"data: {")]
+            self.assertEqual(frames[-2]["choices"][0]["finish_reason"], "tool_calls")
+            self.assertEqual(frames[-1]["usage"], {"prompt_tokens": 11, "completion_tokens": 4, "total_tokens": 15})
+        for encoding in ("top", "content", "text"):
+            for finish, value in (("missing", None), ("null", None), ("empty", ""), ("stop", "stop"),
+                                  ("length", "length"), ("filter", "content_filter"), ("tools", "tool_calls")):
+                status, kind, raw = tool_integrity_reply("/fixture/chat/completions", {"model": "fixture"},
+                    f"gwtest-mode=terminal_{encoding}_{finish}".encode())
+                self.assertEqual((status, kind), (200, "application/json"))
+                choice = json.loads(raw)["choices"][0]
+                self.assertEqual("finish_reason" in choice, finish != "missing")
+                self.assertEqual(choice.get("finish_reason"), value)
+                message = choice["message"]
+                if encoding == "top":
+                    self.assertEqual(message["tool_calls"][0]["id"], "call_gwtest_a")
+                elif encoding == "content":
+                    self.assertEqual(message["content"][0]["tool_calls"][0]["id"], "call_gwtest_a")
+                    self.assertNotIn("tool_calls", message)
+                else:
+                    self.assertEqual(message["content"], "answer")
+                    self.assertNotIn("tool_calls", message)
+
 
 class AdmittedPatchSelectionTests(unittest.TestCase):
     def test_every_new_row_requires_explicit_selection_before_gateway_creation(self):

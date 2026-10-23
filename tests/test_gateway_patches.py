@@ -8,9 +8,10 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from urllib.parse import urlsplit
 
-from charmer import probe, render, state
+from charmer import probe, render, state, strict_json
 from _catalog import SHIPPED_ROOT, uses_shipped_catalog
 import _gateway_harness as harness
 
@@ -526,16 +527,18 @@ class ContentChunkRouteInventoryTests(unittest.TestCase):
 
 
 class _ContentChunkFixture:
+    respond = staticmethod(harness.content_chunk_reply)
+
     @classmethod
     def setUpClass(cls):
         if not os.environ.get(harness.BINARY_ENV):
-            harness.boundary("BOUNDARY: content-chunk proof needs an explicitly selected manifest build")
+            harness.boundary("BOUNDARY: chat conversion proof needs an explicitly selected manifest build")
         from test_gateway_keyed_compat import KeyedTLS
         import test_openai_compat_keyed as keyed
         cls.keyless = harness.GatewayHarness(upstream_factory=lambda path: harness.FakeUpstream(
-            path, respond=harness.content_chunk_reply))
+            path, respond=cls.respond))
         cls.addClassCleanup(cls.keyless.close)
-        cls.keyed = KeyedTLS(respond=harness.content_chunk_reply)
+        cls.keyed = KeyedTLS(respond=cls.respond)
         cls.addClassCleanup(cls.keyed.close)
         cls.routes = (("keyless", cls.keyless, "gwtest-compat-plain"),
                       ("keyed", cls.keyed.gateway, keyed.KEYED_KEY))
@@ -614,6 +617,356 @@ class ContentChunkGoldenTests(_ContentChunkFixture, unittest.TestCase):
                         f"native:{alias}:{stream}"].encode())
         if self._outcome.success:
             record("MG2", status="passed", cases=6, messages_and_responses_untouched=True)
+
+
+def tool_integrity_deltas(mode):
+    """Independent wire stimuli; indexes are absent, not null/zero substitutes."""
+    def call(identity=None, name=None, arguments="", index=None):
+        value = {"function": {"arguments": arguments}}
+        if identity is not None:
+            value.update(id=identity, type="function")
+        if name is not None:
+            value["function"]["name"] = name
+        if index is not None:
+            value["index"] = index
+        return {"tool_calls": [value]}
+
+    a = lambda index=None: call("call_gwtest_a", "gwtest_tool_a", '{"k":"a"}', index)
+    b = lambda index=None: call("call_gwtest_b", "gwtest_tool_b", '{"k":"b"}', index)
+    if mode == "omitted":
+        return [a(), b()]
+    if mode == "mixed_forward":
+        # Array position 1 and explicit index 1 name different calls.
+        return [{"tool_calls": [a(1)["tool_calls"][0], b()["tool_calls"][0]]}]
+    if mode == "mixed_reverse":
+        return [a(), b(0)]
+    if mode == "stable_id":
+        # The explicit continuation may not rewrite the announced A identity.
+        # Its attempted B rewrite must not make the later omitted B join A.
+        return [call("call_gwtest_a", "gwtest_tool_a", '{"k":', 0),
+                call("call_gwtest_b", arguments='"a"}', index=0), b()]
+    indexes = {"explicit_continue": (0, 0), "omitted_continue": (None, None),
+               "omit_to_explicit": (None, 0), "explicit_to_omit": (0, None)}
+    first, second = indexes[mode]
+    return [call("call_gwtest_a", "gwtest_tool_a", '{"k":', first),
+            call(arguments='"a"}', index=second)]
+
+
+def tool_integrity_reply(path, body, raw, _headers=None):
+    """Chat responses only, with literal calls, terminal reasons and usage."""
+    if not path.endswith("/chat/completions"):
+        return 404, "application/json", b'{"error":"unexpected tool fixture path"}'
+    modes = re.findall(rb"gwtest-mode=([a-z0-9_]+)", raw)
+    mode = modes[-1].decode() if modes else "omitted"
+    base = {"id": "chatcmpl_tool_fixture", "model": body["model"], "created": 1}
+    usage = {"prompt_tokens": 11, "completion_tokens": 4, "total_tokens": 15}
+    if not body.get("stream"):
+        _, encoding, finish = mode.split("_", 2)
+        call = {"id": "call_gwtest_a", "type": "function",
+                "function": {"name": "gwtest_tool_a", "arguments": '{"k":"a"}'}}
+        message = {"role": "assistant", "content": None, "tool_calls": [call]}
+        if encoding == "content":
+            message = {"role": "assistant", "content": [{"type": "tool_calls", "tool_calls": [call]}]}
+        elif encoding == "text":
+            message = {"role": "assistant", "content": "answer"}
+        elif encoding != "top":
+            raise AssertionError("unknown tool fixture encoding")
+        choice = {"index": 0, "message": message}
+        if finish != "missing":
+            choice["finish_reason"] = {"stop": "stop", "empty": "", "null": None,
+                "length": "length", "filter": "content_filter", "tools": "tool_calls"}[finish]
+        return 200, "application/json", json.dumps({**base, "object": "chat.completion",
+            "choices": [choice], "usage": usage}).encode()
+    chunks = [{**base, "object": "chat.completion.chunk", "choices": [
+        {"index": 0, "delta": delta, "finish_reason": None}]}
+        for delta in [{"role": "assistant"}, *tool_integrity_deltas(mode)]]
+    chunks.extend([{**base, "choices": [{"index": 0, "delta": {}, "finish_reason": "tool_calls"}]},
+                   {**base, "choices": [], "usage": usage}])
+    return 200, "text/event-stream", b"".join(
+        b"data: " + json.dumps(chunk).encode() + b"\n\n" for chunk in chunks) + b"data: [DONE]\n\n"
+
+
+def tool_integrity_sse_events(raw):
+    """Validate the frozen gateway framing, not the full permissive SSE grammar.
+
+    Each frame has exactly `event: <type>` then one `data: <JSON object>`
+    record, followed by an empty terminating line. Comments, id/retry records,
+    multiline data and extra empty frames are outside this fixture contract.
+    LF and CRLF (also mixed) are accepted; bare CR is never normalized away.
+    Escaped CR inside JSON remains payload, parsed by the existing strict loader.
+    """
+    events, records = [], []
+    offset = 0
+    while offset < len(raw):
+        end = raw.find(b"\n", offset)
+        if end < 0:
+            raise AssertionError("tool SSE: unterminated line/frame")
+        line, offset = raw[offset:end], end + 1
+        if line.endswith(b"\r"):
+            line = line[:-1]  # consume only the CR belonging to this CRLF
+        if b"\r" in line:
+            raise AssertionError("tool SSE: bare CR in frame")
+        if line:
+            records.append(line)
+            continue
+        if (len(records) != 2 or not records[0].startswith(b"event: ")
+                or not records[1].startswith(b"data: ")):
+            raise AssertionError("tool SSE: expected one event and one data record per frame")
+        label = records[0][7:]
+        if not re.fullmatch(rb"[a-z][a-z0-9_]*", label):
+            raise AssertionError("tool SSE: invalid event label")
+        try:
+            event = strict_json.loads(records[1][6:])
+        except strict_json.StrictJSONError as error:
+            raise AssertionError("tool SSE: invalid JSON payload") from error
+        if not isinstance(event, dict) or event.get("type") != label.decode("ascii"):
+            raise AssertionError("tool SSE: event label differs from JSON type")
+        events.append(event)
+        records = []
+    if records or not events:
+        raise AssertionError("tool SSE: empty stream or incomplete frame boundary")
+    return events
+
+
+class ToolCallIntegrityTests(_ContentChunkFixture, unittest.TestCase):
+    """Actual keyed TLS and rendered keyless Messages-to-chat conversions."""
+    respond = staticmethod(tool_integrity_reply)
+    A = {"type": "tool_use", "id": "call_gwtest_a", "name": "gwtest_tool_a", "input": {"k": "a"}}
+    B = {"type": "tool_use", "id": "call_gwtest_b", "name": "gwtest_tool_b", "input": {"k": "b"}}
+
+    def check_reply(self, gateway, alias, mode, *, stream, expected, reason):
+        from test_gateway_contracts import reconstructed_blocks
+
+        before = len(gateway.upstream.hits)
+        tools = [{"name": name, "input_schema": {"type": "object", "properties": {"k": {"type": "string"}}}}
+                 for name in ("gwtest_tool_a", "gwtest_tool_b")]
+        reply = gateway.request(alias, stream=stream, mode=mode, body={"tools": tools})
+        self.assertEqual(reply.status, 200)
+        self.assertEqual(len(reply.hits), 1)
+        self.assertEqual(len(gateway.upstream.hits), before + 1, "extra or unattributed fake-upstream request")
+        self.assertEqual(reply.hits, gateway.upstream.hits[before:])
+        self.assertEqual(reply.hits[0].method, "POST")
+        self.assertTrue(reply.hits[0].path.endswith("/chat/completions"))
+        self.assertEqual(gateway.upstream.unexpected, 0)
+        if stream:
+            events = tool_integrity_sse_events(reply.raw)
+            self.assertEqual(reply.events(), events, "normalized events differ from validated raw frames")
+            self.assertEqual(events[0]["type"], "message_start")
+            self.assertIsNone(events[0]["message"]["stop_reason"])
+            self.assertEqual(events[0]["message"]["usage"]["output_tokens"], 0)
+            self.assertEqual([e["type"] for e in events].count("message_start"), 1)
+            self.assertEqual([e["type"] for e in events].count("message_stop"), 1)
+            self.assertEqual([e["type"] for e in events[-2:]], ["message_delta", "message_stop"])
+            terminal, = [e for e in events if e["type"] == "message_delta"]
+            self.assertEqual(terminal["delta"]["stop_reason"], reason)
+            self.assertEqual(terminal["usage"], {"input_tokens": 11, "output_tokens": 4})
+            opened, indexes, stops = None, [], []
+            for event in events:
+                if event["type"] == "content_block_start":
+                    self.assertIsNone(opened, "overlapping converted blocks")
+                    opened = event["index"]
+                    indexes.append(opened)
+                elif event["type"] == "content_block_delta":
+                    self.assertIsNotNone(opened)
+                    self.assertEqual(event["index"], opened)
+                elif event["type"] == "content_block_stop":
+                    self.assertIsNotNone(opened)
+                    self.assertEqual(event["index"], opened)
+                    stops.append(opened)
+                    opened = None
+            self.assertIsNone(opened)
+            self.assertEqual(indexes, list(range(len(expected))))
+            self.assertEqual(stops, indexes)
+            blocks = reconstructed_blocks(SimpleNamespace(events=lambda: events))
+            for block in blocks:
+                if block["type"] == "tool_use":
+                    block["input"] = json.loads(block.pop("partial_json"))
+        else:
+            message = reply.json()
+            self.assertEqual(message["stop_reason"], reason)
+            self.assertEqual(message["usage"], {"input_tokens": 11, "output_tokens": 4})
+            blocks = message["content"]
+        self.assertEqual(blocks, expected)
+
+    def test_distinct_omitted_index_calls(self):
+        for route, gateway, alias in self.routes:
+            for mode in ("omitted", "mixed_forward", "mixed_reverse"):
+                with self.subTest(route=route, encoding=mode):
+                    self.check_reply(gateway, alias, mode, stream=True, expected=[self.A, self.B], reason="tool_use")
+        if self._outcome.success:
+            record("TI1", status="passed", routes=2, cases=6, upstream_hits=6, distinct_calls=2)
+
+    def test_announced_tool_identity_is_stable(self):
+        for route, gateway, alias in self.routes:
+            with self.subTest(route=route):
+                self.check_reply(gateway, alias, "stable_id", stream=True, expected=[self.A, self.B], reason="tool_use")
+        if self._outcome.success:
+            record("TI2", status="passed", routes=2, cases=2, upstream_hits=2, announced_identity_stable=True)
+
+    def test_nonstream_converted_tools_override_ordinary_or_absent_finish(self):
+        for route, gateway, alias in self.routes:
+            for encoding in ("top", "content"):
+                for finish in ("stop", "missing", "empty", "null"):
+                    with self.subTest(route=route, encoding=encoding, finish=finish):
+                        self.check_reply(gateway, alias, f"terminal_{encoding}_{finish}", stream=False,
+                                         expected=[self.A], reason="tool_use")
+        if self._outcome.success:
+            record("TI3", status="passed", routes=2, encodings=2, cases=16, upstream_hits=16)
+
+    def test_explicit_and_mixed_continuations_remain_one_call(self):
+        for route, gateway, alias in self.routes:
+            for mode in ("explicit_continue", "omitted_continue", "omit_to_explicit", "explicit_to_omit"):
+                with self.subTest(route=route, encoding=mode):
+                    self.check_reply(gateway, alias, mode, stream=True, expected=[self.A], reason="tool_use")
+        if self._outcome.success:
+            record("TIC1", status="passed", routes=2, cases=8, upstream_hits=8, continuation_preserved=True)
+
+    def test_text_only_and_explicit_terminal_precedence_are_unchanged(self):
+        cases = [(encoding, finish, reason, [self.A]) for encoding in ("top", "content")
+                 for finish, reason in (("length", "max_tokens"), ("filter", "end_turn"), ("tools", "tool_use"))]
+        cases += [("text", finish, reason, [{"type": "text", "text": "answer"}]) for finish, reason in (
+            ("stop", "end_turn"), ("missing", "end_turn"), ("empty", "end_turn"), ("null", "end_turn"),
+            ("length", "max_tokens"), ("filter", "end_turn"))]
+        for route, gateway, alias in self.routes:
+            for encoding, finish, reason, expected in cases:
+                with self.subTest(route=route, encoding=encoding, finish=finish):
+                    self.check_reply(gateway, alias, f"terminal_{encoding}_{finish}", stream=False,
+                                     expected=expected, reason=reason)
+        if self._outcome.success:
+            record("TIC2", status="passed", routes=2, cases=24, upstream_hits=24, explicit_precedence=True)
+
+
+class ToolCallSSEFramingTests(unittest.TestCase):
+    """Pure wire controls: no gateway creation, process or serving evidence."""
+
+    def setUp(self):
+        self.events = [
+            {"type": "message_start", "message": {"id": "msg_fixture", "type": "message", "role": "assistant",
+                "model": "fixture", "content": [], "stop_reason": None, "stop_sequence": None,
+                "usage": {"input_tokens": 11, "output_tokens": 0}}},
+            {"type": "content_block_start", "index": 0, "content_block": {
+                "type": "tool_use", "id": "call_gwtest_a", "name": "gwtest_tool_a", "input": {}}},
+            {"type": "content_block_delta", "index": 0, "delta": {
+                "type": "input_json_delta", "partial_json": '{"k":"a"}'}},
+            {"type": "content_block_stop", "index": 0},
+            {"type": "message_delta", "delta": {"stop_reason": "tool_use", "stop_sequence": None},
+                "usage": {"input_tokens": 11, "output_tokens": 4}},
+            {"type": "message_stop"},
+        ]
+        self.frames = [harness.sse_frame(event["type"], event) for event in self.events]
+        self.raw = b"".join(self.frames)
+        self.helper = ToolCallIntegrityTests("test_distinct_omitted_index_calls")
+
+    def gateway_for(self, raw):
+        hit = SimpleNamespace(method="POST", path="/fixture/chat/completions")
+        upstream = SimpleNamespace(hits=[], unexpected=0)
+        reply = harness.Reply(200, {"content-type": "text/event-stream"}, raw, hits=[hit])
+        def request(*_args, **_kwargs):
+            upstream.hits.append(hit)
+            return reply
+        return SimpleNamespace(upstream=upstream, request=request), reply
+
+    def check_serving_helper(self, gateway):
+        self.helper.check_reply(gateway, "fixture", "omitted", stream=True,
+                                expected=[ToolCallIntegrityTests.A], reason="tool_use")
+
+    def test_lf_crlf_and_mixed_line_endings_preserve_complete_frames(self):
+        for raw in (self.raw, self.raw.replace(b"\n", b"\r\n"),
+                    self.raw.replace(b"\ndata: ", b"\r\ndata: ")):
+            with self.subTest(raw_prefix=raw[:40]):
+                self.assertEqual(tool_integrity_sse_events(raw), self.events)
+                self.assertEqual(harness.Reply(200, {}, raw).events(), self.events)
+
+    def test_escaped_cr_stays_json_payload_in_lf_and_crlf_frames(self):
+        event = {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "before\rafter"}}
+        raw = harness.sse_frame(event["type"], event)
+        self.assertIn(b"\\r", raw)
+        for escaped in (raw, raw.replace(b"\\r", b"\\u000d")):
+            for framed in (escaped, escaped.replace(b"\n", b"\r\n")):
+                with self.subTest(raw=framed):
+                    self.assertEqual(tool_integrity_sse_events(framed), [event])
+
+    def test_missing_merged_premature_and_incomplete_boundaries_are_rejected(self):
+        cases = {
+            "empty": b"", "merged": self.raw.replace(b"\n\n", b"\n", 1),
+            "all_merged": self.raw.replace(b"\n\n", b"\n"),
+            "premature": self.raw.replace(b"\ndata: ", b"\n\ndata: ", 1),
+            "missing_last_blank": self.raw[:-1], "unterminated_data": self.raw[:-2],
+            "unfinished_suffix": self.raw + b"event: message_stop\n",
+            "leading_blank": b"\n" + self.raw, "extra_blank": self.raw + b"\n",
+            "whitespace_delimiter": self.raw.replace(b"\n\n", b"\n \n", 1),
+            "bare_cr_delimiters": self.raw.replace(b"\n", b"\r"),
+            "bare_cr_boundary": self.raw.replace(b"\n\n", b"\r\r", 1),
+            "cr_cr_lf": self.raw.replace(b"\n", b"\r\r\n"),
+            "crlf_missing_last_blank": self.raw.replace(b"\n", b"\r\n")[:-2],
+        }
+        for name, raw in cases.items():
+            with self.subTest(case=name), self.assertRaisesRegex(AssertionError, "tool SSE:"):
+                tool_integrity_sse_events(raw)
+
+    def test_each_frame_requires_exactly_one_matching_event_then_one_data_record(self):
+        event, data = self.frames[-1][:-2].split(b"\n")
+        cases = {
+            "missing_event": [data], "missing_data": [event],
+            "duplicate_event": [event, event, data], "duplicate_data": [event, data, data],
+            "reversed": [data, event], "wrong_label": [b"event: message_delta", data],
+            "empty_label": [b"event: ", data], "padded_label": [event + b" ", data],
+            "empty_data": [event, b"data: "],
+            "missing_event_space": [event.replace(b"event: ", b"event:"), data],
+            "missing_data_space": [event, data.replace(b"data: ", b"data:")],
+            "comment": [b": keepalive", event, data], "id": [b"id: 1", event, data],
+            "retry": [b"retry: 100", event, data],
+            "multiline_data": [event, b'data: {"type":', b'data: "message_stop"}'],
+        }
+        for name, records in cases.items():
+            with self.subTest(case=name), self.assertRaisesRegex(AssertionError, "tool SSE:"):
+                tool_integrity_sse_events(b"\n".join(records) + b"\n\n")
+
+    def test_malformed_or_ambiguous_json_payloads_are_rejected(self):
+        payloads = (b"{", b'{"type":"message_stop"}{}', b'{"type":"message_stop","type":"message_stop"}',
+                    b'{"type":"message_stop","n":NaN}', b'{"type":"message_stop","n":1e999}',
+                    b'{"type":"message_stop","text":"before\rafter"}', b'{"type":"message_stop","text":"\xff"}',
+                    b'{"not_type":"message_stop"}', b'{"type":7}', b"[]", b'"message_stop"', b"null", b"[DONE]")
+        for payload in payloads:
+            with self.subTest(payload=payload), self.assertRaisesRegex(AssertionError, "tool SSE:"):
+                tool_integrity_sse_events(b"event: message_stop\ndata: " + payload + b"\n\n")
+
+    def test_serving_helper_rejects_raw_faults_before_any_normalized_consumer(self):
+        from unittest import mock
+        import test_gateway_contracts as contracts
+
+        for raw in (self.raw.replace(b"\n\n", b"\n", 1),
+                    self.raw.replace(b"event: message_start", b"event: message_delta", 1)):
+            gateway, reply = self.gateway_for(raw)
+            reply.events = mock.Mock(side_effect=AssertionError("normalized too soon"))
+            with self.subTest(raw_prefix=raw[:40]), mock.patch.object(contracts, "reconstructed_blocks") as reconstruct:
+                with self.assertRaisesRegex(AssertionError, "tool SSE:"):
+                    self.check_serving_helper(gateway)
+                reply.events.assert_not_called()
+                reconstruct.assert_not_called()
+
+    def test_serving_helper_rejects_a_different_normalized_interpretation(self):
+        from unittest import mock
+        import test_gateway_contracts as contracts
+
+        gateway, reply = self.gateway_for(self.raw)
+        reply.events = mock.Mock(return_value=list(reversed(self.events)))
+        with mock.patch.object(contracts, "reconstructed_blocks") as reconstruct:
+            with self.assertRaisesRegex(AssertionError, "normalized events differ"):
+                self.check_serving_helper(gateway)
+            reconstruct.assert_not_called()
+
+    def test_serving_helper_reconstructs_only_the_validated_events(self):
+        from unittest import mock
+
+        for raw in (self.raw, self.raw.replace(b"\n", b"\r\n")):
+            gateway, reply = self.gateway_for(raw)
+            reply.events = mock.Mock(wraps=reply.events)
+            with self.subTest(raw_prefix=raw[:40]):
+                self.check_serving_helper(gateway)
+                # Reconstruction receives validated events, not a second parse
+                # through Reply.events(), whose boundaries/labels are lossy.
+                reply.events.assert_called_once_with()
 
 
 if __name__ == "__main__":

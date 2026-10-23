@@ -2647,21 +2647,44 @@ use-max-completion-tokens are not exposed. `docs/providers/openai-compatible.md`
 states the user-facing caveats.
 
 Audit=true is guarded by `tests/fixtures/keyed-compat-audit.json` and
-`test_packaging.KeyedAuditInvariantTests`: full ordered basename@sha256 manifest
-(series order, 22 entries numbered 1–10 and 12–23), mandatory 3/9/10,
-no 11, build definition, recipe and build tool,
-source/vendor, client and exact whole-file relevant-source identities plus
-complete core/audit/client/`J1` proof. The fixture is test provenance, never runtime policy. Closed and
-absent flags remain regression inputs; changing the flag creates no operator state.
-Any listed-source change requires fresh complete keyed proof and fixture refresh,
-or audit=false; patch basenames/version equality alone are insufficient.
-**Available in this release:** the regenerated complete proof passes all 34
-required rows (5 core, 11 audit, 9 client and 9 journeys) against the 22-patch
-gateway and pinned client. The shipped flag is true. Source paths in the
-fixture are repository-relative; immutable store paths and binary digests
-remain exact. The package-containment journey checks that the standalone
-package payload excludes operator credentials and grants. It replaces the
-removed module-export surface, not any route-safety row.
+`test_packaging.KeyedAuditInvariantTests`: full ordered basename@sha256 manifest,
+explicit reviewed admission ids, mandatory 3/9/10, exclusions 11/14 on 8.0.33,
+build definition, recipe and build tool, source/vendor, client and exact
+whole-file relevant-source identities plus complete core/audit/client/`J1` proof.
+`PatchAdmissionMappingTests` checks those source mappings independently of stale
+full proof. The historical 7.3.15 shape is 1–10, 12–23. The 8.0.33 baseline is
+B = 1–10, 12, 13, 15–25; the only additional supported helper shapes are B+26
+(the separately planned output-cap tail) or B+29, never both. 26–28 remain
+reservations, not retired ids. Caller labels or equal series lengths cannot
+substitute identities. Recipe hashes must match actual patch bytes, ordered
+catalog and packaged contract; admission 29 also pins its reviewed SHA256
+`914a4c538e0a2ff8464e22141d75ccfcd371fcec10afee09f45aa94f9467436f`.
+
+The current source set stages `cli-proxy-api-tool-call-integrity.patch` as 29
+on the unchanged 8.0.33 source/toolchain/vendor pins. It repairs distinct
+omitted-index calls, announced call identity and non-stream converted-tool
+terminal reasons on keyed and keyless Messages-to-chat routes. Ownership:
+`ToolCallIntegrityTests` TI1/TI2/TI3 in `tests/test_gateway_patches.py`, with
+explicit/mixed continuation and terminal-precedence controls TIC1/TIC2 and
+existing MC1/MC2/MG1/MG2 content-chunk controls. Its golden hunk edits
+`internal/translator/openai/claude/openai_claude_content_goldens_test.go`, created
+by 22: `_gateway_harness.PATCH_DEPENDENCIES` declares 29→22. Omission of 22 uses
+{22,29} compared with dependent-only {29}; failed application is not own-red.
+No production patch was changed to add these serving tests.
+
+This is source staging, not fresh gateway execution or release acceptance.
+Fresh preparation/builds, notices/inventory/SBOM derivation, complete behavioral
+omission/dependency proof and keyed proof remain required. The audit flag stays
+true during staging; stale proof is not rewritten or hidden by closing the flag.
+The existing 34-row proof (5 core, 11 audit, 9 client and 9 journeys) describes
+the earlier 22-patch release, not this source set. The fixture is test provenance,
+never runtime policy. Closed and absent flags remain regression inputs; changing
+the flag creates no operator state. Any listed-source change requires fresh
+complete keyed proof and fixture refresh; basenames/version equality alone are
+insufficient. Source paths in the fixture are repository-relative; immutable
+store paths and binary digests remain exact. The package-containment journey
+checks that the standalone package payload excludes operator credentials and
+grants. It replaces the removed module-export surface, not any route-safety row.
 `tests/_gateway_harness.py --validate-keyed-evidence DIR` validates gateway and
 client evidence; the complete inventory also requires all nine journeys.
 The binding tests check the intact open proof before mutation controls, so

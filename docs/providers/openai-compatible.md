@@ -141,6 +141,18 @@ choose and bind them as leads or agents; the badge and diagnostics are optional.
   only; image requests and Responses-API requests are outside that
   promise.
 
+### Staged converter repair
+
+The staged gateway source keeps distinct tool calls separate when the upstream
+omits their indexes, preserves an already announced call identity, and returns
+`tool_use` for converted tools with ordinary or missing non-stream finish
+reasons. Explicit truncation (`length` → `max_tokens`) and filtering keep their
+existing precedence. This does not remove the translation limits above.
+
+Fresh built-gateway keyed/keyless checks and release acceptance for this source
+set are still pending; the earlier complete compatibility proof is not proof of
+these new bytes. No live-provider result is claimed.
+
 Qualification checks forced and automatic tool use separately; a failure
 is never retried with a weaker tool contract.
 

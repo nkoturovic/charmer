@@ -33,7 +33,8 @@
       "cli-proxy-api-openai-content-chunks.patch",
       "cli-proxy-api-charmer-model-ids.patch",
       "cli-proxy-api-access-log-path-quoting.patch",
-      "cli-proxy-api-codex-refresh-lead.patch"
+      "cli-proxy-api-codex-refresh-lead.patch",
+      "cli-proxy-api-tool-call-integrity.patch"
     ],
     "model_discovery": "disabled",
     "renderer": "restricted-yaml-v1",

@@ -164,6 +164,11 @@
       "basename": "cli-proxy-api-codex-refresh-lead.patch",
       "sha256": "dfd433f757e0dd22eb423f51e6bc4ed7049caa3dc358c54bbae9330e13e15a1c",
       "admitted": true
+    },
+    {
+      "basename": "cli-proxy-api-tool-call-integrity.patch",
+      "sha256": "914a4c538e0a2ff8464e22141d75ccfcd371fcec10afee09f45aa94f9467436f",
+      "admitted": true
     }
   ],
   "candidates": [],

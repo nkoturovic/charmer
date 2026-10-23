@@ -150,6 +150,11 @@ PATCH_ROWS = {
     "cli-proxy-api-codex-refresh-lead.patch": (
         "tests.test_gateway_patches.PatchOmissionProbeTests.test_codex_refresh_lead",
     ),
+    "cli-proxy-api-tool-call-integrity.patch": (
+        "tests.test_gateway_patches.ToolCallIntegrityTests.test_distinct_omitted_index_calls",
+        "tests.test_gateway_patches.ToolCallIntegrityTests.test_announced_tool_identity_is_stable",
+        "tests.test_gateway_patches.ToolCallIntegrityTests.test_nonstream_converted_tools_override_ordinary_or_absent_finish",
+    ),
 }
 
 
@@ -157,6 +162,14 @@ PATCH_ROWS = {
 # discriminating rows: their bytes must stay green even when it is omitted.
 PATCH_CONTROL_ROWS = {
     "cli-proxy-api-openai-content-chunks.patch": (
+        "tests.test_gateway_patches.ContentChunkGoldenTests.test_legacy_chat_bytes",
+        "tests.test_gateway_patches.ContentChunkGoldenTests.test_native_route_bytes",
+    ),
+    "cli-proxy-api-tool-call-integrity.patch": (
+        "tests.test_gateway_patches.ToolCallIntegrityTests.test_explicit_and_mixed_continuations_remain_one_call",
+        "tests.test_gateway_patches.ToolCallIntegrityTests.test_text_only_and_explicit_terminal_precedence_are_unchanged",
+        "tests.test_gateway_patches.MistralContentChunkTests.test_streaming_content_chunks",
+        "tests.test_gateway_patches.MistralContentChunkTests.test_non_streaming_content_chunks",
         "tests.test_gateway_patches.ContentChunkGoldenTests.test_legacy_chat_bytes",
         "tests.test_gateway_patches.ContentChunkGoldenTests.test_native_route_bytes",
     ),
@@ -240,6 +253,12 @@ def gateway_check_selections():
 # longer compiles, when only the prerequisite is omitted (8.0.33 omission
 # matrix); "hunk" is that hunk's start line, 0 for a file the dependent adds.
 PATCH_DEPENDENCIES = {
+    "cli-proxy-api-tool-call-integrity.patch": {
+        "cli-proxy-api-openai-content-chunks.patch": {
+            "file": "internal/translator/openai/claude/openai_claude_content_goldens_test.go", "hunk": 21,
+            "reason": "the registered tool-reasoning golden adapted by 29 is in the test file created by 22",
+        },
+    },
     "cli-proxy-api-refresh-shutdown-join.patch": {
         "cli-proxy-api-credential-save-report.patch": {
             "file": "sdk/cliproxy/service_shutdown_test.go", "hunk": 0,
@@ -342,7 +361,7 @@ REQUIRED_EVIDENCE["tests.test_gateway_clamp"] = {
 
 
 REQUIRED_EVIDENCE["tests.test_gateway_patches"] = {
-    "patches": {"LO1", "LO2", "LO1-A", "LO3", "LO4", "M0", "M1", "M2", "M3", "M4", "M5", "M6", "M7", "AL1", "RL1", "ME1", "S1", "P1", "CS1", "CR1", "KS1", "AS1", "SC1", "ML1", "OM1", "CI1", "CI2", "CK1", "RS1", "MC1", "MC2", "MG1", "MG2", "CL1"},
+    "patches": {"LO1", "LO2", "LO1-A", "LO3", "LO4", "M0", "M1", "M2", "M3", "M4", "M5", "M6", "M7", "AL1", "RL1", "ME1", "S1", "P1", "CS1", "CR1", "KS1", "AS1", "SC1", "ML1", "OM1", "CI1", "CI2", "CK1", "RS1", "MC1", "MC2", "MG1", "MG2", "CL1", "TI1", "TI2", "TI3", "TIC1", "TIC2"},
 }
 
 
