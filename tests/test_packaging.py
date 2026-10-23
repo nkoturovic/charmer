@@ -73,10 +73,25 @@ def gate(name, document=None):
 # The files whose bytes define the gateway build: the recipe and the tool.
 RECIPE_FILES = ("gateway/UPSTREAM.json", "tools/build.py")
 
-# Admission ids are stable: a retired id is never reused. 11 is the
-# Retry-After candidate (never admitted), 14 plugin-host-locking (retired with
-# the 8.0.33 rebase); the tail patches are 24 and 25.
+# Admission ids are stable and never inferred from a patch's position or the
+# series length: 11 was never admitted, 14 retired with the 8.0.33 rebase and
+# 26-28 are reserved. The keyed proof numbers each shipped patch by this map.
 RETIRED_PATCH_NUMBERS = (11, 14)
+PATCH_IDS = {
+    "cli-proxy-api-loopback-oauth.patch": 1, "cli-proxy-api-kimi-claude-compat.patch": 2,
+    "cli-proxy-api-non-claude-cache-retention.patch": 3, "cli-proxy-api-management-readonly-allowlist.patch": 4,
+    "cli-proxy-api-watcher-parentdir.patch": 5, "cli-proxy-api-serve-after-initial-auth-load.patch": 6,
+    "cli-proxy-api-management-env-only.patch": 7, "cli-proxy-api-credential-save-report.patch": 8,
+    "cli-proxy-api-credentialed-redirects.patch": 9, "cli-proxy-api-openai-compat-keyed-safety.patch": 10,
+    "cli-proxy-api-auth-snapshot-locking.patch": 12, "cli-proxy-api-server-config-snapshot.patch": 13,
+    "cli-proxy-api-claude-metadata-locking.patch": 15, "cli-proxy-api-oauth-model-overlay.patch": 16,
+    "cli-proxy-api-no-antigravity-egress.patch": 17, "cli-proxy-api-codex-client-identity.patch": 18,
+    "cli-proxy-api-antigravity-loopback-callback.patch": 19, "cli-proxy-api-codex-api-key-safety.patch": 20,
+    "cli-proxy-api-refresh-shutdown-join.patch": 21, "cli-proxy-api-openai-content-chunks.patch": 22,
+    "cli-proxy-api-charmer-model-ids.patch": 23, "cli-proxy-api-access-log-path-quoting.patch": 24,
+    "cli-proxy-api-codex-refresh-lead.patch": 25, "cli-proxy-api-tool-call-integrity.patch": 29,
+    "cli-proxy-api-initial-registration.patch": 31,
+}
 
 
 class KeyedAuditInvariantTests(unittest.TestCase):
@@ -84,8 +99,9 @@ class KeyedAuditInvariantTests(unittest.TestCase):
 
     Source paths are repository-relative; immutable store identities remain
     exact. All current source checks use REPO_ROOT; neither operator state
-    nor host evidence is read. An open flag requires the complete current
-    proof, not just a matching gateway version or patch basename list.
+    nor host evidence is read. The shipped flag is true only with a current
+    proof, otherwise false: an open flag requires the complete current proof,
+    not just a matching gateway version or patch basename list.
     """
 
     def setUp(self):
@@ -143,15 +159,11 @@ class KeyedAuditInvariantTests(unittest.TestCase):
         self.assertEqual(build["ordered_manifest"], manifest)
         from charmer import qualify
         self.assertEqual(qualify.parse_gateway_contract(content("gateway-contract.json")), manifest)
-        # Series order numbers the patches with their stable admission ids.
-        # Retired ids are skipped: 11 (the never-admitted Retry-After
-        # candidate) and 14 (plugin-host-locking, redundant since 8.0.28), so
-        # 23 admitted patches are numbered 1-10, 12, 13, 15-25.
-        numbers = [number for number in range(1, len(identities) + len(RETIRED_PATCH_NUMBERS) + 1)
-                   if number not in RETIRED_PATCH_NUMBERS]
+        # Each shipped patch carries its reviewed admission id, never one
+        # inferred from its position or the series length.
+        self.assertLessEqual(set(names), set(PATCH_IDS))
         self.assertEqual(build["numbered_to_shipped"], [
-            {"number": number, "identity": identity} for number, identity in zip(numbers, identities)])
-        self.assertEqual(len(identities), len(numbers))
+            {"number": PATCH_IDS[name], "identity": identity} for name, identity in zip(names, identities)])
         self.assertEqual(fixture["required_patch_numbers"], [3, 9, 10])
         self.assertEqual(fixture["excluded_patch_numbers"], list(RETIRED_PATCH_NUMBERS))
         for index, name in ((2, "non-claude-cache-retention"), (8, "credentialed-redirects"),
@@ -489,7 +501,6 @@ class ManagementPinWiringTests(unittest.TestCase):
         text = (NIX_DIR / "gateway.nix").read_text()
         names = admitted_names()
         manifest = json.loads((RESOURCES_ROOT / "catalog" / "gateway.json").read_text())["gateway"]["patches"]
-        self.assertEqual(len(names), 23)
         self.assertEqual(names, manifest)
         # The applied series and the passthru export are the recipe's admitted
         # series, in order; gateway.nix carries no patch list of its own.
@@ -642,37 +653,8 @@ class CliProxyApiDerivationTests(unittest.TestCase):
         # retention patch's hunks are pinned to the sequentially patched
         # source, so the order is part of the contract. The gateway.json
         # manifest must carry the same ordered list (manifest parity).
-        applied = names
-        self.assertEqual(
-            applied,
-            [
-                "cli-proxy-api-loopback-oauth.patch",
-                "cli-proxy-api-kimi-claude-compat.patch",
-                "cli-proxy-api-non-claude-cache-retention.patch",
-                "cli-proxy-api-management-readonly-allowlist.patch",
-                "cli-proxy-api-watcher-parentdir.patch",
-                "cli-proxy-api-serve-after-initial-auth-load.patch",
-                "cli-proxy-api-management-env-only.patch",
-                "cli-proxy-api-credential-save-report.patch",
-                "cli-proxy-api-credentialed-redirects.patch",
-                "cli-proxy-api-openai-compat-keyed-safety.patch",
-                "cli-proxy-api-auth-snapshot-locking.patch",
-                "cli-proxy-api-server-config-snapshot.patch",
-                "cli-proxy-api-claude-metadata-locking.patch",
-                "cli-proxy-api-oauth-model-overlay.patch",
-                "cli-proxy-api-no-antigravity-egress.patch",
-                "cli-proxy-api-codex-client-identity.patch",
-                "cli-proxy-api-antigravity-loopback-callback.patch",
-                "cli-proxy-api-codex-api-key-safety.patch",
-                "cli-proxy-api-refresh-shutdown-join.patch",
-                "cli-proxy-api-openai-content-chunks.patch",
-                "cli-proxy-api-charmer-model-ids.patch",
-                "cli-proxy-api-access-log-path-quoting.patch",
-                "cli-proxy-api-codex-refresh-lead.patch",
-            ],
-        )
         manifest = json.loads((RESOURCES_ROOT / "catalog" / "gateway.json").read_text())
-        self.assertEqual(manifest["gateway"]["patches"], applied)
+        self.assertEqual(manifest["gateway"]["patches"], names)
         # The network-free regression gates are recipe records; the build
         # tool runs them in the flake's gate checks (never in the shipped
         # build), so the patched tests run inside a sandboxed build.

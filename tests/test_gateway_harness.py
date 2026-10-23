@@ -46,6 +46,75 @@ class PatchCoverageTests(unittest.TestCase):
                 self.assertFalse(loader.errors, name)
                 self.assertEqual(suite.countTestCases(), 1, name)
 
+    def test_control_rows_resolve_and_are_never_their_patch_rows(self):
+        import check_gateway_patch_revert as tool
+
+        self.assertLessEqual(set(harness.PATCH_CONTROL_ROWS), set(harness.PATCH_ROWS))
+        for patch, controls in harness.PATCH_CONTROL_ROWS.items():
+            for control in controls:
+                with self.subTest(patch=patch, control=control):
+                    loader = unittest.TestLoader()
+                    self.assertEqual(loader.loadTestsFromName(control).countTestCases(), 1)
+                    self.assertFalse(loader.errors, control)
+                    self.assertIn(control, tool.test_ids())
+                    self.assertNotIn(control, harness.PATCH_ROWS[patch])
+
+    def test_tool_fixture_requires_explicit_selection_before_gateway_creation(self):
+        from tests.test_gateway_patches import ToolCallIntegrityTests
+
+        for required in (False, True):
+            with self.subTest(required=required), mock.patch.dict(os.environ, {}, clear=True), \
+                    mock.patch.object(harness, "GatewayHarness") as create:
+                if required:
+                    os.environ[harness.REQUIRE_ENV] = "1"
+                with self.assertRaises(AssertionError if required else unittest.SkipTest):
+                    ToolCallIntegrityTests.setUpClass()
+                create.assert_not_called()
+
+    def test_tool_wire_stimuli_preserve_the_discriminating_differences(self):
+        from tests.test_gateway_patches import tool_integrity_deltas, tool_integrity_reply
+
+        omitted = tool_integrity_deltas("omitted")
+        self.assertEqual([row["tool_calls"][0]["id"] for row in omitted], ["call_gwtest_a", "call_gwtest_b"])
+        self.assertTrue(all("index" not in row["tool_calls"][0] for row in omitted))
+        mixed = tool_integrity_deltas("mixed_forward")[0]["tool_calls"]
+        self.assertEqual(mixed[0]["index"], 1)
+        self.assertNotIn("index", mixed[1])
+        stable = [row["tool_calls"][0] for row in tool_integrity_deltas("stable_id")]
+        self.assertEqual([row["id"] for row in stable], ["call_gwtest_a", "call_gwtest_b", "call_gwtest_b"])
+        self.assertEqual([row.get("index") for row in stable], [0, 0, None])
+        self.assertEqual(stable[0]["function"]["arguments"] + stable[1]["function"]["arguments"], '{"k":"a"}')
+        interleaved = [row["tool_calls"][0] for row in tool_integrity_deltas("omitted_interleaved")]
+        self.assertEqual([row["id"] for row in interleaved], ["call_gwtest_a", "call_gwtest_b"] * 2)
+        self.assertTrue(all("index" not in row for row in interleaved))
+        for mode in ("omitted", "mixed_forward", "mixed_reverse", "omitted_interleaved", "stable_id",
+                     "explicit_continue", "omitted_continue", "omit_to_explicit", "explicit_to_omit"):
+            status, kind, raw = tool_integrity_reply("/fixture/chat/completions", {"model": "fixture", "stream": True},
+                                                    ("gwtest-mode=" + mode).encode())
+            self.assertEqual((status, kind), (200, "text/event-stream"))
+            self.assertTrue(raw.endswith(b"data: [DONE]\n\n"))
+            frames = [json.loads(line[6:]) for line in raw.splitlines() if line.startswith(b"data: {")]
+            self.assertEqual(frames[-2]["choices"][0]["finish_reason"], "tool_calls")
+            self.assertEqual(frames[-1]["usage"], {"prompt_tokens": 11, "completion_tokens": 4, "total_tokens": 15})
+        for encoding in ("top", "content", "text"):
+            for finish, value in (("missing", None), ("null", None), ("empty", ""), ("stop", "stop"), ("other", "other"),
+                                  ("length", "length"), ("filter", "content_filter"), ("tools", "tool_calls")):
+                status, kind, raw = tool_integrity_reply("/fixture/chat/completions", {"model": "fixture"},
+                    f"gwtest-mode=terminal_{encoding}_{finish}".encode())
+                self.assertEqual((status, kind), (200, "application/json"))
+                choice = json.loads(raw)["choices"][0]
+                self.assertEqual("finish_reason" in choice, finish != "missing")
+                self.assertEqual(choice.get("finish_reason"), value)
+                message = choice["message"]
+                if encoding == "top":
+                    self.assertEqual(message["tool_calls"][0]["id"], "call_gwtest_a")
+                elif encoding == "content":
+                    self.assertEqual(message["content"][0]["tool_calls"][0]["id"], "call_gwtest_a")
+                    self.assertNotIn("tool_calls", message)
+                else:
+                    self.assertEqual(message["content"], "answer")
+                    self.assertNotIn("tool_calls", message)
+
 
 class AdmittedPatchSelectionTests(unittest.TestCase):
     def test_every_new_row_requires_explicit_selection_before_gateway_creation(self):
@@ -59,6 +128,43 @@ class AdmittedPatchSelectionTests(unittest.TestCase):
                     with self.assertRaises(AssertionError if required else unittest.SkipTest):
                         getattr(PatchOmissionProbeTests(name), name)()
                     create.assert_not_called()
+
+
+class FixtureCleanupTests(unittest.TestCase):
+    def test_patch_module_closes_the_shared_gateway_as_a_module_cleanup(self):
+        # A module cleanup runs before tools/test.py removes its workspace;
+        # the atexit backstop alone ran after it and failed on the gone root.
+        import tests.test_gateway_patches as patches
+
+        with mock.patch.object(unittest, "addModuleCleanup") as register:
+            patches.setUpModule()
+        register.assert_called_once_with(harness.close_main_harness)
+
+    def test_setup_failure_keeps_its_error_and_notes_a_failed_cleanup(self):
+        import check_gateway_patch_revert as tool
+
+        for cleanup in (None, FileNotFoundError("fixture root already removed")):
+            original = AssertionError(harness.REQUIRE_ENV + "=1: BOUNDARY: fixture setup refused")
+            created = []
+
+            def refuse(path, *_args, **_kwargs):
+                created.append(path)
+                raise original
+
+            with self.subTest(cleanup=cleanup), \
+                    mock.patch.object(harness, "find_gateway_binary", return_value=("/nix/store/fixture/bin/cli-proxy-api", "")), \
+                    mock.patch.object(harness.probe, "network_isolation_available", return_value=None), \
+                    mock.patch.object(harness, "ports", return_value=(1, 2)), \
+                    mock.patch.object(harness.state, "ensure_private_dir", side_effect=refuse), \
+                    mock.patch.object(harness.GatewayHarness, "close", side_effect=cleanup):
+                with self.assertRaises(AssertionError) as caught:
+                    harness.GatewayHarness()
+                self.addCleanup(os.rmdir, created[0])
+                self.assertIs(caught.exception, original)
+                self.assertTrue(tool.boundary_error((AssertionError, caught.exception, None)))
+                notes = getattr(caught.exception, "__notes__", [])
+                self.assertEqual(notes, [] if cleanup is None else
+                                 ["gateway fixture cleanup also failed: FileNotFoundError: fixture root already removed"])
 
 
 class ListenerHelperTests(unittest.TestCase):

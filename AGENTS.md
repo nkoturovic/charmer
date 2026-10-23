@@ -151,7 +151,7 @@ three response paths into text and unsigned thinking blocks, ignores
 `closed:true` as a block terminator, and keeps string, null and absent
 content byte-identical; unsupported chunks keep each path's earlier
 behavior (omission rows MC1/MC2). Signed Mistral history replay stays
-unsupported. The last patch, #23, keeps charmer's own names literal in the
+unsupported. #23 keeps charmer's own names literal in the
 Anthropic-format `/v1/models` listing (the one an `Anthropic-Version`
 request gets): upstream's `EnsureClaudeModelIDPrefix` lists every id outside
 `claude-` as `claude-fable-5-dd-` plus the id reversed, and now also leaves
@@ -159,7 +159,19 @@ request gets): upstream's `EnsureClaudeModelIDPrefix` lists every id outside
 its own selectors under their earlier prefix; every other id (`gpt-multi-*` included)
 stays cloaked, requests resolve either form as before, and the
 OpenAI-format listing is unchanged (Go gate `charmer-model-ids`,
-built-gateway row `CharmerModelListingTests` CL1). Refused
+built-gateway row `CharmerModelListingTests` CL1). #29 repairs tool calls on
+the keyed and keyless Messages-to-chat routes: calls whose upstream omits
+their index stay distinct (interleaved fragments follow their call's ID), an
+announced call keeps its ID, and a reply that converts tool calls ends with
+`tool_use`, streamed or not, unless the finish reason is `length` or
+`content_filter` (Go gate `tool-call-integrity`,
+built-gateway rows `ToolCallIntegrityTests` TI1–TI3 with controls TIC1/TIC2;
+it edits a golden file of #22, a declared `PATCH_DEPENDENCIES` edge). #31
+keeps a newly loaded credential's queued model registration when ordinary
+bookkeeping (a request result, refresh scheduling, cooldown or quota state)
+advances its generation first: it drops the generation-only skip and keeps the
+disabled and removed checks (omission row IR1, probe
+`TestOmissionInitialRegistration` in `tests/gateway_service_probe_test.go`). Refused
 credentialed redirects yield fixed local 502 `upstream redirect refused`, with
 no upstream body/Location or path-bearing refusal log. Keyed-compat safety is
 route-scoped to Claude `/v1/messages` → chat; compact, images and SDK
@@ -2647,21 +2659,25 @@ use-max-completion-tokens are not exposed. `docs/providers/openai-compatible.md`
 states the user-facing caveats.
 
 Audit=true is guarded by `tests/fixtures/keyed-compat-audit.json` and
-`test_packaging.KeyedAuditInvariantTests`: full ordered basename@sha256 manifest
-(series order, 22 entries numbered 1–10 and 12–23), mandatory 3/9/10,
-no 11, build definition, recipe and build tool,
-source/vendor, client and exact whole-file relevant-source identities plus
-complete core/audit/client/`J1` proof. The fixture is test provenance, never runtime policy. Closed and
-absent flags remain regression inputs; changing the flag creates no operator state.
-Any listed-source change requires fresh complete keyed proof and fixture refresh,
-or audit=false; patch basenames/version equality alone are insufficient.
-**Available in this release:** the regenerated complete proof passes all 34
-required rows (5 core, 11 audit, 9 client and 9 journeys) against the 22-patch
-gateway and pinned client. The shipped flag is true. Source paths in the
-fixture are repository-relative; immutable store paths and binary digests
-remain exact. The package-containment journey checks that the standalone
-package payload excludes operator credentials and grants. It replaces the
-removed module-export surface, not any route-safety row.
+`test_packaging.KeyedAuditInvariantTests`: the full ordered basename@sha256
+manifest (equal to the actual patch bytes, the catalog order and the packaged
+contract), each shipped patch numbered by its reviewed admission id
+(`test_packaging.PATCH_IDS`, never inferred from position or series length; 11
+and 14 are excluded, 26–28 reserved), mandatory 3/9/10, build definition,
+recipe and build tool, source/vendor, client and exact whole-file
+relevant-source identities plus complete core/audit/client/`J1` proof (34 rows:
+5 core, 11 audit, 9 client and 9 journeys). The shipped flag is true only with
+a current proof, otherwise false: any listed-source change requires a fresh
+complete keyed proof and fixture refresh, or audit=false; basenames/version
+equality alone are insufficient, and a stale proof is never rebound. Reopening
+the flag also restores the open-route wording of
+`docs/providers/openai-compatible.md` and `docs/quickstart.md`, which the docs
+tests check against the flag. The fixture is test provenance, never runtime
+policy. Closed and absent flags remain regression inputs; changing the flag
+creates no operator state. Source paths in the fixture are repository-relative; immutable
+store paths and binary digests remain exact. The package-containment journey
+checks that the standalone package payload excludes operator credentials and
+grants. It replaces the removed module-export surface, not any route-safety row.
 `tests/_gateway_harness.py --validate-keyed-evidence DIR` validates gateway and
 client evidence; the complete inventory also requires all nine journeys.
 The binding tests check the intact open proof before mutation controls, so

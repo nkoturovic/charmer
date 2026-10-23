@@ -20,6 +20,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/api"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/watcher"
 	sdkaccess "github.com/router-for-me/CLIProxyAPI/v8/sdk/access"
 	sdkauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/auth"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
@@ -203,6 +204,52 @@ func TestOmissionCodexRefreshLead(t *testing.T) {
 		"type": "codex", "refresh_token": "dummy-omission", "expired": time.Now().Add(95 * time.Hour).Format(time.RFC3339)}}
 	if _, has, need := coreauth.CodexOuterNeedsRefresh(auth, time.Now()); !has || !need {
 		t.Fatalf("codex credential 95h from expiry: has=%t need=%t, want a refresh", has, need)
+	}
+}
+
+// A request result recorded while a new credential's model registration is
+// queued advances its generation without changing what it registers. The
+// queued registration must still publish the credential's models.
+func TestOmissionInitialRegistration(t *testing.T) {
+	const id = "omission-initial-registration"
+	if modelRegistrationTaskHook != nil {
+		t.Fatal("model registration hook already set")
+	}
+	reg := GlobalModelRegistry()
+	reg.UnregisterClient(id)
+	manager := coreauth.NewManager(nil, nil, nil)
+	service := &Service{cfg: &config.Config{}, coreManager: manager}
+	var calls atomic.Int32
+	var queued, advanced uint64
+	// The hook runs once per queued task, after the task captured the
+	// credential and before it decides whether to register.
+	modelRegistrationTaskHook = func() {
+		if calls.Add(1) != 1 {
+			return
+		}
+		current, ok := manager.GetByID(id)
+		if !ok {
+			return
+		}
+		queued = current.Generation
+		manager.MarkResult(context.Background(), coreauth.Result{AuthID: id, Provider: current.Provider, Success: true,
+			CredentialVersion: current.CredentialVersion, RegistrationEpoch: current.RegistrationEpoch})
+		if next, ok := manager.GetByID(id); ok {
+			advanced = next.Generation
+		}
+	}
+	t.Cleanup(func() {
+		modelRegistrationTaskHook = nil
+		reg.UnregisterClient(id)
+	})
+	auth := &coreauth.Auth{ID: id, Provider: "codex", Status: coreauth.StatusActive}
+	service.handleAuthUpdate(coreauth.WithSkipPersist(context.Background()),
+		watcher.AuthUpdate{Action: watcher.AuthUpdateActionAdd, ID: id, Auth: auth})
+	if calls.Load() != 1 || queued == 0 || advanced <= queued {
+		t.Fatalf("request result between queueing and registration: tasks=%d generation %d -> %d", calls.Load(), queued, advanced)
+	}
+	if len(reg.GetModelsForClient(id)) == 0 {
+		t.Fatal("initial registration published no models after a request result advanced the generation")
 	}
 }
 

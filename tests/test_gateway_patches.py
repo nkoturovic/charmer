@@ -17,6 +17,12 @@ import _gateway_harness as harness
 MODULE = "tests.test_gateway_patches"
 
 
+def setUpModule():
+    # Close the shared gateway fixture with this module, before tools/test.py
+    # removes its private workspace; atexit would run after that removal.
+    unittest.addModuleCleanup(harness.close_main_harness)
+
+
 def tearDownModule():
     harness.EVIDENCE.finalize_module(MODULE)
 
@@ -356,6 +362,9 @@ class PatchOmissionProbeTests(unittest.TestCase):
     def test_codex_refresh_lead(self):
         self.check_probe("service", "TestOmissionCodexRefreshLead", "RL1")
 
+    def test_initial_registration(self):
+        self.check_probe("service", "TestOmissionInitialRegistration", "IR1")
+
 
 
 class CodexIdentityTests(unittest.TestCase):
@@ -526,16 +535,18 @@ class ContentChunkRouteInventoryTests(unittest.TestCase):
 
 
 class _ContentChunkFixture:
+    respond = staticmethod(harness.content_chunk_reply)
+
     @classmethod
     def setUpClass(cls):
         if not os.environ.get(harness.BINARY_ENV):
-            harness.boundary("BOUNDARY: content-chunk proof needs an explicitly selected manifest build")
+            harness.boundary("BOUNDARY: chat conversion proof needs an explicitly selected manifest build")
         from test_gateway_keyed_compat import KeyedTLS
         import test_openai_compat_keyed as keyed
         cls.keyless = harness.GatewayHarness(upstream_factory=lambda path: harness.FakeUpstream(
-            path, respond=harness.content_chunk_reply))
+            path, respond=cls.respond))
         cls.addClassCleanup(cls.keyless.close)
-        cls.keyed = KeyedTLS(respond=harness.content_chunk_reply)
+        cls.keyed = KeyedTLS(respond=cls.respond)
         cls.addClassCleanup(cls.keyed.close)
         cls.routes = (("keyless", cls.keyless, "gwtest-compat-plain"),
                       ("keyed", cls.keyed.gateway, keyed.KEYED_KEY))
@@ -614,6 +625,184 @@ class ContentChunkGoldenTests(_ContentChunkFixture, unittest.TestCase):
                         f"native:{alias}:{stream}"].encode())
         if self._outcome.success:
             record("MG2", status="passed", cases=6, messages_and_responses_untouched=True)
+
+
+def tool_integrity_deltas(mode):
+    """Independent wire stimuli; indexes are absent, not null/zero substitutes."""
+    def call(identity=None, name=None, arguments="", index=None):
+        value = {"function": {"arguments": arguments}}
+        if identity is not None:
+            value.update(id=identity, type="function")
+        if name is not None:
+            value["function"]["name"] = name
+        if index is not None:
+            value["index"] = index
+        return {"tool_calls": [value]}
+
+    a = lambda index=None: call("call_gwtest_a", "gwtest_tool_a", '{"k":"a"}', index)
+    b = lambda index=None: call("call_gwtest_b", "gwtest_tool_b", '{"k":"b"}', index)
+    if mode == "omitted":
+        return [a(), b()]
+    if mode == "mixed_forward":
+        # Array position 1 and explicit index 1 name different calls.
+        return [{"tool_calls": [a(1)["tool_calls"][0], b()["tool_calls"][0]]}]
+    if mode == "mixed_reverse":
+        return [a(), b(0)]
+    if mode == "stable_id":
+        # The explicit continuation may not rewrite the announced A identity.
+        # Its attempted B rewrite must not make the later omitted B join A.
+        return [call("call_gwtest_a", "gwtest_tool_a", '{"k":', 0),
+                call("call_gwtest_b", arguments='"a"}', index=0), b()]
+    if mode == "omitted_interleaved":
+        # Every fragment is at array position 0; the IDs name the calls.
+        return [call("call_gwtest_a", "gwtest_tool_a", '{"k":'), call("call_gwtest_b", "gwtest_tool_b", '{"k":'),
+                call("call_gwtest_a", arguments='"a"}'), call("call_gwtest_b", arguments='"b"}')]
+    indexes = {"explicit_continue": (0, 0), "omitted_continue": (None, None),
+               "omit_to_explicit": (None, 0), "explicit_to_omit": (0, None)}
+    first, second = indexes[mode]
+    return [call("call_gwtest_a", "gwtest_tool_a", '{"k":', first),
+            call(arguments='"a"}', index=second)]
+
+
+def tool_integrity_reply(path, body, raw, _headers=None):
+    """Chat responses only, with literal calls, terminal reasons and usage."""
+    if not path.endswith("/chat/completions"):
+        return 404, "application/json", b'{"error":"unexpected tool fixture path"}'
+    modes = re.findall(rb"gwtest-mode=([a-z0-9_]+)", raw)
+    mode = modes[-1].decode() if modes else "omitted"
+    base = {"id": "chatcmpl_tool_fixture", "model": body["model"], "created": 1}
+    usage = {"prompt_tokens": 11, "completion_tokens": 4, "total_tokens": 15}
+    if not body.get("stream"):
+        _, encoding, finish = mode.split("_", 2)
+        call = {"id": "call_gwtest_a", "type": "function",
+                "function": {"name": "gwtest_tool_a", "arguments": '{"k":"a"}'}}
+        message = {"role": "assistant", "content": None, "tool_calls": [call]}
+        if encoding == "content":
+            message = {"role": "assistant", "content": [{"type": "tool_calls", "tool_calls": [call]}]}
+        elif encoding == "text":
+            message = {"role": "assistant", "content": "answer"}
+        elif encoding != "top":
+            raise AssertionError("unknown tool fixture encoding")
+        choice = {"index": 0, "message": message}
+        if finish != "missing":
+            choice["finish_reason"] = {"stop": "stop", "empty": "", "null": None, "other": "other",
+                "length": "length", "filter": "content_filter", "tools": "tool_calls"}[finish]
+        return 200, "application/json", json.dumps({**base, "object": "chat.completion",
+            "choices": [choice], "usage": usage}).encode()
+    chunks = [{**base, "object": "chat.completion.chunk", "choices": [
+        {"index": 0, "delta": delta, "finish_reason": None}]}
+        for delta in [{"role": "assistant"}, *tool_integrity_deltas(mode)]]
+    chunks.extend([{**base, "choices": [{"index": 0, "delta": {}, "finish_reason": "tool_calls"}]},
+                   {**base, "choices": [], "usage": usage}])
+    return 200, "text/event-stream", b"".join(
+        b"data: " + json.dumps(chunk).encode() + b"\n\n" for chunk in chunks) + b"data: [DONE]\n\n"
+
+
+class ToolCallIntegrityTests(_ContentChunkFixture, unittest.TestCase):
+    """Actual keyed TLS and rendered keyless Messages-to-chat conversions."""
+    respond = staticmethod(tool_integrity_reply)
+    A = {"type": "tool_use", "id": "call_gwtest_a", "name": "gwtest_tool_a", "input": {"k": "a"}}
+    B = {"type": "tool_use", "id": "call_gwtest_b", "name": "gwtest_tool_b", "input": {"k": "b"}}
+
+    def check_reply(self, gateway, alias, mode, *, stream, expected, reason):
+        from test_gateway_contracts import reconstructed_blocks
+
+        before = len(gateway.upstream.hits)
+        tools = [{"name": name, "input_schema": {"type": "object", "properties": {"k": {"type": "string"}}}}
+                 for name in ("gwtest_tool_a", "gwtest_tool_b")]
+        reply = gateway.request(alias, stream=stream, mode=mode, body={"tools": tools})
+        self.assertEqual(reply.status, 200)
+        self.assertEqual(len(reply.hits), 1)
+        self.assertEqual(len(gateway.upstream.hits), before + 1, "extra or unattributed fake-upstream request")
+        self.assertEqual(reply.hits, gateway.upstream.hits[before:])
+        self.assertEqual(reply.hits[0].method, "POST")
+        self.assertTrue(reply.hits[0].path.endswith("/chat/completions"))
+        self.assertEqual(gateway.upstream.unexpected, 0)
+        if stream:
+            events = reply.events()
+            self.assertEqual(events[0]["type"], "message_start")
+            self.assertIsNone(events[0]["message"]["stop_reason"])
+            self.assertEqual(events[0]["message"]["usage"]["output_tokens"], 0)
+            self.assertEqual([e["type"] for e in events].count("message_start"), 1)
+            self.assertEqual([e["type"] for e in events].count("message_stop"), 1)
+            self.assertEqual([e["type"] for e in events[-2:]], ["message_delta", "message_stop"])
+            terminal, = [e for e in events if e["type"] == "message_delta"]
+            self.assertEqual(terminal["delta"]["stop_reason"], reason)
+            self.assertEqual(terminal["usage"], {"input_tokens": 11, "output_tokens": 4})
+            opened, indexes, stops = None, [], []
+            for event in events:
+                if event["type"] == "content_block_start":
+                    self.assertIsNone(opened, "overlapping converted blocks")
+                    opened = event["index"]
+                    indexes.append(opened)
+                elif event["type"] == "content_block_delta":
+                    self.assertIsNotNone(opened)
+                    self.assertEqual(event["index"], opened)
+                elif event["type"] == "content_block_stop":
+                    self.assertIsNotNone(opened)
+                    self.assertEqual(event["index"], opened)
+                    stops.append(opened)
+                    opened = None
+            self.assertIsNone(opened)
+            self.assertEqual(indexes, list(range(len(expected))))
+            self.assertEqual(stops, indexes)
+            blocks = reconstructed_blocks(reply)
+            for block in blocks:
+                if block["type"] == "tool_use":
+                    block["input"] = json.loads(block.pop("partial_json"))
+        else:
+            message = reply.json()
+            self.assertEqual(message["stop_reason"], reason)
+            self.assertEqual(message["usage"], {"input_tokens": 11, "output_tokens": 4})
+            blocks = message["content"]
+        self.assertEqual(blocks, expected)
+
+    def test_distinct_omitted_index_calls(self):
+        for route, gateway, alias in self.routes:
+            for mode in ("omitted", "mixed_forward", "mixed_reverse", "omitted_interleaved"):
+                with self.subTest(route=route, encoding=mode):
+                    self.check_reply(gateway, alias, mode, stream=True, expected=[self.A, self.B], reason="tool_use")
+        if self._outcome.success:
+            record("TI1", status="passed", routes=2, cases=8, upstream_hits=8, distinct_calls=2)
+
+    def test_announced_tool_identity_is_stable(self):
+        for route, gateway, alias in self.routes:
+            with self.subTest(route=route):
+                self.check_reply(gateway, alias, "stable_id", stream=True, expected=[self.A, self.B], reason="tool_use")
+        if self._outcome.success:
+            record("TI2", status="passed", routes=2, cases=2, upstream_hits=2, announced_identity_stable=True)
+
+    def test_nonstream_converted_tools_override_ordinary_or_absent_finish(self):
+        for route, gateway, alias in self.routes:
+            for encoding in ("top", "content"):
+                for finish in ("stop", "missing", "empty", "null", "other"):
+                    with self.subTest(route=route, encoding=encoding, finish=finish):
+                        self.check_reply(gateway, alias, f"terminal_{encoding}_{finish}", stream=False,
+                                         expected=[self.A], reason="tool_use")
+        if self._outcome.success:
+            record("TI3", status="passed", routes=2, encodings=2, cases=20, upstream_hits=20)
+
+    def test_explicit_and_mixed_continuations_remain_one_call(self):
+        for route, gateway, alias in self.routes:
+            for mode in ("explicit_continue", "omitted_continue", "omit_to_explicit", "explicit_to_omit"):
+                with self.subTest(route=route, encoding=mode):
+                    self.check_reply(gateway, alias, mode, stream=True, expected=[self.A], reason="tool_use")
+        if self._outcome.success:
+            record("TIC1", status="passed", routes=2, cases=8, upstream_hits=8, continuation_preserved=True)
+
+    def test_text_only_and_explicit_terminal_precedence_are_unchanged(self):
+        cases = [(encoding, finish, reason, [self.A]) for encoding in ("top", "content")
+                 for finish, reason in (("length", "max_tokens"), ("filter", "end_turn"), ("tools", "tool_use"))]
+        cases += [("text", finish, reason, [{"type": "text", "text": "answer"}]) for finish, reason in (
+            ("stop", "end_turn"), ("missing", "end_turn"), ("empty", "end_turn"), ("null", "end_turn"),
+            ("other", "end_turn"), ("length", "max_tokens"), ("filter", "end_turn"))]
+        for route, gateway, alias in self.routes:
+            for encoding, finish, reason, expected in cases:
+                with self.subTest(route=route, encoding=encoding, finish=finish):
+                    self.check_reply(gateway, alias, f"terminal_{encoding}_{finish}", stream=False,
+                                     expected=expected, reason=reason)
+        if self._outcome.success:
+            record("TIC2", status="passed", routes=2, cases=26, upstream_hits=26, explicit_precedence=True)
 
 
 if __name__ == "__main__":

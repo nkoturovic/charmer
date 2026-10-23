@@ -28,11 +28,11 @@ Presets are vendors' documented endpoints, filled in for you (`charmer providers
 | `novita` (Novita AI) | [anthropic-compatible](anthropic-compatible.md#presets) | `NOVITA_API_KEY` | `https://api.novita.ai/anthropic` | `preset` | yes |
 | `vercel` (Vercel AI Gateway) | [anthropic-compatible](anthropic-compatible.md#presets) | `AI_GATEWAY_API_KEY` | `https://ai-gateway.vercel.sh` | `preset` | yes |
 | `zai` (Z.ai (GLM)) | [anthropic-compatible](anthropic-compatible.md#presets) | `ZAI_API_KEY` | `https://api.z.ai/api/anthropic` | `preset` | yes |
-| `cerebras` (Cerebras) | [openai-compatible](openai-compatible.md#presets) | `CEREBRAS_API_KEY` | `https://api.cerebras.ai/v1` | `preset` | yes |
-| `gemini` (Google Gemini) | [openai-compatible](openai-compatible.md#presets) | `GEMINI_API_KEY` | `https://generativelanguage.googleapis.com/v1beta/openai` | `preset` | yes |
-| `groq` (Groq) | [openai-compatible](openai-compatible.md#presets) | `GROQ_API_KEY` | `https://api.groq.com/openai/v1` | `preset` | yes |
-| `mistral` (Mistral AI) | [openai-compatible](openai-compatible.md#presets) | `MISTRAL_API_KEY` | `https://api.mistral.ai/v1` | `preset` | yes |
-| `xai` (xAI (Grok)) | [openai-compatible](openai-compatible.md#presets) | `XAI_API_KEY` | `https://api.x.ai/v1` | `preset` | yes |
+| `cerebras` (Cerebras) | [openai-compatible](openai-compatible.md#presets) | `CEREBRAS_API_KEY` | `https://api.cerebras.ai/v1` | `preset` | no: the route is closed in this release |
+| `gemini` (Google Gemini) | [openai-compatible](openai-compatible.md#presets) | `GEMINI_API_KEY` | `https://generativelanguage.googleapis.com/v1beta/openai` | `preset` | no: the route is closed in this release |
+| `groq` (Groq) | [openai-compatible](openai-compatible.md#presets) | `GROQ_API_KEY` | `https://api.groq.com/openai/v1` | `preset` | no: the route is closed in this release |
+| `mistral` (Mistral AI) | [openai-compatible](openai-compatible.md#presets) | `MISTRAL_API_KEY` | `https://api.mistral.ai/v1` | `preset` | no: the route is closed in this release |
+| `xai` (xAI (Grok)) | [openai-compatible](openai-compatible.md#presets) | `XAI_API_KEY` | `https://api.x.ai/v1` | `preset` | no: the route is closed in this release |
 | `lan-openai-compatible` (LAN OpenAI-compatible server) | [openai-compatible-lan](lan.md#presets) | none | your server's address | `preset` | yes |
 | `llama-cpp` (llama.cpp) | [openai-compatible-lan](lan.md#presets) | none | `http://localhost:8080/v1` | `preset` | yes |
 | `lm-studio` (LM Studio) | [openai-compatible-lan](lan.md#presets) | none | `http://localhost:1234/v1` | `preset` | yes |

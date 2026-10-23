@@ -1,7 +1,7 @@
 {
   "version": 1,
   "audits": {
-    "openai_compat_keyed": true
+    "openai_compat_keyed": false
   },
   "gateway": {
     "base_url": "http://127.0.0.1:8317",
@@ -33,7 +33,9 @@
       "cli-proxy-api-openai-content-chunks.patch",
       "cli-proxy-api-charmer-model-ids.patch",
       "cli-proxy-api-access-log-path-quoting.patch",
-      "cli-proxy-api-codex-refresh-lead.patch"
+      "cli-proxy-api-codex-refresh-lead.patch",
+      "cli-proxy-api-tool-call-integrity.patch",
+      "cli-proxy-api-initial-registration.patch"
     ],
     "model_discovery": "disabled",
     "renderer": "restricted-yaml-v1",

@@ -2269,11 +2269,14 @@ class ClosedTransportWordingTests(unittest.TestCase):
                 self.assertIn(needle, text)
             self.assertNotRegex(text, r"SPEC|§|\b0\d\d\b")
 
-    def test_the_shipped_keyed_route_is_offered_with_available_wording(self) -> None:
+    def test_an_audited_keyed_route_is_offered_with_available_wording(self) -> None:
         from charmer import views
 
-        shipped = catalog.load_catalog(SHIPPED_ROOT)
-        audited = catalog.keyed_compat_audited(shipped.docs["gateway"])
+        # The shipped gateway document with its keyed audit open, as a build
+        # with a current compatibility proof ships it.
+        gateway = {**catalog.load_catalog(SHIPPED_ROOT).docs["gateway"],
+                   catalog.AUDITS_KEY: {catalog.KEYED_COMPAT_AUDIT: True}}
+        audited = catalog.keyed_compat_audited(gateway)
         self.assertTrue(audited)
         field = next(field for field in views.provider_form_fields(keyed_audited=audited) if field[0] == "kind")
         choices = dict(field[3])

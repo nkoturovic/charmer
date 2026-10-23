@@ -9,30 +9,37 @@ vendor offers one; translation loses some features (below).
 
 ## Availability in this build
 
-The keyed OpenAI-compatible route is available in this release. Its complete
-compatibility proof covers the gateway, the pinned Claude Code client and
-setup journeys against synthetic endpoints; it is not a test of every vendor.
-The audit state is part of the release (`audits.openai_compat_keyed` in the
-packaged gateway catalog), not a setting you can change or an approval to send
-your key anywhere.
+This build does not offer the keyed OpenAI-compatible route. Declaring one
+stops with this message:
 
-In the launcher: **G** Providers → **N** (or **W** Get started → **A**) →
-OpenAI-compatible endpoint or a preset below. Give its name and `https`
-address, the models' family (`unknown` if unsure), and optionally the model
-list's address. The key is always sent as `Authorization: Bearer`. Approve
+> keyed generic openai-compatible routes are unavailable in this build: their compatibility audit gate is closed
+
+The route is open only in a build whose complete compatibility proof covers
+its gateway, the pinned Claude Code client and setup journeys against
+synthetic endpoints; that proof is not a test of every vendor. The audit
+state is part of the release (`audits.openai_compat_keyed` in the packaged
+gateway catalog), not a setting you can change or an approval to send your key
+anywhere. Until then, use one of the other options below.
+
+Where the route is open, in the launcher: **G** Providers → **N** (or **W**
+Get started → **A**) → OpenAI-compatible endpoint or a preset below. Give its
+name and `https` address, the models' family (`unknown` if unsure), and
+optionally the model list's address. The key is always sent as
+`Authorization: Bearer`. Approve
 where the key goes, then type the key; adding models follows. In **M** Models,
 Enter changes the optional admission badge and **Q** offers optional
 diagnostics; bind it in the profile editor without either step. A valid
 model on an enabled, approved route with its key can lead or run agents.
 Declaring a keyed endpoint alone never approves its credential destination.
 
-From a terminal outside Claude Code (an invented vendor and model with a
-200,000-token context limit; use your real model's documented limit, never
-inflate it to silence a context warning):
+From a terminal outside Claude Code, where the route is open, `providers add`
+declares the endpoint (with `--kind openai-compatible`, its `https`
+`--base-url`, `--auth bearer`, a `--secret-ref` and a `--family`) and
+`providers set-key` saves its key. Its models are then added and bound
+(an invented vendor and model with a 200,000-token context limit; use your
+real model's documented limit, never inflate it to silence a context warning):
 
 ```bash
-charmer providers add acme --kind openai-compatible --base-url https://api.acme.example/v1 --auth bearer --secret-ref env:ACME_API_KEY --family unknown
-charmer providers set-key acme
 charmer models add acme acme-large-1 --context 200000 --source docs --source-ref "https://docs.acme.example/models" --as custom-acme-large
 charmer profile edit <name>         # bind custom-acme-large as a lead or agent
 ```
@@ -93,8 +100,9 @@ Other options:
 The release carries presets (each labelled `preset`, filled in from the
 vendor's documentation and not tested by charmer) for vendors that
 document an OpenAI-compatible endpoint with an API key. All five are
-available in Get started and Providers → **N**; the label remains `preset`,
-not vendor-tested.
+listed in Get started and Providers → **N**, not available in this release
+while the route is closed: use Anthropic-compatible if your vendor offers it.
+The label remains `preset`, not vendor-tested.
 
 | Preset | Vendor | Address | Key name |
 | --- | --- | --- | --- |
@@ -105,8 +113,8 @@ not vendor-tested.
 | `xai` | xAI (Grok) | `https://api.x.ai/v1` | `XAI_API_KEY` |
 
 They work like the [Anthropic-compatible presets](anthropic-compatible.md#presets).
-From a terminal, `charmer providers add --preset groq` declares and
-approves one, then `charmer providers set-key groq` saves its key.
+Where the route is open, `charmer providers add --preset groq` declares and
+approves one from a terminal, then `charmer providers set-key groq` saves its key.
 The same options for [a second copy or shared key](anthropic-compatible.md#the-same-preset-twice)
 apply. Each has a model-list address: listing models is a separate, consented
 request, not automatic admission or qualification. Add the model ids you
@@ -140,6 +148,15 @@ choose and bind them as leads or agents; the badge and diagnostics are optional.
 - The route's redirect and error safety covers the Messages-to-chat path
   only; image requests and Responses-API requests are outside that
   promise.
+
+### Tool calls
+
+The gateway keeps distinct tool calls separate when the endpoint omits their
+indexes and keeps the identity of a call it has already announced. A reply
+that carries tool calls ends with `tool_use`, streamed or not, unless the
+endpoint reports truncation (`length`, which becomes `max_tokens`) or
+filtering (`content_filter`, which becomes `end_turn`). This does not remove
+the translation limits above.
 
 Qualification checks forced and automatic tool use separately; a failure
 is never retried with a weaker tool contract.
