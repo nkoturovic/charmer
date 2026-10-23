@@ -38,6 +38,8 @@ _TARGETS = {"linux-x64": "linux-x86_64", "linux-arm64": "linux-aarch64",
             "darwin-x64": "darwin-x86_64", "darwin-arm64": "darwin-arm64"}
 _CHUNK = 1 << 20
 _HEX = re.compile(r"[0-9a-f]{64}")
+_METADATA_REMEDY = ("obtain MANIFEST.json, SHA256SUMS and SHA256SUMS.sshsig for the exact installed release, "
+                    "then retry with --from-dir")
 
 
 @dataclass(frozen=True)
@@ -74,9 +76,17 @@ class Verification:
 
     def lines(self) -> tuple[str, ...]:
         lines = [f"{check.component}: {check.status} — {check.detail}" for check in self.checks]
-        lines.append({"verified": "Verified against the signed release using installed trust.",
-                      "mismatch": "Mismatch. Reinstall with the release installer or use charmer update --rollback.",
-                      "incomplete": "Partly checked; requested verification is incomplete."}[self.status])
+        summary = {"verified": "Verified against the signed release using installed trust.",
+                   "mismatch": "Mismatch. Reinstall with the release installer or use charmer update --rollback.",
+                   "incomplete": "Partly checked; requested verification is incomplete."}[self.status]
+        installed = {"signed-release", "inner-manifest", "bundle-content", "gateway", "managed-client"}
+        if (self.status == "mismatch" and installed <= {check.component for check in self.checks if check.status == "match"}
+                and all(check.status == "match" for check in self.checks if check.component != "running-gateway")):
+            summary = ("Installed bytes verified; only the running gateway differs: "
+                       "restart between turns with charmer gateway restart (it follows the persistence hold).")
+        elif any(check.component == "signed-release" and check.status == "mismatch" for check in self.checks):
+            summary = "Release metadata authentication failed. Do not use these files; " + _METADATA_REMEDY + "."
+        lines.append(summary)
         lines.append("Nothing was changed.")
         return tuple(lines)
 
@@ -245,20 +255,34 @@ def _member(document: dict, name: str) -> dict:
     return value
 
 
+def _metadata_unavailable(detail: str) -> None:
+    raise _Problem("unavailable", detail + "; " + _METADATA_REMEDY)
+
+
 class _LocalMetadata:
-    """Only regular metadata files in the selected offline directory; no network."""
+    """Bounded reads of regular offline files; signatures authenticate the bytes."""
     def __init__(self, directory: Path) -> None:
         self.directory = directory
 
     def fetch(self, name: str, version: str, limit: int) -> bytes:
         try:
-            fd = _directory(self.directory)
+            directory = _directory(self.directory)
             try:
-                return _file(fd, name, capture=True)[2]
+                fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC, dir_fd=directory)
             finally:
-                os.close(fd)
+                os.close(directory)
+            with os.fdopen(fd, "rb") as stream:
+                info = os.fstat(stream.fileno())
+                if not stat.S_ISREG(info.st_mode):
+                    _metadata_unavailable("offline metadata must be regular, non-symlink files")
+                if info.st_size > limit:
+                    _metadata_unavailable("offline metadata exceeds the size limit")
+                raw = stream.read(limit + 1)
+            if len(raw) > limit:
+                _metadata_unavailable("offline metadata exceeds the size limit")
+            return raw
         except OSError:
-            raise _Problem("unavailable", "offline signed metadata could not be safely read") from None
+            _metadata_unavailable("offline signed metadata could not be safely read")
 
 
 def _release(version: str, target: str, *, environ: Mapping[str, str],
@@ -283,24 +307,29 @@ def _release(version: str, target: str, *, environ: Mapping[str, str],
         sums = transport.fetch(self_update.SUMS, version, self_update.METADATA_LIMIT)
         signature = transport.fetch(self_update.SIGNATURE, version, self_update.METADATA_LIMIT)
     except (self_update.UpdateError, OSError, http.client.HTTPException):
-        raise _Problem("unavailable", "signed release metadata could not be read") from None
+        _metadata_unavailable("signed release metadata could not be read")
     try:
         trust.verify(sums, signature, signers)
-        listed = trust.parse_sums(sums)
     except trust.TrustError:
         _mismatch("SHA256SUMS or its signature does not verify with installed trust")
     try:
+        listed = trust.parse_sums(sums)
+    except trust.TrustError:
+        _metadata_unavailable("signed SHA256SUMS is malformed")
+    try:
         outer = transport.fetch(self_update.MANIFEST, version, self_update.METADATA_LIMIT)
     except (self_update.UpdateError, OSError, http.client.HTTPException):
-        raise _Problem("unavailable", "the outer release manifest could not be read") from None
+        _metadata_unavailable("the outer release manifest could not be read")
+    if listed.get(self_update.MANIFEST) != hashlib.sha256(outer).hexdigest():
+        _mismatch("the outer release manifest does not match the signed checksums")
     try:
         release = self_update.parse_release(outer, listed, target)
     except (self_update.UpdateError, ValueError, RecursionError):
-        _mismatch("the outer release manifest does not match the signed checksums or selected target")
+        _metadata_unavailable("the outer release manifest is invalid for the selected target")
     if release.version != version:
-        _mismatch("signed release metadata names a different version than installed")
+        _metadata_unavailable("signed release metadata names a different version than installed")
     if release.asset.manifest_sha256 is None or release.asset.content_sha256 is None:
-        raise _Problem("unavailable", "signed metadata lacks the inner-manifest or content identity")
+        _metadata_unavailable("signed metadata lacks the inner-manifest or content identity")
     return release
 
 
@@ -330,11 +359,12 @@ def _client(inner: dict, release: self_update.Release, environ: Mapping[str, str
                  digest, actual)
 
 
-def _previous_digest(versions: int, link: str | None, target: str) -> str | None:
-    """A retained local comparison, NOT authenticated release evidence."""
-    if link is None:
-        return None
+def _previous_digest(root: int, versions: int, target: str) -> str | None:
+    """An optional retained local comparison, NOT authenticated release evidence."""
     try:
+        link = _link(root, "previous", optional=True, allow_dev=True)
+        if link is None:
+            return None
         fd = _directory(link.split("/")[1], parent=versions)
         try:
             inner = _json(_file(fd, self_update.MANIFEST, capture=True)[2])
@@ -357,7 +387,7 @@ def _previous_digest(versions: int, link: str | None, target: str) -> str | None
         return None
 
 
-def _link(fd: int, name: str, *, optional: bool = False) -> str | None:
+def _link(fd: int, name: str, *, optional: bool = False, allow_dev: bool = False) -> str | None:
     try:
         value = os.readlink(name, dir_fd=fd)
     except FileNotFoundError:
@@ -368,7 +398,10 @@ def _link(fd: int, name: str, *, optional: bool = False) -> str | None:
         _mismatch("installation link leaves versions/")
     version = value.removeprefix("versions/")
     try:
-        self_update._release_version(version, "installed version")
+        if allow_dev:
+            self_update.version_key(version)
+        else:
+            self_update._release_version(version, "installed version")
     except self_update.UpdateError:
         _mismatch("installation link does not name an exact release version")
     return value
@@ -468,7 +501,7 @@ def verify_installation(*, environ: Mapping[str, str], channel: str | None, runn
         except OSError as exc:
             checks.append(_os_check(component, exc))
         component = "running-gateway"
-        previous = _previous_digest(versions, _link(root, "previous", optional=True), target)
+        previous = _previous_digest(root, versions, target)
         checks.append(verify_running_gateway(observe, gateway_digest, previous_digest=previous,
                                              proc_root=proc_root, platform=platform))
         component = "snapshot"

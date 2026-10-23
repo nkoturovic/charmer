@@ -87,8 +87,8 @@ class _CardHealthActions:
     ``_LaunchCardScreen`` is the one class that inherits them.  They
     read only ``runtime``, ``palette``, ``update_hint``, ``gateway_problem``,
     ``gateway_checked``, ``gateway_check``, ``gateway_hold``, ``hold_check``,
-    ``hint_detector``, ``tty_in``, ``tty_out``, ``way_back``, ``self._draw``
-    and ``self._open_sessions``.
+    ``hint_detector``, ``tty_in``, ``tty_out``, ``way_back``, ``passthrough``
+    and ``self._draw``.
     """
 
     runtime: "Runtime"
@@ -217,7 +217,8 @@ class _CardHealthActions:
         result = screens_findings.run_findings_screen(
             self.runtime, win, self.palette, tty_in=self.tty_in, tty_out=self.tty_out,
             say=lambda line: _card_doctor_line(self.runtime, line, self.way_back),
-            open_sessions=self._open_sessions,
+            passthrough=self.passthrough,
+            way_back=self.way_back.deeper() if self.way_back is not None else _WayBack(1, card=True),
         )
         self._refresh_health()
         return result

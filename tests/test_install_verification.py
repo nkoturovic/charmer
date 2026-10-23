@@ -196,7 +196,7 @@ class InstallationVerificationTests(unittest.TestCase):
         put(self.fixture.dir / "MANIFEST.json", self.fixture.inner_path.read_bytes())
         FakeRelease.write_sums(self.fixture)
         FakeRelease.sign(self.fixture, self.key)
-        self.assertMismatch("signed-release")
+        self.assertMetadataUnavailable()
 
     def test_unsigned_outer_change(self):
         self.fixture.outer["state_format"] = 9
@@ -214,16 +214,27 @@ class InstallationVerificationTests(unittest.TestCase):
 
     def test_invalid_signature(self):
         put(self.fixture.dir / "SHA256SUMS.sshsig", b"not a signature")
-        self.assertMismatch("signed-release")
+        report = self.assertMismatch("signed-release")
+        self.assertIn("Release metadata authentication failed. Do not use these files", "\n".join(report.lines()))
+        self.assertNotIn("Reinstall", "\n".join(report.lines()))
+
+    def assertMetadataUnavailable(self, **kwargs):
+        report = self.fixture.run(**kwargs)
+        self.assertEqual((report.status, report.exit_code), ("incomplete", 3), report.document())
+        check = self.check(report, "signed-release")
+        self.assertEqual(check.status, "unavailable")
+        self.assertIn("--from-dir", check.detail)
+        self.assertNotIn("Reinstall", "\n".join(report.lines()))
+        return report
 
     def test_wrong_release_version(self):
         other = SignedInstallation(self.base / "other", self.key, version="2.0.1")
-        self.assertMismatch("signed-release", from_dir=other.dir)
+        self.assertMetadataUnavailable(from_dir=other.dir)
 
     def test_wrong_release_target(self):
         self.fixture.asset["target"] = "darwin-arm64"
         self.fixture.sign()
-        self.assertMismatch("signed-release")
+        self.assertMetadataUnavailable()
 
     def test_wrong_inner_target(self):
         self.fixture.inner["target"] = "darwin-arm64"
@@ -368,6 +379,59 @@ class InstallationVerificationTests(unittest.TestCase):
         put(running, self.fixture.gateway, 0o755)
         self.assertEqual(self.fixture.run(observe=lambda: observation, proc_root=proc).exit_code, 0)
 
+    def test_optional_previous_link_problems_do_not_fail_current_verification(self):
+        previous = self.fixture.root / "previous"
+        observe = mock.Mock(side_effect=stopped)
+        for target in (None, "../outside", "versions/not-a-version", "versions/2.0.0"):
+            with self.subTest(target=target):
+                if target is None:
+                    put(previous, b"not a link")
+                else:
+                    previous.symlink_to(target)
+                report = self.fixture.run(observe=observe)
+                previous.unlink()
+                self.assertEqual(report.exit_code, 0, report.document())
+                self.assertEqual(self.check(report, "running-gateway").status, "stopped")
+        real = os.readlink
+
+        def readlink(name, **kwargs):
+            if name == "previous":
+                raise PermissionError("fixture denied")
+            return real(name, **kwargs)
+
+        with mock.patch.object(verify.os, "readlink", side_effect=readlink):
+            report = self.fixture.run(observe=observe)
+        self.assertEqual(report.exit_code, 0, report.document())
+        self.assertTrue(observe.called)
+
+    def test_optional_previous_development_bundle_supplies_local_comparison(self):
+        previous = self.fixture.root / "versions/2.1.0-dev"
+        shutil.copytree(self.fixture.bundle, previous, symlinks=True)
+        inner = {**self.fixture.inner, "version": "2.1.0-dev"}
+        put(previous / "MANIFEST.json", json_bytes(inner))
+        (self.fixture.root / "previous").symlink_to("versions/2.1.0-dev")
+        with mock.patch.object(verify, "verify_running_gateway", wraps=verify.verify_running_gateway) as running:
+            report = self.fixture.run()
+        self.assertEqual(report.exit_code, 0, report.document())
+        self.assertEqual(running.call_args.kwargs["previous_digest"], sha(self.fixture.gateway))
+
+    def test_running_only_difference_recommends_guarded_restart(self):
+        for status in ("different-running-build", "mismatch"):
+            with self.subTest(status=status), mock.patch.object(verify, "verify_running_gateway", return_value=
+                    verify.Check("running-gateway", status, "fixture running difference")):
+                report = self.fixture.run()
+                self.assertEqual((report.status, report.exit_code), ("mismatch", 1))
+                text = "\n".join(report.lines())
+                self.assertIn("restart between turns with charmer gateway restart (it follows the persistence hold)", text)
+                self.assertNotIn("Reinstall", text)
+                self.assertNotIn("--rollback", text)
+                for other_status in ("mismatch", "unavailable"):
+                    with mock.patch.object(verify, "_client", return_value=
+                            verify.Check("managed-client", other_status, "fixture client problem")):
+                        incomplete = self.fixture.run()
+                    self.assertEqual(incomplete.exit_code, 1)
+                    self.assertNotIn("restart between turns", "\n".join(incomplete.lines()))
+
     def test_current_selection_changed_during_verification_is_incomplete(self):
         def observe():
             self.fixture.current.unlink()
@@ -407,7 +471,35 @@ class InstallationVerificationTests(unittest.TestCase):
         outside = self.base / "sums"
         path.rename(outside)
         path.symlink_to(outside)
-        self.assertMismatch("signed-release")
+        self.assertMetadataUnavailable()
+
+    def test_external_metadata_file_type_and_size_are_unavailable(self):
+        path = self.fixture.dir / "SHA256SUMS"
+        path.unlink()
+        for kind in ("directory", "fifo", "oversized"):
+            with self.subTest(kind=kind):
+                if kind == "directory":
+                    path.mkdir()
+                elif kind == "fifo":
+                    os.mkfifo(path)
+                else:
+                    put(path, b"x" * (self_update.METADATA_LIMIT + 1))
+                try:
+                    self.assertMetadataUnavailable()
+                finally:
+                    if kind == "directory":
+                        path.rmdir()
+                    else:
+                        path.unlink()
+
+    def test_local_metadata_reader_honors_the_requested_bound(self):
+        path = self.fixture.dir / "SHA256SUMS"
+        put(path, b"fixture metadata")
+        reader = verify._LocalMetadata(self.fixture.dir)
+        self.assertEqual(reader.fetch(path.name, self.fixture.version, path.stat().st_size), path.read_bytes())
+        with self.assertRaises(verify._Problem) as caught:
+            reader.fetch(path.name, self.fixture.version, 4)
+        self.assertEqual(caught.exception.status, "unavailable")
 
     def test_directory_symlink_does_not_hide_or_read_external_content(self):
         (self.fixture.bundle / "unexpected-dir").symlink_to(self.base)

@@ -62,9 +62,6 @@ def _clear_hold(gateway: gateway_lifecycle.Gateway, runtime: "runtime_mod.Runtim
     if not report.held:
         _write(output_stream, ["persistence hold: none — nothing to clear"])
         return 0
-    if report.journald_unavailable:
-        _write(sys.stderr, ["persistence hold: " + gateway_hold.describe(report), gateway_hold.remedy(report)])
-        return EXIT_FAILED
     prompt = consent.prompt_stream()
     _write(prompt, [
         "persistence hold:",

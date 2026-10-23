@@ -1601,6 +1601,29 @@ class CardSessionsKeyTests(_CardCase):
         self.assertEqual(prepared.result.session_action.kind, "resume")
         self.assertEqual(self.runtime.launches, [])
 
+    def test_h_needs_choice_resume_preserves_passthrough_and_way_back(self) -> None:
+        from charmer.cli import doctor as doctor_mod, gateway_facts
+        from charmer.cli.screens import launch_sessions
+
+        record = fx.v4_record(self.runtime, catalog.DEFAULT_SEED, managed_id=fx.FIXED_ID, needs_choice=True)
+        self._transcript(record)
+        line = gateway_facts.tagged("1 session needs a lead choice", area="Sessions", action="needs-choice")
+        passthrough = ["--permission-mode", "plan", "--verbose"]
+        with mock.patch.object(doctor_mod, "_collect_doctor_reports", return_value=([], [], [line])), \
+                mock.patch.object(self.runtime, "prepare", wraps=self.runtime.prepare) as prepare, \
+                mock.patch.object(launch_sessions, "_resume_card_result",
+                                  wraps=launch_sessions._resume_card_result) as resume:
+            result, _win = self.run_card(self.card(passthrough=passthrough),
+                                        ["h", ENTER, DOWN, DOWN, ENTER, ENTER, ENTER])
+        self.assertEqual(result[0], "perform")
+        self.assertEqual(result[1].result.session_action.kind, "resume")
+        self.assertEqual(result[1].result.argv[-len(passthrough):], passthrough)
+        resumed = [call for call in prepare.call_args_list if call.kwargs.get("action") == "resume"]
+        self.assertTrue(resumed)
+        self.assertTrue(all(call.kwargs["passthrough"] == passthrough for call in resumed))
+        self.assertEqual(resume.call_args.kwargs["way_back"], launch_sessions._WayBack(3, card=True))
+        self.assertEqual(self.runtime.launches, [])
+
     def test_embedded_sessions_resume_of_a_direct_record(self) -> None:
         # A direct (ad-hoc, agent-less) record resumes
         # from the card's S like any other; the lineup stays direct.

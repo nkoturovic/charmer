@@ -154,13 +154,15 @@ class VerificationBoundaryTests(_VerificationCase):
         self.assertNotIn("1111111111", json.dumps(document) + error)
         self.assert_shared(document, self.screen_report())
 
-    def test_oversized_json_integer_in_signed_outer_manifest_is_a_mismatch(self):
+    def test_oversized_json_integer_in_signed_outer_manifest_is_unavailable(self):
         put(self.fixture.dir / "MANIFEST.json", b'{"format":' + b"1" * 5000 + b"}")
         FakeRelease.write_sums(self.fixture)
         FakeRelease.sign(self.fixture, self.key)
         document, _ = self.report()
-        self.assertEqual(document["exit_code"], 1)
+        self.assertEqual(document["exit_code"], 3)
         self.assertEqual(document["checks"][-1]["component"], "signed-release")
+        self.assertEqual(document["checks"][-1]["status"], "unavailable")
+        self.assertIn("--from-dir", document["checks"][-1]["detail"])
         self.assert_shared(document, self.screen_report())
 
     def test_truncated_chunked_metadata_is_incomplete_on_cli_and_tui(self):

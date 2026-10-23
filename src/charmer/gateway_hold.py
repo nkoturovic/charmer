@@ -27,9 +27,10 @@ log source:
   instance also needs a known start time of the default-namespace system
   journald process: a restart after the later of the instance start and
   last clear is a coverage risk, even with a retained start marker. An
-  unavailable observation holds until access/availability is restored;
-  unlike a known restart, it cannot be acknowledged by a clear. This is
-  one conservative risk check, not proof that no evidence was lost.
+  unavailable observation is a coverage gap that the user can acknowledge
+  for this running instance after checking the credentials. It remains
+  visible after clearing, and later failed saves still hold. This is one
+  conservative risk check, not proof that no evidence was lost.
 
 Both read only the evidence (``gateway_events.is_save_line``: the lines of
 patch 8's credential-save emitter) and the running instance's start line,
@@ -101,14 +102,10 @@ COVERAGE_ONLY = ("held because part of the log could not be evaluated (no failed
 COVERAGE_REMEDY = (
     "keep the gateway running and check the credentials (charmer providers list); the reason names "
     "what could not be read (journald retention shorter than the gateway's run, a journald rate-limit "
-    "notice or restart, a read that timed out, a credential-save line that does not parse); then clear it on "
+    "notice or restart, an unavailable journald observation, a read that timed out, a credential-save line "
+    "that does not parse); then clear it on "
     "the command line: charmer gateway clear-hold (it records that you checked them, and the logs are "
     "evaluated again from that point on)"
-)
-JOURNALD_REMEDY = (
-    "keep the gateway running; restore read-only system-manager access to the loaded, active "
-    "systemd-journald.service and its process start time, then retry the hold check; "
-    "charmer gateway clear-hold cannot waive an unavailable observation"
 )
 
 
@@ -131,19 +128,15 @@ class HoldReport:
     # Where the evaluation started and how many credential saves it read
     # (shown when nothing holds).
     evaluated: str = ""
-    # Transient observation only, never part of the hold document. A clear
-    # cannot restore visibility of the current journald process.
+    # Transient observation only: still disclosed after the user acknowledges
+    # the coverage gap for this running instance.
     journald_unavailable: bool = False
 
 
 def remedy(report: HoldReport) -> str:
-    """The report's recovery: unavailable journald observation must be
-    restored; failed saves keep their own remedy even beside that risk."""
+    """Missing coverage can be acknowledged; failed saves keep their own remedy."""
 
-    coverage = getattr(report, "coverage_only", False)
-    if getattr(report, "journald_unavailable", False):
-        return JOURNALD_REMEDY if coverage else REMEDY + "; " + JOURNALD_REMEDY
-    return COVERAGE_REMEDY if coverage else REMEDY
+    return COVERAGE_REMEDY if getattr(report, "coverage_only", False) else REMEDY
 
 
 def describe(report: HoldReport) -> str:
@@ -405,8 +398,9 @@ def evaluate_journal(state_root: Path, providers: Iterable[str], *,
     ``journald_start()`` observes the default-namespace system journald
     after the evidence read: a start strictly after the later of the
     instance start and last clear holds for restart risk, even with a
-    surviving start marker and reach-back. Unknown observation also holds
-    and requires restored access/availability, not a clear. A missing
+    surviving start marker and reach-back. Unknown observation is a coverage
+    hold until a clear at or after this instance's start acknowledges it; the
+    limitation stays visible, and failed saves still hold. A missing
     ``reaches``, ``drops`` or ``journald_start`` answers None, never a host
     observation. The restart check is not a completeness proof: silent
     loss without restart, clock discontinuities, other collectors and a
@@ -438,9 +432,9 @@ def evaluate_journal(state_root: Path, providers: Iterable[str], *,
         started = journald_start() if journald_start is not None else None
         if not isinstance(started, datetime.datetime) or started.utcoffset() is None:
             journald_unavailable = True
-            coverage.append("service journal: journald's current process start could not be observed; "
-                            "credential-save evidence may be missing; observation access and availability "
-                            "must be restored")
+            if cutoff is None or cutoff < running[1]:
+                coverage.append("service journal: journald's current process start could not be observed; "
+                                "credential-save evidence may be missing")
         elif started > boundary:
             coverage.append("service journal: journald restarted; credential-save evidence may be missing")
     if running is not None and running[0] and window.coverage == "bounded":
@@ -484,6 +478,10 @@ def evaluate_journal(state_root: Path, providers: Iterable[str], *,
     evaluated = f"from {_utc(shown):%Y-%m-%d %H:%M} UTC: {_count(len(saves.events))}"
     if drops_checked and dropped is None:
         evaluated += "; journald's drop notices are not readable for this user"
+    if journald_unavailable:
+        evaluated += "; journald's current process start remains unavailable"
+        if cutoff is not None and cutoff >= running[1]:
+            evaluated += " (coverage gap acknowledged for this instance)"
     if saves.coverage != "bounded":
         # A failure seen in an incomplete read is recorded at once (a later
         # vacuum cannot take it away); an incomplete read resolves nothing.
@@ -581,12 +579,10 @@ def clear(state_root: Path, report: HoldReport) -> tuple[Mapping[str, str], ...]
 
     Returns the recorded holds kept because they were recorded after the
     report (evidence the user has not seen); the hold then still applies.
-    An unavailable journald observation refuses before any write: a clear
-    cannot restore visibility of its current process.
+    An unavailable journald observation is acknowledged for the running
+    instance, not converted into a successful observation.
     """
 
-    if report.journald_unavailable:
-        raise HoldError(remedy(report))
     path = hold_path(state_root)
     state.ensure_private_dir(path.parent)
     with state.FileLock(path):

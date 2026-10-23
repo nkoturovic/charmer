@@ -90,6 +90,11 @@ Choose **Downloaded files** there to enter a directory instead: just like
 `--from-dir`, this makes no network attempt or transport. That directory
 must contain those three files from the installed exact release; it cannot
 supply replacement trust keys. Archives are not downloaded for verification.
+Wrong-version, malformed, oversized or unreadable metadata makes verification
+incomplete (exit 3), not evidence that the installation is damaged. Obtain the
+three files for the installed release and retry with `--from-dir`. A failed
+signature or signed checksum is an authentication failure (exit 1): do not use
+those metadata files.
 
 The authentication chain is:
 
@@ -125,6 +130,13 @@ stay distinct:
 | `stopped` | no running executable to verify; **not ready**, even when installed files verify |
 | `unavailable` | ownership, process identity or bytes cannot be proved, or the platform is not Linux |
 | `mismatch` | running bytes differ from the authenticated gateway |
+
+The optional `previous` bundle supplies only a local comparison, including
+when it is a development build. A missing or unreadable `previous` link does
+not prevent verification of the selected installation. If installed bytes
+verify and **only the running gateway differs**, restart between turns with
+`charmer gateway restart` (it follows the persistence hold); reinstalling or
+rolling back is not needed for that difference alone.
 
 CLI text, JSON and the TUI show the same component statuses. Verification's
 exit contract is mode-specific: **0** complete (`verified`), **1** mismatch

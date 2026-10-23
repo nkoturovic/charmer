@@ -30,7 +30,10 @@ from __future__ import annotations
 import io
 import textwrap
 from dataclasses import dataclass
-from typing import Any, Callable, Sequence, TextIO
+from typing import Any, Callable, Sequence, TextIO, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from charmer.cli.screens.launch_sessions import _WayBack
 
 from charmer import errors, termtext, tui, views
 import charmer.cli.doctor as doctor
@@ -100,22 +103,22 @@ def action_hint(row: doctor.Row) -> str:
 
 
 class FindingsScreen:
-    """The findings list (see the module docstring). ``open_sessions`` is
-    the card's Sessions (it may return a perform intent, which the list
-    returns); ``say`` words a finding for the card."""
+    """The findings list (see the module docstring). Session resumes keep the
+    card's passthrough and way back; ``say`` words a finding for the card."""
 
     what = "the doctor findings"
 
     def __init__(self, runtime: Any, *, palette: tui.Palette, tty_in: TextIO, tty_out: TextIO,
                  say: Callable[[str], str] | None = None,
-                 open_sessions: Callable[[Any], tuple | None] | None = None,
+                 passthrough: Sequence[str] = (), way_back: _WayBack | None = None,
                  report: Callable[[], tuple[list[str], list[str], list[str]]] | None = None):
         self.runtime = runtime
         self.palette = palette
         self.tty_in = tty_in
         self.tty_out = tty_out
         self.say = say or str
-        self.open_sessions = open_sessions
+        self.passthrough = tuple(passthrough)
+        self.way_back = way_back
         self.report = report or (lambda: doctor._collect_doctor_reports(runtime))
         self.expanded = False
         self.selected = 0
@@ -539,6 +542,7 @@ class FindingsScreen:
         import charmer.cli.screens.launch_sessions as launch_sessions
 
         screen = launch_sessions._SessionsScreen(self.runtime, palette=self.palette,
+                                                 passthrough=self.passthrough, way_back=self.way_back,
                                                  tty_in=self.tty_in, tty_out=self.tty_out)
         screen.cwd_filter = False
         screen.filter_mode = "needs a choice"
@@ -602,9 +606,9 @@ def run_install_verification(runtime: Any, win: Any, palette: tui.Palette, *,
 
 def run_findings_screen(runtime: Any, win: Any, palette: tui.Palette, *, tty_in: TextIO, tty_out: TextIO,
                         say: Callable[[str], str] | None = None,
-                        open_sessions: Callable[[Any], tuple | None] | None = None) -> tuple | None:
+                        passthrough: Sequence[str] = (), way_back: _WayBack | None = None) -> tuple | None:
     """Open the findings list on ``win``: None, or the perform intent of a
     resume chosen in Sessions."""
 
     return FindingsScreen(runtime, palette=palette, tty_in=tty_in, tty_out=tty_out, say=say,
-                          open_sessions=open_sessions).run(win)
+                          passthrough=passthrough, way_back=way_back).run(win)
