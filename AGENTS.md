@@ -2721,14 +2721,16 @@ relevant-source identities plus complete core/audit/client/`J1` proof (34 rows:
 a current proof, otherwise false: any listed-source change requires a fresh
 complete keyed proof and fixture refresh, or audit=false; basenames/version
 equality alone are insufficient, and a stale proof is never rebound. Reopening
-the flag also restores the open-route wording of
+the flag requires reconciling availability in
 `docs/providers/openai-compatible.md`, `docs/quickstart.md`,
-`docs/reference/compatibility.md` and `docs/troubleshooting.md`, and removes
-this release's closed-route limit from its changelog and release notes.
+`docs/reference/compatibility.md`, `docs/troubleshooting.md` and
+`docs/CHEATSHEET.md`, and removing this release's closed-route upgrade
+warning, Changed entry and known limit from its changelog and release notes.
 Regenerate `docs/providers/api-keys.md` with `tools/docs_gen.py`; its provider
-index reads the flag. Keep the conditional closed-build remedies in
-`docs/CHEATSHEET.md`. The docs tests check availability against the flag. The fixture is test provenance, never runtime
-policy. Closed and absent flags remain regression inputs; changing the flag
+index reads the flag. The cheatsheet keeps its quoted refusal symptoms, but
+its remedies must agree with the shipped flag and never assume every published
+release opens the route. The docs tests check availability against the flag.
+The fixture is test provenance, never runtime policy. Closed and absent flags remain regression inputs; changing the flag
 creates no operator state. Source paths in the fixture are repository-relative; immutable
 store paths and binary digests remain exact. The package-containment journey
 checks that the standalone package payload excludes operator credentials and

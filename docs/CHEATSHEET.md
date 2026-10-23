@@ -159,11 +159,11 @@ restart.
 | “needs a terminal outside Claude Code sessions” | run the command yourself in a terminal outside Claude Code |
 | “… changed while you were deciding — nothing written” | run the command again and check its new preview |
 | `providers rm <id> --yes`: the key was kept | `charmer providers remove-key <provider>` (with `--name`, as printed) |
-| a keyed OpenAI-compatible provider: “keyed generic openai-compatible routes are unavailable in this build: their compatibility audit gate is closed” | this build has a closed audit; published releases offer the route. Use an audited release, an Anthropic-compatible endpoint or OpenRouter ([providers/openai-compatible.md](providers/openai-compatible.md)) |
+| a keyed OpenAI-compatible provider: “keyed generic openai-compatible routes are unavailable in this build: their compatibility audit gate is closed” | this build's keyed OpenAI-compatible audit is closed; use the vendor's Anthropic-compatible endpoint, OpenRouter, or a keyless server on your network ([providers/openai-compatible.md](providers/openai-compatible.md)) |
 | doctor: “gateway substitution:” | the provider served another model; rebind the agent if it matters |
 | Anthropic or OpenAI on its API key: doctor “<name> is not set — charmer providers set-key” | save the key: `charmer providers set-key <provider>`, or G → K on the provider; or back to the account: `charmer providers transport <provider> oauth-pool` ([providers/api-keys.md](providers/api-keys.md#openai)) |
 | doctor: “the <choice> transport of <provider> is not approved for the current …” or “its selectors are not served” | `charmer providers transport <provider> api-key` again (terminal), or back: `charmer providers transport <provider> oauth-pool` |
-| a preset: “not available in this release” | this build has a closed OpenAI-compatible audit; the five keyed presets are available in published releases. Use an audited release, the vendor's Anthropic-compatible endpoint or OpenRouter |
+| a preset: “not available in this release” | this build's keyed OpenAI-compatible audit is closed; use the vendor's Anthropic-compatible endpoint, OpenRouter, or a keyless server on your network ([providers/openai-compatible.md](providers/openai-compatible.md)) |
 | a spending or usage limit reached at the provider | raise or wait out the limit in its console ([costs per provider](providers/api-keys.md#6-costs-and-limits)) |
 
 ### Lineups and `/cm`

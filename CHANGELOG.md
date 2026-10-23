@@ -6,9 +6,12 @@ follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-## [2.1.0] - 2026-10-24
+## [2.1.0] — 2026-10-24
 
 ### Upgrade notes
+
+Keyed OpenAI-compatible endpoints and presets that 2.0.1 offered are refused
+after this update; move roles bound to them to another provider first.
 
 Updating switches the installation, not the running gateway. Between turns,
 in a plain terminal outside Claude Code, run each step after checking the
@@ -35,6 +38,9 @@ restart also enables quota readings in an updated release bundle.
 claimed for macOS 13 or 14; the native Apple silicon release-bundle journey
 runs on macOS 15. Intel has no support claim. On macOS 12, stay on 2.0.1
 until upgrading macOS: the 2.0.1 updater does not enforce the new floor.
+If you updated on macOS 12 anyway, run `sh install.sh --rollback` with this
+release's installer to return to the retained previous release; its safety
+checks and persistence hold still apply.
 Running-gateway byte verification is Linux-only; on macOS it reports
 unavailable, not a match. See [updating](docs/update.md#updating-from-201).
 
@@ -46,12 +52,16 @@ unavailable, not a match. See [updating](docs/update.md#updating-from-201).
   the full detail and JSON findings include their area.
 - **H** on the launch card opens a findings list with guarded actions and
   confirmations. Housekeeping is offered only when session liveness and
-  records can be checked safely; other rows show the exact remedy.
+  records can be checked safely; other rows show the exact remedy. Opening
+  Sessions from a needs-choice finding keeps the launch's extra arguments
+  and its way back.
 - Session lists and bulk housekeeping accept combined directory, ended,
   needs-choice and age filters. Preview several sessions before forgetting
   them with one confirmation; live, unknown or changed records are refused,
-  and transcripts stay untouched. In **S**, mark rows with **Space** or
-  **\***, combine filters with **B**, and forget with **X**.
+  and transcripts stay untouched. Bulk selections refuse an unreadable
+  sessions directory; a single-session `forget --dry-run` previews that
+  same operation without writes, including its force option. In **S**, mark
+  rows with **Space** or **\***, combine filters with **B**, and forget with **X**.
 - `charmer sessions choose` and **Q** in Sessions save a profile or direct
   lead for sessions that need a choice, without launching. A valid saved
   choice clears the actionable warning and applies at the next resume.
@@ -59,7 +69,11 @@ unavailable, not a match. See [updating](docs/update.md#updating-from-201).
   exact-version metadata, its files, the managed client and, on Linux, the
   running gateway's bytes. `--from-dir` works fully offline. The launch
   card's **U** and the findings list **H** offer the same explicit check;
-  neither plain doctor nor opening H fetches release metadata.
+  neither plain doctor nor opening H fetches release metadata. A missing or
+  unreadable optional previous release does not prevent verification;
+  unusable supplied metadata is incomplete, distinct from a signature
+  failure. When only the running gateway differs, the remedy is a guarded
+  restart rather than reinstalling.
 - If the gateway fails to start after an update, its failure and doctor
   name `charmer update --rollback`, then `charmer gateway start`, when the
   retained release is a compatible rollback with a different gateway.
@@ -72,6 +86,12 @@ unavailable, not a match. See [updating](docs/update.md#updating-from-201).
 
 ### Changed
 
+- Keyed OpenAI-compatible endpoints and presets that 2.0.1 offered are
+  refused after this update; move roles bound to them to another provider
+  first.
+- The full-screen interface now requires verifiable eight-bit terminal
+  settings. Unsupported terminals get a notice; the launch/resume line
+  flow remains available.
 - Managed sessions use Claude Code 2.1.302, catalog 40, and CLIProxyAPI
   8.0.33 built with Go 1.27.2. Every client platform build is checked against
   Anthropic's signed manifest. charmer's compiled permission default is
@@ -103,6 +123,10 @@ unavailable, not a match. See [updating](docs/update.md#updating-from-201).
 
 ### Security
 
+- Isolated checks on Claude Code 2.1.302 observe the synthetic gateway key
+  only at the gateway in the tested request paths, including a gateway URL
+  from managed settings and a key-helper refresh after a 401. The previous
+  pin also sent it with start-up and feature-flag requests.
 - Managed sessions disable and deny fork subagents. Inherited environment,
   user, project and local settings cannot re-enable the fork gate or
   replace workflow agents' models or the auto-mode classifier model.
@@ -153,18 +177,9 @@ unavailable, not a match. See [updating](docs/update.md#updating-from-201).
   or refresh bookkeeping changes it before its first model registration.
 - The full-screen interface remains interruptible while waiting for input
   and preserves incomplete multibyte characters across waits and screen
-  suspension. It requires verifiable eight-bit terminal settings; unsupported
-  terminals get a notice and the launch/resume line flow remains available.
+  suspension.
 - Output on non-UTF-8 terminals no longer fails on charmer's markers:
   characters the encoding cannot show are replaced.
-- Opening Sessions from a needs-choice finding preserves the launch's
-  extra arguments and its way back. Bulk selections refuse an unreadable
-  sessions directory; a single-session `forget --dry-run` stays a read-only
-  preview of that single operation, including its force option.
-- Installation verification tolerates a missing or unreadable optional
-  previous release, reports unusable supplied metadata as incomplete, and
-  recommends a guarded restart rather than reinstalling when only the
-  running gateway differs. Signature failures stay distinct.
 - `charmer lineup --session` accepts managed and runtime ids, historical
   runtime aliases and unique prefixes of at least eight characters.
   Ambiguous selections name the candidates; unreadable possible owners and

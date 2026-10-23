@@ -18,6 +18,10 @@ This is an enforced floor, not a runtime support claim for macOS 13 or 14:
 the native Apple silicon journey exercises the release bundle on macOS 15.
 On macOS 12, stay on charmer 2.0.1 until you upgrade macOS. The 2.0.1 updater
 does not enforce the new floor; check your OS before updating.
+If you updated on macOS 12 anyway, use this release's installer and run
+`sh install.sh --rollback` in a plain terminal to return to the retained
+previous release. Installer rollback does not apply the new-install macOS
+check; its usual safety checks and persistence hold still apply.
 
 The gateway runs on demand only; there is no launchd service.
 
