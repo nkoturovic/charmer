@@ -206,7 +206,7 @@ the original failure. No native or kernel input queue is flushed during cleanup.
 | Claude and ChatGPT account sign-ins | supported, for personal use |
 | Anthropic-compatible endpoints of your own, and the Anthropic-compatible presets | supported; a preset is the vendor's documented endpoint, not tested by charmer |
 | keyless OpenAI-compatible servers on your network, and their presets | supported, for leads and agents |
-| keyed OpenAI-compatible endpoints, and the presets that use them | unavailable in this release; built-in providers and keyless network servers are unaffected ([availability and alternatives](../providers/openai-compatible.md#availability-in-this-build)) |
+| keyed OpenAI-compatible endpoints, and the presets that use them | supported in this release after the complete compatibility proof; HTTPS and bearer-only, with [translation limits](../providers/openai-compatible.md#translation-limits); presets are not vendor-tested |
 
 Anthropic and OpenAI use either their account sign-in or their API key,
 never both at once, and never fall back from one to the other.

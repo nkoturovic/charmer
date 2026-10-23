@@ -10,11 +10,6 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Upgrade notes
 
-Keyed OpenAI-compatible endpoints and presets that 2.0.1 offered are refused
-after this update; move roles bound to them to another provider and remove
-their declarations (`charmer providers rm <provider>`) first. A remaining
-declaration is refused and blocks later provider changes until removed.
-
 Updating switches the installation, not the running gateway. Between turns,
 in a plain terminal outside Claude Code, run each step after checking the
 previous result:
@@ -90,11 +85,6 @@ unavailable, not a match. See [updating](docs/update.md#updating-from-201).
 
 ### Changed
 
-- Keyed OpenAI-compatible endpoints and presets that 2.0.1 offered are
-  refused after this update; move roles bound to them to another provider
-  and remove their declarations (`charmer providers rm <provider>`) first.
-  A remaining declaration is refused and blocks later provider changes until
-  removed.
 - The full-screen interface now requires verifiable eight-bit terminal
   settings. Unsupported terminals get a notice; the launch/resume line
   flow remains available.
@@ -199,11 +189,6 @@ unavailable, not a match. See [updating](docs/update.md#updating-from-201).
 
 ### Known limits
 
-- Keyed generic OpenAI-compatible endpoints and their five presets
-  (Cerebras, Google Gemini, Groq, Mistral AI and xAI) are closed in this
-  release. Built-in providers, Anthropic-compatible endpoints and presets,
-  and keyless network servers are unaffected. See
-  [availability](docs/providers/openai-compatible.md#availability-in-this-build).
 - A credential-file read error can remove an account's models from the
   running gateway instead of retaining its last working credentials.
   Restore owner-only read access and check providers and doctor; if models

@@ -1,7 +1,7 @@
 {
   "version": 1,
   "audits": {
-    "openai_compat_keyed": false
+    "openai_compat_keyed": true
   },
   "gateway": {
     "base_url": "http://127.0.0.1:8317",
