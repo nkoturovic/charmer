@@ -84,7 +84,7 @@ class VerificationBoundaryTests(_VerificationCase):
     def assert_shared(self, document, lines):
         result = install_verify.Verification(document["version"], document["target"],
                                             tuple(install_verify.Check(**check) for check in document["checks"]))
-        self.assertEqual(result.lines(), lines)
+        self.assertEqual(result.lines(surface="tui"), lines)
 
     def canonical_urls(self):
         # Build input is a test comparison, never the runtime authority.
@@ -190,6 +190,23 @@ class VerificationBoundaryTests(_VerificationCase):
                     self.assertNotIn("IncompleteRead", json.dumps(document) + error)
                     self.assert_shared(document, self.screen_report(online=True))
             self.assertTrue(all(response.closed for response in responses))
+
+    def test_metadata_remedies_name_downloaded_files_in_the_tui(self):
+        for raw, code in ((b"not a signature", 1), (None, 3)):
+            with self.subTest(code=code):
+                signature = self.fixture.dir / "SHA256SUMS.sshsig"
+                if raw is None:
+                    signature.unlink()
+                else:
+                    put(signature, raw)
+                document, _ = self.report()
+                self.assertEqual(document["exit_code"], code)
+                result = install_verify.Verification(document["version"], document["target"],
+                    tuple(install_verify.Check(**check) for check in document["checks"]))
+                self.assertIn("retry with --from-dir", "\n".join(result.lines()))
+                text = "\n".join(self.screen_report())
+                self.assertIn("Verify this installation → Downloaded files", text)
+                self.assertNotIn("--from-dir", text)
 
     def test_online_keyboard_interrupt_remains_an_interrupt(self):
         def interrupted(url):

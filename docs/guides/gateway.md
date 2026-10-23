@@ -127,8 +127,9 @@ confirmed save; sign in again only if none comes. Once you have checked
 the credentials (`charmer providers list`),
 `charmer gateway clear-hold` acknowledges the evidence you checked (a terminal
 outside Claude Code, typed confirmation). An unavailable journald process
-observation is a coverage gap that this confirmation can acknowledge for the
-running gateway. A generic restart is never the fix for a held gateway.
+observation is a coverage gap acknowledged only by a clear whose report showed
+it as unavailable, for the same running gateway instance. A generic restart is
+never the fix for a held gateway.
 
 The hold reads only what it needs, over the gateway's whole run: on the
 supervised service, the credential-save lines and the running gateway's
@@ -168,11 +169,14 @@ What to do depends on the reason:
 - **Journald's process start could not be observed:** keep the gateway running,
   check the credentials, then run `charmer gateway clear-hold`. A missing tool
   or system bus, denied access, timeout, inactive service, invalid properties
-  or an older systemd can leave this observation unavailable. The clear
-  acknowledges the coverage gap for this running gateway; it does not restore
-  the observation, which remains visible in status and doctor. A new gateway
-  instance needs a new check, and later failed saves still hold. Unreadable
-  system-journal drop notices remain advisory as described above.
+  or an older systemd can leave this observation unavailable. Only a clear
+  whose report showed the observation as unavailable acknowledges the coverage
+  gap for that same running gateway instance. A clear made while it was available
+  does not create an acknowledgement, but leaves an existing one unchanged.
+  The clear does not restore the observation, which remains visible in status
+  and doctor. A new gateway instance needs a new check, and later failed saves
+  still hold. Unreadable system-journal drop notices remain advisory as
+  described above.
 - **A credential save failed:** keep the gateway running and wait for a
   persisted save of that credential (sign in again only if none comes),
   and clear only after checking it. A restart-risk or observation problem

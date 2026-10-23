@@ -29,7 +29,7 @@ import argparse
 import sys
 from typing import TYPE_CHECKING, TextIO
 
-from charmer import endpoint, errors, gateway_hold, gateway_inhibition, gateway_lifecycle, termtext
+from charmer import endpoint, errors, gateway_inhibition, gateway_lifecycle, termtext
 import charmer.cli.consent as consent
 
 if TYPE_CHECKING:
