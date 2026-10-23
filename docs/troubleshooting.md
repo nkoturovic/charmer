@@ -108,6 +108,7 @@ to a model.
 | --- | --- | --- |
 | a provider shows not connected | its key is missing, or no sign-in is saved | `charmer providers set-key <provider>`, or `charmer providers sign-in anthropic` |
 | an account's requests fail after a while | `invalid_grant` lines since the sign-in, or the pool has no credential record | sign in again: `charmer providers sign-in anthropic` (or `openai`) |
+| an account's models disappear after its credential file becomes unreadable | the gateway can drop that account's models instead of retaining the last working credentials; doctor may report missing selectors | restore owner-only read access to the credential file, then check `charmer providers list` and `charmer doctor`; if models remain missing, follow the persistence hold before a guarded `charmer gateway restart`; do not delete the credential file |
 | 401 or 403 from a keyed provider | the provider refused the key | create a new key in its console and set it again |
 | 402 or 429, agents of one provider stall | per-model counts of 402/429/403 from the gateway's log | in the session, `/cm fallback <provider>`, then `/reload-plugins`; for new launches pick a fallback profile |
 | a provider has no models | its key is set but no model is declared | **G** → **K** continues into adding a model, or `charmer discover <provider>` |
@@ -119,7 +120,7 @@ to a model.
 | OpenAI on its API key: long answers cost more than expected | none: each answer is bounded by Claude Code's output cap, not by a spend limit | set a hard project spend limit with OpenAI ([providers/api-keys.md](providers/api-keys.md#openai)) |
 | OpenRouter or another OpenAI-compatible provider: a long session stops with the provider's context-length error | none: on these routes a context-window error is shown as the provider's error and does not start automatic compaction (on OpenAI it does) | run `/compact`, then continue |
 | Qwen answers 401 | the key does not match the address | the Qwen provider takes a Token Plan key; a pay-as-you-go Model Studio key belongs to the `model-studio` preset |
-| a preset or an OpenAI-compatible endpoint: “not available in this release” | a build whose keyed OpenAI-compatible audit is closed (published releases ship the route open) | use an audited release, the vendor's Anthropic-compatible endpoint, OpenRouter, or a server on your network ([providers/openai-compatible.md](providers/openai-compatible.md)) |
+| a preset or an OpenAI-compatible endpoint: “not available in this release” | a build whose keyed OpenAI-compatible audit is closed; this release closes these routes | use the vendor's Anthropic-compatible endpoint, OpenRouter, or a keyless server on your network ([providers/openai-compatible.md](providers/openai-compatible.md)) |
 | adding a preset again: “is already the API key of …” | another provider uses that key name | follow the message: another provider name, or share or replace the key on purpose ([the same preset twice](providers/anthropic-compatible.md#the-same-preset-twice)) |
 | setting a key asks to replace it “for each of them” | the key name is shared: other providers (a preset added twice, or a provider of the earlier custom registry) use the same key | answer y to replace it for every provider named, or N to keep it ([replace a shared key](providers/api-keys.md#4-replace-remove-disconnect)) |
 

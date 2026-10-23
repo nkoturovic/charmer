@@ -122,6 +122,7 @@ CHARMER_ASSETS="$site/charmer/data"
 CHARMER_HOOK_COMMAND="$root/bin/charmer"
 CHARMER_PROXY_BIN="$root/libexec/charmer/cli-proxy-api"
 export CHARMER_CHANNEL CHARMER_ASSETS CHARMER_HOOK_COMMAND CHARMER_PROXY_BIN
+# This fixture deliberately models an unattested bundle, so quota stays unavailable.
 unset CHARMER_PROXY_PATCHES
 exec "$root/runtime/python/bin/python3" -I -B -c 'import sys; sys.path.insert(0, sys.argv.pop(1)); from charmer.entrypoints import main; raise SystemExit(main())' "$site" {name} "$@"
 """

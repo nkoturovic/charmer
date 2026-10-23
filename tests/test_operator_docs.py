@@ -130,10 +130,24 @@ def _released_version() -> str:
 
     if not __version__.endswith("-dev"):
         return __version__
-    match = re.search(r"^## \[(\d+\.\d+\.\d+)\] — \d{4}-\d{2}-\d{2}$",
+    match = re.search(r"^## \[(\d+\.\d+\.\d+)\] [—-] \d{4}-\d{2}-\d{2}$",
                       _CHANGELOG.read_text(encoding="utf-8"), re.M)
     assert match is not None, "CHANGELOG.md names no released version"
     return match.group(1)
+
+
+class ReleasedVersionTests(unittest.TestCase):
+    def test_development_line_uses_newest_dated_section_with_either_separator(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            changelog = Path(tmp) / "CHANGELOG.md"
+            for separator in ("—", "-"):
+                with self.subTest(separator=separator):
+                    changelog.write_text(
+                        f"## [Unreleased]\n\n## [2.1.0] {separator} 2026-10-24\n\n"
+                        "## [2.0.1] — 2026-10-18\n", encoding="utf-8")
+                    with mock.patch("charmer.__version__", "2.2.0-dev"), \
+                            mock.patch.dict(globals(), _CHANGELOG=changelog):
+                        self.assertEqual(_released_version(), "2.1.0")
 
 
 class GateRuleTests(unittest.TestCase):
@@ -1579,6 +1593,16 @@ class OpenAICompatibleDocsTests(unittest.TestCase):
                 self.assertIn(alternative, text)
         for name in ("CHEATSHEET.md", "reference/compatibility.md"):
             self.assertIn("openai-compatible.md", _text(name))
+        route = next(row for row in _rows(_section(_text("reference/compatibility.md"), "Transports"))
+                     if row.startswith("| keyed OpenAI-compatible endpoints,"))
+        troubleshooting = _text("troubleshooting.md")
+        self.assertNotIn("published releases ship the route open", troubleshooting)
+        if open_:
+            self.assertIn("| supported", route)
+            self.assertNotIn("this release closes these routes", troubleshooting)
+        else:
+            self.assertIn("unavailable in this release", route)
+            self.assertIn("this release closes these routes", troubleshooting)
 
 
 class ProviderRouteDocsTests(unittest.TestCase):

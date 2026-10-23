@@ -2144,8 +2144,8 @@ def _doctor_journal_report(runtime: runtime_mod.Runtime, text: str | gateway_eve
     for substitution in facts.substitutions:
         lines.append(gateway_facts.tagged(
             f"gateway substitution: {substitution.label} was answered by {substitution.served} "
-            f"({substitution.count}× in 24 h{qualifier}, a lower bound: logged at most once per credential "
-            "and model pair per 10 min); the provider serves another model under this wire — "
+            f"({substitution.count}× in 24 h{qualifier}, logged per attempt); "
+            "the provider serves another model under this wire — "
             "check the line (charmer models) and move agents off it if that matters", area="Models"))
     return lines
 

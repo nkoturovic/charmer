@@ -59,6 +59,7 @@ installation (a source tree, or the prefix of an installed package: its
 │                                # gateway.lock (held by the running gateway across exec),
 │                                # gateway-start.lock, exec.json (instance nonce),
 │                                # start-history.json, persistence-hold.json,
+│                                # journald-unavailable-ack.json (same-instance clear acknowledgement),
 │                                # inhibition.json (the root's gateway inhibition: only while a
 │                                # transaction owner — service hand-off, installer, updater,
 │                                # machine move — changes the gateway, or after one died midway;
@@ -92,7 +93,7 @@ installation (a source tree, or the prefix of an installed package: its
                                  # charmer-gateway.service by default)
 ```
 
-Release: the version in `version.json` (2.0.1; catalog 39).
+Release: the version in `version.json` (2.1.0; catalog 40).
 Current default: the **`balanced` seed profile**
 (`catalog/profiles/balanced.json`): Opus 5.5 lead at ultracode, Sol high
 explorer/xhigh analyst, Opus analyst-strong, Luna max / Sol xhigh / Sol max
@@ -198,8 +199,9 @@ disabled and removed checks (omission row IR1, probe
 credentialed redirects yield fixed local 502 `upstream redirect refused`, with
 no upstream body/Location or path-bearing refusal log. Keyed-compat safety is
 route-scoped to Claude `/v1/messages` → chat; compact, images and SDK
-`HttpRequest` are outside that promise. Retry-After patch 11 is deferred: it
-stays a candidate (`gateway/candidates/`), never shipped. The embedded
+`HttpRequest` are outside that promise. Retry-After (admission ID 11) was
+never admitted; its earlier candidate file was removed with the 8.0.33 rebase.
+The embedded
 registry carries every catalog wire except the overlay-only generations
 (the OAuth how-to in §5); the pinned registry directory
 (`${cliProxyApi.src}/internal/registry/models`,
@@ -387,7 +389,7 @@ Profile lineups and direct lineups, one compile path:
     writes (`~/.claude/agents`, `~/.claude/settings.json`, gateway env).
 11. **Non-Claude outbound cache-retention boundary.** The gateway
     patch `cli-proxy-api-non-claude-cache-retention.patch` (pinned
-    CLIProxyAPI 7.3.15; derived over the split executor files)
+    CLIProxyAPI 8.0.33; derived over the split executor files)
     enforces that `prompt_cache_retention` — the OpenAI Responses-platform
     cache TTL control — is stripped at the **final outbound boundary** for
     every non-Claude route. One sanitizer
@@ -417,7 +419,9 @@ Profile lineups and direct lineups, one compile path:
     - **xAI** `prepareResponsesRequestTo` (`xai_executor_request.go`), at
       the end of the shared final preparation (HTTP, `/responses/compact`,
       WebSocket); upstream's single early `sjson` delete is folded into it,
-      not duplicated.
+      not duplicated. `retentionStrippingFinalizer` also sanitizes late payload
+      overrides; HTTP/compact/stream and WebSocket initial/retry sends refuse
+      an empty finalized body.
     - **Meta** `prepareResponsesRequest` (`meta_executor_execute.go`), same
       pattern: upstream's early delete folded into the final invariant.
     - **OpenAI-compatible chat** (an extension of this patch):
@@ -431,7 +435,7 @@ Profile lineups and direct lineups, one compile path:
       is `Execute`'s genuine non-stream `/responses/compact` request, a
       Responses-platform request that keeps the field (below).
 
-    **Not applicable on 7.3.15** (no outbound payload the boundary could
+    **Not applicable on the current pin** (no outbound payload the boundary could
     miss): `CountTokens` for a custom/third-party base URL is now
     **local** — upstream estimates tokens in-process and sends no request —
     so Kimi/Qwen/DeepSeek/OpenRouter `count_tokens` results are local
@@ -441,12 +445,10 @@ Profile lineups and direct lineups, one compile path:
     which the render leaves off. The Kimi OAuth executor's own
     OpenAI/Responses passthrough is not a charmer route (the catalog
     has no Kimi OAuth pool; Kimi is a `claude-api-key` direct route).
-    (Unmodified by design, as before: the `/alpha/search` server
-    passthrough, plugin management routes, and Claude OAuth refresh — they
-    carry no messages/responses payloads. Also 7.3's codex realtime/live
-    passthroughs (`/v1/realtime*`, `/v1/live`; `internal/api/server_routes.go`
-    ~81–100): they carry SDP/session JSON, not Responses payloads, so there
-    is no retention field to strip.)
+    Claude OAuth refresh carries no messages/responses payload. Alpha search,
+    plugin management/resources and realtime/live routes need no retention
+    sanitizer coverage either, but are not exposed passthroughs: the management
+    guard refuses them before handlers or key checks.
 
     Claude classification is **endpoint-first**: only the default base URL
     or a resolved official HTTPS `api.anthropic.com` (default/443 port,
@@ -474,22 +476,20 @@ Profile lineups and direct lineups, one compile path:
     rename-replace, held-open old inode, temp/sibling names ignored,
     blank/whitespace/missing never load, api-key-dropping reload refused),
     plus the start-up gate, a second filtered
-    `go test ./sdk/cliproxy -run '<the patch's seven start-up tests>'`
-    (`test_packaging.StartupGateTests` pins the list and the patch body;
+    `go test ./sdk/cliproxy -run '<the recipe's start-up test prefixes>'`
+    (`test_packaging.StartupGateTests` checks the selection;
     the barrier tests run under the watcher gate),
     plus the management allowlist gate `go test -skip '^(…)$'
     ./internal/api/...` (the patch's own `TestManagementAllowlist_*` tests
     — on production-shaped servers with the plugin host wired as
     `sdk/cliproxy/builder.go` does, plus a source tripwire that pins every
-    management-key consumer by file and count — and every upstream
-    `internal/api` test except seven that pin surfaces
-    the allowlist refuses by design, skipped by explicit name — no wildcard,
-    no `-count`; `test_packaging.ManagementAllowlistGateTests` pins the list
-    and the patch body); keep those gates when
-    adding routes, and keep the sdk/cliproxy runs filtered (that package
-    carries an upstream failure on pristine 7.3.15, and the allowlist patch
-    fails three of its end-to-end tests that write through the management
-    API). Do not add model-name
+    management-key consumer by file and count — and the upstream tests
+    except the recipe's explicit, wildcard-free exclusions for refused
+    surfaces). `test_packaging.ManagementAllowlistGateTests` checks that
+    selection. The separate `sdk-service` gate runs `./sdk/cliproxy` with
+    its own explicit skip list; SDK coverage is not limited to the filtered
+    startup and compatibility tests. Preserve the recipe's selections when
+    adding routes. Do not add model-name
     conditions, do not strip globally, and keep the patch independently
     removable — any new non-Claude route must route through one of these
     boundaries, never re-introduce the field after them. A new executor
@@ -559,13 +559,15 @@ Profile lineups and direct lineups, one compile path:
 | `installs.py` | channels, install roots, the channel marker | `check(state_root, environ, record=)` (the entry point's guard: claims the launcher's channel in `<state>/channel` on the first writing run under `channel.lock` (`claim_marker`; a claim that cannot be written refuses), refuses another channel except a read-only plain doctor, fails closed on unknown content), `guard(state_root, environ, writes=)` (the same for the raw `lineup` intercept, before its Runtime), `bundle_link`/`nix_link`/`discover` (doctor's installation list), `plan_selection`/`apply_selection`/`restore_selection` (the service's exec link; Nix: link to the running store path + `nix-store --add-root --indirect`), `install_root(environ, installation)` (the launcher tree, never a resource directory) |
 | `choices.py` | `choices.json` | the closed document for choices older releases must never meet (`FIELDS`: `default_profile`, `session_env_keep`, `acknowledgements`, `window_ceiling` — the context window ceiling, 200K..800K, default 800K; `window_ceiling(environ)` never raises and names an unreadable file's problem, `parse_window_ceiling` reads `400000`/`400K` and refuses with the range); `read`/`update` (atomic 0600, locked, default value removes the key; `update(expected=digest(…))` compares the document under the same lock and refuses with `ChoicesChanged`, `replace(key, old, new)` writes only while the value is still `old`) |
 | `account_pools.py` | the account pools as data | the packaged `account-pools.json` (closed schema `schemas/account-pools.schema.json`; the release's own data, never a resource override; read once): per pool its catalog `provider`, `display`, `sign_in` (`flow` `browser` — methods `browser`/`address` — or `device`, the account `host`, the `charmer-proxy` login `command`, the `signin_policy` values that offer it), `acknowledgement` (`id`, `text`), `record_prefix` and `registry` (`section` the catalog's lines are checked against, every one of the `sections` its sign-ins serve from); `record_prefixes` lists every prefix the pinned gateway names sign-in records with, a pool's or not. A pool's name is its gateway channel. `parse` adds the rules the schema cannot state (name grammar, a listed record prefix, the section among the sections, offered by `public`, no shared provider, display, login command, acknowledgement id or record prefix); `PoolTable.classify` gives a record name to the longest matching prefix (`kimi-ai-1.json` is never a `kimi` record), names only; `section_pools` maps a registry section back to its pools (two pools may share one). Imports only `errors`, `strict_json`, `validate` |
-| `gateway_hold.py` | the persistence hold | `evaluate_files` (every retained instance log from the cleared offset; `file_log.scan_instance_logs` problems, unreadable logs and an unfinished last line (`file_log.read_evidence`) hold) / `evaluate_journal` (over the running instance's whole run, from its start line or the last clear: only credential-save lines of the gateway's reporter, `gateway_events.SAVE_LINE_PATTERN`, and that start line, by a narrowed journal read with a streaming fallback; the journal must still reach the last clear (`journal_reaches`), and journald's rate-limit drop notices on the shared `user@<uid>.service` group after it hold (`journal_drops`; a system journal this account cannot read is reported, not held)) through `gateway_events.recovery_hold`, recording every unresolved failure it sees as a hold with its journal `evidence` identity at once (a journal vacuum cannot unhold it; it resolves itself only while a complete window still shows that failure and its repair); recorded holds and unreadable records veto; `clear` (typed `charmer gateway clear-hold`) records per-instance offsets and removes only the recorded holds its `HoldReport.recorded` showed (newer ones stay and are returned; the verb then exits 1); `prune_at_start` (at a spawn, previous instances only, beyond `PRUNE_BUDGET`) persists each pruned log's unresolved failure or incomplete evaluation as a hold with its `coverage` before deleting the file; an unreadable hold record prunes nothing |
-| `platform/` | POSIX backends (Linux and macOS) | the package imports nothing; `observation` (result types: running / stopped / unknown), `posix_fs` (directory fsync, one `os.replace`, flock, exec, ownership), `linux_service` (systemctl/journalctl argv behind `service.py`, plus the three control verbs and the unit-file verbs of `gateway service install|uninstall`), `systemd_unit` (the supervised unit's pure renderer and parser; `HEADER` marks product-written files), `linux_process` (bounded `/proc`), `darwin_process` (macOS: `lsof -Fpu` + loopback connect probe for the listener, kill(0) + `ps -o comm=` for the gateway PID, one bounded `ps -axww` session scan, one bounded `ps -axww -o comm=` executable-path read for the prune rule, the shared `/tmp/cc-daemon-<uid>` daemon root; sessions dispatch through `sessions._platform`), `mounts` (filesystem type under a path, WSL detection), `posix_process` (exists, SIGTERM, the detached spawn), `file_log` (per-instance logs: exclusive 0600 create, newest-first listing, bounded windows with `<nonce>:<offset>` cursors and UTC envelope times, `read_recent` for doctor; never truncates; `remove_instance_log` deletes only a whole finished log); a missing capability is unknown, never stopped |
+| `gateway_hold.py` | the persistence hold | `evaluate_files` (every retained instance log from the cleared offset; `file_log.scan_instance_logs` problems, unreadable logs and an unfinished last line (`file_log.read_evidence`) hold) / `evaluate_journal` (over the running instance's whole run, from its start line or the last clear: only credential-save lines of the gateway's reporter, `gateway_events.SAVE_LINE_PATTERN`, and that start line, by a narrowed journal read with a streaming fallback; the journal must still reach the last clear (`journal_reaches`), and journald's rate-limit drop notices on the shared `user@<uid>.service` group after it hold (`journal_drops`; a system journal this account cannot read is reported, not held); after the evidence read, a known supervised instance also checks `journald_start`: a process start later than both the gateway's start and the last clear holds even if the gateway start marker survived, and an unavailable observation holds unless explicitly acknowledged for this instance) through `gateway_events.recovery_hold`, recording every unresolved failure it sees as a hold with its journal `evidence` identity at once (a journal vacuum cannot unhold it; it resolves itself only while a complete window still shows that failure and its repair); recorded holds and unreadable records veto; `clear` (typed `charmer gateway clear-hold`) records per-instance offsets and removes only the recorded holds its `HoldReport.recorded` showed (newer ones stay and are returned; the verb then exits 1); only a clear whose report showed journald's process start unavailable writes `journald-unavailable-ack.json`, private and bound to the exact gateway nonce and UTC start, separate from the version-1 hold document (the limitation remains visible; later failed saves still hold); `prune_at_start` (at a spawn, previous instances only, beyond `PRUNE_BUDGET`) persists each pruned log's unresolved failure or incomplete evaluation as a hold with its `coverage` before deleting the file; an unreadable hold record prunes nothing |
+| `platform/` | POSIX backends (Linux and macOS) | the package imports nothing; `observation` (result types: running / stopped / unknown), `posix_fs` (directory fsync, one `os.replace`, flock, exec, ownership), `linux_service` (systemctl/journalctl argv behind `service.py`, plus the three control verbs and the unit-file verbs of `gateway service install|uninstall`; `journald_start` makes one bounded read-only system-manager query for the default namespace's `systemd-journald.service`: loaded, active, positive PID and a valid UTC microsecond start timestamp required, unavailable or invalid is unknown), `systemd_unit` (the supervised unit's pure renderer and parser; `HEADER` marks product-written files), `linux_process` (bounded `/proc`), `darwin_process` (macOS: `lsof -Fpu` + loopback connect probe for the listener, kill(0) + `ps -o comm=` for the gateway PID, one bounded `ps -axww` session scan, one bounded `ps -axww -o comm=` executable-path read for the prune rule, the shared `/tmp/cc-daemon-<uid>` daemon root; sessions dispatch through `sessions._platform`), `mounts` (filesystem type under a path, WSL detection), `posix_process` (exists, SIGTERM, the detached spawn), `file_log` (per-instance logs: exclusive 0600 create, newest-first listing, bounded windows with `<nonce>:<offset>` cursors and UTC envelope times, `read_recent` for doctor; never truncates; `remove_instance_log` deletes only a whole finished log); a missing capability is unknown, never stopped |
 | `pin.py` | contract v2 accessors, the owned copy and pin facts | `version`, `platform_record`, `evidence_class`, `settings_keys` (`verified[0].settings_keys`; required for a releasable pin, None — fixtures only — skips the skew check); `owned_path` (data root, `claude.exe` on win32); `verify_owned` (regular, non-symlink dirs and file, size, executable, full sha256 — every launch); `take_use_lock`/`take_use_lock_in`/`UseLock` (the per-version `.in-use` lock, see `retention.py`; `owned_version_of` names the version an executable path is the owned copy of); `copy_state` (metadata only, for the card); `installed_client`/`version_from_path` (the user's `claude` by real path, never run); `staleness` (> 30 days or a newer user claude; no command); `override_attention` (doctor text) |
 | `acquire.py` | owned-copy acquisition (`setup --step claude`) | sources in order: `--claude-from`, retained `pinned-clients/<v>`, native versions dirs (`$XDG_DATA_HOME/claude/versions`, `~/.local/share/claude/versions`, Windows `%USERPROFILE%`), resolved PATH `claude`; else the consented download (`DownloadPlan`, Range resume, three tries, streaming hash, same-host redirects only); per-version host lock; 0700 dir / 0755 file via verified temp + rename; `migrate_retained` (launch path, copy never move); `pins.json` launcher → pin index for the prune rule; `setup --step claude` (`cli/commands/setup.py`) exits 0 when the copy is in place, 3 when the offered download is declined, 1 on a human-guard refusal, not set up or failure, 130 when cancelled |
 | `trust.py` | release signatures | stdlib sshsig verifier (`SHA256SUMS.sshsig`, namespace `charmer-release`, sha512 prehash, strict Ed25519 with canonical-s checks), `allowed_signers` parsing with `valid-after`/`valid-before` rotation; `release_signers()` reads the packaged `release-trust/allowed_signers` (the only trust an installation verifies updates with; a file with no key refuses); `parse_sums` |
 | `self_update.py` | the bundle update core | `read_installation` (`install/versions/<v>`, `current`, `previous` = the version current before the last switch, whatever the numbers), `check` (latest `MANIFEST.json` + signed `SHA256SUMS`), `plan` (size, restart class, Claude Code change and its download size, state format, rollback blocked), `apply`/`rollback` under the install lock and with **required** safety seams (`hold`, `protected`, `inhibit`, `prune_copies`, `acquire_pin`; `rollback` also the `confirmed` installation, refused when the links moved since); the two links change through `switch` (recorded in `install/.switch.json` first) and `finish_switch` puts an interrupted one back; the gateway hold vetoes a gateway-changing switch, versions a running gateway executes from are kept (unknown keeps every version) and never replaced in place, the incoming Claude Code is put in place before the switch, every step is a phase of `inhibit`'s record (`download`, `pin`, `replace`, `switch`, `prune`), and the cleanup ends with `prune_copies` for the new current; `install_lock`, `tidy` (an interrupted run's leftovers: a version moved aside as `versions/.replaced.<v>.<pid>` comes back, staging and partial downloads go); `installed_pins` (current/previous/running pins for the owned-copy prune rule) |
-| `release_update.py` | `charmer update` and the card's U | one journey: channel (Nix/source get instructions, exit 1), the running launcher is `install/current`, ownership (`install_txn`), the packaged release key, `HttpsTransport` (https only, release host plus its download host, size caps, `tls` trust through `environ`; proxy selection and bypass from the process environment via `getproxies_environment()`, lowercase including empty overrides wins, no gateway proxy or OS proxy discovery, no direct retry; connection and CONNECT failures, `HTTPException` included, have fixed credential-free text) or `--from-dir`; equal version = up to date (never planned); y/N or `--yes`; refused inside a Claude Code session; exits 0/1/2/3/130; the run's inhibition (owner `updater`, `_transaction`: ended on success or when nothing changed, kept by an interruption from `replace` on — `self_update.Interrupted`, exit 1, or 130 when cancelled) and its recovery (`_recover`: the next update or rollback takes it back under the install lock, `tidy` and `finish_switch`, ends it, then carries on); a rollback passes the installation it showed as `confirmed`; `copies_pruner` (the use-lock prune for the incoming contract); `pin_acquirer` (the incoming contract's pin through `acquire`, recorded for the incoming release); `doctor_lines`/`card_hint` (offline release age, trust source) |
+| `install_verify.py` | read-only signed-bundle verification | `verify_current` / `verify_installation`, shared by `charmer update --verify` and the TUI: installed trust authenticates exact installed-version metadata, then the inner manifest, bundle content, gateway and managed-client identities; no repairs, created locks, token reads or executable runs. Linux running-gateway verification hashes the opened `/proc/<pid>/exe` with ownership and identity rechecks; unavailable is incomplete, never assumed stopped. Only `MANIFEST.json` is excluded from the version-tree content hash. An unreadable optional `previous` link does not prevent verification; its development or release bundle supplies a local comparison only. Unusable supplied metadata is incomplete; signature/checksum failures are mismatches. Exit 0 verified, 1 mismatch, 3 incomplete; if only running bytes differ, the remedy is guarded `charmer gateway restart`, not reinstall/rollback |
+| `bundle_content.py` | shared `bundle-content-v1` encoder | pure `content_digest`: sorted path-part records encode file hashes and normalized executable/non-executable modes, literal link targets and directories; returns SHA-256 plus regular-file count. No filesystem reads or link following; the builder and verifier share this encoder |
+| `release_update.py` | `charmer update` and the card's U | one journey: channel (Nix/source get instructions, exit 1), the running launcher is `install/current`, ownership (`install_txn`), the packaged release key, `HttpsTransport` (https only, release host plus its download host, size caps, `tls` trust through `environ`; proxy selection and bypass from the process environment via `getproxies_environment()`, lowercase including empty overrides wins, no gateway proxy or OS proxy discovery, no direct retry; connection and CONNECT failures, `HTTPException` included, have fixed credential-free text) or `--from-dir`; equal version = up to date (never planned); y/N or `--yes`; refused inside a Claude Code session; exits 0/1/2/3/130; the run's inhibition (owner `updater`, `_transaction`: ended on success or when nothing changed, kept by an interruption from `replace` on — `self_update.Interrupted`, exit 1, or 130 when cancelled) and its recovery (`_recover`: the next update or rollback takes it back under the install lock, `tidy` and `finish_switch`, ends it, then carries on); a rollback passes the installation it showed as `confirmed`; `copies_pruner` (the use-lock prune for the incoming contract); `pin_acquirer` (the incoming contract's pin through `acquire`, recorded for the incoming release); `doctor_lines`/`card_hint` (offline release age, trust source). Verification uses the separate `verification_transport`: installed code owns the canonical GitHub exact-version directory and admits only `SHA256SUMS`, `SHA256SUMS.sshsig` and `MANIFEST.json`; disclosure precedes fetching, redirects stay on the exact requested GitHub URL or known HTTPS GitHub asset hosts, and manifest URLs never select the destination. Verification's `--from-dir` uses bounded regular, non-symlink metadata reads without constructing an HTTPS transport; trust still comes from the installation |
 | `install_txn.py` | the installer's and updater's safety transaction | strict channel-marker ownership (`installs.read_marker` rules; `--migrate-from-nix` accepts only a valid foreign marker), `claim` (the runtime's marker format, inside the root's writer fence for the inhibition's owner), state format (forward only), the gateway inhibition (`gateway_inhibition`, no fallback: `guard` refuses any record the caller does not own — an earlier release's `service-handoff.json` and an unreadable one included; `begin` (owner `installer`/`updater`, owner-process expiry, never a silent take-over), `Inhibition.advance`/`fenced`/`end`/`restorable` (phases up to `pin` change nothing the installation runs from), `recover` (explicit, under the install lock)), `protected_versions` (the running gateway's version from its start record; unknown = None), `hold_reason`, `prune_copies` (`retention.prune_copies` for the current release); a `main` that `install.sh` runs through the bundle's own interpreter, which also runs `charmer.gateway_inhibition`'s command for the installer's record |
 | `install_receipt.py` | `install/installer.json` | format 2: launchers `{path, sha256}` and PATH lines `{file, marker, line}`; strict `read` (a hash-less format 1 vouches for nothing), `Launcher.owned`, `PathLine.present`, `record` (the installer's writer) — the one schema the uninstall command reads |
 | `legacy.py` | the names charmer had before the rename | the one module of the package that spells them (`NAME`, `SPELLINGS`, `NAME_PATTERN`, `LEGACY_SELECTOR_PREFIX`, the earlier roots by the same resolution policies as `paths.py`, shims, units with their exact header, launchers and their mark, the managed-id variable, the Nix links, the export format, caches, resources and start line); standard library only, nothing from charmer; each constant says who reads it and how long it stays |
@@ -584,7 +586,7 @@ Profile lineups and direct lineups, one compile path:
 | `dev.py` | draft→check→review→promote | promotes only models/providers; dummy secrets in checks; pretty post-images; scaffold (`model add --like`) reads raw v2 and derives selectors by documented shape only (never `str.replace`), refuses retired keys/selectors and Anthropic like-lines (a new Anthropic generation needs a route edit); promote always lands `status: "new"` (New · not admitted) and `_check_new_entry_policy` enforces the catalog-33 selector shape (Anthropic canonical `wire[1m]`, OpenAI-compat `charmer-<key>[1m]`, gateway-effort `<prefix><key>-<effort>[1m]` with contract level == effort); draft/review data v2 (a v1 draft points at `drafts migrate`; the journal stays v1); `charmer-dev drafts migrate [--apply]` — dry-run default, `--apply` renames into `drafts/archive-2x/` (0700) and converts v1 model drafts, never deletes, refuses under a newer marker; the check render uses v2 lines + `continuity={}`; `check` runs the pinned-registry presence rule (`registry_presence` → `CheckResult.registry`, printed): every OAuth-pool line (New included) whose wire is absent from its registry section is **reported, never refused** (the overlay trigger; the registry is the pre-patch source, so a patch-added wire still reports; no package registry → one "skipped" line); `promote`/`--patch-output` return and print `gateway_effort_moves` notes, historical same-alias reload vs renamed-alias continuity-until-resume, for every gateway-effort line whose `wire_model`/`generation` differs between the **installed** catalog (`running_catalog_lines`, the package's own) and the post-image (print-only: promote has no apply step to ask at); `_check_new_entry_policy`'s legacy default-composition checks run only while a legacy `catalog/compositions/default.json` exists; the seed checks always run — a New model bound in any seed, or a New provider bound, named in `lead_providers` or as `primary_provider`, is refused (New · Off) |
 | `errors.py` | `CharmerError` root | operator-facing errors share one catch; internal programming errors still raise |
 | `service.py` | gateway service seam | the one remedy seam `hint(verb, home=|backend=)`: control verbs always name `charmer gateway <command>` (guarded), manager text only on the systemd backend (`backend_of(home)` from endpoint.json); `failure_notice(unit)` is the unit's own text; journal argv; PID/health, listener ownership before authentication, exec/reload stamps and pending restart; every live read has an injected test seam. Shared `owner_policy`: foreign uid refuses before sending either token, same-uid outside MainPID or unknown ownership emits Attention and proceeds; launch and management share it |
-| `management.py` | restart-bound key slots and minimized local client | channel policy: `allowlist_build` needs `CHARMER_CHANNEL=nix` (the Nix wrappers set it) plus the pinned binary and the attested allowlist patch; any other channel or none keeps management off whatever the gateway's backend (doctor and `charmer-proxy status` say so by channel, never by backend), and `pool_status` then returns `unavailable` without reading keys or the gateway; the spawned gateway never carries `CHARMER_PROXY_PATCHES`. HOME-relative `management-key`, `.next`, `.disabled`, `.prepared` (private selection digest), leaf `.lock`; marker wins. `ensure`/rotation stage; only `init --prepare-start` promotes after listener and PID absence is proven, publishing selection last. Disable writes marker first; missing/deleted active or re-enable stays unreadable until selection. `run --prepared` reads/injects only: no writes/chmod/locks. Wrapper attests a pinned binary and allowlist manifest; standalone clears inherited attestations. Client accepts only numeric loopback HTTP, shared owner policy before the key is sent, one `http.client` GET to `/v0/management/auth-files` via `X-Management-Key`, 1.5 s, 1 MiB / 256-entry caps, no proxy env, redirects or retries; unsafe repairs and exceptions are value-free |
+| `management.py` | restart-bound key slots and minimized local client | channel policy: `allowlist_build` permits attested `nix` and `bundle` channels with a nonempty `CHARMER_PROXY_BIN`. Nix supplies patch basenames including the allowlist patch; bundles supply the exact ordered `basename@sha256` list from the packaged gateway contract, including that patch, compared against `resources_root()` (selected assets or checkout resources cannot authorize an installed bundle). Source, unwrapped and other channels keep management off regardless of backend, and `pool_status` then returns `unavailable` without reading keys or the gateway; the spawned gateway never carries `CHARMER_PROXY_PATCHES`. HOME-relative `management-key`, `.next`, `.disabled`, `.prepared` (private selection digest), leaf `.lock`; marker wins. `ensure`/rotation stage; only `init --prepare-start` promotes after listener and PID absence is proven, publishing selection last. Disable writes marker first; missing/deleted active or re-enable stays unreadable until selection. `run --prepared` reads/injects only: no writes/chmod/locks. Wrappers supply the gateway path and attestation; source preparation forces the source channel, and unwrapped console entry points drop an inherited channel. Client accepts only numeric loopback HTTP, shared owner policy before the key is sent, one `http.client` GET to `/v0/management/auth-files` via `X-Management-Key`, 1.5 s, 1 MiB / 256-entry caps, no proxy env, redirects or retries; unsafe repairs and exceptions are value-free |
 | `quota.py` | pure minimized quota facts, classification and text | stdlib + `errors`, `strict_json`; no I/O. New objects retain only allowed credential fields, closed reason from raw status_message, anonymous pool handles and recognized Claude/codex windows. ≥90% current warns; expired windows reset; observation age/unknown reset/no-window exhaustion explicit, never extrapolated. Runtime caches every result 60 s, no persistence/polling; injected health/models seams suppress live management unless explicitly injected. `quota` disables state cleanup/shim refresh; doctor never quota-BLOCKs or suppresses healthy-pool journal failures; Providers details carry reset/age; card uses actual lineup pools with fresh P / resume S→T guidance. `condition()` types every observation (available, stale, exhausted, management-disabled, unavailable, not-ours); `command_lines` prints its `condition_line` on every surface (`quota`, `/cm quota`, the Providers and card details) and returns `CONDITION_EXIT` (1 exactly when no reading was made; `/cm quota` always 0) |
 | `paths.py` | HOME/XDG paths and display | the authority for `state_root`/`config_root` (`sessions` keeps its wrappers and call sites); gateway config stays HOME-relative; operator config/data respect XDG; the native-projects and Claude-settings directories are two separate accessors; no side effects |
 | `retention.py` | retained and owned copies | `pinned-clients/` copies are never pruned (rollback material; `verify_retained`, `same_file` for hooks/doctor); owned-copy prune rule (`prune_plan`/`prune_copies`; `prune` returns the removed names): keep the current pin, the previous release's pin, the running gateway's release pin, every version whose **use lock** is held (`use_state`, a momentary non-blocking probe that creates nothing; an unsafe lock file or version directory keeps its version too) and every version a readable process runs, in that order of reasons (a pin keeps its pin reason while in use; the lock outranks the process evidence). The use lock (`pin.take_use_lock`: `<owned root>/<version>/.in-use`, 0600 in the 0700 version directory, opened `O_NOFOLLOW`; a symlinked, foreign-owned, hard-linked or non-regular file refuses with the setup remedy) is the authority for what charmer runs: every launch (`launch.PinnedCopy` in `perform_launch` — fresh, resume, relaunch — and `sessions stop`) takes it shared before the hash check, and the launch's descriptor is inheritable, so the exec'd Claude Code (and its children) hold it for its whole lifetime; every probe run of the owned copy (`probe.run_native`/`run_native_pty`: developer probes, evidence suites and the qualification exact-client check, which also holds it across its runs) takes it before the hash check too, in the owned root `trusted_from_contract` recorded (`TrustedExecutable.owned_root`, so a run in a fixture environment still locks it; `pin.take_use_lock_in`), and hands it to the client (`pass_fds`, through bwrap and the namespace wrapper's exec); a version directory that appears during the check (a retained copy copied into place) is locked and checked again. The process scan is supplementary (`scan_processes`: readable `/proc/<pid>/exe` links on Linux, one bounded `ps -axww -o comm=` read on macOS through `platform.darwin_process`, `_platform` is the test seam): an unreadable process is no evidence either way and blocks nothing; a copy started outside charmer by a process that cannot be inspected holds no lock (documented residual). Unknown facts still remove nothing (a process table that cannot be listed or read, an unreadable or invalid gateway start record). `prune_copies` takes each candidate's `acquire.version_lock` and use lock exclusively without waiting (creating the lock file, so no launch can start in between), keeps and reports as `in_use` every version it cannot lock or the fresh plan keeps running, re-reads the facts under those locks, deletes with the locks held — every other file first, the use lock file last, so a launch that opens a new lock file finds no copy to verify — and releases the acquisition lock first; a launch waiting on the use lock re-opens it when the file was removed and then finds the version gone (not set up, or copied back from a retained copy and locked anew); a version left in place (anything but regular files in it, a file that cannot be removed) is reported as `failed`; setup reports in-use copies (never a pin) and doctor lists them as `(in use)`, a pin in use as `(<pin reason>, in use)`; `retention_report` never hashes |
@@ -1636,8 +1638,9 @@ On memory-tight hosts the suite's tmpfs fixture copies can fail with
   The `bin/` launchers (`tools/_build/bundle.py`) resolve their installation
   without resolving the install's `current` link, force
   `CHARMER_CHANNEL=bundle`, the resources, the hook command
-  (`<root>/bin/charmer`) and the bundled gateway, unset
-  `CHARMER_PROXY_PATCHES`, append the bundled terminfo to
+  (`<root>/bin/charmer`) and the bundled gateway, export
+  `CHARMER_PROXY_PATCHES` as the packaged contract's ordered, unique
+  `basename@sha256` identities, append the bundled terminfo to
   `TERMINFO_DIRS` and run `python3 -I -B`. The host target's bundle is run
   before it is archived (every package module and every standard-library
   module the package imports, and `--version`). Archives are deterministic
@@ -1809,7 +1812,7 @@ On memory-tight hosts the suite's tmpfs fixture copies can fail with
   `test_catalog` green (a new `minimum_tested` above the 2.1.216 baseline
   goes into its locked `floors` map), the live gateway re-rendered
   (`charmer-proxy init` writes the config; the patched
-  7.3.15 watcher hot-reloads the rename-replaced `config.yaml` and init
+  pinned gateway's watcher hot-reloads the rename-replaced `config.yaml` and init
   verifies it through the render sentinel within 2 s — it prints
   the restart remedy (`charmer gateway restart`) only when the reload did not
   apply, e.g. an unpatched gateway or the startup race), doctor's served
@@ -2021,7 +2024,7 @@ On memory-tight hosts the suite's tmpfs fixture copies can fail with
   pinned client keeps an overlay-only claude wire's declared efforts,
   thinking, window and output limit. Never hand-edit secret config or add a
   Go registry patch for a model the overlay can express; a gateway re-pin is
-  the alternative. Preserve the committed patch order through 20 (11 omitted).
+  the alternative. Preserve the exact committed recipe order.
 - **Change a role, a prompt or a seed profile.** Roles are closed:
   the id set is `catalog.ROLE_IDS`, and each id's function, grade, prompt
   file, isolation, read-only tool list and `requires` follow from its id
@@ -2121,10 +2124,10 @@ On memory-tight hosts the suite's tmpfs fixture copies can fail with
      **bare family alias resolves to an older id**, so a fence must pin the
      explicit id to get the new generation. Never "fix" an anthropic entry by
      switching it to a bare family name.
-  2. *A model the pinned registry predates needs an overlay or re-pin* — on 7.3.15 check
-     first: the registry already carries every current Anthropic and codex
-     wire (claude-opus-5-5, claude-fable-5-1, claude-sonnet-5, gpt-6-*), so
-     most generation bumps need **no** overlay. Use `oauth-extra-models` through
+  2. *A model the pinned registry predates needs an overlay or re-pin* — check
+     the pinned registry first: it already carries many Anthropic and codex
+     wires (claude-opus-5-5, claude-fable-5-1, claude-sonnet-5, gpt-6-*),
+     while newer generations can still need an overlay. Use `oauth-extra-models` through
      a reviewed registration or an operator pool line for a missing wire (above). When a gateway patch is needed, order it
      in the committed `gateway/UPSTREAM.json` order: loopback-oauth →
      kimi-claude-compat → non-claude-cache-retention →
@@ -2251,7 +2254,9 @@ the operator's approval. Doctor never retires backups.
   `providers rm`, a render that would drop live aliases) name this command
   through `sessions.mark_ended_remedy`.
 - `charmer-proxy snapshot-auth [--restore <file>]` — the auth-dir
-  snapshot for a gateway rollback between 7.3.15 and 7.2.80.
+  snapshot/restore aid for gateway rollback; restore requires a proven-stopped
+  gateway. Its historical `pre-7.3` snapshot naming is retained; this does not
+  establish credential-format compatibility across gateway versions.
 - `charmer -r <id> --print-launch` — exact argv + env keys; the six
   credential keys appear only as `unset` lines and the gateway auth line
   names the scope apiKeyHelper. `--print-launch` never persists state.
@@ -2336,6 +2341,20 @@ the operator's approval. Doctor never retires backups.
   observations, not claims that the defects are repaired.
 
 - **Development versions:** see §4 "Version" for the `-dev` convention and update guard.
+
+- **macOS floor:** the installer refuses new installs of 2.1.0 or newer
+  below macOS 13; the native Apple silicon journey is on macOS 15, with no
+  runtime claim for 13 or 14 and no Intel support claim. The 2.0.1 updater
+  does not enforce that floor. See `docs/install/macos.md` and `docs/update.md`.
+- **Credential-read and WebSocket limits:** a credential-file read error can
+  withdraw an account's models rather than retain its last working credentials;
+  restore owner-only readability and follow `docs/troubleshooting.md` before
+  any restart. An already-open loopback WebSocket can keep using a retired
+  gateway key until disconnect; managed Claude Code uses HTTP, not that route
+  (`docs/guides/gateway.md`). Neither behavior is repaired by this release.
+- **Context refusals:** the normalized Codex account/API-key errors recover
+  before and after headers; OpenRouter and other OpenAI-compatible errors
+  are not normalized and require `/compact` (`docs/troubleshooting.md`).
 
 - **Gateway unit:** the supervised unit is verified with `ProtectHome=tmpfs`
   and all 17 Tier-B hardening keys, none relaxed or removed.
@@ -2604,7 +2623,7 @@ the operator's approval. Doctor never retires backups.
 ## 10. Operator tools and health
 
 Read-only `explain`, `usage`, `quota --json`, `doctor --json`, `doctor
---first-run` (text and JSON), `plan`, stdout
+--first-run` (text and JSON), `update --verify` (text and JSON), `plan`, stdout
 export/import preview and `doctor --prune --preview` do not create stores or
 refresh shims. Reports use the read-only SessionStore seam. `restore-2x --check`
 is dispatched before Runtime and checks metadata only.
@@ -2695,7 +2714,7 @@ Audit=true is guarded by `tests/fixtures/keyed-compat-audit.json` and
 manifest (equal to the actual patch bytes, the catalog order and the packaged
 contract), each shipped patch numbered by its reviewed admission id
 (`test_packaging.PATCH_IDS`, never inferred from position or series length; 11
-and 14 are excluded, 26–28 reserved), mandatory 3/9/10, build definition,
+and 14 are excluded, 30 was withdrawn), mandatory 3/9/10, build definition,
 recipe and build tool, source/vendor, client and exact whole-file
 relevant-source identities plus complete core/audit/client/`J1` proof (34 rows:
 5 core, 11 audit, 9 client and 9 journeys). The shipped flag is true only with
@@ -2703,8 +2722,12 @@ a current proof, otherwise false: any listed-source change requires a fresh
 complete keyed proof and fixture refresh, or audit=false; basenames/version
 equality alone are insufficient, and a stale proof is never rebound. Reopening
 the flag also restores the open-route wording of
-`docs/providers/openai-compatible.md` and `docs/quickstart.md`, which the docs
-tests check against the flag. The fixture is test provenance, never runtime
+`docs/providers/openai-compatible.md`, `docs/quickstart.md`,
+`docs/reference/compatibility.md` and `docs/troubleshooting.md`, and removes
+this release's closed-route limit from its changelog and release notes.
+Regenerate `docs/providers/api-keys.md` with `tools/docs_gen.py`; its provider
+index reads the flag. Keep the conditional closed-build remedies in
+`docs/CHEATSHEET.md`. The docs tests check availability against the flag. The fixture is test provenance, never runtime
 policy. Closed and absent flags remain regression inputs; changing the flag
 creates no operator state. Source paths in the fixture are repository-relative; immutable
 store paths and binary digests remain exact. The package-containment journey

@@ -313,9 +313,9 @@ class SeedLoadTests(unittest.TestCase):
             {"disableWorkflows", "workflowSizeGuideline", "workflowKeywordTriggerEnabled"},
         )
 
-    def test_version_json_is_the_development_release_and_catalog(self) -> None:
+    def test_version_json_is_the_release_and_catalog(self) -> None:
         bundle = catalog.load_catalog(CATALOG_ROOT)
-        self.assertEqual(bundle.docs["version"]["launcher_version"], "2.1.0-dev")
+        self.assertEqual(bundle.docs["version"]["launcher_version"], "2.1.0")
         self.assertEqual(bundle.docs["version"]["catalog_version"], 40)
 
     def test_removed_lines_are_retired_without_successor(self) -> None:
