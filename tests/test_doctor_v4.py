@@ -2096,7 +2096,7 @@ class SubstitutionRadarTests(_DoctorCase):
         malformed = self._line("wire").replace('"replacement"', '"unterminated')
         self.assertEqual(cli._journal_facts(self.runtime, malformed).substitutions, ())
 
-    def test_doctor_one_read_one_attention_and_lower_bound_count(self):
+    def test_doctor_one_read_one_attention_and_per_attempt_count(self):
         wire = next(iter(self.runtime.catalog.lines.values()))["wire_model"]
         text = "\n".join([self._line(wire)] * 3)
         self.runtime.doctor_callback = None
@@ -2105,8 +2105,9 @@ class SubstitutionRadarTests(_DoctorCase):
         read.assert_called_once_with(self.runtime)
         mine = [line for line in attention if line.startswith("gateway substitution:")]
         self.assertEqual(len(mine), 1)
-        self.assertIn("3× in 24 h, a lower bound", mine[0])
-        self.assertIn("logged at most once per credential and model pair per 10 min", mine[0])
+        self.assertIn("3× in 24 h, logged per attempt", mine[0])
+        self.assertNotIn("lower bound", mine[0])
+        self.assertNotIn("10 min", mine[0])
         self.assertNotIn("auth_index", mine[0])
         self.assertNotIn("request-never-printed", mine[0])
         with mock.patch('charmer.cli.gateway_facts._read_gateway_journal', return_value=""):

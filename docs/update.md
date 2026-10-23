@@ -52,21 +52,35 @@ then explicitly restart through the guarded command and inspect the result:
 
 ```bash
 charmer update
+charmer --version
 charmer gateway restart
 charmer gateway status
 charmer update --verify
 charmer doctor
 ```
 
-Run the next step only after assessing the previous result. If restart is
-held, keep the gateway running and follow [the persistence hold](guides/gateway.md#the-persistence-hold);
-never bypass a held stop with a service-manager stop or a signal. Verification
+Run the next step only after assessing the previous result. A long-running
+gateway may hold the update or restart with "coverage truncated". Keep it
+running, check the credentials with `charmer providers list`, then run
+`charmer gateway clear-hold` in a plain terminal outside Claude Code and
+retry the held step. For a failed save or any other hold reason, follow
+[the persistence hold](guides/gateway.md#the-persistence-hold); never bypass
+a held stop with a service-manager stop or a signal. Verification
 cannot restart or repair it for you. On macOS, running-byte verification is
 unavailable (exit 3); status and doctor remain separate health checks, not a
 substitute for a running-byte match.
 
-**macOS 13 or newer is required by this release.** Check your OS before
-updating: the old updater does not guarantee refusal on an older macOS.
+**macOS 13 is the minimum the new installer enforces.** This is not a
+runtime support claim for macOS 13 or 14; the native Apple silicon journey
+runs on macOS 15. On macOS 12, stay on 2.0.1 until upgrading macOS. Check
+your OS before updating: the 2.0.1 updater does not enforce the new floor.
+If you updated on macOS 12 anyway, use this release's installer and run
+`sh install.sh --rollback` in a plain terminal to return to the retained
+previous release. Installer rollback does not apply the new-install macOS
+check, but it runs its checks with the installed 2.1.0 runtime, which has no
+macOS 12 evidence; if that runtime cannot start, the rollback stops and
+changes nothing. Its usual safety checks and persistence hold still apply.
+See [macOS requirements](install/macos.md#architectures-and-evidence).
 
 ## Verify an installation
 

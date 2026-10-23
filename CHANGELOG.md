@@ -6,40 +6,47 @@ follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-### Security
+## [2.1.0] — 2026-10-24
 
-- The release build refuses a bundled runtime archive whose links resolve
-  outside the runtime or that names a member twice, and a prepared runtime
-  that keeps a file Python runs at startup (`.pth`, `.start`,
-  `sitecustomize`, `usercustomize`).
-- The isolated test lanes run bubblewrap 0.13.1, built from its release by
-  hash, and refuse one older than 0.12 (GHSA-pxhw-h44j-8pfx) or one that is
-  setuid; the Nix development shell requires 0.12 or later.
-- Isolated checks on Claude Code 2.1.302 observe the synthetic gateway key
-  only at the gateway in the tested request paths, including a gateway URL
-  from managed settings and a key-helper refresh after a 401. The previous
-  pin also sent it with start-up and feature-flag requests.
-- Managed scopes disable the fork-subagent gate
-  (`CLAUDE_CODE_FORK_SUBAGENT=0`) as well as denying `Agent(fork)`; the
-  launch clears inherited gate values. User, project and local settings
-  cannot re-enable that gate in a managed session.
-- Build and CI dependencies refreshed and verified: setuptools 84.0.0,
-  govulncheck v1.9.0, zizmor 1.31.1, install-nix-action v31.11.2,
-  upload-artifact v7.0.2, download-artifact v8.0.2 and the Linux container
-  digests; the CI Go compiler and ShellCheck are pinned by publisher digest.
-- A weekly vulnerability watch checks the latest signed release: govulncheck
-  over each bundle's gateway against that release's dispositions, and OSV
-  over its Go modules and CPython. CPython advisories are accepted only by
-  explicit, expiring reviews bound to the advisory revision and runtime
-  version; one issue tracks the findings.
-- The gateway's per-request routing line keeps its provider and model but no
-  longer names the credential (an account's file name, which carries its
-  e-mail address, or an identifier derived from a key). Websocket
-  connection and request lines move to debug level without it. Selection and
-  failure lines name an account by its credential index and an API key as
-  `[redacted]`, with no part of the key, and a model-substitution warning
-  shows `auth_index=nil` for an API key. Other gateway lines can still name
-  account files.
+### Upgrade notes
+
+Keyed OpenAI-compatible endpoints and presets that 2.0.1 offered are refused
+after this update; move roles bound to them to another provider and remove
+their declarations (`charmer providers rm <provider>`) first. A remaining
+declaration is refused and blocks later provider changes until removed.
+
+Updating switches the installation, not the running gateway. Between turns,
+in a plain terminal outside Claude Code, run each step after checking the
+previous result:
+
+```bash
+charmer update
+charmer --version
+charmer gateway restart
+charmer gateway status
+charmer update --verify
+charmer doctor
+```
+
+A long-running gateway may hold the update or restart with "coverage
+truncated". Keep it running, check the credentials with
+`charmer providers list`, then run `charmer gateway clear-hold` in that
+plain terminal and retry the held step. For a failed save or another hold
+reason, follow [the persistence hold](docs/guides/gateway.md#the-persistence-hold).
+Never bypass a hold with a service-manager stop or a signal. The guarded
+restart also enables quota readings in an updated release bundle.
+
+**macOS 13 is the minimum the installer enforces.** No runtime support is
+claimed for macOS 13 or 14; the native Apple silicon release-bundle journey
+runs on macOS 15. Intel has no support claim. On macOS 12, stay on 2.0.1
+until upgrading macOS: the 2.0.1 updater does not enforce the new floor.
+If you updated on macOS 12 anyway, try `sh install.sh --rollback` with this
+release's installer to return to the retained previous release. Its checks
+run with the installed 2.1.0 runtime, which has no macOS 12 evidence; if that
+runtime cannot start, the rollback stops and changes nothing. Its safety
+checks and persistence hold still apply.
+Running-gateway byte verification is Linux-only; on macOS it reports
+unavailable, not a match. See [updating](docs/update.md#updating-from-201).
 
 ### Added
 
@@ -47,168 +54,174 @@ follow [Semantic Versioning](https://semver.org/).
   Attention findings, and separates optional-evidence advisories from the
   verdict. Repeated findings are collapsed with counts; `doctor -v` keeps
   the full detail and JSON findings include their area.
-- **H** on the launch card opens a findings list with fixed, guarded
-  actions and confirmations. It offers housekeeping only when session
-  liveness and records can be checked safely; other rows show their details
-  and exact remedy commands.
-- If a gateway-changing update is followed by a failed gateway start,
-  the failure and doctor name `charmer update --rollback`, then
-  `charmer gateway start`, when the retained release is a valid rollback
-  with a different gateway.
-- Re-pinning requires five additional client checks: fork gate, spawn-mod
-  fence membership, MCP policy, token destinations and fence substitution.
-  The release evidence job runs every required producer, including the
-  compaction-window, auto-mode-model and debug-diagnostics checks.
-
-- When you add an OpenRouter model (`charmer discover openrouter --add`, or
-  the TUI declaration form), charmer suggests its vendor family from the
-  model's namespace (`deepseek/` → deepseek, `qwen/` → alibaba, …), so
-  review routing can tell families apart. The suggestion is editable,
-  `--family` wins, unknown, router and stealth namespaces stay unknown, and
-  existing lines are never rewritten.
+- **H** on the launch card opens a findings list with guarded actions and
+  confirmations. Housekeeping is offered only when session liveness and
+  records can be checked safely; other rows show the exact remedy. Opening
+  Sessions from a needs-choice finding keeps the launch's extra arguments
+  and its way back.
+- Session lists and bulk housekeeping accept combined directory, ended,
+  needs-choice and age filters. Preview several sessions before forgetting
+  them with one confirmation; live, unknown or changed records are refused,
+  and transcripts stay untouched. Bulk selections refuse an unreadable
+  sessions directory; a single-session `forget --dry-run` previews that
+  same operation without writes, including its force option. In **S**, mark
+  rows with **Space** or **\***, combine filters with **B**, and forget with **X**.
+- `charmer sessions choose` and **Q** in Sessions save a profile or direct
+  lead for sessions that need a choice, without launching. A valid saved
+  choice clears the actionable warning and applies at the next resume.
+- `charmer update --verify` checks the installed release against signed
+  exact-version metadata, its files, the managed client and, on Linux, the
+  running gateway's bytes. `--from-dir` works fully offline. The launch
+  card's **U** and the findings list **H** offer the same explicit check;
+  neither plain doctor nor opening H fetches release metadata. A missing or
+  unreadable optional previous release does not prevent verification;
+  unusable supplied metadata is incomplete, distinct from a signature
+  failure. When only the running gateway differs, the remedy is a guarded
+  restart rather than reinstalling.
+- If the gateway fails to start after an update, its failure and doctor
+  name `charmer update --rollback`, then `charmer gateway start`, when the
+  retained release is a compatible rollback with a different gateway.
+- Adding an OpenRouter model suggests its vendor family from the model's
+  namespace, so review routing can tell families apart. The suggestion is
+  editable, `--family` wins, unknown, router and stealth namespaces stay
+  unknown, and existing lines are never rewritten.
+- A task-first quickstart and an encrypted cold-backup and restore guide
+  cover first launch and recovery without deleting transcripts.
 
 ### Changed
 
-- Keyed generic OpenAI-compatible endpoints are unavailable in this build,
-  and so are the five presets that use them (Cerebras, Google Gemini, Groq,
-  Mistral AI, xAI): declaring one stops with a message that the route is
-  closed. Built-in providers, Anthropic-compatible endpoints and presets, and
-  keyless network servers are unaffected
-  ([availability](docs/providers/openai-compatible.md#availability-in-this-build)).
+- Keyed OpenAI-compatible endpoints and presets that 2.0.1 offered are
+  refused after this update; move roles bound to them to another provider
+  and remove their declarations (`charmer providers rm <provider>`) first.
+  A remaining declaration is refused and blocks later provider changes until
+  removed.
+- The full-screen interface now requires verifiable eight-bit terminal
+  settings. Unsupported terminals get a notice; the launch/resume line
+  flow remains available.
+- Managed sessions use Claude Code 2.1.302, catalog 40, and CLIProxyAPI
+  8.0.33 built with Go 1.27.2. Every client platform build is checked against
+  Anthropic's signed manifest. charmer's compiled permission default is
+  unchanged.
+- Release bundles run CPython 3.15.0, with the GIL enabled and the
+  experimental JIT off. The Nix flake follows nixos-unstable of 2026-10-15.
+- Release bundles now provide the same passive account-quota readings as
+  the Nix package in `charmer quota`, `/cm quota` and the Providers screen.
+  After updating, use the guarded `charmer gateway restart`; an update
+  alone does not enable readings in the running gateway. Disabled readings
+  stay disabled. Source checkouts report quota as unavailable; a missing
+  reading never means zero use or a remaining balance.
+- On the OpenAI API key, Claude Code's per-request output cap reaches
+  OpenAI as the request's output limit, streaming or not. A cap below
+  OpenAI's minimum of 16 tokens is raised to 16, so `/model` validation
+  keeps working. On the ChatGPT account the model's own output limit still
+  applies.
 - Managed terminal sessions may run a subagent in the foreground;
   background remains the default.
+- Claude Code's own `--autocompact` flag after `--` is refused: set the
+  session's window with `charmer window-ceiling` instead.
 - The launch card shows gateway holds, describes **U** as checking for an
-  update rather than promising one, and opens Get started on Enter when
-  nothing is connected. **L** launches anyway.
+  update and opens Get started on Enter when nothing is connected.
+  **L** launches anyway. Gateway actions offer no restart while held;
+  otherwise a restart first lists known running sessions and asks.
 - Scopes compiled under the earlier product name appear as one doctor
   finding. Repair recompiles stopped sessions; running sessions pick up
-  the current scope at their next resume.
-- Installed `agent.spawn` mods can redirect a fresh workflow agent to
-  another model within the lineup fence. Exact per-agent binding is not
-  guaranteed against that code. The separate binding probe retains this
-  as an expected failure; the required spawn-mod check proves fence
-  membership, not exact binding.
+  the current scope and client policies at their next resume.
 
-- Release bundles run CPython 3.15.0 (python-build-standalone 20261013) in
-  its default build: the GIL enabled, the experimental JIT off. The runtime
-  licence notices and SBOM components were regenerated from the matching full
-  archives.
-- The Nix flake follows nixos-unstable of 2026-10-15.
-- CI builds its Go tools with the gateway's pinned Go toolchain, runs a weekly
-  read-only online zizmor audit, and runs the 3.15 battery leg also under an
-  ISO-8859-1 locale.
-- Claude Code's own `--autocompact` flag after `--` is refused, in both its
-  separate and equals forms: the session compaction window is charmer's (set it
-  with `charmer window-ceiling`). `charmer doctor` reports a scope compiled by an
-  earlier release (no fork-subagent deny, a fence hook without its failure
-  policy) as lazy state, applied at the next resume or by `doctor --repair`.
-- Managed sessions run Claude Code 2.1.302 (was 2.1.292), catalog 40. Every
-  platform build is checked against Anthropic's signed release manifest. The
-  client starts an unconfigured session in default mode again; charmer's
-  compiled permission default is unchanged. The compatibility page names the
-  pin and its limits and lists keyless network (LAN) servers as supported for
-  leads and agents; the privacy page states the new traffic observation.
-- `charmer gateway status` and `charmer doctor` show where the persistence
-  hold's evaluation started and how many credential saves it read.
-- The gateway actions (**G** from the findings list, and **W** on Providers
-  and Direct) show the persistence hold: a coverage-only hold reads "held — log coverage
-  incomplete, not a failed save", otherwise the failure is shown. While held,
-  no restart is offered and the clear-hold command is named. A restart there
-  first lists the managed sessions running now and asks y/N.
-- CI tests Python 3.15 beside 3.11 and 3.14, and Ubuntu 26.04 beside 24.04
-  in the WSL lane.
+### Security
 
-- When this build cannot read quota, `charmer quota` and `/cm quota` add
-  one line: readings are available only in the Nix package in this
-  release; `charmer doctor` shows per-model 429/402/403 counts and
-  `/cm fallback <provider>` moves affected roles. `--json` output and exit
-  statuses are unchanged.
-- On the OpenAI API key, Claude Code's per-request output cap now reaches
-  OpenAI as the request's output limit, streaming or not, so an answer stops
-  at the cap Claude Code set. A cap below OpenAI's minimum of 16 tokens is
-  raised to 16, so switching to such a model with `/model` (which checks the
-  model with a one-token request) keeps working. On the ChatGPT account the
-  model's own output limit still applies.
+- Isolated checks on Claude Code 2.1.302 observe the synthetic gateway key
+  only at the gateway in the tested request paths, including a gateway URL
+  from managed settings and a key-helper refresh after a 401. The previous
+  pin also sent it with start-up and feature-flag requests.
+- Managed sessions disable and deny fork subagents. Inherited environment,
+  user, project and local settings cannot re-enable the fork gate or
+  replace workflow agents' models or the auto-mode classifier model.
+  A managed policy that locks a model is reported, never overwritten.
+- A model switch is refused when its fence hook cannot answer, including
+  a missing, non-executable, crashing or slow shim. The fence gets
+  15 seconds; other hooks keep their five-second limit and failure policy.
+- Routine gateway routing logs keep the provider and model but no longer
+  name credentials. WebSocket diagnostics move to debug level without
+  credential IDs; selection and failure lines use account indexes or
+  `[redacted]` for API keys. Substitution warnings remain per attempt and
+  withhold key-derived indexes. Other gateway lines can still name account
+  files; never share raw logs.
+- The release build refuses runtime archives with escaping links or
+  duplicate members, and prepared runtimes that retain Python startup
+  customization files. Build and CI tools use refreshed, verified pins;
+  isolated test lanes refuse bubblewrap older than 0.12 or setuid builds.
+- A weekly vulnerability watch checks the latest signed release's gateway,
+  Go modules and CPython. Reviewed CPython exceptions are tied to the
+  advisory revision and runtime version and expire; one issue tracks
+  current findings.
 
 ### Fixed
 
-- On OpenAI (the API key and the ChatGPT account), a request whose input
-  exceeds the model's context window now reaches Claude Code as Anthropic's
-  own "prompt is too long" refusal, whether OpenAI refuses it before the
-  answer starts or after, so Claude Code compacts the conversation and
-  retries instead of stopping with an error. Other errors reach Claude Code
-  as before. On OpenRouter and other OpenAI-compatible providers a
-  context-window error is still shown as the provider's error and does not
-  start automatic compaction; run `/compact`.
-
-- OpenAI-compatible endpoints: tool calls whose index the endpoint omits stay
-  separate, also when their fragments interleave; a call keeps the ID it was
-  announced with; and a reply that carries tool calls ends with `tool_use`,
-  streamed or not, unless the endpoint reports truncation (`length`) or
-  filtering (`content_filter`).
-- A credential the gateway loads is no longer left without models when a
-  request result or refresh bookkeeping updates it while its first model
-  registration is still queued.
-- Gateway restart confirmation uses the shared session scan. When a record
-  is unreadable it names the live sessions it can identify and says whether
-  other sessions may be running, rather than claiming none run.
-- A managed session refuses a model switch when its fence hook cannot answer:
-  the compiled PreModelSwitch hook fails closed, so a missing, non-executable,
-  crashing or slow shim keeps the lead model. The fence alone gets 15 seconds;
-  every other hook keeps 5 seconds and stays fail-open.
-- A managed session owns Claude Code's auto-mode classifier model
-  (`CLAUDE_CODE_AUTO_MODE_MODEL`): the launch clears it, the compiled settings
-  state it empty so no user, project or local settings file can set it, a
-  model's lead environment cannot set it, and a managed policy that sets it is
-  reported as a model lock. The retry watchdog's wait caps stay yours to set.
-- Under a terminal encoding that is not UTF-8 (on Python 3.11–3.14, as in
-  Nix and source installations), `charmer --help`, `charmer sessions list`
-  and other output no longer fail on charmer's markers: characters the
-  encoding cannot show are replaced. Text files and tool output charmer reads
-  name their encoding.
-- A gateway that has run for days no longer holds every stop, restart,
-  update and uninstall because its log coverage is incomplete. The
-  persistence hold reads only the gateway's credential-save lines and its
-  start line, over the gateway's whole run, instead of the newest 32 MB of
-  the service journal (8 MB of each on-demand log). Missing or unreadable
-  evidence still holds, and the reason says what could not be read.
-- Only lines the gateway's credential-save reporter wrote count as
-  credential-save evidence; a request path containing the same words no
-  longer reduces the hold's coverage.
-- The persistence hold also holds when the service journal no longer reaches
-  back to the last `charmer gateway clear-hold`, and when journald reports
-  that its rate limit for your user services, which the gateway shares,
-  dropped log lines (visible only when your account may read the system
-  journal; otherwise status and doctor say the notices were not checked).
-- A failed credential save seen in an otherwise incomplete read is recorded
-  as a hold at once; a save line of an unknown format version holds; a
-  gateway log line over 4 KB no longer makes the evaluation incomplete.
-- Starting an on-demand gateway removes an old instance log only after
-  reading it completely; a read that does not finish within ten seconds keeps
-  the log for a later start instead of holding.
-- `charmer gateway stop` on the supervised service refuses when the gateway
-  restarted while its hold was being evaluated.
-- `CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL` (Claude Code 2.1.296+) set in a
-  user, project or local settings file or in the environment no longer
-  rebinds a managed session's workflow agents; a
-  model's lead environment cannot set it, and a managed policy that sets it is
-  reported as a model lock.
-- Managed sessions deny fork subagents (`Agent(fork)`), which Claude Code
-  2.1.302 also enables headless. `charmer doctor` reports a session compiled
-  before this change as lazy state, applied at the next resume or by
-  `charmer doctor --repair`.
+- Long-running gateways no longer hold every stop, restart or update just
+  because ordinary logs filled the read limit. The persistence hold reads
+  credential-save evidence over the whole run and reports where it started
+  and how many saves it read. Missing or unreadable evidence still holds.
+- The hold recognizes missing journal history, reported drops from the
+  shared user-service log limit, and a journald restart. Failed saves are
+  retained even in an incomplete read. If journald's process start cannot
+  be observed, checking the credentials and explicitly clearing that
+  coverage gap acknowledges it for the same gateway instance; later
+  failures still hold. Unreadable system-journal drop notices are reported
+  as unchecked, not as a failed save.
+- Request paths cannot impersonate credential-save evidence. Large ordinary
+  log lines no longer make that evidence incomplete. Old on-demand logs
+  are removed only after a complete read; a read that times out keeps the
+  log. A supervised stop refuses if the gateway restarted during its hold
+  check.
+- On OpenAI's API-key and ChatGPT-account routes, identified context-window
+  refusals reach Claude Code as "prompt is too long", before or after the
+  answer starts, so it compacts and retries. Other errors are unchanged.
+- OpenAI-compatible tool calls stay separate when their indexes are
+  omitted or fragments interleave, keep their announced IDs, and finish as
+  tool use unless the provider reports truncation or filtering.
+- A newly loaded credential is no longer left without models when request
+  or refresh bookkeeping changes it before its first model registration.
+- The full-screen interface remains interruptible while waiting for input
+  and preserves incomplete multibyte characters across waits and screen
+  suspension.
+- Output on non-UTF-8 terminals no longer fails on charmer's markers:
+  characters the encoding cannot show are replaced.
 - `charmer lineup --session` accepts managed and runtime ids, historical
-  runtime aliases and unique prefixes of at least eight characters, as
-  doctor prints them. Ambiguous or unknown selections list the candidates;
-  pending forks and unreadable possible owners still refuse.
-- `charmer uninstall` fences gateway starts even when the gateway's working
-  folder is absent and refuses a symlinked working folder before removing
-  anything. Waiting writers reject lock files unlinked or replaced while
-  they acquire them.
-- `charmer migrate from-legacy` and `--back` recognize credential-save
-  receipts logged under the Claude and ChatGPT account pool names.
-  Persisted token refreshes no longer cause a false unsaved-credential
-  hold; unknown providers and unresolved save failures still block the move.
+  runtime aliases and unique prefixes of at least eight characters.
+  Ambiguous selections name the candidates; unreadable possible owners and
+  pending forks still refuse.
+- Uninstall fences gateway starts even without a working folder and
+  refuses a symlinked working folder. Waiting writers reject lock files
+  replaced while they acquire them.
+- Migration from the earlier product name recognizes Claude and ChatGPT
+  credential-save receipts, so persisted refreshes no longer cause a false
+  unsaved-credential hold.
+
+### Known limits
+
+- Keyed generic OpenAI-compatible endpoints and their five presets
+  (Cerebras, Google Gemini, Groq, Mistral AI and xAI) are closed in this
+  release. Built-in providers, Anthropic-compatible endpoints and presets,
+  and keyless network servers are unaffected. See
+  [availability](docs/providers/openai-compatible.md#availability-in-this-build).
+- A credential-file read error can remove an account's models from the
+  running gateway instead of retaining its last working credentials.
+  Restore owner-only read access and check providers and doctor; if models
+  remain missing, follow the persistence hold before a guarded restart.
+  Do not delete the credential file.
+- An already-open loopback WebSocket connection can keep using a retired
+  gateway key until it disconnects. Reconnect with the new key after
+  rotation; managed Claude Code sessions use HTTP, not that route.
+- Context-window errors from OpenRouter and other OpenAI-compatible
+  providers do not trigger automatic compaction. Claude Code shows the
+  provider's error; run `/compact`, then continue.
+- A stream missing its final completion marker after completed content can
+  make the pinned client report success without recovery, despite the
+  gateway's error. A successful client result is not proof of complete
+  stream framing; see [the late-stream limit](docs/troubleshooting.md#late-stream-completion-limit).
+- Installed `agent.spawn` mods can redirect a fresh workflow agent to
+  another model within the lineup fence. Exact per-agent binding is not
+  guaranteed against that code.
 
 ## [2.0.1] — 2026-10-18
 

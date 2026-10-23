@@ -12,7 +12,19 @@ Code.
 | Apple silicon (arm64) | release bundle, Nix package | supported; native release-bundle journey on macOS 15 |
 | Intel (x86_64) | release bundle only (not a Nix system) | built and reproduced, no native journey; no support claim |
 
-The native Apple silicon journey exercises the release bundle on macOS 15.
+**macOS 13 is the minimum.** The installer refuses a new installation of
+charmer 2.1.0 or newer on an older macOS before changing the installation.
+This is an enforced floor, not a runtime support claim for macOS 13 or 14:
+the native Apple silicon journey exercises the release bundle on macOS 15.
+On macOS 12, stay on charmer 2.0.1 until you upgrade macOS. The 2.0.1 updater
+does not enforce the new floor; check your OS before updating.
+If you updated on macOS 12 anyway, use this release's installer and run
+`sh install.sh --rollback` in a plain terminal to return to the retained
+previous release. Installer rollback does not apply the new-install macOS
+check, but it runs its checks with the installed 2.1.0 runtime, which has no
+macOS 12 evidence; if that runtime cannot start, the rollback stops and
+changes nothing. Its usual safety checks and persistence hold still apply.
+
 The gateway runs on demand only; there is no launchd service.
 
 Requirements: `curl` for the downloads and `ssh-keygen` (it ships with

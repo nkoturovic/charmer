@@ -267,6 +267,10 @@ gateway accepts the old and the new key for about five minutes, then only
 the new one. It asks first, verifies every reload, and resumes if
 interrupted. The key never appears in output.
 
+An already-open loopback WebSocket connection can keep using a retired key
+until it disconnects; reconnect it with the new key after rotation (managed
+Claude Code sessions use HTTP, not this WebSocket route).
+
 ## Retired models stay served
 
 When a release retires a model line, sessions started earlier still name

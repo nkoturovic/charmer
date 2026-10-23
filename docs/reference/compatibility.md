@@ -154,6 +154,12 @@ the release's evidence. A cross-build or a test on another platform does
 not establish support. These native journeys exercise release bundles;
 listing Nix as a channel does not claim a Nix installation journey.
 
+The installer enforces macOS 13 as the minimum for a new installation of
+charmer 2.1.0 or newer. No runtime support is claimed for macOS 13 or 14;
+the native Apple silicon journey runs on macOS 15. On macOS 12, stay on
+2.0.1 until upgrading the OS; its updater does not enforce the new floor.
+See [installing on macOS](../install/macos.md#architectures-and-evidence).
+
 ## Full-screen terminal input
 
 The full-screen interface requires both input and output to be terminals with
@@ -200,7 +206,7 @@ the original failure. No native or kernel input queue is flushed during cleanup.
 | Claude and ChatGPT account sign-ins | supported, for personal use |
 | Anthropic-compatible endpoints of your own, and the Anthropic-compatible presets | supported; a preset is the vendor's documented endpoint, not tested by charmer |
 | keyless OpenAI-compatible servers on your network, and their presets | supported, for leads and agents |
-| keyed OpenAI-compatible endpoints, and the presets that use them | supported in this release after the complete compatibility proof; HTTPS and bearer-only, with [translation limits](../providers/openai-compatible.md#translation-limits); presets are not vendor-tested |
+| keyed OpenAI-compatible endpoints, and the presets that use them | unavailable in this release; built-in providers and keyless network servers are unaffected ([availability and alternatives](../providers/openai-compatible.md#availability-in-this-build)) |
 
 Anthropic and OpenAI use either their account sign-in or their API key,
 never both at once, and never fall back from one to the other.

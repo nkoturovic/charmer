@@ -1579,6 +1579,19 @@ class OpenAICompatibleDocsTests(unittest.TestCase):
                 self.assertIn(alternative, text)
         for name in ("CHEATSHEET.md", "reference/compatibility.md"):
             self.assertIn("openai-compatible.md", _text(name))
+        cheatsheet = _flat(_text("CHEATSHEET.md"))
+        self.assertNotIn("published releases offer the route", cheatsheet)
+        self.assertNotIn("available in published releases", cheatsheet)
+        route = next(row for row in _rows(_section(_text("reference/compatibility.md"), "Transports"))
+                     if row.startswith("| keyed OpenAI-compatible endpoints,"))
+        troubleshooting = _text("troubleshooting.md")
+        self.assertNotIn("published releases ship the route open", troubleshooting)
+        if open_:
+            self.assertIn("| supported", route)
+            self.assertNotIn("this release closes these routes", troubleshooting)
+        else:
+            self.assertIn("unavailable in this release", route)
+            self.assertIn("this release closes these routes", troubleshooting)
 
 
 class ProviderRouteDocsTests(unittest.TestCase):
