@@ -21,7 +21,9 @@ does not enforce the new floor; check your OS before updating.
 If you updated on macOS 12 anyway, use this release's installer and run
 `sh install.sh --rollback` in a plain terminal to return to the retained
 previous release. Installer rollback does not apply the new-install macOS
-check; its usual safety checks and persistence hold still apply.
+check, but it runs its checks with the installed 2.1.0 runtime, which has no
+macOS 12 evidence; if that runtime cannot start, the rollback stops and
+changes nothing. Its usual safety checks and persistence hold still apply.
 
 The gateway runs on demand only; there is no launchd service.
 

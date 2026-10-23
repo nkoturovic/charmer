@@ -11,7 +11,9 @@ follow [Semantic Versioning](https://semver.org/).
 ### Upgrade notes
 
 Keyed OpenAI-compatible endpoints and presets that 2.0.1 offered are refused
-after this update; move roles bound to them to another provider first.
+after this update; move roles bound to them to another provider and remove
+their declarations (`charmer providers rm <provider>`) first. A remaining
+declaration is refused and blocks later provider changes until removed.
 
 Updating switches the installation, not the running gateway. Between turns,
 in a plain terminal outside Claude Code, run each step after checking the
@@ -38,8 +40,10 @@ restart also enables quota readings in an updated release bundle.
 claimed for macOS 13 or 14; the native Apple silicon release-bundle journey
 runs on macOS 15. Intel has no support claim. On macOS 12, stay on 2.0.1
 until upgrading macOS: the 2.0.1 updater does not enforce the new floor.
-If you updated on macOS 12 anyway, run `sh install.sh --rollback` with this
-release's installer to return to the retained previous release; its safety
+If you updated on macOS 12 anyway, try `sh install.sh --rollback` with this
+release's installer to return to the retained previous release. Its checks
+run with the installed 2.1.0 runtime, which has no macOS 12 evidence; if that
+runtime cannot start, the rollback stops and changes nothing. Its safety
 checks and persistence hold still apply.
 Running-gateway byte verification is Linux-only; on macOS it reports
 unavailable, not a match. See [updating](docs/update.md#updating-from-201).
@@ -88,7 +92,9 @@ unavailable, not a match. See [updating](docs/update.md#updating-from-201).
 
 - Keyed OpenAI-compatible endpoints and presets that 2.0.1 offered are
   refused after this update; move roles bound to them to another provider
-  first.
+  and remove their declarations (`charmer providers rm <provider>`) first.
+  A remaining declaration is refused and blocks later provider changes until
+  removed.
 - The full-screen interface now requires verifiable eight-bit terminal
   settings. Unsupported terminals get a notice; the launch/resume line
   flow remains available.
