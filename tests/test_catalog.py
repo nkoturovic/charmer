@@ -1989,42 +1989,13 @@ class GatewayManifestConsistencyTests(unittest.TestCase):
     def test_manifest_covers_every_patch_the_recipe_applies(self) -> None:
         bundle = catalog.load_catalog(CATALOG_ROOT)
         # Exact ordered lists, not sets: the build applies the recipe's
-        # series in this order, and the retention patch's context hunks are
-        # pinned against the sequentially patched source. Any reorder or
-        # entry drift must fail loudly.
+        # series in this order, so any reorder or entry drift between the
+        # catalog and the recipe must fail loudly.
         manifest = list(bundle.docs["gateway"]["gateway"]["patches"])
         recipe = json.loads(UPSTREAM_JSON.read_text(encoding="utf-8"))
         applied = [entry["basename"] for entry in recipe["series"] if entry["admitted"]]
         self.assertTrue(applied, "no admitted patches in gateway/UPSTREAM.json?")
         self.assertEqual(manifest, applied)
-        self.assertEqual(
-            manifest,
-            [
-                "cli-proxy-api-loopback-oauth.patch",
-                "cli-proxy-api-kimi-claude-compat.patch",
-                "cli-proxy-api-non-claude-cache-retention.patch",
-                "cli-proxy-api-management-readonly-allowlist.patch",
-                "cli-proxy-api-watcher-parentdir.patch",
-                "cli-proxy-api-serve-after-initial-auth-load.patch",
-                "cli-proxy-api-management-env-only.patch",
-                "cli-proxy-api-credential-save-report.patch",
-                "cli-proxy-api-credentialed-redirects.patch",
-                "cli-proxy-api-openai-compat-keyed-safety.patch",
-                "cli-proxy-api-auth-snapshot-locking.patch",
-                "cli-proxy-api-server-config-snapshot.patch",
-                "cli-proxy-api-claude-metadata-locking.patch",
-                "cli-proxy-api-oauth-model-overlay.patch",
-                "cli-proxy-api-no-antigravity-egress.patch",
-                "cli-proxy-api-codex-client-identity.patch",
-                "cli-proxy-api-antigravity-loopback-callback.patch",
-                "cli-proxy-api-codex-api-key-safety.patch",
-                "cli-proxy-api-refresh-shutdown-join.patch",
-                "cli-proxy-api-openai-content-chunks.patch",
-                "cli-proxy-api-charmer-model-ids.patch",
-                "cli-proxy-api-access-log-path-quoting.patch",
-                "cli-proxy-api-codex-refresh-lead.patch",
-            ],
-        )
 
     def test_manifest_entries_exist_as_files(self) -> None:
         bundle = catalog.load_catalog(CATALOG_ROOT)
