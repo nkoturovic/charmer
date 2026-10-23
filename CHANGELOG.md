@@ -89,7 +89,7 @@ unavailable, not a match. See [updating](docs/update.md#updating-from-201).
   settings. Unsupported terminals get a notice; the launch/resume line
   flow remains available.
 - Managed sessions use Claude Code 2.1.302, catalog 40, and CLIProxyAPI
-  8.0.33 built with Go 1.27.2. Every client platform build is checked against
+  8.0.33 built with Go 1.27.3. Every client platform build is checked against
   Anthropic's signed manifest. charmer's compiled permission default is
   unchanged.
 - Release bundles run CPython 3.15.0, with the GIL enabled and the
@@ -119,6 +119,8 @@ unavailable, not a match. See [updating](docs/update.md#updating-from-201).
 
 ### Security
 
+- The gateway is built with Go 1.27.3, which fixes a certificate-verification
+  vulnerability in `crypto/x509` (GO-2026-6809).
 - Isolated checks on Claude Code 2.1.302 observe the synthetic gateway key
   only at the gateway in the tested request paths, including a gateway URL
   from managed settings and a key-helper refresh after a 401. The previous

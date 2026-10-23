@@ -48,7 +48,7 @@
     "These are current-render assumptions plus explicitly planned 2.1.0 changes, not a claim that the planned ports have shipped. Any rendered-configuration change reopens the affected reachability reasons before it is merged."
   ],
   "dependencies": {
-    "go_mod": "The frozen source uses the /v8 module path and retains go 1.26.0. The module-requirements patch pins Go-compatible x/net 0.61.0, x/crypto 0.58.0, x/sys 0.49.0, x/text 0.43.0, x/sync 0.24.0, compress 1.20.3 and go-git v6.0.0-beta.1. All four plain shipped builds and typed Go gates pass with Go 1.27.2; no alpha fallback is needed. Compiled GODEBUG is tracebacklabels=0,x509sslcertoverrideplatform=1, bound in contract v2.",
+    "go_mod": "The frozen source uses the /v8 module path and retains go 1.26.0. The module-requirements patch pins Go-compatible x/net 0.61.0, x/crypto 0.58.0, x/sys 0.49.0, x/text 0.43.0, x/sync 0.24.0, compress 1.20.3 and go-git v6.0.0-beta.1. The pinned gateway toolchain is Go 1.27.3, which fixes GO-2026-6809 in crypto/x509; no alpha fallback is needed. Compiled GODEBUG is tracebacklabels=0,x509sslcertoverrideplatform=1, bound in contract v2.",
     "go_sum": "The module-requirements patch updates checksums through Go's verified module download and tidy; the verified fresh vendor-tree identity and its module sums are recorded in UPSTREAM.json and licenses/modules.json."
   },
   "vulncheck": {

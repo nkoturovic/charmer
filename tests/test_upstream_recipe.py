@@ -153,7 +153,7 @@ class BuildRecordTests(unittest.TestCase):
                          "-X main.BuildDate=1970-01-01T00:00:00Z")
         self.assertEqual(self.recipe["build"]["flags"], ["-trimpath", "-buildvcs=false", "-mod=vendor"])
         self.assertEqual(self.recipe["build"]["env"], {"CGO_ENABLED": "0", "GOTOOLCHAIN": "local"})
-        self.assertEqual(self.recipe["toolchain"]["version"], "1.27.2")
+        self.assertEqual(self.recipe["toolchain"]["version"], "1.27.3")
         self.assertEqual(self.recipe["build"]["godebug"], ["tracebacklabels=0", "x509sslcertoverrideplatform=1"])
 
     def test_targets_ship_four_and_compile_a_windows_canary(self):
