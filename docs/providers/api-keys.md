@@ -232,7 +232,8 @@ documented bounds and the date they were checked.
 **The output limit is the client's.** Each client turn is one request to
 OpenAI's Responses API (with no retry when it succeeds), carrying Claude
 Code's per-request output cap as its output limit; reasoning tokens count
-toward it. Set a spend limit before long or multi-agent sessions.
+toward it. A cap below OpenAI's minimum of 16 tokens is raised to 16. Set a
+spend limit before long or multi-agent sessions.
 
 **Spending controls.** OpenAI's
 [spend limits](https://developers.openai.com/api/docs/guides/spend-limits)

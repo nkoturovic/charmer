@@ -314,7 +314,7 @@ Before the modules are vendored, this patch updates the module requirements:
       modified  sdk/cliproxy/auth/types.go
 
 24. cli-proxy-api-output-cap.patch
-    sha256 253b97c700370d63d9de711e75eceb75a6dd192c8337b18ec960ec65976a951a
+    sha256 9ba554fc81f3432a89fe4d75ac0b38f7b5137bd605d26b3caef9c224a41b7a67
       modified  internal/runtime/executor/codex_executor_execute.go
       modified  internal/runtime/executor/codex_executor_stream.go
       added     internal/runtime/executor/codex_key_output_cap.go

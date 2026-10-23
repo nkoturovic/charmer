@@ -11,8 +11,11 @@ are printed.
 - Output cap (patch 26): every request the client sends on the API-key route
   in a short journey (an interactive model switch and back, turns, a helper,
   token counting, a non-streaming fallback, compaction) reaches OpenAI with
-  ``max_output_tokens`` equal to the client's own ``max_tokens``; on the
-  ChatGPT account route none is added.
+  ``max_output_tokens`` equal to the client's own ``max_tokens``, or 16 for a
+  cap below OpenAI's minimum. The fake upstream refuses less than 16 as
+  OpenAI does and ends an answer at a limit of 16; the model switch, which
+  validates each model with ``max_tokens: 1``, succeeds both ways. On the
+  ChatGPT account route no limit is added.
 - Context overflow (patch 27): when the upstream reports that the input
   exceeds the model's context window, before the response headers (HTTP 400)
   or after them (a failed stream), the client compacts its conversation and
@@ -44,6 +47,10 @@ MODULE = "tests.test_openai_key_route_client"
 PREFIX = "x-claude-code-"
 CONTEXT_MESSAGE = "Your input exceeds the context window of this model. Please adjust your input and try again."
 NATIVE_OVERFLOW = {"type": "error", "error": {"type": "invalid_request_error", "message": "prompt is too long"}}
+# OpenAI's Responses API refuses max_output_tokens below 16; a request under
+# a limit this small ends at it (incomplete) rather than completing.
+MIN_OUTPUT_TOKENS = 16
+SMALL_CAP = 16
 FILLER = " ".join(f"seed-filler-{index:05d}" for index in range(700))
 SEEDS = 2
 
@@ -52,18 +59,36 @@ def facts(case, **values):
     print("openai route client: " + json.dumps({"case": case, **values}, sort_keys=True))
 
 
-def responses_reply(model, text, *, input_tokens=900):
-    """A completed Responses stream (the gateway asks for one either way)."""
+def responses_reply(model, text, *, input_tokens=900, cap=None):
+    """A Responses stream (the gateway asks for one either way): completed,
+    or, under a small output limit, ended at that limit as OpenAI ends it
+    (``response.incomplete``, reason ``max_output_tokens``)."""
 
-    item = {"id": "msg_kc", "type": "message", "role": "assistant", "status": "completed",
+    incomplete = cap is not None and cap <= SMALL_CAP
+    output_tokens = cap if incomplete else 6
+    item = {"id": "msg_kc", "type": "message", "role": "assistant",
+            "status": "incomplete" if incomplete else "completed",
             "content": [{"type": "output_text", "text": text, "annotations": []}]}
     response = {"id": "resp_kc_" + uuid.uuid4().hex[:8], "object": "response", "model": model,
-                "status": "completed", "output": [item],
-                "usage": {"input_tokens": input_tokens, "output_tokens": 6, "total_tokens": input_tokens + 6}}
+                "status": "incomplete" if incomplete else "completed", "output": [item],
+                "usage": {"input_tokens": input_tokens, "output_tokens": output_tokens,
+                          "total_tokens": input_tokens + output_tokens}}
+    if incomplete:
+        response["incomplete_details"] = {"reason": "max_output_tokens"}
+    terminal = "response.incomplete" if incomplete else "response.completed"
     frames = [("response.created", {"response": {**response, "status": "in_progress", "output": []}}),
               ("response.output_item.done", {"output_index": 0, "item": item}),
-              ("response.completed", {"response": response})]
+              (terminal, {"response": response})]
     return 200, "text/event-stream", b"".join(harness.sse_frame(kind, {"type": kind, **data}) for kind, data in frames)
+
+
+def below_minimum(cap):
+    """OpenAI's refusal of an output limit below its minimum of 16."""
+
+    return 400, "application/json", json.dumps({"error": {
+        "message": f"Invalid 'max_output_tokens': integer below minimum value. Expected a value >= 16, "
+                   f"but got {cap} instead.",
+        "type": "invalid_request_error", "param": "max_output_tokens", "code": "integer_below_min_value"}}).encode()
 
 
 def failed_stream(model, error):
@@ -149,6 +174,10 @@ class Scenario:
         if not path.endswith("/responses"):
             return 404, "application/json", b'{"error":"unexpected fake upstream path"}'
         model = body.get("model", "gwtest-wire")
+        cap = body.get("max_output_tokens")
+        if type(cap) is int and cap < MIN_OUTPUT_TOKENS:
+            return below_minimum(cap)
+        cap = cap if type(cap) is int else None
         action = self.action
         if action == "overflow":
             return self.overflow(model)
@@ -156,12 +185,12 @@ class Scenario:
             return failed_stream(model, {"type": "invalid_request_error", "code": "invalid_prompt",
                                          "message": "The fixture stream failed."})
         if action == "summary":
-            return responses_reply(model, "<summary>PROBE-SUMMARY of the seed turns</summary>")
+            return responses_reply(model, "<summary>PROBE-SUMMARY of the seed turns</summary>", cap=cap)
         if action == "recovered":
-            return responses_reply(model, "PROBE-RECOVERED")
+            return responses_reply(model, "PROBE-RECOVERED", cap=cap)
         if action == "seed":
-            return responses_reply(model, f"PROBE-OK-{self.main}" + FILLER)
-        return responses_reply(model, "PROBE-AUX")
+            return responses_reply(model, f"PROBE-OK-{self.main}" + FILLER, cap=cap)
+        return responses_reply(model, "PROBE-AUX", cap=cap)
 
     def summary(self):
         return {"main": self.main, "rejections": self.rejections, "summaries": self.summaries,
@@ -208,7 +237,7 @@ class ClientRelay(_GatewayRelay):
             self.rows.append({
                 "run": self.run_name, "route": path.split("?", 1)[0], "class": kind, "action": action,
                 "compaction": headers.get(PREFIX + "compaction"), "stream": bool(document.get("stream")),
-                "max_tokens": max_tokens if type(max_tokens) is int else None,
+                "model": document.get("model"), "max_tokens": max_tokens if type(max_tokens) is int else None,
                 "upstream": [{"path": hit.path, "max_output_tokens": hit.body.get("max_output_tokens"),
                               "limits": sorted({"max_tokens", "max_completion_tokens"} & set(hit.body))}
                              for hit in hits],
@@ -350,11 +379,9 @@ class PinnedClientKeyRouteTests(_PinnedClientCase):
         self.assert_completed(runs)
         caps = sorted({row["max_tokens"] for row in rows if row["max_tokens"] is not None})
         generating = [row for row in rows if row["route"] == "/v1/messages"]
-        # Reported, not judged: a cap below OpenAI's reported minimum (16)
-        # is forwarded as the client set it (the model switch validates the
-        # new model with max_tokens 1).
         facts("output-cap-key", runs=[run["run"] for run in runs], scenario=scenario.summary(), ingress_caps=caps,
-              low_caps=[cap for cap in caps if 1 <= cap <= 15], count_tokens_requests=len(rows) - len(generating),
+              low_caps=[cap for cap in caps if 1 <= cap < MIN_OUTPUT_TOKENS],
+              count_tokens_requests=len(rows) - len(generating),
               requests=[{key: row[key] for key in ("run", "class", "compaction", "stream", "max_tokens", "status")}
                         | {"egress": [hit["max_output_tokens"] for hit in row["upstream"]]} for row in generating])
         self.assertTrue(generating)
@@ -362,9 +389,23 @@ class PinnedClientKeyRouteTests(_PinnedClientCase):
             with self.subTest(run=row["run"], cls=row["class"], stream=row["stream"]):
                 self.assertIsNotNone(row["max_tokens"], "the client sent no output cap")
                 self.assertTrue(row["upstream"], "the request never reached the upstream")
+                self.assertEqual(row["status"], 200)
                 for hit in row["upstream"]:
-                    self.assertEqual(hit["max_output_tokens"], row["max_tokens"])
+                    # A cap below OpenAI's minimum is sent as 16.
+                    self.assertEqual(hit["max_output_tokens"], max(row["max_tokens"], MIN_OUTPUT_TOKENS))
                     self.assertEqual(hit["limits"], [])
+        # The interactive switch to another key-route model and back: each
+        # switch validates the model with max_tokens 1, which the upstream
+        # accepts as 16 (ending the answer there), and the turn in between
+        # runs on the model switched to.
+        interactive = [row for row in generating if row["run"] == "interactive"]
+        checks = [row for row in interactive if row["max_tokens"] == 1 and not row["stream"]]
+        self.assertEqual([row["status"] for row in checks], [200, 200])
+        aliases = sorted({row["model"] for row in checks})
+        self.assertEqual(len(aliases), 2, "the switch did not change the model and back")
+        turns = [row for row in interactive if row["class"] == "main"]
+        self.assertTrue(turns)
+        self.assertTrue(all(row["model"] == checks[0]["model"] for row in turns), "the turn ran on another model")
         # The journey covered what it names: turns streaming and not (the
         # fallback after a failed stream), a helper, compaction, token counting.
         self.assertEqual(scenario.fallbacks, 1)

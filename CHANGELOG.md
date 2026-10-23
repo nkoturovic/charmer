@@ -125,10 +125,10 @@ follow [Semantic Versioning](https://semver.org/).
   statuses are unchanged.
 - On the OpenAI API key, Claude Code's per-request output cap now reaches
   OpenAI as the request's output limit, streaming or not, so an answer stops
-  at the cap Claude Code set. The cap is passed on exactly as set, never
-  raised; if OpenAI does not accept a very small cap, that request fails as
-  an invalid request. On the ChatGPT account the model's own output limit
-  still applies.
+  at the cap Claude Code set. A cap below OpenAI's minimum of 16 tokens is
+  raised to 16, so switching to such a model with `/model` (which checks the
+  model with a one-token request) keeps working. On the ChatGPT account the
+  model's own output limit still applies.
 
 ### Fixed
 
@@ -137,7 +137,9 @@ follow [Semantic Versioning](https://semver.org/).
   own "prompt is too long" refusal, whether OpenAI refuses it before the
   answer starts or after, so Claude Code compacts the conversation and
   retries instead of stopping with an error. Other errors reach Claude Code
-  as before.
+  as before. On OpenRouter and other OpenAI-compatible providers a
+  context-window error is still shown as the provider's error and does not
+  start automatic compaction; run `/compact`.
 
 - OpenAI-compatible endpoints: tool calls whose index the endpoint omits stay
   separate, also when their fragments interleave; a call keeps the ID it was

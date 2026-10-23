@@ -932,13 +932,13 @@ class PinnedGatewayKeyRouteTurnTests(unittest.TestCase):
 
     def test_the_clients_output_cap_reaches_the_responses_request(self) -> None:
         # The client's Messages max_tokens becomes the Responses request's
-        # max_output_tokens on the key route, streaming or not, however
-        # small: the gateway forwards the cap as the client set it.
-        for cap in (CLIENT_TURN["max_tokens"], 1):
+        # max_output_tokens on the key route, streaming or not; a cap below
+        # OpenAI's minimum of 16 is sent as 16.
+        for cap, sent in ((CLIENT_TURN["max_tokens"], CLIENT_TURN["max_tokens"]), (1, 16), (16, 16), (17, 17)):
             for stream in (False, True):
                 with self.subTest(cap=cap, stream=stream):
                     body = self.turn(self.gateway, stream=stream, body={**CLIENT_TURN, "max_tokens": cap}).hits[0].body
-                    self.assertEqual(body.get("max_output_tokens"), cap)
+                    self.assertEqual(body.get("max_output_tokens"), sent)
                     self.assertFalse({"max_tokens", "max_completion_tokens"} & set(body))
 
     def test_no_hosted_image_tool_is_added(self) -> None:

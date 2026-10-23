@@ -228,10 +228,10 @@ after pending changes and writes nothing.
   not ask for, and replaces any error the provider returns with fixed
   local text, so an error that quotes the key never reaches a session.
 - On the API key, Claude Code's per-request output cap reaches OpenAI as
-  the request's output limit, exactly as Claude Code set it; if OpenAI does
-  not accept a very small cap, that request fails as an invalid request.
-  On the ChatGPT account it is not passed on: the model's own output limit
-  applies ([providers/api-keys.md](../providers/api-keys.md#openai)).
+  the request's output limit, as Claude Code set it; a cap below OpenAI's
+  minimum of 16 tokens is raised to 16. On the ChatGPT account it is not
+  passed on: the model's own output limit applies
+  ([providers/api-keys.md](../providers/api-keys.md#openai)).
 - On both OpenAI routes, when OpenAI reports that a request exceeds the
   model's context window, Claude Code gets the refusal in Anthropic's own
   form ("prompt is too long"), so it compacts the conversation and retries,

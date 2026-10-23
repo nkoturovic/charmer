@@ -98,9 +98,9 @@ Current default: the **`balanced` seed profile**
 explorer/xhigh analyst, Opus analyst-strong, Luna max / Sol xhigh / Sol max
 implementer grades, Sol max reviewer and Opus reviewer-strong.
 The trusted catalog pins Claude
-**2.1.292** as the verified binary. The gateway is **CLIProxyAPI 7.3.15**
+**2.1.302** as the verified binary. The gateway is **CLIProxyAPI 8.0.33**
 (pinned in `gateway/UPSTREAM.json` and built by `tools/build.py` with the official
-Go toolchain, `CGO_ENABLED=0`; see "Gateway build" in §4) with twenty-two local patches (numbered 1–10 and 12–23; 11 is deferred) —
+Go toolchain, `CGO_ENABLED=0`; see "Gateway build" in §4) with twenty-eight local patches (admission ids 1–10, 12, 13, 15–29 and 31; 11 was never admitted, 14 retired with 8.0.33, 30 was withdrawn) —
 loopback OAuth bind, Kimi/Claude compat, the non-Claude cache-retention
 boundary (§2 invariant 11), the read-only management allowlist (an
 engine-level guard serves
@@ -120,8 +120,8 @@ routes never wait), followed by the env-only management patch
 (`remote-management.secret-key` and the local password are inert at startup and
 reload; only the environment secret enables/authenticates management). The
 series then adds credential-save receipts, credentialed redirect refusal, keyed
-OpenAI-compat safety, auth snapshot ownership, server config snapshots, plugin-host
-locking, Claude metadata locking, the OAuth model overlay and suppression of
+OpenAI-compat safety, auth snapshot ownership, server config snapshots,
+Claude metadata locking, the OAuth model overlay and suppression of
 the Antigravity version updater under `--local-model`, in that order; #18 is
 the Codex 0.159.1 client identity (one bounded exception: the pinned
 registry's static `override_header` entries sit on `gpt-5.6-luna`, which no
@@ -160,7 +160,7 @@ its own selectors under their earlier prefix; every other id (`gpt-multi-*` incl
 stays cloaked, requests resolve either form as before, and the
 OpenAI-format listing is unchanged (Go gate `charmer-model-ids`,
 built-gateway row `CharmerModelListingTests` CL1). #26 forwards the
-client's output cap on the codex API-key route (above; Go gate
+client's output cap on the codex API-key route, at least 16 (above; Go gate
 `codex-output-cap`, rows in `tests/test_openai_key_route.py` and the
 pinned-client journey). #27 marks a Claude-format request's failure on the
 codex HTTP Execute/ExecuteStream paths (account and key) when the upstream
@@ -1071,14 +1071,16 @@ gateway config). T2 **selects** T0/T1 vocabulary and never extends it.
   turn on the key route is one Responses request (no retry when it
   succeeds), and the client's `max_tokens` (or a native Responses
   `max_output_tokens`) reaches it as `max_output_tokens`, applied after
-  payload rules (patch #26; every positive plain integer is forwarded as
-  supplied, with no gateway floor, and any other value is not forwarded);
-  the account route sets none (`PinnedGatewayKeyRouteTurnTests`,
-  `PinnedGatewayAccountRouteTurnTests`; the pinned client's own journey in
-  `tests/test_openai_key_route_client.py` compares every ingress
-  `max_tokens` with the egress limit, its `/model` switch validation
-  included, which sends `max_tokens: 1`; `/responses/compact` and
-  encrypted-reasoning replay with the pinned client are not exercised). In the TUI, Enter (and K) on an account
+  payload rules (patch #26; a positive plain integer is forwarded, a final
+  limit below OpenAI's minimum of 16 is raised to 16 (D225), and any other
+  value is not forwarded); the account route sets none
+  (`PinnedGatewayKeyRouteTurnTests`, `PinnedGatewayAccountRouteTurnTests`;
+  the pinned client's own journey in `tests/test_openai_key_route_client.py`
+  compares every ingress `max_tokens` with the egress limit against a fake
+  upstream that refuses less than 16 as OpenAI does, and its interactive
+  `/model` switch, which validates each model with `max_tokens: 1`, must
+  succeed both ways; `/responses/compact` and encrypted-reasoning replay
+  with the pinned client are not exercised). In the TUI, Enter (and K) on an account
   provider whose key this build offers opens its account-or-key chooser
   (`ConnectActions.chooser`, `screens.providers.key_choice`; the key route
   names its reviewed models; Anthropic's consent keeps its title,
@@ -2129,11 +2131,13 @@ On memory-tight hosts the suite's tmpfs fixture copies can fail with
      management-readonly-allowlist → watcher-parentdir →
      serve-after-initial-auth-load → management-env-only →
      credential-save-report → credentialed-redirects → openai-compat-keyed-safety →
-     auth-snapshot-locking → server-config-snapshot → plugin-host-locking →
+     auth-snapshot-locking → server-config-snapshot →
      claude-metadata-locking → oauth-model-overlay → no-antigravity-egress →
      codex-client-identity → antigravity-loopback-callback →
      codex-api-key-safety → refresh-shutdown-join → openai-content-chunks →
-     charmer-model-ids. Retry-After (11) is not
+     charmer-model-ids → access-log-path-quoting → codex-refresh-lead →
+     output-cap → context-error-normalization → log-reduction →
+     tool-call-integrity → initial-registration. Retry-After (11) is not
      admitted. New hunks must be generated against the
      **sequentially patched** source. Generate it offline against
      the pinned tag (`git show v<baseline>:internal/registry/models/models.json`,
