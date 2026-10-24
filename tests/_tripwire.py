@@ -1,15 +1,16 @@
-"""Always-on live-gateway connect tripwire for the test process.
+"""Shared live-resource tripwire for the test process and Python children.
 
-``tests/__init__.py`` installs it for every run that imports the ``tests``
-package (the documented ``discover -s tests -t .`` gate and the Nix sandbox
-suite). It wraps ``socket.socket.connect``, ``connect_ex`` and
-``socket.create_connection`` and refuses any
-TCP connect to the live gateway ports (8317 gateway, 8316 proxy, and the port
-the developer's own ``~/.config/charmer/endpoint.json`` configures, read
-once at import from the real HOME) on a loopback/unspecified host (``127.0.0.0/8``, ``::1``, ``0.0.0.0``, ``::``,
-``localhost``) by raising
-``ConnectionRefusedError("test tripwire: live gateway port")`` — before the
-real connect runs, so nothing ever reaches the live daemon.
+``tests/__init__.py`` installs it on importing the ``tests`` package.
+It wraps ``socket.socket.connect``, ``connect_ex`` and
+``socket.create_connection``, refusing ports 8317/8316 on EVERY host before
+resolution or connection. No fixture uses those ports anywhere.
+
+A first parent installation also checks a bounded, non-blocking regular
+``HOME/.config/charmer/endpoint.json`` read for a configured port, refused
+on loopback/unspecified hosts. The ordinary runner has already replaced
+HOME, so this does not capture the caller's custom endpoint port. Child
+bootstraps never read that document, even on a later ``import tests``.
+Refusals raise ``ConnectionRefusedError("test tripwire: live gateway port")``.
 
 Every refusal is recorded in :data:`HITS`, reported once on stderr at exit,
 and — when ``CM_ISOLATION_GUARD_LOG`` is set (the external sitecustomize
@@ -40,24 +41,30 @@ import json
 import operator
 import os
 import socket
+import stat
 import sys
 import traceback
 from typing import Any
 
 def configured_ports(environ: Any = os.environ) -> frozenset[int]:
-    """The port of the real HOME's gateway endpoint document, if it names one."""
+    """Read a bounded regular endpoint file from the supplied HOME, never a FIFO."""
 
     home = environ.get("HOME") or os.path.expanduser("~")
     try:
-        with open(os.path.join(home, ".config", "charmer", "endpoint.json"), "rb") as handle:
-            port = json.loads(handle.read(65536)).get("port")
-    except (OSError, ValueError, AttributeError):
+        fd = os.open(os.path.join(home, ".config", "charmer", "endpoint.json"), os.O_RDONLY | os.O_NONBLOCK)
+        try:
+            if not stat.S_ISREG(os.fstat(fd).st_mode):
+                return frozenset()
+            port = json.loads(os.read(fd, 65536)).get("port")
+        finally:
+            os.close(fd)
+    except (OSError, ValueError, AttributeError, RecursionError):
         return frozenset()
     return frozenset({port}) if type(port) is int and 0 < port < 65536 else frozenset()
 
 
 RESERVED_PORTS = frozenset({8317, 8316})
-PORTS = RESERVED_PORTS | configured_ports()
+PORTS = RESERVED_PORTS
 _CONTROL_VERBS = frozenset({"start", "stop", "restart", "reload", "try-restart", "reload-or-restart",
                             "enable", "disable", "kill", "daemon-reload", "reset-failed", "mask", "unmask",
                             "link", "revert", "preset"})
@@ -187,10 +194,13 @@ def _report() -> None:
         )
 
 
-def install() -> None:
-    """Install the guard once per process (idempotent across module copies)."""
+def install(*, read_configured: bool = True) -> None:
+    """Install once; a child bootstrap never opens endpoint metadata."""
 
+    global PORTS
     if not getattr(sys, "_cm_listener_tripwire", False):
+        if read_configured:
+            PORTS = RESERVED_PORTS | configured_ports()
         sys.addaudithook(_listener_observation)
         sys._cm_listener_tripwire = True
     for name in ("connect", "connect_ex"):

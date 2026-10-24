@@ -142,7 +142,7 @@ def guard_source(tests_dir: Path) -> str:
             "    guard = types.ModuleType('_tripwire')\n"
             f"    exec(compile({source!r}, {str(path)!r}, 'exec'), guard.__dict__)\n"
             "    sys.modules['_tripwire'] = guard\n"
-            "sys.modules['_tripwire'].install()\n")
+            "sys.modules['_tripwire'].install(read_configured=False)\n")
 
 
 def legacy_environment(repo: Path) -> tuple[str, ...]:

@@ -137,6 +137,16 @@ else:
             self.log.read_text(encoding="utf-8").count("BLOCKED "), 2 * len(addresses)
         )
 
+    def test_parent_configured_port_keeps_loopback_policy(self) -> None:
+        endpoint = self.tmp / ".config/charmer/endpoint.json"
+        endpoint.parent.mkdir(parents=True)
+        endpoint.write_text('{"port":18417}')
+        ports = _tripwire.configured_ports({"HOME": str(self.tmp)})
+        self.assertEqual(ports, frozenset({18417}))
+        with mock.patch.object(_tripwire, "PORTS", ports | {8317, 8316}):
+            self.assertTrue(_tripwire.is_live_gateway(("::ffff:127.0.0.1", 18417)))
+            self.assertFalse(_tripwire.is_live_gateway(("api.example.com", 18417)))
+
     def test_reserved_ports_accept_index_protocol(self) -> None:
         class Port:
             def __init__(self, value):
@@ -255,6 +265,53 @@ else:
 
 
 class ChildTripwireTests(unittest.TestCase):
+    def test_child_never_reads_or_uses_endpoint_metadata(self) -> None:
+        from tests.check_fixture_isolation import GUARD_SOURCE
+
+        with tempfile.TemporaryDirectory(prefix="cm-child-endpoint-") as tmp:
+            root = Path(tmp)
+            endpoint = root / ".config/charmer/endpoint.json"
+            endpoint.parent.mkdir(parents=True)
+            endpoint.write_text('{"port":18417}')
+            backstop = """
+import sys
+def forbid_endpoint(event, args):
+    if event == "open" and str(args[0]).endswith("/endpoint.json"):
+        raise AssertionError("child tried endpoint metadata")
+sys.addaudithook(forbid_endpoint)
+"""
+            (root / "sitecustomize.py").write_text(backstop + GUARD_SOURCE)
+            script = "import tests, sys; g = sys.modules['_tripwire']; assert g.installed(); " \
+                     "assert not g.is_live_gateway(('127.0.0.1', 18417))"
+            result = subprocess.run([sys.executable, "-c", script], cwd=root,
+                                    env={"HOME": tmp, "PYTHONPATH": os.pathsep.join((tmp, str(REPO_ROOT)))},
+                                    capture_output=True, text=True, timeout=5)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertNotIn("Error in sitecustomize", result.stderr)
+
+    @unittest.skipUnless(hasattr(os, "mkfifo"), "FIFO fixture needs POSIX")
+    def test_endpoint_fifo_cannot_hang_parent_or_child_guard(self) -> None:
+        from tests.check_fixture_isolation import GUARD_SOURCE
+
+        with tempfile.TemporaryDirectory(prefix="cm-guard-fifo-") as tmp:
+            root = Path(tmp)
+            endpoint = root / ".config/charmer/endpoint.json"
+            endpoint.parent.mkdir(parents=True)
+            os.mkfifo(endpoint)
+            (root / "sitecustomize.py").write_text(GUARD_SOURCE)
+            for mode in ("child", "parent-reader"):
+                with self.subTest(mode=mode):
+                    script = "import sys; g = sys.modules['_tripwire']; assert g.installed()"
+                    if mode == "parent-reader":
+                        script += "; assert g.configured_ports() == frozenset()"
+                    try:
+                        result = subprocess.run([sys.executable, "-c", script], cwd=root,
+                                                env={"HOME": tmp, "PYTHONPATH": tmp},
+                                                capture_output=True, text=True, timeout=2)
+                    except subprocess.TimeoutExpired:
+                        self.fail("endpoint FIFO blocked the guard")
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_parent_and_child_share_address_and_process_policy(self) -> None:
         from tests.check_fixture_isolation import GUARD_SOURCE
 
@@ -271,7 +328,7 @@ for host in ("", "0", "127.1", "2130706433", "0x7f000001", "0177.0.0.1",
              "localhost4", "localhost.localdomain", bytearray(b"127.0.0.1"), "api.example.com"):
     for port in (8317, 8316):
         assert sys.modules["_tripwire"].is_live_gateway((host, Port(port)))
-addresses = [(host, port) for port in (8317, 8316, 18417) for host in (
+addresses = [(host, port) for port in (8317, 8316) for host in (
     "127.0.0.1", "127.0.0.2", "127.255.255.254", "localhost", "localhost.",
     "LOCALHOST", "probe.localhost", "::1", "::ffff:127.0.0.1", "::", "0.0.0.0",
     b"localhost", "::1%lo")]
