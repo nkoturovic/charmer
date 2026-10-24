@@ -709,7 +709,7 @@ class NativeReplayTests(unittest.TestCase):
         # Buffered complete-SSE reconstruction establishes ordered content and
         # bounded execution counts, NOT eager timing or general exactly-once
         # behavior. No previous-version baseline has been established.
-        self.assertEqual(self.version, "2.1.302", "requalify late-terminal evidence for a changed client")
+        self.assertEqual(self.version, "2.1.310", "requalify late-terminal evidence for a changed client")
         for tool in (False, True):
             paired_usage = {}
             for cut in (False, True):
@@ -737,6 +737,10 @@ class NativeReplayTests(unittest.TestCase):
                         if tool and first:
                             offered = [item["name"] for item in body.get("tools", [])
                                        if item.get("name") == "mcp__v8counter__probe"]
+                            # From 2.1.304 the client defers MCP tools behind ToolSearch with a custom base URL;
+                            # the fixture calls the deferred tool by name, which the pin accepts (measured on 2.1.310).
+                            if not offered and any(item.get("name") == "ToolSearch" for item in body.get("tools", [])):
+                                offered = ["mcp__v8counter__probe"]
                             if offered:
                                 content = [{"type": "tool_use", "id": "toolu_v8_counter", "name": offered[0], "input": {}}]
                                 stop = "tool_use"
