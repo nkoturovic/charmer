@@ -632,10 +632,12 @@ class NativeReplayTests(unittest.TestCase):
                     self.assertTrue(restart_oauth_gateway(gateway))
                 before = len(gateway.upstream.hits)
                 offset = gateway.log_path.stat().st_size
+                # From 2.1.310 --tools on a --resume turn no longer narrows the offered list (execution stays
+                # restricted, measured); --disallowedTools still reshapes the native tool prefix.
                 result = probe.run_native(("-p", "fixture turn " + str(index), "--model", "claude-opus-5-5[1m]",
                     "--output-format", "json", "--permission-mode", "default",
                     "--session-id" if index == 0 else "--resume", session_id,
-                    *(("--tools", "Read") if index == 3 else ())),
+                    *(("--disallowedTools", "Write") if index == 3 else ())),
                     trusted=self.trusted, fixture=fixture, provider=relay, allow_real=True,
                     environ=environ, timeout=120)
                 self.assertEqual(result.returncode, 0)
@@ -653,8 +655,9 @@ class NativeReplayTests(unittest.TestCase):
                 self.assertEqual(recognition.D11_THINKING_BINDING in observed_delta, index > 0)
                 tools = [tool["name"] for tool in body.get("tools", [])]
                 if index == 3:
-                    self.assertTrue(tools != previous_tools, "native tool-prefix reshape was not observed")
-                    self.assertEqual(tools, ["Read"])
+                    self.assertIn("Write", previous_tools)
+                    self.assertEqual(len(tools), len(set(tools)))
+                    self.assertEqual(set(tools), set(previous_tools) - {"Write"}, "native tool-prefix reshape was not observed")
                 previous_tools = tools
                 returned_cache = json.loads(result.stdout)["usage"]["cache_read_input_tokens"]
                 self.assertEqual(returned_cache, cache_counts[index])
@@ -709,9 +712,9 @@ class NativeReplayTests(unittest.TestCase):
         # Buffered complete-SSE reconstruction establishes ordered content and
         # bounded execution counts, NOT eager timing or general exactly-once
         # behavior. No previous-version baseline has been established.
-        self.assertEqual(self.version, "2.1.302", "requalify late-terminal evidence for a changed client")
+        self.assertEqual(self.version, "2.1.310", "requalify late-terminal evidence for a changed client")
         for tool in (False, True):
-            paired_usage = {}
+            paired_usage, skipped = {}, {}
             for cut in (False, True):
                 with self.subTest(tool=tool, cut=cut), tempfile.TemporaryDirectory(prefix="gwtest-v8-impact-") as temporary:
                     root = Path(temporary)
@@ -737,6 +740,10 @@ class NativeReplayTests(unittest.TestCase):
                         if tool and first:
                             offered = [item["name"] for item in body.get("tools", [])
                                        if item.get("name") == "mcp__v8counter__probe"]
+                            # From 2.1.304 the client defers MCP tools behind ToolSearch with a custom base URL;
+                            # the fixture calls the deferred tool by name, which the pin accepts (measured on 2.1.310).
+                            if not offered and any(item.get("name") == "ToolSearch" for item in body.get("tools", [])):
+                                offered = ["mcp__v8counter__probe"]
                             if offered:
                                 content = [{"type": "tool_use", "id": "toolu_v8_counter", "name": offered[0], "input": {}}]
                                 stop = "tool_use"
@@ -761,7 +768,11 @@ class NativeReplayTests(unittest.TestCase):
                             return 200, "text/event-stream", b"".join(harness.sse_frame(kind, value) for kind, value in events)
                         return 200, "application/json", json.dumps(payload).encode()
 
-                    gateway = harness.GatewayHarness(upstream_factory=lambda path: harness.FakeUpstream(path, respond))
+                    try:
+                        gateway = harness.GatewayHarness(upstream_factory=lambda path: harness.FakeUpstream(path, respond))
+                    except unittest.SkipTest as exc:  # no candidate gateway: the pair below skips too
+                        skipped[cut] = str(exc)
+                        raise
                     try:
                         with TrafficRelay(gateway) as relay:
                             result = probe.run_native(("-p", "fixture late-terminal impact", "--model", "gwtest-cc-output-config-high",
@@ -814,6 +825,8 @@ class NativeReplayTests(unittest.TestCase):
                     finally:
                         gateway.close()
             with self.subTest(tool=tool, paired_usage=True):
+                if skipped:  # the pair skips only when a run it pairs skipped; a run that failed fails it
+                    self.skipTest(next(iter(skipped.values())))
                 self.assertEqual(set(paired_usage), {False, True}, "missing paired client outcomes")
                 self.assertEqual(paired_usage[False], paired_usage[True], "healthy/late client usage changed")
 

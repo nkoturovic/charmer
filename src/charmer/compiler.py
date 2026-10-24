@@ -683,7 +683,8 @@ def generate_session_appendix(
 # CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL (the flag settings state it neutral).
 # CLAUDE_CODE_AUTO_MODE_MODEL (the auto-mode classifier's model) is cleared
 # too: an inherited value would pick a lineup model the lineup never chose.
-# So is CLAUDE_CODE_FORK_SUBAGENT (the flag settings turn the fork gate off).
+# So is CLAUDE_CODE_FORK_SUBAGENT (the flag settings turn the fork gate off),
+# and CLAUDE_CODE_RETRY_WATCHDOG_SCOPE (the flag settings pin the broad scope).
 V2_ENV_UNSET = (
     *catalog_mod.CREDENTIAL_ENV_KEYS,
     "ANTHROPIC_DEFAULT_FABLE_MODEL",
@@ -695,6 +696,7 @@ V2_ENV_UNSET = (
     "CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL",
     "CLAUDE_CODE_AUTO_MODE_MODEL",
     FORK_SUBAGENT_ENV,
+    "CLAUDE_CODE_RETRY_WATCHDOG_SCOPE",
     "CLAUDE_CODE_MAX_OUTPUT_TOKENS",
     "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY",
     "CLAUDE_CODE_AUTO_COMPACT_WINDOW",

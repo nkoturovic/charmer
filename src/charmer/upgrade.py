@@ -130,6 +130,14 @@ ESSENTIAL_EVIDENCE_PREFIXES = (
     "client check mcp-policy: PASS class=MCP-named-deny-first ",
     "client check token-destinations: PASS ",
     "client check fence-substitution: PASS class=FS-fenced ",
+    # The 2.1.310 re-pin: a managed turn carries what charmer's gateway
+    # accepts (effort beta and output_config.effort, context_management, tool
+    # search, system turns) once per turn while the client's resends without
+    # each part stay reachable (refusal controls), and an HTTP MCP call that
+    # changes something is sent once when its connection closes mid-call (a
+    # read-only call is retried).
+    "client check gateway-fallbacks: PASS class=GF-no-fallback ",
+    "client check mcp-http-retry: PASS class=MR-changing-once ",
 )
 
 # Named alternative completion lines that satisfy an essential prefix. The

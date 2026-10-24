@@ -495,6 +495,33 @@ class EnvTests(unittest.TestCase):
         _lineup, result = _seed_launch("balanced")
         self.assertEqual(result.scope_plan.settings["env"]["CLAUDE_CODE_RETRY_WATCHDOG"], "1")
 
+    def test_the_retry_watchdog_scope_is_pinned_broad_on_every_layer(self) -> None:
+        """Claude Code 2.1.310 narrows the pinned watchdog to capacity errors
+        (300 retries become 10) when CLAUDE_CODE_RETRY_WATCHDOG_SCOPE is
+        "capacity": fresh and resumed launches clear an inherited value, the
+        flag settings pin the broad scope (the empty value) over a user,
+        project or local settings env, and a lead env can never set it. The
+        real-client proof is the watchdog-scope check in
+        ``test_client_gateway_fallbacks``."""
+
+        key = scope.RETRY_WATCHDOG_SCOPE_ENV
+        self.assertEqual((key, scope.RETRY_WATCHDOG_SCOPE_BROAD), ("CLAUDE_CODE_RETRY_WATCHDOG_SCOPE", ""))
+        self.assertIn(key, catalog.RESERVED_LEAD_ENV_KEYS)
+        self.assertIn(key, compiler.V2_ENV_UNSET)
+        for action in (compiler.build_fresh(FIXED_SESSION), compiler.build_resume(FIXED_SESSION, RUNTIME_ID)):
+            for seed in ("balanced", "direct"):
+                _lineup, result = _seed_launch(seed, action=action, launch_environ={key: "capacity"})
+                with self.subTest(action=action.kind, seed=seed):
+                    self.assertIn(key, result.env_unset)
+                    self.assertNotIn(key, result.env_set)
+                    env = result.scope_plan.settings["env"]
+                    self.assertEqual(env["CLAUDE_CODE_RETRY_WATCHDOG"], "1")
+                    self.assertEqual(env[key], scope.RETRY_WATCHDOG_SCOPE_BROAD)
+        bundle, _l, eff, lineup = _seed("balanced")
+        bad = dataclasses.replace(lineup, lead=dataclasses.replace(lineup.lead, env={key: "capacity"}))
+        with self.assertRaisesRegex(CompilerError, "compiler-owned and reserved"):
+            _launch(bad, eff, bundle=bundle)
+
     def test_fork_subagents_are_denied_in_every_scope(self) -> None:
         """Fork subagents run outside the lineup on the caller's own model;
         every scope denies Agent(fork) (--no-subagents denies Agent itself)
