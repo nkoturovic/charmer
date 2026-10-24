@@ -337,6 +337,6 @@ In full: [cli.md](cli.md).
 | --- | --- | --- | --- | --- |
 | plain lines instead of the full screen; no colour | not in the launcher: they choose how the TUI itself is drawn | `charmer --line`; `charmer --no-color` | not a `/cm` request | asks nothing |
 
-Not listed here: 13 compatibility operations; 1 internal operation; 7 maintenance operations of the gateway tool alone; 4 operations the gateway service and the launcher run.
+Not listed here: 13 compatibility operations; 2 internal operations; 7 maintenance operations of the gateway tool alone; 4 operations the gateway service and the launcher run.
 
 <!-- end of generated: tasks -->

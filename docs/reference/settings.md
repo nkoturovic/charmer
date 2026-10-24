@@ -69,6 +69,13 @@ The Settings screen also rotates the gateway token
 ([guides/gateway.md](../guides/gateway.md#the-gateway-token)) and edits
 the choices above.
 
+The agent panel's rows are not a setting here. Every managed session gets
+charmer's subagent status line unless your own Claude Code settings define
+`subagentStatusLine`: then yours is used, and one of your own (even one that
+prints nothing) turns charmer's off. Claude Code's main `statusLine` stays
+yours; `charmer statusline main` is a line you may name there
+([guides/sessions.md](../guides/sessions.md#the-agent-panels-rows)).
+
 ## Host preferences: `preferences.json`
 
 `~/.config/charmer/preferences.json`; **Config root**: `claude_feedback_drafts`, `off`
@@ -123,7 +130,7 @@ Every row uses the **State root**, not the configuration root.
 | `gateway/` | the gateway's working directory and its logs (a `.env` file there stops the gateway) |
 | `channel` | the installation that owns this state: `bundle`, `nix` or `source` |
 | `state-version`, `migration.lock` | the state format and the lock migrations hold |
-| `bin/` | hook shims and the token helper: never run them by hand |
+| `bin/` | hook shims, the token helper and the subagent status line: never run them by hand |
 
 ## Installation
 
