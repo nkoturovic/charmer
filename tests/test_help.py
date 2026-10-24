@@ -79,8 +79,8 @@ class HelpTests(unittest.TestCase):
             self.assertEqual(args.command, "session-event")
 
     def test_every_visible_action_has_help(self) -> None:
-        # Hidden on purpose: the hook command and the earlier spellings.
-        hidden = {"session-event", "compose", "show", "transition"}
+        # Hidden on purpose: the hook command, the status lines and the earlier spellings.
+        hidden = {"session-event", "statusline", "compose", "show", "transition"}
 
         def walk(parser):
             for action in parser._actions:
@@ -167,7 +167,7 @@ class GroupedRootHelpTests(unittest.TestCase):
         self.assertEqual(len(grouped), len(set(grouped)))
         public = {item.dest for item in commands._choices_actions}
         self.assertEqual(set(grouped), public)
-        self.assertEqual(set(commands.choices) - public, {"session-event", "compose", "show"})
+        self.assertEqual(set(commands.choices) - public, {"session-event", "statusline", "compose", "show"})
         for title, rows in parser_mod.COMMAND_GROUPS:
             self.assertIn(f"\n{title}:\n", text)
             for name, _summary in rows:
