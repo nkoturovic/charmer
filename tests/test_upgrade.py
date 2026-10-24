@@ -21,6 +21,7 @@ from charmer import catalog, paths, pin, release_manifest, state, upgrade, valid
 from _catalog import FIXTURE_ROOT
 from _layout import REPO_ROOT, RESOURCES_RELATIVE, RESOURCES_ROOT
 from charmer.upgrade import UpgradeError
+from charmer.platform import posix_fs
 
 
 FAKE_CLAUDE = """#!/bin/sh
@@ -982,6 +983,38 @@ class RepoFileWriteTests(unittest.TestCase):
         target = root / "created.json"
         upgrade._write_repo_file(target, b"x\n")
         self.assertEqual(stat.S_IMODE(os.lstat(target).st_mode), 0o644)
+
+
+    def test_preexisting_predictable_temp_is_not_used(self) -> None:
+        for symlink in (False, True):
+            with self.subTest(symlink=symlink), tempfile.TemporaryDirectory(prefix="cm-repofile-") as directory:
+                root = Path(directory)
+                target = root / "file.json"
+                other = root / "other"
+                other.write_bytes(b"untouched")
+                temporary = root / f".file.json.tmp-{os.getpid()}"
+                if symlink:
+                    temporary.symlink_to(other)
+                else:
+                    temporary.write_bytes(b"untouched")
+                upgrade._write_repo_file(target, b"new")
+                self.assertEqual(other.read_bytes(), b"untouched")
+                self.assertTrue(os.path.lexists(temporary))
+                self.assertEqual(temporary.read_bytes(), b"untouched")
+                self.assertEqual(target.read_bytes(), b"new")
+                self.assertFalse(target.is_symlink())
+
+    def test_directory_sync_failure_reports_committed_repo_file(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="cm-repofile-") as directory:
+            target = Path(directory) / "file.json"
+            target.write_bytes(b"old")
+            target.chmod(0o640)
+            with mock.patch.object(posix_fs, "fsync_directory", side_effect=OSError(5, "fixture")):
+                with self.assertRaises(posix_fs.CommittedReplaceError):
+                    upgrade._write_repo_file(target, b"new")
+            self.assertEqual(target.read_bytes(), b"new")
+            self.assertEqual(stat.S_IMODE(target.stat().st_mode), 0o640)
+            self.assertEqual(set(target.parent.iterdir()), {target})
 
 
 class CandidateOrderingTests(UpgradeTestCase):
