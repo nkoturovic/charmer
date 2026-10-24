@@ -98,6 +98,7 @@ import datetime
 import os
 import re
 import secrets
+import shlex
 import sys
 import time
 from dataclasses import dataclass
@@ -158,7 +159,7 @@ class AuthorityUnreadable(InhibitionError):
 
 
 class AuthorityChanged(InhibitionError):
-    """The managed root moved to a root this writer did not fence."""
+    """The managed root is missing or moved to a root this writer did not fence."""
 
 
 AUTHORITY_CHANGED = "the managed state root changed while this command waited; run it again"
@@ -531,9 +532,10 @@ def revalidate(home: Path | str, *, what: str = "nothing was changed") -> None:
     """At a write of ``home``'s configuration or credentials, under the
     api-key lock (the lock a root adoption moves the authority under): the
     managed root ``continuity.json`` records now must be one whose fence this
-    flow holds (:func:`fenced`). Raises :class:`AuthorityChanged` when an
-    adoption moved it meanwhile (a begin of the new root does not wait for
-    this writer), :class:`AuthorityUnreadable` when it cannot be read. A
+    flow holds (:func:`fenced`). Raises :class:`AuthorityChanged` when it is
+    missing (with its directory-recreation command) or an adoption moved it
+    meanwhile (a begin of the new root does not wait for this writer),
+    :class:`AuthorityUnreadable` when it cannot be read. A
     flow that holds no fence (the unit's directives, a library caller) is
     not checked here."""
 
@@ -542,6 +544,17 @@ def revalidate(home: Path | str, *, what: str = "nothing was changed") -> None:
         return
     managed = managed_root(home, what=what)
     if managed is not None and managed not in held:
+        try:
+            managed.lstat()
+        except FileNotFoundError:
+            shown = termtext.visible_text(str(managed))
+            command = termtext.visible_text(shlex.join(["charmer-proxy", "init", "--state-root", str(managed)]))
+            raise AuthorityChanged(
+                f"the recorded managed state root is missing: {shown}; {what}",
+                remedy=f"run {command} to recreate its directories; this does not restore lost session records",
+            ) from None
+        except OSError:
+            pass  # An unreadable path is not proof that the root is missing.
         raise AuthorityChanged(f"{AUTHORITY_CHANGED} ({what})",
                                remedy="run the command again: it then waits for the state root that manages "
                                       "this home now")

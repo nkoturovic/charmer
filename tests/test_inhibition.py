@@ -17,6 +17,7 @@ import datetime
 import io
 import json
 import os
+import shlex
 import socket
 import stat
 import unittest
@@ -1228,6 +1229,7 @@ class TwoRootsTests(_Entry):
         roots = gi.home_roots(self.home, self.state_root)
         self.assertEqual(roots, (self.state_root,))
         adopted = self.root / "adopted" / "charmer"
+        state.ensure_private_dir(adopted)
         document = continuity.read(self.home)
         document["state_root"] = str(adopted)
         continuity.write(self.home, document)  # adopted after the roots were resolved
@@ -1235,7 +1237,6 @@ class TwoRootsTests(_Entry):
             self.fail("a writer entered with a stale authority")
         self.assertEqual(str(raised.exception), f"{gi.AUTHORITY_CHANGED} (nothing was changed)")
         self.assertIn("run the command again", raised.exception.remedy)  # every surface shows a fix line
-        state.ensure_private_dir(adopted)
         with gi.fenced(gi.home_roots(self.home, self.state_root), home=self.home):
             gi.revalidate(self.home)  # both existing roots have their locks held
             with gi.fenced(roots):
@@ -1289,6 +1290,34 @@ class TwoRootsTests(_Entry):
             with gi.fenced(gi.home_roots(self.home, self.state_root), home=self.home):
                 self.fail("entered a home-scoped write without the managed root's lock")
         self.assertFalse(missing.exists())
+
+    def test_missing_secondary_root_explains_its_recovery(self) -> None:
+        from charmer import continuity
+
+        self.assertEqual(self.proxy("init")[0], 0)
+        missing = self.root / "missing root" / "charmer"
+        document = continuity.read(self.home)
+        document["state_root"] = str(missing)
+        continuity.write(self.home, document)
+        before = self.config_files()
+        command = shlex.join(["charmer-proxy", "init", "--state-root", str(missing)])
+        code, _out, err, execs = self.proxy("init")
+        self.assertEqual((code, execs), (1, []))
+        self.assertIn(f"the recorded managed state root is missing: {missing}", err)
+        self.assertIn(command, err)
+        self.assertIn("does not restore lost session records", err)
+        self.assertNotIn(gi.AUTHORITY_CHANGED, err)
+        self.assertFalse(missing.exists())
+        self.assertEqual(self.config_files(), before)
+        # The named recovery makes the recorded root primary, so its fence
+        # is created; it neither moves authority nor fabricates lost records.
+        code, _out, err, execs = self.proxy("init", "--state-root", str(missing))
+        self.assertEqual((code, execs), (0, []), err)
+        self.assertTrue(missing.is_dir())
+        self.assertFalse((missing / "sessions").exists())
+        self.assertEqual(continuity.read(self.home)["state_root"], str(missing))
+        self.assertEqual(self.proxy("init")[0], 0)  # the cross-root write is now fenced too
+        self.assertEqual(continuity.read(self.home)["state_root"], str(missing))
 
     def test_an_unreadable_authority_refuses_every_change_and_reading_stays(self) -> None:
         from charmer import continuity
