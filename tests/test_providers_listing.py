@@ -24,6 +24,26 @@ class RejectedDeclarationTests(test_cli.OperatorCommandCase):
         self.path = self.pdir / f"{self.literal}.json"
         state.atomic_write(self.path, strict_json.pretty_file_bytes(self.document))
 
+    def test_models_qualify_screens_invalid_declaring_file_diagnostics(self) -> None:
+        del self.document["lines"][self.key]["wire_model"]
+        state.atomic_write(self.path, strict_json.pretty_file_bytes(self.document))
+        for file_id in (self.literal, "broken"):
+            with self.subTest(file_id=file_id):
+                target = self.pdir / f"{file_id}.json"
+                if target != self.path:
+                    self.path.rename(target)
+                    self.path = target
+                before = self.state_bytes()
+                code, out, err = self.op(["models", "qualify", self.key])
+                self.assertEqual(code, 1, out + err)
+                self.assertNotIn(self.literal, out + err)
+                self.assertIn("charmer providers validate", out + err)
+                if file_id == "broken":
+                    self.assertIn("providers.d/broken.json", out + err)
+                    self.assertIn("missing required key 'wire_model'", out + err)
+                self.assertEqual((self.calls, self.http_calls), ([], []))
+                self.assertEqual(self.state_bytes(), before)
+
     def test_models_edit_refuses_a_credential_bearing_declaring_file(self) -> None:
         from charmer.cli.commands import providers
 

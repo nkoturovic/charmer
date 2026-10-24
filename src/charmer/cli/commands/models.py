@@ -216,7 +216,9 @@ def _qualification_context(runtime: runtime_mod.Runtime, key: str, verb: str) ->
 
     ctx = providers_cmd.operator_context(runtime, metadata_only=True)
     providers_cmd.require_ledger(ctx, verb)
-    line = _operator_line(ctx, key, verb)
+    line = ctx.layer.lines.get(key)
+    if line is None:
+        return providers_cmd.operator_context(runtime)
     provider = (ctx.layer.providers[line.provider_id].entry if line.provider_id in ctx.layer.providers
                 else ctx.docs["providers"]["providers"][line.provider_id])
     if catalog.is_keyed_compat(provider):
