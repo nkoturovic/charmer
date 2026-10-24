@@ -378,7 +378,10 @@ def send_request(connection, key: str) -> tuple[int, bytes]:
     """One canonical GET. No retry, redirect, proxy env, or error-body read."""
     connection.request("GET", quota.AUTH_FILES_PATH, headers={"X-Management-Key": key})
     response = connection.getresponse()
-    return response.status, response.read(quota.MAX_BODY_BYTES + 1) if response.status == 200 else b""
+    if response.status != 200:
+        return response.status, b""
+    body = response.read(quota.MAX_BODY_BYTES + 1)
+    return response.status, body if response.length in (None, 0) else b""
 
 
 def default_get(base_url: str, key: str, *, timeout: float = TIMEOUT_SECONDS) -> tuple[int, bytes]:
