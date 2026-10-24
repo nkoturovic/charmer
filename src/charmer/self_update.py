@@ -7,6 +7,7 @@ The installation layout is the one ``packaging/install.sh`` creates::
       current  -> versions/<v> what every launcher file runs
       previous -> versions/<v> what a rollback returns to (the one older version kept)
       .lock/pid                held while an install, update or rollback runs
+      .lock-guard              persistent flock guard, created when an existing lock is inspected
       installer.json           launcher files and PATH lines the installer wrote
 
 A release publishes ``MANIFEST.json`` (version, release date, state format,
@@ -43,6 +44,7 @@ the install lock) finishes what the interrupted run left behind.
 
 from __future__ import annotations
 
+import contextlib
 import gzip
 import hashlib
 import json
@@ -50,7 +52,9 @@ import os
 import posixpath
 import re
 import shutil
+import stat
 import subprocess
+import sys
 import tarfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -389,50 +393,103 @@ def state_version(state_root: Path) -> int:
 
 
 class _InstallLock:
-    """``<root>/.lock`` (a directory with the holder's pid), shared with install.sh."""
+    """The mkdir/pid lock understood by every published installer and updater.
 
-    def __init__(self, root: Path) -> None:
+    Fresh acquisition is one atomic mkdir. A stable flock guard serializes
+    stale reclamation by cooperating writers; its file is never removed. Older
+    writers still see the live mkdir lock, but cannot join this guard when
+    reclaiming a stale one themselves.
+    """
+
+    def __init__(self, root: Path, *, pid: int | None = None) -> None:
         self.path = root / LOCK_DIR
+        self.pid = os.getpid() if pid is None else pid
+        if self.pid <= 0:
+            raise UpdateError("the install lock needs a positive owner pid")
 
-    def __enter__(self) -> "_InstallLock":
+    @contextlib.contextmanager
+    def _guard(self):
+        path = self.path.with_name(".lock-guard")
+        descriptor = os.open(path, os.O_RDWR | os.O_CREAT | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600)
+        try:
+            info = os.fstat(descriptor)
+            if (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1
+                    or not posix_fs.owned_by_caller(info) or info.st_mode & 0o077):
+                raise UpdateError(f"the install lock guard {path} is not a private regular file")
+            try:
+                posix_fs.lock_descriptor(descriptor, shared=False, blocking=False)
+            except BlockingIOError:
+                raise UpdateError("another install or update is running") from None
+            current = os.lstat(path)
+            if (info.st_dev, info.st_ino) != (current.st_dev, current.st_ino):
+                raise UpdateError(f"the install lock guard {path} changed; run the command again")
+            yield
+        finally:
+            os.close(descriptor)
+
+    def _create(self) -> bool:
+        try:
+            self.path.mkdir(mode=0o700)
+        except FileExistsError:
+            return False
+        (self.path / "pid").write_text(f"{self.pid}\n")
+        return True
+
+    def acquire(self) -> "_InstallLock":
         if not self.path.parent.is_dir():
             state.ensure_private_dir(self.path.parent)
-        for _attempt in range(2):
-            try:
-                self.path.mkdir(mode=0o700)
-            except FileExistsError:
+        if self._create():
+            return self
+        with self._guard():
+            for _attempt in range(2):
+                if self._create():
+                    return self
+                # Re-read only under the guard: another acquirer may have
+                # replaced the stale directory before this run took it.
                 holder = self._holder()
                 if holder is None:  # a holder between mkdir and writing its pid, or a crash there
+                    if not os.path.lexists(self.path):
+                        continue  # Its holder released between our mkdir and pid read.
                     raise UpdateError(f"another install or update holds {self.path}",
                                       remedy=f"if none is running, remove {self.path}") from None
                 if _alive(holder):
                     raise UpdateError(f"another install or update is running (process {holder})") from None
-                stale = self.path.with_name(f"{LOCK_DIR}.stale.{os.getpid()}")
+                stale = self.path.with_name(f"{LOCK_DIR}.stale.{self.pid}")
                 try:
                     os.rename(self.path, stale)
                     shutil.rmtree(stale, ignore_errors=True)
                 except OSError:
                     pass
-                continue
-            (self.path / "pid").write_text(f"{os.getpid()}\n")
-            return self
         raise UpdateError("another install or update is running")
+
+    def __enter__(self) -> "_InstallLock":
+        return self.acquire()
 
     def _holder(self) -> int | None:
         try:
-            text = (self.path / "pid").read_text().strip()
+            if self.path.is_symlink():
+                return None
+            descriptor = os.open(self.path / "pid", os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+            try:
+                if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+                    return None
+                text = os.read(descriptor, 64).strip()
+            finally:
+                os.close(descriptor)
         except OSError:
             return None
-        return int(text) if text.isdigit() else None
+        holder = int(text) if re.fullmatch(rb"[1-9][0-9]{0,9}", text) else None
+        return holder if holder is not None and holder < 2 ** 31 else None
 
     def __exit__(self, *_exc: object) -> None:
-        shutil.rmtree(self.path, ignore_errors=True)
+        if self._holder() == self.pid:
+            shutil.rmtree(self.path, ignore_errors=True)
 
 
-def install_lock(root: Path) -> "_InstallLock":
-    """The install lock (``<root>/.lock``), shared with ``install.sh``."""
+def install_lock(root: Path, *, pid: int | None = None) -> "_InstallLock":
+    """The install lock shared with ``install.sh`` (``pid``: its shell owner)."""
 
-    return _InstallLock(root)
+    return _InstallLock(root, pid=pid)
 
 
 def tidy(root: Path) -> tuple[str, ...]:
@@ -502,6 +559,70 @@ def _sync(root: Path) -> None:
         posix_fs.fsync_directory(root)
     except OSError as exc:
         raise UpdateError(f"the new links in {root} are in place but could not be made durable: {exc}") from exc
+
+
+def _sync_tree(descriptor: int) -> None:
+    """Flush a bundle bottom-up through directory descriptors, never links."""
+
+    for name in os.listdir(descriptor):
+        info = os.stat(name, dir_fd=descriptor, follow_symlinks=False)
+        if stat.S_ISLNK(info.st_mode):
+            continue  # The containing directory persists the link itself.
+        if not (stat.S_ISDIR(info.st_mode) or stat.S_ISREG(info.st_mode)):
+            raise OSError(f"bundle entry {name!r} is not a regular file or directory")
+        flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
+        if stat.S_ISDIR(info.st_mode):
+            flags |= os.O_DIRECTORY
+        child = os.open(name, flags, dir_fd=descriptor)
+        try:
+            opened = os.fstat(child)
+            if (opened.st_dev, opened.st_ino, stat.S_IFMT(opened.st_mode)) != (
+                    info.st_dev, info.st_ino, stat.S_IFMT(info.st_mode)):
+                raise OSError(f"bundle entry {name!r} changed during its durability check")
+            if stat.S_ISDIR(opened.st_mode):
+                _sync_tree(child)
+            else:
+                os.fsync(child)
+        finally:
+            os.close(child)
+    os.fsync(descriptor)
+
+
+def sync_bundle(root: Path, version: str, *, staging: str | None = None) -> None:
+    """Flush incoming contents before replacement, then their final parent.
+
+    ``staging`` names a private unpacking directory under ``versions``. Flush
+    it before replacing a version a current or previous link already names.
+    A second call without it persists the final version and parent entries.
+
+    Linux sync waits for the writes in parallel: thousands of individual
+    file fsyncs on a freshly unpacked bundle can take tens of seconds.
+    Other POSIX hosts flush regular files and directories bottom-up, without
+    following links. Rollback reuses a durable version and skips this barrier.
+    """
+
+    version_key(version)
+    if staging is not None and re.fullmatch(r"\.staging\.[0-9]+", staging) is None:
+        raise UpdateError("the incoming staging directory name is invalid")
+    name = version if staging is None else staging
+    bundle = root / VERSIONS / name
+    try:
+        parent = os.open(root / VERSIONS, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            descriptor = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent)
+            try:
+                if sys.platform.startswith("linux"):
+                    os.sync()
+                else:
+                    _sync_tree(descriptor)
+                    os.fsync(parent)
+            finally:
+                os.close(descriptor)
+        finally:
+            os.close(parent)
+    except OSError as exc:
+        raise UpdateError(f"the incoming bundle {bundle} could not be made durable ({exc}); "
+                          "the links were left as they are") from exc
 
 
 def _link_text(root: Path, name: str) -> str | None:
@@ -654,15 +775,22 @@ class DirectoryTransport:
 
     def download(self, name: str, version: str, destination: Path, size: int) -> None:
         try:
-            with open(self._path(name), "rb") as source, open(destination, "wb") as out:
-                copied = 0
-                for chunk in iter(lambda: source.read(_CHUNK), b""):
-                    copied += len(chunk)
-                    if copied > size:
-                        raise UpdateError(f"{name} is larger than the {size} bytes the release lists")
-                    out.write(chunk)
+            source = open(self._path(name), "rb")
         except OSError as exc:
             raise UpdateError(f"cannot read {name} from the release ({exc.strerror})") from exc
+        with source, open(destination, "wb") as out:
+            copied = 0
+            while True:
+                try:
+                    chunk = source.read(_CHUNK)
+                except OSError as exc:
+                    raise UpdateError(f"cannot read {name} from the release ({exc.strerror})") from exc
+                if not chunk:
+                    break
+                copied += len(chunk)
+                if copied > size:
+                    raise UpdateError(f"{name} is larger than the {size} bytes the release lists")
+                out.write(chunk)
 
 
 def signature_verifier(allowed_signers: str, *, now: float | None = None) -> Verifier:
@@ -963,6 +1091,7 @@ def apply(installation: Installation, release: Release, planned: Plan, transport
             if acquire_pin is not None and release.claude_code != fresh.current.claude_code:
                 _advance(held, "pin")
                 acquire_pin(unpacked, release)
+            sync_bundle(root, release.version, staging=staging.name)
             _advance(held, "replace")
             destination = root / VERSIONS / release.version
             if os.path.lexists(destination):
@@ -970,6 +1099,7 @@ def apply(installation: Installation, release: Release, planned: Plan, transport
                 shutil.rmtree(replaced, ignore_errors=True)
                 os.rename(destination, replaced)
             os.rename(unpacked, destination)
+            sync_bundle(root, release.version)
             _advance(held, "switch")
             switch(root, current=release.version, previous=old if old != release.version else None)
         finally:

@@ -139,6 +139,7 @@ class HttpsTransport:
         request = urllib.request.Request(url, headers={"User-Agent": "charmer-update"})
         return opener.open(request, timeout=self.timeout)
 
+    @contextlib.contextmanager
     def _response(self, name: str, version: str | None):
         url = self.url(name, version)
         try:
@@ -150,23 +151,44 @@ class HttpsTransport:
         except (urllib.error.URLError, OSError, ValueError, http.client.HTTPException):
             # Proxy URLs and CONNECT replies can carry credentials or server text.
             raise TransportError(f"cannot reach the release server for {name}: connection failed") from None
-        final = urllib.parse.urlsplit(response.geturl() if hasattr(response, "geturl") else url)
-        if final.scheme != "https" or (final.hostname or "").lower() not in self.hosts:
-            response.close()
-            raise TransportError(f"{name} came from {final.hostname}, which is not a release host")
-        return response
+        try:
+            final = urllib.parse.urlsplit(response.geturl() if hasattr(response, "geturl") else url)
+            if final.scheme != "https" or (final.hostname or "").lower() not in self.hosts:
+                raise TransportError(f"{name} came from {final.hostname}, which is not a release host")
+            yield response
+        except BaseException:
+            # Closing must not mask the original refusal or local write failure.
+            with contextlib.suppress(OSError, ValueError, http.client.HTTPException):
+                response.close()
+            raise
+        else:
+            try:
+                response.close()
+            except (OSError, ValueError, http.client.HTTPException):
+                raise TransportError(f"cannot read the release {name}: response failed") from None
+
+    def _read(self, response, name: str, size: int) -> bytes:
+        try:
+            data = response.read(size)
+            # Bounded HTTPResponse.read accepts premature EOF with a declared
+            # length. Never treat those bytes as a complete response.
+            if len(data) < size and getattr(response, "length", None) not in (None, 0):
+                raise http.client.IncompleteRead(b"")
+            return data
+        except (OSError, ValueError, http.client.HTTPException):
+            raise TransportError(f"cannot read the release {name}: response failed") from None
 
     def fetch(self, name: str, version: str | None, limit: int) -> bytes:
-        with contextlib.closing(self._response(name, version)) as response:
-            data = response.read(limit + 1)
+        with self._response(name, version) as response:
+            data = self._read(response, name, limit + 1)
         if len(data) > limit:
             raise TransportError(f"the release {name} is larger than {limit} bytes")
         return data
 
     def download(self, name: str, version: str, destination: Path, size: int) -> None:
         copied = 0
-        with contextlib.closing(self._response(name, version)) as response, open(destination, "wb") as out:
-            while chunk := response.read(_CHUNK):
+        with self._response(name, version) as response, open(destination, "wb") as out:
+            while chunk := self._read(response, name, _CHUNK):
                 copied += len(chunk)
                 if copied > size:
                     raise TransportError(f"{name} is larger than the {size} bytes the release lists")

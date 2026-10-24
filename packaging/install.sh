@@ -174,7 +174,11 @@ cleanup() {
 	end_inhibition
 	if [ -n "$work" ]; then rm -rf "$work"; fi
 	if [ -n "$staging" ]; then rm -rf "$staging"; fi
-	if [ "$locked" = yes ]; then rm -rf "$lock_dir"; fi
+	if [ "$locked" = yes ] && [ ! -L "$lock_dir" ] && [ -f "$lock_dir/pid" ] && [ ! -L "$lock_dir/pid" ]; then
+		holder=''
+		IFS= read -r holder <"$lock_dir/pid" 2>/dev/null || true
+		if [ "$holder" = "$$" ]; then rm -rf "$lock_dir"; fi
+	fi
 	exit "$status"
 }
 trap cleanup EXIT
@@ -295,24 +299,32 @@ mkdir_private() (
 )
 
 acquire_lock() {
+	# The verified bundle serializes stale reclamation with the updater.
+	# Older bundles can still repair/roll back, but never reclaim a stale lock.
 	mkdir_private "$install_root"
 	chmod 700 "$install_root"
+	lock_help=$(bundle_python "$1" "$TXN" --help) || exit 1
+	case $lock_help in
+	*acquire-lock*)
+		bundle_python "$1" "$TXN" acquire-lock --install-root "$install_root" --pid "$$" || exit 1
+		locked=yes
+		return 0
+		;;
+	esac
 	if mkdir -m 700 "$lock_dir" 2>/dev/null; then
 		printf '%s\n' "$$" >"$lock_dir/pid"
 		locked=yes
 		return 0
 	fi
 	holder=''
-	IFS= read -r holder <"$lock_dir/pid" 2>/dev/null || true
+	if [ ! -L "$lock_dir" ] && [ -f "$lock_dir/pid" ] && [ ! -L "$lock_dir/pid" ]; then
+		IFS= read -r holder <"$lock_dir/pid" 2>/dev/null || true
+	fi
 	case $holder in
-	'' | *[!0-9]*) die "another install or update holds $lock_dir. If none is running, remove that directory and try again." ;;
+	'' | *[!0-9]*) ;;
 	*) if kill -0 "$holder" 2>/dev/null; then die "another install or update is running (process $holder)"; fi ;;
 	esac
-	stale=$install_root/.lock.stale.$$
-	if mv "$lock_dir" "$stale" 2>/dev/null; then rm -rf "$stale"; fi
-	mkdir -m 700 "$lock_dir" 2>/dev/null || die "another install or update is running"
-	printf '%s\n' "$$" >"$lock_dir/pid"
-	locked=yes
+	die "the older bundle cannot safely reclaim $lock_dir. Confirm no installer or charmer update process is running, then run: rm -r $(quote "$lock_dir"); retry the installer afterwards."
 }
 
 migrate_flag() {
@@ -800,6 +812,16 @@ install_bundle() {
 	rm -rf "$staging"
 	mv "$unpacked" "$staging"
 	txn_bundle=$staging
+	# A reinstall may replace the tree current already names. Its contents
+	# must be durable before that tree is moved aside, not only before links change.
+	sync_help=$(bundle_python "$txn_bundle" "$TXN" --help) || exit 1
+	case $sync_help in
+	*sync-bundle*)
+		bundle_python "$txn_bundle" "$TXN" sync-bundle --install-root "$install_root" --version "$version" \
+			--staging "${staging##*/}" || exit 1
+		;;
+	*) sync || die "system sync failed; the links were left as they are" ;;
+	esac
 	replaced=''
 	if [ -e "$dest" ] || [ -L "$dest" ]; then
 		replaced=$install_root/versions/.replaced.$version.$$
@@ -809,6 +831,16 @@ install_bundle() {
 	mv "$staging" "$dest"
 	staging=''
 	txn_bundle=$dest
+	# Persist the final versions/ entries after both renames as well.
+	case $sync_help in
+	*sync-bundle*)
+		bundle_python "$txn_bundle" "$TXN" sync-bundle --install-root "$install_root" --version "$version" || exit 1
+		;;
+	*)
+		sync || die "system sync failed; the links were left as they are"
+		say "the incoming release lacks the durability helper; used system sync"
+		;;
+	esac
 	if [ -n "$replaced" ]; then rm -rf "$replaced"; fi
 	advance switch
 	if [ -n "$old" ] && [ "$old" != "$version" ] && [ -d "$install_root/versions/$old" ]; then
@@ -843,7 +875,7 @@ do_install() {
 	set --
 	if [ "$recovering" = yes ]; then set -- --recoverable installer; fi
 	preflight "$unpacked" --version "$version" --readable-format "$new_format" --bundle "$unpacked" "$@"
-	acquire_lock
+	acquire_lock "$unpacked"
 	if [ "$recovering" = yes ] && recover_transaction "$unpacked"; then
 		say "finishing an interrupted run of the installer"
 		tidy_interrupted
@@ -918,7 +950,7 @@ do_repair() {
 		return
 	fi
 	preflight "$bundle" --version "$version" --readable-format "$format" --recoverable installer
-	acquire_lock
+	acquire_lock "$bundle"
 	# An interrupted install, repair or rollback left its inhibition: this
 	# run takes it back and finishes the job; otherwise it records its own.
 	if recover_transaction "$bundle"; then
@@ -957,7 +989,7 @@ do_rollback() {
 	if [ -n "$current" ] && [ -d "$install_root/versions/$current" ]; then checker=$install_root/versions/$current; fi
 	preflight "$checker" --version "$previous" --readable-format "$format" --bundle "$target_bundle" \
 		--rollback-from "${current:-the current version}"
-	acquire_lock
+	acquire_lock "$checker"
 	# The rollback is the one checked above: refused when another run changed
 	# the links before this one took the lock.
 	if [ "$(link_version current)" != "$current" ] || [ "$(link_version previous)" != "$previous" ]; then

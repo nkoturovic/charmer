@@ -10,6 +10,7 @@ import io
 import json
 import os
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -468,6 +469,30 @@ class ReceiptTests(TxnTestCase):
         self.assertFalse(recorded.present())
         bashrc.write_text(f"x\n{install_receipt.PATH_LINE}\n")
         self.assertTrue(recorded.present())
+
+    def test_special_launcher_files_are_not_owned_without_blocking(self) -> None:
+        program = """
+import sys
+from charmer import install_receipt
+path = sys.argv[1]
+assert install_receipt.file_sha256(path) is None
+assert not install_receipt.Launcher(path, "a" * 64).owned()
+print("special launcher is not owned")
+"""
+        for kind in ("fifo", "socket"):
+            with self.subTest(kind=kind), socket.socket(socket.AF_UNIX) as sock:
+                launcher = self.tmp / kind
+                if kind == "fifo":
+                    os.mkfifo(launcher)
+                else:
+                    sock.bind(str(launcher))
+                try:
+                    result = subprocess.run([sys.executable, "-c", program, str(launcher)], cwd=self.tmp,
+                                            stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=3)
+                except subprocess.TimeoutExpired:
+                    self.fail(f"receipt ownership check blocked on a {kind}")
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn("special launcher is not owned", result.stdout)
 
     def test_a_legacy_receipt_vouches_for_nothing(self) -> None:
         legacy = {"format": 1, "launchers": ["/x"], "path_lines": [{"file": "/y", "marker": "# m"}]}

@@ -11,8 +11,10 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import select
 import shutil
 import subprocess
+import threading
 import tarfile
 import tempfile
 import unittest
@@ -105,6 +107,44 @@ class SelfUpdateTestCase(unittest.TestCase):
         return sorted(p.name for p in (self.root / "versions").iterdir())
 
 
+class DirectoryTransportFailureTests(SelfUpdateTestCase):
+    def test_destination_failures_keep_the_local_path_and_errno(self) -> None:
+        source = self.tmp / "bundle.tar.gz"
+        source.write_bytes(b"bundle")
+        transport = su.DirectoryTransport(self.tmp)
+        destination = self.tmp / "absent" / "download"
+        with self.assertRaises(FileNotFoundError) as caught:
+            transport.download(source.name, "1.0.0", destination, 6)
+        self.assertEqual(caught.exception.filename, str(destination))
+        for operation in ("write", "__exit__"):
+            with self.subTest(operation=operation):
+                target = mock.MagicMock()
+                target.__enter__.return_value = target
+                getattr(target, operation).side_effect = OSError(28, "No space left on device", str(destination))
+                real_open = open
+                def open_file(path, mode):
+                    return target if path == destination else real_open(path, mode)
+                with mock.patch.object(su, "open", side_effect=open_file, create=True), \
+                        self.assertRaises(OSError) as caught:
+                    transport.download(source.name, "1.0.0", destination, 6)
+                self.assertEqual(caught.exception.errno, 28)
+                self.assertEqual(caught.exception.filename, str(destination))
+
+    def test_source_open_and_read_failures_keep_the_release_diagnostic(self) -> None:
+        transport = su.DirectoryTransport(self.tmp)
+        with self.assertRaisesRegex(su.UpdateError, "cannot read bundle.tar.gz from the release"):
+            transport.download("bundle.tar.gz", "1.0.0", self.tmp / "out", 6)
+        source = mock.MagicMock()
+        source.__enter__.return_value = source
+        source.read.side_effect = OSError(5, "Input/output error")
+        real_open = open
+        def open_file(path, mode):
+            return source if mode == "rb" else real_open(path, mode)
+        with mock.patch.object(su, "open", side_effect=open_file, create=True), \
+                self.assertRaisesRegex(su.UpdateError, "cannot read bundle.tar.gz from the release"):
+            transport.download("bundle.tar.gz", "1.0.0", self.tmp / "out", 6)
+
+
 class VersionAndStateTests(SelfUpdateTestCase):
     def test_version_order(self) -> None:
         ordered = ["0.9.9", "1.0.0-dev", "1.0.0", "1.0.1", "1.2.0", "1.10.0", "2.0.0"]
@@ -165,6 +205,177 @@ class InstallationTests(SelfUpdateTestCase):
         (self.root / "current").symlink_to("versions/1.0.0")
         with self.assertRaisesRegex(su.UpdateError, "unreadable"):
             su.read_installation(self.root)
+
+
+class InstallLockRaceTests(SelfUpdateTestCase):
+    def test_fresh_acquisition_creates_no_guard_file(self) -> None:
+        with su.install_lock(self.root):
+            self.assertFalse((self.root / ".lock-guard").exists())
+            self.assertEqual((self.root / ".lock/pid").read_text(), f"{os.getpid()}\n")
+        self.assertEqual(list(self.root.iterdir()), [])
+
+    def test_a_holder_released_before_the_pid_read_is_retried(self) -> None:
+        first = su.install_lock(self.root)
+        first.acquire()
+        second = su.install_lock(self.root)
+        original = second._holder
+        released = []
+        def holder():
+            if not released:
+                first.__exit__(None, None, None)
+                released.append(True)
+                return None
+            return original()
+        try:
+            with mock.patch.object(second, "_holder", side_effect=holder):
+                with second:
+                    self.assertEqual(released, [True])
+                    self.assertEqual((self.root / ".lock/pid").read_text(), f"{os.getpid()}\n")
+        finally:
+            if not released:
+                first.__exit__(None, None, None)
+        self.assertFalse((self.root / ".lock").exists())
+        self.assertTrue((self.root / ".lock-guard").exists())
+        self.assertIn(".lock-guard", su.__doc__)
+
+    def test_the_guard_is_stable_and_unsafe_guard_files_are_refused(self) -> None:
+        lock = self.root / ".lock"
+        lock.mkdir(parents=True)
+        (lock / "pid").write_text(f"{2 ** 22 + 1}\n")
+        with su.install_lock(self.root):
+            guard = self.root / ".lock-guard"
+            identity = (guard.stat().st_dev, guard.stat().st_ino)
+        with su.install_lock(self.root):
+            self.assertEqual((guard.stat().st_dev, guard.stat().st_ino), identity)
+        self.assertEqual(guard.stat().st_mode & 0o777, 0o600)
+        guard.unlink()
+        target = self.tmp / "elsewhere"
+        target.write_bytes(b"untouched")
+        lock.mkdir()
+        (lock / "pid").write_text(f"{2 ** 22 + 1}\n")
+        guard.symlink_to(target)
+        with self.assertRaises((su.UpdateError, OSError)):
+            with su.install_lock(self.root):
+                self.fail("symlinked guard accepted")
+        self.assertEqual(target.read_bytes(), b"untouched")
+        guard.unlink()
+        os.mkfifo(guard)
+        with self.assertRaises((su.UpdateError, OSError)):
+            with su.install_lock(self.root):
+                self.fail("special guard accepted")
+        self.assertEqual((lock / "pid").read_text(), f"{2 ** 22 + 1}\n")
+
+    def test_release_leaves_a_replacement_owners_lock_alone(self) -> None:
+        held = su.install_lock(self.root)
+        held.__enter__()
+        (self.root / ".lock/pid").write_text(f"{os.getppid()}\n")
+        held.__exit__(None, None, None)
+        self.assertEqual((self.root / ".lock/pid").read_text(), f"{os.getppid()}\n")
+
+    def test_two_stale_reclaimers_cannot_both_acquire(self) -> None:
+        lock = self.root / ".lock"
+        lock.mkdir(parents=True)
+        (lock / "pid").write_text(f"{2 ** 22 + 1}\n")
+        paused, second_attempted, first_attempted, release = (threading.Event() for _ in range(4))
+        acquired, refused, errors = [], [], []
+        real_rename = su.os.rename
+
+        def rename(source, destination):
+            if Path(source) == lock and threading.current_thread().name == "first":
+                paused.set()
+                if not second_attempted.wait(5):
+                    raise AssertionError("second reclaimer did not attempt the lock")
+            return real_rename(source, destination)
+
+        def run(name):
+            held = su.install_lock(self.root)
+            owns = False
+            try:
+                try:
+                    held.__enter__()
+                    owns = True
+                    acquired.append(name)
+                except su.UpdateError:
+                    refused.append(name)
+                finally:
+                    (first_attempted if name == "first" else second_attempted).set()
+                if owns and not release.wait(5):
+                    raise AssertionError("test did not release the winner")
+            except BaseException as exc:
+                errors.append(exc)
+            finally:
+                if owns:
+                    held.__exit__(None, None, None)
+
+        first = threading.Thread(target=run, args=("first",), name="first", daemon=True)
+        second = threading.Thread(target=run, args=("second",), name="second", daemon=True)
+        with mock.patch.object(su.os, "rename", side_effect=rename):
+            try:
+                first.start()
+                self.assertTrue(paused.wait(5), "first reclaimer did not reach the rename barrier")
+                second.start()
+                self.assertTrue(first_attempted.wait(5), "first reclaimer did not finish acquiring")
+                self.assertEqual(errors, [])
+                self.assertEqual(len(acquired), 1, f"both reclaimers acquired: {acquired}")
+                self.assertEqual(len(refused), 1)
+                self.assertEqual((lock / "pid").read_text(), f"{os.getpid()}\n")
+            finally:
+                second_attempted.set()
+                release.set()
+                first.join(5)
+                if second.ident is not None:
+                    second.join(5)
+        self.assertFalse(first.is_alive() or second.is_alive())
+        self.assertEqual(errors, [])
+        self.assertFalse(lock.exists())
+
+    LEGACY_LOCK = r'''
+lock=$1/.lock
+locked=no
+trap 'if [ "$locked" = yes ]; then rm -rf "$lock"; fi' EXIT
+if ! mkdir -m 700 "$lock" 2>/dev/null; then
+    holder=''
+    IFS= read -r holder <"$lock/pid" 2>/dev/null || true
+    case $holder in
+    '' | *[!0-9]*) echo held; exit 1 ;;
+    *) if kill -0 "$holder" 2>/dev/null; then echo held; exit 1; fi ;;
+    esac
+    stale=$1/.lock.stale.$$
+    if mv "$lock" "$stale" 2>/dev/null; then rm -rf "$stale"; fi
+    mkdir -m 700 "$lock" 2>/dev/null || exit 1
+fi
+printf '%s\n' "$$" >"$lock/pid"
+locked=yes
+printf 'acquired\n'
+IFS= read -r release
+'''
+
+    def test_live_new_lock_refuses_the_legacy_mkdir_protocol(self) -> None:
+        with su.install_lock(self.root):
+            result = subprocess.run(["sh", "-c", self.LEGACY_LOCK, "sh", str(self.root)],
+                                    cwd=self.tmp, input="\n", capture_output=True, text=True, timeout=5)
+            self.assertEqual(result.returncode, 1, result.stderr)
+            self.assertEqual(result.stdout, "held\n")
+            self.assertEqual((self.root / ".lock/pid").read_text(), f"{os.getpid()}\n")
+
+    def test_live_legacy_mkdir_lock_refuses_the_new_protocol(self) -> None:
+        self.root.mkdir(mode=0o700)
+        process = subprocess.Popen(["sh", "-c", self.LEGACY_LOCK, "sh", str(self.root)], cwd=self.tmp,
+                                   stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        try:
+            self.assertTrue(select.select([process.stdout], [], [], 5)[0], "legacy fixture did not acquire")
+            self.assertEqual(process.stdout.readline(), "acquired\n")
+            with self.assertRaisesRegex(su.UpdateError, "another install or update is running"):
+                with su.install_lock(self.root):
+                    self.fail("both protocols acquired")
+            self.assertEqual((self.root / ".lock/pid").read_text(), f"{process.pid}\n")
+            _out, err = process.communicate("\n", timeout=5)
+            self.assertEqual(process.returncode, 0, err)
+        finally:
+            if process.poll() is None:
+                process.kill()
+            process.communicate(timeout=5)
+        self.assertFalse((self.root / ".lock").exists())
 
 
 class CheckAndPlanTests(SelfUpdateTestCase):
@@ -367,6 +578,107 @@ class ApplyTests(SelfUpdateTestCase):
             transport.fetch("../MANIFEST.json", None, 10)
         with self.assertRaisesRegex(su.UpdateError, "larger than the 5 bytes"):
             transport.download(release.asset().name, "1.0.1", self.tmp / "out", 5)
+
+
+class IncomingDurabilityTests(SelfUpdateTestCase):
+    def test_staging_sync_failure_keeps_the_retained_previous_tree_unchanged(self) -> None:
+        self.seed(self.release("1.0.0"))
+        incoming = self.release("1.1.0")
+        self.update_to(incoming)
+        roll_back(self.root, state_root=self.state, hold=clear, inhibit=contextlib.nullcontext)
+        previous_launcher = self.root / "previous/bin/charmer"
+        previous_launcher.write_bytes(b"the retained launcher must stay in place\n")
+        before = previous_launcher.read_bytes()
+        links = tuple(os.readlink(self.root / name) for name in ("current", "previous"))
+        observed = []
+        def fail_staging(root, version, **kwargs):
+            observed.append((root, version, kwargs))
+            self.assertEqual(previous_launcher.read_bytes(), before)
+            raise su.UpdateError("fixture staging sync failed")
+        with mock.patch.object(su, "sync_bundle", side_effect=fail_staging):
+            with self.assertRaisesRegex(su.UpdateError, "fixture staging sync failed"):
+                self.update_to(incoming)
+        self.assertEqual(observed, [(self.root, "1.1.0", {"staging": f".staging.{os.getpid()}"})])
+        self.assertEqual(previous_launcher.read_bytes(), before)
+        self.assertEqual(tuple(os.readlink(self.root / name) for name in ("current", "previous")), links)
+        self.assertFalse(list((self.root / "versions").glob(".replaced.*")))
+
+    def test_update_syncs_staging_before_replacement_and_version_afterwards(self) -> None:
+        self.seed(self.release("1.0.0"))
+        observed = []
+        real = su.sync_bundle
+        def barrier(root, version, **kwargs):
+            staged = kwargs.get("staging")
+            observed.append(staged)
+            self.assertEqual((root / "versions" / version).exists(), staged is None)
+            self.assertEqual(os.readlink(root / "current"), "versions/1.0.0")
+            return real(root, version, **kwargs)
+        with mock.patch.object(su, "sync_bundle", side_effect=barrier):
+            self.update_to(self.release("1.1.0"))
+        self.assertEqual(observed, [f".staging.{os.getpid()}", None])
+
+    def test_update_sync_failure_leaves_both_links_and_switch_record_untouched(self) -> None:
+        self.seed(self.release("1.0.0"))
+        self.update_to(self.release("1.0.1"))
+        before = tuple(os.readlink(self.root / name) for name in ("current", "previous"))
+        with mock.patch.object(su, "sync_bundle", create=True,
+                               side_effect=[None, su.UpdateError("incoming bundle could not be made durable")]) as barrier:
+            with self.assertRaisesRegex(su.UpdateError, "incoming bundle could not be made durable"):
+                self.update_to(self.release("1.0.2"))
+        self.assertEqual(barrier.call_args_list, [
+            mock.call(self.root, "1.0.2", staging=f".staging.{os.getpid()}"), mock.call(self.root, "1.0.2")])
+        self.assertEqual(tuple(os.readlink(self.root / name) for name in ("current", "previous")), before)
+        self.assertFalse((self.root / su.SWITCH_RECORD).exists())
+
+    def test_rollback_skips_the_incoming_bundle_barrier(self) -> None:
+        self.seed(self.release("1.0.0"))
+        self.update_to(self.release("1.0.1"))
+        with mock.patch.object(su, "sync_bundle", create=True, side_effect=AssertionError("rollback never syncs")):
+            result = roll_back(self.root, state_root=self.state, hold=clear, inhibit=contextlib.nullcontext)
+        self.assertEqual(result.version, "1.0.0")
+
+    def test_linux_uses_one_sync_and_reports_its_failure(self) -> None:
+        self.seed(self.release("1.0.0"))
+        with mock.patch.object(su.sys, "platform", "linux"), mock.patch.object(su.os, "sync", create=True) as sync:
+            su.sync_bundle(self.root, "1.0.0")
+            sync.assert_called_once_with()
+            sync.side_effect = OSError(5, "Input/output error")
+            with self.assertRaisesRegex(su.UpdateError, "links were left as they are"):
+                su.sync_bundle(self.root, "1.0.0")
+
+    def test_file_walk_syncs_files_then_directories_without_following_links(self) -> None:
+        import stat
+
+        versions = self.root / "versions"
+        incoming = versions / "1.0.0"
+        nested = incoming / "nested"
+        nested.mkdir(parents=True)
+        payload = nested / "payload"
+        payload.write_bytes(b"new bundle")
+        outside = self.tmp / "outside"
+        outside.write_bytes(b"never opened")
+        (incoming / "link").symlink_to(outside)
+        seen = []
+        def fsync(fd):
+            info = os.fstat(fd)
+            seen.append((info.st_ino, stat.S_IFMT(info.st_mode)))
+        with mock.patch.object(su.sys, "platform", "darwin"), mock.patch.object(su.os, "fsync", side_effect=fsync):
+            su.sync_bundle(self.root, "1.0.0")
+        self.assertEqual(seen, [(p.stat().st_ino, stat.S_IFMT(p.stat().st_mode))
+                                for p in (payload, nested, incoming, versions)])
+
+    def test_file_walk_refuses_special_files_and_symlinked_roots(self) -> None:
+        incoming = self.root / "versions/1.0.0"
+        incoming.mkdir(parents=True)
+        os.mkfifo(incoming / "fifo")
+        with mock.patch.object(su.sys, "platform", "darwin"):
+            with self.assertRaisesRegex(su.UpdateError, "links were left as they are"):
+                su.sync_bundle(self.root, "1.0.0")
+            (incoming / "fifo").unlink()
+            incoming.rmdir()
+            incoming.symlink_to(self.tmp, target_is_directory=True)
+            with self.assertRaisesRegex(su.UpdateError, "links were left as they are"):
+                su.sync_bundle(self.root, "1.0.0")
 
 
 class SafetyTests(SelfUpdateTestCase):

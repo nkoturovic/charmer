@@ -110,7 +110,7 @@ def file_sha256(path: Path | str) -> str | None:
     """The sha256 of a regular, non-link file; None otherwise."""
 
     try:
-        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | getattr(os, "O_NOFOLLOW", 0))
     except OSError:
         return None
     try:

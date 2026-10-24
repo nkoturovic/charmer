@@ -139,15 +139,24 @@ def _bare(runtime: runtime_mod.Runtime, *, redo: bool, input_stream: TextIO | No
     state = status.snapshot(runtime)
     for line in status.status_lines(state):
         write(line)
+    refreshed = False
     for step in status.STEP_ORDER:
-        current = status.snapshot(runtime).step(step)
+        current = state.step(step)
         if current.state == "done" and not redo:
             continue
-        if step == "test" and not redo and current.state == "optional":
-            pass
         code = _run_step(runtime, step, input_stream=input_stream, output_stream=output_stream, write=write)
         if code == EXIT_CANCELLED or (code != EXIT_READY and step != "test"):
             return code
+        state = status.snapshot(runtime)
+        refreshed = True
+    # A post-step snapshot also serves the final readiness check when only
+    # skipped steps followed it. An entirely skipped run still rechecks once.
+    if not refreshed:
+        state = status.snapshot(runtime)
+    if not state.ready:
+        for line in status.status_lines(state):
+            write(line)
+        return EXIT_FAILED
     write(texts.SETUP_DONE)
     return EXIT_READY
 

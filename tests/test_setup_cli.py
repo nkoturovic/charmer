@@ -4,9 +4,11 @@ statuses (0 ok, 1 refused or not done, 2 usage, 3 declined, 130 cancelled)."""
 
 from __future__ import annotations
 
+import ast
 import contextlib
 import dataclasses
 import hashlib
+import inspect
 import io
 import json
 import os
@@ -54,6 +56,70 @@ class SetupCase(test_cli.OperatorCommandCase):
         return self.private_file("answers/setup.json", json.dumps(document).encode())
 
 
+class ReadySnapshotTests(test_cli.OperatorCommandCase):
+    def setUp(self) -> None:
+        super().setUp()
+        original = self.runtime.catalog.docs["native-contract"]
+        contract = {**original, "verified": [{**original["verified"][0], "version": "2.1.400",
+                    "platforms": {pin.host_platform(): {"sha256": hashlib.sha256(CLAUDE_BUILD).hexdigest(),
+                                                       "size": len(CLAUDE_BUILD)}}}]}
+        self.runtime.catalog.docs["native-contract"] = contract
+        self.copy = pin.owned_path(self.runtime.environ, "2.1.400", pin.host_platform())
+        state.ensure_private_dir(self.copy.parent)
+        self.copy.write_bytes(CLAUDE_BUILD)
+        self.copy.chmod(0o755)
+        self.real_snapshot = status.snapshot
+
+    def ready_snapshot(self, runtime, *, test_done=False):
+        found = self.real_snapshot(runtime)
+        steps = tuple(dataclasses.replace(step, state=(step.state if step.id == "claude" else
+                      "optional" if step.id == "test" and not test_done else "done")) for step in found.steps)
+        return dataclasses.replace(found, steps=steps)
+
+    def bare(self):
+        out = io.StringIO()
+        code = setup_cmd._bare(self.runtime, redo=False, input_stream=io.StringIO("n\n"),
+                               output_stream=out, write=setup_cmd._writer(out))
+        return code, out.getvalue()
+
+    def test_ready_setup_hashes_only_initial_and_final_snapshots(self) -> None:
+        for test_done in (False, True):
+            with self.subTest(test_done=test_done), \
+                    mock.patch.object(status, "snapshot", side_effect=lambda runtime: self.ready_snapshot(
+                        runtime, test_done=test_done)), \
+                    mock.patch.object(pin, "check_file", wraps=pin.check_file) as checked, \
+                    mock.patch.object(setup_cmd, "_run_step", return_value=0) as run:
+                code, out = self.bare()
+                self.assertEqual(code, 0, out)
+                self.assertEqual(checked.call_count, 2)
+                self.assertEqual([call.args[1] for call in run.call_args_list], [] if test_done else ["test"])
+
+    def test_executed_step_refresh_detects_changed_client_before_reporting_ready(self) -> None:
+        def run_step(_runtime, step, **_kwargs):
+            self.assertEqual(step, "test")
+            self.copy.write_bytes(b"x" * len(CLAUDE_BUILD))
+            return 0
+
+        with mock.patch.object(status, "snapshot", side_effect=self.ready_snapshot), \
+                mock.patch.object(setup_cmd, "_run_step", side_effect=run_step):
+            code, out = self.bare()
+        self.assertEqual(code, 1, out)
+        self.assertNotIn(texts.SETUP_DONE, out)
+        self.assertIn("cannot be used", out)
+
+    def test_refresh_after_a_step_skips_steps_it_completed(self) -> None:
+        first = self.ready_snapshot(self.runtime, test_done=True)
+        pending = dataclasses.replace(first, steps=tuple(
+            dataclasses.replace(step, state="todo") if step.id in ("providers", "profile") else step
+            for step in first.steps))
+        with mock.patch.object(status, "snapshot", side_effect=[pending, first]) as snapshot, \
+                mock.patch.object(setup_cmd, "_run_step", return_value=0) as run:
+            code, out = self.bare()
+        self.assertEqual(code, 0, out)
+        self.assertEqual([call.args[1] for call in run.call_args_list], ["providers"])
+        self.assertEqual(snapshot.call_count, 2)
+
+
 class StatusTests(SetupCase):
     def test_status_lists_every_step_and_exits_by_readiness(self) -> None:
         code, out, err = self.op(["setup", "--status"], tty=False)
@@ -86,6 +152,14 @@ class StatusTests(SetupCase):
 
 
 class ModeTests(SetupCase):
+    def test_bare_setup_has_no_noop_conditions(self) -> None:
+        # The optional test runs through the ordinary step path; a separate
+        # condition with no effect wrongly suggests a different policy.
+        tree = ast.parse(inspect.getsource(setup_cmd._bare))
+        empty = [node.lineno for node in ast.walk(tree) if isinstance(node, ast.If)
+                 and len(node.body) == 1 and isinstance(node.body[0], ast.Pass)]
+        self.assertEqual(empty, [], "bare setup contains a no-op condition")
+
     def test_usage_errors_exit_2(self) -> None:
         answers = self.answers({"version": 1})
         cases = [

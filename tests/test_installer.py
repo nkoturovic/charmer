@@ -36,7 +36,7 @@ esac
 # (shell builtins and mocked platform commands aside). A new dependency
 # must be added here on purpose.
 INSTALLER_TOOLS = ("awk", "cat", "chmod", "cp", "cut", "getconf", "grep", "gzip", "id", "ldd", "ln", "ls",
-                   "mkdir", "mktemp", "mv", "readlink", "rm", "sed", "sha256sum", "sort", "tail", "tar", "tr")
+                   "mkdir", "mktemp", "mv", "readlink", "rm", "sed", "sha256sum", "sort", "sync", "tail", "tar", "tr")
 SHELLS = [("sh",)] + ([("busybox", "sh")] if shutil.which("busybox") else [])
 
 
@@ -208,6 +208,77 @@ class InstallTests(InstallerTestCase):
         self.assertEqual(sorted(p.name for p in (self.root / "versions").iterdir()), ["1.0.1", "1.1.0"])
         self.assertEqual(self.launcher("--version").stdout.strip(), "charmer 1.1.0")
 
+    def test_incoming_sync_failure_never_switches_the_installation(self) -> None:
+        self.assertInstalled(self.install(self.release("1.0.0")), "1.0.0")
+        self.assertInstalled(self.install(self.release("1.0.1")), "1.0.1")
+        before = tuple(os.readlink(self.root / name) for name in ("current", "previous"))
+        source = (REPO_ROOT / "src/charmer/self_update.py").read_bytes()
+        failure = b'\ndef sync_bundle(root, version, **kwargs):\n    raise UpdateError("fixture incoming sync failure; links were left as they are")\n'
+        release = self.release("1.0.2", overrides={"charmer/self_update.py": source + failure})
+        result = self.install(release)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("fixture incoming sync failure", result.stderr)
+        self.assertEqual(tuple(os.readlink(self.root / name) for name in ("current", "previous")), before)
+        self.assertFalse((self.root / ".switch.json").exists())
+        self.assertFalse((self.root / ".lock").exists())
+
+    def older_bundle_sync(self, exit_code: int):
+        self.assertInstalled(self.install(self.release("1.0.0")), "1.0.0")
+        self.assertInstalled(self.install(self.release("1.1.0")), "1.1.0")
+        before = tuple(os.readlink(self.root / name) for name in ("current", "previous"))
+        source = (REPO_ROOT / "src/charmer/install_txn.py").read_bytes()
+        older = b'''
+_original_parser = _parser
+def _parser():
+    parser = _original_parser()
+    for action in parser._actions:
+        if isinstance(action, argparse._SubParsersAction):
+            action.choices.pop("sync-bundle", None)
+    return parser
+'''
+        release = self.release("0.9.0", overrides={"charmer/install_txn.py": source + older})
+        tools = self.tmp / "sync-tools"
+        tools.mkdir()
+        sync = tools / "sync"
+        sync.write_text('#!/bin/sh\nreadlink "$SYNC_ROOT/current" >"$SYNC_LOG"\n'
+                        'readlink "$SYNC_ROOT/previous" >>"$SYNC_LOG"\nexit "$SYNC_EXIT"\n')
+        sync.chmod(0o755)
+        log = self.tmp / "sync.log"
+        result = self.install(release, path=f"{tools}:{self.fakebin}:{os.environ['PATH']}",
+                              SYNC_ROOT=str(self.root), SYNC_LOG=str(log), SYNC_EXIT=str(exit_code))
+        return result, before, log
+
+    def test_older_bundle_uses_system_sync_before_switching(self) -> None:
+        result, before, log = self.older_bundle_sync(0)
+        self.assertInstalled(result, "0.9.0")
+        self.assertEqual(tuple(log.read_text().splitlines()), before)
+        self.assertIn("incoming release lacks the durability helper; used system sync", result.stdout)
+        self.assertEqual(os.readlink(self.root / "previous"), "versions/1.1.0")
+
+    def test_older_bundle_system_sync_failure_preserves_both_links(self) -> None:
+        result, before, log = self.older_bundle_sync(1)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("system sync failed; the links were left as they are", result.stderr)
+        self.assertEqual(tuple(log.read_text().splitlines()), before)
+        self.assertEqual(tuple(os.readlink(self.root / name) for name in ("current", "previous")), before)
+        self.assertFalse((self.root / ".switch.json").exists())
+
+    def test_same_version_staging_sync_failure_preserves_the_current_tree(self) -> None:
+        self.assertInstalled(self.install(self.release("1.0.0")), "1.0.0")
+        launcher = self.root / "current/bin/charmer"
+        before = b"the current launcher must stay in place\n"
+        launcher.write_bytes(before)
+        source = (REPO_ROOT / "src/charmer/self_update.py").read_bytes()
+        failure = b'\ndef sync_bundle(root, version, **kwargs):\n    raise UpdateError("fixture staging sync failed")\n'
+        release = self.release("1.0.0", overrides={"charmer/self_update.py": source + failure})
+        result = self.install(release)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("fixture staging sync failed", result.stderr)
+        self.assertEqual(launcher.read_bytes(), before)
+        self.assertEqual(os.readlink(self.root / "current"), "versions/1.0.0")
+        self.assertFalse((self.root / ".switch.json").exists())
+        self.assertFalse(list((self.root / "versions").glob(".replaced.*")))
+
     def test_reinstalling_the_same_version_replaces_it(self) -> None:
         release = self.release("1.0.0")
         self.assertInstalled(self.install(release), "1.0.0")
@@ -240,7 +311,8 @@ class InstallTests(InstallerTestCase):
         lock.mkdir(parents=True)
         busy = self.install(release)
         self.assertEqual(busy.returncode, 1)
-        self.assertIn("If none is running, remove that directory", busy.stderr)
+        self.assertIn("if none is running, remove", busy.stderr)
+        self.assertIn(str(lock), busy.stderr)
         (lock / "pid").write_text(f"{os.getpid()}\n")
         running = self.install(release)
         self.assertIn(f"is running (process {os.getpid()})", running.stderr)
@@ -249,6 +321,73 @@ class InstallTests(InstallerTestCase):
         (lock / "pid").write_text(f"{dead}\n")
         self.assertInstalled(self.install(release), "1.0.0")
         self.assertFalse(lock.exists())
+
+    def test_acquisition_honours_the_updaters_stable_guard(self) -> None:
+        from charmer.platform import posix_fs
+
+        release = self.release("1.0.0")
+        self.root.mkdir(parents=True, mode=0o700)
+        (self.root / ".lock").mkdir()
+        (self.root / ".lock/pid").write_text(f"{2 ** 22 + 1}\n")
+        descriptor = os.open(self.root / ".lock-guard", os.O_RDWR | os.O_CREAT, 0o600)
+        try:
+            posix_fs.lock_descriptor(descriptor, shared=False, blocking=False)
+            result = self.install(release)
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("another install or update is running", result.stderr)
+            self.assertNothingInstalled()
+            self.assertEqual((self.root / ".lock/pid").read_text(), f"{2 ** 22 + 1}\n")
+        finally:
+            os.close(descriptor)
+
+    def test_cleanup_keeps_another_owners_install_lock(self) -> None:
+        source = (REPO_ROOT / "src/charmer/install_txn.py").read_bytes()
+        replacement = b'''
+_original_main = main
+def main(*args, **kwargs):
+    if "preflight" in sys.argv and "--token-env" in sys.argv:
+        root = Path(sys.argv[sys.argv.index("--install-root") + 1])
+        (root / ".lock/pid").write_text(os.environ["REPLACEMENT_PID"] + "\\n")
+        return 1
+    return _original_main(*args, **kwargs)
+'''
+        release = self.release("1.0.0", overrides={"charmer/install_txn.py": source + replacement})
+        result = self.install(release, REPLACEMENT_PID=str(os.getpid()))
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertEqual((self.root / ".lock/pid").read_text(), f"{os.getpid()}\n")
+        self.assertNothingInstalled()
+
+    def test_legacy_helper_stale_lock_refuses_repair_and_rollback(self) -> None:
+        source = (REPO_ROOT / "src/charmer/install_txn.py").read_bytes()
+        legacy = b'''
+_original_parser = _parser
+def _parser():
+    parser = _original_parser()
+    for action in parser._actions:
+        if isinstance(action, argparse._SubParsersAction):
+            action.choices.pop("acquire-lock", None)
+    return parser
+'''
+        for version in ("1.0.0", "1.1.0"):
+            release = self.release(version, overrides={"charmer/install_txn.py": source + legacy})
+            self.assertInstalled(self.install(release), version)
+        lock = self.root / ".lock"
+        lock.mkdir()
+        holder = f"{2 ** 22 + 1}\n"
+        (lock / "pid").write_text(holder)
+        for mode in ("--repair", "--rollback"):
+            with self.subTest(mode=mode):
+                result = self.run_installer(mode, "--no-modify-path")
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertIn("Confirm no installer or charmer update process is running", result.stderr)
+                self.assertIn(str(lock), result.stderr)
+                self.assertIn("rm -r", result.stderr)
+                self.assertEqual((lock / "pid").read_text(), holder)
+                self.assertEqual(os.readlink(self.root / "current"), "versions/1.1.0")
+        shutil.rmtree(lock)  # The fixture operator has confirmed neither run acquired it.
+        result = self.run_installer("--rollback")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(os.readlink(self.root / "current"), "versions/1.0.0")
 
     def test_rollback_without_a_previous_version(self) -> None:
         self.assertInstalled(self.install(self.release("1.0.0")), "1.0.0")
