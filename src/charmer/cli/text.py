@@ -179,16 +179,16 @@ RESUME_QUICK_HELP = (
 # (``_SessionsScreen._keybar``). `?` sits before Esc.
 SESSIONS_KEYBAR = (
     ("Enter", "resume"),
+    ("T", "lineup"),
+    ("V", "details"),
+    ("F", "follow/pin"),
+    ("R", "rename"),
+    ("X", "forget"),
     ("Space", "mark"),
     ("*", "all"),
     ("/", "filter"),
-    ("X", "forget"),
-    ("C", "all dirs"),
     ("Q", "save"),
-    ("V", "details"),
-    ("T", "lineup"),
-    ("F", "follow/pin"),
-    ("R", "rename"),
+    ("C", "all dirs"),
     ("L", "link"),
     ("B", "filters"),
     ("?", "help"),
@@ -196,7 +196,7 @@ SESSIONS_KEYBAR = (
 )
 SESSIONS_KEYBAR_ALL = tuple((key, "this dir" if key == "C" else label)
                             for key, label in SESSIONS_KEYBAR)
-# The row actions that join the bar when they apply, before L.
+# The row actions that join the bar when they apply, right after X.
 SESSIONS_STOP_BINDING = ("E", "stop")
 SESSIONS_MARK_BINDING = ("M", "mark ended")
 SESSIONS_REPAIR_BINDING = ("P", "repair")

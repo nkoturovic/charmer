@@ -304,12 +304,12 @@ class SessionsRowTests(_SessionsCase):
         self.assertEqual(len(screen.records), 2)
         self.assertIn("sessions — all directories · 2 total", win.frames[-1])
         self.assertIn("showing all directories", win.frames[-1])
-        self.assertIn("C this dir", win.frames[-1])
+        self.assertIn(("C", "this dir"), screen._keybar().bindings)
         self.assertEqual((screen.selected, screen.offset), (0, 0))
         screen.selected, screen.offset = 1, 7
         screen.run(FakeWindow(["C", ESC]))
         self.assertEqual((screen.selected, screen.offset), (0, 0))
-        self.assertIn("C all dirs", self.frame(screen))
+        self.assertIn(("C", "all dirs"), screen._keybar().bindings)
         self.assertLessEqual(tui.KeyBar(cli.SESSIONS_KEYBAR).rows(80), 2)
         import charmer.cli.text as text
         self.assertLessEqual(tui.KeyBar(text.SESSIONS_KEYBAR_ALL).rows(80), 2)
@@ -372,8 +372,8 @@ class SessionsRowTests(_SessionsCase):
     def test_keybar_and_help(self) -> None:
         self.assertEqual(
             cli.SESSIONS_KEYBAR,
-            (("Enter", "resume"), ("Space", "mark"), ("*", "all"), ("/", "filter"), ("X", "forget"),
-             ("C", "all dirs"), ("Q", "save"), ("V", "details"), ("T", "lineup"), ("F", "follow/pin"), ("R", "rename"),
+            (("Enter", "resume"), ("T", "lineup"), ("V", "details"), ("F", "follow/pin"), ("R", "rename"),
+             ("X", "forget"), ("Space", "mark"), ("*", "all"), ("/", "filter"), ("Q", "save"), ("C", "all dirs"),
              ("L", "link"), ("B", "filters"), ("?", "help"), ("Esc", "back")),
         )
         self.record()
@@ -386,9 +386,9 @@ class SessionsRowTests(_SessionsCase):
         # The selected row (no end event, not running, a v4 record) adds M and P.
         self.assertEqual(
             self.screen()._keybar().text(),
-            "Enter resume · Space mark · * all · / filter · X forget · C all dirs · Q save · V details · T lineup "
-            "· F follow/pin · R rename · M mark ended · P repair · L link · B filters · ? help · Esc back")
-        self.assertIn("Enter resume · Space mark · * all · / filter", win.frames[0])
+            "Enter resume · T lineup · V details · F follow/pin · R rename · X forget · M mark ended · P repair "
+            "· Space mark · * all · / filter · Q save · C all dirs · L link · B filters · ? help · Esc back")
+        self.assertIn("Enter resume · T lineup · V details · F follow/pin", win.frames[0])
 
     def test_the_root_screen_quits_with_esc(self) -> None:
         self.record()

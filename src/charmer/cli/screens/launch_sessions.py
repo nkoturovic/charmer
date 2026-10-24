@@ -973,10 +973,10 @@ _ROW_ACTIONS = (cli_text.SESSIONS_STOP_BINDING, cli_text.SESSIONS_MARK_BINDING, 
 
 
 def _with_row_actions(base: Sequence[tuple[str, str]], actions: Sequence[tuple[str, str]]) -> tuple[tuple[str, str], ...]:
-    """The sessions bar with the selected row's conditional keys before L."""
+    """The sessions bar with the selected row's conditional keys after X."""
 
     bindings = list(base)
-    at = next((index for index, (key, _label) in enumerate(bindings) if key == "L"), len(bindings) - 2)
+    at = next((index + 1 for index, (key, _label) in enumerate(bindings) if key == "X"), len(bindings) - 2)
     bindings[at:at] = list(actions)
     return tuple(bindings)
 

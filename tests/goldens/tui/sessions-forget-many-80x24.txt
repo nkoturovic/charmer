@@ -20,5 +20,5 @@
 
   lineup gen 1 · 8 agents · follow
 
-  Enter resume · Space mark · * all · / filter · X forget · C all dirs
-  … · ? help · Esc back
+  Enter resume · T lineup · V details · F follow/pin · R rename · X forget
+  M mark ended · Space mark · * all · / filter · … · ? help · Esc back

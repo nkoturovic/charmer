@@ -970,9 +970,26 @@ class KeyBar:
                 safe_add(win, origin, x, f" {label}", palette.attr("normal"))
                 x += 1 + len(label)
                 index += 1
-            tail = "… · " if index < len(body) else ""
-            safe_add(win, origin + 1, col, tail, palette.attr("dim"))
-            x = col + len(tail)
+            # Use the bottom row too, reserving the ellipsis and protected
+            # keys before admitting another whole binding.
+            x = col
+            reserved = len("… · " + KeyBar(protected).text())
+            while index < len(body):
+                key, label = body[index]
+                entry = len(key) + 1 + len(label) + (3 if x > col else 0)
+                if x + entry + 3 + reserved > width - 2:
+                    break
+                if x > col:
+                    safe_add(win, origin + 1, x, " · ", palette.attr("dim"))
+                    x += 3
+                safe_add(win, origin + 1, x, key, palette.attr("accent"))
+                x += len(key)
+                safe_add(win, origin + 1, x, f" {label}", palette.attr("normal"))
+                x += 1 + len(label)
+                index += 1
+            tail = (" · " if x > col else "") + ("… · " if index < len(body) else "")
+            safe_add(win, origin + 1, x, tail, palette.attr("dim"))
+            x += len(tail)
             for offset, (key, label) in enumerate(protected):
                 if offset:
                     safe_add(win, origin + 1, x, " · ", palette.attr("dim"))

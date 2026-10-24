@@ -1880,7 +1880,7 @@ def session_rows(
     total = len(summaries)
     where = "all directories" if cwd is None else f"{PurePath(cwd).name or cwd} (cwd)"
     title = f"sessions — {where} · {total} total"
-    if marked is not None:
+    if marked:
         title += f" · {len(marked)} marked"
     banner = (
         f"! {needs_total} session(s) need a profile choice (lead model removed)"

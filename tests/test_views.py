@@ -1279,6 +1279,13 @@ class PickerRowsTests(unittest.TestCase):
 
 
 class SessionRowsTests(_RuntimeCase):
+    def test_header_only_counts_nonempty_marks(self) -> None:
+        for marked, suffix in ((frozenset(), ""), (frozenset({fx.FIXED_ID}), " · 1 marked")):
+            with self.subTest(marked=marked):
+                model = views.session_rows([], lcat=self.runtime.lineup_catalog(), states={},
+                                           now=fx.FIXED_NOW, width=80, marked=marked)
+                self.assertEqual(model.title, "sessions — all directories · 0 total" + suffix)
+
     def test_columns_tiers_marks_and_banner(self) -> None:
         fx.v4_record(self.runtime, catalog.DEFAULT_SEED, managed_id=fx.FIXED_ID, title="t1")
         fx.v4_record(self.runtime, catalog.DEFAULT_SEED, managed_id=fx.OTHER_ID, ended=True, pending=True)
