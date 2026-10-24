@@ -436,9 +436,13 @@ class QuotaSurfaceTests(unittest.TestCase):
             self.assertIn("3d old", text)
             self.assertIn("resets Fri 09:00", text)
             self.assertLessEqual(len(text), 67)
-            self.assertIn("S Sessions → T" if resume else "P provider fallback", text)
+            self.assertIn("S Sessions → T" if resume else "P → F", text)
             if resume:
                 self.assertNotIn("P ", text)
+        wide, _role = self.card(self.credentials(), width=120)
+        self.assertIn("resets Fri 09:00", wide)
+        self.assertIn("3d old", wide)
+        self.assertTrue(wide.endswith("— P → F fallback profiles"), wide)
 
     def test_card_missing_window_and_reset_and_nonwarning_states(self):
         self.assertIsNone(self.card(self.credentials(reason="quota exhausted", window=False, observed=False)))

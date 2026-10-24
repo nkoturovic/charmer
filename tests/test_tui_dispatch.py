@@ -229,6 +229,7 @@ class ProvidersDispatchTests(_ProvidersCase):
         shown: list = []
         with mock.patch.object(charmer.tui, "TextView", _recording_views(shown)):
             self.run_screen(self.screen("kimi"), ["v", ESC])
+        self.assertEqual(len(shown), 1)
         self.assertEqual(shown[0][0], cli_text.DETAILS_TITLE)
         self.assertTrue(shown[0][1])
 

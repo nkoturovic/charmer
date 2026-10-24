@@ -1157,7 +1157,7 @@ class CardKeyTests(_CardCase):
         listed = next(frame for frame in win.frames if cli_text.FINDINGS_TITLE in frame)
         self.assertIn(f"{cli_text.FINDINGS_TITLE} — {views.CARD_STATUS_TEXT[presentation.status]}",
                       listed.splitlines()[1])
-        self.assertIn("Enter act · V details · G gateway · ? help · Esc back", listed)
+        self.assertIn("Enter act · V details · W gateway · ? help · Esc back", listed)
         # Nothing is printed outside curses any more, and nothing launched.
         self.assertEqual(screen.tty_out.getvalue(), "")
         self.assertEqual(self.runtime.launches, [])
@@ -1981,14 +1981,14 @@ class CardQuotaScreenTests(_CardCase):
         text = self.frame(screen)
         self.assertIn("93%!", text)
         self.assertIn("3d old", text)
-        self.assertIn("P provider fallback", text)
+        self.assertIn("P → F", text)
         self.assertTrue(screen.card.ready)
         self.assertEqual(self.quota_rows(screen)[0].role, "warn")
         _record, prepared = self.resume_prepared()
         resume = self.resume_card(prepared, now=fx.FIXED_NOW)
         text = self.frame(resume)
         self.assertIn("S Sessions → T", text)
-        self.assertNotIn("P provider fallback", text)
+        self.assertNotIn("P → F", text)
         self.assertTrue(resume.card.ready)
         self.assertEqual(len(self.runtime.management_calls), 1)
 

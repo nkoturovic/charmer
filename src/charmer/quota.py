@@ -646,13 +646,14 @@ def card_summary(pool: PoolStatus, *, pools: Iterable[str], login_commands,
     reset = (f"resets {format_reset(w.resets_at, now, tz)}" if w and w.resets_at else "reset unknown")
     base = f"{c.handle} {value} · {age}"
     text = f"{base} · {reset} — {remedy}"
-    if len(text) > width and w is not None and w.resets_at is None:
-        # Unknown reset is a fact, not disposable detail. Shorten the fresh
-        # remedy first, then the redundant handle rather than invent a time.
-        remedy = "S Sessions → T" if resume else "P → F"
+    if len(text) > width and not resume:
+        # Prefer the compact key path over losing a known reset time.
+        remedy = "P → F"
         text = f"{base} · {reset} — {remedy}"
-        if len(text) > width:
-            text = f"{value} · {age} · {reset} — {remedy}"
+    if len(text) > width and w is not None and w.resets_at is None:
+        # Unknown reset is a fact, not disposable detail. Drop the redundant
+        # handle rather than invent a time.
+        text = f"{value} · {age} · {reset} — {remedy}"
     elif len(text) > width:
         # A known reset remains in Providers/charmer quota; never lose
         # the observation age or suggest the unavailable P action on resume.
