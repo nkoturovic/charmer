@@ -255,7 +255,7 @@ class OperatorLedger:
 
 @dataclass(frozen=True)
 class OperatorEvidence:
-    """Tool-owned, verdict-only evidence (the admission smoke writes it)."""
+    """Tool-owned, verdict-only qualification evidence."""
 
     lines: dict[str, Any]
     sha256: str | None = None
@@ -3203,24 +3203,20 @@ def changed_fields(grant: Mapping[str, Any], layer: OperatorLayer, key: str) -> 
     return tuple(sorted(name for name in set(old) | set(new) if old.get(name) != new.get(name)))
 
 
-def line_file_ids(read: ProvidersRead | None) -> dict[str, str]:
-    """line key -> declaring file id, best effort over the raw files (pure,
-    never raises; a secret-bearing or unparsable file contributes nothing)."""
+DECLARATION_REMEDY = "run charmer providers validate; rename any credential-bearing file before retrying"
+
+
+def line_file_ids(read: ProvidersRead | None, layer: OperatorLayer) -> dict[str, str]:
+    """line key -> declaring file id from the credential-screened inventory.
+
+    Rejected names never become display labels or write targets, even when
+    their raw files are readable and contain otherwise valid declarations.
+    """
 
     found: dict[str, str] = {}
     for file_id in sorted(read.files if read is not None else {}):
-        raw = read.files[file_id]
-        if _raw_secret_hit(raw):
-            continue
-        try:
-            document = strict_json.loads(raw, strict_json.JSONLimits(max_bytes=READ_LIMIT_BYTES, max_string=4096))
-        except (strict_json.StrictJSONError, ValueError):
-            continue
-        lines = document.get("lines") if isinstance(document, dict) else None
-        if isinstance(lines, dict):
-            for key in sorted(lines):
-                if isinstance(key, str) and not _secret_bearing(key):
-                    found.setdefault(key, file_id)
+        for key in layer.file_lines.get(file_id, ()):
+            found.setdefault(key, file_id)
     return found
 
 
@@ -3923,7 +3919,7 @@ def doctor_findings(
 
     # Per-file declared names (best effort) for reference impact.
     file_keys: dict[str, set[str]] = {}
-    for key, file_id in line_file_ids(snapshot.read).items():
+    for key, file_id in line_file_ids(snapshot.read, layer).items():
         file_keys.setdefault(file_label(file_id), set()).add(key)
     file_aliases: dict[str, set[str]] = {}
     for alias, label in declared_aliases(layer, snapshot.read).items():

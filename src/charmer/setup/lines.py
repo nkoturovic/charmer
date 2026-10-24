@@ -108,11 +108,11 @@ def plan_line_remove(runtime: Any, key: str, *, successor: str | None = None) ->
     ctx = cmd.operator_context(runtime)
     if ctx.snapshot.ledger_error is not None:
         raise model.Refused(f"{ctx.snapshot.ledger_error} — nothing changed")
-    file_id = operator_mod.line_file_ids(ctx.read).get(key)
+    file_id = operator_mod.line_file_ids(ctx.read, ctx.layer).get(key)
     if file_id is None:
         if key in runtime.catalog.docs["models-v2"]["models"]:
             raise model.Refused(texts.LINE_NOT_YOURS.format(key=key))
-        raise model.Refused(texts.LINE_UNKNOWN.format(key=key))
+        raise model.Refused(f"{texts.LINE_UNKNOWN.format(key=key)} — {operator_mod.DECLARATION_REMEDY}")
     scan = cmd.record_scan(runtime)
     try:
         cmd.refuse_unknown_liveness(scan, f"models rm {key}")

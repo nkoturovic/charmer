@@ -246,7 +246,7 @@ def _operator_line(ctx: providers_cmd.OperatorContext, key: str, verb: str) -> o
         raise OperatorCommandError(
             f"{verb}: the catalog serves {displaced.provider_id}/{displaced.core_entry['wire_model']}; "
             f"{key} yields to it — admit or bind that catalog line instead")
-    file_id = operator_mod.line_file_ids(ctx.read).get(key)
+    file_id = operator_mod.line_file_ids(ctx.read, ctx.layer).get(key)
     found = [p.text() for p in ctx.layer.problems_by_file.get(operator_mod.file_label(file_id), ())] if file_id else []
     detail = ("\n  " + "\n  ".join(found)) if found else ""
     raise OperatorCommandError(f"{verb}: no valid declaration of {key} (charmer providers validate){detail}")
@@ -503,9 +503,9 @@ def _models_edit(runtime: runtime_mod.Runtime, key: str, *, input_stream: TextIO
         return fail(f"models edit {key} needs a terminal for the editor")
     ctx = providers_cmd.operator_context(runtime)
     providers_cmd.require_ledger(ctx, f"models edit {key}")
-    file_id = operator_mod.line_file_ids(ctx.read).get(key)
+    file_id = operator_mod.line_file_ids(ctx.read, ctx.layer).get(key)
     if file_id is None:
-        return fail(f"models edit {key}: no providers.d declaration of {key}")
+        return fail(f"models edit {key}: no providers.d declaration of {key} — {operator_mod.DECLARATION_REMEDY}")
     previous = ctx.read.files[file_id]
     document = strict_json.loads(previous)
     fragment = operator_mod.document_bytes({key: document["lines"][key]})

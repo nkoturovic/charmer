@@ -819,7 +819,7 @@ def _resolved_provider(ctx: OperatorContext, provider_id: str) -> dict[str, Any]
         "route": layer.route_status.get(provider_id, "catalog" if catalog_provider is not None else "invalid"),
         "route_digest": provider.route_digest if provider is not None else None,
         "lines": lines,
-        "pending": sorted(key for key, fid in operator_mod.line_file_ids(ctx.read).items()
+        "pending": sorted(key for key, fid in operator_mod.line_file_ids(ctx.read, ctx.layer).items()
                           if fid == provider_id and key in layer.pending),
         "problems": [problem.text() for problem in
                      layer.problems_by_file.get(operator_mod.file_label(provider_id), ())],

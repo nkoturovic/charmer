@@ -8,8 +8,59 @@ import weakref
 from unittest import mock
 
 from charmer import launch, operator, state, strict_json
+import test_cli
 from test_cli import CLITestCase
 from test_operator import _fixture_files
+
+
+class RejectedDeclarationTests(test_cli.OperatorCommandCase):
+    def setUp(self) -> None:
+        super().setUp()
+        self.literal = "fixture-stored-provider-secret"
+        self.key = "custom-lan-model"
+        self.document = _fixture_files()["lanbox"]
+        state.atomic_write(self.secret_file, f"ACME_API_KEY={self.literal}\n".encode())
+        state.ensure_private_dir(self.pdir)
+        self.path = self.pdir / f"{self.literal}.json"
+        state.atomic_write(self.path, strict_json.pretty_file_bytes(self.document))
+
+    def test_models_edit_refuses_a_credential_bearing_declaring_file(self) -> None:
+        from charmer.cli.commands import providers
+
+        edited = dict(self.document["lines"][self.key], display="Fixture edited")
+        before = self.state_bytes()
+        with mock.patch.object(providers, "run_editor", return_value=(
+                strict_json.pretty_file_bytes({self.key: edited}), None, None)) as editor:
+            code, out, err = self.op(["models", "edit", self.key], "y\n")
+        self.assertNotIn(self.literal, out + err)
+        self.assertEqual(code, 1, out + err)
+        self.assertIn("charmer providers validate", out + err)
+        self.assertIn("rename", out + err)
+        self.assertNotIn("Write providers.d/", out + err)
+        editor.assert_not_called()
+        self.assertEqual(self.state_bytes(), before)
+
+    def test_models_rm_refuses_a_credential_bearing_declaring_file(self) -> None:
+        before = self.state_bytes()
+        with mock.patch.object(operator, "write_provider_bytes", wraps=operator.write_provider_bytes) as write:
+            code, out, err = self.op(["models", "rm", self.key, "--yes"])
+        write.assert_not_called()
+        self.assertNotIn(self.literal, out + err)
+        self.assertEqual(code, 1, out + err)
+        self.assertIn("charmer providers validate", out + err)
+        self.assertIn("rename", out + err)
+        self.assertEqual(self.state_bytes(), before)
+
+    def test_removal_plan_never_describes_a_rejected_declaring_file(self) -> None:
+        from charmer.setup import lines, model
+
+        before = self.state_bytes()
+        with self.assertRaises(model.Refused) as raised:
+            lines.plan_line_remove(self.runtime, self.key)
+        self.assertNotIn(self.literal, str(raised.exception))
+        self.assertIn("charmer providers validate", str(raised.exception))
+        self.assertIn("rename", str(raised.exception))
+        self.assertEqual(self.state_bytes(), before)
 
 
 class RuntimePreparationTests(CLITestCase):
