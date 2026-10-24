@@ -564,9 +564,16 @@ PREVIOUS_RELEASE = "2.1.0"
 class RollbackToPreviousReleaseTests(V4Case):
     """The retained previous release's own launcher over state this checkout
     wrote, with and without a user-owned ``subagentStatusLine``: it starts,
-    reads the records and the user's settings, reports the compiled key as
-    a scope its repair recompiles, repairs it, and its argparse refuses
-    ``statusline`` (which the shim then answers with nothing, exit 0). Opt-in:
+    lists the sessions, its repair finds the compiled key a scope difference
+    and recompiles it (a user-owned key leaves nothing to repair), its pin
+    knows the user's key (no settings skew), and its argparse refuses
+    ``statusline``, which the shim then answers with nothing, exit 0.
+
+    Only commands that observe no gateway run (never ``doctor`` itself). The
+    child gets :func:`isolated_child_environ`: the runner's live-resource
+    tripwire armed, the fixture's own endpoint on a free port of the
+    new-install range (never the packaged one), and no route to the real
+    user session's service manager or bus. Opt-in:
     ``CHARMER_TEST_PREVIOUS_RELEASE`` names a source tree of that release
     (``git archive v2.1.0``); without it the class skips."""
 
@@ -579,19 +586,14 @@ class RollbackToPreviousReleaseTests(V4Case):
         if version != PREVIOUS_RELEASE:
             self.fail(f"{PREVIOUS_RELEASE_ENV} names release {version}, not {PREVIOUS_RELEASE}")
         super().setUp()
-        from charmer import endpoint
-
-        # A port of the new-install range that nothing listens on (never the
-        # packaged one): the previous doctor's health check is refused there.
-        endpoint.ensure_config(Path(self.env["HOME"]), probe=endpoint.port_free)
+        write_fixture_endpoint(Path(self.env["HOME"]))
         self.runtime = self.make_runtime(asset_root=charmer_resources())
+        self.environ = isolated_child_environ(self.env, self.root / "runtime")
+        assert_guard_armed(self, self.environ)
 
     def previous_charmer(self, *argv: str, stdin: bytes = b"") -> subprocess.CompletedProcess:
-        # The runner's live-gateway tripwire stays on the child's path (its
-        # source launcher puts the previous release's src first).
-        environ = {**self.env, "PATH": "/usr/bin:/bin", "PYTHONPATH": os.environ.get("PYTHONPATH", "")}
         return subprocess.run([sys.executable, str(self.previous / "bin" / "charmer"), *argv], input=stdin,
-                              capture_output=True, env=environ, cwd=self.project, timeout=120)
+                              capture_output=True, env=self.environ, cwd=self.project, timeout=120)
 
     def user_layer(self, document: dict | None) -> Path:
         path = Path(self.env["HOME"]) / ".claude" / "settings.json"
@@ -601,6 +603,8 @@ class RollbackToPreviousReleaseTests(V4Case):
         return path
 
     def test_the_previous_launcher_starts_and_repairs_over_this_releases_state(self) -> None:
+        contract = json.loads((self.previous / "src/charmer/data/catalog/native-contract.json").read_text())
+        self.assertIn("subagentStatusLine", contract["verified"][0]["settings_keys"])  # no skew finding
         user_line = {"type": "command", "command": "printf ''"}
         for owned in (False, True):
             with self.subTest(user_owned=owned):
@@ -608,48 +612,141 @@ class RollbackToPreviousReleaseTests(V4Case):
                 record = self.launch_fresh(self.direct_target("opus"))
                 mid = record["managed_id"]
                 settings_path = self.live(mid) / scope.SETTINGS_RELPATH
-                compiled = strict_json.loads(settings_path.read_bytes())
-                self.assertEqual("subagentStatusLine" in compiled, not owned)
+                self.assertEqual("subagentStatusLine" in strict_json.loads(settings_path.read_bytes()), not owned)
                 user_before = user.read_bytes() if user.exists() else None
-                shim = scope.status_line_shim_path(self.store.root)
                 version = self.previous_charmer("--version")
                 self.assertEqual(version.returncode, 0, version.stderr)
                 self.assertTrue(version.stdout.decode().startswith(f"charmer {PREVIOUS_RELEASE}"), version.stdout)
                 listing = self.previous_charmer("sessions", "list", "--all")
                 self.assertEqual(listing.returncode, 0, listing.stderr)
                 self.assertIn(mid[:8].encode(), listing.stdout)
-                report = self.previous_charmer("doctor", "--json")
-                self.assertIn(report.returncode, (0, 1), report.stderr)
-                self.assertNotIn(b"Traceback", report.stderr)
-                text = json.dumps(json.loads(report.stdout))
-                self.assertNotIn("does not know (subagentStatusLine", text)  # the previous pin knows the key
-                plain = self.previous_charmer("doctor", "-v")
-                self.assertIn(plain.returncode, (0, 1), plain.stderr)
-                difference = f"session {mid[:8]}: scope differs from the record-authoritative compile"
+                repaired = self.previous_charmer("doctor", "--repair", mid)
+                self.assertEqual(repaired.returncode, 0, repaired.stdout + repaired.stderr)
+                self.assertNotIn(b"Traceback", repaired.stderr)
+                report = repaired.stdout.decode()
                 if not owned:
                     # The key it does not compile is a scope difference its repair resolves.
-                    self.assertIn(difference, plain.stdout.decode(), plain.stdout.decode()[-3000:])
-                    print("previous doctor:", next(line.strip() for line in plain.stdout.decode().splitlines()
-                                                    if difference in line))
-                    repaired = self.previous_charmer("doctor", "--repair", mid)
-                    self.assertEqual(repaired.returncode, 0, repaired.stdout + repaired.stderr)
+                    self.assertIn("live scope drifted from record authority (settings.json content differs)", report)
                     self.assertNotIn("subagentStatusLine", strict_json.loads(settings_path.read_bytes()))
-                    self.assertNotIn(difference, self.previous_charmer("doctor", "-v").stdout.decode())
                 else:
-                    self.assertNotIn(difference, plain.stdout.decode())
+                    self.assertIn("live scope matches the record-authoritative compile", report)
+                again = self.previous_charmer("doctor", "--repair", mid)
+                self.assertIn("live scope matches the record-authoritative compile", again.stdout.decode())
                 # Its parser refuses the plumbing command; the shim prints nothing and exits 0.
                 refused = self.previous_charmer("statusline", "subagents", stdin=json.dumps(TEN_TASKS).encode())
                 self.assertEqual((refused.returncode, refused.stdout), (2, b""))
-                scope.ensure_status_line_shim(self.store.root, str(self.previous / "bin" / "charmer"))
+                shim = scope.ensure_status_line_shim(self.store.root, str(self.previous / "bin" / "charmer"))
                 answered = subprocess.run(str(shim), input=json.dumps(TEN_TASKS).encode(), capture_output=True,
-                                          env={**self.env, "PATH": "/usr/bin:/bin"}, timeout=120)
+                                          env=self.environ, timeout=120)
                 self.assertEqual((answered.returncode, answered.stdout, answered.stderr), (0, b"", b""))
                 self.assertEqual(user.read_bytes() if user.exists() else None, user_before)  # never written
                 user.unlink(missing_ok=True)
-                print(f"rollback {PREVIOUS_RELEASE}: user-owned={owned} --version ok, sessions list ok, "
-                      f"doctor exit {report.returncode}, "
-                      + ("compiled key reported and repaired" if not owned else "no scope difference")
+                print(f"rollback {PREVIOUS_RELEASE}: user-owned={owned} --version ok, sessions list ok, repair: "
+                      + next(line for line in report.splitlines() if line.startswith("live scope"))
                       + "; statusline refused (exit 2), shim answered nothing (exit 0)")
+
+
+class RollbackLaneGuardTests(V4Case):
+    """The rollback lane's child environment arms the tripwire and reaches no
+    real user session, shown with fabricated events only (no launcher of
+    another release runs, no real connection is made)."""
+
+    def test_the_lane_child_environment_arms_the_guard(self) -> None:
+        port = write_fixture_endpoint(Path(self.env["HOME"]))
+        environ = isolated_child_environ(self.env, self.root / "runtime")
+        self.assertNotIn(port, (8316, 8317))
+        self.assertTrue({"PYTHONPATH", "CM_ISOLATION_GUARD_LOG"} <= set(environ))
+        self.assertEqual(environ["HOME"], self.env["HOME"])
+        assert_guard_armed(self, environ)
+
+
+# The variables that locate the real user session's service manager and bus.
+USER_SESSION_ENV = ("DBUS_SESSION_BUS_ADDRESS", "XDG_RUNTIME_DIR")
+
+
+def write_fixture_endpoint(home: Path) -> int:
+    """The fixture's own ``endpoint.json``: a free ephemeral loopback port
+    the system assigns (bound, then released; nothing listens there, and it
+    is never a live gateway port), the on-demand backend."""
+
+    import socket
+
+    from charmer import endpoint
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    endpoint.write_config(home, endpoint.EndpointConfig(port=port))
+    config = endpoint.read_config(home)
+    assert config is not None and config.port == port and config.backend == endpoint.ON_DEMAND
+    assert port not in (8316, 8317)
+    return port
+
+
+def isolated_child_environ(fixture: dict[str, str], runtime_dir: Path) -> dict[str, str]:
+    """A child's environment: the runner's (its tripwire: ``PYTHONPATH`` with
+    the guard ``sitecustomize`` and ``CM_ISOLATION_GUARD_LOG``) with the
+    fixture's HOME and roots, ``XDG_RUNTIME_DIR`` an empty private fixture
+    directory and no session bus address, so ``systemctl --user`` and
+    ``journalctl --user`` cannot reach the real user session."""
+
+    runtime_dir.mkdir(mode=0o700, exist_ok=True)
+    environ = {key: value for key, value in os.environ.items() if key not in USER_SESSION_ENV}
+    environ.update(fixture)
+    environ.update({"PATH": "/usr/bin:/bin", "XDG_RUNTIME_DIR": str(runtime_dir)})
+    return environ
+
+
+# Fabricated events only: the connect goes to a fake object (an unguarded
+# socket method rejects it with TypeError before any system call), the
+# audit events are raised by hand, and no real connection is ever made.
+_GUARD_PROBE = """\
+import os, socket, sys
+results = []
+try:
+    socket.socket.connect(object(), ("127.0.0.1", 8317))
+    results.append("connect:allowed")
+except ConnectionRefusedError as exc:
+    results.append("connect:refused" if "tripwire" in str(exc) else "connect:other")
+except TypeError:
+    results.append("connect:unguarded")
+results.append("create_connection:" + ("guarded" if getattr(socket.create_connection, "_cm_test_tripwire", False)
+                                       else "unguarded"))
+for name, event, args in (("proc-net-tcp", "open", ("/proc/net/tcp", "r", 0)),
+                          ("systemctl-restart", "subprocess.Popen",
+                           ("systemctl", ["systemctl", "--user", "restart", "charmer-gateway"], None, None))):
+    try:
+        sys.audit(event, *args)
+        results.append(name + ":allowed")
+    except AssertionError:
+        results.append(name + ":refused")
+print(",".join(results), os.environ.get("XDG_RUNTIME_DIR", "-"), os.environ.get("DBUS_SESSION_BUS_ADDRESS", "-"))
+"""
+GUARD_VERDICTS = "connect:refused,create_connection:guarded,proc-net-tcp:refused,systemctl-restart:refused"
+
+
+def assert_guard_armed(case: unittest.TestCase, environ: dict[str, str]) -> None:
+    """A child with the lane's environment (its guard log redirected to a
+    probe log, so the deliberate hits never fail the run) refuses a
+    fabricated live-gateway connect, a fabricated ``/proc/net/tcp`` read and a
+    fabricated ``systemctl --user restart``, logs them, and sees the fixture's
+    empty runtime directory and no session bus."""
+
+    log = Path(environ["XDG_RUNTIME_DIR"]).parent / "guard-probe.log"
+    probe_environ = {**environ, "CM_ISOLATION_GUARD_LOG": str(log)}
+    case.assertEqual(set(probe_environ) - {"CM_ISOLATION_GUARD_LOG"}, set(environ) - {"CM_ISOLATION_GUARD_LOG"})
+    result = subprocess.run([sys.executable, "-c", _GUARD_PROBE], capture_output=True, env=probe_environ,
+                            timeout=60)
+    case.assertEqual(result.returncode, 0, result.stderr)
+    verdicts, runtime_dir, bus = result.stdout.decode().split()
+    case.assertEqual(verdicts, GUARD_VERDICTS, result.stderr)
+    case.assertEqual((runtime_dir, bus), (environ["XDG_RUNTIME_DIR"], "-"))
+    case.assertEqual(list(Path(runtime_dir).iterdir()), [])  # no bus socket, no manager
+    logged = log.read_text(encoding="utf-8")
+    for hit in ("('127.0.0.1', 8317)", "/proc/net/tcp", "systemctl unit control"):
+        case.assertIn(hit, logged)
+    print(f"guard armed in the lane's child: {verdicts}; XDG_RUNTIME_DIR={runtime_dir} (empty fixture), "
+          "DBUS_SESSION_BUS_ADDRESS unset")
 
 
 def charmer_resources() -> Path:
