@@ -564,16 +564,20 @@ PREVIOUS_RELEASE = "2.1.0"
 class RollbackToPreviousReleaseTests(V4Case):
     """The retained previous release's own launcher over state this checkout
     wrote, with and without a user-owned ``subagentStatusLine``: it starts,
-    lists the sessions, its repair finds the compiled key a scope difference
-    and recompiles it (a user-owned key leaves nothing to repair), its pin
-    knows the user's key (no settings skew), and its argparse refuses
-    ``statusline``, which the shim then answers with nothing, exit 0.
+    its repair reads the record and recompiles ``settings.json`` without the
+    compiled key (a user-owned key leaves none of it to repair; any other
+    difference between the two releases' compiles is reported, not
+    asserted), its pin knows the user's key (no settings skew), and its
+    argparse refuses ``statusline``, which the shim then answers with
+    nothing, exit 0.
 
-    Only commands that observe no gateway run (never ``doctor`` itself). The
-    child gets :func:`isolated_child_environ`: the runner's live-resource
-    tripwire armed, the fixture's own endpoint on a free port of the
-    new-install range (never the packaged one), and no route to the real
-    user session's service manager or bus. Opt-in:
+    Only commands that observe neither the gateway nor the host's sessions
+    run: never ``doctor`` itself, and never ``sessions list`` (it lists the
+    real Claude daemon's directory and scans the process table). The child
+    gets :func:`isolated_child_environ`: the runner's live-resource tripwire
+    armed, the fixture's own endpoint on a free ephemeral port the system
+    assigns (never the packaged one), and no route to the real user
+    session's service manager or bus. Opt-in:
     ``CHARMER_TEST_PREVIOUS_RELEASE`` names a source tree of that release
     (``git archive v2.1.0``); without it the class skips."""
 
@@ -612,26 +616,33 @@ class RollbackToPreviousReleaseTests(V4Case):
                 record = self.launch_fresh(self.direct_target("opus"))
                 mid = record["managed_id"]
                 settings_path = self.live(mid) / scope.SETTINGS_RELPATH
-                self.assertEqual("subagentStatusLine" in strict_json.loads(settings_path.read_bytes()), not owned)
+                before = strict_json.loads(settings_path.read_bytes())  # this checkout's compile
+                self.assertEqual("subagentStatusLine" in before, not owned)
                 user_before = user.read_bytes() if user.exists() else None
                 version = self.previous_charmer("--version")
                 self.assertEqual(version.returncode, 0, version.stderr)
                 self.assertTrue(version.stdout.decode().startswith(f"charmer {PREVIOUS_RELEASE}"), version.stdout)
-                listing = self.previous_charmer("sessions", "list", "--all")
-                self.assertEqual(listing.returncode, 0, listing.stderr)
-                self.assertIn(mid[:8].encode(), listing.stdout)
+                # Its repair resolves the record by id (it reads what this checkout wrote).
                 repaired = self.previous_charmer("doctor", "--repair", mid)
                 self.assertEqual(repaired.returncode, 0, repaired.stdout + repaired.stderr)
                 self.assertNotIn(b"Traceback", repaired.stderr)
                 report = repaired.stdout.decode()
-                if not owned:
-                    # The key it does not compile is a scope difference its repair resolves.
+                after = strict_json.loads(settings_path.read_bytes())  # the previous release's compile
+                self.assertNotIn("subagentStatusLine", after)
+                changed = sorted(key for key in before.keys() | after.keys() if before.get(key) != after.get(key))
+                env_changed = sorted(name for name in before.get("env", {}).keys() | after.get("env", {}).keys()
+                                     if before.get("env", {}).get(name) != after.get("env", {}).get(name))
+                # The key it does not compile is a difference its repair resolves;
+                # under a user-owned key there is none of it.
+                self.assertEqual("subagentStatusLine" in changed, not owned, changed)
+                if changed:
+                    # settings.json is the only scope file the two compiles disagree on.
                     self.assertIn("live scope drifted from record authority (settings.json content differs)", report)
-                    self.assertNotIn("subagentStatusLine", strict_json.loads(settings_path.read_bytes()))
                 else:
                     self.assertIn("live scope matches the record-authoritative compile", report)
                 again = self.previous_charmer("doctor", "--repair", mid)
                 self.assertIn("live scope matches the record-authoritative compile", again.stdout.decode())
+                self.assertEqual(strict_json.loads(settings_path.read_bytes()), after)
                 # Its parser refuses the plumbing command; the shim prints nothing and exits 0.
                 refused = self.previous_charmer("statusline", "subagents", stdin=json.dumps(TEN_TASKS).encode())
                 self.assertEqual((refused.returncode, refused.stdout), (2, b""))
@@ -641,9 +652,10 @@ class RollbackToPreviousReleaseTests(V4Case):
                 self.assertEqual((answered.returncode, answered.stdout, answered.stderr), (0, b"", b""))
                 self.assertEqual(user.read_bytes() if user.exists() else None, user_before)  # never written
                 user.unlink(missing_ok=True)
-                print(f"rollback {PREVIOUS_RELEASE}: user-owned={owned} --version ok, sessions list ok, repair: "
+                print(f"rollback {PREVIOUS_RELEASE}: user-owned={owned} --version ok, repair: "
                       + next(line for line in report.splitlines() if line.startswith("live scope"))
-                      + "; statusline refused (exit 2), shim answered nothing (exit 0)")
+                      + f"; settings keys it changed: {changed} (env: {env_changed}); repair again: matches; "
+                      "statusline refused (exit 2), shim answered nothing (exit 0)")
 
 
 class RollbackLaneGuardTests(V4Case):
