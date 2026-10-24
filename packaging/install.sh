@@ -812,6 +812,16 @@ install_bundle() {
 	rm -rf "$staging"
 	mv "$unpacked" "$staging"
 	txn_bundle=$staging
+	# A reinstall may replace the tree current already names. Its contents
+	# must be durable before that tree is moved aside, not only before links change.
+	sync_help=$(bundle_python "$txn_bundle" "$TXN" --help) || exit 1
+	case $sync_help in
+	*sync-bundle*)
+		bundle_python "$txn_bundle" "$TXN" sync-bundle --install-root "$install_root" --version "$version" \
+			--staging "${staging##*/}" || exit 1
+		;;
+	*) sync || die "system sync failed; the links were left as they are" ;;
+	esac
 	replaced=''
 	if [ -e "$dest" ] || [ -L "$dest" ]; then
 		replaced=$install_root/versions/.replaced.$version.$$
@@ -821,7 +831,7 @@ install_bundle() {
 	mv "$staging" "$dest"
 	staging=''
 	txn_bundle=$dest
-	sync_help=$(bundle_python "$txn_bundle" "$TXN" --help) || exit 1
+	# Persist the final versions/ entries after both renames as well.
 	case $sync_help in
 	*sync-bundle*)
 		bundle_python "$txn_bundle" "$TXN" sync-bundle --install-root "$install_root" --version "$version" || exit 1

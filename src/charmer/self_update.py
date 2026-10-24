@@ -585,8 +585,12 @@ def _sync_tree(descriptor: int) -> None:
     os.fsync(descriptor)
 
 
-def sync_bundle(root: Path, version: str) -> None:
-    """Make the incoming version and its parent durable before a link switch.
+def sync_bundle(root: Path, version: str, *, staging: str | None = None) -> None:
+    """Flush incoming contents before replacement, then their final parent.
+
+    ``staging`` names a private unpacking directory under ``versions``. Flush
+    it before replacing a version a current or previous link already names.
+    A second call without it persists the final version and parent entries.
 
     Linux sync waits for the writes in parallel: thousands of individual
     file fsyncs on a freshly unpacked bundle can take tens of seconds.
@@ -595,11 +599,14 @@ def sync_bundle(root: Path, version: str) -> None:
     """
 
     version_key(version)
-    bundle = root / VERSIONS / version
+    if staging is not None and re.fullmatch(r"\.staging\.[0-9]+", staging) is None:
+        raise UpdateError("the incoming staging directory name is invalid")
+    name = version if staging is None else staging
+    bundle = root / VERSIONS / name
     try:
         parent = os.open(root / VERSIONS, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
         try:
-            descriptor = os.open(version, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent)
+            descriptor = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent)
             try:
                 if sys.platform.startswith("linux"):
                     os.sync()
@@ -1081,6 +1088,7 @@ def apply(installation: Installation, release: Release, planned: Plan, transport
             if acquire_pin is not None and release.claude_code != fresh.current.claude_code:
                 _advance(held, "pin")
                 acquire_pin(unpacked, release)
+            sync_bundle(root, release.version, staging=staging.name)
             _advance(held, "replace")
             destination = root / VERSIONS / release.version
             if os.path.lexists(destination):

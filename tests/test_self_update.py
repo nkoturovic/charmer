@@ -557,15 +557,52 @@ class ApplyTests(SelfUpdateTestCase):
 
 
 class IncomingDurabilityTests(SelfUpdateTestCase):
+    def test_staging_sync_failure_keeps_the_retained_previous_tree_unchanged(self) -> None:
+        self.seed(self.release("1.0.0"))
+        incoming = self.release("1.1.0")
+        self.update_to(incoming)
+        roll_back(self.root, state_root=self.state, hold=clear, inhibit=contextlib.nullcontext)
+        previous_launcher = self.root / "previous/bin/charmer"
+        previous_launcher.write_bytes(b"the retained launcher must stay in place\n")
+        before = previous_launcher.read_bytes()
+        links = tuple(os.readlink(self.root / name) for name in ("current", "previous"))
+        observed = []
+        def fail_staging(root, version, **kwargs):
+            observed.append((root, version, kwargs))
+            self.assertEqual(previous_launcher.read_bytes(), before)
+            raise su.UpdateError("fixture staging sync failed")
+        with mock.patch.object(su, "sync_bundle", side_effect=fail_staging):
+            with self.assertRaisesRegex(su.UpdateError, "fixture staging sync failed"):
+                self.update_to(incoming)
+        self.assertEqual(observed, [(self.root, "1.1.0", {"staging": f".staging.{os.getpid()}"})])
+        self.assertEqual(previous_launcher.read_bytes(), before)
+        self.assertEqual(tuple(os.readlink(self.root / name) for name in ("current", "previous")), links)
+        self.assertFalse(list((self.root / "versions").glob(".replaced.*")))
+
+    def test_update_syncs_staging_before_replacement_and_version_afterwards(self) -> None:
+        self.seed(self.release("1.0.0"))
+        observed = []
+        real = su.sync_bundle
+        def barrier(root, version, **kwargs):
+            staged = kwargs.get("staging")
+            observed.append(staged)
+            self.assertEqual((root / "versions" / version).exists(), staged is None)
+            self.assertEqual(os.readlink(root / "current"), "versions/1.0.0")
+            return real(root, version, **kwargs)
+        with mock.patch.object(su, "sync_bundle", side_effect=barrier):
+            self.update_to(self.release("1.1.0"))
+        self.assertEqual(observed, [f".staging.{os.getpid()}", None])
+
     def test_update_sync_failure_leaves_both_links_and_switch_record_untouched(self) -> None:
         self.seed(self.release("1.0.0"))
         self.update_to(self.release("1.0.1"))
         before = tuple(os.readlink(self.root / name) for name in ("current", "previous"))
         with mock.patch.object(su, "sync_bundle", create=True,
-                               side_effect=su.UpdateError("incoming bundle could not be made durable")) as barrier:
+                               side_effect=[None, su.UpdateError("incoming bundle could not be made durable")]) as barrier:
             with self.assertRaisesRegex(su.UpdateError, "incoming bundle could not be made durable"):
                 self.update_to(self.release("1.0.2"))
-        barrier.assert_called_once_with(self.root, "1.0.2")
+        self.assertEqual(barrier.call_args_list, [
+            mock.call(self.root, "1.0.2", staging=f".staging.{os.getpid()}"), mock.call(self.root, "1.0.2")])
         self.assertEqual(tuple(os.readlink(self.root / name) for name in ("current", "previous")), before)
         self.assertFalse((self.root / su.SWITCH_RECORD).exists())
 

@@ -58,7 +58,7 @@ itself through ``charmer.gateway_inhibition``'s command the same way
     install_txn receipt --install-root R --launcher PATH ... [--path-line FILE LINE]
     install_txn legacy                                   (an earlier installation: say so; exit 1 when none)
     install_txn acquire-lock --install-root R --pid PID   (the shell holds .lock/pid)
-    install_txn sync-bundle --install-root R --version V  (before an incoming switch)
+    install_txn sync-bundle --install-root R --version V [--staging .staging.PID]
     install_txn switch --install-root R --current V [--previous V]
     install_txn finish-switch --install-root R            (prints what it put back)
 
@@ -446,6 +446,7 @@ def _parser() -> argparse.ArgumentParser:
     sync = commands.add_parser("sync-bundle")
     sync.add_argument("--install-root", required=True)
     sync.add_argument("--version", required=True)
+    sync.add_argument("--staging", help="flush this staging directory before moving an installed version aside")
     links = commands.add_parser("switch")
     links.add_argument("--install-root", required=True)
     links.add_argument("--current", required=True, help="the version that becomes current")
@@ -535,7 +536,8 @@ def main(argv: Sequence[str] | None = None, *, environ: Mapping[str, str] | None
         if args.command == "sync-bundle":
             from charmer import self_update
 
-            self_update.sync_bundle(_absolute(args.install_root, "--install-root"), args.version)
+            self_update.sync_bundle(_absolute(args.install_root, "--install-root"), args.version,
+                                    staging=args.staging)
             return EXIT_OK
         if args.command in ("switch", "finish-switch"):
             from charmer import self_update

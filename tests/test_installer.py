@@ -213,7 +213,7 @@ class InstallTests(InstallerTestCase):
         self.assertInstalled(self.install(self.release("1.0.1")), "1.0.1")
         before = tuple(os.readlink(self.root / name) for name in ("current", "previous"))
         source = (REPO_ROOT / "src/charmer/self_update.py").read_bytes()
-        failure = b'\ndef sync_bundle(root, version):\n    raise UpdateError("fixture incoming sync failure; links were left as they are")\n'
+        failure = b'\ndef sync_bundle(root, version, **kwargs):\n    raise UpdateError("fixture incoming sync failure; links were left as they are")\n'
         release = self.release("1.0.2", overrides={"charmer/self_update.py": source + failure})
         result = self.install(release)
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
@@ -262,6 +262,22 @@ def _parser():
         self.assertEqual(tuple(log.read_text().splitlines()), before)
         self.assertEqual(tuple(os.readlink(self.root / name) for name in ("current", "previous")), before)
         self.assertFalse((self.root / ".switch.json").exists())
+
+    def test_same_version_staging_sync_failure_preserves_the_current_tree(self) -> None:
+        self.assertInstalled(self.install(self.release("1.0.0")), "1.0.0")
+        launcher = self.root / "current/bin/charmer"
+        before = b"the current launcher must stay in place\n"
+        launcher.write_bytes(before)
+        source = (REPO_ROOT / "src/charmer/self_update.py").read_bytes()
+        failure = b'\ndef sync_bundle(root, version, **kwargs):\n    raise UpdateError("fixture staging sync failed")\n'
+        release = self.release("1.0.0", overrides={"charmer/self_update.py": source + failure})
+        result = self.install(release)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("fixture staging sync failed", result.stderr)
+        self.assertEqual(launcher.read_bytes(), before)
+        self.assertEqual(os.readlink(self.root / "current"), "versions/1.0.0")
+        self.assertFalse((self.root / ".switch.json").exists())
+        self.assertFalse(list((self.root / "versions").glob(".replaced.*")))
 
     def test_reinstalling_the_same_version_replaces_it(self) -> None:
         release = self.release("1.0.0")
