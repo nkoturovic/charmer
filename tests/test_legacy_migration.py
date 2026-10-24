@@ -120,7 +120,8 @@ class Harness:
         a scope charmer compiled: the items the launch fence proves stay
         (``launch_items`` keeps what it found), everything else is compiled
         in the earlier form (here: the hooks and token helper name the
-        earlier shims, the permissions the earlier folders)."""
+        earlier shims, the permissions the earlier folders, and no subagent
+        status line is compiled)."""
 
         layout = self.layout
         self.calls.append("repair")
@@ -151,6 +152,7 @@ class Harness:
                 path = layout.legacy_state / "scopes" / mid / scope.SETTINGS_RELPATH
                 settings = json.loads(path.read_bytes())
                 fenced = {key: settings.pop(key) for key in sessions.LAUNCH_TIME_SETTINGS_KEYS if key in settings}
+                settings.pop(scope.SUBAGENT_STATUS_LINE_KEY, None)  # the earlier release compiles none
                 text = json.dumps(settings)
                 for new, old in replace.items():
                     text = text.replace(new, old)

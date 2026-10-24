@@ -1437,7 +1437,7 @@ class ForeignChannelShimTests(_Entry):
         with self.process_environ(old, CHARMER_CHANNEL="nix"):
             self.assertIsNone(cli.Runtime(asset_root=FIXTURE_ROOT).shims_withheld)
         before = self.shims()
-        self.assertEqual(len(before), 3)
+        self.assertEqual(len(before), 4)  # two hook shims, the token helper, the status line
         runtime_id = "0b5e7f4e-1d2c-4b3a-8a9b-0c1d2e3f4a5b"
         for marker in (b"nix\n", b"garbage\n"):
             state.atomic_write(installs.marker_path(self.state_root), marker)

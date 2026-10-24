@@ -1194,7 +1194,9 @@ class WorktreeSeamTests(unittest.TestCase):
 class LoopbackProxyCompileTests(unittest.TestCase):
     def test_no_proxy_bytes_match_the_existing_golden(self):
         bundle, lcat, eff, lineup = _seed("balanced")
-        plan = _launch(lineup, eff, bundle=bundle, launch_environ={}).scope_plan
+        # As a launch compiles it: the shipped subagent status line included.
+        plan = _launch(lineup, eff, bundle=bundle, launch_environ={},
+                       subagent_status_line=bless.V2_STATUS_LINE).scope_plan
         assertGolden(self, GOLDENS_ROOT / "v2/managed/scope/settings.json",
                      strict_json.canonical_file_bytes(plan.settings))
         self.assertNotIn("NO_PROXY", plan.settings["env"])
