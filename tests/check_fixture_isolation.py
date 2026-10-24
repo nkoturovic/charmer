@@ -69,7 +69,7 @@ from pathlib import Path
 
 # Run as a script, the tests directory is sys.path[0]; imported (test_harness),
 # it is on PYTHONPATH. _layout is the one root source.
-from _layout import REPO_ROOT, RESOURCES_RELATIVE  # noqa: E402
+from _layout import REPO_ROOT, RESOURCES_RELATIVE, load_tool  # noqa: E402
 
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
@@ -92,90 +92,8 @@ REAL_BINARY_MODULES = ("test_scope_probe", "test_client_agents", "test_client_ga
 # Never copied — VCS metadata, worktrees/session files, build links.
 _SKIP_TOP = (".git", ".claude", "result")
 
-GUARD_SOURCE = '''"""check_fixture_isolation tripwire: refuse and log live-gateway connects."""
-import os
-import socket
+GUARD_SOURCE = load_tool("test").guard_source(REPO_ROOT / "tests")
 
-_LOG = os.environ.get("CM_ISOLATION_GUARD_LOG")
-_PORTS = {8317, 8316}
-_HOSTS = {"127.0.0.1", "localhost", "::1", "0.0.0.0"}
-_connect = socket.socket.connect
-_connect_ex = socket.socket.connect_ex
-_create = socket.create_connection
-
-
-def _hit(address):
-    try:
-        return address[1] in _PORTS and address[0] in _HOSTS
-    except Exception:
-        return False
-
-
-def _record(address):
-    import traceback
-    text = f"BLOCKED {address!r} pid={os.getpid()}\\n"
-    if _LOG:
-        try:
-            with open(_LOG, "a", encoding="utf-8") as handle:
-                handle.write(text)
-                handle.write("".join(traceback.format_stack(limit=12)) + "----\\n")
-            return
-        except OSError:
-            pass
-    print(text, end="", file=sys.stderr)
-
-
-def connect(self, address):
-    if _hit(address):
-        _record(address)
-        raise ConnectionRefusedError(111, "isolation guard: live gateway blocked")
-    return _connect(self, address)
-
-
-def connect_ex(self, address):
-    if _hit(address):
-        _record(address)
-        return 111
-    return _connect_ex(self, address)
-
-
-def create_connection(address, *args, **kwargs):
-    if _hit(address):
-        _record(address)
-        raise ConnectionRefusedError(111, "isolation guard: live gateway blocked")
-    return _create(address, *args, **kwargs)
-
-
-socket.socket.connect = connect
-socket.socket.connect_ex = connect_ex
-socket.create_connection = create_connection
-
-# No charmer import here: the guard also covers scope-only child paths
-# without loading product modules before their own import restrictions apply.
-import sys
-
-
-def _listener_observation(event, args):
-    if getattr(sys, "_cm_listener_tripwire", False):
-        return  # the always-on in-process guard records and raises instead
-    target = None
-    if event == "open" and isinstance(args[0], (str, bytes)):
-        path = os.path.normpath(os.fsdecode(args[0]))
-        if path in ("/proc/net/tcp", "/proc/net/tcp6"):
-            target = path
-    elif event == "subprocess.Popen":
-        executable, argv = args[:2]
-        if (os.path.basename(os.fsdecode(executable)) == "systemctl"
-                and not isinstance(argv, (str, bytes))
-                and any("MainPID" in os.fsdecode(arg) for arg in argv)):
-            target = "systemctl MainPID"
-    if target is not None:
-        _record(("listener-owner", target))
-        raise AssertionError("isolation guard: live listener observation")
-
-
-sys.addaudithook(_listener_observation)
-'''
 
 PREFLIGHT = r'''
 import json, os, socket

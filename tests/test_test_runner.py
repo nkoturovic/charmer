@@ -68,13 +68,13 @@ MODULES = {
         import socket, unittest
         class T(unittest.TestCase):
             def test_connect(self):
-                with socket.socket() as s:
-                    with self.assertRaises(ConnectionRefusedError):
-                        s.connect(("127.0.0.1", 8317))
+                # A non-socket cannot contact anything if the guard regresses.
+                with self.assertRaises(ConnectionRefusedError):
+                    socket.socket.connect(object(), ("127.0.0.1", 8317))
     """,
     "test_child_hit": """
         import subprocess, sys, unittest
-        CHILD = "import socket\\ntry:\\n    socket.create_connection(('127.0.0.1', 8316), 1)\\nexcept OSError:\\n    pass\\n"
+        CHILD = "import socket\\ntry:\\n    socket.socket.connect(object(), ('127.0.0.1', 8316))\\nexcept OSError:\\n    pass\\n"
         class T(unittest.TestCase):
             def test_child(self):
                 subprocess.run([sys.executable, "-c", CHILD], check=True, timeout=60, stdin=subprocess.DEVNULL)

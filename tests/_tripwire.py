@@ -2,7 +2,8 @@
 
 ``tests/__init__.py`` installs it for every run that imports the ``tests``
 package (the documented ``discover -s tests -t .`` gate and the Nix sandbox
-suite). It wraps ``socket.socket.connect`` and ``connect_ex`` and refuses any
+suite). It wraps ``socket.socket.connect``, ``connect_ex`` and
+``socket.create_connection`` and refuses any
 TCP connect to the live gateway ports (8317 gateway, 8316 proxy, and the port
 the developer's own ``~/.config/charmer/endpoint.json`` configures, read
 once at import from the real HOME) on a loopback/unspecified host (``127.0.0.0/8``, ``::1``, ``0.0.0.0``, ``::``,
@@ -16,8 +17,9 @@ tripwire of ``check_fixture_isolation.py`` and the done-gate command) —
 appended to that log as one ``BLOCKED`` entry. The guard raises before it
 delegates to whatever ``connect`` it wrapped, so when the external tripwire is
 also installed the hit is logged exactly once (by this guard), never twice.
-Child processes are not covered here; the external sitecustomize tripwire and
-the real-binary network namespace cover them.
+The runner embeds this same module in child ``sitecustomize`` (no product
+imports): children inheriting PYTHONPATH and loading sitecustomize share the
+policy. The real-binary network namespace covers the remaining processes.
 
 The listener observer is also guarded: audit events refuse reads
 of /proc/net/tcp{,6}, real systemctl MainPID queries, every real systemctl
@@ -91,14 +93,16 @@ def is_live_gateway(address: Any) -> bool:
 def _record(address: Any) -> None:
     HITS.append(tuple(address))
     log = os.environ.get("CM_ISOLATION_GUARD_LOG")
-    if not log:
-        return
-    try:
-        with open(log, "a", encoding="utf-8") as handle:
-            handle.write(f"BLOCKED {address!r} pid={os.getpid()} source=tests-guard\n")
-            handle.write("".join(traceback.format_stack(limit=12)) + "----\n")
-    except OSError:
-        pass  # the in-process record and the exit report still stand
+    text = f"BLOCKED {address!r} pid={os.getpid()} source=tests-guard\n"
+    if log:
+        try:
+            with open(log, "a", encoding="utf-8") as handle:
+                handle.write(text)
+                handle.write("".join(traceback.format_stack(limit=12)) + "----\n")
+            return
+        except OSError:
+            pass
+    print(text, end="", file=sys.stderr)
 
 
 def _wrap(original: Any) -> Any:
@@ -115,7 +119,9 @@ def _wrap(original: Any) -> Any:
     return guarded
 
 
-def _listener_observation(event: str, args: tuple) -> None:
+def observation_target(event: str, args: tuple) -> str | None:
+    """Pure policy for forbidden file/process audit events; never performs I/O."""
+
     target = None
     if event == "open" and isinstance(args[0], (str, bytes)):
         path = os.path.normpath(os.fsdecode(args[0]))
@@ -134,14 +140,31 @@ def _listener_observation(event: str, args: tuple) -> None:
               and not isinstance(argv, (str, bytes))
               and "--add-root" in {os.fsdecode(arg) for arg in argv}):
             target = "nix-store garbage-collector root"
+    return target
+
+
+def _listener_observation(event: str, args: tuple) -> None:
+    target = observation_target(event, args)
     if target is not None:
         _record(("listener-owner", target))
         # Not OSError: the observer must not swallow the guard as 'unknown'.
         raise AssertionError("test tripwire: live listener observation")
 
 
+def _wrap_create_connection(original: Any) -> Any:
+    def guarded(address: Any, *args: Any, **kwargs: Any) -> Any:
+        if is_live_gateway(address):
+            _record(address)
+            raise ConnectionRefusedError(MESSAGE)
+        return original(address, *args, **kwargs)
+
+    guarded.__wrapped__ = original  # type: ignore[attr-defined]
+    setattr(guarded, _MARK, True)
+    return guarded
+
+
 def installed() -> bool:
-    return all(
+    return getattr(socket.create_connection, _MARK, False) and all(
         getattr(getattr(socket.socket, name), _MARK, False)
         for name in ("connect", "connect_ex")
     )
@@ -166,6 +189,8 @@ def install() -> None:
         current = getattr(socket.socket, name)
         if not getattr(current, _MARK, False):
             setattr(socket.socket, name, _wrap(current))
+    if not getattr(socket.create_connection, _MARK, False):
+        socket.create_connection = _wrap_create_connection(socket.create_connection)
     if not getattr(install, "_reported", False):
         atexit.register(_report)
         install._reported = True  # type: ignore[attr-defined]

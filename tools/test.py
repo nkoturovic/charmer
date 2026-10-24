@@ -123,14 +123,21 @@ def select_modules(tests_dir: Path, names: list[str], platform_name: str) -> tup
 
 
 def guard_source(tests_dir: Path) -> str:
-    """The child-process tripwire (``GUARD_SOURCE`` of the isolation check)."""
+    """Bootstrap the same stdlib-only tripwire before child test imports.
 
-    path = tests_dir / "check_fixture_isolation.py"
-    tree = ast.parse(path.read_text(encoding="utf-8"), str(path))
-    for node in tree.body:
-        if isinstance(node, ast.Assign) and any(getattr(t, "id", "") == "GUARD_SOURCE" for t in node.targets):
-            return ast.literal_eval(node.value)
-    raise UsageError(f"{path} defines no GUARD_SOURCE")
+    Embed its source so a child needs neither the tests package nor product
+    imports. Register the canonical module name: a later ``import tests``
+    shares its hit record and idempotent installation.
+    """
+
+    path = tests_dir / "_tripwire.py"
+    source = path.read_text(encoding="utf-8")
+    return ("import sys, types\n"
+            "if '_tripwire' not in sys.modules:\n"
+            "    guard = types.ModuleType('_tripwire')\n"
+            f"    exec(compile({source!r}, {str(path)!r}, 'exec'), guard.__dict__)\n"
+            "    sys.modules['_tripwire'] = guard\n"
+            "sys.modules['_tripwire'].install()\n")
 
 
 def legacy_environment(repo: Path) -> tuple[str, ...]:

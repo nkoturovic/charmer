@@ -230,6 +230,107 @@ else:
 
 
 class ChildTripwireTests(unittest.TestCase):
+    def test_parent_and_child_share_address_and_process_policy(self) -> None:
+        from tests.check_fixture_isolation import GUARD_SOURCE
+
+        script = """
+import socket, sys
+if sys.argv[1] == "parent":
+    import tests
+addresses = [(host, port) for port in (8317, 8316, 18417) for host in (
+    "127.0.0.1", "127.0.0.2", "127.255.255.254", "localhost", "localhost.",
+    "LOCALHOST", "probe.localhost", "::1", "::ffff:127.0.0.1", "::", "0.0.0.0",
+    b"localhost", "::1%lo")]
+addresses += [("::1", 8317, 0, 0)]
+# Non-sockets are the backstop: even a regressed guard cannot connect.
+for method in (socket.socket.connect, socket.socket.connect_ex):
+    for address in addresses:
+        try:
+            method(object(), address)
+        except ConnectionRefusedError:
+            pass
+        else:
+            raise AssertionError((method.__name__, address, "not refused"))
+# create_connection must refuse before resolving a hostname or opening a socket.
+def no_dns(*args, **kwargs):
+    raise AssertionError("unguarded DNS")
+socket.getaddrinfo = no_dns
+try:
+    socket.create_connection(("probe.localhost.", 8317))
+except ConnectionRefusedError:
+    pass
+else:
+    raise AssertionError("create_connection not refused")
+verbs = ("start", "stop", "restart", "reload", "try-restart", "reload-or-restart",
+         "enable", "disable", "kill", "daemon-reload", "reset-failed", "mask", "unmask",
+         "link", "revert", "preset")
+commands = [("/fixture/systemctl", ["systemctl", "--user", verb, "fixture.service"]) for verb in verbs]
+commands += [("systemctl", ["systemctl", "show", "--property=MainPID"]),
+             ("/fixture/nix-store", ["nix-store", "--add-root", "/fixture/root"])]
+# sys.audit emits the real event without executing anything, even if unguarded.
+for executable, argv in commands:
+    try:
+        sys.audit("subprocess.Popen", executable, argv, None, None)
+    except AssertionError as exc:
+        assert "live listener observation" in str(exc), str(exc)
+    else:
+        raise AssertionError((argv, "not refused"))
+for path in ("/proc/net/tcp", "/proc/net/tcp6"):
+    try:
+        sys.audit("open", path, "r", 0)
+    except AssertionError as exc:
+        assert "live listener observation" in str(exc), str(exc)
+    else:
+        raise AssertionError((path, "not refused"))
+assert not any(name == "charmer" or name.startswith("charmer.") for name in sys.modules)
+print(2 * len(addresses) + 1 + len(commands) + 2)
+"""
+        with tempfile.TemporaryDirectory(prefix="cm-policy-") as tmp:
+            root = Path(tmp)
+            (root / "sitecustomize.py").write_text(GUARD_SOURCE, encoding="utf-8")
+            endpoint = root / ".config/charmer/endpoint.json"
+            endpoint.parent.mkdir(parents=True)
+            endpoint.write_text('{"port":18417}')
+            for mode in ("parent", "child"):
+                with self.subTest(mode=mode):
+                    log = root / f"{mode}.log"
+                    env = {"HOME": tmp, "CM_ISOLATION_GUARD_LOG": str(log),
+                           "PYTHONPATH": os.pathsep.join((tmp, str(REPO_ROOT)))}
+                    child = subprocess.run([sys.executable, "-c", script, mode], env=env,
+                                           cwd=root, capture_output=True, text=True, timeout=20)
+                    self.assertEqual(child.returncode, 0, child.stdout + child.stderr)
+                    self.assertEqual(log.read_text().count("BLOCKED "), int(child.stdout))
+
+    def test_child_allows_ephemeral_fixture_sockets(self) -> None:
+        from tests.check_fixture_isolation import GUARD_SOURCE
+
+        script = """
+import socket, sys
+with socket.socket() as server:
+    server.bind(("127.0.0.1", 0))
+    server.listen(2)
+    with socket.create_connection(server.getsockname(), timeout=2):
+        accepted, _ = server.accept()
+        accepted.close()
+    with socket.socket() as client:
+        client.settimeout(2)
+        assert client.connect_ex(server.getsockname()) == 0
+        accepted, _ = server.accept()
+        accepted.close()
+sys.audit("subprocess.Popen", "systemctl", ["systemctl", "--version"], None, None)
+sys.audit("subprocess.Popen", "nix-store", ["nix-store", "--query", "--outputs", "/fixture"], None, None)
+sys.audit("open", "/fixture/proc/net/tcp", "r", 0)
+"""
+        with tempfile.TemporaryDirectory(prefix="cm-fixture-socket-") as tmp:
+            root = Path(tmp)
+            (root / "sitecustomize.py").write_text(GUARD_SOURCE, encoding="utf-8")
+            log = root / "guard.log"
+            child = subprocess.run([sys.executable, "-c", script], cwd=root,
+                                   env={"HOME": tmp, "PYTHONPATH": tmp, "CM_ISOLATION_GUARD_LOG": str(log)},
+                                   capture_output=True, text=True, timeout=20)
+            self.assertEqual(child.returncode, 0, child.stdout + child.stderr)
+            self.assertFalse(log.exists())
+
     def test_child_without_log_still_refuses_and_reports_hits(self) -> None:
         from tests.check_fixture_isolation import GUARD_SOURCE
 
