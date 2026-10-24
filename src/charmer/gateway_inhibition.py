@@ -99,6 +99,7 @@ import os
 import re
 import secrets
 import shlex
+import stat
 import sys
 import time
 from dataclasses import dataclass
@@ -159,7 +160,7 @@ class AuthorityUnreadable(InhibitionError):
 
 
 class AuthorityChanged(InhibitionError):
-    """The managed root is missing or moved to a root this writer did not fence."""
+    """The managed root is unusable or moved to a root this writer did not fence."""
 
 
 AUTHORITY_CHANGED = "the managed state root changed while this command waited; run it again"
@@ -457,8 +458,8 @@ def _locked(state_root: Path | str, held: bool, wait: float | None = None) -> _S
 
 
 def _fence_lock(state_root: Path | str, *, shared: bool, create: bool) -> state.FileLock | None:
-    """The root's writer fence; None for a root that does not exist when
-    ``create`` is False (no record can be there)."""
+    """The root's writer fence; None for a secondary root that is not a
+    directory. Home-scoped revalidation supplies its refusal and remedy."""
 
     root = Path(state_root)
     if create:
@@ -533,8 +534,8 @@ def revalidate(home: Path | str, *, what: str = "nothing was changed") -> None:
     api-key lock (the lock a root adoption moves the authority under): the
     managed root ``continuity.json`` records now must be one whose fence this
     flow holds (:func:`fenced`). Raises :class:`AuthorityChanged` when it is
-    missing (with its directory-recreation command) or an adoption moved it
-    meanwhile (a begin of the new root does not wait for this writer),
+    missing or unusable (with its repair and directory-recreation command)
+    or an adoption moved it meanwhile (a begin of the new root does not wait for this writer),
     :class:`AuthorityUnreadable` when it cannot be read. A
     flow that holds no fence (the unit's directives, a library caller) is
     not checked here."""
@@ -544,17 +545,30 @@ def revalidate(home: Path | str, *, what: str = "nothing was changed") -> None:
         return
     managed = managed_root(home, what=what)
     if managed is not None and managed not in held:
+        shown = termtext.visible_text(str(managed))
+        command = termtext.visible_text(shlex.join(["charmer-proxy", "init", "--state-root", str(managed)]))
+        problem = None
+        repair = "move the unusable path aside"
         try:
-            managed.lstat()
+            info = managed.lstat()
         except FileNotFoundError:
-            shown = termtext.visible_text(str(managed))
-            command = termtext.visible_text(shlex.join(["charmer-proxy", "init", "--state-root", str(managed)]))
             raise AuthorityChanged(
                 f"the recorded managed state root is missing: {shown}; {what}",
                 remedy=f"run {command} to recreate its directories; this does not restore lost session records",
             ) from None
-        except OSError:
-            pass  # An unreadable path is not proof that the root is missing.
+        except OSError as exc:
+            problem = "cannot examine it: " + termtext.visible_text(exc.strerror or type(exc).__name__)
+            repair = "restore access to the path and its parent; if it is not a directory, move it aside"
+        else:
+            if stat.S_ISLNK(info.st_mode):
+                problem = "it is a symbolic link"
+            elif not stat.S_ISDIR(info.st_mode):
+                problem = "it is not a directory"
+        if problem is not None:
+            raise AuthorityChanged(
+                f"the recorded managed state root {shown} is not a usable directory ({problem}); {what}",
+                remedy=f"{repair}; then run {command} to recreate its directories; "
+                       "this does not restore lost session records")
         raise AuthorityChanged(f"{AUTHORITY_CHANGED} ({what})",
                                remedy="run the command again: it then waits for the state root that manages "
                                       "this home now")
