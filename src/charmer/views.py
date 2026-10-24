@@ -689,7 +689,7 @@ EDITOR_SEED_NAG = "a newer shipped version exists — P → U shows the changes 
 # work yet); L launches all the same, as line mode's "no" to setup does.
 CARD_KEYS_NOT_CONNECTED = (
     ("Enter", "get started"), ("L", "launch anyway"), ("P", "profiles"), ("D", "direct"), ("V", "details"),
-    ("S", "sessions"), ("G", "providers"), ("M", "models"), ("O", "settings"), ("H", "doctor"), ("?", "help"),
+    ("S", "sessions"), ("G", "providers"), ("M", "models"), ("O", "settings"), ("H", "checks"), ("?", "help"),
     ("Esc", ""),
 )
 # The release row's key: a check, never a claim that an update exists (the

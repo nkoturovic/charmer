@@ -531,7 +531,7 @@ class EditorKeyTests(_EditorCase):
         state = self.state()
         rid = next(r for r in catalog.AGENT_ROLE_IDS if r in state.document["agents"])
         screen = self.editor(state, initial_focus=rid)
-        self.run_screen(screen, ["U", ESC, ENTER])
+        self.run_screen(screen, ["U", ESC, RIGHT, ENTER])
         self.assertNotIn(rid, state.document["agents"])
         screen = self.editor(self.state(), initial_focus="lead")
         win, _ = self.run_screen(screen, ["u", ESC])
@@ -545,7 +545,7 @@ class EditorKeyTests(_EditorCase):
         efforts = profile.declared_efforts(self.lcat.lines[before["model"]])
         step = RIGHT if efforts.index(before["effort"]) < len(efforts) - 1 else LEFT
         screen = self.editor(state, initial_focus=rid)
-        win, _ = self.run_screen(screen, [ENTER, step, ENTER, ESC, ENTER])
+        win, _ = self.run_screen(screen, [ENTER, step, ENTER, ESC, RIGHT, ENTER])
         picker_frame = next(f for f in win.frames if f"{profile.label(rid)} — choose model" in f)
         self.assertIn("← → effort:", picker_frame)
         after = state.document["agents"][rid]
@@ -597,7 +597,7 @@ class EditorKeyTests(_EditorCase):
             DOWN, ENTER, DOWN, ENTER,   # primary provider = the first provider id
             DOWN, ENTER, *([DOWN] * providers.index(lead_provider)), " ", ENTER,  # lead providers = the lead's
             DOWN, "7", "0",             # compaction override 70
-            CTRL_S, ESC, ENTER,
+            CTRL_S, ESC, RIGHT, ENTER,
         ]
         win, _ = self.run_screen(self.editor(state), keys)
         self.assertTrue(any(tui.PROFILE_FORM_GENERAL_TITLE in f for f in win.frames))
@@ -633,7 +633,7 @@ class EditorNativeRowTests(_EditorCase):
             keys += [RIGHT, DOWN]
             expected[key] = options[(current + 1) % len(options)]
         wf_current = tui.WORKFLOWS_VALUES.index(state.document.get("workflows", "native"))
-        keys += [RIGHT, ENTER, ESC, ENTER]
+        keys += [RIGHT, ENTER, ESC, RIGHT, ENTER]
         screen = self.editor(state, initial_focus="native")
         win, _ = self.run_screen(screen, keys)
         self.assertTrue(any(tui.PROFILE_FORM_NATIVE_TITLE in f for f in win.frames))
@@ -662,6 +662,21 @@ class EditorNativeRowTests(_EditorCase):
 
 
 class EditorDirtyGuardTests(_EditorCase):
+    def test_discard_defaults_to_cancel(self) -> None:
+        state = self.state()
+        state.unbind(self.free_agent(state.document))
+        captured = []
+        original = tui.Modal.run
+
+        def run(modal, win, palette, **kwargs):
+            captured.append((tuple(modal.buttons), modal.focus))
+            return original(modal, win, palette, **kwargs)
+
+        with mock.patch.object(tui.Modal, "run", run):
+            self.assertFalse(self.editor(state)._leave(FakeWindow([ENTER])))
+        self.assertEqual(captured, [((("Cancel", False), ("Discard", True)), 1)])
+        self.assertTrue(state.dirty)
+
     def test_clean_esc_and_ctrl_c_return_without_a_modal(self) -> None:
         for key in (ESC, CTRL_C):
             win, result = self.run_screen(self.editor(), [key])
@@ -673,11 +688,11 @@ class EditorDirtyGuardTests(_EditorCase):
             with self.subTest(key=repr(key)):
                 state = self.state()
                 state.unbind(self.free_agent(state.document))
-                win, result = self.run_screen(self.editor(state), [key, RIGHT, ENTER, key, ENTER])
+                win, result = self.run_screen(self.editor(state), [key, ENTER, key, RIGHT, ENTER])
                 modal = next(f for f in win.frames if tui.PROFILE_FORM_DISCARD_TITLE in f)
                 self.assertIn(tui.PROFILE_FORM_DISCARD_BODY, modal)
                 self.assertIn("[ Discard ]", modal)
-                self.assertIn("[ Keep editing ]", modal)
+                self.assertIn("[ Cancel ]", modal)
                 self.assertIsNone(result)
                 self.assertTrue(state.dirty, "discarding never writes; the state keeps the edit")
 
@@ -729,7 +744,7 @@ class EditorSaveTests(_EditorCase):
     def test_a_seed_offers_only_save_as_new_and_the_edits_stay(self) -> None:
         # A shipped profile keeps its name: the dialog never offers Rename.
         state = self.edited()
-        keys = [*self.rename_to(state, "renamed"), CTRL_S, RIGHT, ENTER, ESC, ENTER]
+        keys = [*self.rename_to(state, "renamed"), CTRL_S, RIGHT, ENTER, ESC, RIGHT, ENTER]
         win, result = self.run_screen(self.editor(state, callbacks=self.callbacks()), keys)
         self.assertIsNone(result)
         dialog = next(f for f in win.frames if tui.PROFILE_FORM_NEW_NAME_TITLE in f)
@@ -744,14 +759,14 @@ class EditorSaveTests(_EditorCase):
     def test_save_as_new_refuses_p1(self) -> None:
         state = self.edited()
         taken = next(n for n in self.runtime.profiles.names() if n != catalog.DEFAULT_SEED)
-        keys = [*self.rename_to(state, taken), CTRL_S, ENTER, ESC, ENTER]
+        keys = [*self.rename_to(state, taken), CTRL_S, ENTER, ESC, RIGHT, ENTER]
         win, result = self.run_screen(self.editor(state, callbacks=self.callbacks()), keys)
         self.assertIsNone(result)
         self.assertTrue(any(f"profile target {taken!r} already exists; choose another name" in f for f in win.frames))
 
     def test_cancel_in_the_name_modal_writes_nothing(self) -> None:
         state = self.edited()
-        keys = [*self.rename_to(state, "mine"), CTRL_S, RIGHT, ENTER, ESC, ENTER]
+        keys = [*self.rename_to(state, "mine"), CTRL_S, RIGHT, ENTER, ESC, RIGHT, ENTER]
         _win, result = self.run_screen(self.editor(state, callbacks=self.callbacks()), keys)
         self.assertIsNone(result)
         self.assertFalse(self.runtime.profiles.contains("mine"))
@@ -769,7 +784,7 @@ class EditorSaveTests(_EditorCase):
         state = self.edited()
         error = state_mod_committed("durability unconfirmed for the test")
         with mock.patch.object(profile.ProfileStore, "commit", side_effect=error):
-            win, result = self.run_screen(self.editor(state, callbacks=self.callbacks()), [CTRL_S, ESC, ENTER])
+            win, result = self.run_screen(self.editor(state, callbacks=self.callbacks()), [CTRL_S, ESC, RIGHT, ENTER])
         self.assertIsNone(result)
         self.assertTrue(any("Committed, durability unconfirmed: durability unconfirmed for the test" in f
                             for f in win.frames))
@@ -778,7 +793,7 @@ class EditorSaveTests(_EditorCase):
     def test_a_state_marker_error_is_shown_verbatim(self) -> None:
         state = self.edited()
         with mock.patch.object(profile.ProfileStore, "commit", side_effect=sessions.StateMarkerError("marker says no")):
-            win, _ = self.run_screen(self.editor(state, callbacks=self.callbacks()), [CTRL_S, ESC, ENTER])
+            win, _ = self.run_screen(self.editor(state, callbacks=self.callbacks()), [CTRL_S, ESC, RIGHT, ENTER])
         self.assertTrue(any("marker says no" in f for f in win.frames))
 
 
@@ -820,7 +835,7 @@ class EditorSaveFailureTests(_EditorCase):
         state.unbind(rid)
         edited = copy.deepcopy(state.document)
         with mock.patch.object(state_module(), "atomic_write", side_effect=OSError(errno.ENOSPC, "disk full")):
-            win, result = self.run_screen(self.editor(state, callbacks=self.callbacks()), [CTRL_S, ESC, ENTER])
+            win, result = self.run_screen(self.editor(state, callbacks=self.callbacks()), [CTRL_S, ESC, RIGHT, ENTER])
         self.assertIsNone(result)
         self.assertTrue(any("disk full" in f for f in win.frames))
         self.assertEqual(state.document, edited)
@@ -838,7 +853,7 @@ class EditorSaveFailureTests(_EditorCase):
         screen = self.editor(state, callbacks=callbacks)
         keys = [ENTER, *([BACKSPACE] * 64), *"mine2", CTRL_S, CTRL_S, RIGHT, ENTER,  # Rename
                 RIGHT, ENTER,  # the follower is shown first: Rename
-                ESC, ENTER]  # dirty: discard and leave
+                ESC, RIGHT, ENTER]  # dirty: select discard and leave
         error = state_module().StateError(errno.ENOSPC, "No space left on device")
         with mock.patch.object(profile.ProfileStore, "_write", side_effect=error):
             win, result = self.run_screen(screen, keys)
@@ -880,7 +895,7 @@ class EditorJsonTests(_EditorCase):
         new = b'"description": "from the json editor"'
         screen = self.editor(state, open_in_editor=self.opener(lambda raw: raw.replace(old, new)),
                              suspender=lambda _win: contextlib.nullcontext())
-        win, _ = self.run_screen(screen, [CTRL_G, ESC, ENTER])
+        win, _ = self.run_screen(screen, [CTRL_G, ESC, RIGHT, ENTER])
         self.assertEqual(state.document["description"], "from the json editor")
         self.assertTrue(any("JSON applied from $EDITOR." in f for f in win.frames))
 
@@ -895,7 +910,7 @@ class EditorJsonTests(_EditorCase):
             with self.subTest(needle=needle):
                 screen = self.editor(state, open_in_editor=self.opener(transform),
                                      suspender=lambda _win: contextlib.nullcontext())
-                win, _ = self.run_screen(screen, [CTRL_G, ESC, ENTER])
+                win, _ = self.run_screen(screen, [CTRL_G, ESC, RIGHT, ENTER])
                 self.assertTrue(any(needle in f for f in win.frames), needle)
                 self.assertEqual(state.document, edited)
 
@@ -1222,7 +1237,7 @@ class NamedBindingsTests(_EditorCase):
         self.assertEqual(messages["B8"], "named binding 'nb' is used by profiles: user-b (agents.cm-analyst)")
         self.assertEqual(self.runtime.bindings.bindings()["nb"]["model"], key, "a refused change writes nothing")
         # And on the screen: the X refusal shows the store's text verbatim.
-        win, _ = self.run_screen(self.screen(), ["X", ENTER, ESC], width=120)
+        win, _ = self.run_screen(self.screen(), ["X", RIGHT, ENTER, ESC], width=120)
         self.assertTrue(any(messages["B8"] in f for f in win.frames))
 
     def test_new_and_role_override_named_bindings_save_with_profile_warnings(self) -> None:
@@ -1263,9 +1278,23 @@ class NamedBindingsTests(_EditorCase):
         picker.assert_called_once()
         self.assertEqual(self.runtime.bindings.bindings()["nb"], {"model": other, "effort": effort})
 
+    def test_delete_defaults_to_cancel(self) -> None:
+        self.seed_binding()
+        captured = []
+        original = tui.Modal.run
+
+        def run(modal, win, palette, **kwargs):
+            captured.append((tuple(modal.buttons), modal.focus))
+            return original(modal, win, palette, **kwargs)
+
+        with mock.patch.object(tui.Modal, "run", run):
+            self.run_screen(self.screen(), ["X", ENTER, ESC])
+        self.assertEqual(captured, [((("Cancel", False), ("Delete", True)), 1)])
+        self.assertIn("nb", self.runtime.bindings.bindings())
+
     def test_delete_removes_an_unused_binding(self) -> None:
         self.seed_binding("gone")
-        self.run_screen(self.screen(), ["X", ENTER, ESC])
+        self.run_screen(self.screen(), ["X", RIGHT, ENTER, ESC])
         self.assertNotIn("gone", self.runtime.bindings.bindings())
 
     def test_a_set_runs_the_propagation_prompt(self) -> None:
@@ -1614,7 +1643,7 @@ class EditorConflictTests(_EditorCase):
     def test_cancel_keeps_the_edits_and_the_stored_profile(self) -> None:
         state, screen = self.editing()
         self.elsewhere()
-        win, result = self.run_screen(screen, [CTRL_S, ENTER, ESC, ENTER])
+        win, result = self.run_screen(screen, [CTRL_S, ENTER, ESC, RIGHT, ENTER])
         dialog = self.dialog(win)
         for label, _value in tui.PROFILE_FORM_CHANGED_BUTTONS:
             self.assertIn(f"[ {label} ]", dialog)

@@ -1325,7 +1325,7 @@ class _SessionsScreen:
         elif gate.kind != "ok":
             try:
                 resolved = _run_resume_gate_modal(runtime, record, gate, win, self.palette, background=self._draw)
-            except (cli_errors.CLIError, sessions.SessionError) as exc:
+            except (cli_errors.CLIError, sessions.SessionError, state.StateError, OSError) as exc:
                 self._say(termtext.visible_message(exc), "warn")
                 return None
             if resolved is None:
@@ -1660,8 +1660,9 @@ class _SessionsScreen:
         lines += list(extra)
         lines.append("Live or unknown liveness refuses; transcripts are never touched.")
         buttons = (("Cancel", False), (verb, True)) + ((("Details", "details"),) if details else ())
+        title_verb = "Save the choice for" if verb == "Save choice" else verb
         while True:
-            answer = tui.Modal(f"{verb} {len(items)} session(s)?", lines, buttons=buttons, default=False).run(
+            answer = tui.Modal(f"{title_verb} {len(items)} session(s)?", lines, buttons=buttons, default=False).run(
                 win, self.palette, background=self._draw)
             if answer != "details":
                 return bool(answer)

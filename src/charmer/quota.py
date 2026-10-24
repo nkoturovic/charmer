@@ -639,7 +639,7 @@ def card_summary(pool: PoolStatus, *, pools: Iterable[str], login_commands,
         return text, "warn"
     if finding.level == "ok":
         return f"worst {c.handle} {w.label} {math.floor(w.used_percent)}% · observed {observation_age(c, now)}", "dim"
-    remedy = "S Sessions → T" if resume else "P provider fallback"
+    remedy = "S Sessions → T" if resume else "P → F fallback profiles"
     value = (f"{w.label} {math.floor(w.used_percent)}%!" if w is not None else "exhausted (no window)")
     if finding.level == "exhausted" and w is not None:
         value = "exhausted " + value
@@ -649,7 +649,7 @@ def card_summary(pool: PoolStatus, *, pools: Iterable[str], login_commands,
     if len(text) > width and w is not None and w.resets_at is None:
         # Unknown reset is a fact, not disposable detail. Shorten the fresh
         # remedy first, then the redundant handle rather than invent a time.
-        remedy = "S Sessions → T" if resume else "P fallback"
+        remedy = "S Sessions → T" if resume else "P → F"
         text = f"{base} · {reset} — {remedy}"
         if len(text) > width:
             text = f"{value} · {age} · {reset} — {remedy}"

@@ -3110,7 +3110,7 @@ class NamedBindingsScreen:
             self._say(NAMED_BINDINGS_READ_ONLY)
             return
         name = self.names[self.index]
-        confirmed = Modal(f"Delete binding {name}?", [], buttons=(("Delete", True), ("Cancel", False))).run(
+        confirmed = Modal(f"Delete binding {name}?", [], buttons=(("Cancel", False), ("Delete", True)), default=False).run(
             win, self.palette, background=self._draw
         )
         if not confirmed:
@@ -3503,7 +3503,7 @@ class ProfileEditorScreen:
             Modal(
                 PROFILE_FORM_DISCARD_TITLE,
                 [PROFILE_FORM_DISCARD_BODY],
-                buttons=(("Discard", True), ("Keep editing", False)),
+                buttons=(("Cancel", False), ("Discard", True)), default=False,
             ).run(win, self.palette, background=self._draw)
         )
 

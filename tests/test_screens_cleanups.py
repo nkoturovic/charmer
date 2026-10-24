@@ -1,0 +1,51 @@
+"""Small presentation regressions over injected facts only."""
+
+from __future__ import annotations
+
+import unittest
+from types import SimpleNamespace
+from unittest import mock
+
+from charmer import discovery, gateway_lifecycle, quota, tui, views
+from charmer.cli.screens import gateway_actions
+
+import _tui_fixture as fx
+from test_tui import FakeWindow
+
+
+class PresentationTests(unittest.TestCase):
+    def test_stop_advice_only_for_a_running_gateway(self) -> None:
+        for status in (gateway_lifecycle.STOPPED, gateway_lifecycle.OURS,
+                       gateway_lifecycle.FOREIGN, gateway_lifecycle.UNKNOWN, None):
+            with self.subTest(status=status):
+                seen = SimpleNamespace(state=status, detail="fixture") if status is not None else None
+                view = gateway_actions.GatewayView(None, seen)
+                bodies = []
+
+                def cancel(modal, *_args, **_kwargs):
+                    bodies.append(" ".join(modal.lines))
+                    return None
+
+                with mock.patch.object(gateway_actions, "observe", return_value=view), \
+                        mock.patch.object(tui.Modal, "run", cancel):
+                    gateway_actions.dialog(None, FakeWindow(), tui.MONO_PALETTE)
+                self.assertEqual("Stop it from a terminal" in bodies[0], status == gateway_lifecycle.OURS)
+
+    def test_quota_fallback_names_the_profiles_filter_at_both_widths(self) -> None:
+        pool = quota.PoolStatus("ok", credentials=quota.parse_auth_files(fx.quota_body(percent=95, reset=False)))
+        pools = {credential.provider for credential in pool.credentials}
+        for width, remedy in ((200, "P → F fallback profiles"), (45, "P → F")):
+            with self.subTest(width=width):
+                text, role = quota.card_summary(pool, pools=pools, login_commands={}, now=fx.FIXED_NOW, width=width)
+                self.assertTrue(text.endswith("— " + remedy), text)
+                self.assertEqual(role, "warn")
+
+    def test_openrouter_help_does_not_hard_wrap_paragraphs(self) -> None:
+        paragraph = next(line for line in discovery.OPENROUTER_HELP.splitlines() if line.startswith("Regular models"))
+        self.assertIn("are pre-release, may retain prompts", paragraph)
+        self.assertIn("with a key, a separately confirmed", paragraph)
+        self.assertTrue(paragraph.endswith("account-only rows."))
+
+    def test_not_connected_card_calls_h_checks(self) -> None:
+        self.assertIn(("H", "checks"), views.CARD_KEYS_NOT_CONNECTED)
+        self.assertNotIn(("H", "doctor"), views.CARD_KEYS_NOT_CONNECTED)

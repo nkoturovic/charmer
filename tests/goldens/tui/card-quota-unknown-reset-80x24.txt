@@ -14,7 +14,7 @@
   … 2 more agents (E shows all)
   review    writers(openai)→reviewer-strong · lead→reviewer   all cross-family…
   health    gateway ok · Claude 2.1.281 · catalog 31
-  quota     claude#1 7d 93%! · 3d old · reset unknown — P provider fallback
+  quota     claude#1 7d 93%! · 3d old · reset unknown — P → F fallback profiles
   ! explorer and every implementer are on openai (codex quota shared)
   implementers unavailable: not a Git repository here (git init enables them)
 

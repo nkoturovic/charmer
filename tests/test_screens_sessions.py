@@ -628,6 +628,40 @@ class SessionsEntryTests(_SessionsCase):
 
 
 class ResumeGateModalTests(_SessionsCase):
+    def test_relink_failure_warns_and_stays_on_sessions(self) -> None:
+        from charmer import state
+
+        record = self.record()
+        record["identity_state"] = sessions.IDENTITY_REPAIR_NEEDED
+        record["observed_cwd"] = "/wrong/project"
+        self.runtime.session_store.save(record)
+        before = self.runtime.session_store.read_record_bytes(fx.FIXED_ID)
+        for error in (state.StateError("fixture lock replaced"), OSError("fixture pointer write failed")):
+            with self.subTest(error=type(error).__name__), mock.patch.object(
+                    self.runtime.session_store, "relink_runtime", side_effect=error) as relink:
+                screen = self.screen()
+                result, win = self.run_screen(screen, [ENTER, ENTER, ESC])
+                self.assertIsNone(result)
+                relink.assert_called_once()
+                self.assertIn("sessions — ", win.frames[-1])
+                self.assertIn(str(error), win.frames[-1])
+                self.assertEqual(screen.message_role, "warn")
+                self.assertEqual(self.runtime.launches, [])
+                self.assertEqual(self.runtime.session_store.read_record_bytes(fx.FIXED_ID), before)
+
+    def test_save_choice_title_names_the_sessions(self) -> None:
+        screen = self.screen()
+        items = [sessions.BatchItem(identifier=fx.FIXED_ID, record=None, problem="fixture refused")]
+        titles = []
+
+        def cancel(modal, *_args, **_kwargs):
+            titles.append(modal.title)
+            return False
+
+        with mock.patch.object(tui.Modal, "run", cancel):
+            self.assertFalse(screen._batch_confirm(FakeWindow(), items, "Save choice"))
+        self.assertEqual(titles, ["Save the choice for 1 session(s)?"])
+
     def test_resume_without_a_diff_returns_the_perform_intent_directly(self) -> None:
         self.record()
         result, _win = self.run_screen(self.screen(), [ENTER])

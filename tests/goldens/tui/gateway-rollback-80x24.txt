@@ -11,11 +11,11 @@
   | if this began after charmer update: charmer update --rollback, then      |
   | charmer gateway start (returns to 2.0.1's gateway; sessions keep their   |
   | records)                                                                 |
-  | Stop it from a terminal: charmer gateway stop.                           |
   |                                                                          |
   |                                                                          |
   | [ Start now ] [ Show log ] [ Close ]                                     |
   +--------------------------------------------------------------------------+
+
 
 
 
