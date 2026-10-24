@@ -711,7 +711,7 @@ class NativeReplayTests(unittest.TestCase):
         # behavior. No previous-version baseline has been established.
         self.assertEqual(self.version, "2.1.310", "requalify late-terminal evidence for a changed client")
         for tool in (False, True):
-            paired_usage = {}
+            paired_usage, skipped = {}, {}
             for cut in (False, True):
                 with self.subTest(tool=tool, cut=cut), tempfile.TemporaryDirectory(prefix="gwtest-v8-impact-") as temporary:
                     root = Path(temporary)
@@ -765,7 +765,11 @@ class NativeReplayTests(unittest.TestCase):
                             return 200, "text/event-stream", b"".join(harness.sse_frame(kind, value) for kind, value in events)
                         return 200, "application/json", json.dumps(payload).encode()
 
-                    gateway = harness.GatewayHarness(upstream_factory=lambda path: harness.FakeUpstream(path, respond))
+                    try:
+                        gateway = harness.GatewayHarness(upstream_factory=lambda path: harness.FakeUpstream(path, respond))
+                    except unittest.SkipTest as exc:  # no candidate gateway: the pair below skips too
+                        skipped[cut] = str(exc)
+                        raise
                     try:
                         with TrafficRelay(gateway) as relay:
                             result = probe.run_native(("-p", "fixture late-terminal impact", "--model", "gwtest-cc-output-config-high",
@@ -818,6 +822,8 @@ class NativeReplayTests(unittest.TestCase):
                     finally:
                         gateway.close()
             with self.subTest(tool=tool, paired_usage=True):
+                if skipped:  # the pair skips only when a run it pairs skipped; a run that failed fails it
+                    self.skipTest(next(iter(skipped.values())))
                 self.assertEqual(set(paired_usage), {False, True}, "missing paired client outcomes")
                 self.assertEqual(paired_usage[False], paired_usage[True], "healthy/late client usage changed")
 
