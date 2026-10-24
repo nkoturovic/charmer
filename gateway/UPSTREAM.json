@@ -991,6 +991,35 @@
         "TestTerminalRejectionNewCredentialResets",
         "TestTerminalRejectionGuardLeavesOrdinaryFailuresReset"
       ]
+    },
+    {
+      "name": "codex-message-boundary",
+      "packages": [
+        "./internal/translator/codex/claude"
+      ],
+      "run": "^(TestConvertCodexResponseToClaude_StreamSecondMessageDoneFallbackAfterStreamedFirstMessage|TestConvertCodexResponseToClaude_StreamCommentaryDoneFallbackIsThinking|TestConvertCodexResponseToClaude_StreamFinalAnswerOnlyUnchanged)$",
+      "platforms": "portable",
+      "race": false,
+      "count": null,
+      "expected_tests": [
+        "TestConvertCodexResponseToClaude_StreamSecondMessageDoneFallbackAfterStreamedFirstMessage",
+        "TestConvertCodexResponseToClaude_StreamCommentaryDoneFallbackIsThinking",
+        "TestConvertCodexResponseToClaude_StreamFinalAnswerOnlyUnchanged"
+      ]
+    },
+    {
+      "name": "auth-read-errors",
+      "packages": [
+        "./internal/watcher"
+      ],
+      "run": "^(TestRefreshAuthStatePreservesUnreadableFile|TestFullScanPreservesAuthsInUnreadableDir)$",
+      "platforms": "portable",
+      "race": false,
+      "count": null,
+      "expected_tests": [
+        "TestRefreshAuthStatePreservesUnreadableFile",
+        "TestFullScanPreservesAuthsInUnreadableDir"
+      ]
     }
   ],
   "source_pins": [
