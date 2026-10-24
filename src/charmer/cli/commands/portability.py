@@ -37,6 +37,7 @@ from charmer import settings as settings_mod
 from charmer import state
 from charmer import strict_json
 from charmer import termtext
+from charmer.platform import posix_fs
 import charmer.cli.commands.providers as providers_cmd
 import charmer.cli.consent as consent
 
@@ -175,6 +176,10 @@ def export_command(runtime: runtime_mod.Runtime, args: argparse.Namespace, outpu
         return 0
     try:
         portability.write_output(target, payload)
+    except posix_fs.CommittedReplaceError as exc:
+        raise portability.PortabilityError(
+            f"export: wrote {target}, but its durability is unconfirmed; "
+            "no export receipt was recorded") from exc
     except OSError as exc:
         raise portability.PortabilityError(
             f"export --out {target}: the write failed ({exc.strerror or type(exc).__name__}) — no export "

@@ -358,26 +358,7 @@ def _write_repo_file(path: Path, data: bytes) -> None:
         mode = stat.S_IMODE(os.lstat(path).st_mode)
     except OSError:
         mode = 0o644
-    temp = path.with_name(f".{path.name}.tmp-{os.getpid()}")
-    descriptor = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode)
-    try:
-        with os.fdopen(descriptor, "wb") as handle:
-            handle.write(data)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.chmod(temp, mode)
-        os.replace(temp, path)
-    except BaseException:
-        try:
-            os.unlink(temp)
-        except OSError:
-            pass
-        raise
-
-    # Publication is not durable until the containing directory is synced.
-    # Propagate failure after replacement: the repin transaction restores its
-    # owned pre-image, unlike the hook log's best-effort helper.
-    posix_fs.fsync_directory(path.parent)
+    posix_fs.atomic_replace(path, data, mode=mode)
 
 
 class _Heartbeat:

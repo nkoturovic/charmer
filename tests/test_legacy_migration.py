@@ -20,6 +20,7 @@ import io
 import json
 import os
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -33,6 +34,7 @@ from _catalog import FIXTURE_GATEWAY_TOKEN, FIXTURE_ROOT
 from _v4 import V4Case
 from charmer import (assets, catalog, continuity, endpoint, gateway_events, gateway_hold, gateway_inhibition,
                      install_receipt, legacy, legacy_migration as lm, pin, scope, sessions, state, strict_json)
+from charmer.platform import posix_fs
 
 OLD_UNIT, OLD_FAILURE = legacy.LEGACY_UNIT, legacy.LEGACY_FAILURE_UNIT
 
@@ -831,6 +833,72 @@ class CrashTests(unittest.TestCase):
                 content = content.replace(home, "HOME")
             found[path.replace(home, "HOME")] = (kind, content)
         return found
+
+
+class LauncherRestorationTests(unittest.TestCase):
+    def test_restore_does_not_follow_or_remove_a_preexisting_temp(self) -> None:
+        harness = Harness(self)
+        originals = {}
+        for name in legacy.LEGACY_LAUNCHERS:
+            target = harness.layout.bin_dir / name
+            target.chmod(0o751)
+            originals[name] = target.read_bytes()
+        harness.migrate()
+        other = harness.base / "unrelated"
+        other.write_bytes(b"untouched")
+        temporary = harness.layout.bin_dir / f".{legacy.LEGACY_LAUNCHERS[0]}.back.{os.getpid()}"
+        temporary.symlink_to(other)
+        harness.back()
+        self.assertEqual(other.read_bytes(), b"untouched")
+        self.assertTrue(temporary.is_symlink())
+        for name, data in originals.items():
+            target = harness.layout.bin_dir / name
+            self.assertFalse(target.is_symlink())
+            self.assertEqual(target.read_bytes(), data)
+            self.assertEqual(stat.S_IMODE(target.stat().st_mode), 0o751)
+        self.assertEqual(harness.journal().status, lm.REVERTED)
+
+    def test_restore_failure_before_replace_cleans_its_temp_and_can_retry(self) -> None:
+        harness = Harness(self)
+        harness.migrate()
+        target = harness.layout.bin_dir / legacy.LEGACY_LAUNCHERS[0]
+        before = set(target.parent.iterdir())
+        with mock.patch.object(os, "replace", side_effect=OSError(errno.EIO, "fixture rename")):
+            with self.assertRaises(OSError):
+                lm._undo_launchers(harness.journal(), harness.layout)
+        self.assertFalse(target.exists())
+        self.assertEqual(set(target.parent.iterdir()), before)
+        harness.back()
+        self.assertTrue(lm.launcher_owned(target))
+        self.assertEqual(harness.journal().status, lm.REVERTED)
+
+    def test_restore_directory_sync_failure_reports_written_launcher(self) -> None:
+        harness = Harness(self)
+        target = harness.layout.bin_dir / legacy.LEGACY_LAUNCHERS[0]
+        data = target.read_bytes()
+        mode = stat.S_IMODE(target.stat().st_mode)
+        harness.migrate()
+        journal = harness.journal()
+        with mock.patch.object(posix_fs, "fsync_directory", side_effect=OSError(errno.EIO, "fixture sync")):
+            with self.assertRaisesRegex(posix_fs.CommittedReplaceError, "written.*durability unconfirmed"):
+                lm._undo_launchers(journal, harness.layout)
+        self.assertEqual(target.read_bytes(), data)
+        self.assertEqual(stat.S_IMODE(target.stat().st_mode), mode)
+        harness.back()
+        self.assertEqual(harness.journal().status, lm.REVERTED)
+
+    def test_put_bytes_refuses_a_symlink_destination(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="cm-restore-") as directory:
+            root = Path(directory)
+            other = root / "other"
+            other.write_bytes(b"untouched")
+            target = root / "launcher"
+            target.symlink_to(other)
+            with self.assertRaises(OSError) as caught:
+                lm._put_bytes(target, b"restored", 0o755)
+            self.assertEqual(caught.exception.errno, errno.ELOOP)
+            self.assertTrue(target.is_symlink())
+            self.assertEqual(other.read_bytes(), b"untouched")
 
 
 class BackHandsTheSessionsBackTests(unittest.TestCase):

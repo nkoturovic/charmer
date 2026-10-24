@@ -1052,6 +1052,105 @@ class PromoteTests(OnboardingTestCase):
         )
         self.assertNotIn("zetamodel", models_doc["models"])
 
+    def _promote_directory_sync_failure(self, failed_sync: int, *, interrupt: bool = False) -> None:
+        draft = _provider_draft()
+        record = self._review(draft, name="d2")
+        originals = {entry["path"]: (self.repo / entry["path"]).read_bytes() for entry in record["files"]}
+        real_sync = os.fsync
+        calls = 0
+
+        def sync(fd):
+            nonlocal calls
+            if stat.S_ISDIR(os.fstat(fd).st_mode):
+                calls += 1
+                if calls == failed_sync:
+                    if interrupt:
+                        raise KeyboardInterrupt("fixture directory sync")
+                    raise OSError(5, "fixture directory sync")
+            return real_sync(fd)
+
+        with mock.patch.object(os, "fsync", side_effect=sync):
+            with self.assertRaisesRegex(DevError, "rolled back"):
+                dev.promote_draft(draft, draft_name="d2", repo=self.repo, review_record=record)
+        for relative, before in originals.items():
+            self.assertEqual((self.repo / relative).read_bytes(), before, relative)
+        self.assertEqual(calls, failed_sync * 2)
+
+    def test_promote_restores_after_first_replacement_directory_sync_failure(self) -> None:
+        self._promote_directory_sync_failure(1)
+
+    def test_promote_restores_after_second_replacement_directory_sync_failure(self) -> None:
+        self._promote_directory_sync_failure(2)
+
+    def test_promote_restores_after_first_replacement_directory_sync_interrupt(self) -> None:
+        self._promote_directory_sync_failure(1, interrupt=True)
+
+    def test_promote_restores_after_second_replacement_directory_sync_interrupt(self) -> None:
+        self._promote_directory_sync_failure(2, interrupt=True)
+
+    def test_promote_reports_retained_file_and_continues_other_restores(self) -> None:
+        draft = _provider_draft()
+        record = self._review(draft, name="d2")
+        originals = {entry["path"]: (self.repo / entry["path"]).read_bytes() for entry in record["files"]}
+        real_sync, real_replace = os.fsync, os.replace
+        syncs = replacements = 0
+
+        def sync(fd):
+            nonlocal syncs
+            if stat.S_ISDIR(os.fstat(fd).st_mode):
+                syncs += 1
+                if syncs == 2:
+                    raise OSError(5, "fixture directory sync")
+            return real_sync(fd)
+
+        def replace(source, target):
+            nonlocal replacements
+            replacements += 1
+            if replacements == 3:
+                raise OSError(5, "fixture restore failure")
+            return real_replace(source, target)
+
+        with mock.patch.object(os, "fsync", side_effect=sync), \
+                mock.patch.object(os, "replace", side_effect=replace):
+            with self.assertRaisesRegex(DevError, "rollback incomplete") as caught:
+                dev.promote_draft(draft, draft_name="d2", repo=self.repo, review_record=record)
+        self.assertIn(MODELS_IMAGE, str(caught.exception))
+        self.assertNotIn(PROVIDERS_IMAGE, str(caught.exception))
+        self.assertIn("inspect these files before retrying promotion", str(caught.exception))
+        self.assertNotIn("rolled back", str(caught.exception))
+        self.assertNotEqual((self.repo / MODELS_IMAGE).read_bytes(), originals[MODELS_IMAGE])
+        self.assertEqual((self.repo / PROVIDERS_IMAGE).read_bytes(), originals[PROVIDERS_IMAGE])
+
+    def test_promote_reports_restore_durability_unconfirmed(self) -> None:
+        draft = _provider_draft()
+        record = self._review(draft, name="d2")
+        originals = {entry["path"]: (self.repo / entry["path"]).read_bytes() for entry in record["files"]}
+        real_sync = os.fsync
+        calls = 0
+
+        def sync(fd):
+            nonlocal calls
+            if stat.S_ISDIR(os.fstat(fd).st_mode):
+                calls += 1
+                if calls in (2, 3):
+                    raise OSError(5, "fixture directory sync")
+            return real_sync(fd)
+
+        with mock.patch.object(os, "fsync", side_effect=sync):
+            with self.assertRaisesRegex(DevError, "rollback incomplete.*durability unconfirmed") as caught:
+                dev.promote_draft(draft, draft_name="d2", repo=self.repo, review_record=record)
+        self.assertNotIn("rolled back", str(caught.exception))
+        self.assertIn(MODELS_IMAGE, str(caught.exception))
+        for relative, before in originals.items():
+            self.assertEqual((self.repo / relative).read_bytes(), before, relative)
+
+    def test_repo_atomic_write_preserves_mode(self) -> None:
+        target = self.resources / "catalog/models.json"
+        target.chmod(0o640)
+        dev._repo_atomic_write(target, b"fixture")
+        self.assertEqual(target.read_bytes(), b"fixture")
+        self.assertEqual(stat.S_IMODE(target.stat().st_mode), 0o640)
+
     def test_patch_output_emit_only(self) -> None:
         draft = _model_draft()
         before = (

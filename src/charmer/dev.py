@@ -37,6 +37,7 @@ from . import errors, layout, paths
 from . import render as render_mod
 from . import sessions, state, strict_json
 from . import validate as schema_validate
+from .platform import posix_fs
 
 
 class DevError(errors.CharmerError, RuntimeError):
@@ -433,27 +434,7 @@ def _repo_atomic_write(target: Path, data: bytes) -> None:
     if target.exists():
         existing = stat.S_IMODE(os.lstat(target).st_mode)
         mode = existing if existing else 0o644
-    descriptor, temporary = tempfile.mkstemp(
-        dir=parent, prefix=f".{target.name}.", suffix=".tmp"
-    )
-    try:
-        os.fchmod(descriptor, mode)
-        with os.fdopen(descriptor, "wb") as handle:
-            handle.write(data)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temporary, target)
-    except BaseException:
-        try:
-            os.unlink(temporary)
-        except OSError:
-            pass
-        raise
-    dirfd = os.open(parent, os.O_RDONLY | os.O_DIRECTORY)
-    try:
-        os.fsync(dirfd)
-    finally:
-        os.close(dirfd)
+    posix_fs.atomic_replace(target, data, mode=mode)
 
 
 def verify_repo(repo: Path | str) -> Path:
@@ -1017,17 +998,40 @@ def promote_draft(
     applied: list[str] = []
     try:
         for entry in journal:
-            _repo_atomic_write(targets[entry["path"]], images[entry["path"]])
+            try:
+                _repo_atomic_write(targets[entry["path"]], images[entry["path"]])
+            except BaseException:
+                # An interrupt can arrive after replacement too. An unreadable
+                # outcome must not be reported as an unchanged file.
+                try:
+                    changed = targets[entry["path"]].read_bytes() != entry["before"]
+                except FileNotFoundError:
+                    changed = entry["before"] is not None
+                except OSError:
+                    changed = True
+                if changed:
+                    applied.append(entry["path"])
+                raise
             applied.append(entry["path"])
     except BaseException:
+        unrestored: list[str] = []
         for entry in journal:
             target = targets[entry["path"]]
             if entry["path"] not in applied:
                 continue
-            if entry["before"] is None:
-                target.unlink(missing_ok=True)
-            else:
-                _repo_atomic_write(target, entry["before"])
+            try:
+                if entry["before"] is None:
+                    target.unlink(missing_ok=True)
+                    posix_fs.fsync_directory(target.parent)
+                else:
+                    _repo_atomic_write(target, entry["before"])
+            except posix_fs.CommittedReplaceError:
+                unrestored.append(f"{entry['path']} (restored bytes, durability unconfirmed)")
+            except BaseException:
+                unrestored.append(f"{entry['path']} (restore failed; promoted file may remain)")
+        if unrestored:
+            raise DevError("promotion failed; rollback incomplete: " + "; ".join(unrestored)
+                           + "; inspect these files before retrying promotion") from None
         raise DevError("promotion failed and was rolled back") from None
 
     if drafts_root is not None:
