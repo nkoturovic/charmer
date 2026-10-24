@@ -22,16 +22,21 @@ beta ids, field presence, tool names); prompts and bodies stay in memory.
   ``prompt-caching-scope`` beta behind a custom base URL. A ``ToolSearch`` call
   returns ``tool_reference`` blocks and the next request carries the fetched
   tool with ``defer_loading``.
-* ``effort-refused``, ``context-refused``, ``tools-refused`` (controls): the
-  fixture gateway refuses the field with the error the client recognises and
-  the client resends once without it, so the shape case's single request per
-  turn shows a request the gateway accepted, not a client that never resends.
+  Every one of these parts is checked on each request: the fresh request, the
+  ``ToolSearch`` continuation and the resumed request.
+* ``effort-refused``, ``context-refused``, ``tools-refused``,
+  ``system-refused`` (controls): the fixture gateway refuses the part with the
+  error the client recognises and the client resends without it, so the shape
+  case's single request per turn shows a request the gateway accepted, not a
+  client that never resends.
 
 ``ShapeThroughGatewayTests`` (the candidate gateway; ``CHARMER_TEST_CLI_PROXY_API``)
 runs the same lead through charmer's gateway on the Claude account route, fresh,
 on ``--resume`` with a ``ToolSearch`` round trip, and in a terminal session
 after ``/model``: every request is answered 200 and each turn is one request, so
-the client takes no fallback; the upstream request keeps the effort. A captured
+the client takes no fallback; each client request carries every promised part,
+and its one upstream request keeps the session's effort value with its beta,
+``context_management``, the system turns and the ``tool_reference`` blocks. A captured
 client request is replayed on the gateway's Claude key, ChatGPT (Codex) and
 OpenAI-compatible routes: none answers 400 or 422.
 
@@ -90,6 +95,7 @@ _REFUSALS = {
     "effort": "output_config.effort: Extra inputs are not permitted",
     "context": "context_management: Extra inputs are not permitted",
     "tools": "tools.0.defer_loading: Extra inputs are not permitted",
+    "system": 'messages.1: role "system" is not supported',
 }
 # The previous pin, for the controls of the behaviours the candidate removed.
 PREVIOUS_ENV = "CHARMER_TEST_PREVIOUS_CLAUDE"
@@ -187,6 +193,8 @@ class _Provider(probe.FakeAnthropicProvider):
             return bool(row.get("context_management"))
         if self.refuse == "tools":
             return "ToolSearch" in row.get("tools", ()) or bool(row.get("deferred"))
+        if self.refuse == "system":
+            return bool(row.get("system_turns"))
         return False
 
     def respond(self, document: dict[str, Any], path: str, context: probe.RequestContext) -> tuple[int, Any]:
@@ -205,30 +213,61 @@ class _Provider(probe.FakeAnthropicProvider):
         return 200, _payload(document, [{"type": "text", "text": "PROBE-OK"}], "end_turn", context.ordinal)
 
 
+def missing_parts(row: dict[str, Any]) -> list[str]:
+    """The promised parts a managed request lacks: the session's effort
+    (``output_config.effort`` at its value, with the effort beta),
+    ``context_management`` with its beta, tool search (``ToolSearch`` and a
+    deferred tool, with the advanced-tool-use beta) and mid-conversation
+    system turns."""
+
+    betas = row.get("betas") or ()
+    gaps = []
+    if row.get("effort") != _EFFORT or EFFORT_BETA not in betas:
+        gaps.append("effort")
+    if not row.get("context_management") or CONTEXT_BETA not in betas:
+        gaps.append("context")
+    if "ToolSearch" not in row.get("tools", ()) or not row.get("deferred") or TOOL_SEARCH_BETA not in betas:
+        gaps.append("tool-search")
+    if not row.get("system_turns"):
+        gaps.append("system-turns")
+    return gaps
+
+
+_CONTROLS = (("effort-refused", "effort"), ("context-refused", "context_management"),
+             ("tools-refused", "tools"), ("system-refused", "system_turns"))
+
+
 def verdict(observed: dict[str, Any]) -> str:
-    """The class from each case's request rows."""
+    """The class from each case's request rows: every request of the fresh
+    turn (the first request and the ToolSearch continuation) and of the
+    resumed turn carries every promised part, one request per step, and each
+    control ends without its refused part within a bounded resend."""
 
     for label in ("known", "unknown"):
         turns = observed["shape"][label]["turns"]
         if len(turns) != 2 or any(not turn for turn in turns):
             raise _Inconclusive(f"shape {label}: a turn sent no main request")
         for turn in turns:
-            if any(row.get("effort") != _EFFORT or EFFORT_BETA not in row["betas"] for row in turn):
-                return "GF-effort-missing"
+            for row in turn:
+                gaps = missing_parts(row)
+                if gaps:
+                    return f"GF-{gaps[0]}-missing"
         # Turn one: the ToolSearch call and its continuation; turn two: one.
         if [len(turn) for turn in turns] != [2, 1]:
             return "GF-resent"
         last = turns[0][-1]
         if not last.get("tool_references") or "SendMessage" not in last.get("deferred", ()):
             raise _Inconclusive(f"shape {label}: the ToolSearch round trip fetched no deferred tool")
-    for case, field in (("effort-refused", "effort"), ("context-refused", "context_management"),
-                        ("tools-refused", "tools")):
+    for case, field in _CONTROLS:
         rows = observed[case]
         if len(rows) < 2:
             raise _Inconclusive(f"{case}: the client did not resend after the refusal")
+        if field == "system_turns" and not rows[0].get("system_turns"):
+            raise _Inconclusive(f"{case}: the refused request carried no system turn")
         final = rows[-1]
         still = (final.get("effort") is not None or EFFORT_BETA in final["betas"] if field == "effort"
                  else final.get("context_management") if field == "context_management"
+                 else bool(final.get("system_turns")) if field == "system_turns"
                  else "ToolSearch" in final.get("tools", ()))
         # The client may first strip another part (an unrecognised 400 drops
         # the system turns before tool search), but it ends without the
@@ -331,7 +370,7 @@ class GatewayFallbackProbe(_GatedCase):
                     turns = self._headless(fixture, self._settings(fixture, lead, [lead]), lead, provider,
                                            ("client check one", "client check two"))
                 observed["shape"][label] = {"turns": turns, "rows": list(provider.rows)}
-            for case in ("effort-refused", "context-refused", "tools-refused"):
+            for case, _field in _CONTROLS:
                 fixture = self._fixture()
                 provider = _Provider(refuse=case.split("-", 1)[0])
                 with provider:
@@ -364,8 +403,7 @@ class GatewayFallbackProbe(_GatedCase):
             f"betas={first['betas']} system-turns={first['system_turns']} "
             f"deferred={first['deferred']} offered={first['tools']} "
             f"caching-scope-beta={'sent' if caching else 'absent'} ({control}) "
-            + " ".join(f"{case}=[{_summary(observed[case])}]"
-                       for case in ("effort-refused", "context-refused", "tools-refused"))
+            + " ".join(f"{case}=[{_summary(observed[case])}]" for case, _field in _CONTROLS)
             + f" client={self.gate.version} sha256={self.trusted.sha256[:12]}")
         if caching and observed_class == PASS_CLASS:
             observed_class = "GF-caching-beta-sent"
@@ -377,26 +415,38 @@ class GatewayFallbackProbe(_GatedCase):
             self.assertIn(record, upgrade.ESSENTIAL_EVIDENCE_PREFIXES)
 
 
+_ALL_BETAS = [EFFORT_BETA, CONTEXT_BETA, TOOL_SEARCH_BETA]
+
+
+def _row(effort=_EFFORT, betas=None, ctx=True, search=True, refs=0, deferred=("DeferredToolPlaceholder",),
+         system=1, model=_LEAD) -> dict[str, Any]:
+    """A client request's facts as ``request_row`` keeps them (self-tests)."""
+
+    return {"route": "/v1/messages", "model": model, "effort": effort, "context_management": ctx,
+            "betas": list(_ALL_BETAS if betas is None else betas),
+            "tools": ["Read", *(["ToolSearch", "DeferredToolPlaceholder"] if search else [])],
+            "deferred": list(deferred) if search else [], "tool_references": refs, "system_turns": system}
+
+
 class VerdictTests(unittest.TestCase):
     def rows(self) -> dict[str, Any]:
-        def row(effort=_EFFORT, beta=True, ctx=True, search=True, refs=0, deferred=()):
-            return {"route": "/v1/messages", "model": _LEAD, "effort": effort, "context_management": ctx,
-                    "betas": [EFFORT_BETA] if beta else [], "tools": ["Read", *(["ToolSearch"] if search else [])],
-                    "deferred": list(deferred), "tool_references": refs}
-
-        searched = row(refs=1, deferred=("SendMessage", "DeferredToolPlaceholder"))
-        shape = {"turns": [[row(), searched], [row()]]}
+        searched = _row(refs=1, deferred=("SendMessage", "DeferredToolPlaceholder"), system=2)
+        shape = {"turns": [[_row(), searched], [_row(refs=1, system=3)]]}
         return {"shape": {"known": shape, "unknown": shape},
-                "effort-refused": [row(), row(effort=None, beta=False)],
-                "context-refused": [row(), row(ctx=False)],
-                "tools-refused": [row(), row(search=False)]}
+                "effort-refused": [_row(), _row(effort=None, betas=[CONTEXT_BETA, TOOL_SEARCH_BETA])],
+                "context-refused": [_row(), _row(ctx=False, betas=[EFFORT_BETA, TOOL_SEARCH_BETA])],
+                "tools-refused": [_row(), _row(search=False, betas=[EFFORT_BETA, CONTEXT_BETA])],
+                "system-refused": [_row(), _row(system=0)]}
 
-    def test_the_class_needs_effort_on_every_turn_and_a_bounded_resend_per_control(self) -> None:
+    @staticmethod
+    def changed(rows, label, turn, index, **fields) -> dict[str, Any]:
+        rows = json.loads(json.dumps(rows))
+        rows["shape"][label]["turns"][turn][index].update(fields)
+        return rows
+
+    def test_the_class_needs_every_promised_part_and_a_bounded_resend_per_control(self) -> None:
         rows = self.rows()
         self.assertEqual(verdict(rows), PASS_CLASS)
-        lost = json.loads(json.dumps(rows))
-        lost["shape"]["known"]["turns"][1][0]["effort"] = None
-        self.assertEqual(verdict(lost), "GF-effort-missing")
         resent = json.loads(json.dumps(rows))
         resent["shape"]["unknown"]["turns"][1].append(resent["shape"]["unknown"]["turns"][1][0])
         self.assertEqual(verdict(resent), "GF-resent")
@@ -409,17 +459,150 @@ class VerdictTests(unittest.TestCase):
         chained = json.loads(json.dumps(rows))
         chained["tools-refused"].insert(1, chained["tools-refused"][0])
         self.assertEqual(verdict(chained), PASS_CLASS)
+        system_kept = json.loads(json.dumps(rows))
+        system_kept["system-refused"][1]["system_turns"] = 1
+        self.assertEqual(verdict(system_kept), "GF-system-refused-not-resent-without")
         never = json.loads(json.dumps(rows))
         never["context-refused"] = never["context-refused"][:1]
         with self.assertRaises(_Inconclusive):
             verdict(never)
-        unsearched = json.loads(json.dumps(rows))
-        unsearched["shape"]["known"]["turns"][0][1]["tool_references"] = 0
+        no_system = json.loads(json.dumps(rows))
+        no_system["system-refused"][0]["system_turns"] = 0
+        with self.assertRaises(_Inconclusive):
+            verdict(no_system)
+        unsearched = self.changed(rows, "known", 0, 1, tool_references=0)
         with self.assertRaises(_Inconclusive):
             verdict(unsearched)
 
+    def test_each_omission_on_each_request_fails(self) -> None:
+        """The fresh request, the ToolSearch continuation and the resumed
+        request of either lead: losing any promised part, or its beta alone,
+        while the effort and the counts stay, is not a pass."""
+
+        rows = self.rows()
+        omissions = {
+            "GF-effort-missing": ({"effort": "low"}, {"effort": None},
+                                  {"betas": [CONTEXT_BETA, TOOL_SEARCH_BETA]}),
+            "GF-context-missing": ({"context_management": False}, {"betas": [EFFORT_BETA, TOOL_SEARCH_BETA]}),
+            "GF-tool-search-missing": ({"tools": ["Read"]}, {"deferred": []},
+                                       {"betas": [EFFORT_BETA, CONTEXT_BETA]}),
+            "GF-system-turns-missing": ({"system_turns": 0},),
+        }
+        for expected, changes in omissions.items():
+            for change in changes:
+                for label in ("known", "unknown"):
+                    for turn, index in ((0, 0), (0, 1), (1, 0)):
+                        with self.subTest(expected=expected, change=change, label=label, turn=turn, index=index):
+                            self.assertEqual(verdict(self.changed(rows, label, turn, index, **change)), expected)
+
+    def test_a_request_row_keeps_the_promised_facts(self) -> None:
+        document = {"model": _LEAD, "output_config": {"effort": "high"}, "context_management": {"edits": []},
+                    "tools": [{"name": "Read"}, {"name": "ToolSearch"},
+                              {"name": "DeferredToolPlaceholder", "defer_loading": True}],
+                    "messages": [{"role": "user", "content": "x"}, {"role": "system", "content": "y"},
+                                 {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t",
+                                                               "content": [{"type": "tool_reference",
+                                                                            "tool_name": "SendMessage"}]}]}]}
+        row = request_row("/v1/messages?beta=true", {"anthropic-beta": ",".join(_ALL_BETAS)}, document)
+        self.assertEqual(missing_parts(row), [])
+        self.assertEqual((row["system_turns"], row["tool_references"], row["deferred"]),
+                         (1, 1, ["DeferredToolPlaceholder"]))
+
 
 # ------------------------------------------------------------ through the gateway
+
+
+def gateway_verdict(observed: dict[str, list[dict[str, Any]]], replay: dict[str, Any]) -> list[str]:
+    """The failure classes of the run through the gateway (empty: a pass).
+    Client side: the fresh request and the ToolSearch continuation
+    (``headless-1``), the resumed request (``headless-2``) and the terminal
+    session's request before and after ``/model`` each carry every promised
+    part, one request per step, every one answered 200. Upstream side (one
+    request per client request): the session's effort value with its beta,
+    ``context_management``, the system turns and the ``tool_reference``
+    blocks the client sent. Replay: each route answers 200 once with the
+    fetched tool."""
+
+    rows = [row for case in observed.values() for row in case]
+    main = _main(rows)
+    terminal = _main(observed["terminal"])
+    failed = []
+    if any(row["status"] != 200 for row in rows) or any(row["status"] != 200 for row in replay.values()):
+        failed.append("GFG-refused")
+    if any(row["upstream"] != 1 or not row["fetched-tool"] for row in replay.values()):
+        failed.append("GFG-fetched-tool-dropped")
+    if [len(_main(observed["headless-1"])), len(_main(observed["headless-2"]))] != [2, 1]:
+        failed.append("GFG-resent")
+    if [row["model"] for row in terminal] != [_LEAD, _SWITCHED]:
+        failed.append("GFG-switch-resent")
+    for row in main:
+        failed += [f"GFG-{part}-missing" for part in missing_parts(row)]
+    if not main:
+        failed.append("GFG-no-request")
+    for row in main:
+        hits = row.get("upstream") or []
+        if len(hits) != 1:
+            failed.append("GFG-upstream-resent" if hits else "GFG-no-upstream")
+        for hit in hits:
+            if hit.get("effort") != _EFFORT:
+                failed.append("GFG-effort-changed-upstream")
+            if EFFORT_BETA not in hit.get("betas", ()):
+                failed.append("GFG-effort-beta-dropped-upstream")
+            if not hit.get("context_management"):
+                failed.append("GFG-context-dropped-upstream")
+            if hit.get("system_turns") != row.get("system_turns"):
+                failed.append("GFG-system-turns-changed-upstream")
+            if hit.get("tool_references") != row.get("tool_references"):
+                failed.append("GFG-tool-references-changed-upstream")
+    return list(dict.fromkeys(failed))
+
+
+class GatewayVerdictTests(unittest.TestCase):
+    def observed(self) -> tuple[dict[str, Any], dict[str, Any]]:
+        def relayed(**fields) -> dict[str, Any]:
+            row = _row(**fields)
+            hit = {key: row[key] for key in ("route", "model", "effort", "context_management", "betas",
+                                             "system_turns", "tool_references")}
+            return {**row, "status": 200, "hits": 1, "upstream": [hit]}
+
+        observed = {"headless-1": [relayed(), relayed(refs=1, system=2, deferred=("SendMessage", "DeferredToolPlaceholder"))],
+                    "headless-2": [relayed(refs=1, system=3)],
+                    "terminal": [relayed(), relayed(model=_SWITCHED, system=2)]}
+        replay = {alias: {"status": 200, "upstream": 1, "fetched-tool": True}
+                  for alias in ("gwtest-cc-output-config-high", "gwtest-codex-reasoning-effort-high", "gwtest-compat-plain")}
+        return observed, replay
+
+    def test_a_clean_run_passes_and_each_loss_names_its_class(self) -> None:
+        observed, replay = self.observed()
+        self.assertEqual(gateway_verdict(observed, replay), [])
+        cases = [
+            ("headless-2", 0, "client", {"context_management": False}, "GFG-context-missing"),
+            ("headless-1", 1, "client", {"system_turns": 0}, "GFG-system-turns-missing"),
+            ("headless-2", 0, "client", {"tools": ["Read"]}, "GFG-tool-search-missing"),
+            ("terminal", 1, "client", {"betas": [EFFORT_BETA, TOOL_SEARCH_BETA]}, "GFG-context-missing"),
+            ("terminal", 1, "client", {"effort": "low"}, "GFG-effort-missing"),
+            ("headless-1", 0, "upstream", {"effort": "low"}, "GFG-effort-changed-upstream"),
+            ("terminal", 1, "upstream", {"effort": None}, "GFG-effort-changed-upstream"),
+            ("headless-2", 0, "upstream", {"betas": []}, "GFG-effort-beta-dropped-upstream"),
+            ("headless-2", 0, "upstream", {"context_management": False}, "GFG-context-dropped-upstream"),
+            ("headless-1", 1, "upstream", {"system_turns": 0}, "GFG-system-turns-changed-upstream"),
+            ("headless-1", 1, "upstream", {"tool_references": 0}, "GFG-tool-references-changed-upstream"),
+        ]
+        for case, index, side, change, expected in cases:
+            with self.subTest(case=case, index=index, side=side, change=change):
+                broken = json.loads(json.dumps(observed))
+                target = broken[case][index] if side == "client" else broken[case][index]["upstream"][0]
+                target.update(change)
+                self.assertEqual(gateway_verdict(broken, replay)[:1], [expected])
+        resent = json.loads(json.dumps(observed))
+        resent["headless-2"][0]["upstream"].append(resent["headless-2"][0]["upstream"][0])
+        self.assertIn("GFG-upstream-resent", gateway_verdict(resent, replay))
+        switched = json.loads(json.dumps(observed))
+        switched["terminal"][1]["model"] = _LEAD
+        self.assertIn("GFG-switch-resent", gateway_verdict(switched, replay))
+        dropped = json.loads(json.dumps(replay))
+        dropped["gwtest-compat-plain"]["fetched-tool"] = False
+        self.assertEqual(gateway_verdict(observed, dropped), ["GFG-fetched-tool-dropped"])
 
 
 class ShapeThroughGatewayTests(_GatedCase):
@@ -503,7 +686,6 @@ class ShapeThroughGatewayTests(_GatedCase):
         observed = self._guard(run)
         rows = [row for case in observed.values() for row in case]
         main = _main(rows)
-        refused = sorted({row["status"] for row in rows if row["status"] != 200})
         terminal = _main(observed["terminal"])
         upstream = [hit for row in main for hit in row["upstream"]]
         replay = self._guard(lambda: self._replay(harness))
@@ -517,19 +699,7 @@ class ShapeThroughGatewayTests(_GatedCase):
             f"upstream system-turns={sorted({int(hit.get('system_turns') or 0) for hit in upstream})} "
             f"upstream tool_references={sorted({int(hit.get('tool_references') or 0) for hit in upstream})} "
             f"replay={replay} gateway={gateway.version} client={self.gate.version}")
-        failed = []
-        if refused or any(row["status"] != 200 for row in replay.values()):
-            failed.append("GFG-refused")
-        if any(row["upstream"] != 1 or not row["fetched-tool"] for row in replay.values()):
-            failed.append("GFG-fetched-tool-dropped")
-        if [len(_main(observed["headless-1"])), len(_main(observed["headless-2"]))] != [2, 1]:
-            failed.append("GFG-resent")
-        if [row["model"] for row in terminal] != [_LEAD, _SWITCHED]:
-            failed.append("GFG-switch-resent")
-        if any(row.get("effort") != _EFFORT or EFFORT_BETA not in row["betas"] for row in main):
-            failed.append("GFG-effort-missing")
-        if not upstream or any(hit.get("effort") is None for hit in upstream):
-            failed.append("GFG-effort-dropped-upstream")
+        failed = gateway_verdict(observed, replay)
         observed_class = failed[0] if failed else "GFG-accepted-once"
         type(self).verdict = ("PASS" if not failed else "FAIL", observed_class, detail)
         self.assertEqual(failed, [], detail)
