@@ -1926,8 +1926,14 @@ def _doctor_user_settings_report(
             if name in document:
                 info.append(f"user setting {name} present ({effect}); effective value/precedence unknown")
     # Presence only (the user's, this directory's project and local layers); never the command.
-    if runtime.subagent_status_line(str(runtime.cwd)) is None:
+    layers = runtime.subagent_status_line_layers(str(runtime.cwd))
+    if layers.defined:
         info.append("subagent status line: user-owned (subagentStatusLine in settings.json; charmer compiles none)")
+    elif layers.unreadable:
+        where = "; ".join(f"{product_paths.display(layer, runtime.environ)} {reason}"
+                          for layer, reason in layers.unreadable)
+        info.append(f"subagent status line: a settings layer could not be read ({where}); charmer's subagent "
+                    "status line was not compiled — fix or remove that file, then it applies at the next resume")
     else:
         info.append("subagent status line: charmer (compiled into managed sessions)")
     if isinstance(document, dict):
@@ -2641,8 +2647,9 @@ def _check_scope_integrity(
     default_mode = (cli_text.DEFAULT_MODE_DRIFT.format(m8=m8, mid=mid), "default-mode", cli_text.DEFAULT_MODE_DRIFTS)
     status_line = (
         f"session {m8}: its subagent status line differs from this release's compile (a scope another release "
-        "compiled, or a subagentStatusLine of your own added or removed since launch; lazy state); applies at "
-        f"the next resume (charmer -r {mid}) — or charmer doctor --repair {mid} now",
+        "compiled, or your own settings since launch: a subagentStatusLine added or removed, or a layer that "
+        f"cannot be read; lazy state); applies at the next resume (charmer -r {mid}) — or charmer doctor "
+        f"--repair {mid} now",
         "status-line",
         "{n} sessions: the subagent status line differs from this release's compile (lazy state); each applies "
         "at its next resume — or charmer doctor --repair-all now (stopped sessions)",

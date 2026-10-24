@@ -119,8 +119,11 @@ off: a `subagentStatusLine` of your own, even one that prints nothing:
 "subagentStatusLine": {"type": "command", "command": "true"}
 ```
 
-A change to those files applies at the next resume (`charmer -r <id>`).
-`charmer doctor` says which one new sessions get.
+If one of those files cannot be read (not valid JSON, larger than 1 MiB,
+or not readable), charmer sets none either, so your setting is never
+overridden; `charmer doctor` names the file. A change to those files
+applies at the next resume (`charmer -r <id>`). `charmer doctor` says which
+one new sessions get.
 
 charmer never sets Claude Code's main `statusLine`. To use charmer's, add
 this to `~/.claude/settings.json`:

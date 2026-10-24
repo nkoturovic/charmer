@@ -800,15 +800,21 @@ class Runtime:
             return None
         return scope_mod.PERMISSION_DEFAULT_MODE
 
+    def subagent_status_line_layers(self, cwd: str) -> managed.StatusLineLayers:
+        """What this runtime's user settings layers say about ``subagentStatusLine``."""
+
+        return managed.subagent_status_line_layers({**self.environ, "HOME": str(self.home)}, cwd)
+
     def subagent_status_line(self, cwd: str) -> dict[str, str] | None:
         """The launch/resume status-line decision: the stable shim's
         ``subagentStatusLine`` unless a settings layer of the user's own
         (``$HOME/.claude``, never ``CLAUDE_CONFIG_DIR``; the launch cwd's
-        project and local files) defines that key: then the user's display
-        is the one in effect and nothing is compiled. A change to those
+        project and local files) defines that key, or one of them cannot be
+        read: then nothing is compiled (the user's display is the one in
+        effect, or keeps control) and the launch goes on. A change to those
         layers applies at the next resume."""
 
-        if managed.subagent_status_line_configured({**self.environ, "HOME": str(self.home)}, cwd):
+        if self.subagent_status_line_layers(cwd).withheld:
             return None
         return dict(self.status_line_setting)
 

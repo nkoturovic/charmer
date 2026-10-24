@@ -27,7 +27,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from charmer import scope, state, statusline, strict_json, transition
+from charmer import managed, scope, state, statusline, strict_json, transition
 from charmer.cli import doctor
 from charmer.cli.commands import statusline as statusline_command
 from _golden import assertGolden
@@ -555,6 +555,78 @@ class CompiledStatusLineTests(V4Case):
         self.assertTrue(any("scope differs from the record-authoritative compile" in text for text in problems),
                         (problems, attention))
         self.assertFalse(any("subagent status line differs" in text for text in attention))
+
+    # Layers that exist but cannot be read as the client parses them: each
+    # holds the user's key, so reading it as "not configured" would compile
+    # over the user's opt-out. (kind, bytes, doctor's value-free reason)
+    USER_KEY = b'"subagentStatusLine": {"type": "command", "command": "/home/user/my-secret-line"}'
+    UNREADABLE = (
+        ("malformed", b"{" + USER_KEY + b",}", "is not valid JSON"),
+        ("oversized", b"{" + USER_KEY + b', "padding": "' + b"x" * (1 << 20) + b'"}', "is larger than 1 MiB"),
+        ("not an object", b"[{" + USER_KEY + b"}]", "is not a JSON object"),
+        ("permission", b"{" + USER_KEY + b"}", "cannot be read"),
+    )
+
+    def unreadable_layer(self, path: Path, kind: str, data: bytes) -> None:
+        path.unlink(missing_ok=True)
+        path.parent.mkdir(parents=True, exist_ok=True)  # the user's own file, not charmer state
+        path.write_bytes(data)
+        if kind == "permission":
+            path.chmod(0)
+
+    def status_line_info(self) -> list[str]:
+        return [text for text in doctor._doctor_user_settings_report(self.runtime, [])[1]
+                if text.startswith("subagent status line:")]
+
+    def test_a_layer_it_cannot_read_compiles_none_and_doctor_names_it(self) -> None:
+        user = Path(self.env["HOME"]) / ".claude" / "settings.json"
+        local = self.project / ".claude" / "settings.local.json"
+        for layer in (user, local):
+            for kind, data, reason in self.UNREADABLE:
+                if kind == "permission" and os.geteuid() == 0:
+                    continue  # root reads a mode-0 file
+                with self.subTest(layer=str(layer.relative_to(self.root)), kind=kind):
+                    self.unreadable_layer(layer, kind, data)
+                    # The launch goes on and compiles none: the user keeps control.
+                    record = self.launch_fresh()
+                    self.assertNotIn("subagentStatusLine", self.settings(record["managed_id"]))
+                    layers = self.runtime.subagent_status_line_layers(str(self.project))
+                    self.assertEqual((layers.defined, [(path, text.split(" (")[0]) for path, text in layers.unreadable]),
+                                     (False, [(layer, reason)]))
+                    self.assertTrue(managed.subagent_status_line_configured(
+                        {**self.env, "HOME": str(self.runtime.home)}, self.project))
+                    [line] = self.status_line_info()
+                    self.assertTrue(line.startswith("subagent status line: a settings layer could not be read ("), line)
+                    self.assertIn(f"{layer.name} {reason}", line)
+                    self.assertIn("charmer's subagent status line was not compiled", line)
+                    self.assertNotIn("my-secret-line", line)  # presence only, never the command
+                    layer.unlink()
+        self.assertEqual(self.status_line_info(), ["subagent status line: charmer (compiled into managed sessions)"])
+
+    def test_repair_and_resume_omit_it_while_a_layer_cannot_be_read(self) -> None:
+        record = self.launch_fresh()
+        mid = record["managed_id"]
+        self.assertEqual(self.settings(mid)["subagentStatusLine"], self.shipped())
+        user = Path(self.env["HOME"]) / ".claude" / "settings.json"
+        kind, data, _reason = self.UNREADABLE[0]
+        self.unreadable_layer(user, kind, data)
+        problems, attention = self.integrity(record)
+        self.assertEqual(problems, [])
+        self.assertEqual(len([text for text in attention if "subagent status line differs" in text]), 1, attention)
+        self.converge(mid)  # doctor --repair
+        self.assertNotIn("subagentStatusLine", self.settings(mid))
+        self.assertEqual(self.integrity(record), ([], []))
+        user.write_text(json.dumps({"model": "opus"}), encoding="utf-8")  # readable, without the key
+        self.assertEqual(self.resume(mid)["managed_id"], mid)
+        self.assertEqual(self.settings(mid)["subagentStatusLine"], self.shipped())
+
+    def test_an_absent_layer_or_one_without_the_key_says_nothing(self) -> None:
+        environ = {**self.env, "HOME": str(self.runtime.home)}
+        self.assertEqual(managed.subagent_status_line_layers(environ, self.project), managed.StatusLineLayers(False))
+        self.user_layer({"model": "opus", "statusLine": {"type": "command", "command": "x"}})
+        self.assertEqual(managed.subagent_status_line_layers(environ, self.project), managed.StatusLineLayers(False))
+        self.user_layer({"subagentStatusLine": {"type": "command", "command": "true"}})
+        self.assertEqual(managed.subagent_status_line_layers(environ, self.project), managed.StatusLineLayers(True))
 
 
 PREVIOUS_RELEASE_ENV = "CHARMER_TEST_PREVIOUS_RELEASE"
