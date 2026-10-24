@@ -172,6 +172,7 @@ def _compile(
     proxy_env: Mapping[str, str] | None = None,
     feedback_drafts: str = settings_mod.FEEDBACK_DRAFTS_DEFAULT,
     default_mode: str | None = None,
+    subagent_status_line: Mapping[str, str] | None = None,
 ) -> scope.ScopePlan:
     return scope.compile_lineup_scope(
         lineup,
@@ -190,6 +191,7 @@ def _compile(
         proxy_env=proxy_env,
         feedback_drafts=feedback_drafts,
         default_mode=default_mode,
+        subagent_status_line=subagent_status_line,
     )
 
 
@@ -441,7 +443,9 @@ def expected_plan(
 
     ``feedback_drafts`` is the current feedback-draft preference (an
     explicit input, never a record field): it shapes the catalog compile
-    only; proven launch files keep what the launch pinned.
+    only; proven launch files keep what the launch pinned. The subagent
+    status line is decided from the settings layers of ``environ``'s HOME
+    and the record's cwd, and names ``state_root``'s stable shim.
 
     Never changes intent: the scope lead and the recorded agents are
     evaluated against the installed catalog with the record's own Settings
@@ -450,7 +454,6 @@ def expected_plan(
     restaged from ``live``; otherwise they are rebuilt from the catalog.
     """
 
-    del state_root  # the scope directory is ``live``; kept for the documented signature
     if record.get("version") != sessions.RECORD_VERSION or record.get("lineup_generation", 0) < 1:
         raise TransitionError(
             f"session {_m8(record)}: expected_plan needs a current-format record with a compiled scope"
@@ -530,6 +533,12 @@ def expected_plan(
         # A live scope keeps its own on-disk presence/absence of
         # permissions.defaultMode; only launch and resume decide from layers.
         default_mode=scope.live_default_mode(live),
+        # The subagent status line is decided like a launch decides it, so a
+        # scope another release compiled converges at repair (a running one
+        # at its next resume), and a user-owned key wins there too.
+        subagent_status_line=(
+            None if environ and environ.get("HOME") and managed.subagent_status_line_configured(environ, record["cwd"])
+            else scope.status_line_setting(scope.status_line_shim_path(state_root))),
     )
     catalog_plan = _compile(record, lineup, lcat, eff, **compile_kw)
     fence = record.get("launch_fence")

@@ -278,6 +278,21 @@ def permission_mode_configured(environ: Mapping[str, str], cwd: str | Path,
     return any(configures_default_mode(path) for path in layers)
 
 
+SUBAGENT_STATUS_LINE_KEY = "subagentStatusLine"
+
+
+def subagent_status_line_configured(environ: Mapping[str, str], cwd: str | Path) -> bool:
+    """Presence only: a user settings layer the managed client reads
+    (:func:`user_settings_layers`) defines ``subagentStatusLine``, with any
+    value. A launch then compiles none: the user's own status line is the
+    one in effect, and such a key is also how a user turns charmer's off.
+    Parsed like the client (:func:`read_settings_as_client`); the command is
+    never read into a report. Decided at launch, resume and repair."""
+
+    return any(SUBAGENT_STATUS_LINE_KEY in read_settings_as_client(path)
+               for path in user_settings_layers(environ, cwd))
+
+
 def settings_env(path: Path) -> dict[str, str]:
     env = read_settings(path).get("env")
     return {k: v for k, v in env.items() if isinstance(v, str)} if isinstance(env, dict) else {}

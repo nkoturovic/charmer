@@ -14,15 +14,27 @@ from __future__ import annotations
 import io
 import json
 import os
+import platform
 import random
 import re
+import shlex
+import stat
 import subprocess
 import sys
+import tempfile
+import time
 import unittest
+from pathlib import Path
+from unittest import mock
 
-from charmer import statusline
+from charmer import scope, state, statusline, strict_json, transition
+from charmer.cli import doctor
 from charmer.cli.commands import statusline as statusline_command
+from _golden import assertGolden
+from _v4 import V4Case
+from _catalog import GOLDENS_ROOT
 from _layout import REPO_ROOT
+from _release import load_tool
 
 _ANSI = re.compile(r"\x1b\[[0-9;]*m")
 _RENDERER_CODES = re.compile(r"\x1b\[(0|2|31|32|33|34|35|36)m")
@@ -366,6 +378,325 @@ class PlumbingCommandTests(unittest.TestCase):
                     self.assertEqual(json.loads(result.stdout)["id"], "t2")
                 else:
                     self.assertEqual(result.stdout, b"")
+
+
+class CompiledStatusLineTests(V4Case):
+    """The compiled ``subagentStatusLine`` through real launches, resumes, doctor and repair."""
+
+    def settings(self, mid: str) -> dict:
+        return strict_json.loads((self.live(mid) / scope.SETTINGS_RELPATH).read_bytes())
+
+    def write_settings(self, mid: str, document: dict) -> None:
+        state.atomic_write(self.live(mid) / scope.SETTINGS_RELPATH, strict_json.canonical_file_bytes(document))
+
+    def user_layer(self, document: dict | None) -> None:
+        path = Path(self.env["HOME"]) / ".claude" / "settings.json"
+        if document is None:
+            path.unlink(missing_ok=True)
+            return
+        path.parent.mkdir(parents=True, exist_ok=True)  # the user's own file, not charmer state
+        path.write_text(json.dumps(document), encoding="utf-8")
+
+    def shipped(self) -> dict[str, str]:
+        return scope.status_line_setting(scope.status_line_shim_path(self.store.root))
+
+    def integrity(self, record: dict) -> tuple[list[str], list[str]]:
+        problems, attention, _info = doctor._check_scope_integrity(self.runtime, record)
+        return problems, attention
+
+    def converge(self, mid: str) -> list[str]:
+        return transition.converge(self.store.root, self.store, mid, runtime_parts=self.runtime.converge_parts())
+
+    def test_a_launch_compiles_the_stable_shim_and_no_bundle_path(self) -> None:
+        for target in (self.profile_target(), self.direct_target()):
+            with self.subTest(target=target.kind):
+                record = self.launch_fresh(target)
+                settings = self.settings(record["managed_id"])
+                self.assertEqual(settings["subagentStatusLine"], self.shipped())
+                self.assertNotIn("statusLine", settings)  # the main line stays the user's
+                shim = scope.status_line_shim_path(self.store.root)
+                self.assertTrue(os.access(shim, os.X_OK))
+                self.assertIn(shlex.quote(self.runtime.resolved_hook_command).encode(), shim.read_bytes())
+                for data in self.tree(self.live(record["managed_id"])).values():
+                    self.assertNotIn(self.runtime.resolved_hook_command.encode(), data)
+
+    def test_a_user_owned_key_wins_and_the_next_resume_follows_the_layers(self) -> None:
+        self.user_layer({"subagentStatusLine": {"type": "command", "command": "true"}})
+        record = self.launch_fresh()
+        mid = record["managed_id"]
+        self.assertNotIn("subagentStatusLine", self.settings(mid))
+        self.assertEqual(self.integrity(record), ([], []))  # nothing drifts under the user's key
+        self.user_layer(None)
+        self.assertEqual(self.resume(mid)["managed_id"], mid)
+        self.assertEqual(self.settings(mid)["subagentStatusLine"], self.shipped())
+
+
+    def test_a_scope_another_release_compiled_is_lazy_and_repair_converges_it(self) -> None:
+        record = self.launch_fresh()
+        mid = record["managed_id"]
+        compiled = self.settings(mid)
+        earlier = {key: value for key, value in compiled.items() if key != "subagentStatusLine"}
+        self.write_settings(mid, earlier)  # as 2.1.0 compiled it
+        problems, attention = self.integrity(record)
+        self.assertEqual(problems, [])
+        self.assertTrue(any(text.startswith(f"session {mid[:8]}: its subagent status line differs") for text in attention),
+                        attention)
+        before = self.tree(self.live(mid))
+        report = self.converge(mid)
+        self.assertTrue(any("recompiled from the record and the installed catalog" in line for line in report), report)
+        after = self.tree(self.live(mid))
+        self.assertEqual({name for name in after if after[name] != before.get(name)}, {scope.SETTINGS_RELPATH})
+        self.assertEqual(self.settings(mid), compiled)
+        self.assertEqual(self.integrity(record), ([], []))
+
+    def test_repair_drops_it_under_a_user_owned_key(self) -> None:
+        record = self.launch_fresh()
+        mid = record["managed_id"]
+        self.user_layer({"subagentStatusLine": {"type": "command", "command": "true"}})
+        problems, attention = self.integrity(record)
+        self.assertEqual(problems, [])
+        self.assertEqual(len([text for text in attention if "subagent status line differs" in text]), 1)
+        self.converge(mid)
+        self.assertNotIn("subagentStatusLine", self.settings(mid))
+
+    def test_another_status_line_in_the_scope_stays_a_problem(self) -> None:
+        record = self.launch_fresh()
+        mid = record["managed_id"]
+        edited = {**self.settings(mid), "subagentStatusLine": {"type": "command", "command": "/tmp/other"}}
+        self.write_settings(mid, edited)
+        problems, attention = self.integrity(record)
+        self.assertTrue(any("scope differs from the record-authoritative compile" in text for text in problems),
+                        (problems, attention))
+        self.assertFalse(any("subagent status line differs" in text for text in attention))
+
+
+GOLDEN_COMMAND = "/nix/store/fixture/bin/charmer"
+TEN_TASKS = {"columns": 120, "tasks": [
+    {**REVIEWER, "id": f"t{n}", "tokenCount": 25_000 * n} for n in range(10)]}
+# The charmer modules the shim's real invocation may load: the entry points,
+# the plumbing command and the renderer (no parser, runtime, store or catalog).
+STATUS_LINE_MODULES = {"charmer", "charmer.entrypoints", "charmer.cli", "charmer.cli.commands",
+                       "charmer.cli.commands.statusline", "charmer.statusline", "charmer.selector_prefixes"}
+_IMPORTED = re.compile(r"^import time:\s+\d+ \|\s+\d+ \|( *)(\S+)$")
+
+
+def _tree(root: Path) -> dict[str, tuple[int, int, int, bytes]]:
+    """Every entry under ``root``: relpath -> (mode, size, mtime_ns, bytes of a file)."""
+
+    entries = {}
+    for path in sorted(root.rglob("*")):
+        info = path.lstat()
+        data = path.read_bytes() if path.is_file() and not path.is_symlink() else b""
+        entries[str(path.relative_to(root))] = (info.st_mode, info.st_size, info.st_mtime_ns, data)
+    return entries
+
+
+class StatusLineShimTests(unittest.TestCase):
+    """``<state>/bin/charmer-statusline``: its bytes, its writer and its exit-0 contract."""
+
+    def setUp(self) -> None:
+        temporary = tempfile.TemporaryDirectory(prefix="charmer-statusline-")
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.state = self.root / "state"
+
+    def fake_launcher(self, body: str, name: str = "charmer") -> Path:
+        path = self.root / "launchers" / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("#!/bin/sh\n" + body, encoding="utf-8")
+        path.chmod(0o755)
+        return path
+
+    def run_shim(self, launcher: str, stdin: bytes = b"{}", path: str = "/usr/bin:/bin") -> subprocess.CompletedProcess:
+        shim = scope.ensure_status_line_shim(self.state, launcher)
+        command = scope.status_line_setting(shim)["command"]
+        # As the client runs it: through a shell, the document on stdin.
+        return subprocess.run(command, shell=True, input=stdin, capture_output=True, timeout=30,
+                              env={"PATH": path, "HOME": str(self.root)})
+
+    def test_the_shim_bytes(self) -> None:
+        assertGolden(self, GOLDENS_ROOT / "shim" / "charmer-statusline", scope.status_line_shim_text(GOLDEN_COMMAND))
+        with self.assertRaises(scope.ScopeError):
+            scope.status_line_shim_text("")
+
+    def test_the_writer_is_the_hook_shims_one(self) -> None:
+        path = scope.ensure_status_line_shim(self.state, GOLDEN_COMMAND)
+        self.assertEqual(path, self.state / "bin" / "charmer-statusline")
+        self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o700)
+        self.assertEqual(stat.S_IMODE(path.parent.stat().st_mode), 0o700)
+        inode = path.stat().st_ino
+        path.chmod(0o600)
+        scope.ensure_status_line_shim(self.state, GOLDEN_COMMAND)
+        self.assertEqual((path.stat().st_ino, stat.S_IMODE(path.stat().st_mode)), (inode, 0o700))  # same bytes
+        scope.ensure_status_line_shim(self.state, "/other/bin/charmer")
+        self.assertNotEqual(path.stat().st_ino, inode)  # rewritten atomically on change
+        self.assertIn(b"launcher=/other/bin/charmer\n", path.read_bytes())
+
+    def test_the_compiled_value_names_only_the_shim(self) -> None:
+        setting = scope.status_line_setting(self.root / "a state" / "bin" / "charmer-statusline")
+        self.assertEqual(setting["command"], f"'{self.root}/a state/bin/charmer-statusline'")
+        self.assertTrue(scope.is_status_line_setting(setting))
+        for other in ({"type": "command", "command": "/x/bin/other"}, {"type": "command", "command": "printf ''"},
+                      {"type": "command", "command": "/s/bin/charmer-statusline --x"},
+                      {"type": "static", "command": "/s/bin/charmer-statusline"},
+                      {"type": "command", "command": "/s/bin/charmer-statusline", "padding": 1}, "x", None):
+            with self.subTest(other=other):
+                self.assertFalse(scope.is_status_line_setting(other))
+
+    def test_rows_are_forwarded_only_on_exit_zero(self) -> None:
+        ok = self.fake_launcher('[ "$1 $2" = "statusline subagents" ] || exit 9\n'
+                                'printf \'{"id":"a","content":"%s"}\\n{"id":"b","content":"x"}\\n\' "$(wc -c)"\n')
+        result = self.run_shim(str(ok), stdin=b"12345")
+        self.assertEqual((result.returncode, result.stdout, result.stderr),
+                         (0, b'{"id":"a","content":"5"}\n{"id":"b","content":"x"}\n', b""))
+
+    def test_every_failure_prints_nothing_and_exits_zero(self) -> None:
+        older = self.fake_launcher("echo 'usage: charmer ...' >&2\necho partial\nexit 2\n", name="older")
+        crash = self.fake_launcher("kill -9 $$\n", name="crash")
+        for label, launcher in (("older release", str(older)), ("killed", str(crash)),
+                                ("missing, none on PATH", str(self.root / "gone" / "charmer"))):
+            with self.subTest(case=label):
+                result = self.run_shim(launcher, stdin=json.dumps(TEN_TASKS).encode())
+                self.assertEqual((result.returncode, result.stdout, result.stderr), (0, b"", b""))
+
+    def test_a_missing_launcher_falls_back_to_charmer_on_path(self) -> None:
+        on_path = self.fake_launcher("echo '{\"id\":\"p\",\"content\":\"path\"}'\n")
+        result = self.run_shim(str(self.root / "gone" / "charmer"), path=f"{on_path.parent}:/usr/bin:/bin")
+        self.assertEqual((result.returncode, result.stdout), (0, b'{"id":"p","content":"path"}\n'))
+
+
+class RuntimeStatusLineTests(unittest.TestCase):
+    """The Runtime refreshes the shim beside the hook shims and decides the key."""
+
+    def setUp(self) -> None:
+        temporary = tempfile.TemporaryDirectory(prefix="charmer-statusline-rt-")
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.home = self.root / "home"
+        self.environ = {"HOME": str(self.home), "XDG_STATE_HOME": str(self.home / ".local/state"),
+                        "XDG_CONFIG_HOME": str(self.home / ".config"), "TERM": "dumb",
+                        "CHARMER_HOOK_COMMAND": str(self.root / "install" / "bin" / "charmer")}
+        self.state = self.home / ".local/state/charmer"
+
+    def runtime(self, **kwargs: object) -> object:
+        from charmer import cli
+        from _catalog import FIXTURE_ROOT
+
+        with mock.patch.dict(os.environ, self.environ):
+            for name in ("CHARMER_CHANNEL", "CHARMER_INHIBITION_TOKEN"):
+                os.environ.pop(name, None)
+            return cli.Runtime(asset_root=FIXTURE_ROOT, environ=dict(self.environ), cwd=str(self.root / "project"),
+                               **kwargs)
+
+    def test_runtime_writes_the_shim_from_the_resolved_launcher(self) -> None:
+        runtime = self.runtime()
+        shim = self.state / "bin" / "charmer-statusline"
+        self.assertEqual(shim.read_bytes(), scope.status_line_shim_text(runtime.resolved_hook_command))
+        self.assertEqual(runtime.status_line_setting, scope.status_line_setting(shim))
+        self.assertEqual(runtime.subagent_status_line(str(self.root / "project")), scope.status_line_setting(shim))
+
+    def test_a_read_only_runtime_names_the_shim_and_writes_nothing(self) -> None:
+        runtime = self.runtime(refresh_shims=False, allow_state_writes=False, initialize_session_store=False)
+        self.assertFalse((self.state / "bin" / "charmer-statusline").exists())
+        self.assertEqual(runtime.status_line_setting,
+                         scope.status_line_setting(self.state / "bin" / "charmer-statusline"))
+
+    def test_a_user_owned_key_in_any_layer_compiles_none(self) -> None:
+        runtime = self.runtime(refresh_shims=False, allow_state_writes=False, initialize_session_store=False)
+        project = self.root / "project"
+        layers = (self.home / ".claude" / "settings.json", project / ".claude" / "settings.json",
+                  project / ".claude" / "settings.local.json")
+        for layer in layers:
+            with self.subTest(layer=str(layer.relative_to(self.root))):
+                layer.parent.mkdir(parents=True, exist_ok=True)
+                # Any value counts, an empty command (the opt-out) included.
+                layer.write_text(json.dumps({"subagentStatusLine": {"type": "command", "command": "printf ''"}}))
+                self.assertIsNone(runtime.subagent_status_line(str(project)))
+                layer.unlink()
+                self.assertIsNotNone(runtime.subagent_status_line(str(project)))
+        # Never CLAUDE_CONFIG_DIR, which every managed launch unsets.
+        other = self.root / "config-dir"
+        other.mkdir()
+        (other / "settings.json").write_text(json.dumps({"subagentStatusLine": None}))
+        runtime.environ["CLAUDE_CONFIG_DIR"] = str(other)
+        self.assertIsNotNone(runtime.subagent_status_line(str(project)))
+
+    def test_an_inhibition_the_run_does_not_own_leaves_the_shim(self) -> None:
+        from charmer import gateway_inhibition as gi
+
+        self.runtime()
+        shim = self.state / "bin" / "charmer-statusline"
+        before = shim.read_bytes()
+        token = gi.begin(self.state, owner="cutover", purpose="move to the bundle", phase="freeze",
+                         remedy="sh cutover.sh --recover", expiry=gi.deadline(3600))
+        self.addCleanup(gi.end, self.state, token)
+        self.environ["CHARMER_HOOK_COMMAND"] = str(self.root / "newer" / "bin" / "charmer")
+        self.assertTrue(self.runtime().inhibited_shims)
+        self.assertEqual(shim.read_bytes(), before)
+
+
+class RealInvocationTests(unittest.TestCase):
+    """The shim through a release-shaped launcher (sh launcher, ``python3 -I
+    -B`` bootstrap): the rows, exit 0, the modules it loads, the time it
+    takes and that nothing under the state or config root changes."""
+
+    def setUp(self) -> None:
+        temporary = tempfile.TemporaryDirectory(prefix="charmer-statusline-real-")
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.home = self.root / "home"
+        self.state = self.home / ".local/state/charmer"
+        self.launcher = release_shaped_launcher(self.root / "bundle", sys.executable,
+                                                imports_log=self.root / "imports.log")
+
+    def test_the_shim_runs_the_renderer_without_the_runtime(self) -> None:
+        shim = scope.ensure_status_line_shim(self.state, str(self.launcher))
+        for name in (".config/charmer", ".claude"):
+            (self.home / name).mkdir(parents=True, exist_ok=True)
+        (self.home / ".config/charmer/settings.json").write_text('{"version": 1}\n')
+        before = _tree(self.home)
+        document = json.dumps(TEN_TASKS).encode()
+        times = []
+        for _ in range(5):
+            (self.root / "imports.log").write_bytes(b"")
+            started = time.monotonic()
+            result = subprocess.run(scope.status_line_setting(shim)["command"], shell=True, input=document,
+                                    capture_output=True, timeout=30,
+                                    env={"HOME": str(self.home), "PATH": "/usr/bin:/bin"})
+            times.append(time.monotonic() - started)
+            self.assertEqual((result.returncode, result.stderr), (0, b""))
+            self.assertEqual(result.stdout, statusline.subagent_output(document))
+            self.assertEqual(len(result.stdout.splitlines()), 10)
+        loaded = {match.group(2) for line in (self.root / "imports.log").read_text().splitlines()
+                  if (match := _IMPORTED.match(line))}
+        self.assertEqual({name for name in loaded if name.startswith("charmer")}, STATUS_LINE_MODULES)
+        self.assertNotIn("argparse", loaded)  # the command-line parser never loads
+        self.assertEqual(_tree(self.home), before)  # nothing under the state or config root changed
+        times.sort()
+        self.assertLess(times[len(times) // 2], 0.5, times)  # generous; the budget is 60 ms
+
+
+def release_shaped_launcher(root: Path, interpreter: str, *, imports_log: Path | None = None) -> Path:
+    """A release bundle's ``bin/charmer`` over this checkout's package: the
+    build's own launcher text, ``interpreter`` as the bundled Python (with
+    ``-X importtime`` to ``imports_log`` when given)."""
+
+    bundle = load_tool(REPO_ROOT / "tools/_build/bundle.py", "statusline_bundle")
+    version = platform.python_version()
+    site = root / bundle.site_dir(version)
+    site.mkdir(parents=True)
+    (site / "charmer").symlink_to(REPO_ROOT / "src" / "charmer", target_is_directory=True)
+    python = root / bundle.RUNTIME_DIR / "bin" / "python3"
+    python.parent.mkdir(parents=True)
+    trace = " -X importtime" if imports_log is not None else ""
+    redirect = f" 2>>{shlex.quote(str(imports_log))}" if imports_log is not None else ""
+    python.write_text(f'#!/bin/sh\nexec {shlex.quote(interpreter)}{trace} "$@"{redirect}\n', encoding="utf-8")
+    python.chmod(0o755)
+    launcher = root / "bin" / "charmer"
+    launcher.parent.mkdir(parents=True)
+    launcher.write_bytes(bundle.launcher_text("charmer", version, {"patches": []}))
+    launcher.chmod(0o755)
+    return launcher
 
 
 if __name__ == "__main__":

@@ -2633,6 +2633,21 @@ def _check_scope_integrity(
         return _per_session(text, mid, kind, summary, action="scope-repair" if repairable else None)
 
     default_mode = (cli_text.DEFAULT_MODE_DRIFT.format(m8=m8, mid=mid), "default-mode", cli_text.DEFAULT_MODE_DRIFTS)
+    status_line = (
+        f"session {m8}: its subagent status line differs from this release's compile (a scope another release "
+        "compiled, or a subagentStatusLine of your own added or removed since launch; lazy state); applies at "
+        f"the next resume (charmer -r {mid}) — or charmer doctor --repair {mid} now",
+        "status-line",
+        "{n} sessions: the subagent status line differs from this release's compile (lazy state); each applies "
+        "at its next resume — or charmer doctor --repair-all now (stopped sessions)",
+    )
+
+    def lazy_alongside() -> None:
+        if scope_mod.default_mode_differs(live, ep.plan):
+            attention.append(lazy(*default_mode))
+        if scope_mod.status_line_differs(live, ep.plan):
+            attention.append(lazy(*status_line, repairable=True))
+
     disk = scope_mod.read_disk_plan(live, ep.plan) if live.is_dir() else None
     if disk is None:
         problems.append(repair(f"session {m8}: scope unreadable; charmer doctor --repair {mid}"))
@@ -2644,13 +2659,17 @@ def _check_scope_integrity(
             # release (with or without the skill deny): lazy, Attention, with the repair path.
             attention.append(lazy(cli_text.SKILL_POLICY_DRIFT.format(m8=m8, mid=mid), "skill-policy",
                                   cli_text.SKILL_POLICY_DRIFTS, repairable=True))
-            if scope_mod.default_mode_differs(live, ep.plan):
-                attention.append(lazy(*default_mode))
+            lazy_alongside()
         elif scope_mod.fork_policy_drift(live, ep.plan, drifted):
             # The fork deny and the model fence's failure policy of another
             # release: lazy, Attention, with the repair path.
             attention.append(lazy(cli_text.FORK_POLICY_DRIFT.format(m8=m8, mid=mid), "fork-policy",
                                   cli_text.FORK_POLICY_DRIFTS, repairable=True))
+            lazy_alongside()
+        elif scope_mod.status_line_drift(live, ep.plan, drifted):
+            # The subagent status line another release compiled, or one a
+            # user-owned key now replaces: lazy, Attention, with the repair path.
+            attention.append(lazy(*status_line, repairable=True))
             if scope_mod.default_mode_differs(live, ep.plan):
                 attention.append(lazy(*default_mode))
         elif scope_mod.default_mode_drift(live, ep.plan, drifted):
