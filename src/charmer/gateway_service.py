@@ -664,20 +664,20 @@ class GatewayService:
             return "the gateway changed meanwhile; it is not safe to stop"
         return None
 
-    def _unfinished(self, what: str) -> list[str]:
+    def _unfinished(self, what: str, *, remedy: str = f"{INSTALL} (or {UNINSTALL})") -> list[str]:
         return [f"restore stopped: {what}",
                 "starts, stops and service changes stay refused until the hand-off is finished; once the "
-                f"credentials are safe, finish it: {INSTALL} (or {UNINSTALL})"]
+                f"credentials are safe, finish it: {remedy}"]
 
     @staticmethod
-    def _not_reloaded() -> list[str]:
+    def _not_reloaded(*, remedy: str = f"{INSTALL} (or {UNINSTALL})") -> list[str]:
         """A restoration whose daemon-reload failed is not complete: the
         manager may still hold the units this hand-off changed."""
 
         return ["restore: the service manager did not reload the restored unit files, so the hand-off is not "
                 "finished",
                 "starts, stops and service changes stay refused until it is; once the service manager reloads "
-                f"(check: charmer doctor), finish it: {INSTALL} (or {UNINSTALL})"]
+                f"(check: charmer doctor), finish it: {remedy}"]
 
     def _restore_on_demand(self, undo: _Undo) -> tuple[list[str], bool]:
         """Undo a failed install: ``(notes, complete)``.
@@ -733,10 +733,12 @@ class GatewayService:
             complete = complete and started.ok
         elif restored:
             notes.append("restored: the on-demand backend is in effect")
+        # With the endpoint back on demand, uninstall cannot finish an
+        # install-phase record; only install can resume this hand-off.
         if not complete:
-            notes.extend(self._unfinished("the on-demand restoration is incomplete"))
+            notes.extend(self._unfinished("the on-demand restoration is incomplete", remedy=INSTALL))
         if not reloaded:
-            notes.extend(self._not_reloaded())
+            notes.extend(self._not_reloaded(remedy=INSTALL))
         return notes, complete and reloaded
 
     @staticmethod

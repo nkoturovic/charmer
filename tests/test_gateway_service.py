@@ -879,6 +879,32 @@ class RollbackCompletenessTests(_ServiceCase):
         self.assertIsNotNone(gateway_inhibition.read(self.state_root))
 
 
+class RestorationRemedyTests(_ServiceCase):
+    def assert_install_remedy(self, outcome) -> None:
+        self.assertFalse(outcome.ok, outcome.lines())
+        self.assertEqual(self.recorded().backend, endpoint.ON_DEMAND)
+        self.assertEqual(gateway_inhibition.read(self.state_root).phase, "install")
+        text = "\n".join(outcome.lines())
+        self.assertIn(f"finish it: {gs.INSTALL}", text)
+        self.assertNotIn(gs.UNINSTALL, text)
+        self.world.now += STALE_AFTER * 2
+        self.manager.enable_ok = self.manager.reload_ok = True
+        self.world.spawn_code = 0
+        restored = self.service().install(max_wait=1)
+        self.assertTrue(restored.ok, restored.lines())
+        self.assertIsNone(gateway_inhibition.read(self.state_root))
+
+    def test_failed_on_demand_restart_offers_only_an_effective_install_remedy(self) -> None:
+        self.running()
+        self.manager.enable_ok = False
+        self.world.spawn_code = 1
+        self.assert_install_remedy(self.service().install(max_wait=1))
+
+    def test_failed_restoring_reload_offers_only_an_effective_install_remedy(self) -> None:
+        self.manager.reload_outcomes = [False, False]
+        self.assert_install_remedy(self.service().install(max_wait=1))
+
+
 class StopIdentityTests(_ServiceCase):
     def test_uninstall_rechecks_the_instance_after_the_hold(self) -> None:
         self.assertTrue(self.service().install().ok)
