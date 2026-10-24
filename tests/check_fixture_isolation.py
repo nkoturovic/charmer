@@ -599,7 +599,7 @@ def _run_probe(args: argparse.Namespace, kind: str) -> int:
         # gateway and keyed proofs belong to the host suite of the same gate,
         # so the probes use the explicit unit lane and write no gate evidence.
         for name in ("CHARMER_TEST_REQUIRE_GATEWAY", "CHARMER_TEST_KEYED_EVIDENCE",
-                     "CHARMER_TEST_GATEWAY_LIFECYCLE_PROBES"):
+                     "CHARMER_TEST_GATEWAY_EVIDENCE", "CHARMER_TEST_GATEWAY_LIFECYCLE_PROBES"):
             env.pop(name, None)
         env["CHARMER_TEST_KEYED_LANE"] = "unit"
         if probe_home is not None:

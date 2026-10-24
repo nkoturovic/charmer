@@ -501,6 +501,15 @@ class WorkflowTests(unittest.TestCase):
 
 
 @requires_release_tree
+def _root_unmapped() -> bool:
+    """True inside a user namespace whose uid map has no entry for root."""
+    try:
+        lines = Path("/proc/self/uid_map").read_text(encoding="ascii").splitlines()
+    except OSError:
+        return False
+    return not any(line.split()[:1] == ["0"] for line in lines)
+
+
 class PrivateCheckOutputTests(unittest.TestCase):
     """Only three closed fast-lane bodies run, with synthetic input and
     fixture-only commands; consumer diagnostics must never escape them."""
@@ -570,8 +579,14 @@ exec -a chmod "$FIXTURE_CHMOD" "$@"
         program = Path(found).resolve(strict=True)
         stored = program.is_relative_to("/nix/store")
         paths = (program,) if stored else (program, *program.parents)
-        if not program.is_file() or any(path.stat().st_mode & 0o022 or
-                                       (not stored and path.stat().st_uid != 0) for path in paths):
+        if not program.is_file() or any(path.stat().st_mode & 0o022 for path in paths):
+            raise AssertionError(f"the private-output fixture requires a trusted {name}")
+        if not stored and any(path.stat().st_uid != 0 for path in paths):
+            if _root_unmapped():
+                # A user namespace that does not map root shows root-owned
+                # files as unowned, so their ownership cannot be verified here.
+                raise unittest.SkipTest(f"BOUNDARY: {name} ownership is not verifiable in a user namespace "
+                                        "that does not map root")
             raise AssertionError(f"the private-output fixture requires a trusted {name}")
         return program
 
