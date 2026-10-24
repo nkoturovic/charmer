@@ -698,6 +698,10 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     args = parser.parse_args(argv)
+    try:
+        _runner_selection(args.only)
+    except ValueError as exc:
+        parser.error(str(exc))
 
     if args.retired_probe and args.operator_probe:
         parser.error("--retired-probe and --operator-probe are exclusive")

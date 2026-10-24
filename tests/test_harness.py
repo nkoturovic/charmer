@@ -512,6 +512,20 @@ class IsolationEnvironmentTests(unittest.TestCase):
             self.assertIn("--keep", commands[0])
             self.assertNotIn("0 attempted connect", output.getvalue())
 
+    def test_invalid_only_target_is_a_clean_usage_error_before_probe_setup(self) -> None:
+        import io
+        from tests import check_fixture_isolation as isolation
+
+        error = io.StringIO()
+        with mock.patch.object(isolation, "_run_probe", return_value=0) as run, \
+                mock.patch("sys.stdout"), mock.patch("sys.stderr", error):
+            with self.assertRaises(SystemExit) as caught:
+                isolation.main(["--only", "not_a_test"])
+            self.assertEqual(caught.exception.code, 2)
+        run.assert_not_called()
+        self.assertIn("not a module, class or test target", error.getvalue())
+        self.assertNotIn("Traceback", error.getvalue())
+
     def test_only_targets_keep_module_class_and_method_selection(self) -> None:
         from tests import check_fixture_isolation as isolation
 
