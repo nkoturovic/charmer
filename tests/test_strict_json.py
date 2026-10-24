@@ -17,6 +17,46 @@ class StrictLoaderTests(unittest.TestCase):
             {"a": [1, 2], "b": {"c": True}},
         )
 
+    def test_only_json_whitespace_is_allowed_around_a_document(self) -> None:
+        for whitespace in (" ", "\t", "\r", "\n", " \t\r\n"):
+            for data in (whitespace + '{"a": 1}' + whitespace,
+                         (whitespace + '{"a": 1}' + whitespace).encode()):
+                with self.subTest(data=data):
+                    self.assertEqual(strict_json.loads(data), {"a": 1})
+        for whitespace in ("\v", "\f", " ", " "):
+            for data in (whitespace + "{}", "{}" + whitespace):
+                with self.subTest(data=data), self.assertRaises(StrictJSONError):
+                    strict_json.loads(data)
+
+    def test_leading_whitespace_preserves_error_position(self) -> None:
+        with self.assertRaisesRegex(StrictJSONError, "line 3 column 2"):
+            strict_json.loads("\n\n{broken}")
+
+    def test_parser_resource_failures_are_value_free_strict_errors(self) -> None:
+        for payload, expected in (
+            (b"9" * 5000, "$: JSON exceeds parser limits"),
+            (b"[" * 200_000 + b"0" + b"]" * 200_000,
+             "nesting too deep"),
+        ):
+            with self.subTest(kind="integer" if payload.startswith(b"9") else "nesting"):
+                with self.assertRaises(StrictJSONError) as raised:
+                    strict_json.loads(payload)
+                self.assertEqual(str(raised.exception), expected)
+
+    def test_lone_surrogates_in_input_values_and_keys_are_rejected(self) -> None:
+        for payload in ('"\ud800"', b'"\\ud800"', b'{"\\udfff": 1}',
+                        b'{"x": ["\\ud800"]}'):
+            with self.subTest(payload=repr(payload)):
+                with self.assertRaisesRegex(StrictJSONError, "invalid UTF-8"):
+                    strict_json.loads(payload)
+        self.assertEqual(strict_json.loads(b'"\\ud83d\\ude00"'), "\U0001f600")
+
+    def test_object_keys_obey_string_limit(self) -> None:
+        limits = JSONLimits(max_string=8)
+        self.assertEqual(strict_json.loads(b'{"12345678": 1}', limits), {"12345678": 1})
+        with self.assertRaisesRegex(StrictJSONError, "string length"):
+            strict_json.loads(b'{"123456789": 1}', limits)
+
     def test_duplicate_keys_rejected(self) -> None:
         with self.assertRaisesRegex(StrictJSONError, "duplicate key"):
             strict_json.loads(b'{"a": 1, "a": 2}')
@@ -185,6 +225,17 @@ class SchemaVocabularyTests(unittest.TestCase):
         self.assertEqual(validate.validate("x", schema), [])
         self.assertEqual(validate.validate(2, schema), [])
         self.assertTrue(validate.validate(True, schema))
+
+    def test_final_pattern_anchor_cannot_match_before_a_newline(self) -> None:
+        schema = {"version": 1, "type": "string", "pattern": "^[a-z][a-z0-9-]*$"}
+        self.assertEqual(validate.validate("abc", schema), [])
+        self.assertEqual(validate.validate("abc\n", schema), [
+            "$: string does not match pattern '^[a-z][a-z0-9-]*$'",
+        ])
+        # Unanchored searches and literal dollar signs keep their semantics.
+        self.assertEqual(validate.validate("x abc\n", {"pattern": "abc"}), [])
+        self.assertEqual(validate.validate("$\n", {"pattern": r"\$"}), [])
+        self.assertTrue(validate.validate("abc\\\n", {"pattern": r"abc\\$"}))
 
     def test_unique_items(self) -> None:
         schema = {"version": 1, "type": "array", "uniqueItems": True}

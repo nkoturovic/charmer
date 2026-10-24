@@ -39,11 +39,12 @@ Manage:
   import          preview an exported configuration on this computer; --apply writes the ready items
 
 Recovery and earlier formats:
-  migrate         convert legacy session records to the current format (backups are kept for
-                  restore-2x); --dry-run writes nothing; migrate from-legacy moves an installation
-                  of the earlier name onto charmer
-  restore-2x      put back the legacy session records a migration backed up, before running an
-                  earlier launcher
+  migrate         convert pre-public record formats v1–3 (written before charmer 1.0.0) to the
+                  current format, keeping byte-exact backups for restore-2x; --dry-run writes
+                  nothing; migrate from-legacy moves an installation of the earlier name onto
+                  charmer
+  restore-2x      restore the pre-public record backups made by migrate; not a release rollback (use
+                  charmer update --rollback)
   custom          the earlier custom-model registry (move it to providers: charmer providers
                   migrate-custom)
   uninstall       remove charmer from this computer (shows the plan first; credentials only after a

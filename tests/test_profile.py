@@ -240,6 +240,14 @@ class ParseTests(ProfileTestCase):
             with self.assertRaises(profile.ProfileValidationError):
                 profile.load_profile_file(path)
 
+    def test_profile_file_accepts_a_leading_blank_line(self) -> None:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "p.json"
+            path.write_bytes(b"\n \t\r\n" + strict_json.pretty_file_bytes(doc()))
+            self.assertEqual(profile.load_profile_file(path), doc())
+
     def test_referenced_bindings(self) -> None:
         document = doc(lead={"use": "lead-b"}, agents_over={"cm-analyst": {"use": "fast"}})
         self.assertEqual(

@@ -282,8 +282,15 @@ def validate(instance: Any, schema: dict[str, Any], path: str = "$") -> list[str
             errors.append(
                 f"{path}: string longer than {body['maxLength']} characters"
             )
-        if "pattern" in body and not re.search(body["pattern"], instance):
-            errors.append(f"{path}: string does not match pattern {body['pattern']!r}")
+        if "pattern" in body:
+            pattern = body["pattern"]
+            # JSON schema's final anchor must not accept a trailing newline.
+            if pattern.endswith("$"):
+                backslashes = len(pattern[:-1]) - len(pattern[:-1].rstrip("\\"))
+                if backslashes % 2 == 0:
+                    pattern = pattern[:-1] + r"\Z"
+            if not re.search(pattern, instance):
+                errors.append(f"{path}: string does not match pattern {body['pattern']!r}")
 
     if _is_number(instance) and not isinstance(instance, bool):
         if "minimum" in body and instance < body["minimum"]:

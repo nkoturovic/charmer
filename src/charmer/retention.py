@@ -1,4 +1,4 @@
-"""Retained and owned Claude Code copies: verification, report and prune rule.
+"""Retained and owned Claude Code copies: report and prune rule.
 
 Two kinds of copies live under the data root:
 
@@ -33,7 +33,6 @@ use lock file removed last (no launch verifies a copy that is about to go).
 
 from __future__ import annotations
 
-import hashlib
 import os
 import re
 import stat
@@ -67,39 +66,6 @@ UNKNOWN = object()
 
 def retained_path(root: Path, version: str) -> Path | None:
     return root / version if isinstance(version, str) and _VERSION.fullmatch(version) else None
-
-
-def _digest(path: Path) -> str:
-    with path.open("rb") as source:
-        return hashlib.file_digest(source, "sha256").hexdigest()
-
-
-def verify_retained(root: Path, version: str, sha256: str) -> Path | None:
-    """Full verification of a retained copy (hooks must use same_file)."""
-
-    from . import state
-
-    target = retained_path(root, version)
-    if target is None:
-        return None
-    try:
-        state._check_directory(root)
-        state._check_regular_file(target)
-        if os.access(target, os.X_OK) and _digest(target) == sha256:
-            return target
-    except OSError:
-        pass
-    return None
-
-
-def same_file(a: Path, b: Path) -> bool:
-    """Metadata-only identity (no hash and no binary reads)."""
-
-    try:
-        left, right = a.stat(), b.stat()
-        return (left.st_dev, left.st_ino) == (right.st_dev, right.st_ino)
-    except OSError:
-        return False
 
 
 def free_bytes(path: Path) -> int | None:
@@ -446,11 +412,13 @@ class PruneOutcome:
     session or launch holds the use lock, a setup is putting the version in
     place, or a process started meanwhile runs it); and the ones it tried
     to remove but left in place, perhaps in part (the directory holds
-    something other than regular files, or a file could not be removed)."""
+    something other than regular files, or a file could not be removed).
+    ``blocked`` names an unknown safety fact; then no copy was removed."""
 
     removed: tuple[str, ...] = ()
     in_use: tuple[str, ...] = ()
     failed: tuple[str, ...] = ()
+    blocked: str | None = None
 
 
 def _version_order(name: str) -> tuple[int, ...]:
@@ -474,15 +442,15 @@ def prune_copies(
     started meanwhile, or a gateway started since, keeps its version; only
     what that fresh plan still removes is deleted, and the locks are held
     until the deletion is done (the use lock file last, see
-    :func:`_remove_version`). Nothing is removed (or reported) while the
-    plan is blocked.
+    :func:`_remove_version`). A blocked plan removes nothing and reports
+    the unknown safety fact.
     """
 
     facts = dict(launcher_version=launcher_version, proc_root=proc_root,
                  gateway_launcher=gateway_launcher, running=running)
     first = prune_plan(contract, environ, **facts)
     if first.blocked is not None:
-        return PruneOutcome()
+        return PruneOutcome(blocked=first.blocked)
     present = set(owned_versions(environ))
     in_use = {name for name, reason in first.keep.items() if reason in (RUNNING, IN_USE) and name in present}
     root = pin.owned_root(environ)
@@ -506,7 +474,7 @@ def prune_copies(
         if held:
             fresh = prune_plan(contract, environ, held=held, **facts)
             if fresh.blocked is not None:
-                return PruneOutcome((), ordered(in_use))
+                return PruneOutcome(in_use=ordered(in_use), blocked=fresh.blocked)
             allowed = {name for name, _size in fresh.remove}
             for name in held:
                 if name in allowed:
@@ -533,6 +501,8 @@ def prune_lines(outcome: PruneOutcome, environ: Mapping[str, str]) -> list[str]:
     the updater print."""
 
     lines = []
+    if outcome.blocked is not None:
+        lines.append(f"Claude Code copy cleanup blocked: {outcome.blocked}.")
     if outcome.removed:
         lines.append("Removed Claude Code copies no release here needs: " + ", ".join(outcome.removed) + ".")
     if outcome.in_use:
@@ -584,6 +554,8 @@ def retention_report(
         kept.append(f"{name} ({reason})")
     if kept:
         info.append("Claude Code copies kept by charmer: " + ", ".join(kept) + ".")
+    if plan.blocked is not None:
+        attention.append(f"Claude Code copy cleanup blocked: {plan.blocked}.")
     if plan.remove:
         attention.append(
             f"Claude Code copies no release here needs: {_sizes(plan.remove)} — "

@@ -205,6 +205,8 @@ replace the program the launcher runs. A rollback goes only to the
 version it showed you: if the installation changed while it waited for
 your answer, it refuses. Afterwards `previous` is the version you left,
 so a second rollback undoes the first.
+`charmer restore-2x` restores pre-public record-format backups and is
+unrelated to release rollback.
 
 When the selected older release supports `update --verify`, it verifies
 that exact older version, not the newest release. **After rollback to

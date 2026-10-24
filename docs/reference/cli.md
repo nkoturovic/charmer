@@ -1034,13 +1034,13 @@ charmer import <file> [--apply]
 
 ### charmer migrate
 
-Convert legacy session records to the current format (backups are kept for restore-2x); --dry-run writes nothing; migrate from-legacy moves an installation of the earlier name onto charmer.
+Convert pre-public record formats v1–3 (written before charmer 1.0.0) to the current format, keeping byte-exact backups for restore-2x; --dry-run writes nothing; migrate from-legacy moves an installation of the earlier name onto charmer.
 
 It reads or converts an earlier format; its own `--help` lists its options.
 
 ### charmer restore-2x
 
-Put back the legacy session records a migration backed up, before running an earlier launcher.
+Restore the pre-public record backups made by migrate; not a release rollback (use charmer update --rollback).
 
 It reads or converts an earlier format; its own `--help` lists its options.
 

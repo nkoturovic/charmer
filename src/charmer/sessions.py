@@ -1987,7 +1987,7 @@ class SessionStore:
             # all new runtime assignment must fail closed.
             try:
                 diagnostic = json.loads(raw, object_pairs_hook=_JSONPairs)
-            except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            except (ValueError, RecursionError) as exc:
                 raise SessionError(
                     f"cannot determine runtime ownership while session record "
                     f"{path.stem} is malformed: {strict_exc}"
@@ -2253,8 +2253,8 @@ class SessionStore:
         index_lock = self.runtime_index_lock()
         lock = self.lifecycle_lock(stable_id)
         index_lock.acquire(blocking=True)
-        lock.acquire(blocking=True)
         try:
+            lock.acquire(blocking=True)
             raw, _raw_bytes = self.load_raw(stable_id)
             current = _lifecycle_view(raw)
             if normalize is not None:
@@ -2360,8 +2360,8 @@ class SessionStore:
         index_lock = self.runtime_index_lock()
         lock = self.lifecycle_lock(stable_id)
         index_lock.acquire(blocking=True)
-        lock.acquire(blocking=True)
         try:
+            lock.acquire(blocking=True)
             raw, _raw_bytes = self.load_raw(stable_id)
             current = _lifecycle_view(raw)
             try:
@@ -2422,37 +2422,34 @@ class SessionStore:
             )
             new_pointer = self._pointer_path(updated["cwd"])
             touched = sorted({*old_pointers, new_pointer}, key=str)
-            pointer_locks = [state.FileLock(path) for path in touched]
-            for pointer_lock in pointer_locks:
-                pointer_lock.acquire(blocking=True)
-            prior_record = self.read_record_bytes(stable_id)
-            prior_pointers: dict[Path, bytes | None] = {}
-            try:
-                prior_pointers = {
-                    path: state.read_private(path) if os.path.lexists(path) else None
-                    for path in touched
-                }
-                self._save_lifecycle(document)
-                for pointer in old_pointers:
-                    if self._pointer_names(pointer, stable_id):
-                        state.remove_private(pointer)
-                payload = {"cwd": updated["cwd"], "session_id": stable_id}
-                state.atomic_write(
-                    new_pointer, strict_json.canonical_file_bytes(payload)
-                )
-                return updated
-            except BaseException:
-                if prior_record is not None:
-                    self.restore_record_bytes(stable_id, prior_record)
-                for pointer, data in prior_pointers.items():
-                    if data is None:
-                        state.remove_private(pointer)
-                    else:
-                        state.atomic_write(pointer, data)
-                raise
-            finally:
-                for pointer_lock in reversed(pointer_locks):
-                    pointer_lock.release()
+            with contextlib.ExitStack() as pointer_locks:
+                for path in touched:
+                    pointer_locks.enter_context(state.FileLock(path))
+                prior_record = self.read_record_bytes(stable_id)
+                prior_pointers: dict[Path, bytes | None] = {}
+                try:
+                    prior_pointers = {
+                        path: state.read_private(path) if os.path.lexists(path) else None
+                        for path in touched
+                    }
+                    self._save_lifecycle(document)
+                    for pointer in old_pointers:
+                        if self._pointer_names(pointer, stable_id):
+                            state.remove_private(pointer)
+                    payload = {"cwd": updated["cwd"], "session_id": stable_id}
+                    state.atomic_write(
+                        new_pointer, strict_json.canonical_file_bytes(payload)
+                    )
+                    return updated
+                except BaseException:
+                    if prior_record is not None:
+                        self.restore_record_bytes(stable_id, prior_record)
+                    for pointer, data in prior_pointers.items():
+                        if data is None:
+                            state.remove_private(pointer)
+                        else:
+                            state.atomic_write(pointer, data)
+                    raise
         finally:
             lock.release()
             index_lock.release()

@@ -8,6 +8,7 @@ import json
 import os
 import shutil
 import stat
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -148,6 +149,23 @@ class OnboardingTestCase(unittest.TestCase):
             candidate_parent=Path(tempfile.mkdtemp(dir=self.root)),
         )
 
+
+
+class DeveloperPathTests(unittest.TestCase):
+    def test_developer_paths_follow_the_shared_xdg_state_rules(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            for xdg in (None, "", "relative-state", str(home / "absolute-state")):
+                with self.subTest(xdg=xdg):
+                    env = {"HOME": tmp}
+                    if xdg is not None:
+                        env["XDG_STATE_HOME"] = xdg
+                    expected = (Path(xdg) if xdg and Path(xdg).is_absolute()
+                                else home / ".local/state") / "charmer"
+                    with mock.patch.dict(os.environ, env, clear=True):
+                        self.assertEqual(dev.state_root_default(), str(expected))
+                        self.assertEqual(dev._drafts_root(), expected / "drafts")
+                    self.assertFalse(expected.exists())
 
 
 class DraftStateMarkerTests(OnboardingTestCase):
@@ -733,6 +751,26 @@ class CheckTests(OnboardingTestCase):
             )
         self.assertFalse(fail_parent.exists())
         self.assertTrue(marker.is_file())
+
+    def test_default_runner_returns_a_value_free_timeout_record(self) -> None:
+        command = ["nix-build", "--no-out-link", "fixture.nix"]
+        timeout = subprocess.TimeoutExpired(command, 1800, output="fixture output", stderr="fixture error")
+        with mock.patch.object(dev.shutil, "which", return_value="/fixture/nix-build"), \
+                mock.patch.object(dev.subprocess, "run", side_effect=timeout) as run:
+            result = dev._default_runner(command, self.repo)
+        self.assertEqual(result, {"cmd": command, "returncode": None, "stdout": "",
+                                  "stderr": "timed out after 1800 s"})
+        self.assertEqual(run.call_args.kwargs["timeout"], 1800)
+
+    def test_build_timeout_is_a_dev_error_and_cleans_the_candidate(self) -> None:
+        parent = self.root / "cand-timeout"
+        parent.mkdir()
+        timeout = subprocess.TimeoutExpired(["nix-build"], 1800)
+        with mock.patch.object(dev.shutil, "which", return_value="/fixture/nix-build"), \
+                mock.patch.object(dev.subprocess, "run", side_effect=timeout):
+            with self.assertRaisesRegex(DevError, "candidate build failed.*timed out after 1800 s"):
+                dev.check_draft(_model_draft(), repo=self.repo, candidate_parent=parent)
+        self.assertFalse(parent.exists())
 
     def test_candidate_cleanup_on_exception_path(self) -> None:
         parent = self.root / "cand-exc"

@@ -1974,6 +1974,28 @@ class ContractOverrideTests(unittest.TestCase):
                 self.assertEqual(bundle.contract_source, "override-ignored-invalid")
                 self.assertEqual(pin.version(bundle.docs["native-contract"]), "2.1.302")
 
+    def test_malformed_override_parser_limits_and_unicode_are_ignored(self) -> None:
+        from charmer import state
+        from charmer.cli.runtime import Runtime
+
+        for payload in (b"9" * 5000, b"[" * 200_000 + b"0" + b"]" * 200_000,
+                        b'{"\\ud800": 1}', b'{"value": "\\udfff"}'):
+            with self.subTest(size=len(payload)), tempfile.TemporaryDirectory() as tmp:
+                home = Path(tmp)
+                target = home / ".config/charmer/native-contract.json"
+                state.ensure_private_dir(target.parent)
+                state.atomic_write(target, payload)
+                packaged = catalog.load_catalog(FIXTURE_ROOT)
+                bundle = catalog.load_catalog(FIXTURE_ROOT, contract_override=target)
+                self.assertEqual(bundle.contract_source, "override-ignored-invalid")
+                self.assertEqual(bundle.bundle_sha256, packaged.bundle_sha256)
+                runtime = Runtime(asset_root=FIXTURE_ROOT, environ={"HOME": tmp}, cwd=tmp,
+                                  allow_state_writes=False, refresh_shims=False,
+                                  initialize_session_store=False)
+                self.assertEqual(runtime.catalog.contract_source, "override-ignored-invalid")
+                self.assertIsNone(runtime.broken_override_error)
+                self.assertEqual(target.read_bytes(), payload)
+
     def test_legacy_override_still_raises_for_its_removal(self) -> None:
         root = _copy_tree(self, CATALOG_ROOT)
         document = self._v1_doc("2.1.300")

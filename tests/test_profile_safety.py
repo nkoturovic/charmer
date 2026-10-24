@@ -190,6 +190,20 @@ class SlotDiffTests(unittest.TestCase):
         ])
         self.assertEqual(profile.slot_diff(old, copy.deepcopy(old)), [])
 
+    def test_lead_provider_restrictions_added_removed_and_changed(self) -> None:
+        for before, after, old_text, new_text in (
+            (None, ["anthropic"], "(unrestricted)", '["anthropic"]'),
+            (["anthropic"], None, '["anthropic"]', "(unrestricted)"),
+            (["anthropic"], ["openai"], '["anthropic"]', '["openai"]'),
+        ):
+            with self.subTest(before=before, after=after):
+                old = {} if before is None else {"lead_providers": before}
+                new = {} if after is None else {"lead_providers": after}
+                self.assertEqual(profile.slot_diff(old, new), [
+                    f"{'lead_providers ':<14}{old_text:<20} →  {new_text}",
+                ])
+        self.assertEqual(profile.slot_diff({}, {"lead_providers": None}), [])
+
 
 class DigestSaveTests(StoreCase):
     def test_save_with_the_loaded_digest(self) -> None:
@@ -412,6 +426,18 @@ class PlanTests(test_cli.CLITestCase):
         with self.assertRaises(model.Refused) as caught:
             setup_profiles.plan_reseed(self.runtime, "mine")
         self.assertEqual(str(caught.exception), setup_profiles.NOT_A_SEED.format(name="mine"))
+
+    def test_reseed_preview_includes_a_lead_providers_only_change(self) -> None:
+        self.runtime.profiles.update("direct", lambda doc: doc.update(lead_providers=["openai"]))
+        path = self.runtime.profiles.root / "direct.json"
+        before = path.read_bytes()
+        plan = setup_profiles.plan_reseed(self.runtime, "direct")
+        old_text = '["openai"]'
+        expected = f"{'lead_providers ':<14}{old_text:<20} →  [\"anthropic\"]"
+        self.assertFalse(plan.nothing)
+        self.assertEqual(plan.diff, (expected,))
+        self.assertEqual(plan.lines[0], expected)
+        self.assertEqual(path.read_bytes(), before)
 
     def test_an_unloadable_seed_is_restored(self) -> None:
         state.atomic_write(self.runtime.profiles.root / "quality.json", b"broken")

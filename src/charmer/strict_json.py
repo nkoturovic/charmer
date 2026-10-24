@@ -55,6 +55,7 @@ def _check_limits(node: Any, limits: JSONLimits, depth: int, path: str) -> None:
                 f"{path}: object has {len(node)} keys, limit is {limits.max_collection}"
             )
         for key in sorted(node):
+            _check_limits(key, limits, depth, f"{path} (object key)")
             _check_limits(node[key], limits, depth + 1, f"{path}.{key}")
     elif isinstance(node, list):
         if len(node) > limits.max_collection:
@@ -64,6 +65,10 @@ def _check_limits(node: Any, limits: JSONLimits, depth: int, path: str) -> None:
         for index, item in enumerate(node):
             _check_limits(item, limits, depth + 1, f"{path}[{index}]")
     elif isinstance(node, str):
+        try:
+            node.encode("utf-8")
+        except UnicodeEncodeError as exc:
+            raise StrictJSONError("$: invalid UTF-8 in JSON string") from exc
         if len(node) > limits.max_string:
             raise StrictJSONError(
                 f"{path}: string length {len(node)} exceeds {limits.max_string}"
@@ -84,7 +89,10 @@ def loads(data: bytes | str, limits: JSONLimits | None = None) -> Any:
         except UnicodeDecodeError as exc:
             raise StrictJSONError(f"$: invalid UTF-8 at byte {exc.start}") from exc
     else:
-        encoded = data.encode("utf-8")
+        try:
+            encoded = data.encode("utf-8")
+        except UnicodeEncodeError as exc:
+            raise StrictJSONError("$: invalid UTF-8 in JSON input") from exc
         if len(encoded) > limits.max_bytes:
             raise StrictJSONError(
                 f"$: input is {len(encoded)} bytes, limit is {limits.max_bytes}"
@@ -104,16 +112,21 @@ def loads(data: bytes | str, limits: JSONLimits | None = None) -> Any:
         parse_constant=_reject_constant,
         parse_float=_parse_finite_float,
     )
+    start = len(text) - len(text.lstrip(" \t\r\n"))
     try:
-        document, end = decoder.raw_decode(text)
+        document, end = decoder.raw_decode(text, start)
     except StrictJSONError:
         raise
     except json.JSONDecodeError as exc:
         raise StrictJSONError(
             f"$: invalid JSON at line {exc.lineno} column {exc.colno}: {exc.msg}"
         ) from exc
+    except RecursionError as exc:
+        raise StrictJSONError("nesting too deep") from exc
+    except ValueError as exc:
+        raise StrictJSONError("$: JSON exceeds parser limits") from exc
     trailing = text[end:]
-    if trailing.strip():
+    if trailing.strip(" \t\r\n"):
         raise StrictJSONError(f"$: trailing data after JSON document at char {end}")
     _check_limits(document, limits, 1, "$")
     return document

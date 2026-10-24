@@ -57,7 +57,6 @@ import charmer.compiler
 from charmer.cli import doctor as cli_doctor, text as cli_text
 import charmer.launch
 import charmer.paths
-import charmer.retention
 
 _tripwire.install()
 
@@ -160,7 +159,6 @@ class ClientIdentityTests(_DoctorCase):
                 return mock.Mock(st_dev=pin_stat.st_dev + 1, st_ino=pin_stat.st_ino)
             return original_stat(path, *args, **kwargs)
         with mock.patch.object(Path, "stat", stat), \
-                mock.patch.object(charmer.retention, "_digest", side_effect=AssertionError("identity must not hash")), \
                 mock.patch.object(subprocess, "run", side_effect=AssertionError("identity must not execute")):
             self.assertEqual(len(self._report()), 1)
 
@@ -188,8 +186,7 @@ class ClientIdentityTests(_DoctorCase):
         self.assertEqual(self._report(), [])
         shutil.copyfile(retained, self.pin)  # same bytes, new inode
         self.assertNotEqual(self.pin.stat().st_ino, retained.stat().st_ino)
-        with mock.patch.object(charmer.retention, "_digest", side_effect=AssertionError("identity must not hash")), \
-                mock.patch.object(subprocess, "run", side_effect=AssertionError("identity must not execute")):
+        with mock.patch.object(subprocess, "run", side_effect=AssertionError("identity must not execute")):
             self.assertEqual(self._report(), [])
             self.exe.unlink()
             self.exe.symlink_to(self.pin)
