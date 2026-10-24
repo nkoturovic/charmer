@@ -315,8 +315,9 @@ class ExportTests(PortabilityCase):
                 with mock.patch.object(os, "fsync", side_effect=sync):
                     code, out, err = self.op(["export", "--out", str(target)])
                 self.assertEqual((code, out), (1, ""))
-                self.assertIn("written; durability unconfirmed", err)
-                self.assertIn("no export receipt was recorded", err)
+                self.assertIn(f"wrote {target}, but its durability is unconfirmed; "
+                              "no export receipt was recorded", err)
+                self.assertNotIn("the write failed", err)
                 self.assertFalse(receipt.exists())
                 self.assertEqual(json.loads(target.read_bytes()), expected)
                 self.assertEqual(stat.S_IMODE(target.stat().st_mode), 0o600)
