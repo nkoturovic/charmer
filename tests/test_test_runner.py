@@ -322,6 +322,14 @@ class RunnerTests(unittest.TestCase):
         # Without the gateway variable the lane is not selected for the real client.
         self.assertEqual(self.run_runner("tests.test_pass").returncode, 0)
 
+    def test_contributor_safety_docs_state_the_guard_and_fast_lane_boundaries(self) -> None:
+        text = (REPO_ROOT / "CONTRIBUTING.md").read_text(encoding="utf-8")
+        section = text.split("## Run the tests", 1)[1].split("\n## ", 1)[0]
+        self.assertIn("8317/8316 on every host", section)
+        self.assertIn("needs --tier full or CHARMER_TEST_KEYED_LANE=unit", section)
+        self.assertIn("class or module fixture skip", section)
+        self.assertIn("Children never read endpoint metadata", section)
+
     def test_fast_locale_ci_step_selects_unit_only_keyed_lane(self) -> None:
         text = (REPO_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
         step = text.split("      - name: The fast tier under ISO-8859-1", 1)[1].split("      - name:", 1)[0]
