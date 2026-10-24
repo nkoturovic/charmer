@@ -729,6 +729,83 @@ class InstallTests(_ServiceCase):
         self.assertEqual((self.recorded().port, self.recorded().backend), (18321, endpoint.SYSTEMD))
 
 
+class StopIdentityTests(_ServiceCase):
+    def test_uninstall_rechecks_the_instance_after_the_hold(self) -> None:
+        self.assertTrue(self.service().install().ok)
+        manager = self.service()
+        before = endpoint.endpoint_path(self.home).read_bytes(), self.unit_text()
+        hold = manager.gateway.persistence_hold
+
+        def changed(seen):
+            report = hold(seen)
+            self.world.write_stamp("cccccccccccccccc")
+            return report
+
+        with mock.patch.object(manager.gateway, "persistence_hold", side_effect=changed):
+            outcome = manager.uninstall()
+        self.assertNotIn("disable", self.manager.verbs())
+        self.assertEqual(outcome.status, "refused", outcome.lines())
+        self.assertIn("changed meanwhile", outcome.message)
+        self.assertEqual((endpoint.endpoint_path(self.home).read_bytes(), self.unit_text()), before)
+        self.assertIsNone(gateway_inhibition.read(self.state_root))
+
+    def test_failed_install_rechecks_the_instance_after_the_hold(self) -> None:
+        manager = self.service()
+        hold = manager.gateway.persistence_hold
+        self.world.health = 503  # the new service never becomes ready
+
+        def changed(seen):
+            report = hold(seen)
+            self.world.write_stamp("cccccccccccccccc")
+            return report
+
+        with mock.patch.object(manager.gateway, "persistence_hold", side_effect=changed):
+            outcome = manager.install(max_wait=1)
+        self.assertNotIn("disable", self.manager.verbs())
+        self.assertFalse(outcome.ok)
+        self.assertIn("restore stopped", "\n".join(outcome.lines()))
+        self.assertIn("changed meanwhile", "\n".join(outcome.lines()))
+        self.assertEqual(self.recorded().backend, endpoint.SYSTEMD)
+        self.assertTrue(systemd_unit.written_here(self.unit_text()))
+        self.assertIsNotNone(gateway_inhibition.read(self.state_root))
+
+    def test_uninstall_rechecks_ownership_even_when_the_stamp_stays(self) -> None:
+        self.assertTrue(self.service().install().ok)
+        for listener in ("foreign", "unknown"):
+            with self.subTest(listener=listener):
+                self.running()
+                manager = self.service()
+                hold = manager.gateway.persistence_hold
+
+                def changed(seen):
+                    report = hold(seen)
+                    self.world.listener = listener
+                    return report
+
+                with mock.patch.object(manager.gateway, "persistence_hold", side_effect=changed):
+                    outcome = manager.uninstall()
+                self.assertNotIn("disable", self.manager.verbs())
+                self.assertEqual(outcome.status, "refused", outcome.lines())
+                self.assertIn("changed meanwhile", outcome.message)
+
+    def test_restore_veto_rechecks_ownership_even_when_the_stamp_stays(self) -> None:
+        for listener in ("foreign", "unknown"):
+            with self.subTest(listener=listener):
+                self.running()
+                manager = self.service()
+                hold = manager.gateway.persistence_hold
+
+                def changed(seen):
+                    report = hold(seen)
+                    self.world.listener = listener
+                    return report
+
+                with mock.patch.object(manager.gateway, "persistence_hold", side_effect=changed):
+                    veto = manager._stop_veto("charmer-gateway")
+                self.assertIsNotNone(veto)
+                self.assertIn("changed meanwhile", veto)
+
+
 class NixSelectionTests(_ServiceCase):
     CHANNEL = "nix"
 

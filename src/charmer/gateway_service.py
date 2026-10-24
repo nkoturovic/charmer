@@ -653,6 +653,10 @@ class GatewayService:
             hold = gateway.persistence_hold(seen)
             if hold.held:
                 return "the persistence hold applies: " + gateway_hold.describe(hold)
+        # A hold read can take seconds and covers only the instance it read.
+        again = gateway.observe()
+        if again.stamp != seen.stamp or again.state in (gateway_lifecycle.FOREIGN, gateway_lifecycle.UNKNOWN):
+            return "the gateway changed meanwhile; it is not safe to stop"
         return None
 
     def _unfinished(self, what: str) -> list[str]:
@@ -954,6 +958,9 @@ class GatewayService:
                     return gateway_lifecycle.Outcome(
                         "held", "the gateway service was not removed: " + gateway_hold.describe(hold),
                         gateway_hold.remedy(hold))
+            again = gateway.observe()
+            if again.stamp != seen.stamp or again.state in (gateway_lifecycle.FOREIGN, gateway_lifecycle.UNKNOWN):
+                return gateway._refused(again, "the gateway changed meanwhile; the gateway service was not removed")
             refused = gateway.begin_handoff("uninstall", name)
             if refused is not None:
                 return refused
