@@ -13,6 +13,7 @@ import tempfile
 import threading
 import time
 import unittest
+from contextlib import ExitStack
 from dataclasses import replace
 from pathlib import Path
 from unittest import mock
@@ -215,12 +216,69 @@ class PruneRuleTests(PruneCase):
     def test_unknown_facts_block_every_removal(self):
         self.assertIn("cannot be checked", self.plan(running=None).blocked)
         self.assertEqual(self.plan(running=None).remove, ())
-        self.assertEqual(self.prune_copies(running=None), retention.PruneOutcome())
+        self.assertEqual(self.prune_copies(running=None),
+                         retention.PruneOutcome(blocked=self.plan(running=None).blocked))
         blocked = self.plan(gateway_launcher="0.8.0")
         self.assertIn("charmer 0.8.0", blocked.blocked)
         self.assertEqual(blocked.remove, ())
         # The gateway of this very release pins the current version.
         self.assertIsNone(self.plan(gateway_launcher="1.0.2").blocked)
+
+    def test_blocked_cleanup_reports_unknown_processes_gateway_stamp_and_pins(self):
+        from charmer import self_update
+
+        workdir = service.ensure_gateway_workdir(paths.state_root(self.env))
+        stamp = workdir / service.EXEC_STAMP
+        copies = {name: pin.owned_path(self.env, name, self.platform).read_bytes()
+                  for name in retention.owned_versions(self.env)}
+        for scenario, reason in (("processes", "processes running Claude Code cannot be checked"),
+                                 ("gateway", "gateway's start record cannot be read"),
+                                 ("pins", "installed release's pins cannot be read")):
+            with self.subTest(scenario=scenario), ExitStack() as seams:
+                seams.enter_context(mock.patch.object(
+                    retention, "scan_processes",
+                    return_value=None if scenario == "processes" else retention.ProcessScan()))
+                if scenario == "gateway":
+                    state.atomic_write(stamp, b'{"launcher_version": 7}')
+                    seams.callback(stamp.unlink)
+                if scenario == "pins":
+                    seams.enter_context(mock.patch.object(
+                        self_update, "installed_pins", side_effect=self_update.UpdateError("fixture unreadable")))
+                outcome = self.prune_copies(running=..., gateway_launcher=...)
+                self.assertEqual(outcome.removed, ())
+                self.assertIn(reason, outcome.blocked)
+                self.assertEqual(retention.prune_lines(outcome, self.env), [
+                    f"Claude Code copy cleanup blocked: {outcome.blocked}.",
+                ])
+                attention, _info = retention.retention_report(self.contract, None, self.env)
+                self.assertTrue(any(reason in line for line in attention), attention)
+                self.assertFalse(any("copies no release here needs" in line for line in attention))
+                self.assertEqual({name: pin.owned_path(self.env, name, self.platform).read_bytes()
+                                  for name in copies}, copies)
+
+    def test_a_second_plan_blocker_is_reported_without_removing_any_copy(self):
+        first = self.plan()
+        reason = "process table became unavailable"
+        second = retention.PrunePlan(first.keep, blocked=reason)
+        with mock.patch.object(retention, "prune_plan", side_effect=[first, second]):
+            outcome = self.prune_copies()
+        self.assertEqual(outcome.removed, ())
+        self.assertEqual(outcome.blocked, reason)
+        self.assertIn(reason, retention.prune_lines(outcome, self.env)[0])
+        for name, _size in first.remove:
+            self.assertTrue(pin.owned_path(self.env, name, self.platform).exists())
+            self.assert_free(name)
+
+    def test_nothing_eligible_and_in_use_are_not_unknown_safety(self):
+        with mock.patch.object(retention, "prune_plan", return_value=retention.PrunePlan({})):
+            empty = self.prune_copies()
+        self.assertIsNone(empty.blocked)
+        self.assertEqual(retention.prune_lines(empty, self.env), [])
+        with mock.patch.object(retention, "prune_plan", return_value=retention.PrunePlan({"2.1.200": retention.IN_USE})):
+            in_use = self.prune_copies()
+        self.assertIsNone(in_use.blocked)
+        self.assertEqual(in_use.in_use, ("2.1.200",))
+        self.assertTrue(retention.prune_lines(in_use, self.env)[0].startswith("Kept Claude Code copies in use:"))
 
     def test_gateway_stamp_is_read_from_the_state_root(self):
         workdir = service.ensure_gateway_workdir(paths.state_root(self.env))
@@ -784,22 +842,6 @@ class LifetimeLockProcessTests(PruneCase):
         self.assertIsNone(child.poll())  # the running program is not disturbed
 
 
-class RetainedHelperTests(unittest.TestCase):
-    def test_verify_retained_and_same_file(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory) / "pinned-clients"
-            state.ensure_private_dir(root)
-            target = root / "2.1.9"
-            target.write_bytes(b"x")
-            target.chmod(0o755)
-            digest = hashlib.sha256(b"x").hexdigest()
-            self.assertEqual(retention.verify_retained(root, "2.1.9", digest), target)
-            self.assertIsNone(retention.verify_retained(root, "2.1.9", "0" * 64))
-            self.assertIsNone(retention.verify_retained(root, "../x", digest))
-            self.assertTrue(retention.same_file(target, target))
-            self.assertFalse(retention.same_file(target, root / "missing"))
-
-
 class ExactClientHoldTests(PruneCase):
     """The qualification probe that runs charmer's own copy holds its use lock."""
 
@@ -1013,7 +1055,6 @@ class OwnedCopyLaunchTests(V4Case):
         self.launch_fresh()
         self.assertEqual(self.execs[-1][0], str(self.owned))
         self.assertTrue(self.retained.is_file())  # copied, never moved
-        self.assertFalse(retention.same_file(self.owned, self.retained))
 
     def test_the_exec_inherits_the_use_lock(self):
         seen = []

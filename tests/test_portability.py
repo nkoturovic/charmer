@@ -277,6 +277,32 @@ class ExportTests(PortabilityCase):
         self.assertIn("is invalid", doctor_info(now)[0])
         self.assertEqual(receipt.read_bytes(), b"{}\n")
 
+    def test_impossible_receipt_dates_are_unusable_without_rewriting(self) -> None:
+        path = portability.receipt_path(self.runtime.session_store.root)
+        for stamp in ("2026-13-01T00:00:00Z", "2026-02-30T00:00:00Z",
+                      "2025-02-29T00:00:00Z", "2026-01-01T24:00:00Z",
+                      "2026-01-01T00:60:00Z", "2026-01-01T00:00:60Z"):
+            with self.subTest(stamp=stamp):
+                data = strict_json.canonical_file_bytes(portability.receipt_document(stamp, "a" * 64))
+                state.ensure_private_dir(path.parent)
+                state.atomic_write(path, data)
+                with self.assertRaisesRegex(portability.PortabilityError, "is invalid"):
+                    portability.read_receipt(path.parent, asset_root=FIXTURE_ROOT)
+                for argv in (["doctor"], ["doctor", "-v"], ["doctor", "--json"]):
+                    code, out, err = self.op(argv)
+                    self.assertEqual(code, 0, out + err)
+                    if "-v" in argv:
+                        self.assertIn("no confirmed file export recorded", out)
+                        self.assertIn("is invalid", out)
+                    if "--json" in argv:
+                        self.assertEqual(json.loads(out)["status"], "ready")
+                    self.assertEqual(path.read_bytes(), data)
+        stamp = "2024-02-29T00:00:00Z"
+        state.atomic_write(path, strict_json.canonical_file_bytes(
+            portability.receipt_document(stamp, "a" * 64)))
+        receipt = portability.read_receipt(path.parent, asset_root=FIXTURE_ROOT)
+        self.assertEqual(receipt.exported_at, stamp)
+
     def test_export_unreadable_profiles_directory_refuses(self) -> None:
         if os.geteuid() == 0:
             self.skipTest("BOUNDARY: root reads a mode-000 directory")

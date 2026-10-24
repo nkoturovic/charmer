@@ -780,6 +780,10 @@ def read_receipt(state_root: Path | str, *, asset_root: Path | str | None = None
     if schema_validate.validate(document, _receipt_schema(asset_root), "$") or not _STAMP.match(
             document.get("exported_at", "")):
         raise PortabilityError(f"export receipt {path} is invalid")
+    try:
+        datetime.datetime.strptime(document["exported_at"], "%Y-%m-%dT%H:%M:%SZ")
+    except ValueError as exc:
+        raise PortabilityError(f"export receipt {path} is invalid") from exc
     return Receipt(document["exported_at"], document["sha256"])
 
 
