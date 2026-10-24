@@ -429,6 +429,8 @@ class EssentialEvidencePrefixTests(unittest.TestCase):
                 "client check mcp-policy: PASS class=MCP-named-deny-first ",
                 "client check token-destinations: PASS ",
                 "client check fence-substitution: PASS class=FS-fenced ",
+                "client check gateway-fallbacks: PASS class=GF-no-fallback ",
+                "client check mcp-http-retry: PASS class=MR-changing-once ",
             ),
         )
         # A fail-closed or BOUNDARY print never matches a prefix.
