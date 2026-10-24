@@ -152,7 +152,7 @@ def _doctor_rotate_token(
             say(f"  - {label}")
     if not ask("Rotate the local gateway token now?"):
         write(output_stream, "rotation not started; nothing changed")
-        return 1
+        return 3
     environ = {**runtime.environ, "CHARMER_ASSETS": str(runtime.asset_root)}
 
     def confirm(question: str) -> bool:

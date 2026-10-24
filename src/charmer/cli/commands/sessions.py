@@ -153,7 +153,10 @@ def sessions_list_document(runtime: runtime_mod.Runtime, selected: sessions.Sess
     cannot be read; ``follow`` is null for a legacy record; no transcript
     content and no native-session metadata."""
 
-    records = _selected_records(runtime, selected)
+    records, problems, _ids = session_facts._session_record_scan(runtime)
+    if problems:
+        raise cli_errors.CLIError("; ".join(problems), remedy="charmer doctor")
+    records = _selected_records(runtime, selected, records=records)
     # Unknown daemon liveness (unreadable metadata, a network filesystem) is
     # null, never false.
     try:
@@ -168,7 +171,6 @@ def sessions_list_document(runtime: runtime_mod.Runtime, selected: sessions.Sess
             record, lcat if record.get("version") == sessions.RECORD_VERSION else None,
             needs_choice=runtime.resume_choice(record, lcat=lcat).needs_choice,
         )
-        marker = launch_flow._session_row_marker(record, summary, live).strip()
         rows.append({
             "managed_id": summary.managed_id,
             "runtime_session_id": sessions.runtime_session_id(record),
@@ -177,9 +179,9 @@ def sessions_list_document(runtime: runtime_mod.Runtime, selected: sessions.Sess
             "lead": summary.lead_key,
             "agents": summary.agent_count,
             "follow": summary.follow,
-            "live": (marker == "●") if live_known else None,
+            "live": session_facts._record_is_live(record, live) if live_known else None,
             "pending_fork": bool(record.get("pending_forks")),
-            "needs_attention": marker == "!",
+            "needs_attention": record.get("identity_state") == sessions.IDENTITY_REPAIR_NEEDED or bool(summary.needs_choice),
             "pending_change": bool(summary.pending),
             "ended": record.get("last_event_source") == "end",
             "needs_choice": bool(summary.needs_choice),
@@ -193,7 +195,8 @@ def _print_sessions_listing(runtime: runtime_mod.Runtime, output_stream: TextIO,
                             selected: sessions.SessionFilter | None = None) -> None:
     """The text sessions listing (``sessions list``, bare ``-r`` without a terminal)."""
 
-    records = _selected_records(runtime, selected)
+    records, problems, _ids = session_facts._session_record_scan(runtime)
+    records = _selected_records(runtime, selected, records=records)
     output_stream.write("sessions\n")
     output_stream.write("----------------------------------------\n")
     live = session_facts._live_background_prefixes()
@@ -215,7 +218,7 @@ def _print_sessions_listing(runtime: runtime_mod.Runtime, output_stream: TextIO,
             )
             + "\n"
         )
-    if not records:
+    if not records and not problems:
         output_stream.write("(no recorded sessions)\n")
     output_stream.write(
         "[r] resume: charmer -r <id> · "
@@ -253,6 +256,8 @@ def _print_sessions_listing(runtime: runtime_mod.Runtime, output_stream: TextIO,
                 )
                 + "\n"
             )
+    if problems:
+        raise cli_errors.CLIError("; ".join(problems), remedy="charmer doctor")
 
 
 def _sessions_transition(
@@ -588,19 +593,26 @@ def _sessions_command(
             updated.get("version") == sessions.RECORD_VERSION
             and updated.get("lineup_generation", 0) >= 1
         ):
+            repair_output = io.StringIO()
+            problem = None
             try:
-                doctor_actions._doctor_repair(runtime, stable_id, io.StringIO())
+                if doctor_actions._doctor_repair(runtime, stable_id, repair_output) != 0:
+                    problem = repair_output.getvalue().strip() or "repair did not complete"
             except cli_errors.CLIError as exc:
+                problem = str(exc)
+            if problem is not None:
                 output_stream.write(
                     f"Reconciled managed {stable_id} to runtime "
-                    f"{updated['runtime_session_id']}, but scope reconverge "
-                    f"failed: {termtext.visible_message(exc)}; run "
+                    f"{updated['runtime_session_id']}, but scope convergence is unfinished: "
+                    f"{termtext.visible_message(problem)}; run "
                     f"`charmer doctor --repair {stable_id}`\n"
                 )
                 return 1
         output_stream.write(
-            f"Reconciled managed {stable_id} to runtime "
-            f"{updated['runtime_session_id']} at CWD {updated['cwd']}.\n"
+            termtext.visible_text(
+                f"Reconciled managed {stable_id} to runtime "
+                f"{updated['runtime_session_id']} at CWD {updated['cwd']}."
+            ) + "\n"
         )
         return 0
     if command == "transition":

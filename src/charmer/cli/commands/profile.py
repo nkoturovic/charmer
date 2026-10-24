@@ -230,7 +230,7 @@ def _edit_profile(
     ``raw`` edits a file that cannot be loaded as it is stored. ``expected``
     (the digest read before editing) refuses the save when the profile
     changed meanwhile. Errors are shown, the temp path is kept and False is
-    returned (exit 2).
+    returned (exit 1).
     """
 
     import tempfile
@@ -251,12 +251,16 @@ def _edit_profile(
         raise
     env = dict(runtime.environ)
     env.setdefault("PATH", os.environ.get("PATH", "/usr/bin:/bin"))
-    completed = subprocess.run([*shlex.split(editor), str(path)], env=env, check=False)
     problems: list[str] = []
     edited: dict[str, Any] | None = None
-    if completed.returncode != 0:
+    completed = None
+    try:
+        completed = subprocess.run([*shlex.split(editor), str(path)], env=env, check=False)
+    except (ValueError, OSError) as exc:
+        problems.append(f"cannot start the editor ($VISUAL/$EDITOR): {exc}")
+    if completed is not None and completed.returncode != 0:
         problems.append(f"the editor exited with status {completed.returncode}")
-    else:
+    elif completed is not None:
         try:
             edited = profile_mod.parse(strict_json.loads(path.read_bytes()))
             edited["name"] = name
@@ -369,7 +373,7 @@ def _profile_subcommand(
         document["name"] = args.name
         return 0 if _edit_profile(
             runtime, document, name=args.name, verb="new", output_stream=output_stream
-        ) else 2
+        ) else 1
     if command == "edit":
         selection._profile_name_or_composition(runtime, args.name)
         if not interactive:
@@ -509,7 +513,7 @@ def _profile_starter(
     answer = input_stream.readline()
     if answer.strip().lower() not in ("y", "yes"):
         output_stream.write("Nothing written.\n")
-        return 1
+        return 3
     store.new(plan.document)
     output_stream.write(f"Saved profile {termtext.visible_text(name)!r} (launch it: charmer --profile {name}).\n")
     return 0

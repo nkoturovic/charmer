@@ -6161,7 +6161,7 @@ class DoctorRotateTokenTests(CLITestCase):
 
     def test_declined_start_changes_nothing(self) -> None:
         code, out = self._rotate("n\n")
-        self.assertEqual(code, 1)
+        self.assertEqual(code, 3)
         self.assertIn("nothing changed", out)
         self.assertFalse((self.config_dir / "previous-key").exists())
         self.assertEqual(self.runtime.gateway_token(), self.old)
