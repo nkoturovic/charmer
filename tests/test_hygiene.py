@@ -127,6 +127,7 @@ class ImportBoundaryTests(unittest.TestCase):
                      if token.type == tokenize.COMMENT]
             with warnings.catch_warnings():
                 warnings.simplefilter("error", SyntaxWarning)
+                warnings.simplefilter("error", DeprecationWarning)  # invalid escapes on Python 3.11
                 tree = ast.parse(source, filename=str(path))
             for node in ast.walk(tree):
                 if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
