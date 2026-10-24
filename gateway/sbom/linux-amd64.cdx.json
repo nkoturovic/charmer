@@ -1,7 +1,7 @@
 {
   "bomFormat": "CycloneDX",
   "specVersion": "1.6",
-  "serialNumber": "urn:uuid:6c839ce4-1d36-54a0-b293-1f0c6eeafd8a",
+  "serialNumber": "urn:uuid:94e1e0b7-030a-577e-815d-0fd674afc67d",
   "version": 1,
   "metadata": {
     "tools": {
@@ -253,7 +253,7 @@
         },
         {
           "name": "charmer:gateway:toolchain",
-          "value": "go1.27.2"
+          "value": "go1.27.3"
         },
         {
           "name": "charmer:gateway:build-env",
@@ -2393,10 +2393,10 @@
     },
     {
       "type": "library",
-      "bom-ref": "pkg:golang/std@go1.27.2",
+      "bom-ref": "pkg:golang/std@go1.27.3",
       "name": "std",
-      "version": "go1.27.2",
-      "purl": "pkg:golang/std@go1.27.2",
+      "version": "go1.27.3",
+      "purl": "pkg:golang/std@go1.27.3",
       "description": "the Go standard library and runtime",
       "licenses": [
         {
@@ -2511,7 +2511,7 @@
         "pkg:golang/gopkg.in/ini.v1@v1.67.0",
         "pkg:golang/gopkg.in/natefinch/lumberjack.v2@v2.2.1",
         "pkg:golang/gopkg.in/yaml.v3@v3.0.1",
-        "pkg:golang/std@go1.27.2"
+        "pkg:golang/std@go1.27.3"
       ]
     }
   ]
