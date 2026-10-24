@@ -1235,14 +1235,60 @@ class TwoRootsTests(_Entry):
             self.fail("a writer entered with a stale authority")
         self.assertEqual(str(raised.exception), f"{gi.AUTHORITY_CHANGED} (nothing was changed)")
         self.assertIn("run the command again", raised.exception.remedy)  # every surface shows a fix line
+        state.ensure_private_dir(adopted)
         with gi.fenced(gi.home_roots(self.home, self.state_root), home=self.home):
-            gi.revalidate(self.home)  # both roots fenced
+            gi.revalidate(self.home)  # both existing roots have their locks held
             with gi.fenced(roots):
                 gi.revalidate(self.home)  # an inner fence keeps the outer roots
         with gi.fenced(roots):
             with self.assertRaises(gi.AuthorityChanged):
                 gi.revalidate(self.home)  # the write-time check
         gi.revalidate(self.home)  # a flow holding no fence is not checked
+
+    def test_a_missing_secondary_root_is_not_a_held_fence(self) -> None:
+        from charmer import continuity
+
+        self.assertEqual(self.proxy("init")[0], 0)
+        missing = self.root / "missing" / "charmer"
+        document = continuity.read(self.home)
+        document["state_root"] = str(missing)
+        continuity.write(self.home, document)
+        roots = gi.home_roots(self.home, self.state_root)
+        self.assertEqual(roots, (self.state_root, missing))
+        with gi.fenced(roots):
+            self.assertFalse(missing.exists())
+            # A separate descriptor can take the exclusive fence: the
+            # writer must not claim this root is protected, even once it exists.
+            token = gi.begin(missing, owner="fixture", purpose="fixture change", phase="begin",
+                             remedy="retry the fixture", lock_wait=0)
+            try:
+                with self.assertRaises(gi.AuthorityChanged):
+                    gi.revalidate(self.home)
+            finally:
+                gi.end(missing, token)
+        # Once it exists, a real shared flock excludes a concurrent begin.
+        with gi.fenced(roots, home=self.home):
+            gi.revalidate(self.home)
+            with self.assertRaises(gi.InhibitionError):
+                gi.begin(missing, owner="fixture", purpose="fixture change", phase="begin",
+                         remedy="retry the fixture", lock_wait=0)
+        token = gi.begin(missing, owner="fixture", purpose="fixture change", phase="begin",
+                         remedy="retry the fixture", lock_wait=0)
+        gi.end(missing, token)
+        gi.revalidate(self.home)  # releasing the fences restores the outer context
+
+    def test_a_missing_secondary_root_refuses_home_scoped_entry(self) -> None:
+        from charmer import continuity
+
+        self.assertEqual(self.proxy("init")[0], 0)
+        missing = self.root / "missing" / "charmer"
+        document = continuity.read(self.home)
+        document["state_root"] = str(missing)
+        continuity.write(self.home, document)
+        with self.assertRaises(gi.AuthorityChanged):
+            with gi.fenced(gi.home_roots(self.home, self.state_root), home=self.home):
+                self.fail("entered a home-scoped write without the managed root's lock")
+        self.assertFalse(missing.exists())
 
     def test_an_unreadable_authority_refuses_every_change_and_reading_stays(self) -> None:
         from charmer import continuity

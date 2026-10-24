@@ -553,7 +553,9 @@ def fenced(state_roots: Iterable[Path | str], *, token: str | None = None, what:
     """Hold each root's writer fence (shared) with its inhibition checked
     under it, for a non-dispatching check-through-write (see the module
     docstring). The first root is the writer's own (its fence is created
-    when missing); another that does not exist is only checked. With
+    when missing); another that does not exist is only checked, never
+    counted as fenced. If it manages ``home``, revalidation refuses the
+    write until its fence can be held. With
     ``home`` (a change of that home's configuration, the roots from
     :func:`home_roots`), the managed root is read again once every fence is
     held, as :func:`revalidate` does.
@@ -567,7 +569,7 @@ def fenced(state_roots: Iterable[Path | str], *, token: str | None = None, what:
 
     roots = tuple(dict.fromkeys(Path(item) for item in state_roots))
     held: list[state.FileLock] = []
-    marker = _FENCED.set(_FENCED.get() + roots)
+    marker = _FENCED.set(_FENCED.get())
     try:
         for index, root in enumerate(roots):
             try:
@@ -577,6 +579,7 @@ def fenced(state_roots: Iterable[Path | str], *, token: str | None = None, what:
                         raise InhibitionError(f"a transaction owner is recording the gateway's inhibition; {what}",
                                               remedy="retry in a moment")
                     held.append(lock)
+                    _FENCED.set(_FENCED.get() + (root,))
             except state.StateError as exc:  # an unsafe state root directory: its own one-line reason
                 raise InhibitionError(str(exc), remedy=exc.remedy) from exc
             except OSError as exc:
