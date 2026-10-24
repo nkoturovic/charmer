@@ -39,6 +39,23 @@ MODULES = {
             def test_would_fail(self):
                 self.fail("a marked module must not run elsewhere")
     """,
+    "test_class_skip": """
+        import unittest
+        class T(unittest.TestCase):
+            @classmethod
+            def setUpClass(cls):
+                raise unittest.SkipTest("BOUNDARY: class unavailable")
+            def test_never(self):
+                self.fail("skipped class ran")
+    """,
+    "test_module_skip": """
+        import unittest
+        def setUpModule():
+            raise unittest.SkipTest("BOUNDARY: module unavailable")
+        class T(unittest.TestCase):
+            def test_never(self):
+                self.fail("skipped module ran")
+    """,
     "test_fail": """
         import unittest
         class T(unittest.TestCase):
@@ -208,6 +225,18 @@ class RunnerTests(unittest.TestCase):
         present = self.run_runner("tests.test_pass", "--require", r"test_pass\.T\.test_ok")
         self.assertEqual(present.returncode, 0, present.stdout + present.stderr)
         self.assertIn("ran 2 tests", present.stdout)
+
+    def test_method_requirement_rejects_covering_fixture_skips(self) -> None:
+        for module in ("test_class_skip", "test_module_skip"):
+            with self.subTest(module=module):
+                required = f"tests.{module}.T.test_never"
+                result = self.run_runner(module, "--require", "^" + required.replace(".", r"\.") + "$")
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertIn("required tests were skipped", result.stderr)
+                self.assertIn(required, result.stderr)
+        unrelated = self.run_runner("test_pass", "test_class_skip", "test_module_skip",
+                                    "--require", r"test_pass\.T\.test_ok$")
+        self.assertEqual(unrelated.returncode, 0, unrelated.stdout + unrelated.stderr)
 
     def test_require_regex_is_validated_before_loading_tests(self) -> None:
         result = self.run_runner("tests.test_fail", "--require", "[")

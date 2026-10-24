@@ -365,8 +365,14 @@ def _run(args: argparse.Namespace, selected: list[str], work: Path) -> int:
     if guard_log.exists() and guard_log.read_text(encoding="utf-8", errors="replace").strip():
         problems.append(f"a child process tried the live gateway (see {guard_log}; rerun with --keep)")
     skipped = [(test.id(), reason) for test, reason in result.skipped]
+    skipped_ids = {test_id for test_id, _ in skipped}
+    for test_id, _ in skipped:
+        fixture = re.fullmatch(r"(?:setUpClass|setUpModule) \(([^)]+)\)", test_id)
+        if fixture is not None:
+            prefix = fixture.group(1) + "."
+            skipped_ids.update(selected_id for selected_id in test_ids if selected_id.startswith(prefix))
     for pattern in args.require:
-        missed = [test_id for test_id, _ in skipped if pattern.search(test_id)]
+        missed = sorted(test_id for test_id in skipped_ids if pattern.search(test_id))
         if missed:
             problems.append(f"required tests were skipped ({pattern.pattern}): {', '.join(missed[:5])}")
     if args.max_skip_ratio is not None and result.testsRun and len(skipped) > args.max_skip_ratio * result.testsRun:
