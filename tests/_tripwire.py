@@ -37,6 +37,7 @@ from __future__ import annotations
 import atexit
 import ipaddress
 import json
+import operator
 import os
 import socket
 import sys
@@ -55,7 +56,8 @@ def configured_ports(environ: Any = os.environ) -> frozenset[int]:
     return frozenset({port}) if type(port) is int and 0 < port < 65536 else frozenset()
 
 
-PORTS = frozenset({8317, 8316}) | configured_ports()
+RESERVED_PORTS = frozenset({8317, 8316})
+PORTS = RESERVED_PORTS | configured_ports()
 _CONTROL_VERBS = frozenset({"start", "stop", "restart", "reload", "try-restart", "reload-or-restart",
                             "enable", "disable", "kill", "daemon-reload", "reset-failed", "mask", "unmask",
                             "link", "revert", "preset"})
@@ -66,12 +68,18 @@ _MARK = "_cm_test_tripwire"
 
 
 def is_live_gateway(address: Any) -> bool:
-    """True for a TCP address naming a loopback host on 8317/8316."""
+    """Reserve 8317/8316 on every host; configured ports only on loopback."""
 
     if not isinstance(address, tuple) or len(address) < 2:
         return False
     host, port = address[0], address[1]
-    if not isinstance(port, int) or port not in PORTS:
+    try:
+        port = operator.index(port)
+    except TypeError:
+        return False
+    if port in RESERVED_PORTS:
+        return True
+    if port not in PORTS:
         return False
     if isinstance(host, bytes):
         host = host.decode("ascii", "replace")

@@ -137,13 +137,38 @@ else:
             self.log.read_text(encoding="utf-8").count("BLOCKED "), 2 * len(addresses)
         )
 
+    def test_reserved_ports_accept_index_protocol(self) -> None:
+        class Port:
+            def __init__(self, value):
+                self.value = value
+
+            def __index__(self):
+                return self.value
+
+        for port in (8317, 8316):
+            with self.subTest(port=port):
+                self.assertTrue(_tripwire.is_live_gateway(("localhost", Port(port))))
+        self.assertFalse(_tripwire.is_live_gateway(("localhost", Port(18317))))
+        self.assertFalse(_tripwire.is_live_gateway(("localhost", object())))
+
+    def test_reserved_ports_refuse_every_host_without_resolution(self) -> None:
+        # Pure classification only: none of these spellings is resolved or
+        # passed to a real socket, including the non-loopback controls.
+        hosts = ("", "0", "127.1", "2130706433", "0x7f000001", "0177.0.0.1",
+                 "localhost4", "localhost.localdomain", bytearray(b"127.0.0.1"),
+                 "10.0.0.9", "192.168.1.5", "api.example.com")
+        for port in (8317, 8316):
+            for host in hosts:
+                with self.subTest(host=host, port=port):
+                    self.assertTrue(_tripwire.is_live_gateway((host, port)))
+
     def test_other_addresses_are_not_live(self) -> None:
         for address in (
             ("127.0.0.1", 8318),
             ("127.0.0.1", 0),
-            ("10.0.0.9", 8317),
-            ("192.168.1.5", 8316),
-            ("api.example.com", 8317),
+            ("10.0.0.9", 18317),
+            ("192.168.1.5", 18316),
+            ("api.example.com", 18317),
             ("127.0.0.1", "8317"),
             "/run/user/1000/gateway.sock",
             b"\0abstract",
@@ -237,6 +262,15 @@ class ChildTripwireTests(unittest.TestCase):
 import socket, sys
 if sys.argv[1] == "parent":
     import tests
+class Port:
+    def __init__(self, value):
+        self.value = value
+    def __index__(self):
+        return self.value
+for host in ("", "0", "127.1", "2130706433", "0x7f000001", "0177.0.0.1",
+             "localhost4", "localhost.localdomain", bytearray(b"127.0.0.1"), "api.example.com"):
+    for port in (8317, 8316):
+        assert sys.modules["_tripwire"].is_live_gateway((host, Port(port)))
 addresses = [(host, port) for port in (8317, 8316, 18417) for host in (
     "127.0.0.1", "127.0.0.2", "127.255.255.254", "localhost", "localhost.",
     "LOCALHOST", "probe.localhost", "::1", "::ffff:127.0.0.1", "::", "0.0.0.0",
