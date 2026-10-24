@@ -1361,6 +1361,7 @@ class RotationTests(ProxyControlTestCase):
         from charmer import continuity
 
         managed = self.root / "state" / "charmer"
+        state.ensure_private_dir(managed)
         proxy.render_runtime_config(self.home, environ=self.environ, state_root=managed)
         before = continuity.path(self.home).read_bytes()
         self.assertEqual(continuity.read(self.home)["state_root"], str(managed))

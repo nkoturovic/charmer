@@ -1568,6 +1568,105 @@ class RollbackRemedyTests(_Lifecycle):
         self.assertIsNone(gateway_actions.observe(self.runtime()).rollback)  # running: nothing to go back for
 
 
+class MalformedInstanceLogTests(_Lifecycle):
+    def test_invalid_calendar_values_are_bounded_scan_problems(self) -> None:
+        valid = self.log_file("aaaaaaaaaaaaaaaa", ["valid log"])
+        stamps = ("20261302T120000Z", "20260230T120000Z", "20250229T120000Z",
+                  "20261002T240000Z", "20261002T126000Z", "20261002T120060Z", "00001002T120000Z")
+        expected = []
+        for index, stamp in enumerate(stamps):
+            nonce = f"{index:016x}"
+            path = self.logs / f"gateway-{stamp}-{nonce}.log"
+            state.atomic_write(path, b"fixture log\n")
+            expected.append(f"instance {nonce}: its log name has an invalid UTC start time")
+        logs, problems = file_log.scan_instance_logs(self.logs)
+        self.assertEqual([log.path for log in logs], [valid])
+        self.assertCountEqual(problems, expected)
+        self.assertTrue(all(len(problem) < 100 for problem in problems))
+        self.assertEqual(file_log.instance_logs(self.logs), logs)
+
+    def test_invalid_log_date_holds_and_survives_pruning_and_status(self) -> None:
+        path = self.logs / "gateway-20261302T120000Z-bbbbbbbbbbbbbbbb.log"
+        contents = (save_line("failed") + "\n").encode()
+        state.atomic_write(path, contents)
+        valid = self.log_file("aaaaaaaaaaaaaaaa", ["valid log"])
+        gateway = self.gateway()
+        report = gateway.persistence_hold()
+        self.assertTrue(report.held)
+        self.assertIn("invalid UTC start time", "\n".join(report.reasons))
+        pruned = gateway_hold.prune_at_start(self.state_root, ("claude",), budget=0)
+        self.assertEqual(pruned.removed, ())
+        self.assertIn("invalid UTC start time", pruned.skipped)
+        self.assertEqual(path.read_bytes(), contents)
+        self.assertTrue(valid.exists())  # the unknown log prevents computing the prune budget
+        self.assertIn("invalid UTC start time", "\n".join(gateway.status().lines({"HOME": str(self.home)})))
+        outcome = gateway.ensure(max_wait=1)
+        self.assertTrue(outcome.ok, outcome.lines())  # starting is allowed; stopping still holds
+        self.assertEqual(gateway.stop().status, "held")
+        self.assertEqual(self.world.terminated, [])
+        self.assertEqual(path.read_bytes(), contents)
+
+
+class PruneDeadlineTests(_Lifecycle):
+    def test_ensure_does_not_record_or_spawn_after_pruning_uses_its_time(self) -> None:
+        self.history(NOW - datetime.timedelta(hours=1))
+        history = (self.workdir / gl.START_HISTORY).read_bytes()
+        for elapsed in (1 - gl.MIN_CALL / 2, 1, 2):
+            with self.subTest(elapsed=elapsed):
+                self.world.clock.now = 0
+
+                def prune(*_args, **_kwargs):
+                    self.world.clock.now += elapsed
+                    return gateway_hold.PruneReport()
+
+                with mock.patch.object(gateway_hold, "prune_at_start", side_effect=prune):
+                    outcome = self.gateway().ensure(max_wait=1)
+                self.assertEqual(self.world.spawned, [])
+                self.assertEqual(outcome.status, "timeout", outcome.lines())
+                self.assertEqual((self.workdir / gl.START_HISTORY).read_bytes(), history)
+                self.assertEqual(list(self.logs.iterdir()), [])
+
+    def test_pruning_gets_the_shorter_deadline_and_the_same_clock(self) -> None:
+        for max_wait in (1, gateway_hold.PRUNE_TIMEOUT * 2):
+            with self.subTest(max_wait=max_wait):
+                self.world.clock.now = 50
+                self.world.lock, self.world.alive, self.world.listener = False, False, "none"
+                with mock.patch.object(gateway_hold, "prune_at_start", return_value=gateway_hold.PruneReport()) as prune:
+                    outcome = self.gateway().ensure(max_wait=max_wait)
+                self.assertTrue(outcome.ok, outcome.lines())
+                self.assertEqual(prune.call_args.kwargs["deadline"], 50 + min(max_wait, gateway_hold.PRUNE_TIMEOUT))
+                self.assertIs(prune.call_args.kwargs["clock"], self.world.clock)
+
+    def test_a_slow_evidence_read_exhausts_ensure_without_losing_the_log(self) -> None:
+        path = self.log_file("1111111111111111", ["x" * 300, save_line("failed")])
+        before = path.read_bytes()
+        read = os.read
+        calls = []
+
+        def slow_read(fd, size):
+            calls.append(size)
+            self.world.clock.now += 0.6
+            return read(fd, size)
+
+        with mock.patch.object(gateway_hold, "PRUNE_BUDGET", 0), \
+                mock.patch.object(file_log, "_SCAN_CHUNK", 32), \
+                mock.patch.object(file_log.os, "read", side_effect=slow_read):
+            outcome = self.gateway().ensure(max_wait=1)
+        self.assertEqual(self.world.spawned, [])
+        self.assertEqual(outcome.status, "timeout", outcome.lines())
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(path.read_bytes(), before)
+        self.assertEqual(list(self.logs.iterdir()), [path])
+        self.assertFalse((self.workdir / gl.START_HISTORY).exists())
+        self.assertFalse(gateway_hold.hold_path(self.state_root).exists())
+        # A later start with time left still records the failure before pruning.
+        with mock.patch.object(gateway_hold, "PRUNE_BUDGET", 0):
+            outcome = self.gateway().ensure(max_wait=5)
+        self.assertTrue(outcome.ok, outcome.lines())
+        self.assertFalse(path.exists())
+        self.assertTrue(self.gateway().persistence_hold().held)
+
+
 class PruneTests(_Lifecycle):
     """Logs are safety evidence: pruning happens only at a start, only for
     previous instances, and only after their unresolved failures became holds."""

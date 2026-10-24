@@ -798,13 +798,18 @@ class Gateway:
                 )
         return self._spawn(deadline, max_wait)
 
-    def prune_logs(self) -> gateway_hold.PruneReport:
+    def prune_logs(self, *, deadline: float | None = None) -> gateway_hold.PruneReport:
         """At an instance start: drop the oldest previous logs beyond the
         budget, after persisting what they still prove (never a running
-        instance's log: a start happens only once the gateway is stopped)."""
+        instance's log: a start happens only once the gateway is stopped).
+        The prune's own time limit never extends the enclosing start's."""
 
+        prune_deadline = self.seams.clock() + gateway_hold.PRUNE_TIMEOUT
+        if deadline is not None:
+            prune_deadline = min(deadline, prune_deadline)
         try:
-            return gateway_hold.prune_at_start(self.state_root, self.providers())
+            return gateway_hold.prune_at_start(self.state_root, self.providers(), deadline=prune_deadline,
+                                               clock=self.seams.clock)
         except (OSError, errors.CharmerError) as exc:
             return gateway_hold.PruneReport(skipped=str(exc))
 
@@ -813,7 +818,9 @@ class Gateway:
             return self._out_of_time(max_wait, "no time was left to start it")
         instance = secrets.token_hex(8)
         started = self.seams.now()
-        self.prune_logs()
+        self.prune_logs(deadline=deadline)
+        if deadline - self.seams.clock() < MIN_CALL:
+            return self._out_of_time(max_wait, "no time was left to start it after pruning logs")
         try:
             argv, env = self.spawn_argv(instance), self.spawn_env()
             self._write_history([*self.recent_starts(), started])

@@ -662,7 +662,8 @@ class PruneReport:
 
 def prune_at_start(state_root: Path, providers: Iterable[str], *, keep: Iterable[str] = (),
                    budget: int | None = None, file_budget: int | None = None,
-                   now: Callable[[], str] = service.utc_now, deadline: float | None = None) -> PruneReport:
+                   now: Callable[[], str] = service.utc_now, deadline: float | None = None,
+                   clock: Callable[[], float] = time.monotonic) -> PruneReport:
     """At an instance start: drop the oldest previous logs beyond ``budget``.
 
     ``keep`` names instances that must stay (a running one). Each log to be
@@ -670,8 +671,9 @@ def prune_at_start(state_root: Path, providers: Iterable[str], *, keep: Iterable
     lines, :data:`TOTAL_BUDGET` bytes examined in all); an unresolved
     failure, or an evaluation that is not complete, becomes a recorded hold
     with that coverage. A log whose read does not finish by ``deadline``
-    (``time.monotonic``; default :data:`PRUNE_TIMEOUT` from the start of the
-    reads), and every later one, is neither recorded nor removed: it stays
+    (on ``clock``, ``time.monotonic`` by default; :data:`PRUNE_TIMEOUT` from
+    the start of the reads when omitted), and every later one, is neither
+    recorded nor removed: it stays
     for a later start. The hold document is written (atomically) before any
     file is removed, and an unreadable hold document prunes nothing.
     """
@@ -704,13 +706,13 @@ def prune_at_start(state_root: Path, providers: Iterable[str], *, keep: Iterable
         holds = list(document["holds"])
         cleared = dict(document["cleared"])
         persisted = []
-        deadline = time.monotonic() + PRUNE_TIMEOUT if deadline is None else deadline
+        deadline = clock() + PRUNE_TIMEOUT if deadline is None else deadline
         remaining = TOTAL_BUDGET
         for index, log in enumerate(victims):
             start = cleared.get(log.nonce, 0)
             evidence = file_log.read_evidence(log, start=start, max_bytes=file_budget,
                                               keep=gateway_events.SAVE_LINE_BYTES, scan_limit=remaining,
-                                              deadline=deadline)
+                                              deadline=deadline, clock=clock)
             if evidence.window.timed_out:
                 # Kept for a later start: neither recorded nor removed.
                 retained += sum(late.size for late in victims[index:])

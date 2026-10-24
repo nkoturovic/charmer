@@ -12,13 +12,14 @@ garbage-collector roots or gateway.
 from __future__ import annotations
 
 import datetime
+import errno
 import io
 import json
 import os
 import subprocess
 import tempfile
 import unittest
-from contextlib import redirect_stderr
+from contextlib import contextmanager, redirect_stderr
 from pathlib import Path
 from unittest import mock
 
@@ -727,6 +728,290 @@ class InstallTests(_ServiceCase):
         select.assert_called()
         self.assertNotIn(packaged, observed)
         self.assertEqual((self.recorded().port, self.recorded().backend), (18321, endpoint.SYSTEMD))
+
+
+class RollbackCompletenessTests(_ServiceCase):
+    @contextmanager
+    def endpoint_sync_failure(self, backend):
+        sync = state._fsync_directory
+        failed = []
+
+        def fail_once(path):
+            if (not failed and path == endpoint.endpoint_path(self.home).parent
+                    and self.recorded().backend == backend):
+                failed.append(True)
+                raise OSError(errno.EIO, "fixture endpoint directory sync failed")
+            return sync(path)
+
+        with mock.patch.object(state, "_fsync_directory", side_effect=fail_once):
+            yield
+        self.assertEqual(failed, [True])  # injected after the replacement, not before it
+
+    def assert_incomplete(self, outcome):
+        self.assertFalse(outcome.ok, outcome.lines())
+        self.assertIsNotNone(gateway_inhibition.read(self.state_root))
+        text = "\n".join(outcome.lines())
+        self.assertIn("restoration is incomplete", text)
+        self.assertIn(f"finish it: {gs.INSTALL}", text)
+        return text
+
+    def test_backend_undo_is_captured_under_lock_before_replacement(self) -> None:
+        previous = self.recorded()
+        captured = []
+
+        def before(old, updated):
+            self.assertEqual(old, previous)
+            self.assertEqual(self.recorded(), previous)
+            self.assertEqual(updated.backend, endpoint.SYSTEMD)
+            lock = state.FileLock(endpoint.endpoint_path(self.home))
+            try:
+                self.assertFalse(lock.acquire(blocking=False))
+            finally:
+                lock.release()
+            captured.append((old, updated))
+
+        pair = endpoint.set_backend(self.home, endpoint.SYSTEMD, "charmer-gateway", packaged_port=self.port,
+                                    before_write=before)
+        self.assertEqual(captured, [pair])
+        self.assertEqual(self.recorded(), pair[1])
+
+    def test_install_restores_an_endpoint_committed_before_sync_failed(self) -> None:
+        before = self.recorded()
+        with self.endpoint_sync_failure(endpoint.SYSTEMD):
+            outcome = self.service().install(max_wait=1)
+        self.assertFalse(outcome.ok, outcome.lines())
+        self.assertEqual(self.recorded(), before)
+        self.assertFalse(self.manager.active)
+        self.assertEqual(list(self.unit_dir.glob("*.service")), [])
+        self.assertIsNone(gateway_inhibition.read(self.state_root))
+
+    def test_uninstall_restores_an_endpoint_committed_before_sync_failed(self) -> None:
+        self.assertTrue(self.service().install().ok)
+        before = self.recorded(), self.unit_text()
+        with self.endpoint_sync_failure(endpoint.ON_DEMAND):
+            outcome = self.service().uninstall(max_wait=1)
+        self.assertFalse(outcome.ok, outcome.lines())
+        self.assertEqual((self.recorded(), self.unit_text()), before)
+        self.assertEqual(self.manager.active, {"charmer-gateway"})
+        self.assertIsNone(gateway_inhibition.read(self.state_root))
+
+    def test_install_endpoint_restore_failure_keeps_the_inhibition(self) -> None:
+        self.running()
+        self.manager.enable_ok = False
+        with mock.patch.object(endpoint, "restore_config", side_effect=OSError("fixture endpoint restore failed")):
+            outcome = self.service().install(max_wait=1)
+        text = self.assert_incomplete(outcome)
+        self.assertEqual(self.world.spawned, [])
+        self.assertNotIn("restored: the on-demand", text)
+
+    def test_uninstall_endpoint_restore_failure_never_reenables_a_split_backend(self) -> None:
+        self.assertTrue(self.service().install().ok)
+        self.world.spawn_code = 1
+        with mock.patch.object(endpoint, "restore_config", side_effect=OSError("fixture endpoint restore failed")):
+            outcome = self.service().uninstall(max_wait=1)
+        text = self.assert_incomplete(outcome)
+        self.assertEqual(self.recorded().backend, endpoint.ON_DEMAND)
+        self.assertTrue(systemd_unit.written_here(self.unit_text()))
+        self.assertFalse(self.manager.active)
+        self.assertEqual(self.manager.verbs().count("enable"), 1)  # only the initial install
+        self.assertNotIn("restored: the gateway service runs again", text)
+
+    def test_install_file_restore_failure_keeps_the_inhibition(self) -> None:
+        self.manager.enable_ok = False
+        manager = self.service()
+        with mock.patch.object(manager, "_restore_files", return_value=["fixture unit restore failed"]):
+            outcome = manager.install(max_wait=1)
+        self.assert_incomplete(outcome)
+
+    def test_install_selection_restore_failure_keeps_the_inhibition(self) -> None:
+        self.manager.enable_ok = False
+        with mock.patch.object(installs, "restore_selection", side_effect=OSError("fixture selection restore failed")):
+            outcome = self.service().install(max_wait=1)
+        self.assert_incomplete(outcome)
+
+    def test_install_restart_failure_keeps_the_inhibition(self) -> None:
+        self.running()
+        self.manager.enable_ok = False
+        self.world.spawn_code = 1
+        outcome = self.service().install(max_wait=1)
+        text = self.assert_incomplete(outcome)
+        self.assertIn("the on-demand gateway did not start", text)
+
+    def test_uninstall_reenable_failure_keeps_the_inhibition(self) -> None:
+        self.assertTrue(self.service().install().ok)
+        self.world.spawn_code = 1
+        self.manager.enable_ok = False
+        outcome = self.service().uninstall(max_wait=1)
+        text = self.assert_incomplete(outcome)
+        self.assertIn("the service manager did not start charmer-gateway again", text)
+        self.assertEqual(self.recorded().backend, endpoint.SYSTEMD)
+
+    def test_uninstall_readiness_failure_keeps_the_inhibition(self) -> None:
+        self.assertTrue(self.service().install().ok)
+        self.world.spawn_code = 1
+        self.world.health = 503
+        outcome = self.service().uninstall(max_wait=1)
+        text = self.assert_incomplete(outcome)
+        self.assertIn("the gateway service did not become ready", text)
+
+    def test_uninstall_file_restore_failure_never_reenables_the_service(self) -> None:
+        self.assertTrue(self.service().install().ok)
+        self.world.spawn_code = 1
+        with mock.patch.object(gs, "write_unit_file", side_effect=OSError("fixture unit restore failed")):
+            outcome = self.service().uninstall(max_wait=1)
+        self.assert_incomplete(outcome)
+        self.assertFalse(self.manager.active)
+        self.assertEqual(self.manager.verbs().count("enable"), 1)
+
+    def test_interrupted_install_restoration_keeps_the_inhibition(self) -> None:
+        self.manager.enable_ok = False
+        with mock.patch.object(endpoint, "restore_config", side_effect=KeyboardInterrupt):
+            with self.assertRaises(KeyboardInterrupt):
+                self.service().install(max_wait=1)
+        self.assertIsNotNone(gateway_inhibition.read(self.state_root))
+
+    def test_interrupted_uninstall_restoration_keeps_the_inhibition(self) -> None:
+        self.assertTrue(self.service().install().ok)
+        self.world.spawn_code = 1
+        with mock.patch.object(endpoint, "restore_config", side_effect=KeyboardInterrupt):
+            with self.assertRaises(KeyboardInterrupt):
+                self.service().uninstall(max_wait=1)
+        self.assertIsNotNone(gateway_inhibition.read(self.state_root))
+
+
+class RestorationRemedyTests(_ServiceCase):
+    def assert_install_remedy(self, outcome) -> None:
+        self.assertFalse(outcome.ok, outcome.lines())
+        self.assertEqual(self.recorded().backend, endpoint.ON_DEMAND)
+        self.assertEqual(gateway_inhibition.read(self.state_root).phase, "install")
+        text = "\n".join(outcome.lines())
+        self.assertIn(f"finish it: {gs.INSTALL}", text)
+        self.assertNotIn(gs.UNINSTALL, text)
+        self.world.now += STALE_AFTER * 2
+        self.manager.enable_ok = self.manager.reload_ok = True
+        self.world.spawn_code = 0
+        restored = self.service().install(max_wait=1)
+        self.assertTrue(restored.ok, restored.lines())
+        self.assertIsNone(gateway_inhibition.read(self.state_root))
+
+    def test_failed_on_demand_restart_offers_only_an_effective_install_remedy(self) -> None:
+        self.running()
+        self.manager.enable_ok = False
+        self.world.spawn_code = 1
+        self.assert_install_remedy(self.service().install(max_wait=1))
+
+    def test_failed_restoring_reload_offers_only_an_effective_install_remedy(self) -> None:
+        self.manager.reload_outcomes = [False, False]
+        self.assert_install_remedy(self.service().install(max_wait=1))
+
+
+class HandoffStopIdentityTests(_ServiceCase):
+    def assert_changed_during_handoff(self, change) -> None:
+        self.assertTrue(self.service().install().ok)
+        manager = self.service()
+        before = endpoint.endpoint_path(self.home).read_bytes(), self.unit_text()
+        begin = manager.gateway.begin_handoff
+
+        def changed(operation, name):
+            result = begin(operation, name)
+            self.assertIsNone(result)
+            change()
+            return result
+
+        with mock.patch.object(manager.gateway, "begin_handoff", side_effect=changed):
+            outcome = manager.uninstall()
+        self.assertNotIn("disable", self.manager.verbs())
+        self.assertEqual(outcome.status, "refused", outcome.lines())
+        self.assertIn("changed meanwhile", outcome.message)
+        self.assertIsNone(gateway_inhibition.read(self.state_root))
+        self.assertEqual((endpoint.endpoint_path(self.home).read_bytes(), self.unit_text()), before)
+        self.assertEqual(self.manager.active, {"charmer-gateway"})
+
+    def test_uninstall_rechecks_the_stamp_after_begin_handoff(self) -> None:
+        self.assert_changed_during_handoff(lambda: self.world.write_stamp("cccccccccccccccc"))
+
+    def test_uninstall_rechecks_foreign_ownership_after_begin_handoff(self) -> None:
+        self.assert_changed_during_handoff(lambda: setattr(self.world, "listener", "foreign"))
+
+    def test_uninstall_rechecks_unknown_ownership_after_begin_handoff(self) -> None:
+        self.assert_changed_during_handoff(lambda: setattr(self.world, "listener", "unknown"))
+
+
+class StopIdentityTests(_ServiceCase):
+    def test_uninstall_rechecks_the_instance_after_the_hold(self) -> None:
+        self.assertTrue(self.service().install().ok)
+        manager = self.service()
+        before = endpoint.endpoint_path(self.home).read_bytes(), self.unit_text()
+        hold = manager.gateway.persistence_hold
+
+        def changed(seen):
+            report = hold(seen)
+            self.world.write_stamp("cccccccccccccccc")
+            return report
+
+        with mock.patch.object(manager.gateway, "persistence_hold", side_effect=changed):
+            outcome = manager.uninstall()
+        self.assertNotIn("disable", self.manager.verbs())
+        self.assertEqual(outcome.status, "refused", outcome.lines())
+        self.assertIn("changed meanwhile", outcome.message)
+        self.assertEqual((endpoint.endpoint_path(self.home).read_bytes(), self.unit_text()), before)
+        self.assertIsNone(gateway_inhibition.read(self.state_root))
+
+    def test_failed_install_rechecks_the_instance_after_the_hold(self) -> None:
+        manager = self.service()
+        hold = manager.gateway.persistence_hold
+        self.world.health = 503  # the new service never becomes ready
+
+        def changed(seen):
+            report = hold(seen)
+            self.world.write_stamp("cccccccccccccccc")
+            return report
+
+        with mock.patch.object(manager.gateway, "persistence_hold", side_effect=changed):
+            outcome = manager.install(max_wait=1)
+        self.assertNotIn("disable", self.manager.verbs())
+        self.assertFalse(outcome.ok)
+        self.assertIn("restore stopped", "\n".join(outcome.lines()))
+        self.assertIn("changed meanwhile", "\n".join(outcome.lines()))
+        self.assertEqual(self.recorded().backend, endpoint.SYSTEMD)
+        self.assertTrue(systemd_unit.written_here(self.unit_text()))
+        self.assertIsNotNone(gateway_inhibition.read(self.state_root))
+
+    def test_uninstall_rechecks_ownership_even_when_the_stamp_stays(self) -> None:
+        self.assertTrue(self.service().install().ok)
+        for listener in ("foreign", "unknown"):
+            with self.subTest(listener=listener):
+                self.running()
+                manager = self.service()
+                hold = manager.gateway.persistence_hold
+
+                def changed(seen):
+                    report = hold(seen)
+                    self.world.listener = listener
+                    return report
+
+                with mock.patch.object(manager.gateway, "persistence_hold", side_effect=changed):
+                    outcome = manager.uninstall()
+                self.assertNotIn("disable", self.manager.verbs())
+                self.assertEqual(outcome.status, "refused", outcome.lines())
+                self.assertIn("changed meanwhile", outcome.message)
+
+    def test_restore_veto_rechecks_ownership_even_when_the_stamp_stays(self) -> None:
+        for listener in ("foreign", "unknown"):
+            with self.subTest(listener=listener):
+                self.running()
+                manager = self.service()
+                hold = manager.gateway.persistence_hold
+
+                def changed(seen):
+                    report = hold(seen)
+                    self.world.listener = listener
+                    return report
+
+                with mock.patch.object(manager.gateway, "persistence_hold", side_effect=changed):
+                    veto = manager._stop_veto("charmer-gateway")
+                self.assertIsNotNone(veto)
+                self.assertIn("changed meanwhile", veto)
 
 
 class NixSelectionTests(_ServiceCase):

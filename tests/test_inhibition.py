@@ -14,9 +14,11 @@ from __future__ import annotations
 
 import contextlib
 import datetime
+import errno
 import io
 import json
 import os
+import shlex
 import socket
 import stat
 import unittest
@@ -1228,6 +1230,7 @@ class TwoRootsTests(_Entry):
         roots = gi.home_roots(self.home, self.state_root)
         self.assertEqual(roots, (self.state_root,))
         adopted = self.root / "adopted" / "charmer"
+        state.ensure_private_dir(adopted)
         document = continuity.read(self.home)
         document["state_root"] = str(adopted)
         continuity.write(self.home, document)  # adopted after the roots were resolved
@@ -1236,13 +1239,151 @@ class TwoRootsTests(_Entry):
         self.assertEqual(str(raised.exception), f"{gi.AUTHORITY_CHANGED} (nothing was changed)")
         self.assertIn("run the command again", raised.exception.remedy)  # every surface shows a fix line
         with gi.fenced(gi.home_roots(self.home, self.state_root), home=self.home):
-            gi.revalidate(self.home)  # both roots fenced
+            gi.revalidate(self.home)  # both existing roots have their locks held
             with gi.fenced(roots):
                 gi.revalidate(self.home)  # an inner fence keeps the outer roots
         with gi.fenced(roots):
             with self.assertRaises(gi.AuthorityChanged):
                 gi.revalidate(self.home)  # the write-time check
         gi.revalidate(self.home)  # a flow holding no fence is not checked
+
+    def test_a_missing_secondary_root_is_not_a_held_fence(self) -> None:
+        from charmer import continuity
+
+        self.assertEqual(self.proxy("init")[0], 0)
+        missing = self.root / "missing" / "charmer"
+        document = continuity.read(self.home)
+        document["state_root"] = str(missing)
+        continuity.write(self.home, document)
+        roots = gi.home_roots(self.home, self.state_root)
+        self.assertEqual(roots, (self.state_root, missing))
+        with gi.fenced(roots):
+            self.assertFalse(missing.exists())
+            # A separate descriptor can take the exclusive fence: the
+            # writer must not claim this root is protected, even once it exists.
+            token = gi.begin(missing, owner="fixture", purpose="fixture change", phase="begin",
+                             remedy="retry the fixture", lock_wait=0)
+            try:
+                with self.assertRaises(gi.AuthorityChanged):
+                    gi.revalidate(self.home)
+            finally:
+                gi.end(missing, token)
+        # Once it exists, a real shared flock excludes a concurrent begin.
+        with gi.fenced(roots, home=self.home):
+            gi.revalidate(self.home)
+            with self.assertRaises(gi.InhibitionError):
+                gi.begin(missing, owner="fixture", purpose="fixture change", phase="begin",
+                         remedy="retry the fixture", lock_wait=0)
+        token = gi.begin(missing, owner="fixture", purpose="fixture change", phase="begin",
+                         remedy="retry the fixture", lock_wait=0)
+        gi.end(missing, token)
+        gi.revalidate(self.home)  # releasing the fences restores the outer context
+
+    def test_a_missing_secondary_root_refuses_home_scoped_entry(self) -> None:
+        from charmer import continuity
+
+        self.assertEqual(self.proxy("init")[0], 0)
+        missing = self.root / "missing" / "charmer"
+        document = continuity.read(self.home)
+        document["state_root"] = str(missing)
+        continuity.write(self.home, document)
+        with self.assertRaises(gi.AuthorityChanged):
+            with gi.fenced(gi.home_roots(self.home, self.state_root), home=self.home):
+                self.fail("entered a home-scoped write without the managed root's lock")
+        self.assertFalse(missing.exists())
+
+    def test_missing_secondary_root_explains_its_recovery(self) -> None:
+        from charmer import continuity
+
+        self.assertEqual(self.proxy("init")[0], 0)
+        missing = self.root / "missing root" / "charmer"
+        document = continuity.read(self.home)
+        document["state_root"] = str(missing)
+        continuity.write(self.home, document)
+        before = self.config_files()
+        command = shlex.join(["charmer-proxy", "init", "--state-root", str(missing)])
+        code, _out, err, execs = self.proxy("init")
+        self.assertEqual((code, execs), (1, []))
+        self.assertIn(f"the recorded managed state root is missing: {missing}", err)
+        self.assertIn(command, err)
+        self.assertIn("does not restore lost session records", err)
+        self.assertNotIn(gi.AUTHORITY_CHANGED, err)
+        self.assertFalse(missing.exists())
+        self.assertEqual(self.config_files(), before)
+        # The named recovery makes the recorded root primary, so its fence
+        # is created; it neither moves authority nor fabricates lost records.
+        code, _out, err, execs = self.proxy("init", "--state-root", str(missing))
+        self.assertEqual((code, execs), (0, []), err)
+        self.assertTrue(missing.is_dir())
+        self.assertFalse((missing / "sessions").exists())
+        self.assertEqual(continuity.read(self.home)["state_root"], str(missing))
+        self.assertEqual(self.proxy("init")[0], 0)  # the cross-root write is now fenced too
+        self.assertEqual(continuity.read(self.home)["state_root"], str(missing))
+
+    def test_unusable_secondary_root_names_the_obstacle_and_effective_recovery(self) -> None:
+        from charmer import continuity
+
+        self.assertEqual(self.proxy("init")[0], 0)
+        for kind, reason in (("file", "not a directory"), ("link", "symbolic link")):
+            with self.subTest(kind=kind):
+                unusable = self.root / f"unusable {kind}"
+                if kind == "file":
+                    unusable.write_text("fixture contents to preserve")
+                else:
+                    unusable.symlink_to(self.root / "absent target")
+                document = continuity.read(self.home)
+                document["state_root"] = str(unusable)
+                continuity.write(self.home, document)
+                before = self.config_files()
+                command = shlex.join(["charmer-proxy", "init", "--state-root", str(unusable)])
+                code, _out, err, execs = self.proxy("init")
+                self.assertEqual((code, execs), (1, []))
+                self.assertIn(f"the recorded managed state root {unusable} is not a usable directory", err)
+                self.assertIn(reason, err)
+                self.assertIn("move the unusable path aside", err)
+                self.assertIn(command, err)
+                self.assertIn("does not restore lost session records", err)
+                self.assertNotIn(gi.AUTHORITY_CHANGED, err)
+                self.assertEqual(self.config_files(), before)
+                # Follow the remedy without deleting the obstacle or its data.
+                kept = unusable.with_name(f"kept {kind}")
+                unusable.rename(kept)
+                code, _out, err, execs = self.proxy("init", "--state-root", str(unusable))
+                self.assertEqual((code, execs), (0, []), err)
+                self.assertTrue(unusable.is_dir())
+                self.assertEqual(continuity.read(self.home)["state_root"], str(unusable))
+                if kind == "file":
+                    self.assertEqual(kept.read_text(), "fixture contents to preserve")
+                else:
+                    self.assertEqual(os.readlink(kept), str(self.root / "absent target"))
+
+    def test_unusable_secondary_root_reports_denied_metadata_access(self) -> None:
+        from charmer import continuity
+
+        self.assertEqual(self.proxy("init")[0], 0)
+        unreadable = self.root / "unreadable root"
+        state.ensure_private_dir(unreadable)
+        document = continuity.read(self.home)
+        document["state_root"] = str(unreadable)
+        continuity.write(self.home, document)
+        lstat = Path.lstat
+
+        def denied(path, *args, **kwargs):
+            if path == unreadable:
+                raise PermissionError(errno.EACCES, "Permission denied")
+            return lstat(path, *args, **kwargs)
+
+        with gi.fenced((self.state_root,)), mock.patch.object(Path, "lstat", denied):
+            with self.assertRaises(gi.AuthorityChanged) as raised:
+                gi.revalidate(self.home)
+        self.assertIn(f"the recorded managed state root {unreadable} is not a usable directory", str(raised.exception))
+        self.assertIn("Permission denied", str(raised.exception))
+        self.assertNotIn(gi.AUTHORITY_CHANGED, str(raised.exception))
+        self.assertIn("restore access", raised.exception.remedy)
+        self.assertIn("move it aside", raised.exception.remedy)
+        self.assertIn(shlex.join(["charmer-proxy", "init", "--state-root", str(unreadable)]), raised.exception.remedy)
+        self.assertTrue(unreadable.is_dir())
+        self.assertEqual(list(unreadable.iterdir()), [])
 
     def test_an_unreadable_authority_refuses_every_change_and_reading_stays(self) -> None:
         from charmer import continuity
