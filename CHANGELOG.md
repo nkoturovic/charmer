@@ -191,11 +191,27 @@ unavailable, not a match. See [updating](docs/update.md#updating-from-201).
 
 ### Known limits
 
-- A credential-file read error can remove an account's models from the
-  running gateway instead of retaining its last working credentials.
-  Restore owner-only read access and check providers and doctor; if models
+- A credential-file or auth-directory read error can remove one or more
+  accounts' models from the running gateway instead of retaining the last
+  working credentials. Resolve the read failure and restore owner-only
+  access, then check `charmer providers list` and `charmer doctor`. If models
   remain missing, follow the persistence hold before a guarded restart.
-  Do not delete the credential file.
+  Do not delete the credential files.
+- A model or alias reload can forget the gateway's in-memory rejection of
+  an account whose access and refresh tokens were already refused, so the
+  gateway may try that account again and return another 401. Sign in to the
+  account again through charmer; do not edit or delete its credential file.
+- On the ChatGPT account and OpenAI API key routes, if an earlier message
+  in a reply streamed text and a later message arrives only in its final
+  event, the gateway can omit that later message. If a reply stops at a
+  preamble or looks incomplete, ask for the rest.
+- The pinned Claude Code 2.1.302 predates upstream fixes for automatic
+  retries of HTTP MCP tool calls after a connection drops mid-call, and for
+  several native sandbox, worktree and Bash-permission edge cases (Claude
+  Code 2.1.304–2.1.309). If a connection is lost during a state-changing MCP
+  call, treat its outcome as unknown and check the external system before
+  retrying. charmer does not replace Claude Code's sandbox or worktree
+  protections.
 - An already-open loopback WebSocket connection can keep using a retired
   gateway key until it disconnects. Reconnect with the new key after
   rotation; managed Claude Code sessions use HTTP, not that route.

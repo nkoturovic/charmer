@@ -48,6 +48,18 @@ is newer; there is nothing to run. Managed sessions disable Claude Code's
 own updater, so the managed copy never changes by itself, while your own
 `claude` keeps updating as usual.
 
+### Deferred client fixes
+
+The pinned Claude Code 2.1.302 can automatically retry an HTTP MCP tool
+call after its connection drops mid-call. A state-changing call may already
+have taken effect: treat its outcome as unknown and check the external
+system before retrying.
+
+Upstream fixes in Claude Code 2.1.304–2.1.309 for this retry behavior and
+several native sandbox, worktree and Bash-permission edge cases are not in
+this pin. charmer does not replace Claude Code's sandbox or worktree
+protections.
+
 ### Client skew
 
 Claude Code's background supervisor can keep a backgrounded managed

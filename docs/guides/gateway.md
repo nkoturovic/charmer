@@ -219,6 +219,21 @@ restart is needed. When a reload cannot be verified, the command says
 on request; `charmer plan` previews what the gateway would serve
 after pending changes and writes nothing.
 
+### Credential reads and account rejection
+
+A credential-file or auth-directory read error can remove one or more
+accounts' models from the running gateway instead of retaining the last
+working credentials. Resolve the read failure and restore owner-only
+access, then check `charmer providers list` and `charmer doctor`. If models
+remain missing, follow [the persistence hold](#the-persistence-hold) before
+a guarded restart. Do not delete the credential files.
+
+A model or alias reload can forget the gateway's in-memory rejection of an
+account whose access and refresh tokens were already refused, so it may try
+that account again and return another 401. Sign in to the account again
+through charmer (`charmer providers sign-in anthropic` or `openai`); do not
+edit or delete its credential file.
+
 ## What the gateway changes in a request
 
 - It adds the provider's key, or the signed-in account's credentials;
@@ -241,6 +256,12 @@ after pending changes and writes nothing.
   form ("prompt is too long"), so it compacts the conversation and retries,
   whether the refusal comes before the answer starts or after. Other errors
   reach Claude Code as before.
+
+On the ChatGPT account and OpenAI API key routes, if an earlier message in
+a reply streamed text and a later message arrives only in its final event,
+the gateway can omit that later message. If a reply stops at a preamble or
+looks incomplete, ask for the rest. This is separate from the client's
+[late-stream completion limit](../troubleshooting.md#late-stream-completion-limit).
 
 ## Thinking from content chunks
 
