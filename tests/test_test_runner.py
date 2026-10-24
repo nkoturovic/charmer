@@ -180,7 +180,9 @@ class RunnerTests(unittest.TestCase):
         from charmer import legacy
 
         absent = ["CHARMER_GATEWAY", "CHARMER_SESSION_ID", "CHARMER_MANAGED_ID", "CHARMER_SECRET_ENV",
-                  legacy.LEGACY_MANAGED_ID_ENV, legacy.ENVIRONMENT[0]]
+                  "ANTHROPIC_BASE_URL", "ANTHROPIC_API_KEY", "CLAUDE_CODE_MESSAGING_SOCKET",
+                  "CLAUDE_CODE_MESSAGING_TOKEN", "CLAUDE_CODE_FIXTURE_OVERRIDE", "CLAUDE_PID",
+                  "DBUS_SESSION_BUS_ADDRESS", legacy.LEGACY_MANAGED_ID_ENV, legacy.ENVIRONMENT[0]]
         env = {name: "set-outside" for name in absent}
         result = self.run_runner("tests/test_env.py", CHARMER_TEST_KEEP="1", EXPECT_ABSENT=",".join(absent),
                                  EXPECT_KEPT="CHARMER_TEST_KEEP,CHARMER_PRIVATE_IDENTIFIERS",

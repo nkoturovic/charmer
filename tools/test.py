@@ -51,7 +51,7 @@ PLATFORM_NAMES = ("linux", "darwin", "windows")
 MIN_PYTHON = (3, 11)
 CLEARED_ENV = ("XDG_CONFIG_HOME", "XDG_STATE_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_RUNTIME_DIR",
                "CLAUDE_CONFIG_DIR", "CHARMER_ASSETS", "CHARMER_MANAGED_ID", "CLAUDECODE",
-               "PYTHONHOME", "PYTHONSTARTUP")
+               "CLAUDE_PID", "DBUS_SESSION_BUS_ADDRESS", "PYTHONHOME", "PYTHONSTARTUP")
 # Every charmer runtime variable is cleared too, except the runner's own:
 # its lane selections and the private identifier input (a path the hygiene
 # and history gates read; without it they run their generic layer alone).
@@ -185,7 +185,7 @@ def isolated_environment(work: Path, *, repo: Path, home: str = "temp", tier: st
     (guard_dir / "sitecustomize.py").write_text(guard_source(repo / "tests"), encoding="utf-8")
     guard_log = work / "guard.log"
     for name in (*CLEARED_ENV, *legacy_environment(repo), *runtime_environment(env),
-                 *(name for name in env if name.startswith("XDG_"))):
+                 *(name for name in env if name.startswith(("XDG_", "CLAUDE_CODE_", "ANTHROPIC_")))):
         env.pop(name, None)
     tmp = work / "tmp"
     tmp.mkdir(mode=0o700)

@@ -496,7 +496,9 @@ class IsolationEnvironmentTests(unittest.TestCase):
                 "HOME", "TMPDIR", "TMP", "TEMP", "XDG_CONFIG_HOME", "XDG_STATE_HOME", "XDG_DATA_HOME",
                 "XDG_CACHE_HOME", "XDG_RUNTIME_DIR", "XDG_CONFIG_DIRS", "XDG_DATA_DIRS", "CLAUDE_CONFIG_DIR",
                 "CHARMER_ASSETS", "CHARMER_MANAGED_ID", "CHARMER_SESSION_ID", "CHARMER_LAUNCH_EPOCH",
-                "CLAUDECODE", "PYTHONHOME", "PYTHONSTARTUP")}
+                "CLAUDECODE", "PYTHONHOME", "PYTHONSTARTUP", "ANTHROPIC_BASE_URL", "ANTHROPIC_API_KEY",
+                "CLAUDE_CODE_MESSAGING_SOCKET", "CLAUDE_CODE_MESSAGING_TOKEN", "CLAUDE_CODE_FIXTURE_OVERRIDE",
+                "CLAUDE_PID", "DBUS_SESSION_BUS_ADDRESS")}
             from charmer import legacy
             poisoned.update({name: str(caller) for name in legacy.ENVIRONMENT})
             fake = dict(id="fixture", cloned_from="fixture", provider="fixture", selector="fixture",
