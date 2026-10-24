@@ -517,8 +517,10 @@ class ShapeThroughGatewayTests(_GatedCase):
             f"upstream tool_references={sorted({int(hit.get('tool_references') or 0) for hit in upstream})} "
             f"replay={replay} gateway={gateway.version} client={self.gate.version}")
         failed = []
-        if refused or any(status != 200 for status in replay.values()):
+        if refused or any(row["status"] != 200 for row in replay.values()):
             failed.append("GFG-refused")
+        if any(row["upstream"] != 1 or not row["fetched-tool"] for row in replay.values()):
+            failed.append("GFG-fetched-tool-dropped")
         if [len(_main(observed["headless-1"])), len(_main(observed["headless-2"]))] != [2, 1]:
             failed.append("GFG-resent")
         if [row["model"] for row in terminal] != [_LEAD, _SWITCHED]:
@@ -531,11 +533,12 @@ class ShapeThroughGatewayTests(_GatedCase):
         type(self).verdict = ("PASS" if not failed else "FAIL", observed_class, detail)
         self.assertEqual(failed, [], detail)
 
-    def _replay(self, harness) -> dict[str, int]:
+    def _replay(self, harness) -> dict[str, Any]:
         """A captured client request (the ToolSearch continuation: deferred
         tool, tool_reference result, system turns, context_management,
         effort) replayed on the harness gateway's Claude key, Codex and
-        OpenAI-compatible routes; the status each answers."""
+        OpenAI-compatible routes: the status each answers and whether the
+        fetched deferred tool reaches the upstream's tool list."""
 
         fixture = self._fixture()
         provider = _Provider(search_once=True)
@@ -554,10 +557,15 @@ class ShapeThroughGatewayTests(_GatedCase):
             document["model"] = alias
             forwarded = {name: value for name, value in headers.items()
                          if name not in {"host", "authorization", "x-api-key", "content-length"}}
+            before = len(gateway.upstream.hits)
             reply = harness.unix_request(gateway.socket, "POST", "/v1/messages",
                                          headers={**forwarded, **gateway.headers()},
                                          body=json.dumps(document).encode(), timeout=45)
-            statuses[alias] = reply.status
+            sent = [hit.body for hit in gateway.upstream.hits[before:]]
+            names = {str(tool.get("name") or (tool.get("function") or {}).get("name"))
+                     for body in sent for tool in body.get("tools") or [] if isinstance(tool, dict)}
+            statuses[alias] = {"status": reply.status, "upstream": len(sent),
+                               "fetched-tool": "SendMessage" in names}
         return statuses
 
 

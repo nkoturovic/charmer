@@ -4,7 +4,7 @@
 
 Each charmer release runs exactly one Claude Code version: the one
 its release pins, verified for every platform the release builds. This
-release pins **Claude Code 2.1.302**. `charmer --version` names the
+release pins **Claude Code 2.1.310**. `charmer --version` names the
 pinned version, and doctor shows the pin, when it was verified, and the
 evidence class for your platform.
 
@@ -50,18 +50,20 @@ own updater, so the managed copy never changes by itself, while your own
 
 ### Deferred client fixes
 
-The pinned Claude Code 2.1.302 can resend an HTTP MCP tool call when its
-connection closes mid-call, so a tool that changes something may run twice,
-without any action from you. After an interrupted MCP call, check the
-external system for a duplicate before continuing.
+The client fixes the previous release deferred are in this pin. When the
+connection to an HTTP MCP server closes before a tool call is answered,
+Claude Code 2.1.310 sends the call again only for a tool the server marks
+read-only or idempotent; a tool that changes something is not called twice.
+An interrupted call still reports an error, and the tool may have run: check
+the external system before asking for it again.
 
-Upstream fixes in Claude Code 2.1.304–2.1.309 for this behavior and for
+The pin also carries the upstream fixes from Claude Code 2.1.304–2.1.309 for
 native sandbox boundaries (for example shell start-up files running outside
 the sandbox, or a writable `--mcp-config` file), worktrees (`--worktree`
-removing a worktree and its branch without asking) and Bash permission checks
-are not in this pin. Do not rely on the pinned client's Bash sandbox as the
-only boundary for untrusted code; charmer does not replace Claude Code's
-sandbox or worktree protections.
+removing a worktree and its branch without asking) and Bash permission checks.
+charmer has not tested those fixes. Do not rely on the client's Bash sandbox
+as the only boundary for untrusted code; charmer does not replace Claude
+Code's sandbox or worktree protections.
 
 ### Client skew
 
@@ -138,8 +140,21 @@ contexts or signed reasoning history.
   URL and a token-helper refresh after a 401. The previous pin sent it
   with its start-up and feature-flag requests to Anthropic. See
   [privacy.md](../privacy.md#data-flows).
-- A synthetic session made by 2.1.302, including a tool turn and manual
-  compaction, resumes on the previous pin, 2.1.292, from its summary without
+- Behind charmer's gateway the client sends the session's effort level
+  with every request, and the gateway accepts it. Claude Code 2.1.310 would
+  send a request again without the effort level, `context_management`,
+  tool search or its in-conversation system turns if a gateway refused
+  them; charmer's gateway accepted each on the routes checked, so no such
+  resend happens.
+- Behind the gateway the client offers tool search: some built-in tools
+  (for example SendMessage, WebFetch, WebSearch and the worktree and cron
+  tools) and MCP tools are listed by name, and the model fetches one with
+  ToolSearch when it needs it. The gateway passes fetched tools on.
+- When a provider refuses a request with an error the client does not
+  recognise, Claude Code 2.1.310 sends it up to three more times, the last
+  two without tool search, before it shows the error.
+- A synthetic session made by 2.1.310, including a tool turn and manual
+  compaction, resumes on the previous pin, 2.1.302, from its summary without
   replaying the old tool turn. This does not verify every operator session
   or background-supervisor rollback.
 - Qualification evidence recorded against an older client remains stored

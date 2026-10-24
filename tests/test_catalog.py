@@ -1619,10 +1619,11 @@ class NativeContractTests(unittest.TestCase):
         acceptance = record["acceptance"]
         # The real-client probe verdicts S1-S12 fold in as U11-U22, S7c
         # (the refusal fallback) as U23, S16 (auxiliary destinations) as U24,
-        # and S10-precedence and S15 (the 2.1.302 policy gaps) as U25-U26.
+        # S10-precedence and S15 (the 2.1.302 policy gaps) as U25-U26, and
+        # the gateway fallbacks and the HTTP MCP retry (2.1.310) as U27-U28.
         self.assertEqual(
             set(acceptance),
-            {"U1", "U2", "U5", "U6", "U10", *(f"U{n}" for n in range(11, 27))},
+            {"U1", "U2", "U5", "U6", "U10", *(f"U{n}" for n in range(11, 29))},
         )
         for name, entry in acceptance.items():
             with self.subTest(acceptance=name):
@@ -1633,11 +1634,11 @@ class NativeContractTests(unittest.TestCase):
                     self.assertEqual(entry["status"], "unverified")
                 else:
                     # The fence (U5) and SubagentStop (U10) are
-                    # probe-verified; U11-U26 are the real-client probe verdicts.
+                    # probe-verified; U11-U28 are the real-client probe verdicts.
                     self.assertEqual(entry["status"], "verified")
                 if entry["status"] == "failed":
                     self.assertIn("fallback", entry["note"])
-                if name in {f"U{n}" for n in range(11, 27)}:
+                if name in {f"U{n}" for n in range(11, 29)}:
                     self.assertIn("client 2.1.310", entry["note"])
                     self.assertIn("Radar: tests/test_client_", entry["note"])
         # The same-launch delivery record is deleted: contingency is the only

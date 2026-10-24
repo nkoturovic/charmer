@@ -2259,8 +2259,23 @@ class ExactClientProbe(_ProbeCase, unittest.TestCase):
 
 # ------------------------------------------------------------ client downgrade
 
-_DG_PREVIOUS = ("2.1.292", "a967e7b1d8b4e47ee421d5433027880347952b0c0857abf880e2c942a4ec93b3")
+_DG_PREVIOUS = ("2.1.302", "60d7eb7f12fbb28a52533fe8be5884097403562aa02dc73991a021c7067e29a5")
 _DG_MARKER = "PROBE-DG-SUMMARY"
+# Under tools/test.py the pin is the private HOME's owned copy, so the
+# previous pin can also be named by path (accepted only at its sha256).
+_DG_PREVIOUS_ENV = "CHARMER_TEST_PREVIOUS_CLAUDE"
+
+
+def _previous_pin(trusted: probe.TrustedExecutable) -> probe.TrustedExecutable | None:
+    """The previous release's pin: beside the pinned client (a versions
+    directory), else the file ``CHARMER_TEST_PREVIOUS_CLAUDE`` names."""
+
+    named = os.environ.get(_DG_PREVIOUS_ENV, "")
+    for path in (trusted.resolved_path.parent / _DG_PREVIOUS[0],
+                 *((Path(os.path.realpath(named)),) if os.path.isabs(named) else ())):
+        if path != trusted.resolved_path and path.is_file() and probe._sha256_file(path) == _DG_PREVIOUS[1]:
+            return probe.TrustedExecutable(path, _DG_PREVIOUS[1])
+    return None
 
 
 class _DowngradeResponder:
@@ -2303,11 +2318,11 @@ class DowngradeResumeTests(_ProbeCase, unittest.TestCase):
     test_observation = None  # one named test, not the shared observation runner
 
     def test_candidate_tool_compact_then_previous_client_resume(self):
-        path = self.trusted.resolved_path.parent / _DG_PREVIOUS[0]
-        if path == self.trusted.resolved_path or not path.is_file() or probe._sha256_file(path) != _DG_PREVIOUS[1]:
+        previous = _previous_pin(self.trusted)
+        if previous is None:
             type(self).verdict = ("BOUNDARY", "unavailable", f"previous pin {_DG_PREVIOUS[0]} not retained")
-            self.skipTest(f"BOUNDARY: previous pin {_DG_PREVIOUS[0]} not retained next to the pinned client")
-        previous = probe.TrustedExecutable(path, _DG_PREVIOUS[1])
+            self.skipTest(f"BOUNDARY: previous pin {_DG_PREVIOUS[0]} not retained next to the pinned client "
+                          f"or named by {_DG_PREVIOUS_ENV}")
         fixture = self._fixture()
         settings = self._settings(fixture, {})
         session = str(uuid.uuid4())
