@@ -380,6 +380,79 @@ class PlumbingCommandTests(unittest.TestCase):
                     self.assertEqual(result.stdout, b"")
 
 
+class MainLineTests(unittest.TestCase):
+    """``charmer statusline main``: the opt-in line for a user's own ``statusLine``."""
+
+    MID = "11111111-1111-4111-8111-111111111111"
+
+    def setUp(self) -> None:
+        temporary = tempfile.TemporaryDirectory(prefix="charmer-statusline-main-")
+        self.addCleanup(temporary.cleanup)
+        self.home = Path(temporary.name) / "home"
+        self.scope = self.home / ".local/state/charmer/scopes" / self.MID
+        self.scope.mkdir(parents=True)
+        (self.scope / "lineup.gen").write_text("7 0123456789ab\n")
+        (self.scope / "lineup.md").write_text("# Lineup\n\nProfile: quality · generation 7\n")
+        self.base = {"model": {"display_name": "Model", "id": "native-model"}, "effort": {"level": "high"},
+                     "context_window": {"used_percentage": 73.8, "context_window_size": 1048576,
+                                        "total_input_tokens": 765432},
+                     "workspace": {"current_dir": str(self.home / "project")}, "cost": {"total_cost_usd": 0.1234}}
+
+    def line(self, document: object, managed_id: str | None = None) -> str:
+        environ = {"HOME": str(self.home)}
+        if managed_id is not None:
+            environ["CHARMER_MANAGED_ID"] = managed_id
+        stdout = io.BytesIO()
+        data = document if isinstance(document, bytes) else json.dumps(document).encode()
+        self.assertEqual(statusline.run("main", io.BytesIO(data), _BinaryStream(stdout), environ), 0)
+        return _ANSI.sub("", stdout.getvalue().decode("utf-8"))
+
+    def scoped(self, directory: Path | None = None) -> dict:
+        return {**self.base, "workspace": {**self.base["workspace"],
+                                           "added_dirs": [None, 42, str(directory or self.scope)]}}
+
+    def test_a_plain_session_has_no_marker_and_no_profile(self) -> None:
+        self.assertEqual(self.line(self.base), "~/project Model · high · ctx 73% 765K/1.0M · $0.12\n")
+
+    def test_a_managed_session_shows_the_marker_and_its_profile(self) -> None:
+        self.assertEqual(self.line(self.scoped(), self.MID),
+                         "~/project ◆Model · high · quality · ctx 73% 765K/1.0M · $0.12\n")
+        (self.scope / "lineup.md").write_text("# Lineup\n\nProfile: ad-hoc direct · generation 8\n")
+        self.assertIn(" · direct · ", self.line(self.scoped(), self.MID))
+
+    def test_the_marker_needs_the_sessions_own_scope_directory(self) -> None:
+        other = "22222222-2222-4222-8222-222222222222"
+        for document, managed_id in ((self.base, self.MID), (self.scoped(), other), (self.scoped(), None),
+                                     (self.scoped(), "not-a-uuid")):
+            with self.subTest(managed_id=managed_id, scoped="added_dirs" in document["workspace"]):
+                self.assertNotIn("◆", self.line(document, managed_id))
+
+    def test_a_scope_without_a_lineup_generation_shows_no_profile(self) -> None:
+        (self.scope / "lineup.gen").write_text("")
+        self.assertEqual(self.line(self.scoped(), self.MID), "~/project ◆Model · high · ctx 73% 765K/1.0M · $0.12\n")
+        (self.scope / "lineup.gen").write_text("7 0123456789ab\n")
+        (self.scope / "lineup.md").write_text("unexpected\n")
+        self.assertIn(" · lineup · ", self.line(self.scoped(), self.MID))
+
+    def test_context_colours_cost_and_fallbacks(self) -> None:
+        stdout = io.BytesIO()
+        document = {**self.base, "context_window": {"used_percentage": 90, "total_input_tokens": 999999}}
+        statusline.run("main", io.BytesIO(json.dumps(document).encode()), _BinaryStream(stdout), {})
+        text = stdout.getvalue().decode("utf-8")
+        self.assertIn("ctx \x1b[31m90%\x1b[0m \x1b[2m999K\x1b[0m", text)
+        self.assertEqual(self.line({"model": {"id": "native-model"}, "cost": {"total_cost_usd": 0}}), "native-model\n")
+
+    def test_display_text_is_sanitized(self) -> None:
+        document = {"model": {"display_name": "M\x1b[2K\nX"}, "effort": {"level": "hi\x9bgh"},
+                    "workspace": {"current_dir": "/p\x07q"}}
+        self.assertEqual(self.line(document), "/p q M [2K X · hi gh\n")
+
+    def test_unusable_input_prints_nothing_and_exits_zero(self) -> None:
+        for data in (b"", b"not json", b"[1]", b"{}", b"null", b'{"model": 5}', b"\xff"):
+            with self.subTest(data=data):
+                self.assertEqual(self.line(data), "")
+
+
 class CompiledStatusLineTests(V4Case):
     """The compiled ``subagentStatusLine`` through real launches, resumes, doctor and repair."""
 
