@@ -620,16 +620,10 @@ def _mode(path: Path) -> int:
 
 
 def _put_bytes(path: Path, data: bytes, mode: int) -> None:
-    """Write ``data`` to ``path`` exactly, with ``mode`` (atomic rename)."""
+    """Write ``data`` exactly, with ``mode`` and a durable atomic replace."""
 
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(f".{path.name}.back.{os.getpid()}")
-    with open(temporary, "wb") as handle:
-        handle.write(data)
-        handle.flush()
-        os.fsync(handle.fileno())
-    os.chmod(temporary, mode)
-    os.replace(temporary, path)
+    posix_fs.atomic_replace(path, data, mode=mode)
 
 
 def launcher_owned(path: Path) -> bool:
