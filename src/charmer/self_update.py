@@ -50,7 +50,9 @@ import os
 import posixpath
 import re
 import shutil
+import stat
 import subprocess
+import sys
 import tarfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -502,6 +504,63 @@ def _sync(root: Path) -> None:
         posix_fs.fsync_directory(root)
     except OSError as exc:
         raise UpdateError(f"the new links in {root} are in place but could not be made durable: {exc}") from exc
+
+
+def _sync_tree(descriptor: int) -> None:
+    """Flush a bundle bottom-up through directory descriptors, never links."""
+
+    for name in os.listdir(descriptor):
+        info = os.stat(name, dir_fd=descriptor, follow_symlinks=False)
+        if stat.S_ISLNK(info.st_mode):
+            continue  # The containing directory persists the link itself.
+        if not (stat.S_ISDIR(info.st_mode) or stat.S_ISREG(info.st_mode)):
+            raise OSError(f"bundle entry {name!r} is not a regular file or directory")
+        flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
+        if stat.S_ISDIR(info.st_mode):
+            flags |= os.O_DIRECTORY
+        child = os.open(name, flags, dir_fd=descriptor)
+        try:
+            opened = os.fstat(child)
+            if (opened.st_dev, opened.st_ino, stat.S_IFMT(opened.st_mode)) != (
+                    info.st_dev, info.st_ino, stat.S_IFMT(info.st_mode)):
+                raise OSError(f"bundle entry {name!r} changed during its durability check")
+            if stat.S_ISDIR(opened.st_mode):
+                _sync_tree(child)
+            else:
+                os.fsync(child)
+        finally:
+            os.close(child)
+    os.fsync(descriptor)
+
+
+def sync_bundle(root: Path, version: str) -> None:
+    """Make the incoming version and its parent durable before a link switch.
+
+    Linux sync waits for the writes in parallel: thousands of individual
+    file fsyncs on a freshly unpacked bundle can take tens of seconds.
+    Other POSIX hosts flush regular files and directories bottom-up, without
+    following links. Rollback reuses a durable version and skips this barrier.
+    """
+
+    version_key(version)
+    bundle = root / VERSIONS / version
+    try:
+        parent = os.open(root / VERSIONS, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            descriptor = os.open(version, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent)
+            try:
+                if sys.platform.startswith("linux"):
+                    os.sync()
+                else:
+                    _sync_tree(descriptor)
+                    os.fsync(parent)
+            finally:
+                os.close(descriptor)
+        finally:
+            os.close(parent)
+    except OSError as exc:
+        raise UpdateError(f"the incoming bundle {bundle} could not be made durable ({exc}); "
+                          "the links were left as they are") from exc
 
 
 def _link_text(root: Path, name: str) -> str | None:
@@ -977,6 +1036,7 @@ def apply(installation: Installation, release: Release, planned: Plan, transport
                 shutil.rmtree(replaced, ignore_errors=True)
                 os.rename(destination, replaced)
             os.rename(unpacked, destination)
+            sync_bundle(root, release.version)
             _advance(held, "switch")
             switch(root, current=release.version, previous=old if old != release.version else None)
         finally:

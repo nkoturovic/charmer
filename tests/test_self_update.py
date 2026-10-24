@@ -407,6 +407,70 @@ class ApplyTests(SelfUpdateTestCase):
             transport.download(release.asset().name, "1.0.1", self.tmp / "out", 5)
 
 
+class IncomingDurabilityTests(SelfUpdateTestCase):
+    def test_update_sync_failure_leaves_both_links_and_switch_record_untouched(self) -> None:
+        self.seed(self.release("1.0.0"))
+        self.update_to(self.release("1.0.1"))
+        before = tuple(os.readlink(self.root / name) for name in ("current", "previous"))
+        with mock.patch.object(su, "sync_bundle", create=True,
+                               side_effect=su.UpdateError("incoming bundle could not be made durable")) as barrier:
+            with self.assertRaisesRegex(su.UpdateError, "incoming bundle could not be made durable"):
+                self.update_to(self.release("1.0.2"))
+        barrier.assert_called_once_with(self.root, "1.0.2")
+        self.assertEqual(tuple(os.readlink(self.root / name) for name in ("current", "previous")), before)
+        self.assertFalse((self.root / su.SWITCH_RECORD).exists())
+
+    def test_rollback_skips_the_incoming_bundle_barrier(self) -> None:
+        self.seed(self.release("1.0.0"))
+        self.update_to(self.release("1.0.1"))
+        with mock.patch.object(su, "sync_bundle", create=True, side_effect=AssertionError("rollback never syncs")):
+            result = roll_back(self.root, state_root=self.state, hold=clear, inhibit=contextlib.nullcontext)
+        self.assertEqual(result.version, "1.0.0")
+
+    def test_linux_uses_one_sync_and_reports_its_failure(self) -> None:
+        self.seed(self.release("1.0.0"))
+        with mock.patch.object(su.sys, "platform", "linux"), mock.patch.object(su.os, "sync", create=True) as sync:
+            su.sync_bundle(self.root, "1.0.0")
+            sync.assert_called_once_with()
+            sync.side_effect = OSError(5, "Input/output error")
+            with self.assertRaisesRegex(su.UpdateError, "links were left as they are"):
+                su.sync_bundle(self.root, "1.0.0")
+
+    def test_file_walk_syncs_files_then_directories_without_following_links(self) -> None:
+        import stat
+
+        versions = self.root / "versions"
+        incoming = versions / "1.0.0"
+        nested = incoming / "nested"
+        nested.mkdir(parents=True)
+        payload = nested / "payload"
+        payload.write_bytes(b"new bundle")
+        outside = self.tmp / "outside"
+        outside.write_bytes(b"never opened")
+        (incoming / "link").symlink_to(outside)
+        seen = []
+        def fsync(fd):
+            info = os.fstat(fd)
+            seen.append((info.st_ino, stat.S_IFMT(info.st_mode)))
+        with mock.patch.object(su.sys, "platform", "darwin"), mock.patch.object(su.os, "fsync", side_effect=fsync):
+            su.sync_bundle(self.root, "1.0.0")
+        self.assertEqual(seen, [(p.stat().st_ino, stat.S_IFMT(p.stat().st_mode))
+                                for p in (payload, nested, incoming, versions)])
+
+    def test_file_walk_refuses_special_files_and_symlinked_roots(self) -> None:
+        incoming = self.root / "versions/1.0.0"
+        incoming.mkdir(parents=True)
+        os.mkfifo(incoming / "fifo")
+        with mock.patch.object(su.sys, "platform", "darwin"):
+            with self.assertRaisesRegex(su.UpdateError, "links were left as they are"):
+                su.sync_bundle(self.root, "1.0.0")
+            (incoming / "fifo").unlink()
+            incoming.rmdir()
+            incoming.symlink_to(self.tmp, target_is_directory=True)
+            with self.assertRaisesRegex(su.UpdateError, "links were left as they are"):
+                su.sync_bundle(self.root, "1.0.0")
+
+
 class SafetyTests(SelfUpdateTestCase):
     """The running gateway's installation, the inhibition and the incoming pin."""
 

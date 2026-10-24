@@ -208,6 +208,20 @@ class InstallTests(InstallerTestCase):
         self.assertEqual(sorted(p.name for p in (self.root / "versions").iterdir()), ["1.0.1", "1.1.0"])
         self.assertEqual(self.launcher("--version").stdout.strip(), "charmer 1.1.0")
 
+    def test_incoming_sync_failure_never_switches_the_installation(self) -> None:
+        self.assertInstalled(self.install(self.release("1.0.0")), "1.0.0")
+        self.assertInstalled(self.install(self.release("1.0.1")), "1.0.1")
+        before = tuple(os.readlink(self.root / name) for name in ("current", "previous"))
+        source = (REPO_ROOT / "src/charmer/self_update.py").read_bytes()
+        failure = b'\ndef sync_bundle(root, version):\n    raise UpdateError("fixture incoming sync failure; links were left as they are")\n'
+        release = self.release("1.0.2", overrides={"charmer/self_update.py": source + failure})
+        result = self.install(release)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("fixture incoming sync failure", result.stderr)
+        self.assertEqual(tuple(os.readlink(self.root / name) for name in ("current", "previous")), before)
+        self.assertFalse((self.root / ".switch.json").exists())
+        self.assertFalse((self.root / ".lock").exists())
+
     def test_reinstalling_the_same_version_replaces_it(self) -> None:
         release = self.release("1.0.0")
         self.assertInstalled(self.install(release), "1.0.0")

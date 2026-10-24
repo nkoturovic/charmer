@@ -809,6 +809,7 @@ install_bundle() {
 	mv "$staging" "$dest"
 	staging=''
 	txn_bundle=$dest
+	bundle_python "$txn_bundle" "$TXN" sync-bundle --install-root "$install_root" --version "$version" || exit 1
 	if [ -n "$replaced" ]; then rm -rf "$replaced"; fi
 	advance switch
 	if [ -n "$old" ] && [ "$old" != "$version" ] && [ -d "$install_root/versions/$old" ]; then
