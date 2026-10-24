@@ -143,8 +143,8 @@
     ]
   },
   "lifecycle_evidence": {
-    "evidence_id": "deepwork-claude-multi-durable-session-config-phase0-2.1.302",
-    "inspected_version": "2.1.302"
+    "evidence_id": "deepwork-claude-multi-durable-session-config-phase0-2.1.310",
+    "inspected_version": "2.1.310"
   },
   "nested_subagents": {
     "concurrency_key": {
@@ -165,42 +165,42 @@
       "evidence": {
         "linux-x64": "battery",
         "others": "identity+smoke",
-        "receipt_sha256": "b268f717d51d9c6585f805cb63ca453d420c7e376bc5fe56c2d4171946fc7320"
+        "receipt_sha256": "fe3ea019c4855a1cffcd69a90b926d2731a478c212e79301a49ff30de81eb23c"
       },
       "key_fingerprint": "31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE",
-      "manifest_sha256": "d7d4f193bfebb48733027b0dc43d6996d99f5335d152961a729730e55bbd5aa1",
+      "manifest_sha256": "895e85ce24c3df3fdb77ac1006bdb2b66f1c42dd557000e65ced1e4aad847e74",
       "platforms": {
         "darwin-arm64": {
-          "sha256": "5262ce9de86243fed0d21edc39b271555d56780d0112e2b194439fe1c6662d37",
-          "size": 267956720
+          "sha256": "ffb64331bc0ee1b69efb7c2c428bd3ab516bc31b75bf60886b356c97c1c25ffd",
+          "size": 274068224
         },
         "darwin-x64": {
-          "sha256": "b9a913114f42870ec8e38848c88c855d73f73187871ec2e1ad05bbe54029d9ac",
-          "size": 279242736
+          "sha256": "28fdbed5a84ef7d4205b5751c7f021e79151c4e319c4a401e48fe6aae86bbb39",
+          "size": 285291472
         },
         "linux-arm64": {
-          "sha256": "2bd4f4e5ed5cb09955b490098f745321cb5491e7ea8c752ba1e3bb010cdadb10",
-          "size": 285335616
+          "sha256": "9c64d9a7442436b65fcd7cc02c1aa0051bb5a7041e7788576ed3b5f29c447d54",
+          "size": 291496120
         },
         "linux-arm64-musl": {
-          "sha256": "58dd401b704351f4b70a0bb6faecbc1eb1405057b4dd4cf48a7beae93b4ca143",
-          "size": 277560568
+          "sha256": "adfd1f0ef12a3bcafa66e33491fc3e4204e41aeb4a7305ffc311c16c26793825",
+          "size": 283658112
         },
         "linux-x64": {
-          "sha256": "60d7eb7f12fbb28a52533fe8be5884097403562aa02dc73991a021c7067e29a5",
-          "size": 285793528
+          "sha256": "b73676430af12f97316a798b8371f81d640f90a58bdcb8f3ce56a835bb47df56",
+          "size": 291638640
         },
         "linux-x64-musl": {
-          "sha256": "39395c4d6fef3e38bf59d75890593a5474181c8e96534b54562312503685f787",
-          "size": 279426576
+          "sha256": "2ceb05e0a97b09be4c14717464a2156e8d087dea9867a399dd75d3b898ca4824",
+          "size": 285302928
         },
         "win32-arm64": {
-          "sha256": "e2c445a4fa8a8c92b64f29bf56dc7addd1770764214ed18023bab8f544f584ed",
-          "size": 274492064
+          "sha256": "91da8a2247a8806162319bcdf3e70c6ffeeb58b568481a9827fbff167a694edb",
+          "size": 280850592
         },
         "win32-x64": {
-          "sha256": "3ab075f78998efef8b87f491c2e4a39c309dddf44e51d0103eba4f3713d2a0ae",
-          "size": 290211488
+          "sha256": "f9a3920634ae3b961ee92c2eb58d0051f5f8852b120983d0a4f57b6a5efeba61",
+          "size": 296791712
         }
       },
       "settings_keys": [
@@ -224,6 +224,8 @@
         "appendPlugins",
         "askUserQuestionTimeout",
         "attribution",
+        "attributionProject",
+        "attributionProjectPolicy",
         "autoCompactEnabled",
         "autoCompactWindow",
         "autoContinueAtUsageLimit",
@@ -356,6 +358,7 @@
         "spinnerTipsOverride",
         "spinnerVerbs",
         "sshConfigs",
+        "sshHostCommands",
         "statusLine",
         "strictKnownMarketplaces",
         "strictPluginOnlyCustomization",
@@ -389,9 +392,9 @@
         "wslInheritsWindowsSettings",
         "xaaIdp"
       ],
-      "signature_sha256": "fa7329ee7da147f019dfc898d4ab978522d3900d25844fabb7b68d1026b6459c",
-      "verified_at": "2026-10-18",
-      "version": "2.1.302"
+      "signature_sha256": "5a441d83b678da97ab2447bfa4fb718fbed07ecc4912909edf96284a4a799011",
+      "verified_at": "2026-10-24",
+      "version": "2.1.310"
     }
   ],
   "version": 2
