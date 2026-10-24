@@ -1568,6 +1568,66 @@ class RollbackRemedyTests(_Lifecycle):
         self.assertIsNone(gateway_actions.observe(self.runtime()).rollback)  # running: nothing to go back for
 
 
+class PruneDeadlineTests(_Lifecycle):
+    def test_ensure_does_not_record_or_spawn_after_pruning_uses_its_time(self) -> None:
+        self.history(NOW - datetime.timedelta(hours=1))
+        history = (self.workdir / gl.START_HISTORY).read_bytes()
+        for elapsed in (1 - gl.MIN_CALL / 2, 1, 2):
+            with self.subTest(elapsed=elapsed):
+                self.world.clock.now = 0
+
+                def prune(*_args, **_kwargs):
+                    self.world.clock.now += elapsed
+                    return gateway_hold.PruneReport()
+
+                with mock.patch.object(gateway_hold, "prune_at_start", side_effect=prune):
+                    outcome = self.gateway().ensure(max_wait=1)
+                self.assertEqual(self.world.spawned, [])
+                self.assertEqual(outcome.status, "timeout", outcome.lines())
+                self.assertEqual((self.workdir / gl.START_HISTORY).read_bytes(), history)
+                self.assertEqual(list(self.logs.iterdir()), [])
+
+    def test_pruning_gets_the_shorter_deadline_and_the_same_clock(self) -> None:
+        for max_wait in (1, gateway_hold.PRUNE_TIMEOUT * 2):
+            with self.subTest(max_wait=max_wait):
+                self.world.clock.now = 50
+                self.world.lock, self.world.alive, self.world.listener = False, False, "none"
+                with mock.patch.object(gateway_hold, "prune_at_start", return_value=gateway_hold.PruneReport()) as prune:
+                    outcome = self.gateway().ensure(max_wait=max_wait)
+                self.assertTrue(outcome.ok, outcome.lines())
+                self.assertEqual(prune.call_args.kwargs["deadline"], 50 + min(max_wait, gateway_hold.PRUNE_TIMEOUT))
+                self.assertIs(prune.call_args.kwargs["clock"], self.world.clock)
+
+    def test_a_slow_evidence_read_exhausts_ensure_without_losing_the_log(self) -> None:
+        path = self.log_file("1111111111111111", ["x" * 300, save_line("failed")])
+        before = path.read_bytes()
+        read = os.read
+        calls = []
+
+        def slow_read(fd, size):
+            calls.append(size)
+            self.world.clock.now += 0.6
+            return read(fd, size)
+
+        with mock.patch.object(gateway_hold, "PRUNE_BUDGET", 0), \
+                mock.patch.object(file_log, "_SCAN_CHUNK", 32), \
+                mock.patch.object(file_log.os, "read", side_effect=slow_read):
+            outcome = self.gateway().ensure(max_wait=1)
+        self.assertEqual(self.world.spawned, [])
+        self.assertEqual(outcome.status, "timeout", outcome.lines())
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(path.read_bytes(), before)
+        self.assertEqual(list(self.logs.iterdir()), [path])
+        self.assertFalse((self.workdir / gl.START_HISTORY).exists())
+        self.assertFalse(gateway_hold.hold_path(self.state_root).exists())
+        # A later start with time left still records the failure before pruning.
+        with mock.patch.object(gateway_hold, "PRUNE_BUDGET", 0):
+            outcome = self.gateway().ensure(max_wait=5)
+        self.assertTrue(outcome.ok, outcome.lines())
+        self.assertFalse(path.exists())
+        self.assertTrue(self.gateway().persistence_hold().held)
+
+
 class PruneTests(_Lifecycle):
     """Logs are safety evidence: pruning happens only at a start, only for
     previous instances, and only after their unresolved failures became holds."""

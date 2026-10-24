@@ -34,6 +34,7 @@ import stat
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
 from charmer.platform import observation
 
@@ -168,7 +169,7 @@ class Evidence:
 
 def read_evidence(log: InstanceLog, *, start: int = 0, max_bytes: int = 32 << 20,
                   keep: re.Pattern[bytes] | None = None, scan_limit: int | None = None,
-                  deadline: float | None = None) -> Evidence:
+                  deadline: float | None = None, clock: Callable[[], float] = time.monotonic) -> Evidence:
     """The complete lines from byte ``start`` to the end, for the persistence hold.
 
     Like :func:`read_window`, but the window is ``incomplete`` whenever the
@@ -178,14 +179,15 @@ def read_evidence(log: InstanceLog, *, start: int = 0, max_bytes: int = 32 << 20
     With ``keep`` (the evidence pattern) the read streams every byte from
     ``start`` and keeps only the lines ``keep`` matches; ``max_bytes`` then
     bounds the kept bytes (the newest are kept), ``scan_limit`` the bytes
-    examined (the newest), and ``deadline`` (``time.monotonic``) the time.
+    examined (the newest), and ``deadline`` (on ``clock``, default
+    ``time.monotonic``) the time.
     Each limit makes the window ``truncated`` or ``incomplete`` and says why
     in ``cause``.
     """
 
     if keep is not None:
         return _scan(log, start=start, max_bytes=max_bytes, keep=keep, scan_limit=scan_limit,
-                     deadline=deadline)
+                     deadline=deadline, clock=clock)
     return _read(log, start=start, max_bytes=max_bytes, strict=True)
 
 
@@ -193,7 +195,7 @@ _SCAN_CHUNK = 1 << 20
 
 
 def _scan(log: InstanceLog, *, start: int, max_bytes: int, keep: re.Pattern[bytes],
-          scan_limit: int | None, deadline: float | None) -> Evidence:
+          scan_limit: int | None, deadline: float | None, clock: Callable[[], float]) -> Evidence:
     """:func:`read_evidence` in keep mode: one streamed pass, kept lines only."""
 
     try:
@@ -225,7 +227,7 @@ def _scan(log: InstanceLog, *, start: int, max_bytes: int, keep: re.Pattern[byte
         end = begin  # after the last complete line
         carry = bytearray()
         while offset < size:
-            if deadline is not None and time.monotonic() >= deadline:
+            if deadline is not None and clock() >= deadline:
                 timed_out = True
                 break
             chunk = os.read(descriptor, min(_SCAN_CHUNK, size - offset))
