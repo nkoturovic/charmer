@@ -6,9 +6,50 @@ import json
 from pathlib import Path
 from unittest import mock
 
-from charmer import sessions
+from charmer import errors, sessions, state
 from charmer.cli import entry
 from test_cli import CLITestCase, FIXED_ID, OTHER_ID
+
+
+class RelinkConvergenceTests(CLITestCase):
+    def test_relink_reports_a_skipped_repair_and_keeps_the_identity_commit(self) -> None:
+        for failure, reason in (
+            (sessions.MigrationBusyError("fixture migration"), "migration or restore in progress"),
+            (state.BarrierBusyError(), state.BARRIER_BUSY_TEXT),
+        ):
+            with self.subTest(failure=type(failure).__name__):
+                before = self.save_v4_session(write_scope=True)
+                settings = self.runtime.session_store.root / "scopes" / FIXED_ID / "settings.json"
+                scope_before = settings.read_bytes()
+                with mock.patch("charmer.cli.doctor_actions.sessions.served_change_phase", side_effect=failure):
+                    code, out, err = self.run_cli_both(
+                        ["sessions", "relink-runtime", FIXED_ID, OTHER_ID], interactive=False)
+                self.assertEqual(code, 1, out + err)
+                self.assertIn("scope convergence is unfinished", out)
+                self.assertIn(reason, out)
+                self.assertIn(f"charmer doctor --repair {FIXED_ID}", out)
+                after = self.runtime.session_store.load(FIXED_ID)
+                self.assertEqual(after["runtime_session_id"], OTHER_ID)
+                self.assertGreater(after["launch_epoch"], before["launch_epoch"])
+                self.assertEqual(settings.read_bytes(), scope_before)
+                code, out, err = self.run_cli_both(["doctor", "--repair", FIXED_ID], interactive=False)
+                self.assertEqual(code, 0, out + err)
+
+    def test_relink_reports_a_raised_repair_failure_with_the_retry(self) -> None:
+        self.save_v4_session(write_scope=True)
+        with mock.patch("charmer.cli.doctor_actions._doctor_repair", side_effect=errors.CLIError("fixture failure")):
+            code, out, err = self.run_cli_both(["sessions", "relink-runtime", FIXED_ID, OTHER_ID], interactive=False)
+        self.assertEqual(code, 1, out + err)
+        self.assertIn("fixture failure", out)
+        self.assertIn(f"charmer doctor --repair {FIXED_ID}", out)
+        self.assertEqual(self.runtime.session_store.load(FIXED_ID)["runtime_session_id"], OTHER_ID)
+
+    def test_relink_success_requires_successful_convergence(self) -> None:
+        self.save_v4_session(write_scope=True)
+        code, out, err = self.run_cli_both(["sessions", "relink-runtime", FIXED_ID, OTHER_ID], interactive=False)
+        self.assertEqual(code, 0, out + err)
+        self.assertIn(f"to runtime {OTHER_ID} at CWD", out)
+        self.assertNotIn("unfinished", out)
 
 
 class SessionInventoryTests(CLITestCase):

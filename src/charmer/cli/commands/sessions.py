@@ -594,13 +594,18 @@ def _sessions_command(
             updated.get("version") == sessions.RECORD_VERSION
             and updated.get("lineup_generation", 0) >= 1
         ):
+            repair_output = io.StringIO()
+            problem = None
             try:
-                doctor_actions._doctor_repair(runtime, stable_id, io.StringIO())
+                if doctor_actions._doctor_repair(runtime, stable_id, repair_output) != 0:
+                    problem = repair_output.getvalue().strip() or "repair did not complete"
             except cli_errors.CLIError as exc:
+                problem = str(exc)
+            if problem is not None:
                 output_stream.write(
                     f"Reconciled managed {stable_id} to runtime "
-                    f"{updated['runtime_session_id']}, but scope reconverge "
-                    f"failed: {termtext.visible_message(exc)}; run "
+                    f"{updated['runtime_session_id']}, but scope convergence is unfinished: "
+                    f"{termtext.visible_message(problem)}; run "
                     f"`charmer doctor --repair {stable_id}`\n"
                 )
                 return 1
