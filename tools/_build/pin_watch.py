@@ -13,8 +13,11 @@ read its pins must not look like a quiet week.
 
 ``compare`` reads ``name=value`` lines of upstream versions (as the weekly
 workflow collects them) and prints a Markdown table of the inputs whose
-upstream is newer; an upstream value that is missing or malformed is a
-failure too. Exit 0 with no output: nothing newer. Stdlib only.
+upstream is newer. Claude Code needs both ``claude_code_latest`` and
+``claude_code_stable``: both are reported, and a pin behind latest while
+latest differs from stable exits 1. Missing or malformed upstream values
+also fail. No stdout means nothing newer; the tag report is on stderr.
+Stdlib only.
 """
 
 from __future__ import annotations
@@ -84,7 +87,7 @@ def _key(value: str) -> tuple[int, ...]:
 
 def normalize(name: str, raw: str) -> str:
     value = raw.strip()
-    if name in ("gateway", "claude_code"):
+    if name in ("gateway", "claude_code_latest", "claude_code_stable"):
         value = value.removeprefix("v")
     if name == "go":
         value = value.removeprefix("go")
@@ -92,18 +95,32 @@ def normalize(name: str, raw: str) -> str:
     return _version(value, f"the upstream {name} version", pattern)
 
 
-def compare(repo: Path, upstream_text: str) -> list[tuple[str, str, str]]:
-    pinned = pins(repo)
-    upstream = dict(line.split("=", 1) for line in upstream_text.splitlines() if "=" in line)
-    newer = []
-    for name in NAMES:
-        if name == "python":
-            continue  # follows the python-build-standalone release
+def upstream_versions(text: str) -> dict[str, str]:
+    names = ("claude_code_latest", "claude_code_stable", "gateway", "go", "python_build_standalone")
+    upstream = {}
+    for line in text.splitlines():
+        if "=" not in line:
+            continue
+        name, value = line.split("=", 1)
+        if name not in names:
+            raise PinError(f"unknown upstream key: {name}")
+        if name in upstream:
+            raise PinError(f"duplicate upstream key: {name}")
+        upstream[name] = value
+    versions = {}
+    for name in names:
         if name not in upstream or not upstream[name].strip():
             raise PinError(f"the upstream {name} version is missing (the lookup failed)")
-        latest = normalize(name, upstream[name])
-        if _key(latest) > _key(pinned[name]):
-            newer.append((name, pinned[name], latest))
+        versions[name] = normalize(name, upstream[name])
+    return versions
+
+
+def compare(pinned: dict[str, str], upstream: dict[str, str]) -> list[tuple[str, str, str]]:
+    newer = []
+    for name, latest in upstream.items():
+        pin_name = "claude_code" if name in ("claude_code_latest", "claude_code_stable") else name
+        if _key(latest) > _key(pinned[pin_name]):
+            newer.append((name, pinned[pin_name], latest))
     return newer
 
 
@@ -119,16 +136,25 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 0
         if args.upstream is None:
             parser.error("compare needs --upstream FILE")
-        rows = compare(args.repo, args.upstream.read_text(encoding="utf-8"))
+        pinned = pins(args.repo)
+        upstream = upstream_versions(args.upstream.read_text(encoding="utf-8"))
+        rows = compare(pinned, upstream)
     except (PinError, OSError) as exc:
         print(f"pin-watch: {exc}", file=sys.stderr)
         return 1
+    latest, stable = upstream["claude_code_latest"], upstream["claude_code_stable"]
+    tags = f"Claude Code: pinned={pinned['claude_code']}; latest={latest}; stable={stable}."
+    print(tags, file=sys.stderr)
+    uncovered = _key(latest) > _key(pinned["claude_code"]) and latest != stable
     if rows:
         print("Newer upstream versions than the pins (re-pin through the documented release steps):\n")
+        print(tags + "\n")
         print("| input | pinned | upstream |\n|---|---|---|")
-        for name, pinned, latest in rows:
-            print(f"| {name} | {pinned} | {latest} |")
-    return 0
+        for name, version, newest in rows:
+            print(f"| {name} | {version} | {newest} |")
+    if uncovered:
+        print("\nReview required: the Claude Code pin is behind latest, and latest is not stable.")
+    return 1 if uncovered else 0
 
 
 if __name__ == "__main__":

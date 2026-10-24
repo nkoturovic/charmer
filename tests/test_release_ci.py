@@ -26,6 +26,7 @@ import signal
 import subprocess
 import tarfile
 import tempfile
+import textwrap
 import unittest
 import zipfile
 from pathlib import Path
@@ -181,7 +182,7 @@ class WorkflowTests(unittest.TestCase):
                 action, ref, comment = match.groups()
                 with self.subTest(f"{name}: {action}"):
                     self.assertRegex(ref, r"^[0-9a-f]{40}$")
-                    self.assertRegex(comment, r"^ # v\d+(\.\d+)*$")
+                    self.assertRegex(comment, r"^ # v?\d+(\.\d+)*$")
                     self.assertEqual(seen.setdefault(action, ref), ref, f"{action} pinned to two commits")
 
     def test_every_pin_is_recorded_as_verified(self) -> None:
@@ -260,10 +261,10 @@ class WorkflowTests(unittest.TestCase):
         tables = _pin_tables(PINS.read_text())
         tools = {row[0]: row[1] for row in tables["Tools (pinned by version)"]}
         self.assertEqual({name: tools[name] for name in ("setuptools", "zizmor", "govulncheck")},
-                         {"setuptools": "84.0.0", "zizmor": "1.31.1", "govulncheck": "v1.9.0"})
+                         {"setuptools": "84.2.1", "zizmor": "1.31.1", "govulncheck": "v1.9.0"})
         actions = {row[0]: row[1] for row in tables["Actions (pinned by commit)"]}
         for action, tag in {"actions/upload-artifact": "v7.0.2", "actions/download-artifact": "v8.0.2",
-                            "cachix/install-nix-action": "v31.11.2"}.items():
+                            "actions/setup-python": "v7.1.0", "cachix/install-nix-action": "31.11.3"}.items():
             self.assertEqual(actions[action], tag)
         script = (SCRIPTS / "ci_tools.sh").read_text()
         for row in tables["Tool artifacts (pinned by sha256)"]:
@@ -1966,17 +1967,93 @@ class PinWatchTests(unittest.TestCase):
                 self.tool.pins(self.repo)
         path.write_text(original)
 
+    def upstream_text(self, **changes) -> str:
+        pins = self.tool.pins(self.repo)
+        values = {k: v for k, v in pins.items() if k not in ("python", "claude_code")}
+        values.update(claude_code_latest=pins["claude_code"], claude_code_stable=pins["claude_code"])
+        values.update(changes)
+        return "\n".join(f"{k}={v}" for k, v in values.items())
+
     def test_compare(self) -> None:
         pins = self.tool.pins(self.repo)
-        same = "\n".join(f"{k}={'v' if k == 'gateway' else ''}{v}" for k, v in pins.items() if k != "python")
-        self.assertEqual(self.tool.compare(self.repo, same), [])
+        same = self.upstream_text(gateway="v" + pins["gateway"])
+        self.assertEqual(self.tool.compare(pins, self.tool.upstream_versions(same)), [])
         major, minor, patch = pins["go"].split(".")
         newer = same.replace(f"go={pins['go']}", f"go=go{major}.{int(minor) + 1}.0")
-        self.assertEqual(self.tool.compare(self.repo, newer), [("go", pins["go"], f"{major}.{int(minor) + 1}.0")])
-        for broken in (same.replace(f"go={pins['go']}", "go="), "\n".join(same.splitlines()[1:]),
-                       same.replace(f"go={pins['go']}", "go=banana")):
-            with self.subTest(broken=broken.splitlines()[:1]), self.assertRaises(self.tool.PinError):
-                self.tool.compare(self.repo, broken)
+        self.assertEqual(self.tool.compare(pins, self.tool.upstream_versions(newer)),
+                         [("go", pins["go"], f"{major}.{int(minor) + 1}.0")])
+        for name in ("go", "gateway", "python_build_standalone", "claude_code_latest", "claude_code_stable"):
+            for value in ("", "banana", "2.1.310-rc1"):
+                with self.subTest(name=name, value=value), self.assertRaises(self.tool.PinError):
+                    self.tool.upstream_versions(self.upstream_text(**{name: value}))
+            missing = "\n".join(line for line in same.splitlines() if not line.startswith(name + "="))
+            with self.subTest(missing=name), self.assertRaises(self.tool.PinError):
+                self.tool.upstream_versions(missing)
+
+    def test_duplicate_upstream_keys_are_refused(self) -> None:
+        text = self.upstream_text(claude_code_latest="2.1.310", claude_code_stable="2.1.308")
+        for line in text.splitlines():
+            name, value = line.split("=", 1)
+            for duplicate in (value, "2.1.308"):
+                with self.subTest(name=name, duplicate=duplicate), self.assertRaisesRegex(
+                        self.tool.PinError, f"duplicate upstream key: {name}"):
+                    self.tool.upstream_versions(text + f"\n{name}={duplicate}")
+
+    def test_unknown_upstream_keys_are_refused(self) -> None:
+        for name in ("claude_code", "python", "unexpected", ""):
+            with self.subTest(name=name), self.assertRaisesRegex(self.tool.PinError, "unknown upstream key:"):
+                self.tool.upstream_versions(self.upstream_text() + f"\n{name}=2.1.310")
+
+    def test_both_tags_are_reported_and_an_unstable_newer_latest_fails(self) -> None:
+        contract = self.repo / "src/charmer/data/catalog/native-contract.json"
+        document = json.loads(contract.read_text())
+        document["verified"][0]["version"] = "2.1.308"
+        contract.write_text(json.dumps(document))
+        for latest, stable, status, has_report in (
+                ("2.1.308", "2.1.308", 0, False),
+                ("2.1.310", "2.1.310", 0, True),
+                ("2.1.310", "2.1.308", 1, True),
+                ("2.1.310", "2.1.309", 1, True),
+                ("2.1.308", "2.1.306", 0, False),
+                ("2.1.307", "2.1.306", 0, False),
+                ("2.1.309", "2.1.310", 1, True)):
+            with self.subTest(latest=latest, stable=stable):
+                path = self.tmp / "upstream.env"
+                path.write_text(self.upstream_text(claude_code_latest=latest, claude_code_stable=stable))
+                out, err = io.StringIO(), io.StringIO()
+                with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                    result = self.tool.main(["compare", "--repo", str(self.repo), "--upstream", str(path)])
+                self.assertEqual(result, status, out.getvalue() + err.getvalue())
+                self.assertIn(f"pinned=2.1.308; latest={latest}; stable={stable}", err.getvalue())
+                self.assertEqual(bool(out.getvalue()), has_report)
+                self.assertEqual("Review required:" in out.getvalue(), status == 1)
+                if has_report:
+                    self.assertIn(f"latest={latest}; stable={stable}", out.getvalue())
+
+    def test_workflow_reports_a_failed_comparison_before_the_issue_step(self) -> None:
+        watch = (WORKFLOWS_DIR / "pin-watch.yml").read_text()
+        self.assertIn("dist-tags.latest", watch)
+        self.assertIn("dist-tags.stable", watch)
+        steps = _steps(_jobs(watch)["watch"])
+        compare = next(step for step in steps if "id: compare" in step)
+        issue = next(step for step in steps if "name: Open or update" in step)
+        self.assertIn("if: ${{ !cancelled() && steps.compare.outputs.changed == 'true' }}", issue)
+        self.assertNotIn("continue-on-error", compare)
+        # Run the actual shell with a controlled comparison failure; its
+        # output must be set even under the runner's errexit behaviour.
+        fake_python = self.tmp / "bin" / "python3"
+        fake_python.parent.mkdir()
+        fake_python.write_text('#!/bin/sh\ncase "$2" in\n  pins) exit 0;;\n  compare) echo "newer latest, not stable"; exit 1;;\nesac\n')
+        fake_python.chmod(0o755)
+        output = self.tmp / "outputs"
+        script = textwrap.dedent(compare.split("run: |", 1)[1])
+        result = subprocess.run(["bash", "-e", "-o", "pipefail", "-c", script],
+                                cwd=self.tmp, capture_output=True, text=True,
+                                env={**os.environ, "PATH": str(fake_python.parent) + os.pathsep + os.environ["PATH"],
+                                     "RUNNER_TEMP": str(self.tmp), "GITHUB_OUTPUT": str(output)}, timeout=30)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertEqual(output.read_text(), "changed=true\n")
+        self.assertIn("newer latest, not stable", (self.tmp / "report.md").read_text())
 
 
 @requires_release_tree
@@ -2518,7 +2595,7 @@ class EvidenceJobTests(unittest.TestCase):
         self.assertIn("--target host", gateway)
         self.assertIn("gateway_probes.py compile", gateway)
         self.assertIn("needs: gateway", battery)
-        order = ["setuptools==84.0.0", "name: gateway-dist", "name: gateway-probes", "gateway_probes.py provision",
+        order = ["setuptools==84.2.1", "name: gateway-dist", "name: gateway-probes", "gateway_probes.py provision",
                  "curl --proto", "tools/test.py --tier full --verbose --claude \"$RUNNER_TEMP/claude\" --require 'DistributionTests'"]
         positions = [battery.index(needle) for needle in order]
         self.assertEqual(positions, sorted(positions))
@@ -3435,6 +3512,25 @@ class VulnerabilityWatchTests(unittest.TestCase):
     def test_shipped_cpython_review_list_validates(self) -> None:
         reviews = self.watch.cpython_reviews(SCRIPTS.parent / "vulnerability-watch-reviewed.json")
         self.assertIsInstance(reviews, list)
+
+    def test_runtime_refresh_has_exact_reviews_past_the_release_window(self) -> None:
+        reviews = self.watch.cpython_reviews(SCRIPTS.parent / "vulnerability-watch-reviewed.json")
+        version = json.loads((REPO_ROOT / "packaging/python-runtimes.json").read_text())["python"]
+        current = {entry["id"]: entry for entry in reviews if entry["version"] == version}
+        self.assertEqual(version, "3.15.1")
+        self.assertEqual(set(current), {"CVE-2026-114583", "PSF-2026-45"})
+        for identifier, alias, revision in (
+                ("CVE-2026-114583", "PSF-2026-45", "2026-10-24T02:50:19.989664282Z"),
+                ("PSF-2026-45", "CVE-2026-114583", "2026-10-23T02:00:45.395220171Z")):
+            self.assertEqual(current[identifier]["aliases"], [alias])
+            self.assertEqual(current[identifier]["modified"], revision)
+            self.assertIn("data filter", current[identifier]["reason"])
+        published = [entry for entry in reviews if entry["version"] == "3.15.0"]
+        self.assertEqual(len(published), 3)  # the watch still scans the published release
+        for entry in [*current.values(), *published]:
+            with self.subTest(version=entry["version"], identifier=entry["id"]):
+                self.assertEqual(entry["re_review"], "2026-12-01")
+                self.assertGreater(datetime.date.fromisoformat(entry["re_review"]), datetime.date(2026, 11, 23))
 
     def test_watch_applies_explicit_cpython_reviews(self) -> None:
         cpython = {"version": "3.14.8", "commit": "a" * 40}

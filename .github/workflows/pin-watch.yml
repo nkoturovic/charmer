@@ -5,8 +5,10 @@
 # gateway/UPSTREAM.json's upstream.version and toolchain.version, the Python
 # runtime in packaging/python-runtimes.json), asks the public upstream
 # metadata for the newest versions, and opens (or updates) one issue when
-# something is newer. A pin or an upstream version that cannot be read fails
-# the job instead of reporting nothing. It never changes the repository and
+# something is newer. Claude Code reports both latest (the users' install
+# channel) and stable; a pin behind latest while latest is not stable also
+# fails the job. A pin or upstream version that cannot be read fails instead
+# of reporting nothing. It never changes the repository and
 # never publishes. The weekly schedule runs only while the repository
 # variable CM_SCHEDULES is "on"; a manual run is not affected.
 
@@ -41,7 +43,8 @@ jobs:
         run: |
           umask 077
           {
-            printf 'claude_code=%s\n' "$(npm view @anthropic-ai/claude-code dist-tags.stable 2>/dev/null || true)"
+            printf 'claude_code_latest=%s\n' "$(npm view @anthropic-ai/claude-code dist-tags.latest 2>/dev/null || true)"
+            printf 'claude_code_stable=%s\n' "$(npm view @anthropic-ai/claude-code dist-tags.stable 2>/dev/null || true)"
             printf 'gateway=%s\n' "$(gh api repos/router-for-me/CLIProxyAPI/releases/latest --jq .tag_name || true)"
             printf 'python_build_standalone=%s\n' "$(gh api repos/astral-sh/python-build-standalone/releases/latest --jq .tag_name || true)"
             printf 'go=%s\n' "$(curl --proto '=https' -fsSL 'https://go.dev/dl/?mode=json' | python3 -c 'import json, sys; print(json.load(sys.stdin)[0]["version"])' || true)"
@@ -51,10 +54,12 @@ jobs:
         run: |
           umask 077
           python3 tools/_build/pin_watch.py pins
-          python3 tools/_build/pin_watch.py compare --upstream "$RUNNER_TEMP/upstream.env" >"$RUNNER_TEMP/report.md"
+          status=0
+          python3 tools/_build/pin_watch.py compare --upstream "$RUNNER_TEMP/upstream.env" >"$RUNNER_TEMP/report.md" || status=$?
           if [ -s "$RUNNER_TEMP/report.md" ]; then echo "changed=true" >>"$GITHUB_OUTPUT"; fi
+          exit "$status"
       - name: Open or update the pin-watch issue
-        if: steps.compare.outputs.changed == 'true'
+        if: ${{ !cancelled() && steps.compare.outputs.changed == 'true' }}
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}

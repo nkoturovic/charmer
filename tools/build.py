@@ -319,7 +319,7 @@ def make_writable_copy(source: Path, destination: Path) -> None:
 
     if destination.exists() or destination.is_symlink():
         remove_tree(destination)
-    shutil.copytree(Path(source).resolve(), destination, symlinks=True, copy_function=shutil.copyfile)
+    shutil.copytree(Path(source).resolve(), destination, symlinks=True, copy_function=shutil.copy)
     normalise_modes(destination)
 
 
@@ -1514,7 +1514,13 @@ BSD_ENDORSEMENT = re.compile(r"(neither the name|names? of (?:its|the) contribut
 
 
 def classify_license(text: str) -> str:
-    """An SPDX expression for one licence file (families joined by AND)."""
+    """An SPDX expression for one licence file.
+
+    A leading SPDX declaration (or a bare expression on its own line) can
+    state a choice between the recognised texts. Unmarked concatenated
+    texts impose all their licences; merely finding two families never
+    establishes a choice. More elaborate declarations need explicit review.
+    """
 
     normalised = _normalised(text)
     found = []
@@ -1536,6 +1542,17 @@ def classify_license(text: str) -> str:
     for _, spdx in sorted(found):
         if spdx not in names:
             names.append(spdx)
+    header = text.strip().splitlines()[0].strip()
+    declared = header.startswith("SPDX-License-Identifier:")
+    expression = header.removeprefix("SPDX-License-Identifier:").strip()
+    if declared or re.fullmatch(r"[\w.-]+(?:\s+(?:AND|OR)\s+[\w.-]+)+", expression):
+        parts = expression.split()
+        licences, operators = parts[::2], parts[1::2]
+        if (not parts or len(parts) % 2 == 0 or set(licences) != set(names)
+                or len(set(licences)) != len(licences) or len(set(operators)) > 1
+                or any(operator not in ("AND", "OR") for operator in operators)):
+            raise BuildError("unrecognised licence declaration or declaration differs from its texts")
+        return " ".join(parts)
     return " AND ".join(names)
 
 
@@ -1543,9 +1560,12 @@ def license_of(files: list[dict[str, Any]], texts: dict[str, bytes]) -> str:
     names: list[str] = []
     for entry in files:
         if entry["kind"] == "license":
-            for name in classify_license(texts[entry["path"]].decode("utf-8", "replace")).split(" AND "):
+            expression = classify_license(texts[entry["path"]].decode("utf-8", "replace"))
+            for name in expression.split(" AND "):
                 if name not in names:
                     names.append(name)
+    if len(names) > 1:
+        names = [f"({name})" if " OR " in name else name for name in names]
     return " AND ".join(names)
 
 

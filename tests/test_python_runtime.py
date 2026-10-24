@@ -152,7 +152,7 @@ class ManifestTests(RuntimeTestCase):
     def test_shipped_manifest_is_consistent(self) -> None:
         runtimes = self.tool.load(RUNTIMES_JSON)
         self.assertEqual(sorted(runtimes.targets), sorted(self.tool.TRIPLES))
-        self.assertEqual(runtimes.python, "3.15.0")
+        self.assertEqual(runtimes.python, "3.15.1")
         self.assertEqual(runtimes.minor, MINOR)
         for target, runtime in runtimes.targets.items():
             with self.subTest(target):

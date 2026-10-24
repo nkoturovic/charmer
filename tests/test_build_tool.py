@@ -112,6 +112,27 @@ class TreeHashTests(unittest.TestCase):
             (root / "a" / "file.go").write_text("package b\n")
             self.assertNotEqual(tool.tree_sha256(root), base)
 
+    def test_writable_copy_preserves_executable_tree_identity(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source, destination = Path(tmp) / "source", Path(tmp) / "copy"
+            source.mkdir()
+            for mode in (0o755, 0o555, 0o644, 0o444):
+                path = source / f"file-{mode:o}"
+                path.write_text("fixture\n")
+                path.chmod(mode)
+            (source / "link").symlink_to("file-555")
+            before = tool.tree_sha256(source)
+            tool.make_writable_copy(source, destination)
+            self.assertEqual(tool.tree_sha256(destination), before)
+            self.assertEqual(tool.tree_sha256(source), before)
+            self.assertTrue((destination / "link").is_symlink())
+            self.assertEqual(destination.stat().st_mode & 0o777, 0o755)
+            for mode in (0o755, 0o555, 0o644, 0o444):
+                with self.subTest(mode=oct(mode)):
+                    expected = 0o755 if mode & 0o111 else 0o644
+                    self.assertEqual((destination / f"file-{mode:o}").stat().st_mode & 0o777, expected)
+                    self.assertEqual((source / f"file-{mode:o}").stat().st_mode & 0o777, mode)
+
     def test_symlinks_hash_their_target_and_top_level_names_can_be_excluded(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -1248,6 +1269,31 @@ class LicenseClassificationTests(unittest.TestCase):
         files = [{"kind": "license", "path": "a"}, {"kind": "license", "path": "b"}, {"kind": "notice", "path": "c"}]
         texts = {"a": self.APACHE.encode(), "b": BSD3_TEXT.encode(), "c": b"anything"}
         self.assertEqual(tool.license_of(files, texts), "Apache-2.0 AND BSD-3-Clause")
+
+    def test_declared_choice_is_not_a_cumulative_licence(self):
+        texts = MIT_TEXT + "\n---\n" + self.APACHE
+        for prefix in ("", "SPDX-License-Identifier: "):
+            for operator in ("OR", "AND"):
+                expression = f"MIT {operator} Apache-2.0"
+                with self.subTest(prefix=prefix, operator=operator):
+                    self.assertEqual(tool.classify_license(prefix + expression + "\n\n" + texts), expression)
+        self.assertEqual(tool.classify_license(texts), "MIT AND Apache-2.0")
+
+    def test_choices_stay_grouped_when_other_files_impose_licences(self):
+        choice = "SPDX-License-Identifier: MIT OR Apache-2.0\n\n" + MIT_TEXT + self.APACHE
+        files = [{"kind": "license", "path": "a"}, {"kind": "license", "path": "b"},
+                 {"kind": "notice", "path": "c"}]
+        texts = {"a": choice.encode(), "b": BSD3_TEXT.encode(), "c": b"not a licence"}
+        self.assertEqual(tool.license_of(files[:1], texts), "MIT OR Apache-2.0")
+        self.assertEqual(tool.license_of(files, texts), "(MIT OR Apache-2.0) AND BSD-3-Clause")
+        self.assertEqual(tool.license_of([files[1], files[0]], texts), "BSD-3-Clause AND (MIT OR Apache-2.0)")
+        self.assertEqual(tool.license_of([files[0], files[0]], texts), "MIT OR Apache-2.0")
+
+    def test_unsupported_or_inconsistent_declarations_refuse_instead_of_guessing(self):
+        for expression in ("MIT OR GPL-3.0-only", "MIT AND", "MIT OR MIT", "MIT XOR Apache-2.0",
+                           "(MIT OR Apache-2.0)", "MIT OR Apache-2.0 AND BSD-3-Clause", "MIT"):
+            with self.subTest(expression=expression), self.assertRaisesRegex(tool.BuildError, "licence declaration"):
+                tool.classify_license("SPDX-License-Identifier: " + expression + "\n\n" + MIT_TEXT + self.APACHE)
 
     def test_unknown_texts_are_refused(self):
         with self.assertRaises(tool.BuildError):
