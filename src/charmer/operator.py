@@ -852,13 +852,15 @@ def parse_ledger(raw: bytes, schema: Mapping[str, Any]) -> OperatorLedger:
     except strict_json.StrictJSONError as exc:
         raise OperatorError(f"{LEDGER_NAME}: {exc}") from exc
     problems = schema_validate.validate(document, dict(schema), "$")
-    for key in document.get("admissions", {}) if isinstance(document, dict) else ():
+    if problems:
+        raise OperatorError(f"{LEDGER_NAME}: " + "; ".join(problems))
+    for key in document["admissions"]:
         if not MIGRATED_KEY.fullmatch(key):
             problems.append(f"$.admissions: invalid line key {key!r}")
-    for key in document.get("routes", {}) if isinstance(document, dict) else ():
+    for key in document["routes"]:
         if not PROVIDER_ID.fullmatch(key):
             problems.append(f"$.routes: invalid provider id {key!r}")
-    for key in document.get("aliases", {}) if isinstance(document, dict) else ():
+    for key in document["aliases"]:
         if not re.fullmatch(r"[a-z0-9][a-z0-9._-]*", key):
             problems.append(f"$.aliases: invalid selector base {key!r}")
     if problems:
@@ -894,7 +896,9 @@ def parse_evidence(raw: bytes, schema: Mapping[str, Any]) -> OperatorEvidence:
     except strict_json.StrictJSONError as exc:
         raise OperatorError(f"{EVIDENCE_NAME}: {exc}") from exc
     problems = schema_validate.validate(document, dict(schema), "$")
-    for key in document.get("lines", {}) if isinstance(document, dict) else ():
+    if problems:
+        raise OperatorError(f"{EVIDENCE_NAME}: " + "; ".join(problems))
+    for key in document["lines"]:
         if not MIGRATED_KEY.fullmatch(key):
             problems.append(f"$.lines: invalid line key {key!r}")
     if problems:

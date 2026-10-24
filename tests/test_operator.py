@@ -964,6 +964,21 @@ class LedgerEvidenceTests(unittest.TestCase):
         evidence = operator.parse_evidence((OPERATOR_FIXTURES / "evidence-sample.json").read_bytes(), schemas.evidence)
         self.assertEqual(evidence.lines["custom-acme-small"]["checks"]["smoke"]["result"], "pass")
 
+    def test_malformed_collection_shapes_fail_closed(self) -> None:
+        schemas = _schemas()
+        for field in ("admissions", "routes", "aliases", "pruned", "removed", "transport_choices"):
+            for value in (None, True, 42, "abc", [], [42]):
+                with self.subTest(store="ledger", field=field, value=value):
+                    document = operator.ledger_document(None)
+                    document[field] = value
+                    with self.assertRaises(operator.OperatorError):
+                        operator.parse_ledger(strict_json.canonical_file_bytes(document), schemas.ledger)
+        for value in (None, True, 42, "abc", [], [1]):
+            with self.subTest(store="evidence", value=value):
+                with self.assertRaises(operator.OperatorError):
+                    operator.parse_evidence(strict_json.canonical_file_bytes({"version": 1, "lines": value}),
+                                            schemas.evidence)
+
     def test_load_is_private_and_absent_is_none(self) -> None:
         home = Path(tempfile.mkdtemp(prefix="charmer-ledger-"))
         os.chmod(home, 0o700)
@@ -1714,6 +1729,41 @@ class CaptureTransactionTests(OperatorHomeCase):
         code, out, _err = self.init()
         self.assertEqual(code, 0)
         self.assertNotIn("unservable selectors: custom-acme-small", out)
+
+
+class MalformedStoreTests(OperatorHomeCase):
+    def test_malformed_ledger_keeps_bytes_and_degrades_only_at_start(self) -> None:
+        self.install(_fixture_files())
+        for field in ("admissions", "routes", "aliases"):
+            for value in (None, True, 42, "abc", [], [42]):
+                with self.subTest(field=field, value=value):
+                    document = operator.ledger_document(None)
+                    document[field] = value
+                    raw = strict_json.canonical_file_bytes(document)
+                    state.atomic_write(self.ledger_file, raw)
+                    snapshot = operator.load_snapshot(self.environ, _docs(), asset_root=FIXTURE_ROOT)
+                    self.assertEqual(snapshot.ledger_error, operator.LEDGER_UNUSABLE)
+                    self.assertIsNone(snapshot.ledger)
+                    with self.assertRaisesRegex(proxy.ProxyError, "cannot be captured"):
+                        self.init()
+                    code, _out, err = self.init("--prepare-start")
+                    self.assertEqual(code, 0, err)
+                    self.assertIn("operator lines not rendered", err)
+                    self.assertNotIn("custom-kimi-next", self.aliases())
+                    self.assertEqual(self.ledger_file.read_bytes(), raw)
+
+    def test_malformed_evidence_cannot_raise_the_validated_floor(self) -> None:
+        self.install(_fixture_files())
+        path = operator.evidence_path(self.environ)
+        state.ensure_private_dir(path.parent)
+        baseline = operator.load_snapshot(self.environ, _docs(), asset_root=FIXTURE_ROOT)
+        for value in (None, True, 42, "abc", [], [1]):
+            with self.subTest(value=value):
+                raw = strict_json.canonical_file_bytes({"version": 1, "lines": value})
+                state.atomic_write(path, raw)
+                snapshot = operator.load_snapshot(self.environ, _docs(), asset_root=FIXTURE_ROOT)
+                self.assertEqual(snapshot.layer.lines, baseline.layer.lines)
+                self.assertEqual(path.read_bytes(), raw)
 
 
 class FailurePolicyTests(OperatorHomeCase):
