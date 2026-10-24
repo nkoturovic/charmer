@@ -20,5 +20,5 @@
   Checks    ✓ valid   ! explorer+implementers share openai
 
 
-  Enter change · U unbind · N named bindings · R routing · ^S save · ? help
+  Enter change · U unbind · B named bindings · R routing · ^S save · ? help
   Esc back

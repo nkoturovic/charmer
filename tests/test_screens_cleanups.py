@@ -13,6 +13,20 @@ import _tui_fixture as fx
 from test_tui import FakeWindow
 
 
+class ShortcutLabelsTests(unittest.TestCase):
+    def test_details_and_named_binding_aliases_are_silent(self) -> None:
+        from charmer.cli import text
+
+        for bar in (text.PROVIDERS_KEYBAR_KEY_MISSING, text.PROVIDERS_KEYBAR_ACCOUNT,
+                    text.PROVIDERS_KEYBAR_ACCOUNT_KEY):
+            self.assertIn(("V", "details"), bar)
+            self.assertNotIn(("Q", "details"), bar)
+        self.assertIn(("B", "named bindings"), tui.PROFILE_EDITOR_KEYBAR)
+        self.assertNotIn(("N", "named bindings"), tui.PROFILE_EDITOR_KEYBAR)
+        self.assertIn("B edits named bindings", tui.PROFILE_EDITOR_HELP)
+        self.assertIn("V shows details", text.PROVIDERS_HELP)
+
+
 class PresentationTests(unittest.TestCase):
     def test_stop_advice_only_for_a_running_gateway(self) -> None:
         for status in (gateway_lifecycle.STOPPED, gateway_lifecycle.OURS,

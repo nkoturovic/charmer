@@ -3,7 +3,7 @@
 Every test drives a real screen (or the gateway dialog) through a
 FakeWindow key script and observes the action that ran: the update view
 and doctor on the resume card; Start now, Restart now, Show log and the
-service install in the gateway dialog; Q, N, E and A on Providers (E opens
+service install in the gateway dialog; V, Q, N, E and A on Providers (E opens
 the prefilled form and saves through the providers edit transaction, never
 an editor); a key for a provider with no models continuing into adding and
 admitting one, after which a starter can lead with it; saved accounts
@@ -164,7 +164,7 @@ class GatewayDialogTests(test_gateway_doctor._GatewayDoctor):
         with mock.patch.object(type(self.runtime), "gateway_service", return_value=service):
             _message, win, _printed = self.dialog([ESC])
         self.assertIn("service: not installed (the gateway starts on demand)", win.frames[0])
-        self.assertIn("charmer gateway stop", win.frames[0])
+        self.assertNotIn("charmer gateway stop", win.frames[0])
         self.assertEqual(service.installed, [])
 
     def test_install_service_runs_the_service_install(self) -> None:
@@ -225,6 +225,13 @@ class _ProvidersCase(test_cli.OperatorCommandCase):
 
 
 class ProvidersDispatchTests(_ProvidersCase):
+    def test_v_shows_the_details(self) -> None:
+        shown: list = []
+        with mock.patch.object(charmer.tui, "TextView", _recording_views(shown)):
+            self.run_screen(self.screen("kimi"), ["v", ESC])
+        self.assertEqual(shown[0][0], cli_text.DETAILS_TITLE)
+        self.assertTrue(shown[0][1])
+
     def test_q_shows_the_details(self) -> None:
         shown: list = []
         with mock.patch.object(charmer.tui, "TextView", _recording_views(shown)):
@@ -384,7 +391,7 @@ class ProvidersGatewayDispatchTests(_ProvidersCase):
         self.assertEqual(acted, [])
         dialog = next(frame for frame in win.frames if gateway_actions.TITLE in frame)
         self.assertIn(line, dialog)
-        self.assertIn("charmer gateway stop", dialog)
+        self.assertNotIn("charmer gateway stop", dialog)
 
 
 class ProviderEditFormTests(_ProvidersCase):

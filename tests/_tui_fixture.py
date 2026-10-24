@@ -445,6 +445,7 @@ class GatewayViewStub:
     offers and what the dialog draws, without observing any gateway."""
 
     gateway = None
+    seen = None
     inhibition = None
     runtime = None  # no sessions to list before a restart
     hold = None

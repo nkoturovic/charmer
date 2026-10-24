@@ -1310,6 +1310,13 @@ class NamedBindingsTests(_EditorCase):
         self.assertIn("saved binding nb (used by user-c)", frame)
         self.assertIn("1 session follows this profile:", frame)
 
+    def test_the_editor_b_key_reloads_bindings(self) -> None:
+        key, effort = self.seed_binding()
+        state = self.state()
+        self.runtime.bindings.set("later", key, effort, cat=self.lcat)
+        self.run_screen(self.editor(state, callbacks=self.callbacks()), ["B", ESC, ESC])
+        self.assertIn("later", state.bindings)
+
     def test_the_editor_n_key_reloads_bindings(self) -> None:
         key, effort = self.seed_binding()
         state = self.state()

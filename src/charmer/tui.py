@@ -1992,7 +1992,7 @@ PROFILE_EDITOR_HELP = (
     "↑/↓ move. Enter changes the row: General (name, description, primary provider,\n"
     "lead providers, compaction override), Lead and agents (model picker; ← → picks\n"
     "the effort), Native (Explore, Plan, general-purpose, workflows), Review (routing).\n"
-    "U unbinds an agent. N edits named bindings. R shows the review routing table.\n"
+    "U unbinds an agent. B edits named bindings. R shows the review routing table.\n"
     "^S saves (^O too); only a valid profile saves. ^G edits the raw JSON in $EDITOR.\n"
     "Checks: ✓ valid · ! warning (never blocks) · ✗ error (Enter jumps to its field).\n"
     "◆ marks a per-profile override of a Settings value. Esc goes back."
@@ -2000,7 +2000,7 @@ PROFILE_EDITOR_HELP = (
 PROFILE_EDITOR_KEYBAR = (
     ("Enter", "change"),
     ("U", "unbind"),
-    ("N", "named bindings"),
+    ("B", "named bindings"),
     ("R", "routing"),
     ("^S", "save"),
     ("?", "help"),
@@ -3542,7 +3542,7 @@ class ProfileEditorScreen:
                 hide_cursor()
             elif key.kind == "char" and key.ch in ("r", "R"):
                 self._routing(win)
-            elif key.kind == "char" and key.ch in ("n", "N"):
+            elif key.kind == "char" and key.ch in ("b", "B", "n", "N"):  # N stays silent until 3.0.0.
                 self._named(win)
             elif key.kind == "char" and key.ch in ("u", "U"):
                 if self.focus == "lead":

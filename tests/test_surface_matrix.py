@@ -619,18 +619,18 @@ class Fixture:
     def test_asserts_only_before_it_presses(self):
         screen = _ProvidersScreen(self.runtime)
         self.assertTrue(screen.rows)
-        screen.run(FakeWindow(["q", ESC]))
+        screen.run(FakeWindow(["v", ESC]))
 
     def test_names_the_key_only_where_it_compares(self):
         screen = _ProvidersScreen(self.runtime)
         win = FakeWindow([ESC])
         screen.run(win)
-        self.assertEqual(screen.last, "q")
-        self.assertIn(self.label("q"), win.text())
+        self.assertEqual(screen.last, "v")
+        self.assertIn(self.label("v"), win.text())
 
     def test_presses_through_a_helper(self):
         screen = _ProvidersScreen(self.runtime)
-        self.press(screen, "q")
+        self.press(screen, "v")
         self.assertEqual(screen.message, "")
 """
 
@@ -643,9 +643,9 @@ class Fixture:
             return fixture_check(f"tests.synthetic.Fixture.{method}", "providers.details")
 
     def test_the_press_and_the_assertion_after_it_are_required(self) -> None:
-        self.assertEqual(self.synthetic("test_asserts_only_before_it_presses"), "asserts nothing after it presses Q")
+        self.assertEqual(self.synthetic("test_asserts_only_before_it_presses"), "asserts nothing after it presses V")
         self.assertEqual(self.synthetic("test_names_the_key_only_where_it_compares"),
-                         "never feeds Q to the input driver (providers.details)")
+                         "never feeds V to the input driver (providers.details)")
         # A key passed to a helper that feeds the driver is pressed.
         self.assertIsNone(self.synthetic("test_presses_through_a_helper"))
 
