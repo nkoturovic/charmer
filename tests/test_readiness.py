@@ -352,8 +352,9 @@ class StarterTests(_Case):
     def test_apply_confirms_saves_once_and_refuses_an_existing_name(self) -> None:
         self.sign_in(*sorted(set(self.pools().values())))
         code, out = self.run_cli(["profile", "starter", "--apply"], "n\n")
-        self.assertEqual(code, 1)
+        self.assertEqual(code, 3)
         self.assertIn("Save as starter? [y/N] Nothing written.", out)
+        self.assertIn("Nothing written.", out)
         self.assertFalse(self.runtime.profiles.contains("starter"))
         code, out = self.run_cli(["profile", "starter", "--apply"], "y\n")
         self.assertEqual(code, 0, out)
