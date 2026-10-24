@@ -1199,7 +1199,7 @@ SETTINGS_DEFAULT_CONNECTED = "connected"
 # ---------------------------------------------------------------- H: the findings list
 
 FINDINGS_TITLE = "charmer doctor"
-FINDINGS_KEYBAR = (("Enter", "act"), ("V", "details"), ("G", "gateway"), ("?", "help"), ("Esc", "back"))
+FINDINGS_KEYBAR = (("Enter", "act"), ("V", "details"), ("W", "gateway"), ("?", "help"), ("Esc", "back"))
 FINDINGS_MIN_COLS = 60
 # The top margin, title and rule; under the list its rule, two info lines,
 # the action line and the message row.
@@ -1261,5 +1261,5 @@ FINDINGS_HELP = (
     "a newer shipped profile (reseed) and a model's optional diagnostics (M → Q; they\n"
     + OPTIONAL_DIAGNOSTICS + "). Every action asks first and reuses the command's own checks;\n"
     "any other row shows its exact command. Nothing here runs on its own.\n"
-    "G — the gateway's actions (start, restart, log). Esc — back to the card."
+    "W — the gateway's actions (start, restart, service install, log). Esc — back to the card."
 )

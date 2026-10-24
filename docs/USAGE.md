@@ -47,7 +47,8 @@ The words the launcher uses, as its help (`?` on the card) defines them:
   its screens (**W** Get started, **P** Profiles, **D** Direct, **S**
   Sessions, **G** Providers, **M** Models, **O** Settings, **H** doctor).
   **V** shows details in Providers; **B** opens named bindings from Profiles
-  or the profile editor. `charmer setup` runs the same first steps as plain lines.
+  or the profile editor. **W** opens the same gateway dialog from Findings,
+  Providers or Direct. `charmer setup` runs the same first steps as plain lines.
 
 ## Connect a provider
 

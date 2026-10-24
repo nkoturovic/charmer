@@ -336,18 +336,25 @@ class GatewayActionsTests(_GatewayDoctor):
         self.assertFalse(fixture.can_start or fixture.can_restart)
         self.assertIn("gateway stop", gateway_actions.CLI_ONLY)
 
-    def test_the_health_prompt_starts_a_stopped_gateway(self) -> None:
+    def test_the_dialog_starts_a_stopped_gateway(self) -> None:
         out = io.StringIO()
-        follow = gateway_actions.health_prompt(self.runtime, io.StringIO("s\n\n"), out)
-        self.assertIsNone(follow)
+        win = FakeWindow(["\n"])
+        with mock.patch.object(tui, "suspended_curses", mock.MagicMock()):
+            message = gateway_actions.dialog(self.runtime, win, tui.MONO_PALETTE,
+                                             tty_in=io.StringIO("\n"), tty_out=out)
+        self.assertIn("gateway ready", message)
         self.assertEqual(len(self.world.spawned), 1)
         printed = out.getvalue()
-        self.assertIn("Gateway: stopped", printed)
-        self.assertIn("s  start it now · l  show its log", printed)
+        self.assertIn("Gateway: stopped", win.frames[0])
+        self.assertIn("[ Start now ] [ Show log ]", win.frames[0])
         self.assertIn("gateway ready", printed)
         self.assertIn("Press Enter to return to charmer.", printed)
-        self.assertEqual(gateway_actions.health_prompt(self.runtime, io.StringIO("l\n"), io.StringIO()), "log")
-        self.assertIsNone(gateway_actions.health_prompt(self.runtime, io.StringIO("s\n"), io.StringIO()))
+        win = FakeWindow(["\t", "\n", ESC])
+        self.assertEqual(gateway_actions.dialog(self.runtime, win, tui.MONO_PALETTE), "")
+        self.assertTrue(any("gateway log — last 200 lines" in frame for frame in win.frames))
+        win = FakeWindow(["s", ESC])
+        self.assertEqual(gateway_actions.dialog(self.runtime, win, tui.MONO_PALETTE), "")
+        self.assertNotIn("[ Start now ]", win.frames[0])
         self.assertEqual(len(self.world.spawned), 1)  # already ours: no start is offered or run
 
     def test_the_dialog_shows_the_log_tail_in_a_text_view(self) -> None:
@@ -533,14 +540,17 @@ class HoldViewTests(_GatewayDoctor):
         text = "\n".join(win.frames)
         self.assertIn("Persistence hold", text)
         self.assertIn("logs are larger than one evaluation reads", text)
-        # H's gateway line says the same and offers no r.
-        out = io.StringIO()
-        self.assertIsNone(gateway_actions.health_prompt(self.runtime, io.StringIO("r\n"), out))
-        printed = out.getvalue()
+        # The shared dialog and its hold details say the same; no restart.
+        win = FakeWindow(["r", "\n", ESC])
+        shown = []
+        with mock.patch.object(tui.TextView, "run", autospec=True,
+                               side_effect=lambda view, _win: shown.extend(view.lines)):
+            self.assertEqual(gateway_actions.dialog(self.runtime, win, tui.MONO_PALETTE), "")
+        printed = " ".join(shown)
         self.assertIn("persistence hold: held — log coverage incomplete, not a failed save", printed)
         self.assertIn("(coverage truncated); the logs are larger than one evaluation reads", printed)
         self.assertIn("charmer gateway clear-hold", printed)
-        self.assertNotIn("r  restart it now", printed)
+        self.assertNotIn("[ Restart now ]", win.frames[0])
         self.assertEqual(self.world.terminated, [])
 
     def test_a_failed_save_is_shown_with_its_remedy(self) -> None:
@@ -574,7 +584,9 @@ class HoldViewTests(_GatewayDoctor):
             _buttons, _body, _win = self.buttons(choose="restart", tty_in="\n\n")
             self.assertEqual(self.world.terminated, [])  # No is the default
             out = io.StringIO()
-            gateway_actions.health_prompt(self.runtime, io.StringIO("r\nn\n"), out)
+            with mock.patch.object(tui, "suspended_curses", mock.MagicMock()):
+                gateway_actions.dialog(self.runtime, FakeWindow(["\n"]), tui.MONO_PALETTE,
+                                       tty_in=io.StringIO("n\n\n"), tty_out=out)
             self.assertEqual(self.world.terminated, [])
             printed = out.getvalue()
             self.assertIn("1 managed session(s) run now; a restart fails their requests in flight:\n"
@@ -582,7 +594,9 @@ class HoldViewTests(_GatewayDoctor):
                           "Restart the gateway now? [y/N] ", printed)
             self.assertIn("Not restarted; nothing was done.", printed)
             out = io.StringIO()
-            gateway_actions.health_prompt(self.runtime, io.StringIO("r\ny\n\n"), out)
+            with mock.patch.object(tui, "suspended_curses", mock.MagicMock()):
+                gateway_actions.dialog(self.runtime, FakeWindow(["\n"]), tui.MONO_PALETTE,
+                                       tty_in=io.StringIO("y\n\n"), tty_out=out)
         self.assertEqual(self.world.terminated, [4242])
         self.assertIn("Restarting the gateway", out.getvalue())
 

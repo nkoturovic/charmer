@@ -581,43 +581,57 @@ FIXED_ID_BROKEN = "77777777-7777-4777-8777-777777777777"
 
 
 class FindingsGatewayTests(_FindingsCase):
-    def gateway(self, answer: str, view) -> tuple[list, str]:
+    def gateway(self, keys, view, *, answer="\n"):
         out = io.StringIO()
-        screen = self.screen(([], [], []), tty_in=io.StringIO(f"{answer}\n\n\n"), tty_out=out)
+        screen = self.screen(([], [], []), tty_in=io.StringIO(answer), tty_out=out)
         with fx.gateway_actions_seam(view) as acted:
-            result, _win = self.drive(screen, ["g", ESC])
+            result, win = self.drive(screen, keys)
         self.assertIsNone(result)
-        return acted, out.getvalue()
+        return acted, out.getvalue(), win
 
-    def test_g_then_r_restarts_a_proven_gateway(self) -> None:
+    def test_w_restarts_a_proven_gateway(self) -> None:
         view = fx.GatewayViewStub(restart=True)
-        acted, printed = self.gateway("r\ny", view)  # r, then y at the restart question
+        acted, printed, win = self.gateway(["w", ENTER, ESC], view, answer="y\n\n")
         self.assertEqual(acted, [(view, "restart")])
-        self.assertIn("r  restart it now", printed)
+        self.assertIn("[ Restart now ]", _flat(win.frames))
         self.assertIn("No managed session runs now.\nRestart the gateway now? [y/N] ", printed)
         self.assertIn("gateway restart: fixture done", printed)
+        self.assertIn("gateway restart: fixture done", win.frames[-1])
 
-    def test_g_then_i_installs_the_gateway_service(self) -> None:
+    def test_w_installs_the_gateway_service(self) -> None:
         view = fx.GatewayViewStub(service=True)
-        acted, printed = self.gateway("i", view)
+        acted, _printed, win = self.gateway(["w", ENTER, ESC], view)
         self.assertEqual(acted, [(view, "service")])
-        self.assertIn("i  install the gateway service", printed)
+        self.assertIn("[ Install service ]", _flat(win.frames))
 
-    def test_g_then_l_opens_the_gateway_log(self) -> None:
-        screen = self.screen(([], [], []), tty_in=io.StringIO("l\n\n\n"))
-        with mock.patch.object(gateway_actions, "health_prompt", return_value="log") as prompt, \
-                mock.patch.object(gateway_actions, "log_view",
-                                  return_value=("gateway log — fixture", ["fixture log line"])), \
-                mock.patch.object(tui, "suspended_curses", mock.MagicMock()):
-            _result, win = self.drive(screen, ["g", ESC, ESC])
-        prompt.assert_called_once_with(self.runtime, screen.tty_in, screen.tty_out)
+    def test_w_opens_the_gateway_log(self) -> None:
+        view = fx.GatewayViewStub()
+        with mock.patch.object(gateway_actions, "log_view",
+                               return_value=("gateway log — fixture", ["fixture log line"])) as log:
+            acted, _printed, win = self.gateway(["w", ENTER, ESC, ESC], view)
+        log.assert_called_once_with(view)
+        self.assertEqual(acted, [])
         self.assertTrue(any("fixture log line" in frame for frame in win.frames))
+
+    def test_g_remains_a_silent_gateway_alias(self) -> None:
+        screen = self.screen(([], [], []))
+        with mock.patch.object(gateway_actions, "dialog", return_value="fixture gateway result") as dialog, \
+                mock.patch.object(screen, "_collect", wraps=screen._collect) as collect:
+            result, win = self.drive(screen, ["g", ESC])
+        self.assertIsNone(result)
+        dialog.assert_called_once_with(self.runtime, win, screen.palette, background=screen._draw,
+                                       tty_in=screen.tty_in, tty_out=screen.tty_out)
+        collect.assert_called_once()
+        self.assertIn("fixture gateway result", win.frames[-1])
+        self.assertIn("W gateway", win.frames[-1])
+        self.assertNotIn("G gateway", win.frames[-1])
 
     def test_a_stopped_gateway_after_an_update_names_the_way_back(self) -> None:
         line = "if this began after charmer update: charmer update --rollback, then charmer gateway start"
         view = fx.GatewayViewStub(start=True, rollback=line)
-        _acted, printed = self.gateway("", view)
-        self.assertIn(line, printed)
+        acted, _printed, win = self.gateway(["w", ESC, ESC], view)
+        self.assertIn(line, _flat(win.frames))
+        self.assertEqual(acted, [])
 
 
 # ================================================================ goldens

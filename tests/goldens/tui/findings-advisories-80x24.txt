@@ -21,4 +21,4 @@
   when you start them (may cost provider calls; never run automatically).
   Enter: hide them
 
-  Enter act · V details · G gateway · ? help · Esc back
+  Enter act · V details · W gateway · ? help · Esc back

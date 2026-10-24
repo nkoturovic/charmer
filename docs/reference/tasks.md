@@ -104,12 +104,12 @@ In full: [guides/gateway.md](../guides/gateway.md).
 
 | Task | TUI | CLI | In-session | Notes |
 | --- | --- | --- | --- | --- |
-| the gateway's backend, endpoint, instance and hold | card → G → W: the gateway is not reachable; card → H → G | `charmer gateway status` | not a `/cm` request | asks nothing |
+| the gateway's backend, endpoint, instance and hold | card → G → W: the gateway is not reachable; card → H → W | `charmer gateway status` | not a `/cm` request | asks nothing |
 | start the gateway and wait until it is ready | card → D → W → Start now: the gateway is stopped; card → G → W → Start now: the gateway is stopped | `charmer gateway start` | not a `/cm` request | asks nothing |
 | exit 0 only when the gateway runs and is ready (for scripts) | not in the launcher: the readiness contract of scripts and the token helper; every launch ensures it | `charmer gateway ensure`; `charmer gateway ensure --quiet` | not a `/cm` request | for scripts; asks nothing |
-| stop, then start your gateway | card → H → G → r: the gateway is proven yours | `charmer gateway restart` | not a `/cm` request | asks nothing |
+| stop, then start your gateway | card → H → W → Restart now: the gateway is proven yours | `charmer gateway restart` | not a `/cm` request | asks nothing |
 | stop your gateway | not in the launcher: a launch never needs it and it is refused while the persistence hold is active; run charmer gateway stop in a terminal | `charmer gateway stop` | not a `/cm` request | asks nothing |
-| the newest gateway log lines | card → H → G → l; card → G → W → Show log: the gateway is not reachable | `charmer gateway logs` | not a `/cm` request | asks nothing |
+| the newest gateway log lines | card → H → W → Show log; card → G → W → Show log: the gateway is not reachable | `charmer gateway logs` | not a `/cm` request | asks nothing |
 | the log of one earlier gateway instance | not in the launcher: historical inspection of an earlier instance by its id; the TUI shows the current instance's log | `charmer gateway logs --instance <nonce>` | not a `/cm` request | maintenance; asks nothing |
 | clear the persistence hold after verifying the credentials | not in the launcher: it needs a typed confirmation in a terminal outside Claude Code: charmer gateway clear-hold | `charmer gateway clear-hold` | not a `/cm` request | asks first: typed confirmation |
 
@@ -120,7 +120,7 @@ In full: [guides/gateway.md](../guides/gateway.md).
 | Task | TUI | CLI | In-session | Notes |
 | --- | --- | --- | --- | --- |
 | whether the supervised service is installed | card → G → W: the gateway is not reachable | `charmer gateway service status` | not a `/cm` request | asks nothing |
-| install or refresh the supervised service | card → H → G → i: a user service manager and no service (or a stale one) | `charmer gateway service install` | not a `/cm` request | asks nothing |
+| install or refresh the supervised service | card → H → W → Install service: a user service manager and no service (or a stale one) | `charmer gateway service install` | not a `/cm` request | asks nothing |
 | hand the gateway back to the on-demand start | not in the launcher: it reverses a deliberate choice and changes the service manager; run charmer gateway service uninstall in a terminal | `charmer gateway service uninstall` | not a `/cm` request | asks nothing |
 
 ## Providers

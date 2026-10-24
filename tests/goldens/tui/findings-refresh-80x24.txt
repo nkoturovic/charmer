@@ -21,4 +21,4 @@
 
   Enter: save lead choices for the filtered sessions, without launching
 
-  Enter act · V details · G gateway · ? help · Esc back
+  Enter act · V details · W gateway · ? help · Esc back
