@@ -73,7 +73,8 @@ substitute for a running-byte match.
 **macOS 13 is the minimum the new installer enforces.** This is not a
 runtime support claim for macOS 13 or 14; the native Apple silicon journey
 runs on macOS 15. On macOS 12, stay on 2.0.1 until upgrading macOS. Check
-your OS before updating: the 2.0.1 updater does not enforce the new floor.
+your OS before updating: the old updater does not guarantee refusal on an
+older macOS.
 If you updated on macOS 12 anyway, use this release's installer and run
 `sh install.sh --rollback` in a plain terminal to return to the retained
 previous release. Installer rollback does not apply the new-install macOS

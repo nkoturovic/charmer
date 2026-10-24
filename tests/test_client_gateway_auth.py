@@ -555,6 +555,7 @@ class _CodexUpstream(BaseHTTPRequestHandler):
                 "model": document.get("model"),
                 "effort": reasoning.get("effort") if isinstance(reasoning, dict) else None,
                 "stream": document.get("stream"),
+                "max_output_tokens": document.get("max_output_tokens"),
                 "body_bytes": len(body),
             }
         )
@@ -846,7 +847,10 @@ class S12GptContextTests(_SpikeCase):
             self.assertEqual(hit["model"], line["wire"])
             self.assertEqual(hit["effort"], line["effort"])
             self.assertIs(hit["stream"], True)
-            self.assertFalse(_CONTEXT_KEYS & set(hit["keys"]), hit["keys"])
+            # The key route forwards the client's cap (patch #26, at least 16) and
+            # adds no other context or truncation field.
+            self.assertEqual(_CONTEXT_KEYS & set(hit["keys"]), {"max_output_tokens"}, hit["keys"])
+            self.assertEqual(hit["max_output_tokens"], max(wide["max_tokens"][0], 16))
             self.assertTrue(gw["advertised"])
             self.assertFalse(
                 [key for keys in gw["advertised"] for key in keys
@@ -861,7 +865,7 @@ class S12GptContextTests(_SpikeCase):
                 f"netns; catalog baseline {baseline}, not required equal): alias "
                 f"{line['base']} forwarded as model={hit['model']} "
                 f"effort={hit['effort']} keys={len(hit['keys'])} with no "
-                "max_output_tokens/truncation/context field; /v1/models "
+                "truncation/context field beyond the client's cap as max_output_tokens; /v1/models "
                 f"advertises no window ({gw['advertised'][0]}); an unstripped "
                 f"[1m] id is refused ({gw['unstripped_status']}, upstream hits=0)"
             )
