@@ -1145,9 +1145,11 @@ class PinnedGatewayAccountRouteTurnTests(unittest.TestCase):
                 self.assertEqual(hit.path, "/backend-api/codex/responses")
                 self.assertEqual(hit.header_values.get("authorization"), "Bearer " + ACCOUNT_TOKEN)
                 self.assertFalse({"max_output_tokens", "max_tokens", "max_completion_tokens"} & set(hit.body))
-        # The turn reached the account host. Other gateway egress has its own
-        # rows (no-antigravity-egress); this output-cap control stays off it.
-        self.assertIn(ACCOUNT_HOST + ":443", self.gateway.upstream.connects)
+        # Only the account host is reached. The background updater's CONNECT is
+        # the no-antigravity-egress patch's own row, so this output-cap control
+        # leaves that one host to it; any other destination still fails here.
+        self.assertEqual(set(self.gateway.upstream.connects) - {"registry.npmjs.org:443"},
+                         {ACCOUNT_HOST + ":443"})
 
 
 if __name__ == "__main__":
