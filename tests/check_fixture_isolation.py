@@ -487,7 +487,7 @@ def _runner_selection(targets: list[str]) -> list[str]:
 
 def _suite_command(targets: list[str]) -> list[str]:
     # HOME is the private one made by isolated_environment, never the caller's.
-    return [sys.executable, "tools/test.py", "--home", "inherit", "--tier", "full",
+    return [sys.executable, "tools/test.py", "--home", "inherit", "--tier", "full", "--keep",
             *_runner_selection(targets)]
 
 
@@ -597,8 +597,8 @@ def _run_probe(args: argparse.Namespace, kind: str) -> int:
         # armed; anything else failing is never retried.
         probe_failures = [t for t in failing if t.split(".")[1].startswith(REAL_BINARY_MODULES)]
         # A rerun can resolve an environment-sensitive test failure, never a
-        # runner safety/prerequisite failure (its private guard log may already
-        # have been removed, but its FAILED diagnostic remains in suite.log).
+        # runner safety/prerequisite failure. Keep the private runner logs and
+        # count its safety diagnostics as well as the outer probe guard log.
         runner_problem = any(line.startswith("FAILED:") and not re.fullmatch(
             r"FAILED: \d+ failures, \d+ errors", line) for line in output.splitlines())
         if prefix and failing and len(probe_failures) == len(failing) and not runner_problem:
@@ -609,8 +609,11 @@ def _run_probe(args: argparse.Namespace, kind: str) -> int:
                 _suite_command(classes),
                 cwd=component, env=env, capture_output=True, text=True, timeout=1800,
             )
-            rerun_verdict = re.findall(r"(?m)^(OK|FAILED)(?: \((.*)\))?\s*$",
-                                       rerun.stdout + rerun.stderr)
+            rerun_output = rerun.stdout + rerun.stderr
+            with suite_log.open("a", encoding="utf-8") as handle:
+                handle.write("\n=== namespace-sensitive rerun ===\n" + rerun_output)
+            output += "\n" + rerun_output
+            rerun_verdict = re.findall(r"(?m)^(OK|FAILED)(?: \((.*)\))?\s*$", rerun_output)
             rerun_ok = rerun.returncode == 0 and bool(rerun_verdict) and rerun_verdict[-1][0] == "OK"
             if rerun_ok:
                 print("suite: probe re-run OK (namespace-sensitive real-binary "
@@ -619,8 +622,11 @@ def _run_probe(args: argparse.Namespace, kind: str) -> int:
                 print("suite: probe re-run FAILED")
             suite_ok = rerun_ok
             failing = [] if rerun_ok else failing
+        runner_hits = len(re.findall(
+            r"(?m)^FAILED: (?:the in-process tripwire refused|a child process tried the live gateway)", output))
         attempts = guard_log.read_text(encoding="utf-8").count("BLOCKED ")
-        print(f"gateway: {attempts} attempted connect(s) to 127.0.0.1:8317/8316")
+        print(f"gateway: {attempts} outer-guard hit(s), {runner_hits} runner tripwire failure(s) "
+              "(runner logs kept with the probe on failure)")
 
         before = _goldens_snapshot(REPO_ROOT / "tests" / "goldens")
         bless = subprocess.run(
@@ -651,6 +657,7 @@ def _run_probe(args: argparse.Namespace, kind: str) -> int:
             suite_ok
             and not failing
             and attempts == 0
+            and runner_hits == 0
             and bless.returncode == 0
             and not changed
             and operator_ok

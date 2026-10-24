@@ -471,6 +471,47 @@ class IsolationEnvironmentTests(unittest.TestCase):
                 self.assertNotIn("8317", run.call_args.args[0][-1])
                 self.assertNotIn("8316", run.call_args.args[0][-1])
 
+    def test_probe_reports_and_retains_runner_tripwire_failures(self) -> None:
+        import argparse
+        import io
+        from tests import check_fixture_isolation as isolation
+
+        with tempfile.TemporaryDirectory(prefix="cm-probe-hits-") as tmp:
+            root = Path(tmp)
+            component = root / "repo"
+            (component / "tests").mkdir(parents=True)
+            (component / "src/charmer").mkdir(parents=True)
+            for relative in ("tests/_tripwire.py", "src/charmer/legacy.py"):
+                shutil.copy2(REPO_ROOT / relative, component / relative)
+            fake = dict(id="fixture", cloned_from="fixture", provider="fixture", selector="fixture",
+                        minimum_tested="0", pinned_client="0")
+            commands = []
+
+            def run(command, **kwargs):
+                commands.append(command)
+                if "stdout" in kwargs:
+                    # Fabricated runner output, not actual protected-port I/O.
+                    kwargs["stdout"].write("Ran 1 test in 0.001s\n\nOK\n"
+                        "FAILED: the in-process tripwire refused 1 live-gateway connects\n"
+                        "FAILED: a child process tried the live gateway (see /fixture/guard.log)\n"
+                        "kept /fixture/runner\n")
+                    return subprocess.CompletedProcess(command, 1)
+                return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+            output = io.StringIO()
+            args = argparse.Namespace(keep=True, python_guard_only=True, only=[])
+            with mock.patch.object(isolation.tempfile, "mkdtemp", return_value=tmp), \
+                    mock.patch.object(isolation, "_copy_tree", return_value=component), \
+                    mock.patch.object(isolation, "_add_fake_model", return_value=fake), \
+                    mock.patch.object(isolation, "_refresh_catalog_docs", return_value=True), \
+                    mock.patch.object(isolation, "_goldens_snapshot", return_value={}), \
+                    mock.patch.object(isolation.subprocess, "run", side_effect=run), \
+                    mock.patch("sys.stdout", output):
+                self.assertEqual(isolation._run_probe(args, "model"), 1)
+            self.assertIn("2 runner tripwire failure(s)", output.getvalue())
+            self.assertIn("--keep", commands[0])
+            self.assertNotIn("0 attempted connect", output.getvalue())
+
     def test_only_targets_keep_module_class_and_method_selection(self) -> None:
         from tests import check_fixture_isolation as isolation
 
