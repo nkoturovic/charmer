@@ -821,7 +821,16 @@ install_bundle() {
 	mv "$staging" "$dest"
 	staging=''
 	txn_bundle=$dest
-	bundle_python "$txn_bundle" "$TXN" sync-bundle --install-root "$install_root" --version "$version" || exit 1
+	sync_help=$(bundle_python "$txn_bundle" "$TXN" --help) || exit 1
+	case $sync_help in
+	*sync-bundle*)
+		bundle_python "$txn_bundle" "$TXN" sync-bundle --install-root "$install_root" --version "$version" || exit 1
+		;;
+	*)
+		sync || die "system sync failed; the links were left as they are"
+		say "the incoming release lacks the durability helper; used system sync"
+		;;
+	esac
 	if [ -n "$replaced" ]; then rm -rf "$replaced"; fi
 	advance switch
 	if [ -n "$old" ] && [ "$old" != "$version" ] && [ -d "$install_root/versions/$old" ]; then

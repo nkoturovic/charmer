@@ -36,7 +36,7 @@ esac
 # (shell builtins and mocked platform commands aside). A new dependency
 # must be added here on purpose.
 INSTALLER_TOOLS = ("awk", "cat", "chmod", "cp", "cut", "getconf", "grep", "gzip", "id", "ldd", "ln", "ls",
-                   "mkdir", "mktemp", "mv", "readlink", "rm", "sed", "sha256sum", "sort", "tail", "tar", "tr")
+                   "mkdir", "mktemp", "mv", "readlink", "rm", "sed", "sha256sum", "sort", "sync", "tail", "tar", "tr")
 SHELLS = [("sh",)] + ([("busybox", "sh")] if shutil.which("busybox") else [])
 
 
@@ -221,6 +221,47 @@ class InstallTests(InstallerTestCase):
         self.assertEqual(tuple(os.readlink(self.root / name) for name in ("current", "previous")), before)
         self.assertFalse((self.root / ".switch.json").exists())
         self.assertFalse((self.root / ".lock").exists())
+
+    def older_bundle_sync(self, exit_code: int):
+        self.assertInstalled(self.install(self.release("1.0.0")), "1.0.0")
+        self.assertInstalled(self.install(self.release("1.1.0")), "1.1.0")
+        before = tuple(os.readlink(self.root / name) for name in ("current", "previous"))
+        source = (REPO_ROOT / "src/charmer/install_txn.py").read_bytes()
+        older = b'''
+_original_parser = _parser
+def _parser():
+    parser = _original_parser()
+    for action in parser._actions:
+        if isinstance(action, argparse._SubParsersAction):
+            action.choices.pop("sync-bundle", None)
+    return parser
+'''
+        release = self.release("0.9.0", overrides={"charmer/install_txn.py": source + older})
+        tools = self.tmp / "sync-tools"
+        tools.mkdir()
+        sync = tools / "sync"
+        sync.write_text('#!/bin/sh\nreadlink "$SYNC_ROOT/current" >"$SYNC_LOG"\n'
+                        'readlink "$SYNC_ROOT/previous" >>"$SYNC_LOG"\nexit "$SYNC_EXIT"\n')
+        sync.chmod(0o755)
+        log = self.tmp / "sync.log"
+        result = self.install(release, path=f"{tools}:{self.fakebin}:{os.environ['PATH']}",
+                              SYNC_ROOT=str(self.root), SYNC_LOG=str(log), SYNC_EXIT=str(exit_code))
+        return result, before, log
+
+    def test_older_bundle_uses_system_sync_before_switching(self) -> None:
+        result, before, log = self.older_bundle_sync(0)
+        self.assertInstalled(result, "0.9.0")
+        self.assertEqual(tuple(log.read_text().splitlines()), before)
+        self.assertIn("incoming release lacks the durability helper; used system sync", result.stdout)
+        self.assertEqual(os.readlink(self.root / "previous"), "versions/1.1.0")
+
+    def test_older_bundle_system_sync_failure_preserves_both_links(self) -> None:
+        result, before, log = self.older_bundle_sync(1)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("system sync failed; the links were left as they are", result.stderr)
+        self.assertEqual(tuple(log.read_text().splitlines()), before)
+        self.assertEqual(tuple(os.readlink(self.root / name) for name in ("current", "previous")), before)
+        self.assertFalse((self.root / ".switch.json").exists())
 
     def test_reinstalling_the_same_version_replaces_it(self) -> None:
         release = self.release("1.0.0")
