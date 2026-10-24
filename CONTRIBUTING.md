@@ -84,6 +84,11 @@ The real-client lanes need the exact Claude Code version the release pins:
 suite's private HOME. Without it, a lane that needs it is reported as not
 runnable and the run fails.
 
+`--require PATTERN` takes a regular expression over selected test IDs. Every
+pattern must match at least one selected case, and matching skips fail the
+run; use the required class name so a class-level prerequisite skip also
+matches. Invalid patterns are usage errors, checked before importing tests.
+
 The installer, update and release tests build small fake releases
 (`tests/_fake_release.py`: bundles carrying this checkout's package, signed
 with throwaway keys) and run the real `packaging/install.sh` and the

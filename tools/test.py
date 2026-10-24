@@ -203,7 +203,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--platform", default=None, help=argparse.SUPPRESS)
     parser.add_argument("-k", dest="patterns", action="append", default=[], help="only tests whose name contains this")
     parser.add_argument("--require", action="append", default=[], metavar="PATTERN",
-                        help="tests whose id matches this regex must run (a skip fails)")
+                        help="this regex must match selected test ids, and matching tests must not skip")
     parser.add_argument("--max-skip-ratio", type=float, default=None, help="fail when skipped/ran exceeds this")
     parser.add_argument("--failfast", action="store_true")
     parser.add_argument("--list", action="store_true", help="print the selection and exit")
@@ -217,6 +217,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f"tools/test.py needs Python {'.'.join(map(str, MIN_PYTHON))} or newer", file=sys.stderr)
         return EXIT_USAGE
     platform_name = args.platform or current_platform()
+    try:
+        args.require = [re.compile(pattern) for pattern in args.require]
+    except re.error as exc:
+        print(f"tools/test.py: invalid --require pattern: {exc}", file=sys.stderr)
+        return EXIT_USAGE
     try:
         selected, excluded = select_modules(REPO / "tests", args.modules, platform_name)
     except UsageError as exc:
@@ -273,6 +278,18 @@ def place_pinned_client(repo: Path, source: Path) -> str:
     return f"Claude Code {outcome.version} ({outcome.platform}) placed in the private HOME"
 
 
+def selected_test_ids(suite: unittest.TestSuite) -> list[str]:
+    """Capture the inventory before unittest consumes the nested suites."""
+
+    ids = []
+    for test in suite:
+        if isinstance(test, unittest.TestSuite):
+            ids.extend(selected_test_ids(test))
+        else:
+            ids.append(test.id())
+    return ids
+
+
 def _run(args: argparse.Namespace, selected: list[str], work: Path) -> int:
     guard_log = prepare_environment(work, repo=REPO, home=args.home, tier=args.tier)
     if args.claude is not None:
@@ -287,9 +304,16 @@ def _run(args: argparse.Namespace, selected: list[str], work: Path) -> int:
     if args.patterns:
         loader.testNamePatterns = [f"*{pattern}*" for pattern in args.patterns]
     suite = loader.loadTestsFromNames(selected)
-    if suite.countTestCases() == 0:
+    test_ids = selected_test_ids(suite)
+    if not test_ids:
         print("tools/test.py: the selection holds no tests", file=sys.stderr)
         return EXIT_USAGE
+    unmatched = [pattern.pattern for pattern in args.require
+                 if not any(pattern.search(test_id) for test_id in test_ids)]
+    if unmatched:
+        for pattern in unmatched:
+            print(f"FAILED: --require {pattern!r} matched no selected tests", file=sys.stderr)
+        return EXIT_FAILED
     started = time.monotonic()
     result = unittest.TextTestRunner(verbosity=2 if args.verbose else 1, failfast=args.failfast).run(suite)
     elapsed = time.monotonic() - started
@@ -303,9 +327,9 @@ def _run(args: argparse.Namespace, selected: list[str], work: Path) -> int:
         problems.append(f"a child process tried the live gateway (see {guard_log}; rerun with --keep)")
     skipped = [(test.id(), reason) for test, reason in result.skipped]
     for pattern in args.require:
-        missed = [test_id for test_id, _ in skipped if re.search(pattern, test_id)]
+        missed = [test_id for test_id, _ in skipped if pattern.search(test_id)]
         if missed:
-            problems.append(f"required tests were skipped ({pattern}): {', '.join(missed[:5])}")
+            problems.append(f"required tests were skipped ({pattern.pattern}): {', '.join(missed[:5])}")
     if args.max_skip_ratio is not None and result.testsRun and len(skipped) > args.max_skip_ratio * result.testsRun:
         problems.append(f"{len(skipped)} of {result.testsRun} tests skipped (more than {args.max_skip_ratio:.0%})")
     reasons: dict[str, int] = {}

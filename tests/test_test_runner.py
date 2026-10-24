@@ -186,6 +186,25 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(ratio.returncode, 1)
         self.assertIn("1 of 2 tests skipped", ratio.stderr)
 
+    def test_require_must_match_each_selected_inventory(self) -> None:
+        for args in (("--require", "NoSuchRequiredTest"),
+                     ("--require", r"test_pass\.T\.test_ok", "--require", "NoSuchRequiredTest"),
+                     ("-k", "test_ok", "--require", "test_skipped")):
+            with self.subTest(args=args):
+                result = self.run_runner("tests.test_pass", *args)
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertIn("matched no selected tests", result.stderr)
+        present = self.run_runner("tests.test_pass", "--require", r"test_pass\.T\.test_ok")
+        self.assertEqual(present.returncode, 0, present.stdout + present.stderr)
+        self.assertIn("ran 2 tests", present.stdout)
+
+    def test_require_regex_is_validated_before_loading_tests(self) -> None:
+        result = self.run_runner("tests.test_fail", "--require", "[")
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("invalid --require pattern", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+        self.assertNotIn("ran 1 tests", result.stdout)
+
     def test_usage_errors_and_listing(self) -> None:
         self.assertEqual(self.run_runner("tests.test_marked", "--platform", "linux").returncode, 2)
         self.assertEqual(self.run_runner("tests.test_nope").returncode, 2)
