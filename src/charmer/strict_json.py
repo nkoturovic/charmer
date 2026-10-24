@@ -121,7 +121,9 @@ def loads(data: bytes | str, limits: JSONLimits | None = None) -> Any:
         raise StrictJSONError(
             f"$: invalid JSON at line {exc.lineno} column {exc.colno}: {exc.msg}"
         ) from exc
-    except (ValueError, RecursionError) as exc:
+    except RecursionError as exc:
+        raise StrictJSONError("nesting too deep") from exc
+    except ValueError as exc:
         raise StrictJSONError("$: JSON exceeds parser limits") from exc
     trailing = text[end:]
     if trailing.strip(" \t\r\n"):

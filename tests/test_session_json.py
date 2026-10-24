@@ -16,8 +16,10 @@ class SessionJSONTests(unittest.TestCase):
     def test_parser_limits_are_reported_by_load_resolve_and_inventory(self):
         managed_id = "11111111-1111-4111-8111-111111111111"
         schema = strict_json.load(FIXTURE_ROOT / "schemas/session.schema.json")
-        for payload in (b'{"integer":' + b"9" * 5000 + b"}",
-                        b"[" * 200_000 + b"0" + b"]" * 200_000):
+        for payload, reason in (
+            (b'{"integer":' + b"9" * 5000 + b"}", "JSON exceeds parser limits"),
+            (b"[" * 200_000 + b"0" + b"]" * 200_000, "nesting too deep"),
+        ):
             with self.subTest(size=len(payload)), tempfile.TemporaryDirectory() as tmp:
                 store = sessions.SessionStore(Path(tmp), schema)
                 path = store.sessions_dir / f"{managed_id}.json"
@@ -32,5 +34,5 @@ class SessionJSONTests(unittest.TestCase):
                 self.assertEqual(ids, {managed_id})
                 self.assertEqual(len(problems), 1)
                 self.assertIn("is unreadable", problems[0])
-                self.assertIn("JSON exceeds parser limits", problems[0])
+                self.assertIn(reason, problems[0])
                 self.assertEqual(path.read_bytes(), payload)

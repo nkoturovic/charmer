@@ -33,11 +33,15 @@ class StrictLoaderTests(unittest.TestCase):
             strict_json.loads("\n\n{broken}")
 
     def test_parser_resource_failures_are_value_free_strict_errors(self) -> None:
-        for payload in (b"9" * 5000, b"[" * 200_000 + b"0" + b"]" * 200_000):
+        for payload, expected in (
+            (b"9" * 5000, "$: JSON exceeds parser limits"),
+            (b"[" * 200_000 + b"0" + b"]" * 200_000,
+             "nesting too deep"),
+        ):
             with self.subTest(kind="integer" if payload.startswith(b"9") else "nesting"):
                 with self.assertRaises(StrictJSONError) as raised:
                     strict_json.loads(payload)
-                self.assertEqual(str(raised.exception), "$: JSON exceeds parser limits")
+                self.assertEqual(str(raised.exception), expected)
 
     def test_lone_surrogates_in_input_values_and_keys_are_rejected(self) -> None:
         for payload in ('"\ud800"', b'"\\ud800"', b'{"\\udfff": 1}',
