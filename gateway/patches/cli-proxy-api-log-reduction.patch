@@ -1022,10 +1022,10 @@ index 00000000..fa80b0a4
 +		t.Errorf("log sites differ from the reviewed inventory:\n%s", strings.Join(differences, "\n"))
 +	}
 +}
-diff --git a/sdk/cliproxy/auth/openai_compat_keyed_cm053_test.go b/sdk/cliproxy/auth/openai_compat_keyed_cm053_test.go
+diff --git a/sdk/cliproxy/auth/openai_compat_keyed_safety_test.go b/sdk/cliproxy/auth/openai_compat_keyed_safety_test.go
 index 38979ff0..1fa9d9f0 100644
---- a/sdk/cliproxy/auth/openai_compat_keyed_cm053_test.go
-+++ b/sdk/cliproxy/auth/openai_compat_keyed_cm053_test.go
+--- a/sdk/cliproxy/auth/openai_compat_keyed_safety_test.go
++++ b/sdk/cliproxy/auth/openai_compat_keyed_safety_test.go
 @@ -182,9 +182,9 @@ func TestCM053KeyedCompatAuthIdentityRedacted(t *testing.T) {
  		}
  	}

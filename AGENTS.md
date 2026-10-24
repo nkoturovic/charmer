@@ -1074,7 +1074,7 @@ gateway config). T2 **selects** T0/T1 vocabulary and never extends it.
   succeeds), and the client's `max_tokens` (or a native Responses
   `max_output_tokens`) reaches it as `max_output_tokens`, applied after
   payload rules (patch #26; a positive plain integer is forwarded, a final
-  limit below OpenAI's minimum of 16 is raised to 16 (D225), and any other
+  limit below OpenAI's minimum of 16 is raised to 16, and any other
   value is not forwarded); the account route sets none
   (`PinnedGatewayKeyRouteTurnTests`, `PinnedGatewayAccountRouteTurnTests`;
   the pinned client's own journey in `tests/test_openai_key_route_client.py`

@@ -3399,11 +3399,11 @@ index 17a1b458..99759f7a 100644
  		return fmt.Sprintf("api_key=%s", util.HideAPIKey(accountInfo))
  	case "oauth":
  		return formatOauthIdentity(auth, provider, accountInfo)
-diff --git a/sdk/cliproxy/auth/openai_compat_keyed_cm053_test.go b/sdk/cliproxy/auth/openai_compat_keyed_cm053_test.go
+diff --git a/sdk/cliproxy/auth/openai_compat_keyed_safety_test.go b/sdk/cliproxy/auth/openai_compat_keyed_safety_test.go
 new file mode 100644
 index 00000000..38979ff0
 --- /dev/null
-+++ b/sdk/cliproxy/auth/openai_compat_keyed_cm053_test.go
++++ b/sdk/cliproxy/auth/openai_compat_keyed_safety_test.go
 @@ -0,0 +1,190 @@
 +package auth
 +
