@@ -43,6 +43,7 @@ the install lock) finishes what the interrupted run left behind.
 
 from __future__ import annotations
 
+import contextlib
 import gzip
 import hashlib
 import json
@@ -391,50 +392,96 @@ def state_version(state_root: Path) -> int:
 
 
 class _InstallLock:
-    """``<root>/.lock`` (a directory with the holder's pid), shared with install.sh."""
+    """The mkdir/pid lock understood by every published installer and updater.
 
-    def __init__(self, root: Path) -> None:
+    A stable flock guard serializes acquisition and stale reclamation by
+    cooperating writers. The guard file is never renamed or removed. Older
+    writers still see the live mkdir lock, but cannot join this guard when
+    reclaiming a stale one themselves.
+    """
+
+    def __init__(self, root: Path, *, pid: int | None = None) -> None:
         self.path = root / LOCK_DIR
+        self.pid = os.getpid() if pid is None else pid
+        if self.pid <= 0:
+            raise UpdateError("the install lock needs a positive owner pid")
 
-    def __enter__(self) -> "_InstallLock":
+    @contextlib.contextmanager
+    def _guard(self, *, blocking: bool):
+        path = self.path.with_name(".lock-guard")
+        descriptor = os.open(path, os.O_RDWR | os.O_CREAT | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600)
+        try:
+            info = os.fstat(descriptor)
+            if (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1
+                    or not posix_fs.owned_by_caller(info) or info.st_mode & 0o077):
+                raise UpdateError(f"the install lock guard {path} is not a private regular file")
+            try:
+                posix_fs.lock_descriptor(descriptor, shared=False, blocking=blocking)
+            except BlockingIOError:
+                raise UpdateError("another install or update is running") from None
+            current = os.lstat(path)
+            if (info.st_dev, info.st_ino) != (current.st_dev, current.st_ino):
+                raise UpdateError(f"the install lock guard {path} changed; run the command again")
+            yield
+        finally:
+            os.close(descriptor)
+
+    def acquire(self) -> "_InstallLock":
         if not self.path.parent.is_dir():
             state.ensure_private_dir(self.path.parent)
-        for _attempt in range(2):
-            try:
-                self.path.mkdir(mode=0o700)
-            except FileExistsError:
-                holder = self._holder()
-                if holder is None:  # a holder between mkdir and writing its pid, or a crash there
-                    raise UpdateError(f"another install or update holds {self.path}",
-                                      remedy=f"if none is running, remove {self.path}") from None
-                if _alive(holder):
-                    raise UpdateError(f"another install or update is running (process {holder})") from None
-                stale = self.path.with_name(f"{LOCK_DIR}.stale.{os.getpid()}")
+        with self._guard(blocking=False):
+            for _attempt in range(2):
                 try:
-                    os.rename(self.path, stale)
-                    shutil.rmtree(stale, ignore_errors=True)
-                except OSError:
-                    pass
-                continue
-            (self.path / "pid").write_text(f"{os.getpid()}\n")
-            return self
+                    self.path.mkdir(mode=0o700)
+                except FileExistsError:
+                    holder = self._holder()
+                    if holder is None:  # a holder between mkdir and writing its pid, or a crash there
+                        raise UpdateError(f"another install or update holds {self.path}",
+                                          remedy=f"if none is running, remove {self.path}") from None
+                    if _alive(holder):
+                        raise UpdateError(f"another install or update is running (process {holder})") from None
+                    stale = self.path.with_name(f"{LOCK_DIR}.stale.{self.pid}")
+                    try:
+                        os.rename(self.path, stale)
+                        shutil.rmtree(stale, ignore_errors=True)
+                    except OSError:
+                        pass
+                    continue
+                (self.path / "pid").write_text(f"{self.pid}\n")
+                return self
         raise UpdateError("another install or update is running")
+
+    def __enter__(self) -> "_InstallLock":
+        return self.acquire()
 
     def _holder(self) -> int | None:
         try:
-            text = (self.path / "pid").read_text().strip()
+            if self.path.is_symlink():
+                return None
+            descriptor = os.open(self.path / "pid", os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+            try:
+                if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+                    return None
+                text = os.read(descriptor, 64).strip()
+            finally:
+                os.close(descriptor)
         except OSError:
             return None
-        return int(text) if text.isdigit() else None
+        holder = int(text) if re.fullmatch(rb"[1-9][0-9]{0,9}", text) else None
+        return holder if holder is not None and holder < 2 ** 31 else None
 
     def __exit__(self, *_exc: object) -> None:
-        shutil.rmtree(self.path, ignore_errors=True)
+        if self._holder() != self.pid:
+            return
+        with self._guard(blocking=True):
+            if self._holder() == self.pid:
+                shutil.rmtree(self.path, ignore_errors=True)
 
 
-def install_lock(root: Path) -> "_InstallLock":
-    """The install lock (``<root>/.lock``), shared with ``install.sh``."""
+def install_lock(root: Path, *, pid: int | None = None) -> "_InstallLock":
+    """The install lock shared with ``install.sh`` (``pid``: its shell owner)."""
 
-    return _InstallLock(root)
+    return _InstallLock(root, pid=pid)
 
 
 def tidy(root: Path) -> tuple[str, ...]:

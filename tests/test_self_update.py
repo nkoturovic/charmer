@@ -11,8 +11,10 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import select
 import shutil
 import subprocess
+import threading
 import tarfile
 import tempfile
 import unittest
@@ -203,6 +205,142 @@ class InstallationTests(SelfUpdateTestCase):
         (self.root / "current").symlink_to("versions/1.0.0")
         with self.assertRaisesRegex(su.UpdateError, "unreadable"):
             su.read_installation(self.root)
+
+
+class InstallLockRaceTests(SelfUpdateTestCase):
+    def test_the_guard_is_stable_and_unsafe_guard_files_are_refused(self) -> None:
+        with su.install_lock(self.root):
+            guard = self.root / ".lock-guard"
+            identity = (guard.stat().st_dev, guard.stat().st_ino)
+        with su.install_lock(self.root):
+            self.assertEqual((guard.stat().st_dev, guard.stat().st_ino), identity)
+        self.assertEqual(guard.stat().st_mode & 0o777, 0o600)
+        guard.unlink()
+        target = self.tmp / "elsewhere"
+        target.write_bytes(b"untouched")
+        guard.symlink_to(target)
+        with self.assertRaises((su.UpdateError, OSError)):
+            with su.install_lock(self.root):
+                self.fail("symlinked guard accepted")
+        self.assertEqual(target.read_bytes(), b"untouched")
+        guard.unlink()
+        os.mkfifo(guard)
+        with self.assertRaises((su.UpdateError, OSError)):
+            with su.install_lock(self.root):
+                self.fail("special guard accepted")
+        self.assertFalse((self.root / ".lock").exists())
+
+    def test_release_leaves_a_replacement_owners_lock_alone(self) -> None:
+        held = su.install_lock(self.root)
+        held.__enter__()
+        (self.root / ".lock/pid").write_text(f"{os.getppid()}\n")
+        held.__exit__(None, None, None)
+        self.assertEqual((self.root / ".lock/pid").read_text(), f"{os.getppid()}\n")
+
+    def test_two_stale_reclaimers_cannot_both_acquire(self) -> None:
+        lock = self.root / ".lock"
+        lock.mkdir(parents=True)
+        (lock / "pid").write_text(f"{2 ** 22 + 1}\n")
+        paused, second_attempted, first_attempted, release = (threading.Event() for _ in range(4))
+        acquired, refused, errors = [], [], []
+        real_rename = su.os.rename
+
+        def rename(source, destination):
+            if Path(source) == lock and threading.current_thread().name == "first":
+                paused.set()
+                if not second_attempted.wait(5):
+                    raise AssertionError("second reclaimer did not attempt the lock")
+            return real_rename(source, destination)
+
+        def run(name):
+            held = su.install_lock(self.root)
+            owns = False
+            try:
+                try:
+                    held.__enter__()
+                    owns = True
+                    acquired.append(name)
+                except su.UpdateError:
+                    refused.append(name)
+                finally:
+                    (first_attempted if name == "first" else second_attempted).set()
+                if owns and not release.wait(5):
+                    raise AssertionError("test did not release the winner")
+            except BaseException as exc:
+                errors.append(exc)
+            finally:
+                if owns:
+                    held.__exit__(None, None, None)
+
+        first = threading.Thread(target=run, args=("first",), name="first", daemon=True)
+        second = threading.Thread(target=run, args=("second",), name="second", daemon=True)
+        with mock.patch.object(su.os, "rename", side_effect=rename):
+            try:
+                first.start()
+                self.assertTrue(paused.wait(5), "first reclaimer did not reach the rename barrier")
+                second.start()
+                self.assertTrue(first_attempted.wait(5), "first reclaimer did not finish acquiring")
+                self.assertEqual(errors, [])
+                self.assertEqual(len(acquired), 1, f"both reclaimers acquired: {acquired}")
+                self.assertEqual(len(refused), 1)
+                self.assertEqual((lock / "pid").read_text(), f"{os.getpid()}\n")
+            finally:
+                second_attempted.set()
+                release.set()
+                first.join(5)
+                if second.ident is not None:
+                    second.join(5)
+        self.assertFalse(first.is_alive() or second.is_alive())
+        self.assertEqual(errors, [])
+        self.assertFalse(lock.exists())
+
+    LEGACY_LOCK = r'''
+lock=$1/.lock
+locked=no
+trap 'if [ "$locked" = yes ]; then rm -rf "$lock"; fi' EXIT
+if ! mkdir -m 700 "$lock" 2>/dev/null; then
+    holder=''
+    IFS= read -r holder <"$lock/pid" 2>/dev/null || true
+    case $holder in
+    '' | *[!0-9]*) echo held; exit 1 ;;
+    *) if kill -0 "$holder" 2>/dev/null; then echo held; exit 1; fi ;;
+    esac
+    stale=$1/.lock.stale.$$
+    if mv "$lock" "$stale" 2>/dev/null; then rm -rf "$stale"; fi
+    mkdir -m 700 "$lock" 2>/dev/null || exit 1
+fi
+printf '%s\n' "$$" >"$lock/pid"
+locked=yes
+printf 'acquired\n'
+IFS= read -r release
+'''
+
+    def test_live_new_lock_refuses_the_legacy_mkdir_protocol(self) -> None:
+        with su.install_lock(self.root):
+            result = subprocess.run(["sh", "-c", self.LEGACY_LOCK, "sh", str(self.root)],
+                                    cwd=self.tmp, input="\n", capture_output=True, text=True, timeout=5)
+            self.assertEqual(result.returncode, 1, result.stderr)
+            self.assertEqual(result.stdout, "held\n")
+            self.assertEqual((self.root / ".lock/pid").read_text(), f"{os.getpid()}\n")
+
+    def test_live_legacy_mkdir_lock_refuses_the_new_protocol(self) -> None:
+        self.root.mkdir(mode=0o700)
+        process = subprocess.Popen(["sh", "-c", self.LEGACY_LOCK, "sh", str(self.root)], cwd=self.tmp,
+                                   stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        try:
+            self.assertTrue(select.select([process.stdout], [], [], 5)[0], "legacy fixture did not acquire")
+            self.assertEqual(process.stdout.readline(), "acquired\n")
+            with self.assertRaisesRegex(su.UpdateError, "another install or update is running"):
+                with su.install_lock(self.root):
+                    self.fail("both protocols acquired")
+            self.assertEqual((self.root / ".lock/pid").read_text(), f"{process.pid}\n")
+            _out, err = process.communicate("\n", timeout=5)
+            self.assertEqual(process.returncode, 0, err)
+        finally:
+            if process.poll() is None:
+                process.kill()
+            process.communicate(timeout=5)
+        self.assertFalse((self.root / ".lock").exists())
 
 
 class CheckAndPlanTests(SelfUpdateTestCase):

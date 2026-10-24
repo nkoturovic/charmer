@@ -254,7 +254,8 @@ class InstallTests(InstallerTestCase):
         lock.mkdir(parents=True)
         busy = self.install(release)
         self.assertEqual(busy.returncode, 1)
-        self.assertIn("If none is running, remove that directory", busy.stderr)
+        self.assertIn("if none is running, remove", busy.stderr)
+        self.assertIn(str(lock), busy.stderr)
         (lock / "pid").write_text(f"{os.getpid()}\n")
         running = self.install(release)
         self.assertIn(f"is running (process {os.getpid()})", running.stderr)
@@ -263,6 +264,71 @@ class InstallTests(InstallerTestCase):
         (lock / "pid").write_text(f"{dead}\n")
         self.assertInstalled(self.install(release), "1.0.0")
         self.assertFalse(lock.exists())
+
+    def test_acquisition_honours_the_updaters_stable_guard(self) -> None:
+        from charmer.platform import posix_fs
+
+        release = self.release("1.0.0")
+        self.root.mkdir(parents=True, mode=0o700)
+        descriptor = os.open(self.root / ".lock-guard", os.O_RDWR | os.O_CREAT, 0o600)
+        try:
+            posix_fs.lock_descriptor(descriptor, shared=False, blocking=False)
+            result = self.install(release)
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("another install or update is running", result.stderr)
+            self.assertNothingInstalled()
+            self.assertFalse((self.root / ".lock").exists())
+        finally:
+            os.close(descriptor)
+
+    def test_cleanup_keeps_another_owners_install_lock(self) -> None:
+        source = (REPO_ROOT / "src/charmer/install_txn.py").read_bytes()
+        replacement = b'''
+_original_main = main
+def main(*args, **kwargs):
+    if "preflight" in sys.argv and "--token-env" in sys.argv:
+        root = Path(sys.argv[sys.argv.index("--install-root") + 1])
+        (root / ".lock/pid").write_text(os.environ["REPLACEMENT_PID"] + "\\n")
+        return 1
+    return _original_main(*args, **kwargs)
+'''
+        release = self.release("1.0.0", overrides={"charmer/install_txn.py": source + replacement})
+        result = self.install(release, REPLACEMENT_PID=str(os.getpid()))
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertEqual((self.root / ".lock/pid").read_text(), f"{os.getpid()}\n")
+        self.assertNothingInstalled()
+
+    def test_legacy_helper_stale_lock_refuses_repair_and_rollback(self) -> None:
+        source = (REPO_ROOT / "src/charmer/install_txn.py").read_bytes()
+        legacy = b'''
+_original_parser = _parser
+def _parser():
+    parser = _original_parser()
+    for action in parser._actions:
+        if isinstance(action, argparse._SubParsersAction):
+            action.choices.pop("acquire-lock", None)
+    return parser
+'''
+        for version in ("1.0.0", "1.1.0"):
+            release = self.release(version, overrides={"charmer/install_txn.py": source + legacy})
+            self.assertInstalled(self.install(release), version)
+        lock = self.root / ".lock"
+        lock.mkdir()
+        holder = f"{2 ** 22 + 1}\n"
+        (lock / "pid").write_text(holder)
+        for mode in ("--repair", "--rollback"):
+            with self.subTest(mode=mode):
+                result = self.run_installer(mode, "--no-modify-path")
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertIn("Confirm no installer or charmer update process is running", result.stderr)
+                self.assertIn(str(lock), result.stderr)
+                self.assertIn("rm -r", result.stderr)
+                self.assertEqual((lock / "pid").read_text(), holder)
+                self.assertEqual(os.readlink(self.root / "current"), "versions/1.1.0")
+        shutil.rmtree(lock)  # The fixture operator has confirmed neither run acquired it.
+        result = self.run_installer("--rollback")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(os.readlink(self.root / "current"), "versions/1.0.0")
 
     def test_rollback_without_a_previous_version(self) -> None:
         self.assertInstalled(self.install(self.release("1.0.0")), "1.0.0")
