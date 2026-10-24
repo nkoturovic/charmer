@@ -794,7 +794,7 @@ class NativeReplayTests(unittest.TestCase):
                             self.assertFalse(result.timed_out)
                             self.assertTrue(result.daemon and result.daemon.unchanged)
                             self.assertEqual(relay.completion_errors(), [])
-                            self.assertEqual(gateway.version, "8.0.33", "requalify late-terminal evidence for a changed gateway")
+                            self.assertEqual(gateway.version, "8.0.42", "requalify late-terminal evidence for a changed gateway")
                             expected_start = {"stop_reason": None, "stop_sequence": None, "output_tokens": 0}
                             self.assertTrue(all(row["initial_fields"] == expected_start for row in upstream_rows))
                             self.assertTrue(all(row.get("reply_initial_fields") == [expected_start] for row in relay.rows))

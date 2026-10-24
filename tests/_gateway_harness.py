@@ -357,7 +357,7 @@ REQUIRED_EVIDENCE["tests.test_gateway_contracts"] = {
         "A8-gwtest-cc", "A8-gwtest-ccb", "C-claude", "C-codex", "C-compat"),
     "filter": stream_rows("gwtest-ccf-a", "gwtest-ccf-b", "gwtest-cont-ccf",
                           "gwtest-cc-think-a", "gwtest-cc-think-b"),
-    "auth": {"K4"} | stream_rows("K1", "K2-False", "K2-True", "K3-catalog", "K3-continuity"),
+    "auth": {"K4"} | stream_rows("K1", "K2-False", "K2-True", "K3-catalog", "K3-continuity", "K5"),
     "passthrough": stream_rows("claude", "codex", "compat"),
     "fidelity": {"F1", "F2-any", "F2-tool", "F2-serial", "F3", "F4", "F5", "F5b", "F5c",
                  "F6-text", "F6-tool_calls", "F6-length", "F7", "F8"} | stream_rows("F9", "F10", "F11"),
