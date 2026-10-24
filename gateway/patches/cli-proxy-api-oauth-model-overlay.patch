@@ -1090,10 +1090,10 @@ index 021da6ea..0b99f485 100644
  	log.Infof("config successfully reloaded, triggering client reload")
  	w.reloadClientsLocked(authDirChanged, affectedOAuthProviders, forceAuthRefresh)
 diff --git a/internal/watcher/diff/config_diff.go b/internal/watcher/diff/config_diff.go
-index ee68350e..4fbe39e5 100644
+index 62b24c5b..dc06561d 100644
 --- a/internal/watcher/diff/config_diff.go
 +++ b/internal/watcher/diff/config_diff.go
-@@ -459,6 +459,13 @@ func BuildConfigChangeDetails(oldCfg, newCfg *config.Config) []string {
+@@ -468,6 +468,13 @@ func BuildConfigChangeDetails(oldCfg, newCfg *config.Config) []string {
  	if entries, _ := DiffOAuthModelAliasChanges(oldCfg.OAuthModelAlias, newCfg.OAuthModelAlias); len(entries) > 0 {
  		changes = append(changes, entries...)
  	}
@@ -1342,10 +1342,10 @@ index 00000000..514b4df2
 +	"root-anchor":     {"--- &root\n", "oauth-extra-models: {codex: [{name: gpt-cm053-shape-1}]}\n"},
 +}
 diff --git a/sdk/cliproxy/antigravity_models.go b/sdk/cliproxy/antigravity_models.go
-index 1abf1325..0d9bf073 100644
+index 6c46f95f..22f2e6bf 100644
 --- a/sdk/cliproxy/antigravity_models.go
 +++ b/sdk/cliproxy/antigravity_models.go
-@@ -653,10 +653,9 @@ func (s *Service) antigravityModelsForHintsWithConfig(auth *coreauth.Auth, hints
+@@ -667,10 +667,9 @@ func (s *Service) antigravityModelsForHintsWithConfig(auth *coreauth.Auth, hints
  	}
  	models := filterAntigravityModels(registry.GetAntigravityModels(), hints)
  	models = applyAntigravityFetchedModelCapabilities(models, hints)
@@ -1360,7 +1360,7 @@ index 1abf1325..0d9bf073 100644
  	models = applyOAuthModelAliasForAuth(cfg, "antigravity", auth.AuthKind(), auth.Attributes, models)
  	models = s.appendPluginModels("antigravity", models, excluded)
 diff --git a/sdk/cliproxy/auth/api_key_model_capabilities.go b/sdk/cliproxy/auth/api_key_model_capabilities.go
-index 8d56296d..3e47085a 100644
+index bb0ae424..6bf2dc45 100644
 --- a/sdk/cliproxy/auth/api_key_model_capabilities.go
 +++ b/sdk/cliproxy/auth/api_key_model_capabilities.go
 @@ -328,6 +328,9 @@ func attachResolvedHomeModelInfo(req cliproxyexecutor.Request, auth *Auth, route
@@ -2403,18 +2403,18 @@ index 2c2083d9..ab6b955c 100644
  		return true, true
  	}
 diff --git a/sdk/cliproxy/service_models.go b/sdk/cliproxy/service_models.go
-index 7dc4d6ee..991a8c02 100644
+index b201a923..14e52168 100644
 --- a/sdk/cliproxy/service_models.go
 +++ b/sdk/cliproxy/service_models.go
-@@ -11,6 +11,7 @@ import (
- 	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
+@@ -12,6 +12,7 @@ import (
+ 	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
  	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
  	"github.com/router-for-me/CLIProxyAPI/v8/sdk/config"
 +	log "github.com/sirupsen/logrus"
  )
  
  // registerModelsForAuth (re)binds provider models in the global registry using the core auth ID as client identifier.
-@@ -70,15 +71,12 @@ func (s *Service) registerModelsForAuthWithConfigAndCache(ctx context.Context, c
+@@ -71,15 +72,12 @@ func (s *Service) registerModelsForAuthWithConfigAndCache(ctx context.Context, c
  	if compatDetected {
  		provider = "openai-compatibility"
  	}
@@ -2435,7 +2435,7 @@ index 7dc4d6ee..991a8c02 100644
  	if handled, published := s.tryRegisterPluginModelsForAuthWithConfigFenced(ctx, cfg, a, fence, provider, authKind, excluded); handled {
  		return published
  	}
-@@ -152,6 +150,7 @@ func (s *Service) registerModelsForAuthWithConfigAndCache(ctx context.Context, c
+@@ -155,6 +153,7 @@ func (s *Service) registerModelsForAuthWithConfigAndCache(ctx context.Context, c
  				excluded = entry.ExcludedModels
  			}
  		}
@@ -2443,7 +2443,7 @@ index 7dc4d6ee..991a8c02 100644
  		models = applyExcludedModels(models, excluded)
  	case "codex":
  		if authKind == "apikey" {
-@@ -179,6 +178,7 @@ func (s *Service) registerModelsForAuthWithConfigAndCache(ctx context.Context, c
+@@ -182,6 +181,7 @@ func (s *Service) registerModelsForAuthWithConfigAndCache(ctx context.Context, c
  		default:
  			models = registry.GetCodexProModels()
  		}
@@ -2451,7 +2451,7 @@ index 7dc4d6ee..991a8c02 100644
  		models = applyExcludedModels(models, excluded)
  	case "kimi", "kimi-ai", "kimi.ai", "kimi.com":
  		models = registry.GetKimiModels()
-@@ -635,6 +635,50 @@ func resolveConfigCodexStyleKey(auth *coreauth.Auth, entries []config.CodexKey,
+@@ -638,6 +638,50 @@ func resolveConfigCodexStyleKey(auth *coreauth.Auth, entries []config.CodexKey,
  	return nil
  }
  
@@ -2502,7 +2502,7 @@ index 7dc4d6ee..991a8c02 100644
  func (s *Service) oauthExcludedModels(provider, authKind string) []string {
  	return oauthExcludedModelsForConfig(s.currentConfig(), provider, authKind)
  }
-@@ -651,6 +695,18 @@ func oauthExcludedModelsForConfig(cfg *config.Config, provider, authKind string)
+@@ -654,6 +698,18 @@ func oauthExcludedModelsForConfig(cfg *config.Config, provider, authKind string)
  	return cfg.OAuthExcludedModels[providerKey]
  }
  
@@ -2522,10 +2522,10 @@ index 7dc4d6ee..991a8c02 100644
  	if len(models) == 0 || len(excluded) == 0 {
  		return models
 diff --git a/sdk/config/config.go b/sdk/config/config.go
-index 47f477d6..c8560dde 100644
+index e584ab82..4643e066 100644
 --- a/sdk/config/config.go
 +++ b/sdk/config/config.go
-@@ -22,6 +22,7 @@ type DiscoveryInterfacesConfig = internalconfig.DiscoveryInterfacesConfig
+@@ -23,6 +23,7 @@ type DiscoveryInterfacesConfig = internalconfig.DiscoveryInterfacesConfig
  type RemoteManagement = internalconfig.RemoteManagement
  type OAuthModelAlias = internalconfig.OAuthModelAlias
  type OAuthModelSetting = internalconfig.OAuthModelSetting

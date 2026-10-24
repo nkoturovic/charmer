@@ -1271,7 +1271,14 @@ def build_config_document(
         headers = (provider_headers or {}).get(provider_id)
         if headers:
             section["headers"] = {name: headers[name] for name in sorted(headers)}
-        section["cloak"] = {"mode": "never"}
+        # No `cloak` key: these routes keep the caller's shape (Claude Code's
+        # own identity passes through, uncloaked). Since 8.0.34 the gateway
+        # treats an explicit cloak mode `never` on a key without the CLI
+        # profile as uncloak, which strips that identity (user agent, client
+        # headers, Claude Code betas, system blocks, metadata user id); an
+        # absent key resolves to auto, which keeps the caller's shape for
+        # unprofiled API keys (internal/runtime/executor/
+        # claude_executor_cloaking.go:1681-1747, resolveClaudeWirePolicy).
         section["models"] = section_models
         # A zero-model provider stays configured (credential
         # status is derived from providers + secrets, not from the render)

@@ -1,5 +1,5 @@
 diff --git a/sdk/cliproxy/service_auth.go b/sdk/cliproxy/service_auth.go
-index a732a9fa..b5169a7b 100644
+index 104c2691..afce9780 100644
 --- a/sdk/cliproxy/service_auth.go
 +++ b/sdk/cliproxy/service_auth.go
 @@ -208,7 +208,6 @@ func (s *Service) handleAuthUpdates(ctx context.Context, updates []watcher.AuthU
@@ -19,7 +19,7 @@ index a732a9fa..b5169a7b 100644
  						return
  					}
  					s.completeModelRegistrationForAuthWithCache(registrationCtx, authForRegistration, compatCache)
-@@ -571,7 +570,7 @@ func waitAuthRegistrations(waits []chan struct{}) {
+@@ -576,7 +575,7 @@ func waitAuthRegistrations(waits []chan struct{}) {
  	}
  }
  
@@ -28,7 +28,7 @@ index a732a9fa..b5169a7b 100644
  	if s == nil || s.coreManager == nil || strings.TrimSpace(authID) == "" {
  		return true
  	}
-@@ -579,9 +578,6 @@ func (s *Service) shouldSkipModelRegistration(authID string, expectedGeneration
+@@ -584,9 +583,6 @@ func (s *Service) shouldSkipModelRegistration(authID string, expectedGeneration
  	if !ok || current == nil {
  		return !expectedDisabled
  	}

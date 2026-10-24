@@ -425,10 +425,10 @@ index 00000000..71e85830
 +	return auth, nil
 +}
 diff --git a/sdk/cliproxy/auth/types.go b/sdk/cliproxy/auth/types.go
-index cb815e48..c6d8cfb7 100644
+index e4a4ef53..a8b5d117 100644
 --- a/sdk/cliproxy/auth/types.go
 +++ b/sdk/cliproxy/auth/types.go
-@@ -425,6 +425,9 @@ func (a *Auth) Clone() *Auth {
+@@ -451,6 +451,9 @@ func (a *Auth) Clone() *Auth {
  	}
  	copyAuth := *a
  	copyAuth.Quota = a.Quota.Clone()
@@ -438,7 +438,7 @@ index cb815e48..c6d8cfb7 100644
  	if a.Attributes != nil {
  		copyAuth.Attributes = make(map[string]string, len(a.Attributes))
  		for key, value := range a.Attributes {
-@@ -444,30 +447,65 @@ func (a *Auth) Clone() *Auth {
+@@ -470,30 +473,65 @@ func (a *Auth) Clone() *Auth {
  	return &copyAuth
  }
  

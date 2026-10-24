@@ -1,0 +1,132 @@
+diff --git a/sdk/cliproxy/auth/conductor_selection.go b/sdk/cliproxy/auth/conductor_selection.go
+index d3c082bd..3746ab06 100644
+--- a/sdk/cliproxy/auth/conductor_selection.go
++++ b/sdk/cliproxy/auth/conductor_selection.go
+@@ -349,7 +349,10 @@ func (m *Manager) ReconcileRegistryModelStates(ctx context.Context, authID strin
+ 				auth.ModelStates = candidateAuth.ModelStates
+ 				if candidateChanged {
+ 					updateAggregatedAvailability(auth, now)
+-					if !hasModelError(auth, now) {
++					// charmer: a model or alias reload never lifts the terminal
++					// rejection of an unchanged credential; new tokens clear it
++					// on update (updateInternalLocked).
++					if !hasModelError(auth, now) && !hasUnauthorizedAuthFailure(auth) {
+ 						auth.LastError = nil
+ 						auth.StatusMessage = ""
+ 						auth.Status = StatusActive
+diff --git a/sdk/cliproxy/auth/terminal_rejection_reload_test.go b/sdk/cliproxy/auth/terminal_rejection_reload_test.go
+new file mode 100644
+index 00000000..8ebdcabc
+--- /dev/null
++++ b/sdk/cliproxy/auth/terminal_rejection_reload_test.go
+@@ -0,0 +1,110 @@
++package auth
++
++import (
++	"context"
++	"errors"
++	"net/http"
++	"testing"
++	"time"
++
++	internalconfig "github.com/router-for-me/CLIProxyAPI/v8/internal/config"
++	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
++)
++
++// terminalRejectionFixture drives the primary credential into a terminal OAuth
++// rejection (401, then invalid_grant on refresh) with cooling disabled, as the
++// rendered gateway configuration sets it.
++func terminalRejectionFixture(t *testing.T) (*Manager, *unauthorizedRefreshExecutor, *Auth, *Auth, string) {
++	t.Helper()
++	m, executor, primary, backup, model := newUnauthorizedRefreshFixture(t, false)
++	m.SetConfigSnapshot(&internalconfig.Config{DisableCooling: true})
++	executor.mu.Lock()
++	executor.refreshErr = errors.New(`token refresh failed with status 400: {"error": "invalid_grant", "error_description": "Refresh token not found or invalid"}`)
++	executor.mu.Unlock()
++	if _, errExecute := m.Execute(context.Background(), []string{"codex"}, cliproxyexecutor.Request{Model: model}, cliproxyexecutor.Options{}); errExecute != nil {
++		t.Fatalf("Execute error = %v, want success via backup", errExecute)
++	}
++	rejected, ok := m.GetByID(primary.ID)
++	if !ok || rejected == nil || !hasUnauthorizedAuthFailure(rejected) {
++		t.Fatalf("precondition: primary is not terminally rejected: %+v", rejected)
++	}
++	return m, executor, primary, backup, model
++}
++
++func primaryExecutions(executor *unauthorizedRefreshExecutor, id string) int {
++	count := 0
++	for _, called := range executor.ExecuteCalls() {
++		if called == id {
++			count++
++		}
++	}
++	return count
++}
++
++// A model or alias reload reconciles registry model states. For an unchanged
++// credential it keeps the terminal rejection: the credential stays rejected,
++// is not refreshed again and does not serve again.
++func TestTerminalRejectionSurvivesModelReload(t *testing.T) {
++	m, executor, primary, _, model := terminalRejectionFixture(t)
++	executionsBefore := primaryExecutions(executor, primary.ID)
++	refreshesBefore := executor.RefreshCalls()
++
++	m.ReconcileRegistryModelStates(context.Background(), primary.ID)
++
++	after, ok := m.GetByID(primary.ID)
++	if !ok || after == nil {
++		t.Fatal("primary auth missing after reload")
++	}
++	if !hasUnauthorizedAuthFailure(after) {
++		t.Fatalf("reload lifted the terminal rejection: status=%s unavailable=%v last_error=%+v", after.Status, after.Unavailable, after.LastError)
++	}
++	if m.shouldRefresh(after, time.Now()) {
++		t.Fatal("reload re-armed refresh of a rejected credential")
++	}
++	if _, errExecute := m.Execute(context.Background(), []string{"codex"}, cliproxyexecutor.Request{Model: model}, cliproxyexecutor.Options{}); errExecute != nil {
++		t.Fatalf("Execute after reload error = %v, want success via backup", errExecute)
++	}
++	if got := primaryExecutions(executor, primary.ID); got != executionsBefore {
++		t.Fatalf("rejected credential executed again after reload: %d executions, want %d", got, executionsBefore)
++	}
++	if got := executor.RefreshCalls(); got != refreshesBefore {
++		t.Fatalf("rejected credential refreshed again after reload: %d refreshes, want %d", got, refreshesBefore)
++	}
++}
++
++// Control: a genuinely new credential (new tokens after signing in again)
++// still clears the rejection, before and after a reload.
++func TestTerminalRejectionNewCredentialResets(t *testing.T) {
++	m, _, primary, _, _ := terminalRejectionFixture(t)
++	m.ReconcileRegistryModelStates(context.Background(), primary.ID)
++	current, _ := m.GetByID(primary.ID)
++	updated := current.Clone()
++	updated.Metadata["access_token"] = "signed-in-again-access-token"
++	updated.Metadata["refresh_token"] = "signed-in-again-refresh-token"
++	if _, errUpdate := m.Update(context.Background(), updated); errUpdate != nil {
++		t.Fatalf("update primary: %v", errUpdate)
++	}
++	m.ReconcileRegistryModelStates(context.Background(), primary.ID)
++	final, _ := m.GetByID(primary.ID)
++	if hasUnauthorizedAuthFailure(final) || final.Status != StatusActive || final.LastError != nil {
++		t.Fatalf("new credential still rejected: status=%s unavailable=%v last_error=%+v", final.Status, final.Unavailable, final.LastError)
++	}
++}
++
++// Control: a reload still clears an ordinary (non-terminal) failure of a
++// supported model, so the guard is limited to terminal rejections.
++func TestTerminalRejectionGuardLeavesOrdinaryFailuresReset(t *testing.T) {
++	m, _, _, backup, model := newUnauthorizedRefreshFixture(t, false)
++	m.SetConfigSnapshot(&internalconfig.Config{DisableCooling: true})
++	m.MarkResult(context.Background(), Result{AuthID: backup.ID, Provider: "codex", Model: model, Success: false,
++		Error: &Error{HTTPStatus: http.StatusInternalServerError, Code: "internal_error", Message: "internal server error"}})
++	failed, _ := m.GetByID(backup.ID)
++	if failed.LastError == nil && len(failed.ModelStates) == 0 {
++		t.Fatalf("precondition: no recorded failure: %+v", failed)
++	}
++	m.ReconcileRegistryModelStates(context.Background(), backup.ID)
++	after, _ := m.GetByID(backup.ID)
++	if after.Status != StatusActive || after.LastError != nil || hasModelError(after, time.Now()) {
++		t.Fatalf("ordinary failure not reset by reload: status=%s last_error=%+v states=%+v", after.Status, after.LastError, after.ModelStates)
++	}
++}

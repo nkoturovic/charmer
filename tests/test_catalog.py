@@ -386,8 +386,8 @@ class FrozenSelectorCoverageTests(unittest.TestCase):
         # fails closed and requires re-cutting the census, not a store lookup
         # or a skip in standalone/sandbox tests. It is not a T1 route claim.
         pin = json.loads(UPSTREAM_JSON.read_text())
-        self.assertEqual(pin["upstream"]["version"], "8.0.33")
-        self.assertEqual(pin["source"]["nix_hash"], "sha256-HpsmjjMzVTnP+KcK6hy3cq3AHRsaCAVvgJdb9PKL7QU=")
+        self.assertEqual(pin["upstream"]["version"], "8.0.42")
+        self.assertEqual(pin["source"]["nix_hash"], "sha256-G5hlWfiu1yoa/lmU/N24zzfIsFwm2yfWquTkJ2mt9Ls=")
         override_wires = {"gpt-5.6-luna"}
         bundle = catalog.load_catalog(SHIPPED_ROOT)
         trusted = {line["wire_model"] for line in bundle.lines.values()}

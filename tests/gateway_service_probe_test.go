@@ -24,6 +24,7 @@ import (
 	sdkaccess "github.com/router-for-me/CLIProxyAPI/v8/sdk/access"
 	sdkauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/auth"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
+	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -250,6 +251,47 @@ func TestOmissionInitialRegistration(t *testing.T) {
 	}
 	if len(reg.GetModelsForClient(id)) == 0 {
 		t.Fatal("initial registration published no models after a request result advanced the generation")
+	}
+}
+
+// omissionRejectingExecutor refuses every request with 401 and every refresh
+// with invalid_grant: both of the credential's tokens are rejected.
+type omissionRejectingExecutor struct {
+	coreauth.ProviderExecutor
+}
+
+func (*omissionRejectingExecutor) Identifier() string { return "codex" }
+func (*omissionRejectingExecutor) Execute(context.Context, *coreauth.Auth, cliproxyexecutor.Request, cliproxyexecutor.Options) (cliproxyexecutor.Response, error) {
+	return cliproxyexecutor.Response{}, &coreauth.Error{HTTPStatus: http.StatusUnauthorized, Message: "token invalidated"}
+}
+func (*omissionRejectingExecutor) Refresh(context.Context, *coreauth.Auth) (*coreauth.Auth, error) {
+	return nil, errors.New(`token refresh failed with status 400: {"error": "invalid_grant"}`)
+}
+
+// With cooling disabled, as rendered, a terminal OAuth rejection survives a
+// model or alias reload of the unchanged credential: reconciling the
+// registry's model states does not mark it active again.
+func TestOmissionTerminalRejectionReload(t *testing.T) {
+	const id = "omission-terminal-rejection"
+	ctx := context.Background()
+	reg := GlobalModelRegistry()
+	reg.RegisterClient(id, "codex", []*ModelInfo{{ID: "gpt-5.5"}})
+	t.Cleanup(func() { reg.UnregisterClient(id) })
+	manager := coreauth.NewManager(nil, nil, nil)
+	manager.SetConfigSnapshot(&config.Config{DisableCooling: true})
+	manager.RegisterExecutor(&omissionRejectingExecutor{})
+	if _, err := manager.Register(ctx, &coreauth.Auth{ID: id, Provider: "codex",
+		Metadata: map[string]any{"access_token": "dummy-omission-rejected", "refresh_token": "dummy-omission-refused"}}); err != nil {
+		t.Fatal(err)
+	}
+	_, _ = manager.Execute(ctx, []string{"codex"}, cliproxyexecutor.Request{Model: "gpt-5.5"}, cliproxyexecutor.Options{})
+	if rejected, ok := manager.GetByID(id); !ok || !coreauth.HasUnauthorizedAuthFailure(rejected) {
+		t.Fatal("precondition: the credential is not terminally rejected")
+	}
+	manager.ReconcileRegistryModelStates(ctx, id)
+	after, ok := manager.GetByID(id)
+	if !ok || !coreauth.HasUnauthorizedAuthFailure(after) {
+		t.Fatalf("model reload lifted the terminal rejection: status=%s unavailable=%t", after.Status, after.Unavailable)
 	}
 }
 

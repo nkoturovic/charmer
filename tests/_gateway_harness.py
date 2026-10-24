@@ -144,12 +144,6 @@ PATCH_ROWS = {
     "cli-proxy-api-charmer-model-ids.patch": (
         "tests.test_gateway_patches.CharmerModelListingTests.test_both_listing_formats",
     ),
-    "cli-proxy-api-access-log-path-quoting.patch": (
-        "tests.test_gateway_patches.AccessLogQuotingTests.test_encoded_newline_cannot_forge_a_log_line",
-    ),
-    "cli-proxy-api-codex-refresh-lead.patch": (
-        "tests.test_gateway_patches.PatchOmissionProbeTests.test_codex_refresh_lead",
-    ),
     "cli-proxy-api-output-cap.patch": (
         "tests.test_openai_key_route.PinnedGatewayKeyRouteTurnTests.test_the_clients_output_cap_reaches_the_responses_request",
         "tests.test_openai_key_route_client.PinnedClientKeyRouteTests.test_the_actual_clients_output_cap_reaches_the_key_route",
@@ -168,6 +162,9 @@ PATCH_ROWS = {
     ),
     "cli-proxy-api-initial-registration.patch": (
         "tests.test_gateway_patches.PatchOmissionProbeTests.test_initial_registration",
+    ),
+    "cli-proxy-api-terminal-rejection-reload.patch": (
+        "tests.test_gateway_patches.PatchOmissionProbeTests.test_terminal_rejection_reload",
     ),
 }
 
@@ -277,12 +274,12 @@ def gateway_check_selections():
 # as well, then attribute the prerequisite's rows by difference against the
 # dependent-only omission. Never infer edges from build failures: each edge
 # below is a hunk that no longer applies, or a file of the dependent that no
-# longer compiles, when only the prerequisite is omitted (8.0.33 omission
+# longer compiles, when only the prerequisite is omitted (8.0.42 omission
 # matrix); "hunk" is that hunk's start line, 0 for a file the dependent adds.
 PATCH_DEPENDENCIES = {
     "cli-proxy-api-context-error-normalization.patch": {
         "cli-proxy-api-codex-api-key-safety.patch": {
-            "file": "internal/runtime/executor/codex_executor_execute.go", "hunk": 136,
+            "file": "internal/runtime/executor/codex_executor_execute.go", "hunk": 140,
             "reason": "the key route's overflow is marked where 20 rebuilds its failures (also the stream)",
         },
     },
@@ -291,12 +288,6 @@ PATCH_DEPENDENCIES = {
             "file": "sdk/cliproxy/auth/conductor_execution.go", "hunk": 1861,
             "reason": "the redacted key and account identities replace the masked branches beside the keyed "
                       "compat identity, and the patch updates that identity test's control",
-        },
-    },
-    "cli-proxy-api-tool-call-integrity.patch": {
-        "cli-proxy-api-openai-content-chunks.patch": {
-            "file": "internal/translator/openai/claude/openai_claude_content_goldens_test.go", "hunk": 21,
-            "reason": "the registered tool-reasoning golden adapted by 29 is in the test file created by 22",
         },
     },
     "cli-proxy-api-refresh-shutdown-join.patch": {
@@ -321,13 +312,13 @@ PATCH_DEPENDENCIES = {
     },
     "cli-proxy-api-openai-compat-keyed-safety.patch": {
         "cli-proxy-api-credentialed-redirects.patch": {
-            "file": "internal/runtime/executor/openai_compat_executor.go", "hunk": 191,
+            "file": "internal/runtime/executor/openai_compat_executor.go", "hunk": 209,
             "reason": "keyed error handling replaces the redirect-guarded request paths",
         },
     },
     "cli-proxy-api-codex-api-key-safety.patch": {
         "cli-proxy-api-credentialed-redirects.patch": {
-            "file": "internal/runtime/executor/codex_executor_execute.go", "hunk": 116,
+            "file": "internal/runtime/executor/codex_executor_execute.go", "hunk": 120,
             "reason": "the transport-error hunks sit on the redirect-guarded request calls (also the stream)",
         },
         "cli-proxy-api-openai-compat-keyed-safety.patch": {
@@ -335,7 +326,7 @@ PATCH_DEPENDENCIES = {
             "reason": "the fixed failure texts and the bounded error-body read come from internal/compatsafe",
         },
         "cli-proxy-api-codex-client-identity.patch": {
-            "file": "internal/runtime/executor/codex_executor_request.go", "hunk": 282,
+            "file": "internal/runtime/executor/codex_executor_request.go", "hunk": 294,
             "reason": "the plain-key Version default replaces the codex client Version default (also the websocket hunk)",
         },
     },
@@ -401,7 +392,7 @@ REQUIRED_EVIDENCE["tests.test_gateway_clamp"] = {
 
 
 REQUIRED_EVIDENCE["tests.test_gateway_patches"] = {
-    "patches": {"LO1", "LO2", "LO1-A", "LO3", "LO4", "M0", "M1", "M2", "M3", "M4", "M5", "M6", "M7", "AL1", "RL1", "ME1", "S1", "P1", "CS1", "CR1", "KS1", "AS1", "SC1", "ML1", "OM1", "CI1", "CI2", "CK1", "RS1", "MC1", "MC2", "MG1", "MG2", "CL1", "TI1", "TI2", "TI3", "TIC1", "TIC2", "IR1", "LR1"},
+    "patches": {"LO1", "LO2", "LO1-A", "LO3", "LO4", "M0", "M1", "M2", "M3", "M4", "M5", "M6", "M7", "AL1", "RL1", "ME1", "S1", "P1", "CS1", "CR1", "KS1", "AS1", "SC1", "ML1", "OM1", "CI1", "CI2", "CK1", "RS1", "MC1", "MC2", "MG1", "MG2", "CL1", "TI1", "TI2", "TI3", "TIC1", "TIC2", "IR1", "TR1", "LR1"},
 }
 
 
@@ -670,7 +661,7 @@ def validate_keyed_evidence(directory, *, core_only=False, gateway_only=False):
 
 
 # The one pinned vendor (go-modules) output every diagnostic reuses.
-PINNED_GO_MODULES = "/nix/store/50vxxcvvskqp25si8ka5n5ryaf4cddiv-cli-proxy-api-8.0.33-go-modules"
+PINNED_GO_MODULES = "/nix/store/05dj8cqi52mc6v99v903yvs98g79csp2-cli-proxy-api-8.0.42-go-modules"
 
 
 def consumed_vendor(installable, run=subprocess.run) -> dict:
@@ -1924,8 +1915,8 @@ class GatewayHarness:
                 )
             self.await_ready()
             match = re.search(r"CLIProxyAPI Version:\s*v?(\d+)\.(\d+)\.(\d+)", self.log_path.read_text(errors="replace"))
-            if not match or tuple(map(int, match.groups())) < (8, 0, 33):
-                boundary("BOUNDARY: launched gateway version unknown or predates 8.0.33")
+            if not match or tuple(map(int, match.groups())) < (8, 0, 42):
+                boundary("BOUNDARY: launched gateway version unknown or predates 8.0.42")
             self.version = ".".join(match.groups())
             EVIDENCE.binary = dict(binary_identity(self.binary, self.version))
         except BaseException as error:
