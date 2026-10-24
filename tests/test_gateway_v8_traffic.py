@@ -632,10 +632,12 @@ class NativeReplayTests(unittest.TestCase):
                     self.assertTrue(restart_oauth_gateway(gateway))
                 before = len(gateway.upstream.hits)
                 offset = gateway.log_path.stat().st_size
+                # From 2.1.310 --tools on a --resume turn no longer narrows the offered list (execution stays
+                # restricted, measured); --disallowedTools still reshapes the native tool prefix.
                 result = probe.run_native(("-p", "fixture turn " + str(index), "--model", "claude-opus-5-5[1m]",
                     "--output-format", "json", "--permission-mode", "default",
                     "--session-id" if index == 0 else "--resume", session_id,
-                    *(("--tools", "Read") if index == 3 else ())),
+                    *(("--disallowedTools", "Write") if index == 3 else ())),
                     trusted=self.trusted, fixture=fixture, provider=relay, allow_real=True,
                     environ=environ, timeout=120)
                 self.assertEqual(result.returncode, 0)
@@ -653,8 +655,9 @@ class NativeReplayTests(unittest.TestCase):
                 self.assertEqual(recognition.D11_THINKING_BINDING in observed_delta, index > 0)
                 tools = [tool["name"] for tool in body.get("tools", [])]
                 if index == 3:
-                    self.assertTrue(tools != previous_tools, "native tool-prefix reshape was not observed")
-                    self.assertEqual(tools, ["Read"])
+                    self.assertIn("Write", previous_tools)
+                    self.assertEqual(len(tools), len(set(tools)))
+                    self.assertEqual(set(tools), set(previous_tools) - {"Write"}, "native tool-prefix reshape was not observed")
                 previous_tools = tools
                 returned_cache = json.loads(result.stdout)["usage"]["cache_read_input_tokens"]
                 self.assertEqual(returned_cache, cache_counts[index])
