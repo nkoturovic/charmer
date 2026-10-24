@@ -88,6 +88,14 @@ def main(
             return 0
         raise
 
+    if args.command == "statusline":
+        # A status line Claude Code runs every few seconds (the shim's exact
+        # argv never gets here: charmer.entrypoints answers it first). No
+        # check, store or Runtime: stdin in, lines out, exit 0.
+        import charmer.cli.commands.statusline as commands_statusline
+
+        return commands_statusline.run(args.statusline_kind, stdin=input_stream, stdout=output_stream,
+                                       environ=runtime.environ if runtime is not None else os.environ)
     problem = parser_mod.update_mode_problem(args)
     if problem is not None:
         parser.error(problem)

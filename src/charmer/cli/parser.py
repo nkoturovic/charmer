@@ -64,7 +64,8 @@ def _doc_pointer(name: str) -> str:
 # The root help's command groups, in order: (title, ((command, summary), ...)).
 # Each summary is also the command's argparse ``help``. Commands absent from
 # every group stay accepted but are not shown: the earlier spellings
-# (``compose``, ``show``) and the hook command (``session-event``).
+# (``compose``, ``show``), the hook command (``session-event``) and the
+# status lines (``statusline``).
 COMMAND_GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
     ("Launch", (
         ("direct", "launch one model as the lead, with no cm-* agents (recorded and resumable "
@@ -210,7 +211,7 @@ def _add_presentation_flags(parser: argparse.ArgumentParser) -> None:
             if not isinstance(action, argparse._SubParsersAction):
                 continue
             for name, child in action.choices.items():
-                if id(child) in seen or name == "session-event":
+                if id(child) in seen or name in ("session-event", "statusline"):
                     continue
                 seen.add(id(child))
                 options = {option for item in child._actions for option in item.option_strings}
@@ -485,6 +486,17 @@ def build_parser() -> argparse.ArgumentParser:
     event_parser.add_argument(
         "--hook-protocol", type=int, choices=(lineup_files.HOOK_PROTOCOL,), default=None
     )
+
+    # The status lines Claude Code runs (never shown): dispatched before
+    # Runtime, like the scope-only hook events (charmer.statusline.KINDS).
+    statusline_parser = commands.add_parser(
+        "statusline",
+        description="The status lines Claude Code runs; a person never needs them. Each reads the "
+        "client's JSON document on stdin and always exits 0.",
+    )
+    kinds = statusline_parser.add_subparsers(dest="statusline_kind", metavar="KIND", required=True)
+    kinds.add_parser("subagents", help="the managed sessions' subagent rows (their compiled subagentStatusLine)")
+    kinds.add_parser("main", help="a one-line main status for a statusLine setting of your own")
 
     migrate_parser = _add_command(commands, "migrate")
     migrate_parser.add_argument(

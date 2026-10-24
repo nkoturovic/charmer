@@ -1081,6 +1081,11 @@ OPERATIONS: tuple[Op, ...] = (
     Op("interface.hooks", "interface", "the managed sessions' lifecycle hooks", audience="internal",
        cli=("session-event",), absent={"tui": "Claude Code runs them; a person never does"}, stream="stdout",
        exit="hook"),
+    Op("interface.status-lines", "interface",
+       "the status lines Claude Code runs: the managed sessions' subagent rows and the main line a "
+       "statusLine setting of the user's own may name", audience="internal",
+       cli=("statusline subagents", "statusline main"),
+       absent={"tui": "Claude Code runs them; a person never does"}, stream="stdout", exit="hook"),
 )
 
 # Option-derived spellings are written "<command path> <flag>"; the root

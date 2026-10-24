@@ -13,11 +13,16 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import random
 import re
+import subprocess
+import sys
 import unittest
 
 from charmer import statusline
+from charmer.cli.commands import statusline as statusline_command
+from _layout import REPO_ROOT
 
 _ANSI = re.compile(r"\x1b\[[0-9;]*m")
 _RENDERER_CODES = re.compile(r"\x1b\[(0|2|31|32|33|34|35|36)m")
@@ -318,6 +323,49 @@ def _efforts(line: dict) -> list[dict]:
     efforts = line.get("efforts")
     specs = list(efforts.values()) if isinstance(efforts, dict) else []
     return specs + ([{"selector": line["selector"]}] if isinstance(line.get("selector"), str) else [])
+
+
+class PlumbingCommandTests(unittest.TestCase):
+    """``charmer statusline subagents`` through the parser and the entry points."""
+
+    def test_the_command_module_owns_the_kinds(self) -> None:
+        from charmer.cli import parser as cli_parser
+
+        self.assertEqual(statusline_command.KINDS, statusline.KINDS)
+        parser = cli_parser.build_parser()
+        for kind in statusline.KINDS:
+            self.assertEqual(parser.parse_args(["statusline", kind]).statusline_kind, kind)
+
+    def test_entry_main_routes_the_command_before_any_runtime(self) -> None:
+        from unittest import mock
+
+        import charmer.cli.entry as entry
+        import charmer.cli.runtime as runtime_mod
+
+        document = json.dumps({"columns": 120, "tasks": [EXPLORE]})
+        stdout = io.StringIO()
+        with mock.patch.object(runtime_mod, "Runtime", side_effect=AssertionError("Runtime built")):
+            status = entry.main(["statusline", "subagents"], input_stream=io.StringIO(document),
+                                output_stream=stdout)
+        self.assertEqual(status, 0)
+        self.assertEqual(json.loads(stdout.getvalue())["id"], "t2")
+
+    def test_a_python_entry_point_answers_with_exit_zero(self) -> None:
+        # The release launcher's interpreter program: -I, the site directory first.
+        code = ("import sys; sys.path.insert(0, sys.argv.pop(1)); "
+                "from charmer.entrypoints import main; raise SystemExit(main())")
+        env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin")}
+        for stdin, expect_row in ((json.dumps({"columns": 80, "tasks": [EXPLORE]}), True), ("{oops", False)):
+            with self.subTest(stdin=stdin[:10]):
+                result = subprocess.run([sys.executable, "-I", "-B", "-c", code, str(REPO_ROOT / "src"), "charmer",
+                                         "statusline", "subagents"],
+                                        input=stdin.encode(), capture_output=True, env=env, timeout=30)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stderr, b"")
+                if expect_row:
+                    self.assertEqual(json.loads(result.stdout)["id"], "t2")
+                else:
+                    self.assertEqual(result.stdout, b"")
 
 
 if __name__ == "__main__":
