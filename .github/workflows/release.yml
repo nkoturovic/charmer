@@ -391,8 +391,22 @@ jobs:
             tests.test_client_debug_diagnostics tests.test_client_spawn_mod tests.test_client_mcp_policy
             tests.test_client_fence_substitution tests.test_client_gateway_fallbacks)
           printf '%s\n' "${modules[@]}" >"$RUNNER_TEMP/modules"
-          required='test_client_(agents|gateway_auth|hooks|models|skill_workflow|debug_diagnostics|spawn_mod|mcp_policy|fence_substitution)\b|test_(compaction_window|auto_mode_model)_probe\b|RealPinnedBinaryTests(?!\.(test_real_takeover_probe_stop_gate|test_real_adoption_onto_newer_plain_claude)$)|test_client_gateway_fallbacks\.(?!ShapeThroughGatewayTests\b)'
-          python3 tools/test.py --verbose --claude "$RUNNER_TEMP/claude" --require "$required" \
+          requires=(
+            --require 'test_client_agents\b'
+            --require 'test_client_gateway_auth\b'
+            --require 'test_client_hooks\b'
+            --require 'test_client_models\b'
+            --require 'test_client_skill_workflow\b'
+            --require 'test_client_debug_diagnostics\b'
+            --require 'test_client_spawn_mod\b'
+            --require 'test_client_mcp_policy\b'
+            --require 'test_client_fence_substitution\b'
+            --require 'test_compaction_window_probe\b'
+            --require 'test_auto_mode_model_probe\b'
+            --require 'RealPinnedBinaryTests(?!\.(test_real_takeover_probe_stop_gate|test_real_adoption_onto_newer_plain_claude)$)'
+            --require 'test_client_gateway_fallbacks\.(?!ShapeThroughGatewayTests\b)'
+          )
+          python3 tools/test.py --verbose --claude "$RUNNER_TEMP/claude" "${requires[@]}" \
             "${modules[@]}" 2>&1 | tee "$RUNNER_TEMP/battery.log"
           status=${PIPESTATUS[0]}
           python3 .github/scripts/evidence.py --log "$RUNNER_TEMP/battery.log" --status "$status" \

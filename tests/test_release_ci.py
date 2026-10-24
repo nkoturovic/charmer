@@ -474,7 +474,7 @@ class WorkflowTests(unittest.TestCase):
                 if "- name: Full suite except the terminal journeys (" in step]
         self.assertEqual(len(full), 1)
         command = ('python3 tools/test.py --tier full --verbose --claude "$RUNNER_TEMP/claude" '
-                   "--require 'DistributionTests' "
+                   "--require 'tests\\.test_python_packaging\\.DistributionTests\\b' "
                    '"${modules[@]}"')
         self.assertIn(command, _commands(full[0]))
 
@@ -2520,16 +2520,16 @@ class EvidenceJobTests(unittest.TestCase):
         """The battery's --require patterns as the shell passes them."""
 
         step = self.battery_step()
-        assigned = dict(re.findall(r"(?m)^\s+(\w+)='([^']*)'$", step))
         (command,) = [line for line in _commands(step) if "tools/test.py" in line]
-        return [quoted if quoted else assigned[name]
-                for quoted, name in re.findall(r"--require (?:'([^']*)'|\"\$(\w+)\")", command)]
+        self.assertIn('"${requires[@]}"', command)
+        (requires,) = re.findall(r"(?ms)^\s+requires=\((.*?)^\s+\)$", step)
+        return re.findall(r"--require '([^']*)'", requires)
 
     def test_the_client_producer_modules_cannot_boundary_skip(self) -> None:
         patterns = self.required_patterns()
         modules = [module for module in self.modules if module.startswith("tests.test_client_")
                    or module in ("tests.test_compaction_window_probe", "tests.test_auto_mode_model_probe")]
-        self.assertTrue(modules)
+        self.assertEqual(len(patterns), len(modules) + 1)
         for module in modules:
             for test_id in (f"{module}.ClientProbe.test_check", f"setUpClass ({module}.ClientProbe)"):
                 with self.subTest(test_id=test_id):
@@ -2596,11 +2596,11 @@ class EvidenceJobTests(unittest.TestCase):
         self.assertIn("gateway_probes.py compile", gateway)
         self.assertIn("needs: gateway", battery)
         order = ["setuptools==84.2.1", "name: gateway-dist", "name: gateway-probes", "gateway_probes.py provision",
-                 "curl --proto", "tools/test.py --tier full --verbose --claude \"$RUNNER_TEMP/claude\" --require 'DistributionTests'"]
+                 "curl --proto", "tools/test.py --tier full --verbose --claude \"$RUNNER_TEMP/claude\" --require 'tests\\.test_python_packaging\\.DistributionTests\\b'"]
         positions = [battery.index(needle) for needle in order]
         self.assertEqual(positions, sorted(positions))
         self.assertNotIn("--home inherit", battery)
-        full = next(step for step in _steps(battery) if "--require 'DistributionTests'" in step)
+        full = next(step for step in _steps(battery) if "--require 'tests\\.test_python_packaging\\.DistributionTests\\b'" in step)
         self.assertIn("\n        env:\n          CHARMER_TEST_DIST_GATEWAY: ${{ runner.temp }}/gateway-dist\n", full)
         self.assertNotRegex(full, r"(?m)^\s+if:")
 
@@ -4041,7 +4041,7 @@ class SupplyChainLaneTests(unittest.TestCase):
         localedef = "sudo localedef -i en_US -f ISO-8859-1 en_US.ISO-8859-1"
         prepare = next(step for step in steps if localedef in step)
         readonly = next(i for i, step in enumerate(steps) if "Read-only interpreter for isolated probes" in step)
-        full = next(i for i, step in enumerate(steps) if "--require 'DistributionTests'" in step)
+        full = next(i for i, step in enumerate(steps) if "--require 'tests\\.test_python_packaging\\.DistributionTests\\b'" in step)
         self.assertLess(steps.index(prepare), readonly)
         self.assertLess(readonly, full)
         self.assertNotRegex(prepare, r"(?m)^\s+if:")  # every Python leg needs the locale fixtures
