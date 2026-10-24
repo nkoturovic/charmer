@@ -137,13 +137,48 @@ else:
             self.log.read_text(encoding="utf-8").count("BLOCKED "), 2 * len(addresses)
         )
 
+    def test_parent_configured_port_keeps_loopback_policy(self) -> None:
+        endpoint = self.tmp / ".config/charmer/endpoint.json"
+        endpoint.parent.mkdir(parents=True)
+        endpoint.write_text('{"port":18417}')
+        ports = _tripwire.configured_ports({"HOME": str(self.tmp)})
+        self.assertEqual(ports, frozenset({18417}))
+        with mock.patch.object(_tripwire, "PORTS", ports | {8317, 8316}):
+            self.assertTrue(_tripwire.is_live_gateway(("::ffff:127.0.0.1", 18417)))
+            self.assertFalse(_tripwire.is_live_gateway(("api.example.com", 18417)))
+
+    def test_reserved_ports_accept_index_protocol(self) -> None:
+        class Port:
+            def __init__(self, value):
+                self.value = value
+
+            def __index__(self):
+                return self.value
+
+        for port in (8317, 8316):
+            with self.subTest(port=port):
+                self.assertTrue(_tripwire.is_live_gateway(("localhost", Port(port))))
+        self.assertFalse(_tripwire.is_live_gateway(("localhost", Port(18317))))
+        self.assertFalse(_tripwire.is_live_gateway(("localhost", object())))
+
+    def test_reserved_ports_refuse_every_host_without_resolution(self) -> None:
+        # Pure classification only: none of these spellings is resolved or
+        # passed to a real socket, including the non-loopback controls.
+        hosts = ("", "0", "127.1", "2130706433", "0x7f000001", "0177.0.0.1",
+                 "localhost4", "localhost.localdomain", bytearray(b"127.0.0.1"),
+                 "10.0.0.9", "192.168.1.5", "api.example.com")
+        for port in (8317, 8316):
+            for host in hosts:
+                with self.subTest(host=host, port=port):
+                    self.assertTrue(_tripwire.is_live_gateway((host, port)))
+
     def test_other_addresses_are_not_live(self) -> None:
         for address in (
             ("127.0.0.1", 8318),
             ("127.0.0.1", 0),
-            ("10.0.0.9", 8317),
-            ("192.168.1.5", 8316),
-            ("api.example.com", 8317),
+            ("10.0.0.9", 18317),
+            ("192.168.1.5", 18316),
+            ("api.example.com", 18317),
             ("127.0.0.1", "8317"),
             "/run/user/1000/gateway.sock",
             b"\0abstract",
@@ -227,6 +262,356 @@ else:
         before = (socket.socket.connect, socket.socket.connect_ex)
         _tripwire.install()
         self.assertEqual((socket.socket.connect, socket.socket.connect_ex), before)
+
+
+class ChildTripwireTests(unittest.TestCase):
+    def test_child_never_reads_or_uses_endpoint_metadata(self) -> None:
+        from tests.check_fixture_isolation import GUARD_SOURCE
+
+        with tempfile.TemporaryDirectory(prefix="cm-child-endpoint-") as tmp:
+            root = Path(tmp)
+            endpoint = root / ".config/charmer/endpoint.json"
+            endpoint.parent.mkdir(parents=True)
+            endpoint.write_text('{"port":18417}')
+            backstop = """
+import sys
+def forbid_endpoint(event, args):
+    if event == "open" and str(args[0]).endswith("/endpoint.json"):
+        raise AssertionError("child tried endpoint metadata")
+sys.addaudithook(forbid_endpoint)
+"""
+            (root / "sitecustomize.py").write_text(backstop + GUARD_SOURCE)
+            script = "import tests, sys; g = sys.modules['_tripwire']; assert g.installed(); " \
+                     "assert not g.is_live_gateway(('127.0.0.1', 18417))"
+            result = subprocess.run([sys.executable, "-c", script], cwd=root,
+                                    env={"HOME": tmp, "PYTHONPATH": os.pathsep.join((tmp, str(REPO_ROOT)))},
+                                    capture_output=True, text=True, timeout=5)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertNotIn("Error in sitecustomize", result.stderr)
+
+    @unittest.skipUnless(hasattr(os, "mkfifo"), "FIFO fixture needs POSIX")
+    def test_endpoint_fifo_cannot_hang_parent_or_child_guard(self) -> None:
+        from tests.check_fixture_isolation import GUARD_SOURCE
+
+        with tempfile.TemporaryDirectory(prefix="cm-guard-fifo-") as tmp:
+            root = Path(tmp)
+            endpoint = root / ".config/charmer/endpoint.json"
+            endpoint.parent.mkdir(parents=True)
+            os.mkfifo(endpoint)
+            (root / "sitecustomize.py").write_text(GUARD_SOURCE)
+            for mode in ("child", "parent-reader"):
+                with self.subTest(mode=mode):
+                    script = "import sys; g = sys.modules['_tripwire']; assert g.installed()"
+                    if mode == "parent-reader":
+                        script += "; assert g.configured_ports() == frozenset()"
+                    try:
+                        result = subprocess.run([sys.executable, "-c", script], cwd=root,
+                                                env={"HOME": tmp, "PYTHONPATH": tmp},
+                                                capture_output=True, text=True, timeout=2)
+                    except subprocess.TimeoutExpired:
+                        self.fail("endpoint FIFO blocked the guard")
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_parent_and_child_share_address_and_process_policy(self) -> None:
+        from tests.check_fixture_isolation import GUARD_SOURCE
+
+        script = """
+import socket, sys
+if sys.argv[1] == "parent":
+    import tests
+class Port:
+    def __init__(self, value):
+        self.value = value
+    def __index__(self):
+        return self.value
+for host in ("", "0", "127.1", "2130706433", "0x7f000001", "0177.0.0.1",
+             "localhost4", "localhost.localdomain", bytearray(b"127.0.0.1"), "api.example.com"):
+    for port in (8317, 8316):
+        assert sys.modules["_tripwire"].is_live_gateway((host, Port(port)))
+addresses = [(host, port) for port in (8317, 8316) for host in (
+    "127.0.0.1", "127.0.0.2", "127.255.255.254", "localhost", "localhost.",
+    "LOCALHOST", "probe.localhost", "::1", "::ffff:127.0.0.1", "::", "0.0.0.0",
+    b"localhost", "::1%lo")]
+addresses += [("::1", 8317, 0, 0)]
+# Non-sockets are the backstop: even a regressed guard cannot connect.
+for method in (socket.socket.connect, socket.socket.connect_ex):
+    for address in addresses:
+        try:
+            method(object(), address)
+        except ConnectionRefusedError:
+            pass
+        else:
+            raise AssertionError((method.__name__, address, "not refused"))
+# create_connection must refuse before resolving a hostname or opening a socket.
+def no_dns(*args, **kwargs):
+    raise AssertionError("unguarded DNS")
+socket.getaddrinfo = no_dns
+try:
+    socket.create_connection(("probe.localhost.", 8317))
+except ConnectionRefusedError:
+    pass
+else:
+    raise AssertionError("create_connection not refused")
+verbs = ("start", "stop", "restart", "reload", "try-restart", "reload-or-restart",
+         "enable", "disable", "kill", "daemon-reload", "reset-failed", "mask", "unmask",
+         "link", "revert", "preset")
+commands = [("/fixture/systemctl", ["systemctl", "--user", verb, "fixture.service"]) for verb in verbs]
+commands += [("systemctl", ["systemctl", "show", "--property=MainPID"]),
+             ("/fixture/nix-store", ["nix-store", "--add-root", "/fixture/root"])]
+# sys.audit emits the real event without executing anything, even if unguarded.
+for executable, argv in commands:
+    try:
+        sys.audit("subprocess.Popen", executable, argv, None, None)
+    except AssertionError as exc:
+        assert "live listener observation" in str(exc), str(exc)
+    else:
+        raise AssertionError((argv, "not refused"))
+for path in ("/proc/net/tcp", "/proc/net/tcp6"):
+    try:
+        sys.audit("open", path, "r", 0)
+    except AssertionError as exc:
+        assert "live listener observation" in str(exc), str(exc)
+    else:
+        raise AssertionError((path, "not refused"))
+assert not any(name == "charmer" or name.startswith("charmer.") for name in sys.modules)
+print(2 * len(addresses) + 1 + len(commands) + 2)
+"""
+        with tempfile.TemporaryDirectory(prefix="cm-policy-") as tmp:
+            root = Path(tmp)
+            (root / "sitecustomize.py").write_text(GUARD_SOURCE, encoding="utf-8")
+            endpoint = root / ".config/charmer/endpoint.json"
+            endpoint.parent.mkdir(parents=True)
+            endpoint.write_text('{"port":18417}')
+            for mode in ("parent", "child"):
+                with self.subTest(mode=mode):
+                    log = root / f"{mode}.log"
+                    env = {"HOME": tmp, "CM_ISOLATION_GUARD_LOG": str(log),
+                           "PYTHONPATH": os.pathsep.join((tmp, str(REPO_ROOT)))}
+                    child = subprocess.run([sys.executable, "-c", script, mode], env=env,
+                                           cwd=root, capture_output=True, text=True, timeout=20)
+                    self.assertEqual(child.returncode, 0, child.stdout + child.stderr)
+                    self.assertEqual(log.read_text().count("BLOCKED "), int(child.stdout))
+
+    def test_child_allows_ephemeral_fixture_sockets(self) -> None:
+        from tests.check_fixture_isolation import GUARD_SOURCE
+
+        script = """
+import socket, sys
+with socket.socket() as server:
+    server.bind(("127.0.0.1", 0))
+    server.listen(2)
+    with socket.create_connection(server.getsockname(), timeout=2):
+        accepted, _ = server.accept()
+        accepted.close()
+    with socket.socket() as client:
+        client.settimeout(2)
+        assert client.connect_ex(server.getsockname()) == 0
+        accepted, _ = server.accept()
+        accepted.close()
+sys.audit("subprocess.Popen", "systemctl", ["systemctl", "--version"], None, None)
+sys.audit("subprocess.Popen", "nix-store", ["nix-store", "--query", "--outputs", "/fixture"], None, None)
+sys.audit("open", "/fixture/proc/net/tcp", "r", 0)
+"""
+        with tempfile.TemporaryDirectory(prefix="cm-fixture-socket-") as tmp:
+            root = Path(tmp)
+            (root / "sitecustomize.py").write_text(GUARD_SOURCE, encoding="utf-8")
+            log = root / "guard.log"
+            child = subprocess.run([sys.executable, "-c", script], cwd=root,
+                                   env={"HOME": tmp, "PYTHONPATH": tmp, "CM_ISOLATION_GUARD_LOG": str(log)},
+                                   capture_output=True, text=True, timeout=20)
+            self.assertEqual(child.returncode, 0, child.stdout + child.stderr)
+            self.assertFalse(log.exists())
+
+    def test_child_without_log_still_refuses_and_reports_hits(self) -> None:
+        from tests.check_fixture_isolation import GUARD_SOURCE
+
+        with tempfile.TemporaryDirectory(prefix="cm-child-guard-") as tmp:
+            root = Path(tmp)
+            (root / "sitecustomize.py").write_text(GUARD_SOURCE, encoding="utf-8")
+            # Not a socket, and a fabricated audit event: no network or process
+            # operation is possible even when sitecustomize fails to install.
+            script = """
+import socket, sys
+try:
+    socket.socket.connect(object(), ("127.0.0.1", 8317))
+except ConnectionRefusedError:
+    pass
+else:
+    raise AssertionError("connect was not refused")
+try:
+    sys.audit("subprocess.Popen", "systemctl", ["systemctl", "show", "--property=MainPID"], None, None)
+except AssertionError as exc:
+    assert "live listener observation" in str(exc), str(exc)
+else:
+    raise AssertionError("observation was not refused")
+"""
+            child = subprocess.run([sys.executable, "-c", script],
+                                   env={"HOME": tmp, "PYTHONPATH": tmp}, cwd=root,
+                                   capture_output=True, text=True, timeout=20)
+            self.assertEqual(child.returncode, 0, child.stdout + child.stderr)
+            self.assertNotIn("Error in sitecustomize", child.stderr)
+            self.assertEqual(child.stderr.count("BLOCKED "), 2, child.stderr)
+
+
+class IsolationEnvironmentTests(unittest.TestCase):
+    def test_namespace_preflight_uses_probe_environment_and_never_a_live_port(self) -> None:
+        import json
+        from tests import check_fixture_isolation as isolation
+
+        env = {"HOME": "/fixture/private"}
+        for namespace, ok in (("net:[caller]", False), ("net:[private]", True)):
+            facts = {"uid": os.getuid(), "caps": {"CapEff": 0, "CapAmb": 0, "CapPrm": 0},
+                     "network_namespace": namespace, "loopback": "ok"}
+            result = subprocess.CompletedProcess([], 0, stdout=json.dumps(facts), stderr="")
+            with self.subTest(namespace=namespace), \
+                    mock.patch.object(isolation.subprocess, "run", return_value=result) as run, \
+                    mock.patch.object(isolation.os, "readlink", return_value="net:[caller]"):
+                self.assertEqual(isolation._preflight(["fixture-unshare"], env)[0], ok)
+                self.assertEqual(run.call_args.kwargs["env"], env)
+                self.assertNotIn("8317", run.call_args.args[0][-1])
+                self.assertNotIn("8316", run.call_args.args[0][-1])
+
+    def test_probe_reports_and_retains_runner_tripwire_failures(self) -> None:
+        import argparse
+        import io
+        from tests import check_fixture_isolation as isolation
+
+        with tempfile.TemporaryDirectory(prefix="cm-probe-hits-") as tmp:
+            root = Path(tmp)
+            component = root / "repo"
+            (component / "tests").mkdir(parents=True)
+            (component / "src/charmer").mkdir(parents=True)
+            for relative in ("tests/_tripwire.py", "src/charmer/legacy.py"):
+                shutil.copy2(REPO_ROOT / relative, component / relative)
+            fake = dict(id="fixture", cloned_from="fixture", provider="fixture", selector="fixture",
+                        minimum_tested="0", pinned_client="0")
+            commands = []
+
+            def run(command, **kwargs):
+                commands.append(command)
+                if "stdout" in kwargs:
+                    # Fabricated runner output, not actual protected-port I/O.
+                    kwargs["stdout"].write("Ran 1 test in 0.001s\n\nOK\n"
+                        "FAILED: the in-process tripwire refused 1 live-gateway connects\n"
+                        "FAILED: a child process tried the live gateway (see /fixture/guard.log)\n"
+                        "kept /fixture/runner\n")
+                    return subprocess.CompletedProcess(command, 1)
+                return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+            output = io.StringIO()
+            args = argparse.Namespace(keep=True, python_guard_only=True, only=[])
+            with mock.patch.object(isolation.tempfile, "mkdtemp", return_value=tmp), \
+                    mock.patch.object(isolation, "_copy_tree", return_value=component), \
+                    mock.patch.object(isolation, "_add_fake_model", return_value=fake), \
+                    mock.patch.object(isolation, "_refresh_catalog_docs", return_value=True), \
+                    mock.patch.object(isolation, "_goldens_snapshot", return_value={}), \
+                    mock.patch.object(isolation.subprocess, "run", side_effect=run), \
+                    mock.patch("sys.stdout", output):
+                self.assertEqual(isolation._run_probe(args, "model"), 1)
+            self.assertIn("2 runner tripwire failure(s)", output.getvalue())
+            self.assertIn("--keep", commands[0])
+            self.assertNotIn("0 attempted connect", output.getvalue())
+
+    def test_invalid_only_target_is_a_clean_usage_error_before_probe_setup(self) -> None:
+        import io
+        from tests import check_fixture_isolation as isolation
+
+        error = io.StringIO()
+        with mock.patch.object(isolation, "_run_probe", return_value=0) as run, \
+                mock.patch("sys.stdout"), mock.patch("sys.stderr", error):
+            with self.assertRaises(SystemExit) as caught:
+                isolation.main(["--only", "not_a_test"])
+            self.assertEqual(caught.exception.code, 2)
+        run.assert_not_called()
+        self.assertIn("not a module, class or test target", error.getvalue())
+        self.assertNotIn("Traceback", error.getvalue())
+
+    def test_only_targets_keep_module_class_and_method_selection(self) -> None:
+        from tests import check_fixture_isolation as isolation
+
+        self.assertEqual(isolation._runner_selection([]), [])
+        self.assertEqual(isolation._runner_selection([
+            "tests/test_one.py", "test_two.Class", "tests.test_two.Other.test_method"]),
+            ["tests.test_one", "tests.test_two", "-k", "tests.test_one", "-k", "tests.test_two.Class",
+             "-k", "tests.test_two.Other.test_method"])
+        with self.assertRaises(ValueError):
+            isolation._runner_selection(["not_a_test"])
+
+    def test_every_probe_uses_a_private_scrubbed_environment_and_runner(self) -> None:
+        import argparse
+        from tests import check_fixture_isolation as isolation
+
+        with tempfile.TemporaryDirectory(prefix="cm-probe-env-") as tmp:
+            root = Path(tmp)
+            caller = root / "caller"
+            caller.mkdir()
+            canary = caller / "canary"
+            canary.write_text("untouched")
+            poisoned = {name: str(caller) for name in (
+                "HOME", "TMPDIR", "TMP", "TEMP", "XDG_CONFIG_HOME", "XDG_STATE_HOME", "XDG_DATA_HOME",
+                "XDG_CACHE_HOME", "XDG_RUNTIME_DIR", "XDG_CONFIG_DIRS", "XDG_DATA_DIRS", "CLAUDE_CONFIG_DIR",
+                "CHARMER_ASSETS", "CHARMER_MANAGED_ID", "CHARMER_SESSION_ID", "CHARMER_LAUNCH_EPOCH",
+                "CLAUDECODE", "PYTHONHOME", "PYTHONSTARTUP", "ANTHROPIC_BASE_URL", "ANTHROPIC_API_KEY",
+                "CLAUDE_CODE_MESSAGING_SOCKET", "CLAUDE_CODE_MESSAGING_TOKEN", "CLAUDE_CODE_FIXTURE_OVERRIDE",
+                "CLAUDE_PID", "DBUS_SESSION_BUS_ADDRESS")}
+            from charmer import legacy
+            poisoned.update({name: str(caller) for name in legacy.ENVIRONMENT})
+            fake = dict(id="fixture", cloned_from="fixture", provider="fixture", selector="fixture",
+                        minimum_tested="0", pinned_client="0", contract="fixture", since_catalog=1,
+                        line="fixture", files={})
+            args = argparse.Namespace(keep=True, python_guard_only=True, only=["tests.test_fixture.T.test_ok"])
+            real_run = subprocess.run
+            for kind in ("model", "retired", "operator"):
+                work = root / kind
+                work.mkdir()
+                component = work / "repo"
+                (component / "tests").mkdir(parents=True)
+                (component / "src/charmer").mkdir(parents=True)
+                for relative in ("tests/_tripwire.py", "src/charmer/legacy.py"):
+                    shutil.copy2(REPO_ROOT / relative, component / relative)
+                captured = []
+
+                def run(command, **kwargs):
+                    captured.append((command, dict(kwargs["env"])))
+                    if "stdout" in kwargs:
+                        kwargs["stdout"].write("Ran 1 test in 0.001s\n\nOK\n")
+                    return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+                with self.subTest(kind=kind), mock.patch.dict(os.environ, poisoned), \
+                        mock.patch.object(isolation.tempfile, "mkdtemp", return_value=str(work)), \
+                        mock.patch.object(isolation, "_copy_tree", return_value=component), \
+                        mock.patch.object(isolation, "_add_fake_model", return_value=fake), \
+                        mock.patch.object(isolation, "_add_fake_retired", return_value=fake), \
+                        mock.patch.object(isolation, "_add_fake_operator", return_value=fake) as operator, \
+                        mock.patch.object(isolation, "_operator_files", return_value={}), \
+                        mock.patch.object(isolation, "_refresh_catalog_docs", return_value=True) as docs, \
+                        mock.patch.object(isolation, "_goldens_snapshot", return_value={}), \
+                        mock.patch.object(isolation.subprocess, "run", side_effect=run), mock.patch("sys.stdout"):
+                    self.assertEqual(isolation._run_probe(args, kind), 0)
+                    self.assertEqual(os.environ["HOME"], str(caller))
+                environments = [docs.call_args.args[1], *(env for _, env in captured)]
+                for env in environments:
+                    home = Path(env["HOME"])
+                    self.assertTrue(home.is_relative_to(work), (kind, home))
+                    self.assertNotEqual(home, caller)
+                    self.assertTrue(Path(env["TMPDIR"]).is_relative_to(work))
+                    for name in poisoned.keys() - {"HOME", "TMPDIR", "TMP", "TEMP"}:
+                        self.assertNotIn(name, env, (kind, name))
+                    self.assertEqual(env["CM_TEST_TIER"], "full")
+                    self.assertEqual(env["CHARMER_TEST_KEYED_LANE"], "unit")
+                suite_command = captured[0][0]
+                self.assertIn("tools/test.py", suite_command)
+                self.assertIn("--home", suite_command)
+                self.assertIn("inherit", suite_command)  # only the newly made probe HOME
+                if kind == "operator":
+                    self.assertEqual(operator.call_args.args[1], Path(environments[0]["HOME"]))
+                child = real_run([sys.executable, "-c", "from pathlib import Path; "
+                                  "(Path.home() / 'child-marker').write_text('private')"],
+                                 env=environments[0], cwd=component, capture_output=True, text=True, timeout=20)
+                self.assertEqual(child.returncode, 0, child.stdout + child.stderr)
+                self.assertTrue((Path(environments[0]["HOME"]) / "child-marker").is_file())
+                self.assertEqual(canary.read_text(), "untouched")
+                self.assertFalse((caller / "child-marker").exists())
 
 
 class IsolationDocsTests(unittest.TestCase):
@@ -316,6 +701,126 @@ class IsolationDocsTests(unittest.TestCase):
             with mock.patch.object(self.isolation.subprocess, "run", side_effect=unexpected_write), \
                     mock.patch("sys.stdout"):
                 self.assertFalse(self.isolation._refresh_catalog_docs(root, {}, [], kind="model"))
+
+
+class SyntaxWarningGateTests(unittest.TestCase):
+    def test_hygiene_rejects_python311_escape_warning_category(self) -> None:
+        import warnings
+        from tests import test_hygiene as hygiene
+
+        with tempfile.TemporaryDirectory(prefix="cm-deprecation-") as tmp:
+            path = Path(tmp) / "sample.py"
+            path.write_text("VALUE = 1\n")
+            gate = hygiene.ImportBoundaryTests("test_comments_explain_behavior_without_review_references")
+            parse = hygiene.ast.parse
+
+            def deprecated_parse(*args, **kwargs):
+                warnings.warn("fixture invalid escape", DeprecationWarning)
+                return parse(*args, **kwargs)
+
+            with mock.patch.object(hygiene, "repository_files", return_value=[path]), \
+                    mock.patch.object(hygiene.ast, "parse", side_effect=deprecated_parse), \
+                    warnings.catch_warnings():
+                warnings.simplefilter("ignore", DeprecationWarning)
+                before = list(warnings.filters)
+                with self.assertRaises(DeprecationWarning):
+                    gate.test_comments_explain_behavior_without_review_references()
+                self.assertEqual(warnings.filters, before)
+
+    def test_hygiene_rejects_invalid_escape_without_changing_warning_filters(self) -> None:
+        import warnings
+        from tests import test_hygiene as hygiene
+
+        with tempfile.TemporaryDirectory(prefix="cm-syntax-") as tmp:
+            path = Path(tmp) / "sample.py"
+            path.write_text("VALUE = b'" + "\\" + "q'\n")
+            gate = hygiene.ImportBoundaryTests("test_comments_explain_behavior_without_review_references")
+            with mock.patch.object(hygiene, "repository_files", return_value=[path]), \
+                    warnings.catch_warnings():
+                warnings.simplefilter("ignore", SyntaxWarning)
+                before = list(warnings.filters)
+                with self.assertRaises((SyntaxError, SyntaxWarning)):
+                    gate.test_comments_explain_behavior_without_review_references()
+                self.assertEqual(warnings.filters, before)
+                path.write_text("VALUE = b'valid'\n")
+                gate.test_comments_explain_behavior_without_review_references()
+                self.assertEqual(warnings.filters, before)
+
+
+class KeyedTierBoundaryTests(unittest.TestCase):
+    def test_fast_client_boundary_is_visible_without_prerequisites_or_finalize(self) -> None:
+        from tests import test_keyed_compat_client as client
+
+        with mock.patch.dict(os.environ, {"CM_TEST_TIER": "fast"}, clear=True), \
+                mock.patch.object(client, "SELECTED", set()), \
+                mock.patch.object(client.keyed_gateway, "prerequisites") as prerequisites, \
+                mock.patch.object(client.probe, "trusted_from_contract",
+                                  side_effect=AssertionError("unguarded pinned-client lookup")), \
+                mock.patch.object(client.harness, "finalize_keyed") as finalize:
+            loader = unittest.TestLoader()
+            suite = client.load_tests(loader, loader.loadTestsFromTestCase(client.KeyedClientTests), None)
+            result = unittest.TestResult()
+            suite.run(result)
+            self.assertEqual(result.errors, [])
+            self.assertEqual(len(result.skipped), 1)
+            self.assertIn("BOUNDARY: fast tier", result.skipped[0][1])
+            prerequisites.assert_not_called()
+            finalize.assert_not_called()
+            self.assertEqual(client.SELECTED, set())
+
+    def test_explicit_class_selection_never_omits_keyed_finalization(self) -> None:
+        from tests import test_keyed_compat_client as client
+
+        with mock.patch.dict(os.environ, {"CM_TEST_TIER": "fast"}, clear=True), \
+                mock.patch.object(client, "SELECTED", set()), \
+                mock.patch.object(client, "FAST_SKIPPED", False, create=True), \
+                mock.patch.object(client.keyed_gateway, "prerequisites"), \
+                mock.patch.object(client.probe, "trusted_from_contract",
+                                  side_effect=AssertionError("unguarded pinned-client lookup")), \
+                mock.patch.object(client.harness, "finalize_keyed") as finalize:
+            # A class target bypasses load_tests; it is never the deliberate
+            # module-wide fast omission that may suppress finalization.
+            with self.assertRaisesRegex(unittest.SkipTest, "BOUNDARY: fast tier"):
+                client.KeyedClientTests.setUpClass()
+            self.assertEqual(client.SELECTED, {"client"})
+            client.tearDownModule()
+            finalize.assert_called_once_with(client.EVIDENCE, client.MODULE, {"client"})
+
+    def test_candidate_required_and_proof_helper_modes_still_finalize_missing_rows(self) -> None:
+        from tests import test_keyed_compat_client as client
+
+        cases = [
+            {"CM_TEST_TIER": "fast", "CHARMER_TEST_CLI_PROXY_API": "/fixture/gateway"},
+            {"CM_TEST_TIER": "fast", "CHARMER_TEST_REQUIRE_GATEWAY": "1"},
+            {"CM_TEST_TIER": "fast", "CHARMER_TEST_KEYED_EVIDENCE": "/fixture/evidence"},
+            {"CM_TEST_TIER": "fast", "CHARMER_TEST_KEYED_REQUIRED": "1"},
+            # The proof refresher supplies these and uses the runner's full
+            # default with --claude, --max-skip-ratio 0 and verbose output.
+            {"CM_TEST_TIER": "full", "CHARMER_TEST_CLI_PROXY_API": "/fixture/gateway",
+             "CHARMER_TEST_REQUIRE_GATEWAY": "1", "CHARMER_TEST_KEYED_LANE": "host",
+             "CHARMER_TEST_KEYED_EVIDENCE": "/fixture/evidence"},
+        ]
+        for env in cases:
+            with self.subTest(env=env), mock.patch.dict(os.environ, env, clear=True), \
+                    mock.patch.object(client, "SELECTED", set()), \
+                    mock.patch.object(client, "EVIDENCE", client.harness.Evidence()), \
+                    mock.patch.object(client.harness, "keyed_identity", return_value={}), \
+                    mock.patch.object(client.harness, "sandbox_metadata", return_value={}), \
+                    mock.patch.object(client.harness, "validate_evidence_document"), \
+                    mock.patch.object(client.harness, "finalize_keyed", wraps=client.harness.finalize_keyed) as finalize:
+                loader = unittest.TestLoader()
+                client.load_tests(loader, loader.loadTestsFromTestCase(client.KeyedClientTests), None)
+                self.assertEqual(client.SELECTED, {"client"})
+                if env["CM_TEST_TIER"] == "fast":
+                    with mock.patch.object(client.keyed_gateway, "prerequisites") as prerequisites, \
+                            mock.patch.object(client.probe, "trusted_from_contract",
+                                              side_effect=AssertionError("unguarded pinned-client lookup")):
+                        with self.assertRaisesRegex(unittest.SkipTest, "BOUNDARY: fast tier"):
+                            client.KeyedClientTests.setUpClass()
+                        prerequisites.assert_not_called()
+                with self.assertRaisesRegex(AssertionError, "missing or duplicate required keyed rows: client"):
+                    client.tearDownModule()
+                finalize.assert_called_once()
 
 
 class TierTests(unittest.TestCase):

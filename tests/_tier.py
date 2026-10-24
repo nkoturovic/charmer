@@ -38,6 +38,20 @@ def fast_tier_boundary() -> str | None:
     return FAST_BOUNDARY if tier() == "fast" else None
 
 
+def keyed_client_fast_skip_allowed() -> bool:
+    """Only ordinary fast iteration may omit keyed-client finalization.
+
+    A candidate, proof output, required gateway or runner-selected keyed
+    inventory always retains the fail-closed evidence check.
+    """
+
+    return (fast_tier_boundary() is not None
+            and not os.environ.get("CHARMER_TEST_CLI_PROXY_API")
+            and os.environ.get("CHARMER_TEST_REQUIRE_GATEWAY", "") in ("", "0")
+            and not os.environ.get("CHARMER_TEST_KEYED_EVIDENCE")
+            and not os.environ.get("CHARMER_TEST_KEYED_REQUIRED"))
+
+
 def real_binary_gate(contract_path: Path | str, *, what: str) -> probe.PinnedBinary:
     """``probe.pinned_binary_gate`` behind the fast-tier skip (test side)."""
 

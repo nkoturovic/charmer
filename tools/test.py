@@ -9,9 +9,13 @@
 What it guarantees on every platform (Python 3.11 or newer):
 
 - The live-gateway tripwire is armed in this process (importing the
-  ``tests`` package does that) and in every Python child process (a
-  ``sitecustomize`` guard on PYTHONPATH that logs and refuses connects to
-  the live gateway ports). Any hit fails the run.
+  ``tests`` package does that) and in Python children inheriting PYTHONPATH
+  and loading ``sitecustomize`` (not ``-I``/``-E``/``-S`` children or
+  non-Python binaries). Fixture network namespaces isolate other network
+  traffic. The guard refuses ports 8317/8316 on every host and covered
+  listener/service operations; any hit fails the run. Children never read
+  endpoint metadata; the private-HOME runner does not capture the caller's
+  configured custom port.
 - The suite sees a private temporary HOME and TMPDIR, and no XDG or
   ``CLAUDE_CONFIG_DIR`` overrides, so it never reads or writes your own
   charmer or Claude Code state (``--home inherit`` opts out).
@@ -20,6 +24,10 @@ What it guarantees on every platform (Python 3.11 or newer):
   and on other platforms the module is listed as not run, never imported.
 - An empty selection fails; ``--require PATTERN`` makes matching tests
   mandatory (a skip fails the run) and ``--max-skip-ratio`` bounds skips.
+- The keyed host lanes need an explicit candidate gateway. Without
+  ``CHARMER_TEST_CLI_PROXY_API``, both keyed modules are reported as not
+  runnable before test imports (full or fast tier), and the run fails.
+  ``CHARMER_TEST_KEYED_LANE=unit`` explicitly selects no keyed proof.
 - The real-client lanes need the pinned Claude Code, which the private HOME
   does not have: ``--claude PATH`` verifies a file against the packaged pin
   and puts a copy in the private HOME's charmer location (the
@@ -46,7 +54,7 @@ PLATFORM_NAMES = ("linux", "darwin", "windows")
 MIN_PYTHON = (3, 11)
 CLEARED_ENV = ("XDG_CONFIG_HOME", "XDG_STATE_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_RUNTIME_DIR",
                "CLAUDE_CONFIG_DIR", "CHARMER_ASSETS", "CHARMER_MANAGED_ID", "CLAUDECODE",
-               "PYTHONHOME", "PYTHONSTARTUP")
+               "CLAUDE_PID", "DBUS_SESSION_BUS_ADDRESS", "PYTHONHOME", "PYTHONSTARTUP")
 # Every charmer runtime variable is cleared too, except the runner's own:
 # its lane selections and the private identifier input (a path the hygiene
 # and history gates read; without it they run their generic layer alone).
@@ -57,6 +65,7 @@ EXIT_OK, EXIT_FAILED, EXIT_USAGE = 0, 1, 2
 # set (it selects their real-client lane).
 PINNED_CLIENT_LANES = {"tests.test_keyed_compat_client": "CHARMER_TEST_CLI_PROXY_API",
                        "tests.test_openai_key_route_client": "CHARMER_TEST_CLI_PROXY_API"}
+KEYED_MODULES = ("tests.test_gateway_keyed_compat", "tests.test_keyed_compat_client")
 
 
 class UsageError(Exception):
@@ -122,14 +131,21 @@ def select_modules(tests_dir: Path, names: list[str], platform_name: str) -> tup
 
 
 def guard_source(tests_dir: Path) -> str:
-    """The child-process tripwire (``GUARD_SOURCE`` of the isolation check)."""
+    """Bootstrap the same stdlib-only tripwire before child test imports.
 
-    path = tests_dir / "check_fixture_isolation.py"
-    tree = ast.parse(path.read_text(encoding="utf-8"), str(path))
-    for node in tree.body:
-        if isinstance(node, ast.Assign) and any(getattr(t, "id", "") == "GUARD_SOURCE" for t in node.targets):
-            return ast.literal_eval(node.value)
-    raise UsageError(f"{path} defines no GUARD_SOURCE")
+    Embed its source so a child needs neither the tests package nor product
+    imports. Register the canonical module name: a later ``import tests``
+    shares its hit record and idempotent installation.
+    """
+
+    path = tests_dir / "_tripwire.py"
+    source = path.read_text(encoding="utf-8")
+    return ("import sys, types\n"
+            "if '_tripwire' not in sys.modules:\n"
+            "    guard = types.ModuleType('_tripwire')\n"
+            f"    exec(compile({source!r}, {str(path)!r}, 'exec'), guard.__dict__)\n"
+            "    sys.modules['_tripwire'] = guard\n"
+            "sys.modules['_tripwire'].install(read_configured=False)\n")
 
 
 def legacy_environment(repo: Path) -> tuple[str, ...]:
@@ -156,33 +172,52 @@ def runtime_environment(environ: dict[str, str] | os._Environ) -> tuple[str, ...
                         and name not in KEPT_RUNTIME))
 
 
-def prepare_environment(work: Path, *, repo: Path, home: str, tier: str) -> Path:
-    """Set this process's environment (inherited by every child); returns the guard log."""
+def isolated_environment(work: Path, *, repo: Path, home: str = "temp", tier: str = "full",
+                         environ: dict[str, str] | os._Environ | None = None) -> dict[str, str]:
+    """Build the runner/probe environment without mutating the caller's.
+
+    Only an explicit ``home='inherit'`` opts out of the private HOME. Probes
+    always create one here and pass it to the runner with that opt-out so
+    the operator-state probe's seeded HOME is the one its tests inspect.
+    """
+
+    env = dict(os.environ if environ is None else environ)
 
     guard_dir = work / "guard"
     guard_dir.mkdir()
     (guard_dir / "sitecustomize.py").write_text(guard_source(repo / "tests"), encoding="utf-8")
     guard_log = work / "guard.log"
-    for name in (*CLEARED_ENV, *legacy_environment(repo), *runtime_environment(os.environ)):
-        os.environ.pop(name, None)
+    for name in (*CLEARED_ENV, *legacy_environment(repo), *runtime_environment(env),
+                 *(name for name in env if name.startswith(("XDG_", "CLAUDE_CODE_", "ANTHROPIC_")))):
+        env.pop(name, None)
     tmp = work / "tmp"
-    tmp.mkdir()
-    os.environ["TMPDIR"] = str(tmp)
-    tempfile.tempdir = None  # re-read TMPDIR
+    tmp.mkdir(mode=0o700)
+    for name in ("TMPDIR", "TMP", "TEMP"):
+        env[name] = str(tmp)
     if home == "temp":
         private_home = work / "home"
-        private_home.mkdir()
-        os.environ["HOME"] = str(private_home)
+        private_home.mkdir(mode=0o700)
+        env["HOME"] = str(private_home)
         if current_platform() == "windows":
-            os.environ["USERPROFILE"] = str(private_home)
-    os.environ["CM_ISOLATION_GUARD_LOG"] = str(guard_log)
-    os.environ["CM_TEST_TIER"] = tier
-    os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
-    os.environ["PYTHONPATH"] = os.pathsep.join([str(guard_dir), str(repo / "src"), str(repo / "tests")])
+            env["USERPROFILE"] = str(private_home)
+    env["CM_ISOLATION_GUARD_LOG"] = str(guard_log)
+    env["CM_TEST_TIER"] = tier
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
+    env["PYTHONPATH"] = os.pathsep.join([str(guard_dir), str(repo / "src"), str(repo / "tests")])
+    return env
+
+
+def prepare_environment(work: Path, *, repo: Path, home: str, tier: str) -> Path:
+    """Install the shared environment before importing any test module."""
+
+    env = isolated_environment(work, repo=repo, home=home, tier=tier)
+    os.environ.clear()
+    os.environ.update(env)
+    tempfile.tempdir = None  # re-read TMPDIR
     for entry in (str(repo / "tests"), str(repo / "src"), str(repo)):
         if entry not in sys.path:
             sys.path.insert(0, entry)
-    return guard_log
+    return Path(env["CM_ISOLATION_GUARD_LOG"])
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -195,7 +230,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--platform", default=None, help=argparse.SUPPRESS)
     parser.add_argument("-k", dest="patterns", action="append", default=[], help="only tests whose name contains this")
     parser.add_argument("--require", action="append", default=[], metavar="PATTERN",
-                        help="tests whose id matches this regex must run (a skip fails)")
+                        help="this regex must match selected test ids, and matching tests must not skip")
     parser.add_argument("--max-skip-ratio", type=float, default=None, help="fail when skipped/ran exceeds this")
     parser.add_argument("--failfast", action="store_true")
     parser.add_argument("--list", action="store_true", help="print the selection and exit")
@@ -210,6 +245,11 @@ def main(argv: list[str] | None = None) -> int:
         return EXIT_USAGE
     platform_name = args.platform or current_platform()
     try:
+        args.require = [re.compile(pattern) for pattern in args.require]
+    except re.error as exc:
+        print(f"tools/test.py: invalid --require pattern: {exc}", file=sys.stderr)
+        return EXIT_USAGE
+    try:
         selected, excluded = select_modules(REPO / "tests", args.modules, platform_name)
     except UsageError as exc:
         print(f"tools/test.py: {exc}", file=sys.stderr)
@@ -223,15 +263,31 @@ def main(argv: list[str] | None = None) -> int:
         print("tools/test.py: nothing selected on this platform", file=sys.stderr)
         return EXIT_USAGE
     not_runnable = []
-    if args.claude is None and args.home == "temp":
+    if (os.environ.get("CHARMER_TEST_KEYED_LANE", "host") == "host"
+            and not os.environ.get("CHARMER_TEST_CLI_PROXY_API")):
+        for module in KEYED_MODULES:
+            if module in selected:
+                selected.remove(module)
+                not_runnable.append(f"{module} needs an explicit candidate gateway for the keyed host lane; "
+                                    "set CHARMER_TEST_CLI_PROXY_API=PATH to a candidate build. "
+                                    "For unit-only iteration, CHARMER_TEST_KEYED_LANE=unit selects no keyed proof")
+    if (args.tier == "fast" and os.environ.get("CHARMER_TEST_CLI_PROXY_API")
+            and os.environ.get("CHARMER_TEST_KEYED_LANE", "host") == "host"
+            and "tests.test_keyed_compat_client" in selected):
+        selected.remove("tests.test_keyed_compat_client")
+        not_runnable.append("tests.test_keyed_compat_client with a candidate gateway needs --tier full or "
+                            "CHARMER_TEST_KEYED_LANE=unit (no keyed proof)")
+    if args.claude is None and args.home == "temp" and args.tier != "fast":
         for module, variable in PINNED_CLIENT_LANES.items():
-            if module in selected and os.environ.get(variable):
+            if (module in selected and os.environ.get(variable)
+                    and not (module == "tests.test_keyed_compat_client"
+                             and os.environ.get("CHARMER_TEST_KEYED_LANE") == "unit")):
                 selected.remove(module)
                 not_runnable.append(f"{module} needs the pinned Claude Code ({variable} selects its real-client "
                                     "lane) and the private HOME has none; pass --claude PATH (a file matching the "
                                     "packaged pin)")
     for reason in not_runnable:
-        print(f"not runnable: {reason}")
+        print(f"not runnable: {reason}", flush=True)
     args.not_runnable = not_runnable
     if not selected:
         print("tools/test.py: nothing runnable is selected", file=sys.stderr)
@@ -265,6 +321,18 @@ def place_pinned_client(repo: Path, source: Path) -> str:
     return f"Claude Code {outcome.version} ({outcome.platform}) placed in the private HOME"
 
 
+def selected_test_ids(suite: unittest.TestSuite) -> list[str]:
+    """Capture the inventory before unittest consumes the nested suites."""
+
+    ids = []
+    for test in suite:
+        if isinstance(test, unittest.TestSuite):
+            ids.extend(selected_test_ids(test))
+        else:
+            ids.append(test.id())
+    return ids
+
+
 def _run(args: argparse.Namespace, selected: list[str], work: Path) -> int:
     guard_log = prepare_environment(work, repo=REPO, home=args.home, tier=args.tier)
     if args.claude is not None:
@@ -279,9 +347,21 @@ def _run(args: argparse.Namespace, selected: list[str], work: Path) -> int:
     if args.patterns:
         loader.testNamePatterns = [f"*{pattern}*" for pattern in args.patterns]
     suite = loader.loadTestsFromNames(selected)
-    if suite.countTestCases() == 0:
+    test_ids = selected_test_ids(suite)
+    if not test_ids:
         print("tools/test.py: the selection holds no tests", file=sys.stderr)
         return EXIT_USAGE
+    unmatched = [pattern.pattern for pattern in args.require
+                 if not any(pattern.search(test_id) for test_id in test_ids)]
+    if unmatched:
+        for pattern in unmatched:
+            print(f"FAILED: --require {pattern!r} matched no selected tests", file=sys.stderr)
+        return EXIT_FAILED
+    keyed_ids = [test_id for test_id in test_ids if test_id.startswith("tests.test_keyed_compat_client.")]
+    if keyed_ids and (args.patterns or any(_module_name(name) == "tests.test_keyed_compat_client"
+                                          for name in args.modules)
+                      or any(pattern.search(test_id) for pattern in args.require for test_id in keyed_ids)):
+        os.environ["CHARMER_TEST_KEYED_REQUIRED"] = "1"
     started = time.monotonic()
     result = unittest.TextTestRunner(verbosity=2 if args.verbose else 1, failfast=args.failfast).run(suite)
     elapsed = time.monotonic() - started
@@ -294,10 +374,16 @@ def _run(args: argparse.Namespace, selected: list[str], work: Path) -> int:
     if guard_log.exists() and guard_log.read_text(encoding="utf-8", errors="replace").strip():
         problems.append(f"a child process tried the live gateway (see {guard_log}; rerun with --keep)")
     skipped = [(test.id(), reason) for test, reason in result.skipped]
+    skipped_ids = {test_id for test_id, _ in skipped}
+    for test_id, _ in skipped:
+        fixture = re.fullmatch(r"(?:setUpClass|setUpModule) \(([^)]+)\)", test_id)
+        if fixture is not None:
+            prefix = fixture.group(1) + "."
+            skipped_ids.update(selected_id for selected_id in test_ids if selected_id.startswith(prefix))
     for pattern in args.require:
-        missed = [test_id for test_id, _ in skipped if re.search(pattern, test_id)]
+        missed = sorted(test_id for test_id in skipped_ids if pattern.search(test_id))
         if missed:
-            problems.append(f"required tests were skipped ({pattern}): {', '.join(missed[:5])}")
+            problems.append(f"required tests were skipped ({pattern.pattern}): {', '.join(missed[:5])}")
     if args.max_skip_ratio is not None and result.testsRun and len(skipped) > args.max_skip_ratio * result.testsRun:
         problems.append(f"{len(skipped)} of {result.testsRun} tests skipped (more than {args.max_skip_ratio:.0%})")
     reasons: dict[str, int] = {}

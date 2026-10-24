@@ -1,14 +1,16 @@
-"""Always-on live-gateway connect tripwire for the test process.
+"""Shared live-resource tripwire for the test process and Python children.
 
-``tests/__init__.py`` installs it for every run that imports the ``tests``
-package (the documented ``discover -s tests -t .`` gate and the Nix sandbox
-suite). It wraps ``socket.socket.connect`` and ``connect_ex`` and refuses any
-TCP connect to the live gateway ports (8317 gateway, 8316 proxy, and the port
-the developer's own ``~/.config/charmer/endpoint.json`` configures, read
-once at import from the real HOME) on a loopback/unspecified host (``127.0.0.0/8``, ``::1``, ``0.0.0.0``, ``::``,
-``localhost``) by raising
-``ConnectionRefusedError("test tripwire: live gateway port")`` — before the
-real connect runs, so nothing ever reaches the live daemon.
+``tests/__init__.py`` installs it on importing the ``tests`` package.
+It wraps ``socket.socket.connect``, ``connect_ex`` and
+``socket.create_connection``, refusing ports 8317/8316 on EVERY host before
+resolution or connection. No fixture uses those ports anywhere.
+
+A first parent installation also checks a bounded, non-blocking regular
+``HOME/.config/charmer/endpoint.json`` read for a configured port, refused
+on loopback/unspecified hosts. The ordinary runner has already replaced
+HOME, so this does not capture the caller's custom endpoint port. Child
+bootstraps never read that document, even on a later ``import tests``.
+Refusals raise ``ConnectionRefusedError("test tripwire: live gateway port")``.
 
 Every refusal is recorded in :data:`HITS`, reported once on stderr at exit,
 and — when ``CM_ISOLATION_GUARD_LOG`` is set (the external sitecustomize
@@ -16,8 +18,9 @@ tripwire of ``check_fixture_isolation.py`` and the done-gate command) —
 appended to that log as one ``BLOCKED`` entry. The guard raises before it
 delegates to whatever ``connect`` it wrapped, so when the external tripwire is
 also installed the hit is logged exactly once (by this guard), never twice.
-Child processes are not covered here; the external sitecustomize tripwire and
-the real-binary network namespace cover them.
+The runner embeds this same module in child ``sitecustomize`` (no product
+imports): children inheriting PYTHONPATH and loading sitecustomize share the
+policy. The real-binary network namespace covers the remaining processes.
 
 The listener observer is also guarded: audit events refuse reads
 of /proc/net/tcp{,6}, real systemctl MainPID queries, every real systemctl
@@ -35,25 +38,33 @@ from __future__ import annotations
 import atexit
 import ipaddress
 import json
+import operator
 import os
 import socket
+import stat
 import sys
 import traceback
 from typing import Any
 
 def configured_ports(environ: Any = os.environ) -> frozenset[int]:
-    """The port of the real HOME's gateway endpoint document, if it names one."""
+    """Read a bounded regular endpoint file from the supplied HOME, never a FIFO."""
 
     home = environ.get("HOME") or os.path.expanduser("~")
     try:
-        with open(os.path.join(home, ".config", "charmer", "endpoint.json"), "rb") as handle:
-            port = json.loads(handle.read(65536)).get("port")
-    except (OSError, ValueError, AttributeError):
+        fd = os.open(os.path.join(home, ".config", "charmer", "endpoint.json"), os.O_RDONLY | os.O_NONBLOCK)
+        try:
+            if not stat.S_ISREG(os.fstat(fd).st_mode):
+                return frozenset()
+            port = json.loads(os.read(fd, 65536)).get("port")
+        finally:
+            os.close(fd)
+    except (OSError, ValueError, AttributeError, RecursionError):
         return frozenset()
     return frozenset({port}) if type(port) is int and 0 < port < 65536 else frozenset()
 
 
-PORTS = frozenset({8317, 8316}) | configured_ports()
+RESERVED_PORTS = frozenset({8317, 8316})
+PORTS = RESERVED_PORTS
 _CONTROL_VERBS = frozenset({"start", "stop", "restart", "reload", "try-restart", "reload-or-restart",
                             "enable", "disable", "kill", "daemon-reload", "reset-failed", "mask", "unmask",
                             "link", "revert", "preset"})
@@ -64,12 +75,18 @@ _MARK = "_cm_test_tripwire"
 
 
 def is_live_gateway(address: Any) -> bool:
-    """True for a TCP address naming a loopback host on 8317/8316."""
+    """Reserve 8317/8316 on every host; configured ports only on loopback."""
 
     if not isinstance(address, tuple) or len(address) < 2:
         return False
     host, port = address[0], address[1]
-    if not isinstance(port, int) or port not in PORTS:
+    try:
+        port = operator.index(port)
+    except TypeError:
+        return False
+    if port in RESERVED_PORTS:
+        return True
+    if port not in PORTS:
         return False
     if isinstance(host, bytes):
         host = host.decode("ascii", "replace")
@@ -91,14 +108,16 @@ def is_live_gateway(address: Any) -> bool:
 def _record(address: Any) -> None:
     HITS.append(tuple(address))
     log = os.environ.get("CM_ISOLATION_GUARD_LOG")
-    if not log:
-        return
-    try:
-        with open(log, "a", encoding="utf-8") as handle:
-            handle.write(f"BLOCKED {address!r} pid={os.getpid()} source=tests-guard\n")
-            handle.write("".join(traceback.format_stack(limit=12)) + "----\n")
-    except OSError:
-        pass  # the in-process record and the exit report still stand
+    text = f"BLOCKED {address!r} pid={os.getpid()} source=tests-guard\n"
+    if log:
+        try:
+            with open(log, "a", encoding="utf-8") as handle:
+                handle.write(text)
+                handle.write("".join(traceback.format_stack(limit=12)) + "----\n")
+            return
+        except OSError:
+            pass
+    print(text, end="", file=sys.stderr)
 
 
 def _wrap(original: Any) -> Any:
@@ -115,7 +134,9 @@ def _wrap(original: Any) -> Any:
     return guarded
 
 
-def _listener_observation(event: str, args: tuple) -> None:
+def observation_target(event: str, args: tuple) -> str | None:
+    """Pure policy for forbidden file/process audit events; never performs I/O."""
+
     target = None
     if event == "open" and isinstance(args[0], (str, bytes)):
         path = os.path.normpath(os.fsdecode(args[0]))
@@ -134,14 +155,31 @@ def _listener_observation(event: str, args: tuple) -> None:
               and not isinstance(argv, (str, bytes))
               and "--add-root" in {os.fsdecode(arg) for arg in argv}):
             target = "nix-store garbage-collector root"
+    return target
+
+
+def _listener_observation(event: str, args: tuple) -> None:
+    target = observation_target(event, args)
     if target is not None:
         _record(("listener-owner", target))
         # Not OSError: the observer must not swallow the guard as 'unknown'.
         raise AssertionError("test tripwire: live listener observation")
 
 
+def _wrap_create_connection(original: Any) -> Any:
+    def guarded(address: Any, *args: Any, **kwargs: Any) -> Any:
+        if is_live_gateway(address):
+            _record(address)
+            raise ConnectionRefusedError(MESSAGE)
+        return original(address, *args, **kwargs)
+
+    guarded.__wrapped__ = original  # type: ignore[attr-defined]
+    setattr(guarded, _MARK, True)
+    return guarded
+
+
 def installed() -> bool:
-    return all(
+    return getattr(socket.create_connection, _MARK, False) and all(
         getattr(getattr(socket.socket, name), _MARK, False)
         for name in ("connect", "connect_ex")
     )
@@ -156,16 +194,21 @@ def _report() -> None:
         )
 
 
-def install() -> None:
-    """Install the guard once per process (idempotent across module copies)."""
+def install(*, read_configured: bool = True) -> None:
+    """Install once; a child bootstrap never opens endpoint metadata."""
 
+    global PORTS
     if not getattr(sys, "_cm_listener_tripwire", False):
+        if read_configured:
+            PORTS = RESERVED_PORTS | configured_ports()
         sys.addaudithook(_listener_observation)
         sys._cm_listener_tripwire = True
     for name in ("connect", "connect_ex"):
         current = getattr(socket.socket, name)
         if not getattr(current, _MARK, False):
             setattr(socket.socket, name, _wrap(current))
+    if not getattr(socket.create_connection, _MARK, False):
+        socket.create_connection = _wrap_create_connection(socket.create_connection)
     if not getattr(install, "_reported", False):
         atexit.register(_report)
         install._reported = True  # type: ignore[attr-defined]

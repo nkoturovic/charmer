@@ -34,7 +34,10 @@ step 2, see ``_add_fake_retired``):
    ``openrouter-lines`` and ``provider-index`` region bodies may change;
    all other documentation bytes and the file set must stay identical.
    The operator-state probe allows no documentation changes.
-4. Runs the full offline suite in the copy with the live gateway blocked:
+4. Gives every probe its own private HOME/TMPDIR with XDG, Claude config
+   and charmer runtime overrides cleared by the ordinary runner's shared
+   environment builder. Runs the full offline suite through that runner
+   in the copy (keeping the new probe HOME) with the live gateway blocked:
    by default inside a private user+network namespace whose only interface is
    a fresh loopback (127.0.0.1:8317 simply does not exist there, for every
    process, including PTY children and real-binary probes), with all
@@ -69,7 +72,7 @@ from pathlib import Path
 
 # Run as a script, the tests directory is sys.path[0]; imported (test_harness),
 # it is on PYTHONPATH. _layout is the one root source.
-from _layout import REPO_ROOT, RESOURCES_RELATIVE  # noqa: E402
+from _layout import REPO_ROOT, RESOURCES_RELATIVE, load_tool  # noqa: E402
 
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
@@ -92,83 +95,8 @@ REAL_BINARY_MODULES = ("test_scope_probe", "test_client_agents", "test_client_ga
 # Never copied — VCS metadata, worktrees/session files, build links.
 _SKIP_TOP = (".git", ".claude", "result")
 
-GUARD_SOURCE = '''"""check_fixture_isolation tripwire: refuse and log live-gateway connects."""
-import os
-import socket
+GUARD_SOURCE = load_tool("test").guard_source(REPO_ROOT / "tests")
 
-_LOG = os.environ["CM_ISOLATION_GUARD_LOG"]
-_PORTS = {8317, 8316}
-_HOSTS = {"127.0.0.1", "localhost", "::1", "0.0.0.0"}
-_connect = socket.socket.connect
-_connect_ex = socket.socket.connect_ex
-_create = socket.create_connection
-
-
-def _hit(address):
-    try:
-        return address[1] in _PORTS and address[0] in _HOSTS
-    except Exception:
-        return False
-
-
-def _record(address):
-    import traceback
-    with open(_LOG, "a", encoding="utf-8") as handle:
-        handle.write(f"BLOCKED {address!r} pid={os.getpid()}\\n")
-        handle.write("".join(traceback.format_stack(limit=12)) + "----\\n")
-
-
-def connect(self, address):
-    if _hit(address):
-        _record(address)
-        raise ConnectionRefusedError(111, "isolation guard: live gateway blocked")
-    return _connect(self, address)
-
-
-def connect_ex(self, address):
-    if _hit(address):
-        _record(address)
-        return 111
-    return _connect_ex(self, address)
-
-
-def create_connection(address, *args, **kwargs):
-    if _hit(address):
-        _record(address)
-        raise ConnectionRefusedError(111, "isolation guard: live gateway blocked")
-    return _create(address, *args, **kwargs)
-
-
-socket.socket.connect = connect
-socket.socket.connect_ex = connect_ex
-socket.create_connection = create_connection
-
-# No charmer import here: the guard also covers scope-only child paths
-# without loading product modules before their own import restrictions apply.
-import sys
-
-
-def _listener_observation(event, args):
-    if not os.environ.get("CM_ISOLATION_GUARD_LOG") or getattr(sys, "_cm_listener_tripwire", False):
-        return  # the always-on in-process guard records and raises instead
-    target = None
-    if event == "open" and isinstance(args[0], (str, bytes)):
-        path = os.path.normpath(os.fsdecode(args[0]))
-        if path in ("/proc/net/tcp", "/proc/net/tcp6"):
-            target = path
-    elif event == "subprocess.Popen":
-        executable, argv = args[:2]
-        if (os.path.basename(os.fsdecode(executable)) == "systemctl"
-                and not isinstance(argv, (str, bytes))
-                and any("MainPID" in os.fsdecode(arg) for arg in argv)):
-            target = "systemctl MainPID"
-    if target is not None:
-        _record(("listener-owner", target))
-        raise AssertionError("isolation guard: live listener observation")
-
-
-sys.addaudithook(_listener_observation)
-'''
 
 PREFLIGHT = r'''
 import json, os, socket
@@ -178,22 +106,14 @@ with open("/proc/self/status", encoding="utf-8") as handle:
         if line.startswith(("CapEff", "CapAmb", "CapPrm")):
             key, value = line.split(":", 1)
             caps[key] = int(value.strip(), 16)
-probe = socket.socket()
-probe.settimeout(2)
-try:
-    probe.connect(("127.0.0.1", 8317))
-    gateway = "REACHABLE"
-except OSError as exc:
-    gateway = f"unreachable ({type(exc).__name__})"
-finally:
-    probe.close()
+network_namespace = os.readlink("/proc/self/ns/net")
 server = socket.socket()
 server.bind(("127.0.0.1", 0))
 server.listen(1)
 client = socket.create_connection(server.getsockname(), timeout=2)
 client.close()
 server.close()
-print(json.dumps({"uid": os.getuid(), "caps": caps, "gateway": gateway, "loopback": "ok"}))
+print(json.dumps({"uid": os.getuid(), "caps": caps, "network_namespace": network_namespace, "loopback": "ok"}))
 '''
 
 
@@ -445,10 +365,10 @@ def _netns_prefix() -> list[str] | None:
     ]
 
 
-def _preflight(prefix: list[str]) -> tuple[bool, str]:
+def _preflight(prefix: list[str], env: dict[str, str]) -> tuple[bool, str]:
     try:
         result = subprocess.run(
-            [*prefix, sys.executable, "-c", PREFLIGHT],
+            [*prefix, sys.executable, "-c", PREFLIGHT], env=env,
             capture_output=True, text=True, timeout=60,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
@@ -461,11 +381,11 @@ def _preflight(prefix: list[str]) -> tuple[bool, str]:
         problems.append(f"uid {facts['uid']} != {os.getuid()}")
     if any(facts["caps"].get(key) for key in ("CapEff", "CapAmb", "CapPrm")):
         problems.append(f"capabilities not dropped: {facts['caps']}")
-    if facts["gateway"] == "REACHABLE":
-        problems.append("127.0.0.1:8317 reachable inside the namespace")
+    if facts["network_namespace"] == os.readlink("/proc/self/ns/net"):
+        problems.append("network namespace was not isolated")
     summary = (
         f"private net namespace (uid {facts['uid']}, caps dropped, "
-        f"127.0.0.1:8317 {facts['gateway']}, loopback {facts['loopback']})"
+        f"distinct from the caller's, loopback {facts['loopback']})"
     )
     return (not problems), (summary if not problems else "; ".join(problems))
 
@@ -550,6 +470,27 @@ def _refresh_catalog_docs(component: Path, env: dict[str, str], prefix: list[str
     return result.returncode == 0 and not problems
 
 
+def _runner_selection(targets: list[str]) -> list[str]:
+    """Preserve --only module/class/method targets through the ordinary runner."""
+
+    names = []
+    for target in targets:
+        name = target.removesuffix(".py").replace("/", ".")
+        if not name.startswith("tests."):
+            name = "tests." + name
+        if not re.fullmatch(r"tests\.test_\w+(?:\.\w+){0,2}", name):
+            raise ValueError(f"not a module, class or test target: {target}")
+        names.append(name)
+    modules = sorted({".".join(name.split(".")[:2]) for name in names})
+    return modules + [arg for name in names for arg in ("-k", name)]
+
+
+def _suite_command(targets: list[str]) -> list[str]:
+    # HOME is the private one made by isolated_environment, never the caller's.
+    return [sys.executable, "tools/test.py", "--home", "inherit", "--tier", "full", "--keep",
+            *_runner_selection(targets)]
+
+
 def _run_probe(args: argparse.Namespace, kind: str) -> int:
     """One probe (``model``, ``retired`` or ``operator``) in its own disposable copy."""
 
@@ -558,10 +499,9 @@ def _run_probe(args: argparse.Namespace, kind: str) -> int:
     try:
         component = _copy_tree(workdir)
         print(f"copy: {component}")
-        probe_home: Path | None = None
+        env = load_tool("test").isolated_environment(workdir, repo=component)
+        probe_home = Path(env["HOME"])
         if kind == "operator":
-            probe_home = workdir / "probe-home"
-            probe_home.mkdir(mode=0o700)
             fake = _add_fake_operator(component, probe_home)
             print(
                 "fake operator state in the probe HOME: provider {provider} (providers.d) and an "
@@ -583,18 +523,8 @@ def _run_probe(args: argparse.Namespace, kind: str) -> int:
                 "seed serves it".format(**fake)
             )
 
-        guard_dir = workdir / "guard"
-        guard_dir.mkdir()
-        (guard_dir / "sitecustomize.py").write_text(GUARD_SOURCE, encoding="utf-8")
-        guard_log = workdir / "guard.log"
+        guard_log = Path(env["CM_ISOLATION_GUARD_LOG"])
         guard_log.touch()
-        env = dict(os.environ)
-        env["PYTHONPATH"] = os.pathsep.join(
-            [str(guard_dir), str(component / "src"), str(component / "tests")]
-        )
-        env["CM_ISOLATION_GUARD_LOG"] = str(guard_log)
-        env.pop("CHARMER_ASSETS", None)
-        env.pop("CM_TEST_TIER", None)  # acceptance runs the full tier, never fast
         # The namespace cannot run the real gateway (bwrap is untrusted there):
         # gateway and keyed proofs belong to the host suite of the same gate,
         # so the probes use the explicit unit lane and write no gate evidence.
@@ -602,8 +532,6 @@ def _run_probe(args: argparse.Namespace, kind: str) -> int:
                      "CHARMER_TEST_GATEWAY_EVIDENCE", "CHARMER_TEST_GATEWAY_LIFECYCLE_PROBES"):
             env.pop(name, None)
         env["CHARMER_TEST_KEYED_LANE"] = "unit"
-        if probe_home is not None:
-            env["HOME"] = str(probe_home)
 
         prefix: list[str] = []
         if args.python_guard_only:
@@ -614,7 +542,7 @@ def _run_probe(args: argparse.Namespace, kind: str) -> int:
                 print("setup: unshare/ip/setpriv unavailable; use --python-guard-only",
                       file=sys.stderr)
                 return 2
-            passed, summary = _preflight(candidate)
+            passed, summary = _preflight(candidate, env)
             if not passed:
                 print(f"setup: {summary}; use --python-guard-only", file=sys.stderr)
                 return 2
@@ -630,12 +558,12 @@ def _run_probe(args: argparse.Namespace, kind: str) -> int:
             targets = list(args.only)
             print(f"suite: running only {' '.join(targets)} in the copy…", flush=True)
         else:
-            targets = ["discover", "-s", "tests", "-t", "."]
+            targets = []
             print("suite: running the full offline suite in the copy (several minutes)…",
                   flush=True)
         with suite_log.open("w", encoding="utf-8") as handle:
             suite = subprocess.run(
-                [*prefix, sys.executable, "-m", "unittest", *targets],
+                [*prefix, *_suite_command(targets)],
                 cwd=component, env=env, stdout=handle, stderr=subprocess.STDOUT,
                 timeout=3600,
             )
@@ -668,16 +596,24 @@ def _run_probe(args: argparse.Namespace, kind: str) -> int:
         # per class outside the namespace, with the Python tripwire still
         # armed; anything else failing is never retried.
         probe_failures = [t for t in failing if t.split(".")[1].startswith(REAL_BINARY_MODULES)]
-        if prefix and failing and len(probe_failures) == len(failing):
+        # A rerun can resolve an environment-sensitive test failure, never a
+        # runner safety/prerequisite failure. Keep the private runner logs and
+        # count its safety diagnostics as well as the outer probe guard log.
+        runner_problem = any(line.startswith("FAILED:") and not re.fullmatch(
+            r"FAILED: \d+ failures, \d+ errors", line) for line in output.splitlines())
+        if prefix and failing and len(probe_failures) == len(failing) and not runner_problem:
             classes = sorted({t.rsplit(".", 1)[0] for t in probe_failures})
             print(f"suite: re-running {len(classes)} real-binary probe class(es) once "
                   "outside the namespace (tripwire armed): " + " ".join(classes))
             rerun = subprocess.run(
-                [sys.executable, "-m", "unittest", *classes],
+                _suite_command(classes),
                 cwd=component, env=env, capture_output=True, text=True, timeout=1800,
             )
-            rerun_verdict = re.findall(r"(?m)^(OK|FAILED)(?: \((.*)\))?\s*$",
-                                       rerun.stdout + rerun.stderr)
+            rerun_output = rerun.stdout + rerun.stderr
+            with suite_log.open("a", encoding="utf-8") as handle:
+                handle.write("\n=== namespace-sensitive rerun ===\n" + rerun_output)
+            output += "\n" + rerun_output
+            rerun_verdict = re.findall(r"(?m)^(OK|FAILED)(?: \((.*)\))?\s*$", rerun_output)
             rerun_ok = rerun.returncode == 0 and bool(rerun_verdict) and rerun_verdict[-1][0] == "OK"
             if rerun_ok:
                 print("suite: probe re-run OK (namespace-sensitive real-binary "
@@ -686,8 +622,11 @@ def _run_probe(args: argparse.Namespace, kind: str) -> int:
                 print("suite: probe re-run FAILED")
             suite_ok = rerun_ok
             failing = [] if rerun_ok else failing
+        runner_hits = len(re.findall(
+            r"(?m)^FAILED: (?:the in-process tripwire refused|a child process tried the live gateway)", output))
         attempts = guard_log.read_text(encoding="utf-8").count("BLOCKED ")
-        print(f"gateway: {attempts} attempted connect(s) to 127.0.0.1:8317/8316")
+        print(f"gateway: {attempts} outer-guard hit(s), {runner_hits} runner tripwire failure(s) "
+              "(runner logs kept with the probe on failure)")
 
         before = _goldens_snapshot(REPO_ROOT / "tests" / "goldens")
         bless = subprocess.run(
@@ -711,13 +650,14 @@ def _run_probe(args: argparse.Namespace, kind: str) -> int:
             print(bless.stderr.strip(), file=sys.stderr)
 
         operator_ok = True
-        if probe_home is not None:
+        if kind == "operator":
             operator_ok = _operator_files(probe_home) == fake["files"]
             print(f"operator: probe HOME operator state {'unchanged' if operator_ok else 'CHANGED by a test'}")
         ok = (
             suite_ok
             and not failing
             and attempts == 0
+            and runner_hits == 0
             and bless.returncode == 0
             and not changed
             and operator_ok
@@ -758,6 +698,10 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     args = parser.parse_args(argv)
+    try:
+        _runner_selection(args.only)
+    except ValueError as exc:
+        parser.error(str(exc))
 
     if args.retired_probe and args.operator_probe:
         parser.error("--retired-probe and --operator-probe are exclusive")

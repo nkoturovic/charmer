@@ -21,12 +21,14 @@ import _gateway_harness as harness
 import test_gateway_keyed_compat as keyed_gateway
 import test_openai_compat_keyed as keyed
 from _catalog import FIXTURE_ROOT, SHIPPED_ROOT
+from _tier import fast_tier_boundary, keyed_client_fast_skip_allowed
 from test_gateway_hint_client import _GatewayRelay, _RelayHandler
 from charmer import catalog, compiler, probe, profile, render, scope, settings, state, strict_json
 
 MODULE = "tests.test_keyed_compat_client"
 EVIDENCE = harness.Evidence()
 SELECTED = set()
+FAST_SKIPPED = False
 LEAD = "custom-keyedtest-lead"
 AGENT = "custom-keyedtest-agent"
 WORKFLOW = "custom-keyedtest-workflow"
@@ -54,14 +56,22 @@ def ingress_violations(rows, transport_rows):
 
 
 def load_tests(loader, tests, pattern):
+    global FAST_SKIPPED
+    FAST_SKIPPED = False
     if harness.keyed_lane() == "unit":
         return unittest.TestSuite()
-    SELECTED.add("client")
+    FAST_SKIPPED = keyed_client_fast_skip_allowed() and not loader.testNamePatterns
+    if not FAST_SKIPPED:
+        SELECTED.add("client")
     return tests
 
 
 def tearDownModule():
-    harness.finalize_keyed(EVIDENCE, MODULE, SELECTED)
+    global FAST_SKIPPED
+    skipped = FAST_SKIPPED and keyed_client_fast_skip_allowed()
+    FAST_SKIPPED = False
+    if not skipped:
+        harness.finalize_keyed(EVIDENCE, MODULE, SELECTED)
 
 
 class RelayHandler(_RelayHandler):
@@ -175,7 +185,11 @@ class Script:
 class KeyedClientTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        SELECTED.add("client")
+        if not (FAST_SKIPPED and keyed_client_fast_skip_allowed()):
+            SELECTED.add("client")
+        boundary = fast_tier_boundary()
+        if boundary is not None:
+            raise unittest.SkipTest(boundary)
         keyed_gateway.prerequisites()
         contract = json.loads((SHIPPED_ROOT / "catalog/native-contract.json").read_text())
         cls.trusted = probe.trusted_from_contract(contract)

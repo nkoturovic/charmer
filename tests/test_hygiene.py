@@ -59,6 +59,7 @@ import secrets
 import tempfile
 import tokenize
 import unittest
+import warnings
 from pathlib import Path
 
 from _layout import LICENSES_DIR, REPO_ROOT, doc_path, installed_paths, load_tool, repository_files, tree_files
@@ -124,7 +125,11 @@ class ImportBoundaryTests(unittest.TestCase):
             source = path.read_text()
             texts = [(token.start[0], token.string) for token in tokenize.generate_tokens(io.StringIO(source).readline)
                      if token.type == tokenize.COMMENT]
-            for node in ast.walk(ast.parse(source)):
+            with warnings.catch_warnings():
+                warnings.simplefilter("error", SyntaxWarning)
+                warnings.simplefilter("error", DeprecationWarning)  # invalid escapes on Python 3.11
+                tree = ast.parse(source, filename=str(path))
+            for node in ast.walk(tree):
                 if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
                     docstring = ast.get_docstring(node)
                     if docstring:

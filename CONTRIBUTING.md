@@ -79,10 +79,26 @@ python3 tools/docs_gen.py --check        # the generated documentation is curren
 git diff --check                         # no whitespace errors
 ```
 
+The two keyed-compatibility modules default to the host proof lane. Without
+an explicit candidate gateway (`CHARMER_TEST_CLI_PROXY_API=PATH`), the
+runner reports both as **not runnable before running tests** and exits
+nonzero, even on the fast tier; the other selected modules still run.
+For unit-only iteration, `CHARMER_TEST_KEYED_LANE=unit` explicitly omits
+keyed proofs—it is not a gateway acceptance result. With a candidate set,
+the fast keyed client is also reported as not runnable:
+`needs --tier full or CHARMER_TEST_KEYED_LANE=unit`. A fast-tier boundary
+never supplies proof; direct keyed-class or proof-helper invocations still
+retain fail-closed finalization.
+
 The real-client lanes need the exact Claude Code version the release pins:
 `--claude PATH` checks a file against the pin and copies it into the
 suite's private HOME. Without it, a lane that needs it is reported as not
 runnable and the run fails.
+
+`--require PATTERN` takes a regular expression over selected test IDs. Every
+pattern must match at least one selected case, and matching skips fail the
+run. A covering class or module fixture skip also fails a method-level
+requirement. Invalid patterns are usage errors, checked before importing tests.
 
 The installer, update and release tests build small fake releases
 (`tests/_fake_release.py`: bundles carrying this checkout's package, signed
@@ -96,10 +112,25 @@ journey also needs the pinned Claude Code (`JOURNEY_CLIENT=PATH`, or
 in a fresh HOME inside a network namespace (for example
 `bwrap --unshare-net`), never against your own installation.
 
-`tools/test.py` gives the suite a private temporary HOME and refuses any
-connection to a live gateway port, so a run never reads or changes your
-own charmer or Claude Code state and never calls a provider. With
-Nix, the same suite also runs in the sandbox:
+`tools/test.py` gives the suite a private temporary HOME and TMPDIR and
+clears XDG, client routing/session and charmer runtime overrides (`--home inherit`
+explicitly opts out of the private HOME). Fixture-isolation probes use the
+same environment builder for every probe, including documentation and
+golden checks; they run tests through the runner, preserving only their
+newly created probe HOME, never the caller's.
+
+One tripwire guards the test process and Python children that inherit
+`PYTHONPATH` and load `sitecustomize`. It refuses ports 8317/8316 on every host
+and live listener/service-control operations before I/O.
+Children never read endpoint metadata; the ordinary runner replaces HOME
+before the parent guard checks it, so the caller's custom endpoint port is
+not captured. Children
+using `-I`, `-E`, `-S` or a scrubbed environment, and non-Python binaries,
+are outside that Python guard; fixture probes use a private network
+namespace for network isolation (`--python-guard-only` omits it).
+Neither guard is a general provider-egress firewall: tests use fake
+providers and must never read or change the caller's state. With Nix,
+the same suite also runs in the sandbox:
 `nix build .#checks.x86_64-linux.charmer`.
 
 Goldens (expected outputs under `tests/goldens/`) change only through
