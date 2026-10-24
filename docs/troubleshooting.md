@@ -119,7 +119,7 @@ to a model.
 | Anthropic or OpenAI on its API key: nothing of it is served | “its selectors are not served”, with the reason: the key is not set, the route is not approved, or no model is reviewed for it | a missing key: `charmer providers set-key openai` (or `anthropic`); a route not approved: `charmer providers transport openai api-key`; or back to the account: `charmer providers transport openai oauth-pool` |
 | OpenAI on its API key: some OpenAI models are gone | doctor lists the lines reviewed for the key route and those not served | expected: the key serves only the reviewed models; bind one of those, or switch back to the ChatGPT account |
 | OpenAI on its API key: long answers cost more than expected | none: each answer is bounded by Claude Code's output cap, not by a spend limit | set a hard project spend limit with OpenAI ([providers/api-keys.md](providers/api-keys.md#openai)) |
-| ChatGPT account or OpenAI API key: a reply stops at a preamble or looks incomplete | none: if an earlier message streamed text, the gateway can omit a later message that arrives only in its final event | ask for the rest; this is a [gateway reply limit](guides/gateway.md#what-the-gateway-changes-in-a-request), separate from the late-stream completion limit below |
+| ChatGPT account or OpenAI API key: a reply stops at a preamble or looks incomplete | none: once an earlier message in the reply has produced text, the gateway can omit a later message that arrives only in its final event | ask for the rest; this is a [gateway reply limit](guides/gateway.md#what-the-gateway-changes-in-a-request), separate from the late-stream completion limit below |
 | OpenRouter or another OpenAI-compatible provider: a long session stops with the provider's context-length error | none: on these routes a context-window error is shown as the provider's error and does not start automatic compaction (on OpenAI it does) | run `/compact`, then continue |
 | Qwen answers 401 | the key does not match the address | the Qwen provider takes a Token Plan key; a pay-as-you-go Model Studio key belongs to the `model-studio` preset |
 | a preset or an OpenAI-compatible endpoint: “not available in this release” | a build whose keyed OpenAI-compatible audit is closed | use the vendor's Anthropic-compatible endpoint, OpenRouter, or a keyless server on your network ([providers/openai-compatible.md](providers/openai-compatible.md)) |
@@ -210,13 +210,14 @@ More: [guides/sessions.md](guides/sessions.md).
 | `/cm` changed nothing for new agents | type `/reload-plugins`, then start agents fresh |
 | `/model` refuses a model | it is outside the lead set: relaunch with a profile whose lead is that model |
 | an MCP server cannot find its API key | managed sessions remove every `*_API_KEY` variable except the names you keep: add its name in Settings (**O**) → kept environment; provider keys are never kept. **V** on the card shows kept and removed names, doctor too. Applies at the next launch or resume |
-| a connection drops during an HTTP MCP tool call | the pinned client can retry automatically; a state-changing call may already have taken effect. Treat its outcome as unknown and check the external system before retrying ([client limits](reference/compatibility.md#deferred-client-fixes)) |
+| an HTTP MCP tool call was interrupted | the pinned client can resend the call when its connection closes mid-call, so a tool that changes something may have run twice. Check the external system for a duplicate before continuing ([client limits](reference/compatibility.md#deferred-client-fixes)) |
 | implementers “unavailable here” | start the session in a Git repository (`git init`) |
 | Remote Control, `/schedule` or claude.ai connectors are missing | expected in managed sessions; use plain `claude` for these |
 
-The pinned client also predates several native sandbox, worktree and
-Bash-permission fixes in Claude Code 2.1.304–2.1.309. charmer does not replace
-Claude Code's sandbox or worktree protections; see the
+The pinned client also predates sandbox-boundary, worktree and Bash-permission
+fixes in Claude Code 2.1.304–2.1.309. Do not rely on its Bash sandbox as the
+only boundary for untrusted code; charmer does not replace Claude Code's
+sandbox or worktree protections. See the
 [deferred client fixes](reference/compatibility.md#deferred-client-fixes).
 
 ### Late-stream completion limit

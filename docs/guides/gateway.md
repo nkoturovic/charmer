@@ -257,9 +257,9 @@ edit or delete its credential file.
   whether the refusal comes before the answer starts or after. Other errors
   reach Claude Code as before.
 
-On the ChatGPT account and OpenAI API key routes, if an earlier message in
-a reply streamed text and a later message arrives only in its final event,
-the gateway can omit that later message. If a reply stops at a preamble or
+On the ChatGPT account and OpenAI API key routes, once an earlier message in
+a reply has produced text, the gateway can omit a later message that arrives
+only in its final event. If a reply stops at a preamble or
 looks incomplete, ask for the rest. This is separate from the client's
 [late-stream completion limit](../troubleshooting.md#late-stream-completion-limit).
 

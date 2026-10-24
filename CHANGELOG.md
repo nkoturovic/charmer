@@ -201,17 +201,18 @@ unavailable, not a match. See [updating](docs/update.md#updating-from-201).
   an account whose access and refresh tokens were already refused, so the
   gateway may try that account again and return another 401. Sign in to the
   account again through charmer; do not edit or delete its credential file.
-- On the ChatGPT account and OpenAI API key routes, if an earlier message
-  in a reply streamed text and a later message arrives only in its final
-  event, the gateway can omit that later message. If a reply stops at a
-  preamble or looks incomplete, ask for the rest.
-- The pinned Claude Code 2.1.302 predates upstream fixes for automatic
-  retries of HTTP MCP tool calls after a connection drops mid-call, and for
-  several native sandbox, worktree and Bash-permission edge cases (Claude
-  Code 2.1.304–2.1.309). If a connection is lost during a state-changing MCP
-  call, treat its outcome as unknown and check the external system before
-  retrying. charmer does not replace Claude Code's sandbox or worktree
-  protections.
+- On the ChatGPT account and OpenAI API key routes, once an earlier message
+  in a reply has produced text, the gateway can omit a later message that
+  arrives only in its final event. If a reply stops at a preamble or looks
+  incomplete, ask for the rest.
+- The pinned Claude Code 2.1.302 can resend an HTTP MCP tool call when its
+  connection closes mid-call, so a tool that changes something may run
+  twice. After an interrupted MCP call, check the external system for a
+  duplicate before continuing. The pin also predates upstream fixes in
+  Claude Code 2.1.304–2.1.309, including sandbox-boundary, worktree and
+  Bash-permission fixes: do not rely on its Bash sandbox as the only boundary
+  for untrusted code. charmer does not replace Claude Code's sandbox or
+  worktree protections.
 - An already-open loopback WebSocket connection can keep using a retired
   gateway key until it disconnects. Reconnect with the new key after
   rotation; managed Claude Code sessions use HTTP, not that route.

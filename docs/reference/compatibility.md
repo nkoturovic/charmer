@@ -50,15 +50,18 @@ own updater, so the managed copy never changes by itself, while your own
 
 ### Deferred client fixes
 
-The pinned Claude Code 2.1.302 can automatically retry an HTTP MCP tool
-call after its connection drops mid-call. A state-changing call may already
-have taken effect: treat its outcome as unknown and check the external
-system before retrying.
+The pinned Claude Code 2.1.302 can resend an HTTP MCP tool call when its
+connection closes mid-call, so a tool that changes something may run twice,
+without any action from you. After an interrupted MCP call, check the
+external system for a duplicate before continuing.
 
-Upstream fixes in Claude Code 2.1.304–2.1.309 for this retry behavior and
-several native sandbox, worktree and Bash-permission edge cases are not in
-this pin. charmer does not replace Claude Code's sandbox or worktree
-protections.
+Upstream fixes in Claude Code 2.1.304–2.1.309 for this behavior and for
+native sandbox boundaries (for example shell start-up files running outside
+the sandbox, or a writable `--mcp-config` file), worktrees (`--worktree`
+removing a worktree and its branch without asking) and Bash permission checks
+are not in this pin. Do not rely on the pinned client's Bash sandbox as the
+only boundary for untrusted code; charmer does not replace Claude Code's
+sandbox or worktree protections.
 
 ### Client skew
 
