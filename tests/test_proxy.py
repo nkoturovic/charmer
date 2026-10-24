@@ -2695,7 +2695,7 @@ class DiscoveryListingContractTests(unittest.TestCase):
             b'{"id": "a", "created_at": "2026-09-01T00:00:00Z"},'
             b'{"id": "b", "created": 1790035200},'
             b'{"id": "c", "created": true},'
-            b'{"id": "d", "created_at": "\u001b[31mnot a date"},'
+            b'{"id": "d", "created_at": "\\u001b[31mnot a date"},'
             b'{"id": "e", "created": -5}'
             b"]}"
         )
