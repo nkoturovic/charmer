@@ -1925,6 +1925,12 @@ def _doctor_user_settings_report(
                              ("promptCacheTtl", "client cache preference; gateway retention policy still applies")):
             if name in document:
                 info.append(f"user setting {name} present ({effect}); effective value/precedence unknown")
+    # Presence only (the user's, this directory's project and local layers); never the command.
+    if runtime.subagent_status_line(str(runtime.cwd)) is None:
+        info.append("subagent status line: user-owned (subagentStatusLine in settings.json; charmer compiles none)")
+    else:
+        info.append("subagent status line: charmer (compiled into managed sessions)")
+    if isinstance(document, dict):
         known = _charmer_selector_set(runtime)
         hits: list[tuple[str, Any]] = []
         if _is_charmer_selector(document.get("model"), known):

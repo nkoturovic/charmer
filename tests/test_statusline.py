@@ -430,6 +430,16 @@ class CompiledStatusLineTests(V4Case):
         self.assertEqual(self.resume(mid)["managed_id"], mid)
         self.assertEqual(self.settings(mid)["subagentStatusLine"], self.shipped())
 
+    def test_doctor_names_the_line_in_effect(self) -> None:
+        def line() -> list[str]:
+            return [text for text in doctor._doctor_user_settings_report(self.runtime, [])[1]
+                    if text.startswith("subagent status line:")]
+
+        self.assertEqual(line(), ["subagent status line: charmer (compiled into managed sessions)"])
+        self.user_layer({"subagentStatusLine": {"type": "command", "command": "/home/user/secret-command"}})
+        self.assertEqual(line(), ["subagent status line: user-owned (subagentStatusLine in settings.json; "
+                                  "charmer compiles none)"])
+        self.assertNotIn("secret-command", " ".join(doctor._doctor_user_settings_report(self.runtime, [])[1]))
 
     def test_a_scope_another_release_compiled_is_lazy_and_repair_converges_it(self) -> None:
         record = self.launch_fresh()
