@@ -105,6 +105,44 @@ class SelfUpdateTestCase(unittest.TestCase):
         return sorted(p.name for p in (self.root / "versions").iterdir())
 
 
+class DirectoryTransportFailureTests(SelfUpdateTestCase):
+    def test_destination_failures_keep_the_local_path_and_errno(self) -> None:
+        source = self.tmp / "bundle.tar.gz"
+        source.write_bytes(b"bundle")
+        transport = su.DirectoryTransport(self.tmp)
+        destination = self.tmp / "absent" / "download"
+        with self.assertRaises(FileNotFoundError) as caught:
+            transport.download(source.name, "1.0.0", destination, 6)
+        self.assertEqual(caught.exception.filename, str(destination))
+        for operation in ("write", "__exit__"):
+            with self.subTest(operation=operation):
+                target = mock.MagicMock()
+                target.__enter__.return_value = target
+                getattr(target, operation).side_effect = OSError(28, "No space left on device", str(destination))
+                real_open = open
+                def open_file(path, mode):
+                    return target if path == destination else real_open(path, mode)
+                with mock.patch.object(su, "open", side_effect=open_file, create=True), \
+                        self.assertRaises(OSError) as caught:
+                    transport.download(source.name, "1.0.0", destination, 6)
+                self.assertEqual(caught.exception.errno, 28)
+                self.assertEqual(caught.exception.filename, str(destination))
+
+    def test_source_open_and_read_failures_keep_the_release_diagnostic(self) -> None:
+        transport = su.DirectoryTransport(self.tmp)
+        with self.assertRaisesRegex(su.UpdateError, "cannot read bundle.tar.gz from the release"):
+            transport.download("bundle.tar.gz", "1.0.0", self.tmp / "out", 6)
+        source = mock.MagicMock()
+        source.__enter__.return_value = source
+        source.read.side_effect = OSError(5, "Input/output error")
+        real_open = open
+        def open_file(path, mode):
+            return source if mode == "rb" else real_open(path, mode)
+        with mock.patch.object(su, "open", side_effect=open_file, create=True), \
+                self.assertRaisesRegex(su.UpdateError, "cannot read bundle.tar.gz from the release"):
+            transport.download("bundle.tar.gz", "1.0.0", self.tmp / "out", 6)
+
+
 class VersionAndStateTests(SelfUpdateTestCase):
     def test_version_order(self) -> None:
         ordered = ["0.9.9", "1.0.0-dev", "1.0.0", "1.0.1", "1.2.0", "1.10.0", "2.0.0"]

@@ -654,15 +654,22 @@ class DirectoryTransport:
 
     def download(self, name: str, version: str, destination: Path, size: int) -> None:
         try:
-            with open(self._path(name), "rb") as source, open(destination, "wb") as out:
-                copied = 0
-                for chunk in iter(lambda: source.read(_CHUNK), b""):
-                    copied += len(chunk)
-                    if copied > size:
-                        raise UpdateError(f"{name} is larger than the {size} bytes the release lists")
-                    out.write(chunk)
+            source = open(self._path(name), "rb")
         except OSError as exc:
             raise UpdateError(f"cannot read {name} from the release ({exc.strerror})") from exc
+        with source, open(destination, "wb") as out:
+            copied = 0
+            while True:
+                try:
+                    chunk = source.read(_CHUNK)
+                except OSError as exc:
+                    raise UpdateError(f"cannot read {name} from the release ({exc.strerror})") from exc
+                if not chunk:
+                    break
+                copied += len(chunk)
+                if copied > size:
+                    raise UpdateError(f"{name} is larger than the {size} bytes the release lists")
+                out.write(chunk)
 
 
 def signature_verifier(allowed_signers: str, *, now: float | None = None) -> Verifier:
