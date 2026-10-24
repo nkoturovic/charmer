@@ -251,12 +251,16 @@ def _edit_profile(
         raise
     env = dict(runtime.environ)
     env.setdefault("PATH", os.environ.get("PATH", "/usr/bin:/bin"))
-    completed = subprocess.run([*shlex.split(editor), str(path)], env=env, check=False)
     problems: list[str] = []
     edited: dict[str, Any] | None = None
-    if completed.returncode != 0:
+    completed = None
+    try:
+        completed = subprocess.run([*shlex.split(editor), str(path)], env=env, check=False)
+    except (ValueError, OSError) as exc:
+        problems.append(f"cannot start the editor ($VISUAL/$EDITOR): {exc}")
+    if completed is not None and completed.returncode != 0:
         problems.append(f"the editor exited with status {completed.returncode}")
-    else:
+    elif completed is not None:
         try:
             edited = profile_mod.parse(strict_json.loads(path.read_bytes()))
             edited["name"] = name

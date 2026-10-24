@@ -115,6 +115,32 @@ class ExitStatusTests(CLITestCase):
         self.assertIn("charmer: cancelled", err)
 
 
+class EditorStartFailureTests(CLITestCase):
+    def test_bad_editor_settings_report_the_kept_copy_without_a_traceback(self) -> None:
+        self.runtime.profiles.install_seeds()
+        before = self.runtime.profiles.raw_bytes("balanced")
+        for variable in ("VISUAL", "EDITOR"):
+            for editor, reason in (("'unterminated", "No closing quotation"),
+                                   (str(self.root / "missing-editor"), "No such file or directory")):
+                for verb, name in (("new", "draft"), ("edit", "balanced")):
+                    with self.subTest(variable=variable, editor=editor, verb=verb), \
+                            mock.patch.dict(self.runtime.environ, {"VISUAL": "", "EDITOR": "", variable: editor}), \
+                            mock.patch("tempfile.tempdir", str(self.root)):
+                        copies_before = set(self.root.glob("charmer-profile-*.json"))
+                        code, out, err = self.run_cli_both(["profile", verb, name, "--line"], interactive=True)
+                        self.assertEqual(code, 1, out + err)
+                        self.assertIn(f"profile {name} was not saved", out)
+                        self.assertIn("cannot start the editor ($VISUAL/$EDITOR):", out)
+                        self.assertIn(reason, out)
+                        self.assertNotIn("Traceback", out + err)
+                        (kept,) = set(self.root.glob("charmer-profile-*.json")) - copies_before
+                        self.assertIn(str(kept), out)
+                        self.assertEqual(kept.stat().st_mode & 0o777, 0o600)
+                        self.assertEqual(json.loads(kept.read_bytes())["name"], name)
+                        self.assertFalse(self.runtime.profiles.contains("draft"))
+                        self.assertEqual(self.runtime.profiles.raw_bytes("balanced"), before)
+
+
 class ImportExitStatusTests(test_portability.PortabilityCase):
     def test_declining_import_is_3_and_never_applies(self) -> None:
         document, _raw, _err = self.export_json()
