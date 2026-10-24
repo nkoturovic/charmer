@@ -500,7 +500,6 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
 
-@requires_release_tree
 def _root_unmapped() -> bool:
     """True inside a user namespace whose uid map has no entry for root."""
     try:
@@ -510,6 +509,7 @@ def _root_unmapped() -> bool:
     return not any(line.split()[:1] == ["0"] for line in lines)
 
 
+@requires_release_tree
 class PrivateCheckOutputTests(unittest.TestCase):
     """Only three closed fast-lane bodies run, with synthetic input and
     fixture-only commands; consumer diagnostics must never escape them."""

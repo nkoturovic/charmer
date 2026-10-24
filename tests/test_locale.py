@@ -85,7 +85,9 @@ class CommandLocaleTests(unittest.TestCase):
                "XDG_CONFIG_HOME": str(self.root / "config"), "XDG_STATE_HOME": str(self.root / "state"),
                "XDG_DATA_HOME": str(self.root / "data"), "CHARMER_ASSETS": str(FIXTURE_ROOT),
                "LC_ALL": "C", "PYTHONCOERCECLOCALE": "0", "PYTHONUTF8": "0",
-               "PYTHONIOENCODING": encoding, "PYTHONPATH": str(SRC_DIR)}
+               "PYTHONIOENCODING": encoding,
+               # The source first; the runner's own entries (its guard) stay.
+               "PYTHONPATH": os.pathsep.join([str(SRC_DIR), *filter(None, os.environ.get("PYTHONPATH", "").split(os.pathsep))])}
         if bypass_run:
             # The pre-stream-policy dispatch, to pin the unchanged UTF-8 bytes.
             argv = ["-c", "import sys; from charmer import entrypoints; "
@@ -94,6 +96,16 @@ class CommandLocaleTests(unittest.TestCase):
             argv = ["-m", "charmer.entrypoints"]
         return subprocess.run([sys.executable, *argv, "charmer", *args], cwd=self.root,
                               env=env, stdin=subprocess.DEVNULL, capture_output=True, timeout=30)
+
+    def test_the_child_keeps_the_runner_path(self) -> None:
+        # The runner's PYTHONPATH carries its connection guard; the child
+        # gets the source first and keeps every inherited entry.
+        inherited = os.pathsep.join(["/runner-guard", "", "/runner-tests"])
+        with mock.patch.dict(os.environ, {"PYTHONPATH": inherited}), \
+                mock.patch.object(subprocess, "run") as run:
+            self.command(["--help"], "utf-8")
+        self.assertEqual(run.call_args.kwargs["env"]["PYTHONPATH"].split(os.pathsep),
+                         [str(SRC_DIR), "/runner-guard", "/runner-tests"])
 
     def test_help_and_sessions_list_survive_latin1(self) -> None:
         for args in (["--help"], ["sessions", "list"]):
