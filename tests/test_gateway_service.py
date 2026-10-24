@@ -905,6 +905,38 @@ class RestorationRemedyTests(_ServiceCase):
         self.assert_install_remedy(self.service().install(max_wait=1))
 
 
+class HandoffStopIdentityTests(_ServiceCase):
+    def assert_changed_during_handoff(self, change) -> None:
+        self.assertTrue(self.service().install().ok)
+        manager = self.service()
+        before = endpoint.endpoint_path(self.home).read_bytes(), self.unit_text()
+        begin = manager.gateway.begin_handoff
+
+        def changed(operation, name):
+            result = begin(operation, name)
+            self.assertIsNone(result)
+            change()
+            return result
+
+        with mock.patch.object(manager.gateway, "begin_handoff", side_effect=changed):
+            outcome = manager.uninstall()
+        self.assertNotIn("disable", self.manager.verbs())
+        self.assertEqual(outcome.status, "refused", outcome.lines())
+        self.assertIn("changed meanwhile", outcome.message)
+        self.assertIsNone(gateway_inhibition.read(self.state_root))
+        self.assertEqual((endpoint.endpoint_path(self.home).read_bytes(), self.unit_text()), before)
+        self.assertEqual(self.manager.active, {"charmer-gateway"})
+
+    def test_uninstall_rechecks_the_stamp_after_begin_handoff(self) -> None:
+        self.assert_changed_during_handoff(lambda: self.world.write_stamp("cccccccccccccccc"))
+
+    def test_uninstall_rechecks_foreign_ownership_after_begin_handoff(self) -> None:
+        self.assert_changed_during_handoff(lambda: setattr(self.world, "listener", "foreign"))
+
+    def test_uninstall_rechecks_unknown_ownership_after_begin_handoff(self) -> None:
+        self.assert_changed_during_handoff(lambda: setattr(self.world, "listener", "unknown"))
+
+
 class StopIdentityTests(_ServiceCase):
     def test_uninstall_rechecks_the_instance_after_the_hold(self) -> None:
         self.assertTrue(self.service().install().ok)

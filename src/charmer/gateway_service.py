@@ -977,15 +977,17 @@ class GatewayService:
                     return gateway_lifecycle.Outcome(
                         "held", "the gateway service was not removed: " + gateway_hold.describe(hold),
                         gateway_hold.remedy(hold))
-            again = gateway.observe()
-            if again.stamp != seen.stamp or again.state in (gateway_lifecycle.FOREIGN, gateway_lifecycle.UNKNOWN):
-                return gateway._refused(again, "the gateway changed meanwhile; the gateway service was not removed")
             refused = gateway.begin_handoff("uninstall", name)
             if refused is not None:
                 return refused
             undo = _Undo(name=name)
             complete = True
             try:
+                # Taking the hand-off may wait for a writer fence; the hold
+                # still covers only the instance observed before that wait.
+                again = gateway.observe()
+                if again.stamp != seen.stamp or again.state in (gateway_lifecycle.FOREIGN, gateway_lifecycle.UNKNOWN):
+                    return gateway._refused(again, "the gateway changed meanwhile; the gateway service was not removed")
                 try:
                     outcome = self._commit_uninstall(name, running, undo, max_wait,
                                                      known=properties.get("LoadState") != "not-found")
