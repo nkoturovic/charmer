@@ -208,7 +208,16 @@ class InstallationTests(SelfUpdateTestCase):
 
 
 class InstallLockRaceTests(SelfUpdateTestCase):
+    def test_fresh_acquisition_creates_no_guard_file(self) -> None:
+        with su.install_lock(self.root):
+            self.assertFalse((self.root / ".lock-guard").exists())
+            self.assertEqual((self.root / ".lock/pid").read_text(), f"{os.getpid()}\n")
+        self.assertEqual(list(self.root.iterdir()), [])
+
     def test_the_guard_is_stable_and_unsafe_guard_files_are_refused(self) -> None:
+        lock = self.root / ".lock"
+        lock.mkdir(parents=True)
+        (lock / "pid").write_text(f"{2 ** 22 + 1}\n")
         with su.install_lock(self.root):
             guard = self.root / ".lock-guard"
             identity = (guard.stat().st_dev, guard.stat().st_ino)
@@ -218,6 +227,8 @@ class InstallLockRaceTests(SelfUpdateTestCase):
         guard.unlink()
         target = self.tmp / "elsewhere"
         target.write_bytes(b"untouched")
+        lock.mkdir()
+        (lock / "pid").write_text(f"{2 ** 22 + 1}\n")
         guard.symlink_to(target)
         with self.assertRaises((su.UpdateError, OSError)):
             with su.install_lock(self.root):
@@ -228,7 +239,7 @@ class InstallLockRaceTests(SelfUpdateTestCase):
         with self.assertRaises((su.UpdateError, OSError)):
             with su.install_lock(self.root):
                 self.fail("special guard accepted")
-        self.assertFalse((self.root / ".lock").exists())
+        self.assertEqual((lock / "pid").read_text(), f"{2 ** 22 + 1}\n")
 
     def test_release_leaves_a_replacement_owners_lock_alone(self) -> None:
         held = su.install_lock(self.root)

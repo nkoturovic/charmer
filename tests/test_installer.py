@@ -311,6 +311,8 @@ def _parser():
 
         release = self.release("1.0.0")
         self.root.mkdir(parents=True, mode=0o700)
+        (self.root / ".lock").mkdir()
+        (self.root / ".lock/pid").write_text(f"{2 ** 22 + 1}\n")
         descriptor = os.open(self.root / ".lock-guard", os.O_RDWR | os.O_CREAT, 0o600)
         try:
             posix_fs.lock_descriptor(descriptor, shared=False, blocking=False)
@@ -318,7 +320,7 @@ def _parser():
             self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
             self.assertIn("another install or update is running", result.stderr)
             self.assertNothingInstalled()
-            self.assertFalse((self.root / ".lock").exists())
+            self.assertEqual((self.root / ".lock/pid").read_text(), f"{2 ** 22 + 1}\n")
         finally:
             os.close(descriptor)
 

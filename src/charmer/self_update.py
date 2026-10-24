@@ -394,8 +394,8 @@ def state_version(state_root: Path) -> int:
 class _InstallLock:
     """The mkdir/pid lock understood by every published installer and updater.
 
-    A stable flock guard serializes acquisition and stale reclamation by
-    cooperating writers. The guard file is never renamed or removed. Older
+    Fresh acquisition is one atomic mkdir. A stable flock guard serializes
+    stale reclamation by cooperating writers; its file is never removed. Older
     writers still see the live mkdir lock, but cannot join this guard when
     reclaiming a stale one themselves.
     """
@@ -407,7 +407,7 @@ class _InstallLock:
             raise UpdateError("the install lock needs a positive owner pid")
 
     @contextlib.contextmanager
-    def _guard(self, *, blocking: bool):
+    def _guard(self):
         path = self.path.with_name(".lock-guard")
         descriptor = os.open(path, os.O_RDWR | os.O_CREAT | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600)
         try:
@@ -416,7 +416,7 @@ class _InstallLock:
                     or not posix_fs.owned_by_caller(info) or info.st_mode & 0o077):
                 raise UpdateError(f"the install lock guard {path} is not a private regular file")
             try:
-                posix_fs.lock_descriptor(descriptor, shared=False, blocking=blocking)
+                posix_fs.lock_descriptor(descriptor, shared=False, blocking=False)
             except BlockingIOError:
                 raise UpdateError("another install or update is running") from None
             current = os.lstat(path)
@@ -426,29 +426,37 @@ class _InstallLock:
         finally:
             os.close(descriptor)
 
+    def _create(self) -> bool:
+        try:
+            self.path.mkdir(mode=0o700)
+        except FileExistsError:
+            return False
+        (self.path / "pid").write_text(f"{self.pid}\n")
+        return True
+
     def acquire(self) -> "_InstallLock":
         if not self.path.parent.is_dir():
             state.ensure_private_dir(self.path.parent)
-        with self._guard(blocking=False):
+        if self._create():
+            return self
+        with self._guard():
             for _attempt in range(2):
+                if self._create():
+                    return self
+                # Re-read only under the guard: another acquirer may have
+                # replaced the stale directory before this run took it.
+                holder = self._holder()
+                if holder is None:  # a holder between mkdir and writing its pid, or a crash there
+                    raise UpdateError(f"another install or update holds {self.path}",
+                                      remedy=f"if none is running, remove {self.path}") from None
+                if _alive(holder):
+                    raise UpdateError(f"another install or update is running (process {holder})") from None
+                stale = self.path.with_name(f"{LOCK_DIR}.stale.{self.pid}")
                 try:
-                    self.path.mkdir(mode=0o700)
-                except FileExistsError:
-                    holder = self._holder()
-                    if holder is None:  # a holder between mkdir and writing its pid, or a crash there
-                        raise UpdateError(f"another install or update holds {self.path}",
-                                          remedy=f"if none is running, remove {self.path}") from None
-                    if _alive(holder):
-                        raise UpdateError(f"another install or update is running (process {holder})") from None
-                    stale = self.path.with_name(f"{LOCK_DIR}.stale.{self.pid}")
-                    try:
-                        os.rename(self.path, stale)
-                        shutil.rmtree(stale, ignore_errors=True)
-                    except OSError:
-                        pass
-                    continue
-                (self.path / "pid").write_text(f"{self.pid}\n")
-                return self
+                    os.rename(self.path, stale)
+                    shutil.rmtree(stale, ignore_errors=True)
+                except OSError:
+                    pass
         raise UpdateError("another install or update is running")
 
     def __enter__(self) -> "_InstallLock":
@@ -471,11 +479,8 @@ class _InstallLock:
         return holder if holder is not None and holder < 2 ** 31 else None
 
     def __exit__(self, *_exc: object) -> None:
-        if self._holder() != self.pid:
-            return
-        with self._guard(blocking=True):
-            if self._holder() == self.pid:
-                shutil.rmtree(self.path, ignore_errors=True)
+        if self._holder() == self.pid:
+            shutil.rmtree(self.path, ignore_errors=True)
 
 
 def install_lock(root: Path, *, pid: int | None = None) -> "_InstallLock":
