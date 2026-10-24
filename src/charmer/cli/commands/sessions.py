@@ -153,7 +153,10 @@ def sessions_list_document(runtime: runtime_mod.Runtime, selected: sessions.Sess
     cannot be read; ``follow`` is null for a legacy record; no transcript
     content and no native-session metadata."""
 
-    records = _selected_records(runtime, selected)
+    records, problems, _ids = session_facts._session_record_scan(runtime)
+    if problems:
+        raise cli_errors.CLIError("; ".join(problems), remedy="charmer doctor")
+    records = _selected_records(runtime, selected, records=records)
     # Unknown daemon liveness (unreadable metadata, a network filesystem) is
     # null, never false.
     try:
@@ -193,7 +196,8 @@ def _print_sessions_listing(runtime: runtime_mod.Runtime, output_stream: TextIO,
                             selected: sessions.SessionFilter | None = None) -> None:
     """The text sessions listing (``sessions list``, bare ``-r`` without a terminal)."""
 
-    records = _selected_records(runtime, selected)
+    records, problems, _ids = session_facts._session_record_scan(runtime)
+    records = _selected_records(runtime, selected, records=records)
     output_stream.write("sessions\n")
     output_stream.write("----------------------------------------\n")
     live = session_facts._live_background_prefixes()
@@ -215,7 +219,7 @@ def _print_sessions_listing(runtime: runtime_mod.Runtime, output_stream: TextIO,
             )
             + "\n"
         )
-    if not records:
+    if not records and not problems:
         output_stream.write("(no recorded sessions)\n")
     output_stream.write(
         "[r] resume: charmer -r <id> · "
@@ -253,6 +257,8 @@ def _print_sessions_listing(runtime: runtime_mod.Runtime, output_stream: TextIO,
                 )
                 + "\n"
             )
+    if problems:
+        raise cli_errors.CLIError("; ".join(problems), remedy="charmer doctor")
 
 
 def _sessions_transition(
