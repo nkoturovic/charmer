@@ -6,9 +6,40 @@ import json
 from pathlib import Path
 from unittest import mock
 
-from charmer import errors, sessions, state
+from charmer import errors, sessions, state, termtext
 from charmer.cli import entry
 from test_cli import CLITestCase, FIXED_ID, OTHER_ID
+
+
+class SessionTerminalTests(CLITestCase):
+    def hostile_cwd(self) -> str:
+        cwd = self.root / "cwd\x1b]8;;https://bad.example\x07link\n\x7f\x85"
+        cwd.mkdir(parents=True)
+        return str(cwd)
+
+    def test_listing_escapes_recorded_cwd_controls(self) -> None:
+        record = self.save_v4_session()
+        record["cwd"] = self.hostile_cwd()
+        self.runtime.session_store.save(record)
+        code, out, err = self.run_cli_both(["sessions", "list"], interactive=False)
+        self.assertEqual(code, 0, out + err)
+        self.assertIn(termtext.visible_text(record["cwd"]), out)
+        self.assertNotIn("\x1b", out)
+
+    def test_relink_success_escapes_recorded_and_explicit_cwd_controls(self) -> None:
+        cwd = self.hostile_cwd()
+        for extra in ([], ["--cwd", cwd]):
+            with self.subTest(extra=extra):
+                record = self.save_v4_session(write_scope=True)
+                if not extra:
+                    record["cwd"] = cwd
+                    self.runtime.session_store.save(record)
+                code, out, err = self.run_cli_both(
+                    ["sessions", "relink-runtime", FIXED_ID, OTHER_ID, *extra], interactive=False)
+                self.assertEqual(code, 0, out + err)
+                self.assertEqual(out, f"Reconciled managed {FIXED_ID} to runtime {OTHER_ID} "
+                                     f"at CWD {termtext.visible_text(cwd)}.\n")
+                self.assertEqual(self.runtime.session_store.load(FIXED_ID)["cwd"], cwd)
 
 
 class RelinkConvergenceTests(CLITestCase):

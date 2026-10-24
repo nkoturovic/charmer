@@ -610,8 +610,10 @@ def _sessions_command(
                 )
                 return 1
         output_stream.write(
-            f"Reconciled managed {stable_id} to runtime "
-            f"{updated['runtime_session_id']} at CWD {updated['cwd']}.\n"
+            termtext.visible_text(
+                f"Reconciled managed {stable_id} to runtime "
+                f"{updated['runtime_session_id']} at CWD {updated['cwd']}."
+            ) + "\n"
         )
         return 0
     if command == "transition":
