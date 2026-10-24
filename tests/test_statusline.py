@@ -553,6 +553,107 @@ class CompiledStatusLineTests(V4Case):
         self.assertFalse(any("subagent status line differs" in text for text in attention))
 
 
+PREVIOUS_RELEASE_ENV = "CHARMER_TEST_PREVIOUS_RELEASE"
+PREVIOUS_RELEASE = "2.1.0"
+
+
+class RollbackToPreviousReleaseTests(V4Case):
+    """The retained previous release's own launcher over state this checkout
+    wrote, with and without a user-owned ``subagentStatusLine``: it starts,
+    reads the records and the user's settings, reports the compiled key as
+    a scope its repair recompiles, repairs it, and its argparse refuses
+    ``statusline`` (which the shim then answers with nothing, exit 0). Opt-in:
+    ``CHARMER_TEST_PREVIOUS_RELEASE`` names a source tree of that release
+    (``git archive v2.1.0``); without it the class skips."""
+
+    def setUp(self) -> None:
+        tree = os.environ.get(PREVIOUS_RELEASE_ENV)
+        if not tree:
+            self.skipTest(f"{PREVIOUS_RELEASE_ENV} names no source tree of the previous release")
+        self.previous = Path(tree)
+        version = json.loads((self.previous / "src/charmer/data/version.json").read_text())["launcher_version"]
+        if version != PREVIOUS_RELEASE:
+            self.fail(f"{PREVIOUS_RELEASE_ENV} names release {version}, not {PREVIOUS_RELEASE}")
+        super().setUp()
+        from charmer import endpoint
+
+        # A port of the new-install range that nothing listens on (never the
+        # packaged one): the previous doctor's health check is refused there.
+        endpoint.ensure_config(Path(self.env["HOME"]), probe=endpoint.port_free)
+        self.runtime = self.make_runtime(asset_root=charmer_resources())
+
+    def previous_charmer(self, *argv: str, stdin: bytes = b"") -> subprocess.CompletedProcess:
+        # The runner's live-gateway tripwire stays on the child's path (its
+        # source launcher puts the previous release's src first).
+        environ = {**self.env, "PATH": "/usr/bin:/bin", "PYTHONPATH": os.environ.get("PYTHONPATH", "")}
+        return subprocess.run([sys.executable, str(self.previous / "bin" / "charmer"), *argv], input=stdin,
+                              capture_output=True, env=environ, cwd=self.project, timeout=120)
+
+    def user_layer(self, document: dict | None) -> Path:
+        path = Path(self.env["HOME"]) / ".claude" / "settings.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if document is not None:
+            path.write_text(json.dumps(document), encoding="utf-8")
+        return path
+
+    def test_the_previous_launcher_starts_and_repairs_over_this_releases_state(self) -> None:
+        user_line = {"type": "command", "command": "printf ''"}
+        for owned in (False, True):
+            with self.subTest(user_owned=owned):
+                user = self.user_layer({"subagentStatusLine": user_line} if owned else None)
+                record = self.launch_fresh(self.direct_target("opus"))
+                mid = record["managed_id"]
+                settings_path = self.live(mid) / scope.SETTINGS_RELPATH
+                compiled = strict_json.loads(settings_path.read_bytes())
+                self.assertEqual("subagentStatusLine" in compiled, not owned)
+                user_before = user.read_bytes() if user.exists() else None
+                shim = scope.status_line_shim_path(self.store.root)
+                version = self.previous_charmer("--version")
+                self.assertEqual(version.returncode, 0, version.stderr)
+                self.assertTrue(version.stdout.decode().startswith(f"charmer {PREVIOUS_RELEASE}"), version.stdout)
+                listing = self.previous_charmer("sessions", "list", "--all")
+                self.assertEqual(listing.returncode, 0, listing.stderr)
+                self.assertIn(mid[:8].encode(), listing.stdout)
+                report = self.previous_charmer("doctor", "--json")
+                self.assertIn(report.returncode, (0, 1), report.stderr)
+                self.assertNotIn(b"Traceback", report.stderr)
+                text = json.dumps(json.loads(report.stdout))
+                self.assertNotIn("does not know (subagentStatusLine", text)  # the previous pin knows the key
+                plain = self.previous_charmer("doctor", "-v")
+                self.assertIn(plain.returncode, (0, 1), plain.stderr)
+                difference = f"session {mid[:8]}: scope differs from the record-authoritative compile"
+                if not owned:
+                    # The key it does not compile is a scope difference its repair resolves.
+                    self.assertIn(difference, plain.stdout.decode(), plain.stdout.decode()[-3000:])
+                    print("previous doctor:", next(line.strip() for line in plain.stdout.decode().splitlines()
+                                                    if difference in line))
+                    repaired = self.previous_charmer("doctor", "--repair", mid)
+                    self.assertEqual(repaired.returncode, 0, repaired.stdout + repaired.stderr)
+                    self.assertNotIn("subagentStatusLine", strict_json.loads(settings_path.read_bytes()))
+                    self.assertNotIn(difference, self.previous_charmer("doctor", "-v").stdout.decode())
+                else:
+                    self.assertNotIn(difference, plain.stdout.decode())
+                # Its parser refuses the plumbing command; the shim prints nothing and exits 0.
+                refused = self.previous_charmer("statusline", "subagents", stdin=json.dumps(TEN_TASKS).encode())
+                self.assertEqual((refused.returncode, refused.stdout), (2, b""))
+                scope.ensure_status_line_shim(self.store.root, str(self.previous / "bin" / "charmer"))
+                answered = subprocess.run(str(shim), input=json.dumps(TEN_TASKS).encode(), capture_output=True,
+                                          env={**self.env, "PATH": "/usr/bin:/bin"}, timeout=120)
+                self.assertEqual((answered.returncode, answered.stdout, answered.stderr), (0, b"", b""))
+                self.assertEqual(user.read_bytes() if user.exists() else None, user_before)  # never written
+                user.unlink(missing_ok=True)
+                print(f"rollback {PREVIOUS_RELEASE}: user-owned={owned} --version ok, sessions list ok, "
+                      f"doctor exit {report.returncode}, "
+                      + ("compiled key reported and repaired" if not owned else "no scope difference")
+                      + "; statusline refused (exit 2), shim answered nothing (exit 0)")
+
+
+def charmer_resources() -> Path:
+    import charmer
+
+    return charmer.resources_root()
+
+
 GOLDEN_COMMAND = "/nix/store/fixture/bin/charmer"
 TEN_TASKS = {"columns": 120, "tasks": [
     {**REVIEWER, "id": f"t{n}", "tokenCount": 25_000 * n} for n in range(10)]}
