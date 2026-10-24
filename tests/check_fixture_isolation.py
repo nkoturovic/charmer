@@ -96,7 +96,7 @@ GUARD_SOURCE = '''"""check_fixture_isolation tripwire: refuse and log live-gatew
 import os
 import socket
 
-_LOG = os.environ["CM_ISOLATION_GUARD_LOG"]
+_LOG = os.environ.get("CM_ISOLATION_GUARD_LOG")
 _PORTS = {8317, 8316}
 _HOSTS = {"127.0.0.1", "localhost", "::1", "0.0.0.0"}
 _connect = socket.socket.connect
@@ -113,9 +113,16 @@ def _hit(address):
 
 def _record(address):
     import traceback
-    with open(_LOG, "a", encoding="utf-8") as handle:
-        handle.write(f"BLOCKED {address!r} pid={os.getpid()}\\n")
-        handle.write("".join(traceback.format_stack(limit=12)) + "----\\n")
+    text = f"BLOCKED {address!r} pid={os.getpid()}\\n"
+    if _LOG:
+        try:
+            with open(_LOG, "a", encoding="utf-8") as handle:
+                handle.write(text)
+                handle.write("".join(traceback.format_stack(limit=12)) + "----\\n")
+            return
+        except OSError:
+            pass
+    print(text, end="", file=sys.stderr)
 
 
 def connect(self, address):
@@ -149,7 +156,7 @@ import sys
 
 
 def _listener_observation(event, args):
-    if not os.environ.get("CM_ISOLATION_GUARD_LOG") or getattr(sys, "_cm_listener_tripwire", False):
+    if getattr(sys, "_cm_listener_tripwire", False):
         return  # the always-on in-process guard records and raises instead
     target = None
     if event == "open" and isinstance(args[0], (str, bytes)):

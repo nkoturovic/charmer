@@ -229,6 +229,38 @@ else:
         self.assertEqual((socket.socket.connect, socket.socket.connect_ex), before)
 
 
+class ChildTripwireTests(unittest.TestCase):
+    def test_child_without_log_still_refuses_and_reports_hits(self) -> None:
+        from tests.check_fixture_isolation import GUARD_SOURCE
+
+        with tempfile.TemporaryDirectory(prefix="cm-child-guard-") as tmp:
+            root = Path(tmp)
+            (root / "sitecustomize.py").write_text(GUARD_SOURCE, encoding="utf-8")
+            # Not a socket, and a fabricated audit event: no network or process
+            # operation is possible even when sitecustomize fails to install.
+            script = """
+import socket, sys
+try:
+    socket.socket.connect(object(), ("127.0.0.1", 8317))
+except ConnectionRefusedError:
+    pass
+else:
+    raise AssertionError("connect was not refused")
+try:
+    sys.audit("subprocess.Popen", "systemctl", ["systemctl", "show", "--property=MainPID"], None, None)
+except AssertionError as exc:
+    assert "live listener observation" in str(exc), str(exc)
+else:
+    raise AssertionError("observation was not refused")
+"""
+            child = subprocess.run([sys.executable, "-c", script],
+                                   env={"HOME": tmp, "PYTHONPATH": tmp}, cwd=root,
+                                   capture_output=True, text=True, timeout=20)
+            self.assertEqual(child.returncode, 0, child.stdout + child.stderr)
+            self.assertNotIn("Error in sitecustomize", child.stderr)
+            self.assertEqual(child.stderr.count("BLOCKED "), 2, child.stderr)
+
+
 class IsolationDocsTests(unittest.TestCase):
     def setUp(self) -> None:
         from tests import check_fixture_isolation

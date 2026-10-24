@@ -9,9 +9,10 @@
 What it guarantees on every platform (Python 3.11 or newer):
 
 - The live-gateway tripwire is armed in this process (importing the
-  ``tests`` package does that) and in every Python child process (a
-  ``sitecustomize`` guard on PYTHONPATH that logs and refuses connects to
-  the live gateway ports). Any hit fails the run.
+  ``tests`` package does that) and in Python children inheriting PYTHONPATH
+  and loading ``sitecustomize`` (not ``-I``/``-S`` children or non-Python
+  binaries). The fixture probes' network namespace covers the rest.
+  The guard logs and refuses live-resource access; any hit fails the run.
 - The suite sees a private temporary HOME and TMPDIR, and no XDG or
   ``CLAUDE_CONFIG_DIR`` overrides, so it never reads or writes your own
   charmer or Claude Code state (``--home inherit`` opts out).
