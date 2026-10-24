@@ -656,7 +656,6 @@ class ServedOperatorTests(test_cli.OperatorCommandCase):
                         phase = (relative, owner.name)
                         metadata_phases[phase] = metadata_phases.get(phase, 0) + 1
         self.assertEqual(metadata_phases, {
-            ("cli/commands/models.py", "_run_smoke"): 1,
             ("cli/commands/models.py", "_models_qualify"): 1,
             ("cli/commands/models.py", "_models_admit"): 1,
             ("cli/commands/models.py", "_models_revoke"): 2,

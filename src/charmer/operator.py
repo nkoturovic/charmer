@@ -3252,7 +3252,6 @@ def file_problems(layer: OperatorLayer, file_id: str) -> tuple[OperatorProblem, 
 # ------------------------------------------------------------ evidence and smoke
 SMOKE_DEADLINE_SECONDS = 120.0
 SMOKE_MAX_BYTES = 256 * 1024
-SMOKE_INPUT_TOKENS = 40
 SMOKE_RESULTS = ("pass", "fail", "degenerate")
 
 
@@ -3291,73 +3290,6 @@ def classify_smoke(status: int | None, body: bytes, *, overflow: bool = False, t
     return SmokeOutcome("pass", status, "ok")
 
 
-@dataclass(frozen=True)
-class SmokePlan:
-    """What one consented smoke would send (disclosed before consent)."""
-
-    key: str
-    alias: str
-    effort: str
-    upstream: str
-    auth: str
-    host: str
-    digest: str
-
-
-def smoke_plan(docs: Mapping[str, Any], layer: OperatorLayer, key: str) -> SmokePlan:
-    """The single request of an admission smoke: the default effort's
-    served alias through the loopback gateway (pure)."""
-
-    line = layer.lines[key]
-    entry = line.core_entry
-    selectors = catalog.line_selectors(dict(entry))
-    chosen = next((item for item in selectors if item[0] == entry["default_effort"]), selectors[0])
-    provider = layer.providers.get(line.provider_id)
-    catalog_provider = docs["providers"]["providers"].get(line.provider_id)
-    if provider is not None:
-        upstream, host = provider.origin, urllib.parse.urlsplit(provider.origin).hostname or "unknown"
-        auth = ("none (keyless)" if provider.auth_kind == "none"
-                else f"{provider.auth_kind} from {provider.secret_name} (value not shown)")
-    else:
-        transport = catalog_provider["transport"]
-        if transport["kind"] == "oauth-pool":
-            upstream, host = f"the {transport['pool']} OAuth pool", transport["pool"]
-            auth = "an OAuth pool credential held by the gateway (not shown)"
-        else:
-            parts = urllib.parse.urlsplit(transport["base_url"])
-            upstream, host = f"{parts.scheme}://{parts.netloc}", (parts.hostname or "unknown")
-            spec = transport.get("auth") or {}
-            ref = spec.get("secret_ref")
-            auth = ("none (keyless)" if spec.get("kind") == "none"
-                    else f"{spec.get('kind')} from {str(ref).removeprefix('env:')} (value not shown)")
-    return SmokePlan(key=key, alias=_selector_base(chosen[1]), effort=chosen[0], upstream=upstream, auth=auth,
-                     host=host.lower(), digest=line.definition_digest)
-
-
-def smoke_consent_text(plan: SmokePlan) -> str:
-    """The exact consent for the one smoke request."""
-
-    return (
-        "charmer will make ONE request to a provider:\n"
-        f"  gateway alias: {plan.alias}\n"
-        f"  upstream origin: {plan.upstream}\n"
-        f"  auth: {plan.auth}\n"
-        f"  why: admission smoke for {plan.key}\n"
-        f"  approximately {SMOKE_INPUT_TOKENS} input tokens; {SMOKE_DEADLINE_SECONDS:g} s wall-clock cap; "
-        f"{SMOKE_MAX_BYTES // 1024} KiB response cap\n"
-        "Proceed? [y/N] "
-    )
-
-
-def evidence_record(plan: SmokePlan, outcome: SmokeOutcome, *, versions: Mapping[str, str], at: str) -> dict[str, Any]:
-    return {
-        "digest": plan.digest,
-        "host": plan.host,
-        "versions": {"launcher": versions["launcher"], "client": versions["client"], "gateway": versions["gateway"]},
-        "checks": {"smoke": {"result": outcome.result, "http": outcome.http, "at": at}},
-    }
-
-
 def write_evidence(environ: Mapping[str, str], schemas: OperatorSchemas, key: str, record: Mapping[str, Any]) -> OperatorEvidence:
     """Record one line's verdict-only evidence (0600, locked). A corrupt
     evidence file raises and is never overwritten."""
@@ -3385,32 +3317,6 @@ def smoke_current(evidence: OperatorEvidence | None, key: str, digest: str) -> b
 # ("tools", variant), ("stream",), ("context",), ("exact_client",).
 EVIDENCE_PASS = "pass"
 EVIDENCE_INCONCLUSIVE = "inconclusive"
-
-
-def smoke_check_record(outcome: SmokeOutcome, *, at: str, contracts: Mapping[str, Any] | None) -> dict[str, Any]:
-    """The admission smoke as a check record: a transient failure
-    (no response, 429, 5xx, the wall-clock cap) is inconclusive; the byte cap
-    and definite rejections fail."""
-
-    reason = "ok"
-    if outcome.result == "pass":
-        result = "pass"
-    elif outcome.result == "degenerate":
-        result, reason = ("failed", "oversize") if "byte cap" in outcome.reason else ("inconclusive", "timeout")
-    elif outcome.http is None:
-        result, reason = "inconclusive", "connection"
-    elif outcome.http == 429:
-        result, reason = "inconclusive", "rate-limited"
-    elif 500 <= outcome.http <= 599:
-        result, reason = "inconclusive", "upstream-error"
-    elif outcome.http == 200:
-        result, reason = "failed", "not-a-message"
-    else:
-        result, reason = "failed", "http-status"
-    record: dict[str, Any] = {"result": result, "http": outcome.http, "at": at, "reason": reason}
-    if contracts is not None:
-        record["contracts"] = dict(contracts)
-    return record
 
 
 def merge_checks(existing: Mapping[str, Any] | None, *, digest: str, host: str, versions: Mapping[str, str],

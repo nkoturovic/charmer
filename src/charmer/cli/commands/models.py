@@ -234,61 +234,6 @@ def _credential_present(ctx: providers_cmd.OperatorContext, provider: Mapping[st
     return render_mod.usable_secret(store.get(name)) if catalog.is_keyed_compat(provider) else store.is_set(name)
 
 
-def _run_smoke(
-    runtime: runtime_mod.Runtime, ctx: providers_cmd.OperatorContext, key: str, verb: str, *,
-    input_stream: TextIO, output_stream: TextIO,
-) -> operator_mod.SmokeOutcome | qualify_mod.CheckResult | None:
-    """Consent, ONE request, revalidation, evidence (never under a lock
-    across the prompt or the request). None: declined (nothing sent)."""
-
-    line = ctx.layer.lines[key]
-    effective_docs = operator_mod.apply_transports(ctx.docs, operator_mod.transport_selections(ctx.docs, ctx.ledger))
-    plan = operator_mod.smoke_plan(effective_docs, ctx.layer, key)
-    sentinel, served, problem = render_identity(runtime)
-    if problem:
-        raise OperatorCommandError(f"{verb}: {problem} — nothing sent")
-    unserved = _served_check(key, line, served)
-    if unserved:
-        raise OperatorCommandError(f"{verb}: {unserved} — nothing sent")
-    contracts = runtime.contract_identity()
-    consented = _qualify_authority(runtime, ctx, key, (sentinel, problem), contracts)
-    if not consent.confirm(operator_mod.smoke_consent_text(plan), input_stream=input_stream):
-        return None
-    _qualify_revalidator(runtime, key, consented)(0)
-    provider = (ctx.layer.providers[line.provider_id].entry if line.provider_id in ctx.layer.providers
-                else effective_docs["providers"]["providers"][line.provider_id])
-    if catalog.is_keyed_compat(provider):
-        battery = qualify_mod.build_plan(key, line.core_entry, digest=line.definition_digest,
-                                        provider_id=line.provider_id, provider=provider, checks=("smoke",),
-                                        keyed_replay=True)
-        (outcome,) = qualify_mod.run_battery(battery, runtime.qualify_post)
-    else:
-        outcome = runtime.smoke(plan.alias)
-    # The smoke-evidence commit is its own phase (no served
-    # change, so no preview); the consent and the call ran with no lock.
-    with providers_cmd.operator_write(runtime, preflight=None):
-        fresh = providers_cmd.operator_context(runtime)
-        now = fresh.layer.lines.get(key)
-        after, served_after, problem_after = render_identity(runtime)
-        if (now is None or _served_check(key, now, served_after) or
-                _qualify_authority(runtime, fresh, key, (after, problem_after), runtime.contract_identity()) != consented):
-            raise OperatorCommandError(f"{verb}: configuration changed during the smoke — evidence not recorded; retry")
-        # The smoke merges into the line's evidence (a
-        # transient outcome never replaces a pass; other checks stay).
-        if isinstance(outcome, qualify_mod.CheckResult):
-            record = outcome.record(operator_mod.utc_stamp(), runtime.contract_identity())
-        else:
-            record = operator_mod.smoke_check_record(outcome, at=operator_mod.utc_stamp(),
-                                                     contracts=runtime.contract_identity().as_document())
-        operator_mod.record_checks(fresh.env, fresh.schemas, key, digest=plan.digest, host=plan.host,
-                                   versions=runtime.evidence_versions(), results=[(("smoke",), record)])
-    http = f"HTTP {outcome.http}" if outcome.http is not None else "no HTTP status"
-    detail = "" if outcome.result == "pass" else f": {outcome.reason}"
-    report(output_stream, f"smoke {key}: {outcome.result} ({http}{detail}); evidence recorded for "
-                          f"{line.definition_digest[:16]}")
-    return outcome
-
-
 def _operator_line(ctx: providers_cmd.OperatorContext, key: str, verb: str) -> operator_mod.ResolvedOperatorLine:
     layer = ctx.layer
     line = layer.lines.get(key)

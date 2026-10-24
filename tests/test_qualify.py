@@ -758,6 +758,17 @@ class AdmissionMetadataTests(test_cli.OperatorCommandCase):
         self.runtime.settings_store.set_provider_enabled("acme", False, catalog=self.runtime.lineup_catalog())
         self.served.clear()
 
+    def test_no_admission_smoke_execution_path_remains(self) -> None:
+        from charmer.cli.commands import models
+
+        self.assertFalse(hasattr(models, "_run_smoke"))
+        for name in ("SmokePlan", "smoke_plan", "smoke_consent_text", "smoke_check_record", "evidence_record"):
+            with self.subTest(name=name):
+                self.assertFalse(hasattr(operator_mod, name))
+        for name in ("SmokeOutcome", "classify_smoke", "write_evidence", "smoke_current"):
+            with self.subTest(kept=name):
+                self.assertTrue(callable(getattr(operator_mod, name)))
+
     def test_admit_and_revoke_only_change_badges_even_with_failed_evidence(self) -> None:
         from charmer.cli.commands import models, providers
 
