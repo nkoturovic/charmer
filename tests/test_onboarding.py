@@ -1052,7 +1052,7 @@ class PromoteTests(OnboardingTestCase):
         )
         self.assertNotIn("zetamodel", models_doc["models"])
 
-    def _promote_directory_sync_failure(self, failed_sync: int) -> None:
+    def _promote_directory_sync_failure(self, failed_sync: int, *, interrupt: bool = False) -> None:
         draft = _provider_draft()
         record = self._review(draft, name="d2")
         originals = {entry["path"]: (self.repo / entry["path"]).read_bytes() for entry in record["files"]}
@@ -1064,6 +1064,8 @@ class PromoteTests(OnboardingTestCase):
             if stat.S_ISDIR(os.fstat(fd).st_mode):
                 calls += 1
                 if calls == failed_sync:
+                    if interrupt:
+                        raise KeyboardInterrupt("fixture directory sync")
                     raise OSError(5, "fixture directory sync")
             return real_sync(fd)
 
@@ -1079,6 +1081,12 @@ class PromoteTests(OnboardingTestCase):
 
     def test_promote_restores_after_second_replacement_directory_sync_failure(self) -> None:
         self._promote_directory_sync_failure(2)
+
+    def test_promote_restores_after_first_replacement_directory_sync_interrupt(self) -> None:
+        self._promote_directory_sync_failure(1, interrupt=True)
+
+    def test_promote_restores_after_second_replacement_directory_sync_interrupt(self) -> None:
+        self._promote_directory_sync_failure(2, interrupt=True)
 
     def test_promote_reports_retained_file_and_continues_other_restores(self) -> None:
         draft = _provider_draft()
@@ -1108,6 +1116,7 @@ class PromoteTests(OnboardingTestCase):
                 dev.promote_draft(draft, draft_name="d2", repo=self.repo, review_record=record)
         self.assertIn(MODELS_IMAGE, str(caught.exception))
         self.assertNotIn(PROVIDERS_IMAGE, str(caught.exception))
+        self.assertIn("inspect these files before retrying promotion", str(caught.exception))
         self.assertNotIn("rolled back", str(caught.exception))
         self.assertNotEqual((self.repo / MODELS_IMAGE).read_bytes(), originals[MODELS_IMAGE])
         self.assertEqual((self.repo / PROVIDERS_IMAGE).read_bytes(), originals[PROVIDERS_IMAGE])

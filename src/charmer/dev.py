@@ -1000,8 +1000,17 @@ def promote_draft(
         for entry in journal:
             try:
                 _repo_atomic_write(targets[entry["path"]], images[entry["path"]])
-            except posix_fs.CommittedReplaceError:
-                applied.append(entry["path"])
+            except BaseException:
+                # An interrupt can arrive after replacement too. An unreadable
+                # outcome must not be reported as an unchanged file.
+                try:
+                    changed = targets[entry["path"]].read_bytes() != entry["before"]
+                except FileNotFoundError:
+                    changed = entry["before"] is not None
+                except OSError:
+                    changed = True
+                if changed:
+                    applied.append(entry["path"])
                 raise
             applied.append(entry["path"])
     except BaseException:
@@ -1021,8 +1030,8 @@ def promote_draft(
             except BaseException:
                 unrestored.append(f"{entry['path']} (restore failed; promoted file may remain)")
         if unrestored:
-            raise DevError("promotion failed; rollback incomplete: " + "; ".join(unrestored),
-                           remedy="inspect these files before retrying promotion") from None
+            raise DevError("promotion failed; rollback incomplete: " + "; ".join(unrestored)
+                           + "; inspect these files before retrying promotion") from None
         raise DevError("promotion failed and was rolled back") from None
 
     if drafts_root is not None:
