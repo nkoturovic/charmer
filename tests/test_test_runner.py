@@ -278,6 +278,19 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(units.returncode, 0, units.stdout + units.stderr)
         self.assertNotIn("not runnable", units.stdout)
 
+    def test_fast_keyed_client_with_candidate_is_preflighted(self) -> None:
+        result = self.run_runner("tests.test_keyed_compat_client", "tests.test_pass", "--tier", "fast",
+                                 CHARMER_TEST_CLI_PROXY_API="/fixture/gateway")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("not runnable: tests.test_keyed_compat_client", result.stdout)
+        self.assertIn("needs --tier full or CHARMER_TEST_KEYED_LANE=unit", result.stdout)
+        self.assertIn("ran 2 tests", result.stdout)
+        self.assertNotIn("Traceback", result.stderr)
+        units = self.run_runner("tests.test_keyed_compat_client", "tests.test_pass", "--tier", "fast",
+                                CHARMER_TEST_CLI_PROXY_API="/fixture/gateway", CHARMER_TEST_KEYED_LANE="unit")
+        self.assertEqual(units.returncode, 0, units.stdout + units.stderr)
+        self.assertNotIn("not runnable", units.stdout)
+
     def test_required_keyed_proof_never_passes_without_a_gateway(self) -> None:
         for env in ({"CHARMER_TEST_REQUIRE_GATEWAY": "1"},
                     {"CHARMER_TEST_KEYED_EVIDENCE": "/fixture/evidence"}):

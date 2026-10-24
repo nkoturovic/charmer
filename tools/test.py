@@ -268,6 +268,12 @@ def main(argv: list[str] | None = None) -> int:
                 not_runnable.append(f"{module} needs an explicit candidate gateway for the keyed host lane; "
                                     "set CHARMER_TEST_CLI_PROXY_API=PATH to a candidate build. "
                                     "For unit-only iteration, CHARMER_TEST_KEYED_LANE=unit selects no keyed proof")
+    if (args.tier == "fast" and os.environ.get("CHARMER_TEST_CLI_PROXY_API")
+            and os.environ.get("CHARMER_TEST_KEYED_LANE", "host") == "host"
+            and "tests.test_keyed_compat_client" in selected):
+        selected.remove("tests.test_keyed_compat_client")
+        not_runnable.append("tests.test_keyed_compat_client with a candidate gateway needs --tier full or "
+                            "CHARMER_TEST_KEYED_LANE=unit (no keyed proof)")
     if args.claude is None and args.home == "temp" and args.tier != "fast":
         for module, variable in PINNED_CLIENT_LANES.items():
             if (module in selected and os.environ.get(variable)
