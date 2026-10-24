@@ -15,7 +15,7 @@ Before the modules are vendored, this patch updates the module requirements:
       modified  internal/auth/codex/oauth_server.go
 
  2. cli-proxy-api-kimi-claude-compat.patch
-    sha256 85c568728c5ea7421d31041851cbf09b2e8f7cc702f3e84b3e2ac9e382092eb8
+    sha256 65ce8cb5ba8f80da573214ef6f732938cec16f6d170fd7dc277584ba72235090
       added     internal/config/claude_compat_fields_test.go
       modified  internal/config/config_types.go
       modified  internal/runtime/executor/claude_executor.go

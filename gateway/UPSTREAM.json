@@ -57,7 +57,7 @@
     },
     {
       "basename": "cli-proxy-api-kimi-claude-compat.patch",
-      "sha256": "85c568728c5ea7421d31041851cbf09b2e8f7cc702f3e84b3e2ac9e382092eb8",
+      "sha256": "65ce8cb5ba8f80da573214ef6f732938cec16f6d170fd7dc277584ba72235090",
       "admitted": true
     },
     {
