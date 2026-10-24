@@ -601,6 +601,65 @@ class LinkTests(SessionTestCase):
         self.assertEqual(self.store.last(record["cwd"]), OTHER_ID)
 
 
+class LockAcquisitionFailureTests(SessionTestCase):
+    def test_lifecycle_acquire_failure_releases_runtime_index(self):
+        for operation in (
+            lambda: self.store.reconcile_runtime(
+                FIXED_ID, observed_runtime_id=OTHER_ID, source="resume"),
+            lambda: self.store.relink_runtime(FIXED_ID, observed_runtime_id=OTHER_ID),
+        ):
+            with self.subTest(operation=operation):
+                index = self.store.runtime_index_lock()
+                lifecycle = self.store.lifecycle_lock(FIXED_ID)
+                lifecycle.lock_path.symlink_to(self.root / "unsafe-target")
+                probe = self.store.runtime_index_lock()
+                try:
+                    with mock.patch.object(self.store, "runtime_index_lock", return_value=index):
+                        with self.assertRaises(state.StateError):
+                            operation()
+                    self.assertTrue(probe.acquire(blocking=False),
+                                    "runtime-index lock leaked after lifecycle acquire failed")
+                finally:
+                    probe.release()
+                    index.release()
+                    lifecycle.lock_path.unlink()
+
+    def test_second_pointer_acquire_failure_releases_every_earlier_lock(self):
+        record = _record(self.snapshot)
+        _v3.save_any(self.store, record)
+        self.store.update_last(record["cwd"], FIXED_ID)
+        before = self.store.read_record_bytes(FIXED_ID)
+        touched = sorted({self.store._pointer_path(record["cwd"]),
+                          self.store._pointer_path("/new/project")}, key=str)
+        unsafe = state.FileLock(touched[1]).lock_path
+        unsafe.unlink(missing_ok=True)
+        unsafe.symlink_to(self.root / "unsafe-target")
+        locks = []
+        acquire = state.FileLock.acquire
+
+        def tracked(lock, *args, **kwargs):
+            locks.append(lock)
+            return acquire(lock, *args, **kwargs)
+
+        try:
+            with mock.patch.object(state.FileLock, "acquire", tracked):
+                with self.assertRaises(state.StateError):
+                    self.store.relink_runtime(FIXED_ID, observed_runtime_id=OTHER_ID,
+                                              cwd="/new/project")
+            for probe in (state.FileLock(touched[0]), self.store.lifecycle_lock(FIXED_ID),
+                          self.store.runtime_index_lock()):
+                try:
+                    self.assertTrue(probe.acquire(blocking=False),
+                                    f"earlier lock leaked: {probe.lock_path.name}")
+                finally:
+                    probe.release()
+            self.assertEqual(self.store.read_record_bytes(FIXED_ID), before)
+            self.assertEqual(self.store.last(record["cwd"]), FIXED_ID)
+        finally:
+            for lock in reversed(locks):
+                lock.release()
+
+
 class IdentityReconciliationTests(SessionTestCase):
     def test_runtime_drift_becomes_authoritative_and_old_id_is_alias(self) -> None:
         _v3.save_any(self.store, _record(self.snapshot))
@@ -1568,6 +1627,25 @@ class CorruptForgetStoreTests(SessionTestCase):
         state.atomic_write(
             self.store.sessions_dir / f"{FIXED_ID}.json", b"{not json"
         )
+
+    def test_parser_limits_and_truncation_allow_forget_but_block_unknown_ownership(self):
+        for payload in (b'{"integer":' + b"9" * 5000 + b"}",
+                        b"[" * 200_000 + b"0" + b"]" * 200_000, b'{"truncated":'):
+            with self.subTest(size=len(payload)):
+                path = self.store._record_path(FIXED_ID)
+                state.atomic_write(path, payload)
+                with self.assertRaisesRegex(SessionError, "cannot determine runtime ownership"):
+                    self.store.resolve(OTHER_ID)
+                self.assertEqual(path.read_bytes(), payload)
+                self.store.update_last("/project/path", FIXED_ID)
+                checked = []
+                removed, _scope_removed = self.store.forget_session(
+                    FIXED_ID, pre_delete_check=lambda record: checked.append(record)
+                )
+                self.assertEqual(checked, [None])
+                self.assertTrue(removed)
+                self.assertFalse(path.exists())
+                self.assertIsNone(self.store.last("/project/path"))
 
     def test_corrupt_record_forgets_scope_and_pointers(self) -> None:
         _v3.save_any(self.store, _record(self.snapshot))
