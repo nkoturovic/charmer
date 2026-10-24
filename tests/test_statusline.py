@@ -556,6 +556,21 @@ class CompiledStatusLineTests(V4Case):
                         (problems, attention))
         self.assertFalse(any("subagent status line differs" in text for text in attention))
 
+    def test_a_status_line_with_shell_syntax_is_an_unexpected_executable_setting(self) -> None:
+        record = self.launch_fresh()
+        mid = record["managed_id"]
+        compiled = self.settings(mid)
+        shim = str(scope.status_line_shim_path(self.store.root))
+        directory = str(Path(shim).parent.parent)
+        for command in (f"true;{shim}", f"{shim};true", f"{directory}/$(id)/../bin/charmer-statusline",
+                        "/tmp/$(id)/bin/charmer-statusline", f"`id`{shim}", f"$(id){shim}"):
+            with self.subTest(command=command):
+                self.write_settings(mid, {**compiled, "subagentStatusLine": {"type": "command", "command": command}})
+                problems, attention = self.integrity(record)
+                self.assertTrue(any("scope differs from the record-authoritative compile" in text for text in problems),
+                                (problems, attention))
+                self.assertFalse(any("subagent status line differs" in text for text in attention), attention)
+
     # Layers that exist but cannot be read as the client parses them: each
     # holds the user's key, so reading it as "not configured" would compile
     # over the user's opt-out. (kind, bytes, doctor's value-free reason)
@@ -905,12 +920,25 @@ class StatusLineShimTests(unittest.TestCase):
         setting = scope.status_line_setting(self.root / "a state" / "bin" / "charmer-statusline")
         self.assertEqual(setting["command"], f"'{self.root}/a state/bin/charmer-statusline'")
         self.assertTrue(scope.is_status_line_setting(setting))
+        self.assertTrue(scope.is_status_line_setting({"type": "command", "command": "/s/bin/charmer-statusline"}))
         for other in ({"type": "command", "command": "/x/bin/other"}, {"type": "command", "command": "printf ''"},
                       {"type": "command", "command": "/s/bin/charmer-statusline --x"},
                       {"type": "static", "command": "/s/bin/charmer-statusline"},
                       {"type": "command", "command": "/s/bin/charmer-statusline", "padding": 1}, "x", None):
             with self.subTest(other=other):
                 self.assertFalse(scope.is_status_line_setting(other))
+        # Shell operators, substitutions and other spellings of a path are
+        # not the shim: only its exact shlex.quote form of a literal path.
+        for command in ("true;/tmp/bin/charmer-statusline", "/tmp/$(id)/bin/charmer-statusline",
+                        "/tmp/`id`/bin/charmer-statusline", "$HOME/bin/charmer-statusline",
+                        "/tmp/bin/charmer-statusline;true", "/tmp/bin/charmer-statusline && id",
+                        "/tmp/bin/charmer-statusline|id", "bin/charmer-statusline", "./bin/charmer-statusline",
+                        "/tmp/../tmp/bin/charmer-statusline", "/tmp//bin/charmer-statusline",
+                        "/tmp/./bin/charmer-statusline", "'/tmp/bin/charmer-statusline'",
+                        '"/tmp/bin/charmer-statusline"', "/tmp/bin/charmer-statusline\n", " /tmp/bin/charmer-statusline",
+                        "/tmp/bin/charmer\\-statusline", "'/r/a state'/bin/charmer-statusline"):
+            with self.subTest(command=command):
+                self.assertFalse(scope.is_status_line_setting({"type": "command", "command": command}))
 
     def test_rows_are_forwarded_only_on_exit_zero(self) -> None:
         ok = self.fake_launcher('[ "$1 $2" = "statusline subagents" ] || exit 9\n'

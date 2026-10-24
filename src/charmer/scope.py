@@ -290,17 +290,27 @@ def status_line_setting(path: Path | str) -> dict[str, str]:
 
 
 def is_status_line_setting(value: object) -> bool:
-    """Whether ``value`` is a :func:`status_line_setting`: a command that runs
-    a ``bin/charmer-statusline`` shim and nothing else."""
+    """Whether ``value`` is a :func:`status_line_setting`: exactly the
+    ``shlex.quote`` form of one absolute, literal, normalized path ending in
+    ``bin/charmer-statusline``. A shell operator, a substitution, a relative
+    or ``..`` path, or any other spelling is not (it stays an unexpected
+    executable setting)."""
 
     if not isinstance(value, Mapping) or set(value) != {"type", "command"} or value["type"] != "command":
         return False
+    command = value["command"]
+    if not isinstance(command, str):
+        return False
     try:
-        words = shlex.split(value["command"]) if isinstance(value["command"], str) else []
+        words = shlex.split(command)
     except ValueError:
         return False
-    return (len(words) == 1 and PurePosixPath(words[0]).name == STATUS_LINE_SHIM_RELATIVE.name
-            and PurePosixPath(words[0]).parent.name == STATUS_LINE_SHIM_RELATIVE.parent.name)
+    if len(words) != 1 or shlex.quote(words[0]) != command:
+        return False
+    path = PurePosixPath(words[0])
+    return (path.is_absolute() and str(path) == words[0] and ".." not in path.parts
+            and path.name == STATUS_LINE_SHIM_RELATIVE.name
+            and path.parent.name == STATUS_LINE_SHIM_RELATIVE.parent.name)
 
 
 def resolve_hook_command(
