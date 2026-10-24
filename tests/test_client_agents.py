@@ -809,9 +809,15 @@ class SendMessageResumeSpikeTests(_SpikeRealBinaryTestCase):
         surface = responder.tool_surface
         self.assertIsNotNone(surface)
         assert surface is not None
-        # The client offers SendMessage to the lead in this mode.
-        self.assertIn("SendMessage", surface["names"])
-        self.assertTrue({"to", "message"} <= set(surface["send_message_props"] or ()))
+        # The client offers SendMessage to the lead in this mode: in the tool
+        # list, or (2.1.304+ behind a custom base URL, re-run on client
+        # 2.1.310) as a deferred tool that ToolSearch fetches; a call by name
+        # runs either way (the send2 outcome below).
+        deferred = "SendMessage" not in surface["names"]
+        if deferred:
+            self.assertTrue({"ToolSearch", "DeferredToolPlaceholder"} <= set(surface["names"]), surface)
+        else:
+            self.assertTrue({"to", "message"} <= set(surface["send_message_props"] or ()))
         self.assertIn("spawn1", responder.agent_ids)
         self.assertEqual(
             responder.send_outcomes.get("send2"),
@@ -827,7 +833,7 @@ class SendMessageResumeSpikeTests(_SpikeRealBinaryTestCase):
         self.assertEqual(resumed.definition, "A")
         self.assertEqual(resumed.system_sha12, original.system_sha12)
         self.assertGreater(resumed.message_count, original.message_count)
-        props = ",".join(surface["send_message_props"] or ())
+        props = "deferred" if deferred else ",".join(surface["send_message_props"] or ())
         sha_relation = (
             "sha-equal" if resumed.system_sha12 == original.system_sha12 else "sha-differs"
         )

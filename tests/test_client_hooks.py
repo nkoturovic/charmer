@@ -1588,6 +1588,8 @@ class _ReplayUpstream:
                    "messages": [_digest(message) for message in messages], "thinking": blocks,
                    "tools": prefix["tools"], "system": prefix["system"], "status": 200, "answer": None,
                    "system_marker": _REPLAY_SYSTEM_MARKER in json.dumps(body.get("system")),
+                   "system_turns": sum(1 for message in messages
+                                       if isinstance(message, dict) and message.get("role") == "system"),
                    "tool_result": any(isinstance(block, dict) and block.get("tool_use_id") == _REPLAY_TOOL_ID
                                       for message in messages if isinstance(message.get("content"), list)
                                       for block in message["content"])}
@@ -1614,7 +1616,9 @@ class _ReplayUpstream:
 
 # The history matrix, one session in this order: label -> (argv
 # without --model/--settings, the provider policy the fixture simulates).
-# The tool-schema change removes one offered tool (WebFetch). The
+# The tool-schema change removes one offered tool (Write; client 2.1.310
+# defers WebFetch behind ToolSearch, so removing it no longer changes the
+# offered schema). The
 # system-prefix change is a DISTINCT leg: the resumed launch appends
 # a marker to the system prompt with the system-prompt record switched off
 # (``--system-prompt-snapshot off``: 2.1.286 otherwise re-sends the system
@@ -1624,7 +1628,7 @@ _REPLAY_STEPS: tuple[tuple[str, tuple[str, ...], dict[str, bool]], ...] = (
     ("append", ("-p", "PROBE-D5R-APPEND", "--dangerously-skip-permissions"), {}),
     ("resume", ("-p", "PROBE-D5R-RESUME"), {}),
     ("account", ("-p", "PROBE-D5R-ACCOUNT"), {"foreign_account": True}),
-    ("tool-schema", ("-p", "PROBE-D5R-PREFIX", "--disallowedTools", "WebFetch"), {"prefix_bound": True}),
+    ("tool-schema", ("-p", "PROBE-D5R-PREFIX", "--disallowedTools", "Write"), {"prefix_bound": True}),
     ("system-prefix", ("-p", "PROBE-D5R-SYSTEM", "--append-system-prompt", _REPLAY_SYSTEM_MARKER,
                        "--system-prompt-snapshot", "off"), {"prefix_bound": True}),
     ("switch", ("-p", "PROBE-D5R-SWITCH"), {}),
@@ -1641,6 +1645,10 @@ _REPLAY_PARTS = {
     "after-compact": "none",
 }
 _REPLAY_REFUSED = ("tool-schema", "system-prefix")
+# The client's own resends of a refused (400) request before it surfaces the
+# error: none on 2.1.302; client 2.1.310 sends a 400 it does not recognise
+# again as sent, then twice without tool search (measured).
+_REPLAY_RESENDS = 3
 
 
 def _d5_replay_qualification(results: dict[str, Any], up: list[dict[str, Any]], sent: list[dict[str, Any]],
@@ -1661,13 +1669,16 @@ def _d5_replay_qualification(results: dict[str, Any], up: list[dict[str, Any]], 
       drop, not an error);
     - tool-schema: the tool schema differs from the issuing request's, the
       system prefix does not; the block is forwarded byte-exact (never
-      silently altered); the prefix-bound 400 surfaces as one visible
-      failure, no retry;
+      silently altered); the prefix-bound 400 surfaces as a visible failure
+      after at most :data:`_REPLAY_RESENDS` client resends, each carrying the
+      block byte-exact (client 2.1.310 resends a 400 it does not recognise:
+      once as sent, then twice without tool search);
     - system-prefix: the outgoing system-prefix digest differs
       from the issuing request's (it carries the appended marker), the tool
       schema does not, so the tool-schema case never counts as this leg;
       the client either replays the block byte-exact (then the prefix-bound
-      400 surfaces as one visible failure, no retry) or drops it whole
+      400 surfaces as a visible failure after the same bounded resends) or
+      drops it whole
       (then the turn completes); the observed disposition is the part. A
       matrix with the tool-schema leg but without this one fails;
     - switch: on a model switch the client drops the block whole (the rest
@@ -1743,9 +1754,13 @@ def _d5_replay_qualification(results: dict[str, Any], up: list[dict[str, Any]], 
             if label in ("resume", "account"):
                 need(_REPLAY_OK in (result.stdout or ""), label, "the turn did not complete")
             if label in _REPLAY_REFUSED:
-                need(len(main) == 1 and first["status"] == 400 and len(relayed) == 1, label,
-                     "the prefix-bound 400 was retried or not surfaced once")
+                need(1 <= len(main) <= 1 + _REPLAY_RESENDS and len(relayed) == len(main)
+                     and all(row["status"] == 400 for row in main), label,
+                     "the prefix-bound 400 was not surfaced within the client's bounded resends")
+                need(all(row["thinking"] and all(block["exact"] for block in row["thinking"]) for row in main),
+                     label, "a resend did not carry the signed thinking block byte-exact")
                 need("400" in (result.stdout or "") + (result.stderr or ""), label, "the 400 is not visible")
+                parts[label] = f"{parts[label]}({len(main)} sent)"
         elif label == "switch":
             need(not first["thinking"] and first["tool_result"], label,
                  "the model switch did not drop the block whole while keeping the history")
@@ -2153,10 +2168,11 @@ class D5GatewayQualificationSelfTests(unittest.TestCase):
 class D5ReplayQualificationSelfTests(unittest.TestCase):
     """Pure: the history matrix's defined paths, and that a
     dropped or mutated replay, an error instead of the account-bound drop,
-    a retried or hidden prefix 400, a block kept across a model switch and
+    a prefix 400 hidden or resent past the client's bound (or resent without
+    the block), a block kept across a model switch and
     a block replayed after compaction all fail; the system-prefix leg
     fails when the system prefix did not change, when the tool
-    schema changed instead, when its 400 is retried or hidden, and when it
+    schema changed instead, when its 400 is resent past the bound or hidden, and when it
     is missing beside the tool-schema leg, and a whole-block client drop is
     recorded as its disposition. The real-path controls are
     ``SonnetForcedToolClassTests.test_replay_negative_control_mutated_signature``
@@ -2203,8 +2219,24 @@ class D5ReplayQualificationSelfTests(unittest.TestCase):
     def test_defined_paths_qualify(self):
         errors, part = self.errors()
         self.assertEqual(errors, [])
-        self.assertEqual(part, ",".join(f"{label}={value}" for label, value in _REPLAY_PARTS.items()))
-        self.assertIn("system-prefix=replay-exact+400-visible", part)
+        self.assertEqual(part, ",".join(f"{label}={value}" + ("(1 sent)" if label in _REPLAY_REFUSED else "")
+                                        for label, value in _REPLAY_PARTS.items()))
+        self.assertIn("system-prefix=replay-exact+400-visible(1 sent)", part)
+
+    def test_bounded_client_resends_of_a_refused_request_qualify(self):
+        """Client 2.1.310 resends a 400 it does not recognise (as sent, then
+        twice without tool search): up to the bound, each carrying the block."""
+
+        def resent(_results, up, sent):
+            for index in (5, 4):
+                up[index + 1:index + 1] = [dict(up[index]) for _ in range(_REPLAY_RESENDS)]
+            sent.extend({"run": run, "upstream_hits": 1} for run in ("tool-schema", "system-prefix")
+                        for _ in range(_REPLAY_RESENDS))
+
+        errors, part = self.errors(resent)
+        self.assertEqual(errors, [])
+        self.assertIn(f"tool-schema=400-visible({1 + _REPLAY_RESENDS} sent)", part)
+        self.assertIn(f"system-prefix=replay-exact+400-visible({1 + _REPLAY_RESENDS} sent)", part)
 
     def test_system_prefix_client_drop_is_recorded(self):
         def client_drop(results, up, _sent):
@@ -2280,7 +2312,11 @@ class D5ReplayQualificationSelfTests(unittest.TestCase):
             up[3]["answer"] = "replayed"
 
         def prefix_retried(_results, up, sent):
-            up.insert(5, dict(up[4]))
+            up[5:5] = [dict(up[4]) for _ in range(_REPLAY_RESENDS + 1)]
+            sent.extend({"run": "tool-schema", "upstream_hits": 1} for _ in range(_REPLAY_RESENDS + 1))
+
+        def prefix_resent_without_block(_results, up, sent):
+            up.insert(5, {**up[4], "thinking": []})
             sent.append({"run": "tool-schema", "upstream_hits": 1})
 
         def prefix_hidden(results, up, _sent):
@@ -2288,8 +2324,8 @@ class D5ReplayQualificationSelfTests(unittest.TestCase):
             up[4].update(status=200, answer="replayed")
 
         def system_retried(_results, up, sent):
-            up.insert(6, dict(up[5]))
-            sent.append({"run": "system-prefix", "upstream_hits": 1})
+            up[6:6] = [dict(up[5]) for _ in range(_REPLAY_RESENDS + 1)]
+            sent.extend({"run": "system-prefix", "upstream_hits": 1} for _ in range(_REPLAY_RESENDS + 1))
 
         def system_hidden(results, up, _sent):
             results["system-prefix"] = types.SimpleNamespace(returncode=1, stdout="", stderr="")
@@ -2308,9 +2344,13 @@ class D5ReplayQualificationSelfTests(unittest.TestCase):
             sent[0]["upstream_hits"] = 2
 
         cases = {account_error: "account: client exit status 1",
-                 prefix_retried: "tool-schema: the prefix-bound 400 was retried or not surfaced once",
+                 prefix_retried: "tool-schema: the prefix-bound 400 was not surfaced within the client's "
+                                 "bounded resends",
+                 prefix_resent_without_block: "tool-schema: a resend did not carry the signed thinking block "
+                                              "byte-exact",
                  prefix_hidden: "tool-schema: provider disposition 'replayed', not 'prefix-mismatch'",
-                 system_retried: "system-prefix: the prefix-bound 400 was retried or not surfaced once",
+                 system_retried: "system-prefix: the prefix-bound 400 was not surfaced within the client's "
+                                 "bounded resends",
                  system_hidden: "system-prefix: the 400 is not visible",
                  system_accepted: "system-prefix: provider disposition 'replayed', not 'prefix-mismatch'",
                  switch_kept: "switch: the model switch did not drop the block whole while keeping the history",
