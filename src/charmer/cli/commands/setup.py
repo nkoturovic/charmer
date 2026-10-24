@@ -144,8 +144,6 @@ def _bare(runtime: runtime_mod.Runtime, *, redo: bool, input_stream: TextIO | No
         current = state.step(step)
         if current.state == "done" and not redo:
             continue
-        if step == "test" and not redo and current.state == "optional":
-            pass
         code = _run_step(runtime, step, input_stream=input_stream, output_stream=output_stream, write=write)
         if code == EXIT_CANCELLED or (code != EXIT_READY and step != "test"):
             return code

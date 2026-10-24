@@ -4,9 +4,11 @@ statuses (0 ok, 1 refused or not done, 2 usage, 3 declined, 130 cancelled)."""
 
 from __future__ import annotations
 
+import ast
 import contextlib
 import dataclasses
 import hashlib
+import inspect
 import io
 import json
 import os
@@ -150,6 +152,14 @@ class StatusTests(SetupCase):
 
 
 class ModeTests(SetupCase):
+    def test_bare_setup_has_no_noop_conditions(self) -> None:
+        # The optional test runs through the ordinary step path; a separate
+        # condition with no effect wrongly suggests a different policy.
+        tree = ast.parse(inspect.getsource(setup_cmd._bare))
+        empty = [node.lineno for node in ast.walk(tree) if isinstance(node, ast.If)
+                 and len(node.body) == 1 and isinstance(node.body[0], ast.Pass)]
+        self.assertEqual(empty, [], "bare setup contains a no-op condition")
+
     def test_usage_errors_exit_2(self) -> None:
         answers = self.answers({"version": 1})
         cases = [
