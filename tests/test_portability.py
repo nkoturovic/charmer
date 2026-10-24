@@ -277,6 +277,62 @@ class ExportTests(PortabilityCase):
         self.assertIn("is invalid", doctor_info(now)[0])
         self.assertEqual(receipt.read_bytes(), b"{}\n")
 
+    def test_export_keeps_another_writers_temporary_file(self) -> None:
+        for symlink in (False, True):
+            with self.subTest(symlink=symlink):
+                target = self.outside / f"bundle-{symlink}.json"
+                temporary = target.with_name(f".{target.name}.{os.getpid()}.tmp")
+                other = self.outside / f"other-{symlink}"
+                other.write_bytes(b"untouched")
+                if symlink:
+                    temporary.symlink_to(other)
+                else:
+                    temporary.write_bytes(b"untouched")
+                code, out, err = self.op(["export", "--out", str(target)])
+                self.assertTrue(os.path.lexists(temporary), "another writer's temporary file was removed")
+                self.assertEqual(temporary.read_bytes(), b"untouched")
+                self.assertEqual(other.read_bytes(), b"untouched")
+                self.assertEqual(code, 0, out + err)
+                self.assertEqual(json.loads(target.read_bytes()), self.export_json()[0])
+                self.assertEqual(stat.S_IMODE(target.stat().st_mode), 0o600)
+
+    def test_export_directory_sync_failure_reports_written_without_receipt(self) -> None:
+        target = self.outside / "bundle.json"
+        receipt = portability.receipt_path(self.runtime.session_store.root)
+        expected = self.export_json()[0]
+        real_sync = os.fsync
+        directory = self.outside.stat()
+        for number in (5, 28):
+            with self.subTest(errno=number):
+                target.write_bytes(b"previous export")
+
+                def sync(fd):
+                    info = os.fstat(fd)
+                    if (info.st_dev, info.st_ino) == (directory.st_dev, directory.st_ino):
+                        raise OSError(number, "fixture directory sync")
+                    return real_sync(fd)
+
+                with mock.patch.object(os, "fsync", side_effect=sync):
+                    code, out, err = self.op(["export", "--out", str(target)])
+                self.assertEqual((code, out), (1, ""))
+                self.assertIn("written; durability unconfirmed", err)
+                self.assertIn("no export receipt was recorded", err)
+                self.assertFalse(receipt.exists())
+                self.assertEqual(json.loads(target.read_bytes()), expected)
+                self.assertEqual(stat.S_IMODE(target.stat().st_mode), 0o600)
+                self.assertEqual(set(self.outside.iterdir()), {target})
+
+    def test_export_failure_before_replace_preserves_previous_file(self) -> None:
+        target = self.outside / "bundle.json"
+        target.write_bytes(b"previous export")
+        for operation in ("fsync", "replace"):
+            with self.subTest(operation=operation), \
+                    mock.patch.object(os, operation, side_effect=OSError(5, "fixture")):
+                with self.assertRaises(OSError):
+                    portability.write_output(target, b"new export")
+            self.assertEqual(target.read_bytes(), b"previous export")
+            self.assertEqual(set(self.outside.iterdir()), {target})
+
     def test_impossible_receipt_dates_are_unusable_without_rewriting(self) -> None:
         path = portability.receipt_path(self.runtime.session_store.root)
         for stamp in ("2026-13-01T00:00:00Z", "2026-02-30T00:00:00Z",

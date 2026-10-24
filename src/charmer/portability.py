@@ -38,6 +38,7 @@ from . import operator as operator_mod
 from . import profile as profile_mod
 from . import settings as settings_mod
 from . import validate as schema_validate
+from .platform import posix_fs
 
 FORMAT = "charmer-operator-export"
 VERSION = 1
@@ -706,30 +707,7 @@ def write_output(target: Path, data: bytes) -> None:
     """Same-directory atomic write (0600, file and directory fsync); a failure
     before the rename leaves any previous file untouched and raises."""
 
-    descriptor, temporary = None, target.with_name(f".{target.name}.{os.getpid()}.tmp")
-    try:
-        descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
-        with os.fdopen(descriptor, "wb") as handle:
-            descriptor = None
-            handle.write(data)
-            handle.flush()
-            os.fsync(handle.fileno())
-        if os.path.islink(target):
-            raise PortabilityError(f"export --out {target}: became a symlink")
-        os.replace(temporary, target)
-    except BaseException:
-        if descriptor is not None:
-            os.close(descriptor)
-        try:
-            os.unlink(temporary)
-        except OSError:
-            pass
-        raise
-    directory = os.open(target.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
-    try:
-        os.fsync(directory)
-    finally:
-        os.close(directory)
+    posix_fs.atomic_replace(target, data, mode=0o600)
 
 
 @dataclass(frozen=True)
