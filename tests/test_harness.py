@@ -451,6 +451,27 @@ class IsolationDocsTests(unittest.TestCase):
                 self.assertFalse(self.isolation._refresh_catalog_docs(root, {}, [], kind="model"))
 
 
+class SyntaxWarningGateTests(unittest.TestCase):
+    def test_hygiene_rejects_invalid_escape_without_changing_warning_filters(self) -> None:
+        import warnings
+        from tests import test_hygiene as hygiene
+
+        with tempfile.TemporaryDirectory(prefix="cm-syntax-") as tmp:
+            path = Path(tmp) / "sample.py"
+            path.write_text("VALUE = b'" + "\\" + "q'\n")
+            gate = hygiene.ImportBoundaryTests("test_comments_explain_behavior_without_review_references")
+            with mock.patch.object(hygiene, "repository_files", return_value=[path]), \
+                    warnings.catch_warnings():
+                warnings.simplefilter("ignore", SyntaxWarning)
+                before = list(warnings.filters)
+                with self.assertRaises((SyntaxError, SyntaxWarning)):
+                    gate.test_comments_explain_behavior_without_review_references()
+                self.assertEqual(warnings.filters, before)
+                path.write_text("VALUE = b'valid'\n")
+                gate.test_comments_explain_behavior_without_review_references()
+                self.assertEqual(warnings.filters, before)
+
+
 class TierTests(unittest.TestCase):
     def _env(self, value: str | None) -> None:
         patch = mock.patch.dict(os.environ)
