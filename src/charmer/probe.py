@@ -2754,10 +2754,29 @@ def _run_bounded_callback(
 
 
 def _kill_process_group(process: subprocess.Popen) -> None:
+    # Every caller creates a new group led by this child. Keep its group id
+    # even after poll()/communicate() has reaped the leader: children may remain.
     try:
-        os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+        os.killpg(process.pid, signal.SIGKILL)
     except (ProcessLookupError, PermissionError):
         pass
+
+
+def _kill_and_drain(process: subprocess.Popen[str]) -> tuple[str, str]:
+    """Bound timeout cleanup even if an escaped descendant holds the pipes."""
+    _kill_process_group(process)
+    try:
+        return process.communicate(timeout=2)
+    except subprocess.TimeoutExpired as exc:
+        raise ProbeError(
+            "probe timed out: an escaped descendant may still hold output pipes "
+            "after process-group teardown; drain exceeded 2 seconds"
+        ) from exc
+    finally:
+        for stream in (process.stdout, process.stderr):
+            if stream is not None:
+                stream.close()
+        process.wait(timeout=2)
 
 
 def _native_command(
@@ -2870,8 +2889,10 @@ def run_native(
     ``token``, ``child_env`` and ``path_dirs`` pass through to
     :meth:`ProbeFixture.environ` (token opt-out, allowlisted typed env,
     validated fixture bin dirs) and are validated before anything starts.
-    The whole process group is SIGKILLed and reaped on timeout or error. A
-    caller-supplied provider keeps its lifecycle; an internally created one is
+    The process group is SIGKILLed and the direct child reaped on timeout or
+    error. The post-kill pipe drain is bounded to two seconds; an escaped
+    descendant keeping the pipes open raises ProbeError rather than hanging.
+    A caller-supplied provider keeps its lifecycle; an internally created one is
     stopped deterministically. charmer's own copy runs under its use
     lock (:func:`_hold_owned_copy`), taken before the hash check and
     inherited by the client.
@@ -2943,8 +2964,7 @@ def run_native(
             returncode: int | None = process.returncode
         except subprocess.TimeoutExpired:
             timed_out = True
-            _kill_process_group(process)
-            stdout, stderr = process.communicate()
+            stdout, stderr = _kill_and_drain(process)
             returncode = None
         except BaseException:
             _kill_process_group(process)
@@ -3077,6 +3097,7 @@ def run_native_pty(
             pid_namespace=pid_namespace,
         )
         master, slave = pty.openpty()
+        os.set_blocking(master, False)
         fcntl.ioctl(
             slave,
             termios.TIOCSWINSZ,
@@ -3112,28 +3133,40 @@ def run_native_pty(
         ) -> None:
             nonlocal cursor
             while until is None or until not in output[cursor:]:
-                if process is None or process.poll() is not None:
-                    if until is not None and until not in output[cursor:]:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise timed_out("client-exit" if until is None else "marker")
+                # An exited child can still have left the awaited marker in
+                # the PTY buffer. Drain it before treating exit as failure.
+                exited = process.poll() is not None
+                ready, _, _ = select.select(
+                    [master], [], [], 0 if exited else min(0.2, remaining)
+                )
+                chunk = b""
+                if ready:
+                    try:
+                        chunk = os.read(master, 65536)
+                    except BlockingIOError:
+                        continue
+                    except OSError as exc:
+                        if exc.errno != errno.EIO:
+                            raise
+                elif not exited:
+                    if until is None:
+                        return
+                    continue
+                if not chunk:
+                    if until is not None:
                         raise ProbeError(
                             f"probe PTY exited before marker {until!r}; output="
                             f"{bytes(output[-4000:])!r}"
                         )
-                    return
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    raise timed_out("client-exit" if until is None else "marker")
-                ready, _, _ = select.select([master], [], [], min(0.2, remaining))
-                if not ready:
-                    if until is None:
-                        return
-                    continue
-                try:
-                    chunk = os.read(master, 65536)
-                except OSError as exc:
-                    if exc.errno == errno.EIO:
-                        return
-                    raise
-                if not chunk:
+                    # EOF/EIO can precede process exit. Waiting avoids a hot
+                    # read loop on a permanently readable closed terminal.
+                    try:
+                        process.wait(timeout=max(0, deadline - time.monotonic()))
+                    except subprocess.TimeoutExpired:
+                        raise timed_out("client-exit") from None
                     return
                 output.extend(chunk)
                 if len(output) > 2 * 1024 * 1024:
@@ -3160,32 +3193,29 @@ def run_native_pty(
                     )
                 pending = memoryview(interaction.send)
                 while pending:
-                    written = os.write(master, pending)
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise timed_out("send")
+                    _, ready, _ = select.select([], [master], [], min(0.2, remaining))
+                    if not ready:
+                        continue
+                    if time.monotonic() >= deadline:
+                        raise timed_out("send")
+                    try:
+                        written = os.write(master, pending)
+                    except BlockingIOError:
+                        continue
                     if written <= 0:
                         raise ProbeError("probe PTY write made no progress")
                     pending = pending[written:]
                 completed_interactions += 1
             while process.poll() is None:
-                if time.monotonic() >= deadline:
-                    raise timed_out("client-exit")
                 read_more(None)
-            while True:
-                ready, _, _ = select.select([master], [], [], 0)
-                if not ready:
-                    break
-                try:
-                    chunk = os.read(master, 65536)
-                except OSError as exc:
-                    if exc.errno == errno.EIO:
-                        break
-                    raise
-                if not chunk:
-                    break
-                output.extend(chunk)
+            # Keep the final drain under the same deadline and output cap.
+            read_more(None)
         except BaseException:
-            if process.poll() is None:
-                _kill_process_group(process)
-                process.wait()
+            _kill_process_group(process)
+            process.wait()
             if domain_before is not None:
                 domain_after = snapshot_daemon_domain(live)
                 siblings_after = fixture_daemon_domains(live)
@@ -4179,8 +4209,7 @@ def run_takeover_probe(
             returncode: int | None = process.returncode
         except subprocess.TimeoutExpired:
             timed_out = True
-            _kill_process_group(process)
-            stdout, stderr = process.communicate()
+            stdout, stderr = _kill_and_drain(process)
             returncode = None
         domain_after = snapshot_daemon_domain(live)
         siblings_after = fixture_daemon_domains(live)

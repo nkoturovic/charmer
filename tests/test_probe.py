@@ -10,6 +10,7 @@ against fake executables created inside each test's private scratch tree.
 from __future__ import annotations
 
 import contextlib
+import errno
 import hashlib
 import http.client
 import http.server
@@ -144,6 +145,55 @@ class ProbeTestCase(unittest.TestCase):
 
     def _cleanup(self) -> None:
         shutil.rmtree(self.root, ignore_errors=True)
+
+    @contextlib.contextmanager
+    def _watchdog(self, seconds: float = 5.0):
+        """Independent wall-clock bound, including when the driver is reverted."""
+
+        def expired(signum, frame):
+            self.fail("probe exceeded independent watchdog")
+
+        previous = signal.signal(signal.SIGALRM, expired)
+        timer = signal.setitimer(signal.ITIMER_REAL, seconds)
+        try:
+            yield
+        finally:
+            signal.setitimer(signal.ITIMER_REAL, *timer)
+            signal.signal(signal.SIGALRM, previous)
+
+    @contextlib.contextmanager
+    def _processes(self, *, wait_before_return: bool = False):
+        """Observe real fake-client children and clean up even a reverted driver."""
+        processes = []
+        popen = subprocess.Popen
+
+        def spawn(*args, **kwargs):
+            process = popen(*args, **kwargs)
+            processes.append(process)
+            if wait_before_return:
+                process.wait(timeout=3)
+            return process
+
+        try:
+            with mock.patch.object(probe.subprocess, "Popen", side_effect=spawn):
+                yield processes
+        finally:
+            for process in processes:
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                process.wait(timeout=2)
+                for stream in (process.stdin, process.stdout, process.stderr):
+                    if stream is not None:
+                        stream.close()
+
+    def _assert_reaped(self, process) -> None:
+        self.assertIsNotNone(process.returncode)
+        with self.assertRaises(ProcessLookupError):
+            os.kill(process.pid, 0)
+        with self.assertRaises(ChildProcessError):
+            os.waitpid(process.pid, os.WNOHANG)
 
     def _live(self, *parts: str) -> Path:
         return Path(self.environ["HOME"]).joinpath(*parts)
@@ -1308,6 +1358,140 @@ print("DONE=" + first + ":" + second, flush=True)
         self.assertEqual(result.returncode, 0)
         self.assertIn("DONE=hello:exit", result.stdout)
 
+    def test_pty_reads_buffered_marker_after_child_exit(self) -> None:
+        script = self._write_fake_executable(
+            "pty-exited", "import os\nos.write(1, b'READY')\n"
+        )
+        calls = []
+        with self._watchdog(), self._processes(wait_before_return=True):
+            result = probe.run_native_pty(
+                [], [probe.PTYInteraction(b"READY", b"", before_send=lambda: calls.append(1))],
+                trusted=self._trusted(script), fixture=self.fixture, timeout=3,
+            )
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(calls, [1])
+
+    def test_pty_blocked_send_times_out_and_reaps(self) -> None:
+        script = self._write_fake_executable(
+            "pty-nonreader",
+            "import time, tty\ntty.setraw(0)\nprint('READY', flush=True)\ntime.sleep(30)\n",
+        )
+        started = time.monotonic()
+        with self._watchdog(), self._processes() as processes:
+            with self.assertRaises(probe.PTYTimeoutError) as caught:
+                probe.run_native_pty(
+                    [], [probe.PTYInteraction(b"READY", b"x" * 65536)],
+                    trusted=self._trusted(script), fixture=self.fixture, timeout=1,
+                )
+            self.assertLess(time.monotonic() - started, 3)
+            self.assertEqual(caught.exception.phase, "send")
+            self.assertEqual(caught.exception.completed_interactions, 0)
+            self.assertEqual(caught.exception.total_interactions, 1)
+            self.assertEqual(processes[0].returncode, -signal.SIGKILL)
+            self._assert_reaped(processes[0])
+
+    def test_pty_send_rechecks_deadline_after_writable_wait(self) -> None:
+        script = self._write_fake_executable("pty-late-send", _PTY_BODY)
+        clock, select = time.monotonic, probe.select.select
+        offset = 0
+
+        def ready_late(readers, writers, errors, timeout):
+            nonlocal offset
+            ready = select(readers, writers, errors, timeout)
+            if writers and ready[1]:
+                offset = 30
+            return ready
+
+        with self._watchdog(), self._processes() as processes, \
+                mock.patch.object(probe.time, "monotonic", side_effect=lambda: clock() + offset), \
+                mock.patch.object(probe.select, "select", side_effect=ready_late), \
+                mock.patch.object(probe.os, "write", wraps=os.write) as write:
+            with self.assertRaises(probe.PTYTimeoutError) as caught:
+                probe.run_native_pty(
+                    [], [probe.PTYInteraction(b"READY", b"hello\n")],
+                    trusted=self._trusted(script), fixture=self.fixture, timeout=15,
+                )
+            self.assertEqual(caught.exception.phase, "send")
+            self.assertEqual(caught.exception.completed_interactions, 0)
+            write.assert_not_called()
+            self._assert_reaped(processes[0])
+
+    def test_pty_nonblocking_send_retries_backpressure_and_partial_writes(self) -> None:
+        payload = b"0123456789abcdef" * 4096
+        script = self._write_fake_executable(
+            "pty-reader",
+            """import hashlib, os, tty
+tty.setraw(0)
+print('READY', flush=True)
+data = bytearray()
+while len(data) < 65536:
+    data.extend(os.read(0, 65536 - len(data)))
+print('DIGEST=' + hashlib.sha256(data).hexdigest(), flush=True)
+""",
+        )
+        write = os.write
+        writes = []
+
+        def short_write(fd, data):
+            self.assertFalse(os.get_blocking(fd), "PTY sends must be nonblocking")
+            writes.append(len(data))
+            if len(writes) == 1:
+                raise BlockingIOError(errno.EAGAIN, "fixture backpressure")
+            return write(fd, data[:1024])
+
+        with self._watchdog(), mock.patch.object(probe.os, "write", side_effect=short_write):
+            result = probe.run_native_pty(
+                [], [probe.PTYInteraction(b"READY", payload)],
+                trusted=self._trusted(script), fixture=self.fixture, timeout=3,
+            )
+        self.assertGreater(len(writes), 2)
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("DIGEST=" + hashlib.sha256(payload).hexdigest(), result.stdout)
+
+    def test_pty_closed_output_waits_for_exit_without_spinning(self) -> None:
+        script = self._write_fake_executable(
+            "pty-closed-output",
+            "import os, time\nfor fd in (0, 1, 2): os.close(fd)\ntime.sleep(30)\n",
+        )
+        read = os.read
+        reads = []
+
+        def count_read(fd, size):
+            reads.append(fd)
+            return read(fd, size)
+
+        with self._watchdog(), self._processes() as processes, \
+                mock.patch.object(probe.os, "read", side_effect=count_read):
+            with self.assertRaises(probe.PTYTimeoutError) as caught:
+                probe.run_native_pty(
+                    [], [], trusted=self._trusted(script), fixture=self.fixture, timeout=1,
+                )
+            self.assertEqual(caught.exception.phase, "client-exit")
+            self.assertEqual(caught.exception.completed_interactions, 0)
+            self._assert_reaped(processes[0])
+        self.assertLess(len(reads), 10, "closed PTY must not spin on EOF/EIO")
+
+    def test_pty_failure_kills_group_after_leader_was_reaped(self) -> None:
+        pidfile = self.fixture.root / "group-child.pid"
+        body = _SPAWNER_BODY.rsplit("time.sleep(30)", 1)[0]
+        script = self._write_fake_executable("pty-exited-leader", body)
+        with self._watchdog(), self._processes(wait_before_return=True):
+            with self.assertRaisesRegex(ProbeError, "exited before marker"):
+                probe.run_native_pty(
+                    [str(pidfile)], [probe.PTYInteraction(b"NEVER-PRINTED", b"")],
+                    trusted=self._trusted(script), fixture=self.fixture, timeout=3,
+                )
+            child = int(pidfile.read_text())
+            deadline = time.monotonic() + 2
+            while time.monotonic() < deadline:
+                try:
+                    os.kill(child, 0)
+                except ProcessLookupError:
+                    break
+                time.sleep(0.01)
+            else:
+                self.fail("PTY failure left the exited leader's child alive")
+
     def _pty_timeout_after_send(self, *, wait_again=False):
         script = self._write_fake_executable(
             "pty-hung", "import time\nprint('READY', flush=True)\ninput()\ntime.sleep(60)\n"
@@ -1439,6 +1623,83 @@ print("DONE=" + first + ":" + second, flush=True)
             [], trusted=self._trusted(script), fixture=self.fixture, timeout=15
         )
         self.assertEqual(followup.returncode, 0)
+
+
+class NativeDrainTimeoutTests(ProbeTestCase):
+    """Escaped fake descendants cannot hold a timeout's output drain open."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.fixture = probe.build_fixture(self.fixture_root, environ=self.environ)
+        self.pidfile = self.fixture.root / "escaped-child.pid"
+        self.script = self._write_fake_executable(
+            "escaped-pipe-holder",
+            f"""import os, time
+if os.fork() == 0:
+    os.setsid()
+    with open({str(self.pidfile)!r}, 'w') as handle:
+        handle.write(str(os.getpid()))
+    print('ESCAPED', flush=True)
+    time.sleep(30)
+    os._exit(0)
+time.sleep(30)
+""",
+        )
+        self.addCleanup(self._stop_escaped_child)
+
+    def _stop_escaped_child(self) -> None:
+        if self.pidfile.exists():
+            try:
+                os.kill(int(self.pidfile.read_text()), signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+
+    def _assert_timeout_cleanup(self, process) -> None:
+        self.assertTrue(self.pidfile.exists(), "the fake must escape before timeout")
+        self.assertNotEqual(os.getpgid(int(self.pidfile.read_text())), process.pid)
+        self.assertEqual(process.returncode, -signal.SIGKILL)
+        self._assert_reaped(process)
+        self.assertTrue(process.stdout.closed, "stdout pipe must be closed")
+        self.assertTrue(process.stderr.closed, "stderr pipe must be closed")
+
+    def test_run_native_bounds_escaped_descendant_drain(self) -> None:
+        started = time.monotonic()
+        with self._watchdog(6), self._processes() as processes:
+            with self.assertRaisesRegex(ProbeError, "timed out.*escaped descendant"):
+                probe.run_native(
+                    [], trusted=self._trusted(self.script), fixture=self.fixture, timeout=1,
+                )
+            self.assertLess(time.monotonic() - started, 5)
+            self._assert_timeout_cleanup(processes[0])
+
+    def test_takeover_bounds_escaped_descendant_drain(self) -> None:
+        # Only hash-pinned synthetic versions execute. The isolation and
+        # supervisor seams keep this test independent of bwrap/real clients.
+        versions = state.ensure_private_dir(self.root / "versions")
+        verified = []
+        for version in ("2.1.216", "2.1.217"):
+            target = versions / version
+            shutil.copy2(self.script, target)
+            verified.append({"version": version, "platforms": {pin.host_platform(): {
+                "sha256": hashlib.sha256(target.read_bytes()).hexdigest(),
+                "size": target.stat().st_size,
+            }}})
+        scope = state.ensure_private_dir(self.fixture.root / "scope")
+        live = state.ensure_private_dir(self.root / "fake-live-domain")
+        started = time.monotonic()
+        with self._watchdog(6), self._processes() as processes, \
+                mock.patch.object(probe, "_assert_real_run_allowed"), \
+                mock.patch.object(probe, "isolated_argv", side_effect=lambda argv, **kw: argv), \
+                mock.patch.object(probe, "_daemon_artifacts", side_effect=[("old",), ("new",)]):
+            with self.assertRaisesRegex(ProbeError, "timed out.*escaped descendant"):
+                probe.run_takeover_probe(
+                    "cm-probe-marker", scope_dir=scope, fixture=self.fixture,
+                    contract={"verified": verified}, environ=self.environ,
+                    versions_dir=versions, supervisor_timeout=1,
+                    takeover_timeout=1, session_timeout=1, live_daemon_domain=live,
+                )
+            self.assertLess(time.monotonic() - started, 5)
+            self._assert_timeout_cleanup(processes[0])
 
 
 class EvidenceTests(ProbeTestCase):
@@ -2605,6 +2866,56 @@ class PTYCallbackTests(ProbeTestCase):
         self.assertEqual(result.returncode, 0)
         self.assertEqual(calls, [1])
         self.assertIn("SEEN2=model-c", result.stdout)
+
+    def test_missing_marker_at_pty_close_never_runs_callback(self) -> None:
+        script = self._write_fake_executable(
+            "pty-closes-before-marker",
+            "import os, time\nos.write(1, b'READ')\n"
+            "for fd in (0, 1, 2): os.close(fd)\ntime.sleep(0.4)\n",
+        )
+        read = os.read
+
+        def eof_instead_of_eio(fd, size):
+            try:
+                return read(fd, size)
+            except OSError as exc:
+                if exc.errno == errno.EIO:
+                    return b""
+                raise
+
+        # Linux reports EIO on a closed PTY; exercise the EOF branch as well.
+        for eof in (False, True):
+            with self.subTest(eof=eof):
+                calls = []
+                reader = eof_instead_of_eio if eof else read
+                with self._watchdog(), self._processes() as processes, \
+                        mock.patch.object(probe.os, "read", side_effect=reader):
+                    with self.assertRaisesRegex(ProbeError, "exited before marker"):
+                        try:
+                            probe.run_native_pty(
+                                [], [probe.PTYInteraction(
+                                    b"READY", b"", before_send=lambda: calls.append(1),
+                                )],
+                                trusted=self._trusted(script), fixture=self.fixture, timeout=3,
+                            )
+                        finally:
+                            self.assertEqual(calls, [], "missing marker must not run callbacks")
+                    self._assert_reaped(processes[0])
+
+    def test_default_cursor_does_not_reuse_buffered_marker(self) -> None:
+        script = self._write_fake_executable(
+            "pty-consumed-marker", "import os\nos.write(1, b'READY-NEXT')\ninput()\n"
+        )
+        calls = []
+        with self._watchdog(), self.assertRaisesRegex(ProbeError, "exited before marker"):
+            probe.run_native_pty(
+                [], [
+                    probe.PTYInteraction(b"READY", b"exit\n"),
+                    probe.PTYInteraction(b"NEXT", b"", before_send=lambda: calls.append(1)),
+                ],
+                trusted=self._trusted(script), fixture=self.fixture, timeout=3,
+            )
+        self.assertEqual(calls, [])
 
     def test_callback_exception_fails_closed_and_reaps(self) -> None:
         def broken() -> None:
