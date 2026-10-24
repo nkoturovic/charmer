@@ -2255,6 +2255,8 @@ def default_qualify_transport(
                 return operator_mod.classify_smoke(status, b"", timed_out=True)
         if left() <= 0:
             return operator_mod.classify_smoke(status, b"", timed_out=True)
+        if response.length not in (None, 0):
+            return operator_mod.SmokeOutcome("fail", status, "malformed HTTP response")
         return operator_mod.classify_smoke(status, b"".join(chunks))
     except (socket.timeout, TimeoutError):
         return operator_mod.classify_smoke(status, b"", timed_out=True)

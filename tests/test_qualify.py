@@ -567,6 +567,30 @@ class BoundsTests(unittest.TestCase):
                                         owner_check=self.OWNER)
         self.assertEqual(refused.failure, "connection")
 
+    def test_premature_eof_is_a_value_free_protocol_failure(self) -> None:
+        import http.client
+
+        body = b'{"type":"message","role":"assistant","content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn"}'
+        for length in (len(body) + 100, len(body), None):
+            with self.subTest(length=length):
+                header = b"" if length is None else f"Content-Length: {length}\r\n".encode()
+                wire = b"HTTP/1.1 200 OK\r\n" + header + b"\r\n" + body
+                response = http.client.HTTPResponse(mock.Mock(makefile=lambda _mode: io.BytesIO(wire)))
+                response.begin()
+                self.addCleanup(response.close)
+                connection = mock.Mock(sock=None)
+                connection.getresponse.return_value = response
+                result = qualify.loopback_post("http://127.0.0.1:1234", "fixture-token", b"{}", deadline=5,
+                                               owner_check=self.OWNER, connect=lambda _timeout: connection)
+                if length == len(body) + 100:
+                    self.assertEqual(result, qualify.HttpResult(200, b"", "protocol"))
+                    self.assertEqual(qualify.classify_message(result), ("inconclusive", "protocol"))
+                else:
+                    self.assertEqual(result, qualify.HttpResult(200, body))
+                    self.assertEqual(qualify.classify_message(result), ("pass", "ok"))
+                connection.request.assert_called_once()
+                connection.close.assert_called_once()
+
     def test_environment_proxies_never_see_the_loopback_request(self) -> None:
         gateway = _Server(_handler("ok"))
         proxy = _Server(_handler("ok"))

@@ -631,6 +631,8 @@ def loopback_post(
                 return HttpResult(status, b"", "oversize")
         if left() <= 0 or cut_done.is_set():
             return HttpResult(status, b"", "timeout")
+        if response.length not in (None, 0):
+            return HttpResult(status, b"", "protocol")
         return HttpResult(status, b"".join(chunks))
     except (socket.timeout, TimeoutError):
         return HttpResult(status, b"", "timeout")

@@ -2740,6 +2740,28 @@ class SmokeTransportTests(unittest.TestCase):
             base, "fixture-token", "custom-fixture-alias",
             owner_check=lambda _base: service.OwnerVerdict("ours", "fixture"), **kwargs)
 
+    def test_premature_eof_is_a_value_free_protocol_failure(self) -> None:
+        import http.client
+
+        body = b'{"type":"message","role":"assistant","content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn"}'
+        for length in (len(body) + 100, len(body), None):
+            with self.subTest(length=length):
+                header = b"" if length is None else f"Content-Length: {length}\r\n".encode()
+                wire = b"HTTP/1.1 200 OK\r\n" + header + b"\r\n" + body
+                response = http.client.HTTPResponse(mock.Mock(makefile=lambda _mode: io.BytesIO(wire)))
+                response.begin()
+                self.addCleanup(response.close)
+                connection = mock.Mock(sock=None)
+                connection.getresponse.return_value = response
+                with mock.patch.object(http.client, "HTTPConnection", return_value=connection):
+                    outcome = self.smoke("http://127.0.0.1:1234", deadline=5)
+                if length == len(body) + 100:
+                    self.assertEqual(outcome, operator.SmokeOutcome("fail", 200, "malformed HTTP response"))
+                else:
+                    self.assertEqual(outcome.result, "pass")
+                connection.request.assert_called_once()
+                connection.close.assert_called_once()
+
     def test_verdicts_and_single_request(self) -> None:
         for mode, result, http in (("ok", "pass", 200), ("redirect", "fail", 302), ("error", "fail", 500),
                                    ("huge", "degenerate", 200)):
