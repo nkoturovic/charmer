@@ -223,6 +223,10 @@ class _Undo:
     enabled: bool = False
     removed_link: str | None = None
 
+    def before_config(self, previous: endpoint.EndpointConfig | None, _updated: endpoint.EndpointConfig) -> None:
+        self.config = previous
+        self.config_written = True
+
 
 @dataclass(frozen=True)
 class ServiceStatus:
@@ -548,10 +552,12 @@ class GatewayService:
                     outcome = gateway_lifecycle.Outcome("failed", f"the gateway service could not be installed: {exc}",
                                                         getattr(exc, "remedy", None) or "check: charmer doctor")
                 except BaseException:
+                    complete = False
                     _notes, complete = self._restore_on_demand(undo)
                     raise
                 if outcome.ok:
                     return outcome
+                complete = False
                 notes, complete = self._restore_on_demand(undo)
                 return self._restored(outcome, notes)
             finally:
@@ -587,9 +593,8 @@ class GatewayService:
                 "failed", f"the service manager does not load {name} from {where}"
                 + (f" (it uses {fragment})" if fragment else ""),
                 "make sure the service manager reads the user unit directory (XDG_CONFIG_HOME), then retry")
-        undo.config, _ = endpoint.set_backend(self.home, endpoint.SYSTEMD, name, packaged_port=self._packaged_port(),
-                                              probe=gateway.seams.port_probe)
-        undo.config_written = True
+        endpoint.set_backend(self.home, endpoint.SYSTEMD, name, packaged_port=self._packaged_port(),
+                             probe=gateway.seams.port_probe, before_write=undo.before_config)
         gateway.reload_endpoint()
         undo.enabled = True
         if not linux_service.enable_now(name, runner):
@@ -679,14 +684,16 @@ class GatewayService:
 
         The new unit is stopped only behind :meth:`_stop_veto`; a veto, or an
         exit that cannot be proven, leaves the service installed and selected
-        (``complete`` False: the caller keeps the hand-off record). Restored
-        unit files count only once the manager's daemon-reload of them
-        succeeded; a failed reload leaves the restoration incomplete too.
+        (``complete`` False: the caller keeps the hand-off record).
+        A complete restoration needs every changed file, endpoint and selection
+        restored, the manager reloaded and, when it ran before, the on-demand
+        gateway ready again. Otherwise the hand-off record stays.
         """
 
         gateway = self.gateway
         runner = self.seams.runner
         notes: list[str] = []
+        complete = True
         if undo.enabled:
             veto = self._stop_veto(undo.name)
             if veto is not None:
@@ -698,29 +705,39 @@ class GatewayService:
                     f"the {undo.name} gateway did not stop" + ("" if disabled else
                                                                " (the service manager refused to disable it)")
                     + "; the service stays installed (check: charmer gateway status)"), False
+            if not disabled:
+                notes.append("restore: the service manager refused to disable the unit")
+                complete = False
         reloaded = True
         if undo.written:
             problems = self._restore_files(undo)
             notes.extend(f"restore: could not restore {problem}" for problem in problems)
+            complete = complete and not problems
             reloaded = linux_service.daemon_reload(runner)
+        restored = False
         try:
             if undo.config_written:
                 endpoint.restore_config(self.home, undo.config)
             if undo.selection is not None:
                 installs.restore_selection(undo.selection)
             gateway.reload_endpoint()
+            restored = True
         except (OSError, errors.CharmerError) as exc:
             notes.append(f"restore: {exc}")
-        if undo.restart_on_demand:
+        complete = complete and restored
+        if restored and undo.restart_on_demand:
             deadline = gateway.seams.clock() + gateway_lifecycle.START_READINESS_TIMEOUT
             started = gateway.ensure_locked(deadline, gateway_lifecycle.START_READINESS_TIMEOUT, explicit=True)
             notes.append("restored: the on-demand gateway runs again" if started.ok
                          else f"restore: the on-demand gateway did not start: {started.message}")
-        else:
+            complete = complete and started.ok
+        elif restored:
             notes.append("restored: the on-demand backend is in effect")
+        if not complete:
+            notes.extend(self._unfinished("the on-demand restoration is incomplete"))
         if not reloaded:
             notes.extend(self._not_reloaded())
-        return notes, reloaded
+        return notes, complete and reloaded
 
     @staticmethod
     def _restored(outcome: gateway_lifecycle.Outcome, notes: list[str]) -> gateway_lifecycle.Outcome:
@@ -974,10 +991,12 @@ class GatewayService:
                     outcome = gateway_lifecycle.Outcome("failed", f"the gateway service could not be removed: {exc}",
                                                         getattr(exc, "remedy", None) or "check: charmer doctor")
                 except BaseException:
+                    complete = False
                     _notes, complete = self._restore_service(undo, max_wait)
                     raise
                 if outcome.ok:
                     return outcome
+                complete = False
                 notes, complete = self._restore_service(undo, max_wait)
                 return self._restored(outcome, notes)
             finally:
@@ -1089,9 +1108,8 @@ class GatewayService:
         if not linux_service.daemon_reload(runner):
             return gateway_lifecycle.Outcome("failed", "the service manager did not reload its unit files",
                                              "check: charmer doctor")
-        undo.config, _ = endpoint.set_backend(self.home, endpoint.ON_DEMAND, packaged_port=self._packaged_port(),
-                                              probe=gateway.seams.port_probe)
-        undo.config_written = True
+        endpoint.set_backend(self.home, endpoint.ON_DEMAND, packaged_port=self._packaged_port(),
+                             probe=gateway.seams.port_probe, before_write=undo.before_config)
         undo.removed_link = installs.remove_nix_link(self.environ)
         gateway.reload_endpoint()
         message = f"gateway service {name} removed; the gateway runs on demand again"
@@ -1108,9 +1126,10 @@ class GatewayService:
         """Undo a failed uninstall: the unit files, the endpoint record and the
         service; ``(notes, complete)``. An on-demand gateway started meanwhile
         is stopped only through the guarded stop; when it cannot be, the
-        on-demand backend stays and ``complete`` is False. The restored unit
-        files count only once the manager's daemon-reload of them succeeded;
-        a failed reload leaves ``complete`` False too."""
+        on-demand backend stays and ``complete`` is False. Only a complete
+        file, link and endpoint restoration followed by daemon-reload may
+        re-enable the service; it must then become ready before the hand-off
+        record can be removed."""
 
         gateway = self.gateway
         runner = self.seams.runner
@@ -1124,6 +1143,7 @@ class GatewayService:
                                             "on-demand backend stays in effect"), False
             elif seen.state != gateway_lifecycle.STOPPED:
                 return self._unfinished(f"{seen.detail}; the on-demand backend stays in effect"), False
+        restored = False
         try:
             for path, raw in undo.files.items():
                 if raw is not None and not os.path.lexists(path):
@@ -1135,18 +1155,25 @@ class GatewayService:
             if undo.config_written:
                 endpoint.restore_config(self.home, undo.config)
             gateway.reload_endpoint()
+            restored = True
         except (OSError, errors.CharmerError) as exc:
             notes.append(f"restore: {exc}")
         reloaded = linux_service.daemon_reload(runner)
-        if undo.enabled and linux_service.enable_now(undo.name, runner):
-            ready = gateway.await_ready(gateway.seams.clock() + max(0.0, max_wait), max_wait)
-            notes.append("restored: the gateway service runs again" if ready.ok
-                         else f"restore: the gateway service did not become ready: {ready.message}")
-        elif undo.enabled:
-            notes.append(f"restore: the service manager did not start {undo.name} again")
+        complete = restored and reloaded
+        if complete and undo.enabled:
+            if linux_service.enable_now(undo.name, runner):
+                ready = gateway.await_ready(gateway.seams.clock() + max(0.0, max_wait), max_wait)
+                notes.append("restored: the gateway service runs again" if ready.ok
+                             else f"restore: the gateway service did not become ready: {ready.message}")
+                complete = ready.ok
+            else:
+                notes.append(f"restore: the service manager did not start {undo.name} again")
+                complete = False
+        if not complete:
+            notes.extend(self._unfinished("the service restoration is incomplete"))
         if not reloaded:
             notes.extend(self._not_reloaded())
-        return notes, reloaded
+        return notes, complete
 
 
 def write_unit_file(path: Path, text: str) -> None:

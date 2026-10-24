@@ -368,9 +368,12 @@ def channel(environ: Mapping[str, str]) -> str | None:
 
 def set_backend(home: Path | str, backend: str, unit: str | None = None, *,
                 packaged_port: int, probe: Callable[[int], bool] = port_free,
+                before_write: Callable[[EndpointConfig | None, EndpointConfig], None] | None = None,
                 ) -> tuple[EndpointConfig | None, EndpointConfig]:
     """Record the backend (and, for systemd, the unit); returns
     ``(previous, recorded)`` so a failed hand-off can restore ``previous``.
+    ``before_write(previous, updated)`` registers that undo under the endpoint
+    lock before replacement, including a write whose directory sync fails.
 
     Without a document a new install takes its first free port and an
     existing install records the packaged port it already uses.
@@ -387,6 +390,8 @@ def set_backend(home: Path | str, backend: str, unit: str | None = None, *,
             base = EndpointConfig(port=packaged_port if existing_install(home) else select_port(probe))
         updated = dataclasses.replace(base, backend=backend,
                                       unit=unit if backend == SYSTEMD else None)
+        if before_write is not None:
+            before_write(previous, updated)
         write_config(home, updated)
         return previous, updated
 
