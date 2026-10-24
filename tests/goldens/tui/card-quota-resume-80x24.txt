@@ -13,7 +13,7 @@
   implementer-strong   GPT-5.6 Sol   xhigh    openai      (worktree)
   reviewer             GPT-5.6 Sol   xhigh    openai      read-only
   reviewer-strong      Opus 5.5      xhigh    anthropic   read-only
-  review    writers(openai)→reviewer-strong · lead→reviewer   all cross-family…
+  review    ✓ cross-family · writers(openai)→reviewer-strong · lead→reviewer
   health    gateway ok · Claude 2.1.281 · catalog 31
   quota     claude#1 7d 93%! · 3d old · resets Fri 09:00 — S Sessions → T
   ! explorer and every implementer are on openai (codex quota shared)

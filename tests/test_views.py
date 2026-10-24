@@ -439,8 +439,8 @@ class ReviewSentenceTests(_RuntimeCase):
         self.assertFalse(lineup.routing.same_family_authors)
         lead = lineup.routing.rows[-1]
         expected = (
-            f"writers({families.pop()})→{profile.label(reviewers.pop())} · "
-            f"lead→{profile.label(lead.normal.reviewer)}   all cross-family ✓"
+            f"✓ cross-family · writers({families.pop()})→{profile.label(reviewers.pop())} · "
+            f"lead→{profile.label(lead.normal.reviewer)}"
         )
         self.assertEqual(views.review_sentence(lineup), expected)
 
@@ -452,7 +452,7 @@ class ReviewSentenceTests(_RuntimeCase):
         self.assertTrue(single, f"{SPEC} §7.3: a fixture seed routes within one family")
         for name in single:
             text = views.review_sentence(self.seed(name))
-            self.assertTrue(text.endswith("   same-family (reduced independence) ≈"), (name, text))
+            self.assertTrue(text.startswith("≈ same-family (reduced independence) · "), (name, text))
 
     def test_direct_seed(self) -> None:
         seeds = catalog.load_catalog(FIXTURE_ROOT).seed_profiles
@@ -484,9 +484,8 @@ class ReviewSentenceTests(_RuntimeCase):
         }))
         text = views.review_sentence(lineup)
         self.assertTrue(
-            text.startswith("implementer→reviewer · implementer-strong→reviewer-strong · lead→"), text
+            text.startswith("✓ cross-family · implementer→reviewer · implementer-strong→reviewer-strong · lead→"), text
         )
-        self.assertTrue(text.endswith("   all cross-family ✓"), text)
 
     def test_same_family_subset(self) -> None:
         same, other = self._two_families()
@@ -500,7 +499,7 @@ class ReviewSentenceTests(_RuntimeCase):
         expected_tail = "≈ same-family for " + ", ".join(
             profile.label(a) for a in lineup.routing.same_family_authors
         )
-        self.assertTrue(text.endswith("   " + expected_tail), text)
+        self.assertTrue(text.startswith(expected_tail + " · "), text)
 
     def test_review_independence_has_known_same_different_and_unknown_labels(self) -> None:
         lcat = self.runtime.lineup_catalog()
@@ -509,7 +508,7 @@ class ReviewSentenceTests(_RuntimeCase):
         other_family = lcat.line_family(other, lcat.lines[other])
         reviewer = "custom-views-reviewer"
         entry = {**copy.deepcopy(lcat.lines[other]), "status": "new"}
-        for family, expected in ((lead_family, "same-family"), (other_family, "all cross-family"),
+        for family, expected in ((lead_family, "same-family"), (other_family, "✓ cross-family"),
                                  ("unknown", "independence unknown"), ("mistral", "independence unknown"),
                                  ("custom", "independence unknown")):
             with self.subTest(family=family):
@@ -673,6 +672,13 @@ class CardModelTests(_RuntimeCase):
         )
         base.update(facts)
         return prepared, views.card_model(**base)
+
+    def test_direct_card_omits_review_and_spread(self) -> None:
+        prepared, card = self.card("direct")
+        self.assertTrue(prepared.lineup.is_direct)
+        self.assertNotIn("review", {row.kind for row in card.rows})
+        self.assertNotIn("spread", {row.kind for row in card.rows})
+        self.assertIn("Status  Ready", views.card_text(card, 80))
 
     def test_rows_and_keys_of_a_fresh_card(self) -> None:
         prepared, card = self.card()

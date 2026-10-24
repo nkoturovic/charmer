@@ -17,7 +17,7 @@
   (worktree)
     reviewer · GPT-5.6 Sol · effort xhigh · provider openai · read-only
     reviewer-strong · Opus 5.5 · effort xhigh · provider anthropic · read-only
-  review: writers(openai)→reviewer-strong · lead→reviewer   all cross-family ✓
+  review: ✓ cross-family · writers(openai)→reviewer-strong · lead→reviewer
   spread: openai 6 · anthropic 2 (+lead)
   health: gateway ok · Claude 2.1.281 · catalog 31
   More below — arrows/PgDn scroll; Home/End

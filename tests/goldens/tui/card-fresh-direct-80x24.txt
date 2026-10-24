@@ -5,11 +5,11 @@
   lead      Opus 5.5 · effort ultracode · 1M class   workflows: native
   context   window 800K · compacts at ~702K (90 %)
   lineup    no agents (direct) · durable scope · Explore native · GP on
-  review    none (direct session)
-  spread    anthropic 0 (+lead)
   health    gateway ok · Claude 2.1.281 · catalog 31
 
   Status  Ready
+
+
 
 
 
