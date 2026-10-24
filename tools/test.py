@@ -164,33 +164,52 @@ def runtime_environment(environ: dict[str, str] | os._Environ) -> tuple[str, ...
                         and name not in KEPT_RUNTIME))
 
 
-def prepare_environment(work: Path, *, repo: Path, home: str, tier: str) -> Path:
-    """Set this process's environment (inherited by every child); returns the guard log."""
+def isolated_environment(work: Path, *, repo: Path, home: str = "temp", tier: str = "full",
+                         environ: dict[str, str] | os._Environ | None = None) -> dict[str, str]:
+    """Build the runner/probe environment without mutating the caller's.
+
+    Only an explicit ``home='inherit'`` opts out of the private HOME. Probes
+    always create one here and pass it to the runner with that opt-out so
+    the operator-state probe's seeded HOME is the one its tests inspect.
+    """
+
+    env = dict(os.environ if environ is None else environ)
 
     guard_dir = work / "guard"
     guard_dir.mkdir()
     (guard_dir / "sitecustomize.py").write_text(guard_source(repo / "tests"), encoding="utf-8")
     guard_log = work / "guard.log"
-    for name in (*CLEARED_ENV, *legacy_environment(repo), *runtime_environment(os.environ)):
-        os.environ.pop(name, None)
+    for name in (*CLEARED_ENV, *legacy_environment(repo), *runtime_environment(env),
+                 *(name for name in env if name.startswith("XDG_"))):
+        env.pop(name, None)
     tmp = work / "tmp"
-    tmp.mkdir()
-    os.environ["TMPDIR"] = str(tmp)
-    tempfile.tempdir = None  # re-read TMPDIR
+    tmp.mkdir(mode=0o700)
+    for name in ("TMPDIR", "TMP", "TEMP"):
+        env[name] = str(tmp)
     if home == "temp":
         private_home = work / "home"
-        private_home.mkdir()
-        os.environ["HOME"] = str(private_home)
+        private_home.mkdir(mode=0o700)
+        env["HOME"] = str(private_home)
         if current_platform() == "windows":
-            os.environ["USERPROFILE"] = str(private_home)
-    os.environ["CM_ISOLATION_GUARD_LOG"] = str(guard_log)
-    os.environ["CM_TEST_TIER"] = tier
-    os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
-    os.environ["PYTHONPATH"] = os.pathsep.join([str(guard_dir), str(repo / "src"), str(repo / "tests")])
+            env["USERPROFILE"] = str(private_home)
+    env["CM_ISOLATION_GUARD_LOG"] = str(guard_log)
+    env["CM_TEST_TIER"] = tier
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
+    env["PYTHONPATH"] = os.pathsep.join([str(guard_dir), str(repo / "src"), str(repo / "tests")])
+    return env
+
+
+def prepare_environment(work: Path, *, repo: Path, home: str, tier: str) -> Path:
+    """Install the shared environment before importing any test module."""
+
+    env = isolated_environment(work, repo=repo, home=home, tier=tier)
+    os.environ.clear()
+    os.environ.update(env)
+    tempfile.tempdir = None  # re-read TMPDIR
     for entry in (str(repo / "tests"), str(repo / "src"), str(repo)):
         if entry not in sys.path:
             sys.path.insert(0, entry)
-    return guard_log
+    return Path(env["CM_ISOLATION_GUARD_LOG"])
 
 
 def main(argv: list[str] | None = None) -> int:

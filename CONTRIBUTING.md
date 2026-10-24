@@ -101,10 +101,22 @@ journey also needs the pinned Claude Code (`JOURNEY_CLIENT=PATH`, or
 in a fresh HOME inside a network namespace (for example
 `bwrap --unshare-net`), never against your own installation.
 
-`tools/test.py` gives the suite a private temporary HOME and refuses any
-connection to a live gateway port, so a run never reads or changes your
-own charmer or Claude Code state and never calls a provider. With
-Nix, the same suite also runs in the sandbox:
+`tools/test.py` gives the suite a private temporary HOME and TMPDIR and
+clears XDG, Claude config and charmer runtime overrides (`--home inherit`
+explicitly opts out of the private HOME). Fixture-isolation probes use the
+same environment builder for every probe, including documentation and
+golden checks; they run tests through the runner, preserving only their
+newly created probe HOME, never the caller's.
+
+One tripwire guards the test process and Python children that inherit
+`PYTHONPATH` and load `sitecustomize`. It refuses loopback live-gateway
+ports and live listener/service-control operations before I/O. Children
+using `-I`, `-E`, `-S` or a scrubbed environment, and non-Python binaries,
+are outside that Python guard; fixture probes use a private network
+namespace for network isolation (`--python-guard-only` omits it).
+Neither guard is a general provider-egress firewall: tests use fake
+providers and must never read or change the caller's state. With Nix,
+the same suite also runs in the sandbox:
 `nix build .#checks.x86_64-linux.charmer`.
 
 Goldens (expected outputs under `tests/goldens/`) change only through
