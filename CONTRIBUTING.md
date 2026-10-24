@@ -79,6 +79,15 @@ python3 tools/docs_gen.py --check        # the generated documentation is curren
 git diff --check                         # no whitespace errors
 ```
 
+The two keyed-compatibility modules default to the host proof lane. Without
+an explicit candidate gateway (`CHARMER_TEST_CLI_PROXY_API=PATH`), the
+runner reports both as **not runnable before running tests** and exits
+nonzero, even on the fast tier; the other selected modules still run.
+For unit-only iteration, `CHARMER_TEST_KEYED_LANE=unit` explicitly omits
+keyed proofs—it is not a gateway acceptance result. A fast-tier keyed
+client boundary never supplies evidence: a configured candidate, required
+keyed selection or proof-output request retains fail-closed finalization.
+
 The real-client lanes need the exact Claude Code version the release pins:
 `--claude PATH` checks a file against the pin and copies it into the
 suite's private HOME. Without it, a lane that needs it is reported as not

@@ -21,6 +21,10 @@ What it guarantees on every platform (Python 3.11 or newer):
   and on other platforms the module is listed as not run, never imported.
 - An empty selection fails; ``--require PATTERN`` makes matching tests
   mandatory (a skip fails the run) and ``--max-skip-ratio`` bounds skips.
+- The keyed host lanes need an explicit candidate gateway. Without
+  ``CHARMER_TEST_CLI_PROXY_API``, both keyed modules are reported as not
+  runnable before test imports (full or fast tier), and the run fails.
+  ``CHARMER_TEST_KEYED_LANE=unit`` explicitly selects no keyed proof.
 - The real-client lanes need the pinned Claude Code, which the private HOME
   does not have: ``--claude PATH`` verifies a file against the packaged pin
   and puts a copy in the private HOME's charmer location (the
@@ -58,6 +62,7 @@ EXIT_OK, EXIT_FAILED, EXIT_USAGE = 0, 1, 2
 # set (it selects their real-client lane).
 PINNED_CLIENT_LANES = {"tests.test_keyed_compat_client": "CHARMER_TEST_CLI_PROXY_API",
                        "tests.test_openai_key_route_client": "CHARMER_TEST_CLI_PROXY_API"}
+KEYED_MODULES = ("tests.test_gateway_keyed_compat", "tests.test_keyed_compat_client")
 
 
 class UsageError(Exception):
@@ -255,15 +260,25 @@ def main(argv: list[str] | None = None) -> int:
         print("tools/test.py: nothing selected on this platform", file=sys.stderr)
         return EXIT_USAGE
     not_runnable = []
-    if args.claude is None and args.home == "temp":
+    if (os.environ.get("CHARMER_TEST_KEYED_LANE", "host") == "host"
+            and not os.environ.get("CHARMER_TEST_CLI_PROXY_API")):
+        for module in KEYED_MODULES:
+            if module in selected:
+                selected.remove(module)
+                not_runnable.append(f"{module} needs an explicit candidate gateway for the keyed host lane; "
+                                    "set CHARMER_TEST_CLI_PROXY_API=PATH to a candidate build. "
+                                    "For unit-only iteration, CHARMER_TEST_KEYED_LANE=unit selects no keyed proof")
+    if args.claude is None and args.home == "temp" and args.tier != "fast":
         for module, variable in PINNED_CLIENT_LANES.items():
-            if module in selected and os.environ.get(variable):
+            if (module in selected and os.environ.get(variable)
+                    and not (module == "tests.test_keyed_compat_client"
+                             and os.environ.get("CHARMER_TEST_KEYED_LANE") == "unit")):
                 selected.remove(module)
                 not_runnable.append(f"{module} needs the pinned Claude Code ({variable} selects its real-client "
                                     "lane) and the private HOME has none; pass --claude PATH (a file matching the "
                                     "packaged pin)")
     for reason in not_runnable:
-        print(f"not runnable: {reason}")
+        print(f"not runnable: {reason}", flush=True)
     args.not_runnable = not_runnable
     if not selected:
         print("tools/test.py: nothing runnable is selected", file=sys.stderr)
@@ -333,6 +348,11 @@ def _run(args: argparse.Namespace, selected: list[str], work: Path) -> int:
         for pattern in unmatched:
             print(f"FAILED: --require {pattern!r} matched no selected tests", file=sys.stderr)
         return EXIT_FAILED
+    keyed_ids = [test_id for test_id in test_ids if test_id.startswith("tests.test_keyed_compat_client.")]
+    if keyed_ids and (args.patterns or any(_module_name(name) == "tests.test_keyed_compat_client"
+                                          for name in args.modules)
+                      or any(pattern.search(test_id) for pattern in args.require for test_id in keyed_ids)):
+        os.environ["CHARMER_TEST_KEYED_REQUIRED"] = "1"
     started = time.monotonic()
     result = unittest.TextTestRunner(verbosity=2 if args.verbose else 1, failfast=args.failfast).run(suite)
     elapsed = time.monotonic() - started

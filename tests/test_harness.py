@@ -576,6 +576,82 @@ class SyntaxWarningGateTests(unittest.TestCase):
                 self.assertEqual(warnings.filters, before)
 
 
+class KeyedTierBoundaryTests(unittest.TestCase):
+    def test_fast_client_boundary_is_visible_without_prerequisites_or_finalize(self) -> None:
+        from tests import test_keyed_compat_client as client
+
+        with mock.patch.dict(os.environ, {"CM_TEST_TIER": "fast"}, clear=True), \
+                mock.patch.object(client, "SELECTED", set()), \
+                mock.patch.object(client.keyed_gateway, "prerequisites") as prerequisites, \
+                mock.patch.object(client.probe, "trusted_from_contract",
+                                  side_effect=AssertionError("unguarded pinned-client lookup")), \
+                mock.patch.object(client.harness, "finalize_keyed") as finalize:
+            loader = unittest.TestLoader()
+            suite = client.load_tests(loader, loader.loadTestsFromTestCase(client.KeyedClientTests), None)
+            result = unittest.TestResult()
+            suite.run(result)
+            self.assertEqual(result.errors, [])
+            self.assertEqual(len(result.skipped), 1)
+            self.assertIn("BOUNDARY: fast tier", result.skipped[0][1])
+            prerequisites.assert_not_called()
+            finalize.assert_not_called()
+            self.assertEqual(client.SELECTED, set())
+
+    def test_explicit_class_selection_never_omits_keyed_finalization(self) -> None:
+        from tests import test_keyed_compat_client as client
+
+        with mock.patch.dict(os.environ, {"CM_TEST_TIER": "fast"}, clear=True), \
+                mock.patch.object(client, "SELECTED", set()), \
+                mock.patch.object(client, "FAST_SKIPPED", False, create=True), \
+                mock.patch.object(client.keyed_gateway, "prerequisites"), \
+                mock.patch.object(client.probe, "trusted_from_contract",
+                                  side_effect=AssertionError("unguarded pinned-client lookup")), \
+                mock.patch.object(client.harness, "finalize_keyed") as finalize:
+            # A class target bypasses load_tests; it is never the deliberate
+            # module-wide fast omission that may suppress finalization.
+            with self.assertRaisesRegex(unittest.SkipTest, "BOUNDARY: fast tier"):
+                client.KeyedClientTests.setUpClass()
+            self.assertEqual(client.SELECTED, {"client"})
+            client.tearDownModule()
+            finalize.assert_called_once_with(client.EVIDENCE, client.MODULE, {"client"})
+
+    def test_candidate_required_and_proof_helper_modes_still_finalize_missing_rows(self) -> None:
+        from tests import test_keyed_compat_client as client
+
+        cases = [
+            {"CM_TEST_TIER": "fast", "CHARMER_TEST_CLI_PROXY_API": "/fixture/gateway"},
+            {"CM_TEST_TIER": "fast", "CHARMER_TEST_REQUIRE_GATEWAY": "1"},
+            {"CM_TEST_TIER": "fast", "CHARMER_TEST_KEYED_EVIDENCE": "/fixture/evidence"},
+            {"CM_TEST_TIER": "fast", "CHARMER_TEST_KEYED_REQUIRED": "1"},
+            # The proof refresher supplies these and uses the runner's full
+            # default with --claude, --max-skip-ratio 0 and verbose output.
+            {"CM_TEST_TIER": "full", "CHARMER_TEST_CLI_PROXY_API": "/fixture/gateway",
+             "CHARMER_TEST_REQUIRE_GATEWAY": "1", "CHARMER_TEST_KEYED_LANE": "host",
+             "CHARMER_TEST_KEYED_EVIDENCE": "/fixture/evidence"},
+        ]
+        for env in cases:
+            with self.subTest(env=env), mock.patch.dict(os.environ, env, clear=True), \
+                    mock.patch.object(client, "SELECTED", set()), \
+                    mock.patch.object(client, "EVIDENCE", client.harness.Evidence()), \
+                    mock.patch.object(client.harness, "keyed_identity", return_value={}), \
+                    mock.patch.object(client.harness, "sandbox_metadata", return_value={}), \
+                    mock.patch.object(client.harness, "validate_evidence_document"), \
+                    mock.patch.object(client.harness, "finalize_keyed", wraps=client.harness.finalize_keyed) as finalize:
+                loader = unittest.TestLoader()
+                client.load_tests(loader, loader.loadTestsFromTestCase(client.KeyedClientTests), None)
+                self.assertEqual(client.SELECTED, {"client"})
+                if env["CM_TEST_TIER"] == "fast":
+                    with mock.patch.object(client.keyed_gateway, "prerequisites") as prerequisites, \
+                            mock.patch.object(client.probe, "trusted_from_contract",
+                                              side_effect=AssertionError("unguarded pinned-client lookup")):
+                        with self.assertRaisesRegex(unittest.SkipTest, "BOUNDARY: fast tier"):
+                            client.KeyedClientTests.setUpClass()
+                        prerequisites.assert_not_called()
+                with self.assertRaisesRegex(AssertionError, "missing or duplicate required keyed rows: client"):
+                    client.tearDownModule()
+                finalize.assert_called_once()
+
+
 class TierTests(unittest.TestCase):
     def _env(self, value: str | None) -> None:
         patch = mock.patch.dict(os.environ)

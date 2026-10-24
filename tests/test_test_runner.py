@@ -82,9 +82,20 @@ MODULES = {
     "test_bad_marker": """
         PLATFORMS = ("plan9",)
     """,
+    "test_gateway_keyed_compat": """
+        import os, unittest
+        def load_tests(loader, tests, pattern):
+            if os.environ.get("CHARMER_TEST_KEYED_LANE") == "unit":
+                return unittest.TestSuite()
+            raise AssertionError("keyed gateway module was loaded without preflight")
+    """,
     "test_keyed_compat_client": """
         import os, unittest
         from pathlib import Path
+        def load_tests(loader, tests, pattern):
+            if os.environ.get("CHARMER_TEST_KEYED_LANE") == "unit":
+                return unittest.TestSuite()
+            return tests
         class T(unittest.TestCase):
             def test_the_pinned_client_is_in_the_private_home(self):
                 owned = Path(os.environ["HOME"]) / ".local/share/charmer/claude/9.9.9"
@@ -216,6 +227,36 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(listing.returncode, 2)  # the bad marker refuses every whole-suite selection
         listing = self.run_runner("--list", "tests.test_pass", "tests.test_env", "--platform", "darwin")
         self.assertEqual(listing.stdout.split(), ["tests.test_env", "tests.test_pass"])
+
+    def test_keyed_preflight_reports_missing_gateway_before_loading_tests(self) -> None:
+        for tier in ("full", "fast"):
+            for lane in (None, "host"):
+                env = {} if lane is None else {"CHARMER_TEST_KEYED_LANE": lane}
+                with self.subTest(tier=tier, lane=lane):
+                    result = self.run_runner("tests.test_gateway_keyed_compat", "tests.test_keyed_compat_client",
+                                             "tests.test_pass", "--tier", tier, **env)
+                    self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                    self.assertEqual(result.stdout.count("not runnable:"), 2, result.stdout)
+                    self.assertIn("CHARMER_TEST_CLI_PROXY_API=PATH", result.stdout)
+                    self.assertIn("ran 2 tests", result.stdout)
+                    self.assertNotIn("Traceback", result.stderr)
+                    self.assertLess(result.stdout.index("not runnable:"), result.stdout.index("ran 2 tests"))
+        only = self.run_runner("tests.test_gateway_keyed_compat", "tests.test_keyed_compat_client")
+        self.assertEqual(only.returncode, 1, only.stdout + only.stderr)
+        self.assertIn("nothing runnable is selected", only.stderr)
+        units = self.run_runner("tests.test_gateway_keyed_compat", "tests.test_keyed_compat_client",
+                                "tests.test_pass", CHARMER_TEST_KEYED_LANE="unit")
+        self.assertEqual(units.returncode, 0, units.stdout + units.stderr)
+        self.assertNotIn("not runnable", units.stdout)
+
+    def test_required_keyed_proof_never_passes_without_a_gateway(self) -> None:
+        for env in ({"CHARMER_TEST_REQUIRE_GATEWAY": "1"},
+                    {"CHARMER_TEST_KEYED_EVIDENCE": "/fixture/evidence"}):
+            with self.subTest(env=env):
+                result = self.run_runner("tests.test_keyed_compat_client", "--tier", "fast",
+                                         "--require", "KeyedClientTests", **env)
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertIn("not runnable: tests.test_keyed_compat_client", result.stdout)
 
     def test_the_real_client_lane_needs_the_pinned_client(self) -> None:
         missing = self.run_runner("tests.test_keyed_compat_client", "tests.test_pass",
