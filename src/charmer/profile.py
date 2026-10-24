@@ -2548,7 +2548,7 @@ def _diff_line(label_text: str, old: str, new: str) -> str:
 def slot_diff(old: Mapping[str, Any], new: Mapping[str, Any]) -> list[str]:
     """One line per changed slot (lead, then agents in role order), then one
     per changed ``description``, ``native_agents.*``, ``workflows``,
-    ``primary_provider`` and ``settings_overrides``."""
+    ``lead_providers``, ``primary_provider`` and ``settings_overrides``."""
 
     lines: list[str] = []
     old_agents = old.get("agents") if isinstance(old.get("agents"), Mapping) else {}
@@ -2567,6 +2567,11 @@ def slot_diff(old: Mapping[str, Any], new: Mapping[str, Any]) -> list[str]:
         if old_native.get(key) != new_native.get(key):
             lines.append(_diff_line(f"native_agents.{key}", _value_text(old_native.get(key)),
                                     _value_text(new_native.get(key))))
+    before, after = old.get("lead_providers"), new.get("lead_providers")
+    if before != after:
+        lines.append(_diff_line("lead_providers ",
+                                "(unrestricted)" if before is None else _value_text(before),
+                                "(unrestricted)" if after is None else _value_text(after)))
     for field_name in ("workflows", "primary_provider", "settings_overrides"):
         if old.get(field_name) != new.get(field_name):
             lines.append(_diff_line(field_name, _value_text(old.get(field_name)),
