@@ -14,7 +14,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 from _catalog import FIXTURE_ROOT
-from _layout import REPO_ROOT
+from _layout import REPO_ROOT, SRC_DIR
 from charmer import entrypoints
 from charmer.platform import mounts
 
@@ -85,7 +85,7 @@ class CommandLocaleTests(unittest.TestCase):
                "XDG_CONFIG_HOME": str(self.root / "config"), "XDG_STATE_HOME": str(self.root / "state"),
                "XDG_DATA_HOME": str(self.root / "data"), "CHARMER_ASSETS": str(FIXTURE_ROOT),
                "LC_ALL": "C", "PYTHONCOERCECLOCALE": "0", "PYTHONUTF8": "0",
-               "PYTHONIOENCODING": encoding}
+               "PYTHONIOENCODING": encoding, "PYTHONPATH": str(SRC_DIR)}
         if bypass_run:
             # The pre-stream-policy dispatch, to pin the unchanged UTF-8 bytes.
             argv = ["-c", "import sys; from charmer import entrypoints; "
