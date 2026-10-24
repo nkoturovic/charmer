@@ -159,6 +159,12 @@ contexts or signed reasoning history.
   (for example SendMessage, WebFetch, WebSearch and the worktree and cron
   tools) and MCP tools are listed by name, and the model fetches one with
   ToolSearch when it needs it. The gateway passes fetched tools on.
+- On Claude Code 2.1.310, `--tools` on a resumed turn no longer narrows the
+  tools offered to the model: the request keeps the session's full tool
+  list, though a call to a tool outside `--tools` is still refused and does
+  not run. `--disallowedTools` still removes a tool from the list on resume.
+  charmer never passes `--tools` itself; only a `--tools` you pass through to
+  Claude Code when resuming is affected.
 - When a provider refuses a request with an error the client does not
   recognise, Claude Code 2.1.310 sends it up to three more times, the last
   two without tool search, before it shows the error.
