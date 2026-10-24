@@ -885,7 +885,7 @@
       "release": "8.0.34-8.0.39",
       "subject": "Claude cloak mode never/uncloak identity stripping; sdk-ts as native; cloak never header validation",
       "disposition": "rebase",
-      "reason": "Reachable through the rendered claude-api-key sections. An explicit cloak mode never now strips Claude Code's user agent, client headers, betas, system blocks and metadata user id on unprofiled keys; the render omits the key so these routes keep the caller's shape as in 2.1.0 (absent resolves to auto)."
+      "reason": "Reachable through the rendered claude-api-key sections. An explicit cloak mode never now strips Claude Code's user agent, client headers, betas, system blocks and metadata user id on unprofiled keys; the render omits the key so these routes keep the caller's shape as in 2.1.0 (absent resolves to auto). On the fake upstream the forwarded identity of the Claude-compatible key routes (x-api-key, custom-header and bearer) and of the real client's main, subagent, helper and count_tokens requests on the direct route equals 8.0.33 with never; rendering never on 8.0.42 strips it (row K5 and the K2 identity branch red). The Claude OAuth pool, which renders no cloak key, forwards the same identity as 8.0.33 except that a confirmed client now keeps its own x-stainless-package-version instead of the pinned 0.112.1 (20c9095c); the Codex cloaking switch is unchanged (isCodexCloakingDisabled and applyCodexCloakingHeaders are identical to 8.0.33)."
     },
     {
       "commits": ["633a294f"],
@@ -899,7 +899,7 @@
       "release": "8.0.34-8.0.39",
       "subject": "Request and stream fidelity fixes on served routes",
       "disposition": "rebase",
-      "reason": "Defects the re-pin carries on reachable routes: standalone Claude effort on Codex (009f8d7a), explicit parallel_tool_calls false (99d1698f), Claude stop reasons and parallel tools (aadb34f9), empty text blocks (df07b1e5), Codex web-search history and tool mode (e7d4c731, 8df4e42a), Codex bootstrap metadata (9e79552f), Responses websocket turn reauthorization (b9bb031d), the compat User-Agent (5026f365). Effort and cap contracts are re-earned by the gateway contract and traffic rows."
+      "reason": "Defects the re-pin carries on reachable routes: standalone Claude effort on Codex (009f8d7a), explicit parallel_tool_calls false (99d1698f), Claude stop reasons and parallel tools (aadb34f9), empty text blocks (df07b1e5), Codex web-search history and tool mode (e7d4c731, 8df4e42a), Codex bootstrap metadata (9e79552f), Responses websocket turn reauthorization (b9bb031d), the compat User-Agent (5026f365: OpenAI-compatible providers now receive the client's User-Agent; row F7). Effort and cap contracts are re-earned by the gateway contract and traffic rows."
     },
     {
       "commits": ["c2dfec28", "d495e24c", "43f27e3a"],
