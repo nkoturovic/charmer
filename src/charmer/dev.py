@@ -33,7 +33,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from . import catalog as catalog_mod
-from . import errors, layout
+from . import errors, layout, paths
 from . import render as render_mod
 from . import sessions, state, strict_json
 from . import validate as schema_validate
@@ -549,8 +549,7 @@ def materialize_candidate(
 
 
 def state_root_default() -> str:
-    root = os.environ.get("XDG_STATE_HOME") or str(Path.home() / ".local" / "state")
-    return str(Path(root) / "charmer")
+    return str(paths.state_root())
 
 
 # --------------------------------------------------------------- lifecycle
@@ -664,9 +663,13 @@ def running_catalog_lines() -> dict[str, Any] | None:
 def _default_runner(command: list[str], cwd: Path) -> dict[str, Any]:
     if shutil.which(command[0]) is None:
         return {"cmd": command, "skipped": f"{command[0]} not available"}
-    completed = subprocess.run(
-        command, cwd=cwd, capture_output=True, text=True, timeout=1800
-    )
+    try:
+        completed = subprocess.run(
+            command, cwd=cwd, capture_output=True, text=True, timeout=1800
+        )
+    except subprocess.TimeoutExpired:
+        return {"cmd": command, "returncode": None, "stdout": "",
+                "stderr": "timed out after 1800 s"}
     return {
         "cmd": command,
         "returncode": completed.returncode,
@@ -1193,11 +1196,7 @@ def v1_draft_entry_to_v2(
 def _drafts_root() -> Path:
     """The live drafts directory path (never created here)."""
 
-    return (
-        Path(os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local" / "state")))
-        / "charmer"
-        / "drafts"
-    )
+    return paths.state_root() / "drafts"
 
 
 def _read_draft_file(path: Path) -> Any:
