@@ -8,6 +8,11 @@ your sessions, profiles, keys, account sign-ins, Claude Code copies and the
 supervised gateway keep working, under charmer's names. Until you remove the
 old installation, `--back` returns everything to claude-multi.
 
+`charmer migrate` converts pre-public record formats v1–3 (written before
+charmer 1.0.0) to the current format, keeping byte-exact backups for
+`charmer restore-2x`. `charmer restore-2x` restores those pre-public backups;
+it is not a release rollback — use `charmer update --rollback` for that.
+
 ## Before you start
 
 - Install charmer with its installer ([Linux](../install/linux.md),
