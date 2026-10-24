@@ -645,6 +645,31 @@ class TransportBoundsTests(unittest.TestCase):
             time.sleep(0.8)  # the resolver finished; nothing may follow it
         self.assertEqual(hits, [])
 
+    def test_premature_eof_is_a_value_free_protocol_failure(self) -> None:
+        import http.client
+        import io
+
+        body = b'{"data":[]}'
+        for length in (len(body) + 100, len(body), None):
+            with self.subTest(length=length):
+                header = b"" if length is None else f"Content-Length: {length}\r\n".encode()
+                wire = b"HTTP/1.1 200 OK\r\n" + header + b"\r\n" + body
+                response = http.client.HTTPResponse(mock.Mock(makefile=lambda _mode: io.BytesIO(wire)))
+                response.begin()
+                self.addCleanup(response.close)
+                opener = mock.Mock()
+                opener.open.return_value = response
+                with mock.patch.object(proxy, "_bounded_opener", return_value=opener):
+                    if length == len(body) + 100:
+                        with self.assertRaises(proxy.ListingFailure) as raised:
+                            proxy.bounded_get("https://listing.invalid/models", {}, deadline=5)
+                        self.assertEqual(raised.exception.kind, "protocol")
+                        self.assertEqual(str(raised.exception), "malformed HTTP response")
+                    else:
+                        self.assertEqual(proxy.bounded_get("https://listing.invalid/models", {}, deadline=5), body)
+                opener.open.assert_called_once()
+                self.assertTrue(response.closed)
+
     def test_malformed_responses_are_value_free_protocol_failures(self) -> None:
         for mode in ("bad-status", "bad-chunk"):
             with self.subTest(mode=mode):

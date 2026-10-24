@@ -567,6 +567,30 @@ class BoundsTests(unittest.TestCase):
                                         owner_check=self.OWNER)
         self.assertEqual(refused.failure, "connection")
 
+    def test_premature_eof_is_a_value_free_protocol_failure(self) -> None:
+        import http.client
+
+        body = b'{"type":"message","role":"assistant","content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn"}'
+        for length in (len(body) + 100, len(body), None):
+            with self.subTest(length=length):
+                header = b"" if length is None else f"Content-Length: {length}\r\n".encode()
+                wire = b"HTTP/1.1 200 OK\r\n" + header + b"\r\n" + body
+                response = http.client.HTTPResponse(mock.Mock(makefile=lambda _mode: io.BytesIO(wire)))
+                response.begin()
+                self.addCleanup(response.close)
+                connection = mock.Mock(sock=None)
+                connection.getresponse.return_value = response
+                result = qualify.loopback_post("http://127.0.0.1:1234", "fixture-token", b"{}", deadline=5,
+                                               owner_check=self.OWNER, connect=lambda _timeout: connection)
+                if length == len(body) + 100:
+                    self.assertEqual(result, qualify.HttpResult(200, b"", "protocol"))
+                    self.assertEqual(qualify.classify_message(result), ("inconclusive", "protocol"))
+                else:
+                    self.assertEqual(result, qualify.HttpResult(200, body))
+                    self.assertEqual(qualify.classify_message(result), ("pass", "ok"))
+                connection.request.assert_called_once()
+                connection.close.assert_called_once()
+
     def test_environment_proxies_never_see_the_loopback_request(self) -> None:
         gateway = _Server(_handler("ok"))
         proxy = _Server(_handler("ok"))
@@ -733,6 +757,17 @@ class AdmissionMetadataTests(test_cli.OperatorCommandCase):
         state.atomic_write(self.secret_file, b"")
         self.runtime.settings_store.set_provider_enabled("acme", False, catalog=self.runtime.lineup_catalog())
         self.served.clear()
+
+    def test_no_admission_smoke_execution_path_remains(self) -> None:
+        from charmer.cli.commands import models
+
+        self.assertFalse(hasattr(models, "_run_smoke"))
+        for name in ("SmokePlan", "smoke_plan", "smoke_consent_text", "smoke_check_record", "evidence_record"):
+            with self.subTest(name=name):
+                self.assertFalse(hasattr(operator_mod, name))
+        for name in ("SmokeOutcome", "classify_smoke", "write_evidence", "smoke_current"):
+            with self.subTest(kept=name):
+                self.assertTrue(callable(getattr(operator_mod, name)))
 
     def test_admit_and_revoke_only_change_badges_even_with_failed_evidence(self) -> None:
         from charmer.cli.commands import models, providers

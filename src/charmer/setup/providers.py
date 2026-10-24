@@ -1174,7 +1174,7 @@ class RemoveProviderPlan(model.Plan):
 
 
 def _provider_keys(ctx: Any, provider_id: str) -> set[str]:
-    keys = {key for key, fid in operator_mod.line_file_ids(ctx.read).items() if fid == provider_id}
+    keys = {key for key, fid in operator_mod.line_file_ids(ctx.read, ctx.layer).items() if fid == provider_id}
     keys |= {key for key, line in ctx.layer.lines.items() if line.provider_id == provider_id}
     return keys
 

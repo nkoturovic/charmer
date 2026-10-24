@@ -175,9 +175,11 @@ def edit_provider(runtime, provider_id, values, *, previous, confirm, output):
 
 def declaration(runtime, key):
     ctx = providers.operator_context(runtime)
-    file_id = operator.line_file_ids(ctx.read).get(key)
+    file_id = operator.line_file_ids(ctx.read, ctx.layer).get(key)
     if file_id is None:
-        raise providers.OperatorCommandError(f"{key}: catalog lines use the developer draft workflow")
+        if key in runtime.catalog.docs["models-v2"]["models"]:
+            raise providers.OperatorCommandError(f"{key}: catalog lines use the developer draft workflow")
+        raise providers.OperatorCommandError(f"{key}: no usable providers.d declaration — {operator.DECLARATION_REMEDY}")
     return file_id, strict_json.loads(ctx.read.files[file_id])["lines"][key]
 
 

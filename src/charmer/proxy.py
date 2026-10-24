@@ -864,6 +864,8 @@ def bounded_get(
                 raise ListingFailure("oversize")
         if bound.over():
             raise ListingFailure("timeout")
+        if response.length not in (None, 0):
+            raise ListingFailure("protocol")
         return b"".join(chunks)
     finally:
         bound.finish()

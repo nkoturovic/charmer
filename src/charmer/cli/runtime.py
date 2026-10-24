@@ -49,6 +49,7 @@ from charmer import strict_json
 from charmer import termtext
 import sys
 import time
+import weakref
 from charmer import views
 from charmer.platform import posix_fs
 
@@ -358,7 +359,8 @@ class Runtime:
         # from a read-only one instead (the entry point sets it).
         self.init_problem: str | None = None
         # Prepared plan -> operator definition digests it bound.
-        self._operator_prepared: dict[int, tuple[Any, dict[str, str]]] = {}
+        self._operator_prepared: dict[int, tuple[weakref.ReferenceType[compiler.CompileResult],
+                                                dict[str, str], dict[str, str]]] = {}
         # The smoke transport seam, (gateway base URL, gateway token,
         # served alias) -> SmokeOutcome. None = one bounded loopback request
         # through the gateway (default_qualify_transport); tests inject a fake.
@@ -1964,10 +1966,12 @@ class Runtime:
         # Remember the operator definitions this plan was
         # compiled from; perform revalidates them before anything commits.
         keys = prepared_line_keys(prepared, lcat)
-        self.__dict__.setdefault("_operator_prepared", {})[id(prepared.result)] = (
-            prepared.result, operator_launch_digests(operator_snapshot, keys),
+        proofs = self.__dict__.setdefault("_operator_prepared", {})
+        proofs[id(prepared.result)] = (
+            weakref.ref(prepared.result), operator_launch_digests(operator_snapshot, keys),
             launch_route_digests(operator_snapshot, docs, keys),
         )
+        weakref.finalize(prepared.result, proofs.pop, id(prepared.result), None)
         return prepared
 
     def revalidate_operator(self, prepared: cli_types.PreparedLaunch) -> None:
@@ -1986,7 +1990,7 @@ class Runtime:
         # Card/Direct adapters may replace presentation fields of a plan;
         # the immutable compile result is the identity of its routing proof.
         stored = self.__dict__.get("_operator_prepared", {}).get(id(prepared.result))
-        stored = stored if stored is not None and stored[0] is prepared.result else None
+        stored = stored if stored is not None and stored[0]() is prepared.result else None
         planned = stored[1] if stored is not None else None
         current = operator_launch_digests(snapshot, keys)
         routes = launch_route_digests(snapshot, docs, keys)
@@ -2255,6 +2259,8 @@ def default_qualify_transport(
                 return operator_mod.classify_smoke(status, b"", timed_out=True)
         if left() <= 0:
             return operator_mod.classify_smoke(status, b"", timed_out=True)
+        if response.length not in (None, 0):
+            return operator_mod.SmokeOutcome("fail", status, "malformed HTTP response")
         return operator_mod.classify_smoke(status, b"".join(chunks))
     except (socket.timeout, TimeoutError):
         return operator_mod.classify_smoke(status, b"", timed_out=True)

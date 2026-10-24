@@ -45,6 +45,7 @@ from typing import Any, Callable, Iterable, Iterator, Mapping
 from . import assets, catalog, custom, errors, paths, render, secret_store, state, strict_json
 from . import sessions as sessions_mod
 from . import validate as schema_validate
+from .platform import posix_fs
 
 
 class OperatorError(errors.CharmerError, ValueError):
@@ -254,7 +255,7 @@ class OperatorLedger:
 
 @dataclass(frozen=True)
 class OperatorEvidence:
-    """Tool-owned, verdict-only evidence (the admission smoke writes it)."""
+    """Tool-owned, verdict-only qualification evidence."""
 
     lines: dict[str, Any]
     sha256: str | None = None
@@ -296,6 +297,9 @@ class OperatorLayer:
     legacy_dropped: dict[str, str] = field(default_factory=dict)
     route_changes: dict[str, tuple[str, str]] = field(default_factory=dict)
     marker: bool = False
+    # Presentation inventory only: file ids and declared line keys that
+    # passed the same credential screen as diagnostics, even when invalid.
+    file_lines: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
     @property
     def problems(self) -> tuple[OperatorProblem, ...]:
@@ -852,13 +856,15 @@ def parse_ledger(raw: bytes, schema: Mapping[str, Any]) -> OperatorLedger:
     except strict_json.StrictJSONError as exc:
         raise OperatorError(f"{LEDGER_NAME}: {exc}") from exc
     problems = schema_validate.validate(document, dict(schema), "$")
-    for key in document.get("admissions", {}) if isinstance(document, dict) else ():
+    if problems:
+        raise OperatorError(f"{LEDGER_NAME}: " + "; ".join(problems))
+    for key in document["admissions"]:
         if not MIGRATED_KEY.fullmatch(key):
             problems.append(f"$.admissions: invalid line key {key!r}")
-    for key in document.get("routes", {}) if isinstance(document, dict) else ():
+    for key in document["routes"]:
         if not PROVIDER_ID.fullmatch(key):
             problems.append(f"$.routes: invalid provider id {key!r}")
-    for key in document.get("aliases", {}) if isinstance(document, dict) else ():
+    for key in document["aliases"]:
         if not re.fullmatch(r"[a-z0-9][a-z0-9._-]*", key):
             problems.append(f"$.aliases: invalid selector base {key!r}")
     if problems:
@@ -894,7 +900,9 @@ def parse_evidence(raw: bytes, schema: Mapping[str, Any]) -> OperatorEvidence:
     except strict_json.StrictJSONError as exc:
         raise OperatorError(f"{EVIDENCE_NAME}: {exc}") from exc
     problems = schema_validate.validate(document, dict(schema), "$")
-    for key in document.get("lines", {}) if isinstance(document, dict) else ():
+    if problems:
+        raise OperatorError(f"{EVIDENCE_NAME}: " + "; ".join(problems))
+    for key in document["lines"]:
         if not MIGRATED_KEY.fullmatch(key):
             problems.append(f"$.lines: invalid line key {key!r}")
     if problems:
@@ -1392,6 +1400,7 @@ def validate_layer(
     secret_names: set[str] = set()
     pending: list[str] = []
     file_digests: dict[str, str] = {}
+    file_lines: dict[str, tuple[str, ...]] = {}
 
     for file_id in sorted(provider_files):
         raw = provider_files[file_id]
@@ -1401,6 +1410,7 @@ def validate_layer(
             add(_problem("secret-literal", file, "", "the provider file name is a secret-like or stored credential literal",
                          "rename the file; reference credentials as env:NAME"))
             continue
+        file_lines[file_id] = ()
         if not PROVIDER_ID.fullmatch(file_id):
             add(_problem("file-name", file, "", "provider file names match ^[a-z][a-z0-9-]*\\.json$"))
             continue
@@ -1435,6 +1445,8 @@ def validate_layer(
                 add(_problem("secret-literal", file, hit, 'a secret value is not allowed',
                              f'store it with charmer providers set-key {file_id}; write "env:NAME"'))
             continue
+        if isinstance(document, dict) and isinstance(document.get("lines"), dict):
+            file_lines[file_id] = tuple(sorted(document["lines"]))
         # The trusted audit gate, by metadata alone (a closed
         # keyed declaration is refused before schema or semantic work and
         # contributes nothing; its sanitized refusal echoes no authored text).
@@ -1768,6 +1780,9 @@ def validate_layer(
                      f'{route[0]}/{route[1]} is the catalog line "{", ".join(catalog_routes[route])}"',
                      "admit or bind that line instead"))
 
+    for label in problems:
+        if label.startswith(f"{PROVIDERS_DIRNAME}/") and label.endswith(".json"):
+            file_lines.setdefault(label.removeprefix(f"{PROVIDERS_DIRNAME}/").removesuffix(".json"), ())
     layer_digest = _digest("operator-layer", {
         "files": file_digests, "marker": marker,
         "ledger": ledger.sha256 if ledger is not None else None,
@@ -1785,6 +1800,7 @@ def validate_layer(
         legacy_dropped=legacy_dropped,
         route_changes=route_changes,
         marker=marker,
+        file_lines=file_lines,
     )
 
 
@@ -2722,29 +2738,51 @@ def prepared_fingerprint(environ: Mapping[str, str]) -> dict[str, Any]:
     """Raw, non-raising digests of providers.d and the ledger for the
     prepared-start receipt (read-only inside the confined unit)."""
 
-    def digest(path: Path) -> str | None:
+    def failure(exc: OSError) -> str:
+        if exc.errno == errno.EFBIG:
+            return "oversize"
+        kind = "unsafe" if isinstance(exc, state.StateError) or exc.errno == errno.ELOOP else "unreadable"
+        return f"{kind}:{exc.errno}"
+
+    def digest(path: Path | str, *, dir_fd: int | None = None, private: bool = False) -> str | None:
         try:
-            with open(path, "rb") as handle:
-                data = handle.read(READ_LIMIT_BYTES + 1)
+            if private:
+                # The ledger keeps read_private's no-link, caller-only,
+                # private-mode policy, checked on the nonblocking descriptor.
+                descriptor = os.open(path, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_NOCTTY)
+                with os.fdopen(descriptor, "rb") as handle:
+                    info = os.fstat(handle.fileno())
+                    if not stat.S_ISREG(info.st_mode):
+                        raise state.StateError(errno.EINVAL, "not a regular file")
+                    if not posix_fs.owned_by_caller(info) or posix_fs.shared_mode_bits(info):
+                        raise state.StateError(errno.EPERM, "not a private owner-controlled file")
+                    limit = strict_json.DEFAULT_LIMITS.max_bytes
+                    data = handle.read(limit + 1)
+                    if len(data) > limit:
+                        return "oversize"
+            else:
+                data = state.read_owned_readable(path, max_bytes=READ_LIMIT_BYTES, dir_fd=dir_fd)
         except FileNotFoundError:
             return None
         except OSError as exc:
-            return f"unreadable:{exc.errno}"
+            return failure(exc)
         return strict_json.sha256_hex(data)
 
     directory = providers_dir(environ)
-    files: dict[str, str | None] = {}
+    files: dict[str, str | None] | None = {}
     try:
-        names = sorted(os.listdir(directory))
+        descriptor, _symlinked = state.open_owned_readable_dir(directory)
+        try:
+            for name in sorted(os.listdir(descriptor)):
+                if FILE_NAME.fullmatch(name) or name == MIGRATION_MARKER:
+                    files[name] = digest(name, dir_fd=descriptor)
+        finally:
+            os.close(descriptor)
     except FileNotFoundError:
-        names = None
+        files = None
     except OSError as exc:
-        names = []
-        files["."] = f"unreadable:{exc.errno}"
-    for name in names or ():
-        if FILE_NAME.fullmatch(name) or name == MIGRATION_MARKER:
-            files[name] = digest(directory / name)
-    return {"providers": None if names is None else files, "ledger": digest(ledger_path(environ))}
+        files["."] = failure(exc)
+    return {"providers": files, "ledger": digest(ledger_path(environ), private=True)}
 
 
 # ------------------------------------------------------------ admission
@@ -3165,24 +3203,20 @@ def changed_fields(grant: Mapping[str, Any], layer: OperatorLayer, key: str) -> 
     return tuple(sorted(name for name in set(old) | set(new) if old.get(name) != new.get(name)))
 
 
-def line_file_ids(read: ProvidersRead | None) -> dict[str, str]:
-    """line key -> declaring file id, best effort over the raw files (pure,
-    never raises; a secret-bearing or unparsable file contributes nothing)."""
+DECLARATION_REMEDY = "run charmer providers validate; rename any credential-bearing file before retrying"
+
+
+def line_file_ids(read: ProvidersRead | None, layer: OperatorLayer) -> dict[str, str]:
+    """line key -> declaring file id from the credential-screened inventory.
+
+    Rejected names never become display labels or write targets, even when
+    their raw files are readable and contain otherwise valid declarations.
+    """
 
     found: dict[str, str] = {}
     for file_id in sorted(read.files if read is not None else {}):
-        raw = read.files[file_id]
-        if _raw_secret_hit(raw):
-            continue
-        try:
-            document = strict_json.loads(raw, strict_json.JSONLimits(max_bytes=READ_LIMIT_BYTES, max_string=4096))
-        except (strict_json.StrictJSONError, ValueError):
-            continue
-        lines = document.get("lines") if isinstance(document, dict) else None
-        if isinstance(lines, dict):
-            for key in sorted(lines):
-                if isinstance(key, str) and not _secret_bearing(key):
-                    found.setdefault(key, file_id)
+        for key in layer.file_lines.get(file_id, ()):
+            found.setdefault(key, file_id)
     return found
 
 
@@ -3214,7 +3248,6 @@ def file_problems(layer: OperatorLayer, file_id: str) -> tuple[OperatorProblem, 
 # ------------------------------------------------------------ evidence and smoke
 SMOKE_DEADLINE_SECONDS = 120.0
 SMOKE_MAX_BYTES = 256 * 1024
-SMOKE_INPUT_TOKENS = 40
 SMOKE_RESULTS = ("pass", "fail", "degenerate")
 
 
@@ -3253,73 +3286,6 @@ def classify_smoke(status: int | None, body: bytes, *, overflow: bool = False, t
     return SmokeOutcome("pass", status, "ok")
 
 
-@dataclass(frozen=True)
-class SmokePlan:
-    """What one consented smoke would send (disclosed before consent)."""
-
-    key: str
-    alias: str
-    effort: str
-    upstream: str
-    auth: str
-    host: str
-    digest: str
-
-
-def smoke_plan(docs: Mapping[str, Any], layer: OperatorLayer, key: str) -> SmokePlan:
-    """The single request of an admission smoke: the default effort's
-    served alias through the loopback gateway (pure)."""
-
-    line = layer.lines[key]
-    entry = line.core_entry
-    selectors = catalog.line_selectors(dict(entry))
-    chosen = next((item for item in selectors if item[0] == entry["default_effort"]), selectors[0])
-    provider = layer.providers.get(line.provider_id)
-    catalog_provider = docs["providers"]["providers"].get(line.provider_id)
-    if provider is not None:
-        upstream, host = provider.origin, urllib.parse.urlsplit(provider.origin).hostname or "unknown"
-        auth = ("none (keyless)" if provider.auth_kind == "none"
-                else f"{provider.auth_kind} from {provider.secret_name} (value not shown)")
-    else:
-        transport = catalog_provider["transport"]
-        if transport["kind"] == "oauth-pool":
-            upstream, host = f"the {transport['pool']} OAuth pool", transport["pool"]
-            auth = "an OAuth pool credential held by the gateway (not shown)"
-        else:
-            parts = urllib.parse.urlsplit(transport["base_url"])
-            upstream, host = f"{parts.scheme}://{parts.netloc}", (parts.hostname or "unknown")
-            spec = transport.get("auth") or {}
-            ref = spec.get("secret_ref")
-            auth = ("none (keyless)" if spec.get("kind") == "none"
-                    else f"{spec.get('kind')} from {str(ref).removeprefix('env:')} (value not shown)")
-    return SmokePlan(key=key, alias=_selector_base(chosen[1]), effort=chosen[0], upstream=upstream, auth=auth,
-                     host=host.lower(), digest=line.definition_digest)
-
-
-def smoke_consent_text(plan: SmokePlan) -> str:
-    """The exact consent for the one smoke request."""
-
-    return (
-        "charmer will make ONE request to a provider:\n"
-        f"  gateway alias: {plan.alias}\n"
-        f"  upstream origin: {plan.upstream}\n"
-        f"  auth: {plan.auth}\n"
-        f"  why: admission smoke for {plan.key}\n"
-        f"  approximately {SMOKE_INPUT_TOKENS} input tokens; {SMOKE_DEADLINE_SECONDS:g} s wall-clock cap; "
-        f"{SMOKE_MAX_BYTES // 1024} KiB response cap\n"
-        "Proceed? [y/N] "
-    )
-
-
-def evidence_record(plan: SmokePlan, outcome: SmokeOutcome, *, versions: Mapping[str, str], at: str) -> dict[str, Any]:
-    return {
-        "digest": plan.digest,
-        "host": plan.host,
-        "versions": {"launcher": versions["launcher"], "client": versions["client"], "gateway": versions["gateway"]},
-        "checks": {"smoke": {"result": outcome.result, "http": outcome.http, "at": at}},
-    }
-
-
 def write_evidence(environ: Mapping[str, str], schemas: OperatorSchemas, key: str, record: Mapping[str, Any]) -> OperatorEvidence:
     """Record one line's verdict-only evidence (0600, locked). A corrupt
     evidence file raises and is never overwritten."""
@@ -3347,32 +3313,6 @@ def smoke_current(evidence: OperatorEvidence | None, key: str, digest: str) -> b
 # ("tools", variant), ("stream",), ("context",), ("exact_client",).
 EVIDENCE_PASS = "pass"
 EVIDENCE_INCONCLUSIVE = "inconclusive"
-
-
-def smoke_check_record(outcome: SmokeOutcome, *, at: str, contracts: Mapping[str, Any] | None) -> dict[str, Any]:
-    """The admission smoke as a check record: a transient failure
-    (no response, 429, 5xx, the wall-clock cap) is inconclusive; the byte cap
-    and definite rejections fail."""
-
-    reason = "ok"
-    if outcome.result == "pass":
-        result = "pass"
-    elif outcome.result == "degenerate":
-        result, reason = ("failed", "oversize") if "byte cap" in outcome.reason else ("inconclusive", "timeout")
-    elif outcome.http is None:
-        result, reason = "inconclusive", "connection"
-    elif outcome.http == 429:
-        result, reason = "inconclusive", "rate-limited"
-    elif 500 <= outcome.http <= 599:
-        result, reason = "inconclusive", "upstream-error"
-    elif outcome.http == 200:
-        result, reason = "failed", "not-a-message"
-    else:
-        result, reason = "failed", "http-status"
-    record: dict[str, Any] = {"result": result, "http": outcome.http, "at": at, "reason": reason}
-    if contracts is not None:
-        record["contracts"] = dict(contracts)
-    return record
 
 
 def merge_checks(existing: Mapping[str, Any] | None, *, digest: str, host: str, versions: Mapping[str, str],
@@ -3979,7 +3919,7 @@ def doctor_findings(
 
     # Per-file declared names (best effort) for reference impact.
     file_keys: dict[str, set[str]] = {}
-    for key, file_id in line_file_ids(snapshot.read).items():
+    for key, file_id in line_file_ids(snapshot.read, layer).items():
         file_keys.setdefault(file_label(file_id), set()).add(key)
     file_aliases: dict[str, set[str]] = {}
     for alias, label in declared_aliases(layer, snapshot.read).items():

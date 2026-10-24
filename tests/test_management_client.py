@@ -4,6 +4,7 @@ import ast
 import http.client
 import http.server
 import inspect
+import io
 import json
 import os
 import socket
@@ -55,6 +56,24 @@ class FakeManagementServer(http.server.ThreadingHTTPServer):
         result = super().get_request()
         self.accepts += 1
         return result
+
+
+class ManagementFramingTests(unittest.TestCase):
+    def test_premature_eof_discards_the_management_body(self):
+        body = b'{"files":[]}'
+        for length in (len(body) + 100, len(body), None):
+            with self.subTest(length=length):
+                header = b"" if length is None else f"Content-Length: {length}\r\n".encode()
+                wire = b"HTTP/1.1 200 OK\r\n" + header + b"\r\n" + body
+                response = http.client.HTTPResponse(mock.Mock(makefile=lambda _mode: io.BytesIO(wire)))
+                response.begin()
+                self.addCleanup(response.close)
+                connection = mock.Mock()
+                connection.getresponse.return_value = response
+                result = management.send_request(connection, "fixture-key")
+                self.assertEqual(result, (200, b"" if length == len(body) + 100 else body))
+                connection.request.assert_called_once_with(
+                    "GET", quota.AUTH_FILES_PATH, headers={"X-Management-Key": "fixture-key"})
 
 
 class ManagementClientTests(unittest.TestCase):

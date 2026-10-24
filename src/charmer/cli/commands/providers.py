@@ -707,14 +707,10 @@ def providers_list_document(runtime: runtime_mod.Runtime) -> dict[str, Any]:
     (gateway not observed) or ``—`` (nothing expected)."""
 
     ctx = operator_context(runtime)
-    layer, read = ctx.layer, ctx.read
+    layer = ctx.layer
     admitted = admitted_keys(runtime)
-    by_file: dict[str, list[str]] = {}
-    for key, file_id in operator_mod.line_file_ids(read).items():
-        by_file.setdefault(file_id, []).append(key)
-    file_ids = set(read.files) | {problem.file.removeprefix(f"{operator_mod.PROVIDERS_DIRNAME}/")
-                                  .removesuffix(".json") for problem in layer.problems
-                                  if problem.file.endswith(".json")}
+    by_file = layer.file_lines
+    file_ids = set(by_file)
     facts, connections, unavailable = _provider_states(runtime)
     entries: list[dict[str, Any]] = []
     for provider_id in sorted(set(facts) | file_ids):
@@ -823,7 +819,7 @@ def _resolved_provider(ctx: OperatorContext, provider_id: str) -> dict[str, Any]
         "route": layer.route_status.get(provider_id, "catalog" if catalog_provider is not None else "invalid"),
         "route_digest": provider.route_digest if provider is not None else None,
         "lines": lines,
-        "pending": sorted(key for key, fid in operator_mod.line_file_ids(ctx.read).items()
+        "pending": sorted(key for key, fid in operator_mod.line_file_ids(ctx.read, ctx.layer).items()
                           if fid == provider_id and key in layer.pending),
         "problems": [problem.text() for problem in
                      layer.problems_by_file.get(operator_mod.file_label(provider_id), ())],

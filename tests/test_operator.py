@@ -10,9 +10,12 @@ from __future__ import annotations
 
 import copy
 import dataclasses
+import errno
 import json
 import os
 import shutil
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -964,6 +967,21 @@ class LedgerEvidenceTests(unittest.TestCase):
         evidence = operator.parse_evidence((OPERATOR_FIXTURES / "evidence-sample.json").read_bytes(), schemas.evidence)
         self.assertEqual(evidence.lines["custom-acme-small"]["checks"]["smoke"]["result"], "pass")
 
+    def test_malformed_collection_shapes_fail_closed(self) -> None:
+        schemas = _schemas()
+        for field in ("admissions", "routes", "aliases", "pruned", "removed", "transport_choices"):
+            for value in (None, True, 42, "abc", [], [42]):
+                with self.subTest(store="ledger", field=field, value=value):
+                    document = operator.ledger_document(None)
+                    document[field] = value
+                    with self.assertRaises(operator.OperatorError):
+                        operator.parse_ledger(strict_json.canonical_file_bytes(document), schemas.ledger)
+        for value in (None, True, 42, "abc", [], [1]):
+            with self.subTest(store="evidence", value=value):
+                with self.assertRaises(operator.OperatorError):
+                    operator.parse_evidence(strict_json.canonical_file_bytes({"version": 1, "lines": value}),
+                                            schemas.evidence)
+
     def test_load_is_private_and_absent_is_none(self) -> None:
         home = Path(tempfile.mkdtemp(prefix="charmer-ledger-"))
         os.chmod(home, 0o700)
@@ -1716,6 +1734,41 @@ class CaptureTransactionTests(OperatorHomeCase):
         self.assertNotIn("unservable selectors: custom-acme-small", out)
 
 
+class MalformedStoreTests(OperatorHomeCase):
+    def test_malformed_ledger_keeps_bytes_and_degrades_only_at_start(self) -> None:
+        self.install(_fixture_files())
+        for field in ("admissions", "routes", "aliases"):
+            for value in (None, True, 42, "abc", [], [42]):
+                with self.subTest(field=field, value=value):
+                    document = operator.ledger_document(None)
+                    document[field] = value
+                    raw = strict_json.canonical_file_bytes(document)
+                    state.atomic_write(self.ledger_file, raw)
+                    snapshot = operator.load_snapshot(self.environ, _docs(), asset_root=FIXTURE_ROOT)
+                    self.assertEqual(snapshot.ledger_error, operator.LEDGER_UNUSABLE)
+                    self.assertIsNone(snapshot.ledger)
+                    with self.assertRaisesRegex(proxy.ProxyError, "cannot be captured"):
+                        self.init()
+                    code, _out, err = self.init("--prepare-start")
+                    self.assertEqual(code, 0, err)
+                    self.assertIn("operator lines not rendered", err)
+                    self.assertNotIn("custom-kimi-next", self.aliases())
+                    self.assertEqual(self.ledger_file.read_bytes(), raw)
+
+    def test_malformed_evidence_cannot_raise_the_validated_floor(self) -> None:
+        self.install(_fixture_files())
+        path = operator.evidence_path(self.environ)
+        state.ensure_private_dir(path.parent)
+        baseline = operator.load_snapshot(self.environ, _docs(), asset_root=FIXTURE_ROOT)
+        for value in (None, True, 42, "abc", [], [1]):
+            with self.subTest(value=value):
+                raw = strict_json.canonical_file_bytes({"version": 1, "lines": value})
+                state.atomic_write(path, raw)
+                snapshot = operator.load_snapshot(self.environ, _docs(), asset_root=FIXTURE_ROOT)
+                self.assertEqual(snapshot.layer.lines, baseline.layer.lines)
+                self.assertEqual(path.read_bytes(), raw)
+
+
 class FailurePolicyTests(OperatorHomeCase):
     """Operator failure policy."""
 
@@ -2040,6 +2093,61 @@ class UnknownHistoryReferenceTests(OperatorHomeCase):
         self.assertFalse(os.path.lexists(self.pdir))
 
 
+class FingerprintTests(OperatorHomeCase):
+    def test_special_files_are_refused_under_an_independent_watchdog(self) -> None:
+        state.ensure_private_dir(self.pdir)
+        for target in (self.pdir / "pipe.json", self.ledger_file):
+            with self.subTest(input=target.name):
+                os.mkfifo(target, 0o600)
+                try:
+                    try:
+                        result = subprocess.run(
+                            [sys.executable, "-c",
+                             "import json,sys; from charmer import operator; "
+                             "print(json.dumps(operator.prepared_fingerprint(json.loads(sys.argv[1]))))",
+                             json.dumps(self.environ)],
+                            cwd=self.root, capture_output=True, text=True, timeout=5,
+                        )
+                    except subprocess.TimeoutExpired:
+                        self.fail("fingerprinting a FIFO exceeded the independent watchdog")
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    found = json.loads(result.stdout)
+                    token = found["ledger"] if target == self.ledger_file else found["providers"][target.name]
+                    self.assertEqual(token, f"unsafe:{errno.EINVAL}")
+                finally:
+                    target.unlink()
+
+    def test_fingerprint_checks_owned_readable_and_private_policies(self) -> None:
+        state.ensure_private_dir(self.pdir)
+        real = self.root / "managed.json"
+        real.write_bytes(b"{}")
+        real.chmod(0o444)
+        (self.pdir / "managed.json").symlink_to(real)
+        (self.pdir / "missing.json").symlink_to(self.root / "absent")
+        (self.pdir / "device.json").symlink_to("/dev/null")
+        (self.pdir / "open.json").write_bytes(b"{}")
+        (self.pdir / "open.json").chmod(0o666)
+        self.ledger_file.symlink_to(real)
+        found = operator.prepared_fingerprint(self.environ)
+        self.assertEqual(found["providers"]["managed.json"], strict_json.sha256_hex(b"{}"))
+        self.assertIsNone(found["providers"]["missing.json"])
+        self.assertEqual(found["providers"]["device.json"], f"unsafe:{errno.EINVAL}")
+        self.assertEqual(found["providers"]["open.json"], f"unsafe:{errno.EPERM}")
+        self.assertEqual(found["ledger"], f"unsafe:{errno.ELOOP}")
+        self.ledger_file.unlink()
+        self.ledger_file.write_bytes(b"{}")
+        self.ledger_file.chmod(0o644)
+        self.assertEqual(operator.prepared_fingerprint(self.environ)["ledger"], f"unsafe:{errno.EPERM}")
+
+    def test_oversize_inputs_are_tokens_not_prefix_digests(self) -> None:
+        state.ensure_private_dir(self.pdir)
+        state.atomic_write(self.pdir / "big.json", b" " * (operator.READ_LIMIT_BYTES + 1))
+        state.atomic_write(self.ledger_file, b" " * (strict_json.DEFAULT_LIMITS.max_bytes + 1))
+        found = operator.prepared_fingerprint(self.environ)
+        self.assertEqual(found["providers"]["big.json"], "oversize")
+        self.assertEqual(found["ledger"], "oversize")
+
+
 class PreparedStartTests(OperatorHomeCase):
     """Prepared execution writes no policy or config; the runtime
     exec stamp stays; operator inputs bind the prepared receipt."""
@@ -2099,6 +2207,25 @@ class PreparedStartTests(OperatorHomeCase):
             return True
         except operator.OperatorError:
             return False
+
+    def test_large_ledger_tail_change_refuses_prepared_execution(self) -> None:
+        raw = self.ledger_file.read_bytes()
+        prefix = b"{" + b" " * 70000
+        state.atomic_write(self.ledger_file, prefix + raw[1:])
+        self.assertEqual(self.init("--prepare-start")[0], 0)
+        before = self.ledger_file.read_bytes()
+        self.assertTrue(before.startswith(prefix))
+        previous = operator.prepared_fingerprint(self.environ)
+        changed = before.replace(b'"transport_choices":{}', b'"transport_choices":{"openai":"api-key"}')
+        self.assertNotEqual(changed, before)
+        state.atomic_write(self.ledger_file, changed)
+        self.assertEqual(self.ledger().transport_choices, {"openai": "api-key"})
+        self.assertNotEqual(operator.prepared_fingerprint(self.environ), previous)
+        with mock.patch.object(proxy, "_stored_secret_values", side_effect=AssertionError("secret read")), \
+                mock.patch.object(proxy, "render_runtime_config", side_effect=AssertionError("render")), \
+                self.assertRaisesRegex(proxy.ProxyError, "preparation is absent or stale"):
+            proxy.cmd_run(["--prepared"], environ=self.environ, execve=lambda *_: self.fail("exec"))
+        self.assertEqual(self.ledger_file.read_bytes(), changed)
 
     def test_fingerprint_never_raises(self) -> None:
         os.chmod(self.pdir / "acme.json", 0)
@@ -2612,6 +2739,28 @@ class SmokeTransportTests(unittest.TestCase):
         return runtime_mod.default_qualify_transport(
             base, "fixture-token", "custom-fixture-alias",
             owner_check=lambda _base: service.OwnerVerdict("ours", "fixture"), **kwargs)
+
+    def test_premature_eof_is_a_value_free_protocol_failure(self) -> None:
+        import http.client
+
+        body = b'{"type":"message","role":"assistant","content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn"}'
+        for length in (len(body) + 100, len(body), None):
+            with self.subTest(length=length):
+                header = b"" if length is None else f"Content-Length: {length}\r\n".encode()
+                wire = b"HTTP/1.1 200 OK\r\n" + header + b"\r\n" + body
+                response = http.client.HTTPResponse(mock.Mock(makefile=lambda _mode: io.BytesIO(wire)))
+                response.begin()
+                self.addCleanup(response.close)
+                connection = mock.Mock(sock=None)
+                connection.getresponse.return_value = response
+                with mock.patch.object(http.client, "HTTPConnection", return_value=connection):
+                    outcome = self.smoke("http://127.0.0.1:1234", deadline=5)
+                if length == len(body) + 100:
+                    self.assertEqual(outcome, operator.SmokeOutcome("fail", 200, "malformed HTTP response"))
+                else:
+                    self.assertEqual(outcome.result, "pass")
+                connection.request.assert_called_once()
+                connection.close.assert_called_once()
 
     def test_verdicts_and_single_request(self) -> None:
         for mode, result, http in (("ok", "pass", 200), ("redirect", "fail", 302), ("error", "fail", 500),
