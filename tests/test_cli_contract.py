@@ -27,6 +27,7 @@ from charmer import cli, identity
 from charmer.cli import parser as parser_mod, streams
 from charmer.cli.commands import lineup as lineup_cmd
 import test_cli
+import test_portability
 from test_cli import FIXED_ID, OTHER_ID, CLITestCase
 
 TWIN_ID = "11111111-2222-4222-8222-222222222222"  # shares FIXED_ID's first 8 characters
@@ -67,6 +68,35 @@ class ExitStatusTests(CLITestCase):
         self.assertIn("Nothing was forgotten.", out)
         self.assertTrue((self.runtime.session_store.sessions_dir / f"{FIXED_ID}.json").exists())
 
+    def test_declining_token_rotation_is_3_and_never_rotates(self) -> None:
+        with mock.patch("charmer.cli.doctor_actions.proxy_mod.rotate_token") as rotate:
+            code, out, err = self.run_cli_both(["doctor", "--rotate-token"], "n\n", interactive=True)
+        self.assertEqual(code, 3, out + err)
+        self.assertIn("rotation not started; nothing changed", out)
+        self.assertIn("[y/N]", out + err)
+        rotate.assert_not_called()
+
+    def test_declining_a_starter_is_3_and_never_saves(self) -> None:
+        with mock.patch.object(self.runtime.profiles, "new") as save:
+            code, out, err = self.run_cli_both(["profile", "starter", "--apply"], "n\n", interactive=True)
+        self.assertEqual(code, 3, out + err)
+        self.assertIn("Nothing written.", out)
+        save.assert_not_called()
+
+    def test_failed_profile_editors_are_1_for_new_and_edit(self) -> None:
+        self.runtime.profiles.install_seeds()
+        before = self.runtime.profiles.raw_bytes("balanced")
+        for verb, name in (("new", "draft"), ("edit", "balanced")):
+            with self.subTest(verb=verb), mock.patch.dict(self.runtime.environ, {"EDITOR": "fixture-editor"}), \
+                    mock.patch("tempfile.tempdir", str(self.root)), \
+                    mock.patch("charmer.cli.commands.profile.subprocess.run",
+                               return_value=subprocess.CompletedProcess([], 7)):
+                code, out, err = self.run_cli_both(["profile", verb, name, "--line"], interactive=True)
+                self.assertEqual(code, 1, out + err)
+                self.assertIn("the editor exited with status 7", out)
+                self.assertFalse(self.runtime.profiles.contains("draft"))
+                self.assertEqual(self.runtime.profiles.raw_bytes("balanced"), before)
+
     def test_forget_off_a_terminal_needs_yes(self) -> None:
         self.save_v4_session()
         code, out, err = self.run_cli_both(["sessions", "forget", FIXED_ID], interactive=False)
@@ -83,6 +113,22 @@ class ExitStatusTests(CLITestCase):
             code, out, err = self.run_cli_both(["profile", "list"], interactive=False)
         self.assertEqual((code, out), (130, ""))
         self.assertIn("charmer: cancelled", err)
+
+
+class ImportExitStatusTests(test_portability.PortabilityCase):
+    def test_declining_import_is_3_and_never_applies(self) -> None:
+        document, _raw, _err = self.export_json()
+        profile = self.runtime.profiles.load("balanced")
+        profile.pop("seed", None)
+        profile["name"] = "imported"
+        document["profiles"]["imported"] = {"document": profile}
+        with mock.patch("charmer.cli.commands.portability.apply_import") as apply:
+            code, out, err, answers = self.importing(self.bundle_file(document), [False], apply=True)
+        self.assertEqual(code, 3, out + err)
+        self.assertIn("import: declined — nothing written", err)
+        self.assertEqual(answers.asked, [test_portability.portability_cmd.APPLY_QUESTION])
+        self.assertFalse(self.runtime.profiles.contains("imported"))
+        apply.assert_not_called()
 
 
 class FilesystemFailureTests(CLITestCase):

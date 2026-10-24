@@ -556,7 +556,7 @@ def import_command(runtime: runtime_mod.Runtime, args: argparse.Namespace, *, in
         raise shown.refusal or cli_errors.CLIError("import: no served preview — nothing written")
     if not consent.confirm(APPLY_QUESTION, input_stream=input_stream):
         _say("import: declined — nothing written")
-        return 1
+        return 3
     # The commit revalidates exactly the preflight whose lines were shown:
     # anything that moved since (a new session on a retargeted alias
     # included) refuses there; the confirmation baseline is never refreshed.
