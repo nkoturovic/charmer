@@ -453,6 +453,78 @@ class TransactionTests(JourneyTestCase):
         self.assertEqual(self.current(), "versions/1.0.0")
 
 
+class ResponseFailureTests(JourneyTestCase):
+    """Body and close failures stay sanitized without hiding local I/O errors."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.seed(self.release("1.0.0"))
+        self.newer = self.release("1.1.0")
+
+    def response(self, raw: bytes):
+        connection = mock.Mock()
+        connection.makefile.return_value = io.BytesIO(raw)
+        response = http.client.HTTPResponse(connection)
+        response.begin()
+        response.url = "https://release.invalid/MANIFEST.json"
+        return response
+
+    def transport(self, failed_name: str, response):
+        def open_response(url, **_kwargs):
+            name = url.rsplit("/", 1)[-1]
+            return response if name == failed_name else io.BytesIO((self.newer.dir / name).read_bytes())
+
+        return ru.HttpsTransport("https://release.invalid", opener=open_response)
+
+    def refused(self, name: str, response) -> str:
+        transport = self.transport(name, response)
+        code, out = self.run_journey(journey=self.journey(transport=lambda *_a: transport), assume_yes=True)
+        self.assertEqual(code, ru.EXIT_REFUSED, out)
+        self.assertIn("response failed", out)
+        for value in ("fixture-password", "fixture-body", "Traceback"):
+            self.assertNotIn(value, out)
+        self.assertEqual(self.current(), "versions/1.0.0")
+        self.assertFalse((self.root / "previous").exists())
+        self.assertIsNone(gateway_inhibition.read(self.state))
+        self.assertFalse(list(self.root.glob("*.part")))
+        return out
+
+    def test_truncated_chunked_metadata_is_a_sanitized_refusal(self) -> None:
+        response = self.response(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n20\r\nfixture-body")
+        self.refused("MANIFEST.json", response)
+        self.assertTrue(response.closed)
+
+    def test_truncated_content_length_metadata_is_a_sanitized_refusal(self) -> None:
+        response = self.response(b"HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\nfixture-body")
+        self.refused("MANIFEST.json", response)
+        self.assertTrue(response.closed)
+
+    def test_bundle_read_failure_after_one_chunk_never_switches(self) -> None:
+        response = mock.Mock(spec=["read", "close"])
+        response.read.side_effect = [b"first chunk", http.client.IncompleteRead(b"fixture-password")]
+        self.refused(self.newer.asset().name, response)
+        self.assertEqual(response.read.call_count, 2)
+        response.close.assert_called_once()
+
+    def test_read_timeouts_and_close_failures_are_sanitized(self) -> None:
+        for operation in ("read", "close"):
+            with self.subTest(operation=operation):
+                response = mock.Mock(spec=["read", "close"])
+                response.read.return_value = (self.newer.dir / "MANIFEST.json").read_bytes()
+                getattr(response, operation).side_effect = TimeoutError("fixture-password fixture-body")
+                self.refused("MANIFEST.json", response)
+                response.close.assert_called_once()
+
+    def test_local_write_failure_is_not_a_transport_failure(self) -> None:
+        destination = self.tmp / "missing" / "bundle.tar.gz"
+        response = io.BytesIO(b"bundle")
+        transport = self.transport("bundle.tar.gz", response)
+        with self.assertRaises(FileNotFoundError) as caught:
+            transport.download("bundle.tar.gz", "1.1.0", destination, 6)
+        self.assertEqual(caught.exception.filename, str(destination))
+        self.assertTrue(response.closed)
+
+
 class FactsTests(JourneyTestCase):
     def test_release_age_lines(self) -> None:
         runtime = mock.Mock(environ=self.environ, home=self.home)
