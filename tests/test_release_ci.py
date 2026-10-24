@@ -1990,6 +1990,20 @@ class PinWatchTests(unittest.TestCase):
             with self.subTest(missing=name), self.assertRaises(self.tool.PinError):
                 self.tool.upstream_versions(missing)
 
+    def test_duplicate_upstream_keys_are_refused(self) -> None:
+        text = self.upstream_text(claude_code_latest="2.1.310", claude_code_stable="2.1.308")
+        for line in text.splitlines():
+            name, value = line.split("=", 1)
+            for duplicate in (value, "2.1.308"):
+                with self.subTest(name=name, duplicate=duplicate), self.assertRaisesRegex(
+                        self.tool.PinError, f"duplicate upstream key: {name}"):
+                    self.tool.upstream_versions(text + f"\n{name}={duplicate}")
+
+    def test_unknown_upstream_keys_are_refused(self) -> None:
+        for name in ("claude_code", "python", "unexpected", ""):
+            with self.subTest(name=name), self.assertRaisesRegex(self.tool.PinError, "unknown upstream key:"):
+                self.tool.upstream_versions(self.upstream_text() + f"\n{name}=2.1.310")
+
     def test_both_tags_are_reported_and_an_unstable_newer_latest_fails(self) -> None:
         contract = self.repo / "src/charmer/data/catalog/native-contract.json"
         document = json.loads(contract.read_text())
@@ -2023,7 +2037,7 @@ class PinWatchTests(unittest.TestCase):
         steps = _steps(_jobs(watch)["watch"])
         compare = next(step for step in steps if "id: compare" in step)
         issue = next(step for step in steps if "name: Open or update" in step)
-        self.assertIn("if: always() && steps.compare.outputs.changed == 'true'", issue)
+        self.assertIn("if: ${{ !cancelled() && steps.compare.outputs.changed == 'true' }}", issue)
         self.assertNotIn("continue-on-error", compare)
         # Run the actual shell with a controlled comparison failure; its
         # output must be set even under the runner's errexit behaviour.

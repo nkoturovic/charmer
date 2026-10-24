@@ -96,9 +96,19 @@ def normalize(name: str, raw: str) -> str:
 
 
 def upstream_versions(text: str) -> dict[str, str]:
-    upstream = dict(line.split("=", 1) for line in text.splitlines() if "=" in line)
+    names = ("claude_code_latest", "claude_code_stable", "gateway", "go", "python_build_standalone")
+    upstream = {}
+    for line in text.splitlines():
+        if "=" not in line:
+            continue
+        name, value = line.split("=", 1)
+        if name not in names:
+            raise PinError(f"unknown upstream key: {name}")
+        if name in upstream:
+            raise PinError(f"duplicate upstream key: {name}")
+        upstream[name] = value
     versions = {}
-    for name in ("claude_code_latest", "claude_code_stable", "gateway", "go", "python_build_standalone"):
+    for name in names:
         if name not in upstream or not upstream[name].strip():
             raise PinError(f"the upstream {name} version is missing (the lookup failed)")
         versions[name] = normalize(name, upstream[name])
