@@ -47,12 +47,14 @@ class StandardStreamTests(unittest.TestCase):
                     self.assertEqual(stream.errors, "replace")
                     self.assertEqual(stream.buffer.getvalue(), b"? caf\xe9\n")
 
-    def test_capable_streams_and_utf8_mode_keep_their_error_policy(self) -> None:
+    def test_only_utf8_streams_keep_their_error_policy_regardless_of_utf8_mode(self) -> None:
         for encodings, utf8_mode, expected in (
             (("utf-8", "utf-8"), 0, ("strict", "strict")),
             (("utf-8", "latin-1"), 0, ("strict", "replace")),
             (("latin-1", "utf-8"), 0, ("replace", "strict")),
-            (("latin-1", "ascii"), 1, ("strict", "strict")),
+            (("latin-1", "ascii"), 1, ("replace", "replace")),
+            (("shift_jis", "utf-8"), 0, ("replace", "strict")),
+            (("utf_8", "UTF8"), 1, ("strict", "strict")),
         ):
             with self.subTest(encodings=encodings, utf8_mode=utf8_mode):
                 stdout, stderr = self.streams(*encodings)
@@ -80,11 +82,11 @@ class CommandLocaleTests(unittest.TestCase):
         self.home = self.root / "home"
         self.home.mkdir()
 
-    def command(self, args: list[str], encoding: str, *, bypass_run: bool = False):
+    def command(self, args: list[str], encoding: str, *, bypass_run: bool = False, utf8_mode: str = "0"):
         env = {**os.environ, "HOME": str(self.home), "TERM": "dumb",
                "XDG_CONFIG_HOME": str(self.root / "config"), "XDG_STATE_HOME": str(self.root / "state"),
                "XDG_DATA_HOME": str(self.root / "data"), "CHARMER_ASSETS": str(FIXTURE_ROOT),
-               "LC_ALL": "C", "PYTHONCOERCECLOCALE": "0", "PYTHONUTF8": "0",
+               "LC_ALL": "C", "PYTHONCOERCECLOCALE": "0", "PYTHONUTF8": utf8_mode,
                "PYTHONIOENCODING": encoding,
                # The source first; the runner's own entries (its guard) stay.
                "PYTHONPATH": os.pathsep.join([str(SRC_DIR), *filter(None, os.environ.get("PYTHONPATH", "").split(os.pathsep))])}
@@ -118,6 +120,22 @@ class CommandLocaleTests(unittest.TestCase):
                 self.assertEqual(latin1.stdout, utf8.stdout.decode("utf-8").encode("latin-1", errors="replace"))
                 if args == ["sessions", "list"]:
                     self.assertIn("●".encode("utf-8"), utf8.stdout)
+
+    def test_ascii_help_survives_a_stream_override_in_utf8_mode(self) -> None:
+        utf8 = self.command(["--help"], "utf-8", utf8_mode="1")
+        ascii_output = self.command(["--help"], "ascii", utf8_mode="1")
+        self.assertEqual(utf8.returncode, 0, utf8.stderr)
+        self.assertEqual(ascii_output.returncode, 0, ascii_output.stderr)
+        self.assertNotIn(b"Traceback", ascii_output.stderr)
+        self.assertEqual(ascii_output.stdout, utf8.stdout.decode("utf-8").encode("ascii", errors="replace"))
+
+    def test_sessions_list_survives_shift_jis_which_encodes_only_some_markers(self) -> None:
+        utf8 = self.command(["sessions", "list"], "utf-8")
+        shift_jis = self.command(["sessions", "list"], "shift_jis")
+        self.assertEqual(utf8.returncode, 0, utf8.stderr)
+        self.assertEqual(shift_jis.returncode, 0, shift_jis.stderr)
+        self.assertNotIn(b"Traceback", shift_jis.stderr)
+        self.assertEqual(shift_jis.stdout, utf8.stdout.decode("utf-8").encode("shift_jis", errors="replace"))
 
     def test_utf8_output_is_byte_identical_to_unconfigured_dispatch(self) -> None:
         for args in (["--help"], ["sessions", "list"]):

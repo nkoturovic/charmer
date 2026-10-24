@@ -30,6 +30,7 @@ through here before the command module loads.
 
 from __future__ import annotations
 
+import codecs
 import os
 import sys
 from pathlib import Path
@@ -130,15 +131,11 @@ def run(name: str, argv: Sequence[str] | None = None) -> int:
     arguments) in the environment as it stands."""
 
     program = PROGRAMS[name]
-    if not sys.flags.utf8_mode:
-        for stream in (sys.stdout, sys.stderr):
-            encoding = getattr(stream, "encoding", None)
-            if encoding and hasattr(stream, "reconfigure"):
-                try:
-                    "●".encode(encoding)
-                except UnicodeEncodeError:
-                    # Keep the user's encoding; unsupported UI markers are lossy, not fatal.
-                    stream.reconfigure(errors="replace")
+    for stream in (sys.stdout, sys.stderr):
+        encoding = getattr(stream, "encoding", None)
+        if encoding and hasattr(stream, "reconfigure") and codecs.lookup(encoding).name != "utf-8":
+            # The stream can override UTF-8 mode. Keep its encoding; unsupported text is lossy, not fatal.
+            stream.reconfigure(errors="replace")
     return program(list(sys.argv[1:] if argv is None else argv))
 
 
