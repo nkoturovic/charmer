@@ -10,9 +10,12 @@ from __future__ import annotations
 
 import copy
 import dataclasses
+import errno
 import json
 import os
 import shutil
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -2090,6 +2093,61 @@ class UnknownHistoryReferenceTests(OperatorHomeCase):
         self.assertFalse(os.path.lexists(self.pdir))
 
 
+class FingerprintTests(OperatorHomeCase):
+    def test_special_files_are_refused_under_an_independent_watchdog(self) -> None:
+        state.ensure_private_dir(self.pdir)
+        for target in (self.pdir / "pipe.json", self.ledger_file):
+            with self.subTest(input=target.name):
+                os.mkfifo(target, 0o600)
+                try:
+                    try:
+                        result = subprocess.run(
+                            [sys.executable, "-c",
+                             "import json,sys; from charmer import operator; "
+                             "print(json.dumps(operator.prepared_fingerprint(json.loads(sys.argv[1]))))",
+                             json.dumps(self.environ)],
+                            cwd=self.root, capture_output=True, text=True, timeout=5,
+                        )
+                    except subprocess.TimeoutExpired:
+                        self.fail("fingerprinting a FIFO exceeded the independent watchdog")
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    found = json.loads(result.stdout)
+                    token = found["ledger"] if target == self.ledger_file else found["providers"][target.name]
+                    self.assertEqual(token, f"unsafe:{errno.EINVAL}")
+                finally:
+                    target.unlink()
+
+    def test_fingerprint_checks_owned_readable_and_private_policies(self) -> None:
+        state.ensure_private_dir(self.pdir)
+        real = self.root / "managed.json"
+        real.write_bytes(b"{}")
+        real.chmod(0o444)
+        (self.pdir / "managed.json").symlink_to(real)
+        (self.pdir / "missing.json").symlink_to(self.root / "absent")
+        (self.pdir / "device.json").symlink_to("/dev/null")
+        (self.pdir / "open.json").write_bytes(b"{}")
+        (self.pdir / "open.json").chmod(0o666)
+        self.ledger_file.symlink_to(real)
+        found = operator.prepared_fingerprint(self.environ)
+        self.assertEqual(found["providers"]["managed.json"], strict_json.sha256_hex(b"{}"))
+        self.assertIsNone(found["providers"]["missing.json"])
+        self.assertEqual(found["providers"]["device.json"], f"unsafe:{errno.EINVAL}")
+        self.assertEqual(found["providers"]["open.json"], f"unsafe:{errno.EPERM}")
+        self.assertEqual(found["ledger"], f"unsafe:{errno.ELOOP}")
+        self.ledger_file.unlink()
+        self.ledger_file.write_bytes(b"{}")
+        self.ledger_file.chmod(0o644)
+        self.assertEqual(operator.prepared_fingerprint(self.environ)["ledger"], f"unsafe:{errno.EPERM}")
+
+    def test_oversize_inputs_are_tokens_not_prefix_digests(self) -> None:
+        state.ensure_private_dir(self.pdir)
+        state.atomic_write(self.pdir / "big.json", b" " * (operator.READ_LIMIT_BYTES + 1))
+        state.atomic_write(self.ledger_file, b" " * (strict_json.DEFAULT_LIMITS.max_bytes + 1))
+        found = operator.prepared_fingerprint(self.environ)
+        self.assertEqual(found["providers"]["big.json"], "oversize")
+        self.assertEqual(found["ledger"], "oversize")
+
+
 class PreparedStartTests(OperatorHomeCase):
     """Prepared execution writes no policy or config; the runtime
     exec stamp stays; operator inputs bind the prepared receipt."""
@@ -2149,6 +2207,25 @@ class PreparedStartTests(OperatorHomeCase):
             return True
         except operator.OperatorError:
             return False
+
+    def test_large_ledger_tail_change_refuses_prepared_execution(self) -> None:
+        raw = self.ledger_file.read_bytes()
+        prefix = b"{" + b" " * 70000
+        state.atomic_write(self.ledger_file, prefix + raw[1:])
+        self.assertEqual(self.init("--prepare-start")[0], 0)
+        before = self.ledger_file.read_bytes()
+        self.assertTrue(before.startswith(prefix))
+        previous = operator.prepared_fingerprint(self.environ)
+        changed = before.replace(b'"transport_choices":{}', b'"transport_choices":{"openai":"api-key"}')
+        self.assertNotEqual(changed, before)
+        state.atomic_write(self.ledger_file, changed)
+        self.assertEqual(self.ledger().transport_choices, {"openai": "api-key"})
+        self.assertNotEqual(operator.prepared_fingerprint(self.environ), previous)
+        with mock.patch.object(proxy, "_stored_secret_values", side_effect=AssertionError("secret read")), \
+                mock.patch.object(proxy, "render_runtime_config", side_effect=AssertionError("render")), \
+                self.assertRaisesRegex(proxy.ProxyError, "preparation is absent or stale"):
+            proxy.cmd_run(["--prepared"], environ=self.environ, execve=lambda *_: self.fail("exec"))
+        self.assertEqual(self.ledger_file.read_bytes(), changed)
 
     def test_fingerprint_never_raises(self) -> None:
         os.chmod(self.pdir / "acme.json", 0)

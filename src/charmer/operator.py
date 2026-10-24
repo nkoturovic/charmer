@@ -45,6 +45,7 @@ from typing import Any, Callable, Iterable, Iterator, Mapping
 from . import assets, catalog, custom, errors, paths, render, secret_store, state, strict_json
 from . import sessions as sessions_mod
 from . import validate as schema_validate
+from .platform import posix_fs
 
 
 class OperatorError(errors.CharmerError, ValueError):
@@ -2737,29 +2738,51 @@ def prepared_fingerprint(environ: Mapping[str, str]) -> dict[str, Any]:
     """Raw, non-raising digests of providers.d and the ledger for the
     prepared-start receipt (read-only inside the confined unit)."""
 
-    def digest(path: Path) -> str | None:
+    def failure(exc: OSError) -> str:
+        if exc.errno == errno.EFBIG:
+            return "oversize"
+        kind = "unsafe" if isinstance(exc, state.StateError) or exc.errno == errno.ELOOP else "unreadable"
+        return f"{kind}:{exc.errno}"
+
+    def digest(path: Path | str, *, dir_fd: int | None = None, private: bool = False) -> str | None:
         try:
-            with open(path, "rb") as handle:
-                data = handle.read(READ_LIMIT_BYTES + 1)
+            if private:
+                # The ledger keeps read_private's no-link, caller-only,
+                # private-mode policy, checked on the nonblocking descriptor.
+                descriptor = os.open(path, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_NOCTTY)
+                with os.fdopen(descriptor, "rb") as handle:
+                    info = os.fstat(handle.fileno())
+                    if not stat.S_ISREG(info.st_mode):
+                        raise state.StateError(errno.EINVAL, "not a regular file")
+                    if not posix_fs.owned_by_caller(info) or posix_fs.shared_mode_bits(info):
+                        raise state.StateError(errno.EPERM, "not a private owner-controlled file")
+                    limit = strict_json.DEFAULT_LIMITS.max_bytes
+                    data = handle.read(limit + 1)
+                    if len(data) > limit:
+                        return "oversize"
+            else:
+                data = state.read_owned_readable(path, max_bytes=READ_LIMIT_BYTES, dir_fd=dir_fd)
         except FileNotFoundError:
             return None
         except OSError as exc:
-            return f"unreadable:{exc.errno}"
+            return failure(exc)
         return strict_json.sha256_hex(data)
 
     directory = providers_dir(environ)
-    files: dict[str, str | None] = {}
+    files: dict[str, str | None] | None = {}
     try:
-        names = sorted(os.listdir(directory))
+        descriptor, _symlinked = state.open_owned_readable_dir(directory)
+        try:
+            for name in sorted(os.listdir(descriptor)):
+                if FILE_NAME.fullmatch(name) or name == MIGRATION_MARKER:
+                    files[name] = digest(name, dir_fd=descriptor)
+        finally:
+            os.close(descriptor)
     except FileNotFoundError:
-        names = None
+        files = None
     except OSError as exc:
-        names = []
-        files["."] = f"unreadable:{exc.errno}"
-    for name in names or ():
-        if FILE_NAME.fullmatch(name) or name == MIGRATION_MARKER:
-            files[name] = digest(directory / name)
-    return {"providers": None if names is None else files, "ledger": digest(ledger_path(environ))}
+        files["."] = failure(exc)
+    return {"providers": files, "ledger": digest(ledger_path(environ), private=True)}
 
 
 # ------------------------------------------------------------ admission
