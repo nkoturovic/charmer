@@ -177,7 +177,7 @@ Before the modules are vendored, this patch updates the module requirements:
       added     internal/upstreamredirect/upstreamredirect_cm053_test.go
 
 10. cli-proxy-api-openai-compat-keyed-safety.patch
-    sha256 d47a5deb330bc62b0191fc791f866862d990a47553290686a3b2dc502c7c7ef0
+    sha256 e0f262f2dfb96bb0921c2487ecd23f37444ea1c70f0e81dad34a433dc43f7d73
       added     internal/compatsafe/compatsafe.go
       added     internal/compatsafe/compatsafe_cm053_test.go
       modified  internal/runtime/executor/helps/usage_helpers.go
@@ -186,7 +186,7 @@ Before the modules are vendored, this patch updates the module requirements:
       added     internal/runtime/executor/openai_compat_keyed_safety.go
       added     internal/runtime/executor/openai_compat_keyed_safety_cm053_test.go
       modified  sdk/cliproxy/auth/conductor_execution.go
-      added     sdk/cliproxy/auth/openai_compat_keyed_cm053_test.go
+      added     sdk/cliproxy/auth/openai_compat_keyed_safety_test.go
 
 11. cli-proxy-api-auth-snapshot-locking.patch
     sha256 66610b574c8cc480451d9399c7cc88d5a0b183da2ddb114d0ae48508a512341b
@@ -330,7 +330,7 @@ Before the modules are vendored, this patch updates the module requirements:
       added     sdk/api/handlers/claude/prompt_too_long.go
 
 26. cli-proxy-api-log-reduction.patch
-    sha256 aa97dbed6bbe7e6bc8411444e15c0ddf3ec30a1608ff14918ec1e0682c1497bc
+    sha256 310f25b067d989b51dea17012f1a180adc1f541a751152eb25fafd5626865433
       modified  internal/runtime/executor/codex_websockets_duplex.go
       modified  internal/runtime/executor/codex_websockets_session.go
       modified  internal/runtime/executor/helps/usage_helpers.go
@@ -342,7 +342,7 @@ Before the modules are vendored, this patch updates the module requirements:
       added     sdk/cliproxy/auth/log_identity.go
       added     sdk/cliproxy/auth/log_identity_test.go
       added     sdk/cliproxy/auth/log_reduction_inventory_test.go
-      modified  sdk/cliproxy/auth/openai_compat_keyed_cm053_test.go
+      modified  sdk/cliproxy/auth/openai_compat_keyed_safety_test.go
       modified  sdk/cliproxy/auth/selector.go
 
 27. cli-proxy-api-tool-call-integrity.patch
