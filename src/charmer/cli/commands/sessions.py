@@ -171,7 +171,6 @@ def sessions_list_document(runtime: runtime_mod.Runtime, selected: sessions.Sess
             record, lcat if record.get("version") == sessions.RECORD_VERSION else None,
             needs_choice=runtime.resume_choice(record, lcat=lcat).needs_choice,
         )
-        marker = launch_flow._session_row_marker(record, summary, live).strip()
         rows.append({
             "managed_id": summary.managed_id,
             "runtime_session_id": sessions.runtime_session_id(record),
@@ -180,9 +179,9 @@ def sessions_list_document(runtime: runtime_mod.Runtime, selected: sessions.Sess
             "lead": summary.lead_key,
             "agents": summary.agent_count,
             "follow": summary.follow,
-            "live": (marker == "●") if live_known else None,
+            "live": session_facts._record_is_live(record, live) if live_known else None,
             "pending_fork": bool(record.get("pending_forks")),
-            "needs_attention": marker == "!",
+            "needs_attention": record.get("identity_state") == sessions.IDENTITY_REPAIR_NEEDED or bool(summary.needs_choice),
             "pending_change": bool(summary.pending),
             "ended": record.get("last_event_source") == "end",
             "needs_choice": bool(summary.needs_choice),

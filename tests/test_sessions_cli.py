@@ -4,11 +4,39 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 from charmer import errors, sessions, state, termtext
 from charmer.cli import entry
 from test_cli import CLITestCase, FIXED_ID, OTHER_ID
+
+
+class SessionJSONFactsTests(CLITestCase):
+    def test_attention_and_liveness_are_independent_facts(self) -> None:
+        record = self.save_v4_session()
+        for repair_needed in (False, True):
+            record["identity_state"] = sessions.IDENTITY_REPAIR_NEEDED if repair_needed else sessions.IDENTITY_UNVERIFIED
+            self.runtime.session_store.save(record)
+            for needs_choice in (False, True):
+                for live in (False, True, None):
+                    verdict = sessions.BackgroundLiveness(live is not None,
+                                                         frozenset({FIXED_ID[:8]}) if live else frozenset())
+                    with self.subTest(repair=repair_needed, needs_choice=needs_choice, live=live), \
+                            mock.patch.object(self.runtime, "background_liveness", return_value=verdict), \
+                            mock.patch.object(self.runtime, "resume_choice",
+                                              return_value=SimpleNamespace(needs_choice=needs_choice)):
+                        code, out, err = self.run_cli_both(["sessions", "list", "--json"], interactive=False)
+                        self.assertEqual(code, 0, out + err)
+                        document = json.loads(out)
+                        self.assertEqual(document["schema_version"], 1)
+                        (row,) = document["sessions"]
+                        self.assertIs(row["live"], live)
+                        self.assertIs(row["needs_attention"], repair_needed or needs_choice)
+                        self.assertIs(row["needs_choice"], needs_choice)
+                        self.assertEqual(set(row), {"managed_id", "runtime_session_id", "format", "profile", "lead",
+                                                    "agents", "follow", "live", "pending_fork", "needs_attention",
+                                                    "pending_change", "ended", "needs_choice", "last_used", "cwd"})
 
 
 class SessionTerminalTests(CLITestCase):
