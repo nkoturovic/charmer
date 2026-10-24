@@ -171,8 +171,10 @@ client check gateway-fallbacks-gateway: PASS class=GFG-accepted-once
 client check mcp-http-retry: PASS class=MR-changing-once
 # An HTTP MCP call held while three reset server-message streams make the
 # client close the connection: a read-only tool is called again (2 calls), a
-# changing tool once (an error result). The previous pin 2.1.302 calls both
-# again. A reset or a truncated answer to the call itself is a tool error
+# changing tool marked neither read-only nor idempotent once (an error
+# result); a tool marked idempotent is retried like a read-only one (read
+# statically from the client, not measured). The previous pin 2.1.302 calls
+# both again. A reset or a truncated answer to the call itself is a tool error
 # without a resend on both pins (observed while building the check).
 client check keepalive: PASS class=KA-one-request
 # 50 s of keep-alive pings after message_start, then the content: one

@@ -52,10 +52,11 @@ own updater, so the managed copy never changes by itself, while your own
 
 The client fixes the previous release deferred are in this pin. When the
 connection to an HTTP MCP server closes before a tool call is answered,
-Claude Code 2.1.310 sends the call again only for a tool the server marks
-read-only or idempotent; a tool that changes something is not called twice.
-An interrupted call still reports an error, and the tool may have run: check
-the external system before asking for it again.
+Claude Code 2.1.310 does not send the call again automatically unless the
+server marks the tool read-only or idempotent. A tool marked neither is
+called once; a tool that changes something but is marked idempotent can
+still be called twice. An interrupted call still reports an error, and the
+tool may have run: check the external system before asking for it again.
 
 The pin also carries the upstream fixes from Claude Code 2.1.304–2.1.309 for
 native sandbox boundaries (for example shell start-up files running outside
