@@ -165,6 +165,10 @@ class SubagentRowCaseTests(unittest.TestCase):
                 stdout = io.BytesIO()
                 status = statusline.run("subagents", io.BytesIO(bad), _BinaryStream(stdout))
                 self.assertEqual((status, stdout.getvalue()), (0, b""))
+        # The decoded API itself: a task that is not an object means no rows, never an exception.
+        for document in ({"tasks": [{"id": "t1"}, "t2"]}, {"tasks": [None, {"id": "t1"}]}):
+            with self.subTest(document=document):
+                self.assertEqual(rows(document), [])
 
     def test_14_control_and_terminal_sequences_are_sanitized_id_and_unicode_kept(self) -> None:
         task = {"id": "synthetic-id\n\x1b[2K", "type": "local_agent", "agentType": "cm-explorer",
