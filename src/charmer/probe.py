@@ -2762,21 +2762,89 @@ def _kill_process_group(process: subprocess.Popen) -> None:
         pass
 
 
+def _pipe_holders(process: subprocess.Popen[str]) -> list[str]:
+    """Best-effort Linux pipe-holder metadata, never command lines or contents."""
+    if sys.platform != "linux":
+        return []
+    pipes = set()
+    for stream in (process.stdout, process.stderr):
+        if stream is not None:
+            try:
+                info = os.fstat(stream.fileno())
+                if stat.S_ISFIFO(info.st_mode):
+                    pipes.add(f"pipe:[{info.st_ino}]")
+            except (OSError, ValueError):
+                pass
+    if not pipes:
+        return []
+    holders = []
+    deadline = time.monotonic() + 1
+    try:
+        with os.scandir("/proc") as entries:
+            for entry in entries:
+                if time.monotonic() >= deadline:
+                    break
+                # The harness's own read ends are not escaped holders.
+                if not entry.name.isdecimal() or entry.name == str(os.getpid()):
+                    continue
+                try:
+                    with os.scandir(Path(entry.path) / "fd") as descriptors:
+                        for descriptor in descriptors:
+                            if time.monotonic() >= deadline:
+                                break
+                            try:
+                                if os.readlink(descriptor.path) not in pipes:
+                                    continue
+                            except OSError:
+                                continue
+                            try:
+                                with open(Path(entry.path) / "comm", encoding="utf-8", errors="replace") as handle:
+                                    comm = handle.read(64).rstrip("\n")
+                            except OSError:
+                                comm = "unavailable"
+                            holders.append(f"pid={entry.name} comm={comm!r}")
+                            break
+                except OSError:
+                    continue
+    except OSError:
+        pass
+    return sorted(holders)
+
+
 def _kill_and_drain(process: subprocess.Popen[str]) -> tuple[str, str]:
     """Bound timeout cleanup even if an escaped descendant holds the pipes."""
     _kill_process_group(process)
+    cause = None
+    message = "probe timed out"
     try:
-        return process.communicate(timeout=2)
+        output = process.communicate(timeout=2)
     except subprocess.TimeoutExpired as exc:
-        raise ProbeError(
-            "probe timed out: an escaped descendant may still hold output pipes "
+        cause = exc
+        message += (
+            ": an escaped descendant may still hold output pipes "
             "after process-group teardown; drain exceeded 2 seconds"
-        ) from exc
+        )
+        holders = _pipe_holders(process)
+        if holders:
+            message += "; pipe holders: " + ", ".join(holders)
     finally:
         for stream in (process.stdout, process.stderr):
             if stream is not None:
-                stream.close()
-        process.wait(timeout=2)
+                try:
+                    stream.close()
+                except OSError:
+                    pass
+        try:
+            process.wait(timeout=2)
+        except subprocess.TimeoutExpired as exc:
+            cause = cause or exc
+            message += (
+                f"; direct child pid={process.pid} could not be reaped within "
+                "2 seconds (possibly in uninterruptible sleep)"
+            )
+    if cause is not None:
+        raise ProbeError(message) from cause
+    return output
 
 
 def _native_command(
@@ -2889,9 +2957,10 @@ def run_native(
     ``token``, ``child_env`` and ``path_dirs`` pass through to
     :meth:`ProbeFixture.environ` (token opt-out, allowlisted typed env,
     validated fixture bin dirs) and are validated before anything starts.
-    The process group is SIGKILLed and the direct child reaped on timeout or
-    error. The post-kill pipe drain is bounded to two seconds; an escaped
-    descendant keeping the pipes open raises ProbeError rather than hanging.
+    The process group is SIGKILLed on timeout or error. On timeout, the pipe
+    drain and direct-child reap each get two seconds; an escaped descendant
+    holding the pipes or an unreapable child raises ProbeError rather than
+    hanging. Linux pipe-holder diagnostics get one further bounded second.
     A caller-supplied provider keeps its lifecycle; an internally created one is
     stopped deterministically. charmer's own copy runs under its use
     lock (:func:`_hold_owned_copy`), taken before the hash check and
@@ -2959,12 +3028,16 @@ def run_native(
             pass_fds=_kept_fds(hold),
         )
         timed_out = False
+        drain_error: ProbeError | None = None
         try:
             stdout, stderr = process.communicate(timeout=timeout)
             returncode: int | None = process.returncode
         except subprocess.TimeoutExpired:
             timed_out = True
-            stdout, stderr = _kill_and_drain(process)
+            try:
+                stdout, stderr = _kill_and_drain(process)
+            except ProbeError as exc:
+                drain_error = exc
             returncode = None
         except BaseException:
             _kill_process_group(process)
@@ -2982,6 +3055,8 @@ def run_native(
                 fixture_domains_before=siblings_before,
                 fixture_domains_after=siblings_after,
             )
+        if drain_error is not None:
+            raise drain_error
         return NativeRunResult(
             argv=command,
             returncode=returncode,
@@ -3158,7 +3233,7 @@ def run_native_pty(
                 if not chunk:
                     if until is not None:
                         raise ProbeError(
-                            f"probe PTY exited before marker {until!r}; output="
+                            f"probe PTY closed before marker {until!r}; output="
                             f"{bytes(output[-4000:])!r}"
                         )
                     # EOF/EIO can precede process exit. Waiting avoids a hot
@@ -4145,6 +4220,7 @@ def run_takeover_probe(
         text=True,
         start_new_session=True,
     )
+    drain_attempted = False
     try:
         # Precondition: the fixture must run its own resident supervisor,
         # observable via fixture-root daemon artifacts, without touching the
@@ -4204,22 +4280,37 @@ def run_takeover_probe(
         # delegate to the marker agent through the carried scope.
         hold.set()
         timed_out = False
+        drain_error: ProbeError | None = None
         try:
             stdout, stderr = process.communicate(timeout=session_timeout)
             returncode: int | None = process.returncode
         except subprocess.TimeoutExpired:
             timed_out = True
-            stdout, stderr = _kill_and_drain(process)
+            drain_attempted = True
+            try:
+                stdout, stderr = _kill_and_drain(process)
+            except ProbeError as exc:
+                drain_error = exc
             returncode = None
-        domain_after = snapshot_daemon_domain(live)
-        siblings_after = fixture_daemon_domains(live)
-        daemon = _enforce_live_domain_untouched(
-            domain_before,
-            domain_after,
-            fixture=fixture,
-            fixture_domains_before=siblings_before,
-            fixture_domains_after=siblings_after,
-        )
+        try:
+            domain_after = snapshot_daemon_domain(live)
+            siblings_after = fixture_daemon_domains(live)
+            daemon = _enforce_live_domain_untouched(
+                domain_before,
+                domain_after,
+                fixture=fixture,
+                fixture_domains_before=siblings_before,
+                fixture_domains_after=siblings_after,
+            )
+        except ProbeError as exc:
+            if drain_error is None:
+                raise
+            drain_error = exc  # The live-domain violation wins over cleanup.
+        if drain_error is not None:
+            _fail(
+                str(drain_error), supervisor_artifacts=list(artifacts),
+                takeover_markers=markers,
+            )
         delegation = DelegationResult(
             subagent_type=subagent_type,
             classification=responder.classification,
@@ -4276,7 +4367,7 @@ def run_takeover_probe(
         )
     finally:
         hold.set()
-        if process.poll() is None:
+        if not drain_attempted and process.poll() is None:
             _kill_process_group(process)
             process.wait()
         for stream in (process.stdout, process.stderr):

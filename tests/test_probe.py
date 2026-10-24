@@ -1476,7 +1476,7 @@ print('DIGEST=' + hashlib.sha256(data).hexdigest(), flush=True)
         body = _SPAWNER_BODY.rsplit("time.sleep(30)", 1)[0]
         script = self._write_fake_executable("pty-exited-leader", body)
         with self._watchdog(), self._processes(wait_before_return=True):
-            with self.assertRaisesRegex(ProbeError, "exited before marker"):
+            with self.assertRaisesRegex(ProbeError, "closed before marker"):
                 probe.run_native_pty(
                     [str(pidfile)], [probe.PTYInteraction(b"NEVER-PRINTED", b"")],
                     trusted=self._trusted(script), fixture=self.fixture, timeout=3,
@@ -1632,6 +1632,7 @@ class NativeDrainTimeoutTests(ProbeTestCase):
         super().setUp()
         self.fixture = probe.build_fixture(self.fixture_root, environ=self.environ)
         self.pidfile = self.fixture.root / "escaped-child.pid"
+        self.live = state.ensure_private_dir(self.root / "fake-live-domain")
         self.script = self._write_fake_executable(
             "escaped-pipe-holder",
             f"""import os, time
@@ -1654,25 +1655,30 @@ time.sleep(30)
             except ProcessLookupError:
                 pass
 
-    def _assert_timeout_cleanup(self, process) -> None:
+    def _assert_timeout_cleanup(self, process, error=None) -> None:
         self.assertTrue(self.pidfile.exists(), "the fake must escape before timeout")
-        self.assertNotEqual(os.getpgid(int(self.pidfile.read_text())), process.pid)
+        pid = int(self.pidfile.read_text())
+        self.assertNotEqual(os.getpgid(pid), process.pid)
         self.assertEqual(process.returncode, -signal.SIGKILL)
         self._assert_reaped(process)
         self.assertTrue(process.stdout.closed, "stdout pipe must be closed")
         self.assertTrue(process.stderr.closed, "stderr pipe must be closed")
+        if error is not None and sys.platform == "linux":
+            self.assertIn(f"pid={pid}", str(error))
+            comm = (Path("/proc") / str(pid) / "comm").read_text().strip()
+            self.assertIn(f"comm={comm!r}", str(error))
 
     def test_run_native_bounds_escaped_descendant_drain(self) -> None:
         started = time.monotonic()
         with self._watchdog(6), self._processes() as processes:
-            with self.assertRaisesRegex(ProbeError, "timed out.*escaped descendant"):
+            with self.assertRaisesRegex(ProbeError, "timed out.*escaped descendant") as caught:
                 probe.run_native(
                     [], trusted=self._trusted(self.script), fixture=self.fixture, timeout=1,
                 )
             self.assertLess(time.monotonic() - started, 5)
-            self._assert_timeout_cleanup(processes[0])
+            self._assert_timeout_cleanup(processes[0], caught.exception)
 
-    def test_takeover_bounds_escaped_descendant_drain(self) -> None:
+    def _takeover(self):
         # Only hash-pinned synthetic versions execute. The isolation and
         # supervisor seams keep this test independent of bwrap/real clients.
         versions = state.ensure_private_dir(self.root / "versions")
@@ -1685,21 +1691,107 @@ time.sleep(30)
                 "size": target.stat().st_size,
             }}})
         scope = state.ensure_private_dir(self.fixture.root / "scope")
-        live = state.ensure_private_dir(self.root / "fake-live-domain")
-        started = time.monotonic()
-        with self._watchdog(6), self._processes() as processes, \
-                mock.patch.object(probe, "_assert_real_run_allowed"), \
+        with mock.patch.object(probe, "_assert_real_run_allowed"), \
                 mock.patch.object(probe, "isolated_argv", side_effect=lambda argv, **kw: argv), \
                 mock.patch.object(probe, "_daemon_artifacts", side_effect=[("old",), ("new",)]):
-            with self.assertRaisesRegex(ProbeError, "timed out.*escaped descendant"):
-                probe.run_takeover_probe(
-                    "cm-probe-marker", scope_dir=scope, fixture=self.fixture,
-                    contract={"verified": verified}, environ=self.environ,
-                    versions_dir=versions, supervisor_timeout=1,
-                    takeover_timeout=1, session_timeout=1, live_daemon_domain=live,
-                )
+            return probe.run_takeover_probe(
+                "cm-probe-marker", scope_dir=scope, fixture=self.fixture,
+                contract={"verified": verified}, environ=self.environ,
+                versions_dir=versions, supervisor_timeout=1,
+                takeover_timeout=1, session_timeout=1, live_daemon_domain=self.live,
+            )
+
+    def test_takeover_bounds_escaped_descendant_drain(self) -> None:
+        started = time.monotonic()
+        with self._watchdog(6), self._processes() as processes:
+            with self.assertRaisesRegex(ProbeError, "timed out.*escaped descendant") as caught:
+                self._takeover()
             self.assertLess(time.monotonic() - started, 5)
-            self._assert_timeout_cleanup(processes[0])
+            self._assert_timeout_cleanup(processes[0], caught.exception)
+
+    def test_run_native_drain_error_still_checks_domain(self) -> None:
+        drain = probe._kill_and_drain
+        for changed in (False, True):
+            with self.subTest(changed=changed):
+                def drain_after_change(process):
+                    if changed:
+                        (self.live / "rogue-entry").mkdir()
+                    return drain(process)
+
+                expected = "live daemon domain touched" if changed else "escaped descendant"
+                try:
+                    with self._watchdog(6), self._processes() as processes, \
+                            mock.patch.object(probe, "_assert_real_run_allowed"), \
+                            mock.patch.object(probe, "isolated_argv", side_effect=lambda argv, **kw: argv), \
+                            mock.patch.object(probe, "_kill_and_drain", side_effect=drain_after_change), \
+                            mock.patch.object(probe, "_enforce_live_domain_untouched",
+                                              wraps=probe._enforce_live_domain_untouched) as enforce:
+                        with self.assertRaisesRegex(ProbeError, expected):
+                            probe.run_native(
+                                [], trusted=self._trusted(self.script, fake=False),
+                                fixture=self.fixture, timeout=1, allow_real=True,
+                                environ=self.environ, live_daemon_domain=self.live,
+                            )
+                        enforce.assert_called_once()
+                        self._assert_timeout_cleanup(processes[0])
+                finally:
+                    self._stop_escaped_child()
+        self.assertTrue((self.live / "rogue-entry").is_dir())
+
+    def test_takeover_drain_error_checks_domain_and_records_failure(self) -> None:
+        drain = probe._kill_and_drain
+        for changed in (False, True):
+            with self.subTest(changed=changed):
+                def drain_after_change(process):
+                    if changed:
+                        (self.live / "rogue-entry").mkdir()
+                    return drain(process)
+
+                expected = "live daemon domain touched" if changed else "escaped descendant"
+                try:
+                    with self._watchdog(6), self._processes() as processes, \
+                            mock.patch.object(probe, "_kill_and_drain", side_effect=drain_after_change), \
+                            mock.patch.object(probe, "_enforce_live_domain_untouched",
+                                              wraps=probe._enforce_live_domain_untouched) as enforce:
+                        with self.assertRaisesRegex(ProbeError, expected) as caught:
+                            self._takeover()
+                        path = self.fixture.root / "evidence" / "takeover-probe.json"
+                        self.assertTrue(path.is_file(), "takeover timeout must record failure evidence")
+                        self.assertEqual(strict_json.loads(path.read_bytes())["error"], str(caught.exception))
+                        enforce.assert_called_once()
+                        self._assert_timeout_cleanup(processes[0])
+                finally:
+                    self._stop_escaped_child()
+        self.assertTrue((self.live / "rogue-entry").is_dir())
+
+    def test_drain_wait_timeout_preserves_error_and_names_direct_child(self) -> None:
+        process = mock.Mock(pid=1234, stdout=io.StringIO(), stderr=io.StringIO())
+        drain_timeout = subprocess.TimeoutExpired(["fixture"], 2)
+        process.communicate.side_effect = drain_timeout
+        process.wait.side_effect = subprocess.TimeoutExpired(["fixture"], 2)
+        with mock.patch.object(probe, "_kill_process_group"):
+            with self.assertRaisesRegex(ProbeError, "escaped descendant") as caught:
+                probe._kill_and_drain(process)
+        self.assertIn("direct child pid=1234", str(caught.exception))
+        self.assertIn("uninterruptible sleep", str(caught.exception))
+        self.assertIs(caught.exception.__cause__, drain_timeout)
+        self.assertTrue(process.stdout.closed)
+        self.assertTrue(process.stderr.closed)
+        process.wait.assert_called_once_with(timeout=2)
+
+    def test_takeover_drain_wait_timeout_is_not_retried(self) -> None:
+        process = mock.Mock(pid=1234, stdout=io.StringIO(), stderr=io.StringIO())
+        process.poll.return_value = None
+        process.communicate.side_effect = subprocess.TimeoutExpired(["fixture"], 2)
+        process.wait.side_effect = [
+            subprocess.TimeoutExpired(["fixture"], 2),
+            AssertionError("takeover retried the bounded reap without a timeout"),
+        ]
+        with mock.patch.object(probe.subprocess, "Popen", return_value=process), \
+                mock.patch.object(probe, "_kill_process_group"):
+            with self.assertRaisesRegex(ProbeError, "direct child pid=1234"):
+                self._takeover()
+        process.wait.assert_called_once_with(timeout=2)
 
 
 class EvidenceTests(ProbeTestCase):
@@ -2890,7 +2982,7 @@ class PTYCallbackTests(ProbeTestCase):
                 reader = eof_instead_of_eio if eof else read
                 with self._watchdog(), self._processes() as processes, \
                         mock.patch.object(probe.os, "read", side_effect=reader):
-                    with self.assertRaisesRegex(ProbeError, "exited before marker"):
+                    with self.assertRaisesRegex(ProbeError, "closed before marker"):
                         try:
                             probe.run_native_pty(
                                 [], [probe.PTYInteraction(
@@ -2907,7 +2999,7 @@ class PTYCallbackTests(ProbeTestCase):
             "pty-consumed-marker", "import os\nos.write(1, b'READY-NEXT')\ninput()\n"
         )
         calls = []
-        with self._watchdog(), self.assertRaisesRegex(ProbeError, "exited before marker"):
+        with self._watchdog(), self.assertRaisesRegex(ProbeError, "closed before marker"):
             probe.run_native_pty(
                 [], [
                     probe.PTYInteraction(b"READY", b"exit\n"),
