@@ -7,6 +7,7 @@ The installation layout is the one ``packaging/install.sh`` creates::
       current  -> versions/<v> what every launcher file runs
       previous -> versions/<v> what a rollback returns to (the one older version kept)
       .lock/pid                held while an install, update or rollback runs
+      .lock-guard              persistent flock guard, created when an existing lock is inspected
       installer.json           launcher files and PATH lines the installer wrote
 
 A release publishes ``MANIFEST.json`` (version, release date, state format,
@@ -447,6 +448,8 @@ class _InstallLock:
                 # replaced the stale directory before this run took it.
                 holder = self._holder()
                 if holder is None:  # a holder between mkdir and writing its pid, or a crash there
+                    if not os.path.lexists(self.path):
+                        continue  # Its holder released between our mkdir and pid read.
                     raise UpdateError(f"another install or update holds {self.path}",
                                       remedy=f"if none is running, remove {self.path}") from None
                 if _alive(holder):

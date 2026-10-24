@@ -214,6 +214,30 @@ class InstallLockRaceTests(SelfUpdateTestCase):
             self.assertEqual((self.root / ".lock/pid").read_text(), f"{os.getpid()}\n")
         self.assertEqual(list(self.root.iterdir()), [])
 
+    def test_a_holder_released_before_the_pid_read_is_retried(self) -> None:
+        first = su.install_lock(self.root)
+        first.acquire()
+        second = su.install_lock(self.root)
+        original = second._holder
+        released = []
+        def holder():
+            if not released:
+                first.__exit__(None, None, None)
+                released.append(True)
+                return None
+            return original()
+        try:
+            with mock.patch.object(second, "_holder", side_effect=holder):
+                with second:
+                    self.assertEqual(released, [True])
+                    self.assertEqual((self.root / ".lock/pid").read_text(), f"{os.getpid()}\n")
+        finally:
+            if not released:
+                first.__exit__(None, None, None)
+        self.assertFalse((self.root / ".lock").exists())
+        self.assertTrue((self.root / ".lock-guard").exists())
+        self.assertIn(".lock-guard", su.__doc__)
+
     def test_the_guard_is_stable_and_unsafe_guard_files_are_refused(self) -> None:
         lock = self.root / ".lock"
         lock.mkdir(parents=True)
