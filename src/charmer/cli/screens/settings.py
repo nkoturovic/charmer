@@ -266,12 +266,19 @@ class _SettingsScreen:
                          if self.message_role == "warn" else [views.clip(self.message, width - 3)])
         message_row = height - bar_rows - max(1, len(message_lines))
         detail_top = message_row - cli_text.SETTINGS_DETAIL_LINES
-        visible = max(1, detail_top - row)
+        capacity = max(1, detail_top - row)
+        visible = capacity
+        if len(self.entries) > visible:
+            visible = max(1, visible - 1)  # reserve the last list row for the marker
         if self.index < self.offset:
             self.offset = self.index
         elif self.index >= self.offset + visible:
             self.offset = self.index - visible + 1
         self.offset = max(0, min(self.offset, max(0, len(self.entries) - visible)))
+        more = sum(kind != "section" for kind, _value in self.entries[self.offset + visible:])
+        if not more:
+            visible = capacity
+            self.offset = min(self.offset, max(0, len(self.entries) - visible))
         shown = range(self.offset, min(len(self.entries), self.offset + visible))
         for index in shown:
             kind, value = self.entries[index]
@@ -283,6 +290,9 @@ class _SettingsScreen:
                 text = value.text(width)
                 attr = palette.attr(role) | (tui.curses.A_REVERSE if focused else 0)
                 tui.safe_add(win, row, 2, text[2:], attr)
+            row += 1
+        if more > 0:
+            tui.safe_add(win, row, 2, tui.MORE_ROWS.format(n=more), palette.attr("dim"))
             row += 1
         for offset, line in enumerate(self._detail_lines(width)):
             tui.safe_add(win, row + offset, 2, line, palette.attr("dim"))

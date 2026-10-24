@@ -20,5 +20,5 @@
   review: ✓ cross-family · writers(openai)→reviewer-strong · lead→reviewer
   spread: openai 6 · anthropic 2 (+lead)
   health: gateway ok · Claude 2.1.281 · catalog 31
-  More below — arrows/PgDn scroll; Home/End
-  Up/Down scroll · PgUp/PgDn page · Home/End  · Esc back
+  ↓ 90 more
+  ↑↓ scroll · PgUp/PgDn page · Esc back

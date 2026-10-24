@@ -20,5 +20,5 @@
   local fake (no provider request); recorded as separate evidence.
   Caps: 120 s and 256 KiB per request; context 300 s and 256 KiB.
   No retries. max_tokens is sent but is not a reliable cost bound.
-  More below — arrows/PgDn scroll; Home/End
+  ↓ 2 more
   y proceed · N cancel · Esc cancel

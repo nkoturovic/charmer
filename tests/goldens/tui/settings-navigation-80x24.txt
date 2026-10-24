@@ -17,7 +17,7 @@
   Providers & models
   providers enabled           8 of 8     G opens providers               next
   Optional admission badges   0          M opens models                   now
-  Gateway
+  ↓ 1 more
   Switching a provider off narrows new sessions' fences only; credentialed
   providers stay rendered, so running sessions keep their routes.
 

@@ -21,4 +21,4 @@
 
 
 
-  Up/Down scroll · PgUp/PgDn page · Home/End  · Esc back
+  ↑↓ scroll · PgUp/PgDn page · Esc back

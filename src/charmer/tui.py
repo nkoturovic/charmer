@@ -3601,6 +3601,9 @@ def run_profile_editor(
         return state.saved
 
 
+MORE_ROWS = "↓ {n} more"
+
+
 class TextView:
     """Read-only, wrapped details. No truncation, I/O, or state authority."""
 
@@ -3615,6 +3618,12 @@ class TextView:
                 for part in (textwrap.wrap(visible_text(str(line)), max(1, width - 4),
                                           replace_whitespace=False) or [""])]
 
+    def _keybar(self):
+        bar = (("Enter", "declare"), ("Esc", "cancel")) if self.confirm == "declare" else (
+            (("y", "proceed"), ("N", "cancel"), ("Esc", "cancel")) if self.confirm else (
+            ("↑↓", "scroll"), ("PgUp/PgDn", "page"), ("Esc", "back")))
+        return KeyBar(bar)
+
     def _draw(self, win):
         height, width = win.getmaxyx()
         win.erase()
@@ -3624,15 +3633,19 @@ class TextView:
         safe_add(win, 1, 2, self.title, self.palette.attr("accent"))
         safe_add(win, 2, 2, views.rule(width), self.palette.attr("dim"))
         lines = self._wrapped(width)
-        self.offset = min(self.offset, max(0, len(lines) - (height - 5)))
-        for y, line in enumerate(lines[self.offset:self.offset + height - 5], 3):
+        keybar = self._keybar()
+        capacity = height - 3 - keybar.rows(width)
+        visible = capacity - (len(lines) > capacity)
+        self.offset = min(self.offset, max(0, len(lines) - visible))
+        more = max(0, len(lines) - self.offset - visible)
+        if not more:
+            visible = capacity
+            self.offset = min(self.offset, max(0, len(lines) - visible))
+        for y, line in enumerate(lines[self.offset:self.offset + visible], 3):
             safe_add(win, y, 2, line, self.palette.attr("normal"))
-        bar = (("Enter", "declare"), ("Esc", "cancel")) if self.confirm == "declare" else (
-            (("y", "proceed"), ("N", "cancel"), ("Esc", "cancel")) if self.confirm else (
-            ("Up/Down", "scroll"), ("PgUp/PgDn", "page"), ("Home/End", ""), ("Esc", "back")))
-        if self.offset + height - 5 < len(lines):
-            safe_add(win, height - 2, 2, "More below — arrows/PgDn scroll; Home/End", self.palette.attr("dim"))
-        KeyBar(bar).draw(win, height - 1, self.palette)
+        if more > 0:
+            safe_add(win, 3 + visible, 2, MORE_ROWS.format(n=more), self.palette.attr("dim"))
+        keybar.draw(win, height - 1, self.palette)
         win.refresh()
 
     def run(self, win):
@@ -3655,9 +3668,9 @@ class TextView:
             elif key.kind == "down":
                 self.offset += 1
             elif key.kind == "pageup":
-                self.offset = max(0, self.offset - max(1, height - 5))
+                self.offset = max(0, self.offset - max(1, height - 4 - self._keybar().rows(width)))
             elif key.kind == "pagedown":
-                self.offset += max(1, height - 5)
+                self.offset += max(1, height - 4 - self._keybar().rows(width))
             elif key.kind == "home":
                 self.offset = 0
             elif key.kind == "end":
