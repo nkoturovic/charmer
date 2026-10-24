@@ -322,6 +322,11 @@ class RunnerTests(unittest.TestCase):
         # Without the gateway variable the lane is not selected for the real client.
         self.assertEqual(self.run_runner("tests.test_pass").returncode, 0)
 
+    def test_fast_locale_ci_step_selects_unit_only_keyed_lane(self) -> None:
+        text = (REPO_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+        step = text.split("      - name: The fast tier under ISO-8859-1", 1)[1].split("      - name:", 1)[0]
+        self.assertIn("        env:\n          CHARMER_TEST_KEYED_LANE: unit\n", step)
+
     def test_tier_and_name_filter(self) -> None:
         result = self.run_runner("tests.test_env", "--tier", "fast", "-k", "private", EXPECT_TIER="fast")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
