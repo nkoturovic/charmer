@@ -296,6 +296,9 @@ class OperatorLayer:
     legacy_dropped: dict[str, str] = field(default_factory=dict)
     route_changes: dict[str, tuple[str, str]] = field(default_factory=dict)
     marker: bool = False
+    # Presentation inventory only: file ids and declared line keys that
+    # passed the same credential screen as diagnostics, even when invalid.
+    file_lines: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
     @property
     def problems(self) -> tuple[OperatorProblem, ...]:
@@ -1396,6 +1399,7 @@ def validate_layer(
     secret_names: set[str] = set()
     pending: list[str] = []
     file_digests: dict[str, str] = {}
+    file_lines: dict[str, tuple[str, ...]] = {}
 
     for file_id in sorted(provider_files):
         raw = provider_files[file_id]
@@ -1405,6 +1409,7 @@ def validate_layer(
             add(_problem("secret-literal", file, "", "the provider file name is a secret-like or stored credential literal",
                          "rename the file; reference credentials as env:NAME"))
             continue
+        file_lines[file_id] = ()
         if not PROVIDER_ID.fullmatch(file_id):
             add(_problem("file-name", file, "", "provider file names match ^[a-z][a-z0-9-]*\\.json$"))
             continue
@@ -1439,6 +1444,8 @@ def validate_layer(
                 add(_problem("secret-literal", file, hit, 'a secret value is not allowed',
                              f'store it with charmer providers set-key {file_id}; write "env:NAME"'))
             continue
+        if isinstance(document, dict) and isinstance(document.get("lines"), dict):
+            file_lines[file_id] = tuple(sorted(document["lines"]))
         # The trusted audit gate, by metadata alone (a closed
         # keyed declaration is refused before schema or semantic work and
         # contributes nothing; its sanitized refusal echoes no authored text).
@@ -1772,6 +1779,9 @@ def validate_layer(
                      f'{route[0]}/{route[1]} is the catalog line "{", ".join(catalog_routes[route])}"',
                      "admit or bind that line instead"))
 
+    for label in problems:
+        if label.startswith(f"{PROVIDERS_DIRNAME}/") and label.endswith(".json"):
+            file_lines.setdefault(label.removeprefix(f"{PROVIDERS_DIRNAME}/").removesuffix(".json"), ())
     layer_digest = _digest("operator-layer", {
         "files": file_digests, "marker": marker,
         "ledger": ledger.sha256 if ledger is not None else None,
@@ -1789,6 +1799,7 @@ def validate_layer(
         legacy_dropped=legacy_dropped,
         route_changes=route_changes,
         marker=marker,
+        file_lines=file_lines,
     )
 
 

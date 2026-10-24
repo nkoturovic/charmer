@@ -707,14 +707,10 @@ def providers_list_document(runtime: runtime_mod.Runtime) -> dict[str, Any]:
     (gateway not observed) or ``—`` (nothing expected)."""
 
     ctx = operator_context(runtime)
-    layer, read = ctx.layer, ctx.read
+    layer = ctx.layer
     admitted = admitted_keys(runtime)
-    by_file: dict[str, list[str]] = {}
-    for key, file_id in operator_mod.line_file_ids(read).items():
-        by_file.setdefault(file_id, []).append(key)
-    file_ids = set(read.files) | {problem.file.removeprefix(f"{operator_mod.PROVIDERS_DIRNAME}/")
-                                  .removesuffix(".json") for problem in layer.problems
-                                  if problem.file.endswith(".json")}
+    by_file = layer.file_lines
+    file_ids = set(by_file)
     facts, connections, unavailable = _provider_states(runtime)
     entries: list[dict[str, Any]] = []
     for provider_id in sorted(set(facts) | file_ids):
