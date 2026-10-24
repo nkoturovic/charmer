@@ -131,6 +131,9 @@ RESERVED_LEAD_ENV_KEYS = frozenset(
         # Claude Code 2.1.302+: the auto-mode classifier's model (a lineup
         # model choice the launch clears; a lead's env never sets it).
         "CLAUDE_CODE_AUTO_MODE_MODEL",
+        # Claude Code 2.1.310: "capacity" narrows the compiled retry watchdog;
+        # the flag settings pin the broad scope and the launch clears it.
+        "CLAUDE_CODE_RETRY_WATCHDOG_SCOPE",
         "CLAUDE_CODE_MAX_OUTPUT_TOKENS",
         "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY",
         "CLAUDE_CODE_MAX_CONTEXT_TOKENS",

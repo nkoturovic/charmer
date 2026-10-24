@@ -55,6 +55,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import socket
 import tempfile
@@ -883,6 +884,172 @@ class KeepaliveProbe(_GatedCase):
                   f"(CLAUDE_CODE_RETRY_WATCHDOG=1) client={self.gate.version} sha256={self.trusted.sha256[:12]}")
         type(self).verdict = ("PASS" if ok else "FAIL", observed_class, detail)
         self.assertEqual(observed_class, KEEPALIVE_PASS_CLASS, detail)
+
+
+# ------------------------------------------------------------ the watchdog's scope
+
+WATCHDOG_SCOPE_PASS_CLASS = "WS-broad"
+_WATCHDOG_ENV = "CLAUDE_CODE_RETRY_WATCHDOG"
+_WATCHDOG_SCOPE_ENV = "CLAUDE_CODE_RETRY_WATCHDOG_SCOPE"
+# The retry budget the client announces in its debug log on the first retry:
+# 300 retries under the broad watchdog, 10 when its scope is "capacity".
+_ATTEMPT_RE = re.compile(r"API error \(attempt 1/(\d+)\)")
+_BROAD_BUDGET, _CAPACITY_BUDGET = 301, 11
+_LAYERS = ("user", "project", "local")
+
+
+def compiled_watchdog_env() -> dict[str, str]:
+    """The retry watchdog lines of the production compile's flag settings env
+    (a managed launch of the balanced seed)."""
+
+    import test_compiler_v2  # the production compile (module import: no tests re-exported)
+
+    _lineup, result = test_compiler_v2._seed_launch("balanced")
+    env = result.scope_plan.settings["env"]
+    return {key: env[key] for key in (_WATCHDOG_ENV, _WATCHDOG_SCOPE_ENV) if key in env}
+
+
+def watchdog_cases() -> tuple[tuple[str, bool, str, bool], ...]:
+    """``(name, compiled, the layer holding scope "capacity", resumed)``."""
+
+    rows = []
+    for compiled in (False, True):
+        prefix = "compiled" if compiled else "control"
+        rows += [(f"{prefix}-{layer}", compiled, layer, False) for layer in _LAYERS]
+        rows.append((f"{prefix}-user-resume", compiled, "user", True))
+    return tuple(rows)
+
+
+def watchdog_verdict(observed: dict[str, int | None]) -> str:
+    """Every control (the compiled watchdog without its scope line) must take
+    the capacity budget from the conflicting layer; every compiled run must
+    keep the broad budget."""
+
+    for name, budget in observed.items():
+        if name.startswith("control-") and budget != _CAPACITY_BUDGET:
+            raise _Inconclusive(f"{name}: the capacity scope did not reach the client (budget {budget})")
+    compiled = {name: budget for name, budget in observed.items() if name.startswith("compiled-")}
+    if not compiled:
+        raise _Inconclusive("no compiled run")
+    if any(budget == _CAPACITY_BUDGET for budget in compiled.values()):
+        return "WS-capacity-wins"
+    if any(budget != _BROAD_BUDGET for budget in compiled.values()):
+        raise _Inconclusive("a compiled run announced no retry budget")
+    return WATCHDOG_SCOPE_PASS_CLASS
+
+
+class WatchdogVerdictTests(unittest.TestCase):
+    def test_the_compile_pins_the_broad_scope_beside_the_watchdog(self) -> None:
+        self.assertEqual(_WATCHDOG_SCOPE_ENV, scope.RETRY_WATCHDOG_SCOPE_ENV)
+        self.assertEqual(compiled_watchdog_env(), {_WATCHDOG_ENV: "1", _WATCHDOG_SCOPE_ENV: ""})
+
+    def test_pass_needs_every_control_and_every_compiled_run(self) -> None:
+        rows = {name: (_BROAD_BUDGET if compiled else _CAPACITY_BUDGET)
+                for name, compiled, _layer, resumed in watchdog_cases()}
+        rows.update({f"{name}-fresh": rows[name] for name, _c, _l, resumed in watchdog_cases() if resumed})
+        self.assertEqual(watchdog_verdict(rows), WATCHDOG_SCOPE_PASS_CLASS)
+        self.assertEqual(watchdog_verdict(dict(rows, **{"compiled-local": _CAPACITY_BUDGET})), "WS-capacity-wins")
+        self.assertEqual(watchdog_verdict(dict(rows, **{"compiled-user-resume": _CAPACITY_BUDGET})),
+                         "WS-capacity-wins")
+        for broken in ({"control-project": _BROAD_BUDGET}, {"compiled-user": None}, {"control-user-resume": None}):
+            with self.subTest(broken=broken), self.assertRaises(_Inconclusive):
+                watchdog_verdict(dict(rows, **broken))
+        with self.assertRaises(_Inconclusive):
+            watchdog_verdict({name: budget for name, budget in rows.items() if name.startswith("control-")})
+
+    def test_the_budget_is_read_from_the_first_retry_line(self) -> None:
+        line = "2026-10-25T00:00:00.000Z [ERROR] API error (attempt 1/301): 500 fixture server error"
+        self.assertEqual([int(match.group(1)) for match in _ATTEMPT_RE.finditer(line)], [301])
+        self.assertEqual(list(_ATTEMPT_RE.finditer("API error (attempt 2/11): 500")), [])
+
+
+class _OneServerError(probe.FakeAnthropicProvider):
+    """Answers a turn's first main request with a server error (which every
+    watchdog scope retries), then the content."""
+
+    def __init__(self) -> None:
+        super().__init__(responder=self)
+        self.lock = threading.Lock()
+        self.failed = False
+        self.main = 0
+
+    def respond(self, document, path, context):
+        if path.split("?", 1)[0].endswith("/count_tokens"):
+            return 200, {"input_tokens": 1}
+        with self.lock:
+            if document.get("tools"):
+                self.main += 1
+                if not self.failed:
+                    self.failed = True
+                    return 500, {"type": "error", "error": {"type": "api_error", "message": "fixture server error"}}
+        return 200, _payload(document, [{"type": "text", "text": "PROBE-WATCHDOG-OK"}], "end_turn", context.ordinal)
+
+
+class WatchdogScopeProbe(_GatedCase):
+    """Claude Code 2.1.310 narrows the retry watchdog to capacity errors when
+    ``CLAUDE_CODE_RETRY_WATCHDOG_SCOPE`` is ``capacity`` (its only value).
+    The production compile's watchdog lines in the flag settings, against that
+    value in the user, project or local settings env, fresh and on
+    ``--resume``: the client keeps the broad budget. The control (the same
+    lines without the scope pin) takes the capacity budget, so the conflicting
+    layer is real. A launch clears an inherited process value
+    (``compiler.V2_ENV_UNSET``); the probe harness admits no such override."""
+
+    probe_id = "watchdog-scope"
+
+    def _turn(self, fixture: probe.ProbeFixture, settings: Path, extra: tuple[str, ...]) -> int | None:
+        debug = fixture.root / f"debug-{uuid.uuid4().hex[:8]}.log"
+        provider = _OneServerError()
+        with provider:
+            result = probe.run_native(
+                ("-p", "client check watchdog-scope", "--settings", str(settings), "--model", _LEAD,
+                 "--debug-file", str(debug), *extra),
+                trusted=self.trusted, fixture=fixture, provider=provider, timeout=150, allow_real=True,
+                environ=self.environ)
+        if result.timed_out or result.returncode != 0:
+            raise _Inconclusive(f"a watchdog-scope turn did not complete (rc={result.returncode})")
+        if provider.main < 2:
+            raise _Inconclusive("the server error was not retried")
+        text = debug.read_text(encoding="utf-8", errors="replace") if debug.is_file() else ""
+        budgets = {int(match.group(1)) for match in _ATTEMPT_RE.finditer(text)}
+        return budgets.pop() if len(budgets) == 1 else None
+
+    def test_the_compiled_watchdog_keeps_its_broad_scope(self) -> None:
+        compiled_env = compiled_watchdog_env()
+        control_env = {key: value for key, value in compiled_env.items() if key != _WATCHDOG_SCOPE_ENV}
+
+        def run() -> dict[str, int | None]:
+            observed: dict[str, int | None] = {}
+            for name, compiled, layer, resumed in watchdog_cases():
+                fixture = self._fixture()
+                target = {"user": fixture.claude_config_dir / "settings.json",
+                          "project": fixture.project_dir / ".claude/settings.json",
+                          "local": fixture.project_dir / ".claude/settings.local.json"}[layer]
+                probe.write_fixture_settings(fixture, str(target.relative_to(fixture.root)),
+                                             {"env": {_WATCHDOG_SCOPE_ENV: "capacity"}})
+                settings = probe.write_fixture_settings(fixture, "scope/settings.json", {
+                    "availableModels": [_LEAD], "model": _LEAD,
+                    "permissions": {"defaultMode": scope.PERMISSION_DEFAULT_MODE},
+                    "env": {**(compiled_env if compiled else control_env), scope.FAST_MODE_ENV: "1"}})
+                extra: tuple[str, ...] = ()
+                if resumed:
+                    session = str(uuid.uuid4())
+                    observed[f"{name}-fresh"] = self._turn(fixture, settings, ("--session-id", session))
+                    extra = ("--resume", session)
+                observed[name] = self._turn(fixture, settings, extra)
+            return observed
+
+        observed = self._guard(run)
+        detail = (" ".join(f"{name}={budget}" for name, budget in observed.items())
+                  + f" compiled={compiled_env} client={self.gate.version} sha256={self.trusted.sha256[:12]}")
+        try:
+            observed_class = watchdog_verdict(observed)
+        except _Inconclusive as exc:
+            type(self).verdict = ("INCONCLUSIVE", "unavailable", f"{exc}; {detail}")
+            raise
+        type(self).verdict = ("PASS" if observed_class == WATCHDOG_SCOPE_PASS_CLASS else "FAIL", observed_class,
+                              detail)
+        self.assertEqual(observed_class, WATCHDOG_SCOPE_PASS_CLASS, detail)
 
 
 if __name__ == "__main__":

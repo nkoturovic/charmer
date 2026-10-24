@@ -181,3 +181,8 @@ client check keepalive: PASS class=KA-one-request
 # signed-thinking request whose error the client does not recognise is sent
 # four times (twice as sent, then twice without tool search) before the 400
 # shows, each carrying the block byte-exact; 2.1.302 sent it once.
+client check watchdog-scope: PASS class=WS-broad
+# The compiled retry watchdog pins its scope broad (the empty value): against
+# CLAUDE_CODE_RETRY_WATCHDOG_SCOPE=capacity in the user, project or local
+# settings env, fresh and on --resume, the client announces 300 retries; the
+# same lines without the pin announce 10.

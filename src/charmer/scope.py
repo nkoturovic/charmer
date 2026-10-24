@@ -1540,6 +1540,17 @@ def _agent_file_v2_bytes(agent: profile.ResolvedAgent, prompt_bodies: Mapping[st
     return ("\n".join(lines) + "\n").encode("utf-8") + bytes(body)
 
 
+# Claude Code 2.1.310 narrows the pinned retry watchdog to capacity errors
+# (10 retries instead of 300) when CLAUDE_CODE_RETRY_WATCHDOG_SCOPE is
+# "capacity", its only value: the client reads anything else, the empty value
+# included, as the broad default. A user, project or local settings env sets it
+# as readily as the launching environment (which the launch clears), so the
+# flag settings pin the broad scope beside the watchdog. The real-binary proof
+# is tests/test_client_gateway_fallbacks (client check watchdog-scope).
+RETRY_WATCHDOG_SCOPE_ENV = "CLAUDE_CODE_RETRY_WATCHDOG_SCOPE"
+RETRY_WATCHDOG_SCOPE_BROAD = ""
+
+
 def _lifecycle_settings_v2(
     managed_id: str,
     hook_command: str,
@@ -1579,6 +1590,7 @@ def _lifecycle_settings_v2(
         "env": {
             "ANTHROPIC_BASE_URL": gateway_base_url,
             "CLAUDE_CODE_RETRY_WATCHDOG": "1",
+            RETRY_WATCHDOG_SCOPE_ENV: RETRY_WATCHDOG_SCOPE_BROAD,
             "CHARMER_LAUNCH_EPOCH": str(launch_epoch),
             "CHARMER_MANAGED_ID": managed_id,
             "CHARMER_SESSION_ID": managed_id,
