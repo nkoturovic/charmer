@@ -41,7 +41,7 @@ class StateError(errors.CharmerError, OSError):
     """Raised when a state path or write violates safety requirements."""
 
 
-class CommittedStateError(StateError):
+class CommittedStateError(StateError, posix_fs.CommittedReplaceError):
     """The target was replaced, but directory durability was not confirmed."""
 
 
@@ -59,13 +59,14 @@ FILESYSTEM_FAILURES = {
 def filesystem_failure(exc: BaseException) -> tuple[str, str] | None:
     """``(what happened, remedy)`` for an ``OSError`` an ordinary command
     reports plainly (no space, a quota, no permission, a read-only file
-    system), or None. A :class:`CommittedStateError` also says the change
-    may already be visible: it never claims that nothing changed."""
+    system), or None. A committed replacement (including private state)
+    also says the change may already be visible: it never claims that
+    nothing changed."""
 
     if not isinstance(exc, OSError) or exc.errno not in FILESYSTEM_FAILURES:
         return None
     what, remedy = FILESYSTEM_FAILURES[exc.errno]
-    if isinstance(exc, CommittedStateError):
+    if isinstance(exc, posix_fs.CommittedReplaceError):
         what += " (the change was written but may not be durable yet)"
     return what, remedy
 

@@ -1,15 +1,17 @@
 """POSIX filesystem, lock and exec primitives (Linux/POSIX only).
 
-Stdlib only, no charmer imports, no policy: callers own error types,
-messages, transaction order and recovery. Every primitive performs exactly
-the operation it names once; nothing here retries, sleeps or falls back.
+Stdlib only, no charmer imports, no policy: callers own policy errors,
+messages, transaction order and recovery. Atomic replacement distinguishes
+committed failures; nothing here retries an operation, sleeps or falls back.
 """
 
 from __future__ import annotations
 
+import errno
 import fcntl
 import os
 import stat
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +35,55 @@ def fsync_directory(path: Path) -> None:
 def replace_file(source: str | Path, target: str | Path) -> None:
     """One atomic same-filesystem rename over ``target``; never retried."""
     os.replace(source, target)
+
+
+class CommittedReplaceError(OSError):
+    """The target was replaced, but directory durability was not confirmed."""
+
+
+def atomic_replace(path: Path | str, data: bytes, *, mode: int, durable: bool = True) -> None:
+    """Replace a file through an exclusive same-directory temporary file.
+
+    The caller owns directory policy and the target mode. Symlink targets
+    are refused, including a link noticed just before replacement. Only a
+    temporary file created by this call is cleaned up on failure. With
+    ``durable=False`` neither file nor directory is fsynced; otherwise a
+    post-replace sync failure is distinguished by ``CommittedReplaceError``.
+    """
+    target = Path(path)
+    if target.is_symlink():
+        raise OSError(errno.ELOOP, "refusing to replace a symlink", str(target))
+    descriptor, temporary = tempfile.mkstemp(
+        dir=target.parent, prefix=f".{target.name}.", suffix=".tmp"
+    )
+    try:
+        with os.fdopen(descriptor, "wb") as handle:
+            descriptor = None  # the handle now owns the descriptor
+            os.fchmod(handle.fileno(), mode)
+            handle.write(data)
+            handle.flush()
+            if durable:
+                os.fsync(handle.fileno())
+        if target.is_symlink():
+            raise OSError(errno.ELOOP, "refusing to replace a symlink", str(target))
+        replace_file(temporary, target)
+    except BaseException:
+        if descriptor is not None:
+            os.close(descriptor)
+        try:
+            os.unlink(temporary)
+        except OSError:
+            pass
+        raise
+    if durable:
+        try:
+            fsync_directory(target.parent)
+        except OSError as exc:
+            raise CommittedReplaceError(
+                exc.errno or errno.EIO,
+                "file was written; durability unconfirmed (directory fsync failed)",
+                str(target),
+            ) from exc
 
 
 def lock_descriptor(descriptor: int, *, shared: bool, blocking: bool) -> None:
