@@ -107,6 +107,10 @@ def load_registry(environ: dict[str, str]) -> dict[str, Any]:
         document = strict_json.loads(state.read_private(path))
     except (state.StateError, ValueError) as exc:
         raise CustomModelsError(f"cannot load the custom registry: {exc}") from exc
+    if not isinstance(document, dict):
+        raise CustomModelsError(
+            f"invalid custom registry: $: expected object, got {type(document).__name__}"
+        )
     if "providers" not in document:  # tolerate a models-only v1 file
         document = {"version": 1, "providers": {}, **document}
     problems = schema_validate.validate(document, _schema(), "$")

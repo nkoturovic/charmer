@@ -86,6 +86,17 @@ class CustomRegistryTests(unittest.TestCase):
         spec = {**self.registry["providers"][name], **changes}
         custom.add_provider(self.env, name, **spec)
 
+    def test_non_object_registry_has_a_typed_error_without_writes(self):
+        for document in (None, True, 42, "registry", []):
+            with self.subTest(kind=type(document).__name__):
+                before = strict_json.canonical_file_bytes(document)
+                state.atomic_write(self.path, before)
+                with self.assertRaises(custom.CustomModelsError) as raised:
+                    custom.load_registry(self.env)
+                self.assertEqual(str(raised.exception),
+                    f"invalid custom registry: $: expected object, got {type(document).__name__}")
+                self.assertEqual(self.path.read_bytes(), before)
+
     def test_predicate_is_sorted_case_insensitive_and_defaults_to_x_api_key(self):
         registry = registry_fixture()
         registry["providers"]["zeta"] = {**registry["providers"]["acme"], "header": "X-Token"}
