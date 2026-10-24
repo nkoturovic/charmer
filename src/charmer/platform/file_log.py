@@ -83,7 +83,8 @@ def create_instance_log(logs_dir: Path, started: datetime.datetime, nonce: str) 
 def scan_instance_logs(logs_dir: Path) -> tuple[tuple[InstanceLog, ...], tuple[str, ...]]:
     """``(logs, problems)``: every instance log, newest first, and what could
     not be examined (an unlistable directory, an entry whose metadata cannot
-    be read). A missing directory is no logs and no problem.
+    be read or whose name has an invalid UTC start time). A missing directory
+    is no logs and no problem.
 
     Only regular files (never symlinks) with the instance name shape count.
     Safety evaluations treat any problem as missing evidence, never as an
@@ -112,7 +113,11 @@ def scan_instance_logs(logs_dir: Path) -> tuple[tuple[InstanceLog, ...], tuple[s
             continue
         if not stat.S_ISREG(info.st_mode):
             continue
-        started = datetime.datetime.strptime(match.group(1), _STAMP).replace(tzinfo=datetime.timezone.utc)
+        try:
+            started = datetime.datetime.strptime(match.group(1), _STAMP).replace(tzinfo=datetime.timezone.utc)
+        except ValueError:
+            problems.append(f"instance {match.group(2)}: its log name has an invalid UTC start time")
+            continue
         found.append(InstanceLog(Path(entry.path), started, match.group(2), info.st_size))
     found.sort(key=lambda log: (log.started, log.path.name), reverse=True)
     return tuple(found), tuple(problems)

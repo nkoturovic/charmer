@@ -1568,6 +1568,45 @@ class RollbackRemedyTests(_Lifecycle):
         self.assertIsNone(gateway_actions.observe(self.runtime()).rollback)  # running: nothing to go back for
 
 
+class MalformedInstanceLogTests(_Lifecycle):
+    def test_invalid_calendar_values_are_bounded_scan_problems(self) -> None:
+        valid = self.log_file("aaaaaaaaaaaaaaaa", ["valid log"])
+        stamps = ("20261302T120000Z", "20260230T120000Z", "20250229T120000Z",
+                  "20261002T240000Z", "20261002T126000Z", "20261002T120060Z", "00001002T120000Z")
+        expected = []
+        for index, stamp in enumerate(stamps):
+            nonce = f"{index:016x}"
+            path = self.logs / f"gateway-{stamp}-{nonce}.log"
+            state.atomic_write(path, b"fixture log\n")
+            expected.append(f"instance {nonce}: its log name has an invalid UTC start time")
+        logs, problems = file_log.scan_instance_logs(self.logs)
+        self.assertEqual([log.path for log in logs], [valid])
+        self.assertCountEqual(problems, expected)
+        self.assertTrue(all(len(problem) < 100 for problem in problems))
+        self.assertEqual(file_log.instance_logs(self.logs), logs)
+
+    def test_invalid_log_date_holds_and_survives_pruning_and_status(self) -> None:
+        path = self.logs / "gateway-20261302T120000Z-bbbbbbbbbbbbbbbb.log"
+        contents = (save_line("failed") + "\n").encode()
+        state.atomic_write(path, contents)
+        valid = self.log_file("aaaaaaaaaaaaaaaa", ["valid log"])
+        gateway = self.gateway()
+        report = gateway.persistence_hold()
+        self.assertTrue(report.held)
+        self.assertIn("invalid UTC start time", "\n".join(report.reasons))
+        pruned = gateway_hold.prune_at_start(self.state_root, ("claude",), budget=0)
+        self.assertEqual(pruned.removed, ())
+        self.assertIn("invalid UTC start time", pruned.skipped)
+        self.assertEqual(path.read_bytes(), contents)
+        self.assertTrue(valid.exists())  # the unknown log prevents computing the prune budget
+        self.assertIn("invalid UTC start time", "\n".join(gateway.status().lines({"HOME": str(self.home)})))
+        outcome = gateway.ensure(max_wait=1)
+        self.assertTrue(outcome.ok, outcome.lines())  # starting is allowed; stopping still holds
+        self.assertEqual(gateway.stop().status, "held")
+        self.assertEqual(self.world.terminated, [])
+        self.assertEqual(path.read_bytes(), contents)
+
+
 class PruneDeadlineTests(_Lifecycle):
     def test_ensure_does_not_record_or_spawn_after_pruning_uses_its_time(self) -> None:
         self.history(NOW - datetime.timedelta(hours=1))
