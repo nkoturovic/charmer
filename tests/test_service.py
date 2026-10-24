@@ -368,6 +368,9 @@ class GatewayStampTests(unittest.TestCase):
         self.assertEqual(len(self.pending()), 1)
         self.assertIn("start arguments or environment filter", self.pending()[0])
 
+    def test_reload_observation_has_one_result_interface(self):
+        self.assertFalse(hasattr(service, "last_reload_failed"))
+
     def test_exec_reload_real_format_and_stamp_failure_fallback(self):
         for text, failed in (
             ("", False),
@@ -379,8 +382,8 @@ class GatewayStampTests(unittest.TestCase):
         ):
             with self.subTest(text=text):
                 runner = mock.Mock(return_value=mock.Mock(returncode=0, stdout=text))
-                result = service.last_reload_failed(runner=runner)
-                self.assertIs(result, failed)
+                result = service.last_reload_result(runner=runner)
+                self.assertIs(result is not None and result.failed, failed)
                 self.assertIn("--property=ExecReload", runner.call_args.args[0])
                 lines = service.pending_restart_lines(self.workdir, signature="s", launcher_version="v",
                                                       reload_failed=lambda: result)

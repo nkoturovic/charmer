@@ -771,7 +771,7 @@ class ReloadFailureVisibilityTests(V4Case):
                            "stop_time=[Sun 2026-09-27 01:00:01 UTC] ; pid=123 ; code=exited ; status=1 }"))
                 self.assertEqual(self.runtime.health_get("fixture", "/healthz"), 200)
                 _, _, attention = cli._collect_doctor_reports(
-                    self.runtime, reload_failed=lambda: service.last_reload_failed(runner=runner))
+                    self.runtime, reload_failed=lambda: service.last_reload_result(runner=runner))
                 self.assertTrue(any("gateway restart pending" in line for line in attention), attention)
                 if unwritable:
                     runner.assert_called_once()

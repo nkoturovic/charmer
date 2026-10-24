@@ -546,12 +546,6 @@ def last_reload_result(*, unit: str = UNIT, runner: Callable = subprocess.run) -
     return linux_service.last_reload_result(unit=unit, runner=runner)
 
 
-def last_reload_failed(*, unit: str = UNIT, runner: Callable = subprocess.run) -> bool:
-    """Compatibility boolean observation; restart radars use the dated result."""
-    result = last_reload_result(unit=unit, runner=runner)
-    return result is not None and result.failed
-
-
 def pending_restart_lines(
     workdir: Path, *, signature: str, launcher_version: str,
     reload_failed: Callable[[], ExecReloadResult | bool | None] | None = None,
