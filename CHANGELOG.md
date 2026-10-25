@@ -18,7 +18,7 @@ next resume, or through `charmer doctor --repair-all` for stopped sessions.
 Your own `subagentStatusLine` setting wins; charmer also leaves it unset when
 it cannot read a settings layer. Doctor explains which line new sessions
 will use. After rolling back to 2.1.0, its doctor reports BLOCKED
-“scope differs” for sessions with the new compiled key until
+"scope differs" for sessions with the new compiled key until
 `charmer doctor --repair-all` or a resume rebuilds their scopes.
 See [updating from 2.1.0](docs/update.md#updating-from-210).
 
@@ -37,15 +37,32 @@ See [updating from 2.1.0](docs/update.md#updating-from-210).
   the gateway, some built-in and MCP tools are listed by name and fetched
   with ToolSearch when needed.
 - Release bundles run CPython 3.15.1 from python-build-standalone 20261021.
-  Build tooling uses setuptools 84.2.1 and refreshed CI action pins; the
-  Nix flake uses a refreshed nixos-unstable lock.
+  The Nix flake uses a refreshed nixos-unstable lock.
 - Running setup when everything is already configured avoids repeated
   client checks; every launch still verifies the client's full hash.
-- The client pin watch reports both latest and stable releases, and flags
-  a newer latest release even when it has not reached stable.
+- Development and tests use refreshed build and CI pins and improve
+  developer promotion (file modes and rollback), lock and resource cleanup,
+  draft/build failures, probe synchronization and timeout cleanup, licence
+  reporting, pin checks, required tests, hygiene and fixture isolation;
+  [test-isolation limits](AGENTS.md#4-development-workflow) still apply.
 - Help distinguishes `charmer migrate` and `charmer restore-2x` support
   for pre-public record formats from `charmer update --rollback`. These
   commands remain available; no retirement is scheduled.
+
+### Security
+
+- Provider listings hide credential-bearing file names and model keys
+  from rejected secret-bearing declarations. Model edit/removal commands
+  cannot resolve those declarations as write targets, and qualification
+  refusals use the same redacted diagnostics.
+- Terminal control characters in session relink success lines are escaped.
+- Isolated checks on Claude Code 2.1.310 again observe the synthetic gateway
+  key only at the gateway in the tested request paths. Requests that bypass
+  the test proxy were not observed.
+- The client pin includes upstream sandbox-boundary, worktree and
+  Bash-permission fixes from 2.1.304–2.1.309. charmer has not tested those
+  fixes and does not replace the client's sandbox or worktree protections.
+- The Nix lock selects OpenSSL 3.5.9, including the fix for CVE-2026-84782.
 
 ### Fixed
 
@@ -82,51 +99,20 @@ See [updating from 2.1.0](docs/update.md#updating-from-210).
   or unusable state directories now name a recovery command.
 - Gateway log pruning counts toward the start deadline. Invalid UTC dates
   in instance-log names hold changes and skip pruning instead of crashing.
-- Catalog writes preserve file modes; file replacement reports when new
-  bytes were written but their durability is unconfirmed. Failed promotion
-  restores changed files after an interrupt too, and names any incomplete
-  recovery instead of claiming it rolled back.
+- File replacement reports when new bytes were written but their durability
+  is unconfirmed, rather than implying that nothing changed.
 - JSON readers accept valid surrounding whitespace and reject oversized
   numbers, deep nesting, invalid Unicode and malformed registry shapes
   without tracebacks. A trailing newline no longer bypasses an anchored
   schema pattern. Invalid ledger, evidence and export-receipt data are
-  reported without rewriting them.
-- Session operations release earlier locks when acquiring a later lock
-  fails. Records that exceed parser limits remain forgettable.
+  reported without rewriting them. Session records that exceed parser
+  limits remain forgettable.
 - Profile reseed previews include lead-provider restriction changes.
   Blocked cleanup of old client copies now reports why nothing was removed.
-- Launch checks no longer hang on special files or miss changes beyond a
-  file's initial bytes; discarded launch preparations release their results.
-  Provider listings, qualification, smoke checks and local management
+- Gateway start preparation no longer hangs on special files or misses
+  changes beyond a file's initial bytes.
+- Provider listings, qualification, smoke checks and local management
   readings reject truncated declared-length responses.
-- Developer probes require observed terminal markers and bound their
-  input sends. Native-client and takeover timeout cleanup no longer hangs
-  on inherited output pipes and retains safety checks and failure evidence.
-  Draft paths follow XDG state rules, and candidate-build timeouts fail
-  cleanly.
-- Build copies preserve executable modes. Licence notices retain explicit
-  alternative licence choices rather than treating them as cumulative.
-- Required-test patterns cannot pass by matching nothing or by skipping a
-  whole class or module. Missing test prerequisites are reported before
-  those modules load, and every fixture probe gets its own home and
-  temporary directories.
-
-### Security
-
-- Provider listings hide credential-bearing file names and model keys
-  from rejected secret-bearing declarations. Model edit/removal commands
-  cannot resolve those declarations as write targets, and qualification
-  refusals use the same redacted diagnostics.
-- Terminal control characters in session relink confirmations are escaped.
-- The client pin includes upstream sandbox-boundary, worktree and
-  Bash-permission fixes from 2.1.304–2.1.309. charmer has not tested those
-  fixes and does not replace the client's sandbox or worktree protections.
-- The Nix lock selects OpenSSL 3.5.9, including the fix for
-  CVE-2026-84782. Its CA data removes the emSign G3, C1 and ECC C3 roots;
-  an operator-selected certificate bundle is unchanged.
-- Tests and guarded Python children share one live-resource policy,
-  refusing ports 8317/8316 on every host and live service-control operations.
-  Invalid Python escape sequences now fail the hygiene checks.
 
 ### Known limits
 
@@ -146,10 +132,6 @@ See [updating from 2.1.0](docs/update.md#updating-from-210).
 - Older releases retain their unguarded stale-lock reclamation: do not run
   it alongside another installer or updater. The older-bundle `sync`
   fallback away from Linux lacks the newer helper's per-file guarantee.
-- The test runner's private home means it does not capture a custom live
-  gateway port. Its Python guard does not cover children that bypass
-  startup customization or non-Python programs; fixture network namespaces
-  remain necessary.
 
 ## [2.1.0] — 2026-10-24
 
