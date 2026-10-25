@@ -187,7 +187,7 @@
     },
     {
       "basename": "cli-proxy-api-relogin-after-refresh-failure.patch",
-      "sha256": "c14511b09f0f6c7f7317cf4d68e71879d9ee96e93b6c06f90fe9f13a889015e1",
+      "sha256": "3853dfb792e023490af91b4f39ef2ae8bb9991d06854f55688ca94b7857fefe8",
       "admitted": true
     }
   ],

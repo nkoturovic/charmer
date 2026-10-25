@@ -1,19 +1,20 @@
 diff --git a/sdk/cliproxy/auth/conductor_lifecycle.go b/sdk/cliproxy/auth/conductor_lifecycle.go
-index 17ac03a7..50a8c60d 100644
+index 17ac03a7..33a6a39d 100644
 --- a/sdk/cliproxy/auth/conductor_lifecycle.go
 +++ b/sdk/cliproxy/auth/conductor_lifecycle.go
-@@ -412,8 +412,15 @@ func (m *Manager) updateInternalLocked(ctx context.Context, base, auth *Auth, mo
+@@ -412,8 +412,16 @@ func (m *Manager) updateInternalLocked(ctx context.Context, base, auth *Auth, mo
  		if credChanged || mode == updateModeRefresh {
  			applyPreservedRejectedTokens(existing, auth, mode == updateModeRefresh)
  			if auth.RejectedAccessToken == "" || authAccessToken(auth) != auth.RejectedAccessToken {
 -				if hasUnauthorizedAuthFailure(existing) || (auth.LastError != nil && isUnauthorizedError(auth.LastError)) {
-+				// charmer (upstream issue 6948): new credentials also clear a dead
-+				// refresh chain (invalid_grant) and an unavailable state without a
-+				// live retry or quota deadline; live deadlines survive.
++				// charmer (upstream issue 6948): when no retry or quota deadline is
++				// live, new credentials also clear a dead refresh chain (invalid_grant)
++				// and an unavailable state; live deadlines survive.
 +				now := time.Now()
-+				if hasUnauthorizedAuthFailure(existing) ||
-+					(auth.LastError != nil && (isUnauthorizedError(auth.LastError) || isInvalidGrantResultError(auth.LastError))) ||
-+					((auth.Unavailable || auth.Status == StatusError) && !auth.NextRetryAfter.After(now) && !auth.Quota.NextRecoverAt.After(now)) {
++				liveDeadline := auth.NextRetryAfter.After(now) || auth.Quota.NextRecoverAt.After(now)
++				if hasUnauthorizedAuthFailure(existing) || (auth.LastError != nil && isUnauthorizedError(auth.LastError)) ||
++					(!liveDeadline && ((auth.LastError != nil && isInvalidGrantResultError(auth.LastError)) ||
++						auth.Unavailable || auth.Status == StatusError)) {
  					auth.Unavailable = false
 +					auth.RefreshFailures = 0
  					auth.NextRetryAfter = time.Time{}
@@ -21,10 +22,10 @@ index 17ac03a7..50a8c60d 100644
  					auth.LastError = nil
 diff --git a/sdk/cliproxy/auth/relogin_after_refresh_failure_test.go b/sdk/cliproxy/auth/relogin_after_refresh_failure_test.go
 new file mode 100644
-index 00000000..c1bc8217
+index 00000000..c065660f
 --- /dev/null
 +++ b/sdk/cliproxy/auth/relogin_after_refresh_failure_test.go
-@@ -0,0 +1,137 @@
+@@ -0,0 +1,144 @@
 +package auth
 +
 +import (
@@ -108,18 +109,22 @@ index 00000000..c1bc8217
 +// Signing an account in again after its refresh failed (a dead refresh token,
 +// or a token endpoint outage) puts it back into rotation, with cooling
 +// disabled as the rendered configuration sets it (upstream issue 6948, a
-+// regression of 8.0.39). A live request cooldown still survives the sign-in.
++// regression of 8.0.39). A live retry or quota deadline still survives the
++// sign-in, whichever way the refresh failed.
 +func TestReloginAfterRefreshFailureRestoresAccount(t *testing.T) {
 +	outage := errors.New("token refresh failed with status 503: upstream connect error")
++	invalidGrant := errors.New(`token refresh failed with status 400: {"error": "invalid_grant", "error_description": "Refresh token not found or invalid"}`)
 +	for _, tc := range []struct {
-+		name        string
-+		refreshErr  error
-+		cooling     bool
-+		rateLimited bool
++		name       string
++		refreshErr error
++		cooling    bool
++		failure    int // a request failure before the refresh: its live deadline must survive
 +	}{
-+		{"invalid grant", errors.New(`token refresh failed with status 400: {"error": "invalid_grant", "error_description": "Refresh token not found or invalid"}`), false, false},
-+		{"token endpoint 503", outage, false, false},
-+		{"active 429 cooldown", outage, true, true},
++		{"invalid grant", invalidGrant, false, 0},
++		{"token endpoint 503", outage, false, 0},
++		{"active 429 cooldown", outage, true, http.StatusTooManyRequests},
++		{"invalid grant with a live retry deadline", invalidGrant, true, http.StatusServiceUnavailable},
++		{"invalid grant with a live 429 quota", invalidGrant, true, http.StatusTooManyRequests},
 +	} {
 +		t.Run(tc.name, func(t *testing.T) {
 +			ctx := WithSkipPersist(context.Background())
@@ -130,10 +135,10 @@ index 00000000..c1bc8217
 +			if _, err := m.Register(ctx, reloginSnapshot(t, path, "old", time.Now().Add(-time.Hour))); err != nil {
 +				t.Fatal(err)
 +			}
-+			if tc.rateLimited {
++			if tc.failure != 0 {
 +				retryAfter := time.Hour
 +				m.MarkResult(ctx, Result{AuthID: "claude-a.json", Provider: "claude", RetryAfter: &retryAfter,
-+					Error: &Error{HTTPStatus: http.StatusTooManyRequests, Message: "rate limited"}})
++					Error: &Error{HTTPStatus: tc.failure, Message: "request failed"}})
 +			}
 +			m.refreshAuth(ctx, "claude-a.json") // expired token, refresh fails
 +			failed, _ := m.GetByID("claude-a.json")
@@ -144,9 +149,12 @@ index 00000000..c1bc8217
 +				t.Fatal(err)
 +			}
 +			after, _ := m.GetByID("claude-a.json")
-+			if tc.rateLimited {
++			if tc.failure != 0 {
 +				if !after.Unavailable || !after.NextRetryAfter.After(time.Now()) {
-+					t.Fatal("sign-in released a live 429 cooldown")
++					t.Fatalf("sign-in released a live retry deadline: unavailable=%v next_retry=%v", after.Unavailable, after.NextRetryAfter)
++				}
++				if tc.failure == http.StatusTooManyRequests && !after.Quota.NextRecoverAt.After(time.Now()) {
++					t.Fatalf("sign-in released a live quota deadline: recover=%v", after.Quota.NextRecoverAt)
 +				}
 +				return
 +			}

@@ -1,7 +1,7 @@
 {
   "bomFormat": "CycloneDX",
   "specVersion": "1.6",
-  "serialNumber": "urn:uuid:eea1c713-29e9-5852-8cad-c7cf8ad819c1",
+  "serialNumber": "urn:uuid:83827599-0866-5a1e-83fd-31b26ffee6fc",
   "version": 1,
   "metadata": {
     "tools": {
@@ -277,7 +277,7 @@
         },
         {
           "name": "charmer:gateway:post-apply-tree-sha256",
-          "value": "7bd7aa5b42dd74267d3c61c8b033bbdb2cdb9764a182eba54e1c6c4854886264"
+          "value": "b9ada93c6df1b01ac4f8e8f265927a49c1d3ad44e979c89a312ffa9f52c9ad4f"
         },
         {
           "name": "charmer:gateway:build-godebug",
@@ -393,7 +393,7 @@
         },
         {
           "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-relogin-after-refresh-failure.patch@c14511b09f0f6c7f7317cf4d68e71879d9ee96e93b6c06f90fe9f13a889015e1"
+          "value": "cli-proxy-api-relogin-after-refresh-failure.patch@3853dfb792e023490af91b4f39ef2ae8bb9991d06854f55688ca94b7857fefe8"
         }
       ]
     }
