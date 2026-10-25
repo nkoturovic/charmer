@@ -62,6 +62,12 @@ MODULES = {
             def test_fails(self):
                 self.assertEqual(1, 2)
     """,
+    "test_stderr_leak": """
+        import io, sys, unittest
+        class T(unittest.TestCase):
+            def test_replaces_stderr(self):
+                sys.stderr = io.StringIO()
+    """,
     "test_env": """
         import os, tempfile, unittest
         from pathlib import Path
@@ -199,6 +205,17 @@ class RunnerTests(unittest.TestCase):
         result = self.run_runner("tests.test_pass", "tests.test_fail")
         self.assertEqual(result.returncode, 1)
         self.assertIn("FAILED: 1 failures, 0 errors", result.stderr)
+
+    def test_failure_summary_survives_a_test_replacing_stderr(self) -> None:
+        for module, reason in (("test_fail", "1 failures, 0 errors"),
+                               ("test_tripwire_hit", "the in-process tripwire refused 1"),
+                               ("test_child_hit", "a child process tried the live gateway")):
+            with self.subTest(module=module):
+                result = self.run_runner("test_stderr_leak", module)
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertIn("FAILED: " + reason, result.stderr)
+                if module != "test_fail":
+                    self.assertIn("\nOK\n", result.stderr)  # only the guard makes the run fail
 
     def test_tripwire_hits_fail_the_run_even_when_tests_pass(self) -> None:
         result = self.run_runner("tests.test_tripwire_hit")
