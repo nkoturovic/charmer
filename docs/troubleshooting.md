@@ -121,8 +121,6 @@ to a model.
 | listing or qualification reports a malformed or incomplete response | a body shorter than its declared length is not a valid result; qualification can be inconclusive | check the provider or network, then repeat only the intended check with its usual consent; an absent management reading does not mean zero usage |
 | a provider shows not connected | its key is missing, or no sign-in is saved | `charmer providers set-key <provider>`, or `charmer providers sign-in anthropic` |
 | an account's requests fail after a while | `invalid_grant` lines since the sign-in, or the pool has no credential record | sign in again: `charmer providers sign-in anthropic` (or `openai`) |
-| one or more accounts' models disappear after a credential-file or auth-directory read error | the gateway can drop those accounts' models instead of retaining the last working credentials; doctor may report missing selectors | resolve the read failure and restore owner-only access, then check `charmer providers list` and `charmer doctor`; if models remain missing, follow [the persistence hold](guides/gateway.md#the-persistence-hold) before a guarded `charmer gateway restart`; do not delete the credential files |
-| an account returns another 401 after a model or alias reload | a reload can forget the gateway's in-memory rejection of an account whose access and refresh tokens were already refused, so it may try that account again | sign in to the account again through charmer (`charmer providers sign-in anthropic` or `openai`); do not edit or delete its credential file |
 | 401 or 403 from a keyed provider | the provider refused the key | create a new key in its console and set it again |
 | 402 or 429, agents of one provider stall | per-model counts of 402/429/403 from the gateway's log | in the session, `/cm fallback <provider>`, then `/reload-plugins`; for new launches pick a fallback profile |
 | a provider has no models | its key is set but no model is declared | **G** → **K** continues into adding a model, or `charmer discover <provider>` |
@@ -132,7 +130,6 @@ to a model.
 | Anthropic or OpenAI on its API key: nothing of it is served | “its selectors are not served”, with the reason: the key is not set, the route is not approved, or no model is reviewed for it | a missing key: `charmer providers set-key openai` (or `anthropic`); a route not approved: `charmer providers transport openai api-key`; or back to the account: `charmer providers transport openai oauth-pool` |
 | OpenAI on its API key: some OpenAI models are gone | doctor lists the lines reviewed for the key route and those not served | expected: the key serves only the reviewed models; bind one of those, or switch back to the ChatGPT account |
 | OpenAI on its API key: long answers cost more than expected | none: each answer is bounded by Claude Code's output cap, not by a spend limit | set a hard project spend limit with OpenAI ([providers/api-keys.md](providers/api-keys.md#openai)) |
-| ChatGPT account or OpenAI API key: a reply stops at a preamble or looks incomplete | none: once an earlier message in the reply has produced text, the gateway can omit a later message that arrives only in its final event | ask for the rest; this is a [gateway reply limit](guides/gateway.md#what-the-gateway-changes-in-a-request), separate from the late-stream completion limit below |
 | OpenRouter or another OpenAI-compatible provider: a long session stops with the provider's context-length error | none: on these routes a context-window error is shown as the provider's error and does not start automatic compaction (on OpenAI it does) | run `/compact`, then continue |
 | Qwen answers 401 | the key does not match the address | the Qwen provider takes a Token Plan key; a pay-as-you-go Model Studio key belongs to the `model-studio` preset |
 | a preset or an OpenAI-compatible endpoint: “not available in this release” | a build whose keyed OpenAI-compatible audit is closed | use the vendor's Anthropic-compatible endpoint, OpenRouter, or a keyless server on your network ([providers/openai-compatible.md](providers/openai-compatible.md)) |
@@ -246,7 +243,7 @@ See [client fixes](reference/compatibility.md#deferred-client-fixes).
 
 ### Late-stream completion limit
 
-Re-measured on 2026-10-24 with Claude Code 2.1.310 and CLIProxyAPI 8.0.33,
+Re-measured on 2026-10-25 with Claude Code 2.1.310 and CLIProxyAPI 8.0.42,
 a stream missing `message_stop` after completed content and a terminal
 `message_delta` can make the client report success without recovery, despite
 the gateway's SSE error. A successful client result is not proof of complete

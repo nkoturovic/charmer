@@ -11,7 +11,9 @@ follow [Semantic Versioning](https://semver.org/).
 The update installs the verified Claude Code 2.1.310 copy before switching
 releases; your own Claude Code installation is untouched. Running sessions
 use the new copy at their next launch or resume. State and record formats
-remain 4.
+remain 4. The gateway also changes: after updating, run the guarded
+`charmer gateway restart` between turns in a plain terminal outside Claude
+Code; [the update sequence](docs/update.md#updating-from-210) has the checks.
 
 Existing managed sessions pick up charmer's subagent status line at their
 next resume, or through `charmer doctor --repair-all` for stopped sessions.
@@ -36,6 +38,18 @@ See [updating from 2.1.0](docs/update.md#updating-from-210).
   platform build is checked against Anthropic's signed manifest. Behind
   the gateway, some built-in and MCP tools are listed by name and fetched
   with ToolSearch when needed.
+- The gateway uses CLIProxyAPI 8.0.42, built with Go 1.27.3 and 28 local
+  patches. Upstream now supplies access-log path quoting and early Codex
+  token refresh, replacing two local patches; the local tool-call patch
+  keeps only the remaining streamed-call repair.
+- Anthropic-compatible API-key routes keep their session and agent identity
+  handling by omitting the cloak-mode setting. This does not mean every
+  header is unchanged: recognised Claude Code traffic can now retain its
+  own SDK-version header on the Claude account and Anthropic-compatible
+  API-key routes, subject to the gateway's version checks.
+- OpenAI-compatible providers receive the caller's `User-Agent` when sent,
+  with a gateway default otherwise; see
+  [what providers receive](docs/privacy.md#what-providers-receive-about-you).
 - Release bundles run CPython 3.15.1 from python-build-standalone 20261021.
   The Nix flake uses a refreshed nixos-unstable lock.
 - Running setup when everything is already configured avoids repeated
@@ -63,6 +77,15 @@ See [updating from 2.1.0](docs/update.md#updating-from-210).
 
 ### Security
 
+- The gateway includes upstream RESP bounds checks, connection panic
+  recovery, request-log filename traversal hardening and credential
+  stripping on plugin redirects. charmer keeps RESP commands closed,
+  request-log middleware disabled and plugins off; shared-listener panic
+  recovery remains applicable. Its stronger credentialed-redirect refusal
+  is retained.
+- The management allowlist blocks the new upstream account-binding and
+  status routes. The new upstream guardian-inheritance routing line omits
+  the credential ID; other log lines can still name account files.
 - Provider listings hide credential-bearing file names and model keys
   from rejected secret-bearing declarations. Model edit/removal commands
   cannot resolve those declarations as write targets, and qualification
@@ -78,6 +101,18 @@ See [updating from 2.1.0](docs/update.md#updating-from-210).
 
 ### Fixed
 
+- Credential-file or auth-directory read errors retain previously loaded
+  accounts and their models instead of removing them. This does not recover
+  credentials that were deleted or never successfully loaded.
+- On the ChatGPT account and OpenAI API-key routes, a later message supplied
+  whole in its `response.output_item.done` event is no longer omitted after
+  earlier streamed text. Commentary preambles from these models now arrive
+  as unsigned thinking rather than reply text.
+- Model or alias reloads no longer clear an unchanged account's terminal
+  credential rejection.
+- Signing in again with new tokens still clears a failed refresh's status,
+  message and count (a local patch for an upstream regression after 8.0.33),
+  unless a live retry or quota deadline is pending.
 - Cancel is first and focused when discarding profile edits or deleting
   a named binding. Gateway dialogs offer stop advice only for a gateway
   known to be running or starting.
@@ -150,8 +185,12 @@ See [updating from 2.1.0](docs/update.md#updating-from-210).
 
 ### Known limits
 
+- CLIProxyAPI 8.0.42 re-checks the key on each Responses WebSocket turn
+  upstream; charmer has not measured this, so reconnect after
+  `charmer doctor --rotate-token`. Managed Claude Code sessions use HTTP,
+  not this WebSocket route.
 - The [late-stream completion limit](docs/troubleshooting.md#late-stream-completion-limit)
-  remains on Claude Code 2.1.310 with the tested CLIProxyAPI 8.0.33: a
+  remains on Claude Code 2.1.310 with the tested CLIProxyAPI 8.0.42: a
   successful client result is not proof of complete stream framing.
 - A user-installed `agent.spawn` mod can change an agent's model within
   the lineup; a `settings.read` mod can also widen the allowed model list.
