@@ -32,7 +32,6 @@ from pathlib import Path
 from typing import Iterable
 from typing import Mapping
 import charmer.cli.text as cli_text
-import json
 import os
 import re
 import stat

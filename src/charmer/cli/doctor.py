@@ -2067,63 +2067,62 @@ def _doctor_journal_report(runtime: runtime_mod.Runtime, text: gateway_events.Lo
     lines: list[str] = []
     saves = facts.credential_saves
     if info_lines is not None:
-        coverage = saves.coverage if saves is not None else "unavailable" if text is None else "incomplete"
+        coverage = saves.coverage
         info_lines.append(
             f"gateway credential saves: coverage={coverage}; last 24 h, bounded observation "
             "only — not backup-retirement evidence"
         )
-    if saves is not None:
-        # Latest outcome AND latest failure per identity within each invocation.
-        # A later success never silently hides a persistence failure in this window;
-        # it only changes the remedy.
-        def repairs_failure(failed: gateway_events.CredentialSave, event: gateway_events.CredentialSave) -> bool:
-            # Repair evidence: persisted, or unverified with credentials_changed=true
-            # that no newer outcome superseded, from a known instance and auth index, at
-            # the failed save's epoch/generation or newer. It changes only the remedy;
-            # backup retirement still needs persisted receipts (the runbook).
-            if event.gateway_instance is None or event.auth_index == "invalid":
-                return False
-            if (event.epoch, event.generation) < (failed.epoch, failed.generation):
-                return False
-            return event.result == "persisted" or (
-                event.result == "unverified" and event.credentials_changed and event.category != "superseded")
+    # Latest outcome AND latest failure per identity within each invocation.
+    # A later success never silently hides a persistence failure in this window;
+    # it only changes the remedy.
+    def repairs_failure(failed: gateway_events.CredentialSave, event: gateway_events.CredentialSave) -> bool:
+        # Repair evidence: persisted, or unverified with credentials_changed=true
+        # that no newer outcome superseded, from a known instance and auth index, at
+        # the failed save's epoch/generation or newer. It changes only the remedy;
+        # backup retirement still needs persisted receipts (the runbook).
+        if event.gateway_instance is None or event.auth_index == "invalid":
+            return False
+        if (event.epoch, event.generation) < (failed.epoch, failed.generation):
+            return False
+        return event.result == "persisted" or (
+            event.result == "unverified" and event.credentials_changed and event.category != "superseded")
 
-        latest = {}
-        failures = {}
-        repairs = {}
-        for event in saves.events:
-            identity = (event.gateway_instance, event.provider, event.auth_index)
-            latest[identity] = event
-            if event.result == "failed":
-                failures[identity] = event
-                repairs.pop(identity, None)
-            elif identity in failures and repairs_failure(failures[identity], event):
-                repairs[identity] = event
-        for event in dict.fromkeys([*latest.values(), *failures.values()]):
-            line = (
-                f"gateway credential save: {event.result} provider={event.provider} "
-                f"auth_index={event.auth_index} bytes={event.bytes}/{event.size} errno={event.errno} "
-                f"stage={event.stage} category={event.category} operation={event.operation} "
-                f"credentials_changed={'true' if event.credentials_changed else 'false'}"
-            )
-            identity = (event.gateway_instance, event.provider, event.auth_index)
-            if event.result == "failed" and identity in repairs:
-                if info_lines is not None:
-                    repair = repairs[identity]
-                    evidence = ("a persisted save" if repair.result == "persisted" else
-                                "an unverified save with credentials_changed=true (repair evidence, "
-                                "not a verified save)")
-                    info_lines.append(line + f"; followed by {evidence} of this credential in the same "
-                                      "gateway instance — no re-authentication needed; retain auth.pre-* backups")
-            elif event.result == "failed":
-                remedy = gateway_facts._OAUTH_LOGIN_COMMANDS.get(event.provider) or "the provider's login command"
-                lines.append(gateway_facts.tagged(
-                    line + "; keep the gateway running, free space, then wait for a persisted save "
-                    f"of this credential; re-authenticate with {remedy} only if none appears, "
-                    "before any restart or rollback; retain auth.pre-* backups", area="Gateway"))
-            elif info_lines is not None:
-                info_lines.append(line + ("; verified save observed" if event.result == "persisted"
-                                          else "; not a verified save"))
+    latest = {}
+    failures = {}
+    repairs = {}
+    for event in saves.events:
+        identity = (event.gateway_instance, event.provider, event.auth_index)
+        latest[identity] = event
+        if event.result == "failed":
+            failures[identity] = event
+            repairs.pop(identity, None)
+        elif identity in failures and repairs_failure(failures[identity], event):
+            repairs[identity] = event
+    for event in dict.fromkeys([*latest.values(), *failures.values()]):
+        line = (
+            f"gateway credential save: {event.result} provider={event.provider} "
+            f"auth_index={event.auth_index} bytes={event.bytes}/{event.size} errno={event.errno} "
+            f"stage={event.stage} category={event.category} operation={event.operation} "
+            f"credentials_changed={'true' if event.credentials_changed else 'false'}"
+        )
+        identity = (event.gateway_instance, event.provider, event.auth_index)
+        if event.result == "failed" and identity in repairs:
+            if info_lines is not None:
+                repair = repairs[identity]
+                evidence = ("a persisted save" if repair.result == "persisted" else
+                            "an unverified save with credentials_changed=true (repair evidence, "
+                            "not a verified save)")
+                info_lines.append(line + f"; followed by {evidence} of this credential in the same "
+                                  "gateway instance — no re-authentication needed; retain auth.pre-* backups")
+        elif event.result == "failed":
+            remedy = gateway_facts._OAUTH_LOGIN_COMMANDS.get(event.provider) or "the provider's login command"
+            lines.append(gateway_facts.tagged(
+                line + "; keep the gateway running, free space, then wait for a persisted save "
+                f"of this credential; re-authenticate with {remedy} only if none appears, "
+                "before any restart or rollback; retain auth.pre-* backups", area="Gateway"))
+        elif info_lines is not None:
+            info_lines.append(line + ("; verified save observed" if event.result == "persisted"
+                                      else "; not a verified save"))
     qualifier = f"; {facts.partial}" if facts.partial else ""
     for pool in sorted(facts.dead_pools):
         if pool in refresh_failures:
