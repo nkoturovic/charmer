@@ -24,6 +24,7 @@ import (
 	sdkaccess "github.com/router-for-me/CLIProxyAPI/v8/sdk/access"
 	sdkauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/auth"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
+	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -250,6 +251,137 @@ func TestOmissionInitialRegistration(t *testing.T) {
 	}
 	if len(reg.GetModelsForClient(id)) == 0 {
 		t.Fatal("initial registration published no models after a request result advanced the generation")
+	}
+}
+
+// omissionRejectingExecutor refuses every request with 401 and every refresh
+// with invalid_grant: both of the credential's tokens are rejected.
+type omissionRejectingExecutor struct {
+	coreauth.ProviderExecutor
+}
+
+func (*omissionRejectingExecutor) Identifier() string { return "codex" }
+func (*omissionRejectingExecutor) Execute(context.Context, *coreauth.Auth, cliproxyexecutor.Request, cliproxyexecutor.Options) (cliproxyexecutor.Response, error) {
+	return cliproxyexecutor.Response{}, &coreauth.Error{HTTPStatus: http.StatusUnauthorized, Message: "token invalidated"}
+}
+func (*omissionRejectingExecutor) Refresh(context.Context, *coreauth.Auth) (*coreauth.Auth, error) {
+	return nil, errors.New(`token refresh failed with status 400: {"error": "invalid_grant"}`)
+}
+
+// With cooling disabled, as rendered, a terminal OAuth rejection survives a
+// model or alias reload of the unchanged credential: reconciling the
+// registry's model states does not mark it active again.
+func TestOmissionTerminalRejectionReload(t *testing.T) {
+	const id = "omission-terminal-rejection"
+	ctx := context.Background()
+	reg := GlobalModelRegistry()
+	reg.RegisterClient(id, "codex", []*ModelInfo{{ID: "gpt-5.5"}})
+	t.Cleanup(func() { reg.UnregisterClient(id) })
+	manager := coreauth.NewManager(nil, nil, nil)
+	manager.SetConfigSnapshot(&config.Config{DisableCooling: true})
+	manager.RegisterExecutor(&omissionRejectingExecutor{})
+	if _, err := manager.Register(ctx, &coreauth.Auth{ID: id, Provider: "codex",
+		Metadata: map[string]any{"access_token": "dummy-omission-rejected", "refresh_token": "dummy-omission-refused"}}); err != nil {
+		t.Fatal(err)
+	}
+	_, _ = manager.Execute(ctx, []string{"codex"}, cliproxyexecutor.Request{Model: "gpt-5.5"}, cliproxyexecutor.Options{})
+	if rejected, ok := manager.GetByID(id); !ok || !coreauth.HasUnauthorizedAuthFailure(rejected) {
+		t.Fatal("precondition: the credential is not terminally rejected")
+	}
+	manager.ReconcileRegistryModelStates(ctx, id)
+	after, ok := manager.GetByID(id)
+	if !ok || !coreauth.HasUnauthorizedAuthFailure(after) {
+		t.Fatalf("model reload lifted the terminal rejection: status=%s unavailable=%t", after.Status, after.Unavailable)
+	}
+}
+
+// omissionReloginExecutor serves only the signed-in account's new access
+// token and fails every refresh with the configured error.
+type omissionReloginExecutor struct {
+	coreauth.ProviderExecutor
+	refreshErr error
+}
+
+func (*omissionReloginExecutor) Identifier() string { return "claude" }
+func (*omissionReloginExecutor) Execute(_ context.Context, auth *coreauth.Auth, _ cliproxyexecutor.Request, _ cliproxyexecutor.Options) (cliproxyexecutor.Response, error) {
+	if token, _ := auth.Metadata["access_token"].(string); token == "dummy-omission-new-at" {
+		return cliproxyexecutor.Response{Payload: []byte("ok")}, nil
+	}
+	return cliproxyexecutor.Response{}, &coreauth.Error{HTTPStatus: http.StatusUnauthorized, Message: "token invalidated"}
+}
+func (e *omissionReloginExecutor) Refresh(context.Context, *coreauth.Auth) (*coreauth.Auth, error) {
+	return nil, e.refreshErr
+}
+
+// omissionReloginSnapshot writes a Claude credential file and returns it as
+// the watcher reads it.
+func omissionReloginSnapshot(t *testing.T, path, token string, expiry time.Time) *coreauth.Auth {
+	t.Helper()
+	expired := expiry.Format(time.RFC3339)
+	access, refresh := "dummy-omission-"+token+"-at", "dummy-omission-"+token+"-rt"
+	data := []byte(`{"type":"claude","access_token":"` + access + `","refresh_token":"` + refresh + `","expired":"` + expired + `"}`)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	auth := &coreauth.Auth{ID: filepath.Base(path), Provider: "claude", FileName: filepath.Base(path),
+		Status: coreauth.StatusActive, Attributes: map[string]string{"path": path, "source": path},
+		Metadata: map[string]any{"type": "claude", "access_token": access, "refresh_token": refresh, "expired": expired}}
+	auth.BindFileSnapshot(path, data)
+	return auth
+}
+
+// With cooling disabled, as rendered, signing in again after a failed refresh
+// (a dead refresh token, or a token endpoint failure) returns the account to
+// rotation at once: the new tokens clear the refresh failure and its status.
+func TestOmissionReloginAfterRefreshFailure(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		refreshErr error
+	}{
+		{"invalid grant", errors.New(`token refresh failed with status 400: {"error": "invalid_grant"}`)},
+		{"token endpoint 503", errors.New("token refresh failed with status 503: upstream connect error")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			const id = "omission-relogin.json"
+			ctx := coreauth.WithSkipPersist(context.Background())
+			reg := GlobalModelRegistry()
+			reg.RegisterClient(id, "claude", []*ModelInfo{{ID: "claude-omission-relogin"}})
+			t.Cleanup(func() { reg.UnregisterClient(id) })
+			path := filepath.Join(t.TempDir(), id)
+			manager := coreauth.NewManager(nil, nil, nil)
+			manager.SetConfigSnapshot(&config.Config{DisableCooling: true})
+			manager.RegisterExecutor(&omissionReloginExecutor{refreshErr: tc.refreshErr})
+			if _, err := manager.Register(ctx, omissionReloginSnapshot(t, path, "old", time.Now().Add(-time.Hour))); err != nil {
+				t.Fatal(err)
+			}
+			// The background refresh of the expired token fails, as it does
+			// before the user signs in again.
+			refreshCtx, stopRefresh := context.WithCancel(ctx)
+			manager.StartAutoRefresh(refreshCtx, 10*time.Millisecond)
+			deadline := time.Now().Add(10 * time.Second)
+			for {
+				if failed, ok := manager.GetByID(id); ok && failed.Unavailable && failed.LastError != nil {
+					break
+				}
+				if time.Now().After(deadline) {
+					stopRefresh()
+					t.Fatal("precondition: the background refresh never failed the account")
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
+			stopRefresh()
+			manager.StopAutoRefresh()
+			if _, err := manager.Update(ctx, omissionReloginSnapshot(t, path, "new", time.Now().Add(8*time.Hour))); err != nil {
+				t.Fatal(err)
+			}
+			// The sign-in itself clears the failure, before any request succeeds.
+			after, _ := manager.GetByID(id)
+			_, errExecute := manager.Execute(ctx, []string{"claude"}, cliproxyexecutor.Request{Model: "claude-omission-relogin"}, cliproxyexecutor.Options{})
+			if errExecute != nil || after.Unavailable || after.Status != coreauth.StatusActive || after.LastError != nil || after.RefreshFailures != 0 {
+				t.Fatalf("signed-in account still out of rotation: err=%v status=%s unavailable=%t refresh_failures=%d",
+					errExecute, after.Status, after.Unavailable, after.RefreshFailures)
+			}
+		})
 	}
 }
 

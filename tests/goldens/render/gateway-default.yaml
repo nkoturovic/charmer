@@ -97,8 +97,6 @@ claude-api-key:
   - api-key: "dummy-kimi-key"
     base-url: "https://api.kimi.com/coding"
     auth-header: "x-api-key"
-    cloak:
-      mode: "never"
     models:
       - name: "k3"
         alias: "charmer-kimi-k3"
@@ -108,8 +106,6 @@ claude-api-key:
         force-mapping: true
   - api-key: "dummy-kimi-key"
     base-url: "https://api.meta.ai"
-    cloak:
-      mode: "never"
     models:
       - name: "muse-spark-1.3"
         alias: "charmer-muse-spark-high"
@@ -126,8 +122,6 @@ claude-api-key:
   - api-key: "dummy-kimi-key"
     base-url: "https://openrouter.ai/api"
     auth-header: "x-api-key"
-    cloak:
-      mode: "never"
     models:
       - name: "x-ai/grok-4.6"
         alias: "charmer-grok46-high"
@@ -203,8 +197,6 @@ claude-api-key:
         force-mapping: true
   - api-key: "dummy-kimi-key"
     base-url: "https://token-plan.ap-southeast-1.maas.aliyuncs.com/apps/anthropic"
-    cloak:
-      mode: "never"
     models:
       - name: "qwen3.8-max"
         alias: "charmer-qwen38-max"
@@ -224,7 +216,7 @@ openai-compatibility:
     base-url: "http://127.0.0.1:9/v1"
     models:
       - name: "charmer-render"
-        alias: "charmer-render-604037f9"
+        alias: "charmer-render-cc49e97d"
         force-mapping: true
 payload:
   override:

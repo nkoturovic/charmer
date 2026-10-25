@@ -1,8 +1,8 @@
 diff --git a/internal/watcher/dispatcher.go b/internal/watcher/dispatcher.go
-index 29d5a755..c453ac49 100644
+index ad92e182..f8e24162 100644
 --- a/internal/watcher/dispatcher.go
 +++ b/internal/watcher/dispatcher.go
-@@ -272,6 +272,45 @@ func (w *Watcher) dispatchAuthUpdates(updates []AuthUpdate) {
+@@ -468,6 +468,45 @@ func (w *Watcher) dispatchAuthUpdates(updates []AuthUpdate) {
  	w.dispatchMu.Unlock()
  }
  
@@ -121,10 +121,10 @@ index 00000000..dcbc7031
 +	}
 +}
 diff --git a/internal/watcher/watcher.go b/internal/watcher/watcher.go
-index 064b6129..fb056f21 100644
+index d2f9ca75..aca7100c 100644
 --- a/internal/watcher/watcher.go
 +++ b/internal/watcher/watcher.go
-@@ -77,6 +77,9 @@ const (
+@@ -78,6 +78,9 @@ const (
  	AuthUpdateActionAdd    AuthUpdateAction = "add"
  	AuthUpdateActionModify AuthUpdateAction = "modify"
  	AuthUpdateActionDelete AuthUpdateAction = "delete"
@@ -134,7 +134,7 @@ index 064b6129..fb056f21 100644
  )
  
  // AuthUpdate describes an incremental change to auth configuration.
-@@ -86,6 +89,8 @@ type AuthUpdate struct {
+@@ -87,6 +90,8 @@ type AuthUpdate struct {
  	Auth        *coreauth.Auth
  	revision    uint64 // Watcher-local ordering, independent of runtime auth generations.
  	fileRemoval bool   // The source file was removed, not just an ID from its content.
@@ -143,7 +143,7 @@ index 064b6129..fb056f21 100644
  }
  
  // IsFileRemoval reports whether this delete was observed as a whole-file removal.
-@@ -100,6 +105,21 @@ func (u *AuthUpdate) SetFileRemoval(fileRemoval bool) {
+@@ -101,6 +106,21 @@ func (u *AuthUpdate) SetFileRemoval(fileRemoval bool) {
  	}
  }
  
@@ -165,8 +165,8 @@ index 064b6129..fb056f21 100644
  // Revision returns the monotonic watcher revision assigned to this update.
  func (u AuthUpdate) Revision() uint64 {
  	return u.revision
-@@ -207,6 +227,14 @@ func (w *Watcher) DispatchPersistedAuthUpdateWithRevision(update *AuthUpdate) (b
- 	return w.dispatchPersistedAuthUpdateWithRevision(update)
+@@ -214,6 +234,14 @@ func (w *Watcher) RereadDiscardedFileSnapshot(auth *coreauth.Auth) {
+ 	w.rereadDiscardedFileSnapshot(auth)
  }
  
 +// DispatchAuthBarrier queues a completion marker behind every auth update the watcher
@@ -208,7 +208,7 @@ index b64c3e05..7e709ca7 100644
  	authManager *sdkAuth.Manager
  
 diff --git a/sdk/cliproxy/service_auth.go b/sdk/cliproxy/service_auth.go
-index cce2773e..a732a9fa 100644
+index 92e2693a..104c2691 100644
 --- a/sdk/cliproxy/service_auth.go
 +++ b/sdk/cliproxy/service_auth.go
 @@ -45,7 +45,12 @@ func (s *Service) ensureAuthUpdateQueue(ctx context.Context) {
@@ -1335,18 +1335,18 @@ index 00000000..107f9249
 +	}
 +}
 diff --git a/sdk/cliproxy/types.go b/sdk/cliproxy/types.go
-index 84bf1a1a..b8c641e2 100644
+index 7b3d9e2a..c0a0e4c3 100644
 --- a/sdk/cliproxy/types.go
 +++ b/sdk/cliproxy/types.go
-@@ -114,6 +114,7 @@ type WatcherWrapper struct {
- 	dispatchPersistedAuthWithRev func(update *watcher.AuthUpdate) (bool, uint64)
+@@ -115,6 +115,7 @@ type WatcherWrapper struct {
+ 	rereadDiscardedFileSnapshot  func(auth *coreauth.Auth)
  	setPluginAuthParser          func(parser PluginAuthParser)
  	reloadConfigIfChanged        func()
 +	dispatchAuthBarrier          func() <-chan struct{}
  }
  
  // Start proxies to the underlying watcher Start implementation.
-@@ -198,6 +199,15 @@ func (w *WatcherWrapper) DispatchPersistedAuthUpdateWithRevision(update *watcher
+@@ -199,6 +200,15 @@ func (w *WatcherWrapper) DispatchPersistedAuthUpdateWithRevision(update *watcher
  	return false, 0
  }
  
@@ -1363,10 +1363,10 @@ index 84bf1a1a..b8c641e2 100644
  // SetClients and SetAPIKeyClients removed; watcher manages its own caches
  
 diff --git a/sdk/cliproxy/watcher.go b/sdk/cliproxy/watcher.go
-index 4635659e..ec5f9d89 100644
+index 72db9024..73716444 100644
 --- a/sdk/cliproxy/watcher.go
 +++ b/sdk/cliproxy/watcher.go
-@@ -46,5 +46,8 @@ func defaultWatcherFactory(configPath, authDir string, reload func(*config.Confi
+@@ -49,5 +49,8 @@ func defaultWatcherFactory(configPath, authDir string, reload func(*config.Confi
  		reloadConfigIfChanged: func() {
  			w.ReloadConfigIfChanged()
  		},

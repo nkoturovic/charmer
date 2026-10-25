@@ -352,9 +352,10 @@ class UpstreamReviewTests(unittest.TestCase):
             target = self.review["target"]
             self.assertEqual((target["tag"], target["commit"]), (pinned["tag"], pinned["commit"]))
             self.assertTrue(target["rule_check"].strip())
+            # A re-pin at the reviewed tag may carry no tail; every tail it
+            # does carry is a reviewed backport with an admitted patch.
             tails = [pick.split(":", 1)[0] for pick in target["cherry_picks"]
                      if re.match(r"^[0-9a-f]{40}:", pick)]
-            self.assertTrue(tails, "a frozen tag needs its separately reviewed tails")
             admitted = set(admitted_names(self.recipe))
             for tail in tails:
                 fixes = [fix for fix in self.review["fixes"]
@@ -369,10 +370,11 @@ class UpstreamReviewTests(unittest.TestCase):
         for mutate in (
                 lambda r: r["upstream"]["reviewed_through"].update(version="0.0.1"),
                 lambda r: r["upstream"]["reviewed_through"].update(commit="0" * 40),
-                lambda r: r["target"].update(cherry_picks=[]),
+                lambda r: r["target"].update(commit="0" * 40),
                 lambda r: r["target"].update(rule_check=""),
                 lambda r: r["target"].update(cherry_picks=["0" * 40 + ": unreviewed"]),
-                lambda r: r.update(fixes=[f for f in r["fixes"] if f["disposition"] != "backport"])):
+                # A tail whose reviewed fix is carried by the re-pin, not an admitted backport.
+                lambda r: r["target"].update(cherry_picks=["4337f1f000ffc1bcdfa6f1a05e5b0687842a83aa: carried"])):
             self.review = copy.deepcopy(original)
             mutate(self.review)
             with self.subTest(review=self.review["upstream"]["reviewed_through"]):

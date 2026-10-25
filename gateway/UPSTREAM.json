@@ -3,27 +3,27 @@
   "upstream": {
     "name": "CLIProxyAPI",
     "repository": "https://github.com/router-for-me/CLIProxyAPI",
-    "tag": "v8.0.33",
-    "version": "8.0.33",
-    "commit": "2422c6b0f5fe16495320fa29456493874c1977a0",
+    "tag": "v8.0.42",
+    "version": "8.0.42",
+    "commit": "bc0643405a1d0adf77dd0f109972ac3313d66397",
     "license": "MIT",
     "module": "github.com/router-for-me/CLIProxyAPI/v8",
     "main_package": "./cmd/server",
     "binary": "cli-proxy-api"
   },
   "source": {
-    "archive_url": "https://github.com/router-for-me/CLIProxyAPI/archive/2422c6b0f5fe16495320fa29456493874c1977a0.tar.gz",
-    "archive_file": "CLIProxyAPI-2422c6b0f5fe16495320fa29456493874c1977a0.tar.gz",
-    "archive_sha256": "6e7d5e1ec706a262f0a19223b9122ac876d2601c1ef44cc79b9aa64793995b8f",
-    "tree_sha256": "81b3a85fa058bd7e887b95a21670d13b10fa451ebe510ffdcd1fa84788230281",
-    "nix_hash": "sha256-HpsmjjMzVTnP+KcK6hy3cq3AHRsaCAVvgJdb9PKL7QU="
+    "archive_url": "https://github.com/router-for-me/CLIProxyAPI/archive/bc0643405a1d0adf77dd0f109972ac3313d66397.tar.gz",
+    "archive_file": "CLIProxyAPI-bc0643405a1d0adf77dd0f109972ac3313d66397.tar.gz",
+    "archive_sha256": "b2be550e96395b464ef642fde8a26fcd2ae7783bc76a5e0e731736a5b5940a56",
+    "tree_sha256": "aadf83cde9776c9876f6786a5b6366a1824e8be13377e15c349920e728acfb12",
+    "nix_hash": "sha256-G5hlWfiu1yoa/lmU/N24zzfIsFwm2yfWquTkJ2mt9Ls="
   },
   "vendor": {
-    "tree_sha256": "7cb61e9f98783c718e8f534af7a4811134c34ffca658740327fb7bce209be63c",
-    "nix_hash": "sha256-qbfl57bA06AhjdAjsU0ae2fAWTLCCAPTfE8K1lLKifo=",
+    "tree_sha256": "4e42d31a36dff35049b83c6470efcfe4326a81a09e38b183519743f72c00271b",
+    "nix_hash": "sha256-YpsBCGfexjcE4mhmrjiv0EUoIxKDs19b6Io9yc/7FCE=",
     "modules_patch": {
       "basename": "cli-proxy-api-module-requirements.patch",
-      "sha256": "e4a58250cbb0c9521ac8d04d6651389c2ff4c2b58c515f35796a0d763d5d23b2"
+      "sha256": "b3ede2fd22a3b2137aa0e7ce01b154bd0848414f17f974337ab8b635a72f9b61"
     }
   },
   "toolchain": {
@@ -57,57 +57,57 @@
     },
     {
       "basename": "cli-proxy-api-kimi-claude-compat.patch",
-      "sha256": "41a25ab3e9572c867234fe9d457ac89417f25de4719acbe7cc7e605dc4b3c234",
+      "sha256": "65ce8cb5ba8f80da573214ef6f732938cec16f6d170fd7dc277584ba72235090",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-non-claude-cache-retention.patch",
-      "sha256": "76fa4ad35ff93795c44a3bebfcbf4d0ef4cb856732c542f58572f972699d20c3",
+      "sha256": "b8a966b82ce6952cab23754ded7201b484c093d5c4c1fe3f012f86a8d21f265a",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-management-readonly-allowlist.patch",
-      "sha256": "457427db7f9ddcdf7f42a92ce77260d974a86c18a4145246ad30afabb6ed62bc",
+      "sha256": "d4b50946e4e4b220ea8338ec4a1674a0b58ae4c3d7bd00bcdcd42b9d617e0700",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-watcher-parentdir.patch",
-      "sha256": "1402747fd59c576cfd5e42899e3654c132d5059c588ad9938bad6f732aad6815",
+      "sha256": "e13f24f07f31f2744a92e9f608e2aee06e5ec8cb47c501ed04f626d31909ac60",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-serve-after-initial-auth-load.patch",
-      "sha256": "24bb8e3c6169457fe6e44985d02f6a0c60ab76d3643b8d30c49d1a2aee1b75b2",
+      "sha256": "b21f437af2344375752d8fc1dce37bdf44dfffe265d1fe09738d862333847840",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-management-env-only.patch",
-      "sha256": "5874d2a7af548595443026f0b02d2f793200ff0cad1aa11b94c7637dda8528d7",
+      "sha256": "d9c3e780f091e2ad68614da0f3b715d1385eb52031d912dff06fe90dd97f879f",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-credential-save-report.patch",
-      "sha256": "2425f556aab2d6263cc2ed5530bb7d62e5bc1f6386d16d4dffd8a1671b982707",
+      "sha256": "75b0e36b700fef87d45c49290908d3fc424a3b55d63c6518fb3e17efe868bb5b",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-credentialed-redirects.patch",
-      "sha256": "d9b4842f8fcde2ce7dd9c38d67d8e6f68e1b8801a3f927100ac2af31a81601ee",
+      "sha256": "5bccf5a3887c617f5436cf9bab0bd17c435c81dc0e87b01efb5e2b006d65d8b6",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-openai-compat-keyed-safety.patch",
-      "sha256": "e0f262f2dfb96bb0921c2487ecd23f37444ea1c70f0e81dad34a433dc43f7d73",
+      "sha256": "eb8aa9b86b1002408c81a603dc3cc7083af7bfef0bd04c3373bf36d96877a81c",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-auth-snapshot-locking.patch",
-      "sha256": "66610b574c8cc480451d9399c7cc88d5a0b183da2ddb114d0ae48508a512341b",
+      "sha256": "aae4c50375c469c3e0fcb71ff3a50a501d1de28d8d3f7389f0326449883096b5",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-server-config-snapshot.patch",
-      "sha256": "4ecd0ee369bfd32a6515ed2403a0f0d3870d326ea21f6d644a224607b7bb2d1f",
+      "sha256": "85898667209616aacdd74501c352ba4d1fe5da3103cc10bfac184ab42d80ec44",
       "admitted": true
     },
     {
@@ -117,17 +117,17 @@
     },
     {
       "basename": "cli-proxy-api-oauth-model-overlay.patch",
-      "sha256": "49b822a4ccabcf35f2a3e395e61366104c9e314000f38500b467bcf123510c95",
+      "sha256": "efebdba90da9d8cb68c4ec9137d22e10c6ea1e90a5be82cacc38a955a8074693",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-no-antigravity-egress.patch",
-      "sha256": "106e865c8062c903bf25cc523e26089b2b710227808fe1e3d8f5532920efb5b0",
+      "sha256": "2cc754efb40618b831438072824757d045f978279ac2501b0524c39ec89c2f07",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-codex-client-identity.patch",
-      "sha256": "405f95472837d9ed335baf99e8f39f61934c453d8aa3bf04e0670b9144018dc2",
+      "sha256": "79b43054fe31cd02ddb87a21f7df991780ed5ce1398243120722f411580e7db6",
       "admitted": true
     },
     {
@@ -137,17 +137,17 @@
     },
     {
       "basename": "cli-proxy-api-codex-api-key-safety.patch",
-      "sha256": "fa02ebceb0549b732664abbd5034a53d4e514c0f54697406e95a47ae59337ee5",
+      "sha256": "edb448bca4146ebeeabfa5459649f04728378453667d71920d09de267a796dfc",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-refresh-shutdown-join.patch",
-      "sha256": "102e0be3ef3a546d672461a08b7a8d0e53588525cd93735c741f2f0aa077c05f",
+      "sha256": "0dab1186e481bfb13adef0a2eef350a5cfbcdb2d33bbf398c1b3550d6784874f",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-openai-content-chunks.patch",
-      "sha256": "d167b000dee94c28296e6c62fc6a41989b4e90441743757a8956232d54769186",
+      "sha256": "bdba665a23e23894a9d03943cccfaafdad956e0af12676b989025cc5383b310e",
       "admitted": true
     },
     {
@@ -156,38 +156,38 @@
       "admitted": true
     },
     {
-      "basename": "cli-proxy-api-access-log-path-quoting.patch",
-      "sha256": "d06758cdb11c5dd4d5f088ecb1d1cf5ce6137c8c1eb24bcab0c6431de128fb31",
-      "admitted": true
-    },
-    {
-      "basename": "cli-proxy-api-codex-refresh-lead.patch",
-      "sha256": "dfd433f757e0dd22eb423f51e6bc4ed7049caa3dc358c54bbae9330e13e15a1c",
-      "admitted": true
-    },
-    {
       "basename": "cli-proxy-api-output-cap.patch",
-      "sha256": "9ba554fc81f3432a89fe4d75ac0b38f7b5137bd605d26b3caef9c224a41b7a67",
+      "sha256": "f36e64a2343c54257ba348fc1b28cb31aaec0c1744bd37524f08b7fa87d17d80",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-context-error-normalization.patch",
-      "sha256": "35847df8aaf3ce696bb608e0625455e19e911a707e9f10b83abfe9a007c5c579",
+      "sha256": "14d9958892249d13fff47ec3814a42587e1d8811331837118de5222754014b26",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-log-reduction.patch",
-      "sha256": "310f25b067d989b51dea17012f1a180adc1f541a751152eb25fafd5626865433",
+      "sha256": "9f97a045e06114918f1a6846ffb440c7338ac3312d958105f13f712bc9a6c06d",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-tool-call-integrity.patch",
-      "sha256": "6e76f133e2d913baab2d0b2c5bd57f4e6c113c861e83497ae564e3cb5275846a",
+      "sha256": "a5db8c2443d271d7890c0aaaf86cc45a430641ffebf3d52d41ecdfba3ff25fa5",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-initial-registration.patch",
-      "sha256": "6d054fbed1eb42ac34dd2f60c47047b6e2db293028d9825a2ec6f919061dffa8",
+      "sha256": "6ec7cd1d7b21c0466141fa546f37e3ec1499ed8a861370908774bff6fd07d8ba",
+      "admitted": true
+    },
+    {
+      "basename": "cli-proxy-api-terminal-rejection-reload.patch",
+      "sha256": "923063a24f7c08c4eb7bc156eb7a9a84edace9caf1aebfbb1ab11ce5f21ab366",
+      "admitted": true
+    },
+    {
+      "basename": "cli-proxy-api-relogin-after-refresh-failure.patch",
+      "sha256": "3853dfb792e023490af91b4f39ef2ae8bb9991d06854f55688ca94b7857fefe8",
       "admitted": true
     }
   ],
@@ -207,9 +207,9 @@
       "-w",
       "-buildid=",
       "-X",
-      "main.Version=8.0.33",
+      "main.Version=8.0.42",
       "-X",
-      "main.Commit=2422c6b0f5fe16495320fa29456493874c1977a0",
+      "main.Commit=bc0643405a1d0adf77dd0f109972ac3313d66397",
       "-X",
       "main.BuildDate=1970-01-01T00:00:00Z"
     ],
@@ -303,7 +303,7 @@
       "packages": [
         "./internal/api/..."
       ],
-      "skip": "^(TestRedisProtocol_SUBSCRIBE_UsageSendsSupportRefresh|TestRedisProtocol_SUBSCRIBE_ErrorsReceivesErrorEvents|TestRedisProtocol_AUTH_And_PopContracts|TestOAuthCallbackRouteSkipsManagementKeyMiddleware|TestManagementUsageRequiresManagementAuthAndPopsArray|TestManagementPluginsRouteRegistered|TestManagementResponseExposesPluginSupportHeaderForCORS|TestConfigV8ETagExposedForCORS|TestIssue5190ModelDetailLifecycle|TestIssue5190ModelDetailUsesVisibleCatalog|TestIssue5190ModelDetailHomeVisibility|TestAuditHomeCodexSearchBusyReturnsTrustedRetryAfter|TestAuditHomeCodexSearchBodyCloseBeforeRelease|TestHomeCodexAlphaSearchReportsUnauthorizedBeforeEarlyReturn|TestHomeCodexAlphaSearchEndsSelectionAcrossDirectHTTPPaths|TestCodexLiveRoutesRequireAuthAndAreRegistered|TestRealtimeStandardRoutesAndClientSecretAuth|TestCodexAlphaSearchForwardsRequest|TestCodexAlphaSearchUsesPluginProviderTargetModel|TestCodexAlphaSearchFallsBackWhenPluginDoesNotHandleRoute|TestCodexAlphaSearchRejectsUnsupportedPluginRouteTarget|TestCodexAlphaSearchSanitizesResponsesOnlyFields|TestCodexAlphaSearchCredentialPolicy|TestCodexAlphaSearchOptInAPIKeyUsesConfiguredEndpoint|TestCodexAlphaSearchOptInAPIKeyStripsCredentialPrefix|TestCodexAlphaSearchOptInAPIKeyResolvesModelAlias|TestCodexAlphaSearchOptInAPIKeyWithoutBaseURLFailsClosed|TestCodexAlphaSearchPassesGinContextToAuthSelection|TestCodexAlphaSearchUsesRequestIDForSessionAffinity|TestVideosRoutesKeepXAINativeAndExposeOpenAIPrefix|TestInteractionsRouteRegistered)$",
+      "skip": "^(TestRedisProtocol_SUBSCRIBE_UsageSendsSupportRefresh|TestRedisProtocol_SUBSCRIBE_ErrorsReceivesErrorEvents|TestRedisProtocol_AUTH_And_PopContracts|TestOAuthCallbackRouteSkipsManagementKeyMiddleware|TestManagementUsageRequiresManagementAuthAndPopsArray|TestManagementPluginsRouteRegistered|TestManagementResponseExposesPluginSupportHeaderForCORS|TestConfigV8ETagExposedForCORS|TestIssue5190ModelDetailLifecycle|TestIssue5190ModelDetailUsesVisibleCatalog|TestIssue5190ModelDetailHomeVisibility|TestAuditHomeCodexSearchBusyReturnsTrustedRetryAfter|TestAuditHomeCodexSearchBodyCloseBeforeRelease|TestHomeCodexAlphaSearchReportsUnauthorizedBeforeEarlyReturn|TestHomeCodexAlphaSearchEndsSelectionAcrossDirectHTTPPaths|TestCodexLiveRoutesRequireAuthAndAreRegistered|TestRealtimeStandardRoutesAndClientSecretAuth|TestCodexAlphaSearchForwardsRequest|TestCodexAlphaSearchUsesPluginProviderTargetModel|TestCodexAlphaSearchFallsBackWhenPluginDoesNotHandleRoute|TestCodexAlphaSearchRejectsUnsupportedPluginRouteTarget|TestCodexAlphaSearchSanitizesResponsesOnlyFields|TestCodexAlphaSearchCredentialPolicy|TestCodexAlphaSearchOptInAPIKeyUsesConfiguredEndpoint|TestCodexAlphaSearchOptInAPIKeyStripsCredentialPrefix|TestCodexAlphaSearchOptInAPIKeyResolvesModelAlias|TestCodexAlphaSearchOptInAPIKeyWithoutBaseURLFailsClosed|TestCodexAlphaSearchPassesGinContextToAuthSelection|TestCodexAlphaSearchUsesRequestIDForSessionAffinity|TestVideosRoutesKeepXAINativeAndExposeOpenAIPrefix|TestInteractionsRouteRegistered|TestRedisProtocol_MalformedAndOverflowFramesDoNotCrashServer|TestCodexAlphaSearchSIWCWithRealExecutor|TestSIWCManagementRouteAccessControl|TestCodexCallbackRejectsSIWCState|TestSIWCStatusEndpoint)$",
       "platforms": "portable",
       "race": false,
       "count": null,
@@ -322,7 +322,8 @@
         "TestManagementAllowlist_RemoteOverrideForcedOff",
         "TestManagementAllowlist_OAuthCallbackWithPendingSessionWritesNothing",
         "TestManagementAllowlist_RefusedAPISurfaces",
-        "TestManagementAllowlist_RESPSurfaceClosedWithoutKeyCheck"
+        "TestManagementAllowlist_RESPSurfaceClosedWithoutKeyCheck",
+        "TestManagementAllowlist_ModelDefinitionsRegistryFallback"
       ]
     },
     {
@@ -906,14 +907,13 @@
         "./sdk/auth",
         "./sdk/cliproxy/auth"
       ],
-      "run": "^(TestProviderRefreshLeads|TestCodexRefreshLeadRegistry96HoursClaudeUnchanged|TestCodexRefreshLeadShouldRefreshAt96Hours)$",
+      "run": "^(TestProviderRefreshLeads|TestIssue6742_CodexProactiveRefreshBeforeSevenDayInvalidation)$",
       "platforms": "portable",
       "race": false,
       "count": null,
       "expected_tests": [
         "TestProviderRefreshLeads",
-        "TestCodexRefreshLeadRegistry96HoursClaudeUnchanged",
-        "TestCodexRefreshLeadShouldRefreshAt96Hours"
+        "TestIssue6742_CodexProactiveRefreshBeforeSevenDayInvalidation"
       ]
     },
     {
@@ -954,7 +954,7 @@
         "./sdk/cliproxy/auth",
         "./internal/runtime/executor"
       ],
-      "run": "^(TestLogReductionInventory|TestSessionAffinityLinesNameNoCredential|TestCredentialIdentityNamesNoAccountOrKey|TestConfigKeyWritesNoCredentialReceipt|TestSubstitutionWarningPerAttemptWithholdsKeyIndex|TestWebsocketDiagnosticsLogAtDebugWithoutAuthID)$",
+      "run": "^(TestLogReductionInventory|TestSessionAffinityLinesNameNoCredential|TestCredentialIdentityNamesNoAccountOrKey|TestConfigKeyWritesNoCredentialReceipt|TestSubstitutionWarningPerAttemptWithholdsKeyIndex|TestWebsocketDiagnosticsLogAtDebugWithoutAuthID|TestGuardianRoutingLineNamesNoCredential)$",
       "platforms": "portable",
       "race": false,
       "count": null,
@@ -964,7 +964,8 @@
         "TestCredentialIdentityNamesNoAccountOrKey",
         "TestConfigKeyWritesNoCredentialReceipt",
         "TestSubstitutionWarningPerAttemptWithholdsKeyIndex",
-        "TestWebsocketDiagnosticsLogAtDebugWithoutAuthID"
+        "TestWebsocketDiagnosticsLogAtDebugWithoutAuthID",
+        "TestGuardianRoutingLineNamesNoCredential"
       ]
     },
     {
@@ -979,6 +980,64 @@
       "expected_tests": [
         "TestToolCallIntegrityStreamGoldens",
         "TestToolCallIntegrityNonStreamGoldens"
+      ]
+    },
+    {
+      "name": "terminal-rejection-reload",
+      "packages": [
+        "./sdk/cliproxy/auth"
+      ],
+      "run": "^(TestTerminalRejectionSurvivesModelReload|TestTerminalRejectionNewCredentialResets|TestTerminalRejectionGuardLeavesOrdinaryFailuresReset)$",
+      "platforms": "portable",
+      "race": false,
+      "count": null,
+      "expected_tests": [
+        "TestTerminalRejectionSurvivesModelReload",
+        "TestTerminalRejectionNewCredentialResets",
+        "TestTerminalRejectionGuardLeavesOrdinaryFailuresReset"
+      ]
+    },
+    {
+      "name": "codex-message-boundary",
+      "packages": [
+        "./internal/translator/codex/claude"
+      ],
+      "run": "^(TestConvertCodexResponseToClaude_StreamSecondMessageDoneFallbackAfterStreamedFirstMessage|TestConvertCodexResponseToClaude_StreamCommentaryDoneFallbackIsThinking|TestConvertCodexResponseToClaude_StreamFinalAnswerOnlyUnchanged)$",
+      "platforms": "portable",
+      "race": false,
+      "count": null,
+      "expected_tests": [
+        "TestConvertCodexResponseToClaude_StreamSecondMessageDoneFallbackAfterStreamedFirstMessage",
+        "TestConvertCodexResponseToClaude_StreamCommentaryDoneFallbackIsThinking",
+        "TestConvertCodexResponseToClaude_StreamFinalAnswerOnlyUnchanged"
+      ]
+    },
+    {
+      "name": "auth-read-errors",
+      "packages": [
+        "./internal/watcher"
+      ],
+      "run": "^(TestRefreshAuthStatePreservesUnreadableFile|TestFullScanPreservesAuthsInUnreadableDir)$",
+      "platforms": "portable",
+      "race": false,
+      "count": null,
+      "expected_tests": [
+        "TestRefreshAuthStatePreservesUnreadableFile",
+        "TestFullScanPreservesAuthsInUnreadableDir"
+      ]
+    },
+    {
+      "name": "relogin-after-refresh-failure",
+      "packages": [
+        "./sdk/cliproxy/auth"
+      ],
+      "run": "^(TestReloginAfterRefreshFailureRestoresAccount|TestReloginKeepsUnchangedTokensAndLiveQuota)$",
+      "platforms": "portable",
+      "race": false,
+      "count": null,
+      "expected_tests": [
+        "TestReloginAfterRefreshFailureRestoresAccount",
+        "TestReloginKeepsUnchangedTokensAndLiveQuota"
       ]
     }
   ],

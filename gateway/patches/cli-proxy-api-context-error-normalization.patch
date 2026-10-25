@@ -371,10 +371,10 @@ index 00000000..f9ecd325
 +	}
 +}
 diff --git a/internal/runtime/executor/codex_executor_execute.go b/internal/runtime/executor/codex_executor_execute.go
-index 240af6ce..121b6df6 100644
+index 24484740..85259b51 100644
 --- a/internal/runtime/executor/codex_executor_execute.go
 +++ b/internal/runtime/executor/codex_executor_execute.go
-@@ -136,7 +136,7 @@ func (e *CodexExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, re
+@@ -140,7 +140,7 @@ func (e *CodexExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, re
  			if errClearReplay := clearCodexReasoningReplayOnInvalidSignature(ctx, replayScope, httpResp.StatusCode, examined); errClearReplay != nil {
  				return resp, errClearReplay
  			}
@@ -383,7 +383,7 @@ index 240af6ce..121b6df6 100644
  			return resp, err
  		}
  		b, _ := io.ReadAll(httpResp.Body)
-@@ -145,7 +145,7 @@ func (e *CodexExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, re
+@@ -149,7 +149,7 @@ func (e *CodexExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, re
  		}
  		helps.AppendAPIResponseChunk(ctx, e.cfg, b)
  		helps.LogWithRequestID(ctx).Debugf("request error, error status: %d, error message: %s", httpResp.StatusCode, helps.SummarizeErrorBody(httpResp.Header.Get("Content-Type"), b))
@@ -392,7 +392,7 @@ index 240af6ce..121b6df6 100644
  		return resp, err
  	}
  	data, errRead := io.ReadAll(httpResp.Body)
-@@ -182,7 +182,7 @@ func (e *CodexExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, re
+@@ -186,7 +186,7 @@ func (e *CodexExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, re
  			if codexKeySafe(auth) {
  				streamErr = codexKeyTerminalFailure(streamErr, terminalBody)
  			}
@@ -402,10 +402,10 @@ index 240af6ce..121b6df6 100644
  		}
  
 diff --git a/internal/runtime/executor/codex_executor_stream.go b/internal/runtime/executor/codex_executor_stream.go
-index 2715a97d..3e35ff80 100644
+index 7d5723b6..64742745 100644
 --- a/internal/runtime/executor/codex_executor_stream.go
 +++ b/internal/runtime/executor/codex_executor_stream.go
-@@ -142,7 +142,7 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
+@@ -146,7 +146,7 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
  			if errClearReplay := clearCodexReasoningReplayOnInvalidSignature(ctx, replayScope, httpResp.StatusCode, examined); errClearReplay != nil {
  				return nil, errClearReplay
  			}
@@ -414,7 +414,7 @@ index 2715a97d..3e35ff80 100644
  			return nil, err
  		}
  		data, readErr := io.ReadAll(httpResp.Body)
-@@ -158,7 +158,7 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
+@@ -162,7 +162,7 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
  		}
  		helps.AppendAPIResponseChunk(ctx, e.cfg, data)
  		helps.LogWithRequestID(ctx).Debugf("request error, error status: %d, error message: %s", httpResp.StatusCode, helps.SummarizeErrorBody(httpResp.Header.Get("Content-Type"), data))
@@ -423,7 +423,7 @@ index 2715a97d..3e35ff80 100644
  		return nil, err
  	}
  
-@@ -273,7 +273,7 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
+@@ -277,7 +277,7 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
  						}
  						helps.LogWithRequestID(ctx).Debugf("codex executor: bootstrap overload rejection after %d lines / %v, time budget exhausted; delivering in-stream", bufferedFrames, timeSinceStart)
  					}
@@ -432,7 +432,7 @@ index 2715a97d..3e35ff80 100644
  					break
  				}
  				if helps.HasMeaningfulCodexOutputDelta(data) {
-@@ -468,7 +468,7 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
+@@ -472,7 +472,7 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
  					helps.RecordAPIResponseError(ctx, e.cfg, streamErr)
  					reporter.PublishFailure(ctx, streamErr)
  					select {

@@ -680,6 +680,40 @@ class KimiCompatAuthTests(GatewayTests):
                     self.assertTrue(hit.header_values.get("authorization") == "Bearer dummy-gwtest-ccb")
                     self.assertNotIn("x-api-key", hit.header_names)
 
+    def test_claude_code_identity_passes_through_unchanged(self):
+        # The rendered Claude-compatible key routes carry no cloak key, so the
+        # gateway keeps the caller's shape: Claude Code's user agent, client
+        # headers, system blocks (billing and identity) and metadata user id
+        # reach the provider as the client sent them. An explicit cloak mode
+        # `never` would strip them (uncloak on keys without the CLI profile).
+        alias = self.alias("gwtest-cc", "output-config-high", levels=())
+        version = catalog.load_catalog(FIXTURE_ROOT).docs["native-contract"]["verified"][0]["version"]
+        session = str(uuid.uuid4())
+        user_agent = f"claude-cli/{version} (external, cli)"
+        client = ("x-app", "x-stainless-lang", "x-stainless-os", "x-stainless-arch", "x-stainless-runtime",
+                  "x-stainless-package-version", "anthropic-beta")
+        headers = {"User-Agent": user_agent, "x-app": "cli", "x-stainless-lang": "js", "x-stainless-os": "Linux",
+                   "x-stainless-arch": "x64", "x-stainless-runtime": "node", "x-stainless-package-version": "0.112.1",
+                   "anthropic-beta": "claude-code-20250219,interleaved-thinking-2025-05-14",
+                   "anthropic-dangerous-direct-browser-access": "true", "x-claude-code-session-id": session}
+        system = [{"type": "text", "text": f"x-anthropic-billing-header: cc_version={version}.000; cc_entrypoint=cli;"},
+                  {"type": "text", "text": "You are Claude Code, Anthropic's official CLI for Claude."},
+                  {"type": "text", "text": "gwtest-system"}]
+        user_id = json.dumps({"device_id": "b" * 64, "account_uuid": "", "session_id": session})
+        for stream in (False, True):
+            with self.subTest(stream=stream):
+                reply = self.gateway.request(alias, stream=stream, headers=headers,
+                                             body={"metadata": {"user_id": user_id}, "system": system})
+                hit = self.hit(reply, alias)
+                kept = {"user_agent": hit.header_values.get("user-agent") == user_agent,
+                        "browser": hit.header_values.get("anthropic-dangerous-direct-browser-access") == "true",
+                        "session": hit.header_values.get("x-claude-code-session-id") == session,
+                        "client_headers": all(name in hit.header_names for name in client),
+                        "system": hit.body.get("system") == system,
+                        "user_id": (hit.body.get("metadata") or {}).get("user_id") == user_id}
+                self.record("auth", streamed_row("K5", stream), reply, **{"kept_" + name: value for name, value in kept.items()})
+                self.assertEqual(kept, dict.fromkeys(kept, True))
+
     def test_models_listing_carries_owned_by_and_context_length(self):
         reply = self.gateway.get("/v1/models")
         self.assertEqual(reply.status, 200)
@@ -808,7 +842,9 @@ class CompatTranslationTests(GatewayTests):
         reply, hit = self.request("F7", body={"prompt_cache_retention": "24h"})
         self.record("fidelity", "F8", reply, classification="translator fact")
         self.assertNotIn("authorization", hit.header_names)
-        self.assertEqual(hit.header_values["user-agent"], "cli-proxy-openai-compat")
+        # Since 8.0.36 the compat executor forwards the client's User-Agent
+        # (cli-proxy-openai-compat only when the client sends none).
+        self.assertEqual(hit.header_values["user-agent"], "gwtest-harness/1")
         self.assertNotIn("prompt_cache_retention", hit.top_level_keys)
 
     def test_f9_f11_unsigned_reasoning_round_trip(self):

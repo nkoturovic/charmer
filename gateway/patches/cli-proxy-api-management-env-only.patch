@@ -1,5 +1,5 @@
 diff --git a/internal/api/handlers/management/handler.go b/internal/api/handlers/management/handler.go
-index cf802eb0..aeb5024d 100644
+index 84cd4dd4..2e9ad26d 100644
 --- a/internal/api/handlers/management/handler.go
 +++ b/internal/api/handlers/management/handler.go
 @@ -21,7 +21,6 @@ import (
@@ -10,7 +10,7 @@ index cf802eb0..aeb5024d 100644
  )
  
  type attemptInfo struct {
-@@ -333,13 +332,9 @@ func (h *Handler) AuthenticateManagementKey(clientIP string, localClient bool, p
+@@ -342,13 +341,9 @@ func (h *Handler) AuthenticateManagementKey(clientIP string, localClient bool, p
  
  	h.mu.Lock()
  	cfg := h.cfg
@@ -25,7 +25,7 @@ index cf802eb0..aeb5024d 100644
  	}
  	h.mu.Unlock()
  	if h.allowRemoteOverride {
-@@ -391,7 +386,11 @@ func (h *Handler) AuthenticateManagementKey(clientIP string, localClient bool, p
+@@ -400,7 +395,11 @@ func (h *Handler) AuthenticateManagementKey(clientIP string, localClient bool, p
  		h.attemptsMu.Unlock()
  	}
  
@@ -38,7 +38,7 @@ index cf802eb0..aeb5024d 100644
  		return false, http.StatusForbidden, "remote management key not set"
  	}
  
-@@ -400,28 +399,13 @@ func (h *Handler) AuthenticateManagementKey(clientIP string, localClient bool, p
+@@ -409,28 +408,13 @@ func (h *Handler) AuthenticateManagementKey(clientIP string, localClient bool, p
  		return false, http.StatusUnauthorized, "missing management key"
  	}
  

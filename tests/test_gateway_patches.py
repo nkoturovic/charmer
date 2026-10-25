@@ -223,6 +223,8 @@ class ManagementAllowlistTests(unittest.TestCase):
 
 
 class AccessLogQuotingTests(unittest.TestCase):
+    # Upstream quotes the path since 8.0.34 (4337f1f0; local patch 24 retired):
+    # a regression row with no patch to omit, kept for every re-pin.
     def test_encoded_newline_cannot_forge_a_log_line(self):
         # A request path is client text: an encoded newline in it must stay
         # inside its quoted access-log line, never start a line of its own
@@ -362,10 +364,18 @@ class PatchOmissionProbeTests(unittest.TestCase):
         self.check_probe("service", "TestOmissionRefreshShutdown", "RS1")
 
     def test_codex_refresh_lead(self):
+        # Upstream's lead since 8.0.34 (feb63984; local patch 25 retired): a
+        # regression row with no patch to omit.
         self.check_probe("service", "TestOmissionCodexRefreshLead", "RL1")
 
     def test_initial_registration(self):
         self.check_probe("service", "TestOmissionInitialRegistration", "IR1")
+
+    def test_terminal_rejection_reload(self):
+        self.check_probe("service", "TestOmissionTerminalRejectionReload", "TR1")
+
+    def test_relogin_after_refresh_failure(self):
+        self.check_probe("service", "TestOmissionReloginAfterRefreshFailure", "RA1")
 
 
 

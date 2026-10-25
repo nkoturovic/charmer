@@ -740,10 +740,10 @@ index e8c66625..edbfe536 100644
  		})
  	}
 diff --git a/internal/watcher/clients.go b/internal/watcher/clients.go
-index 7c188dac..00734e6b 100644
+index 130892f4..467f896c 100644
 --- a/internal/watcher/clients.go
 +++ b/internal/watcher/clients.go
-@@ -23,6 +23,13 @@ import (
+@@ -26,6 +26,13 @@ import (
  )
  
  func (w *Watcher) reloadClients(rescanAuth bool, affectedOAuthProviders []string, forceAuthRefresh bool) {
@@ -757,7 +757,7 @@ index 7c188dac..00734e6b 100644
  	log.Debugf("starting full client load process")
  
  	w.clientsMutex.RLock()
-@@ -499,7 +506,7 @@ func (w *Watcher) triggerServerUpdate(cfg *config.Config) {
+@@ -644,7 +651,7 @@ func (w *Watcher) triggerServerUpdate(cfg *config.Config) {
  		}
  		w.serverUpdatePend = false
  		w.serverUpdateMu.Unlock()
@@ -766,7 +766,7 @@ index 7c188dac..00734e6b 100644
  		return
  	}
  
-@@ -522,10 +529,6 @@ func (w *Watcher) triggerServerUpdate(cfg *config.Config) {
+@@ -667,10 +674,6 @@ func (w *Watcher) triggerServerUpdate(cfg *config.Config) {
  		if w.stopped.Load() {
  			return
  		}
@@ -777,7 +777,7 @@ index 7c188dac..00734e6b 100644
  		w.serverUpdateMu.Lock()
  		if w.serverUpdateTimer != timer || !w.serverUpdatePend {
  			w.serverUpdateMu.Unlock()
-@@ -533,15 +536,29 @@ func (w *Watcher) triggerServerUpdate(cfg *config.Config) {
+@@ -678,15 +681,29 @@ func (w *Watcher) triggerServerUpdate(cfg *config.Config) {
  		}
  		w.serverUpdateTimer = nil
  		w.serverUpdatePend = false
@@ -2014,21 +2014,35 @@ index f6a55d04..5a0aaf9c 100644
  	if errAddAuthDir := w.watcher.Add(w.authDir); errAddAuthDir != nil {
  		log.Errorf("failed to watch auth directory %s: %v", w.authDir, errAddAuthDir)
 diff --git a/internal/watcher/watcher.go b/internal/watcher/watcher.go
-index a2734deb..064b6129 100644
+index c5017dc0..d2f9ca75 100644
 --- a/internal/watcher/watcher.go
 +++ b/internal/watcher/watcher.go
-@@ -38,7 +38,9 @@ type Watcher struct {
- 	authRescanMu      sync.Mutex
- 	configReloadMu    sync.Mutex
- 	configReloadTimer *time.Timer
--	configApplyMu     sync.Mutex // Serializes config file reloads so they apply in file order.
+@@ -31,14 +31,16 @@ type authDirProvider interface {
+ 
+ // Watcher manages file watching for configuration and authentication files
+ type Watcher struct {
+-	configPath                 string
+-	authDir                    string
+-	config                     *config.Config
+-	clientsMutex               sync.RWMutex
+-	authRescanMu               sync.Mutex
+-	configReloadMu             sync.Mutex
+-	configReloadTimer          *time.Timer
+-	configApplyMu              sync.Mutex // Serializes config file reloads so they apply in file order.
++	configPath        string
++	authDir           string
++	config            *config.Config
++	clientsMutex      sync.RWMutex
++	authRescanMu      sync.Mutex
++	configReloadMu    sync.Mutex
++	configReloadTimer *time.Timer
 +	// Serializes config file reloads so they apply in file order. Lock order:
 +	// configApplyMu -> clientsMutex/serverUpdateMu; held through callbacks.
-+	configApplyMu     sync.Mutex
- 	serverUpdateMu    sync.Mutex
- 	serverUpdateTimer *time.Timer
- 	serverUpdateLast  time.Time
-@@ -166,6 +168,8 @@ func (w *Watcher) Stop() error {
++	configApplyMu              sync.Mutex
+ 	serverUpdateMu             sync.Mutex
+ 	serverUpdateTimer          *time.Timer
+ 	serverUpdateLast           time.Time
+@@ -167,6 +169,8 @@ func (w *Watcher) Stop() error {
  // SetConfig updates the current configuration
  func (w *Watcher) SetConfig(cfg *config.Config) {
  	cloned := cfg.CloneForRuntime()

@@ -3198,7 +3198,9 @@ class TransportAlternativeTests(unittest.TestCase):
         self.assertEqual(len(sections), 1)
         section = sections[0]
         self.assertEqual(section["auth-header"], "x-api-key")
-        self.assertEqual(section["cloak"], {"mode": "never"})
+        # No cloak key: the caller's shape passes through (8.0.34+ reads an
+        # explicit `never` as uncloak, which strips Claude Code's identity).
+        self.assertNotIn("cloak", section)
         self.assertEqual(section["api-key"], "dummy-platform_anthropic_api_key")
         self.assertEqual({entry["alias"] for entry in section["models"]}, claude_pool)
         self.assertIn("anthropic", available)

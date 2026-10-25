@@ -339,10 +339,10 @@ index f3f73d53..2f51b915 100644
  	if cfg != nil {
  		keys = safemode.ExampleAPIKeys(cfg.APIKeys)
 diff --git a/internal/api/server_routes.go b/internal/api/server_routes.go
-index 8113a815..ee87fa07 100644
+index 7bf7ff70..956afec6 100644
 --- a/internal/api/server_routes.go
 +++ b/internal/api/server_routes.go
-@@ -158,7 +158,7 @@ func (s *Server) setupRoutes() {
+@@ -159,7 +159,7 @@ func (s *Server) setupRoutes() {
  			errStr = c.Query("error_description")
  		}
  		if state != "" {
@@ -351,16 +351,16 @@ index 8113a815..ee87fa07 100644
  				_, _ = managementHandlers.WriteOAuthCallbackFileForPendingSession(cfg.AuthDir, "anthropic", state, code, errStr)
  			}
  		}
-@@ -174,7 +174,7 @@ func (s *Server) setupRoutes() {
+@@ -175,7 +175,7 @@ func (s *Server) setupRoutes() {
  			errStr = c.Query("error_description")
  		}
  		if state != "" {
 -			if cfg := s.getConfig(); cfg != nil {
 +			if cfg := s.requestConfig(c); cfg != nil {
- 				_, _ = managementHandlers.WriteOAuthCallbackFileForPendingSession(cfg.AuthDir, "codex", state, code, errStr)
- 			}
- 		}
-@@ -190,7 +190,7 @@ func (s *Server) setupRoutes() {
+ 				if _, errWrite := managementHandlers.WriteOAuthCallbackFileForPendingSession(cfg.AuthDir, "codex", state, code, errStr); errors.Is(errWrite, managementHandlers.ErrSIWCCallbackRequiresV8) {
+ 					c.JSON(http.StatusConflict, gin.H{"error": "SIWC callbacks require /v8/management/oauth/callback"})
+ 					return
+@@ -194,7 +194,7 @@ func (s *Server) setupRoutes() {
  			errStr = c.Query("error_description")
  		}
  		if state != "" {
@@ -369,7 +369,7 @@ index 8113a815..ee87fa07 100644
  				_, _ = managementHandlers.WriteOAuthCallbackFileForPendingSession(cfg.AuthDir, "antigravity", state, code, errStr)
  			}
  		}
-@@ -210,7 +210,7 @@ func (s *Server) setupRoutes() {
+@@ -214,7 +214,7 @@ func (s *Server) setupRoutes() {
  			c.JSON(http.StatusBadRequest, gin.H{"error": "code or error is required"})
  			return
  		}
@@ -378,7 +378,7 @@ index 8113a815..ee87fa07 100644
  		authDir := ""
  		if cfg != nil {
  			authDir = cfg.AuthDir
-@@ -478,7 +478,7 @@ func (s *Server) codexAlphaSearch(c *gin.Context) {
+@@ -482,7 +482,7 @@ func (s *Server) codexAlphaSearch(c *gin.Context) {
  			return nil, errRequest
  		}
  		authType, authValue := current.AccountInfo()
@@ -387,7 +387,7 @@ index 8113a815..ee87fa07 100644
  			URL:       upstreamURL,
  			Method:    http.MethodPost,
  			Headers:   req.Header.Clone(),
-@@ -499,7 +499,7 @@ func (s *Server) codexAlphaSearch(c *gin.Context) {
+@@ -503,7 +503,7 @@ func (s *Server) codexAlphaSearch(c *gin.Context) {
  		c.JSON(clienterror.HTTPStatusFromErrorOr(errCtx, http.StatusRequestTimeout), gin.H{"error": errCtx.Error()})
  		return
  	}
@@ -396,7 +396,7 @@ index 8113a815..ee87fa07 100644
  	resp, err := performRequest(selected)
  	if err != nil {
  		if errors.Is(err, errMissingBaseURL) {
-@@ -617,7 +617,7 @@ func (s *Server) unifiedModelsHandler(openaiHandler *openai.OpenAIAPIHandler, cl
+@@ -621,7 +621,7 @@ func (s *Server) unifiedModelsHandler(openaiHandler *openai.OpenAIAPIHandler, cl
  			return
  		}
  
@@ -405,7 +405,7 @@ index 8113a815..ee87fa07 100644
  		if _, ok := c.Request.URL.Query()["client_version"]; ok {
  			clientVersion := c.Query("client_version")
  			if cfg != nil && cfg.Home.Enabled {
-@@ -675,7 +675,7 @@ func grokModelsFromRegistryInfos(infos []*registry.ModelInfo) []grokbuild.ModelI
+@@ -679,7 +679,7 @@ func grokModelsFromRegistryInfos(infos []*registry.ModelInfo) []grokbuild.ModelI
  
  func (s *Server) handleGrokModels(c *gin.Context) {
  	var models []grokbuild.ModelInfo
@@ -414,7 +414,7 @@ index 8113a815..ee87fa07 100644
  		entries, ok := s.loadHomeModelEntries(c)
  		if !ok {
  			return
-@@ -703,7 +703,7 @@ func (s *Server) handleHomeCodexClientModels(c *gin.Context, clientVersion strin
+@@ -707,7 +707,7 @@ func (s *Server) handleHomeCodexClientModels(c *gin.Context, clientVersion strin
  		return
  	}
  
@@ -423,7 +423,7 @@ index 8113a815..ee87fa07 100644
  	models := make([]map[string]any, 0, len(entries))
  	for _, entry := range entries {
  		models = append(models, formatHomeCodexModelWithSettings(entry, cfg))
-@@ -868,7 +868,7 @@ func formatHomeCodexModelWithSettings(entry homeModelEntry, cfg *config.Config)
+@@ -872,7 +872,7 @@ func formatHomeCodexModelWithSettings(entry homeModelEntry, cfg *config.Config)
  
  func (s *Server) geminiModelsHandler(geminiHandler *gemini.GeminiAPIHandler) gin.HandlerFunc {
  	return func(c *gin.Context) {
@@ -432,7 +432,7 @@ index 8113a815..ee87fa07 100644
  			s.handleHomeGeminiModels(c)
  			return
  		}
-@@ -879,7 +879,7 @@ func (s *Server) geminiModelsHandler(geminiHandler *gemini.GeminiAPIHandler) gin
+@@ -883,7 +883,7 @@ func (s *Server) geminiModelsHandler(geminiHandler *gemini.GeminiAPIHandler) gin
  
  func (s *Server) geminiGetHandler(geminiHandler *gemini.GeminiAPIHandler) gin.HandlerFunc {
  	return func(c *gin.Context) {
@@ -441,7 +441,7 @@ index 8113a815..ee87fa07 100644
  			s.handleHomeGeminiModel(c)
  			return
  		}
-@@ -910,7 +910,7 @@ func (s *Server) handleHomeModels(c *gin.Context) {
+@@ -914,7 +914,7 @@ func (s *Server) handleHomeModels(c *gin.Context) {
  	isClaude := isAnthropicModelsRequest(c)
  
  	if isClaude {
@@ -885,7 +885,7 @@ index 6f0bfbc9..d9b0a9b7 100644
  		maxBootstrapRetries = 0
  	}
 diff --git a/sdk/api/handlers/openai/openai_handlers.go b/sdk/api/handlers/openai/openai_handlers.go
-index f5114e54..af3bd81b 100644
+index e0e72458..5a297baf 100644
 --- a/sdk/api/handlers/openai/openai_handlers.go
 +++ b/sdk/api/handlers/openai/openai_handlers.go
 @@ -507,7 +507,7 @@ func (h *OpenAIAPIHandler) handleStreamingResponse(c *gin.Context, rawJSON []byt
@@ -897,7 +897,7 @@ index f5114e54..af3bd81b 100644
  	defer stopKeepAlive()
  
  	dataChan, resolvedHeaders, errChan, okBootstrap := h.ExecuteStreamWithPreFTKeepAlive(
-@@ -666,7 +666,7 @@ func (h *OpenAIAPIHandler) handleCompletionsStreamingResponse(c *gin.Context, ra
+@@ -670,7 +670,7 @@ func (h *OpenAIAPIHandler) handleCompletionsStreamingResponse(c *gin.Context, ra
  		flusher.Flush()
  		return true
  	}
@@ -907,10 +907,10 @@ index f5114e54..af3bd81b 100644
  
  	dataChan, resolvedHeaders, errChan, okBootstrap := h.ExecuteStreamWithPreFTKeepAlive(
 diff --git a/sdk/api/handlers/openai/openai_responses_handlers.go b/sdk/api/handlers/openai/openai_responses_handlers.go
-index e32e2523..33349c39 100644
+index d0396925..537d81f9 100644
 --- a/sdk/api/handlers/openai/openai_responses_handlers.go
 +++ b/sdk/api/handlers/openai/openai_responses_handlers.go
-@@ -554,7 +554,7 @@ func (h *OpenAIResponsesAPIHandler) prepareCodexMultiAgentV2Tools(c *gin.Context
+@@ -572,7 +572,7 @@ func (h *OpenAIResponsesAPIHandler) prepareCodexMultiAgentV2Tools(c *gin.Context
  	if h == nil {
  		return payload
  	}
@@ -919,7 +919,7 @@ index e32e2523..33349c39 100644
  	if cfg == nil {
  		return payload
  	}
-@@ -587,7 +587,7 @@ func (h *OpenAIResponsesAPIHandler) prepareCodexOrphanDelegation(c *gin.Context,
+@@ -605,7 +605,7 @@ func (h *OpenAIResponsesAPIHandler) prepareCodexOrphanDelegation(c *gin.Context,
  	if h == nil {
  		return payload
  	}
@@ -928,7 +928,7 @@ index e32e2523..33349c39 100644
  	if cfg == nil || !cfg.CodexOrphanDelegationCompatibility {
  		return payload
  	}
-@@ -762,7 +762,7 @@ func (h *OpenAIResponsesAPIHandler) handleStreamingResponse(c *gin.Context, rawJ
+@@ -780,7 +780,7 @@ func (h *OpenAIResponsesAPIHandler) handleStreamingResponse(c *gin.Context, rawJ
  		}
  		return true
  	}
@@ -938,10 +938,10 @@ index e32e2523..33349c39 100644
  
  	dataChan, resolvedHeaders, errChan, okBootstrap := h.ExecuteStreamWithPreFTKeepAlive(
 diff --git a/sdk/api/handlers/openai/openai_responses_websocket.go b/sdk/api/handlers/openai/openai_responses_websocket.go
-index 2b5ab5e0..25881ad0 100644
+index 92de9175..afa9f411 100644
 --- a/sdk/api/handlers/openai/openai_responses_websocket.go
 +++ b/sdk/api/handlers/openai/openai_responses_websocket.go
-@@ -281,7 +281,7 @@ func (h *OpenAIResponsesAPIHandler) ResponsesWebsocket(c *gin.Context) {
+@@ -347,7 +347,7 @@ func (h *OpenAIResponsesAPIHandler) ResponsesWebsocket(c *gin.Context) {
  	requestLogEnabled := false
  	codexResponseSteering := false
  	if h != nil {

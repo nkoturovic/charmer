@@ -213,7 +213,7 @@ index 57aff6b8..00a78a6b 100644
  	if configFilePath == "" {
  		log.Debug("management asset auto-updater skipped: empty config path")
 diff --git a/internal/misc/antigravity_version.go b/internal/misc/antigravity_version.go
-index b416c556..78840469 100644
+index 1e77c2d5..bc2cdbfb 100644
 --- a/internal/misc/antigravity_version.go
 +++ b/internal/misc/antigravity_version.go
 @@ -13,6 +13,8 @@ import (
@@ -225,7 +225,7 @@ index b416c556..78840469 100644
  )
  
  const (
-@@ -46,6 +48,9 @@ var (
+@@ -55,6 +57,9 @@ var (
  // StartAntigravityVersionUpdater starts a background goroutine that periodically refreshes the cached antigravity version.
  // This is intentionally decoupled from request execution to avoid blocking executors on version lookups.
  func StartAntigravityVersionUpdater(ctx context.Context) {

@@ -1204,7 +1204,7 @@ index 00000000..f6a1c62c
 +	}
 +}
 diff --git a/internal/runtime/executor/helps/usage_helpers.go b/internal/runtime/executor/helps/usage_helpers.go
-index 8348d6e7..c01ef153 100644
+index 6a2b9511..e8b78032 100644
 --- a/internal/runtime/executor/helps/usage_helpers.go
 +++ b/internal/runtime/executor/helps/usage_helpers.go
 @@ -16,6 +16,7 @@ import (
@@ -1215,7 +1215,7 @@ index 8348d6e7..c01ef153 100644
  	internallogging "github.com/router-for-me/CLIProxyAPI/v8/internal/logging"
  	"github.com/router-for-me/CLIProxyAPI/v8/internal/thinking"
  	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
-@@ -117,6 +118,11 @@ func NewUsageReporter(ctx context.Context, provider, model string, auth *cliprox
+@@ -118,6 +119,11 @@ func NewUsageReporter(ctx context.Context, provider, model string, auth *cliprox
  				baseURL = strings.TrimSpace(v)
  			}
  		}
@@ -1227,7 +1227,7 @@ index 8348d6e7..c01ef153 100644
  	}
  	traceID := usage.TraceIDFromContext(ctx)
  	if traceID == "" {
-@@ -822,6 +828,14 @@ func AccessProviderFromContext(ctx context.Context) string {
+@@ -847,6 +853,14 @@ func AccessProviderFromContext(ctx context.Context) string {
  
  func resolveUsageSource(auth *cliproxyauth.Auth, ctxAPIKey string) string {
  	if auth != nil {
@@ -1243,7 +1243,7 @@ index 8348d6e7..c01ef153 100644
  		if strings.EqualFold(provider, "vertex") {
  			if auth.Metadata != nil {
 diff --git a/internal/runtime/executor/openai_compat_executor.go b/internal/runtime/executor/openai_compat_executor.go
-index 6aa58364..8ae379f7 100644
+index 1078b923..de615218 100644
 --- a/internal/runtime/executor/openai_compat_executor.go
 +++ b/internal/runtime/executor/openai_compat_executor.go
 @@ -16,6 +16,7 @@ import (
@@ -1252,9 +1252,9 @@ index 6aa58364..8ae379f7 100644
  	"github.com/google/uuid"
 +	"github.com/router-for-me/CLIProxyAPI/v8/internal/compatsafe"
  	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
+ 	"github.com/router-for-me/CLIProxyAPI/v8/internal/misc"
  	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
- 	"github.com/router-for-me/CLIProxyAPI/v8/internal/thinking"
-@@ -181,7 +182,11 @@ func (e *OpenAICompatExecutor) Execute(ctx context.Context, auth *cliproxyauth.A
+@@ -199,7 +200,11 @@ func (e *OpenAICompatExecutor) executeWithCredentials(ctx context.Context, auth
  		authLabel = auth.Label
  		authType, authValue = auth.AccountInfo()
  	}
@@ -1267,7 +1267,7 @@ index 6aa58364..8ae379f7 100644
  		URL:       url,
  		Method:    http.MethodPost,
  		Headers:   httpReq.Header.Clone(),
-@@ -191,22 +196,33 @@ func (e *OpenAICompatExecutor) Execute(ctx context.Context, auth *cliproxyauth.A
+@@ -209,22 +214,33 @@ func (e *OpenAICompatExecutor) executeWithCredentials(ctx context.Context, auth
  		AuthLabel: authLabel,
  		AuthType:  authType,
  		AuthValue: authValue,
@@ -1308,7 +1308,7 @@ index 6aa58364..8ae379f7 100644
  		b, _ := io.ReadAll(httpResp.Body)
  		helps.AppendAPIResponseChunk(ctx, e.cfg, b)
  		helps.LogWithRequestID(ctx).Debugf("request error, error status: %d, error message: %s", httpResp.StatusCode, helps.SummarizeErrorBody(httpResp.Header.Get("Content-Type"), b))
-@@ -215,9 +231,19 @@ func (e *OpenAICompatExecutor) Execute(ctx context.Context, auth *cliproxyauth.A
+@@ -233,9 +249,19 @@ func (e *OpenAICompatExecutor) executeWithCredentials(ctx context.Context, auth
  	}
  	body, err := io.ReadAll(httpResp.Body)
  	if err != nil {
@@ -1328,7 +1328,7 @@ index 6aa58364..8ae379f7 100644
  	helps.AppendAPIResponseChunk(ctx, e.cfg, body)
  	reporter.ObserveResponseModel(body)
  	// Ensure we at least record the request even if upstream doesn't return usage
-@@ -231,7 +257,7 @@ func (e *OpenAICompatExecutor) Execute(ctx context.Context, auth *cliproxyauth.A
+@@ -249,7 +275,7 @@ func (e *OpenAICompatExecutor) executeWithCredentials(ctx context.Context, auth
  	if responseFormat == sdktranslator.FormatOpenAIResponse {
  		out = helps.EnsureResponsesUsageDetails(out)
  	}
@@ -1337,7 +1337,7 @@ index 6aa58364..8ae379f7 100644
  	return resp, nil
  }
  
-@@ -417,7 +443,11 @@ func (e *OpenAICompatExecutor) ExecuteStream(ctx context.Context, auth *cliproxy
+@@ -444,7 +470,11 @@ func (e *OpenAICompatExecutor) executeStreamWithCredentials(ctx context.Context,
  		authLabel = auth.Label
  		authType, authValue = auth.AccountInfo()
  	}
@@ -1350,7 +1350,7 @@ index 6aa58364..8ae379f7 100644
  		URL:       url,
  		Method:    http.MethodPost,
  		Headers:   httpReq.Header.Clone(),
-@@ -427,16 +457,41 @@ func (e *OpenAICompatExecutor) ExecuteStream(ctx context.Context, auth *cliproxy
+@@ -454,16 +484,41 @@ func (e *OpenAICompatExecutor) executeStreamWithCredentials(ctx context.Context,
  		AuthLabel: authLabel,
  		AuthType:  authType,
  		AuthValue: authValue,
@@ -3347,7 +3347,7 @@ index 00000000..ad4a6435
 +	})
 +}
 diff --git a/sdk/cliproxy/auth/conductor_execution.go b/sdk/cliproxy/auth/conductor_execution.go
-index 17a1b458..99759f7a 100644
+index 3ee3ea06..436c8087 100644
 --- a/sdk/cliproxy/auth/conductor_execution.go
 +++ b/sdk/cliproxy/auth/conductor_execution.go
 @@ -1857,6 +1857,10 @@ func debugLogAuthSelection(entry *log.Entry, auth *Auth, provider string, model

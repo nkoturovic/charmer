@@ -1,8 +1,8 @@
 diff --git a/internal/api/handlers/management/handler.go b/internal/api/handlers/management/handler.go
-index c186e75f..cf802eb0 100644
+index 21747e58..84cd4dd4 100644
 --- a/internal/api/handlers/management/handler.go
 +++ b/internal/api/handlers/management/handler.go
-@@ -79,7 +79,7 @@ func NewHandler(cfg *config.Config, configFilePath string, manager *coreauth.Man
+@@ -81,7 +81,7 @@ func NewHandler(cfg *config.Config, configFilePath string, manager *coreauth.Man
  		failedAttempts:      make(map[string]*attemptInfo),
  		authManager:         manager,
  		tokenStore:          sdkAuth.GetTokenStore(),
@@ -60,10 +60,10 @@ index 000626d5..eb5b5cf7 100644
  		}
  	})
 diff --git a/internal/api/redis_queue_protocol.go b/internal/api/redis_queue_protocol.go
-index f14344a1..0c04866c 100644
+index 2ca8b259..00913861 100644
 --- a/internal/api/redis_queue_protocol.go
 +++ b/internal/api/redis_queue_protocol.go
-@@ -64,6 +64,14 @@ func (s *Server) handleRedisConnection(conn net.Conn, reader *bufio.Reader) {
+@@ -72,6 +72,14 @@ func (s *Server) handleRedisConnection(conn net.Conn, reader *bufio.Reader) {
  		return
  	}
  
@@ -430,10 +430,10 @@ index 00000000..334ac126
 +}
 diff --git a/internal/api/server_management_allowlist_test.go b/internal/api/server_management_allowlist_test.go
 new file mode 100644
-index 00000000..cce8d4e2
+index 00000000..930a3302
 --- /dev/null
 +++ b/internal/api/server_management_allowlist_test.go
-@@ -0,0 +1,1020 @@
+@@ -0,0 +1,1043 @@
 +package api
 +
 +import (
@@ -458,6 +458,7 @@ index 00000000..cce8d4e2
 +	managementHandlers "github.com/router-for-me/CLIProxyAPI/v8/internal/api/handlers/management"
 +	proxyconfig "github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 +	"github.com/router-for-me/CLIProxyAPI/v8/internal/pluginhost"
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
 +	sdkconfig "github.com/router-for-me/CLIProxyAPI/v8/sdk/config"
 +)
 +
@@ -1059,6 +1060,28 @@ index 00000000..cce8d4e2
 +	}
 +}
 +
++// The allowlisted model-definitions read falls back to the models registered
++// for a channel without a static catalog (upstream 50cfd238, 8.0.34); a channel
++// with neither still answers 400 "unknown channel". It reads the in-memory
++// registry only, and the v8 counterpart stays refused.
++func TestManagementAllowlist_ModelDefinitionsRegistryFallback(t *testing.T) {
++	s := newAllowlistTestServer(t)
++	const channel, client = "fixture-channel", "fixture-model-definitions-client"
++	reg := registry.GetGlobalRegistry()
++	reg.RegisterClient(client, channel, []*registry.ModelInfo{{ID: "fixture-model", Object: "model"}})
++	t.Cleanup(func() { reg.UnregisterClient(client) })
++
++	rr := serveAllowlist(s, allowlistRequest(http.MethodGet, "/v0/management/model-definitions/"+channel, allowlistTestKey, ""))
++	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), `"fixture-model"`) {
++		t.Fatalf("registered channel: status = %d body=%q, want 200 with its registered model", rr.Code, rr.Body.String())
++	}
++	rr = serveAllowlist(s, allowlistRequest(http.MethodGet, "/v0/management/model-definitions/fixture-unknown-channel", allowlistTestKey, ""))
++	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), "unknown channel") {
++		t.Fatalf("unknown channel: status = %d body=%q, want 400 unknown channel", rr.Code, rr.Body.String())
++	}
++	assertRefused(t, serveAllowlist(s, allowlistRequest(http.MethodGet, "/v8/management/routing/model-definitions/"+channel, allowlistTestKey, "")), "v8 model definitions")
++}
++
 +func TestManagementAllowlist_FiveBadKeysOnAllowlistedRouteBan(t *testing.T) {
 +	s := newAllowlistTestServer(t)
 +	for i := 0; i < 5; i++ {
@@ -1456,10 +1479,10 @@ index 00000000..cce8d4e2
 +}
 diff --git a/internal/api/server_management_route_table_test.go b/internal/api/server_management_route_table_test.go
 new file mode 100644
-index 00000000..851a0879
+index 00000000..6661041d
 --- /dev/null
 +++ b/internal/api/server_management_route_table_test.go
-@@ -0,0 +1,261 @@
+@@ -0,0 +1,264 @@
 +package api
 +
 +// charmer local patch (management-readonly-allowlist): the reviewed route
@@ -1586,8 +1609,10 @@ index 00000000..851a0879
 +	"GET /v8/management/credentials":                           routeRefuse,
 +	"GET /v8/management/credentials/download":                  routeRefuse,
 +	"GET /v8/management/credentials/models":                    routeRefuse,
++	"GET /v8/management/credentials/siwc/status":               routeRefuse,
 +	"GET /v8/management/oauth/auth-url":                        routeRefuse,
 +	"GET /v8/management/oauth/callback":                        routeRefuse,
++	"GET /v8/management/oauth/siwc/status":                     routeRefuse,
 +	"GET /v8/management/oauth/status":                          routeRefuse,
 +	"GET /v8/management/observability/logs":                    routeRefuse,
 +	"GET /v8/management/observability/logs/errors":             routeRefuse,
@@ -1684,6 +1709,7 @@ index 00000000..851a0879
 +	"POST /v8/management/credentials/refresh":                  routeRefuse,
 +	"POST /v8/management/oauth/callback":                       routeRefuse,
 +	"POST /v8/management/oauth/import":                         routeRefuse,
++	"POST /v8/management/oauth/siwc/bind":                      routeRefuse,
 +	"POST /v8/management/plugins/:id/quota":                    routeRefuse,
 +	"POST /v8/management/plugins/store/:id/install":            routeRefuse,
 +	"POST /v8/management/requests/api-call":                    routeRefuse,
@@ -1722,10 +1748,10 @@ index 00000000..851a0879
 +	"PUT /v8/management/config/*path":                          routeRefuse,
 +}
 diff --git a/internal/api/server_test.go b/internal/api/server_test.go
-index 44862bb9..e7cc9a02 100644
+index 0a030084..281ef058 100644
 --- a/internal/api/server_test.go
 +++ b/internal/api/server_test.go
-@@ -1865,44 +1865,22 @@ func TestExampleAPIKeySafeModeShowsWarningAndKeepsManagement(t *testing.T) {
+@@ -1867,44 +1867,22 @@ func TestExampleAPIKeySafeModeShowsWarningAndKeepsManagement(t *testing.T) {
  		}
  	})
  
@@ -1786,7 +1812,7 @@ index 44862bb9..e7cc9a02 100644
  
  	t.Run("proxy endpoints are blocked", func(t *testing.T) {
  		req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
-@@ -1929,7 +1907,9 @@ func TestExampleAPIKeySafeModeShowsWarningAndKeepsManagement(t *testing.T) {
+@@ -1931,7 +1909,9 @@ func TestExampleAPIKeySafeModeShowsWarningAndKeepsManagement(t *testing.T) {
  	})
  
  	t.Run("management endpoints still work", func(t *testing.T) {

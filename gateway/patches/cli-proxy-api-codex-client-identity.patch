@@ -286,7 +286,7 @@ index 00000000..467c5caf
 +	}
 +}
 diff --git a/internal/runtime/executor/codex_executor_request.go b/internal/runtime/executor/codex_executor_request.go
-index 0c390e5e..7f6520ba 100644
+index 7ea038f0..f30be5bd 100644
 --- a/internal/runtime/executor/codex_executor_request.go
 +++ b/internal/runtime/executor/codex_executor_request.go
 @@ -26,7 +26,7 @@ import (
@@ -298,7 +298,7 @@ index 0c390e5e..7f6520ba 100644
  	codexOriginator            = "codex-tui"
  	codexDefaultImageToolModel = "gpt-image-2"
  	codexResponsesLiteHeader   = "X-OpenAI-Internal-Codex-Responses-Lite"
-@@ -282,7 +282,7 @@ func applyCodexHeadersFromSources(r *http.Request, auth *cliproxyauth.Auth, toke
+@@ -294,7 +294,7 @@ func applyCodexHeadersWithSIWC(r *http.Request, auth *cliproxyauth.Auth, useSIWC
  	if ginHeaders != nil && ginHeaders.Get("X-Codex-Beta-Features") != "" {
  		r.Header.Set("X-Codex-Beta-Features", ginHeaders.Get("X-Codex-Beta-Features"))
  	}
@@ -334,7 +334,7 @@ index 47e957f3..7a7072c4 100644
  	if got := req.Header.Get("X-Codex-Turn-Metadata"); got != "" {
  		t.Fatalf("X-Codex-Turn-Metadata = %q, want empty", got)
 diff --git a/internal/runtime/executor/codex_websockets_request.go b/internal/runtime/executor/codex_websockets_request.go
-index 23111dbe..4b9c8e32 100644
+index e2b95b26..058bea84 100644
 --- a/internal/runtime/executor/codex_websockets_request.go
 +++ b/internal/runtime/executor/codex_websockets_request.go
 @@ -114,7 +114,7 @@ func applyCodexWebsocketHeaders(ctx context.Context, headers http.Header, auth *
