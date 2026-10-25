@@ -33,6 +33,14 @@ class UnixSocketTests(unittest.TestCase):
             self.assertTrue(stat.S_ISSOCK(self.path.stat().st_mode))
         self.assertEqual(Path.cwd(), cwd)
 
+    @unittest.skipUnless(sys.platform == "linux", "needs Linux directory descriptors")
+    def test_long_path_in_write_and_search_only_directory(self) -> None:
+        self.path.parent.chmod(0o300)
+        self.addCleanup(self.path.parent.chmod, 0o700)
+        with socket.socket(socket.AF_UNIX) as sock:
+            _unix_socket.bind_unix_socket(sock, self.path)
+            self.assertTrue(stat.S_ISSOCK(self.path.stat().st_mode))
+
     def test_short_address_binds_directly(self) -> None:
         sock = mock.Mock(spec=socket.socket)
         _unix_socket.bind_unix_socket(sock, Path("fixture.sock"))

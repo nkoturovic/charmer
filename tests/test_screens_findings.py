@@ -546,12 +546,16 @@ class FindingsCollectedTests(_FindingsCase):
         self.assertEqual(rows[0].remedy, doctor.LEFTOVERS_REMEDY)
         screen = self.real_screen()
         keys = self.select(screen, "prune")
-        _result, win = self.drive(screen, [*keys, ENTER, "n", ESC])
+        preview = io.StringIO()
+        self.assertEqual(doctor_actions._doctor_prune_preview(self.runtime, preview), 0)
+        # Keep all four candidate paths on one line each in the preview frame.
+        width = max(80, max(map(len, preview.getvalue().splitlines())) + 4)
+        _result, win = self.drive(screen, [*keys, ENTER, "n", ESC], width=width)
         self.assertTrue(all(os.path.lexists(path) for path in files))  # a cancel removes nothing
         shown = _flat(win.frames)
         self.assertEqual(shown.count("Candidate: "), 4)  # the preview names what the row counts
         self.assertIn("scope/staging for forgotten record", shown)
-        _result, win = self.drive(screen, [HOME, *keys, ENTER, "y", ESC, ESC])
+        _result, win = self.drive(screen, [HOME, *keys, ENTER, "y", ESC, ESC], width=width)
         self.assertIn(f"scope for forgotten session {FORGOTTEN_ID}", _flat(win.frames))
         self.assertFalse([path for path in files if os.path.lexists(path)])
         self.assertFalse([item for item in screen.lines if item.row is not None and item.row.action == "prune"])

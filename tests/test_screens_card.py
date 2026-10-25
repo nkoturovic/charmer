@@ -887,7 +887,8 @@ class CardBlockedTests(_CardCase):
         runtime = self.make_runtime(self.tmp / "nosecret", secrets=())
         screen = self.card(self._secret_target(), runtime=runtime)
         self.assertTrue(screen.prepared.secret_problems)
-        text = self.frame(screen, height=40, width=200)
+        width = max(200, max(map(len, screen.prepared.secret_problems)) + 8)
+        text = self.frame(screen, height=40, width=width)
         self.assertIn("Status  BLOCKED", text)
         for problem in screen.prepared.secret_problems:
             self.assertIn(problem, _flat(text))
