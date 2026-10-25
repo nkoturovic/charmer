@@ -231,12 +231,12 @@ else:
         self.assertEqual(inner_calls, [("127.0.0.1", 18317)])
 
     def test_sandbox_suite_imports_the_tests_package(self) -> None:
-        # The Nix sandbox (flake check) discovers with -t, so tests/__init__.py
-        # arms this guard there too, exactly as in the dev gate.
+        # The shared runner imports the tests package (arming the parent guard),
+        # arms Python children and checks both hit logs in the sandbox too.
         text = (REPO_ROOT / "tests" / "default.nix").read_text(encoding="utf-8")
-        self.assertIn(
-            'discover -s "$staged/charmer/tests" -t "$staged/charmer"', text
-        )
+        self.assertIn('python3 "$staged/charmer/tools/test.py"', text)
+        self.assertIn("export CHARMER_TEST_KEYED_LANE=unit", text)
+        self.assertNotIn("python3 -m unittest discover", text)
 
     def test_uninjected_served_models_trips_before_proc_read_or_transport(self) -> None:
         from charmer import launch, service

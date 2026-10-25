@@ -65,9 +65,9 @@ pkgs.runCommand "charmer-tests"
     # Explicit non-gateway lane: select pure keyed self-tests, never skip a required proof.
     export CHARMER_TEST_KEYED_LANE=unit
     cd "$TMPDIR"
-    # Same discovery as the dev gate (-t: tests is a package), so
-    # tests/__init__.py arms the live-gateway connect tripwire here too.
-    python3 -m unittest discover -s "$staged/charmer/tests" -t "$staged/charmer" -p 'test_*.py'
+    # The host runner discovers the same suite, arms the parent and child
+    # live-resource tripwire and fails the check if either guard records a hit.
+    python3 "$staged/charmer/tools/test.py"
     "$package/bin/charmer" --version
     "$package/bin/charmer-proxy" --version
     "$package/bin/charmer" --help | grep -qF "$package/share/charmer/CHEATSHEET.md"

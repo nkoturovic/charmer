@@ -132,6 +132,13 @@ def _provider_draft() -> dict:
 
 class OnboardingTestCase(unittest.TestCase):
     def setUp(self) -> None:
+        # Developer output redacts every value under a sensitive-looking name,
+        # including nonsecret runner flags. Each fixture supplies its own values.
+        environ = {name: value for name, value in os.environ.items()
+                   if not any(marker in name.upper() for marker in ("KEY", "TOKEN", "SECRET", "PASS"))}
+        clean_environment = mock.patch.dict(os.environ, environ, clear=True)
+        clean_environment.start()
+        self.addCleanup(clean_environment.stop)
         self.root = Path(tempfile.mkdtemp(prefix="charmer-dev-"))
         os.chmod(self.root, 0o700)
         self.addCleanup(lambda: shutil.rmtree(self.root, ignore_errors=True))
@@ -1370,8 +1377,9 @@ class DevCLIErrorTests(OnboardingTestCase):
 
 class RedactionTests(OnboardingTestCase):
     def test_short_values_redacted(self) -> None:
-        with mock.patch.dict(os.environ, {"KIMI_CLAUDE_API_KEY": "abc12"}):
-            self.assertEqual(dev._sanitize_output("token abc12 tail"), "token *** tail")
+        for value in ("abc12", "1"):
+            with self.subTest(value=value), mock.patch.dict(os.environ, {"KIMI_CLAUDE_API_KEY": value}):
+                self.assertEqual(dev._sanitize_output(f"token {value} tail"), "token *** tail")
 
     def test_overlapping_values_fully_redacted(self) -> None:
         with mock.patch.dict(
@@ -1393,6 +1401,26 @@ class RedactionTests(OnboardingTestCase):
     def test_empty_values_ignored(self) -> None:
         with mock.patch.dict(os.environ, {"EMPTY_KEY": ""}):
             self.assertEqual(dev._sanitize_output("plain"), "plain")
+
+
+class EnvironmentIsolationTests(unittest.TestCase):
+    def test_dev_output_fixtures_ignore_and_restore_sensitive_environment(self) -> None:
+        # Explicit keyed-client selections set this nonsecret flag in the suite.
+        # Other ambient values can collide with exact diagnostic assertions too.
+        outside = {"CHARMER_TEST_KEYED_REQUIRED": "1", "FIXTURE_TOKEN": "eval",
+                   "FIXTURE_SECRET": "token", "FIXTURE_PASSWORD": "plain"}
+        cases = (CheckTests("test_default_runner_returns_a_value_free_timeout_record"),
+                 CheckTests("test_build_timeout_is_a_dev_error_and_cleans_the_candidate"),
+                 RedactionTests("test_short_values_redacted"),
+                 RedactionTests("test_nonsecret_diagnostics_retained"),
+                 RedactionTests("test_empty_values_ignored"))
+        with mock.patch.dict(os.environ, outside):
+            result = unittest.TestResult()
+            unittest.TestSuite(cases).run(result)
+            self.assertEqual(result.testsRun, len(cases))
+            self.assertEqual(result.errors, [])
+            self.assertEqual(result.failures, [])
+            self.assertEqual({name: os.environ.get(name) for name in outside}, outside)
 
 
 class ReviewRecordValidationTests(OnboardingTestCase):
