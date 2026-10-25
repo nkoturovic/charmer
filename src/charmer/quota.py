@@ -640,6 +640,7 @@ def card_summary(pool: PoolStatus, *, pools: Iterable[str], login_commands,
     if finding.level == "ok":
         return f"worst {c.handle} {w.label} {math.floor(w.used_percent)}% · observed {observation_age(c, now)}", "dim"
     remedy = "S Sessions → T" if resume else "P → F fallback profiles"
+    full_remedy = remedy
     value = (f"{w.label} {math.floor(w.used_percent)}%!" if w is not None else "exhausted (no window)")
     if finding.level == "exhausted" and w is not None:
         value = "exhausted " + value
@@ -657,7 +658,8 @@ def card_summary(pool: PoolStatus, *, pools: Iterable[str], login_commands,
     elif len(text) > width:
         # A known reset remains in Providers/charmer quota; never lose
         # the observation age or suggest the unavailable P action on resume.
-        text = f"{base} — {remedy}"
+        full = f"{base} — {full_remedy}"
+        text = full if len(full) <= width else f"{base} — {remedy}"
     return text, "warn"
 
 

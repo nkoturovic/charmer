@@ -444,6 +444,17 @@ class QuotaSurfaceTests(unittest.TestCase):
         self.assertIn("3d old", wide)
         self.assertTrue(wide.endswith("— P → F fallback profiles"), wide)
 
+    def test_card_uses_the_full_remedy_when_only_the_reset_must_drop(self):
+        for width, remedy in ((51, "P → F fallback profiles"), (50, "P → F")):
+            with self.subTest(width=width):
+                text, role = self.card(self.credentials(), width=width)
+                self.assertTrue(text.endswith("— " + remedy), text)
+                self.assertIn("93%!", text)
+                self.assertIn("3d old", text)
+                self.assertNotIn("resets", text)
+                self.assertLessEqual(len(text), width)
+                self.assertEqual(role, "warn")
+
     def test_card_missing_window_and_reset_and_nonwarning_states(self):
         self.assertIsNone(self.card(self.credentials(reason="quota exhausted", window=False, observed=False)))
         for resume in (False, True):
