@@ -15,7 +15,8 @@ import stat
 import unittest
 from unittest import mock
 
-from charmer import compiler, profile, scope, sessions, state, transition
+from charmer import compiler, profile, scope, sessions, state, strict_json, transition
+from charmer.cli import doctor, text as cli_text
 from charmer.transition import TransitionError
 from _v4 import V4Case
 
@@ -143,6 +144,72 @@ class ConvergeTests(_Case):
         with mock.patch.object(self.store, "load", spying_load):
             self.converge()
         self.assertEqual(acquisitions[:1], [False])
+
+
+class DoctorScopeIntegrityTests(_Case):
+    """A matching content hash is not proof of a healthy scope tree."""
+
+    def assert_drift(self, *drift: str) -> None:
+        problems, _attention, info = doctor._check_scope_integrity(self.runtime, self.record)
+        self.assertEqual(problems, [
+            f"session {self.mid[:8]}: scope differs from the record-authoritative compile "
+            f"({'; '.join(drift)}); run charmer doctor --repair {self.mid}"
+        ])
+        self.assertFalse(any(line.startswith("Scope:") for line in info), info)
+
+    def test_clean_scope_still_reports_ok(self) -> None:
+        problems, attention, info = doctor._check_scope_integrity(self.runtime, self.record)
+        self.assertEqual((problems, attention), ([], []))
+        self.assertEqual(info, [
+            f"Scope: {self.mid[:8]} OK (lineup generation {self.record['lineup_generation']})."
+        ])
+
+    def test_unexpected_file_is_reported(self) -> None:
+        state.atomic_write(self.live(self.mid) / "stray.txt", b"stray instructions\n")
+        self.assert_drift("unexpected file stray.txt")
+
+    def test_unexpected_skill_directory_is_reported(self) -> None:
+        path = self.live(self.mid) / ".claude/skills/evil/SKILL.md"
+        state.ensure_private_dir(path.parent)
+        state.atomic_write(path, b"stray skill\n")
+        self.assert_drift("unexpected directory .claude/skills/evil")
+
+    def test_unexpected_commands_directory_is_reported(self) -> None:
+        path = self.live(self.mid) / ".claude/commands/x.md"
+        state.ensure_private_dir(path.parent)
+        state.atomic_write(path, b"stray command\n")
+        self.assert_drift("unexpected directory .claude/commands")
+
+    def test_readable_file_mode_drift_is_reported(self) -> None:
+        (self.live(self.mid) / "settings.json").chmod(0o400)
+        self.assert_drift("settings.json mode is not 0600")
+
+    def test_scope_root_mode_drift_is_reported(self) -> None:
+        self.live(self.mid).chmod(0o755)
+        self.assert_drift("scope root mode is not 0700")
+
+    def test_internal_directory_mode_drift_is_reported(self) -> None:
+        (self.live(self.mid) / ".claude/skills/cm").chmod(0o755)
+        self.assert_drift("directory .claude/skills/cm mode is not 0700",
+                          "missing file .claude/skills/cm/SKILL.md")
+
+    def remove_fork_deny(self) -> None:
+        path = self.live(self.mid) / "settings.json"
+        document = strict_json.loads(path.read_bytes())
+        document["permissions"]["deny"].remove(compiler.FORK_AGENT_DENY)
+        state.atomic_write(path, strict_json.canonical_file_bytes(document))
+
+    def test_lazy_policy_difference_stays_attention(self) -> None:
+        self.remove_fork_deny()
+        problems, attention, info = doctor._check_scope_integrity(self.runtime, self.record)
+        self.assertEqual(problems, [])
+        self.assertIn(cli_text.FORK_POLICY_DRIFT.format(m8=self.mid[:8], mid=self.mid), attention)
+        self.assertFalse(any(line.startswith("Scope:") for line in info), info)
+
+    def test_structural_damage_alongside_lazy_policy_still_blocks(self) -> None:
+        self.remove_fork_deny()
+        state.atomic_write(self.live(self.mid) / "stray.txt", b"stray instructions\n")
+        self.assert_drift("settings.json content differs", "unexpected file stray.txt")
 
 
 class ExpectedPlanTests(_Case):

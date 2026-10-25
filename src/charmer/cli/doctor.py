@@ -2662,10 +2662,11 @@ def _check_scope_integrity(
             attention.append(lazy(*status_line, repairable=True))
 
     disk = scope_mod.read_disk_plan(live, ep.plan) if live.is_dir() else None
+    # Expected content alone does not prove the tree's structure or modes.
+    drifted = scope_mod.live_drift(live, ep.plan) if disk is not None else []
     if disk is None:
         problems.append(repair(f"session {m8}: scope unreadable; charmer doctor --repair {mid}"))
-    elif scope_mod.plan_hash(disk) != scope_mod.plan_hash(ep.plan):
-        drifted = scope_mod.live_drift(live, ep.plan)
+    elif drifted:
         agent_files = _catalog_agent_drift(runtime, record, live, drifted)
         if scope_mod.skill_policy_drift(live, ep.plan, drifted):
             # The managed skill policy of another
