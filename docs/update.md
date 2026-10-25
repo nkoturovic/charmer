@@ -66,10 +66,12 @@ restart or repair the gateway for you.
 
 On Linux, check for `running-gateway: current-match` after the restart:
 the opened running executable matches the authenticated installed gateway.
-A different or unavailable result is not a match; follow the verification
-remedy. On macOS, running-byte verification reports unavailable (exit 3),
-not a match. Status and doctor remain separate readiness checks, not a
-substitute for running-byte verification.
+If installed bytes match but the running build differs or mismatches,
+restart between turns as the summary says. For `running-gateway: unavailable`,
+check `charmer gateway status` and retry once the gateway runs. On macOS,
+running-byte verification reports unavailable (exit 3), not a match.
+Status and doctor remain separate readiness checks, not a substitute for
+running-byte verification.
 
 The update installs charmer's verified **Claude Code 2.1.310** copy before
 switching the release: it copies a matching local file or downloads and

@@ -42,10 +42,11 @@ See [updating from 2.1.0](docs/update.md#updating-from-210).
   patches. Upstream now supplies access-log path quoting and early Codex
   token refresh, replacing two local patches; the local tool-call patch
   keeps only the remaining streamed-call repair.
-- Claude-compatible API-key routes keep their session and agent identity
+- Anthropic-compatible API-key routes keep their session and agent identity
   handling by omitting the cloak-mode setting. This does not mean every
-  header is unchanged: recognised Claude Code traffic now keeps its own
-  SDK-version header on both Claude account and direct routes.
+  header is unchanged: recognised Claude Code traffic can now retain its
+  own SDK-version header on the Claude account and Anthropic-compatible
+  API-key routes, subject to the gateway's version checks.
 - OpenAI-compatible providers receive the caller's `User-Agent` when sent,
   with a gateway default otherwise; see
   [what providers receive](docs/privacy.md#what-providers-receive-about-you).
@@ -83,8 +84,8 @@ See [updating from 2.1.0](docs/update.md#updating-from-210).
   recovery remains applicable. Its stronger credentialed-redirect refusal
   is retained.
 - The management allowlist blocks the new upstream account-binding and
-  status routes. Guardian-inheritance routing logs no longer include the
-  credential ID; other log lines can still name account files.
+  status routes. The new upstream guardian-inheritance routing line omits
+  the credential ID; other log lines can still name account files.
 - Provider listings hide credential-bearing file names and model keys
   from rejected secret-bearing declarations. Model edit/removal commands
   cannot resolve those declarations as write targets, and qualification
@@ -105,11 +106,13 @@ See [updating from 2.1.0](docs/update.md#updating-from-210).
   credentials that were deleted or never successfully loaded.
 - On the ChatGPT account and OpenAI API-key routes, a later message supplied
   whole in its `response.output_item.done` event is no longer omitted after
-  earlier streamed text.
+  earlier streamed text. Commentary preambles from these models now arrive
+  as unsigned thinking rather than reply text.
 - Model or alias reloads no longer clear an unchanged account's terminal
   credential rejection.
-- Signing in again with new tokens clears the stale failed-refresh status,
-  message and count, unless a live retry or quota deadline is still pending.
+- Signing in again with new tokens still clears a failed refresh's status,
+  message and count (a local patch for an upstream regression after 8.0.33),
+  unless a live retry or quota deadline is pending.
 - Cancel is first and focused when discarding profile edits or deleting
   a named binding. Gateway dialogs offer stop advice only for a gateway
   known to be running or starting.
@@ -182,6 +185,10 @@ See [updating from 2.1.0](docs/update.md#updating-from-210).
 
 ### Known limits
 
+- CLIProxyAPI 8.0.42 re-checks the key on each Responses WebSocket turn
+  upstream; charmer has not measured this, so reconnect after
+  `charmer doctor --rotate-token`. Managed Claude Code sessions use HTTP,
+  not this WebSocket route.
 - The [late-stream completion limit](docs/troubleshooting.md#late-stream-completion-limit)
   remains on Claude Code 2.1.310 with the tested CLIProxyAPI 8.0.42: a
   successful client result is not proof of complete stream framing.

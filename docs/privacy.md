@@ -68,9 +68,12 @@ Besides the requests themselves:
 
 OpenAI-compatible providers receive the caller's `User-Agent` header, which
 can identify the client software and version; the gateway supplies a default
-when none is sent. On Claude account and Claude-compatible direct routes,
-requests recognised as Claude Code retain the client's own SDK-version
-header, `x-stainless-package-version`, instead of the gateway's pinned value.
+when none is sent. On the Claude account and Anthropic-compatible API-key
+routes, requests recognised as Claude Code can retain the caller's
+SDK-version header, `x-stainless-package-version`, when it meets the
+gateway's version checks. The gateway may also pass the caller's
+runtime-version header, `x-stainless-runtime-version`, under those checks.
+Missing or rejected versions fall back to the gateway's profile values.
 
 On the OpenAI API key, the gateway sends the key as a plain API client
 (no ChatGPT client version or session header) and adds no hosted tool

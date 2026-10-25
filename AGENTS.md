@@ -2446,10 +2446,10 @@ the operator's approval. Doctor never retires backups.
   below macOS 13; the native Apple silicon journey is on macOS 15, with no
   runtime claim for 13 or 14 and no Intel support claim. The 2.0.1 updater
   does not enforce that floor. See `docs/install/macos.md` and `docs/update.md`.
-- **WebSocket key-retirement limit:** an already-open loopback WebSocket can
-  keep using a retired gateway key until disconnect; managed Claude Code
-  uses HTTP, not that route (`docs/guides/gateway.md`). This behavior is not
-  repaired by this release.
+- **WebSocket key retirement (unmeasured):** CLIProxyAPI 8.0.42 re-checks
+  the key on each Responses WebSocket turn upstream; charmer has not
+  measured this, so reconnect after `charmer doctor --rotate-token`.
+  Managed Claude Code uses HTTP, not that route (`docs/guides/gateway.md`).
 - **Context refusals:** the normalized Codex account/API-key errors recover
   before and after headers; OpenRouter and other OpenAI-compatible errors
   are not normalized and require `/compact` (`docs/troubleshooting.md`).
