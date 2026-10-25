@@ -84,6 +84,10 @@
       "note": "Client check mcp-http-retry (client 2.1.310): an HTTP MCP call held while the client closes the connection (three reset server-message streams) is sent again only for a tool marked read-only or idempotent; the changing tool, marked neither, is called once and reports an error. The previous pin 2.1.302 sent both again. Radar: tests/test_client_gateway_fallbacks.py HttpMcpRetryProbe.",
       "status": "verified"
     },
+    "U29": {
+      "note": "Client check S17 (client 2.1.310): in a terminal a --settings subagentStatusLine runs when the user layer has none and its rows replace the native ones; without it the user layer's runs; with both only --settings runs, so the compile omits charmer's under a user key. The compiled shim draws the shipped row. stdin: columns (int), tasks[] with id, type, agentType, status, description, label, startTime, model, effort, contextWindowSize, tokenCount, tokenSamples, cwd. Radar: tests/test_client_statusline.py.",
+      "status": "verified"
+    },
     "U5": {
       "note": "availableModels compiles lead + every roster selector after the lead-only fence silently degraded all subagent dispatch to the lead; the offline delegation probe asserts the subagent's wire model through the production-shaped fence on the pinned binary every build (with the lead-only negative control preserved as the incident document).",
       "status": "verified"

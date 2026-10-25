@@ -1,9 +1,9 @@
 """Recorded 1.0.0 scopes survive presentation-only compiler changes.
 
 The executable changes since are the fork-subagent deny (``Agent(fork)``,
-compiled from the 2.1.302 pin on) and the model fence's failure policy
+compiled from the 2.1.302 pin on), the model fence's failure policy
 (``onFailure: block`` and the fence's own timeout on the PreModelSwitch
-hook): a baseline scope differs
+hook) and the compiled subagent status line: a baseline scope differs
 from the current compile by exactly those, which doctor reports as lazy state
 (Attention, applied at the next resume or by repair) and repair writes,
 nothing else.
@@ -146,8 +146,9 @@ def renamed_baseline(scenario):
 
 
 def without_fork_deny(settings):
-    """``settings`` without the fork-subagent deny and the model fence's
-    failure policy (its executable changes since 1.0.0)."""
+    """``settings`` without the fork-subagent deny, the model fence's
+    failure policy and the compiled subagent status line (its executable
+    changes since 1.0.0)."""
 
     permissions = settings["permissions"]
     deny = [rule for rule in permissions["deny"] if rule != compiler.FORK_AGENT_DENY]
@@ -156,7 +157,8 @@ def without_fork_deny(settings):
         for hook in group["hooks"]:
             hook.pop("onFailure", None)
             hook["timeout"] = scope.HOOK_TIMEOUT_SECONDS
-    return {**settings, "permissions": {**permissions, "deny": deny}, "hooks": hooks}
+    rest = {key: value for key, value in settings.items() if key != scope.SUBAGENT_STATUS_LINE_KEY}
+    return {**rest, "permissions": {**permissions, "deny": deny}, "hooks": hooks}
 
 
 class ScopeCompatibilityTests(unittest.TestCase):
@@ -233,8 +235,10 @@ class ScopeCompatibilityTests(unittest.TestCase):
             problems, attention, info = doctor._check_scope_integrity(reader, self.record)
         self.assertEqual(problems, [])
         self.assertTrue(any("proven scope is kept until the next resume" in line for line in attention))
-        # The fork deny it predates is lazy state, never BLOCK.
+        # The fork deny and the status line it predates are lazy state, never BLOCK.
         self.assertIn(cli_text.FORK_POLICY_DRIFT.format(m8=MID[:8], mid=MID), attention)
+        self.assertTrue(any(line.startswith(f"session {MID[:8]}: its subagent status line differs") for line in attention),
+                        attention)
         self.assertEqual(self.tree(), before)
         altered = self.old_plan.other_files[scope.LINEUP_MD] + b"Injected instructions.\n"
         state.atomic_write(self.live / scope.LINEUP_MD, altered)
@@ -331,6 +335,8 @@ class ScopeCompatibilityTests(unittest.TestCase):
         self.assertEqual({name for name in after if after[name] != before.get(name)}, {scope.SETTINGS_RELPATH})
         repaired = strict_json.loads(after[scope.SETTINGS_RELPATH])
         self.assertIn(compiler.FORK_AGENT_DENY, repaired["permissions"]["deny"])
+        self.assertEqual(repaired[scope.SUBAGENT_STATUS_LINE_KEY],
+                         scope.status_line_setting(scope.status_line_shim_path(self.root)))
         self.assertEqual(without_fork_deny(repaired), self.old_plan.settings)
         self.assertEqual(store.read_record_bytes(MID), record)
 
@@ -342,6 +348,7 @@ class ScopeCompatibilityTests(unittest.TestCase):
             lineup, lcat, eff, prompts, scope.catalog_meta_v2(docs),
             lineup_generation=2, managed_id=MID, hook_command=HOOK,
             token_helper_command=HELPER, worktree_available=True,
+            subagent_status_line=scope.status_line_setting(scope.status_line_shim_path(self.root)),
         )
         self.assertIn(b"independence unknown", plan.other_files[scope.LINEUP_MD])
         self.assertNotEqual(plan.other_files[scope.LINEUP_MD], self.old_plan.other_files[scope.LINEUP_MD])

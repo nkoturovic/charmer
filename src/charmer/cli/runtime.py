@@ -287,7 +287,7 @@ class Runtime:
             marker_ok = False
         # refresh_shims=False (migrate --dry-run, --print-launch)
         # takes the same paths-only branch as a newer marker, for the legacy
-        # shim, shim-3 and the token shim: a read-only command never repoints
+        # shim, shim-3, the token shim and the status-line shim: a read-only command never repoints
         # the shims running sessions use. allow_state_writes still gates only
         # the legacy override removal above.
         # The shims stay what another party left (shims_withheld says why):
@@ -298,7 +298,7 @@ class Runtime:
         # - "inhibited": a transaction owner holds the state root's
         #   inhibition (an installer, an updater, a machine move, a service
         #   hand-off) and this run is not its own (no token). The check and
-        #   the three writes happen inside the writer fence, so an owner's
+        #   the shim writes happen inside the writer fence, so an owner's
         #   begin never lands between them;
         # - "authority": this home's continuity.json cannot be read, so the
         #   root that owns its gateway (and could be inhibited) is unknown.
@@ -312,6 +312,7 @@ class Runtime:
             self.hook_command = str(scope_mod.hook_shim_path(state_path))
             self.hook3_command = str(scope_mod.hook_shim_v3_path(state_path))
             self.token_helper_command = scope_mod.token_helper_setting(scope_mod.gateway_token_shim_path(state_path))
+            self.status_line_setting = scope_mod.status_line_setting(scope_mod.status_line_shim_path(state_path))
         # The legacy composition store is lazy and read-only for lineup
         # paths (only the screens and the alias hint touch it), so no
         # command creates its directory as a side effect.
@@ -494,8 +495,8 @@ class Runtime:
         return self.shims_withheld == "inhibited"
 
     def _refresh_shims(self, state_path: Path) -> bool:
-        """Refresh the hook, protocol-3 hook and token-helper shims (see
-        ``shims_withheld``); False when they were left alone."""
+        """Refresh the hook, protocol-3 hook, token-helper and status-line
+        shims (see ``shims_withheld``); False when they were left alone."""
 
         from charmer import installs
 
@@ -514,6 +515,9 @@ class Runtime:
                 hook3_command = str(scope_mod.ensure_hook_shim_v3(state_path, self.resolved_hook_command))
                 token_helper_command = scope_mod.ensure_token_helper_command(
                     state_path, self.environ, self.resolved_hook_command)
+                # The subagent status line the scopes compile, from the same command.
+                status_line = scope_mod.status_line_setting(
+                    scope_mod.ensure_status_line_shim(state_path, self.resolved_hook_command))
         except gateway_inhibition.AuthorityUnreadable:
             self.shims_withheld = "authority"
             return False
@@ -522,6 +526,7 @@ class Runtime:
             return False
         self.hook_command, self.hook3_command, self.token_helper_command = (
             hook_command, hook3_command, token_helper_command)
+        self.status_line_setting = status_line
         return True
 
     def provision_endpoint(self) -> bool:
@@ -794,6 +799,24 @@ class Runtime:
         if managed.permission_mode_configured(environ, cwd, self.managed_root, known_keys=known):
             return None
         return scope_mod.PERMISSION_DEFAULT_MODE
+
+    def subagent_status_line_layers(self, cwd: str) -> managed.StatusLineLayers:
+        """What this runtime's user settings layers say about ``subagentStatusLine``."""
+
+        return managed.subagent_status_line_layers({**self.environ, "HOME": str(self.home)}, cwd)
+
+    def subagent_status_line(self, cwd: str) -> dict[str, str] | None:
+        """The launch/resume status-line decision: the stable shim's
+        ``subagentStatusLine`` unless a settings layer of the user's own
+        (``$HOME/.claude``, never ``CLAUDE_CONFIG_DIR``; the launch cwd's
+        project and local files) defines that key, or one of them cannot be
+        read: then nothing is compiled (the user's display is the one in
+        effect, or keeps control) and the launch goes on. A change to those
+        layers applies at the next resume."""
+
+        if self.subagent_status_line_layers(cwd).withheld:
+            return None
+        return dict(self.status_line_setting)
 
     def settings_skew(self, cwd: str, passthrough: Iterable[str] = ()) -> list[str]:
         """Attention lines for user settings files with keys the pin does not know.
@@ -1894,6 +1917,7 @@ class Runtime:
             agent_gate=lcat.agent_gate,
             default_mode=self.permission_default_mode(cwd),
             env_keep=self.session_env_keep(),
+            subagent_status_line=self.subagent_status_line(cwd),
         )
         if result.scope_plan is None or result.fence is None:
             raise cli_errors.CLIError("the compile produced no v2 scope plan")

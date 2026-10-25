@@ -19,10 +19,15 @@ trees compiled by ``scope.compile_lineup_scope`` from the fixture seeds
 ``lineup.md``, ``lineup.gen``, ``lead-set.json`` and the ``/cm`` skill;
 ``tests/goldens/v2/{managed,direct}/{argv-fresh,argv-resume,env}.json`` and
 ``lead-appendix.md`` are the matching ``compiler.compile_lineup_launch``
-argv, process environment and lead appendix.
+argv, process environment and lead appendix. Both compile the shipped
+subagent status line (the stable shim ``/state/bin/charmer-statusline``);
+``tests/goldens/v2/managed/settings-user-status-line.json`` is the managed
+``settings.json`` when a settings layer of the user's own defines
+``subagentStatusLine`` (none compiled).
 ``tests/goldens/shim/charmer-hook`` (the 2.x lifecycle hook shim,
-frozen) and ``tests/goldens/shim/charmer-hook-3`` (the protocol-3 shim)
-are the two shim texts for the state root ``/state`` and the fixed
+frozen), ``tests/goldens/shim/charmer-hook-3`` (the protocol-3 shim) and
+``tests/goldens/shim/charmer-statusline`` (the subagent status-line shim)
+are the shim texts for the state root ``/state`` and the fixed
 launcher ``/nix/store/fixture/bin/charmer``.
 ``tests/goldens/v2/managed/notice/{startup,resume,fork,prompt}.json``
 are the exact protocol-3 hook stdout of the lineup notice
@@ -124,6 +129,10 @@ V2_SEEDS = {"managed": "balanced", "direct": "direct"}
 V2_STATE_ROOT = Path("/state")
 V2_HOOK_COMMAND = "/state/bin/charmer-hook-3"
 V2_TOKEN_HELPER = "/state/bin/charmer-gateway-token"
+# A launch compiles the shipped subagent status line unless a settings layer
+# of the user's own defines the key (the ``user-status-line`` golden).
+V2_STATUS_LINE = scope.status_line_setting(scope.status_line_shim_path(V2_STATE_ROOT))
+V2_USER_STATUS_LINE_GOLDEN = V2_GOLDENS / "managed" / "settings-user-status-line.json"
 V2_GENERATION = 1
 
 # The lineup notice hook stdout over the managed golden scope files.
@@ -161,8 +170,10 @@ def v2_inputs(root: Path = CATALOG_ROOT):
     return bundle, lcat, eff
 
 
-def v2_scope_plan(kind: str) -> scope.ScopePlan:
-    """The golden v2 scope plan of ``kind`` (``managed`` or ``direct``)."""
+def v2_scope_plan(kind: str, *, user_status_line: bool = False) -> scope.ScopePlan:
+    """The golden v2 scope plan of ``kind`` (``managed`` or ``direct``);
+    ``user_status_line``: a settings layer of the user's own defines
+    ``subagentStatusLine``, so none is compiled."""
 
     bundle, lcat, eff = v2_inputs()
     lineup = profile.resolve(bundle.seed_profiles[V2_SEEDS[kind]], lcat, effective=eff)
@@ -177,6 +188,7 @@ def v2_scope_plan(kind: str) -> scope.ScopePlan:
         hook_command=V2_HOOK_COMMAND,
         launch_epoch=0,
         token_helper_command=V2_TOKEN_HELPER,
+        subagent_status_line=None if user_status_line else V2_STATUS_LINE,
     )
 
 
@@ -201,6 +213,7 @@ def v2_launch(kind: str, action=None) -> compiler.CompileResult:
         token_helper_command=V2_TOKEN_HELPER,
         launch_epoch=0,
         passthrough=V2_PASSTHROUGH,
+        subagent_status_line=V2_STATUS_LINE,
     )
 
 
@@ -246,6 +259,7 @@ def shim_files() -> dict[str, bytes]:
         scope.HOOK_SHIM_V3_RELATIVE.name: scope.hook_shim_v3_text(
             V2_STATE_ROOT, SHIM_COMMAND
         ),
+        scope.STATUS_LINE_SHIM_RELATIVE.name: scope.status_line_shim_text(SHIM_COMMAND),
     }
 
 
@@ -396,6 +410,9 @@ def plan() -> dict[Path, bytes]:
         # Argv, process env and the lead appendix of the same seeds.
         for name, data in v2_launch_files(kind).items():
             _write(V2_GOLDENS / kind / name, data)
+    # The managed compile when the user's own settings define subagentStatusLine.
+    _write(V2_USER_STATUS_LINE_GOLDEN,
+           strict_json.canonical_file_bytes(v2_scope_plan("managed", user_status_line=True).settings))
 
     # Both hook shim texts (the 2.x one frozen; protocol 3).
     for name, data in shim_files().items():

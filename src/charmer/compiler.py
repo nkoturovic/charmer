@@ -886,6 +886,7 @@ def compile_lineup_launch(
     agent_gate: Any = None,
     default_mode: str | None = None,
     env_keep: Sequence[str] = (),
+    subagent_status_line: Mapping[str, str] | None = None,
 ) -> CompileResult:
     """The one v2 launch plan for every session, managed or direct.
 
@@ -904,7 +905,10 @@ def compile_lineup_launch(
     ``*_API_KEY`` names join ``env_unset``. Fails closed
     (``CompilerError``/``ScopeError``) on every gap. ``default_mode`` is the
     launch's permission-mode decision (``scope.PERMISSION_DEFAULT_MODE``
-    when no settings layer configures one, else None).
+    when no settings layer configures one, else None);
+    ``subagent_status_line`` the launch's status-line decision (the stable
+    shim's ``scope.status_line_setting`` unless a settings layer of the
+    user's own defines ``subagentStatusLine``, else None).
     """
 
     from . import profile as profile_mod
@@ -958,6 +962,7 @@ def compile_lineup_launch(
         proxy_env=bypass,
         feedback_drafts=feedback_drafts,
         default_mode=default_mode,
+        subagent_status_line=subagent_status_line,
     )
     _require_token_helper(plan, token_helper_command)
 

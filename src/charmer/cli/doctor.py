@@ -1925,6 +1925,18 @@ def _doctor_user_settings_report(
                              ("promptCacheTtl", "client cache preference; gateway retention policy still applies")):
             if name in document:
                 info.append(f"user setting {name} present ({effect}); effective value/precedence unknown")
+    # Presence only (the user's, this directory's project and local layers); never the command.
+    layers = runtime.subagent_status_line_layers(str(runtime.cwd))
+    if layers.defined:
+        info.append("subagent status line: user-owned (subagentStatusLine in settings.json; charmer compiles none)")
+    elif layers.unreadable:
+        where = "; ".join(f"{product_paths.display(layer, runtime.environ)} {reason}"
+                          for layer, reason in layers.unreadable)
+        info.append(f"subagent status line: a settings layer could not be read ({where}); charmer's subagent "
+                    "status line was not compiled — fix or remove that file, then it applies at the next resume")
+    else:
+        info.append("subagent status line: charmer (compiled into managed sessions)")
+    if isinstance(document, dict):
         known = _charmer_selector_set(runtime)
         hits: list[tuple[str, Any]] = []
         if _is_charmer_selector(document.get("model"), known):
@@ -2633,6 +2645,22 @@ def _check_scope_integrity(
         return _per_session(text, mid, kind, summary, action="scope-repair" if repairable else None)
 
     default_mode = (cli_text.DEFAULT_MODE_DRIFT.format(m8=m8, mid=mid), "default-mode", cli_text.DEFAULT_MODE_DRIFTS)
+    status_line = (
+        f"session {m8}: its subagent status line differs from this release's compile (a scope another release "
+        "compiled, or your own settings since launch: a subagentStatusLine added or removed, or a layer that "
+        f"cannot be read; lazy state); applies at the next resume (charmer -r {mid}) — or charmer doctor "
+        f"--repair {mid} now",
+        "status-line",
+        "{n} sessions: the subagent status line differs from this release's compile (lazy state); each applies "
+        "at its next resume — or charmer doctor --repair-all now (stopped sessions)",
+    )
+
+    def lazy_alongside() -> None:
+        if scope_mod.default_mode_differs(live, ep.plan):
+            attention.append(lazy(*default_mode))
+        if scope_mod.status_line_differs(live, ep.plan):
+            attention.append(lazy(*status_line, repairable=True))
+
     disk = scope_mod.read_disk_plan(live, ep.plan) if live.is_dir() else None
     if disk is None:
         problems.append(repair(f"session {m8}: scope unreadable; charmer doctor --repair {mid}"))
@@ -2644,13 +2672,17 @@ def _check_scope_integrity(
             # release (with or without the skill deny): lazy, Attention, with the repair path.
             attention.append(lazy(cli_text.SKILL_POLICY_DRIFT.format(m8=m8, mid=mid), "skill-policy",
                                   cli_text.SKILL_POLICY_DRIFTS, repairable=True))
-            if scope_mod.default_mode_differs(live, ep.plan):
-                attention.append(lazy(*default_mode))
+            lazy_alongside()
         elif scope_mod.fork_policy_drift(live, ep.plan, drifted):
             # The fork deny and the model fence's failure policy of another
             # release: lazy, Attention, with the repair path.
             attention.append(lazy(cli_text.FORK_POLICY_DRIFT.format(m8=m8, mid=mid), "fork-policy",
                                   cli_text.FORK_POLICY_DRIFTS, repairable=True))
+            lazy_alongside()
+        elif scope_mod.status_line_drift(live, ep.plan, drifted):
+            # The subagent status line another release compiled, or one a
+            # user-owned key now replaces: lazy, Attention, with the repair path.
+            attention.append(lazy(*status_line, repairable=True))
             if scope_mod.default_mode_differs(live, ep.plan):
                 attention.append(lazy(*default_mode))
         elif scope_mod.default_mode_drift(live, ep.plan, drifted):

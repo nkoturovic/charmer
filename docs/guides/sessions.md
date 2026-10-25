@@ -92,6 +92,50 @@ A binding in the lineup is not proof of the model the provider served:
 unknown. `usage` counts completed client requests, not upstream attempts
 or billed tokens.
 
+## The agent panel's rows
+
+In a managed session, charmer draws Claude Code's agent panel: one row
+per agent, for example
+
+```text
+cm-reviewer requested: charmer-sol-xhigh · xhigh · 23% 250K/1.0M · Reading the diff
+```
+
+The row shows the agent type (and its name, when it has one), the model it
+asked for, its effort, how much of its context window it uses (green, yellow
+from 60 %, red from 85 %), its status when it is not running, and as much of
+its current task as fits. `requested:` marks a charmer selector: the model the
+agent asked for, not proof of the model the provider served (`charmer
+explain` shows what was served).
+
+Every managed session runs this as Claude Code's `subagentStatusLine`
+setting (`~/.local/state/charmer/bin/charmer-statusline`). When your own
+Claude Code settings define `subagentStatusLine` (`~/.claude/settings.json`,
+or the project's `.claude/settings.json` or `.claude/settings.local.json`),
+charmer sets none and yours is used. That is also how to turn charmer's rows
+off: a `subagentStatusLine` of your own, even one that prints nothing:
+
+```json
+"subagentStatusLine": {"type": "command", "command": "true"}
+```
+
+If one of those files cannot be read (not valid JSON, larger than 1 MiB,
+or not readable), charmer sets none either, so your setting is never
+overridden; `charmer doctor` names the file. A change to those files
+applies at the next resume (`charmer -r <id>`). `charmer doctor` says which
+one new sessions get.
+
+charmer never sets Claude Code's main `statusLine`. To use charmer's, add
+this to `~/.claude/settings.json`:
+
+```json
+"statusLine": {"type": "command", "command": "charmer statusline main"}
+```
+
+It shows the directory, the model (◆ marks a managed session), the effort,
+the session's profile, the context use and the cost. Plain `claude` shows
+it too, without the ◆ and the profile.
+
 ## Stop, end, forget
 
 - **Stop** a session running in the background: **E**, or

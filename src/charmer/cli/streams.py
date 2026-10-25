@@ -84,6 +84,7 @@ _STDOUT_REPORT_COMMANDS = frozenset(
         ("window-ceiling", None),
         ("restore-2x", None),
         ("session-event", None),
+        ("statusline", None),
         ("compose", "list"),
         ("compose", "show"),
         ("compose", "delete"),

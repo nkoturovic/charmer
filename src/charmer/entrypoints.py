@@ -25,7 +25,9 @@ only for a verified source tree, and otherwise whatever the installation's
 own wrapper set.
 
 Standard library only, and cheap to import: every lifecycle hook passes
-through here before the command module loads.
+through here before the command module loads, and ``charmer statusline
+subagents|main`` (the status lines Claude Code runs every few seconds) is
+answered here before the command-line package loads at all.
 """
 
 from __future__ import annotations
@@ -48,6 +50,8 @@ SOURCE_MARKERS = ("nix/package.nix", "src/charmer/__init__.py")
 # never takes these from its caller.
 WRAPPER_VARIABLES = (CHANNEL_ENV, ASSETS_ENV, HOOK_COMMAND_ENV)
 NAMES = ("charmer", "charmer-proxy", "charmer-dev")
+# ``charmer statusline <kind>`` (the status-line shim passes ``subagents``).
+STATUS_LINE_COMMAND = "statusline"
 
 
 def is_source_tree(root: Path | str) -> bool:
@@ -99,6 +103,13 @@ def _identity() -> int:
 def _charmer(argv: list[str]) -> int:
     if argv == ["--version"]:
         return _identity()
+    if len(argv) == 2 and argv[0] == STATUS_LINE_COMMAND:
+        # Claude Code runs a status line every few seconds: answered before
+        # the command-line parser and any Runtime, store or catalog.
+        from charmer.cli.commands import statusline
+
+        if argv[1] in statusline.KINDS:
+            return statusline.run(argv[1])
     from charmer.cli.entry import main
 
     return main(argv)

@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from . import errors, legacy, strict_json, validate as schema_validate
+from .selector_prefixes import CHARMER_SELECTOR_PREFIX
 
 
 # Data version of every catalog document except ``models`` and ``roles``
@@ -181,7 +182,7 @@ _RENDER_SENTINEL_PREFIX = "charmer-render-"
 # every comparison with the catalog translates it first
 # (:func:`renamed_selector`), so a resume launches on the new name with the
 # same provider, wire, effort contract and window.
-RENAMED_SELECTOR_PREFIX = "charmer-"
+RENAMED_SELECTOR_PREFIX = CHARMER_SELECTOR_PREFIX
 
 _HASH_FIELDS = frozenset(
     {"sha256", "composition_hash", "catalog_hash", "pre_image_hash", "post_image_hash"}

@@ -278,6 +278,57 @@ def permission_mode_configured(environ: Mapping[str, str], cwd: str | Path,
     return any(configures_default_mode(path) for path in layers)
 
 
+SUBAGENT_STATUS_LINE_KEY = "subagentStatusLine"
+
+
+@dataclass(frozen=True)
+class StatusLineLayers:
+    """What the user settings layers say about ``subagentStatusLine``,
+    presence only: whether a readable layer defines the key, and each layer
+    that exists but cannot be read as the client parses it (the file and a
+    value-free reason; never its content)."""
+
+    defined: bool
+    unreadable: tuple[tuple[Path, str], ...] = ()
+
+    @property
+    def withheld(self) -> bool:
+        """charmer compiles no ``subagentStatusLine``: the user's own is the
+        one in effect, or a layer that may define it cannot be read (the user
+        keeps control; the launch goes on)."""
+
+        return self.defined or bool(self.unreadable)
+
+
+def subagent_status_line_layers(environ: Mapping[str, str], cwd: str | Path) -> StatusLineLayers:
+    """Read the user settings layers the managed client reads
+    (:func:`user_settings_layers`) for ``subagentStatusLine``. An absent file
+    and a readable document without the key say nothing; a file that cannot
+    be read, is larger than 1 MiB, is not valid JSON or is not an object is
+    unreadable, never "not configured". Parsed like the client
+    (:func:`_read_policy_file`); the command is never read into a report."""
+
+    defined = False
+    unreadable: list[tuple[Path, str]] = []
+    for path in user_settings_layers(environ, cwd):
+        document, reason = _read_policy_file(path)
+        if reason is not None:
+            unreadable.append((path, reason))
+        elif document is not None and SUBAGENT_STATUS_LINE_KEY in document:
+            defined = True
+    return StatusLineLayers(defined, tuple(unreadable))
+
+
+def subagent_status_line_configured(environ: Mapping[str, str], cwd: str | Path) -> bool:
+    """True when a launch compiles no ``subagentStatusLine``
+    (:attr:`StatusLineLayers.withheld`): a user settings layer defines the
+    key, with any value (the user's own status line is the one in effect, and
+    such a key is also how a user turns charmer's off), or a layer cannot be
+    read. Decided at launch, resume and repair; doctor names which."""
+
+    return subagent_status_line_layers(environ, cwd).withheld
+
+
 def settings_env(path: Path) -> dict[str, str]:
     env = read_settings(path).get("env")
     return {k: v for k, v in env.items() if isinstance(v, str)} if isinstance(env, dict) else {}

@@ -178,6 +178,7 @@ restart.
 | `/cm` fails: `charmer` not found | `charmer` must be on the session's PATH |
 | /cm fallback: “no complete fallback profile is available” | create a profile with that primary provider binding every role the session binds |
 | doctor: “may shadow the session's /cm skill” | rename that `cm` skill |
+| the agent panel shows your own status line, not charmer's (doctor: “subagent status line: user-owned”) | remove `subagentStatusLine` from `~/.claude/settings.json` (or the project's `.claude/settings.json` or `.claude/settings.local.json`), then `charmer -r <id>` |
 
 ### Sessions
 
