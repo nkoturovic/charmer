@@ -17,6 +17,7 @@ from unittest import mock
 from charmer import gateway_events as events, gateway_hold, launch, service
 from charmer.cli import doctor, gateway_facts
 from charmer.platform import linux_service, observation
+from _journal import log_window
 from _layout import PATCH_DIR, UPSTREAM_JSON
 from _v4 import V4Case
 
@@ -311,8 +312,8 @@ class DoctorSaveTests(V4Case):
                 source = events.LogWindow((events.LogRecord(message, NOW, INSTANCE),), "bounded")
                 attention, _info = self.report(source)
                 substitution, = [text for text in attention if "gateway substitution:" in text]
-                legacy, _info = self.report(message)
-                self.assertEqual(substitution, next(text for text in legacy if "gateway substitution:" in text))
+                fixture, _info = self.report(log_window(message))
+                self.assertEqual(substitution, next(text for text in fixture if "gateway substitution:" in text))
                 self.assertIn(key, substitution)
                 self.assertIn(f"({wire})", substitution)
                 self.assertNotIn("partial journal read", substitution)

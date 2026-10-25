@@ -37,6 +37,7 @@ from unittest import mock
 
 from charmer import catalog, cli, lineup, management as management_mod, scope, sessions, state, strict_json
 from _catalog import FIXTURE_GATEWAY_TOKEN, FIXTURE_ROOT, served_selectors
+from _journal import LogWindow, log_window
 import charmer.launch
 import charmer.service
 
@@ -52,7 +53,7 @@ __all__ = [
     "fixture_runtime",
     "hermetic",
     "iso",
-    "journal_text",
+    "journal_window",
     "managed_agents_precondition",
     "needs_choice_key",
     "v4_record",
@@ -361,20 +362,21 @@ def scope_mod_swap(root: Path, managed_id: str, plan: Any) -> None:
     scope.swap_scope(root, managed_id, plan)
 
 
-def journal_text(
+def journal_window(
     *,
     dead_pool: str | None = None,
     quota: Iterable[tuple[str, str, int]] = (),
     when: datetime | None = None,
-) -> str:
-    """CLIProxyAPI-format journal lines for the providers screen's ``journal=`` seam.
+) -> LogWindow:
+    """A bounded source window for the providers screen's ``journal=`` seam.
 
     The ``tests/test_doctor_v4.py`` shapes: ``[YYYY-mm-dd HH:MM:SS]
     [<request id>] [<level>] [<file:line>] <message>`` in local time.
     ``dead_pool`` (``claude``/``codex``) adds one ``invalid_grant`` line
     naming it; ``quota`` adds, per ``(model alias, code, count)``, ``count``
     request ids, each with one selector line and one status line.
-    ``when`` defaults to :data:`FIXED_NOW` in local time.
+    ``when`` defaults to :data:`FIXED_NOW` in local time. The shared
+    ``log_window`` helper adds normalized timestamps and a gateway instance.
     """
 
     moment = (when or FIXED_NOW).astimezone().replace(tzinfo=None)
@@ -394,7 +396,7 @@ def journal_text(
             lines.append(
                 f'[{stamp}] [{rid}] [warn ] [gin_logger.go:99] {code} |  1.2s | 127.0.0.1 | POST "/v1/messages"'
             )
-    return "".join(line + "\n" for line in lines)
+    return log_window("\n".join(lines))
 
 
 def canonical(record: dict[str, Any]) -> bytes:

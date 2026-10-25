@@ -4,7 +4,7 @@ Sessions are real v4 launches (``_v4.V4Case``); switch sequences use the real
 ``charmer lineup`` and the protocol-3 ``postmodel`` seam. Retired /
 renamed keys use test-local catalogs; the
 retirement radar reads a test-local copy of the pinned-registry fixture with
-an injected clock; the journal pass reads fixture text through its seam, so
+an injected clock; the journal pass reads fixture LogWindows through its seam, so
 no test reads the host journal, the operator's settings or a gateway.
 """
 
@@ -22,6 +22,7 @@ import sys
 import time
 import unittest
 from contextlib import contextmanager
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
@@ -32,6 +33,7 @@ from charmer import (
     cli,
     custom,
     endpoint,
+    gateway_events,
     paths,
     hooks,
     lineup_log,
@@ -48,13 +50,14 @@ from charmer import (
     transition,
 )
 from _catalog import FIXTURE_ROOT
+from _journal import LogWindow, log_window
 from _layout import REPO_ROOT
 from _v4 import V4Case
 from test_lineup import LineupCase
 from test_migrate import _local_cat, _retired_entry
 from tests.test_quota import FIXTURES as QUOTA_FIXTURES, NOW as QUOTA_NOW, SENTINELS
 import charmer.compiler
-from charmer.cli import doctor as cli_doctor, text as cli_text
+from charmer.cli import doctor as cli_doctor, gateway_facts, text as cli_text
 import charmer.launch
 import charmer.paths
 
@@ -1199,7 +1202,7 @@ class RetirementRadarTests(_DoctorCase):
 
 
 class JournalPassTests(_DoctorCase):
-    """Fixture journal text; the host journal is never read."""
+    """Fixture journal windows; the host journal is never read."""
 
     NOW = datetime(2026, 9, 26, 12, 0, 0).astimezone()
 
@@ -1208,7 +1211,7 @@ class JournalPassTests(_DoctorCase):
 
     def _report(self, text: str) -> list[str]:
         with mock.patch('charmer.cli.gateway_facts._doctor_now', lambda: self.NOW.astimezone(timezone.utc)):
-            return cli._doctor_journal_report(self.runtime, text)
+            return cli._doctor_journal_report(self.runtime, log_window(text))
 
     def test_the_default_reader_never_runs_with_injected_seams(self) -> None:
         with mock.patch.object(subprocess, "run") as run:
@@ -1225,18 +1228,56 @@ class JournalPassTests(_DoctorCase):
         text = (REPO_ROOT / "tests/fixtures/journal/gateway-cat.log").read_text()
         lines = text.splitlines()
         with mock.patch('charmer.cli.gateway_facts._doctor_now', lambda: self.NOW.astimezone(timezone.utc)):
-            facts = cli._journal_facts(self.runtime, text)
-            clean = cli._journal_facts(self.runtime, "\n".join([*lines[2:4], lines[5]]))
+            facts = cli._journal_facts(self.runtime, log_window(text))
+            clean = cli._journal_facts(self.runtime, log_window("\n".join([*lines[2:4], lines[5]])))
         self.assertEqual(facts.quota, {("fixture-quota-model", "403"): 1})
-        self.assertEqual(facts.dead_pools, {"codex": (1, datetime(2026, 9, 26, 11, 32))})
+        self.assertEqual(facts.dead_pools, {"codex": (1, datetime(2026, 9, 26, 11, 32).astimezone())})
         self.assertIsNone(facts.unattributed)
-        self.assertEqual(clean, cli.JournalFacts({}, None, {}))
+        self.assertEqual(clean, cli.JournalFacts({}, None, {},
+                                               credential_saves=gateway_events.CredentialSaves((), "bounded")))
         report = self._report(text)
         self.assertEqual(len(report), 2, report)
         self.assertTrue(any("model fixture-quota-model got 1× 403" in line for line in report))
         self.assertTrue(any("1 invalid_grant line(s) since the codex pool" in line for line in report))
         self.assertNotIn("fixture-auth", "\n".join(report))
         self.assertNotIn("fixture-healthy-model", "\n".join(report))
+
+    def test_non_inference_403_is_not_quota(self) -> None:
+        text = f'[{self._ts(10)}] [request1] [warn ] [gin_logger.go:99] 403 | 1ms | 127.0.0.1 | GET "/v1/models"'
+        window = log_window(text)
+        facts = cli._journal_facts(self.runtime, window)
+        self.assertEqual(facts.quota, {})
+        self.assertEqual(self._report(text), [])
+        with mock.patch.object(gateway_facts, "_read_gateway_journal", return_value=window) as read, \
+                self.runtime.report_snapshot():
+            events = gateway_facts.report_events(self.runtime)
+            self.assertEqual(gateway_facts.report_journal_facts(self.runtime), facts)
+        read.assert_called_once_with(self.runtime)
+        self.assertEqual(len(events.requests), 1)
+        self.assertEqual(events.requests[0].endpoint, "models")
+        self.assertEqual(events.requests[0].status, 403)
+        self.assertEqual(cli._journal_facts(self.runtime, events), facts)
+        # The same final status on inference is counted, even without a selector.
+        inference = log_window(text.replace('GET "/v1/models"', 'POST "/v1/messages"'))
+        self.assertEqual(cli._journal_facts(self.runtime, inference).quota, {("unattributed", "403"): 1})
+
+    def test_selector_join_requires_unique_request_and_source_identity(self) -> None:
+        prefix = f"[{self._ts(10)}] [request1] [info ] "
+        selector = prefix + "[selector.go:468] x | model=fixture-model"
+        status = prefix + '[gin_logger.go:99] 403 | 1ms | 127.0.0.1 | POST "/v1/messages"'
+        text = "\n".join([selector, status])
+        window = log_window(text)
+        for name, source, expected in (
+            ("joined", window, {("fixture-model", "403"): 1}),
+            ("reused request id", log_window(text + "\n" + status), {("unattributed", "403"): 2}),
+            ("missing instance", log_window(text, gateway_instance=None), {("unattributed", "403"): 1}),
+            ("missing timestamp", LogWindow(tuple(replace(row, timestamp=None) for row in window.records), "bounded"),
+             {("unattributed", "403"): 1}),
+            ("conflicting selector", log_window(text + "\n" + selector.replace("fixture-model", "other-model")),
+             {("unattributed", "403"): 1}),
+        ):
+            with self.subTest(name=name):
+                self.assertEqual(cli._journal_facts(self.runtime, source).quota, expected)
 
     def test_per_model_429_402_403(self) -> None:
         lines = []
@@ -1249,7 +1290,7 @@ class JournalPassTests(_DoctorCase):
         lines.append(f"[{self._ts(300)}] [pay00001] [warn ] [gin_logger.go:99] 402 |  0.1s | 127.0.0.1 | POST \"/v1/messages\"")
         # old 429s (over an hour) never count toward the hourly threshold
         for n in range(30):
-            lines.append(f"[{self._ts(120)}] [old{n:05d}] [warn ] [gin_logger.go:99] 429 |  1s | x | POST \"/v1\"")
+            lines.append(f"[{self._ts(120)}] [old{n:05d}] [warn ] [gin_logger.go:99] 429 |  1s | x | POST \"/v1/messages\"")
         report = self._report("\n".join(lines))
         self.assertIn(
             "gateway journal: model gpt-multi-sol-high[1m] got 21× 429 (rate limit / quota) in the last hour "
@@ -1317,7 +1358,7 @@ class QuotaDoctorTests(_DoctorCase):
         self.addCleanup(mock.patch.stopall)
         mock.patch.object(quota, "_now", return_value=self.now).start()
         mock.patch('charmer.cli.gateway_facts._doctor_now', return_value=self.now).start()
-        self.journal = mock.patch('charmer.cli.gateway_facts._read_gateway_journal', return_value="").start()
+        self.journal = mock.patch('charmer.cli.gateway_facts._read_gateway_journal', return_value=log_window()).start()
         self.restart = cli.gateway_service_hint("restart")
 
     def test_management_follows_the_channel_whatever_the_backend(self):
@@ -1361,7 +1402,7 @@ class QuotaDoctorTests(_DoctorCase):
     def test_healthy_management_preserves_journal_refresh_failure(self):
         self.enable()
         self.get.return_value = (200, (QUOTA_FIXTURES / "auth-files-refresh-failing-active.json").read_bytes())
-        self.journal.return_value = self.grant()
+        self.journal.return_value = log_window(self.grant())
         problems, info, attention = self.report()
         self.assertEqual(problems, [])
         self.assertTrue(any("claude#1 5h 42%" in line for line in info))
@@ -1371,7 +1412,7 @@ class QuotaDoctorTests(_DoctorCase):
 
     def test_only_equivalent_invalid_grant_dedupes(self):
         self.enable()
-        self.journal.return_value = "\n".join([self.grant(), self.grant("codex"), self.grant("")])
+        self.journal.return_value = log_window("\n".join([self.grant(), self.grant("codex"), self.grant("")]))
         for reason in ("invalid_grant", "unauthorized", "token expired", "payment_required", "quota exhausted", ""):
             with self.subTest(reason=reason):
                 self.get.return_value = (200, json.dumps({"files": [{
@@ -1696,7 +1737,7 @@ class QuotaDoctorTests(_DoctorCase):
         self.journal.assert_called_once_with(self.runtime)
 
     def test_missing_key_keeps_journal_fallback_and_seam_reads_nothing(self):
-        self.journal.return_value = self.grant()
+        self.journal.return_value = log_window(self.grant())
         problems, info, attention = self.report()
         self.assertEqual(problems, [])
         self.assertIn(quota.state_text(quota.PoolStatus("no-key"), restart_hint=self.restart,
@@ -1713,7 +1754,7 @@ class QuotaDoctorTests(_DoctorCase):
         # are neither read nor sent, and doctor offers no command for quota.
         self.enable()
         management.stage_rotation(self.runtime.home)
-        self.journal.return_value = self.grant()
+        self.journal.return_value = log_window(self.grant())
         for channel in ("bundle", None):
             with self.subTest(channel=channel):
                 if channel is None:
@@ -1759,10 +1800,11 @@ class QuotaDoctorTests(_DoctorCase):
         lines = [self.grant()]
         for n, code in enumerate(["429"] * cli._JOURNAL_429_PER_HOUR + ["402", "403"]):
             prefix = f"[{stamp}] [r{n:07d}] [warn ] [fixture.go:1] "
-            lines += [prefix + "selector model=fixture-quota-model", prefix + f"{code} | fixture"]
+            lines += [prefix + "selector model=fixture-quota-model",
+                      prefix + f'{code} | 1ms | 127.0.0.1 | POST "/v1/messages"']
         lines.append(f'[{stamp}] [--------] [warn ] [fixture.go:1] codex executor: '
                      'upstream served model "replacement" for requested model "fixture-wire" (auth_index=discard)')
-        self.journal.return_value = "\n".join(lines)
+        self.journal.return_value = log_window("\n".join(lines))
         self.runtime.doctor_served_callback.return_value = (["fixture served damage"], ["fixture served info"])
         with mock.patch.object(service, "pending_restart_lines", return_value=["fixture restart radar"]) as radar, \
              mock.patch('charmer.cli.doctor._doctor_managed_report', return_value=(["fixture managed damage"], ["fixture managed attention"])), \
@@ -2065,7 +2107,7 @@ class SubstitutionRadarTests(_DoctorCase):
         retired_key, retired = next(iter(docs["retired"]["retired"].items()))
         docs["models"]["models"]["shared-wire"] = copy.deepcopy(entry)
         text = "\n".join([self._line(wire)] * 2 + [self._line("unknown-wire"), self._line(retired["last_wire"])])
-        facts = cli._journal_facts(self.runtime, text)
+        facts = cli._journal_facts(self.runtime, log_window(text))
         by_label = {fact.label: fact for fact in facts.substitutions}
         shared_label = f"{', '.join(sorted((key, 'shared-wire')))} ({wire})"
         self.assertEqual(by_label[shared_label].count, 2)
@@ -2080,24 +2122,28 @@ class SubstitutionRadarTests(_DoctorCase):
         path = custom.registry_path(self.runtime.environ)
         state.ensure_private_dir(path.parent)
         state.atomic_write(path, strict_json.pretty_file_bytes(registry_fixture()))
-        facts = cli._journal_facts(self.runtime, self._line("clean-wire"))
+        facts = cli._journal_facts(self.runtime, log_window(self._line("clean-wire")))
         self.assertEqual(facts.substitutions[0].label, "clean-one (clean-wire)")
 
     def test_hyphenated_executor_quotes_go_escape_and_malformed_line(self):
-        facts = cli._journal_facts(self.runtime, self._line('wire"quoted', 'served"quoted', 'gemini-interactions'))
-        self.assertEqual(facts.substitutions[0].label, 'wire wire"quoted')
-        self.assertEqual(facts.substitutions[0].served, 'served"quoted')
-        raw_go = self._line("wire").replace('"replacement"', '"served\\x7f"')
-        self.assertEqual(cli._journal_facts(self.runtime, raw_go).substitutions[0].served, r"served\x7f")
-        self.assertEqual(cli._journal_facts(self.runtime, "not a log line").substitutions, ())
-        malformed = self._line("wire").replace('"replacement"', '"unterminated')
-        self.assertEqual(cli._journal_facts(self.runtime, malformed).substitutions, ())
+        facts = cli._journal_facts(self.runtime, log_window(self._line("wire", "served", "gemini-interactions")))
+        self.assertEqual(facts.substitutions[0].label, "wire wire")
+        self.assertEqual(facts.substitutions[0].served, "served")
+        # The collector keeps safe identifiers only, not quoted/escaped text.
+        for line in (
+            self._line('wire"quoted', 'served"quoted', 'gemini-interactions'),
+            self._line("wire").replace('"replacement"', '"served\\x7f"'),
+            "not a log line",
+            self._line("wire").replace('"replacement"', '"unterminated'),
+        ):
+            with self.subTest(line=line):
+                self.assertEqual(cli._journal_facts(self.runtime, log_window(line)).substitutions, ())
 
     def test_doctor_one_read_one_attention_and_per_attempt_count(self):
         wire = next(iter(self.runtime.catalog.lines.values()))["wire_model"]
         text = "\n".join([self._line(wire)] * 3)
         self.runtime.doctor_callback = None
-        with mock.patch('charmer.cli.gateway_facts._read_gateway_journal', return_value=text) as read:
+        with mock.patch('charmer.cli.gateway_facts._read_gateway_journal', return_value=log_window(text)) as read:
             _problems, _info, attention = _doctor(self)
         read.assert_called_once_with(self.runtime)
         mine = [line for line in attention if line.startswith("gateway substitution:")]
@@ -2107,7 +2153,7 @@ class SubstitutionRadarTests(_DoctorCase):
         self.assertNotIn("10 min", mine[0])
         self.assertNotIn("auth_index", mine[0])
         self.assertNotIn("request-never-printed", mine[0])
-        with mock.patch('charmer.cli.gateway_facts._read_gateway_journal', return_value=""):
+        with mock.patch('charmer.cli.gateway_facts._read_gateway_journal', return_value=log_window()):
             self.assertFalse(any(line.startswith("gateway substitution:") for line in _doctor(self)[2]))
 
 
@@ -2121,7 +2167,7 @@ class SubstitutionRadarTests(_DoctorCase):
                                 if e["wire_model"] != entry["wire_model"])
         text = "\n".join([self._line(entry["wire_model"]), self._line(known["wire_model"]),
                           self._line("unknown-wire")])
-        lines = cli._doctor_journal_report(self.runtime, text)
+        lines = cli._doctor_journal_report(self.runtime, log_window(text))
         labels = [f"{', '.join(sorted((key, 'shared-wire')))} ({entry['wire_model']})",
                   f"{known_key} ({known['wire_model']})", "wire unknown-wire"]
         self.assertEqual(sorted(line.split(" was answered by ")[0] for line in lines),

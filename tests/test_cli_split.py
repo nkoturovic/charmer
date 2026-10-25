@@ -209,7 +209,7 @@ class DoctorSplitTests(unittest.TestCase):
                 self.assertIs(getattr(cli, name), getattr(modules[alias], name))
         self.assertEqual({n for n, owners in seen.items() if len(owners) > 1}, set())
         # _doctor_operator_report is a new doctor check, not a move.
-        self.assertEqual(len(seen), 74)
+        self.assertEqual(len(seen), 69)
         self.assertEqual(added, set(self.NEW_051))
 
     def test_layering_reports_actions_and_observations(self):
