@@ -30,7 +30,9 @@ class SessionsDetailsTests(_SessionsCase):
         record = self.record(pending=True)
         from test_tui import END
 
-        result, win = self.run_screen(self.screen(), ["v", END, ESC, ESC], height=40, width=120)
+        # Keep the full directory line visible, including TextView's four columns of padding.
+        width = max(120, len(f"directory: {record['cwd']}") + 4)
+        result, win = self.run_screen(self.screen(), ["v", END, ESC, ESC], height=40, width=width)
         self.assertIsNone(result)
         text = _flat("\n".join(win.frames))
         self.assertIn(cli_text.SESSIONS_DETAILS_TITLE, text)

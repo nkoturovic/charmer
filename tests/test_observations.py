@@ -18,6 +18,7 @@ import charmer.cli.gateway_facts as gateway_facts
 import charmer.cli.runtime as runtime_mod
 from charmer.platform.observation import LogRecord, LogWindow
 from _catalog import FIXTURE_ROOT
+from _unix_socket import bind_unix_socket
 from _v4 import V4Case
 
 NOW = datetime(2026, 9, 30, 12, tzinfo=timezone.utc)
@@ -311,7 +312,7 @@ class HookLogTests(V4Case):
                     os.mkfifo(self.path)
                 else:
                     sock = socket.socket(socket.AF_UNIX)
-                    sock.bind(str(self.path))
+                    bind_unix_socket(sock, self.path)
                 try:
                     with mock.patch("charmer.lineup_log.os.open", side_effect=AssertionError("opened special file")):
                         fact, lines = self.fact()

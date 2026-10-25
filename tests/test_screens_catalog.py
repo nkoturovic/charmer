@@ -263,7 +263,10 @@ class ModelsScreenTests(_ScreenCase):
         runtime = self.make_runtime(self.tmp / "new", asset_root=_fixture_copy(self, new=(key,)))
         path = _write_settings(runtime, b"{")
         # Enter inspects the line instead (no admission while the banner shows).
-        win = self.run_screen(self.screen(runtime), [END, ENTER, ESC, ESC])
+        screen = self.screen(runtime)
+        # Allow the banner's wrapped path to grow with TMPDIR.
+        height = max(24, screen.min_size(80)[0])
+        win = self.run_screen(screen, [END, ENTER, ESC, ESC], height=height)
         text = win.text()
         self.assertIn("settings.json is unreadable:", text)
         # The banner wraps at a TMPDIR-dependent point; compare it re-joined.

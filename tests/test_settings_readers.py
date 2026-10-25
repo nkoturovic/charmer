@@ -15,6 +15,7 @@ from unittest import mock
 from charmer import hooks, managed
 from charmer.cli import doctor
 from charmer.cli.commands import migration
+from _unix_socket import bind_unix_socket
 
 
 _READER = """
@@ -105,13 +106,12 @@ class SettingsReaderTests(unittest.TestCase):
 
     @unittest.skipUnless(hasattr(socket, "AF_UNIX"), "needs Unix sockets")
     def test_socket_policy_is_not_a_regular_file(self) -> None:
-        # Keep the bound path below the platform's AF_UNIX length limit.
-        with tempfile.TemporaryDirectory(prefix="sr-") as temporary:
-            path = Path(temporary) / "managed-settings.json"
-            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as listener:
-                listener.bind(str(path))
-                self.assertEqual(self.read_child("policy", path), [None, "is not a regular file"])
-                self.assertEqual(self.read_child("findings", path), [["unreadable", False]])
+        # Keep the bind address below the AF_UNIX limit even with a deeply nested TMPDIR.
+        path = self.root / "managed-settings.json"
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as listener:
+            bind_unix_socket(listener, path)
+            self.assertEqual(self.read_child("policy", path), [None, "is not a regular file"])
+            self.assertEqual(self.read_child("findings", path), [["unreadable", False]])
 
     @unittest.skipUnless(hasattr(os, "mkfifo"), "needs POSIX FIFOs")
     def test_symlink_to_fifo_is_also_unusable_without_waiting(self) -> None:
