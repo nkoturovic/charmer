@@ -72,6 +72,14 @@ verification is Linux-only; before updating a Mac, check the **macOS 13** floor
 because the old updater does not guarantee refusal. [The update sequence](update.md#updating-from-201)
 keeps restart, integrity and readiness checks separate.
 
+## Installation and update failures
+
+| Symptom | Fix |
+| --- | --- |
+| an update reports “response failed” while reading release files | the response was interrupted, truncated or timed out; no release switch occurred. Retry the update. A local write error instead names the local problem: resolve that before retrying |
+| the installer says an older bundle cannot safely reclaim its lock | first confirm no installer or updater is running, then follow the printed `rm -r` command for only the named lock and retry. Keep `.lock-guard`; do not run an older release's stale-lock reclamation concurrently with another installer or updater |
+| installing an older release says it used system sync | its bundle lacks the durability helper; the installer uses system `sync` with a notice. Away from Linux this does not provide the newer helper's per-file guarantee ([update details](update.md#what-happens-to-old-files)) |
+
 ## The gateway
 
 | Symptom | Doctor says | Fix | Check |
@@ -84,7 +92,10 @@ keeps restart, integrity and readiness checks separate.
 | a model is missing from the gateway | “the running gateway does not serve rendered selector” | `charmer gateway restart` between turns | `charmer doctor` |
 | sessions are refused with 401 | “token mismatch” | `charmer-proxy init` (verifies the reload); if it persists, `charmer gateway restart` | doctor |
 | the gateway's key files are unusable | “gateway key slots unusable” | `charmer doctor --rotate-token` in a terminal | doctor |
-| every change is refused while a transaction runs | “the gateway is inhibited by <owner> (…)” | wait for that installer, update or service hand-off; if it was interrupted, run the command the message names | `charmer gateway status` shows no inhibition |
+| every change is refused while a transaction runs | “the gateway is inhibited by <owner> (…)” | wait for that installer, update or service hand-off; if it was interrupted, run the command the message names. After a failed service install, use `charmer gateway service install`: uninstall may report nothing installed and leave the inhibition. Never remove the inhibition record by hand | `charmer gateway status` shows no inhibition |
+| service removal or restoration refuses because the gateway changed meanwhile | the instance changed after its persistence hold was checked | inspect `charmer gateway status`, then retry the named service operation between turns; do not bypass the refusal with a signal or service-manager stop | the operation completes against the checked instance |
+| a gateway command names “the recorded managed state root” as missing or unusable | it cannot safely lock that root; nothing was changed | follow the printed access or move-aside remedy and `charmer-proxy init --state-root <root>` command. This recreates directories, not lost session records | retry the refused command, then doctor |
+| a persistence hold says “its log name has an invalid UTC start time” | an instance-log filename is not valid evidence; pruning is skipped | keep the gateway and its logs; assess the missing evidence through [the persistence hold](guides/gateway.md#the-persistence-hold). Clearing a hold does not repair the filename | status reports whether evidence is still incomplete |
 | commands refuse: another state directory | “gateway managed for root <A>; this command used <B>” | run with the managed state directory (check `XDG_STATE_HOME`) | doctor |
 | `charmer gateway service install` on Ubuntu 23.10 or later: the gateway exited during its start | the on-demand gateway is kept; doctor does not diagnose the AppArmor restriction | keep the on-demand gateway, or ask an administrator to assess the system-wide security trade-off of allowing unprivileged user namespaces ([service requirements](guides/gateway.md#the-supervised-service-linux)) | `charmer gateway status`; after an approved system change, retry service install and check `charmer gateway service status` |
 | the gateway service keeps restarting | “gateway working directory <path> holds a .env file” | move that `.env` aside, then `charmer gateway restart` | `charmer gateway service status` |
@@ -106,6 +117,8 @@ to a model.
 
 | Symptom | Doctor says | Fix |
 | --- | --- | --- |
+| a provider listing has a redacted invalid-file row | credential-bearing names are withheld; its count is problems, not files | run `charmer providers validate` and follow its rename remedy; model edit/removal cannot select the rejected declaration. Do not paste the file's secret-bearing name into a report |
+| listing or qualification reports a malformed or incomplete response | a body shorter than its declared length is not a valid result; qualification can be inconclusive | check the provider or network, then repeat only the intended check with its usual consent; an absent management reading does not mean zero usage |
 | a provider shows not connected | its key is missing, or no sign-in is saved | `charmer providers set-key <provider>`, or `charmer providers sign-in anthropic` |
 | an account's requests fail after a while | `invalid_grant` lines since the sign-in, or the pool has no credential record | sign in again: `charmer providers sign-in anthropic` (or `openai`) |
 | one or more accounts' models disappear after a credential-file or auth-directory read error | the gateway can drop those accounts' models instead of retaining the last working credentials; doctor may report missing selectors | resolve the read failure and restore owner-only access, then check `charmer providers list` and `charmer doctor`; if models remain missing, follow [the persistence hold](guides/gateway.md#the-persistence-hold) before a guarded `charmer gateway restart`; do not delete the credential files |
@@ -152,6 +165,7 @@ expect these advisories after an update; they ask for nothing.
 
 | Symptom | Meaning | What to do |
 | --- | --- | --- |
+| an operator ledger or evidence store is unreadable or invalid | malformed collection data is refused, not repaired automatically | follow the named diagnostic; restore a damaged ledger from a known backup, never delete it to clear the warning. Optional evidence can remain unavailable without rewriting its store |
 | New · not admitted, or stale admission | the optional definition-bound badge is absent or stale; not a use block | bind the model on its usable route, or optionally use **M** → Enter / `charmer models admit <line>`; admission sends no inference request |
 | qualification not run, failed or stale; exact-client evidence unavailable | an advisory, not a lead/agent/workflow ban; the failed check remains a failure | assess the named limitation; optionally run `charmer models qualify <line> --agents` at a terminal outside Claude Code, with explicit human consent to the plan, default No |
 | tools evidence covers auto but not forced | automatic tool use is not evidence of forced-tool support | keep the warning or explicitly test forced tools; no automatic weaker-contract retry |
@@ -176,6 +190,7 @@ See [models](guides/models.md) and [profile limits](guides/profiles.md#recommend
 | --- | --- | --- | --- |
 | launches refuse: the copy is missing or changed | “is not set up for charmer”, or “does not match the verified sha256” | `charmer setup --step claude` | `charmer doctor` |
 | the card looks ready but a launch refuses | the card checks the copy's size and metadata only; doctor and every launch check its full hash | `charmer setup --step claude` | the launch |
+| setup or doctor says “Claude Code copy cleanup blocked” | ownership or process/install facts could not be checked safely; nothing was removed | resolve the reported cause, then `charmer setup --step claude`; do not force-delete copies | doctor no longer reports the blocker |
 | after an upgrade a running session still uses the old Claude Code | “runs Claude <version>, not the pinned” | `/exit`, then `charmer -r <id>` | the session's next start shows no notice |
 | doctor: a newer Claude Code than the pin is installed | the pin was verified some days ago, or your own Claude Code is newer | nothing to do: a charmer release brings a newer pin | doctor shows it as information |
 
@@ -194,6 +209,9 @@ report it.
 | “<n> sessions do not run and have no recorded end”, or “session <id>: does not run and has no recorded end” | each exited without its end being recorded, so commands that refuse while a session may run count it (migration and uninstall among them): `charmer sessions mark-ended --all-dead` (one: `charmer sessions mark-ended <id>`); **H** → Enter on the row marks every one after a confirmation, and each mark checks again that the session does not run. Doctor names none while whether sessions run cannot be told (the process table or the background daemon unreadable, a state root on a network filesystem) |
 | “<n> generated files left by forgotten or ended sessions” | scopes, lead prompts, notice markers or lineup logs no record owns any more: `charmer doctor --prune --preview` lists them, `charmer doctor --prune` removes them (**H** → Enter on the row shows the preview, then asks y/N); records, transcripts and backups are never among them. Doctor names none while a record cannot be read |
 | “scope differs from the record-authoritative compile” | `charmer doctor --repair <id>` |
+| “its subagent status line differs from this release's compile” | expected after a release or your status-line settings change: resume with `charmer -r <id>`, or run `charmer doctor --repair <id>` now (`charmer doctor --repair-all` for stopped sessions); this is Attention, not damage |
+| relink says “scope convergence is unfinished” | the identity change was saved, but scope repair failed or was skipped; resolve the reported cause, then run the printed `charmer doctor --repair <id>` command |
+| a plain session listing exits 1, or its JSON says unavailable | the inventory could not be read completely; use `charmer --line sessions list` to see readable rows and the errors, then `charmer doctor`. Do not treat the JSON result as an empty list |
 | “<n> session(s) need a profile or model choice (lead removed)” | the lead each was bound to left the catalog: resume one interactively (`charmer -r <id>`, which asks for a profile or model), or `charmer lineup --session <runtime-id> --relaunch profile <name>`; **H** → Enter on the row opens Sessions. Doctor names the first three ids; `doctor -v` lists every one |
 | “<n> session scope(s) were compiled by <earlier name>” | the scopes of sessions from before the rename: `charmer doctor --repair-all` recompiles every stopped one now (**H** → Enter on the row, after a confirmation); a running one is recompiled at its next resume. Doctor shows one line for all of them |
 | “session record <id> is unreadable” | `charmer sessions show <id>` names the error; never edit the record; forget a disposable session with `charmer sessions forget <id>` |
@@ -206,23 +224,28 @@ More: [guides/sessions.md](guides/sessions.md).
 
 | Symptom | Fix |
 | --- | --- |
+| your own agent rows appear instead of charmer's | a user, project or local `subagentStatusLine` setting wins; doctor reports that choice. To use charmer's rows, remove your override, fix any unreadable settings layer, then resume ([the agent panel](guides/sessions.md#the-agent-panels-rows)) |
+| only Claude Code's native agent rows appear | run `charmer doctor`: an earlier scope compile needs a resume or `charmer doctor --repair <id>`; if a settings file cannot be read, fix its JSON, size or access first, then resume. Repair alone does not fix unreadable user settings |
 | `/cm` fails: `charmer` not found | `charmer` must be on the session's PATH |
 | `/cm` changed nothing for new agents | type `/reload-plugins`, then start agents fresh |
 | `/model` refuses a model | it is outside the lead set: relaunch with a profile whose lead is that model |
 | an MCP server cannot find its API key | managed sessions remove every `*_API_KEY` variable except the names you keep: add its name in Settings (**O**) → kept environment; provider keys are never kept. **V** on the card shows kept and removed names, doctor too. Applies at the next launch or resume |
-| an HTTP MCP tool call was interrupted | the pinned client can resend the call when its connection closes mid-call, so a tool that changes something may have run twice. Check the external system for a duplicate before continuing ([client limits](reference/compatibility.md#deferred-client-fixes)) |
+| an HTTP MCP tool call was interrupted | Claude Code retries after a closed connection only when the server marks the tool read-only or idempotent; a state-changing tool marked idempotent can still run twice. An interrupted call may have run even when it reports an error: check the external system before asking again ([client limits](reference/compatibility.md#deferred-client-fixes)) |
+| an MCP tool, WebFetch, WebSearch or SendMessage is missing, or ToolSearch runs first | expected: behind the gateway some tools are listed by name and fetched with ToolSearch when needed; this is not a missing permission or installation |
+| a provider refusal takes a while to appear, or the same refused request appears four times | Claude Code 2.1.310 resends an unrecognised refusal up to three times before showing it; assess the final error before retrying ([client limits](reference/compatibility.md#verified-behavior-and-limits)) |
+| an installed mod changes an agent's model | an `agent.spawn` mod can choose another lineup model; a `settings.read` mod can also widen the allowed model list. Disable the mod if the compiled lineup must hold; charmer's fence does not constrain user-installed code ([client limits](reference/compatibility.md#verified-behavior-and-limits)) |
 | implementers “unavailable here” | start the session in a Git repository (`git init`) |
 | Remote Control, `/schedule` or claude.ai connectors are missing | expected in managed sessions; use plain `claude` for these |
 
-The pinned client also predates sandbox-boundary, worktree and Bash-permission
-fixes in Claude Code 2.1.304–2.1.309. Do not rely on its Bash sandbox as the
-only boundary for untrusted code; charmer does not replace Claude Code's
-sandbox or worktree protections. See the
-[deferred client fixes](reference/compatibility.md#deferred-client-fixes).
+The pinned client carries the sandbox-boundary, worktree and Bash-permission
+fixes from Claude Code 2.1.304–2.1.309; charmer has not tested those fixes.
+Do not rely on its Bash sandbox as the only boundary for untrusted code;
+charmer does not replace Claude Code's sandbox or worktree protections.
+See [client fixes](reference/compatibility.md#deferred-client-fixes).
 
 ### Late-stream completion limit
 
-With Claude Code 2.1.302 and the tested CLIProxyAPI 8.0.33 gateway candidate,
+Re-measured on 2026-10-24 with Claude Code 2.1.310 and CLIProxyAPI 8.0.33,
 a stream missing `message_stop` after completed content and a terminal
 `message_delta` can make the client report success without recovery, despite
 the gateway's SSE error. A successful client result is not proof of complete
@@ -247,8 +270,13 @@ gateway bytes require fresh qualification.
 | this account's state belongs to another installation | use that installation, or follow the printed fix to move the account ([install/linux.md](install/linux.md#one-installation-per-account)) |
 | a certificate error | [guides/networking.md](guides/networking.md#certificate-errors) |
 | “session record directory is unavailable; records are unknown” | the state directory must be yours, mode 0700; fix ownership or mode, then `charmer doctor` |
-| a write fails on a full or read-only disk | free space or make the path writable, then rerun the command; writes are atomic and leave the old file in place |
+| a write fails on a full or read-only disk | resolve the named local problem, then retry. A failure before replacement leaves the old file; “file was written; durability unconfirmed” means new bytes are present but directory persistence was not confirmed. Follow the command's recovery advice rather than assuming nothing changed |
+| export says it wrote the file but durability is unconfirmed | no export receipt was recorded; fix the storage problem, then rerun `charmer export --out <file>` and check its result |
+| doctor reports an invalid export receipt | the receipt is kept unchanged and is not proof of a completed export; create a fresh one with `charmer export --out <file>` |
+| catalog promotion reports incomplete rollback | inspect the paths the command names before retrying promotion; some replacements remain. Individual file writes are atomic, not the whole multi-file promotion |
 | the full-screen interface misbehaves | `charmer --line` uses plain lines; `--no-color` (or `NO_COLOR`) turns colour off |
+| a profile says “cannot start the editor” | fix `$VISUAL` (used first) or `$EDITOR`, then retry; the profile was not saved and the message names the temporary copy kept for recovery |
+| output has replacement characters | the selected stream encoding cannot show the text; use `PYTHONIOENCODING=utf-8` with a UTF-8 terminal or consumer, especially for JSON |
 
 ## The launch card
 
