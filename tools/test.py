@@ -395,7 +395,8 @@ def _run(args: argparse.Namespace, selected: list[str], work: Path) -> int:
     for reason, count in sorted(reasons.items(), key=lambda item: -item[1]):
         print(f"  skipped {count}: {reason}")
     for problem in problems:
-        print(f"FAILED: {problem}", file=sys.stderr)
+        # A test may leave sys.stderr replaced; runner failures must remain visible.
+        print(f"FAILED: {problem}", file=sys.__stderr__)
     return EXIT_FAILED if problems else EXIT_OK
 
 

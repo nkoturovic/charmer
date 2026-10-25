@@ -112,7 +112,12 @@ class BackupShellTests(unittest.TestCase):
         if b"GNU tar" not in version.stdout:
             self.skipTest("BOUNDARY: backup examples need GNU tar")
         self.tools = tools
-        self.temp = tempfile.TemporaryDirectory(prefix="charmer-backup-docs-")
+        # Keep the example's GnuPG sockets short even when the runner nests TMPDIR.
+        bases = {Path("/tmp"), Path(tempfile.gettempdir())}
+        writable = [base for base in bases if base.is_dir() and os.access(base, os.W_OK | os.X_OK)]
+        self.assertTrue(writable, "backup fixture needs a writable temporary base")
+        base = min(writable, key=lambda path: len(os.fsencode(path.resolve())))
+        self.temp = tempfile.TemporaryDirectory(prefix="cb-", dir=base)
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         old_mask = os.umask(0o077)
@@ -120,6 +125,12 @@ class BackupShellTests(unittest.TestCase):
         self.home = self.root / "home"
         self.scripts = self.root / "scripts"
         self.backups = self.root / "encrypted backups"
+        # The example creates its private GnuPG home below this workspace.
+        # Include the longest agent socket name and the mktemp suffix; BSD's
+        # sun_path allows 103 pathname bytes plus NUL (Linux allows 107).
+        socket_path = self.backups.resolve() / "charmer-cold.XXXXXXXX" / "gnupg" / "S.gpg-agent.browser"
+        self.assertLessEqual(len(os.fsencode(socket_path)), 103,
+                             f"backup fixture GnuPG socket path is too long: {socket_path}")
         self.restores = self.root / "restore staging"
         for directory in (self.home, self.scripts, self.backups, self.restores, self.root / "tmp"):
             directory.mkdir(mode=0o700)

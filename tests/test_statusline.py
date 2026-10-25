@@ -18,6 +18,7 @@ import platform
 import random
 import re
 import shlex
+import shutil
 import stat
 import subprocess
 import sys
@@ -891,9 +892,12 @@ class StatusLineShimTests(unittest.TestCase):
         path.chmod(0o755)
         return path
 
-    def run_shim(self, launcher: str, stdin: bytes = b"{}", path: str = "/usr/bin:/bin") -> subprocess.CompletedProcess:
+    def run_shim(self, launcher: str, stdin: bytes = b"{}", path: str = "/usr/bin:/bin", *,
+                 interpreter: str | None = None) -> subprocess.CompletedProcess:
         shim = scope.ensure_status_line_shim(self.state, launcher)
         command = scope.status_line_setting(shim)["command"]
+        if interpreter is not None:
+            command = f"{shlex.quote(interpreter)} {command}"
         # As the client runs it: through a shell, the document on stdin.
         return subprocess.run(command, shell=True, input=stdin, capture_output=True, timeout=30,
                               env={"PATH": path, "HOME": str(self.root)})
@@ -941,11 +945,45 @@ class StatusLineShimTests(unittest.TestCase):
                 self.assertFalse(scope.is_status_line_setting({"type": "command", "command": command}))
 
     def test_rows_are_forwarded_only_on_exit_zero(self) -> None:
+        # Only shell builtins: a sandbox need not have wc under /usr/bin or /bin.
+        # read keeps the unterminated ASCII fixture even though EOF returns nonzero.
         ok = self.fake_launcher('[ "$1 $2" = "statusline subagents" ] || exit 9\n'
-                                'printf \'{"id":"a","content":"%s"}\\n{"id":"b","content":"x"}\\n\' "$(wc -c)"\n')
-        result = self.run_shim(str(ok), stdin=b"12345")
-        self.assertEqual((result.returncode, result.stdout, result.stderr),
-                         (0, b'{"id":"a","content":"5"}\n{"id":"b","content":"x"}\n', b""))
+                                'IFS= read -r payload || :\n'
+                                'printf \'{"id":"a","content":"%s"}\\n{"id":"b","content":"x"}\\n\' "${#payload}"\n')
+        for path in ("/usr/bin:/bin", str(self.root / "no-tools")):
+            with self.subTest(path=path):
+                result = self.run_shim(str(ok), stdin=b"12345", path=path)
+                self.assertEqual((result.returncode, result.stdout, result.stderr),
+                                 (0, b'{"id":"a","content":"5"}\n{"id":"b","content":"x"}\n', b""))
+
+    def test_a_killed_launcher_is_silent_in_dash(self) -> None:
+        dash = shutil.which("dash")
+        if dash is None:
+            self.skipTest("BOUNDARY: dash is not available")
+        crash = self.fake_launcher("echo partial\necho failure >&2\nkill -9 $$\n", name="crash")
+        result = self.run_shim(str(crash), interpreter=dash)
+        self.assertEqual((result.returncode, result.stdout, result.stderr), (0, b"", b""))
+
+    def test_a_failed_stderr_redirection_is_silent_and_exits_zero(self) -> None:
+        launcher = self.fake_launcher("echo unexpected-launch\n")
+        shim = scope.ensure_status_line_shim(self.state, str(launcher))
+        missing = shlex.quote(str(self.root / "missing" / "null")).encode()
+        copy = self.root / "failed-redirection"
+        copy.write_bytes(shim.read_bytes().replace(b"2>/dev/null", b"2>" + missing, 1))
+        copy.chmod(0o700)
+        interpreters = ["/bin/sh", shutil.which("dash")]
+        if zsh := shutil.which("zsh"):
+            alias = self.root / "zsh" / "sh"
+            alias.parent.mkdir()
+            alias.symlink_to(zsh)
+            interpreters.append(str(alias))
+        for interpreter in dict.fromkeys(interpreters):
+            if interpreter is None:
+                continue
+            with self.subTest(interpreter=interpreter):
+                result = subprocess.run([interpreter, str(copy)], input=b"{}", capture_output=True,
+                                        env={"PATH": "/usr/bin:/bin", "HOME": str(self.root)}, timeout=30)
+                self.assertEqual((result.returncode, result.stdout, result.stderr), (0, b"", b""))
 
     def test_every_failure_prints_nothing_and_exits_zero(self) -> None:
         older = self.fake_launcher("echo 'usage: charmer ...' >&2\necho partial\nexit 2\n", name="older")
