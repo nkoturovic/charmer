@@ -6,8 +6,8 @@ then the advisories (optional evidence), collapsed behind their header
 until Enter opens it. Each row wraps in full (no command in it is cut
 off); what Enter does on the selected one shows under the list, with how
 many findings a collapsed row stands for. ``V`` is the full report as
-``doctor -v`` prints it, ``G`` the gateway's own actions
-(``gateway_actions.health_prompt``), Esc back.
+``doctor -v`` prints it, ``W`` the gateway's own actions
+(``gateway_actions.dialog``), Esc back.
 
 Enter acts only on the rows a collector tagged with one of
 ``doctor.ACTIONS``, each through the service and guards its command uses:

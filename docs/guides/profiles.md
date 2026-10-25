@@ -116,7 +116,7 @@ charmer profile reseed <name>
 Enter changes a row: the name, the primary provider and lead providers,
 the lead and each agent (a model picker where ← → picks the effort), the
 native agents (Explore, Plan, general-purpose, workflows) and the review
-routing. **U** unbinds an agent, **N** edits named bindings, **R** shows
+routing. **U** unbinds an agent, **B** edits named bindings, **R** shows
 where reviews route, `^S` saves (`^O` too; only a valid profile saves),
 `^G` edits the raw JSON in `$EDITOR`, **?** explains and Esc goes back
 (asking when there are unsaved edits). Checks read ✓ valid, ! warning

@@ -14,6 +14,14 @@ from test_tui import FakeWindow
 
 
 class ShortcutLabelsTests(unittest.TestCase):
+    def test_both_cards_advertise_the_findings_gateway_key(self) -> None:
+        from charmer.cli import text
+
+        for help_text in (text.QUICK_HELP, text.RESUME_QUICK_HELP):
+            with self.subTest(help_text=help_text.splitlines()[0]):
+                self.assertIn("W the gateway's actions", help_text)
+                self.assertNotIn("G the gateway's actions", help_text)
+
     def test_details_and_named_binding_aliases_are_silent(self) -> None:
         from charmer.cli import text
 

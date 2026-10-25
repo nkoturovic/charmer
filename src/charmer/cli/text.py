@@ -95,7 +95,7 @@ _HELP_MODEL = (
 )
 _HELP_DOCTOR = (
     "H — doctor: its findings as a list (BLOCKED, Attention by area, then the advisories);\n"
-    "Enter acts on a row or shows its command, V the full report, G the gateway's actions.\n"
+    "Enter acts on a row or shows its command, V the full report, W the gateway's actions.\n"
     "U — check for and install a newer charmer: an installed release checks, asks and\n"
     "applies; a Nix install updates through its flake. Claude Code itself: W → Claude Code.\n"
 )
