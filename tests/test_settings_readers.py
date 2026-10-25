@@ -8,9 +8,12 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 from charmer import hooks, managed
+from charmer.cli import doctor
+from charmer.cli.commands import migration
 
 
 _READER = """
@@ -35,6 +38,18 @@ elif reader == "findings":
     result = [[item.kind, item.blocks] for item in managed.policy_findings(path.parent)]
 elif reader == "hook":
     result = hooks.saved_user_model({"CLAUDE_CONFIG_DIR": str(path.parent)})
+elif reader in ("radar", "migration"):
+    from types import SimpleNamespace
+    root = Path(sys.argv[3])
+    runtime = SimpleNamespace(environ={"HOME": str(root / "home")}, cwd=str(root / "project"),
+                              ordinary_docs={"providers": {"providers": {}}})
+    if reader == "radar":
+        from charmer.cli import doctor
+        radar = doctor._settings_radar(runtime, [])
+        result = [radar.attention, radar.info, radar.credential_hits]
+    else:
+        from charmer.cli.commands import migration
+        result = migration._user_claude_settings(runtime)
 else:
     raise AssertionError(reader)
 print(json.dumps(result))
@@ -55,7 +70,7 @@ class SettingsReaderTests(unittest.TestCase):
         # to the checkout so the reader cannot depend on repository discovery.
         try:
             result = subprocess.run(
-                [sys.executable, "-B", "-c", _READER, reader, str(path)],
+                [sys.executable, "-B", "-c", _READER, reader, str(path), str(self.root)],
                 cwd=self.root, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=3,
             )
         except subprocess.TimeoutExpired as exc:
@@ -94,6 +109,54 @@ class SettingsReaderTests(unittest.TestCase):
         self.path.symlink_to(target)
         self.assertEqual(self.read_child("client", self.path), {})
         self.assertEqual(self.read_child("policy", self.path), [None, "is not a regular file"])
+
+    @unittest.skipUnless(hasattr(os, "mkfifo"), "needs POSIX FIFOs")
+    def test_doctor_radar_fifo_user_settings_returns_promptly(self) -> None:
+        path = self.root / "home/.claude/settings.json"
+        path.parent.mkdir(parents=True)
+        os.mkfifo(path)
+        self.assertEqual(self.read_child("radar", path), [[], [], []])
+
+    @unittest.skipUnless(hasattr(os, "mkfifo"), "needs POSIX FIFOs")
+    def test_doctor_radar_fifo_project_local_settings_returns_promptly(self) -> None:
+        path = self.root / "project/.claude/settings.local.json"
+        path.parent.mkdir(parents=True)
+        os.mkfifo(path)
+        self.assertEqual(self.read_child("radar", path), [[], [], []])
+
+    @unittest.skipUnless(hasattr(os, "mkfifo"), "needs POSIX FIFOs")
+    def test_migration_fifo_user_settings_returns_promptly(self) -> None:
+        path = self.root / "home/.claude/settings.json"
+        path.parent.mkdir(parents=True)
+        os.mkfifo(path)
+        self.assertIsNone(self.read_child("migration", path))
+
+    def test_doctor_and_migration_keep_tolerant_symlink_reads_and_limits(self) -> None:
+        path = self.root / "home/.claude/settings.json"
+        path.parent.mkdir(parents=True)
+        target = self.root / "user-settings-target"
+        path.symlink_to(target)
+        runtime = SimpleNamespace(environ={"HOME": str(self.root / "home")})
+        raw = json.dumps(self.document).encode("utf-8")
+        limit = 1 << 20
+        for data, expected in (
+            (raw, self.document),
+            (b'{"model": "first", "model": "last"}', {"model": "last"}),
+            (b"[]", []),
+            (b"{bad", None),
+            (raw + b" " * (limit - len(raw)), self.document),
+            (raw + b" " * (limit + 1 - len(raw)), None),
+        ):
+            with self.subTest(size=len(data), expected=expected):
+                target.write_bytes(data)
+                self.assertEqual(doctor._read_settings_file(path), expected)
+                self.assertEqual(migration._user_claude_settings(runtime), expected)
+        target.unlink()
+        self.assertIsNone(doctor._read_settings_file(path))
+        self.assertIsNone(migration._user_claude_settings(runtime))
+        target.mkdir()
+        self.assertIsNone(doctor._read_settings_file(path))
+        self.assertIsNone(migration._user_claude_settings(runtime))
 
     def test_directory_is_not_a_settings_or_policy_file(self) -> None:
         self.path.mkdir()

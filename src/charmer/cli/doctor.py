@@ -1782,11 +1782,10 @@ def _read_settings_file(path: Path) -> Any:
     """Tolerant, bounded (≤ 1 MiB), symlink-following read; None when unreadable."""
 
     try:
-        with open(path, "rb") as handle:
-            raw = handle.read((1 << 20) + 1)
+        raw = hooks.read_settings_bytes(path, 1 << 20)
     except OSError:
         return None
-    if len(raw) > (1 << 20):
+    if raw is None or len(raw) > (1 << 20):
         return None
     try:
         return json.loads(raw)
