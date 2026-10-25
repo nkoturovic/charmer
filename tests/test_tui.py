@@ -936,6 +936,17 @@ class TableTests(unittest.TestCase):
 class KeyBarOverflowTests(unittest.TestCase):
     """2.14.0: overflow keeps the exit AND the help binding visible."""
 
+    def test_three_row_bar_fills_the_second_row_at_80_columns(self):
+        bar = tui.KeyBar(tuple((f"K{i}", f"action-{i}") for i in range(12))
+                         + (("?", "help"), ("Esc", "back")))
+        self.assertEqual(bar._rows_needed(80), 3)
+        win = FakeWindow(height=24, width=80)
+        bar.draw(win, 23, tui.MONO_PALETTE)
+        rows = win.text().splitlines()
+        self.assertEqual(rows[22].strip(), " · ".join(f"K{i} action-{i}" for i in range(5)))
+        self.assertEqual(rows[23].strip(),
+                         "K5 action-5 · K6 action-6 · K7 action-7 · … · ? help · Esc back")
+
     def test_overflow_keeps_help_and_exit(self):
         bar = tui.KeyBar(
             (

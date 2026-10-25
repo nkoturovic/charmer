@@ -20,5 +20,5 @@
   analyst-strong: claude credential records not observed — sign in: G → L
   implementer-light: codex credential records not observed — sign in: G → L
   implementer: codex credential records not observed — sign in: G → L
-  More below — arrows/PgDn scroll; Home/End
-  Up/Down scroll · PgUp/PgDn page · Home/End  · Esc back
+  ↓ 71 more
+  ↑↓ scroll · PgUp/PgDn page · Esc back

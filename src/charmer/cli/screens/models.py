@@ -295,15 +295,25 @@ class _ModelsScreen:
         retired_lines = model.retired.split("\n")
         reserve = self._detail_reserve(model)
         message_row = height - bar_rows - 1
-        visible = max(1, message_row - reserve - len(retired_lines) - (row + 1))
+        capacity = max(1, message_row - reserve - len(retired_lines) - (row + 1))
+        visible = capacity
+        if len(cells) > visible:
+            visible = max(1, visible - 1)  # reserve the last list row for the marker
         if self.index < self.offset:
             self.offset = self.index
         elif self.index >= self.offset + visible:
             self.offset = self.index - visible + 1
         self.offset = max(0, min(self.offset, max(0, len(cells) - visible)))
+        more = sum(key is not None for key in self.keys[self.offset + visible:])
+        if not more:
+            visible = capacity
+            self.offset = min(self.offset, max(0, len(cells) - visible))
         # Content ends at ``width - 1`` (the rule's right edge).
         used = table.draw(win, row, 2, width - 1, palette, max_rows=visible, start=self.offset)
         row += used
+        if more > 0:
+            tui.safe_add(win, row, 2, tui.MORE_ROWS.format(n=more), palette.attr("dim"))
+            row += 1
         for line in retired_lines:
             tui.safe_add(win, row, 2, line, palette.attr("dim"))
             row += 1

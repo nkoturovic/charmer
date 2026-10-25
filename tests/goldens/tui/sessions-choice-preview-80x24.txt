@@ -4,7 +4,7 @@
   > balanced
     claude
   +-------------------------------------------------------------------------+
-  | Save choice 2 session(s)?                                               |
+  | Save the choice for 2 session(s)?                                       |
   | Selected IDs are frozen; each is checked again under its lock.          |
   | 11111111  balanced  2026-09-01T11:58:00Z  project                       |
   | 22222222  balanced  2026-09-01T11:58:00Z  project                       |

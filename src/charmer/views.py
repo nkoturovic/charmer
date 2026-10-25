@@ -530,16 +530,16 @@ def review_sentence(lineup: profile.ResolvedLineup) -> str:
     parts.append(f"lead→{lbl(lead.normal.reviewer)}" if lead.normal.reviewer else "lead→—")
     routing = lineup.routing
     if routing.independence_unknown:
-        tail = "independence unknown for " + ", ".join(lbl(a) for a in routing.independence_unknown_authors)
+        verdict = "independence unknown for " + ", ".join(lbl(a) for a in routing.independence_unknown_authors)
         if routing.same_family_authors:
-            tail += "; ≈ same-family for " + ", ".join(lbl(a) for a in routing.same_family_authors)
+            verdict += "; ≈ same-family for " + ", ".join(lbl(a) for a in routing.same_family_authors)
     elif not routing.same_family_authors:
-        tail = "all cross-family ✓"
+        verdict = "✓ cross-family"
     elif routing.single_family:
-        tail = "same-family (reduced independence) ≈"
+        verdict = "≈ same-family (reduced independence)"
     else:
-        tail = "≈ same-family for " + ", ".join(lbl(a) for a in routing.same_family_authors)
-    return " · ".join(parts) + "   " + tail
+        verdict = "≈ same-family for " + ", ".join(lbl(a) for a in routing.same_family_authors)
+    return " · ".join([verdict, *parts])
 
 
 def effective_context(
@@ -689,7 +689,7 @@ EDITOR_SEED_NAG = "a newer shipped version exists — P → U shows the changes 
 # work yet); L launches all the same, as line mode's "no" to setup does.
 CARD_KEYS_NOT_CONNECTED = (
     ("Enter", "get started"), ("L", "launch anyway"), ("P", "profiles"), ("D", "direct"), ("V", "details"),
-    ("S", "sessions"), ("G", "providers"), ("M", "models"), ("O", "settings"), ("H", "doctor"), ("?", "help"),
+    ("S", "sessions"), ("G", "providers"), ("M", "models"), ("O", "settings"), ("H", "checks"), ("?", "help"),
     ("Esc", ""),
 )
 # The release row's key: a check, never a claim that an update exists (the
@@ -930,9 +930,10 @@ def card_model(
                 )
         if workflow_default is not None:
             rows.append(CardRow("workflow", "workflow", workflow_text(*workflow_default), "dim", 6))
-        sentence = review_sentence(lineup)
-        rows.append(CardRow("review", "review", sentence, "warn" if "≈" in sentence else "normal", 3))
-        rows.append(CardRow("spread", "spread", lineup.spread_text(), "dim", 6))
+        if not lineup.is_direct:
+            sentence = review_sentence(lineup)
+            rows.append(CardRow("review", "review", sentence, "warn" if "≈" in sentence else "normal", 3))
+            rows.append(CardRow("spread", "spread", lineup.spread_text(), "dim", 6))
         for note in spend:
             rows.append(CardRow("spend", "spend", note, "warn", 5, label_role="warn"))
     if not_connected and not resuming:
@@ -1880,7 +1881,7 @@ def session_rows(
     total = len(summaries)
     where = "all directories" if cwd is None else f"{PurePath(cwd).name or cwd} (cwd)"
     title = f"sessions — {where} · {total} total"
-    if marked is not None:
+    if marked:
         title += f" · {len(marked)} marked"
     banner = (
         f"! {needs_total} session(s) need a profile choice (lead model removed)"

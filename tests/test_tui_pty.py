@@ -1882,7 +1882,7 @@ class ProfileEditorPTYTests(unittest.TestCase):
         child.read_until(b"JSON not applied")
         child.send(b"\x1b")
         child.read_until(b"Discard")
-        child.send(b"\n")
+        child.send(RIGHT_KEY + b"\n")
         self.assertCancelled(child)
 
 

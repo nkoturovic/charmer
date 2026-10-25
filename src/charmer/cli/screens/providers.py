@@ -1306,7 +1306,7 @@ class _ProvidersScreen:
                 self._load_facts()
             elif letter == "E":
                 self._edit(win)
-            elif letter == "Q":
+            elif letter in ("V", "Q"):  # Q stays a silent compatibility key until 3.0.0.
                 self._details(win)
             elif letter == "K":
                 self._key(win)

@@ -1,5 +1,5 @@
 
-  sessions — project (cwd) · 1 total · 0 marked
+  sessions — project (cwd) · 1 total
   ─────────────────────────────────────────────────────────────────────────────
     *  state      profile   lead      agents  follow  last seen  title
   ›    ◐ unknown  balanced  Opus 5.5  8       follow  2 min      api design
@@ -20,5 +20,5 @@
 
   lineup gen 1 · 8 agents · follow
 
-  Enter resume · Space mark · * all · / filter · X forget · C all dirs
-  … · ? help · Esc back
+  Enter resume · T lineup · V details · F follow/pin · R rename · X forget
+  M mark ended · P repair · Space mark · * all · … · ? help · Esc back

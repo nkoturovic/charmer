@@ -37,4 +37,4 @@
 
   Enter: repair every stopped session (asks first)
 
-  Enter act · V details · G gateway · ? help · Esc back
+  Enter act · V details · W gateway · ? help · Esc back

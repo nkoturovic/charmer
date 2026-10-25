@@ -57,21 +57,21 @@ shows each move, for example "agent class 200K → 1M".
 | Key | Action |
 | --- | --- |
 | Enter | resume (a live one opens the takeover question; ⚠ opens adopt or discard; ! opens the chooser) |
-| V | details: identity, directory, runtime id, lineup, the pending change and why it waits, routing and the last day's observed requests |
 | T | change its lineup ([lineup.md](lineup.md)) |
+| V | details: identity, directory, runtime id, lineup, the pending change and why it waits, routing and the last day's observed requests |
 | F | follow its profile, or pin its lineup |
 | R | rename (shown here only) |
-| Space | mark or unmark a row; the header shows the marked count |
-| * | mark every visible row, or clear the marks |
-| / | cycle all, this directory, exited without an end, ended, needs a choice, older than 30 days |
-| B | combine directory, ended, needs-choice and any age with AND; apply or cancel without writing state |
 | X | forget the marked rows (or the selected row) with one preview; the transcript stays |
-| Q | save a profile or direct lead for the marked sessions (or this row), without launching |
 | E | stop a session running in the background |
 | M | mark the marked sessions ended, or the selected row when nothing is marked |
 | P | repair its generated files |
-| L | link a native session to a profile or a direct model |
+| Space | mark or unmark a row; the header shows the marked count only when nonzero |
+| * | mark every visible row, or clear the marks |
+| / | cycle all, this directory, exited without an end, ended, needs a choice, older than 30 days |
+| Q | save a profile or direct lead for the marked sessions (or this row), without launching |
 | C | this directory, or all directories |
+| L | link a native session to a profile or a direct model |
+| B | combine directory, ended, needs-choice and any age with AND; apply or cancel without writing state |
 
 Marks: ● running · ◐ unknown (no end recorded, no process seen) · ○ ended
 · ↻ relaunch change recorded · ⚠ fork waiting · ! needs a choice.

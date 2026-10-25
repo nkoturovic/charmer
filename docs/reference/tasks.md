@@ -104,12 +104,12 @@ In full: [guides/gateway.md](../guides/gateway.md).
 
 | Task | TUI | CLI | In-session | Notes |
 | --- | --- | --- | --- | --- |
-| the gateway's backend, endpoint, instance and hold | card → G → W: the gateway is not reachable; card → H → G | `charmer gateway status` | not a `/cm` request | asks nothing |
+| the gateway's backend, endpoint, instance and hold | card → G → W: the gateway is not reachable; card → H → W | `charmer gateway status` | not a `/cm` request | asks nothing |
 | start the gateway and wait until it is ready | card → D → W → Start now: the gateway is stopped; card → G → W → Start now: the gateway is stopped | `charmer gateway start` | not a `/cm` request | asks nothing |
 | exit 0 only when the gateway runs and is ready (for scripts) | not in the launcher: the readiness contract of scripts and the token helper; every launch ensures it | `charmer gateway ensure`; `charmer gateway ensure --quiet` | not a `/cm` request | for scripts; asks nothing |
-| stop, then start your gateway | card → H → G → r: the gateway is proven yours | `charmer gateway restart` | not a `/cm` request | asks nothing |
+| stop, then start your gateway | card → H → W → Restart now: the gateway is proven yours | `charmer gateway restart` | not a `/cm` request | asks nothing |
 | stop your gateway | not in the launcher: a launch never needs it and it is refused while the persistence hold is active; run charmer gateway stop in a terminal | `charmer gateway stop` | not a `/cm` request | asks nothing |
-| the newest gateway log lines | card → H → G → l; card → G → W → Show log: the gateway is not reachable | `charmer gateway logs` | not a `/cm` request | asks nothing |
+| the newest gateway log lines | card → H → W → Show log; card → G → W → Show log: the gateway is not reachable | `charmer gateway logs` | not a `/cm` request | asks nothing |
 | the log of one earlier gateway instance | not in the launcher: historical inspection of an earlier instance by its id; the TUI shows the current instance's log | `charmer gateway logs --instance <nonce>` | not a `/cm` request | maintenance; asks nothing |
 | clear the persistence hold after verifying the credentials | not in the launcher: it needs a typed confirmation in a terminal outside Claude Code: charmer gateway clear-hold | `charmer gateway clear-hold` | not a `/cm` request | asks first: typed confirmation |
 
@@ -120,7 +120,7 @@ In full: [guides/gateway.md](../guides/gateway.md).
 | Task | TUI | CLI | In-session | Notes |
 | --- | --- | --- | --- | --- |
 | whether the supervised service is installed | card → G → W: the gateway is not reachable | `charmer gateway service status` | not a `/cm` request | asks nothing |
-| install or refresh the supervised service | card → H → G → i: a user service manager and no service (or a stale one) | `charmer gateway service install` | not a `/cm` request | asks nothing |
+| install or refresh the supervised service | card → H → W → Install service: a user service manager and no service (or a stale one) | `charmer gateway service install` | not a `/cm` request | asks nothing |
 | hand the gateway back to the on-demand start | not in the launcher: it reverses a deliberate choice and changes the service manager; run charmer gateway service uninstall in a terminal | `charmer gateway service uninstall` | not a `/cm` request | asks nothing |
 
 ## Providers
@@ -130,7 +130,7 @@ In full: [providers/api-keys.md](../providers/api-keys.md).
 | Task | TUI | CLI | In-session | Notes |
 | --- | --- | --- | --- | --- |
 | list every provider: source, on or off, connection, lines | card → G | `charmer providers list`; `charmer providers list --json` | not a `/cm` request | asks nothing |
-| one provider's details | card → G → Q: a provider row | `charmer providers show <provider>` | not a `/cm` request | asks nothing |
+| one provider's details | card → G → V: a provider row | `charmer providers show <provider>` | not a `/cm` request | asks nothing |
 | the resolved provider and lines as JSON | not in the launcher: a machine-readable report for scripts and issue reports; the screens show the same facts | `charmer providers show <provider> --resolved` | not a `/cm` request | for scripts; asks nothing |
 | add a provider: your endpoint (by hand or from a preset) | card → G → N; card → W → A; card → W → A → a preset: a reviewed preset with an API key; card → G → N → a preset: a reviewed preset with an API key; card → G → N → a preset → another address: a reviewed preset whose vendor documents another address | `charmer providers add <provider> --base-url <url> --secret-ref <secret-ref>`; `charmer providers add --preset <preset> [--as <provider>]` | not a `/cm` request | asks first: consent naming every request |
 | write an inert declaration without approving its route | not in the launcher: an unapproved declaration is a review step for scripts; the TUI declares and approves in one flow | `charmer providers add [<provider>] --declare-only` | not a `/cm` request | for scripts; asks nothing |
@@ -265,7 +265,7 @@ In full: [troubleshooting.md](../troubleshooting.md).
 | check this installation and its sessions | card → H; charmer -r → H: the resume card; card → H → V | `charmer doctor`; `charmer doctor --verbose` | not a `/cm` request | asks nothing |
 | the first-run checks in order, one fix each | card → H: nothing is connected yet | `charmer doctor --first-run` | not a `/cm` request | asks nothing |
 | the structured report with its environment block | not in the launcher: a machine-readable report for scripts and issue reports; the screens show the same facts | `charmer doctor --json` | not a `/cm` request | for scripts; asks nothing |
-| account quota and credential health (release bundles and the Nix package) | card → G (the quota column and Q details): an account provider | `charmer quota`; `charmer quota --json` | `/cm quota` | asks nothing |
+| account quota and credential health (release bundles and the Nix package) | card → G (the quota column and V details): an account provider | `charmer quota`; `charmer quota --json` | `/cm quota` | asks nothing |
 | a session's recorded bindings and observed routing | card → S → V: a session row | `charmer explain [<id>]` | not a `/cm` request | asks nothing |
 | observed requests per model and session | card → S → V (the last 24 hours): a session row | `charmer usage` | not a `/cm` request | asks nothing |
 | what the gateway would serve after pending changes | not in the launcher: served-change inspection for review; the provider and model flows show each change's effect before it is written | `charmer plan` | not a `/cm` request | asks nothing |
@@ -295,7 +295,7 @@ In full: [guides/profiles.md](../guides/profiles.md).
 
 | Task | TUI | CLI | In-session | Notes |
 | --- | --- | --- | --- | --- |
-| the named bindings and the profiles that use them | card → P → B; profile editor → N | no command: named bindings are edited in their validated TUI editor; there is no binding command | not a `/cm` request | asks nothing |
+| the named bindings and the profiles that use them | card → P → B; profile editor → B | no command: named bindings are edited in their validated TUI editor; there is no binding command | not a `/cm` request | asks nothing |
 | add a named binding | card → P → B → A | no command: named bindings are edited in their validated TUI editor; there is no binding command | not a `/cm` request | asks nothing |
 | change a named binding (then apply it to the profiles using it) | card → P → B → Enter: a named binding | no command: named bindings are edited in their validated TUI editor; there is no binding command | not a `/cm` request | asks nothing |
 | delete a named binding nothing uses | card → P → B → X: an unused binding | no command: named bindings are edited in their validated TUI editor; there is no binding command | not a `/cm` request | asks first: dialog with Cancel focused first |

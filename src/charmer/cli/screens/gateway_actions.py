@@ -352,7 +352,8 @@ def dialog(runtime: Any, win: Any, palette: tui.Palette, *, background: Callable
     lines.extend(view.hold_summary())
     if view.rollback is not None:
         lines.append(view.rollback)
-    lines.append("Stop it from a terminal: charmer gateway stop.")
+    if view.seen is not None and view.seen.state in (gateway_lifecycle.OURS, gateway_lifecycle.STARTING):
+        lines.append("Stop it from a terminal: charmer gateway stop.")
     # Wrapped to the box, so no remedy is cut off (the inhibition's above all).
     body = [piece for line in lines for piece in screens_common.modal_lines(line, win)]
     choice = tui.Modal(TITLE, body, buttons=tuple(buttons)).run(win, palette, background=background)
@@ -366,57 +367,3 @@ def dialog(runtime: Any, win: Any, palette: tui.Palette, *, background: Callable
     if choice in ("start", "restart", "service"):
         return _run_suspended(win, view, choice, tty_in or sys.stdin, tty_out or sys.stdout)
     return ""
-
-
-def health_prompt(runtime: Any, tty_in: TextIO, tty_out: TextIO) -> str | None:
-    """H's gateway line (inside the suspended region): the state, the
-    offered keys and the return prompt. Returns ``"log"`` when the log tail
-    should open once curses is back, else None."""
-
-    view = observe(runtime)
-    tty_out.write("\n" + termtext.visible_text(view.headline()) + "\n")
-    if view.inhibition is not None:
-        tty_out.write(termtext.visible_text(view.inhibition) + "\n")
-    for line in view.hold_lines():
-        tty_out.write(termtext.visible_text(line) + "\n")
-    if view.rollback is not None:
-        tty_out.write(termtext.visible_text(view.rollback) + "\n")
-    offers = []
-    if view.can_start:
-        offers.append("s  start it now")
-    if view.can_restart:
-        offers.append("r  restart it now")
-    if view.can_install_service:
-        offers.append("i  install the gateway service")
-    offers.append("l  show its log")
-    tty_out.write("  " + " · ".join(offers) + "\n")
-    tty_out.write("Press Enter to return to charmer.")
-    tty_out.flush()
-    try:
-        answer = tty_in.readline().strip().lower()
-    except KeyboardInterrupt:
-        return None
-    if answer == "l":
-        return "log"
-    action = {"s": "start", "r": "restart", "i": "service"}.get(answer)
-    if action is None or (action == "start" and not view.can_start) or (
-            action == "restart" and not view.can_restart) or (
-            action == "service" and not view.can_install_service):
-        return None
-    if action == "restart":
-        tty_out.write("\n")
-        if not confirm_restart(view, tty_in, tty_out):
-            tty_out.write("Not restarted; nothing was done.\n")
-            tty_out.flush()
-            return None
-    tty_out.write(f"\n{_ACTION_TEXT[action]} (at most {gateway_lifecycle.START_READINESS_TIMEOUT:g} s)…\n")
-    tty_out.flush()
-    for line in act(view, action).lines():
-        tty_out.write(termtext.visible_text(line) + "\n")
-    tty_out.write("\nPress Enter to return to charmer.")
-    tty_out.flush()
-    try:
-        tty_in.readline()
-    except KeyboardInterrupt:
-        pass
-    return None

@@ -445,10 +445,14 @@ class MutationPathTests(_Inhibited):
         self.assertTrue(view.seen is not None and view.seen.state == gl.STOPPED)
         self.assertIn("inhibited by cutover", view.inhibition)
         self.assertFalse(view.can_start or view.can_restart or view.can_install_service)
-        out = io.StringIO()
-        gateway_actions.health_prompt(runtime, io.StringIO("s\n"), out)
-        self.assertIn("inhibited by cutover", out.getvalue())
-        self.assertNotIn("s  start it now", out.getvalue())
+        from charmer import tui
+        from test_tui import FakeWindow
+
+        win = FakeWindow(["s", "\x1b"])
+        gateway_actions.dialog(runtime, win, tui.MONO_PALETTE)
+        shown = "\n".join(win.frames)
+        self.assertIn("inhibited by cutover", shown)
+        self.assertNotIn("[ Start now ]", shown)
         self.assertEqual(self.world.spawned, [])
 
 

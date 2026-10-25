@@ -639,24 +639,27 @@ def card_summary(pool: PoolStatus, *, pools: Iterable[str], login_commands,
         return text, "warn"
     if finding.level == "ok":
         return f"worst {c.handle} {w.label} {math.floor(w.used_percent)}% · observed {observation_age(c, now)}", "dim"
-    remedy = "S Sessions → T" if resume else "P provider fallback"
+    remedy = "S Sessions → T" if resume else "P → F fallback profiles"
+    full_remedy = remedy
     value = (f"{w.label} {math.floor(w.used_percent)}%!" if w is not None else "exhausted (no window)")
     if finding.level == "exhausted" and w is not None:
         value = "exhausted " + value
     reset = (f"resets {format_reset(w.resets_at, now, tz)}" if w and w.resets_at else "reset unknown")
     base = f"{c.handle} {value} · {age}"
     text = f"{base} · {reset} — {remedy}"
-    if len(text) > width and w is not None and w.resets_at is None:
-        # Unknown reset is a fact, not disposable detail. Shorten the fresh
-        # remedy first, then the redundant handle rather than invent a time.
-        remedy = "S Sessions → T" if resume else "P fallback"
+    if len(text) > width and not resume:
+        # Prefer the compact key path over losing a known reset time.
+        remedy = "P → F"
         text = f"{base} · {reset} — {remedy}"
-        if len(text) > width:
-            text = f"{value} · {age} · {reset} — {remedy}"
+    if len(text) > width and w is not None and w.resets_at is None:
+        # Unknown reset is a fact, not disposable detail. Drop the redundant
+        # handle rather than invent a time.
+        text = f"{value} · {age} · {reset} — {remedy}"
     elif len(text) > width:
         # A known reset remains in Providers/charmer quota; never lose
         # the observation age or suggest the unavailable P action on resume.
-        text = f"{base} — {remedy}"
+        full = f"{base} — {full_remedy}"
+        text = full if len(full) <= width else f"{base} — {remedy}"
     return text, "warn"
 
 

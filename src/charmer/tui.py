@@ -970,9 +970,26 @@ class KeyBar:
                 safe_add(win, origin, x, f" {label}", palette.attr("normal"))
                 x += 1 + len(label)
                 index += 1
-            tail = "… · " if index < len(body) else ""
-            safe_add(win, origin + 1, col, tail, palette.attr("dim"))
-            x = col + len(tail)
+            # Use the bottom row too, reserving the ellipsis and protected
+            # keys before admitting another whole binding.
+            x = col
+            reserved = len("… · " + KeyBar(protected).text())
+            while index < len(body):
+                key, label = body[index]
+                entry = len(key) + 1 + len(label) + (3 if x > col else 0)
+                if x + entry + 3 + reserved > width - 2:
+                    break
+                if x > col:
+                    safe_add(win, origin + 1, x, " · ", palette.attr("dim"))
+                    x += 3
+                safe_add(win, origin + 1, x, key, palette.attr("accent"))
+                x += len(key)
+                safe_add(win, origin + 1, x, f" {label}", palette.attr("normal"))
+                x += 1 + len(label)
+                index += 1
+            tail = (" · " if x > col else "") + ("… · " if index < len(body) else "")
+            safe_add(win, origin + 1, x, tail, palette.attr("dim"))
+            x += len(tail)
             for offset, (key, label) in enumerate(protected):
                 if offset:
                     safe_add(win, origin + 1, x, " · ", palette.attr("dim"))
@@ -1975,7 +1992,7 @@ PROFILE_EDITOR_HELP = (
     "↑/↓ move. Enter changes the row: General (name, description, primary provider,\n"
     "lead providers, compaction override), Lead and agents (model picker; ← → picks\n"
     "the effort), Native (Explore, Plan, general-purpose, workflows), Review (routing).\n"
-    "U unbinds an agent. N edits named bindings. R shows the review routing table.\n"
+    "U unbinds an agent. B edits named bindings. R shows the review routing table.\n"
     "^S saves (^O too); only a valid profile saves. ^G edits the raw JSON in $EDITOR.\n"
     "Checks: ✓ valid · ! warning (never blocks) · ✗ error (Enter jumps to its field).\n"
     "◆ marks a per-profile override of a Settings value. Esc goes back."
@@ -1983,7 +2000,7 @@ PROFILE_EDITOR_HELP = (
 PROFILE_EDITOR_KEYBAR = (
     ("Enter", "change"),
     ("U", "unbind"),
-    ("N", "named bindings"),
+    ("B", "named bindings"),
     ("R", "routing"),
     ("^S", "save"),
     ("?", "help"),
@@ -3093,7 +3110,7 @@ class NamedBindingsScreen:
             self._say(NAMED_BINDINGS_READ_ONLY)
             return
         name = self.names[self.index]
-        confirmed = Modal(f"Delete binding {name}?", [], buttons=(("Delete", True), ("Cancel", False))).run(
+        confirmed = Modal(f"Delete binding {name}?", [], buttons=(("Cancel", False), ("Delete", True)), default=False).run(
             win, self.palette, background=self._draw
         )
         if not confirmed:
@@ -3486,7 +3503,7 @@ class ProfileEditorScreen:
             Modal(
                 PROFILE_FORM_DISCARD_TITLE,
                 [PROFILE_FORM_DISCARD_BODY],
-                buttons=(("Discard", True), ("Keep editing", False)),
+                buttons=(("Cancel", False), ("Discard", True)), default=False,
             ).run(win, self.palette, background=self._draw)
         )
 
@@ -3525,7 +3542,7 @@ class ProfileEditorScreen:
                 hide_cursor()
             elif key.kind == "char" and key.ch in ("r", "R"):
                 self._routing(win)
-            elif key.kind == "char" and key.ch in ("n", "N"):
+            elif key.kind == "char" and key.ch in ("b", "B", "n", "N"):  # N stays silent until 3.0.0.
                 self._named(win)
             elif key.kind == "char" and key.ch in ("u", "U"):
                 if self.focus == "lead":
@@ -3584,6 +3601,9 @@ def run_profile_editor(
         return state.saved
 
 
+MORE_ROWS = "↓ {n} more"
+
+
 class TextView:
     """Read-only, wrapped details. No truncation, I/O, or state authority."""
 
@@ -3598,6 +3618,12 @@ class TextView:
                 for part in (textwrap.wrap(visible_text(str(line)), max(1, width - 4),
                                           replace_whitespace=False) or [""])]
 
+    def _keybar(self):
+        bar = (("Enter", "declare"), ("Esc", "cancel")) if self.confirm == "declare" else (
+            (("y", "proceed"), ("N", "cancel"), ("Esc", "cancel")) if self.confirm else (
+            ("↑↓", "scroll"), ("PgUp/PgDn", "page"), ("Esc", "back")))
+        return KeyBar(bar)
+
     def _draw(self, win):
         height, width = win.getmaxyx()
         win.erase()
@@ -3607,15 +3633,19 @@ class TextView:
         safe_add(win, 1, 2, self.title, self.palette.attr("accent"))
         safe_add(win, 2, 2, views.rule(width), self.palette.attr("dim"))
         lines = self._wrapped(width)
-        self.offset = min(self.offset, max(0, len(lines) - (height - 5)))
-        for y, line in enumerate(lines[self.offset:self.offset + height - 5], 3):
+        keybar = self._keybar()
+        capacity = height - 3 - keybar.rows(width)
+        visible = capacity - (len(lines) > capacity)
+        self.offset = min(self.offset, max(0, len(lines) - visible))
+        more = max(0, len(lines) - self.offset - visible)
+        if not more:
+            visible = capacity
+            self.offset = min(self.offset, max(0, len(lines) - visible))
+        for y, line in enumerate(lines[self.offset:self.offset + visible], 3):
             safe_add(win, y, 2, line, self.palette.attr("normal"))
-        bar = (("Enter", "declare"), ("Esc", "cancel")) if self.confirm == "declare" else (
-            (("y", "proceed"), ("N", "cancel"), ("Esc", "cancel")) if self.confirm else (
-            ("Up/Down", "scroll"), ("PgUp/PgDn", "page"), ("Home/End", ""), ("Esc", "back")))
-        if self.offset + height - 5 < len(lines):
-            safe_add(win, height - 2, 2, "More below — arrows/PgDn scroll; Home/End", self.palette.attr("dim"))
-        KeyBar(bar).draw(win, height - 1, self.palette)
+        if more > 0:
+            safe_add(win, 3 + visible, 2, MORE_ROWS.format(n=more), self.palette.attr("dim"))
+        keybar.draw(win, height - 1, self.palette)
         win.refresh()
 
     def run(self, win):
@@ -3638,9 +3668,9 @@ class TextView:
             elif key.kind == "down":
                 self.offset += 1
             elif key.kind == "pageup":
-                self.offset = max(0, self.offset - max(1, height - 5))
+                self.offset = max(0, self.offset - max(1, height - 4 - self._keybar().rows(width)))
             elif key.kind == "pagedown":
-                self.offset += max(1, height - 5)
+                self.offset += max(1, height - 4 - self._keybar().rows(width))
             elif key.kind == "home":
                 self.offset = 0
             elif key.kind == "end":

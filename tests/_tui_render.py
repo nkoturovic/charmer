@@ -373,7 +373,7 @@ def sessions_choices_golden(root: Path, kind: str) -> str:
         keys += [tui.curses.KEY_RIGHT, "\n", "\x1b", "\x1b"] if kind == "saved" else ["\x1b", "\x1b"]
         win = FakeWindow(keys, width=width, height=height)
         screen.run(win)
-        return render(lambda: screen) if kind == "saved" else last_frame(win, "Save choice 2 session(s)?")
+        return render(lambda: screen) if kind == "saved" else last_frame(win, "Save the choice for 2 session(s)?")
 
 
 def _lineup_golden(root: Path, target: Callable[[cli.Runtime], str]) -> str:

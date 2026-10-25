@@ -717,7 +717,7 @@ class SettingsScreenTests(_ScreenCase):
         win = self.run_screen(screen, ["j"] * (len(selectable) - 1) + [ESC])
         self.assertIn(cli.SETTINGS_TITLE, win.frames[0])
         for section in views.SETTINGS_SECTIONS:
-            self.assertIn("  " + section, win.frames[0])
+            self.assertTrue(any("  " + section in frame for frame in win.frames), section)
         for index, row in enumerate(selectable):
             with self.subTest(row=row.key):
                 self.assertIn(row.label, win.frames[index])

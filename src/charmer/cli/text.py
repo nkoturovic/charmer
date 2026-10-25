@@ -95,7 +95,7 @@ _HELP_MODEL = (
 )
 _HELP_DOCTOR = (
     "H — doctor: its findings as a list (BLOCKED, Attention by area, then the advisories);\n"
-    "Enter acts on a row or shows its command, V the full report, G the gateway's actions.\n"
+    "Enter acts on a row or shows its command, V the full report, W the gateway's actions.\n"
     "U — check for and install a newer charmer: an installed release checks, asks and\n"
     "applies; a Nix install updates through its flake. Claude Code itself: W → Claude Code.\n"
 )
@@ -179,16 +179,16 @@ RESUME_QUICK_HELP = (
 # (``_SessionsScreen._keybar``). `?` sits before Esc.
 SESSIONS_KEYBAR = (
     ("Enter", "resume"),
+    ("T", "lineup"),
+    ("V", "details"),
+    ("F", "follow/pin"),
+    ("R", "rename"),
+    ("X", "forget"),
     ("Space", "mark"),
     ("*", "all"),
     ("/", "filter"),
-    ("X", "forget"),
-    ("C", "all dirs"),
     ("Q", "save"),
-    ("V", "details"),
-    ("T", "lineup"),
-    ("F", "follow/pin"),
-    ("R", "rename"),
+    ("C", "all dirs"),
     ("L", "link"),
     ("B", "filters"),
     ("?", "help"),
@@ -196,7 +196,7 @@ SESSIONS_KEYBAR = (
 )
 SESSIONS_KEYBAR_ALL = tuple((key, "this dir" if key == "C" else label)
                             for key, label in SESSIONS_KEYBAR)
-# The row actions that join the bar when they apply, before L.
+# The row actions that join the bar when they apply, right after X.
 SESSIONS_STOP_BINDING = ("E", "stop")
 SESSIONS_MARK_BINDING = ("M", "mark ended")
 SESSIONS_REPAIR_BINDING = ("P", "repair")
@@ -528,16 +528,16 @@ PROVIDERS_LEGEND = ("credential: API key or sign-in · served: models the local 
 PROVIDERS_APPLY_BANNER = "The gateway is not serving your latest provider changes — P applies them."
 # The bar while the list is empty.
 PROVIDERS_KEYBAR = (("N", "new"), ("R", "refresh"), ("?", "help"), ("Esc", "back"))
-PROVIDERS_KEYBAR_KEY_MISSING = (("Enter", "set key"), ("A", "add models"), ("Space", "on/off"), ("Q", "details"),
+PROVIDERS_KEYBAR_KEY_MISSING = (("Enter", "set key"), ("A", "add models"), ("Space", "on/off"), ("V", "details"),
                                 ("N", "new"), ("R", "refresh"), ("?", "help"), ("Esc", "back"))
 PROVIDERS_KEYBAR_KEY_SET = (("Enter", "details"), ("K", "replace key"), ("X", "remove key"), ("T", "test"),
                             ("A", "add models"), ("Space", "on/off"), ("N", "new"), ("?", "help"), ("Esc", "back"))
 PROVIDERS_KEYBAR_ACCOUNT = (("Enter", "{primary}"), ("L", "sign in/out"), ("T", "test"), ("Space", "on/off"),
-                            ("Q", "details"), ("N", "new"), ("?", "help"), ("Esc", "back"))
+                            ("V", "details"), ("N", "new"), ("?", "help"), ("Esc", "back"))
 # An account provider whose active connection is its API key: key actions
 # first; L still lists and manages the saved accounts.
 PROVIDERS_KEYBAR_ACCOUNT_KEY = (("Enter", "{primary}"), ("K", "{key_label}"), ("X", "remove key"),
-                                ("L", "accounts"), ("T", "test"), ("Space", "on/off"), ("Q", "details"),
+                                ("L", "accounts"), ("T", "test"), ("Space", "on/off"), ("V", "details"),
                                 ("N", "new"), ("?", "help"), ("Esc", "back"))
 PROVIDERS_KEYBAR_OWN = (("Enter", "{primary}"), ("E", "edit"), ("K", "{key_label}"), ("X", "remove"),
                         ("A", "add models"), ("T", "test"), ("Space", "on/off"), ("N", "new"), ("?", "help"),
@@ -576,7 +576,7 @@ PROVIDERS_HELP = (
     "route.\n"
     "P applies your changes when the gateway is not serving them yet.\n"
     "Space turns a provider on or off for new sessions; running sessions keep theirs.\n"
-    "Q shows details: models, served state, signed-in accounts, quota. R refreshes.\n"
+    "V shows details: models, served state, signed-in accounts, quota. R refreshes.\n"
     "W opens the local gateway: start or restart it now, or read its log (stopping it is a terminal\n"
     "command: charmer gateway stop).\n"
     "Changing credentials needs a terminal outside Claude Code."
@@ -1199,7 +1199,7 @@ SETTINGS_DEFAULT_CONNECTED = "connected"
 # ---------------------------------------------------------------- H: the findings list
 
 FINDINGS_TITLE = "charmer doctor"
-FINDINGS_KEYBAR = (("Enter", "act"), ("V", "details"), ("G", "gateway"), ("?", "help"), ("Esc", "back"))
+FINDINGS_KEYBAR = (("Enter", "act"), ("V", "details"), ("W", "gateway"), ("?", "help"), ("Esc", "back"))
 FINDINGS_MIN_COLS = 60
 # The top margin, title and rule; under the list its rule, two info lines,
 # the action line and the message row.
@@ -1261,5 +1261,5 @@ FINDINGS_HELP = (
     "a newer shipped profile (reseed) and a model's optional diagnostics (M → Q; they\n"
     + OPTIONAL_DIAGNOSTICS + "). Every action asks first and reuses the command's own checks;\n"
     "any other row shows its exact command. Nothing here runs on its own.\n"
-    "G — the gateway's actions (start, restart, log). Esc — back to the card."
+    "W — the gateway's actions (start, restart, service install, log). Esc — back to the card."
 )

@@ -13,7 +13,7 @@
   implementer-strong   GPT-5.6 Sol   xhigh    openai      (worktree)
   reviewer             GPT-5.6 Sol   xhigh    openai      read-only
   reviewer-strong      Opus 5.5      xhigh    anthropic   read-only
-  review    writers(openai)→reviewer-strong · lead→reviewer   all cross-family…
+  review    ✓ cross-family · writers(openai)→reviewer-strong · lead→reviewer
   health    gateway ok · Claude 2.1.281 · catalog 31
   ! explorer and every implementer are on openai (codex quota shared)
   implementers unavailable: not a Git repository here (git init enables them)

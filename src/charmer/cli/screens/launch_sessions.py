@@ -973,10 +973,10 @@ _ROW_ACTIONS = (cli_text.SESSIONS_STOP_BINDING, cli_text.SESSIONS_MARK_BINDING, 
 
 
 def _with_row_actions(base: Sequence[tuple[str, str]], actions: Sequence[tuple[str, str]]) -> tuple[tuple[str, str], ...]:
-    """The sessions bar with the selected row's conditional keys before L."""
+    """The sessions bar with the selected row's conditional keys after X."""
 
     bindings = list(base)
-    at = next((index for index, (key, _label) in enumerate(bindings) if key == "L"), len(bindings) - 2)
+    at = next((index + 1 for index, (key, _label) in enumerate(bindings) if key == "X"), len(bindings) - 2)
     bindings[at:at] = list(actions)
     return tuple(bindings)
 
@@ -1325,7 +1325,7 @@ class _SessionsScreen:
         elif gate.kind != "ok":
             try:
                 resolved = _run_resume_gate_modal(runtime, record, gate, win, self.palette, background=self._draw)
-            except (cli_errors.CLIError, sessions.SessionError) as exc:
+            except (cli_errors.CLIError, sessions.SessionError, state.StateError, OSError) as exc:
                 self._say(termtext.visible_message(exc), "warn")
                 return None
             if resolved is None:
@@ -1660,8 +1660,9 @@ class _SessionsScreen:
         lines += list(extra)
         lines.append("Live or unknown liveness refuses; transcripts are never touched.")
         buttons = (("Cancel", False), (verb, True)) + ((("Details", "details"),) if details else ())
+        title_verb = "Save the choice for" if verb == "Save choice" else verb
         while True:
-            answer = tui.Modal(f"{verb} {len(items)} session(s)?", lines, buttons=buttons, default=False).run(
+            answer = tui.Modal(f"{title_verb} {len(items)} session(s)?", lines, buttons=buttons, default=False).run(
                 win, self.palette, background=self._draw)
             if answer != "details":
                 return bool(answer)

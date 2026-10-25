@@ -184,7 +184,7 @@ class FixtureSeedRuleTests(unittest.TestCase):
         bundle = catalog.load_catalog(FIXTURE_ROOT)
         lineup = profile.resolve(bundle.seed_profiles["openrouter"], bundle)
         self.assertNotIn("≈", views.review_sentence(lineup))
-        self.assertIn("all cross-family", views.review_sentence(lineup))
+        self.assertTrue(views.review_sentence(lineup).startswith("✓ cross-family · "))
 
 
 @uses_shipped_catalog

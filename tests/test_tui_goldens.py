@@ -96,7 +96,7 @@ class QuotaGoldenTests(unittest.TestCase):
             row = next(line for line in text.splitlines() if line.startswith("  quota "))
             self.assertNotIn("…", row, name)
             self.assertIn("age unknown" if "exhausted" in name else "3d old", row)
-            self.assertIn("S Sessions → T" if "resume" in name else "P provider fallback", row)
+            self.assertIn("S Sessions → T" if "resume" in name else "P → F", row)
             # A quota warning never blocks: the card can launch and asks for a look.
             self.assertIn("Status  Attention", text)
             if "resume" in name:

@@ -37,4 +37,4 @@
 
 
 
-  Enter change · U unbind · N named bindings · R routing · ^S save · ? help · Esc back
+  Enter change · U unbind · B named bindings · R routing · ^S save · ? help · Esc back

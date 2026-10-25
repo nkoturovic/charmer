@@ -304,12 +304,12 @@ class SessionsRowTests(_SessionsCase):
         self.assertEqual(len(screen.records), 2)
         self.assertIn("sessions — all directories · 2 total", win.frames[-1])
         self.assertIn("showing all directories", win.frames[-1])
-        self.assertIn("C this dir", win.frames[-1])
+        self.assertIn(("C", "this dir"), screen._keybar().bindings)
         self.assertEqual((screen.selected, screen.offset), (0, 0))
         screen.selected, screen.offset = 1, 7
         screen.run(FakeWindow(["C", ESC]))
         self.assertEqual((screen.selected, screen.offset), (0, 0))
-        self.assertIn("C all dirs", self.frame(screen))
+        self.assertIn(("C", "all dirs"), screen._keybar().bindings)
         self.assertLessEqual(tui.KeyBar(cli.SESSIONS_KEYBAR).rows(80), 2)
         import charmer.cli.text as text
         self.assertLessEqual(tui.KeyBar(text.SESSIONS_KEYBAR_ALL).rows(80), 2)
@@ -372,8 +372,8 @@ class SessionsRowTests(_SessionsCase):
     def test_keybar_and_help(self) -> None:
         self.assertEqual(
             cli.SESSIONS_KEYBAR,
-            (("Enter", "resume"), ("Space", "mark"), ("*", "all"), ("/", "filter"), ("X", "forget"),
-             ("C", "all dirs"), ("Q", "save"), ("V", "details"), ("T", "lineup"), ("F", "follow/pin"), ("R", "rename"),
+            (("Enter", "resume"), ("T", "lineup"), ("V", "details"), ("F", "follow/pin"), ("R", "rename"),
+             ("X", "forget"), ("Space", "mark"), ("*", "all"), ("/", "filter"), ("Q", "save"), ("C", "all dirs"),
              ("L", "link"), ("B", "filters"), ("?", "help"), ("Esc", "back")),
         )
         self.record()
@@ -386,9 +386,9 @@ class SessionsRowTests(_SessionsCase):
         # The selected row (no end event, not running, a v4 record) adds M and P.
         self.assertEqual(
             self.screen()._keybar().text(),
-            "Enter resume · Space mark · * all · / filter · X forget · C all dirs · Q save · V details · T lineup "
-            "· F follow/pin · R rename · M mark ended · P repair · L link · B filters · ? help · Esc back")
-        self.assertIn("Enter resume · Space mark · * all · / filter", win.frames[0])
+            "Enter resume · T lineup · V details · F follow/pin · R rename · X forget · M mark ended · P repair "
+            "· Space mark · * all · / filter · Q save · C all dirs · L link · B filters · ? help · Esc back")
+        self.assertIn("Enter resume · T lineup · V details · F follow/pin", win.frames[0])
 
     def test_the_root_screen_quits_with_esc(self) -> None:
         self.record()
@@ -628,6 +628,40 @@ class SessionsEntryTests(_SessionsCase):
 
 
 class ResumeGateModalTests(_SessionsCase):
+    def test_relink_failure_warns_and_stays_on_sessions(self) -> None:
+        from charmer import state
+
+        record = self.record()
+        record["identity_state"] = sessions.IDENTITY_REPAIR_NEEDED
+        record["observed_cwd"] = "/wrong/project"
+        self.runtime.session_store.save(record)
+        before = self.runtime.session_store.read_record_bytes(fx.FIXED_ID)
+        for error in (state.StateError("fixture lock replaced"), OSError("fixture pointer write failed")):
+            with self.subTest(error=type(error).__name__), mock.patch.object(
+                    self.runtime.session_store, "relink_runtime", side_effect=error) as relink:
+                screen = self.screen()
+                result, win = self.run_screen(screen, [ENTER, ENTER, ESC])
+                self.assertIsNone(result)
+                relink.assert_called_once()
+                self.assertIn("sessions — ", win.frames[-1])
+                self.assertIn(str(error), win.frames[-1])
+                self.assertEqual(screen.message_role, "warn")
+                self.assertEqual(self.runtime.launches, [])
+                self.assertEqual(self.runtime.session_store.read_record_bytes(fx.FIXED_ID), before)
+
+    def test_save_choice_title_names_the_sessions(self) -> None:
+        screen = self.screen()
+        items = [sessions.BatchItem(identifier=fx.FIXED_ID, record=None, problem="fixture refused")]
+        titles = []
+
+        def cancel(modal, *_args, **_kwargs):
+            titles.append(modal.title)
+            return False
+
+        with mock.patch.object(tui.Modal, "run", cancel):
+            self.assertFalse(screen._batch_confirm(FakeWindow(), items, "Save choice"))
+        self.assertEqual(titles, ["Save the choice for 1 session(s)?"])
+
     def test_resume_without_a_diff_returns_the_perform_intent_directly(self) -> None:
         self.record()
         result, _win = self.run_screen(self.screen(), [ENTER])

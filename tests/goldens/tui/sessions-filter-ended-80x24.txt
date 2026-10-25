@@ -1,5 +1,5 @@
 
-  sessions — all directories · 3 total · 0 marked · ended
+  sessions — all directories · 3 total · ended
   ─────────────────────────────────────────────────────────────────────────────
     *  state    profile   lead      agents  follow  last seen   title
   ›    ○ ended  balanced  Opus 5.5  8       follow  2026-07-03  —
@@ -20,5 +20,5 @@
 
   lineup gen 1 · 8 agents · follow
   filter: ended
-  Enter resume · Space mark · * all · / filter · X forget · C this dir
-  … · ? help · Esc back
+  Enter resume · T lineup · V details · F follow/pin · R rename · X forget
+  P repair · Space mark · * all · / filter · Q save · … · ? help · Esc back

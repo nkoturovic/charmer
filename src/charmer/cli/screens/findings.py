@@ -6,8 +6,8 @@ then the advisories (optional evidence), collapsed behind their header
 until Enter opens it. Each row wraps in full (no command in it is cut
 off); what Enter does on the selected one shows under the list, with how
 many findings a collapsed row stands for. ``V`` is the full report as
-``doctor -v`` prints it, ``G`` the gateway's own actions
-(``gateway_actions.health_prompt``), Esc back.
+``doctor -v`` prints it, ``W`` the gateway's own actions
+(``gateway_actions.dialog``), Esc back.
 
 Enter acts only on the rows a collector tagged with one of
 ``doctor.ACTIONS``, each through the service and guards its command uses:
@@ -311,7 +311,7 @@ class FindingsScreen:
                     return result
             elif ch == "v":
                 self._details(win)
-            elif ch == "g":
+            elif ch in ("w", "g"):  # G stays a silent compatibility key until 3.0.0.
                 self._gateway(win)
             elif ch == "?":
                 self._help(win)
@@ -343,15 +343,13 @@ class FindingsScreen:
         tui.TextView(f"{cli_text.FINDINGS_TITLE} -v", lines, palette=self.palette).run(win)
 
     def _gateway(self, win: Any) -> None:
-        """The gateway's own actions, as before the list existed (start,
-        restart after y/N, service install, the log tail)."""
+        """The shared gateway dialog: start, restart, service install, log."""
 
-        with tui.suspended_curses(win):
-            follow = screens_gateway.health_prompt(self.runtime, self.tty_in, self.tty_out)
-        if follow == "log":
-            title, lines = screens_gateway.log_view(screens_gateway.observe(self.runtime))
-            tui.TextView(title, lines, palette=self.palette).run(win)
+        message = screens_gateway.dialog(self.runtime, win, self.palette, background=self._draw,
+                                         tty_in=self.tty_in, tty_out=self.tty_out)
         self._collect()
+        if message:
+            self._say(message)
 
     def _help(self, win: Any) -> None:
         wrap = max(20, min(100, win.getmaxyx()[1] - 8))
