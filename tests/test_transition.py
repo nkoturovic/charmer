@@ -164,6 +164,23 @@ class DoctorScopeIntegrityTests(_Case):
             f"Scope: {self.mid[:8]} OK (lineup generation {self.record['lineup_generation']})."
         ])
 
+    def test_scope_disappearing_after_disk_read_is_reported_unreadable(self) -> None:
+        read_disk_plan = scope.read_disk_plan
+
+        def rename_after_read(live, expected):
+            disk = read_disk_plan(live, expected)
+            self.assertIsNotNone(disk)
+            live.rename(self.root / "scope-in-flight")
+            return disk
+
+        with mock.patch.object(scope, "read_disk_plan", side_effect=rename_after_read) as reader:
+            problems, attention, info = doctor._check_scope_integrity(self.runtime, self.record)
+        reader.assert_called_once()
+        self.assertEqual(problems, [
+            f"session {self.mid[:8]}: scope unreadable; charmer doctor --repair {self.mid}"
+        ])
+        self.assertEqual((attention, info), ([], []))
+
     def test_unexpected_file_is_reported(self) -> None:
         state.atomic_write(self.live(self.mid) / "stray.txt", b"stray instructions\n")
         self.assert_drift("unexpected file stray.txt")
