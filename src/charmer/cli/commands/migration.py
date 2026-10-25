@@ -223,12 +223,13 @@ def _user_claude_settings(runtime: runtime_mod.Runtime) -> Any:
     Never ``$CLAUDE_CONFIG_DIR``: managed sessions run without it, so their
     client applies HOME's ``cleanupPeriodDays``."""
 
+    from charmer import hooks
+
     base = product_paths.claude_settings_dir(runtime.environ)
     path = base / "settings.json"
     try:
-        with open(path, "rb") as handle:
-            raw = handle.read((1 << 20) + 1)
-        if len(raw) > (1 << 20):
+        raw = hooks.read_settings_bytes(path, 1 << 20)
+        if raw is None or len(raw) > (1 << 20):
             return None
         return json.loads(raw)
     except (OSError, ValueError):

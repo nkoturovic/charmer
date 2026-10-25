@@ -120,6 +120,37 @@ def is_nonblocking_hook_argv(argv: list[str] | tuple[str, ...]) -> bool:
 # ---------------------------------------------------------------- reads
 
 
+def read_settings_bytes(path: Path, limit: int) -> bytes | None:
+    """Read at most ``limit + 1`` bytes of a regular settings file.
+
+    Symlinks are intentional for user and managed-policy settings. A
+    non-regular file returns None; other read failures raise ``OSError``.
+    The extra byte lets callers distinguish oversized from unusable files.
+    ``O_NONBLOCK`` keeps a FIFO from hanging before its type is checked.
+    """
+
+    try:
+        descriptor = os.open(path, os.O_RDONLY | os.O_CLOEXEC | os.O_NONBLOCK)
+    except OSError as exc:
+        if exc.errno == errno.ENXIO:
+            return None  # Unix sockets can fail open before fstat can classify them.
+        raise
+    try:
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            return None
+        chunks: list[bytes] = []
+        remaining = limit + 1
+        while remaining > 0:
+            chunk = os.read(descriptor, remaining)
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        return b"".join(chunks)
+    finally:
+        os.close(descriptor)
+
+
 def _read_bounded_private(path: Path, limit: int) -> bytes:
     """Read an owner-only regular file without following a symlink.
 
@@ -578,18 +609,10 @@ def saved_user_model(environ: Mapping[str, str]) -> tuple[Path, str] | None:
 
     path = user_settings_path(environ)
     try:
-        descriptor = os.open(path, os.O_RDONLY | os.O_CLOEXEC | os.O_NONBLOCK)
+        raw = read_settings_bytes(path, USER_SETTINGS_MAX_BYTES)
     except OSError:
         return None
-    try:
-        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
-            return None
-        raw = os.read(descriptor, USER_SETTINGS_MAX_BYTES + 1)
-    except OSError:
-        return None
-    finally:
-        os.close(descriptor)
-    if len(raw) > USER_SETTINGS_MAX_BYTES:
+    if raw is None or len(raw) > USER_SETTINGS_MAX_BYTES:
         return None
     try:
         document = json.loads(raw.decode("utf-8"))

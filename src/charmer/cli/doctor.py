@@ -1782,11 +1782,10 @@ def _read_settings_file(path: Path) -> Any:
     """Tolerant, bounded (≤ 1 MiB), symlink-following read; None when unreadable."""
 
     try:
-        with open(path, "rb") as handle:
-            raw = handle.read((1 << 20) + 1)
+        raw = hooks.read_settings_bytes(path, 1 << 20)
     except OSError:
         return None
-    if len(raw) > (1 << 20):
+    if raw is None or len(raw) > (1 << 20):
         return None
     try:
         return json.loads(raw)
@@ -2662,10 +2661,16 @@ def _check_scope_integrity(
             attention.append(lazy(*status_line, repairable=True))
 
     disk = scope_mod.read_disk_plan(live, ep.plan) if live.is_dir() else None
+    # Expected content alone does not prove the tree's structure or modes.
+    try:
+        drifted = scope_mod.live_drift(live, ep.plan) if disk is not None else []
+    except OSError:
+        # A concurrent resume can swap the scope between the read and walk.
+        disk = None
+        drifted = []
     if disk is None:
         problems.append(repair(f"session {m8}: scope unreadable; charmer doctor --repair {mid}"))
-    elif scope_mod.plan_hash(disk) != scope_mod.plan_hash(ep.plan):
-        drifted = scope_mod.live_drift(live, ep.plan)
+    elif drifted:
         agent_files = _catalog_agent_drift(runtime, record, live, drifted)
         if scope_mod.skill_policy_drift(live, ep.plan, drifted):
             # The managed skill policy of another
@@ -2705,7 +2710,7 @@ def _check_scope_integrity(
         elif (deny_note := _deny_drift_note(runtime, live, ep.plan, m8, mid, drifted)) is not None:
             attention.append(deny_note)
         else:
-            drift = "; ".join(drifted) or "content differs"
+            drift = "; ".join(drifted)
             problems.append(repair(
                 f"session {m8}: scope differs from the record-authoritative compile ({drift}); "
                 f"run charmer doctor --repair {mid}"
