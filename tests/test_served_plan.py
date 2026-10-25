@@ -344,6 +344,28 @@ class PublishedDocumentTests(unittest.TestCase):
                 document.setdefault(name, []).append("fixture")
                 self.assert_unknown(document)
 
+    def test_wrong_inner_model_list_type_is_unknown(self) -> None:
+        for name in ("claude-api-key", "codex-api-key", "openai-compatibility"):
+            for models in ("fixture", {}, None, 1):
+                with self.subTest(name=name, models=models):
+                    document = copy.deepcopy(self.document)
+                    document.setdefault(name, [{}])[0]["models"] = models
+                    self.assert_unknown(document)
+
+    def test_non_mapping_inner_model_entry_is_unknown(self) -> None:
+        for name in ("claude-api-key", "codex-api-key", "openai-compatibility"):
+            with self.subTest(name=name):
+                document = copy.deepcopy(self.document)
+                document.setdefault(name, [{}])[0]["models"] = ["fixture"]
+                self.assert_unknown(document)
+
+    def test_non_mapping_oauth_pool_entry_is_unknown(self) -> None:
+        for entry in ("fixture", None, 1, []):
+            with self.subTest(entry=entry):
+                document = copy.deepcopy(self.document)
+                document["oauth-model-alias"]["claude"].append(entry)
+                self.assert_unknown(document)
+
     def test_published_type_error_is_unknown(self) -> None:
         state.atomic_write(self.config, render.emit_yaml(self.document).encode())
         with mock.patch.object(served_plan, "routes_from_document", side_effect=TypeError):

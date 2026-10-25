@@ -356,12 +356,18 @@ def _validate_document_structure(document: Mapping[str, Any]) -> None:
     for entries in pools.values():
         if not isinstance(entries, list):
             raise PlanParseError("OAuth alias pool must be a list")
+        if any(not isinstance(entry, Mapping) for entry in entries):
+            raise PlanParseError("OAuth alias pool entries must be mappings")
     for name in (SECTION_KEY, SECTION_CODEX_KEY, SECTION_COMPAT):
         sections = document.get(name, [])
         if not isinstance(sections, list):
             raise PlanParseError(f"{name} must be a list")
         if any(not isinstance(section, Mapping) for section in sections):
             raise PlanParseError(f"{name} entries must be mappings")
+        for section in sections:
+            models = section.get("models", [])
+            if not isinstance(models, list) or any(not isinstance(model, Mapping) for model in models):
+                raise PlanParseError(f"{name} models must be a list of mappings")
     if sum(_is_reload_sentinel(section) for section in document.get(SECTION_COMPAT, [])) != 1:
         raise PlanParseError("expected exactly one reload sentinel")
 
