@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePath, PurePosixPath, PureWindowsPath
 from typing import Any, Iterable, Mapping
 
-from . import paths, strict_json
+from . import hooks, paths, strict_json
 
 
 def managed_root_for(platform: str) -> PurePath:
@@ -42,9 +42,8 @@ _SETTINGS_CAP = 1 << 20
 
 
 def _read_bounded(path: Path) -> bytes | None:
-    with path.open("rb") as stream:
-        raw = stream.read(_SETTINGS_CAP + 1)
-    return None if len(raw) > _SETTINGS_CAP else raw
+    raw = hooks.read_settings_bytes(path, _SETTINGS_CAP)
+    return None if raw is None or len(raw) > _SETTINGS_CAP else raw
 
 
 def read_settings(path: Path) -> dict[str, Any]:
@@ -84,12 +83,13 @@ def _read_policy_file(path: Path) -> tuple[dict[str, Any] | None, str | None]:
     parse it."""
 
     try:
-        with path.open("rb") as stream:
-            raw = stream.read(_SETTINGS_CAP + 1)
+        raw = hooks.read_settings_bytes(path, _SETTINGS_CAP)
     except FileNotFoundError:
         return None, None
     except OSError as exc:
         return None, f"cannot be read ({exc.strerror or type(exc).__name__})"
+    if raw is None:
+        return None, "is not a regular file"
     if len(raw) > _SETTINGS_CAP:
         return None, "is larger than 1 MiB"
     try:
