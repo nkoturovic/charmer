@@ -352,7 +352,7 @@ def dialog(runtime: Any, win: Any, palette: tui.Palette, *, background: Callable
     lines.extend(view.hold_summary())
     if view.rollback is not None:
         lines.append(view.rollback)
-    if view.seen is not None and view.seen.state == gateway_lifecycle.OURS:
+    if view.seen is not None and view.seen.state in (gateway_lifecycle.OURS, gateway_lifecycle.STARTING):
         lines.append("Stop it from a terminal: charmer gateway stop.")
     # Wrapped to the box, so no remedy is cut off (the inhibition's above all).
     body = [piece for line in lines for piece in screens_common.modal_lines(line, win)]

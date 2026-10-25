@@ -37,7 +37,8 @@ class ShortcutLabelsTests(unittest.TestCase):
 
 class PresentationTests(unittest.TestCase):
     def test_stop_advice_only_for_a_running_gateway(self) -> None:
-        for status in (gateway_lifecycle.STOPPED, gateway_lifecycle.OURS,
+        running = (gateway_lifecycle.OURS, gateway_lifecycle.STARTING)
+        for status in (gateway_lifecycle.STOPPED, *running,
                        gateway_lifecycle.FOREIGN, gateway_lifecycle.UNKNOWN, None):
             with self.subTest(status=status):
                 seen = SimpleNamespace(state=status, detail="fixture") if status is not None else None
@@ -51,7 +52,7 @@ class PresentationTests(unittest.TestCase):
                 with mock.patch.object(gateway_actions, "observe", return_value=view), \
                         mock.patch.object(tui.Modal, "run", cancel):
                     gateway_actions.dialog(None, FakeWindow(), tui.MONO_PALETTE)
-                self.assertEqual("Stop it from a terminal" in bodies[0], status == gateway_lifecycle.OURS)
+                self.assertEqual("Stop it from a terminal" in bodies[0], status in running)
 
     def test_quota_fallback_names_the_profiles_filter_at_both_widths(self) -> None:
         pool = quota.PoolStatus("ok", credentials=quota.parse_auth_files(fx.quota_body(percent=95, reset=False)))
