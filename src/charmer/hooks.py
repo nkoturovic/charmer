@@ -129,7 +129,12 @@ def read_settings_bytes(path: Path, limit: int) -> bytes | None:
     ``O_NONBLOCK`` keeps a FIFO from hanging before its type is checked.
     """
 
-    descriptor = os.open(path, os.O_RDONLY | os.O_CLOEXEC | os.O_NONBLOCK)
+    try:
+        descriptor = os.open(path, os.O_RDONLY | os.O_CLOEXEC | os.O_NONBLOCK)
+    except OSError as exc:
+        if exc.errno == errno.ENXIO:
+            return None  # Unix sockets can fail open before fstat can classify them.
+        raise
     try:
         if not stat.S_ISREG(os.fstat(descriptor).st_mode):
             return None

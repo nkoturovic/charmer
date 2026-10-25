@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import socket
 import subprocess
 import sys
 import tempfile
@@ -101,6 +102,16 @@ class SettingsReaderTests(unittest.TestCase):
         ordinary_unreadable = [[item.kind, item.blocks] for item in managed.policy_findings(unreadable_root)]
         self.assertEqual(ordinary_unreadable, [["unreadable", False]])
         self.assertEqual(self.read_child("findings", path), ordinary_unreadable)
+
+    @unittest.skipUnless(hasattr(socket, "AF_UNIX"), "needs Unix sockets")
+    def test_socket_policy_is_not_a_regular_file(self) -> None:
+        # Keep the bound path below the platform's AF_UNIX length limit.
+        with tempfile.TemporaryDirectory(prefix="sr-") as temporary:
+            path = Path(temporary) / "managed-settings.json"
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as listener:
+                listener.bind(str(path))
+                self.assertEqual(self.read_child("policy", path), [None, "is not a regular file"])
+                self.assertEqual(self.read_child("findings", path), [["unreadable", False]])
 
     @unittest.skipUnless(hasattr(os, "mkfifo"), "needs POSIX FIFOs")
     def test_symlink_to_fifo_is_also_unusable_without_waiting(self) -> None:
