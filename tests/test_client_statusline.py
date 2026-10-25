@@ -75,6 +75,11 @@ RENDERER_TASK_FIELDS = frozenset({"id", "agentType", "type", "name", "model", "e
 # The shipped row stays visible past the client's first tick (300 ms) and
 # its periodic one (5 s).
 SHIPPED_HOLD_SECONDS = 6.5
+# Without a fixed hold, the agent's answer waits for the first recorded
+# document and then this long: the record lands before the command prints its
+# row, and the client draws that row only after the command exits, so the task
+# stays running through the next periodic tick (5 s).
+DRAW_GRACE_SECONDS = 5.5
 _ESCAPE = re.compile(r"\x1b\[([0-9;?<>=]*)([A-Za-z@`~])|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[()][0-9A-Za-z]|\x1b.")
 
 
@@ -169,8 +174,9 @@ for task in tasks or []:
 
 class _Responder:
     """The lead spawns one background ``cm-spike-s17`` agent. The agent's own
-    request is held until a status-line command recorded a document (or for
-    ``hold`` seconds), so the row is visible when the client ticks."""
+    request is held until a status-line command recorded a document and then
+    :data:`DRAW_GRACE_SECONDS` longer (or for ``hold`` seconds), so the row is
+    drawn while the task still runs."""
 
     def __init__(self, records: Path, hold: float | None) -> None:
         self.records = records
@@ -195,6 +201,8 @@ class _Responder:
                 deadline = time.monotonic() + 25
                 while not any(self.records.iterdir()) and time.monotonic() < deadline:
                     time.sleep(0.1)
+                if any(self.records.iterdir()):
+                    time.sleep(DRAW_GRACE_SECONDS)
             with self._lock:
                 self.agent_requests += 1
                 self.recorded_before_answer = any(self.records.iterdir())
