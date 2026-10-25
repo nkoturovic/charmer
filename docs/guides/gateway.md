@@ -21,9 +21,10 @@ charmer gateway logs       # the newest log lines (-n N; --instance <id>)
 charmer gateway ensure --quiet   # for scripts: exit 0 only when your gateway is ready
 ```
 
-In the launcher, **H** (doctor) offers start, restart (**r**) and the log
-(**l**); the Providers and Direct screens offer a start when the gateway
-is down. Stopping stays a terminal command.
+In the launcher, **H** → **W** opens the gateway dialog (Start now,
+Restart now, Install service, Hold details, Show log, Close, as available).
+**W** on Providers opens the same dialog; Direct offers **W** when the
+gateway's model listing is unavailable. Stopping stays a terminal command.
 
 Exit statuses: 0 ok; 1 refused, paused, failed, not ready, busy, held or
 inhibited (the message says which); 2 usage; 3 a declined confirmation;

@@ -81,9 +81,9 @@ See [updating from 2.1.0](docs/update.md#updating-from-210).
 - Cancel is first and focused when discarding profile edits or deleting
   a named binding. Gateway dialogs offer stop advice only for a gateway
   known to be running or starting.
-- Fresh launch cards point quota warnings to **P → F** fallback profiles,
+- Fresh launch cards point quota warnings to **P** → **F** fallback profiles,
   keeping observation age and known reset times when they fit; resume cards
-  keep their Sessions → Lineup remedy.
+  keep their **S** → **T** (Sessions → Lineup) remedy.
 - Saved-choice confirmations say "Save the choice for N session(s)?",
   OpenRouter help wraps to the dialog width, and first-run **H** is labelled
   "checks" while nothing is connected.
@@ -92,8 +92,8 @@ See [updating from 2.1.0](docs/update.md#updating-from-210).
   ownership or permissions even when compiled contents match. A scope that
   becomes unreadable during its check reports a repair command instead of
   crashing.
-- charmer's settings and managed-policy reads no longer hang on FIFOs or
-  other special files. Regular-file symlinks and the 1 MiB limits are kept.
+- Reads of Claude Code settings and managed policy no longer hang on FIFOs
+  or other special files. Regular-file symlinks and the 1 MiB limits are kept.
 - Change previews treat incomplete published gateway configurations and
   malformed route sections as unknown, not empty, retaining their
   destructive-change checks. Doctor skips an uncheckable pending-change
