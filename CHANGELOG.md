@@ -40,11 +40,23 @@ See [updating from 2.1.0](docs/update.md#updating-from-210).
   The Nix flake uses a refreshed nixos-unstable lock.
 - Running setup when everything is already configured avoids repeated
   client checks; every launch still verifies the client's full hash.
+- **V** opens Providers details, **B** opens named bindings in the profile
+  editor, and **W** opens gateway actions from Findings, using the same
+  dialog as Providers and Direct. The old **Q**, **N** and **G** keys remain
+  accepted for compatibility on their respective screens.
+- The Sessions keybar uses both available rows, puts row actions first and
+  keeps help and exit visible. The marked count appears only when nonzero.
+- Launch cards put the review-independence verdict before its routing;
+  direct cards omit the review and provider-spread rows.
+- Models, Settings and text views show `↓ N more` for entries below the
+  visible area; text views count wrapped lines.
 - Development and tests use refreshed build and CI pins and improve
   developer promotion (file modes and rollback), lock and resource cleanup,
   draft/build failures, probe synchronization and timeout cleanup, licence
   reporting, pin checks, required tests, hygiene and fixture isolation;
-  [test-isolation limits](AGENTS.md#4-development-workflow) still apply.
+  Nix uses the shared guarded runner and final failure summaries remain
+  visible when a test replaces stderr, with
+  [test-isolation limits](AGENTS.md#4-development-workflow) unchanged.
 - Help distinguishes `charmer migrate` and `charmer restore-2x` support
   for pre-public record formats from `charmer update --rollback`. These
   commands remain available; no retirement is scheduled.
@@ -66,6 +78,28 @@ See [updating from 2.1.0](docs/update.md#updating-from-210).
 
 ### Fixed
 
+- Cancel is first and focused when discarding profile edits or deleting
+  a named binding. Gateway dialogs offer stop advice only for a gateway
+  known to be running or starting.
+- Fresh launch cards point quota warnings to **P → F** fallback profiles,
+  keeping observation age and known reset times when they fit; resume cards
+  keep their Sessions → Lineup remedy.
+- Saved-choice confirmations say "Save the choice for N session(s)?",
+  OpenRouter help wraps to the dialog width, and first-run **H** is labelled
+  "checks" while nothing is connected.
+- Sessions stays open with a warning when resume-time relinking fails.
+- Doctor detects unexpected scope files and directories and incorrect
+  ownership or permissions even when compiled contents match. A scope that
+  becomes unreadable during its check reports a repair command instead of
+  crashing.
+- charmer's settings and managed-policy reads no longer hang on FIFOs or
+  other special files. Regular-file symlinks and the 1 MiB limits are kept.
+- Change previews treat incomplete published gateway configurations and
+  malformed route sections as unknown, not empty, retaining their
+  destructive-change checks. Doctor skips an uncheckable pending-change
+  comparison instead of crashing.
+- Managed subagent status lines stay silent when their launcher is killed
+  or their stderr setup fails.
 - After an HTTP MCP connection closes mid-call, Claude Code retries only
   tools the server marks read-only or idempotent. A state-changing tool
   marked idempotent can still run twice; check the external system after
