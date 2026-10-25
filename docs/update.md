@@ -45,13 +45,31 @@ is active, a switch that changes the gateway waits.
 
 ### Updating from 2.1.0
 
-Between turns, in a terminal outside Claude Code, update and check the
-installed version, assessing each result before continuing:
+The gateway changes in this release. Updating switches the installation,
+not the running gateway. Between turns, in a plain terminal outside Claude
+Code, run each step after assessing the previous result:
 
 ```bash
 charmer update
 charmer --version
+charmer gateway restart
+charmer gateway status
+charmer update --verify
+charmer doctor
 ```
+
+The restart checks ownership and the persistence hold before stopping. If
+an update or restart is held, keep the gateway running and follow
+[the persistence hold](guides/gateway.md#the-persistence-hold). Never bypass
+a held stop with a service-manager stop or a signal. Verification cannot
+restart or repair the gateway for you.
+
+On Linux, check for `running-gateway: current-match` after the restart:
+the opened running executable matches the authenticated installed gateway.
+A different or unavailable result is not a match; follow the verification
+remedy. On macOS, running-byte verification reports unavailable (exit 3),
+not a match. Status and doctor remain separate readiness checks, not a
+substitute for running-byte verification.
 
 The update installs charmer's verified **Claude Code 2.1.310** copy before
 switching the release: it copies a matching local file or downloads and

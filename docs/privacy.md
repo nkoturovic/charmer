@@ -66,6 +66,12 @@ Besides the requests themselves:
 - OpenAI-compatible routes receive none of these;
 - charmer adds no identifying hint headers of its own.
 
+OpenAI-compatible providers receive the caller's `User-Agent` header, which
+can identify the client software and version; the gateway supplies a default
+when none is sent. On Claude account and Claude-compatible direct routes,
+requests recognised as Claude Code retain the client's own SDK-version
+header, `x-stainless-package-version`, instead of the gateway's pinned value.
+
 On the OpenAI API key, the gateway sends the key as a plain API client
 (no ChatGPT client version or session header) and adds no hosted tool
 the client did not ask for.
