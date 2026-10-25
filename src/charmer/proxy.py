@@ -1983,8 +1983,8 @@ def published_identity(home: Path) -> PublishedIdentity:
         return PublishedIdentity(None, "published gateway config unreadable", "unknown")
     try:
         document = served_plan_mod.parse_restricted_yaml(raw.decode("utf-8"))
-        routes = served_plan_mod.routes_from_document(document)
-    except (served_plan_mod.PlanParseError, UnicodeDecodeError, ValueError):
+        routes = served_plan_mod.routes_from_document(document, strict=True)
+    except (served_plan_mod.PlanParseError, UnicodeDecodeError, ValueError, TypeError):
         return PublishedIdentity(None, "published gateway config is not in the rendered form", "unknown")
     return PublishedIdentity(routes, None, served_plan_mod.gateway_label(document))
 
