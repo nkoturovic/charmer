@@ -1634,12 +1634,16 @@ class TuiFixtureTests(unittest.TestCase):
         self.assertEqual(gen0["last_event_source"], "end")
         self.assertFalse(scope.scope_dir(runtime.session_store.root, fx.OTHER_ID).exists())
 
-    def test_journal_text_is_the_doctor_shape(self) -> None:
+    def test_journal_window_is_the_doctor_shape(self) -> None:
         runtime = fx.fixture_runtime(self.tmp)
         model = "views-model-alias"
-        text = fx.journal_text(dead_pool="codex", quota=[(model, "402", 2)])
+        window = fx.journal_window(dead_pool="codex", quota=[(model, "402", 2)])
+        self.assertEqual(window.coverage, "bounded")
+        self.assertEqual(len(window.records), 5)
+        self.assertTrue(all(row.timestamp == fx.FIXED_NOW for row in window.records))
+        self.assertEqual({row.gateway_instance for row in window.records}, {"fixture-gateway"})
         with mock.patch('charmer.cli.gateway_facts._doctor_now', lambda: fx.FIXED_NOW):
-            report = cli._doctor_journal_report(runtime, text)
+            report = cli._doctor_journal_report(runtime, window)
         self.assertEqual(len(report), 2, report)
         self.assertIn("invalid_grant line(s) since the codex pool", report[0])
         self.assertIn(f"model {model} got 2× 402 (payment required)", report[1])

@@ -165,7 +165,7 @@ class _DirectScreen:
         palette: tui.Palette,
         passthrough: Sequence[str] = (),
         purpose: str | None = None,
-        journal: Callable[[], str | None] | None = None,
+        journal: Callable[[], gateway_facts.gateway_events.LogWindow | None] | None = None,
         no_subagents: bool | None = None,
     ):
         self.runtime = runtime
@@ -558,7 +558,7 @@ def run_direct_screen(
     *,
     passthrough: Sequence[str] = (),
     purpose: str | None = None,
-    journal: Callable[[], str | None] | None = None,
+    journal: Callable[[], gateway_facts.gateway_events.LogWindow | None] | None = None,
     no_subagents: bool | None = None,
 ) -> tuple | None:
     """Open Direct (T §5) on ``win``: ``("perform", prepared)``, ``(key, effort)`` or None.

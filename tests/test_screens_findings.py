@@ -707,7 +707,7 @@ def gateway_rollback_golden(root: Path) -> str:
     from _tui_render import first_oauth_pool
 
     with golden_runtime(root) as runtime:
-        journal = fx.journal_text(dead_pool=first_oauth_pool(runtime))
+        journal = fx.journal_window(dead_pool=first_oauth_pool(runtime))
         providers = cli._ProvidersScreen(runtime, palette=tui.MONO_PALETTE, journal=lambda: journal)
         base_url = endpoint.gateway_endpoint(runtime.catalog.docs["gateway"]).base_url
         view = gateway_actions.GatewayView(

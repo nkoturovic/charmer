@@ -425,7 +425,7 @@ class ProvidersScreenTests(_ScreenCase):
         auth.mkdir(parents=True, exist_ok=True)
         (auth / f"{pools[-1]}-user.json").write_text("{}")
         (auth / f"{pools[-1]}-other.json").write_text("{}")
-        journal = fx.journal_text(dead_pool=pools[0])
+        journal = fx.journal_window(dead_pool=pools[0])
         text = self.run_screen(self.screen(runtime, lambda: journal), [ESC], height=30).text()
         providers = self.providers(runtime)
         for pid in sorted(providers):
@@ -441,7 +441,7 @@ class ProvidersScreenTests(_ScreenCase):
         facts = cli._provider_facts(self.runtime).facts
         fact = next(f for f in facts if f["selectors"])
         alias = fact["selectors"][0]
-        journal = fx.journal_text(quota=[(alias, "402", 2)])
+        journal = fx.journal_window(quota=[(alias, "402", 2)])
         screen = self.screen(journal=lambda: journal)
         win = self.run_screen(screen, self.steps_to(screen, fact["id"]) + [ESC])
         self.assertIn(views.clip(f"{alias}: 2× 402 (payment required) in the last 24 h", 77), win.text())
@@ -621,11 +621,11 @@ class ProvidersJournalSeamTests(_ScreenCase):
     def test_journal_facts_render_the_doctor_lines_byte_identically(self) -> None:
         pool = _tui_render.first_oauth_pool(self.runtime)
         alias = "screens-alias"
-        text = fx.journal_text(dead_pool=pool, quota=[(alias, "403", 1), ("quiet", "429", 3)])
-        facts = cli._journal_facts(self.runtime, text)
+        window = fx.journal_window(dead_pool=pool, quota=[(alias, "403", 1), ("quiet", "429", 3)])
+        facts = cli._journal_facts(self.runtime, window)
         self.assertEqual(set(facts.dead_pools), {pool})
         self.assertEqual(facts.quota, {(alias, "403"): 1}, "429 below the hourly threshold is not a fact")
-        report = cli._doctor_journal_report(self.runtime, text)
+        report = cli._doctor_journal_report(self.runtime, window)
         self.assertEqual(len(report), 2)
         self.assertEqual(cli._journal_facts(self.runtime, None), cli.JournalFacts({}, None, {}))
 
@@ -1010,7 +1010,7 @@ class ProviderQuotaScreenTests(_ScreenCase):
 
     def test_visible_age_and_refresh_failure_remedy_at_80_columns(self):
         pool_name = _tui_render.first_oauth_pool(self.runtime)
-        screen = self.screen(journal=lambda: fx.journal_text(dead_pool=pool_name))
+        screen = self.screen(journal=lambda: fx.journal_window(dead_pool=pool_name))
         text = self.run_screen(screen, [ESC]).text()
         row = next(r for r in screen.rows if r.kind == "oauth-pool")
         self.assertEqual(row.cells[2], "sign-in failing")

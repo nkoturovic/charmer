@@ -1074,7 +1074,7 @@ def keyed_cells_golden(root: Path) -> str:
     assets = audited_root(Path(root))
     with tr.golden_runtime(root, asset_root=assets, secrets=[*fx._secret_names(assets), KEYED_SECRET]) as runtime:
         install_keyed_state(runtime.gateway_environ(), keyed_files())
-        journal = fx.journal_text(dead_pool=tr.first_oauth_pool(runtime))
+        journal = fx.journal_window(dead_pool=tr.first_oauth_pool(runtime))
 
         def screen():
             widget = cli._ProvidersScreen(runtime, palette=tui.MONO_PALETTE, journal=lambda: journal)

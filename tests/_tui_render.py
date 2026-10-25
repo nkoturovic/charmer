@@ -12,7 +12,7 @@ names are roles, never fixture ids.
 
 Determinism inputs: the fixture catalog, ``FIXED_NOW`` for doctor's
 clock (``cli._doctor_now``), the injected liveness/served/health seams and
-``hermetic(runtime)``, the journal text through the providers ``journal=``
+``hermetic(runtime)``, the journal window through the providers ``journal=``
 seam, no pinned registry (``CHARMER_REGISTRY_DIR`` names a missing
 directory, so the retirement radar is silent), the gateway token's mtime set
 to ``FIXED_NOW``, the temp-root ``.git`` marker, and no temp path drawn.
@@ -109,7 +109,7 @@ def models_golden(root: Path) -> str:
 
 def providers_golden(root: Path) -> str:
     with golden_runtime(root) as runtime:
-        journal = fx.journal_text(dead_pool=first_oauth_pool(runtime))
+        journal = fx.journal_window(dead_pool=first_oauth_pool(runtime))
         return render(
             lambda: cli._ProvidersScreen(runtime, palette=tui.MONO_PALETTE, journal=lambda: journal)
         )
@@ -401,7 +401,7 @@ def lineup_relaunch_golden(root: Path) -> str:
 
 def providers_quota_golden(root: Path) -> str:
     with golden_runtime(root, management=fx.quota_body(percent=18, short_percent=42, count=2, age=timedelta(minutes=12))) as runtime:
-        journal = fx.journal_text(dead_pool=first_oauth_pool(runtime))
+        journal = fx.journal_window(dead_pool=first_oauth_pool(runtime))
         return render(lambda: cli._ProvidersScreen(
             runtime, palette=tui.MONO_PALETTE, journal=lambda: journal,
             now=fx.FIXED_NOW, tz=timezone.utc,

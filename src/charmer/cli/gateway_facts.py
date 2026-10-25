@@ -32,7 +32,6 @@ from pathlib import Path
 from typing import Iterable
 from typing import Mapping
 import charmer.cli.text as cli_text
-import json
 import os
 import re
 import stat
@@ -668,18 +667,6 @@ def journal_command(runtime: runtime_mod.Runtime) -> tuple[str, ...] | None:
 _JOURNAL_MAX_BYTES = 32 * 1024 * 1024
 
 
-_JOURNAL_LINE = re.compile(
-    r"^\[(?P<ts>\d{4}-\d\d-\d\d \d\d:\d\d:\d\d)\] \[(?P<rid>[^\]]*)\] \[[^\]]*\] "
-    r"(?:\[[^\]]*\] )?(?P<msg>.*)$"
-)
-
-
-_JOURNAL_STATUS = re.compile(r"^(?P<code>[1-5]\d\d) \|")
-
-
-_JOURNAL_MODEL = re.compile(r"\bmodel=(?P<model>[A-Za-z0-9._:/@\[\]-]{1,128})")
-
-
 _JOURNAL_429_PER_HOUR = 20
 
 
@@ -705,9 +692,6 @@ def _report_journal(runtime, *, since="-24h"):
     def read():
         window = (_read_gateway_journal(runtime) if since == "-24h" else
                   _read_gateway_journal(runtime, since=since))
-        if isinstance(window, str):
-            # Compatibility for test seams that inject a string window only.
-            return gateway_events.collect(gateway_events.LogWindow(), providers=()), _journal_facts(runtime, window)
         events = gateway_events.collect(window or gateway_events.LogWindow(), providers={
             *runtime.pool_providers(), *runtime.ordinary_docs["providers"]["providers"],
         })
@@ -757,13 +741,6 @@ def _pool_credential_mtimes(runtime: runtime_mod.Runtime) -> dict[str, float]:
 SUBSTITUTION_FORMAT = "%s executor: upstream served model %q for requested model %q (auth_index=%s)"
 
 
-_Q = r'"((?:[^"\\]|\\.)*)"'
-
-
-_SUBSTITUTION = re.compile(r"^([A-Za-z0-9_-]+) executor: upstream served model " + _Q
-                           + r" for requested model " + _Q)
-
-
 @dataclass(frozen=True)
 class Substitution:
     label: str
@@ -793,138 +770,23 @@ class JournalFacts:
     partial: str | None = None
 
 
-def _journal_facts(runtime: runtime_mod.Runtime, text: str | gateway_events.LogWindow | None) -> JournalFacts:
-    """Parse CLIProxyAPI journal text into :class:`JournalFacts`.
+def _journal_facts(
+    runtime: runtime_mod.Runtime,
+    window: gateway_events.LogWindow | gateway_events.GatewayEvents | None,
+) -> JournalFacts:
+    """Project a source window or already-collected events into shared facts.
 
-    CLIProxyAPI's log lines are ``[YYYY-mm-dd HH:MM:SS] [<request id>]
-    [<level>] [<file:line>] <message>`` (local time); a status line's
-    message starts with ``<code> |``, a selector line carries
-    ``model=<alias>`` under the same request id. Counts only; no body or
-    message text is kept. Empty or None text gives empty facts.
+    All message parsing and conservative request joins belong to
+    ``gateway_events.collect``. None means no observation was requested.
     """
 
-    if isinstance(text, gateway_events.GatewayEvents):
-        return _event_journal_facts(runtime, text)
-    if isinstance(text, gateway_events.LogWindow):
-        return _event_journal_facts(runtime, gateway_events.collect(text, providers={
-            *runtime.pool_providers(), *runtime.ordinary_docs["providers"]["providers"],
-        }))
-    if not text:
+    if window is None:
         return JournalFacts(dead_pools={}, unattributed=None, quota={})
-    window = text if isinstance(text, gateway_events.LogWindow) else gateway_events.LogWindow(
-        tuple(gateway_events.LogRecord(line) for line in text.splitlines()[:gateway_events.MAX_RECORDS]),
-        "incomplete",
-    )
-    saves = gateway_events.collect_credential_saves(window, providers={
-        provider["transport"]["pool"]
-        for provider in runtime.catalog.docs["providers"]["providers"].values()
-        if provider["transport"]["kind"] == "oauth-pool"
-    })
-    now = _doctor_now()
-    local_now = now.astimezone().replace(tzinfo=None)
-    request_model: dict[str, str] = {}
-    statuses: list[tuple[datetime, str, str]] = []
-    grants: list[tuple[datetime, str]] = []
-    substitutions: dict[tuple[str, str], int] = {}
-    for record in window.records:
-        raw_line = record.message
-        # Credential-save lines (including malformed/path-bearing ones) never
-        # fall through to the older permissive journal pattern recognizers.
-        if gateway_events.is_save_line(raw_line):
-            continue
-        match = _JOURNAL_LINE.match(raw_line)
-        if match is None:
-            continue
-        try:
-            when = datetime.strptime(match["ts"], "%Y-%m-%d %H:%M:%S")
-        except ValueError:
-            continue
-        rid, message = match["rid"], match["msg"]
-        substitution = _SUBSTITUTION.match(message)
-        if substitution is not None:
-            def unquote(value: str) -> str:
-                try:
-                    return json.loads('"' + value + '"')
-                except ValueError:
-                    return value
-            served, requested = (unquote(value) for value in substitution.groups()[1:])
-            pair = (requested, served)
-            substitutions[pair] = substitutions.get(pair, 0) + 1
-        model = _JOURNAL_MODEL.search(message)
-        if model is not None and rid and set(rid) != {"-"}:
-            request_model[rid] = model["model"]
-        status = _JOURNAL_STATUS.match(message)
-        if status is not None and status["code"] in {"402", "403", "429"}:
-            statuses.append((when, rid, status["code"]))
-        if "invalid_grant" in message:
-            lowered = message.lower()
-            pool = "codex" if "codex" in lowered else "claude" if (
-                "claude" in lowered or "anthropic" in lowered
-            ) else ""
-            grants.append((when, pool))
-    mtimes = _pool_credential_mtimes(runtime)
-
-    def after_write(name: str, when: datetime) -> bool:
-        since = mtimes.get(name)
-        return since is None or when > datetime.fromtimestamp(since)
-
-    dead_pools: dict[str, tuple[int, datetime]] = {}
-    for pool in sorted({pool for _when, pool in grants if pool}):
-        fresh = [
-            when for when, grant_pool in grants if grant_pool == pool and after_write(pool, when)
-        ]
-        if fresh:
-            dead_pools[pool] = (len(fresh), max(fresh))
-    # A grant line naming no pool is ONE failure of an unknown pool: one fact
-    # naming every pool whose credential predates it as a candidate, never
-    # one "dead" pool per candidate.
-    names = sorted(mtimes) or sorted(_OAUTH_LOGIN_COMMANDS)
-    unattributed_times = [
-        when for when, pool in grants if not pool and any(after_write(n, when) for n in names)
-    ]
-    unattributed = None
-    if unattributed_times:
-        possible = tuple(
-            n for n in names if any(after_write(n, when) for when in unattributed_times)
-        )
-        unattributed = (len(unattributed_times), max(unattributed_times), possible)
-    per_model: dict[tuple[str, str], int] = {}
-    for when, rid, code in statuses:
-        age = (local_now - when).total_seconds()
-        if code == "429" and age > 3600:
-            continue
-        model = request_model.get(rid, "unattributed")
-        per_model[(model, code)] = per_model.get((model, code), 0) + 1
-    quota = {
-        (model, code): count
-        for (model, code), count in sorted(per_model.items())
-        if not (code == "429" and count < _JOURNAL_429_PER_HOUR)
-    }
-    labels: dict[str, set[str]] = {}
-    if substitutions:
-        docs = runtime.ordinary_docs
-        for collection, field in ((docs["models"]["models"], "wire_model"),
-                                  (docs.get("retired", {}).get("retired", {}), "last_wire")):
-            for key, entry in collection.items():
-                labels.setdefault(entry[field], set()).add(key)
-    substitution_facts = tuple(
-        Substitution(
-            f"{', '.join(sorted(labels[wire]))} ({wire})" if wire in labels else f"wire {wire}",
-            served, count,
-        )
-        for (wire, served), count in sorted(substitutions.items())
-    )
-    partial = None
-    if isinstance(text, gateway_events.LogWindow) and window.coverage in {"truncated", "incomplete"}:
-        # A cap or a timeout cut the oldest part of the window (the reader runs
-        # newest first); counts are lower bounds over what was actually read.
-        stamps = [record.timestamp for record in window.records if record.timestamp is not None]
-        partial = (f"partial journal read since {min(stamps).astimezone():%Y-%m-%d %H:%M}, "
-                   f"coverage={window.coverage}") if stamps else f"partial journal read, coverage={window.coverage}"
-    return JournalFacts(dead_pools=dead_pools, unattributed=unattributed, quota=quota,
-                        substitutions=substitution_facts,
-                        credential_saves=saves if saves.events or isinstance(text, gateway_events.LogWindow) else None,
-                        partial=partial)
+    if isinstance(window, gateway_events.GatewayEvents):
+        return _event_journal_facts(runtime, window)
+    return _event_journal_facts(runtime, gateway_events.collect(window, providers={
+        *runtime.pool_providers(), *runtime.ordinary_docs["providers"]["providers"],
+    }))
 
 
 def _event_journal_facts(runtime, events: gateway_events.GatewayEvents) -> JournalFacts:

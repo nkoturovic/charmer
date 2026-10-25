@@ -792,7 +792,7 @@ class _ProvidersScreen:
         runtime: runtime_mod.Runtime,
         *,
         palette: tui.Palette,
-        journal: Callable[[], str | None] | None = None,
+        journal: Callable[[], gateway_facts.gateway_events.LogWindow | None] | None = None,
         now: datetime | None = None,
         tz=None,
     ):
@@ -1325,7 +1325,7 @@ def run_providers_screen(
     win: Any,
     palette: tui.Palette,
     *,
-    journal: Callable[[], str | None] | None = None,
+    journal: Callable[[], gateway_facts.gateway_events.LogWindow | None] | None = None,
 ) -> None:
     """Open the Providers screen on ``win``; returns when it is closed."""
 

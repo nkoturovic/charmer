@@ -17,6 +17,7 @@ from unittest import mock
 from charmer import gateway_events as events, gateway_hold, launch, service
 from charmer.cli import doctor, gateway_facts
 from charmer.platform import linux_service, observation
+from _journal import log_window
 from _layout import PATCH_DIR, UPSTREAM_JSON
 from _v4 import V4Case
 
@@ -299,7 +300,8 @@ class DoctorSaveTests(V4Case):
                         self.assertIn(f"since {oldest.astimezone():%Y-%m-%d %H:%M}, coverage={coverage}", text)
                     self.assertEqual("timed out" in text, timed_out)
 
-    def test_log_window_substitutions_keep_live_and_retired_catalog_labels(self):
+    def test_log_window_fixture_matches_explicit_substitution_records(self):
+        """The shared fixture preserves the label report of explicit source records."""
         docs = self.runtime.ordinary_docs
         for collection, field in ((docs["models"]["models"], "wire_model"),
                                   (docs["retired"]["retired"], "last_wire")):
@@ -311,8 +313,8 @@ class DoctorSaveTests(V4Case):
                 source = events.LogWindow((events.LogRecord(message, NOW, INSTANCE),), "bounded")
                 attention, _info = self.report(source)
                 substitution, = [text for text in attention if "gateway substitution:" in text]
-                legacy, _info = self.report(message)
-                self.assertEqual(substitution, next(text for text in legacy if "gateway substitution:" in text))
+                fixture, _info = self.report(log_window(message))
+                self.assertEqual(substitution, next(text for text in fixture if "gateway substitution:" in text))
                 self.assertIn(key, substitution)
                 self.assertIn(f"({wire})", substitution)
                 self.assertNotIn("partial journal read", substitution)

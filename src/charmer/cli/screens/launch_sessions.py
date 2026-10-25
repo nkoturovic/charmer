@@ -2406,7 +2406,7 @@ class _LaunchCardScreen(_CardHealthActions):
         resume_decision: str | None = None,
         now: datetime | None = None,
         tz=None,
-        journal: Callable[[], str | None] | None = None,
+        journal: Callable[[], gateway_facts.gateway_events.LogWindow | None] | None = None,
         explicit: bool = False,
         auto_setup: bool = False,
         way_back: _WayBack | None = None,
