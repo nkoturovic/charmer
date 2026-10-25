@@ -274,6 +274,11 @@ class PublishedDocumentTests(unittest.TestCase):
         self.assertIn("Published render: unknown", plan.text())
         self.assertNotIn(served_plan.NO_SERVED_CHANGE, plan.text())
 
+    def test_sentinel_constants_match_renderer(self) -> None:
+        self.assertEqual(served_plan.SENTINEL_NAME, render.SENTINEL_NAME)
+        self.assertEqual(served_plan.SENTINEL_PREFIX, render.SENTINEL_PREFIX)
+        self.assertEqual(served_plan.SENTINEL_BASE_URL, render.SENTINEL_BASE_URL)
+
     def test_empty_and_header_only_documents_are_unknown(self) -> None:
         for document in ({}, {"host": "127.0.0.1", "port": 18317}):
             with self.subTest(document=document):
