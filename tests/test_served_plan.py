@@ -27,7 +27,7 @@ from unittest import mock
 
 import charmer
 from charmer import cli, continuity, lineup, migrate, proxy, render, sessions, state, strict_json, transition
-from charmer import served_plan
+from charmer import legacy, served_plan
 from _catalog import FIXTURE_ROOT, GOLDENS_ROOT
 from _layout import ASSET_ENTRIES, INSTALLED_RESOURCES_RELATIVE, REPO_ROOT, RESOURCES_RELATIVE, RESOURCES_ROOT, fake_checkout
 from _v4 import V4Case
@@ -243,6 +243,162 @@ class PlannerTests(unittest.TestCase):
         # The authority is the existing field: no field is added by 3.1.
         self.assertEqual(set(continuity.empty()),
                          {"version", "seeded_through_catalog", "state_root", "aliases", "pruned"})
+
+
+# ------------------------------------------------------------ published document structure
+class PublishedDocumentTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.document = served_plan.parse_restricted_yaml(
+            (GOLDENS_ROOT / "render" / "gateway-default.yaml").read_text())
+        self.home = Path(self.enterContext(tempfile.TemporaryDirectory(prefix="cm-published-")))
+        self.config = state.ensure_private_dir(proxy.config_dir(self.home)) / "config.yaml"
+
+    def assert_unknown(self, document: dict) -> None:
+        emitted = render.emit_yaml(document)
+        with self.assertRaises(served_plan.PlanParseError):
+            served_plan.routes_from_document(document)
+        with self.assertRaises(served_plan.PlanParseError):
+            served_plan.published_routes(emitted)
+        state.atomic_write(self.config, emitted.encode())
+        published = proxy.published_identity(self.home)
+        self.assertIsNone(published.routes, "invalid published state must be unknown, not empty")
+        self.assertEqual(published.unknown, "published gateway config is not in the rendered form")
+        self.assertEqual(published.gateway, "unknown")
+        plan = served_plan.build_plan(
+            published.routes, {}, before_unknown=published.unknown,
+            references=served_plan.References({}, frozenset(), unknown="record scan incomplete"),
+            state_root="/state", gateway=published.gateway)
+        self.assertEqual(plan.before_unknown, published.unknown)
+        self.assertTrue(plan.destructive)
+        self.assertIsNotNone(plan.refusal())
+        self.assertIn("Published render: unknown", plan.text())
+        self.assertNotIn(served_plan.NO_SERVED_CHANGE, plan.text())
+
+    def test_empty_and_header_only_documents_are_unknown(self) -> None:
+        for document in ({}, {"host": "127.0.0.1", "port": 18317}):
+            with self.subTest(document=document):
+                self.assert_unknown(document)
+
+    def test_missing_host_is_unknown(self) -> None:
+        self.document.pop("host")
+        self.assert_unknown(self.document)
+
+    def test_missing_port_is_unknown(self) -> None:
+        self.document.pop("port")
+        self.assert_unknown(self.document)
+
+    def test_missing_api_keys_are_unknown(self) -> None:
+        self.document.pop("api-keys")
+        self.assert_unknown(self.document)
+
+    def test_empty_api_keys_are_unknown(self) -> None:
+        self.document["api-keys"] = []
+        self.assert_unknown(self.document)
+
+    def test_non_string_api_keys_are_unknown(self) -> None:
+        for keys in ("fixture-key", {}, None, [None], [1], [True], ["fixture-key", 1]):
+            with self.subTest(keys=keys):
+                self.document["api-keys"] = keys
+                self.assert_unknown(self.document)
+
+    def test_missing_reload_sentinel_is_unknown(self) -> None:
+        self.document["openai-compatibility"].pop()
+        self.assert_unknown(self.document)
+        self.document.pop("openai-compatibility")
+        self.assert_unknown(self.document)
+
+    def test_duplicate_reload_sentinels_are_unknown(self) -> None:
+        for name in (render.SENTINEL_NAME, legacy.LEGACY_SELECTOR_PREFIX + "render"):
+            with self.subTest(name=name):
+                document = copy.deepcopy(self.document)
+                sentinel = copy.deepcopy(document["openai-compatibility"][-1])
+                sentinel["name"] = name
+                document["openai-compatibility"].append(sentinel)
+                self.assert_unknown(document)
+
+    def test_wrong_oauth_alias_section_type_is_unknown(self) -> None:
+        for section in ([], "fixture", 1, None):
+            with self.subTest(section=section):
+                self.document["oauth-model-alias"] = section
+                self.assert_unknown(self.document)
+
+    def test_wrong_oauth_pool_type_is_unknown(self) -> None:
+        for pool in ({}, "fixture", 1, None):
+            with self.subTest(pool=pool):
+                self.document["oauth-model-alias"] = {"claude": pool}
+                self.assert_unknown(self.document)
+
+    def test_wrong_key_or_compat_section_type_is_unknown(self) -> None:
+        for name in ("claude-api-key", "codex-api-key", "openai-compatibility"):
+            for section in ({}, "fixture", 1, None):
+                with self.subTest(name=name, section=section):
+                    document = copy.deepcopy(self.document)
+                    document[name] = section
+                    self.assert_unknown(document)
+
+    def test_non_mapping_key_or_compat_entry_is_unknown(self) -> None:
+        for name in ("claude-api-key", "codex-api-key", "openai-compatibility"):
+            with self.subTest(name=name):
+                document = copy.deepcopy(self.document)
+                document.setdefault(name, []).append("fixture")
+                self.assert_unknown(document)
+
+    def test_published_type_error_is_unknown(self) -> None:
+        state.atomic_write(self.config, render.emit_yaml(self.document).encode())
+        with mock.patch.object(served_plan, "routes_from_document", side_effect=TypeError):
+            try:
+                published = proxy.published_identity(self.home)
+            except TypeError:
+                self.fail("published_identity leaked TypeError instead of reporting unknown")
+        self.assertIsNone(published.routes)
+        self.assertEqual(published.unknown, "published gateway config is not in the rendered form")
+        self.assertEqual(published.gateway, "unknown")
+
+    def test_every_render_golden_parses(self) -> None:
+        goldens = sorted((GOLDENS_ROOT / "render").glob("*.yaml"))
+        self.assertTrue(goldens)
+        for path in goldens:
+            with self.subTest(golden=path.name):
+                raw = path.read_bytes()
+                document = served_plan.parse_restricted_yaml(raw.decode())
+                routes = served_plan.published_routes(raw)
+                self.assertTrue(routes)
+                self.assertEqual(set(routes), render.rendered_selectors(document))
+                state.atomic_write(self.config, raw)
+                published = proxy.published_identity(self.home)
+                self.assertEqual(published.routes, routes)
+                self.assertIsNone(published.unknown)
+
+    def test_render_without_cloak_and_with_another_sentinel_alias_parses(self) -> None:
+        for name in ("gateway-default.yaml", "gateway-operator-compat.yaml"):
+            with self.subTest(golden=name):
+                document = served_plan.parse_restricted_yaml(
+                    (GOLDENS_ROOT / "render" / name).read_text())
+                before = served_plan.routes_from_document(document)
+                for section in document["claude-api-key"]:
+                    section.pop("cloak", None)
+                document["openai-compatibility"][-1]["models"][0]["alias"] = "charmer-render-00000000"
+                self.assertEqual(served_plan.published_routes(render.emit_yaml(document)), before)
+
+    def test_earlier_reload_sentinel_is_accepted_but_not_a_route(self) -> None:
+        before = served_plan.routes_from_document(self.document)
+        sentinel = self.document["openai-compatibility"][-1]
+        name = legacy.LEGACY_SELECTOR_PREFIX + "render"
+        sentinel["name"] = sentinel["models"][0]["name"] = name
+        sentinel["models"][0]["alias"] = name + "-00000000"
+        self.assertEqual(served_plan.published_routes(render.emit_yaml(self.document)), before)
+        state.atomic_write(self.config, render.emit_yaml(self.document).encode())
+        self.assertEqual(proxy.published_identity(self.home).routes, before)
+
+    def test_sentinel_only_render_is_known_empty(self) -> None:
+        document = render.finalize_document({
+            "host": "127.0.0.1", "port": 18317, "api-keys": ["fixture-key", "fixture-next-key"],
+        })
+        state.atomic_write(self.config, render.emit_yaml(document).encode())
+        published = proxy.published_identity(self.home)
+        self.assertEqual(published.routes, {})
+        self.assertIsNone(published.unknown)
+        self.assertEqual(published.gateway, "127.0.0.1:18317")
 
 
 # ------------------------------------------------------------ the barrier primitive
@@ -891,6 +1047,16 @@ class ServedOperatorTests(test_cli.OperatorCommandCase):
         self.assertEqual(document["kind"], "served-change-plan")
         self.assertEqual(document["retargeted"][0]["before"]["wire"], "k2")
         self.assertIsNone(document["published_unknown"])
+
+    def test_invalid_published_render_does_not_crash_doctor_pending_check(self) -> None:
+        self.published()
+        for document in ({}, {"host": "127.0.0.1", "port": 18317}, {"claude-api-key": 1}):
+            with self.subTest(document=document):
+                state.atomic_write(self.config(), render.emit_yaml(document).encode())
+                before = self.state_bytes()
+                self.assertIsNone(doctor_mod.pending_served_plan(self.runtime))
+                self.assertIsNone(doctor_mod._pending_served_change(self.runtime))
+                self.assertEqual(self.state_bytes(), before)
 
     def test_doctor_reports_pending_served_drift(self) -> None:
         self.published()

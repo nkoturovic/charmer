@@ -34,6 +34,8 @@ import json
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Mapping
 
+from . import legacy
+
 SECTION_OAUTH = "oauth-pool"
 SECTION_KEY = "claude-api-key"
 # The Responses key channel of a reviewed API-key transport: its identity is
@@ -43,6 +45,8 @@ SECTION_CODEX_KEY = "codex-api-key"
 SECTION_COMPAT = "openai-compatibility"
 SENTINEL_NAME = "charmer-render"
 SENTINEL_PREFIX = "charmer-render-"
+# An upgrade may still compare against a render published before the rename.
+_SENTINEL_NAMES = (SENTINEL_NAME, legacy.LEGACY_SELECTOR_PREFIX + "render")
 
 HEADER = "Served change preview — no changes written"
 NO_SERVED_CHANGE = "Served selectors: unchanged."
@@ -318,12 +322,45 @@ def _compat_capabilities(model: Mapping[str, Any]) -> list[str]:
     return ["model:" + _canonical({key: model.get(key) for key in _COMPAT_CAPABILITY_KEYS})]
 
 
+def _validate_document_structure(document: Mapping[str, Any]) -> None:
+    """Check the emitted envelope and route containers before projecting them.
+
+    A malformed section must not silently lose its routes and turn a removal
+    into an apparent addition. This is not a full gateway schema validator.
+    """
+
+    if "host" not in document:
+        raise PlanParseError("missing gateway host")
+    if "port" not in document:
+        raise PlanParseError("missing gateway port")
+    keys = document.get("api-keys")
+    if not isinstance(keys, list) or not keys or any(not isinstance(key, str) for key in keys):
+        raise PlanParseError("gateway api-keys must be a non-empty list of strings")
+
+    pools = document.get("oauth-model-alias", {})
+    if not isinstance(pools, Mapping):
+        raise PlanParseError("oauth-model-alias must be a mapping")
+    for entries in pools.values():
+        if not isinstance(entries, list):
+            raise PlanParseError("OAuth alias pool must be a list")
+    for name in (SECTION_KEY, SECTION_CODEX_KEY, SECTION_COMPAT):
+        sections = document.get(name, [])
+        if not isinstance(sections, list):
+            raise PlanParseError(f"{name} must be a list")
+        if any(not isinstance(section, Mapping) for section in sections):
+            raise PlanParseError(f"{name} entries must be mappings")
+    if sum(section.get("name") in _SENTINEL_NAMES for section in document.get(SECTION_COMPAT, [])) != 1:
+        raise PlanParseError("expected exactly one reload sentinel")
+
+
 def routes_from_document(document: Mapping[str, Any]) -> dict[str, RouteIdentity]:
     """Every public selector of a (parsed or in-memory) gateway document.
 
-    The reload sentinel is never a selector. Key values are never read.
+    The reload sentinel is never a selector. Key values are never retained.
+    Malformed envelopes or route containers raise :class:`PlanParseError`.
     """
 
+    _validate_document_structure(document)
     contracts = _contracts(document)
     overlay = _overlay(document)
     excluded = document.get("oauth-excluded-models")
@@ -378,7 +415,7 @@ def routes_from_document(document: Mapping[str, Any]) -> dict[str, RouteIdentity
         if not isinstance(section, Mapping):
             continue
         name = str(section.get("name"))
-        if name == SENTINEL_NAME or name.startswith(SENTINEL_PREFIX):
+        if name in _SENTINEL_NAMES or name.startswith(SENTINEL_PREFIX):
             continue
         route = f"{name} {normalize_base_url(section.get('base-url'))}"
         # Auth mode and header NAMES only (key and header values
