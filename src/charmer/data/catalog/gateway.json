@@ -37,7 +37,8 @@
       "cli-proxy-api-log-reduction.patch",
       "cli-proxy-api-tool-call-integrity.patch",
       "cli-proxy-api-initial-registration.patch",
-      "cli-proxy-api-terminal-rejection-reload.patch"
+      "cli-proxy-api-terminal-rejection-reload.patch",
+      "cli-proxy-api-relogin-after-refresh-failure.patch"
     ],
     "model_discovery": "disabled",
     "renderer": "restricted-yaml-v1",

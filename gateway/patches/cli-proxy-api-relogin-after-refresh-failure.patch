@@ -1,0 +1,164 @@
+diff --git a/sdk/cliproxy/auth/conductor_lifecycle.go b/sdk/cliproxy/auth/conductor_lifecycle.go
+index 17ac03a7..50a8c60d 100644
+--- a/sdk/cliproxy/auth/conductor_lifecycle.go
++++ b/sdk/cliproxy/auth/conductor_lifecycle.go
+@@ -412,8 +412,15 @@ func (m *Manager) updateInternalLocked(ctx context.Context, base, auth *Auth, mo
+ 		if credChanged || mode == updateModeRefresh {
+ 			applyPreservedRejectedTokens(existing, auth, mode == updateModeRefresh)
+ 			if auth.RejectedAccessToken == "" || authAccessToken(auth) != auth.RejectedAccessToken {
+-				if hasUnauthorizedAuthFailure(existing) || (auth.LastError != nil && isUnauthorizedError(auth.LastError)) {
++				// charmer (upstream issue 6948): new credentials also clear a dead
++				// refresh chain (invalid_grant) and an unavailable state without a
++				// live retry or quota deadline; live deadlines survive.
++				now := time.Now()
++				if hasUnauthorizedAuthFailure(existing) ||
++					(auth.LastError != nil && (isUnauthorizedError(auth.LastError) || isInvalidGrantResultError(auth.LastError))) ||
++					((auth.Unavailable || auth.Status == StatusError) && !auth.NextRetryAfter.After(now) && !auth.Quota.NextRecoverAt.After(now)) {
+ 					auth.Unavailable = false
++					auth.RefreshFailures = 0
+ 					auth.NextRetryAfter = time.Time{}
+ 					auth.cooldownRecordedSeq = 0
+ 					auth.LastError = nil
+diff --git a/sdk/cliproxy/auth/relogin_after_refresh_failure_test.go b/sdk/cliproxy/auth/relogin_after_refresh_failure_test.go
+new file mode 100644
+index 00000000..c1bc8217
+--- /dev/null
++++ b/sdk/cliproxy/auth/relogin_after_refresh_failure_test.go
+@@ -0,0 +1,137 @@
++package auth
++
++import (
++	"context"
++	"errors"
++	"net/http"
++	"os"
++	"path/filepath"
++	"testing"
++	"time"
++
++	internalconfig "github.com/router-for-me/CLIProxyAPI/v8/internal/config"
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
++	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
++)
++
++// reloginSnapshot writes a Claude auth file and returns it as the watcher
++// reads it (a file snapshot of that file).
++func reloginSnapshot(t *testing.T, path, token string, expiry time.Time) *Auth {
++	t.Helper()
++	expired := expiry.Format(time.RFC3339)
++	data := []byte(`{"type":"claude","access_token":"` + token + `-at","refresh_token":"` + token + `-rt","expired":"` + expired + `"}`)
++	if err := os.WriteFile(path, data, 0o600); err != nil {
++		t.Fatal(err)
++	}
++	a := &Auth{ID: filepath.Base(path), Provider: "claude", FileName: filepath.Base(path), Status: StatusActive,
++		Attributes: map[string]string{"path": path, "source": path},
++		Metadata:   map[string]any{"type": "claude", "access_token": token + "-at", "refresh_token": token + "-rt", "expired": expired}}
++	a.BindFileSnapshot(path, data)
++	return a
++}
++
++// Controls for the 8.0.39 runtime-state preservation the fix keeps: a rewrite
++// with unchanged tokens keeps the failed refresh's state, and new tokens keep
++// a live credential quota cooldown.
++func TestReloginKeepsUnchangedTokensAndLiveQuota(t *testing.T) {
++	ctx := WithSkipPersist(context.Background())
++	invalidGrant := errors.New(`token refresh failed with status 400: {"error": "invalid_grant"}`)
++	t.Run("unchanged tokens", func(t *testing.T) {
++		path := filepath.Join(t.TempDir(), "claude-a.json")
++		m := NewManager(nil, nil, nil)
++		m.SetConfigSnapshot(&internalconfig.Config{DisableCooling: true})
++		m.RegisterExecutor(&unauthorizedRefreshExecutor{id: "claude", refreshErr: invalidGrant})
++		expiry := time.Now().Add(-time.Hour)
++		if _, err := m.Register(ctx, reloginSnapshot(t, path, "old", expiry)); err != nil {
++			t.Fatal(err)
++		}
++		m.refreshAuth(ctx, "claude-a.json")
++		if _, err := m.Update(ctx, reloginSnapshot(t, path, "old", expiry)); err != nil {
++			t.Fatal(err)
++		}
++		after, _ := m.GetByID("claude-a.json")
++		if after.Status != StatusError || after.RefreshFailures == 0 {
++			t.Fatalf("rewrite with unchanged tokens dropped the failed refresh: status=%s refresh_failures=%d", after.Status, after.RefreshFailures)
++		}
++	})
++	t.Run("live credential quota", func(t *testing.T) {
++		path := filepath.Join(t.TempDir(), "claude-a.json")
++		m := NewManager(nil, nil, nil)
++		m.RegisterExecutor(&unauthorizedRefreshExecutor{id: "claude"})
++		if _, err := m.Register(ctx, reloginSnapshot(t, path, "old", time.Now().Add(8*time.Hour))); err != nil {
++			t.Fatal(err)
++		}
++		recover := time.Now().Add(time.Hour)
++		m.mu.Lock()
++		current := m.auths["claude-a.json"]
++		current.Status, current.Unavailable = StatusError, true
++		current.LastError = &Error{HTTPStatus: http.StatusTooManyRequests, Message: "credential quota exhausted"}
++		current.Quota = QuotaState{Exceeded: true, Reason: "credential_quota", NextRecoverAt: recover}
++		m.mu.Unlock()
++		if _, err := m.Update(ctx, reloginSnapshot(t, path, "new", time.Now().Add(8*time.Hour))); err != nil {
++			t.Fatal(err)
++		}
++		after, _ := m.GetByID("claude-a.json")
++		if !after.Unavailable || !after.Quota.NextRecoverAt.Equal(recover) {
++			t.Fatalf("sign-in released a live credential quota cooldown: unavailable=%v recover=%v", after.Unavailable, after.Quota.NextRecoverAt)
++		}
++	})
++}
++
++// Signing an account in again after its refresh failed (a dead refresh token,
++// or a token endpoint outage) puts it back into rotation, with cooling
++// disabled as the rendered configuration sets it (upstream issue 6948, a
++// regression of 8.0.39). A live request cooldown still survives the sign-in.
++func TestReloginAfterRefreshFailureRestoresAccount(t *testing.T) {
++	outage := errors.New("token refresh failed with status 503: upstream connect error")
++	for _, tc := range []struct {
++		name        string
++		refreshErr  error
++		cooling     bool
++		rateLimited bool
++	}{
++		{"invalid grant", errors.New(`token refresh failed with status 400: {"error": "invalid_grant", "error_description": "Refresh token not found or invalid"}`), false, false},
++		{"token endpoint 503", outage, false, false},
++		{"active 429 cooldown", outage, true, true},
++	} {
++		t.Run(tc.name, func(t *testing.T) {
++			ctx := WithSkipPersist(context.Background())
++			path := filepath.Join(t.TempDir(), "claude-a.json")
++			m := NewManager(nil, nil, nil)
++			m.SetConfigSnapshot(&internalconfig.Config{DisableCooling: !tc.cooling})
++			m.RegisterExecutor(&unauthorizedRefreshExecutor{id: "claude", refreshErr: tc.refreshErr})
++			if _, err := m.Register(ctx, reloginSnapshot(t, path, "old", time.Now().Add(-time.Hour))); err != nil {
++				t.Fatal(err)
++			}
++			if tc.rateLimited {
++				retryAfter := time.Hour
++				m.MarkResult(ctx, Result{AuthID: "claude-a.json", Provider: "claude", RetryAfter: &retryAfter,
++					Error: &Error{HTTPStatus: http.StatusTooManyRequests, Message: "rate limited"}})
++			}
++			m.refreshAuth(ctx, "claude-a.json") // expired token, refresh fails
++			failed, _ := m.GetByID("claude-a.json")
++			if !failed.Unavailable {
++				t.Fatalf("precondition: refresh failure left the account available: %+v", failed)
++			}
++			if _, err := m.Update(ctx, reloginSnapshot(t, path, "new", time.Now().Add(8*time.Hour))); err != nil {
++				t.Fatal(err)
++			}
++			after, _ := m.GetByID("claude-a.json")
++			if tc.rateLimited {
++				if !after.Unavailable || !after.NextRetryAfter.After(time.Now()) {
++					t.Fatal("sign-in released a live 429 cooldown")
++				}
++				return
++			}
++			// It serves at once, without waiting for a later refresh.
++			registry.GetGlobalRegistry().RegisterClient("claude-a.json", "claude", []*registry.ModelInfo{{ID: "fixture-model"}})
++			t.Cleanup(func() { registry.GetGlobalRegistry().UnregisterClient("claude-a.json") })
++			resp, errExecute := m.Execute(ctx, []string{"claude"}, cliproxyexecutor.Request{Model: "fixture-model"}, cliproxyexecutor.Options{})
++			serves := errExecute == nil && string(resp.Payload) == "claude-a.json:new-at"
++			if !serves || after.Unavailable || after.Status != StatusActive || after.LastError != nil || after.RefreshFailures != 0 {
++				t.Fatalf("signed-in account still out of rotation: serves=%v (err=%v) status=%s msg=%q unavailable=%v refresh_failures=%d",
++					serves, errExecute, after.Status, after.StatusMessage, after.Unavailable, after.RefreshFailures)
++			}
++		})
++	}
++}

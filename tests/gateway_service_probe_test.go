@@ -295,6 +295,96 @@ func TestOmissionTerminalRejectionReload(t *testing.T) {
 	}
 }
 
+// omissionReloginExecutor serves only the signed-in account's new access
+// token and fails every refresh with the configured error.
+type omissionReloginExecutor struct {
+	coreauth.ProviderExecutor
+	refreshErr error
+}
+
+func (*omissionReloginExecutor) Identifier() string { return "claude" }
+func (*omissionReloginExecutor) Execute(_ context.Context, auth *coreauth.Auth, _ cliproxyexecutor.Request, _ cliproxyexecutor.Options) (cliproxyexecutor.Response, error) {
+	if token, _ := auth.Metadata["access_token"].(string); token == "dummy-omission-new-at" {
+		return cliproxyexecutor.Response{Payload: []byte("ok")}, nil
+	}
+	return cliproxyexecutor.Response{}, &coreauth.Error{HTTPStatus: http.StatusUnauthorized, Message: "token invalidated"}
+}
+func (e *omissionReloginExecutor) Refresh(context.Context, *coreauth.Auth) (*coreauth.Auth, error) {
+	return nil, e.refreshErr
+}
+
+// omissionReloginSnapshot writes a Claude credential file and returns it as
+// the watcher reads it.
+func omissionReloginSnapshot(t *testing.T, path, token string, expiry time.Time) *coreauth.Auth {
+	t.Helper()
+	expired := expiry.Format(time.RFC3339)
+	access, refresh := "dummy-omission-"+token+"-at", "dummy-omission-"+token+"-rt"
+	data := []byte(`{"type":"claude","access_token":"` + access + `","refresh_token":"` + refresh + `","expired":"` + expired + `"}`)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	auth := &coreauth.Auth{ID: filepath.Base(path), Provider: "claude", FileName: filepath.Base(path),
+		Status: coreauth.StatusActive, Attributes: map[string]string{"path": path, "source": path},
+		Metadata: map[string]any{"type": "claude", "access_token": access, "refresh_token": refresh, "expired": expired}}
+	auth.BindFileSnapshot(path, data)
+	return auth
+}
+
+// With cooling disabled, as rendered, signing in again after a failed refresh
+// (a dead refresh token, or a token endpoint failure) returns the account to
+// rotation at once: the new tokens clear the refresh failure and its status.
+func TestOmissionReloginAfterRefreshFailure(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		refreshErr error
+	}{
+		{"invalid grant", errors.New(`token refresh failed with status 400: {"error": "invalid_grant"}`)},
+		{"token endpoint 503", errors.New("token refresh failed with status 503: upstream connect error")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			const id = "omission-relogin.json"
+			ctx := coreauth.WithSkipPersist(context.Background())
+			reg := GlobalModelRegistry()
+			reg.RegisterClient(id, "claude", []*ModelInfo{{ID: "claude-omission-relogin"}})
+			t.Cleanup(func() { reg.UnregisterClient(id) })
+			path := filepath.Join(t.TempDir(), id)
+			manager := coreauth.NewManager(nil, nil, nil)
+			manager.SetConfigSnapshot(&config.Config{DisableCooling: true})
+			manager.RegisterExecutor(&omissionReloginExecutor{refreshErr: tc.refreshErr})
+			if _, err := manager.Register(ctx, omissionReloginSnapshot(t, path, "old", time.Now().Add(-time.Hour))); err != nil {
+				t.Fatal(err)
+			}
+			// The background refresh of the expired token fails, as it does
+			// before the user signs in again.
+			refreshCtx, stopRefresh := context.WithCancel(ctx)
+			manager.StartAutoRefresh(refreshCtx, 10*time.Millisecond)
+			deadline := time.Now().Add(10 * time.Second)
+			for {
+				if failed, ok := manager.GetByID(id); ok && failed.Unavailable && failed.LastError != nil {
+					break
+				}
+				if time.Now().After(deadline) {
+					stopRefresh()
+					t.Fatal("precondition: the background refresh never failed the account")
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
+			stopRefresh()
+			manager.StopAutoRefresh()
+			if _, err := manager.Update(ctx, omissionReloginSnapshot(t, path, "new", time.Now().Add(8*time.Hour))); err != nil {
+				t.Fatal(err)
+			}
+			// The sign-in itself clears the failure, before any request succeeds.
+			after, _ := manager.GetByID(id)
+			_, errExecute := manager.Execute(ctx, []string{"claude"}, cliproxyexecutor.Request{Model: "claude-omission-relogin"}, cliproxyexecutor.Options{})
+			if errExecute != nil || after.Unavailable || after.Status != coreauth.StatusActive || after.LastError != nil || after.RefreshFailures != 0 {
+				t.Fatalf("signed-in account still out of rotation: err=%v status=%s unavailable=%t refresh_failures=%d",
+					errExecute, after.Status, after.Unavailable, after.RefreshFailures)
+			}
+		})
+	}
+}
+
 // The fixture counts only actors and sockets it owns, not a noisy global
 // goroutine total. The existing durable-save/join probes remain separate.
 type d217ServiceResources struct {

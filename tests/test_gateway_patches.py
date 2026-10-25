@@ -374,6 +374,9 @@ class PatchOmissionProbeTests(unittest.TestCase):
     def test_terminal_rejection_reload(self):
         self.check_probe("service", "TestOmissionTerminalRejectionReload", "TR1")
 
+    def test_relogin_after_refresh_failure(self):
+        self.check_probe("service", "TestOmissionReloginAfterRefreshFailure", "RA1")
+
 
 
 class CodexIdentityTests(unittest.TestCase):

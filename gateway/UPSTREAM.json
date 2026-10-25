@@ -184,6 +184,11 @@
       "basename": "cli-proxy-api-terminal-rejection-reload.patch",
       "sha256": "923063a24f7c08c4eb7bc156eb7a9a84edace9caf1aebfbb1ab11ce5f21ab366",
       "admitted": true
+    },
+    {
+      "basename": "cli-proxy-api-relogin-after-refresh-failure.patch",
+      "sha256": "c14511b09f0f6c7f7317cf4d68e71879d9ee96e93b6c06f90fe9f13a889015e1",
+      "admitted": true
     }
   ],
   "candidates": [],
@@ -1019,6 +1024,20 @@
       "expected_tests": [
         "TestRefreshAuthStatePreservesUnreadableFile",
         "TestFullScanPreservesAuthsInUnreadableDir"
+      ]
+    },
+    {
+      "name": "relogin-after-refresh-failure",
+      "packages": [
+        "./sdk/cliproxy/auth"
+      ],
+      "run": "^(TestReloginAfterRefreshFailureRestoresAccount|TestReloginKeepsUnchangedTokensAndLiveQuota)$",
+      "platforms": "portable",
+      "race": false,
+      "count": null,
+      "expected_tests": [
+        "TestReloginAfterRefreshFailureRestoresAccount",
+        "TestReloginKeepsUnchangedTokensAndLiveQuota"
       ]
     }
   ],

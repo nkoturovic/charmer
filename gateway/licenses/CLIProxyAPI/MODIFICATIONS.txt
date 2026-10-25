@@ -346,3 +346,8 @@ Before the modules are vendored, this patch updates the module requirements:
     sha256 923063a24f7c08c4eb7bc156eb7a9a84edace9caf1aebfbb1ab11ce5f21ab366
       modified  sdk/cliproxy/auth/conductor_selection.go
       added     sdk/cliproxy/auth/terminal_rejection_reload_test.go
+
+28. cli-proxy-api-relogin-after-refresh-failure.patch
+    sha256 c14511b09f0f6c7f7317cf4d68e71879d9ee96e93b6c06f90fe9f13a889015e1
+      modified  sdk/cliproxy/auth/conductor_lifecycle.go
+      added     sdk/cliproxy/auth/relogin_after_refresh_failure_test.go

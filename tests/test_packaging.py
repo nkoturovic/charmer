@@ -93,6 +93,7 @@ PATCH_IDS = {
     "cli-proxy-api-context-error-normalization.patch": 27, "cli-proxy-api-log-reduction.patch": 28,
     "cli-proxy-api-tool-call-integrity.patch": 29, "cli-proxy-api-initial-registration.patch": 31,
     "cli-proxy-api-terminal-rejection-reload.patch": 32,
+    "cli-proxy-api-relogin-after-refresh-failure.patch": 33,
 }
 
 
