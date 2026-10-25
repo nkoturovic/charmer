@@ -101,16 +101,20 @@ Current default: the **`balanced` seed profile**
 explorer/xhigh analyst, Opus analyst-strong, Luna max / Sol xhigh / Sol max
 implementer grades, Sol max reviewer and Opus reviewer-strong.
 The trusted catalog pins Claude
-**2.1.310** as the verified binary. The gateway is **CLIProxyAPI 8.0.33**
+**2.1.310** as the verified binary. The gateway is **CLIProxyAPI 8.0.42**
 (pinned in `gateway/UPSTREAM.json` and built by `tools/build.py` with the official
-Go toolchain, `CGO_ENABLED=0`; see "Gateway build" in §4) with twenty-eight local patches (admission ids 1–10, 12, 13, 15–29 and 31; 11 was never admitted, 14 retired with 8.0.33, 30 was withdrawn) —
+Go 1.27.3 toolchain, `CGO_ENABLED=0`; see "Gateway build" in §4) with
+twenty-eight local patches (admission ids 1–10, 12, 13, 15–23, 26–29 and
+31–33; 11 was never admitted, 14 retired with 8.0.33, 24 and 25 retired
+with 8.0.42, and 30 was withdrawn) —
 loopback OAuth bind, Kimi/Claude compat, the non-Claude cache-retention
 boundary (§2 invariant 11), the read-only management allowlist (an
 engine-level guard serves
 only `GET /v0/management/auth-files`, `…/auth-files/models` and
 `…/model-definitions/:channel` and refuses every other management-scoped
-request with a bare 404 before any key check; the env password does not
-imply allow-remote and the RESP surface is closed; inert until a
+request with a bare 404 before any key check, including the new v8 SIWC
+bind and both SIWC status routes; the env password does not imply
+allow-remote and the RESP surface is closed; inert until a
 start-selected management key is injected), and
 the config watcher (parent-directory watch, so a rename-replaced
 `config.yaml` hot-reloads; blank or key-dropping configs never load), and the
@@ -182,30 +186,40 @@ drops the credential from the routing line (`session-affinity:` keeps
 `provider=`/`model=` at info), moves the websocket lines to debug without
 the auth ID, names an account by `auth_index` and an API key as
 `[redacted]` in selection/failure lines, and logs `auth_index=nil` for an
-API key in the unthrottled substitution warning (`Auth.LogIndex`); the
-auth-file watcher and other lines can still name account files (Go gate
+API key in the unthrottled substitution warning (`Auth.LogIndex`); guardian
+inheritance keeps session/parent/provider/model but drops the credential ID.
+The auth-file watcher and other lines can still name account files (Go gate
 `log-reduction`, built-gateway row `LogReductionTests` LR1; it edits #10's
-keyed identity branches, a declared edge). #29 repairs tool calls on
-the keyed and keyless Messages-to-chat routes: calls whose upstream omits
-their index stay distinct (interleaved fragments follow their call's ID), an
-announced call keeps its ID, and a reply that converts tool calls ends with
-`tool_use`, streamed or not, unless the finish reason is `length` or
-`content_filter` (Go gate `tool-call-integrity`,
-built-gateway rows `ToolCallIntegrityTests` TI1–TI3 with controls TIC1/TIC2;
-it edits a golden file of #22, a declared `PATCH_DEPENDENCIES` edge). #31
-keeps a newly loaded credential's queued model registration when ordinary
+keyed identity branches, a declared edge). #29 keeps streamed tool calls
+distinct on the keyed and keyless Messages-to-chat routes: explicit indexes
+and omitted array positions use separate accumulator namespaces, and an
+index-less fragment rejoins the call whose ID it carries. Upstream now
+supplies the non-stream stop-reason and announced-ID repairs; the local
+patch retains only the stream residual (Go gate `tool-call-integrity`,
+built-gateway rows `ToolCallIntegrityTests` TI1–TI3 with controls TIC1/TIC2).
+#31 keeps a newly loaded credential's queued model registration when ordinary
 bookkeeping (a request result, refresh scheduling, cooldown or quota state)
 advances its generation first: it drops the generation-only skip and keeps the
 disabled and removed checks (omission row IR1, probe
-`TestOmissionInitialRegistration` in `tests/gateway_service_probe_test.go`). Refused
-credentialed redirects yield fixed local 502 `upstream redirect refused`, with
-no upstream body/Location or path-bearing refusal log. Keyed-compat safety is
+`TestOmissionInitialRegistration` in `tests/gateway_service_probe_test.go`).
+#32 preserves terminal OAuth rejection of an unchanged credential across
+model or alias reload reconciliation; new tokens can still clear that
+rejection, and ordinary failures still reset (Go gate
+`terminal-rejection-reload`, omission row TR1). #33 extends the reset to
+failed-refresh state: new tokens clear the stale failed-refresh status,
+message and count, unless a live retry or quota deadline is still pending.
+It covers `invalid_grant` and stale unavailable/error states; an
+unchanged-token file rewrite retains the failure (Go gate
+`relogin-after-refresh-failure`, omission row RA1; upstream issue #6948).
+Refused credentialed redirects yield fixed local 502
+`upstream redirect refused`, with no upstream body/Location or path-bearing
+refusal log. Keyed-compat safety is
 route-scoped to Claude `/v1/messages` → chat; compact, images and SDK
 `HttpRequest` are outside that promise. Retry-After (admission ID 11) was
 never admitted; its earlier candidate file was removed with the 8.0.33 rebase.
-The embedded
-registry carries every catalog wire except the overlay-only generations
-(the OAuth how-to in §5); the pinned registry directory
+The embedded registry carries every current catalog wire on the Claude
+and Codex OAuth pools; retained overlay markers do not replace a static
+entry (the OAuth how-to in §5). The pinned registry directory
 (`${cliProxyApi.src}/internal/registry/models`,
 pre-patch) is a checked-in resource, `registry/` (generated by
 `python3 tools/build.py gateway registry` after `gateway fetch`; the flake
@@ -392,7 +406,7 @@ Profile lineups and direct lineups, one compile path:
    env; the latter is scrubbed from the launch environment and reserved in
    lead env, so an inherited `capacity` cannot narrow recovery.
    Earlier-cut recovery remains a required gate. With client 2.1.310 and the
-   tested 8.0.33 gateway candidate, missing `message_stop` after completed
+   tested 8.0.42 gateway candidate, missing `message_stop` after completed
    content and terminal `message_delta` can instead produce client
    false-success without recovery, despite the gateway’s SSE error. This
    disclosed known negative is not recovery or proof of harmlessness; see
@@ -416,7 +430,7 @@ Profile lineups and direct lineups, one compile path:
     writes (`~/.claude/agents`, `~/.claude/settings.json`, gateway env).
 11. **Non-Claude outbound cache-retention boundary.** The gateway
     patch `cli-proxy-api-non-claude-cache-retention.patch` (pinned
-    CLIProxyAPI 8.0.33; derived over the split executor files)
+    CLIProxyAPI 8.0.42; derived over the split executor files)
     enforces that `prompt_cache_retention` — the OpenAI Responses-platform
     cache TTL control — is stripped at the **final outbound boundary** for
     every non-Claude route. Claude Code 2.1.310 no longer sends the
@@ -2223,9 +2237,10 @@ On memory-tight hosts the suite's tmpfs fixture copies can fail with
      claude-metadata-locking → oauth-model-overlay → no-antigravity-egress →
      codex-client-identity → antigravity-loopback-callback →
      codex-api-key-safety → refresh-shutdown-join → openai-content-chunks →
-     charmer-model-ids → access-log-path-quoting → codex-refresh-lead →
-     output-cap → context-error-normalization → log-reduction →
-     tool-call-integrity → initial-registration. Retry-After (11) is not
+     charmer-model-ids → output-cap → context-error-normalization →
+     log-reduction → tool-call-integrity → initial-registration →
+     terminal-rejection-reload → relogin-after-refresh-failure.
+     Retry-After (11) is not
      admitted. New hunks must be generated against the
      **sequentially patched** source. Generate it offline against
      the pinned tag (`git show v<baseline>:internal/registry/models/models.json`,
@@ -2431,12 +2446,10 @@ the operator's approval. Doctor never retires backups.
   below macOS 13; the native Apple silicon journey is on macOS 15, with no
   runtime claim for 13 or 14 and no Intel support claim. The 2.0.1 updater
   does not enforce that floor. See `docs/install/macos.md` and `docs/update.md`.
-- **Credential-read and WebSocket limits:** a credential-file read error can
-  withdraw an account's models rather than retain its last working credentials;
-  restore owner-only readability and follow `docs/troubleshooting.md` before
-  any restart. An already-open loopback WebSocket can keep using a retired
-  gateway key until disconnect; managed Claude Code uses HTTP, not that route
-  (`docs/guides/gateway.md`). Neither behavior is repaired by this release.
+- **WebSocket key-retirement limit:** an already-open loopback WebSocket can
+  keep using a retired gateway key until disconnect; managed Claude Code
+  uses HTTP, not that route (`docs/guides/gateway.md`). This behavior is not
+  repaired by this release.
 - **Context refusals:** the normalized Codex account/API-key errors recover
   before and after headers; OpenRouter and other OpenAI-compatible errors
   are not normalized and require `/compact` (`docs/troubleshooting.md`).
@@ -2798,9 +2811,9 @@ Audit=true is guarded by `tests/fixtures/keyed-compat-audit.json` and
 `test_packaging.KeyedAuditInvariantTests`: the full ordered basename@sha256
 manifest (equal to the actual patch bytes, the catalog order and the packaged
 contract), each shipped patch numbered by its reviewed admission id
-(`test_packaging.PATCH_IDS`, never inferred from position or series length; 11
-and 14 are excluded, 30 was withdrawn), mandatory 3/9/10, build definition,
-recipe and build tool, source/vendor, client and exact whole-file
+(`test_packaging.PATCH_IDS`, never inferred from position or series length;
+11, 14, 24 and 25 are excluded, 30 was withdrawn), mandatory 3/9/10,
+build definition, recipe and build tool, source/vendor, client and exact whole-file
 relevant-source identities plus complete core/audit/client/`J1` proof (34 rows:
 5 core, 11 audit, 9 client and 9 journeys). The shipped flag is true only with
 a current proof, otherwise false: any listed-source change requires a fresh
