@@ -768,7 +768,8 @@ class EditTests(ProfilesCase):
         self.assertFalse(row.loadable)
         self.assertEqual(row.state_text, defaults.STATE_UNLOADABLE)
         self.assertIn("line 3", row.notes)
-        _result, win = self.run_screen(self.screen(selected="broken"), [ESC], width=200)
+        width = max(200, len(row.description) + 3)
+        _result, win = self.run_screen(self.screen(selected="broken"), [ESC], width=width)
         frame = win.frames[0]
         self.assertIn("broken.json line 3:", frame)
         self.assertIn(setup_profiles.PROFILE_REASON["unloadable"], frame)

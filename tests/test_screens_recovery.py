@@ -11,6 +11,9 @@ session id, and the under-lock guards still refuse the current session.
 
 from __future__ import annotations
 
+import os
+import tempfile
+import textwrap
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -30,7 +33,9 @@ class SessionsDetailsTests(_SessionsCase):
         record = self.record(pending=True)
         from test_tui import END
 
-        result, win = self.run_screen(self.screen(), ["v", END, ESC, ESC], height=40, width=120)
+        # Keep the full directory line visible, including TextView's four columns of padding.
+        width = max(120, len(f"directory: {record['cwd']}") + 4)
+        result, win = self.run_screen(self.screen(), ["v", END, ESC, ESC], height=40, width=width)
         self.assertIsNone(result)
         text = _flat("\n".join(win.frames))
         self.assertIn(cli_text.SESSIONS_DETAILS_TITLE, text)
@@ -452,13 +457,22 @@ class RelinkGateTests(_SessionsCase):
         from test_tui import FakeWindow
 
         gate = resume_checks._evaluate_resume_gate(self.runtime, record, live_prefixes=frozenset())
-        win = FakeWindow(list(keys), height=30, width=110)
+        height = max(30, sum(len(textwrap.wrap(line, width=60)) for line in gate.lines) + 6)
+        buttons = [label for _value, label in gate.actions] + ["Cancel"]
+        width = max(110, sum(len(label) + 4 for label in buttons) + 10)
+        win = FakeWindow(list(keys), height=height, width=width)
         return gate, launch_sessions._run_resume_gate_modal(self.runtime, record, gate, win, tui.MONO_PALETTE), win
 
     def test_a_transcript_in_another_existing_project_relinks_and_resumes(self) -> None:
         record = self.record()
-        elsewhere = Path(self.runtime.cwd).parent / "elsewhere"
-        elsewhere.mkdir()
+        # session_facts._native_project_slug hashes paths over 200 characters, making them undecodable.
+        bases = {Path("/tmp"), Path(tempfile.gettempdir())}
+        writable = [base for base in bases if base.is_dir() and os.access(base, os.W_OK | os.X_OK)]
+        self.assertTrue(writable, "relink fixture needs a writable temporary base")
+        base = min(writable, key=lambda path: len(os.fsencode(path.resolve())))
+        temporary = tempfile.TemporaryDirectory(prefix="relink-", dir=base)
+        self.addCleanup(temporary.cleanup)
+        elsewhere = Path(temporary.name)
         transcript = self.transcript(record)
         target = transcript.parent.parent / cli._native_project_slug(str(elsewhere)) / transcript.name
         target.parent.mkdir(parents=True)

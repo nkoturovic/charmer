@@ -21,6 +21,7 @@ from unittest import mock
 
 from charmer import gateway_inhibition, install_receipt, install_txn, installs, service, state
 import test_inhibition  # module import: no test classes re-exported
+from _unix_socket import bind_unix_socket
 
 
 class TxnTestCase(unittest.TestCase):
@@ -485,7 +486,7 @@ print("special launcher is not owned")
                 if kind == "fifo":
                     os.mkfifo(launcher)
                 else:
-                    sock.bind(str(launcher))
+                    bind_unix_socket(sock, launcher)
                 try:
                     result = subprocess.run([sys.executable, "-c", program, str(launcher)], cwd=self.tmp,
                                             stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=3)

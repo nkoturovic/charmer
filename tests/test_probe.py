@@ -32,6 +32,7 @@ from unittest import mock
 
 from charmer import dev, pin, probe, state, strict_json
 from charmer.probe import ProbeError
+from _unix_socket import bind_unix_socket
 
 
 _FAKE_CLAUDE_BODY = """import http.client
@@ -2065,7 +2066,7 @@ class DaemonDomainSnapshotTests(ProbeTestCase):
         (self.domain / "a-dir").mkdir()
         listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         try:
-            listener.bind(str(self.domain / "m-sock"))
+            bind_unix_socket(listener, self.domain / "m-sock")
             snap = probe.snapshot_daemon_domain(self.domain)
         finally:
             listener.close()
