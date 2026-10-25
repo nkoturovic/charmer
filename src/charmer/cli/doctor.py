@@ -2052,7 +2052,7 @@ def _doctor_quota_report(runtime: runtime_mod.Runtime) -> tuple[list[str], list[
     )
 
 
-def _doctor_journal_report(runtime: runtime_mod.Runtime, text: str | gateway_events.LogWindow | None = None, *,
+def _doctor_journal_report(runtime: runtime_mod.Runtime, text: gateway_events.LogWindow | None = None, *,
                            refresh_failures: frozenset[str] = frozenset(),
                            info_lines: list[str] | None = None) -> list[str]:
     """Dead OAuth refresh and per-model 429/402/403 counts (Attention).
