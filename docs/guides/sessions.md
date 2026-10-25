@@ -120,10 +120,13 @@ off: a `subagentStatusLine` of your own, even one that prints nothing:
 ```
 
 If one of those files cannot be read (not valid JSON, larger than 1 MiB,
-or not readable), charmer sets none either, so your setting is never
-overridden; `charmer doctor` names the file. A change to those files
-applies at the next resume (`charmer -r <id>`). `charmer doctor` says which
-one new sessions get.
+not a regular file, or not readable), charmer sets none either, so your
+setting is never overridden. `charmer doctor` reports a user-owned setting
+first, otherwise an unreadable file, otherwise charmer's line. A change to
+those files applies at the next resume (`charmer -r <id>`).
+
+For adoption after an update and scope repair after rollback, see
+[updating from 2.1.0](../update.md#updating-from-210).
 
 charmer never sets Claude Code's main `statusLine`. To use charmer's, add
 this to `~/.claude/settings.json`:

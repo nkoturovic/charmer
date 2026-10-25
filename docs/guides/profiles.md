@@ -158,7 +158,8 @@ need the exact declared selector/contract mapping; no effort is invented.
 A newer release can ship a newer version of a shipped profile. Doctor then
 says so as Attention, and **P** → **U** or
 `charmer profile reseed <name>` takes it; your changed copy is kept
-as a backup. An update never reseeds by itself.
+as a backup. The reseed preview includes changes to the lead-provider
+restriction. An update never reseeds by itself.
 
 ## Sessions that follow a profile
 
@@ -172,7 +173,7 @@ that is **pinned** keeps its own lineup. See [lineup.md](lineup.md).
 A named binding gives a model and effort pair a name (`fast`, for example)
 that profile slots can use instead of a model; editing the binding changes
 every profile that uses it. Manage them with **P** → **B** or in the
-editor (**N**). A name starts with a lower-case letter and has at most 32
+editor (**B**). A name starts with a lower-case letter and has at most 32
 lower-case letters, digits and `-`; it may not equal a model key. A
 binding still in use cannot be deleted, and an edit that would break a
 profile using it is refused. They are stored in

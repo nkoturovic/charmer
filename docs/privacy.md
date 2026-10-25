@@ -28,9 +28,9 @@ the client made through its proxy to a local interceptor that accepted any
 host. The test client key reached the local gateway and nothing else: none
 of the requests to `api.anthropic.com`, `downloads.claude.ai` or
 `raw.githubusercontent.com` carried it, with the managed settings or with
-the client's defaults. The previous pin still sent it with requests to
-`api.anthropic.com` (paths including `/api/claude_cli/bootstrap` and
-`/api/eval/<id>`). These requests were intercepted locally, not sent to
+the client's defaults. Claude Code 2.1.292 and earlier sent it with
+requests to `api.anthropic.com` (paths including `/api/claude_cli/bootstrap`
+and `/api/eval/<id>`). These requests were intercepted locally, not sent to
 anyone; a request that does not use the proxy was not observed.
 
 This is not an exhaustive list of Claude Code's destinations. Equivalent
