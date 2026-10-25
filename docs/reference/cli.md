@@ -17,6 +17,30 @@ Exception: `update --verify` uses 0 complete, 1 mismatch, 3 incomplete or
 unsupported (2 usage, 130 interrupted). A verified installation with a
 stopped gateway is not ready; see [verification](../update.md#verify-an-installation).
 
+## Output and partial failures
+
+A plain `charmer sessions list` (also bare `charmer -r` without a
+terminal) keeps readable rows when a record or the sessions directory
+cannot be read, reports the errors on stderr and exits 1.
+`charmer sessions list --json` instead returns an unavailable document,
+not a partial inventory. In a complete JSON listing, `live` and
+`needs_attention` are independent: a running session can need repair or a
+lead choice, and an ended one can too.
+
+`charmer sessions relink-runtime <id> <runtime-id>` saves the identity
+change before repairing its scope. If that repair fails or is skipped,
+the identity change remains; the command exits 1 and prints the exact
+`charmer doctor --repair <id>` command to finish it.
+
+Declining token rotation, starter-profile creation or an import returns
+3. A profile editor that cannot start or exits unsuccessfully returns 1;
+the profile is not saved and the message names the temporary copy kept
+for recovery. `$VISUAL` takes precedence over `$EDITOR`.
+
+On a non-UTF-8 output stream, unsupported characters are replaced, even
+when Python's UTF-8 mode is enabled. This also affects JSON string values:
+use `PYTHONIOENCODING=utf-8` when their exact text matters.
+
 <!-- generated: cli-reference (tools/docs_gen.py) -->
 
 ## Launch

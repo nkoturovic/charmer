@@ -6,6 +6,133 @@ follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Upgrade notes
+
+The update installs the verified Claude Code 2.1.310 copy before switching
+releases; your own Claude Code installation is untouched. Running sessions
+use the new copy at their next launch or resume. State and record formats
+remain 4.
+
+Existing managed sessions pick up charmer's subagent status line at their
+next resume, or through `charmer doctor --repair-all` for stopped sessions.
+Your own `subagentStatusLine` setting wins; charmer also leaves it unset when
+it cannot read a settings layer. Doctor explains which line new sessions
+will use. After rolling back to 2.1.0, its doctor reports BLOCKED
+"scope differs" for sessions with the new compiled key until
+`charmer doctor --repair-all` or a resume rebuilds their scopes.
+See [updating from 2.1.0](docs/update.md#updating-from-210).
+
+### Added
+
+- Managed sessions show subagent type, requested model, effort, context and
+  task in Claude Code's agent panel. Your main status line is unchanged;
+  `charmer statusline main` is available as an opt-in renderer.
+- Doctor reports which subagent status line new sessions get, including a
+  user-owned setting or a settings file it cannot read.
+
+### Changed
+
+- Managed sessions use Claude Code 2.1.310 and catalog 41. Every client
+  platform build is checked against Anthropic's signed manifest. Behind
+  the gateway, some built-in and MCP tools are listed by name and fetched
+  with ToolSearch when needed.
+- Release bundles run CPython 3.15.1 from python-build-standalone 20261021.
+  The Nix flake uses a refreshed nixos-unstable lock.
+- Running setup when everything is already configured avoids repeated
+  client checks; every launch still verifies the client's full hash.
+- Development and tests use refreshed build and CI pins and improve
+  developer promotion (file modes and rollback), lock and resource cleanup,
+  draft/build failures, probe synchronization and timeout cleanup, licence
+  reporting, pin checks, required tests, hygiene and fixture isolation;
+  [test-isolation limits](AGENTS.md#4-development-workflow) still apply.
+- Help distinguishes `charmer migrate` and `charmer restore-2x` support
+  for pre-public record formats from `charmer update --rollback`. These
+  commands remain available; no retirement is scheduled.
+
+### Security
+
+- Provider listings hide credential-bearing file names and model keys
+  from rejected secret-bearing declarations. Model edit/removal commands
+  cannot resolve those declarations as write targets, and qualification
+  refusals use the same redacted diagnostics.
+- Terminal control characters in session relink success lines are escaped.
+- Isolated checks on Claude Code 2.1.310 again observe the synthetic gateway
+  key only at the gateway in the tested request paths. Requests that bypass
+  the test proxy were not observed.
+- The client pin includes upstream sandbox-boundary, worktree and
+  Bash-permission fixes from 2.1.304–2.1.309. charmer has not tested those
+  fixes and does not replace the client's sandbox or worktree protections.
+- The Nix lock selects OpenSSL 3.5.9, including the fix for CVE-2026-84782.
+
+### Fixed
+
+- After an HTTP MCP connection closes mid-call, Claude Code retries only
+  tools the server marks read-only or idempotent. A state-changing tool
+  marked idempotent can still run twice; check the external system after
+  an interrupted call before asking again.
+- An inherited setting can no longer narrow managed sessions' retry
+  watchdog to capacity errors only.
+- Session listings report an incomplete inventory instead of silently
+  omitting unreadable records. Plain output keeps readable rows and exits
+  1; JSON reports unavailable. Whether a session is running is independent
+  of whether it needs attention.
+- Relinking a session reports an unfinished scope repair, keeps the saved
+  identity change and names the doctor command to finish it.
+- Explicit non-UTF-8 output encodings no longer crash help or listings,
+  even with Python's UTF-8 mode enabled. Unsupported characters are
+  replaced; use UTF-8 for lossless JSON text.
+- Declining token rotation, starter-profile creation or an import returns
+  exit 3. A profile editor that fails to start reports the error without
+  a traceback, returns 1 and names the unsaved copy kept for recovery.
+- Interrupted or truncated release downloads fail before switching the
+  installation, without exposing response details; local write errors keep
+  their own diagnostics. Launcher-ownership checks no longer hang on a
+  FIFO or socket at a recorded path.
+- Concurrent installers and updaters serialize stale-lock reclamation and
+  remove only their own lock. Incoming bundles are flushed before replacing
+  installed trees and before switching release links, including reinstalling
+  the same version. An older bundle without the helper uses system `sync`
+  with a notice.
+- Service removal and failed-install cleanup recheck the gateway after its
+  hold check. An incomplete restoration keeps gateway changes paused until
+  files, endpoint, service state and required starts are restored. Missing
+  or unusable state directories now name a recovery command.
+- Gateway log pruning counts toward the start deadline. Invalid UTC dates
+  in instance-log names hold changes and skip pruning instead of crashing.
+- File replacement reports when new bytes were written but their durability
+  is unconfirmed, rather than implying that nothing changed.
+- JSON readers accept valid surrounding whitespace and reject oversized
+  numbers, deep nesting, invalid Unicode and malformed registry shapes
+  without tracebacks. A trailing newline no longer bypasses an anchored
+  schema pattern. Invalid ledger, evidence and export-receipt data are
+  reported without rewriting them. Session records that exceed parser
+  limits remain forgettable.
+- Profile reseed previews include lead-provider restriction changes.
+  Blocked cleanup of old client copies now reports why nothing was removed.
+- Gateway start preparation no longer hangs on special files or misses
+  changes beyond a file's initial bytes.
+- Provider listings, qualification, smoke checks and local management
+  readings reject truncated declared-length responses.
+
+### Known limits
+
+- The [late-stream completion limit](docs/troubleshooting.md#late-stream-completion-limit)
+  remains on Claude Code 2.1.310 with the tested CLIProxyAPI 8.0.33: a
+  successful client result is not proof of complete stream framing.
+- A user-installed `agent.spawn` mod can change an agent's model within
+  the lineup; a `settings.read` mod can also widen the allowed model list.
+  The compiled lineup does not constrain user-installed code.
+- The client can resend an unrecognised provider refusal up to three times.
+  On resume, a passed-through `--tools` option does not narrow the tools
+  offered to the model, although calls outside it are still refused.
+  See [client limits](docs/reference/compatibility.md#verified-behavior-and-limits).
+- CPython 3.15.1 still carries a tar-filter advisory outside charmer's
+  extraction paths. The Nix channel holds Python 3.14.8 and GnuPG 2.4.9;
+  GnuPG is for development and tests, not bundle signature verification.
+- Older releases retain their unguarded stale-lock reclamation: do not run
+  it alongside another installer or updater. The older-bundle `sync`
+  fallback away from Linux lacks the newer helper's per-file guarantee.
+
 ## [2.1.0] — 2026-10-24
 
 ### Upgrade notes

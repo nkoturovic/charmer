@@ -43,6 +43,39 @@ A running gateway keeps the version it started from until you restart it
 between turns (`charmer gateway restart`); while its persistence hold
 is active, a switch that changes the gateway waits.
 
+### Updating from 2.1.0
+
+Between turns, in a terminal outside Claude Code, update and check the
+installed version, assessing each result before continuing:
+
+```bash
+charmer update
+charmer --version
+```
+
+The update installs charmer's verified **Claude Code 2.1.310** copy before
+switching the release: it copies a matching local file or downloads and
+verifies the pin when none is available. Your own Claude Code installation
+is untouched. A session already running keeps its client until its next
+launch or resume (`/exit`, then `charmer -r <id>`). State and record formats
+remain 4; no record migration is needed.
+
+Existing managed sessions get charmer's subagent status line at their next
+resume. `charmer doctor --repair-all` recompiles stopped sessions now;
+running sessions can wait for their next resume. Doctor reports this as
+Attention, not damage. A user, project or local `subagentStatusLine` setting
+wins, and an unreadable settings layer also makes charmer compile none.
+Doctor says which applies. To use charmer's rows instead of your own,
+remove your `subagentStatusLine` setting and resume; charmer never changes
+your main `statusLine`. See
+[the agent panel](guides/sessions.md#the-agent-panels-rows).
+
+After `charmer update --rollback` returns to **2.1.0**, its plain doctor
+reports BLOCKED “scope differs” for sessions carrying 2.2.0's compiled
+subagent status line. Run `charmer doctor --repair-all` for stopped sessions,
+or resume one to recompile it. This removes the new compiled key; it does
+not change your own status-line settings or the conversation.
+
 ### Updating from 2.0.1
 
 The 2.0.1 updater switches the installation links, but the **old gateway
@@ -189,6 +222,21 @@ one a running gateway still executes), and they remove Claude Code copies
 no installed release needs; a copy a running session uses is kept and
 reported.
 
+The 2.2.0 updater and installer flush incoming contents before replacing an
+installed version and persist the final version entries before switching
+`current` and `previous`. The installer does this for same-version
+reinstalls too. Rollback
+reuses the retained version without this incoming-bundle step. The updater
+of an older release still uses that older release's update code.
+
+When this installer is used with an older bundle that lacks the durability
+helper, it prints a notice and uses system `sync`; away from Linux, that
+fallback does not give the helper's per-file guarantee. If such a bundle
+cannot safely reclaim a stale install lock, confirm no installer or updater
+is running, then follow the printed removal command for only the named
+lock. Never remove `.lock-guard`, and never run an older release's
+stale-lock reclamation alongside another installer or updater.
+
 While an update or the installer works, gateway changes are paused (see
 [the gateway guide](guides/gateway.md#when-gateway-changes-are-paused)).
 If one is interrupted after it started changing the installation, the
@@ -233,9 +281,11 @@ format is refused. Rollbacks restore the program, never the state.
 
 ## Claude Code with an update
 
-A newer charmer release may pin a newer Claude Code. `update` puts
-that copy in place before it switches, so a launch never finds a missing
-client. Your own Claude Code installation is untouched.
+When the incoming release changes the Claude Code pin, `update` puts the
+verified matching managed copy in place before switching. An unchanged pin
+is not reinstalled by update; use `charmer setup --step claude` if that copy
+is missing or damaged. Rollback does not acquire a client either. Your own
+Claude Code installation is untouched.
 
 ## The Nix package
 
