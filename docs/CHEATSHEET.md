@@ -99,6 +99,10 @@ Marks on the sessions screen: ● running · ◐ unknown (no end event, no proce
 
 <!-- end of generated: cheatsheet-keys -->
 
+Models, Settings and text views show `↓ N more` when rows remain below.
+Models and Settings count entries, not headings; text views count wrapped
+lines. In text views, use ↑/↓ to scroll, PgUp/PgDn to page and Esc to go back.
+
 Inside a session: `/model` offers the lead set only (press `s` to change it for this session only), `/cm` shows or changes the lineup and `/reload-plugins` applies a change. In the profile editor: “^S saves (^O too); only a valid profile saves. ^G edits the raw JSON in $EDITOR.”
 
 ### Files
@@ -140,6 +144,7 @@ restart.
 | doctor: “gateway continuity set unreadable” | move `~/.config/charmer/continuity.json` aside, then `charmer-proxy init` (it re-seeds the set) |
 | doctor: “gateway managed for root <A>; this command used <B>” | run with the managed state directory (unset or correct `XDG_STATE_HOME`) |
 | “the gateway is inhibited by <owner> (…)” | wait for that installer, update or service hand-off; an interrupted one: run the command after `fix:` |
+| a failed service install leaves gateway changes inhibited | resolve the reported problem, then `charmer gateway service install`; uninstall can leave an install-phase inhibition in place. Never delete the inhibition record |
 | “the local gateway is not set up yet” | `charmer setup --step gateway` |
 | doctor: “gateway working directory <path> holds a .env file” | move that `.env` aside, then `charmer gateway restart` |
 | why did the gateway stop; what did it serve | `charmer gateway logs` (keys, tokens and account identifiers redacted; the log files themselves are not: never paste them publicly); `charmer doctor` summarizes errors per model without account details |
@@ -186,6 +191,8 @@ restart.
 |---|---|
 | ⚠; doctor: “has an unresolved native fork” | Enter on the row (adopt or discard), or `charmer sessions resolve-fork <id> <fork-id>` |
 | !; doctor: “identity is repair-needed” | `charmer -r <id>`, or `charmer sessions relink-runtime <id> <runtime-id>` |
+| relink says “scope convergence is unfinished” | the identity change was saved; fix the reported cause, then run the printed `charmer doctor --repair <id>` command |
+| a session listing exits 1, or its JSON says unavailable | `charmer sessions list` keeps readable rows and reports the errors; then `charmer doctor`. Unavailable is not an empty inventory |
 | ● or ◐ but the session is gone | `charmer sessions mark-ended <id>` (all: `charmer sessions mark-ended --all-dead`) |
 | doctor: “sessions do not run and have no recorded end” | `charmer sessions mark-ended --all-dead`, or H → Enter on the row |
 | doctor: “generated files left by forgotten or ended sessions” | `charmer doctor --prune --preview`, then `charmer doctor --prune`; or H → Enter on the row |

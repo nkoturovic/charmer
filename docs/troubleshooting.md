@@ -30,7 +30,7 @@ prune-aliases; generated leftovers: the prune preview, then y/N; sessions
 that do not run and have no recorded end: mark-ended for each; sessions
 that need a lead: Sessions; a newer shipped profile: reseed; an advisory
 model: its optional diagnostics, **M** → **Q**). Any other row shows its exact
-command. **V** shows the full report as `doctor -v` prints it, **G** the
+command. **V** shows the full report as `doctor -v` prints it, **W** the
 gateway's actions (start, restart, log). The separate **Verify this installation**
 row runs only when selected: choose downloaded release files for fully offline
 verification, or confirm the exact-version online fetch (Cancel is focused).
@@ -208,7 +208,8 @@ report it.
 | ● or ◐ but the session is gone | `charmer sessions mark-ended <id>` (all: `--all-dead`) |
 | “<n> sessions do not run and have no recorded end”, or “session <id>: does not run and has no recorded end” | each exited without its end being recorded, so commands that refuse while a session may run count it (migration and uninstall among them): `charmer sessions mark-ended --all-dead` (one: `charmer sessions mark-ended <id>`); **H** → Enter on the row marks every one after a confirmation, and each mark checks again that the session does not run. Doctor names none while whether sessions run cannot be told (the process table or the background daemon unreadable, a state root on a network filesystem) |
 | “<n> generated files left by forgotten or ended sessions” | scopes, lead prompts, notice markers or lineup logs no record owns any more: `charmer doctor --prune --preview` lists them, `charmer doctor --prune` removes them (**H** → Enter on the row shows the preview, then asks y/N); records, transcripts and backups are never among them. Doctor names none while a record cannot be read |
-| “scope differs from the record-authoritative compile” | `charmer doctor --repair <id>` |
+| “scope differs from the record-authoritative compile” | also covers unexpected files or directories and incorrect ownership or permissions, even when compiled contents match: `charmer doctor --repair <id>` |
+| “scope unreadable” | doctor could not verify the scope, including a read failure during a concurrent resume's scope swap; use the printed `charmer doctor --repair <id>` command |
 | “its subagent status line differs from this release's compile” | expected after a release or your status-line settings change: resume with `charmer -r <id>`, or run `charmer doctor --repair <id>` now (`charmer doctor --repair-all` for stopped sessions); this is Attention, not damage |
 | relink says “scope convergence is unfinished” | the identity change was saved, but scope repair failed or was skipped; resolve the reported cause, then run the printed `charmer doctor --repair <id>` command |
 | a plain session listing exits 1, or its JSON says unavailable | the inventory could not be read completely; use `charmer sessions list` to see readable rows and the errors, then `charmer doctor`. Do not treat the JSON result as an empty list |
