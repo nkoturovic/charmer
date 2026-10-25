@@ -45,6 +45,7 @@ SECTION_CODEX_KEY = "codex-api-key"
 SECTION_COMPAT = "openai-compatibility"
 SENTINEL_NAME = "charmer-render"
 SENTINEL_PREFIX = "charmer-render-"
+SENTINEL_BASE_URL = "http://127.0.0.1:9/v1"
 # An upgrade may still compare against a render published before the rename.
 _SENTINEL_NAMES = (SENTINEL_NAME, legacy.LEGACY_SELECTOR_PREFIX + "render")
 
@@ -322,8 +323,20 @@ def _compat_capabilities(model: Mapping[str, Any]) -> list[str]:
     return ["model:" + _canonical({key: model.get(key) for key in _COMPAT_CAPABILITY_KEYS})]
 
 
+def _is_reload_sentinel(section: Mapping[str, Any]) -> bool:
+    """Recognize the reload marker without hiding a same-named user provider."""
+
+    name = section.get("name")
+    models = section.get("models")
+    if (name not in _SENTINEL_NAMES or section.get("base-url") != SENTINEL_BASE_URL
+            or not isinstance(models, list) or len(models) != 1 or not isinstance(models[0], Mapping)):
+        return False
+    alias = models[0].get("alias")
+    return isinstance(alias, str) and alias.startswith(name + "-")
+
+
 def _validate_document_structure(document: Mapping[str, Any]) -> None:
-    """Check the emitted envelope and route containers before projecting them.
+    """Check the published envelope and route containers before projecting them.
 
     A malformed section must not silently lose its routes and turn a removal
     into an apparent addition. This is not a full gateway schema validator.
@@ -349,18 +362,20 @@ def _validate_document_structure(document: Mapping[str, Any]) -> None:
             raise PlanParseError(f"{name} must be a list")
         if any(not isinstance(section, Mapping) for section in sections):
             raise PlanParseError(f"{name} entries must be mappings")
-    if sum(section.get("name") in _SENTINEL_NAMES for section in document.get(SECTION_COMPAT, [])) != 1:
+    if sum(_is_reload_sentinel(section) for section in document.get(SECTION_COMPAT, [])) != 1:
         raise PlanParseError("expected exactly one reload sentinel")
 
 
-def routes_from_document(document: Mapping[str, Any]) -> dict[str, RouteIdentity]:
+def routes_from_document(document: Mapping[str, Any], *, strict: bool = False) -> dict[str, RouteIdentity]:
     """Every public selector of a (parsed or in-memory) gateway document.
 
     The reload sentinel is never a selector. Key values are never retained.
-    Malformed envelopes or route containers raise :class:`PlanParseError`.
+    Published readers pass ``strict=True`` to reject malformed envelopes and
+    route containers; a trusted in-memory candidate needs only projection.
     """
 
-    _validate_document_structure(document)
+    if strict:
+        _validate_document_structure(document)
     contracts = _contracts(document)
     overlay = _overlay(document)
     excluded = document.get("oauth-excluded-models")
@@ -415,7 +430,7 @@ def routes_from_document(document: Mapping[str, Any]) -> dict[str, RouteIdentity
         if not isinstance(section, Mapping):
             continue
         name = str(section.get("name"))
-        if name in _SENTINEL_NAMES or name.startswith(SENTINEL_PREFIX):
+        if _is_reload_sentinel(section):
             continue
         route = f"{name} {normalize_base_url(section.get('base-url'))}"
         # Auth mode and header NAMES only (key and header values
@@ -439,7 +454,7 @@ def published_routes(raw: bytes | str) -> dict[str, RouteIdentity]:
     the emitted form). The bytes carry key values; only identities return."""
 
     text = raw.decode("utf-8") if isinstance(raw, bytes) else raw
-    return routes_from_document(parse_restricted_yaml(text))
+    return routes_from_document(parse_restricted_yaml(text), strict=True)
 
 
 def gateway_label(document: Mapping[str, Any] | None) -> str:

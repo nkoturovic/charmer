@@ -256,7 +256,7 @@ class PublishedDocumentTests(unittest.TestCase):
     def assert_unknown(self, document: dict) -> None:
         emitted = render.emit_yaml(document)
         with self.assertRaises(served_plan.PlanParseError):
-            served_plan.routes_from_document(document)
+            served_plan.routes_from_document(document, strict=True)
         with self.assertRaises(served_plan.PlanParseError):
             served_plan.published_routes(emitted)
         state.atomic_write(self.config, emitted.encode())
@@ -312,7 +312,8 @@ class PublishedDocumentTests(unittest.TestCase):
             with self.subTest(name=name):
                 document = copy.deepcopy(self.document)
                 sentinel = copy.deepcopy(document["openai-compatibility"][-1])
-                sentinel["name"] = name
+                sentinel["name"] = sentinel["models"][0]["name"] = name
+                sentinel["models"][0]["alias"] = name + "-00000000"
                 document["openai-compatibility"].append(sentinel)
                 self.assert_unknown(document)
 
@@ -389,6 +390,35 @@ class PublishedDocumentTests(unittest.TestCase):
         self.assertEqual(served_plan.published_routes(render.emit_yaml(self.document)), before)
         state.atomic_write(self.config, render.emit_yaml(self.document).encode())
         self.assertEqual(proxy.published_identity(self.home).routes, before)
+
+    def test_candidate_projection_does_not_require_the_published_envelope(self) -> None:
+        before = served_plan.routes_from_document(self.document)
+        for key in ("host", "port", "api-keys"):
+            self.document.pop(key)
+        self.document["openai-compatibility"].pop()
+        self.assertEqual(served_plan.routes_from_document(self.document), before)
+        self.assert_unknown(self.document)
+
+    def test_earlier_sentinel_name_needs_the_sentinel_shape(self) -> None:
+        self.assertEqual(served_plan.SENTINEL_BASE_URL, render.SENTINEL_BASE_URL)
+        name = legacy.LEGACY_SELECTOR_PREFIX + "render"
+        sections = (
+            {"name": name, "base-url": "http://box.lan:8000/v1",
+             "models": [{"name": "wire", "alias": name + "-public"}]},
+            {"name": name, "base-url": render.SENTINEL_BASE_URL,
+             "models": [{"name": "wire", "alias": LAN_ALIAS}]},
+            {"name": name, "base-url": render.SENTINEL_BASE_URL,
+             "models": [{"name": "wire", "alias": name + "-public"},
+                        {"name": "other-wire", "alias": LAN_ALIAS}]},
+        )
+        for section in sections:
+            with self.subTest(section=section):
+                document = copy.deepcopy(self.document)
+                document["openai-compatibility"].insert(0, section)
+                routes = served_plan.published_routes(render.emit_yaml(document))
+                for model in section["models"]:
+                    self.assertEqual(routes[model["alias"]].route,
+                                     f"{name} {section['base-url']}")
 
     def test_sentinel_only_render_is_known_empty(self) -> None:
         document = render.finalize_document({
@@ -1047,6 +1077,52 @@ class ServedOperatorTests(test_cli.OperatorCommandCase):
         self.assertEqual(document["kind"], "served-change-plan")
         self.assertEqual(document["retargeted"][0]["before"]["wire"], "k2")
         self.assertIsNone(document["published_unknown"])
+
+    def test_earlier_sentinel_name_is_a_legal_operator_provider(self) -> None:
+        self.published()
+        name = legacy.LEGACY_SELECTOR_PREFIX + "render"
+        add, model = list(LAN_ADD), list(LAN_MODEL)
+        add[2] = model[2] = name
+        for argv in (add, model, ["providers", "apply"]):
+            with self.subTest(argv=argv):
+                code, out, err = self.op(argv, "y\n")
+                self.assertEqual(code, 0, out + err)
+        published = proxy.published_identity(self.runtime.home)
+        self.assertIsNone(published.unknown)
+        self.assertEqual(published.routes[LAN_ALIAS].route, f"{name} http://box.lan:8000/v1")
+        code, out, err = self.op(["plan", "--json"])
+        self.assertEqual(code, 0, out + err)
+        self.assertIsNone(json.loads(out)["published_unknown"])
+        self.assertIsNone(doctor_mod._pending_served_change(self.runtime))
+        code, out, err = self.op(["models", "rm", LAN_ALIAS], "y\n")
+        self.assertEqual(code, 0, out + err)
+        published = proxy.published_identity(self.runtime.home)
+        self.assertIsNone(published.unknown)
+        # Removing a declaration retains its captured served alias.
+        self.assertEqual(published.routes[LAN_ALIAS].route, f"{name} http://box.lan:8000/v1")
+
+    def test_existing_render_with_an_earlier_sentinel_named_provider_stays_known(self) -> None:
+        self.published()
+        name = legacy.LEGACY_SELECTOR_PREFIX + "render"
+        add, model = list(LAN_ADD), list(LAN_MODEL)
+        add[2] = model[2] = name
+        # Reproduce a config an earlier renderer published without validation.
+        with mock.patch.object(served_plan, "_validate_document_structure", return_value=None):
+            for argv in (add, model, ["providers", "apply"]):
+                code, out, err = self.op(argv, "y\n")
+                self.assertEqual(code, 0, out + err)
+        published = proxy.published_identity(self.runtime.home)
+        self.assertIsNone(published.unknown)
+        self.assertIn(LAN_ALIAS, published.routes)
+        self.assertIsNone(doctor_mod._pending_served_change(self.runtime))
+        for argv in (["plan", "--json"], ["providers", "apply"], ["models", "rm", LAN_ALIAS],
+                     ["providers", "rm", name]):
+            with self.subTest(argv=argv):
+                code, out, err = self.op(argv, "y\n")
+                self.assertEqual(code, 0, out + err)
+                self.assertIsNone(proxy.published_identity(self.runtime.home).unknown)
+        self.assertEqual(proxy.pending_served_summary(
+            self.runtime.home, environ=self.runtime.gateway_environ(), state_root=self.runtime.session_store.root), [])
 
     def test_invalid_published_render_does_not_crash_doctor_pending_check(self) -> None:
         self.published()
