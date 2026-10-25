@@ -11,7 +11,7 @@ runs. Your own Claude Code installation is not replaced or reconfigured.
 charmer is an independent project, not affiliated with or endorsed
 by Anthropic or OpenAI.
 
-**Latest release:** 2.1.0. Downloads are on
+**Latest release:** 2.2.0. Downloads are on
 [GitHub Releases](https://github.com/nkoturovic/charmer/releases/latest)
 ([CHANGELOG.md](CHANGELOG.md)).
 

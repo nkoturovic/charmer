@@ -6,6 +6,8 @@ follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.2.0] — 2026-10-27
+
 ### Upgrade notes
 
 The update installs the verified Claude Code 2.1.310 copy before switching
