@@ -964,6 +964,27 @@ class StatusLineShimTests(unittest.TestCase):
         result = self.run_shim(str(crash), interpreter=dash)
         self.assertEqual((result.returncode, result.stdout, result.stderr), (0, b"", b""))
 
+    def test_a_failed_stderr_redirection_is_silent_and_exits_zero(self) -> None:
+        launcher = self.fake_launcher("echo unexpected-launch\n")
+        shim = scope.ensure_status_line_shim(self.state, str(launcher))
+        missing = shlex.quote(str(self.root / "missing" / "null")).encode()
+        copy = self.root / "failed-redirection"
+        copy.write_bytes(shim.read_bytes().replace(b"2>/dev/null", b"2>" + missing, 1))
+        copy.chmod(0o700)
+        interpreters = ["/bin/sh", shutil.which("dash")]
+        if zsh := shutil.which("zsh"):
+            alias = self.root / "zsh" / "sh"
+            alias.parent.mkdir()
+            alias.symlink_to(zsh)
+            interpreters.append(str(alias))
+        for interpreter in dict.fromkeys(interpreters):
+            if interpreter is None:
+                continue
+            with self.subTest(interpreter=interpreter):
+                result = subprocess.run([interpreter, str(copy)], input=b"{}", capture_output=True,
+                                        env={"PATH": "/usr/bin:/bin", "HOME": str(self.root)}, timeout=30)
+                self.assertEqual((result.returncode, result.stdout, result.stderr), (0, b"", b""))
+
     def test_every_failure_prints_nothing_and_exits_zero(self) -> None:
         older = self.fake_launcher("echo 'usage: charmer ...' >&2\necho partial\nexit 2\n", name="older")
         crash = self.fake_launcher("kill -9 $$\n", name="crash")
