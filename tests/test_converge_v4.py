@@ -292,6 +292,57 @@ class PermissionDefaultModeConvergeTests(V4Case):
 
 
 class RepairAllTests(V4Case):
+    def test_repair_messages_explain_prev_retention_until_forget(self) -> None:
+        mid = self.launch_fresh()["managed_id"]
+        self.mutate(mid, last_event_source="end")
+        state.atomic_write(self.live(mid) / ".claude/agents/cm-reviewer.md", b"tampered\n")
+        out = io.StringIO()
+        self.assertEqual(cli._doctor_repair_all(self.runtime, out), 0)
+        self.assertIn("prior generation retained at .prev for rollback while the session record exists; "
+                      "doctor --prune removes it after the session is forgotten", out.getvalue())
+        self.assertIn("Retained .prev generations are rollback state while their session records exist; "
+                      "`doctor --prune` removes them after those sessions are forgotten.", out.getvalue())
+        prev = self.tree(self.prev(mid))
+        out = io.StringIO()
+        self.assertEqual(cli.main(["doctor", "--prune", "--preview"], runtime=self.runtime,
+                                  output_stream=out, interactive=False), 0)
+        self.assertNotIn("Candidate:", out.getvalue())
+        self.assertEqual(cli._doctor_prune(self.runtime, io.StringIO()), 0)
+        self.assertEqual(self.tree(self.prev(mid)), prev)
+        # A forgotten record makes the retained generation a prune candidate.
+        self.assertTrue(self.store.forget(mid))
+        self.assertEqual(cli._doctor_prune(self.runtime, io.StringIO()), 0)
+        self.assertFalse(self.prev(mid).exists())
+
+    def test_repair_all_counts_deferred_separately_from_converged(self) -> None:
+        repaired = self.launch_fresh()["managed_id"]
+        moved = self.launch_fresh()["managed_id"]
+        unknown = self.launch_fresh()["managed_id"]
+        for mid in (repaired, moved, unknown):
+            self.mutate(mid, last_event_source="end")
+        state.atomic_write(self.live(repaired) / ".claude/agents/cm-reviewer.md", b"tampered\n")
+        for mid, field, value in ((moved, "selector", "gpt-multi-sol-medium[1m]"),
+                                  (unknown, "key", "custom-missing")):
+            applied = copy.deepcopy(self.store.load(mid)["applied"])
+            applied["agents"]["cm-reviewer"][field] = value
+            self.mutate(mid, applied=applied)
+        before = {mid: (self.record_bytes(mid), self.tree(self.live(mid))) for mid in (moved, unknown)}
+        out = io.StringIO()
+        with mock.patch.object(transition, "expected_plan", wraps=transition.expected_plan) as expected:
+            self.assertEqual(cli._doctor_repair_all(self.runtime, out), 0, out.getvalue())
+        self.assertEqual(expected.call_count, 3)  # no unlocked pre-check before converge
+        self.assertIn("Repair-all: 1 session(s) converged to record authority. 2 deferred.", out.getvalue())
+        self.assertIn("the installed catalog resolves reviewer", out.getvalue())
+        self.assertIn("the installed catalog no longer evaluates", out.getvalue())
+        for mid in (moved, unknown):
+            self.assertEqual((self.record_bytes(mid), self.tree(self.live(mid))), before[mid])
+        # All-deferred is not success disguised as repair, either.
+        self.mutate(repaired, last_event_source=None)
+        out = io.StringIO()
+        self.assertEqual(cli._doctor_repair_all(self.runtime, out), 0)
+        self.assertIn("Repair-all: 0 session(s) converged to record authority. 2 deferred.", out.getvalue())
+        self.assertIn(f"skipped {repaired[:8]}", out.getvalue())
+
     def test_skips_live_or_unknown_unless_include_live(self) -> None:
         record = self.launch_fresh()
         mid = record["managed_id"]

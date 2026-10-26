@@ -595,14 +595,14 @@ def _doctor_repair_all(
         output_stream.write(f"Repair-all: skipped — {exc.strerror}.\n")
         return 1
     try:
-        repaired = _repair_all_records(
+        repaired, deferred = _repair_all_records(
             runtime, records, transition, parts, daemon, live, barrier, include_live,
             output_stream, failures, skipped,
         )
     finally:
         phase.__exit__(None, None, None)
     output_stream.write(
-        f"Repair-all: {repaired} session(s) converged to record authority.\n"
+        f"Repair-all: {repaired} session(s) converged to record authority. {deferred} deferred.\n"
     )
     for line in skipped:
         output_stream.write(f"  - skipped {termtext.visible_text(line)}\n")
@@ -611,8 +611,9 @@ def _doctor_repair_all(
     if failures:
         return 1
     output_stream.write(
-        "Re-run `charmer doctor` to confirm; `doctor --prune` collects "
-        "retained .prev generations afterwards.\n"
+        "Re-run `charmer doctor` to confirm. Retained .prev generations are rollback state "
+        "while their session records exist; `doctor --prune` removes them after those sessions "
+        "are forgotten.\n"
     )
     return 0
 
@@ -621,10 +622,10 @@ def _repair_all_records(
     runtime: runtime_mod.Runtime, records: list, transition: ModuleType, parts: transition_mod.RuntimeParts, daemon: sessions.BackgroundLiveness,
     live: frozenset, barrier: state.BarrierToken, include_live: bool, output_stream: TextIO,
     failures: list[str], skipped: list[str],
-) -> int:
-    """The per-record body of ``doctor --repair-all`` inside its one phase."""
+) -> tuple[int, int]:
+    """The pass's (converged, deferred) counts, inside its one phase."""
 
-    repaired = 0
+    repaired = deferred = 0
     for record in records:
         stable_id = sessions.managed_id(record)
         m8 = stable_id[:8]
@@ -683,14 +684,17 @@ def _repair_all_records(
         ) as exc:
             failures.append(f"{stable_id}: {exc}")
             continue
-        repaired += 1
+        if report.deferred:
+            deferred += 1
+        else:
+            repaired += 1
         if fork_converged:
             output_stream.write(
                 f"{m8}… cleared a fork marker the live runtime already resolved\n"
             )
         for line in report:
             output_stream.write(f"{m8}… {termtext.visible_text(line)}\n")
-    return repaired
+    return repaired, deferred
 
 
 def _doctor_prune_preview(runtime: runtime_mod.Runtime, output_stream: TextIO) -> int:
