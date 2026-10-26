@@ -197,7 +197,7 @@ restart.
 | doctor: “sessions do not run and have no recorded end” | `charmer sessions mark-ended --all-dead`, or H → Enter on the row |
 | doctor: “generated files left by forgotten or ended sessions” | `charmer doctor --prune --preview`, then `charmer doctor --prune`; or H → Enter on the row |
 | doctor: “session(s) need a profile or model choice (lead removed)” | `charmer -r <id>` asks for one; or `charmer lineup --session <runtime-id> --relaunch profile <name>` |
-| doctor: “session scope(s) were compiled by <earlier name>” | `charmer doctor --repair-all` (stopped sessions); a running one recompiles at its next resume |
+| doctor: “session scope(s) were compiled by <earlier name>” | the row names its step: `charmer doctor --repair-all` (stopped sessions the installed catalog can recompile), the next resume (`charmer -r <id>`) for a lineup it defers, or a profile or model choice first (`charmer sessions choose --needs-choice --profile <name>`); a running one recompiles at its next resume |
 | doctor: “Advisories (optional evidence; does not change the verdict)” | nothing is required; optional: `charmer models qualify <line> --agents` or M → Q |
 | doctor: “scope differs from the record-authoritative compile”, “scope unreadable” or “scope(s) diverged from record authority” | `charmer doctor --repair <id>`; all stopped sessions: `charmer doctor --repair-all` |
 | doctor: “compiled hook target” | `charmer doctor --repair <id>` |
