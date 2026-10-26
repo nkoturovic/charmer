@@ -43,6 +43,28 @@ A running gateway keeps the version it started from until you restart it
 between turns (`charmer gateway restart`); while its persistence hold
 is active, a switch that changes the gateway waits.
 
+### Updating from 2.2.0
+
+Only the launcher changes in this release: the bundled Python moves to
+CPython 3.15.2, while the gateway binary, Claude Code 2.1.310 and the state
+and record formats (4) stay the same. The update plan says only the
+launcher changes; the running gateway keeps serving. In a plain terminal
+outside Claude Code, between turns:
+
+```bash
+charmer update
+charmer update --verify
+charmer doctor
+```
+
+On Linux, `charmer update --verify` reports `running-gateway: current-match`
+without a restart: the running gateway's bytes are the installed ones.
+`charmer gateway status` and doctor still say "gateway restart pending",
+because they compare the running gateway's install path (in the 2.2.0
+directory) with the new one, not the bytes. A guarded
+`charmer gateway restart` between turns clears it whenever convenient.
+`charmer update --rollback` returns to 2.2.0.
+
 ### Updating from 2.1.0
 
 The gateway changes in this release. Updating switches the installation,

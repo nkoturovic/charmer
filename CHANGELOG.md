@@ -6,6 +6,84 @@ follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Upgrade notes
+
+Only the launcher changes: the gateway binary, Claude Code 2.1.310 and the
+state and record formats (4) stay as in 2.2.0. A running gateway keeps
+serving. On Linux, `charmer update --verify` reports
+`running-gateway: current-match` without a restart; on macOS, running-byte
+verification remains unavailable (exit 3). `charmer gateway status`
+and doctor still say "gateway restart pending" until the next restart,
+because they compare the running gateway's install path, not its bytes:
+restart between turns when convenient. See
+[updating from 2.2.0](docs/update.md#updating-from-220).
+
+### Security
+
+- The bundled Python is CPython 3.15.2 (python-build-standalone 20261026).
+  It distrusts the compromised eMudhra intermediate CA keys
+  (CVE-2026-115557 / PSF-2026-46): `charmer discover` model listings and the
+  public model feed, which use Python TLS with your system's certificates,
+  now reject chains through those keys even where the system store still
+  trusts the affected roots. It also fixes the tar-filter advisory
+  (CVE-2026-114583 / PSF-2026-45), which charmer's extraction did not use.
+  Library versions, including OpenSSL 3.5.9, are unchanged.
+
+### Fixed
+
+- For sessions from before the rename, `charmer doctor` offers
+  `charmer doctor --repair-all` for recorded lineups the installed catalog
+  can recompile; it repairs stopped sessions, and running ones recompile at
+  their next resume. For lineups the catalog defers, doctor names the next
+  resume instead, or a profile or model choice first when the lead needs
+  replacing. **H** follows the same remedy, and `--repair-all` counts
+  deferred sessions separately.
+- `charmer doctor --repair-all` says that a session's prior scope generation
+  stays as rollback state while its record exists; `charmer doctor --prune`
+  removes it after the session is forgotten.
+- Documentation: a `SendMessage` continuation after `/reload-plugins` takes
+  the new model with the old instructions and history; the 2.2.0 section
+  below is dated by its publication and lists the known limits its release
+  notes added.
+
+### Known limits
+
+- CLIProxyAPI 8.0.42 re-checks the key on each Responses WebSocket turn
+  upstream; charmer has not measured this, so reconnect after
+  `charmer doctor --rotate-token`. Managed Claude Code sessions use HTTP,
+  not this WebSocket route.
+- The [late-stream completion limit](docs/troubleshooting.md#late-stream-completion-limit)
+  remains on Claude Code 2.1.310 with the tested CLIProxyAPI 8.0.42: a
+  successful client result is not proof of complete stream framing.
+- On the ChatGPT account and OpenAI API-key routes, a Codex model's own
+  commentary preambles arrive as unsigned thinking and can be omitted
+  when the gateway translates subsequent history back to the model
+  ([upstream #6966](https://github.com/router-for-me/CLIProxyAPI/issues/6966)).
+  This omission does not remove tool calls or tool results; reasoning is
+  replayed only with a compatible signature.
+- A user-installed `agent.spawn` mod can change an agent's model within
+  the lineup; a `settings.read` mod can also widen the allowed model list.
+  The compiled lineup does not constrain user-installed code.
+- A worktree-isolated agent that finishes without changes loses its
+  worktree; continuing it with SendMessage then runs it in the main
+  checkout without isolation
+  ([upstream #104928](https://github.com/anthropics/claude-code/issues/104928)).
+  Spawn a fresh implementer agent instead of continuing one that stopped
+  before changing anything.
+- The client can resend an unrecognised provider refusal up to three times.
+  On resume, a passed-through `--tools` option does not narrow the tools
+  offered to the model, although calls outside it are still refused.
+  See [client limits](docs/reference/compatibility.md#verified-behavior-and-limits).
+- The Nix package uses the channel's Python 3.14.8, which lacks the eMudhra
+  distrust (CPython 3.14.10 adds it). Until the channel moves, run
+  credentialed `charmer discover` listings from a release bundle, or with
+  `SSL_CERT_FILE`/`SSL_CERT_DIR` pointing at certificates that no longer
+  trust the affected roots. The channel's GnuPG 2.4.9 is for development
+  and tests, not bundle signature verification.
+- Older releases retain their unguarded stale-lock reclamation: do not run
+  it alongside another installer or updater. The older-bundle `sync`
+  fallback away from Linux lacks the newer helper's per-file guarantee.
+
 ## [2.2.0] — 2026-10-26
 
 ### Upgrade notes
