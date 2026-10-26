@@ -6,6 +6,8 @@ follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.2.1] — 2026-10-26
+
 ### Upgrade notes
 
 Only the launcher changes: the gateway binary, Claude Code 2.1.310 and the
