@@ -2661,6 +2661,133 @@ class ResumeAfterMigrationTests(V4Case):
         self.assertEqual({path.parent for path in scope.hook_targets(settings)}, {self.layout.state / "bin"})
         self.assertEqual(earlier_rows(), [])
 
+    def _defer_record(self, mid: str, *, needs_choice: bool = False) -> None:
+        record = self.store.load(mid)
+        if needs_choice:
+            record["applied"]["lead"]["key"] = "custom-missing"
+            record["scope_lead"]["key"] = "custom-missing"
+        else:
+            record["applied"]["agents"]["cm-reviewer-strong"]["selector"] = "charmer-old-high"
+        self.mutate(mid, applied=record["applied"], scope_lead=record["scope_lead"], last_event_source="end")
+
+    def _earlier_rows(self) -> list:
+        from charmer.cli import doctor
+
+        problems, _info, attention = doctor._collect_doctor_reports(self.runtime)
+        self.assertEqual(problems, [])
+        return [row for row in doctor.present_report(problems, attention).rows
+                if f"compiled by {legacy.NAME}" in row.text]
+
+    def test_earlier_scope_with_moved_binding_offers_resume_not_repair_all(self) -> None:
+        from charmer import transition
+        from charmer.cli import doctor_actions
+
+        self._defer_record(self.mid)
+        before = self.record_bytes(self.mid), self.tree(self.live(self.mid))
+        with mock.patch.object(transition, "expected_plan", wraps=transition.expected_plan) as expected:
+            rows = self._earlier_rows()
+        self.assertEqual(expected.call_count, 1)
+        self.assertEqual(len(rows), 1)
+        self.assertIsNone(rows[0].action)
+        self.assertEqual(rows[0].remedy, f"charmer -r {self.mid}")
+        self.assertIn("repair-all defers", rows[0].text)
+        self.assertIn("next resume", rows[0].text)
+        self.assertIn("the installed catalog resolves reviewer-strong", "\n".join(rows[0].originals))
+        out = io.StringIO()
+        self.assertEqual(doctor_actions._doctor_repair_all(self.runtime, out), 0)
+        self.assertIn("Repair-all: 0 session(s) converged to record authority. 1 deferred.", out.getvalue())
+        self.assertEqual((self.record_bytes(self.mid), self.tree(self.live(self.mid))), before)
+        self.assertEqual(self._earlier_rows(), rows)
+
+    def test_earlier_scope_with_unknown_lead_offers_the_existing_choice_remedy(self) -> None:
+        self._defer_record(self.mid, needs_choice=True)
+        rows = self._earlier_rows()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].action, "needs-choice")
+        self.assertEqual(rows[0].remedy, "charmer sessions choose --needs-choice --profile <name>")
+        self.assertIn("choose a profile or model", rows[0].text)
+        self.assertNotIn("--repair-all", rows[0].text)
+
+    def test_repairable_and_deferred_earlier_scopes_are_separate_rows(self) -> None:
+        import copy
+        from charmer.cli import doctor_actions
+
+        other = "22222222-2222-4222-8222-222222222222"
+        record = copy.deepcopy(self.store.load(self.mid))
+        record.update(managed_id=other, runtime_session_id=other, last_event_source="end")
+        self.store.save(record)
+        shutil.copytree(self.live(self.mid), self.live(other))
+        self._defer_record(self.mid)
+        rows = self._earlier_rows()
+        repairable = [row for row in rows if row.action == "earlier-scopes"]
+        deferred = [row for row in rows if row.action is None]
+        self.assertEqual(len(repairable), 1)
+        self.assertEqual(len(deferred), 1)
+        self.assertIn(other[:8], repairable[0].text)
+        self.assertNotIn(self.mid[:8], repairable[0].text)
+        self.assertIn(self.mid[:8], deferred[0].text)
+        self.assertNotIn(other[:8], deferred[0].text)
+        out = io.StringIO()
+        self.assertEqual(doctor_actions._doctor_repair_all(self.runtime, out), 0, out.getvalue())
+        self.assertIn("Repair-all: 1 session(s) converged to record authority. 1 deferred.", out.getvalue())
+        self.assertEqual([row.action for row in self._earlier_rows()], [None])
+
+    def test_earlier_scope_plan_is_evaluated_once_per_record_per_doctor_pass(self) -> None:
+        import copy
+        from charmer import transition
+        from charmer.cli import doctor
+
+        for index in range(1, 60):
+            mid = f"{index:08x}-1111-4111-8111-111111111111"
+            record = copy.deepcopy(self.store.load(self.mid))
+            record.update(managed_id=mid, runtime_session_id=mid)
+            self.store.save(record)
+            shutil.copytree(self.live(self.mid), self.live(mid))
+        with mock.patch.object(transition, "expected_plan", wraps=transition.expected_plan) as expected:
+            doctor._collect_doctor_reports(self.runtime)
+            self.assertEqual(expected.call_count, 60)
+            # A second pass must re-read, never reuse stale cached plans.
+            self._defer_record(self.mid)
+            rows = self._earlier_rows()
+            self.assertEqual(expected.call_count, 120)
+        self.assertEqual(len([row for row in rows if row.action is None]), 1)
+        self.assertTrue(any("59 session scope(s)" in row.text for row in rows))
+
+    def test_findings_repair_confirmation_discloses_deferred_lineups(self) -> None:
+        from charmer.cli import text
+
+        self.assertIn("Lineups the installed catalog cannot recompile are deferred until resume or a model choice.",
+                      text.FINDINGS_REPAIR_BODY)
+        self.assertNotIn("every stopped session's generated scope is rebuilt", text.FINDINGS_REPAIR_BODY)
+
+    def test_findings_enter_on_deferred_scope_never_runs_repair_all(self) -> None:
+        from charmer import tui
+        from charmer.cli import doctor
+        from charmer.cli.screens import findings
+        from test_tui import DOWN, ENTER, ESC, FakeWindow
+
+        for needs_choice in (False, True):
+            with self.subTest(needs_choice=needs_choice):
+                self._defer_record(self.mid, needs_choice=needs_choice)
+                report = doctor._collect_doctor_reports(self.runtime)
+                screen = findings.FindingsScreen(self.runtime, palette=tui.MONO_PALETTE,
+                                                  tty_in=io.StringIO(), tty_out=io.StringIO(), report=lambda: report)
+                index = next(i for i, position in enumerate(screen.selectable)
+                             if screen.lines[position].row is not None
+                             and f"compiled by {legacy.NAME}" in screen.lines[position].row.text)
+                win = FakeWindow([*[DOWN] * index, ENTER, ESC], height=40, width=120)
+                with mock.patch.object(screen, "_repair_all") as repair, \
+                        mock.patch.object(screen, "_command") as command, \
+                        mock.patch.object(screen, "_sessions", return_value=None) as choices:
+                    screen.run(win)
+                repair.assert_not_called()
+                if needs_choice:
+                    choices.assert_called_once()
+                    command.assert_not_called()
+                else:
+                    command.assert_called_once()
+                    choices.assert_not_called()
+
     def test_converge_recompiles_the_stale_scope_on_the_same_routes(self) -> None:
         from charmer import transition
 

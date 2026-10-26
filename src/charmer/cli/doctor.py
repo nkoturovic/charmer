@@ -56,6 +56,7 @@ from typing import TYPE_CHECKING
 from typing import Mapping
 
 if TYPE_CHECKING:
+    from charmer.transition import ExpectedPlan
     from typing import Any
     from typing import Callable
 
@@ -754,7 +755,8 @@ def _compiled_by_earlier_release(settings: Mapping[str, Any], environ: Mapping[s
 
 
 def _doctor_hook_targets(
-    runtime: runtime_mod.Runtime, records: list[dict[str, Any]],
+    runtime: runtime_mod.Runtime, records: list[dict[str, Any]], *,
+    plans: dict[str, ExpectedPlan | str] | None = None,
 ) -> tuple[list[str], list[str], list[str]]:
     """``(problems, attention, info)``: a compiled hook command that is
     missing is BLOCKED, except the earlier release's own shims in its state
@@ -762,7 +764,8 @@ def _doctor_hook_targets(
     from-legacy`` moved the roots, recompiled at its next resume (Attention)."""
 
     problems: list[str] = []
-    stale: list[str] = []
+    attention: list[str] = []
+    stale = 0
     checked = 0
     for record in records:
         if record.get("version") != 4 or record.get("lineup_generation", 0) < 1:
@@ -774,7 +777,12 @@ def _doctor_hook_targets(
         checked += 1
         missing = scope_mod.missing_hook_targets(settings)
         if missing and all(_earlier_shim(path, runtime.environ) for path in missing):
-            stale.append(mid)
+            stale += 1
+            # The scope check owns the remedy, including catalog deferrals.
+            # Reuse its plan during a report rather than compiling each of
+            # these sessions again for the hook-target summary.
+            _problems, findings, _info = _check_scope_integrity(runtime, record, plans=plans, earlier_hooks=True)
+            attention.extend(findings)
             continue
         for path in missing:
             problems.append(gateway_facts.tagged(
@@ -783,13 +791,7 @@ def _doctor_hook_targets(
                 f"charmer doctor --repair {mid}",
                 area="Sessions", action="scope-repair", subjects=(mid[:8],),
             ))
-    attention = [gateway_facts.tagged(gateway_facts.Finding(
-        f"{len(stale)} session scope(s) were compiled by {legacy.NAME} (their hooks name its shims, which the move "
-        f"to charmer replaced): {cli_text.EARLIER_SCOPES_FIX} — {_listed(tuple(mid[:8] for mid in stale))}",
-        code="earlier-scopes", public="session scopes compiled by charmer's earlier name wait for their next resume",
-        remedy="charmer doctor --repair-all"), area="Sessions", action="earlier-scopes", group=EARLIER_SCOPES,
-        summary=_EARLIER_SCOPES_SUMMARY, subjects=tuple(mid[:8] for mid in stale))] if stale else []
-    info = [] if problems else [f"Hook targets: every compiled hook command exists ({checked - len(stale)} "
+    info = [] if problems else [f"Hook targets: every compiled hook command exists ({checked - stale} "
                                 f"session(s))."]
     return problems, attention, info
 
@@ -1141,7 +1143,10 @@ def _collect_doctor_report_lines(
     )
     scope_attention_extra.extend(area(readiness_attention, PROFILES))
     info_lines.extend(readiness_info)
-    scope_info, scope_problems, scope_attention = _doctor_scope_report(runtime)
+    # Report-local only: a later doctor pass must observe the new catalog,
+    # records and scopes. The hook-target check shares these evaluations.
+    plans: dict[str, ExpectedPlan | str] = {}
+    scope_info, scope_problems, scope_attention = _doctor_scope_report(runtime, plans=plans)
     scope_attention = area(scope_attention, SESSIONS)
     info_lines.extend(scope_info)
     problems.extend(area(scope_problems, SESSIONS))
@@ -1151,7 +1156,7 @@ def _collect_doctor_report_lines(
     scope_attention.extend(scope_attention_extra)
     records = session_facts._session_records(runtime)
     liveness = _session_liveness(runtime)
-    hook_problems, hook_attention, hook_info = _doctor_hook_targets(runtime, records)
+    hook_problems, hook_attention, hook_info = _doctor_hook_targets(runtime, records, plans=plans)
     problems.extend(area(hook_problems, SESSIONS))
     scope_attention.extend(area(hook_attention, SESSIONS))
     info_lines.extend(hook_info)
@@ -2584,7 +2589,8 @@ def _catalog_agent_drift(
 
 
 def _check_scope_integrity(
-    runtime: runtime_mod.Runtime, record: dict[str, Any]
+    runtime: runtime_mod.Runtime, record: dict[str, Any], *,
+    plans: dict[str, ExpectedPlan | str] | None = None, earlier_hooks: bool = False,
 ) -> tuple[list[str], list[str], list[str]]:
     """A v4 gen >= 1 scope vs the record-authoritative compile (read-only).
 
@@ -2596,30 +2602,25 @@ def _check_scope_integrity(
     m8 = mid[:8]
     live = scope_mod.scope_dir(runtime.session_store.root, mid)
     earlier = managed.read_settings(live / "settings.json") if live.is_dir() else None
-    if earlier and _compiled_by_earlier_release(earlier, runtime.environ):
-        # Compiled by the earlier release before migrate from-legacy moved
-        # the roots: every file of it is recompiled at the next resume (or
-        # by repair-all, while it is stopped).
-        return [], [_per_session(
-            f"session {m8}: scope compiled by {legacy.NAME} before the move to charmer (stale; its hooks name "
-            f"the earlier shims); it is recompiled at the next resume (charmer -r {mid}) — or charmer doctor "
-            f"--repair-all now, while it is stopped",
-            mid, EARLIER_SCOPES[1], _EARLIER_SCOPES_SUMMARY, action="earlier-scopes")], []
+    earlier_hooks = earlier_hooks or bool(earlier and _compiled_by_earlier_release(earlier, runtime.environ))
     transition = runtime_mod._transition_module()
-    parts = runtime.converge_parts()
     try:
-        ep = transition.expected_plan(
-            record,
-            docs=parts.docs,
-            prompt_bodies=parts.prompt_bodies,
-            state_root=runtime.session_store.root,
-            hook_command=parts.hook_command,
-            token_helper_command=parts.token_helper_command,
-            live=live if os.path.lexists(live) else None,
-            environ=parts.environ,
-            managed_root=parts.managed_root,
-            feedback_drafts=parts.feedback_drafts,
-        )
+        ep = plans.get(mid) if plans is not None else None
+        if ep is None:
+            parts = runtime.converge_parts()
+            ep = transition.expected_plan(
+                record,
+                docs=parts.docs,
+                prompt_bodies=parts.prompt_bodies,
+                state_root=runtime.session_store.root,
+                hook_command=parts.hook_command,
+                token_helper_command=parts.token_helper_command,
+                live=live if os.path.lexists(live) else None,
+                worktree_available=parts.worktree_available(record["cwd"]) if parts.worktree_available else None,
+                environ=parts.environ,
+                managed_root=parts.managed_root,
+                feedback_drafts=parts.feedback_drafts,
+            )
     except (
         transition.TransitionError,
         profile_mod.ProfileError,
@@ -2629,7 +2630,40 @@ def _check_scope_integrity(
         settings_mod.SettingsError,
         KeyError,
     ) as exc:
-        return [], [f"session {m8}: scope not checked ({exc})"], []
+        ep = str(exc)
+    if plans is not None:
+        plans[mid] = ep
+    if isinstance(ep, str):
+        return [], [f"session {m8}: scope not checked ({ep})"], []
+    if earlier_hooks:
+        # Earlier hooks are lazy state, but a moved or unevaluable binding
+        # cannot be rewritten by repair-all even while the session is stopped.
+        action = "earlier-scopes"
+        remedy = "charmer doctor --repair-all"
+        fix = cli_text.EARLIER_SCOPES_FIX
+        detail = f"{fix} (charmer -r {mid})"
+        group = EARLIER_SCOPES
+        summary = _EARLIER_SCOPES_SUMMARY
+        if ep.plan is None:
+            if runtime.resume_choice(record).needs_choice:
+                action = "needs-choice"
+                remedy = "charmer sessions choose --needs-choice --profile <name>"
+                fix = cli_text.EARLIER_SCOPES_CHOICE_FIX
+                detail = f"{fix} (charmer -r {mid})"
+                group = ("session", "earlier-scope-choice")
+            else:
+                action = None
+                remedy = f"charmer -r {mid}"
+                fix = cli_text.EARLIER_SCOPES_DEFERRED_FIX
+                detail = f"repair-all defers it: {ep.reason}"
+                group = ("session", "earlier-scope-deferred")
+            summary = f"{{n}} session scope(s) were compiled by {legacy.NAME}: {fix}"
+        line = gateway_facts.Finding(
+            f"session {m8}: scope compiled by {legacy.NAME} before the move to charmer "
+            f"(stale; its hooks name the earlier shims); {detail}",
+            code="earlier-scopes", public=f"session scope compiled by charmer's earlier name: {fix}", remedy=remedy)
+        return [], [gateway_facts.tagged(line, area="Sessions", action=action, group=group,
+                                         summary=summary, subjects=(m8,))], []
     if ep.plan is None:
         return [], [f"session {m8}: {ep.reason}"], []
     problems: list[str] = []
@@ -2794,7 +2828,9 @@ def _check_scope_integrity(
     return problems, attention, info
 
 
-def _doctor_scope_report(runtime: runtime_mod.Runtime) -> tuple[list[str], list[str], list[str]]:
+def _doctor_scope_report(
+    runtime: runtime_mod.Runtime, *, plans: dict[str, ExpectedPlan | str] | None = None,
+) -> tuple[list[str], list[str], list[str]]:
     """Session census plus per-record lines and v4 scope integrity.
 
     Returns ``(info, problems, attention)``. v1-3 records get one
@@ -2856,7 +2892,7 @@ def _doctor_scope_report(runtime: runtime_mod.Runtime) -> tuple[list[str], list[
         if record["lineup_generation"] == 0:
             info.append(f"session {m8}: legacy scope (not checked until its next launch)")
             continue
-        scope_problems, scope_attention, scope_info = _check_scope_integrity(runtime, record)
+        scope_problems, scope_attention, scope_info = _check_scope_integrity(runtime, record, plans=plans)
         if scope_problems:
             scope_mismatch += 1
         problems.extend(scope_problems)

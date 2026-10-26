@@ -938,9 +938,14 @@ DEFAULT_MODE_DRIFTS = (
     "{n} sessions: the compiled permission default mode differs from this launch's decision (lazy "
     "state); each applies at its next resume"
 )
-# What a scope the earlier name compiled needs (doctor's one row for them).
+# Earlier scopes are grouped by the remedy the recorded lineup admits.
 EARLIER_SCOPES_FIX = ("charmer doctor --repair-all recompiles the stopped ones now (H offers it); a running "
                       "one is recompiled at its next resume")
+EARLIER_SCOPES_DEFERRED_FIX = ("repair-all defers these recorded lineups; each scope is recompiled at its next "
+                               "resume (charmer -r <id>)")
+EARLIER_SCOPES_CHOICE_FIX = ("repair-all cannot recompile these recorded lineups; choose a profile or model first: "
+                             "charmer sessions choose --needs-choice --profile <name> (S banner), or resume "
+                             "interactively")
 # A passthrough surface S14 proved to defeat the deny gets exactly
 # this one stderr line at launch (``compiler.SKILL_POLICY_BYPASS_FLAGS``).
 SKILL_POLICY_BYPASS_NOTICE = (
@@ -1233,8 +1238,9 @@ FINDINGS_HOLD_CLEAR = ("Clearing it stays on the command line, with a typed conf
 FINDINGS_READ_ONLY = "this run is read-only; nothing was done"
 FINDINGS_CANCELLED = "nothing was done"
 FINDINGS_REPAIR_TITLE = "Repair every stopped session?"
-FINDINGS_REPAIR_BODY = ("charmer doctor --repair-all: every stopped session's generated scope is rebuilt from its "
-                        "record. Running sessions and sessions whose state cannot be told are skipped.")
+FINDINGS_REPAIR_BODY = ("charmer doctor --repair-all: converge stopped sessions' generated scopes to their records. "
+                        "Running sessions and sessions whose state cannot be told are skipped. Lineups the installed "
+                        "catalog cannot recompile are deferred until resume or a model choice.")
 FINDINGS_REPAIR_BUTTONS = (("Cancel", False), ("Repair", True))
 FINDINGS_PRUNE_ALIAS_TITLE = "Prune alias {alias}?"
 FINDINGS_PRUNE_ALIAS_BODY = ("charmer doctor --prune-aliases {alias}: the gateway stops serving the alias; it is "

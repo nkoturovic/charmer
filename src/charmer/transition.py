@@ -648,6 +648,18 @@ def catalog_role_order(ids: set[str]) -> list[str]:
     return sorted(ids, key=lambda rid: (order.get(rid, len(order)), rid))
 
 
+class ConvergeReport(list[str]):
+    """Human report lines, with a deferred outcome independent of their wording.
+
+    A deferred scope did not converge, even if generation fencing or fork
+    cleanup made progress. Existing single-session callers still use the lines.
+    """
+
+    def __init__(self, lines: tuple[str, ...] = (), *, deferred: bool = False) -> None:
+        super().__init__(lines)
+        self.deferred = deferred
+
+
 def converge(
     state_root: Path | str,
     store: sessions.SessionStore,
@@ -656,7 +668,7 @@ def converge(
     runtime_parts: RuntimeParts,
     dir_fsync: Callable[[Path], None] | None = None,
     barrier: state.BarrierToken | None = None,
-) -> list[str]:
+) -> ConvergeReport:
     """Converge a session's scope to record authority (``doctor --repair``).
 
     ``doctor --repair``/``--repair-all`` pass their held
@@ -677,7 +689,7 @@ def converge(
     sync = dir_fsync if dir_fsync is not None else scope._fsync_directory
     m8 = session_id[:8]
     parts = runtime_parts
-    report: list[str] = []
+    report = ConvergeReport()
     prev_retained = False
     with sessions.phase_or_guard(store.root, barrier):
         lock = store.lifecycle_lock(session_id)
@@ -685,11 +697,13 @@ def converge(
         try:
             record = store.load(session_id)
             if record.get("version") != sessions.RECORD_VERSION:
-                return [
-                    f"session {m8} is a legacy record; run charmer migrate (or resume it) first"
-                ]
+                return ConvergeReport((
+                    f"session {m8} is a legacy record; run charmer migrate (or resume it) first",
+                ), deferred=True)
             if record["lineup_generation"] == 0:
-                return [f"session {m8} runs a legacy scope; it converges at its next launch with this launcher"]
+                return ConvergeReport((
+                    f"session {m8} runs a legacy scope; it converges at its next launch with this launcher",
+                ), deferred=True)
             scopes_root = state.ensure_private_dir(Path(store.root) / "scopes")
             live = scopes_root / session_id
             prev = scopes_root / f".{session_id}.prev"
@@ -732,6 +746,7 @@ def converge(
 
             ep = plan_for(live if os.path.lexists(live) else None)
             if ep.plan is None:
+                report.deferred = True
                 report.append(str(ep.reason))
                 return report
             if not os.path.lexists(live) and os.path.lexists(prev):
@@ -745,6 +760,7 @@ def converge(
                 )
                 ep = plan_for(live)
                 if ep.plan is None:
+                    report.deferred = True
                     report.append(str(ep.reason))
                     return report
             rebuilt = False
@@ -786,5 +802,6 @@ def converge(
         finally:
             lock.release()
     if prev_retained:
-        report.append("prior generation retained at .prev; doctor --prune removes it")
+        report.append("prior generation retained at .prev for rollback while the session record exists; "
+                      "doctor --prune removes it after the session is forgotten")
     return report
