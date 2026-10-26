@@ -6,7 +6,7 @@ follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-## [2.2.0] — 2026-10-27
+## [2.2.0] — 2026-10-26
 
 ### Upgrade notes
 
@@ -194,16 +194,44 @@ See [updating from 2.1.0](docs/update.md#updating-from-210).
 - The [late-stream completion limit](docs/troubleshooting.md#late-stream-completion-limit)
   remains on Claude Code 2.1.310 with the tested CLIProxyAPI 8.0.42: a
   successful client result is not proof of complete stream framing.
+- On the ChatGPT account and OpenAI API-key routes, a Codex model's own
+  commentary preambles arrive as unsigned thinking and can be omitted
+  when the gateway translates subsequent history back to the model
+  ([upstream #6966](https://github.com/router-for-me/CLIProxyAPI/issues/6966),
+  reproduced in [#6994](https://github.com/router-for-me/CLIProxyAPI/issues/6994);
+  unchanged in 8.0.43; upstream's fix is not yet released). This omission does not remove tool calls or tool
+  results; reasoning is replayed only with a compatible signature.
 - A user-installed `agent.spawn` mod can change an agent's model within
   the lineup; a `settings.read` mod can also widen the allowed model list.
   The compiled lineup does not constrain user-installed code.
+- A worktree-isolated agent that finishes without changes loses its
+  worktree; continuing it with SendMessage then runs it in the main
+  checkout without isolation
+  ([upstream #104928](https://github.com/anthropics/claude-code/issues/104928),
+  reported on clients since 2.1.292, including 2.1.310). Spawn a fresh
+  implementer agent instead of continuing one that stopped before
+  changing anything.
 - The client can resend an unrecognised provider refusal up to three times.
   On resume, a passed-through `--tools` option does not narrow the tools
   offered to the model, although calls outside it are still refused.
   See [client limits](docs/reference/compatibility.md#verified-behavior-and-limits).
 - CPython 3.15.1 still carries a tar-filter advisory outside charmer's
-  extraction paths. The Nix channel holds Python 3.14.8 and GnuPG 2.4.9;
-  GnuPG is for development and tests, not bundle signature verification.
+  extraction paths and lacks the `ssl` denylist for the compromised
+  eMudhra intermediate CA keys (CVE-2026-115557 / PSF-2026-46). CPython
+  3.15.2 (2026-10-25) fixes both; python-build-standalone had not
+  published 3.15.2 builds at the 2026-10-26 check, so a follow-up
+  release moves to it. Release bundles and managed Claude Code binaries
+  are verified against signed checksums or pinned hashes before use, and
+  the gateway's Go 1.27.3 includes Go's mitigation for the same
+  compromise (CVE-2026-111943). `charmer discover` model listings and the
+  public model feed use Python TLS with your system's certificates, which
+  may still trust the affected roots: an attacker who can intercept the
+  connection could then read the provider key a credentialed listing
+  sends. Until the follow-up, avoid credentialed listings, or run them
+  only with `SSL_CERT_FILE`/`SSL_CERT_DIR` pointing at certificates that
+  no longer trust those roots. The Nix channel holds Python 3.14.8, which
+  also lacks the denylist, and GnuPG 2.4.9; GnuPG is for development and
+  tests, not bundle signature verification.
 - Older releases retain their unguarded stale-lock reclamation: do not run
   it alongside another installer or updater. The older-bundle `sync`
   fallback away from Linux lacks the newer helper's per-file guarantee.

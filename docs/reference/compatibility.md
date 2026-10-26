@@ -102,6 +102,12 @@ contexts or signed reasoning history.
   `system-reminder` tag openings; it does not discard the notice.
 - After a lineup change, spawn fresh agents. Continuing an old agent with
   SendMessage can use its new model with its old prompt and history.
+- A worktree-isolated agent that finishes without changes loses its
+  worktree; continuing it with SendMessage then runs it in the main
+  checkout without isolation
+  ([upstream #104928](https://github.com/anthropics/claude-code/issues/104928),
+  reported on clients since 2.1.292, including 2.1.310). Spawn a fresh
+  agent instead of continuing one that stopped before changing anything.
 - Claude Code can run every workflow agent on one model
   (`CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL`), replacing the models of `cm-*`
   agents too. Managed sessions set it to `inherit` in their own settings,

@@ -60,8 +60,10 @@ about cache/history cost, not permission to use that family.
 
 `/reload-plugins` is yours to type when the result calls for it: no hook
 can observe it, so until you do, new agents keep the previous bindings.
-Start fresh agents afterwards; running agents keep their binding, and
-`SendMessage` continuation does not move an old agent to the new model.
+Start fresh agents afterwards; running agents keep their binding. Do not
+`SendMessage`-continue an agent started before the reload: the client runs
+it on the new binding's model with its old instructions and history, a
+mix that neither lineup describes.
 User-installed spawn mods can redirect fresh agents: the lineup describes
 charmer's bindings, not an exact-binding guarantee against those mods
 ([compatibility limits](../reference/compatibility.md)).
@@ -94,7 +96,8 @@ pending change) or a fallback provider, each with its effect shown first.
 3. If the result asks for `/reload-plugins`, type it and start fresh
    agents. If it also names `/model`, follow that instruction (press `s`)
    to switch the lead, or resume instead. Running agents keep their binding;
-   do not `SendMessage`-continue them expecting the new model.
+   do not `SendMessage`-continue them: a continued agent takes the new
+   model but keeps its old instructions and history.
 4. If it says `relaunch needed`, or records a `pending` change with
    `nothing in the running session changed`, exit, then `charmer -r <id>`.
    A result naming only `/model` or the next resume needs that step instead;

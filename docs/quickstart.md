@@ -127,7 +127,8 @@ change command's output before taking the next step:
 
 - If it says `next: type /reload-plugins`, type `/reload-plugins`, then
   start fresh agents. Running agents keep their binding; do not
-  `SendMessage`-continue an old agent expecting it to use the change.
+  `SendMessage`-continue an old agent: it would take the new model but
+  keep its old instructions and history.
 - If it says `relaunch needed`, or records a `pending` change with
   `nothing in the running session changed`, exit the session, then run
   `charmer -r <id>`. Reload alone does not apply that pending change.
