@@ -242,6 +242,12 @@ after pending changes and writes nothing.
   form ("prompt is too long"), so it compacts the conversation and retries,
   whether the refusal comes before the answer starts or after. Other errors
   reach Claude Code as before.
+- On both OpenAI routes, a Codex model's own commentary preambles reach
+  Claude Code as unsigned thinking, and the gateway omits them when it
+  translates the history Claude Code sends back
+  ([upstream #6966](https://github.com/router-for-me/CLIProxyAPI/issues/6966)).
+  Tool calls and tool results are kept; reasoning is replayed only with a
+  compatible signature.
 
 ## Thinking from content chunks
 
