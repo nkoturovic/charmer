@@ -1,10 +1,10 @@
 {
   "format": 1,
-  "python": "3.15.1",
-  "release": "20261021",
+  "python": "3.15.2",
+  "release": "20261026",
   "source": {
     "flavor": "pgo+lto-full",
-    "versions": "pythonbuild/downloads.json of 20261021 (sha256 510d5b18ac3902627cab1c5e0c0a77b2e0e18b6f298df0610de3fcb8a2406db4)"
+    "versions": "pythonbuild/downloads.json of 20261026 (sha256 8b0e472c66797dcd58dfa461171c7f416602503924091e5e4629e776221b8a27)"
   },
   "targets": {
     "darwin-arm64": {
@@ -17,13 +17,13 @@
         "_ctypes_test"
       ],
       "full_archive": {
-        "filename": "cpython-3.15.1+20261021-aarch64-apple-darwin-pgo+lto-full.tar.zst",
-        "sha256": "3ba97f493a5fc72d9cad9f2d83cb5524b4c67e78140e4a6769bb0e0747f06e41",
-        "size": 69282901
+        "filename": "cpython-3.15.2+20261026-aarch64-apple-darwin-pgo+lto-full.tar.zst",
+        "sha256": "17a41099bba8c18c45c527580014e75dc7a77300f619d7f5cdfecc57aca06f39",
+        "size": 69311061
       },
       "install_only": {
-        "filename": "cpython-3.15.1+20261021-aarch64-apple-darwin-install_only_stripped.tar.gz",
-        "sha256": "1a4eb4d5aa82400de6eeb94e6fc6d870f5fabc97eb1d801f7eeba8072117b11c"
+        "filename": "cpython-3.15.2+20261026-aarch64-apple-darwin-install_only_stripped.tar.gz",
+        "sha256": "1b1b03fca8aa351698403f3d100ee83db7a5d99748fc7707681ac31a6a846ad9"
       },
       "libraries": [
         {
@@ -217,7 +217,7 @@
           "CNRI-Python"
         ],
         "text": "LICENSE.txt",
-        "version": "3.15.1"
+        "version": "3.15.2"
       }
     },
     "darwin-x86_64": {
@@ -230,13 +230,13 @@
         "_ctypes_test"
       ],
       "full_archive": {
-        "filename": "cpython-3.15.1+20261021-x86_64-apple-darwin-pgo+lto-full.tar.zst",
-        "sha256": "4f6eb28cf8222cdddbaba2134905712af45c8c54053cf220a50fa54a7363d212",
-        "size": 68217462
+        "filename": "cpython-3.15.2+20261026-x86_64-apple-darwin-pgo+lto-full.tar.zst",
+        "sha256": "f3ded442ab28d88ef625b54e936a5c45c9a444763d3f9f02c8653e11f0d99688",
+        "size": 68198003
       },
       "install_only": {
-        "filename": "cpython-3.15.1+20261021-x86_64-apple-darwin-install_only_stripped.tar.gz",
-        "sha256": "b7604b6cfcce467baca5bd607c4fc55928be99310b92b4faf2bdb448f488929e"
+        "filename": "cpython-3.15.2+20261026-x86_64-apple-darwin-install_only_stripped.tar.gz",
+        "sha256": "6ec04346b578656b5d5597144cbe0f4773acea6af6048cb8fe0cac3e92c702ac"
       },
       "libraries": [
         {
@@ -430,7 +430,7 @@
           "CNRI-Python"
         ],
         "text": "LICENSE.txt",
-        "version": "3.15.1"
+        "version": "3.15.2"
       }
     },
     "linux-aarch64": {
@@ -443,13 +443,13 @@
         "_ctypes_test"
       ],
       "full_archive": {
-        "filename": "cpython-3.15.1+20261021-aarch64-unknown-linux-gnu-pgo+lto-full.tar.zst",
-        "sha256": "9e208dab28830673758bdf2af2623756646aa39481cc246360c5465ba7156afb",
-        "size": 106374144
+        "filename": "cpython-3.15.2+20261026-aarch64-unknown-linux-gnu-pgo+lto-full.tar.zst",
+        "sha256": "b3fc351d2271f6c0b3c6d2b423043771dfcb5267053512b8aebba195dad110e9",
+        "size": 106685012
       },
       "install_only": {
-        "filename": "cpython-3.15.1+20261021-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz",
-        "sha256": "6efe65c43ae0bdebebeab4607f91a0053dd36d5e51cfd69a791d544e9b122be7"
+        "filename": "cpython-3.15.2+20261026-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz",
+        "sha256": "0f23351c03b39beb880de668976074fcc3c082d9c3b03d0b43185632b2b270a0"
       },
       "libraries": [
         {
@@ -722,7 +722,7 @@
           "CNRI-Python"
         ],
         "text": "LICENSE.txt",
-        "version": "3.15.1"
+        "version": "3.15.2"
       }
     },
     "linux-x86_64": {
@@ -735,13 +735,13 @@
         "_ctypes_test"
       ],
       "full_archive": {
-        "filename": "cpython-3.15.1+20261021-x86_64-unknown-linux-gnu-pgo+lto-full.tar.zst",
-        "sha256": "ed8c818ad80faeb7cb3a37f5d2283bd5f8350350b007bdda092026b9048ccb33",
-        "size": 123152725
+        "filename": "cpython-3.15.2+20261026-x86_64-unknown-linux-gnu-pgo+lto-full.tar.zst",
+        "sha256": "3488eafeae3c25a44895df9fd52a9be1f2fa11a45cb0580279e03c2bce5339b4",
+        "size": 122721644
       },
       "install_only": {
-        "filename": "cpython-3.15.1+20261021-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz",
-        "sha256": "01d901e09ca673c99a6c9bd9ec2cfbd58dbe8813d07514c36cb73cfd20b18bd8"
+        "filename": "cpython-3.15.2+20261026-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz",
+        "sha256": "7b03163a980c607ba8194709d4a4086735a7a9c488cc475b098157306927b36b"
       },
       "libraries": [
         {
@@ -1014,7 +1014,7 @@
           "CNRI-Python"
         ],
         "text": "LICENSE.txt",
-        "version": "3.15.1"
+        "version": "3.15.2"
       }
     }
   },

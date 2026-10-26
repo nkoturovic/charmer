@@ -254,7 +254,7 @@ closure and Nix/native gateway equality remain release-candidate checks.
 | Package | Version in the locked source | Newest upstream | Disposition | Verified |
 | --- | --- | --- | --- | --- |
 | bubblewrap | 0.12.0 | 0.13.1 | required floor 0.12.0 (GHSA-pxhw-h44j-8pfx, CVE-2026-87766), asserted by `nix/devshell.nix`; newer releases follow the channel | 2026-10-24 |
-| python3 | 3.14.8 | 3.14.9 / 3.15.1 | channel hold; the tarfile custom-filter fallback and private-directory cleanup dispositions below apply; bundles ship 3.15.1 separately | 2026-10-24 |
+| python3 | 3.14.8 | 3.14.10 / 3.15.2 | channel hold (nixos-unstable still selects 3.14.8 on 2026-10-26); 3.14.8 lacks the eMudhra `ssl` distrust (CVE-2026-115557) that 3.14.10 adds, so Nix-package model listings keep the release notes' interim advice until the channel moves; the tarfile custom-filter fallback and private-directory cleanup dispositions below apply; bundles ship 3.15.2 separately | 2026-10-26 |
 | openssl (default) | 3.5.9 | 3.5.9 LTS / 3.6.5 / 4.0.3 | current on the 3.5 LTS line, selected by the Nix Python's ssl recipe; closes the prior 3.5.8 gap including CVE-2026-84782 | 2026-10-24 |
 | git | 2.56.0 | 2.56.0 | current (development shell and tests only) | 2026-10-24 |
 | gnupg | 2.4.9 (FreePG) | 2.5.24 | channel hold for development shell and tests, not bundle release trust; upstream 2.4 is EOL, FreePG support beyond that is unconfirmed; re-check at the release candidate | 2026-10-24 |
@@ -302,11 +302,11 @@ The setuptools 84.2.1 wheel matched the sha256 in
 scratch directory. It is not yanked and still needs Python >=3.10. The
 build backend and the battery's hash-required wheel pin move together.
 
-CPython 3.15.1 comes from python-build-standalone 20261021. Each of the
+CPython 3.15.2 comes from python-build-standalone 20261026. Each of the
 following eight downloads matched both the release API's asset digest
-(<https://api.github.com/repos/astral-sh/python-build-standalone/releases/tags/20261021>)
+(<https://api.github.com/repos/astral-sh/python-build-standalone/releases/tags/20261026>)
 and the release's
-[SHA256SUMS](https://github.com/astral-sh/python-build-standalone/releases/download/20261021/SHA256SUMS).
+[SHA256SUMS](https://github.com/astral-sh/python-build-standalone/releases/download/20261026/SHA256SUMS).
 The install-only hashes also live in `packaging/python-runtimes.json`; the
 full-archive hashes and sizes live in the regenerated licence inventory.
 
@@ -314,39 +314,44 @@ full-archive hashes and sizes live in the regenerated licence inventory.
 
 | Archive | sha256 | Verified |
 | --- | --- | --- |
-| cpython-3.15.1+20261021-aarch64-apple-darwin-install_only_stripped.tar.gz | 1a4eb4d5aa82400de6eeb94e6fc6d870f5fabc97eb1d801f7eeba8072117b11c | 2026-10-24 |
-| cpython-3.15.1+20261021-aarch64-apple-darwin-pgo+lto-full.tar.zst | 3ba97f493a5fc72d9cad9f2d83cb5524b4c67e78140e4a6769bb0e0747f06e41 | 2026-10-24 |
-| cpython-3.15.1+20261021-x86_64-apple-darwin-install_only_stripped.tar.gz | b7604b6cfcce467baca5bd607c4fc55928be99310b92b4faf2bdb448f488929e | 2026-10-24 |
-| cpython-3.15.1+20261021-x86_64-apple-darwin-pgo+lto-full.tar.zst | 4f6eb28cf8222cdddbaba2134905712af45c8c54053cf220a50fa54a7363d212 | 2026-10-24 |
-| cpython-3.15.1+20261021-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz | 6efe65c43ae0bdebebeab4607f91a0053dd36d5e51cfd69a791d544e9b122be7 | 2026-10-24 |
-| cpython-3.15.1+20261021-aarch64-unknown-linux-gnu-pgo+lto-full.tar.zst | 9e208dab28830673758bdf2af2623756646aa39481cc246360c5465ba7156afb | 2026-10-24 |
-| cpython-3.15.1+20261021-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz | 01d901e09ca673c99a6c9bd9ec2cfbd58dbe8813d07514c36cb73cfd20b18bd8 | 2026-10-24 |
-| cpython-3.15.1+20261021-x86_64-unknown-linux-gnu-pgo+lto-full.tar.zst | ed8c818ad80faeb7cb3a37f5d2283bd5f8350350b007bdda092026b9048ccb33 | 2026-10-24 |
+| cpython-3.15.2+20261026-aarch64-apple-darwin-install_only_stripped.tar.gz | 1b1b03fca8aa351698403f3d100ee83db7a5d99748fc7707681ac31a6a846ad9 | 2026-10-26 |
+| cpython-3.15.2+20261026-aarch64-apple-darwin-pgo+lto-full.tar.zst | 17a41099bba8c18c45c527580014e75dc7a77300f619d7f5cdfecc57aca06f39 | 2026-10-26 |
+| cpython-3.15.2+20261026-x86_64-apple-darwin-install_only_stripped.tar.gz | 6ec04346b578656b5d5597144cbe0f4773acea6af6048cb8fe0cac3e92c702ac | 2026-10-26 |
+| cpython-3.15.2+20261026-x86_64-apple-darwin-pgo+lto-full.tar.zst | f3ded442ab28d88ef625b54e936a5c45c9a444763d3f9f02c8653e11f0d99688 | 2026-10-26 |
+| cpython-3.15.2+20261026-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz | 0f23351c03b39beb880de668976074fcc3c082d9c3b03d0b43185632b2b270a0 | 2026-10-26 |
+| cpython-3.15.2+20261026-aarch64-unknown-linux-gnu-pgo+lto-full.tar.zst | b3fc351d2271f6c0b3c6d2b423043771dfcb5267053512b8aebba195dad110e9 | 2026-10-26 |
+| cpython-3.15.2+20261026-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz | 7b03163a980c607ba8194709d4a4086735a7a9c488cc475b098157306927b36b | 2026-10-26 |
+| cpython-3.15.2+20261026-x86_64-unknown-linux-gnu-pgo+lto-full.tar.zst | 3488eafeae3c25a44895df9fd52a9be1f2fa11a45cb0580279e03c2bce5339b4 | 2026-10-26 |
 
 The release's `pythonbuild/downloads.json` has sha256
-`510d5b18ac3902627cab1c5e0c0a77b2e0e18b6f298df0610de3fcb8a2406db4`.
-The full archives' `PYTHON.json` records GIL enabled on all targets, JIT
-built but off by default except Intel macOS (not built). All four prepared
-runtimes passed the existing archive-member, startup-file and shipped-library
-checks: no retained `.pth`, `.start`, `sitecustomize` or `usercustomize`.
-Library versions and licence texts are unchanged, including Expat 2.9.0,
-OpenSSL 3.5.9 and zstd 1.5.7. These full archives now carry the zstd licence
-text themselves, byte-identical to the formerly supplemental text; its
-inventory provenance changes accordingly. CPython 3.15.1's ensurepip update
-is pruned and its Windows mimetypes
-fix does not affect the shipped Linux/macOS targets. The standalone release
-also repairs x86-64 Linux BOLT/perf-trampoline crashes.
+`8b0e472c66797dcd58dfa461171c7f416602503924091e5e4629e776221b8a27`; against
+20261021 it changes only the CPython versions. The full archives' `PYTHON.json`
+records GIL enabled on all targets, JIT built but off by default except Intel
+macOS (not built), unchanged. All four prepared runtimes passed the existing
+archive-member, startup-file and shipped-library checks: no retained `.pth`,
+`.start`, `sitecustomize` or `usercustomize`. Library versions and licence
+texts are unchanged, including Expat 2.9.0, OpenSSL 3.5.9 and zstd 1.5.7.
+Between the two standalone releases, ARM, PowerPC and s390x Linux builds are
+cross-compiled with LLVM and AArch64 Linux enables the Cortex-A53 erratum
+843419 workaround; the arm64 Linux release journeys and the arm64 reproduce
+build requalify that target.
 
-OSV was queried on 2026-10-24 for CPython 3.15.1's release-tag commit
-`c37e74cb6bcdadcd5f46f289498f6b3298ddee61`, not a PyPI namesake. It reports
-`CVE-2026-114583` and `PSF-2026-45`: the `tar` extraction filter is affected,
-whereas the runtime preparer and signed updater use `data` after their own
-member checks. Exact id/alias/revision/version reviews expire 2026-12-01;
-this is a non-reachability disposition, not a fix claim. The still-published
-CPython 3.15.0 commit `d220409a13b77de7a6c30abe16ea90db01528edc` was queried
-too; its two tar-filter findings and Windows-only `PSF-2025-2` retain their
-exact reviews, extended from 2026-11-23 to 2026-12-01. The MIME finding no
-longer matches 3.15.1 and receives no exemption for that version.
+CPython 3.15.2 adds the `ssl` distrust of the compromised eMudhra
+intermediate CA keys (CVE-2026-115557 / PSF-2026-46) and fixes the tar
+filter (CVE-2026-114583 / PSF-2026-45). With the launcher's own TLS context
+(`tls.context()`, trust from `SSL_CERT_FILE`) and CPython's gh-160040 test
+chain, 3.15.1 completes the handshake and 3.15.2 rejects it
+(`SSLCertVerificationError`, verify code 28), checked on 2026-10-26.
+
+OSV was queried on 2026-10-26 for CPython 3.15.2's release-tag commit
+`5e58eaad7c58df58dfa8ea549c87996e01dd1077`, not a PyPI namesake: no
+advisory. Until this release is published the watch scans 2.2.0's CPython
+3.15.1 (commit `c37e74cb6bcdadcd5f46f289498f6b3298ddee61`), which OSV lists
+with the four ids above at their 2026-10-25/26 revisions: the tar-filter pair
+keeps its non-reachability review to 2026-12-01; the `ssl` pair is reviewed
+as the reachable 2.2.0 known limit that this release fixes, expiring
+2026-11-09. The 3.15.0 reviews are removed: no published release that the
+watch scans carries 3.15.0 any more.
 
 The pin watch now reads and reports both npm `latest` (the user-install
 channel) and `stable`. Either newer tag is included in the issue report.
