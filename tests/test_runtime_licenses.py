@@ -53,10 +53,10 @@ class CheckedInTests(unittest.TestCase):
                 self.assertRegex(entry["full_archive"]["sha256"], r"^[0-9a-f]{64}$")
 
     def test_security_refresh_provenance_and_components_move_together(self) -> None:
-        self.assertEqual(self.runtimes.release, "20261021")
-        self.assertEqual(self.runtimes.python, "3.15.1")
+        self.assertEqual(self.runtimes.release, "20261026")
+        self.assertEqual(self.runtimes.python, "3.15.2")
         self.assertEqual(self.inventory.document["python"], self.runtimes.python)
-        self.assertIn("510d5b18ac3902627cab1c5e0c0a77b2e0e18b6f298df0610de3fcb8a2406db4",
+        self.assertIn("8b0e472c66797dcd58dfa461171c7f416602503924091e5e4629e776221b8a27",
                       self.inventory.document["source"]["versions"])
         for target in self.runtimes.targets:
             with self.subTest(target=target):
@@ -67,7 +67,7 @@ class CheckedInTests(unittest.TestCase):
                 notices = self.tool.notices_bytes(self.inventory, target).decode()
                 self.assertIn("expat 2.9.0", notices)
                 self.assertIn("libffi 3.8.0", notices)
-                self.assertIn("20261021", self.inventory.target(target)["full_archive"]["filename"])
+                self.assertIn("20261026", self.inventory.target(target)["full_archive"]["filename"])
 
     def test_the_runtimes_are_the_default_build(self) -> None:
         """Read from each full archive's PYTHON.json when the inventory was

@@ -3516,21 +3516,24 @@ class VulnerabilityWatchTests(unittest.TestCase):
     def test_runtime_refresh_has_exact_reviews_past_the_release_window(self) -> None:
         reviews = self.watch.cpython_reviews(SCRIPTS.parent / "vulnerability-watch-reviewed.json")
         version = json.loads((REPO_ROOT / "packaging/python-runtimes.json").read_text())["python"]
-        current = {entry["id"]: entry for entry in reviews if entry["version"] == version}
-        self.assertEqual(version, "3.15.1")
-        self.assertEqual(set(current), {"CVE-2026-114583", "PSF-2026-45"})
-        for identifier, alias, revision in (
-                ("CVE-2026-114583", "PSF-2026-45", "2026-10-24T02:50:19.989664282Z"),
-                ("PSF-2026-45", "CVE-2026-114583", "2026-10-23T02:00:45.395220171Z")):
-            self.assertEqual(current[identifier]["aliases"], [alias])
-            self.assertEqual(current[identifier]["modified"], revision)
-            self.assertIn("data filter", current[identifier]["reason"])
-        published = [entry for entry in reviews if entry["version"] == "3.15.0"]
-        self.assertEqual(len(published), 3)  # the watch still scans the published release
-        for entry in [*current.values(), *published]:
-            with self.subTest(version=entry["version"], identifier=entry["id"]):
-                self.assertEqual(entry["re_review"], "2026-12-01")
-                self.assertGreater(datetime.date.fromisoformat(entry["re_review"]), datetime.date(2026, 11, 23))
+        current = [entry for entry in reviews if entry["version"] == version]
+        self.assertEqual(version, "3.15.2")
+        self.assertEqual(current, [])  # OSV lists no advisory for v3.15.2 (2026-10-26)
+        # The watch scans the newest published release until this one is published: 2.2.0's 3.15.1.
+        published = {entry["id"]: entry for entry in reviews if entry["version"] == "3.15.1"}
+        self.assertEqual(set(published), {"CVE-2026-114583", "PSF-2026-45", "CVE-2026-115557", "PSF-2026-46"})
+        for identifier, alias, revision, marker, expiry in (
+                ("CVE-2026-114583", "PSF-2026-45", "2026-10-26T10:45:18.183044227Z", "data filter", "2026-12-01"),
+                ("PSF-2026-45", "CVE-2026-114583", "2026-10-26T01:00:04.904112049Z", "data filter", "2026-12-01"),
+                ("CVE-2026-115557", "PSF-2026-46", "2026-10-26T13:07:48.670498567Z", "reachable", "2026-11-09"),
+                ("PSF-2026-46", "CVE-2026-115557", "2026-10-25T07:08:33.263861324Z", "reachable", "2026-11-09")):
+            with self.subTest(identifier=identifier):
+                self.assertEqual(published[identifier]["aliases"], [alias])
+                self.assertEqual(published[identifier]["modified"], revision)
+                self.assertIn(marker, published[identifier]["reason"])
+                self.assertIn("3.15.2", published[identifier]["reason"])
+                self.assertEqual(published[identifier]["re_review"], expiry)
+        self.assertFalse([entry for entry in reviews if entry["version"] == "3.15.0"])
 
     def test_watch_applies_explicit_cpython_reviews(self) -> None:
         cpython = {"version": "3.14.8", "commit": "a" * 40}
