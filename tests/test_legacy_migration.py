@@ -2641,7 +2641,7 @@ class ResumeAfterMigrationTests(V4Case):
                          ("attention", "Sessions", "charmer doctor --repair-all"))
         self.assertIn(self.mid[:8], rows[0].text)
         self.assertIn("charmer doctor --repair-all recompiles the stopped ones now", rows[0].text)
-        self.assertGreaterEqual(len(rows[0].originals), 2)  # the hook-target and scope-integrity lines
+        self.assertEqual(len(rows[0].originals), 1)  # one finding per session, even with missing earlier hooks
         # The moved record has no recorded end: live or unknown, so repair-all leaves it.
         out = io.StringIO()
         self.assertEqual(doctor_actions._doctor_repair_all(self.runtime, out), 0, out.getvalue())
@@ -2731,6 +2731,71 @@ class ResumeAfterMigrationTests(V4Case):
         self.assertEqual(doctor_actions._doctor_repair_all(self.runtime, out), 0, out.getvalue())
         self.assertIn("Repair-all: 1 session(s) converged to record authority. 1 deferred.", out.getvalue())
         self.assertEqual([row.action for row in self._earlier_rows()], [None])
+
+    def test_missing_earlier_hooks_report_each_session_once_in_verbose_and_json(self) -> None:
+        import copy
+        from charmer.cli import entry
+
+        other = "22222222-2222-4222-8222-222222222222"
+        record = copy.deepcopy(self.store.load(self.mid))
+        record.update(managed_id=other, runtime_session_id=other, last_event_source="end")
+        self.store.save(record)
+        shutil.copytree(self.live(self.mid), self.live(other))
+        self.mutate(self.mid, last_event_source="end")
+        for mid in (self.mid, other):
+            settings = strict_json.load(self.live(mid) / "settings.json")
+            self.assertTrue(scope.missing_hook_targets(settings))
+            self.assertEqual(set(scope.hook_targets(settings)), set(scope.missing_hook_targets(settings)))
+        for disposition in ("repairable", "deferred", "needs-choice"):
+            if disposition != "repairable":
+                for mid in (self.mid, other):
+                    self._defer_record(mid, needs_choice=disposition == "needs-choice")
+            for option in ("-v", "--json"):
+                with self.subTest(disposition=disposition, option=option):
+                    out = io.StringIO()
+                    self.assertEqual(entry.main(["doctor", option], runtime=self.runtime,
+                                                output_stream=out, interactive=False), 0)
+                    if option == "--json":
+                        document = json.loads(out.getvalue())
+                        diagnostics = [item for item in document["diagnostics"] if item["code"] == "earlier-scopes"]
+                        self.assertEqual(len(diagnostics), 2, diagnostics)
+                        if disposition == "needs-choice":
+                            self.assertEqual(sum(item["code"] == "needs-choice" for item in document["diagnostics"]), 1)
+                    else:
+                        for mid in (self.mid, other):
+                            self.assertEqual(out.getvalue().count(
+                                f"session {mid[:8]}: scope compiled by {legacy.NAME}"), 1, out.getvalue())
+
+    def test_grouped_deferred_scope_details_use_a_generic_resume_command(self) -> None:
+        import copy
+        from charmer import tui
+        from charmer.cli import doctor
+        from charmer.cli.screens import findings
+        from test_tui import ENTER, ESC, FakeWindow
+
+        other = "22222222-2222-4222-8222-222222222222"
+        record = copy.deepcopy(self.store.load(self.mid))
+        record.update(managed_id=other, runtime_session_id=other, last_event_source="end")
+        self.store.save(record)
+        shutil.copytree(self.live(self.mid), self.live(other))
+        for mid in (self.mid, other):
+            self._defer_record(mid)
+        problems, _info, attention = doctor._collect_doctor_reports(self.runtime)
+        self.assertEqual(problems, [])
+        earlier = [line for line in attention if getattr(line, "code", None) == "earlier-scopes"]
+        row, = doctor.present_report([], earlier).rows
+        self.assertEqual(row.remedy, "charmer -r <id>")
+        self.assertEqual(len(row.originals), 2)
+        screen = findings.FindingsScreen(self.runtime, palette=tui.MONO_PALETTE,
+                                          tty_in=io.StringIO(), tty_out=io.StringIO(),
+                                          report=lambda: ([], [], earlier))
+        with mock.patch.object(tui, "TextView") as view:
+            screen.run(FakeWindow([ENTER, ESC], height=40, width=120))
+        view.assert_called_once()
+        lines = view.call_args.args[1]
+        self.assertEqual(lines[-1], "Its command: charmer -r <id>")
+        for mid in (self.mid, other):
+            self.assertEqual("\n".join(lines).count(f"session {mid[:8]}: scope compiled by {legacy.NAME}"), 1)
 
     def test_earlier_scope_plan_is_evaluated_once_per_record_per_doctor_pass(self) -> None:
         import copy

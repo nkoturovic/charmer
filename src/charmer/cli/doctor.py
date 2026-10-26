@@ -99,8 +99,8 @@ ADVISORIES_TITLE = "Advisories (optional evidence; does not change the verdict)"
 SHOWN_IDS = 3
 VERBOSE_HINT = "(doctor -v lists them)"
 _LEVEL_ORDER = {"block": 0, "attention": 1, ADVISORY: 2}
-# Scopes the earlier name compiled: the count line and each session's line
-# are one row.
+# Repairable scopes the earlier name compiled share one row, with one
+# original finding per session. Deferred scopes are grouped by their remedy.
 EARLIER_SCOPES = ("session", "earlier-scope")
 _EARLIER_SCOPES_SUMMARY = (f"{{n}} session scope(s) were compiled by {legacy.NAME} (their hooks name its shims, "
                            f"which the move to charmer replaced): {cli_text.EARLIER_SCOPES_FIX}")
@@ -277,6 +277,8 @@ def present_report(problems: list[str], attention: list[str]) -> Presentation:
         # The command any member names (a group's lines may come from collectors that name it once),
         # else the command of an advisory model row's optional next step.
         remedy = next((line.remedy for line in lines if getattr(line, "remedy", None)), None)
+        if group == ("session", "earlier-scope-deferred") and len(subjects) > 1:
+            remedy = "charmer -r <id>"
         if remedy is None and level == ADVISORY and group and group[0] == "model" and group[2]:
             remedy = advisory_command(group[1], getattr(first, "subject", None))
         rows.append((_LEVEL_ORDER[level], _area_index(area), 0 if hold else 1, index,
@@ -1158,7 +1160,10 @@ def _collect_doctor_report_lines(
     liveness = _session_liveness(runtime)
     hook_problems, hook_attention, hook_info = _doctor_hook_targets(runtime, records, plans=plans)
     problems.extend(area(hook_problems, SESSIONS))
-    scope_attention.extend(area(hook_attention, SESSIONS))
+    # Missing earlier shims repeat the scope check's per-session finding.
+    # Drop only exact repeats; a distinct hook finding must remain visible.
+    already_reported = set(scope_attention)
+    scope_attention.extend(area([line for line in hook_attention if line not in already_reported], SESSIONS))
     info_lines.extend(hook_info)
     scope_attention.extend(area(_doctor_client_report(runtime, records), SESSIONS))
     record_attention, record_info = _doctor_record_report(runtime, records)
