@@ -10,8 +10,9 @@ follow [Semantic Versioning](https://semver.org/).
 
 Only the launcher changes: the gateway binary, Claude Code 2.1.310 and the
 state and record formats (4) stay as in 2.2.0. A running gateway keeps
-serving, and `charmer update --verify` reports
-`running-gateway: current-match` without a restart. `charmer gateway status`
+serving. On Linux, `charmer update --verify` reports
+`running-gateway: current-match` without a restart; on macOS, running-byte
+verification remains unavailable (exit 3). `charmer gateway status`
 and doctor still say "gateway restart pending" until the next restart,
 because they compare the running gateway's install path, not its bytes:
 restart between turns when convenient. See
@@ -31,11 +32,12 @@ restart between turns when convenient. See
 ### Fixed
 
 - For sessions from before the rename, `charmer doctor` offers
-  `charmer doctor --repair-all` only where repair-all can recompile the
-  scope now. Otherwise it names the step that applies: the session's next
-  resume when the installed catalog defers its lineup, or a profile or
-  model choice first when its lead left the catalog. **H** follows the same
-  remedy, and `--repair-all` counts deferred sessions separately.
+  `charmer doctor --repair-all` for recorded lineups the installed catalog
+  can recompile; it repairs stopped sessions, and running ones recompile at
+  their next resume. For lineups the catalog defers, doctor names the next
+  resume instead, or a profile or model choice first when the lead needs
+  replacing. **H** follows the same remedy, and `--repair-all` counts
+  deferred sessions separately.
 - `charmer doctor --repair-all` says that a session's prior scope generation
   stays as rollback state while its record exists; `charmer doctor --prune`
   removes it after the session is forgotten.
