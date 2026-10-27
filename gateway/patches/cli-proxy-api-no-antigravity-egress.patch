@@ -237,20 +237,21 @@ index 1e77c2d5..bc2cdbfb 100644
  	})
 diff --git a/internal/registry/catalog_localmode_test.go b/internal/registry/catalog_localmode_test.go
 new file mode 100644
-index 00000000..aed91d08
+index 00000000..024c15ed
 --- /dev/null
 +++ b/internal/registry/catalog_localmode_test.go
-@@ -0,0 +1,96 @@
+@@ -0,0 +1,124 @@
 +package registry
 +
 +// charmer local patch (no-antigravity-egress) gate: under the local-mode
 +// no-egress policy the catalog readers read only embedded catalogs, also through
-+// the legacy StartModelsUpdater and a reload, and an explicit remote source is
-+// refused while an absolute local file is kept. The readers are injected, so
-+// nothing is read.
++// the legacy StartModelsUpdater, a reload and an on-demand refresh, and an
++// explicit remote source is refused while an absolute local file is kept. The
++// readers are injected, so nothing is read.
 +
 +import (
 +	"context"
++	"strings"
 +	"sync"
 +	"testing"
 +	"time"
@@ -337,11 +338,38 @@ index 00000000..aed91d08
 +		}
 +	}
 +}
++
++func TestCM053LocalModeOnDemandRefreshRefusesRemoteSources(t *testing.T) {
++	reads, ctx := fxWithPolicy(t, true)
++	running, stop := context.WithCancel(ctx)
++	StartModelCatalogUpdaters(running, CatalogSources{}, false)
++	reads.waitFor(t, "catalog=embed")
++	// With the updaters stopped, an on-demand refresh falls back to the sources
++	// it is given; every remote one is refused and the embedded catalogs are
++	// skipped, so nothing is read.
++	stop()
++	remote := CatalogSources{
++		Catalog:      "https://catalog.invalid/models.json",
++		CodexCatalog: "https://catalog.invalid/codex.json",
++		DevinCatalog: "https://catalog.invalid/devin.json",
++	}
++	_, errRefresh := RefreshModelCatalogsWithPolicy(context.Background(), remote, false)
++	reads.mu.Lock()
++	defer reads.mu.Unlock()
++	for _, read := range reads.reads {
++		if strings.Contains(read, "=https://") {
++			t.Fatalf("local mode read a remote catalog source on demand: %v", reads.reads)
++		}
++	}
++	if errRefresh != nil {
++		t.Fatalf("on-demand refresh failed: %v", errRefresh)
++	}
++}
 diff --git a/internal/registry/catalog_sources.go b/internal/registry/catalog_sources.go
-index f89a153f..6cdd5e0e 100644
+index 226b2d3e..3b4239e4 100644
 --- a/internal/registry/catalog_sources.go
 +++ b/internal/registry/catalog_sources.go
-@@ -11,6 +11,7 @@ import (
+@@ -12,6 +12,7 @@ import (
  	"sync"
  	"time"
  
@@ -349,19 +377,39 @@ index f89a153f..6cdd5e0e 100644
  	log "github.com/sirupsen/logrus"
  )
  
-@@ -68,7 +69,10 @@ func (u *catalogUpdater) configure(ctx context.Context, source string) {
+@@ -35,10 +36,15 @@ type catalogUpdater struct {
  }
  
- func (u *catalogUpdater) refresh(ctx context.Context, source string, generation uint64) {
--	data, errFetch := u.fetch(ctx, source)
+ func (u *catalogUpdater) fetchCatalog(ctx context.Context, source string) ([]byte, string, error) {
+-	if u.fetchWithSource != nil {
+-		return u.fetchWithSource(ctx, source)
++	// charmer local patch (no-antigravity-egress): the readers are read under
++	// the lock, because ReplaceCatalogFetchers swaps them.
 +	u.mu.Lock()
-+	fetch := u.fetch
++	fetchWithSource, fetch := u.fetchWithSource, u.fetch
 +	u.mu.Unlock()
-+	data, errFetch := fetch(ctx, source)
- 	if errFetch != nil {
- 		if ctx.Err() == nil {
- 			log.Warn("model catalog refresh failed; keeping last valid catalog")
-@@ -237,6 +241,13 @@ func configureCatalogs(ctx context.Context, sources CatalogSources, local, home
++	if fetchWithSource != nil {
++		return fetchWithSource(ctx, source)
+ 	}
+-	data, err := u.fetch(ctx, source)
++	data, err := fetch(ctx, source)
+ 	return data, source, err
+ }
+ 
+@@ -434,6 +440,12 @@ func RefreshModelCatalogsWithPolicy(ctx context.Context, fallbackSources Catalog
+ 		fallbackHome = catalogRuntime.home
+ 	}
+ 	catalogRuntime.Unlock()
++	// charmer local patch (no-antigravity-egress): an on-demand refresh obeys
++	// the same no-egress policy as a start or a reload.
++	if localmode.NoEgress() {
++		fallbackSources = refuseRemoteCatalogSources(fallbackSources)
++		local = true
++	}
+ 
+ 	effectiveFallback := effectiveCatalogSources(fallbackSources, local, fallbackHome)
+ 	var (
+@@ -492,6 +504,13 @@ func configureCatalogs(ctx context.Context, sources CatalogSources, local, home
  		log.WithError(errValidate).Warn("invalid catalog sources")
  		return
  	}
@@ -375,7 +423,7 @@ index f89a153f..6cdd5e0e 100644
  	sources = effectiveCatalogSources(sources, local, home)
  	generalCatalogUpdater.configure(ctx, sources.Catalog)
  	codexCatalogUpdater.configure(ctx, sources.CodexCatalog)
-@@ -259,6 +270,55 @@ func effectiveCatalogSources(sources CatalogSources, local, home bool) CatalogSo
+@@ -514,6 +533,56 @@ func effectiveCatalogSources(sources CatalogSources, local, home bool) CatalogSo
  	return CatalogSources{Catalog: general, CodexCatalog: selectSource(sources.CodexCatalog), DevinCatalog: devin}
  }
  
@@ -403,26 +451,27 @@ index f89a153f..6cdd5e0e 100644
 +// ("catalog", "codex-catalog", "devin-catalog") and the source it was asked to
 +// read ("" is the official remote default, "embed" the embedded catalog). It
 +// returns the function that restores the readers. Tests use it to observe which
-+// sources a start or a reload reads without reading any.
++// sources a start, a reload or an on-demand refresh reads without reading any.
 +func ReplaceCatalogFetchers(fetch func(ctx context.Context, catalog, source string) ([]byte, error)) (restore func()) {
 +	updaters := []struct {
 +		name    string
 +		updater *catalogUpdater
 +	}{{"catalog", generalCatalogUpdater}, {"codex-catalog", codexCatalogUpdater}, {"devin-catalog", devinCatalogUpdater}}
-+	previous := make([]func(context.Context, string) ([]byte, error), len(updaters))
++	previous := make([]func(context.Context, string) ([]byte, string, error), len(updaters))
 +	for index, entry := range updaters {
 +		name := entry.name
 +		entry.updater.mu.Lock()
-+		previous[index] = entry.updater.fetch
-+		entry.updater.fetch = func(ctx context.Context, source string) ([]byte, error) {
-+			return fetch(ctx, name, source)
++		previous[index] = entry.updater.fetchWithSource
++		entry.updater.fetchWithSource = func(ctx context.Context, source string) ([]byte, string, error) {
++			data, err := fetch(ctx, name, source)
++			return data, source, err
 +		}
 +		entry.updater.mu.Unlock()
 +	}
 +	return func() {
 +		for index, entry := range updaters {
 +			entry.updater.mu.Lock()
-+			entry.updater.fetch = previous[index]
++			entry.updater.fetchWithSource = previous[index]
 +			entry.updater.mu.Unlock()
 +		}
 +	}

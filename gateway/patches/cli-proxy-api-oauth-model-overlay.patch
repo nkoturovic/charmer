@@ -33,10 +33,10 @@ index 3d65f835..ee00bf78 100644
  }
 diff --git a/internal/config/oauth_extra_models.go b/internal/config/oauth_extra_models.go
 new file mode 100644
-index 00000000..baa5b146
+index 00000000..d7abf285
 --- /dev/null
 +++ b/internal/config/oauth_extra_models.go
-@@ -0,0 +1,576 @@
+@@ -0,0 +1,582 @@
 +package config
 +
 +// charmer local patch (oauth-model-overlay): an explicit list of extra
@@ -60,7 +60,6 @@ index 00000000..baa5b146
 +	"unicode/utf8"
 +
 +	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
-+	"github.com/router-for-me/CLIProxyAPI/v8/internal/thinking"
 +	"gopkg.in/yaml.v3"
 +)
 +
@@ -542,6 +541,15 @@ index 00000000..baa5b146
 +	return nil
 +}
 +
++// oauthExtraThinkingLevels is the thinking package's level vocabulary: the
++// discrete effort levels (ParseLevelSuffix) and the special modes none and
++// auto (ParseSpecialSuffix without its numeric -1). This package cannot import
++// internal/thinking, which imports internal/util, which imports this package;
++// TestCM053OverlayThinkingLevelsMatchParsers binds the two.
++var oauthExtraThinkingLevels = map[string]struct{}{
++	"minimal": {}, "low": {}, "medium": {}, "high": {}, "xhigh": {}, "max": {}, "none": {}, "auto": {},
++}
++
 +// ValidateOAuthExtraModelThinking checks a thinking capability with the
 +// thinking package's own level vocabulary: levels are the discrete effort
 +// levels and the special modes none/auto, lower case, without duplicates; a
@@ -568,9 +576,7 @@ index 00000000..baa5b146
 +		if level != strings.ToLower(strings.TrimSpace(level)) {
 +			return fmt.Errorf("level %q must be lower case without whitespace", level)
 +		}
-+		_, isLevel := thinking.ParseLevelSuffix(level)
-+		_, isSpecial := thinking.ParseSpecialSuffix(level)
-+		if !isLevel && !(isSpecial && level != "-1") {
++		if _, known := oauthExtraThinkingLevels[level]; !known {
 +			return fmt.Errorf("level %q is not a thinking level", level)
 +		}
 +		if _, exists := seen[level]; exists {
@@ -944,6 +950,41 @@ index 00000000..1c5386b9
 +				t.Fatalf("LoadConfigOptional did not fall back to the empty config: %+v, %v", cfg, err)
 +			}
 +		})
++	}
++}
+diff --git a/internal/config/oauth_extra_models_levels_cm053_test.go b/internal/config/oauth_extra_models_levels_cm053_test.go
+new file mode 100644
+index 00000000..0053f94b
+--- /dev/null
++++ b/internal/config/oauth_extra_models_levels_cm053_test.go
+@@ -0,0 +1,29 @@
++package config_test
++
++// charmer local patch (oauth-model-overlay) gate: the overlay's thinking-level
++// vocabulary is internal/thinking's own, which the config package cannot
++// import (internal/thinking imports internal/util, which imports config).
++
++import (
++	"testing"
++
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/thinking"
++)
++
++func TestCM053OverlayThinkingLevelsMatchParsers(t *testing.T) {
++	candidates := []string{
++		"minimal", "low", "medium", "high", "xhigh", "max", "none", "auto",
++		"-1", "0", "1024", "ultra", "xxhigh", "default", "dynamic", "off", "on", "disabled", "enabled",
++	}
++	for _, level := range candidates {
++		_, isLevel := thinking.ParseLevelSuffix(level)
++		_, isSpecial := thinking.ParseSpecialSuffix(level)
++		want := isLevel || (isSpecial && level != "-1")
++		err := config.ValidateOAuthExtraModelThinking(&registry.ThinkingSupport{Levels: []string{level}})
++		if got := err == nil; got != want {
++			t.Errorf("level %q: the overlay accepts it %t, the thinking parsers %t (error %v)", level, got, want, err)
++		}
 +	}
 +}
 diff --git a/internal/config/parse.go b/internal/config/parse.go
@@ -1426,10 +1467,10 @@ index ae07e401..ab22ed62 100644
  			// Match the watcher's normalization so no-op and unrelated reloads do not
 diff --git a/sdk/cliproxy/oauth_extra_models_cm053_test.go b/sdk/cliproxy/oauth_extra_models_cm053_test.go
 new file mode 100644
-index 00000000..da01b8f5
+index 00000000..e0fc075d
 --- /dev/null
 +++ b/sdk/cliproxy/oauth_extra_models_cm053_test.go
-@@ -0,0 +1,937 @@
+@@ -0,0 +1,946 @@
 +package cliproxy
 +
 +// charmer local patch (oauth-model-overlay) gates. Model ids are
@@ -1756,7 +1797,16 @@ index 00000000..da01b8f5
 +
 +func TestCM053OverlayStaticWins(t *testing.T) {
 +	staticClaude := internalregistry.GetClaudeModels()[0]
-+	staticCodex := internalregistry.GetCodexPlusModels()[0]
++	// A static codex model the free plan also lists, so a free account
++	// registers it.
++	codexPlus := internalregistry.GetCodexPlusModels()
++	staticCodex := codexPlus[0]
++	for _, model := range codexPlus {
++		if len(fxFind(internalregistry.GetCodexFreeModels(), model.ID)) != 0 {
++			staticCodex = model
++			break
++		}
++	}
 +	proOnly := ""
 +	for _, model := range internalregistry.GetCodexProModels() {
 +		if internalregistry.LookupStaticModelInfoByChannel(model.ID, "codex") != nil && len(fxFind(internalregistry.GetCodexFreeModels(), model.ID)) == 0 {
@@ -2403,7 +2453,7 @@ index 2c2083d9..ab6b955c 100644
  		return true, true
  	}
 diff --git a/sdk/cliproxy/service_models.go b/sdk/cliproxy/service_models.go
-index b201a923..14e52168 100644
+index cf9554d5..0750973a 100644
 --- a/sdk/cliproxy/service_models.go
 +++ b/sdk/cliproxy/service_models.go
 @@ -12,6 +12,7 @@ import (

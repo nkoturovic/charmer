@@ -793,6 +793,7 @@ class ManagementAllowlistGateTests(unittest.TestCase):
         "TestManagementAllowlist_BadKeysOnRefusedRoutesNeverCount",
         "TestManagementAllowlist_BrowserOriginatedRequestsRefusedAndNeverCount",
         "TestManagementAllowlist_PreflightRefusedBeforeCORS",
+        "TestManagementAllowlist_RefusedUnreadBodyClosesConnection",
         "TestManagementAllowlist_NonLoopbackHostRefusedAndNeverCounts",
         "TestManagementAllowlist_RemoteOverrideForcedOff",
         "TestManagementAllowlist_OAuthCallbackWithPendingSessionWritesNothing",
@@ -844,6 +845,12 @@ class ManagementAllowlistGateTests(unittest.TestCase):
         "TestSIWCManagementRouteAccessControl",
         "TestCodexCallbackRejectsSIWCState",
         "TestSIWCStatusEndpoint",
+        # 8.0.45 recorded exclusions (gateway/upstream-review.json
+        # test_exclusions): a Codex client-catalog test that fails on the
+        # pristine tag, and an advisory fixture that depends on the zstd
+        # encoder's window choice.
+        "TestModelsMultiAgentClientConfigAndReload",
+        "TestCaptureRequestInfoDoesNotDecodeASingleSegmentBomb",
     )
 
     def _patch_text(self) -> str:
@@ -883,6 +890,13 @@ class ManagementAllowlistGateTests(unittest.TestCase):
         self.assertIn("+++ b/internal/api/server_management_route_table_test.go", text)
         self.assertRegex(added, r'"GET /v8/management/credentials":\s+routeRefuse,')
         self.assertRegex(added, r'"GET /v0/management/auth-files":\s+routeAllow,')
+        self.assertRegex(added, r'"POST /v8/management/models/refresh":\s+routeRefuse,')
+        self.assertRegex(added, r'"POST /v8/management/routing/model-definitions/refresh":\s+routeRefuse,')
+        # The guard answers inside upstream's unconsumed-body wrapper, and the
+        # server keeps its header read deadline (an unchanged context line).
+        self.assertIn("+\t\tHandler:           wrapUnconsumedRequestBodyHandler(managementGuardHandler(engine, "
+                      "logging.GinLogrusLogger(), logging.GinLogrusRecovery())),\n"
+                      " \t\tReadHeaderTimeout: muxSniffDeadline,\n", text)
 
     def test_gate_runs_internal_api_with_explicit_skips(self) -> None:
         record = gate("management-allowlist")
@@ -1315,6 +1329,7 @@ class AdmittedPatchGateTests(unittest.TestCase):
         "./internal/config": (
             "TestCM053OverlayInvalidRefusedAtLoad",
             "TestCM053OverlayShapeRefused",
+            "TestCM053OverlayThinkingLevelsMatchParsers",
         ),
         "./internal/watcher": ("TestCM053OverlayReloadRefresh",),
         "./sdk/cliproxy": (
@@ -1376,7 +1391,8 @@ class AdmittedPatchGateTests(unittest.TestCase):
                  "TestLocalModeNoEgressSDKLocalModel",
                  "TestLocalModeNoEgressSDKRemoteModel",
                  "TestCM053LocalModeStartModelsUpdaterReadsEmbedded",
-                 "TestCM053LocalModeRefusesRemoteCatalogSources")
+                 "TestCM053LocalModeRefusesRemoteCatalogSources",
+                 "TestCM053LocalModeOnDemandRefreshRefusesRemoteSources")
         record = gate("no-antigravity-egress")
         self.assertEqual(record["packages"], ["./cmd/server", "./sdk/cliproxy", "./internal/registry"])
         self.assertEqual(record["run"], f"^({'|'.join(names)})$")

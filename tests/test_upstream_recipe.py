@@ -208,6 +208,39 @@ class GateRecordTests(unittest.TestCase):
                     self.assertEqual(gate["platforms"], "linux" if linux_only else "portable")
                     self.assertIsNone(gate["count"])
 
+    # Upstream's own regression tests for the two request-body advisories
+    # fixed in 8.0.45, run by name (internal/api and internal/api/middleware).
+    ADVISORY_TESTS = [
+        "TestAcceptMuxRecoversFromEMFILE",
+        "TestAcceptMuxUnauthenticatedRESPDoesNotStarveHTTP",
+        "TestServerRejectsIncompleteUnauthenticatedRequestBodiesPromptly",
+        "TestServerMaxRequestBodyBytesRejectsContentLengthAndChunkedBodies",
+        "TestShouldCaptureRequestBody",
+        "TestCaptureRequestInfoBoundsZstdExpansionWithoutAConfiguredLimit",
+        "TestDecodeCapturedZstdRefusesAnOversizedWindow",
+    ]
+    # The one advisory test the gates do not run: a recorded exclusion whose
+    # fixture depends on the zstd encoder's window choice.
+    ADVISORY_EXCLUDED = "TestCaptureRequestInfoDoesNotDecodeASingleSegmentBomb"
+
+    def test_advisory_regression_tests_run_by_name_and_are_never_skipped(self):
+        gate = self.gates["request-body-advisories"]
+        self.assertEqual(gate["packages"], ["./internal/api", "./internal/api/middleware"])
+        self.assertEqual(gate["expected_tests"], self.ADVISORY_TESTS)
+        self.assertEqual(gate["run"], "^(" + "|".join(self.ADVISORY_TESTS) + ")$")
+        self.assertNotIn("skip", gate)
+        self.assertFalse(gate["race"])
+        for other in self.recipe["gates"]:
+            if other.get("skip"):
+                with self.subTest(gate=other["name"]):
+                    skip = re.compile(other["skip"])
+                    self.assertFalse([name for name in self.ADVISORY_TESTS if skip.search(name)])
+        review = strict_json.load(UPSTREAM_REVIEW)
+        for name in [*self.ADVISORY_TESTS, self.ADVISORY_EXCLUDED]:
+            with self.subTest(test=name):
+                self.assertIn(name, review["admission"])
+        self.assertIn(self.ADVISORY_EXCLUDED, [item["test"] for item in review["test_exclusions"]])
+
     def test_patch_owned_gate_tests_exist_in_the_admitted_patches(self):
         added = "\n".join("\n".join(added_lines((PATCH_DIR / name).read_text(), tests=True))
                           for name in admitted_names(self.recipe))

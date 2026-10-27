@@ -425,7 +425,7 @@ index 00000000..71e85830
 +	return auth, nil
 +}
 diff --git a/sdk/cliproxy/auth/types.go b/sdk/cliproxy/auth/types.go
-index e4a4ef53..a8b5d117 100644
+index ba307249..b5034cbf 100644
 --- a/sdk/cliproxy/auth/types.go
 +++ b/sdk/cliproxy/auth/types.go
 @@ -451,6 +451,9 @@ func (a *Auth) Clone() *Auth {

@@ -1204,7 +1204,7 @@ index 00000000..f6a1c62c
 +	}
 +}
 diff --git a/internal/runtime/executor/helps/usage_helpers.go b/internal/runtime/executor/helps/usage_helpers.go
-index 845d16e4..92f002e7 100644
+index 75a5f989..08dbbd63 100644
 --- a/internal/runtime/executor/helps/usage_helpers.go
 +++ b/internal/runtime/executor/helps/usage_helpers.go
 @@ -16,6 +16,7 @@ import (
@@ -1227,7 +1227,7 @@ index 845d16e4..92f002e7 100644
  	}
  	traceID := usage.TraceIDFromContext(ctx)
  	if traceID == "" {
-@@ -862,6 +868,14 @@ func AccessProviderFromContext(ctx context.Context) string {
+@@ -871,6 +877,14 @@ func AccessProviderFromContext(ctx context.Context) string {
  
  func resolveUsageSource(auth *cliproxyauth.Auth, ctxAPIKey string) string {
  	if auth != nil {
@@ -1243,10 +1243,10 @@ index 845d16e4..92f002e7 100644
  		if strings.EqualFold(provider, "vertex") {
  			if auth.Metadata != nil {
 diff --git a/internal/runtime/executor/openai_compat_executor.go b/internal/runtime/executor/openai_compat_executor.go
-index 5d678c5a..2a00539a 100644
+index c1953cb4..e1aacb3b 100644
 --- a/internal/runtime/executor/openai_compat_executor.go
 +++ b/internal/runtime/executor/openai_compat_executor.go
-@@ -16,6 +16,7 @@ import (
+@@ -17,6 +17,7 @@ import (
  	"time"
  
  	"github.com/google/uuid"
@@ -1254,7 +1254,7 @@ index 5d678c5a..2a00539a 100644
  	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
  	"github.com/router-for-me/CLIProxyAPI/v8/internal/misc"
  	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
-@@ -199,7 +200,11 @@ func (e *OpenAICompatExecutor) executeWithCredentials(ctx context.Context, auth
+@@ -200,7 +201,11 @@ func (e *OpenAICompatExecutor) executeWithCredentials(ctx context.Context, auth
  		authLabel = auth.Label
  		authType, authValue = auth.AccountInfo()
  	}
@@ -1267,7 +1267,7 @@ index 5d678c5a..2a00539a 100644
  		URL:       url,
  		Method:    http.MethodPost,
  		Headers:   httpReq.Header.Clone(),
-@@ -209,22 +214,33 @@ func (e *OpenAICompatExecutor) executeWithCredentials(ctx context.Context, auth
+@@ -210,22 +215,33 @@ func (e *OpenAICompatExecutor) executeWithCredentials(ctx context.Context, auth
  		AuthLabel: authLabel,
  		AuthType:  authType,
  		AuthValue: authValue,
@@ -1308,7 +1308,7 @@ index 5d678c5a..2a00539a 100644
  		b, _ := io.ReadAll(httpResp.Body)
  		helps.AppendAPIResponseChunk(ctx, e.cfg, b)
  		helps.LogWithRequestID(ctx).Debugf("request error, error status: %d, error message: %s", httpResp.StatusCode, helps.SummarizeErrorBody(httpResp.Header.Get("Content-Type"), b))
-@@ -233,9 +249,19 @@ func (e *OpenAICompatExecutor) executeWithCredentials(ctx context.Context, auth
+@@ -234,9 +250,19 @@ func (e *OpenAICompatExecutor) executeWithCredentials(ctx context.Context, auth
  	}
  	body, err := io.ReadAll(httpResp.Body)
  	if err != nil {
@@ -1328,7 +1328,7 @@ index 5d678c5a..2a00539a 100644
  	helps.AppendAPIResponseChunk(ctx, e.cfg, body)
  	reporter.ObserveResponseModel(body)
  	// Ensure we at least record the request even if upstream doesn't return usage
-@@ -249,7 +275,7 @@ func (e *OpenAICompatExecutor) executeWithCredentials(ctx context.Context, auth
+@@ -250,7 +276,7 @@ func (e *OpenAICompatExecutor) executeWithCredentials(ctx context.Context, auth
  	if responseFormat == sdktranslator.FormatOpenAIResponse {
  		out = helps.EnsureResponsesUsageDetails(out)
  	}
@@ -1337,7 +1337,7 @@ index 5d678c5a..2a00539a 100644
  	return resp, nil
  }
  
-@@ -444,7 +470,11 @@ func (e *OpenAICompatExecutor) executeStreamWithCredentials(ctx context.Context,
+@@ -445,7 +471,11 @@ func (e *OpenAICompatExecutor) executeStreamWithCredentials(ctx context.Context,
  		authLabel = auth.Label
  		authType, authValue = auth.AccountInfo()
  	}
@@ -1350,7 +1350,7 @@ index 5d678c5a..2a00539a 100644
  		URL:       url,
  		Method:    http.MethodPost,
  		Headers:   httpReq.Header.Clone(),
-@@ -454,16 +484,41 @@ func (e *OpenAICompatExecutor) executeStreamWithCredentials(ctx context.Context,
+@@ -455,16 +485,41 @@ func (e *OpenAICompatExecutor) executeStreamWithCredentials(ctx context.Context,
  		AuthLabel: authLabel,
  		AuthType:  authType,
  		AuthValue: authValue,
@@ -3347,10 +3347,10 @@ index 00000000..ad4a6435
 +	})
 +}
 diff --git a/sdk/cliproxy/auth/conductor_execution.go b/sdk/cliproxy/auth/conductor_execution.go
-index ddd4066d..d5780a9f 100644
+index 4f8bf2de..7d99806b 100644
 --- a/sdk/cliproxy/auth/conductor_execution.go
 +++ b/sdk/cliproxy/auth/conductor_execution.go
-@@ -1876,6 +1876,10 @@ func debugLogAuthSelection(entry *log.Entry, auth *Auth, provider string, model
+@@ -1909,6 +1909,10 @@ func debugLogAuthSelection(entry *log.Entry, auth *Auth, provider string, model
  	}
  	switch accountType {
  	case "api_key":
@@ -3361,7 +3361,7 @@ index ddd4066d..d5780a9f 100644
  		entry.Debugf("Use API key %s for model %s%s", util.HideAPIKey(accountInfo), model, suffix)
  	case "oauth":
  		ident := formatOauthIdentity(auth, provider, accountInfo)
-@@ -1914,6 +1918,27 @@ func formatOauthIdentity(auth *Auth, provider string, accountInfo string) string
+@@ -1947,6 +1951,27 @@ func formatOauthIdentity(auth *Auth, provider string, accountInfo string) string
  	return strings.Join(parts, " ")
  }
  
@@ -3389,7 +3389,7 @@ index ddd4066d..d5780a9f 100644
  func formatAuthIdentity(auth *Auth, provider string) string {
  	if auth == nil {
  		return "auth=nil"
-@@ -1921,6 +1946,9 @@ func formatAuthIdentity(auth *Auth, provider string) string {
+@@ -1954,6 +1979,9 @@ func formatAuthIdentity(auth *Auth, provider string) string {
  	accountType, accountInfo := auth.AccountInfo()
  	switch accountType {
  	case "api_key":

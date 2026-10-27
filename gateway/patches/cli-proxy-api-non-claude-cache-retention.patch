@@ -99,7 +99,7 @@ index b03948d7..23b12114 100644
  	if e.cfg != nil && e.cfg.Codex.UpstreamRequestCompression && auth != nil &&
  		!codexAuthUsesAPIKey(auth) && !codexUseSIWCForRequest(ctx, auth, headers) &&
 diff --git a/internal/runtime/executor/codex_websockets_execute.go b/internal/runtime/executor/codex_websockets_execute.go
-index b52f5861..b91b9d61 100644
+index 1637c5d1..2d80caad 100644
 --- a/internal/runtime/executor/codex_websockets_execute.go
 +++ b/internal/runtime/executor/codex_websockets_execute.go
 @@ -104,6 +104,14 @@ func (e *CodexWebsocketsExecutor) Execute(ctx context.Context, auth *cliproxyaut
@@ -118,10 +118,10 @@ index b52f5861..b91b9d61 100644
  	wsHeaders = applyCodexWebsocketHeaders(ctx, wsHeaders, auth, apiKey, e.cfg, nativeRequest, opts.Headers)
  	applyCodexRoutingHint(ctx, wsHeaders, auth, baseModel, body, opts.Headers)
 diff --git a/internal/runtime/executor/codex_websockets_stream.go b/internal/runtime/executor/codex_websockets_stream.go
-index a3151db2..c611d11f 100644
+index 91989d7d..5d4de927 100644
 --- a/internal/runtime/executor/codex_websockets_stream.go
 +++ b/internal/runtime/executor/codex_websockets_stream.go
-@@ -834,6 +834,14 @@ func (e *CodexWebsocketsExecutor) prepareCodexWebsocketStream(ctx context.Contex
+@@ -909,6 +909,14 @@ func (e *CodexWebsocketsExecutor) prepareCodexWebsocketStream(ctx context.Contex
  		body = applyCodexSIWCWebsocketBodyRules(body, hasExplicitInstructions, cliproxyexecutor.Options{KeepTopLevelEffort: thinking.HasThinkingSuffix(req.Model)})
  	}
  	body = finalizePayload(body)
@@ -2760,10 +2760,10 @@ index 00000000..66f4f3f4
 +	})
 +}
 diff --git a/internal/runtime/executor/openai_compat_executor.go b/internal/runtime/executor/openai_compat_executor.go
-index 6a4a2345..57308290 100644
+index d270f621..2fcf6b32 100644
 --- a/internal/runtime/executor/openai_compat_executor.go
 +++ b/internal/runtime/executor/openai_compat_executor.go
-@@ -167,6 +167,18 @@ func (e *OpenAICompatExecutor) executeWithCredentials(ctx context.Context, auth
+@@ -168,6 +168,18 @@ func (e *OpenAICompatExecutor) executeWithCredentials(ctx context.Context, auth
  	url := strings.TrimSuffix(baseURL, "/") + endpoint
  	translated = helps.ApplyPayloadConfigWithRequest(e.cfg, baseModel, to.String(), from.String(), "", translated, originalTranslated, requestedModel, requestPath, opts.Headers)
  	reporter.SetTranslatedReasoningEffort(translated, to.String())
@@ -2782,7 +2782,7 @@ index 6a4a2345..57308290 100644
  	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(translated))
  	if err != nil {
  		return resp, err
-@@ -401,6 +413,15 @@ func (e *OpenAICompatExecutor) executeStreamWithCredentials(ctx context.Context,
+@@ -402,6 +414,15 @@ func (e *OpenAICompatExecutor) executeStreamWithCredentials(ctx context.Context,
  	url := strings.TrimSuffix(baseURL, "/") + "/chat/completions"
  	translated = helps.ApplyPayloadConfigWithRequest(e.cfg, baseModel, to.String(), from.String(), "", translated, originalTranslated, requestedModel, requestPath, opts.Headers)
  	reporter.SetTranslatedReasoningEffort(translated, to.String())
