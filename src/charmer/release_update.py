@@ -337,9 +337,9 @@ def release_age(release_date: str, today: datetime.date) -> int | None:
 def age_text(version: str, release_date: str, today: datetime.date) -> str:
     days = release_age(release_date, today)
     if days is None or days < 0:
-        return f"charmer {version} (released {release_date})"
+        return f"charmer {version} (source dated {release_date})"
     unit = "day" if days == 1 else "days"
-    return f"charmer {version} was released {release_date}, {days} {unit} ago"
+    return f"charmer {version} (source dated {release_date}, {days} {unit} ago)"
 
 
 def installed_release(journey: Journey) -> self_update.Installation:
@@ -533,13 +533,13 @@ def run(journey: Journey, *, mode: str = "update", assume_yes: bool = False, ask
         return _refuse(out, exc)
     current, release = installation.current, result.release
     if result.status == "current":
-        _write(out, f"charmer {current.version} is up to date (released {current.release_date}).")
+        _write(out, f"charmer {current.version} is up to date (source dated {current.release_date}).")
         return EXIT_OK
     if result.status == "older":
         _write(out, f"The installed charmer {current.version} is newer than the latest release "
                     f"{release.version}; nothing to do.")
         return EXIT_OK
-    _write(out, f"charmer {release.version} is available (released {release.release_date}); "
+    _write(out, f"charmer {release.version} is available (source dated {release.release_date}); "
                 f"{current.version} is installed.")
     if mode == "check":
         _write(out, "Run 'charmer update' to see what it changes and install it.")
@@ -781,5 +781,5 @@ def card_hint(runtime: Any, *, today: datetime.date | None = None) -> tuple[str,
     moment = today or datetime.datetime.now(datetime.timezone.utc).date()
     days = release_age(installation.current.release_date, moment)
     if days is not None and days >= AGE_NOTICE_DAYS:
-        return (installation.current.version, f"this release is {days} days old — charmer update --check")
-    return (installation.current.version, f"released {installation.current.release_date}")
+        return (installation.current.version, f"source is {days} days old — charmer update --check")
+    return (installation.current.version, f"source dated {installation.current.release_date}")

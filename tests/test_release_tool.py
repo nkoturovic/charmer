@@ -59,7 +59,8 @@ class FakeRunner:
         return completed(argv)
 
 
-def git_repo(root: Path, version: str = "1.2.3", catalog: int = 7, changelog: str | None = None) -> Path:
+def git_repo(root: Path, version: str = "1.2.3", catalog: int = 7, changelog: str | None = None, *,
+             committer_date: str = "2026-10-15T12:00:00+00:00") -> Path:
     repo = root / "repo"
     (repo / "src" / "charmer" / "data" / "catalog").mkdir(parents=True)
     (repo / "src" / "charmer" / "data" / "version.json").write_text(json.dumps(
@@ -67,7 +68,8 @@ def git_repo(root: Path, version: str = "1.2.3", catalog: int = 7, changelog: st
     (repo / "src" / "charmer" / "data" / "catalog" / "models.json").write_text("{}\n")
     (repo / "CHANGELOG.md").write_text(changelog if changelog is not None else
                                        f"# Changelog\n\n## [{version}] — 2026-10-15\n\n- first\n")
-    env = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+    env = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1",
+           "GIT_AUTHOR_DATE": "2026-10-14T12:00:00+00:00", "GIT_COMMITTER_DATE": committer_date}
     for argv in (["git", "init", "-q", "-b", "main"], ["git", "add", "-A"],
                  ["git", "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-q", "-m", "one"]):
         subprocess.run(argv, cwd=repo, env=env, check=True, capture_output=True, timeout=60)
@@ -110,6 +112,84 @@ class PreflightCheckTests(unittest.TestCase):
         self.assertFalse(self.tool.check_changelog(undated).ok)
         missing = git_repo(self.tmp / "missing", changelog="# Changelog\n\n## [1.2.2] — 2026-01-01\n")
         self.assertIn("no section for 1.2.3", self.tool.check_changelog(missing).detail)
+
+    @needs_git
+    def test_changelog_uses_the_committer_source_date(self) -> None:
+        repo = git_repo(self.tmp)
+        check = self.tool.check_changelog(repo)
+        self.assertTrue(check.ok, check.detail)
+        self.assertEqual(check.detail, "## [1.2.3] — 2026-10-15")
+
+    @needs_git
+    def test_changelog_date_mismatch_names_both_dates_and_the_fix(self) -> None:
+        repo = git_repo(self.tmp, changelog="# Changelog\n\n## [1.2.3] — 2026-10-14\n")
+        check = self.tool.check_changelog(repo)
+        self.assertFalse(check.ok, check.detail)
+        self.assertIn("CHANGELOG date 2026-10-14", check.detail)
+        self.assertIn("UTC source date 2026-10-15", check.detail)
+        self.assertIn("re-date the heading in the same commit", check.detail)
+
+    @needs_git
+    def test_changelog_date_is_required(self) -> None:
+        for index, suffix in enumerate(("", " — unreleased", " — YYYY-MM-DD", " — 2026-10-150")):
+            with self.subTest(suffix=suffix):
+                repo = git_repo(self.tmp / str(index), changelog=f"# Changelog\n\n## [1.2.3]{suffix}\n")
+                check = self.tool.check_changelog(repo)
+                self.assertFalse(check.ok, check.detail)
+                self.assertIn("section is not dated", check.detail)
+                self.assertIn("YYYY-MM-DD", check.detail)
+
+    @needs_git
+    def test_changelog_date_must_be_a_valid_calendar_date(self) -> None:
+        for date in ("2026-02-30", "2026-13-15", "0000-10-15"):
+            with self.subTest(date=date):
+                repo = git_repo(self.tmp / date, changelog=f"# Changelog\n\n## [1.2.3] — {date}\n")
+                check = self.tool.check_changelog(repo)
+                self.assertFalse(check.ok, check.detail)
+                self.assertIn(f"invalid date {date}", check.detail)
+
+    @needs_git
+    def test_changelog_date_uses_utc_at_a_local_day_boundary(self) -> None:
+        boundary = "2026-10-16T00:30:00+01:00"
+        self.addCleanup(time.tzset)
+        with mock.patch.dict(os.environ, {"TZ": "UTC-1"}):
+            time.tzset()
+            repo = git_repo(self.tmp / "utc", committer_date=boundary)
+            epoch = self.tool.commit_epoch(repo)
+            self.assertEqual(time.strftime("%Y-%m-%d", time.localtime(epoch)), "2026-10-16")
+            check = self.tool.check_changelog(repo)
+            self.assertTrue(check.ok, check.detail)
+            local = git_repo(self.tmp / "local", committer_date=boundary,
+                             changelog="# Changelog\n\n## [1.2.3] — 2026-10-16\n")
+            check = self.tool.check_changelog(local)
+            self.assertFalse(check.ok, check.detail)
+            self.assertIn("CHANGELOG date 2026-10-16", check.detail)
+            self.assertIn("UTC source date 2026-10-15", check.detail)
+
+    @needs_git
+    def test_changelog_refuses_a_missing_candidate_commit(self) -> None:
+        repo = git_repo(self.tmp)
+        (repo / ".git" / "HEAD").write_text("f" * 40 + "\n")
+        check = self.tool.check_changelog(repo)
+        self.assertFalse(check.ok, check.detail)
+        self.assertIn("cannot read the candidate commit's UTC source date", check.detail)
+
+    @needs_git
+    def test_changelog_refuses_when_git_is_unavailable(self) -> None:
+        repo = git_repo(self.tmp)
+        with mock.patch.dict(os.environ, {"PATH": ""}):
+            check = self.tool.check_changelog(repo)
+        self.assertFalse(check.ok, check.detail)
+        self.assertIn("cannot read the candidate commit's UTC source date", check.detail)
+
+    @needs_git
+    def test_changelog_refuses_an_unreadable_commit_timestamp(self) -> None:
+        repo = git_repo(self.tmp)
+        for epoch in ("", "not-a-timestamp", "9" * 40):
+            with self.subTest(epoch=epoch), mock.patch.object(self.tool, "git", return_value=epoch):
+                check = self.tool.check_changelog(repo)
+                self.assertFalse(check.ok, check.detail)
+                self.assertIn("cannot read the candidate commit's UTC source date", check.detail)
 
     @needs_git
     def test_version_bump_against_the_previous_release(self) -> None:
@@ -316,7 +396,8 @@ class PreflightCheckTests(unittest.TestCase):
 
     def test_preflight_runs_every_check(self) -> None:
         runner = FakeRunner([(["status", "--porcelain"], (0, "")), (["rev-parse", "HEAD"], (0, "c" * 40 + "\n")),
-                             (["tag", "--merged"], (0, "")), (["tag", "--list"], (0, ""))])
+                             (["tag", "--merged"], (0, "")), (["tag", "--list"], (0, "")),
+                             (["log", "-1"], (0, "0\n"))])
         checks = self.tool.preflight(REPO_ROOT, receipt=None, runner=runner)
         names = [check.name for check in checks]
         self.assertEqual(names, ["clean-tree", "version", "version-bump", "changelog", "drafting-markers",
@@ -324,13 +405,16 @@ class PreflightCheckTests(unittest.TestCase):
                                  "notices", "hygiene", "history", "trust", "release-urls", "receipt"])
         verdicts = {check.name: check.ok for check in checks}
         # A development line (X.Y.Z-dev, AGENTS.md) is refused by the version
-        # and changelog checks; the release commit sets X.Y.Z and its dated
-        # entry, and then both pass.
+        # check. Even a release heading is refused when its date differs from
+        # the candidate's timestamp supplied by the runner.
         from charmer import __version__
 
         released = self.tool.RELEASE_VERSION.fullmatch(__version__) is not None
         self.assertEqual(verdicts["version"], released)
-        self.assertEqual(verdicts["changelog"], released)
+        self.assertFalse(verdicts["changelog"])
+        if released:
+            self.assertIn("UTC source date 1970-01-01", next(check.detail for check in checks
+                                                         if check.name == "changelog"))
         self.assertTrue(verdicts["clean-tree"] and verdicts["contract"] and verdicts["gateway-parity"]
                         and verdicts["release-urls"])
         self.assertTrue(verdicts["trust"])  # the production key

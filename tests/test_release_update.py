@@ -134,7 +134,7 @@ class CheckAndUpdateTests(JourneyTestCase):
             for mode in ("update", "check"):
                 code, out = self.run_journey(mode=mode, from_dir=str(same.dir), assume_yes=True)
                 self.assertEqual(code, ru.EXIT_OK, out)
-                self.assertIn("charmer 1.0.0 is up to date (released 2026-10-15)", out)
+                self.assertIn("charmer 1.0.0 is up to date (source dated 2026-10-15)", out)
         self.assertEqual(self.current(), "versions/1.0.0")
         older = self.release("0.9.0")
         code, out = self.run_journey(from_dir=str(older.dir))
@@ -145,7 +145,7 @@ class CheckAndUpdateTests(JourneyTestCase):
         newer = self.release("1.1.0")
         code, out = self.run_journey(mode="check", from_dir=str(newer.dir))
         self.assertEqual(code, ru.EXIT_OK, out)
-        self.assertIn("charmer 1.1.0 is available (released 2026-10-15); 1.0.0 is installed", out)
+        self.assertIn("charmer 1.1.0 is available (source dated 2026-10-15); 1.0.0 is installed", out)
         self.assertEqual(self.current(), "versions/1.0.0")
 
     def test_confirmation_and_exit_codes(self) -> None:
@@ -526,15 +526,22 @@ class ResponseFailureTests(JourneyTestCase):
 
 
 class FactsTests(JourneyTestCase):
+    def test_age_text_names_the_source_date(self) -> None:
+        for date, suffix in (("2026-10-18", ", 2 days ago"), ("2026-10-19", ", 1 day ago"),
+                             ("2026-10-20", ", 0 days ago"), ("2026-10-21", ""), ("invalid", "")):
+            with self.subTest(date=date):
+                self.assertEqual(ru.age_text("1.0.0", date, TODAY),
+                                 f"charmer 1.0.0 (source dated {date}{suffix})")
+
     def test_release_age_lines(self) -> None:
         runtime = mock.Mock(environ=self.environ, home=self.home)
         self.assertEqual(ru.card_hint(runtime, today=TODAY), (mock.ANY, "installed release unreadable — sh install.sh --repair"))
         self.seed(self.release("1.0.0", release_date="2026-10-01"))
-        self.assertEqual(ru.card_hint(runtime, today=TODAY), ("1.0.0", "released 2026-10-01"))
+        self.assertEqual(ru.card_hint(runtime, today=TODAY), ("1.0.0", "source dated 2026-10-01"))
         old = ru.card_hint(runtime, today=datetime.date(2026, 12, 1))
-        self.assertEqual(old, ("1.0.0", "this release is 61 days old — charmer update --check"))
+        self.assertEqual(old, ("1.0.0", "source is 61 days old — charmer update --check"))
         lines = ru.doctor_lines(runtime, today=TODAY)
-        self.assertIn("Installed release: charmer 1.0.0 was released 2026-10-01, 19 days ago — check for a "
+        self.assertIn("Installed release: charmer 1.0.0 (source dated 2026-10-01, 19 days ago) — check for a "
                       "newer one: charmer update --check", lines)
         self.assertTrue(lines[0].startswith("HTTPS trust (update, Claude Code download): "))
         nix = mock.Mock(environ={**self.environ, "CHARMER_CHANNEL": "nix"}, home=self.home)
@@ -1038,10 +1045,10 @@ class CommandLineTests(JourneyTestCase):
         before, entries = snapshot(), tree()
         result = self.cli("update", "--check", "--from-dir", str(self.release("1.0.0").dir))
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("charmer 1.0.0 is up to date (released 2026-10-15)", result.stdout)
+        self.assertIn("charmer 1.0.0 is up to date (source dated 2026-10-15)", result.stdout)
         result = self.cli("update", "--check", "--from-dir", str(self.release("1.1.0").dir))
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("charmer 1.1.0 is available (released 2026-10-15); 1.0.0 is installed", result.stdout)
+        self.assertIn("charmer 1.1.0 is available (source dated 2026-10-15); 1.0.0 is installed", result.stdout)
         self.assertIn("Run 'charmer update' to see what it changes and install it.", result.stdout)
         result = self.cli("update", "--check")
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)

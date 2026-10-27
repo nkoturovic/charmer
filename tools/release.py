@@ -10,8 +10,9 @@
 
 preflight    the release conditions, each reported: a clean tree; a release
              version (no -dev) newer than the previous release tag, with the
-             catalog number moved when the catalog changed; a dated CHANGELOG
-             section; no drafting markers in public documentation;
+             catalog number moved when the catalog changed; a CHANGELOG
+             section dated to the commit's UTC source date; no drafting
+             markers in public documentation;
              the Claude Code contract (format 2, every bundle
              platform pinned, settings keys recorded); the gateway series
              identical in gateway/UPSTREAM.json, the catalog and the packaged
@@ -70,6 +71,7 @@ Exit status: 0 done, 1 refused or failed (the message says why), 2 usage,
 from __future__ import annotations
 
 import argparse
+import datetime
 import hashlib
 import importlib.util
 import json
@@ -318,7 +320,7 @@ def check_version_bump(repo: Path, previous: str | None, runner: Runner = run) -
                                                                 if changed else "; catalog unchanged"))
 
 
-def check_changelog(repo: Path) -> Check:
+def check_changelog(repo: Path, runner: Runner = run) -> Check:
     version, _ = release_version(repo)
     try:
         text = (repo / "CHANGELOG.md").read_text(encoding="utf-8")
@@ -327,8 +329,21 @@ def check_changelog(repo: Path) -> Check:
     heading = re.search(rf"(?m)^## \[{re.escape(version)}\](.*)$", text)
     if heading is None:
         return Check("changelog", False, f"CHANGELOG.md has no section for {version}")
-    if "unreleased" in heading.group(1).lower() or not re.search(r"\d{4}-\d{2}-\d{2}", heading.group(1)):
+    dated = re.search(r"\b[0-9]{4}-[0-9]{2}-[0-9]{2}\b", heading.group(1))
+    if "unreleased" in heading.group(1).lower() or dated is None:
         return Check("changelog", False, f"the {version} section is not dated (## [{version}] — YYYY-MM-DD)")
+    date = dated.group(0)
+    try:
+        datetime.date.fromisoformat(date)
+    except ValueError:
+        return Check("changelog", False, f"the {version} section has an invalid date {date} (use YYYY-MM-DD)")
+    try:
+        source_date = datetime.datetime.fromtimestamp(commit_epoch(repo, runner), datetime.timezone.utc).date().isoformat()
+    except (ReleaseError, OSError, ValueError, OverflowError, subprocess.SubprocessError) as exc:
+        return Check("changelog", False, f"cannot read the candidate commit's UTC source date: {exc}")
+    if date != source_date:
+        return Check("changelog", False, f"CHANGELOG date {date} differs from the candidate commit's UTC source date "
+                                        f"{source_date}; re-date the heading in the same commit")
     return Check("changelog", True, heading.group(0).strip())
 
 
@@ -508,7 +523,7 @@ def preflight(repo: Path, *, receipt: Path | None, previous: str | None | object
         return check_version_bump(repo, chosen, runner)  # type: ignore[arg-type]
 
     guarded("version-bump", bump)
-    guarded("changelog", lambda: check_changelog(repo))
+    guarded("changelog", lambda: check_changelog(repo, runner))
     guarded("drafting-markers", lambda: check_drafting_markers(repo))
     guarded("contract", lambda: check_contract(repo))
     guarded("gateway-parity", lambda: check_gateway_parity(repo))
