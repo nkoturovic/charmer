@@ -1,7 +1,7 @@
 {
   "bomFormat": "CycloneDX",
   "specVersion": "1.6",
-  "serialNumber": "urn:uuid:138c5596-f18e-58c1-a8cc-98f0e15a2cdb",
+  "serialNumber": "urn:uuid:35ae529e-4a56-539a-851c-d6afb9f2dab5",
   "version": 1,
   "metadata": {
     "tools": {
@@ -18,8 +18,8 @@
       "type": "application",
       "bom-ref": "cli-proxy-api",
       "name": "cli-proxy-api",
-      "version": "8.0.42",
-      "description": "CLIProxyAPI 8.0.42 with charmer's patches (linux-amd64)",
+      "version": "8.0.44",
+      "description": "CLIProxyAPI 8.0.44 with charmer's patches (linux-amd64)",
       "licenses": [
         {
           "license": {
@@ -31,10 +31,10 @@
         "ancestors": [
           {
             "type": "application",
-            "bom-ref": "pkg:golang/github.com/router-for-me/CLIProxyAPI/v8@v8.0.42",
+            "bom-ref": "pkg:golang/github.com/router-for-me/CLIProxyAPI/v8@v8.0.44",
             "name": "CLIProxyAPI",
-            "version": "8.0.42",
-            "purl": "pkg:golang/github.com/router-for-me/CLIProxyAPI/v8@v8.0.42",
+            "version": "8.0.44",
+            "purl": "pkg:golang/github.com/router-for-me/CLIProxyAPI/v8@v8.0.44",
             "licenses": [
               {
                 "license": {
@@ -49,11 +49,11 @@
               },
               {
                 "type": "distribution",
-                "url": "https://github.com/router-for-me/CLIProxyAPI/archive/bc0643405a1d0adf77dd0f109972ac3313d66397.tar.gz",
+                "url": "https://github.com/router-for-me/CLIProxyAPI/archive/1f917e77c4562623aa49e9804d999524151a2f96.tar.gz",
                 "hashes": [
                   {
                     "alg": "SHA-256",
-                    "content": "b2be550e96395b464ef642fde8a26fcd2ae7783bc76a5e0e731736a5b5940a56"
+                    "content": "66f0f1937319c8ffaa05cce5e786c5fc4b81e025ab0d072ce07fa1c19a86d4bf"
                   }
                 ]
               }
@@ -62,8 +62,8 @@
         ],
         "commits": [
           {
-            "uid": "bc0643405a1d0adf77dd0f109972ac3313d66397",
-            "url": "https://github.com/router-for-me/CLIProxyAPI/commit/bc0643405a1d0adf77dd0f109972ac3313d66397"
+            "uid": "1f917e77c4562623aa49e9804d999524151a2f96",
+            "url": "https://github.com/router-for-me/CLIProxyAPI/commit/1f917e77c4562623aa49e9804d999524151a2f96"
           }
         ],
         "patches": [
@@ -228,12 +228,6 @@
             "diff": {
               "url": "gateway/patches/cli-proxy-api-terminal-rejection-reload.patch"
             }
-          },
-          {
-            "type": "unofficial",
-            "diff": {
-              "url": "gateway/patches/cli-proxy-api-relogin-after-refresh-failure.patch"
-            }
           }
         ],
         "notes": "Built from the upstream source at the commit above with the patches applied in order; each patch's sha256 and the patched tree's normalised sha256 (vendor/ excluded) are the charmer:gateway properties."
@@ -265,11 +259,11 @@
         },
         {
           "name": "charmer:gateway:ldflags",
-          "value": "-s -w -buildid= -X main.Version=8.0.42 -X main.Commit=bc0643405a1d0adf77dd0f109972ac3313d66397 -X main.BuildDate=1970-01-01T00:00:00Z"
+          "value": "-s -w -buildid= -X main.Version=8.0.44 -X main.Commit=1f917e77c4562623aa49e9804d999524151a2f96 -X main.BuildDate=1970-01-01T00:00:00Z"
         },
         {
           "name": "charmer:gateway:source-tree-sha256",
-          "value": "aadf83cde9776c9876f6786a5b6366a1824e8be13377e15c349920e728acfb12"
+          "value": "20b8f3cc769e23166d972a2917b8c5129a19b47878dcbe15fae970aaf53c9930"
         },
         {
           "name": "charmer:gateway:vendor-tree-sha256",
@@ -277,7 +271,7 @@
         },
         {
           "name": "charmer:gateway:post-apply-tree-sha256",
-          "value": "b9ada93c6df1b01ac4f8e8f265927a49c1d3ad44e979c89a312ffa9f52c9ad4f"
+          "value": "af6a7ac8f2e7baae22a7dca4d9c2914d9c8d7467188006f86dd68d5eea0b09f4"
         },
         {
           "name": "charmer:gateway:build-godebug",
@@ -289,39 +283,39 @@
         },
         {
           "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-kimi-claude-compat.patch@65ce8cb5ba8f80da573214ef6f732938cec16f6d170fd7dc277584ba72235090"
+          "value": "cli-proxy-api-kimi-claude-compat.patch@d777110728cac5819881577a52ac1513fc19982284c7185eb903f6f85b57c2d2"
         },
         {
           "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-non-claude-cache-retention.patch@b8a966b82ce6952cab23754ded7201b484c093d5c4c1fe3f012f86a8d21f265a"
+          "value": "cli-proxy-api-non-claude-cache-retention.patch@f566ff0a35f7fcc701ca01631d1f7ca787e6a2686cd75de855cd911cda138af7"
         },
         {
           "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-management-readonly-allowlist.patch@d4b50946e4e4b220ea8338ec4a1674a0b58ae4c3d7bd00bcdcd42b9d617e0700"
+          "value": "cli-proxy-api-management-readonly-allowlist.patch@b7f85e21e8fc5833775fe9e48dfe597596071174b3486922bb7215b54b903191"
         },
         {
           "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-watcher-parentdir.patch@e13f24f07f31f2744a92e9f608e2aee06e5ec8cb47c501ed04f626d31909ac60"
+          "value": "cli-proxy-api-watcher-parentdir.patch@00b666332d85bc3174214831f064be2ea3e4dc37ad419ca7b8e782ae4b657e62"
         },
         {
           "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-serve-after-initial-auth-load.patch@b21f437af2344375752d8fc1dce37bdf44dfffe265d1fe09738d862333847840"
+          "value": "cli-proxy-api-serve-after-initial-auth-load.patch@2f9d4b87c9ffd1ff10d816ab870661b4ddd756a0d3b8e85daae3d1189903a9d5"
         },
         {
           "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-management-env-only.patch@d9c3e780f091e2ad68614da0f3b715d1385eb52031d912dff06fe90dd97f879f"
+          "value": "cli-proxy-api-management-env-only.patch@aec453ca8f9b310ebc25d274f8d66630b1d3c42acc3c142568b416a3aee90cc6"
         },
         {
           "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-credential-save-report.patch@75b0e36b700fef87d45c49290908d3fc424a3b55d63c6518fb3e17efe868bb5b"
+          "value": "cli-proxy-api-credential-save-report.patch@b83ba03e158eaf42d6f0dc8b67fea9a796abd041f3e945c81acc85189d0267cd"
         },
         {
           "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-credentialed-redirects.patch@5bccf5a3887c617f5436cf9bab0bd17c435c81dc0e87b01efb5e2b006d65d8b6"
+          "value": "cli-proxy-api-credentialed-redirects.patch@75f23b5f2e378fb149feb66755276db136141046ea0d1d2061ca7df575fc6357"
         },
         {
           "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-openai-compat-keyed-safety.patch@eb8aa9b86b1002408c81a603dc3cc7083af7bfef0bd04c3373bf36d96877a81c"
+          "value": "cli-proxy-api-openai-compat-keyed-safety.patch@322616bf3b65754f3eea77b0d22bcd939422d3c3fcce5812b049e27eb87e36ba"
         },
         {
           "name": "charmer:gateway:patch",
@@ -329,7 +323,7 @@
         },
         {
           "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-server-config-snapshot.patch@85898667209616aacdd74501c352ba4d1fe5da3103cc10bfac184ab42d80ec44"
+          "value": "cli-proxy-api-server-config-snapshot.patch@3c2d694166610e613246ce4fa0d63738bba8244a6a92de881becf6fb61cb02b6"
         },
         {
           "name": "charmer:gateway:patch",
@@ -337,7 +331,7 @@
         },
         {
           "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-oauth-model-overlay.patch@efebdba90da9d8cb68c4ec9137d22e10c6ea1e90a5be82cacc38a955a8074693"
+          "value": "cli-proxy-api-oauth-model-overlay.patch@2ea15c22fc8f55f1201d1fc4d5e94f5ff3b733799c8c4b51d7909baf88b6ef4a"
         },
         {
           "name": "charmer:gateway:patch",
@@ -345,7 +339,7 @@
         },
         {
           "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-codex-client-identity.patch@79b43054fe31cd02ddb87a21f7df991780ed5ce1398243120722f411580e7db6"
+          "value": "cli-proxy-api-codex-client-identity.patch@54c95f1d955395fd7b7582be35c2c925876794e2726fce3c76c1a04ef6cdf922"
         },
         {
           "name": "charmer:gateway:patch",
@@ -353,11 +347,11 @@
         },
         {
           "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-codex-api-key-safety.patch@edb448bca4146ebeeabfa5459649f04728378453667d71920d09de267a796dfc"
+          "value": "cli-proxy-api-codex-api-key-safety.patch@e37bd30d77aef3788addb5663c28b1e026ae209156a92c74d9dc1a26ec5a9be7"
         },
         {
           "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-refresh-shutdown-join.patch@0dab1186e481bfb13adef0a2eef350a5cfbcdb2d33bbf398c1b3550d6784874f"
+          "value": "cli-proxy-api-refresh-shutdown-join.patch@b7938047ff69143ca5590920db59d638b75851d10a6a7d3c04cac22c825116ba"
         },
         {
           "name": "charmer:gateway:patch",
@@ -369,15 +363,15 @@
         },
         {
           "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-output-cap.patch@f36e64a2343c54257ba348fc1b28cb31aaec0c1744bd37524f08b7fa87d17d80"
+          "value": "cli-proxy-api-output-cap.patch@f71444396279a109d0097918b2372f9ae8f2624a17c2396fb3705f42850aa509"
         },
         {
           "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-context-error-normalization.patch@14d9958892249d13fff47ec3814a42587e1d8811331837118de5222754014b26"
+          "value": "cli-proxy-api-context-error-normalization.patch@cd0d8328a6dec6c504fa3c570c22bcc8462620eab55d727540b55abc73f9df1d"
         },
         {
           "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-log-reduction.patch@9f97a045e06114918f1a6846ffb440c7338ac3312d958105f13f712bc9a6c06d"
+          "value": "cli-proxy-api-log-reduction.patch@de049d66351da799af638d820a7636aab94f0faca6c923511b924f4698af97d9"
         },
         {
           "name": "charmer:gateway:patch",
@@ -389,11 +383,7 @@
         },
         {
           "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-terminal-rejection-reload.patch@923063a24f7c08c4eb7bc156eb7a9a84edace9caf1aebfbb1ab11ce5f21ab366"
-        },
-        {
-          "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-relogin-after-refresh-failure.patch@3853dfb792e023490af91b4f39ef2ae8bb9991d06854f55688ca94b7857fefe8"
+          "value": "cli-proxy-api-terminal-rejection-reload.patch@954f76ab1a49628fc21ad112d4146a3caab514faa6b946776988f4ea3f5fcdc5"
         }
       ]
     }

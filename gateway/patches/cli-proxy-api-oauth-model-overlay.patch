@@ -1,8 +1,8 @@
 diff --git a/internal/config/config.go b/internal/config/config.go
-index cbe34493..b15c6e54 100644
+index faa54336..7306140e 100644
 --- a/internal/config/config.go
 +++ b/internal/config/config.go
-@@ -189,6 +189,11 @@ type Config struct {
+@@ -198,6 +198,11 @@ type Config struct {
  	// gemini-api-key, interactions-api-key, codex-api-key, xai-api-key, meta-api-key, claude-api-key, openai-compatibility, and vertex-api-key.
  	OAuthModelAlias map[string][]OAuthModelAlias `yaml:"oauth-model-alias,omitempty" json:"oauth-model-alias,omitempty"`
  

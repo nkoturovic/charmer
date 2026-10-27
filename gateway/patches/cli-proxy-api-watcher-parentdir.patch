@@ -740,7 +740,7 @@ index e8c66625..edbfe536 100644
  		})
  	}
 diff --git a/internal/watcher/clients.go b/internal/watcher/clients.go
-index 130892f4..467f896c 100644
+index 98bf690d..b908f3ea 100644
 --- a/internal/watcher/clients.go
 +++ b/internal/watcher/clients.go
 @@ -26,6 +26,13 @@ import (
@@ -757,7 +757,7 @@ index 130892f4..467f896c 100644
  	log.Debugf("starting full client load process")
  
  	w.clientsMutex.RLock()
-@@ -644,7 +651,7 @@ func (w *Watcher) triggerServerUpdate(cfg *config.Config) {
+@@ -646,7 +653,7 @@ func (w *Watcher) triggerServerUpdate(cfg *config.Config) {
  		}
  		w.serverUpdatePend = false
  		w.serverUpdateMu.Unlock()
@@ -766,7 +766,7 @@ index 130892f4..467f896c 100644
  		return
  	}
  
-@@ -667,10 +674,6 @@ func (w *Watcher) triggerServerUpdate(cfg *config.Config) {
+@@ -669,10 +676,6 @@ func (w *Watcher) triggerServerUpdate(cfg *config.Config) {
  		if w.stopped.Load() {
  			return
  		}
@@ -777,7 +777,7 @@ index 130892f4..467f896c 100644
  		w.serverUpdateMu.Lock()
  		if w.serverUpdateTimer != timer || !w.serverUpdatePend {
  			w.serverUpdateMu.Unlock()
-@@ -678,15 +681,29 @@ func (w *Watcher) triggerServerUpdate(cfg *config.Config) {
+@@ -680,15 +683,29 @@ func (w *Watcher) triggerServerUpdate(cfg *config.Config) {
  		}
  		w.serverUpdateTimer = nil
  		w.serverUpdatePend = false
@@ -2014,7 +2014,7 @@ index f6a55d04..5a0aaf9c 100644
  	if errAddAuthDir := w.watcher.Add(w.authDir); errAddAuthDir != nil {
  		log.Errorf("failed to watch auth directory %s: %v", w.authDir, errAddAuthDir)
 diff --git a/internal/watcher/watcher.go b/internal/watcher/watcher.go
-index c5017dc0..d2f9ca75 100644
+index 60a5f68f..9436b273 100644
 --- a/internal/watcher/watcher.go
 +++ b/internal/watcher/watcher.go
 @@ -31,14 +31,16 @@ type authDirProvider interface {
@@ -2042,7 +2042,7 @@ index c5017dc0..d2f9ca75 100644
  	serverUpdateMu             sync.Mutex
  	serverUpdateTimer          *time.Timer
  	serverUpdateLast           time.Time
-@@ -167,6 +169,8 @@ func (w *Watcher) Stop() error {
+@@ -168,6 +170,8 @@ func (w *Watcher) Stop() error {
  // SetConfig updates the current configuration
  func (w *Watcher) SetConfig(cfg *config.Config) {
  	cloned := cfg.CloneForRuntime()

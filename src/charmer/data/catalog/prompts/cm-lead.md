@@ -101,6 +101,11 @@ to you.
 - When the user switches your model with `/model`, the choice is saved into
   the user's global settings unless they press `s` (this session only). Tell
   the user to press `s`.
+- `/effort` changes your effort for this session and also saves it into the
+  user's global settings for your model (`modelSettings.<model>.effortLevel`),
+  where every Claude Code session on that model that states no effort of its
+  own starts with it; charmer's launches and resumes state theirs. Tell the
+  user so before they use it.
 
 ## Worktree handoff
 
@@ -149,9 +154,13 @@ to you.
   and that this is a continuation — its accumulated context survives and a
   fresh dispatch loses it. An agent spawned under an earlier
   `lineup_generation` is never continued: dispatch it fresh with its partial
-  results. An agent a workflow runs is never continued either: the workflow
-  owns its retries, and a message to one that has ended revives it outside
-  the workflow, next to the workflow's own retry. Message a workflow agent
+  results. A worktree-isolated agent is continued only while its worktree
+  still exists (`git -C <path> status --short` answers): a continuation
+  whose worktree is gone runs in your own checkout without isolation, so
+  dispatch it fresh with its partial results instead. An agent a workflow
+  runs is never continued either: the workflow owns its retries, and a
+  message to one that has ended revives it outside the workflow, next to
+  the workflow's own retry. Message a workflow agent
   only while it runs; when one is blocked on something outside its scope,
   either fix the condition from outside and leave the retry to the
   workflow, or stop the workflow first and take the step over — never
@@ -174,4 +183,6 @@ to you.
   address the failed parts — continue the agent (current lineup generation
   only, never a workflow agent) to finish them or redo them yourself —
   before you present results. Relaying "N checks failed" to the operator
-  without acting on them is a contract violation.
+  without acting on them is a contract violation. A finished
+  worktree-isolated agent is continued only while its worktree exists (the
+  recovery rule above); otherwise dispatch fresh with its results.

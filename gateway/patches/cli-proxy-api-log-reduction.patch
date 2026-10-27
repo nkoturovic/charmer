@@ -1,5 +1,5 @@
 diff --git a/internal/runtime/executor/codex_websockets_duplex.go b/internal/runtime/executor/codex_websockets_duplex.go
-index 7d80a497..6f2b95a2 100644
+index de15c1b8..c1283ea6 100644
 --- a/internal/runtime/executor/codex_websockets_duplex.go
 +++ b/internal/runtime/executor/codex_websockets_duplex.go
 @@ -43,7 +43,7 @@ func (e *CodexWebsocketsExecutor) streamCodexDuplex(
@@ -11,7 +11,7 @@ index 7d80a497..6f2b95a2 100644
  	writeErrors := make(chan error, 1)
  	// Explicit creates have their own request settings. Automatic successors
  	// inherit the preceding response settings, just as they do upstream.
-@@ -257,7 +257,7 @@ func (e *CodexWebsocketsExecutor) streamCodexDuplex(
+@@ -258,7 +258,7 @@ func (e *CodexWebsocketsExecutor) streamCodexDuplex(
  				fail(mapCodexWebsocketWriteError(sess, conn, errWrite))
  				return false
  			}
@@ -20,7 +20,7 @@ index 7d80a497..6f2b95a2 100644
  			return true
  		}
  		flushPendingCreates := func() bool {
-@@ -357,7 +357,7 @@ func (e *CodexWebsocketsExecutor) streamCodexDuplex(
+@@ -358,7 +358,7 @@ func (e *CodexWebsocketsExecutor) streamCodexDuplex(
  						fail(mapCodexWebsocketWriteError(sess, conn, errWrite))
  						return
  					}
@@ -80,10 +80,10 @@ index 4e6dbf2a..91ff3bfb 100644
  
  // CloseCodexWebsocketSessionsForAuthID closes all active Codex upstream websocket sessions
 diff --git a/internal/runtime/executor/helps/usage_helpers.go b/internal/runtime/executor/helps/usage_helpers.go
-index e8b78032..63a29bfb 100644
+index 92f002e7..478f51db 100644
 --- a/internal/runtime/executor/helps/usage_helpers.go
 +++ b/internal/runtime/executor/helps/usage_helpers.go
-@@ -36,6 +36,7 @@ type UsageReporter struct {
+@@ -37,6 +37,7 @@ type UsageReporter struct {
  	alias                string
  	authID               string
  	authIndex            string
@@ -91,7 +91,7 @@ index e8b78032..63a29bfb 100644
  	authMu               sync.RWMutex
  	accessTokenHash      string
  	authType             string
-@@ -152,6 +153,7 @@ func NewUsageReporter(ctx context.Context, provider, model string, auth *cliprox
+@@ -154,6 +155,7 @@ func NewUsageReporter(ctx context.Context, provider, model string, auth *cliprox
  	if auth != nil {
  		reporter.authID = auth.ID
  		reporter.authIndex = auth.EnsureIndex()
@@ -99,7 +99,7 @@ index e8b78032..63a29bfb 100644
  		reporter.accessTokenHash = authAccessTokenSHA256(auth)
  	}
  	return reporter
-@@ -306,12 +308,13 @@ func (r *UsageReporter) warnModelSubstitution(ctx context.Context) {
+@@ -308,12 +310,13 @@ func (r *UsageReporter) warnModelSubstitution(ctx context.Context) {
  	LogWithRequestID(ctx).Warnf("%s executor: upstream served model %q for requested model %q (auth_index=%s)", providerName, served, r.model, r.authIndexForLog())
  }
  
@@ -271,10 +271,10 @@ index 00000000..004370ea
 +	}
 +}
 diff --git a/internal/runtime/executor/xai_websockets_executor.go b/internal/runtime/executor/xai_websockets_executor.go
-index 9c5c4d72..a991a927 100644
+index ec4053b4..586bce82 100644
 --- a/internal/runtime/executor/xai_websockets_executor.go
 +++ b/internal/runtime/executor/xai_websockets_executor.go
-@@ -994,14 +994,9 @@ func (e *XAIWebsocketsExecutor) executeCompactionTriggerFromWebsocketContext(ctx
+@@ -995,14 +995,9 @@ func (e *XAIWebsocketsExecutor) executeCompactionTriggerFromWebsocketContext(ctx
  			}
  		}
  	}
@@ -291,7 +291,7 @@ index 9c5c4d72..a991a927 100644
  		inputItemsCount,
  		keepPreviousResponseID,
  	)
-@@ -1688,19 +1683,22 @@ func applyXAIWebsocketHeaders(ctx context.Context, headers http.Header, auth *cl
+@@ -1695,19 +1690,22 @@ func applyXAIWebsocketHeaders(ctx context.Context, headers http.Header, auth *cl
  	return headers
  }
  
@@ -318,7 +318,7 @@ index 9c5c4d72..a991a927 100644
  		strings.TrimSpace(wsURL),
  		strings.TrimSpace(gjson.GetBytes(payload, "type").String()),
  		strings.TrimSpace(gjson.GetBytes(payload, "previous_response_id").String()),
-@@ -1710,20 +1708,18 @@ func logXAIWebsocketRequest(sessionID string, authID string, wsURL string, paylo
+@@ -1717,20 +1715,18 @@ func logXAIWebsocketRequest(sessionID string, authID string, wsURL string, paylo
  }
  
  func logXAIWebsocketWarmupCompleted(sessionID string, authID string, wsURL string, payload []byte) {
@@ -343,7 +343,7 @@ index 9c5c4d72..a991a927 100644
  		strings.TrimSpace(wsURL),
  		strings.TrimSpace(eventType),
  		strings.TrimSpace(gjson.GetBytes(payload, "response.id").String()),
-@@ -1739,10 +1735,10 @@ func logXAIWebsocketConnectedWithReused(sess *codexWebsocketSession, sessionID s
+@@ -1746,10 +1742,10 @@ func logXAIWebsocketConnectedWithReused(sess *codexWebsocketSession, sessionID s
  	sessionStr := strings.TrimSpace(sessionID)
  	sessionKind := sessionObjectKind(sess)
  	if reused {
@@ -356,7 +356,7 @@ index 9c5c4d72..a991a927 100644
  }
  
  func logXAIWebsocketDisconnected(sessionID string, authID string, wsURL string, reason string, err error) {
-@@ -1755,17 +1751,17 @@ func logXAIWebsocketDisconnectedWithLastEvent(sess *codexWebsocketSession, sessi
+@@ -1762,17 +1758,17 @@ func logXAIWebsocketDisconnectedWithLastEvent(sess *codexWebsocketSession, sessi
  	terminalStatus := isTerminalEvent(lastEvent)
  	if err != nil {
  		if lastEvent != "" {
@@ -379,7 +379,7 @@ index 9c5c4d72..a991a927 100644
  
  // CloseXAIWebsocketSessionsForAuthID closes all active xAI upstream websocket sessions
 diff --git a/sdk/cliproxy/auth/conductor_execution.go b/sdk/cliproxy/auth/conductor_execution.go
-index 436c8087..3bf0443d 100644
+index d5780a9f..5f75bd6c 100644
 --- a/sdk/cliproxy/auth/conductor_execution.go
 +++ b/sdk/cliproxy/auth/conductor_execution.go
 @@ -8,7 +8,6 @@ import (
@@ -390,7 +390,7 @@ index 436c8087..3bf0443d 100644
  	"sort"
  	"strconv"
  	"strings"
-@@ -1861,14 +1860,14 @@ func debugLogAuthSelection(entry *log.Entry, auth *Auth, provider string, model
+@@ -1880,14 +1879,14 @@ func debugLogAuthSelection(entry *log.Entry, auth *Auth, provider string, model
  			entry.Debugf("Use API key %s for model %s%s", openAICompatAuthLogIdentity(auth), model, suffix)
  			return
  		}
@@ -407,7 +407,7 @@ index 436c8087..3bf0443d 100644
  	if auth == nil {
  		return ""
  	}
-@@ -1877,26 +1876,13 @@ func formatOauthIdentity(auth *Auth, provider string, accountInfo string) string
+@@ -1896,26 +1895,13 @@ func formatOauthIdentity(auth *Auth, provider string, accountInfo string) string
  	if providerName == "" {
  		providerName = strings.TrimSpace(provider)
  	}
@@ -439,7 +439,7 @@ index 436c8087..3bf0443d 100644
  }
  
  // isOpenAICompatAuthForLog reports an OpenAI-compatible provider auth
-@@ -1930,20 +1916,11 @@ func formatAuthIdentity(auth *Auth, provider string) string {
+@@ -1949,20 +1935,11 @@ func formatAuthIdentity(auth *Auth, provider string) string {
  		if isOpenAICompatAuthForLog(auth) {
  			return "api_key=" + openAICompatAuthLogIdentity(auth)
  		}
@@ -814,10 +814,10 @@ index 00000000..1c470851
 +}
 diff --git a/sdk/cliproxy/auth/log_reduction_inventory_test.go b/sdk/cliproxy/auth/log_reduction_inventory_test.go
 new file mode 100644
-index 00000000..c1d0c2dc
+index 00000000..662fb5f6
 --- /dev/null
 +++ b/sdk/cliproxy/auth/log_reduction_inventory_test.go
-@@ -0,0 +1,239 @@
+@@ -0,0 +1,242 @@
 +package auth
 +
 +import (
@@ -925,6 +925,9 @@ index 00000000..c1d0c2dc
 +	{"internal/runtime/executor/xai_websockets_executor.go", "configureXAIWebsocketConn", "Debugf", "xai websockets: upstream pong replied session=%s session_object=%s duration=%v"},
 +	{"internal/runtime/executor/xai_websockets_executor.go", "XAIWebsocketsExecutor.invalidateUpstreamConnWithNotify", "Errorf", "xai websockets executor: close websocket error: %v"},
 +	{"internal/runtime/executor/xai_websockets_executor.go", "closeXAIWebsocketSession", "Errorf", "xai websockets executor: close websocket error: %v"},
++	// Compression level (8.0.44): a gorilla flate-level error; it names no
++	// credential and stays off under the rendered codex.websocket-compression false.
++	{"internal/runtime/executor/xai_websockets_executor.go", "XAIWebsocketsExecutor.dialXAIWebsocket", "Errorf", "set xAI websocket compression level: %v"},
 +}
 +
 +var logMethods = map[string]bool{

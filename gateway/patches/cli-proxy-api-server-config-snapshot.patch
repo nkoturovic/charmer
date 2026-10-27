@@ -317,10 +317,10 @@ index 00000000..db73e78e
 +	}
 +}
 diff --git a/internal/api/server_middleware.go b/internal/api/server_middleware.go
-index f3f73d53..2f51b915 100644
+index 6da5abc7..27017899 100644
 --- a/internal/api/server_middleware.go
 +++ b/internal/api/server_middleware.go
-@@ -76,7 +76,7 @@ func (s *Server) maxRequestBodyBytesMiddleware() gin.HandlerFunc {
+@@ -89,7 +89,7 @@ func (s *Server) maxRequestBodyBytesMiddleware() gin.HandlerFunc {
  
  func (s *Server) homeHeartbeatMiddleware() gin.HandlerFunc {
  	return func(c *gin.Context) {
@@ -329,7 +329,7 @@ index f3f73d53..2f51b915 100644
  		if s == nil || cfg == nil || !cfg.Home.Enabled {
  			c.Next()
  			return
-@@ -131,7 +131,7 @@ func (s *Server) exampleAPIKeySafeModeMiddleware() gin.HandlerFunc {
+@@ -144,7 +144,7 @@ func (s *Server) exampleAPIKeySafeModeMiddleware() gin.HandlerFunc {
  }
  
  func (s *Server) serveExampleAPIKeyWarningPage(c *gin.Context) {
@@ -708,10 +708,10 @@ index 00000000..6e79fc6f
 +	}
 +}
 diff --git a/sdk/api/handlers/handlers.go b/sdk/api/handlers/handlers.go
-index 5e8df3a7..43df61d6 100644
+index be576f70..4a8e8059 100644
 --- a/sdk/api/handlers/handlers.go
 +++ b/sdk/api/handlers/handlers.go
-@@ -583,6 +583,8 @@ func (h *BaseAPIHandler) GetContextWithCancel(handler interfaces.APIHandler, c *
+@@ -605,6 +605,8 @@ func (h *BaseAPIHandler) GetContextWithCancel(handler interfaces.APIHandler, c *
  		}
  	}
  	newCtx, cancel := context.WithCancel(parentCtx)
@@ -720,7 +720,7 @@ index 5e8df3a7..43df61d6 100644
  
  	endpoint := ""
  	if c != nil && c.Request != nil {
-@@ -632,7 +634,7 @@ func (h *BaseAPIHandler) GetContextWithCancel(handler interfaces.APIHandler, c *
+@@ -654,7 +656,7 @@ func (h *BaseAPIHandler) GetContextWithCancel(handler interfaces.APIHandler, c *
  		if c != nil {
  			logging.SetResponseStatus(cancelCtx, c.Writer.Status())
  		}
@@ -729,7 +729,7 @@ index 5e8df3a7..43df61d6 100644
  			if captured, exists := c.Get(logging.APIResponseCapturedContextKey); exists {
  				if capturedBool, ok := captured.(bool); ok && capturedBool {
  					cancel()
-@@ -684,7 +686,7 @@ func (h *BaseAPIHandler) StartNonStreamingKeepAlive(c *gin.Context, ctx context.
+@@ -706,7 +708,7 @@ func (h *BaseAPIHandler) StartNonStreamingKeepAlive(c *gin.Context, ctx context.
  	if h == nil || c == nil {
  		return func() {}
  	}
@@ -814,10 +814,10 @@ index 7893da08..91e9ac59 100644
  			if apiResponseErrors, isExist := ginContext.Get("API_RESPONSE_ERROR"); isExist {
  				if slicesAPIResponseError, isOk := apiResponseErrors.([]*interfaces.ErrorMessage); isOk {
 diff --git a/sdk/api/handlers/handlers_execution.go b/sdk/api/handlers/handlers_execution.go
-index 5e4c1962..08c93ef4 100644
+index 0f821c3e..43e49d80 100644
 --- a/sdk/api/handlers/handlers_execution.go
 +++ b/sdk/api/handlers/handlers_execution.go
-@@ -112,7 +112,7 @@ func (h *BaseAPIHandler) executeWithAuthManagerFormats(ctx context.Context, entr
+@@ -113,7 +113,7 @@ func (h *BaseAPIHandler) executeWithAuthManagerFormats(ctx context.Context, entr
  	executedReq, executedOpts := afterAuthCapture.apply(req, opts)
  	ctx = enrichContextWithSessionHierarchy(ctx, executedOpts.Headers, executedReq.Payload, executedOpts.Metadata)
  	rawResponseHeaders := cloneHeader(resp.Headers)
@@ -826,7 +826,7 @@ index 5e4c1962..08c93ef4 100644
  	responseHeaders := downstreamHeadersFromExecutor(rawResponseHeaders, passthroughHeaders)
  	body, responseHeaders := h.applyResponseInterceptors(ctx, lifecycle.requestID(), responseProtocol, normalizedModel, originalRequestedModel, executedOpts, rawResponseHeaders, responseHeaders, executedOpts.OriginalRequest, executedReq.Payload, resp.Payload, http.StatusOK, execOptions.SkipInterceptorPluginID, passthroughHeaders)
  	lifecycle.complete(pluginapi.RequestCompletionSucceeded, http.StatusOK, nil)
-@@ -182,7 +182,7 @@ func (h *BaseAPIHandler) executeCountWithAuthManager(ctx context.Context, handle
+@@ -184,7 +184,7 @@ func (h *BaseAPIHandler) executeCountWithAuthManager(ctx context.Context, handle
  	executedReq, executedOpts := afterAuthCapture.apply(req, opts)
  	ctx = enrichContextWithSessionHierarchy(ctx, executedOpts.Headers, executedReq.Payload, executedOpts.Metadata)
  	rawResponseHeaders := cloneHeader(resp.Headers)
@@ -835,7 +835,7 @@ index 5e4c1962..08c93ef4 100644
  	responseHeaders := downstreamHeadersFromExecutor(rawResponseHeaders, passthroughHeaders)
  	body, responseHeaders := h.applyResponseInterceptors(ctx, lifecycle.requestID(), handlerType, normalizedModel, originalRequestedModel, executedOpts, rawResponseHeaders, responseHeaders, executedOpts.OriginalRequest, executedReq.Payload, resp.Payload, http.StatusOK, execOptions.SkipInterceptorPluginID, passthroughHeaders)
  	lifecycle.complete(pluginapi.RequestCompletionSucceeded, http.StatusOK, nil)
-@@ -232,7 +232,7 @@ func (h *BaseAPIHandler) executeWithPluginExecutor(ctx context.Context, entryPro
+@@ -234,7 +234,7 @@ func (h *BaseAPIHandler) executeWithPluginExecutor(ctx context.Context, entryPro
  		reporter.EnsurePublished(execCtx)
  	}
  	rawResponseHeaders := cloneHeader(resp.Headers)
@@ -844,7 +844,7 @@ index 5e4c1962..08c93ef4 100644
  	responseHeaders := downstreamHeadersFromExecutor(rawResponseHeaders, passthroughHeaders)
  	body, responseHeaders := h.applyResponseInterceptors(execCtx, lifecycle.requestID(), responseProtocol, modelName, originalRequestedModel, opts, rawResponseHeaders, responseHeaders, opts.OriginalRequest, req.Payload, resp.Payload, http.StatusOK, execOptions.SkipInterceptorPluginID, passthroughHeaders)
  	lifecycle.complete(pluginapi.RequestCompletionSucceeded, http.StatusOK, nil)
-@@ -268,7 +268,7 @@ func (h *BaseAPIHandler) countWithPluginExecutor(ctx context.Context, handlerTyp
+@@ -270,7 +270,7 @@ func (h *BaseAPIHandler) countWithPluginExecutor(ctx context.Context, handlerTyp
  		return nil, nil, errMsg
  	}
  	rawResponseHeaders := cloneHeader(resp.Headers)
@@ -854,7 +854,7 @@ index 5e4c1962..08c93ef4 100644
  	body, responseHeaders := h.applyResponseInterceptors(ctx, lifecycle.requestID(), handlerType, modelName, originalRequestedModel, opts, rawResponseHeaders, responseHeaders, opts.OriginalRequest, req.Payload, resp.Payload, http.StatusOK, execOptions.SkipInterceptorPluginID, passthroughHeaders)
  	lifecycle.complete(pluginapi.RequestCompletionSucceeded, http.StatusOK, nil)
 diff --git a/sdk/api/handlers/handlers_stream.go b/sdk/api/handlers/handlers_stream.go
-index 6f0bfbc9..d9b0a9b7 100644
+index 102a3853..1214f05a 100644
 --- a/sdk/api/handlers/handlers_stream.go
 +++ b/sdk/api/handlers/handlers_stream.go
 @@ -92,7 +92,7 @@ func (h *BaseAPIHandler) streamWithPluginExecutor(ctx context.Context, entryProt
@@ -866,7 +866,7 @@ index 6f0bfbc9..d9b0a9b7 100644
  	interceptorHost := h.interceptorHost()
  	streamInterceptorsActive := streamInterceptorsEnabled(interceptorHost)
  	rawStreamHeaders := cloneHeader(streamResult.Headers)
-@@ -375,7 +375,7 @@ func (h *BaseAPIHandler) executeStreamWithAuthManagerFormats(ctx context.Context
+@@ -376,7 +376,7 @@ func (h *BaseAPIHandler) executeStreamWithAuthManagerFormats(ctx context.Context
  	if executedReq, executedOpts := executedRequest(); len(executedOpts.Headers) > 0 || len(executedReq.Payload) > 0 || len(executedOpts.Metadata) > 0 {
  		ctx = enrichContextWithSessionHierarchy(ctx, executedOpts.Headers, executedReq.Payload, executedOpts.Metadata)
  	}
@@ -875,7 +875,7 @@ index 6f0bfbc9..d9b0a9b7 100644
  	interceptorHost := h.interceptorHost()
  	streamInterceptorsActive := streamInterceptorsEnabled(interceptorHost)
  	// Resolve bootstrap retries and header initialization before returning so the
-@@ -539,7 +539,7 @@ func (h *BaseAPIHandler) executeStreamWithAuthManagerFormats(ctx context.Context
+@@ -533,7 +533,7 @@ func (h *BaseAPIHandler) executeStreamWithAuthManagerFormats(ctx context.Context
  		}
  	}
  
@@ -938,10 +938,10 @@ index d0396925..537d81f9 100644
  
  	dataChan, resolvedHeaders, errChan, okBootstrap := h.ExecuteStreamWithPreFTKeepAlive(
 diff --git a/sdk/api/handlers/openai/openai_responses_websocket.go b/sdk/api/handlers/openai/openai_responses_websocket.go
-index 92de9175..afa9f411 100644
+index 8807df98..2bd9db25 100644
 --- a/sdk/api/handlers/openai/openai_responses_websocket.go
 +++ b/sdk/api/handlers/openai/openai_responses_websocket.go
-@@ -347,7 +347,7 @@ func (h *OpenAIResponsesAPIHandler) ResponsesWebsocket(c *gin.Context) {
+@@ -363,7 +363,7 @@ func (h *OpenAIResponsesAPIHandler) ResponsesWebsocket(c *gin.Context) {
  	requestLogEnabled := false
  	codexResponseSteering := false
  	if h != nil {

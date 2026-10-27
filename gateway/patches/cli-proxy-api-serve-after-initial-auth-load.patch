@@ -1,8 +1,8 @@
 diff --git a/internal/watcher/dispatcher.go b/internal/watcher/dispatcher.go
-index ad92e182..f8e24162 100644
+index 1e165b45..c914fae8 100644
 --- a/internal/watcher/dispatcher.go
 +++ b/internal/watcher/dispatcher.go
-@@ -468,6 +468,45 @@ func (w *Watcher) dispatchAuthUpdates(updates []AuthUpdate) {
+@@ -483,6 +483,45 @@ func (w *Watcher) dispatchAuthUpdates(updates []AuthUpdate) {
  	w.dispatchMu.Unlock()
  }
  
@@ -121,10 +121,10 @@ index 00000000..dcbc7031
 +	}
 +}
 diff --git a/internal/watcher/watcher.go b/internal/watcher/watcher.go
-index d2f9ca75..aca7100c 100644
+index 9436b273..94233543 100644
 --- a/internal/watcher/watcher.go
 +++ b/internal/watcher/watcher.go
-@@ -78,6 +78,9 @@ const (
+@@ -79,6 +79,9 @@ const (
  	AuthUpdateActionAdd    AuthUpdateAction = "add"
  	AuthUpdateActionModify AuthUpdateAction = "modify"
  	AuthUpdateActionDelete AuthUpdateAction = "delete"
@@ -134,7 +134,7 @@ index d2f9ca75..aca7100c 100644
  )
  
  // AuthUpdate describes an incremental change to auth configuration.
-@@ -87,6 +90,8 @@ type AuthUpdate struct {
+@@ -88,6 +91,8 @@ type AuthUpdate struct {
  	Auth        *coreauth.Auth
  	revision    uint64 // Watcher-local ordering, independent of runtime auth generations.
  	fileRemoval bool   // The source file was removed, not just an ID from its content.
@@ -143,7 +143,7 @@ index d2f9ca75..aca7100c 100644
  }
  
  // IsFileRemoval reports whether this delete was observed as a whole-file removal.
-@@ -101,6 +106,21 @@ func (u *AuthUpdate) SetFileRemoval(fileRemoval bool) {
+@@ -102,6 +107,21 @@ func (u *AuthUpdate) SetFileRemoval(fileRemoval bool) {
  	}
  }
  
@@ -165,7 +165,7 @@ index d2f9ca75..aca7100c 100644
  // Revision returns the monotonic watcher revision assigned to this update.
  func (u AuthUpdate) Revision() uint64 {
  	return u.revision
-@@ -214,6 +234,14 @@ func (w *Watcher) RereadDiscardedFileSnapshot(auth *coreauth.Auth) {
+@@ -215,6 +235,14 @@ func (w *Watcher) RereadDiscardedFileSnapshot(auth *coreauth.Auth) {
  	w.rereadDiscardedFileSnapshot(auth)
  }
  

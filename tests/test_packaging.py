@@ -75,9 +75,10 @@ RECIPE_FILES = ("gateway/UPSTREAM.json", "tools/build.py")
 
 # Admission ids are stable and never inferred from a patch's position or the
 # series length: 11 was never admitted, 14 retired with the 8.0.33 rebase, 30
-# was withdrawn, and 24 and 25 retired with the 8.0.42 rebase (upstream carries
-# them). The keyed proof numbers each shipped patch by this map.
-RETIRED_PATCH_NUMBERS = (11, 14, 24, 25)
+# was withdrawn, 24 and 25 retired with the 8.0.42 rebase (upstream carries
+# them), and 33 with the 8.0.44 rebase (upstream 21553509). The keyed proof
+# numbers each shipped patch by this map.
+RETIRED_PATCH_NUMBERS = (11, 14, 24, 25, 33)
 PATCH_IDS = {
     "cli-proxy-api-loopback-oauth.patch": 1, "cli-proxy-api-kimi-claude-compat.patch": 2,
     "cli-proxy-api-non-claude-cache-retention.patch": 3, "cli-proxy-api-management-readonly-allowlist.patch": 4,
@@ -93,7 +94,6 @@ PATCH_IDS = {
     "cli-proxy-api-context-error-normalization.patch": 27, "cli-proxy-api-log-reduction.patch": 28,
     "cli-proxy-api-tool-call-integrity.patch": 29, "cli-proxy-api-initial-registration.patch": 31,
     "cli-proxy-api-terminal-rejection-reload.patch": 32,
-    "cli-proxy-api-relogin-after-refresh-failure.patch": 33,
 }
 
 
@@ -792,6 +792,7 @@ class ManagementAllowlistGateTests(unittest.TestCase):
         "TestManagementAllowlist_BypassVariantsRefused",
         "TestManagementAllowlist_BadKeysOnRefusedRoutesNeverCount",
         "TestManagementAllowlist_BrowserOriginatedRequestsRefusedAndNeverCount",
+        "TestManagementAllowlist_PreflightRefusedBeforeCORS",
         "TestManagementAllowlist_NonLoopbackHostRefusedAndNeverCounts",
         "TestManagementAllowlist_RemoteOverrideForcedOff",
         "TestManagementAllowlist_OAuthCallbackWithPendingSessionWritesNothing",
@@ -1255,6 +1256,7 @@ class AdmittedPatchGateTests(unittest.TestCase):
                                      'TestCM053GuardCopiesClient'],
      './internal/runtime/executor': ['TestCM053ClaudeRedirectEntryPoints',
                                      'TestCM053CodexRedirectEntryPoints',
+                                     'TestCM053CodexCompressedRetryRedirectRefused',
                                      'TestCM053GeminiVertexRedirectEntryPoints',
                                      'TestCM053OtherExecutorRedirectEntryPoints',
                                      'TestCM053KeyedCompatRefusesEveryRedirect',
@@ -1807,6 +1809,8 @@ class NoAntigravityEgressTests(unittest.TestCase):
             # The same policy keeps the Grok CLI (npm) version updater off.
             self.assertFalse("periodic Grok CLI version refresh started" in text,
                              "Grok CLI updater started under --local-model")
+            self.assertEqual(gateway.document["discovery"], {"enabled": False})
+            self.assertNotIn("discovery:", text, "the LAN discovery advertiser ran")
             harness.EVIDENCE.record(__name__, "patches", {"row": "AG1", "updater_started": False})
             harness.EVIDENCE.finalize_module(__name__)
         finally:
@@ -1901,7 +1905,8 @@ class CodexApiKeySafetyGateTests(unittest.TestCase):
     NAME = "cli-proxy-api-codex-api-key-safety.patch"
     TESTS = ("TestCodexKeyStatusFailureIsLocal", "TestCodexKeyTerminalFailureIsLocal",
              "TestCodexKeyTransportErrorIsLocal", "TestCodexKeyErrorBodyReadIsBounded",
-             "TestCodexPlainKeyIdentity", "TestCodexKeyTerminalFailureCapture", "TestCodexKeySuccessAndAccountCapture")
+             "TestCodexPlainKeyIdentity", "TestCodexKeyTerminalFailureCapture", "TestCodexKeySuccessAndAccountCapture",
+             "TestCodexKeyDecoderFailureIsLocal", "TestCodexKeyCompressedFailureBodyIsLocal")
     PREREQUISITES = ("cli-proxy-api-credentialed-redirects.patch", "cli-proxy-api-openai-compat-keyed-safety.patch",
                      "cli-proxy-api-codex-client-identity.patch")
 
