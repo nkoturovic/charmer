@@ -250,14 +250,17 @@ client check watch-effort: REPRODUCED class=EF-shared-launch-holds
 client check watch-scratchpad: REPRODUCED class=SP-headless:remains-terminal:remains
 # The session's scratchpad directory remains after a headless and a terminal
 # session end (2.1.310 the same).
-client check watch-mcp-large: NOT-REPRODUCED class=ML-own-results
-# Two parallel calls of one MCP tool, each answer too large to stay inline:
-# each saved file holds its own call's answer. 2.1.310 reproduces the report
-# (ML-same-file: both results name one file, holding one call's answer).
+client check watch-mcp-large: REPRODUCED class=ML-same-file
+# Four parallel calls of one MCP tool, each answer too large to stay inline,
+# three trials: in every trial two or more results name one saved file, which
+# holds one call's answer (2.1.310 the same). With two parallel calls the
+# results share a file in about one trial of ten, on both clients.
 client check watch-bash-queue: NOT-REPRODUCED class=BQ-prompt
-# Eight parallel workflow agents, one Bash command each, with hooks on the
-# six events charmer compiles: every result within a second (2.1.310 the
-# same).
+# Eight parallel workflow agents, one Bash command each, in a fixture managed
+# session whose compiled lifecycle hooks run charmer's shim and launcher
+# (start, end and one SubagentStart per agent through the launcher, each
+# exit 0; the lead gets the lineup notice): every result within a second
+# (2.1.310 the same).
 client check watch-teams: NOT-APPLICABLE class=AT-absent
 # No agent teams: the Agent tool has no team or name parameter and
 # ToolSearch finds SendMessage but no team tool (2.1.310 the same).

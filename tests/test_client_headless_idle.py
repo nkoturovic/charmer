@@ -5,8 +5,8 @@ output per turn, and its stream idle limit behind a custom base URL.
   starts a background agent and ends its first turn; the agent's completion
   notice starts a second turn. Text output prints the text of every completed
   turn, not only the last one; within a turn only the final text is printed
-  (a step's text before a tool call is not). JSON output carries one result;
-  the record says which turn's. Charmer's own parsers of headless output (the
+  (a step's text before a tool call is not). JSON output carries one result,
+  the last turn's (asserted). Charmer's own parsers of headless output (the
   probe helpers, ``models qualify``) read the JSON form of one-turn sessions.
 * ``stream-idle``: a streamed answer that sends ``message_start`` and then
   nothing, not even ``ping`` events. Under the compiled retry watchdog, a
@@ -108,6 +108,14 @@ def output_verdict(observed: dict[str, dict[str, Any]]) -> str:
         return "HO-last-turn-only"
     if text["step"]:
         return "HO-every-step"
+    # JSON output: exactly one result, the last turn's.
+    results = observed["json"].get("results")
+    if results != [_TURN_TWO]:
+        if not results:
+            return "HO-json-no-result"
+        if len(results) > 1:
+            return "HO-json-several-results"
+        return "HO-json-other-result"
     return OUTPUT_PASS_CLASS
 
 
@@ -196,13 +204,25 @@ def idle_verdict(observed: dict[str, dict[str, Any]]) -> str:
 class VerdictTests(unittest.TestCase):
     def test_output(self) -> None:
         both = {"rc": 0, "turns": ["one", "two"], "agent": 1}
-        rows = {"text": {**both, "one": True, "two": True, "step": False}, "json": {**both, "result": _TURN_TWO}}
+        rows = {"text": {**both, "one": True, "two": True, "step": False}, "json": {**both, "results": [_TURN_TWO]}}
         self.assertEqual(output_verdict(rows), OUTPUT_PASS_CLASS)
         self.assertEqual(output_verdict(dict(rows, text={**rows["text"], "one": False})), "HO-last-turn-only")
         self.assertEqual(output_verdict(dict(rows, text={**rows["text"], "two": False})), "HO-first-turn-only")
         self.assertEqual(output_verdict(dict(rows, text={**rows["text"], "step": True})), "HO-every-step")
         with self.assertRaises(fallbacks._Inconclusive):
             output_verdict(dict(rows, json={**rows["json"], "turns": ["one"]}))
+
+    def test_output_json_carries_the_last_turn_only(self) -> None:
+        both = {"rc": 0, "turns": ["one", "two"], "agent": 1}
+        text = {**both, "one": True, "two": True, "step": False}
+        missing = {key: value for key, value in both.items()}
+        for json_row, expected in (({**both, "results": []}, "HO-json-no-result"),
+                                   (missing, "HO-json-no-result"),
+                                   ({**both, "results": ["wrong-turn"]}, "HO-json-other-result"),
+                                   ({**both, "results": [_TURN_ONE]}, "HO-json-other-result"),
+                                   ({**both, "results": [_TURN_ONE, _TURN_TWO]}, "HO-json-several-results")):
+            with self.subTest(results=json_row.get("results")):
+                self.assertEqual(output_verdict({"text": text, "json": json_row}), expected)
 
     def test_idle(self) -> None:
         rows = {"short": {"rc": 0, "result": "PROBE-IDLE-OK", "main": 1, "elapsed": 241, "abandoned_after": None},
