@@ -1,8 +1,8 @@
 diff --git a/sdk/cliproxy/auth/conductor_selection.go b/sdk/cliproxy/auth/conductor_selection.go
-index d3c082bd..3746ab06 100644
+index 23883f13..d11d31b3 100644
 --- a/sdk/cliproxy/auth/conductor_selection.go
 +++ b/sdk/cliproxy/auth/conductor_selection.go
-@@ -349,7 +349,10 @@ func (m *Manager) ReconcileRegistryModelStates(ctx context.Context, authID strin
+@@ -350,7 +350,10 @@ func (m *Manager) ReconcileRegistryModelStates(ctx context.Context, authID strin
  				auth.ModelStates = candidateAuth.ModelStates
  				if candidateChanged {
  					updateAggregatedAvailability(auth, now)

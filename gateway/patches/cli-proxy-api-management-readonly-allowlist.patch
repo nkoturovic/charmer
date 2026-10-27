@@ -1,5 +1,5 @@
 diff --git a/internal/api/handlers/management/handler.go b/internal/api/handlers/management/handler.go
-index 21747e58..84cd4dd4 100644
+index 529c3a8b..9260cee3 100644
 --- a/internal/api/handlers/management/handler.go
 +++ b/internal/api/handlers/management/handler.go
 @@ -81,7 +81,7 @@ func NewHandler(cfg *config.Config, configFilePath string, manager *coreauth.Man
@@ -79,10 +79,10 @@ index 2ca8b259..00913861 100644
  		if !s.managementRoutesEnabled.Load() {
  			return
 diff --git a/internal/api/server.go b/internal/api/server.go
-index fc1646c9..25a1aa43 100644
+index 87ddc279..ffca1545 100644
 --- a/internal/api/server.go
 +++ b/internal/api/server.go
-@@ -172,6 +172,8 @@ func NewServer(cfg *config.Config, authManager *auth.Manager, accessManager *sdk
+@@ -173,6 +173,8 @@ func NewServer(cfg *config.Config, authManager *auth.Manager, accessManager *sdk
  	engine.Use(logging.GinLogrusLogger())
  	engine.Use(logging.GinLogrusRecovery())
  	engine.Use(logging.CPATraceIDMiddleware())
@@ -91,7 +91,7 @@ index fc1646c9..25a1aa43 100644
  	engine.Use(s.maxRequestBodyBytesMiddleware())
  	for _, mw := range optionState.extraMiddleware {
  		engine.Use(mw)
-@@ -262,8 +264,9 @@ func NewServer(cfg *config.Config, authManager *auth.Manager, accessManager *sdk
+@@ -265,8 +267,9 @@ func NewServer(cfg *config.Config, authManager *auth.Manager, accessManager *sdk
  
  	// Create HTTP server
  	s.server = &http.Server{
@@ -430,10 +430,10 @@ index 00000000..334ac126
 +}
 diff --git a/internal/api/server_management_allowlist_test.go b/internal/api/server_management_allowlist_test.go
 new file mode 100644
-index 00000000..930a3302
+index 00000000..3a320e77
 --- /dev/null
 +++ b/internal/api/server_management_allowlist_test.go
-@@ -0,0 +1,1043 @@
+@@ -0,0 +1,1082 @@
 +package api
 +
 +import (
@@ -1303,6 +1303,45 @@ index 00000000..930a3302
 +	assertNotBanned(t, s, "browser-shaped requests")
 +}
 +
++// A CORS preflight never reaches the CORS middleware on a management path:
++// the guard refuses it first, so a browser never learns that Authorization or
++// the management key header would be allowed there. Both layers refuse it:
++// the pre-routing handler and, behind it, the engine's own guard, which runs
++// before the CORS middleware. Inference routes still get the explicit
++// allowance (the control).
++func TestManagementAllowlist_PreflightRefusedBeforeCORS(t *testing.T) {
++	s := newAllowlistTestServer(t)
++	targets := []string{"/v8/management/oauth/auth-url", "/v8/management/credentials"}
++	for _, target := range allowlistedManagementRoutes {
++		targets = append(targets, target)
++	}
++	targets = append(targets, refusedV8ReadTwins...)
++	for _, target := range targets {
++		for _, origin := range []string{"https://attacker.example", "null"} {
++			for n := 0; n < 5; n++ {
++				for layer, serve := range map[string]func(*Server, *http.Request) *httptest.ResponseRecorder{
++					"handler": serveAllowlist, "engine": serveEngine} {
++					req := allowlistRequest(http.MethodOptions, target, "", "")
++					req.Header.Set("Origin", origin)
++					req.Header.Set("Access-Control-Request-Method", http.MethodPost)
++					req.Header.Set("Access-Control-Request-Headers", "Authorization, X-Management-Key, X-Api-Key")
++					assertRefused(t, serve(s, req), layer+" preflight "+target+" from "+origin)
++				}
++			}
++		}
++	}
++	assertNotBanned(t, s, "management preflights")
++	req := allowlistRequest(http.MethodOptions, "/v1/messages", "", "")
++	req.Header.Set("Origin", "https://attacker.example")
++	req.Header.Set("Access-Control-Request-Method", http.MethodPost)
++	req.Header.Set("Access-Control-Request-Headers", "Authorization")
++	rr := serveAllowlist(s, req)
++	if rr.Code != http.StatusNoContent || !strings.Contains(rr.Header().Get("Access-Control-Allow-Headers"), "Authorization") {
++		t.Fatalf("inference preflight control: status = %d allow-headers = %q, want 204 naming Authorization",
++			rr.Code, rr.Header().Get("Access-Control-Allow-Headers"))
++	}
++}
++
 +// A DNS-rebinding page reaches 127.0.0.1 under its own host name. Only
 +// loopback Host literals are served, in both namespaces.
 +func TestManagementAllowlist_NonLoopbackHostRefusedAndNeverCounts(t *testing.T) {
@@ -1479,10 +1518,10 @@ index 00000000..930a3302
 +}
 diff --git a/internal/api/server_management_route_table_test.go b/internal/api/server_management_route_table_test.go
 new file mode 100644
-index 00000000..6661041d
+index 00000000..7c67a39c
 --- /dev/null
 +++ b/internal/api/server_management_route_table_test.go
-@@ -0,0 +1,264 @@
+@@ -0,0 +1,265 @@
 +package api
 +
 +// charmer local patch (management-readonly-allowlist): the reviewed route
@@ -1707,6 +1746,7 @@ index 00000000..6661041d
 +	"POST /v1beta/models/*action":                              routeOpen,
 +	"POST /v8/management/credentials":                          routeRefuse,
 +	"POST /v8/management/credentials/refresh":                  routeRefuse,
++	"POST /v8/management/oauth/auth-url":                       routeRefuse,
 +	"POST /v8/management/oauth/callback":                       routeRefuse,
 +	"POST /v8/management/oauth/import":                         routeRefuse,
 +	"POST /v8/management/oauth/siwc/bind":                      routeRefuse,

@@ -375,6 +375,8 @@ class PatchOmissionProbeTests(unittest.TestCase):
         self.check_probe("service", "TestOmissionTerminalRejectionReload", "TR1")
 
     def test_relogin_after_refresh_failure(self):
+        # Upstream's re-login recovery since 8.0.43 (21553509; local patch 33
+        # retired): a regression row with no patch to omit.
         self.check_probe("service", "TestOmissionReloginAfterRefreshFailure", "RA1")
 
 

@@ -166,9 +166,6 @@ PATCH_ROWS = {
     "cli-proxy-api-terminal-rejection-reload.patch": (
         "tests.test_gateway_patches.PatchOmissionProbeTests.test_terminal_rejection_reload",
     ),
-    "cli-proxy-api-relogin-after-refresh-failure.patch": (
-        "tests.test_gateway_patches.PatchOmissionProbeTests.test_relogin_after_refresh_failure",
-    ),
 }
 
 
@@ -277,18 +274,18 @@ def gateway_check_selections():
 # as well, then attribute the prerequisite's rows by difference against the
 # dependent-only omission. Never infer edges from build failures: each edge
 # below is a hunk that no longer applies, or a file of the dependent that no
-# longer compiles, when only the prerequisite is omitted (8.0.42 omission
+# longer compiles, when only the prerequisite is omitted (8.0.44 omission
 # matrix); "hunk" is that hunk's start line, 0 for a file the dependent adds.
 PATCH_DEPENDENCIES = {
     "cli-proxy-api-context-error-normalization.patch": {
         "cli-proxy-api-codex-api-key-safety.patch": {
-            "file": "internal/runtime/executor/codex_executor_execute.go", "hunk": 140,
+            "file": "internal/runtime/executor/codex_executor_execute.go", "hunk": 143,
             "reason": "the key route's overflow is marked where 20 rebuilds its failures (also the stream)",
         },
     },
     "cli-proxy-api-log-reduction.patch": {
         "cli-proxy-api-openai-compat-keyed-safety.patch": {
-            "file": "sdk/cliproxy/auth/conductor_execution.go", "hunk": 1861,
+            "file": "sdk/cliproxy/auth/conductor_execution.go", "hunk": 1880,
             "reason": "the redacted key and account identities replace the masked branches beside the keyed "
                       "compat identity, and the patch updates that identity test's control",
         },
@@ -321,15 +318,16 @@ PATCH_DEPENDENCIES = {
     },
     "cli-proxy-api-codex-api-key-safety.patch": {
         "cli-proxy-api-credentialed-redirects.patch": {
-            "file": "internal/runtime/executor/codex_executor_execute.go", "hunk": 120,
-            "reason": "the transport-error hunks sit on the redirect-guarded request calls (also the stream)",
+            "file": "internal/runtime/executor/codex_key_safety.go", "hunk": 0,
+            "reason": "the key-safe transport error keeps the redirect refusal through internal/upstreamredirect "
+                      "(IsRefused)",
         },
         "cli-proxy-api-openai-compat-keyed-safety.patch": {
             "file": "internal/runtime/executor/codex_key_safety.go", "hunk": 0,
             "reason": "the fixed failure texts and the bounded error-body read come from internal/compatsafe",
         },
         "cli-proxy-api-codex-client-identity.patch": {
-            "file": "internal/runtime/executor/codex_executor_request.go", "hunk": 294,
+            "file": "internal/runtime/executor/codex_executor_request.go", "hunk": 453,
             "reason": "the plain-key Version default replaces the codex client Version default (also the websocket hunk)",
         },
     },
@@ -664,7 +662,7 @@ def validate_keyed_evidence(directory, *, core_only=False, gateway_only=False):
 
 
 # The one pinned vendor (go-modules) output every diagnostic reuses.
-PINNED_GO_MODULES = "/nix/store/05dj8cqi52mc6v99v903yvs98g79csp2-cli-proxy-api-8.0.42-go-modules"
+PINNED_GO_MODULES = "/nix/store/jwjc39cvkcrq2vgy2aclicydw4n70if8-cli-proxy-api-8.0.44-go-modules"
 
 
 def consumed_vendor(installable, run=subprocess.run) -> dict:
@@ -726,6 +724,41 @@ def templates(bundle) -> dict:
         raise AssertionError(f"fixture lacks template {adapter}/{auth}")
     return {"codex": pick(CODEX), "header": pick(CLAUDE, "header"),
             "bearer": pick(CLAUDE, "bearer"), "compat": pick(COMPAT)}
+
+
+# The shipped catalog's compression settings (cliproxy_static): downstream
+# response compression and Codex WebSocket compression are on when unset, so
+# the harness renders the frozen fixture with the shipped values; gateway
+# traffic then runs the way the product renders it.
+SHIPPED_COMPRESSION_KEYS = ("response-compression", "codex")
+
+
+def shipped_compression():
+    static = json.loads((RESOURCES_ROOT / "catalog/gateway.json").read_text())["gateway"]["cliproxy_static"]
+    return {key: copy.deepcopy(static[key]) for key in SHIPPED_COMPRESSION_KEYS}
+
+
+def shipped_gateway_doc(gateway_doc):
+    """A copy of ``gateway_doc`` (a fixture gateway document) carrying the
+    shipped compression settings."""
+    document = copy.deepcopy(gateway_doc)
+    document["gateway"]["cliproxy_static"].update(shipped_compression())
+    return document
+
+
+def with_shipped_compression(document):
+    """A finalized config document that states no compression setting gets
+    the shipped ones (a document rendered from another catalog, such as a
+    route test's own render); one that states any is returned unchanged, so
+    a control can render compression on explicitly."""
+    if any(key in document for key in SHIPPED_COMPRESSION_KEYS):
+        return document
+    revised = copy.deepcopy(document)
+    if revised["openai-compatibility"][-1]["name"] != render.SENTINEL_NAME:
+        raise AssertionError("a harness document must end with its render sentinel")
+    revised["openai-compatibility"].pop()
+    revised.update(shipped_compression())
+    return render.finalize_document(revised)
 
 
 def build_document(bundle, egress: int, gateway: int, home: Path, variant="main"):
@@ -817,7 +850,7 @@ def build_document(bundle, egress: int, gateway: int, home: Path, variant="main"
                              "context_tokens": 180000 + len(continuity) * 1000, "proxy_contract": contract}
         aliases[alias] = AliasInfo(provider_id, provider_id, CLAUDE, "claude", wire, contract, declared, "continuity")
 
-    gateway_doc = copy.deepcopy(bundle.docs["gateway"])
+    gateway_doc = shipped_gateway_doc(bundle.docs["gateway"])
     gateway_doc["gateway"]["base_url"] = f"http://127.0.0.1:{gateway}"
     document, available, unavailable, info = render.build_config_document(
         gateway_doc, providers, lines, home=home, gateway_token=FIXTURE_GATEWAY_TOKEN,
@@ -873,7 +906,7 @@ def build_census_document(bundle, egress: int, gateway: int, home: Path, lines: 
         keys[alias] = key
     if not synthetic:
         raise AssertionError("census requires at least one selected line")
-    gateway_doc = copy.deepcopy(bundle.docs["gateway"])
+    gateway_doc = shipped_gateway_doc(bundle.docs["gateway"])
     gateway_doc["gateway"]["base_url"] = f"http://127.0.0.1:{gateway}"
     document, available, unavailable, info = render.build_config_document(
         gateway_doc, {route: provider}, synthetic, home=home, gateway_token=FIXTURE_GATEWAY_TOKEN,
@@ -1898,6 +1931,7 @@ class GatewayHarness:
                 self.document, self.aliases, self.info = build_document(bundle, self.egress, self.port, self.home, variant)
             else:
                 self.document, self.aliases, self.info = build_census_document(bundle, self.egress, self.port, self.home, census_lines)
+            self.document = with_shipped_compression(self.document)
             if config_secret:
                 self.document["remote-management"]["secret-key"] = "dummy-gwtest-config-secret"
             self.config = self.home / ".config/charmer/config.yaml"

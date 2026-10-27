@@ -322,7 +322,7 @@ class UpstreamReviewTests(unittest.TestCase):
 
     def test_closed_shape(self):
         self.assertEqual(set(self.review), {"format", "upstream", "admission", "rendered_configuration",
-                                            "dependencies", "vulncheck", "fixes", "target"})
+                                            "dependencies", "vulncheck", "fixes", "target", "test_exclusions"})
         self.assertEqual(self.review["format"], 1)
         upstream = self.review["upstream"]
         self.assertEqual(set(upstream), {"repository", "pinned", "reviewed_through", "reviewed_on",
@@ -391,6 +391,52 @@ class UpstreamReviewTests(unittest.TestCase):
         self.assertIsInstance(target["cherry_picks"], list)
         self.assertTrue(all(isinstance(pick, str) and pick.strip() for pick in target["cherry_picks"]))
         self.assertTrue(target["rule_check"].strip())
+
+    EXCLUSION_KEYS = {"test", "package", "gate", "reason", "measured", "upstream", "re_check"}
+    # Gates whose skip exists only for recorded upstream test exclusions (the
+    # other skips leave out upstream tests of surfaces the patches refuse).
+    EXCLUSION_ONLY_GATES = {"executor"}
+
+    def check_test_exclusions(self, review, recipe):
+        gates = {gate["name"]: gate for gate in recipe["gates"]}
+        recorded = {}
+        for item in review["test_exclusions"]:
+            self.assertEqual(set(item), self.EXCLUSION_KEYS)
+            self.assertTrue(all(isinstance(value, str) and value.strip() for value in item.values()))
+            self.assertRegex(item["test"], r"^Test[A-Za-z0-9_]+$")
+            gate = gates[item["gate"]]
+            self.assertIn(item["package"], gate["packages"])
+            # A named skip only: the exact test name is one alternative of the
+            # gate's anchored skip, never a broader pattern.
+            match = re.fullmatch(r"\^\(([A-Za-z0-9_|]+)\)\$", gate.get("skip", ""))
+            self.assertIsNotNone(match, f"gate {gate['name']} has no anchored named skip")
+            self.assertIn(item["test"], match.group(1).split("|"))
+            self.assertNotIn(item["test"], gate["expected_tests"])
+            recorded.setdefault(item["gate"], []).append(item["test"])
+        for name in self.EXCLUSION_ONLY_GATES:
+            gate = gates[name]
+            if not gate.get("skip"):
+                self.assertNotIn(name, recorded)
+                continue
+            self.assertEqual(gate["skip"], "^(" + "|".join(recorded.get(name, [])) + ")$",
+                             f"gate {name} skips a test without a recorded exclusion")
+
+    def test_upstream_test_exclusions_are_recorded_named_skips(self):
+        """An upstream test the gates do not run (a diagnosed upstream flake)
+        is recorded with its diagnosis and re-check rule and excluded by name
+        from exactly its gate; re-checked at every re-pin."""
+        self.check_test_exclusions(self.review, self.recipe)
+        exclusion = self.review["test_exclusions"][0]
+        broadened = copy.deepcopy(self.recipe)
+        next(gate for gate in broadened["gates"] if gate["name"] == exclusion["gate"])["skip"] = (
+            "^(" + exclusion["test"][:-3] + ".*)$")
+        unrecorded = copy.deepcopy(self.review)
+        unrecorded["test_exclusions"] = []
+        renamed = copy.deepcopy(self.review)
+        renamed["test_exclusions"][0]["test"] = exclusion["test"] + "Other"
+        for review, recipe in ((self.review, broadened), (unrecorded, self.recipe), (renamed, self.recipe)):
+            with self.subTest(review=len(review["test_exclusions"])), self.assertRaises(AssertionError):
+                self.check_test_exclusions(review, recipe)
 
     def test_every_fix_has_one_disposition_and_a_reason(self):
         admitted = {entry["basename"] for entry in self.recipe["series"] if entry["admitted"]}

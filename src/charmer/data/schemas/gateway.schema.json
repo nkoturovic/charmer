@@ -115,7 +115,24 @@
                 "session-affinity-ttl": { "type": "string", "pattern": "^[0-9]+[smhd]$" }
               }
             },
-            "ws-auth": { "type": "boolean" }
+            "ws-auth": { "type": "boolean" },
+            "response-compression": {
+              "type": "object",
+              "required": ["enabled"],
+              "additionalProperties": false,
+              "properties": {
+                "enabled": { "const": false }
+              }
+            },
+            "codex": {
+              "type": "object",
+              "required": ["websocket-compression", "upstream-request-compression"],
+              "additionalProperties": false,
+              "properties": {
+                "websocket-compression": { "const": false },
+                "upstream-request-compression": { "const": false }
+              }
+            }
           }
         }
       }

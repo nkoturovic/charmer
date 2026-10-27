@@ -1,18 +1,18 @@
 diff --git a/internal/runtime/executor/codex_executor_execute.go b/internal/runtime/executor/codex_executor_execute.go
-index 389f39b5..1dd886f8 100644
+index c6e86d54..8be62218 100644
 --- a/internal/runtime/executor/codex_executor_execute.go
 +++ b/internal/runtime/executor/codex_executor_execute.go
 @@ -99,6 +99,7 @@ func (e *CodexExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, re
- 	applyCodexHeaders(httpReq, auth, apiKey, true, e.cfg, opts.Headers)
- 	applyCodexRoutingHint(ctx, httpReq.Header, auth, baseModel, upstreamBody, opts.Headers)
- 	applyModelHeaderOverrides(httpReq.Header, baseModel)
-+	dropCodexPlainKeySession(httpReq.Header, e.cfg, auth)
- 	var authID, authLabel, authType, authValue string
- 	if auth != nil {
- 		authID = auth.ID
-@@ -120,6 +121,9 @@ func (e *CodexExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, re
+ 		applyCodexHeaders(request, auth, apiKey, true, e.cfg, opts.Headers)
+ 		applyCodexRoutingHint(ctx, request.Header, auth, baseModel, upstreamBody, opts.Headers)
+ 		applyModelHeaderOverrides(request.Header, baseModel)
++		dropCodexPlainKeySession(request.Header, e.cfg, auth)
+ 		alignCodexContentEncoding(request)
+ 	}
+ 	prepareHeaders(httpReq)
+@@ -123,6 +124,9 @@ func (e *CodexExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, re
  	httpClient = reporter.TrackHTTPClient(httpClient)
- 	httpResp, err := upstreamredirect.Result(httpClient.Do(httpReq))
+ 	httpResp, err := doCodexRequest(httpClient, httpReq, upstreamBody, prepareHeaders, nil)
  	if err != nil {
 +		if codexKeySafe(auth) {
 +			err = codexKeyTransportError(err)
@@ -20,7 +20,7 @@ index 389f39b5..1dd886f8 100644
  		helps.RecordAPIResponseError(ctx, e.cfg, err)
  		return resp, err
  	}
-@@ -130,6 +134,14 @@ func (e *CodexExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, re
+@@ -133,6 +137,14 @@ func (e *CodexExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, re
  	}()
  	helps.RecordAPIResponseMetadata(ctx, e.cfg, httpResp.StatusCode, httpResp.Header.Clone())
  	if httpResp.StatusCode < 200 || httpResp.StatusCode >= 300 {
@@ -35,7 +35,7 @@ index 389f39b5..1dd886f8 100644
  		b, _ := io.ReadAll(httpResp.Body)
  		if errClearReplay := clearCodexReasoningReplayOnInvalidSignature(ctx, replayScope, httpResp.StatusCode, b); errClearReplay != nil {
  			return resp, errClearReplay
-@@ -140,7 +152,9 @@ func (e *CodexExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, re
+@@ -143,7 +155,9 @@ func (e *CodexExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, re
  		return resp, err
  	}
  	data, errRead := io.ReadAll(httpResp.Body)
@@ -46,7 +46,7 @@ index 389f39b5..1dd886f8 100644
  
  	events := helps.NewCodexSSEScanner(ctx, bytes.NewReader(data), len(data)+1)
  	outputItemsByIndex := make(map[int64][]byte)
-@@ -148,6 +162,9 @@ func (e *CodexExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, re
+@@ -151,6 +165,9 @@ func (e *CodexExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, re
  	sawOutputDelta := false
  	for events.Scan() {
  		line := events.Bytes()
@@ -56,7 +56,7 @@ index 389f39b5..1dd886f8 100644
  		if !bytes.HasPrefix(line, dataTag) {
  			continue
  		}
-@@ -165,6 +182,9 @@ func (e *CodexExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, re
+@@ -168,6 +185,9 @@ func (e *CodexExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, re
  			if errClearReplay := clearCodexReasoningReplayOnInvalidSignature(ctx, replayScope, streamErr.StatusCode(), terminalBody); errClearReplay != nil {
  				return resp, errClearReplay
  			}
@@ -66,7 +66,7 @@ index 389f39b5..1dd886f8 100644
  			err = streamErr
  			return resp, err
  		}
-@@ -218,6 +238,9 @@ func (e *CodexExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, re
+@@ -221,6 +241,9 @@ func (e *CodexExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, re
  			err = errCtx
  			return resp, err
  		}
@@ -76,17 +76,17 @@ index 389f39b5..1dd886f8 100644
  		helps.RecordAPIResponseError(ctx, e.cfg, errRead)
  	}
  	err = newCodexIncompleteStreamError()
-@@ -283,6 +306,7 @@ func (e *CodexExecutor) executeCompact(ctx context.Context, auth *cliproxyauth.A
- 	applyCodexHeaders(httpReq, auth, apiKey, false, e.cfg, opts.Headers)
- 	applyCodexRoutingHint(ctx, httpReq.Header, auth, baseModel, upstreamBody, opts.Headers)
- 	applyModelHeaderOverrides(httpReq.Header, baseModel)
-+	dropCodexPlainKeySession(httpReq.Header, e.cfg, auth)
- 	var authID, authLabel, authType, authValue string
- 	if auth != nil {
- 		authID = auth.ID
-@@ -304,6 +328,9 @@ func (e *CodexExecutor) executeCompact(ctx context.Context, auth *cliproxyauth.A
+@@ -287,6 +310,7 @@ func (e *CodexExecutor) executeCompact(ctx context.Context, auth *cliproxyauth.A
+ 		applyCodexHeaders(request, auth, apiKey, false, e.cfg, opts.Headers)
+ 		applyCodexRoutingHint(ctx, request.Header, auth, baseModel, upstreamBody, opts.Headers)
+ 		applyModelHeaderOverrides(request.Header, baseModel)
++		dropCodexPlainKeySession(request.Header, e.cfg, auth)
+ 		alignCodexContentEncoding(request)
+ 	}
+ 	prepareHeaders(httpReq)
+@@ -311,6 +335,9 @@ func (e *CodexExecutor) executeCompact(ctx context.Context, auth *cliproxyauth.A
  	httpClient = reporter.TrackHTTPClient(httpClient)
- 	httpResp, err := upstreamredirect.Result(httpClient.Do(httpReq))
+ 	httpResp, err := doCodexRequest(httpClient, httpReq, upstreamBody, prepareHeaders, nil)
  	if err != nil {
 +		if codexKeySafe(auth) {
 +			err = codexKeyTransportError(err)
@@ -94,7 +94,7 @@ index 389f39b5..1dd886f8 100644
  		helps.RecordAPIResponseError(ctx, e.cfg, err)
  		return resp, err
  	}
-@@ -314,6 +341,10 @@ func (e *CodexExecutor) executeCompact(ctx context.Context, auth *cliproxyauth.A
+@@ -321,6 +348,10 @@ func (e *CodexExecutor) executeCompact(ctx context.Context, auth *cliproxyauth.A
  	}()
  	helps.RecordAPIResponseMetadata(ctx, e.cfg, httpResp.StatusCode, httpResp.Header.Clone())
  	if httpResp.StatusCode < 200 || httpResp.StatusCode >= 300 {
@@ -105,7 +105,7 @@ index 389f39b5..1dd886f8 100644
  		b, _ := io.ReadAll(httpResp.Body)
  		helps.AppendAPIResponseChunk(ctx, e.cfg, b)
  		helps.LogWithRequestID(ctx).Debugf("request error, error status: %d, error message: %s", httpResp.StatusCode, helps.SummarizeErrorBody(httpResp.Header.Get("Content-Type"), b))
-@@ -322,6 +353,9 @@ func (e *CodexExecutor) executeCompact(ctx context.Context, auth *cliproxyauth.A
+@@ -329,6 +360,9 @@ func (e *CodexExecutor) executeCompact(ctx context.Context, auth *cliproxyauth.A
  	}
  	data, err := io.ReadAll(httpResp.Body)
  	if err != nil {
@@ -116,10 +116,10 @@ index 389f39b5..1dd886f8 100644
  		return resp, err
  	}
 diff --git a/internal/runtime/executor/codex_executor_request.go b/internal/runtime/executor/codex_executor_request.go
-index f30be5bd..703849a4 100644
+index 02fc4304..6fa9c371 100644
 --- a/internal/runtime/executor/codex_executor_request.go
 +++ b/internal/runtime/executor/codex_executor_request.go
-@@ -294,7 +294,7 @@ func applyCodexHeadersWithSIWC(r *http.Request, auth *cliproxyauth.Auth, useSIWC
+@@ -453,7 +453,7 @@ func applyCodexHeadersWithSIWC(r *http.Request, auth *cliproxyauth.Auth, useSIWC
  	if ginHeaders != nil && ginHeaders.Get("X-Codex-Beta-Features") != "" {
  		r.Header.Set("X-Codex-Beta-Features", ginHeaders.Get("X-Codex-Beta-Features"))
  	}
@@ -129,20 +129,20 @@ index f30be5bd..703849a4 100644
  	misc.EnsureHeader(r.Header, ginHeaders, "X-Codex-Turn-State", "")
  	misc.EnsureHeader(r.Header, ginHeaders, "X-Client-Request-Id", "")
 diff --git a/internal/runtime/executor/codex_executor_stream.go b/internal/runtime/executor/codex_executor_stream.go
-index 1910e4be..2cea0da8 100644
+index 35dbda91..80c314fc 100644
 --- a/internal/runtime/executor/codex_executor_stream.go
 +++ b/internal/runtime/executor/codex_executor_stream.go
 @@ -106,6 +106,7 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
- 	applyCodexHeaders(httpReq, auth, apiKey, true, e.cfg, opts.Headers)
- 	applyCodexRoutingHint(ctx, httpReq.Header, auth, baseModel, upstreamBody, opts.Headers)
- 	applyModelHeaderOverrides(httpReq.Header, baseModel)
-+	dropCodexPlainKeySession(httpReq.Header, e.cfg, auth)
- 	var authID, authLabel, authType, authValue string
- 	if auth != nil {
- 		authID = auth.ID
-@@ -128,11 +129,25 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
- 	httpClient = reporter.TrackHTTPClientRoundTripOnly(httpClient)
- 	httpResp, err := upstreamredirect.Result(httpClient.Do(httpReq))
+ 		applyCodexHeaders(request, auth, apiKey, true, e.cfg, opts.Headers)
+ 		applyCodexRoutingHint(ctx, request.Header, auth, baseModel, upstreamBody, opts.Headers)
+ 		applyModelHeaderOverrides(request.Header, baseModel)
++		dropCodexPlainKeySession(request.Header, e.cfg, auth)
+ 		alignCodexContentEncoding(request)
+ 	}
+ 	prepareHeaders(httpReq)
+@@ -143,11 +144,25 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
+ 	}
+ 	httpResp, err := doCodexRequest(httpClient, httpReq, upstreamBody, prepareHeaders, responseReady)
  	if err != nil {
 +		if codexKeySafe(auth) {
 +			err = codexKeyTransportError(err)
@@ -166,7 +166,7 @@ index 1910e4be..2cea0da8 100644
  		data, readErr := io.ReadAll(httpResp.Body)
  		if errClose := httpResp.Body.Close(); errClose != nil {
  			log.Errorf("codex executor: close response body error: %v", errClose)
-@@ -164,9 +179,11 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
+@@ -171,9 +186,11 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
  	exhaustedReason := ""
  
  	scanner := helps.NewCodexSSEScanner(ctx, httpResp.Body, 52_428_800) // 50MB
@@ -181,7 +181,7 @@ index 1910e4be..2cea0da8 100644
  	if buffering {
  		scanner.SetBudgetChecker(func(line []byte, heldLines, heldBytes int) bool {
  			timeSinceStart := nowCodexBootstrap().Sub(bootstrapStart)
-@@ -212,6 +229,9 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
+@@ -219,6 +236,9 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
  	if buffering {
  		for scanner.Scan() {
  			line := scanner.Bytes()
@@ -191,7 +191,7 @@ index 1910e4be..2cea0da8 100644
  			if budgetExhausted {
  				helps.LogWithRequestID(ctx).Debugf("codex executor: bootstrap %s exhausted after %d lines / %d bytes / %v, releasing stream without overload probing", exhaustedReason, bufferedFrames, bufferedBytes, nowCodexBootstrap().Sub(bootstrapStart))
  				initialChunks = nil
-@@ -238,6 +258,9 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
+@@ -245,6 +265,9 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
  						reporter.PublishFailure(ctx, errClearReplay)
  						return nil, errClearReplay
  					}
@@ -201,7 +201,7 @@ index 1910e4be..2cea0da8 100644
  					helps.RecordAPIResponseError(ctx, e.cfg, streamErr)
  					reporter.PublishFailure(ctx, streamErr)
  					if isCodexOverloadBootstrapFailure(terminalBody) {
-@@ -249,7 +272,7 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
+@@ -256,7 +279,7 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
  							// transparently retry on another credential, and report the status the
  							// upstream refused to put on the wire.
  							helps.LogWithRequestID(ctx).Debugf("codex executor: bootstrap overload rejection after %d buffered lines, failing over", bufferedFrames)
@@ -210,7 +210,7 @@ index 1910e4be..2cea0da8 100644
  						}
  						helps.LogWithRequestID(ctx).Debugf("codex executor: bootstrap overload rejection after %d lines / %v, time budget exhausted; delivering in-stream", bufferedFrames, timeSinceStart)
  					}
-@@ -349,6 +372,9 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
+@@ -356,6 +379,9 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
  				if ctx.Err() != nil {
  					return nil, ctx.Err()
  				}
@@ -220,7 +220,7 @@ index 1910e4be..2cea0da8 100644
  				helps.RecordAPIResponseError(ctx, e.cfg, errScan)
  				reporter.PublishFailure(ctx, errScan)
  				return nil, errScan
-@@ -415,6 +441,9 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
+@@ -422,6 +448,9 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
  		}()
  		for scanner.Scan() {
  			line := scanner.Bytes()
@@ -230,7 +230,7 @@ index 1910e4be..2cea0da8 100644
  			var translatedLine []byte
  			terminalSuccess := false
  
-@@ -436,6 +465,9 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
+@@ -443,6 +472,9 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
  						}
  						return
  					}
@@ -240,7 +240,7 @@ index 1910e4be..2cea0da8 100644
  					helps.RecordAPIResponseError(ctx, e.cfg, streamErr)
  					reporter.PublishFailure(ctx, streamErr)
  					select {
-@@ -500,6 +532,9 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
+@@ -507,6 +539,9 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
  			if ctx.Err() != nil {
  				return
  			}
@@ -650,13 +650,15 @@ index 00000000..132e08bd
 +}
 diff --git a/internal/runtime/executor/codex_key_safety_test.go b/internal/runtime/executor/codex_key_safety_test.go
 new file mode 100644
-index 00000000..6512501b
+index 00000000..3130f3d8
 --- /dev/null
 +++ b/internal/runtime/executor/codex_key_safety_test.go
-@@ -0,0 +1,400 @@
+@@ -0,0 +1,468 @@
 +package executor
 +
 +import (
++	"bytes"
++	"compress/gzip"
 +	"context"
 +	"errors"
 +	"fmt"
@@ -904,6 +906,72 @@ index 00000000..6512501b
 +			t.Fatalf("account failure changed: %v", err)
 +		}
 +	})
++}
++
++// A response the shared decoder cannot open (a gzip label on a plain body) is a
++// helper failure on the request path: for an API key it keeps only the trusted
++// transport identity, while an account keeps the decoder's own text.
++func TestCodexKeyDecoderFailureIsLocal(t *testing.T) {
++	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		_, _ = io.Copy(io.Discard, r.Body)
++		w.Header().Set("Content-Type", "text/event-stream")
++		w.Header().Set("Content-Encoding", "gzip")
++		_, _ = io.WriteString(w, "not a gzip stream for "+codexKeyTestSecret)
++	}))
++	defer server.Close()
++	for _, mode := range codexKeyTestModes {
++		t.Run(mode, func(t *testing.T) {
++			err := codexKeyTestRun(t, &config.Config{}, codexKeyTestAuth(server.URL, true), mode, nil)
++			if err == nil {
++				t.Fatal("no failure")
++			}
++			if strings.Contains(err.Error(), "decode upstream response") || strings.Contains(err.Error(), codexKeyTestSecret) {
++				t.Fatalf("decoder failure kept its text: %q", err.Error())
++			}
++			var transport compatsafe.TransportError
++			if !errors.As(err, &transport) {
++				t.Fatalf("failure %T (%q) is not a trusted transport identity", err, err.Error())
++			}
++		})
++	}
++	t.Run("account", func(t *testing.T) {
++		err := codexKeyTestRun(t, &config.Config{}, codexKeyTestAuth(server.URL, false), "execute", nil)
++		if err == nil || !strings.Contains(err.Error(), "decode upstream response") {
++			t.Fatalf("account failure changed: %v", err)
++		}
++	})
++}
++
++// A compressed non-2xx body is decoded before the bounded read: the key it
++// quotes never reaches the failure text, which is the fixed envelope of its kind.
++func TestCodexKeyCompressedFailureBodyIsLocal(t *testing.T) {
++	body := `{"error":{"message":"Incorrect API key provided: ` + codexKeyTestSecret + `","type":"invalid_request_error","code":"invalid_api_key"}}`
++	var compressed bytes.Buffer
++	writer := gzip.NewWriter(&compressed)
++	_, _ = writer.Write([]byte(body))
++	_ = writer.Close()
++	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		_, _ = io.Copy(io.Discard, r.Body)
++		w.Header().Set("Content-Type", "application/json")
++		w.Header().Set("Content-Encoding", "gzip")
++		w.WriteHeader(http.StatusUnauthorized)
++		_, _ = w.Write(compressed.Bytes())
++	}))
++	defer server.Close()
++	for _, mode := range codexKeyTestModes {
++		t.Run(mode, func(t *testing.T) {
++			err := codexKeyTestRun(t, &config.Config{}, codexKeyTestAuth(server.URL, true), mode, nil)
++			if err == nil {
++				t.Fatal("no failure")
++			}
++			if got := codexKeyTestStatus(t, err); got != http.StatusUnauthorized {
++				t.Fatalf("status = %d, want 401", got)
++			}
++			if err.Error() != compatsafe.KindAuthentication.Body() {
++				t.Fatalf("failure text = %q, want the fixed authentication envelope", err.Error())
++			}
++		})
++	}
 +}
 +
 +type codexKeyTestReader struct {

@@ -527,7 +527,8 @@ class _OAuthTLSUpstream:
     exactly ``api.anthropic.com:443`` that terminates TLS with a fixture
     certificate (the gateway trusts it through ``SSL_CERT_FILE``) and serves
     canned native replies. Headers and bodies stay in memory only; each hit
-    is ``(headers, raw, route)``.
+    is ``(headers, raw, route)``. A ``respond`` reply may add a fourth item,
+    extra response headers.
 
     ``force_agent`` (one-shot) answers the next request offering the Agent
     tool with an Agent call for that agent type; ``respond`` replaces the
@@ -573,9 +574,11 @@ class _OAuthTLSUpstream:
                     return
                 self._send(*native_reply(body, [{"type": "text", "text": "PROBE-OK"}], "end_turn"))
 
-            def _send(self, status, data, content_type):
+            def _send(self, status, data, content_type, headers=None):
                 self.send_response(status)
                 self.send_header("Content-Type", content_type)
+                for name, value in (headers or {}).items():
+                    self.send_header(name, value)
                 self.send_header("Content-Length", str(len(data)))
                 self.end_headers()
                 self.wfile.write(data)

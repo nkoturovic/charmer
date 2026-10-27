@@ -274,6 +274,49 @@ class GoldenTests(unittest.TestCase):
                         validate.validate(gateway, raw["schemas"]["gateway"], "$")
                     )
 
+    def test_shipped_render_states_compression_off(self) -> None:
+        # Downstream response compression (SSE included) and Codex WebSocket
+        # permessage-deflate are on when their keys are unset; the shipped
+        # catalog states both off and keeps Codex request compression off.
+        # The schema admits only these values. The frozen fixture predates the
+        # keys, so its render (and the goldens) carries neither.
+        bundle = catalog.load_catalog(SHIPPED_ROOT)
+        document = render.build_config_document(
+            bundle.docs["gateway"], bundle.providers, bundle.lines,
+            home=Path("/home/test"), gateway_tokens=("a" * 64,),
+            resolve_secret=lambda _: "dummy-secret", continuity={},
+        )[0]
+        self.assertEqual(document["response-compression"], {"enabled": False})
+        self.assertEqual(document["codex"], {"websocket-compression": False, "upstream-request-compression": False})
+        yaml = render.render_config(
+            bundle.docs["gateway"], bundle.docs["providers"]["providers"], bundle.lines,
+            home=Path("/home/test"), gateway_token="a" * 64, resolve_secret=lambda _: "dummy-secret",
+            continuity={},
+        ).yaml
+        self.assertIn("response-compression:\n  enabled: false\n", yaml)
+        self.assertIn("codex:\n  websocket-compression: false\n  upstream-request-compression: false\n", yaml)
+        fixture = render.build_config_document(
+            catalog.load_catalog(CATALOG_ROOT).docs["gateway"], catalog.load_catalog(CATALOG_ROOT).providers,
+            catalog.load_catalog(CATALOG_ROOT).lines, home=Path("/home/test"), gateway_tokens=("a" * 64,),
+            resolve_secret=lambda _: "dummy-kimi-key", continuity=_seed(),
+        )[0]
+        self.assertNotIn("response-compression", fixture)
+        self.assertNotIn("codex", fixture)
+        raw = catalog.load_raw(SHIPPED_ROOT)
+        from charmer import validate
+
+        for key, bad in (("response-compression", {"enabled": True}), ("response-compression", {}),
+                         ("response-compression", {"enabled": False, "min-bytes": 1024}),
+                         ("codex", {"websocket-compression": True, "upstream-request-compression": False}),
+                         ("codex", {"websocket-compression": False, "upstream-request-compression": True}),
+                         ("codex", {"websocket-compression": False}),
+                         ("codex", {"websocket-compression": False, "upstream-request-compression": False,
+                                    "disable-codex-cloaking": True})):
+            with self.subTest(key=key, bad=bad):
+                gateway = copy.deepcopy(raw["docs"]["gateway"])
+                gateway["gateway"]["cliproxy_static"][key] = bad
+                self.assertTrue(validate.validate(gateway, raw["schemas"]["gateway"], "$"))
+
     def test_retained_and_removed_aliases(self) -> None:
         yaml = _render().yaml
         for retained in (

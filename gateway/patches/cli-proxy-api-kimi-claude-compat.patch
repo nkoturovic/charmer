@@ -77,10 +77,10 @@ index 00000000..3db8da4b
 +	}
 +}
 diff --git a/internal/config/config_types.go b/internal/config/config_types.go
-index fbd849f0..a0d55c3f 100644
+index 8a7f1030..e9b57471 100644
 --- a/internal/config/config_types.go
 +++ b/internal/config/config_types.go
-@@ -612,6 +612,10 @@ type ClaudeKey struct {
+@@ -653,6 +653,10 @@ type ClaudeKey struct {
  	// If empty, the default Claude API URL will be used.
  	BaseURL string `yaml:"base-url" json:"base-url"`
  
@@ -91,7 +91,7 @@ index fbd849f0..a0d55c3f 100644
  	// ProxyURL overrides the global proxy setting for this API key if provided.
  	ProxyURL string `yaml:"proxy-url" json:"proxy-url"`
  
-@@ -698,16 +702,28 @@ type ClaudeModel struct {
+@@ -739,16 +743,28 @@ type ClaudeModel struct {
  
  	// Thinking configures the thinking/reasoning capability for this model.
  	Thinking *registry.ThinkingSupport `yaml:"thinking,omitempty" json:"thinking,omitempty"`
@@ -125,10 +125,10 @@ index fbd849f0..a0d55c3f 100644
  func (m ClaudeModel) GetThinking() *registry.ThinkingSupport { return m.Thinking }
  
 diff --git a/internal/runtime/executor/claude_executor.go b/internal/runtime/executor/claude_executor.go
-index a077da0c..e6bb8dca 100644
+index c8029732..bf665fb6 100644
 --- a/internal/runtime/executor/claude_executor.go
 +++ b/internal/runtime/executor/claude_executor.go
-@@ -368,9 +368,10 @@ func (e *ClaudeExecutor) PrepareRequest(req *http.Request, auth *cliproxyauth.Au
+@@ -371,9 +371,10 @@ func (e *ClaudeExecutor) PrepareRequest(req *http.Request, auth *cliproxyauth.Au
  	}
  	apiKey, _ := claudeCreds(auth)
  	useAPIKey := auth != nil && (auth.AuthKind() == cliproxyauth.AuthKindAPIKey || (auth.Attributes != nil && strings.TrimSpace(auth.Attributes["api_key"]) != ""))
@@ -140,7 +140,7 @@ index a077da0c..e6bb8dca 100644
  			req.Header.Del("Authorization")
  			req.Header.Set("x-api-key", apiKey)
  		} else {
-@@ -386,9 +387,28 @@ func (e *ClaudeExecutor) PrepareRequest(req *http.Request, auth *cliproxyauth.Au
+@@ -389,9 +390,28 @@ func (e *ClaudeExecutor) PrepareRequest(req *http.Request, auth *cliproxyauth.Au
  		attrs = auth.Attributes
  	}
  	util.ApplyCustomHeadersFromAttrs(req, attrs)
@@ -403,10 +403,10 @@ index 00000000..00607cd2
 +	}
 +}
 diff --git a/internal/runtime/executor/claude_executor_request.go b/internal/runtime/executor/claude_executor_request.go
-index e5cf769c..f9225860 100644
+index b0541229..797f05ac 100644
 --- a/internal/runtime/executor/claude_executor_request.go
 +++ b/internal/runtime/executor/claude_executor_request.go
-@@ -1245,8 +1245,9 @@ func applyClaudeHeadersWithNativeProfile(
+@@ -1090,8 +1090,9 @@ func applyClaudeHeadersWithNativeProfile(
  	preserveCallerFingerprint := !applyCLIFingerprint && !confirmedClaudeCode
  	useOAuthBetas := fp.UseOAuthBetas
  	isAnthropicBase := isAnthropicUpstreamURL(r.URL)
@@ -417,7 +417,7 @@ index e5cf769c..f9225860 100644
  			r.Header.Del("Authorization")
  			r.Header.Set("x-api-key", apiKey)
  		} else {
-@@ -1481,6 +1482,7 @@ func applyClaudeHeadersWithNativeProfile(
+@@ -1326,6 +1327,7 @@ func applyClaudeHeadersWithNativeProfile(
  			attrs = auth.Attributes
  		}
  		util.ApplyCustomHeadersFromAttrs(r, attrs, incomingHeaders)
@@ -425,7 +425,7 @@ index e5cf769c..f9225860 100644
  		// Scope the custom-header escape hatch exactly like the CLI path below, which
  		// claws overrides back on api.anthropic.com (an operator Anthropic-Beta reaches
  		// a first-party API that rejects unknown values) and on any streaming request
-@@ -1647,6 +1649,7 @@ func applyClaudeHeadersWithNativeProfile(
+@@ -1492,6 +1494,7 @@ func applyClaudeHeadersWithNativeProfile(
  		attrs = auth.Attributes
  	}
  	util.ApplyCustomHeadersFromAttrs(r, attrs, incomingHeaders)
