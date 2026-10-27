@@ -1851,7 +1851,7 @@ def _settings_radar(runtime: runtime_mod.Runtime, records: list[dict[str, Any]])
                     )
                 elif key == compiler.AUTO_COMPACT_ENV:
                     # Every managed scope states it "0" in its flag settings,
-                    # which outrank this layer (D245); DISABLE_COMPACT stays
+                    # which outrank this layer; DISABLE_COMPACT stays
                     # a policy key (the pinned client lets nothing undo it).
                     if str(env[key]).strip().lower() not in ("", "0", "false", "no", "off"):
                         info.append(f"{path}: env.{key}: managed sessions re-enable compaction; plain claude "

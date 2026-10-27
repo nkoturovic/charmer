@@ -295,8 +295,8 @@ def lineup_default_env(lead_selector: str, bound: Iterable[tuple[str, str]]) -> 
     even to a model outside the fence named in the user's settings env (the
     one layer a launch does not clear); the flag settings env outranks that
     layer. So the variable is the ``haiku`` line's selector when the lineup
-    binds it, else the lead's selector (D244). ``DISABLE_AUTO_COMPACT`` is
-    ``"0"``: a user's ``1`` never stops the managed compaction (D245).
+    binds it, else the lead's selector. ``DISABLE_AUTO_COMPACT`` is ``"0"``:
+    a user's ``1`` never stops the managed compaction.
     """
 
     haiku = sorted({selector for key, selector in bound if key == HAIKU_LINE})

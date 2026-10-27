@@ -538,7 +538,7 @@ class CustomLeadTests(unittest.TestCase):
         plan = _compile(lineup, lcat, eff, bundle)
         env = plan.settings["env"]
         # No family default; the client's background requests stay on the
-        # lead (D244).
+        # lead.
         self.assertEqual({key: env[key] for key in env if key.startswith("ANTHROPIC_DEFAULT_")},
                          {compiler.HAIKU_DEFAULT_ENV: lcat.lines["my-model"]["selector"]})
         self.assertEqual(plan.settings["availableModels"], [lcat.lines["my-model"]["selector"]])
@@ -774,7 +774,7 @@ class SettingsTests(unittest.TestCase):
         expected = compiler.family_default_env(offered, dict(lcat.providers))
         env = plan.settings["env"]
         # Plus the client's background requests on the lead: the lineup
-        # binds no haiku line (D244).
+        # binds no haiku line.
         self.assertNotIn(compiler.HAIKU_LINE, {agent.binding.key for agent in lineup.agents.values()})
         self.assertEqual({k: env[k] for k in env if k.startswith("ANTHROPIC_DEFAULT_")},
                          {**expected, compiler.HAIKU_DEFAULT_ENV: lineup.lead.binding.selector})
@@ -1808,7 +1808,7 @@ class GenerationClassTests(unittest.TestCase):
         assert_generation_class(self, bundle, "sonnet")
 
 
-# --------------------------------------------- lineup defaults (D244, D245)
+# ---------------------------------------------------------- lineup defaults
 
 
 def _settings_env(live: Path) -> dict[str, Any]:

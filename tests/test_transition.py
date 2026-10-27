@@ -380,7 +380,7 @@ class FeedbackPreferencePlanTests(_Case):
 @uses_shipped_catalog
 class BackgroundModelPlanTests(V4Case):
     """ANTHROPIC_DEFAULT_HAIKU_MODEL follows the lineup's haiku binding
-    (D244), and the settings env is a launch-time item: a live bind or unbind
+    and the settings env is a launch-time item: a live bind or unbind
     keeps the running value and moves it at the next resume. That is its own
     reason, never "catalog changed"; any other launch-item difference keeps
     the existing texts."""

@@ -1,4 +1,4 @@
-"""Exact-client checks of the lineup defaults the compile states (D244, D245).
+"""Exact-client checks of the lineup defaults the compile states.
 
 Real pinned client through the probe harness (network-hermetic, loopback fake
 provider, fixture homes; zero provider calls), like
@@ -123,7 +123,7 @@ class HaikuFenceProbe(client_models._SpikeTestCase):
                     self.assertEqual(observed[label][case], [_wire(target)], (label, case))
                     self.assertLessEqual(set(observed[label][case]), wires, (label, case))
         # Without the compiled value the user's model outside the fence gets
-        # them (the D244 gap); the project layer, measured:
+        # them (what the compile closes); the project layer, measured:
         self.assertEqual(observed["opus"]["user-uncompiled"], [_MARKER])
         self.assertEqual(observed["opus"]["project-uncompiled"], [_MARKER])
         detail = " ".join(f"{label}:{case}->{'/'.join(models)}" for label, cases in observed.items()

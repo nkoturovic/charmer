@@ -919,7 +919,7 @@ class SettingsRadarTests(_DoctorCase):
         self.assertEqual(problems, [])
         text = "\n".join(attention)
         # Every managed scope turns compaction back on over a user's
-        # DISABLE_AUTO_COMPACT (D245); nothing undoes DISABLE_COMPACT.
+        # DISABLE_AUTO_COMPACT; nothing undoes DISABLE_COMPACT.
         self.assertNotIn("env.DISABLE_AUTO_COMPACT", text)
         self.assertIn(f"{user}: env.DISABLE_AUTO_COMPACT: managed sessions re-enable compaction; plain claude does "
                       "not compact", info)

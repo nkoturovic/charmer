@@ -1195,7 +1195,7 @@ class OneMillionSuffixProbe(_SpikeTestCase):
 
 class HaikuNativeProbe(_SpikeTestCase):
     """The client-native Haiku, measured without the compile's
-    ``ANTHROPIC_DEFAULT_HAIKU_MODEL`` (D244 states it; the compiled value is
+    ``ANTHROPIC_DEFAULT_HAIKU_MODEL`` (the compile states it; the compiled value is
     checked in ``tests/test_compiler_env_probe.py``).
 
     Measured: the ``haiku`` alias and ``ANTHROPIC_DEFAULT_HAIKU_MODEL`` on the
