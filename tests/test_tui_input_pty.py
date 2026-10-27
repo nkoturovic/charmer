@@ -274,10 +274,10 @@ class CardKeyTests(_InputCase):
         child = self.child("charmer-pty-field-")
         child.read_until(CARD_STATUS, FIXTURE_TIMEOUT)
         self.press(child, b"o", "settings — global".encode())
-        # The kept environment row: End reaches the last row, then up past
-        # the Gateway and Providers rows.
+        # The kept environment row: End reaches Import apply, then up past
+        # the three Portability rows, Gateway and the two Providers rows.
         child.send(END_KEY)
-        for _ in range(3):
+        for _ in range(6):
             child.send(b"k")
         self.press(child, b"\r", "kept environment".encode())
         child.send(b"MCP?")

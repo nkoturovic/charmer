@@ -14,7 +14,6 @@ from pathlib import Path
 from typing import Any, Callable
 
 from charmer import errors, paths, tui
-from charmer.cli.commands import portability as commands
 from charmer.cli.onboarding import Answers
 from charmer.cli.screens import common
 
@@ -24,6 +23,8 @@ TITLES = {"export": "Export configuration", "import-preview": "Import preview", 
 def run(runtime: Any, win: Any, palette: tui.Palette, action: str, *,
         background: Callable[[Any], None] | None = None) -> None:
     """Choose a file, then use the CLI service without replacing its guards."""
+
+    from charmer.cli.commands import portability as commands
 
     exporting = action == "export"
     title = TITLES[action]
