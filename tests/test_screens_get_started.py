@@ -325,6 +325,84 @@ class PresetPickerTests(GetStartedCase):
         self.assertIn(name, self.ledger().routes)
         self.assertTrue(screen.message.startswith(f"Added {name}"), screen.message)
 
+    def test_enter_on_a_connected_preset_resumes_adding_its_first_model(self) -> None:
+        name = self.first("anthropic-compatible")
+        self.existing_instance(name, name, "preset-resume-dummy")
+        route = dict(self.ledger().routes[name])
+        screen = self.screen()
+        keys = ["a", *self.to_entry(f"own:{name}"), ENTER,
+                HOME, DOWN, ENTER,  # by hand, no listing
+                *"fixture-chat", ENTER, ENTER, ENTER,  # wire, default display, derived key
+                *"200000", ENTER, ENTER, *"https://docs.example/models 2026-10", ENTER,
+                ENTER, ENTER, ENTER, ENTER, ENTER, ENTER,  # family, efforts, default, output, uses, roles
+                ENTER, ESC,  # declare, result
+                ENTER,  # skip the optional badge
+                ESC, ESC]
+        _result, win = self.run_screen(screen, keys)
+        frames = "\n".join(win.frames)
+        self.assertIn(cli_text.ADD_MODELS_TITLE.format(id=name), frames,
+                      "Enter on a connected provider with no models must resume adding models")
+        self.assertIn("Enter finishes connecting or adds its first model", frames)
+        self.assertIn("Declaration preview", frames)
+        self.assertIn(cli_text.ADMIT_NOW_TITLE.format(key="custom-fixture-chat"), frames)
+        line = self.runtime.lineup_catalog().lines["custom-fixture-chat"]
+        self.assertEqual((line["provider"], line["wire_model"]), (name, "fixture-chat"))
+        self.assertEqual(line["default_effort"], "high")
+        self.assertEqual(line["context"]["declared_tokens"], 200000)
+        self.assertEqual(self.ledger().routes[name], route)
+        self.assertNotIn("custom-fixture-chat", self.ledger().admissions)
+        self.assertEqual(self.secret(self.presets[name].secret_name), "preset-resume-dummy")
+        self.assertNotIn("preset-resume-dummy", frames)
+        self.assertEqual(self.calls, [])
+
+    def test_leaving_a_resumed_model_offer_changes_nothing(self) -> None:
+        name = self.first("anthropic-compatible")
+        self.existing_instance(name, name, "preset-resume-dummy")
+        before = self.state_bytes()
+        screen = self.screen()
+        _result, win = self.run_screen(screen, ["a", *self.to_entry(f"own:{name}"), ENTER, ESC, ESC, ESC])
+        self.assertIn(cli_text.ADD_MODELS_TITLE.format(id=name), "\n".join(win.frames))
+        self.assertEqual(self.state_bytes(), before)
+        self.assertEqual(screen.message, cli_text.NO_MODELS_LATER.format(id=name))
+        self.assertEqual(self.calls, [])
+
+    def test_a_connected_provider_with_models_names_the_profile_step(self) -> None:
+        name = self.first("anthropic-compatible")
+        self.existing_instance(name, name, "preset-resume-dummy")
+        code, _out, err = self.op(["models", "add", name, "fixture-chat", "--context", "200000",
+                                   "--source", "docs", "--source-ref", "https://docs.example/models 2026-10",
+                                   "--as", "custom-fixture-chat"])
+        self.assertEqual(code, 0, err)
+        before = self.state_bytes()
+        screen = self.screen()
+        _result, win = self.run_screen(screen, ["a", *self.to_entry(f"own:{name}"), ENTER, ESC, ESC])
+        self.assertEqual(screen.message, "Connected — choose your profile in Get started.")
+        self.assertIn(screen.message, win.frames[-1])
+        self.assertNotIn(cli_text.ADD_MODELS_TITLE.format(id=name), "\n".join(win.frames))
+        self.assertEqual(self.state_bytes(), before)
+        self.assertEqual(self.calls, [])
+
+    def test_resumed_model_entry_keeps_the_human_and_read_only_guards(self) -> None:
+        from charmer.cli.screens.providers import ConnectActions
+
+        name = self.first("anthropic-compatible")
+        self.existing_instance(name, name, "preset-resume-dummy")
+        before = self.state_bytes()
+        cases = ((False, {}, True, model.READ_ONLY_SETUP), (True, {"CLAUDECODE": ""}, True, "outside Claude Code"),
+                 (True, {}, False, "terminal"))
+        for writable, env, tty, refusal in cases:
+            with self.subTest(writable=writable, env=env, tty=tty), \
+                    mock.patch.object(self.runtime, "allow_state_writes", writable), \
+                    mock.patch.dict(self.runtime.environ, env), \
+                    mock.patch.object(consent, "stdio_ttys", return_value=tty), \
+                    mock.patch.object(ConnectActions, "continue_to_models") as models:
+                outcome = ConnectActions(self.runtime, FakeWindow([]), tui.MONO_PALETTE).own(name)
+            self.assertIsNotNone(outcome)
+            self.assertEqual(outcome.role, "warn")
+            self.assertIn(refusal, outcome.text)
+            models.assert_not_called()
+            self.assertEqual(self.state_bytes(), before)
+
     def existing_instance(self, name: str, provider_id: str, key: str) -> None:
         """An existing, active provider from preset ``name`` (declared, approved, its key saved)."""
 

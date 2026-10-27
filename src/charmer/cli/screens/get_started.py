@@ -251,6 +251,9 @@ class _ProviderPicker:
         if not entry.available:
             return cli_text.PICKER_DETAIL["unavailable"].format(note=entry.note or entry.state_text)
         display = entry.group_title
+        if entry.kind == "own":
+            return ("A provider you added. Enter finishes connecting or adds its first model. "
+                    "Return to the launch card for G → E to edit it.")
         if entry.kind == "api-key":
             from charmer.setup import texts
 
