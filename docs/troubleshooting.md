@@ -249,8 +249,8 @@ More: [guides/sessions.md](guides/sessions.md).
 | an HTTP MCP tool call was interrupted | Claude Code retries after a closed connection only when the server marks the tool read-only or idempotent; a state-changing tool marked idempotent can still run twice. An interrupted call may have run even when it reports an error: check the external system before asking again ([client limits](reference/compatibility.md#deferred-client-fixes)) |
 | an MCP tool, WebFetch, WebSearch or SendMessage is missing, or ToolSearch runs first | expected: behind the gateway some tools are listed by name and fetched with ToolSearch when needed; this is not a missing permission or installation |
 | a provider refusal takes a while to appear, or the same refused request appears six times | Claude Code 2.1.311 resends an unrecognised refusal up to five times before showing it; assess the final error before retrying ([client limits](reference/compatibility.md#verified-behavior-and-limits)) |
-| a Codex capacity refusal (429) has no `Retry-After` delay | on both OpenAI routes the refusal reaches Claude Code without the provider's delay; wait and retry, or switch route |
-| a refusal is retried despite the provider's retry headers | the gateway does not forward a provider's `x-should-retry` or `Retry-After` on gateway routes, and the client applies its own retry rules; assess the final error before retrying |
+| a Codex capacity refusal (429) asks for a long wait | on both OpenAI routes the refusal carries the provider's `Retry-After` delay; wait for it, or switch route |
+| a refusal is retried despite the provider's retry headers | the gateway does not forward a provider's `x-should-retry`; on Claude routes it answers a 429 or 529 with a `Retry-After` of its own instead of the provider's, and the client applies its own retry rules; assess the final error before retrying |
 | doctor reports `DISABLE_AUTO_COMPACT` as Info | managed sessions re-enable compaction despite this user setting; plain `claude` does not compact. No managed-session remedy is needed |
 | managed compaction is disabled; doctor reports `DISABLE_COMPACT` as Attention | remove `DISABLE_COMPACT` from your Claude Code user settings env, then `/exit` and resume with `charmer -r <id>`; the compiled setting cannot override it on 2.1.311 |
 | an installed mod changes an agent's model | an `agent.spawn` mod can choose another lineup model; a `settings.read` mod can also widen the allowed model list. Disable the mod if the compiled lineup must hold; charmer's fence does not constrain user-installed code ([client limits](reference/compatibility.md#verified-behavior-and-limits)) |
@@ -274,7 +274,7 @@ See [client fixes](reference/compatibility.md#deferred-client-fixes).
 
 ### Late-stream completion limit
 
-Re-measured on 2026-10-27 with Claude Code 2.1.311 and CLIProxyAPI 8.0.44,
+Re-measured on 2026-10-27 with Claude Code 2.1.311 and CLIProxyAPI 8.0.45,
 a stream missing `message_stop` after completed content and a terminal
 `message_delta` can make the client report success without recovery, despite
 the gateway's SSE error. A successful client result is not proof of complete

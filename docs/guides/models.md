@@ -226,12 +226,14 @@ transport must still support the route; there is no implicit fallback.
 
 Terra is not a shipped line. With OpenAI connected through your ChatGPT
 account, declare it with a key of your own, then optionally qualify it in a
-terminal outside Claude Code. The context and source below are from the
-model's documentation checked on 2026-10-27; recheck them before declaring.
+terminal outside Claude Code. The context below is the ChatGPT account's: the
+gateway's model registry (CLIProxyAPI 8.0.45) lists Terra there with
+500,000 tokens; the 1,050,000 in OpenAI's API documentation applies to the
+API-key route. Recheck it before declaring.
 The five efforts use the account route's reasoning-effort contracts:
 
 ```bash
-charmer models add openai gpt-6.1-terra --as custom-terra --context 1050000 --source docs --source-ref "https://developers.openai.com/api/docs/models/gpt-6.1-terra, 2026-10-27" --effort low=reasoning-effort-low --effort medium=reasoning-effort-medium --effort high=reasoning-effort-high --effort xhigh=reasoning-effort-xhigh --effort max=reasoning-effort-max --default-effort medium --display "GPT-6.1 Terra"
+charmer models add openai gpt-6.1-terra --as custom-terra --context 500000 --source registry --source-ref "https://github.com/router-for-me/CLIProxyAPI/blob/v8.0.45/internal/registry/models/models.json, 2026-10-27" --effort low=reasoning-effort-low --effort medium=reasoning-effort-medium --effort high=reasoning-effort-high --effort xhigh=reasoning-effort-xhigh --effort max=reasoning-effort-max --default-effort medium --display "GPT-6.1 Terra"
 charmer models qualify custom-terra --agents
 ```
 

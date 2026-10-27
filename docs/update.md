@@ -45,7 +45,7 @@ is active, a switch that changes the gateway waits.
 
 ### Updating from 2.2.1
 
-charmer 2.3.0 moves the gateway to CLIProxyAPI 8.0.44 with 27 local patches
+charmer 2.3.0 moves the gateway to CLIProxyAPI 8.0.45 with 27 local patches
 and Claude Code from 2.1.310 to 2.1.311. Catalog 42 ships with this release;
 Go 1.27.3 and the bundled CPython 3.15.2 stay the same. Updating switches
 the installation, not the running gateway. Between turns, in a plain

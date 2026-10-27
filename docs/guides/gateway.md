@@ -281,7 +281,7 @@ gateway accepts the old and the new key for about five minutes, then only
 the new one. It asks first, verifies every reload, and resumes if
 interrupted. The key never appears in output.
 
-CLIProxyAPI 8.0.44 checks the key again on every Responses WebSocket turn:
+CLIProxyAPI 8.0.45 checks the key again on every Responses WebSocket turn:
 during the rotation overlap an open socket keeps working, and once the old
 key is retired the next turn on that socket is refused (401) without
 reaching the provider. Reconnect with the new key after

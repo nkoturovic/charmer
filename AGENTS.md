@@ -109,7 +109,7 @@ Meta's Wonder contributor id answered 404 on 2026-10-27. Terra is not a
 shipped line; the add-and-qualify recipes and evidence limits live in
 [the models guide](docs/guides/models.md).
 The trusted catalog pins Claude
-**2.1.311** as the verified binary. The gateway is **CLIProxyAPI 8.0.44**
+**2.1.311** as the verified binary. The gateway is **CLIProxyAPI 8.0.45**
 (pinned in `gateway/UPSTREAM.json` and built by `tools/build.py` with the official
 Go 1.27.3 toolchain, `CGO_ENABLED=0`; see "Gateway build" in §4) with
 twenty-seven local patches (admission ids 1–10, 12, 13, 15–23, 26–29,
@@ -423,7 +423,7 @@ Profile lineups and direct lineups, one compile path:
    env; the latter is scrubbed from the launch environment and reserved in
    lead env, so an inherited `capacity` cannot narrow recovery.
    Earlier-cut recovery remains a required gate. With client 2.1.311 and the
-   tested 8.0.44 gateway candidate, missing `message_stop` after completed
+   tested 8.0.45 gateway candidate, missing `message_stop` after completed
    content and terminal `message_delta` can instead produce client
    false-success without recovery, despite the gateway’s SSE error. This
    disclosed known negative is not recovery or proof of harmlessness; see
@@ -447,7 +447,7 @@ Profile lineups and direct lineups, one compile path:
     writes (`~/.claude/agents`, `~/.claude/settings.json`, gateway env).
 11. **Non-Claude outbound cache-retention boundary.** The gateway
     patch `cli-proxy-api-non-claude-cache-retention.patch` (pinned
-    CLIProxyAPI 8.0.44; derived over the split executor files)
+    CLIProxyAPI 8.0.45; derived over the split executor files)
     enforces that `prompt_cache_retention` — the OpenAI Responses-platform
     cache TTL control — is stripped at the **final outbound boundary** for
     every non-Claude route. Claude Code 2.1.311 does not send the
@@ -1384,10 +1384,16 @@ uses your own HOME and environment.
   check); `--validate-evidence` stays the private host/build check.
   Never claim a cached build is a fresh execution.
   The executor gate excludes exactly
-  `TestCodexWebsockets_KeepalivePingDuringUpload_Sessionless`: its fixture
+  `TestCodexWebsockets_KeepalivePingDuringUpload_Sessionless` (its fixture
   closes the socket without reading the held request, a flake reproduced
-  on pristine and patched 8.0.44. `gateway/upstream-review.json`
-  `test_exclusions` records it; every other executor test still runs.
+  on pristine and patched 8.0.45) and
+  `TestDevinApplyPatchRejectionCarriesLogDiagnostic` (it expects Go 1.26's
+  JSON error text and fails on the pristine tag with Go 1.27.3). The
+  management-allowlist gate excludes `TestModelsMultiAgentClientConfigAndReload`
+  (fails on the pristine tag, upstream #7059) and
+  `TestCaptureRequestInfoDoesNotDecodeASingleSegmentBomb` (its fixture depends
+  on the zstd encoder's window choice). `gateway/upstream-review.json`
+  `test_exclusions` records each; every other test in those gates still runs.
 - **Budget and diagnostic lanes:** the ordinary gateway lanes target ≤20 s on a
   quiet host; >30 s stops the leg. Concurrent-load timings are labelled,
   not used for that stop rule. Revert, lifecycle, races, the hint-client
@@ -2483,16 +2489,18 @@ the operator's approval. Doctor never retires backups.
   below macOS 13; the native Apple silicon journey is on macOS 15, with no
   runtime claim for 13 or 14 and no Intel support claim. The 2.0.1 updater
   does not enforce that floor. See `docs/install/macos.md` and `docs/update.md`.
-- **WebSocket key retirement:** CLIProxyAPI 8.0.44 checks the key on every
+- **WebSocket key retirement:** CLIProxyAPI 8.0.45 checks the key on every
   Responses WebSocket turn. Measured: an overlap turn succeeds; after
   retirement the next turn on that open socket gets 401 without reaching
   the provider, and a new socket with the new key works. Reconnect after
   `charmer doctor --rotate-token`. Managed Claude Code uses HTTP, not that
   route (`docs/guides/gateway.md`).
 - **Refusal headers:** the gateway does not forward a provider's
-  `x-should-retry` or `Retry-After` on gateway routes; the client applies its
-  own retry rules. Codex capacity 429s have no provider retry delay at the
-  client (`docs/troubleshooting.md`).
+  `x-should-retry`; on Claude routes it answers a 429 or 529 with a
+  `Retry-After` of its own (8–36 s measured against the provider's 7 s), and
+  the client applies its own retry rules. Since 8.0.45 a Codex capacity 429
+  reaches the client with the provider's `Retry-After` on both OpenAI routes
+  (`docs/troubleshooting.md`).
 - **Nix runtime holds:** the Nix package keeps Python 3.14.8; release bundles
   ship CPython 3.15.2. The development shell keeps GnuPG 2.4.9 FreePG;
   applicability of the newer upstream fixes is not established. See
