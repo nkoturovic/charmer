@@ -92,6 +92,12 @@ ACTIONS: dict[str, tuple[Action, ...]] = {
         _HELP,
         ("back", "Esc", "back to the card"),
     ),
+    "gateway": _rows(
+        "gateway",
+        ("plan", "P", "show the read-only served-change plan", "charmer plan"),
+        _HELP,
+        ("back", "Esc", "close the gateway dialog"),
+    ),
     "lineup-dialog": _rows(
         "lineup-dialog",
         ("apply", "Enter", "apply the previewed change", "charmer lineup --session <session>"),

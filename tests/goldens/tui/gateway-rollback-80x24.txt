@@ -3,7 +3,6 @@
   ─────────────────────────────────────────────────────────────────────────────
   credential: API key or sign-in · served: models the local gateway serves now
   (not a test of the provider)
-    provider   on credential      quota models served src route
   +--------------------------------------------------------------------------+
   | Local gateway                                                            |
   | Gateway: stopped — the gateway is not running                            |
@@ -20,5 +19,6 @@
 
 
 
-  Enter connect · L sign in/out · T test · Space on/off · V details · N new
-  ? help · Esc back
+
+
+  P plan · ? help · Esc close

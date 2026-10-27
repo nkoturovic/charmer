@@ -107,7 +107,6 @@ def _t(action: str, path: str, available: str, fixture: str) -> Tui:
 ALWAYS = "always"
 SETTINGS_CLI = "an interactive, validated editor of local choices; no general settings command is promised"
 BINDINGS_CLI = "named bindings are edited in their validated TUI editor; there is no binding command"
-PORTABLE_TUI = "portable-file input and output: the file is written for, or read from, another computer"
 MACHINE_TUI = "a machine-readable report for scripts and issue reports; the screens show the same facts"
 INSTALL_TUI = ("it replaces or removes the running installation, so it runs from a terminal where the "
                "launcher starts again cleanly")
@@ -909,8 +908,9 @@ OPERATIONS: tuple[Op, ...] = (
                f"{T_RECOVERY}.SessionsDetailsTests.test_v_shows_identity_lineup_pending_and_unavailable_usage"),),
        stream="stdout", exit="user"),
     Op("diagnostics.plan", "diagnostics", "what the gateway would serve after pending changes",
-       cli=("plan",), absent={"tui": "served-change inspection for review; the provider and model flows "
-                                     "show each change's effect before it is written"},
+       cli=("plan",),
+       tui=(_t("gateway.plan", "card → H → W → P plan", ALWAYS,
+               "tests.test_screens_portability.GatewayPlanTests.test_p_shows_the_same_readonly_plan_as_cli"),),
        stream="stdout", exit="user"),
     Op("diagnostics.plan-assets", "diagnostics", "what a candidate package's assets would serve",
        audience="maintenance", cli=("plan --assets",),
@@ -988,12 +988,20 @@ OPERATIONS: tuple[Op, ...] = (
                f"{T_EDITOR}.PickerTests.test_the_zero_model_row_and_named_rows"),)),
     # ------------------------------------------------------------ portability
     Op("portability.export", "portability", "write your configuration as a portable file (no keys)",
-       cli=("export", "export --out"), absent={"tui": PORTABLE_TUI}, stream="stdout", exit="user"),
+       cli=("export", "export --out"),
+       tui=(_t("settings.edit", "card → O → Export configuration → Enter", ALWAYS,
+               "tests.test_screens_portability.PortabilityScreenTests.test_export_path_writes_the_cli_file_and_receipt"),),
+       stream="stdout", exit="user"),
     Op("portability.import-preview", "portability", "preview an exported configuration here",
-       cli=("import",), absent={"tui": PORTABLE_TUI}, stream="stdout", exit="user"),
+       cli=("import",),
+       tui=(_t("settings.edit", "card → O → Import preview → Enter", ALWAYS,
+               "tests.test_screens_portability.PortabilityScreenTests.test_import_preview_displays_the_cli_plan_without_writing"),),
+       stream="stdout", exit="user"),
     Op("portability.import", "portability", "apply an exported configuration's ready items",
-       cli=("import --apply",), absent={"tui": PORTABLE_TUI}, confirm="y/N, default No", stream="stdout",
-       exit="user"),
+       cli=("import --apply",),
+       tui=(_t("settings.edit", "card → O → Import apply → Enter → Apply", "a terminal outside Claude Code",
+               "tests.test_screens_portability.PortabilityScreenTests.test_import_apply_confirms_then_uses_the_cli_service"),),
+       confirm="y/N, default No", stream="stdout", exit="user"),
     # ------------------------------------------------------------ maintenance
     Op("maintenance.prune-preview", "maintenance", "preview removing stale staging and orphan scopes",
        audience="maintenance", cli=("doctor --preview",),

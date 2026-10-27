@@ -623,6 +623,12 @@ class _SettingsScreen:
         if row.edit in ("providers", "models"):
             self._open(win, row.edit)
             return
+        if row.edit in views.SETTINGS_PORTABILITY_EDITS:
+            from charmer.cli.screens import portability
+
+            portability.run(self.runtime, win, self.palette, row.edit, background=self._draw)
+            self._load()
+            return
         if row.key == views.SETTINGS_ENV_KEEP_KEY:
             self._edit_env_keep(win, row)
             return

@@ -1,7 +1,6 @@
 
   settings — global (profile overrides marked ◆)
   ─────────────────────────────────────────────────────────────────────────────
-  context window ceiling      800K       default · range 200K–800K       next
   auto-compact at             90 %       default 90 %  range 60–95       next
   output reserve              20K        pinned (client policy)
   → effective for balanced (Opus 5.5): window 800K · compacts at ~702K
@@ -18,6 +17,7 @@
   Optional admission badges   0          M opens models                   now
   Gateway
   token                       rotate…    last rotated 2026-09-01         live
+  ↓ 3 more
   Hitless dual-key rotation (charmer doctor --rotate-token); running sessions
   switch within one helper TTL.
 

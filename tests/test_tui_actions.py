@@ -7,6 +7,7 @@ import unittest
 
 from charmer import tui, views
 import charmer.cli.screens.actions as actions
+import charmer.cli.screens.gateway_actions as gateway_actions
 import charmer.cli.screens.profiles as screens_profiles
 import charmer.cli.text as cli_text
 
@@ -21,6 +22,7 @@ BARS = {
     # card (the help's first line), and the not-connected bar names it as Enter.
     "card": _keys(views.CARD_KEYS_FRESH, views.CARD_KEYS_NOT_CONNECTED, ("U", "update"), ("W", "get started")),
     "findings": _keys(cli_text.FINDINGS_KEYBAR),
+    "gateway": _keys(gateway_actions.KEYBAR),
     "resume-card": _keys((("Enter", "resume"),), views.CARD_KEYS_RESUME, ("U", "update")),
     "sessions": _keys(cli_text.SESSIONS_KEYBAR, cli_text.SESSIONS_KEYBAR_ALL, cli_text.SESSIONS_STOP_BINDING,
                       cli_text.SESSIONS_MARK_BINDING, cli_text.SESSIONS_REPAIR_BINDING),

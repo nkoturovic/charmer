@@ -1487,7 +1487,11 @@ class Modal:
         buttons: Sequence[tuple[str, Any]] = (("OK", True), ("Cancel", False)),
         input: TextInput | None = None,
         default: Any = _FIRST,
+        shortcuts: Mapping[str, Any] | None = None,
+        keybar: Sequence[tuple[str, str]] = (),
     ):
+        self.shortcuts = dict(shortcuts or {})
+        self.keybar = KeyBar(keybar) if keybar else None
         self.title = title
         self.lines = list(lines)
         self.buttons = list(buttons)
@@ -1504,6 +1508,8 @@ class Modal:
 
     def _geometry(self, win: Any) -> tuple[int, int, int, int]:
         height, width = win.getmaxyx()
+        if self.keybar is not None:
+            height -= max(2, self.keybar.rows(width))
         buttons_width = sum(len(label) + 4 for label, _ in self.buttons) + 2
         content = max(
             [len(self.title), buttons_width]
@@ -1554,6 +1560,11 @@ class Modal:
             attr = palette.attr("accent") | (curses.A_REVERSE if focused else 0)
             safe_add(win, top + box_h - 2, col, f"[ {label} ]", attr)
             col += len(label) + 5
+        if self.keybar is not None:
+            height, width = win.getmaxyx()
+            for row in (height - 2, height - 1):
+                safe_add(win, row, 0, " " * (width - 1))
+            self.keybar.draw(win, height - 1, palette)
         win.refresh()
 
     def run(
@@ -1593,6 +1604,8 @@ class Modal:
                     continue
                 self.input.handle(key)
                 continue
+            if key.kind == "char" and key.ch and key.ch.upper() in self.shortcuts:
+                return self.shortcuts[key.ch.upper()]
             if key.kind == "left":
                 self.focus = 1 + (self.focus - 2) % len(self.buttons)
                 continue
