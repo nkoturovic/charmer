@@ -1515,6 +1515,8 @@ class CallerScopedAliasTests(unittest.TestCase):
     distinct per key, never the key, and restored in the reply."""
 
     def test_claude_oauth_tool_alias_is_caller_scoped(self):
+        if shutil.which("openssl", path="/usr/bin:/bin") is None:
+            raise unittest.SkipTest("BOUNDARY: openssl is needed for the fixture TLS upstream")
         sent = []
         def respond(route_path, body):
             if route_path.endswith("/count_tokens"):
