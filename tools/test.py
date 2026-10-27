@@ -34,12 +34,20 @@ What it guarantees on every platform (Python 3.11 or newer):
   product's own acquisition). A lane that needs it (the keyed client lane
   once ``CHARMER_TEST_CLI_PROXY_API`` names a gateway) without it is
   reported as not runnable, with the reason, and the run fails.
+- Two control clients are named by path, never copied: the previous
+  release's pin (``CHARMER_TEST_PREVIOUS_CLAUDE``, the downgrade-resume
+  control) and an older fallback control
+  (``CHARMER_TEST_FALLBACK_CONTROL_CLAUDE``). Each named one must be an
+  absolute path to that exact build (the sha256 recorded in
+  ``tests/_client_roles.py``), checked before any test runs; a wrong one is a
+  usage error. Without one, its control is reported unavailable or skipped.
 """
 
 from __future__ import annotations
 
 import argparse
 import ast
+import hashlib
 import os
 import re
 import shutil
@@ -161,6 +169,55 @@ def legacy_environment(repo: Path) -> tuple[str, ...]:
     raise UsageError(f"{path} defines no ENVIRONMENT")
 
 
+def control_clients(repo: Path) -> dict[str, tuple[str, str]]:
+    """The control clients' variables and their recorded ``(version,
+    sha256)`` (``CONTROL_CLIENTS`` in ``tests/_client_roles.py``), read with
+    ``ast`` (never imported: the runner has not isolated its environment yet)."""
+
+    path = repo / "tests" / "_client_roles.py"
+    if not path.is_file():
+        return {}  # a checkout without real-client lanes names no control
+    tree = ast.parse(path.read_text(encoding="utf-8"), str(path))
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and any(getattr(t, "id", "") == "CONTROL_CLIENTS" for t in node.targets):
+            value = ast.literal_eval(node.value)
+            if (isinstance(value, dict) and value
+                    and all(isinstance(name, str) and name.startswith(TEST_PREFIX)
+                            and isinstance(identity, tuple) and len(identity) == 2 for name, identity in value.items())):
+                return value
+            raise UsageError(f"{path}: CONTROL_CLIENTS must map {TEST_PREFIX}* names to (version, sha256)")
+    raise UsageError(f"{path} defines no CONTROL_CLIENTS")
+
+
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as reader:
+        while chunk := reader.read(1 << 20):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def check_control_clients(repo: Path, environ: dict[str, str] | os._Environ) -> list[str]:
+    """Check every control client the environment names (an absolute path to
+    a regular file at its recorded sha256); return what each one is."""
+
+    lines = []
+    for variable, (version, sha256) in control_clients(repo).items():
+        named = environ.get(variable)
+        if not named:
+            continue
+        if not os.path.isabs(named):
+            raise UsageError(f"{variable} must be an absolute path (Claude Code {version}); it is {named!r}")
+        path = Path(os.path.realpath(named))
+        if not path.is_file():
+            raise UsageError(f"{variable} names {named}, which is not a regular file (Claude Code {version})")
+        if _file_sha256(path) != sha256:
+            raise UsageError(f"{variable} names {named}, which is not the Claude Code {version} build the "
+                             f"tests record (sha256 {sha256[:12]}…)")
+        lines.append(f"control client {variable}: Claude Code {version} ({named})")
+    return lines
+
+
 def runtime_environment(environ: dict[str, str] | os._Environ) -> tuple[str, ...]:
     """charmer's own runtime variables in ``environ`` (``CHARMER_*``): a shell
     inside a session, or an operator's, must not leak them into a run. The
@@ -262,6 +319,13 @@ def main(argv: list[str] | None = None) -> int:
     if not selected:
         print("tools/test.py: nothing selected on this platform", file=sys.stderr)
         return EXIT_USAGE
+    try:
+        control_lines = check_control_clients(REPO, os.environ)
+    except UsageError as exc:
+        print(f"tools/test.py: {exc}", file=sys.stderr)
+        return EXIT_USAGE
+    for line in control_lines:
+        print(line, flush=True)
     not_runnable = []
     if (os.environ.get("CHARMER_TEST_KEYED_LANE", "host") == "host"
             and not os.environ.get("CHARMER_TEST_CLI_PROXY_API")):

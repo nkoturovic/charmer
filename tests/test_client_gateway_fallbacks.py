@@ -50,10 +50,11 @@ content completes as one request under the compiled retry watchdog.
 
 The output lines: ``client check gateway-fallbacks: <STATUS> class=<class>
 <detail>``, ``client check gateway-fallbacks-gateway: ...``, ``client check
-mcp-http-retry: ...`` and ``client check keepalive: ...``. The previous pin
-(``CHARMER_TEST_PREVIOUS_CLAUDE``, accepted only at its recorded sha256) is
-the control for the two removed behaviours: it sends the caching beta and sends
-the changing MCP tool call twice.
+mcp-http-retry: ...`` and ``client check keepalive: ...``. The fallback control
+(``CHARMER_TEST_FALLBACK_CONTROL_CLAUDE``, an older client accepted only at its
+recorded sha256; ``_client_roles``) is the control for the two removed
+behaviours: it sends the caching beta and sends the changing MCP tool call
+twice.
 """
 
 from __future__ import annotations
@@ -74,6 +75,7 @@ from typing import Any
 from charmer import probe, scope, state, upgrade
 from charmer.probe import ProbeError
 
+import _client_roles
 from _layout import RESOURCES_ROOT
 from _tier import real_binary_gate
 
@@ -97,22 +99,20 @@ _REFUSALS = {
     "tools": "tools.0.defer_loading: Extra inputs are not permitted",
     "system": 'messages.1: role "system" is not supported',
 }
-# The previous pin, for the controls of the behaviours the candidate removed.
-PREVIOUS_ENV = "CHARMER_TEST_PREVIOUS_CLAUDE"
-_PREVIOUS = ("2.1.302", "60d7eb7f12fbb28a52533fe8be5884097403562aa02dc73991a021c7067e29a5")
+# The fallback control: an older client that still has the behaviours the
+# pin removed (the caching beta, the resent changing MCP call). It is not the
+# previous release's pin (2.1.310 already dropped both), which is the
+# downgrade-resume control instead (_client_roles).
+FALLBACK_CONTROL_ENV = _client_roles.FALLBACK_CONTROL_ENV
+_FALLBACK_CONTROL = _client_roles.FALLBACK_CONTROL
 
 
-def previous_client(version: str, sha256: str) -> probe.TrustedExecutable | None:
-    """The previous pin named by ``CHARMER_TEST_PREVIOUS_CLAUDE`` when it is
-    that exact build (absolute, a regular file, the recorded sha256)."""
+def fallback_control_client() -> probe.TrustedExecutable | None:
+    """The fallback control named by ``CHARMER_TEST_FALLBACK_CONTROL_CLAUDE``
+    when it is that exact build (absolute, a regular file, the recorded
+    sha256)."""
 
-    named = os.environ.get(PREVIOUS_ENV)
-    if not named or not os.path.isabs(named):
-        return None
-    path = Path(os.path.realpath(named))
-    if not path.is_file() or probe._sha256_file(path) != sha256:
-        return None
-    return probe.TrustedExecutable(path, sha256)
+    return _client_roles.named_control(FALLBACK_CONTROL_ENV)
 
 
 class _Inconclusive(AssertionError):
@@ -235,6 +235,10 @@ def missing_parts(row: dict[str, Any]) -> list[str]:
 
 _CONTROLS = (("effort-refused", "effort"), ("context-refused", "context_management"),
              ("tools-refused", "tools"), ("system-refused", "system_turns"))
+# The most requests one refusal control may take: the refused request and
+# its resends (2.1.311 measured: four for a refused tool search, the first
+# resend without the thinking-token-count beta; 2.1.310: three).
+_CONTROL_REQUESTS = 4
 
 
 def verdict(observed: dict[str, Any]) -> str:
@@ -269,10 +273,11 @@ def verdict(observed: dict[str, Any]) -> str:
                  else final.get("context_management") if field == "context_management"
                  else bool(final.get("system_turns")) if field == "system_turns"
                  else "ToolSearch" in final.get("tools", ()))
-        # The client may first strip another part (an unrecognised 400 drops
-        # the system turns before tool search), but it ends without the
-        # refused part within a bounded number of resends.
-        if still or len(rows) > 3:
+        # The client may first strip other parts (for an unrecognised 400,
+        # 2.1.311 first drops the thinking-token-count beta, then one more
+        # part, before tool search), but it ends without the refused part
+        # within a bounded number of resends.
+        if still or len(rows) > _CONTROL_REQUESTS:
             return f"GF-{case}-not-resent-without"
     return PASS_CLASS
 
@@ -384,8 +389,9 @@ class GatewayFallbackProbe(_GatedCase):
         first = known[0][0]
         caching = any(CACHING_SCOPE_BETA in row["betas"]
                       for label in ("known", "unknown") for row in observed["shape"][label]["rows"])
-        previous = previous_client(*_PREVIOUS)
-        control = f"previous-pin control unavailable ({_PREVIOUS[0]} not named by {PREVIOUS_ENV})"
+        previous = fallback_control_client()
+        control = (f"fallback control unavailable ({_FALLBACK_CONTROL[0]} not named by "
+                   f"{FALLBACK_CONTROL_ENV})")
         if previous is not None:
             fixture = self._fixture()
             provider = _Provider()
@@ -393,10 +399,10 @@ class GatewayFallbackProbe(_GatedCase):
                 self._guard(lambda: self._headless(fixture, self._settings(fixture, _LEAD, [_LEAD]), _LEAD,
                                                    provider, ("client check",), trusted=previous))
             sent = any(CACHING_SCOPE_BETA in row["betas"] for row in provider.rows)
-            self.assertTrue(sent, "the previous pin no longer sends the caching beta: the control is void")
+            self.assertTrue(sent, "the fallback control no longer sends the caching beta: the control is void")
             offered = _main(provider.rows)[0]["tools"]
-            control = (f"previous pin {_PREVIOUS[0]} sends {CACHING_SCOPE_BETA} and offers {len(offered)} tools "
-                       f"{'with' if 'ToolSearch' in offered else 'without'} ToolSearch")
+            control = (f"fallback control {_FALLBACK_CONTROL[0]} sends {CACHING_SCOPE_BETA} and offers "
+                       f"{len(offered)} tools {'with' if 'ToolSearch' in offered else 'without'} ToolSearch")
         detail = (
             f"turns(known)=[{' | '.join(_summary(turn) for turn in known)}] "
             f"turns(unknown)=[{' | '.join(_summary(turn) for turn in observed['shape']['unknown']['turns'])}] "
@@ -454,11 +460,16 @@ class VerdictTests(unittest.TestCase):
         kept["effort-refused"][1]["effort"] = _EFFORT
         self.assertEqual(verdict(kept), "GF-effort-refused-not-resent-without")
         looped = json.loads(json.dumps(rows))
-        looped["tools-refused"] = [looped["tools-refused"][0]] * 3 + [looped["tools-refused"][1]]
+        looped["tools-refused"] = [looped["tools-refused"][0]] * _CONTROL_REQUESTS + [looped["tools-refused"][1]]
         self.assertEqual(verdict(looped), "GF-tools-refused-not-resent-without")
         chained = json.loads(json.dumps(rows))
         chained["tools-refused"].insert(1, chained["tools-refused"][0])
         self.assertEqual(verdict(chained), PASS_CLASS)
+        # The measured 2.1.311 shape: two resends as sent (the first without
+        # the thinking-token-count beta), then one without tool search.
+        walked = json.loads(json.dumps(rows))
+        walked["tools-refused"] = [walked["tools-refused"][0]] * 3 + [walked["tools-refused"][1]]
+        self.assertEqual(verdict(walked), PASS_CLASS)
         system_kept = json.loads(json.dumps(rows))
         system_kept["system-refused"][1]["system_turns"] = 1
         self.assertEqual(verdict(system_kept), "GF-system-refused-not-resent-without")
@@ -925,13 +936,14 @@ class HttpMcpRetryProbe(_GatedCase):
     def test_a_changing_tool_call_is_sent_once(self) -> None:
         observed = self._guard(lambda: self._observe(self.trusted))
         observed_class = self._guard(lambda: mcp_verdict(observed))
-        previous = previous_client(*_PREVIOUS)
-        control = f"previous-pin control unavailable ({_PREVIOUS[0]} not named by {PREVIOUS_ENV})"
+        previous = fallback_control_client()
+        control = (f"fallback control unavailable ({_FALLBACK_CONTROL[0]} not named by "
+                   f"{FALLBACK_CONTROL_ENV})")
         if previous is not None:
             before = self._guard(lambda: self._observe(previous))
             self.assertEqual(self._guard(lambda: mcp_verdict(before)), "MR-changing-resent",
-                             f"the previous pin no longer resends the held changing call: {before}")
-            control = (f"previous pin {_PREVIOUS[0]}: change-first {before['change-first']['calls']}, "
+                             f"the fallback control no longer resends the held changing call: {before}")
+            control = (f"fallback control {_FALLBACK_CONTROL[0]}: change-first {before['change-first']['calls']}, "
                        f"lookup-first {before['lookup-first']['calls']}")
         detail = (f"change-first calls={observed['change-first']['calls']} "
                   f"results={observed['change-first']['results']}; lookup-first "
@@ -1220,6 +1232,127 @@ class WatchdogScopeProbe(_GatedCase):
         type(self).verdict = ("PASS" if observed_class == WATCHDOG_SCOPE_PASS_CLASS else "FAIL", observed_class,
                               detail)
         self.assertEqual(observed_class, WATCHDOG_SCOPE_PASS_CLASS, detail)
+
+
+# ------------------------------------------------------- the API's "do not retry"
+
+DO_NOT_RETRY_CLASS = "DNR-honored"
+# (case, status, the error type, x-should-retry or None): the first main
+# request of the turn gets this answer, every later one the content.
+_DNR_CASES = (
+    ("500", 500, "api_error", None),
+    ("500-should-retry-false", 500, "api_error", "false"),
+    ("529-should-retry-false", 529, "overloaded_error", "false"),
+    ("429-should-retry-false", 429, "rate_limit_error", "false"),
+    ("529-should-retry-true", 529, "overloaded_error", "true"),
+)
+
+
+class _OneRefusal(probe.FakeAnthropicProvider):
+    """Answers a turn's first main request with ``status`` (and the header),
+    then the content."""
+
+    def __init__(self, status: int, kind: str, should_retry: str | None) -> None:
+        super().__init__(responder=self)
+        self.status, self.kind, self.should_retry = status, kind, should_retry
+        self.lock = threading.Lock()
+        self.failed = False
+        self.main = 0
+
+    def respond(self, document, path, context):
+        if path.split("?", 1)[0].endswith("/count_tokens"):
+            return 200, {"input_tokens": 1}
+        with self.lock:
+            if document.get("tools"):
+                self.main += 1
+                if not self.failed:
+                    self.failed = True
+                    headers = (("x-should-retry", self.should_retry),) if self.should_retry else ()
+                    if self.status == 429:
+                        headers += (("retry-after", "1"),)
+                    return probe.ProviderReply(self.status, {"type": "error", "error": {
+                        "type": self.kind, "message": "fixture refusal"}}, headers)
+        return 200, _payload(document, [{"type": "text", "text": "PROBE-DNR-OK"}], "end_turn", context.ordinal)
+
+
+def do_not_retry_verdict(observed: dict[str, dict[str, Any]]) -> str:
+    """The control (a plain 500) must be retried under the compiled
+    watchdog; the class says what an explicit ``x-should-retry: false`` does."""
+
+    control = observed["500"]
+    if control["main"] < 2 or control["rc"] != 0:
+        raise _Inconclusive(f"the plain 500 was not retried ({control})")
+    refused = [observed[name] for name in observed if name.endswith("should-retry-false")]
+    if all(row["main"] == 1 and row["rc"] != 0 for row in refused):
+        return DO_NOT_RETRY_CLASS
+    if all(row["main"] >= 2 for row in refused):
+        return "DNR-retried"
+    return "DNR-mixed"
+
+
+class DoNotRetryVerdictTests(unittest.TestCase):
+    def test_the_class_follows_the_refused_cases(self) -> None:
+        rows = {"500": {"main": 2, "rc": 0}, "500-should-retry-false": {"main": 1, "rc": 1},
+                "529-should-retry-false": {"main": 1, "rc": 1}, "529-should-retry-true": {"main": 2, "rc": 0}}
+        self.assertEqual(do_not_retry_verdict(rows), DO_NOT_RETRY_CLASS)
+        self.assertEqual(do_not_retry_verdict(dict(rows, **{"500-should-retry-false": {"main": 2, "rc": 0},
+                                                            "529-should-retry-false": {"main": 2, "rc": 0}})),
+                         "DNR-retried")
+        self.assertEqual(do_not_retry_verdict(dict(rows, **{"500-should-retry-false": {"main": 2, "rc": 0}})),
+                         "DNR-mixed")
+        with self.assertRaises(_Inconclusive):
+            do_not_retry_verdict(dict(rows, **{"500": {"main": 1, "rc": 1}}))
+
+
+class DoNotRetryProbe(_GatedCase):
+    """From 2.1.311 the client honours an API answer that says not to retry
+    (``x-should-retry: false``) on a 529 or 429 too, instead of the retry
+    watchdog retrying it (2.1.310 already did on a 500). Each case runs the
+    compiled watchdog lines (broad scope): a plain 500 is retried (the
+    control); the class records what each refused answer does, with
+    ``x-should-retry: true`` as the retried counterpart. Whether charmer's
+    gateway passes such a header through from an upstream is the gateway's
+    own row."""
+
+    probe_id = "do-not-retry"
+
+    def test_the_compiled_watchdog_against_do_not_retry(self) -> None:
+        compiled_env = compiled_watchdog_env()
+
+        def run() -> dict[str, dict[str, Any]]:
+            observed: dict[str, dict[str, Any]] = {}
+            for name, status, kind, should_retry in _DNR_CASES:
+                fixture = self._fixture()
+                settings = probe.write_fixture_settings(fixture, "scope/settings.json", {
+                    "availableModels": [_LEAD], "model": _LEAD,
+                    "permissions": {"defaultMode": scope.PERMISSION_DEFAULT_MODE},
+                    "env": {**compiled_env, scope.FAST_MODE_ENV: "1"}})
+                provider = _OneRefusal(status, kind, should_retry)
+                started = time.monotonic()
+                with provider:
+                    result = probe.run_native(
+                        ("-p", "client check do-not-retry", "--settings", str(settings), "--model", _LEAD),
+                        trusted=self.trusted, fixture=fixture, provider=provider, timeout=180, allow_real=True,
+                        environ=self.environ)
+                if result.timed_out:
+                    raise _Inconclusive(f"{name}: the turn timed out")
+                observed[name] = {"main": provider.main, "rc": result.returncode,
+                                  "seconds": round(time.monotonic() - started)}
+            return observed
+
+        observed = self._guard(run)
+        detail = (" ".join(f"{name}=requests:{row['main']},rc:{row['rc']},{row['seconds']}s"
+                           for name, row in observed.items())
+                  + f" compiled={compiled_env} client={self.gate.version} sha256={self.trusted.sha256[:12]}")
+        try:
+            observed_class = do_not_retry_verdict(observed)
+        except _Inconclusive as exc:
+            type(self).verdict = ("INCONCLUSIVE", "unavailable", f"{exc}; {detail}")
+            raise
+        type(self).verdict = ("MEASURED", observed_class, detail)
+        # Measured: 2.1.311 ends the turn on each refused answer; 2.1.310
+        # still retried a 529 or 429 that said not to (DNR-mixed).
+        self.assertEqual(observed_class, DO_NOT_RETRY_CLASS, detail)
 
 
 if __name__ == "__main__":
