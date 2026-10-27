@@ -907,7 +907,7 @@ class SettingsRadarTests(_DoctorCase):
 
     def test_every_table_key_in_user_and_record_cwd_settings(self) -> None:
         user = self._write(Path(self.env["HOME"]) / ".claude" / "settings.json", {
-            "env": {"DISABLE_AUTO_COMPACT": "1", "MAX_THINKING_TOKENS": "secret-looking-1234"},
+            "env": {"DISABLE_AUTO_COMPACT": "1", "DISABLE_COMPACT": "1", "MAX_THINKING_TOKENS": "secret-looking-1234"},
             "disableAllHooks": True,
             "alwaysThinkingEnabled": False,
         })
@@ -915,15 +915,26 @@ class SettingsRadarTests(_DoctorCase):
         other.mkdir()
         record = self.store.load(self.mid)
         local = self._write(Path(record["cwd"]) / ".claude" / "settings.local.json", {"maxEffortLevel": "low"})
-        problems, _info, attention = _doctor(self)
+        problems, info, attention = _doctor(self)
         self.assertEqual(problems, [])
         text = "\n".join(attention)
-        self.assertIn(f"{user}: env.DISABLE_AUTO_COMPACT defeats the charmer session policy", text)
+        # Every managed scope turns compaction back on over a user's
+        # DISABLE_AUTO_COMPACT (D245); nothing undoes DISABLE_COMPACT.
+        self.assertNotIn("env.DISABLE_AUTO_COMPACT", text)
+        self.assertIn(f"{user}: env.DISABLE_AUTO_COMPACT: managed sessions re-enable compaction; plain claude does "
+                      "not compact", info)
+        self.assertIn(f"{user}: env.DISABLE_COMPACT defeats the charmer session policy (claude merges it after the "
+                      "launcher's env cleanup) — remove it", attention)
         self.assertIn(f"{user}: env.MAX_THINKING_TOKENS defeats", text)
         self.assertIn(f"{user}: disableAllHooks disables every hook", text)
         self.assertIn(f"{user}: alwaysThinkingEnabled turns extended thinking off", text)
         self.assertIn(f"{local}: maxEffortLevel caps every session's effort", text)
         self.assertNotIn("secret-looking-1234", text)
+
+    def test_a_compaction_switch_left_off_says_nothing(self) -> None:
+        self._write(Path(self.env["HOME"]) / ".claude" / "settings.json", {"env": {"DISABLE_AUTO_COMPACT": "0"}})
+        _problems, info, attention = _doctor(self)
+        self.assertFalse([line for line in (*info, *attention) if "DISABLE_AUTO_COMPACT" in line])
 
     def test_a_credential_key_is_attention_and_blocks_rotate_token(self) -> None:
         user = self._write(Path(self.env["HOME"]) / ".claude" / "settings.json",

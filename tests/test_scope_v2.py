@@ -20,11 +20,13 @@ import unittest
 from pathlib import Path
 from typing import Any
 
-from charmer import catalog, compiler, custom, lineup_files, profile, scope, settings, state, strict_json
+from charmer import catalog, cli, compiler, custom, lineup_files, profile, scope, settings, state, strict_json
 from charmer import lineup as lineup_mod
+from charmer.cli import doctor as doctor_mod
 from charmer.scope import ScopeError
 from _catalog import FIXTURE_ROOT, uses_shipped_catalog
 from _golden import assertGolden
+from _v4 import V4Case
 
 import bless
 
@@ -535,7 +537,10 @@ class CustomLeadTests(unittest.TestCase):
         )
         plan = _compile(lineup, lcat, eff, bundle)
         env = plan.settings["env"]
-        self.assertFalse([key for key in env if key.startswith("ANTHROPIC_DEFAULT_")])
+        # No family default; the client's background requests stay on the
+        # lead (D244).
+        self.assertEqual({key: env[key] for key in env if key.startswith("ANTHROPIC_DEFAULT_")},
+                         {compiler.HAIKU_DEFAULT_ENV: lcat.lines["my-model"]["selector"]})
         self.assertEqual(plan.settings["availableModels"], [lcat.lines["my-model"]["selector"]])
         self.assertNotIn("Default row", _md(plan))
 
@@ -768,7 +773,11 @@ class SettingsTests(unittest.TestCase):
         offered = {k: e for k, e in lcat.lines.items() if _offered(lcat, eff, k, e)}
         expected = compiler.family_default_env(offered, dict(lcat.providers))
         env = plan.settings["env"]
-        self.assertEqual({k: env[k] for k in env if k.startswith("ANTHROPIC_DEFAULT_")}, expected)
+        # Plus the client's background requests on the lead: the lineup
+        # binds no haiku line (D244).
+        self.assertNotIn(compiler.HAIKU_LINE, {agent.binding.key for agent in lineup.agents.values()})
+        self.assertEqual({k: env[k] for k in env if k.startswith("ANTHROPIC_DEFAULT_")},
+                         {**expected, compiler.HAIKU_DEFAULT_ENV: lineup.lead.binding.selector})
         self.assertTrue(expected)
         # A New family line is usable without its optional admission badge.
         docs = copy.deepcopy(bundle.docs)
@@ -1797,6 +1806,149 @@ class GenerationClassTests(unittest.TestCase):
         bundle = catalog.load_catalog(SHIPPED_ROOT)
         self.assertNotIn("agent_client_tokens", bundle.lines["sonnet"]["context"])
         assert_generation_class(self, bundle, "sonnet")
+
+
+# --------------------------------------------- lineup defaults (D244, D245)
+
+
+def _settings_env(live: Path) -> dict[str, Any]:
+    return strict_json.loads((live / scope.SETTINGS_RELPATH).read_bytes())["env"]
+
+
+def _lineup_defaults(env: dict[str, Any]) -> dict[str, Any]:
+    return {key: env.get(key) for key in (compiler.HAIKU_DEFAULT_ENV, compiler.AUTO_COMPACT_ENV)}
+
+
+class LineupDefaultEnvTests(unittest.TestCase):
+    """The client sends its own background requests (summaries, the native
+    claude-code-guide) to ANTHROPIC_DEFAULT_HAIKU_MODEL alone, and a user's
+    DISABLE_AUTO_COMPACT=1 stops compaction; both are read from the user's
+    settings env, which a launch does not clear. The flag settings env
+    outranks that layer, so every scope states a fenced model and "0"."""
+
+    def test_every_seed_names_its_lead(self) -> None:
+        for name in catalog.SEED_PROFILE_NAMES:
+            lineup, plan = _plan(name)
+            env = plan.settings["env"]
+            with self.subTest(seed=name):
+                self.assertNotIn(compiler.HAIKU_LINE, {agent.binding.key for agent in lineup.agents.values()})
+                self.assertEqual(_lineup_defaults(env), {compiler.HAIKU_DEFAULT_ENV: lineup.lead.binding.selector,
+                                                         compiler.AUTO_COMPACT_ENV: "0"})
+                self.assertIn(env[compiler.HAIKU_DEFAULT_ENV], plan.settings["availableModels"])
+                _, direct = _plan(name, no_subagents=True)
+                self.assertEqual(_lineup_defaults(direct.settings["env"]), _lineup_defaults(env))
+
+    def test_the_lineup_default_env(self) -> None:
+        self.assertEqual(compiler.lineup_default_env("lead[1m]", ()),
+                         {"ANTHROPIC_DEFAULT_HAIKU_MODEL": "lead[1m]", "DISABLE_AUTO_COMPACT": "0"})
+        bound = (("sonnet", "s[1m]"), ("haiku", "h[1m]"), ("haiku", "h[1m]"))
+        self.assertEqual(compiler.lineup_default_env("lead[1m]", bound)["ANTHROPIC_DEFAULT_HAIKU_MODEL"], "h[1m]")
+        # Another line on the same wire is not the haiku line.
+        self.assertEqual(compiler.lineup_default_env("lead[1m]", (("custom-haiku", "h[1m]"),))
+                         ["ANTHROPIC_DEFAULT_HAIKU_MODEL"], "lead[1m]")
+
+    @uses_shipped_catalog
+    def test_opus_and_gpt_leads_and_a_bound_haiku_line(self) -> None:
+        from _catalog import SHIPPED_ROOT
+
+        bundle = catalog.load_catalog(SHIPPED_ROOT)
+        lcat = _lcat(bundle.docs)
+        eff = _eff(lcat)
+        with_haiku = copy.deepcopy(bundle.seed_profiles["claude"])
+        with_haiku["agents"]["cm-explorer"] = {"model": "haiku", "effort": "medium"}
+        cases = {"claude": (bundle.seed_profiles["claude"], "opus"),
+                 "openai": (bundle.seed_profiles["openai"], "astra"),
+                 "claude+haiku": (with_haiku, "haiku")}
+        for label, (document, expected_key) in cases.items():
+            lineup = profile.resolve(document, lcat, effective=eff)
+            plan = _compile(lineup, lcat, eff, bundle)
+            env = plan.settings["env"]
+            with self.subTest(lineup=label):
+                if expected_key == "haiku":
+                    expected = lineup.agents["cm-explorer"].binding.selector
+                    self.assertEqual(expected, "claude-haiku-5-5[1m]")
+                else:
+                    self.assertEqual(lineup.lead.binding.key, expected_key)
+                    expected = lineup.lead.binding.selector
+                self.assertEqual(_lineup_defaults(env), {compiler.HAIKU_DEFAULT_ENV: expected,
+                                                         compiler.AUTO_COMPACT_ENV: "0"})
+                self.assertIn(expected, plan.settings["availableModels"])
+
+
+class LineupDefaultEnvSessionTests(V4Case):
+    """The two keys on launch, live apply and resume: the launch states
+    them, a live apply keeps the launch-time settings (the client read them
+    once), a resume compiles them again. A user's values in the process
+    environment never reach the client, and their values in the user's
+    settings env never change what is compiled."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.env["DISABLE_AUTO_COMPACT"] = "1"
+        self.env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] = "outside-the-fence"
+        user = state.ensure_private_dir(Path(self.env["HOME"]) / ".claude")
+        state.atomic_write(user / "settings.json", strict_json.canonical_file_bytes(
+            {"env": {"DISABLE_AUTO_COMPACT": "1", "ANTHROPIC_DEFAULT_HAIKU_MODEL": "outside-the-fence"}}))
+
+    def _request(self, rid: str, text: str) -> tuple[int, str]:
+        import io
+
+        out = io.StringIO()
+        code = cli.main(["lineup", "--session", rid, text], runtime=self.runtime, output_stream=out)
+        return code, out.getvalue()
+
+    def _exec_env(self) -> dict[str, str]:
+        return self.execs[-1][2]
+
+    def _check(self, document: dict[str, Any], change: str, at_resume: str) -> tuple[dict, dict, dict]:
+        self.runtime.profiles.save(document)
+        record = self.launch_fresh(self.profile_target(document["name"]))
+        mid, rid = record["managed_id"], record["runtime_session_id"]
+        launched = _settings_env(self.live(mid))
+        for key in (compiler.HAIKU_DEFAULT_ENV, compiler.AUTO_COMPACT_ENV):
+            self.assertNotIn(key, self._exec_env())
+        lead = record["applied"]["lead"]["selector"]
+        settings_doc = strict_json.loads((self.live(mid) / scope.SETTINGS_RELPATH).read_bytes())
+        self.assertIn(launched[compiler.HAIKU_DEFAULT_ENV], settings_doc["availableModels"])
+        code, out = self._request(rid, change)
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.store.load(mid)["lineup_generation"], 2, out)
+        applied = _settings_env(self.live(mid))
+        self.integrity = doctor_mod._check_scope_integrity(self.runtime, self.store.load(mid))
+        resumed_record = self.resume(mid)
+        for key in (compiler.HAIKU_DEFAULT_ENV, compiler.AUTO_COMPACT_ENV):
+            self.assertNotIn(key, self._exec_env())
+        resumed = _settings_env(self.live(mid))
+        settings_doc = strict_json.loads((self.live(mid) / scope.SETTINGS_RELPATH).read_bytes())
+        self.assertIn(resumed[compiler.HAIKU_DEFAULT_ENV], settings_doc["availableModels"])
+        expected = resumed_record["applied"]["agents"]["cm-explorer"]["selector"] if at_resume == "haiku" else lead
+        self.assertEqual(resumed[compiler.HAIKU_DEFAULT_ENV], expected)
+        return _lineup_defaults(launched), _lineup_defaults(applied), _lineup_defaults(resumed)
+
+    def test_keys_on_launch_live_apply_and_resume(self) -> None:
+        self.runtime = self.make_runtime()
+        document = copy.deepcopy(self.runtime.profiles.load("balanced"))
+        document["name"] = "mine"
+        launched, applied, resumed = self._check(document, "set implementer=opus55:xhigh", "lead")
+        # A live change that moves neither key leaves the launch items as
+        # the installed catalog compiles them.
+        self.assertEqual(self.integrity[:2], ([], []))
+        self.assertEqual(launched[compiler.AUTO_COMPACT_ENV], "0")
+        self.assertEqual(launched, applied)
+        self.assertEqual(launched, resumed)
+
+    @uses_shipped_catalog
+    def test_a_haiku_binding_moves_at_the_next_resume(self) -> None:
+        from _catalog import SHIPPED_ROOT
+
+        self.runtime = self.make_runtime(asset_root=SHIPPED_ROOT)
+        document = copy.deepcopy(self.runtime.catalog.seed_profiles["claude"])
+        document["name"] = "mine"
+        launched, applied, resumed = self._check(document, "set explorer=haiku:medium", "haiku")
+        self.assertEqual(launched, applied)
+        self.assertEqual(resumed, {compiler.HAIKU_DEFAULT_ENV: "claude-haiku-5-5[1m]",
+                                   compiler.AUTO_COMPACT_ENV: "0"})
+        self.assertNotEqual(launched, resumed)
 
 
 if __name__ == "__main__":

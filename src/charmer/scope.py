@@ -1842,6 +1842,10 @@ def compile_lineup_scope(
         family_env = compiler.family_default_env(
             {line.key: dict(line.entry) for line in view.lines}, dict(cat.providers)
         )
+        family_env.update(compiler.lineup_default_env(
+            lineup.lead.binding.selector,
+            ((agent.binding.key, agent.binding.selector) for agent in lineup.agents.values()),
+        ))
     except compiler.CompilerError as exc:
         raise ScopeError(str(exc)) from exc
     env: dict[str, str] = dict(family_env)
