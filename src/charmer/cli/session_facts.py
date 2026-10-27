@@ -488,10 +488,16 @@ def _decode_project_slug_candidates(slug: str) -> tuple[Path, ...]:
                 finals.add(base)
                 continue
             try:
-                children = [child for child in base.iterdir() if child.is_dir()]
+                children = list(base.iterdir())
             except OSError:
                 continue
             for child in children:
+                try:
+                    if not child.is_dir():
+                        continue
+                except OSError:
+                    # One inaccessible entry is not evidence about its siblings.
+                    continue
                 encoded = _native_slug_component(child.name)
                 if remaining == encoded:
                     following.append((child, ""))

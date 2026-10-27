@@ -431,11 +431,12 @@ def _choose_session_line(
 ) -> str | None:
     """Numbered sessions, then ``resume which session``; the managed id or None."""
 
-    records = sorted(
-        session_facts._session_records(runtime), key=session_facts._record_sort_key_last_used, reverse=True
-    )
+    records, problems, _ids = session_facts._session_record_scan(runtime)
+    records.sort(key=session_facts._record_sort_key_last_used, reverse=True)
+    for problem in problems:
+        output_stream.write(f"{termtext.visible_text(problem)}\n")
     if not records:
-        output_stream.write("(no recorded sessions)\n")
+        output_stream.write("(no readable session records)\n" if problems else "(no recorded sessions)\n")
         output_stream.flush()
         return None
     live = session_facts._live_background_prefixes()

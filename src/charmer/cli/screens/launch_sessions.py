@@ -1873,8 +1873,9 @@ class _SessionsScreen:
         self._reload()
         tui.TextView(cli_text.REPAIR_RESULT_TITLE.format(short=short), buf.getvalue().splitlines() or ["(no output)"],
                      palette=self.palette).run(win)
-        self._say(f"repair of {short} " + ("done" if code == 0 else f"ended with exit {code}"),
-                  "accent" if code == 0 else "warn")
+        outcome = ("done" if code == 0 else "deferred" if code == doctor_actions.REPAIR_DEFERRED
+                   else f"ended with exit {code}")
+        self._say(f"repair of {short} {outcome}", "accent" if code == 0 else "warn")
 
     def _details(self, win: Any, record: dict[str, Any]) -> None:
         """V: identity, directory, runtime id, the applied lineup, the

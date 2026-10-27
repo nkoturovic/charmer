@@ -13,8 +13,9 @@ Enter acts only on the rows a collector tagged with one of
 ``doctor.ACTIONS``, each through the service and guards its command uses:
 the persistence hold shows why it holds and the clear-hold command (clearing
 stays a typed confirmation outside Claude Code); a missing key opens the key
-entry of Providers (G → K); scopes to repair run repair-all (stopped sessions
-only); an unused alias is pruned; generated leftovers get the prune preview;
+entry of Providers (G → K); scopes to repair offer stopped-session repair-all
+or a separately confirmed live-inclusive pass; an unused alias is pruned;
+generated leftovers get the prune preview;
 sessions without a recorded end that are not running are marked ended; a
 newer shipped profile is reseeded; an advisory model gets its optional
 diagnostics (M → Q); sessions that need a lead open Sessions. Each one asks
@@ -134,7 +135,7 @@ class FindingsScreen:
         """Run doctor again and rebuild the list (on open and after every action)."""
 
         self.problems, self.info, self.attention = self.report()
-        self.presentation = doctor.present_report(self.problems, self.attention)
+        self.presentation = doctor.present_report(self.problems, self.attention, info=self.info)
         self._rebuild()
 
     def _rebuild(self, keep: doctor.Row | None = None) -> None:
@@ -417,12 +418,60 @@ class FindingsScreen:
     def _repair_all(self, win: Any, row: doctor.Row) -> None:
         if not self._writable():
             return
-        if not self._confirm(win, cli_text.FINDINGS_REPAIR_TITLE, cli_text.FINDINGS_REPAIR_BODY,
-                             cli_text.FINDINGS_REPAIR_BUTTONS):
+        mode = tui.Modal(cli_text.FINDINGS_REPAIR_TITLE,
+                         screens_common.modal_lines(cli_text.FINDINGS_REPAIR_BODY, win),
+                         buttons=cli_text.FINDINGS_REPAIR_BUTTONS, default=False).run(
+                             win, self.palette, background=self._draw)
+        if not mode:
             self._say(cli_text.FINDINGS_CANCELLED)
+            return
+        if mode == "live":
+            self._repair_including_live(win)
             return
         self._show_result(win, "charmer doctor --repair-all",
                           lambda out: doctor_actions._doctor_repair_all(self.runtime, out))
+
+    def _repair_including_live(self, win: Any) -> None:
+        from charmer import sessions
+        import charmer.cli.session_facts as session_facts
+
+        records, problems, _ids = session_facts._session_record_scan(self.runtime)
+        if problems:
+            self._say("Cannot preview every repair target: " + termtext.visible_text(problems[0]), "warn")
+            return
+        records = [record for record in records if record.get("version") == sessions.RECORD_VERSION
+                   and record.get("lineup_generation", 0) >= 1]
+        if not records:
+            self._say("No current-format scopes to repair.")
+            return
+        labels, unknown = screens_gateway.running_sessions(self.runtime)
+        body = [cli_text.FINDINGS_REPAIR_LIVE_BODY]
+        body += ["Running now:", *(f"  {label}" for label in labels)] if labels else []
+        if unknown:
+            body.append(f"Liveness is incomplete: {unknown}")
+        body += ["Every scope this pass may change (including live or unknown sessions):"]
+        body += [f"  {sessions.managed_id(record)} ({session_facts._record_target_label(record)})" for record in records]
+        lines = screens_common.modal_lines("\n".join(termtext.visible_text(line) for line in body), win)
+        # A plain modal clips a long body. Keep every target accessible before
+        # asking, and still focus Cancel in the final confirmation.
+        if len(lines) > win.getmaxyx()[0] - 5:
+            if not tui.TextView(cli_text.FINDINGS_REPAIR_LIVE_TITLE,
+                                [*lines, "", "Continue to the repair confirmation?"],
+                                palette=self.palette, confirm=True).run(win):
+                self._say(cli_text.FINDINGS_CANCELLED)
+                return
+            lines = screens_common.modal_lines(
+                f"Repair the {len(records)} sessions listed in the preview, including running sessions? "
+                + cli_text.FINDINGS_REPAIR_LIVE_BODY, win)
+        if not tui.Modal(cli_text.FINDINGS_REPAIR_LIVE_TITLE, lines,
+                         buttons=(("Cancel", False), ("Repair", True)), default=False).run(
+                             win, self.palette, background=self._draw):
+            self._say(cli_text.FINDINGS_CANCELLED)
+            return
+        ids = frozenset(sessions.managed_id(record) for record in records)
+        self._show_result(win, "charmer doctor --repair-all --include-live",
+                          lambda out: doctor_actions._doctor_repair_all(
+                              self.runtime, out, include_live=True, session_ids=ids))
 
     def _prune_alias(self, win: Any, row: doctor.Row) -> None:
         if row.subject is None:

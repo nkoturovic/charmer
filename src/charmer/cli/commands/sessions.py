@@ -594,18 +594,24 @@ def _sessions_command(
             and updated.get("lineup_generation", 0) >= 1
         ):
             repair_output = io.StringIO()
+            repair_status = 1
             problem = None
             try:
-                if doctor_actions._doctor_repair(runtime, stable_id, repair_output) != 0:
+                repair_status = doctor_actions._doctor_repair(runtime, stable_id, repair_output)
+                if repair_status != 0:
                     problem = repair_output.getvalue().strip() or "repair did not complete"
             except cli_errors.CLIError as exc:
                 problem = str(exc)
             if problem is not None:
-                output_stream.write(
+                if repair_status == doctor_actions.REPAIR_DEFERRED:
+                    detail = "scope convergence is deferred until resume or a model choice"
+                    remedy = f"charmer -r {stable_id}"
+                else:
+                    detail = f"scope convergence is unfinished: {termtext.visible_message(problem)}"
+                    remedy = f"charmer doctor --repair {stable_id}"
+                sys.stderr.write(
                     f"Reconciled managed {stable_id} to runtime "
-                    f"{updated['runtime_session_id']}, but scope convergence is unfinished: "
-                    f"{termtext.visible_message(problem)}; run "
-                    f"`charmer doctor --repair {stable_id}`\n"
+                    f"{updated['runtime_session_id']}, but {detail}; run `{remedy}`\n"
                 )
                 return 1
         output_stream.write(
