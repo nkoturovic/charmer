@@ -70,9 +70,10 @@ still get an independent review from another family. The card and
 When you add a listed OpenRouter model, charmer suggests a family from a
 small set of vendor namespaces: `anthropic/` → `anthropic`, `openai/` →
 `openai`, `google/` → `google`, `deepseek/` → `deepseek`, `x-ai/` → `x-ai`,
-`moonshotai/` → `moonshot`, `qwen/` → `alibaba`, and `meta-llama/` → `meta`.
-A suggestion is used only if the installed catalog already recognizes that
-family. This is an **editable suggestion from the id**, not verified model
+`moonshotai/` → `moonshot`, `qwen/` → `alibaba`, and `meta-llama/` or
+`meta/` → `meta`. It also recognizes the prefixes `minimax/`, `mistralai/`
+and `z-ai/`, but a suggestion is used only if the installed catalog already
+recognizes that family; otherwise it stays `unknown`. This is an **editable suggestion from the id**, not verified model
 provenance. Unknown vendors, `stealth/`, `openrouter/` routers and ids
 without a vendor prefix stay `unknown`; an unknown family cannot establish
 review independence. Providers you declare yourself do not get these
@@ -119,6 +120,20 @@ relabelled automatically; editing, export and import never infer a family.
 Manual `models add` remains a no-lookup path with an explicit `--family`
 when you want one.
 
+### Efforts for models you add
+
+OpenRouter accepts the `output-config-low`, `output-config-medium` and
+`output-config-max` contracts as well as high and xhigh. Map only the efforts
+the model supports, for example `--effort low=output-config-low`,
+`--effort medium=output-config-medium` and `--effort max=output-config-max`.
+These contracts describe what charmer sends, not a live pass for every
+model. The shipped `or-kimi` line adds low and max at contract level;
+its measured high/xhigh checks passed, forced tool choice was rejected and
+automatic tool choice passed on 2026-10-27.
+
+See the [MiniMax M3.1 Flash example](../guides/models.md#minimax-m31-flash-on-openrouter)
+for a declaration using all five contracts.
+
 ### Stealth models and add by id
 
 A `stealth/` id, such as `stealth/space-bunny-alpha`, is marked **stealth**:
@@ -148,9 +163,14 @@ review the facts and the prefilled declaration before saving. **Manual entry**
 (and `models add … --context N --source docs --source-ref URL`) remains a
 no-lookup path.
 
-Ids with suffixes such as `vendor/model:free` stay visible with **not addable in
-this release**: the wire grammar does not accept `:`. Do not strip the
-suffix to declare a different model by accident.
+Use lowercase dated ids the provider documents. Mixed-case vendor ids,
+moving ids such as `~deepseek/deepseek-flash-latest`, colon-suffixed ids
+such as `vendor/model:free`, and ids ending in `[1m]` cannot be declared in
+this release. A listing can still show them as **not addable in this
+release**; `models add` explains the unsupported part and writes nothing.
+Do not strip a suffix or lowercase an id to declare a different model by
+accident: choose a documented alternative. See
+[model id limits](../guides/models.md#model-id-limits).
 
 Listing alone never declares, enables, admits, binds or chooses a default.
 Only `--add` or the TUI declaration preview writes a model of your own;

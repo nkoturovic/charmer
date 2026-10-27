@@ -179,3 +179,12 @@ tools, thinking, caching or token counting; qualification checks the parts
 an agent needs, not everything. Token counts for third-party endpoints are
 estimated locally by the gateway, so context figures and compaction
 thresholds on those models are approximate.
+
+The model declaration accepts lowercase wire ids, not mixed-case vendor
+ids such as `MiniMax-M3.1-Flash`. Moving ids starting with `~`, suffixes
+such as `:free`, and ids ending in `[1m]` are also refused, with the reason
+and nothing written. Use the vendor's documented lowercase id or a
+lowercase dated id on OpenRouter; do not guess by changing case or stripping
+a suffix. For example, MiniMax M3.1 Flash can be declared on OpenRouter as
+`minimax/minimax-m3.1-flash`. The `[1m]` context selector is separate from
+the provider's wire id; see [model id limits](../guides/models.md#model-id-limits).

@@ -103,6 +103,13 @@ Which key file:
    (recorded in `~/.config/charmer/secret-file.json`);
 3. otherwise `~/.config/charmer/secrets/provider-keys.env`.
 
+In **G** Providers → **F** key file, enter an existing private `NAME=value`
+file's path and choose **Use file**. This selects the file; it does not
+copy its contents. The same choice is available in the key prompt. The
+file must be yours, mode 0600, and not a symlink. Selecting it re-renders
+the gateway configuration and verifies the reload; an environment override
+still takes precedence as above.
+
 The launcher, the gateway and every key command read the same file.
 Managed sessions cannot read it. More: [reference/settings.md](../reference/settings.md#the-api-key-file).
 
@@ -125,6 +132,12 @@ Managed sessions cannot read it. More: [reference/settings.md](../reference/sett
 - Turn a provider off for new sessions without removing its key:
   `charmer providers disable <provider>` or **G** → Space. Running
   sessions keep their routes.
+
+A key kept after removing its provider appears under **G** Providers →
+**O** orphan keys. Only names are shown, never values. Select the key with
+Enter, give the removed provider's id, then Continue → **Remove** to
+confirm. Cancel keeps it; removal checks again that no provider uses the
+key. Removing the local key does not revoke it at the vendor.
 
 If the key may have leaked, also revoke it in the provider's console.
 
@@ -286,7 +299,7 @@ refuses `api.openai.com` and has its own availability
 - **Key:** an API key from the Meta Model API dashboard
   ([quickstart](https://dev.meta.ai/docs/quickstart)). The key is sent as
   `Authorization: Bearer`.
-- **Lines:** Muse Spark 1.3 (`muse`) and Muse Spark 1.3 Contributor
+- **Lines:** Muse Wonder 1.0 (`muse`) and Muse Spark 1.3 Contributor
   (`muse-contributor`), efforts low to xhigh (no max), for the lead and
   every agent role. The contributor tier costs less in exchange for
   Meta's permission to use your prompts and completions to train future
@@ -296,6 +309,12 @@ refuses `api.openai.com` and has its own availability
   lines.
 - **Limits:** thinking is always on; a forced tool choice that names one
   tool is refused (HTTP 400).
+
+`muse-contributor` stays on Spark 1.3 because Meta answered HTTP 404 for
+`muse-wonder-1.0-contributor` on 2026-10-27. Muse Wonder Full is restricted
+to Muse Code, not the public Model API; candidates and declarations name
+that limit. The [models guide](../guides/models.md#lines-moved-in-this-release)
+records the moved line's measurements and continuity for running sessions.
 
 Meta's route uses strict tool schemas: a tool whose `required` list omits
 one of its properties is refused with HTTP 400, and the card warns about
@@ -318,7 +337,7 @@ any profile slot on such a route.
 
 Some shipped lines come from the vendor's documentation and have not yet
 been checked with a live request through the gateway (the Kimi and Qwen
-lines, Meta's, and the OpenAI key route's): their context windows and
+lines, Meta's contributor line, and the OpenAI key route's): their context windows and
 efforts are the documented ones. `charmer models show <line>` shows
 each line's evidence and where its figures come from. A provider that
 ships no line for the model you want takes one you add yourself

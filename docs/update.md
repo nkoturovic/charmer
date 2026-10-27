@@ -93,6 +93,81 @@ remain 4; no record migration is needed. If 2.2.1 is the retained previous
 release, `charmer update --rollback` returns to it; restart the gateway
 between turns to use that release's gateway too.
 
+#### Models you added that now ship
+
+If you added Haiku 5.5 on Anthropic, Muse Wonder 1.0 on Meta, or
+DeepSeek V4.1 Flash 1017 or Kimi K3.1 Pro on OpenRouter yourself, your key
+now resolves to the shipped line (`haiku`, `muse`, `or-deepseek` or
+`or-kimi`). Profiles keep working;
+running sessions keep their captured routes until resume. Other models you
+added are unchanged. Remove the duplicate declaration with the successor
+that the message names; this rewrites the profiles and named bindings
+that use your key:
+
+```bash
+charmer models rm <line> --successor <line>
+```
+
+The first `<line>` is your key; the successor is the shipped key. The
+command asks before changing anything. If a running session still uses your
+line, removal refuses: exit that session first and follow the named remedy.
+These are the messages to expect. `KEY` is your key, `P` the provider,
+`W` the wire id and `S` the shipped line. The listing example uses the wire
+id as its display name; a display name you chose is kept. Its columns are separated by tabs (shown as `\t` below).
+
+| Surface | Text |
+| --- | --- |
+| `charmer providers validate` (exit 0) | `providers.d/P.json: lines.KEY: P/W is now provided by the catalog line "S" — yours yields to it; remove it: charmer models rm KEY --successor S` |
+| `charmer doctor` (Attention) | `operator line KEY (P/W) is now provided by the catalog as S: yours yields to it — remove it: charmer models rm KEY --successor S` |
+| `charmer models` | `KEY\tW\tnow provided by the catalog as S\tremove yours: charmer models rm KEY --successor S` |
+| `charmer models show <line>` (exit 0) | `operator line KEY (P/W) is now provided by the catalog as S: yours yields to it — remove it: charmer models rm KEY --successor S` |
+
+For a bound line, doctor adds, for example,
+`; used by profile mine cm-explorer: they move to S at their next launch or resume`.
+An admitted line adds ` (it was admitted)` before that semicolon.
+
+Trying to add a model the release already ships writes nothing (exit 1).
+For a new Haiku key, the refusal is:
+
+```text
+charmer: models add: anthropic/claude-haiku-5-5 ships with charmer as the line haiku — nothing written; bind it in a profile (charmer profile edit NAME) or see charmer models
+```
+
+If the earlier Kimi declaration is still present, it instead names its
+removal:
+
+```text
+charmer: models add: openrouter/moonshotai/kimi-k3.1-pro ships with charmer as the line or-kimi — nothing written; yours (custom-moonshotai-kimi-k3-1-pro) yields to it — remove it: charmer models rm custom-moonshotai-kimi-k3-1-pro --successor or-kimi
+```
+
+Aliases left by models you removed may still be reported as
+`alias <alias> (captured for KEY) has no line — prune when unused: charmer doctor --prune-aliases`.
+Once no live session uses them, name the aliases to remove:
+
+```bash
+charmer doctor --prune-aliases <alias>…
+```
+
+Without names, the option prunes all eligible unused aliases. It keeps
+captures of current model declarations; naming an alias still used by a
+live session refuses the whole operation.
+
+#### Settings at the next resume
+
+Managed sessions running at update time pick up two new compiled settings
+at their next resume: `ANTHROPIC_DEFAULT_HAIKU_MODEL` names the bound
+Haiku model, otherwise the lead, and `DISABLE_AUTO_COMPACT="0"` re-enables
+managed compaction. They do not change your own settings or plain `claude`.
+Until then, doctor says
+`fence/picker differ from the installed catalog (catalog changed since launch); applies at the next resume`.
+Resume with `charmer -r <id>` after exiting the session.
+
+A later live Haiku bind or unbind has its own reason:
+`session <id8>: background requests move to claude-haiku-5-5[1m] at the next resume`
+(or the lead's selector after unbinding). Reloading plugins does not change
+this launch-time setting. A user `DISABLE_COMPACT` still needs removal;
+see [compaction troubleshooting](troubleshooting.md#inside-a-session).
+
 ### Updating from 2.2.0
 
 Follow the [same update sequence](#updating-from-221). In addition to the

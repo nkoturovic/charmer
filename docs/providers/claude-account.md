@@ -1,6 +1,6 @@
 # Sign in with a Claude account
 
-You can run the Claude models (Opus, Sonnet, Fable) on your own Claude
+You can run the Claude models (Opus, Sonnet, Fable, Haiku) on your own Claude
 account (Pro or Max) instead of an Anthropic API key. This route is for
 your own, personal use, and you confirm that before the first sign-in.
 
@@ -64,6 +64,14 @@ its login stay as they are.
 With the account signed in, the shipped profiles that use Claude lines are
 connected. `charmer providers test anthropic` sends one small request
 after you agree.
+
+Haiku 5.5 ships as `haiku`, for explorer and light-writer agents, not the
+lead. It is the same family as Opus, Sonnet and Fable, not an independent
+reviewer of them. Its Claude-account checks passed on 2026-10-27; the
+[models guide](../guides/models.md#haiku-on-the-claude-account) names the
+measured checks and explains when it handles the session's background
+requests. Bind it with **E** on the launch card; no model declaration is
+needed.
 
 ## 6. Limits and quota
 
