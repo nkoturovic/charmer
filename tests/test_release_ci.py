@@ -1880,10 +1880,10 @@ if mode == "fail":
         }
         self.assertEqual({key: entry[key] for key in expected}, expected)
         self.assertEqual(policy["gateway"]["targets"], {
-            "darwin-arm64": "314467242281c6ec6c3d5b3307c5d7baca7537c82be134a266d1aa3580b39dad",
-            "darwin-x86_64": "0930df86944a47966eae021de315ed4f834ec35d626efdf87b6f566dc6907f34",
-            "linux-aarch64": "6786c28361e4e5de49363b1c2437e8134d29db334a31e470f83f336691504a44",
-            "linux-x86_64": "dfc2309fea77cb890866e8ca6251d574e1f3dd912a900baf133a08052f4a154f",
+            "darwin-arm64": "bdc99bc58c02841cecc7ae3e8484cb4e35bedd99e149c2f46270c0ef45df6022",
+            "darwin-x86_64": "dcbbffb55aaf8a71eedd697e72d514d1b669e45eaa795740b917ecb1ee3dc356",
+            "linux-aarch64": "ae75812743ea1c7cc65839ec067ed5d5fe0cb1f9175a40517bfdc1d1f805c8a2",
+            "linux-x86_64": "52618ae82ede09f408edf456b4d58952db097a5cf6a2cdb68c2f139b15a345fd",
         })
         for fact in ("golang.org/x/crypto/openpgp", "not imported", "ProtonMail", "component is absent"):
             self.assertIn(fact, entry["reason"])
