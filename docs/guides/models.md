@@ -39,23 +39,24 @@ usable for leads, agents and reviews.
 | `astra` | GPT-6 Astra | OpenAI | openai | low, medium, high, xhigh, max (high) | 1M class, provider window 872K | lead and agents | `gpt-multi-astra-<effort>[1m]` |
 | `deepseek-flash` | DeepSeek V4.1 Flash | DeepSeek | deepseek | high, max (high) | 1M class, provider window 1M | lead and agents | `charmer-deepseek-flash-<effort>[1m]` |
 | `fable` | Fable 5.1 · 1M selector | Anthropic | anthropic | low, medium, high, xhigh, max (high) | 1M class, provider window 1M | lead and agents | `claude-fable-5-1[1m]` (the effort is chosen in Claude Code) |
+| `haiku` | Haiku 5.5 · 1M selector | Anthropic | anthropic | low, medium, high, xhigh, max (medium) | 1M class, provider window 1M | agents | `claude-haiku-5-5[1m]` (the effort is chosen in Claude Code) |
 | `kimi-code` | Kimi for Coding | Kimi | moonshot | low, high, max (max) | 1M class, provider window 1M | lead and agents | `charmer-kimi-code-<effort>[1m]` |
 | `luna` | GPT-6 Luna | OpenAI | openai | low, medium, high, xhigh, max (max) | 1M class, provider window 872K | lead and agents | `gpt-multi-luna-<effort>[1m]` |
-| `muse` | Muse Spark 1.3 | Meta | meta | low, medium, high, xhigh (xhigh) | 1M class, provider window 1M | lead and agents | `charmer-muse-<effort>[1m]` |
+| `muse` | Muse Wonder 1.0 | Meta | meta | low, medium, high, xhigh (xhigh) | 1M class, provider window 1M | lead and agents | `charmer-muse-1-0-<effort>[1m]` |
 | `muse-contributor` | Muse Spark 1.3 Contributor | Meta | meta | low, medium, high, xhigh (high) | 1M class, provider window 1M | lead and agents | `charmer-muse-contributor-<effort>[1m]` |
 | `opus` | Opus 5.5 · 1M selector | Anthropic | anthropic | low, medium, high, xhigh, max (high) | 1M class, provider window 1M | lead and agents | `claude-opus-5-5[1m]` (the effort is chosen in Claude Code) |
-| `or-deepseek` | DeepSeek V4.1 Flash · OpenRouter | OpenRouter | deepseek | high, xhigh (high) | 1M class, provider window 1M | lead and agents | `charmer-or-deepseek-<effort>[1m]` |
+| `or-deepseek` | DeepSeek V4.1 Flash 1017 · OpenRouter | OpenRouter | deepseek | high, xhigh (high) | 1M class, provider window 1M | lead and agents | `charmer-or-deepseek-4-1-1017-<effort>[1m]` |
 | `or-gemini` | Gemini 3.8 Flash · OpenRouter | OpenRouter | google | high, xhigh (high) | 1M class, provider window 1M | lead and agents | `charmer-or-gemini-<effort>[1m]` |
 | `or-gpt` | GPT-6.1 Sol · OpenRouter | OpenRouter | openai | high, xhigh (high) | 1M class, provider window 1M | lead and agents | `charmer-or-gpt-<effort>[1m]` |
 | `or-grok` | Grok 4.7 · OpenRouter | OpenRouter | x-ai | high, xhigh (high) | 200K class, provider window 500K | lead and agents | `charmer-or-grok-<effort>` |
-| `or-kimi` | Kimi K3 · OpenRouter | OpenRouter | moonshot | high, xhigh (high) | 1M class, provider window 1M | lead and agents | `charmer-or-kimi-<effort>[1m]` |
+| `or-kimi` | Kimi K3.1 Pro · OpenRouter | OpenRouter | moonshot | low, high, xhigh, max (high) | 1M class, provider window 1M | lead and agents | `charmer-or-kimi-3-1-<effort>[1m]` |
 | `or-opus` | Opus 5.5 · OpenRouter | OpenRouter | anthropic | high, xhigh (xhigh) | 1M class, provider window 1M | lead and agents | `charmer-or-opus-<effort>[1m]` |
 | `qwen-flash` | Qwen3.8 Flash | Qwen | alibaba | low, medium, xhigh (xhigh) | 1M class, provider window 983,616 | lead and agents | `charmer-qwen-flash-<effort>[1m]` |
 | `qwen-max` | Qwen3.8 Max | Qwen | alibaba | low, medium, xhigh (xhigh) | 1M class, provider window 983,616 | lead and agents | `charmer-qwen-max-<effort>[1m]` |
 | `sol` | GPT-6.1 Sol | OpenAI | openai | low, medium, high, xhigh, max (high) | 1M class, provider window 872K | lead and agents | `gpt-multi-sol-6-1-<effort>[1m]` |
 | `sonnet` | Sonnet 5.5 · 1M selector | Anthropic | anthropic | low, medium, high, xhigh, max (high) | 1M class, provider window 1M | lead and agents | `claude-sonnet-5-5[1m]` (the effort is chosen in Claude Code) |
 
-17 retired keys resolve to their successors; `charmer models` lists them.
+20 retired keys resolve to their successors; `charmer models` lists them.
 
 <!-- end of generated: model-lines -->
 

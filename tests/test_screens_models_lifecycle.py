@@ -253,7 +253,7 @@ class LetterTests(ModelsCase):
                 mock.patch.object(screens_common.OnboardingActions, "show"):
             self.run_screen(self.screen(), ["Q", ESC])
             win = self.run_screen(self.screen(), ["Q", RIGHT, ENTER, ENTER, ENTER, ENTER, "n"])
-        self.assertTrue(any("Confirm explicit action" in frame for frame in win.frames))
+        self.assertTrue(any("Proceed with these listed requests?" in frame for frame in win.frames))
         self.assertEqual(self.state_bytes(), before)
         self.assertEqual(self.http_calls, [])
 

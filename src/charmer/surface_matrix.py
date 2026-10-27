@@ -233,8 +233,8 @@ OPERATIONS: tuple[Op, ...] = (
        stream="stdout", exit="user"),
     Op("setup.claude-from", "setup", "install the pinned Claude Code from a local file",
        cli=("setup --claude-from",),
-       absent={"tui": "a local copy of the pinned build is a file input for offline machines; the Claude "
-                      "Code step downloads and verifies the same copy"},
+       tui=(_t("get-started.offline-client", "card → W → Claude Code → F offline file", ALWAYS,
+               f"{T_GS}.OfflineClientTests.test_f_copies_a_verified_offline_client"),),
        stream="stdout", exit="user"),
     Op("setup.gateway", "setup", "set up and start the local gateway", cli=("setup --step",),
        tui=(_t("get-started.open", "card → W → local gateway", ALWAYS,
@@ -271,8 +271,8 @@ OPERATIONS: tuple[Op, ...] = (
        absent={"tui": "a prepared answers file is a scripting input; Get started asks each step"},
        confirm="y/N, default No", stream="stdout", exit="user"),
     Op("setup.keys-file", "setup", "use an existing private key file for API keys", cli=("setup --keys-file",),
-       absent={"tui": "the key file is chosen once per computer by its path, checked before it is used; "
-                      "every TUI key prompt then writes to the file chosen"},
+       tui=(_t("providers.key-file", "card → G → F key file (also in the key prompt)", ALWAYS,
+               f"{T_PROVIDERS}.KeyFileChoiceTests.test_f_selects_the_key_file_and_shows_receipt"),),
        stream="stdout", exit="user"),
     # ------------------------------------------------------------ install
     Op("install.identity", "install", "show the release identity (launcher, catalog, gateway, Claude Code)",
@@ -474,8 +474,8 @@ OPERATIONS: tuple[Op, ...] = (
        destructive=True, confirm="y/N, default No", stream="stdout", exit="user"),
     Op("credentials.remove-orphan-key", "credentials", "remove a key kept after its provider was removed",
        cli=("providers remove-key --name",),
-       absent={"tui": "a key without a provider has no row to select; removing the provider (X) offers "
-                      "its key at that moment"},
+       tui=(_t("providers.remove-orphan-key", "card → G → O orphan keys → Enter → Remove", "a saved key no provider uses",
+               f"{T_PROVIDERS}.OrphanKeyTests.test_o_lists_names_and_removes_only_after_confirmation"),),
        destructive=True, confirm="y/N, default No", stream="stdout", exit="user"),
     Op("credentials.key-file-input", "credentials", "read a key from a private 0600 file",
        audience="scripting",
@@ -593,8 +593,8 @@ OPERATIONS: tuple[Op, ...] = (
                f"{T_DISPATCH}.ProvidersDispatchTests.test_a_offers_the_add_models_flow"),),
        confirm="consent naming every request", stream="stdout", exit="user"),
     Op("discovery.all", "discovery", "list every enabled provider's models", cli=("discover --all",),
-       absent={"tui": "advanced discovery: every enabled provider in one consented pass; A lists one "
-                      "provider at a time"},
+       tui=(_t("providers.discover-all", "card → G → D list all → consent", ALWAYS,
+               f"{T_PROVIDERS}.AllDiscoveryTests.test_d_discloses_all_calls_then_lists_in_order"),),
        confirm="consent naming every request", stream="stdout", exit="user"),
     Op("discovery.feed", "discovery", "compare the public model feed with the pinned registry",
        cli=("discover --feed",),

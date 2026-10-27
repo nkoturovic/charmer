@@ -36,5 +36,5 @@
 
 
 
-
-  Enter connect · L sign in/out · T test · Space on/off · V details · N new · ? help · Esc back
+  Enter connect · L sign in/out · T test · Space on/off · V details · N new · F key file · O orphan keys · D list all
+  ? help · Esc back

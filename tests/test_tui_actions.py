@@ -9,6 +9,7 @@ from charmer import tui, views
 import charmer.cli.screens.actions as actions
 import charmer.cli.screens.gateway_actions as gateway_actions
 import charmer.cli.screens.profiles as screens_profiles
+import charmer.cli.screens.providers as screens_providers
 import charmer.cli.text as cli_text
 
 
@@ -33,13 +34,14 @@ BARS = {
                        cli_text.PROVIDERS_KEYBAR_ACCOUNT_KEY,
                        cli_text.PROVIDERS_KEYBAR_OWN, cli_text.PROVIDERS_KEYBAR_OWN_KEYLESS,
                        cli_text.PROVIDERS_KEYBAR_KEYLESS, cli_text.PROVIDERS_APPLY_BINDING,
-                       cli_text.PROVIDERS_GATEWAY_BINDING),
+                       cli_text.PROVIDERS_GATEWAY_BINDING, screens_providers.PROVIDERS_FILE_BINDINGS),
     "models": _keys(cli_text.MODELS_KEYBAR, cli_text.MODELS_KEYBAR_NEW, cli_text.MODELS_KEYBAR_ADMITTED),
     "settings": _keys(cli_text.SETTINGS_KEYBAR, cli_text.SETTINGS_KEYBAR_OPEN, cli_text.SETTINGS_KEYBAR_ROTATE),
     "profiles": _keys(cli_text.PROFILES_KEYBAR_YOURS, cli_text.PROFILES_KEYBAR_SEED,
                       cli_text.PROFILES_KEYBAR_UNLOADABLE, cli_text.PROFILES_RESTORE_BINDING,
                       screens_profiles.keybar(None, fallback_only=False)),
-    "get-started": _keys(cli_text.GS_KEYBAR),
+    # F shows on the Claude Code step only (the offline client file).
+    "get-started": _keys(cli_text.GS_KEYBAR, (("F", "offline file"),)),
     "editor": _keys(tui.PROFILE_EDITOR_KEYBAR),
     "binding-picker": _keys(tui.BINDING_PICKER_KEYBAR),
     "named-bindings": _keys(tui.NAMED_BINDINGS_KEYBAR),

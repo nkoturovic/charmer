@@ -700,15 +700,16 @@ ADD_MODELS_TITLE = "add models for {id}?"
 NO_MODELS_HEAD = "{id} has no models yet; declare one to select in a profile. Admission is optional."
 NO_MODELS_LATER = "{id} has no models yet — A on Providers adds them (charmer discover {id} --add WIRE)"
 NO_MODELS_NOT_ADMITTED = ("{id}: added {keys}, not admitted (optional badge only). "
-                          "Return to the launch card, then P (Profiles) selects for this launch; "
-                          "provider/route restrictions still apply. Optional diagnostics: M → Q "
+                          "Return to the launch card, then P (Profiles) selects for this launch or E binds it "
+                          "in the profile; provider/route restrictions still apply. Optional diagnostics: M → Q "
                           "(explicit consent; may be billed).")
 NO_MODELS_ADMITTED = ("{id}: admitted {keys} (badge only). Return to the launch card, then P (Profiles) "
-                     "selects for this launch; provider/route restrictions still apply. "
+                     "selects for this launch or E binds it in the profile; provider/route restrictions still apply. "
                      "Optional diagnostics: M → Q (explicit consent; may be billed).")
 ADMIT_NOW_TITLE = "Admit {key} now?"
 ADMIT_NOW_BODY = ("Record an optional local admission badge for {key}? No test request is sent. "
-                  "Skip to select it normally in Profiles; provider/route restrictions still apply. "
+                  "Skip to select it in Profiles (P) for this launch, or bind it with E on the launch card; "
+                  "provider/route restrictions still apply. "
                   "Optional diagnostics are on Models (Q).")
 ADMIT_NOW_BUTTONS = (("Skip", False), ("Admit badge", True))
 ADD_MODELS_ITEMS = ("List its models (sends one request; you confirm first)", "Enter a model by hand", "Later")

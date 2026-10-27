@@ -36,11 +36,11 @@ you: they are catalog lines, checked for the release.
 
 | Key | Model | OpenRouter model | Family | Efforts | Context |
 | --- | --- | --- | --- | --- | --- |
-| `or-deepseek` | DeepSeek V4.1 Flash · OpenRouter | `deepseek/deepseek-v4.1-flash` | deepseek | high, xhigh | 1M class, provider window 1M |
+| `or-deepseek` | DeepSeek V4.1 Flash 1017 · OpenRouter | `deepseek/deepseek-v4.1-flash-1017` | deepseek | high, xhigh | 1M class, provider window 1M |
 | `or-gemini` | Gemini 3.8 Flash · OpenRouter | `google/gemini-3.8-flash` | google | high, xhigh | 1M class, provider window 1M |
 | `or-gpt` | GPT-6.1 Sol · OpenRouter | `openai/gpt-6.1-sol` | openai | high, xhigh | 1M class, provider window 1M |
 | `or-grok` | Grok 4.7 · OpenRouter | `x-ai/grok-4.7` | x-ai | high, xhigh | 200K class, provider window 500K |
-| `or-kimi` | Kimi K3 · OpenRouter | `moonshotai/kimi-k3` | moonshot | high, xhigh | 1M class, provider window 1M |
+| `or-kimi` | Kimi K3.1 Pro · OpenRouter | `moonshotai/kimi-k3.1-pro` | moonshot | low, high, xhigh, max | 1M class, provider window 1M |
 | `or-opus` | Opus 5.5 · OpenRouter | `anthropic/claude-opus-5.5` | anthropic | high, xhigh | 1M class, provider window 1M |
 
 The shipped `openrouter` profile: OpenRouter only (billed per token): Opus lead and strong writer, GPT analysts and writer, DeepSeek explorer and light writer, Gemini and Grok reviewers.

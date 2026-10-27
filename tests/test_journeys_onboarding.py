@@ -556,7 +556,7 @@ class FirstRunJourneys(JourneyCase):
         child.keys("m")
         child.expect("admit badge")
         child.keys(ENTER)
-        child.expect("Confirm explicit action")
+        child.expect("Admit custom-")
         child.keys("y")
         child.expect("admitted")
         child.keys(ESC)
