@@ -1888,7 +1888,24 @@ def merge_docs(
     :func:`validate_layer`.
     """
 
-    base: Mapping[str, Any] = docs
+    reserved: Mapping[str, Any] = docs
+    successors = displaced_successors(docs, layer)
+    if successors:
+        # A line the catalog now provides (a release shipped its route):
+        # its key resolves to that catalog line like a retired key, so the
+        # profiles, bindings and records that name it keep resolving. The
+        # mapping exists before legacy models merge, so a legacy model under
+        # the same key is a collision the merge drops (a live entry would
+        # win over the mapping and route the key elsewhere).
+        retired_doc = dict(docs.get("retired") or {"version": 1, "retired": {}})
+        version = (docs.get("version") or {}).get("catalog_version")
+        retired_doc["retired"] = {
+            **retired_doc.get("retired", {}),
+            **{key: _displaced_retired_entry(layer.displaced[key], successor, version)
+               for key, successor in successors.items() if key not in retired_doc.get("retired", {})},
+        }
+        reserved = {**docs, "retired": retired_doc}
+    base: Mapping[str, Any] = reserved
     if legacy and not layer.marker:
         filtered = {
             "version": legacy.get("version", 1),
@@ -1896,7 +1913,7 @@ def merge_docs(
             "models": {k: v for k, v in legacy.get("models", {}).items()
                        if v.get("provider") not in layer.legacy_dropped},
         }
-        base = custom.merge_docs(dict(docs), filtered)
+        base = custom.merge_docs(dict(reserved), filtered)
     merged = dict(base)
     # Capture recognition before operator providers or legacy entries are merged.
     # This metadata is not an operator-extensible family registry.
@@ -1912,19 +1929,7 @@ def merge_docs(
                   "selector_mode": line.selector_mode, "family": line.family}
             for key, line in sorted(layer.lines.items())
         }
-    successors = displaced_successors(docs, layer)
     if successors:
-        # A line the catalog now provides (a release shipped its route):
-        # its key resolves to that catalog line like a retired key, so the
-        # profiles, bindings and records that name it keep resolving.
-        retired_doc = dict(base.get("retired") or {"version": 1, "retired": {}})
-        version = (docs.get("version") or {}).get("catalog_version")
-        retired_doc["retired"] = {
-            **retired_doc.get("retired", {}),
-            **{key: _displaced_retired_entry(layer.displaced[key], successor, version)
-               for key, successor in successors.items() if key not in retired_doc.get("retired", {})},
-        }
-        merged["retired"] = retired_doc
         merged[DISPLACED_KEY] = dict(successors)
     if not layer.providers and not layer.lines:
         return merged

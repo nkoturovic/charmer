@@ -25,7 +25,7 @@ from unittest import mock
 import charmer.proxy
 import test_cli  # module import: no test classes re-exported
 from _catalog import SHIPPED_ROOT, served_selectors
-from charmer import cli, operator as operator_mod, profile, state, strict_json
+from charmer import cli, custom, operator as operator_mod, profile, scope, state, strict_json
 from charmer.cli import doctor as doctor_mod
 
 SECRETS = (b"KIMI_CLAUDE_API_KEY=cli-test-dummy\nACME_API_KEY=acme-dummy-value\n"
@@ -72,6 +72,10 @@ PROFILE = {"version": 2, "name": "mine", "description": "uses lines of my own",
 
 
 class ShadowedOperatorLineTests(test_cli.OperatorCommandCase):
+    # A legacy custom.json registry present at the update (no migration
+    # marker), or None.
+    LEGACY: dict | None = None
+
     def setUp(self) -> None:
         super().setUp()
         # Phase one: 2.2.1's registry, written and rendered on a catalog
@@ -86,6 +90,10 @@ class ShadowedOperatorLineTests(test_cli.OperatorCommandCase):
         self.before = self.runtime.operator_snapshot().layer
         self.runtime.profiles.save(copy.deepcopy(PROFILE))
         self.captured = set(self.ledger().aliases)
+        if self.LEGACY is not None:
+            path = custom.registry_path(self.runtime.environ)
+            state.ensure_private_dir(path.parent)
+            state.atomic_write(path, strict_json.pretty_file_bytes(self.LEGACY))
         # Phase two: the same state, the 2.3.0 catalog.
         self.served = set(served_selectors(SHIPPED_ROOT))
         self.runtime = cli.Runtime(
@@ -222,6 +230,45 @@ class ShadowedOperatorLineTests(test_cli.OperatorCommandCase):
         self.assertEqual((set(layer.lines), set(layer.displaced)), ({OTHER}, set()))
         _blocks, attention, _info = doctor_mod._doctor_operator_report(self.runtime, None)
         self.assertFalse([line for line in attention if "now provided by the catalog" in line])
+
+
+class LegacyCollisionTests(ShadowedOperatorLineTests):
+    """The same update with a legacy custom.json (no migration marker) that
+    names each shadowed key too, on an unrelated route (DeepSeek's own API,
+    another wire and credential). Before the update the declaration wins
+    the key; after it the key follows its shipped successor, never the
+    legacy model: every test above holds unchanged."""
+
+    LEGACY = {"version": 1, "providers": {}, "models": {
+        key: {"provider": "deepseek", "wire_model": "deepseek-flash", "context_tokens": 1000000,
+              "created_via": "manual"}
+        for key in SHADOWED}}
+
+    def test_a_colliding_legacy_model_never_takes_the_key(self) -> None:
+        self.assertFalse(self.runtime.operator_snapshot().layer.marker)
+        docs = self.runtime.ordinary_docs
+        lcat = self.runtime.lineup_catalog()
+        for key, (_provider, _wire, successor) in SHADOWED.items():
+            with self.subTest(key=key):
+                self.assertNotIn(key, docs["models"]["models"])
+                self.assertNotIn(key, lcat.lines)
+                self.assertEqual(lcat.resolve_key(key).key, successor)
+        eff = self.runtime.current_effective()
+        lineup = profile.resolve(self.runtime.profiles.load("mine"), lcat, effective=eff)
+        bound = {lineup.lead.binding.key, *(agent.binding.key for agent in lineup.agents.values())}
+        self.assertLessEqual({"or-deepseek", "haiku", "or-kimi"}, bound)
+        self.assertFalse(bound & set(SHADOWED))
+        self.assertTrue([notice for notice in lineup.notices if notice.code == "retired-successor"])
+        plan = scope.compile_lineup_scope(lineup, lcat, eff, self.runtime.catalog.prompt_bodies,
+                                          scope.catalog_meta_v2(docs), lineup_generation=1)
+        legacy_selectors = {f"custom-{key}" for key in SHADOWED}
+        self.assertFalse(legacy_selectors & set(plan.settings["availableModels"]))
+        self.assertEqual(plan.settings["model"], "charmer-or-deepseek-4-1-1017-high[1m]")
+        code, out, err = self.op(["providers", "apply"])
+        self.assertEqual(code, 0, out + err)
+        rendered = (charmer.proxy.config_dir(self.runtime.home) / "config.yaml").read_text()
+        for selector in legacy_selectors:
+            self.assertNotIn(f'"{selector}"', rendered)
 
 
 if __name__ == "__main__":
