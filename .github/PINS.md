@@ -214,6 +214,12 @@ revision or version changes, the match needs review again. The list starts
 empty: adding a mechanism is not a review of an advisory, and there is no
 version-wide or alias-only exemption.
 
+GitHub starts this repository's scheduled runs hours after their cron time:
+in October 2026 between about 4.5 and 8 hours (the watch's Tuesday 06:17 UTC
+schedule ran at 11:43 on 2026-10-20 and at 12:18 on 2026-10-27). A scheduled
+run absent a few hours after its time is late, not skipped; check again
+before treating it as missing.
+
 Failures, new traces and unreviewed OSV matches fail the workflow and attempt
 to open or update one issue. A sorted finding fingerprint excludes run URLs
 and scanner timestamps; changed findings post a delta comment before updating
