@@ -166,7 +166,7 @@ A later live Haiku bind or unbind has its own reason:
 this launch-time setting. A user `DISABLE_COMPACT` still needs removal;
 see [compaction troubleshooting](troubleshooting.md#inside-a-session).
 
-#### Rolling back to 2.2.1
+#### Before going back to 2.2.1
 
 If 2.2.1 is the retained previous release, `charmer update --rollback`
 returns to it. Prepare first, between turns:

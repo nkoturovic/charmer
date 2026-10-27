@@ -278,7 +278,7 @@ model, bind it with **E** on the launch card; **M → Q** offers optional
 qualification with a request plan and explicit consent.
 
 charmer 2.2.1 does not accept the low, medium and max contracts on
-OpenRouter; see [rolling back to 2.2.1](../update.md#rolling-back-to-221)
+OpenRouter; see [before going back to 2.2.1](../update.md#before-going-back-to-221)
 before a rollback.
 
 ### Model id limits
