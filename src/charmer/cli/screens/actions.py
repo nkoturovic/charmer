@@ -88,7 +88,7 @@ ACTIONS: dict[str, tuple[Action, ...]] = {
         "findings",
         ("act", "Enter", "act on the finding (its fixed action, asked first) or show its exact command"),
         ("details", "V", "the full report, every original line", "charmer doctor -v"),
-        ("gateway", "W", "the gateway's actions: start, restart, service install, log", "charmer gateway status"),
+        ("gateway", "W", "the gateway's actions: start, restart, service install, log, plan", "charmer gateway status"),
         _HELP,
         ("back", "Esc", "back to the card"),
     ),

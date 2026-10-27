@@ -74,6 +74,10 @@ class ActionTableTests(unittest.TestCase):
         for bar_keys in BARS.values():
             self.assertNotIn("Left/Right", bar_keys)
 
+    def test_findings_gateway_description_includes_the_plan(self) -> None:
+        self.assertEqual(actions.action("findings.gateway").does,
+                         "the gateway's actions: start, restart, service install, log, plan")
+
 
 if __name__ == "__main__":
     unittest.main()

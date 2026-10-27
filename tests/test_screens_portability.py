@@ -45,7 +45,7 @@ class PortabilityScreenTests(PortabilityCase):
 
     def test_export_path_writes_the_cli_file_and_receipt(self):
         target = self.outside / "portable.json"
-        screen, win = self.drive("export", [*str(target), ENTER, RIGHT, ENTER, ESC])
+        screen, win = self.drive("export", [*str(target), ENTER, ENTER, ESC])
         self.assertTrue(target.is_file(), screen.message)
         self.assertEqual(target.stat().st_mode & 0o777, 0o600)
         self.assertEqual(portability.load_export(target.read_bytes(), asset_root=self.runtime.asset_root).document,
@@ -55,7 +55,7 @@ class PortabilityScreenTests(PortabilityCase):
 
     def test_blank_export_keeps_the_cli_stdout_default_without_a_receipt(self):
         before = inventory(self.root)
-        _screen, win = self.drive("export", [ENTER, RIGHT, ENTER, ESC])
+        _screen, win = self.drive("export", [ENTER, ENTER, ESC])
         self.assertIn(portability.FORMAT, self.text(win))
         self.assertIn("blank: show JSON", self.text(win))
         self.assertEqual(before, inventory(self.root))
@@ -63,7 +63,7 @@ class PortabilityScreenTests(PortabilityCase):
     def test_import_preview_displays_the_cli_plan_without_writing(self):
         path = self.ready_file()
         before = inventory(self.root)
-        _screen, win = self.drive("import-preview", [*str(path), ENTER, RIGHT, ENTER, END, ESC])
+        _screen, win = self.drive("import-preview", [*str(path), ENTER, ENTER, END, ESC])
         self.assertIn(portability.PREVIEW_HEADER, self.text(win))
         self.assertIn("Import plan digest:", self.text(win))
         self.assertEqual(before, inventory(self.root))
@@ -71,7 +71,7 @@ class PortabilityScreenTests(PortabilityCase):
     def test_import_apply_confirms_then_uses_the_cli_service(self):
         path = self.ready_file()
         with mock.patch.object(consent, "stdio_ttys", return_value=True):
-            _screen, win = self.drive("import", [*str(path), ENTER, RIGHT, ENTER,
+            _screen, win = self.drive("import", [*str(path), ENTER, ENTER,
                                                 ESC, RIGHT, ENTER, ESC])
         self.assertEqual(self.runtime.settings_store.load()[settings.COMPACTION_PERCENT_KEY], 71)
         self.assertIn("Apply imported configuration?", self.text(win))
@@ -82,24 +82,25 @@ class PortabilityScreenTests(PortabilityCase):
         path = self.ready_file()
         before = inventory(self.root)
         with mock.patch.object(consent, "stdio_ttys", return_value=True):
-            _screen, win = self.drive("import", [*str(path), ENTER, RIGHT, ENTER, ESC, ENTER, ESC])
+            _screen, win = self.drive("import", [*str(path), ENTER, ENTER, ESC, ENTER, ESC])
         self.assertEqual(before, inventory(self.root))
+        self.assertIn("Apply imported configuration?", self.text(win))
         self.assertIn("import: declined", self.text(win))
 
     def test_import_human_guard_refuses_before_reading_the_file(self):
         with mock.patch.dict(self.runtime.environ, {"CLAUDECODE": ""}), \
                 mock.patch.object(portability, "read_bundle", side_effect=AssertionError("read before guard")):
-            _screen, win = self.drive("import", [*"missing.json", ENTER, RIGHT, ENTER, ESC])
+            _screen, win = self.drive("import", [*"missing.json", ENTER, ENTER, ESC])
         self.assertIn("needs a terminal outside Claude Code", self.text(win))
 
     def test_readonly_export_and_import_apply_do_not_write(self):
         self.runtime.allow_state_writes = False
         target = self.outside / "portable.json"
-        _screen, win = self.drive("export", [*str(target), ENTER, RIGHT, ENTER, ESC])
+        _screen, win = self.drive("export", [*str(target), ENTER, ENTER, ESC])
         self.assertFalse(target.exists())
         self.assertIn("read-only", self.text(win))
         with mock.patch.object(portability, "read_bundle", side_effect=AssertionError("read before guard")):
-            _screen, win = self.drive("import", [*"missing.json", ENTER, RIGHT, ENTER, ESC])
+            _screen, win = self.drive("import", [*"missing.json", ENTER, ENTER, ESC])
         self.assertIn("read-only", self.text(win))
 
     def test_path_cancel_and_invalid_input_change_nothing(self):
@@ -108,7 +109,7 @@ class PortabilityScreenTests(PortabilityCase):
             with self.subTest(row=row):
                 self.drive(row, [ESC])
                 self.assertEqual(before, inventory(self.root))
-        _screen, win = self.drive("import-preview", [*"missing.json", ENTER, RIGHT, ENTER, ESC])
+        _screen, win = self.drive("import-preview", [*"missing.json", ENTER, ENTER, ESC])
         self.assertIn("nothing written", self.text(win))
         self.assertEqual(before, inventory(self.root))
 
@@ -125,7 +126,7 @@ class PortabilityScreenTests(PortabilityCase):
 
         with mock.patch.object(consent, "stdio_ttys", return_value=True), \
                 mock.patch.object(tui.Modal, "run", change_at_confirmation):
-            _screen, win = self.drive("import", [*str(path), ENTER, RIGHT, ENTER, ESC, RIGHT, ENTER, ESC])
+            _screen, win = self.drive("import", [*str(path), ENTER, ENTER, ESC, RIGHT, ENTER, ESC])
         self.assertEqual(self.runtime.settings_store.load()[settings.COMPACTION_PERCENT_KEY], 72)
         self.assertIn("changed since the preview", self.text(win))
         self.assertNotIn(portability.APPLIED_HEADER, self.text(win))
@@ -139,7 +140,7 @@ class PortabilityScreenTests(PortabilityCase):
         self.fresh_target()
         path = self.bundle_file(document)
         with mock.patch.object(consent, "stdio_ttys", return_value=True):
-            _screen, win = self.drive("import", [*str(path), ENTER, RIGHT, ENTER,
+            _screen, win = self.drive("import", [*str(path), ENTER, ENTER,
                                                 END, ESC, ENTER, END, ESC, RIGHT, ENTER, ESC])
         self.assertFalse((self.pdir / "lanbox.json").exists())
         self.assertEqual(self.runtime.settings_store.load()[settings.COMPACTION_PERCENT_KEY], 71)

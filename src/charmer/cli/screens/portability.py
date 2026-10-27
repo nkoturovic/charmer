@@ -34,8 +34,8 @@ def run(runtime: Any, win: Any, palette: tui.Palette, action: str, *,
              ["Preview writes nothing. Imported trust is never active."])
     field = tui.TextInput(max_length=4096)
     choice = tui.Modal(title, [*lines, label], input=field,
-                       buttons=(("Cancel", None), ("Export" if exporting else "Preview", "open"))).run(
-                           win, palette, background=background)
+                       buttons=(("Cancel", None), ("Export" if exporting else "Preview", "open")),
+                       default="open").run(win, palette, background=background)
     if choice != "open":
         return
     text = field.value.strip()
