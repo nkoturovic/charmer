@@ -506,7 +506,10 @@ class SelectorRecognitionProbe(_SpikeTestCase):
         for selector, row in observed.items():
             self.assertEqual(row["model"], _wire(selector))
             self.assertEqual(row["thinking_type"], "adaptive")
-            self.assertTrue(_has_beta(row, "context-1m-"), selector)
+            # From 2.1.311 the client drops an ineffective [1m]: a canonical
+            # id that is 1M on its own sends no 1M beta; an unknown id still
+            # needs the beta for its 1M window (client check one-m-suffix).
+            self.assertEqual(_has_beta(row, "context-1m-"), selector.startswith("charmer-"), selector)
         canonical_opus, multi_opus = observed[_OPUS], observed[_MULTI_OPUS]
         canonical_fable, multi_fable = observed[_FABLE], observed[_MULTI_FABLE]
         canonical_sonnet = observed[_SONNET]
@@ -729,7 +732,9 @@ class SelectorLimitsProbe(_SpikeTestCase):
                     row = json.loads(window_path.read_bytes())
                 except (OSError, ValueError):
                     row = {}
-                if row.get("model") == selector and isinstance(row.get("window"), int):
+                # From 2.1.311 the status line names a canonical 1M id
+                # without its ineffective [1m].
+                if row.get("model") == _wire(selector) and isinstance(row.get("window"), int):
                     window.update(row)
                     return
                 time.sleep(0.05)
@@ -763,13 +768,14 @@ class SelectorLimitsProbe(_SpikeTestCase):
                 label = f"{selector}/{'switch' if switched else 'fresh'}"
                 observed[label] = self._case(selector, switched=switched)
         # This custom endpoint does not get Models API lookups: advertised
-        # 300K/16K limits do not replace the client's 1M/128K defaults. The
-        # [1m] suffix changes the beta, not the canonical Opus window.
+        # 300K/16K limits do not replace the client's 1M/128K defaults. From
+        # 2.1.311 the [1m] suffix changes nothing on the canonical Opus id
+        # (2.1.310 added the beta for it): same window, no beta.
         for selector in (_wire(_OPUS), _OPUS):
             for kind in ("fresh", "switch"):
                 self.assertEqual(observed[f"{selector}/{kind}"], {
                     "window": 1000000,
-                    "max_tokens": 128000, "long_context": selector.endswith("[1m]"),
+                    "max_tokens": 128000, "long_context": False,
                     "limit_queries": [],
                 })
         print(f"client check S7-limits: PASS {self._identity()} {observed}")
@@ -1123,3 +1129,169 @@ class NativeAgentWireProbe(_SpikeTestCase):
             + (" (retried after a PTY timeout)"
                if getattr(self, "_pty_retried", False) else "")
         )
+
+
+# The client's own default Haiku (a client fact, not a catalog line: the
+# compiled family defaults name Fable, Opus and Sonnet only).
+_HAIKU = "claude-haiku-5-5"
+_HAIKU_MARKER = "client-check-marker-haiku"
+
+
+def _measured_turn(case: _SpikeTestCase, selector: str, *, fence: tuple[str, ...] | None,
+                   child_env: dict[str, str] | None = None) -> dict[str, Any]:
+    """One headless turn on ``selector``: the wire, the 1M beta, the output
+    cap and the context window the client books (``modelUsage``)."""
+
+    result, rows = case._run("1M", selector, responder=_SpikeResponder(), fence=fence,
+                             child_env=child_env, extra=("--output-format", "json"))
+    main = [row for row in rows if row["tool_count"]] or rows
+    try:
+        usage = json.loads(result.stdout or "{}").get("modelUsage") or {}
+    except ValueError:
+        usage = {}
+    return {"rc": result.returncode, "wire": main[0]["model"], "beta": _has_beta(main[0], "context-1m-"),
+            "max_tokens": main[0]["max_tokens"],
+            "window": sorted({value.get("contextWindow") for value in usage.values()
+                              if isinstance(value, dict) and isinstance(value.get("contextWindow"), int)})}
+
+
+class OneMillionSuffixProbe(_SpikeTestCase):
+    """What the ``[1m]`` suffix does on the pin, per selector kind.
+
+    Claude Code 2.1.311 drops the suffix from a model's name and id where it
+    changes nothing. The compiled selectors keep it on every 1M line; what
+    the lineup stands on is that each of them still books the 1M window (the
+    compaction and window accounting) and reaches the wire without the
+    suffix. The 1M beta is recorded per selector, not required: a canonical
+    id that is 1M on its own needs none.
+    """
+
+    def test_every_compiled_1m_selector_books_1m(self) -> None:
+        cases = {selector: (selector,) for family in (_OPUS, _FABLE, _SONNET, _MULTI_OPUS)
+                 for selector in (family, _wire(family))}
+        cases.update({_HAIKU: (_HAIKU,), f"{_HAIKU}[1m]": (f"{_HAIKU}[1m]",)})
+        observed = {selector: _measured_turn(self, selector, fence=fence) for selector, fence in cases.items()}
+        for selector, row in observed.items():
+            self.assertEqual(row["rc"], 0, selector)
+            self.assertEqual(row["wire"], _wire(selector), selector)
+        # Every compiled 1M selector books 1M.
+        for selector in (_OPUS, _FABLE, _SONNET, _MULTI_OPUS):
+            self.assertEqual(observed[selector]["window"], [1000000], selector)
+        # An unknown id is 200K without the suffix and needs the beta for 1M.
+        self.assertEqual(observed[_wire(_MULTI_OPUS)]["window"], [200000])
+        self.assertTrue(observed[_MULTI_OPUS]["beta"])
+        self.assertFalse(observed[_wire(_MULTI_OPUS)]["beta"])
+        # A canonical id is 1M on its own: with or without the suffix the
+        # request is the same (2.1.310 still added the beta for the suffix).
+        for family in (_OPUS, _FABLE, _SONNET, f"{_HAIKU}[1m]"):
+            self.assertEqual(observed[family], observed[_wire(family)], family)
+            self.assertFalse(observed[family]["beta"], family)
+        detail = " ".join(
+            f"{selector}->{row['wire']}:window={'/'.join(map(str, row['window'])) or '?'}"
+            f"{'+1m-beta' if row['beta'] else ''}:max={row['max_tokens']}"
+            for selector, row in observed.items())
+        print(f"client check one-m-suffix: PASS class=1M-booked {detail} {self._identity()}")
+
+
+class HaikuNativeProbe(_SpikeTestCase):
+    """The client-native Haiku, which the compile does not configure (no
+    ``ANTHROPIC_DEFAULT_HAIKU_MODEL``; the catalog has no Haiku line).
+
+    Measured: the ``haiku`` alias and ``ANTHROPIC_DEFAULT_HAIKU_MODEL`` on the
+    lead, the native ``claude-code-guide`` agent (the client's own Haiku
+    user) under fences with and without Anthropic routes and with a Haiku
+    selector (with and without ``[1m]``), the client's auxiliary requests in a
+    terminal session (they follow the variable, never the fence alone), and the
+    window ``claude-haiku-5-5`` books without ``[1m]``. The line is
+    ``client check haiku: MEASURED <detail>``; the assertions pin each
+    observation.
+    """
+
+    def _guide(self, lead: str, fence: tuple[str, ...] | None, env: dict[str, str] | None = None) -> str | None:
+        child_env = {**_HINT_ENV, _EXPLORE_CAP_OFF: "1", **(env or {})}
+
+        def run_helper(*, timeout=_RUN_TIMEOUT):
+            return self._run("haiku", lead, responder=_SpikeResponder(agents=("claude-code-guide",)),
+                             fence=fence, child_env=child_env, pty=True, timeout=timeout)
+
+        (_result, rows), _retried = _retry_s9_pty(run_helper)
+        helper = [row for row in rows if row["agent_type"] == "claude-code-guide"]
+        self.assertTrue(helper, f"claude-code-guide was never spawned (lead {lead}, fence {fence})")
+        models = {row["model"] for row in helper}
+        self.assertEqual(len(models), 1)
+        return models.pop()
+
+    def _background(self, lead: str, fence: tuple[str, ...], env: dict[str, str] | None = None
+                    ) -> dict[str, list[str]]:
+        """A terminal turn: the models of the client's own requests that are
+        not the lead's turn (by request class)."""
+
+        def run_turn(*, timeout=_RUN_TIMEOUT):
+            return self._run("haiku", lead, responder=_SpikeResponder(), fence=fence,
+                             child_env={**_HINT_ENV, **(env or {})}, pty=True, timeout=timeout)
+
+        (_result, rows), _retried = _retry_s9_pty(run_turn)
+        classes: dict[str, set[str]] = {}
+        for row in rows:
+            if row["request_class"] not in (None, "main"):
+                classes.setdefault(str(row["request_class"]), set()).add(str(row["model"]))
+        return {name: sorted(models) for name, models in sorted(classes.items())}
+
+    def test_haiku_is_client_native(self) -> None:
+        anthropic = (_OPUS, _FABLE, _SONNET)
+        lead = {
+            "alias": _measured_turn(self, "haiku", fence=None),
+            "alias+fence": _measured_turn(self, "haiku", fence=anthropic),
+            "alias+env": _measured_turn(self, "haiku", fence=None,
+                                        child_env={"ANTHROPIC_DEFAULT_HAIKU_MODEL": _HAIKU_MARKER}),
+            "id": _measured_turn(self, _HAIKU, fence=(_HAIKU,)),
+        }
+        guide = {
+            "opus-fence-anthropic-no-haiku": self._guide(_OPUS, anthropic),
+            "opus-fence-with-haiku": self._guide(_OPUS, (*anthropic, _HAIKU)),
+            "opus-fence-with-alias": self._guide(_OPUS, (*anthropic, "haiku")),
+            # The shape a compiled 1M Anthropic line would take: [1m] in the fence.
+            "opus-fence-with-haiku-1m": self._guide(_OPUS, (*anthropic, f"{_HAIKU}[1m]")),
+            "env-haiku-1m-fenced": self._guide(_OPUS, (*anthropic, f"{_HAIKU}[1m]"),
+                                               {"ANTHROPIC_DEFAULT_HAIKU_MODEL": f"{_HAIKU}[1m]"}),
+            "env-marker-unfenced": self._guide(_OPUS, None, {"ANTHROPIC_DEFAULT_HAIKU_MODEL": _HAIKU_MARKER}),
+            "env-marker-fenced": self._guide(_OPUS, (*anthropic, _HAIKU_MARKER),
+                                             {"ANTHROPIC_DEFAULT_HAIKU_MODEL": _HAIKU_MARKER}),
+        }
+        # The client's own background requests: on the lead, with or without
+        # Haiku in the fence; a Haiku variable naming a fenced model moves them.
+        background = {
+            "opus-fence-no-haiku": self._background(_OPUS, ()),
+            "opus-fence-with-haiku": self._background(_OPUS, (_HAIKU,)),
+            "gpt-fence-with-haiku": self._background(_LEAD_GPT, (_HAIKU,)),
+            "opus-fence-with-haiku+variable": self._background(
+                _OPUS, (_HAIKU,), {"ANTHROPIC_DEFAULT_HAIKU_MODEL": _HAIKU}),
+        }
+        for label, row in lead.items():
+            self.assertEqual(row["rc"], 0, label)
+        # The alias is the client's current Haiku through the custom base URL,
+        # with or without Anthropic routes in the fence; the variable retargets
+        # it. claude-haiku-5-5 books 1M without [1m].
+        self.assertEqual(lead["alias"]["wire"], _HAIKU)
+        self.assertEqual(lead["alias+fence"]["wire"], _HAIKU)
+        self.assertEqual(lead["alias+env"]["wire"], _HAIKU_MARKER)
+        self.assertEqual([lead[label]["window"] for label in ("alias", "alias+fence", "id")], [[1000000]] * 3)
+        self.assertFalse(any(row["beta"] for row in lead.values()))
+        # The client's own Haiku user runs on Haiku only when the fence admits
+        # it (by id or alias), else on the lead; the variable retargets it too.
+        self.assertEqual(guide, {
+            "opus-fence-anthropic-no-haiku": _wire(_OPUS), "opus-fence-with-haiku": _HAIKU,
+            "opus-fence-with-alias": _HAIKU, "opus-fence-with-haiku-1m": _HAIKU, "env-haiku-1m-fenced": _HAIKU,
+            "env-marker-unfenced": _HAIKU_MARKER, "env-marker-fenced": _HAIKU_MARKER})
+        # The client's auxiliary requests follow the variable, not the fence.
+        self.assertEqual(background, {
+            "opus-fence-no-haiku": {"auxiliary": [_wire(_OPUS)]},
+            "opus-fence-with-haiku": {"auxiliary": [_wire(_OPUS)]},
+            "gpt-fence-with-haiku": {"auxiliary": [_LEAD_GPT]},
+            "opus-fence-with-haiku+variable": {"auxiliary": [_HAIKU]}})
+        detail = ("lead " + " ".join(
+            f"{label}->{row['wire']}:window={'/'.join(map(str, row['window'])) or '?'}"
+            f"{'+1m-beta' if row['beta'] else ''}" for label, row in lead.items())
+            + "; claude-code-guide " + " ".join(f"{label}->{model}" for label, model in guide.items())
+            + "; background requests " + " ".join(f"{label}->{row}" for label, row in background.items()))
+        print(f"client check haiku: MEASURED {detail} {self._identity()}", flush=True)

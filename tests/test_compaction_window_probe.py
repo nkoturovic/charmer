@@ -162,6 +162,9 @@ class Case:
     main_agent: bool = False
     extra_argv: tuple[str, ...] = field(default=())
     gating: bool = False
+    # A user settings env (the user layer) and extra flag settings env.
+    user_env: tuple[tuple[str, str], ...] = field(default=())
+    flag_env: tuple[tuple[str, str], ...] = field(default=())
 
 
 def cases(window: int) -> tuple[Case, ...]:
@@ -201,6 +204,18 @@ def cases(window: int) -> tuple[Case, ...]:
         Case("flag-lead", "flag", "lead", "base", lead),
         Case("flag-lead-user-layers", "flag", "lead", "base", lead, user_overrides=True),
         Case("flag-agent-window", "flag", "agent", "narrow", trigger(AGENT_WINDOW), AGENT_WINDOW),
+        # Recorded: the compaction switches in a user's settings env against
+        # the compiled scope (a launch unsets them in the process
+        # environment), and the flag settings stating them off (from 2.1.311
+        # a settings env can use DISABLE_COMPACT only to turn compaction off).
+        Case("env-lead-user-disable-compact", "env", "lead", "base", lead, user_env=(("DISABLE_COMPACT", "1"),)),
+        Case("env-lead-user-disable-auto-compact", "env", "lead", "base", lead,
+             user_env=(("DISABLE_AUTO_COMPACT", "1"),)),
+        Case("env-lead-user-disable-compact-flag-off", "env", "lead", "base", lead,
+             user_env=(("DISABLE_COMPACT", "1"),), flag_env=(("DISABLE_COMPACT", "0"),)),
+        Case("env-lead-user-disable-auto-compact-flag-off", "env", "lead", "base", lead,
+             user_env=(("DISABLE_AUTO_COMPACT", "1"),), flag_env=(("DISABLE_AUTO_COMPACT", "0"),)),
+        Case("env-lead-flag-disable-compact-off", "env", "lead", "base", lead, flag_env=(("DISABLE_COMPACT", "0"),)),
     )
 
 
@@ -346,7 +361,7 @@ class CompactionWindowProbe(client_probe._ProbeCase, unittest.TestCase):
     def _case(self, case: Case, compiled: dict) -> dict:
         plan, context = compiled["plan"], compiled["context"]
         flag_settings, argv, process_env = represent(plan.settings, case.representation, context.window)
-        flag_settings["env"] = dict(flag_settings["env"], **_HINTS)
+        flag_settings["env"] = dict(flag_settings["env"], **_HINTS, **dict(case.flag_env))
         agent_files = dict(plan.agent_files)
         relpath = f".claude/agents/{_AGENT}.md"
         if case.agent_window is not None:
@@ -356,6 +371,9 @@ class CompactionWindowProbe(client_probe._ProbeCase, unittest.TestCase):
                                  scope.ScopePlan(agent_files, plan.settings, plan.other_files))
         if case.user_overrides:
             self._user_layers(fixture, compiled["lead"].selector)
+        if case.user_env:
+            target = fixture.claude_config_dir / "settings.json"
+            self._settings(fixture, {"env": dict(case.user_env)}, str(target.relative_to(fixture.root)))
         # The launch's own process environment (the probe harness admits a
         # window from 100K; below it the flag settings alone carry it).
         policy = (probe.ProbeCompactionPolicy(context.window, context.percent)
