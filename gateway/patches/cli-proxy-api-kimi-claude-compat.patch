@@ -495,10 +495,10 @@ index 8e407191..0fba2e59 100644
  	synth := NewConfigSynthesizer()
  	ctx := &SynthesisContext{
 diff --git a/sdk/cliproxy/service_models.go b/sdk/cliproxy/service_models.go
-index 16cbbf20..b201a923 100644
+index 7daa6ed1..cf9554d5 100644
 --- a/sdk/cliproxy/service_models.go
 +++ b/sdk/cliproxy/service_models.go
-@@ -808,6 +808,15 @@ type modelCompatEntry interface {
+@@ -811,6 +811,15 @@ type modelCompatEntry interface {
  	GetIsCompat() bool
  }
  
@@ -514,7 +514,7 @@ index 16cbbf20..b201a923 100644
  func buildConfiguredModelInfo(model modelEntry, ownedBy, modelType string, created int64, fallbackDisplayName string, userDefined bool) *ModelInfo {
  	name := strings.TrimSpace(model.GetName())
  	alias := strings.TrimSpace(model.GetAlias())
-@@ -847,6 +856,19 @@ func buildConfiguredModelInfo(model modelEntry, ownedBy, modelType string, creat
+@@ -850,6 +859,19 @@ func buildConfiguredModelInfo(model modelEntry, ownedBy, modelType string, creat
  	if compatModel, okCompat := any(model).(modelCompatEntry); okCompat {
  		info.IsCompat = compatModel.GetIsCompat()
  	}
@@ -535,19 +535,19 @@ index 16cbbf20..b201a923 100644
  }
  
 diff --git a/sdk/cliproxy/service_oauth_model_alias_test.go b/sdk/cliproxy/service_oauth_model_alias_test.go
-index c7fb5551..a6647123 100644
+index b8cb9141..0cc8cbc1 100644
 --- a/sdk/cliproxy/service_oauth_model_alias_test.go
 +++ b/sdk/cliproxy/service_oauth_model_alias_test.go
-@@ -3,6 +3,7 @@ package cliproxy
- import (
+@@ -8,6 +8,7 @@ import (
  	"testing"
  
+ 	"github.com/gin-gonic/gin"
 +	internalconfig "github.com/router-for-me/CLIProxyAPI/v8/internal/config"
  	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
- 	"github.com/router-for-me/CLIProxyAPI/v8/sdk/config"
- )
-@@ -298,3 +299,98 @@ func TestApplyModelPrefixes_PreservesMetadataModelID(t *testing.T) {
- 		}
+ 	"github.com/router-for-me/CLIProxyAPI/v8/sdk/api/handlers"
+ 	"github.com/router-for-me/CLIProxyAPI/v8/sdk/api/handlers/gemini"
+@@ -426,3 +427,98 @@ func TestApplyModelPrefixes_RewritesModelInfoNameForGeminiEndpoints(t *testing.T
+ 		t.Fatalf("forced gcp/gemini-4-argon Name = %q, want models/gcp/gemini-4-argon", forcedOut[0].Name)
  	}
  }
 +

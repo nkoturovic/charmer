@@ -12,10 +12,10 @@ index 529c3a8b..9260cee3 100644
  	}
  	h.startAttemptCleanup()
 diff --git a/internal/api/max_request_body_bytes_test.go b/internal/api/max_request_body_bytes_test.go
-index 000626d5..eb5b5cf7 100644
+index 6f042705..746a7991 100644
 --- a/internal/api/max_request_body_bytes_test.go
 +++ b/internal/api/max_request_body_bytes_test.go
-@@ -134,7 +134,6 @@ observability:
+@@ -152,7 +152,6 @@ observability:
  		"/v1/responses",
  		"/v1/messages",
  		"/v1beta/models/gemini-2.5-pro:generateContent",
@@ -23,7 +23,7 @@ index 000626d5..eb5b5cf7 100644
  	} {
  		t.Run("authenticated chunked body exceeding limit returns 413 on "+endpoint, func(t *testing.T) {
  			cfgNoLog := parseTestServerConfigYAML(t, `config-version: 8
-@@ -320,8 +319,11 @@ access:
+@@ -338,8 +337,11 @@ access:
  		reqMultipart.Header.Set("Content-Type", mw.FormDataContentType())
  		rrMultipart := httptest.NewRecorder()
  		srvMultipart.engine.ServeHTTP(rrMultipart, reqMultipart)
@@ -37,7 +37,7 @@ index 000626d5..eb5b5cf7 100644
  		}
  	})
  
-@@ -378,7 +380,9 @@ access:
+@@ -396,7 +398,9 @@ access:
  		}
  	})
  
@@ -48,7 +48,7 @@ index 000626d5..eb5b5cf7 100644
  		rawCfg := "config-version: 8\nserver:\n  max-request-body-bytes: 32\nmanagement:\n  allow-remote: true\n  secret-key: mgmt-secret\n"
  		cfgMgmt := parseTestServerConfigYAML(t, rawCfg)
  		srvMgmt := newTestServerWithConfig(t, cfgMgmt)
-@@ -399,8 +403,8 @@ access:
+@@ -417,8 +421,8 @@ access:
  			reqMgmt.Header.Set("Content-Type", "application/json")
  			rrMgmt := httptest.NewRecorder()
  			srvMgmt.engine.ServeHTTP(rrMgmt, reqMgmt)
@@ -60,10 +60,10 @@ index 000626d5..eb5b5cf7 100644
  		}
  	})
 diff --git a/internal/api/redis_queue_protocol.go b/internal/api/redis_queue_protocol.go
-index 2ca8b259..00913861 100644
+index afdbf668..a74346fd 100644
 --- a/internal/api/redis_queue_protocol.go
 +++ b/internal/api/redis_queue_protocol.go
-@@ -72,6 +72,14 @@ func (s *Server) handleRedisConnection(conn net.Conn, reader *bufio.Reader) {
+@@ -74,6 +74,14 @@ func (s *Server) handleRedisConnection(conn net.Conn, reader *bufio.Reader) {
  		return
  	}
  
@@ -79,7 +79,7 @@ index 2ca8b259..00913861 100644
  		if !s.managementRoutesEnabled.Load() {
  			return
 diff --git a/internal/api/server.go b/internal/api/server.go
-index 87ddc279..ffca1545 100644
+index 32a7c567..4989fc51 100644
 --- a/internal/api/server.go
 +++ b/internal/api/server.go
 @@ -173,6 +173,8 @@ func NewServer(cfg *config.Config, authManager *auth.Manager, accessManager *sdk
@@ -91,18 +91,20 @@ index 87ddc279..ffca1545 100644
  	engine.Use(s.maxRequestBodyBytesMiddleware())
  	for _, mw := range optionState.extraMiddleware {
  		engine.Use(mw)
-@@ -265,8 +267,9 @@ func NewServer(cfg *config.Config, authManager *auth.Manager, accessManager *sdk
+@@ -265,8 +267,11 @@ func NewServer(cfg *config.Config, authManager *auth.Manager, accessManager *sdk
  
  	// Create HTTP server
  	s.server = &http.Server{
--		Addr:    fmt.Sprintf("%s:%d", cfg.Host, cfg.Port),
--		Handler: engine,
+-		Addr:              fmt.Sprintf("%s:%d", cfg.Host, cfg.Port),
+-		Handler:           wrapUnconsumedRequestBodyHandler(engine),
 +		Addr: fmt.Sprintf("%s:%d", cfg.Host, cfg.Port),
-+		// charmer: the management allowlist guard answers before gin routes.
-+		Handler: managementGuardHandler(engine, logging.GinLogrusLogger(), logging.GinLogrusRecovery()),
++		// charmer: the management allowlist guard answers before gin routes;
++		// the unconsumed-body wrapper stays outermost, so a refusal that
++		// leaves a request body unread also closes the connection.
++		Handler:           wrapUnconsumedRequestBodyHandler(managementGuardHandler(engine, logging.GinLogrusLogger(), logging.GinLogrusRecovery())),
+ 		ReadHeaderTimeout: muxSniffDeadline,
  	}
  
- 	return s
 diff --git a/internal/api/server_devin_oauth_test.go b/internal/api/server_devin_oauth_test.go
 index e96150f3..30d853bd 100644
 --- a/internal/api/server_devin_oauth_test.go
@@ -430,10 +432,10 @@ index 00000000..334ac126
 +}
 diff --git a/internal/api/server_management_allowlist_test.go b/internal/api/server_management_allowlist_test.go
 new file mode 100644
-index 00000000..3a320e77
+index 00000000..412f482a
 --- /dev/null
 +++ b/internal/api/server_management_allowlist_test.go
-@@ -0,0 +1,1082 @@
+@@ -0,0 +1,1111 @@
 +package api
 +
 +import (
@@ -443,6 +445,7 @@ index 00000000..3a320e77
 +	"go/ast"
 +	"go/parser"
 +	"go/token"
++	"io"
 +	"io/fs"
 +	"net"
 +	"net/http"
@@ -1311,7 +1314,8 @@ index 00000000..3a320e77
 +// allowance (the control).
 +func TestManagementAllowlist_PreflightRefusedBeforeCORS(t *testing.T) {
 +	s := newAllowlistTestServer(t)
-+	targets := []string{"/v8/management/oauth/auth-url", "/v8/management/credentials"}
++	targets := []string{"/v8/management/oauth/auth-url", "/v8/management/credentials",
++		"/v8/management/models/refresh", "/v8/management/routing/model-definitions/refresh"}
 +	for _, target := range allowlistedManagementRoutes {
 +		targets = append(targets, target)
 +	}
@@ -1340,6 +1344,33 @@ index 00000000..3a320e77
 +		t.Fatalf("inference preflight control: status = %d allow-headers = %q, want 204 naming Authorization",
 +			rr.Code, rr.Header().Get("Access-Control-Allow-Headers"))
 +	}
++}
++
++// The guard never reads a refused request's body. The server's outermost
++// handler then marks the response Connection: close (and expires the read
++// deadline), so an unread body cannot hold the connection open.
++func TestManagementAllowlist_RefusedUnreadBodyClosesConnection(t *testing.T) {
++	s := newAllowlistTestServer(t)
++	for _, target := range []string{"/v8/management/models/refresh", "/v8/management/routing/model-definitions/refresh",
++		"/v0/management/api-keys", "/v1/images/generations"} {
++		for _, key := range []string{"", allowlistTestKey} {
++			req := allowlistRequest(http.MethodPost, target, key, "")
++			req.Body = io.NopCloser(strings.NewReader(`{"partial":`))
++			req.ContentLength = 1 << 20
++			rr := serveAllowlist(s, req)
++			assertRefused(t, rr, "POST "+target+" with an unread body")
++			if got := rr.Header().Get("Connection"); got != "close" {
++				t.Fatalf("POST %s with an unread body: Connection = %q, want close", target, got)
++			}
++		}
++	}
++	// Control: a refused request without a body keeps its connection.
++	rr := serveAllowlist(s, allowlistRequest(http.MethodGet, "/v8/management/credentials", allowlistTestKey, ""))
++	assertRefused(t, rr, "GET /v8/management/credentials")
++	if got := rr.Header().Get("Connection"); got != "" {
++		t.Fatalf("refused GET without a body: Connection = %q, want none", got)
++	}
++	assertNotBanned(t, s, "refused requests with unread bodies")
 +}
 +
 +// A DNS-rebinding page reaches 127.0.0.1 under its own host name. Only
@@ -1518,10 +1549,10 @@ index 00000000..3a320e77
 +}
 diff --git a/internal/api/server_management_route_table_test.go b/internal/api/server_management_route_table_test.go
 new file mode 100644
-index 00000000..7c67a39c
+index 00000000..048ec050
 --- /dev/null
 +++ b/internal/api/server_management_route_table_test.go
-@@ -0,0 +1,265 @@
+@@ -0,0 +1,267 @@
 +package api
 +
 +// charmer local patch (management-readonly-allowlist): the reviewed route
@@ -1746,6 +1777,7 @@ index 00000000..7c67a39c
 +	"POST /v1beta/models/*action":                              routeOpen,
 +	"POST /v8/management/credentials":                          routeRefuse,
 +	"POST /v8/management/credentials/refresh":                  routeRefuse,
++	"POST /v8/management/models/refresh":                       routeRefuse,
 +	"POST /v8/management/oauth/auth-url":                       routeRefuse,
 +	"POST /v8/management/oauth/callback":                       routeRefuse,
 +	"POST /v8/management/oauth/import":                         routeRefuse,
@@ -1754,6 +1786,7 @@ index 00000000..7c67a39c
 +	"POST /v8/management/plugins/store/:id/install":            routeRefuse,
 +	"POST /v8/management/requests/api-call":                    routeRefuse,
 +	"POST /v8/management/routing/cooldown/reset":               routeRefuse,
++	"POST /v8/management/routing/model-definitions/refresh":    routeRefuse,
 +	"PUT /v0/management/api-keys":                              routeRefuse,
 +	"PUT /v0/management/claude-api-key":                        routeRefuse,
 +	"PUT /v0/management/codex-api-key":                         routeRefuse,

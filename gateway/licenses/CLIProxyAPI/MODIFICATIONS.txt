@@ -1,11 +1,11 @@
-cli-proxy-api is CLIProxyAPI 8.0.44 (https://github.com/router-for-me/CLIProxyAPI,
-commit 1f917e77c4562623aa49e9804d999524151a2f96), distributed under the MIT licence
+cli-proxy-api is CLIProxyAPI 8.0.45 (https://github.com/router-for-me/CLIProxyAPI,
+commit ad8bdd3f20bef44f0684b8a6096a216b2c76040d), distributed under the MIT licence
 in LICENSE next to this file, modified by the patches below. They are applied
 in this order; each lists the files it modifies, adds or deletes.
 
 Before the modules are vendored, this patch updates the module requirements:
     cli-proxy-api-module-requirements.patch
-    sha256 aee9af45adaaf73181f32a9de73f525271f35799c7d53c49b39581aca3b32952
+    sha256 32e75243d5515478d0d263ac6fb6a62698fa708e9458ee1e3337a92be66e19b6
       modified  go.mod
       modified  go.sum
 
@@ -15,7 +15,7 @@ Before the modules are vendored, this patch updates the module requirements:
       modified  internal/auth/codex/oauth_server.go
 
  2. cli-proxy-api-kimi-claude-compat.patch
-    sha256 d777110728cac5819881577a52ac1513fc19982284c7185eb903f6f85b57c2d2
+    sha256 b75ee784dc93654590ca4eda8146387185fddb708d614a43c051fec7064f40c2
       added     internal/config/claude_compat_fields_test.go
       modified  internal/config/config_types.go
       modified  internal/runtime/executor/claude_executor.go
@@ -27,7 +27,7 @@ Before the modules are vendored, this patch updates the module requirements:
       modified  sdk/cliproxy/service_oauth_model_alias_test.go
 
  3. cli-proxy-api-non-claude-cache-retention.patch
-    sha256 f566ff0a35f7fcc701ca01631d1f7ca787e6a2686cd75de855cd911cda138af7
+    sha256 8bf1eb83abdfaed8cc10774c724f909a0f7a6b45fe786f02853ddc3271a6bc76
       modified  internal/runtime/executor/claude_executor_execute.go
       modified  internal/runtime/executor/claude_executor_stream.go
       modified  internal/runtime/executor/claude_executor_tokens.go
@@ -47,7 +47,7 @@ Before the modules are vendored, this patch updates the module requirements:
       modified  internal/runtime/executor/xai_websockets_executor.go
 
  4. cli-proxy-api-management-readonly-allowlist.patch
-    sha256 b7f85e21e8fc5833775fe9e48dfe597596071174b3486922bb7215b54b903191
+    sha256 f59ae6341725fa7d0748fa11cd779623a68897aec943a551b91921807b285977
       modified  internal/api/handlers/management/handler.go
       modified  internal/api/max_request_body_bytes_test.go
       modified  internal/api/redis_queue_protocol.go
@@ -91,7 +91,7 @@ Before the modules are vendored, this patch updates the module requirements:
       modified  sdk/cliproxy/watcher.go
 
  7. cli-proxy-api-management-env-only.patch
-    sha256 aec453ca8f9b310ebc25d274f8d66630b1d3c42acc3c142568b416a3aee90cc6
+    sha256 851b905b7d6699a4cd95b186d721fa7f3dab98ec0cf19cc4550f091a58c3f519
       modified  internal/api/handlers/management/handler.go
       modified  internal/api/server.go
       added     internal/api/server_management_env_only_test.go
@@ -102,7 +102,7 @@ Before the modules are vendored, this patch updates the module requirements:
       modified  internal/config/parse.go
 
  8. cli-proxy-api-credential-save-report.patch
-    sha256 b83ba03e158eaf42d6f0dc8b67fea9a796abd041f3e945c81acc85189d0267cd
+    sha256 2d081f8e4ac74362a3c2e8c6dc6e40118e24826fe480d559c49750f752b2b6ef
       modified  internal/auth/claude/token.go
       modified  internal/auth/codex/token.go
       modified  internal/auth/kimi/token.go
@@ -135,7 +135,7 @@ Before the modules are vendored, this patch updates the module requirements:
       modified  sdk/cliproxy/auth/file_snapshot_traffic_test.go
 
  9. cli-proxy-api-credentialed-redirects.patch
-    sha256 75f23b5f2e378fb149feb66755276db136141046ea0d1d2061ca7df575fc6357
+    sha256 501cd1bcb606b01a24f0677428d840374f45546e723070143e549ef46e8c02d8
       modified  internal/auth/claude/anthropic_auth.go
       added     internal/auth/claude/oauth_redirect_cm053_test.go
       modified  internal/auth/claude/utls_transport.go
@@ -175,7 +175,7 @@ Before the modules are vendored, this patch updates the module requirements:
       added     internal/upstreamredirect/upstreamredirect_cm053_test.go
 
 10. cli-proxy-api-openai-compat-keyed-safety.patch
-    sha256 322616bf3b65754f3eea77b0d22bcd939422d3c3fcce5812b049e27eb87e36ba
+    sha256 89921f21bf34416ccb46df5f8cffbb676df89fc30935b11412eae136c8724031
       added     internal/compatsafe/compatsafe.go
       added     internal/compatsafe/compatsafe_cm053_test.go
       modified  internal/runtime/executor/helps/usage_helpers.go
@@ -187,13 +187,13 @@ Before the modules are vendored, this patch updates the module requirements:
       added     sdk/cliproxy/auth/openai_compat_keyed_safety_test.go
 
 11. cli-proxy-api-auth-snapshot-locking.patch
-    sha256 aae4c50375c469c3e0fcb71ff3a50a501d1de28d8d3f7389f0326449883096b5
+    sha256 b19adc4d432b6095de27f3e73125acb3d9c9a1f67bf7171d8446afaeb73e3402
       added     internal/runtime/executor/claude_manager_prepare_cm053_test.go
       added     sdk/cliproxy/auth/auth_snapshot_cm053_test.go
       modified  sdk/cliproxy/auth/types.go
 
 12. cli-proxy-api-server-config-snapshot.patch
-    sha256 3c2d694166610e613246ce4fa0d63738bba8244a6a92de881becf6fb61cb02b6
+    sha256 ece8ee8a4218fc28617bac2fdee4a0fcdc6c5bf8b846717e542b4273181d8aff
       added     internal/api/server_config_snapshot.go
       added     internal/api/server_config_snapshot_cm053_test.go
       modified  internal/api/server_middleware.go
@@ -217,11 +217,12 @@ Before the modules are vendored, this patch updates the module requirements:
       added     internal/runtime/executor/claude_executor_auth_cm053_test.go
 
 14. cli-proxy-api-oauth-model-overlay.patch
-    sha256 2ea15c22fc8f55f1201d1fc4d5e94f5ff3b733799c8c4b51d7909baf88b6ef4a
+    sha256 77d8c60cd28e8d6ae989703a716ba482f5b1c64e7b43b30ec4f0f177061606b4
       modified  internal/config/config.go
       modified  internal/config/config_load.go
       added     internal/config/oauth_extra_models.go
       added     internal/config/oauth_extra_models_cm053_test.go
+      added     internal/config/oauth_extra_models_levels_cm053_test.go
       modified  internal/config/parse.go
       added     internal/modelconfig/oauth_extra_models.go
       modified  internal/watcher/config_reload.go
@@ -237,7 +238,7 @@ Before the modules are vendored, this patch updates the module requirements:
       modified  sdk/config/config.go
 
 15. cli-proxy-api-no-antigravity-egress.patch
-    sha256 2cc754efb40618b831438072824757d045f978279ac2501b0524c39ec89c2f07
+    sha256 beb48ca92a47038192729f3a1bb8e03daaf4727add5a6ec8888c6c083a3dfab7
       added     cmd/server/antigravity_version_cm053_test.go
       modified  cmd/server/main.go
       modified  internal/api/handlers/management/config_basic.go
@@ -264,7 +265,7 @@ Before the modules are vendored, this patch updates the module requirements:
       added     sdk/auth/antigravity_callback_loopback_test.go
 
 18. cli-proxy-api-codex-api-key-safety.patch
-    sha256 e37bd30d77aef3788addb5663c28b1e026ae209156a92c74d9dc1a26ec5a9be7
+    sha256 03a70b44e0d3e29c8c7b7fe3ae7c161bfb0eaafb123fae31c41d71bbd369ca9d
       modified  internal/runtime/executor/codex_executor_execute.go
       modified  internal/runtime/executor/codex_executor_request.go
       modified  internal/runtime/executor/codex_executor_stream.go
@@ -299,14 +300,14 @@ Before the modules are vendored, this patch updates the module requirements:
       added     internal/client/claude/models/models_charmer_test.go
 
 22. cli-proxy-api-output-cap.patch
-    sha256 f71444396279a109d0097918b2372f9ae8f2624a17c2396fb3705f42850aa509
+    sha256 a8fc3083686cdb96ae04d5cb3ed5dab6c3d545a8b86c31e167b1ee524601048a
       modified  internal/runtime/executor/codex_executor_execute.go
       modified  internal/runtime/executor/codex_executor_stream.go
       added     internal/runtime/executor/codex_key_output_cap.go
       added     internal/runtime/executor/codex_key_output_cap_test.go
 
 23. cli-proxy-api-context-error-normalization.patch
-    sha256 cd0d8328a6dec6c504fa3c570c22bcc8462620eab55d727540b55abc73f9df1d
+    sha256 e443d74142f2b1602c03c65604db8424e0557bafe2a93650dec7e10ca99ca6c4
       added     internal/runtime/executor/codex_context_error_normalization.go
       added     internal/runtime/executor/codex_context_error_normalization_test.go
       modified  internal/runtime/executor/codex_executor_execute.go
@@ -315,9 +316,10 @@ Before the modules are vendored, this patch updates the module requirements:
       added     sdk/api/handlers/claude/prompt_too_long.go
 
 24. cli-proxy-api-log-reduction.patch
-    sha256 de049d66351da799af638d820a7636aab94f0faca6c923511b924f4698af97d9
+    sha256 a28bae2a00e5aef8360d1c79155f4fa2ce884f8e101583079edeb6f5a2c055dd
       modified  internal/runtime/executor/codex_websockets_duplex.go
       modified  internal/runtime/executor/codex_websockets_session.go
+      modified  internal/runtime/executor/codex_websockets_write_loss_test.go
       modified  internal/runtime/executor/helps/usage_helpers.go
       added     internal/runtime/executor/log_reduction_test.go
       modified  internal/runtime/executor/xai_websockets_executor.go
@@ -340,6 +342,6 @@ Before the modules are vendored, this patch updates the module requirements:
       modified  sdk/cliproxy/service_auth.go
 
 27. cli-proxy-api-terminal-rejection-reload.patch
-    sha256 954f76ab1a49628fc21ad112d4146a3caab514faa6b946776988f4ea3f5fcdc5
+    sha256 e8fba56c077c71bca71d6b20677b552156da8aa3fb446911072efe63f1267834
       modified  sdk/cliproxy/auth/conductor_selection.go
       added     sdk/cliproxy/auth/terminal_rejection_reload_test.go

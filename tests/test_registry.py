@@ -43,8 +43,8 @@ def _oauth_lines(raw_docs):
 # that source byte for byte). A gateway re-pin regenerates it and updates
 # these recorded identities in the same change.
 REGISTRY_SNAPSHOT_SHA256 = {
-    "models.json": "202d50ff901832d8ed915db9a4f852e957ea5c2370b5f8bbfac7db226ba8b7d9",
-    "codex_client_models.json": "73fc4da198317b8ef2462b532d3870b2824232eb008fd10ca8926f36f67afb55",
+    "models.json": "32f663de911083339cf5347be74b0b4cbf1471bc1968362897cc94ebf021c306",
+    "codex_client_models.json": "811fab5cea2a1ae61fc83c55613405aacd7d81f0cd1be3a1756f495c77a9e2c5",
 }
 
 

@@ -317,10 +317,10 @@ index 00000000..db73e78e
 +	}
 +}
 diff --git a/internal/api/server_middleware.go b/internal/api/server_middleware.go
-index 6da5abc7..27017899 100644
+index 94500385..dad89708 100644
 --- a/internal/api/server_middleware.go
 +++ b/internal/api/server_middleware.go
-@@ -89,7 +89,7 @@ func (s *Server) maxRequestBodyBytesMiddleware() gin.HandlerFunc {
+@@ -335,7 +335,7 @@ func (s *Server) maxRequestBodyBytesMiddleware() gin.HandlerFunc {
  
  func (s *Server) homeHeartbeatMiddleware() gin.HandlerFunc {
  	return func(c *gin.Context) {
@@ -329,7 +329,7 @@ index 6da5abc7..27017899 100644
  		if s == nil || cfg == nil || !cfg.Home.Enabled {
  			c.Next()
  			return
-@@ -144,7 +144,7 @@ func (s *Server) exampleAPIKeySafeModeMiddleware() gin.HandlerFunc {
+@@ -392,7 +392,7 @@ func (s *Server) exampleAPIKeySafeModeMiddleware() gin.HandlerFunc {
  }
  
  func (s *Server) serveExampleAPIKeyWarningPage(c *gin.Context) {
@@ -339,10 +339,10 @@ index 6da5abc7..27017899 100644
  	if cfg != nil {
  		keys = safemode.ExampleAPIKeys(cfg.APIKeys)
 diff --git a/internal/api/server_routes.go b/internal/api/server_routes.go
-index 7bf7ff70..956afec6 100644
+index bb02a013..bb307289 100644
 --- a/internal/api/server_routes.go
 +++ b/internal/api/server_routes.go
-@@ -159,7 +159,7 @@ func (s *Server) setupRoutes() {
+@@ -160,7 +160,7 @@ func (s *Server) setupRoutes() {
  			errStr = c.Query("error_description")
  		}
  		if state != "" {
@@ -351,7 +351,7 @@ index 7bf7ff70..956afec6 100644
  				_, _ = managementHandlers.WriteOAuthCallbackFileForPendingSession(cfg.AuthDir, "anthropic", state, code, errStr)
  			}
  		}
-@@ -175,7 +175,7 @@ func (s *Server) setupRoutes() {
+@@ -176,7 +176,7 @@ func (s *Server) setupRoutes() {
  			errStr = c.Query("error_description")
  		}
  		if state != "" {
@@ -360,7 +360,7 @@ index 7bf7ff70..956afec6 100644
  				if _, errWrite := managementHandlers.WriteOAuthCallbackFileForPendingSession(cfg.AuthDir, "codex", state, code, errStr); errors.Is(errWrite, managementHandlers.ErrSIWCCallbackRequiresV8) {
  					c.JSON(http.StatusConflict, gin.H{"error": "SIWC callbacks require /v8/management/oauth/callback"})
  					return
-@@ -194,7 +194,7 @@ func (s *Server) setupRoutes() {
+@@ -195,7 +195,7 @@ func (s *Server) setupRoutes() {
  			errStr = c.Query("error_description")
  		}
  		if state != "" {
@@ -369,7 +369,7 @@ index 7bf7ff70..956afec6 100644
  				_, _ = managementHandlers.WriteOAuthCallbackFileForPendingSession(cfg.AuthDir, "antigravity", state, code, errStr)
  			}
  		}
-@@ -214,7 +214,7 @@ func (s *Server) setupRoutes() {
+@@ -215,7 +215,7 @@ func (s *Server) setupRoutes() {
  			c.JSON(http.StatusBadRequest, gin.H{"error": "code or error is required"})
  			return
  		}
@@ -378,7 +378,7 @@ index 7bf7ff70..956afec6 100644
  		authDir := ""
  		if cfg != nil {
  			authDir = cfg.AuthDir
-@@ -482,7 +482,7 @@ func (s *Server) codexAlphaSearch(c *gin.Context) {
+@@ -483,7 +483,7 @@ func (s *Server) codexAlphaSearch(c *gin.Context) {
  			return nil, errRequest
  		}
  		authType, authValue := current.AccountInfo()
@@ -387,7 +387,7 @@ index 7bf7ff70..956afec6 100644
  			URL:       upstreamURL,
  			Method:    http.MethodPost,
  			Headers:   req.Header.Clone(),
-@@ -503,7 +503,7 @@ func (s *Server) codexAlphaSearch(c *gin.Context) {
+@@ -504,7 +504,7 @@ func (s *Server) codexAlphaSearch(c *gin.Context) {
  		c.JSON(clienterror.HTTPStatusFromErrorOr(errCtx, http.StatusRequestTimeout), gin.H{"error": errCtx.Error()})
  		return
  	}
@@ -396,7 +396,7 @@ index 7bf7ff70..956afec6 100644
  	resp, err := performRequest(selected)
  	if err != nil {
  		if errors.Is(err, errMissingBaseURL) {
-@@ -621,7 +621,7 @@ func (s *Server) unifiedModelsHandler(openaiHandler *openai.OpenAIAPIHandler, cl
+@@ -626,7 +626,7 @@ func (s *Server) unifiedModelsHandler(openaiHandler *openai.OpenAIAPIHandler, cl
  			return
  		}
  
@@ -405,7 +405,7 @@ index 7bf7ff70..956afec6 100644
  		if _, ok := c.Request.URL.Query()["client_version"]; ok {
  			clientVersion := c.Query("client_version")
  			if cfg != nil && cfg.Home.Enabled {
-@@ -679,7 +679,7 @@ func grokModelsFromRegistryInfos(infos []*registry.ModelInfo) []grokbuild.ModelI
+@@ -684,7 +684,7 @@ func grokModelsFromRegistryInfos(infos []*registry.ModelInfo) []grokbuild.ModelI
  
  func (s *Server) handleGrokModels(c *gin.Context) {
  	var models []grokbuild.ModelInfo
@@ -414,7 +414,7 @@ index 7bf7ff70..956afec6 100644
  		entries, ok := s.loadHomeModelEntries(c)
  		if !ok {
  			return
-@@ -707,7 +707,7 @@ func (s *Server) handleHomeCodexClientModels(c *gin.Context, clientVersion strin
+@@ -712,7 +712,7 @@ func (s *Server) handleHomeCodexClientModels(c *gin.Context, clientVersion strin
  		return
  	}
  
@@ -423,7 +423,7 @@ index 7bf7ff70..956afec6 100644
  	models := make([]map[string]any, 0, len(entries))
  	for _, entry := range entries {
  		models = append(models, formatHomeCodexModelWithSettings(entry, cfg))
-@@ -872,7 +872,7 @@ func formatHomeCodexModelWithSettings(entry homeModelEntry, cfg *config.Config)
+@@ -877,7 +877,7 @@ func formatHomeCodexModelWithSettings(entry homeModelEntry, cfg *config.Config)
  
  func (s *Server) geminiModelsHandler(geminiHandler *gemini.GeminiAPIHandler) gin.HandlerFunc {
  	return func(c *gin.Context) {
@@ -432,7 +432,7 @@ index 7bf7ff70..956afec6 100644
  			s.handleHomeGeminiModels(c)
  			return
  		}
-@@ -883,7 +883,7 @@ func (s *Server) geminiModelsHandler(geminiHandler *gemini.GeminiAPIHandler) gin
+@@ -888,7 +888,7 @@ func (s *Server) geminiModelsHandler(geminiHandler *gemini.GeminiAPIHandler) gin
  
  func (s *Server) geminiGetHandler(geminiHandler *gemini.GeminiAPIHandler) gin.HandlerFunc {
  	return func(c *gin.Context) {
@@ -441,7 +441,7 @@ index 7bf7ff70..956afec6 100644
  			s.handleHomeGeminiModel(c)
  			return
  		}
-@@ -914,7 +914,7 @@ func (s *Server) handleHomeModels(c *gin.Context) {
+@@ -919,7 +919,7 @@ func (s *Server) handleHomeModels(c *gin.Context) {
  	isClaude := isAnthropicModelsRequest(c)
  
  	if isClaude {
@@ -451,7 +451,7 @@ index 7bf7ff70..956afec6 100644
  		s.writeModelListResponse(c, "claude", claudemodels.BuildResponse(formatHomeClaudeModels(entries), disableCloaking))
  		return
 diff --git a/sdk/api/handlers/claude/code_handlers.go b/sdk/api/handlers/claude/code_handlers.go
-index 823decd6..18ce0e23 100644
+index 04b32ae1..fc415665 100644
 --- a/sdk/api/handlers/claude/code_handlers.go
 +++ b/sdk/api/handlers/claude/code_handlers.go
 @@ -157,7 +157,7 @@ func rewriteClaudeDDModelInBody(rawJSON []byte) []byte {
@@ -708,10 +708,10 @@ index 00000000..6e79fc6f
 +	}
 +}
 diff --git a/sdk/api/handlers/handlers.go b/sdk/api/handlers/handlers.go
-index be576f70..4a8e8059 100644
+index 5e7d4383..d0ec71a1 100644
 --- a/sdk/api/handlers/handlers.go
 +++ b/sdk/api/handlers/handlers.go
-@@ -605,6 +605,8 @@ func (h *BaseAPIHandler) GetContextWithCancel(handler interfaces.APIHandler, c *
+@@ -608,6 +608,8 @@ func (h *BaseAPIHandler) GetContextWithCancel(handler interfaces.APIHandler, c *
  		}
  	}
  	newCtx, cancel := context.WithCancel(parentCtx)
@@ -720,7 +720,7 @@ index be576f70..4a8e8059 100644
  
  	endpoint := ""
  	if c != nil && c.Request != nil {
-@@ -654,7 +656,7 @@ func (h *BaseAPIHandler) GetContextWithCancel(handler interfaces.APIHandler, c *
+@@ -659,7 +661,7 @@ func (h *BaseAPIHandler) GetContextWithCancel(handler interfaces.APIHandler, c *
  		if c != nil {
  			logging.SetResponseStatus(cancelCtx, c.Writer.Status())
  		}
@@ -729,7 +729,7 @@ index be576f70..4a8e8059 100644
  			if captured, exists := c.Get(logging.APIResponseCapturedContextKey); exists {
  				if capturedBool, ok := captured.(bool); ok && capturedBool {
  					cancel()
-@@ -706,7 +708,7 @@ func (h *BaseAPIHandler) StartNonStreamingKeepAlive(c *gin.Context, ctx context.
+@@ -711,7 +713,7 @@ func (h *BaseAPIHandler) StartNonStreamingKeepAlive(c *gin.Context, ctx context.
  	if h == nil || c == nil {
  		return func() {}
  	}
@@ -792,7 +792,7 @@ index 00000000..3d1d819c
 +	return h.RequestConfig(c)
 +}
 diff --git a/sdk/api/handlers/handlers_errors.go b/sdk/api/handlers/handlers_errors.go
-index 7893da08..91e9ac59 100644
+index 418f83f2..f1922117 100644
 --- a/sdk/api/handlers/handlers_errors.go
 +++ b/sdk/api/handlers/handlers_errors.go
 @@ -128,7 +128,7 @@ func (h *BaseAPIHandler) WriteErrorResponse(c *gin.Context, msg *interfaces.Erro
@@ -804,7 +804,7 @@ index 7893da08..91e9ac59 100644
  		for key, values := range msg.Addon {
  			if len(values) == 0 || IsCPAReservedResponseHeader(key) {
  				continue
-@@ -196,7 +196,7 @@ func writeDirectErrorResponse(c *gin.Context, status int, msg *interfaces.ErrorM
+@@ -201,7 +201,7 @@ func writeDirectErrorResponse(c *gin.Context, status int, msg *interfaces.ErrorM
  }
  
  func (h *BaseAPIHandler) LoggingAPIResponseError(ctx context.Context, err *interfaces.ErrorMessage) {
@@ -814,10 +814,10 @@ index 7893da08..91e9ac59 100644
  			if apiResponseErrors, isExist := ginContext.Get("API_RESPONSE_ERROR"); isExist {
  				if slicesAPIResponseError, isOk := apiResponseErrors.([]*interfaces.ErrorMessage); isOk {
 diff --git a/sdk/api/handlers/handlers_execution.go b/sdk/api/handlers/handlers_execution.go
-index 0f821c3e..43e49d80 100644
+index 34130f76..6798b23e 100644
 --- a/sdk/api/handlers/handlers_execution.go
 +++ b/sdk/api/handlers/handlers_execution.go
-@@ -113,7 +113,7 @@ func (h *BaseAPIHandler) executeWithAuthManagerFormats(ctx context.Context, entr
+@@ -117,7 +117,7 @@ func (h *BaseAPIHandler) executeWithAuthManagerFormats(ctx context.Context, entr
  	executedReq, executedOpts := afterAuthCapture.apply(req, opts)
  	ctx = enrichContextWithSessionHierarchy(ctx, executedOpts.Headers, executedReq.Payload, executedOpts.Metadata)
  	rawResponseHeaders := cloneHeader(resp.Headers)
@@ -826,7 +826,7 @@ index 0f821c3e..43e49d80 100644
  	responseHeaders := downstreamHeadersFromExecutor(rawResponseHeaders, passthroughHeaders)
  	body, responseHeaders := h.applyResponseInterceptors(ctx, lifecycle.requestID(), responseProtocol, normalizedModel, originalRequestedModel, executedOpts, rawResponseHeaders, responseHeaders, executedOpts.OriginalRequest, executedReq.Payload, resp.Payload, http.StatusOK, execOptions.SkipInterceptorPluginID, passthroughHeaders)
  	lifecycle.complete(pluginapi.RequestCompletionSucceeded, http.StatusOK, nil)
-@@ -184,7 +184,7 @@ func (h *BaseAPIHandler) executeCountWithAuthManager(ctx context.Context, handle
+@@ -188,7 +188,7 @@ func (h *BaseAPIHandler) executeCountWithAuthManager(ctx context.Context, handle
  	executedReq, executedOpts := afterAuthCapture.apply(req, opts)
  	ctx = enrichContextWithSessionHierarchy(ctx, executedOpts.Headers, executedReq.Payload, executedOpts.Metadata)
  	rawResponseHeaders := cloneHeader(resp.Headers)
@@ -835,7 +835,7 @@ index 0f821c3e..43e49d80 100644
  	responseHeaders := downstreamHeadersFromExecutor(rawResponseHeaders, passthroughHeaders)
  	body, responseHeaders := h.applyResponseInterceptors(ctx, lifecycle.requestID(), handlerType, normalizedModel, originalRequestedModel, executedOpts, rawResponseHeaders, responseHeaders, executedOpts.OriginalRequest, executedReq.Payload, resp.Payload, http.StatusOK, execOptions.SkipInterceptorPluginID, passthroughHeaders)
  	lifecycle.complete(pluginapi.RequestCompletionSucceeded, http.StatusOK, nil)
-@@ -234,7 +234,7 @@ func (h *BaseAPIHandler) executeWithPluginExecutor(ctx context.Context, entryPro
+@@ -238,7 +238,7 @@ func (h *BaseAPIHandler) executeWithPluginExecutor(ctx context.Context, entryPro
  		reporter.EnsurePublished(execCtx)
  	}
  	rawResponseHeaders := cloneHeader(resp.Headers)
@@ -844,7 +844,7 @@ index 0f821c3e..43e49d80 100644
  	responseHeaders := downstreamHeadersFromExecutor(rawResponseHeaders, passthroughHeaders)
  	body, responseHeaders := h.applyResponseInterceptors(execCtx, lifecycle.requestID(), responseProtocol, modelName, originalRequestedModel, opts, rawResponseHeaders, responseHeaders, opts.OriginalRequest, req.Payload, resp.Payload, http.StatusOK, execOptions.SkipInterceptorPluginID, passthroughHeaders)
  	lifecycle.complete(pluginapi.RequestCompletionSucceeded, http.StatusOK, nil)
-@@ -270,7 +270,7 @@ func (h *BaseAPIHandler) countWithPluginExecutor(ctx context.Context, handlerTyp
+@@ -274,7 +274,7 @@ func (h *BaseAPIHandler) countWithPluginExecutor(ctx context.Context, handlerTyp
  		return nil, nil, errMsg
  	}
  	rawResponseHeaders := cloneHeader(resp.Headers)
@@ -854,7 +854,7 @@ index 0f821c3e..43e49d80 100644
  	body, responseHeaders := h.applyResponseInterceptors(ctx, lifecycle.requestID(), handlerType, modelName, originalRequestedModel, opts, rawResponseHeaders, responseHeaders, opts.OriginalRequest, req.Payload, resp.Payload, http.StatusOK, execOptions.SkipInterceptorPluginID, passthroughHeaders)
  	lifecycle.complete(pluginapi.RequestCompletionSucceeded, http.StatusOK, nil)
 diff --git a/sdk/api/handlers/handlers_stream.go b/sdk/api/handlers/handlers_stream.go
-index 102a3853..1214f05a 100644
+index 816de409..68cc028b 100644
 --- a/sdk/api/handlers/handlers_stream.go
 +++ b/sdk/api/handlers/handlers_stream.go
 @@ -92,7 +92,7 @@ func (h *BaseAPIHandler) streamWithPluginExecutor(ctx context.Context, entryProt
@@ -866,7 +866,7 @@ index 102a3853..1214f05a 100644
  	interceptorHost := h.interceptorHost()
  	streamInterceptorsActive := streamInterceptorsEnabled(interceptorHost)
  	rawStreamHeaders := cloneHeader(streamResult.Headers)
-@@ -376,7 +376,7 @@ func (h *BaseAPIHandler) executeStreamWithAuthManagerFormats(ctx context.Context
+@@ -380,7 +380,7 @@ func (h *BaseAPIHandler) executeStreamWithAuthManagerFormats(ctx context.Context
  	if executedReq, executedOpts := executedRequest(); len(executedOpts.Headers) > 0 || len(executedReq.Payload) > 0 || len(executedOpts.Metadata) > 0 {
  		ctx = enrichContextWithSessionHierarchy(ctx, executedOpts.Headers, executedReq.Payload, executedOpts.Metadata)
  	}
@@ -875,7 +875,7 @@ index 102a3853..1214f05a 100644
  	interceptorHost := h.interceptorHost()
  	streamInterceptorsActive := streamInterceptorsEnabled(interceptorHost)
  	// Resolve bootstrap retries and header initialization before returning so the
-@@ -533,7 +533,7 @@ func (h *BaseAPIHandler) executeStreamWithAuthManagerFormats(ctx context.Context
+@@ -537,7 +537,7 @@ func (h *BaseAPIHandler) executeStreamWithAuthManagerFormats(ctx context.Context
  		}
  	}
  
@@ -938,7 +938,7 @@ index d0396925..537d81f9 100644
  
  	dataChan, resolvedHeaders, errChan, okBootstrap := h.ExecuteStreamWithPreFTKeepAlive(
 diff --git a/sdk/api/handlers/openai/openai_responses_websocket.go b/sdk/api/handlers/openai/openai_responses_websocket.go
-index 8807df98..2bd9db25 100644
+index 329fb6e1..c4f56d5b 100644
 --- a/sdk/api/handlers/openai/openai_responses_websocket.go
 +++ b/sdk/api/handlers/openai/openai_responses_websocket.go
 @@ -363,7 +363,7 @@ func (h *OpenAIResponsesAPIHandler) ResponsesWebsocket(c *gin.Context) {

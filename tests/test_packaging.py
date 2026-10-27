@@ -23,7 +23,7 @@ from pathlib import Path
 
 
 from _layout import FLAKE_NIX as _FLAKE, NIX_DIR, PATCH_DIR, REPO_ROOT, RESOURCES_ROOT
-from _layout import UPSTREAM_JSON, installed_paths, load_tool, logical_path, pyproject, tree_files
+from _layout import UPSTREAM_JSON, UPSTREAM_REVIEW, installed_paths, load_tool, logical_path, pyproject, tree_files
 from charmer import legacy
 
 # None inside the Nix sandbox tree, which stages no flake.nix/flake.lock.
@@ -793,6 +793,7 @@ class ManagementAllowlistGateTests(unittest.TestCase):
         "TestManagementAllowlist_BadKeysOnRefusedRoutesNeverCount",
         "TestManagementAllowlist_BrowserOriginatedRequestsRefusedAndNeverCount",
         "TestManagementAllowlist_PreflightRefusedBeforeCORS",
+        "TestManagementAllowlist_RefusedUnreadBodyClosesConnection",
         "TestManagementAllowlist_NonLoopbackHostRefusedAndNeverCounts",
         "TestManagementAllowlist_RemoteOverrideForcedOff",
         "TestManagementAllowlist_OAuthCallbackWithPendingSessionWritesNothing",
@@ -845,6 +846,15 @@ class ManagementAllowlistGateTests(unittest.TestCase):
         "TestCodexCallbackRejectsSIWCState",
         "TestSIWCStatusEndpoint",
     )
+    # Upstream tests this gate excludes for a diagnosed upstream reason, not a
+    # refused surface. Each keeps its record in gateway/upstream-review.json
+    # test_exclusions (8.0.45): a Codex client-catalog test that fails on the
+    # pristine tag, and an advisory fixture that depends on the zstd
+    # encoder's window choice.
+    RECORDED_EXCLUSIONS = (
+        "TestModelsMultiAgentClientConfigAndReload",
+        "TestCaptureRequestInfoDoesNotDecodeASingleSegmentBomb",
+    )
 
     def _patch_text(self) -> str:
         self.assertTrue(self.PATCH.is_file(), f"{self.PATCH} missing next to the package")
@@ -883,6 +893,13 @@ class ManagementAllowlistGateTests(unittest.TestCase):
         self.assertIn("+++ b/internal/api/server_management_route_table_test.go", text)
         self.assertRegex(added, r'"GET /v8/management/credentials":\s+routeRefuse,')
         self.assertRegex(added, r'"GET /v0/management/auth-files":\s+routeAllow,')
+        self.assertRegex(added, r'"POST /v8/management/models/refresh":\s+routeRefuse,')
+        self.assertRegex(added, r'"POST /v8/management/routing/model-definitions/refresh":\s+routeRefuse,')
+        # The guard answers inside upstream's unconsumed-body wrapper, and the
+        # server keeps its header read deadline (an unchanged context line).
+        self.assertIn("+\t\tHandler:           wrapUnconsumedRequestBodyHandler(managementGuardHandler(engine, "
+                      "logging.GinLogrusLogger(), logging.GinLogrusRecovery())),\n"
+                      " \t\tReadHeaderTimeout: muxSniffDeadline,\n", text)
 
     def test_gate_runs_internal_api_with_explicit_skips(self) -> None:
         record = gate("management-allowlist")
@@ -895,8 +912,9 @@ class ManagementAllowlistGateTests(unittest.TestCase):
             # upstream tests, and the patch's own tests must never be skipped.
             self.assertRegex(name, r"^Test[A-Za-z0-9_]+$")
             self.assertNotIn(name, self.GATE_TESTS)
-        self.assertEqual(sorted(names), sorted(self.SKIPPED_UPSTREAM))
+        self.assertEqual(sorted(names), sorted([*self.SKIPPED_UPSTREAM, *self.RECORDED_EXCLUSIONS]))
         self.assertEqual(len(names), len(set(names)))
+        self._check_exclusion_records(json.loads(UPSTREAM_REVIEW.read_text()))
         # The patch's own tests must be in the selection.
         self.assertEqual(record["expected_tests"], list(self.GATE_TESTS))
         # No run filter and no reruns on this gate (global-state tests in
@@ -904,6 +922,24 @@ class ManagementAllowlistGateTests(unittest.TestCase):
         self.assertNotIn("run", record)
         self.assertIsNone(record["count"])
         self.assertFalse(record["race"])
+
+    def _check_exclusion_records(self, review) -> None:
+        # Every non-surface skip of this gate has its review record, and no
+        # refused surface is passed off as an upstream exclusion.
+        recorded = [item["test"] for item in review["test_exclusions"] if item["gate"] == "management-allowlist"]
+        self.assertEqual(sorted(recorded), sorted(self.RECORDED_EXCLUSIONS),
+                         "a management-allowlist skip lost its test_exclusions record")
+        self.assertFalse(set(recorded) & set(self.SKIPPED_UPSTREAM))
+
+    def test_each_recorded_exclusion_keeps_its_review_record(self) -> None:
+        review = json.loads(UPSTREAM_REVIEW.read_text())
+        self._check_exclusion_records(review)
+        # Negative controls: delete each record in turn while its skip stays.
+        for name in self.RECORDED_EXCLUSIONS:
+            missing = {**review, "test_exclusions": [item for item in review["test_exclusions"]
+                                                     if item["test"] != name]}
+            with self.subTest(deleted=name), self.assertRaises(AssertionError):
+                self._check_exclusion_records(missing)
 
 
 class StartupGateTests(unittest.TestCase):
@@ -1315,6 +1351,7 @@ class AdmittedPatchGateTests(unittest.TestCase):
         "./internal/config": (
             "TestCM053OverlayInvalidRefusedAtLoad",
             "TestCM053OverlayShapeRefused",
+            "TestCM053OverlayThinkingLevelsMatchParsers",
         ),
         "./internal/watcher": ("TestCM053OverlayReloadRefresh",),
         "./sdk/cliproxy": (
@@ -1376,7 +1413,8 @@ class AdmittedPatchGateTests(unittest.TestCase):
                  "TestLocalModeNoEgressSDKLocalModel",
                  "TestLocalModeNoEgressSDKRemoteModel",
                  "TestCM053LocalModeStartModelsUpdaterReadsEmbedded",
-                 "TestCM053LocalModeRefusesRemoteCatalogSources")
+                 "TestCM053LocalModeRefusesRemoteCatalogSources",
+                 "TestCM053LocalModeOnDemandRefreshRefusesRemoteSources")
         record = gate("no-antigravity-egress")
         self.assertEqual(record["packages"], ["./cmd/server", "./sdk/cliproxy", "./internal/registry"])
         self.assertEqual(record["run"], f"^({'|'.join(names)})$")

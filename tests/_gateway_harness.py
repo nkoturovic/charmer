@@ -274,7 +274,7 @@ def gateway_check_selections():
 # as well, then attribute the prerequisite's rows by difference against the
 # dependent-only omission. Never infer edges from build failures: each edge
 # below is a hunk that no longer applies, or a file of the dependent that no
-# longer compiles, when only the prerequisite is omitted (8.0.44 omission
+# longer compiles, when only the prerequisite is omitted (8.0.45 omission
 # matrix); "hunk" is that hunk's start line, 0 for a file the dependent adds.
 PATCH_DEPENDENCIES = {
     "cli-proxy-api-context-error-normalization.patch": {
@@ -285,7 +285,7 @@ PATCH_DEPENDENCIES = {
     },
     "cli-proxy-api-log-reduction.patch": {
         "cli-proxy-api-openai-compat-keyed-safety.patch": {
-            "file": "sdk/cliproxy/auth/conductor_execution.go", "hunk": 1880,
+            "file": "sdk/cliproxy/auth/conductor_execution.go", "hunk": 1913,
             "reason": "the redacted key and account identities replace the masked branches beside the keyed "
                       "compat identity, and the patch updates that identity test's control",
         },
@@ -312,7 +312,7 @@ PATCH_DEPENDENCIES = {
     },
     "cli-proxy-api-openai-compat-keyed-safety.patch": {
         "cli-proxy-api-credentialed-redirects.patch": {
-            "file": "internal/runtime/executor/openai_compat_executor.go", "hunk": 209,
+            "file": "internal/runtime/executor/openai_compat_executor.go", "hunk": 210,
             "reason": "keyed error handling replaces the redirect-guarded request paths",
         },
     },
@@ -662,7 +662,7 @@ def validate_keyed_evidence(directory, *, core_only=False, gateway_only=False):
 
 
 # The one pinned vendor (go-modules) output every diagnostic reuses.
-PINNED_GO_MODULES = "/nix/store/jwjc39cvkcrq2vgy2aclicydw4n70if8-cli-proxy-api-8.0.44-go-modules"
+PINNED_GO_MODULES = "/nix/store/qpg3khndfvxsnsl9cbivl4hfz4yg959r-cli-proxy-api-8.0.45-go-modules"
 
 
 def consumed_vendor(installable, run=subprocess.run) -> dict:

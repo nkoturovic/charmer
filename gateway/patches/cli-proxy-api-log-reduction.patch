@@ -1,8 +1,8 @@
 diff --git a/internal/runtime/executor/codex_websockets_duplex.go b/internal/runtime/executor/codex_websockets_duplex.go
-index de15c1b8..c1283ea6 100644
+index 41daa3e0..83e3f1f4 100644
 --- a/internal/runtime/executor/codex_websockets_duplex.go
 +++ b/internal/runtime/executor/codex_websockets_duplex.go
-@@ -43,7 +43,7 @@ func (e *CodexWebsocketsExecutor) streamCodexDuplex(
+@@ -44,7 +44,7 @@ func (e *CodexWebsocketsExecutor) streamCodexDuplex(
  	streamCtx, cancel := context.WithCancel(ctx)
  	out := make(chan cliproxyexecutor.StreamChunk)
  	// This first frame was successfully written by ExecuteStream before handoff.
@@ -11,7 +11,7 @@ index de15c1b8..c1283ea6 100644
  	writeErrors := make(chan error, 1)
  	// Explicit creates have their own request settings. Automatic successors
  	// inherit the preceding response settings, just as they do upstream.
-@@ -258,7 +258,7 @@ func (e *CodexWebsocketsExecutor) streamCodexDuplex(
+@@ -280,7 +280,7 @@ func (e *CodexWebsocketsExecutor) streamCodexDuplex(
  				fail(mapCodexWebsocketWriteError(sess, conn, errWrite))
  				return false
  			}
@@ -20,7 +20,7 @@ index de15c1b8..c1283ea6 100644
  			return true
  		}
  		flushPendingCreates := func() bool {
-@@ -358,7 +358,7 @@ func (e *CodexWebsocketsExecutor) streamCodexDuplex(
+@@ -383,7 +383,7 @@ func (e *CodexWebsocketsExecutor) streamCodexDuplex(
  						fail(mapCodexWebsocketWriteError(sess, conn, errWrite))
  						return
  					}
@@ -30,10 +30,10 @@ index de15c1b8..c1283ea6 100644
  
  				case "response.create", "response.append":
 diff --git a/internal/runtime/executor/codex_websockets_session.go b/internal/runtime/executor/codex_websockets_session.go
-index 4e6dbf2a..91ff3bfb 100644
+index cd22affd..02af56ca 100644
 --- a/internal/runtime/executor/codex_websockets_session.go
 +++ b/internal/runtime/executor/codex_websockets_session.go
-@@ -1027,6 +1027,10 @@ func sessionObjectKind(sess *codexWebsocketSession) string {
+@@ -1060,6 +1060,10 @@ func sessionObjectKind(sess *codexWebsocketSession) string {
  	return "ephemeral"
  }
  
@@ -44,7 +44,7 @@ index 4e6dbf2a..91ff3bfb 100644
  func logCodexWebsocketConnected(sessionID string, authID string, wsURL string) {
  	logCodexWebsocketConnectedWithReused(nil, sessionID, authID, wsURL, false)
  }
-@@ -1035,10 +1039,10 @@ func logCodexWebsocketConnectedWithReused(sess *codexWebsocketSession, sessionID
+@@ -1068,10 +1072,10 @@ func logCodexWebsocketConnectedWithReused(sess *codexWebsocketSession, sessionID
  	sessionStr := strings.TrimSpace(sessionID)
  	sessionKind := sessionObjectKind(sess)
  	if reused {
@@ -57,7 +57,7 @@ index 4e6dbf2a..91ff3bfb 100644
  }
  
  func logCodexWebsocketDisconnected(sessionID string, authID string, wsURL string, reason string, err error) {
-@@ -1060,17 +1064,17 @@ func logCodexWebsocketDisconnectedWithLastEvent(sess *codexWebsocketSession, ses
+@@ -1093,17 +1097,17 @@ func logCodexWebsocketDisconnectedWithLastEvent(sess *codexWebsocketSession, ses
  	terminalStatus := isTerminalEvent(lastEvent)
  	if err != nil {
  		if lastEvent != "" {
@@ -79,8 +79,34 @@ index 4e6dbf2a..91ff3bfb 100644
  }
  
  // CloseCodexWebsocketSessionsForAuthID closes all active Codex upstream websocket sessions
+diff --git a/internal/runtime/executor/codex_websockets_write_loss_test.go b/internal/runtime/executor/codex_websockets_write_loss_test.go
+index ed887859..b28190e8 100644
+--- a/internal/runtime/executor/codex_websockets_write_loss_test.go
++++ b/internal/runtime/executor/codex_websockets_write_loss_test.go
+@@ -101,8 +101,10 @@ type disconnectLogBarrierHook struct {
+ 	release   <-chan struct{}
+ }
+ 
++// charmer local patch (log-reduction): the websocket disconnect line is a
++// debug line, so the barrier listens there.
+ func (h *disconnectLogBarrierHook) Levels() []log.Level {
+-	return []log.Level{log.InfoLevel}
++	return []log.Level{log.DebugLevel}
+ }
+ 
+ func (h *disconnectLogBarrierHook) Fire(entry *log.Entry) error {
+@@ -175,6 +177,9 @@ func TestCodexWebsocketInvalidatePublishesLossEpochBeforeReleasingConnLock(t *te
+ 
+ 	enteredLog := make(chan struct{})
+ 	releaseLog := make(chan struct{})
++	previousLevel := log.GetLevel()
++	log.SetLevel(log.DebugLevel)
++	t.Cleanup(func() { log.SetLevel(previousLevel) })
+ 	log.AddHook(&disconnectLogBarrierHook{
+ 		sessionID: sessionID,
+ 		entered:   enteredLog,
 diff --git a/internal/runtime/executor/helps/usage_helpers.go b/internal/runtime/executor/helps/usage_helpers.go
-index 92f002e7..478f51db 100644
+index 08dbbd63..1cebf79c 100644
 --- a/internal/runtime/executor/helps/usage_helpers.go
 +++ b/internal/runtime/executor/helps/usage_helpers.go
 @@ -37,6 +37,7 @@ type UsageReporter struct {
@@ -379,7 +405,7 @@ index ec4053b4..586bce82 100644
  
  // CloseXAIWebsocketSessionsForAuthID closes all active xAI upstream websocket sessions
 diff --git a/sdk/cliproxy/auth/conductor_execution.go b/sdk/cliproxy/auth/conductor_execution.go
-index d5780a9f..5f75bd6c 100644
+index 7d99806b..379460b8 100644
 --- a/sdk/cliproxy/auth/conductor_execution.go
 +++ b/sdk/cliproxy/auth/conductor_execution.go
 @@ -8,7 +8,6 @@ import (
@@ -390,7 +416,7 @@ index d5780a9f..5f75bd6c 100644
  	"sort"
  	"strconv"
  	"strings"
-@@ -1880,14 +1879,14 @@ func debugLogAuthSelection(entry *log.Entry, auth *Auth, provider string, model
+@@ -1913,14 +1912,14 @@ func debugLogAuthSelection(entry *log.Entry, auth *Auth, provider string, model
  			entry.Debugf("Use API key %s for model %s%s", openAICompatAuthLogIdentity(auth), model, suffix)
  			return
  		}
@@ -407,7 +433,7 @@ index d5780a9f..5f75bd6c 100644
  	if auth == nil {
  		return ""
  	}
-@@ -1896,26 +1895,13 @@ func formatOauthIdentity(auth *Auth, provider string, accountInfo string) string
+@@ -1929,26 +1928,13 @@ func formatOauthIdentity(auth *Auth, provider string, accountInfo string) string
  	if providerName == "" {
  		providerName = strings.TrimSpace(provider)
  	}
@@ -439,7 +465,7 @@ index d5780a9f..5f75bd6c 100644
  }
  
  // isOpenAICompatAuthForLog reports an OpenAI-compatible provider auth
-@@ -1949,20 +1935,11 @@ func formatAuthIdentity(auth *Auth, provider string) string {
+@@ -1982,20 +1968,11 @@ func formatAuthIdentity(auth *Auth, provider string) string {
  		if isOpenAICompatAuthForLog(auth) {
  			return "api_key=" + openAICompatAuthLogIdentity(auth)
  		}

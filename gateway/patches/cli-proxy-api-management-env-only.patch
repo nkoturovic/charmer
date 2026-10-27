@@ -70,7 +70,7 @@ index 9260cee3..de408df0 100644
  
  // persistLocked saves the current in-memory config to disk.
 diff --git a/internal/api/server.go b/internal/api/server.go
-index ffca1545..0db1faac 100644
+index 4989fc51..3ed63a66 100644
 --- a/internal/api/server.go
 +++ b/internal/api/server.go
 @@ -250,9 +250,11 @@ func NewServer(cfg *config.Config, authManager *auth.Manager, accessManager *sdk
@@ -599,7 +599,7 @@ index 00000000..f5edeeff
 +	assertManagementOff(t, s, "keep-alive server without MANAGEMENT_PASSWORD")
 +}
 diff --git a/internal/api/server_management_v8_test.go b/internal/api/server_management_v8_test.go
-index f7fbb117..52f26659 100644
+index da91cd74..39090682 100644
 --- a/internal/api/server_management_v8_test.go
 +++ b/internal/api/server_management_v8_test.go
 @@ -18,6 +18,9 @@ import (
@@ -622,7 +622,7 @@ index f7fbb117..52f26659 100644
  	path := filepath.Join(t.TempDir(), "config.yaml")
  	raw := "port: 8317\nrequest-retry: 3\ndebug: false\napi-keys: [client]\nremote-management: {secret-key: test-password}\n"
  	if err := os.WriteFile(path, []byte(raw), 0600); err != nil {
-@@ -180,6 +186,9 @@ func TestManagementV8IndependentContract(t *testing.T) {
+@@ -182,6 +188,9 @@ func TestManagementV8IndependentContract(t *testing.T) {
  }
  
  func TestManagementV8PluginOperationMigratesConfiguration(t *testing.T) {

@@ -808,8 +808,8 @@ class NativeReplayTests(unittest.TestCase):
                             self.assertFalse(result.timed_out)
                             self.assertTrue(result.daemon and result.daemon.unchanged)
                             self.assertEqual(relay.completion_errors(), [])
-                            # Re-measured on 8.0.44 with client 2.1.310: the same known negative.
-                            self.assertEqual(gateway.version, "8.0.44", "requalify late-terminal evidence for a changed gateway")
+                            # Re-measured on 8.0.45 with client 2.1.311: the same known negative.
+                            self.assertEqual(gateway.version, "8.0.45", "requalify late-terminal evidence for a changed gateway")
                             expected_start = {"stop_reason": None, "stop_sequence": None, "output_tokens": 0}
                             self.assertTrue(all(row["initial_fields"] == expected_start for row in upstream_rows))
                             self.assertTrue(all(row.get("reply_initial_fields") == [expected_start] for row in relay.rows))
@@ -1469,8 +1469,9 @@ def capacity_reply(path, body, raw, _headers):
 
 class CodexCapacityRejectionTests(unittest.TestCase):
     """#7017: the ChatGPT Codex capacity 429 with Retry-After under the
-    rendered request-retry 0 and disable-cooling true. Observation row; the
-    disposition (a known limit) is in gateway/upstream-review.json."""
+    rendered request-retry 0 and disable-cooling true. Measured on 8.0.45:
+    the client receives the provider's Retry-After on both OpenAI routes
+    (8.0.44 sent none); the disposition is in gateway/upstream-review.json."""
 
     def observe(self, gateway, alias, route_name):
         rows = []
@@ -1506,6 +1507,10 @@ class CodexCapacityRejectionTests(unittest.TestCase):
         rows += self.observe(account, sorted(account.info["reviewed"])[0], "account")
         facts(account, "codex-capacity-429", upstream_status=429, upstream_retry_after="300",
               upstream_error=TURN_LIMIT["error"]["code"], rows=rows)
+        # The provider's delay reaches the client on both routes, streamed or
+        # not (on the API-key route through patch 20's classification).
+        self.assertEqual([row["retry_after"] for row in rows], ["300"] * len(rows))
+        self.assertEqual({row["status"] for row in rows}, {429})
 
 
 class CallerScopedAliasTests(unittest.TestCase):
@@ -1657,9 +1662,48 @@ class ShouldRetryHeaderTests(unittest.TestCase):
             # the refusal's status reaches the client.
             self.assertEqual(row["upstream_requests"], 1, row)
             self.assertEqual(row["status"], row["upstream_status"], row)
-            # Measured on 8.0.44: with passthrough-headers false neither header
-            # reaches the client, so the client's do-not-retry rule never sees
-            # the provider's answer (a known limit); a change is reconciled
-            # deliberately, never just accepted.
+            # Measured on 8.0.45: with passthrough-headers false x-should-retry
+            # still never reaches the client, so its do-not-retry rule never
+            # sees the provider's answer (a known limit). The gateway now
+            # answers every refusal with a Retry-After of its own choosing
+            # (8 to 36 s in two runs against the provider's 7 s, on both
+            # routes and in both modes; 8.0.44 sent none). A change is
+            # reconciled deliberately, never just accepted.
             self.assertIsNone(row["x_should_retry"], row)
-            self.assertIsNone(row["retry_after"], row)
+            self.assertRegex(row["retry_after"] or "", r"^[1-9][0-9]*$", row)
+
+
+class HeaderReadTimeoutTests(unittest.TestCase):
+    """A connection that starts a request and stops before the end of its
+    headers is closed by the gateway as rendered (the HTTP server's header read
+    deadline), so an idle client cannot hold it open. One connection, the
+    harness's own ports."""
+
+    BOUND = 15.0
+
+    def test_unfinished_request_head_is_closed(self):
+        gateway = harness.GatewayHarness()
+        self.addCleanup(gateway.close)
+        connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.addCleanup(connection.close)
+        connection.settimeout(self.BOUND)
+        connection.connect(str(gateway.socket))
+        started = time.monotonic()
+        connection.sendall(f"GET /healthz HTTP/1.1\r\nHost: 127.0.0.1:{gateway.port}\r\n".encode())
+        closed, reply = False, b""
+        while (remaining := self.BOUND - (time.monotonic() - started)) > 0:
+            connection.settimeout(remaining)
+            try:
+                chunk = connection.recv(4096)
+            except (socket.timeout, TimeoutError):
+                break
+            if not chunk:
+                closed = True
+                break
+            reply += chunk
+        elapsed = round(time.monotonic() - started, 3)
+        facts(gateway, "unfinished-request-head", bound_seconds=self.BOUND, closed=closed, seconds=elapsed,
+              reply_bytes=len(reply))
+        self.assertTrue(closed, f"the connection was still open after {self.BOUND} s")
+        self.assertLess(elapsed, self.BOUND)
+        self.assertEqual(gateway.get("/healthz").status, 200)

@@ -28,6 +28,7 @@ from _layout import (
     UPSTREAM_REVIEW,
 )
 from charmer import strict_json, validate
+import test_packaging as packaging
 
 SCHEMA = RESOURCES_ROOT / "schemas" / "gateway-upstream.schema.json"
 
@@ -207,6 +208,39 @@ class GateRecordTests(unittest.TestCase):
                     linux_only = gate["name"] in {"config-bytes-loader"}
                     self.assertEqual(gate["platforms"], "linux" if linux_only else "portable")
                     self.assertIsNone(gate["count"])
+
+    # Upstream's own regression tests for the two request-body advisories
+    # fixed in 8.0.45, run by name (internal/api and internal/api/middleware).
+    ADVISORY_TESTS = [
+        "TestAcceptMuxRecoversFromEMFILE",
+        "TestAcceptMuxUnauthenticatedRESPDoesNotStarveHTTP",
+        "TestServerRejectsIncompleteUnauthenticatedRequestBodiesPromptly",
+        "TestServerMaxRequestBodyBytesRejectsContentLengthAndChunkedBodies",
+        "TestShouldCaptureRequestBody",
+        "TestCaptureRequestInfoBoundsZstdExpansionWithoutAConfiguredLimit",
+        "TestDecodeCapturedZstdRefusesAnOversizedWindow",
+    ]
+    # The one advisory test the gates do not run: a recorded exclusion whose
+    # fixture depends on the zstd encoder's window choice.
+    ADVISORY_EXCLUDED = "TestCaptureRequestInfoDoesNotDecodeASingleSegmentBomb"
+
+    def test_advisory_regression_tests_run_by_name_and_are_never_skipped(self):
+        gate = self.gates["request-body-advisories"]
+        self.assertEqual(gate["packages"], ["./internal/api", "./internal/api/middleware"])
+        self.assertEqual(gate["expected_tests"], self.ADVISORY_TESTS)
+        self.assertEqual(gate["run"], "^(" + "|".join(self.ADVISORY_TESTS) + ")$")
+        self.assertNotIn("skip", gate)
+        self.assertFalse(gate["race"])
+        for other in self.recipe["gates"]:
+            if other.get("skip"):
+                with self.subTest(gate=other["name"]):
+                    skip = re.compile(other["skip"])
+                    self.assertFalse([name for name in self.ADVISORY_TESTS if skip.search(name)])
+        review = strict_json.load(UPSTREAM_REVIEW)
+        for name in [*self.ADVISORY_TESTS, self.ADVISORY_EXCLUDED]:
+            with self.subTest(test=name):
+                self.assertIn(name, review["admission"])
+        self.assertIn(self.ADVISORY_EXCLUDED, [item["test"] for item in review["test_exclusions"]])
 
     def test_patch_owned_gate_tests_exist_in_the_admitted_patches(self):
         added = "\n".join("\n".join(added_lines((PATCH_DIR / name).read_text(), tests=True))
@@ -393,9 +427,32 @@ class UpstreamReviewTests(unittest.TestCase):
         self.assertTrue(target["rule_check"].strip())
 
     EXCLUSION_KEYS = {"test", "package", "gate", "reason", "measured", "upstream", "re_check"}
-    # Gates whose skip exists only for recorded upstream test exclusions (the
-    # other skips leave out upstream tests of surfaces the patches refuse).
-    EXCLUSION_ONLY_GATES = {"executor"}
+    # The sdk-service gate's own explicit skip list (no recorded exclusion).
+    SDK_SERVICE_SKIPS = (
+        "TestEndToEndStatusPatch_RestoresModelsThroughServerPipeline",
+        "TestEndToEndAuthFileReplacement_RestoresModelsInV1ModelsWithoutRestart",
+        "TestEndToEndAuthFilePatch_RestoresModelsInV1ModelsWithoutRestart",
+        "TestManagementSequentialWritesSurviveStaleReload_Issue6631",
+        "TestManagementWriteDuringReloadReachesRuntime_Issue6631",
+        "TestPutOpenAICompatConcurrentWithAuthFieldsPatch_Issue6559",
+        "TestPutOpenAICompatConcurrentWithConfigReloadAndAuthUpdate_Issue6559",
+        "TestRegisterModelsForAuth_CredentialExcludedModelsOverrideGlobal",
+        "TestCodexExcludedModelsCredentialPriorityAfterPatchAndReload",
+        "TestRegisterModelsForAuth_PluginStaticModelsFollowExclusions",
+        "TestAntigravityModelsForHints_PluginStaticModelsFollowExclusions",
+        "TestPluginStaticModelAvailabilityFollowsCredentials",
+        "TestModelRegistrationAllowsIrrelevantConfigReload",
+    )
+
+    @classmethod
+    def reviewed_skips(cls):
+        """Per gate with a named skip, the skipped names that are not upstream
+        test exclusions: the management allowlist's refused surfaces (kept by
+        test_packaging) and the sdk-service list. Every other skipped name
+        needs a test_exclusions record."""
+        return {"executor": (),
+                "management-allowlist": packaging.ManagementAllowlistGateTests.SKIPPED_UPSTREAM,
+                "sdk-service": cls.SDK_SERVICE_SKIPS}
 
     def check_test_exclusions(self, review, recipe):
         gates = {gate["name"]: gate for gate in recipe["gates"]}
@@ -413,12 +470,24 @@ class UpstreamReviewTests(unittest.TestCase):
             self.assertIn(item["test"], match.group(1).split("|"))
             self.assertNotIn(item["test"], gate["expected_tests"])
             recorded.setdefault(item["gate"], []).append(item["test"])
-        for name in self.EXCLUSION_ONLY_GATES:
-            gate = gates[name]
+        # The reverse check, for every gate with a named skip: each skipped
+        # name is a reviewed skip of that gate or has its exclusion record.
+        reviewed = self.reviewed_skips()
+        for name, gate in gates.items():
             if not gate.get("skip"):
                 self.assertNotIn(name, recorded)
                 continue
-            self.assertEqual(gate["skip"], "^(" + "|".join(recorded.get(name, [])) + ")$",
+            self.assertIn(name, reviewed, f"gate {name} has a named skip nobody reviewed")
+            match = re.fullmatch(r"\^\(([A-Za-z0-9_|]+)\)\$", gate["skip"])
+            self.assertIsNotNone(match, f"gate {name} has no anchored named skip")
+            skipped = match.group(1).split("|")
+            exclusions = recorded.get(name, [])
+            surfaces = set(reviewed[name])
+            self.assertEqual(len(skipped), len(set(skipped)), f"gate {name} skips a test twice")
+            self.assertEqual(len(exclusions), len(set(exclusions)), f"gate {name} records a test twice")
+            self.assertFalse(surfaces & set(exclusions), f"gate {name} records a reviewed skip as an exclusion")
+            self.assertLessEqual(surfaces, set(skipped), f"gate {name} no longer skips a reviewed name")
+            self.assertEqual(set(skipped) - surfaces, set(exclusions),
                              f"gate {name} skips a test without a recorded exclusion")
 
     def test_upstream_test_exclusions_are_recorded_named_skips(self):
@@ -437,6 +506,24 @@ class UpstreamReviewTests(unittest.TestCase):
         for review, recipe in ((self.review, broadened), (unrecorded, self.recipe), (renamed, self.recipe)):
             with self.subTest(review=len(review["test_exclusions"])), self.assertRaises(AssertionError):
                 self.check_test_exclusions(review, recipe)
+
+    def test_every_named_skip_keeps_its_exclusion_record(self):
+        """Deleting any one exclusion record while its skip stays fails, in
+        every gate; so does a skipped name no gate review lists."""
+        self.check_test_exclusions(self.review, self.recipe)
+        for index, item in enumerate(self.review["test_exclusions"]):
+            missing = copy.deepcopy(self.review)
+            del missing["test_exclusions"][index]
+            with self.subTest(deleted=item["test"], gate=item["gate"]), self.assertRaises(AssertionError):
+                self.check_test_exclusions(missing, self.recipe)
+        extended = copy.deepcopy(self.recipe)
+        sdk = next(gate for gate in extended["gates"] if gate["name"] == "sdk-service")
+        sdk["skip"] = sdk["skip"][:-2] + "|TestUnreviewedUpstreamCase)$"
+        unlisted = copy.deepcopy(self.recipe)
+        next(gate for gate in unlisted["gates"] if not gate.get("skip"))["skip"] = "^(TestUnreviewedUpstreamCase)$"
+        for label, recipe in (("unreviewed name", extended), ("unreviewed gate", unlisted)):
+            with self.subTest(skip=label), self.assertRaises(AssertionError):
+                self.check_test_exclusions(self.review, recipe)
 
     def test_every_fix_has_one_disposition_and_a_reason(self):
         admitted = {entry["basename"] for entry in self.recipe["series"] if entry["admitted"]}

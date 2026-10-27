@@ -1,5 +1,5 @@
 diff --git a/internal/runtime/executor/codex_executor_execute.go b/internal/runtime/executor/codex_executor_execute.go
-index c6e86d54..8be62218 100644
+index cbaf2c9c..fe5d5941 100644
 --- a/internal/runtime/executor/codex_executor_execute.go
 +++ b/internal/runtime/executor/codex_executor_execute.go
 @@ -99,6 +99,7 @@ func (e *CodexExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, re
@@ -129,7 +129,7 @@ index 02fc4304..6fa9c371 100644
  	misc.EnsureHeader(r.Header, ginHeaders, "X-Codex-Turn-State", "")
  	misc.EnsureHeader(r.Header, ginHeaders, "X-Client-Request-Id", "")
 diff --git a/internal/runtime/executor/codex_executor_stream.go b/internal/runtime/executor/codex_executor_stream.go
-index 35dbda91..80c314fc 100644
+index 5b708452..af8366f0 100644
 --- a/internal/runtime/executor/codex_executor_stream.go
 +++ b/internal/runtime/executor/codex_executor_stream.go
 @@ -106,6 +106,7 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
@@ -466,7 +466,7 @@ index 00000000..84cc66e5
 +}
 diff --git a/internal/runtime/executor/codex_key_safety.go b/internal/runtime/executor/codex_key_safety.go
 new file mode 100644
-index 00000000..132e08bd
+index 00000000..67de4b7e
 --- /dev/null
 +++ b/internal/runtime/executor/codex_key_safety.go
 @@ -0,0 +1,178 @@
@@ -552,7 +552,7 @@ index 00000000..132e08bd
 +// replaces its text with the fixed envelope of kind.
 +func codexKeyFailure(classified statusErr, kind compatsafe.Kind) statusErr {
 +	return statusErr{code: classified.code, msg: kind.Body(), retryAfter: classified.retryAfter,
-+		credentialScoped: classified.credentialScoped}
++		credentialScoped: classified.credentialScoped, transientRateLimit: classified.transientRateLimit}
 +}
 +
 +// codexKeyKind selects the fixed kind of a codex failure from its status and
@@ -620,7 +620,7 @@ index 00000000..132e08bd
 +	if !examinable {
 +		body = nil
 +	}
-+	classified := newCodexStatusErrWithCooling(resp.StatusCode, body, modelLevelCooling)
++	classified := newCodexStatusErrWithHeadersAndCooling(resp.StatusCode, resp.Header, body, modelLevelCooling)
 +	var kind compatsafe.Kind
 +	if examinable {
 +		kind = codexKeyKind(classified.code, body)
@@ -650,10 +650,10 @@ index 00000000..132e08bd
 +}
 diff --git a/internal/runtime/executor/codex_key_safety_test.go b/internal/runtime/executor/codex_key_safety_test.go
 new file mode 100644
-index 00000000..3130f3d8
+index 00000000..391c45f8
 --- /dev/null
 +++ b/internal/runtime/executor/codex_key_safety_test.go
-@@ -0,0 +1,468 @@
+@@ -0,0 +1,482 @@
 +package executor
 +
 +import (
@@ -738,19 +738,27 @@ index 00000000..3130f3d8
 +}
 +
 +// A non-2xx response that quotes the key becomes the fixed text of its kind;
-+// the status, the usage-limit retry delay and the credential scope survive.
++// the status, the retry delay (the usage-limit reset, or Retry-After for a
++// transient capacity rejection), the credential scope and the transient
++// capacity mark survive.
 +func TestCodexKeyStatusFailureIsLocal(t *testing.T) {
 +	retry := 300 * time.Second
++	turnRetry := 120 * time.Second
 +	cases := []struct {
-+		name     string
-+		status   int
-+		body     string
-+		kind     compatsafe.Kind
-+		want     int
-+		retry    *time.Duration
-+		scoped   bool
-+		jsonBody bool
++		name        string
++		status      int
++		body        string
++		kind        compatsafe.Kind
++		want        int
++		retry       *time.Duration
++		scoped      bool
++		jsonBody    bool
++		retryHeader string
++		transient   bool
 +	}{
++		{name: "turn-rate", status: http.StatusTooManyRequests, jsonBody: true, kind: compatsafe.KindRateLimited, want: http.StatusTooManyRequests,
++			retry: &turnRetry, retryHeader: "120", transient: true,
++			body: `{"error":{"type":"rate_limit_error","code":"turn_rate_limit_exceeded","message":"turn limit for ` + codexKeyTestSecret + `"}}`},
 +		{name: "credential", status: http.StatusUnauthorized, jsonBody: true, kind: compatsafe.KindAuthentication, want: http.StatusUnauthorized,
 +			body: `{"error":{"message":"Incorrect API key provided: ` + codexKeyTestSecret + `","type":"invalid_request_error","code":"invalid_api_key"}}`},
 +		{name: "context", status: http.StatusBadRequest, jsonBody: true, kind: compatsafe.KindContextLength, want: http.StatusBadRequest,
@@ -768,6 +776,9 @@ index 00000000..3130f3d8
 +			_, _ = io.Copy(io.Discard, r.Body)
 +			if tc.jsonBody {
 +				w.Header().Set("Content-Type", "application/json")
++			}
++			if tc.retryHeader != "" {
++				w.Header().Set("Retry-After", tc.retryHeader)
 +			}
 +			w.WriteHeader(tc.status)
 +			_, _ = io.WriteString(w, tc.body)
@@ -793,6 +804,9 @@ index 00000000..3130f3d8
 +				}
 +				if failure.IsCredentialScoped() != tc.scoped {
 +					t.Fatalf("credential scope = %t, want %t", failure.IsCredentialScoped(), tc.scoped)
++				}
++				if failure.IsTransientRateLimit() != tc.transient {
++					t.Fatalf("transient capacity = %t, want %t", failure.IsTransientRateLimit(), tc.transient)
 +				}
 +			})
 +		}
