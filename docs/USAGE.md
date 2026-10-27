@@ -45,14 +45,14 @@ The words the launcher uses, as its help (`?` on the card) defines them:
 - `charmer` opens the card and its screens (**W** Get started, **P** Profiles,
   **D** Direct, **S** Sessions, **G** Providers, **M** Models, **O** Settings,
   **H** doctor). `charmer setup` runs the same first steps as plain lines.
-- **Get started → Claude Code → F** verifies and copies an offline file of
-  the pinned client; it never changes your original file.
+- To verify and copy an offline file of the pinned client, in **W** Get started,
+  select the **Claude Code** step and press **F**; it never changes your original file.
 
 ## Connect a provider
 
 Any one provider is enough for a working setup; connect only the ones you want.
-**Providers → D** lists all enabled providers' models after one consent
-naming every request. Listing alone adds no model.
+**Providers → D** lists the models of every enabled provider that has a key, an approved route and a supported listing
+(account sign-ins are skipped), after one consent naming every request. Listing alone adds no model.
 
 - [API keys](providers/api-keys.md): built-in providers, Anthropic and OpenAI included.
   **Providers → F** chooses an existing private key file; **O** opens orphan

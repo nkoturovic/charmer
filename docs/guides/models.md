@@ -277,6 +277,10 @@ establish review independence unless the catalog recognizes it. For either
 model, bind it with **E** on the launch card; **M → Q** offers optional
 qualification with a request plan and explicit consent.
 
+charmer 2.2.1 does not accept the low, medium and max contracts on
+OpenRouter; see [rolling back to 2.2.1](../update.md#rolling-back-to-221)
+before a rollback.
+
 ### Model id limits
 
 Use a provider's documented lowercase id, or a lowercase dated id on
@@ -289,9 +293,12 @@ that may name a different model. Use an alternative the provider actually
 documents, such as `minimax/minimax-m3.1-flash` on OpenRouter instead of the
 direct vendor id `MiniMax-M3.1-Flash`.
 
-The wire id is what the provider receives; a `[1m]` selector is what Claude
-Code uses for its context class. Declare `k3.1-pro`, not `k3.1-pro[1m]`,
-and give the documented context separately.
+The wire id is what the provider receives; charmer adds `[1m]` to its own
+selectors from `--context` for Claude Code's context class. On Kimi Code,
+`k3.1-pro[1m]` is the provider's own id for its 1M-context model: it cannot be
+declared in this release, and a larger `--context` on `k3.1-pro` does not
+reach it. Declare `k3.1-pro` with its documented 262,144 tokens, or use the
+shipped `or-kimi` line for K3.1 Pro's 1M context on OpenRouter.
 
 ## Revoke, remove, replace
 

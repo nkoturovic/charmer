@@ -23,8 +23,8 @@ release pins. It copies an exact size-and-sha256 match from your existing
 installation without changing it, or shows the download's address and size
 and asks first (no credentials sent; answering no sends nothing).
 `charmer setup --step claude` runs just this step. To use a file you
-already have, open **W** Get started → **Claude Code** → **F** offline
-file: enter its path, then charmer verifies the pinned size and SHA-256
+already have, in **W** Get started, select the **Claude Code** step and
+press **F**: enter its path, then charmer verifies the pinned size and SHA-256
 before copying it into its own location. A mismatch writes nothing; this
 path makes no download and leaves your original file untouched.
 [Compatibility details](reference/compatibility.md).

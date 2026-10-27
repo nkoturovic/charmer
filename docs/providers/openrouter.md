@@ -134,6 +134,10 @@ automatic tool choice passed on 2026-10-27.
 See the [MiniMax M3.1 Flash example](../guides/models.md#minimax-m31-flash-on-openrouter)
 for a declaration using all five contracts.
 
+charmer 2.2.1 does not accept the low, medium and max contracts on
+OpenRouter; see [rolling back to 2.2.1](../update.md#rolling-back-to-221)
+before a rollback.
+
 ### Stealth models and add by id
 
 A `stealth/` id, such as `stealth/space-bunny-alpha`, is marked **stealth**:

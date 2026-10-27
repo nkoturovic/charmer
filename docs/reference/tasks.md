@@ -30,9 +30,10 @@ verifies an offline file against the pinned client and copies it into
 charmer's own location. **Providers → F** chooses an existing private API-key
 file; it does not paste a key into a model or profile. **Providers → O**
 lists orphan keys by name, never value; Enter → **Remove** asks before
-removing a key no provider uses. **Providers → D** lists all enabled
-providers' models with one consent naming every request. Declining sends
-nothing, and listing alone declares or binds no model.
+removing a key no provider uses. **Providers → D** lists the models of every
+enabled provider that has a key, an approved route and a supported listing
+(account sign-ins are skipped), after one consent naming every request.
+Listing alone adds no model.
 
 <!-- generated: tasks (tools/docs_gen.py) -->
 
