@@ -601,7 +601,7 @@ def _sessions_command(
             except cli_errors.CLIError as exc:
                 problem = str(exc)
             if problem is not None:
-                output_stream.write(
+                sys.stderr.write(
                     f"Reconciled managed {stable_id} to runtime "
                     f"{updated['runtime_session_id']}, but scope convergence is unfinished: "
                     f"{termtext.visible_message(problem)}; run "

@@ -682,8 +682,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--repair-all",
         action="store_true",
         dest="doctor_repair_all",
-        help="converge every durable session's scope (and refresh its record "
-        "snapshot) against the installed catalog",
+        help="converge stopped durable sessions' scopes to record authority; lineups the installed "
+        "catalog cannot recompile are deferred until resume or a model choice",
     )
     doctor_parser.add_argument("--preview", action="store_true", help="read-only generated-state prune preview")
     doctor_actions.add_argument(

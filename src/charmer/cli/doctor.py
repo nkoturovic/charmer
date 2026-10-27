@@ -237,24 +237,29 @@ def _model_text(level: str, members: list[str]) -> str:
     return text
 
 
-def present_report(problems: list[str], attention: list[str]) -> Presentation:
+def present_report(problems: list[str], attention: list[str], *,
+                   info: list[str] | tuple[str, ...] = ()) -> Presentation:
     """The rows plain doctor and H show, from the collected lines.
 
     Lines collapse only when they share a known identity: the group a
     collector gave them (one row per (model, code) with its profile and
-    slot counts; per-session kinds with a count and the first ids), or the
-    exact same text. A line's ``short`` form stands for it; ``-v`` prints
+    slot counts; per-session kinds with a count and the first ids), the
+    lead-choice action, or the exact same text. Info explicitly tagged as
+    advisory appears here too, without changing its diagnostic severity. A line's ``short`` form stands for it; ``-v`` prints
     every original. Order: BLOCKED, Attention, advisories; by area inside
     each (the persistence hold first in Gateway), then as collected."""
 
     order: list[tuple[str, str, tuple]] = []
     members: dict[tuple[str, str, tuple], list[str]] = {}
     for level, line in [*(("block", line) for line in problems),
-                        *((getattr(line, "level", None) or "attention", line) for line in attention)]:
+                        *((getattr(line, "level", None) or "attention", line) for line in attention),
+                        *((ADVISORY, line) for line in info if getattr(line, "level", None) == ADVISORY)]:
         level = level if level in _LEVEL_ORDER else "attention"
         area = getattr(line, "area", None) or OTHER_AREA
         group = getattr(line, "group", None)
-        key = (level, area, ("group", *group) if group else ("text", str(line)))
+        identity = (("action", "needs-choice") if getattr(line, "action", None) == "needs-choice" else
+                    ("group", *group) if group else ("text", str(line)))
+        key = (level, area, identity)
         if key not in members:
             members[key] = []
             order.append(key)
@@ -273,6 +278,16 @@ def present_report(problems: list[str], attention: list[str]) -> Presentation:
             text = first.summary.replace("{n}", str(len(subjects) or len(lines))) + " — " + _listed(subjects)
         else:
             text = getattr(first, "short", None) or str(first)
+        if getattr(first, "action", None) == "needs-choice" and len(lines) > 1:
+            # The record's aggregate owns the choice action; earlier-scope
+            # findings add context, not a second route to the same chooser.
+            choices = [line for line in lines if getattr(line, "group", None) != ("session", "earlier-scope-choice")]
+            earlier_ids = {mid for line in lines if getattr(line, "group", None) == ("session", "earlier-scope-choice")
+                           for mid in getattr(line, "subjects", ())}
+            if choices and earlier_ids:
+                text = getattr(choices[0], "short", None) or str(choices[0])
+                text += (f"; choose a profile or model before recompiling {len(earlier_ids)} scope(s) "
+                         f"compiled by {legacy.NAME}")
         hold = group == ("gateway", "persistence-hold") or getattr(first, "action", None) in ("hold", "hold-coverage")
         # The command any member names (a group's lines may come from collectors that name it once),
         # else the command of an advisory model row's optional next step.
@@ -294,7 +309,7 @@ def report_lines(problems: list[str], info_lines: list[str], attention: list[str
     lines (``-v`` only), the hidden-detail hint and the closing line.
     ``say`` words each finding for its surface (the card's key route)."""
 
-    presentation = present_report(problems, attention)
+    presentation = present_report(problems, attention, info=info_lines)
     status = presentation.status
     out: list[tuple[str, str]] = []
 
@@ -317,9 +332,11 @@ def report_lines(problems: list[str], info_lines: list[str], attention: list[str
         items(presentation.of(ADVISORY), "  ", "dim")
     if status == "ready":
         out.append(("ok", "Ready"))
-    shown = info_lines if verbose else [line for line in info_lines if not detail_line(line)]
+    # Highlighted Info already appeared with the advisories, never twice.
+    details = [line for line in info_lines if getattr(line, "level", None) != ADVISORY]
+    shown = details if verbose else [line for line in details if not detail_line(line)]
     out.extend(("normal", termtext.visible_text(say(line))) for line in shown)
-    hidden = len(info_lines) - len(shown)
+    hidden = len(details) - len(shown)
     if hidden:
         out.append(("normal", cli_text.CARD_DOCTOR_HIDDEN.format(n=hidden, s="s" if hidden != 1 else "")))
     out.append(("normal", DOCTOR_SUMMARY[status].rstrip("\n")))
@@ -798,6 +815,29 @@ def _doctor_hook_targets(
     return problems, attention, info
 
 
+def _doctor_spawn_mods(runtime: runtime_mod.Runtime) -> list[str]:
+    """Info, also visible in Findings, from bounded manifest/module text only."""
+
+    from charmer import spawn_mods
+
+    scan = spawn_mods.scan(runtime.home, runtime.cwd, runtime.environ)
+    lines: list[str] = []
+    for mod in scan.mods:
+        state_text = "declares an agent.spawn hook (literal text only)" if mod.spawn else "hook module present, not inspected"
+        if mod.spawn and not mod.inspected:
+            state_text += "; another hook module is present, not inspected"
+        public = (f"Spawn-mod advisory: {state_text}; present in a folder the pinned client may load from, "
+                  f"not proof it is enabled or active. {spawn_mods.SPAWN_EFFECT} {scan.coverage}")
+        text = f"{paths.display(mod.folder, runtime.environ)}: {public}"
+        lines.append(gateway_facts.tagged(gateway_facts.Finding(
+            text, code="spawn-mod-advisory", public=public), area=INSTALLATION, level=ADVISORY))
+    if scan.incomplete:
+        text = "Spawn-mod scan incomplete: " + ", ".join(scan.incomplete) + ". " + scan.coverage
+        lines.append(gateway_facts.tagged(gateway_facts.Finding(
+            text, code="spawn-mod-scan-incomplete", public=text), area=INSTALLATION, level=ADVISORY))
+    return lines
+
+
 def _doctor_managed_report(runtime: runtime_mod.Runtime) -> tuple[list[str], list[str]]:
     """Managed policy (names only): what refuses a launch, or locks the
     model, is BLOCKED; the rest is Attention. Denied models are judged per
@@ -1179,6 +1219,7 @@ def _collect_doctor_report_lines(
     radar = _settings_radar(runtime, records)
     scope_attention.extend(area(radar.attention, INSTALLATION))
     info_lines.extend(radar.info)
+    info_lines.extend(_doctor_spawn_mods(runtime))
     parity = custom.registry_parity(runtime.environ)
     if parity is not None:
         scope_attention.extend(area([parity], PROVIDERS))
@@ -2645,7 +2686,7 @@ def _check_scope_integrity(
         # cannot be rewritten by repair-all even while the session is stopped.
         action = "earlier-scopes"
         remedy = "charmer doctor --repair-all"
-        fix = cli_text.EARLIER_SCOPES_FIX
+        fix = cli_text.EARLIER_SCOPE_FIX
         detail = f"{fix} (charmer -r {mid})"
         group = EARLIER_SCOPES
         summary = _EARLIER_SCOPES_SUMMARY
@@ -2653,16 +2694,18 @@ def _check_scope_integrity(
             if runtime.resume_choice(record).needs_choice:
                 action = "needs-choice"
                 remedy = "charmer sessions choose --needs-choice --profile <name>"
-                fix = cli_text.EARLIER_SCOPES_CHOICE_FIX
+                fix = cli_text.EARLIER_SCOPE_CHOICE_FIX
+                summary_fix = cli_text.EARLIER_SCOPES_CHOICE_FIX
                 detail = f"{fix} (charmer -r {mid})"
                 group = ("session", "earlier-scope-choice")
             else:
                 action = None
                 remedy = f"charmer -r {mid}"
-                fix = cli_text.EARLIER_SCOPES_DEFERRED_FIX
+                fix = cli_text.EARLIER_SCOPE_DEFERRED_FIX
+                summary_fix = cli_text.EARLIER_SCOPES_DEFERRED_FIX
                 detail = f"repair-all defers it: {ep.reason}"
                 group = ("session", "earlier-scope-deferred")
-            summary = f"{{n}} session scope(s) were compiled by {legacy.NAME}: {fix}"
+            summary = f"{{n}} session scope(s) were compiled by {legacy.NAME}: {summary_fix}"
         line = gateway_facts.Finding(
             f"session {m8}: scope compiled by {legacy.NAME} before the move to charmer "
             f"(stale; its hooks name the earlier shims); {detail}",

@@ -2640,7 +2640,7 @@ class ResumeAfterMigrationTests(V4Case):
         self.assertEqual((rows[0].level, rows[0].area, rows[0].remedy),
                          ("attention", "Sessions", "charmer doctor --repair-all"))
         self.assertIn(self.mid[:8], rows[0].text)
-        self.assertIn("charmer doctor --repair-all recompiles the stopped ones now", rows[0].text)
+        self.assertIn("charmer doctor --repair-all recompiles this stopped scope now", rows[0].text)
         self.assertEqual(len(rows[0].originals), 1)  # one finding per session, even with missing earlier hooks
         # The moved record has no recorded end: live or unknown, so repair-all leaves it.
         out = io.StringIO()

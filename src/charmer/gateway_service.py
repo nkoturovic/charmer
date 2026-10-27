@@ -1020,6 +1020,10 @@ class GatewayService:
         gateway = self.gateway
         not_installed = gateway_lifecycle.Outcome("stopped", "the gateway service is not installed; nothing was changed")
         record = gateway_inhibition.read(gateway.state_root)
+        if record is not None and record.readable and record.owner == gateway_lifecycle.SERVICE_OWNER \
+                and record.phase in ("install", "refresh"):
+            message, remedy = gateway_inhibition.refusal(record, "nothing was removed", now=gateway.seams.now())
+            return gateway_lifecycle.Outcome("inhibited", message, remedy)
         if record is None or not record.readable or record.owner != gateway_lifecycle.SERVICE_OWNER \
                 or record.phase != "uninstall":
             return not_installed

@@ -728,5 +728,73 @@ def gateway_rollback_golden(root: Path) -> str:
         return "".join(win.line(y) + "\n" for y in range(height))
 
 
+class FindingsLiveRepairTests(_FindingsCase):
+    def repair_screen(self):
+        line = gateway_facts.tagged("scope repair needed", area="Sessions", action="scope-repair")
+        return self.screen(([line], [], []))
+
+    def test_including_running_sessions_names_targets_then_repairs_them(self) -> None:
+        running = fx.v4_record(self.runtime, catalog.DEFAULT_SEED, managed_id=fx.FIXED_ID)
+        unknown = fx.v4_record(self.runtime, catalog.DEFAULT_SEED, managed_id=fx.OTHER_ID)
+        self.runtime.live_prefixes = frozenset({sessions.runtime_session_id(running)[:8]})
+        screen = self.repair_screen()
+        with mock.patch.object(doctor_actions, "_doctor_repair_all", wraps=doctor_actions._doctor_repair_all) as repair:
+            _result, win = self.drive(screen, [ENTER, RIGHT, RIGHT, ENTER, RIGHT, ENTER, ESC, ESC], width=120, height=35)
+        repair.assert_called_once()
+        self.assertTrue(repair.call_args.kwargs.get("include_live"))
+        shown = _flat(win.frames)
+        self.assertIn("Including running sessions", shown)
+        self.assertIn(f"{sessions.managed_id(running)}", shown)
+        self.assertIn(f"{sessions.managed_id(unknown)}", shown)
+        self.assertIn("Repair-all: 2 session(s) converged", shown)
+        self.assertNotIn("- skipped", shown)
+
+    def test_live_confirmation_focuses_cancel_and_changes_nothing(self) -> None:
+        fx.v4_record(self.runtime, catalog.DEFAULT_SEED, managed_id=fx.FIXED_ID)
+        screen = self.repair_screen()
+        with mock.patch.object(doctor_actions, "_doctor_repair_all") as repair:
+            _result, win = self.drive(screen, [ENTER, RIGHT, RIGHT, ENTER, ENTER, ESC], width=120)
+        repair.assert_not_called()
+        self.assertIn("Including running sessions", _flat(win.frames))
+        self.assertIn(cli_text.FINDINGS_CANCELLED, win.frames[-1])
+
+    def test_a_record_appearing_after_the_live_preview_is_not_repaired(self) -> None:
+        fx.v4_record(self.runtime, catalog.DEFAULT_SEED, managed_id=fx.FIXED_ID)
+        real = doctor_actions._doctor_repair_all
+        def appeared(runtime, out, **kwargs):
+            fx.v4_record(runtime, catalog.DEFAULT_SEED, managed_id=fx.OTHER_ID)
+            return real(runtime, out, **kwargs)
+        screen = self.repair_screen()
+        with mock.patch.object(doctor_actions, "_doctor_repair_all", side_effect=appeared):
+            _result, win = self.drive(screen, [ENTER, RIGHT, RIGHT, ENTER, RIGHT, ENTER, ESC, ESC], width=120, height=35)
+        self.assertIn("Repair-all: 1 session(s) converged", _flat(win.frames))
+        self.assertNotIn("Repair-all: 2 session(s)", _flat(win.frames))
+
+    def test_long_live_target_lists_are_scrollable_before_cancel_focused_confirmation(self) -> None:
+        ids = [f"{index:08x}-1111-4111-8111-111111111111" for index in range(24)]
+        for mid in ids:
+            fx.v4_record(self.runtime, catalog.DEFAULT_SEED, managed_id=mid)
+        screen = self.repair_screen()
+        with mock.patch.object(tui, "TextView") as preview, \
+                mock.patch.object(doctor_actions, "_doctor_repair_all") as repair:
+            preview.return_value.run.return_value = False
+            self.drive(screen, [ENTER, RIGHT, RIGHT, ENTER, ESC])
+        repair.assert_not_called()
+        preview.assert_called_once()
+        self.assertTrue(preview.call_args.kwargs["confirm"])
+        text = "\n".join(preview.call_args.args[1])
+        for mid in ids:
+            self.assertIn(mid, text)
+
+    def test_unreadable_inventory_cannot_authorize_live_bulk_repair(self) -> None:
+        import charmer.cli.session_facts as session_facts
+        screen = self.repair_screen()
+        with mock.patch.object(session_facts, "_session_record_scan", return_value=([], ["fixture unreadable record"], [])), \
+                mock.patch.object(doctor_actions, "_doctor_repair_all") as repair:
+            _result, win = self.drive(screen, [ENTER, RIGHT, RIGHT, ENTER, ESC], width=120)
+        repair.assert_not_called()
+        self.assertIn("fixture unreadable record", _flat(win.frames))
+
+
 if __name__ == "__main__":
     unittest.main()

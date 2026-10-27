@@ -155,6 +155,7 @@ class DoctorSplitTests(unittest.TestCase):
         "probe_lan", "lan_reachability", "discovery_known", "pinned_registry", "served_extras_info",
         "_doctor_lan_report",
         "_doctor_prune_preview",  # New action, not a compatibility export
+        "_doctor_spawn_mods", "REPAIR_DEFERRED",  # New check/outcome, not moved facade definitions
         "_AGENT_DRIFT", "_agent_frontmatter", "_catalog_agent_drift",
         "oauth_record_observation", "_lan_live_bindings", "_doctor_readiness_report",
         "pending_served_plan", "_pending_served_change", "_repair_all_records",

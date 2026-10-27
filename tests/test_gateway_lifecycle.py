@@ -1954,9 +1954,9 @@ class StatusFactsTests(_Lifecycle):
         self.running("aaaaaaaaaaaaaaaa")
         self.log_file("aaaaaaaaaaaaaaaa", ["line"])
         binary = self.root / "cli-proxy-api"
-        binary.write_text("")
+        binary.write_bytes(b"fixture previous gateway")
         installed = self.root / "new-cli-proxy-api"
-        installed.write_text("")
+        installed.write_bytes(b"fixture changed gateway")
         environ = {"HOME": str(self.home), "CHARMER_PROXY_BIN": str(installed)}
         service.write_exec_stamp(self.workdir, service.ExecStamp(
             "1.0.0", "signature", self.world.pid, str(binary), NOW.isoformat(), "pid:[101]",

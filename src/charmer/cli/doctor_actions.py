@@ -525,8 +525,11 @@ def lineup_log_remove(root: Path, session_id: str) -> bool:
     return lineup_log.remove(root, session_id)
 
 
+REPAIR_DEFERRED = 3  # no failure, but the scope has not converged
+
+
 def _doctor_repair(runtime: runtime_mod.Runtime, uuid: str, output_stream: TextIO) -> int:
-    """Converge one session's scope to its record (regardless of liveness)."""
+    """Converge one scope regardless of liveness; exit 3 when deferred."""
 
     if not sessions.UUID4.fullmatch(uuid):
         raise cli_errors.CLIError(f"{uuid!r} is not a UUIDv4")
@@ -560,11 +563,18 @@ def _doctor_repair(runtime: runtime_mod.Runtime, uuid: str, output_stream: TextI
         )
     for line in report:
         output_stream.write(f"{termtext.visible_text(line)}\n")
+    if report.deferred:
+        output_stream.write(
+            f"Repair deferred; scope convergence is unfinished. Resume interactively to apply the "
+            f"catalog or choose a model: charmer -r {stable_id}\n"
+        )
+        return REPAIR_DEFERRED
     return 0
 
 
 def _doctor_repair_all(
-    runtime: runtime_mod.Runtime, output_stream: TextIO, *, include_live: bool = False
+    runtime: runtime_mod.Runtime, output_stream: TextIO, *, include_live: bool = False,
+    session_ids: frozenset[str] | None = None,
 ) -> int:
     """Bulk converge; live/unknown sessions only with ``--include-live``.
 
@@ -575,6 +585,10 @@ def _doctor_repair_all(
     """
 
     records, record_problems, _ids = session_facts._session_record_scan(runtime)
+    if session_ids is not None:
+        # The TUI names its live-inclusive targets before confirming. A new
+        # session appearing afterwards is not covered by that confirmation.
+        records = [record for record in records if sessions.managed_id(record) in session_ids]
     transition = runtime_mod._transition_module()
     failures: list[str] = list(record_problems)
     skipped: list[str] = []

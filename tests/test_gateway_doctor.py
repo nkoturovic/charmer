@@ -56,6 +56,7 @@ class _GatewayDoctor(V4Case):
         self.world.become_ready(nonce)
         binary = self.root / "cli-proxy-api"
         binary.write_text("")
+        self.runtime.environ["CHARMER_PROXY_BIN"] = str(binary)
         service.write_exec_stamp(self.workdir, service.ExecStamp(
             "1.0.0", "signature", self.world.pid, str(binary), NOW.isoformat(), "pid:[101]", instance=nonce))
 

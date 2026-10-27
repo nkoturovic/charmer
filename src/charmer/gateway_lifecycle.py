@@ -60,9 +60,11 @@ from __future__ import annotations
 
 import dataclasses
 import datetime
+import hashlib
 import os
 import secrets
 import shutil
+import stat
 import subprocess
 import sys
 import time
@@ -131,6 +133,38 @@ class LifecycleError(errors.CharmerError, RuntimeError):
 SERVICE_OWNER = gateway_inhibition.SERVICE_OWNER
 SERVICE_REMEDY = gateway_inhibition.SERVICE_REMEDY
 NOT_SET_UP = "the local gateway is not set up yet (no port is recorded for it)"
+
+
+class BinaryDrift(str):
+    """A path/content notice, not process identity or running-byte proof."""
+
+    restart_pending: bool
+
+    def __new__(cls, text: str, *, restart_pending: bool = True) -> "BinaryDrift":
+        value = super().__new__(cls, text)
+        value.restart_pending = restart_pending
+        return value
+
+
+def _binary_digest(path: str) -> tuple[bytes, tuple[int, int]]:
+    """Hash a regular on-disk file, rejecting a replacement or change during
+    the read. Follow installation links, but never block on a FIFO. This is
+    deliberately not the running-process verification of update --verify."""
+
+    descriptor = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_CLOEXEC)
+    with os.fdopen(descriptor, "rb") as stream:
+        before = os.fstat(stream.fileno())
+        if not stat.S_ISREG(before.st_mode):
+            raise OSError("not a regular gateway binary")
+        digest = hashlib.sha256()
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+        after = os.fstat(stream.fileno())
+        current = os.stat(path)
+        fields = ("st_dev", "st_ino", "st_size", "st_mtime_ns", "st_ctime_ns")
+        if any(getattr(before, key) != getattr(item, key) for item in (after, current) for key in fields):
+            raise OSError("gateway binary changed during comparison")
+        return digest.digest(), (before.st_dev, before.st_ino)
 
 
 @dataclass(frozen=True)
@@ -712,7 +746,8 @@ class Gateway:
         try:
             self.inhibition_token = gateway_inhibition.begin(
                 self.state_root, owner=SERVICE_OWNER, purpose=f"gateway service {operation} ({unit})",
-                phase=operation, remedy=SERVICE_REMEDY, expiry=gateway_inhibition.owner_process(),
+                phase=operation, remedy=gateway_inhibition.service_remedy(operation),
+                expiry=gateway_inhibition.owner_process(),
                 now=self.seams.now(), held_lock=True, take_over_stale=True)
         except gateway_inhibition.InhibitionError as exc:
             return Outcome("busy", f"the gateway service hand-off was not recorded: {exc}; nothing was changed",
@@ -1140,28 +1175,40 @@ class Gateway:
         stamp = service.read_exec_stamp(self.workdir)
         return stamp.binary if stamp is not None else None
 
-    def binary_drift(self, seen: Observation) -> str | None:
-        """Restart-pending text when the running gateway runs another binary
-        than this install provides (or one that is no longer installed)."""
+    def binary_drift(self, seen: Observation) -> BinaryDrift | None:
+        """Compare the recorded and installed files' SHA-256 hashes, not their
+        paths. Matching bytes on another path make a restart optional, but
+        running_binary still protects the recorded path from cleanup. None
+        means no notice, never a cross-platform verification of the process's
+        running bytes."""
 
         stamp = seen.stamp
         if stamp is None or seen.state not in (OURS, STARTING):
             return None
         restart = service.hint_code("restart", backend=self.remedy_backend)
         if not os.path.lexists(stamp.binary):
-            return (f"gateway restart pending: the running gateway's binary is no longer installed "
-                    f"({stamp.binary}); restart it between turns: {restart}")
+            return BinaryDrift(f"gateway restart pending: the running gateway's binary is no longer installed "
+                               f"({stamp.binary}); restart it between turns: {restart}")
         installed = self.installed_binary()
         if installed is None:
-            return None
+            return BinaryDrift("gateway restart pending: this installation's gateway binary cannot be located; "
+                               f"restore it, then restart between turns: {restart}")
         try:
-            same = os.path.samefile(installed, stamp.binary)
+            running_hash, running_file = _binary_digest(stamp.binary)
+            installed_hash, installed_file = _binary_digest(installed)
         except OSError:
-            same = os.path.realpath(installed) == os.path.realpath(stamp.binary)
-        if same:
-            return None
-        return (f"gateway restart pending: the running gateway runs {stamp.binary}, this install "
-                f"provides {installed}; restart it between turns: {restart}")
+            return BinaryDrift("gateway restart pending: the recorded or installed gateway binary is missing, "
+                               "unreadable or changed during comparison (on-disk comparison unavailable); "
+                               f"restart it between turns: {restart}")
+        if running_hash == installed_hash:
+            if running_file == installed_file:
+                return None
+            return BinaryDrift("gateway same binary on another path; restart optional "
+                               "(on-disk SHA-256 match; running bytes not verified); "
+                               f"to move to this install between turns: {restart}", restart_pending=False)
+        return BinaryDrift(f"gateway restart pending: the running gateway runs {stamp.binary}, this install "
+                           f"provides {installed} (different on-disk SHA-256 hashes); "
+                           f"restart it between turns: {restart}")
 
     # ------------------------------------------------------------ status / logs
     def status(self) -> "StatusReport":
