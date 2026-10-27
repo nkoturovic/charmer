@@ -65,6 +65,33 @@ class RankedPresentationTests(unittest.TestCase):
         self.assertIn(title, body)
         self.assertNotIn("[y/N]", body)
 
+    def test_confirmation_question_survives_terminal_resize(self):
+        question = "Revoke the optional admission badge for custom-acme-small?"
+        win = FakeWindow([tui.curses.KEY_RESIZE, "\n"], width=80, height=24)
+        getch = win.getch
+
+        def resize():
+            key = getch()
+            if key == tui.curses.KEY_RESIZE:
+                win.width = 50
+            return key
+
+        with mock.patch.object(win, "getch", side_effect=resize):
+            self.assertFalse(OnboardingActions(None, win, tui.MONO_PALETTE).confirm(question + " [y/N] "))
+        self.assertEqual(len(win.frames), 2)
+        self.assertIn(question, win.frames[0])
+        self.assertIn("custom-acme-small", win.frames[1])
+        body = " ".join(" ".join(win.frames[1].splitlines()[3:]).split())
+        self.assertIn(question, body)
+
+    def test_only_questions_that_fit_the_minimum_width_leave_the_body(self):
+        for length, occurrences in ((37, 1), (38, 2)):
+            with self.subTest(length=length):
+                question = "Apply " + "x" * (length - 7) + "?"
+                win = FakeWindow(["\x1b"], width=80)
+                OnboardingActions(None, win, tui.MONO_PALETTE).confirm(question + " [y/N] ")
+                self.assertEqual(win.frames[0].count(question), occurrences)
+
     def test_focused_picker_warning_is_beside_effort_and_wraps(self):
         note = "Attention: provider bound below the 200K client class; no per-agent window"
         item = views.PickerItem("line", "fixture", "fixture " + "wide " * 20, True,

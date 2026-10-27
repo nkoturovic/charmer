@@ -396,9 +396,9 @@ class OnboardingActions:
         if "?" in prompt:
             title = prompt.split("?", 1)[0].rsplit(". ", 1)[-1].strip() + "?"
             lines[-1] = prompt
-            # A short question can be the heading alone; its explanation
-            # remains in the body. Long questions stay scrollable in full.
-            if len(title) <= self.win.getmaxyx()[1] - 4:
+            # Only a heading that fits TextView's 40-column minimum can
+            # replace the question in the body, even after a resize.
+            if len(title) <= 37:
                 lines[-1] = prompt.replace(title, "", 1).strip()
         else:
             title = lines[0] if lines else prompt
