@@ -120,7 +120,7 @@ FENCE = "gateway-inhibition"
 OWNERS = ("service", "installer", "updater", "cutover")
 # The service hand-off (``charmer gateway service install|uninstall``).
 SERVICE_OWNER = "service"
-SERVICE_REMEDY = "charmer gateway service install (or: charmer gateway service uninstall)"
+SERVICE_REMEDY = "charmer gateway service install"
 # An earlier hand-off record (see the module docstring).
 LEGACY_RECORD = "service-handoff.json"
 LEGACY_STALE_AFTER = 600
@@ -338,6 +338,12 @@ def _load(target: Path, parse: Callable[[Any], Inhibition], label: str) -> Inhib
         return Inhibition(problem=f"{label}{type(exc).__name__}: {exc}"[:200])
 
 
+def service_remedy(phase: str) -> str:
+    """Only the service operation that can finish this hand-off."""
+
+    return "charmer gateway service uninstall" if phase == "uninstall" else SERVICE_REMEDY
+
+
 def _parse_legacy(document: Any) -> Inhibition:
     """An earlier hand-off record as the ``service`` owner's inhibition."""
 
@@ -353,7 +359,8 @@ def _parse_legacy(document: Any) -> Inhibition:
     except InhibitionError as exc:
         raise ValueError(str(exc)) from exc
     return Inhibition(SERVICE_OWNER, purpose, document["operation"], started, started,
-                      Expiry(OWNER_PROCESS, LEGACY_STALE_AFTER, document["pid"]), SERVICE_REMEDY, document["token"])
+                      Expiry(OWNER_PROCESS, LEGACY_STALE_AFTER, document["pid"]),
+                      service_remedy(document["operation"]), document["token"])
 
 
 def read(state_root: Path | str) -> Inhibition | None:
@@ -407,9 +414,12 @@ def refusal(record: Inhibition, what: str, *, now: datetime.datetime | None = No
                 f"{RECORD} (and an earlier {LEGACY_RECORD}) from the gateway directory of the state root "
                 "(charmer doctor names it)")
     state_text = " — its owner did not finish (stale)" if record.stale(now=now) else ""
+    # Correct older generic service remedies on read, without rewriting state.
+    remedy = (service_remedy(record.phase) if record.owner == SERVICE_OWNER
+              and record.phase in ("install", "refresh", "uninstall") else record.remedy)
     return (f"the gateway is inhibited by {record.describe()}{state_text}; {what}",
             f"wait until it has finished; if it was interrupted, its owner finishes or releases it: "
-            f"{termtext.visible_text(str(record.remedy))}")
+            f"{termtext.visible_text(str(remedy))}")
 
 
 def guard(state_root: Path | str, *, token: str | None = None, what: str = "nothing was changed",

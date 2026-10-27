@@ -13,9 +13,10 @@ reviewed catalog changes; it is not part of an installation.
 Every command's `--help` lists its options, examples and exit behaviour.
 Exit statuses of the user commands: 0 done, 1 failed, refused or
 unavailable, 2 usage, 3 you declined, 130 interrupted.
-Exception: `update --verify` uses 0 complete, 1 mismatch, 3 incomplete or
-unsupported (2 usage, 130 interrupted). A verified installation with a
-stopped gateway is not ready; see [verification](../update.md#verify-an-installation).
+Exceptions: `update --verify` uses 0 complete, 1 mismatch, 3 incomplete or
+unsupported (2 usage, 130 interrupted). `doctor --repair <id>` exits 3 when
+the session's scope is deferred rather than converged. A verified installation
+with a stopped gateway is not ready; see [verification](../update.md#verify-an-installation).
 
 ## Output and partial failures
 
@@ -28,9 +29,11 @@ not a partial inventory. In a complete JSON listing, `live` and
 lead choice, and an ended one can too.
 
 `charmer sessions relink-runtime <id> <runtime-id>` saves the identity
-change before repairing its scope. If that repair fails or is skipped,
+change before repairing its scope. If that repair fails or is refused,
 the identity change remains; the command exits 1 and prints the exact
-`charmer doctor --repair <id>` command to finish it.
+`charmer doctor --repair <id>` command to finish it. When the repair is
+deferred, it also exits 1 and names `charmer -r <id>` to resume and finish
+convergence.
 
 Declining token rotation, starter-profile creation or an import returns
 3. A profile editor that cannot start or exits unsuccessfully returns 1;
@@ -106,8 +109,8 @@ charmer doctor [--json | --repair <id> | --repair-all | --prune | --rotate-token
 | `--json` | read-only diagnostic report (one JSON document) |
 | `-v`, `--verbose` | also show every session's line and the observation details |
 | `--first-run` | the first-run checks in order, one fix each (with --json: one object) |
-| `--repair <id>` | converge a session's scope to its record authority (its id, an id prefix of 8 or more characters, or its name) |
-| `--repair-all` | converge every durable session's scope (and refresh its record snapshot) against the installed catalog |
+| `--repair <id>` | converge a session's scope to its record authority (its id, an id prefix of 8 or more characters, or its name); exits 3 when the scope is deferred, not converged |
+| `--repair-all` | converge stopped durable sessions' scopes to record authority; lineups the installed catalog cannot recompile are deferred until resume or a model choice |
 | `--preview` | read-only generated-state prune preview |
 | `--prune` | remove stale staging dirs and scopes whose records are gone |
 | `--rotate-token` | rotate the local gateway token hitlessly (dual-key window, ~5 min helper-TTL wait, reload verified; interactive; rerun resumes) |

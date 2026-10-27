@@ -1299,7 +1299,7 @@ def gateway_runtime_report(runtime: runtime_mod.Runtime) -> tuple[list[str], lis
         info.append(f"Gateway instance lock: {lock}{instance} ({seen.state}: {seen.detail})")
         drift = gateway.binary_drift(seen)
         if drift is not None:
-            attention.append(drift)
+            (attention if getattr(drift, "restart_pending", True) else info).append(drift)
     starts = len(gateway.recent_starts())
     window = int(gateway_lifecycle.CRASH_WINDOW.total_seconds() // 60)
     if starts >= gateway_lifecycle.CRASH_LIMIT and gateway.backend == endpoint_mod.ON_DEMAND:

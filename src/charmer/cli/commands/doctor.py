@@ -8,7 +8,7 @@ attention items grouped by area (a held gateway first), then the
 advisories, each repeated finding collapsed into one row. Routine detail
 lines (one per session, the gateway's counters, the evidence notes) and
 every collapsed row's original lines show only with ``-v``.
-Exit statuses: 0 ready or attention, 1 blocked, 2 usage.
+Exit statuses: 0 ready or attention, 1 blocked, 2 usage; --repair 3 deferred.
 """
 
 from __future__ import annotations

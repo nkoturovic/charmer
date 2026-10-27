@@ -67,6 +67,7 @@ class GatewayView:
     # stopped (``gateway_lifecycle.rollback_remedy``); rollback itself
     # stays a command-line action, so the view shows its command.
     rollback: str | None = None
+    drift: str | None = None  # on-disk binary comparison, separate from ownership
 
     @property
     def can_install_service(self) -> bool:
@@ -148,7 +149,8 @@ def observe(runtime: Any) -> GatewayView:
     seen = gateway.observe()
     return GatewayView(gateway, seen, service=manager, service_status=status, runtime=runtime,
                        inhibition=_inhibition_text(gateway), hold=_hold(gateway, seen),
-                       rollback=_rollback(gateway) if seen.state == gateway_lifecycle.STOPPED else None)
+                       rollback=_rollback(gateway) if seen.state == gateway_lifecycle.STOPPED else None,
+                       drift=gateway.binary_drift(seen))
 
 
 def _rollback(gateway: Any) -> str | None:
@@ -349,6 +351,9 @@ def dialog(runtime: Any, win: Any, palette: tui.Palette, *, background: Callable
         lines.append(view.service_line())
     if view.inhibition is not None:
         lines.append(view.inhibition)
+    drift = getattr(view, "drift", None)
+    if drift is not None:
+        lines.append(drift)
     lines.extend(view.hold_summary())
     if view.rollback is not None:
         lines.append(view.rollback)

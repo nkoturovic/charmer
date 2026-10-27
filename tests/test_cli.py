@@ -1824,7 +1824,7 @@ class DoctorVisibilityTests(CLITestCase):
     def test_repair_legacy_record_is_actionable(self) -> None:
         self.save_session()
         code, output = self.run_cli(["doctor", "--repair", FIXED_ID])
-        self.assertEqual(code, 0)
+        self.assertEqual(code, 3)
         self.assertIn(
             f"session {FIXED_ID[:8]} is a legacy record; run charmer migrate (or resume it) first",
             output,
@@ -4607,7 +4607,8 @@ class SingleRepairConvergenceTests(CLITestCase):
         }
         _v3.save_any(self.runtime.session_store, stuck)
         code, output = self.run_cli(["doctor", "--repair", FIXED_ID])
-        self.assertEqual(code, 0, output)
+        # Fork cleanup succeeded, but this legacy scope still needs a resume.
+        self.assertEqual(code, 3, output)
         self.assertIn("cleared a fork marker", output)
         self.assertEqual(
             self.runtime.session_store.load(FIXED_ID)["pending_forks"], []

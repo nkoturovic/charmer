@@ -84,9 +84,10 @@ class RelinkConvergenceTests(CLITestCase):
                     code, out, err = self.run_cli_both(
                         ["sessions", "relink-runtime", FIXED_ID, OTHER_ID], interactive=False)
                 self.assertEqual(code, 1, out + err)
-                self.assertIn("scope convergence is unfinished", out)
-                self.assertIn(reason, out)
-                self.assertIn(f"charmer doctor --repair {FIXED_ID}", out)
+                self.assertEqual(out, "")
+                self.assertIn("scope convergence is unfinished", err)
+                self.assertIn(reason, err)
+                self.assertIn(f"charmer doctor --repair {FIXED_ID}", err)
                 after = self.runtime.session_store.load(FIXED_ID)
                 self.assertEqual(after["runtime_session_id"], OTHER_ID)
                 self.assertGreater(after["launch_epoch"], before["launch_epoch"])
@@ -99,8 +100,9 @@ class RelinkConvergenceTests(CLITestCase):
         with mock.patch("charmer.cli.doctor_actions._doctor_repair", side_effect=errors.CLIError("fixture failure")):
             code, out, err = self.run_cli_both(["sessions", "relink-runtime", FIXED_ID, OTHER_ID], interactive=False)
         self.assertEqual(code, 1, out + err)
-        self.assertIn("fixture failure", out)
-        self.assertIn(f"charmer doctor --repair {FIXED_ID}", out)
+        self.assertEqual(out, "")
+        self.assertIn("fixture failure", err)
+        self.assertIn(f"charmer doctor --repair {FIXED_ID}", err)
         self.assertEqual(self.runtime.session_store.load(FIXED_ID)["runtime_session_id"], OTHER_ID)
 
     def test_relink_success_requires_successful_convergence(self) -> None:

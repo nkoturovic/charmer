@@ -939,6 +939,13 @@ DEFAULT_MODE_DRIFTS = (
     "state); each applies at its next resume"
 )
 # Earlier scopes are grouped by the remedy the recorded lineup admits.
+EARLIER_SCOPE_FIX = ("charmer doctor --repair-all recompiles this stopped scope now (H offers it); if running, "
+                     "it is recompiled at its next resume")
+EARLIER_SCOPE_DEFERRED_FIX = ("repair-all defers this recorded lineup; its scope is recompiled at its next "
+                              "resume (charmer -r <id>)")
+EARLIER_SCOPE_CHOICE_FIX = ("repair-all cannot recompile this recorded lineup; choose a profile or model first: "
+                            "charmer sessions choose --needs-choice --profile <name> (S banner), or resume "
+                            "interactively")
 EARLIER_SCOPES_FIX = ("charmer doctor --repair-all recompiles the stopped ones now (H offers it); a running "
                       "one is recompiled at its next resume")
 EARLIER_SCOPES_DEFERRED_FIX = ("repair-all defers these recorded lineups; each scope is recompiled at its next "
@@ -1241,7 +1248,11 @@ FINDINGS_REPAIR_TITLE = "Repair every stopped session?"
 FINDINGS_REPAIR_BODY = ("charmer doctor --repair-all: converge stopped sessions' generated scopes to their records. "
                         "Running sessions and sessions whose state cannot be told are skipped. Lineups the installed "
                         "catalog cannot recompile are deferred until resume or a model choice.")
-FINDINGS_REPAIR_BUTTONS = (("Cancel", False), ("Repair", True))
+FINDINGS_REPAIR_BUTTONS = (("Cancel", False), ("Repair", True), ("Including running sessions", "live"))
+FINDINGS_REPAIR_LIVE_TITLE = "Including running sessions"
+FINDINGS_REPAIR_LIVE_BODY = ("Converge the listed scopes to their records without restarting sessions. "
+                            "Catalog changes that cannot be recompiled are deferred until resume or a model choice. "
+                            "Running sessions may need /reload-plugins to pick up repaired agent files.")
 FINDINGS_PRUNE_ALIAS_TITLE = "Prune alias {alias}?"
 FINDINGS_PRUNE_ALIAS_BODY = ("charmer doctor --prune-aliases {alias}: the gateway stops serving the alias; it is "
                              "refused while a live session uses it.")
