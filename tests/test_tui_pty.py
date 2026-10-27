@@ -2531,7 +2531,7 @@ finally:
             child.send(DOWN_KEY + b"\n")
         else:
             child.send(b"\n")
-            child.read_until(b"Confirm explicit action")
+            child.read_until(b"Proceed with these listed requests?")
             child.send(b"y")
             # The account-filtered listing has its own consent after the public one.
             child.read_until(b"/user")
@@ -2560,9 +2560,11 @@ finally:
         child.read_until(b"admit badge", FIXTURE_TIMEOUT)
         mark = len(child.output)
         child.send(b"\n")
-        _read_after(child, mark, b"Confirm explicit action", FIXTURE_TIMEOUT)
+        _read_after(child, mark, b"Admit custom-", FIXTURE_TIMEOUT)
         child.send(b"y")
-        child.read_until(b"Action result", FIXTURE_TIMEOUT)
+        # Curses keeps the leading A when Admit becomes Action result;
+        # synchronize on the receipt, not an unchanged heading cell.
+        _read_after(child, mark, b"Optional badge recorded", FIXTURE_TIMEOUT)
         child.send(b"\x1bq")
         child.read_until("qualify — choose checks".encode(), FIXTURE_TIMEOUT)
         child.send(b"\n\n\n")

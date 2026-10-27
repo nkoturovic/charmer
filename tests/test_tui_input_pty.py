@@ -290,7 +290,7 @@ class CardKeyTests(_InputCase):
 
 
 class RemedyLayoutTests(_InputCase):
-    def test_narrow_picker_warning_keeps_v_details_and_opens_them(self) -> None:
+    def test_narrow_picker_warning_is_focused_and_v_opens_details(self) -> None:
         setup = """
 from charmer import tui, views
 
@@ -307,7 +307,7 @@ def picker_main(argv, *, runtime, input_stream, output_stream, interactive):
 entry.main = picker_main
 """
         child = self.child("charmer-pty-picker-remedy-", setup=setup)
-        child.read_until("— V details".encode(), FIXTURE_TIMEOUT)
+        child.read_until(b"Attention: effort unverified", FIXTURE_TIMEOUT)
         self.press(child, b"v", "model — details".encode())
         child.read_until(b"effort unverified for this line", FIXTURE_TIMEOUT)
         self.press(child, b"\x1b", "reviewer — choose model".encode())
