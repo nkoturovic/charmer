@@ -34,13 +34,18 @@
 #              repository variable CM_MACOS_INTEL_RUNNER names a runner) and
 #              WSL 2 on Windows Server 2025, where install.ps1 itself checks
 #              and installs WSL 2 and runs install.sh in the distribution
-#              (its Pester suite too): the installation channel, the pinned
-#              Claude Code, the gateway lifecycle and its loopback
-#              confinement, a first managed turn against a fixture provider
-#              and its resume, the uninstall once the session recorded its
-#              end; the update and rollback journey on two test builds of
-#              this commit that trust the ephemeral key (the release key
-#              never enters CI)
+#              (its Pester suite too): the installation channel, the
+#              installed release's process observation on disposable
+#              processes, the pinned Claude Code, the gateway lifecycle and
+#              its loopback confinement, the first interactive managed turn
+#              with its one-time screens recorded, a print-mode turn
+#              against a fixture provider and its resume, the session verbs
+#              on a running client, the user's own Claude Code left
+#              untouched, the uninstall once every session recorded its end
+#              (WSL 2 adds its checks and an on-demand start after the
+#              distribution shut down); the update and rollback journey on
+#              two test builds of this commit that trust the ephemeral key
+#              (the release key never enters CI)
 # service      the supervised gateway service under a real systemd user
 #              manager (a dedicated user with lingering)
 # draft        a draft GitHub release with the unsigned assets, behind the
@@ -439,9 +444,9 @@ jobs:
       matrix:
         # Pinned by image index digest (.github/PINS.md).
         image:
-          - "ubuntu:22.04@sha256:0a9887931b0e38af2e3487ed39e29436b0535c4f3f52e57745baaf79d1898956"
-          - "ubuntu:24.04@sha256:68ee22004a9109b44973313b02ff7b1de250f1de0f5ecb628d73f579aaff33ac"
-          - "debian:12@sha256:2c037a04925515fdd6ea85ea14a682d0e79931f5e9f5d07b6dbfc6ba12f9e858"
+          - "ubuntu:22.04@sha256:e0f80c829509ef4df9e76bd8944eb7b8ec25cbb379b112a7f9448b2c77a77c9b"
+          - "ubuntu:24.04@sha256:24737cef17f4e22b1977df7d9a05e77c4e28b7da5b8911f8d8ccda136bf3573c"
+          - "debian:12@sha256:854dd8ab51d62866dbd8f5431d15ce77b12983a2a4a1e1fe43a2395dc7ef9f61"
           - "fedora:44@sha256:43b29f65a41eb9c35e1cd5323e3bdf3b655c2357a9f4f1ff2f9c2798e5045d80"
     container:
       image: ${{ matrix.image }}
@@ -471,7 +476,7 @@ jobs:
           cp -R dist .github packaging /home/journey/
           chown -R journey /home/journey
           # shellcheck disable=SC2016 # $HOME is the journey user's, expanded by its shell
-          su journey -c 'umask 077; cd "$HOME" && JOURNEY_PERMISSIONS=1 JOURNEY_CLIENT=fetch sh .github/scripts/journey.sh install dist'
+          su journey -c 'umask 077; cd "$HOME" && JOURNEY_PERMISSIONS=1 JOURNEY_NATIVE=1 JOURNEY_CLIENT=fetch sh .github/scripts/journey.sh install dist'
 
   journeys-linux-arm64:
     needs: [resolve, build]
@@ -492,7 +497,7 @@ jobs:
         timeout-minutes: 20
         run: |
           umask 077
-          JOURNEY_CLIENT=fetch JOURNEY_TARGET=linux-aarch64 sh .github/scripts/journey.sh install dist
+          JOURNEY_NATIVE=1 JOURNEY_CLIENT=fetch JOURNEY_TARGET=linux-aarch64 sh .github/scripts/journey.sh install dist
       - name: No Claude Code bytes in the workspace
         if: always()
         run: |
@@ -669,6 +674,7 @@ jobs:
         timeout-minutes: 20
         env:
           JOURNEY_CLIENT: ${{ runner.temp }}/claude
+          JOURNEY_NATIVE: "1"
         run: |
           umask 077
           sh .github/scripts/journey.sh install dist
@@ -706,7 +712,7 @@ jobs:
         timeout-minutes: 20
         run: |
           umask 077
-          JOURNEY_CLIENT=fetch JOURNEY_TARGET=darwin-x86_64 sh .github/scripts/journey.sh install dist
+          JOURNEY_NATIVE=1 JOURNEY_CLIENT=fetch JOURNEY_TARGET=darwin-x86_64 sh .github/scripts/journey.sh install dist
       - name: No Claude Code bytes in the workspace
         if: always()
         run: |
@@ -849,7 +855,14 @@ jobs:
             }
           }
           # Detach explicitly: WSL can retain /dev/tty even with redirected stdin/stdout.
-          wsl --distribution $distribution --cd "$workspace" --exec setsid --wait sh -c 'umask 077; JOURNEY_CLIENT=fetch sh .github/scripts/journey.sh installed "$0"' $version
+          # The workspace is on a Windows drive: the WSL checks start there.
+          wsl --distribution $distribution --cd "$workspace" --exec setsid --wait sh -c 'umask 077; JOURNEY_NATIVE=1 JOURNEY_CLIENT=fetch JOURNEY_WSL=1 JOURNEY_UNINSTALL=skip JOURNEY_KEEP="$HOME/journey-keep" sh .github/scripts/journey.sh installed "$0"' $version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # The distribution shuts down, as when its last terminal closes; the
+          # next managed launch starts the gateway again.
+          wsl --terminate $distribution
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          wsl --distribution $distribution --cd "$workspace" --exec setsid --wait sh -c 'umask 077; sh .github/scripts/journey.sh restarted "$0" "$HOME/journey-keep"' $version
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
   draft:
