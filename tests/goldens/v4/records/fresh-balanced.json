@@ -94,7 +94,7 @@
     "workflows": "native"
   },
   "applied_hash": "sha256:6171264be9985f8eb85ee0b3bd433a73b6c8f6d3cba9988232efb890e1ce4791",
-  "catalog_hash": "sha256:3e09d73d284173d45868187338cb5097047bcd8ec4bf94c84ade53418bfd9281",
+  "catalog_hash": "sha256:437040dbc5bb7096e3a9b558de39ed3389a089d9d46c865619d8c5e6b4bfe7ce",
   "catalog_version": 31,
   "created_at": "2026-09-25T00:00:00Z",
   "cwd": "/project",

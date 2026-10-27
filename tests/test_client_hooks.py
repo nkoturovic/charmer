@@ -1647,8 +1647,9 @@ _REPLAY_PARTS = {
 _REPLAY_REFUSED = ("tool-schema", "system-prefix")
 # The client's own resends of a refused (400) request before it surfaces the
 # error: none on 2.1.302; client 2.1.310 sends a 400 it does not recognise
-# again as sent, then twice without tool search (measured).
-_REPLAY_RESENDS = 3
+# again as sent, then twice without tool search; client 2.1.311 resends it
+# five times, the first without the thinking-token-count beta (measured).
+_REPLAY_RESENDS = 5
 
 
 def _d5_replay_qualification(results: dict[str, Any], up: list[dict[str, Any]], sent: list[dict[str, Any]],
@@ -1671,8 +1672,8 @@ def _d5_replay_qualification(results: dict[str, Any], up: list[dict[str, Any]], 
       system prefix does not; the block is forwarded byte-exact (never
       silently altered); the prefix-bound 400 surfaces as a visible failure
       after at most :data:`_REPLAY_RESENDS` client resends, each carrying the
-      block byte-exact (client 2.1.310 resends a 400 it does not recognise:
-      once as sent, then twice without tool search);
+      block byte-exact (client 2.1.311 resends a 400 it does not recognise
+      five times, the first without the thinking-token-count beta);
     - system-prefix: the outgoing system-prefix digest differs
       from the issuing request's (it carries the appended marker), the tool
       schema does not, so the tool-schema case never counts as this leg;
@@ -2224,8 +2225,9 @@ class D5ReplayQualificationSelfTests(unittest.TestCase):
         self.assertIn("system-prefix=replay-exact+400-visible(1 sent)", part)
 
     def test_bounded_client_resends_of_a_refused_request_qualify(self):
-        """Client 2.1.310 resends a 400 it does not recognise (as sent, then
-        twice without tool search): up to the bound, each carrying the block."""
+        """Client 2.1.311 resends a 400 it does not recognise five times (the
+        first without the thinking-token-count beta): up to the bound, each
+        carrying the block."""
 
         def resent(_results, up, sent):
             for index in (5, 4):

@@ -9,7 +9,10 @@ records through (``PreModelSwitch``/``PostModelSwitch``):
 
 * ``beta-refused`` (2.1.295): the gateway refuses the context-1m beta of a
   ``[1m]`` lead with a 400 naming it; the client resends once without the
-  beta, on the same model;
+  beta, on the same model. The lead is a gateway name the client does not
+  know: from 2.1.311 a canonical Anthropic id that is 1M on its own drops an
+  ineffective ``[1m]`` and sends no beta to refuse (``client check
+  one-m-suffix``);
 * ``above-200k`` (2.1.299): a gateway model name the client does not know
   (200K assumed) past 200K tokens: the next turn compacts and answers on the
   same model instead of failing with "Prompt is too long";
@@ -56,6 +59,8 @@ _CONTRACT = RESOURCES_ROOT / "catalog" / "native-contract.json"
 _BETA = "context-1m-2025-08-07"
 _FABLE, _PREVIOUS_FABLE = "claude-fable-5-1", "claude-fable-5"
 _RESPONSE_MODEL = "fence-upstream-substituted"
+# A gateway name the client does not know (200K unless [1m], which adds the beta).
+_BETA_LEAD = "fence-gw-wide"
 
 
 def wire(selector: str) -> str:
@@ -75,7 +80,7 @@ def verdict(observed: dict[str, dict[str, Any]]) -> str:
     beta = observed["beta-refused"]["rows"]
     if not beta or not beta[0]["beta"]:
         raise _Inconclusive("beta-refused: the first request carried no context-1m beta")
-    if models("beta-refused") != {"claude-opus-5-5"} or len(beta) < 2 or beta[-1]["beta"]:
+    if models("beta-refused") != {_BETA_LEAD} or len(beta) < 2 or beta[-1]["beta"]:
         return "FS-beta-resend-changed"
     big = observed["above-200k"]
     if big["returncodes"] != [0, 0] or models("above-200k") != {"fence-gw-lead"}:
@@ -157,7 +162,7 @@ class VerdictTests(unittest.TestCase):
             return {"model": model, "beta": beta, "class": kind}
 
         return {
-            "beta-refused": {"rows": [row("claude-opus-5-5", True), row("claude-opus-5-5")]},
+            "beta-refused": {"rows": [row(_BETA_LEAD, True), row(_BETA_LEAD)]},
             "above-200k": {"rows": [row("fence-gw-lead"), row("fence-gw-lead", kind="compaction"),
                                     row("fence-gw-lead")], "returncodes": [0, 0]},
             "response-model": {"rows": [row("fence-gw-lead")] * 3},
@@ -184,7 +189,7 @@ class VerdictTests(unittest.TestCase):
                           {"model": _PREVIOUS_FABLE, "beta": False, "class": "main"}]}
         self.assertEqual(verdict({**rows, "best-fallback": moved}), "FS-fable-substituted")
         with self.assertRaises(_Inconclusive):
-            verdict({**rows, "beta-refused": {"rows": [{"model": "claude-opus-5-5", "beta": False, "class": "main"}]}})
+            verdict({**rows, "beta-refused": {"rows": [{"model": _BETA_LEAD, "beta": False, "class": "main"}]}})
 
 
 class FenceSubstitutionProbe(unittest.TestCase):
@@ -291,7 +296,7 @@ class FenceSubstitutionProbe(unittest.TestCase):
         observed: dict[str, dict[str, Any]] = {}
         try:
             observed["beta-refused"] = self._turns(
-                "claude-opus-5-5[1m]", ["claude-opus-5-5[1m]"], _Script(refuse_beta=True), ("client check",))
+                f"{_BETA_LEAD}[1m]", [f"{_BETA_LEAD}[1m]"], _Script(refuse_beta=True), ("client check",))
             observed["above-200k"] = self._turns(
                 "fence-gw-lead", ["fence-gw-lead"], _Script(tokens=210000), ("client check one", "client check two"))
             observed["response-model"] = self._turns(
