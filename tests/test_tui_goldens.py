@@ -139,9 +139,13 @@ class OperatorGoldens(unittest.TestCase):
         self.assertIn("admission: not admitted (optional)", text)
         assertGolden(self, TUI_GOLDENS / _tui_render.golden_name("operator-route-unapproved"), text.encode())
 
-    def test_picker_warning_keeps_details_action_in_the_narrow_row(self):
+    def test_picker_warning_is_focused_and_details_stays_in_the_keybar(self):
         text = _tui_render.build("operator-picker-ineligible")
         selected = next(line for line in text.splitlines() if line.startswith("  ›"))
-        self.assertTrue(selected.endswith("— V details"), selected)
+        self.assertNotIn("— V details", selected)
         self.assertIn("Fixture Reviewer", selected)
+        detail = " ".join(text[text.index("  effort:"):].split())
+        self.assertIn("Attention: custom-fixture-reviewer: not qualified: no current smoke, efforts, tools, stream evidence",
+                      detail)
+        self.assertIn("V details", text.splitlines()[-1])
         assertGolden(self, TUI_GOLDENS / _tui_render.golden_name("operator-picker-ineligible"), text.encode())

@@ -391,8 +391,22 @@ class OnboardingActions:
         self.runtime, self.win, self.palette = runtime, win, palette
 
     def confirm(self, text):
-        return tui.TextView("Confirm explicit action", text.splitlines(),
-                            palette=self.palette, confirm=True).run(self.win)
+        lines = text.rstrip().splitlines()
+        prompt = lines[-1].removesuffix("[y/N]").rstrip() if lines else "Review change"
+        if "?" in prompt:
+            title = prompt.split("?", 1)[0].rsplit(". ", 1)[-1].strip() + "?"
+            lines[-1] = prompt
+            # Only a heading that fits TextView's 40-column minimum can
+            # replace the question in the body, even after a resize.
+            if len(title) <= 37:
+                lines[-1] = prompt.replace(title, "", 1).strip()
+        else:
+            title = lines[0] if lines else prompt
+            if lines:
+                lines[-1] = prompt
+                if len(title) <= self.win.getmaxyx()[1] - 4:
+                    lines = lines[1:]
+        return tui.TextView(title, lines, palette=self.palette, confirm=True).run(self.win)
 
     def preview(self, text):
         return tui.TextView("Declaration preview", text.splitlines(), palette=self.palette, confirm="declare").run(self.win)

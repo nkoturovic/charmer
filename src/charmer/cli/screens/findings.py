@@ -254,7 +254,8 @@ class FindingsScreen:
             tui.safe_add(win, y, 2, line, attr)
         tui.safe_add(win, rule_row, 2, views.rule(width), palette.attr("dim"))
         if self.offset + visible < len(drawn):
-            tui.safe_add(win, rule_row, 2, "↓ more ", palette.attr("dim"))
+            tui.safe_add(win, rule_row, 2, tui.MORE_ROWS.format(n=len(drawn) - self.offset - visible) + " ",
+                         palette.attr("dim"))
         for y, line in enumerate(self._info(width), info_top):
             tui.safe_add(win, y, 2, line, palette.attr("dim"))
         item = self.item()

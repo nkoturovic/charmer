@@ -174,6 +174,7 @@ PTY_SENDS = frozenset({"send", "feed", "keys"})
 SCREEN_ENTRY_POINTS: dict[str, frozenset[str]] = {
     "card": frozenset({"_LaunchCardScreen", "launch_card"}),
     "findings": frozenset({"FindingsScreen", "run_findings_screen"}),
+    "gateway": frozenset({"dialog"}),
     "resume-card": frozenset({"_LaunchCardScreen", "launch_card", "_resume_card_result"}),
     "sessions": frozenset({"_SessionsScreen", "_sessions_list_tui"}),
     "lineup-dialog": frozenset({"_LineupDialog"}),
@@ -446,6 +447,30 @@ def census(**overrides) -> list[str]:
 
 
 class CensusTests(unittest.TestCase):
+    def test_readonly_plan_and_portability_have_dispatch_paths(self) -> None:
+        for name in ("diagnostics.plan", "portability.export", "portability.import-preview", "portability.import"):
+            with self.subTest(operation=name):
+                row = next(op for op in sm.OPERATIONS if op.id == name)
+                self.assertTrue(row.tui)
+                self.assertNotIn("tui", row.absent)
+
+    def test_terminal_and_in_session_exceptions_stay_explicit(self) -> None:
+        kept = {"launch.no-subagents", "install.identity", "install.rollback", "install.uninstall-preview",
+                "install.uninstall", "gateway.stop", "gateway.clear-hold", "gateway-service.uninstall",
+                "discovery.feed", "discovery.context-override", "review.request", "interface.presentation"}
+        for row in sm.OPERATIONS:
+            if row.id in kept:
+                with self.subTest(operation=row.id):
+                    self.assertFalse(row.tui)
+                    self.assertTrue(row.absent.get("tui"))
+        self.assertEqual(kept, {op.id for op in sm.OPERATIONS if op.id in kept})
+        counts = {}
+        for row in sm.OPERATIONS:
+            if not row.tui and row.audience != "user":
+                counts[row.audience] = counts.get(row.audience, 0) + 1
+        self.assertEqual(counts, {"scripting": 13, "maintenance": 10, "compatibility": 13,
+                                  "service": 4, "internal": 2})
+
     def test_every_surface_is_classified_and_every_row_is_real(self) -> None:
         self.assertEqual(census(), [])
 
@@ -714,7 +739,7 @@ class Fixture:
                                     for p in census(operations=rows)), reason)
 
     def test_a_user_command_without_a_tui_path_or_reason(self) -> None:
-        rows = [replace(op, absent={}) if op.id == "portability.export" else op for op in sm.OPERATIONS]
+        rows = [replace(op, absent={}, tui=()) if op.id == "portability.export" else op for op in sm.OPERATIONS]
         self.assertIn("row portability.export: a user command with neither a TUI path nor its reason",
                       census(operations=rows))
 

@@ -16,7 +16,7 @@
       ! profile alpha: next launch: lead: no OAuth credential record
         (readiness; never a block)
 › ▾ Advisories (optional evidence; does not change the verdict) (1)
-  ↓ more ──────────────────────────────────────────────────────────────────────
+  ↓ 5 more ────────────────────────────────────────────────────────────────────
   Optional evidence: it never changes the verdict. Its diagnostics run only
   when you start them (may cost provider calls; never run automatically).
   Enter: hide them

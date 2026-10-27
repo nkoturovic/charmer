@@ -1628,7 +1628,7 @@ def picker_rows(
             if 0 < row.provider_tokens < 200000:
                 warnings.append("provider bound below the 200K client class; no per-agent window")
             if enabled and warnings:
-                note = "Attention: " + warnings[0] + " — V details"
+                note = "Attention: " + warnings[0]
             cycle = tuple(shown)
             if slot == "workflow" and row.mode == "client":
                 cycle = ()
@@ -2149,17 +2149,17 @@ def models_model(
     keys: list[str] = []
     for row in rows:
         if row.source == "catalog" and (row.status != "new" or row.admitted):
-            main.append((row.key, row.display, row.provider, row.class_label, efforts(row), used_text(row)))
+            main.append((row.key, row.short, row.provider, row.class_label, efforts(row), used_text(row)))
             keys.append(row.key)
     for row in rows:
         if row.source == "custom":
-            main.append((row.key, row.display, "custom", row.class_label, efforts(row), used_text(row)))
+            main.append((row.key, row.short, "custom", row.class_label, efforts(row), used_text(row)))
             keys.append(row.key)
     new_rows: list[tuple[str, ...]] = []
     new_keys: list[str] = []
     for row in rows:
         if row.source == "catalog" and row.status == "new" and not row.admitted:
-            new_rows.append((row.key, row.display, row.provider, row.class_label, efforts(row),
+            new_rows.append((row.key, row.short, row.provider, row.class_label, efforts(row),
                              "New · unavailable" if row.unavailable_reason else "New · not admitted"))
             new_keys.append(row.key)
     heading = "new (not admitted — Enter adds an optional badge):" + ("" if new_rows else " —")
@@ -2662,7 +2662,7 @@ class SettingsRow:
         return line
 
 
-SETTINGS_SECTIONS = ("Context & compaction", "Agents", "Claude Code", "Providers & models", "Gateway")
+SETTINGS_SECTIONS = ("Context & compaction", "Agents", "Claude Code", "Providers & models", "Gateway", "Portability")
 # The context window ceiling row (``choices.json``, not ``settings.json``).
 SETTINGS_CEILING_KEY = "ceiling"
 SETTINGS_CEILING_LABEL = "context window ceiling"
@@ -2680,7 +2680,8 @@ SETTINGS_DEFAULT_AUTOMATIC = "automatic"
 SETTINGS_DEFAULT_DETAIL = ("Used in a directory with no recent profile, when it is connected. automatic: the first "
                            "connected shipped profile.")
 # The rows whose Enter opens another screen (never reset).
-SETTINGS_NAVIGATION_EDITS = frozenset({"providers", "models"})
+SETTINGS_PORTABILITY_EDITS = frozenset({"export", "import-preview", "import"})
+SETTINGS_NAVIGATION_EDITS = frozenset({"providers", "models"}) | SETTINGS_PORTABILITY_EDITS
 
 
 def _ceiling_row(section: str, ceiling: tuple[int, bool, str | None] | None) -> SettingsRow:
@@ -2867,6 +2868,15 @@ def settings_rows(
             True,
         )
     )
+    for key, label, note, detail in (
+        ("export", "Export configuration", "file or JSON view",
+         "Choose a path to save the portable configuration and its receipt; blank shows JSON without writing."),
+        ("import-preview", "Import preview", "read-only",
+         "Choose an export file to preview against this computer. Nothing is written; trust is never transferred."),
+        ("import", "Import apply", "confirm first",
+         "Preview an export file, then confirm the ready changes. Cancel is focused first; imported trust stays inert."),
+    ):
+        rows.append(SettingsRow(sec[5], key, label, "open…", note, "", key, detail, True))
     return tuple(rows)
 
 

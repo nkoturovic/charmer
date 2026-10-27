@@ -3,7 +3,7 @@
   ─────────────────────────────────────────────────────────────────────────────
   charmer — profile: balanced · follows profile · Fresh
   Fixture seed balanced: frozen test data mirroring the shipped seed's slot
-  families.
+    families.
   lead: Opus 5.5 · effort ultracode · 1M class   workflows: native
   context: window 800K (lead and agents) · compacts at ~702K (90 %)
   lineup: 8 agents · durable scope · Explore→cm-explorer · GP off
@@ -11,10 +11,10 @@
     analyst · GPT-5.6 Sol · effort high · provider openai
     analyst-strong · Opus 5.5 · effort xhigh · provider anthropic
     implementer-light · GPT-5.6 Sol · effort high · provider openai ·
-  (worktree)
+      (worktree)
     implementer · GPT-5.6 Sol · effort high · provider openai · (worktree)
     implementer-strong · GPT-5.6 Sol · effort xhigh · provider openai ·
-  (worktree)
+      (worktree)
     reviewer · GPT-5.6 Sol · effort xhigh · provider openai · read-only
     reviewer-strong · Opus 5.5 · effort xhigh · provider anthropic · read-only
   review: ✓ cross-family · writers(openai)→reviewer-strong · lead→reviewer

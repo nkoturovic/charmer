@@ -455,6 +455,18 @@ class QuotaSurfaceTests(unittest.TestCase):
                 self.assertLessEqual(len(text), width)
                 self.assertEqual(role, "warn")
 
+    def test_narrow_resume_summary_keeps_age_unknown_reset_and_the_route(self):
+        for width in (40, 45, 50, 67):
+            for percent in (93, 100):
+                with self.subTest(width=width, percent=percent):
+                    text, role = self.card(self.credentials(percent=percent, reset=False), resume=True, width=width)
+                    self.assertLessEqual(len(text), width, text)
+                    self.assertIn("3d old", text)
+                    self.assertIn("reset unknown", text)
+                    self.assertIn("%", text)
+                    self.assertTrue(text.endswith("— S → T") or text.endswith("— S Sessions → T"), text)
+                    self.assertEqual(role, "warn")
+
     def test_card_missing_window_and_reset_and_nonwarning_states(self):
         self.assertIsNone(self.card(self.credentials(reason="quota exhausted", window=False, observed=False)))
         for resume in (False, True):

@@ -274,10 +274,10 @@ class CardKeyTests(_InputCase):
         child = self.child("charmer-pty-field-")
         child.read_until(CARD_STATUS, FIXTURE_TIMEOUT)
         self.press(child, b"o", "settings — global".encode())
-        # The kept environment row: End reaches the last row, then up past
-        # the Gateway and Providers rows.
+        # The kept environment row: End reaches Import apply, then up past
+        # the three Portability rows, Gateway and the two Providers rows.
         child.send(END_KEY)
-        for _ in range(3):
+        for _ in range(6):
             child.send(b"k")
         self.press(child, b"\r", "kept environment".encode())
         child.send(b"MCP?")
@@ -290,7 +290,7 @@ class CardKeyTests(_InputCase):
 
 
 class RemedyLayoutTests(_InputCase):
-    def test_narrow_picker_warning_keeps_v_details_and_opens_them(self) -> None:
+    def test_narrow_picker_warning_is_focused_and_v_opens_details(self) -> None:
         setup = """
 from charmer import tui, views
 
@@ -307,7 +307,7 @@ def picker_main(argv, *, runtime, input_stream, output_stream, interactive):
 entry.main = picker_main
 """
         child = self.child("charmer-pty-picker-remedy-", setup=setup)
-        child.read_until("— V details".encode(), FIXTURE_TIMEOUT)
+        child.read_until(b"Attention: effort unverified", FIXTURE_TIMEOUT)
         self.press(child, b"v", "model — details".encode())
         child.read_until(b"effort unverified for this line", FIXTURE_TIMEOUT)
         self.press(child, b"\x1b", "reviewer — choose model".encode())

@@ -270,7 +270,7 @@ In full: [troubleshooting.md](../troubleshooting.md).
 | account quota and credential health (release bundles and the Nix package) | card → G (the quota column and V details): an account provider | `charmer quota`; `charmer quota --json` | `/cm quota` | asks nothing |
 | a session's recorded bindings and observed routing | card → S → V: a session row | `charmer explain [<id>]` | not a `/cm` request | asks nothing |
 | observed requests per model and session | card → S → V (the last 24 hours): a session row | `charmer usage` | not a `/cm` request | asks nothing |
-| what the gateway would serve after pending changes | not in the launcher: served-change inspection for review; the provider and model flows show each change's effect before it is written | `charmer plan` | not a `/cm` request | asks nothing |
+| what the gateway would serve after pending changes | card → H → W → P plan | `charmer plan` | not a `/cm` request | asks nothing |
 | what a candidate package's assets would serve | not in the launcher: candidate-package inspection for maintainers | `charmer plan --assets <path>` | not a `/cm` request | maintenance; asks nothing |
 
 ## Settings
@@ -309,9 +309,9 @@ In full: [guides/move-machines.md](../guides/move-machines.md).
 
 | Task | TUI | CLI | In-session | Notes |
 | --- | --- | --- | --- | --- |
-| write your configuration as a portable file (no keys) | not in the launcher: portable-file input and output: the file is written for, or read from, another computer | `charmer export`; `charmer export --out <file>` | not a `/cm` request | asks nothing |
-| preview an exported configuration here | not in the launcher: portable-file input and output: the file is written for, or read from, another computer | `charmer import <file>` | not a `/cm` request | asks nothing |
-| apply an exported configuration's ready items | not in the launcher: portable-file input and output: the file is written for, or read from, another computer | `charmer import <file> --apply` | not a `/cm` request | asks first: y/N, default No |
+| write your configuration as a portable file (no keys) | card → O → Export configuration → Enter | `charmer export`; `charmer export --out <file>` | not a `/cm` request | asks nothing |
+| preview an exported configuration here | card → O → Import preview → Enter | `charmer import <file>` | not a `/cm` request | asks nothing |
+| apply an exported configuration's ready items | card → O → Import apply → Enter → Apply: a terminal outside Claude Code | `charmer import <file> --apply` | not a `/cm` request | asks first: y/N, default No |
 
 ## Maintenance
 

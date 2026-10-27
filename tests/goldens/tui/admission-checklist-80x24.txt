@@ -1,10 +1,10 @@
 
-  Confirm explicit action
+  Admit custom-fixture-reviewer?
   ─────────────────────────────────────────────────────────────────────────────
     ✓ declaration valid (providers.d/openrouter.json)
 
-  Admit custom-fixture-reviewer? Record an optional local attestation only; no
-  requests are sent, route approval and qualification are unchanged. [y/N]
+  Record an optional local attestation only; no requests are sent, route
+    approval and qualification are unchanged.
 
 
 
@@ -21,4 +21,4 @@
 
 
 
-  y proceed · N cancel · Esc cancel
+  y proceed · Esc cancel

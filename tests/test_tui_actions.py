@@ -7,6 +7,7 @@ import unittest
 
 from charmer import tui, views
 import charmer.cli.screens.actions as actions
+import charmer.cli.screens.gateway_actions as gateway_actions
 import charmer.cli.screens.profiles as screens_profiles
 import charmer.cli.text as cli_text
 
@@ -21,6 +22,7 @@ BARS = {
     # card (the help's first line), and the not-connected bar names it as Enter.
     "card": _keys(views.CARD_KEYS_FRESH, views.CARD_KEYS_NOT_CONNECTED, ("U", "update"), ("W", "get started")),
     "findings": _keys(cli_text.FINDINGS_KEYBAR),
+    "gateway": _keys(gateway_actions.KEYBAR),
     "resume-card": _keys((("Enter", "resume"),), views.CARD_KEYS_RESUME, ("U", "update")),
     "sessions": _keys(cli_text.SESSIONS_KEYBAR, cli_text.SESSIONS_KEYBAR_ALL, cli_text.SESSIONS_STOP_BINDING,
                       cli_text.SESSIONS_MARK_BINDING, cli_text.SESSIONS_REPAIR_BINDING),
@@ -71,6 +73,10 @@ class ActionTableTests(unittest.TestCase):
     def test_arrow_keys_are_named_one_way(self) -> None:
         for bar_keys in BARS.values():
             self.assertNotIn("Left/Right", bar_keys)
+
+    def test_findings_gateway_description_includes_the_plan(self) -> None:
+        self.assertEqual(actions.action("findings.gateway").does,
+                         "the gateway's actions: start, restart, service install, log, plan")
 
 
 if __name__ == "__main__":

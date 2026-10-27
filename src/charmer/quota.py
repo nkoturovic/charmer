@@ -660,6 +660,14 @@ def card_summary(pool: PoolStatus, *, pools: Iterable[str], login_commands,
         # the observation age or suggest the unavailable P action on resume.
         full = f"{base} — {full_remedy}"
         text = full if len(full) <= width else f"{base} — {remedy}"
+    if len(text) > width:
+        # Narrow cards keep the age, an unknown reset and the executable
+        # route; the credential handle and window label are in details.
+        remedy = "S → T" if resume else "P → F"
+        unknown = " · reset unknown" if w is not None and w.resets_at is None else ""
+        text = f"{value} · {age}{unknown} — {remedy}"
+        if len(text) > width and w is not None:
+            text = f"{math.floor(w.used_percent)}%! · {age}{unknown} — {remedy}"
     return text, "warn"
 
 

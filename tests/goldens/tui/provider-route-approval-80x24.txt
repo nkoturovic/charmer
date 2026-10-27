@@ -1,5 +1,5 @@
 
-  Confirm explicit action
+  Approve this route?
   ─────────────────────────────────────────────────────────────────────────────
   Served change preview — no changes written
   Served selectors: unchanged.
@@ -11,7 +11,7 @@
     origin: https://api.acme.example
     auth: bearer from ACME_API_KEY (value not shown; not set yet)
     listing: none
-  The key is sent only to this origin. Approve this route? [y/N]
+  The key is sent only to this origin.
 
 
 
@@ -21,4 +21,4 @@
 
 
 
-  y proceed · N cancel · Esc cancel
+  y proceed · Esc cancel

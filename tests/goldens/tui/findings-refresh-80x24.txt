@@ -16,7 +16,7 @@
     Sessions (1)
 ›     ! 2 session(s) need a profile or model choice (lead removed): resume
         interactively with charmer -r <id> — 1111aaaa, 2222bbbb
-  ↓ more ──────────────────────────────────────────────────────────────────────
+  ↓ 5 more ────────────────────────────────────────────────────────────────────
 
 
   Enter: save lead choices for the filtered sessions, without launching
