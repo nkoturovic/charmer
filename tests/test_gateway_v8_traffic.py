@@ -726,7 +726,7 @@ class NativeReplayTests(unittest.TestCase):
         # Buffered complete-SSE reconstruction establishes ordered content and
         # bounded execution counts, NOT eager timing or general exactly-once
         # behavior. No previous-version baseline has been established.
-        self.assertEqual(self.version, "2.1.310", "requalify late-terminal evidence for a changed client")
+        self.assertEqual(self.version, "2.1.311", "requalify late-terminal evidence for a changed client")
         for tool in (False, True):
             paired_usage, skipped = {}, {}
             for cut in (False, True):
@@ -1589,3 +1589,75 @@ class DiscoveryOffTests(unittest.TestCase):
                     facts(gateway, "discovery", enabled=enabled, **rows[enabled])
                 finally:
                     gateway.close()
+
+
+def refusal_reply(status, headers):
+    """A Claude refusal (429 or 529) carrying the given response headers."""
+    kind = "rate_limit_error" if status == 429 else "overloaded_error"
+    body = json.dumps({"type": "error", "error": {"type": kind, "message": "fixture refusal"}}).encode()
+    return status, "application/json", body, headers
+
+
+class ShouldRetryHeaderTests(unittest.TestCase):
+    """Whether a Claude upstream's x-should-retry (and Retry-After) reaches
+    the client through the gateway as rendered (passthrough-headers false),
+    on the Claude key and Claude OAuth routes. The client ends a turn on
+    x-should-retry: false (client check do-not-retry); this row records what
+    the gateway lets through. Observation of the rendered behaviour."""
+
+    HEADERS = {"x-should-retry": "false", "retry-after": "7"}
+
+    def test_claude_refusal_headers_through_the_gateway(self):
+        rows = []
+        for status in (429, 529):
+            def respond(route_path, body, raw, headers, status=status):
+                if route_path.endswith("/v1/messages"):
+                    return refusal_reply(status, self.HEADERS)
+                return harness.fake_reply(route_path, body, raw)
+
+            gateway = harness.GatewayHarness(upstream_factory=lambda path: harness.FakeUpstream(path, respond))
+            try:
+                for stream in (False, True):
+                    before = len(gateway.upstream.hits)
+                    reply = post(gateway, request_body(CLAUDE_KEY_ALIAS, stream=stream))
+                    rows.append({"route": "claude-key", "upstream_status": status, "stream": stream,
+                                 "status": reply.status, "x_should_retry": reply.headers.get("x-should-retry"),
+                                 "retry_after": reply.headers.get("retry-after"),
+                                 "upstream_requests": len(gateway.upstream.hits) - before})
+            finally:
+                gateway.close()
+
+        def oauth_respond(route_path, body):
+            if route_path.endswith("/count_tokens"):
+                return 200, b'{"input_tokens":1}', "application/json"
+            status = 529 if "gwtest-overloaded" in json.dumps(body) else 429
+            _status, kind, data, headers = refusal_reply(status, self.HEADERS)
+            return status, data, kind, headers
+
+        root = Path(tempfile.mkdtemp(prefix="gwtest-v8-should-retry-"))
+        self.addCleanup(shutil.rmtree, root, True)
+        oauth = recognition.start_oauth_gateway(root, oauth_respond)
+        self.addCleanup(oauth.close)
+        model = oauth.document["oauth-model-alias"]["claude"][0]["alias"]
+        for status in (429, 529):
+            for stream in (False, True):
+                before = len(oauth.upstream.hits)
+                text = "gwtest-overloaded" if status == 529 else "gwtest-rate-limited"
+                reply = post(oauth, {**request_body(model, stream=stream),
+                                     "messages": [{"role": "user", "content": text}]})
+                rows.append({"route": "claude-oauth", "upstream_status": status, "stream": stream,
+                             "status": reply.status, "x_should_retry": reply.headers.get("x-should-retry"),
+                             "retry_after": reply.headers.get("retry-after"),
+                             "upstream_requests": len(oauth.upstream.hits) - before})
+        facts(oauth, "claude-should-retry-header", upstream_headers=self.HEADERS, rows=rows)
+        for row in rows:
+            # One upstream request per client request (request-retry 0), and
+            # the refusal's status reaches the client.
+            self.assertEqual(row["upstream_requests"], 1, row)
+            self.assertEqual(row["status"], row["upstream_status"], row)
+            # Measured on 8.0.44: with passthrough-headers false neither header
+            # reaches the client, so the client's do-not-retry rule never sees
+            # the provider's answer (a known limit); a change is reconciled
+            # deliberately, never just accepted.
+            self.assertIsNone(row["x_should_retry"], row)
+            self.assertIsNone(row["retry_after"], row)
