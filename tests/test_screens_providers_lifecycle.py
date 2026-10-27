@@ -844,5 +844,493 @@ def signout_modal_golden(root: Path) -> str:
         case.doCleanups()
 
 
+class KeyFileChoiceTests(ProvidersCase):
+    def setUp(self) -> None:
+        super().setUp()
+        from charmer import state
+
+        self.runtime.environ.pop(secret_store.SECRET_ENV_OVERRIDE, None)
+        secret_store.write_pointer(self.runtime.gateway_environ(), self.secret_file)
+        self.chosen = state.ensure_private_dir(self.runtime.home / "keys") / "chosen.env"
+        state.atomic_write(self.chosen, self.secret_file.read_bytes() + b"FILE_API_KEY=file-dummy\n")
+
+    def path_keys(self, value: str) -> list:
+        from charmer.setup import providers as layer
+
+        return [*([BACKSPACE] * len(layer.key_file_display(self.runtime))), *value, ENTER, RIGHT, ENTER]
+
+    def test_f_selects_the_key_file_and_shows_receipt(self) -> None:
+        from charmer.setup import providers as layer
+
+        screen = self.screen()
+        probe = self.run_screen(screen, ["F", ESC])
+        self.assertIn("Choose API-key file", "\n".join(probe.frames))
+        applied = []
+        select = layer.select_key_file
+
+        def choose(runtime, path):
+            result = select(runtime, path)
+            applied.append(result)
+            return result
+
+        with mock.patch.object(layer, "select_key_file", side_effect=choose) as selected:
+            win = self.run_screen(screen, ["F", *self.path_keys("~/keys/chosen.env"), ESC], height=32, width=140)
+        selected.assert_called_once_with(self.runtime, self.chosen)
+        self.assertEqual(secret_store.read_pointer(self.runtime.gateway_environ()), self.chosen)
+        frames = "\n".join(win.frames)
+        for text in ("Choose API-key file", "Key-file path:", "Use file", *applied[0].lines):
+            self.assertIn(text, frames)
+        self.assertNotIn("file-dummy", frames)
+        self.assertNotIn("cli-test-dummy", frames)
+
+    def test_key_prompt_can_choose_a_file_without_saving_typed_secret(self) -> None:
+        from charmer.setup import providers as layer
+
+        original = self.secret_file.read_bytes()
+        chosen = self.chosen.read_bytes()
+        screen = self.screen(self.keyed(present=True))
+        with mock.patch.object(layer, "apply_set_key", side_effect=AssertionError("stale key save")) as save, \
+                mock.patch.object(providers_screen.ConnectActions, "continue_to_models") as models:
+            win = self.run_screen(screen, ["K", *"discarded-dummy", ENTER, RIGHT, RIGHT, ENTER,
+                                           *self.path_keys(str(self.chosen)), ESC])
+        save.assert_not_called()
+        models.assert_not_called()
+        self.assertEqual(self.secret_file.read_bytes(), original)
+        self.assertEqual(self.chosen.read_bytes(), chosen)
+        self.assertEqual(secret_store.read_pointer(self.runtime.gateway_environ()), self.chosen)
+        self.assertIn("[ Key file… ]", "\n".join(win.frames))
+        self.assertNotIn("discarded-dummy", "\n".join(win.frames))
+        self.assertEqual(screen.connections[self.keyed(present=True)].state, "connected")
+
+    def test_key_file_cancel_invalid_and_override(self) -> None:
+        from charmer.setup import external, providers as layer
+
+        for keys in ([ESC], [ENTER, ENTER], self.path_keys("")):
+            screen = self.screen()
+            before = self.state_bytes()
+            with mock.patch.object(layer, "select_key_file") as select:
+                self.run_screen(screen, ["F", *keys])
+            select.assert_not_called()
+            self.assertEqual(self.state_bytes(), before)
+            if keys == self.path_keys(""):
+                self.assertEqual(screen.message, "No key file selected — nothing changed")
+        link = self.chosen.with_name("linked.env")
+        link.symlink_to(self.chosen)
+        for target in (self.chosen, link):
+            with self.subTest(target=target.name):
+                self.chosen.chmod(0o644 if target == self.chosen else 0o600)
+                with self.assertRaises(model.Refused) as raised:
+                    layer.select_key_file(self.runtime, target)
+                before = self.state_bytes()
+                screen = self.screen()
+                self.run_screen(screen, ["F", *self.path_keys(str(target))])
+                self.assertEqual(screen.message, providers_screen._error_text(raised.exception))
+                self.assertEqual(self.state_bytes(), before)
+        self.runtime.environ[secret_store.SECRET_ENV_OVERRIDE] = str(self.secret_file)
+        screen = self.screen()
+        with mock.patch.object(external, "service_installed", return_value=True):
+            win = self.run_screen(screen, ["F", *self.path_keys(str(self.chosen)), ESC], width=160)
+        frames = "\n".join(win.frames)
+        self.assertIn(texts.KEYS_FILE_OVERRIDDEN, frames)
+        self.assertIn(texts.KEYS_FILE_SERVICE.format(path="~/keys/chosen.env"), frames)
+        self.assertEqual(secret_store.read_pointer(self.runtime.gateway_environ()), self.chosen)
+        self.assertEqual(self.store().path, self.secret_file, "the environment override still wins")
+
+    def test_key_file_human_and_readonly_guards(self) -> None:
+        from charmer.setup import providers as layer
+
+        for readonly, marker, tty in ((True, False, True), (False, True, True), (False, False, False)):
+            screen = self.screen()
+            before = self.state_bytes()
+            with self.subTest(readonly=readonly, marker=marker, tty=tty), \
+                    mock.patch.object(self.runtime, "allow_state_writes", not readonly), \
+                    mock.patch.dict(self.runtime.environ, {"CLAUDECODE": ""} if marker else {}), \
+                    mock.patch.object(consent, "stdio_ttys", return_value=tty), \
+                    mock.patch.object(screen, "_load_facts"), \
+                    mock.patch.object(tui, "Modal", side_effect=AssertionError("input before guard")), \
+                    mock.patch.object(secret_store, "check_key_file") as check, \
+                    mock.patch.object(secret_store, "write_pointer") as write, \
+                    mock.patch.object(layer, "select_key_file") as select:
+                self.run_screen(screen, ["F"])
+            check.assert_not_called()
+            write.assert_not_called()
+            select.assert_not_called()
+            self.assertEqual(self.state_bytes(), before)
+            self.assertIn(model.READ_ONLY_SETUP if readonly else "setup --keys-file: needs a terminal", screen.message)
+
+
+class OrphanKeyTests(ProvidersCase):
+    def setUp(self) -> None:
+        super().setUp()
+        self.store().delete("ACME_API_KEY")
+        self.store().set("ORPHAN_API_KEY", "orphan-dummy")
+
+    def test_o_lists_names_and_removes_only_after_confirmation(self) -> None:
+        screen = self.screen()
+        probe = self.run_screen(screen, ["O", ESC])
+        self.assertIn("Orphan API keys", "\n".join(probe.frames))
+        before = self.store().get("KIMI_CLAUDE_API_KEY")
+        win = self.run_screen(screen, ["O", ENTER, *"custom-gone", ENTER, RIGHT, ENTER,
+                                       RIGHT, ENTER, ESC], height=32, width=140)
+        frames = "\n".join(win.frames)
+        for text in ("Orphan API keys", "ORPHAN_API_KEY", "Removed provider id:",
+                     "Remove the custom-gone API key?", "[ Cancel ]", "[ Remove ]",
+                     "No orphan API keys.", "custom-gone API key removed"):
+            self.assertIn(text, frames)
+        self.assertNotIn("orphan-dummy", frames)
+        self.assertIsNone(self.store().get("ORPHAN_API_KEY"))
+        self.assertEqual(self.store().get("KIMI_CLAUDE_API_KEY"), before)
+
+    def test_orphan_cancel_keeps_every_key(self) -> None:
+        from charmer.setup import providers as layer
+
+        for keys in (["O", ESC], ["O", ENTER, ESC, ESC],
+                     ["O", ENTER, ENTER, ENTER, ESC],
+                     ["O", ENTER, ENTER, RIGHT, ENTER, ESC],
+                     ["O", ENTER, *"custom-gone", ENTER, RIGHT, ENTER, ENTER, ESC]):
+            screen = self.screen()
+            before = self.state_bytes()
+            with mock.patch.object(layer, "apply_remove_key") as apply:
+                win = self.run_screen(screen, keys)
+            apply.assert_not_called()
+            self.assertEqual(self.state_bytes(), before)
+            if keys == ["O", ENTER, ENTER, RIGHT, ENTER, ESC]:
+                self.assertEqual(screen.message, "No provider id entered — nothing changed")
+        self.assertIn("[ Cancel ]", "\n".join(win.frames))
+        self.assertEqual(screen.message, model.NOTHING_CHANGED)
+
+    def test_owned_and_account_keys_are_not_orphans(self) -> None:
+        from charmer import operator as operator_mod
+        from charmer.setup import providers as layer
+        from charmer.cli.screens.get_started import _StepView
+
+        reserved = [operator_mod.transport_alternative(pid, operator_mod.TRANSPORT_API_KEY).secret_name
+                    for pid in layer.ACCOUNT_PROVIDERS
+                    if operator_mod.transport_alternative(pid, operator_mod.TRANSPORT_API_KEY) is not None]
+        for name in reserved:
+            self.store().set(name, "reserved-dummy")
+        self.store().set("SHARED_API_KEY", "shared-dummy")
+
+        def own(pid, name):
+            code, _out, err = self.op([
+                "providers", "add", pid, "--kind", "anthropic-compatible", "--base-url",
+                "https://shared.example", "--auth", "bearer", "--secret-ref", f"env:{name}",
+                "--family", "shared", "--contracts", "output-config-high"], "y\n")
+            self.assertEqual(code, 0, err)
+
+        own("first", "SHARED_API_KEY")
+        own("second", "SHARED_API_KEY")
+        from charmer import custom
+
+        custom.add_provider(self.runtime.environ, "retained", base_url="https://retained.example",
+                            auth_kind="bearer", secret_env="RETAINED_API_KEY")
+        self.store().set("RETAINED_API_KEY", "retained-dummy")
+        self.assertEqual(layer.orphan_key_names(self.runtime), ("ORPHAN_API_KEY",))
+        win = self.run_screen(self.screen(), ["O", ESC])
+        shown = self.frame_with(win, "Orphan API keys")
+        for name in ("SHARED_API_KEY", "RETAINED_API_KEY", "KIMI_CLAUDE_API_KEY", *reserved):
+            self.assertNotIn(name, shown)
+        # An owner appears while the final preview is open. Removal must
+        # not fall through to ordinary in-use-key removal, even with that id.
+        original = _StepView.run
+
+        def gaining_owner(view, window):
+            answer = original(view, window)
+            own("custom-gone", "ORPHAN_API_KEY")
+            return answer
+
+        screen = self.screen()
+        with mock.patch.object(_StepView, "run", gaining_owner), \
+                mock.patch.object(layer, "apply_remove_key") as apply:
+            win = self.run_screen(screen, ["O", ENTER, *"custom-gone", ENTER, RIGHT, ENTER,
+                                           RIGHT, ENTER, ESC], width=140)
+        apply.assert_not_called()
+        self.assertEqual(screen.message, "Key ORPHAN_API_KEY is now used by a provider — nothing changed")
+        self.assertEqual(self.store().get("ORPHAN_API_KEY"), "orphan-dummy")
+
+    def test_bad_inventory_and_human_guard_refuse(self) -> None:
+        from charmer import state
+        from charmer.setup import providers as layer
+        from charmer.cli.commands import providers as command
+
+        state.ensure_private_dir(self.pdir)
+        broken = self.pdir / "broken.json"
+        screen = self.screen()
+        state.atomic_write(broken, b'{"provider": "broken-dummy"}')
+        before = self.state_bytes()
+        with mock.patch.object(screen, "_load_facts"):
+            win = self.run_screen(screen, ["O"])
+        self.assertIn("provider metadata is unreadable or invalid", screen.message)
+        self.assertNotIn("ORPHAN_API_KEY", "\n".join(win.frames))
+        self.assertNotIn("broken-dummy", "\n".join(win.frames))
+        self.assertEqual(self.state_bytes(), before)
+        broken.unlink()
+        screen = self.screen()
+        state.atomic_write(self.secret_file, b"not-an-assignment-dummy\n")
+        before = self.state_bytes()
+        with mock.patch.object(screen, "_load_facts"):
+            win = self.run_screen(screen, ["O"])
+        self.assertIn("selected key file is unreadable or invalid", screen.message)
+        self.assertNotIn("not-an-assignment-dummy", "\n".join(win.frames))
+        self.assertEqual(self.state_bytes(), before)
+        # Unreadable metadata must not inherit provider_key_names' empty fallback.
+        with mock.patch.object(command, "operator_context", side_effect=OSError("private-dummy")):
+            with self.assertRaisesRegex(model.Refused, "provider metadata is unreadable or invalid") as raised:
+                layer.orphan_key_names(self.runtime)
+        self.assertNotIn("private-dummy", str(raised.exception))
+        for readonly, marker, tty in ((True, False, True), (False, True, True), (False, False, False)):
+            with self.subTest(readonly=readonly, marker=marker, tty=tty), \
+                    mock.patch.object(self.runtime, "allow_state_writes", not readonly), \
+                    mock.patch.dict(self.runtime.environ, {"CLAUDECODE": ""} if marker else {}), \
+                    mock.patch.object(consent, "stdio_ttys", return_value=tty), \
+                    mock.patch.object(screen, "_load_facts"), \
+                    mock.patch.object(layer, "orphan_key_names") as inventory, \
+                    mock.patch.object(secret_store, "read_env_file") as read:
+                self.run_screen(screen, ["O"])
+            inventory.assert_not_called()
+            read.assert_not_called()
+            self.assertIn(model.READ_ONLY_SETUP if readonly else "needs a terminal outside Claude Code", screen.message)
+
+
+class AllDiscoveryTests(ProvidersCase):
+    def setUp(self) -> None:
+        super().setUp()
+        from charmer import state
+
+        # Two credential-bearing providers with no connection to real URLs.
+        self.ids = ("acme", "zeta")
+        self.urls = tuple(f"https://{pid}.example/v1/models" for pid in self.ids)
+        self.names = tuple(f"{pid.upper()}_API_KEY" for pid in self.ids)
+        for pid, name in zip(self.ids, self.names):
+            code, _out, err = self.op([
+                "providers", "add", pid, "--kind", "anthropic-compatible", "--base-url",
+                f"https://{pid}.example", "--auth", "bearer", "--secret-ref", f"env:{name}",
+                "--family", pid, "--contracts", "output-config-high"], "y\n")
+            self.assertEqual(code, 0, err)
+            self.store().set(name, f"{pid}-listing-dummy")
+        self.only(self.ids)
+        self.sent = []
+        self.responses = {url: json.dumps({"data": [{"id": f"{pid}-listed"}]}).encode()
+                          for pid, url in zip(self.ids, self.urls)}
+        self.runtime.listing_transport = self.transport
+
+    def only(self, ids) -> None:
+        ids = set(ids)
+        self.runtime.settings_store.update(
+            lambda doc: doc.update(providers={pid: {"enabled": pid in ids}
+                                               for pid in self.runtime.lineup_catalog().providers}),
+            catalog=self.runtime.lineup_catalog())
+
+    def transport(self, url, headers, *, deadline, max_bytes):
+        self.assertEqual((deadline, max_bytes), (20.0, 4 * 1024 * 1024))
+        self.sent.append(url)
+        value = self.responses[url]
+        if isinstance(value, Exception):
+            raise value
+        return value
+
+    def test_d_discloses_all_calls_then_lists_in_order(self) -> None:
+        screen = self.screen()
+        probe = self.run_screen(screen, ["D", ESC])
+        self.assertIn("List connected providers", "\n".join(probe.frames))
+        self.assertEqual(self.sent, [])
+        before = self.state_bytes()
+        win = FakeWindow(["D", END, "Y", ESC, ESC], height=40, width=140)
+        read = tui.read_key
+
+        def key(window):
+            value = read(window)
+            if value.kind == "char" and value.ch == "Y":
+                self.assertEqual(self.sent, [])
+                frames = "\n".join(win.frames)
+                for text in ("List connected providers", *self.urls, *self.names):
+                    self.assertIn(text, frames)
+            return value
+
+        with mock.patch.object(tui, "read_key", side_effect=key):
+            screen.run(win)
+        self.assertEqual(self.sent, list(self.urls))
+        frames = "\n".join(win.frames)
+        self.assertIn("Connected provider models", frames)
+        for pid, url in zip(self.ids, self.urls):
+            self.assertIn(f"== {pid} (GET {url})", frames)
+            self.assertIn(f"{pid}-listed", frames)
+        self.assertNotIn("listing-dummy", frames)
+        self.assertEqual(self.state_bytes(), before)
+
+    def test_batch_decline_and_human_guard_send_nothing(self) -> None:
+        from charmer import discovery
+        from charmer.cli.commands import discover
+
+        for answer in (ENTER, ESC, "N"):
+            screen = self.screen()
+            win = self.run_screen(screen, ["D", answer])
+            self.assertIn("List connected providers", "\n".join(win.frames))
+            self.assertEqual(screen.message, discover.ALL_DECLINED)
+            self.assertEqual(self.sent, [])
+        for marker, tty in ((True, True), (False, False)):
+            screen = self.screen()
+            with self.subTest(marker=marker, tty=tty), \
+                    mock.patch.dict(self.runtime.environ, {"CLAUDECODE": ""} if marker else {}), \
+                    mock.patch.object(consent, "stdio_ttys", return_value=tty), \
+                    mock.patch.object(screen, "_load_facts"), \
+                    mock.patch.object(discovery, "plan_all") as plan, \
+                    mock.patch.object(secret_store, "default_store") as store:
+                self.run_screen(screen, ["D"])
+            plan.assert_not_called()
+            store.assert_not_called()
+            self.assertIn("discover --all: needs a terminal outside Claude Code", screen.message)
+            self.assertEqual(self.sent, [])
+
+    def test_openrouter_account_request_is_in_the_single_summary(self) -> None:
+        from charmer import discovery
+        from charmer.cli.commands import discover
+
+        public = discovery.OPENROUTER_MODELS_URL
+        account = public + "/user"
+        name = self.secret_name("openrouter")
+        self.only(("openrouter",))
+        self.responses[public] = json.dumps({"data": [{"id": "maker/public", "name": "Public"}]}).encode()
+        self.responses[account] = json.dumps({"data": [{"id": "maker/public", "name": "Public"},
+                                                       {"id": "stealth/private", "name": "Private"}]}).encode()
+        self.store().set(name, "router-dummy")
+        original = providers_screen._ListingConsent.run
+        summaries = []
+
+        def confirm(view, window):
+            self.assertEqual(self.sent, [])
+            summaries.append("\n".join(view.lines))
+            self.assertIn(f"GET {public}", summaries[-1])
+            self.assertIn(f"GET {account}", summaries[-1])
+            self.assertIn(name, summaries[-1])
+            return original(view, window)
+
+        with mock.patch.object(providers_screen._ListingConsent, "run", confirm):
+            win = self.run_screen(self.screen(), ["D", END, "Y", ESC], height=40, width=140)
+        self.assertEqual(len(summaries), 1)
+        self.assertEqual(self.sent, [public, account])
+        frames = "\n".join(win.frames)
+        self.assertIn("maker/public", frames)
+        self.assertIn("stealth/private", frames)
+        self.assertIn("account-only", frames)
+        self.assertNotIn("router-dummy", frames)
+
+        # Absent, unreadable, vanished after consent, and newly appearing
+        # credentials never cause an unannounced account request.
+        transport = self.transport
+        for mode in ("absent", "unreadable", "vanished", "appeared"):
+            with self.subTest(mode=mode):
+                self.sent.clear()
+                self.store().set(name, "router-dummy")
+                if mode in ("absent", "appeared"):
+                    self.store().delete(name)
+                screen = self.screen()
+                if mode == "unreadable":
+                    self.secret_file.chmod(0o644)
+
+                def send(url, headers, *, deadline, max_bytes):
+                    if mode == "vanished":
+                        self.store().delete(name)
+                    elif mode == "appeared":
+                        self.store().set(name, "router-dummy")
+                    return transport(url, headers, deadline=deadline, max_bytes=max_bytes)
+
+                self.runtime.listing_transport = send
+                win = self.run_screen(screen, ["D", END, "Y", ESC], height=40, width=140)
+                self.secret_file.chmod(0o600)
+                self.assertEqual(self.sent, [public])
+                frames = "\n".join(win.frames)
+                self.assertIn("maker/public", frames)
+                if mode in ("unreadable", "vanished"):
+                    self.assertIn(discover.ACCOUNT_CREDENTIAL_UNAVAILABLE, frames)
+                else:
+                    self.assertIn("public listing only (no key configured)", frames)
+                    self.assertNotIn(f"GET {account}", frames)
+
+    def test_stale_batch_stops_and_transport_failure_continues(self) -> None:
+        from charmer import state
+
+        original = providers_screen._ListingConsent.run
+        source = self.pdir / "acme.json"
+        raw = source.read_bytes()
+
+        def stale(view, window):
+            answer = original(view, window)
+            document = json.loads(raw)
+            document["provider"]["display"] = "Changed fixture"
+            state.atomic_write(source, json.dumps(document).encode())
+            return answer
+
+        with mock.patch.object(providers_screen._ListingConsent, "run", stale):
+            win = self.run_screen(self.screen(), ["D", END, "Y", ESC], height=40, width=140)
+        self.assertEqual(self.sent, [])
+        self.assertIn("configuration changed while awaiting confirmation", "\n".join(win.frames))
+        self.assertIn("later providers were not requested", "\n".join(win.frames))
+        state.atomic_write(source, raw)
+
+        # Revoking a later route after the first response stops that provider.
+        original_ledger = self.ledger_file.read_bytes()
+        transport = self.transport
+
+        def revoke(url, headers, *, deadline, max_bytes):
+            document = json.loads(original_ledger)
+            document["routes"].pop("zeta")
+            state.atomic_write(self.ledger_file, json.dumps(document).encode())
+            return transport(url, headers, deadline=deadline, max_bytes=max_bytes)
+
+        self.runtime.listing_transport = revoke
+        win = self.run_screen(self.screen(), ["D", END, "Y", ESC], height=40, width=140)
+        self.assertEqual(self.sent, [self.urls[0]])
+        self.assertIn("route unapproved or changed", "\n".join(win.frames))
+        self.assertIn("later providers were not requested", "\n".join(win.frames))
+        state.atomic_write(self.ledger_file, original_ledger)
+        self.runtime.listing_transport = transport
+        self.sent.clear()
+        self.responses[self.urls[0]] = RuntimeError("private-error-dummy")
+        screen = self.screen()
+        win = self.run_screen(screen, ["D", END, "Y", ESC], height=40, width=140)
+        self.assertEqual(self.sent, list(self.urls))
+        frames = "\n".join(win.frames)
+        self.assertIn("acme: listing failed (RuntimeError)", frames)
+        self.assertIn("zeta-listed", frames)
+        self.assertNotIn("private-error-dummy", frames)
+        self.assertEqual(screen.message_role, "warn")
+
+    def test_no_eligible_provider_reports_nothing_sent(self) -> None:
+        from charmer import discovery
+        from charmer.cli.commands import discover
+
+        self.only(())
+        screen = self.screen()
+        win = self.run_screen(screen, ["D", END, ESC], height=40, width=140)
+        frames = "\n".join(win.frames)
+        self.assertIn(discover.ALL_EMPTY, frames)
+        self.assertEqual(screen.message, discover.ALL_EMPTY)
+        for line in discovery.CODEX_EXCLUDED.splitlines():
+            self.assertIn(line, frames)
+        self.assertIn("skipped acme: disabled in Settings", frames)
+        self.assertEqual(self.sent, [])
+
+
+class ProviderBatchKeybarTests(ProvidersCase):
+    def test_every_row_and_empty_state_expose_the_three_actions(self) -> None:
+        screen = self.screen()
+        for selected in range(len(screen.rows)):
+            screen.selected = selected
+            bindings = screen._keybar_bindings()
+            self.assertEqual(bindings[-5:], [("F", "key file"), ("O", "orphan keys"), ("D", "list all"),
+                                             ("?", "help"), ("Esc", "back")])
+            win = self.run_screen(screen, [])
+            self.assertIn("? help", win.frames[0])
+            self.assertIn("Esc back", win.frames[0])
+        screen.facts, screen.rows = [], ()
+        self.assertEqual(screen._keybar_bindings()[-5:], bindings[-5:])
+        for key, method in (("F", "choose_key_file"), ("O", "orphan_keys"), ("D", "list_all")):
+            with mock.patch.object(providers_screen.ConnectActions, method, return_value=None) as action, \
+                    mock.patch.object(screen, "_load_facts"):
+                self.run_screen(screen, [key])
+            action.assert_called_once()
+
+
 if __name__ == "__main__":
     unittest.main()
