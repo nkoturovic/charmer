@@ -3,7 +3,7 @@
   ─────────────────────────────────────────────────────────────────────────────
   ! explorer and every implementer are on openai (codex quota shared)
   implementer agents are unavailable here: they work in a Git worktree and
-  this directory is not a Git repository (git init enables them)
+    this directory is not a Git repository (git init enables them)
 
   Review routing (operator-declared families are labelled)
   implementer-light  — (its check)  reviewer-strong Opus 5.5 ✓
@@ -13,7 +13,7 @@
 
   Per-slot readiness
   Ready means locally configured and served; upstream authentication, quota,
-  and reachability may still fail.
+    and reachability may still fail.
   lead: claude credential records not observed — sign in: G → L
   explorer: codex credential records not observed — sign in: G → L
   analyst: codex credential records not observed — sign in: G → L

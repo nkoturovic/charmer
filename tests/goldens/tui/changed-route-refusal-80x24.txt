@@ -3,7 +3,7 @@
   ─────────────────────────────────────────────────────────────────────────────
     ✓ declaration valid (providers.d/acme.json)
   admitted custom-acme-small. Optional badge recorded; route approval and
-  qualification unchanged.
+    qualification unchanged.
 
 
 

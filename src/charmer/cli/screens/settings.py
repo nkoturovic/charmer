@@ -395,7 +395,7 @@ class _SettingsScreen:
             if error:
                 lines.extend(textwrap.wrap(error, max(20, min(60, win.getmaxyx()[1] - 8))))
             modal = tui.Modal(
-                row.label, lines, buttons=(("Save", True), ("Cancel", False)),
+                row.label, lines, buttons=(("Cancel", False), ("Save", True)), default=True,
                 input=tui.TextInput(max_length=6),
             )
             confirmed = modal.run(win, self.palette, background=self._draw)
@@ -426,7 +426,7 @@ class _SettingsScreen:
             if error:
                 lines.extend(textwrap.wrap(error, max(20, min(60, win.getmaxyx()[1] - 8))))
             modal = tui.Modal(
-                row.label, lines, buttons=(("Save", True), ("Cancel", False)),
+                row.label, lines, buttons=(("Cancel", False), ("Save", True)), default=True,
                 input=tui.TextInput(max_length=9),
             )
             confirmed = modal.run(win, self.palette, background=self._draw)
@@ -544,7 +544,7 @@ class _SettingsScreen:
         if not self._writable(row):
             return
         confirmed = tui.Modal(
-            f"Reset {row.label} to its default?", [], buttons=(("Reset", True), ("Cancel", False)), default=False,
+            f"Reset {row.label} to its default?", [], buttons=(("Cancel", False), ("Reset", True)), default=False,
         ).run(win, self.palette, background=self._draw)
         if not confirmed:
             return
@@ -581,7 +581,7 @@ class _SettingsScreen:
         wrap = max(20, min(60, win.getmaxyx()[1] - 8))
         confirmed = tui.Modal(
             cli_text.SETTINGS_TOKEN_TITLE, textwrap.wrap(cli_text.SETTINGS_TOKEN_BODY, wrap),
-            buttons=(("Rotate", True), ("Cancel", False)), default=False,
+            buttons=(("Cancel", False), ("Rotate", True)), default=False,
         ).run(win, self.palette, background=self._draw)
         if not confirmed:
             return
@@ -724,7 +724,7 @@ class _SettingsScreen:
             lines = textwrap.wrap(cli_text.SETTINGS_ENV_KEEP_PROMPT, wrap)
             if error:
                 lines.extend(textwrap.wrap(error, wrap))
-            modal = tui.Modal(row.label, lines, buttons=(("Save", True), ("Cancel", False)),
+            modal = tui.Modal(row.label, lines, buttons=(("Cancel", False), ("Save", True)), default=True,
                               input=tui.TextInput(current, max_length=1024))
             confirmed = modal.run(win, self.palette, background=self._draw)
             text = modal.input.value.strip()
@@ -743,7 +743,7 @@ class _SettingsScreen:
             return
         confirmed = tui.Modal(
             f"Reset {row.label} to its default?", [cli_text.SETTINGS_ENV_KEEP_RESET_BODY],
-            buttons=(("Reset", True), ("Cancel", False)), default=False,
+            buttons=(("Cancel", False), ("Reset", True)), default=False,
         ).run(win, self.palette, background=self._draw)
         if not confirmed:
             return

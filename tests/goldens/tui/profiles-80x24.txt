@@ -16,7 +16,7 @@
 
 
 
-  ─
+  ─────────────────────────────────────────────────────────────────────────────
   Fixture seed openrouter: frozen test data mirroring the shipped seed's slot …
   connected: every model this profile uses is served here
 

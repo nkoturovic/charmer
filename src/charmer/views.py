@@ -1628,7 +1628,7 @@ def picker_rows(
             if 0 < row.provider_tokens < 200000:
                 warnings.append("provider bound below the 200K client class; no per-agent window")
             if enabled and warnings:
-                note = "Attention: " + warnings[0] + " — V details"
+                note = "Attention: " + warnings[0]
             cycle = tuple(shown)
             if slot == "workflow" and row.mode == "client":
                 cycle = ()
@@ -2149,17 +2149,17 @@ def models_model(
     keys: list[str] = []
     for row in rows:
         if row.source == "catalog" and (row.status != "new" or row.admitted):
-            main.append((row.key, row.display, row.provider, row.class_label, efforts(row), used_text(row)))
+            main.append((row.key, row.short, row.provider, row.class_label, efforts(row), used_text(row)))
             keys.append(row.key)
     for row in rows:
         if row.source == "custom":
-            main.append((row.key, row.display, "custom", row.class_label, efforts(row), used_text(row)))
+            main.append((row.key, row.short, "custom", row.class_label, efforts(row), used_text(row)))
             keys.append(row.key)
     new_rows: list[tuple[str, ...]] = []
     new_keys: list[str] = []
     for row in rows:
         if row.source == "catalog" and row.status == "new" and not row.admitted:
-            new_rows.append((row.key, row.display, row.provider, row.class_label, efforts(row),
+            new_rows.append((row.key, row.short, row.provider, row.class_label, efforts(row),
                              "New · unavailable" if row.unavailable_reason else "New · not admitted"))
             new_keys.append(row.key)
     heading = "new (not admitted — Enter adds an optional badge):" + ("" if new_rows else " —")

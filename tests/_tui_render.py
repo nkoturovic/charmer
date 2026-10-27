@@ -523,12 +523,21 @@ def listing_unavailable_golden(root: Path) -> str:
         return last_frame(win, "Listing unavailable")
 
 
+def confirmation_frame(text: str) -> str:
+    """The production confirmation adapter, not a second title convention."""
+    import charmer.cli.screens.common as common
+    width, height = current_size()
+    win = FakeWindow([ESC], width=width, height=height)
+    common.OnboardingActions(None, win, tui.MONO_PALETTE).confirm(text)
+    return frame_text(win.frames[-1])
+
+
 def qualification_consent_golden(root: Path, *, pool=False) -> str:
     import test_qualify as q
     from charmer import qualify
     plan = q._plan(provider=q.POOL if pool else q.PROVIDER,
                    entry=q._entry(["high"], selector="claude-fixture-9") if pool else q._entry())
-    return render(lambda: tui.TextView("Confirm explicit action", qualify.consent_text(plan).splitlines(), confirm=True))
+    return confirmation_frame(qualify.consent_text(plan))
 
 
 def operator_models_golden(root: Path, *, admitted=False, eligible=False, picker=False) -> str:
@@ -645,7 +654,7 @@ def admission_checklist_golden(root: Path) -> str:
         with mock.patch.object(consent, "stdio_ttys", return_value=True), mock.patch.object(
                 models, "render_identity", return_value=("charmer-render-05100000", identity[1], identity[2])):
             action.invoke(["models", "admit", key])
-        return render(lambda: tui.TextView("Confirm explicit action", seen[0].splitlines(), confirm=True))
+        return confirmation_frame(seen[0])
     finally:
         case.doCleanups()
 
@@ -683,7 +692,7 @@ def route_consent_golden(root: Path) -> str:
         # Stable preview identity input; no golden byte post-processing.
         with mock.patch.object(served_plan, "_digest", return_value="e" * 64):
             action.invoke(["providers", "approve", "acme"])
-        return last_frame(win, "Confirm explicit action")
+        return last_frame(win, "Approve this route?")
 
 
 def changed_route_refusal_golden(root: Path) -> str:

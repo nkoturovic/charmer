@@ -176,7 +176,7 @@ class ModelsScreenTests(_ScreenCase):
             line = body[index]
             with self.subTest(key=row.key):
                 self.assertTrue(line.startswith(row.key + " "), (line, row.key))
-                self.assertIn(row.display, line)
+                self.assertIn(row.short, line)
                 self.assertIn(row.provider, line)
                 self.assertIn(row.class_label, line)
                 efforts = views.efforts_text(row.efforts)

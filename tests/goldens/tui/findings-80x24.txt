@@ -16,7 +16,7 @@
         again from there on)
       ! continuity alias charmer-old is not served (its upstream route may be
         gone); once no live session uses it: charmer doctor --prune-aliases
-  ↓ more ──────────────────────────────────────────────────────────────────────
+  ↓ 9 more ────────────────────────────────────────────────────────────────────
 
 
   Enter: repair every stopped session (asks first)

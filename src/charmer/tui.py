@@ -1499,6 +1499,7 @@ class Modal:
         # 0 input, 1..n buttons; ``default`` names the value of the button
         # focused first (a destructive dialog focuses the one that cancels).
         values = [value for _label, value in self.buttons]
+        self.button_default = 1 + values.index(default) if default is not _FIRST and default in values else 1
         if input is not None:
             self.focus = 0
         elif default is not _FIRST and default in values:
@@ -1600,7 +1601,7 @@ class Modal:
                 continue
             if self.focus == 0 and self.input is not None:
                 if key.kind == "enter" or key.kind == "down":
-                    self.focus = 1
+                    self.focus = self.button_default
                     continue
                 self.input.handle(key)
                 continue
@@ -2753,13 +2754,16 @@ class BindingPicker:
         item = self.model.items[index]
         return self.efforts.get(index, item.initial_effort)
 
-    def _chrome(self) -> int:
-        # Top, title, (the role subtitle,) rule, the effort line.
-        return 5 + (1 if self.model.subtitle else 0)
+    def _detail_lines(self, width: int) -> list[str]:
+        return textwrap.wrap(self._effort_line(), max(1, width - 4), subsequent_indent="  ") or [""]
+
+    def _chrome(self, width: int) -> int:
+        # Top, title, (the role subtitle,) rule, effort and focused warning.
+        return 4 + (1 if self.model.subtitle else 0) + len(self._detail_lines(width))
 
     def min_size(self, width: int) -> tuple[int, int]:
         return views.ScreenFloor.compute(
-            chrome=self._chrome(),
+            chrome=self._chrome(width),
             list_rows=len(self.model.items),
             detail_reserve=0,
             bar_rows=KeyBar(BINDING_PICKER_KEYBAR).rows(width),
@@ -2784,9 +2788,8 @@ class BindingPicker:
             return f"{effort}: not eligible — {item.effort_reasons[effort]}"
         if item.kind == "named":
             return f"effort: [{effort}] (named binding)"
-        if len(item.efforts) > 1:
-            return f"← → effort: [{effort}]"
-        return f"effort: [{effort}]"
+        text = f"← → effort: [{effort}]" if len(item.efforts) > 1 else f"effort: [{effort}]"
+        return text + (" · " + item.note if item.note else "")
 
     def _draw(self, win: Any) -> None:
         palette = self.palette
@@ -2804,7 +2807,7 @@ class BindingPicker:
             safe_add(win, top, 2, _clip_at(self.model.subtitle, width, 2), palette.attr("dim"))
             top += 1
         safe_add(win, top, 2, views.rule(width), palette.attr("dim"))
-        visible = max(1, height - bar_rows - self._chrome())
+        visible = max(1, height - bar_rows - self._chrome(width))
         if self.index < self.offset:
             self.offset = self.index
         elif self.index >= self.offset + visible:
@@ -2817,7 +2820,9 @@ class BindingPicker:
             if focused:
                 safe_add(win, row, 2, "›", palette.attr("accent"))
             safe_add(win, row, 4, views.fit_text((item.text,), max(0, width - 5)), attr)
-        safe_add(win, height - bar_rows - 1, 2, _clip_at(self._effort_line(), width, 2), palette.attr("accent"))
+        detail = self._detail_lines(width)
+        for y, line in enumerate(detail, height - bar_rows - len(detail)):
+            safe_add(win, y, 2, line, palette.attr("accent"))
         bar.draw(win, height - 1, palette)
         win.refresh()
 
@@ -3627,13 +3632,18 @@ class TextView:
         self.confirm = confirm
 
     def _wrapped(self, width):
-        return [part for line in self.lines
-                for part in (textwrap.wrap(visible_text(str(line)), max(1, width - 4),
-                                          replace_whitespace=False) or [""])]
+        lines = []
+        room = max(1, width - 4)
+        for line in self.lines:
+            text = visible_text(str(line))
+            indent = min(len(text) - len(text.lstrip()) + 2, room - 1)
+            lines.extend(textwrap.wrap(text, room, subsequent_indent=" " * indent,
+                                       replace_whitespace=False) or [""])
+        return lines
 
     def _keybar(self):
         bar = (("Enter", "declare"), ("Esc", "cancel")) if self.confirm == "declare" else (
-            (("y", "proceed"), ("N", "cancel"), ("Esc", "cancel")) if self.confirm else (
+            (("y", "proceed"), ("Esc", "cancel")) if self.confirm else (
             ("↑↓", "scroll"), ("PgUp/PgDn", "page"), ("Esc", "back")))
         return KeyBar(bar)
 
@@ -3673,6 +3683,8 @@ class TextView:
                 continue
             if self.confirm == "declare" and key.kind == "enter":
                 return True
+            if self.confirm is True and key.kind == "enter":
+                return False
             if self.confirm is True and key.kind == "char" and key.ch in "yYnN":
                 return key.ch in "yY"
             height, width = win.getmaxyx()

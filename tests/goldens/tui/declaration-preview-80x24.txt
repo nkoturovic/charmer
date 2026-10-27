@@ -2,7 +2,7 @@
   Declaration preview
   ─────────────────────────────────────────────────────────────────────────────
   Declaration preview — admission and diagnostics are optional; route approval
-  is separate.
+    is separate.
   {
     "custom-fixture-reviewer": {
       "capabilities": [

@@ -195,7 +195,7 @@ class _ProfilesScreen:
             role = "warn" if not row.loadable else "normal"
             tui.safe_add(win, y, 4, views.clip(row_text(row, widths, now), width - 5),
                          palette.attr(role) | (tui.curses.A_REVERSE if focused else 0))
-        tui.safe_add(win, separator, 2, "─", palette.attr("dim"))
+        tui.safe_add(win, separator, 2, views.rule(width), palette.attr("dim"))
         row = self.selected
         if row is not None:
             first = row.description if row.loadable else row.description or row.reason_line

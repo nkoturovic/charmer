@@ -5,7 +5,7 @@
     follow: off → on (profile balanced)
     pending change (native agents: explore replace → native): dropped
   Effect: the record only — the applied lineup, the scope and the generation
-  stay as they are
+    stay as they are
   Preview only; nothing changed.
 
 
@@ -21,4 +21,4 @@
 
 
 
-  y proceed · N cancel · Esc cancel
+  y proceed · Esc cancel
