@@ -751,7 +751,10 @@ def exact_client_input(runtime: runtime_mod.Runtime, ctx: providers_cmd.Operator
                                  line_keys=lcat.lines)
     seed = copy.deepcopy(runtime.catalog.seed_profiles["direct"])
     seed.pop("seed", None)
-    seed.update(name="qualify", lead={"model": key, "effort": entry["default_effort"]})
+    # The Direct seed narrows its leads to one provider; the qualified line
+    # leads here whatever its provider (an OpenAI-account line included).
+    seed.update(name="qualify", lead={"model": key, "effort": entry["default_effort"]},
+                lead_providers=[line.provider_id])
     lineup = profile_mod.resolve(seed, lcat, effective=eff)
     plan = scope_mod.compile_lineup_scope(lineup, lcat, eff, runtime.catalog.prompt_bodies,
                                           scope_mod.catalog_meta_v2(docs), lineup_generation=1)
@@ -866,6 +869,14 @@ def _models_qualify(runtime: runtime_mod.Runtime, args: argparse.Namespace, *, i
     if unserved:
         raise OperatorCommandError(f"{verb}: {unserved} — nothing sent")
     sessions.check_state_marker(runtime.session_store.root)
+    exact_input = None
+    if plan.exact_client:
+        # The offline check's compile runs before any request: a line it
+        # cannot compile refuses here instead of after a sent battery.
+        try:
+            exact_input = exact_client_input(runtime, ctx, key)
+        except cli_errors.CharmerError as exc:
+            raise OperatorCommandError(f"{verb}: the exact-client compile failed ({exc}) — nothing sent") from exc
     contracts = runtime.contract_identity()
     consented = _qualify_authority(runtime, ctx, key, (sentinel, problem), contracts)
     if not consent.confirm(qualify_mod.consent_text(plan), input_stream=input_stream):
@@ -875,8 +886,8 @@ def _models_qualify(runtime: runtime_mod.Runtime, args: argparse.Namespace, *, i
     # remaining requests), and again under the lock before the commit.
     results = list(qualify_mod.run_battery(plan, runtime.qualify_post,
                                            before_send=_qualify_revalidator(runtime, key, consented)))
-    if plan.exact_client:
-        outcome = runtime.run_exact_client(exact_client_input(runtime, ctx, key))
+    if exact_input is not None:
+        outcome = runtime.run_exact_client(exact_input)
         results.append(qualify_mod.exact_client_result(outcome))
     at = operator_mod.utc_stamp()
     # Evidence-only commit phase (no served change, no preview).
