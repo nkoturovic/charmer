@@ -222,7 +222,9 @@ client check haiku: MEASURED
 # retargets it. claude-code-guide runs on the lead unless the fence admits
 # Haiku (claude-haiku-5-5 with or without [1m], or the alias). The client's
 # auxiliary requests in a terminal stay on the lead even with Haiku fenced and
-# move to Haiku only when the variable names it.
+# follow the variable alone: named in the user's settings env, a model outside
+# the fence gets them (2.1.310 the same); the variable in the flag settings env
+# outranks the user's.
 # Headless output and the stream idle limit (tests/test_client_headless_idle.py):
 client check headless-output: PASS class=HO-every-turn
 # A two-turn headless session (a background agent's completion starts the

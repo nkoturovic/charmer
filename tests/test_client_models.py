@@ -1201,8 +1201,10 @@ class HaikuNativeProbe(_SpikeTestCase):
     lead, the native ``claude-code-guide`` agent (the client's own Haiku
     user) under fences with and without Anthropic routes and with a Haiku
     selector (with and without ``[1m]``), the client's auxiliary requests in a
-    terminal session (they follow the variable, never the fence alone), and the
-    window ``claude-haiku-5-5`` books without ``[1m]``. The line is
+    terminal session (they follow the variable, never the fence alone, even to
+    a model outside the fence named in the user's settings env; the variable
+    in the flag settings env outranks it), and the window ``claude-haiku-5-5``
+    books without ``[1m]``. The line is
     ``client check haiku: MEASURED <detail>``; the assertions pin each
     observation.
     """
@@ -1221,14 +1223,22 @@ class HaikuNativeProbe(_SpikeTestCase):
         self.assertEqual(len(models), 1)
         return models.pop()
 
-    def _background(self, lead: str, fence: tuple[str, ...], env: dict[str, str] | None = None
+    def _background(self, lead: str, fence: tuple[str, ...], env: dict[str, str] | None = None, *,
+                    user_env: dict[str, str] | None = None, flag_env: dict[str, str] | None = None
                     ) -> dict[str, list[str]]:
         """A terminal turn: the models of the client's own requests that are
-        not the lead's turn (by request class)."""
+        not the lead's turn (by request class). ``user_env`` is the user's
+        settings env (a layer a managed launch does not scrub), ``flag_env``
+        the flag settings env (where a managed session's compiled env lives)."""
 
         def run_turn(*, timeout=_RUN_TIMEOUT):
+            fixture = self._fixture()
+            if user_env is not None:
+                state.atomic_write(fixture.claude_config_dir / "settings.json",
+                                   strict_json.canonical_file_bytes({"env": dict(user_env)}))
             return self._run("haiku", lead, responder=_SpikeResponder(), fence=fence,
-                             child_env={**_HINT_ENV, **(env or {})}, pty=True, timeout=timeout)
+                             child_env={**_HINT_ENV, **(env or {})}, pty=True, timeout=timeout,
+                             fixture=fixture, settings_env=flag_env)
 
         (_result, rows), _retried = _retry_s9_pty(run_turn)
         classes: dict[str, set[str]] = {}
@@ -1259,13 +1269,20 @@ class HaikuNativeProbe(_SpikeTestCase):
                                              {"ANTHROPIC_DEFAULT_HAIKU_MODEL": _HAIKU_MARKER}),
         }
         # The client's own background requests: on the lead, with or without
-        # Haiku in the fence; a Haiku variable naming a fenced model moves them.
+        # Haiku in the fence; a Haiku variable moves them, inside the fence or
+        # not, also from the user's settings env; the same variable in the
+        # flag settings env, naming the lead, keeps them there.
+        marker = {"ANTHROPIC_DEFAULT_HAIKU_MODEL": _HAIKU_MARKER}
         background = {
             "opus-fence-no-haiku": self._background(_OPUS, ()),
             "opus-fence-with-haiku": self._background(_OPUS, (_HAIKU,)),
             "gpt-fence-with-haiku": self._background(_LEAD_GPT, (_HAIKU,)),
             "opus-fence-with-haiku+variable": self._background(
                 _OPUS, (_HAIKU,), {"ANTHROPIC_DEFAULT_HAIKU_MODEL": _HAIKU}),
+            "opus-fence-no-haiku+user-variable": self._background(_OPUS, (), user_env=marker),
+            "gpt-fence-no-haiku+user-variable": self._background(_LEAD_GPT, (), user_env=marker),
+            "opus-fence-no-haiku+user-variable+flag-lead": self._background(
+                _OPUS, (), user_env=marker, flag_env={"ANTHROPIC_DEFAULT_HAIKU_MODEL": _OPUS}),
         }
         for label, row in lead.items():
             self.assertEqual(row["rc"], 0, label)
@@ -1283,12 +1300,16 @@ class HaikuNativeProbe(_SpikeTestCase):
             "opus-fence-anthropic-no-haiku": _wire(_OPUS), "opus-fence-with-haiku": _HAIKU,
             "opus-fence-with-alias": _HAIKU, "opus-fence-with-haiku-1m": _HAIKU, "env-haiku-1m-fenced": _HAIKU,
             "env-marker-unfenced": _HAIKU_MARKER, "env-marker-fenced": _HAIKU_MARKER})
-        # The client's auxiliary requests follow the variable, not the fence.
+        # The client's auxiliary requests follow the variable, not the fence:
+        # a model outside the fence named in the user's settings env gets them.
         self.assertEqual(background, {
             "opus-fence-no-haiku": {"auxiliary": [_wire(_OPUS)]},
             "opus-fence-with-haiku": {"auxiliary": [_wire(_OPUS)]},
             "gpt-fence-with-haiku": {"auxiliary": [_LEAD_GPT]},
-            "opus-fence-with-haiku+variable": {"auxiliary": [_HAIKU]}})
+            "opus-fence-with-haiku+variable": {"auxiliary": [_HAIKU]},
+            "opus-fence-no-haiku+user-variable": {"auxiliary": [_HAIKU_MARKER]},
+            "gpt-fence-no-haiku+user-variable": {"auxiliary": [_HAIKU_MARKER]},
+            "opus-fence-no-haiku+user-variable+flag-lead": {"auxiliary": [_wire(_OPUS)]}})
         detail = ("lead " + " ".join(
             f"{label}->{row['wire']}:window={'/'.join(map(str, row['window'])) or '?'}"
             f"{'+1m-beta' if row['beta'] else ''}" for label, row in lead.items())

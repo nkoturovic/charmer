@@ -41,7 +41,7 @@
       "status": "verified"
     },
     "U19": {
-      "note": "Client check S9 (re-run on client 2.1.311): native Explore inherits a GPT lead and is capped to the Opus default under a Fable lead unless CLAUDE_CODE_DISABLE_EXPLORE_INHERIT_CAP is set; statusline-setup follows the fenced Sonnet default; claude-code-guide sends Haiku 5.5 only when the fence admits Haiku, else runs on the lead; auxiliary requests move to Haiku only through ANTHROPIC_DEFAULT_HAIKU_MODEL. Radar: tests/test_client_models.py test_s9_native_agent_wires, HaikuNativeProbe.",
+      "note": "Client check S9 (re-run on client 2.1.311): native Explore inherits a GPT lead and is capped to the Opus default under a Fable lead unless CLAUDE_CODE_DISABLE_EXPLORE_INHERIT_CAP is set; statusline-setup follows the fenced Sonnet default; claude-code-guide sends Haiku 5.5 only when the fence admits Haiku, else runs on the lead; auxiliary requests follow ANTHROPIC_DEFAULT_HAIKU_MODEL alone, even outside the fence. Radar: tests/test_client_models.py test_s9_native_agent_wires, HaikuNativeProbe.",
       "status": "verified"
     },
     "U2": {
