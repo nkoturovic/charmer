@@ -6,6 +6,182 @@ follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.3.0] — 2026-10-28
+
+### Upgrade notes
+
+2.3.0 changes the launcher, the gateway (CLIProxyAPI 8.0.45 with 27 local
+patches) and the pinned Claude Code (2.1.311); catalog 42 ships with it.
+State and record formats stay 4. After `charmer update`, restart the gateway
+between turns (`charmer gateway restart`, guarded) and check
+`charmer update --verify`. Running managed sessions keep their client and
+routes until their next launch or resume. A model you added yourself on
+2.2.1 that 2.3.0 now ships keeps working and resolves to the shipped line;
+`charmer doctor` names the remedy. See
+[updating from 2.2.1](docs/update.md#updating-from-221).
+
+Before `charmer update --rollback` to 2.2.1, rebind roles that use `haiku`
+or `or-kimi` at low or max, and remove models you added on OpenRouter with
+the low, medium or max contract: 2.2.1 cannot read them. After the rollback,
+restart the gateway (guarded); 2.2.1's doctor reports sessions 2.3.0
+compiled as "fence/picker differ" until their next resume. See
+[before going back to 2.2.1](docs/update.md#before-going-back-to-221).
+
+### Added
+
+- `haiku`: Claude Haiku 5.5 on the Claude account, for explorer and light
+  writer roles (agents only; not an independent reviewer of Opus, Sonnet or
+  Fable). Qualified on 2026-10-27 with Claude Code 2.1.310 and CLIProxyAPI
+  8.0.42.
+- The launcher's gateway dialog shows the read-only served-change plan with
+  **P**. Settings offers configuration export, import preview and confirmed
+  import, with the same receipts and safeguards as the CLI.
+- Get started verifies and copies an offline Claude Code file (**F** on the
+  Claude Code step). Providers chooses the private key file used for every
+  API key (**F**), lists saved keys no provider uses and removes one (**O**),
+  and lists every connected provider's models in one consented pass (**D**).
+- The model candidates and `charmer models add` name Muse ids that Meta's
+  public Model API does not serve, and OpenRouter ids under `meta/` suggest
+  the `meta` family.
+- `charmer doctor` reports a declared mod module that contains
+  `agent.spawn` or cannot be inspected (bounded, text-only).
+- Findings (**H**) offers **Including running sessions** on a scope-repair
+  row: it previews every affected session, asks with Cancel focused first and
+  repairs only those. `charmer doctor --repair-all --include-live` stays the
+  command-line form and repairs without a preview.
+
+### Changed
+
+- The gateway is CLIProxyAPI 8.0.45 (Go 1.27.3; golang.org/x/net 0.62.0)
+  with 27 local patches; patch 33 is retired because upstream carries it.
+  The compression added in 8.0.44 stays off: local responses and WebSocket
+  traffic stay uncompressed and Codex requests go out uncompressed;
+  compressed Codex answers are decoded.
+- The gateway closes a connection whose request head is not complete within
+  10 seconds.
+- On both OpenAI routes a Codex capacity refusal (429) now reaches Claude
+  Code with the provider's `Retry-After` (upstream #7017). On Claude routes
+  the gateway answers a provider's 429 or 529 with a `Retry-After` of its
+  own (8 to 36 seconds measured), not the provider's value.
+- Claude Code 2.1.311 is the pinned client (signed for all eight platforms);
+  catalog 42. Canonical Anthropic models no longer send the long-context
+  beta for `[1m]`; every 1M line still books 1M.
+- `muse` moves to Muse Wonder 1.0, `or-deepseek` to DeepSeek V4.1 Flash
+  1017 and `or-kimi` to Kimi K3.1 Pro (low and max added at contract level,
+  not live-qualified; forced tool choice is rejected by that route, automatic
+  tool choice passes). Earlier models
+  keep serving running sessions until they resume. `muse-contributor` stays
+  on Muse Spark 1.3: Meta's Model API answered 404 for the Wonder
+  contributor model on 2026-10-27.
+- The OpenRouter provider accepts the low, medium and max output contracts
+  besides high and xhigh, so a model you add there can declare all five.
+- When an isolated agent's worktree is gone, the lead dispatches a fresh
+  agent with its partial results instead of continuing it in your checkout;
+  the lead also tells you that `/effort` saves the effort into your user
+  settings for that model.
+- Doctor reports a deferred scope repair as deferred, not done:
+  `charmer doctor --repair <id>` exits 3 when the repair waits for a resume or
+  a model choice; `charmer sessions relink-runtime` keeps exit 1 and names
+  the resume command.
+- Gateway status, doctor and the gateway view compare the recorded and
+  installed gateway files by SHA-256: matching bytes at another path make the
+  restart optional.
+- Get started resumes adding models to a connected provider; the add-model
+  hints name **E** on the launch card for binding a model in a profile.
+- Binding pickers show focused warnings beside effort, Models tables use
+  short names while details keep full names, wrapped text keeps a hanging
+  indent, and confirmations use their question as the title with one cancel
+  presentation. Findings shows numeric more-markers; narrow resume quota
+  summaries keep their facts and remedy; Profiles uses a full-width separator.
+- CI pins re-verified on 2026-10-27; the Ubuntu 22.04/24.04 and Debian 12
+  journey images move to their rebuilt indexes. The release journeys assert
+  native process, session, gateway-log, forget and untouched-installation
+  behaviour, WSL detection and guidance, and WSL restart recovery; the WSL
+  support label names Ubuntu 24.04 and 26.04.
+- Development: the release preflight (`tools/release.py`) refuses a CHANGELOG
+  heading dated other than the source commit's UTC date; the release record
+  says "source dated".
+
+### Fixed
+
+- A model you added yourself on 2.2.1 that 2.3.0 now ships (Haiku 5.5, Muse
+  Wonder 1.0, DeepSeek V4.1 Flash 1017 or Kimi K3.1 Pro on OpenRouter)
+  resolves to the shipped line: profiles keep working, running sessions keep
+  their routes, and doctor, `charmer models` and `charmer providers validate`
+  name the line and `charmer models rm KEY --successor LINE`.
+- `charmer models qualify --agents` works for lines on the ChatGPT account
+  (it stopped with a lead-providers error after sending its requests); a
+  compile problem now refuses before any request is sent.
+- Every managed session names the model for Claude Code's own background
+  requests (summaries and the built-in `claude-code-guide`): Haiku 5.5 when
+  the profile binds `haiku`, otherwise the lead. A user-level or project
+  `ANTHROPIC_DEFAULT_HAIKU_MODEL` no longer sends them outside the lineup.
+- A user-level `DISABLE_AUTO_COMPACT` no longer stops managed compaction;
+  doctor reports it as information. `DISABLE_COMPACT` still stops it on
+  Claude Code 2.1.311, and doctor flags it with the remedy.
+- `charmer models add` says in plain words why it cannot declare an id
+  (capital letters, a leading `~`, a colon suffix such as `:free` or a
+  trailing `[1m]`), what to use instead, and that nothing was written.
+- After a live Haiku bind or unbind, doctor says background requests move at
+  the next resume instead of blaming a catalog change.
+- On both OpenAI routes, a Codex model's commentary preambles are kept when
+  Claude Code sends the conversation back on the same route (upstream #6966).
+- A native Claude Code session's project directory is still found, in
+  session listings and for adoption, when another entry in one of its parent
+  directories cannot be read.
+- `charmer gateway service uninstall` refuses while a service install or
+  refresh is unfinished, instead of reporting that nothing is installed; the
+  message names `charmer gateway service install` to finish that hand-off.
+
+### Security
+
+- CLIProxyAPI 8.0.45 fixes GHSA-j4xx-x47j-7h54 and GHSA-4w5v-m7vx-jpmh
+  (high, unauthenticated). As charmer renders the gateway (commercial mode
+  on), the request-log body capture both advisories describe never runs. The
+  reachable part, a listener with no header read deadline that stopped when
+  it ran out of file descriptors, is fixed: an unfinished request head is
+  closed after 10 seconds and such accept errors are retried. A release gate
+  runs upstream's regression tests for both advisories.
+- Upstream CLIProxyAPI 8.0.43–8.0.45: each Responses WebSocket turn re-checks
+  the key, so a retired gateway key is refused on an open socket (measured);
+  the Claude account route's tool aliases derive from a hash of the key, not
+  the key. The new management routes `POST /v8/management/oauth/auth-url`,
+  `POST /v8/management/models/refresh` and
+  `POST /v8/management/routing/model-definitions/refresh` are refused, and
+  management stays refused before CORS; the on-demand model catalog refresh
+  cannot reach the network. LAN discovery stays off.
+- The pin carries Claude Code 2.1.311's Linux sandbox fix for overlapping
+  added or plugin directories with `blockReadsOutsideWorkingDirectories`;
+  charmer has not tested it.
+- The vulnerability watch keeps no CPython reviews (3.15.2 has no OSV
+  advisory); GO-2026-5932 stays component-absent; `klauspost/compress` stays
+  overridden to 1.20.3 (GO-2026-5841).
+
+### Known limits
+
+- A provider's `x-should-retry` does not reach Claude Code through the
+  gateway, and on Claude routes the gateway sends its own `Retry-After`
+  instead of the provider's; the client applies its own retry rules.
+- Switching a session from a Codex model to another route drops the
+  commentary preambles (Claude Code drops them).
+- Mixed-case vendor ids, `~…-latest` aliases, ids with a colon suffix such
+  as `:free` and ids ending in `[1m]` cannot be declared; use the lowercase
+  dated id.
+- GPT-6.1 Terra is not a shipped line; add it on the ChatGPT account with
+  `charmer models add` and qualify it.
+- When several MCP calls with results too large to show inline finish
+  together, Claude Code can hand more than one of them the same saved result
+  file (upstream #105138; reproduced on 2.1.311). Upstream #104928, #95611,
+  #105036 and #104612 still reproduce on 2.1.311.
+- An unrecognised provider refusal can be sent up to six times before it shows.
+- The [late-stream completion limit](docs/troubleshooting.md#late-stream-completion-limit)
+  remains, re-measured with Claude Code 2.1.311 and CLIProxyAPI 8.0.45.
+- The release journeys do not establish interactive onboarding or the
+  dedicated Windows-drive state refusal (the private-mode ownership check
+  refuses first).
+- The Nix package uses the channel's Python 3.14.8; the development shell's
+  GnuPG is 2.4.9 FreePG.
+
 ## [2.2.1] — 2026-10-26
 
 ### Upgrade notes
