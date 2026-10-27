@@ -32,6 +32,10 @@
         {
           "fork": true,
           "name": "claude-sonnet-5-5"
+        },
+        {
+          "fork": true,
+          "name": "claude-haiku-5-5"
         }
       ],
       "payload_contracts": [],
@@ -52,7 +56,7 @@
         "output-config-max"
       ],
       "support": "locally-validated-experimental",
-      "support_note": "DeepSeek Anthropic endpoint (Flash probes 2026-08-12; Pro GA 2026-08-19; docs re-verified 2026-09-10): x-api-key, 1M, thinking default-on. Max thinking + model-selected tool use work when tool_choice is omitted; named forced tool_choice returns 400. Flash documents Anthropic image blocks (Pro: none) - unverified here; cache_control ignored; MCP blocks unsupported. deepseek-v4-flash redirects here; from 2026-09-14 04:00 UTC deepseek-v4-pro does too. Listing: Bearer GET /models (Anthropic 404); China-based.",
+      "support_note": "DeepSeek Anthropic endpoint (Flash probes 2026-08-12; Pro GA 2026-08-19; docs re-verified 2026-09-10): x-api-key, 1M, thinking default-on. Max thinking + model-selected tool use work when tool_choice is omitted; named forced tool_choice returns 400. Flash documents Anthropic image blocks (Pro: none) - unverified here; cache_control ignored; MCP blocks unsupported. deepseek-v4-flash redirects here; deepseek-v4-pro stays a separate model (2026-10-27). Listing: Bearer GET /models (Anthropic 404); China-based.",
       "transport": {
         "auth": {
           "header": "x-api-key",
@@ -98,7 +102,7 @@
         "output-config-xhigh"
       ],
       "support": "locally-validated-experimental",
-      "support_note": "Meta Model API Anthropic Messages adapter: the SDK appends /v1/messages to https://api.meta.ai; Bearer META_CLAUDE_API_KEY. Effort via output_config.effort low/medium/high/xhigh (NO max); thinking always on (disabled -> 400); rejects stop_sequences/top_k/unknown top-level fields; named forced tool_choice -> 400; extra stop_reason 'refusal'. Contributor variant: outputs may train Meta products (privacy), 100 RPM cap. Route acceptance live-probe-gated.",
+      "support_note": "Meta Model API Anthropic Messages adapter: the SDK appends /v1/messages to https://api.meta.ai; Bearer META_CLAUDE_API_KEY. Effort via output_config.effort low/medium/high/xhigh (NO max); thinking always on (disabled -> 400); rejects stop_sequences/top_k/unknown top-level fields; named forced tool_choice -> 400; extra stop_reason 'refusal'. Contributor variant: Meta may train on prompts, files and outputs (privacy), 150 RPM cap. Route acceptance live-probe-gated.",
       "transport": {
         "auth": {
           "kind": "bearer",
@@ -133,11 +137,14 @@
       "independence_family": "unknown",
       "passthrough_routes": [],
       "payload_contracts": [
+        "output-config-low",
+        "output-config-medium",
         "output-config-high",
-        "output-config-xhigh"
+        "output-config-xhigh",
+        "output-config-max"
       ],
       "support": "locally-validated-experimental",
-      "support_note": "OpenRouter's Anthropic-compatible route (an aggregator: each model line declares its family). Model list: public GET /api/v1/models (no key).",
+      "support_note": "OpenRouter's Anthropic-compatible route (an aggregator: each model line declares its family). Model list: public GET /api/v1/models (no key). Effort travels as output_config.effort low..max; OpenRouter maps a level a model does not offer to one it does, so an accepted level is not a distinct reasoning depth.",
       "transport": {
         "auth": {
           "header": "x-api-key",

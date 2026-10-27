@@ -10,14 +10,19 @@ live in ``test_converge_v4``.
 
 from __future__ import annotations
 
+import copy
+import io
+import json
 import os
+import shutil
 import stat
 import unittest
 from unittest import mock
 
-from charmer import compiler, profile, scope, sessions, state, strict_json, transition
+from charmer import cli, compiler, profile, scope, sessions, state, strict_json, transition
 from charmer.cli import doctor, text as cli_text
 from charmer.transition import TransitionError
+from _catalog import SHIPPED_ROOT, uses_shipped_catalog
 from _v4 import V4Case
 
 FIXED_ID = "11111111-1111-4111-8111-111111111111"
@@ -370,3 +375,107 @@ class FeedbackPreferencePlanTests(_Case):
             self._plan("quiet")
         self.assertEqual(scope.feedback_drafts_env("off"), {"CLAUDE_CODE_SEND_FEEDBACK": "false"})
         self.assertEqual(scope.feedback_drafts_env("notify"), {})
+
+
+@uses_shipped_catalog
+class BackgroundModelPlanTests(V4Case):
+    """ANTHROPIC_DEFAULT_HAIKU_MODEL follows the lineup's haiku binding
+    and the settings env is a launch-time item: a live bind or unbind
+    keeps the running value and moves it at the next resume. That is its own
+    reason, never "catalog changed"; any other launch-item difference keeps
+    the existing texts."""
+
+    HAIKU = "claude-haiku-5-5[1m]"
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.runtime = self.make_runtime(asset_root=SHIPPED_ROOT)
+
+    def _launch(self, explorer: dict | None = None) -> dict:
+        document = copy.deepcopy(self.runtime.catalog.seed_profiles["claude"])
+        document["name"] = "mine"
+        if explorer is not None:
+            document["agents"]["cm-explorer"] = explorer
+        self.runtime.profiles.save(document)
+        record = self.launch_fresh(self.profile_target("mine"))
+        self.mid, self.rid = record["managed_id"], record["runtime_session_id"]
+        return record
+
+    def _live(self, text: str) -> None:
+        out = io.StringIO()
+        code = cli.main(["lineup", "--session", self.rid, text], runtime=self.runtime, output_stream=out)
+        self.assertEqual((code, self.store.load(self.mid)["lineup_generation"]), (0, 2), out.getvalue())
+
+    def _plan(self) -> transition.ExpectedPlan:
+        parts = self.runtime.converge_parts()
+        return transition.expected_plan(
+            self.store.load(self.mid), docs=parts.docs, prompt_bodies=parts.prompt_bodies,
+            state_root=self.store.root, hook_command=parts.hook_command,
+            token_helper_command=parts.token_helper_command, environ=parts.environ,
+            managed_root=parts.managed_root, live=self.live(self.mid))
+
+    def _attention(self) -> list[str]:
+        problems, attention, _info = doctor._check_scope_integrity(self.runtime, self.store.load(self.mid))
+        self.assertEqual(problems, [])
+        return [str(line) for line in attention]
+
+    def _env(self) -> dict:
+        return strict_json.loads((self.live(self.mid) / scope.SETTINGS_RELPATH).read_bytes())["env"]
+
+    def test_a_live_bind_moves_background_requests_at_the_next_resume(self) -> None:
+        record = self._launch()
+        lead = record["applied"]["lead"]["selector"]
+        self.assertEqual(self._env()[compiler.HAIKU_DEFAULT_ENV], lead)
+        self._live("set explorer=haiku:medium")
+        self.assertEqual(self._env()[compiler.HAIKU_DEFAULT_ENV], lead)
+        ep = self._plan()
+        self.assertTrue(ep.launch_files_kept)
+        self.assertEqual((ep.background_launch_differs, ep.preference_launch_differs), (self.HAIKU, False))
+        self.assertEqual(self._attention(),
+                         [f"session {self.mid[:8]}: background requests move to {self.HAIKU} at the next resume"])
+        self.resume(self.mid)
+        self.assertEqual(self._env()[compiler.HAIKU_DEFAULT_ENV], self.HAIKU)
+        self.assertEqual(self._attention(), [])
+
+    def test_a_live_unbind_moves_them_back_to_the_lead(self) -> None:
+        record = self._launch({"model": "haiku", "effort": "medium"})
+        lead = record["applied"]["lead"]["selector"]
+        self.assertEqual(self._env()[compiler.HAIKU_DEFAULT_ENV], self.HAIKU)
+        self._live("set explorer=sonnet:high")
+        self.assertEqual(self._plan().background_launch_differs, lead)
+        self.assertEqual(self._attention(),
+                         [f"session {self.mid[:8]}: background requests move to {lead} at the next resume"])
+
+    def test_an_unrelated_live_change_says_nothing(self) -> None:
+        self._launch({"model": "haiku", "effort": "medium"})
+        self._live("set implementer=fable:high")
+        ep = self._plan()
+        self.assertEqual((ep.background_launch_differs, ep.catalog_launch_differs), (None, False))
+        self.assertEqual(self._attention(), [])
+
+    def test_a_catalog_change_keeps_its_text(self) -> None:
+        """A real catalog change (a test-local copy gained a lead-class
+        line, so the fence differs), alone or with a live haiku bind, keeps
+        the existing reason."""
+
+        self._launch()
+        root = self.root / "assets"
+        shutil.copytree(SHIPPED_ROOT, root)
+        models_path = root / "catalog" / "models.json"
+        document = json.loads(models_path.read_text())
+        line = copy.deepcopy(document["models"]["sol"])
+        line["display"] = "GPT-6.1 Sol Two"
+        line["wire_model"] = "gpt-6.1-sol-two"
+        for effort, spec in line["efforts"].items():
+            spec["selector"] = f"gpt-multi-sol2-{effort}[1m]"
+        document["models"]["sol2"] = line
+        models_path.write_text(json.dumps(document, indent=2) + "\n")
+        self.runtime = self.make_runtime(asset_root=root)
+        catalog_text = (f"session {self.mid[:8]}: fence/picker differ from the installed catalog (catalog changed "
+                        "since launch); applies at the next resume")
+        ep = self._plan()
+        self.assertEqual((ep.background_launch_differs, ep.catalog_launch_differs), (None, True))
+        self.assertEqual(self._attention(), [catalog_text])
+        self._live("set explorer=haiku:medium")
+        self.assertIsNone(self._plan().background_launch_differs)
+        self.assertEqual(self._attention(), [catalog_text])

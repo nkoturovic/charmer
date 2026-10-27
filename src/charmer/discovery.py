@@ -50,6 +50,23 @@ OWNED_ALIAS_PREFIXES = ("charmer-", "gpt-multi-", "custom-")
 RECOGNISED_ALIAS_PREFIXES = (*OWNED_ALIAS_PREFIXES, legacy.LEGACY_SELECTOR_PREFIX)
 
 
+# Registry ids the provider's public API does not serve. The registry lists
+# them, so every place that offers or declares one names the restriction:
+# (registry channel or provider id, id prefix, note).
+RESTRICTED_IDS = (
+    ("meta", "muse-wonder-full-", "Muse Code subscriptions only, not on Meta's public Model API"),
+    ("meta", "muse-wonder-1.0-contributor", "Meta's Model API answered 404 for it when checked (2026-10-27)"),
+)
+
+
+def restriction(provider: str | None, wire: str) -> str | None:
+    """The restriction note of ``wire`` on ``provider`` (a registry channel
+    or provider id), or None."""
+
+    return next((note for owner, prefix, note in RESTRICTED_IDS if provider == owner and wire.startswith(prefix)),
+                None)
+
+
 def section_provider(section: str) -> str | None:
     """The catalog provider a registry section serves, or None (no account
     pool serves from it, or pools of different providers share it)."""
@@ -188,7 +205,9 @@ class Candidate:
 
     @property
     def mark(self) -> str:
-        return "served candidate" if "served" in self.sources else "candidate"
+        base = "served candidate" if "served" in self.sources else "candidate"
+        note = restriction(self.provider_hint or self.channel, self.wire)
+        return f"{base} · {note}" if note else base
 
     @property
     def created_text(self) -> str:
@@ -866,6 +885,8 @@ def entry_text(marked: MarkedEntry, *, codex: Mapping[str, Any] | None = None) -
 KEY_MAX = 48
 OVER_LISTED_MAX = 200
 # Namespace labels are editable defaults, not verified model provenance.
+# A label the catalog does not trust (today minimax, mistral, zhipu)
+# suggests nothing: trusting a new label is a catalog decision.
 OPENROUTER_FAMILY_PREFIXES = {
     "anthropic/": "anthropic",
     "openai/": "openai",
@@ -875,6 +896,10 @@ OPENROUTER_FAMILY_PREFIXES = {
     "moonshotai/": "moonshot",
     "qwen/": "alibaba",
     "meta-llama/": "meta",
+    "meta/": "meta",
+    "minimax/": "minimax",
+    "mistralai/": "mistral",
+    "z-ai/": "zhipu",
 }
 
 
@@ -899,6 +924,30 @@ def family_suggestion_note(wire: str) -> str:
 
 class DeclarationRefusal(ValueError):
     """A listed model cannot be declared from the listing as asked."""
+
+
+# The declarable model id (the ``wire_model`` pattern of the provider
+# declaration schema): lowercase, at most one ``/``. A mixed-case vendor id,
+# an OpenRouter floating alias (``~…``) or variant (``…:free``) and an id
+# carrying ``[1m]`` are not declarable.
+WIRE = re.compile(r"^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)?$")
+
+
+def wire_problem(wire: str) -> str | None:
+    """Why ``wire`` cannot be declared, in the user's terms (None: it can)."""
+
+    if WIRE.fullmatch(wire):
+        return None
+    if wire.endswith("[1m]"):
+        why = ("charmer adds [1m] to its own selectors from --context; a provider id that itself ends in [1m] "
+               "cannot be declared")
+    elif wire.startswith("~") or ":" in wire:
+        why = "floating aliases (~…) and variants (…:free) cannot be declared; use the dated id the listing shows"
+    elif wire != wire.lower():
+        why = "model ids with capital letters cannot be declared; OpenRouter lists every model in lowercase"
+    else:
+        why = "a model id is lowercase letters, digits, '.', '_' and '-', with at most one '/'"
+    return f"{wire} cannot be declared: {why}"
 
 
 def derived_key(wire: str, taken: Iterable[str]) -> str | None:

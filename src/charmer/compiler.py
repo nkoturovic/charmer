@@ -279,6 +279,30 @@ def family_default_env(
     return env
 
 
+HAIKU_DEFAULT_ENV = "ANTHROPIC_DEFAULT_HAIKU_MODEL"
+HAIKU_LINE = "haiku"
+AUTO_COMPACT_ENV = "DISABLE_AUTO_COMPACT"
+AUTO_COMPACT_ON = "0"
+
+
+def lineup_default_env(lead_selector: str, bound: Iterable[tuple[str, str]]) -> dict[str, str]:
+    """The flag-settings env a lineup states over the user's settings env.
+
+    ``bound`` is each bound agent's ``(line key, selector)``; the caller has
+    checked every one of them and the lead selector against the session
+    fence. The client sends its own background requests (summaries, the
+    native ``claude-code-guide``) to ``ANTHROPIC_DEFAULT_HAIKU_MODEL`` alone,
+    even to a model outside the fence named in the user's settings env (the
+    one layer a launch does not clear); the flag settings env outranks that
+    layer. So the variable is the ``haiku`` line's selector when the lineup
+    binds it, else the lead's selector. ``DISABLE_AUTO_COMPACT`` is ``"0"``:
+    a user's ``1`` never stops the managed compaction.
+    """
+
+    haiku = sorted({selector for key, selector in bound if key == HAIKU_LINE})
+    return {HAIKU_DEFAULT_ENV: haiku[0] if haiku else lead_selector, AUTO_COMPACT_ENV: AUTO_COMPACT_ON}
+
+
 @dataclass(frozen=True)
 class CompileResult:
     """Pure launch plan; effects (state writes, readiness, exec) happen later."""

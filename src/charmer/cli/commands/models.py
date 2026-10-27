@@ -48,6 +48,7 @@ def _models_listing(runtime: runtime_mod.Runtime, output_stream: Any) -> int:
     """
 
     lcat = runtime.lineup_catalog()
+    displaced = runtime.ordinary_docs.get(operator_mod.DISPLACED_KEY) or {}
     for key in sorted(lcat.lines):
         line = lcat.lines[key]
         provider_id = line.get("provider", "?")
@@ -69,6 +70,12 @@ def _models_listing(runtime: runtime_mod.Runtime, output_stream: Any) -> int:
     for key in sorted(lcat.retired):
         entry = lcat.retired[key]
         successor = entry.get("successor")
+        if key in displaced:
+            # A line of yours the catalog now provides (it yields to it).
+            output_stream.write(f"{key}\t{entry.get('display', key)}\tnow provided by the catalog as "
+                                f"{displaced[key]}\tremove yours: "
+                                f"{operator_mod.displaced_remedy(key, [displaced[key]])}\n")
+            continue
         output_stream.write(
             f"{key}\t{entry.get('display', key)}\tretired (catalog {entry.get('since_catalog', '?')})"
             f"\t{'successor ' + str(successor) if successor else 'no successor'}\n"
@@ -245,9 +252,11 @@ def _operator_line(ctx: providers_cmd.OperatorContext, key: str, verb: str) -> o
         raise OperatorCommandError(f"{verb}: {key} is pending migration — charmer providers migrate-custom --apply")
     if key in layer.displaced:
         displaced = layer.displaced[key]
+        successor = operator_mod.displaced_successors(ctx.docs, layer).get(key)
         raise OperatorCommandError(
-            f"{verb}: the catalog serves {displaced.provider_id}/{displaced.core_entry['wire_model']}; "
-            f"{key} yields to it — admit or bind that catalog line instead")
+            f"{verb}: {displaced.provider_id}/{displaced.core_entry['wire_model']} is now provided by the catalog; "
+            f"{key} yields to it — remove yours: "
+            f"{operator_mod.displaced_remedy(key, [successor] if successor else [])}")
     file_id = operator_mod.line_file_ids(ctx.read, ctx.layer).get(key)
     found = [p.text() for p in ctx.layer.problems_by_file.get(operator_mod.file_label(file_id), ())] if file_id else []
     detail = ("\n  " + "\n  ".join(found)) if found else ""
@@ -332,6 +341,9 @@ def declare_line(
     providers.d file under the frozen lock order, re-render or undo. A
     declared line has no admission badge; existing lines are never edited here."""
 
+    problem = discovery.wire_problem(str(line["wire_model"]))
+    if problem is not None:
+        return fail(f"{verb}: {problem} — nothing written")
     ctx = providers_cmd.operator_context(runtime)
     providers_cmd.require_ledger(ctx, verb)
     catalog_provider = ctx.docs["providers"]["providers"].get(provider_id)
@@ -349,6 +361,11 @@ def declare_line(
                     f"charmer providers add {provider_id} ...")
     wire = line["wire_model"]
     if key in document.get("lines", {}):
+        if key in ctx.layer.displaced:
+            shipped = operator_mod.displaced_successors(ctx.docs, ctx.layer).get(key)
+            return fail(f"{verb}: {provider_id}/{wire} ships with charmer as the line {shipped or 'of the catalog'} — "
+                        f"nothing written; yours ({key}) yields to it — remove it: "
+                        f"{operator_mod.displaced_remedy(key, [shipped] if shipped else [])}")
         return fail(f"{verb}: {key} is already declared in {operator_mod.file_label(provider_id)} — "
                     f"edit it: charmer models edit {key}")
     document = {**document, "lines": {**document.get("lines", {}), key: dict(line)}}
@@ -356,7 +373,9 @@ def declare_line(
     layer = providers_cmd.proposed(ctx, {provider_id: raw})
     own = [p for p in operator_mod.file_problems(layer, provider_id)]
     if key in layer.displaced:
-        return fail(f"{verb}: {provider_id}/{wire} is a catalog line — admit or bind that line instead")
+        shipped = operator_mod.displaced_successors(ctx.docs, layer).get(key)
+        return fail(f"{verb}: {provider_id}/{wire} ships with charmer as the line {shipped or 'of the catalog'} — "
+                    f"nothing written; bind it in a profile (charmer profile edit NAME) or see charmer models")
     if own or key not in layer.lines:
         return fail(f"{verb}: not declared:\n  " + "\n  ".join(p.text() for p in own or
                                                                  layer.problems_by_file.get(
@@ -377,6 +396,9 @@ def declare_line(
     selectors = ", ".join(selector for _level, selector, _contract in catalog.line_selectors(dict(entry)))
     declared = entry["context"]["declared_tokens"]
     report(output_stream, f"declared {key} — New · not admitted · selectors {selectors} · class custom-{declared}")
+    restricted = discovery.restriction(provider_id, wire)
+    if restricted is not None:
+        report(output_stream, f"note: {wire}: {restricted}; a request may fail")
     report(output_stream, f"{_agent_status(resolved)} · validated floor {entry['context']['validated_tokens']} (not near-limit measured)")
     status = layer.route_status.get(provider_id)
     if status in ("unapproved", "changed"):
@@ -683,6 +705,15 @@ def _models_show(runtime: runtime_mod.Runtime, key: str, resolved: bool, evidenc
         report(output_stream, f"{key}: {lcat.origin(key)} line · {entry['provider']}/{entry['wire_model']} · "
                               f"status {entry.get('status', 'active')}")
         return 0
+    if line is None and key in ctx.layer.displaced:
+        displaced = ctx.layer.displaced[key]
+        successor = operator_mod.displaced_successors(ctx.docs, ctx.layer).get(key)
+        report(output_stream, operator_mod.displaced_text(
+            key, displaced.provider_id, displaced.core_entry["wire_model"],
+            [successor] if successor else sorted(k for k, e in lcat.lines.items()
+                                                 if (e["provider"], e["wire_model"]) ==
+                                                 (displaced.provider_id, displaced.core_entry["wire_model"]))))
+        return 0
     if line is None:
         status = providers_cmd.line_status(key, ctx, providers_cmd.admitted_keys(runtime))
         return fail(f"models show {key}: {status} (charmer providers validate)")
@@ -751,7 +782,10 @@ def exact_client_input(runtime: runtime_mod.Runtime, ctx: providers_cmd.Operator
                                  line_keys=lcat.lines)
     seed = copy.deepcopy(runtime.catalog.seed_profiles["direct"])
     seed.pop("seed", None)
-    seed.update(name="qualify", lead={"model": key, "effort": entry["default_effort"]})
+    # The Direct seed narrows its leads to one provider; the qualified line
+    # leads here whatever its provider (an OpenAI-account line included).
+    seed.update(name="qualify", lead={"model": key, "effort": entry["default_effort"]},
+                lead_providers=[line.provider_id])
     lineup = profile_mod.resolve(seed, lcat, effective=eff)
     plan = scope_mod.compile_lineup_scope(lineup, lcat, eff, runtime.catalog.prompt_bodies,
                                           scope_mod.catalog_meta_v2(docs), lineup_generation=1)
@@ -866,6 +900,14 @@ def _models_qualify(runtime: runtime_mod.Runtime, args: argparse.Namespace, *, i
     if unserved:
         raise OperatorCommandError(f"{verb}: {unserved} — nothing sent")
     sessions.check_state_marker(runtime.session_store.root)
+    exact_input = None
+    if plan.exact_client:
+        # The offline check's compile runs before any request: a line it
+        # cannot compile refuses here instead of after a sent battery.
+        try:
+            exact_input = exact_client_input(runtime, ctx, key)
+        except cli_errors.CharmerError as exc:
+            raise OperatorCommandError(f"{verb}: the exact-client compile failed ({exc}) — nothing sent") from exc
     contracts = runtime.contract_identity()
     consented = _qualify_authority(runtime, ctx, key, (sentinel, problem), contracts)
     if not consent.confirm(qualify_mod.consent_text(plan), input_stream=input_stream):
@@ -875,8 +917,8 @@ def _models_qualify(runtime: runtime_mod.Runtime, args: argparse.Namespace, *, i
     # remaining requests), and again under the lock before the commit.
     results = list(qualify_mod.run_battery(plan, runtime.qualify_post,
                                            before_send=_qualify_revalidator(runtime, key, consented)))
-    if plan.exact_client:
-        outcome = runtime.run_exact_client(exact_client_input(runtime, ctx, key))
+    if exact_input is not None:
+        outcome = runtime.run_exact_client(exact_input)
         results.append(qualify_mod.exact_client_result(outcome))
     at = operator_mod.utc_stamp()
     # Evidence-only commit phase (no served change, no preview).

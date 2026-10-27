@@ -615,6 +615,8 @@ LINEAGE_KEEP: tuple[tuple[str, str, int, str], ...] = (
     ("tests/goldens/shim/charmer-hook-3", "embedded in compiled 3.0", 1, "the golden of that shim"),
     ("src/charmer/migrate.py", "2.x", 1,
      "the target field value of the restore-2x --check --json document (a machine contract)"),
+    ("src/charmer/data/catalog/models.json", '"generation": "3.1"', 1,
+     "or-kimi's model generation (Kimi K3.1 Pro): a model version, not a release line"),
 )
 # Test files whose names still carry release or unit lineage, with the pass
 # that renames them; a new one fails, a renamed one leaves the table.

@@ -265,7 +265,9 @@ def line_status(key: str, ctx: OperatorContext, admitted: Iterable[str]) -> str:
     if key in layer.pending:
         return "pending migration"
     if key in layer.displaced:
-        return "displaced by the catalog"
+        successor = operator_mod.displaced_successors(ctx.docs, layer).get(key)
+        return (f"now provided by the catalog{' as ' + successor if successor else ''} — "
+                f"{operator_mod.displaced_remedy(key, [successor] if successor else [])}")
     line = layer.lines.get(key)
     if line is None:
         return "invalid"

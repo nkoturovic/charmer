@@ -64,12 +64,13 @@ compaction window probe: PASS class=env-window-holds
 # workflow agent's window are not measured offline, so it is not compiled.
 # --autocompact as the representation passes the lead, user-layer and agent
 # cases; /autocompact in a running session replaces it (read from the build).
-# Recorded, never gating: DISABLE_COMPACT=1 or DISABLE_AUTO_COMPACT=1 in the
-# user's settings env stops the managed lead from compacting (no compaction by
-# 800000; 2.1.310 the same). A "0" in the flag-settings env turns
-# DISABLE_AUTO_COMPACT back off on both clients, and DISABLE_COMPACT only on
-# 2.1.310: from 2.1.311 a settings env can use DISABLE_COMPACT only to turn
-# compaction off. charmer compiles neither value.
+# Recorded, never gating: DISABLE_COMPACT=1 in the user's settings env stops
+# the managed lead from compacting (no compaction by 800000; 2.1.310 the
+# same). DISABLE_AUTO_COMPACT=1 there did too until the compile stated it "0"
+# (tests/test_compiler_env_probe.py): a "0" in the flag-settings env turns it
+# back off on both clients, and DISABLE_COMPACT only on 2.1.310: from 2.1.311
+# a settings env can use DISABLE_COMPACT only to turn compaction off. doctor
+# names a user's DISABLE_COMPACT.
 #
 # The auto-mode classifier's model (tests/test_auto_mode_model_probe.py):
 client check auto-mode-model: PASS class=AM-owned
@@ -216,7 +217,8 @@ client check one-m-suffix: PASS class=1M-booked
 # added the beta for the suffix); an unknown id needs [1m], which adds the
 # beta (200000 without it).
 client check haiku: MEASURED
-# The client's own Haiku, which the compile leaves unset: the haiku alias is
+# The client's own Haiku (the compile states ANTHROPIC_DEFAULT_HAIKU_MODEL,
+# tests/test_compiler_env_probe.py): the haiku alias is
 # claude-haiku-5-5 through the custom base URL, with or without Anthropic
 # routes in the fence, and books 1M without [1m]; ANTHROPIC_DEFAULT_HAIKU_MODEL
 # retargets it. claude-code-guide runs on the lead unless the fence admits

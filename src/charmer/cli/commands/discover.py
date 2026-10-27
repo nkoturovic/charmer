@@ -384,9 +384,20 @@ def _declare(
     return code
 
 
-def _discover_all(
-    runtime: runtime_mod.Runtime, *, input_stream: TextIO, output_stream: TextIO,
-) -> int:
+ALL_EMPTY = "discover --all: no provider has a listing to request — nothing sent"
+ALL_DECLINED = "discover --all: declined — nothing sent"
+
+
+def list_all(runtime, *, confirm, output_stream, notice, failure) -> int:
+    """The CLI/TUI batch: one disclosure, sequential bounded requests.
+
+    Optional account calls are resolved before consent and kept as immutable
+    plans, never added after the answer. Public results survive an unavailable
+    account credential or ordinary account-listing failure. Route or plan
+    changes stop later providers, just as for a primary listing.
+    """
+
+    consent.require_human("discover --all", runtime.gateway_environ())
     ctx, docs = _view(runtime)
     eff = runtime.current_effective()
     store = secret_store.default_store(runtime.gateway_environ())
@@ -402,35 +413,71 @@ def _discover_all(
                               secret_present=present, transports=_transports(ctx))
     if not plan.calls:
         for item in plan.skipped:
-            consent.prompt_stream().write(f"skipped {item.provider_id}: {item.reason}\n")
+            notice(f"skipped {item.provider_id}: {item.reason}")
         if plan.codex_excluded:
-            consent.prompt_stream().write(discovery.CODEX_EXCLUDED + "\n")
-        report(output_stream, "discover --all: no provider has a listing to request — nothing sent")
+            notice(discovery.CODEX_EXCLUDED)
+        report(output_stream, ALL_EMPTY)
         return 0
-    if not consent.confirm(discovery.consent_text(plan.calls, plan.skipped, codex_excluded=plan.codex_excluded),
-                           input_stream=input_stream):
-        consent.prompt_stream().write("discover --all: declined — nothing sent\n")
+    calls = []
+    accounts = {}
+    account_notices = {}
+    for call in plan.calls:
+        calls.append(call)
+        if call.provider_id != "openrouter" or call.tier != "T1":
+            continue
+        account = _plan_one(runtime, call.provider_id, account=True)
+        try:
+            available = store.is_set(account.secret_name)
+        except secret_store.SecretStoreError:
+            account_notices[call.provider_id] = ACCOUNT_CREDENTIAL_UNAVAILABLE
+            continue
+        if available:
+            accounts[call.provider_id] = account
+            calls.append(account)
+        else:
+            account_notices[call.provider_id] = (
+                "OpenRouter: public listing only (no key configured); stealth ids can be added directly.")
+    if not confirm(discovery.consent_text(calls, plan.skipped, codex_excluded=plan.codex_excluded)):
+        notice(ALL_DECLINED)
         return 0
     failed = 0
     for call in plan.calls:
         try:
             result = _execute(runtime, call)
+            account = accounts.get(call.provider_id)
+            if account is not None:
+                try:
+                    listed = _execute(runtime, account)
+                except ListingCredentialUnavailable:
+                    report(output_stream, ACCOUNT_CREDENTIAL_UNAVAILABLE)
+                except proxy_mod.ProxyError as exc:
+                    report(output_stream, f"OpenRouter: account-filtered listing failed ({exc}); "
+                                          "keeping the public listing.")
+                else:
+                    result = proxy_mod.ListingResult(discovery.merge_listings(result.entries, listed.entries),
+                                                     result.complete and listed.complete)
+            elif call.provider_id in account_notices:
+                report(output_stream, account_notices[call.provider_id])
         except providers_cmd.OperatorCommandError as exc:
             # A changed plan or authorization stops the batch.
             report(output_stream, f"== {call.provider_id} (GET {call.url})")
-            fail(f"{exc}; later providers were not requested")
+            failure(f"{exc}; later providers were not requested")
             return 1
         except proxy_mod.ProxyError as exc:
             report(output_stream, f"== {call.provider_id} (GET {call.url})")
             report(output_stream, f"{call.provider_id}: listing failed ({exc})")
             failed += 1
             continue
-        result = account_listing(
-            runtime, call, result,
-            confirm=lambda text: consent.confirm(text, input_stream=input_stream),
-            notice=lambda text: report(output_stream, text))
         _report_listing(runtime, call, result, output_stream, heading=True)
     return 1 if failed else 0
+
+
+def _discover_all(
+    runtime: runtime_mod.Runtime, *, input_stream: TextIO, output_stream: TextIO,
+) -> int:
+    return list_all(runtime, confirm=lambda text: consent.confirm(text, input_stream=input_stream),
+                    output_stream=output_stream,
+                    notice=lambda text: consent.prompt_stream().write(text + "\n"), failure=fail)
 
 
 def _discover_feed(runtime: runtime_mod.Runtime, *, input_stream: TextIO, output_stream: TextIO) -> int:

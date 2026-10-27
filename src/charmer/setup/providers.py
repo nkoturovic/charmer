@@ -1825,16 +1825,43 @@ def _key_present(runtime: Any, name: str) -> bool:
 # ------------------------------------------------------------------ moving to another computer
 
 
-def provider_key_names(runtime: Any) -> dict[str, tuple[str, str]]:
+def orphan_key_names(runtime: Any) -> tuple[str, ...]:
+    """Saved names with no owner, from a fully readable provider inventory.
+
+    Metadata is validated before the private file is read. A partial layer
+    must never turn an owned key into an apparent orphan; neither values nor
+    exception payloads leave this inventory.
+    """
+
+    try:
+        ctx = _cmd().operator_context(runtime, metadata_only=True)
+        _cmd().require_ledger(ctx, "orphan API keys")
+        _cmd().refuse_blocking(ctx.layer, "orphan API keys")
+        owners = provider_key_names(runtime, context=ctx)
+    except (errors.CharmerError, OSError, ValueError):
+        raise model.Refused("Cannot list orphan API keys — provider metadata is unreadable or invalid; "
+                            "nothing changed") from None
+    try:
+        path = secret_store.secret_env_path(runtime.gateway_environ())
+        saved = secret_store.read_env_file(path) if os.path.lexists(path) else {}
+    except (secret_store.SecretStoreError, OSError):
+        raise model.Refused("Cannot list orphan API keys — the selected key file is unreadable or invalid; "
+                            "nothing changed") from None
+    return tuple(sorted(name for name, value in saved.items() if value and name not in owners))
+
+
+def provider_key_names(runtime: Any, *, context: Any = None) -> dict[str, tuple[str, str]]:
     """API-key name -> (provider id, display name) of every keyed provider
-    here, the API keys of the account providers included (names only)."""
+    here, the API keys of the account providers included (names only).
+    ``context`` reuses an inventory's already validated metadata snapshot."""
 
     found: dict[str, tuple[str, str]] = {}
     try:
-        ctx = _cmd().operator_context(runtime, metadata_only=True)
+        ctx = context if context is not None else _cmd().operator_context(runtime, metadata_only=True)
     except (errors.CharmerError, OSError):
         return found
-    for pid, provider in ctx.docs["providers"]["providers"].items():
+    docs = operator_mod.merge_docs(ctx.docs, ctx.layer, legacy=ctx.legacy)
+    for pid, provider in docs["providers"]["providers"].items():
         ref = ((provider.get("transport") or {}).get("auth") or {}).get("secret_ref")
         if isinstance(ref, str):
             found[ref.removeprefix("env:")] = (pid, str(provider.get("display") or pid))

@@ -536,7 +536,14 @@ class CollisionTests(unittest.TestCase):
         layer = _layer(files, docs=docs)
         self.assertIn("custom-kimi-next", layer.displaced)
         self.assertNotIn("custom-kimi-next", layer.lines)
-        self.assertTrue(any("admit or bind that line instead" in t for t in _texts(layer)))
+        self.assertTrue(any("is now provided by the catalog line" in t and "charmer models rm custom-kimi-next" in t
+                            for t in _texts(layer)))
+        # Its key resolves to the catalog line that now serves its route.
+        merged = operator.merge_docs(docs, layer)
+        successor = next(k for k, e in docs["models"]["models"].items() if e["wire_model"] == kimi_wire)
+        self.assertEqual(merged[operator.DISPLACED_KEY], {"custom-kimi-next": successor})
+        self.assertEqual(merged["retired"]["retired"]["custom-kimi-next"]["successor"], successor)
+        self.assertNotIn("custom-kimi-next", docs["retired"]["retired"])  # never the trusted docs
 
 
 class SecretOriginTests(unittest.TestCase):
@@ -2901,8 +2908,9 @@ class DoctorFindingsTests(unittest.TestCase):
             "wire_model": "k3", "display": "dup", "efforts": ["high"], "default_effort": "high",
             "context": {"declared_tokens": 65536, "source": "operator"}}}}}
         displaced = self.findings(self.snapshot(files), key_refs={"custom-kimi-dup": ["binding b"]})
-        self.assertTrue(any(text.startswith("operator line custom-kimi-dup (kimi/k3) is displaced by catalog kimi-k3")
-                            and "choose a model for binding b" in text for text in displaced.attention), displaced)
+        self.assertIn("operator line custom-kimi-dup (kimi/k3) is now provided by the catalog as kimi-k3: yours "
+                      "yields to it — remove it: charmer models rm custom-kimi-dup --successor kimi-k3; used by "
+                      "binding b: they move to kimi-k3 at their next launch or resume", displaced.attention)
 
     def test_migrated_million_line_is_info(self) -> None:
         files = {"zeta": {"version": 1, "provider": {
@@ -3349,7 +3357,9 @@ class OnboardingRefusalCatalogueTests(unittest.TestCase):
         doc = {"version": 1, "lines": {"custom-duplicate": _acme_line(wire_model=line["wire_model"])}}
         pid = line["provider"]
         self.assertEqual(self.problem(doc, "E06", pid=pid).text(),
-                         f'providers.d/{pid}.json: lines.custom-duplicate: {pid}/{line["wire_model"]} is the catalog line "{key}" — admit or bind that line instead')
+                         f'providers.d/{pid}.json: lines.custom-duplicate: {pid}/{line["wire_model"]} is now provided '
+                         f'by the catalog line "{key}" — yours yields to it; remove it: charmer models rm '
+                         f'custom-duplicate --successor {key}')
 
     def test_keyless_agent_declaration_has_no_separate_route_refusal(self):
         doc = _fixture_files()["lanbox"]

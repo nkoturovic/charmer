@@ -238,7 +238,7 @@ class JourneyPTY(PTYProcess):
     for raw terminal output (a suspended screen, the final prints)."""
 
     def __init__(self, code: str, screen: Path, *, rows: int = 24, columns: int = 80,
-                 extra_env: dict[str, str] | None = None):
+                 extra_env: dict[str, str] | None = None, cwd: Path | None = None):
         # Like PTYProcess, plus the terminal is the child's controlling
         # terminal, so Ctrl-C reaches a suspended screen's program as SIGINT.
         self.master, self.slave = pty.openpty()
@@ -255,7 +255,7 @@ class JourneyPTY(PTYProcess):
             fcntl.ioctl(slave, termios.TIOCSCTTY, 0)
 
         self.process = subprocess.Popen([sys.executable, "-c", code], stdin=slave, stdout=slave, stderr=slave,
-                                        preexec_fn=attach, close_fds=True, env=env)
+                                        preexec_fn=attach, close_fds=True, env=env, cwd=cwd)
         self.output = bytearray()
         self.screen = screen
         self.screen_mark = 0
@@ -632,6 +632,151 @@ class FirstRunJourneys(JourneyCase):
         # Skipping both admission and diagnostics still reaches ordinary selection.
         output = self.starter_from_step_six(child)
         self.assertIn("DEFAULT=starter", output)
+
+    def test_j8_accounts_keys_and_resumed_preset_bind_without_diagnostics(self) -> None:
+        """One fresh home, all five connections, then a manual model bound
+        through the profile editor and the launch card. No CLI escape hatch."""
+        from charmer.cli import text as cli_text
+        from charmer.setup import model, providers as layer, texts
+        import test_presets
+
+        name = test_presets.first("anthropic-compatible")
+        info = test_presets.shipped()[name]
+        key = "custom-preset-chat"
+        options = {"presets": True, "serve_render": True, "login": self.login_launcher()}
+        # Row counts come from the same picker after declaring this preset,
+        # not from a fixed catalog ordering. This separate home is never launched.
+        with self.shape(options) as runtime, mock.patch("charmer.cli.consent.stdio_ttys", return_value=True):
+            plan = layer.plan_add_preset(runtime, name, name, None)
+            layer.apply_add_preset(runtime, plan, model.Confirmation.given(plan), model.Secret("shape-dummy"))
+            own_index = [entry.id for entry in layer.picker_entries(runtime)].index(f"own:{name}")
+        setup = f"""
+            from charmer import tui
+            from charmer.setup import signin, status
+            def no_listing(*args, **kwargs):
+                raise AssertionError("the by-hand journey must not fetch a listing")
+            runtime.listing_transport = no_listing
+            assert not status.connected(runtime)
+            original_editor = tui.ProfileEditorScreen.run
+            def editor(screen, win):
+                journeys.say("EDIT_PROFILE", screen.state.name)
+                journeys.say("FOCUS_INDEX", screen._focusable().index("cm-explorer"))
+                return original_editor(screen, win)
+            stack.enter_context(mock.patch.object(tui.ProfileEditorScreen, "run", editor))
+            original_picker = tui.BindingPicker.run
+            def picker(screen, win):
+                rows = [item for item in screen.model.items if item.kind != "zero"]
+                item = next(item for item in rows if item.key == {key!r})
+                assert item.selectable
+                journeys.say("BIND_INDEX", rows.index(item))
+                return original_picker(screen, win)
+            stack.enter_context(mock.patch.object(tui.BindingPicker, "run", picker))
+            def launch(prepared):
+                assert prepared.target.document["agents"]["cm-explorer"]["model"] == {key!r}
+                assert not runtime.operator_snapshot().ledger.admissions
+                assert len(status.connected(runtime)) == 5
+                assert signin.accounts(runtime, "anthropic") and signin.accounts(runtime, "openai")
+                journeys.say("AUDIT_BOUND", {key!r})
+                return fake(prepared)
+            runtime.launch_callback = launch
+        """
+        child = self.child(options=options, setup=setup, cwd=self.tmp)
+        child.expect("charmer — Get started")
+        child.expect("nothing connected yet")
+        self.to_picker_entry(child, "anthropic:account", options)
+        child.expect(cli_text.ACK_TITLE.format(kind="Claude account"))
+        child.keys("personal", ENTER, ENTER)
+        child.expect(cli_text.SIGNIN_METHOD_TITLE.format(kind="Claude account"))
+        child.keys(END, ENTER)
+        child.expect_out("Paste the Claude callback URL")
+        child.keys("http://localhost:54545/callback?code=journey&state=x\n")
+        child.expect_out(cli_text.SIGNIN_RETURN)
+        child.keys(ENTER)
+        child.expect("(Claude account). Its models are")
+        child.keys(ENTER, ESC)
+        child.expect("charmer — Get started")
+        # The shipped account models already provide a profile; no model
+        # declaration, badge or inference test is needed for this default.
+        self.open_step(child, "profile")
+        child.expect("Your profile: claude")
+        child.keys(ESC)
+        child.expect("charmer — Get started")
+
+        self.to_picker_entry(child, "openai:account", options)
+        child.expect(cli_text.ACK_TITLE.format(kind="ChatGPT account"))
+        child.keys("personal", ENTER, ENTER)
+        child.expect_out("enter the code FAKE-CODE")
+        child.expect_out(cli_text.SIGNIN_RETURN)
+        child.keys(ENTER)
+        child.expect("(ChatGPT account). Its models are")
+        child.keys(ENTER, ESC)
+        child.expect("charmer — Get started")
+
+        self.to_picker_entry(child, "deepseek:api-key", options)
+        child.expect("DeepSeek API key")
+        child.keys("deepseek-journey-dummy", ENTER, ENTER)
+        # The frozen fixture deliberately has no DeepSeek line. It covers
+        # the first-model branch; the release's shipped line needs no add.
+        child.expect(cli_text.ADD_MODELS_TITLE.format(id="deepseek"))
+        self.declare_by_hand(child, "fixture-deepseek-chat", "custom-deepseek-chat")
+        child.expect(cli_text.ADMIT_NOW_TITLE.format(key="custom-deepseek-chat"))
+        child.keys(ENTER, ESC)
+        child.expect("charmer — Get started")
+
+        self.to_picker_entry(child, "openrouter:api-key", options)
+        child.expect("OpenRouter API key")
+        child.keys("openrouter-journey-dummy", ENTER, ENTER)
+        child.expect("OpenRouter API key saved (")
+        child.expect(texts.RELOAD_TEXT["reloaded"])
+        child.keys(ESC)
+        child.expect("charmer — Get started")
+
+        self.to_picker_entry(child, f"preset:{name}", options)
+        child.expect(cli_text.PRESET_FORM_TITLE.format(display=info.display))
+        child.keys(ENTER, ENTER)
+        child.expect(cli_text.ENDPOINT_PREVIEW_TITLE)
+        child.keys(ENTER)
+        child.expect(cli_text.APPROVE_TITLE.format(id=name))
+        child.keys(RIGHT, ENTER)
+        child.expect(cli_text.KEY_MODAL_TITLE.format(display=info.display))
+        child.keys("preset-journey-dummy", ENTER, ENTER)
+        child.expect(cli_text.ADD_MODELS_TITLE.format(id=name))
+        child.keys(ESC, ESC)  # add later, leave the picker
+        child.expect("charmer — Get started")
+        child.keys("a", HOME, *([DOWN] * own_index), ENTER)
+        child.expect(cli_text.ADD_MODELS_TITLE.format(id=name))
+        self.declare_by_hand(child, "fixture-preset-chat", key)
+        child.expect(cli_text.ADMIT_NOW_TITLE.format(key=key))
+        child.keys(ENTER, ESC)  # skip admission, leave the picker
+        child.expect("charmer — Get started")
+        self.open_step(child, "profile")
+        child.expect("Your profile:")
+        child.keys(ESC, ESC)
+        child.expect("Status  Ready")
+
+        child.keys("e")
+        mark = child.screen_mark
+        profile_name = self.fact(child, "EDIT_PROFILE")
+        focus = int(self.fact(child, "FOCUS_INDEX"))
+        child.screen_mark = mark  # the editor can draw while its metadata is read
+        child.expect("edit profile")
+        child.keys(HOME, *([DOWN] * focus), ENTER)
+        mark = child.screen_mark
+        bind_index = int(self.fact(child, "BIND_INDEX"))
+        child.screen_mark = mark
+        child.expect("choose model")
+        child.keys(HOME, *([DOWN] * bind_index), ENTER, CTRL_S)
+        child.expect(f"saved {profile_name}")
+        child.keys(ESC)
+        child.expect("Status  ")  # optional evidence is Attention, not a block
+        child.keys(ENTER)
+        child.expect_out(f"AUDIT_BOUND={key}")
+        output = self.finish(child)
+        self.assertIn(f"FAKE_LAUNCH={profile_name}", output)
+        self.assertIn("EXIT=0", output)
+        self.assertNotIn("preset-journey-dummy", child.drawn())
+        self.assertNotIn("deepseek-journey-dummy", child.drawn())
+        self.assertNotIn("openrouter-journey-dummy", child.drawn())
 
     def entry_ids(self, options: dict[str, Any]) -> list[str]:
         from charmer.setup import providers as layer

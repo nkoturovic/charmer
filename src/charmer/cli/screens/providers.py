@@ -78,6 +78,59 @@ def key_choice(runtime: Any, provider_id: str, current: str | None = None) -> bo
     return current == operator_mod.TRANSPORT_API_KEY
 
 
+KEY_FILE_TITLE = "Choose API-key file"
+KEY_FILE_BODY = ("Use an existing private NAME=value file for all provider API keys. This selects the file; "
+                 "it does not copy its contents or change plain claude.")
+ORPHAN_TITLE = "Orphan API keys"
+ORPHAN_INTRO = "Saved keys no provider currently uses. Values are never shown."
+ORPHAN_OWNED = "Key {name} is now used by a provider — nothing changed"
+LIST_ALL_TITLE = "List connected providers"
+LIST_ALL_INTRO = ("List models from every connected provider with listing support. "
+                 "Nothing is declared or admitted.")
+PROVIDERS_FILE_BINDINGS = (("F", "key file"), ("O", "orphan keys"), ("D", "list all"))
+PROVIDERS_FILE_HELP = (
+    "\n\nF — key file: choose an existing private NAME=value file for all provider API keys.\n"
+    "O — orphan keys: list saved names no provider uses and confirm a removal. Values are never shown.\n"
+    "D — list all: disclose every listing request before one confirmation; nothing is declared or admitted.\n"
+    "CLI: charmer setup --keys-file FILE; charmer providers remove-key REMOVED_PROVIDER --name KEY_NAME; "
+    "charmer discover --all")
+
+
+class _ListingConsent(tui.TextView):
+    """A scrolling batch disclosure whose Enter, like Esc, declines.
+
+    The shared TextView draws the disclosure and y/N keybar. This explicit
+    consent never treats Enter as permission (nor leaves a queued Y to act
+    after the person already declined with Enter).
+    """
+
+    def run(self, win: Any) -> bool:
+        tui.hide_cursor()
+        while True:
+            self._draw(win)
+            key = tui.read_key(win)
+            if key.kind in ("esc", "enter") or (key.kind == "ctrl" and key.ch == "c"):
+                return False
+            height, width = win.getmaxyx()
+            if height < 10 or width < 40:
+                continue
+            if key.kind == "char" and key.ch in ("y", "Y", "n", "N"):
+                return key.ch in ("y", "Y")
+            page = max(1, height - 4 - self._keybar().rows(width))
+            if key.kind == "up":
+                self.offset = max(0, self.offset - 1)
+            elif key.kind == "down":
+                self.offset += 1
+            elif key.kind == "pageup":
+                self.offset = max(0, self.offset - page)
+            elif key.kind == "pagedown":
+                self.offset += page
+            elif key.kind == "home":
+                self.offset = 0
+            elif key.kind == "end":
+                self.offset = len(self._wrapped(width))
+
+
 class ConnectActions:
     """The provider and credential flows (see the module docstring)."""
 
@@ -133,22 +186,27 @@ class ConnectActions:
             return None
         return index - (len(entries) - len(items))
 
-    def _ask_key(self, display: str, path: str, replaces: int | None) -> str | None:
-        """The masked key modal; None when cancelled. The typed value is
-        cleared from the widget at once."""
+    def _ask_key(self, display: str, path: str, replaces: int | None) -> str | Outcome | None:
+        """The masked key modal; None when cancelled, an Outcome when the
+        person chooses a key file instead. That choice discards both the
+        typed secret and the caller's old-file plan."""
 
         body = self._body([cli_text.KEY_MODAL_BODY.format(path=path, display=display)])
         if replaces is not None:
             body += [""] + self._body([cli_text.KEY_MODAL_REPLACE.format(n=replaces)])
+        buttons = cli_text.KEY_MODAL_BUTTONS_REPLACE if replaces is not None else cli_text.KEY_MODAL_BUTTONS_NEW
         modal = tui.Modal(cli_text.KEY_MODAL_TITLE.format(display=display), body,
-                          buttons=cli_text.KEY_MODAL_BUTTONS_REPLACE if replaces is not None
-                          else cli_text.KEY_MODAL_BUTTONS_NEW,
+                          buttons=(*buttons, ("Key file…", "key-file")),
                           input=tui.TextInput(mask="•", max_length=4096))
         confirmed = modal.run(self.win, self.palette, background=self.background)
+        if confirmed == "key-file":
+            if modal.input is not None:
+                modal.input.value = ""
+            return self.choose_key_file()
         value = modal.input.value if modal.input is not None else ""
         if modal.input is not None:
             modal.input.value = ""
-        if not confirmed:
+        if confirmed is not True:
             return None
         return value
 
@@ -161,6 +219,135 @@ class ConnectActions:
             return "the key file"
 
     # -- API keys --------------------------------------------------------------
+
+    def choose_key_file(self) -> Outcome:
+        from charmer import secret_store
+        from charmer.setup import model, providers as layer
+
+        refusal = self._read_only() or self._guard("setup --keys-file")
+        if refusal is not None:
+            return refusal
+        try:
+            current = layer.key_file_display(self.runtime)
+            if not secret_store.expand(current, self.runtime.environ).is_absolute():
+                current = ""
+        except (cli_errors.CharmerError, OSError, ValueError):
+            current = ""
+        field = tui.TextInput(current, max_length=4096)
+        choice = tui.Modal(KEY_FILE_TITLE, self._body([KEY_FILE_BODY, "", "Key-file path:"]),
+                           input=field, buttons=(("Cancel", None), ("Use file", "use"))).run(
+                               self.win, self.palette, background=self.background)
+        if choice != "use":
+            return Outcome(model.NOTHING_CHANGED, "warn")
+        if not field.value.strip():
+            return Outcome("No key file selected — nothing changed", "warn")
+        try:
+            path = secret_store.expand(field.value.strip(), self.runtime.environ)
+            applied = layer.select_key_file(self.runtime, path)
+        except (cli_errors.CharmerError, OSError, ValueError) as exc:
+            return self._refused(exc)
+        tui.TextView(KEY_FILE_TITLE, applied.lines, palette=self.palette).run(self.win)
+        return Outcome(_joined(applied.lines))
+
+    def orphan_keys(self) -> Outcome | None:
+        from charmer.setup import providers as layer
+
+        refusal = self._read_only() or self._guard("providers remove-key")
+        if refusal is not None:
+            return refusal
+        outcome = None
+        selected = 1
+        while True:
+            try:
+                names = layer.orphan_key_names(self.runtime)
+            except (cli_errors.CharmerError, OSError, ValueError) as exc:
+                return self._refused(exc)
+            items = [tui.SelectItem(ORPHAN_INTRO, header=True)]
+            items += ([tui.SelectItem(name) for name in names] if names else
+                      [tui.SelectItem("No orphan API keys.", header=True)])
+            picker = tui.SelectList(ORPHAN_TITLE, items, selected=selected,
+                                    footer=(("Enter", "remove"), ("?", "help"), ("Esc", "back")))
+            if outcome is not None:
+                picker.message = outcome.text
+            index = picker.run(self.win, self.palette, help_text=ORPHAN_INTRO + PROVIDERS_FILE_HELP)
+            if index is None:
+                return outcome
+            selected = index
+            outcome = self._remove_orphan_key(names[index - 1])
+
+    def _still_orphan(self, name: str) -> None:
+        from charmer.setup import model, providers as layer, texts
+
+        if name not in layer.orphan_key_names(self.runtime):
+            if name in layer.provider_key_names(self.runtime):
+                raise model.Refused(ORPHAN_OWNED.format(name=name))
+            raise model.Refused(texts.KEY_NOT_SET.format(display=name))
+
+    def _remove_orphan_key(self, name: str) -> Outcome:
+        from charmer.setup import model, providers as layer
+        from charmer.cli.screens.get_started import _StepView
+
+        refusal = self._read_only() or self._guard("providers remove-key")
+        if refusal is not None:
+            return refusal
+        field = tui.TextInput(max_length=128)
+        choice = tui.Modal("Remove orphan API key", self._body([f"Key: {name}", "Removed provider id:"]),
+                           input=field, buttons=(("Cancel", None), ("Continue", "continue"))).run(
+                               self.win, self.palette)
+        if choice != "continue":
+            return Outcome(model.NOTHING_CHANGED, "warn")
+        provider_id = field.value.strip()
+        if not provider_id:
+            return Outcome("No provider id entered — nothing changed", "warn")
+        try:
+            self._still_orphan(name)
+            pair = layer.retained_key(self.runtime, provider_id, name)
+            plan = layer.plan_remove_key(self.runtime, provider_id, secret=pair)
+            preview = list(plan.served.plan.lines()) if plan.served is not None else []
+            # A scrolling preview keeps Cancel/Remove, even on a small
+            # terminal; a generic y-only confirmation would lose that choice.
+            if not _StepView(cli_text.REMOVE_KEY_TITLE.format(display=plan.display),
+                             [*preview, "", *plan.lines], palette=self.palette,
+                             buttons=cli_text.REMOVE_BUTTONS).run(self.win):
+                return Outcome(model.NOTHING_CHANGED, "warn")
+            refusal = self._read_only() or self._guard(f"providers remove-key {provider_id}")
+            if refusal is not None:
+                return refusal
+            self._still_orphan(name)
+            applied = layer.apply_remove_key(self.runtime, plan, model.Confirmation.given(plan))
+        except (cli_errors.CharmerError, OSError, ValueError) as exc:
+            return self._refused(exc)
+        return Outcome(_joined(applied.lines))
+
+    def list_all(self) -> Outcome:
+        from charmer.cli.commands import discover
+
+        refusal = self._guard("discover --all")
+        if refusal is not None:
+            return refusal
+        output = io.StringIO()
+        approved = None
+
+        def confirm(text: str) -> bool:
+            nonlocal approved
+            approved = _ListingConsent(LIST_ALL_TITLE, [LIST_ALL_INTRO, "", *text.splitlines()],
+                                       palette=self.palette, confirm=True).run(self.win)
+            return approved
+
+        try:
+            code = discover.list_all(
+                self.runtime, confirm=confirm, output_stream=output,
+                notice=lambda text: discover.report(output, text),
+                failure=lambda text: discover.report(output, f"charmer: {text}"))
+        except (cli_errors.CharmerError, OSError, ValueError) as exc:
+            return self._refused(exc)
+        if approved is False:
+            return Outcome(discover.ALL_DECLINED)
+        tui.TextView("Connected provider models", output.getvalue().splitlines(), palette=self.palette).run(self.win)
+        if approved is None:
+            return Outcome(discover.ALL_EMPTY)
+        return Outcome("Connected provider models — some listings failed" if code else
+                       "Connected provider models — listing complete", "warn" if code else "accent")
 
     def set_key(self, provider_id: str) -> Outcome:
         """Set or replace a provider's API key (Cancel is the default when one
@@ -186,6 +373,8 @@ class ConnectActions:
                                  cli_text.SHARED_KEY_REPLACE_BUTTONS):
                 return Outcome(texts.KEY_KEPT.format(display=plan.display), "warn")
         value = self._ask_key(plan.display, plan.path_display, plan.current_length if plan.replaces else None)
+        if isinstance(value, Outcome):
+            return value
         if value is None:
             return Outcome(texts.KEY_KEPT.format(display=plan.display) if plan.replaces else cli_text.KEY_CANCELLED,
                            "warn")
@@ -318,6 +507,8 @@ class ConnectActions:
         value: str | None = None
         if to_key and not plan.key_present:
             value = self._ask_key(words["display"], self._key_file(), None)
+            if isinstance(value, Outcome):
+                return value
             if not value:
                 return Outcome(model.NOTHING_CHANGED, "warn")
         try:
@@ -618,6 +809,8 @@ class ConnectActions:
                                      cli_text.SHARED_KEY_REPLACE_BUTTONS):
                     return Outcome(model.NOTHING_CHANGED, "warn")
             value = self._ask_key(display, self._key_file(), plan.key_length if plan.key_present else None)
+            if isinstance(value, Outcome):
+                return value
             if value is None or (plan.key_use == layer.KEY_REPLACE and not value):
                 return Outcome(model.NOTHING_CHANGED, "warn")
         try:
@@ -730,7 +923,8 @@ class ConnectActions:
     # -- a picker entry ---------------------------------------------------------
 
     def own(self, provider_id: str) -> Outcome | None:
-        """A provider you added: approve its route, set its key, or its state."""
+        """Finish connecting a provider you added, including its first model
+        when the person left that step for later."""
 
         from charmer.setup import status
 
@@ -739,6 +933,15 @@ class ConnectActions:
             return self.approve(provider_id)
         if conn is not None and conn.state in ("key-missing", "key-invalid"):
             return self.set_key(provider_id)
+        if conn is not None and conn.state == status.CONNECTED:
+            if self._provider_lines(provider_id):
+                return Outcome("Connected — choose your profile in Get started.")
+            refusal = self._read_only() or self._guard("models add")
+            if refusal is not None:
+                return refusal
+            text = self.continue_to_models(provider_id)
+            if text:
+                return Outcome(text)
         return None
 
     def connect(self, entry: Any) -> Outcome | None:
@@ -956,6 +1159,7 @@ class _ProvidersScreen:
             bindings.insert(1 if bindings and bindings[0][0] == "Enter" else 0, cli_text.PROVIDERS_APPLY_BINDING)
         if self.gateway_down:
             bindings.insert(len(bindings) - 2, cli_text.PROVIDERS_GATEWAY_BINDING)
+        bindings[-2:-2] = PROVIDERS_FILE_BINDINGS
         return bindings
 
     # -- layout ------------------------------------------------------------
@@ -970,7 +1174,8 @@ class _ProvidersScreen:
                 cli_text.PROVIDERS_KEYBAR_ACCOUNT, cli_text.PROVIDERS_KEYBAR_ACCOUNT_KEY, cli_text.PROVIDERS_KEYBAR_OWN,
                 cli_text.PROVIDERS_KEYBAR_OWN_KEYLESS, cli_text.PROVIDERS_KEYBAR_KEYLESS]
         return max(tui.KeyBar((bar[0], cli_text.PROVIDERS_APPLY_BINDING, *bar[1:-2],
-                               cli_text.PROVIDERS_GATEWAY_BINDING, *bar[-2:])).rows(width) for bar in bars)
+                               cli_text.PROVIDERS_GATEWAY_BINDING, *PROVIDERS_FILE_BINDINGS,
+                               *bar[-2:])).rows(width) for bar in bars)
 
     def min_size(self, width: int) -> tuple[int, int]:
         """(rows, cols) floor: chrome + min(list, 3) + detail reserve + bar."""
@@ -1284,7 +1489,8 @@ class _ProvidersScreen:
             elif key.kind == "end":
                 self.selected = max(0, len(self.rows) - 1)
             elif letter == "?":
-                screens_common._help_modal(win, self.palette, "providers — help", cli_text.PROVIDERS_HELP, self._draw)
+                screens_common._help_modal(win, self.palette, "providers — help",
+                                           cli_text.PROVIDERS_HELP + PROVIDERS_FILE_HELP, self._draw)
             elif letter == "R":
                 self._refresh()
                 self._say("refreshed.")
@@ -1297,6 +1503,12 @@ class _ProvidersScreen:
                     self._say(message)
             elif letter == "P":
                 self._apply(win)
+            elif letter == "F":
+                self._show(self._actions(win).choose_key_file())
+            elif letter == "O":
+                self._show(self._actions(win).orphan_keys())
+            elif letter == "D":
+                self._show(self._actions(win).list_all())
             elif not self.rows:
                 continue
             elif letter == " ":

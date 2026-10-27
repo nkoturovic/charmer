@@ -416,8 +416,15 @@ class FixturePropertyTests(unittest.TestCase):
         self.assertIs(settings_doc["modelPicker"]["replaceBuiltInOptions"], True)
         # Native-agent defaults and workflow selection match declared policy.
         env = settings_doc["env"]
-        family = {k: v for k, v in env.items() if k.startswith("ANTHROPIC_DEFAULT_")}
+        family = {k: v for k, v in env.items()
+                  if k.startswith("ANTHROPIC_DEFAULT_") and k != "ANTHROPIC_DEFAULT_HAIKU_MODEL"}
         self.assertEqual(family, oracle_family_env(lines, providers, case.enabled))
+        # The client's own background requests: the bound haiku line, else
+        # the lead, always inside the fence; compaction stays on.
+        haiku = sorted({agent.binding.selector for agent in lineup.agents.values() if agent.binding.key == "haiku"})
+        self.assertEqual(env["ANTHROPIC_DEFAULT_HAIKU_MODEL"], haiku[0] if haiku else lead_sel)
+        self.assertIn(env["ANTHROPIC_DEFAULT_HAIKU_MODEL"], available)
+        self.assertEqual(env["DISABLE_AUTO_COMPACT"], "0")
         self.assertEqual(
             env.get("CLAUDE_CODE_DISABLE_EXPLORE_INHERIT_CAP"),
             "1" if case.cap_disabled else None,

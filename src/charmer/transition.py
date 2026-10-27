@@ -105,6 +105,11 @@ class ExpectedPlan:
     # kept: the ONLY launch-item difference is the feedback-draft preference:
     # doctor Attention "managed-session preference changed", never BLOCK.
     preference_launch_differs: bool = False
+    # kept: the ONLY launch-item difference is the model of the client's own
+    # background requests (ANTHROPIC_DEFAULT_HAIKU_MODEL follows the lineup's
+    # haiku binding, so a live bind or unbind moves it): the selector the
+    # next resume compiles (doctor Attention, never "catalog changed").
+    background_launch_differs: str | None = None
     # Unchanged agent bindings whose recorded selector the installed catalog
     # and the session window move only by their context class (200K <-> 1M)
     # keep the recorded selector until resume: ``(slot label, recorded,
@@ -202,6 +207,16 @@ def _without_preference(items: Mapping[str, Any]) -> dict[str, Any]:
     env = stripped.get("env")
     if isinstance(env, dict):
         env.pop(scope.FEEDBACK_ENV, None)
+    return stripped
+
+
+def _without_background(items: Mapping[str, Any]) -> dict[str, Any]:
+    """Launch items minus the background-request model env key."""
+
+    stripped = copy.deepcopy(dict(items))
+    env = stripped.get("env")
+    if isinstance(env, dict):
+        env.pop(compiler.HAIKU_DEFAULT_ENV, None)
     return stripped
 
 
@@ -574,6 +589,7 @@ def expected_plan(
         # the digest), with the env epoch the launch stated.
         differs = True
         preference_only = False
+        background: str | None = None
         try:
             launch_lead = strict_json.loads(live_lead_set)["lead"]
             if (launch_lead["key"], launch_lead["effort"]) == (
@@ -601,6 +617,12 @@ def expected_plan(
                     _without_preference(_launch_items(ref_settings))
                     == _without_preference(_launch_items(live_settings))
                 )
+                if differs and same_lead_set and not preference_only and (
+                    _without_background(_launch_items(ref_settings))
+                    == _without_background(_launch_items(live_settings))
+                ):
+                    moved = (ref_settings.get("env") or {}).get(compiler.HAIKU_DEFAULT_ENV)
+                    background = moved if isinstance(moved, str) else None
         except (
             KeyError,
             TypeError,
@@ -611,7 +633,8 @@ def expected_plan(
         ):
             differs = True
         return ExpectedPlan(plan, None, catalog_plan, True, None, differs, lead_switched,
-                            preference_launch_differs=preference_only, agent_class_kept=class_kept,
+                            preference_launch_differs=preference_only, background_launch_differs=background,
+                            agent_class_kept=class_kept,
                             diagnostics_kept=bool(legacy_files))
 
     if not why:

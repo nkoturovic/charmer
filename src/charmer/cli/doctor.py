@@ -1892,6 +1892,13 @@ def _settings_radar(runtime: runtime_mod.Runtime, records: list[dict[str, Any]])
                         "session's apiKeyHelper (token rotation would break those sessions) "
                         "— remove it (charmer doctor --rotate-token refuses while it is set)"
                     )
+                elif key == compiler.AUTO_COMPACT_ENV:
+                    # Every managed scope states it "0" in its flag settings,
+                    # which outrank this layer; DISABLE_COMPACT stays
+                    # a policy key (the pinned client lets nothing undo it).
+                    if str(env[key]).strip().lower() not in ("", "0", "false", "no", "off"):
+                        info.append(f"{path}: env.{key}: managed sessions re-enable compaction; plain claude "
+                                    "does not compact")
                 elif key in policy_keys and env[key] not in (None, ""):
                     attention.append(
                         f"{path}: env.{key} defeats the charmer session policy (claude "
@@ -2825,6 +2832,14 @@ def _check_scope_integrity(
         attention.append(lazy(
             f"session {m8}: managed-session preference changed; applies at the next resume",
             "preference", "{n} sessions: managed-session preference changed; each applies at its next resume",
+        ))
+    elif ep.launch_files_kept and ep.background_launch_differs:
+        # A live haiku bind or unbind moves only the background-request
+        # model (a launch-time item): lazy state, never "catalog changed".
+        attention.append(lazy(
+            f"session {m8}: background requests move to {ep.background_launch_differs} at the next resume",
+            "background", "{n} sessions: background requests move with their lineup's haiku binding; each at "
+            "its next resume",
         ))
     elif ep.launch_files_kept and ep.catalog_launch_differs:
         attention.append(lazy(

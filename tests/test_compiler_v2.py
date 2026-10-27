@@ -1127,7 +1127,12 @@ class CustomLeadLaunchTests(unittest.TestCase):
         self.assertEqual(result.fence.lead_set[0].family, "custom")
         self.assertEqual(result.fence.fallback_only, ())
         self.assertEqual(result.scope_plan.settings["availableModels"], [selector])
-        self.assertFalse([key for key in result.scope_plan.settings["env"] if key in FAMILY_KEYS])
+        # No family default; the client's own background requests stay on
+        # the lead whatever the user's settings env names, and a user's
+        # DISABLE_AUTO_COMPACT never stops compaction.
+        env = result.scope_plan.settings["env"]
+        self.assertEqual({key: env[key] for key in env if key in FAMILY_KEYS}, {compiler.HAIKU_DEFAULT_ENV: selector})
+        self.assertEqual(env[compiler.AUTO_COMPACT_ENV], "0")
         self.assertIn("MY_GW_API_KEY", result.env_unset)
         self.assertIn("- Explore:", _appendix(result))
 
