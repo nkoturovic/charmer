@@ -48,6 +48,7 @@ def _models_listing(runtime: runtime_mod.Runtime, output_stream: Any) -> int:
     """
 
     lcat = runtime.lineup_catalog()
+    displaced = runtime.ordinary_docs.get(operator_mod.DISPLACED_KEY) or {}
     for key in sorted(lcat.lines):
         line = lcat.lines[key]
         provider_id = line.get("provider", "?")
@@ -69,6 +70,12 @@ def _models_listing(runtime: runtime_mod.Runtime, output_stream: Any) -> int:
     for key in sorted(lcat.retired):
         entry = lcat.retired[key]
         successor = entry.get("successor")
+        if key in displaced:
+            # A line of yours the catalog now provides (it yields to it).
+            output_stream.write(f"{key}\t{entry.get('display', key)}\tnow provided by the catalog as "
+                                f"{displaced[key]}\tremove yours: "
+                                f"{operator_mod.displaced_remedy(key, [displaced[key]])}\n")
+            continue
         output_stream.write(
             f"{key}\t{entry.get('display', key)}\tretired (catalog {entry.get('since_catalog', '?')})"
             f"\t{'successor ' + str(successor) if successor else 'no successor'}\n"
@@ -245,9 +252,11 @@ def _operator_line(ctx: providers_cmd.OperatorContext, key: str, verb: str) -> o
         raise OperatorCommandError(f"{verb}: {key} is pending migration — charmer providers migrate-custom --apply")
     if key in layer.displaced:
         displaced = layer.displaced[key]
+        successor = operator_mod.displaced_successors(ctx.docs, layer).get(key)
         raise OperatorCommandError(
-            f"{verb}: the catalog serves {displaced.provider_id}/{displaced.core_entry['wire_model']}; "
-            f"{key} yields to it — admit or bind that catalog line instead")
+            f"{verb}: {displaced.provider_id}/{displaced.core_entry['wire_model']} is now provided by the catalog; "
+            f"{key} yields to it — remove yours: "
+            f"{operator_mod.displaced_remedy(key, [successor] if successor else [])}")
     file_id = operator_mod.line_file_ids(ctx.read, ctx.layer).get(key)
     found = [p.text() for p in ctx.layer.problems_by_file.get(operator_mod.file_label(file_id), ())] if file_id else []
     detail = ("\n  " + "\n  ".join(found)) if found else ""
@@ -349,6 +358,11 @@ def declare_line(
                     f"charmer providers add {provider_id} ...")
     wire = line["wire_model"]
     if key in document.get("lines", {}):
+        if key in ctx.layer.displaced:
+            shipped = operator_mod.displaced_successors(ctx.docs, ctx.layer).get(key)
+            return fail(f"{verb}: {provider_id}/{wire} ships with charmer as the line {shipped or 'of the catalog'} — "
+                        f"nothing written; yours ({key}) yields to it — remove it: "
+                        f"{operator_mod.displaced_remedy(key, [shipped] if shipped else [])}")
         return fail(f"{verb}: {key} is already declared in {operator_mod.file_label(provider_id)} — "
                     f"edit it: charmer models edit {key}")
     document = {**document, "lines": {**document.get("lines", {}), key: dict(line)}}
@@ -356,7 +370,9 @@ def declare_line(
     layer = providers_cmd.proposed(ctx, {provider_id: raw})
     own = [p for p in operator_mod.file_problems(layer, provider_id)]
     if key in layer.displaced:
-        return fail(f"{verb}: {provider_id}/{wire} is a catalog line — admit or bind that line instead")
+        shipped = operator_mod.displaced_successors(ctx.docs, layer).get(key)
+        return fail(f"{verb}: {provider_id}/{wire} ships with charmer as the line {shipped or 'of the catalog'} — "
+                    f"nothing written; bind it in a profile (charmer profile edit NAME) or see charmer models")
     if own or key not in layer.lines:
         return fail(f"{verb}: not declared:\n  " + "\n  ".join(p.text() for p in own or
                                                                  layer.problems_by_file.get(
@@ -682,6 +698,15 @@ def _models_show(runtime: runtime_mod.Runtime, key: str, resolved: bool, evidenc
         entry = lcat.lines[key]
         report(output_stream, f"{key}: {lcat.origin(key)} line · {entry['provider']}/{entry['wire_model']} · "
                               f"status {entry.get('status', 'active')}")
+        return 0
+    if line is None and key in ctx.layer.displaced:
+        displaced = ctx.layer.displaced[key]
+        successor = operator_mod.displaced_successors(ctx.docs, ctx.layer).get(key)
+        report(output_stream, operator_mod.displaced_text(
+            key, displaced.provider_id, displaced.core_entry["wire_model"],
+            [successor] if successor else sorted(k for k, e in lcat.lines.items()
+                                                 if (e["provider"], e["wire_model"]) ==
+                                                 (displaced.provider_id, displaced.core_entry["wire_model"]))))
         return 0
     if line is None:
         status = providers_cmd.line_status(key, ctx, providers_cmd.admitted_keys(runtime))

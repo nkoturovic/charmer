@@ -1777,8 +1777,8 @@ def validate_layer(
         line = displaced[key]
         route = (line.provider_id, line.core_entry["wire_model"])
         add(_problem("displaced", line.source, f"$.lines.{key}",
-                     f'{route[0]}/{route[1]} is the catalog line "{", ".join(catalog_routes[route])}"',
-                     "admit or bind that line instead"))
+                     f'{route[0]}/{route[1]} is now provided by the catalog line "{", ".join(catalog_routes[route])}"',
+                     f"yours yields to it; remove it: {displaced_remedy(key, catalog_routes[route])}"))
 
     for label in problems:
         if label.startswith(f"{PROVIDERS_DIRNAME}/") and label.endswith(".json"):
@@ -1817,6 +1817,62 @@ def resolve_provider_document(
 # Merged-docs keys carrying operator metadata (never catalog documents).
 LINES_KEY = "operator-lines"
 SECRET_NAMES_KEY = "operator-secret-names"
+# Displaced operator key -> the catalog key that now serves its (provider,
+# wire); the same lines are in the merged ``retired`` map (below).
+DISPLACED_KEY = "operator-displaced"
+
+
+def displaced_successors(docs: Mapping[str, Any], layer: OperatorLayer) -> dict[str, str]:
+    """Each displaced operator key -> the catalog line that now serves its
+    (provider, wire): the one live line of that route, else none (a route two
+    catalog lines share names no single successor)."""
+
+    lines = _docs_lines(docs)
+    found: dict[str, str] = {}
+    for key, line in sorted(layer.displaced.items()):
+        route = (line.provider_id, line.core_entry["wire_model"])
+        matches = sorted(ckey for ckey, entry in lines.items() if (entry["provider"], entry["wire_model"]) == route)
+        if len(matches) == 1:
+            found[key] = matches[0]
+    return found
+
+
+def displaced_remedy(key: str, catalog_keys: Iterable[str]) -> str:
+    """Remove the yielded line; with one successor, also move its profiles
+    and named bindings onto it."""
+
+    keys = list(catalog_keys)
+    return f"charmer models rm {key}" + (f" --successor {keys[0]}" if len(keys) == 1 else "")
+
+
+def displaced_text(key: str, provider: str, wire: str, catalog_keys: Iterable[str]) -> str:
+    """The one wording of a line the catalog now provides (doctor, the
+    models listing and show): yours yields to it; remove yours."""
+
+    keys = list(catalog_keys)
+    return (f"operator line {key} ({provider}/{wire}) is now provided by the catalog as "
+            f"{', '.join(keys)}: yours yields to it — remove it: {displaced_remedy(key, keys)}")
+
+
+def _displaced_retired_entry(line: ResolvedOperatorLine, successor: str, catalog_version: Any) -> dict[str, Any]:
+    """A retired-shaped entry for a displaced operator line, merged so its
+    profiles, bindings and records resolve to the catalog line (no family:
+    it never names an alias owner)."""
+
+    entry = line.core_entry
+    return {
+        "successor": successor,
+        "reason": (f"Now provided by the catalog as {successor} ({line.provider_id}/{entry['wire_model']}); "
+                   f"remove yours: {displaced_remedy(line.key, [successor])}")[:256],
+        "since_catalog": catalog_version if isinstance(catalog_version, int) else 0,
+        "provider": line.provider_id,
+        "last_wire": entry["wire_model"],
+        "display": entry["display"],
+        "context_tokens": entry["context"]["provider_tokens"],
+        "capabilities": list(entry["capabilities"]),
+        "roles": copy.deepcopy(entry["roles"]),
+        "selectors": {selector: contract for _level, selector, contract in catalog.line_selectors(dict(entry))},
+    }
 
 
 def merge_docs(
@@ -1856,6 +1912,20 @@ def merge_docs(
                   "selector_mode": line.selector_mode, "family": line.family}
             for key, line in sorted(layer.lines.items())
         }
+    successors = displaced_successors(docs, layer)
+    if successors:
+        # A line the catalog now provides (a release shipped its route):
+        # its key resolves to that catalog line like a retired key, so the
+        # profiles, bindings and records that name it keep resolving.
+        retired_doc = dict(base.get("retired") or {"version": 1, "retired": {}})
+        version = (docs.get("version") or {}).get("catalog_version")
+        retired_doc["retired"] = {
+            **retired_doc.get("retired", {}),
+            **{key: _displaced_retired_entry(layer.displaced[key], successor, version)
+               for key, successor in successors.items() if key not in retired_doc.get("retired", {})},
+        }
+        merged["retired"] = retired_doc
+        merged[DISPLACED_KEY] = dict(successors)
     if not layer.providers and not layer.lines:
         return merged
     if layer.providers:
@@ -4030,11 +4100,16 @@ def doctor_findings(
         users = [f"session {identifier[:8]}" for identifier in
                  sorted(holders(line_aliases(line.core_entry) if line is not None else ()))]
         users.extend(key_users.get(row.key, ()))
-        attention.append(
-            f"operator line {row.key} ({row.provider}/{row.wire}) is displaced by catalog "
-            f"{', '.join(row.catalog_keys)}{' (admitted)' if row.admitted else ''}: it yields, with no automatic "
-            "successor" + (f"; choose a model for {', '.join(users[:5])}" if users else "")
-        )
+        text = displaced_text(row.key, row.provider, row.wire, row.catalog_keys) + (
+            " (it was admitted)" if row.admitted else "")
+        if len(row.catalog_keys) == 1:
+            # Its key resolves to that catalog line (merge_docs); running
+            # sessions keep the aliases they recorded until their resume.
+            text += (f"; used by {', '.join(users[:5])}: they move to {row.catalog_keys[0]} at their next "
+                     "launch or resume" if users else "")
+        else:
+            text += (f"; no single successor: choose a model for {', '.join(users[:5])}" if users else "")
+        attention.append(text)
 
     legacy_doc = legacy or {}
     legacy_present = bool(legacy_doc.get("providers") or legacy_doc.get("models"))
