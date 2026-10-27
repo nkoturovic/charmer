@@ -665,15 +665,17 @@ def mcp_large_class(results: dict[str, dict[str, Any]], files: dict[str, dict[st
     unsaved = sorted(set(_PARTS) - set(files))
     if unsaved:
         raise fallbacks._Inconclusive(f"no validated saved file for {unsaved}")
+    # Every saved file must hold some call's answer before a class is chosen:
+    # an unmarked file is missing evidence, never a collision.
+    unmarked = sorted(part for part, file in files.items() if not (file["own"] or file["other"]))
+    if unmarked:
+        raise fallbacks._Inconclusive(f"the saved file for {unmarked} holds no call's answer")
     if len({file["file"] for file in files.values()}) < len(_PARTS):
         return "ML-same-file"
     if any(row["other"] and not row["own"] for row in results.values()):
         return "ML-other-result"
     if any(file["other"] for file in files.values()):
         return "ML-other-result"
-    unmarked = sorted(part for part, file in files.items() if not file["own"])
-    if unmarked:
-        raise fallbacks._Inconclusive(f"the saved file for {unmarked} holds neither call's answer")
     return "ML-own-results"
 
 
@@ -700,6 +702,17 @@ class McpLargeVerdictTests(unittest.TestCase):
         self.assertEqual(mcp_large_class(own, crossed), "ML-other-result")
         with self.assertRaises(fallbacks._Inconclusive):
             mcp_large_class({part: {**row, "chars": _PART_CHARS} for part, row in own.items()}, files)
+
+    def test_a_shared_unmarked_file_is_inconclusive(self) -> None:
+        unmarked = {part: {"own": False, "other": False, "file": "/x/one"} for part in _PARTS}
+        with self.assertRaises(fallbacks._Inconclusive):
+            mcp_large_class(self.OWN, unmarked)
+
+    def test_a_collision_beside_an_unmarked_file_is_inconclusive(self) -> None:
+        mixed = {**self.FILES, "two": {"own": False, "other": True, "file": "/x/one"},
+                 "three": {"own": False, "other": False, "file": "/x/three"}}
+        with self.assertRaises(fallbacks._Inconclusive):
+            mcp_large_class(self.OWN, mixed)
 
     def test_trials(self) -> None:
         self.assertEqual(mcp_large_verdict(["ML-own-results"] * _MCP_TRIALS), "ML-own-results")
