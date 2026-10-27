@@ -107,7 +107,7 @@ charmer doctor [--json | --repair <id> | --repair-all | --prune | --rotate-token
 | `-v`, `--verbose` | also show every session's line and the observation details |
 | `--first-run` | the first-run checks in order, one fix each (with --json: one object) |
 | `--repair <id>` | converge a session's scope to its record authority (its id, an id prefix of 8 or more characters, or its name) |
-| `--repair-all` | converge every durable session's scope (and refresh its record snapshot) against the installed catalog |
+| `--repair-all` | converge stopped durable sessions' scopes to record authority; lineups the installed catalog cannot recompile are deferred until resume or a model choice |
 | `--preview` | read-only generated-state prune preview |
 | `--prune` | remove stale staging dirs and scopes whose records are gone |
 | `--rotate-token` | rotate the local gateway token hitlessly (dual-key window, ~5 min helper-TTL wait, reload verified; interactive; rerun resumes) |
