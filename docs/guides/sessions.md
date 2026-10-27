@@ -290,8 +290,23 @@ charmer sessions relink-runtime <id> <runtime-id>   # the record names the wrong
 ```
 
 Generated files are rebuilt from the record; never edit them or the
-record by hand. `--repair-all --include-live` also repairs sessions that
-may be running; do that only when you know they can take it.
+record by hand. `charmer doctor --repair <id>` exits 3 when repair is
+deferred rather than complete. Resume interactively with `charmer -r <id>`
+to apply the catalog or choose a model. The sessions screen's **P** also
+reports a deferred repair rather than success.
+
+`charmer sessions relink-runtime <id> <runtime-id>` preserves its identity
+update but exits 1 when scope repair is unfinished, with the diagnostic on
+stderr. A deferred repair names `charmer -r <id>`; a failed repair names
+`charmer doctor --repair <id>` after the reported cause is resolved.
+
+Repair-all skips live or unknown sessions unless explicitly included, and
+reports lineups the installed catalog cannot recompile as deferred.
+`--repair-all --include-live` also repairs sessions that may be running;
+do that only when you know they can take it. In Findings (**H**),
+**Including running sessions** previews the affected sessions and asks for
+confirmation with Cancel focused first. That pass is limited to the
+previewed sessions.
 
 ## When providers change under a running session
 

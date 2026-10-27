@@ -25,6 +25,15 @@ check, but it runs its checks with the newly installed release's runtime, which
 has no macOS 12 evidence; if that runtime cannot start, the rollback stops and
 changes nothing. Its usual safety checks and persistence hold still apply.
 
+The native release journey checks process and listener ownership, session
+liveness, refusing to mark a running client ended and marking it after exit,
+the stop refusal for a client not running in the background, compiled
+credential-deny rules, gateway-log read-back, forgetting a session and
+leaving the user's own Claude Code installation and preferences unchanged. It uses print-mode sessions against
+a loopback fixture provider. Interactive onboarding is not established by
+these checks, nor is stopping a real background-daemon session, another
+user's listener, or gateway-log rotation and locking.
+
 The gateway runs on demand only; there is no launchd service.
 
 Requirements: `curl` for the downloads and `ssh-keygen` (it ships with

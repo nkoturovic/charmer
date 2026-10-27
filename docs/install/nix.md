@@ -65,6 +65,15 @@ migrated forward: after a newer version upgraded the state, an older
 package refuses to change it and names the fix. Rolling the Nix package
 back does not roll the state back; see [update.md](../update.md#state-only-moves-forward).
 
+## Runtime limits
+
+The pinned Nix package uses Python 3.14.8, not the release bundle's CPython
+3.15.2. It lacks Python 3.14.10's eMudhra certificate distrust and tar-filter
+fix. The development shell keeps GnuPG 2.4.9 from the FreePG recipe;
+applicability of the format-string and out-of-bounds fixes in GnuPG
+2.5.23–2.5.24 to that recipe is not established. These are recorded holds,
+not claims that those fixes are present.
+
 ## Next
 
 - [Quickstart](../quickstart.md).

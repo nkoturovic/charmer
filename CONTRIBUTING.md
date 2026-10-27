@@ -95,6 +95,14 @@ The real-client lanes need the exact Claude Code version the release pins:
 suite's private HOME. Without it, a lane that needs it is reported as not
 runnable and the run fails.
 
+Two control clients are named by absolute path, never copied:
+`CHARMER_TEST_PREVIOUS_CLAUDE` (the previous release's pin, Claude Code
+2.1.310, for the downgrade-resume check) and
+`CHARMER_TEST_FALLBACK_CONTROL_CLAUDE` (Claude Code 2.1.302, for the
+gateway-fallback controls). The runner checks each one named against the
+sha256 in `tests/_client_roles.py` before any test runs and stops with a
+usage error on a mismatch.
+
 `--require PATTERN` takes a regular expression over selected test IDs. Every
 pattern must match at least one selected case, and matching skips fail the
 run. A covering class or module fixture skip also fails a method-level

@@ -4,10 +4,21 @@ On Windows, charmer runs inside WSL2: the Linux release is installed
 into a Linux distribution and runs there. Native Windows is not supported.
 
 Release-bundle status for Windows through WSL2:
-**supported inside WSL2; Windows Server 2025 with Ubuntu 24.04**.
+**supported inside WSL2; Windows Server 2025 with Ubuntu 24.04 and 26.04**.
 The support label requires the Windows installer and the subsequent
 installed-session journey to complete; passing installer unit tests alone
 does not establish support.
+
+The release journeys check native process and listener ownership, session
+liveness and end marking, the stop refusal for a client not running in the
+background, gateway-log read-back, forgetting a session and leaving the
+WSL user's own Claude Code installation and preferences unchanged. They
+also check WSL detection, Windows-drive working-directory guidance, the
+compiled Windows-side credential rules and a new launch after WSL stops.
+These are print-mode sessions against a loopback fixture provider, not
+interactive onboarding. They do not establish that a Windows-side Claude
+Code installation is untouched, or that a token helper reconnects across
+WSL shutdown.
 
 ## Install
 
@@ -83,14 +94,23 @@ available; the ChatGPT sign-in uses a device code, which works anywhere.
   directory under `/mnt/` because file access is slow there and file modes
   are not kept.
 
+The dedicated Windows-drive state refusal is not established by the
+release journeys: the private-mode ownership check refuses the directory
+first. That earlier refusal does not establish the dedicated check, and
+is not a reason to weaken the directory's permissions.
+
 ## When WSL shuts down
 
-The WSL virtual machine stops when every WSL terminal is closed, and the
-gateway stops with it. Nothing is lost: the next launch or resume starts
-the gateway again. A session that was running reconnects through its token
-helper, which starts a stopped gateway (waiting at most 10 seconds) and
+When WSL stops, the gateway stops with it. Stored session records are kept;
+the next launch or resume starts the gateway again. The release journeys
+terminate WSL, then verify that a new launch starts the gateway and gets a
+fixture answer; the subsequent uninstall keeps state.
+
+If only the gateway stops while a session is still running, the session's
+token helper starts a stopped gateway (waiting at most 10 seconds) and
 hands the session its token only when that gateway is proven to be yours
-and ready. If a session reports that it cannot reach the gateway, run
+and ready. This does not prove token-helper recovery across WSL shutdown.
+If a session reports that it cannot reach the gateway, run
 `charmer gateway status`, then `charmer gateway start`; see
 [troubleshooting.md](../troubleshooting.md#the-gateway).
 

@@ -76,17 +76,15 @@ want.
 
 ## Sessions and lineup changes
 
-- [Sessions](guides/sessions.md): resume, inspect, stop, forks, adoption
-  and repair.
-- [Changing a lineup](guides/lineup.md): `/cm` and `/model` inside a
-  session, LIVE and RELAUNCH changes, follow and pin.
+- [Sessions](guides/sessions.md): resume, inspect, stop, forks, adoption and repair.
+- [Changing a lineup](guides/lineup.md): `/cm` and `/model`, LIVE and RELAUNCH changes, follow and pin.
 
 ## The local gateway
 
-- [Gateway](guides/gateway.md): how requests reach other providers, its
-  on-demand start, the optional user service and recovery.
-- [Networking](guides/networking.md): proxies and custom certificate
-  authorities.
+- [Gateway](guides/gateway.md): requests, on-demand start, the optional user service and recovery.
+- From doctor findings, **W → P** shows what the gateway would serve after pending changes,
+  without writing or contacting it.
+- [Networking](guides/networking.md): proxies and custom certificate authorities.
 
 ## Recovery
 
@@ -99,9 +97,12 @@ want.
 - [Update](update.md) · [Move to another computer](guides/move-machines.md) · [Uninstall](uninstall.md) ·
   [An installation from before the rename](guides/legacy-migration.md): 31 renamed model names launch as
   `charmer-` names, the only ones served for them; continuity aliases keep the names they were saved under.
-- Import never approves a credential destination or imports trusted passing evidence. No storage
-  migration is needed for permissive bindings, but older releases may refuse broader family labels
-  or newly allowed profiles; [rollback limits](guides/move-machines.md#moving-to-an-older-release-or-rolling-back).
+- Settings (**O**) offers Export configuration, Import preview and Import apply. Saving an export file
+  records the normal receipt; leaving its path blank only shows JSON. Preview is read-only.
+  Applying an import never activates imported trust and still requires a terminal outside Claude Code;
+  preview does not. Import never approves a credential destination or imports trusted passing evidence.
+- No storage migration is needed for permissive bindings, but older releases may refuse broader family
+  labels or newly allowed profiles; [rollback limits](guides/move-machines.md#moving-to-an-older-release-or-rolling-back).
 
 ## Trust and privacy
 
@@ -111,9 +112,8 @@ want.
 
 ## Reference
 
-- [Command line](reference/cli.md) · [Tasks by surface](reference/tasks.md)
-  · [Settings and files](reference/settings.md) ·
-  [Compatibility](reference/compatibility.md) ·
+- [Command line](reference/cli.md) · [Tasks by surface](reference/tasks.md) ·
+  [Settings and files](reference/settings.md) · [Compatibility](reference/compatibility.md) ·
   [Licences and notices](reference/licenses.md).
 - Contributing, the architecture and the development workflow live in the
   source repository: [CONTRIBUTING.md](https://github.com/nkoturovic/charmer/blob/main/CONTRIBUTING.md)

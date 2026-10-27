@@ -43,33 +43,14 @@ A running gateway keeps the version it started from until you restart it
 between turns (`charmer gateway restart`); while its persistence hold
 is active, a switch that changes the gateway waits.
 
-### Updating from 2.2.0
+### Updating from 2.2.1
 
-Only the launcher changes in this release: the bundled Python moves to
-CPython 3.15.2, while the gateway binary, Claude Code 2.1.310 and the state
-and record formats (4) stay the same. The update plan says only the
-launcher changes; the running gateway keeps serving. In a plain terminal
-outside Claude Code, between turns:
-
-```bash
-charmer update
-charmer update --verify
-charmer doctor
-```
-
-On Linux, `charmer update --verify` reports `running-gateway: current-match`
-without a restart: the running gateway's bytes are the installed ones.
-`charmer gateway status` and doctor still say "gateway restart pending",
-because they compare the running gateway's install path (in the 2.2.0
-directory) with the new one, not the bytes. A guarded
-`charmer gateway restart` between turns clears it whenever convenient.
-`charmer update --rollback` returns to 2.2.0.
-
-### Updating from 2.1.0
-
-The gateway changes in this release. Updating switches the installation,
-not the running gateway. Between turns, in a plain terminal outside Claude
-Code, run each step after assessing the previous result:
+charmer 2.3.0 moves the gateway to CLIProxyAPI 8.0.44 with 27 local patches
+and Claude Code from 2.1.310 to 2.1.311. Catalog 42 ships with this release;
+Go 1.27.3 and the bundled CPython 3.15.2 stay the same. Updating switches
+the installation, not the running gateway. Between turns, in a plain
+terminal outside Claude Code, run each step after assessing the previous
+result:
 
 ```bash
 charmer update
@@ -95,12 +76,33 @@ running-byte verification reports unavailable (exit 3), not a match.
 Status and doctor remain separate readiness checks, not a substitute for
 running-byte verification.
 
-The update installs charmer's verified **Claude Code 2.1.310** copy before
+Gateway status, doctor and the gateway view compare the recorded and
+installed gateway files by SHA-256 when their file identities differ.
+Matching bytes at another path make switching paths optional: the finding
+says `gateway same binary on another path; restart optional`. Changed,
+missing or unreadable files still leave a restart pending. This on-disk
+comparison does not verify running bytes or remove running-path retention
+protection. Other restart conditions and persistence holds still apply.
+
+The update installs charmer's verified **Claude Code 2.1.311** copy before
 switching the release: it copies a matching local file or downloads and
 verifies the pin when none is available. Your own Claude Code installation
 is untouched. A session already running keeps its client until its next
 launch or resume (`/exit`, then `charmer -r <id>`). State and record formats
-remain 4; no record migration is needed.
+remain 4; no record migration is needed. If 2.2.1 is the retained previous
+release, `charmer update --rollback` returns to it; restart the gateway
+between turns to use that release's gateway too.
+
+### Updating from 2.2.0
+
+Follow the [same update sequence](#updating-from-221). In addition to the
+client and gateway changes, the bundled Python moves to CPython 3.15.2.
+The running gateway still needs the guarded restart.
+
+### Updating from 2.1.0
+
+Follow the [same update sequence](#updating-from-221), then check the
+session settings below.
 
 Existing managed sessions get charmer's subagent status line at their next
 resume. `charmer doctor --repair-all` recompiles stopped sessions now;

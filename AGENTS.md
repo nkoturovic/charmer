@@ -95,26 +95,26 @@ installation (a source tree, or the prefix of an installed package: its
                                  # charmer-gateway.service by default)
 ```
 
-Release: the version in `version.json` (catalog 41).
+Release: 2.3.0 (catalog 42; `version.json` is the packaged identity).
 Current default: the **`balanced` seed profile**
 (`catalog/profiles/balanced.json`): Opus 5.5 lead at ultracode, Sol high
 explorer/xhigh analyst, Opus analyst-strong, Luna max / Sol xhigh / Sol max
 implementer grades, Sol max reviewer and Opus reviewer-strong.
 The trusted catalog pins Claude
-**2.1.310** as the verified binary. The gateway is **CLIProxyAPI 8.0.42**
+**2.1.311** as the verified binary. The gateway is **CLIProxyAPI 8.0.44**
 (pinned in `gateway/UPSTREAM.json` and built by `tools/build.py` with the official
 Go 1.27.3 toolchain, `CGO_ENABLED=0`; see "Gateway build" in §4) with
-twenty-eight local patches (admission ids 1–10, 12, 13, 15–23, 26–29 and
-31–33; 11 was never admitted, 14 retired with 8.0.33, 24 and 25 retired
-with 8.0.42, and 30 was withdrawn) —
+twenty-seven local patches (admission ids 1–10, 12, 13, 15–23, 26–29,
+31 and 32; 11 was never admitted, 14 retired with 8.0.33, 24 and 25 retired
+with 8.0.42, 33 retired with 8.0.44, and 30 was withdrawn) —
 loopback OAuth bind, Kimi/Claude compat, the non-Claude cache-retention
 boundary (§2 invariant 11), the read-only management allowlist (an
 engine-level guard serves
 only `GET /v0/management/auth-files`, `…/auth-files/models` and
 `…/model-definitions/:channel` and refuses every other management-scoped
-request with a bare 404 before any key check, including the new v8 SIWC
-bind and both SIWC status routes; the env password does not imply
-allow-remote and the RESP surface is closed; inert until a
+request with a bare 404 before CORS or any key check, including the v8 SIWC
+bind, both SIWC status routes and `POST /v8/management/oauth/auth-url`; the
+env password does not imply allow-remote and the RESP surface is closed; inert until a
 start-selected management key is injected), and
 the config watcher (parent-directory watch, so a rename-replaced
 `config.yaml` hot-reloads; blank or key-dropping configs never load), and the
@@ -205,12 +205,9 @@ disabled and removed checks (omission row IR1, probe
 #32 preserves terminal OAuth rejection of an unchanged credential across
 model or alias reload reconciliation; new tokens can still clear that
 rejection, and ordinary failures still reset (Go gate
-`terminal-rejection-reload`, omission row TR1). #33 extends the reset to
-failed-refresh state: new tokens clear the stale failed-refresh status,
-message and count, unless a live retry or quota deadline is still pending.
-It covers `invalid_grant` and stale unavailable/error states; an
-unchanged-token file rewrite retains the failure (Go gate
-`relogin-after-refresh-failure`, omission row RA1; upstream issue #6948).
+`terminal-rejection-reload`, omission row TR1). Upstream clears stale
+failed-refresh state when new tokens arrive; the re-login row RA1 remains
+a regression check, not a local-patch omission row.
 Refused credentialed redirects yield fixed local 502
 `upstream redirect refused`, with no upstream body/Location or path-bearing
 refusal log. Keyed-compat safety is
@@ -227,7 +224,12 @@ passes the pinned source's directory to `nix/package.nix` as
 `cliProxyApiRegistry`, and the package build refuses a snapshot that
 differs from it; the package also links the gateway it ships as
 `libexec/charmer/cli-proxy-api`). `run`/login exec the gateway with a scrubbed environment and the
-rendered config pins `discovery: {enabled: false}`. Gateway auth
+rendered config pins `discovery: {enabled: false}`,
+`response-compression.enabled: false`, `codex.websocket-compression: false`
+and `codex.upstream-request-compression: false`. Local responses and
+WebSocket traffic stay uncompressed; Codex requests advertise compressed
+answers but go out plain. The traffic checks cover decoding gzip, deflate,
+zstd and plain upstream answers, not Brotli. Gateway auth
 is **helper-only**: no launch puts a credential in the process
 env; the compiled `apiKeyHelper` is the single source (§2 invariant 3).
 
@@ -388,8 +390,15 @@ Profile lineups and direct lineups, one compile path:
    defaultMode-only delta is doctor Attention (`DEFAULT_MODE_DRIFT`), never
    BLOCK or repair. `--permission-mode`/`--dangerously-skip-permissions`
    win (`tests/test_permission_defaults.py`).
-8. **Managed sessions own their policy.** `autoCompactEnabled:true` is pinned
-   (a user-level false silently wedges 1M sessions). The fence is **split**:
+8. **Managed sessions own their policy.** `autoCompactEnabled:true` and
+   `DISABLE_AUTO_COMPACT="0"` are pinned (a user-level
+   `autoCompactEnabled:false` silently wedges 1M sessions). Doctor reports a user `DISABLE_AUTO_COMPACT` as Info:
+   managed sessions re-enable compaction, while plain `claude` does not
+   compact. A user settings env `DISABLE_COMPACT` still stops managed
+   compaction on 2.1.311; doctor reports Attention and asks to remove it.
+   `ANTHROPIC_DEFAULT_HAIKU_MODEL` is pinned to the lineup's Haiku selector,
+   else the lead, so user or project settings cannot move helper or
+   background requests outside the session's models. The fence is **split**:
    `availableModels` = lead set ∪ agent set ∪ fallback-only set, so
    every bound agent selector is admitted (else agent dispatch silently
    falls back to the lead — the 2026-07-28 routing incident; the
@@ -405,8 +414,8 @@ Profile lineups and direct lineups, one compile path:
    `CLAUDE_CODE_RETRY_WATCHDOG_SCOPE=""` are pinned in the durable settings
    env; the latter is scrubbed from the launch environment and reserved in
    lead env, so an inherited `capacity` cannot narrow recovery.
-   Earlier-cut recovery remains a required gate. With client 2.1.310 and the
-   tested 8.0.42 gateway candidate, missing `message_stop` after completed
+   Earlier-cut recovery remains a required gate. With client 2.1.311 and the
+   tested 8.0.44 gateway candidate, missing `message_stop` after completed
    content and terminal `message_delta` can instead produce client
    false-success without recovery, despite the gateway’s SSE error. This
    disclosed known negative is not recovery or proof of harmlessness; see
@@ -430,10 +439,10 @@ Profile lineups and direct lineups, one compile path:
     writes (`~/.claude/agents`, `~/.claude/settings.json`, gateway env).
 11. **Non-Claude outbound cache-retention boundary.** The gateway
     patch `cli-proxy-api-non-claude-cache-retention.patch` (pinned
-    CLIProxyAPI 8.0.42; derived over the split executor files)
+    CLIProxyAPI 8.0.44; derived over the split executor files)
     enforces that `prompt_cache_retention` — the OpenAI Responses-platform
     cache TTL control — is stripped at the **final outbound boundary** for
-    every non-Claude route. Claude Code 2.1.310 no longer sends the
+    every non-Claude route. Claude Code 2.1.311 does not send the
     `prompt-caching-scope` beta; that header change does not remove this
     payload-field boundary. One sanitizer
     (`internal/runtime/executor/non_claude_cache_retention.go`) is called at
@@ -451,9 +460,9 @@ Profile lineups and direct lineups, one compile path:
       signing step). Reached by the official origin and by the Kimi OAuth
       executor's `CountTokens`, which still delegates upstream.
     - **Codex `cacheHelper`** (`codex_executor_request.go`), after
-      cache-key insertion, input-ID sanitization and identity rewriting:
-      ordinary `/responses` execute and stream, `/responses/compact`, and
-      the image paths.
+      cache-key insertion, input-ID sanitization and identity rewriting,
+      before wire-body serialization and compression: ordinary `/responses`
+      execute and stream, `/responses/compact`, and the image paths.
     - **Codex WebSockets**: `Execute` (`codex_websockets_execute.go`) and
       `prepareCodexWebsocketStream` (`codex_websockets_stream.go`), after
       identity rewriting and before logging/frame transmission. Every
@@ -1366,6 +1375,11 @@ uses your own HOME and environment.
   `--validate-published-evidence <out>/evidence` (read-only store content
   check); `--validate-evidence` stays the private host/build check.
   Never claim a cached build is a fresh execution.
+  The executor gate excludes exactly
+  `TestCodexWebsockets_KeepalivePingDuringUpload_Sessionless`: its fixture
+  closes the socket without reading the held request, a flake reproduced
+  on pristine and patched 8.0.44. `gateway/upstream-review.json`
+  `test_exclusions` records it; every other executor test still runs.
 - **Budget and diagnostic lanes:** the ordinary gateway lanes target ≤20 s on a
   quiet host; >30 s stops the leg. Concurrent-load timings are labelled,
   not used for that stop rule. Revert, lifecycle, races, the hint-client
@@ -1831,8 +1845,21 @@ On memory-tight hosts the suite's tmpfs fixture copies can fail with
   control listener on every interface answering), a first managed turn
   against a loopback fixture provider (`.github/scripts/journey_fixture.py`,
   declared and admitted like any provider) and its resume, another
-  program's listener on the gateway port refused, update and rollback —
-  the draft behind the protected `release` environment),
+  program's listener on the gateway port refused, update and rollback.
+  With `JOURNEY_NATIVE=1`, the install journeys also assert native process
+  and listener ownership, session liveness and end marking, the stop refusal
+  for a non-background client, compiled credential-deny rules, gateway-log
+  read-back, forgetting a session and the user's own installation and
+  preferences left unchanged. WSL journeys assert detection,
+  Windows-drive cwd guidance and compiled
+  credential rules, then run `restarted` after `wsl --terminate`: the next
+  launch starts the gateway and uninstall keeps state. Interactive
+  onboarding is not established by these journeys. The dedicated
+  Windows-drive state refusal is also not established: the private-mode
+  ownership check refuses first. The separate Nix check's `nix_roots.py`
+  proves refresh keeps the one GC root; it is not a real user-manager Nix
+  service journey. The draft stays behind the protected `release`
+  environment),
   `pin-watch.yml` (`tools/_build/pin_watch.py`) and
   `vulnerability-watch.yml` (weekly when `CM_SCHEDULES` is `on`, or by
   hand: `.github/scripts/vulnerability_watch.py` downloads the latest
@@ -2239,7 +2266,7 @@ On memory-tight hosts the suite's tmpfs fixture copies can fail with
      codex-api-key-safety → refresh-shutdown-join → openai-content-chunks →
      charmer-model-ids → output-cap → context-error-normalization →
      log-reduction → tool-call-integrity → initial-registration →
-     terminal-rejection-reload → relogin-after-refresh-failure.
+     terminal-rejection-reload.
      Retry-After (11) is not
      admitted. New hunks must be generated against the
      **sequentially patched** source. Generate it offline against
@@ -2446,10 +2473,25 @@ the operator's approval. Doctor never retires backups.
   below macOS 13; the native Apple silicon journey is on macOS 15, with no
   runtime claim for 13 or 14 and no Intel support claim. The 2.0.1 updater
   does not enforce that floor. See `docs/install/macos.md` and `docs/update.md`.
-- **WebSocket key retirement (unmeasured):** CLIProxyAPI 8.0.42 re-checks
-  the key on each Responses WebSocket turn upstream; charmer has not
-  measured this, so reconnect after `charmer doctor --rotate-token`.
-  Managed Claude Code uses HTTP, not that route (`docs/guides/gateway.md`).
+- **WebSocket key retirement:** CLIProxyAPI 8.0.44 checks the key on every
+  Responses WebSocket turn. Measured: an overlap turn succeeds; after
+  retirement the next turn on that open socket gets 401 without reaching
+  the provider, and a new socket with the new key works. Reconnect after
+  `charmer doctor --rotate-token`. Managed Claude Code uses HTTP, not that
+  route (`docs/guides/gateway.md`).
+- **Refusal headers:** the gateway does not forward a provider's
+  `x-should-retry` or `Retry-After` on gateway routes; the client applies its
+  own retry rules. Codex capacity 429s have no provider retry delay at the
+  client (`docs/troubleshooting.md`).
+- **Nix runtime holds:** the Nix package keeps Python 3.14.8; release bundles
+  ship CPython 3.15.2. The development shell keeps GnuPG 2.4.9 FreePG;
+  applicability of the newer upstream fixes is not established. See
+  `docs/install/nix.md` for the missing Python fixes and the GnuPG limit.
+- **Native journey limits:** interactive onboarding, the dedicated
+  Windows-drive state refusal, Intel macOS, stopping a real background
+  daemon session, another user's listener, log rotation and locking, and
+  Windows-side Claude noninterference or token-helper recovery across WSL
+  shutdown are not established by the release journeys.
 - **Context refusals:** the normalized Codex account/API-key errors recover
   before and after headers; OpenRouter and other OpenAI-compatible errors
   are not normalized and require `/compact` (`docs/troubleshooting.md`).

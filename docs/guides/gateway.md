@@ -208,7 +208,9 @@ message naming the owner and the fix: “the gateway is inhibited by …”. A
 gateway already proven yours keeps serving running sessions. If the
 owner was interrupted, its own command finishes it (for example
 `charmer gateway service install` again for an interrupted hand-off,
-or `sh install.sh --repair` for an interrupted install).
+or `sh install.sh --repair` for an interrupted install). An unfinished
+service install or refresh must be completed with
+`charmer gateway service install`; uninstall does not clear that hand-off.
 
 ## Applying changes
 
@@ -221,6 +223,10 @@ on request; `charmer plan` previews what the gateway would serve
 after pending changes and writes nothing.
 
 ## What the gateway changes in a request
+
+The local listener sends uncompressed responses and WebSocket traffic.
+Codex requests also go uncompressed; compressed Codex answers are decoded
+before they reach Claude Code.
 
 - It adds the provider's key, or the signed-in account's credentials;
   sessions never hold either.
@@ -242,12 +248,13 @@ after pending changes and writes nothing.
   form ("prompt is too long"), so it compacts the conversation and retries,
   whether the refusal comes before the answer starts or after. Other errors
   reach Claude Code as before.
-- On both OpenAI routes, a Codex model's own commentary preambles reach
-  Claude Code as unsigned thinking, and the gateway omits them when it
-  translates the history Claude Code sends back
-  ([upstream #6966](https://github.com/router-for-me/CLIProxyAPI/issues/6966)).
-  Tool calls and tool results are kept; reasoning is replayed only with a
-  compatible signature.
+- On both OpenAI routes, a Codex model's commentary preambles reach Claude
+  Code as thinking carrying the gateway's internal commentary marker, and
+  come back as commentary when Claude Code sends the history on the same
+  route ([upstream #6966](https://github.com/router-for-me/CLIProxyAPI/issues/6966));
+  the marker never reaches a provider. After a switch to a model on another
+  route, Claude Code drops those preambles itself. Tool calls and tool
+  results are kept; reasoning is replayed only with a compatible signature.
 
 ## Thinking from content chunks
 
@@ -274,8 +281,10 @@ gateway accepts the old and the new key for about five minutes, then only
 the new one. It asks first, verifies every reload, and resumes if
 interrupted. The key never appears in output.
 
-CLIProxyAPI 8.0.42 re-checks the key on each Responses WebSocket turn
-upstream; charmer has not measured this, so reconnect after
+CLIProxyAPI 8.0.44 checks the key again on every Responses WebSocket turn:
+during the rotation overlap an open socket keeps working, and once the old
+key is retired the next turn on that socket is refused (401) without
+reaching the provider. Reconnect with the new key after
 `charmer doctor --rotate-token`. Managed Claude Code sessions use HTTP,
 not this WebSocket route.
 
