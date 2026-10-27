@@ -99,6 +99,10 @@ FROZEN_2X_SELECTORS = {
     "claude-multi-qwen-flash-next": ("llm-local", "qwen3.8-flash-next", None),
 }
 RETAINED_SELECTOR_BASES = frozenset(FROZEN_2X_SELECTORS)
+# Gateway-effort lines that moved to a new generation on their key: their
+# selectors carry the generation (``<prefix><key>-<generation>-<effort>``)
+# and the previous generation's selectors live on under ``<key>@<old>``.
+GENERATION_TAGGED_LINES = {"sol": "6", "muse": "1.3", "or-deepseek": "4.1"}
 CODEX_SELECTOR_PREFIX = "gpt-multi-"
 CLAUDE_SELECTOR_PREFIX = "charmer-"
 REMOVED_PATTERNS = (
@@ -211,7 +215,7 @@ class SeedLoadTests(unittest.TestCase):
                             else CLAUDE_SELECTOR_PREFIX
                         )
                         generation = ""
-                        if model_id == "sol":  # the reviewed, separable generation rename
+                        if model_id in GENERATION_TAGGED_LINES:  # the reviewed generation moves
                             generation = model["generation"].replace(".", "-") + "-"
                         self.assertEqual(selector, f"{prefix}{model_id}-{generation}{level}{suffix}")
                         self.assertTrue(contract.endswith("-" + level), contract)
@@ -260,6 +264,7 @@ class SeedLoadTests(unittest.TestCase):
             [
                 "claude-fable-5",
                 "claude-fable-5-1",
+                "claude-haiku-5-5",
                 "claude-opus-4-8",
                 "claude-opus-5",
                 "claude-opus-5-5",
@@ -538,7 +543,7 @@ def catalog38_mismatches(bundle, projection: dict) -> list[str]:
     """Where catalog 39's renamed selectors leave the routes catalog 38
     gave their old names (``projection``: the checked-in routes file)."""
 
-    live = RenamedSelectorContinuityTests.live_routes(bundle)
+    live = RenamedSelectorContinuityTests.current_routes(bundle)
     found: list[str] = []
     expected = {legacy.LEGACY_SELECTOR_PREFIX + rest for rest in projection["routes"]}
     if set(bundle.renamed) != expected:
@@ -547,10 +552,12 @@ def catalog38_mismatches(bundle, projection: dict) -> list[str]:
         old = legacy.LEGACY_SELECTOR_PREFIX + rest
         new = bundle.current_selector(old)
         if new not in live:
-            found.append(f"{old}: translates to {new}, not a live selector")
+            found.append(f"{old}: translates to {new}, not a live or retired selector")
             continue
         key, provider, wire, contract, window = live[new]
-        client = bundle.lines[key]["context"]["client_tokens"]
+        # A generation a later catalog retired keeps its [1m] class in the selector.
+        client = (bundle.lines[key]["context"]["client_tokens"] if new in RenamedSelectorContinuityTests.live_routes(bundle)
+                  else (1_000_000 if new.endswith("[1m]") else 200_000))
         now = {"key": key, "provider": provider, "wire_model": wire, "proxy_contract": contract,
                "provider_tokens": window, "client_tokens": client}
         if now != route:
@@ -576,18 +583,36 @@ class RenamedSelectorContinuityTests(unittest.TestCase):
             for _level, selector, contract in catalog.line_selectors(line)
         }
 
+    @classmethod
+    def current_routes(cls, bundle) -> dict[str, tuple[str, str, str, str | None, int]]:
+        """:meth:`live_routes` plus the selectors of each generation a later
+        catalog retired (``K@g``): their recorded route, under the line key
+        ``K`` a record still names (resume moves it to the current one)."""
+
+        routes = cls.live_routes(bundle)
+        for retired_key, entry in bundle.retired.items():
+            if "@" not in retired_key:
+                continue
+            for selector, contract in entry["selectors"].items():
+                routes.setdefault(selector, (entry["successor"], entry["provider"], entry["last_wire"], contract,
+                                             entry["context_tokens"]))
+        return routes
+
     def test_every_renamed_selector_keeps_its_route(self) -> None:
         bundle = catalog.load_catalog(CATALOG_ROOT)
         live = self.live_routes(bundle)
+        current = self.current_routes(bundle)
         renamed = bundle.renamed
-        # The 31 selectors catalog 39 renamed: distinct live charmer-*
-        # selectors, each mapped from its old twin (a line added later has
-        # no earlier name, so it is in no entry).
+        # The 31 selectors catalog 39 renamed: distinct charmer-* selectors,
+        # each mapped from its old twin (a line added later has no earlier
+        # name, so it is in no entry). Each is live, or the selector of a
+        # generation a later catalog moved on from (catalog 42: muse,
+        # muse-contributor, or-kimi, or-deepseek), which keeps its route.
         targets = sorted(spec["selector"] for spec in renamed.values())
         self.assertEqual(len(targets), 31)
         self.assertEqual(len(set(targets)), 31)
         self.assertEqual([selector for selector in targets if not selector.startswith("charmer-")], [])
-        self.assertEqual([selector for selector in targets if selector not in live], [])
+        self.assertEqual([selector for selector in targets if selector not in current], [])
         index = bundle.renamed_selector_index()
         retired = bundle.retired_selector_index()
         for old, spec in sorted(renamed.items()):
@@ -597,19 +622,27 @@ class RenamedSelectorContinuityTests(unittest.TestCase):
                 self.assertEqual(old, legacy.LEGACY_SELECTOR_PREFIX + new.removeprefix("charmer-"))
                 # The same [1m] class: the client sees the same window.
                 self.assertEqual(old.endswith("[1m]"), new.endswith("[1m]"))
-                key, provider, wire, contract, window = live[new]
+                key, provider, wire, contract, window = current[new]
                 base = old.removesuffix("[1m]")
                 self.assertNotIn(base, {s.removesuffix("[1m]") for s in live})
                 self.assertNotIn(base, retired)
                 self.assertEqual(bundle.current_selector(old), new)
                 self.assertEqual(bundle.current_selector(base), new.removesuffix("[1m]"))
-                found_key, entry, found_contract = index[base]
-                self.assertEqual(found_key, key)
+                if new in live:
+                    found_key, entry, found_contract = index[base]
+                    self.assertEqual(found_key, key)
+                    expected_key = key
+                else:
+                    # Renamed, then retired by a generation move: through its new name.
+                    self.assertNotIn(base, index)
+                    found_key, entry, found_contract = retired[new.removesuffix("[1m]")]
+                    self.assertEqual(entry["successor"], key)
+                    expected_key = found_key
                 self.assertEqual((entry["provider"], entry["last_wire"], found_contract, entry["context_tokens"]),
                                  (provider, wire, contract, window))
-                self.assertEqual(bundle.resolve_selector(old)[0], key)
-                self.assertEqual(bundle.resolve_selector(base)[0], key)
-                self.assertEqual(bundle.resolve_key(key).key, key)
+                self.assertEqual(bundle.resolve_selector(old)[0], expected_key)
+                self.assertEqual(bundle.resolve_selector(base)[0], expected_key)
+                self.assertEqual(bundle.resolve_key(expected_key).key, key)
 
     def test_catalog_39_keeps_the_catalog_38_routes(self) -> None:
         # The immutable catalog-38 projection: every old name's route then
@@ -644,7 +677,7 @@ class RenamedSelectorContinuityTests(unittest.TestCase):
         from charmer import continuity, render
 
         bundle = catalog.load_catalog(CATALOG_ROOT)
-        live = self.live_routes(bundle)
+        live = self.current_routes(bundle)
         projection = json.loads(CATALOG38_ROUTES.read_text(encoding="utf-8"))["routes"]
         seed = continuity.seed_only(bundle)
         self.assertEqual(seed["seeded_through_catalog"], bundle.docs["version"]["catalog_version"])
@@ -704,11 +737,15 @@ class RenamedSelectorContinuityTests(unittest.TestCase):
         from charmer import migrate
 
         bundle = catalog.load_catalog(CATALOG_ROOT)
-        live = self.live_routes(bundle)
+        live = self.current_routes(bundle)
         for old, spec in sorted(bundle.renamed.items()):
             key = live[spec["selector"]][0]
+            # A line a later catalog moved to a new generation: a catalog-38
+            # record meant the generation it then served (``K@g``).
+            moved = [retired_key for retired_key, entry in bundle.retired.items()
+                     if retired_key.startswith(f"{key}@") and entry["since_catalog"] > 38]
             with self.subTest(old=old):
-                self.assertEqual(migrate.translate_key(key, old, 38, bundle), key)
+                self.assertEqual(migrate.translate_key(key, old, 38, bundle), moved[0] if moved else key)
                 self.assertIsNone(migrate.resolve_retired_selector(bundle.retired, old))
 
     def test_a_renamed_selector_a_later_catalog_retired_resolves_through_its_new_name(self) -> None:
@@ -1684,7 +1721,9 @@ class NativeContractTests(unittest.TestCase):
         bundle = catalog.load_catalog(CATALOG_ROOT)
         validated = pin.version(bundle.docs["native-contract"])
         self.assertEqual(validated, "2.1.311")
-        floors = {"opus": "2.1.280", "fable": "2.1.257", "sonnet": "2.1.286"}
+        # haiku: the pin its qualification ran on (the 2.2.1 twin on Claude
+        # Code 2.1.310; the client documents its haiku alias from 2.1.293).
+        floors = {"opus": "2.1.280", "fable": "2.1.257", "sonnet": "2.1.286", "haiku": "2.1.310"}
         # The OpenRouter lines record the pin their evidence ran on.
         floors.update({key: "2.1.286" for key, line in bundle.lines.items()
                        if line["provider"] in catalog.AGGREGATOR_PROVIDERS})
@@ -2136,6 +2175,23 @@ class DeepSeekProductionModelsTests(unittest.TestCase):
         # No dated callable id is documented by DeepSeek.
         self.assertNotIn("deepseek-flash-0910", json.dumps(flash))
         self.assertNotIn("deepseek-v4.1-flash", json.dumps(flash))
+        # The alias moved in place to the 1017 snapshot (catalog 42 text):
+        # thinking is on by default and can be turned off upstream.
+        self.assertIn("currently V4.1-Flash-1017", flash["routing_note"])
+        self.assertIn("default-on, disableable", flash["routing_note"])
+        self.assertNotIn("always on", flash["routing_note"])
+        self.assertIn("DeepSeek-V4.1-Flash-1017, released 2026-10-17", flash["context"]["qualification"])
+        self.assertNotIn("deepseek-v4-pro does too", bundle.providers["deepseek"]["support_note"])
+
+    def test_kimi_code_stays_on_its_alias(self) -> None:
+        # kimi-for-coding still serves K2.8 Preview (2026-10-27); K3.1 Pro is
+        # the separate Coding-route id k3.1-pro, added by hand.
+        bundle = catalog.load_catalog(CATALOG_ROOT)
+        kimi = bundle.lines["kimi-code"]
+        self.assertEqual((kimi["wire_model"], kimi["generation"]), ("kimi-for-coding", "2.8"))
+        self.assertIn("still serves K2.8 Preview", kimi["context"]["qualification"])
+        self.assertIn("k3.1-pro", kimi["context"]["qualification"])
+        self.assertIn("K2.8 Preview on 2026-10-27", kimi["routing_note"])
 
     def test_pro_is_retired_without_successor(self) -> None:
         # Since 2026-09-14 deepseek-v4-pro serves V4.1-Flash, which the
@@ -2234,12 +2290,22 @@ class RetiredDirectLinesTests(unittest.TestCase):
                 for line in leads:
                     self.assertLessEqual(line["context"]["validated_tokens"], line["context"]["provider_tokens"])
 
-    def test_openrouter_declares_high_and_xhigh_output_contracts(self) -> None:
+    def test_openrouter_declares_the_five_output_contracts(self) -> None:
+        # Catalog 42: low, medium and max join high and xhigh (a listed
+        # model's own levels, e.g. MiniMax M3.1 Flash's default max). The
+        # note says an accepted level is not a distinct depth: OpenRouter
+        # maps a level a model lacks to one it has.
         bundle = catalog.load_catalog(CATALOG_ROOT)
+        provider = bundle.providers["openrouter"]
         self.assertEqual(
-            set(bundle.providers["openrouter"]["payload_contracts"]),
-            {"output-config-high", "output-config-xhigh"},
+            provider["payload_contracts"],
+            [f"output-config-{level}" for level in ("low", "medium", "high", "xhigh", "max")],
         )
+        from charmer import render
+
+        self.assertLessEqual(set(provider["payload_contracts"]),
+                             set(render.ADAPTER_PAYLOAD_CONTRACTS[provider["adapter"]]))
+        self.assertIn("not a distinct reasoning depth", provider["support_note"])
 
 
 class AstraAndMuseModelTests(unittest.TestCase):
@@ -2280,13 +2346,20 @@ class AstraAndMuseModelTests(unittest.TestCase):
         self.assertNotIn("qwen38", context["qualification"])
 
     def test_muse_pair_shape(self) -> None:
+        # Catalog 42: muse moved from Muse Spark 1.3 to Muse Wonder 1.0
+        # (Meta publishes no unversioned Wonder alias) with generation-tagged
+        # selectors; muse@1.3 carries the Spark wire and selectors for running
+        # sessions. muse-contributor stays on Spark 1.3: Meta's Model API
+        # answered 404 for muse-wonder-1.0-contributor (2026-10-27 twin).
         bundle = catalog.load_catalog(CATALOG_ROOT)
         muse = bundle.lines["muse"]
         contrib = bundle.lines["muse-contributor"]
-        self.assertEqual(muse["wire_model"], "muse-spark-1.3")
-        self.assertEqual(contrib["wire_model"], "muse-spark-1.3-contributor")
-        levels = ["low", "medium", "high", "xhigh"]  # Meta documents no max
-        for key, model in (("muse", muse), ("muse-contributor", contrib)):
+        self.assertEqual((muse["wire_model"], muse["generation"], muse["display"]),
+                         ("muse-wonder-1.0", "1.0", "Muse Wonder 1.0"))
+        self.assertEqual((contrib["wire_model"], contrib["generation"], contrib["display"]),
+                         ("muse-spark-1.3-contributor", "1.3", "Muse Spark 1.3 Contributor"))
+        levels = ["low", "medium", "high", "xhigh"]  # the Messages adapter documents no max
+        for key, model, tag in (("muse", muse, "1-0-"), ("muse-contributor", contrib, "")):
             self.assertEqual(model["provider"], "meta")
             self.assertEqual(model["capabilities"], ["lead", "agents"])
             self.assertEqual(model["context"]["client_tokens"], 1000000)
@@ -2299,20 +2372,33 @@ class AstraAndMuseModelTests(unittest.TestCase):
                 self.assertEqual(
                     model["efforts"][level],
                     {
-                        "selector": f"charmer-{key}-{level}[1m]",
+                        "selector": f"charmer-{key}-{tag}{level}[1m]",
                         "proxy_contract": f"output-config-{level}",
                     },
                 )
+        # The move's measured evidence, and its continuity entry.
+        self.assertIn("Qualified 2026-10-27T14:59:24Z", muse["context"]["qualification"])
+        self.assertIn("Claude Code 2.1.310, CLIProxyAPI 8.0.42", muse["context"]["qualification"])
+        old = bundle.retired["muse@1.3"]
+        self.assertEqual((old["successor"], old["generation"], old["provider"], old["last_wire"]),
+                         ("muse", "1.3", "meta", "muse-spark-1.3"))
+        self.assertEqual(old["selectors"], {f"charmer-muse-{level}[1m]": f"output-config-{level}" for level in levels})
+        self.assertEqual(old["since_catalog"], 42)
+        self.assertNotIn("muse-contributor@1.3", bundle.retired)
+        self.assertIn("answered HTTP 404", contrib["context"]["qualification"])
         self.assertEqual(muse["default_effort"], "xhigh")
         self.assertEqual(contrib["default_effort"], "high")
-        for old, new in (("muse-spark", "muse"), ("muse-spark-contributor", "muse-contributor")):
-            self.assertEqual(bundle.retired[old]["successor"], new)
+        for old_key, new in (("muse-spark", "muse"), ("muse-spark-contributor", "muse-contributor")):
+            self.assertEqual(bundle.retired[old_key]["successor"], new)
+            self.assertEqual(bundle.resolve_key(old_key).key, new)
         # Contributor carries the privacy caveat in both routing surfaces.
-        self.assertIn("improve Meta products", contrib["context"]["qualification"])
-        self.assertIn("train Meta", contrib["routing_note"])
-        self.assertIn("100 RPM", contrib["routing_note"])
+        self.assertIn("Meta may train on the prompts", contrib["context"]["qualification"])
+        self.assertIn("train on prompts", contrib["routing_note"])
+        self.assertIn("150 RPM", contrib["routing_note"])
         self.assertIn("muse tier", contrib["routing_note"])
         self.assertNotIn("muse-spark tier", contrib["routing_note"])
+        # Wonder Full is not on the public Model API: never a shipped wire.
+        self.assertFalse([line for line in bundle.lines.values() if "wonder-full" in line["wire_model"]])
 
     def test_meta_provider_contract_and_bearer_transport(self) -> None:
         bundle = catalog.load_catalog(CATALOG_ROOT)
@@ -2335,6 +2421,8 @@ class AstraAndMuseModelTests(unittest.TestCase):
         )
         self.assertIn("NO max", meta["support_note"])
         self.assertIn("thinking always on", meta["support_note"])
+        self.assertIn("Meta may train on prompts", meta["support_note"])
+        self.assertIn("150 RPM", meta["support_note"])
 
 
 def _retired_entry(**overrides) -> dict:
@@ -2759,6 +2847,8 @@ class ShippedLineDefaultsTests(unittest.TestCase):
             "astra": "high", "sol": "high", "luna": "max",
             "muse": "xhigh", "muse-contributor": "high",
             "deepseek-flash": "high",
+            # Anthropic's documented Haiku default.
+            "haiku": "medium",
         }
         for key, effort in expected.items():
             with self.subTest(line=key):
@@ -3065,3 +3155,207 @@ class SolGenerationTests(unittest.TestCase):
         self.assertEqual(bundle.resolve_key("gpt55").key, key)
         self.assertIn("2026-10-14T19:00:00Z", bundle.retired["gpt55"]["reason"])
         self.assertNotIn(retired_key, bundle.lines)
+
+
+def _shipped_render(bundle):
+    """The shipped catalog's gateway document with every provider's dummy
+    secret and the continuity seed (what an installed catalog serves)."""
+
+    from charmer import continuity, operator, render
+
+    plan = operator.render_plan(bundle.docs, operator.validate_layer(
+        bundle.docs, {}, schemas=operator.load_schemas(SHIPPED_ROOT)), None)
+    document, *_ = render.build_config_document(
+        plan.docs["gateway"], bundle.providers, bundle.lines, home=Path("/fixture/home"),
+        gateway_tokens=("fixture-token",), resolve_secret=lambda _n: "dummy-secret",
+        continuity=continuity.seed_entries(bundle), oauth_overlay=plan.overlay)
+    return document
+
+
+def _routes(document) -> dict[str, set[str]]:
+    """Served alias -> the upstream wires it names (direct, key and OAuth sections)."""
+
+    from charmer import render
+
+    found: dict[str, set[str]] = {}
+    for section in (render.CLAUDE_KEY_SECTION, render.CODEX_KEY_SECTION, "openai-compatibility"):
+        for item in document.get(section) or ():
+            for model in item.get("models") or ():
+                found.setdefault(model.get("alias"), set()).add(model.get("name"))
+    for rows in (document.get("oauth-model-alias") or {}).values():
+        for row in rows:
+            found.setdefault(row["alias"], set()).add(row["name"])
+    return found
+
+
+def _effort_params(document, alias: str) -> list:
+    return sorted(json.dumps(entry["params"], sort_keys=True)
+                  for kind in sorted(document.get("payload", {}))
+                  for entry in document["payload"][kind]
+                  for model in entry["models"] if model["name"] == alias)
+
+
+@uses_shipped_catalog
+class GenerationMoveTests(unittest.TestCase):
+    """Catalog 42 moves the lines hardcoded to a dated model to the newest
+    of their kind on the same key where a measurement supports it: ``muse``
+    to Muse Wonder 1.0, ``or-deepseek`` to the 1017 snapshot (both measured
+    on 2026-10-27). Old scopes keep routing to the old wire through the
+    retired selectors; new compiles and resumes route to the new wire. The
+    held lines (``muse-contributor``, ``or-kimi``) record why."""
+
+    MOVES = {
+        "muse": ("1.3", "muse-spark-1.3", "muse-wonder-1.0"),
+        "or-deepseek": ("4.1", "deepseek/deepseek-v4.1-flash", "deepseek/deepseek-v4.1-flash-1017"),
+    }
+
+    def test_the_held_lines_record_the_measurement(self) -> None:
+        bundle = catalog.load_catalog(SHIPPED_ROOT)
+        held = {"muse-contributor": ("muse-spark-1.3-contributor", "HTTP 404"),
+                "or-kimi": ("moonshotai/kimi-k3", "forced named tool choice was rejected (HTTP 400)")}
+        for key, (wire, needle) in held.items():
+            with self.subTest(line=key):
+                if key in self.MOVES:
+                    continue  # the separable move applied
+                line = bundle.lines[key]
+                self.assertEqual(line["wire_model"], wire)
+                self.assertIn(needle, line["context"]["qualification"])
+                self.assertFalse([retired_key for retired_key in bundle.retired if retired_key.startswith(f"{key}@")])
+
+    def test_the_moves_and_their_continuity_entries(self) -> None:
+        bundle = catalog.load_catalog(SHIPPED_ROOT)
+        for key, (old_generation, old_wire, new_wire) in self.MOVES.items():
+            with self.subTest(line=key):
+                self.assertEqual(GENERATION_TAGGED_LINES[key], old_generation)
+                line, old = bundle.lines[key], bundle.retired[f"{key}@{old_generation}"]
+                self.assertEqual((line["wire_model"], old["last_wire"]), (new_wire, old_wire))
+                self.assertNotEqual(line["generation"], old["generation"])
+                self.assertEqual((old["successor"], old["since_catalog"], old["provider"]), (key, 42, line["provider"]))
+                self.assertEqual(old.get("family"), line.get("family"))
+                self.assertEqual((old["capabilities"], old["roles"]), (line["capabilities"], line["roles"]))
+                tag = line["generation"].replace(".", "-")
+                old_bases = {selector.removesuffix("[1m]") for selector in old["selectors"]}
+                for level, spec in line["efforts"].items():
+                    self.assertEqual(spec["selector"], f"charmer-{key}-{tag}-{level}[1m]")
+                    self.assertNotIn(spec["selector"].removesuffix("[1m]"), old_bases)
+                # Every effort an existing binding could name still resolves.
+                self.assertLessEqual({selector.removesuffix("[1m]").rsplit("-", 1)[1] for selector in old["selectors"]},
+                                     set(line["efforts"]))
+                # Measured text: the twin's pins, never 2.3.0's.
+                self.assertIn("Claude Code 2.1.310, CLIProxyAPI 8.0.42", line["context"]["qualification"])
+                self.assertIn(f"Moved from {old_wire} on 2026-10-27", line["context"]["qualification"])
+                self.assertEqual(line["context"]["validated_tokens"], 200000)
+                self.assertEqual(bundle.resolve_key(f"{key}@{old_generation}").key, key)
+        self.assertEqual(bundle.lines["or-deepseek"]["output"]["declared_tokens"], 393216)
+
+    def test_old_scopes_keep_routing_to_the_old_wire(self) -> None:
+        # A scope compiled before the move names the old selectors (and,
+        # before catalog 39, their earlier names): the continuity seed serves
+        # each on its recorded wire and effort contract; a record resolves it
+        # to the retired generation.
+        from charmer import migrate
+
+        bundle = catalog.load_catalog(SHIPPED_ROOT)
+        document = _shipped_render(bundle)
+        routes = _routes(document)
+        for key, (old_generation, old_wire, _new_wire) in self.MOVES.items():
+            retired_key = f"{key}@{old_generation}"
+            for selector, contract in bundle.retired[retired_key]["selectors"].items():
+                base = selector.removesuffix("[1m]")
+                with self.subTest(selector=selector):
+                    self.assertEqual(routes.get(base), {old_wire})
+                    level = contract.removeprefix("output-config-")
+                    self.assertIn(json.dumps({"output_config.effort": level}, sort_keys=True),
+                                  _effort_params(document, base))
+                    for spelling in (selector, base):
+                        self.assertEqual(bundle.resolve_selector(spelling)[0], retired_key)
+                    # A catalog-41 record of this key meant the old generation.
+                    self.assertEqual(migrate.translate_key(key, selector, 41, bundle), retired_key)
+                    earlier = legacy.LEGACY_SELECTOR_PREFIX + selector.removeprefix("charmer-")
+                    if earlier in bundle.renamed:
+                        self.assertEqual(bundle.resolve_selector(earlier)[0], retired_key)
+
+    def test_new_compiles_route_to_the_new_wire(self) -> None:
+        from charmer import profile, scope, settings
+
+        bundle = catalog.load_catalog(SHIPPED_ROOT)
+        document = _shipped_render(bundle)
+        routes = _routes(document)
+        lcat = profile.LineupCatalog.from_docs(bundle.docs)
+        eff = settings.effective({"version": 1}, provider_ids=lcat.providers, line_keys=lcat.lines)
+        for key, (_old_generation, old_wire, new_wire) in self.MOVES.items():
+            line = bundle.lines[key]
+            for level in line["efforts"]:
+                with self.subTest(line=key, effort=level):
+                    # A lead binding (a fresh launch or a resume: both rebuild
+                    # from key + effort) compiles the new generation's selector.
+                    lineup = profile.resolve(profile.ad_hoc_direct(key, level), lcat, effective=eff, ad_hoc=True)
+                    selector = lineup.lead.binding.selector
+                    self.assertEqual(selector, line["efforts"][level]["selector"])
+                    base = selector.removesuffix("[1m]")
+                    self.assertEqual(routes.get(base), {new_wire})
+                    self.assertNotIn(old_wire, routes.get(base))
+                    self.assertIn(json.dumps({"output_config.effort": level}, sort_keys=True),
+                                  _effort_params(document, base))
+        # The OpenRouter seed's DeepSeek agents compile the 1017 selectors.
+        lineup = profile.resolve(bundle.seed_profiles["openrouter"], lcat, effective=eff)
+        plan = scope.compile_lineup_scope(lineup, lcat, eff, bundle.prompt_bodies, scope.catalog_meta_v2(bundle.docs),
+                                          lineup_generation=1)
+        explorer = lineup.agents["cm-explorer"].binding.selector
+        self.assertEqual(explorer, "charmer-or-deepseek-4-1-1017-high[1m]")
+        self.assertIn(explorer, plan.settings["availableModels"])
+        self.assertEqual(routes.get(explorer.removesuffix("[1m]")), {"deepseek/deepseek-v4.1-flash-1017"})
+
+
+@uses_shipped_catalog
+class HaikuLineTests(unittest.TestCase):
+    """The first-party Haiku 5.5 line (catalog 42): agents only, the Claude
+    account's canonical 1M selector on its own passthrough route."""
+
+    def test_shape_and_evidence(self) -> None:
+        bundle = catalog.load_catalog(SHIPPED_ROOT)
+        haiku = bundle.lines["haiku"]
+        self.assertEqual((haiku["provider"], haiku["wire_model"], haiku["selector"]),
+                         ("anthropic", "claude-haiku-5-5", "claude-haiku-5-5[1m]"))
+        self.assertEqual(haiku["efforts"], ["low", "medium", "high", "xhigh", "max"])
+        self.assertEqual((haiku["default_effort"], haiku["generation"]), ("medium", "5.5"))
+        # Agents only: never a lead, never a reviewer or strong analyst by recommendation.
+        self.assertEqual((haiku["capabilities"], haiku["lead"]), (["agents"], None))
+        self.assertEqual(haiku["roles"], ["cm-explorer", "cm-implementer-light"])
+        context = haiku["context"]
+        self.assertEqual((context["client_tokens"], context["provider_tokens"], context["declared_tokens"]),
+                         (1000000, 1000000, 1000000))
+        self.assertEqual((context["validated_tokens"], context["ordinary_profile"]), (200000, None))
+        # Measured on 2026-10-27 through the 2.2.1 twin: its pins are the floor.
+        self.assertIn("Qualified 2026-10-27T15:00:25Z", context["qualification"])
+        self.assertIn("Claude Code 2.1.310, CLIProxyAPI 8.0.42", context["qualification"])
+        self.assertEqual(haiku["output"]["declared_tokens"], 128000)
+        self.assertEqual(haiku["minimum_tested"], {"claude_code": "2.1.310", "cliproxyapi": "8.0.42"})
+        self.assertIn("not an independent reviewer", haiku["routing_note"])
+        self.assertIn({"fork": True, "name": "claude-haiku-5-5"}, bundle.providers["anthropic"]["passthrough_routes"])
+        # The pinned registry serves the wire statically: no overlay marker, and
+        # the registry's own figures agree with the declaration.
+        self.assertIsNone(haiku["registry_overlay"])
+        registry = catalog.load_pinned_registry(SHIPPED_ROOT / "registry")
+        meta = registry.meta["claude"]["claude-haiku-5-5"]
+        self.assertEqual((meta.context_length, meta.max_completion_tokens), (1000000, 128000))
+        self.assertEqual(meta.thinking_levels, tuple(haiku["efforts"]))
+        # No seed binds it (profile seeds are unchanged).
+        for name, seed in bundle.seed_profiles.items():
+            bound = {seed["lead"]["model"], *(slot["model"] for slot in seed["agents"].values())}
+            self.assertNotIn("haiku", bound, name)
+
+    def test_served_on_its_route_and_offered_to_agents_only(self) -> None:
+        from charmer import profile, scope, settings
+
+        bundle = catalog.load_catalog(SHIPPED_ROOT)
+        routes = _routes(_shipped_render(bundle))
+        self.assertEqual(routes.get("claude-haiku-5-5"), {"claude-haiku-5-5"})
+        lcat = profile.LineupCatalog.from_docs(bundle.docs)
+        eff = settings.effective({"version": 1}, provider_ids=lcat.providers, line_keys=lcat.lines)
+        self.assertIn("claude-haiku-5-5[1m]", scope.agent_set(lcat, eff))
+        lineup = profile.resolve(bundle.seed_profiles["claude"], lcat, effective=eff)
+        fence = scope.compile_fence(lineup, lcat, eff)
+        self.assertNotIn("haiku", {row.key for row in fence.lead_set})
+        with self.assertRaises(Exception):
+            profile.resolve(profile.ad_hoc_direct("haiku", "medium"), lcat, effective=eff, ad_hoc=True)
