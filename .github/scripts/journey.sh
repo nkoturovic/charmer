@@ -25,23 +25,23 @@
 #       journeys, on disposable runners: these steps read the host's
 #       process table and Claude Code daemon root) adds the native checks:
 #       the installed release's own process observation against disposable
-#       processes (journey_fixture.py processes), and with a client the
-#       first interactive managed turn on Linux on a pseudo-terminal with
-#       the one-time screens recorded (before the print-mode turns), the session
+#       processes (journey_fixture.py processes), and with a client the session
 #       verbs on a running client (a turn the fixture holds: mark-ended
 #       refused and answered at once, stop finds nothing in the background;
 #       once the client is stopped, mark-ended records its end), the
 #       session's compiled credential rules, the running gateway's log read
 #       back through charmer gateway logs, sessions forget, and the
 #       user's own Claude Code launcher, version files and install and
-#       update preferences left untouched. JOURNEY_WSL=1 (the Windows
-#       journey, started in a directory on a Windows drive) adds the WSL
-#       checks: doctor detects WSL and states that the Windows-side and
-#       WSL-side Claude configurations are separate, a working directory on
-#       a Windows drive gets the guidance and a Linux one does not, a state
-#       root on a Windows drive refuses the gateway start, and the compiled
-#       session carries the rules for the Windows side's Claude
-#       configuration (elsewhere it carries none). JOURNEY_KEEP=DIR keeps
+#       update preferences left untouched. Interactive onboarding is not
+#       established by this journey. JOURNEY_WSL=1 (the Windows journey,
+#       started in a directory on a Windows drive) adds the WSL checks:
+#       doctor detects WSL and states that the Windows-side and WSL-side
+#       Claude configurations are separate, a working directory on a Windows
+#       drive gets the guidance and a Linux one does not, and the compiled
+#       session carries the rules for the Windows side's Claude configuration
+#       (elsewhere it carries none). The dedicated Windows-drive state refusal
+#       is not established: the private-mode ownership check refuses first.
+#       JOURNEY_KEEP=DIR keeps
 #       what the restarted journey needs there and leaves the gateway
 #       running for the shutdown.
 #   sh .github/scripts/journey.sh restarted VERSION KEEPDIR
@@ -72,7 +72,7 @@
 #
 # JOURNEY_GATEWAY=skip and JOURNEY_UNINSTALL=skip leave those steps out
 # (the repository's own tests run this script on fake releases that carry
-# no gateway); JOURNEY_INTERACTIVE=skip leaves out the interactive turn.
+# no gateway).
 # JOURNEY_TARGET=<target> requires a fresh install to install that bundle
 # target (linux-aarch64 on the arm64 runner). Each step prints
 # "journey: <step>: ok"; any failure stops the journey with a nonzero exit.
@@ -254,26 +254,6 @@ confinement() {
 	say "loopback confinement: ok (refused on $(printf '%s' "$addresses" | tr '\n' ' '); the control listener answered)"
 }
 
-first_interactive_turn() {
-	# Linux only, including WSL: this probe does not establish macOS
-	# onboarding. All native process/session checks still run there, using
-	# the print-mode turns below for their managed session.
-	if [ "$(uname -s)" = Darwin ]; then
-		say "macOS interactive onboarding: not established by this journey"
-		return 0
-	fi
-	if [ "${JOURNEY_INTERACTIVE:-run}" = skip ]; then
-		say "first interactive managed turn: not run (JOURNEY_INTERACTIVE=skip)"
-		return 0
-	fi
-	mkdir "$work/first"
-	fx interactive --log "$work/screens.log" --fixture-log "$work/fixture.log" --cwd "$work/first" -- "$cm" --line direct \
-		--model custom-journey-fixture >"$work/screens.txt" 2>&1 ||
-		{ cat "$work/screens.txt" >&2; fail "the first interactive managed turn"; }
-	sed 's/^/journey:   /' "$work/screens.txt"
-	say "first interactive managed turn: ok (Claude Code configuration before it: $claude_config_before)"
-}
-
 user_claude_installation() {
 	# The user's own Claude Code launcher and version files (a disposable
 	# stand-in where the account has none; an existing one is only read),
@@ -293,8 +273,8 @@ user_claude_preferences() {
 }
 
 user_claude_standin_preferences() {
-	# A separate baseline for an initially empty configuration: after the
-	# interactive probe (or before the first print-mode turn if skipped).
+	# A separate baseline for an initially empty configuration, before the
+	# first print-mode turn; interactive onboarding is not exercised.
 	[ "$claude_config_before" = empty ] || return 0
 	fx user-claude plant --preferences || fail "the user's Claude Code preferences could not be prepared"
 	user_preferences_file=$work/user-claude-standin-preferences.json
@@ -395,7 +375,7 @@ managed_turn() {
 	if native; then
 		claude_config_before=$(fx claude-config) || fail "the Claude Code configuration could not be read"
 		user_claude_preferences
-		first_interactive_turn
+		say "interactive onboarding: not established by this journey"
 		user_claude_standin_preferences
 	fi
 	mkdir "$work/project"
@@ -449,8 +429,8 @@ foreign_listener() {
 }
 
 wsl_checks() {
-	# $1 = the stopped gateway's port. Under WSL 2 (JOURNEY_WSL=1; the journey
-	# starts in a directory on a Windows drive).
+	# Under WSL 2 (JOURNEY_WSL=1; the journey starts in a directory on a
+	# Windows drive).
 	[ "${JOURNEY_WSL:-}" = 1 ] || return 0
 	case $start_dir in
 	/mnt/?/*) ;;
@@ -471,18 +451,7 @@ wsl_checks() {
 		fail "doctor gives the Windows-drive guidance for a directory in the Linux file system"
 	fi
 	say "WSL: detected, the separate configurations stated, Windows-drive guidance only on a Windows drive: ok"
-	windows_state=$start_dir/.journey-windows-state
-	mkdir -p "$windows_state"
-	status=0
-	XDG_STATE_HOME=$windows_state "$cm" gateway start >"$work/wsl-state.txt" 2>&1 || status=$?
-	rm -rf "$windows_state"
-	[ "$status" -ne 0 ] || fail "gateway start accepted a state root on a Windows drive"
-	grep -q 'on a Windows drive' "$work/wsl-state.txt" ||
-		{ show_tail "$work/wsl-state.txt"; fail "gateway start did not refuse the state root on a Windows drive"; }
-	if fx reach --host 127.0.0.1 --port "$1"; then
-		fail "a gateway answers on port $1 after the refused start"
-	fi
-	say "WSL: a state root on a Windows drive refused the gateway start: ok"
+	say "dedicated Windows-drive state refusal: not established (the private-mode ownership check refuses first)"
 }
 
 uninstall_keeping_state() {

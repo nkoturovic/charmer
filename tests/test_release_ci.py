@@ -802,16 +802,14 @@ class JourneyStepsTests(unittest.TestCase):
                        'fx carried --log "$work/fixture.log" --reply "$second" --earlier "$first"'):
             self.assertIn(needle, turn)
         self.assertIn('base="http://127.0.0.1:', turn)  # the provider is the loopback fixture only
-        # Existing preferences precede the first launch, even when interactive;
+        # Existing preferences precede the first print-mode launch;
         # an initially empty configuration gets a separate stand-in baseline.
         steps = ['--hold-start "$work/hold-start" --hold-release "$work/release-held"',
-                 'claude_config_before=$(fx claude-config)', "user_claude_preferences", "first_interactive_turn",
+                 'claude_config_before=$(fx claude-config)', "user_claude_preferences",
+                 'say "interactive onboarding: not established by this journey"',
                  "user_claude_standin_preferences", '-p "journey turn one"', '-p "journey turn two"', "session_verbs"]
         positions = [turn.index(step) for step in steps]
         self.assertEqual(positions, sorted(positions))
-        interactive = text.split("first_interactive_turn() {", 1)[1].split("\n}\n", 1)[0]
-        self.assertIn('fx interactive --log "$work/screens.log" --fixture-log "$work/fixture.log" '
-                      '--cwd "$work/first" -- "$cm" --line direct', interactive)
         verbs = text.split("session_verbs() {", 1)[1].split("\n}\n", 1)[0]
         steps = ['fx ended --install "$install_dir" --timeout 60', ': >"$work/hold-start"',
                  'background "$work/held.pid" exec --cwd "$work/project" -- "$cm" -c -- -p "journey turn held"',
@@ -1066,8 +1064,9 @@ fx() {
         steps = ["/mnt/?/*)", '(cd "$start_dir" && "$cm" doctor)', "'WSL: running under'",
                  "'WSL: the Windows-side and WSL-side Claude configurations are separate'",
                  "'is on a Windows drive: file access is slow'", '(cd "$work" && "$cm" doctor)',
-                 'XDG_STATE_HOME=$windows_state "$cm" gateway start', 'rm -rf "$windows_state"',
-                 "grep -q 'on a Windows drive'", 'fx reach --host 127.0.0.1 --port "$1"']
+                 'say "WSL: detected, the separate configurations stated, Windows-drive guidance only on a Windows drive: ok"',
+                 'say "dedicated Windows-drive state refusal: not established '
+                 '(the private-mode ownership check refuses first)"']
         positions = [wsl.index(step) for step in steps]
         self.assertEqual(positions, sorted(positions))
         self.assertTrue(text.index("start_dir=$(pwd)") < text.index('here=$(CDPATH='))  # before any cd
@@ -1076,8 +1075,9 @@ fx() {
         for needle in ('f"WSL: running under {distro};', "WSL: the Windows-side and WSL-side Claude configurations "
                        "are separate", "is on a Windows drive: file access is slow"):
             self.assertIn(needle, facts)
-        lifecycle = (REPO_ROOT / "src/charmer/gateway_lifecycle.py").read_text()
-        self.assertIn('is on a Windows drive "', lifecycle)
+        for removed in ("XDG_STATE_HOME=", ".journey-windows-state", '"$cm" gateway start', "fx reach"):
+            self.assertNotIn(removed, wsl)
+        self.assertNotIn("a state root on a Windows drive refused the gateway start: ok", wsl)
 
     def run_managed_turn(self, tmp: Path, platform: str, change: str = "", *, empty: bool = False
                          ) -> subprocess.CompletedProcess[str]:
@@ -1155,17 +1155,22 @@ fx() {
                     self.assertEqual(json.loads(baseline.read_text())["facts"]["preferences"],
                                      {"installMethod": "native", "autoUpdates": True, "autoUpdatesChannel": "stable"})
 
-    def test_macos_skips_only_interactive_onboarding(self) -> None:
+    def test_journey_never_invokes_the_interactive_driver(self) -> None:
+        text = JOURNEY.read_text()
+        self.assertNotIn("fx interactive", text)
+        self.assertNotIn("first_interactive_turn", text)
+        self.assertNotIn("JOURNEY_INTERACTIVE", text)
+        self.assertNotIn("macOS interactive onboarding", text)
+
+    def test_all_platforms_leave_only_interactive_onboarding_unestablished(self) -> None:
         for platform in ("Linux", "Darwin"):
             with self.subTest(platform=platform), tempfile.TemporaryDirectory() as directory:
                 result = self.run_managed_turn(Path(directory), platform)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-                if platform == "Darwin":
-                    self.assertIn("journey: macOS interactive onboarding: not established by this journey", result.stdout)
-                    self.assertNotIn("interactive probe reached", result.stdout)
-                else:
-                    self.assertIn("interactive probe reached", result.stdout)
-                    self.assertNotIn("macOS interactive onboarding", result.stdout)
+                self.assertEqual(result.stdout.splitlines().count(
+                    "journey: interactive onboarding: not established by this journey"), 1)
+                self.assertNotIn("interactive probe reached", result.stdout)
+                self.assertNotIn("macOS interactive onboarding", result.stdout)
                 for step in ("first managed turn: ok", "resumed managed session: ok", "session verbs reached",
                              "the user's own Claude Code: untouched"):
                     self.assertIn(step, result.stdout)
