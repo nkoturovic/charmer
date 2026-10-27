@@ -102,7 +102,7 @@ RETAINED_SELECTOR_BASES = frozenset(FROZEN_2X_SELECTORS)
 # Gateway-effort lines that moved to a new generation on their key: their
 # selectors carry the generation (``<prefix><key>-<generation>-<effort>``)
 # and the previous generation's selectors live on under ``<key>@<old>``.
-GENERATION_TAGGED_LINES = {"sol": "6", "muse": "1.3", "or-deepseek": "4.1"}
+GENERATION_TAGGED_LINES = {"sol": "6", "muse": "1.3", "or-deepseek": "4.1", "or-kimi": "3"}
 CODEX_SELECTOR_PREFIX = "gpt-multi-"
 CLAUDE_SELECTOR_PREFIX = "charmer-"
 REMOVED_PATTERNS = (
@@ -3199,15 +3199,27 @@ def _effort_params(document, alias: str) -> list:
 class GenerationMoveTests(unittest.TestCase):
     """Catalog 42 moves the lines hardcoded to a dated model to the newest
     of their kind on the same key where a measurement supports it: ``muse``
-    to Muse Wonder 1.0, ``or-deepseek`` to the 1017 snapshot (both measured
-    on 2026-10-27). Old scopes keep routing to the old wire through the
-    retired selectors; new compiles and resumes route to the new wire. The
-    held lines (``muse-contributor``, ``or-kimi``) record why."""
+    to Muse Wonder 1.0, ``or-deepseek`` to the 1017 snapshot, ``or-kimi``
+    to Kimi K3.1 Pro (all measured on 2026-10-27). Old scopes keep routing
+    to the old wire through the retired selectors; new compiles and resumes
+    route to the new wire. The held line (``muse-contributor``) records why."""
 
     MOVES = {
         "muse": ("1.3", "muse-spark-1.3", "muse-wonder-1.0"),
         "or-deepseek": ("4.1", "deepseek/deepseek-v4.1-flash", "deepseek/deepseek-v4.1-flash-1017"),
+        "or-kimi": ("3", "moonshotai/kimi-k3", "moonshotai/kimi-k3.1-pro"),
     }
+
+    def test_or_kimi_keeps_xhigh_and_records_the_tool_choice(self) -> None:
+        bundle = catalog.load_catalog(SHIPPED_ROOT)
+        line = bundle.lines["or-kimi"]
+        # The listing's low/high/max plus xhigh for existing bindings.
+        self.assertEqual(sorted(line["efforts"]), ["high", "low", "max", "xhigh"])
+        text = line["context"]["qualification"]
+        self.assertIn("automatic tool choice passed; forced named tool choice rejected (HTTP 400)", text)
+        self.assertIn("low and max stay contract-level only", text)
+        self.assertIn("xhigh stays for existing bindings", text)
+        self.assertIn("automatic tool choice only", line["routing_note"])
 
     def test_the_held_lines_record_the_measurement(self) -> None:
         bundle = catalog.load_catalog(SHIPPED_ROOT)

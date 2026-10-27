@@ -381,6 +381,26 @@
       "since_catalog": 42,
       "successor": "or-deepseek"
     },
+    "or-kimi@3": {
+      "capabilities": [
+        "lead",
+        "agents"
+      ],
+      "context_tokens": 1000000,
+      "display": "Kimi K3 · OpenRouter",
+      "family": "moonshot",
+      "generation": "3",
+      "last_wire": "moonshotai/kimi-k3",
+      "provider": "openrouter",
+      "reason": "OpenRouter Kimi move: the or-kimi line moved to Kimi K3.1 Pro on 2026-10-27; Kimi K3 aliases stay on their recorded wire for running sessions; resume resolves or-kimi to the current one.",
+      "roles": "all",
+      "selectors": {
+        "charmer-or-kimi-high[1m]": "output-config-high",
+        "charmer-or-kimi-xhigh[1m]": "output-config-xhigh"
+      },
+      "since_catalog": 42,
+      "successor": "or-kimi"
+    },
     "qwen-flash-next": {
       "capabilities": [
         "lead"
