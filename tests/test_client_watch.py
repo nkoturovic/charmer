@@ -21,11 +21,15 @@ reproduces on the pin.
   between two turns.
 * ``watch-scratchpad``: whether a session's scratchpad directory remains
   after the session ends (headless and terminal).
-* ``watch-mcp-large``: two parallel calls of one MCP tool whose results are
-  each too large to stay inline: whether each call gets its own saved result.
+* ``watch-mcp-large``: four parallel calls of one MCP tool whose results are
+  each too large to stay inline, in three trials: whether each call gets its
+  own saved result. A trial counts only when every call returned
+  successfully and each result names one saved file inside the fixture, read
+  for the markers.
 * ``watch-bash-queue``: many workflow agents at once, each running one
-  ``Bash`` command, with hooks on the events charmer compiles: how long each
-  command waits for its result.
+  ``Bash`` command, in a fixture-only managed session whose compiled
+  lifecycle hooks run charmer's shim and launcher (every launcher run is
+  logged and must succeed): how long each command waits for its result.
 * ``watch-teams``: whether a session offers agent teams at all (the
   ``Agent`` tool's parameters and a ``ToolSearch`` for the team tools).
 
@@ -38,8 +42,12 @@ so a client change shows as a failure to requalify.
 from __future__ import annotations
 
 import json
+import os
 import re
+import shlex
 import subprocess
+import sys
+import tempfile
 import threading
 import time
 import unittest
@@ -47,12 +55,15 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from charmer import catalog, compiler, probe, state, strict_json
+from charmer import catalog, cli, compiler, probe, profile, scope, state, strict_json
+from charmer import settings as settings_mod
 from charmer.probe import ProbeError
 
+import _v3
 import test_client_agents as agents
 import test_client_gateway_fallbacks as fallbacks
-from _layout import RESOURCES_ROOT
+from _catalog import FIXTURE_ROOT, uses_shipped_catalog
+from _layout import REPO_ROOT, RESOURCES_ROOT
 
 _SHIPPED = catalog.load_catalog(RESOURCES_ROOT)
 _FAMILY = compiler.family_default_env(
@@ -479,8 +490,15 @@ class ScratchpadWatchProbe(fallbacks._GatedCase):
 
 _MCP_SERVER = "wfx"
 _MCP_TOOL = f"mcp__{_MCP_SERVER}__big"
-_PARTS = ("one", "two")
+# Four parallel calls per trial: with two, results share a saved file in
+# about one trial of ten on both 2.1.310 and 2.1.311; with four, in nearly
+# every trial (measured over 20 trials each).
+_PARTS = ("one", "two", "three", "four")
 _PART_CHARS = 160_000
+_MCP_TRIALS = 3
+# Measured on the pin (re-recorded on a re-pin): parallel results are handed
+# one saved file (2.1.310 the same).
+_MCP_MEASURED = "ML-same-file"
 
 
 def _part_marker(part: str) -> str:
@@ -547,6 +565,10 @@ class _BigMcpHandler(probe._ProviderHandler):
 
 
 _PATH_RE = re.compile(r"(/[^\s\"'`\\)\]]+)")
+# The most paths kept from one result's text (in memory only).
+_PATHS_KEPT = 16
+# How much of a saved file is read for the markers.
+_SAVED_HEAD = 4096
 
 
 class _BigMcpProvider(probe.FakeAnthropicProvider):
@@ -582,7 +604,8 @@ class _BigMcpProvider(probe.FakeAnthropicProvider):
                     "chars": len(text),
                     "own": _part_marker(part) in text,
                     "other": any(_part_marker(other) in text for other in _PARTS if other != part),
-                    "paths": sorted(set(_PATH_RE.findall(text)))[:4],  # in memory only
+                    "error": bool(block.get("is_error")),
+                    "paths": sorted(set(_PATH_RE.findall(text)))[:_PATHS_KEPT],  # in memory only
                 }
         if not self.searched and "ToolSearch" in offered and _MCP_TOOL not in offered:
             self.searched = True
@@ -597,39 +620,147 @@ class _BigMcpProvider(probe.FakeAnthropicProvider):
         return 200, fallbacks._payload(document, [{"type": "text", "text": "PROBE-OK"}], "end_turn", context.ordinal)
 
 
-def mcp_large_class(results: dict[str, dict[str, Any]], files: dict[str, dict[str, bool]]) -> str:
+def saved_files(results: dict[str, dict[str, Any]], root: Path) -> tuple[dict[str, dict[str, Any]], dict[str, int]]:
+    """The saved file each result names, validated: a path that resolves
+    inside the fixture ``root`` to a regular, readable file. A part gets an
+    entry only when its result names exactly one such file: its markers
+    (``own``, ``other``) and its resolved path (``file``, in memory only, for
+    comparison). Also returns how many validated files each result named."""
+
+    base = Path(os.path.realpath(root))
+    files: dict[str, dict[str, Any]] = {}
+    counts: dict[str, int] = {}
+    for part, row in results.items():
+        found: dict[str, str] = {}
+        for named in row.get("paths") or ():
+            resolved = Path(os.path.realpath(named))
+            if base not in resolved.parents or not resolved.is_file():
+                continue
+            try:
+                with resolved.open("r", encoding="utf-8", errors="replace") as handle:
+                    found[str(resolved)] = handle.read(_SAVED_HEAD)
+            except OSError:
+                continue
+        counts[part] = len(found)
+        if len(found) == 1:
+            (path, head), = found.items()
+            files[part] = {"own": _part_marker(part) in head,
+                           "other": any(_part_marker(o) in head for o in _PARTS if o != part), "file": path}
+    return files, counts
+
+
+def mcp_large_class(results: dict[str, dict[str, Any]], files: dict[str, dict[str, Any]]) -> str:
+    """One trial: every call must have returned successfully and been saved
+    (each result naming one validated file, :func:`saved_files`) before a
+    class is chosen; missing, failed or unreadable evidence is inconclusive."""
+
     if set(results) != set(_PARTS):
-        raise fallbacks._Inconclusive(f"the two results did not both return ({sorted(results)})")
-    if all(row["chars"] >= _PART_CHARS // 2 for row in results.values()):
-        raise fallbacks._Inconclusive("both results stayed inline: the size limit was not reached")
-    paths = [tuple(row["paths"]) for row in results.values()]
-    if paths[0] and paths[0] == paths[1]:
+        raise fallbacks._Inconclusive(f"not every result returned ({sorted(results)} of {list(_PARTS)})")
+    failed = sorted(part for part, row in results.items() if row.get("error"))
+    if failed:
+        raise fallbacks._Inconclusive(f"the call(s) {failed} returned an error result")
+    inline = sorted(part for part, row in results.items() if row["chars"] >= _PART_CHARS // 2)
+    if inline:
+        raise fallbacks._Inconclusive(f"the result(s) {inline} stayed inline: the size limit was not reached")
+    unsaved = sorted(set(_PARTS) - set(files))
+    if unsaved:
+        raise fallbacks._Inconclusive(f"no validated saved file for {unsaved}")
+    if len({file["file"] for file in files.values()}) < len(_PARTS):
         return "ML-same-file"
     if any(row["other"] and not row["own"] for row in results.values()):
         return "ML-other-result"
-    if any(not file["own"] or file["other"] for file in files.values()):
+    if any(file["other"] for file in files.values()):
         return "ML-other-result"
+    unmarked = sorted(part for part, file in files.items() if not file["own"])
+    if unmarked:
+        raise fallbacks._Inconclusive(f"the saved file for {unmarked} holds neither call's answer")
     return "ML-own-results"
 
 
+def mcp_large_verdict(trials: list[str]) -> str:
+    """Over the trials: the first class other than own results, else own
+    results (every trial's evidence already validated)."""
+
+    if len(trials) != _MCP_TRIALS:
+        raise fallbacks._Inconclusive(f"{len(trials)} of {_MCP_TRIALS} trials completed")
+    return next((observed for observed in trials if observed != "ML-own-results"), "ML-own-results")
+
+
 class McpLargeVerdictTests(unittest.TestCase):
+    OWN = {part: {"chars": 900, "own": False, "other": False, "error": False, "paths": [f"/x/{part}"]}
+           for part in _PARTS}
+    FILES = {part: {"own": True, "other": False, "file": f"/x/{part}"} for part in _PARTS}
+
     def test_classes(self) -> None:
-        own = {"one": {"chars": 900, "own": True, "other": False, "paths": ["/x/a"]},
-               "two": {"chars": 900, "own": True, "other": False, "paths": ["/x/b"]}}
-        files = {"one": {"own": True, "other": False}, "two": {"own": True, "other": False}}
+        own, files = self.OWN, self.FILES
         self.assertEqual(mcp_large_class(own, files), "ML-own-results")
-        same = {part: {**row, "paths": ["/x/a"]} for part, row in own.items()}
-        self.assertEqual(mcp_large_class(same, files), "ML-same-file")
-        self.assertEqual(mcp_large_class(own, {**files, "two": {"own": False, "other": True}}), "ML-other-result")
+        shared = {**files, "two": {"own": False, "other": True, "file": "/x/one"}}
+        self.assertEqual(mcp_large_class(own, shared), "ML-same-file")
+        crossed = {**files, "two": {"own": False, "other": True, "file": "/x/two"}}
+        self.assertEqual(mcp_large_class(own, crossed), "ML-other-result")
         with self.assertRaises(fallbacks._Inconclusive):
             mcp_large_class({part: {**row, "chars": _PART_CHARS} for part, row in own.items()}, files)
+
+    def test_trials(self) -> None:
+        self.assertEqual(mcp_large_verdict(["ML-own-results"] * _MCP_TRIALS), "ML-own-results")
+        self.assertEqual(mcp_large_verdict(["ML-own-results"] * (_MCP_TRIALS - 1) + ["ML-same-file"]),
+                         "ML-same-file")
+        with self.assertRaises(fallbacks._Inconclusive):
+            mcp_large_verdict(["ML-own-results"] * (_MCP_TRIALS - 1))
+
+    def test_short_error_results_without_files_are_inconclusive(self) -> None:
+        errors = {part: {"chars": 40, "own": False, "other": False, "error": True, "paths": []} for part in _PARTS}
+        with self.assertRaises(fallbacks._Inconclusive):
+            mcp_large_class(errors, {})
+
+    def test_named_files_that_do_not_exist_are_inconclusive(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            named = {part: {**row, "paths": [str(root / f"missing-{part}.txt")]} for part, row in self.OWN.items()}
+            files, counts = saved_files(named, root)
+            self.assertEqual((files, counts), ({}, {part: 0 for part in _PARTS}))
+            with self.assertRaises(fallbacks._Inconclusive):
+                mcp_large_class(named, files)
+
+    def test_one_validated_file_is_inconclusive(self) -> None:
+        with tempfile.TemporaryDirectory() as directory, tempfile.TemporaryDirectory() as outside:
+            root = Path(directory)
+            (root / "one.txt").write_text(_part_marker("one") + " saved", encoding="utf-8")
+            # Every other result names a file outside the fixture (by a link
+            # inside it): never read, never counted.
+            named = {"one": {**self.OWN["one"], "paths": [str(root / "one.txt")]}}
+            for part in _PARTS[1:]:
+                (Path(outside) / f"{part}.txt").write_text(_part_marker(part) + " saved", encoding="utf-8")
+                (root / f"{part}.txt").symlink_to(Path(outside) / f"{part}.txt")
+                named[part] = {**self.OWN[part], "paths": [str(root / f"{part}.txt")]}
+            files, counts = saved_files(named, root)
+            self.assertEqual(sorted(files), ["one"])
+            self.assertEqual(counts, {"one": 1, **{part: 0 for part in _PARTS[1:]}})
+            with self.assertRaises(fallbacks._Inconclusive):
+                mcp_large_class(named, files)
+
+    def test_saved_files_carry_their_markers(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for part in _PARTS:
+                (root / f"{part}.txt").write_text(_part_marker(part) + " saved", encoding="utf-8")
+            named = {part: {**row, "paths": [str(root), str(root / f"{part}.txt")]} for part, row in self.OWN.items()}
+            files, counts = saved_files(named, root)
+            self.assertEqual(counts, {part: 1 for part in _PARTS})
+            self.assertEqual(mcp_large_class(named, files), "ML-own-results")
+            (root / "two.txt").write_text("nothing recognisable", encoding="utf-8")
+            with self.assertRaises(fallbacks._Inconclusive):
+                mcp_large_class(named, saved_files(named, root)[0])
+            # Two results naming one file that holds one call's answer.
+            named["two"] = {**named["two"], "paths": [str(root / "one.txt")]}
+            self.assertEqual(mcp_large_class(named, saved_files(named, root)[0]), "ML-same-file")
 
 
 class McpLargeWatchProbe(fallbacks._GatedCase):
     probe_id = "watch-mcp-large"
 
-    def test_parallel_large_results_keep_their_own_files(self) -> None:
-        def run() -> tuple[dict[str, Any], dict[str, Any], probe.ProbeFixture]:
+    def test_parallel_large_results_and_their_saved_files(self) -> None:
+        def trial() -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
             fixture = self._fixture()
             provider = _BigMcpProvider()
             with provider:
@@ -646,30 +777,32 @@ class McpLargeWatchProbe(fallbacks._GatedCase):
                     environ=self.environ)
             if result.timed_out or result.returncode != 0:
                 raise fallbacks._Inconclusive(f"the MCP run did not complete (rc={result.returncode})")
-            files: dict[str, dict[str, bool]] = {}
-            for part, row in provider.results.items():
-                for named in row["paths"]:
-                    candidate = Path(named)
-                    if fixture.root in candidate.parents and candidate.is_file():
-                        head = candidate.read_text(encoding="utf-8", errors="replace")[:4096]
-                        files[part] = {"own": _part_marker(part) in head,
-                                       "other": any(_part_marker(o) in head for o in _PARTS if o != part)}
-                        break
-            return dict(provider.results), files, {"calls": list(provider.calls)}
+            files, counts = saved_files(provider.results, fixture.root)
+            return dict(provider.results), files, {"calls": sorted(provider.calls), "validated": counts}
 
-        results, files, calls = self._guard(run)
-        detail = (" ".join(f"{part}=chars:{row['chars']},own:{row['own']},other:{row['other']},"
-                           f"files:{len(row['paths'])}" for part, row in sorted(results.items()))
-                  + f" saved-files={files} server-calls={calls['calls']} "
-                  f"client={self.gate.version} sha256={self.trusted.sha256[:12]}")
+        rows: list[str] = []
+        trials: list[str] = []
         try:
-            observed_class = mcp_large_class(results, files)
+            for index in range(_MCP_TRIALS):
+                results, files, calls = self._guard(trial)
+                distinct = len({file["file"] for file in files.values()})
+                rows.append(f"trial{index + 1}=[" + " ".join(
+                    f"{part}:chars={row['chars']},error={row['error']},validated={calls['validated'].get(part, 0)},"
+                    f"own-file={files[part]['own'] if part in files else None},"
+                    f"other-file={files[part]['other'] if part in files else None}"
+                    for part, row in sorted(results.items())) + f" distinct-files={distinct}]")
+                trials.append(mcp_large_class(results, files))
+            observed_class = mcp_large_verdict(trials)
         except fallbacks._Inconclusive as exc:
-            type(self).verdict = ("INCONCLUSIVE", "unavailable", f"{exc}; {detail}")
+            type(self).verdict = ("INCONCLUSIVE", "unavailable", f"{exc}; {' '.join(rows)}")
             raise
+        shared = sum(observed != "ML-own-results" for observed in trials)
+        detail = (f"{len(_PARTS)} parallel calls per trial: classes {trials} (results sharing or crossing a file in "
+                  f"{shared} of {_MCP_TRIALS} trials) {' '.join(rows)} "
+                  f"client={self.gate.version} sha256={self.trusted.sha256[:12]}")
         type(self).verdict = ("NOT-REPRODUCED" if observed_class == "ML-own-results" else "REPRODUCED",
                               observed_class, detail)
-        self.assertEqual(observed_class, "ML-own-results", detail)
+        self.assertEqual(observed_class, _MCP_MEASURED, detail)
 
 
 # ---------------------------------------------------------- the Bash queue
@@ -682,12 +815,14 @@ _COMPILED_EVENTS = ("SessionStart", "UserPromptSubmit", "PreModelSwitch", "PostM
 
 class _QueueProvider(probe.FakeAnthropicProvider):
     """The lead runs one workflow of ``_QUEUE_AGENTS`` parallel agents; each
-    agent runs ``Bash`` once (``true``); the wait for each result is kept."""
+    agent runs ``Bash`` once (``true``); the wait for each result is kept, and
+    whether the lead's request carried the session-start lineup notice."""
 
     def __init__(self) -> None:
         super().__init__(responder=self)
         self.lock = threading.Lock()
         self.forced = False
+        self.notice = False
         self.sent: dict[str, float] = {}
         self.waits: dict[str, float] = {}
 
@@ -698,6 +833,8 @@ class _QueueProvider(probe.FakeAnthropicProvider):
         text = json.dumps(document.get("messages"))
         found = [marker for marker in _QUEUE_MARKERS if marker in text]
         with self.lock:
+            if "Workflow" in offered and _QUEUE_NOTICE in text:
+                self.notice = True
             if "Workflow" in offered and not self.forced:
                 self.forced = True
                 calls = ", ".join(f"agent('Reply {marker}', {{label: 'q{index}'}})"
@@ -718,40 +855,191 @@ class _QueueProvider(probe.FakeAnthropicProvider):
         return 200, fallbacks._payload(document, [{"type": "text", "text": "PROBE-OK"}], "end_turn", context.ordinal)
 
 
+# charmer's launcher as the compiled hooks reach it: the fixture-built
+# protocol-3 shim (under the fixture's own state root) runs this wrapper,
+# which runs the checkout's launcher on the fixture state and appends the
+# event, its exit status and its duration (ms) to a fixture log.
+_HOOK_WRAPPER = """#!/bin/sh
+CHARMER_HOOK_COMMAND={wrapper}
+export CHARMER_HOOK_COMMAND
+PYTHONPATH={src}
+export PYTHONPATH
+started=$(date +%s%N)
+{python} {launcher} "$@"
+status=$?
+ended=$(date +%s%N)
+printf '%s %s %s\\n' "${{2-}}" "$status" "$(( (ended - started) / 1000000 ))" >> {log}
+exit "$status"
+"""
+_QUEUE_GENERATION = 4243
+# The head of the lineup notice the SessionStart hook gives the lead.
+_QUEUE_NOTICE = f"lineup_generation {_QUEUE_GENERATION}]"
+
+
+def managed_hook_scope(fixture: probe.ProbeFixture) -> dict[str, Any]:
+    """A fixture-only managed session for the compiled lifecycle hooks: the
+    v3 record (built from the package catalog the hook's launcher loads) and
+    the v2 scope (managed compile of the fixture seed ``balanced``) under the
+    fixture's state root, the protocol-3 shim there, and the compiled hooks
+    naming it (``session-event`` with the managed id, launch epoch and hook
+    protocol). Nothing outside the fixture is read or written."""
+
+    state.ensure_private_dir(fixture.xdg_state_home)
+    state_root = state.ensure_private_dir(fixture.xdg_state_home / "charmer")
+    log = fixture.root / "launcher-events.log"
+    wrapper = fixture.root / "charmer-wrapper"
+    wrapper.write_text(_HOOK_WRAPPER.format(
+        log=shlex.quote(str(log)), wrapper=shlex.quote(str(wrapper.resolve())),
+        src=shlex.quote(str(REPO_ROOT / "src")), python=shlex.quote(sys.executable),
+        launcher=shlex.quote(str(REPO_ROOT / "bin" / "charmer"))), encoding="utf-8")
+    wrapper.chmod(0o700)
+    resolved = str(wrapper.resolve())
+    shim = scope.hook_shim_v3_path(state_root)
+    state.ensure_private_dir(shim.parent)
+    state.atomic_write(shim, scope.hook_shim_v3_text(state_root, resolved))
+    shim.chmod(0o700)
+    environ = fixture.environ()
+    environ["CHARMER_HOOK_COMMAND"] = resolved
+    runtime = cli.Runtime(asset_root=RESOURCES_ROOT, environ=environ, cwd=fixture.project_dir,
+                          allow_state_writes=False)
+    if runtime.session_store.root != state_root:
+        raise fallbacks._Inconclusive("the hook's state root is not the fixture's")
+    managed = str(uuid.uuid4())
+    document = _v3.v1_projection(runtime.catalog.seed_profiles["balanced"],
+                                 _v3.v1_models_view(runtime.catalog.docs)["models"])
+    record = _v3.make_record(
+        managed_id=managed, cwd=str(fixture.project_dir), composition_name=document["name"],
+        snapshot=_v3.snapshot_for(runtime.catalog.docs, document), catalog_version=runtime.catalog_version,
+        catalog_hash=runtime.catalog.bundle_sha256, launcher_version=runtime.launcher_version, mode="durable",
+        scope_generation=1, launch_epoch=1)
+    _v3.save_any(runtime.session_store, record)
+    cat = catalog.load_catalog(FIXTURE_ROOT)
+    lcat = profile.LineupCatalog.from_catalog(cat)
+    eff = settings_mod.effective({"version": 1}, provider_ids=cat.providers, line_keys=cat.lines)
+    lineup = profile.resolve(cat.seed_profiles["balanced"], lcat, effective=eff)
+    plan = scope.compile_lineup_scope(
+        lineup, lcat, eff, cat.prompt_bodies, scope.catalog_meta_v2(cat.docs), lineup_generation=_QUEUE_GENERATION,
+        managed_id=managed, hook_command=str(shim), launch_epoch=1)
+    scope.write_scope(state_root, managed, plan)
+    lifecycle_env = {key: value for key, value in plan.settings["env"].items() if key.startswith("CHARMER_")}
+    return {"managed": managed, "hooks": plan.settings["hooks"], "env": lifecycle_env, "log": log,
+            "shim": shim, "shim_bytes": shim.read_bytes(), "model": record["snapshot"]["lead"]["client_selector"]}
+
+
+def launcher_runs(log: Path) -> list[tuple[str, int, int]]:
+    """``(event, exit status, milliseconds)`` per launcher run the shim made."""
+
+    runs = []
+    text = log.read_text(encoding="utf-8") if log.exists() else ""
+    for row in text.splitlines():
+        parts = row.split()
+        if len(parts) == 3 and parts[1].lstrip("-").isdigit() and parts[2].lstrip("-").isdigit():
+            runs.append((parts[0], int(parts[1]), int(parts[2])))
+    return runs
+
+
+def queue_class(waits: dict[str, float], runs: list[tuple[str, int, int]], notice: bool) -> str:
+    """The Bash queue, counted only when charmer's hooks provably ran: the
+    session's start and end and one ``SubagentStart`` per workflow agent went
+    through the launcher, each with exit status 0, the start hook's lineup
+    notice reached the lead, and every agent got its command's result."""
+
+    events = [event for event, _status, _ms in runs]
+    if "start" not in events or "end" not in events:
+        raise fallbacks._Inconclusive(f"the compiled session hooks did not run through the launcher ({events})")
+    if not notice:
+        raise fallbacks._Inconclusive("the lead never saw the session-start lineup notice")
+    if events.count("subagent") < _QUEUE_AGENTS:
+        raise fallbacks._Inconclusive(f"SubagentStart reached the launcher {events.count('subagent')} times "
+                                      f"for {_QUEUE_AGENTS} agents")
+    failed = sorted({event for event, status, _ms in runs if status != 0})
+    if failed:
+        raise fallbacks._Inconclusive(f"the launcher failed the hook event(s) {failed}")
+    if len(waits) != _QUEUE_AGENTS:
+        raise fallbacks._Inconclusive(f"not every agent ran its command ({len(waits)} of {_QUEUE_AGENTS})")
+    longest = max(waits.values())
+    return "BQ-prompt" if longest < 30 else ("BQ-queued" if longest > 120 else "BQ-slow")
+
+
+class QueueVerdictTests(unittest.TestCase):
+    RUNS = [("start", 0, 400), *[("subagent", 0, 300)] * _QUEUE_AGENTS, ("end", 0, 200)]
+    WAITS = {marker: 0.2 for marker in _QUEUE_MARKERS}
+
+    def test_classes(self) -> None:
+        self.assertEqual(queue_class(self.WAITS, self.RUNS, True), "BQ-prompt")
+        self.assertEqual(queue_class({**self.WAITS, _QUEUE_MARKERS[0]: 480.0}, self.RUNS, True), "BQ-queued")
+        self.assertEqual(queue_class({**self.WAITS, _QUEUE_MARKERS[0]: 60.0}, self.RUNS, True), "BQ-slow")
+
+    def test_the_hooks_must_have_run(self) -> None:
+        for runs in ([], [run for run in self.RUNS if run[0] != "start"], [run for run in self.RUNS if run[0] != "end"],
+                     [run for run in self.RUNS if run[0] != "subagent"] + [("subagent", 0, 300)],
+                     [*self.RUNS[:-1], ("end", 1, 200)]):
+            with self.subTest(runs=[run[:2] for run in runs]), self.assertRaises(fallbacks._Inconclusive):
+                queue_class(self.WAITS, runs, True)
+        with self.assertRaises(fallbacks._Inconclusive):
+            queue_class(self.WAITS, self.RUNS, False)
+
+    def test_every_agent_must_have_its_result(self) -> None:
+        with self.assertRaises(fallbacks._Inconclusive):
+            queue_class(dict(list(self.WAITS.items())[:-1]), self.RUNS, True)
+
+    def test_the_launcher_log_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            log = Path(directory) / "log"
+            self.assertEqual(launcher_runs(log), [])
+            log.write_text("start 0 412\nsubagent 0 300\ngarbage\nend 1 20\n", encoding="utf-8")
+            self.assertEqual(launcher_runs(log), [("start", 0, 412), ("subagent", 0, 300), ("end", 1, 20)])
+
+
+@uses_shipped_catalog
 class BashQueueWatchProbe(fallbacks._GatedCase):
+    """#105012 with charmer's hooks installed: a fixture-only managed session
+    (record and scope under the fixture's state root), the compiled lifecycle
+    hooks running the fixture-built shim and the checkout's launcher."""
+
     probe_id = "watch-bash-queue"
 
     def test_parallel_workflow_agents_get_their_bash_results(self) -> None:
-        def run() -> dict[str, float]:
+        def run() -> tuple[dict[str, float], list[tuple[str, int, int]], bool]:
             fixture = self._fixture()
-            hook = fixture.root / "hook.sh"
-            state.atomic_write(hook, b"#!/bin/sh\ncat >/dev/null\nprintf '{}\\n'\n")
-            hook.chmod(0o700)
-            settings = self._settings(fixture, fallbacks._LEAD, [fallbacks._LEAD])
+            managed = managed_hook_scope(fixture)
+            lead = managed["model"]
+            settings = self._settings(fixture, lead, [lead])
             document = json.loads(settings.read_text(encoding="utf-8"))
-            document["hooks"] = {event: [{"hooks": [{"type": "command", "command": str(hook), "timeout": 5}]}]
-                                 for event in _COMPILED_EVENTS}
+            document["hooks"] = managed["hooks"]
+            document["env"] = {**document["env"], **managed["env"]}
             state.atomic_write(settings, strict_json.canonical_file_bytes(document))
+            if sorted(managed["hooks"]) != sorted(_COMPILED_EVENTS):
+                raise fallbacks._Inconclusive(f"the compile names other hook events ({sorted(managed['hooks'])})")
             provider = _QueueProvider()
             with provider:
                 result = probe.run_native(
-                    ("-p", "client check watch queue", "--settings", str(settings), "--model", fallbacks._LEAD,
-                     "--dangerously-skip-permissions"),
+                    ("-p", "client check watch queue", "--settings", str(settings), "--model", lead,
+                     "--session-id", managed["managed"], "--dangerously-skip-permissions"),
                     trusted=self.trusted, fixture=fixture, provider=provider, timeout=420, allow_real=True,
                     environ=self.environ)
             if result.timed_out:
                 raise fallbacks._Inconclusive(f"the workflow did not finish (waits so far {provider.waits})")
-            if len(provider.waits) != _QUEUE_AGENTS:
-                raise fallbacks._Inconclusive(f"not every agent ran its command ({len(provider.waits)} of "
-                                              f"{_QUEUE_AGENTS}; rc={result.returncode})")
-            return dict(provider.waits)
+            if managed["shim"].read_bytes() != managed["shim_bytes"]:
+                raise fallbacks._Inconclusive("the hook shim changed during the run")
+            return dict(provider.waits), launcher_runs(managed["log"]), provider.notice
 
-        waits = self._guard(run)
-        longest = max(waits.values())
-        observed_class = "BQ-prompt" if longest < 30 else ("BQ-queued" if longest > 120 else "BQ-slow")
-        detail = (f"{_QUEUE_AGENTS} parallel workflow agents, one Bash each, hooks on {','.join(_COMPILED_EVENTS)}: "
-                  f"longest wait {longest:.1f}s, median {sorted(waits.values())[len(waits) // 2]:.1f}s "
-                  f"client={self.gate.version} sha256={self.trusted.sha256[:12]}")
+        waits, runs, notice = self._guard(run)
+        events = [event for event, _status, _ms in runs]
+        counts = {event: events.count(event) for event in sorted(set(events))}
+        slowest = max((ms for _event, _status, ms in runs), default=0)
+        values = sorted(waits.values())
+        detail = (f"{_QUEUE_AGENTS} parallel workflow agents, one Bash each, under charmer's compiled hooks on "
+                  f"{','.join(_COMPILED_EVENTS)} (fixture managed scope and record, fixture-built shim, the "
+                  f"checkout's launcher): launcher runs {counts} statuses {sorted({s for _e, s, _m in runs})} "
+                  f"slowest hook {slowest / 1000:.1f}s, lead notice {'seen' if notice else 'absent'}; "
+                  + (f"longest wait {values[-1]:.1f}s, median {values[len(values) // 2]:.1f}s " if values else "")
+                  + f"client={self.gate.version} sha256={self.trusted.sha256[:12]}")
+        try:
+            observed_class = queue_class(waits, runs, notice)
+        except fallbacks._Inconclusive as exc:
+            type(self).verdict = ("INCONCLUSIVE", "unavailable", f"{exc}; {detail}")
+            raise
         type(self).verdict = ("NOT-REPRODUCED" if observed_class == "BQ-prompt" else
                               "REPRODUCED" if observed_class == "BQ-queued" else "INCONCLUSIVE", observed_class, detail)
         self.assertEqual(observed_class, "BQ-prompt", detail)
