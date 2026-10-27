@@ -83,7 +83,8 @@ installed release's pin.
       recorded PID running the recorded program, refuses it for another
       program and reports it stopped once it exits; the parent walk reaches
       this process; on macOS the executable path ps reports is the
-      program's; the daemon root reads as known (JOURNEY_DAEMON_ROOT names
+      program's; the mount table names the home directory's filesystem;
+      the daemon root reads as known (JOURNEY_DAEMON_ROOT names
       another root, for the repository's tests). With --session, the
       session's runtime id must be in the scan too (its client is running).
   scope-rules --install DIR --session ID --wsl present|absent
@@ -775,6 +776,15 @@ def native_checks(platform: str, scratch: Path, session_runtime: str | None = No
         if paths_seen is None or not any(os.path.realpath(path) == program for path in paths_seen):
             raise CheckError(f"ps does not report the executable path {program} of a running process")
         lines.append("executable paths: ok (ps reports the program's path)")
+
+    # The mount table (macOS: mount's output; Linux: mountinfo) names the
+    # filesystem under the state root's home.
+    from charmer.platform import mounts
+
+    fstype = mounts.filesystem_type(Path.home(), platform=platform)
+    if not fstype:
+        raise CheckError("the mount table names no filesystem for the home directory")
+    lines.append(f"mount table: ok (the home directory is on {fstype})")
 
     # The daemon root reads as known (nothing about its entries is printed).
     # The repository's tests name a root of their own (JOURNEY_DAEMON_ROOT).

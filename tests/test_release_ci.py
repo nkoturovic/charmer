@@ -820,7 +820,7 @@ class JourneyStepsTests(unittest.TestCase):
                  '"$cm" sessions mark-ended "$held_session" >"$work/mark-live.txt"', "grep -q 'is live'",
                  '"$cm" sessions stop "$held_session"', "grep -q 'not live in the background'",
                  'fx scope-rules --install "$install_dir" --session "$held_session" --wsl "$wsl_rules"',
-                 'stop_helper "$work/held.pid"', ': >"$work/release-held"',
+                 'logged=$("$cm" gateway logs -n 20 2>&1)', 'stop_helper "$work/held.pid"', ': >"$work/release-held"',
                  '"$cm" sessions mark-ended "$held_session" >"$work/mark.txt"', "grep -q 'marked ended'",
                  "grep -q 'already ended'"]
         positions = [verbs.index(step) for step in steps]
@@ -1578,7 +1578,8 @@ cat "$STUB/text"; exit "$(cat "$STUB/text.exit")"
         result = self.fixture("processes", "--install", str(self.installed()), env=environ)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual([line.split(": ", 2)[1] for line in result.stdout.splitlines()],
-                         ["session scan", "listener ownership", "process identity", "parent walk", "daemon root"])
+                         ["session scan", "listener ownership", "process identity", "parent walk", "mount table",
+                          "daemon root"])
         self.assertTrue(all(line.startswith("native processes (linux): ") for line in result.stdout.splitlines()))
         # --session: the session's runtime id names a running process.
         managed, runtime = str(uuid.uuid4()), str(uuid.uuid4())
@@ -1610,9 +1611,12 @@ cat "$STUB/text"; exit "$(cat "$STUB/text.exit")"
         in with the answers they give on macOS (the disposable processes and
         the session scan stay real)."""
 
-        from charmer.platform import darwin_process, observation
+        from charmer.platform import darwin_process, mounts, observation
 
         tool = load_tool(JOURNEY_FIXTURE, "journey_fixture")
+        filesystems = mock.patch.object(mounts, "filesystem_type", lambda _path, *, platform: f"apfs ({platform})")
+        filesystems.start()
+        self.addCleanup(filesystems.stop)
 
         def alive(pid: int) -> bool:
             try:
@@ -1647,7 +1651,8 @@ cat "$STUB/text"; exit "$(cat "$STUB/text.exit")"
                 if problem is None:
                     lines = tool.native_checks("darwin", self.tmp)
                     self.assertIn("executable paths: ok (ps reports the program's path)", lines)
-                    self.assertEqual(len(lines), 6)
+                    self.assertIn("mount table: ok (the home directory is on apfs (darwin))", lines)
+                    self.assertEqual(len(lines), 7)
                 else:
                     with self.assertRaisesRegex(tool.CheckError, problem):
                         tool.native_checks("darwin", self.tmp)

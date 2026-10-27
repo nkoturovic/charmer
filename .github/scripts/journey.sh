@@ -31,7 +31,8 @@
 #       verbs on a running client (a turn the fixture holds: mark-ended
 #       refused and answered at once, stop finds nothing in the background;
 #       once the client is stopped, mark-ended records its end), the
-#       session's compiled credential rules, sessions forget, and the
+#       session's compiled credential rules, the running gateway's log read
+#       back through charmer gateway logs, sessions forget, and the
 #       user's own Claude Code launcher, version files and install and
 #       update preferences left untouched. JOURNEY_WSL=1 (the Windows
 #       journey, started in a directory on a Windows drive) adds the WSL
@@ -335,6 +336,11 @@ session_verbs() {
 	rules=$(fx scope-rules --install "$install_dir" --session "$held_session" --wsl "$wsl_rules") ||
 		fail "the session's compiled credential rules"
 	say "compiled credential rules: ok ($rules)"
+	# The running gateway's own log, read back through its reader (the lines
+	# are not printed here).
+	logged=$("$cm" gateway logs -n 20 2>&1) || fail "charmer gateway logs while the gateway runs"
+	[ -n "$logged" ] || fail "charmer gateway logs printed nothing while the gateway runs"
+	say "gateway log: ok ($(printf '%s\n' "$logged" | wc -l | tr -d ' ') line(s) through charmer gateway logs)"
 	# Stopped without its end hook (SIGKILL to its process group): the record
 	# stays open until mark-ended, which now finds no process.
 	stop_helper "$work/held.pid"
