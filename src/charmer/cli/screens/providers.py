@@ -923,7 +923,8 @@ class ConnectActions:
     # -- a picker entry ---------------------------------------------------------
 
     def own(self, provider_id: str) -> Outcome | None:
-        """A provider you added: approve its route, set its key, or its state."""
+        """Finish connecting a provider you added, including its first model
+        when the person left that step for later."""
 
         from charmer.setup import status
 
@@ -932,6 +933,15 @@ class ConnectActions:
             return self.approve(provider_id)
         if conn is not None and conn.state in ("key-missing", "key-invalid"):
             return self.set_key(provider_id)
+        if conn is not None and conn.state == status.CONNECTED:
+            if self._provider_lines(provider_id):
+                return Outcome("Connected — choose your profile in Get started.")
+            refusal = self._read_only() or self._guard("models add")
+            if refusal is not None:
+                return refusal
+            text = self.continue_to_models(provider_id)
+            if text:
+                return Outcome(text)
         return None
 
     def connect(self, entry: Any) -> Outcome | None:
