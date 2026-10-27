@@ -6,16 +6,24 @@ harness; request bodies stay in memory and only bounded facts are printed.
 """
 from __future__ import annotations
 
+import base64
 import copy
+import gzip
+import hashlib
+import http.client
 import json
+import os
 import shutil
+import socket
 import ssl
+import struct
 import subprocess
 import tempfile
 import threading
 import time
 import unittest
 import uuid
+import zlib
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from unittest import mock
@@ -25,8 +33,14 @@ from _catalog import SHIPPED_ROOT
 from _tier import real_binary_gate
 import _gateway_harness as harness
 import test_gateway_hint_client as recognition
+import test_openai_key_route as route
 from test_gateway_contracts import reconstructed_blocks
 from test_client_mcp_policy import _SERVER as MCP_COUNTER_SERVER
+
+try:
+    from compression import zstd
+except ImportError:  # Python before 3.14: the zstd encodings are not exercised
+    zstd = None
 
 BINDING_BETA = "thinking-binding-controls-2026-08-01"
 # Upstream's public, syntactically valid preservedThinkingTestSignature fixture;
@@ -794,7 +808,8 @@ class NativeReplayTests(unittest.TestCase):
                             self.assertFalse(result.timed_out)
                             self.assertTrue(result.daemon and result.daemon.unchanged)
                             self.assertEqual(relay.completion_errors(), [])
-                            self.assertEqual(gateway.version, "8.0.42", "requalify late-terminal evidence for a changed gateway")
+                            # Re-measured on 8.0.44 with client 2.1.310: the same known negative.
+                            self.assertEqual(gateway.version, "8.0.44", "requalify late-terminal evidence for a changed gateway")
                             expected_start = {"stop_reason": None, "stop_sequence": None, "output_tokens": 0}
                             self.assertTrue(all(row["initial_fields"] == expected_start for row in upstream_rows))
                             self.assertTrue(all(row.get("reply_initial_fields") == [expected_start] for row in relay.rows))
@@ -907,5 +922,670 @@ class NativeReplayTests(unittest.TestCase):
                         self.assertFalse(terminal[0].get("is_error"))
                         self.assertGreaterEqual(count[0], 2, "cut stream was silently accepted without recovery")
                         self.assertLessEqual(count[0], 4, "unexpected retry amplification")
+                finally:
+                    gateway.close()
+
+
+# ------------------------------------------------------- 8.0.44 re-pin rows
+# Rendered compression, the Responses WebSocket key retirement, the commentary
+# replay marker, the capacity 429, the caller-scoped MCP alias and discovery
+# (gateway/upstream-review.json records each disposition).
+
+CODEX_ALIAS = "gwtest-codex-reasoning-effort-high"
+CLAUDE_KEY_ALIAS = "gwtest-cc-output-config-high"
+CLIENT_ENCODINGS = "gzip, deflate, br, zstd"  # what the managed client sends
+COMMENTARY_MARKER = "cpa:commentary:v1"
+UPSTREAM_ENCODINGS = ("identity", "gzip", "deflate") + (("zstd",) if zstd else ())
+
+
+def revised(document, **changes):
+    """A finalized document with ``changes`` and a fresh render sentinel."""
+    document = copy.deepcopy(document)
+    if document["openai-compatibility"][-1]["name"] != render.SENTINEL_NAME:
+        raise AssertionError("document does not end with its render sentinel")
+    document["openai-compatibility"].pop()
+    document.update(changes)
+    return render.finalize_document(document)
+
+
+def reload_document(gateway, document, *, key=harness.FIXTURE_GATEWAY_TOKEN, deadline=15.0):
+    """Write ``document`` as the running config (the watcher's hot reload) and
+    wait until the gateway serves its sentinel to a holder of ``key``."""
+    state.atomic_write(gateway.config, render.emit_yaml(document).encode())
+    sentinel = render.document_sentinel(document)
+    headers = {"Authorization": "Bearer " + key, "Host": f"127.0.0.1:{gateway.port}", "User-Agent": "gwtest-harness/1"}
+    ends = time.monotonic() + deadline
+    while time.monotonic() < ends:
+        try:
+            reply = harness.unix_request(gateway.socket, "GET", "/v1/models", headers=headers, timeout=1)
+            if reply.status == 200 and sentinel in {row["id"] for row in reply.json().get("data", [])}:
+                gateway.document = document
+                return
+        except (OSError, ValueError, http.client.HTTPException):
+            pass
+        time.sleep(0.05)
+    raise AssertionError(gateway.diagnostic("the reloaded config was not served"))
+
+
+def compression_unset(*args):
+    """The fixture render with the compression settings left at upstream's
+    defaults: present but empty, so the harness adds nothing and the gateway
+    sees every enabled flag unset (response and WebSocket compression on)."""
+    document, aliases, info = harness.build_document(*args)
+    return revised(document, **{"response-compression": {}, "codex": {}}), aliases, info
+
+
+def encoded(encoding, data):
+    if encoding == "gzip":
+        return gzip.compress(data)
+    if encoding == "deflate":
+        return zlib.compress(data)
+    if encoding == "zstd":
+        return zstd.compress(data)
+    return data
+
+
+class StreamDecoder:
+    """Incremental decoder for a downstream Content-Encoding."""
+    def __init__(self, encoding):
+        self.encoding = encoding or "identity"
+        if self.encoding == "gzip":
+            self.inner = zlib.decompressobj(16 + zlib.MAX_WBITS)
+        elif self.encoding == "deflate":
+            self.inner = zlib.decompressobj()
+        elif self.encoding == "zstd":
+            if zstd is None:
+                raise unittest.SkipTest("zstd decoding needs Python 3.14")
+            self.inner = zstd.ZstdDecompressor()
+        elif self.encoding == "identity":
+            self.inner = None
+        else:
+            raise AssertionError("unexpected downstream encoding " + self.encoding)
+
+    def feed(self, data):
+        return self.inner.decompress(data) if self.inner is not None else data
+
+
+def timed_messages_stream(gateway, body, *, accept=CLIENT_ENCODINGS, timeout=30):
+    """POST /v1/messages and read the SSE reply as it arrives: the status, the
+    headers and (seconds since the request, event name) per decoded event."""
+    connection = probe.UnixHTTPConnection(gateway.socket, timeout=timeout)
+    try:
+        started = time.monotonic()
+        connection.request("POST", "/v1/messages", body=json.dumps(body).encode(),
+                           headers={**gateway.headers(), "Accept-Encoding": accept})
+        response = connection.getresponse()
+        headers = {key.lower(): value for key, value in response.getheaders()}
+        decoder = StreamDecoder(headers.get("content-encoding"))
+        text, arrivals = "", []
+        while True:
+            data = response.read1(65536)
+            if not data:
+                break
+            at = time.monotonic() - started
+            text += decoder.feed(data).decode()
+            while "\n\n" in text:
+                frame, text = text.split("\n\n", 1)
+                kind = next((line[7:] for line in frame.splitlines() if line.startswith("event: ")), None)
+                if kind:
+                    arrivals.append((round(at, 3), kind))
+        return response.status, headers, arrivals
+    finally:
+        connection.close()
+
+
+PING_GAP, PINGS = 0.6, 4
+
+
+def held_stream_reply(_route, body, _raw, _headers):
+    """A Claude stream that holds its content behind ``PINGS`` ping events,
+    one per ``PING_GAP`` seconds (the keepalive shape the client's watchdog
+    relies on), written and flushed one event at a time."""
+    payload = probe._message_payload([{"type": "text", "text": "FIXTURE-HELD"}], model=body["model"],
+                                     stop_reason="end_turn", message_id="msg_v8_held")
+    events = text_tool_events(payload)
+    chunks = [(0.0, harness.sse_frame(*events[0]))]
+    chunks += [(PING_GAP, harness.sse_frame("ping", {"type": "ping"})) for _ in range(PINGS)]
+    chunks.append((PING_GAP, b"".join(harness.sse_frame(kind, value) for kind, value in events[1:])))
+    return 200, "text/event-stream", harness.ChunkedBody(tuple(chunks))
+
+
+class ResponsesSocket:
+    """A minimal RFC 6455 client on the harness's ingress socket; it offers
+    permessage-deflate so the gateway's negotiation is observable."""
+
+    GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+
+    def __init__(self, gateway, key, *, timeout=20):
+        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.sock.settimeout(timeout)
+        self.sock.connect(str(gateway.socket))
+        nonce = base64.b64encode(os.urandom(16)).decode()
+        request = ["GET /v1/responses HTTP/1.1", f"Host: 127.0.0.1:{gateway.port}", "Authorization: Bearer " + key,
+                   "Connection: Upgrade", "Upgrade: websocket", "Sec-WebSocket-Version: 13",
+                   "Sec-WebSocket-Key: " + nonce, "Sec-WebSocket-Extensions: permessage-deflate; client_max_window_bits",
+                   "User-Agent: gwtest-harness/1"]
+        self.sock.sendall(("\r\n".join(request) + "\r\n\r\n").encode())
+        head = b""
+        while b"\r\n\r\n" not in head:
+            chunk = self.sock.recv(4096)
+            if not chunk:
+                raise AssertionError("the gateway closed the WebSocket upgrade")
+            head += chunk
+        head, self.buffer = head.split(b"\r\n\r\n", 1)
+        status, *lines = head.decode("latin-1").split("\r\n")
+        self.status = int(status.split()[1])
+        self.headers = {name.strip().lower(): value.strip()
+                        for name, value in (line.split(":", 1) for line in lines if ":" in line)}
+        accept = base64.b64encode(hashlib.sha1((nonce + self.GUID).encode()).digest()).decode()
+        if self.status == 101 and self.headers.get("sec-websocket-accept") != accept:
+            raise AssertionError("invalid WebSocket upgrade")
+
+    def _read(self, size):
+        while len(self.buffer) < size:
+            chunk = self.sock.recv(65536)
+            if not chunk:
+                raise ConnectionError("the gateway closed the WebSocket")
+            self.buffer += chunk
+        data, self.buffer = self.buffer[:size], self.buffer[size:]
+        return data
+
+    def _send(self, opcode, payload):
+        mask, size = os.urandom(4), len(payload)
+        header = bytes([0x80 | opcode])
+        if size < 126:
+            header += bytes([0x80 | size])
+        elif size < 65536:
+            header += bytes([0x80 | 126]) + struct.pack("!H", size)
+        else:
+            header += bytes([0x80 | 127]) + struct.pack("!Q", size)
+        self.sock.sendall(header + mask + bytes(byte ^ mask[index % 4] for index, byte in enumerate(payload)))
+
+    def receive(self):
+        """The next data message as JSON (pings answered); None on close."""
+        message = b""
+        while True:
+            first, second = self._read(2)
+            if first & 0x70:
+                raise AssertionError("a reserved (compression) bit is set on a server frame")
+            if second & 0x80:
+                raise AssertionError("a server frame is masked")
+            size = second & 0x7F
+            if size == 126:
+                size = struct.unpack("!H", self._read(2))[0]
+            elif size == 127:
+                size = struct.unpack("!Q", self._read(8))[0]
+            payload, opcode = self._read(size), first & 0x0F
+            if opcode == 0x9:
+                self._send(0xA, payload)
+                continue
+            if opcode == 0xA:
+                continue
+            if opcode == 0x8:
+                return None
+            message += payload
+            if first & 0x80:
+                return json.loads(message)
+
+    def turn(self, alias, text):
+        """One response.create turn: its events up to the terminal one."""
+        self._send(0x1, json.dumps({"type": "response.create", "model": alias, "input": [
+            {"type": "message", "role": "user", "content": [{"type": "input_text", "text": text}]}]}).encode())
+        events = []
+        while True:
+            event = self.receive()
+            if event is None:
+                return events + [{"type": "close"}]
+            events.append(event)
+            if event.get("type") in ("response.completed", "response.failed", "response.incomplete", "error"):
+                return events
+
+    def close(self):
+        try:
+            self._send(0x8, struct.pack("!H", 1000))
+        except OSError:
+            pass
+        self.sock.close()
+
+
+class RenderedCompressionTrafficTests(unittest.TestCase):
+    """The rendered compression settings (gateway.json cliproxy_static), against
+    a control that leaves them at upstream's defaults."""
+
+    def test_codex_responses_decode_every_upstream_encoding_and_stay_plain_downstream(self):
+        seen = []
+        def respond(route_path, body, raw, headers):
+            seen.append({"accept_encoding": headers.get("accept-encoding"),
+                         "content_encoding": headers.get("content-encoding")})
+            status, kind, data = harness.fake_reply(route_path, body, raw)
+            marker = next((name for name in UPSTREAM_ENCODINGS if f"gwtest-encoding-{name}".encode() in raw), "identity")
+            if marker == "identity":
+                return status, kind, data
+            return status, kind, encoded(marker, data), {"Content-Encoding": marker}
+
+        gateway = harness.GatewayHarness(upstream_factory=lambda path: harness.FakeUpstream(path, respond))
+        self.addCleanup(gateway.close)
+        self.assertEqual(gateway.document["response-compression"], {"enabled": False})
+        self.assertEqual(gateway.document["codex"], {"websocket-compression": False, "upstream-request-compression": False})
+        rows = []
+        for encoding in UPSTREAM_ENCODINGS:
+            for stream in (False, True):
+                with self.subTest(encoding=encoding, stream=stream):
+                    reply = gateway.request(CODEX_ALIAS, stream=stream, headers={"Accept-Encoding": CLIENT_ENCODINGS},
+                                            body={"system": f"gwtest-encoding-{encoding}"})
+                    self.assertEqual(reply.status, 200, reply.raw[:300])
+                    self.assertEqual(len(reply.hits), 1)
+                    self.assertNotIn("content-encoding", reply.headers)
+                    text = ("".join(block.get("text", "") for block in reconstructed_blocks(reply)) if stream
+                            else "".join(block.get("text", "") for block in reply.json()["content"]))
+                    self.assertEqual(text, "FAKE_OK")
+                    rows.append({"upstream_encoding": encoding, "stream": stream, "status": reply.status,
+                                 "downstream_encoding": reply.headers.get("content-encoding", "identity")})
+        # Every Codex request advertises the shared decoder's encodings and is
+        # itself sent plain (upstream-request-compression false).
+        self.assertEqual({row["accept_encoding"] for row in seen}, {"gzip, deflate, br, zstd"})
+        self.assertEqual({row["content_encoding"] for row in seen}, {None})
+        facts(gateway, "codex-upstream-encodings", rows=rows, upstream_request_headers=seen[0],
+              brotli="not exercised (no stdlib encoder)")
+
+    def test_held_stream_timing_and_websocket_negotiation_against_upstream_defaults(self):
+        rows = {}
+        for rendered in (True, False):
+            with self.subTest(rendered=rendered):
+                gateway = harness.GatewayHarness(document_factory=None if rendered else compression_unset,
+                                                 upstream_factory=lambda path: harness.FakeUpstream(path, held_stream_reply))
+                try:
+                    status, headers, arrivals = timed_messages_stream(
+                        gateway, request_body(CLAUDE_KEY_ALIAS, stream=True, max_tokens=64))
+                    self.assertEqual(status, 200)
+                    kinds = [kind for _at, kind in arrivals]
+                    self.assertEqual(kinds.count("ping"), PINGS)
+                    self.assertEqual(kinds[0], "message_start")
+                    self.assertEqual(kinds[-1], "message_stop")
+                    pings = [at for at, kind in arrivals if kind == "ping"]
+                    connection = ResponsesSocket(gateway, harness.FIXTURE_GATEWAY_TOKEN)
+                    try:
+                        self.assertEqual(connection.status, 101)
+                        extension = connection.headers.get("sec-websocket-extensions")
+                    finally:
+                        connection.close()
+                    rows[rendered] = {"downstream_encoding": headers.get("content-encoding", "identity"),
+                                      "arrivals": arrivals, "websocket_extension": extension}
+                    if rendered:
+                        # Off as rendered: plain bytes, every ping delivered when the
+                        # upstream wrote it (the stream is never held back).
+                        self.assertNotIn("content-encoding", headers)
+                        self.assertIsNone(extension)
+                        self.assertLess(arrivals[0][0], PING_GAP)
+                        for index, at in enumerate(pings, start=1):
+                            self.assertAlmostEqual(at - arrivals[0][0], index * PING_GAP, delta=PING_GAP / 2)
+                    else:
+                        # The discriminator: unset, upstream compresses the client's
+                        # stream and negotiates WebSocket compression.
+                        self.assertIn(headers.get("content-encoding"), {"zstd", "gzip"})
+                        self.assertIsNotNone(extension)
+                        self.assertIn("permessage-deflate", extension)
+                    facts(gateway, "held-stream-compression", rendered=rendered, **rows[rendered])
+                finally:
+                    gateway.close()
+
+
+class ResponsesWebsocketKeyRetirementTests(unittest.TestCase):
+    def test_a_retired_key_is_refused_on_the_socket_it_opened(self):
+        gateway = harness.GatewayHarness()
+        self.addCleanup(gateway.close)
+        old, new = harness.FIXTURE_GATEWAY_TOKEN, "gwtest-rotated-" + uuid.uuid4().hex
+        self.assertEqual(gateway.document["api-keys"], [old])
+        rows = []
+        connection = ResponsesSocket(gateway, old)
+        self.addCleanup(connection.close)
+        self.assertEqual(connection.status, 101)
+        self.assertNotIn("sec-websocket-extensions", connection.headers)
+
+        def turn(name, socket_=connection):
+            before = len(gateway.upstream.hits)
+            events = socket_.turn(CODEX_ALIAS, f"gwtest-ws-{name}")
+            terminal = events[-1]
+            rows.append({"turn": name, "terminal": terminal.get("type"), "status": terminal.get("status"),
+                         "events": len(events), "upstream_requests": len(gateway.upstream.hits) - before})
+            return terminal
+
+        self.assertEqual(turn("before-rotation")["type"], "response.completed")
+        # Rotation as the product renders it: (previous, current), then current alone.
+        reload_document(gateway, revised(gateway.document, **{"api-keys": [old, new]}), key=new)
+        self.assertEqual(turn("overlap")["type"], "response.completed")
+        reload_document(gateway, revised(gateway.document, **{"api-keys": [new]}), key=new)
+        retired_http = harness.unix_request(gateway.socket, "GET", "/v1/models", headers={
+            "Authorization": "Bearer " + old, "Host": f"127.0.0.1:{gateway.port}"}).status
+        self.assertEqual(retired_http, 401)
+        refused = turn("after-retirement")
+        self.assertEqual(refused["type"], "error")
+        self.assertEqual(refused["status"], 401)
+        self.assertEqual(rows[-1]["upstream_requests"], 0)
+        fresh = ResponsesSocket(gateway, new)
+        try:
+            self.assertEqual(fresh.status, 101)
+            self.assertEqual(turn("new-socket-current-key", fresh)["type"], "response.completed")
+        finally:
+            fresh.close()
+        self.assertEqual([row["upstream_requests"] for row in rows], [1, 1, 0, 1])
+        facts(gateway, "responses-websocket-key-retirement", rows=rows, retired_key_http_status=retired_http,
+              same_socket=True, websocket_extension=None)
+
+
+def codex_commentary_reply(model, commentary, final):
+    """A Codex Responses stream: an optional commentary message, then the final answer."""
+    items = [{"id": "msg_final", "type": "message", "role": "assistant", "status": "completed",
+              "phase": "final_answer", "content": [{"type": "output_text", "text": final, "annotations": []}]}]
+    if commentary:
+        items.insert(0, {"id": "msg_commentary", "type": "message", "role": "assistant", "status": "completed",
+                         "phase": "commentary", "content": [{"type": "output_text", "text": commentary, "annotations": []}]})
+    response = {"id": "resp_commentary", "object": "response", "model": model, "status": "completed",
+                "output": items, "usage": {"input_tokens": 7, "output_tokens": 3, "total_tokens": 10}}
+    frames = [("response.created", {"response": {**response, "status": "in_progress", "output": []}})]
+    for index, item in enumerate(items):
+        part, text = item["content"][0], item["content"][0]["text"]
+        frames += [("response.output_item.added", {"output_index": index, "item": {
+                        **{key: value for key, value in item.items() if key != "content"}, "status": "in_progress", "content": []}}),
+                   ("response.content_part.added", {"output_index": index, "item_id": item["id"], "content_index": 0,
+                                                    "part": {"type": "output_text", "text": "", "annotations": []}}),
+                   ("response.output_text.delta", {"output_index": index, "item_id": item["id"], "content_index": 0,
+                                                   "delta": text}),
+                   ("response.output_text.done", {"output_index": index, "item_id": item["id"], "content_index": 0,
+                                                  "text": text}),
+                   ("response.content_part.done", {"output_index": index, "item_id": item["id"], "content_index": 0,
+                                                   "part": part}),
+                   ("response.output_item.done", {"output_index": index, "item": item})]
+    frames.append(("response.completed", {"response": response}))
+    return 200, "text/event-stream", b"".join(harness.sse_frame(kind, {"type": kind, **data}) for kind, data in frames)
+
+
+def commentary_inputs(body):
+    """The replayed assistant messages a Codex request carries: (phase, text)."""
+    return [(item.get("phase"), "".join(part.get("text", "") for part in item.get("content", []) if isinstance(part, dict)))
+            for item in body.get("input", []) if isinstance(item, dict)
+            and item.get("type") == "message" and item.get("role") == "assistant"]
+
+
+def assistant_blocks(body):
+    return [block for message in body.get("messages", []) if message.get("role") == "assistant"
+            and isinstance(message.get("content"), list) for block in message["content"] if isinstance(block, dict)]
+
+
+class CommentaryReplayTests(unittest.TestCase):
+    """531721bf: Codex commentary reaches the client as thinking carrying the
+    gateway's internal marker and is restored on replay; the marker itself
+    never reaches an upstream."""
+
+    @classmethod
+    def setUpClass(cls):
+        gate = real_binary_gate(SHIPPED_ROOT / "catalog/native-contract.json", what="v8 commentary replay")
+        if gate.boundary:
+            raise unittest.SkipTest(gate.boundary)
+        cls.trusted, cls.version = gate.trusted, gate.version
+
+    def journey(self, account):
+        root = Path(tempfile.mkdtemp(prefix="gwtest-v8-commentary-"))
+        self.addCleanup(shutil.rmtree, root, True)
+        commentary = "COMMENTARY-" + uuid.uuid4().hex[:8]
+        upstream = []
+
+        def respond(path, body, raw, _headers):
+            upstream.append({"path": path, "raw": raw, "body": body})
+            if path.endswith("/responses"):
+                first = not any(row["path"].endswith("/responses") for row in upstream[:-1])
+                return codex_commentary_reply(body.get("model", "gwtest-wire"), commentary if first else "",
+                                              "FINAL-FIRST" if first else "FINAL-REPLAY")
+            if path.endswith("/v1/messages"):
+                status, data, kind = message_reply(body)
+                return status, kind, data
+            return harness.fake_reply(path, body, raw)
+
+        if account:
+            gateway = route.account_gateway(root, respond=respond)
+        else:
+            gateway = harness.GatewayHarness(document_factory=route.gateway_document,
+                                             upstream_factory=lambda path: harness.FakeUpstream(path, respond))
+        self.addCleanup(gateway.close)
+        codex_alias = sorted(gateway.info["reviewed"])[0]
+        claude_alias = gateway.document["claude-api-key"][0]["models"][0]["alias"]
+        environ = {"HOME": str(root / "ambient/home"), "PATH": "/usr/bin:/bin"}
+        fixture = probe.build_fixture(root / "client", environ=environ)
+        probe.seed_fixture_project_trust(fixture, fixture.project_dir)
+        session = str(uuid.uuid4())
+        runs = []
+        with TrafficRelay(gateway) as relay:
+            for index, model in enumerate((codex_alias, codex_alias, claude_alias)):
+                result = probe.run_native(("-p", f"fixture commentary turn {index}", "--model", model,
+                    "--output-format", "json", "--permission-mode", "default",
+                    "--session-id" if index == 0 else "--resume", session),
+                    trusted=self.trusted, fixture=fixture, provider=relay, allow_real=True, environ=environ, timeout=120)
+                outcome = json.loads(result.stdout or "{}")
+                runs.append({"model": model, "returncode": result.returncode, "timed_out": result.timed_out,
+                             "is_error": outcome.get("is_error"), "result": str(outcome.get("result"))[:80]})
+                self.assertEqual(result.returncode, 0, runs[-1])
+                self.assertFalse(result.timed_out)
+                self.assertTrue(result.daemon and result.daemon.unchanged)
+            self.assertEqual(relay.completion_errors(), [])
+            rows = list(relay.rows)
+        return gateway, commentary, upstream, runs, rows, claude_alias
+
+    def check_journey(self, account):
+        gateway, commentary, upstream, runs, relay_rows, claude_alias = self.journey(account)
+        # The marker never reaches any upstream request, on any route.
+        self.assertEqual([row["path"] for row in upstream if COMMENTARY_MARKER.encode() in row["raw"]], [])
+        codex = [row for row in upstream if row["path"].endswith("/responses")]
+        claude = [row for row in upstream if row["path"].endswith("/v1/messages") and row["body"].get("messages")]
+        self.assertTrue(any(row["reply_thinking"] for row in relay_rows),
+                        "the commentary did not reach the client as thinking")
+        replayed = [commentary_inputs(row["body"]) for row in codex if commentary_inputs(row["body"])]
+        # Same route: the commentary returns as an assistant commentary message.
+        self.assertTrue(replayed and all(("commentary", commentary) in inputs for inputs in replayed), replayed)
+        self.assertTrue(claude, "the cross-family turn did not reach the Claude route")
+        blocks = assistant_blocks(claude[-1]["body"])
+        # What the client itself replayed on the cross-family turn: the gateway
+        # can only restore a block the client sends.
+        sent = sorted({kind for row in relay_rows if row["model"] == claude_alias for kind in row["assistant_types"]})
+        cross = {"client_assistant_types": sent,
+                 "text": commentary in [block.get("text") for block in blocks if block.get("type") == "text"],
+                 "thinking": [block.get("type") for block in blocks if block.get("type") in ("thinking", "redacted_thinking")]}
+        # Cross-family: never thinking with the marker; plain assistant text
+        # whenever the client replays the marked block.
+        self.assertEqual(cross["thinking"], [])
+        self.assertEqual(cross["text"], "thinking" in sent, (cross, relay_rows))
+        facts(gateway, "commentary-replay", route="account" if account else "key", client_version=self.version,
+              client_sha256=self.trusted.sha256, runs=runs, codex_requests=len(codex),
+              codex_replays=[len(inputs) for inputs in replayed], commentary_restored=True,
+              cross_family=cross, marker_upstream=False, upstream_requests=len(upstream))
+
+    def test_key_route_commentary_survives_replay_and_crosses_family_as_text(self):
+        self.check_journey(account=False)
+
+    def test_account_route_commentary_survives_replay_and_crosses_family_as_text(self):
+        self.check_journey(account=True)
+
+
+class CommentaryMarkerControlTests(unittest.TestCase):
+    """Without the client: a genuine signature stays a signed thinking block,
+    and a forged marker buys plain text only (the marker is forgeable by
+    design and is no credential)."""
+
+    def test_genuine_signature_kept_and_forged_marker_reduced_to_text(self):
+        captured = []
+        def respond(route_path, body, raw, headers):
+            captured.append((route_path, raw, body))
+            return direct_reply(route_path, body, raw, headers)
+
+        gateway = harness.GatewayHarness(document_factory=recognition.native_document,
+                                         upstream_factory=lambda path: harness.FakeUpstream(path, respond))
+        self.addCleanup(gateway.close)
+        rows = []
+        cases = {
+            "genuine": [{"type": "thinking", "thinking": "fixture reasoning", "signature": SIGNATURE},
+                        {"type": "text", "text": "prior response"}],
+            "forged": [{"type": "thinking", "thinking": "FORGED-COMMENTARY", "signature": COMMENTARY_MARKER},
+                       {"type": "text", "text": "prior response"}],
+            "forged-empty": [{"type": "thinking", "thinking": "", "signature": COMMENTARY_MARKER},
+                             {"type": "text", "text": "prior response"}]}
+        expected = {"genuine": cases["genuine"],
+                    "forged": [{"type": "text", "text": "FORGED-COMMENTARY"}, {"type": "text", "text": "prior response"}],
+                    "forged-empty": [{"type": "text", "text": "prior response"}]}
+        for name, content in cases.items():
+            with self.subTest(case=name):
+                history = [{"role": "user", "content": "earlier"}, {"role": "assistant", "content": content},
+                           {"role": "user", "content": "next"}]
+                reply = post(gateway, request_body(thinking={"type": "adaptive"}, messages=history))
+                self.assertEqual(reply.status, 200)
+                _path, raw, sent = captured[-1]
+                self.assertNotIn(COMMENTARY_MARKER.encode(), raw)
+                self.assertEqual(sent["messages"][1]["content"], expected[name])
+                rows.append({"case": name, "route": "claude",
+                             "upstream_assistant": [block["type"] for block in sent["messages"][1]["content"]]})
+        # On a Codex route (the fixture render's key route) the forged marker
+        # becomes a commentary message, text only.
+        codex = harness.GatewayHarness()
+        self.addCleanup(codex.close)
+        reply = codex.request(CODEX_ALIAS, body={"messages": [
+            {"role": "user", "content": "earlier"}, {"role": "assistant", "content": cases["forged"]}]})
+        self.assertEqual(reply.status, 200)
+        self.assertEqual(len(reply.hits), 1)
+        self.assertNotIn(COMMENTARY_MARKER.encode(), reply.hits[0].raw)
+        inputs = commentary_inputs(reply.hits[0].body)
+        self.assertIn(("commentary", "FORGED-COMMENTARY"), inputs)
+        self.assertFalse([item for item in reply.hits[0].body.get("input", []) if item.get("type") == "reasoning"])
+        rows.append({"case": "forged", "route": "codex", "upstream_assistant": inputs})
+        facts(gateway, "commentary-marker-controls", rows=rows)
+
+
+TURN_LIMIT = {"error": {"type": "invalid_request_error", "code": "turn_rate_limit_exceeded",
+                        "message": "Codex is at capacity. Please try again later."}}
+
+
+def capacity_reply(path, body, raw, _headers):
+    if path.endswith("/responses"):
+        return 429, "application/json", json.dumps(TURN_LIMIT).encode(), {"Retry-After": "300"}
+    return harness.fake_reply(path, body, raw)
+
+
+class CodexCapacityRejectionTests(unittest.TestCase):
+    """#7017: the ChatGPT Codex capacity 429 with Retry-After under the
+    rendered request-retry 0 and disable-cooling true. Observation row; the
+    disposition (a known limit) is in gateway/upstream-review.json."""
+
+    def observe(self, gateway, alias, route_name):
+        rows = []
+        for attempt, stream in enumerate((False, True, False)):
+            before = len(gateway.upstream.hits)
+            reply = gateway.request(alias, stream=stream)
+            hits = len(gateway.upstream.hits) - before
+            error = {}
+            if "text/event-stream" in reply.headers.get("content-type", ""):
+                error = next((event.get("error", {}) for event in reply.events() if event.get("type") == "error"), {})
+            elif reply.raw:
+                document = reply.json()
+                error = document.get("error", {}) if isinstance(document, dict) else {}
+            rows.append({"route": route_name, "attempt": attempt + 1, "stream": stream, "status": reply.status,
+                         "retry_after": reply.headers.get("retry-after"), "error_type": error.get("type"),
+                         "upstream_requests": hits})
+            # request-retry 0 and no cooldown: one upstream request per client
+            # request, and the next request still reaches the upstream.
+            self.assertEqual(hits, 1, rows[-1])
+            self.assertGreaterEqual(reply.status, 400)
+        return rows
+
+    def test_capacity_rejection_reaches_the_client_once_per_request(self):
+        gateway = harness.GatewayHarness(upstream_factory=lambda path: harness.FakeUpstream(path, capacity_reply))
+        try:
+            rows = self.observe(gateway, CODEX_ALIAS, "key")
+        finally:
+            gateway.close()
+        root = Path(tempfile.mkdtemp(prefix="gwtest-v8-capacity-"))
+        self.addCleanup(shutil.rmtree, root, True)
+        account = route.account_gateway(root, respond=capacity_reply)
+        self.addCleanup(account.close)
+        rows += self.observe(account, sorted(account.info["reviewed"])[0], "account")
+        facts(account, "codex-capacity-429", upstream_status=429, upstream_retry_after="300",
+              upstream_error=TURN_LIMIT["error"]["code"], rows=rows)
+
+
+class CallerScopedAliasTests(unittest.TestCase):
+    """e48d780f: on the Claude OAuth route a non-MCP client tool is sent as an
+    MCP tool whose server component derives from the caller scope (a hash of
+    the gateway key since 8.0.43, previously the key itself): stable per key,
+    distinct per key, never the key, and restored in the reply."""
+
+    def test_claude_oauth_tool_alias_is_caller_scoped(self):
+        sent = []
+        def respond(route_path, body):
+            if route_path.endswith("/count_tokens"):
+                return 200, b'{"input_tokens":1}', "application/json"
+            names = [tool["name"] for tool in body.get("tools", [])]
+            sent.append(names)
+            content = [{"type": "tool_use", "id": "toolu_v8_alias", "name": names[0], "input": {}}]
+            payload = probe._message_payload(content, model=body["model"], stop_reason="tool_use",
+                                             message_id="msg_v8_alias")
+            return 200, json.dumps(payload).encode(), "application/json"
+
+        root = Path(tempfile.mkdtemp(prefix="gwtest-v8-alias-"))
+        self.addCleanup(shutil.rmtree, root, True)
+        gateway = recognition.start_oauth_gateway(root, respond)
+        self.addCleanup(gateway.close)
+        model = gateway.document["oauth-model-alias"]["claude"][0]["alias"]
+        second = "gwtest-second-caller-" + uuid.uuid4().hex
+        reload_document(gateway, revised(gateway.document, **{"api-keys": [harness.FIXTURE_GATEWAY_TOKEN, second]}))
+        body = request_body(model, tools=[{"name": "gwtest_lookup", "description": "fixture",
+                                           "input_schema": {"type": "object", "properties": {}}}])
+        replies = []
+        for key in (harness.FIXTURE_GATEWAY_TOKEN, harness.FIXTURE_GATEWAY_TOKEN, second):
+            reply = harness.unix_request(gateway.socket, "POST", "/v1/messages", timeout=45,
+                                         headers={**gateway.headers(), "Authorization": "Bearer " + key},
+                                         body=json.dumps(body).encode())
+            self.assertEqual(reply.status, 200, reply.raw[:300])
+            replies.append([block.get("name") for block in reply.json()["content"] if block.get("type") == "tool_use"])
+        aliases = [names[0] for names in sent]
+        self.assertEqual(len(aliases), 3)
+        self.assertTrue(all(alias.startswith("mcp__") and alias.endswith("gwtest_lookup") for alias in aliases), aliases)
+        self.assertEqual(aliases[0], aliases[1], "one caller's alias changed between requests")
+        self.assertNotEqual(aliases[0], aliases[2], "two callers share an alias")
+        for alias in aliases:
+            self.assertNotIn(harness.FIXTURE_GATEWAY_TOKEN, alias)
+            self.assertNotIn(second, alias)
+        self.assertEqual(replies, [["gwtest_lookup"]] * 3)
+        facts(gateway, "claude-oauth-caller-scoped-alias", stable_per_caller=True, distinct_callers=True,
+              restored_in_reply=True, alias_shape="mcp__<caller-scoped server>__gwtest_lookup")
+
+
+class DiscoveryOffTests(unittest.TestCase):
+    """Discovery (8a982a52, 11e5f67b) stays off: the schema pins it, the render
+    states it, and the running gateway neither logs the advertiser nor holds a
+    UDP socket in its namespace; enabling it is the discriminator."""
+
+    def test_rendered_off_and_the_advertiser_never_runs(self):
+        schema = json.loads((SHIPPED_ROOT / "schemas/gateway.schema.json").read_text())
+        static_schema = schema["properties"]["gateway"]["properties"]["cliproxy_static"]["properties"]["discovery"]
+        self.assertEqual(static_schema["properties"]["enabled"], {"const": False})
+        rows = {}
+        for enabled in (False, True):
+            with self.subTest(enabled=enabled):
+                factory = None
+                if enabled:
+                    def factory(*args):
+                        document, aliases, info = harness.build_document(*args)
+                        return revised(document, discovery={"enabled": True}), aliases, info
+                gateway = harness.GatewayHarness(document_factory=factory)
+                try:
+                    self.assertEqual(gateway.document["discovery"], {"enabled": enabled})
+                    self.assertIn(f"discovery:\n  enabled: {str(enabled).lower()}\n", gateway.config.read_text())
+                    time.sleep(1.0)  # past the advertiser's start on a gateway that runs one
+                    log = gateway.log_path.read_text(errors="replace")
+                    lines = [line for line in log.splitlines() if "discovery:" in line]
+                    udp = harness.listener_rows(gateway.process.pid, gateway.binary, udp=True)
+                    rows[enabled] = {"discovery_log_lines": len(lines), "udp_sockets": udp}
+                    if enabled:
+                        self.assertTrue(lines or udp, "the discriminator saw no advertiser")
+                    else:
+                        self.assertEqual(lines, [])
+                        self.assertEqual(udp, [])
+                    facts(gateway, "discovery", enabled=enabled, **rows[enabled])
                 finally:
                     gateway.close()

@@ -1204,7 +1204,7 @@ index 00000000..f6a1c62c
 +	}
 +}
 diff --git a/internal/runtime/executor/helps/usage_helpers.go b/internal/runtime/executor/helps/usage_helpers.go
-index 6a2b9511..e8b78032 100644
+index 845d16e4..92f002e7 100644
 --- a/internal/runtime/executor/helps/usage_helpers.go
 +++ b/internal/runtime/executor/helps/usage_helpers.go
 @@ -16,6 +16,7 @@ import (
@@ -1215,7 +1215,7 @@ index 6a2b9511..e8b78032 100644
  	internallogging "github.com/router-for-me/CLIProxyAPI/v8/internal/logging"
  	"github.com/router-for-me/CLIProxyAPI/v8/internal/thinking"
  	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
-@@ -118,6 +119,11 @@ func NewUsageReporter(ctx context.Context, provider, model string, auth *cliprox
+@@ -119,6 +120,11 @@ func NewUsageReporter(ctx context.Context, provider, model string, auth *cliprox
  				baseURL = strings.TrimSpace(v)
  			}
  		}
@@ -1227,7 +1227,7 @@ index 6a2b9511..e8b78032 100644
  	}
  	traceID := usage.TraceIDFromContext(ctx)
  	if traceID == "" {
-@@ -847,6 +853,14 @@ func AccessProviderFromContext(ctx context.Context) string {
+@@ -862,6 +868,14 @@ func AccessProviderFromContext(ctx context.Context) string {
  
  func resolveUsageSource(auth *cliproxyauth.Auth, ctxAPIKey string) string {
  	if auth != nil {
@@ -1243,7 +1243,7 @@ index 6a2b9511..e8b78032 100644
  		if strings.EqualFold(provider, "vertex") {
  			if auth.Metadata != nil {
 diff --git a/internal/runtime/executor/openai_compat_executor.go b/internal/runtime/executor/openai_compat_executor.go
-index 1078b923..de615218 100644
+index 5d678c5a..2a00539a 100644
 --- a/internal/runtime/executor/openai_compat_executor.go
 +++ b/internal/runtime/executor/openai_compat_executor.go
 @@ -16,6 +16,7 @@ import (
@@ -3347,10 +3347,10 @@ index 00000000..ad4a6435
 +	})
 +}
 diff --git a/sdk/cliproxy/auth/conductor_execution.go b/sdk/cliproxy/auth/conductor_execution.go
-index 3ee3ea06..436c8087 100644
+index ddd4066d..d5780a9f 100644
 --- a/sdk/cliproxy/auth/conductor_execution.go
 +++ b/sdk/cliproxy/auth/conductor_execution.go
-@@ -1857,6 +1857,10 @@ func debugLogAuthSelection(entry *log.Entry, auth *Auth, provider string, model
+@@ -1876,6 +1876,10 @@ func debugLogAuthSelection(entry *log.Entry, auth *Auth, provider string, model
  	}
  	switch accountType {
  	case "api_key":
@@ -3361,7 +3361,7 @@ index 3ee3ea06..436c8087 100644
  		entry.Debugf("Use API key %s for model %s%s", util.HideAPIKey(accountInfo), model, suffix)
  	case "oauth":
  		ident := formatOauthIdentity(auth, provider, accountInfo)
-@@ -1895,6 +1899,27 @@ func formatOauthIdentity(auth *Auth, provider string, accountInfo string) string
+@@ -1914,6 +1918,27 @@ func formatOauthIdentity(auth *Auth, provider string, accountInfo string) string
  	return strings.Join(parts, " ")
  }
  
@@ -3389,7 +3389,7 @@ index 3ee3ea06..436c8087 100644
  func formatAuthIdentity(auth *Auth, provider string) string {
  	if auth == nil {
  		return "auth=nil"
-@@ -1902,6 +1927,9 @@ func formatAuthIdentity(auth *Auth, provider string) string {
+@@ -1921,6 +1946,9 @@ func formatAuthIdentity(auth *Auth, provider string) string {
  	accountType, accountInfo := auth.AccountInfo()
  	switch accountType {
  	case "api_key":

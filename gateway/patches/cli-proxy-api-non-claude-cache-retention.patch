@@ -1,8 +1,8 @@
 diff --git a/internal/runtime/executor/claude_executor_execute.go b/internal/runtime/executor/claude_executor_execute.go
-index e8b08d35..02afba6e 100644
+index 8a9c808a..69671353 100644
 --- a/internal/runtime/executor/claude_executor_execute.go
 +++ b/internal/runtime/executor/claude_executor_execute.go
-@@ -255,6 +255,21 @@ func (e *ClaudeExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, r
+@@ -256,6 +256,21 @@ func (e *ClaudeExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, r
  	}
  	extraBetas, bodyForUpstream = extractAndRemoveBetas(bodyForUpstream)
  	bodyForUpstream = stripPromptCacheOptions(bodyForUpstream)
@@ -25,10 +25,10 @@ index e8b08d35..02afba6e 100644
  		bodyForUpstream, err = signAnthropicMessagesBody(bodyForUpstream)
  		if err != nil {
 diff --git a/internal/runtime/executor/claude_executor_stream.go b/internal/runtime/executor/claude_executor_stream.go
-index dc6b2fd3..61519839 100644
+index c0ec95ca..82aede49 100644
 --- a/internal/runtime/executor/claude_executor_stream.go
 +++ b/internal/runtime/executor/claude_executor_stream.go
-@@ -247,6 +247,21 @@ func (e *ClaudeExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.A
+@@ -248,6 +248,21 @@ func (e *ClaudeExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.A
  	}
  	extraBetas, bodyForUpstream = extractAndRemoveBetas(bodyForUpstream)
  	bodyForUpstream = stripPromptCacheOptions(bodyForUpstream)
@@ -51,10 +51,10 @@ index dc6b2fd3..61519839 100644
  		bodyForUpstream, err = signAnthropicMessagesBody(bodyForUpstream)
  		if err != nil {
 diff --git a/internal/runtime/executor/claude_executor_tokens.go b/internal/runtime/executor/claude_executor_tokens.go
-index 8d949940..9db9130f 100644
+index a4855194..b611407f 100644
 --- a/internal/runtime/executor/claude_executor_tokens.go
 +++ b/internal/runtime/executor/claude_executor_tokens.go
-@@ -254,6 +254,20 @@ func (e *ClaudeExecutor) countTokensUpstream(ctx context.Context, auth *cliproxy
+@@ -258,6 +258,20 @@ func (e *ClaudeExecutor) countTokensUpstream(ctx context.Context, auth *cliproxy
  	}
  	body = helps.NewPayloadFinalizer(e.cfg, e.Identifier(), baseModel, to.String(), "", originalTranslatedForPayload, req, opts)(body)
  	body = stripPromptCacheOptions(body)
@@ -76,10 +76,10 @@ index 8d949940..9db9130f 100644
  	if err != nil {
  		return cliproxyexecutor.Response{}, err
 diff --git a/internal/runtime/executor/codex_executor_request.go b/internal/runtime/executor/codex_executor_request.go
-index 04370300..cd89688b 100644
+index b03948d7..23b12114 100644
 --- a/internal/runtime/executor/codex_executor_request.go
 +++ b/internal/runtime/executor/codex_executor_request.go
-@@ -148,6 +148,16 @@ func (e *CodexExecutor) cacheHelper(ctx context.Context, from sdktranslator.Form
+@@ -153,6 +153,18 @@ func (e *CodexExecutor) cacheHelper(ctx context.Context, from sdktranslator.Form
  	}
  	rawJSON = helps.SanitizeCodexInputItemIDs(rawJSON)
  	rawJSON = helps.FinalizePayload(ctx, rawJSON)
@@ -88,14 +88,16 @@ index 04370300..cd89688b 100644
 +	// transformation (payload rules, replay injection) can leak the
 +	// unsupported TTL control to the Codex backend. Covers ordinary
 +	// /responses (execute and stream), /responses/compact (which has no early
-+	// strip upstream) and the image paths. Fails closed.
++	// strip upstream) and the image paths. It runs before the body is
++	// serialized for the wire (optionally compressed), so the compressed body
++	// and the plain-body retry both carry the sanitized bytes. Fails closed.
 +	rawJSON, err := stripPromptCacheRetention(rawJSON)
 +	if err != nil {
 +		return nil, nil, fmt.Errorf("codex executor: %w", err)
 +	}
- 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(rawJSON))
- 	if err != nil {
- 		return nil, nil, err
+ 	wireBody := rawJSON
+ 	if e.cfg != nil && e.cfg.Codex.UpstreamRequestCompression && auth != nil &&
+ 		!codexAuthUsesAPIKey(auth) && !codexUseSIWCForRequest(ctx, auth, headers) &&
 diff --git a/internal/runtime/executor/codex_websockets_execute.go b/internal/runtime/executor/codex_websockets_execute.go
 index b52f5861..b91b9d61 100644
 --- a/internal/runtime/executor/codex_websockets_execute.go
@@ -622,10 +624,10 @@ index 00000000..bacff06d
 +}
 diff --git a/internal/runtime/executor/non_claude_cache_retention_test.go b/internal/runtime/executor/non_claude_cache_retention_test.go
 new file mode 100644
-index 00000000..382ec80d
+index 00000000..ece13b82
 --- /dev/null
 +++ b/internal/runtime/executor/non_claude_cache_retention_test.go
-@@ -0,0 +1,1749 @@
+@@ -0,0 +1,1790 @@
 +package executor
 +
 +import (
@@ -640,6 +642,7 @@ index 00000000..382ec80d
 +	"time"
 +
 +	"github.com/gorilla/websocket"
++	"github.com/klauspost/compress/zstd"
 +	"github.com/pierrec/xxHash/xxHash64"
 +	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 +	_ "github.com/router-for-me/CLIProxyAPI/v8/internal/translator"
@@ -853,9 +856,49 @@ index 00000000..382ec80d
 +			"https://example.com/responses",
 +			req,
 +			rawJSON,
++			nil,
 +		)
 +		if err == nil {
 +			t.Fatalf("cacheHelper() error = nil, want fail-closed error on body %q (len=%d)", string(rawJSON), len(rawJSON))
++		}
++	}
++}
++
++// The strip runs before the body is serialized for the wire: with upstream
++// request compression enabled, the zstd body the ChatGPT backend receives and
++// the plain body kept for the one uncompressed retry are both retention-free.
++func TestCodexExecutorCacheHelperStripsRetentionBeforeCompression(t *testing.T) {
++	executor := NewCodexExecutor(&config.Config{Codex: config.CodexConfig{UpstreamRequestCompression: true}})
++	auth := &cliproxyauth.Auth{Metadata: map[string]any{"access_token": "test-oauth"}}
++	payload := []byte(`{"model":"gpt-5.6-sol","prompt_cache_retention":"24h","input":[{"role":"user","content":"` +
++		strings.Repeat("compressible input ", 400) + `"}]}`)
++	httpReq, upstreamBody, err := executor.cacheHelper(context.Background(), sdktranslator.FormatOpenAIResponse,
++		"https://chatgpt.com/backend-api/codex/responses", cliproxyexecutor.Request{Payload: payload}, payload, auth)
++	if err != nil {
++		t.Fatalf("cacheHelper() error = %v", err)
++	}
++	if httpReq.Header.Get("Content-Encoding") != "zstd" {
++		t.Fatalf("Content-Encoding = %q, want a compressed wire body", httpReq.Header.Get("Content-Encoding"))
++	}
++	wire, errRead := io.ReadAll(httpReq.Body)
++	if errRead != nil {
++		t.Fatalf("read wire body: %v", errRead)
++	}
++	decoder, errDecoder := zstd.NewReader(nil)
++	if errDecoder != nil {
++		t.Fatalf("zstd reader: %v", errDecoder)
++	}
++	defer decoder.Close()
++	decoded, errDecode := decoder.DecodeAll(wire, nil)
++	if errDecode != nil {
++		t.Fatalf("decode wire body: %v", errDecode)
++	}
++	for name, body := range map[string][]byte{"wire": decoded, "retry": upstreamBody} {
++		if gjson.GetBytes(body, "prompt_cache_retention").Exists() {
++			t.Fatalf("%s body still carries prompt_cache_retention: %s", name, body[:64])
++		}
++		if !gjson.GetBytes(body, "input").Exists() {
++			t.Fatalf("%s body lost its input", name)
 +		}
 +	}
 +}
@@ -2717,7 +2760,7 @@ index 00000000..66f4f3f4
 +	})
 +}
 diff --git a/internal/runtime/executor/openai_compat_executor.go b/internal/runtime/executor/openai_compat_executor.go
-index 3f81ee02..33b2e0a7 100644
+index 6a4a2345..57308290 100644
 --- a/internal/runtime/executor/openai_compat_executor.go
 +++ b/internal/runtime/executor/openai_compat_executor.go
 @@ -167,6 +167,18 @@ func (e *OpenAICompatExecutor) executeWithCredentials(ctx context.Context, auth
@@ -2780,10 +2823,10 @@ index f92d436b..10389f93 100644
  	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, requestURL, bytes.NewReader(prepared.body))
  	if err != nil {
 diff --git a/internal/runtime/executor/xai_executor_request.go b/internal/runtime/executor/xai_executor_request.go
-index 296379eb..6669999f 100644
+index 569b4b91..69f34853 100644
 --- a/internal/runtime/executor/xai_executor_request.go
 +++ b/internal/runtime/executor/xai_executor_request.go
-@@ -96,11 +96,10 @@ func (e *XAIExecutor) prepareResponsesRequestTo(ctx context.Context, req cliprox
+@@ -97,11 +97,10 @@ func (e *XAIExecutor) prepareResponsesRequestTo(ctx context.Context, req cliprox
  		return nil, err
  	}
  
@@ -2796,7 +2839,7 @@ index 296379eb..6669999f 100644
  	body, _ = sjson.DeleteBytes(body, "safety_identifier")
  	body, _ = sjson.DeleteBytes(body, "stream_options")
  	body = helps.RewriteCodexMultiAgentV2Input(ctx, opts.Headers, body, e.cfg)
-@@ -170,6 +169,16 @@ func (e *XAIExecutor) prepareResponsesRequestTo(ctx context.Context, req cliprox
+@@ -171,6 +170,16 @@ func (e *XAIExecutor) prepareResponsesRequestTo(ctx context.Context, req cliprox
  		body = helps.SetStringIfDifferent(body, "prompt_cache_key", sessionID)
  	}
  
@@ -2850,10 +2893,10 @@ index 2a3b5c9d..ecfc5b37 100644
  	if err != nil {
  		return cliproxyexecutor.Response{}, fmt.Errorf("xai executor: token counting failed: %w", err)
 diff --git a/internal/runtime/executor/xai_websockets_executor.go b/internal/runtime/executor/xai_websockets_executor.go
-index 02edd544..9c5c4d72 100644
+index cca1478d..ec4053b4 100644
 --- a/internal/runtime/executor/xai_websockets_executor.go
 +++ b/internal/runtime/executor/xai_websockets_executor.go
-@@ -520,6 +520,10 @@ func (e *XAIWebsocketsExecutor) ExecuteStream(ctx context.Context, auth *cliprox
+@@ -521,6 +521,10 @@ func (e *XAIWebsocketsExecutor) ExecuteStream(ctx context.Context, auth *cliprox
  	prepared.body = sanitizeXAIInputEncryptedContentForBaseURL(prepared.body, baseURL)
  	wsHeaders := applyXAIWebsocketHeaders(ctx, http.Header{}, auth, token, prepared.sessionID, opts.Headers)
  	wsReqBody := buildXAIWebsocketRequestBody(prepared.body, prepared.finalizePayload)
@@ -2864,7 +2907,7 @@ index 02edd544..9c5c4d72 100644
  	reporter.SetTranslatedReasoningEffort(wsReqBody, e.Identifier())
  	requestType := strings.TrimSpace(gjson.GetBytes(req.Payload, "type").String())
  	transcriptReset := strings.TrimSpace(gjson.GetBytes(wsReqBody, "previous_response_id").String()) == "" &&
-@@ -630,6 +634,12 @@ func (e *XAIWebsocketsExecutor) ExecuteStream(ctx context.Context, auth *cliprox
+@@ -631,6 +635,12 @@ func (e *XAIWebsocketsExecutor) ExecuteStream(ctx context.Context, auth *cliprox
  			}
  			readCh = sess.activate(conn)
  			wsReqBodyRetry := buildXAIWebsocketRequestBody(prepared.body, prepared.finalizePayload)
@@ -2877,7 +2920,7 @@ index 02edd544..9c5c4d72 100644
  			helps.RecordAPIWebsocketRequest(ctx, e.cfg, helps.UpstreamRequestLog{
  				URL:       wsURL,
  				Method:    "WEBSOCKET",
-@@ -1620,6 +1630,11 @@ func buildXAIWebsocketRequestBody(body []byte, finalizers ...helps.PayloadFinali
+@@ -1627,6 +1637,11 @@ func buildXAIWebsocketRequestBody(body []byte, finalizers ...helps.PayloadFinali
  	}
  	if len(finalizers) > 0 && finalizers[0] != nil {
  		wsReqBody = finalizers[0](wsReqBody)

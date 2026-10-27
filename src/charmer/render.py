@@ -1186,6 +1186,16 @@ def build_config_document(
     document["quota-exceeded"] = static["quota-exceeded"]
     document["routing"] = static["routing"]
     document["ws-auth"] = static["ws-auth"]
+    # Compression the gateway negotiates when these keys are absent stays off:
+    # downstream HTTP responses, SSE streams included (on when unset), and
+    # Codex WebSocket permessage-deflate upstream and downstream (on when
+    # unset), on a loopback listener where compression saves nothing and
+    # streamed frames must flush as they arrive; Codex upstream request
+    # compression keeps its default, off, stated.
+    if "response-compression" in static:
+        document["response-compression"] = static["response-compression"]
+    if "codex" in static:
+        document["codex"] = static["codex"]
 
     rendered_by_provider: dict[str, list[str]] = {}
 

@@ -721,7 +721,7 @@ index 3baead92..3bf578bd 100644
  	requestPrepareLocks sync.Map
  	// refreshLocks serializes credential refresh per auth ID so concurrent
 diff --git a/sdk/cliproxy/auth/conductor_refresh.go b/sdk/cliproxy/auth/conductor_refresh.go
-index 56a912b3..cb21c8e0 100644
+index e21998ce..1e4f2a8c 100644
 --- a/sdk/cliproxy/auth/conductor_refresh.go
 +++ b/sdk/cliproxy/auth/conductor_refresh.go
 @@ -40,28 +40,44 @@ const (
