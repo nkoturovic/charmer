@@ -26,8 +26,8 @@
 #       process table and Claude Code daemon root) adds the native checks:
 #       the installed release's own process observation against disposable
 #       processes (journey_fixture.py processes), and with a client the
-#       first interactive managed turn on a pseudo-terminal with the
-#       one-time screens recorded (before the print-mode turns), the session
+#       first interactive managed turn on Linux on a pseudo-terminal with
+#       the one-time screens recorded (before the print-mode turns), the session
 #       verbs on a running client (a turn the fixture holds: mark-ended
 #       refused and answered at once, stop finds nothing in the background;
 #       once the client is stopped, mark-ended records its end), the
@@ -255,16 +255,19 @@ confinement() {
 }
 
 first_interactive_turn() {
-	# The first interactive managed turn, on a pseudo-terminal in a new
-	# folder: the one-time screens Claude Code shows are answered and
-	# recorded (journey_fixture.py interactive), with whether this account
-	# had a Claude Code configuration before it.
+	# Linux only, including WSL: this probe does not establish macOS
+	# onboarding. All native process/session checks still run there, using
+	# the print-mode turns below for their managed session.
+	if [ "$(uname -s)" = Darwin ]; then
+		say "macOS interactive onboarding: not established by this journey"
+		return 0
+	fi
 	if [ "${JOURNEY_INTERACTIVE:-run}" = skip ]; then
 		say "first interactive managed turn: not run (JOURNEY_INTERACTIVE=skip)"
 		return 0
 	fi
 	mkdir "$work/first"
-	fx interactive --log "$work/screens.log" --cwd "$work/first" -- "$cm" --line direct \
+	fx interactive --log "$work/screens.log" --fixture-log "$work/fixture.log" --cwd "$work/first" -- "$cm" --line direct \
 		--model custom-journey-fixture >"$work/screens.txt" 2>&1 ||
 		{ cat "$work/screens.txt" >&2; fail "the first interactive managed turn"; }
 	sed 's/^/journey:   /' "$work/screens.txt"
@@ -281,21 +284,28 @@ user_claude_installation() {
 }
 
 user_claude_preferences() {
-	# Its install and update preferences in ~/.claude.json, recorded before
-	# the print-mode turns: stand-in values only when the account had no
-	# Claude Code configuration before this journey's first managed launch
-	# (an existing one is only read).
-	if [ "$claude_config_before" = empty ]; then
-		fx user-claude plant --preferences || fail "the user's Claude Code preferences could not be prepared"
-	fi
-	fx user-claude record --what preferences --file "$work/user-claude-preferences.json" ||
+	# Existing preferences are only read, before ANY managed launch. Never
+	# replace this baseline with values written by first-run onboarding.
+	[ "$claude_config_before" != empty ] || return 0
+	user_preferences_file=$work/user-claude-preferences.json
+	fx user-claude record --what preferences --file "$user_preferences_file" ||
+		fail "the user's Claude Code preferences could not be recorded"
+}
+
+user_claude_standin_preferences() {
+	# A separate baseline for an initially empty configuration: after the
+	# interactive probe (or before the first print-mode turn if skipped).
+	[ "$claude_config_before" = empty ] || return 0
+	fx user-claude plant --preferences || fail "the user's Claude Code preferences could not be prepared"
+	user_preferences_file=$work/user-claude-standin-preferences.json
+	fx user-claude record --what preferences --file "$user_preferences_file" ||
 		fail "the user's Claude Code preferences could not be recorded"
 }
 
 user_claude_untouched() {
 	fx user-claude check --file "$work/user-claude-installation.json" ||
 		fail "the managed client changed the user's Claude Code launcher or version files"
-	fx user-claude check --file "$work/user-claude-preferences.json" ||
+	fx user-claude check --file "$user_preferences_file" ||
 		fail "the managed client changed the user's Claude Code install or update preferences"
 	say "the user's own Claude Code: untouched (launcher, version files, install and update preferences)"
 }
@@ -312,6 +322,7 @@ session_verbs() {
 	# launch's exec would block it. Every earlier session has recorded its
 	# end first, so the held one is the only open record.
 	fx ended --install "$install_dir" --timeout 60 >/dev/null || fail "an earlier managed session has not ended"
+	: >"$work/hold-start"
 	background "$work/held.pid" exec --cwd "$work/project" -- "$cm" -c -- -p "journey turn held" \
 		>"$work/held.txt" 2>&1 </dev/null
 	wait_up_to 120 "the held managed turn" fx held --log "$work/fixture.log"
@@ -370,7 +381,7 @@ forget_session() {
 
 managed_turn() {
 	background "$work/fixture.pid" serve --port-file "$work/fixture.port" --log "$work/fixture.log" \
-		--hold-release "$work/release-held"
+		--hold-start "$work/hold-start" --hold-release "$work/release-held"
 	wait_for "the fixture provider" test -s "$work/fixture.port"
 	base="http://127.0.0.1:$(cat "$work/fixture.port")/v1"
 	"$cm" providers add --preset lan-openai-compatible --as journey-fixture --base-url "$base" \
@@ -383,8 +394,9 @@ managed_turn() {
 	say "fixture provider declared and admitted: ok"
 	if native; then
 		claude_config_before=$(fx claude-config) || fail "the Claude Code configuration could not be read"
-		first_interactive_turn
 		user_claude_preferences
+		first_interactive_turn
+		user_claude_standin_preferences
 	fi
 	mkdir "$work/project"
 	(cd "$work/project" && "$cm" direct --model custom-journey-fixture -- -p "journey turn one") \

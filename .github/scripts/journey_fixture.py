@@ -5,16 +5,15 @@ works on hosts without one. Nothing here contacts anything but loopback
 listeners it starts itself, except ``client``, which only reads the
 installed release's pin.
 
-  serve --port-file F --log F [--port N] [--hold-release F]
+  serve --port-file F --log F [--port N] [--hold-start F --hold-release F]
       a keyless OpenAI-compatible chat endpoint on 127.0.0.1 (port N, or
       an ephemeral one; written to F once listening). The Nth chat request
-      is answered "fixture reply N" ("INTERACTIVE-OK-N" when its last user
-      message asks for "journey turn interactive"); each request is logged
-      as one JSON line of metadata (method, path, model, the earlier fixture
-      replies its conversation carried, whether it was held), never a
-      message text. With --hold-release, a request whose last user message
-      asks for "journey turn held" is logged, then answered only once that
-      file exists (120 s at most): its client stays running meanwhile.
+      is answered "fixture reply N"; each request is logged as one JSON
+      line of metadata (method, path, model, the earlier fixture replies
+      its conversation carried, whether it was held), never a message text.
+      Once the --hold-start file exists, requests are logged, then answered
+      only once the --hold-release file exists (120 s at most): their
+      clients stay running meanwhile, regardless of the message layout.
   held --log F
       exit 0 once the log records a held request, else 1.
   exec [--cwd D] -- CMD [ARG...]
@@ -106,13 +105,14 @@ installed release's pin.
       never changes or runs an existing one. record --what
       installation|preferences writes their facts to F; check compares
       them with F and names what changed.
-  interactive --log F [--timeout S] [--cwd D] -- CMD [ARG...]
+  interactive --log F --fixture-log F [--timeout S] [--cwd D] -- CMD [ARG...]
       the first interactive managed turn on a pseudo-terminal (CMD: the
       managed launch): the one-time screens are answered as a person
       would (charmer's launch confirmation, the text style, the security
       notes, the folder trust question: yes) and recorded in their order,
       with a line of the text each showed, in F and on stdout; then one
-      turn (its fixture reply must show) and /exit, whose status must be 0.
+      turn (its numbered fixture reply must show after submission and match
+      a new request in --fixture-log) and /exit, whose status must be 0.
       A run that stalls (on a screen it does not know), a missing reply or a
       run past S seconds fails, printing the screen's last lines.
 """
@@ -142,10 +142,8 @@ REPLY = "fixture reply {n}"
 _REPLY = re.compile(r"fixture reply ([0-9]+)")
 _QUESTION = re.compile(rb"\[y/N\]\s*$")
 _KEEP_CREDENTIALS = re.compile(rb"press Enter to keep them:\s*$")
-HELD = "journey turn held"
 HOLD_LIMIT = 120.0
 INTERACTIVE = "journey turn interactive"
-INTERACTIVE_REPLY = "INTERACTIVE-OK-{n}"
 
 
 def _text(content: object) -> str:
@@ -167,16 +165,10 @@ def _write_port(path: Path, port: int) -> None:
     os.replace(temporary, path)
 
 
-def _last_user_text(messages: list) -> str:
-    for message in reversed(messages):
-        if isinstance(message, dict) and message.get("role") == "user":
-            return _text(message.get("content"))
-    return ""
-
-
 class _Chat(BaseHTTPRequestHandler):
     log_path: Path
     hold_release: Path | None = None
+    hold_start: Path | None = None
     counter = [0]
     lock = threading.Lock()
 
@@ -210,8 +202,10 @@ class _Chat(BaseHTTPRequestHandler):
         messages = request.get("messages") if isinstance(request.get("messages"), list) else []
         earlier = sorted({int(n) for m in messages if isinstance(m, dict) and m.get("role") == "assistant"
                           for n in _REPLY.findall(_text(m.get("content")))})
-        asked = _last_user_text(messages)
-        held = self.hold_release is not None and HELD in asked
+        # The journey arms the hold just before its background launch. Client
+        # reminders and gateway message translation cannot change this signal.
+        held = (self.hold_start is not None and self.hold_start.exists()
+                and self.hold_release is not None and not self.hold_release.exists())
         with self.lock:
             self.counter[0] += 1
             number = self.counter[0]
@@ -224,7 +218,7 @@ class _Chat(BaseHTTPRequestHandler):
             deadline = time.monotonic() + HOLD_LIMIT
             while not self.hold_release.exists() and time.monotonic() < deadline:
                 time.sleep(0.2)
-        reply = (INTERACTIVE_REPLY if INTERACTIVE in asked else REPLY).format(n=number)
+        reply = REPLY.format(n=number)
         usage = {"prompt_tokens": 10, "completion_tokens": 3, "total_tokens": 13}
         model = request.get("model") or MODEL
         head = {"id": f"chatcmpl-fixture-{number}", "created": 0, "model": model}
@@ -283,8 +277,10 @@ def serve_files(directory: Path, port_file: Path, cert: Path | None, key: Path |
     return 0
 
 
-def serve(port_file: Path, log_path: Path, port: int = 0, hold_release: Path | None = None) -> int:
-    handler = type("Chat", (_Chat,), {"log_path": log_path, "counter": [0], "hold_release": hold_release})
+def serve(port_file: Path, log_path: Path, port: int = 0, hold_release: Path | None = None,
+          hold_start: Path | None = None) -> int:
+    handler = type("Chat", (_Chat,), {"log_path": log_path, "counter": [0],
+                                     "hold_release": hold_release, "hold_start": hold_start})
     server = ThreadingHTTPServer(("127.0.0.1", port), handler)
     server.daemon_threads = True  # a held request never keeps the stopped server alive
     _write_port(port_file, server.server_address[1])
@@ -964,25 +960,53 @@ def user_claude(command: str, home: Path, environ: dict[str, str], file: Path | 
     return 0
 
 
-# The one-time screens of a first interactive launch, in the order they come,
-# each with a single-word marker (an incremental redraw may move the cursor
-# between the words of a phrase) and what a person answers. The folder trust
-# question preselects "No, exit": Down, then Enter once the selection glyph
-# is drawn again on the "Yes" row.
-_GLYPH = "❯".encode()
+# Only these dialogs may receive keys. Match identifying text AND options,
+# never a generic "Choose", "Press", "confirm" or selection glyph. The
+# folder trust question preselects "No, exit": Down, then Enter only after
+# the redraw selects the expected Yes row.
 SCREENS = (
-    ("launch-confirm", b"Enter launch", (b"\r",)),
-    ("text-style", b"Choose", (b"\r",)),
-    ("security-notes", b"Press", (b"\r",)),
-    ("folder-trust", b"confirm", (b"\x1b[B", _GLYPH, b"\r")),
+    ("launch-confirm", re.compile(r"Enter launch · q quit:\s*$")),
+    ("text-style", re.compile(
+        r"Choose the text style that looks best with your terminal.*?To change this later, run /theme"
+        r".*?❯ (?:✔ )?Dark mode.*?Light mode.*?Dark mode \(colorblind-friendly\)"
+        r".*?Light mode \(colorblind-friendly\).*?Dark mode \(ANSI colors only\)"
+        r".*?Light mode \(ANSI colors only\)")),
+    ("security-notes", re.compile(
+        r"Security notes:.*?Claude can make mistakes\..*?Due to prompt injection risks"
+        r".*?Press Enter to continue")),
+    ("folder-trust", re.compile(
+        r"Accessing workspace:.*?Quick safety check: Is this a project you created or one you trust\?"
+        r".*?❯ No, exit Yes, I trust this folder Enter to confirm · Esc to cancel")),
 )
+_TRUST_YES = re.compile(r"❯ Yes, I trust this folder(?:\s|$)")
+# The empty input row and its idle footer, not a selection menu's glyph.
+_INPUT_PROMPT = re.compile(r"❯ ─{3,} ⏸ manual mode on · \? for shortcuts · ← for agents"
+                           r"(?: ◉ \w+ · \w+ · /effort)?$")
 _ESCAPES = re.compile(rb"\x1b\[[0-9;?<>=]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[()][0-9A-Za-z]|\x1b[=>78]")
+_STYLES = re.compile(rb"\x1b\[[0-9;]*m")
 
 
 def screen_text(data: bytes) -> str:
-    """Terminal output as plain text: escape sequences out, whitespace collapsed."""
+    """Plain terminal text: styles join letters; cursor moves separate words."""
 
-    return " ".join(_ESCAPES.sub(b" ", data).decode("utf-8", "replace").split())
+    return " ".join(_ESCAPES.sub(b" ", _STYLES.sub(b"", data)).decode("utf-8", "replace").split())
+
+
+def fixture_replies(log_path: Path) -> set[int]:
+    """Numbered chat requests, from fixture metadata only (never client history)."""
+
+    try:
+        try:
+            lines = log_path.read_text(encoding="utf-8").splitlines()
+        except FileNotFoundError:
+            return set()
+        records = [json.loads(line) for line in lines]
+        return {record["reply"] for record in records
+                if record.get("method") == "POST"
+                and record.get("path", "").rstrip("/").endswith("/chat/completions")
+                and record.get("model") == MODEL and type(record.get("reply")) is int}
+    except (OSError, ValueError, AttributeError, TypeError) as exc:
+        raise CheckError("the fixture request log could not be read") from exc
 
 
 class _Terminal:
@@ -1014,17 +1038,18 @@ class _Terminal:
         self.output.extend(chunk)
         self.last_output = time.monotonic()
 
-    def wait_for(self, marker: bytes, *, limit: float) -> bool:
-        """Read until ``marker`` shows after the cursor (``limit`` seconds at
-        most, within the deadline); the cursor moves past it."""
+    def wait_for(self, pattern: re.Pattern[str], *, limit: float) -> re.Match[str] | None:
+        """Match normalised output after the cursor, within both time bounds.
+        Wait for a quiet read so a split number or label cannot match early."""
 
         end = min(self.deadline, time.monotonic() + limit)
-        while marker not in self.output[self.cursor:]:
+        while True:
+            match = pattern.search(screen_text(bytes(self.output[self.cursor:])))
+            if match is not None and time.monotonic() - self.last_output >= 0.2:
+                return match
             if time.monotonic() >= end or self.closed:
-                return False
+                return None
             self.read(0.2)
-        self.cursor = self.output.index(marker, self.cursor) + len(marker)
-        return True
 
     def send(self, data: bytes) -> None:
         os.write(self.master, data)
@@ -1034,7 +1059,7 @@ class _Terminal:
         return screen_text(bytes(self.output[-6000:]))[-1500:]
 
 
-def interactive(argv: list[str], log_path: Path, timeout: float, cwd: Path | None) -> int:
+def interactive(argv: list[str], log_path: Path, timeout: float, cwd: Path | None, fixture_log: Path) -> int:
     """The first interactive managed turn (module docstring)."""
 
     import fcntl
@@ -1059,27 +1084,26 @@ def interactive(argv: list[str], log_path: Path, timeout: float, cwd: Path | Non
     try:
         pending = list(SCREENS)
         while problem is None:
-            fresh = bytes(terminal.output[terminal.cursor:])
-            hit = next(((index, screen) for index, screen in enumerate(pending) if screen[1] in fresh), None)
-            if hit is not None:
-                index, (name, marker, answers) = hit
-                text = screen_text(fresh)
-                where = text.find(marker.decode())
-                seen.append({"screen": name, "text": text[max(0, where - 120):where + 80]})
+            text = screen_text(bytes(terminal.output[terminal.cursor:]))
+            quiet = time.monotonic() - terminal.last_output
+            hit = next(((index, name, pattern.search(text)) for index, (name, pattern) in enumerate(pending)
+                        if pattern.search(text)), None)
+            if hit is not None and quiet >= 0.2:
+                index, name, match = hit
+                seen.append({"screen": name, "text": text[match.start():match.end()]})
                 terminal.cursor = len(terminal.output)
-                for answer in answers:
-                    if answer == _GLYPH:
-                        if not terminal.wait_for(_GLYPH, limit=10):
-                            problem = f"the {name} screen did not take the selection"
-                            break
-                    else:
-                        terminal.send(answer)
-                terminal.cursor = len(terminal.output)
+                if name == "folder-trust":
+                    terminal.send(b"\x1b[B")
+                    if not terminal.wait_for(_TRUST_YES, limit=10):
+                        problem = f"the {name} screen did not take the selection"
+                        continue
+                    terminal.cursor = len(terminal.output)
+                terminal.send(b"\r")
+                # Output may already contain the next screen: keep it unread.
                 pending = pending[index + 1:]
                 continue
-            quiet = time.monotonic() - terminal.last_output
-            if _GLYPH in fresh and quiet >= 2.0:
-                break  # the input prompt: no known screen is waiting
+            if _INPUT_PROMPT.search(text) and quiet >= 2.0:
+                break
             if terminal.closed:
                 problem = "the launch ended before its input prompt"
             elif time.monotonic() >= terminal.deadline:
@@ -1087,19 +1111,25 @@ def interactive(argv: list[str], log_path: Path, timeout: float, cwd: Path | Non
             else:
                 terminal.read(0.2)
         if problem is None:
+            before = fixture_replies(fixture_log)
             terminal.cursor = len(terminal.output)
             terminal.send(INTERACTIVE.encode() + b"\r")
-            if not terminal.wait_for(b"INTERACTIVE-OK", limit=120):
+            reply = terminal.wait_for(_REPLY, limit=120)
+            if reply is None:
                 problem = "the turn showed no fixture reply"
+            elif int(reply.group(1)) not in fixture_replies(fixture_log) - before:
+                problem = "the fixture reply has no corresponding new request"
+        if problem is None and not terminal.wait_for(_INPUT_PROMPT, limit=20):
+            problem = "the input prompt did not return after the fixture reply"
         if problem is None:
-            terminal.wait_for(_GLYPH, limit=20)
-            time.sleep(0.5)
             terminal.send(b"/exit\r")
             end = time.monotonic() + 30
             while not terminal.closed and time.monotonic() < end:
                 terminal.read(0.2)
             if not terminal.closed:
                 problem = "/exit did not end the session within 30 s"
+    except CheckError as exc:
+        problem = str(exc)
     finally:
         if problem is not None:
             try:
@@ -1162,6 +1192,7 @@ def main(argv: list[str] | None = None) -> int:
     serve_cmd.add_argument("--log", type=Path, required=True)
     serve_cmd.add_argument("--port", type=int, default=0)
     serve_cmd.add_argument("--hold-release", type=Path)
+    serve_cmd.add_argument("--hold-start", type=Path)
     held_cmd = commands.add_parser("held")
     held_cmd.add_argument("--log", type=Path, required=True)
     exec_cmd = commands.add_parser("exec")
@@ -1189,6 +1220,7 @@ def main(argv: list[str] | None = None) -> int:
     user_cmd.add_argument("--preferences", action="store_true")
     interactive_cmd = commands.add_parser("interactive")
     interactive_cmd.add_argument("--log", type=Path, required=True)
+    interactive_cmd.add_argument("--fixture-log", type=Path, required=True)
     interactive_cmd.add_argument("--timeout", type=float, default=240.0)
     interactive_cmd.add_argument("--cwd", type=Path)
     interactive_cmd.add_argument("argv", nargs=argparse.REMAINDER)
@@ -1233,9 +1265,11 @@ def main(argv: list[str] | None = None) -> int:
             os.execvp(command[0], command)
         if args.command == "run":
             return run_bounded(command, args.timeout, args.cwd)
-        return interactive(command, args.log, args.timeout, args.cwd)
+        return interactive(command, args.log, args.timeout, args.cwd, args.fixture_log)
     if args.command == "serve":
-        return serve(args.port_file, args.log, args.port, args.hold_release)
+        if (args.hold_start is None) != (args.hold_release is None):
+            parser.error("serve needs both --hold-start and --hold-release")
+        return serve(args.port_file, args.log, args.port, args.hold_release, args.hold_start)
     if args.command == "held":
         return held(args.log)
     if args.command == "session-ids":

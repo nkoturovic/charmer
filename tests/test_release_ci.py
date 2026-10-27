@@ -802,18 +802,18 @@ class JourneyStepsTests(unittest.TestCase):
                        'fx carried --log "$work/fixture.log" --reply "$second" --earlier "$first"'):
             self.assertIn(needle, turn)
         self.assertIn('base="http://127.0.0.1:', turn)  # the provider is the loopback fixture only
-        # The first managed launch is the interactive one, with the account's
-        # Claude Code configuration recorded before it; the preferences are
-        # recorded before the print-mode turns, the session verbs after them.
-        steps = ['--hold-release "$work/release-held"', 'claude_config_before=$(fx claude-config)',
-                 "first_interactive_turn", "user_claude_preferences", '-p "journey turn one"',
-                 '-p "journey turn two"', "session_verbs"]
+        # Existing preferences precede the first launch, even when interactive;
+        # an initially empty configuration gets a separate stand-in baseline.
+        steps = ['--hold-start "$work/hold-start" --hold-release "$work/release-held"',
+                 'claude_config_before=$(fx claude-config)', "user_claude_preferences", "first_interactive_turn",
+                 "user_claude_standin_preferences", '-p "journey turn one"', '-p "journey turn two"', "session_verbs"]
         positions = [turn.index(step) for step in steps]
         self.assertEqual(positions, sorted(positions))
         interactive = text.split("first_interactive_turn() {", 1)[1].split("\n}\n", 1)[0]
-        self.assertIn('fx interactive --log "$work/screens.log" --cwd "$work/first" -- "$cm" --line direct', interactive)
+        self.assertIn('fx interactive --log "$work/screens.log" --fixture-log "$work/fixture.log" '
+                      '--cwd "$work/first" -- "$cm" --line direct', interactive)
         verbs = text.split("session_verbs() {", 1)[1].split("\n}\n", 1)[0]
-        steps = ['fx ended --install "$install_dir" --timeout 60',
+        steps = ['fx ended --install "$install_dir" --timeout 60', ': >"$work/hold-start"',
                  'background "$work/held.pid" exec --cwd "$work/project" -- "$cm" -c -- -p "journey turn held"',
                  'fx held --log "$work/fixture.log"', "open_session",
                  'fx processes --install "$install_dir" --session "$held_session"',
@@ -1079,18 +1079,123 @@ fx() {
         lifecycle = (REPO_ROOT / "src/charmer/gateway_lifecycle.py").read_text()
         self.assertIn('is on a Windows drive "', lifecycle)
 
+    def run_managed_turn(self, tmp: Path, platform: str, change: str = "", *, empty: bool = False
+                         ) -> subprocess.CompletedProcess[str]:
+        """Execute the journey's ordering and real preference checks; stand in
+        only for managed launches, fixture setup and the later native verbs."""
+
+        text = JOURNEY.read_text()
+        names = ("first_interactive_turn", "user_claude_installation", "user_claude_preferences",
+                 "user_claude_standin_preferences", "user_claude_untouched", "managed_turn")
+        functions = []
+        for name in names:
+            start = text.find(f"\n{name}() {{\n")
+            if start >= 0:
+                functions.append(text[start + 1:text.index("\n}\n", start) + 3])
+        home, work = tmp / "home", tmp / "work"
+        home.mkdir()
+        work.mkdir()
+        if not empty:
+            (home / ".claude.json").write_text(json.dumps(
+                {"installMethod": "native", "autoUpdates": True, "autoUpdatesChannel": "stable"}))
+        client = tmp / "client.py"
+        client.write_text(
+            "import json, os\nfrom pathlib import Path\n"
+            "path = Path(os.environ['HOME']) / '.claude.json'\n"
+            "document = json.loads(path.read_text()) if path.exists() else {}\n"
+            "document['hasCompletedOnboarding'] = True\n"
+            "key = os.environ['CHANGE_PREF']\n"
+            "if key:\n    document[key] = {'installMethod': 'npm', 'autoUpdates': False, "
+            "'autoUpdatesChannel': 'latest'}[key]\n"
+            "path.write_text(json.dumps(document))\n")
+        stub = tmp / "charmer"
+        stub.write_text('#!/bin/sh\ncase $1 in\n'
+                        'direct) "$PYTHON" -I "$CLIENT"; echo "fixture reply 1" ;;\n'
+                        '-c) echo "fixture reply 2" ;;\nesac\n')
+        stub.chmod(0o755)
+        harness = r'''set -eu
+work=$WORK
+cm=$STUB
+install_dir=$WORK
+say() { printf 'journey: %s\n' "$*"; }
+fail() { printf 'journey: FAILED: %s\n' "$*" >&2; exit 1; }
+native() { return 0; }
+uname() { printf '%s\n' "$PLATFORM"; }
+background() { printf '12345\n' >"$work/fixture.port"; }
+wait_for() { return 0; }
+show_tail() { cat "$1" >&2; }
+reply_number() { sed -n 's/.*fixture reply \([0-9][0-9]*\).*/\1/p' "$1"; }
+session_verbs() { say "session verbs reached"; }
+fx() {
+    case $1 in
+    user-claude|claude-config) "$PYTHON" -I "$FIXTURE" "$@" ;;
+    interactive) "$PYTHON" -I "$CLIENT"; echo "interactive probe reached" ;;
+    *) return 0 ;;
+    esac
+}
+'''
+        script = harness + "".join(functions) + "user_claude_installation\nmanaged_turn\nuser_claude_untouched\n"
+        env = {**os.environ, "HOME": str(home), "WORK": str(work), "STUB": str(stub), "CLIENT": str(client),
+               "PYTHON": sys.executable, "FIXTURE": str(JOURNEY_FIXTURE), "CHANGE_PREF": change,
+               "PLATFORM": platform, "JOURNEY_INTERACTIVE": "run"}
+        return subprocess.run(["sh", "-c", script], env=env, cwd=tmp, capture_output=True, text=True, timeout=30)
+
+    def test_first_managed_launch_cannot_rebaseline_existing_preferences(self) -> None:
+        for platform in ("Linux", "Darwin"):
+            for change in ("", "autoUpdates", "installMethod", "autoUpdatesChannel"):
+                with self.subTest(platform=platform, change=change), tempfile.TemporaryDirectory() as directory:
+                    result = self.run_managed_turn(Path(directory), platform, change)
+                    self.assertEqual(result.returncode, 1 if change else 0, result.stdout + result.stderr)
+                    if change:
+                        self.assertIn("the managed client changed the user's Claude Code install or update preferences",
+                                      result.stderr)
+                    else:
+                        self.assertIn("the user's own Claude Code: untouched", result.stdout)
+                    baseline = Path(directory) / "work/user-claude-preferences.json"
+                    self.assertEqual(json.loads(baseline.read_text())["facts"]["preferences"],
+                                     {"installMethod": "native", "autoUpdates": True, "autoUpdatesChannel": "stable"})
+
+    def test_macos_skips_only_interactive_onboarding(self) -> None:
+        for platform in ("Linux", "Darwin"):
+            with self.subTest(platform=platform), tempfile.TemporaryDirectory() as directory:
+                result = self.run_managed_turn(Path(directory), platform)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                if platform == "Darwin":
+                    self.assertIn("journey: macOS interactive onboarding: not established by this journey", result.stdout)
+                    self.assertNotIn("interactive probe reached", result.stdout)
+                else:
+                    self.assertIn("interactive probe reached", result.stdout)
+                    self.assertNotIn("macOS interactive onboarding", result.stdout)
+                for step in ("first managed turn: ok", "resumed managed session: ok", "session verbs reached",
+                             "the user's own Claude Code: untouched"):
+                    self.assertIn(step, result.stdout)
+
+    def test_initially_empty_preferences_use_a_separate_standin_baseline(self) -> None:
+        for platform in ("Linux", "Darwin"):
+            with self.subTest(platform=platform), tempfile.TemporaryDirectory() as directory:
+                tmp = Path(directory)
+                result = self.run_managed_turn(tmp, platform, empty=True)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertFalse((tmp / "work/user-claude-preferences.json").exists())
+                baseline = tmp / "work/user-claude-standin-preferences.json"
+                self.assertEqual(json.loads(baseline.read_text())["facts"]["preferences"],
+                                 {"installMethod": "native", "autoUpdates": True, "autoUpdatesChannel": None})
+                self.assertIn("the user's own Claude Code: untouched", result.stdout)
+
     def test_the_users_own_claude_code_is_recorded_around_every_managed_run(self) -> None:
         text = JOURNEY.read_text()
         installation = text.split("user_claude_installation() {", 1)[1].split("\n}\n", 1)[0]
         self.assertLess(installation.index("fx user-claude plant ||"),
                         installation.index('fx user-claude record --what installation'))
         preferences = text.split("user_claude_preferences() {", 1)[1].split("\n}\n", 1)[0]
-        self.assertRegex(preferences, r'if \[ "\$claude_config_before" = empty \]; then\s+'
-                                      r'fx user-claude plant --preferences')
-        self.assertLess(preferences.index("plant --preferences"), preferences.index("record --what preferences"))
+        self.assertIn('[ "$claude_config_before" != empty ] || return 0', preferences)
+        self.assertNotIn("plant --preferences", preferences)
+        standin = text.split("user_claude_standin_preferences() {", 1)[1].split("\n}\n", 1)[0]
+        self.assertIn('[ "$claude_config_before" = empty ] || return 0', standin)
+        self.assertLess(standin.index("plant --preferences"), standin.index("record --what preferences"))
         untouched = text.split("user_claude_untouched() {", 1)[1].split("\n}\n", 1)[0]
-        for record in ("user-claude-installation.json", "user-claude-preferences.json"):
-            self.assertIn(f'fx user-claude check --file "$work/{record}"', untouched)
+        self.assertIn('fx user-claude check --file "$work/user-claude-installation.json"', untouched)
+        self.assertIn('fx user-claude check --file "$user_preferences_file"', untouched)
 
 
 @requires_release_tree
@@ -1503,19 +1608,24 @@ cat "$STUB/text"; exit "$(cat "$STUB/text.exit")"
     def test_a_held_request_keeps_its_client_waiting_until_released(self) -> None:
         import threading
 
-        release = self.tmp / "release"
+        release, start = self.tmp / "release", self.tmp / "hold-start"
         self.background("serve", "--port-file", str(self.tmp / "port"), "--log", str(self.tmp / "log"),
-                        "--hold-release", str(release))
+                        "--hold-release", str(release), "--hold-start", str(start))
         port = self.port(self.tmp / "port")
+        ordinary = {"model": "m", "messages": [{"role": "user", "content": "ready"}]}
+        self.assertEqual(json.loads(self.post(port, ordinary))["choices"][0]["message"]["content"], "fixture reply 1")
         self.assertEqual(self.fixture("held", "--log", str(self.tmp / "log")).returncode, 1)
+        start.touch()  # arm immediately before the managed launch, independent of its message layout
         answers: list[bytes] = []
-        asked = {"model": "m", "messages": [{"role": "user", "content": "one"},
+        asked = {"model": "m", "messages": [{"role": "user", "content": "journey turn held"},
                                             {"role": "assistant", "content": "fixture reply 9"},
-                                            {"role": "user", "content": [{"type": "text", "text": "journey turn held"}]}]}
+                                            {"role": "user", "content": "an additional client reminder"}]}
         waiting = threading.Thread(target=lambda: answers.append(self.post(port, asked)))
         waiting.start()
         self.addCleanup(waiting.join, 30)
         self.addCleanup(release.touch)
+        waiting.join(timeout=0.5)
+        self.assertEqual(answers, [], "the armed request was answered instead of held")
         deadline = time.monotonic() + 30
         while self.fixture("held", "--log", str(self.tmp / "log")).returncode != 0:
             self.assertLess(time.monotonic(), deadline, "the held request was not logged")
@@ -1524,12 +1634,12 @@ cat "$STUB/text"; exit "$(cat "$STUB/text.exit")"
         self.assertEqual(answers, [])  # still held
         release.touch()
         waiting.join(timeout=30)
-        self.assertEqual(json.loads(answers[0])["choices"][0]["message"]["content"], "fixture reply 1")
-        interactive = json.loads(self.post(port, {"model": "m", "messages": [
-            {"role": "user", "content": "journey turn interactive"}]}))
-        self.assertEqual(interactive["choices"][0]["message"]["content"], "INTERACTIVE-OK-2")
+        self.assertEqual(json.loads(answers[0])["choices"][0]["message"]["content"], "fixture reply 2")
+        interactive = json.loads(self.post(port, ordinary))
+        self.assertEqual(interactive["choices"][0]["message"]["content"], "fixture reply 3")
         records = [json.loads(line) for line in (self.tmp / "log").read_text().splitlines()]
-        self.assertEqual([(r["reply"], r["held"], r["carried"]) for r in records], [(1, True, [9]), (2, False, [])])
+        self.assertEqual([(r["reply"], r["held"], r["carried"]) for r in records],
+                         [(1, False, []), (2, True, [9]), (3, False, [])])
         self.assertNotIn("journey turn", (self.tmp / "log").read_text())  # metadata only
         # Without a release file nothing is held.
         self.background("serve", "--port-file", str(self.tmp / "port2"), "--log", str(self.tmp / "log2"))
@@ -1733,24 +1843,38 @@ cat "$STUB/text"; exit "$(cat "$STUB/text.exit")"
         self.assertFalse(os.path.lexists(own / ".local/bin/claude"))
         self.assertEqual({path: path.read_bytes() for path in before}, before)
 
-    FAKE_CLIENT = r"""import os, sys, tty
+    # The headings, options and input footer seen in the stock release journey.
+    # Replies come from the real fixture server, not a client-side success token.
+    FAKE_CLIENT = r"""import json, os, sys, tty, urllib.request
+from pathlib import Path
 tty.setraw(0)
 screens = sys.argv[1].split(",") if sys.argv[1] else []
 
 
 def show(text):
+    if os.environ.get("CURSOR_SPACES") == "1":
+        text = text.replace(" ", "\x1b[1C")
     os.write(1, text.encode())
 
 
 def key():
-    return os.read(0, 64)
+    data = os.read(0, 64)
+    with open(os.environ["KEYS"], "ab") as handle:
+        handle.write(data)
+    return data
 
 
 def line():
     typed = b""
     while not typed.endswith(b"\r"):
-        typed += os.read(0, 64)
+        typed += key()
     return typed[:-1]
+
+
+def prompt():
+    show("\r\n──────────────── cm:direct:custom-journey-fixture@first ─\r\n❯ \r\n"
+         "────────────────────────────────\r\n"
+         "⏸ manual mode on · ? for shortcuts · ← for agents\r\n")
 
 
 for screen in screens:
@@ -1759,68 +1883,135 @@ for screen in screens:
         if line() != b"":
             sys.exit(11)
     elif screen == "style":
-        show("\x1b[2J\x1b[HChoose the text style\r\n❯ 1. Dark mode\r\n")
+        show("\x1b[2J\x1b[HChoose the te\x1b[1mxt\x1b[0m style that looks best with your terminal\r\n"
+             "To change this later, run /theme\r\nAuto (match terminal)\r\n❯ ✔ Dark mode\r\nLight mode\r\n"
+             "Dark mode (colorblind-friendly)\r\nLight mode (colorblind-friendly)\r\n"
+             "Dark mode (ANSI colors only)\r\nLight mode (ANSI colors only)\r\n")
         if key() != b"\r":
             sys.exit(12)
     elif screen == "notes":
-        show("\x1b[2J\x1b[HSecurity notes\r\nPress Enter to continue\r\n")
+        show("\x1b[2J\x1b[HSecurity notes:\r\n1. Claude can make mistakes.\r\n"
+             "2. Due to prompt injection risks, only use it with code you trust\r\n"
+             "Press Enter to continue…\r\n")
         if key() != b"\r":
             sys.exit(13)
     elif screen == "trust":
-        show("\x1b[2J\x1b[HDo you trust the files in this folder?\r\n  1. Yes\r\n❯ 2. No, exit\r\n"
-             "Enter to confirm · Esc to exit\r\n")
+        show("\x1b[2J\x1b[HAccessing workspace: /tmp/first\r\n"
+             "Quick safety check: Is this a project you created or one you trust?\r\n"
+             "❯ No, exit\r\nYes, I trust this folder\r\nEnter to confirm · Esc to cancel\r\n")
         if key() != b"\x1b[B":
             sys.exit(14)
-        show("\x1b[3A❯ 1. Yes")
+        show("\x1b[3ANo, exit\r\n❯ Yes, I trust this folder\r\n")
         if key() != b"\r":
             sys.exit(15)
-    elif screen == "welcome":
-        show("\x1b[2J\x1b[HWelcome to the new release, sign in\r\n")
+    elif screen == "unknown":
+        show(os.environ["UNKNOWN_SCREEN"])
         key()
-show("\x1b[2J\x1b[H❯ ")
+show("\x1b[2J\x1b[HClaude Code v2.1.310\r\n")
+if os.environ.get("BEFORE_REPLY"):
+    show("● fixture reply 1\r\n")
+prompt()
 if line() != b"journey turn interactive":
     sys.exit(16)
+reply = "fixture reply 1"
+if os.environ.get("NO_REQUEST") != "1":
+    # A later user-role reminder makes the old last-user-text heuristic miss.
+    request = urllib.request.Request(os.environ["FIXTURE_URL"], method="POST",
+        headers={"Content-Type": "application/json"},
+        data=json.dumps({"model": "fixture-model-1", "messages": [
+            {"role": "user", "content": "journey turn interactive"},
+            {"role": "user", "content": "an additional client reminder"}]}).encode())
+    with urllib.request.urlopen(request, timeout=10) as response:
+        reply = json.load(response)["choices"][0]["message"]["content"]
+if os.environ.get("WRONG_REPLY") == "1":
+    reply = "fixture reply 999"
 if os.environ.get("SILENT") != "1":
-    show("\r\n● INTERACTIVE-OK-4\r\n\r\n❯ ")
+    show("\r\n❯ journey turn interactive\r\n● " + reply + "\r\n")
+    prompt()
 if line() != b"/exit":
     sys.exit(17)
 show("\r\nbye\r\n")
 """
 
-    def test_interactive_answers_and_records_the_one_time_screens(self) -> None:
+    def interactive_turn(self, screens: str = "", timeout: str = "12", **env: str
+                         ) -> subprocess.CompletedProcess[str]:
         try:
-            os.close(os.openpty()[0])
+            master, slave = os.openpty()
+            os.close(master)
+            os.close(slave)
         except OSError as exc:
             self.skipTest(f"BOUNDARY: no pseudo-terminal here ({exc})")
-        client = self.tmp / "client.py"
+        run = self.tmp / str(uuid.uuid4())
+        run.mkdir()
+        client = run / "client.py"
         client.write_text(self.FAKE_CLIENT)
-        log = self.tmp / "screens.log"
+        requests = run / "fixture.log"
+        self.background("serve", "--port-file", str(run / "port"), "--log", str(requests))
+        port = self.port(run / "port")
+        if env.get("STALE_REQUEST") == "1":
+            self.post(port, {"model": "fixture-model-1", "messages": []})
+        self.screen_log, self.keys = run / "screens.log", run / "keys"
+        return self.fixture("interactive", "--log", str(self.screen_log), "--fixture-log", str(requests),
+                            "--timeout", timeout, "--cwd", str(run), "--", sys.executable, "-I", str(client), screens,
+                            env={**os.environ, "TERM": "dumb", "KEYS": str(self.keys),
+                                 "FIXTURE_URL": f"http://127.0.0.1:{port}/v1/chat/completions", **env})
 
-        def turn(screens: str, timeout: str = "60", **env: str) -> subprocess.CompletedProcess[str]:
-            return self.fixture("interactive", "--log", str(log), "--timeout", timeout, "--cwd", str(self.tmp), "--",
-                                sys.executable, "-I", str(client), screens,
-                                env={**os.environ, "TERM": "dumb", **env})
-
-        full = turn("confirm,style,notes,trust")
+    def test_interactive_answers_and_records_the_one_time_screens(self) -> None:
+        full = self.interactive_turn("confirm,style,notes,trust", CURSOR_SPACES="1")
         self.assertEqual(full.returncode, 0, full.stdout + full.stderr)
         self.assertIn("screens: launch-confirm, text-style, security-notes, folder-trust; one turn answered; /exit",
                       full.stdout)
-        self.assertIn("screen folder-trust: Do you trust the files in this folder?", full.stdout)
-        self.assertEqual([entry["screen"] for entry in json.loads(log.read_text().splitlines()[-1])["screens"]],
+        self.assertIn("screen folder-trust: Accessing workspace:", full.stdout)
+        self.assertEqual([entry["screen"] for entry in json.loads(self.screen_log.read_text())["screens"]],
                          ["launch-confirm", "text-style", "security-notes", "folder-trust"])
-        some = turn("notes")  # screens a configured account no longer shows are left out
+        some = self.interactive_turn("notes")  # screens a configured account no longer shows are left out
         self.assertEqual(some.returncode, 0, some.stdout + some.stderr)
         self.assertIn("screens: security-notes; one turn answered", some.stdout)
-        none = turn("")
-        self.assertIn("screens: none; one turn answered", none.stdout)
-        stalled = turn("welcome", timeout="6")
-        self.assertEqual(stalled.returncode, 1)
-        self.assertIn("no input prompt and no known screen", stalled.stderr)
-        self.assertIn("Welcome to the new release", stalled.stderr)  # the screen's last lines, for the record
-        silent = turn("", timeout="8", SILENT="1")
-        self.assertEqual(silent.returncode, 1)
-        self.assertIn("the turn showed no fixture reply", silent.stderr)
-        self.assertEqual(json.loads(log.read_text().splitlines()[-1])["problem"], "the turn showed no fixture reply")
+
+    def test_interactive_accepts_the_stock_numbered_reply_with_a_new_request(self) -> None:
+        result = self.interactive_turn()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("screens: none; one turn answered", result.stdout)
+        self.assertIn(b"journey turn interactive\r/exit\r", self.keys.read_bytes())
+
+    def test_interactive_unknown_dialogs_receive_no_keys(self) -> None:
+        screens = (
+            "Choose whether to enable automatic updates\r\nPress Enter to enable\r\n",
+            "Press Enter to enable automatic updates\r\n",
+            "Please confirm automatic updates\r\n❯ Enable\r\nDisable\r\n",
+            "❯ Enable automatic updates\r\n  Keep disabled\r\n",
+            "❯ \r\n────────────────\r\n⏸ manual mode on · ? for shortcuts · ← for agents\r\n"
+            "Choose whether to enable automatic updates\r\n❯ Enable\r\n",
+            "Welcome to the new release, sign in\r\n",
+            # Identifying headings without their expected options are not enough.
+            "Choose the text style\r\n❯ Enable automatic updates\r\nPress Enter\r\n",
+            "Security notes:\r\nPress Enter to enable automatic updates\r\n",
+            "Quick safety check: Is this a project you created or one you trust?\r\n"
+            "❯ Enable automatic updates\r\nEnter to confirm\r\n",
+            "Enter launch · q quit: enable automatic updates?\r\n",
+        )
+        for screen in screens:
+            with self.subTest(screen=screen):
+                result = self.interactive_turn("unknown", timeout="6", UNKNOWN_SCREEN=screen)
+                self.assertFalse(self.keys.exists(), "the unrecognised dialog received keystrokes")
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertIn("no input prompt and no known screen", result.stderr)
+                self.assertIn(screen.splitlines()[0], result.stderr)
+                self.assertEqual(json.loads(self.screen_log.read_text())["screens"], [])
+
+    def test_interactive_reply_needs_new_matching_request_and_post_submission_output(self) -> None:
+        for env, problem in (
+                ({"NO_REQUEST": "1"}, "the fixture reply has no corresponding new request"),
+                ({"NO_REQUEST": "1", "STALE_REQUEST": "1"}, "the fixture reply has no corresponding new request"),
+                ({"WRONG_REPLY": "1"}, "the fixture reply has no corresponding new request"),
+                ({"SILENT": "1"}, "the turn showed no fixture reply"),
+                ({"BEFORE_REPLY": "1", "SILENT": "1", "STALE_REQUEST": "1"}, "the turn showed no fixture reply")):
+            with self.subTest(env=env):
+                result = self.interactive_turn(timeout="6", **env)
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertIn(problem, result.stderr)
+                self.assertNotIn(b"/exit", self.keys.read_bytes())
+                self.assertEqual(json.loads(self.screen_log.read_text())["problem"], problem)
 
 
 @requires_release_tree
