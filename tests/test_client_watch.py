@@ -38,7 +38,6 @@ so a client change shows as a failure to requalify.
 from __future__ import annotations
 
 import json
-import os
 import re
 import subprocess
 import threading
@@ -48,14 +47,12 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from charmer import compiler, probe, scope, state, strict_json
+from charmer import catalog, compiler, probe, state, strict_json
 from charmer.probe import ProbeError
 
 import test_client_agents as agents
 import test_client_gateway_fallbacks as fallbacks
 from _layout import RESOURCES_ROOT
-
-from charmer import catalog
 
 _SHIPPED = catalog.load_catalog(RESOURCES_ROOT)
 _FAMILY = compiler.family_default_env(
