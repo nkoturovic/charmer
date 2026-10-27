@@ -89,9 +89,116 @@ switching the release: it copies a matching local file or downloads and
 verifies the pin when none is available. Your own Claude Code installation
 is untouched. A session already running keeps its client until its next
 launch or resume (`/exit`, then `charmer -r <id>`). State and record formats
-remain 4; no record migration is needed. If 2.2.1 is the retained previous
-release, `charmer update --rollback` returns to it; restart the gateway
-between turns to use that release's gateway too.
+remain 4; no record migration is needed.
+
+#### Models you added that now ship
+
+If you added Haiku 5.5 on Anthropic, Muse Wonder 1.0 on Meta, or
+DeepSeek V4.1 Flash 1017 or Kimi K3.1 Pro on OpenRouter yourself, your key
+now resolves to the shipped line (`haiku`, `muse`, `or-deepseek` or
+`or-kimi`). Profiles keep working;
+running sessions keep their captured routes until resume. Other models you
+added are unchanged. Remove the duplicate declaration with the successor
+that the message names; this rewrites the profiles and named bindings
+that use your key:
+
+```bash
+charmer models rm <line> --successor <line>
+```
+
+The first `<line>` is your key; the successor is the shipped key. The
+command asks before changing anything. If a running session still uses your
+line, removal refuses: exit that session first and follow the named remedy.
+These are the messages to expect. `KEY` is your key, `P` the provider,
+`W` the wire id and `S` the shipped line. The listing example uses the wire
+id as its display name; a display name you chose is kept. Its columns are separated by tabs (shown as `\t` below).
+
+| Surface | Text |
+| --- | --- |
+| `charmer providers validate` (exit 0) | `providers.d/P.json: lines.KEY: P/W is now provided by the catalog line "S" — yours yields to it; remove it: charmer models rm KEY --successor S` |
+| `charmer doctor` (Attention) | `operator line KEY (P/W) is now provided by the catalog as S: yours yields to it — remove it: charmer models rm KEY --successor S` |
+| `charmer models` | `KEY\tW\tnow provided by the catalog as S\tremove yours: charmer models rm KEY --successor S` |
+| `charmer models show <line>` (exit 0) | `operator line KEY (P/W) is now provided by the catalog as S: yours yields to it — remove it: charmer models rm KEY --successor S` |
+
+For a bound line, doctor adds, for example,
+`; used by profile mine cm-explorer: they move to S at their next launch or resume`.
+An admitted line adds ` (it was admitted)` before that semicolon.
+
+Trying to add a model the release already ships writes nothing (exit 1).
+For a new Haiku key, the refusal is:
+
+```text
+charmer: models add: anthropic/claude-haiku-5-5 ships with charmer as the line haiku — nothing written; bind it in a profile (charmer profile edit NAME) or see charmer models
+```
+
+If the earlier Kimi declaration is still present, it instead names its
+removal:
+
+```text
+charmer: models add: openrouter/moonshotai/kimi-k3.1-pro ships with charmer as the line or-kimi — nothing written; yours (custom-moonshotai-kimi-k3-1-pro) yields to it — remove it: charmer models rm custom-moonshotai-kimi-k3-1-pro --successor or-kimi
+```
+
+Aliases left by models you removed may still be reported as
+`alias <alias> (captured for KEY) has no line — prune when unused: charmer doctor --prune-aliases`.
+Once no live session uses them, name the aliases to remove:
+
+```bash
+charmer doctor --prune-aliases <alias>…
+```
+
+Without names, the option prunes all eligible unused aliases. It keeps
+captures of current model declarations; naming an alias still used by a
+live session refuses the whole operation.
+
+#### Settings at the next resume
+
+Managed sessions launched before the update, running or stopped, pick up
+two new compiled settings at their next resume: `ANTHROPIC_DEFAULT_HAIKU_MODEL` names the bound
+Haiku model, otherwise the lead, and `DISABLE_AUTO_COMPACT="0"` re-enables
+managed compaction. They do not change your own settings or plain `claude`.
+Until then, doctor says
+`fence/picker differ from the installed catalog (catalog changed since launch); applies at the next resume`.
+Resume with `charmer -r <id>` after exiting the session.
+
+A later live Haiku bind or unbind has its own reason:
+`session <id8>: background requests move to claude-haiku-5-5[1m] at the next resume`
+(or the lead's selector after unbinding). Reloading plugins does not change
+this launch-time setting. A user `DISABLE_COMPACT` still needs removal;
+see [compaction troubleshooting](troubleshooting.md#inside-a-session).
+
+#### Rolling back to 2.2.1
+
+If 2.2.1 is the retained previous release, `charmer update --rollback`
+returns to it. Prepare first, between turns:
+
+- Rebind profile roles that use `haiku`, or `or-kimi` at low or max; 2.2.1
+  has neither. Its doctor reports such a profile as BLOCKED, for example
+  `profile mine: agents.cm-explorer.model: unknown model 'haiku'` or
+  `profile mine: agents.cm-implementer.effort: 'max' is not supported by 'or-kimi' (available: high, xhigh)`.
+  Profiles that `charmer models rm <line> --successor haiku` rewrote are
+  among them.
+- Remove each model you added on OpenRouter with the low, medium or max
+  contract (`charmer models rm <line>`), or keep only high and xhigh
+  (`charmer models edit <line>`). 2.2.1 rejects those contracts
+  (`proxy effort contract 'output-config-low' is not declared by provider 'openrouter'`),
+  and while such a line exists `charmer providers apply` and adding a model
+  refuse with `operator layer invalid — config not written`. After the
+  rollback, `charmer models rm <line>` refuses while another such line remains.
+- Exit sessions that use `haiku`, `muse`, `or-deepseek` or `or-kimi`: 2.2.1
+  does not serve the selectors 2.3.0 compiled for them. At their next resume
+  `muse`, `or-deepseek` and `or-kimi` resolve to 2.2.1's Muse Spark 1.3,
+  DeepSeek V4.1 Flash and Kimi K3, and a `haiku` role is unbound.
+
+After the rollback the running gateway is still 2.3.0's. Run the guarded
+`charmer gateway restart` between turns, then `charmer update --verify`, and
+do not postpone the restart: 2.2.1's configuration does not turn off the
+2.3.0 gateway's response compression.
+
+Sessions 2.3.0 compiled show 2.2.1's Attention
+`session <id8>: fence/picker differ from the installed catalog (catalog changed since launch); applies at the next resume`
+until their next resume (`charmer -r <id>`); `charmer doctor --repair-all`
+does not clear it. A session whose lineup binds `haiku` also shows
+`session <id8>: the installed catalog no longer evaluates the recorded lineup (agents.cm-explorer.model: unknown model 'haiku'); it applies at the next resume (charmer -r <id>)`.
 
 ### Updating from 2.2.0
 
@@ -115,8 +222,8 @@ your main `statusLine`. See
 [the agent panel](guides/sessions.md#the-agent-panels-rows).
 
 After `charmer update --rollback` returns to **2.1.0**, its plain doctor
-reports BLOCKED “scope differs” for sessions carrying 2.2.0's compiled
-subagent status line. Run `charmer doctor --repair-all` for stopped sessions,
+reports BLOCKED “scope differs” for sessions carrying the subagent status
+line 2.2.0 and later compile. Run `charmer doctor --repair-all` for stopped sessions,
 or resume one to recompile it. This removes the new compiled key; it does
 not change your own status-line settings or the conversation.
 

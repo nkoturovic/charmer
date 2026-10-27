@@ -51,6 +51,20 @@ slots of other profiles are connected. `charmer providers test
 openai` sends one small request after you agree. Which models your plan
 serves is up to OpenAI; a model the account cannot use fails its requests.
 
+GPT-6.1 Terra is not a shipped line. You can add `gpt-6.1-terra` by hand on
+the `openai` provider while the ChatGPT account is selected, with its
+documented context and five reasoning-effort contracts. Follow the
+[Terra add-and-qualify recipe](../guides/models.md#gpt-61-terra-on-the-chatgpt-account),
+then bind your new line with **E** on the launch card. This does not make
+Terra available on the OpenAI API-key route.
+
+Agent qualification (`charmer models qualify custom-terra --agents`) now
+works for ChatGPT-account lines: it prepares the offline exact-client check
+for the line's own provider before asking consent. A preparation failure
+sends no requests; it no longer loses the results of requests already sent.
+Qualification is optional, lists every request and asks first in a terminal
+outside Claude Code; it records evidence, not permission to use a model.
+
 ## 6. Limits and quota
 
 Your plan's usage limits apply and vary by plan and workload; charmer

@@ -39,30 +39,30 @@ The words the launcher uses, as its help (`?` on the card) defines them:
 
 ## Start here
 
-- [Quickstart](quickstart.md): install, connect one provider, pick a
-  profile and launch a first session.
+- [Quickstart](quickstart.md): install, connect one provider, pick a profile and launch.
 - Install: [Linux](install/linux.md) · [macOS](install/macos.md) ·
   [Windows (WSL2)](install/windows-wsl2.md) · [Nix](install/nix.md).
-- `charmer` with no command opens the launcher: the launch card and
-  its screens (**W** Get started, **P** Profiles, **D** Direct, **S**
-  Sessions, **G** Providers, **M** Models, **O** Settings, **H** doctor).
-  `charmer setup` runs the same first steps as plain lines.
+- `charmer` opens the card and its screens (**W** Get started, **P** Profiles,
+  **D** Direct, **S** Sessions, **G** Providers, **M** Models, **O** Settings,
+  **H** doctor). `charmer setup` runs the same first steps as plain lines.
+- To verify and copy an offline file of the pinned client, in **W** Get started,
+  select the **Claude Code** step and press **F**; it never changes your original file.
 
 ## Connect a provider
 
-Any one provider is enough for a working setup; connect only the ones you
-want.
+Any one provider is enough for a working setup; connect only the ones you want.
+**Providers → D** lists the models of every enabled provider that has a key, an approved route and a supported listing
+(account sign-ins are skipped), after one consent naming every request. Listing alone adds no model.
 
-- [API keys](providers/api-keys.md): the built-in providers that take an
-  API key, Anthropic and OpenAI included.
-- [OpenRouter](providers/openrouter.md): one key for models from many
-  vendors.
+- [API keys](providers/api-keys.md): built-in providers, Anthropic and OpenAI included.
+  **Providers → F** chooses an existing private key file; **O** opens orphan
+  keys, where Enter → **Remove** confirms removing a key no provider uses.
+- [OpenRouter](providers/openrouter.md): one key for models from many vendors.
 - [Claude account](providers/claude-account.md) and
-  [ChatGPT account](providers/chatgpt-account.md) sign-ins, for personal
-  use.
+  [ChatGPT account](providers/chatgpt-account.md) sign-ins, for personal use.
 - Your own endpoint, or a vendor's from a preset:
-  [Anthropic-compatible](providers/anthropic-compatible.md)
-  (recommended), [OpenAI-compatible](providers/openai-compatible.md), or a
+  [Anthropic-compatible](providers/anthropic-compatible.md) (recommended),
+  [OpenAI-compatible](providers/openai-compatible.md), or a
   [server on your network](providers/lan.md).
 
 ## Profiles and models

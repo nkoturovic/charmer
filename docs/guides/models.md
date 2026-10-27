@@ -60,6 +60,49 @@ usable for leads, agents and reviews.
 
 <!-- end of generated: model-lines -->
 
+### Haiku on the Claude account
+
+`haiku` is Haiku 5.5 on the Claude account, for agents only: an explorer
+(`cm-explorer`) and light writer (`cm-implementer-light`). It is the same
+family as Opus, Sonnet and Fable, not an independent reviewer of them.
+Measured on 2026-10-27 with Claude Code 2.1.310 and CLIProxyAPI 8.0.42:
+smoke, all five efforts, automatic tool use, streaming and the offline
+exact-client check passed. The 1M context is documented, not measured near
+its limit; the validated floor remains 200,000 tokens.
+
+Every managed session names the model for Claude Code's own background requests
+(summaries and the built-in claude-code-guide): Haiku 5.5 when the profile uses
+the haiku model, otherwise the lead, so a value in your own or your project's
+settings cannot send them outside the session's models.
+
+### Lines moved in this release
+
+- `muse` uses Muse Wonder 1.0 (`muse-wonder-1.0`) on Meta's Model API.
+  Smoke, low/medium/high/xhigh, automatic tool use and streaming passed on
+  2026-10-27. Thinking stays on; xhigh is the top effort on this route.
+- `or-deepseek` uses DeepSeek V4.1 Flash 1017
+  (`deepseek/deepseek-v4.1-flash-1017`) on OpenRouter. Smoke, high/xhigh,
+  forced tool use and streaming passed on 2026-10-27.
+- `or-kimi` uses Kimi K3.1 Pro (`moonshotai/kimi-k3.1-pro`) on OpenRouter.
+  Smoke, high/xhigh and streaming passed on 2026-10-27; forced named tool
+  choice was rejected (HTTP 400), and automatic tool choice passed. Claude
+  Code's agent loop uses automatic tool choice. Low and max are
+  contract-level support, not live-qualified efforts.
+
+Those measurements used Claude Code 2.1.310 and CLIProxyAPI 8.0.42; they
+are not new measurements on this release's pins. Earlier models keep
+serving running sessions until they resume. The first-party
+`deepseek-flash` line keeps DeepSeek's canonical alias: the provider's docs
+checked on 2026-10-27 say it serves V4.1-Flash-1017, but that snapshot has
+not had a live acceptance check on the direct route.
+
+`muse-contributor` stays on Muse Spark 1.3 Contributor: Meta answered
+HTTP 404 for `muse-wonder-1.0-contributor` on 2026-10-27. Meta may train on
+prompts and outputs sent to the contributor tier; do not send confidential
+work. Muse Wonder Full is restricted to Muse Code, not Meta's public Model
+API. Candidates and declarations name these restrictions; listing an id
+does not make that route available.
+
 ## Inspect
 
 ```bash
@@ -178,6 +221,84 @@ qualification also runs an offline check of the pinned Claude Code with
 that model id. Missing, failed or unavailable exact-client evidence is a
 warning, not an agent-use prohibition. The selected account or API-key
 transport must still support the route; there is no implicit fallback.
+
+### GPT-6.1 Terra on the ChatGPT account
+
+Terra is not a shipped line. With OpenAI connected through your ChatGPT
+account, declare it with a key of your own, then optionally qualify it in a
+terminal outside Claude Code. The context and source below are from the
+model's documentation checked on 2026-10-27; recheck them before declaring.
+The five efforts use the account route's reasoning-effort contracts:
+
+```bash
+charmer models add openai gpt-6.1-terra --as custom-terra --context 1050000 --source docs --source-ref "https://developers.openai.com/api/docs/models/gpt-6.1-terra, 2026-10-27" --effort low=reasoning-effort-low --effort medium=reasoning-effort-medium --effort high=reasoning-effort-high --effort xhigh=reasoning-effort-xhigh --effort max=reasoning-effort-max --default-effort medium --display "GPT-6.1 Terra"
+charmer models qualify custom-terra --agents
+```
+
+The declaration makes no provider request. Qualification lists its requests
+and asks before sending any; it also checks the pinned Claude Code offline.
+There is no shipped Terra qualification result. On 2.3.0, agent
+qualification for a ChatGPT-account line prepares that offline check before
+consent: a preparation failure says nothing was sent, rather than losing
+the results of a battery already sent. Once declared, bind `custom-terra`
+with **E** on the launch card. This recipe does not enable the OpenAI API-key
+route for Terra.
+
+### Kimi K3.1 Pro on the Kimi provider
+
+The built-in `kimi` provider is the Kimi Code subscription, not Moonshot's
+pay-per-token API. To add K3.1 Pro by hand on that route:
+
+```bash
+charmer models add kimi k3.1-pro --as custom-kimi-pro --context 262144 --source docs --source-ref "https://www.kimi.com/code/docs/en/kimi-code/models.html, 2026-10-27" --effort low=output-config-low --effort high=output-config-high --effort max=output-config-max --default-effort high --display "Kimi K3.1 Pro"
+```
+
+This route offers low, high and max, not medium. The gateway strips the
+client's thinking parameter for Kimi; the declared wire stays `k3.1-pro`.
+The add path, effort mapping and tool/reasoning round trip were checked
+against a fake provider through the pinned gateway, not a live Kimi account.
+Check the provider's context documentation before declaring; the declared
+bound does not give each agent a separately adjustable window.
+
+### MiniMax M3.1 Flash on OpenRouter
+
+With OpenRouter connected, use its lowercase id and all five output
+contracts, with max as the default:
+
+```bash
+charmer models add openrouter minimax/minimax-m3.1-flash --as custom-minimax-flash --family minimax --context 1048576 --source docs --source-ref "https://openrouter.ai/minimax/minimax-m3.1-flash, 2026-10-27" --effort low=output-config-low --effort medium=output-config-medium --effort high=output-config-high --effort xhigh=output-config-xhigh --effort max=output-config-max --default-effort max --display "MiniMax M3.1 Flash"
+```
+
+The declaration and rendered effort mappings are checked offline; this is
+not a live qualification or a near-limit context measurement. OpenRouter
+may map effort levels to those a model offers, so accepting a level does
+not prove a distinct reasoning depth. The `minimax` family label does not
+establish review independence unless the catalog recognizes it. For either
+model, bind it with **E** on the launch card; **M → Q** offers optional
+qualification with a request plan and explicit consent.
+
+charmer 2.2.1 does not accept the low, medium and max contracts on
+OpenRouter; see [rolling back to 2.2.1](../update.md#rolling-back-to-221)
+before a rollback.
+
+### Model id limits
+
+Use a provider's documented lowercase id, or a lowercase dated id on
+OpenRouter. Mixed-case vendor ids, moving ids starting with `~` (such as
+`~deepseek/deepseek-flash-latest`), colon-suffixed ids such as
+`deepseek/deepseek-v4.1-flash:free`, and ids ending in `[1m]` cannot be
+declared in this release. `models add` says which part is unsupported and
+that nothing was written. Do not just lowercase an id or strip its suffix:
+that may name a different model. Use an alternative the provider actually
+documents, such as `minimax/minimax-m3.1-flash` on OpenRouter instead of the
+direct vendor id `MiniMax-M3.1-Flash`.
+
+The wire id is what the provider receives; charmer adds `[1m]` to its own
+selectors from `--context` for Claude Code's context class. On Kimi Code,
+`k3.1-pro[1m]` is the provider's own id for its 1M-context model: it cannot be
+declared in this release, and a larger `--context` on `k3.1-pro` does not
+reach it. Declare `k3.1-pro` with its documented 262,144 tokens, or use the
+shipped `or-kimi` line for K3.1 Pro's 1M context on OpenRouter.
 
 ## Revoke, remove, replace
 

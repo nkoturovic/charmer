@@ -100,6 +100,14 @@ Current default: the **`balanced` seed profile**
 (`catalog/profiles/balanced.json`): Opus 5.5 lead at ultracode, Sol high
 explorer/xhigh analyst, Opus analyst-strong, Luna max / Sol xhigh / Sol max
 implementer grades, Sol max reviewer and Opus reviewer-strong.
+The `haiku` line is Haiku 5.5 on the Claude account, agents only (explorer
+and light writer), not an independent reviewer of Opus, Sonnet or Fable.
+`muse` is Muse Wonder 1.0; `or-deepseek` is DeepSeek V4.1 Flash 1017 and
+`or-kimi` is Kimi K3.1 Pro on OpenRouter. Their earlier models keep serving
+running sessions until resume. `muse-contributor` stays on Spark 1.3:
+Meta's Wonder contributor id answered 404 on 2026-10-27. Terra is not a
+shipped line; the add-and-qualify recipes and evidence limits live in
+[the models guide](docs/guides/models.md).
 The trusted catalog pins Claude
 **2.1.311** as the verified binary. The gateway is **CLIProxyAPI 8.0.44**
 (pinned in `gateway/UPSTREAM.json` and built by `tools/build.py` with the official
@@ -1967,8 +1975,10 @@ On memory-tight hosts the suite's tmpfs fixture copies can fail with
   DeepSeek aliases follow a distinct
   first-party convention: the wire is whatever id
   DeepSeek's own docs name as canonical — since the V4.1-Flash release that
-  is literally `deepseek-flash` (previously `deepseek-v4-flash`, which is now
-  only a compatibility redirect with no stated sunset); the Pro slot stays
+  is literally `deepseek-flash` (currently V4.1-Flash-1017 per the docs
+  checked on 2026-10-27; no acceptance call on that snapshot). The earlier
+  `deepseek-v4-flash` is only a compatibility redirect with no stated sunset;
+  the Pro slot stays
   `deepseek-v4-pro`, whose requests DeepSeek reroutes to V4.1-Flash from
   2026-09-14 04:00 UTC until V4.1-Pro ships. Dated Flash-0731 / Pro-0813
   strings are resolved version labels, never first-party callable ids.

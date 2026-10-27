@@ -22,7 +22,11 @@ Setup gets charmer's own verified copy of the Claude Code version the
 release pins. It copies an exact size-and-sha256 match from your existing
 installation without changing it, or shows the download's address and size
 and asks first (no credentials sent; answering no sends nothing).
-`charmer setup --step claude` runs just this step.
+`charmer setup --step claude` runs just this step. To use a file you
+already have, in **W** Get started, select the **Claude Code** step and
+press **F**: enter its path, then charmer verifies the pinned size and SHA-256
+before copying it into its own location. A mismatch writes nothing; this
+path makes no download and leaves your original file untouched.
 [Compatibility details](reference/compatibility.md).
 
 ## 1. Connect one provider
@@ -79,6 +83,11 @@ billed and never run automatically. Missing or failed evidence warns, not
 prohibits use; route approval and technical limits still apply.
 [Adding models and optional diagnostics](guides/models.md#add-a-model-of-your-own).
 
+If you connected a provider of your own but left its models for later,
+return to **W → A**, select it under **Your providers** and press Enter to resume
+adding models. You do not need to reconnect it. Once its models are ready,
+Get started points you to the profile step.
+
 ## 2. Choose a profile
 
 A **profile** is a saved lineup: the lead model and the agents bound to
@@ -90,6 +99,10 @@ On the launch card, **P** opens Profiles. **Enter** selects a profile for
 this launch; **D** makes it the default. The card otherwise prefers the
 profile last used in this directory, then your connected default, then
 another connected profile.
+
+To use a model you just added, press **E** on the launch card to edit the
+profile shown there. Select the lead or agent role, choose the model and
+its effort, then save with Ctrl-S. Adding a model does not bind it for you.
 
 From a terminal, `charmer profile starter` is a preview only. With
 `--apply`, it asks and saves the profile, but does not make it the default;
