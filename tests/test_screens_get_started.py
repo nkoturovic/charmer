@@ -656,6 +656,158 @@ class ClaudeStepTests(GetStartedCase):
         self.assertFalse(self.owned.exists())
 
 
+class OfflineClientTests(GetStartedCase):
+    """F copies a pinned fixture file through the real setup acquisition.
+    Downloads and child processes are forbidden, including on invalid input."""
+
+    PAYLOAD = b"offline fixture client\n" + bytes(range(256)) * 16
+    VERSION = "2.1.400"
+
+    def setUp(self) -> None:
+        super().setUp()
+        from charmer import acquire, pin
+
+        self.platform = pin.host_platform()
+        self.contract = {**self.runtime.catalog.docs["native-contract"], "verified": [{
+            "version": self.VERSION,
+            "platforms": {self.platform: {"sha256": hashlib.sha256(self.PAYLOAD).hexdigest(),
+                                          "size": len(self.PAYLOAD)}},
+        }]}
+        self.source = self.runtime.home / "offline client"
+        self.source.write_bytes(self.PAYLOAD)
+        self.owned = pin.owned_path(self.runtime.environ, self.VERSION, self.platform)
+        empty = self.root / "empty-path"
+        empty.mkdir()
+        patches = {
+            "environment": mock.patch.dict(self.runtime.environ, {"PATH": str(empty)}),
+            "contract": mock.patch.dict(self.runtime.catalog.docs, {"native-contract": self.contract}),
+            "acquire": mock.patch.object(external, "acquire_claude", wraps=external.acquire_claude),
+            "download": mock.patch.object(acquire, "download", side_effect=AssertionError("offline download")),
+            "execute": mock.patch("subprocess.Popen", side_effect=AssertionError("offline execution")),
+            "prune": mock.patch("charmer.retention.prune"),
+        }
+        self.mocks = {}
+        for name, patcher in patches.items():
+            self.mocks[name] = patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def test_f_copies_a_verified_offline_client(self) -> None:
+        # Repeating with an owned copy must still verify/copy the explicit
+        # file, rather than turning F into the ordinary installed-status view.
+        for state_ in ("missing", "verified"):
+            with self.subTest(state=state_), mock.patch.object(
+                    external, "claude_status", return_value=external.ClaudeStatus(
+                        self.VERSION, state_, "fixture client", None)):
+                screen = self.screen(focus="claude")
+                self.mocks["acquire"].reset_mock()
+                self.mocks["prune"].reset_mock()
+                _result, win = self.run_screen(screen, ["F", *"~/offline client", ENTER, RIGHT, ENTER, ESC, ESC])
+                self.assertTrue(any("Offline Claude Code file" in frame for frame in win.frames),
+                                "F did not open Offline Claude Code file")
+                frames = "\n".join(win.frames)
+                self.assertIn("Offline client file:", frames)
+                self.assertIn("Verify and copy", frames)
+                keybar = " ".join(line.strip() for line in win.frames[0].splitlines()[-2:])
+                self.assertIn("F offline file", keybar)
+                self.assertLess(keybar.index("F offline file"), keybar.index("? help"))
+                self.assertLess(keybar.index("? help"), keybar.index("Esc launch card"))
+                self.assertEqual(self.owned.read_bytes(), self.PAYLOAD)
+                self.assertEqual(self.source.read_bytes(), self.PAYLOAD)
+                self.assertEqual(screen.message, cli_text.CLAUDE_STEP_DONE.format(version=self.VERSION))
+                self.assertEqual(self.mocks["acquire"].call_count, 1)
+                args, kwargs = self.mocks["acquire"].call_args
+                self.assertEqual(args, (self.runtime,))
+                self.assertEqual(kwargs["claude_from"], self.source)
+                self.assertTrue(callable(kwargs["consent"]))
+                self.assertTrue(callable(kwargs["progress"]))
+                self.mocks["prune"].assert_called_once_with(self.contract, self.runtime.environ)
+        self.mocks["download"].assert_not_called()
+        self.mocks["execute"].assert_not_called()
+
+    def test_bad_offline_file_uses_cli_refusal(self) -> None:
+        from charmer import acquire
+
+        acquire.acquire(self.contract, self.runtime.environ, claude_from=self.source)
+        owned_stat = self.owned.stat()
+        for problem, payload in (("size", b"wrong"), ("sha256", b"x" * len(self.PAYLOAD)), ("missing", None)):
+            with self.subTest(problem=problem):
+                if payload is not None:
+                    self.source.write_bytes(payload)
+                source = self.source if payload is not None else self.runtime.home / "missing-client"
+                before = self.state_bytes()
+                code, output = self.run_cli(["setup", "--step", "claude", "--claude-from", str(source)])
+                self.assertEqual(code, 1, output)
+                self.assertEqual(self.state_bytes(), before)
+                screen = self.screen(focus="claude")
+                with mock.patch.object(acquire, "copy_verified", wraps=acquire.copy_verified) as copy:
+                    self.run_screen(screen, ["f", *f"~/{source.name}", ENTER, RIGHT, ENTER, ESC, ESC])
+                self.assertEqual(output, f"charmer: setup --step claude: {screen.message}\n")
+                self.assertEqual(screen.message_role, "warn")
+                self.assertEqual(self.state_bytes(), before)
+                self.assertEqual(self.owned.read_bytes(), self.PAYLOAD)
+                self.assertEqual(self.owned.stat().st_ino, owned_stat.st_ino)
+                copy.assert_not_called()
+        self.mocks["prune"].assert_not_called()
+        self.mocks["download"].assert_not_called()
+        self.mocks["execute"].assert_not_called()
+
+    def test_cancel_and_blank_offline_file_change_nothing(self) -> None:
+        cases = (
+            ("escape", [*"~/offline client", ESC], ""),
+            ("cancel", [*"~/offline client", ENTER, ENTER], ""),
+            ("blank", [ENTER, RIGHT, ENTER], "No file selected — nothing changed"),
+            ("whitespace", [*"   ", ENTER, RIGHT, ENTER], "No file selected — nothing changed"),
+        )
+        before = self.state_bytes()
+        for name, keys, message in cases:
+            with self.subTest(choice=name):
+                screen = self.screen(focus="claude")
+                _result, win = self.run_screen(screen, ["F", *keys, ESC, ESC])
+                self.assertTrue(any("Offline Claude Code file" in frame for frame in win.frames))
+                self.assertEqual(screen.message, message)
+                if message:
+                    self.assertIn(message, win.frames[-1])
+                self.assertEqual(self.state_bytes(), before)
+        for step in self.ids():
+            if step == "claude":
+                continue
+            with self.subTest(step=step), mock.patch.object(tui, "Modal") as modal:
+                _result, win = self.run_screen(self.screen(focus=step), ["F", ESC])
+                self.assertNotIn("F offline file", win.frames[0])
+                modal.assert_not_called()
+                self.assertEqual(self.state_bytes(), before)
+        self.mocks["acquire"].assert_not_called()
+        self.mocks["prune"].assert_not_called()
+        self.mocks["download"].assert_not_called()
+        self.mocks["execute"].assert_not_called()
+
+    def test_offline_file_keeps_resume_and_human_guards(self) -> None:
+        from charmer import secret_store
+
+        cases = [("resume", True, True, {}, cli_text.GS_RESUME_READONLY),
+                 ("read-only", False, False, {}, cli_text.GS_READONLY)]
+        cases.extend((marker, False, True, {marker: ""}, cli_text.GS_IN_SESSION)
+                     for marker in consent.SESSION_MARKERS)
+        before = self.state_bytes()
+        for name, resume, writable, environ, refusal in cases:
+            with self.subTest(guard=name), mock.patch.object(self.runtime, "allow_state_writes", writable), \
+                    mock.patch.dict(self.runtime.environ, environ), mock.patch.object(tui, "Modal") as modal, \
+                    mock.patch.object(tui, "TextInput") as field, \
+                    mock.patch.object(secret_store, "expand") as expand:
+                screen = self.screen(focus="claude", resume=resume)
+                self.run_screen(screen, ["F", ESC])
+                self.assertEqual(screen.message, refusal)
+                self.assertEqual(screen.message_role, "warn")
+                modal.assert_not_called()
+                field.assert_not_called()
+                expand.assert_not_called()
+                self.mocks["acquire"].assert_not_called()
+                self.assertEqual(self.state_bytes(), before)
+        self.mocks["prune"].assert_not_called()
+        self.mocks["download"].assert_not_called()
+        self.mocks["execute"].assert_not_called()
+
+
 def get_started_golden(root: Path) -> str:
     """Get started at 80x24 over the operator fixture (tests/goldens/tui)."""
 

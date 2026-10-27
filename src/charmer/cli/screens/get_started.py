@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import textwrap
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
 from charmer import errors as cli_errors
@@ -436,12 +437,15 @@ class _GetStartedScreen:
             screens_common._screen_too_small(win, palette, self.what, rows_needed, cols_needed)
             return
         win.erase()
-        keybar = tui.KeyBar(cli_text.GS_KEYBAR)
+        step = self.state.steps[self.selected]
+        bindings = cli_text.GS_KEYBAR
+        if step.id == "claude":
+            bindings = (*bindings[:-2], ("F", "offline file"), *bindings[-2:])
+        keybar = tui.KeyBar(bindings)
         bar_rows = keybar.rows(width)
         message_row = height - bar_rows - 1
         tui.safe_add(win, 1, 2, cli_text.GS_HEADER, palette.attr("accent") | tui.curses.A_BOLD)
         tui.safe_add(win, 2, 2, views.rule(width), palette.attr("dim"))
-        step = self.state.steps[self.selected]
         version = str(dict(self.state.step("claude").fields).get("version") or "")
         intro = screens_common._wrapped(cli_text.GS_INTRO, width - 4)
         detail = screens_common._wrapped(cli_text.GS_DETAIL[step.id].format(version=version), width - 4)
@@ -495,12 +499,34 @@ class _GetStartedScreen:
         tui.TextView(cli_text.PREFLIGHT_TITLE, firstrun.render_lines(checks[:3], surface="tui"),
                      palette=self.palette).run(win)
 
-    def _claude(self, win: Any) -> None:
+    def _offline_claude(self, win: Any) -> None:
+        from charmer import secret_store
+
+        refusal = self._blocked("claude")
+        if refusal is not None:
+            self._say(refusal, "warn")
+            return
+        field = tui.TextInput(max_length=4096)
+        lines = screens_common.modal_lines(
+            "File to copy into charmer's pinned client installation. Its size and SHA-256 must match the "
+            "packaged pin; plain claude is not changed.", win) + ["", "Offline client file:"]
+        choice = tui.Modal("Offline Claude Code file", lines,
+                           buttons=(("Cancel", None), ("Verify and copy", "copy")), input=field).run(
+                               win, self.palette, background=self._draw)
+        if choice != "copy":
+            return
+        value = field.value.strip()
+        if not value:
+            self._say("No file selected — nothing changed")
+            return
+        self._claude(win, claude_from=secret_store.expand(value, self.runtime.environ))
+
+    def _claude(self, win: Any, *, claude_from: Path | None = None) -> None:
         from charmer import acquire, pin, retention
         from charmer.setup import external, model
 
         status_ = external.claude_status(self.runtime)
-        if status_.state == "verified":
+        if status_.state == "verified" and claude_from is None:
             tui.TextView(cli_text.CLAUDE_STEP_STATUS_TITLE.format(version=status_.version),
                          [status_.detail, cli_text.GS_DETAIL["claude"].format(version=status_.version)],
                          palette=self.palette).run(win)
@@ -528,7 +554,7 @@ class _GetStartedScreen:
 
         contract = self.runtime.catalog.docs["native-contract"]
         try:
-            outcome = external.acquire_claude(self.runtime, consent=ask, progress=progress)
+            outcome = external.acquire_claude(self.runtime, claude_from=claude_from, consent=ask, progress=progress)
         except (acquire.AcquireError, pin.PinError, cli_errors.CharmerError, OSError) as exc:
             remedy = getattr(exc, "remedy", None)
             self._say(str(exc) + (f" — {remedy}" if remedy and remedy not in str(exc) else ""), "warn")
@@ -715,6 +741,9 @@ class _GetStartedScreen:
                 screens_common._help_modal(win, self.palette, cli_text.GS_HELP_TITLE, cli_text.GS_HELP, self._draw)
             elif key.kind == "enter":
                 result = self._open(win)
+                self._reload()
+            elif letter == "F" and self.state.steps[self.selected].id == "claude":
+                self._offline_claude(win)
                 self._reload()
             elif letter == "A":
                 refusal = self._blocked("providers")
