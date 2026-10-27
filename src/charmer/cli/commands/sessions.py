@@ -613,7 +613,7 @@ def _sessions_command(
                     f"Reconciled managed {stable_id} to runtime "
                     f"{updated['runtime_session_id']}, but {detail}; run `{remedy}`\n"
                 )
-                return repair_status
+                return 1
         output_stream.write(
             termtext.visible_text(
                 f"Reconciled managed {stable_id} to runtime "

@@ -42,7 +42,8 @@ class SingleRepairOutcomeTests(CLITestCase):
         before = self.deferred_record()
         code, out, err = self.run_cli_both(
             ["sessions", "relink-runtime", FIXED_ID, OTHER_ID], interactive=False)
-        self.assertEqual(code, doctor_actions.REPAIR_DEFERRED, out + err)
+        # relink keeps the ordinary exit contract (3 means declined): an unfinished convergence is 1.
+        self.assertEqual(code, 1, out + err)
         self.assertEqual(out, "")
         self.assertEqual(err.count("scope convergence is deferred"), 1)
         self.assertNotIn("scope convergence is unfinished", err)

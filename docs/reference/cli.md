@@ -31,8 +31,9 @@ lead choice, and an ended one can too.
 `charmer sessions relink-runtime <id> <runtime-id>` saves the identity
 change before repairing its scope. If that repair fails or is refused,
 the identity change remains; the command exits 1 and prints the exact
-`charmer doctor --repair <id>` command to finish it. A deferred repair exits
-3 instead and names `charmer -r <id>` to resume and finish convergence.
+`charmer doctor --repair <id>` command to finish it. When the repair is
+deferred, it also exits 1 and names `charmer -r <id>` to resume and finish
+convergence.
 
 Declining token rotation, starter-profile creation or an import returns
 3. A profile editor that cannot start or exits unsuccessfully returns 1;
