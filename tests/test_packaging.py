@@ -23,7 +23,7 @@ from pathlib import Path
 
 
 from _layout import FLAKE_NIX as _FLAKE, NIX_DIR, PATCH_DIR, REPO_ROOT, RESOURCES_ROOT
-from _layout import UPSTREAM_JSON, installed_paths, load_tool, logical_path, pyproject, tree_files
+from _layout import UPSTREAM_JSON, UPSTREAM_REVIEW, installed_paths, load_tool, logical_path, pyproject, tree_files
 from charmer import legacy
 
 # None inside the Nix sandbox tree, which stages no flake.nix/flake.lock.
@@ -845,10 +845,13 @@ class ManagementAllowlistGateTests(unittest.TestCase):
         "TestSIWCManagementRouteAccessControl",
         "TestCodexCallbackRejectsSIWCState",
         "TestSIWCStatusEndpoint",
-        # 8.0.45 recorded exclusions (gateway/upstream-review.json
-        # test_exclusions): a Codex client-catalog test that fails on the
-        # pristine tag, and an advisory fixture that depends on the zstd
-        # encoder's window choice.
+    )
+    # Upstream tests this gate excludes for a diagnosed upstream reason, not a
+    # refused surface. Each keeps its record in gateway/upstream-review.json
+    # test_exclusions (8.0.45): a Codex client-catalog test that fails on the
+    # pristine tag, and an advisory fixture that depends on the zstd
+    # encoder's window choice.
+    RECORDED_EXCLUSIONS = (
         "TestModelsMultiAgentClientConfigAndReload",
         "TestCaptureRequestInfoDoesNotDecodeASingleSegmentBomb",
     )
@@ -909,8 +912,9 @@ class ManagementAllowlistGateTests(unittest.TestCase):
             # upstream tests, and the patch's own tests must never be skipped.
             self.assertRegex(name, r"^Test[A-Za-z0-9_]+$")
             self.assertNotIn(name, self.GATE_TESTS)
-        self.assertEqual(sorted(names), sorted(self.SKIPPED_UPSTREAM))
+        self.assertEqual(sorted(names), sorted([*self.SKIPPED_UPSTREAM, *self.RECORDED_EXCLUSIONS]))
         self.assertEqual(len(names), len(set(names)))
+        self._check_exclusion_records(json.loads(UPSTREAM_REVIEW.read_text()))
         # The patch's own tests must be in the selection.
         self.assertEqual(record["expected_tests"], list(self.GATE_TESTS))
         # No run filter and no reruns on this gate (global-state tests in
@@ -918,6 +922,24 @@ class ManagementAllowlistGateTests(unittest.TestCase):
         self.assertNotIn("run", record)
         self.assertIsNone(record["count"])
         self.assertFalse(record["race"])
+
+    def _check_exclusion_records(self, review) -> None:
+        # Every non-surface skip of this gate has its review record, and no
+        # refused surface is passed off as an upstream exclusion.
+        recorded = [item["test"] for item in review["test_exclusions"] if item["gate"] == "management-allowlist"]
+        self.assertEqual(sorted(recorded), sorted(self.RECORDED_EXCLUSIONS),
+                         "a management-allowlist skip lost its test_exclusions record")
+        self.assertFalse(set(recorded) & set(self.SKIPPED_UPSTREAM))
+
+    def test_each_recorded_exclusion_keeps_its_review_record(self) -> None:
+        review = json.loads(UPSTREAM_REVIEW.read_text())
+        self._check_exclusion_records(review)
+        # Negative controls: delete each record in turn while its skip stays.
+        for name in self.RECORDED_EXCLUSIONS:
+            missing = {**review, "test_exclusions": [item for item in review["test_exclusions"]
+                                                     if item["test"] != name]}
+            with self.subTest(deleted=name), self.assertRaises(AssertionError):
+                self._check_exclusion_records(missing)
 
 
 class StartupGateTests(unittest.TestCase):
