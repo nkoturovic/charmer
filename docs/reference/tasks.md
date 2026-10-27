@@ -18,6 +18,13 @@ roles with `/cm fallback <provider>`. When this build cannot read quota,
 is 0 for `available`, `stale` or `exhausted`, 1 for `management-disabled`,
 `unavailable` or `not-ours`; `/cm quota` always exits 0.
 
+In the launcher, **H → W → P** shows the read-only served-change plan.
+**O → Export configuration**, **Import preview**, and **Import apply** use
+the same command services as the CLI; a blank export path shows JSON
+without recording a receipt, and import confirms with Cancel focused first.
+Applying an import never activates imported trust and requires a terminal
+outside Claude Code; preview is read-only and has no such requirement.
+
 <!-- generated: tasks (tools/docs_gen.py) -->
 
 ## The launcher's screens

@@ -110,8 +110,10 @@ charmer                      # review the launch card; Enter launches
 
 Claude Code may show its own first-run and folder-trust prompts. Read and
 answer them before continuing; they depend on its existing configuration,
-not charmer. Release installation checks use print-mode sessions, not a
-particular interactive first-run screen sequence on Linux, macOS or WSL2.
+not charmer. Release journeys check print-mode turns and native process,
+session and gateway behavior on Linux, macOS and WSL2. Interactive
+onboarding is not established by those journeys; no particular first-run
+screen sequence is verified.
 
 ## 4. Change one agent
 
