@@ -11,8 +11,8 @@
 #       the new installation (doctor --first-run: ready, or not ready only
 #       for what a fresh install has not set up yet, providers included:
 #       nothing connected yet), the installation channel (plain doctor:
-#       "this launcher is the bundle channel"), the pinned Claude Code
-#       from a verified local copy ($JOURNEY_CLIENT: a file, or "fetch" to
+#       "this launcher is the bundle channel"), the pinned Claude Code from
+#       a verified local copy ($JOURNEY_CLIENT: a file, or "fetch" to
 #       download the installed release's pin), the on-demand gateway
 #       lifecycle (setup --step gateway, status, stop) with its loopback
 #       confinement, a first managed turn against a fixture provider and
@@ -21,7 +21,34 @@
 #       uninstall --keep-setup --yes on a pseudo-terminal, never --force,
 #       once every managed session recorded its end: it removes the
 #       launchers and the installed release, and keeps the credentials,
-#       which only a typed phrase deletes)
+#       which only a typed phrase deletes). JOURNEY_NATIVE=1 (the CI
+#       journeys, on disposable runners: these steps read the host's
+#       process table and Claude Code daemon root) adds the native checks:
+#       the installed release's own process observation against disposable
+#       processes (journey_fixture.py processes), and with a client the
+#       first interactive managed turn on a pseudo-terminal with the
+#       one-time screens recorded (before the print-mode turns), the session
+#       verbs on a running client (a turn the fixture holds: mark-ended
+#       refused and answered at once, stop finds nothing in the background;
+#       once the client is stopped, mark-ended records its end), the
+#       session's compiled credential rules, sessions forget, and the
+#       user's own Claude Code launcher, version files and install and
+#       update preferences left untouched. JOURNEY_WSL=1 (the Windows
+#       journey, started in a directory on a Windows drive) adds the WSL
+#       checks: doctor detects WSL and states that the Windows-side and
+#       WSL-side Claude configurations are separate, a working directory on
+#       a Windows drive gets the guidance and a Linux one does not, a state
+#       root on a Windows drive refuses the gateway start, and the compiled
+#       session carries the rules for the Windows side's Claude
+#       configuration (elsewhere it carries none). JOURNEY_KEEP=DIR keeps
+#       what the restarted journey needs there and leaves the gateway
+#       running for the shutdown.
+#   sh .github/scripts/journey.sh restarted VERSION KEEPDIR
+#       after the installed journey (JOURNEY_UNINSTALL=skip, JOURNEY_KEEP)
+#       and a shutdown of the system that ran it with the gateway running
+#       (wsl --terminate): what gateway status says is recorded, the next
+#       managed launch starts the gateway on demand and completes its turn,
+#       the gateway stops, and the uninstall keeps the state
 #   sh .github/scripts/journey.sh update KEYDIR DIST_A DIST_B
 #       install A, check, update to B, "up to date", roll back to A, the
 #       installation channel checked after each step; both releases trust
@@ -44,8 +71,9 @@
 #
 # JOURNEY_GATEWAY=skip and JOURNEY_UNINSTALL=skip leave those steps out
 # (the repository's own tests run this script on fake releases that carry
-# no gateway). JOURNEY_TARGET=<target> requires a fresh install to install
-# that bundle target (linux-aarch64 on the arm64 runner). Each step prints
+# no gateway); JOURNEY_INTERACTIVE=skip leaves out the interactive turn.
+# JOURNEY_TARGET=<target> requires a fresh install to install that bundle
+# target (linux-aarch64 on the arm64 runner). Each step prints
 # "journey: <step>: ok"; any failure stops the journey with a nonzero exit.
 #
 # Providers are fixtures only: the managed turn's provider is
@@ -65,7 +93,9 @@ umask 0002
 
 say() { printf 'journey: %s\n' "$*"; }
 fail() { printf 'journey: FAILED: %s\n' "$*" >&2; exit 1; }
+native() { [ "${JOURNEY_NATIVE:-}" = 1 ]; }
 
+start_dir=$(pwd)
 here=$(CDPATH='' cd "$(dirname "$0")" && pwd)
 installer_default=$here/../../packaging/install.sh
 fixture=$here/journey_fixture.py
@@ -162,10 +192,18 @@ wait_for() {
 	# $1 = what, then a command that succeeds once it is ready (20 s at most)
 	what=$1
 	shift
+	wait_up_to 20 "$what" "$@"
+}
+
+wait_up_to() {
+	# $1 = seconds at most, $2 = what, then a command that succeeds once it is ready
+	limit=$(($1 * 2))
+	what=$2
+	shift 2
 	tries=0
 	until "$@"; do
 		tries=$((tries + 1))
-		[ "$tries" -le 40 ] || fail "$what did not become ready"
+		[ "$tries" -le "$limit" ] || fail "$what did not become ready"
 		sleep 0.5
 	done
 }
@@ -215,8 +253,118 @@ confinement() {
 	say "loopback confinement: ok (refused on $(printf '%s' "$addresses" | tr '\n' ' '); the control listener answered)"
 }
 
+first_interactive_turn() {
+	# The first interactive managed turn, on a pseudo-terminal in a new
+	# folder: the one-time screens Claude Code shows are answered and
+	# recorded (journey_fixture.py interactive), with whether this account
+	# had a Claude Code configuration before it.
+	if [ "${JOURNEY_INTERACTIVE:-run}" = skip ]; then
+		say "first interactive managed turn: not run (JOURNEY_INTERACTIVE=skip)"
+		return 0
+	fi
+	mkdir "$work/first"
+	fx interactive --log "$work/screens.log" --cwd "$work/first" -- "$cm" --line direct \
+		--model custom-journey-fixture >"$work/screens.txt" 2>&1 ||
+		{ cat "$work/screens.txt" >&2; fail "the first interactive managed turn"; }
+	sed 's/^/journey:   /' "$work/screens.txt"
+	say "first interactive managed turn: ok (Claude Code configuration before it: $claude_config_before)"
+}
+
+user_claude_installation() {
+	# The user's own Claude Code launcher and version files (a disposable
+	# stand-in where the account has none; an existing one is only read),
+	# recorded before charmer copies its pinned client.
+	fx user-claude plant || fail "the user's Claude Code installation could not be prepared"
+	fx user-claude record --what installation --file "$work/user-claude-installation.json" ||
+		fail "the user's Claude Code installation could not be recorded"
+}
+
+user_claude_preferences() {
+	# Its install and update preferences in ~/.claude.json, recorded before
+	# the print-mode turns: stand-in values only when the account had no
+	# Claude Code configuration before this journey's first managed launch
+	# (an existing one is only read).
+	if [ "$claude_config_before" = empty ]; then
+		fx user-claude plant --preferences || fail "the user's Claude Code preferences could not be prepared"
+	fi
+	fx user-claude record --what preferences --file "$work/user-claude-preferences.json" ||
+		fail "the user's Claude Code preferences could not be recorded"
+}
+
+user_claude_untouched() {
+	fx user-claude check --file "$work/user-claude-installation.json" ||
+		fail "the managed client changed the user's Claude Code launcher or version files"
+	fx user-claude check --file "$work/user-claude-preferences.json" ||
+		fail "the managed client changed the user's Claude Code install or update preferences"
+	say "the user's own Claude Code: untouched (launcher, version files, install and update preferences)"
+}
+
+open_session() {
+	# sets held_session: the open managed session records, one per line
+	held_session=$(fx session-ids --install "$install_dir" --open) && [ -n "$held_session" ]
+}
+
+session_verbs() {
+	# A resumed turn the fixture provider holds keeps its client running
+	# while the session verbs read this host's process table and daemon
+	# root. Each verb runs bounded: a session lock that outlived the
+	# launch's exec would block it. Every earlier session has recorded its
+	# end first, so the held one is the only open record.
+	fx ended --install "$install_dir" --timeout 60 >/dev/null || fail "an earlier managed session has not ended"
+	background "$work/held.pid" exec --cwd "$work/project" -- "$cm" -c -- -p "journey turn held" \
+		>"$work/held.txt" 2>&1 </dev/null
+	wait_up_to 120 "the held managed turn" fx held --log "$work/fixture.log"
+	wait_up_to 30 "the held session's open record" open_session
+	[ "$(printf '%s\n' "$held_session" | wc -l)" -eq 1 ] ||
+		fail "expected one running managed session, found: $(printf '%s ' "$held_session")"
+	fx processes --install "$install_dir" --session "$held_session" ||
+		fail "the process table does not show the running client"
+	if fx run --timeout 60 -- "$cm" sessions mark-ended "$held_session" >"$work/mark-live.txt" 2>&1; then
+		fail "sessions mark-ended recorded the end of a running session"
+	fi
+	grep -q 'is live' "$work/mark-live.txt" ||
+		{ show_tail "$work/mark-live.txt"; fail "sessions mark-ended did not refuse the running session"; }
+	if fx run --timeout 60 -- "$cm" sessions stop "$held_session" >"$work/stop.txt" 2>&1; then
+		fail "sessions stop acted on a session that is not in the background"
+	fi
+	grep -q 'not live in the background' "$work/stop.txt" ||
+		{ show_tail "$work/stop.txt"; fail "sessions stop did not read the daemon root"; }
+	say "session verbs on a running client: ok (mark-ended refused it, stop found nothing in the background)"
+	wsl_rules=absent
+	[ "${JOURNEY_WSL:-}" != 1 ] || wsl_rules=present
+	rules=$(fx scope-rules --install "$install_dir" --session "$held_session" --wsl "$wsl_rules") ||
+		fail "the session's compiled credential rules"
+	say "compiled credential rules: ok ($rules)"
+	# Stopped without its end hook (SIGKILL to its process group): the record
+	# stays open until mark-ended, which now finds no process.
+	stop_helper "$work/held.pid"
+	: >"$work/release-held"
+	[ "$(fx session-ids --install "$install_dir" --open)" = "$held_session" ] ||
+		fail "the stopped client's session does not stay open"
+	fx run --timeout 60 -- "$cm" sessions mark-ended "$held_session" >"$work/mark.txt" 2>&1 ||
+		{ show_tail "$work/mark.txt"; fail "sessions mark-ended after the client stopped"; }
+	grep -q 'marked ended' "$work/mark.txt" || { show_tail "$work/mark.txt"; fail "the session was not marked ended"; }
+	fx run --timeout 60 -- "$cm" sessions mark-ended "$held_session" >"$work/mark-again.txt" 2>&1 ||
+		{ show_tail "$work/mark-again.txt"; fail "sessions mark-ended again"; }
+	grep -q 'already ended' "$work/mark-again.txt" ||
+		{ show_tail "$work/mark-again.txt"; fail "a second mark-ended did not say already ended"; }
+	say "session verbs after the client stopped: ok (marked ended, then already ended)"
+}
+
+forget_session() {
+	# $1 = a managed session whose end is recorded
+	fx run --timeout 60 -- "$cm" sessions forget "$1" --yes >"$work/forget.txt" 2>&1 ||
+		{ show_tail "$work/forget.txt"; fail "sessions forget"; }
+	grep -q "Forgot: $1" "$work/forget.txt" || { show_tail "$work/forget.txt"; fail "sessions forget did not forget $1"; }
+	if fx session-ids --install "$install_dir" | grep -qx "$1"; then
+		fail "the forgotten session's record remains"
+	fi
+	say "sessions forget: ok (its record and generated scope deleted)"
+}
+
 managed_turn() {
-	background "$work/fixture.pid" serve --port-file "$work/fixture.port" --log "$work/fixture.log"
+	background "$work/fixture.pid" serve --port-file "$work/fixture.port" --log "$work/fixture.log" \
+		--hold-release "$work/release-held"
 	wait_for "the fixture provider" test -s "$work/fixture.port"
 	base="http://127.0.0.1:$(cat "$work/fixture.port")/v1"
 	"$cm" providers add --preset lan-openai-compatible --as journey-fixture --base-url "$base" \
@@ -227,6 +375,11 @@ managed_turn() {
 	fx answer -- "$cm" models admit custom-journey-fixture >"$work/admit.txt" 2>&1 ||
 		{ show_tail "$work/admit.txt"; fail "models admit (the fixture line)"; }
 	say "fixture provider declared and admitted: ok"
+	if native; then
+		claude_config_before=$(fx claude-config) || fail "the Claude Code configuration could not be read"
+		first_interactive_turn
+		user_claude_preferences
+	fi
 	mkdir "$work/project"
 	(cd "$work/project" && "$cm" direct --model custom-journey-fixture -- -p "journey turn one") \
 		>"$work/turn1.txt" 2>"$work/turn1.err" </dev/null ||
@@ -242,6 +395,9 @@ managed_turn() {
 	fx carried --log "$work/fixture.log" --reply "$second" --earlier "$first" ||
 		fail "the resumed turn did not carry the first turn's reply"
 	say "resumed managed session: ok (fixture reply $second carried reply $first)"
+	if native; then
+		session_verbs
+	fi
 	# Keep the provider reachable for the foreign-listener launch's preflight.
 }
 
@@ -272,6 +428,61 @@ foreign_listener() {
 	fi
 	stop_helper "$work/foreign.pid"
 	say "another program on the gateway port refused: ok"
+}
+
+wsl_checks() {
+	# $1 = the stopped gateway's port. Under WSL 2 (JOURNEY_WSL=1; the journey
+	# starts in a directory on a Windows drive).
+	[ "${JOURNEY_WSL:-}" = 1 ] || return 0
+	case $start_dir in
+	/mnt/?/*) ;;
+	*) fail "the WSL journey must start in a directory on a Windows drive, not $start_dir" ;;
+	esac
+	status=0
+	(cd "$start_dir" && "$cm" doctor) >"$work/wsl-doctor.txt" 2>&1 || status=$?
+	[ "$status" -le 1 ] || { show_tail "$work/wsl-doctor.txt"; fail "charmer doctor under WSL exited $status"; }
+	for line in 'WSL: running under' \
+		'WSL: the Windows-side and WSL-side Claude configurations are separate' \
+		'is on a Windows drive: file access is slow'; do
+		grep -qF "$line" "$work/wsl-doctor.txt" || { show_tail "$work/wsl-doctor.txt"; fail "doctor under WSL lacks '$line'"; }
+	done
+	status=0
+	(cd "$work" && "$cm" doctor) >"$work/linux-doctor.txt" 2>&1 || status=$?
+	[ "$status" -le 1 ] || { show_tail "$work/linux-doctor.txt"; fail "charmer doctor in a Linux directory exited $status"; }
+	if grep -qF 'is on a Windows drive: file access is slow' "$work/linux-doctor.txt"; then
+		fail "doctor gives the Windows-drive guidance for a directory in the Linux file system"
+	fi
+	say "WSL: detected, the separate configurations stated, Windows-drive guidance only on a Windows drive: ok"
+	windows_state=$start_dir/.journey-windows-state
+	mkdir -p "$windows_state"
+	status=0
+	XDG_STATE_HOME=$windows_state "$cm" gateway start >"$work/wsl-state.txt" 2>&1 || status=$?
+	rm -rf "$windows_state"
+	[ "$status" -ne 0 ] || fail "gateway start accepted a state root on a Windows drive"
+	grep -q 'on a Windows drive' "$work/wsl-state.txt" ||
+		{ show_tail "$work/wsl-state.txt"; fail "gateway start did not refuse the state root on a Windows drive"; }
+	if fx reach --host 127.0.0.1 --port "$1"; then
+		fail "a gateway answers on port $1 after the refused start"
+	fi
+	say "WSL: a state root on a Windows drive refused the gateway start: ok"
+}
+
+uninstall_keeping_state() {
+	state=${XDG_STATE_HOME:-$HOME/.local/state}/charmer
+	release=$(readlink "$install_dir") || fail "no installed release at $install_dir"
+	session_ends
+	# Uninstall needs a terminal: the fixture's pseudo-terminal confirms
+	# nothing (--yes) and keeps the credentials at their question.
+	fx answer -- "$cm" uninstall --keep-setup --yes >"$work/uninstall.txt" 2>&1 ||
+		{ show_tail "$work/uninstall.txt"; fail "charmer uninstall --keep-setup --yes"; }
+	grep -q 'charmer is uninstalled' "$work/uninstall.txt" ||
+		{ show_tail "$work/uninstall.txt"; fail "uninstall did not finish"; }
+	[ ! -e "$HOME/.local/bin/charmer" ] || fail "the launcher was not removed"
+	if [ -e "$install_dir" ] || [ -e "${install_dir%/current}/$release" ]; then
+		fail "the installed release was not removed"
+	fi
+	[ -d "$state" ] || fail "the state ($state) was not kept"
+	say "uninstall keeping the state: ok"
 }
 
 first_run() {
@@ -358,8 +569,19 @@ journey_installed() {
 	first_run
 	# after the first run, which must meet the installation untouched
 	bundle_channel "installed $version"
+	if native; then
+		observed=$(fx processes --install "$install_dir") ||
+			fail "the installed release's process observation (see above)"
+		printf '%s\n' "$observed" | sed 's/^/journey:   /'
+		say "native process observation: ok"
+	else
+		say "native checks: not run (JOURNEY_NATIVE=1 runs them, on a disposable host)"
+	fi
 	[ "${JOURNEY_CLIENT:-}" != fetch ] || fetch_client
 	if [ -n "${JOURNEY_CLIENT:-}" ]; then
+		if native; then
+			user_claude_installation
+		fi
 		"$cm" setup --step claude --claude-from "$JOURNEY_CLIENT" || fail "setup --step claude --claude-from"
 		say "pinned Claude Code from a verified local copy: ok"
 		smoke=$("$JOURNEY_CLIENT" --version) || fail "the pinned Claude Code does not run here"
@@ -382,27 +604,57 @@ journey_installed() {
 		say "on-demand gateway lifecycle: ok"
 		private_directories
 		foreign_listener "$port"
+		wsl_checks "$port"
 		if [ -n "${JOURNEY_CLIENT:-}" ]; then
 			stop_helper "$work/fixture.pid"
+			if native; then
+				forget_session "$held_session"
+				user_claude_untouched
+			fi
+			if [ -n "${JOURNEY_KEEP:-}" ]; then
+				# The restarted journey's fixture port, and a gateway that is
+				# running when the system shuts down.
+				mkdir -p "$JOURNEY_KEEP"
+				cp "$work/fixture.port" "$JOURNEY_KEEP/fixture.port"
+				"$cm" gateway start || fail "gateway start before the shutdown"
+				say "gateway left running for the shutdown: ok"
+			fi
 		fi
 	fi
 	if [ "${JOURNEY_UNINSTALL:-run}" != skip ]; then
-		state=${XDG_STATE_HOME:-$HOME/.local/state}/charmer
-		release=$(readlink "$install_dir") || fail "no installed release at $install_dir"
-		session_ends
-		# Uninstall needs a terminal: the fixture's pseudo-terminal confirms
-		# nothing (--yes) and keeps the credentials at their question.
-		fx answer -- "$cm" uninstall --keep-setup --yes >"$work/uninstall.txt" 2>&1 ||
-			{ show_tail "$work/uninstall.txt"; fail "charmer uninstall --keep-setup --yes"; }
-		grep -q 'charmer is uninstalled' "$work/uninstall.txt" ||
-			{ show_tail "$work/uninstall.txt"; fail "uninstall did not finish"; }
-		[ ! -e "$HOME/.local/bin/charmer" ] || fail "the launcher was not removed"
-		if [ -e "$install_dir" ] || [ -e "${install_dir%/current}/$release" ]; then
-			fail "the installed release was not removed"
-		fi
-		[ -d "$state" ] || fail "the state ($state) was not kept"
-		say "uninstall keeping the state: ok"
+		uninstall_keeping_state
 	fi
+}
+
+journey_restarted() {
+	version=${1:?usage: journey.sh restarted VERSION KEEPDIR}
+	keep=${2:?usage: journey.sh restarted VERSION KEEPDIR}
+	[ -x "$cm" ] || fail "no launcher at $cm"
+	[ -s "$keep/fixture.port" ] || fail "$keep has no fixture port (run the installed journey with JOURNEY_KEEP first)"
+	expect_version "$version"
+	# What status says of a gateway the shutdown stopped is recorded; the
+	# check is that the next launch starts it.
+	"$cm" gateway status >"$work/status.txt" 2>&1 || true
+	sed 's/^/journey:   /' "$work/status.txt"
+	# The fixture provider comes back on the port the declared provider names.
+	background "$work/fixture.pid" serve --port "$(cat "$keep/fixture.port")" --port-file "$work/fixture.port" \
+		--log "$work/fixture.log"
+	wait_for "the fixture provider" test -s "$work/fixture.port"
+	mkdir "$work/project"
+	(cd "$work/project" && "$cm" direct --model custom-journey-fixture -- -p "journey turn after the restart") \
+		>"$work/turn.txt" 2>"$work/turn.err" </dev/null ||
+		{ show_tail "$work/turn.err"; fail "the first managed launch after the shutdown"; }
+	reply=$(reply_number "$work/turn.txt")
+	[ -n "$reply" ] || { show_tail "$work/turn.txt"; fail "the launch after the shutdown printed no fixture reply"; }
+	"$cm" gateway status || fail "gateway status after the launch"
+	port=$(gateway_port)
+	if [ -z "$port" ] || ! fx reach --host 127.0.0.1 --port "$port"; then
+		fail "the launch after the shutdown did not start the gateway"
+	fi
+	say "on-demand start after the shutdown: ok (the launch started the gateway; fixture reply $reply)"
+	"$cm" gateway stop || fail "gateway stop"
+	stop_helper "$work/fixture.pid"
+	uninstall_keeping_state
 }
 
 journey_update() {
@@ -503,9 +755,10 @@ mode=${1:-}
 case $mode in
 install) journey_install "$@" ;;
 installed) journey_installed "$@" ;;
+restarted) journey_restarted "$@" ;;
 update) journey_update "$@" ;;
 service) journey_service "$@" ;;
 prepare) journey_prepare "$@" ;;
-*) fail "usage: journey.sh install DIST | installed VERSION | update KEYDIR DIST_A DIST_B | service DIST | prepare DIST OUT" ;;
+*) fail "usage: journey.sh install DIST | installed VERSION | restarted VERSION KEEPDIR | update KEYDIR DIST_A DIST_B | service DIST | prepare DIST OUT" ;;
 esac
 say "done"

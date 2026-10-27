@@ -15,6 +15,9 @@ answers (``nix-store --query --roots``, ``nix-store --delete``):
 - after the selection: its roots are exactly the product's link, the
   selection says it registered the root, and deleting PACKAGE is refused
   because it is alive;
+- after a second selection of the same package (the refresh a repeated
+  service install makes): the link is unchanged, the root is registered
+  again, and the product's link is still the one root;
 - after the removal: PACKAGE has no root again.
 
 Exit 0 when all hold, else 1 naming the first that does not.
@@ -85,6 +88,18 @@ def prove(package: str, runner=subprocess.run) -> list[str]:
         if found != [str(link)]:
             raise RootError(f"after the selection the roots are {found}, expected exactly {link}")
         steps.append(f"rooted by the product's link {link}")
+        # The refresh (a second service install of the same package): the
+        # link already names it, and it stays the one root.
+        again = installs.plan_selection("nix", environ, installation=store)
+        if again.changed or again.root != store:
+            raise RootError(f"the refresh would change the link ({again.previous} -> {again.root})")
+        refreshed = installs.apply_selection(again, environ, runner=runner)
+        if not refreshed.gc_root:
+            raise RootError(f"the refresh did not keep the root registered ({refreshed.note})")
+        found = roots(store)
+        if found != [str(link)]:
+            raise RootError(f"after the refresh the roots are {found}, expected exactly {link}")
+        steps.append("refreshed: still the one root")
         deleted = _nix_store("--delete", store)
         if deleted.returncode == 0:
             raise RootError(f"nix-store --delete removed {store} although the link roots it")

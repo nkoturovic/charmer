@@ -34,13 +34,18 @@
 #              repository variable CM_MACOS_INTEL_RUNNER names a runner) and
 #              WSL 2 on Windows Server 2025, where install.ps1 itself checks
 #              and installs WSL 2 and runs install.sh in the distribution
-#              (its Pester suite too): the installation channel, the pinned
-#              Claude Code, the gateway lifecycle and its loopback
-#              confinement, a first managed turn against a fixture provider
-#              and its resume, the uninstall once the session recorded its
-#              end; the update and rollback journey on two test builds of
-#              this commit that trust the ephemeral key (the release key
-#              never enters CI)
+#              (its Pester suite too): the installation channel, the
+#              installed release's process observation on disposable
+#              processes, the pinned Claude Code, the gateway lifecycle and
+#              its loopback confinement, the first interactive managed turn
+#              with its one-time screens recorded, a print-mode turn
+#              against a fixture provider and its resume, the session verbs
+#              on a running client, the user's own Claude Code left
+#              untouched, the uninstall once every session recorded its end
+#              (WSL 2 adds its checks and an on-demand start after the
+#              distribution shut down); the update and rollback journey on
+#              two test builds of this commit that trust the ephemeral key
+#              (the release key never enters CI)
 # service      the supervised gateway service under a real systemd user
 #              manager (a dedicated user with lingering)
 # draft        a draft GitHub release with the unsigned assets, behind the
@@ -471,7 +476,7 @@ jobs:
           cp -R dist .github packaging /home/journey/
           chown -R journey /home/journey
           # shellcheck disable=SC2016 # $HOME is the journey user's, expanded by its shell
-          su journey -c 'umask 077; cd "$HOME" && JOURNEY_PERMISSIONS=1 JOURNEY_CLIENT=fetch sh .github/scripts/journey.sh install dist'
+          su journey -c 'umask 077; cd "$HOME" && JOURNEY_PERMISSIONS=1 JOURNEY_NATIVE=1 JOURNEY_CLIENT=fetch sh .github/scripts/journey.sh install dist'
 
   journeys-linux-arm64:
     needs: [resolve, build]
@@ -492,7 +497,7 @@ jobs:
         timeout-minutes: 20
         run: |
           umask 077
-          JOURNEY_CLIENT=fetch JOURNEY_TARGET=linux-aarch64 sh .github/scripts/journey.sh install dist
+          JOURNEY_NATIVE=1 JOURNEY_CLIENT=fetch JOURNEY_TARGET=linux-aarch64 sh .github/scripts/journey.sh install dist
       - name: No Claude Code bytes in the workspace
         if: always()
         run: |
@@ -669,6 +674,7 @@ jobs:
         timeout-minutes: 20
         env:
           JOURNEY_CLIENT: ${{ runner.temp }}/claude
+          JOURNEY_NATIVE: "1"
         run: |
           umask 077
           sh .github/scripts/journey.sh install dist
@@ -706,7 +712,7 @@ jobs:
         timeout-minutes: 20
         run: |
           umask 077
-          JOURNEY_CLIENT=fetch JOURNEY_TARGET=darwin-x86_64 sh .github/scripts/journey.sh install dist
+          JOURNEY_NATIVE=1 JOURNEY_CLIENT=fetch JOURNEY_TARGET=darwin-x86_64 sh .github/scripts/journey.sh install dist
       - name: No Claude Code bytes in the workspace
         if: always()
         run: |
@@ -849,7 +855,14 @@ jobs:
             }
           }
           # Detach explicitly: WSL can retain /dev/tty even with redirected stdin/stdout.
-          wsl --distribution $distribution --cd "$workspace" --exec setsid --wait sh -c 'umask 077; JOURNEY_CLIENT=fetch sh .github/scripts/journey.sh installed "$0"' $version
+          # The workspace is on a Windows drive: the WSL checks start there.
+          wsl --distribution $distribution --cd "$workspace" --exec setsid --wait sh -c 'umask 077; JOURNEY_NATIVE=1 JOURNEY_CLIENT=fetch JOURNEY_WSL=1 JOURNEY_UNINSTALL=skip JOURNEY_KEEP="$HOME/journey-keep" sh .github/scripts/journey.sh installed "$0"' $version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # The distribution shuts down, as when its last terminal closes; the
+          # next managed launch starts the gateway again.
+          wsl --terminate $distribution
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          wsl --distribution $distribution --cd "$workspace" --exec setsid --wait sh -c 'umask 077; sh .github/scripts/journey.sh restarted "$0" "$HOME/journey-keep"' $version
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
   draft:

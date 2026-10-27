@@ -37,6 +37,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+import uuid
 
 from _fake_release import FakeRelease, make_key, needs_ssh_keygen, signers_line
 from _layout import REPO_ROOT, RESOURCES_ROOT
@@ -761,9 +762,24 @@ class JourneyStepsTests(unittest.TestCase):
         self.assertLess(fresh.index('install_from "$work/release"'), fresh.index('say "fresh install: ok"'))
         body = text.split("journey_installed() {", 1)[1].split("\n}\n", 1)[0]
         steps = ['expect_version "$version"', "first_run", 'bundle_channel "installed $version"',
-                 '"$cm" setup --step gateway', 'confinement "$port"', "managed_turn", '"$cm" gateway stop',
-                 'foreign_listener "$port"', "session_ends", '"$cm" uninstall --keep-setup --yes']
+                 'fx processes --install "$install_dir"', "user_claude_installation",
+                 '"$cm" setup --step claude --claude-from', '"$cm" setup --step gateway', 'confinement "$port"',
+                 "managed_turn", '"$cm" gateway stop', 'foreign_listener "$port"', 'wsl_checks "$port"',
+                 'stop_helper "$work/fixture.pid"', 'forget_session "$held_session"', "user_claude_untouched",
+                 "uninstall_keeping_state"]
         positions = [body.index(step) for step in steps]
+        self.assertEqual(positions, sorted(positions))
+        # The restarted journey meets a gateway the shutdown stopped, and the fixture's port.
+        keep = body.split('if [ -n "${JOURNEY_KEEP:-}" ]; then', 1)[1].split("\n\t\t\tfi\n", 1)[0]
+        self.assertLess(keep.index('cp "$work/fixture.port" "$JOURNEY_KEEP/fixture.port"'),
+                        keep.index('"$cm" gateway start || fail "gateway start before the shutdown"'))
+        uninstall = text.split("uninstall_keeping_state() {", 1)[1].split("\n}\n", 1)[0]
+        self.assertLess(uninstall.index("session_ends"), uninstall.index('"$cm" uninstall --keep-setup --yes'))
+        restarted = text.split("journey_restarted() {", 1)[1].split("\n}\n", 1)[0]
+        steps = ['expect_version "$version"', '"$cm" gateway status >"$work/status.txt"',
+                 'serve --port "$(cat "$keep/fixture.port")"', '"$cm" direct --model custom-journey-fixture -- -p',
+                 'fx reach --host 127.0.0.1 --port "$port"', '"$cm" gateway stop', "uninstall_keeping_state"]
+        positions = [restarted.index(step) for step in steps]
         self.assertEqual(positions, sorted(positions))
         commands = [line for line in text.splitlines() if not line.lstrip().startswith("#")]
         self.assertFalse([line for line in commands if "--force" in line])  # never a forced uninstall
@@ -786,6 +802,34 @@ class JourneyStepsTests(unittest.TestCase):
                        'fx carried --log "$work/fixture.log" --reply "$second" --earlier "$first"'):
             self.assertIn(needle, turn)
         self.assertIn('base="http://127.0.0.1:', turn)  # the provider is the loopback fixture only
+        # The first managed launch is the interactive one, with the account's
+        # Claude Code configuration recorded before it; the preferences are
+        # recorded before the print-mode turns, the session verbs after them.
+        steps = ['--hold-release "$work/release-held"', 'claude_config_before=$(fx claude-config)',
+                 "first_interactive_turn", "user_claude_preferences", '-p "journey turn one"',
+                 '-p "journey turn two"', "session_verbs"]
+        positions = [turn.index(step) for step in steps]
+        self.assertEqual(positions, sorted(positions))
+        interactive = text.split("first_interactive_turn() {", 1)[1].split("\n}\n", 1)[0]
+        self.assertIn('fx interactive --log "$work/screens.log" --cwd "$work/first" -- "$cm" --line direct', interactive)
+        verbs = text.split("session_verbs() {", 1)[1].split("\n}\n", 1)[0]
+        steps = ['fx ended --install "$install_dir" --timeout 60',
+                 'background "$work/held.pid" exec --cwd "$work/project" -- "$cm" -c -- -p "journey turn held"',
+                 'fx held --log "$work/fixture.log"', "open_session",
+                 'fx processes --install "$install_dir" --session "$held_session"',
+                 '"$cm" sessions mark-ended "$held_session" >"$work/mark-live.txt"', "grep -q 'is live'",
+                 '"$cm" sessions stop "$held_session"', "grep -q 'not live in the background'",
+                 'fx scope-rules --install "$install_dir" --session "$held_session" --wsl "$wsl_rules"',
+                 'stop_helper "$work/held.pid"', ': >"$work/release-held"',
+                 '"$cm" sessions mark-ended "$held_session" >"$work/mark.txt"', "grep -q 'marked ended'",
+                 "grep -q 'already ended'"]
+        positions = [verbs.index(step) for step in steps]
+        self.assertEqual(positions, sorted(positions))
+        # Every verb is bounded: a session lock that outlived the launch's exec would hang it.
+        for line in verbs.splitlines():
+            if '"$cm" sessions ' in line:
+                self.assertIn("fx run --timeout 60 --", line)
+        self.assertNotIn("--yes", verbs)  # stop is never confirmed: it must refuse on its own
         confinement = text.split("confinement() {", 1)[1].split("\n}\n", 1)[0]
         for needle in ("--host 0.0.0.0", "control: a listener on every interface does not answer",
                        "the gateway answers on", '[ "$(uname -s)" != Darwin ]'):
@@ -806,9 +850,9 @@ class JourneyStepsTests(unittest.TestCase):
         self.assertIn('stop_helper "$work/fixture.pid"', installed)
         self.assertLess(installed.index('foreign_listener "$port"'),
                         installed.index('stop_helper "$work/fixture.pid"'))
-        self.assertLess(installed.index('stop_helper "$work/fixture.pid"'), installed.index("session_ends"))
+        self.assertLess(installed.index('stop_helper "$work/fixture.pid"'), installed.index("uninstall_keeping_state"))
         self.assertRegex(installed, r'if \[ -n "\$\{JOURNEY_CLIENT:-\}" \]; then\s+'
-                                   r'stop_helper "\$work/fixture.pid"\s+fi')
+                                   r'stop_helper "\$work/fixture.pid"\s+if native; then\s+forget_session')
         foreign = text.split("foreign_listener() {", 1)[1].split("\n}\n", 1)[0]
         self.assertIn("the gateway was not started", foreign)
         self.assertIn('no_credential_sent "the managed launch" "$1"', foreign)
@@ -848,7 +892,7 @@ fx() {
 
         text = JOURNEY.read_text()
         functions = []
-        for name in ("kill_helper", "cleanup", "background", "stop_helper", "wait_for", "show_tail",
+        for name in ("kill_helper", "cleanup", "background", "stop_helper", "wait_for", "wait_up_to", "show_tail",
                      "no_credential_sent", "foreign_listener"):
             start = text.find(f"\n{name}() {{\n")
             if start >= 0:
@@ -990,9 +1034,63 @@ fx() {
             with self.subTest(job):
                 self.assertIn(f"JOURNEY_CLIENT=fetch JOURNEY_TARGET={target} sh .github/scripts/journey.sh install dist",
                               jobs[job])
-        self.assertIn("JOURNEY_CLIENT=fetch sh .github/scripts/journey.sh installed", jobs["journeys-windows"])
+        self.assertIn("JOURNEY_CLIENT=fetch JOURNEY_WSL=1 JOURNEY_UNINSTALL=skip", jobs["journeys-windows"])
         self.assertIn("JOURNEY_CLIENT: ${{ runner.temp }}/claude", jobs["journeys-macos"])
         self.assertIn("curl", jobs["journeys-linux"].split("- name: Base tools", 1)[1].split("- uses:", 1)[0])
+
+    def test_the_native_checks_run_on_the_ci_journeys_only(self) -> None:
+        """They read the host's process table and Claude Code daemon root:
+        every CI install journey (a disposable runner) asks for them, and
+        the release tool's draft check (the maintainer's computer) does not."""
+
+        jobs = _jobs((WORKFLOWS_DIR / "release.yml").read_text())
+        for job in ("journeys-linux", "journeys-linux-arm64", "journeys-macos-intel", "journeys-windows"):
+            with self.subTest(job):
+                self.assertIn("JOURNEY_NATIVE=1 JOURNEY_CLIENT=fetch", jobs[job])
+        self.assertIn('JOURNEY_NATIVE: "1"', jobs["journeys-macos"])
+        self.assertNotIn("JOURNEY_NATIVE", (TOOLS_DIR / "release.py").read_text())
+        text = JOURNEY.read_text()
+        self.assertIn('native() { [ "${JOURNEY_NATIVE:-}" = 1 ]; }', text)
+        for function, needle in (("journey_installed", "fx processes"), ("journey_installed", "user_claude_installation"),
+                                 ("journey_installed", "forget_session"), ("managed_turn", "claude_config_before="),
+                                 ("managed_turn", "session_verbs")):
+            body = text.split(f"{function}() {{", 1)[1].split("\n}\n", 1)[0]
+            before = body[:body.index(needle)]
+            with self.subTest(needle):
+                self.assertEqual(before.rsplit("\n", 2)[-2].strip(), "if native; then")
+
+    def test_the_wsl_checks_expect_the_products_own_words(self) -> None:
+        text = JOURNEY.read_text()
+        wsl = text.split("wsl_checks() {", 1)[1].split("\n}\n", 1)[0]
+        self.assertIn('[ "${JOURNEY_WSL:-}" = 1 ] || return 0', wsl)
+        steps = ["/mnt/?/*)", '(cd "$start_dir" && "$cm" doctor)', "'WSL: running under'",
+                 "'WSL: the Windows-side and WSL-side Claude configurations are separate'",
+                 "'is on a Windows drive: file access is slow'", '(cd "$work" && "$cm" doctor)',
+                 'XDG_STATE_HOME=$windows_state "$cm" gateway start', 'rm -rf "$windows_state"',
+                 "grep -q 'on a Windows drive'", 'fx reach --host 127.0.0.1 --port "$1"']
+        positions = [wsl.index(step) for step in steps]
+        self.assertEqual(positions, sorted(positions))
+        self.assertTrue(text.index("start_dir=$(pwd)") < text.index('here=$(CDPATH='))  # before any cd
+        # The lines the journey expects are the product's own.
+        facts = (REPO_ROOT / "src/charmer/cli/gateway_facts.py").read_text()
+        for needle in ('f"WSL: running under {distro};', "WSL: the Windows-side and WSL-side Claude configurations "
+                       "are separate", "is on a Windows drive: file access is slow"):
+            self.assertIn(needle, facts)
+        lifecycle = (REPO_ROOT / "src/charmer/gateway_lifecycle.py").read_text()
+        self.assertIn('is on a Windows drive "', lifecycle)
+
+    def test_the_users_own_claude_code_is_recorded_around_every_managed_run(self) -> None:
+        text = JOURNEY.read_text()
+        installation = text.split("user_claude_installation() {", 1)[1].split("\n}\n", 1)[0]
+        self.assertLess(installation.index("fx user-claude plant ||"),
+                        installation.index('fx user-claude record --what installation'))
+        preferences = text.split("user_claude_preferences() {", 1)[1].split("\n}\n", 1)[0]
+        self.assertRegex(preferences, r'if \[ "\$claude_config_before" = empty \]; then\s+'
+                                      r'fx user-claude plant --preferences')
+        self.assertLess(preferences.index("plant --preferences"), preferences.index("record --what preferences"))
+        untouched = text.split("user_claude_untouched() {", 1)[1].split("\n}\n", 1)[0]
+        for record in ("user-claude-installation.json", "user-claude-preferences.json"):
+            self.assertIn(f'fx user-claude check --file "$work/{record}"', untouched)
 
 
 @requires_release_tree
@@ -1402,6 +1500,323 @@ cat "$STUB/text"; exit "$(cat "$STUB/text.exit")"
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("kept", result.stdout)
 
+    def test_a_held_request_keeps_its_client_waiting_until_released(self) -> None:
+        import threading
+
+        release = self.tmp / "release"
+        self.background("serve", "--port-file", str(self.tmp / "port"), "--log", str(self.tmp / "log"),
+                        "--hold-release", str(release))
+        port = self.port(self.tmp / "port")
+        self.assertEqual(self.fixture("held", "--log", str(self.tmp / "log")).returncode, 1)
+        answers: list[bytes] = []
+        asked = {"model": "m", "messages": [{"role": "user", "content": "one"},
+                                            {"role": "assistant", "content": "fixture reply 9"},
+                                            {"role": "user", "content": [{"type": "text", "text": "journey turn held"}]}]}
+        waiting = threading.Thread(target=lambda: answers.append(self.post(port, asked)))
+        waiting.start()
+        self.addCleanup(waiting.join, 30)
+        self.addCleanup(release.touch)
+        deadline = time.monotonic() + 30
+        while self.fixture("held", "--log", str(self.tmp / "log")).returncode != 0:
+            self.assertLess(time.monotonic(), deadline, "the held request was not logged")
+            time.sleep(0.1)
+        time.sleep(0.5)
+        self.assertEqual(answers, [])  # still held
+        release.touch()
+        waiting.join(timeout=30)
+        self.assertEqual(json.loads(answers[0])["choices"][0]["message"]["content"], "fixture reply 1")
+        interactive = json.loads(self.post(port, {"model": "m", "messages": [
+            {"role": "user", "content": "journey turn interactive"}]}))
+        self.assertEqual(interactive["choices"][0]["message"]["content"], "INTERACTIVE-OK-2")
+        records = [json.loads(line) for line in (self.tmp / "log").read_text().splitlines()]
+        self.assertEqual([(r["reply"], r["held"], r["carried"]) for r in records], [(1, True, [9]), (2, False, [])])
+        self.assertNotIn("journey turn", (self.tmp / "log").read_text())  # metadata only
+        # Without a release file nothing is held.
+        self.background("serve", "--port-file", str(self.tmp / "port2"), "--log", str(self.tmp / "log2"))
+        quick = json.loads(self.post(self.port(self.tmp / "port2"), asked))
+        self.assertEqual(quick["choices"][0]["message"]["content"], "fixture reply 1")
+
+    def test_run_bounds_a_command_and_exec_replaces_the_process(self) -> None:
+        quick = self.fixture("run", "--timeout", "30", "--", "sh", "-c", "echo out; echo err >&2; exit 3")
+        self.assertEqual((quick.returncode, quick.stdout, quick.stderr), (3, "out\n", "err\n"))
+        started = time.monotonic()
+        slow = self.fixture("run", "--timeout", "1", "--", "sh", "-c", "sleep 30 & sleep 30")
+        self.assertEqual(slow.returncode, 124, slow.stderr)
+        self.assertLess(time.monotonic() - started, 20)
+        self.assertIn("did not finish within 1 s", slow.stderr)
+        here = self.tmp / "here"
+        here.mkdir()
+        moved = self.fixture("exec", "--cwd", str(here), "--", "sh", "-c", "pwd -P; exit 4")
+        self.assertEqual((moved.returncode, moved.stdout.strip()), (4, os.path.realpath(here)))
+        self.assertEqual(self.fixture("run", "--timeout", "1").returncode, 2)
+
+    def test_session_ids_lists_every_or_only_the_open_records(self) -> None:
+        from charmer import sessions
+
+        home = self.tmp / "home"
+        records = home / ".local" / "state" / "charmer" / "sessions"
+        records.mkdir(parents=True)
+        ended, open_ = "12345678-1234-4123-8123-123456789abc", "abcdef01-2345-4678-9abc-def012345678"
+        for name, event in ((ended, "end"), (open_, "resume")):
+            (records / f"{name}.json").write_text(json.dumps({"version": sessions.RECORD_VERSION,
+                                                              "last_event_source": event}))
+        environ = {"HOME": str(home), "PATH": os.environ.get("PATH", os.defpath)}
+        every = self.fixture("session-ids", "--install", str(self.installed()), env=environ)
+        self.assertEqual((every.returncode, every.stdout.split()), (0, [ended, open_]), every.stderr)
+        running = self.fixture("session-ids", "--install", str(self.installed()), "--open", env=environ)
+        self.assertEqual(running.stdout.split(), [open_])
+
+    @unittest.skipUnless(sys.platform.startswith("linux"), "BOUNDARY: the process observation of this host is Linux's")
+    def test_processes_observes_disposable_processes_with_the_real_tables(self) -> None:
+        from charmer import sessions
+
+        home = self.tmp / "home"
+        home.mkdir()
+        daemon = self.tmp / "cc-daemon"
+        environ = {"HOME": str(home), "PATH": os.environ.get("PATH", os.defpath), "TMPDIR": str(self.tmp),
+                   "JOURNEY_DAEMON_ROOT": str(daemon)}
+        result = self.fixture("processes", "--install", str(self.installed()), env=environ)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual([line.split(": ", 2)[1] for line in result.stdout.splitlines()],
+                         ["session scan", "listener ownership", "process identity", "parent walk", "daemon root"])
+        self.assertTrue(all(line.startswith("native processes (linux): ") for line in result.stdout.splitlines()))
+        # --session: the session's runtime id names a running process.
+        managed, runtime = str(uuid.uuid4()), str(uuid.uuid4())
+        records = home / ".local" / "state" / "charmer" / "sessions"
+        records.mkdir(parents=True)
+        (records / f"{managed}.json").write_text(json.dumps({"version": sessions.RECORD_VERSION, "managed_id": managed,
+                                                             "runtime_session_id": runtime}))
+        client = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)", "--resume", runtime],
+                                  stdin=subprocess.DEVNULL)
+        self.addCleanup(client.wait, 30)
+        self.addCleanup(client.kill)
+        found = self.fixture("processes", "--install", str(self.installed()), "--session", managed, env=environ)
+        self.assertEqual(found.returncode, 0, found.stdout + found.stderr)
+        self.assertIn(f"the client of session {runtime[:8]} is running", found.stdout)
+        client.kill()
+        client.wait(timeout=30)
+        gone = self.fixture("processes", "--install", str(self.installed()), "--session", managed, env=environ)
+        self.assertEqual(gone.returncode, 1)
+        self.assertIn(f"did not find the running client of session {runtime[:8]}", gone.stderr)
+        # A daemon root that cannot be read safely is unknown, never "nothing in the background".
+        daemon.mkdir(mode=0o700)
+        (daemon / "link").symlink_to(self.tmp)
+        unknown = self.fixture("processes", "--install", str(self.installed()), env=environ)
+        self.assertEqual(unknown.returncode, 1)
+        self.assertIn("the daemon root is unknown (symlink in daemon root)", unknown.stderr)
+
+    def test_the_macos_checks_use_lsof_and_ps_answers(self) -> None:
+        """The macOS branch of the process observation, its readers standing
+        in with the answers they give on macOS (the disposable processes and
+        the session scan stay real)."""
+
+        from charmer.platform import darwin_process, observation
+
+        tool = load_tool(JOURNEY_FIXTURE, "journey_fixture")
+
+        def alive(pid: int) -> bool:
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                return False
+            return True
+
+        def owner(_base: str, *, pid: int) -> observation.OwnerVerdict:
+            if pid == os.getpid():
+                return observation.OwnerVerdict("unknown", "another process of yours")
+            return observation.OwnerVerdict("ours" if alive(pid) else "none", "fixture")
+
+        def identity(stamp, **_kwargs):
+            if not alive(stamp.pid):
+                return stamp.pid, False
+            return (stamp.pid, True) if stamp.binary == os.path.realpath(sys.executable) else (None, None)
+
+        known = observation.BackgroundLiveness(True, frozenset())
+        variants = {"macOS answers": ([sys.executable], owner, None),
+                    "ps shows a short name": (["python3"], owner, "ps does not report the executable path"),
+                    "lsof misses the listener": ([sys.executable],
+                                                 lambda base, *, pid: observation.OwnerVerdict("none", "nothing"),
+                                                 "expected ours, unknown, none")}
+        for name, (paths_seen, listener, problem) in variants.items():
+            with self.subTest(name), \
+                    mock.patch.object(darwin_process, "listener_owner", listener), \
+                    mock.patch.object(darwin_process, "gateway_pid", identity), \
+                    mock.patch.object(darwin_process, "executable_paths", lambda: paths_seen), \
+                    mock.patch.object(darwin_process, "ancestor_pids", lambda pid: frozenset({pid, os.getpid(), 1})), \
+                    mock.patch.object(darwin_process, "background_liveness", lambda root=None: known):
+                if problem is None:
+                    lines = tool.native_checks("darwin", self.tmp)
+                    self.assertIn("executable paths: ok (ps reports the program's path)", lines)
+                    self.assertEqual(len(lines), 6)
+                else:
+                    with self.assertRaisesRegex(tool.CheckError, problem):
+                        tool.native_checks("darwin", self.tmp)
+
+    def test_scope_rules_need_the_credential_denies_and_the_windows_side_ones_only_under_wsl(self) -> None:
+        from charmer import scope
+
+        home = self.tmp / "home"
+        session = str(uuid.uuid4())
+        directory = scope.scope_dir(home / ".local" / "state" / "charmer", session)
+        directory.mkdir(parents=True)
+        environ = {"HOME": str(home), "PATH": os.environ.get("PATH", os.defpath)}
+
+        def rules(deny: list[str], wsl: str) -> subprocess.CompletedProcess[str]:
+            (directory / scope.SETTINGS_RELPATH).write_text(json.dumps({"permissions": {"deny": deny}}))
+            return self.fixture("scope-rules", "--install", str(self.installed()), "--session", session, "--wsl", wsl,
+                                env=environ)
+
+        fixed, windows = list(scope.SECRET_PATH_DENIES), list(scope.WSL_SECRET_PATH_DENIES)
+        for deny, wsl, code in ((fixed, "absent", 0), (fixed + windows, "present", 0), (fixed, "present", 1),
+                                (fixed + windows, "absent", 1), (fixed + windows[:1], "present", 1),
+                                (fixed[1:] + windows, "present", 1)):
+            with self.subTest(deny=len(deny), wsl=wsl):
+                result = rules(deny, wsl)
+                self.assertEqual(result.returncode, code, result.stdout + result.stderr)
+        self.assertIn("does not deny charmer's own credentials", rules(fixed[1:], "absent").stderr)
+        (directory / scope.SETTINGS_RELPATH).unlink()
+        self.assertEqual(self.fixture("scope-rules", "--install", str(self.installed()), "--session", session,
+                                      "--wsl", "absent", env=environ).returncode, 1)
+
+    def test_user_claude_plants_only_where_the_account_has_none_and_names_changes(self) -> None:
+        home = self.tmp / "home"
+        home.mkdir()
+        environ = {"HOME": str(home), "PATH": os.environ.get("PATH", os.defpath)}
+        self.assertEqual(self.fixture("claude-config", env=environ).stdout, "empty\n")
+
+        def user(*args: str, env: dict | None = None) -> subprocess.CompletedProcess[str]:
+            return self.fixture("user-claude", *args, env=env or environ)
+
+        planted = user("plant")
+        self.assertEqual(planted.returncode, 0, planted.stderr)
+        launcher, version = home / ".local/bin/claude", home / ".local/share/claude/versions/0.0.0-journey"
+        self.assertEqual(os.readlink(launcher), str(version))
+        self.assertFalse(os.access(version, os.X_OK))  # a stand-in is never run
+        record = self.tmp / "installation.json"
+        self.assertEqual(user("record", "--what", "installation", "--file", str(record)).returncode, 0)
+        self.assertEqual(user("check", "--file", str(record)).returncode, 0)
+        launcher.unlink()
+        launcher.symlink_to(home / "elsewhere")
+        changed = user("check", "--file", str(record))
+        self.assertEqual(changed.returncode, 1)
+        self.assertIn("installation changed: launcher", changed.stderr)
+        launcher.unlink()
+        launcher.symlink_to(version)
+        (version.parent / "9.9.9").write_bytes(b"x")
+        self.assertIn("versions", user("check", "--file", str(record)).stderr)
+        (version.parent / "9.9.9").unlink()
+        self.assertEqual(user("check", "--file", str(record)).returncode, 0)
+        # Preferences: stand-in values where there are none, then compared.
+        self.assertEqual(user("plant", "--preferences").returncode, 0)
+        config = home / ".claude.json"
+        self.assertEqual(json.loads(config.read_text()), {"installMethod": "native", "autoUpdates": True})
+        self.assertEqual(config.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(self.fixture("claude-config", env=environ).stdout, ".claude.json\n")
+        prefs = self.tmp / "preferences.json"
+        self.assertEqual(user("record", "--what", "preferences", "--file", str(prefs)).returncode, 0)
+        config.write_text(json.dumps({"installMethod": "native", "autoUpdates": False, "numStartups": 2}))
+        self.assertIn("preferences changed: preferences", user("check", "--file", str(prefs)).stderr)
+        # An account's own installation and preferences are only read.
+        own = self.tmp / "own"
+        (own / ".local/share/claude/versions").mkdir(parents=True)
+        (own / ".local/share/claude/versions/2.0.0").write_bytes(b"theirs")
+        (own / ".claude.json").write_text(json.dumps({"autoUpdates": False, "theme": "dark"}))
+        before = {path: path.read_bytes() for path in (own / ".local/share/claude/versions/2.0.0", own / ".claude.json")}
+        theirs = {"HOME": str(own), "PATH": os.environ.get("PATH", os.defpath)}
+        self.assertIn("the account's own", user("plant", env=theirs).stdout)
+        self.assertIn("already set", user("plant", "--preferences", env=theirs).stdout)
+        self.assertFalse(os.path.lexists(own / ".local/bin/claude"))
+        self.assertEqual({path: path.read_bytes() for path in before}, before)
+
+    FAKE_CLIENT = r"""import os, sys, tty
+tty.setraw(0)
+screens = sys.argv[1].split(",") if sys.argv[1] else []
+
+
+def show(text):
+    os.write(1, text.encode())
+
+
+def key():
+    return os.read(0, 64)
+
+
+def line():
+    typed = b""
+    while not typed.endswith(b"\r"):
+        typed += os.read(0, 64)
+    return typed[:-1]
+
+
+for screen in screens:
+    if screen == "confirm":
+        show("Enter launch · q quit: ")
+        if line() != b"":
+            sys.exit(11)
+    elif screen == "style":
+        show("\x1b[2J\x1b[HChoose the text style\r\n❯ 1. Dark mode\r\n")
+        if key() != b"\r":
+            sys.exit(12)
+    elif screen == "notes":
+        show("\x1b[2J\x1b[HSecurity notes\r\nPress Enter to continue\r\n")
+        if key() != b"\r":
+            sys.exit(13)
+    elif screen == "trust":
+        show("\x1b[2J\x1b[HDo you trust the files in this folder?\r\n  1. Yes\r\n❯ 2. No, exit\r\n"
+             "Enter to confirm · Esc to exit\r\n")
+        if key() != b"\x1b[B":
+            sys.exit(14)
+        show("\x1b[3A❯ 1. Yes")
+        if key() != b"\r":
+            sys.exit(15)
+    elif screen == "welcome":
+        show("\x1b[2J\x1b[HWelcome to the new release, sign in\r\n")
+        key()
+show("\x1b[2J\x1b[H❯ ")
+if line() != b"journey turn interactive":
+    sys.exit(16)
+if os.environ.get("SILENT") != "1":
+    show("\r\n● INTERACTIVE-OK-4\r\n\r\n❯ ")
+if line() != b"/exit":
+    sys.exit(17)
+show("\r\nbye\r\n")
+"""
+
+    def test_interactive_answers_and_records_the_one_time_screens(self) -> None:
+        try:
+            os.close(os.openpty()[0])
+        except OSError as exc:
+            self.skipTest(f"BOUNDARY: no pseudo-terminal here ({exc})")
+        client = self.tmp / "client.py"
+        client.write_text(self.FAKE_CLIENT)
+        log = self.tmp / "screens.log"
+
+        def turn(screens: str, timeout: str = "60", **env: str) -> subprocess.CompletedProcess[str]:
+            return self.fixture("interactive", "--log", str(log), "--timeout", timeout, "--cwd", str(self.tmp), "--",
+                                sys.executable, "-I", str(client), screens,
+                                env={**os.environ, "TERM": "dumb", **env})
+
+        full = turn("confirm,style,notes,trust")
+        self.assertEqual(full.returncode, 0, full.stdout + full.stderr)
+        self.assertIn("screens: launch-confirm, text-style, security-notes, folder-trust; one turn answered; /exit",
+                      full.stdout)
+        self.assertIn("screen folder-trust: Do you trust the files in this folder?", full.stdout)
+        self.assertEqual([entry["screen"] for entry in json.loads(log.read_text().splitlines()[-1])["screens"]],
+                         ["launch-confirm", "text-style", "security-notes", "folder-trust"])
+        some = turn("notes")  # screens a configured account no longer shows are left out
+        self.assertEqual(some.returncode, 0, some.stdout + some.stderr)
+        self.assertIn("screens: security-notes; one turn answered", some.stdout)
+        none = turn("")
+        self.assertIn("screens: none; one turn answered", none.stdout)
+        stalled = turn("welcome", timeout="6")
+        self.assertEqual(stalled.returncode, 1)
+        self.assertIn("no input prompt and no known screen", stalled.stderr)
+        self.assertIn("Welcome to the new release", stalled.stderr)  # the screen's last lines, for the record
+        silent = turn("", timeout="8", SILENT="1")
+        self.assertEqual(silent.returncode, 1)
+        self.assertIn("the turn showed no fixture reply", silent.stderr)
+        self.assertEqual(json.loads(log.read_text().splitlines()[-1])["problem"], "the turn showed no fixture reply")
+
 
 @requires_release_tree
 @needs_ssh_keygen("BOUNDARY: ssh-keygen is not installed (the journey signs with it)")
@@ -1421,17 +1836,20 @@ class JourneyScriptTests(unittest.TestCase):
         (self.fakebin / "uname").write_text('#!/bin/sh\ncase $1 in -m) echo x86_64;; -r) echo 6.1.0;; *) echo Linux;; esac\n')
         os.chmod(self.fakebin / "uname", 0o755)
 
-    def run_journey(self, *args: str, uninstall: bool = False, target: str | None = None
+    def run_journey(self, *args: str, uninstall: bool = False, target: str | None = None, native: bool = True
                     ) -> subprocess.CompletedProcess[str]:
         # The caller's PATH stays (the signing tools may live anywhere, as in
         # the Nix sandbox); only uname is a stand-in.
         path = f"{self.fakebin}{os.pathsep}{os.environ.get('PATH', '/usr/bin:/bin')}"
         env = {"HOME": str(self.home), "PATH": path, "LC_ALL": "C", "TMPDIR": str(self.tmp),
-               "JOURNEY_GATEWAY": "skip", "SHELL": "/bin/sh"}
+               "JOURNEY_GATEWAY": "skip", "SHELL": "/bin/sh", "JOURNEY_NATIVE": "1",
+               "JOURNEY_DAEMON_ROOT": str(self.tmp / "cc-daemon")}
         if not uninstall:
             env["JOURNEY_UNINSTALL"] = "skip"
         if target is not None:
             env["JOURNEY_TARGET"] = target
+        if not native:
+            del env["JOURNEY_NATIVE"]
         return subprocess.run(["sh", str(JOURNEY), *args], env=env, cwd=self.tmp, capture_output=True, text=True,
                               timeout=300, stdin=subprocess.DEVNULL, start_new_session=True)
 
@@ -1448,6 +1866,7 @@ class JourneyScriptTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         for step in ("bundle target: linux-x86_64", "fresh install: ok", "version: charmer 1.0.0 (catalog",
                      self.FIRST_RUN_OK, "installation channel (installed 1.0.0): bundle",
+                     "journey:   native processes (linux): session scan: ok", "native process observation: ok",
                      "managed sessions ended: ok (0 managed session record(s), every one ended)",
                      "uninstall keeping the state: ok", "done"):
             self.assertIn(step, result.stdout)
@@ -1524,6 +1943,16 @@ exit 71
         result = self.run_journey("bogus")
         self.assertEqual(result.returncode, 1)
         self.assertIn("journey: FAILED: usage", result.stderr)
+
+    def test_the_restarted_journey_needs_what_the_installed_one_kept(self) -> None:
+        release = FakeRelease(self.tmp / "dist", "1.0.0", real_launchers=True)
+        installed = self.run_journey("install", str(release.dir), native=False)
+        self.assertIn("native checks: not run (JOURNEY_NATIVE=1 runs them, on a disposable host)", installed.stdout)
+        self.assertNotIn("native processes", installed.stdout)
+        self.assertEqual(installed.returncode, 0, installed.stdout + installed.stderr)
+        result = self.run_journey("restarted", "1.0.0", str(self.tmp / "nothing-kept"))
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("has no fixture port (run the installed journey with JOURNEY_KEEP first)", result.stderr)
 
 
 class RequiredReleaseTestsTests(unittest.TestCase):
@@ -2892,7 +3321,8 @@ class NativeLaneTests(unittest.TestCase):
                  "journey.sh prepare dist", "serve-files", "--cert", "Invoke-Main -Distribution $distribution",
                  '-InstallerUrl "https://localhost:$port/install.sh"', "-InstallerSha256 $sum",
                  "-InstallerArguments @('--from-dir'", "'--allowed-signers'",
-                 "JOURNEY_CLIENT=fetch sh .github/scripts/journey.sh installed"]
+                 "JOURNEY_CLIENT=fetch JOURNEY_WSL=1 JOURNEY_UNINSTALL=skip", "wsl --terminate $distribution",
+                 "sh .github/scripts/journey.sh restarted"]
         positions = [job.index(needle) for needle in order]
         self.assertEqual(positions, sorted(positions))
         self.assertNotIn("journey.sh install dist", job)  # install.ps1 installs, not the journey
@@ -2904,14 +3334,19 @@ class NativeLaneTests(unittest.TestCase):
 
     def test_windows_installed_journey_detaches_and_keeps_its_argv_and_exit_guard(self) -> None:
         job = self.release["journeys-windows"]
-        commands = _commands(job)
-        journeys = [line for line in commands if "journey.sh installed" in line]
+        commands = [line for line in _commands(job) if not line.startswith("#")]
+        journeys = [line for line in commands if "journey.sh installed" in line or "journey.sh restarted" in line]
         self.assertEqual(journeys, [
             'wsl --distribution $distribution --cd "$workspace" --exec setsid --wait sh -c '
-            '\'umask 077; JOURNEY_CLIENT=fetch sh .github/scripts/journey.sh installed "$0"\' $version'])
-        self.assertEqual(commands[commands.index(journeys[0]) + 1],
-                         "if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }")
-        self.assertEqual(job.count("setsid"), 1, "detach only the installed journey, not installer or readiness")
+            '\'umask 077; JOURNEY_NATIVE=1 JOURNEY_CLIENT=fetch JOURNEY_WSL=1 JOURNEY_UNINSTALL=skip '
+            'JOURNEY_KEEP="$HOME/journey-keep" sh .github/scripts/journey.sh installed "$0"\' $version',
+            'wsl --distribution $distribution --cd "$workspace" --exec setsid --wait sh -c '
+            '\'umask 077; sh .github/scripts/journey.sh restarted "$0" "$HOME/journey-keep"\' $version'])
+        guard = "if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }"
+        first, second = (commands.index(line) for line in journeys)
+        self.assertEqual(commands[first + 1:second + 2], [guard, "wsl --terminate $distribution", guard,
+                                                           journeys[1], guard])
+        self.assertEqual(job.count("setsid"), 2, "detach only the journeys, not installer or readiness")
 
     @unittest.skipUnless(shutil.which("setsid"), "BOUNDARY: util-linux setsid (--wait) is required for the PTY test")
     def test_windows_installed_journey_detachment_is_headless_and_preserves_exit_status(self) -> None:
@@ -3273,9 +3708,11 @@ class NixRootsTests(unittest.TestCase):
 state=$FAKE_NIX_STATE
 case $1 in
 --add-root)
-	[ "${FAKE_NIX_ADD:-ok}" = ok ] || exit 1
+	[ "${FAKE_NIX_ADD:-ok}" != fail ] || exit 1
+	[ "${FAKE_NIX_ADD:-ok}" != once ] || [ ! -s "$state/roots" ] || exit 1
 	[ "$3" = --indirect ] && [ "$4" = --realise ] || exit 64
-	printf '%s\\n' "$2" >>"$state/roots"
+	# An indirect root is one per link: adding it again keeps the one.
+	grep -qxF -- "$2" "$state/roots" 2>/dev/null || printf '%s\\n' "$2" >>"$state/roots"
 	echo "$2" ;;
 --query)
 	[ -f "$state/roots" ] || exit 0
@@ -3331,14 +3768,18 @@ esac
     def test_the_product_roots_and_unroots_the_package(self) -> None:
         code, output = self.prove()
         self.assertEqual(code, 0, output)
-        for step in ("unrooted before the selection: ok", "rooted by the product's link", "deletion refused: still alive: ok",
-                     "unrooted after the removal: ok"):
-            self.assertIn(step, output)
+        steps = ["unrooted before the selection: ok", "rooted by the product's link", "refreshed: still the one root: ok",
+                 "deletion refused: still alive: ok", "unrooted after the removal: ok"]
+        positions = [output.index(step) for step in steps]
+        self.assertEqual(positions, sorted(positions))
         roots = (self.tmp / "state" / "roots").read_text().split()
         self.assertEqual(len(roots), 1)
         self.assertTrue(roots[0].endswith("/.local/share/charmer/nix/current"))
 
     def test_failures(self) -> None:
+        code, output = self.prove(FAKE_NIX_ADD="once")  # the refresh's registration fails
+        self.assertEqual(code, 1)
+        self.assertIn("the refresh did not keep the root registered", output)
         code, output = self.prove(FAKE_NIX_ADD="fail")
         self.assertEqual(code, 1)
         self.assertIn("did not register the root", output)
