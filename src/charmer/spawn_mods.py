@@ -23,9 +23,9 @@ MAX_DEPTH = 8
 MAX_MODULES = 16
 MODULE_SUFFIXES = frozenset({".ts", ".tsx", ".jsx", ".js", ".mjs", ".cjs", ".mts", ".cts"})
 COVERAGE = ("Scanned: session dev-mods, user skills, current-project skills, plugin store and synced folders, "
-            "CLAUDE_CODE_PLUGIN_DIRS in this environment and user settings, and explicitly supplied plugin "
-            "directories from the client's command line. Not scanned: other sessions' command-line plugin "
-            "directories or projects, folder marketplaces elsewhere, "
+            "CLAUDE_CODE_PLUGIN_DIRS in this environment and user settings. "
+            "Not scanned: plugin directories given on a client's command line (managed sessions refuse that flag), "
+            "other projects, folder marketplaces elsewhere, "
             "imports, computed hook names, symlinks, and files or folders beyond the scan bounds. "
             "This check is not exhaustive and is not proof a mod is enabled or active.")
 SPAWN_EFFECT = ("An agent.spawn hook may redirect spawns within the lineup fence; the exact per-agent binding "
@@ -50,8 +50,8 @@ class _NotInspected(Exception):
     pass
 
 
-def _directory(path: Path) -> bool:
-    """No linked parent may redirect the walk into unrelated user data."""
+def _directory(path: Path, root: Path) -> bool:
+    """Refuse linked folders within the scan root, not its ancestors."""
 
     for part in (path, *path.parents):
         try:
@@ -60,7 +60,9 @@ def _directory(path: Path) -> bool:
             return False
         if not stat.S_ISDIR(mode):
             raise _NotInspected("linked or non-directory location")
-    return True
+        if part == root:
+            return True
+    raise _NotInspected("folder outside the scan root")
 
 
 def scan(home: Path | str, cwd: Path | str, environ: Mapping[str, str], *,
@@ -68,9 +70,9 @@ def scan(home: Path | str, cwd: Path | str, environ: Mapping[str, str], *,
     """Only bounded regular UTF-8 files named by a plugin's manifests are read.
     ``plugin_dirs`` is explicit input, not a process or transcript search."""
 
-    home, cwd = Path(home), Path(cwd)
-    claude = paths.claude_settings_dir({**environ, "HOME": str(home)})
-    forbidden = (home / ".claude" / "projects", paths.native_projects(home, environ))
+    home, cwd = Path(os.path.realpath(home)), Path(os.path.realpath(cwd))
+    claude = Path(os.path.realpath(paths.claude_settings_dir({**environ, "HOME": str(home)})))
+    forbidden = (claude / "projects", Path(os.path.realpath(paths.native_projects(home, environ))))
     roots = [(claude / "dev-mods", 2), (claude / "skills", 1),
              (cwd / ".claude" / "skills", 1), (claude / "plugins" / "store", MAX_DEPTH),
              (claude / "plugins" / "synced", MAX_DEPTH)]
@@ -82,7 +84,7 @@ def scan(home: Path | str, cwd: Path | str, environ: Mapping[str, str], *,
         nonlocal total_bytes
         if (not target.is_relative_to(root)
                 or any(target == denied or target.is_relative_to(denied) for denied in forbidden)
-                or not _directory(target.parent)):
+                or not _directory(target.parent, root)):
             raise _NotInspected("module outside the plugin or missing folder")
         descriptor = os.open(target, os.O_RDONLY | os.O_NONBLOCK | os.O_CLOEXEC | os.O_NOFOLLOW)
         with os.fdopen(descriptor, "rb") as stream:
@@ -105,6 +107,9 @@ def scan(home: Path | str, cwd: Path | str, environ: Mapping[str, str], *,
         if not isinstance(value, str):
             if value is not None:
                 incomplete.add("invalid plugin directory setting")
+            return
+        if "\x00" in value:
+            incomplete.add("invalid plugin directory setting")
             return
         for raw in value.split(os.pathsep):
             if not raw:
@@ -171,13 +176,13 @@ def scan(home: Path | str, cwd: Path | str, environ: Mapping[str, str], *,
                 spawn = "agent.spawn" in read(folder, target) or spawn
             except (OSError, ValueError, RecursionError, _NotInspected):
                 inspected = False
-        if spawn or not inspected:
-            mods.append(Mod(folder, spawn, inspected))
+        mods.append(Mod(folder, spawn, inspected))
         return True
 
     visited: set[Path] = set()
     for root, depth in roots:
-        if any(root == target or root.is_relative_to(target) for target in forbidden):
+        resolved = Path(os.path.realpath(root))
+        if any(resolved == target or resolved.is_relative_to(target) for target in forbidden):
             incomplete.add("transcript location excluded")
             continue
         queue = [(root, depth)]
@@ -187,10 +192,13 @@ def scan(home: Path | str, cwd: Path | str, environ: Mapping[str, str], *,
                 continue
             visited.add(folder)
             try:
-                if not _directory(folder):
+                if not _directory(folder, root):
                     continue
-                if inspect(folder) or left == 0:
-                    if left == 0 and depth > 1:
+                found = inspect(folder)
+                if found:
+                    continue
+                if left == 0:
+                    if depth > 1:
                         incomplete.add("folder depth limit")
                     continue
                 with os.scandir(folder) as children:
@@ -208,7 +216,7 @@ def scan(home: Path | str, cwd: Path | str, environ: Mapping[str, str], *,
                                 queue.append((Path(child.path), left - 1))
                         except OSError:
                             incomplete.add("folder entry unreadable")
-            except (OSError, _NotInspected):
+            except (OSError, ValueError, _NotInspected):
                 incomplete.add("folder unreadable or linked")
         if queue:
             incomplete.add("folder entry limit")

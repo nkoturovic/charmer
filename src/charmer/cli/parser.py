@@ -676,7 +676,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--repair",
         metavar="SESSION",
         dest="doctor_repair",
-        help=f"converge a session's scope to its record authority ({SESSION_ARGUMENT})",
+        help=f"converge a session's scope to its record authority ({SESSION_ARGUMENT}); "
+        "exits 3 when the scope is deferred, not converged",
     )
     doctor_actions.add_argument(
         "--repair-all",

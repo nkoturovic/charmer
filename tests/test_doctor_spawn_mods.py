@@ -18,8 +18,8 @@ from test_tui import DOWN, ENTER, ESC, FakeWindow
 
 class SpawnModAdvisoryTests(V4Case):
     def setUp(self) -> None:
-        # Exercise real directories, not a platform's /tmp or /var alias:
-        # linked scan locations deliberately remain outside this check.
+        # Keep fixture path assertions canonical even on platforms with
+        # a linked /tmp or /var.
         with mock.patch.object(tempfile, "tempdir", str(Path(tempfile.gettempdir()).resolve())):
             super().setUp()
 
@@ -92,13 +92,85 @@ class SpawnModAdvisoryTests(V4Case):
         (claude / "settings.json").write_text(json.dumps({"env": {"CLAUDE_CODE_PLUGIN_DIRS": str(roots[-2])}}))
         result = spawn_mods.scan(self.runtime.home, self.runtime.cwd, self.runtime.environ, plugin_dirs=(roots[-1],))
         self.assertEqual({row.folder for row in result.mods if row.spawn}, set(roots))
-        self.assertIn("directories from the client's command line", result.coverage)
+        self.assertEqual(result.incomplete, ())
         self.assertIn("folder marketplaces", result.coverage)
         # Imported code is not read: only the declared module's literal matters.
         root, module = self.plugin(self.root / "import-only", text="import './other.mjs';")
         (module.parent / "other.mjs").write_text("on('agent.spawn', () => {});")
         isolated = spawn_mods.scan(self.root / "empty-home", self.root / "empty-project", {}, plugin_dirs=(root,))
-        self.assertEqual(isolated.mods, ())
+        self.assertEqual(isolated.mods, (spawn_mods.Mod(root, False, True),))
+
+    def test_coverage_excludes_client_command_line_plugin_directories(self) -> None:
+        from charmer import spawn_mods
+        scanned, not_scanned = spawn_mods.COVERAGE.split("Not scanned:")
+        self.assertNotIn("command line", scanned)
+        self.assertIn("plugin directories given on a client's command line (managed sessions refuse that flag)",
+                      not_scanned)
+
+    def test_session_dev_mod_without_spawn_is_found_at_the_last_allowed_depth(self) -> None:
+        from charmer import spawn_mods
+        home = self.root / "dev-mod-home"
+        root, _module = self.plugin(home / ".claude" / "dev-mods" / "sess" / "example",
+                                    module="./register.ts", text="export const register = () => {};")
+        result = spawn_mods.scan(home, self.root / "empty-project", {})
+        self.assertEqual(result.mods, (spawn_mods.Mod(root, False, True),))
+        self.assertEqual(result.incomplete, ())
+
+    def test_invalid_plugin_directory_settings_are_incomplete_not_exceptions(self) -> None:
+        from charmer import spawn_mods
+        home = self.root / "invalid-setting-home"
+        claude = home / ".claude"
+        claude.mkdir(parents=True)
+        invalid = "/tmp/a\x00b"
+        for source in ("settings", "environment"):
+            with self.subTest(source=source):
+                (claude / "settings.json").write_text(json.dumps(
+                    {"env": {"CLAUDE_CODE_PLUGIN_DIRS": invalid}} if source == "settings" else {}))
+                environ = {"CLAUDE_CODE_PLUGIN_DIRS": invalid} if source == "environment" else {}
+                result = spawn_mods.scan(home, self.root / "empty-project", environ)
+                self.assertEqual(result.mods, ())
+                self.assertEqual(result.incomplete, ("invalid plugin directory setting",))
+
+    def test_a_home_and_project_through_a_linked_parent_have_the_same_coverage(self) -> None:
+        from charmer import spawn_mods
+        parent = self.root / "real-parent"
+        home, cwd = parent / "home", parent / "project"
+        self.plugin(home / ".claude" / "skills" / "example")
+        self.plugin(cwd / ".claude" / "skills" / "example")
+        linked = self.root / "linked-parent"
+        linked.symlink_to(parent, target_is_directory=True)
+        real = spawn_mods.scan(home, cwd, {})
+        result = spawn_mods.scan(linked / "home", linked / "project", {})
+        self.assertEqual(len(real.mods), 2)
+        self.assertEqual(real.incomplete, ())
+        self.assertEqual(result.mods, real.mods)
+        self.assertEqual(result.incomplete, ())
+
+    def test_a_linked_settings_directory_keeps_its_projects_excluded(self) -> None:
+        from charmer import spawn_mods
+        home = self.root / "linked-settings-home"
+        home.mkdir()
+        claude = self.root / "real-settings"
+        root, _module = self.plugin(claude / "skills" / "example")
+        (home / ".claude").symlink_to(claude, target_is_directory=True)
+        result = spawn_mods.scan(home, self.root / "empty-project", {})
+        self.assertEqual(result.mods, (spawn_mods.Mod(root, True, True),))
+        self.assertEqual(result.incomplete, ())
+        # The excluded directory need not exist; no transcript is made or read.
+        for projects in (claude / "projects", home / ".claude" / "projects"):
+            with self.subTest(path=projects):
+                result = spawn_mods.scan(home, self.root / "empty-project", {}, plugin_dirs=(projects,))
+                self.assertIn("transcript location excluded", result.incomplete)
+
+    def test_a_linked_skill_inside_a_scan_root_is_still_not_inspected(self) -> None:
+        from charmer import spawn_mods
+        root, _module = self.plugin(self.root / "outside-skill")
+        skills = self.runtime.home / ".claude" / "skills"
+        skills.mkdir(parents=True)
+        (skills / "linked-skill").symlink_to(root, target_is_directory=True)
+        result = spawn_mods.scan(self.runtime.home, self.runtime.cwd, self.runtime.environ)
+        self.assertEqual(result.mods, ())
+        self.assertEqual(result.incomplete, ("symlinked folder not inspected",))
 
     def test_oversized_nontext_and_escaped_modules_are_not_inspected(self) -> None:
         from charmer import spawn_mods

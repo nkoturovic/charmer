@@ -823,6 +823,8 @@ def _doctor_spawn_mods(runtime: runtime_mod.Runtime) -> list[str]:
     scan = spawn_mods.scan(runtime.home, runtime.cwd, runtime.environ)
     lines: list[str] = []
     for mod in scan.mods:
+        if mod.inspected and not mod.spawn:
+            continue
         state_text = "declares an agent.spawn hook (literal text only)" if mod.spawn else "hook module present, not inspected"
         if mod.spawn and not mod.inspected:
             state_text += "; another hook module is present, not inspected"

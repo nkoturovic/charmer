@@ -70,7 +70,7 @@ import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Iterable, Mapping
+from typing import Any, BinaryIO, Callable, Iterable, Mapping
 
 from charmer import (endpoint, errors, gateway_hold, gateway_inhibition, installs, layout, paths, secret_store,
                           service, state, strict_json, termtext)
@@ -146,25 +146,20 @@ class BinaryDrift(str):
         return value
 
 
-def _binary_digest(path: str) -> tuple[bytes, tuple[int, int]]:
-    """Hash a regular on-disk file, rejecting a replacement or change during
-    the read. Follow installation links, but never block on a FIFO. This is
-    deliberately not the running-process verification of update --verify."""
+def _binary_digest(path: str, stream: BinaryIO, before: os.stat_result) -> bytes:
+    """Hash an opened regular file, rejecting a replacement or change during
+    the read. This is deliberately not the running-process verification of
+    update --verify."""
 
-    descriptor = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_CLOEXEC)
-    with os.fdopen(descriptor, "rb") as stream:
-        before = os.fstat(stream.fileno())
-        if not stat.S_ISREG(before.st_mode):
-            raise OSError("not a regular gateway binary")
-        digest = hashlib.sha256()
-        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(chunk)
-        after = os.fstat(stream.fileno())
-        current = os.stat(path)
-        fields = ("st_dev", "st_ino", "st_size", "st_mtime_ns", "st_ctime_ns")
-        if any(getattr(before, key) != getattr(item, key) for item in (after, current) for key in fields):
-            raise OSError("gateway binary changed during comparison")
-        return digest.digest(), (before.st_dev, before.st_ino)
+    digest = hashlib.sha256()
+    for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+        digest.update(chunk)
+    after = os.fstat(stream.fileno())
+    current = os.stat(path)
+    fields = ("st_dev", "st_ino", "st_size", "st_mtime_ns", "st_ctime_ns")
+    if any(getattr(before, key) != getattr(item, key) for item in (after, current) for key in fields):
+        raise OSError("gateway binary changed during comparison")
+    return digest.digest()
 
 
 @dataclass(frozen=True)
@@ -1176,8 +1171,8 @@ class Gateway:
         return stamp.binary if stamp is not None else None
 
     def binary_drift(self, seen: Observation) -> BinaryDrift | None:
-        """Compare the recorded and installed files' SHA-256 hashes, not their
-        paths. Matching bytes on another path make a restart optional, but
+        """Compare opened file identities, then SHA-256 hashes if they differ.
+        Matching bytes on another path make a restart optional, but
         running_binary still protects the recorded path from cleanup. None
         means no notice, never a cross-platform verification of the process's
         running bytes."""
@@ -1194,15 +1189,21 @@ class Gateway:
             return BinaryDrift("gateway restart pending: this installation's gateway binary cannot be located; "
                                f"restore it, then restart between turns: {restart}")
         try:
-            running_hash, running_file = _binary_digest(stamp.binary)
-            installed_hash, installed_file = _binary_digest(installed)
+            flags = os.O_RDONLY | os.O_NONBLOCK | os.O_CLOEXEC
+            with os.fdopen(os.open(stamp.binary, flags), "rb") as running, \
+                    os.fdopen(os.open(installed, flags), "rb") as current:
+                running_file, installed_file = os.fstat(running.fileno()), os.fstat(current.fileno())
+                if not all(stat.S_ISREG(info.st_mode) for info in (running_file, installed_file)):
+                    raise OSError("not a regular gateway binary")
+                if (running_file.st_dev, running_file.st_ino) == (installed_file.st_dev, installed_file.st_ino):
+                    return None
+                running_hash = _binary_digest(stamp.binary, running, running_file)
+                installed_hash = _binary_digest(installed, current, installed_file)
         except OSError:
             return BinaryDrift("gateway restart pending: the recorded or installed gateway binary is missing, "
                                "unreadable or changed during comparison (on-disk comparison unavailable); "
                                f"restart it between turns: {restart}")
         if running_hash == installed_hash:
-            if running_file == installed_file:
-                return None
             return BinaryDrift("gateway same binary on another path; restart optional "
                                "(on-disk SHA-256 match; running bytes not verified); "
                                f"to move to this install between turns: {restart}", restart_pending=False)

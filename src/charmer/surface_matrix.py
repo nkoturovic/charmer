@@ -43,8 +43,9 @@ STREAMS = ("stdout", "terminal")
 # failed, refused or unavailable, 2 usage, 3 declined, 130 interrupted), the
 # gateway tool's documented statuses, the hooks' fail-open/fail-closed
 # protocol, the /cm skill transport (status 0 with the text), or installed
-# verification (0 complete, 1 mismatch, 3 incomplete/unsupported; 2 usage, 130 interrupted).
-EXITS = ("user", "proxy", "hook", "skill", "verification")
+# verification (0 complete, 1 mismatch, 3 incomplete/unsupported; 2 usage, 130 interrupted),
+# or repair (0 converged, 1 failed or refused, 2 usage, 3 deferred until resume or a model choice, 130 interrupted).
+EXITS = ("user", "proxy", "hook", "skill", "verification", "repair")
 # How a destructive operation is confirmed.
 CONFIRMS = (
     "y/N, default No; --yes off a terminal",
@@ -772,7 +773,7 @@ OPERATIONS: tuple[Op, ...] = (
     Op("sessions.repair", "sessions", "rebuild one session's generated scope", cli=("doctor --repair",),
        tui=(_t("sessions.repair", "card → S → P", "a current-format session",
                f"{T_RECOVERY}.SessionsRepairTests.test_p_repairs_through_the_doctor_operation"),),
-       confirm="dialog with Cancel focused first", stream="stdout", exit="user"),
+       confirm="dialog with Cancel focused first", stream="stdout", exit="repair"),
     Op("sessions.repair-all", "sessions", "converge stopped scopes; catalog-ineligible lineups are deferred",
        cli=("doctor --repair-all",),
        tui=(_t("findings.act", "card → H → Enter on a scope to repair → Repair", "a finding names a scope repair",

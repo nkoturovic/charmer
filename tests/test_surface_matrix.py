@@ -464,6 +464,13 @@ class CensusTests(unittest.TestCase):
                     self.assertIn(command.name, rows[operation].proxy)
                     self.assertEqual(rows[operation].exit, "proxy")
 
+    def test_single_scope_repair_has_its_own_deferred_exit_contract(self) -> None:
+        rows = sm.rows()
+        self.assertEqual(rows["sessions.repair"].exit, "repair")
+        self.assertIn("repair", sm.EXITS)
+        self.assertEqual(rows["sessions.repair-all"].exit, "user")
+        self.assertEqual(rows["sessions.repair-all-live"].exit, "user")
+
     def test_the_tui_leaves_the_gateway_cli_only_operations_with_their_reasons(self) -> None:
         rows = sm.rows()
         for verb, row in (("gateway stop", "gateway.stop"), ("gateway clear-hold", "gateway.clear-hold"),

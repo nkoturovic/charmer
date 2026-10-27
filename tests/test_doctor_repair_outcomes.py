@@ -42,10 +42,12 @@ class SingleRepairOutcomeTests(CLITestCase):
         before = self.deferred_record()
         code, out, err = self.run_cli_both(
             ["sessions", "relink-runtime", FIXED_ID, OTHER_ID], interactive=False)
-        self.assertEqual(code, 1, out + err)
+        self.assertEqual(code, doctor_actions.REPAIR_DEFERRED, out + err)
         self.assertEqual(out, "")
-        self.assertIn("scope convergence is unfinished", err)
-        self.assertIn(f"charmer -r {FIXED_ID}", err)
+        self.assertEqual(err.count("scope convergence is deferred"), 1)
+        self.assertNotIn("scope convergence is unfinished", err)
+        self.assertNotIn("charmer doctor --repair", err)
+        self.assertTrue(err.rstrip().endswith(f"`charmer -r {FIXED_ID}`"), err)
         after = self.runtime.session_store.load(FIXED_ID)
         self.assertEqual(after["runtime_session_id"], OTHER_ID)
         self.assertGreater(after["launch_epoch"], before["launch_epoch"])
@@ -76,6 +78,12 @@ class SingleRepairOutcomeTests(CLITestCase):
             self.assertIsNone(launch_flow._choose_session_line(self.runtime, io.StringIO(), out))
         self.assertIn("fixture unavailable", out.getvalue())
         self.assertNotIn("(no recorded sessions)", out.getvalue())
+
+    def test_single_repair_help_discloses_the_deferred_exit_status(self) -> None:
+        out = io.StringIO()
+        with mock.patch("sys.stdout", out), self.assertRaises(SystemExit):
+            parser.build_parser().parse_args(["doctor", "--help"])
+        self.assertIn("exits 3 when the scope is deferred, not converged", " ".join(out.getvalue().split()))
 
     def test_repair_all_help_discloses_catalog_deferrals(self) -> None:
         out = io.StringIO()

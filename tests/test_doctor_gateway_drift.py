@@ -80,6 +80,18 @@ class GatewayByteDriftTests(_GatewayDoctor):
                 self.assertIsNotNone(drift)
                 self.assertIn("gateway restart pending", drift)
 
+    def test_same_file_identity_does_not_read_binary_bytes(self) -> None:
+        gateway = self.runtime.gateway()
+        seen = gateway.observe()
+        linked = self.root / "same-file-gateway"
+        os.link(self.running_path, linked)
+        for path in (self.running_path, linked):
+            gateway.environ["CHARMER_PROXY_BIN"] = str(path)
+            with self.subTest(path=path.name), mock.patch.object(
+                    gl, "_binary_digest", return_value=(b"fixture", (0, 1))) as digest:
+                self.assertIsNone(gateway.binary_drift(seen))
+                digest.assert_not_called()
+
     def test_missing_or_unreadable_paths_never_claim_same_bytes(self) -> None:
         gateway = self.runtime.gateway()
         seen = gateway.observe()
