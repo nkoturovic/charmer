@@ -341,6 +341,9 @@ def declare_line(
     providers.d file under the frozen lock order, re-render or undo. A
     declared line has no admission badge; existing lines are never edited here."""
 
+    problem = discovery.wire_problem(str(line["wire_model"]))
+    if problem is not None:
+        return fail(f"{verb}: {problem} — nothing written")
     ctx = providers_cmd.operator_context(runtime)
     providers_cmd.require_ledger(ctx, verb)
     catalog_provider = ctx.docs["providers"]["providers"].get(provider_id)
@@ -393,6 +396,9 @@ def declare_line(
     selectors = ", ".join(selector for _level, selector, _contract in catalog.line_selectors(dict(entry)))
     declared = entry["context"]["declared_tokens"]
     report(output_stream, f"declared {key} — New · not admitted · selectors {selectors} · class custom-{declared}")
+    restricted = discovery.restriction(provider_id, wire)
+    if restricted is not None:
+        report(output_stream, f"note: {wire}: {restricted}; a request may fail")
     report(output_stream, f"{_agent_status(resolved)} · validated floor {entry['context']['validated_tokens']} (not near-limit measured)")
     status = layer.route_status.get(provider_id)
     if status in ("unapproved", "changed"):
