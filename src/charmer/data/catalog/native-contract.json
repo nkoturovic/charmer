@@ -177,7 +177,7 @@
       "evidence": {
         "linux-x64": "battery",
         "others": "identity+smoke",
-        "receipt_sha256": "6c185d6b189f4fabd07a3e29f60f5ac4f92a2edcf88e08f35ff87d32822bcf36"
+        "receipt_sha256": "5d9b5a2ec344db51decab17f8245155d6d027d9d053229e2540dacb1dfe17722"
       },
       "key_fingerprint": "31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE",
       "manifest_sha256": "d456e7293d621e6e09dd73b1d2a112bef62dae08d1ee44c1065356e64da65c0d",
