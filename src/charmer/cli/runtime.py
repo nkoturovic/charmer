@@ -898,9 +898,10 @@ class Runtime:
     def custom_conflicts(self) -> list[str]:
         """Custom-registry ids shadowing the catalog (dropped by the merge)."""
 
-        return custom.merge_conflicts(
-            self.catalog.docs, custom.load_registry(self.environ)
-        )
+        # Include displaced-key reservations, not the merged custom entries
+        # themselves: active custom models are not catalog conflicts.
+        reserved = {**self.catalog.docs, "retired": self.ordinary_docs["retired"]}
+        return custom.merge_conflicts(reserved, custom.load_registry(self.environ))
 
     def custom_header_violations(self) -> list[tuple[str, str]]:
         """Custom providers whose auth is unsupported (dropped with their models)."""

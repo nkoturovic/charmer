@@ -1,8 +1,8 @@
 """H: doctor's findings as a list, and the fixed set of actions on them.
 
-The rows are ``doctor.present_report``'s, the ones plain ``charmer doctor``
-prints: BLOCKED, then Attention under area headers (a held gateway first),
-then the advisories (optional evidence), collapsed behind their header
+The rows are ``doctor.present_report``'s: the same BLOCKED and Attention rows
+as plain ``charmer doctor`` under area headers (a held gateway first), then
+each advisory (plain doctor summarizes them by model), collapsed behind its header
 until Enter opens it. Each row wraps in full (no command in it is cut
 off); what Enter does on the selected one shows under the list, with how
 many findings a collapsed row stands for. ``V`` is the full report as
@@ -100,6 +100,8 @@ def items(presentation: doctor.Presentation, *, expanded: bool,
 def action_hint(row: doctor.Row) -> str:
     """What Enter does on ``row``."""
 
+    if row.action == "unused-alias" and len(row.subjects) > 1:
+        return f"Enter: prune these {len(row.subjects)} aliases (asks first)"
     return cli_text.FINDINGS_ACTIONS.get(row.action or "", cli_text.FINDINGS_COMMAND_HINT)
 
 
@@ -475,19 +477,26 @@ class FindingsScreen:
                               self.runtime, out, include_live=True, session_ids=ids))
 
     def _prune_alias(self, win: Any, row: doctor.Row) -> None:
-        if row.subject is None:
+        aliases = row.subjects or ((row.subject,) if row.subject else ())
+        if not aliases:
             self._command(win, row)
             return
         if not self._writable():
             return
-        alias = row.subject
-        if not self._confirm(win, cli_text.FINDINGS_PRUNE_ALIAS_TITLE.format(alias=alias),
-                             cli_text.FINDINGS_PRUNE_ALIAS_BODY.format(alias=alias),
-                             cli_text.FINDINGS_PRUNE_ALIAS_BUTTONS):
-            self._say(cli_text.FINDINGS_CANCELLED)
-            return
-        self._show_result(win, f"charmer doctor --prune-aliases {alias}",
-                          lambda out: doctor_actions._doctor_prune_aliases(self.runtime, [alias], out))
+
+        def confirm(plan: list[str]) -> bool:
+            # Scrollable: every frozen subject remains visible, even when
+            # the group is too large for a modal. The service sampled its
+            # inputs before this question and rechecks them under its locks.
+            lines = [*plan, "", cli_text.FINDINGS_PRUNE_ALIAS_BODY]
+            title = cli_text.FINDINGS_PRUNE_ALIAS_TITLE.format(
+                aliases="this alias" if len(aliases) == 1 else f"these {len(aliases)} aliases")
+            return bool(tui.TextView(title, [termtext.visible_text(line) for line in lines],
+                                     palette=self.palette, confirm=True).run(win))
+
+        self._show_result(win, "charmer doctor --prune-aliases",
+                          lambda out: doctor_actions._doctor_prune_aliases(
+                              self.runtime, list(aliases), out, confirm=confirm))
 
     def _prune(self, win: Any, row: doctor.Row) -> None:
         if not self._writable():

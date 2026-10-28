@@ -108,8 +108,9 @@ class AddPathTests(kimi._ShippedOperatorCase):
     def test_ids_the_grammar_does_not_admit_are_refused_in_plain_words(self) -> None:
         before = self.state_bytes()
         cases = {
-            ("minimax", "MiniMax-M3.1-Flash"): "model ids with capital letters cannot be declared; OpenRouter "
-                                               "lists every model in lowercase",
+            ("minimax", "MiniMax-M3.1-Flash"): "capital letters are not supported; the same model may be on "
+                                               "OpenRouter in lowercase (charmer discover openrouter). "
+                                               "Do not just lowercase the id.",
             ("openrouter", "~deepseek/deepseek-flash-latest"): "floating aliases (~…) and variants (…:free) "
                                                                "cannot be declared; use the dated id the listing "
                                                                "shows",

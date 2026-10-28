@@ -12,7 +12,7 @@
     adds account-only rows.
   Add an id directly: charmer discover openrouter --add stealth/space-bunny-
     alpha.
-  Variant ids such as :free are listed but not addable in this release.
+  Variant ids such as :free are listed but cannot be declared.
 
 
 

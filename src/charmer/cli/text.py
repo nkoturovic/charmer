@@ -945,15 +945,17 @@ EARLIER_SCOPE_FIX = ("charmer doctor --repair-all recompiles this stopped scope 
 EARLIER_SCOPE_DEFERRED_FIX = ("repair-all defers this recorded lineup; its scope is recompiled at its next "
                               "resume (charmer -r <id>)")
 EARLIER_SCOPE_CHOICE_FIX = ("repair-all cannot recompile this recorded lineup; choose a profile or model first: "
-                            "charmer sessions choose --needs-choice --profile <name> (S banner), or resume "
-                            "interactively")
+                            "charmer sessions choose --needs-choice --profile <name> (launch card's S key), or resume "
+                            "interactively; to forget every such session instead, review: "
+                            "charmer sessions forget --needs-choice --dry-run")
 EARLIER_SCOPES_FIX = ("charmer doctor --repair-all recompiles the stopped ones now (H offers it); a running "
                       "one is recompiled at its next resume")
 EARLIER_SCOPES_DEFERRED_FIX = ("repair-all defers these recorded lineups; each scope is recompiled at its next "
                                "resume (charmer -r <id>)")
 EARLIER_SCOPES_CHOICE_FIX = ("repair-all cannot recompile these recorded lineups; choose a profile or model first: "
-                             "charmer sessions choose --needs-choice --profile <name> (S banner), or resume "
-                             "interactively")
+                             "charmer sessions choose --needs-choice --profile <name> (launch card's S key), or resume "
+                             "interactively; to forget every such session instead, review: "
+                             "charmer sessions forget --needs-choice --dry-run")
 # A passthrough surface S14 proved to defeat the deny gets exactly
 # this one stderr line at launch (``compiler.SKILL_POLICY_BYPASS_FLAGS``).
 SKILL_POLICY_BYPASS_NOTICE = (
@@ -1230,7 +1232,7 @@ FINDINGS_ACTIONS = {
     "missing-key": "Enter: set the key (G → K)",
     "earlier-scopes": "Enter: repair every stopped session (asks first)",
     "scope-repair": "Enter: repair every stopped session (asks first)",
-    "unused-alias": "Enter: prune the alias (asks first)",
+    "unused-alias": "Enter: prune this alias (asks first)",
     "prune": "Enter: preview the cleanup of generated files, then confirm",
     "dead-sessions": "Enter: record the end of every session that is not running (asks first)",
     "seed-update": "Enter: the shipped changes, then reseed (asks first)",
@@ -1254,10 +1256,9 @@ FINDINGS_REPAIR_LIVE_TITLE = "Including running sessions"
 FINDINGS_REPAIR_LIVE_BODY = ("Converge the listed scopes to their records without restarting sessions. "
                             "Catalog changes that cannot be recompiled are deferred until resume or a model choice. "
                             "Running sessions may need /reload-plugins to pick up repaired agent files.")
-FINDINGS_PRUNE_ALIAS_TITLE = "Prune alias {alias}?"
-FINDINGS_PRUNE_ALIAS_BODY = ("charmer doctor --prune-aliases {alias}: the gateway stops serving the alias; it is "
-                             "refused while a live session uses it.")
-FINDINGS_PRUNE_ALIAS_BUTTONS = (("Cancel", False), ("Prune", True))
+FINDINGS_PRUNE_ALIAS_TITLE = "Prune {aliases}?"
+FINDINGS_PRUNE_ALIAS_BODY = ("Prune only the aliases listed above? Their retained copies are removed; shipped lines "
+                             "keep serving their own aliases. A running session using an alias refuses the prune.")
 FINDINGS_PRUNE_TITLE = "Generated-state cleanup (charmer doctor --prune)"
 FINDINGS_PRUNE_QUESTION = "Prune these now? Only generated files with no living record are removed."
 FINDINGS_DEAD_TITLE = "Record the end of {n} session(s)?"
@@ -1273,9 +1274,9 @@ FINDINGS_HELP = (
     "advisories: optional evidence that never changes the verdict (Enter on their header shows them).\n"
     "Repeated findings are one row; V shows every original line, as charmer doctor -v does.\n"
     "Enter acts on the rows it knows: the persistence hold (why, and the clear-hold command),\n"
-    "a missing key (G → K), scopes to repair (repair-all, stopped sessions only), an unused alias\n"
-    "(prune-aliases), generated leftovers (the prune preview), sessions that do not run and have no\n"
-    "recorded end (mark-ended), sessions that need a lead (Sessions),\n"
+    "a missing key (G → K), scopes to repair (repair-all, stopped sessions only), unused aliases\n"
+    "(prune-aliases: the whole listed group, after a preview), generated leftovers (the prune preview),\n"
+    "sessions that do not run and have no recorded end (mark-ended), sessions that need a lead (Sessions),\n"
     "a newer shipped profile (reseed) and a model's optional diagnostics (M → Q; they\n"
     + OPTIONAL_DIAGNOSTICS + "). Every action asks first and reuses the command's own checks;\n"
     "any other row shows its exact command. Nothing here runs on its own.\n"

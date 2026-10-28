@@ -373,7 +373,7 @@ OPENROUTER_HELP = (
     "may retain prompts and may disappear. The public list may omit them; with a key, "
     "a separately confirmed account-filtered listing adds account-only rows.\n"
     "Add an id directly: charmer discover openrouter --add stealth/space-bunny-alpha.\n"
-    "Variant ids such as :free are listed but not addable in this release."
+    "Variant ids such as :free are listed but cannot be declared."
 )
 
 
@@ -857,6 +857,9 @@ def entry_text(marked: MarkedEntry, *, codex: Mapping[str, Any] | None = None) -
         value = entry.get(name)
         if value:
             parts.append(f" {label}={value}")
+    problem = wire_problem(entry["id"], brief=True)
+    if problem is not None:
+        parts.append(f" [{problem}]")
     if entry.get("openrouter"):
         wire = entry["id"]
         if wire.startswith("stealth/"):
@@ -865,8 +868,6 @@ def entry_text(marked: MarkedEntry, *, codex: Mapping[str, Any] | None = None) -
             parts.append(" [router]")
         if entry.get("account_only"):
             parts.append(" [account-only]")
-        if ":" in wire:
-            parts.append(" [not addable in this release]")
         if not isinstance(context, int) or isinstance(context, bool) or context <= 0:
             parts.append(" context=unknown")
         pricing = entry.get("pricing") or {}
@@ -933,21 +934,30 @@ class DeclarationRefusal(ValueError):
 WIRE = re.compile(r"^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)?$")
 
 
-def wire_problem(wire: str) -> str | None:
-    """Why ``wire`` cannot be declared, in the user's terms (None: it can)."""
+def wire_problem(wire: str, *, brief: bool = False) -> str | None:
+    """Why ``wire`` cannot be declared (None: it can).
+
+    Listings use the brief reason; CLI refusals and the pre-form modal share
+    the full explanation and remedy.
+    """
 
     if WIRE.fullmatch(wire):
         return None
     if wire.endswith("[1m]"):
+        short = "selector suffix"
         why = ("charmer adds [1m] to its own selectors from --context; a provider id that itself ends in [1m] "
                "cannot be declared")
     elif wire.startswith("~") or ":" in wire:
+        short = "floating alias or variant"
         why = "floating aliases (~…) and variants (…:free) cannot be declared; use the dated id the listing shows"
     elif wire != wire.lower():
-        why = "model ids with capital letters cannot be declared; OpenRouter lists every model in lowercase"
+        short = "capital letters"
+        why = ("capital letters are not supported; the same model may be on OpenRouter in lowercase "
+               "(charmer discover openrouter). Do not just lowercase the id.")
     else:
+        short = "unsupported id format"
         why = "a model id is lowercase letters, digits, '.', '_' and '-', with at most one '/'"
-    return f"{wire} cannot be declared: {why}"
+    return f"cannot be declared: {short}" if brief else f"{wire} cannot be declared: {why}"
 
 
 def derived_key(wire: str, taken: Iterable[str]) -> str | None:

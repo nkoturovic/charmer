@@ -3918,6 +3918,27 @@ def migration_preview_lines(plan: CustomMigrationPlan, *, key_refs: Mapping[str,
 
 # ------------------------------------------------------------ doctor
 @dataclass(frozen=True)
+class UnusedAlias:
+    """A captured alias no current operator line or running session uses."""
+
+    alias: str
+    key: str
+    provider: str
+    catalog_served: tuple[str, ...]
+    rendered: bool
+
+
+def catalog_alias_lines(docs: Mapping[str, Any]) -> dict[str, tuple[str, ...]]:
+    """Selector bases and the shipped lines that own them, before any merge."""
+
+    owners: dict[str, list[str]] = {}
+    for key, entry in sorted(docs["models-v2"]["models"].items()):
+        for alias in line_aliases(entry):
+            owners.setdefault(alias, []).append(key)
+    return {alias: tuple(keys) for alias, keys in owners.items()}
+
+
+@dataclass(frozen=True)
 class DoctorFindings:
     """Operator doctor lines by severity (doctrine #6: damage BLOCKs, lazy
     or unreferenced state is Attention with the fix, counts are Info)."""
@@ -3925,6 +3946,7 @@ class DoctorFindings:
     blocks: tuple[str, ...]
     attention: tuple[str, ...]
     info: tuple[str, ...]
+    unused_aliases: tuple[UnusedAlias, ...] = ()
 
 
 _SECRET_CODES = frozenset({"secret-literal"})
@@ -4049,6 +4071,8 @@ def doctor_findings(
             attention.append(text)
 
     current_bases = {base for line in layer.lines.values() for base in line_aliases(line.core_entry)}
+    catalog_bases = catalog_alias_lines(docs)
+    unused_aliases: list[UnusedAlias] = []
     for alias in sorted(captures):
         if alias in current_bases:
             continue
@@ -4056,19 +4080,14 @@ def doctor_findings(
         pid = capture["provider"]
         key = capture["source"].removeprefix("operator:")
         users = holders((alias,))
-        rendered = plan is not None and alias in plan.captures
-        if not rendered:
-            if users:
-                if pid not in route_blocked:
-                    blocks.append(f"alias {alias} (provider {pid} not rendered) is used by {_ids8(users)} — "
-                                  f"restore {file_label(pid)} or end the session; "
-                                  f"{sessions_mod.mark_ended_remedy(users)}")
-            else:
-                attention.append(f"alias {alias} (captured for {key}; provider {pid} not rendered) has no line — "
-                                 "prune when unused: charmer doctor --prune-aliases")
-        elif not users:
-            attention.append(f"alias {alias} (captured for {key}) has no line — "
-                             "prune when unused: charmer doctor --prune-aliases")
+        catalog_served = catalog_bases.get(alias, ())
+        rendered = bool(catalog_served) or (plan is not None and alias in plan.captures)
+        if not users:
+            unused_aliases.append(UnusedAlias(alias, key, pid, catalog_served, rendered))
+        elif not rendered and pid not in route_blocked:
+            blocks.append(f"alias {alias} (provider {pid} not rendered) is used by {_ids8(users)} — "
+                          f"restore {file_label(pid)} or end the session; "
+                          f"{sessions_mod.mark_ended_remedy(users)}")
 
     for key in sorted(ledger.admissions if ledger is not None else {}):
         grant = ledger.admissions[key]
@@ -4180,7 +4199,8 @@ def doctor_findings(
         if line.selector_mode == "migrated" and line.core_entry["context"]["declared_tokens"] >= ONE_MILLION:
             info.append(f"{key}: migrated selector has no [1m]; the client books its default window — "
                         "re-declare to change it")
-    return DoctorFindings(tuple(dict.fromkeys(blocks)), tuple(dict.fromkeys(attention)), tuple(dict.fromkeys(info)))
+    return DoctorFindings(tuple(dict.fromkeys(blocks)), tuple(dict.fromkeys(attention)), tuple(dict.fromkeys(info)),
+                          tuple(unused_aliases))
 
 
 def route_status_text(provider: str, status: str, *, old: str | None = None, new: str | None = None) -> str:

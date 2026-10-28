@@ -344,8 +344,9 @@ def _declare(
     agent_efforts = runtime.catalog.agent_efforts
     code = 0
     for wire in args.discover_add:
-        if call.provider_id == "openrouter" and ":" in wire:
-            code = fail(f"{verb}: {wire}: not addable in this release")
+        problem = discovery.wire_problem(wire)
+        if problem is not None:
+            code = fail(f"{verb}: nothing declared: {problem}")
             continue
         item = by_id.get(wire)
         if item is None:

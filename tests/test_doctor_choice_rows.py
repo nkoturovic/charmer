@@ -26,6 +26,9 @@ class ChoiceRowTests(V4Case):
         self.assertIn(f"compiled by {legacy.NAME}", rows[0].text)
         self.assertEqual(rows[0].remedy, "charmer sessions choose --needs-choice --profile <name>")
         self.assertNotIn("--repair-all", rows[0].text)
+        self.assertIn("launch card's S key", rows[0].text)
+        self.assertIn("charmer sessions forget --needs-choice --dry-run", rows[0].text)
+        self.assertNotIn("S banner", rows[0].text)
 
     def test_mixed_choice_rows_keep_every_session_without_claiming_all_scopes_are_earlier(self) -> None:
         earlier = self.needs_choice()
@@ -45,6 +48,7 @@ class ChoiceRowTests(V4Case):
         for text in (line, line.public):
             self.assertNotIn("these recorded lineups", text)
             self.assertIn("this recorded lineup", text)
+            self.assertIn("to forget every such session instead", text)
         record = self.launch_fresh()
         line, = doctor._check_scope_integrity(self.runtime, record, earlier_hooks=True)[1]
         self.assertIn("this stopped scope", line.public)

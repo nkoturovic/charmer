@@ -61,7 +61,7 @@ class OrderingTests(unittest.TestCase):
         problems = [tag("broken session", "Sessions"), tag("broken gateway", "Gateway")]
         lines = _text(problems, [], attention)
         headers = [line for line in lines if not line.startswith(" ")]
-        self.assertEqual(headers[:3], ["BLOCKED", "Attention", doctor.ADVISORIES_TITLE])
+        self.assertEqual(headers[:3], ["BLOCKED", "Attention", doctor.COMPACT_ADVISORIES_TITLE])
         self.assertEqual(lines[1:3], ["  - broken gateway", "  - broken session"])
         areas = [line.strip().split(" (")[0] for line in lines if line.startswith("  ") and line.endswith(")")
                  and not line.startswith("    ") and "- " not in line]
@@ -82,6 +82,46 @@ class OrderingTests(unittest.TestCase):
         # Two kinds never merge; one session is shown as it is.
         single = _text([], [], attention[:1])
         self.assertIn("    - session 10000000: the default mode differs", single)
+
+
+class UnusedAliasTests(unittest.TestCase):
+    def test_unused_aliases_are_one_action_with_every_frozen_subject(self) -> None:
+        from charmer import operator
+
+        facts = tuple(operator.UnusedAlias(f"alias-{i}", f"custom-removed-{i // 2}", "fixture", (), True)
+                      for i in range(4))
+        lines = doctor.unused_alias_lines(facts)
+        row, = doctor.present_report([], lines).rows
+        self.assertEqual(row.area, "Providers")
+        self.assertEqual(row.level, "attention")
+        self.assertEqual(row.action, "unused-alias")
+        self.assertEqual(row.subjects, tuple(f"alias-{i}" for i in range(4)))
+        self.assertEqual(row.remedy, "charmer doctor --prune-aliases")
+        self.assertEqual(row.text, "4 aliases left by 2 earlier lines are not used by any running session: "
+                         "charmer doctor --prune-aliases (review first: --preview) — "
+                         "alias-0, alias-1, alias-2… (doctor -v lists them)")
+        verbose = _text([], [], lines, verbose=True)
+        self.assertEqual(len([line for line in verbose if "captured for" in line]), 4)
+        single, = doctor.present_report([], doctor.unused_alias_lines(facts[:1])).rows
+        self.assertIn("1 alias left by 1 earlier line is not used", single.text)
+
+    def test_verbose_alias_notes_and_public_identifier_minimization(self) -> None:
+        from charmer import operator
+
+        facts = (operator.UnusedAlias("alias-catalog", "custom-earlier", "fixture", ("shipped-line",), True),
+                 operator.UnusedAlias("alias-unrendered", "custom-refused", "unavailable", (), False))
+        lines = doctor.unused_alias_lines(facts)
+        verbose = _text([], [], lines, verbose=True)
+        self.assertIn("; the shipped line shipped-line keeps serving it", "\n".join(verbose))
+        self.assertIn("; not rendered", "\n".join(verbose))
+        diagnostics = [doctor._diagnostic("attention", line) for line in lines]
+        self.assertEqual([item.subject_id for item in diagnostics], [fact.alias for fact in facts])
+        self.assertEqual({item.text for item in diagnostics},
+                         {"2 unused aliases: charmer doctor --prune-aliases"})
+        unsafe = operator.UnusedAlias("alias/path", "custom-earlier", "fixture", (), False)
+        diagnostic = doctor._diagnostic("attention", doctor.unused_alias_lines((unsafe,))[0])
+        self.assertIsNone(diagnostic.subject_id)
+        self.assertNotIn("alias/path", diagnostic.text)
 
 
 class CollapseIdentityTests(unittest.TestCase):
@@ -166,6 +206,38 @@ class ModelIdentityTests(unittest.TestCase):
                          "effort … unverified here")
 
 
+class CompactAdvisoryTests(unittest.TestCase):
+    def test_every_advisory_code_has_a_compact_label(self) -> None:
+        self.assertEqual(set(doctor._ADVISORY_LABELS), doctor.ADVISORY_CODES)
+
+    def test_plain_doctor_has_one_line_per_model_but_verbose_keeps_each_finding(self) -> None:
+        from charmer import profile
+
+        lines = [doctor._tag_model(message, profile.Finding(code, None, message, message), key="custom-x")
+                 for code, message in (("admission", "not admitted"), ("qualification", "not qualified"),
+                                       ("family-unknown", "family 'local': review independence unknown"))]
+        plain = _text([], [], lines)
+        self.assertIn("Advisories (optional evidence; does not change the verdict) — doctor -v or H lists each", plain)
+        self.assertEqual([line for line in plain if line.startswith("  - ")], [
+            "  - custom-x: not admitted, not qualified, family unknown — optional: "
+            "charmer models admit custom-x; charmer models qualify custom-x --agents"])
+        verbose = _text([], [], lines, verbose=True)
+        self.assertEqual([line for line in verbose if line.startswith("  - ")],
+                         [f"  - {line}" for line in lines])
+        self.assertEqual(len(doctor.present_report([], lines).of(doctor.ADVISORY)), 3)  # H's rows
+
+    def test_compact_qualification_uses_facts_not_message_words(self) -> None:
+        from charmer import profile
+
+        facts = profile.AgentFacts(key="custom-x", provider="fixture", admitted=True, route="catalog", d60=False,
+                                   route_kind="oauth-pool", family="fixture", t1_families=frozenset(),
+                                   evidence="contract-stale")
+        finding = profile.Finding("qualification", None, "different wording", "different wording")
+        line = doctor._tag_model(finding.message, finding, key="custom-x", facts=facts)
+        self.assertIn("  - custom-x: qualification stale — optional: charmer models qualify custom-x --agents",
+                      _text([], [], [line]))
+
+
 class AdvisoryTests(test_operator_agents.AgentCase):
     """3 profiles × 4 slots bound to one model whose qualification predates
     the current pins: one advisory line with the counts, the verdict
@@ -203,6 +275,22 @@ class AdvisoryTests(test_operator_agents.AgentCase):
         self.assertGreaterEqual(sum("qualification predates the current pins" in line for line in lines), 12)
         self.assertEqual(sum(line.startswith("  - profile stale-a: ") and "predates" in line for line in lines), 4)
 
+    def test_plain_model_summary_counts_distinct_slots_and_drops_duplicate_new_model(self) -> None:
+        self.install(self.runtime, self.acme_files(), keys=())
+        problems, info, attention = self.collected()
+        self.assertTrue(any((getattr(line, "group", None) or ()) == ("model", "admission", AGENT_KEY)
+                            for line in attention))
+        self.assertFalse(any(str(line).startswith("New model:") and getattr(line, "subject", None) == AGENT_KEY
+                             for line in attention))
+        lines = _text(problems, info, attention)
+        model_rows = [line for line in lines if line.startswith(f"  - {AGENT_KEY}:")]
+        self.assertEqual(len(model_rows), 1, model_rows)
+        self.assertIn("not admitted, qualification stale", model_rows[0])
+        self.assertIn("(3 profiles, 12 slots)", model_rows[0])
+        self.assertEqual(model_rows[0].count(f"charmer models qualify {AGENT_KEY} --agents"), 1)
+        verbose = _text(problems, info, attention, verbose=True)
+        self.assertGreaterEqual(sum("not admitted" in line for line in verbose), 12)
+
     def test_advisories_never_change_the_verdict(self) -> None:
         problems, info, attention = self.collected()
         without = [line for line in attention if getattr(line, "level", None) != doctor.ADVISORY]
@@ -212,7 +300,7 @@ class AdvisoryTests(test_operator_agents.AgentCase):
         lines = _text([], [], only.rows and [line for line in attention
                                              if getattr(line, "level", None) == doctor.ADVISORY])
         self.assertIn("Ready", lines)
-        self.assertIn(doctor.ADVISORIES_TITLE, lines)
+        self.assertIn(doctor.COMPACT_ADVISORIES_TITLE, lines)
 
     def test_a_ready_report_with_advisories_exits_0(self) -> None:
         problems, info, attention = self.collected()
@@ -223,7 +311,7 @@ class AdvisoryTests(test_operator_agents.AgentCase):
                                                   output_stream=out, interactive=False, no_color=True)
         self.assertEqual(code, 0)
         printed = out.getvalue()
-        self.assertIn(f"{doctor.ADVISORIES_TITLE}\n", printed)
+        self.assertIn(f"{doctor.COMPACT_ADVISORIES_TITLE}\n", printed)
         self.assertIn("\nReady\n", printed)
         self.assertNotIn("Attention\n", printed)
         self.assertIn(doctor.DOCTOR_SUMMARY["ready"], printed)
