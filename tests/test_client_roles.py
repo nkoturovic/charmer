@@ -33,8 +33,8 @@ class ClientRoleTests(unittest.TestCase):
     def test_three_distinct_roles(self) -> None:
         candidate = pin.version(_PACKAGED)
         previous, control = _client_roles.PREVIOUS, _client_roles.FALLBACK_CONTROL
-        self.assertEqual(previous[0], "2.1.310")
-        self.assertEqual(previous[1], "b73676430af12f97316a798b8371f81d640f90a58bdcb8f3ce56a835bb47df56")
+        self.assertEqual(previous[0], "2.1.311")
+        self.assertEqual(previous[1], "86dc1fcc69498159eaf15f446613e847010f9036bfbbdffd4c49350be8489ada")
         self.assertEqual(control[0], "2.1.302")
         self.assertEqual(control[1], "60d7eb7f12fbb28a52533fe8be5884097403562aa02dc73991a021c7067e29a5")
         # Strictly older down the roles: candidate > N-1 > fallback control.
