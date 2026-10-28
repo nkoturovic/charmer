@@ -24,7 +24,6 @@ import charmer.cli.commands.update as commands_update
 import charmer.cli.commands.setup as commands_setup
 import charmer.cli.commands.uninstall as commands_uninstall
 import charmer.cli.launch_flow as launch_flow
-import charmer.cli.session_events as session_events
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -55,29 +54,8 @@ def handle_command(
     if args.command in ("export", "import"):
         return commands_portability.command(runtime, args, input_stream=input_stream, output_stream=output_stream)
 
-    if args.command == "restore-2x":
-        return commands_migration._restore_2x(
-            runtime.session_store.root,
-            output_stream,
-            args,
-            input_stream=input_stream,
-            interactive=interactive,
-            environ=runtime.environ,
-        )
-
     if args.command == "migrate":
-        if getattr(args, "migrate_source", None) == "from-legacy":
-            return commands_migration._migrate_from_legacy(
-                args, output_stream, input_stream=input_stream, environ=runtime.environ)
         return commands_migration._migrate_command(runtime, args, output_stream)
-
-    if args.command == "session-event":
-        return session_events._handle_session_event(
-            runtime,
-            args,
-            input_stream=input_stream,
-            output_stream=output_stream,
-        )
 
     if args.command == "direct":
         return launch_flow._direct_command(

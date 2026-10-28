@@ -1376,6 +1376,30 @@ class DevCLIErrorTests(OnboardingTestCase):
 
 
 class RedactionTests(OnboardingTestCase):
+    def test_keyed_test_controls_preserve_numeric_diagnostics(self) -> None:
+        for name, value in (("CHARMER_TEST_KEYED_REQUIRED", "1"),
+                            ("CHARMER_TEST_KEYED_LANE", "unit"),
+                            ("CHARMER_TEST_KEYED_EVIDENCE", "/fixture/keyed-evidence")):
+            with self.subTest(name=name), mock.patch.dict(os.environ, {name: value}):
+                text = f"exit 1; v2.1.311; 181 tests; {value}"
+                self.assertEqual(dev._sanitize_output(text), text)
+
+    def test_keyed_test_controls_keep_one_character_secrets_redacted(self) -> None:
+        with mock.patch.dict(os.environ, {"CHARMER_TEST_KEYED_REQUIRED": "1",
+                                          "CHARMER_TEST_KEYED_LANE": "unit",
+                                          "CHARMER_TEST_KEYED_EVIDENCE": "/fixture/keyed-evidence",
+                                          "FIXTURE_API_KEY": "1"}):
+            self.assertEqual(
+                dev._sanitize_output("exit 1; v2.1.311; 181 tests; unit; /fixture/keyed-evidence"),
+                "exit ***; v2.***.3******; ***8*** tests; unit; /fixture/keyed-evidence",
+            )
+
+    def test_similar_keyed_test_control_names_remain_sensitive(self) -> None:
+        for name in ("CHARMER_TEST_KEYED_REQUIRED", "CHARMER_TEST_KEYED_LANE", "CHARMER_TEST_KEYED_EVIDENCE"):
+            for sensitive_name in (name + "_EXTRA", name.lower()):
+                with self.subTest(name=sensitive_name), mock.patch.dict(os.environ, {sensitive_name: "1"}):
+                    self.assertEqual(dev._sanitize_output("exit 1"), "exit ***")
+
     def test_short_values_redacted(self) -> None:
         for value in ("abc12", "1"):
             with self.subTest(value=value), mock.patch.dict(os.environ, {"KIMI_CLAUDE_API_KEY": value}):

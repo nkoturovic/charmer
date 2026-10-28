@@ -144,9 +144,8 @@ class DoctorSplitTests(unittest.TestCase):
                 names.append(node.target.id)
         return names
 
-    # New observations and doctor checks, not moved
-    # definitions; the compatibility facade (kept through 3.1) names only
-    # moved ones.
+    # New observations and doctor checks, not moved definitions; the
+    # compatibility facade, retained for existing callers, names only moved ones.
     NEW_051 = frozenset({
         # Later additions are not part of the compatibility surface.
         "_report_journal", "report_events", "report_journal_facts", "_event_journal_facts",
@@ -559,6 +558,57 @@ HOOK_CHILD = (
     "    sys.stderr.write('\\n@@MODULES@@' + json.dumps(sorted(m for m in sys.modules if m.startswith('charmer'))))\n"
     "raise SystemExit(code)\n"
 )
+
+
+class EarlyCommandRoutingTests(unittest.TestCase):
+    def test_early_commands_reach_their_implementations_without_dispatch(self):
+        import io
+        from charmer.cli import dispatch, entry, session_events
+        from charmer.cli.commands import migration
+
+        cases = (
+            (["restore-2x"], migration, "_restore_2x", 2),
+            (["migrate", "from-legacy"], migration, "_migrate_from_legacy", 0),
+            (["migrate", "from-legacy", "--back"], migration, "_migrate_from_legacy", 0),
+            (["migrate", "from-legacy", "--purge"], migration, "_migrate_from_legacy", 0),
+            (["session-event", "end", "--managed-id", "11111111-1111-4111-8111-111111111111"],
+             session_events, "_handle_session_event", 1),
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            runtime = mock.Mock(environ={"HOME": tmp})
+            runtime.session_store.root = Path(tmp) / "state"
+            for argv, owner, name, args_index in cases:
+                with self.subTest(argv=argv), \
+                        mock.patch.object(dispatch, "handle_command", side_effect=AssertionError("late dispatch")), \
+                        mock.patch.object(owner, name, return_value=17) as implementation:
+                    self.assertEqual(entry.main(argv, runtime=runtime, input_stream=io.StringIO(),
+                                                output_stream=io.StringIO(), interactive=False), 17)
+                    implementation.assert_called_once()
+                    parsed = implementation.call_args.args[args_index]
+                    self.assertEqual(parsed.command, argv[0])
+                    if argv[0] == "migrate":
+                        self.assertEqual(parsed.migrate_source, "from-legacy")
+                        self.assertEqual(parsed.legacy_back, "--back" in argv)
+                        self.assertEqual(parsed.legacy_purge, "--purge" in argv)
+            self.assertEqual(list(Path(tmp).iterdir()), [])
+
+    def test_record_migration_keeps_ordinary_dispatch(self):
+        import io
+        from charmer.cli import dispatch, entry
+        from charmer.cli.commands import migration
+
+        with tempfile.TemporaryDirectory() as tmp:
+            runtime = mock.Mock(environ={"HOME": tmp})
+            runtime.session_store.root = Path(tmp) / "state"
+            with mock.patch.object(dispatch, "handle_command", wraps=dispatch.handle_command) as late, \
+                    mock.patch.object(migration, "_migrate_command", return_value=17) as implementation:
+                self.assertEqual(entry.main(["migrate", "--dry-run"], runtime=runtime,
+                                            input_stream=io.StringIO(), output_stream=io.StringIO(),
+                                            interactive=False), 17)
+            late.assert_called_once()
+            implementation.assert_called_once()
+            self.assertTrue(implementation.call_args.args[1].dry_run)
+            self.assertEqual(list(Path(tmp).iterdir()), [])
 
 
 class EntryImportPinTests(unittest.TestCase):

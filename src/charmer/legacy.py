@@ -1,11 +1,11 @@
 """The names this program had before it was charmer.
 
-charmer was released as ``claude-multi`` up to 1.1.0. charmer never runs
-under those names, never writes them and never verifies a release made
-under them; it only has to recognise them where something recorded before
-the rename can still reach it. This module is the one place in the package
-that spells them (the repository's name census holds every other file to
-the new names), and each constant says who reads it and how long it stays.
+charmer was released as ``claude-multi`` up to 1.1.0. Normal operation uses
+only the current names and never verifies a release under the earlier name.
+Compatibility paths recognise old records and session markers, and reverse
+migration writes the earlier names back. This module is the one place in
+the package that spells them (the repository's name census holds every other
+file to the new names), and each constant says who reads it and how long it stays.
 
 Standard library only, and nothing from charmer: a leaf any module (and the
 test runner, which reads ``ENVIRONMENT`` without importing it) can use.
@@ -56,9 +56,10 @@ NAME_PATTERN = rf"(?i)claude{_SEPARATOR}multi|charmer{_SEPARATOR}multi|claude{_S
 LEGACY_SELECTOR_PREFIX = "claude-multi-"
 
 # The variables the old commands exported into a session or set in their
-# wrappers. charmer reads none of them; the test runner clears them so a
-# shell started inside an old session never leaks them into a run. Stays
-# while old installations can still start sessions.
+# wrappers. Normal routing does not use them; compatibility consent guards
+# recognise the old managed-session variable, and reverse migration translates
+# session environments. The test runner clears them so an old session's shell
+# never leaks them into a run. Stay while old installations can start sessions.
 ENVIRONMENT = (
     "CLAUDE_MULTI_ASSETS",
     "CLAUDE_MULTI_CHANNEL",
