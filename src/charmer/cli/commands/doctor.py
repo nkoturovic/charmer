@@ -5,7 +5,7 @@ The report's headline is the one health reduction of the JSON report
 advisories (optional evidence) never change it. The rows are
 ``doctor.present_report``'s, the ones H lists: blocking reasons first, then the
 attention items grouped by area (a held gateway first), then the
-advisories, each repeated finding collapsed into one row. Routine detail
+advisories, one summary per model (H lists each finding separately). Routine detail
 lines (one per session, the gateway's counters, the evidence notes) and
 every collapsed row's original lines show only with ``-v``.
 Exit statuses: 0 ready or attention, 1 blocked, 2 usage; --repair 3 deferred.

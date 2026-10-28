@@ -892,6 +892,110 @@ class DeclarationTests(DiscoveryCLICase):
         self.assertEqual(discovery.derived_key("w", {"custom-w", "custom-w-2"}), "custom-w-3")
 
 
+# ------------------------------------------------------------ undeclarable listing ids
+class UndeclarableListingTests(DiscoveryCLICase):
+    PROVIDERS = ("acme", "lanbox", "openrouter")
+    CASES = {
+        "Vendor-Fresh": ("capital letters", "capital letters are not supported; the same model may be on "
+                         "OpenRouter in lowercase (charmer discover openrouter). Do not just lowercase the id."),
+        "vendor/fresh:free": ("floating alias or variant", "floating aliases (~…) and variants (…:free) cannot be "
+                              "declared; use the dated id the listing shows"),
+        "~vendor/fresh": ("floating alias or variant", "floating aliases (~…) and variants (…:free) cannot be "
+                         "declared; use the dated id the listing shows"),
+        "vendor/fresh[1m]": ("selector suffix", "charmer adds [1m] to its own selectors from --context; "
+                            "a provider id that itself ends in [1m] cannot be declared"),
+        "vendor/a/b": ("unsupported id format", "a model id is lowercase letters, digits, '.', '_' and '-', "
+                       "with at most one '/'"),
+    }
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.approve_acme()
+        code, _out, err = self.op(LAN_ADD)
+        self.assertEqual(code, 0, err)
+        layer = self.runtime.operator_snapshot().layer
+        docs = operator_mod.merge_docs(self.runtime.catalog.docs, layer)
+        self.plans = {pid: discovery.plan_provider(pid, docs=docs, layer=layer, descriptors=proxy._LISTING_SUPPORT)
+                      for pid in self.PROVIDERS}
+        for call in self.plans.values():
+            self.listing(call.url, [{"id": wire} for wire in (*self.CASES, "vendor/fresh")])
+
+    def test_listings_mark_undeclarable_ids_for_every_provider(self) -> None:
+        before = self.state_bytes()
+        for provider in self.PROVIDERS:
+            with self.subTest(provider=provider):
+                code, out, err = self.op(["discover", provider], "y\n")
+                self.assertEqual(code, 0, err)
+                for wire, (short, _why) in self.CASES.items():
+                    row = next(line for line in out.splitlines() if line.startswith(wire + "\t"))
+                    self.assertIn(f"[cannot be declared: {short}]", row)
+                row = next(line for line in out.splitlines() if line.startswith("vendor/fresh\t"))
+                self.assertNotIn("cannot be declared", row)
+        self.assertEqual(self.state_bytes(), before)
+
+    def test_add_refuses_undeclarable_before_context_or_key_planning(self) -> None:
+        before = self.state_bytes()
+        for provider in self.PROVIDERS:
+            for wire, (_short, why) in self.CASES.items():
+                with self.subTest(provider=provider, wire=wire), \
+                        mock.patch.object(discovery, "derived_key", wraps=discovery.derived_key) as derive:
+                    code, _out, err = self.op(["discover", provider, "--add", wire], "y\n")
+                    self.assertEqual(code, 1, err)
+                    self.assertIn(f"discover {provider}: {wire} cannot be declared: {why} — nothing declared", err)
+                    derive.assert_not_called()
+        self.assertEqual(self.state_bytes(), before)
+
+    def test_picker_enter_refuses_undeclarable_before_form(self) -> None:
+        from charmer import tui
+        from charmer.cli import onboarding
+        from charmer.cli.screens import common, providers
+        from test_tui import ENTER, ESC, FakeWindow
+
+        before = self.state_bytes()
+        for provider in self.PROVIDERS:
+            for wire, (short, why) in self.CASES.items():
+                with self.subTest(provider=provider, wire=wire):
+                    win = FakeWindow(["A", ENTER, " ", ENTER, ESC, ESC], width=120, height=40)
+                    screen = providers._ProvidersScreen(self.runtime, palette=tui.MONO_PALETTE)
+                    screen.selected = next(i for i, row in enumerate(screen.rows) if row.id == provider)
+                    result = proxy.ListingResult(({"id": wire},), True)
+                    with mock.patch.object(onboarding, "listing", return_value=(self.plans[provider], result)), \
+                            mock.patch.object(onboarding, "line_draft") as draft, \
+                            mock.patch.object(common.OnboardingActions, "model_form") as form, \
+                            mock.patch.object(common.OnboardingActions, "show", autospec=True,
+                                              side_effect=common.OnboardingActions.show) as shown:
+                        screen.run(win)
+                    form.assert_not_called()
+                    draft.assert_not_called()
+                    self.assertEqual(shown.call_count, 1)
+                    self.assertEqual(shown.call_args.args[1:],
+                                     ("Cannot be declared", [f"{wire} cannot be declared: {why}"]))
+                    picker = [frame for frame in win.frames if "advertised models" in frame]
+                    self.assertTrue(any(f"[cannot be declared: {short}]" in frame for frame in picker), picker)
+                    self.assertTrue(any("Cannot be declared" in frame for frame in win.frames))
+        self.assertEqual(self.state_bytes(), before)
+
+    def test_picker_enter_opens_form_for_declarable_id(self) -> None:
+        from charmer import tui
+        from charmer.cli import onboarding
+        from charmer.cli.screens import common
+        from test_tui import ENTER, FakeWindow
+
+        for provider in self.PROVIDERS:
+            with self.subTest(provider=provider):
+                win = FakeWindow([" ", ENTER], width=120, height=30)
+                action = common.OnboardingActions(self.runtime, win, tui.MONO_PALETTE)
+                result = proxy.ListingResult(({"id": "vendor/fresh"},), True)
+                line = {"wire_model": "vendor/fresh"}
+                with mock.patch.object(onboarding, "listing", return_value=(self.plans[provider], result)), \
+                        mock.patch.object(onboarding, "line_draft", return_value=line), \
+                        mock.patch.object(action, "model_form") as form, mock.patch.object(action, "show") as shown:
+                    action.add_models(provider, mode="listing")
+                form.assert_called_once_with(provider, line, "custom-vendor-fresh")
+                shown.assert_not_called()
+                self.assertNotIn("cannot be declared", "\n".join(win.frames))
+
+
 # ------------------------------------------------------------ purity and candidates report
 class PurityTests(DiscoveryCLICase):
     def setUp(self) -> None:

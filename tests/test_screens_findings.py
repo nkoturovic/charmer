@@ -155,10 +155,12 @@ class FindingsListTests(_FindingsCase):
         self.assertEqual(listed, list(presented))
         printed = [line.strip().removeprefix("- ") for _role, line in
                    doctor.report_lines(problems, info, attention, verbose=False)]
-        for row in listed:
+        non_advisory = [row for row in listed if row.level != doctor.ADVISORY]
+        for row in non_advisory:
             self.assertIn(row.text, printed)
-        self.assertEqual([printed.index(row.text) for row in listed],
-                         sorted(printed.index(row.text) for row in listed))
+        self.assertEqual([printed.index(row.text) for row in non_advisory],
+                         sorted(printed.index(row.text) for row in non_advisory))
+        self.assertIn(doctor.COMPACT_ADVISORIES_TITLE, printed)
         self.assertEqual({row.action for row in listed},
                          {"scope-repair", "hold-coverage", "unused-alias", "needs-choice", "advisory-model", None})
 

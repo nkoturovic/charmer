@@ -1,8 +1,8 @@
 """H: doctor's findings as a list, and the fixed set of actions on them.
 
-The rows are ``doctor.present_report``'s, the ones plain ``charmer doctor``
-prints: BLOCKED, then Attention under area headers (a held gateway first),
-then the advisories (optional evidence), collapsed behind their header
+The rows are ``doctor.present_report``'s: the same BLOCKED and Attention rows
+as plain ``charmer doctor`` under area headers (a held gateway first), then
+each advisory (plain doctor summarizes them by model), collapsed behind its header
 until Enter opens it. Each row wraps in full (no command in it is cut
 off); what Enter does on the selected one shows under the list, with how
 many findings a collapsed row stands for. ``V`` is the full report as

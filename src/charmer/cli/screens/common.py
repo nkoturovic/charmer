@@ -623,7 +623,10 @@ class OnboardingActions:
         entries = result.entries
         # checked=None: the widget draws its own toggles ([x] after Space);
         # a fixed checked=False would toggle invisibly.
-        labels = [entry["id"] for entry in entries]
+        labels = []
+        for entry in entries:
+            problem = discovery.wire_problem(entry["id"], brief=True)
+            labels.append(entry["id"] + (f" [{problem}]" if problem is not None else ""))
         if provider_id == "openrouter":
             labels = [discovery.entry_text(row).replace("\t", "  ")
                       for row in onboarding.listing_rows(self.runtime, provider_id, entries)]
@@ -642,8 +645,9 @@ class OnboardingActions:
         elif chosen is not None:
             for index in chosen:
                 entry = entries[index]
-                if provider_id == "openrouter" and ":" in entry["id"]:
-                    self.show("Not addable", [entry["id"] + ": not addable in this release"])
+                problem = discovery.wire_problem(entry["id"])
+                if problem is not None:
+                    self.show("Cannot be declared", [problem])
                     continue
                 try:
                     draft = onboarding.line_draft(self.runtime, provider_id, entry, call)

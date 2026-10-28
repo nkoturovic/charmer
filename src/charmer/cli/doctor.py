@@ -66,8 +66,9 @@ if TYPE_CHECKING:
 # Each collector tags its lines (``gateway_facts.Line``) where it makes them:
 # the area doctor lists them under, an action code for the findings the TUI
 # findings list acts on, ``advisory`` for optional evidence, and the
-# identity repeated lines share. Plain doctor and H present the same rows
-# (:func:`present_report`); nothing here reads a line's text to decide anything.
+# identity repeated lines share. Plain doctor and H share the actionable rows
+# (:func:`present_report`); plain doctor compacts advisories by model, while H
+# and -v keep their individual facts. No text determines a fact or an action.
 
 # The areas, in report order (a held gateway leads Gateway).
 AREAS = ("Gateway", "Installation", "Providers", "Sessions", "Profiles", "Models")
@@ -95,6 +96,19 @@ ADVISORY_CODES = frozenset({
 # The model finding codes the optional diagnostics (M → Q) answer.
 _QUALIFY_CODES = {"qualification": "--agents", "exact-client": "--agents", "tool-evidence": "--tools"}
 ADVISORIES_TITLE = "Advisories (optional evidence; does not change the verdict)"
+COMPACT_ADVISORIES_TITLE = ADVISORIES_TITLE + " — doctor -v or H lists each"
+_ADVISORY_LABELS = {
+    "admission": "not admitted", "qualification": "not qualified", "family-unknown": "family unknown",
+    "exact-client": "exact-client check not current", "tool-evidence": "forced tool evidence missing",
+    "capability-recommendation": "capability recommendation overridden",
+    "role-recommendation": "role recommendation overridden", "effort-unverified": "effort unverified",
+    "independence-unknown": "review independence unknown", "companion-grade": "companion grade recommendation",
+    "explore-replacement-unbound": "explorer replacement unbound",
+}
+_QUALIFICATION_LABELS = {
+    "missing": "not qualified", "failed": "qualification failed",
+    "definition-stale": "qualification stale", "contract-stale": "qualification stale",
+}
 # How many session ids a collapsed row names before "(doctor -v lists them)".
 SHOWN_IDS = 3
 VERBOSE_HINT = "(doctor -v lists them)"
@@ -238,8 +252,36 @@ def _model_text(level: str, members: list[str]) -> str:
     return text
 
 
+def _compact_advisory_text(members: list[str]) -> str:
+    """One model's optional facts and distinct remedies; never infer facts from text."""
+
+    key = members[0].subject
+    labels, commands = [], []
+    for code in _ADVISORY_LABELS:
+        found = [line for line in members if line.group[1] == code]
+        if not found:
+            continue
+        labels.extend(getattr(line, "summary", None) or _ADVISORY_LABELS[code] for line in found)
+        command = advisory_command(code, key)
+        if command:
+            commands.append(command)
+    bindings = {(line.owner, line.slot) for line in members if getattr(line, "owner", None)}
+    counts = [_plural(len({owner for owner, _slot in bindings}), "profile")] if bindings else []
+    slots = sum(bool(slot) for _owner, slot in bindings)
+    if slots:
+        counts.append(_plural(slots, "slot"))
+    text = f"{key}: {', '.join(dict.fromkeys(labels))}"
+    if counts:
+        text += f" ({', '.join(counts)})"
+    if commands:
+        text += " — optional: " + "; ".join(dict.fromkeys(commands))
+    else:
+        text += " — a recommendation; the explicit binding stays allowed"
+    return text
+
+
 def present_report(problems: list[str], attention: list[str], *,
-                   info: list[str] | tuple[str, ...] = ()) -> Presentation:
+                   info: list[str] | tuple[str, ...] = (), compact_advisories: bool = False) -> Presentation:
     """The rows plain doctor and H show, from the collected lines.
 
     Lines collapse only when they share a known identity: the group a
@@ -248,7 +290,9 @@ def present_report(problems: list[str], attention: list[str], *,
     lead-choice action, or the exact same text. Info explicitly tagged as
     advisory appears here too, without changing its diagnostic severity. A line's ``short`` form stands for it; ``-v`` prints
     every original. Order: BLOCKED, Attention, advisories; by area inside
-    each (the persistence hold first in Gateway), then as collected."""
+    each (the persistence hold first in Gateway), then as collected.
+    ``compact_advisories`` combines a model's optional facts for plain doctor;
+    H keeps one row per finding code with its individual action."""
 
     order: list[tuple[str, str, tuple]] = []
     members: dict[tuple[str, str, tuple], list[str]] = {}
@@ -259,6 +303,8 @@ def present_report(problems: list[str], attention: list[str], *,
         area = getattr(line, "area", None) or OTHER_AREA
         group = getattr(line, "group", None)
         identity = (("action", "needs-choice") if getattr(line, "action", None) == "needs-choice" else
+                    ("advisory-model", line.subject) if compact_advisories and level == ADVISORY and group
+                    and group[0] == "model" and getattr(line, "subject", None) else
                     ("group", *group) if group else ("text", str(line)))
         key = (level, area, identity)
         if key not in members:
@@ -272,7 +318,9 @@ def present_report(problems: list[str], attention: list[str], *,
         first = lines[0]
         group = getattr(first, "group", None)
         subjects = tuple(dict.fromkeys(subject for line in lines for subject in getattr(line, "subjects", ())))
-        if group and group[0] == "model":
+        if _identity[0] == "advisory-model":
+            text = _compact_advisory_text(lines)
+        elif group and group[0] == "model":
             text = _model_text(level, lines)
         elif len(lines) > 1 and getattr(first, "summary", None):
             # A literal placeholder: the summary may name a path or a value.
@@ -310,7 +358,7 @@ def report_lines(problems: list[str], info_lines: list[str], attention: list[str
     lines (``-v`` only), the hidden-detail hint and the closing line.
     ``say`` words each finding for its surface (the card's key route)."""
 
-    presentation = present_report(problems, attention, info=info_lines)
+    presentation = present_report(problems, attention, info=info_lines, compact_advisories=not verbose)
     status = presentation.status
     out: list[tuple[str, str]] = []
 
@@ -329,7 +377,7 @@ def report_lines(problems: list[str], info_lines: list[str], attention: list[str
             out.append(("warn", f"  {area} ({count})"))
             items(rows, "    ", "warn")
     if presentation.of(ADVISORY):
-        out.append(("dim", ADVISORIES_TITLE))
+        out.append(("dim", ADVISORIES_TITLE if verbose else COMPACT_ADVISORIES_TITLE))
         items(presentation.of(ADVISORY), "  ", "dim")
     if status == "ready":
         out.append(("ok", "Ready"))
@@ -345,7 +393,7 @@ def report_lines(problems: list[str], info_lines: list[str], attention: list[str
 
 
 def _tag_model(line: str, finding: Any, *, key: str | None, owner: str | None = None,
-               slot: str | None = None) -> gateway_facts.Line:
+               slot: str | None = None, facts: profile_mod.AgentFacts | None = None) -> gateway_facts.Line:
     """A model finding (``profile.Finding``) of one profile slot, or of a
     declared line: listed under Models, advisory for optional evidence, one
     row per (model, code) whatever each slot's wording. A lineup-wide
@@ -354,9 +402,12 @@ def _tag_model(line: str, finding: Any, *, key: str | None, owner: str | None = 
     code = finding.code
     advisory = code in ADVISORY_CODES
     identity = ("model", code, key) if key else ("model", code, "", finding.message)
+    summary = _ADVISORY_LABELS.get(code)
+    if code == "qualification":
+        summary = _QUALIFICATION_LABELS.get(facts.evidence if facts else "missing", "qualification needs review")
     return gateway_facts.tagged(
         line, area="Models", level=ADVISORY if advisory else None, group=identity,
-        short=finding.message, subject=key, owner=owner, slot=slot,
+        short=finding.message, subject=key, owner=owner, slot=slot, summary=summary,
         action="advisory-model" if advisory and code in _QUALIFY_CODES and key is not None else None)
 
 
@@ -1255,7 +1306,9 @@ def _collect_doctor_report_lines(
     keep_attention, keep_info = _doctor_env_keep_report(runtime)
     scope_attention.extend(area(keep_attention, INSTALLATION))
     info_lines.extend(keep_info)
-    scope_attention.extend(area(_doctor_new_lines_report(runtime), MODELS))
+    admission_keys = frozenset(line.subject for line in scope_attention
+                               if (getattr(line, "group", None) or ())[:2] == ("model", "admission"))
+    scope_attention.extend(area(_doctor_new_lines_report(runtime, admission_keys=admission_keys), MODELS))
     scope_attention.extend(area(_doctor_retirement_radar(runtime), MODELS))
     scope_attention.extend(area(_doctor_hook_errors(runtime, records), SESSIONS))
     scope_attention.extend(area(_doctor_leftovers(runtime, liveness), SESSIONS))
@@ -1393,7 +1446,8 @@ def _doctor_operator_report(
         unset_secrets=unset, agent_eligible=agent_eligible, agent_qualified=agent_qualified,
     )
     warnings = _operator_agent_warnings(runtime, snapshot, gate)
-    agent_lines = [_tag_model(message, warnings[message][0], key=warnings[message][1]) if message in warnings
+    agent_lines = [_tag_model(message, warnings[message][0], key=warnings[message][1],
+                             facts=gate.facts.get(warnings[message][1])) if message in warnings
                    else gateway_facts.tagged(message, area="Models") for message in agent_attention]
     return list(findings.blocks), [*findings.attention, *unused_alias_lines(findings.unused_aliases),
                                    *agent_lines], list(findings.info)
@@ -1629,8 +1683,9 @@ def _doctor_profile_report(runtime: runtime_mod.Runtime) -> tuple[list[str], lis
         for finding in lineup.notices:
             if finding.code in {"retired-successor", "retired-unbound"}:
                 attention.append(f"profile {name}: {finding.message}")
+        facts = lcat.agent_gate.facts if lcat.agent_gate is not None else {}
         attention.extend(_tag_model(f"profile {name}: {finding.message}", finding, key=_slot_key(lineup, finding.slot),
-                                    owner=name, slot=finding.slot)
+                                    owner=name, slot=finding.slot, facts=facts.get(_slot_key(lineup, finding.slot)))
                          for finding in lineup.warnings if finding.code in profile_mod.MODEL_WARNING_CODES)
         try:
             workflow_warnings = scope_mod.workflow_default_warnings(
@@ -1640,7 +1695,8 @@ def _doctor_profile_report(runtime: runtime_mod.Runtime) -> tuple[list[str], lis
         else:
             workflow_key = _workflow_key(lcat, eff)
             attention.extend(_tag_model(f"profile {name}: {finding.message}", finding, key=workflow_key, owner=name,
-                                        slot="workflow default") for finding in workflow_warnings)
+                                        slot="workflow default", facts=facts.get(workflow_key))
+                             for finding in workflow_warnings)
         gaps = _provider_credential_gaps(runtime, lineup)
         # A shipped profile for providers not set up at all is simply not
         # connected here, not a credential gap to fix.
@@ -3183,8 +3239,9 @@ def _doctor_env_keep_report(runtime: runtime_mod.Runtime) -> tuple[list[str], li
     return attention, info
 
 
-def _doctor_new_lines_report(runtime: runtime_mod.Runtime) -> list[str]:
-    """Attention for each New model lacking the optional admission badge."""
+def _doctor_new_lines_report(runtime: runtime_mod.Runtime, *,
+                             admission_keys: frozenset[str] = frozenset()) -> list[str]:
+    """Unadmitted New lines not already named by an admission advisory."""
 
     try:
         lines = runtime.lineup_catalog().lines
@@ -3194,7 +3251,7 @@ def _doctor_new_lines_report(runtime: runtime_mod.Runtime) -> list[str]:
     found: list[str] = []
     for key in sorted(lines):
         line = lines[key]
-        if line.get("status") != "new" or key in admitted:
+        if line.get("status") != "new" or key in admitted or key in admission_keys:
             continue
         # The optional admission badge: an advisory, like every optional attestation.
         found.append(gateway_facts.tagged(gateway_facts.Finding(
@@ -3202,7 +3259,8 @@ def _doctor_new_lines_report(runtime: runtime_mod.Runtime) -> list[str]:
             f"charmer models admit {key} (or Models, then Enter; use does not require it)",
             code="model-newly-available", subject_id=key if observations.identifier(key) else None,
             public="a new model is available and not admitted", remedy=f"charmer models admit {key}",
-        ), area="Models", level=ADVISORY, subject=key))
+        ), area="Models", level=ADVISORY, subject=key, group=("model", "admission", key),
+            short=f"{key}: not admitted (optional badge)", summary="not admitted"))
     return found
 
 

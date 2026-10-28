@@ -2,7 +2,7 @@
 
   > [ ] vendor/regular  candidate context=200000 created=2025-06-15 price/token
     [ ] vendor/bare  candidate context=unknown price/token: prompt=unknown comp
-    [ ] vendor/free:free  candidate [not addable in this release] context=unkno
+    [ ] vendor/free:free  candidate [cannot be declared: floating alias or vari
     [ ] openrouter/auto  candidate context=200000 [router] price/token: prompt=
     [ ] vendor/malformed  candidate context=unknown price/token: prompt=unknown
     [ ] stealth/space-bunny-alpha  candidate context=262144 [stealth: maker hid
