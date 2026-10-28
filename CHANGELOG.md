@@ -6,6 +6,91 @@ follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.4.0] — 2026-10-28
+
+### Upgrade notes
+
+2.4.0 changes the launcher and the pinned Claude Code (2.1.312); catalog 43
+ships with it. The gateway (CLIProxyAPI 8.0.45 with 27 local patches) is
+unchanged, so no gateway restart is needed after `charmer update`:
+`charmer update --verify` shows `running-gateway: current-match` at once.
+Running managed sessions keep their client and compiled settings until
+their next launch or resume. State and record formats stay 4. See
+[updating from 2.3.0](docs/update.md#updating-from-230).
+
+`charmer update --rollback` now checks first what the previous version can
+read of your state and lists what to prepare; with a finding, No is the
+default and `--yes` refuses. 2.4.0 adds no model, effort contract or
+selector that 2.3.0 lacks. See
+[before going back to 2.3.0](docs/update.md#before-going-back-to-230).
+
+### Added
+
+- `charmer update --rollback` first checks what the previous version can
+  read: the models and providers you declared that it would reject (even
+  unused), profile and named-binding errors, and running sessions on
+  selectors it would not serve, each with its fix. With a finding, No is
+  the default and `--yes` refuses; it changes nothing and runs no other
+  program.
+- A legacy custom model displaced by a shipped line is marked in
+  `charmer custom list` and in doctor with its successor and the removal
+  command.
+- Managed sessions get the compiled `CLAUDE_CODE_MODEL_CAPABILITIES`
+  counter: every fenced non-Anthropic selector is marked
+  `-refusal_fallback`, so Claude Code 2.1.312 never falls back to another
+  model on a refusal from one of them. It is compiled for every launch and
+  resume and never enters your own settings.
+
+### Changed
+
+- Claude Code 2.1.312 is the pinned client (2.1.311 is the downgrade control
+  and 2.1.302 the fallback control of the evidence suite); catalog 43.
+- Doctor groups the unused aliases that removed models left behind into one
+  row; the launch card's **H** previews and confirms the whole listed group,
+  and `charmer doctor --prune-aliases --preview` is the read-only plan.
+- Plain doctor summarizes a model's optional evidence once per model; the
+  card's **H** and `charmer doctor -v` keep the individual findings.
+- The needs-choice row names the launch card's **S** key and the
+  choose-or-forget paths (`charmer sessions forget --needs-choice`).
+- Discovery marks unsupported ids for every provider and explains their
+  limits before opening the declaration form.
+- The Nix channel lane follows nixpkgs `31ecbaca` (nixos-unstable,
+  2026-10-27); its Python stays 3.14.8 (the bundled runtime is 3.15.2 and
+  unaffected). The `debian:12` release journey runs on the image index
+  pushed 2026-10-28.
+- Internal: three unreachable duplicate dispatch branches and two unused
+  helpers removed; internal annotations and compatibility comments
+  corrected without changing supported migration or hook entry paths.
+
+### Fixed
+
+- After an update that changed only the launcher, the next update no longer
+  reports "Claude Code copy cleanup blocked … not recorded here"; a gateway
+  started by a release unknown here gets one line: restart it, then doctor
+  names any copy to remove.
+- Alias cleanup supports the read-only preview and no longer claims "no
+  changes written" before applying a prune.
+- Doctor no longer reports a missing captured route as blocking when the
+  same alias belongs to a shipped line.
+- `charmer-dev` output stays readable when keyed test-control flags are set;
+  genuine secrets, including one-character values, stay redacted.
+
+### Security
+
+- No gateway change: the advisories fixed in 2.3.0 (GHSA-4w5v-m7vx-jpmh,
+  GHSA-j4xx-x47j-7h54) remain fixed by the shipped 8.0.45. OSV re-queried
+  2026-10-28 for the module inventory and CPython 3.15.2: only
+  GO-2026-5932, whose component the gateway does not include.
+
+### Known limits
+
+- Carried from 2.3.0: `x-should-retry` is not forwarded; mixed-case ids
+  cannot be declared; the late-terminal row of the client evidence remains a
+  known false success on 2.1.312 with gateway 8.0.45.
+- The rollback check applies this release's rules, model-id grammar
+  included, to the previous release's data; the previous release may still
+  refuse something these rules accept.
+
 ## [2.3.0] — 2026-10-28
 
 ### Upgrade notes
