@@ -23,6 +23,11 @@ precedent); the child never inherits it.
 - S8 agent frontmatter ``effort`` values on the subagent's wire.
 - S9 native helper wires (Explore, statusline-setup, claude-code-guide)
   under non-Opus leads and production-shaped fences.
+- refusal-routing: the refusal matrix with the compiled managed session
+  (fence, flag settings env, lifecycle hooks through charmer's launcher):
+  every source kind a lineup binds x refusal category x fence shape x lead,
+  subagent, workflow and resumed turns x the switch controls; each case must
+  give its specified target or no switch.
 
 Evidence is metadata only: model ids, integers, beta token names, hint
 header safe ids, marker names and booleans. Request bodies are inspected in
@@ -40,20 +45,25 @@ import os
 import re
 import shlex
 import shutil
+import subprocess
 import sys
 import tempfile
 import threading
 import time
 import unittest
+import uuid
 from unittest import mock
 from pathlib import Path
 from typing import Any
 
-from charmer import catalog, compiler, probe, scope, state, strict_json
+from charmer import catalog, cli, compiler, probe, profile, scope, state, strict_json
+from charmer import settings as settings_mod
 from charmer.probe import ProbeError
 
+import _v3
+from _catalog import uses_shipped_catalog
 from _tier import real_binary_gate
-from _layout import RESOURCES_ROOT  # the one root source
+from _layout import REPO_ROOT, RESOURCES_ROOT  # the one root source
 
 
 _CONTRACT_PATH = (
@@ -1317,3 +1327,543 @@ class HaikuNativeProbe(_SpikeTestCase):
             + "; claude-code-guide " + " ".join(f"{label}->{model}" for label, model in guide.items())
             + "; background requests " + " ".join(f"{label}->{row}" for label, row in background.items()))
         print(f"client check haiku: MEASURED {detail} {self._identity()}", flush=True)
+
+
+# ---------------------------------------------------- refusal routing matrix
+
+# The switches charmer's policy specifies: the client's categorized-refusal
+# route table for the canonical Anthropic sources (U23). Every other source a
+# lineup can bind (a charmer-* alias, a gateway selector of another family, an
+# Anthropic line served by another provider, Haiku) has the specified outcome
+# "no switch" (U17): a refused turn stays a visible refusal on its own model.
+_REFUSAL_ROUTES = {
+    _wire(_OPUS): {"cyber": "claude-opus-4-8", "bio": "claude-opus-5", "frontier_llm": "claude-opus-5"},
+    _wire(_FABLE): {"cyber": "claude-opus-4-8", "bio": "claude-opus-5", "frontier_llm": "claude-opus-5"},
+    _wire(_SONNET): {"cyber": "claude-sonnet-5", "frontier_llm": "claude-sonnet-5"},
+}
+_REFUSAL_CATEGORIES = ("cyber", "bio", "frontier_llm", "reasoning_extraction", None, "check_unknown")
+_DISABLE_REFUSAL_FALLBACK = "CLAUDE_CODE_DISABLE_REFUSAL_FALLBACK"
+_MODEL_CAPABILITIES = "CLAUDE_CODE_MODEL_CAPABILITIES"
+# Real selectors of the shipped catalog, by kind (every one is in the
+# compiled fence of every shipped seed).
+_ROUTING_SOURCES = {
+    "opus": _OPUS,
+    "fable": _FABLE,
+    "sonnet": _SONNET,
+    "haiku": f"{_HAIKU}[1m]",
+    "or-opus": "charmer-or-opus-xhigh[1m]",
+    "astra": "gpt-multi-astra-high[1m]",
+    "kimi": "charmer-kimi-code-high[1m]",
+    "or-gpt": "charmer-or-gpt-high[1m]",
+    "or-grok": "charmer-or-grok-high",
+}
+
+
+def expected_switch(source: str, category: str | None, fence: tuple[str, ...] | list[str], *,
+                    switches: bool = True) -> str | None:
+    """The specified outcome of a refused turn on ``source``: its route-table
+    target when the fence admits it (with or without ``[1m]``), else None (no
+    switch). ``switches=False`` is a session where the switch is off."""
+
+    target = _REFUSAL_ROUTES.get(_wire(source), {}).get(category) if switches else None
+    if target is None or not ({target, target + "[1m]"} & set(fence)):
+        return None
+    return target
+
+
+# The compiled hooks reach charmer's launcher through the fixture-built
+# protocol-3 shim, which runs this logger: it runs the checkout's launcher on
+# the fixture state with the hook's argv and stdin, passes its output and
+# status through, and appends one metadata row per event (event, status, the
+# PreModelSwitch decision and the payload's switch source and models).
+_HOOK_LOGGER = """#!{python}
+import json, os, re, subprocess, sys, time
+SAFE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:\\[\\]-]{{0,127}}")
+def safe(value):
+    return value if isinstance(value, str) and SAFE.fullmatch(value) else None
+payload = sys.stdin.buffer.read()
+try:
+    document = json.loads(payload)
+except ValueError:
+    document = {{}}
+if not isinstance(document, dict):
+    document = {{}}
+env = dict(os.environ, CHARMER_HOOK_COMMAND={wrapper!r}, PYTHONPATH={src!r})
+started = time.monotonic()
+done = subprocess.run([{python!r}, {launcher!r}, *sys.argv[1:]], input=payload, capture_output=True, env=env)
+sys.stdout.buffer.write(done.stdout)
+sys.stdout.flush()
+try:
+    answer = json.loads(done.stdout or b"{{}}")
+    decision = (answer.get("hookSpecificOutput") or {{}}).get("permissionDecision")
+except (ValueError, AttributeError):
+    decision = "unparsable"
+row = {{"event": safe(sys.argv[2]) if len(sys.argv) > 2 else None, "status": done.returncode,
+       "ms": int((time.monotonic() - started) * 1000), "decision": safe(decision),
+       "name": safe(document.get("hook_event_name")), "source": safe(document.get("source")),
+       "from": safe(document.get("from_model")), "to": safe(document.get("to_model"))}}
+with open({log!r}, "a", encoding="utf-8") as out:
+    out.write(json.dumps(row, sort_keys=True) + "\\n")
+sys.exit(done.returncode)
+"""
+
+
+def compiled_managed_scope(fixture: probe.ProbeFixture, seed: str, *,
+                           flag_env: dict[str, str] | None = None, counter: bool = False) -> dict[str, Any]:
+    """A fixture-only managed session of a shipped seed: the v3 record and the
+    v2 scope (the managed compile, with its six lifecycle hooks and the
+    permission default) under the fixture's state root, the protocol-3 shim
+    there running :data:`_HOOK_LOGGER`. The probe's own copy of the compiled
+    flag settings drops only the gateway base URL (the fixture provider is the
+    endpoint) and adds ``flag_env`` (and, with ``counter``, the measured
+    :func:`model_capabilities_counter`). Nothing outside the fixture is read or
+    written."""
+
+    # A git work tree with one commit: the writable roles are worktree-isolated.
+    git_env = {"HOME": str(fixture.home), "PATH": "/usr/bin:/bin", "GIT_CONFIG_NOSYSTEM": "1",
+               "GIT_CONFIG_GLOBAL": "/dev/null", "LANG": "C.UTF-8"}
+    for command in (["git", "init", "-q", "-b", "main"],
+                    ["git", "-c", "user.name=client-check", "-c", "user.email=check@invalid",
+                     "commit", "-q", "--allow-empty", "-m", "fixture"]):
+        subprocess.run(command, cwd=fixture.project_dir, env=git_env, check=True, capture_output=True, timeout=30)
+    state.ensure_private_dir(fixture.xdg_state_home)
+    state_root = state.ensure_private_dir(fixture.xdg_state_home / "charmer")
+    log = fixture.root / "hook-events.jsonl"
+    logger = fixture.root / "charmer-hook-logger"
+    logger.write_text(_HOOK_LOGGER.format(
+        python=sys.executable, wrapper=str(logger.resolve()), src=str(REPO_ROOT / "src"),
+        launcher=str(REPO_ROOT / "bin" / "charmer"), log=str(log)), encoding="utf-8")
+    logger.chmod(0o700)
+    resolved = str(logger.resolve())
+    shim = scope.hook_shim_v3_path(state_root)
+    state.ensure_private_dir(shim.parent)
+    state.atomic_write(shim, scope.hook_shim_v3_text(state_root, resolved))
+    shim.chmod(0o700)
+    environ = fixture.environ()
+    environ["CHARMER_HOOK_COMMAND"] = resolved
+    runtime = cli.Runtime(asset_root=RESOURCES_ROOT, environ=environ, cwd=fixture.project_dir,
+                          allow_state_writes=False)
+    if runtime.session_store.root != state_root:
+        raise AssertionError("the hook's state root is not the fixture's")
+    managed = str(uuid.uuid4())
+    document = _v3.v1_projection(_SHIPPED.seed_profiles[seed], _v3.v1_models_view(_SHIPPED.docs)["models"])
+    record = _v3.make_record(
+        managed_id=managed, cwd=str(fixture.project_dir), composition_name=document["name"],
+        snapshot=_v3.snapshot_for(_SHIPPED.docs, document), catalog_version=runtime.catalog_version,
+        catalog_hash=runtime.catalog.bundle_sha256, launcher_version=runtime.launcher_version, mode="durable",
+        scope_generation=1, launch_epoch=1)
+    _v3.save_any(runtime.session_store, record)
+    lcat = profile.LineupCatalog.from_catalog(_SHIPPED)
+    eff = settings_mod.effective({"version": 1}, provider_ids=_SHIPPED.providers, line_keys=_SHIPPED.lines)
+    lineup = profile.resolve(_SHIPPED.seed_profiles[seed], lcat, effective=eff)
+    fence = scope.compile_fence(lineup, lcat, eff)
+    plan = scope.compile_lineup_scope(
+        lineup, lcat, eff, _SHIPPED.prompt_bodies, scope.catalog_meta_v2(_SHIPPED.docs), lineup_generation=1,
+        managed_id=managed, hook_command=str(shim), launch_epoch=1, default_mode=scope.PERMISSION_DEFAULT_MODE)
+    live = scope.write_scope(state_root, managed, plan)
+    probe.seed_fixture_project_trust(fixture, live)
+    settings = json.loads(json.dumps(plan.settings))
+    settings["env"].pop("ANTHROPIC_BASE_URL")
+    settings["env"].update(flag_env or {})
+    anthropic = {row.selector for row in fence.lead_set if row.provider == "anthropic"} | set(fence.fallback_only)
+    if counter:
+        settings["env"][_MODEL_CAPABILITIES] = model_capabilities_counter(
+            tuple(settings["availableModels"]), tuple(anthropic))
+    path = fixture.root / "compiled-settings.json"
+    state.atomic_write(path, strict_json.canonical_file_bytes(settings))
+    return {"managed": managed, "settings": path, "live": live, "log": log, "lineup": lineup,
+            "available": tuple(settings["availableModels"]), "fallback_only": fence.fallback_only,
+            "canonical": tuple(sorted(anthropic)), "hooks": sorted(settings["hooks"]),
+            "lead": lineup.lead.binding.selector, "effort": lineup.lead.session_effort}
+
+
+def hook_rows(log: Path) -> list[dict[str, Any]]:
+    text = log.read_text(encoding="utf-8") if log.exists() else ""
+    return [json.loads(line) for line in text.splitlines() if line.strip()]
+
+
+def model_capabilities_counter(available: tuple[str, ...], canonical: tuple[str, ...]) -> str:
+    """``CLAUDE_CODE_MODEL_CAPABILITIES`` turning the client's refusal fallback
+    off for every fenced selector that is not a canonical Anthropic id (the
+    measured candidate counter; a prefix-free exact list)."""
+
+    names = sorted({_wire(selector) for selector in available} - {_wire(selector) for selector in canonical})
+    return ";".join(f"{name}=-refusal_fallback" for name in names)
+
+
+class _RoutingResponder:
+    """Refuses (``stop_reason: refusal`` + category) or 404s the requests of
+    one execution path (request class ``main``, ``subagent`` or ``workflow``)
+    on one wire; with ``spawn`` the lead's first request offering the tool
+    gets one Agent (subagent path) or Workflow ``agent()`` (workflow path)
+    call of that cm-* type. Everything else gets PROBE-OK. Rows are metadata."""
+
+    def __init__(self, wire: str | None, category: str | None, *, path: str = "main",
+                 spawn: str | None = None, server_fallback: str | None = None, not_found: bool = False):
+        self.wire, self.category, self.path, self.spawn = wire, category, path, spawn
+        self.server_fallback, self.not_found = server_fallback, not_found
+        self.fallbacks_fields: list[int] = []
+        self.rows: list[dict[str, Any]] = []
+        self._forced = False
+        self._lock = threading.Lock()
+
+    def _spawn_use(self) -> dict[str, Any]:
+        if self.path == "workflow":
+            script = ("export const meta = { name: 'refusal-routing', description: 'refusal routing probe' }\n"
+                      f"const r = await agent('Reply with exactly: PROBE-OK', {{label: 'rr', agentType: "
+                      f"'{self.spawn}'}})\nreturn [r]\n")
+            return {"type": "tool_use", "id": "toolu_refusal_routing_wf", "name": "Workflow",
+                    "input": {"script": script}}
+        return {"type": "tool_use", "id": "toolu_refusal_routing_00", "name": "Agent",
+                "input": {"description": "refusal routing", "subagent_type": self.spawn,
+                          "prompt": "Reply with exactly: PROBE-OK"}}
+
+    def respond(self, document: dict[str, Any], path: str, context: Any) -> Any:
+        route = path.split("?", 1)[0].rstrip("/")
+        if route.endswith("/count_tokens"):
+            return 200, {"input_tokens": 1}
+        if not route.endswith("/messages"):
+            return 404, {"type": "error", "error": {"type": "not_found_error", "message": "probe: unknown path"}}
+        hints = dict(context.record.hint_header_values)
+        model = document.get("model")
+        stream = bool(document.get("stream"))
+        request_class = hints.get("x-claude-code-request-class") or "main"
+        tool = "Workflow" if self.path == "workflow" else "Agent"
+        with self._lock:
+            if "fallbacks" in document:
+                self.fallbacks_fields.append(context.ordinal)
+            record = context.record
+            self.rows.append({"ordinal": context.ordinal, "model": record.model, "request_class": request_class,
+                              "agent_type": hints.get("x-claude-code-agent-type"),
+                              "shape": (record.max_tokens, record.effort, record.thinking_type, record.tool_count)})
+            force = (self.spawn is not None and not self._forced and request_class == "main"
+                     and tool in context.record.tool_names)
+            if force:
+                self._forced = True
+        if isinstance(model, str) and model == self.wire and request_class == self.path:
+            if self.not_found:
+                return 404, {"type": "error", "error": {"type": "not_found_error", "message": "probe: model not found"}}
+            return 200, _refusal_reply(model, self.category, stream, self.server_fallback)
+        content = [self._spawn_use()] if force else [{"type": "text", "text": "PROBE-OK"}]
+        payload = probe._message_payload(content, model=model, stop_reason="tool_use" if force else "end_turn",
+                                         message_id="msg_refusal_routing")
+        return 200, probe._sse_message(payload) if stream else payload
+
+
+@uses_shipped_catalog
+class RefusalRoutingMatrixProbe(_SpikeTestCase):
+    """Refusal routing on the pin, with the compiled managed session.
+
+    Every case runs a shipped seed's managed compile (its fence, flag
+    settings env and the six lifecycle hooks through charmer's own launcher),
+    or a hand-shaped fence for the shapes no seed compiles, and refuses one
+    execution path's requests on one wire. A case passes only when the wire
+    models on that path are the source and its specified target
+    (:func:`expected_switch`), or the source alone; fence membership is
+    necessary, never sufficient. Each case prints one row
+    ``client check refusal-routing case: <label> expected=<..> observed=<..>``
+    with the PreModelSwitch events charmer's hook saw; each test then prints
+    ``client check refusal-routing-<part>: PASS|FAIL <n> cases``.
+    """
+
+    def _launch(self, fixture: probe.ProbeFixture, argv: tuple[str, ...], responder: _RoutingResponder, *,
+                compiled: bool = True, timeout: float = _RUN_TIMEOUT
+                ) -> tuple[probe.NativeRunResult, list[dict[str, Any]]]:
+        """One run. A compiled session states the family defaults in its flag
+        settings env (the launch clears them from the process env); a
+        hand-shaped fence gets them in the process env."""
+
+        provider = _BetaRecordingProvider(responder=responder)
+        with provider:
+            try:
+                result = probe.run_native(argv, trusted=self.trusted, fixture=fixture, provider=provider,
+                                          timeout=timeout, allow_real=True, environ=self.environ,
+                                          child_env=dict(_HINT_ENV) if compiled else {**_FAMILY, **_HINT_ENV})
+            except ProbeError as exc:
+                if _TRIPWIRE in str(exc):
+                    self.skipTest(f"BOUNDARY: refusal-routing INCONCLUSIVE: {exc}")
+                raise
+        self.assertFalse(result.timed_out, "refusal-routing run timed out")
+        self.assertTrue(result.daemon is not None and result.daemon.unchanged)
+        return result, [{**row, "betas": provider.beta_names.get(row["ordinal"], ())} for row in responder.rows]
+
+    @staticmethod
+    def _compiled_argv(managed: dict[str, Any], model: str, session: tuple[str, str], *extra: str
+                       ) -> tuple[str, ...]:
+        return ("-p", _TURN, *session, "--settings", str(managed["settings"]), "--model", model,
+                "--effort", managed["effort"], "--add-dir", str(managed["live"]), *extra)
+
+    def _observe(self, label: str, source: str, path: str, expected: str | None, result: Any,
+                 rows: list[dict[str, Any]], responder: _RoutingResponder, hooks: list[dict[str, Any]],
+                 *, lead: str | None = None, compiled: bool = True) -> dict[str, Any]:
+        wire = _wire(source)
+        on_path = [row["model"] for row in rows if row["request_class"] == path]
+        switched = sorted(set(on_path) - {wire})
+        problems = []
+        if not on_path or on_path[0] != wire:
+            problems.append(f"first {path} request on {on_path[:1]}, not the source {wire}")
+        if switched != ([] if expected is None else [expected]):
+            problems.append(f"switched to {switched or 'nothing'}")
+        if responder.fallbacks_fields:
+            problems.append("a request carried a fallbacks field")
+        if path == "main" and (result.returncode == 0) != (expected is not None):
+            problems.append(f"exit {result.returncode}")
+        if path != "main" and lead is not None and _wire(lead) != wire and _wire(lead) in on_path:
+            problems.append("the refused agent ran on the lead's model")
+        switches = [f"{row['event']}:{row.get('source')}:{row.get('to')}:{row.get('decision')}"
+                    for row in hooks if row.get("event") in ("premodel", "postmodel")]
+        failed = sorted({row["event"] for row in hooks if row.get("status") not in (0, None)})
+        if compiled:
+            # Positive control: the compiled hooks ran through charmer's
+            # launcher (the shim answers a prompt whose notice was already
+            # seen itself, so ``prompt`` need not reach the launcher).
+            events = {row.get("event") for row in hooks}
+            if not {"start", "end"} <= events:
+                problems.append(f"the compiled hooks did not run (events {sorted(map(str, events))})")
+            if failed:
+                problems.append(f"the launcher failed hook events {failed}")
+        observed = {"label": label, "expected": expected or "none", "observed": switched[0] if switched else "none",
+                    "rc": result.returncode, "requests": len(on_path), "switch_hooks": switches,
+                    "hook_failures": failed, "problems": problems}
+        print(f"client check refusal-routing case: {label} expected={observed['expected']} "
+              f"observed={'+'.join(switched) or 'none'} rc={result.returncode} {path}-requests={len(on_path)} "
+              f"switch-hooks={switches or 'none'} {'MISMATCH ' + '; '.join(problems) if problems else 'OK'}",
+              flush=True)
+        return observed
+
+    def _compiled_case(self, label: str, seed: str, source: str, category: str | None, *, path: str = "main",
+                       spawn: str | None = None, flag_env: dict[str, str] | None = None,
+                       user_settings: dict[str, Any] | None = None, server: str | None = None,
+                       not_found: bool = False, switches: bool = True, counter: bool = False,
+                       project_settings: dict[str, Any] | None = None) -> dict[str, Any]:
+        fixture = self._fixture()
+        if user_settings is not None:
+            state.atomic_write(fixture.claude_config_dir / "settings.json",
+                               strict_json.canonical_file_bytes(user_settings))
+        managed = compiled_managed_scope(fixture, seed, flag_env=flag_env, counter=counter)
+        if project_settings is not None:
+            directory = state.ensure_private_dir(fixture.project_dir / ".claude")
+            state.atomic_write(directory / "settings.json", strict_json.canonical_file_bytes(project_settings))
+        self.assertEqual(managed["hooks"], sorted(name for name, _event in scope.HOOK_EVENTS_V3))
+        self.assertIn(source, managed["available"], label)
+        model = source if path == "main" else managed["lead"]
+        responder = _RoutingResponder(_wire(source), category, path=path, spawn=spawn,
+                                      server_fallback=server, not_found=not_found)
+        extra = ("--dangerously-skip-permissions",) if path == "workflow" else ()
+        result, rows = self._launch(fixture, self._compiled_argv(
+            managed, model, ("--session-id", str(uuid.uuid4())), *extra), responder)
+        expected = None if not_found else expected_switch(source, category, managed["available"], switches=switches)
+        return self._observe(label, source, path, expected, result, rows, responder, hook_rows(managed["log"]),
+                             lead=managed["lead"])
+
+    def _shaped_case(self, label: str, source: str, category: str | None, fence: tuple[str, ...]
+                     ) -> dict[str, Any]:
+        """A hand-shaped fence (the compiled family defaults in the env, the
+        managed permission default), for shapes no shipped seed compiles."""
+
+        fixture = self._fixture()
+        responder = _RoutingResponder(_wire(source), category)
+        argv = ("-p", _TURN, "--model", source, *self._settings_argv(fixture, source, fence))
+        result, rows = self._launch(fixture, argv, responder, compiled=False)
+        return self._observe(label, source, "main", expected_switch(source, category, (source, *fence)),
+                             result, rows, responder, [], compiled=False)
+
+    def _verdict(self, part: str, cases: list[dict[str, Any]]) -> None:
+        failed = [case for case in cases if case["problems"]]
+        hooks = sorted({hook for case in cases for hook in case["switch_hooks"]})
+        print(f"client check refusal-routing-{part}: {'FAIL' if failed else 'PASS'} {self._identity()} "
+              f"{len(cases)} cases, {len(failed)} off the specified outcome"
+              + (": " + " ".join(f"{case['label']}->{case['observed']}(expected {case['expected']})"
+                                 for case in failed) if failed else "")
+              + f"; switch hooks seen: {hooks or 'none'}", flush=True)
+        self.assertEqual([case["label"] for case in failed], [], part)
+
+    def test_lead_path_compiled_fence(self) -> None:
+        """Every source kind x every refusal category on the lead path, in the
+        compiled fence of the balanced seed (mixed providers, the
+        fallback-only targets fenced)."""
+
+        cases = [self._compiled_case(f"lead-{kind}-{category or 'uncategorized'}-balanced", "balanced", source,
+                                     category)
+                 for kind, source in _ROUTING_SOURCES.items() for category in _REFUSAL_CATEGORIES]
+        self._verdict("lead", cases)
+
+    def test_lead_path_fence_shapes_and_controls(self) -> None:
+        """Lead-only and non-Anthropic lead-set fences, the openai and
+        openrouter seeds' compiled leads, server-named targets and 404s."""
+
+        no_fallback = ("gpt-multi-astra-high[1m]", "charmer-kimi-code-high[1m]", "charmer-or-gpt-high[1m]",
+                       "charmer-or-opus-xhigh[1m]", _SONNET)
+        cases = [self._shaped_case(f"leadonly-{kind}-cyber", source, "cyber", ())
+                 for kind, source in _ROUTING_SOURCES.items()]
+        cases += [self._shaped_case(f"nofallback-{kind}-{category}", _ROUTING_SOURCES[kind], category, no_fallback)
+                  for kind in ("astra", "kimi", "or-opus") for category in ("cyber", "frontier_llm")]
+        cases += [self._compiled_case(f"seed-{seed}-lead-{category}", seed, managed_lead, category)
+                  for seed, managed_lead in (("openai", "gpt-multi-astra-high[1m]"),
+                                             ("openrouter", "charmer-or-opus-xhigh[1m]"))
+                  for category in ("cyber", "bio", "frontier_llm")]
+        for kind in ("opus", "astra", "or-opus"):
+            source = _ROUTING_SOURCES[kind]
+            cases.append(self._compiled_case(f"server-out-{kind}-cyber", "balanced", source, "cyber",
+                                             server="claude-check-server-chosen"))
+            cases.append(self._compiled_case(f"server-in-set-{kind}-cyber", "balanced", source, "cyber",
+                                             server=_wire(_SONNET5)))
+            cases.append(self._compiled_case(f"not-found-{kind}", "balanced", source, None, not_found=True))
+        self._verdict("shapes", cases)
+
+    def test_switch_controls(self) -> None:
+        """``switchModelsOnFlag:false``, the client's
+        ``CLAUDE_CODE_DISABLE_REFUSAL_FALLBACK`` in the flag and the user
+        settings env, measured in the compiled balanced fence."""
+
+        cases = []
+        for kind in ("opus", "sonnet", "astra", "or-opus", "kimi"):
+            source = _ROUTING_SOURCES[kind]
+            cases.append(self._compiled_case(f"switch-off-{kind}-cyber", "balanced", source, "cyber",
+                                             user_settings={"switchModelsOnFlag": False}, switches=False))
+            cases.append(self._compiled_case(f"disable-flag-env-{kind}-cyber", "balanced", source, "cyber",
+                                             flag_env={_DISABLE_REFUSAL_FALLBACK: "1"}, switches=False))
+            cases.append(self._compiled_case(f"disable-user-env-{kind}-cyber", "balanced", source, "cyber",
+                                             user_settings={"env": {_DISABLE_REFUSAL_FALLBACK: "1"}},
+                                             switches=False))
+        self._verdict("controls", cases)
+
+    def test_subagent_and_workflow_paths(self) -> None:
+        """A refused cm-* agent of each source kind the seeds bind (subagent
+        and workflow paths): its wire, a specified target or none, never the
+        lead's model."""
+
+        agents = (
+            ("balanced", "cm-explorer", "gpt-multi-sol-6-1-high[1m]"),
+            ("balanced", "cm-analyst-strong", _OPUS),
+            ("claude", "cm-explorer", _SONNET),
+            ("claude", "cm-reviewer-strong", _FABLE),
+            ("openrouter", "cm-implementer-strong", "charmer-or-opus-xhigh[1m]"),
+            ("openrouter", "cm-analyst", "charmer-or-gpt-high[1m]"),
+            ("openrouter", "cm-reviewer-strong", "charmer-or-grok-xhigh"),
+        )
+        cases = [self._compiled_case(f"subagent-{seed}-{agent}-{category or 'uncategorized'}", seed, source,
+                                     category, path="subagent", spawn=agent)
+                 for seed, agent, source in agents for category in ("cyber", "bio", "frontier_llm", None)]
+        cases += [self._compiled_case(f"workflow-{seed}-{agent}-{category}", seed, source, category,
+                                      path="workflow", spawn=agent)
+                  for seed, agent, source in (agents[0], agents[1], agents[4])
+                  for category in ("cyber", "frontier_llm")]
+        self._verdict("agents", cases)
+
+    def _resume_case(self, kind: str, first_refused: bool, *, counter: bool = False) -> dict[str, Any]:
+        """Resume on the compiled balanced scope: a refusal on the resumed
+        turn, or the first resumed turn after a refused one (it runs on the
+        relaunch argv's model, the source)."""
+
+        source = _ROUTING_SOURCES[kind]
+        label = (f"{'counter-' if counter else ''}resume-{kind}-"
+                 f"{'after-refusal' if first_refused else 'then-refusal'}-cyber")
+        fixture = self._fixture()
+        managed = compiled_managed_scope(fixture, "balanced", counter=counter)
+        session = str(uuid.uuid4())
+        refuse = _RoutingResponder(_wire(source), "cyber")
+        plain = _RoutingResponder(None, None)
+        first, second = (refuse, plain) if first_refused else (plain, refuse)
+        result_one, rows_one = self._launch(fixture, self._compiled_argv(
+            managed, source, ("--session-id", session)), first)
+        result_two, rows_two = self._launch(fixture, self._compiled_argv(
+            managed, source, ("--resume", session)), second)
+        hooks = hook_rows(managed["log"])
+        expected = expected_switch(source, "cyber", managed["available"])
+        if not first_refused:
+            self.assertEqual(result_one.returncode, 0, label)
+            return self._observe(label, source, "main", expected, result_two, rows_two, refuse, hooks)
+        observed = self._observe(label + "/first", source, "main", expected, result_one, rows_one, refuse, hooks)
+        resumed = [row["model"] for row in rows_two if row["request_class"] == "main"]
+        if resumed[:1] != [_wire(source)]:
+            observed["problems"].append(f"the resumed turn ran on {resumed[:1]}, not {_wire(source)}")
+        print(f"client check refusal-routing case: {label}/resumed first-wire={resumed[:1]} "
+              f"rc={result_two.returncode} {'MISMATCH' if observed['problems'] else 'OK'}", flush=True)
+        observed["label"] = label
+        return observed
+
+    def test_resume_paths(self) -> None:
+        cases = [self._resume_case(kind, first_refused) for kind in ("opus", "astra", "or-opus")
+                 for first_refused in (False, True)]
+        self._verdict("resume", cases)
+
+    def _shape(self, seed: str, source: str, *, counter: bool) -> tuple[Any, ...]:
+        """The first main request of a plain turn: wire, output cap, effort,
+        thinking, tool count and beta names."""
+
+        fixture = self._fixture()
+        managed = compiled_managed_scope(fixture, seed, counter=counter)
+        result, rows = self._launch(fixture, self._compiled_argv(
+            managed, source, ("--session-id", str(uuid.uuid4()))), _RoutingResponder(None, None))
+        self.assertEqual(result.returncode, 0, source)
+        main = [row for row in rows if row["request_class"] == "main"]
+        return (main[0]["model"], *main[0]["shape"], main[0]["betas"])
+
+    def test_model_capabilities_counter(self) -> None:
+        """The measured candidate counter: ``CLAUDE_CODE_MODEL_CAPABILITIES``
+        in the flag settings env marks every fenced selector that is not a
+        canonical Anthropic id ``-refusal_fallback``; the canonical sources
+        keep their route-table switches, every other source keeps its own
+        model on every path, a user or project settings env cannot turn the
+        switch back on, and an unrefused request is unchanged."""
+
+        cases = [self._compiled_case(f"counter-lead-{kind}-{category}", "balanced", _ROUTING_SOURCES[kind],
+                                     category, counter=True)
+                 for kind in _ROUTING_SOURCES for category in ("cyber", "bio", "frontier_llm")]
+        cases += [self._compiled_case(f"counter-seed-{seed}-lead-{category}", seed, lead, category, counter=True)
+                  for seed, lead in (("openai", "gpt-multi-astra-high[1m]"),
+                                     ("openrouter", "charmer-or-opus-xhigh[1m]"))
+                  for category in ("cyber", "frontier_llm")]
+        agents = (("balanced", "cm-explorer", "gpt-multi-sol-6-1-high[1m]"),
+                  ("balanced", "cm-analyst-strong", _OPUS),
+                  ("claude", "cm-explorer", _SONNET),
+                  ("openrouter", "cm-implementer-strong", "charmer-or-opus-xhigh[1m]"),
+                  ("openrouter", "cm-analyst", "charmer-or-gpt-high[1m]"),
+                  ("openrouter", "cm-reviewer-strong", "charmer-or-grok-xhigh"))
+        cases += [self._compiled_case(f"counter-subagent-{seed}-{agent}-{category}", seed, source, category,
+                                      path="subagent", spawn=agent, counter=True)
+                  for seed, agent, source in agents for category in ("cyber", "frontier_llm")]
+        cases += [self._compiled_case(f"counter-workflow-{seed}-{agent}-cyber", seed, source, "cyber",
+                                      path="workflow", spawn=agent, counter=True)
+                  for seed, agent, source in (agents[0], agents[1], agents[3])]
+        cases += [self._resume_case(kind, first_refused, counter=True) for kind in ("opus", "astra", "or-opus")
+                  for first_refused in (False, True)]
+        # Precedence: a user or project settings env naming the capability on
+        # for every model does not turn the switch back on.
+        enable = {"env": {_MODEL_CAPABILITIES: "refusal_fallback"}}
+        # Positive control: the user's settings env reaches the client's
+        # capability table (without the counter, the user's own entry alone
+        # keeps an unknown source on its model).
+        cases.append(self._compiled_case(
+            "counter-user-env-only-astra-cyber", "balanced", _ROUTING_SOURCES["astra"], "cyber",
+            user_settings={"env": {_MODEL_CAPABILITIES: f"{_wire(_ROUTING_SOURCES['astra'])}=-refusal_fallback"}}))
+        for kind in ("astra", "or-opus", "opus"):
+            source = _ROUTING_SOURCES[kind]
+            cases.append(self._compiled_case(f"counter-user-env-enable-{kind}-cyber", "balanced", source, "cyber",
+                                             counter=True, user_settings=enable))
+            cases.append(self._compiled_case(f"counter-project-env-enable-{kind}-cyber", "balanced", source,
+                                             "cyber", counter=True, project_settings=enable))
+        # An unrefused turn is the same request with and without the counter.
+        shapes = {kind: (self._shape("balanced", source, counter=False), self._shape("balanced", source, counter=True))
+                  for kind, source in _ROUTING_SOURCES.items()}
+        changed = sorted(kind for kind, (plain, countered) in shapes.items() if plain != countered)
+        print("client check refusal-routing case: counter-request-shape "
+              f"changed={changed or 'none'} " + " ".join(f"{kind}={plain}" for kind, (plain, _c) in shapes.items()),
+              flush=True)
+        cases.append({"label": "counter-request-shape", "expected": "unchanged",
+                      "observed": "changed:" + ",".join(changed) if changed else "unchanged",
+                      "switch_hooks": [], "problems": [f"request changed for {changed}"] if changed else []})
+        # The client's catch-all (an uncategorized refusal switches to the
+        # session's armed fallback) set in the user's settings env: with the
+        # counter an unknown source still keeps its model. Without the counter
+        # and for a canonical source the outcome is recorded, not gated (a
+        # user's own opt-in).
+        catch_all = {"env": {"CLAUDE_CODE_REFUSAL_FALLBACK_CATCH_ALL": "1"}}
+        for kind in ("astra", "or-opus"):
+            cases.append(self._compiled_case(f"counter-catch-all-{kind}-uncategorized", "balanced",
+                                             _ROUTING_SOURCES[kind], None, counter=True, user_settings=catch_all))
+        for kind, counter in (("astra", False), ("opus", False), ("opus", True)):
+            self._compiled_case(f"observed-catch-all-{kind}-uncategorized{'-counter' if counter else ''}",
+                                "balanced", _ROUTING_SOURCES[kind], None, counter=counter, user_settings=catch_all)
+        self._verdict("counter", cases)
