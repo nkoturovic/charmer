@@ -4,7 +4,7 @@
 
 Each charmer release runs exactly one Claude Code version: the one
 its release pins, verified for every platform the release builds. This
-release pins **Claude Code 2.1.311**. `charmer --version` names the
+release pins **Claude Code 2.1.312**. `charmer --version` names the
 pinned version, and doctor shows the pin, when it was verified, and the
 evidence class for your platform.
 
@@ -47,6 +47,17 @@ when the pin was verified more than 30 days ago or your own Claude Code
 is newer; there is nothing to run. Managed sessions disable Claude Code's
 own updater, so the managed copy never changes by itself, while your own
 `claude` keeps updating as usual.
+
+### Refusal fallback
+
+Claude Code 2.1.312 can move a request to another model when a provider
+refuses it (its refusal fallback). Managed sessions compile
+`CLAUDE_CODE_MODEL_CAPABILITIES` for every launch and resume: each fenced
+non-Anthropic selector of the lineup is marked `-refusal_fallback`, so a
+refusal from one of them is shown as the error it is and is never answered
+by another model. The setting lives in the session's compiled settings only,
+never in your own settings or plain `claude`. 2.3.0 held this client back for
+that fallback; the counter is why 2.4.0 admits it.
 
 ### Deferred client fixes
 

@@ -95,7 +95,7 @@ installation (a source tree, or the prefix of an installed package: its
                                  # charmer-gateway.service by default)
 ```
 
-Release: 2.3.0 (catalog 42; `version.json` is the packaged identity).
+Release: 2.4.0 (catalog 43; `version.json` is the packaged identity).
 Current default: the **`balanced` seed profile**
 (`catalog/profiles/balanced.json`): Opus 5.5 lead at ultracode, Sol high
 explorer/xhigh analyst, Opus analyst-strong, Luna max / Sol xhigh / Sol max

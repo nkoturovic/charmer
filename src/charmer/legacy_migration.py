@@ -1663,7 +1663,8 @@ def _earlier_env_name(name: str) -> str:
 # leaves them out.
 LATER_ENV_KEYS = frozenset({scope.WORKFLOW_MODEL_ENV, scope.AUTO_MODE_MODEL_ENV,
                             scope.compiler.FORK_SUBAGENT_ENV, scope.RETRY_WATCHDOG_SCOPE_ENV,
-                            scope.compiler.HAIKU_DEFAULT_ENV, scope.compiler.AUTO_COMPACT_ENV})
+                            scope.compiler.HAIKU_DEFAULT_ENV, scope.compiler.AUTO_COMPACT_ENV,
+                            scope.MODEL_CAPABILITIES_ENV})
 
 
 def _earlier_launch_items(settings: dict[str, Any], renamed: Mapping[str, Any]) -> dict[str, Any]:

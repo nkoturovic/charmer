@@ -320,8 +320,8 @@ class SeedLoadTests(unittest.TestCase):
 
     def test_version_json_is_the_release_and_catalog(self) -> None:
         bundle = catalog.load_catalog(CATALOG_ROOT)
-        self.assertEqual(bundle.docs["version"]["launcher_version"], "2.3.0")
-        self.assertEqual(bundle.docs["version"]["catalog_version"], 42)
+        self.assertEqual(bundle.docs["version"]["launcher_version"], "2.4.0")
+        self.assertEqual(bundle.docs["version"]["catalog_version"], 43)
 
     def test_removed_lines_are_retired_without_successor(self) -> None:
         # Catalog 33: out-of-favour lines leave; their providers stay.

@@ -26,11 +26,11 @@ nix profile install github:nkoturovic/charmer
 ```
 
 Those references follow the repository's default branch. To select the
-2.3.0 release instead, use its tag:
+2.4.0 release instead, use its tag:
 
 ```bash
-nix run github:nkoturovic/charmer/v2.3.0
-nix profile install github:nkoturovic/charmer/v2.3.0
+nix run github:nkoturovic/charmer/v2.4.0
+nix profile install github:nkoturovic/charmer/v2.4.0
 ```
 
 The package puts `charmer` and `charmer-proxy` in `bin/`, the
