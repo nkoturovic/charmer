@@ -686,7 +686,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="converge stopped durable sessions' scopes to record authority; lineups the installed "
         "catalog cannot recompile are deferred until resume or a model choice",
     )
-    doctor_parser.add_argument("--preview", action="store_true", help="read-only generated-state prune preview")
+    doctor_parser.add_argument("--preview", action="store_true",
+                               help="read-only preview of a prune (--prune or --prune-aliases); nothing is written")
     doctor_actions.add_argument(
         "--prune",
         action="store_true",
@@ -1181,6 +1182,6 @@ def _writes_versioned_state(args: argparse.Namespace) -> bool:
             or args.doctor_repair_all
             or (args.doctor_prune and not getattr(args, "preview", False))
             or args.doctor_rotate_token
-            or args.doctor_prune_aliases is not None
+            or (args.doctor_prune_aliases is not None and not getattr(args, "preview", False))
         )
     return False

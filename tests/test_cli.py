@@ -6858,6 +6858,10 @@ class PruneAliasesTests(ContinuityDoctorCase):
         self.assertTrue(cli._writes_versioned_state(
             cli.build_parser().parse_args(["doctor", "--prune-aliases"])
         ))
+        # The alias prune's preview is read-only, like the generated-state prune's.
+        self.assertFalse(cli._writes_versioned_state(
+            cli.build_parser().parse_args(["doctor", "--prune-aliases", "--preview"])
+        ))
 
 
 class ZeroModelProviderPaneTests(CLITestCase):
