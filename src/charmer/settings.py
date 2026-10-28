@@ -308,17 +308,6 @@ def _policy_values(document: Mapping[str, Any], where: str) -> dict[str, Any]:
     return values
 
 
-def _line_efforts(entry: Mapping[str, Any]) -> tuple[str, ...]:
-    """Declared efforts by the line's own shape (list or map)."""
-
-    efforts = entry.get("efforts")
-    if isinstance(efforts, (list, tuple)):
-        return tuple(value for value in efforts if isinstance(value, str))
-    if isinstance(efforts, Mapping):
-        return tuple(value for value in efforts if isinstance(value, str))
-    return ()
-
-
 def check_workflow_default_binding(binding: Mapping[str, Any] | None, *, catalog: Any) -> None:
     """Refuse a workflow default binding the catalog cannot back (save side).
 

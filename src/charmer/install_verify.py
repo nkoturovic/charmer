@@ -25,7 +25,7 @@ import stat
 import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Callable, Mapping, TYPE_CHECKING
+from typing import Callable, Mapping, NoReturn, TYPE_CHECKING
 
 from . import bundle_content, errors, pin, self_update, service, strict_json, trust
 
@@ -98,7 +98,7 @@ class _Problem(Exception):
         self.status, self.detail = status, detail
 
 
-def _mismatch(detail: str) -> None:
+def _mismatch(detail: str) -> NoReturn:
     raise _Problem("mismatch", detail)
 
 
@@ -257,7 +257,7 @@ def _member(document: dict, name: str) -> dict:
     return value
 
 
-def _metadata_unavailable(detail: str) -> None:
+def _metadata_unavailable(detail: str) -> NoReturn:
     raise _Problem("unavailable", detail + "; " + _METADATA_REMEDY)
 
 

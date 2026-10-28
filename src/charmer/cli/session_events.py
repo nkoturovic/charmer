@@ -394,7 +394,7 @@ def _session_start_v3(
     args: argparse.Namespace,
     *,
     state_path: Path,
-    runtime_factory: Callable[[], "Runtime"],
+    runtime_factory: Callable[[], runtime_mod.Runtime],
     input_stream: TextIO,
     output_stream: TextIO,
     error_stream: TextIO,

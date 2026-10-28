@@ -326,11 +326,6 @@ class KeyedProvider:
     lines: int
 
 
-def _merged_docs(runtime: Any) -> dict[str, Any]:
-    ctx = _cmd().operator_context(runtime)
-    return operator_mod.merge_docs(ctx.docs, ctx.layer)
-
-
 def line_count(runtime: Any, provider_id: str, ctx: Any | None = None) -> int:
     ctx = ctx if ctx is not None else _cmd().operator_context(runtime)
     count = sum(1 for entry in ctx.docs["models-v2"]["models"].values() if entry.get("provider") == provider_id)

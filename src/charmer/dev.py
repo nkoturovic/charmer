@@ -668,7 +668,11 @@ def _sanitize_output(text: str) -> str:
 
     sensitive: list[str] = []
     for name, value in os.environ.items():
-        if not value:
+        if not value or name in (
+            "CHARMER_TEST_KEYED_REQUIRED",
+            "CHARMER_TEST_KEYED_LANE",
+            "CHARMER_TEST_KEYED_EVIDENCE",
+        ):
             continue
         if any(marker in name.upper() for marker in ("KEY", "TOKEN", "SECRET", "PASS")):
             sensitive.append(value)

@@ -91,7 +91,7 @@ class _CardHealthActions:
     and ``self._draw``.
     """
 
-    runtime: "Runtime"
+    runtime: runtime_mod.Runtime
     palette: tui.Palette
     update_hint: tuple[str, str] | None
     gateway_problem: str | None
