@@ -293,8 +293,8 @@ not this WebSocket route.
 When a release retires a model line, sessions started earlier still name
 its selector. The gateway keeps serving each such selector on its original
 model as a continuity alias (listed in `~/.config/charmer/continuity.json`)
-until no live session uses it; `charmer doctor --prune-aliases`
-removes the unused ones.
+until no live session uses it; `charmer doctor --prune-aliases --preview`
+shows the unused ones and `charmer doctor --prune-aliases` removes them.
 
 ## Quota readings
 

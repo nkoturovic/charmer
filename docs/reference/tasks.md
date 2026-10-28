@@ -205,7 +205,7 @@ In full: [guides/models.md](../guides/models.md).
 | list the models a provider offers (one consented request) | card → G → A → list its models: a provider with a listing | `charmer discover <provider>` | not a `/cm` request | asks first: consent naming every request |
 | list every enabled provider's models | card → G → D list all → consent | `charmer discover [<provider>] --all` | not a `/cm` request | asks first: consent naming every request |
 | compare the public model feed with the pinned registry | not in the launcher: advanced discovery: a feed comparison for maintainers of the catalog | `charmer discover [<provider>] --feed` | not a `/cm` request | asks first: consent naming every request |
-| declare listed models New · not admitted | card → G → A → list → Space → Enter: a listing was read | `charmer discover <provider> --add <wire>… [--as <new-id>]` | not a `/cm` request | asks nothing |
+| declare listed models New · not admitted | card → G → A → list → Space → Enter: a listing was read; card → G → A → list → Space → Enter → refusal before form: an advertised id cannot be declared | `charmer discover <provider> --add <wire>… [--as <new-id>]` | not a `/cm` request | asks nothing |
 | declare a context above the listed one, with a reason | not in the launcher: a context above the listing needs a written justification; the TUI form refuses raising a listed context | `charmer discover <provider> --add <wire> --context <n> --over-listed <text>` | not a `/cm` request | asks nothing |
 
 ## Profiles
@@ -336,9 +336,9 @@ In full: [troubleshooting.md](../troubleshooting.md).
 
 | Task | TUI | CLI | In-session | Notes |
 | --- | --- | --- | --- | --- |
-| preview removing stale staging and orphan scopes | card → H → Enter on generated leftovers: doctor names leftovers to prune | `charmer doctor --preview` | not a `/cm` request | maintenance; asks nothing |
+| preview removing generated leftovers or unused aliases | card → H → Enter on generated leftovers: doctor names leftovers to prune; card → H → Enter on unused aliases: doctor names unused aliases | `charmer doctor --preview`; `charmer doctor --prune-aliases [<alias>…] --preview` | not a `/cm` request | maintenance; asks nothing |
 | remove stale staging and scopes whose records are gone | card → H → Enter on generated leftovers → y: doctor names leftovers to prune | `charmer doctor --prune` | not a `/cm` request | maintenance; asks first: y/N, default No |
-| remove continuity aliases no live session uses | card → H → Enter on an unused alias → Prune: doctor names an alias nothing serves | `charmer doctor --prune-aliases [<alias>…]` | not a `/cm` request | maintenance; asks first: dialog with Cancel focused first |
+| remove retained aliases no running session uses | card → H → Enter on unused aliases → y: doctor names unused aliases | `charmer doctor --prune-aliases [<alias>…]` | not a `/cm` request | maintenance; asks first: y/N, default No |
 
 ## Reviews
 

@@ -146,9 +146,14 @@ Once no live session uses them, name the aliases to remove:
 charmer doctor --prune-aliases <alias>…
 ```
 
-Without names, the option prunes all eligible unused aliases. It keeps
-captures of current model declarations; naming an alias still used by a
-live session refuses the whole operation.
+Doctor lists the aliases left by earlier lines only when no running session
+uses them, as one finding. `charmer doctor --prune-aliases --preview` shows
+the plan without writing; without names, `charmer doctor --prune-aliases`
+prunes all of them (**H** → Enter previews and confirms the listed group).
+Name aliases only when you want to keep some. It keeps captures of current
+model declarations; naming an alias still used by a live session refuses the
+whole operation, and removing a stale captured copy never removes an alias a
+shipped line owns.
 
 #### Settings at the next resume
 

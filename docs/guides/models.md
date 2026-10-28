@@ -293,7 +293,9 @@ declared in this release. `models add` says which part is unsupported and
 that nothing was written. Do not just lowercase an id or strip its suffix:
 that may name a different model. Use an alternative the provider actually
 documents, such as `minimax/minimax-m3.1-flash` on OpenRouter instead of the
-direct vendor id `MiniMax-M3.1-Flash`.
+direct vendor id `MiniMax-M3.1-Flash`. Discovery listings mark such ids
+before declaration (`[cannot be declared: …]`), and selecting one explains
+why before any form opens.
 
 The wire id is what the provider receives; charmer adds `[1m]` to its own
 selectors from `--context` for Claude Code's context class. On Kimi Code,
@@ -318,8 +320,8 @@ charmer models rm <line> --successor <line>       # also rewrite the profiles an
 
 A line a live session uses is not removed out from under it: the gateway
 keeps serving the session's selector (a continuity alias) until no live
-session uses it; `charmer doctor --prune-aliases` removes unused
-ones.
+session uses it; `charmer doctor --prune-aliases --preview` shows the
+unused ones and `charmer doctor --prune-aliases` removes them.
 
 ## Context windows
 

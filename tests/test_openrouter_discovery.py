@@ -58,7 +58,7 @@ class ParserTests(unittest.TestCase):
         self.assertIn("price=free", text[WIRE])
         self.assertIn("tools=yes", text[WIRE])
         self.assertIn("context=262144", text[WIRE])
-        self.assertIn("not addable in this release", text["vendor/free:free"])
+        self.assertIn("[cannot be declared: floating alias or variant]", text["vendor/free:free"])
         self.assertIn("tools=no", text["vendor/free:free"])
         self.assertNotIn("price=free", text["vendor/bare"])
         self.assertIn("context=unknown", text["vendor/malformed"])
@@ -359,8 +359,9 @@ class OpenRouterTests(DiscoveryCLICase):
     def test_free_variant_is_visible_but_not_declared(self):
         code, out, err = self.op(["discover", "openrouter", "--add", "vendor/free:free"], "y\n")
         self.assertEqual(code, 1)
-        self.assertIn("not addable in this release", out)
-        self.assertIn("not addable in this release", err)
+        self.assertIn("[cannot be declared: floating alias or variant]", out)
+        self.assertIn("vendor/free:free cannot be declared: floating aliases (~…) and variants (…:free) cannot be declared; "
+                      "use the dated id the listing shows", err)
         self.assertFalse((self.pdir / "openrouter.json").exists())
 
     def test_manual_models_add_remains_no_lookup(self):
@@ -418,7 +419,8 @@ class OpenRouterTests(DiscoveryCLICase):
                     for row in discovery.merge_listings(entries("public"), entries("account"))]
         self.assertEqual(captured, expected)
         action.model_form.assert_not_called()
-        self.assertIn("not addable in this release", str(action.show.call_args))
+        self.assertEqual(action.show.call_args.args,
+                         ("Cannot be declared", [discovery.wire_problem("vendor/free:free")]))
 
     def test_tui_keeps_the_cli_catalog_classification(self):
         key, line = next((key, line) for key, line in self.runtime.catalog.lines.items()

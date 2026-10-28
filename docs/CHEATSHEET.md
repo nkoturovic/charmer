@@ -154,7 +154,7 @@ restart.
 | HTTP 400 `prompt_cache_retention is not supported on this model` | the running gateway predates the release: `charmer gateway restart` between turns |
 | doctor: “gateway persistence hold: HELD because part of the log could not be evaluated” | keep it running; `charmer providers list`, then `charmer gateway clear-hold` in a terminal outside Claude Code |
 | the gateway does not start after `charmer update`; doctor: “if this began after charmer update” | `charmer update --rollback`, then `charmer gateway start` |
-| doctor: “continuity alias <alias> is not served” or “has no line — prune when unused” | once no live session uses it: `charmer doctor --prune-aliases <alias>` |
+| doctor: “continuity alias <alias> is not served”, or aliases “not used by any running session” | `charmer doctor --prune-aliases --preview` to review the plan, then `charmer doctor --prune-aliases`; name aliases only to keep some |
 
 ### Providers and models
 

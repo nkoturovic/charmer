@@ -122,6 +122,7 @@ class UnusedAliasTests(unittest.TestCase):
         diagnostic = doctor._diagnostic("attention", doctor.unused_alias_lines((unsafe,))[0])
         self.assertIsNone(diagnostic.subject_id)
         self.assertNotIn("alias/path", diagnostic.text)
+        self.assertEqual(diagnostic.text, "1 unused alias: charmer doctor --prune-aliases")
 
 
 class CollapseIdentityTests(unittest.TestCase):

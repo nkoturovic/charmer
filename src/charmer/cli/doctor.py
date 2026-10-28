@@ -1468,7 +1468,7 @@ def unused_alias_lines(facts: tuple[operator_mod.UnusedAlias, ...]) -> list[gate
         text = (f"alias {fact.alias} (captured for {fact.key}; provider {fact.provider}{note}) is not used by "
                 f"any running session: {remedy} (review first: --preview)")
         finding = gateway_facts.Finding(text, code="unused-alias",
-                                        public=f"{len(facts)} unused aliases: {remedy}",
+                                        public=f"{len(facts)} unused {'alias' if len(facts) == 1 else 'aliases'}: {remedy}",
                                         subject_id=observations.identifier(fact.alias), remedy=remedy)
         lines.append(gateway_facts.tagged(
             finding, area=PROVIDERS, action="unused-alias", group=("operator", "unused-alias"),
