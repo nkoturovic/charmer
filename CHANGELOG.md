@@ -90,6 +90,11 @@ selector that 2.3.0 lacks. See
 - The rollback check applies this release's rules, model-id grammar
   included, to the previous release's data; the previous release may still
   refuse something these rules accept.
+- The gateway stays at CLIProxyAPI 8.0.45. Its 8.0.46 (published
+  2026-10-28) carries performance work on response compression, which
+  charmer's configuration turns off, and fixes to the OpenAI Responses
+  inbound handler, which charmer's clients do not use, and no advisory; it
+  is a candidate for the next release.
 
 ## [2.3.0] — 2026-10-28
 
