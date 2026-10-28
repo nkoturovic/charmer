@@ -155,8 +155,8 @@
     ]
   },
   "lifecycle_evidence": {
-    "evidence_id": "deepwork-claude-multi-durable-session-config-phase0-2.1.311",
-    "inspected_version": "2.1.311"
+    "evidence_id": "deepwork-claude-multi-durable-session-config-phase0-2.1.312",
+    "inspected_version": "2.1.312"
   },
   "nested_subagents": {
     "concurrency_key": {
@@ -177,42 +177,42 @@
       "evidence": {
         "linux-x64": "battery",
         "others": "identity+smoke",
-        "receipt_sha256": "5d9b5a2ec344db51decab17f8245155d6d027d9d053229e2540dacb1dfe17722"
+        "receipt_sha256": "c25f573118ee4430b63a25dcb65b8fab6cb48843618db29d7eb03e9bacafb06c"
       },
       "key_fingerprint": "31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE",
-      "manifest_sha256": "d456e7293d621e6e09dd73b1d2a112bef62dae08d1ee44c1065356e64da65c0d",
+      "manifest_sha256": "f9bc2d099665e498cbc4123f81f2220852c3a75ee118c0081ef83f42f165aec9",
       "platforms": {
         "darwin-arm64": {
-          "sha256": "85d8c08707fcfd1e78ffa0204eefbc6ec9e4fe22f375fb2767ef85d957ed3161",
-          "size": 276185504
+          "sha256": "6b5ec691195e551b02c41df9f7d723f4ea61eaa03c2df90acefe3736f1aeb620",
+          "size": 275988512
         },
         "darwin-x64": {
-          "sha256": "d34e1cb82015b050471a97574aa6ea6f698ecf3a97a61c980961f43ad9f838f5",
-          "size": 287420928
+          "sha256": "9534770e162cfd6e39301d9ab775affce214df032a68484085bdbab966a7f8cf",
+          "size": 287239296
         },
         "linux-arm64": {
-          "sha256": "2e2496c9a8065df93acb0fca2d341f59a6b8777649b2e025ab8c9bcd5eef61f3",
-          "size": 293658808
+          "sha256": "dc4af28917455e009d26704b82a438353a06149e825b6cdf782908b2d28661f5",
+          "size": 293462200
         },
         "linux-arm64-musl": {
-          "sha256": "172150e3f9ea07e8e2e2e29862d7d9a25f5c234d8e909e4063df237665bf09b9",
-          "size": 285822152
+          "sha256": "62555d1d87e4fff49298b70f306ef851fa167fc58b179958680f7c4d407a8c5c",
+          "size": 285625544
         },
         "linux-x64": {
-          "sha256": "86dc1fcc69498159eaf15f446613e847010f9036bfbbdffd4c49350be8489ada",
-          "size": 293776752
+          "sha256": "4f4178ce41d83e23341ebfbaecdbcf8ea6bf7baea0690025abe49eeec3a5d01d",
+          "size": 293592432
         },
         "linux-x64-musl": {
-          "sha256": "cd40dd327145ee47aa0deacd571801c1d782388f709d71242eee6b91de8ed11f",
-          "size": 287442392
+          "sha256": "78adef63924b762580b039c9ff0dd2ae44eb06171d467db62fd9040442505f76",
+          "size": 287258072
         },
         "win32-arm64": {
-          "sha256": "951b5d94bf2a5296db2c442784e68d18fa04dec2d7d2e805aa50e75d618aad5e",
-          "size": 282933920
+          "sha256": "2bde7020ff94a52b59fa4c0c14f81558d3c5180848b2d85069b6efcad0415a4f",
+          "size": 282754208
         },
         "win32-x64": {
-          "sha256": "966f4b2ce962298f5dee6a942e8c47c8f97392e69e728e622319a98b259c0680",
-          "size": 298870432
+          "sha256": "6099672ebe5dcb518b67d1d32dde1e3360bc6bee1dae7f8d28a69c49acc7c865",
+          "size": 298690208
         }
       },
       "settings_keys": [
@@ -404,9 +404,9 @@
         "wslInheritsWindowsSettings",
         "xaaIdp"
       ],
-      "signature_sha256": "7cb5c28b0f3fba12a6af07aa38bf1abfc11ef843356c78ed95fc8b5b9f963b8b",
-      "verified_at": "2026-10-27",
-      "version": "2.1.311"
+      "signature_sha256": "9ed114ea6c57d3e6831defe512e71b8faa4521f3929edd374543609e7cfcd480",
+      "verified_at": "2026-10-28",
+      "version": "2.1.312"
     }
   ],
   "version": 2
