@@ -990,14 +990,6 @@ class CommandLineTests(JourneyTestCase):
                               capture_output=True, text=True, timeout=180, stdin=subprocess.DEVNULL)
 
     def test_update_and_rollback_through_the_installed_command(self) -> None:
-        from charmer import endpoint
-
-        # The rollback runs the previous release's own doctor: an unused
-        # port, so it never observes another gateway.
-        with socket.socket() as probe:
-            probe.bind(("127.0.0.1", 0))
-            port = probe.getsockname()[1]
-        endpoint.write_config(self.home, endpoint.parse_config({"version": 1, "host": "127.0.0.1", "port": port}))
         self.seed(self.release("1.0.0"))
         result = self.cli("update", "--from-dir", str(self.release("1.0.0").dir))
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

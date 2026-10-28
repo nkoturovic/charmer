@@ -23,9 +23,12 @@ the rollback"). The target's documents (catalog files, ``version.json`` and
 the seed profiles) are evaluated with this release's schemas: a private
 temporary resource root holds this release's schemas, settings and role
 prompts beside them and is removed afterwards. Nothing in the state tree is
-written. The target's own ``doctor`` runs read-only as supporting evidence
-(a scrubbed environment, no input, a bounded time); its report is shown as
-it is, never subtracted, and a doctor that cannot run changes no finding.
+written, and no other program runs: the target's own ``doctor`` is not
+started before the operator has answered, because its plain report
+refreshes the shared hook and token shims to the target's launcher and
+records the channel marker (a change before consent), and its read-only
+JSON report redacts the untyped lines that would matter here. Run the
+target's doctor after the rollback, as the update guide says.
 
 Limits: the checks apply this release's rules, its model-id grammar
 included, so the target may still refuse what they accept. A release that
@@ -38,8 +41,6 @@ import dataclasses
 import os
 import re
 import shutil
-import signal
-import subprocess
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -48,7 +49,6 @@ from typing import Callable, Mapping
 from charmer import strict_json, termtext
 
 DOCS_ANCHOR = "docs/update.md#rolling-back"
-DOCTOR_TIMEOUT = 60.0
 DECLARATIONS, PROFILES, SESSIONS = "declarations", "profiles", "sessions"
 GROUPS = (DECLARATIONS, PROFILES, SESSIONS)
 # The target's documents the check reads (resource-relative); the seed
@@ -59,14 +59,6 @@ TARGET_DOCUMENTS = (
 )
 _READ_LIMIT = 8 * 1024 * 1024
 _REASON_LIMIT = 240
-# What the target's launcher needs to find the state, and nothing of a
-# session's transport (no gateway token, base URL or session identity).
-_DOCTOR_ENVIRONMENT = (
-    "HOME", "PATH", "USER", "LOGNAME", "LANG", "LANGUAGE", "TZ", "TMPDIR", "XDG_CONFIG_HOME", "XDG_STATE_HOME",
-    "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS", "CHARMER_SECRET_ENV",
-)
-_DOCTOR_HEADERS = ("BLOCKED", "Attention", "Ready")
-_DOCTOR_AREAS = ("Providers", "Sessions", "Profiles")
 _LINE_PATH = re.compile(r"^\$\.lines\.([a-z0-9][a-z0-9-]*)(?:\.|$)")
 _PROVIDER_FILE = re.compile(r"^providers\.d/([a-z][a-z0-9-]*)\.json$")
 
@@ -88,26 +80,10 @@ class Finding:
 
 
 @dataclass(frozen=True)
-class DoctorEvidence:
-    """The target doctor's rows (``rows``), or why it could not run (``problem``)."""
-
-    rows: tuple[str, ...] = ()
-    problem: str | None = None
-
-    def lines(self, target: str) -> list[str]:
-        if self.problem is not None:
-            return [f"Could not run {target}'s doctor ({self.problem})."]
-        if not self.rows:
-            return [f"{target} itself reports nothing under BLOCKED, Providers, Sessions or Profiles."]
-        return [f"{target} itself reports:", *(f"  {row}" for row in self.rows)]
-
-
-@dataclass(frozen=True)
 class Report:
     """The preflight's result: findings by group, the count of items both
-    releases report, notes on what could not be checked, the reason the
-    target's data could not be read (then nothing was checked) and the
-    target doctor's evidence."""
+    releases report, notes on what could not be checked and the reason the
+    target's data could not be read (then nothing was checked)."""
 
     current: str
     target: str
@@ -115,7 +91,6 @@ class Report:
     unchanged: int = 0
     notes: tuple[str, ...] = ()
     unreadable: str | None = None
-    doctor: DoctorEvidence | None = None
 
     def lines(self) -> list[str]:
         out: list[str] = []
@@ -134,12 +109,10 @@ class Report:
                     out.extend(f"  - {finding.line()}" for finding in items)
             if not self.findings:
                 out.append(f"Nothing found that {self.target} cannot read.")
-            if self.unchanged:
-                out.append(f"Also reported by {self.current}: {self.unchanged}, unchanged by the rollback.")
+            # The count is printed even when it is zero: what was subtracted
+            # is never silent.
+            out.append(f"Also reported by {self.current}: {self.unchanged}, unchanged by the rollback.")
             out.extend(self.notes)
-        if self.doctor is not None:
-            out.extend(self.doctor.lines(self.target))
-        if self.unreadable is None:
             out.append(f"Checked with {self.current}'s rules against {self.target}'s data; "
                        f"{self.target} may still refuse what these rules accept.")
         return [termtext.visible_text(line) for line in out]
@@ -367,15 +340,13 @@ def _session_findings(state_root: Path, current: _View, target: _View, label: st
 
 
 def check(*, environ: Mapping[str, str], home: Path, state_root: Path, current_root: Path,
-          target_root: Path | None, current: str, target: str,
-          doctor: Callable[[], DoctorEvidence] | None = None) -> Report:
+          target_root: Path | None, current: str, target: str) -> Report:
     """The preflight of a rollback from ``current`` to ``target`` (read only).
 
     ``current_root``: this release's resources; ``target_root``: the
-    target's packaged resources (:func:`bundle_data_root`). ``doctor`` runs
-    the target's own doctor (:func:`run_doctor`). When the target's data or
-    this check fails, the report says it could not check and why; the
-    rollback then asks as it always did.
+    target's packaged resources (:func:`bundle_data_root`). When the
+    target's data or this check fails, the report says it could not check
+    and why; the rollback then asks as it always did.
     """
 
     try:
@@ -387,8 +358,6 @@ def check(*, environ: Mapping[str, str], home: Path, state_root: Path, current_r
         report = Report(current, target, unreadable=str(exc))
     except Exception as exc:  # an advisory check never shuts the rollback: it says why it did not check
         report = Report(current, target, unreadable=_reason(exc))
-    if doctor is not None:
-        report = dataclasses.replace(report, doctor=doctor())
     return report
 
 
@@ -412,100 +381,6 @@ def _check(*, environ: dict[str, str], home: Path, state_root: Path, current_roo
     return Report(current, target, tuple([*findings, *sessions]), unchanged, tuple(notes))
 
 
-# ------------------------------------------------------------ the target's doctor
-
-
-def doctor_environment(environ: Mapping[str, str]) -> dict[str, str]:
-    """What the target's launcher gets: the state's locations and the
-    locale, never a session's transport, plain text output."""
-
-    env = {name: environ[name] for name in _DOCTOR_ENVIRONMENT if name in environ}
-    env.update({name: value for name, value in environ.items() if name.startswith("LC_")})
-    env.setdefault("PATH", os.defpath)
-    env.update({"TERM": "dumb", "NO_COLOR": "1"})
-    return env
-
-
-def doctor_rows(text: str) -> tuple[str, ...] | None:
-    """The BLOCKED section and the Providers, Sessions and Profiles
-    Attention areas of a plain doctor report, verbatim; None when ``text``
-    is not a doctor report."""
-
-    lines = text.splitlines()
-    if not any(line in _DOCTOR_HEADERS for line in lines):
-        return None
-    rows: list[str] = []
-    section: str | None = None
-    keep = False
-    attention_shown = False
-    for line in lines:
-        if not line.startswith(" "):
-            section = line if line in ("BLOCKED", "Attention") else None
-            if section == "BLOCKED":
-                rows.append(line)
-            continue
-        if section == "BLOCKED":
-            rows.append(line)
-        elif section == "Attention":
-            if not line.startswith("    "):
-                keep = line.strip().rsplit(" (", 1)[0] in _DOCTOR_AREAS
-                if keep and not attention_shown:
-                    rows.append("Attention")
-                    attention_shown = True
-                if keep:
-                    rows.append(line)
-            elif keep:
-                rows.append(line)
-    return tuple(termtext.visible_text(row) for row in rows)
-
-
-def run_doctor(bundle: Path, environ: Mapping[str, str], *, timeout: float = DOCTOR_TIMEOUT) -> DoctorEvidence:
-    """Run the retained release's ``bin/charmer doctor`` (plain text,
-    read only) in a scrubbed environment with no input, for at most
-    ``timeout`` seconds. Exit 1 with a report is a BLOCKED verdict, shown
-    like any other."""
-
-    launcher = Path(bundle) / "bin" / "charmer"
-    if not launcher.is_file():
-        return DoctorEvidence(problem="no bin/charmer in the retained release")
-    try:
-        process = subprocess.Popen([str(launcher), "doctor"], env=doctor_environment(environ),
-                                   stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                                   start_new_session=True)
-    except OSError as exc:
-        return DoctorEvidence(problem=f"cannot start: {exc.strerror or type(exc).__name__}")
-    try:
-        output, _ = process.communicate(timeout=timeout)
-    except subprocess.TimeoutExpired:
-        _stop(process)
-        return DoctorEvidence(problem=f"timed out after {timeout:g} s")
-    except BaseException:
-        _stop(process)
-        raise
-    if process.returncode < 0:
-        return DoctorEvidence(problem=f"stopped by signal {-process.returncode}")
-    if process.returncode not in (0, 1):
-        return DoctorEvidence(problem=f"exit status {process.returncode}")
-    try:
-        rows = doctor_rows(output.decode("utf-8"))
-    except UnicodeDecodeError:
-        rows = None
-    if rows is None:
-        return DoctorEvidence(problem="unrecognized output")
-    return DoctorEvidence(rows=rows)
-
-
-def _stop(process: subprocess.Popen) -> None:
-    try:
-        os.killpg(process.pid, signal.SIGKILL)
-    except OSError:
-        pass
-    try:
-        process.communicate(timeout=5)
-    except (subprocess.TimeoutExpired, OSError, ValueError):
-        pass
-
-
 # ------------------------------------------------------------ the updater's seam
 
 
@@ -516,7 +391,6 @@ def for_rollback(environ: Mapping[str, str], *, state_root: Path, current_root: 
         previous = installation.previous
         return check(environ=environ, home=Path(environ["HOME"]), state_root=state_root,
                      current_root=current_root, target_root=bundle_data_root(previous.path),
-                     current=installation.current.version, target=previous.version,
-                     doctor=lambda: run_doctor(previous.path, environ))
+                     current=installation.current.version, target=previous.version)
 
     return run

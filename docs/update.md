@@ -82,8 +82,8 @@ If 2.3.0 is the retained previous release, `charmer update --rollback`
 returns to it. The rollback first checks what 2.3.0 can read of your state
 ([what the preflight checks](#what-the-preflight-checks)). 2.4.0 adds no
 model, effort contract or selector that 2.3.0 lacks, so the check should
-find nothing when you roll back to 2.3.0; it lists what it checked and shows
-2.3.0's own doctor before it asks.
+find nothing when you roll back to 2.3.0; it lists what it checked before it
+asks.
 
 After the rollback the running gateway needs no restart: 2.3.0 ships the
 same gateway bytes. Sessions 2.4.0 compiled show 2.3.0's Attention
@@ -483,10 +483,10 @@ release's own rules; nothing is changed by the check:
    `charmer -r <id>` resumes it on the previous version's models.
 
 Items both versions report are not listed; the line
-“Also reported by” … “unchanged by the rollback” counts them. The previous
-version's own doctor runs read-only as supporting evidence, with a bounded
-time and no input, and its BLOCKED, Providers, Sessions and Profiles rows are
-shown as they are; a doctor that cannot run changes no finding.
+“Also reported by” … “unchanged by the rollback” counts them, zero included.
+The previous version's own doctor is not run before you answer: its report
+would repoint the shared hook and token shims to the previous launcher, a
+change before consent. Run `charmer doctor` after the rollback, as before.
 
 With a finding, the question defaults to No, an empty answer changes nothing
 (exit 3), and `--yes` refuses with exit 1 (“cannot read what is listed

@@ -9,9 +9,9 @@ user's own with the low effort contract, a profile binding ``haiku`` and
 being left does. Every check leaves the state tree byte for byte as it was
 and removes its temporary resource root.
 
-No provider call and no gateway: renders are candidate documents, the
-target's doctor is a stub launcher (and, in the installed-command test, the
-fake release's own doctor on an unused loopback port).
+No provider call and no gateway: renders are candidate documents, and the
+preflight starts no other program (the target's doctor is not run before
+the operator answers; see the module's docstring).
 """
 
 from __future__ import annotations
@@ -21,7 +21,6 @@ import io
 import json
 import os
 import shutil
-import socket
 import subprocess
 import tempfile
 import unittest
@@ -31,7 +30,7 @@ import test_release_update  # module import: no test classes re-exported
 from _fake_release import FakeRelease
 from _layout import FIXTURES_ROOT, RESOURCES_ROOT
 from test_trust import SEED_A, signer_line
-from charmer import (catalog, continuity, custom, endpoint, observations, operator as operator_mod,
+from charmer import (catalog, continuity, custom, observations, operator as operator_mod,
                      profile as profile_mod, proxy, release_update as ru, render, rollback_preflight as rp,
                      self_update as su, state, strict_json)
 
@@ -67,38 +66,14 @@ MAX_FINDING = ("  - profile mine: agents.cm-implementer.effort: 'max' is not sup
 MOVED_FINDING = ("  - session 33333333 uses charmer-or-kimi-3-1-high, which 2.2.1 does not serve — exit it first "
                  f"(end the session; after the rollback, charmer -r {MOVED} resumes it on 2.2.1's models)")
 LIMITS_221 = "Checked with 2.4.0's rules against 2.2.1's data; 2.2.1 may still refuse what these rules accept."
+NONE_UNCHANGED = "Also reported by 2.4.0: 0, unchanged by the rollback."
 STATE_230_AGAINST_221 = [
     f"Declarations 2.2.1 cannot read ({ANCHOR}):", LOW_FINDING,
     f"Profiles and named bindings 2.2.1 cannot evaluate ({ANCHOR}):", HAIKU_FINDING, MAX_FINDING,
     f"Running sessions on selectors 2.2.1 does not serve ({ANCHOR}):", MOVED_FINDING,
+    NONE_UNCHANGED,
     LIMITS_221,
 ]
-BLOCKED_DOCTOR = """BLOCKED
-  - profile mine: agents.cm-explorer.model: unknown model 'haiku'
-Attention
-  Gateway (1)
-    - gateway: stopped
-  Providers (1)
-    - providers.d/openrouter.json ignored: lines.custom-z-ai-glm-5-2: unsupported contract
-  Profiles (1)
-    - profile mine: agents.cm-explorer: an advisory
-Advisories (optional evidence; does not change the verdict)
-  - an advisory row
-Installed release: charmer 2.2.1
-Launches are blocked until each blocking item above is fixed; each line names its fix.
-"""
-DOCTOR_ROWS = (
-    "2.2.1 itself reports:",
-    "  BLOCKED",
-    "    - profile mine: agents.cm-explorer.model: unknown model 'haiku'",
-    "  Attention",
-    "    Providers (1)",
-    "      - providers.d/openrouter.json ignored: lines.custom-z-ai-glm-5-2: unsupported contract",
-    "    Profiles (1)",
-    "      - profile mine: agents.cm-explorer: an advisory",
-)
-
-
 def write_json(path: Path, document: dict) -> None:
     state.ensure_private_dir(path.parent)
     state.atomic_write(path, strict_json.pretty_file_bytes(document))
@@ -144,13 +119,6 @@ def scratch_roots() -> set[str]:
     return {name for name in os.listdir(tempfile.gettempdir()) if name.startswith("charmer-rollback-check-")}
 
 
-def stub(path: Path, body: str) -> Path:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("#!/bin/sh\n" + body)
-    path.chmod(0o755)
-    return path
-
-
 class PreflightCase(unittest.TestCase):
     def setUp(self) -> None:
         self.root = Path(tempfile.mkdtemp(prefix="cm-preflight-"))
@@ -167,14 +135,13 @@ class PreflightCase(unittest.TestCase):
         # This release's rules over 2.3.0's catalog: the release being left.
         self.current_root = rp.compose_root(RESOURCES_ROOT, rp.read_target(NEW), self.root / "current")
 
-    def check(self, target_root: Path | None = OLD, *, target: str = "2.2.1", doctor=None) -> rp.Report:
+    def check(self, target_root: Path | None = OLD, *, target: str = "2.2.1") -> rp.Report:
         """The preflight, asserting it changed nothing and left no scratch root."""
 
         roots = [self.root / "home", self.root / "config", self.root / "state", self.root / "secrets"]
         before, scratch = tree(*roots), scratch_roots()
         report = rp.check(environ=self.env, home=self.home, state_root=self.state_root,
-                          current_root=self.current_root, target_root=target_root, current="2.4.0", target=target,
-                          doctor=doctor)
+                          current_root=self.current_root, target_root=target_root, current="2.4.0", target=target)
         self.assertEqual(tree(*roots), before)
         self.assertEqual(scratch_roots(), scratch)
         return report
@@ -201,6 +168,7 @@ class DataFindingsTests(PreflightCase):
         report = self.check(NEW, target="2.3.0")
         self.assertEqual(report.lines(), [
             "Nothing found that 2.3.0 cannot read.",
+            NONE_UNCHANGED,
             "Checked with 2.4.0's rules against 2.3.0's data; 2.3.0 may still refuse what these rules accept.",
         ])
         self.assertEqual(report.findings, ())
@@ -213,7 +181,8 @@ class DataFindingsTests(PreflightCase):
                                         asset_root=self.current_root).layer
         self.assertEqual(operator_mod.blocking_problems(layer), ())
         report = self.check()
-        self.assertEqual(report.lines(), [f"Declarations 2.2.1 cannot read ({ANCHOR}):", LOW_FINDING, LIMITS_221])
+        self.assertEqual(report.lines(), [f"Declarations 2.2.1 cannot read ({ANCHOR}):", LOW_FINDING, NONE_UNCHANGED,
+                                          LIMITS_221])
 
     def test_two_profile_failures_the_doctor_json_collapses_are_two_findings(self) -> None:
         save_profile(self.env, self.current_root, MINE)
@@ -303,7 +272,7 @@ class SessionTests(PreflightCase):
         self.assertIn("charmer-or-kimi-3-1-high", mine)
         self.assertNotIn("charmer-or-kimi-3-1-high", theirs)
         report = self.check()
-        self.assertEqual(report.lines(), ["Nothing found that 2.2.1 cannot read.", LIMITS_221])
+        self.assertEqual(report.lines(), ["Nothing found that 2.2.1 cannot read.", NONE_UNCHANGED, LIMITS_221])
 
     def test_a_running_session_on_a_selector_the_target_does_not_serve_is_a_finding(self) -> None:
         session(self.state_root, MOVED, "claude-opus-5-5[1m]", {"cm-implementer": "charmer-or-kimi-3-1-high[1m]"})
@@ -312,61 +281,10 @@ class SessionTests(PreflightCase):
         report = self.check()
         self.assertEqual(report.lines(), [
             f"Running sessions on selectors 2.2.1 does not serve ({ANCHOR}):", MOVED_FINDING,
+            NONE_UNCHANGED,
             "Session records not checked (unreadable): 66666666.",
             LIMITS_221,
         ])
-
-
-class DoctorEvidenceTests(PreflightCase):
-    def setUp(self) -> None:
-        super().setUp()
-        state_230(self.env, self.state_root, self.current_root)
-        self.bundle = self.root / "bundle"
-
-    def doctor(self, body: str, *, timeout: float = rp.DOCTOR_TIMEOUT):
-        stub(self.bundle / "bin" / "charmer", body)
-        return lambda: rp.run_doctor(self.bundle, self.env, timeout=timeout)
-
-    def test_a_blocked_doctor_is_shown_verbatim_not_as_could_not_check(self) -> None:
-        report = self.check(doctor=self.doctor(f"cat <<'EOF'\n{BLOCKED_DOCTOR}EOF\nexit 1\n"))
-        self.assertEqual(report.lines(), [*STATE_230_AGAINST_221[:-1], *DOCTOR_ROWS, LIMITS_221])
-        self.assertEqual(report.doctor, rp.DoctorEvidence(rows=tuple(row[2:] for row in DOCTOR_ROWS[1:])))
-        quiet = self.check(doctor=self.doctor("printf 'Ready\\nCatalog, profiles, and local gateway are valid.\\n'\n"))
-        self.assertIn("2.2.1 itself reports nothing under BLOCKED, Providers, Sessions or Profiles.", quiet.lines())
-
-    def test_a_doctor_that_cannot_run_is_named_and_the_findings_stand(self) -> None:
-        cases = {
-            "exit status 3": "echo 'Traceback (most recent call last):' >&2\nexit 3\n",
-            "stopped by signal 9": "kill -9 $$\n",
-            "unrecognized output": "echo 'charmer 2.2.1'\nexit 0\n",
-            "timed out after 0.5 s": "exec sleep 30\n",
-        }
-        for reason, body in cases.items():
-            with self.subTest(reason):
-                report = self.check(doctor=self.doctor(body, timeout=0.5))
-                self.assertEqual(report.lines(), [*STATE_230_AGAINST_221[:-1],
-                                                  f"Could not run 2.2.1's doctor ({reason}).", LIMITS_221])
-        shutil.rmtree(self.bundle)
-        report = self.check(doctor=lambda: rp.run_doctor(self.bundle, self.env))
-        self.assertIn("Could not run 2.2.1's doctor (no bin/charmer in the retained release).", report.lines())
-        self.assertEqual(len(report.findings), 4)
-
-    def test_the_doctor_runs_with_a_scrubbed_environment_and_no_input(self) -> None:
-        seen = self.root / "seen-environment"
-        environ = {**self.env, "CHARMER_MANAGED_ID": "11111111-1111-4111-8111-111111111111",
-                   "ANTHROPIC_BASE_URL": "http://127.0.0.1:9", "ANTHROPIC_AUTH_TOKEN": "fixture-token",
-                   "CHARMER_ASSETS": "/elsewhere", "LC_ALL": "C", "PATH": "/usr/bin:/bin"}
-        stub(self.bundle / "bin" / "charmer",
-             f"env > '{seen}'\nif read -r line; then echo got-input >> '{seen}'; fi\necho Ready\n")
-        evidence = rp.run_doctor(self.bundle, environ)
-        self.assertEqual(evidence, rp.DoctorEvidence(rows=()))
-        names = {line.split("=", 1)[0] for line in seen.read_text().splitlines() if "=" in line}
-        for absent in ("CHARMER_MANAGED_ID", "ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "CHARMER_ASSETS",
-                       "CHARMER_REGISTRY_DIR"):
-            self.assertNotIn(absent, names)
-        self.assertLessEqual({"HOME", "XDG_CONFIG_HOME", "XDG_STATE_HOME", "CHARMER_SECRET_ENV", "LC_ALL", "PATH",
-                              "TERM", "NO_COLOR"}, names)
-        self.assertNotIn("got-input", seen.read_text())
 
 
 class UnreadableDataTests(PreflightCase):
@@ -431,6 +349,7 @@ class JourneyTests(test_release_update.JourneyTestCase):
             "Checking what 1.0.0 can read: its packaged data, with 1.1.0's rules; nothing is changed.",
             f"Running sessions on selectors 1.0.0 does not serve ({ANCHOR}):",
             "  - session 33333333 uses x — exit it first",
+            "Also reported by 1.1.0: 0, unchanged by the rollback.",
             "Checked with 1.1.0's rules against 1.0.0's data; 1.0.0 may still refuse what these rules accept.",
             "charmer update: the rollback to 1.0.0 was not started: 1.0.0 cannot read what is listed above; "
             "nothing was changed.",
@@ -500,7 +419,7 @@ class JourneyTests(test_release_update.JourneyTestCase):
 
 class RetainedBundleTests(test_release_update.JourneyTestCase):
     """The updater's own seam over an installation whose previous version
-    carries 2.2.1's packaged data and a doctor of its own."""
+    carries 2.2.1's packaged data."""
 
     def test_the_230_state_through_the_updater(self) -> None:
         secrets = self.tmp / "claude.env"
@@ -509,8 +428,7 @@ class RetainedBundleTests(test_release_update.JourneyTestCase):
                    "CHARMER_REGISTRY_DIR": str(RESOURCES_ROOT / "registry")}
         current_root = rp.compose_root(RESOURCES_ROOT, rp.read_target(NEW), self.tmp / "current")
         overrides = {f"charmer/data/{relative}": raw for relative, raw in rp.read_target(OLD).items()}
-        doctor = "#!/bin/sh\nprintf 'BLOCKED\\n  - profile mine: agents.cm-explorer.model: unknown model'\nexit 1\n"
-        self.seed(self.release("1.0.0", overrides=overrides, launcher=doctor.replace("{", "{{").replace("}", "}}")))
+        self.seed(self.release("1.0.0", overrides=overrides))
         code, out = self.run_journey(from_dir=str(self.release("1.1.0").dir), assume_yes=True)
         self.assertEqual(code, ru.EXIT_OK, out)
         state_230(environ, self.state, current_root)
@@ -520,17 +438,16 @@ class RetainedBundleTests(test_release_update.JourneyTestCase):
         self.assertEqual(code, ru.EXIT_REFUSED, out)
         self.assertEqual(tree(self.home), before)
         lines = out.splitlines()
-        self.assertEqual(lines[2:9], [line.replace("2.2.1", "1.0.0").replace("2.4.0", "1.1.0")
-                                      for line in STATE_230_AGAINST_221[:-1]])
-        self.assertEqual(lines[9:12], ["1.0.0 itself reports:", "  BLOCKED",
-                                       "    - profile mine: agents.cm-explorer.model: unknown model"])
+        self.assertEqual(lines[2:11], [line.replace("2.2.1", "1.0.0").replace("2.4.0", "1.1.0")
+                                       for line in STATE_230_AGAINST_221])
         self.assertIn("run without --yes to roll back anyway", out)
         self.assertEqual(self.current(), "versions/1.1.0")
 
 
 class InstalledCommandTests(test_release_update.JourneyTestCase):
-    """The installed charmer's rollback runs the preflight and the previous
-    release's real doctor (an unused loopback port, never the gateway's)."""
+    """The installed charmer's rollback runs the preflight: with a finding,
+    --yes refuses and the whole home is byte for byte as it was; with none,
+    it rolls back. No gateway is contacted (the preflight starts no program)."""
 
     def release(self, version: str, **kwargs) -> FakeRelease:
         return test_release_update.sign(FakeRelease(self.tmp / f"release-{version}", version, real_launchers=True,
@@ -542,10 +459,6 @@ class InstalledCommandTests(test_release_update.JourneyTestCase):
                               capture_output=True, text=True, timeout=180, stdin=subprocess.DEVNULL)
 
     def test_the_installed_rollback_checks_first(self) -> None:
-        with socket.socket() as probe:
-            probe.bind(("127.0.0.1", 0))
-            port = probe.getsockname()[1]
-        endpoint.write_config(self.home, endpoint.parse_config({"version": 1, "host": "127.0.0.1", "port": port}))
         self.seed(self.release("1.0.0"))
         result = self.cli("update", "--from-dir", str(self.release("1.1.0").dir), "--yes")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -554,11 +467,43 @@ class InstalledCommandTests(test_release_update.JourneyTestCase):
         self.assertIn("Checking what 1.0.0 can read: its packaged data, with 1.1.0's rules; nothing is changed.",
                       result.stdout)
         self.assertIn("Nothing found that 1.0.0 cannot read.", result.stdout)
+        self.assertIn("Also reported by 1.1.0: 0, unchanged by the rollback.", result.stdout)
         self.assertIn("Checked with 1.1.0's rules against 1.0.0's data; 1.0.0 may still refuse what these rules "
                       "accept.", result.stdout)
-        self.assertNotIn("Could not run 1.0.0's doctor", result.stdout)
-        self.assertIn("1.0.0 itself reports", result.stdout)
         self.assertEqual(self.current(), "versions/1.0.0")
+
+    def test_the_installed_rollback_refuses_yes_and_changes_nothing_with_a_finding(self) -> None:
+        # The previous release carries 2.2.1's packaged data; the home holds
+        # the 2.3.0-shaped state (declared through this checkout's data, which
+        # the installed 1.1.0 runs).
+        overrides = {f"charmer/data/{relative}": raw for relative, raw in rp.read_target(OLD).items()}
+        self.seed(self.release("1.0.0", overrides=overrides))
+        result = self.cli("update", "--from-dir", str(self.release("1.1.0").dir), "--yes")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        state_230({"HOME": str(self.home)}, self.state, RESOURCES_ROOT)
+        # Every writing command of the installed launcher refreshes the shared
+        # shims to itself; after the switch the first one does so. The refused
+        # rollback itself must leave the home as it finds it — and the shims
+        # must never name the previous release while it is only being checked.
+        first = self.cli("update", "--rollback", "--yes")
+        self.assertEqual(first.returncode, 1, first.stdout + first.stderr)
+        hook = (self.state / "bin" / "charmer-hook").read_text()
+        self.assertIn("versions/1.1.0", hook)
+        self.assertNotIn("versions/1.0.0", hook)
+        before = tree(self.home)
+        result = self.cli("update", "--rollback", "--yes")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertEqual(result.stdout, first.stdout)
+        for line in (f"Declarations 1.0.0 cannot read ({ANCHOR}):", LOW_FINDING,
+                     f"Profiles and named bindings 1.0.0 cannot evaluate ({ANCHOR}):", HAIKU_FINDING, MAX_FINDING,
+                     "Also reported by 1.1.0: 0, unchanged by the rollback.",
+                     "charmer update: the rollback to 1.0.0 was not started: 1.0.0 cannot read what is listed above; "
+                     "nothing was changed."):
+            self.assertIn(line, result.stdout.splitlines(), result.stdout)
+        after = tree(self.home)
+        self.assertEqual({path: value for path, value in after.items() if before.get(path) != value}, {})
+        self.assertEqual(sorted(set(before) - set(after)), [])
+        self.assertEqual(self.current(), "versions/1.1.0")
 
 
 if __name__ == "__main__":
