@@ -11,8 +11,11 @@ evaluates the live state against it with this release's own validators:
   target's ``providers apply``, ``models add`` and ``models rm`` refuse;
 - **profiles and named bindings**, evaluated as doctor evaluates them, with a
   lineup catalog built from the target's documents;
-- **running sessions**: a selector a live record names that this release's
-  gateway render serves and the target's would not. Both sets come from the
+- **running sessions**: a selector a live session runs on (its lead or one
+  of its agents) that this release's gateway render serves and the target's
+  would not. The session's picker fence (``availableModels``) is not a
+  finding: it is what the user could switch to, and the target recompiles it
+  at the next resume. Both sets come from the
   candidate render (:func:`charmer.proxy.candidate_document`), so
   continuity aliases, the record extension, retained captures and
   credential availability count as a real render counts them; neither the
@@ -324,7 +327,14 @@ def _session_findings(state_root: Path, current: _View, target: _View, label: st
     scan = continuity.scan_records(state_root)
     findings: list[Finding] = []
     for record in sorted(scan.live):
+        slots = scan.slots.get(record, {})
         for base in sorted(base for base, ids in scan.refs.items() if record in ids):
+            # Only what the session runs on (its lead, its agents): a selector
+            # the record names in its picker fence alone is what the user
+            # could switch to, and the target recompiles the fence at the
+            # next resume.
+            if set(slots.get(base, ())) <= {"fence"}:
+                continue
             if base in current.served and base not in target.served:
                 findings.append(Finding(
                     SESSIONS, f"session {record[:8]} uses {base}, which {label} does not serve",

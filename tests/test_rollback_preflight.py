@@ -89,11 +89,25 @@ def save_profile(env: dict, root: Path, document: dict) -> None:
     profile_mod.ProfileStore.for_catalog(catalog.load_catalog(root), env).save(document)
 
 
-def session(state_root: Path, identifier: str, lead: str, agents: dict, *, live: bool = True) -> None:
+def session(state_root: Path, identifier: str, lead: str, agents: dict, *, live: bool = True,
+            fence: list[str] | None = None) -> None:
+    """A session record (its applied lead and agents) and, with ``fence``,
+    its compiled scope settings: the picker fence ``availableModels`` and
+    ``model``, as a real launch writes them."""
+
     write_json(state_root / "sessions" / f"{identifier}.json", {
         "applied": {"lead": {"selector": lead},
                     "agents": {role: {"selector": selector} for role, selector in agents.items()}},
         "last_event_source": "startup" if live else "end"})
+    if fence is not None:
+        write_json(state_root / "scopes" / identifier / "settings.json", {"availableModels": fence, "model": lead})
+
+
+# A 2.3.0 picker fence: every selector the lineup could switch to, including
+# ones 2.2.1 does not serve (Haiku, the moved Muse, DeepSeek and Kimi lines).
+FENCE_230 = ["claude-opus-5-5[1m]", "claude-fable-5-1[1m]", "claude-haiku-5-5[1m]", "charmer-muse-1-0-high[1m]",
+             "charmer-or-deepseek-4-1-flash-1017-high[1m]", "charmer-or-kimi-3-1-high[1m]",
+             "charmer-or-kimi-3-1-xhigh[1m]", "gpt-multi-sol-high[1m]"]
 
 
 def state_230(env: dict, state_root: Path, root: Path) -> None:
@@ -102,7 +116,8 @@ def state_230(env: dict, state_root: Path, root: Path) -> None:
 
     declare(env, {"custom-z-ai-glm-5-2": LOW_LINE})
     save_profile(env, root, MINE)
-    session(state_root, MOVED, "claude-opus-5-5[1m]", {"cm-implementer": "charmer-or-kimi-3-1-high[1m]"})
+    session(state_root, MOVED, "claude-opus-5-5[1m]", {"cm-implementer": "charmer-or-kimi-3-1-high[1m]"},
+            fence=FENCE_230)
 
 
 def tree(*roots: Path) -> dict[str, tuple[str, int]]:
@@ -250,8 +265,11 @@ class SessionTests(PreflightCase):
             "continuity revived by a live record": "gpt-multi-sol-low",
             "the target's own or-kimi": "charmer-or-kimi-high",
         }
+        # The picker fence names selectors the target does not serve: never a
+        # finding (only what the session runs on counts).
         session(self.state_root, CONTROLS, "claude-opus-5-5[1m]",
-                {f"cm-role-{index}": f"{selector}[1m]" for index, selector in enumerate(controls.values())})
+                {f"cm-role-{index}": f"{selector}[1m]" for index, selector in enumerate(controls.values())},
+                fence=FENCE_230)
         session(self.state_root, ENDED, "charmer-or-kimi-3-1-high[1m]", {}, live=False)
         mine = self.served(self.current_root)
         with tempfile.TemporaryDirectory() as scratch:
@@ -275,7 +293,10 @@ class SessionTests(PreflightCase):
         self.assertEqual(report.lines(), ["Nothing found that 2.2.1 cannot read.", NONE_UNCHANGED, LIMITS_221])
 
     def test_a_running_session_on_a_selector_the_target_does_not_serve_is_a_finding(self) -> None:
-        session(self.state_root, MOVED, "claude-opus-5-5[1m]", {"cm-implementer": "charmer-or-kimi-3-1-high[1m]"})
+        # One finding for the agent that runs on the moved selector; the fence
+        # (which also names it, and other unserved selectors) adds none.
+        session(self.state_root, MOVED, "claude-opus-5-5[1m]", {"cm-implementer": "charmer-or-kimi-3-1-high[1m]"},
+                fence=FENCE_230)
         sessions = self.state_root / "sessions"
         (sessions / "66666666-6666-4666-8666-666666666666.json").write_bytes(b"{not json")
         report = self.check()

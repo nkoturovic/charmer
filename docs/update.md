@@ -486,9 +486,11 @@ release's own rules; nothing is changed by the check:
 2. **Profiles and named bindings** — every error the previous version's
    doctor would report for a profile or a named binding, with the profile to
    edit.
-3. **Running sessions** — a session whose selector this release serves and
-   the previous version would not. Exit it first; after the rollback,
-   `charmer -r <id>` resumes it on the previous version's models.
+3. **Running sessions** — a session whose lead or agent runs on a selector
+   this release serves and the previous version would not (its model picker
+   does not count: the previous version recompiles it at the next resume).
+   Exit it first; after the rollback, `charmer -r <id>` resumes it on the
+   previous version's models.
 
 Items both versions report are not listed; the line
 “Also reported by” … “unchanged by the rollback” counts them, zero included.
