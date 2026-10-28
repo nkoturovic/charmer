@@ -14,7 +14,9 @@ An installed release (the ``bundle`` channel) updates itself::
 
 An equal version is "up to date": nothing is planned or replaced.
 ``--rollback`` returns to the previous version (refused once the state moved
-past what it reads). Each step is a phase of the run's gateway inhibition
+past what it reads); before it asks, it lists what the previous version
+cannot read (:mod:`charmer.rollback_preflight`): then No is the default and
+``--yes`` refuses. Each step is a phase of the run's gateway inhibition
 (owner ``updater``); a run interrupted after it started changing the
 installation keeps it, and the next update or rollback finishes that run
 before anything else. The cleanup removes old versions and the Claude Code
@@ -46,7 +48,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Iterator, Mapping, TextIO
 
-from charmer import errors, install_txn, installs, paths, self_update, strict_json, termtext, tls, trust
+from charmer import errors, install_txn, installs, paths, rollback_preflight, self_update, strict_json, termtext, tls, trust
 
 EXIT_OK, EXIT_REFUSED, EXIT_USAGE, EXIT_DECLINED, EXIT_CANCELLED = 0, 1, 2, 3, 130
 TIMEOUT = 30.0
@@ -297,7 +299,9 @@ class Journey:
 
     ``running``: the installation tree the launcher runs from (None when
     unknown); ``hold``, ``protected``, ``prune_copies`` and ``acquire_pin``
-    are the safety callbacks :func:`charmer.self_update.apply` requires.
+    are the safety callbacks :func:`charmer.self_update.apply` requires;
+    ``preflight`` checks what the previous version can read before a
+    rollback asks (:mod:`charmer.rollback_preflight`; None skips it).
     """
 
     environ: Mapping[str, str]
@@ -313,6 +317,7 @@ class Journey:
     signers: Callable[[], Any] = trust.release_signers
     transport: Callable[[str | None, str | None, Path], self_update.Transport] | None = None
     today: Callable[[], datetime.date] = field(default=lambda: datetime.datetime.now(datetime.timezone.utc).date())
+    preflight: Callable[[self_update.Installation], Any] | None = None
 
 
 def _display(journey: Journey, path: Path) -> str:
@@ -601,10 +606,39 @@ def _rollback(journey: Journey, installation: self_update.Installation, *, assum
     current = installation.current
     _write(out, f"Rollback: {current.version} -> {previous.version} ({current.version} stays installed as the "
                 "previous version, so a second rollback returns to it).")
+    question = f"Roll back charmer to {previous.version} now?"
     try:
-        stop = _confirm(ask, f"Roll back charmer to {previous.version} now?", assume_yes, out)
-        if stop is not None:
-            return stop
+        report = None
+        if journey.preflight is not None:
+            _write(out, f"Checking what {previous.version} can read: its packaged data, with {current.version}'s "
+                        "rules; nothing is changed.")
+            report = journey.preflight(installation)
+            for line in report.lines():
+                _write(out, line)
+        if report is not None and report.findings:
+            # What the previous version cannot read is listed: the default
+            # answer and an unattended run do not roll back; an explicit yes on
+            # a terminal does (rollback stays the escape when a new release
+            # does not work).
+            if assume_yes:
+                _write(out, f"charmer update: the rollback to {previous.version} was not started: "
+                            f"{previous.version} cannot read what is listed above; nothing was changed.")
+                _write(out, f"  fix: prepare first ({rollback_preflight.DOCS_ANCHOR}), "
+                            "or run without --yes to roll back anyway")
+                return EXIT_REFUSED
+            _write(out, f"Prepare first ({rollback_preflight.DOCS_ANCHOR}), or roll back anyway.")
+            answer = ask(question)
+            if answer is None:
+                _write(out, "Nothing was changed: with what is listed above, confirm on a terminal "
+                            "(--yes does not roll back).")
+                return EXIT_REFUSED
+            if not answer:
+                _write(out, "Nothing was changed.")
+                return EXIT_DECLINED
+        else:
+            stop = _confirm(ask, question, assume_yes, out)
+            if stop is not None:
+                return stop
         result = self_update.rollback(
             journey.install_root, state_root=journey.state_root, hold=journey.hold,
             inhibit=lambda: _transaction(journey, f"roll back charmer to {previous.version}"),
@@ -681,13 +715,22 @@ def pin_acquirer(environ: Mapping[str, str], *, platform: str | None = None,
 def copies_pruner(environ: Mapping[str, str]) -> self_update.PruneCopies:
     """The updater's cleanup of Claude Code copies for the release now
     current (its packaged contract): the use-lock prune, a copy in use kept
-    and reported."""
+    and reported. The copy index first records that release's pin: an
+    update that keeps the pin acquires nothing, so nothing else records the
+    new launcher, and the prune rule reads the index for the pin of a
+    gateway the launcher starts."""
+
+    from charmer import acquire, pin
 
     def run(bundle: Path, release: self_update.Release) -> list[str]:
         try:
             contract = bundle_contract(bundle)
         except self_update.UpdateError as exc:
             return [f"Claude Code copies were not cleaned up ({exc})."]
+        try:
+            acquire.record_launcher(environ, release.version, pin.version(contract))
+        except (KeyError, TypeError, ValueError, errors.CharmerError):
+            pass  # an invalid contract: the prune below reports it
         return install_txn.prune_copies(environ, launcher_version=release.version, contract=contract)
 
     return run
@@ -718,7 +761,8 @@ def journey_for(runtime: Any) -> Journey:
         running=installs.install_root(environ), hold=hold,
         protected=lambda: install_txn.protected_versions(install_root, state_root),
         prune_copies=copies_pruner(environ),
-        acquire_pin=pin_acquirer(environ, platform=platform), platform=platform)
+        acquire_pin=pin_acquirer(environ, platform=platform), platform=platform,
+        preflight=rollback_preflight.for_rollback(environ, state_root=state_root, current_root=runtime.asset_root))
 
 
 def terminal_ask(input_stream: TextIO, output_stream: TextIO, *, interactive: bool) -> Ask:

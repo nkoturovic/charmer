@@ -64,6 +64,18 @@ class UnknownFact(Exception):
 UNKNOWN = object()
 
 
+class RestartFirst(str):
+    """A ``blocked`` reason that is a line of its own: nothing was removed
+    because the running gateway's release is not known here, and a gateway
+    restart is what resolves it."""
+
+
+def blocked_line(reason: str) -> str:
+    """How setup, the installer, the updater and doctor state a blocked cleanup."""
+
+    return str(reason) if isinstance(reason, RestartFirst) else f"Claude Code copy cleanup blocked: {reason}."
+
+
 def retained_path(root: Path, version: str) -> Path | None:
     return root / version if isinstance(version, str) and _VERSION.fullmatch(version) else None
 
@@ -230,6 +242,22 @@ def _launcher_key(value: str) -> tuple[int, ...]:
     return pin.version_key(value.removesuffix("-dev")) or ()
 
 
+def _installed_release_pin(environ: Mapping[str, str], version: str) -> str | None:
+    """The Claude Code pin of installed release ``version`` (its bundle
+    manifest under ``install/versions/``), or None when it is not installed
+    here or its manifest cannot be read."""
+
+    from . import self_update
+
+    if not _VERSION.fullmatch(version):
+        return None
+    try:
+        return self_update.read_bundle_manifest(
+            self_update.install_root(environ) / self_update.VERSIONS / version, version=version).claude_code
+    except (OSError, self_update.UpdateError):
+        return None
+
+
 def _installed_release_pins(environ: Mapping[str, str], keep: dict[str, str]) -> str | None:
     """Add the installed release's pins to ``keep`` (``current``, ``previous``
     and the running gateway's version, as the install links say, never by
@@ -300,10 +328,13 @@ def prune_plan(
         gateway_blocked = "the gateway's start record cannot be read"
         stamped = None
     if isinstance(stamped, str) and stamped != launcher:
-        stamped_pin = index.get(stamped)
+        # A launcher-only release never acquired a copy, so the index may
+        # lack it; its installed bundle still names its pin.
+        stamped_pin = index.get(stamped) or _installed_release_pin(environ, stamped)
         if stamped_pin is None:
-            gateway_blocked = (f"the running gateway was started by charmer {stamped}, "
-                               "whose Claude Code version is not recorded here")
+            gateway_blocked = RestartFirst(
+                f"Claude Code copies: nothing removed yet — the running gateway is charmer {stamped}'s; "
+                "after `charmer gateway restart`, doctor names any copy to remove.")
         else:
             keep.setdefault(stamped_pin, f"the running gateway's release ({stamped}) pins it")
     mine = frozenset(held)
@@ -502,7 +533,7 @@ def prune_lines(outcome: PruneOutcome, environ: Mapping[str, str]) -> list[str]:
 
     lines = []
     if outcome.blocked is not None:
-        lines.append(f"Claude Code copy cleanup blocked: {outcome.blocked}.")
+        lines.append(blocked_line(outcome.blocked))
     if outcome.removed:
         lines.append("Removed Claude Code copies no release here needs: " + ", ".join(outcome.removed) + ".")
     if outcome.in_use:
@@ -555,7 +586,7 @@ def retention_report(
     if kept:
         info.append("Claude Code copies kept by charmer: " + ", ".join(kept) + ".")
     if plan.blocked is not None:
-        attention.append(f"Claude Code copy cleanup blocked: {plan.blocked}.")
+        attention.append(blocked_line(plan.blocked))
     if plan.remove:
         attention.append(
             f"Claude Code copies no release here needs: {_sizes(plan.remove)} — "

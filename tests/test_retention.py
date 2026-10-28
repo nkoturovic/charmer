@@ -256,6 +256,82 @@ class PruneRuleTests(PruneCase):
                 self.assertEqual({name: pin.owned_path(self.env, name, self.platform).read_bytes()
                                   for name in copies}, copies)
 
+    def install(self, version: str, claude: str, link: str | None = None) -> None:
+        """An installed release ``version`` pinning Claude Code ``claude``."""
+
+        from charmer import self_update
+
+        bundle = self_update.install_root(self.env) / self_update.VERSIONS / version
+        bundle.mkdir(parents=True)
+        (bundle / self_update.MANIFEST).write_text(json.dumps({
+            "format": 1, "name": "charmer", "version": version, "target": "linux-x86_64",
+            "release_date": "2026-10-15", "state_format": 4, "claude_code": {"version": claude},
+            "gateway": {"sha256": "0" * 64}}))
+        if link is not None:
+            (bundle.parent.parent / link).symlink_to(f"{self_update.VERSIONS}/{version}")
+
+    def stamp_gateway(self, launcher: str) -> None:
+        workdir = service.ensure_gateway_workdir(paths.state_root(self.env))
+        service.write_exec_stamp(workdir, service.ExecStamp(launcher, "sig", 4242, "/gw", "2026-10-28T00:00:00+00:00"))
+
+    def test_a_gateway_started_by_an_installed_launcher_only_release_keeps_its_pin(self):
+        # 1.0.2 changed only the launcher: it never acquired a copy, so the
+        # index lacks it; its installed bundle still names its pin.
+        acquire.record_launcher(self.env, "1.0.1", "2.1.280")
+        self.install("1.0.2", "2.1.280", link="previous")
+        self.install("1.0.3", "2.1.300", link="current")
+        self.stamp_gateway("1.0.2")
+        with mock.patch.object(retention, "scan_processes", return_value=retention.ProcessScan()):
+            plan = retention.prune_plan(self.contract, self.env, launcher_version="1.0.3")
+            outcome = retention.prune_copies(self.contract, self.env, launcher_version="1.0.3")
+        self.assertIsNone(plan.blocked)
+        self.assertEqual(plan.keep["2.1.280"], "the previous release's pin")
+        self.assertEqual(outcome.removed, ("2.1.200", "2.1.250"))
+        self.assertFalse([line for line in retention.prune_lines(outcome, self.env) if "blocked" in line
+                          or "nothing removed" in line])
+        # Not installed and not indexed: the stamp alone keeps the pin it names.
+        self.assertEqual(retention.prune_plan(self.contract, self.env, launcher_version="1.0.4", running=set(),
+                                              gateway_launcher="1.0.3").keep["2.1.300"], "the current pin")
+
+    def test_a_gateway_of_an_unknown_release_says_what_to_do(self):
+        line = ("Claude Code copies: nothing removed yet — the running gateway is charmer 0.8.0's; "
+                "after `charmer gateway restart`, doctor names any copy to remove.")
+        plan = self.plan(gateway_launcher="0.8.0")
+        self.assertEqual(plan.blocked, line)
+        self.assertEqual(plan.remove, ())
+        outcome = self.prune_copies(gateway_launcher="0.8.0")
+        self.assertEqual(retention.prune_lines(outcome, self.env), [line])
+        self.stamp_gateway("0.8.0")
+        with mock.patch.object(retention, "scan_processes", return_value=retention.ProcessScan()):
+            attention, _info = retention.retention_report(self.contract, None, self.env)
+        self.assertIn(line, attention)
+        self.assertFalse([entry for entry in attention if entry.startswith("Claude Code copy cleanup blocked")])
+
+    def test_a_launcher_only_update_records_its_launcher_so_its_gateway_never_blocks_cleanup(self):
+        from charmer import release_update, self_update
+
+        bundle = self.home / "bundle"
+        contract_path = bundle / "lib/python3.14/site-packages/charmer/data/catalog/native-contract.json"
+        contract_path.parent.mkdir(parents=True)
+        contract_path.write_text(json.dumps(self.contract))
+
+        def release(version: str) -> self_update.Release:
+            return self_update.Release(version, "2026-10-28", 4, "2.1.300",
+                                       self_update.Asset("bundle", "linux-x86_64", 1, "0" * 64, "0" * 64, "0" * 64))
+
+        cleanup = release_update.copies_pruner(self.env)
+        acquire.record_launcher(self.env, "1.0.2", "2.1.300")
+        with mock.patch.object(retention, "scan_processes", return_value=retention.ProcessScan()):
+            # 1.0.3 keeps the pin: nothing is acquired; its cleanup records it.
+            cleanup(bundle, release("1.0.3"))
+            self.assertEqual(acquire.read_index(self.env)["1.0.3"], "2.1.300")
+            # Its gateway runs (restarted by 1.0.3); the next release cleans up.
+            self.stamp_gateway("1.0.3")
+            lines = cleanup(bundle, release("1.0.4"))
+        self.assertEqual(lines, [])  # nothing left to remove, and nothing blocked
+        self.assertEqual(retention.owned_versions(self.env), ["2.1.300"])
+        self.assertEqual(acquire.read_index(self.env), {"1.0.2": "2.1.300", "1.0.3": "2.1.300", "1.0.4": "2.1.300"})
+
     def test_a_second_plan_blocker_is_reported_without_removing_any_copy(self):
         first = self.plan()
         reason = "process table became unavailable"
