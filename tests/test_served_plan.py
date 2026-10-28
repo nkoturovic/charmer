@@ -1321,7 +1321,7 @@ class ServedOperatorTests(test_cli.OperatorCommandCase):
         before = self.state_bytes()
         code, out = self.run_cli(["doctor", "--prune-aliases", aliases[0]], interactive=False)
         self.assertEqual(code, 1, out)
-        self.assertIn(served_plan.HEADER, out)  # the shared preview, before any lock
+        self.assertIn("Served change plan", out)  # the shared plan, before any lock
         self.assertIn(f"  {LAN_ALIAS}: lan http://box.lan:8000/v1 · lan-model → lan http://box.lan:8000/v2", out)
         self.assertIn(f"{LIVE[:8]} lead: {LAN_ALIAS} retargets", out)
         self.assertIn("not part of this prune", out)
@@ -1333,10 +1333,61 @@ class ServedOperatorTests(test_cli.OperatorCommandCase):
         self.assertEqual(code, 0, err)
         code, out = self.run_cli(["doctor", "--prune-aliases", aliases[0]], interactive=False)
         self.assertEqual(code, 0, out)
-        self.assertIn(served_plan.HEADER, out)
+        self.assertIn("Served change plan", out)
         self.assertIn(f"pruned: {aliases[0]} (", out)
         self.assertNotIn("Retargeted", out)
         self.assertNotIn(aliases[0], continuity.read(self.runtime.home)["aliases"])
+
+    def test_alias_prune_preview_changes_nothing_and_lists_catalog_served_aliases(self) -> None:
+        operator = charmer.operator
+        key, entry = next(iter(self.runtime.catalog.docs["models-v2"]["models"].items()))
+        catalog_alias = next(iter(operator.line_aliases(entry)))
+        ledger = operator.ledger_document(None)
+        ledger["aliases"][catalog_alias] = {
+            "provider": entry["provider"], "rd": "0" * 64, "wire": entry["wire_model"],
+            "proxy_contract": None, "display": "Removed", "context_tokens": 65536,
+            "source": "operator:custom-removed", "since_catalog": 31, "overlay": None}
+        operator.write_ledger(self.env, ledger, operator.load_schemas(self.runtime.asset_root))
+        self.published()
+        (self.root / "proc").mkdir(exist_ok=True)
+        aliases = sorted(continuity.read(self.runtime.home)["aliases"])
+        aliases.append(catalog_alias)
+        before = self.state_bytes()
+        code, out = self.run_cli(["doctor", "--prune-aliases", "--preview"], interactive=False)
+        self.assertEqual(code, 0, out)
+        self.assertIn(served_plan.HEADER, out)
+        self.assertIn("Aliases to prune", out)
+        for alias in aliases:
+            self.assertIn(alias, out)
+        self.assertNotIn("pruned:", out)
+        self.assertIn(f"{catalog_alias} — the shipped line {key} keeps serving it", out)
+        self.assertEqual(self.state_bytes(), before)
+        code, out = self.run_cli(["doctor", "--prune-aliases", aliases[0]], interactive=False)
+        self.assertEqual(code, 0, out)
+        self.assertIn("Served change plan", out)
+        self.assertNotIn("no changes written", out)
+
+    def test_alias_prune_confirmation_rejects_changed_session_references(self) -> None:
+        from charmer.cli import doctor_actions
+
+        self.published()
+        (self.root / "proc").mkdir(exist_ok=True)
+        aliases = sorted(continuity.read(self.runtime.home)["aliases"])
+        before = self.state_bytes()
+        changed = []
+
+        def confirm(lines):
+            self.assertIn(aliases[0], "\n".join(lines))
+            changed.append(self.record(LIVE, aliases[0]))
+            return True
+
+        out = io.StringIO()
+        code = doctor_actions._doctor_prune_aliases(self.runtime, aliases, out, confirm=confirm)
+        self.assertEqual(code, 1, out.getvalue())
+        self.assertIn(served_plan.CHANGED_REFUSAL, out.getvalue())
+        after = self.state_bytes()
+        after.pop(str(changed[0]))
+        self.assertEqual(after, before)
 
     def test_alias_prune_revalidates_its_preview_inside_the_phase(self) -> None:
         self.published()

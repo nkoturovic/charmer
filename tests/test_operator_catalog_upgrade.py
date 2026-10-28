@@ -240,9 +240,44 @@ class LegacyCollisionTests(ShadowedOperatorLineTests):
     legacy model: every test above holds unchanged."""
 
     LEGACY = {"version": 1, "providers": {}, "models": {
-        key: {"provider": "deepseek", "wire_model": "deepseek-flash", "context_tokens": 1000000,
-              "created_via": "manual"}
-        for key in SHADOWED}}
+        **{key: {"provider": "deepseek", "wire_model": "deepseek-flash", "context_tokens": 1000000,
+                 "created_via": "manual"}
+           for key in SHADOWED},
+        "legacy-other": {"provider": "deepseek", "wire_model": "deepseek-other", "context_tokens": 1000000,
+                         "created_via": "manual"}}}
+
+    def test_custom_list_marks_displaced_legacy_models(self) -> None:
+        before = self.state_bytes()
+        code, out, err = self.op(["custom", "list"])
+        self.assertEqual(code, 0, err)
+        expected = [
+            f"model {key}\twire=deepseek-flash · provider=deepseek · context=1000000 · manual · "
+            f"ignored — {key} now resolves to the shipped line {successor}; remove: charmer custom remove-model {key}"
+            for key, (_provider, _wire, successor) in SHADOWED.items()
+        ]
+        expected.append("model legacy-other\twire=deepseek-other · provider=deepseek · context=1000000 · manual")
+        self.assertEqual(out.splitlines(), sorted(expected))
+        _blocks, _info, attention = doctor_mod._collect_doctor_reports(self.runtime)
+        for key, (_provider, _wire, successor) in SHADOWED.items():
+            marker = (f"ignored — {key} now resolves to the shipped line {successor}; "
+                      f"remove: charmer custom remove-model {key}")
+            self.assertTrue(any(marker in line for line in attention), marker)
+        self.assertEqual(self.state_bytes(), before)
+
+    def test_custom_conflicts_includes_displaced_reservations(self) -> None:
+        before = self.state_bytes()
+        self.assertEqual(self.runtime.custom_conflicts(),
+                         sorted(f"model {key} (retired catalog key)" for key in SHADOWED))
+        self.assertEqual(self.state_bytes(), before)
+        for key, (_provider, _wire, successor) in SHADOWED.items():
+            with self.subTest(key=key):
+                self.assertNotIn(key, self.runtime.catalog.docs["retired"]["retired"])
+                code, out, err = self.op(["custom", "remove-model", key])
+                self.assertEqual(code, 0, out + err)
+                self.assertEqual(self.runtime.lineup_catalog().resolve_key(key).key, successor)
+        self.assertEqual(self.runtime.custom_conflicts(), [])
+        self.assertEqual(self.op(["custom", "list"]),
+                         (0, "model legacy-other\twire=deepseek-other · provider=deepseek · context=1000000 · manual\n", ""))
 
     def test_a_colliding_legacy_model_never_takes_the_key(self) -> None:
         self.assertFalse(self.runtime.operator_snapshot().layer.marker)

@@ -60,8 +60,11 @@ def _doctor_command(
             return 2
         return _first_run(runtime, json_output=bool(getattr(args, "json", False)), output_stream=output_stream)
     if getattr(args, "preview", False):
+        if args.doctor_prune_aliases is not None:
+            return doctor_actions._doctor_prune_aliases(
+                runtime, args.doctor_prune_aliases, output_stream, preview_only=True)
         if not args.doctor_prune:
-            raise cli_types.UsageError("--preview is valid only with --prune")
+            raise cli_types.UsageError("--preview is valid only with --prune or --prune-aliases")
         return doctor_actions._doctor_prune_preview(runtime, output_stream)
     if args.doctor_rotate_token:
         return doctor_actions._doctor_rotate_token(

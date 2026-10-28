@@ -611,7 +611,7 @@ def _successor_rewrites(runtime: runtime_mod.Runtime, key: str,
         raise OperatorCommandError(f"models rm {key}: successor {resolved} is not offered ({reason})")
     efforts = entry.get("efforts") or ()
     levels = set(efforts) if isinstance(efforts, list) else set(efforts)
-    rewrites: list[tuple[str, str, str]] = []
+    rewrites: list[tuple[str, str, str, dict[str, Any]]] = []
     for name in runtime.profiles.names():
         if not runtime.profiles.has_user(name):
             continue

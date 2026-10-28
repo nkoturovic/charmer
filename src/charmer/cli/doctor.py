@@ -124,6 +124,7 @@ class Row:
     action: str | None = None
     subject: str | None = None
     remedy: str | None = None
+    subjects: tuple[str, ...] = ()
 
     @property
     def collapsed(self) -> bool:
@@ -298,7 +299,7 @@ def present_report(problems: list[str], attention: list[str], *,
             remedy = advisory_command(group[1], getattr(first, "subject", None))
         rows.append((_LEVEL_ORDER[level], _area_index(area), 0 if hold else 1, index,
                      Row(level, area, text, tuple(map(str, lines)), getattr(first, "action", None),
-                         getattr(first, "subject", None), remedy)))
+                         getattr(first, "subject", None), remedy, subjects)))
     return Presentation(tuple(row for *_order, row in sorted(rows, key=lambda item: item[:4])))
 
 
@@ -1046,6 +1047,13 @@ def _collect_doctor_report_lines(
     if runtime.init_problem is not None:
         problems.extend(area([_init_problem_line(runtime.init_problem)], INSTALLATION))
     custom_conflicts = runtime.custom_conflicts()
+    displaced = runtime.ordinary_docs.get(operator_mod.DISPLACED_KEY, {})
+    for key, successor in displaced.items():
+        conflict = f"model {key} (retired catalog key)"
+        if conflict in custom_conflicts:
+            custom_conflicts[custom_conflicts.index(conflict)] += (
+                f" · ignored — {key} now resolves to the shipped line {successor}; "
+                f"remove: charmer custom remove-model {key}")
     if custom_conflicts:
         # Ignored by the merge (catalog wins) but a real misconfiguration:
         # attention with the exact fix, never silent.
@@ -1387,7 +1395,29 @@ def _doctor_operator_report(
     warnings = _operator_agent_warnings(runtime, snapshot, gate)
     agent_lines = [_tag_model(message, warnings[message][0], key=warnings[message][1]) if message in warnings
                    else gateway_facts.tagged(message, area="Models") for message in agent_attention]
-    return list(findings.blocks), [*findings.attention, *agent_lines], list(findings.info)
+    return list(findings.blocks), [*findings.attention, *unused_alias_lines(findings.unused_aliases),
+                                   *agent_lines], list(findings.info)
+
+
+def unused_alias_lines(facts: tuple[operator_mod.UnusedAlias, ...]) -> list[gateway_facts.Line]:
+    """One actionable group from structured capture facts; verbose keeps each alias."""
+
+    remedy = "charmer doctor --prune-aliases"
+    summary = (f"{len(facts)} {'alias' if len(facts) == 1 else 'aliases'} left by "
+               f"{_plural(len({fact.key for fact in facts}), 'removed model')} "
+               f"{'is' if len(facts) == 1 else 'are'} not used by any running session: "
+               f"{remedy} (review first: --preview)")
+    lines = []
+    for fact in facts:
+        note = (f"; the shipped line {', '.join(fact.catalog_served)} keeps serving it" if fact.catalog_served else
+                "; not rendered" if not fact.rendered else "")
+        text = (f"alias {fact.alias} (captured for {fact.key}; provider {fact.provider}{note}) is not used by "
+                f"any running session: {remedy} (review first: --preview)")
+        finding = gateway_facts.Finding(text, code="unused-alias", public=text, remedy=remedy)
+        lines.append(gateway_facts.tagged(
+            finding, area=PROVIDERS, action="unused-alias", group=("operator", "unused-alias"),
+            subjects=(fact.alias,), summary=summary, short=summary + " — " + fact.alias))
+    return lines
 
 
 def _operator_agent_warnings(
@@ -1765,7 +1795,8 @@ def _doctor_record_report(
     if needs_choice:
         head = (f"{len(needs_choice)} session(s) need a profile or model choice (lead removed): "
                 "save without launching: charmer sessions choose --needs-choice --profile <name> "
-                "(S banner), or resume interactively with charmer -r <id> — ")
+                "(launch card's S key), or resume interactively with charmer -r <id>; "
+                "to forget them instead, review: charmer sessions forget --needs-choice --dry-run — ")
         attention.append(gateway_facts.tagged(
             head + ", ".join(needs_choice), action="needs-choice", subjects=tuple(needs_choice),
             short=head + _listed(tuple(needs_choice)) if len(needs_choice) > SHOWN_IDS else None,

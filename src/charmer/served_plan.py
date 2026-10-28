@@ -562,14 +562,14 @@ class ServedChangePlan:
         holders = sorted({entry[0] for entry in self.impacts})
         return f"{len(holders)} live session(s)" if holders else "none"
 
-    def lines(self, *, confirm: bool = False) -> list[str]:
+    def lines(self, *, confirm: bool = False, header: str = HEADER) -> list[str]:
         """The preview text. With no served change it is compact:
         the header, ``Served selectors: unchanged.``, any authority diff
         (never omitted) and the digest; the scope and the live-impact
         sections appear only when something served moves."""
 
         if not self.served_changed and self.before_unknown is None:
-            out = [HEADER, NO_SERVED_CHANGE]
+            out = [header, NO_SERVED_CHANGE]
             if self.authority:
                 out += ["Offered/admitted changes",
                         *(f"  {key}: {old} → {new}" for key, old, new in self.authority)]
@@ -577,7 +577,7 @@ class ServedChangePlan:
             if confirm:
                 out.append(CONFIRM_TEXT.rstrip())
             return out
-        out = [HEADER, f"Scope: gateway {self.gateway} · state root {self.state_root}"]
+        out = [header, f"Scope: gateway {self.gateway} · state root {self.state_root}"]
         if self.before_unknown is not None:
             # Nothing to compare with: a count, not a list of every selector
             # (``charmer plan --json`` carries the full candidate set).

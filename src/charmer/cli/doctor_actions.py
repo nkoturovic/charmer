@@ -216,9 +216,14 @@ def _remove_scope_tree(path: Path) -> None:
 
 
 def _doctor_prune_aliases(
-    runtime: runtime_mod.Runtime, requested: list[str], output_stream: TextIO,
+    runtime: runtime_mod.Runtime, requested: list[str], output_stream: TextIO, *,
+    preview_only: bool = False, confirm: Callable[[list[str]], bool] | None = None,
 ) -> int:
-    """`doctor --prune-aliases [ALIAS ...]`.
+    """`doctor --prune-aliases [ALIAS ...] [--preview]`.
+
+    The optional TUI confirmation sees the frozen plan before any lock;
+    its inputs and references are revalidated after the answer. Preview
+    writes no state and never invokes the confirmation or the mutator.
 
     Drives ``proxy.prune_aliases`` with the runtime HOME and session state
     root: removes (and tombstones) continuity aliases no live session record
@@ -238,7 +243,7 @@ def _doctor_prune_aliases(
     import hashlib
 
     import charmer.cli.commands.providers as providers_cmd
-    from charmer import served_plan
+    from charmer import operator, served_plan
 
     sessions.check_state_marker(runtime.session_store.root)
 
@@ -261,7 +266,7 @@ def _doctor_prune_aliases(
             continuity_bytes = state.read_private(continuity_mod.path(runtime.home))
         except state.StateError as exc:
             continuity_bytes = f"<{exc.errno}>".encode()
-        return providers_cmd._sample(runtime) + ":" + hashlib.sha256(continuity_bytes).hexdigest()
+        return providers_cmd._sample(runtime, references=True) + ":" + hashlib.sha256(continuity_bytes).hexdigest()
 
     sample = inputs_sample()  # before any plan read: the plan can only be newer
     preview = proxy_mod.prune_preview(
@@ -273,7 +278,14 @@ def _doctor_prune_aliases(
             output_stream.write(f"{termtext.visible_text(line)}\n")
         return preview.outcome.code
     assert preview.prune is not None and preview.served is not None
-    for line in preview.served.lines():
+    plan_lines = preview.served.lines(header=served_plan.HEADER if preview_only else "Served change plan")
+    plan_lines.append("Aliases to prune (retained copies only; shipped lines stay)")
+    catalog_aliases = operator.catalog_alias_lines(runtime.catalog.docs)
+    for alias in sorted(set(preview.prune.remove_continuity) | set(preview.prune.remove_captures)):
+        owners = catalog_aliases.get(alias, ())
+        note = f" — the shipped line {', '.join(owners)} keeps serving it" if owners else ""
+        plan_lines.append(f"  {alias}{note}")
+    for line in plan_lines:
         output_stream.write(f"{termtext.visible_text(line)}\n")
     refusal = preview.served.refusal()
     if refusal is not None:
@@ -287,6 +299,11 @@ def _doctor_prune_aliases(
         return 1
     expected = (preview.prune.remove_continuity, preview.prune.remove_captures,
                 served_plan.references_from_scan(preview.prune.scan).fingerprint())
+    if preview_only:
+        return 0
+    if confirm is not None and not confirm(plan_lines):
+        output_stream.write("nothing was done\n")
+        return 0
 
     def revalidate(planned: proxy_mod.AliasPrunePlan) -> str | None:
         current = (planned.remove_continuity, planned.remove_captures,
@@ -298,6 +315,9 @@ def _doctor_prune_aliases(
     try:
         # One served-change phase: migration guard -> barrier.
         with sessions.served_change_phase(runtime.session_store.root, runtime.home) as barrier:
+            if inputs_sample() != sample:
+                output_stream.write(served_plan.CHANGED_REFUSAL + "\n")
+                return 1
             outcome = proxy_mod.prune_aliases(
                 runtime.home,
                 runtime.session_store.root,

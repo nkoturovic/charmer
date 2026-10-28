@@ -61,11 +61,15 @@ def _custom_command(
                 f"provider {termtext.visible_text(provider_id)}\t{spec['base_url']} · "
                 f"{spec['auth_kind']} · env:{spec['secret_env']}\n"
             )
+        displaced = runtime.ordinary_docs.get(operator_mod.DISPLACED_KEY, {})
         for model_id, spec in sorted(registry["models"].items()):
+            shown = termtext.visible_text(model_id)
+            ignored = (f" · ignored — {shown} now resolves to the shipped line {displaced[model_id]}; "
+                       f"remove: charmer custom remove-model {shown}" if model_id in displaced else "")
             output_stream.write(
-                f"model {termtext.visible_text(model_id)}\twire={spec['wire_model']} · "
+                f"model {shown}\twire={spec['wire_model']} · "
                 f"provider={spec['provider']} · context={spec['context_tokens']} · "
-                f"{spec['created_via']}\n"
+                f"{spec['created_via']}{ignored}\n"
             )
         return 0
     if command == "add-provider":

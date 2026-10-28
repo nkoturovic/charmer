@@ -318,16 +318,46 @@ class FindingsActionTests(_FindingsCase):
     def test_enter_on_an_unused_alias_prunes_it_after_a_confirmation(self) -> None:
         problems, info, attention = mixed_report()
         after = (problems, info, [line for line in attention if getattr(line, "action", None) != "unused-alias"])
-        screen = self.screen([(problems, info, attention), after])  # a cancel reads nothing again
+        screen = self.screen([(problems, info, attention), (problems, info, attention), after])
         keys = self.select(screen, "unused-alias")
-        with mock.patch.object(doctor_actions, "_doctor_prune_aliases", return_value=0) as prune:
-            _result, win = self.drive(screen, [*keys, ENTER, ENTER, ESC])
-            prune.assert_not_called()
-            _result, win = self.drive(screen, [HOME, *keys, ENTER, RIGHT, ENTER, ESC, ESC])
-        prune.assert_called_once()
-        self.assertEqual(prune.call_args.args[1], ["charmer-old"])
+        applied = []
+
+        def prune(runtime, aliases, out, *, confirm):
+            if confirm(["Served change plan", *aliases]):
+                applied.append(aliases)
+            return 0
+
+        with mock.patch.object(doctor_actions, "_doctor_prune_aliases", side_effect=prune):
+            self.drive(screen, [*keys, ENTER, "n", ESC, ESC])
+            self.assertEqual(applied, [])
+            self.drive(screen, [HOME, *keys, ENTER, "y", ESC, ESC])
+        self.assertEqual(applied, [["charmer-old"]])
         # The report is read again after the action: the row is gone.
         self.assertNotIn("charmer-old", "\n".join(item.text for item in screen.lines))
+
+    def test_enter_on_grouped_aliases_confirms_the_frozen_subjects(self) -> None:
+        from charmer import operator
+
+        aliases = ("alias-a", "alias-b", "alias-c", "alias-d")
+        lines = doctor.unused_alias_lines(tuple(operator.UnusedAlias(alias, "custom-old", "fixture", (), True)
+                                                for alias in aliases))
+        screen = self.screen(([], [], lines))
+        applied = []
+
+        def prune(runtime, requested, out, *, confirm):
+            self.assertEqual(requested, list(aliases))
+            if confirm(["Served change plan", *requested]):
+                applied.append(tuple(requested))
+            return 0
+
+        with mock.patch.object(doctor_actions, "_doctor_prune_aliases", side_effect=prune):
+            self.drive(screen, [ENTER, "n", ESC, ESC])
+            self.assertEqual(applied, [])
+            _result, win = self.drive(screen, [ENTER, "y", ESC, ESC])
+        self.assertEqual(applied, [aliases])
+        self.assertIn("Enter: prune these 4 aliases (asks first)", _flat(win.frames))
+        for alias in aliases:
+            self.assertIn(alias, _flat(win.frames))
 
     def test_enter_on_leftovers_previews_then_prunes(self) -> None:
         line = gateway_facts.tagged("3 protocol-3 hook failure(s) logged since the last launch (start 3) in "
@@ -671,8 +701,12 @@ def _driven(root: Path, keys: "callable", reports: list) -> str:
         screen = _golden_screen(runtime, report)
         width, height = current_size()
         win = FakeWindow([*keys(screen), ESC], height=height, width=width)
-        with mock.patch.object(doctor_actions, "_doctor_prune_aliases",
-                               side_effect=lambda _runtime, _aliases, out: out.write("pruned charmer-old\n") or 0):
+        def prune(_runtime, aliases, out, *, confirm):
+            if confirm(["Served change plan", *aliases]):
+                out.write("pruned charmer-old\n")
+            return 0
+
+        with mock.patch.object(doctor_actions, "_doctor_prune_aliases", side_effect=prune):
             screen.run(win)
         return "".join(win.line(y) + "\n" for y in range(height))
 
@@ -696,7 +730,7 @@ def findings_refresh_golden(root: Path) -> str:
     after = (problems, info, [line for line in attention if getattr(line, "action", None) != "unused-alias"])
     return _driven(root, lambda screen: [*_steps_to(screen, lambda item: item.row is not None
                                                      and item.row.action == "unused-alias"),
-                                         ENTER, RIGHT, ENTER, ESC],
+                                         ENTER, "y", ESC],
                    [(problems, info, attention), after])
 
 

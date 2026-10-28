@@ -84,6 +84,28 @@ class OrderingTests(unittest.TestCase):
         self.assertIn("    - session 10000000: the default mode differs", single)
 
 
+class UnusedAliasTests(unittest.TestCase):
+    def test_unused_aliases_are_one_action_with_every_frozen_subject(self) -> None:
+        from charmer import operator
+
+        facts = tuple(operator.UnusedAlias(f"alias-{i}", f"custom-removed-{i // 2}", "fixture", (), True)
+                      for i in range(4))
+        lines = doctor.unused_alias_lines(facts)
+        row, = doctor.present_report([], lines).rows
+        self.assertEqual(row.area, "Providers")
+        self.assertEqual(row.level, "attention")
+        self.assertEqual(row.action, "unused-alias")
+        self.assertEqual(row.subjects, tuple(f"alias-{i}" for i in range(4)))
+        self.assertEqual(row.remedy, "charmer doctor --prune-aliases")
+        self.assertEqual(row.text, "4 aliases left by 2 removed models are not used by any running session: "
+                         "charmer doctor --prune-aliases (review first: --preview) — "
+                         "alias-0, alias-1, alias-2… (doctor -v lists them)")
+        verbose = _text([], [], lines, verbose=True)
+        self.assertEqual(len([line for line in verbose if "captured for" in line]), 4)
+        single, = doctor.present_report([], doctor.unused_alias_lines(facts[:1])).rows
+        self.assertIn("1 alias left by 1 removed model is not used", single.text)
+
+
 class CollapseIdentityTests(unittest.TestCase):
     def test_lines_collapse_only_on_a_known_identity(self) -> None:
         same_text = ["identical", "identical"]

@@ -2857,8 +2857,10 @@ class DoctorFindingsTests(unittest.TestCase):
         quiet = self.findings(self.snapshot(files, ledger=ledger))
         self.assertIn("provider acme: route unapproved; not rendered — charmer providers approve acme",
                       quiet.attention)
-        self.assertIn("alias custom-acme-old (captured for custom-acme-old; provider acme not rendered) has no line — "
-                      "prune when unused: charmer doctor --prune-aliases", quiet.attention)
+        alias, = quiet.unused_aliases
+        self.assertEqual((alias.alias, alias.key, alias.provider, alias.catalog_served),
+                         ("custom-acme-old", "custom-acme-old", "acme", ()))
+        self.assertFalse(alias.rendered)
         busy = self.findings(self.snapshot(files, ledger=ledger), refs={"custom-acme-small": frozenset({self.LIVE})},
                              live={self.LIVE})
         self.assertIn("provider acme: route unapproved; not rendered — charmer providers approve acme "
@@ -2870,6 +2872,21 @@ class DoctorFindingsTests(unittest.TestCase):
                       "providers.d/acme.json or end the session; a record without a recorded end counts as live, "
                       "including a launch that exited before SessionStart; if that session is not running, record "
                       f"its end: charmer sessions mark-ended {self.LIVE}", b05.blocks)
+
+    def test_unused_capture_names_the_catalog_line_that_keeps_serving_it(self) -> None:
+        key, entry = next(iter(_docs()["models-v2"]["models"].items()))
+        alias = next(iter(operator.line_aliases(entry)))
+        capture = {"provider": entry["provider"], "rd": "0" * 64, "wire": entry["wire_model"],
+                   "proxy_contract": None, "display": "Old", "context_tokens": 65536,
+                   "source": "operator:custom-removed", "since_catalog": 31, "overlay": None}
+        snapshot = self.snapshot({}, ledger=_ledger(routes={}, aliases={alias: capture}))
+        quiet = self.findings(snapshot)
+        fact, = quiet.unused_aliases
+        self.assertEqual(fact.alias, alias)
+        self.assertIn(key, fact.catalog_served)
+        busy = self.findings(snapshot, refs={alias: frozenset({self.LIVE})}, live={self.LIVE})
+        self.assertEqual(busy.unused_aliases, ())
+        self.assertFalse(any(alias in text for text in busy.blocks), busy.blocks)
 
     def test_admission_lapse_unserved_and_counts(self) -> None:
         files, layer = self.acme()
