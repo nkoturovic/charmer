@@ -104,7 +104,7 @@ command).
 | --- | --- | --- |
 | ubuntu:22.04 | sha256:e0f80c829509ef4df9e76bd8944eb7b8ec25cbb379b112a7f9448b2c77a77c9b | 2026-10-27 |
 | ubuntu:24.04 | sha256:24737cef17f4e22b1977df7d9a05e77c4e28b7da5b8911f8d8ccda136bf3573c | 2026-10-27 |
-| debian:12 | sha256:854dd8ab51d62866dbd8f5431d15ce77b12983a2a4a1e1fe43a2395dc7ef9f61 | 2026-10-27 |
+| debian:12 | sha256:d74df7598108a173a621eda4d58a2adbf850b2d9a9d81bc2cca1a6c21174a880 | 2026-10-28 |
 | fedora:44 | sha256:43b29f65a41eb9c35e1cd5323e3bdf3b655c2357a9f4f1ff2f9c2798e5045d80 | 2026-10-27 |
 
 The digests are the multi-platform image indexes on Docker Hub
@@ -251,14 +251,15 @@ workflow, actionlint 1.7.12 (ShellCheck 0.11.0 on the path) and zizmor 1.31.1
 
 ## Nix inputs (flake.lock)
 
-`nixpkgs` follows `nixos-unstable`, locked on 2026-10-24 to
-`3ec636362e1816bc2f0888fa0fa2c69f1bc9e504` (2026-10-23,
-`sha256-rZLrzrC6i+jnTAlvPZHogKDulY7WWDEv9hJeHieO7Zw=`), the newest revision
-of the channel. `nix flake update` and the exact-revision metadata agree on
-that content hash. On 2026-10-27 the channel
+`nixpkgs` follows `nixos-unstable`, locked on 2026-10-28 to
+`31ecbaca1bdefa45dffc409f0250bd8039ea0010` (2026-10-27,
+`sha256-dhoW6VgFWlaodSY5jrBn+CF2FLmaUvDVgM7+C7T2+NM=`), the newest revision
+of the channel: on 2026-10-28 the channel
 (`https://channels.nixos.org/nixos-unstable/git-revision`) and the
-`nixos-unstable` branch head still named this revision, so the lock and the
-versions below are unchanged. It supplies the Nix channel's Python and the development
+`nixos-unstable` branch head both named it, and `nix flake update nixpkgs`
+recorded that content hash (the previous lock, `3ec63636` of 2026-10-23, was
+the channel head from 2026-10-24 to 2026-10-27). The versions below were
+re-evaluated at the new revision. It supplies the Nix channel's Python and the development
 shell's tools only: the gateway is built from the recipe's pinned Go archive
 and vendored modules, and the release bundles carry their own runtime, so
 none of these versions reaches a bundle. The table records the selected
@@ -267,12 +268,12 @@ closure and Nix/native gateway equality remain release-candidate checks.
 
 | Package | Version in the locked source | Newest upstream | Disposition | Verified |
 | --- | --- | --- | --- | --- |
-| bubblewrap | 0.12.0 | 0.13.1 | required floor 0.12.0 (GHSA-pxhw-h44j-8pfx, CVE-2026-87766), asserted by `nix/devshell.nix`; newer releases follow the channel | 2026-10-27 |
-| python3 | 3.14.8 | 3.14.10 / 3.15.2 | channel hold (nixos-unstable still selects 3.14.8 on 2026-10-27); 3.14.8 lacks the eMudhra `ssl` distrust (CVE-2026-115557) and the tar-filter fix (CVE-2026-114583) that 3.14.10 carries, so Nix-package model listings keep the release notes' interim advice until the channel moves; the tarfile and private-directory cleanup dispositions below apply; bundles ship 3.15.2 separately, which carries both fixes | 2026-10-27 |
-| openssl (default) | 3.5.9 | 3.5.9 LTS / 3.6.5 / 4.0.3 / 4.1.0 | current on the 3.5 LTS line, selected by the Nix Python's ssl recipe: 3.5.9 is the newest 3.5 release and carries the September security fixes, including CVE-2026-84782; 4.1.0 (2026-10-23) is a feature release whose notes list no security fix | 2026-10-27 |
-| git | 2.56.0 | 2.56.0 | current (development shell and tests only) | 2026-10-27 |
-| gnupg | 2.4.9 (FreePG) | 2.5.24 | channel hold for development shell and tests, not bundle release trust; upstream 2.4 is EOL, FreePG support beyond that is unconfirmed; 2.5.24 carries security-relevant fixes whose applicability to the locked FreePG recipe is unestablished (below); re-check at the release candidate | 2026-10-27 |
-| cacert | 3.131.1 | 3.131.1 | NSS CA data removes emSign G3, C1 and ECC C3 roots; this is not a guarantee about an operator-selected certificate bundle | 2026-10-24 |
+| bubblewrap | 0.12.0 | 0.13.1 | required floor 0.12.0 (GHSA-pxhw-h44j-8pfx, CVE-2026-87766), asserted by `nix/devshell.nix`; newer releases follow the channel | 2026-10-28 |
+| python3 | 3.14.8 | 3.14.10 / 3.15.2 | channel hold (nixos-unstable still selects 3.14.8 at 31ecbaca on 2026-10-28); 3.14.8 lacks the eMudhra `ssl` distrust (CVE-2026-115557) and the tar-filter fix (CVE-2026-114583) that 3.14.10 carries, so Nix-package model listings keep the release notes' interim advice until the channel moves; the tarfile and private-directory cleanup dispositions below apply; bundles ship 3.15.2 separately, which carries both fixes | 2026-10-28 |
+| openssl (default) | 3.5.9 | 3.5.9 LTS / 3.6.5 / 4.0.3 / 4.1.0 | current on the 3.5 LTS line, selected by the Nix Python's ssl recipe: 3.5.9 is the newest 3.5 release and carries the September security fixes, including CVE-2026-84782; 4.1.0 (2026-10-23) is a feature release whose notes list no security fix | 2026-10-28 |
+| git | 2.56.0 | 2.56.0 | current (development shell and tests only) | 2026-10-28 |
+| gnupg | 2.4.9 (FreePG) | 2.5.24 | channel hold for development shell and tests, not bundle release trust; upstream 2.4 is EOL, FreePG support beyond that is unconfirmed; 2.5.24 carries security-relevant fixes whose applicability to the locked FreePG recipe is unestablished (below); re-check at the release candidate | 2026-10-28 |
+| cacert | 3.131.1 | 3.131.1 | NSS CA data removes emSign G3, C1 and ECC C3 roots; this is not a guarantee about an operator-selected certificate bundle | 2026-10-28 |
 
 Python 3.14.9's fixes for `CVE-2026-12345` / `PSF-2026-42`
 (TemporaryDirectory cleanup race) and `CVE-2026-87910` / `PSF-2026-40`
@@ -395,9 +396,10 @@ needs a recorded reason (the Nix table above has the two holds).
 | setuptools | 84.2.1 | 84.2.1 | PyPI, wheel sha256 as pinned, not yanked | current | 2026-10-27 |
 | six actions | the action table | the same tags and commits | each repository's latest release and tag ref | current | 2026-10-27 |
 | actionlint, zizmor, govulncheck, Pester, ShellCheck, bubblewrap | the tool tables | the same versions and digests | latest releases, Go module proxy, PyPI, PowerShell Gallery, release asset digests | current | 2026-10-27 |
-| ubuntu:22.04, ubuntu:24.04, debian:12 | the 2026-10-18 indexes | rebuilt indexes | registry digest, index bytes and Docker Hub tag API agree | moved | 2026-10-27 |
-| fedora:44 | the 2026-10-03 index | the same index | registry digest, index bytes and Docker Hub tag API agree | current | 2026-10-27 |
-| nixpkgs (nixos-unstable) | 3ec636362e1816bc2f0888fa0fa2c69f1bc9e504 | the same revision | channel git-revision and branch head | current | 2026-10-27 |
+| ubuntu:22.04, ubuntu:24.04 | the 2026-10-27 indexes | the same indexes | registry digest and Docker Hub tag API agree | current | 2026-10-28 |
+| debian:12 | the 2026-10-27 index | the index pushed 2026-10-28T02:23Z (`d74df759…`; amd64 manifest `a0039cc6…`) | registry digest and Docker Hub tag API agree | moved | 2026-10-28 |
+| fedora:44 | the 2026-10-03 index | the same index | registry digest and Docker Hub tag API agree | current | 2026-10-28 |
+| nixpkgs (nixos-unstable) | 31ecbaca1bdefa45dffc409f0250bd8039ea0010 | the same revision | channel git-revision and branch head | moved from 3ec63636 | 2026-10-28 |
 
 With the moved image digests, actionlint 1.7.12 (ShellCheck 0.11.0 on the
 path) and zizmor 1.31.1 (`--offline`, default persona, and pedantic at
