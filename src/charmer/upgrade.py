@@ -138,6 +138,20 @@ ESSENTIAL_EVIDENCE_PREFIXES = (
     # read-only call is retried).
     "client check gateway-fallbacks: PASS class=GF-no-fallback ",
     "client check mcp-http-retry: PASS class=MR-changing-once ",
+    # The 2.1.312 re-pin: the refusal-routing matrix with the compiled managed
+    # session. Every part prints its own record: a refused turn gets its
+    # specified target or no switch on the lead, fence-shape, agent, resume,
+    # control and counter paths, and without the compiled capability table the
+    # client still switches an unrecognized model (the counter's premise). A
+    # part whose run touches the live daemon domain skips as BOUNDARY and one
+    # off its outcome prints FAIL; neither prints the record.
+    "client check refusal-routing-lead: PASS ",
+    "client check refusal-routing-shapes: PASS ",
+    "client check refusal-routing-agents: PASS ",
+    "client check refusal-routing-resume: PASS ",
+    "client check refusal-routing-controls: PASS ",
+    "client check refusal-routing-counter: PASS ",
+    "client check refusal-routing-uncountered: PASS ",
 )
 
 # Named alternative completion lines that satisfy an essential prefix. The

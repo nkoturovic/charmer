@@ -56,7 +56,7 @@ from unittest import mock
 from pathlib import Path
 from typing import Any
 
-from charmer import catalog, cli, compiler, probe, profile, scope, state, strict_json
+from charmer import catalog, cli, compiler, probe, profile, scope, state, strict_json, upgrade
 from charmer import settings as settings_mod
 from charmer.probe import ProbeError
 
@@ -100,6 +100,19 @@ _MULTI_FABLE = "charmer-" + _FABLE.removeprefix("claude-")
 # classify Agent spawns and refuses them.
 _MANAGED_PERMISSIONS = {"defaultMode": scope.PERMISSION_DEFAULT_MODE}
 _LEAD_GPT = "gpt-multi-sol-high"
+# The completion records the re-pin gate requires (charmer.upgrade), one per
+# refusal-routing part; release evidence finds this module as their producer
+# by these literals. A part that skips at a boundary or prints FAIL prints
+# none of them.
+REFUSAL_ROUTING_RECORDS = (
+    "client check refusal-routing-lead: PASS ",
+    "client check refusal-routing-shapes: PASS ",
+    "client check refusal-routing-agents: PASS ",
+    "client check refusal-routing-resume: PASS ",
+    "client check refusal-routing-controls: PASS ",
+    "client check refusal-routing-counter: PASS ",
+    "client check refusal-routing-uncountered: PASS ",
+)
 _OPUS_MARKER = "client-check-marker-opus"
 _FABLE_MARKER = "client-check-marker-fable"
 _SONNET_MARKER = "client-check-marker-sonnet"
@@ -161,6 +174,33 @@ class S9RetryTests(unittest.TestCase):
                     _retry_s9_pty(runner)
                 self.assertIs(caught.exception, error)
                 runner.assert_called_once_with(timeout=240)
+
+
+class RefusalRoutingRecordTests(unittest.TestCase):
+    """The refusal-routing parts gate every re-pin: each part's PASS record
+    is essential, and its boundary skip, FAIL verdict or case rows never
+    satisfy it."""
+
+    def test_the_records_are_essential(self) -> None:
+        for record in REFUSAL_ROUTING_RECORDS:
+            self.assertIn(record, upgrade.ESSENTIAL_EVIDENCE_PREFIXES)
+        self.assertEqual(len(set(REFUSAL_ROUTING_RECORDS)), 7)
+
+    def test_a_skipped_or_failed_part_never_satisfies_its_record(self) -> None:
+        for record in REFUSAL_ROUTING_RECORDS:
+            part = record.removeprefix("client check refusal-routing-").removesuffix(": PASS ")
+            others = "\n".join(prefix + "fixture" for prefix in upgrade.ESSENTIAL_EVIDENCE_PREFIXES
+                               if prefix != record)
+            for line in (
+                f"test_{part} (tests.test_client_models.RefusalRoutingMatrixProbe) ... skipped "
+                f"'BOUNDARY: refusal-routing INCONCLUSIVE: {_TRIPWIRE} (fixture)'",
+                f"client check refusal-routing-{part}: FAIL client=fixture 1 cases, 1 off the specified outcome",
+                "client check refusal-routing case: fixture expected=none observed=none rc=1 OK",
+                f"note {record}fixture",
+            ):
+                with self.subTest(part=part, line=line):
+                    self.assertEqual(upgrade._missing_evidence_prefixes(others + "\n" + line + "\n"), (record,))
+            self.assertEqual(upgrade._missing_evidence_prefixes(others + "\n" + record + "fixture\n"), ())
 
 
 def _wire(selector: str) -> str:
@@ -1686,6 +1726,7 @@ class RefusalRoutingMatrixProbe(_SpikeTestCase):
                              result, rows, responder, [], compiled=False)
 
     def _verdict(self, part: str, cases: list[dict[str, Any]]) -> None:
+        self.assertIn(f"client check refusal-routing-{part}: PASS ", REFUSAL_ROUTING_RECORDS)
         failed = [case for case in cases if case["problems"]]
         hooks = sorted({hook for case in cases for hook in case["switch_hooks"]})
         print(f"client check refusal-routing-{part}: {'FAIL' if failed else 'PASS'} {self._identity()} "
