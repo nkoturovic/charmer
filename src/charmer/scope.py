@@ -1166,6 +1166,40 @@ def fallback_only(rows: Iterable[LeadSetRow]) -> tuple[str, ...]:
     )
 
 
+# Claude Code 2.1.312 also gives a model it does not recognise (every
+# selector but a canonical Anthropic id) its categorized-refusal switch: a
+# cyber, bio or frontier_llm refusal moves the turn to claude-opus-4-8 or
+# claude-opus-5 whenever the fence admits them, which every lead set with an
+# Anthropic row does (the fallback-only set). That would run a turn of a
+# lineup bound to another provider on the Anthropic pool. The client's
+# per-model capability table (``<model>=-refusal_fallback``, matched on the
+# model name without ``[1m]``) turns the switch off for each such fenced
+# selector; the Anthropic lead-set rows and the fallback-only targets keep
+# the client's route table. The flag settings state it in every scope (empty
+# when nothing needs it), outranking the user's settings env; a project's
+# settings cannot set it; the launch clears an inherited value; a managed
+# policy setting it is reported as a model lock. The real-binary proof is
+# tests/test_client_models RefusalRoutingMatrixProbe (client check
+# refusal-routing).
+MODEL_CAPABILITIES_ENV = "CLAUDE_CODE_MODEL_CAPABILITIES"
+REFUSAL_FALLBACK_OFF = "-refusal_fallback"
+
+
+def refusal_fallback_capabilities(fence: Fence) -> str:
+    """The compiled :data:`MODEL_CAPABILITIES_ENV` value of ``fence``: one
+    ``<name>=-refusal_fallback`` entry per fenced selector (``[1m]`` removed,
+    sorted, ``;``-joined) except the ``anthropic`` provider's lead-set rows and
+    the fallback-only targets."""
+
+    def name(selector: str) -> str:
+        return selector.removesuffix("[1m]")
+
+    kept = {name(row.selector) for row in fence.lead_set if row.provider == "anthropic"}
+    kept.update(name(selector) for selector in fence.fallback_only)
+    names = sorted({name(selector) for selector in fence.available_models} - kept)
+    return ";".join(f"{entry}={REFUSAL_FALLBACK_OFF}" for entry in names)
+
+
 def fence_gaps(available_models: Iterable[str], selectors: Iterable[str]) -> tuple[str, ...]:
     """Sorted selectors not in ``available_models`` (exact membership, never a prefix).
 
@@ -1864,6 +1898,7 @@ def compile_lineup_scope(
     env[compiler.FORK_SUBAGENT_ENV] = compiler.FORK_SUBAGENT_OFF
     env.update(feedback_drafts_env(feedback_drafts))
     env[FAST_MODE_ENV] = "1"
+    env[MODEL_CAPABILITIES_ENV] = refusal_fallback_capabilities(fence)
 
     _, denies = compiler.compile_native_policy(
         dict(lineup.native_agents), meta.generic_agent_aliases

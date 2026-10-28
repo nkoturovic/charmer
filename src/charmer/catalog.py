@@ -135,6 +135,9 @@ RESERVED_LEAD_ENV_KEYS = frozenset(
         # Claude Code 2.1.310: "capacity" narrows the compiled retry watchdog;
         # the flag settings pin the broad scope and the launch clears it.
         "CLAUDE_CODE_RETRY_WATCHDOG_SCOPE",
+        # The client's per-model capability table: the flag settings state
+        # which fenced models keep the refusal switch; the launch clears it.
+        "CLAUDE_CODE_MODEL_CAPABILITIES",
         "CLAUDE_CODE_MAX_OUTPUT_TOKENS",
         "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY",
         "CLAUDE_CODE_MAX_CONTEXT_TOKENS",

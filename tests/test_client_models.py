@@ -606,13 +606,20 @@ class SelectorRecognitionProbe(_SpikeTestCase):
             ("fable-cyber-leadonly", _FABLE, "cyber", (), None),
             ("fable-bio-prod", _FABLE, "bio", production, "claude-opus-5"),
             ("fable-frontier-prod", _FABLE, "frontier_llm", production, "claude-opus-5"),
+            # From 2.1.312 an unknown id gets the client's default route table
+            # too; the capability table a managed scope compiles keeps it on
+            # its own model (the refusal-routing check measures every source).
+            ("multi-opus-cyber-uncountered", _MULTI_OPUS, "cyber", None, "claude-opus-4-8"),
             ("multi-opus-cyber", _MULTI_OPUS, "cyber", None, None),
         )
         observed: dict[str, str] = {}
         for label, lead, category, fence, expected in cases:
             wire = _wire(lead)
             responder = _SpikeResponder(refuse={wire: category})
-            result, rows = self._run("S7", lead, responder=responder, fence=fence, child_env=dict(_FAMILY))
+            counter = {} if label.endswith("-uncountered") or lead.startswith("claude-") else {
+                scope.MODEL_CAPABILITIES_ENV: f"{wire}={scope.REFUSAL_FALLBACK_OFF}"}
+            result, rows = self._run("S7", lead, responder=responder, fence=fence, child_env=dict(_FAMILY),
+                                     settings_env=counter or None)
             self.assertEqual(rows[0]["model"], wire, label)
             lead_rows = [row for row in rows if row["model"] == wire]
             switched = sorted({row["model"] for row in rows} - {wire})
@@ -652,7 +659,8 @@ class SelectorRecognitionProbe(_SpikeTestCase):
             "one same-wire retry, no fallbacks opt-in) switch target per case: "
             + " ".join(f"{label}->{target}" for label, target in observed.items())
             + " (a fence entry permits the switch with or without [1m]; a "
-            "lead-only fence never switches; server-named targets are not followed)"
+            "lead-only fence never switches; server-named targets are not followed; an unknown id "
+            "switches unless the capability table turns it off)"
         )
 
     def test_s7_selector_recognition(self) -> None:
@@ -1409,15 +1417,16 @@ sys.exit(done.returncode)
 
 
 def compiled_managed_scope(fixture: probe.ProbeFixture, seed: str, *,
-                           flag_env: dict[str, str] | None = None, counter: bool = False) -> dict[str, Any]:
+                           flag_env: dict[str, str] | None = None, without_counter: bool = False) -> dict[str, Any]:
     """A fixture-only managed session of a shipped seed: the v3 record and the
-    v2 scope (the managed compile, with its six lifecycle hooks and the
-    permission default) under the fixture's state root, the protocol-3 shim
-    there running :data:`_HOOK_LOGGER`. The probe's own copy of the compiled
-    flag settings drops only the gateway base URL (the fixture provider is the
-    endpoint) and adds ``flag_env`` (and, with ``counter``, the measured
-    :func:`model_capabilities_counter`). Nothing outside the fixture is read or
-    written."""
+    v2 scope (the managed compile, with its six lifecycle hooks, the
+    permission default and the refusal-switch capability table) under the
+    fixture's state root, the protocol-3 shim there running
+    :data:`_HOOK_LOGGER`. The probe's own copy of the compiled flag settings
+    drops only the gateway base URL (the fixture provider is the endpoint) and
+    adds ``flag_env``; ``without_counter`` also drops the compiled capability
+    table (the client's own behaviour, measured). Nothing outside the fixture
+    is read or written."""
 
     # A git work tree with one commit: the writable roles are worktree-isolated.
     git_env = {"HOME": str(fixture.home), "PATH": "/usr/bin:/bin", "GIT_CONFIG_NOSYSTEM": "1",
@@ -1464,11 +1473,14 @@ def compiled_managed_scope(fixture: probe.ProbeFixture, seed: str, *,
     probe.seed_fixture_project_trust(fixture, live)
     settings = json.loads(json.dumps(plan.settings))
     settings["env"].pop("ANTHROPIC_BASE_URL")
-    settings["env"].update(flag_env or {})
     anthropic = {row.selector for row in fence.lead_set if row.provider == "anthropic"} | set(fence.fallback_only)
-    if counter:
-        settings["env"][_MODEL_CAPABILITIES] = model_capabilities_counter(
-            tuple(settings["availableModels"]), tuple(anthropic))
+    # The compile states the counter the measured candidate named.
+    if settings["env"][_MODEL_CAPABILITIES] != model_capabilities_counter(
+            tuple(settings["availableModels"]), tuple(anthropic)):
+        raise AssertionError("the compiled capability table is not the measured counter")
+    if without_counter:
+        del settings["env"][_MODEL_CAPABILITIES]
+    settings["env"].update(flag_env or {})
     path = fixture.root / "compiled-settings.json"
     state.atomic_write(path, strict_json.canonical_file_bytes(settings))
     return {"managed": managed, "settings": path, "live": live, "log": log, "lineup": lineup,
@@ -1484,8 +1496,8 @@ def hook_rows(log: Path) -> list[dict[str, Any]]:
 
 def model_capabilities_counter(available: tuple[str, ...], canonical: tuple[str, ...]) -> str:
     """``CLAUDE_CODE_MODEL_CAPABILITIES`` turning the client's refusal fallback
-    off for every fenced selector that is not a canonical Anthropic id (the
-    measured candidate counter; a prefix-free exact list)."""
+    off for every fenced selector that is not a canonical Anthropic id, stated
+    independently of the compile (a prefix-free exact list)."""
 
     names = sorted({_wire(selector) for selector in available} - {_wire(selector) for selector in canonical})
     return ";".join(f"{name}=-refusal_fallback" for name in names)
@@ -1634,13 +1646,16 @@ class RefusalRoutingMatrixProbe(_SpikeTestCase):
     def _compiled_case(self, label: str, seed: str, source: str, category: str | None, *, path: str = "main",
                        spawn: str | None = None, flag_env: dict[str, str] | None = None,
                        user_settings: dict[str, Any] | None = None, server: str | None = None,
-                       not_found: bool = False, switches: bool = True, counter: bool = False,
-                       project_settings: dict[str, Any] | None = None) -> dict[str, Any]:
+                       not_found: bool = False, switches: bool = True, without_counter: bool = False,
+                       project_settings: dict[str, Any] | None = None,
+                       expected: str | None | bool = True) -> dict[str, Any]:
+        """One compiled case; ``expected`` True means :func:`expected_switch`."""
+
         fixture = self._fixture()
         if user_settings is not None:
             state.atomic_write(fixture.claude_config_dir / "settings.json",
                                strict_json.canonical_file_bytes(user_settings))
-        managed = compiled_managed_scope(fixture, seed, flag_env=flag_env, counter=counter)
+        managed = compiled_managed_scope(fixture, seed, flag_env=flag_env, without_counter=without_counter)
         if project_settings is not None:
             directory = state.ensure_private_dir(fixture.project_dir / ".claude")
             state.atomic_write(directory / "settings.json", strict_json.canonical_file_bytes(project_settings))
@@ -1652,9 +1667,11 @@ class RefusalRoutingMatrixProbe(_SpikeTestCase):
         extra = ("--dangerously-skip-permissions",) if path == "workflow" else ()
         result, rows = self._launch(fixture, self._compiled_argv(
             managed, model, ("--session-id", str(uuid.uuid4())), *extra), responder)
-        expected = None if not_found else expected_switch(source, category, managed["available"], switches=switches)
-        return self._observe(label, source, path, expected, result, rows, responder, hook_rows(managed["log"]),
-                             lead=managed["lead"])
+        if expected is True:
+            expected = None if not_found else expected_switch(source, category, managed["available"],
+                                                              switches=switches)
+        return self._observe(label, source, path, expected or None, result, rows, responder,
+                             hook_rows(managed["log"]), lead=managed["lead"])
 
     def _shaped_case(self, label: str, source: str, category: str | None, fence: tuple[str, ...]
                      ) -> dict[str, Any]:
@@ -1751,16 +1768,15 @@ class RefusalRoutingMatrixProbe(_SpikeTestCase):
                   for category in ("cyber", "frontier_llm")]
         self._verdict("agents", cases)
 
-    def _resume_case(self, kind: str, first_refused: bool, *, counter: bool = False) -> dict[str, Any]:
+    def _resume_case(self, kind: str, first_refused: bool) -> dict[str, Any]:
         """Resume on the compiled balanced scope: a refusal on the resumed
         turn, or the first resumed turn after a refused one (it runs on the
         relaunch argv's model, the source)."""
 
         source = _ROUTING_SOURCES[kind]
-        label = (f"{'counter-' if counter else ''}resume-{kind}-"
-                 f"{'after-refusal' if first_refused else 'then-refusal'}-cyber")
+        label = f"resume-{kind}-{'after-refusal' if first_refused else 'then-refusal'}-cyber"
         fixture = self._fixture()
-        managed = compiled_managed_scope(fixture, "balanced", counter=counter)
+        managed = compiled_managed_scope(fixture, "balanced")
         session = str(uuid.uuid4())
         refuse = _RoutingResponder(_wire(source), "cyber")
         plain = _RoutingResponder(None, None)
@@ -1788,64 +1804,46 @@ class RefusalRoutingMatrixProbe(_SpikeTestCase):
                  for first_refused in (False, True)]
         self._verdict("resume", cases)
 
-    def _shape(self, seed: str, source: str, *, counter: bool) -> tuple[Any, ...]:
+    def _shape(self, seed: str, source: str, *, without_counter: bool) -> tuple[Any, ...]:
         """The first main request of a plain turn: wire, output cap, effort,
         thinking, tool count and beta names."""
 
         fixture = self._fixture()
-        managed = compiled_managed_scope(fixture, seed, counter=counter)
+        managed = compiled_managed_scope(fixture, seed, without_counter=without_counter)
         result, rows = self._launch(fixture, self._compiled_argv(
             managed, source, ("--session-id", str(uuid.uuid4()))), _RoutingResponder(None, None))
         self.assertEqual(result.returncode, 0, source)
         main = [row for row in rows if row["request_class"] == "main"]
         return (main[0]["model"], *main[0]["shape"], main[0]["betas"])
 
-    def test_model_capabilities_counter(self) -> None:
-        """The measured candidate counter: ``CLAUDE_CODE_MODEL_CAPABILITIES``
-        in the flag settings env marks every fenced selector that is not a
-        canonical Anthropic id ``-refusal_fallback``; the canonical sources
-        keep their route-table switches, every other source keeps its own
-        model on every path, a user or project settings env cannot turn the
-        switch back on, and an unrefused request is unchanged."""
+    def test_the_compiled_counter_holds_against_every_layer(self) -> None:
+        """The compiled capability table against the other layers: a user or
+        project settings env naming the capability on for every model does
+        not turn the switch back on (and the user's layer does reach the
+        client: its own entry alone keeps an unknown source on its model); the
+        client's catch-all in the user's settings env still leaves an unknown
+        source on its model; an unrefused turn is the same request with and
+        without the table."""
 
-        cases = [self._compiled_case(f"counter-lead-{kind}-{category}", "balanced", _ROUTING_SOURCES[kind],
-                                     category, counter=True)
-                 for kind in _ROUTING_SOURCES for category in ("cyber", "bio", "frontier_llm")]
-        cases += [self._compiled_case(f"counter-seed-{seed}-lead-{category}", seed, lead, category, counter=True)
-                  for seed, lead in (("openai", "gpt-multi-astra-high[1m]"),
-                                     ("openrouter", "charmer-or-opus-xhigh[1m]"))
-                  for category in ("cyber", "frontier_llm")]
-        agents = (("balanced", "cm-explorer", "gpt-multi-sol-6-1-high[1m]"),
-                  ("balanced", "cm-analyst-strong", _OPUS),
-                  ("claude", "cm-explorer", _SONNET),
-                  ("openrouter", "cm-implementer-strong", "charmer-or-opus-xhigh[1m]"),
-                  ("openrouter", "cm-analyst", "charmer-or-gpt-high[1m]"),
-                  ("openrouter", "cm-reviewer-strong", "charmer-or-grok-xhigh"))
-        cases += [self._compiled_case(f"counter-subagent-{seed}-{agent}-{category}", seed, source, category,
-                                      path="subagent", spawn=agent, counter=True)
-                  for seed, agent, source in agents for category in ("cyber", "frontier_llm")]
-        cases += [self._compiled_case(f"counter-workflow-{seed}-{agent}-cyber", seed, source, "cyber",
-                                      path="workflow", spawn=agent, counter=True)
-                  for seed, agent, source in (agents[0], agents[1], agents[3])]
-        cases += [self._resume_case(kind, first_refused, counter=True) for kind in ("opus", "astra", "or-opus")
-                  for first_refused in (False, True)]
-        # Precedence: a user or project settings env naming the capability on
-        # for every model does not turn the switch back on.
         enable = {"env": {_MODEL_CAPABILITIES: "refusal_fallback"}}
-        # Positive control: the user's settings env reaches the client's
-        # capability table (without the counter, the user's own entry alone
-        # keeps an unknown source on its model).
-        cases.append(self._compiled_case(
-            "counter-user-env-only-astra-cyber", "balanced", _ROUTING_SOURCES["astra"], "cyber",
-            user_settings={"env": {_MODEL_CAPABILITIES: f"{_wire(_ROUTING_SOURCES['astra'])}=-refusal_fallback"}}))
+        astra = _ROUTING_SOURCES["astra"]
+        cases = [self._compiled_case(
+            "user-env-entry-alone-astra-cyber", "balanced", astra, "cyber", without_counter=True,
+            user_settings={"env": {_MODEL_CAPABILITIES: f"{_wire(astra)}=-refusal_fallback"}})]
         for kind in ("astra", "or-opus", "opus"):
             source = _ROUTING_SOURCES[kind]
-            cases.append(self._compiled_case(f"counter-user-env-enable-{kind}-cyber", "balanced", source, "cyber",
-                                             counter=True, user_settings=enable))
-            cases.append(self._compiled_case(f"counter-project-env-enable-{kind}-cyber", "balanced", source,
-                                             "cyber", counter=True, project_settings=enable))
-        # An unrefused turn is the same request with and without the counter.
-        shapes = {kind: (self._shape("balanced", source, counter=False), self._shape("balanced", source, counter=True))
+            cases.append(self._compiled_case(f"user-env-enable-{kind}-cyber", "balanced", source, "cyber",
+                                             user_settings=enable))
+            cases.append(self._compiled_case(f"project-env-enable-{kind}-cyber", "balanced", source, "cyber",
+                                             project_settings=enable))
+        # The client's catch-all: an uncategorized refusal switches to the
+        # session's armed fallback (the compiled Opus family default).
+        catch_all = {"env": {"CLAUDE_CODE_REFUSAL_FALLBACK_CATCH_ALL": "1"}}
+        for kind in ("astra", "or-opus", "opus"):
+            cases.append(self._compiled_case(f"catch-all-{kind}-uncategorized", "balanced",
+                                             _ROUTING_SOURCES[kind], None, user_settings=catch_all))
+        shapes = {kind: (self._shape("balanced", source, without_counter=True),
+                         self._shape("balanced", source, without_counter=False))
                   for kind, source in _ROUTING_SOURCES.items()}
         changed = sorted(kind for kind, (plain, countered) in shapes.items() if plain != countered)
         print("client check refusal-routing case: counter-request-shape "
@@ -1854,16 +1852,35 @@ class RefusalRoutingMatrixProbe(_SpikeTestCase):
         cases.append({"label": "counter-request-shape", "expected": "unchanged",
                       "observed": "changed:" + ",".join(changed) if changed else "unchanged",
                       "switch_hooks": [], "problems": [f"request changed for {changed}"] if changed else []})
-        # The client's catch-all (an uncategorized refusal switches to the
-        # session's armed fallback) set in the user's settings env: with the
-        # counter an unknown source still keeps its model. Without the counter
-        # and for a canonical source the outcome is recorded, not gated (a
-        # user's own opt-in).
-        catch_all = {"env": {"CLAUDE_CODE_REFUSAL_FALLBACK_CATCH_ALL": "1"}}
-        for kind in ("astra", "or-opus"):
-            cases.append(self._compiled_case(f"counter-catch-all-{kind}-uncategorized", "balanced",
-                                             _ROUTING_SOURCES[kind], None, counter=True, user_settings=catch_all))
-        for kind, counter in (("astra", False), ("opus", False), ("opus", True)):
-            self._compiled_case(f"observed-catch-all-{kind}-uncategorized{'-counter' if counter else ''}",
-                                "balanced", _ROUTING_SOURCES[kind], None, counter=counter, user_settings=catch_all)
         self._verdict("counter", cases)
+
+    def test_without_the_compiled_counter(self) -> None:
+        """Why the compile states the table: without it the pin gives a model
+        it does not recognise its default route table (cyber ->
+        claude-opus-4-8, bio and frontier_llm -> claude-opus-5) inside the
+        fence, on the lead, a subagent and a workflow agent, and the
+        catch-all moves an uncategorized refusal to the compiled Opus family
+        default; canonical sources are the same with or without it. A client
+        that stops switching fails this check: re-measure the counter."""
+
+        default_route = {"cyber": "claude-opus-4-8", "bio": "claude-opus-5", "frontier_llm": "claude-opus-5"}
+        cases = []
+        for kind in ("or-opus", "astra", "kimi", "or-grok"):
+            for category in ("cyber", "bio", "frontier_llm", None):
+                cases.append(self._compiled_case(
+                    f"uncountered-lead-{kind}-{category or 'uncategorized'}", "balanced", _ROUTING_SOURCES[kind],
+                    category, without_counter=True, expected=default_route.get(category)))
+        for kind in ("opus", "sonnet"):
+            cases.append(self._compiled_case(f"uncountered-lead-{kind}-cyber", "balanced", _ROUTING_SOURCES[kind],
+                                             "cyber", without_counter=True))
+        cases.append(self._compiled_case("uncountered-subagent-balanced-cm-explorer-cyber", "balanced",
+                                         "gpt-multi-sol-6-1-high[1m]", "cyber", path="subagent", spawn="cm-explorer",
+                                         without_counter=True, expected="claude-opus-4-8"))
+        cases.append(self._compiled_case("uncountered-workflow-balanced-cm-explorer-bio", "balanced",
+                                         "gpt-multi-sol-6-1-high[1m]", "bio", path="workflow", spawn="cm-explorer",
+                                         without_counter=True, expected="claude-opus-5"))
+        cases.append(self._compiled_case(
+            "uncountered-catch-all-astra-uncategorized", "balanced", _ROUTING_SOURCES["astra"], None,
+            without_counter=True, user_settings={"env": {"CLAUDE_CODE_REFUSAL_FALLBACK_CATCH_ALL": "1"}},
+            expected=_wire(_OPUS)))
+        self._verdict("uncountered", cases)

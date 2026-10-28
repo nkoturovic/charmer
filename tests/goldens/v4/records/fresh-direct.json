@@ -55,7 +55,7 @@
   "last_event_source": null,
   "last_seen_at": "2026-09-25T00:00:00Z",
   "launch_epoch": 1,
-  "launch_fence": "sha256:4193ea1285bcd150d3078c0f11800052fc6e96d96edfd04778f0782ac2a25d15",
+  "launch_fence": "sha256:4f7751aa89ae7f0c589d1e1ec02c7abff23a11186ce5c6cdadfad1d2028f8446",
   "launcher_version": "2.25.1",
   "lead_class": "large",
   "lineup_generation": 1,

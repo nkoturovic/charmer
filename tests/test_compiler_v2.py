@@ -31,6 +31,7 @@ from charmer import (
     composition,
     custom,
     lineup_files,
+    managed,
     profile,
     proxy,
     scope,
@@ -40,7 +41,7 @@ from charmer import (
 )
 from charmer.compiler import CompilerError
 from charmer.scope import ScopeError
-from _catalog import FIXTURE_ROOT, GOLDENS_ROOT
+from _catalog import FIXTURE_ROOT, GOLDENS_ROOT, SHIPPED_ROOT, uses_shipped_catalog
 from _golden import assertGolden
 
 import bless
@@ -521,6 +522,113 @@ class EnvTests(unittest.TestCase):
         bad = dataclasses.replace(lineup, lead=dataclasses.replace(lineup.lead, env={key: "capacity"}))
         with self.assertRaisesRegex(CompilerError, "compiler-owned and reserved"):
             _launch(bad, eff, bundle=bundle)
+
+    def test_the_refusal_switch_is_off_for_every_unrecognized_fenced_model(self) -> None:
+        """Claude Code 2.1.312 switches a refused turn on a model it does not
+        recognise to its own Anthropic targets when the fence admits them.
+        Every scope's flag settings env names each fenced selector (without
+        ``[1m]``) ``-refusal_fallback`` in the client's capability table,
+        except the Anthropic lead-set rows and the fallback-only targets,
+        fresh and resumed, with or without subagents; the launch clears an
+        inherited value and a lead env can never set it. The real-client
+        proof is the refusal-routing check in ``test_client_models``."""
+
+        key = scope.MODEL_CAPABILITIES_ENV
+        self.assertEqual((key, scope.REFUSAL_FALLBACK_OFF), ("CLAUDE_CODE_MODEL_CAPABILITIES", "-refusal_fallback"))
+        self.assertIn(key, catalog.RESERVED_LEAD_ENV_KEYS)
+        self.assertIn(key, compiler.V2_ENV_UNSET)
+        for action in (compiler.build_fresh(FIXED_SESSION), compiler.build_resume(FIXED_SESSION, RUNTIME_ID)):
+            for seed in ("balanced", "direct"):
+                for no_subagents in (False, True):
+                    bundle, lcat, eff, lineup = _seed(seed)
+                    result = _launch(lineup, eff, bundle=bundle, action=action, no_subagents=no_subagents,
+                                     launch_environ={key: "refusal_fallback"})
+                    fence = scope.compile_fence(lineup, lcat, eff)
+                    kept = ({row.selector.removesuffix("[1m]") for row in fence.lead_set
+                             if row.provider == "anthropic"}
+                            | {selector.removesuffix("[1m]") for selector in fence.fallback_only})
+                    marked = sorted({selector.removesuffix("[1m]") for selector in fence.available_models} - kept)
+                    with self.subTest(action=action.kind, seed=seed, no_subagents=no_subagents):
+                        self.assertIn(key, result.env_unset)
+                        self.assertNotIn(key, result.env_set)
+                        settings_doc = result.scope_plan.settings
+                        value = settings_doc["env"][key]
+                        self.assertEqual(value, ";".join(f"{name}=-refusal_fallback" for name in marked))
+                        entries = [entry.split("=", 1) for entry in value.split(";")]
+                        self.assertTrue(all(cap == "-refusal_fallback" for _name, cap in entries))
+                        names = [name for name, _cap in entries]
+                        self.assertEqual(names, sorted(set(names)))
+                        self.assertFalse(any(name.endswith("[1m]") for name in names))
+                        # Every fenced selector is either marked or kept, never both.
+                        fenced = {selector.removesuffix("[1m]") for selector in settings_doc["availableModels"]}
+                        self.assertEqual(set(names) | kept, fenced)
+                        self.assertFalse(set(names) & kept)
+                        if seed == "balanced":
+                            # A lead set of several providers marks its other rows.
+                            self.assertTrue(set(names) & {row.selector.removesuffix("[1m]")
+                                                          for row in fence.lead_set})
+        bundle, _l, eff, lineup = _seed("balanced")
+        bad = dataclasses.replace(lineup, lead=dataclasses.replace(lineup.lead, env={key: "refusal_fallback"}))
+        with self.assertRaisesRegex(CompilerError, "compiler-owned and reserved"):
+            _launch(bad, eff, bundle=bundle)
+
+    def test_the_refusal_switch_value_keeps_only_the_anthropic_rows_and_targets(self) -> None:
+        """The value from its three inputs: an Anthropic lead-set row and a
+        fallback-only target are never marked; another provider's lead-set
+        row, an agent-set selector (an Anthropic one included) and a
+        selector without ``[1m]`` are; a fence of only kept selectors gives
+        the empty value (still stated, so no other layer's table applies)."""
+
+        row = lambda selector, provider: SimpleNamespace(selector=selector, provider=provider)  # noqa: E731
+        fence = SimpleNamespace(
+            lead_set=(row("claude-opus-5-5[1m]", "anthropic"), row("gpt-multi-sol-high[1m]", "openai"),
+                      row("charmer-or-opus-high[1m]", "openrouter")),
+            fallback_only=("claude-opus-4-8[1m]", "claude-sonnet-5[1m]"),
+            available_models=("charmer-or-grok-high", "charmer-or-opus-high[1m]", "claude-haiku-5-5[1m]",
+                              "claude-opus-4-8[1m]", "claude-opus-5-5[1m]", "claude-sonnet-5[1m]",
+                              "gpt-multi-sol-high[1m]"))
+        self.assertEqual(scope.refusal_fallback_capabilities(fence),
+                         "charmer-or-grok-high=-refusal_fallback;charmer-or-opus-high=-refusal_fallback;"
+                         "claude-haiku-5-5=-refusal_fallback;gpt-multi-sol-high=-refusal_fallback")
+        kept_only = SimpleNamespace(lead_set=(row("claude-opus-5-5[1m]", "anthropic"),),
+                                    fallback_only=("claude-opus-4-8[1m]",),
+                                    available_models=("claude-opus-4-8[1m]", "claude-opus-5-5[1m]"))
+        self.assertEqual(scope.refusal_fallback_capabilities(kept_only), "")
+
+    @uses_shipped_catalog
+    def test_the_refusal_switch_value_on_the_shipped_seeds(self) -> None:
+        """Every shipped seed marks every fenced selector but the canonical
+        Opus, Fable and Sonnet rows and the three fallback-only targets."""
+
+        shipped = catalog.load_catalog(SHIPPED_ROOT)
+        lcat = _lcat(shipped.docs)
+        eff = _eff(lcat)
+        for name in catalog.SEED_PROFILE_NAMES:
+            lineup = profile.resolve(shipped.seed_profiles[name], lcat, effective=eff)
+            plan = scope.compile_lineup_scope(lineup, lcat, eff, shipped.prompt_bodies,
+                                              scope.catalog_meta_v2(shipped.docs), lineup_generation=1)
+            with self.subTest(seed=name):
+                value = plan.settings["env"][scope.MODEL_CAPABILITIES_ENV]
+                names = {entry.split("=", 1)[0] for entry in value.split(";")}
+                fenced = {selector.removesuffix("[1m]") for selector in plan.settings["availableModels"]}
+                self.assertEqual(fenced - names, {"claude-opus-5-5", "claude-fable-5-1", "claude-sonnet-5-5",
+                                                  "claude-opus-4-8", "claude-opus-5", "claude-sonnet-5"})
+                self.assertIn("gpt-multi-sol-6-1-high", names)
+                self.assertIn("charmer-or-opus-xhigh", names)
+                self.assertIn("charmer-or-grok-high", names)
+
+    def test_a_policy_model_capability_table_is_a_model_lock(self) -> None:
+        """A managed policy env outranks the flag settings: a capability
+        table there replaces the compiled one, reported (by name) as a model
+        lock."""
+
+        root = Path(tempfile.mkdtemp(prefix="charmer-policy-"))
+        self.addCleanup(shutil.rmtree, root, True)
+        state.atomic_write(root / "managed-settings.json", strict_json.canonical_file_bytes(
+            {"env": {scope.MODEL_CAPABILITIES_ENV: "DO-NOT-REPORT-VALUE"}}))
+        locks = managed.read_locks(root)
+        self.assertEqual([(lock.key, lock.kind) for lock in locks], [("env.CLAUDE_CODE_MODEL_CAPABILITIES", "model")])
+        self.assertNotIn("DO-NOT-REPORT-VALUE", repr(locks))
 
     def test_fork_subagents_are_denied_in_every_scope(self) -> None:
         """Fork subagents run outside the lineup on the caller's own model;
