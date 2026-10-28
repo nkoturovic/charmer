@@ -97,7 +97,8 @@ same gateway bytes. Sessions 2.4.0 compiled show 2.3.0's Attention
 `session <id8>: fence/picker differ from the installed catalog (catalog changed since launch); applies at the next resume`
 until their next resume (`charmer -r <id>`); a session still running the
 2.1.312 client shows `session <id8> runs Claude 2.1.312, not the pinned 2.1.311`
-until then. Neither needs `charmer doctor --repair-all`.
+until then, and resumes on 2.1.311 from its summary. Neither needs
+`charmer doctor --repair-all`.
 
 ### Updating from 2.2.1
 

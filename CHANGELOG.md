@@ -10,8 +10,9 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Upgrade notes
 
-2.4.0 changes the launcher and the pinned Claude Code (2.1.312); catalog 43
-ships with it. The gateway (CLIProxyAPI 8.0.45 with 27 local patches) is
+2.4.0 changes the launcher and the pinned Claude Code, from 2.1.311 to
+2.1.312; catalog 43 ships with it. A rollback to 2.3.0 returns to 2.1.311
+(a 2.1.312 session resumes there from its summary). The gateway (CLIProxyAPI 8.0.45 with 27 local patches) is
 unchanged, so no gateway restart is needed after `charmer update`:
 `charmer update --verify` shows `running-gateway: current-match` at once.
 Running managed sessions keep their client and compiled settings until
@@ -35,16 +36,18 @@ selector that 2.3.0 lacks. See
 - A legacy custom model displaced by a shipped line is marked in
   `charmer custom list` and in doctor with its successor and the removal
   command.
-- Managed sessions get the compiled `CLAUDE_CODE_MODEL_CAPABILITIES`
-  counter: every fenced non-Anthropic selector is marked
-  `-refusal_fallback`, so Claude Code 2.1.312 never falls back to another
-  model on a refusal from one of them. It is compiled for every launch and
-  resume and never enters your own settings.
 
 ### Changed
 
-- Claude Code 2.1.312 is the pinned client (2.1.311 is the downgrade control
-  and 2.1.302 the fallback control of the evidence suite); catalog 43.
+- Claude Code 2.1.312 is the pinned client (signed for all eight platforms;
+  no settings keys added or removed); catalog 43.
+- Claude Code 2.1.312 can switch a flagged turn of a model it does not
+  recognise — every GPT, Kimi or OpenRouter line — to Claude Opus 4.8 or
+  Opus 5. Managed sessions turn that switch off per model in their compiled
+  settings, on the lead, agents, workflow agents and resumed turns, and your
+  user or project settings cannot turn it back on. Canonical Opus, Fable and
+  Sonnet keep the client's switch to their fallback models. A managed policy
+  that sets `CLAUDE_CODE_MODEL_CAPABILITIES` is reported as a model lock.
 - Doctor groups the unused aliases that removed models left behind into one
   row; the launch card's **H** previews and confirms the whole listed group,
   and `charmer doctor --prune-aliases --preview` is the read-only plan.
@@ -74,6 +77,10 @@ selector that 2.3.0 lacks. See
   same alias belongs to a shipped line.
 - `charmer-dev` output stays readable when keyed test-control flags are set;
   genuine secrets, including one-character values, stay redacted.
+- Skills scoped to a subdirectory or by `paths:` stay available after Bash
+  moves deeper into the repository (Claude Code 2.1.312; hidden on 2.1.311).
+- Prompt-hook timeouts below one second count as one second (Claude Code
+  2.1.312).
 
 ### Security
 
@@ -85,8 +92,13 @@ selector that 2.3.0 lacks. See
 ### Known limits
 
 - Carried from 2.3.0: `x-should-retry` is not forwarded; mixed-case ids
-  cannot be declared; the late-terminal row of the client evidence remains a
-  known false success on 2.1.312 with gateway 8.0.45.
+  cannot be declared. The late-stream completion limit remains, re-measured
+  with Claude Code 2.1.312 and CLIProxyAPI 8.0.45.
+- The per-model refusal setting uses `CLAUDE_CODE_MODEL_CAPABILITIES`, which
+  Claude Code does not document; it is re-measured at every re-pin and its
+  check is required re-pin evidence.
+- Upstream #105138 reproduces on 2.1.312; #104928, #95611, #105036 and
+  #104612 still reproduce on 2.1.312.
 - The rollback check applies this release's rules, model-id grammar
   included, to the previous release's data; the previous release may still
   refuse something these rules accept.
