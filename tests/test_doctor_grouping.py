@@ -97,13 +97,31 @@ class UnusedAliasTests(unittest.TestCase):
         self.assertEqual(row.action, "unused-alias")
         self.assertEqual(row.subjects, tuple(f"alias-{i}" for i in range(4)))
         self.assertEqual(row.remedy, "charmer doctor --prune-aliases")
-        self.assertEqual(row.text, "4 aliases left by 2 removed models are not used by any running session: "
+        self.assertEqual(row.text, "4 aliases left by 2 earlier lines are not used by any running session: "
                          "charmer doctor --prune-aliases (review first: --preview) — "
                          "alias-0, alias-1, alias-2… (doctor -v lists them)")
         verbose = _text([], [], lines, verbose=True)
         self.assertEqual(len([line for line in verbose if "captured for" in line]), 4)
         single, = doctor.present_report([], doctor.unused_alias_lines(facts[:1])).rows
-        self.assertIn("1 alias left by 1 removed model is not used", single.text)
+        self.assertIn("1 alias left by 1 earlier line is not used", single.text)
+
+    def test_verbose_alias_notes_and_public_identifier_minimization(self) -> None:
+        from charmer import operator
+
+        facts = (operator.UnusedAlias("alias-catalog", "custom-earlier", "fixture", ("shipped-line",), True),
+                 operator.UnusedAlias("alias-unrendered", "custom-refused", "unavailable", (), False))
+        lines = doctor.unused_alias_lines(facts)
+        verbose = _text([], [], lines, verbose=True)
+        self.assertIn("; the shipped line shipped-line keeps serving it", "\n".join(verbose))
+        self.assertIn("; not rendered", "\n".join(verbose))
+        diagnostics = [doctor._diagnostic("attention", line) for line in lines]
+        self.assertEqual([item.subject_id for item in diagnostics], [fact.alias for fact in facts])
+        self.assertEqual({item.text for item in diagnostics},
+                         {"2 unused aliases: charmer doctor --prune-aliases"})
+        unsafe = operator.UnusedAlias("alias/path", "custom-earlier", "fixture", (), False)
+        diagnostic = doctor._diagnostic("attention", doctor.unused_alias_lines((unsafe,))[0])
+        self.assertIsNone(diagnostic.subject_id)
+        self.assertNotIn("alias/path", diagnostic.text)
 
 
 class CollapseIdentityTests(unittest.TestCase):

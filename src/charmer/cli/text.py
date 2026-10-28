@@ -946,7 +946,7 @@ EARLIER_SCOPE_DEFERRED_FIX = ("repair-all defers this recorded lineup; its scope
                               "resume (charmer -r <id>)")
 EARLIER_SCOPE_CHOICE_FIX = ("repair-all cannot recompile this recorded lineup; choose a profile or model first: "
                             "charmer sessions choose --needs-choice --profile <name> (launch card's S key), or resume "
-                            "interactively; to forget them instead, review: "
+                            "interactively; to forget every such session instead, review: "
                             "charmer sessions forget --needs-choice --dry-run")
 EARLIER_SCOPES_FIX = ("charmer doctor --repair-all recompiles the stopped ones now (H offers it); a running "
                       "one is recompiled at its next resume")
@@ -954,7 +954,7 @@ EARLIER_SCOPES_DEFERRED_FIX = ("repair-all defers these recorded lineups; each s
                                "resume (charmer -r <id>)")
 EARLIER_SCOPES_CHOICE_FIX = ("repair-all cannot recompile these recorded lineups; choose a profile or model first: "
                              "charmer sessions choose --needs-choice --profile <name> (launch card's S key), or resume "
-                             "interactively; to forget them instead, review: "
+                             "interactively; to forget every such session instead, review: "
                              "charmer sessions forget --needs-choice --dry-run")
 # A passthrough surface S14 proved to defeat the deny gets exactly
 # this one stderr line at launch (``compiler.SKILL_POLICY_BYPASS_FLAGS``).
@@ -1276,8 +1276,7 @@ FINDINGS_HELP = (
     "Enter acts on the rows it knows: the persistence hold (why, and the clear-hold command),\n"
     "a missing key (G → K), scopes to repair (repair-all, stopped sessions only), unused aliases\n"
     "(prune-aliases: the whole listed group, after a preview), generated leftovers (the prune preview),\n"
-    "sessions that do not run and have no\n"
-    "recorded end (mark-ended), sessions that need a lead (Sessions),\n"
+    "sessions that do not run and have no recorded end (mark-ended), sessions that need a lead (Sessions),\n"
     "a newer shipped profile (reseed) and a model's optional diagnostics (M → Q; they\n"
     + OPTIONAL_DIAGNOSTICS + "). Every action asks first and reuses the command's own checks;\n"
     "any other row shows its exact command. Nothing here runs on its own.\n"

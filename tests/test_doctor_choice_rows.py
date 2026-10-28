@@ -48,6 +48,7 @@ class ChoiceRowTests(V4Case):
         for text in (line, line.public):
             self.assertNotIn("these recorded lineups", text)
             self.assertIn("this recorded lineup", text)
+            self.assertIn("to forget every such session instead", text)
         record = self.launch_fresh()
         line, = doctor._check_scope_integrity(self.runtime, record, earlier_hooks=True)[1]
         self.assertIn("this stopped scope", line.public)

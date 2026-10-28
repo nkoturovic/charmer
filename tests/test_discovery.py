@@ -941,7 +941,7 @@ class UndeclarableListingTests(DiscoveryCLICase):
                         mock.patch.object(discovery, "derived_key", wraps=discovery.derived_key) as derive:
                     code, _out, err = self.op(["discover", provider, "--add", wire], "y\n")
                     self.assertEqual(code, 1, err)
-                    self.assertIn(f"discover {provider}: {wire} cannot be declared: {why} — nothing declared", err)
+                    self.assertIn(f"discover {provider}: nothing declared: {wire} cannot be declared: {why}", err)
                     derive.assert_not_called()
         self.assertEqual(self.state_bytes(), before)
 
@@ -974,6 +974,23 @@ class UndeclarableListingTests(DiscoveryCLICase):
                     self.assertTrue(any(f"[cannot be declared: {short}]" in frame for frame in picker), picker)
                     self.assertTrue(any("Cannot be declared" in frame for frame in win.frames))
         self.assertEqual(self.state_bytes(), before)
+
+    def test_stealth_refusal_and_help_use_cannot_be_declared(self) -> None:
+        from charmer import tui
+        from charmer.cli import onboarding
+        from charmer.cli.screens import common
+
+        self.assertIn("Variant ids such as :free are listed but cannot be declared.", discovery.OPENROUTER_HELP)
+        for wire in ("stealth/model:free", "stealth/Model", "vendor/model"):
+            with self.subTest(wire=wire):
+                action = common.OnboardingActions(self.runtime, None, tui.MONO_PALETTE)
+                with mock.patch.object(tui.OnboardingForm, "run", return_value={"wire": wire}), \
+                        mock.patch.object(onboarding, "lookup_stealth") as lookup, \
+                        mock.patch.object(action, "show") as shown:
+                    action.stealth_model()
+                lookup.assert_not_called()
+                problem = discovery.wire_problem(wire) or f"{wire} cannot be declared here: use stealth/<name>."
+                shown.assert_called_once_with("Cannot be declared", [problem])
 
     def test_picker_enter_opens_form_for_declarable_id(self) -> None:
         from charmer import tui

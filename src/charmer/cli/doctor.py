@@ -1458,7 +1458,7 @@ def unused_alias_lines(facts: tuple[operator_mod.UnusedAlias, ...]) -> list[gate
 
     remedy = "charmer doctor --prune-aliases"
     summary = (f"{len(facts)} {'alias' if len(facts) == 1 else 'aliases'} left by "
-               f"{_plural(len({fact.key for fact in facts}), 'removed model')} "
+               f"{_plural(len({fact.key for fact in facts}), 'earlier line')} "
                f"{'is' if len(facts) == 1 else 'are'} not used by any running session: "
                f"{remedy} (review first: --preview)")
     lines = []
@@ -1467,7 +1467,9 @@ def unused_alias_lines(facts: tuple[operator_mod.UnusedAlias, ...]) -> list[gate
                 "; not rendered" if not fact.rendered else "")
         text = (f"alias {fact.alias} (captured for {fact.key}; provider {fact.provider}{note}) is not used by "
                 f"any running session: {remedy} (review first: --preview)")
-        finding = gateway_facts.Finding(text, code="unused-alias", public=text, remedy=remedy)
+        finding = gateway_facts.Finding(text, code="unused-alias",
+                                        public=f"{len(facts)} unused aliases: {remedy}",
+                                        subject_id=observations.identifier(fact.alias), remedy=remedy)
         lines.append(gateway_facts.tagged(
             finding, area=PROVIDERS, action="unused-alias", group=("operator", "unused-alias"),
             subjects=(fact.alias,), summary=summary, short=summary + " — " + fact.alias))

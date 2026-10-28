@@ -1367,6 +1367,29 @@ class ServedOperatorTests(test_cli.OperatorCommandCase):
         self.assertIn("Served change plan", out)
         self.assertNotIn("no changes written", out)
 
+    def test_alias_prune_confirmation_applies_when_inputs_stay_unchanged(self) -> None:
+        from charmer.cli import doctor_actions
+
+        self.published()
+        (self.root / "proc").mkdir(exist_ok=True)
+        aliases = sorted(continuity.read(self.runtime.home)["aliases"])
+        self.assertTrue(aliases)
+        confirmed = []
+
+        def confirm(lines):
+            self.assertTrue(all(alias in "\n".join(lines) for alias in aliases))
+            confirmed.append(True)
+            return True
+
+        out = io.StringIO()
+        code = doctor_actions._doctor_prune_aliases(self.runtime, aliases, out, confirm=confirm)
+        self.assertEqual(code, 0, out.getvalue())
+        self.assertEqual(confirmed, [True])
+        self.assertFalse(set(aliases) & set(continuity.read(self.runtime.home)["aliases"]))
+        self.assertNotIn(served_plan.CHANGED_REFUSAL, out.getvalue())
+        for alias in aliases:
+            self.assertIn(f"pruned: {alias} (", out.getvalue())
+
     def test_alias_prune_confirmation_rejects_changed_session_references(self) -> None:
         from charmer.cli import doctor_actions
 

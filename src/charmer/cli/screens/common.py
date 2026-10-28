@@ -668,7 +668,8 @@ class OnboardingActions:
             return
         wire = values["wire"]
         if not discovery.stealth_id(wire):
-            self.show("Not addable", ["Use stealth/<name>; variant ids are not addable in this release."])
+            problem = discovery.wire_problem(wire) or f"{wire} cannot be declared here: use stealth/<name>."
+            self.show("Cannot be declared", [problem])
             return
         try:
             call, entry = onboarding.lookup_stealth(

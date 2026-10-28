@@ -1007,7 +1007,7 @@ OPERATIONS: tuple[Op, ...] = (
        confirm="y/N, default No", stream="stdout", exit="user"),
     # ------------------------------------------------------------ maintenance
     Op("maintenance.prune-preview", "maintenance", "preview removing generated leftovers or unused aliases",
-       audience="maintenance", cli=("doctor --preview",),
+       audience="maintenance", cli=("doctor --preview", "doctor --prune-aliases --preview"),
        tui=(_t("findings.act", "card → H → Enter on generated leftovers", "doctor names leftovers to prune",
                f"{T_FINDINGS}.FindingsCollectedTests.test_generated_leftovers_are_a_row_that_previews_then_prunes"),
             _t("findings.act", "card → H → Enter on unused aliases", "doctor names unused aliases",

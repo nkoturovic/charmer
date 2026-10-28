@@ -346,7 +346,7 @@ def _declare(
     for wire in args.discover_add:
         problem = discovery.wire_problem(wire)
         if problem is not None:
-            code = fail(f"{verb}: {problem} — nothing declared")
+            code = fail(f"{verb}: nothing declared: {problem}")
             continue
         item = by_id.get(wire)
         if item is None:

@@ -373,7 +373,7 @@ OPENROUTER_HELP = (
     "may retain prompts and may disappear. The public list may omit them; with a key, "
     "a separately confirmed account-filtered listing adds account-only rows.\n"
     "Add an id directly: charmer discover openrouter --add stealth/space-bunny-alpha.\n"
-    "Variant ids such as :free are listed but not addable in this release."
+    "Variant ids such as :free are listed but cannot be declared."
 )
 
 
