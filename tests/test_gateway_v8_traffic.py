@@ -1057,9 +1057,7 @@ class ResponsesSocket:
     GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
     def __init__(self, gateway, key, *, timeout=20):
-        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        self.sock.settimeout(timeout)
-        self.sock.connect(str(gateway.socket))
+        self.sock = probe.unix_connect(gateway.socket, timeout=timeout)
         nonce = base64.b64encode(os.urandom(16)).decode()
         request = ["GET /v1/responses HTTP/1.1", f"Host: 127.0.0.1:{gateway.port}", "Authorization: Bearer " + key,
                    "Connection: Upgrade", "Upgrade: websocket", "Sec-WebSocket-Version: 13",
@@ -1684,10 +1682,8 @@ class HeaderReadTimeoutTests(unittest.TestCase):
     def test_unfinished_request_head_is_closed(self):
         gateway = harness.GatewayHarness()
         self.addCleanup(gateway.close)
-        connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        connection = probe.unix_connect(gateway.socket, timeout=self.BOUND)
         self.addCleanup(connection.close)
-        connection.settimeout(self.BOUND)
-        connection.connect(str(gateway.socket))
         started = time.monotonic()
         connection.sendall(f"GET /healthz HTTP/1.1\r\nHost: 127.0.0.1:{gateway.port}\r\n".encode())
         closed, reply = False, b""
