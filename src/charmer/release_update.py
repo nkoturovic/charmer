@@ -14,7 +14,9 @@ An installed release (the ``bundle`` channel) updates itself::
 
 An equal version is "up to date": nothing is planned or replaced.
 ``--rollback`` returns to the previous version (refused once the state moved
-past what it reads). Each step is a phase of the run's gateway inhibition
+past what it reads); before it asks, it lists what the previous version
+cannot read (:mod:`charmer.rollback_preflight`): then No is the default and
+``--yes`` refuses. Each step is a phase of the run's gateway inhibition
 (owner ``updater``); a run interrupted after it started changing the
 installation keeps it, and the next update or rollback finishes that run
 before anything else. The cleanup removes old versions and the Claude Code
@@ -713,13 +715,22 @@ def pin_acquirer(environ: Mapping[str, str], *, platform: str | None = None,
 def copies_pruner(environ: Mapping[str, str]) -> self_update.PruneCopies:
     """The updater's cleanup of Claude Code copies for the release now
     current (its packaged contract): the use-lock prune, a copy in use kept
-    and reported."""
+    and reported. The copy index first records that release's pin: an
+    update that keeps the pin acquires nothing, so nothing else records the
+    new launcher, and the prune rule reads the index for the pin of a
+    gateway the launcher starts."""
+
+    from charmer import acquire, pin
 
     def run(bundle: Path, release: self_update.Release) -> list[str]:
         try:
             contract = bundle_contract(bundle)
         except self_update.UpdateError as exc:
             return [f"Claude Code copies were not cleaned up ({exc})."]
+        try:
+            acquire.record_launcher(environ, release.version, pin.version(contract))
+        except (KeyError, TypeError, ValueError, errors.CharmerError):
+            pass  # an invalid contract: the prune below reports it
         return install_txn.prune_copies(environ, launcher_version=release.version, contract=contract)
 
     return run
