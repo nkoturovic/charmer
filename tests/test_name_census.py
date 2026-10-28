@@ -58,6 +58,18 @@ HISTORICAL_FILES = {
     "tests/fixtures/legacy/v1.1.0-tree.json": (
         "ee00c7327a65aa9f82c7f19d787470972278fc929eff4e8b0574c8df25475f8f",
         "the installation 1.1.0 wrote, generated from the v1.1.0 tag (migrate from-legacy input)"),
+    "tests/fixtures/rollback-preflight/2.2.1/catalog/native-contract.json": (
+        "fc504b1d470b989883b2a4f63168d631e6b107cc2d6c9d4c5188168f5cff5a2e",
+        "2.2.1's packaged native contract, copied from the v2.2.1 tag (rollback preflight input)"),
+    "tests/fixtures/rollback-preflight/2.2.1/catalog/retired.json": (
+        "a0110e18f19fc8ccf7283dce87a2732ca8056da00d123f82d94e01287fdc36e2",
+        "2.2.1's packaged retired map, copied from the v2.2.1 tag (rollback preflight input)"),
+    "tests/fixtures/rollback-preflight/2.3.0/catalog/native-contract.json": (
+        "ea3377147e77de979a403c03be26c58bffe8c6a9830f90ac66c057c04278e4c5",
+        "2.3.0's packaged native contract, copied from the v2.3.0 tag (rollback preflight input)"),
+    "tests/fixtures/rollback-preflight/2.3.0/catalog/retired.json": (
+        "3fdf87b56b42484d55041eac2adf536d2b3b445c0c5d698eea9bd17c42657ad5",
+        "2.3.0's packaged retired map, copied from the v2.3.0 tag (rollback preflight input)"),
 }
 
 # Exact spans of a file (path -> [(span, occurrences, reason)]): each span
