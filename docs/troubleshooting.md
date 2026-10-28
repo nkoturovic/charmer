@@ -80,6 +80,7 @@ keeps restart, integrity and readiness checks separate.
 
 | Symptom | Fix |
 | --- | --- |
+| `charmer update --rollback --yes` refuses: the previous version “cannot read what is listed above” | the preflight found declarations, profile or binding errors, or running sessions the previous version cannot read; nothing was changed. Apply the listed fixes ([what the preflight checks](update.md#what-the-preflight-checks)), or run without `--yes` on a terminal and confirm to roll back anyway |
 | an update reports “response failed” while reading release files | the response was interrupted, truncated or timed out; no release switch occurred. Retry the update. A local write error instead names the local problem: resolve that before retrying |
 | the installer says an older bundle cannot safely reclaim its lock | first confirm no installer or updater is running, then follow the printed `rm -r` command for only the named lock and retry. Keep `.lock-guard`; do not run an older release's stale-lock reclamation concurrently with another installer or updater |
 | installing an older release says it used system sync | its bundle lacks the durability helper; the installer uses system `sync` with a notice. Away from Linux this does not provide the newer helper's per-file guarantee ([update details](update.md#what-happens-to-old-files)) |
@@ -204,6 +205,7 @@ See [models](guides/models.md) and [profile limits](guides/profiles.md#recommend
 | launches refuse: the copy is missing or changed | “is not set up for charmer”, or “does not match the verified sha256” | `charmer setup --step claude` | `charmer doctor` |
 | the card looks ready but a launch refuses | the card checks the copy's size and metadata only; doctor and every launch check its full hash | `charmer setup --step claude` | the launch |
 | setup or doctor says “Claude Code copy cleanup blocked” | ownership or process/install facts could not be checked safely; nothing was removed | resolve the reported cause, then `charmer setup --step claude`; do not force-delete copies | doctor no longer reports the blocker |
+| setup, the installer, the updater or doctor says “Claude Code copies: nothing removed yet” | the running gateway was started by a charmer release whose Claude Code pin is not recorded here; nothing was removed | the guarded `charmer gateway restart` between turns; then nothing more, unless doctor names a copy to remove | doctor no longer shows the line |
 | after an upgrade a running session still uses the old Claude Code | “runs Claude <version>, not the pinned” | `/exit`, then `charmer -r <id>` | the session's next start shows no notice |
 | doctor: a newer Claude Code than the pin is installed | the pin was verified some days ago, or your own Claude Code is newer | nothing to do: a charmer release brings a newer pin | doctor shows it as information |
 

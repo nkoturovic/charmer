@@ -43,6 +43,55 @@ A running gateway keeps the version it started from until you restart it
 between turns (`charmer gateway restart`); while its persistence hold
 is active, a switch that changes the gateway waits.
 
+### Updating from 2.3.0
+
+charmer 2.4.0 changes the launcher and the pinned Claude Code, from 2.1.311
+to 2.1.312, and ships catalog 43. The gateway (CLIProxyAPI 8.0.45 with 27
+local patches), Go 1.27.3 and the bundled CPython 3.15.2 stay the same, so
+no gateway restart is needed: the running gateway's bytes are 2.4.0's, and
+`charmer update --verify` reports `running-gateway: current-match` at once.
+Between turns, in a plain terminal outside Claude Code, run each step after
+assessing the previous result:
+
+```bash
+charmer update
+charmer --version
+charmer gateway status
+charmer update --verify
+charmer doctor
+```
+
+The update installs charmer's verified **Claude Code 2.1.312** copy before
+switching the release: it copies a matching local file or downloads and
+verifies the pin when none is available. Your own Claude Code installation
+is untouched. A session already running keeps its client and its compiled
+settings until its next launch or resume (`/exit`, then `charmer -r <id>`);
+until then doctor says
+`fence/picker differ from the installed catalog (catalog changed since launch); applies at the next resume`
+for it. State and record formats remain 4; no record migration is needed.
+Profiles, bindings, declared models and continuity aliases are unchanged:
+2.4.0 adds no model, effort contract or selector.
+
+After the update, `charmer doctor` may list aliases that removed models left
+behind as one row; review the plan with `charmer doctor --prune-aliases
+--preview` before removing them ([models guide](guides/models.md)).
+
+#### Before going back to 2.3.0
+
+If 2.3.0 is the retained previous release, `charmer update --rollback`
+returns to it. The rollback first checks what 2.3.0 can read of your state
+([what the preflight checks](#what-the-preflight-checks)). 2.4.0 adds no
+model, effort contract or selector that 2.3.0 lacks, so the check should
+find nothing when you roll back to 2.3.0; it lists what it checked and shows
+2.3.0's own doctor before it asks.
+
+After the rollback the running gateway needs no restart: 2.3.0 ships the
+same gateway bytes. Sessions 2.4.0 compiled show 2.3.0's Attention
+`session <id8>: fence/picker differ from the installed catalog (catalog changed since launch); applies at the next resume`
+until their next resume (`charmer -r <id>`); a session still running the
+2.1.312 client shows `session <id8> runs Claude 2.1.312, not the pinned 2.1.311`
+until then. Neither needs `charmer doctor --repair-all`.
+
 ### Updating from 2.2.1
 
 charmer 2.3.0 moves the gateway to CLIProxyAPI 8.0.45 with 27 local patches
@@ -412,6 +461,43 @@ your answer, it refuses. Afterwards `previous` is the version you left,
 so a second rollback undoes the first.
 `charmer restore-2x` restores pre-public record-format backups and is
 unrelated to release rollback.
+
+### What the preflight checks
+
+Before it asks, `charmer update --rollback` checks what the previous
+version can read of the state on disk. It reads the retained release's
+packaged catalog data and evaluates your state against it with this
+release's own rules; nothing is changed by the check:
+
+1. **Declarations** — the models and providers you declared
+   (`providers.d`, the ledger, the legacy `custom.json`) that the previous
+   version's catalog would reject, used or not: one such line makes its
+   providers apply, models add and models rm commands refuse. Each is
+   listed with its file and line and its fix (`charmer models rm <line>`, or
+   `charmer models edit <line>`).
+2. **Profiles and named bindings** — every error the previous version's
+   doctor would report for a profile or a named binding, with the profile to
+   edit.
+3. **Running sessions** — a session whose selector this release serves and
+   the previous version would not. Exit it first; after the rollback,
+   `charmer -r <id>` resumes it on the previous version's models.
+
+Items both versions report are not listed; the line
+“Also reported by” … “unchanged by the rollback” counts them. The previous
+version's own doctor runs read-only as supporting evidence, with a bounded
+time and no input, and its BLOCKED, Providers, Sessions and Profiles rows are
+shown as they are; a doctor that cannot run changes no finding.
+
+With a finding, the question defaults to No, an empty answer changes nothing
+(exit 3), and `--yes` refuses with exit 1 (“cannot read what is listed
+above”): prepare first, or run without `--yes` on a terminal and confirm to
+roll back anyway. With nothing found, `--yes` proceeds as before. When the
+retained release's data is missing or unreadable, or the check itself fails,
+the rollback says so (“Could not check what” …) and asks as before.
+
+The check applies this release's rules, its model-id grammar included, to
+the previous version's data: the previous version may still refuse
+something these rules accept.
 
 When the selected older release supports `update --verify`, it verifies
 that exact older version, not the newest release. **After rollback to
