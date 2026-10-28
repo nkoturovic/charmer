@@ -2371,3 +2371,121 @@ class D5ReplayQualificationSelfTests(unittest.TestCase):
         self.assertIn(self.WIRE.encode(), raw)
         self.assertNotEqual(_synthetic_claude_signature(self.WIRE, salt=1), signature)
         self.assertEqual(len(_synthetic_claude_signature(self.WIRE, salt=1)), len(signature))
+
+
+# ============================================ prompt/agent hook evaluators
+
+_CAP_REASON = "PROBE-HOOK-CAP-NOT-MET"
+
+
+class _EvaluatorResponder:
+    """Holds every hook-evaluator request ``hold`` seconds before it answers
+    (the peak number in flight is kept); the first ``not_met`` evaluations
+    answer "not met" with a fixed reason, every later one "met". Main
+    requests get PROBE-OK and are counted, with whether they carry the
+    reason (the Stop-hook block path feeds it back). Metadata only."""
+
+    def __init__(self, hold: float, not_met: int = 0) -> None:
+        self.hold, self.not_met = hold, not_met
+        self.lock = threading.Lock()
+        self.in_flight = self.peak = self.evaluations = self.answered = 0
+        self.kinds: set[str] = set()
+        self.main = self.reason_seen = 0
+
+    def respond(self, document: dict[str, Any], path: str, context: Any) -> Any:
+        if path.split("?", 1)[0].endswith("/count_tokens"):
+            return 200, {"input_tokens": 1}
+        kind = _hook_evaluator(document)
+        if kind is None:
+            with self.lock:
+                self.main += 1
+                if _CAP_REASON in json.dumps(document.get("messages") or []):
+                    self.reason_seen += 1
+            content, stop = [{"type": "text", "text": "PROBE-OK"}], "end_turn"
+        else:
+            with self.lock:
+                self.kinds.add(kind)
+                self.evaluations += 1
+                index = self.evaluations
+                self.in_flight += 1
+                self.peak = max(self.peak, self.in_flight)
+            time.sleep(self.hold)
+            with self.lock:
+                self.in_flight -= 1
+                self.answered += 1
+            decision = {"ok": True} if index > self.not_met else {"ok": False, "reason": _CAP_REASON}
+            if kind == "agent":
+                content = [{"type": "tool_use", "id": f"toolu_probe_cap_{context.ordinal}",
+                            "name": "StructuredOutput", "input": decision}]
+                stop = "tool_use"
+            else:
+                content, stop = [{"type": "text", "text": json.dumps(decision)}], "end_turn"
+        payload = probe._message_payload(content, model=document.get("model"), stop_reason=stop,
+                                         message_id=f"msg_probe_cap_{context.ordinal:04d}")
+        return 200, probe._sse_message(payload) if document.get("stream") else payload
+
+
+class HookEvaluatorCapProbe(_SpikeBase):
+    """Claude Code 2.1.312 runs at most 24 prompt and agent hooks of a session
+    at once and treats a timeout below one second as one second. A bounded
+    fake-provider case: thirty prompt hooks on Stop whose evaluator answers
+    after two seconds (how many are in flight at most; each must be
+    evaluated and the turn must end), and one Stop prompt hook with a 0.3 s
+    timeout whose evaluator answers "not met" after 0.7 s (the decision
+    still applies when the timeout is one second; 2.1.311 timed it out) and
+    after 1.6 s (it times out). Charmer compiles no prompt or agent hook
+    (its six hooks are command hooks); this measures the evaluator class the
+    structured-output check above qualifies."""
+
+    probe_id = "hook-cap"
+    parts = ("cap", "timeout")
+    SONNET = _FAMILY["ANTHROPIC_DEFAULT_SONNET_MODEL"]
+
+    @classmethod
+    def verdict(cls, missing: list[str]) -> tuple[str, str]:
+        detail = " ".join(f"{key}={cls.observed[key]}" for key in cls.parts if key in cls.observed)
+        return ("INCONCLUSIVE" if missing else "MEASURED"), f"{cls.evidence_version} {detail}"
+
+    def _stop_hooks(self, label: str, hooks: list[dict[str, Any]], responder: _EvaluatorResponder
+                    ) -> probe.NativeRunResult:
+        fixture = self._fixture(label)
+        path = fixture.root / "flag-settings.json"
+        state.atomic_write(path, strict_json.canonical_file_bytes({
+            "availableModels": [self.SONNET], "model": self.SONNET,
+            "permissions": {"defaultMode": scope.PERMISSION_DEFAULT_MODE},
+            "hooks": {"Stop": [{"hooks": hooks}]}}))
+        with probe.FakeAnthropicProvider(responder=responder) as provider:
+            return self._headless(label, ("-p", "probe turn", "--settings", str(path), "--model", self.SONNET),
+                                  fixture=fixture, provider=provider)
+
+    def test_thirty_prompt_hooks_on_one_event(self) -> None:
+        hooks = [{"type": "prompt", "prompt": f"Decide {index}: $ARGUMENTS", "model": self.SONNET, "timeout": 60}
+                 for index in range(30)]
+        responder = _EvaluatorResponder(hold=2.0)
+        started = time.monotonic()
+        result = self._stop_hooks("cap", hooks, responder)
+        elapsed = time.monotonic() - started
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(responder.kinds, {"prompt"})
+        self.assertEqual((responder.evaluations, responder.answered), (30, 30))
+        type(self).observed["cap"] = (f"30-prompt-hooks peak-in-flight={responder.peak} evaluated={responder.answered} "
+                                      f"main={responder.main} {elapsed:.1f}s")
+        # Measured on 2.1.311 and 2.1.312 alike: at most twelve evaluations
+        # of one event run at once (the probe's bridge admits 128), so the
+        # 24-per-session cap is never reached here; the rest wait their turn.
+        self.assertLessEqual(responder.peak, 24)
+        self.assertEqual(responder.peak, 12)
+
+    def test_a_sub_second_timeout_is_one_second(self) -> None:
+        hook = {"type": "prompt", "prompt": "Decide: $ARGUMENTS", "model": self.SONNET, "timeout": 0.3}
+        outcomes = {}
+        for label, hold in (("within-one-second", 0.7), ("past-one-second", 1.6)):
+            responder = _EvaluatorResponder(hold=hold, not_met=1)
+            result = self._stop_hooks(label, [hook], responder)
+            self.assertEqual(result.returncode, 0, label)
+            outcomes[label] = (responder.reason_seen > 0, responder.evaluations)
+        type(self).observed["timeout"] = " ".join(
+            f"{label}:{'decision-applied' if applied else 'timed-out'}(evaluations={count})"
+            for label, (applied, count) in outcomes.items())
+        self.assertEqual(outcomes["within-one-second"][0], True)
+        self.assertEqual(outcomes["past-one-second"][0], False)

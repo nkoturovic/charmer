@@ -13,7 +13,8 @@ The pinned client resolves a role's compaction window in this order: a valid
 ``--autocompact`` session value, then the ``autoCompactWindow`` settings
 (100K to 1M; another value is ignored), then the model's own default. A
 subagent's frontmatter ``autoCompactWindow`` only lowers the window it would
-otherwise inherit, and never under the environment variable.
+otherwise inherit; from 2.1.312 that includes the variable's window (it never
+raises it, and a value below 100K is ignored).
 
 The production compile (``env``) states the window as the variable in the
 compiled flag settings and the launch environment. Its cases gate the probe:
@@ -27,8 +28,12 @@ outranks it anyway); a
 window; a lead set bound below 100K compacts at the client's 100K floor,
 never at the model's own default.
 
-Per-agent windows (an agent file's ``autoCompactWindow``) are not compiled:
-under the variable the client ignores them (``env-agent-window``, measured).
+Per-agent windows (an agent file's ``autoCompactWindow``) are not compiled: a
+lineup states one window for the session. The ``env-agent-window`` cases
+record, never gating, what an agent's own window does under the variable:
+it lowers the agent's window (a 200K-class agent to 128K, a 1M-class agent to
+300K), keeps doing so after ``--resume``, never raises it (500K) and is
+ignored below 100K (64K).
 The other representations are measured for the record, never gating:
 
 * ``settings``: a top-level ``autoCompactWindow`` in the flag settings, the
@@ -182,8 +187,15 @@ def cases(window: int) -> tuple[Case, ...]:
         Case("env-agent", "env", "agent", "narrow", narrow, gating=True),
         Case("env-small-lead", "env", "lead", "small", floor, gating=True),
         # Recorded, never gating: an own window under the variable (what a
-        # per-agent window would need), and the other representations.
+        # per-agent window would need: lowering, an attempted raise, a value
+        # below the client's floor, a 1M-class agent and resume), and the
+        # other representations.
         Case("env-agent-window", "env", "agent", "narrow", trigger(AGENT_WINDOW), AGENT_WINDOW),
+        Case("env-agent-window-above-class", "env", "agent", "narrow", narrow, ABOVE_CLASS),
+        Case("env-agent-window-below-floor", "env", "agent", "narrow", narrow, BELOW_FLOOR),
+        Case("env-1m-agent-window", "env", "agent", "base", trigger(WIDE_AGENT_WINDOW), WIDE_AGENT_WINDOW),
+        Case("env-agent-window-resume", "env", "agent", "narrow", trigger(AGENT_WINDOW), AGENT_WINDOW,
+             resume=True),
         Case("settings-lead", "settings", "lead", "base", lead),
         Case("settings-agent-window", "settings", "agent", "narrow", trigger(AGENT_WINDOW), AGENT_WINDOW),
         Case("settings-agent", "settings", "agent", "narrow", narrow),
@@ -310,7 +322,8 @@ class ScheduleTests(unittest.TestCase):
                                 "representation": case.representation} for case in names}
         rows = {case.name: {"work": 3, "spawned": True, "target_models": ["w"], "summaries": 1,
                             "first_summary_after": case.expected} for case in names}
-        # The variable ignores an agent's own window: recorded, not gating.
+        # An agent's own window under the variable is recorded, not gating
+        # (a client that ignores it, as 2.1.311 did, still passes).
         rows["env-agent-window"]["first_summary_after"] = 162_000
         rows["settings-lead-autocompact-flag"]["summaries"] = 0
         outcome = outcomes(rows, expected)

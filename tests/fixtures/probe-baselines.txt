@@ -1,5 +1,5 @@
 # The recorded class of each real-binary probe (tests/test_scope_probe_client.py).
-# Re-observed on signed client 2.1.311 (linux-x64), 2026-10-27.
+# Re-observed on signed client 2.1.312 (linux-x64), 2026-10-28.
 # PASS names an observed class, not a blanket capability or provider guarantee.
 # A diagnostic probe whose new run differs reports 'changed recorded=<class>';
 # the correctness-essential classes are asserted by the probes themselves.
@@ -29,17 +29,17 @@ client probe FD: PASS class=FD-env-off-subagent-withheld
 # FD: notify restores the lead; the subagent notify control is unavailable.
 client probe XC: PASS class=XC-exact
 client probe DG: PASS class=DG-resumable
-# DG: a 2.1.311 tool turn + /compact resumes on 2.1.310 (the previous
+# DG: a 2.1.312 tool turn + /compact resumes on 2.1.311 (the previous
 # release's pin, CHARMER_TEST_PREVIOUS_CLAUDE) with summary only.
 client probe SL: BOUNDARY class=unavailable
 # SL: no newer-than-pin client retained; not a successful resume observation.
 # Supervisor takeover and staged marketplace-plugin updates remain INCONCLUSIVE
 # offline. Signed real-provider behavior is not established by these fixtures.
 #
-# The receipts below: signed client 2.1.311 linux-x64 (binary sha256
-# 86dc1fcc69498159eaf15f446613e847010f9036bfbbdffd4c49350be8489ada, release
-# manifest sha256 d456e7293d621e6e09dd73b1d2a112bef62dae08d1ee44c1065356e64da65c0d),
-# 2026-10-27.
+# The receipts below: signed client 2.1.312 linux-x64 (binary sha256
+# 4f4178ce41d83e23341ebfbaecdbcf8ea6bf7baea0690025abe49eeec3a5d01d, release
+# manifest sha256 f9bc2d099665e498cbc4123f81f2220852c3a75ee118c0081ef83f42f165aec9),
+# 2026-10-28.
 #
 # The session window's representation (tests/test_compaction_window_probe.py),
 # session window 800000 at 90 %:
@@ -52,8 +52,11 @@ compaction window probe: PASS class=env-window-holds
 # 128000-bound agent shares its 200K class's window (162000). A lead set bound
 # at 80000 compacts at the client's 100K floor (67000; charmer compiles and
 # shows 47000), never at the model's own default.
-# Per-agent windows are not compiled: under the variable a 128000 agent
-# window is ignored (162000). Recorded, never gating: a top-level
+# Per-agent windows are not compiled. Recorded, never gating: under the
+# variable an agent's own window lowers its window from 2.1.312 (95000 for
+# 128000, 252000 for 300000 on a 1M agent, the same after --resume; 500000
+# never raises it and 64000 is ignored); 2.1.311 ignored it (162000 and
+# 702000). Recorded, never gating: a top-level
 # autoCompactWindow with the variable "0" in the flag-settings env lowers an
 # agent to its own window (95000 for 128000, 252000 for 300000 on a 1M agent;
 # one above the class or below 100K is ignored) and holds the lead against the
@@ -175,7 +178,7 @@ client check gateway-fallbacks: PASS class=GF-no-fallback
 # without the thinking-token-count beta, the last without ToolSearch; 2.1.310
 # took two).
 client check gateway-fallbacks-gateway: PASS class=GFG-accepted-once
-# The 8.0.42 gateway's Claude account route (fresh, resumed with a ToolSearch
+# The 8.0.45 gateway's Claude account route (fresh, resumed with a ToolSearch
 # round trip, a terminal /model to claude-fable-5-1): every request answered
 # 200 once; the upstream keeps output_config.effort and its beta,
 # context_management, the system turns and the tool_reference blocks. A
@@ -237,7 +240,8 @@ client check stream-idle: PASS class=SI-limit-then-retry
 # message_start, then no event at all: 240 s of silence completes as one
 # request; 345 s is abandoned at 300 s and sent again under the compiled
 # watchdog, which the fixture answers at once.
-# The watch list (tests/test_client_watch.py; each also run on 2.1.310):
+# The watch list (tests/test_client_watch.py; each also run on 2.1.310, and
+# re-run on 2.1.312 with the same classes):
 client check watch-worktree: REPRODUCED class=WC-removed-continued-in-project+SW-refused-isolation
 # An isolated agent that finished without changes loses its worktree, and a
 # SendMessage continuation then runs in the project checkout; the isolation
@@ -266,3 +270,45 @@ client check watch-bash-queue: NOT-REPRODUCED class=BQ-prompt
 client check watch-teams: NOT-APPLICABLE class=AT-absent
 # No agent teams: the Agent tool has no team or name parameter and
 # ToolSearch finds SendMessage but no team tool (2.1.310 the same).
+#
+# The re-pin to 2.1.312, same client and receipts, 2026-10-28.
+# Refusal routing with the compiled managed session (tests/test_client_models.py
+# RefusalRoutingMatrixProbe; the shipped seeds' compiles, their six hooks
+# through charmer's launcher):
+client check refusal-routing-lead: PASS
+client check refusal-routing-shapes: PASS
+client check refusal-routing-agents: PASS
+client check refusal-routing-resume: PASS
+client check refusal-routing-controls: PASS
+client check refusal-routing-counter: PASS
+client check refusal-routing-uncountered: PASS
+# 2.1.312 gives a model it does not recognise its default refusal route table
+# (cyber -> claude-opus-4-8, bio and frontier_llm -> claude-opus-5) whenever
+# the fence admits the target, which every shipped seed's does: without the
+# compiled CLAUDE_CODE_MODEL_CAPABILITIES a refused GPT, Kimi or OpenRouter
+# turn (lead, subagent, workflow, resumed) moved to the Anthropic pool, and the
+# client's catch-all moved an uncategorized one to claude-opus-5-5 (2.1.311
+# switched none). With it every such source keeps its model; the canonical
+# Opus, Fable and Sonnet sources keep their route table; a user or project
+# capability entry re-enables nothing; an unrefused request is unchanged.
+# switchModelsOnFlag:false and CLAUDE_CODE_DISABLE_REFUSAL_FALLBACK=1 (flag or
+# user settings env) stop every switch, the canonical ones included. No
+# refusal switch fires PreModelSwitch.
+# Prompt and agent hook evaluators (tests/test_client_hooks.py HookEvaluatorCapProbe):
+client check hook-cap: MEASURED
+# Thirty prompt hooks on Stop, the evaluator answering after 2 s: at most 12
+# evaluations in flight (2.1.311 the same), all thirty evaluated, the turn
+# ends; the 24-per-session cap is not reached here. A 0.3 s timeout counts as
+# 1 s: an answer after 0.7 s applies (2.1.311 timed it out), after 1.6 s it
+# times out.
+# Session fixes (tests/test_client_session_fixes.py):
+client check skill-discovery: PASS
+# A subdirectory's skill and a paths: skill stay invocable when the Bash
+# moves deeper before the file under them is read (2.1.311 hid both).
+client check malformed-command: PASS
+# Unloadable user and project commands and skill names beside a scope skill:
+# the skill runs its launcher in -p and the answer prints (2.1.311 the same).
+client check resume-twice: PASS
+# Terminal session, terminal resume with one turn exited right after its
+# reply, headless resume: the second resume carries both replies, three
+# trials (2.1.311 the same).
