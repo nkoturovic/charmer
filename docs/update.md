@@ -72,6 +72,13 @@ for it. State and record formats remain 4; no record migration is needed.
 Profiles, bindings, declared models and continuity aliases are unchanged:
 2.4.0 adds no model, effort contract or selector.
 
+Managed sessions launched before the update pick up one new compiled setting
+at their next resume: `CLAUDE_CODE_MODEL_CAPABILITIES`, which marks every
+fenced non-Anthropic selector of the lineup `-refusal_fallback`, so Claude
+Code 2.1.312 never answers a refusal from one of them with another model
+([compatibility](reference/compatibility.md#refusal-fallback)). It does not
+change your own settings or plain `claude`.
+
 After the update, `charmer doctor` may list aliases that removed models left
 behind as one row; review the plan with `charmer doctor --prune-aliases
 --preview` before removing them ([models guide](guides/models.md)).
