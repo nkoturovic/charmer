@@ -9,6 +9,7 @@ copied byte for byte from the release tag with `git show <commit>:<path>`
 | --------- | -------- | ------------------------------------------ |
 | `2.2.1/`  | `v2.2.1` | `acf9bd5238058ebcdfcef8f62ac101c581ebca47` |
 | `2.3.0/`  | `v2.3.0` | `2fe786954ee93e18a2d25ab722bc602c122bc3e0` |
+| `2.4.0/`  | `v2.4.0` | `762af5628e1e42b43fc94b7b50c221ebfca477dd` |
 
 Files: `version.json`, `catalog/gateway.json`, `catalog/models.json`,
 `catalog/native-contract.json`, `catalog/providers.json`,
