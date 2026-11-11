@@ -614,18 +614,21 @@ class PropagationRowsTests(unittest.TestCase):
         rows = views.propagation_rows(
             [_follower(fx.FIXED_ID)], {fx.FIXED_ID: "live"}, {fx.FIXED_ID: "api design"}
         )
-        self.assertEqual(len(rows[0]), 77)
-        self.assertTrue(rows[0].endswith("…"))
+        self.assertLessEqual(len(rows[0]), 77)
+        self.assertTrue(rows[0].endswith("apply now (then /reload-plugins there)"))
 
-    def test_narrow_drops_the_title_and_clips(self) -> None:
+    def test_narrow_drops_directory_and_keeps_the_reload_instruction(self) -> None:
         rows = views.propagation_rows([_follower(fx.FIXED_ID)], {fx.FIXED_ID: "live"}, {fx.FIXED_ID: "t"}, width=60)
-        self.assertNotIn('"t"', rows[0])
+        self.assertIn('"t"', rows[0])
+        self.assertNotIn("project", rows[0])
         self.assertLessEqual(len(rows[0]), 57)
-        self.assertTrue(rows[0].endswith("…"))
-        wide = views.propagation_rows(
-            [_follower(fx.FIXED_ID)], {fx.FIXED_ID: "live"}, {fx.FIXED_ID: "x" * 90}, width=80
-        )
-        self.assertLessEqual(len(wide[0]), 77)
+        for width in (60, 70, 80, 99):
+            with self.subTest(width=width):
+                row = views.propagation_rows(
+                    [_follower(fx.FIXED_ID)], {fx.FIXED_ID: "live"}, {fx.FIXED_ID: "x" * 90}, width=width
+                )[0]
+                self.assertLessEqual(len(row), width - 3)
+                self.assertTrue(row.endswith("apply now (then /reload-plugins there)"))
 
 
 # ------------------------------------------------------------------ liveness

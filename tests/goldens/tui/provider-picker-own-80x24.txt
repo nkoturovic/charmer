@@ -1,0 +1,24 @@
+
+  add your own provider
+  ─────────────────────────────────────────────────────────────────────────────
+    Other
+  ›   Anthropic-compatible endpoint (your vendor, w…
+      OpenAI-compatible endpoint (with an API key)
+      Advanced: every field (manual)
+
+
+
+
+
+
+
+
+
+
+
+
+  ─
+  Your vendor's documented endpoint and an API key. You approve where the key
+  is sent before anything is saved.
+
+  Enter connect · ? help · Esc back

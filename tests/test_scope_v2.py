@@ -23,7 +23,7 @@ from unittest import mock
 
 from charmer import catalog, cli, compiler, custom, lineup_files, paths, profile, scope, settings, state, strict_json
 from charmer import lineup as lineup_mod
-from charmer.cli import doctor as doctor_mod
+from charmer.cli import doctor as doctor_mod, text as cli_text
 from charmer.scope import ScopeError
 from _catalog import FIXTURE_ROOT, uses_shipped_catalog
 from _golden import assertGolden
@@ -857,7 +857,8 @@ class HookTests(unittest.TestCase):
 class ModPolicyDriftTests(unittest.TestCase):
     """A live scope 2.4.0 compiled (its skill denies, no mod-folder deny) is
     another release's managed skill policy: lazy state, which resume or
-    repair resolves; a partial set stays a difference doctor blocks on."""
+    repair resolves; a partial set, either mod-authoring deny without the
+    other among them, stays a difference doctor blocks on."""
 
     def setUp(self) -> None:
         temporary = tempfile.TemporaryDirectory(prefix="mod-drift-")
@@ -887,9 +888,11 @@ class ModPolicyDriftTests(unittest.TestCase):
             ("2.4.0", released_2_4_0, True),
             ("no named deny", self.denies(lambda rule: rule not in (*scope.MANAGED_SKILL_DENIES,
                                                                     *scope.MOD_FOLDER_DENIES)), True),
-            ("folder deny only missing", self.denies(lambda rule: rule not in scope.MOD_FOLDER_DENIES), True),
+            ("folder deny only missing", self.denies(lambda rule: rule not in scope.MOD_FOLDER_DENIES), False),
             ("authoring skill deny only missing", self.denies(lambda rule: rule != "Skill(plugin-authoring)"),
-             True),
+             False),
+            ("the folder deny without a skill deny", self.denies(lambda rule: rule not in scope.MANAGED_SKILL_DENIES),
+             False),
             ("another skill deny missing", self.denies(lambda rule: rule != "Skill(code-review)"), False),
             ("2.4.0 without a skill deny", self.denies(lambda rule: rule not in (
                 "Skill(plugin-authoring)", "Skill(code-review)", *scope.MOD_FOLDER_DENIES)), False),
@@ -922,6 +925,38 @@ class ModPolicyDriftTests(unittest.TestCase):
         drifted = scope.live_drift(live, self.plan)
         if scope.SUBAGENT_STATUS_LINE_KEY in self.plan.settings:
             self.assertTrue(scope.status_line_drift(live, self.plan, drifted))
+
+
+class AuthoringDenyDoctorTests(V4Case):
+    """Doctor reads a live scope that carries only one of the two
+    mod-authoring denies as damage (BLOCK), never as another release's lazy
+    state; without both (a scope 2.4.0 compiled) it stays Attention."""
+
+    def test_either_authoring_deny_alone_is_block(self) -> None:
+        mid = self.launch_fresh()["managed_id"]
+        path = self.live(mid) / scope.SETTINGS_RELPATH
+        released = path.read_bytes()
+        lazy = cli_text.SKILL_POLICY_DRIFT.format(m8=mid[:8], mid=mid)
+        authoring = ("Skill(plugin-authoring)", *scope.MOD_FOLDER_DENIES)
+        self.assertEqual(len(authoring), 2)
+        for removed, block in (((authoring[0],), True), ((authoring[1],), True), (authoring, False)):
+            with self.subTest(removed=removed):
+                document = strict_json.loads(released)
+                document["permissions"]["deny"] = [
+                    rule for rule in document["permissions"]["deny"] if rule not in removed]
+                state.atomic_write(path, strict_json.canonical_file_bytes(document))
+                problems, attention, _info = doctor_mod._check_scope_integrity(
+                    self.runtime, self.store.load(mid))
+                if block:
+                    self.assertTrue(any("scope differs from the record-authoritative compile" in line
+                                        for line in problems), problems)
+                    self.assertEqual([line for line in attention if "policy" in line], [])
+                else:
+                    self.assertEqual(problems, [])
+                    self.assertIn(lazy, attention)
+                state.atomic_write(path, released)
+        problems, _attention, _info = doctor_mod._check_scope_integrity(self.runtime, self.store.load(mid))
+        self.assertEqual(problems, [])
 
 
 class ForkPolicyDriftTests(unittest.TestCase):

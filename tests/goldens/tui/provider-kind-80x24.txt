@@ -2,7 +2,7 @@
   new provider
   ─────────────────────────────────────────────────────────────────────────────
 
-  Step 2/10 — Generation protocol (Left/Right chooses)
+  Step 2/10 — Generation protocol (↑↓ chooses)
 
   > anthropic-compatible — recommended (Messages)
     openai-compatible — with an API key
@@ -21,4 +21,4 @@
   Draft only — nothing written before declaration preview.
 
 
-  Enter next · Backspace previous · ? help · Esc cancel
+  Enter next · Backspace previous · ↑↓ choose · ? help · Esc cancel

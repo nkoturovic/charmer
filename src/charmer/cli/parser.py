@@ -663,8 +663,9 @@ def build_parser() -> argparse.ArgumentParser:
     doctor_parser = _add_command(
         commands, "doctor",
         description="Check this installation and its sessions. The verdict is Ready, Attention or BLOCKED; "
-        "each finding names one fix. Plain doctor is read-only and does not fetch release metadata; "
-        "use doctor --json for a read-only report. --repair, --prune and --rotate-token act.",
+        "each finding names one fix. Plain doctor makes no repairs and fetches no release metadata; launcher "
+        "initialization may refresh shared helpers. Use charmer doctor --json for a report that does not write "
+        "local state. --repair, --prune and --rotate-token act.",
     )
     doctor_actions = doctor_parser.add_mutually_exclusive_group()
     doctor_actions.add_argument("--json", action="store_true", help="read-only diagnostic report (one JSON document)")
@@ -795,6 +796,10 @@ MODEL_SOURCES = ("docs", "operator", "registry")
 # The reviewed transports of a shipped account provider (kept literal: the
 # parser imports no operator module).
 TRANSPORT_CHOICES = ("oauth-pool", "api-key")
+# The private networks a provider may be declared on (netclass.DECLARABLE,
+# kept literal for the same reason).
+NETWORK_CHOICES = ("loopback", "lan", "tailnet")
+NETWORK_HELP = "the private network the base URL is on: allows http with a key; the gateway checks every connection"
 
 
 def _add_providers_commands(parser: argparse.ArgumentParser) -> None:
@@ -815,6 +820,7 @@ def _add_providers_commands(parser: argparse.ArgumentParser) -> None:
     template = sub.add_parser("template", help="print a providers.d template for a reviewed kind")
     template.add_argument("--kind", choices=PROVIDER_KINDS, default="anthropic-compatible",
                           help="reviewed provider kind (default anthropic-compatible)")
+    template.add_argument("--network", default=None, choices=NETWORK_CHOICES, help=NETWORK_HELP)
     add = sub.add_parser("add", help="declare a new provider, by hand or from a reviewed --preset "
                          "(route approval follows unless --declare-only)")
     add.add_argument("provider_id", nargs="?", metavar="ID", help="new provider id (never a catalog id)")
@@ -831,7 +837,8 @@ def _add_providers_commands(parser: argparse.ArgumentParser) -> None:
                             help="for --preset when another provider already uses its API key: replace that "
                                  "shared key with --secret-file (asks first, naming every provider using it)")
     add.add_argument("--kind", default=None, choices=PROVIDER_KINDS, help="generation protocol (default: anthropic-compatible, recommended for documented Messages endpoints; explicit preset kind wins)")
-    add.add_argument("--base-url", default=None, help="provider base URL (https when keyed)")
+    add.add_argument("--base-url", default=None, help="provider base URL (https when keyed, unless --network)")
+    add.add_argument("--network", default=None, choices=NETWORK_CHOICES, help=NETWORK_HELP)
     add.add_argument("--auth", default=None, choices=("bearer", "header", "none"), help="credential transport")
     add.add_argument("--header", default=None, help="header name for --auth header (x-api-key only)")
     add.add_argument("--secret-ref", default=None, metavar="env:NAME",

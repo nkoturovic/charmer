@@ -16,9 +16,9 @@
   kept environment            none       default none                    next
   Providers & models
   providers enabled           8 of 8     G opens providers               next
-  Optional admission badges   0          M opens models                   now
-  ↓ 4 more
+  ↓ 5 more
   Compaction trigger percent (process env and the reactive trigger); a profile
   may override it (◆). Applies at the next launch or resume.
 
-  read-only: this command cannot write · ? help · Esc back
+  read-only: this command cannot write · G providers · M models · ? help
+  Esc back

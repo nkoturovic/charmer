@@ -9,6 +9,7 @@ from charmer import tui
 from charmer import views
 from typing import Any
 import io
+import charmer.cli.screens.actions as screen_actions
 import charmer.cli.screens.common as screens_common
 import charmer.cli.session_facts as session_facts
 import charmer.cli.text as cli_text
@@ -16,6 +17,9 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     import charmer.cli.runtime as runtime_mod
+
+
+HELP = screen_actions.help_text("propagation", cli_text.PROPAGATION_HELP)
 
 
 class _PropagationScreen:
@@ -82,8 +86,11 @@ class _PropagationScreen:
             for f in self.followers
         )
 
-    def keybar(self) -> tuple[tuple[str, str], ...]:
-        return cli_text.PROPAGATION_KEYBAR if self.offers_apply else cli_text.PROPAGATION_KEYBAR_LATER
+    def keybar(self) -> tuple[tuple[str, str, int], ...]:
+        ids = {"later", "help", "back"}
+        if self.offers_apply:
+            ids.add("apply")
+        return screen_actions.bar("propagation", ids)
 
     def heading(self) -> str:
         if self.binding is not None:
@@ -99,7 +106,7 @@ class _PropagationScreen:
     def min_size(self, width: int) -> tuple[int, int]:
         return views.ScreenFloor.compute(
             chrome=5, list_rows=len(self.followers), detail_reserve=0,
-            bar_rows=tui.KeyBar(cli_text.PROPAGATION_KEYBAR).rows(width), cols=cli_text.PROPAGATION_MIN_COLS,
+            bar_rows=tui.KeyBar(screen_actions.bar("propagation")).rows(width), cols=cli_text.PROPAGATION_MIN_COLS,
         ).as_tuple()
 
     def _draw(self, win: Any) -> None:
@@ -168,7 +175,7 @@ class _PropagationScreen:
             if key.kind == "char" and key.ch in ("l", "L"):
                 return self._apply(win, False)
             if key.kind == "char" and key.ch == "?":
-                screens_common._help_modal(win, self.palette, "propagation — help", cli_text.PROPAGATION_HELP, self._draw)
+                screens_common._help_modal(win, self.palette, "propagation — help", HELP, self._draw)
 
 
 def run_propagation_screen(

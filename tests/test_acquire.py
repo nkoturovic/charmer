@@ -485,8 +485,9 @@ class SetupCommandTests(V4Case):
             in_use.release()
         self.assertEqual(code, 0, output)
         self.assertIn("Removed Claude Code copies no release here needs: 2.1.100.", output)
-        self.assertIn("Kept Claude Code copies in use: 2.1.200 — once no session runs them, "
+        self.assertIn("Kept Claude Code copies in use: 2.1.200 — once no process uses them, "
                       "`charmer setup --step claude` removes them.", output)
+        self.assertIn("Claude Code 2.1.200 kept: the holder could not be identified.", output)
         self.assertIn("Could not remove Claude Code copies: 2.1.090 — check ", output)
         self.assertIn(", then run `charmer setup --step claude` again.", output)
         self.assertTrue(pin.owned_path(self.env, "2.1.090", self.platform).exists())
