@@ -147,11 +147,12 @@ def renamed_baseline(scenario):
 
 def without_fork_deny(settings):
     """``settings`` without the fork-subagent deny, the model fence's
-    failure policy and the compiled subagent status line (its executable
-    changes since 1.0.0)."""
+    failure policy, the compiled subagent status line and the mod-authoring
+    denies (its executable changes since 1.0.0)."""
 
     permissions = settings["permissions"]
-    deny = [rule for rule in permissions["deny"] if rule != compiler.FORK_AGENT_DENY]
+    deny = [rule for rule in permissions["deny"]
+            if rule not in (compiler.FORK_AGENT_DENY, "Skill(plugin-authoring)", *scope.MOD_FOLDER_DENIES)]
     hooks = copy.deepcopy(settings["hooks"])
     for group in hooks["PreModelSwitch"]:
         for hook in group["hooks"]:
