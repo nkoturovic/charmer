@@ -4,7 +4,7 @@
 
 Each charmer release runs exactly one Claude Code version: the one
 its release pins, verified for every platform the release builds. This
-release pins **Claude Code 2.1.312**. `charmer --version` names the
+release pins **Claude Code 2.1.322**. `charmer --version` names the
 pinned version, and doctor shows the pin, when it was verified, and the
 evidence class for your platform.
 

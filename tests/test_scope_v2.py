@@ -19,8 +19,9 @@ import tempfile
 import unittest
 from pathlib import Path
 from typing import Any
+from unittest import mock
 
-from charmer import catalog, cli, compiler, custom, lineup_files, profile, scope, settings, state, strict_json
+from charmer import catalog, cli, compiler, custom, lineup_files, paths, profile, scope, settings, state, strict_json
 from charmer import lineup as lineup_mod
 from charmer.cli import doctor as doctor_mod
 from charmer.scope import ScopeError
@@ -797,7 +798,7 @@ class SettingsTests(unittest.TestCase):
                 self.assertIs(plan.settings["disableWorkflows"], True)
                 self.assertEqual(
                     plan.settings["permissions"]["deny"],
-                    ["Agent", *scope.MANAGED_SKILL_DENIES, *scope.SECRET_PATH_DENIES],
+                    ["Agent", *scope.MANAGED_SKILL_DENIES, *scope.MOD_FOLDER_DENIES, *scope.SECRET_PATH_DENIES],
                 )
                 self.assertIn("delegation is disabled for this session", _md(plan))
 
@@ -851,6 +852,76 @@ class HookTests(unittest.TestCase):
         _, plan = _plan("balanced", hook_command="/st ate/bin/charmer-hook-3")
         command = plan.settings["hooks"]["SessionStart"][0]["hooks"][0]["command"]
         self.assertTrue(command.startswith("'/st ate/bin/charmer-hook-3' session-event"))
+
+
+class ModPolicyDriftTests(unittest.TestCase):
+    """A live scope 2.4.0 compiled (its skill denies, no mod-folder deny) is
+    another release's managed skill policy: lazy state, which resume or
+    repair resolves; a partial set stays a difference doctor blocks on."""
+
+    def setUp(self) -> None:
+        temporary = tempfile.TemporaryDirectory(prefix="mod-drift-")
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        _, self.plan = _plan("balanced")
+
+    def drift(self, live_settings: dict[str, Any]) -> tuple[list[str], bool]:
+        live = scope.write_scope(self.root / str(len(list(self.root.iterdir()))), FIXED_SESSION,
+                                 dataclasses.replace(self.plan, settings=live_settings))
+        drifted = scope.live_drift(live, self.plan)
+        return drifted, scope.skill_policy_drift(live, self.plan, drifted)
+
+    def denies(self, keep) -> dict[str, Any]:
+        document = copy.deepcopy(self.plan.settings)
+        document["permissions"]["deny"] = [rule for rule in document["permissions"]["deny"] if keep(rule)]
+        return document
+
+    def test_the_released_forms_are_lazy_and_a_partial_set_is_not(self) -> None:
+        differs = [f"{scope.SETTINGS_RELPATH} content differs"]
+        self.assertEqual(self.drift(copy.deepcopy(self.plan.settings)), ([], False))
+        released_2_4_0 = self.denies(lambda rule: rule not in ("Skill(plugin-authoring)", *scope.MOD_FOLDER_DENIES))
+        self.assertEqual(
+            [rule for rule in released_2_4_0["permissions"]["deny"] if rule.startswith("Skill(")],
+            list(scope.PREVIOUS_MANAGED_SKILL_DENIES[0]))
+        for label, document, lazy in (
+            ("2.4.0", released_2_4_0, True),
+            ("no named deny", self.denies(lambda rule: rule not in (*scope.MANAGED_SKILL_DENIES,
+                                                                    *scope.MOD_FOLDER_DENIES)), True),
+            ("folder deny only missing", self.denies(lambda rule: rule not in scope.MOD_FOLDER_DENIES), True),
+            ("authoring skill deny only missing", self.denies(lambda rule: rule != "Skill(plugin-authoring)"),
+             True),
+            ("another skill deny missing", self.denies(lambda rule: rule != "Skill(code-review)"), False),
+            ("2.4.0 without a skill deny", self.denies(lambda rule: rule not in (
+                "Skill(plugin-authoring)", "Skill(code-review)", *scope.MOD_FOLDER_DENIES)), False),
+            ("a secret deny missing", self.denies(lambda rule: rule != scope.SECRET_PATH_DENIES[0]), False),
+        ):
+            with self.subTest(label):
+                self.assertEqual(self.drift(document), (differs, lazy))
+
+    def test_the_authoring_denies_compose_with_the_other_lazy_rows(self) -> None:
+        """A scope an earlier release compiled lacks the authoring denies
+        beside the fork deny or the status line: the fork-policy and
+        status-line rows still read it as lazy; with only one of the two
+        authoring denies it stays a difference."""
+
+        differs = [f"{scope.SETTINGS_RELPATH} content differs"]
+        authoring = ("Skill(plugin-authoring)", *scope.MOD_FOLDER_DENIES)
+        for kept, lazy in (((), True), (authoring, True), (authoring[:1], False), (authoring[1:], False)):
+            document = self.denies(lambda rule, kept=kept: rule != compiler.FORK_AGENT_DENY
+                                   and (rule not in authoring or rule in kept))
+            live = scope.write_scope(self.root / f"fork-{len(kept)}-{kept[:1]}", FIXED_SESSION,
+                                     dataclasses.replace(self.plan, settings=document))
+            drifted = scope.live_drift(live, self.plan)
+            with self.subTest(kept=kept):
+                self.assertEqual(drifted, differs)
+                self.assertEqual(scope.fork_policy_drift(live, self.plan, drifted), lazy)
+                self.assertFalse(scope.skill_policy_drift(live, self.plan, drifted))
+        status = self.denies(lambda rule: rule not in authoring)
+        status.pop(scope.SUBAGENT_STATUS_LINE_KEY, None)
+        live = scope.write_scope(self.root / "status", FIXED_SESSION, dataclasses.replace(self.plan, settings=status))
+        drifted = scope.live_drift(live, self.plan)
+        if scope.SUBAGENT_STATUS_LINE_KEY in self.plan.settings:
+            self.assertTrue(scope.status_line_drift(live, self.plan, drifted))
 
 
 class ForkPolicyDriftTests(unittest.TestCase):
@@ -993,11 +1064,12 @@ class DenyTests(unittest.TestCase):
             deny = plan.settings["permissions"]["deny"]
             with self.subTest(seed=name):
                 self.assertEqual(deny[-len(scope.SECRET_PATH_DENIES):], list(scope.SECRET_PATH_DENIES))
-                # The named skill denies sit between the agent and secret denies.
-                policy = deny[-len(scope.SECRET_PATH_DENIES) - len(scope.MANAGED_SKILL_DENIES):
-                              -len(scope.SECRET_PATH_DENIES)]
-                self.assertEqual(policy, list(scope.MANAGED_SKILL_DENIES))
-                agent_denies = deny[: -len(scope.SECRET_PATH_DENIES) - len(scope.MANAGED_SKILL_DENIES)]
+                # The named skill denies, then the mod-folder deny, sit between
+                # the agent and secret denies.
+                named = [*scope.MANAGED_SKILL_DENIES, *scope.MOD_FOLDER_DENIES]
+                policy = deny[-len(scope.SECRET_PATH_DENIES) - len(named):-len(scope.SECRET_PATH_DENIES)]
+                self.assertEqual(policy, named)
+                agent_denies = deny[: -len(scope.SECRET_PATH_DENIES) - len(named)]
                 if lineup.is_direct:
                     self.assertEqual(agent_denies, ["Agent(fork)", "Agent(claude)"])
                 else:
@@ -1025,6 +1097,55 @@ class DenyTests(unittest.TestCase):
                 "Edit(~/.config/charmer/**)",
             ],
         )
+
+    def test_the_compiled_permissions_are_a_closed_set(self) -> None:
+        """The closed allowlist one level down: only the deny list and the
+        default mode are compiled; the newer nested permission settings stay
+        the user's own."""
+
+        self.assertEqual(scope.COMPILED_PERMISSIONS_KEYS, frozenset({"deny", "defaultMode"}))
+        for nested in ("blockWritesOutsideWorkingDirectories", "denyInsteadOfPrompting", "allow", "ask"):
+            self.assertNotIn(nested, scope.COMPILED_PERMISSIONS_KEYS)
+        for name in catalog.SEED_PROFILE_NAMES:
+            for no_subagents in (False, True):
+                _, plan = _plan(name, no_subagents=no_subagents)
+                with self.subTest(seed=name, no_subagents=no_subagents):
+                    self.assertLessEqual(set(plan.settings["permissions"]), scope.COMPILED_PERMISSIONS_KEYS)
+        with mock.patch.object(scope, "COMPILED_PERMISSIONS_KEYS", frozenset({"defaultMode"})):
+            with self.assertRaisesRegex(ScopeError, "compiled permissions carry keys outside the closed allowlist"):
+                _plan("balanced")
+
+    def test_the_mod_folder_and_the_authoring_skill_are_denied(self) -> None:
+        """The model can neither write a mod into the session's dev-mods
+        folder nor call the client's authoring skill: the folder is the one
+        the managed client reads (its config folder is always ~/.claude), and
+        the skill sits in the named inventory, model-invocable at the pin."""
+
+        self.assertEqual(scope.MOD_FOLDER_DENIES, ("Edit(~/.claude/dev-mods/**)",))
+        home = "/home/someone"
+        settings_dir = paths.claude_settings_dir({"HOME": home, "CLAUDE_CONFIG_DIR": "/elsewhere"})
+        self.assertEqual(Path(home, scope.MOD_FOLDER_DENIES[0][len("Edit(~/"):-len("/**)")]),
+                         settings_dir / "dev-mods")
+        self.assertIn("CLAUDE_CONFIG_DIR", compiler.V2_ENV_UNSET)
+        self.assertEqual(dict((name, pin) for name, _why, pin in scope.SKILL_POLICY)["plugin-authoring"], "model")
+        self.assertIn("Skill(plugin-authoring)", scope.MANAGED_SKILL_DENIES)
+        for name in catalog.SEED_PROFILE_NAMES:
+            for no_subagents in (False, True):
+                _, plan = _plan(name, no_subagents=no_subagents)
+                deny = plan.settings["permissions"]["deny"]
+                with self.subTest(seed=name, no_subagents=no_subagents):
+                    self.assertEqual(deny.count(scope.MOD_FOLDER_DENIES[0]), 1)
+                    self.assertIn("Skill(plugin-authoring)", deny)
+                    self.assertNotIn("allow", plan.settings["permissions"])
+
+    def test_the_previous_release_skill_denies(self) -> None:
+        """2.4.0 compiled the inventory without plugin-authoring; that exact
+        set is the only previous one, a subset in this release's order."""
+
+        (previous,) = scope.PREVIOUS_MANAGED_SKILL_DENIES
+        self.assertEqual(previous, tuple(entry for entry in scope.MANAGED_SKILL_DENIES
+                                         if entry != "Skill(plugin-authoring)"))
+        self.assertEqual(len(previous), 17)
 
 
 # -------------------------------------------------------------- lineup files
@@ -1272,7 +1393,11 @@ class SkillTests(unittest.TestCase):
         """Every compiled scope's /cm skill carries the hint
         listing the subcommands (the real client shows it: S14's /cm control)."""
 
-        self.assertEqual(scope.PREVIOUS_SKILL_MD_BYTES, self.PREVIOUS)
+        # The literal holds 2.4.0's bytes; while this release compiles the
+        # same bytes they are the current skill, not a previous one.
+        self.assertEqual(scope.PREVIOUS_SKILL_MD_BYTES,
+                         tuple(skill for skill in (*self.PREVIOUS, scope._SKILL_MD_BYTES_2_4_0)
+                               if skill != scope.SKILL_MD_BYTES))
         for name in catalog.SEED_PROFILE_NAMES:
             _, plan = _plan(name)
             text = plan.other_files[lineup_files.SKILL_RELPATH].decode("utf-8")
@@ -1308,6 +1433,36 @@ class SkillTests(unittest.TestCase):
                     self.assertTrue(scope.skill_policy_drift(live, plan, drifted))
             state.atomic_write(target, b"---\nname: cm\nsomething else\n")
             self.assertFalse(scope.skill_policy_drift(live, plan, drifted))
+
+    def test_the_released_2_4_0_skill_is_known(self) -> None:
+        """2.4.0's exact /cm skill (its ``skill_md_bytes()`` at the tag) is
+        in the known set, so a scope 2.4.0 launched reads as lazy state once
+        this release's skill bytes move."""
+
+        released = (
+            "---\n"
+            "name: cm\n"
+            "description: Show or change this charmer session's agent lineup "
+            "(/cm, /cm profiles, /cm profile NAME, /cm set AGENT=MODEL[:EFFORT], /cm unset AGENT, "
+            "/cm direct [MODEL[:EFFORT]], /cm pin, /cm follow, /cm fallback PROVIDER [--preview], "
+            "/cm review [high-stakes] [RANGE], /cm quota)\n"
+            'argument-hint: "profiles · profile NAME · set AGENT=MODEL[:EFFORT] · unset AGENT · '
+            'direct [MODEL[:EFFORT]] · pin · follow · fallback PROVIDER [--preview] · '
+            'review [high-stakes] [RANGE] · quota"\n'
+            "disable-model-invocation: true\n"
+            "allowed-tools: Bash(charmer lineup:*)\n"
+            "---\n"
+            "!`charmer lineup --session ${CLAUDE_SESSION_ID} '$ARGUMENTS'`\n"
+        ).encode("utf-8")
+        self.assertEqual(scope._SKILL_MD_BYTES_2_4_0, released)
+        self.assertIn(released, (*scope.PREVIOUS_SKILL_MD_BYTES, scope.SKILL_MD_BYTES))
+        _, plan = _plan("balanced")
+        drifted = [f"{lineup_files.SKILL_RELPATH} content differs"]
+        with tempfile.TemporaryDirectory(prefix="cm-skill-240-") as tmp:
+            target = Path(tmp) / lineup_files.SKILL_RELPATH
+            target.parent.mkdir(parents=True, mode=0o700)
+            state.atomic_write(target, released)
+            self.assertTrue(scope.skill_policy_drift(Path(tmp), plan, drifted))
 
     def test_bytes_identical_for_every_session(self) -> None:
         self.assertEqual(scope.SKILL_MD_BYTES, self.EXPECTED)
