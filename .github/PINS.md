@@ -27,12 +27,12 @@ wrapper around `actions/attest` (same inputs).
 
 | Action | Tag | Commit | Runs on | Verified |
 | --- | --- | --- | --- | --- |
-| actions/checkout | v7.0.1 | 3d3c42e5aac5ba805825da76410c181273ba90b1 | node24 | 2026-10-27 |
-| actions/setup-python | v7.1.0 | 6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 | node24 | 2026-10-27 |
-| actions/upload-artifact | v7.0.2 | cf430e030ddbb5b0abf93d22962f4752f3646cd9 | node24 | 2026-10-27 |
-| actions/download-artifact | v8.0.2 | 9000827ccba6bdab643e8b6fd33ac0654aef8333 | node24 | 2026-10-27 |
-| actions/attest-build-provenance | v4.2.2 | 4d101475d8b20a2381f78447822ac1eab6504dd8 | composite | 2026-10-27 |
-| cachix/install-nix-action | 31.11.3 | 75c75c31ebece974e48ebc36b4ad125bd97bd97b | composite | 2026-10-27 |
+| actions/checkout | v7.0.1 | 3d3c42e5aac5ba805825da76410c181273ba90b1 | node24 | 2026-11-11 |
+| actions/setup-python | v7.1.0 | 6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 | node24 | 2026-11-11 |
+| actions/upload-artifact | v7.0.2 | cf430e030ddbb5b0abf93d22962f4752f3646cd9 | node24 | 2026-11-11 |
+| actions/download-artifact | v8.0.2 | 9000827ccba6bdab643e8b6fd33ac0654aef8333 | node24 | 2026-11-11 |
+| actions/attest-build-provenance | v4.2.2 | 4d101475d8b20a2381f78447822ac1eab6504dd8 | composite | 2026-11-11 |
+| cachix/install-nix-action | v31.11.4 | 91f6a0f59e94dfb2cfed0f4000f36a68ead1d20c | composite | 2026-11-11 |
 
 Each tag is a lightweight tag: the commit is the tag's own object
 (`gh api repos/<owner>/<repo>/git/refs/tags/<tag>` names a commit), and
@@ -42,23 +42,23 @@ each is the repository's latest release (not a draft or prerelease).
 
 | Tool | Version | Upstream identity | Verified |
 | --- | --- | --- | --- |
-| actionlint | v1.7.12 | github.com/rhysd/actionlint tag v1.7.12 = 914e7df21a07ef503a81201c76d2b11c789d3fca (Go module proxy origin and `@latest` agree; latest release) | 2026-10-27 |
-| zizmor | 1.31.1 | PyPI zizmor 1.31.1 (latest), not yanked; the manylinux x86_64 wheel verified against PyPI metadata; `--offline` retained | 2026-10-27 |
-| govulncheck | v1.9.0 | golang.org/x/vuln tag v1.9.0 = e672cbe8fbc8c76e28fcb6db0efd9ce354e0dac5 (Go module proxy origin and `@latest` agree); CI builds it with the gateway's Go and checksum-database verification | 2026-10-27 |
-| Pester | 6.2.0 | PowerShell Gallery Pester 6.2.0 (latest, not a prerelease); github.com/pester/Pester tag 6.2.0 = 98e56d65da1642a7158992b50ded240c42a3ac18 | 2026-10-27 |
-| setuptools | 84.2.1 | PyPI setuptools 84.2.1 (latest), not yanked; the build backend and CI wheel move together; Python >=3.10 (below the supported 3.11 floor) | 2026-10-27 |
-| ShellCheck | 0.11.0 | koalaman/shellcheck v0.11.0 (latest release), Linux x86_64 archive verified against the GitHub release asset digest | 2026-10-27 |
-| Go (CI tools) | gateway/UPSTREAM.json | the gateway's toolchain pin: its go.dev linux-amd64 archive and sha256, verified there; `GOTOOLCHAIN=local` disables automatic toolchain replacement | 2026-10-27 |
-| bubblewrap | 0.13.1 | github.com/containers/bubblewrap tag v0.13.1 (latest release, 2026-10-14), source archive verified against the GitHub release asset digest and the release notes' sha256; built unprivileged | 2026-10-27 |
+| actionlint | v1.7.12 | github.com/rhysd/actionlint tag v1.7.12 = 914e7df21a07ef503a81201c76d2b11c789d3fca (Go module proxy origin and `@latest` agree; latest release) | 2026-11-11 |
+| zizmor | 1.32.0 | PyPI zizmor 1.32.0 (latest), not yanked, Python >=3.11; the manylinux x86_64 wheel hash agrees in PyPI JSON and the simple index; `--offline` retained, no workflow lockfile adopted | 2026-11-11 |
+| govulncheck | v1.9.0 | golang.org/x/vuln tag v1.9.0 = e672cbe8fbc8c76e28fcb6db0efd9ce354e0dac5 (Go module proxy origin and `@latest` agree); CI builds it with the gateway's Go and checksum-database verification | 2026-11-11 |
+| Pester | 6.2.0 | PowerShell Gallery Pester 6.2.0 (latest, not a prerelease); github.com/pester/Pester tag 6.2.0 = 98e56d65da1642a7158992b50ded240c42a3ac18 | 2026-11-11 |
+| setuptools | 84.2.1 | PyPI setuptools 84.2.1 (latest), not yanked; wheel hash agrees in PyPI JSON and the simple index; Python >=3.10 (below the supported 3.11 floor) | 2026-11-11 |
+| ShellCheck | 0.11.0 | koalaman/shellcheck v0.11.0 (latest release), Linux x86_64 archive verified against the GitHub release asset digest | 2026-11-11 |
+| Go (CI tools) | gateway/UPSTREAM.json | the gateway's toolchain pin: its go.dev linux-amd64 archive and sha256, verified there; `GOTOOLCHAIN=local` disables automatic toolchain replacement; newest stable is 1.27.4, the gateway re-pin owns the move | 2026-11-11 |
+| bubblewrap | 0.13.1 | github.com/containers/bubblewrap tag v0.13.1 (latest release, 2026-10-14), source archive verified against the GitHub release asset digest and the release notes' sha256; built unprivileged | 2026-11-11 |
 
 ## Tool artifacts (pinned by sha256)
 
 | Tool | Artifact | sha256 | Verified |
 | --- | --- | --- | --- |
-| zizmor | zizmor-1.31.1-py3-none-manylinux_2_28_x86_64.whl | 58e878eb2dbd2c6183c105e1ac28c14f7dd1eca44a783f1fe2a69647d012c410 | 2026-10-27 |
-| setuptools | setuptools-84.2.1-py3-none-any.whl | ca140b45d5325a9478f880e351484f62fef15f336462e449ca0c03c873d589c2 | 2026-10-27 |
-| ShellCheck | shellcheck-v0.11.0.linux.x86_64.tar.xz | 8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198 | 2026-10-27 |
-| bubblewrap | bubblewrap-0.13.1.tar.xz | 0e85c8702248b8dd64144f594147553650cdd0e4c951690345faace79c217c4d | 2026-10-27 |
+| zizmor | zizmor-1.32.0-py3-none-manylinux_2_28_x86_64.whl | 84a6acb975accc13408786a2bd274b572537ca19c933ebbc13e78f3988562071 | 2026-11-11 |
+| setuptools | setuptools-84.2.1-py3-none-any.whl | ca140b45d5325a9478f880e351484f62fef15f336462e449ca0c03c873d589c2 | 2026-11-11 |
+| ShellCheck | shellcheck-v0.11.0.linux.x86_64.tar.xz | 8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198 | 2026-11-11 |
+| bubblewrap | bubblewrap-0.13.1.tar.xz | 0e85c8702248b8dd64144f594147553650cdd0e4c951690345faace79c217c4d | 2026-11-11 |
 
 `ci_tools.sh` verifies these archives, and the Go archive named by
 `gateway/UPSTREAM.json`'s `toolchain` (its linux-amd64 file and sha256), before
@@ -75,8 +75,8 @@ directories, as the isolated tests require of the `bwrap` they run.
 or later (GHSA-pxhw-h44j-8pfx, CVE-2026-87766, is fixed there), not setuid
 or setgid, its version, path and sha256 printed and added to the job
 summary. Nothing passes `--not-a-security-boundary`. The CI lanes take the
-newest release, 0.13.1; the Nix lane holds nixpkgs' 0.12.0 (the locked
-nixos-unstable ships no newer one; the development shell refuses older).
+newest release, 0.13.1; the Nix lane now selects the same version from
+nixos-unstable, ending its 0.12.0 hold. The development shell's floor stays.
 Before the pin, 0.13.1 passed the isolated test classes that run without the
 pinned client or gateway on a local build (its source archive by the same
 hash).
@@ -102,19 +102,20 @@ command).
 
 | Image | Index digest | Verified |
 | --- | --- | --- |
-| ubuntu:22.04 | sha256:e0f80c829509ef4df9e76bd8944eb7b8ec25cbb379b112a7f9448b2c77a77c9b | 2026-10-27 |
-| ubuntu:24.04 | sha256:24737cef17f4e22b1977df7d9a05e77c4e28b7da5b8911f8d8ccda136bf3573c | 2026-10-27 |
-| debian:12 | sha256:d74df7598108a173a621eda4d58a2adbf850b2d9a9d81bc2cca1a6c21174a880 | 2026-10-28 |
-| fedora:44 | sha256:43b29f65a41eb9c35e1cd5323e3bdf3b655c2357a9f4f1ff2f9c2798e5045d80 | 2026-10-27 |
+| ubuntu:22.04 | sha256:076e7bf82319619f28dd0aa9c02ab34b055ad37100395b4f49a2ffba04fb5e11 | 2026-11-11 |
+| ubuntu:24.04 | sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852 | 2026-11-11 |
+| debian:12 | sha256:268fb24c39bca92d326dd83ea3abebe4a3f7751c804ffef23bb6d857dd343ff8 | 2026-11-11 |
+| fedora:44 | sha256:15da97ed9aa94dd3d92c3925eb89520f6c80e07ea7ee24cba848d1f8b6912b3e | 2026-11-11 |
 
 The digests are the multi-platform image indexes on Docker Hub
 (`library/<name>`), still the current index of each tag on the day
 verified; the runner pulls its own platform's image from the index. On
-2026-10-27 the registry's `Docker-Content-Digest`, the sha256 of the index
-bytes it served and Docker Hub's tag API agreed on each digest above; the
-Ubuntu indexes were rebuilt that day and Debian 12's on 2026-10-21, and
-Fedora 44's is unchanged (Docker Hub's `fedora:latest` is the same index).
-Each index still lists `linux/amd64`.
+2026-11-11 the registry's `Docker-Content-Digest`, the sha256 of the index
+bytes it served and Docker Hub's tag API agreed on each digest above. The
+Ubuntu indexes were pushed on 2026-10-29, Debian 12's on 2026-11-05 and
+Fedora 44's on 2026-11-02. Each index lists `linux/amd64`; this is identity
+verification, not a scan of the image's packages. Debian 12 remains a
+coverage choice, not a claim that it is the newest Debian major.
 
 ## Workflow lint before the first CI run
 
@@ -210,9 +211,9 @@ Non-Go reviews live in `vulnerability-watch-reviewed.json` (`format: 1`,
 `cpython` list). Each entry requires the exact OSV `id`, complete `aliases`,
 `modified` timestamp, bundled CPython `version`, a concrete `reason`, and a
 `re_review` date (YYYY-MM-DD, UTC). On that date, or when the id, aliases,
-revision or version changes, the match needs review again. The list starts
-empty: adding a mechanism is not a review of an advisory, and there is no
-version-wide or alias-only exemption.
+revision or version changes, the match needs review again. Each entry is
+an advisory-specific review, never a version-wide or alias-only exemption;
+the current cookiejar non-use review is described below.
 
 GitHub starts this repository's scheduled runs hours after their cron time:
 in October 2026 between about 4.5 and 8 hours (the watch's Tuesday 06:17 UTC
@@ -235,7 +236,7 @@ informational job-name suppressions remain; no new suppression was added.
 ## Online workflow audit
 
 `zizmor-online.yml` (weekly while `CM_SCHEDULES` is `on`, or by hand) runs the
-same hash-installed zizmor 1.31.1 without `--offline`, so the audits that read
+same hash-installed zizmor 1.32.0 without `--offline`, so the audits that read
 GitHub's API run too (impostor commits, ref confusion, stale action refs,
 known-vulnerable actions): the default persona, then the pedantic persona at
 `--min-severity low` (its informational `anonymous-definition` notes are the
@@ -251,46 +252,45 @@ workflow, actionlint 1.7.12 (ShellCheck 0.11.0 on the path) and zizmor 1.31.1
 
 ## Nix inputs (flake.lock)
 
-`nixpkgs` follows `nixos-unstable`, locked on 2026-10-28 to
-`31ecbaca1bdefa45dffc409f0250bd8039ea0010` (2026-10-27,
-`sha256-dhoW6VgFWlaodSY5jrBn+CF2FLmaUvDVgM7+C7T2+NM=`), the newest revision
-of the channel: on 2026-10-28 the channel
-(`https://channels.nixos.org/nixos-unstable/git-revision`) and the
-`nixos-unstable` branch head both named it, and `nix flake update nixpkgs`
-recorded that content hash (the previous lock, `3ec63636` of 2026-10-23, was
-the channel head from 2026-10-24 to 2026-10-27). The versions below were
-re-evaluated at the new revision. It supplies the Nix channel's Python and the development
-shell's tools only: the gateway is built from the recipe's pinned Go archive
-and vendored modules, and the release bundles carry their own runtime, so
-none of these versions reaches a bundle. The table records the selected
-recipes in that source, not a claim about a realized closure; the evaluated
-closure and Nix/native gateway equality remain release-candidate checks.
+`nixpkgs` follows `nixos-unstable`, locked on 2026-11-11 to
+`f4a03c008967841f2a0b3cb7c436fc6fc31671f6` (2026-11-07,
+`sha256-ziZn2PvCJE5JEEpqTdxXwJpPB+L3YqoCpTAMCzyaP3U=`). The
+[channel revision](https://channels.nixos.org/nixos-unstable/git-revision)
+and [branch head](https://api.github.com/repos/NixOS/nixpkgs/commits/nixos-unstable)
+agreed; `nix flake update nixpkgs` recorded the content hash. The lead's
+`nix eval` of the new lock returned the six versions below. The lead also
+built `gateway-linux-amd64`: sha256
+`092bb347b763d00fc58e8b18ba4199b8deadfe68d3dc36793d1c58068af991d6`,
+identical to the native content-bound build and the signed 2.4.0 manifest.
+Thus the lock move alone leaves the gateway bytes unchanged. This is the
+8.0.45 baseline comparison, not qualification of a later gateway re-pin;
+that pair still needs its own Nix/native comparison at the release candidate.
+
+The input supplies the Nix channel's Python and development tools. The
+gateway uses the recipe's pinned Go archive and vendored modules, and
+release bundles carry their own runtime. No whole-closure vulnerability
+scan is claimed by the version evaluation or the byte comparison.
 
 | Package | Version in the locked source | Newest upstream | Disposition | Verified |
 | --- | --- | --- | --- | --- |
-| bubblewrap | 0.12.0 | 0.13.1 | required floor 0.12.0 (GHSA-pxhw-h44j-8pfx, CVE-2026-87766), asserted by `nix/devshell.nix`; newer releases follow the channel | 2026-10-28 |
-| python3 | 3.14.8 | 3.14.10 / 3.15.2 | channel hold (nixos-unstable still selects 3.14.8 at 31ecbaca on 2026-10-28); 3.14.8 lacks the eMudhra `ssl` distrust (CVE-2026-115557) and the tar-filter fix (CVE-2026-114583) that 3.14.10 carries, so Nix-package model listings keep the release notes' interim advice until the channel moves; the tarfile and private-directory cleanup dispositions below apply; bundles ship 3.15.2 separately, which carries both fixes | 2026-10-28 |
-| openssl (default) | 3.5.9 | 3.5.9 LTS / 3.6.5 / 4.0.3 / 4.1.0 | current on the 3.5 LTS line, selected by the Nix Python's ssl recipe: 3.5.9 is the newest 3.5 release and carries the September security fixes, including CVE-2026-84782; 4.1.0 (2026-10-23) is a feature release whose notes list no security fix | 2026-10-28 |
-| git | 2.56.0 | 2.56.0 | current (development shell and tests only) | 2026-10-28 |
-| gnupg | 2.4.9 (FreePG) | 2.5.24 | channel hold for development shell and tests, not bundle release trust; upstream 2.4 is EOL, FreePG support beyond that is unconfirmed; 2.5.24 carries security-relevant fixes whose applicability to the locked FreePG recipe is unestablished (below); re-check at the release candidate | 2026-10-28 |
-| cacert | 3.131.1 | 3.131.1 | NSS CA data removes emSign G3, C1 and ECC C3 roots; this is not a guarantee about an operator-selected certificate bundle | 2026-10-28 |
+| bubblewrap | 0.13.1 | 0.13.1 | current; the channel update ends the 0.12.0 hold; the required floor 0.12.0 (GHSA-pxhw-h44j-8pfx, CVE-2026-87766) in `nix/devshell.nix` stays | 2026-11-11 |
+| python3 | 3.14.10 | 3.14.10 / 3.15.2 | current on the channel's selected 3.14 line; the 3.14.8 hold ends, including the missing eMudhra and tar-filter fixes; CVE-2026-124249 remains a bounded cookiejar non-use review, not a fix; bundles ship 3.15.2 separately | 2026-11-11 |
+| openssl (default) | 3.5.9 | 3.5.9 LTS / 4.1.0 | current on the selected 3.5 LTS line (the Python ssl recipe); the newer 4.1.0 feature line is not selected; verified by upstream release and 3.5 tag metadata, not a closure scan | 2026-11-11 |
+| git | 2.56.0 | 2.56.1 | channel lag; development shell and tests only, no override; advisory applicability not assessed; re-check at the release candidate | 2026-11-11 |
+| gnupg | 2.4.9 (FreePG) | 2.5.24 | channel hold for development shell and tests, not bundle release trust; the recipe is byte-identical to the old lock; upstream 2.4 is EOL, FreePG support and applicability of newer security fixes remain unestablished; re-check at the release candidate | 2026-11-11 |
+| cacert | 3.131.1 | NSS 3.133 | version-label lag with identical `certdata.txt` blobs (`9ee50e8d53fe7c98676718e84e1222cb31f0ed35`) at NSS_3_131_1_RTM and NSS_3_133_RTM; no root-data change demonstrated and no guarantee about an operator-selected certificate bundle | 2026-11-11 |
 
-Python 3.14.9's fixes for `CVE-2026-12345` / `PSF-2026-42`
-(TemporaryDirectory cleanup race) and `CVE-2026-87910` / `PSF-2026-40`
-(tarfile custom-filter link fallback) are not in this lock's Python patch
-list. The Nix launcher uses a mode-0700 `mkdtemp` directory for its signature
-verification work; racing its cleanup requires write access to that tree.
-Its archive paths use the built-in `data` filter after their own member
-validation, never a custom filter returning None. The Windows-only
-`PSF-2025-2` MIME-file defect is outside the Nix platforms, and the launcher
-does not import mimetypes. The later `CVE-2026-114583` / `PSF-2026-45`
-`tar`-filter issue is likewise outside those extraction paths. These are
-bounded non-reachability dispositions, not backports; re-check the Python
-hold and those paths by 2026-12-01 or at the release candidate, whichever
-comes first. A newer default Python follows the channel.
+The Python 3.14.8 security hold is removed, not extended: the new selected
+3.14.10 contains the intervening upstream fixes. CVE-2026-124249 affects
+both 3.14.10 and bundled 3.15.2, but the same charmer source installs no
+cookie processor (the bounded review below). This source-level review is
+not a trace of a realized Nix interpreter; re-check at the release candidate
+or by 2026-12-01, whichever comes first.
 
 The GnuPG recipe applies `source-2.4.9-freepg-1` patches, but their presence
-is not a post-EOL support promise. Upstream 2.5.24 (2026-09-23) follows
+is not a post-EOL support promise. The old and new lock's
+`pkgs/tools/security/gnupg/24.nix` both name blob
+`6625b827848490f4728dc988c0435d5088ac2705`, checked on 2026-11-11. Upstream 2.5.24 (2026-09-23) follows
 2.5.23, whose release notes fix an exploitable format-string bug under
 `gpgsm --debug x509`, an out-of-bounds read in dirmngr's DNS CERT record
 parser and an out-of-bounds access in scdaemon's card data parsing; whether
@@ -300,61 +300,69 @@ installed release verification uses the launcher's SSH-signature verifier.
 The OpenSSL 3.5.9 security release and NSS 3.131.1 CA changes are recorded in
 [OpenSSL's advisories](https://openssl-library.org/news/vulnerabilities/) and
 [the NSS release notes](https://firefox-source-docs.mozilla.org/security/nss/releases/nss_3_131_1.html).
-Python's held changes are in the
-[3.14.9 changelog](https://docs.python.org/release/3.14.9/whatsnew/changelog.html);
+The Python fixes now included are in the
+[3.14.10 changelog](https://docs.python.org/release/3.14.10/whatsnew/changelog.html);
 [GnuPG's support page](https://gnupg.org/download/index.html) records the
 2.4 end-of-life.
 
 ## Runtime and workflow refresh
 
-On 2026-10-24 the action refs API resolved `actions/setup-python` v7.1.0
-and `cachix/install-nix-action` 31.11.3 to the commits in the action table.
-The latter tag has no `v` prefix. Their exact-commit `action.yml` files
-retain the inputs used here: setup-python's `python-version`, no inputs
-for install-nix-action. setup-python stays on Node 24 and adds optional
-mirror inputs; install-nix-action's definition is unchanged and its script
-moves Nix 2.35.3 to 2.35.4, removing compromised eMudhra certificates from
-the installer's certificate bundle. The four other action tags still name
-the latest non-draft, non-prerelease releases and the same commits.
+On 2026-11-11 the latest-release and tag-ref APIs resolved all six Actions
+to the action table. `cachix/install-nix-action` moves from 31.11.3 to
+**v31.11.4**, including the new `v` prefix. Its exact-commit `action.yml` is
+byte-identical: still composite, same inputs, none passed here. Its script
+moves Nix 2.35.4 to 2.35.5 and fixes the handling of extra configuration
+and default experimental flags. The five other tags remain latest,
+non-draft, non-prerelease, at the same commits. GitHub advisory queries for
+each selected action/version returned no match; this is not a transitive
+npm dependency scan.
 
-The setuptools 84.2.1 wheel matched the sha256 in
-<https://pypi.org/pypi/setuptools/84.2.1/json> before extraction into a
-scratch directory. It is not yanked and still needs Python >=3.10. The
-build backend and the battery's hash-required wheel pin move together.
+setuptools 84.2.1 is still PyPI's newest, not yanked, Python >=3.10. Its
+wheel hash agrees in the version JSON and simple index. zizmor moves to
+1.32.0, Python >=3.11; the same two metadata sources agree on the sha256
+of `zizmor-1.32.0-py3-none-manylinux_2_28_x86_64.whl`. The existing
+hash-required installation and offline invocations are retained; its new
+workflow-lockfile feature is not adopted.
 
-CPython 3.15.2 comes from python-build-standalone 20261026. Each of the
-following eight downloads matched both the release API's asset digest
-(<https://api.github.com/repos/astral-sh/python-build-standalone/releases/tags/20261026>)
-and the release's
-[SHA256SUMS](https://github.com/astral-sh/python-build-standalone/releases/download/20261026/SHA256SUMS).
-The install-only hashes also live in `packaging/python-runtimes.json`; the
+CPython 3.15.2 comes from python-build-standalone 20261110, the latest
+release published 2026-11-11T01:51:17Z. Before any of the eight archive
+downloads below, the release API's asset digests
+(<https://api.github.com/repos/astral-sh/python-build-standalone/releases/tags/20261110>)
+agreed with the release's
+[SHA256SUMS](https://github.com/astral-sh/python-build-standalone/releases/download/20261110/SHA256SUMS).
+The runtime fetch tool then verified each downloaded size and sha256.
+The install-only pins live in `packaging/python-runtimes.json`; the
 full-archive hashes and sizes live in the regenerated licence inventory.
 
 ### CPython runtime archives
 
 | Archive | sha256 | Verified |
 | --- | --- | --- |
-| cpython-3.15.2+20261026-aarch64-apple-darwin-install_only_stripped.tar.gz | 1b1b03fca8aa351698403f3d100ee83db7a5d99748fc7707681ac31a6a846ad9 | 2026-10-26 |
-| cpython-3.15.2+20261026-aarch64-apple-darwin-pgo+lto-full.tar.zst | 17a41099bba8c18c45c527580014e75dc7a77300f619d7f5cdfecc57aca06f39 | 2026-10-26 |
-| cpython-3.15.2+20261026-x86_64-apple-darwin-install_only_stripped.tar.gz | 6ec04346b578656b5d5597144cbe0f4773acea6af6048cb8fe0cac3e92c702ac | 2026-10-26 |
-| cpython-3.15.2+20261026-x86_64-apple-darwin-pgo+lto-full.tar.zst | f3ded442ab28d88ef625b54e936a5c45c9a444763d3f9f02c8653e11f0d99688 | 2026-10-26 |
-| cpython-3.15.2+20261026-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz | 0f23351c03b39beb880de668976074fcc3c082d9c3b03d0b43185632b2b270a0 | 2026-10-26 |
-| cpython-3.15.2+20261026-aarch64-unknown-linux-gnu-pgo+lto-full.tar.zst | b3fc351d2271f6c0b3c6d2b423043771dfcb5267053512b8aebba195dad110e9 | 2026-10-26 |
-| cpython-3.15.2+20261026-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz | 7b03163a980c607ba8194709d4a4086735a7a9c488cc475b098157306927b36b | 2026-10-26 |
-| cpython-3.15.2+20261026-x86_64-unknown-linux-gnu-pgo+lto-full.tar.zst | 3488eafeae3c25a44895df9fd52a9be1f2fa11a45cb0580279e03c2bce5339b4 | 2026-10-26 |
+| cpython-3.15.2+20261110-aarch64-apple-darwin-install_only_stripped.tar.gz | 7e58607647b5b4832092a339ff1c55eeeccee128221232509b8fc8d27957065e | 2026-11-11 |
+| cpython-3.15.2+20261110-aarch64-apple-darwin-pgo+lto-full.tar.zst | 53af18af034de253bac9b08d95c861d5b08a6d46a87ec5c9d8b34577fe48b4ad | 2026-11-11 |
+| cpython-3.15.2+20261110-x86_64-apple-darwin-install_only_stripped.tar.gz | 11143c2a2556b14619e8241d3f74bb43ad97181c0eb4909bab87d7aad1154e49 | 2026-11-11 |
+| cpython-3.15.2+20261110-x86_64-apple-darwin-pgo+lto-full.tar.zst | 15807b2f364aa77636ff87760ab60e12f3fb547022232d54d0334bbf9b3eb2d3 | 2026-11-11 |
+| cpython-3.15.2+20261110-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz | d1367a6c3cd86a9e35712072841f1376859f3b47a2a54e224421a0f9fd169047 | 2026-11-11 |
+| cpython-3.15.2+20261110-aarch64-unknown-linux-gnu-pgo+lto-full.tar.zst | 56246cc19968bbfc32a92a2c7887fa2fd4ba1917976dccb2d0ee3e43468b1b3d | 2026-11-11 |
+| cpython-3.15.2+20261110-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz | ad23d1b73fac26440b0306ae06911031344c49a90ec19716c8362e7fa40cae43 | 2026-11-11 |
+| cpython-3.15.2+20261110-x86_64-unknown-linux-gnu-pgo+lto-full.tar.zst | a61124f187ea3b379d6b78806ac06edd43db524eef411925eca05fb9357589d5 | 2026-11-11 |
 
 The release's `pythonbuild/downloads.json` has sha256
-`8b0e472c66797dcd58dfa461171c7f416602503924091e5e4629e776221b8a27`; against
-20261021 it changes only the CPython versions. The full archives' `PYTHON.json`
-records GIL enabled on all targets, JIT built but off by default except Intel
-macOS (not built), unchanged. All four prepared runtimes passed the existing
-archive-member, startup-file and shipped-library checks: no retained `.pth`,
-`.start`, `sitecustomize` or `usercustomize`. Library versions and licence
-texts are unchanged, including Expat 2.9.0, OpenSSL 3.5.9 and zstd 1.5.7.
-Between the two standalone releases, ARM, PowerPC and s390x Linux builds are
-cross-compiled with LLVM and AArch64 Linux enables the Cortex-A53 erratum
-843419 workaround; the arm64 Linux release journeys and the arm64 reproduce
-build requalify that target.
+`d48f25ee30c3ba8006c9a3046d4d3c5ec061a3f1fd831a1e44562f2e8547ef60`
+(the contents API and raw source agree). The full archives' `PYTHON.json`
+records GIL enabled on all targets and JIT built but off by default except
+Intel macOS (not built), unchanged. Expat moves 2.9.0 → 2.10.0 on every
+target; Linux's bundled zlib moves 1.3.2 → 1.4 and libedit moves to
+20260512-3.1. macOS uses system zlib and libedit, not those bundled copies.
+OpenSSL 3.5.9, libffi 3.8.0 and zstd 1.5.7 stay. The inventory was derived
+from all four full archives; only the zlib licence text changed.
+
+All four install-only archives passed member/link validation, delete-only
+pruning (24 matched entries each), shipped-library inventory validation,
+and the startup-file, dangling-link and store-reference checks: no retained
+`.pth`, `.start`, `sitecustomize` or `usercustomize`. The prepared host
+interpreter reports 3.15.2. Native execution on the other three targets,
+the journeys and cross-host reproduction remain release-candidate checks.
 
 CPython 3.15.2 adds the `ssl` distrust of the compromised eMudhra
 intermediate CA keys (CVE-2026-115557 / PSF-2026-46) and fixes the tar
@@ -363,16 +371,33 @@ filter (CVE-2026-114583 / PSF-2026-45). With the launcher's own TLS context
 chain, 3.15.1 completes the handshake and 3.15.2 rejects it
 (`SSLCertVerificationError`, verify code 28), checked on 2026-10-26.
 
-OSV was queried on 2026-10-26 for CPython 3.15.2's release-tag commit
-`5e58eaad7c58df58dfa8ea549c87996e01dd1077`, not a PyPI namesake: no
-advisory. Since 2.2.1 was published the watch scans its bundles, which carry
-3.15.2. On 2026-10-27 a dispatched watch run over 2.2.1 and a fresh
-querybatch (the gateway's 100 module versions and that commit) again found
-no CPython advisory; the one module match, GO-2026-5932 on
-`golang.org/x/crypto` v0.58.0, is the binary gate's reviewed disposition.
-`vulnerability-watch-reviewed.json` therefore holds no review: the 3.15.1
-reviews of the superseded 2.2.0 bundles and the older 3.14.8 reviews are
-removed, because no release the watch scans carries those versions.
+On 2026-11-11 OSV reports
+[CVE-2026-124249](https://api.osv.dev/v1/vulns/CVE-2026-124249) for CPython
+3.15.2 (release-tag commit `5e58eaad7c58df58dfa8ea549c87996e01dd1077`)
+and 3.14.10. The affected `http.cookiejar` code can delete a stored cookie
+from an expired response cookie before policy validation. It remains
+present in PBS 20261110; the PBS refresh does not fix this advisory.
+
+The source review found no cookiejar import, cookie jar construction or
+cookie processor in the 162 product Python files. The five bounded
+`urllib.request.build_opener` sites are `acquire.py`, `release_manifest.py`,
+both transports in `release_update.py`, and `proxy.py`: they add HTTP,
+HTTPS, redirect and proxy handlers, not `HTTPCookieProcessor`. In the
+selected 3.15.2 stdlib, the default opener does not add that processor and
+the cookiejar import is local to its constructor. Dynamic product imports
+select fixed charmer modules, and there is no unpickling path or external
+Python dependency. This is bounded source-level non-use, not a claim that
+the vulnerable code is absent or safe for arbitrary interpreter use.
+
+`vulnerability-watch-reviewed.json` records exactly id `CVE-2026-124249`,
+aliases `[]`, revision `2026-11-11T10:47:25.104930807Z`, version `3.15.2`
+and re-review date `2026-12-01`. The nanoseconds are part of that exact
+revision. Re-review also occurs at the release candidate, on a changed
+advisory/runtime, or if cookie processing, unpickling, external dependencies
+or dynamic loading are added. The lead's watch run
+[43037446186](https://github.com/nkoturovic/charmer/actions/runs/43037446186)
+reported the new CPython finding on the published 2.4.0 release; this review
+does not suppress any of that run's separate gateway findings.
 
 The pin watch now reads and reports both npm `latest` (the user-install
 channel) and `stable`. Either newer tag is included in the issue report.
@@ -385,23 +410,30 @@ a quiet week. The watch never changes a pin or installs the client.
 ## Pins against their newest upstream
 
 Every pin was compared with its newest stable upstream release from
-read-only metadata; a pin moves when a newer stable exists, and a hold
-needs a recorded reason (the Nix table above has the two holds).
+read-only metadata on 2026-11-11; a pin moves when a newer stable exists,
+and a hold needs a recorded reason (the Nix table above names the selected
+lines and remaining lags). The gateway's own toolchain and module pins
+are qualified together, separately from the runtime and workflow refresh.
 
 | Input | Pinned | Newest upstream | Source | Result | Checked |
 | --- | --- | --- | --- | --- | --- |
-| Go (gateway toolchain, CI tools) | 1.27.3 | 1.27.3 (1.26.10 on the previous line) | go.dev release metadata; the four archive digests in `gateway/UPSTREAM.json` match it | current | 2026-10-27 |
-| CPython (bundled) | 3.15.2 | 3.15.2 (3.16.0a1 is a prerelease) | CPython release tags | current | 2026-10-27 |
-| python-build-standalone | 20261026 | 20261026 | the GitHub latest release, not a draft or prerelease | current | 2026-10-27 |
-| setuptools | 84.2.1 | 84.2.1 | PyPI, wheel sha256 as pinned, not yanked | current | 2026-10-27 |
-| six actions | the action table | the same tags and commits | each repository's latest release and tag ref | current | 2026-10-27 |
-| actionlint, zizmor, govulncheck, Pester, ShellCheck, bubblewrap | the tool tables | the same versions and digests | latest releases, Go module proxy, PyPI, PowerShell Gallery, release asset digests | current | 2026-10-27 |
-| ubuntu:22.04, ubuntu:24.04 | the 2026-10-27 indexes | the same indexes | registry digest and Docker Hub tag API agree | current | 2026-10-28 |
-| debian:12 | the 2026-10-27 index | the index pushed 2026-10-28T02:23Z (`d74df759…`; amd64 manifest `a0039cc6…`) | registry digest and Docker Hub tag API agree | moved | 2026-10-28 |
-| fedora:44 | the 2026-10-03 index | the same index | registry digest and Docker Hub tag API agree | current | 2026-10-28 |
-| nixpkgs (nixos-unstable) | 31ecbaca1bdefa45dffc409f0250bd8039ea0010 | the same revision | channel git-revision and branch head | moved from 3ec63636 | 2026-10-28 |
+| Go (gateway toolchain, CI tools) | 1.27.3 | 1.27.4 | go.dev download API | newer security release; move belongs to the gateway re-pin, not an accepted hold | 2026-11-11 |
+| CPython (bundled) | 3.15.2 | 3.15.2 (3.16.0a2 is a prerelease) | CPython release-tag refs | already newest stable; cookiejar finding reviewed separately | 2026-11-11 |
+| python-build-standalone | 20261110 | 20261110 | GitHub latest release, asset digests and SHA256SUMS | moved from 20261026; eight downloaded archives verified | 2026-11-11 |
+| setuptools | 84.2.1 | 84.2.1 | PyPI JSON and simple index, wheel hash as pinned, not yanked | already newest | 2026-11-11 |
+| actions/checkout, setup-python, upload-artifact, download-artifact, attest-build-provenance | the action table | the same tags and commits | each repository's latest release and tag ref | already newest | 2026-11-11 |
+| cachix/install-nix-action | v31.11.4 | v31.11.4 | GitHub latest release and tag ref; exact-commit action and script | moved from 31.11.3; composite inputs unchanged | 2026-11-11 |
+| zizmor | 1.32.0 | 1.32.0 | PyPI JSON and simple index; GitHub release | moved from 1.31.1; offline lint re-verified, no workflow lockfile | 2026-11-11 |
+| actionlint, govulncheck, Pester, ShellCheck, bubblewrap | the tool tables | the same versions and digests | latest releases, Go module proxy, PowerShell Gallery, release asset digests | already newest | 2026-11-11 |
+| ubuntu:22.04, ubuntu:24.04 | the image table | indexes pushed 2026-10-29 | registry header, index-byte hash and Docker Hub tag API agree | moved | 2026-11-11 |
+| debian:12 | the image table | index pushed 2026-11-05 | registry header, index-byte hash and Docker Hub tag API agree | moved | 2026-11-11 |
+| fedora:44 | the image table | index pushed 2026-11-02 | registry header, index-byte hash and Docker Hub tag API agree | moved | 2026-11-11 |
+| nixpkgs (nixos-unstable) | f4a03c008967841f2a0b3cb7c436fc6fc31671f6 | the same revision | channel git-revision and branch head | moved from 31ecbaca; lead's version evaluation and baseline Nix/native byte comparison passed | 2026-11-11 |
 
-With the moved image digests, actionlint 1.7.12 (ShellCheck 0.11.0 on the
-path) and zizmor 1.31.1 (`--offline`, default persona, and pedantic at
-`--min-severity low`), each fetched by the hashes above, ran over `.github/`
-locally on 2026-10-27: no findings and no new suppression.
+With the moved pins, actionlint 1.7.12 (ShellCheck 0.11.0 on the path) and
+zizmor 1.32.0 (`--offline`, default persona, and pedantic at
+`--min-severity low`) ran over `.github/` locally on 2026-11-11: no findings
+and no new suppression. actionlint's archive matched the release asset
+digest and checksums file; zizmor was installed with `--require-hashes`
+from the wheel above. The existing 180-minute battery job limit and
+60-minute locale step limit are unchanged.
