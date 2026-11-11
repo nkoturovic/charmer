@@ -429,8 +429,7 @@ def cases(runtime):
     prop = propagation._PropagationScreen(runtime, tui.MONO_PALETTE, [catalog.DEFAULT_SEED])
     yield Case("propagation", "running follower", tui.KeyBar(prop.keybar()))
     prop.states = {mid: "ended" for mid in prop.states}
-    yield Case("propagation", "no running followers", tui.KeyBar(prop.keybar()),
-               frozenset(_all_keys("propagation") - {"A", "Enter"}))
+    yield Case("propagation", "no running followers", tui.KeyBar(prop.keybar()), frozenset(_all_keys("propagation") - {"A"}))
     started = get_started._GetStartedScreen(runtime, tui.MONO_PALETTE)
     for index, step in enumerate(started.state.steps):
         started.selected = index
