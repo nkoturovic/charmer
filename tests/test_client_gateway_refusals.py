@@ -56,15 +56,18 @@ Behaviour = Callable[[stream.UpstreamTurn, dict[str, Any], int], None]
 def _refusal(turn: stream.UpstreamTurn, body: dict[str, Any], _nth: int) -> None:
     reply = models._refusal_reply(body.get("model"), _CATEGORY, bool(body.get("stream")))
     if isinstance(reply, probe.SseResponse):
+        turn.hit["sent"] = "refusal-event"
         turn.headers()
         for kind, data in reply.events:
             turn.chunk(stream.harness.sse_frame(kind, data))
         turn.end()
     else:
+        turn.hit["sent"] = "refusal-json"
         turn.full(200, json.dumps(reply).encode(), "application/json")
 
 
 def _refusal_400(turn: stream.UpstreamTurn, _body: dict[str, Any], _nth: int) -> None:
+    turn.hit["sent"] = "status-400"
     turn.full(400, json.dumps(_REFUSAL_400).encode(), "application/json")
 
 
@@ -76,6 +79,7 @@ def _cut(turn: stream.UpstreamTurn, body: dict[str, Any], nth: int) -> None:
     for frame in turn.events(body, [{"type": "text", "text": "PROBE-PARTIAL"}], "end_turn"):
         turn.chunk(frame)
         if frame.startswith(b"event: content_block_delta"):
+            turn.hit["sent"] = "cut-after-delta"
             break
     turn.cut()
 
@@ -85,6 +89,15 @@ ROWS: dict[str, tuple[Behaviour, bool]] = {
     "stream-refusal": (_refusal, True),
     "refusal-400": (_refusal_400, False),
     "mid-stream-cut": (_cut, False),
+}
+# Each row's stimulus, stated before the run: what the upstream sends on the
+# lead's model ("sent", recorded by the behaviour as it sends it) and the
+# status the client's request on that model must then get through the gateway.
+# Its evidence is required: a row without it is never a pass.
+STIMULI: dict[str, dict[str, Any]] = {
+    "stream-refusal": {"sent": "refusal-event", "status": 200},
+    "refusal-400": {"sent": "status-400", "status": 400},
+    "mid-stream-cut": {"sent": "cut-after-delta", "status": 200},
 }
 
 
@@ -96,6 +109,52 @@ def parts(request: dict[str, Any]) -> str:
         ("effort", bool(request.get("effort"))), ("ctx", bool(request.get("context_management"))),
         ("search", "ToolSearch" in request.get("tools", ())), ("sys", bool(request.get("system_turns"))))
         if present) or "none"
+
+
+def stimulus_problems(name: str, observed: dict[str, Any]) -> list[str]:
+    """What shows the row's stimulus did not happen as stated
+    (:data:`STIMULI`): no upstream request on the source's model, none sent
+    the stimulus, or the client's first request on that model did not get it
+    through the gateway (its status; the refusal's stop reason; a stream that
+    carried a text delta and then ended without ``message_stop``). A refused
+    400 may be resent on the same model any number of times, each refused."""
+
+    spec, wire = STIMULI[name], models._wire(_SOURCE)
+    upstream = [hit for hit in observed["upstream_lead"] if hit.get("model") == wire]
+    if not upstream:
+        return [f"no upstream request on {wire}"]
+    problems = []
+    if not any(hit.get("sent") == spec["sent"] for hit in upstream):
+        problems.append(f"the upstream never sent {spec['sent']} (sent {[hit.get('sent') for hit in upstream]})")
+    if name == "refusal-400" and any(hit.get("sent") != spec["sent"] for hit in upstream):
+        problems.append("a request on the source's model was answered other than with the 400")
+    if name == "mid-stream-cut" and not any(hit.get("sent") == spec["sent"] and "cut" in hit for hit in upstream):
+        problems.append("the upstream never cut a stream")
+    client = [row for row in observed["main_rows"] if row.get("model") == wire]
+    if not client:
+        return [*problems, f"no client request on {wire}"]
+    first = client[0]
+    if first.get("status") != spec["status"]:
+        problems.append(f"the first client request on {wire} got {first.get('status')}, not {spec['status']}")
+    if name == "stream-refusal" and "refusal" not in first.get("stop_reasons", ()):
+        problems.append("the refusal's stop reason never reached the client")
+    if name == "mid-stream-cut":
+        types = first.get("event_types", ())
+        if "content_block_delta" not in types or "message_stop" in types:
+            problems.append(f"the client's first stream was not cut after a text delta (events {list(types)})")
+    return problems
+
+
+def first_on_source(observed: dict[str, Any]) -> str:
+    """The client's first request on the source's model as the relay saw it:
+    status, last event type, stop reasons."""
+
+    rows = [row for row in observed.get("main_rows", ()) if row.get("model") == models._wire(_SOURCE)]
+    if not rows:
+        return "-"
+    first = rows[0]
+    types = first.get("event_types") or ["-"]
+    return f"{first.get('status')}:{types[-1]}:{','.join(first.get('stop_reasons') or ['-'])}"
 
 
 def row_problems(name: str, observed: dict[str, Any], expected: str | None) -> list[str]:
@@ -136,6 +195,7 @@ class _Direct400:
                           "request_class": hints.get("x-claude-code-request-class") or "main",
                           "request": fallbacks.request_row(path, {}, document)})
         if document.get("tools") and document.get("model") == models._wire(_SOURCE):
+            self.rows[-1]["sent"] = "status-400"
             return 400, _REFUSAL_400
         payload = probe._message_payload([{"type": "text", "text": "PROBE-OK"}], model=document.get("model"),
                                          stop_reason="end_turn", message_id="msg_direct_400")
@@ -197,12 +257,16 @@ class GatewayRefusalRowsProbe(models._SpikeTestCase):
                                       child_env=dict(models._HINT_ENV))
         main = [row for row in relay.rows if row["class"] == "main" and row["route"].endswith("/messages")]
         hooks = models.hook_rows(managed["log"])
+        lead_hits = [hit for hit in gateway.upstream.hits if hit.get("main") and hit.get("model") == lead["model"]]
         return {"rc": result.returncode, "timed_out": result.timed_out,
                 "main_models": [row["model"] for row in main],
                 "main_statuses": [row.get("status") for row in main],
                 "main_parts": [parts(row["request"]) for row in main],
+                "main_rows": [{key: row.get(key) for key in ("model", "status", "event_types", "stop_reasons")}
+                              for row in main],
                 "upstream_models": [hit["model"] for hit in gateway.upstream.hits if hit.get("main")],
-                "upstream_lead": lead["model"],
+                "upstream_lead": [{key: hit.get(key) for key in ("model", "sent", "status", "cut")
+                                   if key in hit} for hit in lead_hits],
                 "hook_events": sorted({str(row.get("event")) for row in hooks}),
                 "switch_hooks": [f"{row['event']}:{row.get('source')}:{row.get('to')}:{row.get('decision')}"
                                  for row in hooks if row.get("event") in ("premodel", "postmodel")],
@@ -223,6 +287,7 @@ class GatewayRefusalRowsProbe(models._SpikeTestCase):
                 "main_models": [row["model"] for row in responder.rows if row["request_class"] == "main"],
                 "main_parts": [parts(row["request"]) for row in responder.rows
                                if row["request_class"] == "main" and "request" in row],
+                "sent": [row["sent"] for row in responder.rows if "sent" in row],
                 "hook_events": sorted({str(row.get("event")) for row in hooks})}
 
     def test_the_gateway_rows_route_as_specified(self) -> None:
@@ -243,20 +308,24 @@ class GatewayRefusalRowsProbe(models._SpikeTestCase):
         problems = {}
         for name, (_behaviour, switches) in ROWS.items():
             expected = models.expected_switch(_SOURCE, _CATEGORY, available) if switches else None
-            problems[name] = row_problems(name, observed[name], expected)
+            problems[name] = stimulus_problems(name, observed[name]) + row_problems(name, observed[name], expected)
         expected = models.expected_switch(_SOURCE, _CATEGORY, available)
         problems["direct"] = row_problems("stream-refusal", {**direct, "main_statuses": []}, expected)
         if direct["main_models"] != observed["stream-refusal"]["main_models"]:
             problems["direct"].append(f"the gateway row sent {observed['stream-refusal']['main_models']}, "
                                       f"directly {direct['main_models']}")
         problems["direct-400"] = row_problems("refusal-400", direct_400, None)
+        if "status-400" not in direct_400["sent"]:
+            problems["direct-400"].append("the control never answered the 400")
         binary = Path(self.gateway.binary)
         identity = (f"client={self.version} sha256={self.trusted.sha256[:12]} gateway={self.gateway.version} "
                     f"sha256={hashlib.sha256(binary.read_bytes()).hexdigest()[:12]}")
         rows = " ".join(
             f"{name}: main={'/'.join(map(str, row['main_models']))} statuses={row.get('main_statuses')} "
             f"parts={'/'.join(row.get('main_parts', []))} "
-            f"upstream={'/'.join(map(str, row.get('upstream_models', [])))} rc={row['rc']} "
+            f"upstream={'/'.join(map(str, row.get('upstream_models', [])))} "
+            f"sent={'/'.join(str(hit.get('sent')) for hit in row.get('upstream_lead', []))} "
+            f"client-first={first_on_source(row)} rc={row['rc']} "
             f"switch-hooks={row.get('switch_hooks') or 'none'} "
             f"{'MISMATCH ' + '; '.join(problems[name]) if problems[name] else 'OK'};"
             for name, row in (*observed.items(), ("direct", direct), ("direct-400", direct_400)))
@@ -282,6 +351,101 @@ class RowVerdictTests(unittest.TestCase):
         self.assertTrue(row_problems("mid-stream-cut", good, None))
         self.assertTrue(row_problems("mid-stream-cut", {**good, "main_models": [wire], "timed_out": True}, None))
         self.assertTrue(row_problems("mid-stream-cut", {**good, "main_models": [wire], "hook_events": []}, None))
+
+    def test_a_row_needs_its_stimulus_to_have_happened(self) -> None:
+        wire = models._wire(_SOURCE)
+        evidence = {
+            "stream-refusal": {"upstream_lead": [{"model": wire, "sent": "refusal-event", "status": 200}] * 2,
+                               "main_rows": [{"model": wire, "status": 200, "stop_reasons": ["refusal"],
+                                              "event_types": ["message_start", "message_delta", "message_stop"]},
+                                             {"model": "claude-opus-4-8", "status": 200}]},
+            "refusal-400": {"upstream_lead": [{"model": wire, "sent": "status-400", "status": 400}] * 6,
+                            "main_rows": [{"model": wire, "status": 400}] * 6},
+            "mid-stream-cut": {"upstream_lead": [{"model": wire, "sent": "cut-after-delta", "status": 200, "cut": 1.0},
+                                                 {"model": wire, "sent": "answer", "status": 200}],
+                               "main_rows": [{"model": wire, "status": 200, "stop_reasons": [],
+                                              "event_types": ["message_start", "content_block_start",
+                                                              "content_block_delta"]},
+                                             {"model": wire, "status": 200}]},
+        }
+        for name, observed in evidence.items():
+            with self.subTest(name):
+                self.assertEqual(stimulus_problems(name, observed), [])
+                # No upstream hits (a client stopped before the gateway, e.g. a 401).
+                self.assertTrue(stimulus_problems(name, {**observed, "upstream_lead": []}))
+                # A wrong response status on the client's first request.
+                wrong = [{**observed["main_rows"][0], "status": 401}, *observed["main_rows"][1:]]
+                self.assertTrue(stimulus_problems(name, {**observed, "main_rows": wrong}))
+                # Upstream requests on another model only.
+                other = [{**hit, "model": "claude-opus-5"} for hit in observed["upstream_lead"]]
+                self.assertTrue(stimulus_problems(name, {**observed, "upstream_lead": other}))
+        # An uncut, complete answer is no cut.
+        uncut = {"upstream_lead": [{"model": wire, "sent": "answer", "status": 200}],
+                 "main_rows": [{"model": wire, "status": 200, "stop_reasons": ["end_turn"],
+                                "event_types": ["message_start", "content_block_delta", "message_delta",
+                                                "message_stop"]}]}
+        self.assertTrue(stimulus_problems("mid-stream-cut", uncut))
+        self.assertTrue(stimulus_problems("mid-stream-cut", {**evidence["mid-stream-cut"],
+                                                             "main_rows": uncut["main_rows"]}))
+        stated = {**evidence["mid-stream-cut"], "upstream_lead": [
+            {"model": wire, "sent": "cut-after-delta", "status": 200}]}
+        self.assertTrue(stimulus_problems("mid-stream-cut", stated))  # stated, never cut
+        # A refusal that never reached the client, a 400 row with one answer.
+        refused = evidence["stream-refusal"]
+        self.assertTrue(stimulus_problems("stream-refusal", {**refused, "main_rows": [
+            {**refused["main_rows"][0], "stop_reasons": ["end_turn"]}]}))
+        self.assertTrue(stimulus_problems("refusal-400", {**evidence["refusal-400"], "upstream_lead": [
+            {"model": wire, "sent": "status-400", "status": 400}, {"model": wire, "sent": "answer", "status": 200}]}))
+
+
+class _Clock:
+    def __init__(self) -> None:
+        self.value = 0.0
+
+    def now(self) -> float:
+        return self.value
+
+
+class RelayObservationTests(unittest.TestCase):
+    """The relay's body observations decode the transfer framing."""
+
+    HEAD = b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\n\r\n"
+
+    def test_a_separately_delivered_chunk_size_line_is_no_body_byte(self) -> None:
+        clock, row = _Clock(), {}
+        observer = stream.BodyObserver(row, clock)
+        observer.feed(self.HEAD + b"c\r\n")
+        self.assertEqual((row.get("status"), row.get("headers"), row.get("first_body")), (200, 0.0, None))
+        clock.value = 20.0
+        observer.feed(b": keepalive\n\r\n")
+        clock.value = 21.0
+        observer.feed(b"0\r\n\r\n")
+        observer.finish()
+        self.assertEqual((row["first_body"], row["first_comment"], row["bytes"], row["comments"]), (20.0, 20.0, 12, 1))
+        self.assertNotIn("first_event", row)
+
+    def test_an_sse_marker_split_across_chunks_counts_when_whole(self) -> None:
+        clock, row = _Clock(), {}
+        observer = stream.BodyObserver(row, clock)
+        first, second = b"event: message_delta\nda", b'ta: {"stop_reason": "refusal"}\n\n'
+        observer.feed(self.HEAD + f"{len(first):x}\r\n".encode() + first[:5])
+        clock.value = 1.0
+        observer.feed(first[5:] + b"\r\n")
+        self.assertEqual((row["first_body"], row.get("first_event")), (0.0, None))
+        clock.value = 2.0
+        observer.feed(f"{len(second):x}\r\n".encode() + second + b"\r\n0\r\n\r\n")
+        observer.finish()
+        self.assertEqual(row["first_event"], 2.0)
+        self.assertEqual((row["events"], row["event_types"], row["stop_reasons"]), (1, ["message_delta"], ["refusal"]))
+        self.assertEqual(row["bytes"], len(first) + len(second))
+
+    def test_an_unchunked_body_is_its_own_payload(self) -> None:
+        clock, row = _Clock(), {}
+        observer = stream.BodyObserver(row, clock)
+        observer.feed(b"HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nContent-Length: 2\r\n\r\n")
+        observer.feed(b"{}")
+        observer.finish()
+        self.assertEqual((row["status"], row["bytes"], row["events"], row["stop_reasons"]), (400, 2, 0, []))
 
 
 if __name__ == "__main__":

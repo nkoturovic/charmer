@@ -226,7 +226,111 @@ def native_text(turn: UpstreamTurn, body: dict[str, Any], text: str = "PROBE-OK"
     """A canned native reply, streamed or not as the request asked."""
 
     status, data, content_type = recognition.native_reply(body, [{"type": "text", "text": text}], "end_turn")
+    turn.hit["sent"] = "answer"
     turn.full(status, data, content_type)
+
+
+class ChunkedBody:
+    """Incremental HTTP/1.1 chunked transfer decoding: :meth:`feed` takes
+    the raw bytes as they arrive and returns the payload bytes they complete
+    (chunk-size lines, chunk ends and trailers removed)."""
+
+    def __init__(self) -> None:
+        self.buffer = bytearray()
+        self.state = "size"
+        self.remaining = 0
+        self.done = False
+
+    def feed(self, data: bytes) -> bytes:
+        self.buffer += data
+        out = bytearray()
+        while not self.done:
+            if self.state == "data":
+                if not self.buffer:
+                    break
+                take = min(self.remaining, len(self.buffer))
+                out += self.buffer[:take]
+                del self.buffer[:take]
+                self.remaining -= take
+                if self.remaining == 0:
+                    self.state = "end"
+                continue
+            if self.state == "end":
+                if len(self.buffer) < 2:
+                    break
+                del self.buffer[:2]
+                self.state = "size"
+                continue
+            line_end = self.buffer.find(b"\r\n")
+            if line_end < 0:
+                break
+            line = bytes(self.buffer[:line_end])
+            del self.buffer[:line_end + 2]
+            if self.state == "trailer":
+                self.done = not line
+                continue
+            try:
+                size = int(line.split(b";", 1)[0].strip(), 16)
+            except ValueError:
+                self.done = True
+                break
+            self.state, self.remaining = ("trailer", 0) if size == 0 else ("data", size)
+        return bytes(out)
+
+
+_STOP_REASON = re.compile(rb'"stop_reason"\s*:\s*"([a-z_]{1,40})"')
+
+
+class BodyObserver:
+    """What one response's body showed and when, from the gateway's raw
+    bytes as they reach the relay: the head (status, transfer framing), then
+    the payload with any chunked framing decoded, so a chunk-size line is no
+    body byte and an SSE marker split across chunks counts when it is whole.
+    ``row`` gets ``headers``, ``status``, ``first_body``, ``first_event``
+    (a ``data:`` line), ``first_comment`` (a line starting with ``:``) and,
+    from :meth:`finish`, the counts, the event types in order (at most 64) and
+    the stop reasons."""
+
+    def __init__(self, row: dict[str, Any], clock: Any):
+        self.row, self.clock = row, clock
+        self.head = bytearray()
+        self.decoder: ChunkedBody | None = None
+        self.payload = bytearray()
+        self.in_body = False
+
+    def feed(self, data: bytes) -> None:
+        if not self.in_body:
+            self.head += data
+            end = self.head.find(b"\r\n\r\n")
+            if end < 0:
+                return
+            self.in_body = True
+            head, rest = bytes(self.head[:end]), bytes(self.head[end + 4:])
+            self.row["headers"] = self.clock.now()
+            self.row["status"] = int(head.split(b" ", 2)[1])
+            fields = [line.split(b":", 1) for line in head.split(b"\r\n")[1:] if b":" in line]
+            if any(name.strip().lower() == b"transfer-encoding" and b"chunked" in value.lower()
+                   for name, value in fields):
+                self.decoder = ChunkedBody()
+            data = rest
+        decoded = self.decoder.feed(data) if self.decoder is not None else data
+        if not decoded:
+            return
+        self.payload += decoded
+        now = self.clock.now()
+        self.row.setdefault("first_body", now)
+        if "first_event" not in self.row and re.search(rb"(?:^|\n)data:", self.payload):
+            self.row["first_event"] = now
+        if "first_comment" not in self.row and _COMMENT.search(self.payload):
+            self.row["first_comment"] = now
+
+    def finish(self) -> None:
+        payload = bytes(self.payload)
+        self.row.update(bytes=len(payload), events=len(re.findall(rb"(?:^|\n)data:", payload)),
+                        comments=len(_COMMENT.findall(payload)),
+                        event_types=[kind.decode() for kind in
+                                     re.findall(rb"(?:^|\n)event: ?([A-Za-z_]{1,40})", payload)[:64]],
+                        stop_reasons=sorted({reason.decode() for reason in _STOP_REASON.findall(payload)}))
 
 
 class _StreamRelayHandler(probe._ProviderHandler):
@@ -252,8 +356,9 @@ class StreamRelay(probe.FakeAnthropicProvider):
     deadline. A client that closes its connection first closes the gateway
     request too. ``rows``: per request, when the gateway's headers, first
     body byte, first SSE event and first SSE comment reached the relay, the
-    counts, and who closed first; ``describe(path, headers, document)`` adds
-    the request's own bounded facts."""
+    counts, event types and stop reasons (:class:`BodyObserver`, transfer
+    framing decoded), and who closed first; ``describe(path, headers,
+    document)`` adds the request's own bounded facts."""
 
     def __init__(self, gateway, clock: Clock,
                  describe: Callable[[str, Any, dict[str, Any]], dict[str, Any]] | None = None):
@@ -293,8 +398,7 @@ class StreamRelay(probe.FakeAnthropicProvider):
                    + "".join(f"{name}: {value}\r\n" for name, value in headers.items()) + "\r\n").encode()
         client = handler.connection
         upstream = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        received = bytearray()
-        head_end = -1
+        observer = BodyObserver(row, self.clock)
         try:
             upstream.connect(str(self.gateway.socket))
             upstream.sendall(request + body)
@@ -310,20 +414,7 @@ class StreamRelay(probe.FakeAnthropicProvider):
                     row["gateway_closed"] = self.clock.now()
                     break
                 row.setdefault("first_bytes", self.clock.now())
-                received += data
-                if head_end < 0:
-                    head_end = received.find(b"\r\n\r\n")
-                    if head_end >= 0:
-                        row["headers"] = self.clock.now()
-                        row["status"] = int(received.split(b" ", 2)[1])
-                if head_end >= 0:
-                    payload = bytes(received[head_end + 4:])
-                    if payload and "first_body" not in row:
-                        row["first_body"] = self.clock.now()
-                    if b"data:" in payload and "first_event" not in row:
-                        row["first_event"] = self.clock.now()
-                    if _COMMENT.search(payload) and "first_comment" not in row:
-                        row["first_comment"] = self.clock.now()
+                observer.feed(data)
                 try:
                     client.sendall(data)
                 except OSError:
@@ -334,6 +425,5 @@ class StreamRelay(probe.FakeAnthropicProvider):
         finally:
             upstream.close()
             handler.close_connection = True
-        payload = bytes(received[head_end + 4:]) if head_end >= 0 else b""
-        row.update(bytes=len(payload), events=len(re.findall(rb"(?:^|\n)data:", payload)),
-                   comments=len(_COMMENT.findall(payload)), ended=self.clock.now())
+        observer.finish()
+        row["ended"] = self.clock.now()
