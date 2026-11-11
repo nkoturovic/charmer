@@ -71,7 +71,10 @@ RESERVED_SECRET_SUFFIXES = ("_FILE_DESCRIPTOR",)
 # also reads the lowercase spellings); DEPLOY=cloud switches the startup
 # mode; WRITABLE_PATH moves the writable base; MANAGEMENT_STATIC_PATH serves
 # a control panel; GITHUB_TOKEN and META_MINT_URL are credential/endpoint
-# overrides. Matched case-insensitively.
+# overrides; CPA_VISIBLE_CODEX_COMMENTARY changes what Codex responses show
+# (internal/translator/common/codex_commentary.go); the CLIPROXY_PLUGIN_DLOPEN_
+# PROBE pair drives the plugin loader's probe child
+# (internal/pluginhost/loader_unix.go). Matched case-insensitively.
 GATEWAY_ENV_DENY_NAMES = frozenset({
     "MANAGEMENT_PASSWORD",
     "HOME_JWT",
@@ -80,6 +83,9 @@ GATEWAY_ENV_DENY_NAMES = frozenset({
     "MANAGEMENT_STATIC_PATH",
     "GITHUB_TOKEN",
     "META_MINT_URL",
+    "CPA_VISIBLE_CODEX_COMMENTARY",
+    "CLIPROXY_PLUGIN_DLOPEN_PROBE",
+    "CLIPROXY_PLUGIN_DLOPEN_PROBE_STATUS",
 })
 GATEWAY_ENV_DENY_PREFIXES = ("PGSTORE_", "GITSTORE_", "OBJECTSTORE_")
 

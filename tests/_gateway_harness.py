@@ -56,6 +56,8 @@ GATEWAY_CHECK_EXCLUSIONS = {
     "test_gateway_keyed_compat",  # the keyed core selected explicitly, full audit host-only
     "test_gateway_regressions",  # Observation-only, separately timed lane
     "test_gateway_v8_traffic",  # Host: exact native client plus bounded 12s/20s traffic lanes
+    "test_gateway_surfaces",  # Host: v8 traffic helpers and the fixture TLS Claude OAuth route
+    "test_gateway_fable",  # Host: the Claude OAuth pool's fixture TLS upstream needs openssl on /usr/bin:/bin
     # The lifecycle, its doctor facts and the service hand-off run against fake
     # worlds and stub managers in the main suite; they need no gateway binary.
     "test_gateway_lifecycle", "test_gateway_doctor", "test_gateway_service",
@@ -137,16 +139,25 @@ PATCH_ROWS = {
     "cli-proxy-api-refresh-shutdown-join.patch": (
         "tests.test_gateway_patches.PatchOmissionProbeTests.test_refresh_shutdown",
     ),
+    # Since 8.0.67 upstream decodes Mistral's typed chunks itself; what the
+    # patch still decides is that a streamed content array with an unknown,
+    # mixed or malformed part keeps its legacy bytes instead of being re-read.
     "cli-proxy-api-openai-content-chunks.patch": (
-        "tests.test_gateway_patches.MistralContentChunkTests.test_streaming_content_chunks",
-        "tests.test_gateway_patches.MistralContentChunkTests.test_non_streaming_content_chunks",
+        "tests.test_gateway_patches.ContentChunkGoldenTests.test_streamed_unknown_part_keeps_legacy_bytes",
+        "tests.test_gateway_patches.ContentChunkGoldenTests.test_streamed_mixed_parts_keep_legacy_bytes",
+        "tests.test_gateway_patches.ContentChunkGoldenTests.test_streamed_malformed_part_keeps_legacy_bytes",
+        "tests.test_gateway_patches.ContentChunkGoldenTests.test_streamed_malformed_thinking_keeps_legacy_bytes",
     ),
     "cli-proxy-api-charmer-model-ids.patch": (
         "tests.test_gateway_patches.CharmerModelListingTests.test_both_listing_formats",
     ),
+    # The account-route rows discriminate too: upstream forwards the client's
+    # cap on every route, and the patch keeps it off the account route.
     "cli-proxy-api-output-cap.patch": (
         "tests.test_openai_key_route.PinnedGatewayKeyRouteTurnTests.test_the_clients_output_cap_reaches_the_responses_request",
         "tests.test_openai_key_route_client.PinnedClientKeyRouteTests.test_the_actual_clients_output_cap_reaches_the_key_route",
+        "tests.test_openai_key_route.PinnedGatewayAccountRouteTurnTests.test_the_clients_output_cap_does_not_reach_the_account_route",
+        "tests.test_openai_key_route_client.PinnedClientAccountRouteTests.test_the_actual_clients_output_cap_does_not_reach_the_account_route",
     ),
     "cli-proxy-api-context-error-normalization.patch": (
         "tests.test_openai_key_route_client.PinnedClientKeyRouteTests.test_the_actual_client_compacts_on_an_overflow_before_headers",
@@ -166,22 +177,26 @@ PATCH_ROWS = {
     "cli-proxy-api-terminal-rejection-reload.patch": (
         "tests.test_gateway_patches.PatchOmissionProbeTests.test_terminal_rejection_reload",
     ),
+    "cli-proxy-api-codex-refresh-without-journal.patch": (
+        "tests.test_gateway_patches.PatchOmissionProbeTests.test_codex_refresh_without_journal",
+    ),
+    "cli-proxy-api-native-advisor-beta-order.patch": (
+        "tests.test_gateway_fable.NativeFingerprintTests.test_fa2_native_2_1_321_fingerprint_and_beta_order",
+    ),
 }
 
 
 # Regression controls travel with a patch's omission proof, but are not its
 # discriminating rows: their bytes must stay green even when it is omitted.
 PATCH_CONTROL_ROWS = {
-    "cli-proxy-api-output-cap.patch": (
-        "tests.test_openai_key_route.PinnedGatewayAccountRouteTurnTests.test_the_clients_output_cap_does_not_reach_the_account_route",
-        "tests.test_openai_key_route_client.PinnedClientAccountRouteTests.test_the_actual_clients_output_cap_does_not_reach_the_account_route",
-    ),
     "cli-proxy-api-context-error-normalization.patch": (
         "tests.test_openai_key_route_client.PinnedClientKeyRouteTests.test_an_unidentified_context_error_is_not_compacted",
     ),
     "cli-proxy-api-openai-content-chunks.patch": (
         "tests.test_gateway_patches.ContentChunkGoldenTests.test_legacy_chat_bytes",
         "tests.test_gateway_patches.ContentChunkGoldenTests.test_native_route_bytes",
+        "tests.test_gateway_patches.MistralContentChunkTests.test_streaming_content_chunks",
+        "tests.test_gateway_patches.MistralContentChunkTests.test_non_streaming_content_chunks",
     ),
     "cli-proxy-api-tool-call-integrity.patch": (
         "tests.test_gateway_patches.ToolCallIntegrityTests.test_explicit_and_mixed_continuations_remain_one_call",
@@ -274,18 +289,18 @@ def gateway_check_selections():
 # as well, then attribute the prerequisite's rows by difference against the
 # dependent-only omission. Never infer edges from build failures: each edge
 # below is a hunk that no longer applies, or a file of the dependent that no
-# longer compiles, when only the prerequisite is omitted (8.0.45 omission
+# longer compiles, when only the prerequisite is omitted (8.0.67 omission
 # matrix); "hunk" is that hunk's start line, 0 for a file the dependent adds.
 PATCH_DEPENDENCIES = {
     "cli-proxy-api-context-error-normalization.patch": {
         "cli-proxy-api-codex-api-key-safety.patch": {
-            "file": "internal/runtime/executor/codex_executor_execute.go", "hunk": 143,
+            "file": "internal/runtime/executor/codex_executor_execute.go", "hunk": 257,
             "reason": "the key route's overflow is marked where 20 rebuilds its failures (also the stream)",
         },
     },
     "cli-proxy-api-log-reduction.patch": {
         "cli-proxy-api-openai-compat-keyed-safety.patch": {
-            "file": "sdk/cliproxy/auth/conductor_execution.go", "hunk": 1913,
+            "file": "sdk/cliproxy/auth/conductor_execution.go", "hunk": 2034,
             "reason": "the redacted key and account identities replace the masked branches beside the keyed "
                       "compat identity, and the patch updates that identity test's control",
         },
@@ -312,7 +327,7 @@ PATCH_DEPENDENCIES = {
     },
     "cli-proxy-api-openai-compat-keyed-safety.patch": {
         "cli-proxy-api-credentialed-redirects.patch": {
-            "file": "internal/runtime/executor/openai_compat_executor.go", "hunk": 210,
+            "file": "internal/runtime/executor/openai_compat_executor.go", "hunk": 226,
             "reason": "keyed error handling replaces the redirect-guarded request paths",
         },
     },
@@ -327,7 +342,7 @@ PATCH_DEPENDENCIES = {
             "reason": "the fixed failure texts and the bounded error-body read come from internal/compatsafe",
         },
         "cli-proxy-api-codex-client-identity.patch": {
-            "file": "internal/runtime/executor/codex_executor_request.go", "hunk": 453,
+            "file": "internal/runtime/executor/codex_executor_request.go", "hunk": 558,
             "reason": "the plain-key Version default replaces the codex client Version default (also the websocket hunk)",
         },
     },
@@ -393,7 +408,7 @@ REQUIRED_EVIDENCE["tests.test_gateway_clamp"] = {
 
 
 REQUIRED_EVIDENCE["tests.test_gateway_patches"] = {
-    "patches": {"LO1", "LO2", "LO1-A", "LO3", "LO4", "M0", "M1", "M2", "M3", "M4", "M5", "M6", "M7", "AL1", "RL1", "ME1", "S1", "P1", "CS1", "CR1", "KS1", "AS1", "SC1", "ML1", "OM1", "CI1", "CI2", "CK1", "RS1", "MC1", "MC2", "MG1", "MG2", "CL1", "TI1", "TI2", "TI3", "TIC1", "TIC2", "IR1", "TR1", "RA1", "LR1"},
+    "patches": {"LO1", "LO2", "LO1-A", "LO3", "LO4", "M0", "M1", "M2", "M3", "M4", "M5", "M6", "M7", "AL1", "RL1", "ME1", "S1", "P1", "CS1", "CR1", "KS1", "AS1", "SC1", "ML1", "OM1", "CI1", "CI2", "CK1", "RS1", "MC1", "MC2", "MG1", "MG2", "CL1", "TI1", "TI2", "TI3", "TIC1", "TIC2", "IR1", "TR1", "RJ1", "RA1", "LR1", "SI1"},
 }
 
 
@@ -401,6 +416,11 @@ REQUIRED_EVIDENCE["tests.test_packaging"] = {"patches": {"AG1"}}
 
 
 WATCHER_READY = "file watcher started for config and auth directory changes"
+# The pinned gateway's native Claude Code baseline: a request is native only
+# with complete client signals and a client of this minor at this patch or
+# later (claude-cli/2.1.321 since 8.0.67). The fixture identity rows send it,
+# so they do not depend on the fixture catalog's older recorded client.
+NATIVE_CLIENT_BASELINE = "2.1.321"
 MARKER = "x-gwtest-upstream-marker"
 NONCE = re.compile(r"gwtest-case-[0-9a-f]{12}")
 
@@ -583,6 +603,7 @@ KEYED_RELEVANT_SOURCES = (
     "src/charmer/served_plan.py", "src/charmer/qualify.py", "src/charmer/discovery.py",
     "src/charmer/profile.py", "src/charmer/compiler.py", "src/charmer/scope.py",
     "src/charmer/cli/commands/models.py", "src/charmer/cli/commands/providers.py",
+    "src/charmer/netclass.py", "src/charmer/proxy.py", "src/charmer/cli/commands/discover.py",
     "schemas/gateway.schema.json", "schemas/providers.schema.json", "schemas/operator-provider.schema.json",
     "schemas/operator-ledger.schema.json", "schemas/models.schema.json",
 )
@@ -662,7 +683,7 @@ def validate_keyed_evidence(directory, *, core_only=False, gateway_only=False):
 
 
 # The one pinned vendor (go-modules) output every diagnostic reuses.
-PINNED_GO_MODULES = "/nix/store/qpg3khndfvxsnsl9cbivl4hfz4yg959r-cli-proxy-api-8.0.45-go-modules"
+PINNED_GO_MODULES = "/nix/store/smz97m3z6rlv7g8gdrvc1p4xk115lcvd-cli-proxy-api-8.0.67-go-modules"
 
 
 def consumed_vendor(installable, run=subprocess.run) -> dict:
@@ -731,33 +752,51 @@ def templates(bundle) -> dict:
 # the harness renders the frozen fixture with the shipped values; gateway
 # traffic then runs the way the product renders it.
 SHIPPED_COMPRESSION_KEYS = ("response-compression", "codex")
+# The shipped catalog's key-value store setting: the gateway keeps its store
+# in memory (a database file in the auth directory when unset), so gateway
+# traffic under test leaves the auth directory holding credentials only.
+SHIPPED_STORE_KEYS = ("kv-store",)
+
+
+def _shipped_static(keys):
+    static = json.loads((RESOURCES_ROOT / "catalog/gateway.json").read_text())["gateway"]["cliproxy_static"]
+    return {key: copy.deepcopy(static[key]) for key in keys}
 
 
 def shipped_compression():
-    static = json.loads((RESOURCES_ROOT / "catalog/gateway.json").read_text())["gateway"]["cliproxy_static"]
-    return {key: copy.deepcopy(static[key]) for key in SHIPPED_COMPRESSION_KEYS}
+    return _shipped_static(SHIPPED_COMPRESSION_KEYS)
+
+
+def shipped_store():
+    return _shipped_static(SHIPPED_STORE_KEYS)
 
 
 def shipped_gateway_doc(gateway_doc):
     """A copy of ``gateway_doc`` (a fixture gateway document) carrying the
-    shipped compression settings."""
+    shipped compression and key-value store settings."""
     document = copy.deepcopy(gateway_doc)
     document["gateway"]["cliproxy_static"].update(shipped_compression())
+    document["gateway"]["cliproxy_static"].update(shipped_store())
     return document
 
 
 def with_shipped_compression(document):
     """A finalized config document that states no compression setting gets
     the shipped ones (a document rendered from another catalog, such as a
-    route test's own render); one that states any is returned unchanged, so
-    a control can render compression on explicitly."""
-    if any(key in document for key in SHIPPED_COMPRESSION_KEYS):
+    route test's own render); one that states any keeps its own, so a
+    control can render compression on explicitly. A document that states no
+    key-value store setting gets the shipped one either way."""
+    compression = not any(key in document for key in SHIPPED_COMPRESSION_KEYS)
+    store = {key: value for key, value in shipped_store().items() if key not in document}
+    if not compression and not store:
         return document
     revised = copy.deepcopy(document)
     if revised["openai-compatibility"][-1]["name"] != render.SENTINEL_NAME:
         raise AssertionError("a harness document must end with its render sentinel")
     revised["openai-compatibility"].pop()
-    revised.update(shipped_compression())
+    if compression:
+        revised.update(shipped_compression())
+    revised.update(store)
     return render.finalize_document(revised)
 
 
@@ -875,7 +914,7 @@ def build_document(bundle, egress: int, gateway: int, home: Path, variant="main"
     document["payload"]["override"].append({"models": [{"name": "gwtest-compat-override", "protocol": "openai"}],
                                             "params": {"reasoning_effort": "low"}})  # S3
     if variant == "ua":
-        major, minor, _ = map(int, bundle.docs["native-contract"]["verified"][0]["version"].split("."))
+        major, minor, _ = map(int, NATIVE_CLIENT_BASELINE.split("."))
         document["claude-header-defaults"] = {"user-agent": f"claude-cli/{major}.{minor + 1}.0 (external, cli)"}  # S6
     return document, aliases, info
 
@@ -1013,6 +1052,8 @@ def content_chunk_reply(path: str, body: dict, raw: bytes, _headers=None) -> tup
 
 # Byte goldens captured from the admitted series before content-chunk decoding.
 # Both the full series and the single-omission build must match these bytes.
+# Since upstream 8.0.56 (6044c5d1) a non-streaming reply with reasoning carries
+# its thinking block before its text, as a native Messages reply does.
 CONTENT_CHUNK_HTTP_GOLDENS = {'keyed:absent:False': '{"id":"chatcmpl_fixture","type":"message","role":"assistant","model":"custom-chatco-chat","content":[],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":11,"output_tokens":4}}',
  'keyed:absent:True': 'event: message_start\n'
                       'data: '
@@ -1083,7 +1124,7 @@ CONTENT_CHUNK_HTTP_GOLDENS = {'keyed:absent:False': '{"id":"chatcmpl_fixture","t
                     'event: message_stop\n'
                     'data: {"type":"message_stop"}\n'
                     '\n',
- 'keyed:precedence:False': '{"id":"chatcmpl_fixture","type":"message","role":"assistant","model":"custom-chatco-chat","content":[{"type":"text","text":"answer"},{"type":"thinking","thinking":"thought"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":11,"output_tokens":4}}',
+ 'keyed:precedence:False': '{"id":"chatcmpl_fixture","type":"message","role":"assistant","model":"custom-chatco-chat","content":[{"type":"thinking","thinking":"thought"},{"type":"text","text":"answer"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":11,"output_tokens":4}}',
  'keyed:precedence:True': 'event: message_start\n'
                           'data: '
                           '{"type":"message_start","message":{"id":"chatcmpl_fixture","type":"message","role":"assistant","model":"custom-chatco-chat","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":16,"output_tokens":0}}}\n'
@@ -1116,7 +1157,7 @@ CONTENT_CHUNK_HTTP_GOLDENS = {'keyed:absent:False': '{"id":"chatcmpl_fixture","t
                           'event: message_stop\n'
                           'data: {"type":"message_stop"}\n'
                           '\n',
- 'keyed:reasoning:False': '{"id":"chatcmpl_fixture","type":"message","role":"assistant","model":"custom-chatco-chat","content":[{"type":"text","text":"answer"},{"type":"thinking","thinking":"thought"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":11,"output_tokens":4}}',
+ 'keyed:reasoning:False': '{"id":"chatcmpl_fixture","type":"message","role":"assistant","model":"custom-chatco-chat","content":[{"type":"thinking","thinking":"thought"},{"type":"text","text":"answer"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":11,"output_tokens":4}}',
  'keyed:reasoning:True': 'event: message_start\n'
                          'data: '
                          '{"type":"message_start","message":{"id":"chatcmpl_fixture","type":"message","role":"assistant","model":"custom-chatco-chat","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":16,"output_tokens":0}}}\n'
@@ -1149,7 +1190,7 @@ CONTENT_CHUNK_HTTP_GOLDENS = {'keyed:absent:False': '{"id":"chatcmpl_fixture","t
                          'event: message_stop\n'
                          'data: {"type":"message_stop"}\n'
                          '\n',
- 'keyed:reasoning_content:False': '{"id":"chatcmpl_fixture","type":"message","role":"assistant","model":"custom-chatco-chat","content":[{"type":"text","text":"answer"},{"type":"thinking","thinking":"thought"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":11,"output_tokens":4}}',
+ 'keyed:reasoning_content:False': '{"id":"chatcmpl_fixture","type":"message","role":"assistant","model":"custom-chatco-chat","content":[{"type":"thinking","thinking":"thought"},{"type":"text","text":"answer"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":11,"output_tokens":4}}',
  'keyed:reasoning_content:True': 'event: message_start\n'
                                  'data: '
                                  '{"type":"message_start","message":{"id":"chatcmpl_fixture","type":"message","role":"assistant","model":"custom-chatco-chat","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":17,"output_tokens":0}}}\n'
@@ -1183,7 +1224,7 @@ CONTENT_CHUNK_HTTP_GOLDENS = {'keyed:absent:False': '{"id":"chatcmpl_fixture","t
                                  'event: message_stop\n'
                                  'data: {"type":"message_stop"}\n'
                                  '\n',
- 'keyed:reasoning_details:False': '{"id":"chatcmpl_fixture","type":"message","role":"assistant","model":"custom-chatco-chat","content":[{"type":"text","text":"answer"},{"type":"thinking","thinking":"thought"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":11,"output_tokens":4}}',
+ 'keyed:reasoning_details:False': '{"id":"chatcmpl_fixture","type":"message","role":"assistant","model":"custom-chatco-chat","content":[{"type":"thinking","thinking":"thought"},{"type":"text","text":"answer"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":11,"output_tokens":4}}',
  'keyed:reasoning_details:True': 'event: message_start\n'
                                  'data: '
                                  '{"type":"message_start","message":{"id":"chatcmpl_fixture","type":"message","role":"assistant","model":"custom-chatco-chat","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":17,"output_tokens":0}}}\n'
@@ -1356,7 +1397,7 @@ CONTENT_CHUNK_HTTP_GOLDENS = {'keyed:absent:False': '{"id":"chatcmpl_fixture","t
                       'event: message_stop\n'
                       'data: {"type":"message_stop"}\n'
                       '\n',
- 'keyless:precedence:False': '{"id":"chatcmpl_fixture","type":"message","role":"assistant","model":"gwtest-compat-plain","content":[{"type":"text","text":"answer"},{"type":"thinking","thinking":"thought"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":11,"output_tokens":4}}',
+ 'keyless:precedence:False': '{"id":"chatcmpl_fixture","type":"message","role":"assistant","model":"gwtest-compat-plain","content":[{"type":"thinking","thinking":"thought"},{"type":"text","text":"answer"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":11,"output_tokens":4}}',
  'keyless:precedence:True': 'event: message_start\n'
                             'data: '
                             '{"type":"message_start","message":{"id":"chatcmpl_fixture","type":"message","role":"assistant","model":"gwtest-compat-plain","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":16,"output_tokens":0}}}\n'
@@ -1389,7 +1430,7 @@ CONTENT_CHUNK_HTTP_GOLDENS = {'keyed:absent:False': '{"id":"chatcmpl_fixture","t
                             'event: message_stop\n'
                             'data: {"type":"message_stop"}\n'
                             '\n',
- 'keyless:reasoning:False': '{"id":"chatcmpl_fixture","type":"message","role":"assistant","model":"gwtest-compat-plain","content":[{"type":"text","text":"answer"},{"type":"thinking","thinking":"thought"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":11,"output_tokens":4}}',
+ 'keyless:reasoning:False': '{"id":"chatcmpl_fixture","type":"message","role":"assistant","model":"gwtest-compat-plain","content":[{"type":"thinking","thinking":"thought"},{"type":"text","text":"answer"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":11,"output_tokens":4}}',
  'keyless:reasoning:True': 'event: message_start\n'
                            'data: '
                            '{"type":"message_start","message":{"id":"chatcmpl_fixture","type":"message","role":"assistant","model":"gwtest-compat-plain","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":16,"output_tokens":0}}}\n'
@@ -1422,7 +1463,7 @@ CONTENT_CHUNK_HTTP_GOLDENS = {'keyed:absent:False': '{"id":"chatcmpl_fixture","t
                            'event: message_stop\n'
                            'data: {"type":"message_stop"}\n'
                            '\n',
- 'keyless:reasoning_content:False': '{"id":"chatcmpl_fixture","type":"message","role":"assistant","model":"gwtest-compat-plain","content":[{"type":"text","text":"answer"},{"type":"thinking","thinking":"thought"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":11,"output_tokens":4}}',
+ 'keyless:reasoning_content:False': '{"id":"chatcmpl_fixture","type":"message","role":"assistant","model":"gwtest-compat-plain","content":[{"type":"thinking","thinking":"thought"},{"type":"text","text":"answer"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":11,"output_tokens":4}}',
  'keyless:reasoning_content:True': 'event: message_start\n'
                                    'data: '
                                    '{"type":"message_start","message":{"id":"chatcmpl_fixture","type":"message","role":"assistant","model":"gwtest-compat-plain","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":17,"output_tokens":0}}}\n'
@@ -1456,7 +1497,7 @@ CONTENT_CHUNK_HTTP_GOLDENS = {'keyed:absent:False': '{"id":"chatcmpl_fixture","t
                                    'event: message_stop\n'
                                    'data: {"type":"message_stop"}\n'
                                    '\n',
- 'keyless:reasoning_details:False': '{"id":"chatcmpl_fixture","type":"message","role":"assistant","model":"gwtest-compat-plain","content":[{"type":"text","text":"answer"},{"type":"thinking","thinking":"thought"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":11,"output_tokens":4}}',
+ 'keyless:reasoning_details:False': '{"id":"chatcmpl_fixture","type":"message","role":"assistant","model":"gwtest-compat-plain","content":[{"type":"thinking","thinking":"thought"},{"type":"text","text":"answer"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":11,"output_tokens":4}}',
  'keyless:reasoning_details:True': 'event: message_start\n'
                                    'data: '
                                    '{"type":"message_start","message":{"id":"chatcmpl_fixture","type":"message","role":"assistant","model":"gwtest-compat-plain","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":17,"output_tokens":0}}}\n'

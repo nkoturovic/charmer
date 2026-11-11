@@ -186,9 +186,14 @@ class SbomTests(unittest.TestCase):
                 components = bom["components"]
                 self.assertEqual(len(components), len(linked) + 1)
                 for module, component in zip(linked, components):
-                    self.assertEqual((component["name"], component["version"]), (module["path"], module["version"]))
+                    # A replaced requirement is the module actually linked,
+                    # with the requirement it replaces as a property.
+                    identity = module.get("replace") or module
+                    self.assertEqual((component["name"], component["version"]), (identity["path"], identity["version"]))
                     self.assertEqual(component["hashes"], [{"alg": "SHA-256", "content": base64.b64decode(
                         module["sum"].removeprefix("h1:")).hex()}])
+                    self.assertEqual(component.get("properties"), None if "replace" not in module else [
+                        {"name": "charmer:gateway:replaces", "value": tool._purl(module["path"], module["version"])}])
                 self.assertEqual(components[-1]["version"], "go" + doc["toolchain"]["version"])
                 self.assertEqual(bom["dependencies"], [{"ref": doc["upstream"]["binary"],
                                                         "dependsOn": [item["bom-ref"] for item in components]}])

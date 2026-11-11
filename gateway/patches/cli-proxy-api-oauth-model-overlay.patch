@@ -1,8 +1,8 @@
 diff --git a/internal/config/config.go b/internal/config/config.go
-index faa54336..7306140e 100644
+index dad8d435..f00eabc7 100644
 --- a/internal/config/config.go
 +++ b/internal/config/config.go
-@@ -198,6 +198,11 @@ type Config struct {
+@@ -208,6 +208,11 @@ type Config struct {
  	// gemini-api-key, interactions-api-key, codex-api-key, xai-api-key, meta-api-key, claude-api-key, openai-compatibility, and vertex-api-key.
  	OAuthModelAlias map[string][]OAuthModelAlias `yaml:"oauth-model-alias,omitempty" json:"oauth-model-alias,omitempty"`
  
@@ -988,7 +988,7 @@ index 00000000..0053f94b
 +	}
 +}
 diff --git a/internal/config/parse.go b/internal/config/parse.go
-index 69c724e6..42566b58 100644
+index b0563e2e..01e0d6af 100644
 --- a/internal/config/parse.go
 +++ b/internal/config/parse.go
 @@ -18,6 +18,13 @@ func ParseConfigBytes(data []byte) (*Config, error) {
@@ -1017,7 +1017,7 @@ index 69c724e6..42566b58 100644
  	if errValidate := validateTrustedProxies(cfg.TrustedProxies); errValidate != nil {
  		return nil, errValidate
  	}
-@@ -117,6 +129,7 @@ func ParseConfigBytes(data []byte) (*Config, error) {
+@@ -121,6 +133,7 @@ func ParseConfigBytes(data []byte) (*Config, error) {
  	cfg.OAuthExcludedModels = NormalizeOAuthExcludedModels(cfg.OAuthExcludedModels)
  	cfg.SanitizeOAuthModelAlias()
  	cfg.SanitizeOAuthSettings()
@@ -1115,12 +1115,12 @@ index 00000000..03610c4d
 +	return false
 +}
 diff --git a/internal/watcher/config_reload.go b/internal/watcher/config_reload.go
-index 021da6ea..0b99f485 100644
+index d69a1760..e794f8fe 100644
 --- a/internal/watcher/config_reload.go
 +++ b/internal/watcher/config_reload.go
-@@ -174,7 +174,10 @@ func (w *Watcher) reloadConfigBytes(data []byte) bool {
- 
- 	authDirChanged := oldConfig == nil || oldConfig.AuthDir != newConfig.AuthDir
+@@ -188,7 +188,10 @@ func (w *Watcher) reloadConfigBytes(data []byte) bool {
+ 		w.syncAuthDirWatch()
+ 	}
  	retryConfigChanged := oldConfig != nil && (oldConfig.RequestRetry != newConfig.RequestRetry || oldConfig.MaxRetryInterval != newConfig.MaxRetryInterval || oldConfig.MaxRetryCredentials != newConfig.MaxRetryCredentials)
 -	forceAuthRefresh := oldConfig != nil && (oldConfig.ForceModelPrefix != newConfig.ForceModelPrefix || !reflect.DeepEqual(oldConfig.OAuthModelAlias, newConfig.OAuthModelAlias) || !reflect.DeepEqual(oldConfig.OAuthSettings, newConfig.OAuthSettings) || retryConfigChanged)
 +	// charmer local patch (oauth-model-overlay): any change to overlay
@@ -1131,10 +1131,10 @@ index 021da6ea..0b99f485 100644
  	log.Infof("config successfully reloaded, triggering client reload")
  	w.reloadClientsLocked(authDirChanged, affectedOAuthProviders, forceAuthRefresh)
 diff --git a/internal/watcher/diff/config_diff.go b/internal/watcher/diff/config_diff.go
-index 62b24c5b..dc06561d 100644
+index 19541a88..a0967968 100644
 --- a/internal/watcher/diff/config_diff.go
 +++ b/internal/watcher/diff/config_diff.go
-@@ -468,6 +468,13 @@ func BuildConfigChangeDetails(oldCfg, newCfg *config.Config) []string {
+@@ -498,6 +498,13 @@ func BuildConfigChangeDetails(oldCfg, newCfg *config.Config) []string {
  	if entries, _ := DiffOAuthModelAliasChanges(oldCfg.OAuthModelAlias, newCfg.OAuthModelAlias); len(entries) > 0 {
  		changes = append(changes, entries...)
  	}
@@ -1383,10 +1383,10 @@ index 00000000..514b4df2
 +	"root-anchor":     {"--- &root\n", "oauth-extra-models: {codex: [{name: gpt-cm053-shape-1}]}\n"},
 +}
 diff --git a/sdk/cliproxy/antigravity_models.go b/sdk/cliproxy/antigravity_models.go
-index 6c46f95f..22f2e6bf 100644
+index b6bb6180..6103163c 100644
 --- a/sdk/cliproxy/antigravity_models.go
 +++ b/sdk/cliproxy/antigravity_models.go
-@@ -667,10 +667,9 @@ func (s *Service) antigravityModelsForHintsWithConfig(auth *coreauth.Auth, hints
+@@ -516,10 +516,9 @@ func (s *Service) antigravityModelsForHintsWithConfig(auth *coreauth.Auth, hints
  	}
  	models := filterAntigravityModels(registry.GetAntigravityModels(), hints)
  	models = applyAntigravityFetchedModelCapabilities(models, hints)
@@ -1467,7 +1467,7 @@ index ae07e401..ab22ed62 100644
  			// Match the watcher's normalization so no-op and unrelated reloads do not
 diff --git a/sdk/cliproxy/oauth_extra_models_cm053_test.go b/sdk/cliproxy/oauth_extra_models_cm053_test.go
 new file mode 100644
-index 00000000..e0fc075d
+index 00000000..22b6bd18
 --- /dev/null
 +++ b/sdk/cliproxy/oauth_extra_models_cm053_test.go
 @@ -0,0 +1,946 @@
@@ -1489,6 +1489,7 @@ index 00000000..e0fc075d
 +	"testing"
 +	"time"
 +
++	"github.com/MoeForge/moego/ojson"
 +	"github.com/gin-gonic/gin"
 +	claudeauth "github.com/router-for-me/CLIProxyAPI/v8/internal/auth/claude"
 +	internalconfig "github.com/router-for-me/CLIProxyAPI/v8/internal/config"
@@ -1505,7 +1506,6 @@ index 00000000..e0fc075d
 +	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
 +	log "github.com/sirupsen/logrus"
 +	logtest "github.com/sirupsen/logrus/hooks/test"
-+	"github.com/tidwall/gjson"
 +)
 +
 +const (
@@ -1686,7 +1686,7 @@ index 00000000..e0fc075d
 +		t.Fatalf("/v1/models status = %d: %s", recorder.Code, recorder.Body.String())
 +	}
 +	var ids []string
-+	for _, item := range gjson.GetBytes(recorder.Body.Bytes(), "data").Array() {
++	for _, item := range ojson.GetBytes(recorder.Body.Bytes(), "data").Array() {
 +		ids = append(ids, item.Get("id").String())
 +	}
 +	return ids
@@ -2075,7 +2075,7 @@ index 00000000..e0fc075d
 +		}
 +		// The overlay's levels are authoritative: "max" is not one of them, so it
 +		// never reaches upstream unvalidated.
-+		if err == nil && gjson.GetBytes(body, "output_config.effort").String() == "max" {
++		if err == nil && ojson.GetBytes(body, "output_config.effort").String() == "max" {
 +			t.Fatalf("%s: effort max passed through unvalidated: %s", requested, body)
 +		}
 +	}
@@ -2175,7 +2175,7 @@ index 00000000..e0fc075d
 +	u.mu.Lock()
 +	defer u.mu.Unlock()
 +	u.paths = append(u.paths, r.URL.Path)
-+	u.models = append(u.models, gjson.GetBytes(body, "model").String())
++	u.models = append(u.models, ojson.GetBytes(body, "model").String())
 +	u.auth = append(u.auth, r.Header.Get("Authorization"))
 +}
 +
@@ -2418,7 +2418,7 @@ index 00000000..e0fc075d
 +	}
 +}
 diff --git a/sdk/cliproxy/service.go b/sdk/cliproxy/service.go
-index 7e709ca7..535781e7 100644
+index df103ff7..7f4d1ba8 100644
 --- a/sdk/cliproxy/service.go
 +++ b/sdk/cliproxy/service.go
 @@ -33,6 +33,10 @@ type Service struct {
@@ -2433,10 +2433,10 @@ index 7e709ca7..535781e7 100644
  	configUpdateMu sync.Mutex
  
 diff --git a/sdk/cliproxy/service_executors.go b/sdk/cliproxy/service_executors.go
-index 2c2083d9..ab6b955c 100644
+index c83c246c..db9d17ab 100644
 --- a/sdk/cliproxy/service_executors.go
 +++ b/sdk/cliproxy/service_executors.go
-@@ -633,12 +633,9 @@ func (s *Service) tryRegisterPluginModelsForAuthWithConfigFenced(ctx context.Con
+@@ -636,12 +636,9 @@ func (s *Service) tryRegisterPluginModelsForAuthWithConfigFenced(ctx context.Con
  		activeExcluded = excluded
  		fallbackExclusionProvider = strings.ToLower(strings.TrimSpace(provider))
  	}
@@ -2572,10 +2572,10 @@ index cf9554d5..0750973a 100644
  	if len(models) == 0 || len(excluded) == 0 {
  		return models
 diff --git a/sdk/config/config.go b/sdk/config/config.go
-index e584ab82..4643e066 100644
+index 735deaf9..711c987a 100644
 --- a/sdk/config/config.go
 +++ b/sdk/config/config.go
-@@ -23,6 +23,7 @@ type DiscoveryInterfacesConfig = internalconfig.DiscoveryInterfacesConfig
+@@ -24,6 +24,7 @@ type DiscoveryInterfacesConfig = internalconfig.DiscoveryInterfacesConfig
  type RemoteManagement = internalconfig.RemoteManagement
  type OAuthModelAlias = internalconfig.OAuthModelAlias
  type OAuthModelSetting = internalconfig.OAuthModelSetting

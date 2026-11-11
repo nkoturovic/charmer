@@ -19,6 +19,8 @@ import (
 	"math/big"
 	"net"
 	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -32,6 +34,7 @@ import (
 	claudeauth "github.com/router-for-me/CLIProxyAPI/v8/internal/auth/claude"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
+	sdkauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/auth"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	coreexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
 	"github.com/router-for-me/CLIProxyAPI/v8/sdk/httptransport"
@@ -123,6 +126,96 @@ func TestOmissionMetadataLock(t *testing.T) {
 	}()
 	close(start)
 	wg.Wait()
+}
+
+// The ordinary Codex refresh keeps no refresh journal: a refresh whose token
+// request was never sent (the dial refused) stays an ordinary, retryable
+// failure, the next refresh rotates the grant and saves it, and nothing is
+// written beside the credential. The real refresh path: the manager over the
+// gateway's file token store, the Codex executor and the Codex token
+// endpoint, dialled to a local TLS server.
+func TestOmissionCodexRefreshWithoutJournal(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "codex-omission.json")
+	expiry := time.Now().UTC().Add(48 * time.Hour).Format(time.RFC3339)
+	credential := fmt.Sprintf(`{"type":"codex","access_token":"omission-access","refresh_token":"omission-grant-0","expired":%q}`, expiry)
+	if err := os.WriteFile(path, []byte(credential), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var calls atomic.Int32
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := calls.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprintf(w, `{"access_token":"omission-access-%d","refresh_token":"omission-grant-%d","expires_in":86400}`, n, n)
+	}))
+	defer server.Close()
+	target, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	closed, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	refused := closed.Addr().String()
+	_ = closed.Close()
+	var reachable atomic.Bool
+	transport := server.Client().Transport.(*http.Transport).Clone()
+	transport.TLSClientConfig = transport.TLSClientConfig.Clone()
+	transport.TLSClientConfig.ServerName = "127.0.0.1"
+	transport.DisableKeepAlives = true
+	transport.DialContext = func(ctx context.Context, network, _ string) (net.Conn, error) {
+		var dialer net.Dialer
+		if !reachable.Load() {
+			return dialer.DialContext(ctx, network, refused)
+		}
+		return dialer.DialContext(ctx, network, target.Host)
+	}
+	original := http.DefaultTransport
+	http.DefaultTransport = transport
+	defer func() { http.DefaultTransport = original }()
+
+	store := sdkauth.NewFileTokenStore()
+	store.SetBaseDir(dir)
+	manager := coreauth.NewManager(store, nil, nil)
+	manager.RegisterExecutor(NewCodexExecutor(&config.Config{AuthDir: dir}))
+	auths, err := store.List(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := ""
+	for _, auth := range auths {
+		if auth.Provider != "codex" {
+			continue
+		}
+		if _, errRegister := manager.Register(context.Background(), auth); errRegister != nil {
+			t.Fatal(errRegister)
+		}
+		id = auth.ID
+	}
+	if id == "" {
+		t.Fatal("no codex credential loaded")
+	}
+	if _, errRefresh := manager.ForceRefreshAuth(context.Background(), id); errRefresh == nil {
+		t.Fatal("the refresh succeeded while the token endpoint was unreachable")
+	}
+	if calls.Load() != 0 {
+		t.Fatalf("token endpoint calls = %d before it was reachable", calls.Load())
+	}
+	if auth, ok := manager.GetByID(id); !ok || auth.RequiresSignIn || auth.RejectedRefreshToken != "" {
+		t.Fatalf("a refresh that sent no request is terminal: found=%t", ok)
+	}
+	reachable.Store(true)
+	refreshed, errRefresh := manager.ForceRefreshAuth(context.Background(), id)
+	if errRefresh != nil {
+		t.Fatalf("the later refresh failed: %v", errRefresh)
+	}
+	if grant, _ := refreshed.Metadata["refresh_token"].(string); grant != "omission-grant-1" || calls.Load() != 1 {
+		t.Fatalf("refreshed grant %q after %d token requests, want omission-grant-1 after 1", grant, calls.Load())
+	}
+	if _, errStat := os.Lstat(filepath.Join(dir, ".codex-refresh")); !errors.Is(errStat, os.ErrNotExist) {
+		t.Fatalf("the refresh wrote beside the credential: %v", errStat)
+	}
 }
 
 // These probes use real response bodies and the shipped transport selection. A fresh

@@ -1,8 +1,8 @@
 diff --git a/internal/api/handlers/management/handler.go b/internal/api/handlers/management/handler.go
-index 529c3a8b..9260cee3 100644
+index 7e8db2f7..a230af08 100644
 --- a/internal/api/handlers/management/handler.go
 +++ b/internal/api/handlers/management/handler.go
-@@ -81,7 +81,7 @@ func NewHandler(cfg *config.Config, configFilePath string, manager *coreauth.Man
+@@ -82,7 +82,7 @@ func NewHandler(cfg *config.Config, configFilePath string, manager *coreauth.Man
  		failedAttempts:      make(map[string]*attemptInfo),
  		authManager:         manager,
  		tokenStore:          sdkAuth.GetTokenStore(),
@@ -79,19 +79,19 @@ index afdbf668..a74346fd 100644
  		if !s.managementRoutesEnabled.Load() {
  			return
 diff --git a/internal/api/server.go b/internal/api/server.go
-index 32a7c567..4989fc51 100644
+index 099b5dda..bbf35a77 100644
 --- a/internal/api/server.go
 +++ b/internal/api/server.go
-@@ -173,6 +173,8 @@ func NewServer(cfg *config.Config, authManager *auth.Manager, accessManager *sdk
+@@ -172,6 +172,8 @@ func NewServer(cfg *config.Config, authManager *auth.Manager, accessManager *sdk
+ 	// Add middleware
  	engine.Use(logging.GinLogrusLogger())
- 	engine.Use(logging.GinLogrusRecovery())
  	engine.Use(logging.CPATraceIDMiddleware())
 +	// charmer: read-only management allowlist; must precede every route.
 +	engine.Use(managementReadOnlyAllowlistMiddleware())
  	engine.Use(s.maxRequestBodyBytesMiddleware())
- 	for _, mw := range optionState.extraMiddleware {
- 		engine.Use(mw)
-@@ -265,8 +267,11 @@ func NewServer(cfg *config.Config, authManager *auth.Manager, accessManager *sdk
+ 
+ 	// Add request logging middleware before recovery and extra middleware so that
+@@ -267,8 +269,11 @@ func NewServer(cfg *config.Config, authManager *auth.Manager, accessManager *sdk
  
  	// Create HTTP server
  	s.server = &http.Server{
@@ -432,10 +432,10 @@ index 00000000..334ac126
 +}
 diff --git a/internal/api/server_management_allowlist_test.go b/internal/api/server_management_allowlist_test.go
 new file mode 100644
-index 00000000..412f482a
+index 00000000..2648ec96
 --- /dev/null
 +++ b/internal/api/server_management_allowlist_test.go
-@@ -0,0 +1,1111 @@
+@@ -0,0 +1,1113 @@
 +package api
 +
 +import (
@@ -1151,6 +1151,7 @@ index 00000000..412f482a
 +	{http.MethodGet, "/v8/management/credentials"},
 +	{http.MethodGet, "/v8/management/credentials/models?name=none"},
 +	{http.MethodGet, "/v8/management/credentials/download?name=x"},
++	{http.MethodPost, "/v8/management/credentials/verify"},
 +	{http.MethodGet, "//v8/management/credentials"},
 +	{http.MethodGet, "/v8//management/credentials"},
 +	{http.MethodGet, "/v8/management//credentials"},
@@ -1315,6 +1316,7 @@ index 00000000..412f482a
 +func TestManagementAllowlist_PreflightRefusedBeforeCORS(t *testing.T) {
 +	s := newAllowlistTestServer(t)
 +	targets := []string{"/v8/management/oauth/auth-url", "/v8/management/credentials",
++		"/v8/management/credentials/verify",
 +		"/v8/management/models/refresh", "/v8/management/routing/model-definitions/refresh"}
 +	for _, target := range allowlistedManagementRoutes {
 +		targets = append(targets, target)
@@ -1352,7 +1354,7 @@ index 00000000..412f482a
 +func TestManagementAllowlist_RefusedUnreadBodyClosesConnection(t *testing.T) {
 +	s := newAllowlistTestServer(t)
 +	for _, target := range []string{"/v8/management/models/refresh", "/v8/management/routing/model-definitions/refresh",
-+		"/v0/management/api-keys", "/v1/images/generations"} {
++		"/v8/management/credentials/verify", "/v0/management/api-keys", "/v1/images/generations"} {
 +		for _, key := range []string{"", allowlistTestKey} {
 +			req := allowlistRequest(http.MethodPost, target, key, "")
 +			req.Body = io.NopCloser(strings.NewReader(`{"partial":`))
@@ -1549,10 +1551,10 @@ index 00000000..412f482a
 +}
 diff --git a/internal/api/server_management_route_table_test.go b/internal/api/server_management_route_table_test.go
 new file mode 100644
-index 00000000..048ec050
+index 00000000..19a4e79e
 --- /dev/null
 +++ b/internal/api/server_management_route_table_test.go
-@@ -0,0 +1,267 @@
+@@ -0,0 +1,268 @@
 +package api
 +
 +// charmer local patch (management-readonly-allowlist): the reviewed route
@@ -1777,6 +1779,7 @@ index 00000000..048ec050
 +	"POST /v1beta/models/*action":                              routeOpen,
 +	"POST /v8/management/credentials":                          routeRefuse,
 +	"POST /v8/management/credentials/refresh":                  routeRefuse,
++	"POST /v8/management/credentials/verify":                   routeRefuse,
 +	"POST /v8/management/models/refresh":                       routeRefuse,
 +	"POST /v8/management/oauth/auth-url":                       routeRefuse,
 +	"POST /v8/management/oauth/callback":                       routeRefuse,
@@ -1821,7 +1824,7 @@ index 00000000..048ec050
 +	"PUT /v8/management/config/*path":                          routeRefuse,
 +}
 diff --git a/internal/api/server_test.go b/internal/api/server_test.go
-index 0a030084..281ef058 100644
+index 30cdbff2..5aa46426 100644
 --- a/internal/api/server_test.go
 +++ b/internal/api/server_test.go
 @@ -1867,44 +1867,22 @@ func TestExampleAPIKeySafeModeShowsWarningAndKeepsManagement(t *testing.T) {

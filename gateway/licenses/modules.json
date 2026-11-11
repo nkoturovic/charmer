@@ -1,38 +1,40 @@
 {
   "format": 1,
   "inputs": {
-    "post_apply_tree_sha256": "dd5f62c8489c6d27ff61ff8d78089a9d01feae2b288dd95123ababf81e85d5d8",
+    "post_apply_tree_sha256": "0e8a168990bfd791ae8c5e0a71cafcd7b74ac6f076a27b329db667370a8050ea",
     "series": [
       "cli-proxy-api-loopback-oauth.patch@244e68528cbc72a636d112d4350c9e2e9aeb0c4b55c9097e08ee42a201fa22f4",
-      "cli-proxy-api-kimi-claude-compat.patch@b75ee784dc93654590ca4eda8146387185fddb708d614a43c051fec7064f40c2",
-      "cli-proxy-api-non-claude-cache-retention.patch@8bf1eb83abdfaed8cc10774c724f909a0f7a6b45fe786f02853ddc3271a6bc76",
-      "cli-proxy-api-management-readonly-allowlist.patch@f59ae6341725fa7d0748fa11cd779623a68897aec943a551b91921807b285977",
-      "cli-proxy-api-watcher-parentdir.patch@00b666332d85bc3174214831f064be2ea3e4dc37ad419ca7b8e782ae4b657e62",
-      "cli-proxy-api-serve-after-initial-auth-load.patch@2f9d4b87c9ffd1ff10d816ab870661b4ddd756a0d3b8e85daae3d1189903a9d5",
-      "cli-proxy-api-management-env-only.patch@851b905b7d6699a4cd95b186d721fa7f3dab98ec0cf19cc4550f091a58c3f519",
-      "cli-proxy-api-credential-save-report.patch@2d081f8e4ac74362a3c2e8c6dc6e40118e24826fe480d559c49750f752b2b6ef",
-      "cli-proxy-api-credentialed-redirects.patch@501cd1bcb606b01a24f0677428d840374f45546e723070143e549ef46e8c02d8",
-      "cli-proxy-api-openai-compat-keyed-safety.patch@89921f21bf34416ccb46df5f8cffbb676df89fc30935b11412eae136c8724031",
-      "cli-proxy-api-auth-snapshot-locking.patch@b19adc4d432b6095de27f3e73125acb3d9c9a1f67bf7171d8446afaeb73e3402",
-      "cli-proxy-api-server-config-snapshot.patch@ece8ee8a4218fc28617bac2fdee4a0fcdc6c5bf8b846717e542b4273181d8aff",
-      "cli-proxy-api-claude-metadata-locking.patch@48122ca2d4e9086e8fac89bdcf61d3b1f3f3647a69d1589d8fac9bf4bf65f1cb",
-      "cli-proxy-api-oauth-model-overlay.patch@77d8c60cd28e8d6ae989703a716ba482f5b1c64e7b43b30ec4f0f177061606b4",
-      "cli-proxy-api-no-antigravity-egress.patch@beb48ca92a47038192729f3a1bb8e03daaf4727add5a6ec8888c6c083a3dfab7",
-      "cli-proxy-api-codex-client-identity.patch@54c95f1d955395fd7b7582be35c2c925876794e2726fce3c76c1a04ef6cdf922",
+      "cli-proxy-api-kimi-claude-compat.patch@2d4f9b1fedc2b191ed2f7fb42437537f1ea592b170f4fe1f0f82b7fbee440bc1",
+      "cli-proxy-api-non-claude-cache-retention.patch@067dc33b0187d763b720a287e01c3d72e244714ae388097723080b5149cbc5e9",
+      "cli-proxy-api-management-readonly-allowlist.patch@7bf1e6965a20c69d9ade6b47b6e007570d7a0e8a41d17750423420fda924b743",
+      "cli-proxy-api-watcher-parentdir.patch@e7817eede617d5cb287a69ef007d04a507d512fe5b2985f89dd7054c90786b77",
+      "cli-proxy-api-serve-after-initial-auth-load.patch@f35a59f1704410ad73fb19da6291ad0d905debf02b4268e6390d5aec2d9e4ed4",
+      "cli-proxy-api-management-env-only.patch@3b9a0c11b00d861c54dde25e8bef394603b881432b3cb9aab3afb526bea7c74c",
+      "cli-proxy-api-credential-save-report.patch@b0a303e3903dc905c0f59e522f08f8b3fd6abd61932939b2d6f36a9f69927b7f",
+      "cli-proxy-api-credentialed-redirects.patch@a10f59a46c4d7d9fee5033f5781aee2729ae3bda2c99f2d529523590ce93be8f",
+      "cli-proxy-api-openai-compat-keyed-safety.patch@b3a03baee2d87454a29190d660059ab670120ac1d97c08e15f2551793afafd95",
+      "cli-proxy-api-auth-snapshot-locking.patch@875e7d398cfe79a537f39fa4778e9e74f0a3599c7fe4f0cd1299e4f281053712",
+      "cli-proxy-api-server-config-snapshot.patch@58bc1434a85f5e439344a4dcbe331b1864c2259cb024615176329d8658635343",
+      "cli-proxy-api-claude-metadata-locking.patch@f6490bfa8e2be77136d7f319895cfaf5731448da64c1d39997ce09e030c32312",
+      "cli-proxy-api-oauth-model-overlay.patch@8dcf8777a76bdc9fd958c53a42e991cb5655045eec6de406e25ed6db0af02a88",
+      "cli-proxy-api-no-antigravity-egress.patch@fe3bce1ebf16dfe3738d060f0a7c5dfa9b6d2837fc12242d2bf30ce392afa105",
+      "cli-proxy-api-codex-client-identity.patch@cebf35a42eae5a798e856f9826da64ebd0498c6c93cc0b64a91fe2ee20887de5",
       "cli-proxy-api-antigravity-loopback-callback.patch@0594e27c8978fb6f354317622fc66b477635164d56aef429e58f6590e0616d8b",
-      "cli-proxy-api-codex-api-key-safety.patch@03a70b44e0d3e29c8c7b7fe3ae7c161bfb0eaafb123fae31c41d71bbd369ca9d",
-      "cli-proxy-api-refresh-shutdown-join.patch@b7938047ff69143ca5590920db59d638b75851d10a6a7d3c04cac22c825116ba",
-      "cli-proxy-api-openai-content-chunks.patch@bdba665a23e23894a9d03943cccfaafdad956e0af12676b989025cc5383b310e",
+      "cli-proxy-api-codex-api-key-safety.patch@e17b17d0867e78199657483f5ac270c0b231e2bdfcfd0f66f1c725548ee7b2e4",
+      "cli-proxy-api-refresh-shutdown-join.patch@04a370f1a0988bafd8172e9d59958e1f8862452ee0a5eee000e250d9a5fab068",
+      "cli-proxy-api-openai-content-chunks.patch@ea9447511efea48358cdaf15903e50ca0c0fc8847ae7337f2bda6d8eba0467f8",
       "cli-proxy-api-charmer-model-ids.patch@00c2e621498482021d12902d2fccc2e2d59a71482eded48581d1dd511a34e48c",
-      "cli-proxy-api-output-cap.patch@a8fc3083686cdb96ae04d5cb3ed5dab6c3d545a8b86c31e167b1ee524601048a",
-      "cli-proxy-api-context-error-normalization.patch@e443d74142f2b1602c03c65604db8424e0557bafe2a93650dec7e10ca99ca6c4",
-      "cli-proxy-api-log-reduction.patch@a28bae2a00e5aef8360d1c79155f4fa2ce884f8e101583079edeb6f5a2c055dd",
-      "cli-proxy-api-tool-call-integrity.patch@a5db8c2443d271d7890c0aaaf86cc45a430641ffebf3d52d41ecdfba3ff25fa5",
-      "cli-proxy-api-initial-registration.patch@6ec7cd1d7b21c0466141fa546f37e3ec1499ed8a861370908774bff6fd07d8ba",
-      "cli-proxy-api-terminal-rejection-reload.patch@e8fba56c077c71bca71d6b20677b552156da8aa3fb446911072efe63f1267834"
+      "cli-proxy-api-output-cap.patch@4daca00e7711fa0d3d949483667ee492c34bd26670291d6b4715eb18bee8a550",
+      "cli-proxy-api-context-error-normalization.patch@ef6b852fcd79a90d1cf1e492a20a9020246de161511004e0f4eef01177a5e2e3",
+      "cli-proxy-api-log-reduction.patch@e67332f3f289802cadecb6b94f4ff69331a6d70d4610c7ff8c892d8c72f89358",
+      "cli-proxy-api-tool-call-integrity.patch@8d5be253dce8ee3be366af4fd4c3120e7c0bd76531ef8e61872bf85c64dfb5b9",
+      "cli-proxy-api-initial-registration.patch@7305fddac2f68284d7354362e3af421f95066752714cf27eeb7c9fe1c3469bf5",
+      "cli-proxy-api-terminal-rejection-reload.patch@d3a318e6c96b8e7f285f3ac228b599777a6b276848e704b3eca4dd16e0ba9f06",
+      "cli-proxy-api-codex-refresh-without-journal.patch@53f48b53806db0bc6b2d411a32467dfaa9a365e552de9d6b50e6473ed282d78e",
+      "cli-proxy-api-native-advisor-beta-order.patch@d4e9fc3ea76787cde7553c25a753e6888402bbac4d865788160a37303757f3fa"
     ],
-    "source_tree_sha256": "8622fbae6524ea5270e6fb146d8c4b121bd1edac818f473724cb4b9c7e4ff670",
-    "vendor_tree_sha256": "76d091bba83a1ee3277579553ff681ef44b0793792acff0ceb04dd39c4989ee5"
+    "source_tree_sha256": "b5d5b0841753df5a71fb0bd860d00a396d5c107d028d0107059f3e6e67c8dbda",
+    "vendor_tree_sha256": "6330e01116c088c4d72e3a51557bc6c1a77e8b6f536532c7161f6cb03f362773"
   },
   "modules": [
     {
@@ -53,6 +55,29 @@
         "linux-arm64"
       ],
       "version": "v0.3.0"
+    },
+    {
+      "files": [
+        {
+          "kind": "license",
+          "path": "modules/github.com/MoeForge/moego/LICENSE",
+          "sha256": "86f028deb5895d8994571a0393face710851c29bb938e9b23fe7a9828efd99a8"
+        }
+      ],
+      "license": "MIT",
+      "path": "github.com/MoeForge/moego",
+      "replace": {
+        "path": "github.com/router-for-me/moego",
+        "version": "v0.1.2"
+      },
+      "sum": "h1:ME0iDkiFZK7N4MDj2C/XMvDT7euvTVIWMYEGd+VQGf0=",
+      "targets": [
+        "darwin-amd64",
+        "darwin-arm64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "version": "v0.1.0-alpha.1"
     },
     {
       "files": [
@@ -88,14 +113,14 @@
       ],
       "license": "MIT",
       "path": "github.com/andybalholm/brotli",
-      "sum": "h1:Yf9fFpf49Zrxb9NlQaluyE92/+X7UVHlhMNJN2sxfOI=",
+      "sum": "h1:IdkhjSe/+34U+fP7FSR2Q6Poj1hnHUa2GoWmzXJd6qY=",
       "targets": [
         "darwin-amd64",
         "darwin-arm64",
         "linux-amd64",
         "linux-arm64"
       ],
-      "version": "v1.0.6"
+      "version": "v1.3.0"
     },
     {
       "files": [
@@ -787,14 +812,14 @@
       ],
       "license": "BSD-3-Clause AND Apache-2.0 AND MIT",
       "path": "github.com/klauspost/compress",
-      "sum": "h1:zWNoFqq/lSuYQRim3dUXlXeA0IqwuZGicdG5ZTfY5j4=",
+      "sum": "h1:dD0v/bvxtjCBqQu6sx1TNWkalEY5lNTIe+HY9w8TeNI=",
       "targets": [
         "darwin-amd64",
         "darwin-arm64",
         "linux-amd64",
         "linux-arm64"
       ],
-      "version": "v1.20.3"
+      "version": "v1.20.4"
     },
     {
       "files": [
@@ -1599,82 +1624,6 @@
       "files": [
         {
           "kind": "license",
-          "path": "modules/github.com/tidwall/gjson/LICENSE",
-          "sha256": "be83ad53208d03a9fe08c7fac231cabf79422989ef5706bff217bd35104ebf07"
-        }
-      ],
-      "license": "MIT",
-      "path": "github.com/tidwall/gjson",
-      "sum": "h1:FIDeeyB800efLX89e5a8Y0BNH+LOngJyGrIWxG2FKQY=",
-      "targets": [
-        "darwin-amd64",
-        "darwin-arm64",
-        "linux-amd64",
-        "linux-arm64"
-      ],
-      "version": "v1.18.0"
-    },
-    {
-      "files": [
-        {
-          "kind": "license",
-          "path": "modules/github.com/tidwall/match/LICENSE",
-          "sha256": "be83ad53208d03a9fe08c7fac231cabf79422989ef5706bff217bd35104ebf07"
-        }
-      ],
-      "license": "MIT",
-      "path": "github.com/tidwall/match",
-      "sum": "h1:+Ho715JplO36QYgwN9PGYNhgZvoUSc9X2c80KVTi+GA=",
-      "targets": [
-        "darwin-amd64",
-        "darwin-arm64",
-        "linux-amd64",
-        "linux-arm64"
-      ],
-      "version": "v1.1.1"
-    },
-    {
-      "files": [
-        {
-          "kind": "license",
-          "path": "modules/github.com/tidwall/pretty/LICENSE",
-          "sha256": "0ca70311227fe097c662dece3f359e3317fa7f9d41f8d29eb45fc5135e216139"
-        }
-      ],
-      "license": "MIT",
-      "path": "github.com/tidwall/pretty",
-      "sum": "h1:RWIZEg2iJ8/g6fDDYzMpobmaoGh5OLl4AXtGUGPcqCs=",
-      "targets": [
-        "darwin-amd64",
-        "darwin-arm64",
-        "linux-amd64",
-        "linux-arm64"
-      ],
-      "version": "v1.2.0"
-    },
-    {
-      "files": [
-        {
-          "kind": "license",
-          "path": "modules/github.com/tidwall/sjson/LICENSE",
-          "sha256": "dbf5e2aa91aee5f19a1ce2cc7891e2ac37204b6461c0adc539426636e27b208e"
-        }
-      ],
-      "license": "MIT",
-      "path": "github.com/tidwall/sjson",
-      "sum": "h1:kLy8mja+1c9jlljvWTlSazM7cKDRfJuR/bOJhcY5NcY=",
-      "targets": [
-        "darwin-amd64",
-        "darwin-arm64",
-        "linux-amd64",
-        "linux-arm64"
-      ],
-      "version": "v1.2.5"
-    },
-    {
-      "files": [
-        {
-          "kind": "license",
           "path": "modules/github.com/tiktoken-go/tokenizer/LICENSE",
           "sha256": "84b1679fd28b98c8e02f2f1a1cab41ac230b0e9841695462ad6369663d32473a"
         }
@@ -1746,6 +1695,25 @@
         "linux-arm64"
       ],
       "version": "v0.0.0-20220910002029-abceb7e1c41e"
+    },
+    {
+      "files": [
+        {
+          "kind": "license",
+          "path": "modules/go.etcd.io/bbolt/LICENSE",
+          "sha256": "c15d721c37e277a11584547de6d618541501f7aa10c4e32a945a4f9ff36cb0f6"
+        }
+      ],
+      "license": "MIT",
+      "path": "go.etcd.io/bbolt",
+      "sum": "h1:S7GAl7Fxv12yohbwFfIbQCGDWbQbtDGPET4P/bD4lxU=",
+      "targets": [
+        "darwin-amd64",
+        "darwin-arm64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "version": "v1.5.0"
     },
     {
       "files": [
@@ -1848,14 +1816,14 @@
       ],
       "license": "BSD-3-Clause",
       "path": "golang.org/x/sync",
-      "sum": "h1:iqiDrGoDgyuvAKrhLQthUEzU/R378N78gXbBjxed7oA=",
+      "sum": "h1:dJnifr0nMV8/SBnBvdo4eSGGnrc3O4FFx6IqvtLcmRs=",
       "targets": [
         "darwin-amd64",
         "darwin-arm64",
         "linux-amd64",
         "linux-arm64"
       ],
-      "version": "v0.24.0"
+      "version": "v0.25.0"
     },
     {
       "files": [
@@ -1872,14 +1840,14 @@
       ],
       "license": "BSD-3-Clause",
       "path": "golang.org/x/sys",
-      "sum": "h1:XbzkgYJHdqh/8m2Uu0W/dQv8nktxx4BFHp1M0gROTXA=",
+      "sum": "h1:dkKZEFTEKaLr1sjhs0WiKqoi8Jj5nHbS3Njmx1UoMJs=",
       "targets": [
         "darwin-amd64",
         "darwin-arm64",
         "linux-amd64",
         "linux-arm64"
       ],
-      "version": "v0.49.0"
+      "version": "v0.50.0"
     },
     {
       "files": [
@@ -1896,14 +1864,14 @@
       ],
       "license": "BSD-3-Clause",
       "path": "golang.org/x/text",
-      "sum": "h1:1QivrlhwAsnMOcqgOdl9my7s9OyZl8O5/UGUTJVXoWc=",
+      "sum": "h1:YItdp/mQNGnsmrgpcdA5yQ3bnRxCfo/Tj/iByGW9GGo=",
       "targets": [
         "darwin-amd64",
         "darwin-arm64",
         "linux-amd64",
         "linux-arm64"
       ],
-      "version": "v0.43.0"
+      "version": "v0.44.0"
     },
     {
       "files": [
@@ -2037,10 +2005,10 @@
     ],
     "license": "BSD-3-Clause",
     "name": "Go",
-    "version": "1.27.3"
+    "version": "1.27.4"
   },
   "upstream": {
-    "commit": "ad8bdd3f20bef44f0684b8a6096a216b2c76040d",
+    "commit": "8bba7a77c6bcbfd993516d26606bfecaa4ff49d0",
     "files": [
       {
         "kind": "license",
@@ -2051,10 +2019,10 @@
     "license": "MIT",
     "modifications": {
       "path": "CLIProxyAPI/MODIFICATIONS.txt",
-      "sha256": "c0459d1db3193fda2651065e54e2795d4c74609cd948c4decba25e15de94db6c"
+      "sha256": "e7228c1ab961afacbeba6a4cc40f9045ae8d318959b2d072e759b424cb521017"
     },
     "name": "CLIProxyAPI",
     "repository": "https://github.com/router-for-me/CLIProxyAPI",
-    "version": "8.0.45"
+    "version": "8.0.67"
   }
 }

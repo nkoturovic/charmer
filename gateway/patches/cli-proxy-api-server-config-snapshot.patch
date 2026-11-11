@@ -339,7 +339,7 @@ index 94500385..dad89708 100644
  	if cfg != nil {
  		keys = safemode.ExampleAPIKeys(cfg.APIKeys)
 diff --git a/internal/api/server_routes.go b/internal/api/server_routes.go
-index bb02a013..bb307289 100644
+index e2b039a8..07aad56e 100644
 --- a/internal/api/server_routes.go
 +++ b/internal/api/server_routes.go
 @@ -160,7 +160,7 @@ func (s *Server) setupRoutes() {
@@ -396,7 +396,7 @@ index bb02a013..bb307289 100644
  	resp, err := performRequest(selected)
  	if err != nil {
  		if errors.Is(err, errMissingBaseURL) {
-@@ -626,7 +626,7 @@ func (s *Server) unifiedModelsHandler(openaiHandler *openai.OpenAIAPIHandler, cl
+@@ -629,7 +629,7 @@ func (s *Server) unifiedModelsHandler(openaiHandler *openai.OpenAIAPIHandler, cl
  			return
  		}
  
@@ -405,7 +405,7 @@ index bb02a013..bb307289 100644
  		if _, ok := c.Request.URL.Query()["client_version"]; ok {
  			clientVersion := c.Query("client_version")
  			if cfg != nil && cfg.Home.Enabled {
-@@ -684,7 +684,7 @@ func grokModelsFromRegistryInfos(infos []*registry.ModelInfo) []grokbuild.ModelI
+@@ -687,7 +687,7 @@ func grokModelsFromRegistryInfos(infos []*registry.ModelInfo) []grokbuild.ModelI
  
  func (s *Server) handleGrokModels(c *gin.Context) {
  	var models []grokbuild.ModelInfo
@@ -414,7 +414,7 @@ index bb02a013..bb307289 100644
  		entries, ok := s.loadHomeModelEntries(c)
  		if !ok {
  			return
-@@ -712,7 +712,7 @@ func (s *Server) handleHomeCodexClientModels(c *gin.Context, clientVersion strin
+@@ -715,7 +715,7 @@ func (s *Server) handleHomeCodexClientModels(c *gin.Context, clientVersion strin
  		return
  	}
  
@@ -423,7 +423,7 @@ index bb02a013..bb307289 100644
  	models := make([]map[string]any, 0, len(entries))
  	for _, entry := range entries {
  		models = append(models, formatHomeCodexModelWithSettings(entry, cfg))
-@@ -877,7 +877,7 @@ func formatHomeCodexModelWithSettings(entry homeModelEntry, cfg *config.Config)
+@@ -880,7 +880,7 @@ func formatHomeCodexModelWithSettings(entry homeModelEntry, cfg *config.Config)
  
  func (s *Server) geminiModelsHandler(geminiHandler *gemini.GeminiAPIHandler) gin.HandlerFunc {
  	return func(c *gin.Context) {
@@ -432,7 +432,7 @@ index bb02a013..bb307289 100644
  			s.handleHomeGeminiModels(c)
  			return
  		}
-@@ -888,7 +888,7 @@ func (s *Server) geminiModelsHandler(geminiHandler *gemini.GeminiAPIHandler) gin
+@@ -891,7 +891,7 @@ func (s *Server) geminiModelsHandler(geminiHandler *gemini.GeminiAPIHandler) gin
  
  func (s *Server) geminiGetHandler(geminiHandler *gemini.GeminiAPIHandler) gin.HandlerFunc {
  	return func(c *gin.Context) {
@@ -441,7 +441,7 @@ index bb02a013..bb307289 100644
  			s.handleHomeGeminiModel(c)
  			return
  		}
-@@ -919,7 +919,7 @@ func (s *Server) handleHomeModels(c *gin.Context) {
+@@ -922,7 +922,7 @@ func (s *Server) handleHomeModels(c *gin.Context) {
  	isClaude := isAnthropicModelsRequest(c)
  
  	if isClaude {
@@ -451,10 +451,10 @@ index bb02a013..bb307289 100644
  		s.writeModelListResponse(c, "claude", claudemodels.BuildResponse(formatHomeClaudeModels(entries), disableCloaking))
  		return
 diff --git a/sdk/api/handlers/claude/code_handlers.go b/sdk/api/handlers/claude/code_handlers.go
-index 04b32ae1..fc415665 100644
+index 90c6a311..c9f05427 100644
 --- a/sdk/api/handlers/claude/code_handlers.go
 +++ b/sdk/api/handlers/claude/code_handlers.go
-@@ -157,7 +157,7 @@ func rewriteClaudeDDModelInBody(rawJSON []byte) []byte {
+@@ -158,7 +158,7 @@ func rewriteClaudeDDModelInBody(rawJSON []byte) []byte {
  // Parameters:
  //   - c: The Gin context for the request.
  func (h *ClaudeCodeAPIHandler) ClaudeModels(c *gin.Context) {
@@ -463,7 +463,7 @@ index 04b32ae1..fc415665 100644
  	disableCloaking := cfg != nil && cfg.ClaudeCode.DisableCloakingModelList
  	h.WriteModelListResponse(c, h.HandlerType(), claudemodels.BuildResponse(h.Models(), disableCloaking))
  }
-@@ -262,7 +262,7 @@ func (h *ClaudeCodeAPIHandler) handleStreamingResponse(c *gin.Context, rawJSON [
+@@ -263,7 +263,7 @@ func (h *ClaudeCodeAPIHandler) handleStreamingResponse(c *gin.Context, rawJSON [
  		flusher.Flush()
  		return true
  	}
@@ -472,7 +472,7 @@ index 04b32ae1..fc415665 100644
  	defer stopKeepAlive()
  
  	dataChan, resolvedHeaders, errChan, okBootstrap := h.ExecuteStreamWithPreFTKeepAlive(
-@@ -597,7 +597,7 @@ func (h *ClaudeCodeAPIHandler) WriteErrorResponse(c *gin.Context, msg *interface
+@@ -643,7 +643,7 @@ func (h *ClaudeCodeAPIHandler) WriteErrorResponse(c *gin.Context, msg *interface
  			c.Writer.Header().Add("Retry-After", value)
  		}
  	}
@@ -708,10 +708,10 @@ index 00000000..6e79fc6f
 +	}
 +}
 diff --git a/sdk/api/handlers/handlers.go b/sdk/api/handlers/handlers.go
-index 5e7d4383..d0ec71a1 100644
+index 47c9f996..ca12070b 100644
 --- a/sdk/api/handlers/handlers.go
 +++ b/sdk/api/handlers/handlers.go
-@@ -608,6 +608,8 @@ func (h *BaseAPIHandler) GetContextWithCancel(handler interfaces.APIHandler, c *
+@@ -652,6 +652,8 @@ func (h *BaseAPIHandler) GetContextWithCancel(handler interfaces.APIHandler, c *
  		}
  	}
  	newCtx, cancel := context.WithCancel(parentCtx)
@@ -720,7 +720,7 @@ index 5e7d4383..d0ec71a1 100644
  
  	endpoint := ""
  	if c != nil && c.Request != nil {
-@@ -659,7 +661,7 @@ func (h *BaseAPIHandler) GetContextWithCancel(handler interfaces.APIHandler, c *
+@@ -703,7 +705,7 @@ func (h *BaseAPIHandler) GetContextWithCancel(handler interfaces.APIHandler, c *
  		if c != nil {
  			logging.SetResponseStatus(cancelCtx, c.Writer.Status())
  		}
@@ -729,7 +729,7 @@ index 5e7d4383..d0ec71a1 100644
  			if captured, exists := c.Get(logging.APIResponseCapturedContextKey); exists {
  				if capturedBool, ok := captured.(bool); ok && capturedBool {
  					cancel()
-@@ -711,7 +713,7 @@ func (h *BaseAPIHandler) StartNonStreamingKeepAlive(c *gin.Context, ctx context.
+@@ -755,7 +757,7 @@ func (h *BaseAPIHandler) StartNonStreamingKeepAlive(c *gin.Context, ctx context.
  	if h == nil || c == nil {
  		return func() {}
  	}
@@ -792,7 +792,7 @@ index 00000000..3d1d819c
 +	return h.RequestConfig(c)
 +}
 diff --git a/sdk/api/handlers/handlers_errors.go b/sdk/api/handlers/handlers_errors.go
-index 418f83f2..f1922117 100644
+index c727d9e2..6868c65b 100644
 --- a/sdk/api/handlers/handlers_errors.go
 +++ b/sdk/api/handlers/handlers_errors.go
 @@ -128,7 +128,7 @@ func (h *BaseAPIHandler) WriteErrorResponse(c *gin.Context, msg *interfaces.Erro
@@ -804,17 +804,8 @@ index 418f83f2..f1922117 100644
  		for key, values := range msg.Addon {
  			if len(values) == 0 || IsCPAReservedResponseHeader(key) {
  				continue
-@@ -201,7 +201,7 @@ func writeDirectErrorResponse(c *gin.Context, status int, msg *interfaces.ErrorM
- }
- 
- func (h *BaseAPIHandler) LoggingAPIResponseError(ctx context.Context, err *interfaces.ErrorMessage) {
--	if cfg := h.CurrentConfig(); cfg != nil && cfg.RequestLog {
-+	if cfg := h.requestConfigFromContext(ctx); cfg != nil && cfg.RequestLog {
- 		if ginContext, ok := ctx.Value("gin").(*gin.Context); ok {
- 			if apiResponseErrors, isExist := ginContext.Get("API_RESPONSE_ERROR"); isExist {
- 				if slicesAPIResponseError, isOk := apiResponseErrors.([]*interfaces.ErrorMessage); isOk {
 diff --git a/sdk/api/handlers/handlers_execution.go b/sdk/api/handlers/handlers_execution.go
-index 34130f76..6798b23e 100644
+index dff03be5..bc061d39 100644
 --- a/sdk/api/handlers/handlers_execution.go
 +++ b/sdk/api/handlers/handlers_execution.go
 @@ -117,7 +117,7 @@ func (h *BaseAPIHandler) executeWithAuthManagerFormats(ctx context.Context, entr
@@ -835,7 +826,7 @@ index 34130f76..6798b23e 100644
  	responseHeaders := downstreamHeadersFromExecutor(rawResponseHeaders, passthroughHeaders)
  	body, responseHeaders := h.applyResponseInterceptors(ctx, lifecycle.requestID(), handlerType, normalizedModel, originalRequestedModel, executedOpts, rawResponseHeaders, responseHeaders, executedOpts.OriginalRequest, executedReq.Payload, resp.Payload, http.StatusOK, execOptions.SkipInterceptorPluginID, passthroughHeaders)
  	lifecycle.complete(pluginapi.RequestCompletionSucceeded, http.StatusOK, nil)
-@@ -238,7 +238,7 @@ func (h *BaseAPIHandler) executeWithPluginExecutor(ctx context.Context, entryPro
+@@ -240,7 +240,7 @@ func (h *BaseAPIHandler) executeWithPluginExecutor(ctx context.Context, entryPro
  		reporter.EnsurePublished(execCtx)
  	}
  	rawResponseHeaders := cloneHeader(resp.Headers)
@@ -844,7 +835,7 @@ index 34130f76..6798b23e 100644
  	responseHeaders := downstreamHeadersFromExecutor(rawResponseHeaders, passthroughHeaders)
  	body, responseHeaders := h.applyResponseInterceptors(execCtx, lifecycle.requestID(), responseProtocol, modelName, originalRequestedModel, opts, rawResponseHeaders, responseHeaders, opts.OriginalRequest, req.Payload, resp.Payload, http.StatusOK, execOptions.SkipInterceptorPluginID, passthroughHeaders)
  	lifecycle.complete(pluginapi.RequestCompletionSucceeded, http.StatusOK, nil)
-@@ -274,7 +274,7 @@ func (h *BaseAPIHandler) countWithPluginExecutor(ctx context.Context, handlerTyp
+@@ -276,7 +276,7 @@ func (h *BaseAPIHandler) countWithPluginExecutor(ctx context.Context, handlerTyp
  		return nil, nil, errMsg
  	}
  	rawResponseHeaders := cloneHeader(resp.Headers)
@@ -854,10 +845,10 @@ index 34130f76..6798b23e 100644
  	body, responseHeaders := h.applyResponseInterceptors(ctx, lifecycle.requestID(), handlerType, modelName, originalRequestedModel, opts, rawResponseHeaders, responseHeaders, opts.OriginalRequest, req.Payload, resp.Payload, http.StatusOK, execOptions.SkipInterceptorPluginID, passthroughHeaders)
  	lifecycle.complete(pluginapi.RequestCompletionSucceeded, http.StatusOK, nil)
 diff --git a/sdk/api/handlers/handlers_stream.go b/sdk/api/handlers/handlers_stream.go
-index 816de409..68cc028b 100644
+index e04fe3bb..0ebd583d 100644
 --- a/sdk/api/handlers/handlers_stream.go
 +++ b/sdk/api/handlers/handlers_stream.go
-@@ -92,7 +92,7 @@ func (h *BaseAPIHandler) streamWithPluginExecutor(ctx context.Context, entryProt
+@@ -143,7 +143,7 @@ func (h *BaseAPIHandler) streamWithPluginExecutor(ctx context.Context, entryProt
  		return nil, nil, errChan
  	}
  
@@ -866,7 +857,7 @@ index 816de409..68cc028b 100644
  	interceptorHost := h.interceptorHost()
  	streamInterceptorsActive := streamInterceptorsEnabled(interceptorHost)
  	rawStreamHeaders := cloneHeader(streamResult.Headers)
-@@ -380,7 +380,7 @@ func (h *BaseAPIHandler) executeStreamWithAuthManagerFormats(ctx context.Context
+@@ -433,7 +433,7 @@ func (h *BaseAPIHandler) executeStreamWithAuthManagerFormats(ctx context.Context
  	if executedReq, executedOpts := executedRequest(); len(executedOpts.Headers) > 0 || len(executedReq.Payload) > 0 || len(executedOpts.Metadata) > 0 {
  		ctx = enrichContextWithSessionHierarchy(ctx, executedOpts.Headers, executedReq.Payload, executedOpts.Metadata)
  	}
@@ -875,7 +866,7 @@ index 816de409..68cc028b 100644
  	interceptorHost := h.interceptorHost()
  	streamInterceptorsActive := streamInterceptorsEnabled(interceptorHost)
  	// Resolve bootstrap retries and header initialization before returning so the
-@@ -537,7 +537,7 @@ func (h *BaseAPIHandler) executeStreamWithAuthManagerFormats(ctx context.Context
+@@ -590,7 +590,7 @@ func (h *BaseAPIHandler) executeStreamWithAuthManagerFormats(ctx context.Context
  		}
  	}
  
@@ -885,10 +876,10 @@ index 816de409..68cc028b 100644
  		maxBootstrapRetries = 0
  	}
 diff --git a/sdk/api/handlers/openai/openai_handlers.go b/sdk/api/handlers/openai/openai_handlers.go
-index e0e72458..5a297baf 100644
+index 032ee92c..3c9db5a8 100644
 --- a/sdk/api/handlers/openai/openai_handlers.go
 +++ b/sdk/api/handlers/openai/openai_handlers.go
-@@ -507,7 +507,7 @@ func (h *OpenAIAPIHandler) handleStreamingResponse(c *gin.Context, rawJSON []byt
+@@ -504,7 +504,7 @@ func (h *OpenAIAPIHandler) handleStreamingResponse(c *gin.Context, rawJSON []byt
  		flusher.Flush()
  		return true
  	}
@@ -897,7 +888,7 @@ index e0e72458..5a297baf 100644
  	defer stopKeepAlive()
  
  	dataChan, resolvedHeaders, errChan, okBootstrap := h.ExecuteStreamWithPreFTKeepAlive(
-@@ -670,7 +670,7 @@ func (h *OpenAIAPIHandler) handleCompletionsStreamingResponse(c *gin.Context, ra
+@@ -671,7 +671,7 @@ func (h *OpenAIAPIHandler) handleCompletionsStreamingResponse(c *gin.Context, ra
  		flusher.Flush()
  		return true
  	}
@@ -907,28 +898,28 @@ index e0e72458..5a297baf 100644
  
  	dataChan, resolvedHeaders, errChan, okBootstrap := h.ExecuteStreamWithPreFTKeepAlive(
 diff --git a/sdk/api/handlers/openai/openai_responses_handlers.go b/sdk/api/handlers/openai/openai_responses_handlers.go
-index d0396925..537d81f9 100644
+index 0dd4aea0..e9a2af9f 100644
 --- a/sdk/api/handlers/openai/openai_responses_handlers.go
 +++ b/sdk/api/handlers/openai/openai_responses_handlers.go
-@@ -572,7 +572,7 @@ func (h *OpenAIResponsesAPIHandler) prepareCodexMultiAgentV2Tools(c *gin.Context
- 	if h == nil {
- 		return payload
+@@ -861,7 +861,7 @@ func (h *OpenAIResponsesAPIHandler) prepareCodexMultiAgentV2ToolsDoc(c *gin.Cont
+ 	if h == nil || doc == nil {
+ 		return false
  	}
 -	cfg := h.CurrentConfig()
 +	cfg := h.RequestConfig(c)
  	if cfg == nil {
- 		return payload
+ 		return false
  	}
-@@ -605,7 +605,7 @@ func (h *OpenAIResponsesAPIHandler) prepareCodexOrphanDelegation(c *gin.Context,
- 	if h == nil {
- 		return payload
+@@ -907,7 +907,7 @@ func (h *OpenAIResponsesAPIHandler) prepareCodexOrphanDelegationDoc(c *gin.Conte
+ 	if h == nil || doc == nil {
+ 		return false
  	}
 -	cfg := h.CurrentConfig()
 +	cfg := h.RequestConfig(c)
  	if cfg == nil || !cfg.CodexOrphanDelegationCompatibility {
- 		return payload
+ 		return false
  	}
-@@ -780,7 +780,7 @@ func (h *OpenAIResponsesAPIHandler) handleStreamingResponse(c *gin.Context, rawJ
+@@ -1108,7 +1108,7 @@ func (h *OpenAIResponsesAPIHandler) handleStreamingResponse(c *gin.Context, rawJ
  		}
  		return true
  	}
@@ -938,10 +929,10 @@ index d0396925..537d81f9 100644
  
  	dataChan, resolvedHeaders, errChan, okBootstrap := h.ExecuteStreamWithPreFTKeepAlive(
 diff --git a/sdk/api/handlers/openai/openai_responses_websocket.go b/sdk/api/handlers/openai/openai_responses_websocket.go
-index 329fb6e1..c4f56d5b 100644
+index 125f2045..0e28f56b 100644
 --- a/sdk/api/handlers/openai/openai_responses_websocket.go
 +++ b/sdk/api/handlers/openai/openai_responses_websocket.go
-@@ -363,7 +363,7 @@ func (h *OpenAIResponsesAPIHandler) ResponsesWebsocket(c *gin.Context) {
+@@ -456,7 +456,7 @@ func (h *OpenAIResponsesAPIHandler) ResponsesWebsocket(c *gin.Context) {
  	requestLogEnabled := false
  	codexResponseSteering := false
  	if h != nil {
@@ -951,7 +942,7 @@ index 329fb6e1..c4f56d5b 100644
  			codexResponseSteering = cfg.CodexResponseSteering
  		}
 diff --git a/sdk/api/handlers/stream_forwarder.go b/sdk/api/handlers/stream_forwarder.go
-index fb5828fc..90972b50 100644
+index 23263b53..a229ccfe 100644
 --- a/sdk/api/handlers/stream_forwarder.go
 +++ b/sdk/api/handlers/stream_forwarder.go
 @@ -148,7 +148,7 @@ func (h *BaseAPIHandler) ForwardStream(c *gin.Context, flusher http.Flusher, can

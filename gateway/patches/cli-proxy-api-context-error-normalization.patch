@@ -1,6 +1,6 @@
 diff --git a/internal/runtime/executor/codex_context_error_normalization.go b/internal/runtime/executor/codex_context_error_normalization.go
 new file mode 100644
-index 00000000..8a75fff2
+index 00000000..878bf9fd
 --- /dev/null
 +++ b/internal/runtime/executor/codex_context_error_normalization.go
 @@ -0,0 +1,73 @@
@@ -9,8 +9,8 @@ index 00000000..8a75fff2
 +import (
 +	"net/http"
 +
++	"github.com/MoeForge/moego/ojson"
 +	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
-+	"github.com/tidwall/gjson"
 +)
 +
 +// Context-window overflow on the Codex routes, for Claude clients.
@@ -58,15 +58,15 @@ index 00000000..8a75fff2
 +	if status != http.StatusBadRequest && status != http.StatusRequestEntityTooLarge {
 +		return false
 +	}
-+	failure := gjson.GetBytes(body, "error")
++	failure := ojson.GetBytes(body, "error")
 +	if !failure.IsObject() {
 +		return false
 +	}
-+	if code := failure.Get("code"); code.Type == gjson.String && code.Str == "context_length_exceeded" {
++	if code := failure.Get("code"); code.Type == ojson.String && code.Str == "context_length_exceeded" {
 +		return true
 +	}
 +	message := failure.Get("message")
-+	return message.Type == gjson.String && message.Str == codexContextWindowMessage
++	return message.Type == ojson.String && message.Str == codexContextWindowMessage
 +}
 +
 +// codexClaudeFailure returns failure, marked when from is the Claude format
@@ -371,10 +371,10 @@ index 00000000..f9ecd325
 +	}
 +}
 diff --git a/internal/runtime/executor/codex_executor_execute.go b/internal/runtime/executor/codex_executor_execute.go
-index 53457fcd..21618c3e 100644
+index ef7b616e..cd21d68e 100644
 --- a/internal/runtime/executor/codex_executor_execute.go
 +++ b/internal/runtime/executor/codex_executor_execute.go
-@@ -143,7 +143,7 @@ func (e *CodexExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, re
+@@ -257,7 +257,7 @@ func (e *CodexExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, re
  			if errClearReplay := clearCodexReasoningReplayOnInvalidSignature(ctx, replayScope, httpResp.StatusCode, examined); errClearReplay != nil {
  				return resp, errClearReplay
  			}
@@ -382,30 +382,30 @@ index 53457fcd..21618c3e 100644
 +			err = codexClaudeFailure(from, failure, examined)
  			return resp, err
  		}
- 		b, _ := io.ReadAll(httpResp.Body)
-@@ -152,7 +152,7 @@ func (e *CodexExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, re
+ 		b, errRead := io.ReadAll(httpResp.Body)
+@@ -269,7 +269,7 @@ func (e *CodexExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, re
+ 			return resp, errClearReplay
  		}
- 		helps.AppendAPIResponseChunk(ctx, e.cfg, b)
  		helps.LogWithRequestID(ctx).Debugf("request error, error status: %d, error message: %s", httpResp.StatusCode, helps.SummarizeErrorBody(httpResp.Header.Get("Content-Type"), b))
 -		err = newCodexStatusErrWithHeadersAndCooling(httpResp.StatusCode, httpResp.Header, b, e.modelLevelCooling())
 +		err = codexClaudeFailure(from, newCodexStatusErrWithHeadersAndCooling(httpResp.StatusCode, httpResp.Header, b, e.modelLevelCooling()), b)
  		return resp, err
  	}
  	data, errRead := io.ReadAll(httpResp.Body)
-@@ -189,7 +189,7 @@ func (e *CodexExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, re
+@@ -309,7 +309,7 @@ func (e *CodexExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, re
  			if codexKeySafe(auth) {
  				streamErr = codexKeyTerminalFailure(streamErr, terminalBody)
  			}
 -			err = streamErr
 +			err = codexClaudeFailure(from, streamErr, terminalBody)
- 			return resp, err
- 		}
- 
+ 			if detail, hasDetail := helps.ParseCodexUsageWithOutputItems(eventData, outputItemsByIndex, outputItemsFallback); hasDetail {
+ 				reporter.PublishFailureWithDetail(ctx, detail, err)
+ 			}
 diff --git a/internal/runtime/executor/codex_executor_stream.go b/internal/runtime/executor/codex_executor_stream.go
-index fdf9b875..f84c11fd 100644
+index 5d8be5ea..0adb57a9 100644
 --- a/internal/runtime/executor/codex_executor_stream.go
 +++ b/internal/runtime/executor/codex_executor_stream.go
-@@ -161,7 +161,7 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
+@@ -196,7 +196,7 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
  			if errClearReplay := clearCodexReasoningReplayOnInvalidSignature(ctx, replayScope, httpResp.StatusCode, examined); errClearReplay != nil {
  				return nil, errClearReplay
  			}
@@ -414,16 +414,16 @@ index fdf9b875..f84c11fd 100644
  			return nil, err
  		}
  		data, readErr := io.ReadAll(httpResp.Body)
-@@ -177,7 +177,7 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
+@@ -212,7 +212,7 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
+ 			return nil, errClearReplay
  		}
- 		helps.AppendAPIResponseChunk(ctx, e.cfg, data)
  		helps.LogWithRequestID(ctx).Debugf("request error, error status: %d, error message: %s", httpResp.StatusCode, helps.SummarizeErrorBody(httpResp.Header.Get("Content-Type"), data))
 -		err = newCodexStatusErrWithHeadersAndCooling(httpResp.StatusCode, httpResp.Header, data, e.modelLevelCooling())
 +		err = codexClaudeFailure(from, newCodexStatusErrWithHeadersAndCooling(httpResp.StatusCode, httpResp.Header, data, e.modelLevelCooling()), data)
  		return nil, err
  	}
  
-@@ -284,7 +284,7 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
+@@ -320,7 +320,7 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
  						}
  						helps.LogWithRequestID(ctx).Debugf("codex executor: bootstrap overload rejection after %d lines / %v, time budget exhausted; delivering in-stream", bufferedFrames, timeSinceStart)
  					}
@@ -432,7 +432,7 @@ index fdf9b875..f84c11fd 100644
  					break
  				}
  				if helps.HasMeaningfulCodexOutputDelta(data) {
-@@ -479,7 +479,7 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
+@@ -520,7 +520,7 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
  					helps.RecordAPIResponseError(ctx, e.cfg, streamErr)
  					reporter.PublishFailure(ctx, streamErr)
  					select {
@@ -442,20 +442,20 @@ index fdf9b875..f84c11fd 100644
  					}
  					return
 diff --git a/sdk/api/handlers/claude/code_handlers.go b/sdk/api/handlers/claude/code_handlers.go
-index fc415665..888d30aa 100644
+index c9f05427..cd0797e2 100644
 --- a/sdk/api/handlers/claude/code_handlers.go
 +++ b/sdk/api/handlers/claude/code_handlers.go
-@@ -533,6 +533,9 @@ type claudeErrorResponse struct {
+@@ -564,6 +564,9 @@ func (h *ClaudeCodeAPIHandler) toClaudeError(msg *interfaces.ErrorMessage) claud
  }
  
- func (h *ClaudeCodeAPIHandler) toClaudeError(msg *interfaces.ErrorMessage) claudeErrorResponse {
+ func (h *ClaudeCodeAPIHandler) toClaudeErrorWithRetryAfter(msg *interfaces.ErrorMessage, retryAfter string) claudeErrorResponse {
 +	if isPromptTooLong(msg) {
 +		return promptTooLongError()
 +	}
  	status := http.StatusInternalServerError
  	errText := http.StatusText(status)
  	if msg != nil {
-@@ -565,6 +568,9 @@ func (h *ClaudeCodeAPIHandler) WriteErrorResponse(c *gin.Context, msg *interface
+@@ -608,6 +611,9 @@ func (h *ClaudeCodeAPIHandler) WriteErrorResponse(c *gin.Context, msg *interface
  	if msg != nil && msg.StatusCode > 0 {
  		status = msg.StatusCode
  	}
