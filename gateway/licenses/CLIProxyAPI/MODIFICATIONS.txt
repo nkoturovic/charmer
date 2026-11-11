@@ -362,3 +362,21 @@ Before the modules are vendored, this patch updates the module requirements:
       modified  internal/runtime/executor/claude_executor_request.go
       added     internal/runtime/executor/claude_native_advisor_beta.go
       added     internal/runtime/executor/claude_native_advisor_beta_test.go
+
+30. cli-proxy-api-private-network-dial.patch
+    sha256 8cb2219558a8260ebfbdef3c170ff37c9daeacacf6968c39dee1af396a2ccb06
+      modified  internal/config/config_normalization.go
+      modified  internal/config/config_types.go
+      added     internal/config/openai_compat_private_network_test.go
+      added     internal/privatenet/privatenet.go
+      added     internal/privatenet/privatenet_test.go
+      added     internal/privatenet/testdata/netclass-corpus.json
+      modified  internal/runtime/executor/openai_compat_executor.go
+      modified  internal/runtime/executor/openai_compat_keyed_safety.go
+      added     internal/runtime/executor/openai_compat_private_network.go
+      added     internal/runtime/executor/openai_compat_private_network_test.go
+      modified  internal/runtime/executor/openai_compat_redirect.go
+      modified  internal/watcher/diff/openai_compat.go
+      added     internal/watcher/diff/openai_compat_private_network_test.go
+      modified  internal/watcher/synthesizer/config.go
+      added     internal/watcher/synthesizer/openai_compat_private_network_test.go

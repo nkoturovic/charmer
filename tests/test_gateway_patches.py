@@ -422,6 +422,9 @@ class PatchOmissionProbeTests(unittest.TestCase):
     def test_codex_refresh_without_journal(self):
         self.check_probe("executor", "TestOmissionCodexRefreshWithoutJournal", "RJ1")
 
+    def test_private_network(self):
+        self.check_probe("executor", "TestOmissionPrivateNetwork", "PN1")
+
     def test_relogin_after_refresh_failure(self):
         # Upstream's re-login recovery since 8.0.43 (21553509; local patch 33
         # retired): a regression row with no patch to omit.

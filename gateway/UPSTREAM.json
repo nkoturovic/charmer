@@ -194,6 +194,11 @@
       "basename": "cli-proxy-api-native-advisor-beta-order.patch",
       "sha256": "d4e9fc3ea76787cde7553c25a753e6888402bbac4d865788160a37303757f3fa",
       "admitted": true
+    },
+    {
+      "basename": "cli-proxy-api-private-network-dial.patch",
+      "sha256": "8cb2219558a8260ebfbdef3c170ff37c9daeacacf6968c39dee1af396a2ccb06",
+      "admitted": true
     }
   ],
   "candidates": [],
@@ -1081,6 +1086,44 @@
       ]
     },
     {
+      "name": "private-network-dial",
+      "packages": [
+        "./internal/privatenet",
+        "./internal/config",
+        "./internal/runtime/executor",
+        "./internal/watcher/diff",
+        "./internal/watcher/synthesizer"
+      ],
+      "run": "^(TestClassifyCorpus|TestCheckPrecedence|TestCheckLocal|TestDialerMixedAnswersResolveOnceAndDialOnlyTheClass|TestDialerLiteralAddressIsNotResolved|TestDialerRefusesWithTheStrongestReasonAndDialsNothing|TestDialerFixedGatewayPortsNeverDialed|TestDialerTailnetLocalAddressRule|TestDialControlRechecksTheSocketAddress|TestDialerConnectsOnLoopback|TestRefusedErrorIsFixedAndCanonical|TestTransportShapeAndCacheIdentity|TestTransportUsesNoEnvironmentProxyAndHTTP11|TestClientFollowsNoRedirect|TestOpenAICompatPrivateNetworkNormalization|TestPrivateNetworkEverySiteServesItsClass|TestPrivateNetworkEverySiteRefusesOutsideItsClass|TestPrivateNetworkRefusesTheGatewaysOwnPort|TestPrivateNetworkUsesNoProxy|TestPrivateNetworkKeylessFollowsNoRedirect|TestDiffOpenAICompatPrivateNetworkPrintsClassAndURLOnly|TestSynthesizeOpenAICompatPrivateNetworkClass)$",
+      "platforms": "portable",
+      "race": false,
+      "count": null,
+      "expected_tests": [
+        "TestClassifyCorpus",
+        "TestCheckPrecedence",
+        "TestCheckLocal",
+        "TestDialerMixedAnswersResolveOnceAndDialOnlyTheClass",
+        "TestDialerLiteralAddressIsNotResolved",
+        "TestDialerRefusesWithTheStrongestReasonAndDialsNothing",
+        "TestDialerFixedGatewayPortsNeverDialed",
+        "TestDialerTailnetLocalAddressRule",
+        "TestDialControlRechecksTheSocketAddress",
+        "TestDialerConnectsOnLoopback",
+        "TestRefusedErrorIsFixedAndCanonical",
+        "TestTransportShapeAndCacheIdentity",
+        "TestTransportUsesNoEnvironmentProxyAndHTTP11",
+        "TestClientFollowsNoRedirect",
+        "TestOpenAICompatPrivateNetworkNormalization",
+        "TestPrivateNetworkEverySiteServesItsClass",
+        "TestPrivateNetworkEverySiteRefusesOutsideItsClass",
+        "TestPrivateNetworkRefusesTheGatewaysOwnPort",
+        "TestPrivateNetworkUsesNoProxy",
+        "TestPrivateNetworkKeylessFollowsNoRedirect",
+        "TestDiffOpenAICompatPrivateNetworkPrintsClassAndURLOnly",
+        "TestSynthesizeOpenAICompatPrivateNetworkClass"
+      ]
+    },
+    {
       "name": "plugin-host",
       "packages": [
         "./internal/pluginhost"
@@ -1181,6 +1224,10 @@
     {
       "patch": "cli-proxy-api-codex-refresh-without-journal.patch",
       "text": "failed to parse refresh response: missing or invalid token fields"
+    },
+    {
+      "patch": "cli-proxy-api-private-network-dial.patch",
+      "text": "private-network: refused provider=%s class=%s remote=%s reason=%s"
     }
   ]
 }

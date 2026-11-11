@@ -1,7 +1,7 @@
 {
   "bomFormat": "CycloneDX",
   "specVersion": "1.6",
-  "serialNumber": "urn:uuid:900ce281-e2dc-5199-9542-e1013e84fef8",
+  "serialNumber": "urn:uuid:84e44628-a36c-5d2c-95f9-80f74d12e8d4",
   "version": 1,
   "metadata": {
     "tools": {
@@ -240,6 +240,12 @@
             "diff": {
               "url": "gateway/patches/cli-proxy-api-native-advisor-beta-order.patch"
             }
+          },
+          {
+            "type": "unofficial",
+            "diff": {
+              "url": "gateway/patches/cli-proxy-api-private-network-dial.patch"
+            }
           }
         ],
         "notes": "Built from the upstream source at the commit above with the patches applied in order; each patch's sha256 and the patched tree's normalised sha256 (vendor/ excluded) are the charmer:gateway properties."
@@ -283,7 +289,7 @@
         },
         {
           "name": "charmer:gateway:post-apply-tree-sha256",
-          "value": "1ae2c34dd0cd347da26ba45bd7b06da2dab09827f3f1c6b524e96e861a911a6b"
+          "value": "3cd19f08970f8e228e5bcacc2cd3edd8c90bc4f1ec1efd52c7f60e1904cf3e57"
         },
         {
           "name": "charmer:gateway:build-godebug",
@@ -404,6 +410,10 @@
         {
           "name": "charmer:gateway:patch",
           "value": "cli-proxy-api-native-advisor-beta-order.patch@d4e9fc3ea76787cde7553c25a753e6888402bbac4d865788160a37303757f3fa"
+        },
+        {
+          "name": "charmer:gateway:patch",
+          "value": "cli-proxy-api-private-network-dial.patch@8cb2219558a8260ebfbdef3c170ff37c9daeacacf6968c39dee1af396a2ccb06"
         }
       ]
     }

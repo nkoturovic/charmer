@@ -34,6 +34,7 @@ import (
 	claudeauth "github.com/router-for-me/CLIProxyAPI/v8/internal/auth/claude"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/watcher/synthesizer"
 	sdkauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/auth"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	coreexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
@@ -126,6 +127,84 @@ func TestOmissionMetadataLock(t *testing.T) {
 	}()
 	close(start)
 	wg.Wait()
+}
+
+// A provider declared on a private network: the rendered entry carries a
+// private-network block and no top-level base-url. With the dial guard the
+// loopback-class entry is served through the config's own auths and the
+// compat executor; without it the gateway drops the entry, so nothing is
+// served. A tailnet-class entry at the same loopback server is refused before
+// any connection, with the fixed text.
+func TestOmissionPrivateNetwork(t *testing.T) {
+	var accepts, requests atomic.Int64
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		if r.Header.Get("Authorization") != "Bearer dummy-omission" {
+			t.Error("the provider key did not reach the provider")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"id":"c1","object":"chat.completion","model":"omission-wire","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`)
+	}))
+	server.Config.ConnState = func(_ net.Conn, state http.ConnState) {
+		if state == http.StateNew {
+			accepts.Add(1)
+		}
+	}
+	server.Start()
+	defer server.Close()
+	base := server.URL + "/v1"
+	cfg, err := config.ParseConfigBytes([]byte(fmt.Sprintf(`openai-compatibility:
+  - name: "omission-loopback"
+    private-network:
+      base-url: %q
+      class: "loopback"
+    api-key-entries:
+      - api-key: "dummy-omission"
+    models:
+      - name: "omission-wire"
+        alias: "omission-pn-loopback"
+  - name: "omission-tailnet"
+    private-network:
+      base-url: %q
+      class: "tailnet"
+    api-key-entries:
+      - api-key: "dummy-omission"
+    models:
+      - name: "omission-wire"
+        alias: "omission-pn-tailnet"
+`, base, base)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	auths, err := synthesizer.NewConfigSynthesizer().Synthesize(&synthesizer.SynthesisContext{Config: cfg, Now: time.Now(), IDGenerator: synthesizer.NewStableIDGenerator()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	byName := map[string]*coreauth.Auth{}
+	for _, auth := range auths {
+		byName[auth.Label] = auth
+	}
+	loopback, tailnet := byName["omission-loopback"], byName["omission-tailnet"]
+	if loopback == nil || tailnet == nil {
+		t.Fatalf("a private-network entry is absent: %d compat entries, %d auths", len(cfg.OpenAICompatibility), len(auths))
+	}
+	exec := NewOpenAICompatExecutor("openai-compatibility", cfg)
+	payload := []byte(`{"model":"omission-wire","messages":[{"role":"user","content":"hi"}]}`)
+	run := func(auth *coreauth.Auth) error {
+		_, errExec := exec.Execute(context.Background(), auth, coreexecutor.Request{Model: "omission-wire", Payload: payload}, coreexecutor.Options{SourceFormat: translator.FormatOpenAI})
+		return errExec
+	}
+	if errServed := run(loopback); errServed != nil || requests.Load() != 1 {
+		t.Fatalf("loopback entry not served: requests=%d err=%v", requests.Load(), errServed)
+	}
+	before := accepts.Load()
+	errRefused := run(tailnet)
+	if errRefused == nil || errRefused.Error() != "upstream address refused: outside the provider's private network (tailnet)" {
+		t.Fatalf("tailnet entry at a loopback address: err=%v", errRefused)
+	}
+	if accepts.Load() != before || requests.Load() != 1 {
+		t.Fatalf("refused entry reached the server: accepts=%d requests=%d", accepts.Load()-before, requests.Load())
+	}
 }
 
 // The ordinary Codex refresh keeps no refresh journal: a refresh whose token
