@@ -160,12 +160,16 @@ ESSENTIAL_EVIDENCE_PREFIXES = (
 )
 
 # Named alternative completion lines that satisfy an essential prefix. The
-# feedback-draft probe: the full lead-and-subagent proof, or the explicit
+# feedback-draft probe: the full lead-and-subagent proof, the explicit
 # client boundary (off suppresses both, notify restores the lead, and the
-# client never offers SendFeedback to a subagent, even one that lists it).
+# client never offers SendFeedback to a subagent, even one that lists it),
+# or the client's gateway boundary (behind a gateway the pin offers the tool
+# to nobody under either value, while the previous release's pin, run the
+# same way, still offers it to the lead).
 ESSENTIAL_EVIDENCE_ALTERNATIVES = {
     "client probe FD: PASS class=FD-env-off ": (
         "client probe FD: PASS class=FD-env-off-subagent-withheld ",
+        "client probe FD: PASS class=FD-client-gateway-withheld ",
     ),
 }
 

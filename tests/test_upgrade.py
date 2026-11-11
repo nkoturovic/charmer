@@ -456,13 +456,15 @@ class EssentialEvidencePrefixTests(unittest.TestCase):
             )
 
     def test_client_boundary_class_is_the_only_alternative(self) -> None:
-        """FD (feedback drafts) is satisfied by the full proof or by the
-        explicit subagent-withheld boundary class, never by another class."""
+        """FD (feedback drafts) is satisfied by the full proof, by the
+        explicit subagent-withheld boundary class or by the gateway-withheld
+        class, never by another class."""
 
         d95 = "client probe FD: PASS class=FD-env-off "
         self.assertEqual(
             upgrade.ESSENTIAL_EVIDENCE_ALTERNATIVES,
-            {d95: ("client probe FD: PASS class=FD-env-off-subagent-withheld ",)},
+            {d95: ("client probe FD: PASS class=FD-env-off-subagent-withheld ",
+                   "client probe FD: PASS class=FD-client-gateway-withheld ")},
         )
         others = "\n".join(
             prefix + "fixture" for prefix in upgrade.ESSENTIAL_EVIDENCE_PREFIXES if prefix != d95
@@ -470,9 +472,14 @@ class EssentialEvidencePrefixTests(unittest.TestCase):
         for line, missing in (
             ("client probe FD: PASS class=FD-env-off off lead=False", ()),
             ("client probe FD: PASS class=FD-env-off-subagent-withheld off lead=False", ()),
+            ("client probe FD: PASS class=FD-client-gateway-withheld off lead=False", ()),
             ("client probe FD: FAIL class=FD-env-ignored class pin expects FD-env-off", (d95,)),
             ("client probe FD: PASS class=FD-env-offish detail", (d95,)),
+            ("client probe FD: PASS class=FD-client-gateway-withheldish detail", (d95,)),
             ("client probe FD: INCONCLUSIVE class=unavailable control", (d95,)),
+            ("test_observation (tests.test_scope_probe_client.FeedbackDraftsProbe) ... skipped "
+             "'BOUNDARY: FD-client-gateway-withheld'", (d95,)),
+            ("note client probe FD: PASS class=FD-client-gateway-withheld detail", (d95,)),
         ):
             with self.subTest(line=line):
                 self.assertEqual(upgrade._missing_evidence_prefixes(others + "\n" + line + "\n"), missing)
