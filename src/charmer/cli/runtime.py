@@ -1707,6 +1707,106 @@ class Runtime:
             raise cli_types.LaunchPlanError(evaluation.errors)
         return evaluation.lineup
 
+    def _record_lineup(
+        self,
+        record: dict[str, Any],
+        target: cli_types.LaunchTarget,
+        *,
+        lead_override: str | None,
+        lcat: profile_mod.LineupCatalog,
+        eff: settings_mod.Effective,
+        notices: list[str],
+        fork: bool = False,
+    ) -> tuple[profile_mod.ResolvedLineup, str | None, bool, str, bool]:
+        """The lineup a session's next resume applies: a lead override, a
+        relaunch target, a recorded change, the followed profile, else the
+        applied lineup (with a requested lead). Returns the lineup, the
+        record's profile and follow after the launch, the source kind and
+        whether a lead override makes it a model relaunch. A lead that needs
+        a choice raises ``NeedsChoiceError``. ``fork``: the same lineup for a
+        fork of ``record``; the notices then name the fork, never a change to
+        ``record``."""
+
+        m8 = sessions.managed_id(record)[:8]
+        profile_name, follow = record["profile"], bool(record["follow"])
+        source_kind = "record"
+        overridden = False
+        document: dict[str, Any] | None = None
+        if lead_override is not None:
+            document = sessions.applied_document(record)
+            document["lead"] = {"model": lead_override, "effort": profile_mod.ULTRACODE}
+            profile_name, follow = None, False
+            source_kind = "override"
+            overridden = True
+        elif target.kind == "relaunch":
+            document = (
+                copy.deepcopy(target.document)
+                if target.document is not None
+                else self.profiles.load(str(target.profile))
+            )
+            profile_name, follow = target.profile, target.follow
+            source_kind = "relaunch"
+        if document is None:
+            choice = self.resume_choice(record, lcat=lcat, effective=eff)
+            pending = record.get("pending")
+            if pending:
+                reasons = "; ".join(pending.get("reasons") or ())
+                if choice.problem:
+                    notices.append(f"pending relaunch change dropped: {choice.problem} ({reasons})"
+                                   if not fork else
+                                   f"session {m8}'s pending change is not applied to the fork: "
+                                   f"{choice.problem} ({reasons})")
+                elif choice.document is not None:
+                    document = choice.document
+                    profile_name, follow = pending.get("profile"), bool(pending.get("follow"))
+                    source_kind = "pending"
+            if choice.needs_choice:
+                key = record["applied"]["lead"]["key"]
+                raise cli_types.NeedsChoiceError(record, key, sessions.lead_choice_notice(record, lcat))
+        if document is None:
+            if record["follow"] and record["profile"] and self.profiles.contains(
+                record["profile"]
+            ):
+                document = self.profiles.load(record["profile"])
+                profile_name, follow = record["profile"], True
+                source_kind = "follow"
+            elif record["follow"]:
+                document = sessions.applied_document(record)
+                profile_name, follow = record["profile"], False
+                notices.append(
+                    f"profile {record['profile']!r} no longer exists; session {m8} "
+                    "is now pinned to its applied lineup"
+                    if not fork else
+                    f"profile {record['profile']!r} no longer exists; the fork is pinned to "
+                    f"session {m8}'s applied lineup"
+                )
+            else:
+                document = sessions.applied_document(record)
+                target_lead = record.get("lead_target")
+                if target_lead is not None:
+                    document["lead"] = {
+                        "model": target_lead["key"],
+                        "effort": target_lead["effort"],
+                    }
+                    notices.append(
+                        "applying the requested lead "
+                        f"{lineup_mod.binding_label(lcat.lines.get(target_lead['key']), target_lead['effort'], key=target_lead['key'])} "
+                        + ("at this resume" if not fork else "in the fork")
+                    )
+        lead_doc = document.get("lead") if isinstance(document, dict) else None
+        if isinstance(lead_doc, dict) and isinstance(lead_doc.get("model"), str):
+            if sessions.lead_key_needs_choice(lead_doc["model"], lcat):
+                try:
+                    notice = lcat.resolve_key(lead_doc["model"]).notice
+                except catalog.CatalogError:
+                    notice = (
+                        f"lead {lead_doc['model']}: unknown to catalog "
+                        f"{lcat.catalog_version} (not a custom model either)"
+                    )
+                raise cli_types.NeedsChoiceError(record, lead_doc["model"], notice)
+        lineup = self._evaluate(document, profile_name=profile_name, effective=eff, lcat=lcat)
+        return lineup, profile_name, follow, source_kind, overridden
+
     def prepare(
         self,
         target: cli_types.LaunchTarget,
@@ -1750,6 +1850,9 @@ class Runtime:
         model_relaunch = False
         record: dict[str, Any] | None = None
         disk_n: int | None = None
+        fork_parent: str | None = None
+        fork_fingerprint: str | None = None
+        fork_title: str | None = None
         if action == "fresh":
             if target.kind == "unloadable":
                 problem = self.selection_load_error
@@ -1826,76 +1929,9 @@ class Runtime:
                 if "observed_cwd" in record or "observed_model" not in record:
                     raise launch.LaunchError(sessions.relink_message(record))
                 model_relaunch = True
-            profile_name, follow = record["profile"], bool(record["follow"])
-            source_kind = "record"
-            document: dict[str, Any] | None = None
-            if lead_override is not None:
-                document = sessions.applied_document(record)
-                document["lead"] = {"model": lead_override, "effort": profile_mod.ULTRACODE}
-                profile_name, follow = None, False
-                source_kind = "override"
-                model_relaunch = True
-            elif target.kind == "relaunch":
-                document = (
-                    copy.deepcopy(target.document)
-                    if target.document is not None
-                    else self.profiles.load(str(target.profile))
-                )
-                profile_name, follow = target.profile, target.follow
-                source_kind = "relaunch"
-            if document is None:
-                choice = self.resume_choice(record, lcat=lcat, effective=eff)
-                pending = record.get("pending")
-                if pending:
-                    reasons = "; ".join(pending.get("reasons") or ())
-                    if choice.problem:
-                        notices.append(f"pending relaunch change dropped: {choice.problem} ({reasons})")
-                    elif choice.document is not None:
-                        document = choice.document
-                        profile_name, follow = pending.get("profile"), bool(pending.get("follow"))
-                        source_kind = "pending"
-                if choice.needs_choice:
-                    key = record["applied"]["lead"]["key"]
-                    raise cli_types.NeedsChoiceError(record, key, sessions.lead_choice_notice(record, lcat))
-            if document is None:
-                if record["follow"] and record["profile"] and self.profiles.contains(
-                    record["profile"]
-                ):
-                    document = self.profiles.load(record["profile"])
-                    profile_name, follow = record["profile"], True
-                    source_kind = "follow"
-                elif record["follow"]:
-                    document = sessions.applied_document(record)
-                    profile_name, follow = record["profile"], False
-                    notices.append(
-                        f"profile {record['profile']!r} no longer exists; session {m8} "
-                        "is now pinned to its applied lineup"
-                    )
-                else:
-                    document = sessions.applied_document(record)
-                    target_lead = record.get("lead_target")
-                    if target_lead is not None:
-                        document["lead"] = {
-                            "model": target_lead["key"],
-                            "effort": target_lead["effort"],
-                        }
-                        notices.append(
-                            "applying the requested lead "
-                            f"{lineup_mod.binding_label(lcat.lines.get(target_lead['key']), target_lead['effort'], key=target_lead['key'])} "
-                            "at this resume"
-                        )
-            lead_doc = document.get("lead") if isinstance(document, dict) else None
-            if isinstance(lead_doc, dict) and isinstance(lead_doc.get("model"), str):
-                if sessions.lead_key_needs_choice(lead_doc["model"], lcat):
-                    try:
-                        notice = lcat.resolve_key(lead_doc["model"]).notice
-                    except catalog.CatalogError:
-                        notice = (
-                            f"lead {lead_doc['model']}: unknown to catalog "
-                            f"{lcat.catalog_version} (not a custom model either)"
-                        )
-                    raise cli_types.NeedsChoiceError(record, lead_doc["model"], notice)
-            lineup = self._evaluate(document, profile_name=profile_name, effective=eff, lcat=lcat)
+            lineup, profile_name, follow, source_kind, overridden = self._record_lineup(
+                record, target, lead_override=lead_override, lcat=lcat, eff=eff, notices=notices)
+            model_relaunch = model_relaunch or overridden
             recorded_ns = bool(record["applied"]["no_subagents"])
             if no_subagents is not None and bool(no_subagents) != recorded_ns:
                 raise launch.LaunchError(
@@ -1929,7 +1965,42 @@ class Runtime:
                 new_gen = max(new_gen, disk_n + 1)
             cwd = record["cwd"]
         elif action == "fork":
-            raise cli_errors.CLIError(compiler.FORK_UNVERIFIED_GUIDANCE)
+            # A new session from a copy of the parent's conversation, with the
+            # lineup the parent would get at its next resume. The parent is
+            # read, never written: a native fork that already holds the
+            # authority is dropped from a view only, and the commit re-reads
+            # the parent under its lock against this fingerprint.
+            if session_id is None:
+                raise cli_errors.CLIError("a fork needs the managed session it copies")
+            parent = store.resolve(session_id)
+            refusal = resume_checks.fork_gate_refusal(self, parent)
+            if refusal is not None:
+                raise cli_errors.CLIError(refusal)
+            fork_parent = sessions.managed_id(parent)
+            fork_fingerprint = sessions.fork_fingerprint(parent)
+            view = sessions.drop_resolved_pending_forks(parent) or parent
+            lineup, profile_name, follow, source_kind, _overridden = self._record_lineup(
+                view, target, lead_override=None, lcat=lcat, eff=eff, notices=notices, fork=True)
+            ns = bool(view["applied"]["no_subagents"])
+            if no_subagents is not None and bool(no_subagents) != ns:
+                raise launch.LaunchError(
+                    "explicit --no-subagents does not match the session's subagent "
+                    "policy; a fork keeps its parent's"
+                )
+            diff = lineup_mod.render_diff(
+                lineup_mod.diff_rows(view["applied"], lineup, lcat, old_lead_class=view.get("lead_class"))
+                + lineup_mod.window_diff_rows(view, lineup)
+            )
+            notices.extend(
+                f"settings changed since session {fork_parent[:8]} last launched: {line}"
+                for line in settings_mod.drift(view["applied"]["settings"], eff)
+            )
+            fork_title = sessions.fork_title(view.get("title"))
+            mid = store.new_id()
+            session_action = compiler.build_fork(mid, sessions.runtime_session_id(parent))
+            epoch = 1
+            new_gen = 1
+            cwd = view["cwd"]
         else:
             raise cli_errors.CLIError(f"unknown launch action {action!r}")
 
@@ -1969,6 +2040,9 @@ class Runtime:
             default_mode=self.permission_default_mode(cwd),
             env_keep=self.session_env_keep(),
             subagent_status_line=self.subagent_status_line(cwd),
+            # Every resume of a session started as a fork keeps Claude Code's
+            # system-prompt record off, as its fork launch did.
+            **({"fork_record": True} if record is not None and record.get("forked_from") else {}),
         )
         if result.scope_plan is None or result.fence is None:
             raise cli_errors.CLIError("the compile produced no v2 scope plan")
@@ -2003,7 +2077,9 @@ class Runtime:
             scope_lead=sessions.lead_ref(applied["lead"]),
         )
         if record is None:
-            new_record = sessions.make_v4_record(managed_id=mid, cwd=cwd, **common)
+            new_record = sessions.make_v4_record(managed_id=mid, cwd=cwd, forked_from=fork_parent, **common)
+            if fork_title is not None:
+                new_record["title"] = fork_title
         else:
             new_record = sessions.next_v4_record(record, **common)
         # Readiness is an observation, never route permission. A known
@@ -2037,6 +2113,8 @@ class Runtime:
             secret_problems=tuple(self.lineup_secret_problems(compiled)),
             workflow_window=views.workflow_window(lcat, eff, compiled),
             window_ceiling=ceiling,
+            fork_parent=fork_parent,
+            fork_fingerprint=fork_fingerprint,
         )
         # Remember the operator definitions this plan was
         # compiled from; perform revalidates them before anything commits.
@@ -2176,11 +2254,16 @@ class Runtime:
             if lock.kind == "model":
                 print(f"charmer: {managed.finding_text(lock)}", file=sys.stderr)
         store = self.session_store
-        if prepared.result.session_action.kind == "fresh":
+        kind = prepared.result.session_action.kind
+        if kind in ("fresh", "fork"):
             try:
                 sessions.ensure_state_v4(store.root)
             except sessions.MigrationBusyError as exc:
                 raise launch.LaunchError(launch.MIGRATION_BUSY_LAUNCH) from exc
+        # A fork's commit re-reads its parent under the parent's lock and
+        # refuses when it moved since the preparation.
+        fork = ({"fork_parent": prepared.fork_parent, "fork_fingerprint": prepared.fork_fingerprint}
+                if kind == "fork" else {})
         return launch.perform_launch(
             prepared.result,
             record=prepared.record,
@@ -2201,6 +2284,7 @@ class Runtime:
             expected_disk_generation=prepared.expected_disk_generation,
             barrier_timeout=self.served_barrier_timeout,
             revalidate=lambda: self._revalidate_in_barrier(prepared),
+            **fork,
         )
 
     def _revalidate_in_barrier(self, prepared: cli_types.PreparedLaunch) -> None:
@@ -2230,6 +2314,13 @@ class Runtime:
         """
 
         action = prepared.result.session_action
+        if action.kind == "fork" and prepared.fork_parent is not None:
+            # A fork's parent passes the fork gate again (no liveness: a
+            # running parent may be forked).
+            refusal = resume_checks.fork_gate_refusal(self, self.session_store.load(prepared.fork_parent))
+            if refusal is not None:
+                raise cli_errors.CLIError(refusal)
+            return
         if action.kind != "resume" or not prepared.record:
             return
         gate = resume_checks._evaluate_resume_gate(

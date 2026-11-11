@@ -329,6 +329,16 @@ def _record_identity_label(record: dict[str, Any], *, short: bool = False) -> st
     return f"{stable} → runtime {runtime_id}"
 
 
+def fork_of_note(record: dict[str, Any], *, lead: str = "") -> str:
+    """``(fork of <parent8>…)`` for a record started as a fork of another
+    session (``forked_from``), after ``lead``; empty for any other record."""
+
+    parent = record.get("forked_from")
+    if not isinstance(parent, str) or not parent:
+        return ""
+    return f"{lead}(fork of {parent[:8]}…)"
+
+
 def _record_target_label(record: dict[str, Any]) -> str:
     if record.get("version") == sessions.RECORD_VERSION:
         if record["profile"] is not None:

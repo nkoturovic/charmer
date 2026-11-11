@@ -54,6 +54,13 @@ class PassthroughFlagTests(unittest.TestCase):
                 with self.assertRaisesRegex(compiler.CompilerError, "session compaction window"):
                     compiler.validate_passthrough(args)
 
+    def test_the_system_prompt_record_is_launcher_owned(self) -> None:
+        for args in (["--system-prompt-snapshot", "on"], ["--system-prompt-snapshot=on"],
+                     ["--system-prompt-snapshot", "off"], ["--system-prompt-snapshot"]):
+            with self.subTest(args=args):
+                with self.assertRaisesRegex(compiler.CompilerError, "system-prompt record policy"):
+                    compiler.validate_passthrough(args)
+
     def test_the_copied_session_mark_is_blocked(self) -> None:
         for args in (["--session-began-as-copy", "1"], ["--session-began-as-copy=1"], ["--session-began-as-copy"]):
             with self.subTest(args=args):
@@ -110,6 +117,41 @@ class EnvironmentTests(unittest.TestCase):
             ["ANTHROPIC_DEFAULT_FABLE_MODEL", "ANTHROPIC_DEFAULT_OPUS_MODEL",
              "ANTHROPIC_DEFAULT_SONNET_MODEL"],
         )
+
+
+class ForkLaunchArgvTests(unittest.TestCase):
+    """A fork: the parent's conversation copied into a new session id, and
+    every launch of a fork with Claude Code's system-prompt record off."""
+
+    def launch(self, action: compiler.SessionAction, **kwargs) -> list[str]:
+        from test_compiler_v2 import _seed_launch
+
+        return _seed_launch("balanced", action=action, **kwargs)[1].argv
+
+    def test_the_fork_argv(self) -> None:
+        argv = self.launch(compiler.build_fork(FIXED_SESSION, OTHER_SESSION))
+        self.assertEqual(argv[:5], ["--resume", OTHER_SESSION, "--fork-session", "--session-id", FIXED_SESSION])
+        fresh = self.launch(compiler.build_fresh(FIXED_SESSION))
+        # The rest is the fresh launch's, then the record switch, then passthrough.
+        self.assertEqual(argv[5:-3], fresh[2:-1])
+        self.assertEqual(argv[-3:], ["--system-prompt-snapshot", "off", "--verbose"])
+
+    def test_every_resume_of_a_fork_switches_the_record_off(self) -> None:
+        resume = compiler.build_resume(FIXED_SESSION)
+        forked = self.launch(resume, fork_record=True)
+        self.assertEqual(forked[:2], ["--resume", FIXED_SESSION])
+        self.assertEqual(forked[-3:], ["--system-prompt-snapshot", "off", "--verbose"])
+        self.assertNotIn("--system-prompt-snapshot", self.launch(resume))
+        self.assertNotIn("--system-prompt-snapshot", self.launch(compiler.build_fresh(FIXED_SESSION)))
+
+    def test_a_fork_needs_another_session_to_copy(self) -> None:
+        for parent in ("", FIXED_SESSION):
+            with self.subTest(parent=parent):
+                with self.assertRaises(compiler.CompilerError):
+                    compiler.build_fork(FIXED_SESSION, parent)
+        with self.assertRaisesRegex(compiler.CompilerError, "runtime id it copies"):
+            self.launch(compiler.SessionAction(kind="fork", managed_id=FIXED_SESSION,
+                                               runtime_session_id=FIXED_SESSION))
 
 
 if __name__ == "__main__":

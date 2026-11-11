@@ -22,11 +22,17 @@ def _docs(root: Path = CATALOG_ROOT):
     return catalog.load_raw(root)["docs"]
 
 
-class ForkGuidanceTests(unittest.TestCase):
-    def test_guidance_points_at_native_fork_and_link(self) -> None:
-        self.assertIn("fork natively", compiler.FORK_UNVERIFIED_GUIDANCE)
-        self.assertIn("--fork-session", compiler.FORK_UNVERIFIED_GUIDANCE)
-        self.assertIn("sessions link", compiler.FORK_UNVERIFIED_GUIDANCE)
+class ForkFlagsTests(unittest.TestCase):
+    def test_the_fork_flags_are_the_launchers(self) -> None:
+        """A fork is the launcher's own (``charmer -r SESSION --fork``): its
+        flags never pass through, and the old advice to fork natively and
+        adopt the copy is gone."""
+
+        for args in (["--fork-session"], ["--resume", OLD_ID], [f"--resume={OLD_ID}"]):
+            with self.subTest(args=args):
+                with self.assertRaisesRegex(CompilerError, "launcher session identity"):
+                    compiler.validate_passthrough(args)
+        self.assertFalse(hasattr(compiler, "FORK_UNVERIFIED_GUIDANCE"))
 
 
 class PassthroughContractTests(unittest.TestCase):

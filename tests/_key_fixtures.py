@@ -301,7 +301,7 @@ def _session_cases(runtime):
             screen.marked.clear()
     screen.records = []
     screen.selected = 0
-    yield Case("sessions", "empty", screen._keybar(), frozenset(base - {"Enter", "T", "V", "F", "X", "R", "Q", "Space", "*"}))
+    yield Case("sessions", "empty", screen._keybar(), frozenset(base - {"Enter", "N", "T", "V", "F", "X", "R", "Q", "Space", "*"}))
 
 
 def _settings_cases(runtime):

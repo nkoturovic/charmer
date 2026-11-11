@@ -276,6 +276,16 @@ def main(
             # model): refused before the channel is recorded or a Runtime that
             # may write is built.
             launch_flow._direct_preflight(args, interactive=bool(interactive))
+        if args.command is None and getattr(args, "fork", False):
+            # `charmer -r SESSION --fork`: no session, -c, a profile or a
+            # running session refuse before the channel is recorded or a
+            # Runtime that may write is built.
+            launch_flow._fork_preflight(
+                session=args.resume or None, continue_session=bool(args.continue_last),
+                profile=any(getattr(args, name, None) is not None
+                            for name in ("profile", "profile_file", "composition", "composition_file")),
+                environ=runtime.environ if runtime is not None else os.environ,
+            )
         if args.command == "gateway" and args.gateway_command == "start":
             # An already-inhibited start refuses before channel recording,
             # config cleanup or session-store initialization. The lifecycle
@@ -365,6 +375,20 @@ def main(
 
         report = output_stream or output
         force = bool(args.force)
+        if getattr(args, "fork", False):
+            # `charmer -r SESSION --fork` (its command-line refusals ran
+            # before the Runtime was built).
+            return launch_flow._fork_flow(
+                runtime,
+                selection._resolve_resume_target(runtime, args.resume),
+                passthrough=passthrough,
+                interactive=bool(interactive),
+                confirm=True,
+                input_stream=inp,
+                output_stream=tty_output,
+                report_stream=report,
+                print_launch=bool(args.print_launch),
+            )
         if args.resume == "":
             # Bare -r: the sessions screen on a curses-capable terminal;
             # --line, a dumb or pipe terminal and --print-launch keep the line
