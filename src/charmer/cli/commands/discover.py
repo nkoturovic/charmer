@@ -86,9 +86,17 @@ def _transport(runtime: runtime_mod.Runtime) -> Any:
     return runtime.listing_transport or proxy_mod.bounded_get
 
 
-def _fetch(runtime: runtime_mod.Runtime, url: str, headers: dict[str, str]) -> bytes:
+def _fetch(runtime: runtime_mod.Runtime, url: str, headers: dict[str, str], *, network: str | None = None) -> bytes:
+    """One bounded listing request; a provider's declared private network
+    travels explicitly to the transport (no proxy, every connection checked
+    against it), never inferred from the URL and never dropped."""
+
+    if network is None:
+        return _transport(runtime)(url, headers, deadline=discovery.LISTING_DEADLINE_SECONDS,
+                                   max_bytes=discovery.LISTING_MAX_BYTES)
     return _transport(runtime)(url, headers, deadline=discovery.LISTING_DEADLINE_SECONDS,
-                               max_bytes=discovery.LISTING_MAX_BYTES)
+                               max_bytes=discovery.LISTING_MAX_BYTES, network=network,
+                               gateway_ports=tuple(sorted(operator_mod.gateway_ports(runtime.catalog.docs))))
 
 
 def _view(runtime: runtime_mod.Runtime) -> tuple[providers_cmd.OperatorContext, dict[str, Any]]:
@@ -152,7 +160,7 @@ def _execute(runtime: runtime_mod.Runtime, call: discovery.ListingCall) -> proxy
         return proxy_mod.ListingResult(tuple(dict(item) for item in listed), True)
     headers = proxy_mod.listing_headers(call.auth, call.shape, secret=secret, header=call.header)
     try:
-        raw = _fetch(runtime, call.url, headers)
+        raw = _fetch(runtime, call.url, headers, network=call.network)
     except Exception as exc:
         # A transport exception may contain headers; only fixed categories leave here.
         detail = str(exc) if isinstance(exc, proxy_mod.ListingFailure) else type(exc).__name__

@@ -628,6 +628,265 @@ class NetworkCommandTests(NetworkCommandCase):
         self.assertIn("keyless route, private network (tailnet)", out)
 
 
+LISTING_BODY = b'{"object": "list", "data": [{"id": "box-chat-1", "object": "model"}]}'
+
+
+class _Fake:
+    """A loopback HTTP fake this test starts: counts requests and the
+    Authorization headers it saw; ``redirect`` answers 307 elsewhere."""
+
+    def __init__(self, test: unittest.TestCase, *, redirect: str | None = None, proxy: bool = False):
+        import http.server
+        import threading
+
+        fake = self
+        self.requests: list[str] = []
+        self.authorization: list[str | None] = []
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self) -> None:  # noqa: N802 (http.server API)
+                fake.requests.append(self.path)
+                fake.authorization.append(self.headers.get("Authorization"))
+                if redirect is not None:
+                    self.send_response(307)
+                    self.send_header("Location", redirect)
+                    self.send_header("Content-Length", "0")
+                    self.end_headers()
+                    return
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(LISTING_BODY)))
+                self.end_headers()
+                self.wfile.write(LISTING_BODY)
+
+            def log_message(self, *_args: Any) -> None:
+                pass
+
+        self.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.port = self.server.server_address[1]
+        thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        thread.start()
+        test.addCleanup(thread.join, 5)
+        test.addCleanup(self.server.server_close)
+        test.addCleanup(self.server.shutdown)
+
+
+class _Seen:
+    """A socket that reports another remote or local address (what a
+    socket behind a NAT or a missing overlay would report)."""
+
+    def __init__(self, sock: Any, *, peer: tuple | None = None, local: tuple | None = None):
+        self._sock, self._peer, self._local = sock, peer, local
+
+    def getpeername(self) -> tuple:
+        return self._peer or self._sock.getpeername()
+
+    def getsockname(self) -> tuple:
+        return self._local or self._sock.getsockname()
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._sock, name)
+
+
+class ListingGuardTests(unittest.TestCase):
+    """``proxy.bounded_get`` with a declared network: the address filter,
+    the socket re-check, the local-address rule, no proxy, no redirect."""
+
+    PORTS = (8316, 8317)
+
+    def setUp(self) -> None:
+        self.fake = _Fake(self)
+        self.dials: list[tuple] = []
+
+    def url(self, port: int | None = None) -> str:
+        return f"http://box.example.test:{port or self.fake.port}/v1/models"
+
+    def connector(self, *, peer: tuple | None = None, local: tuple | None = None):
+        import socket
+
+        def connect(info: tuple, timeout: float) -> Any:
+            self.dials.append(info[4])
+            sock = socket.create_connection(("127.0.0.1", self.fake.port), timeout=timeout)
+            return _Seen(sock, peer=peer, local=local) if (peer or local) else sock
+
+        return connect
+
+    def get(self, network: str | None, *answers: str, connector: Any = None, url: str | None = None) -> bytes:
+        from charmer import proxy
+
+        return proxy.bounded_get(url or self.url(), {"Authorization": "Bearer nettest-dummy-key"}, deadline=5.0,
+                                 network=network, gateway_ports=self.PORTS, resolver=_getaddrinfo(*answers),
+                                 connector=connector)
+
+    def assertRefused(self, call: Any) -> None:
+        from charmer import proxy
+
+        with self.assertRaises(proxy.ListingFailure) as caught:
+            call()
+        self.assertEqual(caught.exception.kind, "network")
+        self.assertEqual(self.fake.requests, [])
+
+    def test_in_network_answer_is_dialled_by_address(self) -> None:
+        self.assertEqual(self.get("loopback", "127.0.0.1"), LISTING_BODY)
+        self.assertEqual(self.fake.authorization, ["Bearer nettest-dummy-key"])
+
+    def test_rebinding_to_an_outside_answer_sends_nothing(self) -> None:
+        self.assertRefused(lambda: self.get("loopback", "203.0.113.9", connector=self.connector()))
+        self.assertEqual(self.dials, [])
+        self.assertRefused(lambda: self.get("tailnet", "192.168.1.10", connector=self.connector()))
+        self.assertEqual(self.dials, [])
+
+    def test_mixed_answers_dial_only_the_allowed_ones(self) -> None:
+        self.assertEqual(self.get("loopback", "203.0.113.9", "169.254.169.254", "127.0.0.1",
+                                  connector=self.connector()), LISTING_BODY)
+        self.assertEqual([address[0] for address in self.dials], ["127.0.0.1"])
+
+    def test_the_socket_is_checked_again_before_a_byte_is_written(self) -> None:
+        self.assertRefused(lambda: self.get("loopback", "127.0.0.1",
+                                            connector=self.connector(peer=("203.0.113.9", 80))))
+        self.assertEqual(len(self.dials), 1)
+
+    def test_tailnet_needs_a_tailnet_local_address(self) -> None:
+        answer = "100.88.12.34"
+        peer = (answer, self.fake.port)
+        self.assertRefused(lambda: self.get("tailnet", answer,
+                                            connector=self.connector(peer=peer, local=("192.168.1.10", 50000))))
+        self.assertRefused(lambda: self.get("tailnet", answer,
+                                            connector=self.connector(peer=peer, local=("100.100.0.7", 50000))))
+        self.assertEqual(self.get("tailnet", answer, connector=self.connector(peer=peer,
+                                                                             local=("100.88.12.35", 50000))),
+                         LISTING_BODY)
+        # Other networks have no local-address rule.
+        self.assertEqual(self.get("loopback", "127.0.0.1", connector=self.connector(local=("192.168.1.10", 50000))),
+                         LISTING_BODY)
+
+    def test_gateway_ports_are_refused_without_a_dial(self) -> None:
+        for port in self.PORTS:
+            with self.subTest(port=port):
+                self.assertRefused(lambda: self.get("loopback", "127.0.0.1", connector=self.connector(),
+                                                    url=self.url(port)))
+        self.assertEqual(self.dials, [])
+
+    def test_no_proxy_from_the_environment(self) -> None:
+        import os
+        from unittest import mock
+
+        proxy_server = _Fake(self)
+        environ = {key: value for key, value in os.environ.items() if key.lower() not in ("no_proxy", "all_proxy")}
+        environ.update(HTTP_PROXY=f"http://127.0.0.1:{proxy_server.port}", http_proxy=f"http://127.0.0.1:{proxy_server.port}")
+        from charmer import proxy
+
+        with mock.patch.dict(os.environ, environ, clear=True):
+            self.assertEqual(self.get("loopback", "127.0.0.1"), LISTING_BODY)
+            self.assertEqual(proxy_server.requests, [])
+            self.assertEqual(len(self.fake.requests), 1)
+            # The control: without a network the same request honours the proxy.
+            proxy.bounded_get(f"http://127.0.0.1:{self.fake.port}/v1/models", {}, deadline=5.0)
+        self.assertEqual(len(proxy_server.requests), 1)
+        self.assertEqual(len(self.fake.requests), 1)
+
+    def test_redirects_are_refused(self) -> None:
+        from charmer import proxy
+
+        target = _Fake(self)
+        for location in (f"http://127.0.0.1:{target.port}/v1/models", f"https://127.0.0.1:{target.port}/v1/models",
+                         "/v1/other"):
+            with self.subTest(location=location):
+                redirecting = _Fake(self, redirect=location)
+                with self.assertRaises(proxy.ListingFailure) as caught:
+                    proxy.bounded_get(f"http://box.example.test:{redirecting.port}/v1/models",
+                                      {"Authorization": "Bearer nettest-dummy-key"}, deadline=5.0, network="loopback",
+                                      gateway_ports=self.PORTS, resolver=_getaddrinfo("127.0.0.1"))
+                self.assertEqual(caught.exception.kind, "redirect")
+                self.assertEqual(len(redirecting.requests), 1)
+        self.assertEqual(target.requests, [])
+
+    def test_refusal_text_is_value_free(self) -> None:
+        from charmer import proxy
+
+        self.assertEqual(str(proxy.ListingFailure("network", detail="tailnet")),
+                         "address refused: outside the provider's private network (tailnet)")
+
+
+class DiscoverNetworkTests(NetworkCommandCase):
+    """``charmer discover`` on a provider declared on a private network: the
+    policy is in the plan, its consent and its stale check, and reaches the
+    transport explicitly."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.sent: list[dict] = []
+        self.runtime.listing_transport = self._transport
+
+    def _transport(self, url: str, headers: dict, **kwargs: Any) -> bytes:
+        self.sent.append({"url": url, "headers": dict(headers), **kwargs})
+        return LISTING_BODY
+
+    def listing(self, provider_id: str, confirm: Any):
+        from unittest import mock
+
+        import charmer.cli.consent as consent
+        from charmer.cli.commands import discover
+
+        with mock.patch.object(consent, "stdio_ttys", return_value=True):
+            return discover.listing(self.runtime, provider_id, confirm=confirm, notice=lambda _text: None)
+
+    def declare_lan(self, network: str = "loopback", base: str = "http://box.example.test:18010/v1") -> None:
+        argv = ["providers", "add", LAN_ID, "--kind", "openai-compatible-lan", "--base-url", base, "--auth", "none",
+                "--family", "boxfam"]
+        code, _out, err = self.command(argv, network=network)
+        self.assertEqual(code, 0, err)
+
+    def test_the_network_travels_from_the_plan_to_the_transport(self) -> None:
+        self.declare_lan("tailnet")
+        shown: list[str] = []
+        observed = self.listing(LAN_ID, lambda text: shown.append(text) or True)
+        self.assertIsNotNone(observed)
+        call, _result = observed
+        self.assertEqual(call.network, "tailnet")
+        self.assertIn("     network: tailnet — a direct connection (no proxy), only to addresses in that network; "
+                      "this computer's address must be a tailnet address too", shown[0])
+        self.assertEqual(len(self.sent), 1)
+        self.assertEqual(self.sent[0]["network"], "tailnet")
+        self.assertEqual(self.sent[0]["url"], "http://box.example.test:18010/v1/models")
+        self.assertIn(8317, self.sent[0]["gateway_ports"])
+
+    def test_keyed_listing_carries_the_key_only_with_the_policy(self) -> None:
+        code, _out, err = self.command(ADD_KEYED, "y\n", network="tailnet")
+        self.assertEqual(code, 0, err)
+        with self.harness.secret_file.open("a") as stream:
+            stream.write(f"{SECRET}=nettest-dummy-key\n")
+        observed = self.listing(KEYED_ID, lambda _text: True)
+        self.assertIsNotNone(observed)
+        self.assertEqual([(sent["network"], sent["headers"].get("Authorization")) for sent in self.sent],
+                         [("tailnet", "Bearer nettest-dummy-key")])
+
+    def test_a_policy_change_between_confirmation_and_send_sends_nothing(self) -> None:
+        from charmer.cli.commands import providers as providers_cmd
+
+        self.declare_lan("tailnet")
+
+        def confirm(_text: str) -> bool:
+            path = operator.providers_dir(self.harness.env) / f"{LAN_ID}.json"
+            document = strict_json.loads(path.read_bytes())
+            document["provider"]["network"] = "lan"
+            path.write_bytes(strict_json.pretty_file_bytes(document))
+            return True
+
+        with self.assertRaises(providers_cmd.OperatorCommandError) as caught:
+            self.listing(LAN_ID, confirm)
+        self.assertIn("configuration changed while awaiting confirmation — nothing sent", str(caught.exception))
+        self.assertEqual(self.sent, [])
+
+    def test_providers_without_a_network_keep_their_call(self) -> None:
+        self.declare_lan(network=None, base="http://box.lan:18010/v1")
+        observed = self.listing(LAN_ID, lambda _text: True)
+        self.assertIsNotNone(observed)
+        self.assertIsNone(observed[0].network)
+        self.assertEqual(self.sent, [{"url": "http://box.lan:18010/v1/models", "headers": self.sent[0]["headers"],
+                                      "deadline": 20.0, "max_bytes": 4 * 1024 * 1024}])
+
+
 def _empty_ledger() -> dict:
     from _layout import FIXTURES_ROOT
     import json

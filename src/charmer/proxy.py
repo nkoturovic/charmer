@@ -578,8 +578,13 @@ class ListingFailure(ProxyError):
             "connection": f"connection error{': ' + detail if detail else ''}",
             "scheme": "only http and https URLs are listed",
             "protocol": "malformed HTTP response",
+            "network": f"address refused: outside the provider's private network ({detail})",
         }.get(kind, kind)
         super().__init__(text)
+
+
+class _OutsideNetwork(OSError):
+    """A connection a declared private network does not allow (value-free)."""
 
 
 class ListingShapeError(ProxyError):
@@ -645,11 +650,25 @@ class _ListingDeadline:
     A timer shuts down every socket the request opened when the deadline
     passes; resolution runs in a helper thread the request stops waiting
     for, so a stalled resolver can never lead to a later connect or send.
+
+    With ``network`` (a provider declared on a private network) the host
+    is resolved once, only the answers in that network are dialled, by
+    address (no second lookup), and the connected socket's remote address
+    is checked again; on ``tailnet`` its local address must be a tailnet
+    address too. Every refusal is :class:`_OutsideNetwork`, before a byte
+    is written. ``resolver`` (getaddrinfo's shape) and ``connector``
+    ``(getaddrinfo entry, timeout) -> socket`` are the test seams.
     """
 
-    def __init__(self, seconds: float, clock: Callable[[], float]):
+    def __init__(self, seconds: float, clock: Callable[[], float], *, network: str | None = None,
+                 gateway_ports: Iterable[int] = (), resolver: Callable[[str, int], Any] | None = None,
+                 connector: Callable[[Any, float], Any] | None = None):
         import threading
 
+        self._network = network
+        self._gateway_ports = frozenset(gateway_ports)
+        self._resolver = resolver
+        self._connector = connector
         self._seconds = seconds
         self._clock = clock
         self._start = clock()
@@ -701,10 +720,11 @@ class _ListingDeadline:
         import threading
 
         outcome: dict[str, Any] = {}
+        resolver = self._resolver or (lambda name, number: socket.getaddrinfo(name, number, 0, socket.SOCK_STREAM))
 
         def work() -> None:
             try:
-                outcome["infos"] = socket.getaddrinfo(host, port, 0, socket.SOCK_STREAM)
+                outcome["infos"] = list(resolver(host, port))
             except OSError as exc:
                 outcome["error"] = type(exc)
 
@@ -721,23 +741,57 @@ class _ListingDeadline:
     def connect(self, address: tuple[str, int]) -> Any:
         import socket
 
+        from charmer import netclass
+
         host, port = address
         failure: type[OSError] | None = None
-        for family, kind, proto, _canonical, target in self.resolve(host, port):
+        infos = self.resolve(host, port)
+        if self._network is not None:
+            infos = [info for info in infos if self._allowed(info[4])]
+            if not infos:
+                raise _OutsideNetwork("outside the provider's private network")
+        for info in infos:
+            family, kind, proto, _canonical, target = info
             self.check()
-            sock = socket.socket(family, kind, proto)
-            self.register(sock)
-            try:
-                sock.settimeout(self.timeout())
-                sock.connect(target)
-            except OSError as exc:
-                failure = type(exc)
-                sock.close()
-                continue
+            if self._connector is not None:
+                try:
+                    sock = self._connector(info, self.timeout())
+                except OSError as exc:
+                    failure = type(exc)
+                    continue
+                self.register(sock)
+            else:
+                sock = socket.socket(family, kind, proto)
+                self.register(sock)
+                try:
+                    sock.settimeout(self.timeout())
+                    sock.connect(target)
+                except OSError as exc:
+                    failure = type(exc)
+                    sock.close()
+                    continue
+            if self._network is not None:
+                # The socket's own view, before any byte is written.
+                try:
+                    peer_ok = self._allowed(sock.getpeername())
+                    local_ok = netclass.local_allowed(sock.getsockname(), self._network).allowed
+                except (OSError, ValueError):
+                    peer_ok = local_ok = False
+                if not (peer_ok and local_ok):
+                    sock.close()
+                    raise _OutsideNetwork("outside the provider's private network")
             self.check()
             return sock
         self.check()
         raise (failure or OSError)("connection failed")
+
+    def _allowed(self, address: Any) -> bool:
+        from charmer import netclass
+
+        try:
+            return netclass.allowed(address, self._network, self._gateway_ports).allowed
+        except ValueError:
+            return False
 
 
 def _bounded_http_classes(deadline: _ListingDeadline) -> tuple[Any, Any]:
@@ -769,7 +823,11 @@ def _bounded_http_classes(deadline: _ListingDeadline) -> tuple[Any, Any]:
     return Plain, Secure
 
 
-def _bounded_opener(deadline: _ListingDeadline) -> Any:
+def _bounded_opener(deadline: _ListingDeadline, *, direct: bool = False) -> Any:
+    """The listing opener: no redirects; ``direct`` also ignores every proxy
+    the environment names (a provider declared on a private network is
+    reached only by its own checked connection)."""
+
     plain, secure = _bounded_http_classes(deadline)
 
     class PlainHandler(urllib.request.HTTPHandler):
@@ -782,19 +840,30 @@ def _bounded_opener(deadline: _ListingDeadline) -> Any:
 
     from charmer import tls
 
-    return urllib.request.build_opener(_NoRedirect(), PlainHandler(), SecureHandler(context=tls.context()))
+    handlers = [_NoRedirect(), PlainHandler(), SecureHandler(context=tls.context())]
+    if direct:
+        handlers.insert(0, urllib.request.ProxyHandler({}))
+    return urllib.request.build_opener(*handlers)
 
 
 def bounded_get(
     url: str, headers: Mapping[str, str], *,
     deadline: float = LISTING_DEADLINE_SECONDS, max_bytes: int = LISTING_MAX_BYTES,
     clock: Callable[[], float] = time.monotonic,
+    network: str | None = None, gateway_ports: Iterable[int] = (),
+    resolver: Callable[[str, int], Any] | None = None, connector: Callable[[Any, float], Any] | None = None,
 ) -> bytes:
     """One bounded GET; raises :class:`ListingFailure` on any failure.
 
     Every failure is a fixed, value-free :class:`ListingFailure` raised
     without exception context: a malformed status line or chunk header can
     echo request data, so neither its text nor its traceback may surface.
+
+    ``network`` (the provider's declared private network) makes the request
+    direct — no proxy from the environment — and checks every connection
+    against the network (:class:`_ListingDeadline`); a refused address is
+    ``ListingFailure("network")``. There is no fallback to an unchecked
+    connection.
     """
 
     import http.client
@@ -804,19 +873,24 @@ def bounded_get(
 
     if urllib.parse.urlsplit(url).scheme not in ("http", "https"):
         raise ListingFailure("scheme")
-    bound = _ListingDeadline(deadline, clock)
+    bound = _ListingDeadline(deadline, clock, network=network, gateway_ports=gateway_ports, resolver=resolver,
+                             connector=connector)
     response = None
     try:
         failure: ListingFailure | None = None
         try:
             request = urllib.request.Request(url, headers=dict(headers), method="GET")
-            response = _bounded_opener(bound).open(request, timeout=bound.timeout())
+            response = _bounded_opener(bound, direct=network is not None).open(request, timeout=bound.timeout())
         except urllib.error.HTTPError as exc:
             code = exc.code
             exc.close()
             failure = ListingFailure("redirect" if 300 <= code < 400 else "http", code)
+        except _OutsideNetwork:
+            failure = ListingFailure("network", detail=network)
         except urllib.error.URLError as exc:
-            if isinstance(exc.reason, (socket.timeout, TimeoutError)) or bound.over():
+            if isinstance(exc.reason, _OutsideNetwork):
+                failure = ListingFailure("network", detail=network)
+            elif isinstance(exc.reason, (socket.timeout, TimeoutError)) or bound.over():
                 failure = ListingFailure("timeout")
             else:
                 failure = ListingFailure("connection", detail=type(exc.reason).__name__)
