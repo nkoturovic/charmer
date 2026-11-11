@@ -714,7 +714,14 @@ def generate_session_appendix(
 # So is CLAUDE_CODE_FORK_SUBAGENT (the flag settings turn the fork gate off),
 # CLAUDE_CODE_RETRY_WATCHDOG_SCOPE (the flag settings pin the broad scope) and
 # CLAUDE_CODE_MODEL_CAPABILITIES (the flag settings state the refusal switch
-# per fenced model).
+# per fenced model). Four host switches of Claude Code 2.1.313 and later are
+# cleared too: CLAUDE_CODE_SESSION_BEGAN_AS_COPY (marks the session a copy,
+# which changes what a print-mode resume continues: the launcher's, like
+# --session-began-as-copy), CLAUDE_CODE_HOST_OWNED_CONFIG_DIR (a damaged
+# Claude config file then starts on defaults that a later save writes over),
+# CLAUDE_CODE_PERSONAL_HOOKS_OFF (turns the person's hooks off for a host's
+# repair) and CLAUDE_CODE_DISABLE_NESTED_SESSION_ID (a `claude -p` run inside
+# the session would share its ID and transcript).
 V2_ENV_UNSET = (
     *catalog_mod.CREDENTIAL_ENV_KEYS,
     "ANTHROPIC_DEFAULT_FABLE_MODEL",
@@ -738,6 +745,10 @@ V2_ENV_UNSET = (
     "CLAUDE_CODE_DISABLE_EXPLORE_PLAN_AGENTS",
     "CLAUDE_CODE_DISABLE_WORKFLOWS",
     "CLAUDE_CODE_DISABLE_EXPLORE_INHERIT_CAP",
+    "CLAUDE_CODE_SESSION_BEGAN_AS_COPY",
+    "CLAUDE_CODE_HOST_OWNED_CONFIG_DIR",
+    "CLAUDE_CODE_PERSONAL_HOOKS_OFF",
+    "CLAUDE_CODE_DISABLE_NESTED_SESSION_ID",
 )
 
 # Policy-defeating keys (also in catalog.RESERVED_LEAD_ENV_KEYS).

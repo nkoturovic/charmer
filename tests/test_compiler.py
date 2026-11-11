@@ -64,6 +64,27 @@ class PassthroughFlagTests(unittest.TestCase):
 
 class EnvironmentTests(unittest.TestCase):
 
+    def test_the_newer_host_switches_are_cleared_and_reserved(self) -> None:
+        """Claude Code 2.1.313+ host switches never reach a managed session
+        from the launching shell, and a model's lead env never sets them."""
+
+        switches = ("CLAUDE_CODE_SESSION_BEGAN_AS_COPY", "CLAUDE_CODE_HOST_OWNED_CONFIG_DIR",
+                    "CLAUDE_CODE_PERSONAL_HOOKS_OFF", "CLAUDE_CODE_DISABLE_NESTED_SESSION_ID")
+        unset = compiler.v2_env_unset(scalar=None, secret_env_names=(), launch_environ={
+            name: "1" for name in switches})
+        for name in switches:
+            with self.subTest(name=name):
+                self.assertIn(name, compiler.V2_ENV_UNSET)
+                self.assertEqual(unset.count(name), 1)
+                self.assertIn(name, catalog.RESERVED_LEAD_ENV_KEYS)
+        # Measured and left to the user: the auto-mode server switch fails
+        # closed, the feature-flag switch keeps the defaults, and the subagent
+        # effort applies only to agents that name none (every cm-* agent does).
+        for name in ("CLAUDE_CODE_AUTO_MODE_SERVER", "CLAUDE_CODE_DISABLE_FEATURE_FLAGS",
+                     "CLAUDE_CODE_SUBAGENT_EFFORT"):
+            with self.subTest(left=name):
+                self.assertNotIn(name, compiler.V2_ENV_UNSET)
+
 
     def test_family_default_env_rules(self) -> None:
         import copy
