@@ -235,7 +235,7 @@ jobs:
     needs: gateway
     if: (github.event_name == 'schedule' && vars.CM_SCHEDULES == 'on') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    timeout-minutes: 180
     permissions:
       contents: read
     strategy:

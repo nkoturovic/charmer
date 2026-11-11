@@ -468,6 +468,12 @@ class WorkflowTests(unittest.TestCase):
             for job, body in _jobs(text).items():
                 with self.subTest(f"{name}: {job}"):
                     self.assertRegex(body, r"timeout-minutes: \d+")
+        # The 3.15 battery runs the whole suite and then the locale tier in
+        # one job; 120 minutes was not enough for both on a slow runner.
+        self.assertIn("\n    timeout-minutes: 180\n", ci["battery"])
+        locale = [step for step in _steps(ci["battery"]) if "ISO-8859-1 with EncodingWarning" in step]
+        self.assertEqual(len(locale), 1)
+        self.assertIn("timeout-minutes: 60", locale[0])
 
     def test_full_battery_reports_test_ids_and_skip_reasons(self) -> None:
         battery = _jobs(self.texts["ci.yml"])["battery"]
