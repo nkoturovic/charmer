@@ -147,6 +147,23 @@ class _HeldSse(probe.SseResponse):
     started: Any = None
 
 
+class _ForkProvider(probe.FakeAnthropicProvider):
+    """The fake upstream with one more credential label: the exact fixture
+    gateway token (what charmer's token helper hands the client) is
+    ``gateway``. Any other token stays ``other``; the value is compared in
+    memory and never kept."""
+
+    def _auth_label(self, headers: Any) -> str:
+        label = super()._auth_label(headers)
+        if label != "other":
+            return label
+        presented = headers.get("x-api-key") or ""
+        if not presented:
+            bearer = headers.get("Authorization") or ""
+            presented = bearer[7:] if bearer.startswith("Bearer ") else bearer
+        return "gateway" if presented == FIXTURE_GATEWAY_TOKEN else label
+
+
 class _StreamingHandler(probe._ProviderHandler):
     """The fake provider's handler, able to stop in the middle of a stream."""
 
@@ -625,10 +642,11 @@ class _ForkFixture:
         command = (f"touch {self.tool_started}; n=0; while [ ! -e {self.release} ] && [ $n -lt 900 ]; "
                    "do sleep 0.2; n=$((n+1)); done; echo FORKTOOL-OUT$((6*7))")
         self.responder = _ForkResponder(command)
-        # The keyed provider's key is a label the fake upstream recognises:
-        # a request carrying it is told apart from the helper's gateway token.
-        self.provider = probe.FakeAnthropicProvider(responder=self.responder,
-                                                    known_tokens={_KEYED_SECRET: "providerkey"}).start()
+        # The credentials the fake upstream tells apart: the keyed provider's
+        # key (providerkey), the exact fixture gateway token (gateway) and
+        # any other token (other).
+        self.provider = _ForkProvider(responder=self.responder,
+                                      known_tokens={_KEYED_SECRET: "providerkey"}).start()
         case.addCleanup(self.provider.stop)
         socket_path = self.provider.unix_socket(self.run_dir)
         for server, _thread in self.provider._unix_servers.values():
@@ -637,7 +655,8 @@ class _ForkFixture:
         self.case.addCleanup(self.stream_release)
         # charmer's gateway: the token file and the endpoint (the bridge port).
         token_dir = state.ensure_private_dir(self.home / ".config" / "charmer")
-        state.atomic_write(token_dir / "api-key", (FIXTURE_GATEWAY_TOKEN + "\n").encode())
+        self.token_file = token_dir / "api-key"
+        state.atomic_write(self.token_file, (FIXTURE_GATEWAY_TOKEN + "\n").encode())
         endpoint.write_config(self.home, endpoint.EndpointConfig(port=self.provider.port))
         # The pinned copy in the fixture's owned location (a hard link of the
         # copy the runner verified and placed).
@@ -864,7 +883,8 @@ class ForkLaunchProbe(unittest.TestCase):
     rows: dict[str, dict[str, Any]] = {}
     verdicts: dict[str, str] = {}
     # Every row of the class: the completion record needs all of them.
-    ROWS = ("G1-snapshot", "G1-compacted", "G1-control-without-switch", "G1-repeat", "G1-keyed-fence", "G2-idle",
+    ROWS = ("G1-snapshot", "G1-compacted", "G1-control-without-switch", "G1-repeat", "G1-keyed-fence",
+            "G1-keyed-fence-control-wrong-token", "G2-idle",
             "G2b-streaming", "G2b-tool", "G2b-streaming-pty", "G2b-tool-pty",
             "G3-builtin-fork")
 
@@ -1080,21 +1100,36 @@ class ForkLaunchProbe(unittest.TestCase):
         session on a keyed line of the fixture catalog is forked while the
         launching shell carries the provider's key variable. The fork sends
         the parent's selector under the same lead set and fence settings,
-        authenticates only with the token helper's gateway token (never the
-        provider key, which reaches no request), keeps the subagent policy,
-        and its environment lacks the inherited key variable (a Bash call of
-        the fork reports it unset). A provider switched off between the
-        preparation and the commit refuses before the client runs, so that
-        case is the host test named in the row."""
+        authenticates only with the token helper's gateway token (label
+        ``gateway``; never the provider key, which reaches no request),
+        keeps the subagent policy, and its environment lacks the inherited
+        key variable (a Bash call of the fork reports it unset). A provider
+        switched off between the preparation and the commit refuses before
+        the client runs, so that case is the host test named in the row."""
 
+        self._keyed_fence("G1-keyed-fence")
+
+    def test_g1_control_a_wrong_gateway_token_is_told_apart(self) -> None:
+        """The keyed-fence row's negative control: the token helper hands the
+        fork another well-formed token, which the fake upstream labels
+        ``other``; the row's credential check must report it."""
+
+        self._keyed_fence("G1-keyed-fence-control-wrong-token", wrong_token=True)
+
+    def _keyed_fence(self, name: str, *, wrong_token: bool = False) -> None:
         fx = self.fixture
         first = fx.headless("fresh", T1, direct=_KEYED_LINE, no_subagents=True)
         self.assertEqual(first.get("rc"), 0, f"parent launch: {first.get('error')} {first['stderr'][-800:]}")
         parent = first["managed_id"]
         parent_leads = self._lead_rows(0.0, T1)
         started = time.monotonic()
-        fork = fx.headless("fork", KEYED_ENV, parent=parent, passthrough=("--allowedTools", "Bash"),
-                           inherited={_KEYED_ENV_NAME: _KEYED_SECRET})
+        if wrong_token:
+            state.atomic_write(fx.token_file, ("f" * 64 + "\n").encode())
+        try:
+            fork = fx.headless("fork", KEYED_ENV, parent=parent, passthrough=("--allowedTools", "Bash"),
+                               inherited={_KEYED_ENV_NAME: _KEYED_SECRET})
+        finally:
+            state.atomic_write(fx.token_file, (FIXTURE_GATEWAY_TOKEN + "\n").encode())
         child = fork.get("managed_id")
         rows = [row for row in fx.responder.snapshot() if row["received"] >= started]
         leads = [row for row in rows if row["main"] and row["tag"] == KEYED_ENV]
@@ -1127,7 +1162,12 @@ class ForkLaunchProbe(unittest.TestCase):
         if not same_lead_set or not same_fence:
             problems.append("the fork's lead set or fence settings differ from the parent's")
         auths = sorted({str(row["auth"]) for row in rows})
-        if not rows or set(auths) & {"providerkey", "absent", "dummy"}:
+        only_gateway = bool(rows) and auths == ["gateway"]
+        if wrong_token:
+            # The control: the check must tell the wrong token apart.
+            if only_gateway or auths != ["other"]:
+                problems.append(f"the credential check did not tell the wrong token apart ({auths})")
+        elif not only_gateway:
             problems.append(f"the fork authenticated with {auths}, not only the helper's gateway token")
         if any(row["secret_in_request"] for row in fx.responder.snapshot()):
             problems.append("the provider key reached a request")
@@ -1139,8 +1179,9 @@ class ForkLaunchProbe(unittest.TestCase):
         daemon = fx.daemon_state()
         if daemon["private_tmp_daemon_dirs"] or daemon["jobs_dir"]:
             problems.append("a daemon or jobs directory appeared")
-        self._row("G1-keyed-fence", {
+        self._row(name, {
             "client": self.version, "parent": parent[:8], "fork": (child or "")[:8], "line": _KEYED_LINE,
+            "control_wrong_token": wrong_token, "parent_auth": sorted({str(row["auth"]) for row in parent_leads}),
             "selector": {"parent": parent_models, "fork": fork_models},
             "same_lead_set": same_lead_set, "same_fence_settings": same_fence, "auth": auths,
             "inherited_key_in_fork": keyed, "fork_requests": len(rows),
