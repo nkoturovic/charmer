@@ -155,7 +155,7 @@ NETWORK_TABLE = (
     (("http://localhost:18010/v1", True, False, "tailnet"), "localhost is on the loopback network, not tailnet"),
     (("http://box.example.test:8317/v1", True, False, "loopback"), "the charmer gateway port is not a provider"),
     (("http://127.0.0.1:8317/v1", True, False, "tailnet"), "the charmer gateway port is not a provider"),
-    # Precedence (D263): never, then the gateway port, then outside the network.
+    # Precedence: never, then the gateway port, then outside the network.
     (("http://100.100.0.7:8317/v1", True, False, "loopback"),
      "100.100.0.7 is not a provider address (100.100.0.0/24: reserved by the overlay for its own services)"),
     (("http://192.168.1.10:8317/v1", True, False, "loopback"), "the charmer gateway port is not a provider"),
