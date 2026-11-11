@@ -96,7 +96,7 @@ def _shipped_render_yaml():
     bundle = catalog.load_catalog(SHIPPED_ROOT)
     return render.render_config(
         bundle.docs["gateway"], bundle.docs["providers"]["providers"], bundle.lines,
-        home=Path("/home/gwtest-surfaces"), gateway_token=harness.FIXTURE_GATEWAY_TOKEN,
+        home=Path("/fixture/home"), gateway_token=harness.FIXTURE_GATEWAY_TOKEN,
         resolve_secret=lambda _name: "dummy-gwtest-surfaces", continuity={},
     ).yaml
 
