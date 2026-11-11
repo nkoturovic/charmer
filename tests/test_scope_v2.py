@@ -898,6 +898,31 @@ class ModPolicyDriftTests(unittest.TestCase):
             with self.subTest(label):
                 self.assertEqual(self.drift(document), (differs, lazy))
 
+    def test_the_authoring_denies_compose_with_the_other_lazy_rows(self) -> None:
+        """A scope an earlier release compiled lacks the authoring denies
+        beside the fork deny or the status line: the fork-policy and
+        status-line rows still read it as lazy; with only one of the two
+        authoring denies it stays a difference."""
+
+        differs = [f"{scope.SETTINGS_RELPATH} content differs"]
+        authoring = ("Skill(plugin-authoring)", *scope.MOD_FOLDER_DENIES)
+        for kept, lazy in (((), True), (authoring, True), (authoring[:1], False), (authoring[1:], False)):
+            document = self.denies(lambda rule, kept=kept: rule != compiler.FORK_AGENT_DENY
+                                   and (rule not in authoring or rule in kept))
+            live = scope.write_scope(self.root / f"fork-{len(kept)}-{kept[:1]}", FIXED_SESSION,
+                                     dataclasses.replace(self.plan, settings=document))
+            drifted = scope.live_drift(live, self.plan)
+            with self.subTest(kept=kept):
+                self.assertEqual(drifted, differs)
+                self.assertEqual(scope.fork_policy_drift(live, self.plan, drifted), lazy)
+                self.assertFalse(scope.skill_policy_drift(live, self.plan, drifted))
+        status = self.denies(lambda rule: rule not in authoring)
+        status.pop(scope.SUBAGENT_STATUS_LINE_KEY, None)
+        live = scope.write_scope(self.root / "status", FIXED_SESSION, dataclasses.replace(self.plan, settings=status))
+        drifted = scope.live_drift(live, self.plan)
+        if scope.SUBAGENT_STATUS_LINE_KEY in self.plan.settings:
+            self.assertTrue(scope.status_line_drift(live, self.plan, drifted))
+
 
 class ForkPolicyDriftTests(unittest.TestCase):
     """A live scope whose only drift is the fork-subagent deny of another

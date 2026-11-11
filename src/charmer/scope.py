@@ -750,9 +750,9 @@ PREVIOUS_MANAGED_SKILL_DENIES: tuple[tuple[str, ...], ...] = (
 # session denies the file-tool writes into that folder (the client checks a
 # Bash redirect's or ``mkdir``'s path against Edit rules too) and, through
 # ``SKILL_POLICY``, the model's call of the bundled ``plugin-authoring``
-# skill that names the folder. The person's own mods (``--plugin-dir``) are
-# untouched. Not a sandbox: in bypass mode a program the model runs can still
-# write the folder, as it can read a file a deny names.
+# skill that names the folder. The mods a person loads from a plugin folder
+# of their own are untouched. Not a sandbox: in bypass mode a program the
+# model runs can still write the folder, as it can read a file a deny names.
 MOD_FOLDER_DENIES: tuple[str, ...] = ("Edit(~/.claude/dev-mods/**)",)
 
 # Writer grades need worktree isolation, which
@@ -2472,6 +2472,26 @@ def _without_default_mode(settings: Mapping[str, Any]) -> Any:
     return {**settings, "permissions": {k: v for k, v in permissions.items() if k != "defaultMode"}}
 
 
+# The mod-authoring denies this release added (the authoring skill and the
+# dev-mods folder): a scope another release compiled carries both or neither.
+_AUTHORING_DENIES = ("Skill(plugin-authoring)", *MOD_FOLDER_DENIES)
+
+
+def _without_authoring_denies(settings: Mapping[str, Any]) -> Any:
+    """``settings`` without the mod-authoring denies when it carries both or
+    neither; unchanged when it carries only one (a difference that stays)."""
+
+    permissions = settings.get("permissions")
+    if not isinstance(permissions, Mapping) or not isinstance(permissions.get("deny"), list):
+        return settings
+    deny = permissions["deny"]
+    present = [rule for rule in _AUTHORING_DENIES if rule in deny]
+    if present and len(present) != len(_AUTHORING_DENIES):
+        return settings
+    return {**settings, "permissions": {**permissions, "deny": [rule for rule in deny
+                                                                if rule not in _AUTHORING_DENIES]}}
+
+
 def _status_line_of(settings: Any) -> tuple[bool, Any]:
     if not isinstance(settings, Mapping) or SUBAGENT_STATUS_LINE_KEY not in settings:
         return False, None
@@ -2480,11 +2500,12 @@ def _status_line_of(settings: Any) -> tuple[bool, Any]:
 
 def _without_lazy_keys(settings: Mapping[str, Any]) -> Any:
     """``settings`` without the keys whose difference alone is lazy state:
-    ``permissions.defaultMode`` and a ``subagentStatusLine`` a release
+    ``permissions.defaultMode``, a ``subagentStatusLine`` a release
     compiles (:func:`is_status_line_setting`; any other value stays, so it
-    remains a difference)."""
+    remains a difference) and the mod-authoring denies, both or neither
+    (:func:`_without_authoring_denies`)."""
 
-    rest = _without_default_mode(settings)
+    rest = _without_authoring_denies(_without_default_mode(settings))
     present, value = _status_line_of(rest)
     if present and is_status_line_setting(value):
         rest = {key: item for key, item in rest.items() if key != SUBAGENT_STATUS_LINE_KEY}

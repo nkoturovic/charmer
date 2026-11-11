@@ -81,8 +81,8 @@ _CALL_OUTCOMES = {"control": ("answered", "denied", "error"), "secret": _OUTCOME
                   "skill": ("answered", "denied", "error"), "write": ("answered", "denied", "error"),
                   "fsread": ("read", "answered", "error")}
 _SPECIFIED = {"control": "answered", "secret": "denied", "skill": "denied", "write": "denied"}
-_SECRET_TOKEN = "MODCHECK-SECRET-TOKEN-0f3a9c"
-_CONTROL_TOKEN = "MODCHECK-CONTROL-TOKEN-5d21e7"
+_SECRET_TOKEN = "MODCHECK-SECRET-FIXTURE-MARK"
+_CONTROL_TOKEN = "MODCHECK-CONTROL-FIXTURE-MARK"
 _MARKERS = {f"{call}-{outcome}": f"MODCHECK-{call}-{outcome}"
             for call, choices in _CALL_OUTCOMES.items() for outcome in choices}
 # The model's own reads: each file's token on the wire.
