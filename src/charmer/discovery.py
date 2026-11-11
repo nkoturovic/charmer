@@ -437,6 +437,9 @@ class ListingCall:
     fingerprint: str
     account: bool = False
     wire: str | None = None
+    # A provider declared on a private network: the request goes direct
+    # (no proxy) and only to addresses in it (``proxy.bounded_get``).
+    network: str | None = None
 
     @property
     def keyed(self) -> bool:
@@ -583,7 +586,8 @@ def _plan_t2(resolved: operator_mod.ResolvedProvider, layer: operator_mod.Operat
             auth, header = "header", resolved.header
     try:
         origin, _normalized = operator_mod.normalize_endpoint(
-            url, keyed=auth != "none", lan=lan, gateway_ports=operator_mod.gateway_ports(docs))
+            url, keyed=auth != "none", lan=lan, network=resolved.network,
+            gateway_ports=operator_mod.gateway_ports(docs), network_hint=resolved.kind == operator_mod.KEYED_KIND)
     except ValueError as exc:
         raise PlanRefusal(pid, f"discover {pid}: listing url refused ({exc})") from exc
     if auth != "none" and origin != resolved.origin:
@@ -593,6 +597,10 @@ def _plan_t2(resolved: operator_mod.ResolvedProvider, layer: operator_mod.Operat
     call = {"provider_id": pid, "tier": "T2", "kind": resolved.kind, "url": url, "shape": shape, "auth": auth,
             "header": header, "secret_name": secret, "verified": verified,
             "route": "approved" if keyed else "keyless"}
+    if resolved.network is not None:
+        # The policy is part of the plan (and of its fingerprint): never
+        # inferred from a host name, never dropped before the send.
+        call["network"] = resolved.network
     return ListingCall(**call, fingerprint=_fingerprint({
         **call, "rd": resolved.route_digest, "route_status": route, "entry": resolved.entry,
         "base_url": resolved.base_url}))
@@ -663,6 +671,10 @@ def consent_text(calls: Sequence[ListingCall], skipped: Sequence[Skipped] = (), 
     for index, call in enumerate(calls, 1):
         lines.append(f"  {index}. GET {call.url}")
         lines.append(f"     {auth_text(call)}")
+        if call.network is not None:
+            local = "; this computer's address must be a tailnet address too" if call.network == "tailnet" else ""
+            lines.append(f"     network: {call.network} — a direct connection (no proxy), only to addresses in "
+                         f"that network{local}")
         if not call.verified:
             lines.append("     endpoint: unverified (an attempt; a failure here is not a refusal by the provider)")
         if call.account:
