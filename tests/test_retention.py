@@ -370,7 +370,8 @@ class PruneRuleTests(PruneCase):
             (proc / pid).mkdir(parents=True)
             (proc / pid / "exe").symlink_to(target)
         scan = retention.scan_processes(pin.owned_root(self.env), proc)
-        self.assertEqual(scan, retention.ProcessScan(frozenset({"2.1.250"})))
+        self.assertEqual(scan.versions, frozenset({"2.1.250"}))
+        self.assertEqual(scan.holders["2.1.250"], (retention.ProcessHolder(10, "claude"),))
         self.assertIsNone(retention.scan_processes(pin.owned_root(self.env), self.home / "no-proc"))
 
     def test_prune_removes_regular_files_only_and_never_follows_links(self):
@@ -429,7 +430,8 @@ class PruneRuleTests(PruneCase):
         finally:
             lock.release()
         self.assertEqual(info, ["Claude Code copies kept by charmer: 2.1.300 (the current pin), "
-                                "2.1.280 (the previous release's pin), 2.1.200 (in use)."])
+                                "2.1.280 (the previous release's pin), 2.1.200 (in use).",
+                                "Claude Code 2.1.200 kept: the holder could not be identified."])
         self.assertEqual(attention, ["Claude Code copies no release here needs: 2.1.250 (0 MiB) — "
                                      "`charmer setup --step claude` removes them"])
         attention, info = report()
@@ -450,7 +452,7 @@ class PruneRuleTests(PruneCase):
                 "2.1.200": "the running gateway's release (0.8.0) pins it",
                 "2.1.250": retention.IN_USE,  # the lock rules over the process evidence
             })
-            # Setup's "once no session runs them" covers no pin.
+            # Setup's "once no process uses them" covers no pin.
             outcome = self.prune_copies(running={"2.1.250", "2.1.280"}, gateway_launcher="0.8.0")
             self.assertEqual(outcome, retention.PruneOutcome((), ("2.1.250",)))
             with mock.patch.object(retention, "scan_processes",
@@ -463,7 +465,9 @@ class PruneRuleTests(PruneCase):
         self.assertEqual(info, ["Claude Code copies kept by charmer: 2.1.300 (the current pin, in use), "
                                 "2.1.280 (the previous release's pin, in use), "
                                 "2.1.200 (the running gateway's release (0.8.0) pins it, in use), "
-                                "2.1.250 (in use)."])
+                                "2.1.250 (in use).",
+                                *[f"Claude Code {version} kept: the holder could not be identified."
+                                  for version in ("2.1.300", "2.1.280", "2.1.200", "2.1.250")]])
         self.assertEqual(attention, [])
         # Once the sessions are gone the pins stay, without the use.
         with mock.patch.object(retention, "scan_processes", return_value=retention.ProcessScan()), \
@@ -517,6 +521,107 @@ class PruneRuleTests(PruneCase):
             self.assertFalse(any(line.startswith("disk space:") for line in attention))
 
 
+class HolderDetailTests(PruneCase):
+    """Holder details are bounded observations, never permission to remove a copy."""
+
+    def setUp(self):
+        super().setUp()
+        self.proc = self.home / "proc"
+        self.process(1, Path("/usr/bin/true"))
+
+    def process(self, pid: int, executable: Path) -> Path:
+        directory = self.proc / str(pid)
+        directory.mkdir(exist_ok=True, parents=True)
+        (directory / "exe").symlink_to(executable)
+        return directory
+
+    def test_embedded_tool_holder_is_named_in_cleanup_and_doctor(self):
+        root = pin.owned_root(self.env)
+        self.process(1234, root / "2.1.200" / "tools" / "grep")
+        scan = retention.scan_processes(root, self.proc)
+        self.assertEqual(scan.versions, frozenset({"2.1.200"}))
+        self.assertEqual(scan.holders["2.1.200"], (retention.ProcessHolder(1234, "grep"),))
+        with mock.patch.object(retention, "scan_processes", return_value=scan):
+            outcome = self.prune_copies(running=...)
+            lines = retention.prune_lines(outcome, self.env)
+            _attention, info = retention.retention_report(self.contract, None, self.env)
+        detail = "Claude Code 2.1.200 kept: 1 process observed using it (pid 1234 grep)."
+        self.assertIn(detail, lines)
+        self.assertIn(detail, info)
+        self.assertIn("once no process uses them", "\n".join(lines))
+        self.assertNotIn("session", "\n".join(lines))
+        self.assertTrue(pin.owned_path(self.env, "2.1.200", self.platform).exists())
+
+    def test_lock_only_and_unreadable_metadata_never_invent_a_holder(self):
+        directory = self.process(1234, Path("/usr/bin/true"))
+        (directory / "exe").unlink()
+        (directory / "exe").write_bytes(b"unreadable link")
+        (directory / "status").write_text("Name:\tprivate-prompt-sentinel\n")
+        lock = pin.take_use_lock(self.env, "2.1.200", shared=True)
+        self.addCleanup(lock.release)
+        outcome = self.prune_copies(running=..., proc_root=self.proc)
+        self.assertIn("2.1.200", outcome.in_use)
+        lines = retention.prune_lines(outcome, self.env)
+        self.assertIn("Claude Code 2.1.200 kept: the holder could not be identified.", lines)
+        self.assertNotIn("private-prompt-sentinel", "\n".join(lines))
+        self.assertNotIn("pid 1234", "\n".join(lines))
+
+    def test_exited_or_reused_pid_does_not_weaken_the_recorded_keep(self):
+        directory = self.process(1234, pin.owned_root(self.env) / "2.1.200" / "grep")
+        outcome = self.prune_copies(running=..., proc_root=self.proc)
+        self.assertIn("2.1.200", outcome.in_use)
+        for replacement in (None, Path("/usr/bin/another-program"), "unreadable"):
+            with self.subTest(replacement=replacement):
+                (directory / "exe").unlink(missing_ok=True)
+                if replacement == "unreadable":
+                    (directory / "exe").write_bytes(b"not a readable link")
+                elif replacement is not None:
+                    (directory / "exe").symlink_to(replacement)
+                # Reporting is a snapshot, not another liveness check or prune.
+                with mock.patch.object(retention, "scan_processes", side_effect=AssertionError("no rescan")):
+                    lines = retention.prune_lines(outcome, self.env)
+                self.assertIn("observed using it (pid 1234 grep)", "\n".join(lines))
+                self.assertNotIn("another-program", "\n".join(lines))
+                self.assertTrue(pin.owned_path(self.env, "2.1.200", self.platform).exists())
+
+    def test_holder_list_and_names_are_bounded_and_paths_are_not_printed(self):
+        root = pin.owned_root(self.env)
+        for pid in range(10, 10 + retention.HOLDER_LIMIT + 3):
+            self.process(pid, root / "2.1.200" / ("tool\x1b[31m\n" + "x" * 100))
+        scan = retention.scan_processes(root, self.proc)
+        self.assertEqual(scan.counts["2.1.200"], retention.HOLDER_LIMIT + 3)
+        self.assertEqual(len(scan.holders["2.1.200"]), retention.HOLDER_LIMIT)
+        self.assertTrue(all(len(holder.name) <= 64 for holder in scan.holders["2.1.200"]))
+        with mock.patch.object(retention, "scan_processes", return_value=scan):
+            lines = retention.prune_lines(self.prune_copies(running=...), self.env)
+        text = "\n".join(lines)
+        self.assertIn(", 3 more)", text)
+        self.assertNotIn(str(root), text)
+        self.assertNotIn("\x1b", text)
+        self.assertNotIn("tool\n", text)
+
+    def test_darwin_holder_seam_reads_pid_and_executable_not_arguments(self):
+        root = pin.owned_root(self.env)
+        result = subprocess.CompletedProcess([], 0, (
+            f" 1234 {root}/2.1.200/tools/grep\n"
+            f" 1235 {root}/2.1.200/claude\n"
+            " 2345 worker\n").encode(), b"")
+        with mock.patch.object(retention, "_platform", return_value="darwin"), \
+                mock.patch.object(darwin_process, "_tool", return_value="/bin/ps"), \
+                mock.patch.object(subprocess, "run", return_value=result) as run:
+            scan = retention.scan_processes(root, runner=run)
+        self.assertEqual(scan.holders["2.1.200"], (
+            retention.ProcessHolder(1234, "grep"), retention.ProcessHolder(1235, "claude")))
+        self.assertEqual(scan.counts["2.1.200"], 2)
+        self.assertEqual(run.call_args.args[0], ["/bin/ps", "-axww", "-o", "pid=,comm="])
+        self.assertEqual(run.call_args.kwargs["timeout"], darwin_process.TIMEOUT)
+        with mock.patch.object(retention, "_platform", return_value="darwin"), \
+                mock.patch.object(darwin_process, "_tool", return_value="/bin/ps"), \
+                mock.patch.object(subprocess, "run", return_value=subprocess.CompletedProcess(
+                    [], 0, b"x" * (darwin_process.OUTPUT_LIMIT + 1), b"")) as run:
+            self.assertIsNone(retention.scan_processes(root, runner=run))
+
+
 class MacOSScanTests(PruneCase):
     """The macOS process evidence: one bounded ``ps`` read through its seam."""
 
@@ -542,16 +647,17 @@ class MacOSScanTests(PruneCase):
         link = self.home / "link"
         link.symlink_to(pin.owned_root(self.env))
         run, calls = self.runner([
-            str(pin.owned_path(self.env, "2.1.250", self.platform)),
-            str(link / "2.1.280" / "claude"),  # through a link: resolved
-            str(self.home / "elsewhere" / "2.1.200" / "claude"),
-            "/usr/bin/true", "(claude)",
+            "11 " + str(pin.owned_path(self.env, "2.1.250", self.platform)),
+            "12 " + str(link / "2.1.280" / "claude"),  # through a link: resolved
+            "13 " + str(self.home / "elsewhere" / "2.1.200" / "claude"),
+            "14 /usr/bin/true", "15 (claude)",
         ])
         real_scan = retention.scan_processes
         with mock.patch.object(retention, "_platform", return_value="darwin"), \
                 mock.patch.object(darwin_process, "_tool", return_value="/bin/ps"):
             scan = retention.scan_processes(pin.owned_root(self.env), runner=run)
-            self.assertEqual(scan, retention.ProcessScan(frozenset({"2.1.250", "2.1.280"})))
+            self.assertEqual(scan.versions, frozenset({"2.1.250", "2.1.280"}))
+            self.assertEqual(scan.holders["2.1.250"], (retention.ProcessHolder(11, "claude"),))
             with mock.patch.object(retention, "scan_processes",
                                    side_effect=lambda root, *_a, **_k: real_scan(root, runner=run)):
                 lock = pin.take_use_lock(self.env, "2.1.200", shared=True)
@@ -561,11 +667,11 @@ class MacOSScanTests(PruneCase):
                     self.assertEqual(plan.keep["2.1.200"], retention.IN_USE)
                     self.assertEqual(plan.remove, ())
                     self.assertEqual(self.prune_copies(running=...),
-                                     retention.PruneOutcome((), ("2.1.200", "2.1.250")))
+                                     retention.PruneOutcome((), ("2.1.200", "2.1.250"), processes=scan))
                 finally:
                     lock.release()
                 self.assertEqual(self.prune_copies(running=...).removed, ("2.1.200",))
-            self.assertTrue(all(argv == ["/bin/ps", "-axww", "-o", "comm="] for argv in calls))
+            self.assertTrue(all(argv == ["/bin/ps", "-axww", "-o", "pid=,comm="] for argv in calls))
 
     def test_an_unreadable_ps_table_blocks_like_an_unlistable_proc(self):
         failing, _calls = self.runner([], returncode=1)
@@ -607,7 +713,9 @@ class PruneInterleavingTests(PruneCase):
 
         with mock.patch.object(retention, "_hold", side_effect=started_meanwhile):
             outcome = self.prune()
-        self.assertEqual(outcome, retention.PruneOutcome(("2.1.250",), ("2.1.200",)))
+        self.assertEqual(outcome.removed, ("2.1.250",))
+        self.assertEqual(outcome.in_use, ("2.1.200",))
+        self.assertEqual(outcome.processes.holders["2.1.200"], (retention.ProcessHolder(77, "claude"),))
         self.assertTrue(pin.owned_path(self.env, "2.1.200", self.platform).exists())
 
     def test_a_version_being_acquired_is_left_alone(self):
@@ -885,6 +993,36 @@ class LifetimeLockProcessTests(PruneCase):
         self.assert_free("2.1.200")
         self.assertEqual(self.prune_copies().removed, ("2.1.200",))
         self.assertFalse(self.copy.exists())
+
+    def test_a_tool_process_in_an_old_copy_is_reported_without_its_arguments(self):
+        import select
+
+        tool = self.copy.with_name("grep")
+        tool.write_bytes(self.copy.read_bytes())
+        tool.chmod(0o755)
+        child = subprocess.Popen(
+            [str(tool), "-c", "print('ready', flush=True); input()", "argument-must-not-appear"],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, cwd=self.home,
+            env={**self.child_env, "HOME": str(self.home), "PYTHONNOUSERSITE": "1"})
+        self.addCleanup(child.wait)
+        self.addCleanup(child.kill)
+        self.addCleanup(child.stdout.close)
+        self.addCleanup(lambda: child.stdin.closed or child.stdin.close())
+        self.assertTrue(select.select([child.stdout], [], [], 10)[0], "fixture did not start")
+        self.assertEqual(child.stdout.readline().strip(), "ready")
+        selected = self.home / "selected-proc"
+        selected.mkdir()
+        (selected / str(child.pid)).symlink_to(f"/proc/{child.pid}", target_is_directory=True)
+        outcome = self.prune_copies(running=..., proc_root=selected)
+        self.assertIn("2.1.200", outcome.in_use)
+        text = "\n".join(retention.prune_lines(outcome, self.env))
+        self.assertIn(f"1 process observed using it (pid {child.pid} grep)", text)
+        self.assertNotIn("argument-must-not-appear", text)
+        self.assertNotIn(str(self.home), text)
+        child.stdin.write("\n")
+        child.stdin.close()
+        self.assertEqual(child.wait(10), 0)
+        self.assertTrue(self.copy.exists())  # a later exit never changes the completed keep
 
     def test_a_child_of_the_exec_d_copy_keeps_the_lock_after_the_copy_exits(self):
         process = self.start(self.FORKER)
@@ -1208,6 +1346,19 @@ class OwnedCopyLaunchTests(V4Case):
         self.assertEqual(problems, [])
         self.assertTrue(any("the next launch copies the verified retained copy" in line for line in info))
         self.assertFalse(self.owned.exists())
+
+    def test_doctor_prints_the_retained_copy_holder_detail(self):
+        old = pin.owned_path(self.env, "2.1.100", pin.host_platform())
+        state.ensure_private_dir(old.parent)
+        old.write_bytes(FAKE)
+        observed = retention.ProcessScan(frozenset({"2.1.100"}),
+                                        {"2.1.100": (retention.ProcessHolder(1234, "grep"),)},
+                                        {"2.1.100": 1})
+        output = io.StringIO()
+        with mock.patch.object(retention, "scan_processes", return_value=observed):
+            cli.main(["doctor"], runtime=self.make_runtime(), output_stream=output, interactive=False)
+        self.assertIn("Claude Code 2.1.100 kept: 1 process observed using it (pid 1234 grep).", output.getvalue())
+        self.assertNotIn(str(old), output.getvalue())
 
     def test_cli_stop_runs_the_owned_copy_under_its_use_lock(self):
         self.retained.unlink()
