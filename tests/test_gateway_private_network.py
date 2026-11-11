@@ -45,6 +45,8 @@ SECRET = "PNBOX_API_KEY"
 KEY_VALUE = "keyedtest-key-pn-sentinel-4c1d"
 REFUSED = "upstream address refused: outside the provider's private network (tailnet)"
 REDIRECT_REFUSED = "upstream redirect refused"
+# The watcher's line when a load (and its credentials' refresh) has finished.
+LOAD_COMPLETE = "full client load complete"
 
 # Line keys (the served aliases) and the path of each provider on its fake.
 LOOP, LAN, TAIL = "custom-pnbox-chat", "custom-pnlan-chat", "custom-pntail-chat"
@@ -232,7 +234,14 @@ class CorpusCopyTests(unittest.TestCase):
         self.assertEqual("\n".join(lines) + "\n", CORPUS.read_text(encoding="utf-8"))
 
 
-class PrivateNetworkGatewayTests(unittest.TestCase):
+class _PrivateNetworkFixture(unittest.TestCase):
+    """One candidate gateway with the rendered private-network document, the
+    fake upstreams (plain, TLS, another port) and a proxy sink every proxy
+    setting points at. ``INERT`` adds that many inert providers of that many
+    models each (keyless, on the discard port), which lengthens a reload."""
+
+    INERT = (0, 0)
+
     @classmethod
     def setUpClass(cls):
         openssl = prerequisites()
@@ -256,6 +265,12 @@ class PrivateNetworkGatewayTests(unittest.TestCase):
                 cls.egress, cls.port = egress, port
                 cls.document = render_document(egress=egress, gateway=port, tls=cls.tls_port,
                                                other=cls.other_port, home=home)
+                providers, models = cls.INERT
+                cls.document["openai-compatibility"][:0] = [
+                    {"name": f"pninert{index:03d}", "base-url": "http://127.0.0.1:9/v1",
+                     "models": [{"name": f"pninert-wire-{model:02d}", "alias": f"custom-pninert-{index:03d}-{model:02d}"}
+                                for model in range(models)]}
+                    for index in range(providers)]
                 proxy = f"http://127.0.0.1:{cls.proxy_port}"
                 # T3: every proxy source the config and environment offer.
                 cls.document["proxy-url"] = proxy
@@ -338,17 +353,35 @@ class PrivateNetworkGatewayTests(unittest.TestCase):
         return [hit.path for fake in (self.main, self.other, self.tls) for hit in fake.hits
                 if hit.path.startswith(FOLLOWED)]
 
-    def reload(self, document: dict) -> None:
-        """Publish ``document`` and wait until the gateway serves its sentinel."""
+    def loads(self) -> int:
+        return self.log().count(LOAD_COMPLETE)
+
+    def settle(self, loads: int) -> None:
+        """Wait until the watcher has finished the load after ``loads``
+        (the credentials of the published document follow)."""
+        deadline = time.monotonic() + 30
+        while self.loads() <= loads:
+            if time.monotonic() > deadline:
+                raise AssertionError(self.gateway.diagnostic("reload did not finish"))
+            time.sleep(0.05)
+        time.sleep(0.5)
+
+    def reload(self, document: dict, *, pause: float = 0.05, settle: bool = True) -> None:
+        """Publish ``document`` and wait until the gateway serves its sentinel
+        and, with ``settle``, until its credentials follow."""
+        loads = self.loads()
         state.atomic_write(self.gateway.config, render.emit_yaml(document).encode())
         sentinel = render.document_sentinel(document)
-        deadline = time.monotonic() + 20
+        deadline = time.monotonic() + 30
         while time.monotonic() < deadline:
             reply = self.gateway.served_listing()
             if reply.status == 200 and sentinel in {row["id"] for row in reply.json()["data"]}:
                 type(self).document = document
+                if settle:
+                    self.settle(loads)
                 return
-            time.sleep(0.05)
+            if pause:
+                time.sleep(pause)
         raise AssertionError(self.gateway.diagnostic("reload sentinel not served"))
 
     def assertRefused(self, reply, text):
@@ -356,6 +389,8 @@ class PrivateNetworkGatewayTests(unittest.TestCase):
         self.assertIn(text, reply.raw.decode(errors="replace"))
         self.assertEqual(reply.hits, [])
 
+
+class PrivateNetworkGatewayTests(_PrivateNetworkFixture):
     def test_rendered_entries_carry_the_private_network_block(self):
         sections = compat(served_plan.parse_restricted_yaml(self.gateway.config.read_text()))
         for name in ("pnbox", "pnksame", "pnlan", "pnsame", "pnport", "pnhttps", "pntls"):
@@ -459,3 +494,69 @@ class PrivateNetworkGatewayTests(unittest.TestCase):
         self.assertNotIn(KEY_VALUE, log)
         self.assertNotIn(KEY_VALUE[-12:], log)
         record("T6", success=True, refusal=True, reload=True)
+
+
+class PrivateNetworkReloadRaceTests(_PrivateNetworkFixture):
+    """T7: a request sent as soon as a reload's sentinel is served is dialled
+    under the reloaded declaration, never under the previous one. A reload
+    publishes its routes before the synthesized credentials follow; 200 inert
+    providers of 20 models each (within the supported provider count) keep
+    that window open long enough to land in it. Every proxy setting points at
+    the sink, so an ordinary dial never reaches the provider directly."""
+
+    INERT = (200, 20)
+
+    def immediately(self, change):
+        """Publish the changed document, request ``LOOP`` as soon as its
+        sentinel is served, then let the load finish. Returns the reply and
+        whether it came back before the load finished."""
+        changed = copy.deepcopy(self.document)
+        change(changed)
+        loads = self.loads()
+        self.reload(refinalize(changed), pause=0, settle=False)
+        reply = self.gateway.request(LOOP)
+        in_window = self.loads() == loads
+        self.settle(loads)
+        return reply, in_window
+
+    def test_t7_a_published_reload_is_dialled_under_its_own_declaration(self):
+        original = copy.deepcopy(self.document)
+        base = f"http://127.0.0.1:{self.egress}"
+        windows = {}
+
+        def network(document):
+            return compat(document)["pnbox"][render.PRIVATE_NETWORK_KEY]
+
+        try:
+            # loopback -> tailnet: refused, nothing reaches the provider.
+            reply, windows["to-tailnet"] = self.immediately(lambda d: network(d).update({"class": "tailnet"}))
+            self.assertRefused(reply, REFUSED)
+            # tailnet -> loopback: served under the reloaded class.
+            reply, windows["to-loopback"] = self.immediately(lambda d: network(d).update({"class": "loopback"}))
+            self.assertEqual(reply.status, 200, self.gateway.diagnostic(f"status {reply.status}"))
+            self.assertEqual([hit.path for hit in reply.hits], ["/pnbox/v1/chat/completions"])
+            # The base URL moves: the previous one is never dialled.
+            reply, windows["url-moved"] = self.immediately(
+                lambda d: network(d).update({"base-url": f"{base}/pnmoved/v1"}))
+            self.assertNotIn("/pnbox/v1/chat/completions", [hit.path for hit in reply.hits])
+            self.reload(original)
+
+            # The private network is removed (an ordinary entry at the same
+            # URL): the previous guard never dials it directly.
+            def ordinary(document):
+                section = compat(document)["pnbox"]
+                section["base-url"] = section.pop(render.PRIVATE_NETWORK_KEY)["base-url"]
+
+            reply, windows["network-removed"] = self.immediately(ordinary)
+            self.assertEqual(reply.hits, [])
+            self.reload(original)
+
+            # The entry is removed: its credential is never dialled again.
+            def removed(document):
+                document["openai-compatibility"] = [s for s in document["openai-compatibility"] if s["name"] != "pnbox"]
+
+            reply, windows["entry-removed"] = self.immediately(removed)
+            self.assertEqual(reply.hits, [])
+        finally:
+            self.reload(original)
+        record("T7", cases=len(windows), in_window=sum(windows.values()))

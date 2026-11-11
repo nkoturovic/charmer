@@ -197,7 +197,7 @@
     },
     {
       "basename": "cli-proxy-api-private-network-dial.patch",
-      "sha256": "8cb2219558a8260ebfbdef3c170ff37c9daeacacf6968c39dee1af396a2ccb06",
+      "sha256": "29e4ff52e8919a0c631c057aebf8515f422d7b5492b45af620a70ce8052e8b25",
       "admitted": true
     }
   ],
@@ -1092,9 +1092,10 @@
         "./internal/config",
         "./internal/runtime/executor",
         "./internal/watcher/diff",
-        "./internal/watcher/synthesizer"
+        "./internal/watcher/synthesizer",
+        "./sdk/cliproxy"
       ],
-      "run": "^(TestClassifyCorpus|TestCheckPrecedence|TestCheckLocal|TestDialerMixedAnswersResolveOnceAndDialOnlyTheClass|TestDialerLiteralAddressIsNotResolved|TestDialerRefusesWithTheStrongestReasonAndDialsNothing|TestDialerFixedGatewayPortsNeverDialed|TestDialerTailnetLocalAddressRule|TestDialControlRechecksTheSocketAddress|TestDialerConnectsOnLoopback|TestRefusedErrorIsFixedAndCanonical|TestTransportShapeAndCacheIdentity|TestTransportUsesNoEnvironmentProxyAndHTTP11|TestClientFollowsNoRedirect|TestOpenAICompatPrivateNetworkNormalization|TestPrivateNetworkEverySiteServesItsClass|TestPrivateNetworkEverySiteRefusesOutsideItsClass|TestPrivateNetworkRefusesTheGatewaysOwnPort|TestPrivateNetworkUsesNoProxy|TestPrivateNetworkKeylessFollowsNoRedirect|TestDiffOpenAICompatPrivateNetworkPrintsClassAndURLOnly|TestSynthesizeOpenAICompatPrivateNetworkClass)$",
+      "run": "^(TestClassifyCorpus|TestCheckPrecedence|TestCheckLocal|TestDialerMixedAnswersResolveOnceAndDialOnlyTheClass|TestDialerLiteralAddressIsNotResolved|TestDialerRefusesWithTheStrongestReasonAndDialsNothing|TestDialerFixedGatewayPortsNeverDialed|TestDialerTailnetLocalAddressRule|TestDialControlRechecksTheSocketAddress|TestDialerConnectsOnLoopback|TestRefusedErrorIsFixedAndCanonical|TestTransportShapeAndCacheIdentity|TestTransportUsesNoEnvironmentProxyAndHTTP11|TestClientFollowsNoRedirect|TestOpenAICompatPrivateNetworkNormalization|TestPrivateNetworkEverySiteServesItsClass|TestPrivateNetworkEverySiteRefusesOutsideItsClass|TestPrivateNetworkRefusesTheGatewaysOwnPort|TestPrivateNetworkUsesNoProxy|TestPrivateNetworkKeylessFollowsNoRedirect|TestDiffOpenAICompatPrivateNetworkPrintsClassAndURLOnly|TestSynthesizeOpenAICompatPrivateNetworkClass|TestPrivateNetworkDialPolicyFollowsTheCurrentConfig|TestPrivateNetworkReloadIsNeverDialledUnderThePreviousDeclaration)$",
       "platforms": "portable",
       "race": false,
       "count": null,
@@ -1120,7 +1121,9 @@
         "TestPrivateNetworkUsesNoProxy",
         "TestPrivateNetworkKeylessFollowsNoRedirect",
         "TestDiffOpenAICompatPrivateNetworkPrintsClassAndURLOnly",
-        "TestSynthesizeOpenAICompatPrivateNetworkClass"
+        "TestSynthesizeOpenAICompatPrivateNetworkClass",
+        "TestPrivateNetworkDialPolicyFollowsTheCurrentConfig",
+        "TestPrivateNetworkReloadIsNeverDialledUnderThePreviousDeclaration"
       ]
     },
     {
