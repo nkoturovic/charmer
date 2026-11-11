@@ -105,6 +105,9 @@ NETWORK_KIND_REFUSAL = "network applies to the OpenAI-compatible kinds"
 KEYED_HTTP_REFUSAL = ("a secret is sent only over https, or over http to a declared private network "
                       "(--network loopback, lan or tailnet)")
 NETWORK_RESTART_PENDING = "private-network providers are served only after the gateway restarts: {restart}"
+# The refusals of a closed trusted gate (metadata only, never screened
+# against stored values): no authored text of the file is shown with them.
+GATED_CODES = frozenset({"kind-gated", "network-gated"})
 # The only static header the keyed kind accepts (canonical spelling).
 KEYED_HEADER = "X-Client"
 _VISIBLE_ASCII = re.compile(r"^[\x20-\x7e]{1,256}$")
@@ -579,13 +582,17 @@ def normalize_endpoint(url: Any, *, keyed: bool, lan: bool, network: str | None 
     if loopback and effective_port in set(gateway_ports):
         raise ValueError("the charmer gateway port is not a provider")
     if network is not None:
+        # Precedence (D263): a never address, then the gateway port (any
+        # host form on loopback), then the address outside the network.
+        verdict = (netclass.allowed(address, network, gateway_ports, port=effective_port)
+                   if address is not None else None)
+        if verdict is not None and verdict.reason == netclass.NEVER_REASON:
+            raise ValueError(netclass.refusal(verdict))
         if network == netclass.LOOPBACK and effective_port in set(gateway_ports):
             raise ValueError("the charmer gateway port is not a provider")
-        if address is not None:
-            verdict = netclass.allowed(address, network, gateway_ports, port=effective_port)
-            if not verdict.allowed:
-                raise ValueError(netclass.refusal(verdict))
-        elif host == "localhost" and network != netclass.LOOPBACK:
+        if verdict is not None and not verdict.allowed:
+            raise ValueError(netclass.refusal(verdict))
+        if address is None and host == "localhost" and network != netclass.LOOPBACK:
             raise ValueError(f"localhost is on the loopback network, not {network}")
     elif lan:
         local = loopback or (address is not None and address.is_private) or (
@@ -713,16 +720,16 @@ def network_declaration(document: Any) -> bool:
     return isinstance(block, Mapping) and "network" in block
 
 
-def network_gate_remedy(file_id: str, document: Any) -> str:
+def network_gate_remedy(file_id: str) -> str:
     """What to remove before going back to a release without private-network
-    routes: the declaration's lines (keys of the operator grammar only),
-    then the provider."""
+    routes, as fixed text: the metadata-only refusal never scans stored
+    values, so no authored text of the file enters it (a line key could hold
+    a stored credential). ``file_id`` is the declaration's file name (it
+    matched ``FILE_NAME`` before the file was read), the same text the
+    problem's ``file`` field shows on this path; both pass ``_scrub``."""
 
-    lines = document.get("lines") if isinstance(document, Mapping) else None
-    keys = sorted(key for key in (lines if isinstance(lines, Mapping) else ())
-                  if isinstance(key, str) and (NEW_KEY.fullmatch(key) or MIGRATED_KEY.fullmatch(key)))
-    steps = [f"charmer models rm {key}" for key in keys] + [f"charmer providers rm {file_id}"]
-    return "before going back to a release without them: " + "; ".join(steps) + " (add it again after returning)"
+    return (f"before going back to a release without them: charmer providers rm {file_id} (it names any of its "
+            "lines to remove first); add the provider and its lines again after returning")
 
 
 def keyed_preflight(docs: Mapping[str, Any], file_id: str, raw: bytes) -> OperatorProblem | None:
@@ -751,7 +758,7 @@ def keyed_preflight(docs: Mapping[str, Any], file_id: str, raw: bytes) -> Operat
                                KEYED_GATE_REMEDY))
     if network_declaration(document) and not private_network_audited(gateway):
         return _scrub(_problem("network-gated", file_label(file_id), "$.provider.network", NETWORK_GATED,
-                               network_gate_remedy(file_id, document)))
+                               network_gate_remedy(file_id)))
     return None
 
 
@@ -1181,7 +1188,7 @@ def _resolve_provider_block(
     if network is not None and not network_audited:
         # Defence in depth, as for the keyed gate.
         return None, [_problem("network-gated", file, f"{path}.network", NETWORK_GATED,
-                               network_gate_remedy(file_id, {}))]
+                               network_gate_remedy(file_id))]
     if network is not None and kind not in NETWORK_KINDS:
         return None, [_problem("network", file, f"{path}.network", NETWORK_KIND_REFUSAL)]
     adapter, transport_kind = KINDS[kind]

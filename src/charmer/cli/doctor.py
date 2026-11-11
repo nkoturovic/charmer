@@ -680,7 +680,7 @@ def _doctor_served_checks(
 
 def _doctor_lan_report(
     runtime: runtime_mod.Runtime, attention: list[str] | None = None,
-    lan_observed: dict[str, gateway_facts.LanReachability] | None = None,
+    lan_observed: dict[tuple[str, str | None], gateway_facts.LanReachability] | None = None,
 ) -> list[str]:
     """One short-timeout reachability observation per keyless LAN
     provider, and per provider declared on a private network (keyed too),
@@ -689,8 +689,8 @@ def _doctor_lan_report(
     unreachable provider's line adds one Attention line per session, and a
     private-network provider's host that resolves outside its network one
     Attention line per such address. Each observation is recorded in
-    ``lan_observed`` (base URL -> observation) for the readiness report of
-    the same refresh (no second probe)."""
+    ``lan_observed`` ((base URL, network) -> observation) for the readiness
+    report of the same refresh (no second probe)."""
 
     try:
         layer = runtime.operator_snapshot().layer
@@ -705,11 +705,11 @@ def _doctor_lan_report(
         keys = {key for key, line in layer.lines.items() if line.provider_id == pid}
         if not keys:
             continue
-        observation = (lan_observed or {}).get(resolved.base_url)
+        observation = (lan_observed or {}).get((resolved.base_url, network))
         if observation is None:
             observation = gateway_facts.lan_reachability(runtime, resolved.base_url, network)
             if lan_observed is not None:
-                lan_observed[resolved.base_url] = observation
+                lan_observed[(resolved.base_url, network)] = observation
         if network is not None:
             transport = operator_mod.credential_transport(resolved)
             if observation.answers:
@@ -757,7 +757,7 @@ def _lan_live_bindings(runtime: runtime_mod.Runtime, pid: str, keys: set[str], t
 
 def _doctor_readiness_report(
     runtime: runtime_mod.Runtime, gateway_reached: bool,
-    lan_observed: dict[str, gateway_facts.LanReachability] | None = None,
+    lan_observed: dict[tuple[str, str | None], gateway_facts.LanReachability] | None = None,
 ) -> tuple[list[str], list[str]]:
     """Next-launch readiness of every profile. Readiness never BLOCKs: a bound slot whose local readiness
     fact fails (unserved, no OAuth credential record) is one Attention line
@@ -1254,7 +1254,7 @@ def _collect_doctor_report_lines(
     scope_attention_extra.extend(area(operator_attention, PROVIDERS))
     info_lines.extend(operator_info)
     lan_attention: list[str] = []
-    lan_observed: dict[str, gateway_facts.LanReachability] = {}
+    lan_observed: dict[tuple[str, str | None], gateway_facts.LanReachability] = {}
     info_lines.extend(_doctor_lan_report(runtime, lan_attention, lan_observed))
     scope_attention_extra.extend(area(lan_attention, PROVIDERS))
     readiness_attention, readiness_info = _doctor_readiness_report(
