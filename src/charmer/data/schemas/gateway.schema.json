@@ -9,7 +9,8 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "openai_compat_keyed": { "type": "boolean" }
+        "openai_compat_keyed": { "type": "boolean" },
+        "private_network": { "type": "boolean" }
       }
     },
     "gateway": {
