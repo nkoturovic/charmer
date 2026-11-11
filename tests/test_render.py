@@ -431,6 +431,26 @@ class ManagementRenderPinTests(unittest.TestCase):
                     self.assertTrue(errors)
                     self.assertTrue(any(field in error and "must equal" in error for error in errors), errors)
 
+    def test_schema_admits_the_private_network_audit_gate(self):
+        # audits.private_network is an optional, closed boolean like
+        # audits.openai_compat_keyed; any other value or spelling is refused.
+        for root in (FIXTURE_ROOT, SHIPPED_ROOT):
+            raw = catalog.load_raw(root)
+            schema = raw["schemas"]["gateway"]
+            for value in (True, False):
+                with self.subTest(root=str(root), value=value):
+                    doc = copy.deepcopy(raw["docs"]["gateway"])
+                    doc.setdefault("audits", {})["private_network"] = value
+                    self.assertEqual(validate.validate(doc, schema, "$"), [])
+                    doc["audits"] = {"private_network": value}
+                    self.assertEqual(validate.validate(doc, schema, "$"), [])
+            for audits in ({"private_network": "true"}, {"private_network": 1}, {"private_network": None},
+                           {"private-network": True}, {"privatenetwork": True}):
+                with self.subTest(root=str(root), audits=audits):
+                    doc = copy.deepcopy(raw["docs"]["gateway"])
+                    doc["audits"] = audits
+                    self.assertTrue(validate.validate(doc, schema, "$"))
+
     def test_runtime_render_never_reads_any_management_slot(self):
         with tempfile.TemporaryDirectory(prefix="cm-management-render-") as tmp:
             home = Path(tmp)
