@@ -184,6 +184,16 @@ BLOCKER = {
              "charmer sessions stop {id8}"),
     "unknown-liveness": ("session {id8} may still be running (◐) — S shows it; end it where it runs",
                          "charmer sessions mark-ended {id8}"),
+    # A declaration a closed gate refuses: its lines are never named (they
+    # were not screened against stored values); the keys are in its file.
+    "gated-admitted": ("{count} of its lines are admitted and not named while a closed gate refuses {file} — "
+                       "revoke each in a terminal: charmer models revoke KEY (the keys are in {file})",
+                       "revoke its {count} admitted line(s), not named while a closed gate refuses {file}: "
+                       "charmer models revoke KEY for each (the keys are in {file})"),
+    "gated-bound-profile": ("profile {p} ({slots}) uses one of its lines — P, select {p}, E rebinds",
+                            "charmer profile edit {p} (it uses one of its lines)"),
+    "gated-bound-binding": ("named binding {b} uses one of its lines — E (edit profile) → N",
+                            "rebind named binding {b} in the profile editor (it uses one of its lines)"),
 }
 REMOVE_PROVIDER_BODY = ("Deletes your declaration {file} and withdraws its route approval; the gateway "
                         "reloads. Running sessions are not affected.")

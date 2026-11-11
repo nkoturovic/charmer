@@ -409,6 +409,9 @@ class Runtime:
         # The barrier token of the operator phase in progress (render_gateway
         # asserts it); None outside a served-change phase.
         self.held_barrier: state.BarrierToken | None = None
+        # The private-network selectors of each render this runtime published,
+        # by sentinel: what ``verify_reload`` requires served.
+        self._render_private: dict[str, tuple[str, ...]] = {}
 
     def _with_endpoint(self, loaded: catalog.Catalog) -> catalog.Catalog:
         """``loaded`` with the configured endpoint, or unchanged (and the error
@@ -979,10 +982,21 @@ class Runtime:
         with gateway_inhibition.fenced(gateway_inhibition.home_roots(self.home, self._session_store_root, what=what),
                                        token=self.environ.get(gateway_inhibition.TOKEN_ENV) or None,
                                        what=what, home=self.home):
-            return proxy_mod.render_runtime_config(
-                self.home, environ=self.gateway_environ(), state_root=self.session_store.root, policy=policy,
-                barrier=barrier if barrier is not None else self.held_barrier,
-            )
+            try:
+                rendered = proxy_mod.render_runtime_config(
+                    self.home, environ=self.gateway_environ(), state_root=self.session_store.root, policy=policy,
+                    barrier=barrier if barrier is not None else self.held_barrier,
+                )
+            except proxy_mod.ConfigPublishedError as exc:
+                self._remember_render(exc.rendered[1])
+                raise
+            self._remember_render(rendered[1])
+            return rendered
+
+    def _remember_render(self, result: Any) -> None:
+        sentinel = getattr(result, "sentinel", None)
+        if isinstance(sentinel, str):
+            self._render_private[sentinel] = tuple(getattr(result, "private_aliases", ()))
 
     def root_authority_refusal(self) -> str | None:
         """The exact refusal when this runtime's state root is
@@ -993,7 +1007,9 @@ class Runtime:
 
     def verify_reload(self, sentinel: str) -> Any:
         """Wait (at most 2 s, no lock held) for the render sentinel through
-        the loopback seam; a ``proxy.ReloadResult``."""
+        the loopback seam; a ``proxy.ReloadResult``. The render's
+        private-network selectors must be served too: those of the render
+        with that sentinel (this runtime's own, else the published one's)."""
 
         endpoint.require_set_up(self.home, "no reload was requested")
         gateway = self.catalog.docs["gateway"]
@@ -1002,13 +1018,15 @@ class Runtime:
             ids, status = self.served_models(token)
             return (status or 0), set(ids or ())
 
+        private = getattr(self, "_render_private", {}).get(sentinel)
         return proxy_mod.await_sentinel(
             gateway, proxy_mod.gateway_api_keys(self.home)[-1], sentinel,
             models_get=None if self.served_models_callback is None else models_get,
             owner_check=self.listener_owner,
             # A gateway without private-network support loads the render
             # (sentinel included) but drops those entries: not a reload.
-            private_aliases=proxy_mod.published_private_network_selectors(self.home),
+            private_aliases=(private if private is not None
+                             else proxy_mod.published_private_network_selectors(self.home, sentinel)),
         )
 
     def smoke(self, alias: str) -> operator_mod.SmokeOutcome:
@@ -1336,7 +1354,7 @@ class Runtime:
 
     def readiness_observations(
         self, lineups: Iterable[profile_mod.ResolvedLineup] = (), *, served: bool = True,
-        lan_observed: dict[str, Any] | None = None,
+        lan_observed: dict[tuple[str, str | None], Any] | None = None,
     ) -> readiness_mod.Observations:
         """One refresh of the local observations readiness reads: the
         served set (one loopback ``/v1/models``; None when the gateway is not
@@ -1345,10 +1363,10 @@ class Runtime:
         provider, or provider declared on a private network, the ``lineups``
         bind (the ``lan_probe`` seam; a TCP connect, never a key). Never a
         provider call, never a write; every failure is an unknown.
-        ``lan_observed`` (base URL -> observation), when given, is shared
-        with another report of the same refresh (doctor): a URL already
-        observed there is reused, a new one is added, so one refresh probes
-        each LAN provider at most once."""
+        ``lan_observed`` ((base URL, network) -> observation), when given, is
+        shared with another report of the same refresh (doctor): a URL and
+        network policy already observed there is reused, a new one is added,
+        so one refresh probes each LAN provider at most once."""
 
         import charmer.cli.gateway_facts as gateway_facts
 
@@ -1378,11 +1396,13 @@ class Runtime:
                 if binding.provider in lan or not readiness_mod.probes_reachability(provider):
                     continue
                 url = str(provider["transport"].get("base_url", ""))
-                observed = lan_observed.get(url) if lan_observed is not None else None
+                network = provider["transport"].get("network")
+                # The same URL under another network policy is another probe.
+                observed = lan_observed.get((url, network)) if lan_observed is not None else None
                 if observed is None:
-                    observed = gateway_facts.lan_reachability(self, url, provider["transport"].get("network"))
+                    observed = gateway_facts.lan_reachability(self, url, network)
                     if lan_observed is not None:
-                        lan_observed[url] = observed
+                        lan_observed[(url, network)] = observed
                 lan[binding.provider] = (observed.state, observed.text())
         login = dict(gateway_facts._OAUTH_LOGIN_COMMANDS)
         return readiness_mod.Observations(served=served_set, oauth_records=records, lan=lan, login=login)
