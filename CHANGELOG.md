@@ -19,10 +19,10 @@ compiled settings and routes until their next launch or resume.
 
 ### Added
 
-- `charmer -r SESSION --fork` (or **N** on the sessions screen) starts a
-  new managed session from a copy of SESSION's conversation, with its own
-  record, scope, hooks and lead prompt and the lineup SESSION would get at
-  its next resume. SESSION is not changed and may keep running.
+- `--fork` with `charmer -r` (or **N** on the sessions screen) starts a new
+  managed session from a copy of a session's conversation, with its own
+  record, scope, hooks and lead prompt and the lineup the session would get
+  at its next resume. The original is not changed and may keep running.
   `--print-launch` shows the fork's command and writes nothing.
 - A keyed OpenAI-compatible provider can be declared on a private network
   (`charmer providers add --network loopback|lan|tailnet …`). Its key is
