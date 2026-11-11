@@ -395,7 +395,7 @@ jobs:
             tests.test_agent_window_probe tests.test_compaction_window_probe tests.test_auto_mode_model_probe
             tests.test_client_debug_diagnostics tests.test_client_spawn_mod tests.test_client_mcp_policy
             tests.test_client_fence_substitution tests.test_client_gateway_fallbacks tests.test_client_mod_policy
-            tests.test_client_fork)
+            tests.test_client_fork tests.test_client_gateway_refusals)
           printf '%s\n' "${modules[@]}" >"$RUNNER_TEMP/modules"
           requires=(
             --require 'test_client_agents\b'

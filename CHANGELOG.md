@@ -37,6 +37,12 @@ compiled settings and routes until their next launch or resume.
 
 ### Changed
 
+- The `fable` line now selects Fable 5.2 (1M context, output up to 128,000
+  tokens; charmer keeps its default effort `high`). Existing profiles follow
+  the stable key without reseeding or effort changes; running Fable 5.1
+  sessions keep their route until they are resumed. A model you declared
+  for Fable 5.2 yourself yields to the shipped line, with one Attention row
+  and its remedy.
 - `--system-prompt-snapshot` is reserved for the launcher in managed
   sessions; every launch of a fork turns Claude Code's system-prompt record
   off, so a fork and its own resumes send the fork's lead prompt.
@@ -69,6 +75,10 @@ compiled settings and routes until their next launch or resume.
 
 ### Fixed
 
+- Removing a model you declared with `--successor` keeps that choice for
+  existing sessions, pinned ones included: they resume on the successor
+  without a resume first. Messages say the model was removed by you, not
+  retired by a catalog.
 - `charmer sessions forget` also removes the lead prompts charmer generated
   for the session.
 - The advice to fork with plain `claude --resume … --fork-session` and adopt
