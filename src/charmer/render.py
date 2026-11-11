@@ -50,7 +50,7 @@ ADAPTER_PAYLOAD_CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
     # of charmer's own. The compat executor still sends reasoning_effort
     # whenever a request carries a thinking field, disabled included, mapped
     # into the line's declared levels (one level pins it; none: low, medium
-    # or high) — measured on 8.0.45 (D263).
+    # or high) — measured on the 8.0.45 gateway.
     "cliproxy-openai-compat-v1": {},
     "cliproxy-oauth-codex-v1": {
         "reasoning-effort-low": {

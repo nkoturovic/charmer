@@ -1302,7 +1302,7 @@ def compat_by_name(result: Any) -> dict[str, dict]:
 
 
 class NetworkRenderTests(unittest.TestCase):
-    """G.md's config shape: the ``private-network`` block instead of ``base-url``."""
+    """The gateway's config shape: the ``private-network`` block instead of ``base-url``."""
 
     def test_a_network_provider_renders_the_block_instead_of_the_base_url(self) -> None:
         result = render_network(network_plan(network_files()))
@@ -1631,7 +1631,7 @@ LEAK_KEY = "boxco-dummy-leak-sentinel-value"
 
 
 class NothingLeaksTests(NetworkCommandCase):
-    """SPEC §3 item 6: a key given for a private-network provider is in the
+    """A key given for a private-network provider is in the
     secret store, the file it came from and the rendered config.yaml —
     nowhere else."""
 
