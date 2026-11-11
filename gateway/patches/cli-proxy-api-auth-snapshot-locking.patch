@@ -425,21 +425,21 @@ index 00000000..71e85830
 +	return auth, nil
 +}
 diff --git a/sdk/cliproxy/auth/types.go b/sdk/cliproxy/auth/types.go
-index ba307249..b5034cbf 100644
+index 69c41e6d..4311d17b 100644
 --- a/sdk/cliproxy/auth/types.go
 +++ b/sdk/cliproxy/auth/types.go
-@@ -451,6 +451,9 @@ func (a *Auth) Clone() *Auth {
+@@ -503,6 +503,9 @@ func (a *Auth) Clone() *Auth {
+ 		copyErr := *a.RefreshError
+ 		copyAuth.RefreshError = &copyErr
  	}
- 	copyAuth := *a
- 	copyAuth.Quota = a.Quota.Clone()
 +	// A clone owns every map it carries, empty ones included: a request path that
 +	// fills an empty map of its copy must never write into the manager's published
 +	// credential. nil stays nil.
  	if a.Attributes != nil {
  		copyAuth.Attributes = make(map[string]string, len(a.Attributes))
  		for key, value := range a.Attributes {
-@@ -470,30 +473,65 @@ func (a *Auth) Clone() *Auth {
- 	return &copyAuth
+@@ -568,30 +571,65 @@ func (o *ProxyConnectionPoolOverride) Clone() *ProxyConnectionPoolOverride {
+ 	return out
  }
  
 +// cloneMetadataMap copies credential metadata deeply (cloneMetadataValue), so a

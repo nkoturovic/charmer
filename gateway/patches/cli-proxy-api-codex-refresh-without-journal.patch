@@ -1,0 +1,499 @@
+diff --git a/internal/auth/codex/openai_auth.go b/internal/auth/codex/openai_auth.go
+index 890a451c..4830883c 100644
+--- a/internal/auth/codex/openai_auth.go
++++ b/internal/auth/codex/openai_auth.go
+@@ -216,9 +216,10 @@ func (o *CodexAuth) RefreshTokens(ctx context.Context, refreshToken string) (*Co
+ 	result, err, _ := codexRefreshGroup.Do(refreshToken, func() (interface{}, error) {
+ 		refreshCtx, cancelRefresh := context.WithTimeout(context.WithoutCancel(ctx), codexRefreshTimeout)
+ 		defer cancelRefresh()
+-		return journalRefresh(refreshCtx, o.journal(ctx), ClientID, refreshToken, func() (*CodexTokenData, error) {
+-			return o.refreshTokensSingleFlight(refreshCtx, refreshToken)
+-		}, decodeRefreshReceipt)
++		// An ordinary refresh keeps no refresh journal: a failed exchange is an
++		// ordinary, retryable refresh error and nothing is written beside the
++		// credential. Sign-in-with-ChatGPT refreshes keep theirs.
++		return o.refreshTokensSingleFlight(refreshCtx, refreshToken)
+ 	})
+ 	if err != nil {
+ 		return nil, err
+@@ -240,7 +241,7 @@ func (o *CodexAuth) refreshTokensSingleFlight(ctx context.Context, refreshToken
+ 
+ 	req, errReq := http.NewRequestWithContext(ctx, "POST", TokenURL, strings.NewReader(data.Encode()))
+ 	if errReq != nil {
+-		return nil, &RefreshOutcomeUnknownError{Stage: "request-create", Cause: errReq}
++		return nil, fmt.Errorf("failed to create refresh request: %w", errReq)
+ 	}
+ 
+ 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+@@ -248,7 +249,7 @@ func (o *CodexAuth) refreshTokensSingleFlight(ctx context.Context, refreshToken
+ 
+ 	resp, errDo := o.doRefreshRequest(req)
+ 	if errDo != nil {
+-		return nil, &RefreshOutcomeUnknownError{Stage: "transport", Cause: errDo}
++		return nil, fmt.Errorf("token refresh request failed: %w", errDo)
+ 	}
+ 	defer func() {
+ 		if errClose := resp.Body.Close(); errClose != nil {
+@@ -258,15 +259,11 @@ func (o *CodexAuth) refreshTokensSingleFlight(ctx context.Context, refreshToken
+ 
+ 	body, errRead := io.ReadAll(resp.Body)
+ 	if errRead != nil {
+-		return nil, &RefreshOutcomeUnknownError{Stage: "response-read", Cause: errRead}
++		return nil, fmt.Errorf("failed to read refresh response: %w", errRead)
+ 	}
+ 
+ 	if resp.StatusCode != http.StatusOK {
+-		errResponse := fmt.Errorf("token refresh failed with status %d: %s", resp.StatusCode, string(body))
+-		if isNonRetryableRefreshErr(errResponse) {
+-			return nil, errResponse
+-		}
+-		return nil, &RefreshOutcomeUnknownError{Stage: "response-status", Cause: errResponse}
++		return nil, fmt.Errorf("token refresh failed with status %d: %s", resp.StatusCode, string(body))
+ 	}
+ 
+ 	var tokenResp struct {
+@@ -278,7 +275,7 @@ func (o *CodexAuth) refreshTokensSingleFlight(ctx context.Context, refreshToken
+ 	}
+ 
+ 	if !ojson.ValidBytes(body) {
+-		return nil, &RefreshOutcomeUnknownError{Stage: "response-decode"}
++		return nil, fmt.Errorf("failed to parse refresh response: invalid JSON")
+ 	}
+ 	response := ojson.ParseBytes(body)
+ 	tokenResp.AccessToken = response.Get("access_token").String()
+@@ -286,7 +283,7 @@ func (o *CodexAuth) refreshTokensSingleFlight(ctx context.Context, refreshToken
+ 	tokenResp.IDToken = response.Get("id_token").String()
+ 	tokenResp.ExpiresIn = int(response.Get("expires_in").Int())
+ 	if response.Get("access_token").Type != ojson.String || strings.TrimSpace(tokenResp.AccessToken) == "" || response.Get("expires_in").Type != ojson.Number || tokenResp.ExpiresIn <= 0 || response.Get("refresh_token").Type != ojson.String || strings.TrimSpace(tokenResp.RefreshToken) == "" {
+-		return nil, &RefreshOutcomeUnknownError{Stage: "response-decode"}
++		return nil, fmt.Errorf("failed to parse refresh response: missing or invalid token fields")
+ 	}
+ 
+ 	// Extract account ID from ID token
+diff --git a/internal/runtime/executor/codex_refresh_without_journal_test.go b/internal/runtime/executor/codex_refresh_without_journal_test.go
+new file mode 100644
+index 00000000..832d16d9
+--- /dev/null
++++ b/internal/runtime/executor/codex_refresh_without_journal_test.go
+@@ -0,0 +1,421 @@
++package executor
++
++// An ordinary Codex refresh keeps no refresh journal: a refresh failure is an
++// ordinary, retryable refresh error, a rotated grant is used and saved as soon
++// as the token endpoint returns it, and nothing is written beside the
++// credential. Every row runs the real refresh path (manager -> Codex executor
++// -> Codex auth -> token endpoint) with the gateway's own file token store in
++// a temporary auth directory, against fake token endpoints reached through a
++// real HTTP transport (the fixed token URL is dialled to a local server). The
++// due attempt after a failure is forced so the test need not wait out the
++// five-minute backoff; the manager state that would suppress a scheduled
++// attempt is asserted separately.
++
++import (
++	"context"
++	"crypto/sha256"
++	"encoding/json"
++	"fmt"
++	"io"
++	"net"
++	"net/http"
++	"net/http/httptest"
++	"net/url"
++	"os"
++	"path/filepath"
++	"strings"
++	"sync"
++	"sync/atomic"
++	"testing"
++	"time"
++
++	codexauth "github.com/router-for-me/CLIProxyAPI/v8/internal/auth/codex"
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
++	sdkauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/auth"
++	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
++)
++
++const journalOffFile = "codex-journal-off.json"
++
++// journalOffDir is where the refresh journal would live under the auth
++// directory.
++const journalOffDir = ".codex-refresh"
++
++type journalOffHarness struct {
++	t        *testing.T
++	dir      string
++	path     string
++	dial     atomic.Value // "server", "dns", "refused", "tls"
++	answer   atomic.Value // "ok", "429", "503", "ok-receipt-fails"
++	calls    atomic.Int32
++	mu       sync.Mutex
++	grants   []string
++	rotation atomic.Int32
++	manager  *cliproxyauth.Manager
++}
++
++func newJournalOffHarness(t *testing.T, dir string) *journalOffHarness {
++	t.Helper()
++	h := &journalOffHarness{t: t, dir: dir, path: filepath.Join(dir, journalOffFile)}
++	h.dial.Store("server")
++	h.answer.Store("ok")
++	server := httptest.NewTLSServer(http.HandlerFunc(h.serve))
++	t.Cleanup(server.Close)
++	target, errParse := url.Parse(server.URL)
++	if errParse != nil {
++		t.Fatal(errParse)
++	}
++	closed, errListen := net.Listen("tcp", "127.0.0.1:0")
++	if errListen != nil {
++		t.Fatal(errListen)
++	}
++	refused := closed.Addr().String()
++	_ = closed.Close()
++	plain, errPlain := net.Listen("tcp", "127.0.0.1:0")
++	if errPlain != nil {
++		t.Fatal(errPlain)
++	}
++	t.Cleanup(func() { _ = plain.Close() })
++	go func() {
++		for {
++			conn, errAccept := plain.Accept()
++			if errAccept != nil {
++				return
++			}
++			// Not TLS: the client's handshake fails before any request byte.
++			_, _ = io.WriteString(conn, "HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n")
++			_ = conn.Close()
++		}
++	}()
++	transport := server.Client().Transport.(*http.Transport).Clone()
++	transport.TLSClientConfig = transport.TLSClientConfig.Clone()
++	transport.TLSClientConfig.ServerName = "127.0.0.1"
++	transport.DisableKeepAlives = true
++	transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
++		var dialer net.Dialer
++		switch h.dial.Load().(string) {
++		case "dns":
++			host, _, _ := net.SplitHostPort(addr)
++			return nil, &net.DNSError{Err: "no such host", Name: host, IsNotFound: true}
++		case "refused":
++			return dialer.DialContext(ctx, network, refused)
++		case "tls":
++			return dialer.DialContext(ctx, network, plain.Addr().String())
++		}
++		return dialer.DialContext(ctx, network, target.Host)
++	}
++	original := http.DefaultTransport
++	http.DefaultTransport = transport
++	t.Cleanup(func() { http.DefaultTransport = original })
++	t.Cleanup(func() { restoreJournalOffModes(dir) })
++	return h
++}
++
++func (h *journalOffHarness) serve(w http.ResponseWriter, req *http.Request) {
++	h.calls.Add(1)
++	_ = req.ParseForm()
++	h.mu.Lock()
++	h.grants = append(h.grants, req.PostForm.Get("refresh_token"))
++	h.mu.Unlock()
++	switch h.answer.Load().(string) {
++	case "429":
++		w.Header().Set("Retry-After", "1")
++		w.WriteHeader(http.StatusTooManyRequests)
++		_, _ = io.WriteString(w, `{"error":"rate_limited"}`)
++		return
++	case "503":
++		w.WriteHeader(http.StatusServiceUnavailable)
++		_, _ = io.WriteString(w, `{"error":"unavailable"}`)
++		return
++	case "ok-receipt-fails":
++		// The exchange succeeds; any bookkeeping beside the credential
++		// that follows it cannot be written (a full or read-only disk).
++		lockJournalOffDir(h.dir)
++	}
++	n := h.rotation.Add(1)
++	w.Header().Set("Content-Type", "application/json")
++	_, _ = fmt.Fprintf(w, `{"access_token":"rotated-access-%d","refresh_token":"rotated-grant-%d","expires_in":86400}`, n, n)
++}
++
++func lockJournalOffDir(dir string) {
++	entries, _ := os.ReadDir(filepath.Join(dir, journalOffDir))
++	for _, entry := range entries {
++		_ = os.Chmod(filepath.Join(dir, journalOffDir, entry.Name()), 0o500)
++	}
++}
++
++func restoreJournalOffModes(dir string) {
++	root := filepath.Join(dir, journalOffDir)
++	entries, _ := os.ReadDir(root)
++	for _, entry := range entries {
++		_ = os.Chmod(filepath.Join(root, entry.Name()), 0o700)
++	}
++}
++
++func (h *journalOffHarness) presented() []string {
++	h.mu.Lock()
++	defer h.mu.Unlock()
++	return append([]string(nil), h.grants...)
++}
++
++func writeJournalOffCredential(t *testing.T, dir, grant string) {
++	t.Helper()
++	expiry := time.Now().UTC().Add(48 * time.Hour).Format(time.RFC3339)
++	raw := fmt.Sprintf(`{"type":"codex","access_token":"valid-access","refresh_token":%q,"expired":%q}`, grant, expiry)
++	if errWrite := os.WriteFile(filepath.Join(dir, journalOffFile), []byte(raw), 0o600); errWrite != nil {
++		t.Fatal(errWrite)
++	}
++}
++
++// start is a gateway start over the auth directory: a new file token store,
++// manager and Codex executor, the credential loaded from disk.
++func (h *journalOffHarness) start() {
++	h.t.Helper()
++	store := sdkauth.NewFileTokenStore()
++	store.SetBaseDir(h.dir)
++	manager := cliproxyauth.NewManager(store, nil, nil)
++	manager.RegisterExecutor(NewCodexExecutor(&config.Config{AuthDir: h.dir}))
++	auths, errList := store.List(context.Background())
++	if errList != nil {
++		h.t.Fatal(errList)
++	}
++	registered := 0
++	for _, auth := range auths {
++		if auth.Provider != "codex" {
++			continue
++		}
++		if _, errRegister := manager.Register(context.Background(), auth); errRegister != nil {
++			h.t.Fatal(errRegister)
++		}
++		registered++
++	}
++	if registered != 1 {
++		h.t.Fatalf("loaded %d codex credentials, want 1", registered)
++	}
++	h.manager = manager
++}
++
++func (h *journalOffHarness) authID() string {
++	h.t.Helper()
++	for _, auth := range h.manager.List() {
++		if auth.Provider == "codex" {
++			return auth.ID
++		}
++	}
++	h.t.Fatal("no codex credential registered")
++	return ""
++}
++
++func (h *journalOffHarness) refresh() (*cliproxyauth.Auth, error) {
++	return h.manager.ForceRefreshAuth(context.Background(), h.authID())
++}
++
++// journalOffTerminalReason says why the manager would not retry this
++// credential on its own: a sign-in demand, a grant recorded as rejected, or a
++// terminal refresh failure.
++func journalOffTerminalReason(auth *cliproxyauth.Auth) string {
++	if auth.RequiresSignIn || auth.RejectedRefreshToken != "" || cliproxyauth.HasUnauthorizedAuthFailure(auth) ||
++		cliproxyauth.HasDisabledInvalidGrantFailure(auth) {
++		code := ""
++		if auth.RefreshError != nil {
++			code = auth.RefreshError.Code
++		}
++		return fmt.Sprintf("RequiresSignIn=%v RejectedRefreshToken=%q refresh error %q",
++			auth.RequiresSignIn, auth.RejectedRefreshToken, code)
++	}
++	return ""
++}
++
++// assertRetryable: the manager keeps the credential for a scheduled retry: no
++// sign-in demand, the grant not recorded as rejected, a short backoff.
++func (h *journalOffHarness) assertRetryable(label string) {
++	h.t.Helper()
++	auth, ok := h.manager.GetByID(h.authID())
++	if !ok || auth == nil {
++		h.t.Fatalf("%s: credential missing", label)
++	}
++	if reason := journalOffTerminalReason(auth); reason != "" {
++		h.t.Fatalf("%s: the failure is terminal: %s", label, reason)
++	}
++	if auth.NextRefreshAfter.IsZero() || auth.NextRefreshAfter.After(time.Now().Add(time.Hour)) {
++		h.t.Fatalf("%s: NextRefreshAfter = %v, want a scheduled retry within the hour", label, auth.NextRefreshAfter)
++	}
++}
++
++func (h *journalOffHarness) savedGrant() string {
++	h.t.Helper()
++	deadline := time.Now().Add(3 * time.Second)
++	for {
++		raw, errRead := os.ReadFile(h.path)
++		if errRead == nil {
++			var doc map[string]any
++			if json.Unmarshal(raw, &doc) == nil {
++				if grant, _ := doc["refresh_token"].(string); grant != "" && (strings.HasPrefix(grant, "rotated-") || time.Now().After(deadline)) {
++					return grant
++				}
++			}
++		}
++		if time.Now().After(deadline) {
++			return ""
++		}
++		time.Sleep(20 * time.Millisecond)
++	}
++}
++
++func (h *journalOffHarness) assertRecovered(label string, wantCalls int32) {
++	h.t.Helper()
++	h.dial.Store("server")
++	h.answer.Store("ok")
++	refreshed, errRefresh := h.refresh()
++	if errRefresh != nil {
++		h.t.Fatalf("%s: the later refresh failed: %v (token endpoint calls %d)", label, errRefresh, h.calls.Load())
++	}
++	if got, _ := refreshed.Metadata["refresh_token"].(string); !strings.HasPrefix(got, "rotated-grant-") {
++		h.t.Fatalf("%s: refreshed grant %q, want a rotated one", label, got)
++	}
++	if h.calls.Load() != wantCalls {
++		h.t.Fatalf("%s: token endpoint calls = %d, want %d", label, h.calls.Load(), wantCalls)
++	}
++	if saved := h.savedGrant(); !strings.HasPrefix(saved, "rotated-grant-") {
++		h.t.Fatalf("%s: saved grant %q, want the rotated one", label, saved)
++	}
++}
++
++// journalOffClaimKey is the name a journal claim for grant would take.
++func journalOffClaimKey(grant string) string {
++	return fmt.Sprintf("%x", sha256.Sum256([]byte(codexauth.ClientID+"\x00"+grant)))
++}
++
++// A DNS, dial or TLS failure before any byte is sent: the next attempt
++// refreshes.
++func TestCodexRefreshWithoutJournalFailureBeforeSendRecovers(t *testing.T) {
++	for _, mode := range []string{"dns", "refused", "tls"} {
++		t.Run(mode, func(t *testing.T) {
++			dir := t.TempDir()
++			writeJournalOffCredential(t, dir, "grant-0")
++			h := newJournalOffHarness(t, dir)
++			h.start()
++			h.dial.Store(mode)
++			if _, errRefresh := h.refresh(); errRefresh == nil {
++				t.Fatal("the refresh succeeded while the token endpoint was unreachable")
++			}
++			if h.calls.Load() != 0 {
++				t.Fatalf("token endpoint calls = %d before it was reachable", h.calls.Load())
++			}
++			h.assertRetryable(mode)
++			h.assertRecovered(mode, 1)
++			if got := h.presented(); len(got) != 1 || got[0] != "grant-0" {
++				t.Fatalf("presented grants %v, want [grant-0]", got)
++			}
++		})
++	}
++}
++
++// HTTP 200 while nothing beside the credential can be written: the rotated
++// tokens are used and saved.
++func TestCodexRefreshWithoutJournalRotatedTokensAreUsedAndSaved(t *testing.T) {
++	dir := t.TempDir()
++	writeJournalOffCredential(t, dir, "grant-0")
++	h := newJournalOffHarness(t, dir)
++	h.start()
++	h.answer.Store("ok-receipt-fails")
++	refreshed, errRefresh := h.refresh()
++	if errRefresh != nil {
++		t.Fatalf("the provider rotated the grant but the refresh failed: %v", errRefresh)
++	}
++	if got, _ := refreshed.Metadata["refresh_token"].(string); got != "rotated-grant-1" {
++		t.Fatalf("refreshed grant %q, want rotated-grant-1", got)
++	}
++	if saved := h.savedGrant(); saved != "rotated-grant-1" {
++		t.Fatalf("saved grant %q, want rotated-grant-1", saved)
++	}
++	restoreJournalOffModes(dir)
++	h.assertRecovered("after the rotation", 2)
++	if got := h.presented(); len(got) != 2 || got[1] != "rotated-grant-1" {
++		t.Fatalf("presented grants %v, want the rotated grant second", got)
++	}
++}
++
++// An exchange that was never sent holds nothing: after a failed dial and a
++// restart, nothing blocks the grant.
++func TestCodexRefreshWithoutJournalUnsentExchangeHoldsNothing(t *testing.T) {
++	dir := t.TempDir()
++	writeJournalOffCredential(t, dir, "grant-0")
++	h := newJournalOffHarness(t, dir)
++	h.start()
++	h.dial.Store("refused")
++	if _, errRefresh := h.refresh(); errRefresh == nil {
++		t.Fatal("the refresh succeeded while the token endpoint was unreachable")
++	}
++	if _, errStat := os.Stat(filepath.Join(dir, journalOffDir, journalOffClaimKey("grant-0"))); errStat == nil {
++		t.Fatal("a claim whose exchange was never sent is still held")
++	}
++	h.start() // a restart must find nothing pending either
++	h.assertRecovered("after the unsent exchange", 1)
++}
++
++// Token endpoint 429 or 503: retried within the refresh, then later.
++func TestCodexRefreshWithoutJournalRateLimitAndUnavailableAreRetried(t *testing.T) {
++	for _, status := range []string{"429", "503"} {
++		t.Run(status, func(t *testing.T) {
++			dir := t.TempDir()
++			writeJournalOffCredential(t, dir, "grant-0")
++			h := newJournalOffHarness(t, dir)
++			h.start()
++			h.answer.Store(status)
++			if _, errRefresh := h.refresh(); errRefresh == nil {
++				t.Fatalf("the refresh succeeded on HTTP %s", status)
++			}
++			// A retryable refresh failure is retried twice within the same
++			// refresh (1 s, then 2 s apart) before it gives up for this round.
++			if h.calls.Load() != 3 {
++				t.Fatalf("token endpoint calls in the failed refresh = %d, want 3", h.calls.Load())
++			}
++			h.assertRetryable(status)
++			h.assertRecovered(status, 4)
++			for _, grant := range h.presented() {
++				if grant != "grant-0" {
++					t.Fatalf("presented grants %v, want grant-0 each time", h.presented())
++				}
++			}
++		})
++	}
++}
++
++// A journal claim left by an earlier gateway that stopped between claim and
++// receipt does not hold the grant: after the start the grant is sent.
++func TestCodexRefreshWithoutJournalLeftClaimDoesNotHoldTheGrant(t *testing.T) {
++	dir := t.TempDir()
++	writeJournalOffCredential(t, dir, "grant-0")
++	// What a stopped journalled refresh leaves on disk: the claim, no receipt.
++	if errMkdir := os.MkdirAll(filepath.Join(dir, journalOffDir, journalOffClaimKey("grant-0")), 0o700); errMkdir != nil {
++		t.Fatal(errMkdir)
++	}
++	h := newJournalOffHarness(t, dir)
++	h.start()
++	h.assertRecovered("after the stop", 1)
++}
++
++// No refresh, failed or successful, writes anything under
++// <auth-dir>/.codex-refresh.
++func TestCodexRefreshWithoutJournalWritesNoJournalFile(t *testing.T) {
++	dir := t.TempDir()
++	writeJournalOffCredential(t, dir, "grant-0")
++	h := newJournalOffHarness(t, dir)
++	h.start()
++	h.dial.Store("refused")
++	_, _ = h.refresh()
++	h.dial.Store("server")
++	h.answer.Store("503")
++	_, _ = h.refresh()
++	h.answer.Store("ok")
++	if _, errRefresh := h.refresh(); errRefresh != nil {
++		t.Fatalf("refresh failed: %v", errRefresh)
++	}
++	if _, errStat := os.Lstat(filepath.Join(dir, journalOffDir)); errStat == nil {
++		entries, _ := os.ReadDir(filepath.Join(dir, journalOffDir))
++		t.Fatalf("the refresh wrote %d journal entries under %s", len(entries), journalOffDir)
++	} else if !os.IsNotExist(errStat) {
++		t.Fatal(errStat)
++	}
++}

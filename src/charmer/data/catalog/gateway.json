@@ -9,7 +9,7 @@
     "token_file": ".config/charmer/api-key",
     "auth_dir": ".local/share/charmer/auth",
     "service": "cli-proxy-api",
-    "cliproxyapi_baseline": "8.0.45",
+    "cliproxyapi_baseline": "8.0.67",
     "patches": [
       "cli-proxy-api-loopback-oauth.patch",
       "cli-proxy-api-kimi-claude-compat.patch",
@@ -37,7 +37,9 @@
       "cli-proxy-api-log-reduction.patch",
       "cli-proxy-api-tool-call-integrity.patch",
       "cli-proxy-api-initial-registration.patch",
-      "cli-proxy-api-terminal-rejection-reload.patch"
+      "cli-proxy-api-terminal-rejection-reload.patch",
+      "cli-proxy-api-codex-refresh-without-journal.patch",
+      "cli-proxy-api-native-advisor-beta-order.patch"
     ],
     "model_discovery": "disabled",
     "renderer": "restricted-yaml-v1",

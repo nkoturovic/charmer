@@ -880,13 +880,20 @@ class PinnedGatewayKeyRouteTests(unittest.TestCase):
                 self.assertEqual(reply.hits, [])
 
 
-def without_image_setting(bundle, egress: int, port: int, home: Path):
-    """The key route's render without its image-generation setting (the
-    gateway's default behaviour, for comparison)."""
+def with_wire(wire: str, *, image_setting: bool = True):
+    """A document factory: the key route's render with every alias sent to
+    the upstream model ``wire``, with or without its image-generation
+    setting (without it: the gateway's default behaviour, for comparison)."""
 
-    document, aliases, info = gateway_document(bundle, egress, port, home)
-    document.pop(render.IMAGE_GENERATION_KEY)
-    return document, aliases, info
+    def factory(bundle, egress: int, port: int, home: Path):
+        document, aliases, info = gateway_document(bundle, egress, port, home)
+        if not image_setting:
+            document.pop(render.IMAGE_GENERATION_KEY)
+        for entry in document[render.CODEX_KEY_SECTION][0]["models"]:
+            entry["name"] = wire
+        return document, aliases, info
+
+    return factory
 
 
 # A client turn as Claude Code sends one: its own output cap, a system
@@ -894,6 +901,11 @@ def without_image_setting(bundle, egress: int, port: int, home: Path):
 CLIENT_TURN = {"max_tokens": 32000, "system": "You are a careful assistant.",
                "tools": [{"name": "cm_lookup", "description": "Look a value up.",
                           "input_schema": {"type": "object", "properties": {"k": {"type": "string"}}}}]}
+
+
+# An upstream model outside the Responses Lite family, for the hosted-tool
+# control.
+OTHER_WIRE = "gpt-5.5"
 
 
 def tool_types(body) -> list[str]:
@@ -946,12 +958,21 @@ class PinnedGatewayKeyRouteTurnTests(unittest.TestCase):
         for stream in (False, True):
             with self.subTest(stream=stream):
                 self.assertEqual(tool_types(self.turn(self.gateway, stream=stream).hits[0].body), ["function"])
-        control = harness.GatewayHarness(document_factory=without_image_setting)
-        try:
-            self.assertNotIn(render.IMAGE_GENERATION_KEY, control.document)
-            self.assertIn("image_generation", tool_types(self.turn(control, stream=False).hits[0].body))
-        finally:
-            control.close()
+        # Since upstream 8.0.58 (d1e5cc60) the gateway never gives a Responses
+        # Lite model a hosted tool: every gpt-6 model and each model its Codex
+        # client catalog marks (gpt-5.6 among them, this line's wire), so these
+        # lines get none even without the setting. On a model outside that set
+        # the default adds one, and the rendered setting prevents it.
+        wire = self.gateway.info["wire"]
+        for factory, added in ((with_wire(wire, image_setting=False), False),
+                               (with_wire(OTHER_WIRE), False), (with_wire(OTHER_WIRE, image_setting=False), True)):
+            control = harness.GatewayHarness(document_factory=factory)
+            try:
+                hit = self.turn(control, stream=False).hits[0]
+                with self.subTest(wire=hit.body["model"], setting=render.IMAGE_GENERATION_KEY in control.document):
+                    self.assertEqual("image_generation" in tool_types(hit.body), added)
+            finally:
+                control.close()
 
 
 class PinnedGatewayKeyRouteSafetyTests(unittest.TestCase):
@@ -1146,7 +1167,7 @@ class PinnedGatewayAccountRouteTurnTests(unittest.TestCase):
                 self.assertEqual(hit.header_values.get("authorization"), "Bearer " + ACCOUNT_TOKEN)
                 self.assertFalse({"max_output_tokens", "max_tokens", "max_completion_tokens"} & set(hit.body))
         # Only the account host is reached. The background updater's CONNECT is
-        # the no-antigravity-egress patch's own row, so this output-cap control
+        # the no-antigravity-egress patch's own row, so this output-cap row
         # leaves that one host to it; any other destination still fails here.
         self.assertEqual(set(self.gateway.upstream.connects) - {"registry.npmjs.org:443"},
                          {ACCOUNT_HOST + ":443"})

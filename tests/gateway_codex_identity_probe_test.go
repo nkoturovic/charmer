@@ -17,12 +17,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/MoeForge/moego/ojson"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 	runtimeexecutor "github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor"
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
 	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
-	"github.com/tidwall/gjson"
 )
 
 func TestOmissionCodexIdentity(t *testing.T) {
@@ -376,7 +376,7 @@ func codexProbeSolEfforts(t *testing.T, cfg *config.Config, spec codexProbeOverl
 								t.Fatal(chunk.Err)
 							}
 							response = append(response, chunk.Payload...)
-							if gjson.GetBytes(chunk.Payload, "choices.0.finish_reason").String() == "stop" {
+							if ojson.GetBytes(chunk.Payload, "choices.0.finish_reason").String() == "stop" {
 								translatedFinished = true
 							}
 						}
@@ -395,7 +395,7 @@ func codexProbeSolEfforts(t *testing.T, cfg *config.Config, spec codexProbeOverl
 						if translated {
 							output = "choices"
 						}
-						if !gjson.GetBytes(response, output).IsArray() {
+						if !ojson.GetBytes(response, output).IsArray() {
 							t.Fatal("HTTP completion absent")
 						}
 					}
@@ -405,10 +405,10 @@ func codexProbeSolEfforts(t *testing.T, cfg *config.Config, spec codexProbeOverl
 					default:
 						t.Fatal("no upstream capture")
 					}
-					if gjson.GetBytes(upstream, "model").String() != spec.Wire {
+					if ojson.GetBytes(upstream, "model").String() != spec.Wire {
 						t.Fatal("alias retargeted")
 					}
-					gotEffort := gjson.GetBytes(upstream, "reasoning.effort")
+					gotEffort := ojson.GetBytes(upstream, "reasoning.effort")
 					if spec.Levels || overrides {
 						if gotEffort.String() != effort {
 							t.Fatal("capability or explicit payload effort lost")
@@ -418,10 +418,10 @@ func codexProbeSolEfforts(t *testing.T, cfg *config.Config, spec codexProbeOverl
 					}
 					// v8 treats summary visibility independently of effort. The old
 					// assertion that no levels strips summary is intentionally retired.
-					if gjson.GetBytes(upstream, "reasoning.summary").String() != "concise" {
+					if ojson.GetBytes(upstream, "reasoning.summary").String() != "concise" {
 						t.Fatal("source summary lost")
 					}
-					if gjson.GetBytes(upstream, "include").Raw != `["reasoning.encrypted_content"]` {
+					if ojson.GetBytes(upstream, "include").Raw != `["reasoning.encrypted_content"]` {
 						t.Fatal("encrypted include lost")
 					}
 					return response
@@ -429,7 +429,7 @@ func codexProbeSolEfforts(t *testing.T, cfg *config.Config, spec codexProbeOverl
 				if mode == "tool" {
 					setup := []any{map[string]any{"role": "user", "content": "codexprobe_tool_setup"}}
 					response := send(false, setup)
-					call := gjson.GetBytes(response, "output.0")
+					call := ojson.GetBytes(response, "output.0")
 					if call.Get("type").String() != "function_call" {
 						t.Fatal("setup did not return tool call")
 					}

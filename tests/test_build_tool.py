@@ -442,11 +442,22 @@ if args[0] == "build":
         head += struct.pack("<IIQQQQQQ", 1, 5, 0, 0, 0, 0, 0, 0)
     else:
         head = b"MZ" + b"\0" * 0x3A + struct.pack("<I", 0x40) + b"PE\0\0" + struct.pack("<H", 0x8664) + b"\0" * 32
-    # Go's embedded build information: the modules vendor/modules.txt lists.
-    deps = [line.split()[1:3] for line in (src / "vendor" / "modules.txt").read_text().splitlines()
-            if line.startswith("# ")]
-    modinfo = "path\texample.test/m/cmd/server\nmod\texample.test/m\t(devel)\t\n" + "".join(
-        f"dep\t{{path}}\t{{version}}\t\n" for path, version in deps) + f"build\tGOOS={{goos}}\n"
+    # Go's embedded build information: the modules vendor/modules.txt lists;
+    # a replaced one as Go writes it (its dep line has no sum and its "=>"
+    # line follows). FAKE_GO_REPLACE="path version" links another replacement.
+    lines = []
+    for fields in (line.split()[1:] for line in (src / "vendor" / "modules.txt").read_text().splitlines()
+                   if line.startswith("# ")):
+        if "=>" in fields:
+            at = fields.index("=>")
+            target = (fields[at + 1:] + ["", ""])[:2]
+            if os.environ.get("FAKE_GO_REPLACE"):
+                target = os.environ["FAKE_GO_REPLACE"].split()
+            lines.append(f"dep\t{{fields[0]}}\t{{fields[1] if at > 1 else ''}}\n=>\t{{target[0]}}\t{{target[1]}}\t\n\n")
+        else:
+            lines.append(f"dep\t{{fields[0]}}\t{{fields[1]}}\t\n")
+    modinfo = "path\texample.test/m/cmd/server\nmod\texample.test/m\t(devel)\t\n" + "".join(lines) + \
+        f"build\tGOOS={{goos}}\n"
     raw = (b"0w\xaf\x0c\x92t\x08\x02A\xe1\xc1\x07\xe6\xd6\x18\xe6" + modinfo.encode()
            + b"\xf92C1\x86\x18 r\x00\x82B\x10A\x16\xd8\xf2")
     def varint(value):
@@ -485,6 +496,8 @@ be used to endorse or promote products derived from this software.
 """
 SUBPACKAGE_TEXT = BSD3_TEXT.replace("Example Authors", "Subpackage Authors")
 MODULE_SUM = "h1:" + base64.b64encode(bytes(range(32))).decode()
+FORK_SUM = "h1:" + base64.b64encode(bytes(range(32, 64))).decode()
+FORK_LICENSE = MIT_TEXT.replace("Example", "Fork Example")
 
 
 class EndToEndTests(unittest.TestCase):
@@ -499,7 +512,7 @@ class EndToEndTests(unittest.TestCase):
         self.root = Path(self.tmp.name)
         self.host = tool.host_target()
         # Upstream source archive with its commit in the pax comment.
-        source = {f"CLIProxyAPI-{self.COMMIT}/go.mod": b"module example.test/m\n\ngo 1.26.0\n",
+        self.source = source = {f"CLIProxyAPI-{self.COMMIT}/go.mod": b"module example.test/m\n\ngo 1.26.0\n",
                   f"CLIProxyAPI-{self.COMMIT}/go.sum": f"example.dep v1.0.0 {MODULE_SUM}\n"
                                                        "example.dep v1.0.0/go.mod h1:AAAA\n"
                                                        f"example.dep/inner v0.1.0 {MODULE_SUM}\n".encode(),
@@ -589,6 +602,37 @@ class EndToEndTests(unittest.TestCase):
 
     def seed_vendor_cache(self):
         shutil.copytree(self.vendor, self.cache / "vendor" / self.recipe["vendor"]["tree_sha256"])
+
+    def republish_source(self, extra_sums):
+        """The upstream archive again with ``extra_sums`` appended to go.sum,
+        pinned in the recipe (before anything is fetched)."""
+
+        members = dict(self.source)
+        members[f"CLIProxyAPI-{self.COMMIT}/go.sum"] += extra_sums.encode()
+        write_tar(self.downloads / "src.tar.gz", members, comment=self.COMMIT, top=f"CLIProxyAPI-{self.COMMIT}")
+        unpacked = self.root / "unpacked-again"
+        tool.remove_tree(unpacked)
+        tool.safe_extract(self.downloads / "src.tar.gz", unpacked)
+        self.recipe["source"]["archive_sha256"] = hashlib.sha256((self.downloads / "src.tar.gz").read_bytes()).hexdigest()
+        self.recipe["source"]["tree_sha256"] = tool.tree_sha256(unpacked)
+        self.write_recipe()
+
+    def replaced_vendor(self, header, *, licence=True):
+        """A vendor tree that also holds example.orig, which go.mod replaces
+        (``header`` is its modules.txt line); Go vendors a replaced module
+        under the required import path."""
+
+        orig = self.vendor / "example.orig"
+        orig.mkdir(exist_ok=True)
+        (orig / "orig.go").write_text("package orig\n")
+        if licence:
+            (orig / "LICENSE").write_text(FORK_LICENSE)
+        else:
+            (orig / "LICENSE").unlink(missing_ok=True)
+        (self.vendor / "modules.txt").write_text(f"# example.dep v1.0.0\nexample.dep\n{header}\nexample.orig\n")
+        self.recipe["vendor"]["tree_sha256"] = tool.tree_sha256(self.vendor)
+        self.write_recipe()
+        self.seed_vendor_cache()
 
     def test_default_pipeline_downloads_verifies_builds_inspects_and_records(self):
         self.seed_vendor_cache()
@@ -1117,6 +1161,81 @@ class EndToEndTests(unittest.TestCase):
         self.assertIn("example.dep v1.0.0 differs", err)
         self.assertIn("modules/example.dep/sub/LICENSE is not checked in", err)
 
+    REPLACED = "# example.orig v0.1.0-alpha.1 => example.fork v0.1.2"
+    FORK_SUMS = f"example.fork v0.1.2 {FORK_SUM}\nexample.fork v0.1.2/go.mod h1:CCCC\n"
+
+    def test_a_versioned_replacement_is_listed_with_its_provenance(self):
+        # go.mod replaces example.orig with example.fork: the requirement is
+        # listed with the module actually linked, the replacement's go.sum
+        # hash, and the licence Go vendored under the required import path.
+        self.republish_source(self.FORK_SUMS)
+        self.replaced_vendor(self.REPLACED)
+        self.run_tool("fetch", "vendor", "apply", "build")
+        version, modinfo = tool.go_buildinfo((self.dist / "linux-amd64" / "cli-proxy-api").read_bytes())
+        self.assertIn("dep\texample.orig\tv0.1.0-alpha.1\n=>\texample.fork\tv0.1.2\t\n", modinfo)
+        self.run_tool("notices")
+        inventory = json.loads((self.licenses / "modules.json").read_text())
+        modules = {module["path"]: module for module in inventory["modules"]}
+        self.assertEqual(sorted(modules), ["example.dep", "example.orig"])
+        replaced = modules["example.orig"]
+        self.assertEqual((replaced["version"], replaced["replace"], replaced["sum"], replaced["license"]),
+                         ("v0.1.0-alpha.1", {"path": "example.fork", "version": "v0.1.2"}, FORK_SUM, "MIT"))
+        self.assertEqual([entry["path"] for entry in replaced["files"]], ["modules/example.orig/LICENSE"])
+        self.assertEqual((self.licenses / "modules/example.orig/LICENSE").read_text(), FORK_LICENSE)
+        self.assertNotIn("replace", modules["example.dep"])
+        self.run_tool("inspect", "record")
+        bom = json.loads((self.dist / "linux-amd64" / "cli-proxy-api.cdx.json").read_text())
+        components = {component["name"]: component for component in bom["components"]}
+        self.assertNotIn("example.orig", components)
+        fork = components["example.fork"]
+        self.assertEqual((fork["version"], fork["purl"], fork["bom-ref"]),
+                         ("v0.1.2", "pkg:golang/example.fork@v0.1.2", "pkg:golang/example.fork@v0.1.2"))
+        self.assertEqual(fork["hashes"], [{"alg": "SHA-256", "content": bytes(range(32, 64)).hex()}])
+        self.assertEqual(fork["properties"], [{"name": "charmer:gateway:replaces",
+                                               "value": "pkg:golang/example.orig@v0.1.0-alpha.1"}])
+        self.assertNotIn("properties", components["example.dep"])
+        notices = (self.dist / "licenses" / "THIRD_PARTY_NOTICES.txt").read_text()
+        self.assertIn("example.orig v0.1.0-alpha.1 replaced by example.fork v0.1.2 (MIT)", notices)
+        self.assertIn("Copyright (c) 2026 Fork Example", notices)
+
+    def test_a_replacement_without_its_go_sum_hash_is_refused(self):
+        # Only the required module's hash: the replacement's source is unverified.
+        self.republish_source(f"example.orig v0.1.0-alpha.1 {FORK_SUM}\n")
+        self.replaced_vendor(self.REPLACED)
+        self.run_tool("fetch", "vendor", "apply", "build")
+        _, err = self.run_tool("notices", expect=1)
+        self.assertIn("go.sum has no hash for example.fork v0.1.2, the replacement of example.orig v0.1.0-alpha.1",
+                      err)
+        self.assertFalse((self.licenses / "modules.json").exists())
+
+    def test_a_replacement_the_vendor_tree_does_not_record_is_refused(self):
+        self.republish_source(self.FORK_SUMS + f"example.fork v0.1.3 {FORK_SUM}\n")
+        self.replaced_vendor(self.REPLACED)
+        with mock.patch.dict(os.environ, {"FAKE_GO_REPLACE": "example.fork v0.1.3"}):
+            self.run_tool("fetch", "vendor", "apply", "build")
+        _, err = self.run_tool("notices", expect=1)
+        self.assertIn("vendor/modules.txt records example.orig v0.1.0-alpha.1 => example.fork v0.1.2, "
+                      "the build links example.orig v0.1.0-alpha.1 => example.fork v0.1.3", err)
+
+    def test_a_replaced_module_without_a_licence_needs_an_override(self):
+        self.republish_source(self.FORK_SUMS)
+        self.replaced_vendor(self.REPLACED, licence=False)
+        self.run_tool("fetch", "vendor", "apply", "build")
+        _, err = self.run_tool("notices", expect=1)
+        self.assertIn("example.orig v0.1.0-alpha.1 ships no licence", err)
+
+    def test_local_and_unversioned_replacements_are_refused(self):
+        self.republish_source(self.FORK_SUMS)
+        for header, problem in (("# example.orig v0.1.0-alpha.1 => ./fork", "'./fork' '': a local directory"),
+                                ("# example.orig v0.1.0-alpha.1 => /src/fork", "'/src/fork' '': a local directory"),
+                                ("# example.orig v0.1.0-alpha.1 => example.fork", "'example.fork' '': unversioned")):
+            with self.subTest(header=header):
+                self.replaced_vendor(header)
+                self.run_tool("fetch", "vendor", "apply", "build")
+                _, err = self.run_tool("notices", expect=1)
+                self.assertIn(f"example.orig v0.1.0-alpha.1 is replaced by {problem}", err)
+                self.assertIn("notices support only a replacement by a versioned module", err)
+
     def test_contract_command_writes_the_admitted_series(self):
         out = self.root / "contract.json"
         self.run_tool("contract", "--out", str(out))
@@ -1184,6 +1303,53 @@ class BuildInfoTests(unittest.TestCase):
                 tool.go_buildinfo(data)
         with self.assertRaises(tool.BuildError):
             tool.linked_modules("dep\tgithub.com/a/b\tv1.0.0\t\n=>\t../local\t\t\n")
+
+    # As Go 1.27 writes a vendored build that replaces one requirement
+    # (upstream replaces github.com/MoeForge/moego with router-for-me/moego).
+    REPLACED_MODINFO = ("path\texample.test/m/cmd/server\nmod\texample.test/m\t(devel)\t\n"
+                        "dep\tcloud.google.com/go/compute/metadata\tv0.3.0\t\n"
+                        "dep\tgithub.com/MoeForge/moego\tv0.1.0-alpha.1\n"
+                        "=>\tgithub.com/router-for-me/moego\tv0.1.2\t\n\n"
+                        "dep\tgithub.com/ProtonMail/go-crypto\tv1.5.2\th1:abc\n"
+                        "build\t-buildmode=exe\n")
+
+    def test_a_versioned_replacement_is_read_with_its_requirement(self):
+        version, modinfo = tool.go_buildinfo(buildinfo_blob(self.REPLACED_MODINFO))
+        self.assertEqual(tool.linked_dependencies(modinfo), [
+            ("cloud.google.com/go/compute/metadata", "v0.3.0", None),
+            ("github.com/MoeForge/moego", "v0.1.0-alpha.1", ("github.com/router-for-me/moego", "v0.1.2")),
+            ("github.com/ProtonMail/go-crypto", "v1.5.2", None)])
+        self.assertEqual(tool.linked_modules(modinfo), [
+            ("cloud.google.com/go/compute/metadata", "v0.3.0"), ("github.com/MoeForge/moego", "v0.1.0-alpha.1"),
+            ("github.com/ProtonMail/go-crypto", "v1.5.2")])
+        pseudo = "dep\ta.example/m\tv1.0.0\n=>\tb.example/m\tv0.0.0-20260101000000-abcdefabcdef\th1:x\n"
+        self.assertEqual(tool.linked_dependencies(pseudo),
+                         [("a.example/m", "v1.0.0", ("b.example/m", "v0.0.0-20260101000000-abcdefabcdef"))])
+
+    def test_orphan_local_unversioned_and_malformed_replacements_are_refused(self):
+        dep = "dep\ta.example/m\tv1.0.0\n"
+        for modinfo, needle in (
+                ("=>\tb.example/m\tv1.0.0\t\n", "follows no replaced dependency"),
+                ("dep\ta.example/m\tv1.0.0\t\n=>\tb.example/m\tv1.0.0\t\n", "follows no replaced dependency"),
+                (dep + "=>\tb.example/m\tv1.0.0\t\n=>\tc.example/m\tv1.0.0\t\n", "follows no replaced dependency"),
+                (dep, "has no sum and no replacement line"),
+                (dep + "\ndep\tc.example/m\tv1.0.0\t\n", "has no sum and no replacement line"),
+                (dep + "dep\tc.example/m\tv1.0.0\t\n", "has no sum and no replacement line"),
+                (dep + "=>\tb.example/m\tv1.0.0\n", "malformed replacement line"),
+                (dep + "=>\t\tv1.0.0\t\n", "malformed replacement line"),
+                (dep + "=>\t../local\t\t\n", "a local directory"),
+                (dep + "=>\t./local\t(devel)\t\n", "a local directory"),
+                (dep + "=>\t/abs/local\t\t\n", "a local directory"),
+                (dep + "=>\tC:\\src\\local\t\t\n", "a local directory"),
+                (dep + "=>\tlocalname\tv1.0.0\t\n", "not a module path"),
+                (dep + "=>\tb.example//m\tv1.0.0\t\n", "not a module path"),
+                (dep + "=>\tb.example/m\t\t\n", "unversioned"),
+                (dep + "=>\tb.example/m\t(devel)\t\n", "unversioned"),
+                (dep + "=>\tb.example/m\tlatest\t\n", "unversioned"),
+                ("dep\ta.example/m\n", "malformed dependency line"),
+                ("dep\ta.example/m\tv1.0.0\th1:x\textra\n", "malformed dependency line")):
+            with self.subTest(modinfo=modinfo), self.assertRaisesRegex(tool.BuildError, needle):
+                tool.linked_dependencies(modinfo)
 
     def test_compiled_go_policy_matches_the_recipe_and_binary(self):
         from types import SimpleNamespace
