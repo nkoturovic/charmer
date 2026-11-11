@@ -1168,6 +1168,12 @@ def build_config_document(
     # mDNS / DNS-SD LAN advertisement pinned off:
     # the gateway defaults it off, but the rendered config states it.
     document["discovery"] = static["discovery"]
+    # The gateway's local key-value store (a database file in the auth
+    # directory, on when unset) stays off: its caches (thinking signatures,
+    # reasoning replay, session date pins) stay in memory, and the auth
+    # directory holds credentials only.
+    if "kv-store" in static:
+        document["kv-store"] = static["kv-store"]
     document["commercial-mode"] = static["commercial-mode"]
     document["logging-to-file"] = static["logging-to-file"]
     document["usage-statistics-enabled"] = static["usage-statistics-enabled"]
