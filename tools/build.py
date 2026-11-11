@@ -1469,19 +1469,70 @@ def go_buildinfo(data: bytes) -> tuple[str, str]:
         return version, modinfo
 
 
-def linked_modules(modinfo: str) -> list[tuple[str, str]]:
-    """The (path, version) of every dependency module the executable links."""
+# A module version as go.mod and the build information write it (a release,
+# a pre-release or a pseudo-version); never "(devel)" or empty.
+MODULE_VERSION = re.compile(r"^v(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)"
+                            r"(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$")
 
-    modules: list[tuple[str, str]] = []
+
+def _replacement_problem(path: str, version: str) -> str | None:
+    """Why a replacement target is not a versioned module (None when it is)."""
+
+    if not path or path.startswith((".", "/", "\\")) or re.match(r"^[A-Za-z]:", path):
+        return "a local directory, not a module"
+    if "." not in path.split("/", 1)[0] or any(not part for part in path.split("/")):
+        return "not a module path"
+    if not MODULE_VERSION.match(version):
+        return "unversioned"
+    return None
+
+
+def linked_dependencies(modinfo: str) -> list[tuple[str, str, tuple[str, str] | None]]:
+    """Every dependency module the executable links: ``(path, version,
+    replacement)``, the replacement ``(path, version)`` when go.mod replaced
+    the requirement with another versioned module, else None.
+
+    Go writes a plain requirement as one ``dep`` line (path, version and a
+    sum, empty in a vendored build) and a replaced one as a ``dep`` line
+    without a sum directly followed by its ``=>`` line. A replacement line
+    anywhere else, a replaced line without one, and a replacement by a local
+    directory or without a version are refused."""
+
+    modules: list[tuple[str, str, tuple[str, str] | None]] = []
+    pending: tuple[str, str] | None = None
     for line in modinfo.splitlines():
         fields = line.split("\t")
         if fields[0] == "=>":
-            raise BuildError("the build replaces a module; notices support only plain module requirements")
+            if pending is None:
+                raise BuildError(f"a replacement line follows no replaced dependency: {line!r}")
+            if len(fields) != 4 or not fields[1]:
+                raise BuildError(f"malformed replacement line {line!r}")
+            problem = _replacement_problem(fields[1], fields[2])
+            if problem:
+                raise BuildError(f"{pending[0]} {pending[1]} is replaced by {fields[1]!r} {fields[2]!r}: {problem}; "
+                                 "notices support only a replacement by a versioned module")
+            modules.append((*pending, (fields[1], fields[2])))
+            pending = None
+            continue
+        if pending is not None:
+            raise BuildError(f"{pending[0]} {pending[1]} has no sum and no replacement line")
         if fields[0] == "dep":
-            if len(fields) < 3 or not fields[1] or not fields[2]:
+            if len(fields) not in (3, 4) or not fields[1] or not fields[2]:
                 raise BuildError(f"malformed dependency line {line!r}")
-            modules.append((fields[1], fields[2]))
+            if len(fields) == 3:
+                pending = (fields[1], fields[2])
+            else:
+                modules.append((fields[1], fields[2], None))
+    if pending is not None:
+        raise BuildError(f"{pending[0]} {pending[1]} has no sum and no replacement line")
     return modules
+
+
+def linked_modules(modinfo: str) -> list[tuple[str, str]]:
+    """The (path, version) of every dependency module the executable links,
+    as go.mod requires it (``linked_dependencies`` adds the replacements)."""
+
+    return [(path, version) for path, version, _ in linked_dependencies(modinfo)]
 
 
 def go_sum_hashes(text: str) -> dict[tuple[str, str], str]:
@@ -1609,14 +1660,27 @@ def _notice_files(directory: Path, prefix: str, *, nested: bool = False,
     return entries, texts
 
 
-def vendored_modules(vendor: Path) -> set[str]:
-    """Every module path vendor/modules.txt lists."""
+def vendored_records(vendor: Path) -> dict[str, tuple[str, ...]]:
+    """What vendor/modules.txt records for each module path: its header's
+    fields after the path (``(version,)``, or ``(version, "=>", path,
+    version)`` for a replaced requirement)."""
 
     try:
         text = (vendor / "modules.txt").read_text(encoding="utf-8")
     except OSError as exc:
         raise BuildError(f"cannot read the vendored module list: {exc}") from exc
-    return {line.split()[1] for line in text.splitlines() if line.startswith("# ") and len(line.split()) > 1}
+    records: dict[str, tuple[str, ...]] = {}
+    for line in text.splitlines():
+        fields = line.split()
+        if line.startswith("# ") and len(fields) > 1:
+            records[fields[1]] = tuple(fields[2:])
+    return records
+
+
+def vendored_modules(vendor: Path) -> set[str]:
+    """Every module path vendor/modules.txt lists."""
+
+    return set(vendored_records(vendor))
 
 
 def module_notice_files(vendor: Path, module: str, modules: set[str]) -> tuple[list[dict[str, Any]], dict[str, bytes]]:
@@ -1681,10 +1745,18 @@ def collect_notices(ctx: Context, state: dict[str, Any], targets: list[str]) -> 
     modules each binary links (its embedded build information), their
     vendored licence and notice files (subpackages' included), their go.sum
     hashes, the toolchain's and the upstream licence, and the patch series'
-    modified files."""
+    modified files.
+
+    A requirement go.mod replaces with another versioned module is listed
+    under its required path and version with ``replace`` naming the module
+    actually linked; its ``sum`` is the replacement's go.sum hash (the source
+    that was fetched and vendored), vendor/modules.txt must record exactly
+    that pairing, and its licence comes from the vendored tree under the
+    required import path, where Go vendors it."""
 
     doc = ctx.doc
     linked: dict[tuple[str, str], list[str]] = {}
+    replaced: dict[tuple[str, str], tuple[str, str] | None] = {}
     toolchain = "go" + doc["toolchain"]["version"]
     for name in targets:
         target = target_records(doc)[name]
@@ -1692,18 +1764,31 @@ def collect_notices(ctx: Context, state: dict[str, Any], targets: list[str]) -> 
         version, modinfo = go_buildinfo(path.read_bytes())
         if version != toolchain:
             raise BuildError(f"{name}: built by {version}, the recipe pins {toolchain}")
-        for module in linked_modules(modinfo):
-            linked.setdefault(module, []).append(name)
+        for module, module_version, replacement in linked_dependencies(modinfo):
+            key = (module, module_version)
+            if replaced.setdefault(key, replacement) != replacement:
+                raise BuildError(f"{module} {module_version} is replaced differently between the targets")
+            linked.setdefault(key, []).append(name)
     sums = go_sum_hashes((ctx.src / "go.sum").read_text(encoding="utf-8"))
     overrides = read_overrides(ctx.licenses / OVERRIDES_FILE)
-    vendored = vendored_modules(ctx.src / "vendor")
+    records = vendored_records(ctx.src / "vendor")
+    vendored = set(records)
     files: dict[str, bytes] = {}
     modules = []
     for (module, version), linking in sorted(linked.items()):
-        if (module, version) not in sums:
-            raise BuildError(f"go.sum has no hash for {module} {version}")
+        replacement = replaced[(module, version)]
         if module not in vendored:
             raise BuildError(f"{module} is linked but not vendored")
+        expected = (version,) if replacement is None else (version, "=>", *replacement)
+        if records[module] != expected:
+            raise BuildError(f"vendor/modules.txt records {module} {' '.join(records[module])}, "
+                             f"the build links {module} {' '.join(expected)}")
+        hashed = (module, version) if replacement is None else replacement
+        if hashed not in sums:
+            if replacement is None:
+                raise BuildError(f"go.sum has no hash for {module} {version}")
+            raise BuildError(f"go.sum has no hash for {replacement[0]} {replacement[1]}, "
+                             f"the replacement of {module} {version}")
         entries, texts = module_notice_files(ctx.src / "vendor", module, vendored)
         files.update(texts)
         if any(entry["kind"] == "license" for entry in entries):
@@ -1718,7 +1803,9 @@ def collect_notices(ctx: Context, state: dict[str, Any], targets: list[str]) -> 
             record = {"license": overrides[module]["license"], "license_override": overrides[module]["reason"]}
         else:
             raise BuildError(f"{module} {version} ships no licence; record it in {OVERRIDES_FILE}")
-        modules.append({"path": module, "version": version, "sum": sums[(module, version)],
+        if replacement is not None:
+            record["replace"] = {"path": replacement[0], "version": replacement[1]}
+        modules.append({"path": module, "version": version, "sum": sums[hashed],
                         "targets": sorted(linking), "files": entries, **record})
     unused = sorted(set(overrides) - {module for module, _ in linked})
     if unused:
@@ -1872,12 +1959,23 @@ def render_sbom(doc: dict[str, Any], inventory: dict[str, Any], target: dict[str
     if target["name"] not in inventory["targets"]:
         raise BuildError(f"{INVENTORY_FILE} does not cover {target['name']}")
     go_version = "go" + inventory["toolchain"]["version"]
-    components = [{
-        "type": "library", "bom-ref": _purl(module["path"], module["version"]),
-        "name": module["path"], "version": module["version"], "purl": _purl(module["path"], module["version"]),
-        "hashes": [{"alg": "SHA-256", "content": _h1_hex(module["sum"])}],
-        "licenses": _licenses(module["license"]),
-    } for module in inventory["modules"] if target["name"] in module["targets"]]
+
+    def component(module: dict[str, Any]) -> dict[str, Any]:
+        # A replaced requirement is the module actually linked (its identity
+        # and hash); the requirement it replaces is a property.
+        linked = module.get("replace") or module
+        entry = {
+            "type": "library", "bom-ref": _purl(linked["path"], linked["version"]),
+            "name": linked["path"], "version": linked["version"], "purl": _purl(linked["path"], linked["version"]),
+            "hashes": [{"alg": "SHA-256", "content": _h1_hex(module["sum"])}],
+            "licenses": _licenses(module["license"]),
+        }
+        if "replace" in module:
+            entry["properties"] = [{"name": "charmer:gateway:replaces",
+                                    "value": _purl(module["path"], module["version"])}]
+        return entry
+
+    components = [component(module) for module in inventory["modules"] if target["name"] in module["targets"]]
     components.append({"type": "library", "bom-ref": _purl("std", go_version), "name": "std",
                        "version": go_version, "purl": _purl("std", go_version),
                        "description": "the Go standard library and runtime",
@@ -1976,6 +2074,9 @@ def render_third_party_notices(tree: NoticeTree) -> bytes:
             toolchain["files"])
     for module in inventory["modules"]:
         title = f"{module['path']} {module['version']} ({module['license']})"
+        if module.get("replace"):
+            title = (f"{module['path']} {module['version']} replaced by {module['replace']['path']} "
+                     f"{module['replace']['version']} ({module['license']})")
         if module.get("license_override"):
             title += f" — no licence file shipped: {module['license_override']}"
         section(title, f"modules/{module['path']}", module["files"])

@@ -1,9 +1,9 @@
 diff --git a/internal/auth/claude/identity.go b/internal/auth/claude/identity.go
-index 3e4bde72..6aa13fd6 100644
+index 7cbf917d..fa44fcf7 100644
 --- a/internal/auth/claude/identity.go
 +++ b/internal/auth/claude/identity.go
-@@ -189,6 +189,24 @@ func ReadMetadataString(metadata *map[string]any, key string) string {
- 	return value
+@@ -356,6 +356,24 @@ func ReadMetadataHomeCloak(metadata *map[string]any) (
+ 	return mode, strictMode, sensitiveWords, sensitiveWordsReplace, cacheUserID, true
  }
  
 +// ReadMetadataBool reads a bool-valued metadata entry under the metadata lock,

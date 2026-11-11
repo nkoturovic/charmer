@@ -14,7 +14,7 @@ from unittest import mock
 from types import SimpleNamespace
 
 from charmer import catalog
-from _catalog import FIXTURE_ROOT, SHIPPED_ROOT, uses_shipped_catalog
+from _catalog import SHIPPED_ROOT, uses_shipped_catalog
 import _gateway_harness as harness
 
 MODULE = "tests.test_gateway_hints"
@@ -22,7 +22,7 @@ PREFIX = "x-claude-code-"
 IDENTITY_NAMES = {PREFIX + name for name in ("session-id", "agent-id", "parent-agent-id")}
 DROPPED_NAMES = {PREFIX + name for name in ("request-class", "agent-type", "prev-tool-durations")}
 PRECONDITION = (
-    "H1 precondition: the fixture version and complete native signals must satisfy the pinned "
+    "H1 precondition: the baseline version and complete native signals must satisfy the pinned "
     "Claude Code detector; confirmed native hints are preserved, unconfirmed custom-route "
     "hints are not. Browser-header presence is not a detector verdict; see HV1/HV2 and H6"
 )
@@ -115,7 +115,7 @@ class HintTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.gateway = harness.main_harness()
-        cls.version = catalog.load_catalog(FIXTURE_ROOT).docs["native-contract"]["verified"][0]["version"]
+        cls.version = harness.NATIVE_CLIENT_BASELINE
 
     def check(self, row, version, expected, *, stream=False, family="claude", omit_app=False, helper=False):
         alias = {"claude": "gwtest-cc-output-config-high", "codex": "gwtest-codex-reasoning-effort-high",
@@ -189,7 +189,7 @@ class HintVariantBaselineTests(HintTests):
     def setUpClass(cls):
         cls.gateway = harness.GatewayHarness("ua")
         cls.addClassCleanup(cls.gateway.close)
-        cls.version = catalog.load_catalog(FIXTURE_ROOT).docs["native-contract"]["verified"][0]["version"]
+        cls.version = harness.NATIVE_CLIENT_BASELINE
 
     def test_hv1_hv2_user_agent_default_changes_baseline(self):
         self.check("HV1", next_minor(self.version), "preserve")

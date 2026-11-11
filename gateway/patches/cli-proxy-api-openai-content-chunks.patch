@@ -1,6 +1,6 @@
 diff --git a/internal/translator/openai/claude/openai_claude_content_chunks_test.go b/internal/translator/openai/claude/openai_claude_content_chunks_test.go
 new file mode 100644
-index 00000000..b4a5ce89
+index 00000000..7d904f14
 --- /dev/null
 +++ b/internal/translator/openai/claude/openai_claude_content_chunks_test.go
 @@ -0,0 +1,242 @@
@@ -15,7 +15,7 @@ index 00000000..b4a5ce89
 +	"strings"
 +	"testing"
 +
-+	"github.com/tidwall/gjson"
++	"github.com/MoeForge/moego/ojson"
 +)
 +
 +func contentChunksStream(deltas ...string) [][]byte {
@@ -44,7 +44,7 @@ index 00000000..b4a5ce89
 +		if len(parts) != 2 {
 +			t.Fatalf("not an SSE event: %q", raw)
 +		}
-+		value := gjson.ParseBytes(bytes.TrimSpace(parts[1]))
++		value := ojson.ParseBytes(bytes.TrimSpace(parts[1]))
 +		switch value.Get("type").String() {
 +		case "content_block_start":
 +			if open != -1 {
@@ -166,7 +166,7 @@ index 00000000..b4a5ce89
 +					}
 +				}
 +				got := []string{}
-+				for _, block := range gjson.GetBytes(out, "content").Array() {
++				for _, block := range ojson.GetBytes(out, "content").Array() {
 +					kind := block.Get("type").String()
 +					got = append(got, kind+":"+block.Get(kind).String())
 +					if block.Get("signature").Exists() {
@@ -176,7 +176,7 @@ index 00000000..b4a5ce89
 +				if !reflect.DeepEqual(got, want) {
 +					t.Fatalf("got %#v, want %#v", got, want)
 +				}
-+				if gjson.GetBytes(out, "usage.input_tokens").Int() != 11 || gjson.GetBytes(out, "usage.output_tokens").Int() != 4 || gjson.GetBytes(out, "stop_reason").String() != "end_turn" {
++				if ojson.GetBytes(out, "usage.input_tokens").Int() != 11 || ojson.GetBytes(out, "usage.output_tokens").Int() != 4 || ojson.GetBytes(out, "stop_reason").String() != "end_turn" {
 +					t.Fatalf("finish/usage lost: %s", out)
 +				}
 +			})
@@ -202,7 +202,7 @@ index 00000000..b4a5ce89
 +			}
 +			raw := []byte(`{"choices":[{"message":` + string(encoded) + `,"finish_reason":"tool_calls"}]}`)
 +			for _, out := range [][]byte{convertOpenAINonStreamingToAnthropic(raw)[0], ConvertOpenAIResponseToClaudeNonStream(context.Background(), "", nil, nil, raw, nil)} {
-+				if strings.Count(string(out), `"thinking":"field"`) != 1 || bytes.Contains(out, []byte("ignored")) || gjson.GetBytes(out, "content.#").Int() != 4 || gjson.GetBytes(out, "stop_reason").String() != "tool_use" {
++				if strings.Count(string(out), `"thinking":"field"`) != 1 || bytes.Contains(out, []byte("ignored")) || ojson.GetBytes(out, "content.#").Int() != 4 || ojson.GetBytes(out, "stop_reason").String() != "tool_use" {
 +					t.Fatalf("nonstream: %s", out)
 +				}
 +			}
@@ -248,7 +248,7 @@ index 00000000..b4a5ce89
 +}
 diff --git a/internal/translator/openai/claude/openai_claude_content_goldens_test.go b/internal/translator/openai/claude/openai_claude_content_goldens_test.go
 new file mode 100644
-index 00000000..65846153
+index 00000000..54eccfe9
 --- /dev/null
 +++ b/internal/translator/openai/claude/openai_claude_content_goldens_test.go
 @@ -0,0 +1,47 @@
@@ -266,11 +266,11 @@ index 00000000..65846153
 +	{"string", "{\"content\":\"answer\"}", "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":0,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"answer\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n", "{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[{\"type\":\"text\",\"text\":\"answer\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}", "{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[{\"type\":\"text\",\"text\":\"answer\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}"},
 +	{"null", "{\"content\":null}", "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":0,\"output_tokens\":0}}}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n", "{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}", "{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}"},
 +	{"absent", "{}", "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":0,\"output_tokens\":0}}}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n", "{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}", "{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}"},
-+	{"reasoning-content", "{\"reasoning_content\":\"thought\",\"content\":\"answer\"}", "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":0,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"thought\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\"answer\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":1}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n", "{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[{\"type\":\"thinking\",\"thinking\":\"thought\"},{\"type\":\"text\",\"text\":\"answer\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}", "{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[{\"type\":\"text\",\"text\":\"answer\"},{\"type\":\"thinking\",\"thinking\":\"thought\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}"},
-+	{"reasoning", "{\"reasoning\":\"thought\",\"content\":\"answer\"}", "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":0,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"thought\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\"answer\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":1}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n", "{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[{\"type\":\"thinking\",\"thinking\":\"thought\"},{\"type\":\"text\",\"text\":\"answer\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}", "{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[{\"type\":\"text\",\"text\":\"answer\"},{\"type\":\"thinking\",\"thinking\":\"thought\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}"},
-+	{"reasoning-details", "{\"reasoning_details\":[{\"type\":\"reasoning.text\",\"text\":\"thought\"}],\"content\":\"answer\"}", "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":0,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"thought\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\"answer\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":1}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n", "{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[{\"type\":\"thinking\",\"thinking\":\"thought\"},{\"type\":\"text\",\"text\":\"answer\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}", "{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[{\"type\":\"text\",\"text\":\"answer\"},{\"type\":\"thinking\",\"thinking\":\"thought\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}"},
-+	{"precedence", "{\"reasoning_content\":\"thought\",\"reasoning\":\"ignored\",\"reasoning_details\":[{\"text\":\"ignored\"}],\"content\":\"answer\"}", "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":0,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"thought\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\"answer\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":1}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n", "{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[{\"type\":\"thinking\",\"thinking\":\"thought\"},{\"type\":\"text\",\"text\":\"answer\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}", "{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[{\"type\":\"text\",\"text\":\"answer\"},{\"type\":\"thinking\",\"thinking\":\"thought\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}"},
-+	{"reasoning-fallback", "{\"reasoning_content\":\"\",\"reasoning\":\"thought\",\"reasoning_details\":[{\"text\":\"ignored\"}],\"content\":\"answer\"}", "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":0,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"thought\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\"answer\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":1}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n", "{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[{\"type\":\"thinking\",\"thinking\":\"thought\"},{\"type\":\"text\",\"text\":\"answer\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}", "{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[{\"type\":\"text\",\"text\":\"answer\"},{\"type\":\"thinking\",\"thinking\":\"thought\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}"},
++	{"reasoning-content", "{\"reasoning_content\":\"thought\",\"content\":\"answer\"}", "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":0,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"thought\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\"answer\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":1}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n", "{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[{\"type\":\"thinking\",\"thinking\":\"thought\"},{\"type\":\"text\",\"text\":\"answer\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}", "{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[{\"type\":\"thinking\",\"thinking\":\"thought\"},{\"type\":\"text\",\"text\":\"answer\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}"},
++	{"reasoning", "{\"reasoning\":\"thought\",\"content\":\"answer\"}", "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":0,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"thought\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\"answer\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":1}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n", "{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[{\"type\":\"thinking\",\"thinking\":\"thought\"},{\"type\":\"text\",\"text\":\"answer\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}", "{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[{\"type\":\"thinking\",\"thinking\":\"thought\"},{\"type\":\"text\",\"text\":\"answer\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}"},
++	{"reasoning-details", "{\"reasoning_details\":[{\"type\":\"reasoning.text\",\"text\":\"thought\"}],\"content\":\"answer\"}", "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":0,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"thought\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\"answer\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":1}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n", "{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[{\"type\":\"thinking\",\"thinking\":\"thought\"},{\"type\":\"text\",\"text\":\"answer\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}", "{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[{\"type\":\"thinking\",\"thinking\":\"thought\"},{\"type\":\"text\",\"text\":\"answer\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}"},
++	{"precedence", "{\"reasoning_content\":\"thought\",\"reasoning\":\"ignored\",\"reasoning_details\":[{\"text\":\"ignored\"}],\"content\":\"answer\"}", "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":0,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"thought\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\"answer\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":1}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n", "{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[{\"type\":\"thinking\",\"thinking\":\"thought\"},{\"type\":\"text\",\"text\":\"answer\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}", "{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[{\"type\":\"thinking\",\"thinking\":\"thought\"},{\"type\":\"text\",\"text\":\"answer\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}"},
++	{"reasoning-fallback", "{\"reasoning_content\":\"\",\"reasoning\":\"thought\",\"reasoning_details\":[{\"text\":\"ignored\"}],\"content\":\"answer\"}", "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":0,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"thought\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\"answer\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":1}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n", "{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[{\"type\":\"thinking\",\"thinking\":\"thought\"},{\"type\":\"text\",\"text\":\"answer\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}", "{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[{\"type\":\"thinking\",\"thinking\":\"thought\"},{\"type\":\"text\",\"text\":\"answer\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}"},
 +	{"unknown", "{\"content\":[{\"type\":\"unknown\",\"text\":\"do not reinterpret\"}]}", "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":0,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"[{\\\"type\\\":\\\"unknown\\\",\\\"text\\\":\\\"do not reinterpret\\\"}]\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n", "{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[{\"type\":\"text\",\"text\":\"[{\\\"type\\\":\\\"unknown\\\",\\\"text\\\":\\\"do not reinterpret\\\"}]\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}", "{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}"},
 +	{"unknown-mixed", "{\"content\":[{\"type\":\"text\",\"text\":\"answer\"},{\"type\":\"unknown\",\"text\":\"do not reinterpret\"}]}", "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":0,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"[{\\\"type\\\":\\\"text\\\",\\\"text\\\":\\\"answer\\\"},{\\\"type\\\":\\\"unknown\\\",\\\"text\\\":\\\"do not reinterpret\\\"}]\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n", "{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[{\"type\":\"text\",\"text\":\"[{\\\"type\\\":\\\"text\\\",\\\"text\\\":\\\"answer\\\"},{\\\"type\\\":\\\"unknown\\\",\\\"text\\\":\\\"do not reinterpret\\\"}]\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}", "{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[{\"type\":\"text\",\"text\":\"answer\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}"},
 +	{"malformed", "{\"content\":[null,{\"type\":\"text\",\"text\":7}]}", "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":0,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"[null,{\\\"type\\\":\\\"text\\\",\\\"text\\\":7}]\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n", "{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[{\"type\":\"text\",\"text\":\"[null,{\\\"type\\\":\\\"text\\\",\\\"text\\\":7}]\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}", "{\"id\":\"fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"fixture\",\"content\":[{\"type\":\"text\",\"text\":\"7\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":11,\"output_tokens\":4}}"},
@@ -300,113 +300,66 @@ index 00000000..65846153
 +	}
 +}
 diff --git a/internal/translator/openai/claude/openai_claude_response.go b/internal/translator/openai/claude/openai_claude_response.go
-index 7cdf707b..4f5ce35b 100644
+index 6f9871c4..557e62b8 100644
 --- a/internal/translator/openai/claude/openai_claude_response.go
 +++ b/internal/translator/openai/claude/openai_claude_response.go
-@@ -248,79 +248,29 @@ func convertOpenAIStreamingChunkToAnthropic(rawJSON []byte, param *ConvertOpenAI
+@@ -247,31 +247,29 @@ func convertOpenAIStreamingChunkToAnthropic(rawJSON []byte, param *ConvertOpenAI
  			// Don't send content_block_start for text here - wait for actual content
  		}
  
 -		// Handle reasoning content delta
 +		// Handle reasoning content delta; its precedence is independent of content.
  		for _, reasoningText := range collectOpenAIObjectReasoningTexts(delta) {
--			if reasoningText == "" {
--				continue
--			}
--			if param.OpenToolCallIndex != -1 {
--				if n := len(param.InterleavedContentChunks); n > 0 && param.InterleavedContentChunks[n-1].Type == "thinking" {
--					param.InterleavedContentChunks[n-1].Text += reasoningText
--				} else {
--					param.InterleavedContentChunks = append(param.InterleavedContentChunks, InterleavedContentChunk{
--						Type: "thinking",
--						Text: reasoningText,
--					})
--				}
--			} else {
--				stopTextContentBlock(param, &results)
--				if !param.ThinkingContentBlockStarted {
--					if param.ThinkingContentBlockIndex == -1 {
--						param.ThinkingContentBlockIndex = param.NextContentBlockIndex
--						param.NextContentBlockIndex++
--					}
--					contentBlockStartJSON := `{"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":""}}`
--					contentBlockStartJSONBytes := []byte(contentBlockStartJSON)
--					contentBlockStartJSONBytes, _ = sjson.SetBytes(contentBlockStartJSONBytes, "index", param.ThinkingContentBlockIndex)
--					results = append(results, translatorcommon.AppendSSEEventBytes(nil, "content_block_start", contentBlockStartJSONBytes, 2))
--					param.ThinkingContentBlockStarted = true
--				}
--
--				thinkingDeltaJSON := `{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":""}}`
--				thinkingDeltaJSONBytes := []byte(thinkingDeltaJSON)
--				thinkingDeltaJSONBytes, _ = sjson.SetBytes(thinkingDeltaJSONBytes, "index", param.ThinkingContentBlockIndex)
--				thinkingDeltaJSONBytes, _ = sjson.SetBytes(thinkingDeltaJSONBytes, "delta.thinking", reasoningText)
--				results = append(results, translatorcommon.AppendSSEEventBytes(nil, "content_block_delta", thinkingDeltaJSONBytes, 2))
-+			if reasoningText != "" {
-+				emitOpenAIThinkingDelta(param, &results, reasoningText)
- 			}
+ 			emitStreamingThinkingDelta(param, reasoningText, &results)
  		}
  
 -		// Handle content delta
-+		// Only arrays use chunk decoding. Strings, null and absent content keep
-+		// the same emission path, including the raw fallback for unknown arrays.
- 		if content := delta.Get("content"); content.Exists() && content.String() != "" {
--			if param.OpenToolCallIndex != -1 {
--				// Tool call content block is currently active on the wire.
--				// Buffer this text so content blocks remain strictly sequential.
--				if n := len(param.InterleavedContentChunks); n > 0 && param.InterleavedContentChunks[n-1].Type == "text" {
--					param.InterleavedContentChunks[n-1].Text += content.String()
--				} else {
--					param.InterleavedContentChunks = append(param.InterleavedContentChunks, InterleavedContentChunk{
--						Type: "text",
--						Text: content.String(),
--					})
--				}
--				param.ContentAccumulator.WriteString(content.String())
--			} else {
--				// Send content_block_start for text if not already sent
--				if !param.TextContentBlockStarted {
--					stopThinkingContentBlock(param, &results)
--					if param.TextContentBlockIndex == -1 {
--						param.TextContentBlockIndex = param.NextContentBlockIndex
--						param.NextContentBlockIndex++
+-		if content := delta.Get("content"); content.Exists() {
+-			if content.IsArray() {
+-				content.ForEach(func(_, part ojson.Result) bool {
+-					if part.Type == ojson.String {
+-						emitStreamingTextDelta(param, part.String(), &results)
+-						return true
++		// Only arrays use chunk decoding: all of an array's chunks decode or the
++		// array keeps the raw-text fallback, never a partial reading of an
++		// unfamiliar provider response. Strings, null and absent content keep
++		// the same emission path.
++		if content := delta.Get("content"); content.Exists() && content.String() != "" {
 +			if chunks, ok := decodeOpenAIContentChunks(content); ok {
 +				for _, chunk := range chunks {
 +					if chunk.Text == "" {
 +						continue
-+					}
+ 					}
+-					switch part.Get("type").String() {
+-					case "thinking", "reasoning":
+-						emitStreamingThinkingDelta(param, extractOpenAIContentPartThinkingText(part), &results)
+-					case "text":
+-						emitStreamingTextDelta(param, part.Get("text").String(), &results)
+-					default:
+-						emitStreamingTextDelta(param, part.String(), &results)
 +					if chunk.Type == "thinking" {
 +						emitOpenAIThinkingDelta(param, &results, chunk.Text)
 +					} else {
 +						emitOpenAITextDelta(param, &results, chunk.Text)
  					}
--					contentBlockStartJSON := `{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`
--					contentBlockStartJSONBytes := []byte(contentBlockStartJSON)
--					contentBlockStartJSONBytes, _ = sjson.SetBytes(contentBlockStartJSONBytes, "index", param.TextContentBlockIndex)
--					results = append(results, translatorcommon.AppendSSEEventBytes(nil, "content_block_start", contentBlockStartJSONBytes, 2))
--					param.TextContentBlockStarted = true
- 				}
--
--				contentDeltaJSON := `{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":""}}`
--				contentDeltaJSONBytes := []byte(contentDeltaJSON)
--				contentDeltaJSONBytes, _ = sjson.SetBytes(contentDeltaJSONBytes, "index", param.TextContentBlockIndex)
--				contentDeltaJSONBytes, _ = sjson.SetBytes(contentDeltaJSONBytes, "delta.text", content.String())
--				results = append(results, translatorcommon.AppendSSEEventBytes(nil, "content_block_delta", contentDeltaJSONBytes, 2))
--
--				// Accumulate content
--				param.ContentAccumulator.WriteString(content.String())
+-					return true
+-				})
+-			} else if content.Type == ojson.String && content.String() != "" {
+-				emitStreamingTextDelta(param, content.String(), &results)
++				}
 +			} else {
 +				emitOpenAITextDelta(param, &results, content.String())
  			}
  		}
  
-@@ -460,6 +410,126 @@ func convertOpenAIStreamingChunkToAnthropic(rawJSON []byte, param *ConvertOpenAI
+@@ -411,6 +409,126 @@ func convertOpenAIStreamingChunkToAnthropic(rawJSON []byte, param *ConvertOpenAI
  	return results
  }
  
 +// decodeOpenAIContentChunks accepts only the text/thinking array shape. If any
 +// chunk is unsupported or malformed, callers retain their original array path
 +// instead of consuming part of an unfamiliar provider response.
-+func decodeOpenAIContentChunks(content gjson.Result) ([]InterleavedContentChunk, bool) {
++func decodeOpenAIContentChunks(content ojson.Result) ([]InterleavedContentChunk, bool) {
 +	if !content.IsArray() {
 +		return nil, false
 +	}
@@ -418,7 +371,7 @@ index 7cdf707b..4f5ce35b 100644
 +		switch item.Get("type").String() {
 +		case "text":
 +			text := item.Get("text")
-+			if text.Type != gjson.String {
++			if text.Type != ojson.String {
 +				return nil, false
 +			}
 +			chunks = append(chunks, InterleavedContentChunk{Type: "text", Text: text.String()})
@@ -435,14 +388,14 @@ index 7cdf707b..4f5ce35b 100644
 +	return chunks, true
 +}
 +
-+func openAIThinkingChunkText(item gjson.Result) (string, bool) {
++func openAIThinkingChunkText(item ojson.Result) (string, bool) {
 +	thinking := item.Get("thinking")
 +	if !thinking.IsArray() {
 +		return "", false
 +	}
 +	var text strings.Builder
 +	for _, nested := range thinking.Array() {
-+		if !nested.IsObject() || nested.Get("type").String() != "text" || nested.Get("text").Type != gjson.String {
++		if !nested.IsObject() || nested.Get("type").String() != "text" || nested.Get("text").Type != ojson.String {
 +			return "", false
 +		}
 +		text.WriteString(nested.Get("text").String())
@@ -471,15 +424,15 @@ index 7cdf707b..4f5ce35b 100644
 +			}
 +			contentBlockStartJSON := `{"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":""}}`
 +			contentBlockStartJSONBytes := []byte(contentBlockStartJSON)
-+			contentBlockStartJSONBytes, _ = sjson.SetBytes(contentBlockStartJSONBytes, "index", param.ThinkingContentBlockIndex)
++			contentBlockStartJSONBytes, _ = ojson.SetBytes(contentBlockStartJSONBytes, "index", param.ThinkingContentBlockIndex)
 +			*results = append(*results, translatorcommon.AppendSSEEventBytes(nil, "content_block_start", contentBlockStartJSONBytes, 2))
 +			param.ThinkingContentBlockStarted = true
 +		}
 +
 +		thinkingDeltaJSON := `{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":""}}`
 +		thinkingDeltaJSONBytes := []byte(thinkingDeltaJSON)
-+		thinkingDeltaJSONBytes, _ = sjson.SetBytes(thinkingDeltaJSONBytes, "index", param.ThinkingContentBlockIndex)
-+		thinkingDeltaJSONBytes, _ = sjson.SetBytes(thinkingDeltaJSONBytes, "delta.thinking", reasoningText)
++		thinkingDeltaJSONBytes, _ = ojson.SetBytes(thinkingDeltaJSONBytes, "index", param.ThinkingContentBlockIndex)
++		thinkingDeltaJSONBytes, _ = ojson.SetBytes(thinkingDeltaJSONBytes, "delta.thinking", reasoningText)
 +		*results = append(*results, translatorcommon.AppendSSEEventBytes(nil, "content_block_delta", thinkingDeltaJSONBytes, 2))
 +	}
 +}
@@ -507,15 +460,15 @@ index 7cdf707b..4f5ce35b 100644
 +			}
 +			contentBlockStartJSON := `{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`
 +			contentBlockStartJSONBytes := []byte(contentBlockStartJSON)
-+			contentBlockStartJSONBytes, _ = sjson.SetBytes(contentBlockStartJSONBytes, "index", param.TextContentBlockIndex)
++			contentBlockStartJSONBytes, _ = ojson.SetBytes(contentBlockStartJSONBytes, "index", param.TextContentBlockIndex)
 +			*results = append(*results, translatorcommon.AppendSSEEventBytes(nil, "content_block_start", contentBlockStartJSONBytes, 2))
 +			param.TextContentBlockStarted = true
 +		}
 +
 +		contentDeltaJSON := `{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":""}}`
 +		contentDeltaJSONBytes := []byte(contentDeltaJSON)
-+		contentDeltaJSONBytes, _ = sjson.SetBytes(contentDeltaJSONBytes, "index", param.TextContentBlockIndex)
-+		contentDeltaJSONBytes, _ = sjson.SetBytes(contentDeltaJSONBytes, "delta.text", text)
++		contentDeltaJSONBytes, _ = ojson.SetBytes(contentDeltaJSONBytes, "index", param.TextContentBlockIndex)
++		contentDeltaJSONBytes, _ = ojson.SetBytes(contentDeltaJSONBytes, "delta.text", text)
 +		*results = append(*results, translatorcommon.AppendSSEEventBytes(nil, "content_block_delta", contentDeltaJSONBytes, 2))
 +
 +		// Accumulate content
@@ -526,44 +479,30 @@ index 7cdf707b..4f5ce35b 100644
  // convertOpenAIDoneToAnthropic handles the [DONE] marker and sends final events
  func convertOpenAIDoneToAnthropic(param *ConvertOpenAIResponseToAnthropicParams) [][]byte {
  	var results [][]byte
-@@ -499,9 +569,21 @@ func convertOpenAINonStreamingToAnthropic(rawJSON []byte) [][]byte {
+@@ -449,7 +567,25 @@ func convertOpenAINonStreamingToAnthropic(rawJSON []byte) [][]byte {
+ 		}
  
- 		// Handle text content
- 		if content := choice.Get("message.content"); content.Exists() && content.String() != "" {
--			block := []byte(`{"type":"text","text":""}`)
--			block, _ = sjson.SetBytes(block, "text", content.String())
--			contentBlocks = append(contentBlocks, block)
+ 		hasToolCall := false
+-		appendOpenAINonStreamingMessageContent(choice.Get("message.content"), nil, &contentBlocks, &hasToolCall)
++		// Handle text content: all of an array's chunks decode, or the array
++		// keeps the raw-text fallback.
++		if content := choice.Get("message.content"); content.Exists() && content.String() != "" {
 +			if chunks, ok := decodeOpenAIContentChunks(content); ok {
 +				for _, chunk := range chunks {
 +					if chunk.Text == "" {
 +						continue
 +					}
 +					block := []byte(`{"type":""}`)
-+					block, _ = sjson.SetBytes(block, "type", chunk.Type)
-+					block, _ = sjson.SetBytes(block, chunk.Type, chunk.Text)
++					block, _ = ojson.SetBytes(block, "type", chunk.Type)
++					block, _ = ojson.SetBytes(block, chunk.Type, chunk.Text)
 +					contentBlocks = append(contentBlocks, block)
 +				}
 +			} else {
 +				block := []byte(`{"type":"text","text":""}`)
-+				block, _ = sjson.SetBytes(block, "text", content.String())
++				block, _ = ojson.SetBytes(block, "text", content.String())
 +				contentBlocks = append(contentBlocks, block)
 +			}
- 		}
++		}
  
  		// Handle tool calls
-@@ -911,6 +993,15 @@ func ConvertOpenAIResponseToClaudeNonStream(_ context.Context, _ string, origina
- 									return true
- 								})
- 							}
-+						case "thinking":
-+							if text, ok := openAIThinkingChunkText(item); ok {
-+								flushText()
-+								thinkingBuilder.WriteString(text)
-+							} else {
-+								// Malformed chunks keep the unknown-type behavior.
-+								flushThinking()
-+								flushText()
-+							}
- 						case "reasoning":
- 							flushText()
- 							if thinking := item.Get("text"); thinking.Exists() {
+ 		if toolCalls := choice.Get("message.tool_calls"); toolCalls.Exists() && toolCalls.IsArray() {

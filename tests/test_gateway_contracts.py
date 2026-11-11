@@ -648,7 +648,7 @@ class KimiCompatAuthTests(GatewayTests):
 
     def test_custom_authorization_header_never_displaces_x_api_key(self):
         alias = self.alias("gwtest-cch")
-        version = catalog.load_catalog(FIXTURE_ROOT).docs["native-contract"]["verified"][0]["version"]
+        version = harness.NATIVE_CLIENT_BASELINE
         for identity in (False, True):
             for stream in (False, True):
                 headers, body = {}, {}
@@ -687,7 +687,7 @@ class KimiCompatAuthTests(GatewayTests):
         # reach the provider as the client sent them. An explicit cloak mode
         # `never` would strip them (uncloak on keys without the CLI profile).
         alias = self.alias("gwtest-cc", "output-config-high", levels=())
-        version = catalog.load_catalog(FIXTURE_ROOT).docs["native-contract"]["verified"][0]["version"]
+        version = harness.NATIVE_CLIENT_BASELINE
         session = str(uuid.uuid4())
         user_agent = f"claude-cli/{version} (external, cli)"
         client = ("x-app", "x-stainless-lang", "x-stainless-os", "x-stainless-arch", "x-stainless-runtime",

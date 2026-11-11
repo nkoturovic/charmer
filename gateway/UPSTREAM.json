@@ -3,49 +3,49 @@
   "upstream": {
     "name": "CLIProxyAPI",
     "repository": "https://github.com/router-for-me/CLIProxyAPI",
-    "tag": "v8.0.45",
-    "version": "8.0.45",
-    "commit": "ad8bdd3f20bef44f0684b8a6096a216b2c76040d",
+    "tag": "v8.0.67",
+    "version": "8.0.67",
+    "commit": "8bba7a77c6bcbfd993516d26606bfecaa4ff49d0",
     "license": "MIT",
     "module": "github.com/router-for-me/CLIProxyAPI/v8",
     "main_package": "./cmd/server",
     "binary": "cli-proxy-api"
   },
   "source": {
-    "archive_url": "https://github.com/router-for-me/CLIProxyAPI/archive/ad8bdd3f20bef44f0684b8a6096a216b2c76040d.tar.gz",
-    "archive_file": "CLIProxyAPI-ad8bdd3f20bef44f0684b8a6096a216b2c76040d.tar.gz",
-    "archive_sha256": "ab8d4949a0f917f91315ba44f65b60755068dd06129046ed3bd2470f742058c4",
-    "tree_sha256": "8622fbae6524ea5270e6fb146d8c4b121bd1edac818f473724cb4b9c7e4ff670",
-    "nix_hash": "sha256-SXTU9blCCVLDKCP84/giO01m+DCI5ab2EgOKK9AdLwk="
+    "archive_url": "https://github.com/router-for-me/CLIProxyAPI/archive/8bba7a77c6bcbfd993516d26606bfecaa4ff49d0.tar.gz",
+    "archive_file": "CLIProxyAPI-8bba7a77c6bcbfd993516d26606bfecaa4ff49d0.tar.gz",
+    "archive_sha256": "813caa36cbd4d0ec30fc9bc08bcf81d3756e86e51b76b252f1241c9a02309fa0",
+    "tree_sha256": "b5d5b0841753df5a71fb0bd860d00a396d5c107d028d0107059f3e6e67c8dbda",
+    "nix_hash": "sha256-njk9i5JbHvJ3lTB7Bn0wTxFtmcJ5MEokgdOHNhzDPPY="
   },
   "vendor": {
-    "tree_sha256": "76d091bba83a1ee3277579553ff681ef44b0793792acff0ceb04dd39c4989ee5",
-    "nix_hash": "sha256-iBD25GOoCTy7qdlay0YevhoxK6ObhpyJUg0NDxy4rcA=",
+    "tree_sha256": "6330e01116c088c4d72e3a51557bc6c1a77e8b6f536532c7161f6cb03f362773",
+    "nix_hash": "sha256-Axnzm6yjN68P25Zvf0cc1+Bh7A9ic6+OVH20VQWYdLA=",
     "modules_patch": {
       "basename": "cli-proxy-api-module-requirements.patch",
-      "sha256": "32e75243d5515478d0d263ac6fb6a62698fa708e9458ee1e3337a92be66e19b6"
+      "sha256": "59fe6b36e3542947cdb7265c21ac07312916ff2c1208f3a54296d578db5975f2"
     }
   },
   "toolchain": {
-    "version": "1.27.3",
+    "version": "1.27.4",
     "source": "https://go.dev/dl/?mode=json&include=all",
     "url_prefix": "https://go.dev/dl/",
     "archives": {
       "linux-amd64": {
-        "file": "go1.27.3.linux-amd64.tar.gz",
-        "sha256": "65efbc80fdc1fa2cd2631cad5b481777a68e8725f34e89f50fc6ac714e379b40"
+        "file": "go1.27.4.linux-amd64.tar.gz",
+        "sha256": "7226736c2339719cda28fbf3a54d71aa63bcefe376e98cef00034268dab24840"
       },
       "linux-arm64": {
-        "file": "go1.27.3.linux-arm64.tar.gz",
-        "sha256": "a06e99309dbcbdca1a8ccd2282c3ee146e55930886e26b4f1193269587165f49"
+        "file": "go1.27.4.linux-arm64.tar.gz",
+        "sha256": "3392582988a273a87ab5043ee1b2c9c17a2c3c00580bf9326c47a2e0aaaeac92"
       },
       "darwin-arm64": {
-        "file": "go1.27.3.darwin-arm64.tar.gz",
-        "sha256": "dd3908cf20959d798c1e06ebe5b72213f0505ce01373b40ce3110975a6cd99c2"
+        "file": "go1.27.4.darwin-arm64.tar.gz",
+        "sha256": "91a44a2b8a716600ad94a4f143e156116620db8828086a6e3602291be9bd0bb4"
       },
       "darwin-amd64": {
-        "file": "go1.27.3.darwin-amd64.tar.gz",
-        "sha256": "b6f8e931e4ab497fcde6da8ae4499a58f9d258e55c8a80824a516eae5950a750"
+        "file": "go1.27.4.darwin-amd64.tar.gz",
+        "sha256": "2b799377704ef12db39bd254995d5c348c9cc8d86562ca817724390e56c38f43"
       }
     }
   },
@@ -57,77 +57,77 @@
     },
     {
       "basename": "cli-proxy-api-kimi-claude-compat.patch",
-      "sha256": "b75ee784dc93654590ca4eda8146387185fddb708d614a43c051fec7064f40c2",
+      "sha256": "2d4f9b1fedc2b191ed2f7fb42437537f1ea592b170f4fe1f0f82b7fbee440bc1",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-non-claude-cache-retention.patch",
-      "sha256": "8bf1eb83abdfaed8cc10774c724f909a0f7a6b45fe786f02853ddc3271a6bc76",
+      "sha256": "067dc33b0187d763b720a287e01c3d72e244714ae388097723080b5149cbc5e9",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-management-readonly-allowlist.patch",
-      "sha256": "f59ae6341725fa7d0748fa11cd779623a68897aec943a551b91921807b285977",
+      "sha256": "7bf1e6965a20c69d9ade6b47b6e007570d7a0e8a41d17750423420fda924b743",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-watcher-parentdir.patch",
-      "sha256": "00b666332d85bc3174214831f064be2ea3e4dc37ad419ca7b8e782ae4b657e62",
+      "sha256": "e7817eede617d5cb287a69ef007d04a507d512fe5b2985f89dd7054c90786b77",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-serve-after-initial-auth-load.patch",
-      "sha256": "2f9d4b87c9ffd1ff10d816ab870661b4ddd756a0d3b8e85daae3d1189903a9d5",
+      "sha256": "f35a59f1704410ad73fb19da6291ad0d905debf02b4268e6390d5aec2d9e4ed4",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-management-env-only.patch",
-      "sha256": "851b905b7d6699a4cd95b186d721fa7f3dab98ec0cf19cc4550f091a58c3f519",
+      "sha256": "3b9a0c11b00d861c54dde25e8bef394603b881432b3cb9aab3afb526bea7c74c",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-credential-save-report.patch",
-      "sha256": "2d081f8e4ac74362a3c2e8c6dc6e40118e24826fe480d559c49750f752b2b6ef",
+      "sha256": "b0a303e3903dc905c0f59e522f08f8b3fd6abd61932939b2d6f36a9f69927b7f",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-credentialed-redirects.patch",
-      "sha256": "501cd1bcb606b01a24f0677428d840374f45546e723070143e549ef46e8c02d8",
+      "sha256": "a10f59a46c4d7d9fee5033f5781aee2729ae3bda2c99f2d529523590ce93be8f",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-openai-compat-keyed-safety.patch",
-      "sha256": "89921f21bf34416ccb46df5f8cffbb676df89fc30935b11412eae136c8724031",
+      "sha256": "b3a03baee2d87454a29190d660059ab670120ac1d97c08e15f2551793afafd95",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-auth-snapshot-locking.patch",
-      "sha256": "b19adc4d432b6095de27f3e73125acb3d9c9a1f67bf7171d8446afaeb73e3402",
+      "sha256": "875e7d398cfe79a537f39fa4778e9e74f0a3599c7fe4f0cd1299e4f281053712",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-server-config-snapshot.patch",
-      "sha256": "ece8ee8a4218fc28617bac2fdee4a0fcdc6c5bf8b846717e542b4273181d8aff",
+      "sha256": "58bc1434a85f5e439344a4dcbe331b1864c2259cb024615176329d8658635343",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-claude-metadata-locking.patch",
-      "sha256": "48122ca2d4e9086e8fac89bdcf61d3b1f3f3647a69d1589d8fac9bf4bf65f1cb",
+      "sha256": "f6490bfa8e2be77136d7f319895cfaf5731448da64c1d39997ce09e030c32312",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-oauth-model-overlay.patch",
-      "sha256": "77d8c60cd28e8d6ae989703a716ba482f5b1c64e7b43b30ec4f0f177061606b4",
+      "sha256": "8dcf8777a76bdc9fd958c53a42e991cb5655045eec6de406e25ed6db0af02a88",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-no-antigravity-egress.patch",
-      "sha256": "beb48ca92a47038192729f3a1bb8e03daaf4727add5a6ec8888c6c083a3dfab7",
+      "sha256": "fe3bce1ebf16dfe3738d060f0a7c5dfa9b6d2837fc12242d2bf30ce392afa105",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-codex-client-identity.patch",
-      "sha256": "54c95f1d955395fd7b7582be35c2c925876794e2726fce3c76c1a04ef6cdf922",
+      "sha256": "cebf35a42eae5a798e856f9826da64ebd0498c6c93cc0b64a91fe2ee20887de5",
       "admitted": true
     },
     {
@@ -137,17 +137,17 @@
     },
     {
       "basename": "cli-proxy-api-codex-api-key-safety.patch",
-      "sha256": "03a70b44e0d3e29c8c7b7fe3ae7c161bfb0eaafb123fae31c41d71bbd369ca9d",
+      "sha256": "e17b17d0867e78199657483f5ac270c0b231e2bdfcfd0f66f1c725548ee7b2e4",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-refresh-shutdown-join.patch",
-      "sha256": "b7938047ff69143ca5590920db59d638b75851d10a6a7d3c04cac22c825116ba",
+      "sha256": "04a370f1a0988bafd8172e9d59958e1f8862452ee0a5eee000e250d9a5fab068",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-openai-content-chunks.patch",
-      "sha256": "bdba665a23e23894a9d03943cccfaafdad956e0af12676b989025cc5383b310e",
+      "sha256": "ea9447511efea48358cdaf15903e50ca0c0fc8847ae7337f2bda6d8eba0467f8",
       "admitted": true
     },
     {
@@ -157,32 +157,42 @@
     },
     {
       "basename": "cli-proxy-api-output-cap.patch",
-      "sha256": "a8fc3083686cdb96ae04d5cb3ed5dab6c3d545a8b86c31e167b1ee524601048a",
+      "sha256": "4daca00e7711fa0d3d949483667ee492c34bd26670291d6b4715eb18bee8a550",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-context-error-normalization.patch",
-      "sha256": "e443d74142f2b1602c03c65604db8424e0557bafe2a93650dec7e10ca99ca6c4",
+      "sha256": "ef6b852fcd79a90d1cf1e492a20a9020246de161511004e0f4eef01177a5e2e3",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-log-reduction.patch",
-      "sha256": "a28bae2a00e5aef8360d1c79155f4fa2ce884f8e101583079edeb6f5a2c055dd",
+      "sha256": "e67332f3f289802cadecb6b94f4ff69331a6d70d4610c7ff8c892d8c72f89358",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-tool-call-integrity.patch",
-      "sha256": "a5db8c2443d271d7890c0aaaf86cc45a430641ffebf3d52d41ecdfba3ff25fa5",
+      "sha256": "8d5be253dce8ee3be366af4fd4c3120e7c0bd76531ef8e61872bf85c64dfb5b9",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-initial-registration.patch",
-      "sha256": "6ec7cd1d7b21c0466141fa546f37e3ec1499ed8a861370908774bff6fd07d8ba",
+      "sha256": "7305fddac2f68284d7354362e3af421f95066752714cf27eeb7c9fe1c3469bf5",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-terminal-rejection-reload.patch",
-      "sha256": "e8fba56c077c71bca71d6b20677b552156da8aa3fb446911072efe63f1267834",
+      "sha256": "d3a318e6c96b8e7f285f3ac228b599777a6b276848e704b3eca4dd16e0ba9f06",
+      "admitted": true
+    },
+    {
+      "basename": "cli-proxy-api-codex-refresh-without-journal.patch",
+      "sha256": "53f48b53806db0bc6b2d411a32467dfaa9a365e552de9d6b50e6473ed282d78e",
+      "admitted": true
+    },
+    {
+      "basename": "cli-proxy-api-native-advisor-beta-order.patch",
+      "sha256": "d4e9fc3ea76787cde7553c25a753e6888402bbac4d865788160a37303757f3fa",
       "admitted": true
     }
   ],
@@ -202,9 +212,9 @@
       "-w",
       "-buildid=",
       "-X",
-      "main.Version=8.0.45",
+      "main.Version=8.0.67",
       "-X",
-      "main.Commit=ad8bdd3f20bef44f0684b8a6096a216b2c76040d",
+      "main.Commit=8bba7a77c6bcbfd993516d26606bfecaa4ff49d0",
       "-X",
       "main.BuildDate=1970-01-01T00:00:00Z"
     ],
@@ -251,7 +261,7 @@
       "packages": [
         "./internal/runtime/executor"
       ],
-      "skip": "^(TestCodexWebsockets_KeepalivePingDuringUpload_Sessionless|TestDevinApplyPatchRejectionCarriesLogDiagnostic)$",
+      "skip": "^(TestCodexUnknownRefreshSurvivesForcedRefreshAndFileAlias)$",
       "platforms": "portable",
       "race": false,
       "count": null,
@@ -299,7 +309,7 @@
       "packages": [
         "./internal/api/..."
       ],
-      "skip": "^(TestRedisProtocol_SUBSCRIBE_UsageSendsSupportRefresh|TestRedisProtocol_SUBSCRIBE_ErrorsReceivesErrorEvents|TestRedisProtocol_AUTH_And_PopContracts|TestOAuthCallbackRouteSkipsManagementKeyMiddleware|TestManagementUsageRequiresManagementAuthAndPopsArray|TestManagementPluginsRouteRegistered|TestManagementResponseExposesPluginSupportHeaderForCORS|TestConfigV8ETagExposedForCORS|TestIssue5190ModelDetailLifecycle|TestIssue5190ModelDetailUsesVisibleCatalog|TestIssue5190ModelDetailHomeVisibility|TestAuditHomeCodexSearchBusyReturnsTrustedRetryAfter|TestAuditHomeCodexSearchBodyCloseBeforeRelease|TestHomeCodexAlphaSearchReportsUnauthorizedBeforeEarlyReturn|TestHomeCodexAlphaSearchEndsSelectionAcrossDirectHTTPPaths|TestCodexLiveRoutesRequireAuthAndAreRegistered|TestRealtimeStandardRoutesAndClientSecretAuth|TestCodexAlphaSearchForwardsRequest|TestCodexAlphaSearchUsesPluginProviderTargetModel|TestCodexAlphaSearchFallsBackWhenPluginDoesNotHandleRoute|TestCodexAlphaSearchRejectsUnsupportedPluginRouteTarget|TestCodexAlphaSearchSanitizesResponsesOnlyFields|TestCodexAlphaSearchCredentialPolicy|TestCodexAlphaSearchOptInAPIKeyUsesConfiguredEndpoint|TestCodexAlphaSearchOptInAPIKeyStripsCredentialPrefix|TestCodexAlphaSearchOptInAPIKeyResolvesModelAlias|TestCodexAlphaSearchOptInAPIKeyWithoutBaseURLFailsClosed|TestCodexAlphaSearchPassesGinContextToAuthSelection|TestCodexAlphaSearchUsesRequestIDForSessionAffinity|TestVideosRoutesKeepXAINativeAndExposeOpenAIPrefix|TestInteractionsRouteRegistered|TestRedisProtocol_MalformedAndOverflowFramesDoNotCrashServer|TestCodexAlphaSearchSIWCWithRealExecutor|TestSIWCManagementRouteAccessControl|TestCodexCallbackRejectsSIWCState|TestSIWCStatusEndpoint|TestModelsMultiAgentClientConfigAndReload|TestCaptureRequestInfoDoesNotDecodeASingleSegmentBomb)$",
+      "skip": "^(TestRedisProtocol_SUBSCRIBE_UsageSendsSupportRefresh|TestRedisProtocol_SUBSCRIBE_ErrorsReceivesErrorEvents|TestRedisProtocol_AUTH_And_PopContracts|TestOAuthCallbackRouteSkipsManagementKeyMiddleware|TestManagementUsageRequiresManagementAuthAndPopsArray|TestManagementPluginsRouteRegistered|TestManagementResponseExposesPluginSupportHeaderForCORS|TestConfigV8ETagExposedForCORS|TestIssue5190ModelDetailLifecycle|TestIssue5190ModelDetailUsesVisibleCatalog|TestIssue5190ModelDetailHomeVisibility|TestAuditHomeCodexSearchBusyReturnsTrustedRetryAfter|TestAuditHomeCodexSearchBodyCloseBeforeRelease|TestHomeCodexAlphaSearchReportsUnauthorizedBeforeEarlyReturn|TestHomeCodexAlphaSearchEndsSelectionAcrossDirectHTTPPaths|TestCodexLiveRoutesRequireAuthAndAreRegistered|TestRealtimeStandardRoutesAndClientSecretAuth|TestCodexAlphaSearchForwardsRequest|TestCodexAlphaSearchUsesPluginProviderTargetModel|TestCodexAlphaSearchFallsBackWhenPluginDoesNotHandleRoute|TestCodexAlphaSearchRejectsUnsupportedPluginRouteTarget|TestCodexAlphaSearchSanitizesResponsesOnlyFields|TestCodexAlphaSearchCredentialPolicy|TestCodexAlphaSearchOptInAPIKeyUsesConfiguredEndpoint|TestCodexAlphaSearchOptInAPIKeyStripsCredentialPrefix|TestCodexAlphaSearchOptInAPIKeyResolvesModelAlias|TestCodexAlphaSearchOptInAPIKeyWithoutBaseURLFailsClosed|TestCodexAlphaSearchPassesGinContextToAuthSelection|TestCodexAlphaSearchUsesRequestIDForSessionAffinity|TestVideosRoutesKeepXAINativeAndExposeOpenAIPrefix|TestInteractionsRouteRegistered|TestRedisProtocol_MalformedAndOverflowFramesDoNotCrashServer|TestCodexAlphaSearchSIWCWithRealExecutor|TestSIWCManagementRouteAccessControl|TestCodexCallbackRejectsSIWCState|TestSIWCStatusEndpoint|TestCaptureRequestInfoDoesNotDecodeASingleSegmentBomb)$",
       "platforms": "portable",
       "race": false,
       "count": null,
@@ -467,7 +477,8 @@
       "platforms": "portable",
       "race": false,
       "count": null,
-      "expected_tests": []
+      "expected_tests": [],
+      "skip": "^(TestRefreshTokensWithRetry_TerminalGrantErrorsOnlyAttemptOnce|TestRefreshOutcomeSurvivesLaterCallAndNewClient|TestRefreshJournalSurvivesProcessRestart|TestRefreshReceiptFollowsLaterRotation|TestRefreshRedirectCannotReplayGrant|TestRefreshHTTPFailureDoesNotProveReplaySafe|TestExpiredSameGrantReceiptRequiresRecovery|TestRelayQualificationAmbiguousRefreshMustNotReplay)$"
     },
     {
       "name": "race-sdk-cliproxy-auth",
@@ -894,7 +905,8 @@
         "TestContentChunksReasoningPrecedenceAndTools",
         "TestContentChunksFinishAndUsage",
         "TestContentChunksLegacyGoldens"
-      ]
+      ],
+      "skip": "^(TestStreaming_DeltaContentTypedPartsArrayPlainThinkingAndUnknownPassthrough|TestNonStream_WhitespaceReasoningNeverOpensThinkingBlock)$"
     },
     {
       "name": "charmer-model-ids",
@@ -1048,6 +1060,46 @@
         "TestRefreshAuthStatePreservesUnreadableFile",
         "TestFullScanPreservesAuthsInUnreadableDir"
       ]
+    },
+    {
+      "name": "codex-refresh-without-journal",
+      "packages": [
+        "./internal/runtime/executor"
+      ],
+      "run": "^(TestCodexRefreshWithoutJournalFailureBeforeSendRecovers|TestCodexRefreshWithoutJournalRotatedTokensAreUsedAndSaved|TestCodexRefreshWithoutJournalUnsentExchangeHoldsNothing|TestCodexRefreshWithoutJournalRateLimitAndUnavailableAreRetried|TestCodexRefreshWithoutJournalLeftClaimDoesNotHoldTheGrant|TestCodexRefreshWithoutJournalWritesNoJournalFile)$",
+      "platforms": "portable",
+      "race": false,
+      "count": null,
+      "expected_tests": [
+        "TestCodexRefreshWithoutJournalFailureBeforeSendRecovers",
+        "TestCodexRefreshWithoutJournalRotatedTokensAreUsedAndSaved",
+        "TestCodexRefreshWithoutJournalUnsentExchangeHoldsNothing",
+        "TestCodexRefreshWithoutJournalRateLimitAndUnavailableAreRetried",
+        "TestCodexRefreshWithoutJournalLeftClaimDoesNotHoldTheGrant",
+        "TestCodexRefreshWithoutJournalWritesNoJournalFile"
+      ]
+    },
+    {
+      "name": "plugin-host",
+      "packages": [
+        "./internal/pluginhost"
+      ],
+      "skip": "^(TestHostHTTPClientStripsCredentialHeadersOnCrossOriginRedirect|TestHostHTTPClientStripsNonCanonicalCredentialHeaderKeysOnRedirect|TestHostHTTPClientKeepsCredentialsStrippedAcrossRedirectChain|TestSameRedirectOriginAndRedirectLimit)$",
+      "platforms": "portable",
+      "race": false,
+      "count": null,
+      "expected_tests": []
+    },
+    {
+      "name": "util",
+      "packages": [
+        "./internal/util"
+      ],
+      "skip": "^(TestInPlaceByteWritesAreReviewed)$",
+      "platforms": "portable",
+      "race": false,
+      "count": null,
+      "expected_tests": []
     }
   ],
   "source_pins": [
@@ -1124,6 +1176,10 @@
     {
       "patch": "cli-proxy-api-log-reduction.patch",
       "text": "Use API key [redacted] for model %s%s"
+    },
+    {
+      "patch": "cli-proxy-api-codex-refresh-without-journal.patch",
+      "text": "failed to parse refresh response: missing or invalid token fields"
     }
   ]
 }

@@ -43,7 +43,7 @@ def _oauth_lines(raw_docs):
 # that source byte for byte). A gateway re-pin regenerates it and updates
 # these recorded identities in the same change.
 REGISTRY_SNAPSHOT_SHA256 = {
-    "models.json": "32f663de911083339cf5347be74b0b4cbf1471bc1968362897cc94ebf021c306",
+    "models.json": "4a52db3f1e4cdc10d045347f758b875fb2c4cbc148ae48ded43afb27037bd0e9",
     "codex_client_models.json": "811fab5cea2a1ae61fc83c55613405aacd7d81f0cd1be3a1756f495c77a9e2c5",
 }
 
@@ -95,7 +95,7 @@ class RegistrySnapshotTests(unittest.TestCase):
     def test_reviewed_static_thinking_facts(self) -> None:
         models = json.loads((REGISTRY_SNAPSHOT / "models.json").read_bytes())
         claude = {entry["id"]: entry for entry in models["claude"]}
-        for wire in ("claude-opus-5-5", "claude-fable-5", "claude-fable-5-1"):
+        for wire in ("claude-opus-5-5", "claude-fable-5", "claude-fable-5-1", "claude-fable-5-2"):
             with self.subTest(wire=wire):
                 self.assertEqual(claude[wire]["thinking"], {
                     "zero_allowed": False, "dynamic_allowed": True,
@@ -107,6 +107,22 @@ class RegistrySnapshotTests(unittest.TestCase):
             self.assertIs(claude[wire]["thinking"]["dynamic_allowed"], True)
         self.assertEqual(claude["claude-sonnet-5-5"]["thinking"]["disable_type"], "between_tools")
         self.assertNotIn("disable_type", claude["claude-haiku-5-5"]["thinking"])
+
+    def test_fable_5_2_is_a_static_claude_entry(self) -> None:
+        # FA8: the snapshot lists claude-fable-5-2 (19a0a854) once, in the
+        # Claude section, with what the launcher reads (presence and meta:
+        # display name, window, output, efforts, created), so the fable line
+        # needs no registry overlay (its static thinking facts are in the row
+        # above). No generic row covers it: the presence rule runs the frozen
+        # fixture catalog, and the shipped fable line was still 5.1.
+        models = json.loads((REGISTRY_SNAPSHOT / "models.json").read_bytes())
+        self.assertEqual(sum(entry["id"] == "claude-fable-5-2" for entry in models["claude"]), 1)
+        self.assertEqual([section for section, rows in models.items()
+                          if any(entry.get("id") == "claude-fable-5-2" for entry in rows)], ["claude"])
+        registry = catalog.load_pinned_registry(REGISTRY_SNAPSHOT)
+        self.assertIn("claude-fable-5-2", registry.sections["claude"])
+        self.assertEqual(registry.meta["claude"]["claude-fable-5-2"], catalog.RegistryModel(
+            "Claude Fable 5.2", 1000000, 128000, ("low", "medium", "high", "xhigh", "max"), 1794250800))
 
     def test_sol_static_listing_does_not_rewrite_trusted_bounds(self) -> None:
         from _catalog import SHIPPED_ROOT
@@ -143,6 +159,30 @@ class RegistrySnapshotTests(unittest.TestCase):
         for name in catalog.REGISTRY_FILES:
             with self.subTest(name=name):
                 self.assertEqual((REGISTRY_SNAPSHOT / name).read_bytes(), (source / name).read_bytes())
+
+
+@uses_shipped_catalog
+class KeyedFableRouteTests(unittest.TestCase):
+    def test_no_keyed_claude_compatible_fable_route_is_shipped(self) -> None:
+        # FA5's known limit stays out of the shipped product: the gateway gives
+        # a Fable model on a keyed Claude-compatible route (OpenRouter's
+        # anthropic/claude-fable-5.2, say) upstream's preserved-thinking
+        # binding, so the shipped catalog renders no such route: no line,
+        # retired line or passthrough route of a Claude-compatible key
+        # provider names a Fable wire. An operator's own line may.
+        from _catalog import SHIPPED_ROOT
+
+        bundle = catalog.load_catalog(SHIPPED_ROOT)
+        keyed = {key for key, provider in bundle.providers.items()
+                 if provider["adapter"] == "cliproxy-claude-compatible-v1"}
+        self.assertIn("openrouter", keyed)
+        wires = [(key, line["wire_model"]) for key, line in bundle.lines.items() if line["provider"] in keyed]
+        wires += [(key, entry.get("last_wire", "")) for key, entry in bundle.retired.items()
+                  if entry.get("provider") in keyed]
+        wires += [(key, route["name"]) for key in keyed
+                  for route in bundle.providers[key].get("passthrough_routes", [])]
+        self.assertTrue(wires)
+        self.assertEqual([item for item in wires if "fable" in item[1].lower()], [])
 
 
 class PinnedRegistryTests(unittest.TestCase):

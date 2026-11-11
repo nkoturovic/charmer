@@ -10,7 +10,7 @@ import time
 import unittest
 import uuid
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 from charmer import probe, render, state
 from _catalog import SHIPPED_ROOT, uses_shipped_catalog
@@ -104,6 +104,51 @@ class LoopbackOAuthListenerTests(unittest.TestCase):
 
     def test_fallback_listener_probe_inside_namespace(self):
         self.check_login("claude", "LO1-A", "A")
+
+    def test_claude_authorize_url_carries_native_state_and_scope(self):
+        # The Claude sign-in's authorize URL, as the built binary prints it:
+        # a 43-character base64url state (32 random bytes, as the native
+        # client sends) and org:create_api_key in the authorize scope; no
+        # other parameter carries that scope.
+        binary = gateway_binary()
+        with tempfile.TemporaryDirectory(prefix="gwtest-login-") as directory:
+            root = Path(directory).resolve()
+            auth = root / "auth"
+            state.ensure_private_dir(auth)
+            port, _ = harness.ports()
+            config = root / "config.yaml"
+            state.atomic_write(config, (f'host: 127.0.0.1\nauth-dir: "{auth}"\n'
+                'discovery: {enabled: false}\nremote-management: {disable-control-panel: true}\n').encode())
+            argv = [binary, "--config", str(config), "--claude-login", "--no-browser",
+                    "--oauth-callback-port", str(port)]
+            log_path = root / "login.log"
+            printed = re.compile(r"Visit the following URL to continue authentication:\n(\S+)\n")
+            with log_path.open("wb") as log:
+                process = probe.start_isolated_process(argv, cwd=root,
+                    env={"HOME": str(root), "PATH": "/usr/bin:/bin"}, stdout=log, stderr=subprocess.STDOUT)
+                try:
+                    deadline = time.monotonic() + 10
+                    match = printed.search(log_path.read_text())
+                    while match is None and time.monotonic() < deadline:
+                        self.assertIsNone(process.poll(), "Claude login exited before printing the authorize URL")
+                        time.sleep(0.02)
+                        match = printed.search(log_path.read_text())
+                    self.assertIsNotNone(match, "the authorize URL was not printed")
+                finally:
+                    probe.stop_isolated_process(process)
+        url = urlsplit(match.group(1))
+        query = parse_qs(url.query, keep_blank_values=True, strict_parsing=True)
+        self.assertEqual(url.scheme, "https")
+        self.assertEqual(len(query.get("state", ())), 1, "one state parameter")
+        self.assertRegex(query["state"][0], r"^[A-Za-z0-9_-]{43}$")
+        self.assertEqual(len(query.get("scope", ())), 1, "one scope parameter")
+        scopes = query["scope"][0].split(" ")
+        self.assertEqual(scopes.count("org:create_api_key"), 1, scopes)
+        self.assertFalse([name for name, values in query.items() if name != "scope"
+                          for value in values if "org:create_api_key" in value])
+        redirect = urlsplit(query["redirect_uri"][0])
+        self.assertTrue(redirect.hostname == "localhost" or harness.loopback_listener(redirect.hostname), redirect)
+        record("SI1", state_length=len(query["state"][0]), scopes=scopes)
 
 
 class GatewayListenerTests(unittest.TestCase):
@@ -374,6 +419,9 @@ class PatchOmissionProbeTests(unittest.TestCase):
     def test_terminal_rejection_reload(self):
         self.check_probe("service", "TestOmissionTerminalRejectionReload", "TR1")
 
+    def test_codex_refresh_without_journal(self):
+        self.check_probe("executor", "TestOmissionCodexRefreshWithoutJournal", "RJ1")
+
     def test_relogin_after_refresh_failure(self):
         # Upstream's re-login recovery since 8.0.43 (21553509; local patch 33
         # retired): a regression row with no patch to omit.
@@ -615,8 +663,9 @@ class ContentChunkRouteInventoryTests(unittest.TestCase):
     def test_goldens_are_independent_omission_controls(self):
         import check_gateway_patch_revert as tool
         patch = "cli-proxy-api-openai-content-chunks.patch"
-        self.assertEqual(len(harness.PATCH_ROWS[patch]), 2)
-        self.assertEqual(len(harness.PATCH_CONTROL_ROWS[patch]), 2)
+        self.assertEqual(len(harness.PATCH_ROWS[patch]), len(STREAMED_NONSTANDARD_PARTS))
+        self.assertEqual(len(harness.PATCH_CONTROL_ROWS[patch]), 4)
+        self.assertLessEqual(set(STREAMED_NONSTANDARD_PARTS), set(harness.CONTENT_CHUNK_LEGACY_MESSAGES))
         for control in harness.PATCH_CONTROL_ROWS[patch]:
             self.assertIn(control, tool.test_ids())
             self.assertNotIn(control, harness.PATCH_ROWS[patch])
@@ -676,6 +725,9 @@ class MistralContentChunkTests(_ContentChunkFixture, unittest.TestCase):
         self.check_chunks(False, "MC2")
 
 
+STREAMED_NONSTANDARD_PARTS = ("unknown", "unknown_mixed", "malformed", "malformed_thinking")
+
+
 class ContentChunkGoldenTests(_ContentChunkFixture, unittest.TestCase):
     def check_golden(self, gateway, alias, route, case, stream):
         reply = harness.content_chunk_request(gateway, alias, stream=stream, mode=case)
@@ -697,12 +749,36 @@ class ContentChunkGoldenTests(_ContentChunkFixture, unittest.TestCase):
                         cases += 1
             for case in harness.CONTENT_CHUNK_LEGACY_MESSAGES:
                 for stream in (False, True):
+                    if stream and case in STREAMED_NONSTANDARD_PARTS:
+                        continue  # the patch's own rows below
                     with self.subTest(route=route, case=case, stream=stream):
                         self.check_golden(gateway, alias, route, case, stream)
                         cases += 1
         if self._outcome.success:
             record("MG1", status="passed", cases=cases, byte_identical=True,
                    shapes=list(harness.CONTENT_CHUNK_SHAPES), unknown_chunks="legacy-per-path")
+
+    # The openai-content-chunks patch's own rows: a streamed content array with
+    # an unknown, mixed or malformed part keeps the legacy bytes (the part
+    # shown as written, never dropped or re-read); pristine 8.0.67 drops the
+    # unknown part of a mixed array, sends a numeric text as a string and
+    # emits no block for a malformed thinking part.
+    def check_streamed_legacy(self, case):
+        for route, gateway, alias in self.routes:
+            with self.subTest(route=route):
+                self.check_golden(gateway, alias, route, case, True)
+
+    def test_streamed_unknown_part_keeps_legacy_bytes(self):
+        self.check_streamed_legacy("unknown")
+
+    def test_streamed_mixed_parts_keep_legacy_bytes(self):
+        self.check_streamed_legacy("unknown_mixed")
+
+    def test_streamed_malformed_part_keeps_legacy_bytes(self):
+        self.check_streamed_legacy("malformed")
+
+    def test_streamed_malformed_thinking_keeps_legacy_bytes(self):
+        self.check_streamed_legacy("malformed_thinking")
 
     def test_native_route_bytes(self):
         for alias in ("gwtest-cc-think-a", "gwtest-ccb-x", "gwtest-codex-e-none"):

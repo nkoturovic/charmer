@@ -1,8 +1,8 @@
 diff --git a/internal/translator/openai/claude/openai_claude_response.go b/internal/translator/openai/claude/openai_claude_response.go
-index 4f5ce35b..60b9f5e6 100644
+index 557e62b8..cfe3e6fc 100644
 --- a/internal/translator/openai/claude/openai_claude_response.go
 +++ b/internal/translator/openai/claude/openai_claude_response.go
-@@ -56,6 +56,9 @@ type ConvertOpenAIResponseToAnthropicParams struct {
+@@ -55,6 +55,9 @@ type ConvertOpenAIResponseToAnthropicParams struct {
  	// OmittedToolCallIndexes maps a chunk-local tool_calls array position to the
  	// active accumulator key when the upstream omits tool_calls[].index.
  	OmittedToolCallIndexes map[int]int
@@ -12,7 +12,7 @@ index 4f5ce35b..60b9f5e6 100644
  	// Index assigned to text content block
  	TextContentBlockIndex int
  	// Index assigned to thinking content block
-@@ -95,6 +98,9 @@ type ToolCallAccumulator struct {
+@@ -94,6 +97,9 @@ type ToolCallAccumulator struct {
  	// StartEmitted tracks whether content_block_start has already been sent
  	// for this tool index.
  	StartEmitted bool
@@ -22,7 +22,7 @@ index 4f5ce35b..60b9f5e6 100644
  }
  
  // ConvertOpenAIResponseToClaude converts OpenAI streaming response format to Anthropic API format.
-@@ -286,33 +292,15 @@ func convertOpenAIStreamingChunkToAnthropic(rawJSON []byte, param *ConvertOpenAI
+@@ -285,33 +291,15 @@ func convertOpenAIStreamingChunkToAnthropic(rawJSON []byte, param *ConvertOpenAI
  					incomingID = id.String()
  				}
  
@@ -70,7 +70,7 @@ index 4f5ce35b..60b9f5e6 100644
 +// accumulator. Explicit indexes and omitted array positions are separate
 +// namespaces; an index-less fragment whose ID a call already holds continues
 +// that call, and a different ID starts a new one.
-+func (p *ConvertOpenAIResponseToAnthropicParams) toolCallAccumulatorIndex(arrayIndex int, toolCall gjson.Result) int {
++func (p *ConvertOpenAIResponseToAnthropicParams) toolCallAccumulatorIndex(arrayIndex int, toolCall ojson.Result) int {
 +	id := toolCall.Get("id")
 +	if explicitIndex := toolCall.Get("index"); explicitIndex.Exists() {
 +		upstreamIndex := int(explicitIndex.Int())
@@ -116,9 +116,9 @@ index 4f5ce35b..60b9f5e6 100644
 +	return index
 +}
 +
-+func (p *ConvertOpenAIResponseToAnthropicParams) toolCallAccumulatorIndexByID(id gjson.Result) (int, bool) {
++func (p *ConvertOpenAIResponseToAnthropicParams) toolCallAccumulatorIndexByID(id ojson.Result) (int, bool) {
 +	found := -1
-+	if id.Type == gjson.String && id.String() != "" {
++	if id.Type == ojson.String && id.String() != "" {
 +		for index, accumulator := range p.ToolCallsAccumulator {
 +			if accumulator != nil && accumulator.ID == id.String() && (found == -1 || index < found) {
 +				found = index
@@ -128,8 +128,8 @@ index 4f5ce35b..60b9f5e6 100644
 +	return found, found != -1
 +}
 +
-+func toolCallIDCompatible(accumulator *ToolCallAccumulator, id gjson.Result) bool {
-+	return accumulator != nil && (id.Type != gjson.String || id.String() == "" || accumulator.ID == "" || id.String() == accumulator.ID)
++func toolCallIDCompatible(accumulator *ToolCallAccumulator, id ojson.Result) bool {
++	return accumulator != nil && (id.Type != ojson.String || id.String() == "" || accumulator.ID == "" || id.String() == accumulator.ID)
 +}
 +
 +func (p *ConvertOpenAIResponseToAnthropicParams) nextToolCallAccumulatorIndex() int {
@@ -145,7 +145,7 @@ index 4f5ce35b..60b9f5e6 100644
  func (p *ConvertOpenAIResponseToAnthropicParams) toolContentBlockIndex(openAIToolIndex int) int {
  	if idx, ok := p.ToolCallBlockIndexes[openAIToolIndex]; ok {
  		return idx
-@@ -780,7 +844,7 @@ func emitBelatedToolUseStart(param *ConvertOpenAIResponseToAnthropicParams, open
+@@ -951,7 +1015,7 @@ func emitBelatedToolUseStart(param *ConvertOpenAIResponseToAnthropicParams, open
  		return false
  	}
  	if accumulator.Name == "" {
@@ -154,7 +154,7 @@ index 4f5ce35b..60b9f5e6 100644
  	}
  	emitToolUseStart(param, openAIToolIndex, accumulator, results)
  	return true
-@@ -904,7 +968,20 @@ func toolCallAccumulatorIndexes(accumulators map[int]*ToolCallAccumulator) []int
+@@ -1075,7 +1139,20 @@ func toolCallAccumulatorIndexes(accumulators map[int]*ToolCallAccumulator) []int
  	for index := range accumulators {
  		indexes = append(indexes, index)
  	}
