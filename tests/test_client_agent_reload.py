@@ -11,10 +11,11 @@ fence), with the agent file changed four ways while the session runs:
 
 Each way, in one terminal session: a spawn on the old definition, the edit
 and a settle, a spawn without any reload, ``/reload-plugins``, a spawn, a
-SendMessage to the first agent (a resumed agent), exit; then a process
-resume of the same session and a spawn. Gated: after ``/reload-plugins`` and
-after a process resume a spawn carries the edit. Measured and printed for
-unit P: what a spawn without a reload and a resumed agent carry. The line:
+SendMessage to the first agent (a resumed agent) and its completion, exit
+(no background work left to ask about); then a process resume of the same
+session and a spawn. Gated: after ``/reload-plugins`` and after a process
+resume a spawn carries the edit. Measured and printed for unit P: what a
+spawn without a reload and a resumed agent carry. The line:
 ``client check agent-reload: <STATUS> <detail>``. Metadata only (models and
 definition labels).
 """
@@ -87,7 +88,12 @@ class AgentFileReloadTests(agents._SpikeRealBinaryTestCase):
             probe.PTYInteraction(b"CLIENTCHECK-NOTIFIED-spawn2", b"/reload-plugins\r"),
             probe.PTYInteraction(b"Reloaded", b"CLIENTCHECK-SPAWN-3 go\r"),
             probe.PTYInteraction(b"CLIENTCHECK-NOTIFIED-spawn3", b"CLIENTCHECK-SEND-4 go\r"),
-            probe.PTYInteraction(b"CLIENTCHECK-DONE-send4", b"/exit\r"),
+            # The SendMessage result (DONE) comes back while the resumed agent
+            # still runs in the background; /exit then would open the client's
+            # exit dialog about that work, which nothing answers. Leave after
+            # its completion notification, as the S lanes do.
+            probe.PTYInteraction(b"CLIENTCHECK-DONE-send4", b"", preserve_after_wait=True),
+            probe.PTYInteraction(b"CLIENTCHECK-NOTIFIED-send4", b"/exit\r"),
         ]
         with probe.FakeAnthropicProvider(responder=responder) as provider:
             self._run(("--session-id", session), steps, provider)
