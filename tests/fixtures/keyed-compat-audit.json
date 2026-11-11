@@ -12,7 +12,7 @@
           "client_sha256": "bfb3703ad5380242328459bc62ada4bde8ae7ba57c6e1eeadb9c00e08874c478",
           "errors": 0,
           "failures": 0,
-          "head": "326b6f9fde48e1a0ccd9aebe17ebcc5330a73766",
+          "head": "69bcead16185ee31dac368d98fff140a78369549",
           "inventory": {
             "J1": {
               "count": 9,
@@ -79,7 +79,7 @@
           },
           "journey_tests": 9,
           "keyed_client_budget_seconds": 900,
-          "keyed_client_seconds": 18.938,
+          "keyed_client_seconds": 18.815,
           "keyed_client_tests": 10,
           "keyed_identity": {
             "client_contract_sha256": "9fb6c56ea034fda7e187057883ab5796f38477dac2f72d5e6c6a1f8c2210325e",
@@ -122,7 +122,7 @@
               "schemas/providers.schema.json": "c13f85f84a1d2de669d930b81f26815c96295d55ee19ca5339cb802dbd5e5ff4",
               "src/charmer/catalog.py": "2a4a7527df16ad3c14d3842f1e293ea06a69190b0bc2c03c9a9f406b97345ab0",
               "src/charmer/cli/commands/models.py": "51e78f92b36883c4c0b04cbfc9857dadf0e62bb3dac3dccc161c9cd73d19d3b8",
-              "src/charmer/cli/commands/providers.py": "82287f82a7552b8156bdfc70a12150744b5d082e46dcdb71c4e8a42f6ee30d53",
+              "src/charmer/cli/commands/providers.py": "1566f30504e23cfdf824efc2fe978d2da9caaa2c7d7cf4f859e321db2c8d6d80",
               "src/charmer/compiler.py": "bbcf55c4602b2d68f42837a2c36dc979727e514482ae7d19d37d1074c06e6320",
               "src/charmer/discovery.py": "dcee867df7f0fba1b91cfa3574cbab779413134cd4faf0e22230783801a0fa75",
               "src/charmer/operator.py": "d6c593fbe6d8a19e47e16dc5d835198765a55ccd75a8e0b5fe3ab8ffb7e55d66",
@@ -178,7 +178,7 @@
             },
             {
               "path": "src/charmer/cli/commands/providers.py",
-              "sha256": "82287f82a7552b8156bdfc70a12150744b5d082e46dcdb71c4e8a42f6ee30d53"
+              "sha256": "1566f30504e23cfdf824efc2fe978d2da9caaa2c7d7cf4f859e321db2c8d6d80"
             },
             {
               "path": "src/charmer/data/schemas/gateway.schema.json",
@@ -205,7 +205,7 @@
           "skipped": 0,
           "status": "passed"
         },
-        "sha256": "731e9ca073ebdab5cb18525fb7c9ea64f9b32662a08f25bd46921ce02076b348"
+        "sha256": "c156adae90c751eb39ecb294d6b5e3a033d69ac872a991e8fde05e34dbbafdd3"
       },
       "tests.keyed_journeys.json": {
         "document": {
@@ -222,54 +222,54 @@
           "tables": {
             "J1": [
               {
-                "head": "326b6f9fde48e1a0ccd9aebe17ebcc5330a73766",
+                "head": "69bcead16185ee31dac368d98fff140a78369549",
                 "row": "tests.test_onboarding_isolation.KeyedJourneyTests.test_keyed_cli_changes_and_failed_qualification_remain_selectable_with_warnings",
                 "status": "passed"
               },
               {
-                "head": "326b6f9fde48e1a0ccd9aebe17ebcc5330a73766",
+                "head": "69bcead16185ee31dac368d98fff140a78369549",
                 "row": "tests.test_onboarding_isolation.KeyedJourneyTests.test_keyed_cli_declare_approve_apply_admit_qualify_bind",
                 "status": "passed"
               },
               {
-                "head": "326b6f9fde48e1a0ccd9aebe17ebcc5330a73766",
+                "head": "69bcead16185ee31dac368d98fff140a78369549",
                 "row": "tests.test_packaging.PackageSourceTests.test_package_payload_excludes_operator_credentials_and_grants",
                 "status": "passed"
               },
               {
-                "head": "326b6f9fde48e1a0ccd9aebe17ebcc5330a73766",
+                "head": "69bcead16185ee31dac368d98fff140a78369549",
                 "row": "tests.test_portability.KeyedPortabilityTests.test_keyed_import_closed_target_refuses_audit",
                 "status": "passed"
               },
               {
-                "head": "326b6f9fde48e1a0ccd9aebe17ebcc5330a73766",
+                "head": "69bcead16185ee31dac368d98fff140a78369549",
                 "row": "tests.test_portability.KeyedPortabilityTests.test_keyed_import_open_target_requires_local_route_and_key_not_admission",
                 "status": "passed"
               },
               {
-                "head": "326b6f9fde48e1a0ccd9aebe17ebcc5330a73766",
+                "head": "69bcead16185ee31dac368d98fff140a78369549",
                 "row": "tests.test_portability.KeyedPortabilityTests.test_keyed_import_rechecks_headers_origins_collisions",
                 "status": "passed"
               },
               {
-                "head": "326b6f9fde48e1a0ccd9aebe17ebcc5330a73766",
+                "head": "69bcead16185ee31dac368d98fff140a78369549",
                 "row": "tests.test_portability.KeyedPortabilityTests.test_keyed_import_uses_existing_single_commit_barrier",
                 "status": "passed"
               },
               {
-                "head": "326b6f9fde48e1a0ccd9aebe17ebcc5330a73766",
+                "head": "69bcead16185ee31dac368d98fff140a78369549",
                 "row": "tests.test_portability.KeyedPortabilityTests.test_keyed_json_export_has_logical_refs_and_no_store_reads",
                 "status": "passed"
               },
               {
-                "head": "326b6f9fde48e1a0ccd9aebe17ebcc5330a73766",
+                "head": "69bcead16185ee31dac368d98fff140a78369549",
                 "row": "tests.test_tui_pty.KeyedJourneyPTYTests.test_keyed_tui_optional_admission_qualification_and_binding",
                 "status": "passed"
               }
             ]
           }
         },
-        "sha256": "d46163a4bc8683ae14273408695d78a8bdf9284329d9570a20502dd654107f48"
+        "sha256": "1fdc8a5269d6e01ff55ddd7c05b4c3a03469addbfd4bb045fd22d8bf40634f8b"
       },
       "tests.test_gateway_keyed_compat.json": {
         "document": {
@@ -318,7 +318,7 @@
               "schemas/providers.schema.json": "c13f85f84a1d2de669d930b81f26815c96295d55ee19ca5339cb802dbd5e5ff4",
               "src/charmer/catalog.py": "2a4a7527df16ad3c14d3842f1e293ea06a69190b0bc2c03c9a9f406b97345ab0",
               "src/charmer/cli/commands/models.py": "51e78f92b36883c4c0b04cbfc9857dadf0e62bb3dac3dccc161c9cd73d19d3b8",
-              "src/charmer/cli/commands/providers.py": "82287f82a7552b8156bdfc70a12150744b5d082e46dcdb71c4e8a42f6ee30d53",
+              "src/charmer/cli/commands/providers.py": "1566f30504e23cfdf824efc2fe978d2da9caaa2c7d7cf4f859e321db2c8d6d80",
               "src/charmer/compiler.py": "bbcf55c4602b2d68f42837a2c36dc979727e514482ae7d19d37d1074c06e6320",
               "src/charmer/discovery.py": "dcee867df7f0fba1b91cfa3574cbab779413134cd4faf0e22230783801a0fa75",
               "src/charmer/operator.py": "d6c593fbe6d8a19e47e16dc5d835198765a55ccd75a8e0b5fe3ab8ffb7e55d66",
@@ -480,7 +480,7 @@
             ]
           }
         },
-        "sha256": "c300bc454db4d72878aa0dfdf8dc0064d5715c6c8d0a53dd3f64535184547c65"
+        "sha256": "6d98b09f0de1ba072c6002f3202ada4170cac005974999a052b17e6eba64eade"
       },
       "tests.test_keyed_compat_client.json": {
         "document": {
@@ -529,7 +529,7 @@
               "schemas/providers.schema.json": "c13f85f84a1d2de669d930b81f26815c96295d55ee19ca5339cb802dbd5e5ff4",
               "src/charmer/catalog.py": "2a4a7527df16ad3c14d3842f1e293ea06a69190b0bc2c03c9a9f406b97345ab0",
               "src/charmer/cli/commands/models.py": "51e78f92b36883c4c0b04cbfc9857dadf0e62bb3dac3dccc161c9cd73d19d3b8",
-              "src/charmer/cli/commands/providers.py": "82287f82a7552b8156bdfc70a12150744b5d082e46dcdb71c4e8a42f6ee30d53",
+              "src/charmer/cli/commands/providers.py": "1566f30504e23cfdf824efc2fe978d2da9caaa2c7d7cf4f859e321db2c8d6d80",
               "src/charmer/compiler.py": "bbcf55c4602b2d68f42837a2c36dc979727e514482ae7d19d37d1074c06e6320",
               "src/charmer/discovery.py": "dcee867df7f0fba1b91cfa3574cbab779413134cd4faf0e22230783801a0fa75",
               "src/charmer/operator.py": "d6c593fbe6d8a19e47e16dc5d835198765a55ccd75a8e0b5fe3ab8ffb7e55d66",
@@ -640,7 +640,7 @@
             ]
           }
         },
-        "sha256": "8f0fd2346966091800a08757136898657977814967bcf4f2625cd1e29c87bca4"
+        "sha256": "b004a849b6930e55cc9ebb012293193e8898931493598fda4a50812d7e31343a"
       }
     },
     "validated_exit": 0
@@ -883,7 +883,7 @@
   "source_report": {
     "document": {
       "evidence_dir": "tests/fixtures",
-      "head": "326b6f9fde48e1a0ccd9aebe17ebcc5330a73766",
+      "head": "69bcead16185ee31dac368d98fff140a78369549",
       "relevant_sources": [
         {
           "path": "src/charmer/catalog.py",
@@ -927,7 +927,7 @@
         },
         {
           "path": "src/charmer/cli/commands/providers.py",
-          "sha256": "82287f82a7552b8156bdfc70a12150744b5d082e46dcdb71c4e8a42f6ee30d53"
+          "sha256": "1566f30504e23cfdf824efc2fe978d2da9caaa2c7d7cf4f859e321db2c8d6d80"
         },
         {
           "path": "src/charmer/data/schemas/gateway.schema.json",
@@ -951,7 +951,7 @@
         }
       ]
     },
-    "sha256": "ab5aed8db5c64c054f68e77004bf1dfb001b26229ee7205a4aa384e123fac3f0"
+    "sha256": "fd14092614e77599b6e2f5e1ba441d859c49aee5a49006c6e1c9db37bfa1f51b"
   },
   "version": 1
 }
