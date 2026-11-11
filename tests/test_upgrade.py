@@ -1232,6 +1232,8 @@ class RealSyncedLiteralTests(unittest.TestCase):
         catalog_literal = f'"catalog_version"], {old_catalog})'
         catalog_text = originals["tests/test_catalog.py"].decode("utf-8")
         contract_text = originals["tests/test_native_contract.py"].decode("utf-8")
+        census_text = originals["tests/test_name_census.py"].decode("utf-8")
+        evidence_span = f"durable-session-config-phase0-{old_version}"
         for name, text, needle in (
             ("test_catalog version", catalog_text, version_literal),
             ("test_catalog sha256", catalog_text, old_sha),
@@ -1239,6 +1241,7 @@ class RealSyncedLiteralTests(unittest.TestCase):
             ("test_catalog catalog_version", catalog_text, catalog_literal),
             ("test_catalog linux-x64 size", catalog_text, f'["linux-x64"]["size"], {old_size})'),
             ("test_native_contract validated_version", contract_text, version_literal),
+            ("test_name_census lifecycle evidence span", census_text, evidence_span),
         ):
             with self.subTest(literal=name):
                 self.assertIn(needle, text, f"{name}: synced literal not found")
@@ -1269,6 +1272,9 @@ class RealSyncedLiteralTests(unittest.TestCase):
         }
         catalog_after = rewritten["tests/test_catalog.py"]
         contract_after = rewritten["tests/test_native_contract.py"]
+        census_after = rewritten["tests/test_name_census.py"]
+        self.assertNotIn(evidence_span, census_after)
+        self.assertIn(f"durable-session-config-phase0-{new_version}", census_after)
         # Nothing pinned to the old contract survives outside floors lines.
         for relative, text in rewritten.items():
             for line in text.splitlines():

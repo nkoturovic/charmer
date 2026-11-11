@@ -889,7 +889,9 @@ class UpgradeOutcome:
     messages: tuple[str, ...]
 
 
-_SYNC_TEST_FILES = ("tests/test_catalog.py", "tests/test_native_contract.py")
+# The name census pins the contract's lifecycle evidence id, which names the
+# pinned version, as an exact span.
+_SYNC_TEST_FILES = ("tests/test_catalog.py", "tests/test_native_contract.py", "tests/test_name_census.py")
 
 
 def _sync_pinned_test_literals(
