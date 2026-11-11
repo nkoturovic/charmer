@@ -542,6 +542,15 @@ class ForkFlowTests(ForkCase):
         self.assertIn(f"charmer: forking session {self.pid[:8]} into new session {child[:8]}", err.getvalue())
         self.assertEqual(self.store.load(child)["forked_from"], self.pid)
 
+    def test_a_fork_from_the_sessions_screen_names_both_sessions(self) -> None:
+        prepared, _fingerprint = self.fork_plan()
+        with mock.patch("sys.stderr", io.StringIO()) as err:
+            launch_flow._perform_card_result(self.runtime, ("perform", prepared, None), force=False)
+        child = self.fork_id(prepared)
+        self.assertIn(f"charmer: forking session {self.pid[:8]} into new session {child[:8]} (profile:balanced); "
+                      "the original is not changed.\n", err.getvalue())
+        self.assertEqual(self.store.load(child)["forked_from"], self.pid)
+
     def test_the_gate_refuses_before_anything_is_prepared(self) -> None:
         self.write_transcript(self.parent["runtime_session_id"]).unlink()
         state_before = self.tree(self.store.root)
