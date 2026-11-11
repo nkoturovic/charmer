@@ -1289,7 +1289,8 @@ def render_network(plan: operator.RenderPlan) -> Any:
 def network_files() -> dict[str, dict]:
     plain = lan_declaration("http://box.lan:8000/v1", network=None)
     plain["lines"] = line(PLAIN_KEY, "plainbox-chat-1")
-    return {KEYED_ID: keyed_declaration("https://box.example.test:8010/v1", network="lan"),
+    return {KEYED_ID: keyed_declaration("http://box.example.test:8010/v1", network="lan",
+                                        headers={"X-Client": "charmer"}),
             LAN_ID: lan_declaration("http://box.example.test:8010/v1", network="tailnet"), PLAIN_ID: plain}
 
 
@@ -1307,8 +1308,8 @@ class NetworkRenderTests(unittest.TestCase):
         result = render_network(network_plan(network_files()))
         sections = compat_by_name(result)
         keyed, lan, plain = sections[KEYED_ID], sections[LAN_ID], sections[PLAIN_ID]
-        self.assertEqual(list(keyed), ["name", "private-network", "api-key-entries", "models"])
-        self.assertEqual(keyed["private-network"], {"base-url": "https://box.example.test:8010/v1", "class": "lan"})
+        self.assertEqual(list(keyed), ["name", "private-network", "api-key-entries", "headers", "models"])
+        self.assertEqual(keyed["private-network"], {"base-url": "http://box.example.test:8010/v1", "class": "lan"})
         self.assertEqual(keyed["api-key-entries"], [{"api-key": SENTINEL_KEY}])
         self.assertEqual(list(lan), ["name", "private-network", "models"])
         self.assertEqual(lan["private-network"], {"base-url": "http://box.example.test:8010/v1", "class": "tailnet"})
@@ -1321,12 +1322,14 @@ class NetworkRenderTests(unittest.TestCase):
         self.assertFalse({model["alias"] for model in plain["models"]} & set(result.private_aliases))
         self.assertLessEqual(set(result.private_aliases), result.served)
         # The models are rendered exactly as without a network.
-        bare = {KEYED_ID: keyed_declaration("https://box.example.test:8010/v1", network=None),
+        bare = {KEYED_ID: keyed_declaration("https://box.example.test:8010/v1", network=None,
+                                            headers={"X-Client": "charmer"}),
                 LAN_ID: lan_declaration("http://box.lan:8010/v1", network=None), PLAIN_ID: network_files()[PLAIN_ID]}
         before = compat_by_name(render_network(network_plan(bare)))
         for name in (KEYED_ID, LAN_ID):
             self.assertEqual(sections[name]["models"], before[name]["models"])
-        self.assertEqual(sections[KEYED_ID]["api-key-entries"], before[KEYED_ID]["api-key-entries"])
+        for field in ("api-key-entries", "headers"):
+            self.assertEqual(sections[KEYED_ID][field], before[KEYED_ID][field])
 
     def test_the_render_resolves_no_name(self) -> None:
         import socket
@@ -1348,7 +1351,7 @@ class NetworkRenderTests(unittest.TestCase):
 
         tailnet = routes(network_files())
         self.assertEqual(tailnet[LAN_KEY].route, "lanbox http://box.example.test:8010/v1 private network tailnet")
-        self.assertEqual(tailnet[KEY].route, "box https://box.example.test:8010/v1 private network lan")
+        self.assertEqual(tailnet[KEY].route, "box http://box.example.test:8010/v1 private network lan")
         self.assertEqual(tailnet[KEY].auth_header, "bearer")
         self.assertEqual(tailnet[PLAIN_KEY].route, "plainbox http://box.lan:8000/v1")
         files = network_files()
