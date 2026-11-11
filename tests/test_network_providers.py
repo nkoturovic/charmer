@@ -1551,6 +1551,67 @@ class ReloadEntryPointTests(_proxy_control_case()):
                                   err.getvalue())
 
 
+LEAK_KEY = "boxco-dummy-leak-sentinel-value"
+
+
+class NothingLeaksTests(NetworkCommandCase):
+    """SPEC §3 item 6: a key given for a private-network provider is in the
+    secret store, the file it came from and the rendered config.yaml —
+    nowhere else."""
+
+    def test_the_key_is_only_in_the_store_its_source_file_and_the_rendered_config(self) -> None:
+        import json
+        import os
+        import shutil
+        import tempfile
+        from pathlib import Path
+
+        import charmer.cli.doctor as doctor_mod
+        from charmer import proxy, state
+
+        source_dir = Path(tempfile.mkdtemp(prefix="nettest-key-")).resolve()
+        self.addCleanup(shutil.rmtree, source_dir, True)
+        os.chmod(source_dir, 0o700)
+        source = source_dir / "box.key"
+        state.atomic_write(source, (LEAK_KEY + "\n").encode())
+        outputs: dict[str, str] = {}
+        code, out, err = self.command(ADD_KEYED, "y\n", network="tailnet")
+        self.assertEqual(code, 0, err)
+        outputs["providers add"] = out + err
+        code, out, err = self.command(["providers", "set-key", KEYED_ID, "--secret-file", str(source)], "y\n")
+        self.assertEqual(code, 0, err)
+        outputs["providers set-key"] = out + err
+        path = operator.providers_dir(self.harness.env) / f"{KEYED_ID}.json"
+        document = strict_json.loads(path.read_bytes())
+        document["lines"] = line()
+        path.write_bytes(strict_json.pretty_file_bytes(document))
+        for argv in (["providers", "apply"], ["providers", "show", KEYED_ID], ["providers", "show", KEYED_ID, "--resolved"],
+                     ["providers", "list", "--json"], ["doctor"], ["doctor", "--json"], ["doctor", "-v"]):
+            code, out, err = self.harness.op(argv)
+            outputs[" ".join(argv)] = out + err
+        config = proxy.config_dir(self.runtime.home) / "config.yaml"
+        rendered = config.read_text()
+        self.assertIn(LEAK_KEY, rendered)
+        self.assertIn("private-network:", rendered)
+        # A pending served change: the plan and its doctor fact.
+        document["lines"] = {**line(), **line("custom-box-two", "box-chat-2")}
+        path.write_bytes(strict_json.pretty_file_bytes(document))
+        plan = doctor_mod.pending_served_plan(self.runtime)
+        self.assertIsNotNone(plan)
+        outputs["served plan"] = plan.text() + json.dumps(plan.as_document()) + (plan.doctor_fact() or "")
+        for argv in (["plan"], ["plan", "--json"]):
+            code, out, err = self.harness.op(argv)
+            outputs[" ".join(argv)] = out + err
+        for name, text in outputs.items():
+            with self.subTest(output=name):
+                self.assertNotIn(LEAK_KEY, text)
+        holders = sorted(str(candidate) for base in (self.harness.root, source_dir)
+                         for candidate in base.rglob("*")
+                         if candidate.is_file() and not candidate.is_symlink()
+                         and LEAK_KEY.encode() in candidate.read_bytes())
+        self.assertEqual(holders, sorted({str(self.harness.secret_file), str(source), str(config)}))
+
+
 class GatedLineKeyTests(NetworkCommandCase):
     """A declaration a closed gate refuses is never screened against stored
     values, so no output names its line keys — even admitted or bound ones,
