@@ -1146,7 +1146,7 @@ class ContractTests(unittest.TestCase):
                 lineup,
                 eff,
                 bundle=bundle,
-                action=compiler.SessionAction("fork", FIXED_SESSION, FIXED_SESSION),
+                action=compiler.SessionAction("branch", FIXED_SESSION, FIXED_SESSION),
             )
 
     def test_scope_helper_must_be_retained(self) -> None:
