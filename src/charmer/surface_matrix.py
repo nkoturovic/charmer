@@ -175,6 +175,12 @@ OPERATIONS: tuple[Op, ...] = (
             _t("resume-card.resume", "charmer -r → Enter", "the resume card",
                f"{T_CARD}.CardResumeKeyTests.test_enter_resumes_with_the_callers_decision")),
        stream="terminal", exit="user"),
+    Op("launch.fork", "launch",
+       "start a new managed session from a copy of a session's conversation (the original is not changed)",
+       cli=("--fork",),
+       tui=(_t("sessions.fork", "card → S → N → Enter", "a session row",
+               f"{T_SESSIONS}.SessionsNewForkTests.test_n_opens_the_fork_card_and_enter_returns_the_fork_intent"),),
+       stream="terminal", exit="user"),
     Op("launch.force-resume", "launch", "resume despite a background-liveness marker",
        cli=("--force", "direct --force"),
        tui=(_t("sessions.resume", "card → S → Enter → Resume anyway", "the background-liveness gate",
@@ -1266,7 +1272,7 @@ NAVIGATION_VERBS = frozenset({"help", "back"})
 # operation with no implementation is still looked for).
 REQUIRED: tuple[str, ...] = (
     "launch.choose-profile", "launch.direct", "launch.fresh", "launch.continue", "launch.resume",
-    "launch.force-resume", "launch.profile-file", "launch.print-launch", "launch.passthrough",
+    "launch.fork", "launch.force-resume", "launch.profile-file", "launch.print-launch", "launch.passthrough",
     "launch.no-subagents", "launch.save-direct",
     "setup.status", "setup.run", "setup.redo", "setup.preflight", "setup.claude", "setup.claude-from",
     "setup.gateway", "setup.providers", "setup.test", "setup.profile", "setup.check", "setup.answers",

@@ -781,6 +781,8 @@ def _card_name(target: Any, record: Mapping | None) -> str:
 def _card_action(action: str, record: Mapping | None) -> str:
     if action == "fresh" or record is None:
         return "Fresh"
+    if action == "fork":
+        return f"Fork of {str(record.get('forked_from', '?'))[:8]} — new session"
     word = "Relaunch" if action == "relaunch" else "Resume"
     return f"{word} {str(record.get('managed_id', '?'))[:8]} · lineup gen {record.get('lineup_generation', 0)}"
 
@@ -1051,7 +1053,7 @@ def card_model(
         remedy = CARD_UNLOADABLE_FIX
     update = update_hint is not None
     if resume:
-        keys: list[tuple[str, str]] = [("Enter", "resume")]
+        keys: list[tuple[str, str]] = [("Enter", "fork" if action == "fork" else "resume")]
         if update:
             keys.append(("U", "update"))
         keys += list(CARD_KEYS_RESUME)

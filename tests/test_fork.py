@@ -505,6 +505,43 @@ class ForkFlowTests(ForkCase):
         self.assertIsNone(launch_flow._fork_preflight(session=self.pid, continue_session=False, profile=False,
                                                       environ={}))
 
+    def test_main_refuses_a_command_line_fork_cannot_use_before_any_state(self) -> None:
+        import contextlib
+
+        import charmer.cli.runtime as runtime_mod
+        from charmer import installs
+
+        for argv, text in ((["-r", "--fork"], launch_flow.FORK_NEEDS_SESSION),
+                           (["-c", "--fork"], launch_flow.FORK_WITH_CONTINUE),
+                           (["-r", self.pid, "--fork", "--profile", "balanced"], launch_flow.FORK_WITH_PROFILE)):
+            with self.subTest(argv=argv), mock.patch.dict(os.environ, self.runtime.environ, clear=True), \
+                    mock.patch.object(installs, "check", side_effect=AssertionError("channel recorded")), \
+                    mock.patch.object(runtime_mod, "Runtime", side_effect=AssertionError("Runtime built")), \
+                    contextlib.redirect_stderr(io.StringIO()) as err:
+                out = io.StringIO()
+                code = cli.main(argv, output_stream=out, interactive=False)
+            self.assertEqual((code, out.getvalue()), (2, ""), err.getvalue())
+            self.assertIn(text, err.getvalue())
+
+    def test_main_dispatches_the_fork(self) -> None:
+        state_before = self.tree(self.store.root)
+        out = io.StringIO()
+        with mock.patch("sys.stderr", io.StringIO()):
+            code = cli.main(["-r", self.pid[:8], "--fork", "--print-launch"], runtime=self.runtime,
+                            output_stream=out, interactive=False)
+        self.assertEqual(code, 0)
+        self.assertIn(f"  --resume\n  {self.parent['runtime_session_id']}\n  --fork-session\n", out.getvalue())
+        self.assertEqual(self.tree(self.store.root), state_before)
+        launches = len(self.execs)
+        with mock.patch("sys.stderr", io.StringIO()) as err:
+            code = cli.main(["-r", self.pid, "--fork"], runtime=self.runtime, output_stream=io.StringIO(),
+                            interactive=False)
+        self.assertEqual(code, 0)
+        self.assertEqual(len(self.execs), launches + 1)
+        child = self.execs[-1][2]["CHARMER_MANAGED_ID"]
+        self.assertIn(f"charmer: forking session {self.pid[:8]} into new session {child[:8]}", err.getvalue())
+        self.assertEqual(self.store.load(child)["forked_from"], self.pid)
+
     def test_the_gate_refuses_before_anything_is_prepared(self) -> None:
         self.write_transcript(self.parent["runtime_session_id"]).unlink()
         state_before = self.tree(self.store.root)

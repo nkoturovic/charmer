@@ -20,5 +20,5 @@
 
   lineup gen 1 · 8 agents · follow
   filter: ended
-  Enter resume · T lineup · V details · F follow/pin · X forget · P repair
-  R rename · Q save · L link · Space mark · * all · ? 3 more · Esc back
+  Enter resume · N fork · T lineup · V details · F follow/pin · X forget
+  P repair · R rename · Q save · L link · Space mark · ? 4 more · Esc back

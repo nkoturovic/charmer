@@ -49,8 +49,15 @@ def _perform_card_result(runtime: runtime_mod.Runtime, result: tuple, *, force: 
     """Perform a card/screen ``("perform", prepared[, decision])`` after teardown (§4.13)."""
 
     decision = result[2] if len(result) > 2 else None
-    _skill_policy_notices(result[1])
-    return runtime.perform(result[1], resume_decision=decision or ("force" if force else None))
+    prepared = result[1]
+    _skill_policy_notices(prepared)
+    if getattr(prepared, "fork_parent", None) is not None:
+        # A fork from the sessions screen (N) names both sessions, as the CLI does.
+        sys.stderr.write(FORK_EXEC_LINE.format(
+            m8=prepared.fork_parent[:8], n8=sessions.managed_id(prepared.record)[:8],
+            profile=termtext.visible_text(session_facts._record_target_label(prepared.record))))
+        sys.stderr.flush()
+    return runtime.perform(prepared, resume_decision=decision or ("force" if force else None))
 
 
 def _transition_preflight_problems(runtime: runtime_mod.Runtime) -> list[str]:
@@ -643,17 +650,19 @@ def _fork_notes(prepared: cli_types.PreparedLaunch, parent_m8: str, stream: Text
 
 def _fork_preflight(*, session: str | None, continue_session: bool, profile: bool,
                     environ: Any) -> None:
-    """The argument refusals of ``--fork``, before anything is read: nothing
-    is written and the exit is non-zero (``CLIError``)."""
+    """The refusals of ``--fork`` that need only the command line and the
+    environment, before anything is read: nothing is written. A command
+    line ``--fork`` cannot use exits 2 (``UsageError``); a run inside a
+    managed session exits 1."""
 
     import charmer.cli.consent as consent  # read-only: the in-session marker
 
     if continue_session:
-        raise cli_errors.CLIError(FORK_WITH_CONTINUE)
+        raise cli_types.UsageError(FORK_WITH_CONTINUE)
     if not session:
-        raise cli_errors.CLIError(FORK_NEEDS_SESSION)
+        raise cli_types.UsageError(FORK_NEEDS_SESSION)
     if profile:
-        raise cli_errors.CLIError(FORK_WITH_PROFILE)
+        raise cli_types.UsageError(FORK_WITH_PROFILE)
     if consent.session_marker(environ) is not None:
         raise cli_errors.CLIError(FORK_INSIDE_SESSION)
 

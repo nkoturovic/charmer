@@ -60,6 +60,10 @@ options:
   -r, --resume [SESSION]
                         resume a managed session: its id, an id prefix of 8 or more characters, or
                         its name; no value opens the sessions picker
+  --fork                with -r SESSION: start a new managed session from a copy of SESSION's
+                        conversation, with its own record and scope and the lineup SESSION would
+                        get at its next resume; SESSION is not changed and may keep running;
+                        client flags after -- must be given again
   --force               resume despite a background-liveness marker (only bypasses the heuristic ●
                         check; identity/transcript guards still apply)
   --line                force the line-based UI (no full-screen curses interface)
@@ -75,6 +79,7 @@ Examples:
   charmer --profile NAME           launch a saved profile
   charmer -c                       continue the last session in this directory
   charmer -r SESSION               resume a session (its id, an 8+ character prefix, or its name)
+  charmer -r SESSION --fork        start a new session from a copy of that session's conversation
   charmer direct --model MODEL     launch one model as the lead
   charmer doctor                   check health, with one fix for each finding
   charmer --profile NAME -- ARGS   pass ARGS to Claude Code unchanged
