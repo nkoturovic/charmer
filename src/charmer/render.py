@@ -46,8 +46,11 @@ class RenderError(errors.CharmerError, ValueError):
 
 # Pinned adapter payload contracts (trusted in-process protocol semantics).
 ADAPTER_PAYLOAD_CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
-    # Keyless OpenAI-compatible upstreams (LAN trust boundary): no payload
-    # params — the compat executor translates shape, never effort tiers.
+    # OpenAI-compatible upstreams (keyless LAN and keyed): no payload params
+    # of charmer's own. The compat executor still sends reasoning_effort
+    # whenever a request carries a thinking field, disabled included, mapped
+    # into the line's declared levels (one level pins it; none: low, medium
+    # or high) — measured on the 8.0.45 gateway.
     "cliproxy-openai-compat-v1": {},
     "cliproxy-oauth-codex-v1": {
         "reasoning-effort-low": {
@@ -559,6 +562,19 @@ def rendered_private_network_selectors(document: Mapping[str, Any]) -> tuple[str
             if isinstance(model, Mapping) and isinstance(model.get("alias"), str):
                 found.add(model["alias"])
     return tuple(sorted(found))
+
+
+def compat_target(transport: Mapping[str, Any]) -> dict[str, Any]:
+    """Where an ``openai-compatibility`` entry points: ``base-url``, or for a
+    provider declared on a private network the ``private-network`` block
+    (its base URL and class) **instead of** ``base-url`` — a gateway without
+    the dial guard drops such an entry rather than serving it unguarded.
+    The URL is written as declared: nothing is resolved at render time."""
+
+    network = transport.get("network")
+    if network is None:
+        return {"base-url": transport["base_url"]}
+    return {PRIVATE_NETWORK_KEY: {"base-url": transport["base_url"], "class": network}}
 
 
 # ------------------------------------------------------------ keyed compat
@@ -1350,7 +1366,7 @@ def build_config_document(
             # when present) and the nonempty model list.
             keyed: dict[str, Any] = {
                 "name": provider_id,
-                "base-url": transport["base_url"],
+                **compat_target(transport),
                 "api-key-entries": [{"api-key": resolved_secrets[provider_id]}],
             }
             headers = (provider_headers or {}).get(provider_id)
@@ -1362,7 +1378,7 @@ def build_config_document(
         compat_sections.append(
             {
                 "name": provider_id,
-                "base-url": transport["base_url"],
+                **compat_target(transport),
                 "models": section_models,
             }
         )

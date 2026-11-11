@@ -422,14 +422,25 @@ class NetworkCommandCase(unittest.TestCase):
     def declaration(self, provider_id: str = KEYED_ID) -> dict:
         return strict_json.loads((operator.providers_dir(self.harness.env) / f"{provider_id}.json").read_bytes())
 
+    def declare_with_line(self, network: str = "tailnet", base: str = "http://box.example.test:8010/v1") -> None:
+        """The keyless LAN kind on ``network`` with one line (LAN_KEY)."""
+
+        argv = ["providers", "add", LAN_ID, "--kind", "openai-compatible-lan", "--base-url", base, "--auth", "none",
+                "--family", "boxfam"]
+        code, _out, err = self.command(argv, network=network)
+        self.assertEqual(code, 0, err)
+        path = operator.providers_dir(self.harness.env) / f"{LAN_ID}.json"
+        document = strict_json.loads(path.read_bytes())
+        document["lines"] = line(LAN_KEY, "lanbox-chat-1")
+        path.write_bytes(strict_json.pretty_file_bytes(document))
+
     def state_bytes(self) -> dict:
         return self.harness.state_bytes()
 
 
-# Keyed plain HTTP is rendered once the renderer's keyed check takes the
-# network; the end-to-end command rows below use HTTPS on a private network,
-# and the plain-HTTP approval text is checked on the resolved provider.
-ADD_KEYED = ["providers", "add", KEYED_ID, "--kind", "openai-compatible", "--base-url",
+# Most end-to-end command rows use HTTPS on a private network; keyed plain
+# HTTP has its own end-to-end row (KeyedPlainHttpTests).
+ADD_KEYED =["providers", "add", KEYED_ID, "--kind", "openai-compatible", "--base-url",
              "https://box.example.test:8010/v1", "--auth", "bearer", "--secret-ref", f"env:{SECRET}",
              "--family", "boxfam"]
 SCOPE_LINE = ("The key is sent only to this origin, and only to addresses in that network (checked at every "
@@ -948,16 +959,6 @@ class DoctorNetworkTests(NetworkCommandCase):
     """Doctor, launch readiness and the reload check for providers declared
     on a private network: a TCP connect only, the resolution named."""
 
-    def declare_with_line(self, network: str = "tailnet", base: str = "http://box.example.test:8010/v1") -> None:
-        argv = ["providers", "add", LAN_ID, "--kind", "openai-compatible-lan", "--base-url", base, "--auth", "none",
-                "--family", "boxfam"]
-        code, _out, err = self.command(argv, network=network)
-        self.assertEqual(code, 0, err)
-        path = operator.providers_dir(self.harness.env) / f"{LAN_ID}.json"
-        document = strict_json.loads(path.read_bytes())
-        document["lines"] = line(LAN_KEY, "lanbox-chat-1")
-        path.write_bytes(strict_json.pretty_file_bytes(document))
-
     def observe(self, *answers: tuple[str, str], state: str = "reachable", reason: str | None = None):
         from charmer.cli import gateway_facts
 
@@ -1251,6 +1252,172 @@ class DoctorNetworkTests(NetworkCommandCase):
                          f"https://api.example.test; auth bearer from {SECRET} (value not shown)")
 
 
+# A dummy key value (no token shape): the leak tests look for it everywhere.
+SENTINEL_KEY = "boxco-dummy-sentinel-key-value"
+PLAIN_ID = "plainbox"
+PLAIN_KEY = "custom-plainbox-chat"
+
+
+def network_plan(files: dict[str, dict], *, docs: dict | None = None,
+                 aliases: dict[str, dict] | None = None) -> operator.RenderPlan:
+    """Validated declarations with approved keyed routes through the real render plan."""
+
+    import test_operator as op_tests
+
+    docs = docs or network_docs()
+    open_docs = network_docs()
+    first = layer_of(files, docs=open_docs)
+    routes = {pid: op_tests._route(provider) for pid, provider in first.providers.items()
+              if provider.auth_kind != "none"}
+    ledger = op_tests._ledger(routes=routes, aliases=aliases or {})
+    return operator.render_plan(docs, layer_of(files, docs=docs, ledger=ledger), ledger)
+
+
+def render_network(plan: operator.RenderPlan) -> Any:
+    from pathlib import Path
+
+    from charmer import render
+
+    return render.render_config(
+        plan.docs["gateway"], plan.docs["providers"]["providers"], plan.docs["models-v2"]["models"],
+        home=Path("/fixture/home"), gateway_tokens=("t" * 64,),
+        resolve_secret=lambda name: SENTINEL_KEY if name == SECRET else f"dummy-{name.lower().replace('_', '-')}",
+        continuity={}, captures=plan.captures, provider_headers=plan.headers, oauth_overlay=plan.overlay,
+        quiet_providers=plan.quiet_providers)
+
+
+def network_files() -> dict[str, dict]:
+    plain = lan_declaration("http://box.lan:8000/v1", network=None)
+    plain["lines"] = line(PLAIN_KEY, "plainbox-chat-1")
+    return {KEYED_ID: keyed_declaration("http://box.example.test:8010/v1", network="lan",
+                                        headers={"X-Client": "charmer"}),
+            LAN_ID: lan_declaration("http://box.example.test:8010/v1", network="tailnet"), PLAIN_ID: plain}
+
+
+def compat_by_name(result: Any) -> dict[str, dict]:
+    from charmer import served_plan
+
+    document = served_plan.parse_restricted_yaml(result.yaml)
+    return {section["name"]: section for section in document["openai-compatibility"]}
+
+
+class NetworkRenderTests(unittest.TestCase):
+    """The gateway's config shape: the ``private-network`` block instead of ``base-url``."""
+
+    def test_a_network_provider_renders_the_block_instead_of_the_base_url(self) -> None:
+        result = render_network(network_plan(network_files()))
+        sections = compat_by_name(result)
+        keyed, lan, plain = sections[KEYED_ID], sections[LAN_ID], sections[PLAIN_ID]
+        self.assertEqual(list(keyed), ["name", "private-network", "api-key-entries", "headers", "models"])
+        self.assertEqual(keyed["private-network"], {"base-url": "http://box.example.test:8010/v1", "class": "lan"})
+        self.assertEqual(keyed["api-key-entries"], [{"api-key": SENTINEL_KEY}])
+        self.assertEqual(list(lan), ["name", "private-network", "models"])
+        self.assertEqual(lan["private-network"], {"base-url": "http://box.example.test:8010/v1", "class": "tailnet"})
+        # Without a network, the 2.4.0 shape.
+        self.assertEqual(list(plain), ["name", "base-url", "models"])
+        self.assertEqual(plain["base-url"], "http://box.lan:8000/v1")
+        private = {model["alias"] for name in (KEYED_ID, LAN_ID) for model in sections[name]["models"]}
+        self.assertTrue(private)
+        self.assertEqual(result.private_aliases, tuple(sorted(private)))
+        self.assertFalse({model["alias"] for model in plain["models"]} & set(result.private_aliases))
+        self.assertLessEqual(set(result.private_aliases), result.served)
+        # The models are rendered exactly as without a network.
+        bare = {KEYED_ID: keyed_declaration("https://box.example.test:8010/v1", network=None,
+                                            headers={"X-Client": "charmer"}),
+                LAN_ID: lan_declaration("http://box.lan:8010/v1", network=None), PLAIN_ID: network_files()[PLAIN_ID]}
+        before = compat_by_name(render_network(network_plan(bare)))
+        for name in (KEYED_ID, LAN_ID):
+            self.assertEqual(sections[name]["models"], before[name]["models"])
+        for field in ("api-key-entries", "headers"):
+            self.assertEqual(sections[KEYED_ID][field], before[KEYED_ID][field])
+
+    def test_the_render_resolves_no_name(self) -> None:
+        import socket
+        from unittest import mock
+
+        plan = network_plan(network_files())
+        refuse = mock.Mock(side_effect=AssertionError("the render resolved a name"))
+        with mock.patch.object(socket, "getaddrinfo", refuse), mock.patch.object(socket, "gethostbyname", refuse), \
+                mock.patch.object(socket, "create_connection", refuse):
+            render_network(plan)
+        refuse.assert_not_called()
+
+    def test_the_served_plan_puts_the_class_into_the_route_identity(self) -> None:
+        from charmer import served_plan
+
+        def routes(files: dict[str, dict]) -> dict:
+            return served_plan.routes_from_document(
+                served_plan.parse_restricted_yaml(render_network(network_plan(files)).yaml), strict=True)
+
+        tailnet = routes(network_files())
+        self.assertEqual(tailnet[LAN_KEY].route, "lanbox http://box.example.test:8010/v1 private network tailnet")
+        self.assertEqual(tailnet[KEY].route, "box http://box.example.test:8010/v1 private network lan")
+        self.assertEqual(tailnet[KEY].auth_header, "bearer")
+        self.assertEqual(tailnet[PLAIN_KEY].route, "plainbox http://box.lan:8000/v1")
+        files = network_files()
+        files[LAN_ID] = lan_declaration("http://box.example.test:8010/v1", network="lan")
+        lan = routes(files)
+        self.assertEqual(lan[LAN_KEY].changed_parts(tailnet[LAN_KEY]), ("route",))
+        self.assertEqual(lan[PLAIN_KEY], tailnet[PLAIN_KEY])
+        self.assertEqual(served_plan.PRIVATE_NETWORK_KEY, __import__("charmer.render").render.PRIVATE_NETWORK_KEY)
+
+
+class GateClosedControlTests(unittest.TestCase):
+    """A closed private-network gate: nothing of the provider is rendered,
+    served, captured or fenced."""
+
+    def test_nothing_is_rendered_or_captured_for_a_gated_provider(self) -> None:
+        files = network_files()
+        first = layer_of(files)
+        capture = {"provider": LAN_ID, "rd": first.providers[LAN_ID].route_digest, "wire": "lanbox-old-1",
+                   "proxy_contract": None, "display": "LAN box old", "context_tokens": 32768,
+                   "source": "operator:custom-lanbox-old", "since_catalog": 36, "overlay": None}
+        aliases = {"custom-lanbox-old": capture}
+        opened = network_plan(files, aliases=aliases)
+        self.assertIn("custom-lanbox-old", opened.captures)
+        open_result = render_network(opened)
+        self.assertIn("custom-lanbox-old", open_result.served)
+        closed = network_plan(files, docs=network_docs(network=False), aliases=aliases)
+        self.assertEqual(set(closed.captures), set())
+        result = render_network(closed)
+        names = set(compat_by_name(result))
+        self.assertEqual(names & {KEYED_ID, LAN_ID}, set())
+        self.assertIn(PLAIN_ID, names)
+        gated = {alias for alias in open_result.served if alias not in result.served}
+        self.assertTrue({"custom-lanbox-old"} <= gated)
+        self.assertEqual(result.private_aliases, ())
+        self.assertNotIn(SENTINEL_KEY, result.yaml)
+
+
+class GateClosedFenceTests(NetworkCommandCase):
+    def fence_models(self) -> set[str]:
+        """The fence of an ad-hoc lineup whose configured workflow default
+        names the provider's line (the one unbound operator selector a fence
+        gains)."""
+
+        import dataclasses
+
+        from charmer import profile, scope
+
+        lcat = self.runtime.lineup_catalog()
+        eff = dataclasses.replace(self.runtime.current_effective(),
+                                  workflow_default_binding={"model": LAN_KEY, "effort": "high"})
+        lead = next(key for key, entry in lcat.lines.items()
+                    if "lead" in entry.get("capabilities", ()) and entry["provider"] != LAN_ID)
+        lineup = profile.resolve(profile.ad_hoc_direct(lead), lcat, effective=eff, ad_hoc=True)
+        return set(scope.compile_fence(lineup, lcat, eff).available_models)
+
+    def test_a_gated_provider_never_reaches_a_compiled_fence(self) -> None:
+        self.declare_with_line()
+        entry = self.runtime.lineup_catalog().lines[LAN_KEY]
+        selectors = {selector for _level, selector, _contract in catalog.line_selectors(dict(entry))}
+        self.assertTrue(selectors & self.fence_models())
+        self.runtime.catalog.docs["gateway"][catalog.AUDITS_KEY][operator.PRIVATE_NETWORK_AUDIT] = False
+        self.assertNotIn(LAN_KEY, self.runtime.lineup_catalog().lines)
+        self.assertFalse(selectors & self.fence_models())
+        self.assertFalse(selectors & set(self.runtime.operator_render_plan().docs["models-v2"]["models"]))
+
+
 class ReloadCheckTests(unittest.TestCase):
     """A gateway without private-network support loads the render, sentinel
     included, and drops those entries: the reload check says so."""
@@ -1384,6 +1551,141 @@ class ReloadEntryPointTests(_proxy_control_case()):
                 if not served:
                     self.assertIn("gateway reloaded without the private-network selector(s) custom-box-chat",
                                   err.getvalue())
+
+
+class CatalogNetworkGateTests(unittest.TestCase):
+    """``catalog.keyed_compat_problem`` (T1 validation, T2 and the render
+    precondition) takes the network: a keyed plain-HTTP base on a declared
+    network passes; a closed private-network gate refuses any network entry."""
+
+    def entry(self, document: dict, *, docs: dict | None = None) -> dict:
+        return layer_of({KEYED_ID: document}, docs=docs or network_docs()).providers[KEYED_ID].entry
+
+    def test_keyed_plain_http_on_a_network_passes_and_a_closed_gate_refuses(self) -> None:
+        provider = self.entry(keyed_declaration("http://box.example.test:8010/v1", network="tailnet"))
+        self.assertEqual(provider["transport"]["network"], "tailnet")
+        self.assertIsNone(catalog.keyed_compat_problem(provider, network_docs()["gateway"]))
+        self.assertEqual(catalog.keyed_compat_problem(provider, network_docs(network=False)["gateway"]),
+                         catalog.PRIVATE_NETWORK_CLOSED)
+        # The keyed gate first.
+        self.assertEqual(catalog.keyed_compat_problem(provider, network_docs(keyed=False, network=False)["gateway"]),
+                         catalog.KEYED_AUDIT_CLOSED)
+        # The base URL is checked with the network, on every path.
+        for base, text in (("http://203.0.113.9:8010/v1", "203.0.113.9 is not on a private network"),
+                           ("http://192.168.1.10:8010/v1", "192.168.1.10 is on the lan network, not tailnet")):
+            outside = copy.deepcopy(provider)
+            outside["transport"]["base_url"] = base
+            self.assertEqual(catalog.keyed_compat_problem(outside, network_docs()["gateway"]),
+                             f"a keyed openai-compatible base URL is refused ({text})")
+        bare = copy.deepcopy(provider)
+        del bare["transport"]["network"]
+        self.assertEqual(catalog.keyed_compat_problem(bare, network_docs()["gateway"]),
+                         "a keyed openai-compatible base URL is refused (a secret is sent only over https)")
+
+    def test_the_keyless_lan_kind_with_a_network_gets_the_same_gate(self) -> None:
+        provider = layer_of({LAN_ID: lan_declaration()}).providers[LAN_ID].entry
+        self.assertIsNone(catalog.keyed_compat_problem(provider, network_docs()["gateway"]))
+        self.assertEqual(catalog.keyed_compat_problem(provider, network_docs(network=False)["gateway"]),
+                         catalog.PRIVATE_NETWORK_CLOSED)
+        plain = layer_of({LAN_ID: lan_declaration("http://box.lan:8010/v1", network=None)}).providers[LAN_ID].entry
+        self.assertIsNone(catalog.keyed_compat_problem(plain, network_docs(keyed=False, network=False)["gateway"]))
+
+    def test_one_accessor(self) -> None:
+        self.assertIs(operator.private_network_audited, catalog.private_network_audited)
+        self.assertEqual((operator.PRIVATE_NETWORK_AUDIT, operator.NETWORK_GATED),
+                         (catalog.PRIVATE_NETWORK_AUDIT, catalog.PRIVATE_NETWORK_CLOSED))
+
+
+class KeyedPlainHttpTests(NetworkCommandCase):
+    """A keyed provider over plain HTTP on a declared network, end to end:
+    declared, approved with the plain-HTTP sentence, rendered as the block."""
+
+    def test_add_approve_and_render(self) -> None:
+        from charmer import proxy, served_plan
+
+        argv = [*ADD_KEYED]
+        argv[argv.index("https://box.example.test:8010/v1")] = "http://box.example.test:8010/v1"
+        code, out, err = self.command(argv, "y\n", network="tailnet")
+        self.assertEqual(code, 0, err)
+        self.assertIn(PLAIN_HTTP_APPROVAL, err)
+        self.assertEqual(self.declaration()["provider"]["base_url"], "http://box.example.test:8010/v1")
+        from charmer import state
+
+        state.atomic_write(self.harness.secret_file, f"{SECRET}={LEAK_KEY}\n".encode())
+        path = operator.providers_dir(self.harness.env) / f"{KEYED_ID}.json"
+        document = strict_json.loads(path.read_bytes())
+        document["lines"] = line()
+        path.write_bytes(strict_json.pretty_file_bytes(document))
+        code, out, err = self.harness.op(["providers", "apply"])
+        self.assertEqual(code, 0, out + err)
+        rendered = served_plan.parse_restricted_yaml((proxy.config_dir(self.runtime.home) / "config.yaml").read_text())
+        section = next(item for item in rendered["openai-compatibility"] if item["name"] == KEYED_ID)
+        self.assertEqual(section["private-network"], {"base-url": "http://box.example.test:8010/v1",
+                                                      "class": "tailnet"})
+        self.assertNotIn("base-url", section)
+        self.assertEqual(section["api-key-entries"], [{"api-key": LEAK_KEY}])
+        self.assertNotIn(LEAK_KEY, out + err)
+
+
+LEAK_KEY = "boxco-dummy-leak-sentinel-value"
+
+
+class NothingLeaksTests(NetworkCommandCase):
+    """A key given for a private-network provider is in the
+    secret store, the file it came from and the rendered config.yaml —
+    nowhere else."""
+
+    def test_the_key_is_only_in_the_store_its_source_file_and_the_rendered_config(self) -> None:
+        import json
+        import os
+        import shutil
+        import tempfile
+        from pathlib import Path
+
+        import charmer.cli.doctor as doctor_mod
+        from charmer import proxy, state
+
+        source_dir = Path(tempfile.mkdtemp(prefix="nettest-key-")).resolve()
+        self.addCleanup(shutil.rmtree, source_dir, True)
+        os.chmod(source_dir, 0o700)
+        source = source_dir / "box.key"
+        state.atomic_write(source, (LEAK_KEY + "\n").encode())
+        outputs: dict[str, str] = {}
+        code, out, err = self.command(ADD_KEYED, "y\n", network="tailnet")
+        self.assertEqual(code, 0, err)
+        outputs["providers add"] = out + err
+        code, out, err = self.command(["providers", "set-key", KEYED_ID, "--secret-file", str(source)], "y\n")
+        self.assertEqual(code, 0, err)
+        outputs["providers set-key"] = out + err
+        path = operator.providers_dir(self.harness.env) / f"{KEYED_ID}.json"
+        document = strict_json.loads(path.read_bytes())
+        document["lines"] = line()
+        path.write_bytes(strict_json.pretty_file_bytes(document))
+        for argv in (["providers", "apply"], ["providers", "show", KEYED_ID], ["providers", "show", KEYED_ID, "--resolved"],
+                     ["providers", "list", "--json"], ["doctor"], ["doctor", "--json"], ["doctor", "-v"]):
+            code, out, err = self.harness.op(argv)
+            outputs[" ".join(argv)] = out + err
+        config = proxy.config_dir(self.runtime.home) / "config.yaml"
+        rendered = config.read_text()
+        self.assertIn(LEAK_KEY, rendered)
+        self.assertIn("private-network:", rendered)
+        # A pending served change: the plan and its doctor fact.
+        document["lines"] = {**line(), **line("custom-box-two", "box-chat-2")}
+        path.write_bytes(strict_json.pretty_file_bytes(document))
+        plan = doctor_mod.pending_served_plan(self.runtime)
+        self.assertIsNotNone(plan)
+        outputs["served plan"] = plan.text() + json.dumps(plan.as_document()) + (plan.doctor_fact() or "")
+        for argv in (["plan"], ["plan", "--json"]):
+            code, out, err = self.harness.op(argv)
+            outputs[" ".join(argv)] = out + err
+        for name, text in outputs.items():
+            with self.subTest(output=name):
+                self.assertNotIn(LEAK_KEY, text)
+        holders = sorted(str(candidate) for base in (self.harness.root, source_dir)
+                         for candidate in base.rglob("*")
+                         if candidate.is_file() and not candidate.is_symlink()
+                         and LEAK_KEY.encode() in candidate.read_bytes())
+        self.assertEqual(holders, sorted({str(self.harness.secret_file), str(source), str(config)}))
 
 
 class GatedLineKeyTests(NetworkCommandCase):
