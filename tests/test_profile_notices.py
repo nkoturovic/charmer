@@ -120,6 +120,27 @@ class ExternalChangeNoticeTests(PropagationCase):
         self.assertEqual(screen.run(FakeWindow(["\x1b"], height=40, width=120)), "later")
         self.once("profile mine changed; this session keeps its lineup")
 
+    def test_profile_removal_notifies_the_pin_with_a_valid_way_out(self):
+        self.runtime.profiles.delete("mine")
+        self.removed("mine")
+        document = self.once("was removed")
+        self.assertIn("now pinned", document["systemMessage"])
+        self.assertIn("/cm profile <name>", document["systemMessage"])
+        text = lineup.show_text(self.runtime, self.store.load(self.mid))
+        self.assertIn("pinned: profile mine no longer exists", text)
+
+    def test_profile_rename_notifies_the_pin_and_new_profile_name(self):
+        self.mutate(self.mid, pending={
+            "requested_at": "2026-09-25T00:00:00Z", "kind": "profile", "profile": "mine",
+            "follow": True, "document": None, "reasons": ["native agents"]})
+        self.runtime.profiles.rename("mine", "renamed")
+        self.removed("mine", renamed_to="renamed")
+        document = self.once("was renamed to 'renamed'")
+        self.assertIn("now pinned", document["systemMessage"])
+        self.assertIn("/cm profile renamed", document["systemMessage"])
+        text = lineup.show_text(self.runtime, self.store.load(self.mid))
+        self.assertIn("pending change: take profile renamed and pin this session", text)
+
     def test_stopped_follower_has_no_prompt_message(self):
         self.mutate(self.mid, last_event_source="end")
         self.change()

@@ -2376,8 +2376,12 @@ def profile_status_lines(runtime: Any, record: Mapping[str, Any]) -> list[str]:
     lines: list[str] = []
     pending = record.get("pending")
     if pending:
-        intent = (f"follow profile {pending['profile']}" if pending.get("follow")
-                  else "pin this session to the recorded lineup")
+        if pending.get("kind") == "profile":
+            intent = (f"follow profile {pending['profile']}" if pending.get("follow")
+                      else f"take profile {pending['profile']} and pin this session")
+        else:
+            intent = (f"take the recorded lineup and follow profile {pending['profile']}" if pending.get("follow")
+                      else "pin this session to the recorded lineup")
         reasons = "; ".join(pending.get("reasons") or ())
         lines.append(f"pending change: {intent} ({reasons}) — applies at the next resume "
                      f"(charmer -r {mid}); drop it with /cm pin; replace it with "
@@ -2385,7 +2389,14 @@ def profile_status_lines(runtime: Any, record: Mapping[str, Any]) -> list[str]:
     if not name:
         return lines
     if not record["follow"]:
-        lines.append(f"pinned: edits of profile {name} do not reach this session — /cm follow follows it again")
+        try:
+            missing = not runtime.profiles.contains(name)
+        except (profile.ProfileError, OSError):
+            missing = False
+        if missing:
+            lines.append(f"pinned: profile {name} no longer exists — /cm profile <name> follows another profile")
+        else:
+            lines.append(f"pinned: edits of profile {name} do not reach this session — /cm follow follows it again")
         return lines
     try:
         eff = _record_eff(record)
@@ -3334,6 +3345,16 @@ def _on_removed_in_phase(
                 return Decision("skip")
             updated["mutation_token"] = sessions.new_mutation_token()
             store.save(updated)
+            if record["follow"] and record["profile"] == name:
+                message = (f"charmer: profile {name!r} was {what}; this session keeps its lineup and is now pinned "
+                           f"— /cm profile {renamed_to or '<name>'} follows another profile")
+            elif updated.get("pending"):
+                message = (f"charmer: profile {name!r} was {what}; the pending lineup change pins this session "
+                           "at its next resume — /cm pin drops it")
+            else:
+                message = (f"charmer: the pending change was dropped because profile {name!r} was removed "
+                           "— /cm show shows the lineup this session keeps")
+            _post_notice(runtime, updated, message)
             return Decision("written", text="\n".join(lines))
 
         try:
