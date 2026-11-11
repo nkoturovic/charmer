@@ -438,10 +438,9 @@ class NetworkCommandCase(unittest.TestCase):
         return self.harness.state_bytes()
 
 
-# Keyed plain HTTP is rendered once the renderer's keyed check takes the
-# network; the end-to-end command rows below use HTTPS on a private network,
-# and the plain-HTTP approval text is checked on the resolved provider.
-ADD_KEYED = ["providers", "add", KEYED_ID, "--kind", "openai-compatible", "--base-url",
+# Most end-to-end command rows use HTTPS on a private network; keyed plain
+# HTTP has its own end-to-end row (KeyedPlainHttpTests).
+ADD_KEYED =["providers", "add", KEYED_ID, "--kind", "openai-compatible", "--base-url",
              "https://box.example.test:8010/v1", "--auth", "bearer", "--secret-ref", f"env:{SECRET}",
              "--family", "boxfam"]
 SCOPE_LINE = ("The key is sent only to this origin, and only to addresses in that network (checked at every "
@@ -1549,6 +1548,80 @@ class ReloadEntryPointTests(_proxy_control_case()):
                 if not served:
                     self.assertIn("gateway reloaded without the private-network selector(s) custom-box-chat",
                                   err.getvalue())
+
+
+class CatalogNetworkGateTests(unittest.TestCase):
+    """``catalog.keyed_compat_problem`` (T1 validation, T2 and the render
+    precondition) takes the network: a keyed plain-HTTP base on a declared
+    network passes; a closed private-network gate refuses any network entry."""
+
+    def entry(self, document: dict, *, docs: dict | None = None) -> dict:
+        return layer_of({KEYED_ID: document}, docs=docs or network_docs()).providers[KEYED_ID].entry
+
+    def test_keyed_plain_http_on_a_network_passes_and_a_closed_gate_refuses(self) -> None:
+        provider = self.entry(keyed_declaration("http://box.example.test:8010/v1", network="tailnet"))
+        self.assertEqual(provider["transport"]["network"], "tailnet")
+        self.assertIsNone(catalog.keyed_compat_problem(provider, network_docs()["gateway"]))
+        self.assertEqual(catalog.keyed_compat_problem(provider, network_docs(network=False)["gateway"]),
+                         catalog.PRIVATE_NETWORK_CLOSED)
+        # The keyed gate first.
+        self.assertEqual(catalog.keyed_compat_problem(provider, network_docs(keyed=False, network=False)["gateway"]),
+                         catalog.KEYED_AUDIT_CLOSED)
+        # The base URL is checked with the network, on every path.
+        for base, text in (("http://203.0.113.9:8010/v1", "203.0.113.9 is not on a private network"),
+                           ("http://192.168.1.10:8010/v1", "192.168.1.10 is on the lan network, not tailnet")):
+            outside = copy.deepcopy(provider)
+            outside["transport"]["base_url"] = base
+            self.assertEqual(catalog.keyed_compat_problem(outside, network_docs()["gateway"]),
+                             f"a keyed openai-compatible base URL is refused ({text})")
+        bare = copy.deepcopy(provider)
+        del bare["transport"]["network"]
+        self.assertEqual(catalog.keyed_compat_problem(bare, network_docs()["gateway"]),
+                         "a keyed openai-compatible base URL is refused (a secret is sent only over https)")
+
+    def test_the_keyless_lan_kind_with_a_network_gets_the_same_gate(self) -> None:
+        provider = layer_of({LAN_ID: lan_declaration()}).providers[LAN_ID].entry
+        self.assertIsNone(catalog.keyed_compat_problem(provider, network_docs()["gateway"]))
+        self.assertEqual(catalog.keyed_compat_problem(provider, network_docs(network=False)["gateway"]),
+                         catalog.PRIVATE_NETWORK_CLOSED)
+        plain = layer_of({LAN_ID: lan_declaration("http://box.lan:8010/v1", network=None)}).providers[LAN_ID].entry
+        self.assertIsNone(catalog.keyed_compat_problem(plain, network_docs(keyed=False, network=False)["gateway"]))
+
+    def test_one_accessor(self) -> None:
+        self.assertIs(operator.private_network_audited, catalog.private_network_audited)
+        self.assertEqual((operator.PRIVATE_NETWORK_AUDIT, operator.NETWORK_GATED),
+                         (catalog.PRIVATE_NETWORK_AUDIT, catalog.PRIVATE_NETWORK_CLOSED))
+
+
+class KeyedPlainHttpTests(NetworkCommandCase):
+    """A keyed provider over plain HTTP on a declared network, end to end:
+    declared, approved with the plain-HTTP sentence, rendered as the block."""
+
+    def test_add_approve_and_render(self) -> None:
+        from charmer import proxy, served_plan
+
+        argv = [*ADD_KEYED]
+        argv[argv.index("https://box.example.test:8010/v1")] = "http://box.example.test:8010/v1"
+        code, out, err = self.command(argv, "y\n", network="tailnet")
+        self.assertEqual(code, 0, err)
+        self.assertIn(PLAIN_HTTP_APPROVAL, err)
+        self.assertEqual(self.declaration()["provider"]["base_url"], "http://box.example.test:8010/v1")
+        from charmer import state
+
+        state.atomic_write(self.harness.secret_file, f"{SECRET}={LEAK_KEY}\n".encode())
+        path = operator.providers_dir(self.harness.env) / f"{KEYED_ID}.json"
+        document = strict_json.loads(path.read_bytes())
+        document["lines"] = line()
+        path.write_bytes(strict_json.pretty_file_bytes(document))
+        code, out, err = self.harness.op(["providers", "apply"])
+        self.assertEqual(code, 0, out + err)
+        rendered = served_plan.parse_restricted_yaml((proxy.config_dir(self.runtime.home) / "config.yaml").read_text())
+        section = next(item for item in rendered["openai-compatibility"] if item["name"] == KEYED_ID)
+        self.assertEqual(section["private-network"], {"base-url": "http://box.example.test:8010/v1",
+                                                      "class": "tailnet"})
+        self.assertNotIn("base-url", section)
+        self.assertEqual(section["api-key-entries"], [{"api-key": LEAK_KEY}])
+        self.assertNotIn(LEAK_KEY, out + err)
 
 
 LEAK_KEY = "boxco-dummy-leak-sentinel-value"
