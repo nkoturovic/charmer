@@ -62,9 +62,8 @@ import charmer.cli.text as cli_text
 import charmer.cli.types as cli_types
 
 
-CARD_HELP = screen_actions.help_text("card", termtext.CHEATSHEET_HINT + "\n" + cli_text._HELP_MODEL + cli_text._HELP_SESSION)
-RESUME_HELP = screen_actions.help_text("resume-card", "{sign_in}\n" + termtext.CHEATSHEET_HINT + "\n"
-                                       + cli_text._HELP_MODEL + cli_text._HELP_SESSION)
+CARD_HELP = screen_actions.help_text("card", cli_text._HELP_MODEL + cli_text._HELP_SESSION)
+RESUME_HELP = screen_actions.help_text("resume-card", "{sign_in}\n" + cli_text._HELP_MODEL + cli_text._HELP_SESSION)
 SESSIONS_HELP = screen_actions.help_text("sessions", cli_text.SESSIONS_HELP)
 LINEUP_HELP = screen_actions.help_text("lineup-dialog", cli_text.LINEUP_DIALOG_HELP)
 PER_AGENT_HELP = screen_actions.help_text("lineup-per-agent", cli_text.LINEUP_PER_AGENT_HELP)
@@ -1186,16 +1185,14 @@ class _SessionsScreen:
         """The selected row's conditional keys: E (running in the
         background), M (no end event and not running), P (a scope to repair)."""
 
-        if self.marked:
-            return (cli_text.SESSIONS_MARK_BINDING,)
+        actions = [cli_text.SESSIONS_MARK_BINDING] if self.marked else []
         record = self._record()
         if record is None or self._on_banner():
-            return ()
+            return tuple(actions)
         state_ = self.states.get(sessions.managed_id(record), "unknown")
-        actions = []
         if state_ == "live":
             actions.append(cli_text.SESSIONS_STOP_BINDING)
-        if self._markable(record, state_):
+        if not self.marked and self._markable(record, state_):
             actions.append(cli_text.SESSIONS_MARK_BINDING)
         if record.get("version") == sessions.RECORD_VERSION:
             actions.append(cli_text.SESSIONS_REPAIR_BINDING)

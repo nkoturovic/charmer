@@ -5,16 +5,17 @@ selector is inline), never from asking the action table for every key.
 """
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import io
 import re
 from dataclasses import dataclass
 from unittest import mock
 
-from charmer import catalog, cli, operator, tui, views
+from charmer import catalog, cli, operator, sessions, tui, views
 from charmer.cli import text as cli_text
 from charmer.cli.screens import (
-    direct, findings, gateway_actions, get_started, launch_sessions,
+    actions, direct, findings, gateway_actions, get_started, launch_sessions,
     models, profiles, propagation, providers, settings, transition,
 )
 
@@ -27,11 +28,23 @@ WIDTHS = (80, 100, 120)
 BAR_NOTES = {"settings": frozenset({cli_text.SETTINGS_READ_ONLY_KEY})}
 
 
+def _all_keys(screen):
+    return {row.key for row in actions.ACTIONS[screen]}
+
+
 @dataclass(frozen=True)
 class Case:
     screen: str
     state: str
     bar: tui.KeyBar
+    active: frozenset[str] | None = None
+    enter_duplicates: frozenset[str] = frozenset()
+
+    def __post_init__(self):
+        if self.active is None and self.screen in actions.ACTIONS:
+            # Unconditional widgets offer the whole table. Contextual
+            # screens below enumerate their applicable actions explicitly.
+            object.__setattr__(self, "active", frozenset(row.key for row in actions.ACTIONS[self.screen]))
 
 
 @dataclass(frozen=True)
@@ -41,6 +54,8 @@ class Frame:
     width: int
     bindings: tuple[tuple[str, str, int], ...]
     parts: tuple[str, ...]
+    active: frozenset[str] | None = None
+    enter_duplicates: frozenset[str] = frozenset()
 
     @property
     def drawn(self) -> set[str]:
@@ -62,13 +77,38 @@ def draw(case: Case, width: int) -> Frame:
     parts = tuple(part for line in win.text().splitlines() if line.strip()
                   for part in line.strip().split(" · "))
     bindings = tuple((key, label, rank) for (key, label), rank in zip(case.bar.bindings, case.bar.ranks))
-    return Frame(case.screen, case.state, width, bindings, parts)
+    return Frame(case.screen, case.state, width, bindings, parts, case.active, case.enter_duplicates)
 
 
 def reachability_errors(screen, rows, frames):
     candidates = {row.key for row in rows if not row.silent and not row.help_only}
     drawn = set().union(*(frame.drawn for frame in frames))
     return [f"{screen} {key}: no fixture draws this bar candidate" for key in sorted(candidates - drawn)]
+
+
+def availability_errors(screen, rows, frames):
+    """Every distinct applicable action must be drawn in that fixture state.
+
+    Overflow can move a key into help at a narrower width, but a different
+    row cannot supply evidence for this one. Only an exact Enter duplicate
+    (not an action reached through another choice) or an explicit help-only
+    key may be absent at every enumerated width.
+    """
+
+    documented = {row.key for row in rows if row.silent or row.help_only}
+    states = {}
+    for frame in frames:
+        if frame.active is not None:
+            states.setdefault(frame.state, []).append(frame)
+    errors = []
+    for state, variants in states.items():
+        active, duplicates = variants[0].active, variants[0].enter_duplicates
+        drawn = set().union(*(frame.drawn for frame in variants))
+        if duplicates and "Enter" not in drawn:
+            errors.append(f"{screen} Enter ({state}): duplicate bindings have no drawn primary action")
+        for key in sorted(active - documented - duplicates - drawn):
+            errors.append(f"{screen} {key} ({state}): handled action is neither drawn nor an Enter duplicate")
+    return errors
 
 
 def frame_errors(frame, rows):
@@ -116,13 +156,43 @@ def _drawn_bar(draw_screen):
     return bars[0]
 
 
+def _provider_actions(screen, fact):
+    # These are the handlers' row conditions, independent of the bar selector.
+    # In particular, opening an account menu is NOT the same action as X's
+    # sign-out. Only V/details, K/set-key and L/account repeat Enter exactly.
+    active = _all_keys("providers") - {"Enter", "P", "A", "E", "L", "K", "X", "T", "Space", "V"}
+    duplicates = set()
+    if screen.apply_offer:
+        active.add("P")
+    if fact is not None:
+        active.update(("Enter", "A", "Space", "V"))
+        if screen._own(fact):
+            active.update(("E", "X"))
+        if screen._account_capable(fact):
+            active.add("L")
+        if screen._key_choice(fact) or (not screen._account(fact) and not screen._keyless(fact)):
+            active.add("K")
+        connection = screen.connections.get(str(fact["id"]))
+        if screen._account(fact) and connection is not None and connection.accounts:
+            active.add("X")
+        if not screen._account(fact) and not screen._keyless(fact) and str(fact.get("credential", "")).endswith(" present"):
+            active.add("X")
+        if str(fact["id"]) in screen.testable:
+            active.add("T")
+        duplicates = {"details": {"V"}, "set-key": {"K"}, "account": {"L"}}.get(screen._primary(fact), set())
+    return frozenset(active), frozenset(duplicates)
+
+
 def _provider_cases(runtime):
     screen = providers._ProvidersScreen(runtime, palette=tui.MONO_PALETTE, journal=lambda: None)
     original = screen.facts
+    connections = screen.connections
     account = next(f for f in original if f["kind"] == "oauth-pool")
     keyed = next(f for f in original if f["kind"] != "oauth-pool" and f.get("auth") != "none")
     variants = {
         "account": account,
+        "account-signed-in": account,
+        "account-signed-in-no-key-choice": account,
         "account-key": dict(account, kind="direct-anthropic", auth="bearer", credential="EXAMPLE_KEY present"),
         "key-set": keyed,
         "key-missing": dict(keyed, credential="EXAMPLE_KEY missing"),
@@ -133,13 +203,21 @@ def _provider_cases(runtime):
         "empty": None,
     }
     for name, fact in variants.items():
-        for down in (False, True):
-            for apply in (False, True):
-                screen.facts = [fact] if fact is not None else []
-                screen.selected = 0
-                screen.gateway_down, screen.apply_offer = down, apply
-                screen.testable = {f["id"] for f in original}
-                yield Case("providers", f"{name}/down={down}/apply={apply}", screen._keybar())
+        screen.connections = dict(connections)
+        if name.startswith("account-signed-in"):
+            pid = str(fact["id"])
+            screen.connections[pid] = dataclasses.replace(connections[pid], accounts=("fixture@example.com",))
+        choice = (mock.patch.object(screen, "_key_choice", return_value=False)
+                  if name.endswith("no-key-choice") else contextlib.nullcontext())
+        with choice:
+            for down in (False, True):
+                for apply in (False, True):
+                    screen.facts = [fact] if fact is not None else []
+                    screen.selected = 0
+                    screen.gateway_down, screen.apply_offer = down, apply
+                    screen.testable = {f["id"] for f in original}
+                    active, duplicates = _provider_actions(screen, fact)
+                    yield Case("providers", f"{name}/down={down}/apply={apply}", screen._keybar(), active, duplicates)
 
 
 def _profile_cases(runtime):
@@ -155,7 +233,18 @@ def _profile_cases(runtime):
     for name, row in variants.items():
         for filtered in (False, True):
             screen.rows, screen.index, screen.fallback_only = (() if row is None else (row,)), 0, filtered
-            yield Case("profiles", f"{name}/fallback={filtered}", screen._keybar())
+            active = _all_keys("profiles") - {"Enter", "E", "C", "R", "X", "U", "D"}
+            if row is not None:
+                active.add("E")
+                if not row.loadable:
+                    active.add("U" if row.origin == "seed" else "X")
+                else:
+                    active.update(("Enter", "C", "D"))
+                    if row.origin != "seed":
+                        active.update(("R", "X"))
+                    elif row.seed_state != "current":
+                        active.add("U")
+            yield Case("profiles", f"{name}/fallback={filtered}", screen._keybar(), frozenset(active))
 
 
 def _card_cases(runtime, record):
@@ -165,31 +254,54 @@ def _card_cases(runtime, record):
         for hint in (None, ("1.0.0", "1.0.1")):
             card.not_connected, card.update_hint = not connected, hint
             card._replan()
-            yield Case("card", f"connected={connected}/update={hint is not None}", card._keybar())
+            active = _all_keys("card") - {"L", "U"}
+            if not connected:
+                active.add("L")
+            if hint is not None:
+                active.add("U")
+            yield Case("card", f"connected={connected}/update={hint is not None}", card._keybar(), frozenset(active),
+                       frozenset({"W"}) if not connected else frozenset())
     prepared = runtime.prepare(cli._record_resume_target(record), action="resume", passthrough=[],
                                session_id=fx.FIXED_ID)
     card = render.card_screen(runtime, prepared.target, action="resume", prepared=prepared)
     for hint in (None, ("1.0.0", "1.0.1")):
         card.update_hint = hint
         card._replan()
-        yield Case("resume-card", f"update={hint is not None}", card._keybar())
+        active = _all_keys("resume-card") - ({"U"} if hint is None else set())
+        yield Case("resume-card", f"update={hint is not None}", card._keybar(), frozenset(active))
 
 
 def _session_cases(runtime):
     screen = launch_sessions._SessionsScreen(runtime, palette=tui.MONO_PALETTE, now=fx.FIXED_NOW)
+    base = _all_keys("sessions") - {"E", "M", "P"}
     for root in (False, True):
         for all_dirs in (False, True):
             screen.root, screen.cwd_filter = root, not all_dirs
             for index, record in enumerate(screen.records):
                 screen.selected = index
                 state = screen.states[record["managed_id"]]
-                yield Case("sessions", f"{state}/root={root}/all-dirs={all_dirs}", screen._keybar())
+                active = set(base)
+                if state == "live":
+                    active.add("E")
+                elif record.get("last_event_source") != "end":
+                    active.add("M")
+                if record.get("version") == sessions.RECORD_VERSION:
+                    active.add("P")
+                yield Case("sessions", f"{state}/root={root}/all-dirs={all_dirs}", screen._keybar(), frozenset(active))
             screen.marked = {fx.FIXED_ID, fx.OTHER_ID}
-            yield Case("sessions", f"marked/root={root}/all-dirs={all_dirs}", screen._keybar())
+            for index, record in enumerate(screen.records):
+                screen.selected = index
+                state = screen.states[record["managed_id"]]
+                active = base | {"M"}
+                if state == "live":
+                    active.add("E")
+                if record.get("version") == sessions.RECORD_VERSION:
+                    active.add("P")
+                yield Case("sessions", f"marked/{state}/root={root}/all-dirs={all_dirs}", screen._keybar(), frozenset(active))
             screen.marked.clear()
     screen.records = []
     screen.selected = 0
-    yield Case("sessions", "empty", screen._keybar())
+    yield Case("sessions", "empty", screen._keybar(), frozenset(base - {"Enter", "T", "V", "F", "X", "R", "Q", "Space", "*"}))
 
 
 def _settings_cases(runtime):
@@ -202,7 +314,15 @@ def _settings_cases(runtime):
             for index, (kind, row) in enumerate(screen.entries):
                 screen.index = index
                 name = row.key if kind == "row" else str(kind)
-                yield Case("settings", f"{name}/writable={writable}", screen._keybar())
+                active = _all_keys("settings") - {"Enter", "R", "← →"}
+                if kind == "row":
+                    if row.edit in views.SETTINGS_NAVIGATION_EDITS or (row.edit == "token" and writable):
+                        active.add("Enter")
+                    elif screen._can_edit(row) or (row.key == views.SETTINGS_ENV_KEEP_KEY and row.editable and writable):
+                        active.update(("Enter", "R"))
+                        if row.key == "review_round_cap":
+                            active.add("← →")
+                yield Case("settings", f"{name}/writable={writable}", screen._keybar(), frozenset(active))
     finally:
         runtime.allow_state_writes = original
 
@@ -213,12 +333,14 @@ def _direct_cases(runtime):
         served = screen.served
         for down in (False, True):
             screen.served = None if down else served
+            base = (_all_keys("direct") - {"Tab", "G", "W", "← →"}) | ({"G", "Tab"} if purpose is None else set()) | ({"W"} if down else set())
             for index, row in enumerate(screen.rows):
                 screen.selected = index
-                yield Case("direct", f"{row.key}/purpose={purpose}/down={down}", screen._keybar())
+                active = base | ({"← →"} if row.mode == "gateway" and screen._shows_effort() and row.efforts else set())
+                yield Case("direct", f"{row.key}/purpose={purpose}/down={down}", screen._keybar(), frozenset(active))
             original = screen.rows
             screen.rows = []
-            yield Case("direct", f"empty/purpose={purpose}/down={down}", screen._keybar())
+            yield Case("direct", f"empty/purpose={purpose}/down={down}", screen._keybar(), frozenset(base - {"Enter", "Tab"}))
             screen.rows = original
 
 
@@ -229,7 +351,10 @@ def _editor_cases(runtime):
     form = tui._GeneralForm(state, tui.MONO_PALETTE)
     for index, field in enumerate(form.FIELDS):
         form.focus = index
-        yield Case("form", field, _drawn_bar(form._draw))
+        # ? types in a text field; elsewhere it is the displayed binding
+        # for the same help action that F1 also opens.
+        active = _all_keys("form") - ({"?"} if field in form.inputs else {"F1"})
+        yield Case("form", field, _drawn_bar(form._draw), frozenset(active))
     native = tui._NativeForm(state, tui.MONO_PALETTE)
     yield Case("native-form", "choices", _drawn_bar(native._draw))
     rows = views.line_rows(state.cat, state.effective, custom_ids=frozenset())
@@ -242,9 +367,10 @@ def _editor_cases(runtime):
     routing = tui.RoutingPreviewScreen(render.default_lineup(runtime), name=catalog.DEFAULT_SEED, palette=tui.MONO_PALETTE)
     yield Case("routing", "profile", _drawn_bar(routing._draw))
     onboarding = tui.OnboardingForm("new provider", views.provider_form_fields(), palette=tui.MONO_PALETTE)
-    for index, (name, _label, _default, _choices) in enumerate(onboarding.fields):
+    for index, (name, _label, _default, choices) in enumerate(onboarding.fields):
         onboarding.index = index
-        yield Case("onboarding-form", name, _drawn_bar(onboarding._draw))
+        active = _all_keys("onboarding-form") - ({"F1"} if choices else {"?", "↑↓"})
+        yield Case("onboarding-form", name, _drawn_bar(onboarding._draw), frozenset(active))
 
 
 def _model_cases(runtime):
@@ -257,12 +383,19 @@ def _model_cases(runtime):
     model = screen.model(120)
     for index, key in enumerate(screen.keys):
         screen.index = index
-        yield Case("models", key or "heading", screen._keybar(model))
+        active = _all_keys("models") - {"Enter", "V", "Q", "E", "X"}
+        if key is not None:
+            active.update(("Enter", "V"))
+            if key in screen.lifecycle:
+                active.update(("Q", "E"))
+            if key != "__candidates__" and key not in runtime.catalog.docs["models-v2"]["models"]:
+                active.add("X")
+        yield Case("models", key or "heading", screen._keybar(model), frozenset(active))
         if key in screen.lifecycle:
             admitted = dataclasses.replace(model, admitted=frozenset((*model.admitted, key)))
-            yield Case("models", f"{key}/admitted", screen._keybar(admitted))
+            yield Case("models", f"{key}/admitted", screen._keybar(admitted), frozenset(active))
             screen.banner = "fixture: settings unavailable"
-            yield Case("models", f"{key}/read-only", screen._keybar(model))
+            yield Case("models", f"{key}/read-only", screen._keybar(model), frozenset(active))
             screen.banner = None
 
 
@@ -296,11 +429,12 @@ def cases(runtime):
     prop = propagation._PropagationScreen(runtime, tui.MONO_PALETTE, [catalog.DEFAULT_SEED])
     yield Case("propagation", "running follower", tui.KeyBar(prop.keybar()))
     prop.states = {mid: "ended" for mid in prop.states}
-    yield Case("propagation", "no running followers", tui.KeyBar(prop.keybar()))
+    yield Case("propagation", "no running followers", tui.KeyBar(prop.keybar()), frozenset(_all_keys("propagation") - {"A"}))
     started = get_started._GetStartedScreen(runtime, tui.MONO_PALETTE)
     for index, step in enumerate(started.state.steps):
         started.selected = index
-        yield Case("get-started", step.id, _drawn_bar(started._draw))
+        active = _all_keys("get-started") - ({"F"} if step.id != "claude" else set())
+        yield Case("get-started", step.id, _drawn_bar(started._draw), frozenset(active))
     for only in (None, "other"):
         picker = get_started._ProviderPicker(runtime, tui.MONO_PALETTE, only=only)
         yield Case("provider-picker", f"only={only}", _drawn_bar(picker._draw))

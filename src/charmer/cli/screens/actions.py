@@ -11,6 +11,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable, Mapping
 
+from charmer import termtext
+
 
 @dataclass(frozen=True)
 class Action:
@@ -42,6 +44,13 @@ def _rows(screen: str, *rows: tuple) -> tuple[Action, ...]:
 
 _HELP = ("help", "?", "this screen's help", None, "help")
 _BACK = ("back", "Esc", "back", None, "back")
+_CARD_HELP_KEY = ("help", "?", "this screen's help", None, "help", 2,
+                  "? — this help, then the workflow guarantees below.")
+_UPDATE_HELP = ("U — check for and install a newer charmer: an installed release checks, asks and "
+                "applies; a Nix install updates through its flake. Claude Code itself: W → Claude Code.")
+_DOCTOR_HELP = ("H — doctor: its findings as a list (BLOCKED, Attention by area, then the advisories); "
+                "Enter acts on a row or shows its command, V the full report, W the gateway's actions.")
+_DETAILS_HELP = "V — full details: every row, the /model lead set, the kept environment, managed differences."
 
 ACTIONS: dict[str, tuple[Action, ...]] = {
     "card": _rows(
@@ -49,25 +58,33 @@ ACTIONS: dict[str, tuple[Action, ...]] = {
         ("launch", "Enter", "launch the profile on the card (while nothing is connected: open Get started)",
          "charmer --profile <name>", "launch", 1, "Enter — launch this profile (a fresh durable session)."),
         ("launch-anyway", "L", "launch while nothing is connected yet", "charmer --profile <name>", "launch anyway", 1),
-        ("update", "U", "check for and install a newer charmer", "charmer update", "update", 1),
-        ("edit", "E", "edit the profile on the card", "charmer profile edit <name>", "edit", 1),
-        ("next-profile", "Tab", "show the next profile (Shift-Tab: the previous one)", None, "next", 1),
-        ("profiles", "P", "open Profiles", "charmer profile list", "profiles"),
-        ("direct", "D", "open Direct", "charmer direct <model>", "direct"),
-        ("details", "V", "every card row in full, the /model lead set and the kept environment", None, "details"),
-        ("sessions", "S", "open Sessions", "charmer sessions list", "sessions"),
+        ("update", "U", "check for and install a newer charmer", "charmer update", "update", 1, _UPDATE_HELP),
+        ("edit", "E", "edit the profile on the card", "charmer profile edit <name>", "edit", 1,
+         "E — edit this profile (^S saves; sessions that follow it are offered the change)."),
+        ("next-profile", "Tab", "show the next profile (Shift-Tab: the previous one)", None, "next", 1,
+         "Tab / Shift-Tab — next / previous profile (connected first, then most recently used)."),
+        ("profiles", "P", "open Profiles", "charmer profile list", "profiles", 2,
+         "P — profiles: use, create, copy, rename, delete, restore shipped versions, make one the default; "
+         "B there edits named bindings; F lists fallback profiles (one provider each) for an outage."),
+        ("direct", "D", "open Direct", "charmer direct <model>", "direct", 2,
+         "D — direct session: one model as the lead, no agents (custom models too)."),
+        ("details", "V", "every card row in full, the /model lead set and the kept environment", None, "details", 2, _DETAILS_HELP),
+        ("sessions", "S", "open Sessions", "charmer sessions list", "sessions", 2,
+         "S — sessions: resume, details (V), change a lineup (T), follow/pin (F), rename (R), forget (X)."),
         ("providers", "G", "open Providers", "charmer providers list", "providers", 2,
-         "G — providers: Enter connects, A add models, N new, K API key, L sign in or out, T test, X remove, P apply."),
-        ("models", "M", "open Models", "charmer models list", "models"),
-        ("settings", "O", "open Settings", None, "settings"),
+         "G — providers: Enter connects, K API key, L sign in or out, T test, X remove, P apply. A add models; N new."),
+        ("models", "M", "open Models", "charmer models list", "models", 2,
+         "M — models: Enter inspects a line (or admits a new one); candidates can be declared. A adds a model."),
+        ("settings", "O", "open Settings", None, "settings", 2,
+         "O — settings: compaction, Explore, workflow default, review rounds, kept environment, token."),
         ("doctor", "H", "doctor's findings (first-run checks while nothing is connected)", "charmer doctor", "doctor", 2,
-         "H — doctor: Enter acts, V the report, W the gateway's actions; while disconnected: first-run checks."),
+         _DOCTOR_HELP + " While nothing is connected, H opens the first-run checks instead."),
         ("get-started", "W", "open Get started", "charmer setup", "", 3,
          "New here? W — Get started: connect a provider (API key or account sign-in) and pick a profile.",
          "Enter already opens Get started when nothing is connected; W remains a help shortcut."),
-        ("help", "?", "this screen's help", None, "help", 2,
-         "? — this help, then the workflow guarantees below."),
-        ("quit", "Esc", "leave without launching", None, "quit"),
+        _CARD_HELP_KEY,
+        ("quit", "Esc", "leave without launching", None, "quit", 2,
+         "Esc — quit without launching (in a dialog or a text field, Esc cancels it)."),
         ("previous-profile", "Shift-Tab", "show the previous profile", None, "", 2, "", None, True),
         ("cycle-profile", "← →", "show the previous or next profile", None, "", 2, "", None, True),
     ),
@@ -75,13 +92,15 @@ ACTIONS: dict[str, tuple[Action, ...]] = {
         "resume-card",
         ("resume", "Enter", "resume the session with the lineup shown", "charmer -r <session>", "resume", 1,
          "Enter — resume this session with the lineup shown (a resume keeps the session's lineup)."),
-        ("update", "U", "check for and install a newer charmer", "charmer update", "update", 1),
-        ("details", "V", "every card row in full, the /model lead set and the kept environment", None, "details"),
-        ("sessions", "S", "open Sessions", "charmer sessions list", "sessions"),
+        ("update", "U", "check for and install a newer charmer", "charmer update", "update", 1, _UPDATE_HELP),
+        ("details", "V", "every card row in full, the /model lead set and the kept environment", None, "details", 2, _DETAILS_HELP),
+        ("sessions", "S", "open Sessions", "charmer sessions list", "sessions", 2,
+         "S — sessions: change this session's lineup (T), follow/pin (F), rename (R), forget (X)."),
         ("doctor", "H", "doctor's findings: act on a row, the full report, the gateway's actions", "charmer doctor", "doctor", 2,
-         "H — doctor: Enter acts on a row or shows its command, V the full report, W the gateway's actions."),
-        _HELP,
-        ("cancel", "Esc", "go back without resuming", None, "cancel"),
+         _DOCTOR_HELP),
+        _CARD_HELP_KEY,
+        ("cancel", "Esc", "go back without resuming", None, "cancel", 2,
+         "Esc — cancel: back without resuming (in a dialog or a text field, Esc cancels it)."),
     ),
     "sessions": _rows(
         "sessions",
@@ -315,7 +334,14 @@ def bar(screen: str, ids: Iterable[str] | None = None, *, labels: Mapping[str, s
 def help_text(screen: str, notes: str = "") -> str:
     """Every non-silent key, one help line each, then the screen's notes."""
 
-    keys = "\n".join(row.help for row in ACTIONS[screen] if not row.silent)
+    lines = []
+    for row in ACTIONS[screen]:
+        if row.silent:
+            continue
+        lines.append(row.help)
+        if screen in ("card", "resume-card") and row.key == "?":
+            lines.append(termtext.CHEATSHEET_HINT)
+    keys = "\n".join(lines)
     return keys + ("\n\n" + notes if notes else "")
 
 

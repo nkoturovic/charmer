@@ -21,4 +21,4 @@
   lineup gen 1 · 8 agents · follow
 
   Enter resume · T lineup · V details · F follow/pin · X forget · M mark ended
-  R rename · Q save · L link · Space mark · * all · ? 3 more · Esc back
+  P repair · R rename · Q save · L link · Space mark · ? 4 more · Esc back

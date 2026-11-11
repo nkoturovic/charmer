@@ -206,7 +206,7 @@ class _SettingsScreen:
             chrome=chrome,
             list_rows=list_rows,
             detail_reserve=0,
-            bar_rows=self._keybar().rows(width),
+            bar_rows=self._keybar(longest=True).rows(width),
             cols=cli_text.SETTINGS_MIN_COLS,
         )
         return floor.as_tuple()
@@ -222,8 +222,13 @@ class _SettingsScreen:
             and bool(self.runtime.allow_state_writes)
         )
 
-    def _keybar(self) -> tui.KeyBar:
-        row = self.selected_row
+    def _keybar(self, *, longest: bool = False) -> tui.KeyBar:
+        if longest:
+            return max((self._row_keybar(row) for kind, row in self.entries if kind == "row"),
+                       key=lambda bar: len(bar.text()), default=self._row_keybar(None))
+        return self._row_keybar(self.selected_row)
+
+    def _row_keybar(self, row: views.SettingsRow | None) -> tui.KeyBar:
         ids = {"providers", "models", "help", "back"}
         labels = {}
         reason = ""

@@ -93,12 +93,6 @@ _HELP_MODEL = (
     "/config block instead); a model outside the set is refused — relaunch with a "
     "profile whose lead is that model.\n"
 )
-_HELP_DOCTOR = (
-    "H — doctor: its findings as a list (BLOCKED, Attention by area, then the advisories);\n"
-    "Enter acts on a row or shows its command, V the full report, W the gateway's actions.\n"
-    "U — check for and install a newer charmer: an installed release checks, asks and\n"
-    "applies; a Nix install updates through its flake. Claude Code itself: W → Claude Code.\n"
-)
 # The terms and the in-session /cm guidance: the help (?) and the card's
 # details (V) show the same lines.
 CARD_TERMS_TITLE = "Terms"
@@ -135,42 +129,18 @@ _HELP_SESSION = (
     "\n"
     "-- workflow guarantees --------------------------------------------"
 )
-QUICK_HELP = (
-    "New here? W — Get started: connect a provider (API key or account sign-in) and pick a profile.\n"
-    "Enter — launch this profile (a fresh durable session).\n"
-    "E — edit this profile (^S saves; sessions that follow it are offered the change).\n"
-    "Tab / Shift-Tab — next / previous profile (connected first, then most recently used).\n"
-    "P — profiles: use, create, copy, rename, delete, restore shipped versions, make one the default;\n"
-    "    B there edits named bindings; F lists fallback profiles (one provider each) for an outage.\n"
-    "D — direct session: one model as the lead, no agents (custom models too).\n"
-    "S — sessions: resume, details (V), change a lineup (T), follow/pin (F), rename (R), forget (X).\n"
-    "G — providers: Enter connects, K API key, L sign in or out, T test, X remove, P apply.\n"
-    "M — models: Enter inspects a line (or admits a new one); candidates can be declared.\n"
-    "O — settings: compaction, Explore, workflow default, review rounds, kept environment, token.\n"
-    "V — full details: every row, the /model lead set, the kept environment, managed differences.\n"
-    + _HELP_DOCTOR
-    + "? — this help, then the workflow guarantees below.\n"
-    + termtext.CHEATSHEET_HINT
-    + "\n"
-    "Esc — quit without launching (in a dialog or a text field, Esc cancels it).\n"
-    + _HELP_MODEL
-    + _HELP_SESSION
-)
+def __getattr__(name: str) -> str:
+    """Compatibility names resolve to the help the screens actually show.
 
+    Keep this lazy: importing command text on the hook path must not load
+    a screen, curses or Runtime merely to expose these older names.
+    """
 
-RESUME_QUICK_HELP = (
-    "Enter — resume this session with the lineup shown (a resume keeps the session's lineup).\n"
-    "V — full details: every row, the /model lead set, the kept environment, managed differences.\n"
-    "S — sessions: change this session's lineup (T), follow/pin (F), rename (R), forget (X).\n"
-    "{sign_in}\n"
-    + _HELP_DOCTOR
-    + "? — this help, then the workflow guarantees below.\n"
-    + termtext.CHEATSHEET_HINT
-    + "\n"
-    "Esc — cancel: back without resuming (in a dialog or a text field, Esc cancels it).\n"
-    + _HELP_MODEL
-    + _HELP_SESSION
-)
+    if name not in ("QUICK_HELP", "RESUME_QUICK_HELP"):
+        raise AttributeError(name)
+    import charmer.cli.screens.launch_sessions as screens_launch_sessions
+
+    return screens_launch_sessions.CARD_HELP if name == "QUICK_HELP" else screens_launch_sessions.RESUME_HELP
 
 
 # ---------------------------------------------------------------- Sessions

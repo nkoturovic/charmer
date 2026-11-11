@@ -222,7 +222,7 @@ class GetStartedKeyTests(CardOnboardingCase):
             # Acknowledge the full refusal, then leave the card.
             _result, win = self.run_card(screen, ["w", ESC, ESC])
         self.assertEqual(calls, [])
-        self.assertEqual(screen.message, cli_text.GS_IN_SESSION)
+        self.assertEqual(screen.message, "")
         modal = next(frame for frame in win.frames if "Action result" in frame)
         body = " ".join(line.split("|", 2)[1].strip() for line in modal.splitlines() if "|" in line)
         self.assertIn(cli_text.GS_IN_SESSION, body)
@@ -230,7 +230,7 @@ class GetStartedKeyTests(CardOnboardingCase):
         with self.get_started() as calls, mock.patch.object(self.runtime, "allow_state_writes", False):
             _result, win = self.run_card(screen, ["w", ESC, ESC])
         self.assertEqual(calls, [])
-        self.assertEqual(screen.message, cli_text.GS_READONLY)
+        self.assertEqual(screen.message, "")
         modal = next(frame for frame in win.frames if "Action result" in frame)
         body = " ".join(line.split("|", 2)[1].strip() for line in modal.splitlines() if "|" in line)
         self.assertIn(cli_text.GS_READONLY, body)

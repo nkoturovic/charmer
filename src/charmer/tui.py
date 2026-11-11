@@ -2180,7 +2180,7 @@ def message_modal(win: Any, screen: Any, *, detail_rows: int | None = None, pale
     text = getattr(source, "message", "")
     detail_rows = getattr(screen, "_message_detail_rows", 0) if detail_rows is None else detail_rows
     width = getattr(screen, "_message_width", win.getmaxyx()[1])
-    if not text or text == getattr(screen, "_closed_message", None) or len(message_lines(text, width)) <= detail_rows + 1:
+    if not text or len(message_lines(text, width)) <= detail_rows + 1:
         return False
     floor = getattr(screen, "min_size", None)
     if floor is not None:
@@ -2192,9 +2192,7 @@ def message_modal(win: Any, screen: Any, *, detail_rows: int | None = None, pale
     palette = palette or getattr(screen, "palette", MONO_PALETTE)
     background = background or getattr(screen, "_draw", None)
     Modal("Action result", lines, buttons=(("Close", True),)).run(win, palette, background=background)
-    screen._closed_message = text
-    if source is not screen:
-        source.message = ""  # the editor draft outlives this screen, not its acknowledged result
+    source.message = ""  # acknowledge this result, not every future result with the same text
     return True
 
 

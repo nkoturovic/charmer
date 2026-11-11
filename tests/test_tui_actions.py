@@ -74,7 +74,13 @@ class ActionTableTests(unittest.TestCase):
                 rows = actions.ACTIONS[screen]
                 self.assertEqual(fixtures.help_errors(screen, rows, text), [])
                 expected = [row.help for row in rows if not row.silent]
-                self.assertEqual(text.splitlines()[:len(expected)], expected,
+                lines = text.splitlines()
+                if screen in ("card", "resume-card"):
+                    # The card's established discovery hint sits immediately
+                    # after ?, inside the opening key list.
+                    self.assertEqual(lines.count(tui.CHEATSHEET_HINT), 1)
+                    lines = [line for line in lines if line != tui.CHEATSHEET_HINT]
+                self.assertEqual(lines[:len(expected)], expected,
                                  f"{screen}: actual help must begin with the complete non-silent key list")
 
     def test_editor_constants_match_the_table_for_actual_variants(self):
@@ -119,6 +125,15 @@ class RenderedCensusTests(unittest.TestCase):
                 frames = [frame for frame in self.frames if frame.screen == screen]
                 self.assertEqual(fixtures.reachability_errors(screen, rows, frames), [])
 
+    def test_each_applicable_action_is_drawn_in_its_own_state(self):
+        for screen in actions.ACTIONS:
+            frames = [frame for frame in self.frames if frame.screen == screen]
+            self.assertTrue(all(frame.active is not None for frame in frames), screen)
+            self.assertEqual(fixtures.availability_errors(screen, actions.ACTIONS[screen], frames), [])
+        providers = [frame for frame in self.frames if frame.screen == "providers"]
+        self.assertEqual(set().union(*(frame.enter_duplicates for frame in providers)), {"V", "K", "L"})
+        self.assertTrue(any("signed-in" in frame.state and "X" in frame.drawn for frame in providers))
+
     def test_no_applicable_rank_one_is_hidden_at_supported_widths(self):
         for frame in self.frames:
             with self.subTest(screen=frame.screen, state=frame.state, width=frame.width):
@@ -139,6 +154,29 @@ class FixtureCensusSelfTests(unittest.TestCase):
         missing = fixtures.draw(dataclasses.replace(self.case, bar=tui.KeyBar((("?", "help", 2),))), 80)
         self.assertEqual(fixtures.reachability_errors("sample", self.rows, [missing]),
                          ["sample A: no fixture draws this bar candidate"])
+
+    def test_another_state_cannot_hide_a_missing_applicable_action(self):
+        available = fixtures.draw(self.case, 80)
+        missing = fixtures.draw(dataclasses.replace(self.case, state="missing", bar=tui.KeyBar((("?", "help"),)),
+                                                    active=frozenset({"A", "?"})), 80)
+        self.assertEqual(fixtures.reachability_errors("sample", self.rows, [available, missing]), [])
+        self.assertEqual(fixtures.availability_errors("sample", self.rows, [available, missing]),
+                         ["sample A (missing): handled action is neither drawn nor an Enter duplicate"])
+
+    def test_only_an_exact_enter_duplicate_is_exempt(self):
+        rows = (actions.Action("sample.details", "Enter", "details", label="details", rank=1),
+                actions.Action("sample.details-key", "V", "details", label="details"),
+                actions.Action("sample.sign-out", "X", "sign out", label="sign out"))
+        case = fixtures.Case("sample", "details", tui.KeyBar((("Enter", "details", 1),)),
+                             frozenset({"Enter", "V"}), frozenset({"V"}))
+        frame = fixtures.draw(case, 80)
+        self.assertEqual(fixtures.availability_errors("sample", rows, [frame]), [])
+        distinct = dataclasses.replace(frame, active=frame.active | {"X"})
+        self.assertEqual(fixtures.availability_errors("sample", rows, [distinct]),
+                         ["sample X (details): handled action is neither drawn nor an Enter duplicate"])
+        no_primary = dataclasses.replace(frame, parts=())
+        self.assertIn("sample Enter (details): duplicate bindings have no drawn primary action",
+                      fixtures.availability_errors("sample", rows, [no_primary]))
 
     def test_candidate_membership_is_not_evidence_of_drawing(self):
         frame = fixtures.draw(self.case, 80)

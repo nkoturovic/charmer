@@ -1006,7 +1006,10 @@ class FailureJourneys(JourneyCase):
         child.expect("nothing is connected yet")
         child.keys("w")
         child.expect(cli_text.GS_IN_SESSION[:50])
-        child.keys(ESC)
+        child.expect("Action result")
+        child.expect("charmer in a separate terminal.")
+        self.assertIn(cli_text.GS_IN_SESSION, " ".join(child.drawn().split()))
+        child.keys(ESC, ESC)  # acknowledge the whole refusal, then leave the card
         output = self.finish(child)
         self.assertNotIn(cli_text.GS_HEADER, self.drawn_before(child, cli_text.GS_IN_SESSION[:50]))
         self.assertIn("Nothing was launched.", output)

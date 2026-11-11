@@ -1015,34 +1015,37 @@ class _ProvidersScreen:
     def _load_facts(self, *, refresh_pool: bool = False) -> None:
         from charmer.setup import check, status
 
-        loaded = gateway_facts._provider_facts(self.runtime)
-        self.facts = loaded.facts
-        self.config_drift = loaded.config_drift
-        self.gateway_down = loaded.gateway_down
-        if self.gateway_down:
-            self.pool = quota.PoolStatus("down")
-        elif refresh_pool:
-            self.pool = self.runtime.pool_status()
-        try:
-            eff = self.runtime.current_effective()
-        except cli_errors.CLIError:
-            eff = screens_common._default_effective(self.runtime)
-        self.eff = eff
-        try:
-            self.connections = {item.provider_id: item
-                                for item in status.connections(self.runtime, facts=loaded.facts)}
-        except (cli_errors.CharmerError, OSError, ValueError):
-            self.connections = {}
-        self.rows = self._rows()
-        self.selected = min(self.selected, max(0, len(self.rows) - 1))
-        self.apply_offer = self._apply_needed()
-        # A connected row need not have a served test target. Use the same
-        # read-only plan as T, once per refresh (never send a request here).
-        try:
-            plan = check.plan_test(self.runtime, [row.id for row in self.rows])
-            self.testable = {target.provider_id for target in plan.targets}
-        except (cli_errors.CharmerError, OSError, ValueError):
-            self.testable = set()
+        # Facts, connection status and the test plan must describe one
+        # observation, including one read of the gateway's served models.
+        with self.runtime.report_snapshot():
+            loaded = gateway_facts._provider_facts(self.runtime)
+            self.facts = loaded.facts
+            self.config_drift = loaded.config_drift
+            self.gateway_down = loaded.gateway_down
+            if self.gateway_down:
+                self.pool = quota.PoolStatus("down")
+            elif refresh_pool:
+                self.pool = self.runtime.pool_status()
+            try:
+                eff = self.runtime.current_effective()
+            except cli_errors.CLIError:
+                eff = screens_common._default_effective(self.runtime)
+            self.eff = eff
+            try:
+                self.connections = {item.provider_id: item
+                                    for item in status.connections(self.runtime, facts=loaded.facts)}
+            except (cli_errors.CharmerError, OSError, ValueError):
+                self.connections = {}
+            self.rows = self._rows()
+            self.selected = min(self.selected, max(0, len(self.rows) - 1))
+            self.apply_offer = self._apply_needed()
+            # A connected row need not have a served test target. Use the same
+            # read-only plan as T, once per refresh (never send a request here).
+            try:
+                plan = check.plan_test(self.runtime, [row.id for row in self.rows])
+                self.testable = {target.provider_id for target in plan.targets}
+            except (cli_errors.CharmerError, OSError, ValueError):
+                self.testable = set()
 
     def _apply_needed(self) -> bool:
         """Drift or a connected provider served below its expected set."""
@@ -1132,10 +1135,15 @@ class _ProvidersScreen:
             return "set-key"
         return "details"
 
-    def _keybar(self) -> tui.KeyBar:
+    def _keybar(self, *, longest: bool = False) -> tui.KeyBar:
+        if longest:
+            return max((self._row_keybar(fact) for fact in self.facts),
+                       key=lambda bar: len(bar.text()), default=self._row_keybar(None))
+        return self._row_keybar(self._fact())
+
+    def _row_keybar(self, fact: Mapping[str, Any] | None) -> tui.KeyBar:
         ids = {"new", "refresh", "gateway", "key-file", "remove-orphan-key", "discover-all", "help", "back"}
         labels: dict[str, str] = {}
-        fact = self._fact()
         if fact is not None:
             primary = self._primary(fact)
             ids.update(("primary", "add-models", "toggle"))
@@ -1145,6 +1153,11 @@ class _ProvidersScreen:
             if self._own(fact):
                 ids.update(("edit", "remove"))
                 labels["remove"] = "remove"
+            elif self._account(fact):
+                connection = self.connections.get(str(fact["id"]))
+                if connection is not None and connection.accounts:
+                    ids.add("remove")
+                    labels["remove"] = "sign out"
             if self._account_capable(fact) and primary != "account":
                 ids.add("sign-in")
                 if not self._account(fact):
@@ -1155,8 +1168,9 @@ class _ProvidersScreen:
                 present = str(fact.get("credential", "")).endswith(" present")
                 labels["set-key"] = ("API key" if key_choice and self._account(fact)
                                      else cli_text.PROVIDERS_KEY_LABELS["replace" if present else "set"])
-            # Account removal is already in L's modal. A missing key has
-            # nothing to remove; an operator provider itself can be removed.
+            # Signing out is distinct from opening the account modal.
+            # A missing key has nothing to remove; an operator provider
+            # itself can still be removed.
             if not self._account(fact) and not self._keyless(fact) and str(fact.get("credential", "")).endswith(" present"):
                 ids.add("remove")
             if str(fact["id"]) in self.testable:
@@ -1179,7 +1193,7 @@ class _ProvidersScreen:
         return legend, (screens_common._wrapped(banner, width - 4) if banner else [])
 
     def _bar_rows(self, width: int) -> int:
-        return self._keybar().rows(width)
+        return self._keybar(longest=True).rows(width)
 
     def min_size(self, width: int) -> tuple[int, int]:
         """(rows, cols) floor: chrome + min(list, 3) + detail reserve + bar."""

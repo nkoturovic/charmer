@@ -1207,7 +1207,7 @@ class CardKeyTests(_CardCase):
         first, scrolled = [f for f in win.frames if cli.CARD_HELP_TITLE in f][:2]
         self.assertIn(screens_launch_sessions.RESUME_HELP.splitlines()[0], _flat(first))
         self.assertNotIn(screens_launch_sessions.CARD_HELP.splitlines()[0], first)
-        self.assertIn("S — open Sessions", first)
+        self.assertIn("S — sessions: change this session's lineup (T), follow/pin (F), rename (R), forget (X).", _flat(first))
         for key in ("E", "P", "D", "G", "M", "O", "W"):
             self.assertNotIn(f"{key} —", first)
         # The sign-in line names this card's own way back (charmer -r: run it again).
@@ -1223,8 +1223,8 @@ class CardKeyTests(_CardCase):
         self.assertIn("first-run checks", next(line for line in card_help if line.startswith("H — doctor")))
         self.assertNotIn("first-run checks", "\n".join(resume_help))
         self.assertTrue(all("W the gateway's actions" in "\n".join(lines) for lines in (card_help, resume_help)))
-        self.assertIn("Esc — go back without resuming", resume_help)
-        self.assertIn("Esc — leave without launching", card_help)
+        self.assertIn("Esc — cancel: back without resuming (in a dialog or a text field, Esc cancels it).", resume_help)
+        self.assertIn("Esc — quit without launching (in a dialog or a text field, Esc cancels it).", card_help)
         self.assertEqual(self.runtime.launches, [])
 
     def test_help_wraps_every_line_and_nothing_is_clipped(self) -> None:
@@ -1338,8 +1338,9 @@ class CardKeyTests(_CardCase):
             "profile whose lead is that model.",
             cli.QUICK_HELP.splitlines(),
         )
-        self.assertTrue(cli.QUICK_HELP.splitlines()[0].startswith("New here? W — Get started"))
-        self.assertEqual(cli.QUICK_HELP.splitlines()[1], "Enter — launch this profile (a fresh durable session).")
+        self.assertIn("New here? W — Get started: connect a provider (API key or account sign-in) and pick a profile.",
+                      cli.QUICK_HELP.splitlines())
+        self.assertEqual(cli.QUICK_HELP.splitlines()[0], "Enter — launch this profile (a fresh durable session).")
 
     def test_the_quick_help_names_session_verbs_terms_and_update_by_channel(self) -> None:
         from charmer import lineup, lineup_files

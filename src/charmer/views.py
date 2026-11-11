@@ -1992,7 +1992,7 @@ def session_details(
             why = "; ".join(pending.get("reasons") or ()) or "a change that needs a relaunch"
             lines.append(f"pending: {pending_target or 'a recorded change'} — waits because {why}")
             lines.append(f"  it applies at the next resume (Enter, or charmer -r {mid[:8]}); "
-                         "T → keep current lineup discards it")
+                         "T → keep discards it")
         else:
             lines.append("pending: none")
         lines.append("settings drift: " + ("; ".join(drift) + " — applies at the next resume" if drift else "none"))
