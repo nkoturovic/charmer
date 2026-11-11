@@ -782,15 +782,19 @@ class _ModelLimitsHandler(probe._ProviderHandler):
 class SelectorLimitsProbe(_SpikeTestCase):
     """Canonical suffixless/[1m] limits on the first turn, fresh or switched."""
 
-    def _case(self, selector, *, switched):
+    def _case(self, selector, *, switched, start=_FABLE, extra=()):
+        """``start``: the lead a switched case begins on; ``extra``: more
+        fenced and offered selectors (the Fable 5.2 lane's own)."""
+
         fixture = self._fixture()
-        lead = _FABLE if switched else selector
-        settings_argv = self._settings_argv(fixture, lead, (_OPUS, _wire(_OPUS), _FABLE))
+        lead = start if switched else selector
+        offered = (_wire(_OPUS), _OPUS, _FABLE, *extra)
+        settings_argv = self._settings_argv(fixture, lead, offered)
         settings_path = Path(settings_argv[1])
         settings = strict_json.load(settings_path)
         settings["modelPicker"] = {
             "options": [{"model": model, "label": f"CHECKS7MODEL{index}", "description": "fixture"}
-                        for index, model in enumerate((_wire(_OPUS), _OPUS, _FABLE))],
+                        for index, model in enumerate(offered)],
             "replaceBuiltInOptions": True,
         }
         # A fixture status line reports only model/window metadata, so the
@@ -1098,6 +1102,191 @@ class AgentEffortProbe(_SpikeTestCase):
         })
         print(f"client check S8-explicit: PASS {self._identity()} session=medium "
               f"frontmatter=low; Agent argument wire={observed}")
+
+    def test_s8_subagent_effort_variable(self) -> None:
+        """CLAUDE_CODE_SUBAGENT_EFFORT (2.1.316+) in the user's settings env
+        applies only to an agent whose definition names no effort and whose
+        call names none: frontmatter effort (every compiled cm-* agent names
+        one) and an explicit Agent effort keep theirs."""
+
+        fixture = self._fixture()
+        state.atomic_write(fixture.claude_config_dir / "settings.json", strict_json.canonical_file_bytes(
+            {"env": {"CLAUDE_CODE_SUBAGENT_EFFORT": "low"}}))
+        cases = {"frontmatter": ("high", None), "unnamed": (None, None), "argument": (None, "max")}
+        markers, agents, explicit = {}, [], {}
+        for label, (frontmatter, argument) in cases.items():
+            name = f"client-check-subagent-effort-{label}"
+            marker = f"CLIENT-CHECK-S8-SUBAGENT-{label.upper()}-MARK"
+            self._write_agent(fixture, name, model=_OPUS, effort=frontmatter, marker=marker)
+            markers[label] = marker
+            agents.append(name)
+            if argument is not None:
+                explicit[name] = argument
+        result, rows = self._run(
+            "S8-subagent-effort", _OPUS,
+            responder=_SpikeResponder(agents=tuple(agents), agent_efforts=explicit),
+            extra=("--effort", "medium", "--dangerously-skip-permissions"),
+            fixture=fixture, markers=markers,
+        )
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(rows[0]["effort"], "medium")
+        observed = {}
+        for label in cases:
+            tagged = [row for row in rows if row["markers"] == (label,)]
+            self.assertEqual(len(tagged), 1, label)
+            observed[label] = tagged[0]["effort"]
+        self.assertEqual(observed, {"frontmatter": "high", "unnamed": "low", "argument": "max"})
+        print(f"client check S8-subagent-effort: PASS {self._identity()} session=medium, user env "
+              f"CLAUDE_CODE_SUBAGENT_EFFORT=low; wire={observed} (frontmatter and Agent argument keep theirs)")
+
+
+class _SpeedResponder(_SpikeResponder):
+    """The spike responder that also keeps each message request's ``speed``."""
+
+    def __init__(self, **options: Any):
+        super().__init__(**options)
+        self.speeds: list[Any] = []
+
+    def respond(self, document: dict[str, Any], path: str, context: Any) -> Any:
+        if path.split("?", 1)[0].rstrip("/").endswith("/messages"):
+            with self._lock:
+                self.speeds.append(document.get("speed"))
+        return super().respond(document, path, context)
+
+
+class Fable52Probe(_SpikeTestCase):
+    """Fable 5.2 by its canonical selector, in both forms, whatever the
+    shipped ``fable`` line names: the same lanes run unchanged once the
+    catalog moves. Each expectation is the pinned client's own model row
+    (native 1M window, 128K default output cap, ``medium`` default effort,
+    adaptive thinking that cannot be turned off, fast-mode capable) and is
+    stated before the run. The lines: ``client check fable-5-2-<part>: PASS``."""
+
+    _FORMS = (_wire(_FABLE52), _FABLE52)
+    _LEVELS = ("low", "medium", "high", "xhigh", "max")
+
+    def _first(self, rows: list[dict[str, Any]]) -> dict[str, Any]:
+        main = [row for row in rows if row["model"] == _wire(_FABLE52) and row["tool_count"]]
+        self.assertTrue(main, "Fable 5.2 sent no main-thread turn")
+        return main[0]
+
+    def test_fable52_selectors_lead_efforts_and_resume(self) -> None:
+        expected = {"model": _wire(_FABLE52), "max_tokens": 128000, "thinking_type": "adaptive", "beta_1m": False}
+        observed: dict[str, Any] = {}
+        for selector in self._FORMS:
+            result, rows = self._run("fable-5-2", selector, responder=_SpikeResponder(), fence=(selector,))
+            first = self._first(rows)
+            shape = {"model": first["model"], "max_tokens": first["max_tokens"],
+                     "thinking_type": first["thinking_type"], "beta_1m": _has_beta(first, "context-1m-")}
+            self.assertEqual(shape, expected, selector)
+            # No --effort: the client's own default for the model.
+            self.assertEqual(first["effort"], "medium", selector)
+            self.assertNotIn(_UNRECOGNIZED_MARKER, result.stderr, selector)
+            observed[selector] = {**shape, "effort": first["effort"]}
+        for level in self._LEVELS:
+            _result, rows = self._run("fable-5-2", _FABLE52, responder=_SpikeResponder(), fence=(_FABLE52,),
+                                      extra=("--effort", level))
+            self.assertEqual(self._first(rows)["effort"], level, level)
+        fixture = self._fixture()
+        session = str(uuid.uuid4())
+        for argv in (("--session-id", session), ("--resume", session)):
+            _result, rows = self._run("fable-5-2", _FABLE52, responder=_SpikeResponder(), fence=(_FABLE52,),
+                                      extra=(*argv, "--effort", "xhigh"), fixture=fixture)
+            first = self._first(rows)
+            self.assertEqual((first["effort"], first["max_tokens"], first["thinking_type"]),
+                             ("xhigh", 128000, "adaptive"), argv[0])
+        print(f"client check fable-5-2-selectors: PASS {self._identity()} {observed}; --effort "
+              f"{'/'.join(self._LEVELS)} sent verbatim; --resume keeps --effort xhigh, 128000, adaptive")
+
+    def test_fable52_agent_efforts(self) -> None:
+        fixture = self._fixture()
+        cases = {**{level: (level, None) for level in self._LEVELS},
+                 "unnamed": (None, None), "override": ("low", "max"), "omitted": ("low", None)}
+        markers, agents, explicit = {}, [], {}
+        for label, (frontmatter, argument) in cases.items():
+            name = f"client-check-fable52-{label}"
+            markers[label] = f"CLIENT-CHECK-F52-{label.upper()}-MARK"
+            self._write_agent(fixture, name, model=_FABLE52, effort=frontmatter, marker=markers[label])
+            agents.append(name)
+            if argument is not None:
+                explicit[name] = argument
+        # The session effort (xhigh) differs from the client's own default
+        # (medium), so an agent that inherits is told apart from one that
+        # gets the model default.
+        result, rows = self._run("fable-5-2-agents", _FABLE52, fence=(_FABLE52,),
+                                 responder=_SpikeResponder(agents=tuple(agents), agent_efforts=explicit),
+                                 extra=("--effort", "xhigh", "--dangerously-skip-permissions"),
+                                 fixture=fixture, markers=markers)
+        self.assertEqual(result.returncode, 0)
+        observed = {}
+        for label in cases:
+            tagged = [row for row in rows if row["markers"] == (label,)]
+            self.assertEqual(len(tagged), 1, label)
+            self.assertEqual((tagged[0]["model"], tagged[0]["thinking_type"]), (_wire(_FABLE52), "adaptive"), label)
+            observed[label] = tagged[0]["effort"]
+        self.assertEqual(observed, {**{level: level for level in self._LEVELS},
+                                    "unnamed": "xhigh", "override": "max", "omitted": "low"})
+        print(f"client check fable-5-2-agents: PASS {self._identity()} session=xhigh; agent wire={observed}")
+
+    def test_fable52_thinking_and_fast_mode(self) -> None:
+        """Settings that try to turn thinking off and fast mode on: thinking
+        stays adaptive and, with the compiled fast-mode disable (flag
+        settings env), no request carries ``speed``. Without the disable the
+        same layers sent no ``fast`` either on 2.1.322 (measured 2026-11-11):
+        this harness has no positive control for a Fable 5.2 fast request, so
+        that half is recorded, not asserted; the FM lanes
+        (tests/test_managed_skill_policy) prove the disable with one."""
+
+        trying = {"alwaysThinkingEnabled": False, "fastMode": True,
+                  "env": {"MAX_THINKING_TOKENS": "0", "CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING": "1"}}
+        observed = {}
+        for label, flag_env in (("compiled", {scope.FAST_MODE_ENV: "1"}), ("control", None)):
+            fixture = self._fixture()
+            state.atomic_write(fixture.claude_config_dir / "settings.json", strict_json.canonical_file_bytes(trying))
+            responder = _SpeedResponder()
+            _result, rows = self._run("fable-5-2-thinking", _FABLE52, responder=responder, fence=(_FABLE52,),
+                                      extra=("--effort", "high"), fixture=fixture, settings_env=flag_env)
+            first = self._first(rows)
+            self.assertEqual(first["thinking_type"], "adaptive", label)
+            observed[label] = sorted({str(speed) for speed in responder.speeds})
+        self.assertEqual(observed["compiled"], ["None"])
+        print(f"client check fable-5-2-thinking: PASS {self._identity()} thinking adaptive under "
+              f"alwaysThinkingEnabled=false, MAX_THINKING_TOKENS=0 and CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING=1; "
+              f"speed with the compiled disable {observed['compiled']}, without it (recorded, no positive "
+              f"control here) {observed['control']}")
+
+    def test_fable52_window_fresh_after_switch_and_effort_command(self) -> None:
+        observed = {}
+        for selector in self._FORMS:
+            for switched in (False, True):
+                label = f"{selector}/{'switch' if switched else 'fresh'}"
+                observed[label] = SelectorLimitsProbe._case(self, selector, switched=switched, start=_OPUS,
+                                                            extra=self._FORMS)
+        for label, row in observed.items():
+            self.assertEqual({key: row[key] for key in ("window", "max_tokens", "long_context")},
+                             {"window": 1000000, "max_tokens": 128000, "long_context": False}, label)
+        effort = self._effort_command()
+        self.assertEqual(effort, "low")
+        print(f"client check fable-5-2-window: PASS {self._identity()} {observed}; /effort low then a turn: "
+              f"wire effort {effort}")
+
+    def _effort_command(self) -> str:
+        fixture = self._fixture()
+        settings_argv = self._settings_argv(fixture, _FABLE52, (_FABLE52,))
+        prompt = "❯".encode()
+        steps = (probe.PTYInteraction(b"Choose", b"2\r"), probe.PTYInteraction(b"Press", b"\r"),
+                 probe.PTYInteraction(prompt, b"/effort low\r", before_send=lambda: time.sleep(0.5)),
+                 probe.PTYInteraction(prompt, _TURN.encode() + b"\r", before_send=lambda: time.sleep(0.5)),
+                 probe.PTYInteraction(b"PROBE-OK", b"", preserve_after_wait=True),
+                 probe.PTYInteraction(prompt, b"/exit\r"))
+        responder = _SpikeResponder()
+        provider = _BetaRecordingProvider(responder=responder)
+        with provider:
+            result = probe.run_native_pty(("--model", _FABLE52, "--effort", "high", *settings_argv), steps,
+                                          trusted=self.trusted, fixture=fixture, provider=provider,
+                                          timeout=_RUN_TIMEOUT, allow_real=True, environ=self.environ)
+        self.assertEqual(result.returncode, 0)
+        return self._first(responder.rows)["effort"]
 
 
 class NativeAgentWireProbe(_SpikeTestCase):
