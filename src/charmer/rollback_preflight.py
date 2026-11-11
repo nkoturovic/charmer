@@ -258,17 +258,25 @@ def _profile_items(environ: Mapping[str, str], cat, merged: Mapping, snapshot) -
     return items
 
 
-def _view(environ: Mapping[str, str], home: Path, state_root: Path, root: Path, legacy: Mapping) -> _View:
+def _view(environ: Mapping[str, str], home: Path, state_root: Path, root: Path, legacy: Mapping, *,
+          target: bool = False) -> _View:
     """One release's reading of the live state, with the resources at ``root``."""
 
-    from charmer import catalog, operator as operator_mod, proxy, render
+    from charmer import catalog, operator as operator_mod, pin, proxy, render
 
     cat = catalog.load_catalog(root)
     snapshot = proxy.operator_snapshot(environ, cat.docs, legacy, asset_root=root)
     declarations: dict[tuple[str, str | None], list[str]] = {}
     for problem in operator_mod.blocking_problems(snapshot.layer):
         declarations.setdefault((problem.file, _line_key(problem.json_path)), []).append(problem.text())
-    merged = operator_mod.merge_docs(cat.docs, snapshot.layer, legacy=legacy)
+    layer = snapshot.layer
+    if target:
+        # Releases before 2.5.0 stored removal successors but ignored them
+        # when resolving keys. Keep this release's current view unchanged.
+        version = pin.version_key(cat.docs["version"]["launcher_version"])
+        if version is None or version < (2, 5, 0):
+            layer = dataclasses.replace(layer, removed={})
+    merged = operator_mod.merge_docs(cat.docs, layer, legacy=legacy)
     profiles = _profile_items(environ, cat, merged, snapshot)
     document = proxy.candidate_document(home, environ=environ, asset_root=root, state_root=state_root)
     return _View({key: tuple(texts) for key, texts in declarations.items()}, dict(snapshot.layer.legacy_dropped),
@@ -383,7 +391,8 @@ def _check(*, environ: dict[str, str], home: Path, state_root: Path, current_roo
     with tempfile.TemporaryDirectory(prefix="charmer-rollback-check-") as scratch:
         root = compose_root(current_root, documents, Path(scratch) / "data")
         try:
-            theirs = _view(_target_environ(environ, Path(target_root), current_root), home, state_root, root, legacy)
+            theirs = _view(_target_environ(environ, Path(target_root), current_root), home, state_root, root, legacy,
+                           target=True)
         except Exception as exc:
             raise Unreadable(f"{target}'s data cannot be read with {current}'s rules ({_reason(exc)})") from exc
     findings, unchanged = _compare(mine, theirs)

@@ -16,7 +16,7 @@ import test_cli
 import test_fable_catalog_upgrade as upgrade
 import test_operator as fixtures
 from _catalog import SHIPPED_ROOT, uses_shipped_catalog
-from charmer import catalog, cli, operator, profile, proxy, render, sessions
+from charmer import catalog, cli, operator, profile, proxy, render, sessions, strict_json
 
 KEY = "custom-removed"
 NEXT = "custom-next"
@@ -41,8 +41,9 @@ class RemovedSuccessorMergeTests(unittest.TestCase):
         resolved = lcat.resolve_key(KEY)
         self.assertEqual(resolved.key, "opus")
         self.assertEqual(resolved.chain, (KEY,))
-        self.assertIn("-> opus", resolved.notice)
+        self.assertEqual(resolved.notice, f"{KEY} was removed by you with successor opus")
         entry = lcat.retired[KEY]
+        self.assertIs(entry["operator_removed"], True)
         self.assertEqual(entry["last_wire"], "removed-wire")
         self.assertIsNone(entry["provider"])
         self.assertEqual(entry["selectors"], {})
@@ -60,18 +61,33 @@ class RemovedSuccessorMergeTests(unittest.TestCase):
         self.assertEqual(lcat.resolve_key(KEY).chain, (KEY, NEXT, retired_key))
 
     def test_missing_removed_and_cyclic_successors_need_a_choice(self) -> None:
-        for rows in ({KEY: removed(NEXT)},
-                     {KEY: removed(NEXT), NEXT: removed(None)},
-                     {KEY: removed(NEXT), NEXT: removed(KEY)},
-                     {KEY: removed(KEY)}):
+        for rows, unavailable in (({KEY: removed(NEXT)}, NEXT),
+                                  ({KEY: removed(NEXT), NEXT: removed(None)}, NEXT),
+                                  ({KEY: removed(NEXT), NEXT: removed(KEY)}, KEY),
+                                  ({KEY: removed(KEY)}, KEY)):
             with self.subTest(rows=rows):
                 lcat, _ = self.merged(rows)
                 resolution = lcat.resolve_key(KEY)
                 self.assertIsNone(resolution.key)
-                self.assertIn(KEY, resolution.notice)
-                self.assertIn("no successor", resolution.notice)
+                self.assertIn(f"{KEY} was removed by you with successor {rows[KEY]['successor']}", resolution.notice)
+                self.assertIn(f"successor {unavailable} is not available (removed, missing or cyclic)",
+                              resolution.notice)
+                self.assertNotIn("retired in catalog", resolution.notice)
+                self.assertNotIn("no successor", resolution.notice)
                 self.assertIn("needs a model choice", resolution.notice)
                 self.assertTrue(sessions.lead_key_needs_choice(KEY, lcat))
+
+    def test_removal_wording_requires_the_explicit_marker(self) -> None:
+        lcat, _ = self.merged({KEY: removed("opus")})
+        entry = {key: value for key, value in lcat.retired[KEY].items() if key != "operator_removed"}
+        resolution = catalog.resolve_key_in(lcat.lines, {KEY: entry}, KEY)
+        self.assertIn("was retired in catalog", resolution.notice)
+        self.assertNotIn("removed by you", resolution.notice)
+        # An ordinary retirement with a missing target also explains that
+        # the target is unavailable, rather than claiming no successor was set.
+        entry["successor"] = NEXT
+        resolution = catalog.resolve_key_in(lcat.lines, {KEY: entry}, KEY)
+        self.assertIn(f"successor {NEXT} is not available (removed, missing or cyclic)", resolution.notice)
 
     def test_no_successor_keeps_the_unknown_key_behavior(self) -> None:
         lcat, _ = self.merged({KEY: removed(None)})
@@ -173,6 +189,47 @@ class RemovedSuccessorResumeTests(upgrade.FableUpgradeCase):
                     self.resume()
                 self.assertIn(upgrade.KEY, str(error.exception))
                 self.assertEqual(self.state_bytes(), before)
+
+    def test_models_list_marks_removal_for_live_missing_and_cyclic_successors(self):
+        self.remove_local()
+        schemas = operator.load_schemas(SHIPPED_ROOT)
+        for rows in ({upgrade.KEY: removed("fable")},
+                     {upgrade.KEY: removed(NEXT)},
+                     {upgrade.KEY: removed(NEXT), NEXT: removed(upgrade.KEY)}):
+            with self.subTest(rows=rows):
+                operator.update_ledger(self.env, schemas, lambda doc: doc.update(removed=rows))
+                before = self.state_bytes()
+                code, out, err = self.op(["models", "list"])
+                self.assertEqual(code, 0, out + err)
+                row, = [line for line in out.splitlines() if line.startswith(upgrade.KEY + "\t")]
+                self.assertEqual(row, f"{upgrade.KEY}\t{upgrade.KEY}\tremoved (successor {rows[upgrade.KEY]['successor']})")
+                self.assertNotIn("catalog", row)
+                code, out, err = self.op(["models", "list", "--json"])
+                self.assertEqual(code, 0, out + err)
+                row, = [row for row in strict_json.loads(out)["retired"] if row["key"] == upgrade.KEY]
+                self.assertIsNone(row["since_catalog"])
+                self.assertEqual(row["successor"], rows[upgrade.KEY]["successor"])
+                self.assertEqual(self.state_bytes(), before)
+
+    def test_240_preflight_flags_a_profile_referencing_a_removed_key(self):
+        self.remove_local()
+        document = profile.ad_hoc_direct(upgrade.KEY, "high")
+        document["name"] = "removed-profile"
+        self.runtime.profiles.save(document)
+        self.assertEqual(self.resolved("removed-profile").lead.binding.key, "fable")
+        report = self.rollback()
+        self.assertEqual([finding.group for finding in report.findings], [upgrade.rp.PROFILES])
+        self.assertEqual(report.findings[0].text,
+                         f"profile removed-profile: lead.model: unknown model '{upgrade.KEY}'")
+        self.assertEqual(report.unchanged, 0)
+        # A target that supports removal successors must keep the mapping.
+        before = self.state_bytes()
+        same = upgrade.rp.check(environ=self.runtime.gateway_environ(), home=self.runtime.home,
+                                state_root=self.runtime.session_store.root, current_root=SHIPPED_ROOT,
+                                target_root=SHIPPED_ROOT, current="2.5.0", target="2.5.0")
+        self.assertIsNone(same.unreadable)
+        self.assertEqual(same.findings, ())
+        self.assertEqual(self.state_bytes(), before)
 
     def test_240_ignores_removed_successor_and_requires_a_model_choice(self):
         self.remove_local()

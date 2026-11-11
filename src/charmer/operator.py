@@ -2017,6 +2017,7 @@ def _removed_retired_entries(docs: Mapping[str, Any], layer: OperatorLayer) -> d
     version = (docs.get("version") or {}).get("catalog_version")
     return {
         key: {
+            catalog.OPERATOR_REMOVED_KEY: True,
             "successor": entry["successor"],
             "reason": f"Removed with successor {entry['successor']}; applies at the next resume.",
             "since_catalog": version if isinstance(version, int) else 0,
