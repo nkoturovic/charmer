@@ -160,7 +160,10 @@ def _execute(runtime: runtime_mod.Runtime, call: discovery.ListingCall) -> proxy
         return proxy_mod.ListingResult(tuple(dict(item) for item in listed), True)
     headers = proxy_mod.listing_headers(call.auth, call.shape, secret=secret, header=call.header)
     try:
-        raw = _fetch(runtime, call.url, headers, network=call.network)
+        # The policy is passed only when there is one, so the fetch of every
+        # other listing is called exactly as before.
+        raw = (_fetch(runtime, call.url, headers) if call.network is None
+               else _fetch(runtime, call.url, headers, network=call.network))
     except Exception as exc:
         # A transport exception may contain headers; only fixed categories leave here.
         detail = str(exc) if isinstance(exc, proxy_mod.ListingFailure) else type(exc).__name__

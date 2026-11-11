@@ -1024,20 +1024,68 @@ class DoctorNetworkTests(NetworkCommandCase):
                                                                     lan={KEYED_ID: ("reachable", "")}))
         self.assertEqual(reachable.state, readiness.READY)
 
-    def test_restart_pending_names_private_network_providers(self) -> None:
-        from types import SimpleNamespace
+    def test_the_runtime_knows_when_a_private_network_is_declared(self) -> None:
+        self.assertFalse(self.runtime.declares_private_network())
+        self.declare_with_line()
+        self.assertTrue(self.runtime.declares_private_network())
 
+    def test_provider_host_resolution_uses_the_seam_and_never_a_lookup_in_a_fixture(self) -> None:
+        from unittest import mock
+
+        found = self.runtime.resolve_provider_host("https://box.example.test:8010/v1")
+        self.assertEqual((found.state, found.answers), ("resolved", (("100.88.12.34", "tailnet"),)))
+        self.assertEqual(self.lookups, ["box.example.test"])
+        literal = self.runtime.resolve_provider_host("http://[::ffff:192.168.1.10]:8000/v1")
+        self.assertEqual((literal.state, literal.text()), ("resolved", "192.168.1.10 (lan)"))
+        self.assertEqual(self.lookups, ["box.example.test"])
+        self.answers = ()
+        missing = self.runtime.resolve_provider_host("https://box.example.test:8010/v1")
+        self.assertEqual((missing.state, missing.text()),
+                         ("none", "nothing — box.example.test does not resolve from here"))
+        self.runtime.host_resolver = None
+        with mock.patch.object(self.runtime, "lan_probe", lambda *_args, **_kwargs: None):
+            unchecked = self.runtime.resolve_provider_host("https://box.example.test:8010/v1")
+            self.assertEqual((unchecked.state, unchecked.text()), ("unknown", "not checked"))
+            self.assertEqual(self.runtime.resolve_provider_host("http://100.88.12.34:8000/v1").answers,
+                             (("100.88.12.34", "tailnet"),))
+        self.assertEqual(self.lookups, ["box.example.test", "box.example.test"])
+
+    def test_restart_pending_names_private_network_providers(self) -> None:
+        from pathlib import Path
+        from types import SimpleNamespace
+        from unittest import mock
+
+        from charmer import endpoint as endpoint_mod
         from charmer.cli import gateway_facts
 
-        pending = SimpleNamespace(restart_pending=True)
-        self.assertEqual(gateway_facts.private_network_restart(self.runtime, pending), [])
-        self.declare_with_line()
-        lines = gateway_facts.private_network_restart(self.runtime, pending)
+        class Drift(str):
+            restart_pending = True
+
+        class Optional(str):
+            restart_pending = False
+
+        hold = SimpleNamespace(held=False, coverage_only=False, source="journal", evaluated="",
+                               journald_acknowledged=False)
+
+        def report(drift: str, declared: bool) -> list[str]:
+            gateway = SimpleNamespace(
+                unit="charmer-gateway.service", config=None, backend=endpoint_mod.SYSTEMD,
+                base_url="http://127.0.0.1:18317", remedy_backend=None, recent_starts=lambda: [],
+                persistence_hold=lambda: hold, binary_drift=lambda _seen: drift,
+                observe=lambda: SimpleNamespace(lock=True, stamp=None, state="ours", detail="fixture"))
+            runtime = SimpleNamespace(endpoint_error=None, gateway=lambda: gateway, gateway_seams=object(),
+                                      environ={}, home=Path("/nonexistent"), health_get=None,
+                                      served_models_callback=None, declares_private_network=lambda: declared)
+            with mock.patch.object(endpoint_mod, "set_up", return_value=True):
+                attention, _info = gateway_facts.gateway_runtime_report(runtime)
+            return [line for line in attention if "private-network" in line]
+
+        lines = report(Drift("gateway restart pending: fixture"), True)
         self.assertEqual(len(lines), 1)
         self.assertTrue(lines[0].startswith("private-network providers are served only after the gateway restarts: `"),
                         lines)
-        self.assertEqual(gateway_facts.private_network_restart(self.runtime, SimpleNamespace(restart_pending=False)), [])
-        self.assertEqual(gateway_facts.private_network_restart(self.runtime, None), [])
+        self.assertEqual(report(Drift("gateway restart pending: fixture"), False), [])
+        self.assertEqual(report(Optional("gateway same binary on another path; restart optional"), True), [])
 
     def test_qualify_route_text_names_the_network(self) -> None:
         from charmer import qualify

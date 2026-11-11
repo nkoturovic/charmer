@@ -241,9 +241,7 @@ def network_approval(runtime: runtime_mod.Runtime, provider: operator_mod.Resolv
     network = provider.network
     if network is None:
         return ()
-    from charmer.cli import gateway_facts
-
-    found = gateway_facts.host_resolution(runtime, provider.base_url)
+    found = runtime.resolve_provider_host(provider.base_url)
     for address, cls in found.outside(network):
         raise OperatorCommandError(f"{verb}: {found.host} resolves to {address} ({cls}), outside network "
                                    f"{network} — {outcome}")

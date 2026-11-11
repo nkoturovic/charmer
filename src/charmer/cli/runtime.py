@@ -923,6 +923,26 @@ class Runtime:
             custom.load_registry(self.environ), asset_root=self.asset_root,
         )
 
+    def resolve_provider_host(self, url: str) -> proxy_mod.HostResolution:
+        """What a private-network provider's host resolves to now (route
+        approval): the ``host_resolver`` seam; with the gateway or LAN test
+        seams injected and no resolver, a name is not looked up (a literal
+        is always classified). Diagnostic only: no key, no connection."""
+
+        if self.host_resolver is None and (self.lan_probe is not None or self.health_get is not None
+                                           or self.served_models_callback is not None):
+            return proxy_mod.resolve_host(url, lookup=False)
+        return proxy_mod.resolve_host(url, resolve=self.host_resolver)
+
+    def declares_private_network(self) -> bool:
+        """Whether a resolved provider is declared on a private network."""
+
+        try:
+            layer = self.operator_snapshot().layer
+        except (errors.CharmerError, OSError, ValueError):
+            return False
+        return any(provider.network is not None for provider in layer.providers.values())
+
     def operator_render_plan(self) -> operator_mod.RenderPlan:
         """What the gateway render serves from the operator layer (start
         policy: a corrupt ledger drops every T2 contribution)."""

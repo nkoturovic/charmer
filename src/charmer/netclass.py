@@ -245,6 +245,31 @@ def local_allowed(value: Any, network: str) -> Verdict:
     return Verdict(found.address, network, found.cls, found.rule, reason)
 
 
+def answers(addresses: Iterable[Any]) -> tuple[tuple[str, str], ...]:
+    """``(address, class)`` per distinct address in order; anything that is
+    not an IP address is left out."""
+
+    found: list[tuple[str, str]] = []
+    for value in addresses:
+        try:
+            item = match(value)
+        except ValueError:
+            continue
+        pair = (str(item.address), item.cls)
+        if pair not in found:
+            found.append(pair)
+    return tuple(found)
+
+
+def in_network(value: Any, network: str, gateway_ports: Iterable[int] = ()) -> bool:
+    """:func:`allowed`, False for anything that is not an IP address."""
+
+    try:
+        return allowed(value, network, gateway_ports).allowed
+    except ValueError:
+        return False
+
+
 def describe(network: str) -> str:
     """``tailnet (100.64.0.0/10, fd7a:115c:a1e0::/48)``."""
 

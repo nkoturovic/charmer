@@ -225,6 +225,23 @@ class AllowedTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             netclass.refusal(netclass.allowed("100.88.12.34", "tailnet"))
 
+    def test_answers_classify_distinct_addresses_and_skip_names(self) -> None:
+        self.assertEqual(
+            netclass.answers(("100.88.12.34", "box.example.invalid", "::ffff:192.168.1.10", "100.88.12.34",
+                              "fe80::1%eth0", "203.0.113.9")),
+            (("100.88.12.34", "tailnet"), ("192.168.1.10", "lan"), ("fe80::1", "never"), ("203.0.113.9", "public")),
+        )
+        self.assertEqual(netclass.answers(()), ())
+
+    def test_in_network_is_allowed_and_false_otherwise(self) -> None:
+        self.assertTrue(netclass.in_network("100.88.12.34", "tailnet"))
+        self.assertTrue(netclass.in_network("::ffff:192.168.1.10", "lan"))
+        self.assertFalse(netclass.in_network("192.168.1.10", "tailnet"))
+        self.assertFalse(netclass.in_network("100.100.100.100", "tailnet"))
+        self.assertFalse(netclass.in_network("box.example.invalid", "lan"))
+        # An unknown network fails closed.
+        self.assertFalse(netclass.in_network("100.88.12.34", "public"))
+
 
 if __name__ == "__main__":
     unittest.main()

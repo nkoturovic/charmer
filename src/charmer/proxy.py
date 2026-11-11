@@ -587,6 +587,84 @@ class _OutsideNetwork(OSError):
     """A connection a declared private network does not allow (value-free)."""
 
 
+# What a private-network provider's host resolves to now: shown at route
+# approval, never a reason to send anything. One bounded resolution on a
+# daemon thread (getaddrinfo has no timeout of its own); an address literal
+# is classified without a lookup. It never holds a key: the gateway, and the
+# listing transport above, check every connection themselves.
+RESOLVE_TIMEOUT = 1.5
+
+
+@dataclass(frozen=True)
+class HostResolution:
+    """``state``: resolved | none | unknown; ``answers``: ``(address, class)``."""
+
+    host: str
+    state: str
+    answers: tuple[tuple[str, str], ...] = ()
+    reason: str | None = None
+
+    def outside(self, network: str) -> tuple[tuple[str, str], ...]:
+        """The answers a connection on ``network`` would refuse."""
+
+        return tuple(answer for answer in self.answers if answer[1] != network)
+
+    def text(self) -> str:
+        if self.state == "resolved":
+            return ", ".join(f"{address} ({cls})" for address, cls in self.answers)
+        if self.state == "none":
+            return f"nothing — {self.host} does not resolve from here"
+        return "not checked"
+
+
+def resolve_host(url: str, *, timeout: float = RESOLVE_TIMEOUT,
+                 resolve: Callable[[str, int], Any] | None = None, lookup: bool = True) -> HostResolution:
+    """What ``url``'s host resolves to now (a literal: itself, no lookup).
+    ``resolve`` replaces getaddrinfo; ``lookup=False`` classifies a literal
+    and leaves a name ``unknown``."""
+
+    import socket
+    import threading
+    import urllib.parse
+
+    from charmer import netclass
+
+    parts = urllib.parse.urlsplit(url)
+    host = parts.hostname or ""
+    try:
+        port = parts.port or (443 if parts.scheme == "https" else 80)
+    except ValueError:
+        return HostResolution(host or url, "unknown", reason="malformed port")
+    if not host:
+        return HostResolution(url, "unknown", reason="no host")
+    literal = netclass.answers((host,))
+    if literal:
+        return HostResolution(host, "resolved", literal)
+    if not lookup:
+        return HostResolution(host, "unknown", reason="not looked up")
+    resolver = resolve or (lambda name, number: socket.getaddrinfo(name, number, type=socket.SOCK_STREAM))
+    result: dict[str, Any] = {}
+
+    def run() -> None:
+        try:
+            result["addresses"] = resolver(host, port)
+        except BaseException as exc:  # handed to the caller below
+            result["error"] = exc
+
+    worker = threading.Thread(target=run, name="charmer-resolve", daemon=True)
+    worker.start()
+    worker.join(timeout)
+    if worker.is_alive():
+        return HostResolution(host, "none", reason="timeout")
+    if "error" in result:
+        return HostResolution(host, "none", reason="nxdomain" if isinstance(result["error"], socket.gaierror)
+                              else "unreachable")
+    entries = [entry[4] for entry in result.get("addresses") or []
+               if isinstance(entry, tuple) and len(entry) == 5 and isinstance(entry[4], tuple)]
+    answers = netclass.answers(entries)
+    return HostResolution(host, "resolved", answers) if answers else HostResolution(host, "none", reason="nxdomain")
+
+
 class ListingShapeError(ProxyError):
     def __init__(self, detail: str):
         self.detail = detail

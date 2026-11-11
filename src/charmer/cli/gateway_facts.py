@@ -963,8 +963,8 @@ def probe_lan(
         return LanReachability("unreachable", host, "nxdomain")
     answers: tuple[tuple[str, str], ...] = ()
     if network is not None:
-        answers = _answers(entry[4] for entry in candidates)
-        candidates = [entry for entry in candidates if _in_network(entry[4], network, gateway_ports)]
+        answers = netclass.answers(entry[4] for entry in candidates)
+        candidates = [entry for entry in candidates if netclass.in_network(entry[4], network, gateway_ports)]
         if not candidates:
             return LanReachability("unreachable", host, "outside", answers)
     def open_address(entry: Any, seconds: float) -> Any:
@@ -1015,28 +1015,6 @@ def probe_lan(
     return LanReachability("unreachable", host, reason, answers)
 
 
-def _answers(addresses: Iterable[Any]) -> tuple[tuple[str, str], ...]:
-    """``(address, class)`` per distinct socket address, in resolver order."""
-
-    found: list[tuple[str, str]] = []
-    for address in addresses:
-        try:
-            match = netclass.match(address)
-        except ValueError:
-            continue
-        item = (str(match.address), match.cls)
-        if item not in found:
-            found.append(item)
-    return tuple(found)
-
-
-def _in_network(address: Any, network: str, gateway_ports: Iterable[int]) -> bool:
-    try:
-        return netclass.allowed(address, network, gateway_ports).allowed
-    except ValueError:
-        return False
-
-
 def lan_reachability(runtime: runtime_mod.Runtime, url: str, network: str | None = None) -> LanReachability:
     """The Runtime seam: an injected ``lan_probe``; with the gateway test
     seams injected and no probe, ``unknown`` (no test ever dials out). A
@@ -1052,96 +1030,6 @@ def lan_reachability(runtime: runtime_mod.Runtime, url: str, network: str | None
         return probe_lan(url)
     return probe_lan(url, resolve=runtime.host_resolver, network=network,
                      gateway_ports=operator_mod.gateway_ports(runtime.catalog.docs))
-
-
-# ------------------------------------------------------------------ name resolution (diagnostic)
-# What a private-network provider's host resolves to now: shown at route
-# approval and by doctor, never a reason to send anything. One bounded
-# resolution on a daemon thread (getaddrinfo has no timeout of its own); an
-# address literal is classified without a lookup. Diagnostic DNS never holds
-# a key, and the gateway checks every connection itself.
-
-RESOLVE_TIMEOUT = 1.5
-
-
-@dataclass(frozen=True)
-class HostResolution:
-    """``state``: resolved | none | unknown; ``answers``: ``(address, class)``."""
-
-    host: str
-    state: str
-    answers: tuple[tuple[str, str], ...] = ()
-    reason: str | None = None
-
-    def outside(self, network: str) -> tuple[tuple[str, str], ...]:
-        """The answers a connection on ``network`` would refuse."""
-
-        return tuple(answer for answer in self.answers if answer[1] != network)
-
-    def text(self) -> str:
-        if self.state == "resolved":
-            return ", ".join(f"{address} ({cls})" for address, cls in self.answers)
-        if self.state == "none":
-            return f"nothing — {self.host} does not resolve from here"
-        return "not checked"
-
-
-def resolve_host(url: str, *, timeout: float = RESOLVE_TIMEOUT,
-                 resolve: "Callable[[str, int], Any] | None" = None) -> HostResolution:
-    """What ``url``'s host resolves to now (a literal: itself, no lookup)."""
-
-    import socket
-    import threading
-    import urllib.parse
-
-    parts = urllib.parse.urlsplit(url)
-    host = parts.hostname or ""
-    try:
-        port = parts.port or (443 if parts.scheme == "https" else 80)
-    except ValueError:
-        return HostResolution(host or url, "unknown", reason="malformed port")
-    if not host:
-        return HostResolution(url, "unknown", reason="no host")
-    literal = _answers((host,))
-    if literal:
-        return HostResolution(host, "resolved", literal)
-    resolver = resolve or (lambda name, number: socket.getaddrinfo(name, number, type=socket.SOCK_STREAM))
-    result: dict[str, Any] = {}
-
-    def run() -> None:
-        try:
-            result["addresses"] = resolver(host, port)
-        except BaseException as exc:  # handed to the caller below
-            result["error"] = exc
-
-    worker = threading.Thread(target=run, name="charmer-resolve", daemon=True)
-    worker.start()
-    worker.join(timeout)
-    if worker.is_alive():
-        return HostResolution(host, "none", reason="timeout")
-    if "error" in result:
-        return HostResolution(host, "none", reason="nxdomain" if isinstance(result["error"], socket.gaierror)
-                              else "unreachable")
-    entries = [entry[4] for entry in result.get("addresses") or []
-               if isinstance(entry, tuple) and len(entry) == 5 and isinstance(entry[4], tuple)]
-    answers = _answers(entries)
-    return HostResolution(host, "resolved", answers) if answers else HostResolution(host, "none", reason="nxdomain")
-
-
-def host_resolution(runtime: runtime_mod.Runtime, url: str) -> HostResolution:
-    """The Runtime seam: an injected ``host_resolver``; with the gateway or
-    LAN test seams injected and none, a name is ``unknown`` (no test ever
-    resolves a real name); a literal is always classified."""
-
-    if runtime.host_resolver is None and (runtime.lan_probe is not None or runtime.health_get is not None
-                                          or runtime.served_models_callback is not None):
-        found = resolve_host(url, resolve=_unresolved)
-        return found if found.state == "resolved" else HostResolution(found.host, "unknown", reason="seam")
-    return resolve_host(url, resolve=runtime.host_resolver)
-
-
-def _unresolved(_host: str, _port: int) -> list[Any]:
-    raise LookupError("no resolver")
 
 
 # ------------------------------------------------------------------ discovery adapters
@@ -1385,24 +1273,6 @@ GATEWAY_NOT_SET_UP = ("Gateway: not set up yet in this home — no port is recor
                       "the packaged port (charmer setup prepares it)")
 
 
-PRIVATE_NETWORK_RESTART = "private-network providers are served only after the gateway restarts: {restart}"
-
-
-def private_network_restart(runtime: runtime_mod.Runtime, drift: Any, backend: Any = None) -> list[str]:
-    """The Attention line while a gateway restart is pending and a provider
-    is declared on a private network (a gateway without that support drops
-    those entries until it restarts)."""
-
-    if drift is None or not getattr(drift, "restart_pending", True):
-        return []
-    try:
-        layer = runtime.operator_snapshot().layer
-    except (cli_errors.CharmerError, OSError, ValueError):
-        return []
-    if not any(provider.network is not None for provider in layer.providers.values()):
-        return []
-    return [PRIVATE_NETWORK_RESTART.format(restart=service.hint_code("restart", backend=backend))]
-
 
 def gateway_runtime_report(runtime: runtime_mod.Runtime) -> tuple[list[str], list[str]]:
     """Doctor's gateway facts: ``(attention, info)``.
@@ -1453,8 +1323,14 @@ def gateway_runtime_report(runtime: runtime_mod.Runtime) -> tuple[list[str], lis
         info.append(f"Gateway instance lock: {lock}{instance} ({seen.state}: {seen.detail})")
         drift = gateway.binary_drift(seen)
         if drift is not None:
-            (attention if getattr(drift, "restart_pending", True) else info).append(drift)
-            attention.extend(private_network_restart(runtime, drift, gateway.remedy_backend))
+            pending = getattr(drift, "restart_pending", True)
+            (attention if pending else info).append(drift)
+            # A gateway without private-network support drops those
+            # providers until it restarts.
+            declared = getattr(runtime, "declares_private_network", None)
+            if pending and declared is not None and declared():
+                attention.append(operator_mod.NETWORK_RESTART_PENDING.format(
+                    restart=service.hint_code("restart", backend=gateway.remedy_backend)))
     starts = len(gateway.recent_starts())
     window = int(gateway_lifecycle.CRASH_WINDOW.total_seconds() // 60)
     if starts >= gateway_lifecycle.CRASH_LIMIT and gateway.backend == endpoint_mod.ON_DEMAND:

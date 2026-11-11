@@ -104,6 +104,7 @@ NETWORK_KINDS = frozenset({"openai-compatible", "openai-compatible-lan"})
 NETWORK_KIND_REFUSAL = "network applies to the OpenAI-compatible kinds"
 KEYED_HTTP_REFUSAL = ("a secret is sent only over https, or over http to a declared private network "
                       "(--network loopback, lan or tailnet)")
+NETWORK_RESTART_PENDING = "private-network providers are served only after the gateway restarts: {restart}"
 # The only static header the keyed kind accepts (canonical spelling).
 KEYED_HEADER = "X-Client"
 _VISIBLE_ASCII = re.compile(r"^[\x20-\x7e]{1,256}$")
