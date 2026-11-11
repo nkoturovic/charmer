@@ -101,7 +101,7 @@ def _profile_editor_callbacks(
             editor_state.loaded_digest = digest
         shown = screens_propagation.run_propagation_screen(runtime, win, palette, [outcome.name], preface=preface)
         if shown == "none" and not preface:
-            return True, cli_text.PROPAGATION_NO_FOLLOWERS.format(name=outcome.name)
+            return True, lineup_mod.no_followers_text([outcome.name], 0)
         return True, tui.PROFILE_FORM_SAVED.format(name=outcome.name)
 
     def load_bindings() -> tuple[dict[str, dict[str, Any]], list[str]]:

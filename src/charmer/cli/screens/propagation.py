@@ -27,9 +27,10 @@ class _PropagationScreen:
 
     The preview rows come from ``lineup.followers`` (lock-free) with the
     liveness of each follower's record (``_liveness`` over the Runtime seams,
-    taken once).  ``A`` calls ``lineup.on_saved(…, apply_live=True)``, ``L``
-    the same with ``apply_live=False``; each shows the lines ``on_saved``
-    wrote on the report screen, verbatim.  ``Esc`` calls nothing.
+    taken once). Enter (or A) calls ``lineup.on_saved(…, apply_live=True)``,
+    L the same with ``apply_live=False``; each shows the report and the
+    shared session status. Dismissal also records Later, without opening
+    another report: the profile save has already committed.
     ``on_saved`` decides membership under each record's lock; this preview
     never decides.
     """
@@ -56,6 +57,7 @@ class _PropagationScreen:
     def _load(self) -> None:
         runtime = self.runtime
         self.followers, self.unreadable = lineup_mod.followers(runtime, self.names)
+        self.pinned = lineup_mod.pinned_users(runtime, self.names)
         prefixes = runtime._live_prefixes()
         proc_ids = runtime._proc_ids()
         lcat = runtime.lineup_catalog()
@@ -77,14 +79,9 @@ class _PropagationScreen:
 
     @property
     def offers_apply(self) -> bool:
-        """``A`` is offered only for a live/unknown follower with a lineup-enabled scope and no pending change."""
+        """Use the same eligibility as the CLI question and locked save pass."""
 
-        return any(
-            self.states.get(f.managed_id) in ("live", "unknown")
-            and f.generation >= 1
-            and not f.has_pending
-            for f in self.followers
-        )
+        return any(lineup_mod.propagation_eligible(follower) for follower in self.followers)
 
     def keybar(self) -> tuple[tuple[str, str, int], ...]:
         ids = {"later", "help", "back"}
@@ -101,7 +98,8 @@ class _PropagationScreen:
         count = len(self.followers)
         noun = "session follows" if count == 1 else "sessions follow"
         what = "this profile" if len(self.names) == 1 else "these profiles"
-        return f"{count} {noun} {what}:"
+        suffix = f" · {len(self.pinned)} pinned session(s) keep their own lineup" if self.pinned else ""
+        return f"{count} {noun} {what}:{suffix}"
 
     def min_size(self, width: int) -> tuple[int, int]:
         return views.ScreenFloor.compute(
@@ -145,23 +143,40 @@ class _PropagationScreen:
         bar.draw(win, height - 1, palette)
         win.refresh()
 
-    def _apply(self, win: Any, apply_live: bool) -> str:
+    def _apply(self, win: Any, apply_live: bool, *, show_report: bool = True) -> str:
         buffer = io.StringIO()
         lineup_mod.on_saved(self.runtime, self.names, apply_live=apply_live, out=buffer)
-        lines = [*self.preface, *buffer.getvalue().splitlines()]
-        title = f"propagation — {self.binding or ', '.join(self.names)}"
-        screens_common._TextReportScreen(title, lines, self.palette).run(win)
+        if show_report:
+            followers, _unreadable = lineup_mod.followers(self.runtime, self.names)
+            lines = list(self.preface)
+            if not followers:
+                pinned = lineup_mod.pinned_users(self.runtime, self.names)
+                lines.append(lineup_mod.no_followers_text(self.names, len(pinned)))
+            lines.extend(buffer.getvalue().splitlines())
+            for follower in followers:
+                try:
+                    record = self.runtime.session_store.load(follower.managed_id)
+                except sessions.SessionError:
+                    continue  # the locked pass already reports unreadable records
+                lines.extend(f"{follower.managed_id[:8]}: {line}"
+                             for line in lineup_mod.profile_status_lines(self.runtime, record))
+            title = f"propagation — {self.binding or ', '.join(self.names)}"
+            screens_common._TextReportScreen(title, lines, self.palette).run(win)
         return "applied" if apply_live else "later"
 
     def run(self, win: Any) -> str | None:
         tui.hide_cursor()
         while True:
             self._draw(win)
-            key = tui.read_key(win)
+            try:
+                key = tui.read_key(win)
+            except KeyboardInterrupt:
+                self._apply(win, False, show_report=False)
+                raise
             if key.kind == "resize":
                 continue
             if key.kind == "esc" or (key.kind == "ctrl" and key.ch == "c"):
-                return None
+                return self._apply(win, False, show_report=False)
             height, width = win.getmaxyx()
             rows, cols = self.min_size(width)
             if height < rows or width < cols:
@@ -170,7 +185,7 @@ class _PropagationScreen:
                 self.offset = max(0, self.offset - 1)
             elif key.kind == "down" or (key.kind == "char" and key.ch == "j"):
                 self.offset += 1  # clamped by _draw
-            if key.kind == "char" and key.ch in ("a", "A") and self.offers_apply:
+            if (key.kind == "enter" or (key.kind == "char" and key.ch in ("a", "A"))) and self.offers_apply:
                 return self._apply(win, True)
             if key.kind == "char" and key.ch in ("l", "L"):
                 return self._apply(win, False)
@@ -195,6 +210,8 @@ def run_propagation_screen(
 
     screen = _PropagationScreen(runtime, palette, names, binding=binding, preface=preface)
     if not screen.followers:
+        if screen.pinned or screen.unreadable:
+            return screen._apply(win, False)
         if preface:
             title = f"propagation — {binding or ', '.join(names)}"
             screens_common._TextReportScreen(title, list(preface), palette).run(win)
