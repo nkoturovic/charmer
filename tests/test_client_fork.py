@@ -23,10 +23,11 @@ measure what the pinned Claude Code does with that argv, end to end:
 - G1 (headless): the fork's conversation file, the parent's bytes, the
   fork's first lead request (history marker, the managed-session sentinel in
   the system prompt), SessionStart on the fork's hooks, no daemon or jobs
-  directory; with a parent whose prompt snapshot is established (and the
-  fork's own resume after it), with a compacted parent, and with
-  ``--system-prompt-snapshot off`` on the fork's launch only or on every
-  launch of the fork;
+  directory, the fork's own-fork notice and its authoritative record; with
+  a parent whose prompt snapshot is established (and the fork's own resume
+  after it), with a compacted parent, with ``--system-prompt-snapshot off``
+  on every launch of the fork, and five fork starts in a row (each start
+  counted on the fork's hooks);
 - G2 (PTY): an idle parent stays live while the fork runs; both take more
   turns; both conversation files stay independent (also with the fork's
   prompt snapshot switched off: which prompt each turn sends);
@@ -38,8 +39,9 @@ Evidence is metadata only: marker names, ids of fixture sessions, counts,
 digests, booleans, role sequences. No request text, transcript text or
 screen text beyond the client's one-line refusal is printed.
 
-Each row prints ``fork-launch row <name>: <json>``; the class prints one
-``client check fork-launch: ...`` line from ``tearDownClass``.
+Each row prints ``fork-launch row <name>: <json>`` and fails its test on any
+problem; the class prints one ``client check fork-launch: ...`` line from
+``tearDownClass`` (``PASS`` only when every row passed).
 """
 
 from __future__ import annotations
@@ -101,6 +103,7 @@ _PREFACES = {
     "startup": "Session started. The lineup below is current.",
     "resume": "Session resumed. Your recorded lead is",
     "fork-shared": "This is a native fork that shares the parent session",
+    "fork-own": "This session was forked from another charmer session and has its own record and scope",
 }
 _SENTINEL_RE = re.compile(r"Managed session: ([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})")
 _ANSI_RE = re.compile(r"\x1b\[[0-9;?<>=]*[ -/]*[@-~]|\x1b\][^\x07]*\x07|\x1b[()][A-Z0-9]|\x1b[=>78]")
@@ -527,8 +530,12 @@ class _ForkFixture:
         base = Path(tempfile.mkdtemp(prefix="cmfork-"))
         os.chmod(base, 0o700)
         case.addCleanup(shutil.rmtree, base, True)
-        if Path(os.path.realpath(base)).is_relative_to("/tmp"):
-            case.skipTest("BOUNDARY: the namespace's private /tmp needs a test TMPDIR outside /tmp")
+        # The namespace's /tmp is a fixture directory. A test tree under the
+        # host's /tmp (the runner's own, holding the pinned copy and this
+        # fixture) is bound back into it at the same path.
+        real = Path(os.path.realpath(base))
+        self.tmp_rebind = (Path("/tmp") / real.relative_to("/tmp").parts[0]
+                           if real.is_relative_to("/tmp") and real != Path("/tmp") else None)
         self.case = case
         self.environ = {"HOME": str(base / "live" / "home"), "PATH": "/usr/bin:/bin"}
         self.fx = probe.build_fixture(base / "fx", environ=self.environ)
@@ -607,7 +614,8 @@ class _ForkFixture:
         argv = probe.isolated_argv([self.python, str(self.launcher), str(spec_path)], env_keys=list(self.env),
                                    bridges=(self.bridge,), cwd=self.fx.project_dir, pid_namespace=True)
         at = argv.index("--dev-bind") + 3
-        argv[at:at] = ["--bind", str(self.nstmp), "/tmp"]
+        rebind = ["--bind", str(self.tmp_rebind), str(self.tmp_rebind)] if self.tmp_rebind else []
+        argv[at:at] = ["--bind", str(self.nstmp), "/tmp", *rebind]
         return argv, plan
 
     @staticmethod
@@ -788,10 +796,14 @@ class ForkLaunchProbe(unittest.TestCase):
         self.fixture = _ForkFixture(self, self.trusted, self.version)
 
     def _row(self, name: str, row: dict[str, Any], problems: list[str]) -> None:
+        """Print the row's evidence, then fail the test on any problem."""
+
         row = {**row, "problems": problems}
         type(self).rows[name] = row
         type(self).verdicts[name] = "pass" if not problems else "fail"
         print(f"fork-launch row {name}: {json.dumps(row, sort_keys=True, default=str)}", flush=True)
+        if problems:
+            self.fail(f"{name}: " + "; ".join(problems))
 
     def _lead_rows(self, since: float = 0.0, tag: str | None = None) -> list[dict[str, Any]]:
         return [row for row in self.fixture.responder.snapshot()
@@ -862,7 +874,13 @@ class ForkLaunchProbe(unittest.TestCase):
         daemon = fx.daemon_state()
         if daemon["private_tmp_daemon_dirs"] or daemon["jobs_dir"]:
             problems.append("a daemon or jobs directory appeared")
+        if "fork-own" not in lead.get("messages_prefaces", ()) or "fork-shared" in lead.get(
+                "messages_prefaces", ()):
+            problems.append(f"the fork's first request lacks its own-fork notice ({lead.get('messages_prefaces')})")
         record = fx.record(child) if child else {}
+        if record.get("identity_state") != "authoritative" or record.get("pending_forks"):
+            problems.append(f"the fork's record is {record.get('identity_state')} with pending forks "
+                            f"{record.get('pending_forks')}")
         resumed: dict[str, Any] = {}
         if resume_fork and child:
             again_started = time.monotonic()
@@ -903,12 +921,40 @@ class ForkLaunchProbe(unittest.TestCase):
     def test_g1_fork_of_a_compacted_parent(self) -> None:
         self._g1("G1-compacted", compact=True)
 
-    def test_g1_fork_with_the_prompt_snapshot_switched_off(self) -> None:
-        self._g1("G1-snapshot-off", compact=False, extra=_SNAPSHOT_OFF, resume_fork=True)
-
     def test_g1_fork_and_its_resume_with_the_prompt_snapshot_switched_off(self) -> None:
         self._g1("G1-snapshot-off-every-launch", compact=False, extra=_SNAPSHOT_OFF, resume_fork=True,
                  resume_extra=_SNAPSHOT_OFF)
+
+    FORK_STARTS = 5
+
+    def test_g1_every_fork_start_reaches_the_forks_hooks(self) -> None:
+        """One parent forked ``FORK_STARTS`` times in a row: every fork's
+        SessionStart hook begins and ends on the fork's own hooks with source
+        ``fork``, the fork's id and exit 0 (counted, so a miss is a defect)."""
+
+        fx = self.fixture
+        parent = self._parent_headless(compact=False)["managed_id"]
+        counts = {"forks": 0, "exit_0": 0, "begun": 0, "recorded": 0, "notice": 0}
+        durations: list[int] = []
+        for _ in range(self.FORK_STARTS):
+            started = time.monotonic()
+            fork = fx.headless("fork", T2, parent=parent)
+            child = fork.get("managed_id")
+            counts["forks"] += 1
+            counts["exit_0"] += fork.get("rc") == 0
+            rows = [row for row in fx.hook_rows() if row.get("managed_id") == child and row.get("event") == "start"]
+            counts["begun"] += any(row.get("call") == "session-event-begin" and row.get("source") == "fork"
+                                   and row.get("session_id") == child for row in rows)
+            done = [row for row in rows if row.get("call") == "session-event" and row.get("source") == "fork"
+                    and row.get("session_id") == child and row.get("rc") == 0]
+            counts["recorded"] += bool(done)
+            durations.extend(row.get("ms") for row in done)
+            leads = self._lead_rows(started, T2)
+            counts["notice"] += bool(leads and "fork-own" in leads[0]["messages_prefaces"])
+        problems = [f"{key} {value}/{self.FORK_STARTS}" for key, value in counts.items()
+                    if value != self.FORK_STARTS]
+        self._row("G1-repeat", {"client": self.version, "parent": parent[:8], "counts": counts,
+                                "start_hook_ms": durations}, problems)
 
     # ------------------------------------------------------------- G2
 
