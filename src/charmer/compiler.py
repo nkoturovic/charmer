@@ -146,14 +146,6 @@ FORK_SUBAGENT_ENV = "CLAUDE_CODE_FORK_SUBAGENT"
 FORK_SUBAGENT_OFF = "0"
 
 
-FORK_UNVERIFIED_GUIDANCE = (
-    "fork with --resume OLD --fork-session --session-id NEW is unverified for "
-    "the pinned Claude CLI; fork natively (`claude --resume OLD "
-    "--fork-session`) and adopt the resulting session with "
-    "`charmer sessions link UUID` instead"
-)
-
-
 SYSTEM_PROMPT_SNAPSHOT_FLAG = "--system-prompt-snapshot"
 SYSTEM_PROMPT_SNAPSHOT_OFF = "off"
 

@@ -2,22 +2,22 @@
 
 The fork is a fresh record of its own (``forked_from``) whose launch runs
 ``--resume <parent runtime> --fork-session --session-id <new>``; the parent
-is read, never written. These tests cover the parts below the launch
-preparation: the commit and its backstop (the parent's fingerprint under its
+is read, never written. These tests cover the preparation (the lineup the
+parent would get at its next resume, the plan, the keyed fence), the commit
+and its backstop (the parent's fingerprint under its
 lifecycle lock), failure cleanup with the continue pointer put back, the
 fork gate's refusals, the CLI flow's argument refusals and its lines, the
 SessionStart notice and store reconcile of the fork's own start, and the
 forget path that removes a session's generated lead prompts.
 
-The fork plans here are built from a prepared fresh launch the way the
-preparation builds them (the fork action, the fork flags in front of the
-argv, ``forked_from`` and the fork title in the record).
+The fork plans here come from the real preparation (``Runtime.prepare``
+with ``action="fork"``); the commit tests call ``launch.perform_launch``
+with the plan's parent and fingerprint, the flow tests run the whole
+``_fork_flow`` through ``Runtime.perform``.
 """
 
 from __future__ import annotations
 
-import copy
-import dataclasses
 import hashlib
 import io
 import os
@@ -27,7 +27,8 @@ from pathlib import Path
 from typing import Any
 from unittest import mock
 
-from charmer import cli, compiler, hooks, launch, sessions, state, strict_json
+from charmer import cli, hooks, launch, scope, sessions, state, strict_json
+from charmer import settings as settings_mod
 from charmer.cli import doctor, launch_flow, resume_checks, session_facts
 from charmer.cli import selection
 from charmer.launch import LaunchError
@@ -47,21 +48,18 @@ class ForkCase(V4Case):
         self.parent = self.launch_fresh()
         self.pid = self.parent["managed_id"]
 
-    def fork_plan(self, parent_id: str | None = None) -> tuple[Any, str]:
+    def fork_target(self, parent_id: str | None = None) -> cli.LaunchTarget:
+        record = self.store.load(parent_id or self.pid)
+        return cli.LaunchTarget("record", None, record.get("profile"), bool(record.get("follow")),
+                                f"Fork of {sessions.managed_id(record)[:8]} — new session")
+
+    def fork_plan(self, parent_id: str | None = None, **kwargs: Any) -> tuple[Any, str]:
+        """The real fork preparation of ``parent_id`` and its fingerprint."""
+
         parent_id = parent_id or self.pid
-        parent = self.store.load(parent_id)
-        fingerprint = sessions.fork_fingerprint(parent)
-        prepared = self.runtime.prepare(self.profile_target(), action="fresh", passthrough=[])
-        fresh = prepared.result.session_action
-        action = compiler.SessionAction(kind="fork", managed_id=fresh.managed_id,
-                                        runtime_session_id=fresh.runtime_session_id)
-        argv = ["--resume", sessions.runtime_session_id(parent), "--fork-session", *prepared.result.argv]
-        record = {**prepared.record, "forked_from": parent_id}
-        title = sessions.fork_title(parent.get("title"))
-        if title is not None:
-            record["title"] = title
-        result = dataclasses.replace(prepared.result, argv=argv, session_action=action)
-        return dataclasses.replace(prepared, result=result, record=record), fingerprint
+        prepared = self.runtime.prepare(self.fork_target(parent_id), action="fork", passthrough=[],
+                                        session_id=parent_id, **kwargs)
+        return prepared, prepared.fork_fingerprint
 
     def perform_fork(self, prepared: Any, fingerprint: str, *, execve: Any = None,
                      parent_id: str | None = None) -> Any:
@@ -84,15 +82,167 @@ class ForkCase(V4Case):
         return sessions.managed_id(prepared.record)
 
 
+NOW = "2026-11-11T12:00:00Z"
+
+
+class ForkPrepareTests(ForkCase):
+    """The preparation: the lineup the parent would get at its next resume,
+    the refusals in the preparation and again before the commit."""
+
+    def test_a_recorded_change_applies_to_the_fork_and_stays_on_the_parent(self) -> None:
+        self.mutate(self.pid, pending={
+            "requested_at": NOW, "kind": "profile", "profile": "quality", "follow": True,
+            "document": None, "reasons": ["lead class large → large"],
+        }, mutation_token=sessions.new_mutation_token())
+        before = self.parent_state()
+        prepared, _fingerprint = self.fork_plan()
+        self.assertEqual((prepared.record["profile"], prepared.record["follow"]), ("quality", True))
+        self.assertNotIn("pending", prepared.record)
+        self.assertTrue(prepared.diff)
+        self.runtime.perform(prepared)
+        self.assertEqual(self.parent_state(), before)
+        self.assertEqual(self.store.load(self.pid)["pending"]["profile"], "quality")
+
+    def test_a_deleted_followed_profile_pins_the_fork_not_the_parent(self) -> None:
+        self.runtime.profiles.duplicate("balanced", "mine")
+        parent = self.launch_fresh(self.profile_target("mine"))
+        self.runtime.profiles.delete("mine")
+        prepared, _fingerprint = self.fork_plan(parent["managed_id"])
+        self.assertIn(f"profile 'mine' no longer exists; the fork is pinned to session "
+                      f"{parent['managed_id'][:8]}'s applied lineup", prepared.notices)
+        self.assertEqual((prepared.record["profile"], prepared.record["follow"]), ("mine", False))
+        self.assertEqual(prepared.record["applied"]["lead"], parent["applied"]["lead"])
+        self.assertTrue(self.store.load(parent["managed_id"])["follow"])
+
+    def test_a_pinned_parent_forks_with_its_applied_lineup(self) -> None:
+        self.mutate(self.pid, follow=False, mutation_token=sessions.new_mutation_token())
+        prepared, _fingerprint = self.fork_plan()
+        self.assertFalse(prepared.record["follow"])
+        for key in ("lead", "agents", "no_subagents"):
+            self.assertEqual(prepared.record["applied"][key], self.parent["applied"][key], key)
+        self.assertEqual(prepared.diff, ())
+
+    def test_the_fork_takes_the_parents_directory_and_title(self) -> None:
+        self.store.set_title(self.pid, "review")
+        elsewhere = self.root / "elsewhere"
+        elsewhere.mkdir()
+        runtime = self.make_runtime(cwd=elsewhere)
+        prepared = runtime.prepare(self.fork_target(), action="fork", passthrough=[], session_id=self.pid)
+        self.assertEqual(prepared.record["cwd"], self.parent["cwd"])
+        self.assertEqual(prepared.record["title"], "review (fork)")
+        self.assertEqual(prepared.record["forked_from"], self.pid)
+        self.assertEqual(prepared.record["launch_epoch"], 1)
+        self.assertEqual(prepared.record["lineup_generation"], 1)
+
+    def test_every_resume_of_the_fork_keeps_the_record_off(self) -> None:
+        prepared, _fingerprint = self.fork_plan()
+        self.runtime.perform(prepared)
+        child = self.fork_id(prepared)
+        self.write_transcript(child)
+        argv = list(self.prepare_resume(child).result.argv)
+        self.assertEqual(argv[argv.index("--system-prompt-snapshot") + 1], "off")
+        self.assertNotIn("--system-prompt-snapshot", self.prepare_resume(self.pid).result.argv)
+
+    def test_the_preparation_refuses_and_writes_nothing(self) -> None:
+        self.write_transcript(self.parent["runtime_session_id"]).unlink()
+        state_before = self.tree(self.store.root)
+        with self.assertRaises(cli.CLIError) as caught:
+            self.fork_plan()
+        self.assertTrue(str(caught.exception).startswith(f"cannot fork session {self.pid[:8]}: no conversation"))
+        self.assertEqual(self.tree(self.store.root), state_before)
+        with self.assertRaises(cli.CLIError):
+            self.runtime.prepare(self.fork_target(), action="fork", passthrough=[])
+
+    def test_the_gate_is_checked_again_before_the_commit(self) -> None:
+        prepared, _fingerprint = self.fork_plan()
+        self.write_transcript(self.parent["runtime_session_id"]).unlink()
+        launches, pointer = len(self.execs), self.pointer()
+        with self.assertRaises(cli.CLIError) as caught:
+            self.runtime.perform(prepared)
+        self.assertTrue(str(caught.exception).startswith(f"cannot fork session {self.pid[:8]}: no conversation"))
+        self.assertIsNone(self.record_bytes(self.fork_id(prepared)))
+        self.assertFalse(self.live(self.fork_id(prepared)).exists())
+        self.assertEqual((len(self.execs), self.pointer()), (launches, pointer))
+
+    def test_a_running_parent_may_be_forked(self) -> None:
+        self.runtime.live_prefixes = frozenset({self.parent["runtime_session_id"][:8]})
+        prepared, _fingerprint = self.fork_plan()
+        self.runtime.perform(prepared)
+        self.assertEqual(self.store.load(self.fork_id(prepared))["forked_from"], self.pid)
+
+    def test_the_subagent_policy_is_the_parents(self) -> None:
+        with self.assertRaisesRegex(launch.LaunchError, "a fork keeps its parent's"):
+            self.fork_plan(no_subagents=not self.parent["applied"]["no_subagents"])
+
+
+class ForkKeyedFenceTests(ForkCase):
+    """A ``--no-subagents`` direct session on a keyed line forks with the
+    same fence, credentials that reach the client only through the token
+    helper and a scrubbed environment; a provider switched off between the
+    preparation and the commit refuses."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.keyed = self.launch_fresh(self.direct_target("kimi-k3"), no_subagents=True)
+        self.kid = self.keyed["managed_id"]
+
+    def test_the_fork_keeps_the_fence_and_helper_only_credentials(self) -> None:
+        self.runtime.environ["KIMI_CLAUDE_API_KEY"] = "fixture-inherited-key"
+        prepared, _fingerprint = self.fork_plan(self.kid)
+        record = prepared.record
+        self.assertTrue(record["applied"]["no_subagents"])
+        self.assertEqual(record["applied"]["lead"], self.keyed["applied"]["lead"])
+        self.assertEqual((record["profile"], record["follow"]), (None, False))
+        parent_scope = self.live(self.kid)
+        self.assertEqual(prepared.result.scope_plan.other_files[scope.LEAD_SET_JSON],
+                         (parent_scope / scope.LEAD_SET_JSON).read_bytes())
+        self.assertIn("KIMI_CLAUDE_API_KEY", prepared.result.env_unset)
+        self.runtime.perform(prepared)
+        _path, argv, env = self.execs[-1]
+        child = env["CHARMER_MANAGED_ID"]
+        self.assertEqual(child, self.fork_id(prepared))
+        self.assertNotIn("KIMI_CLAUDE_API_KEY", env)
+        parent_settings = strict_json.loads((parent_scope / "settings.json").read_bytes())
+        settings = strict_json.loads((self.live(child) / "settings.json").read_bytes())
+        self.assertEqual(settings["apiKeyHelper"], parent_settings["apiKeyHelper"])
+        for key in ("availableModels", "model", "modelPicker"):
+            self.assertEqual(settings.get(key), parent_settings.get(key), key)
+        files = self.tree(self.live(child))
+        for value in ("v4-test-dummy", "fixture-inherited-key"):
+            with self.subTest(value=value):
+                self.assertFalse(any(value in item for item in argv))
+                self.assertFalse(any(value in item for item in env.values()))
+                self.assertFalse(any(value.encode() in data for data in files.values()))
+
+    def test_a_provider_switched_off_after_the_preparation_refuses(self) -> None:
+        prepared, _fingerprint = self.fork_plan(self.kid)
+        launches, pointer, parent = len(self.execs), self.pointer(), self.record_bytes(self.kid)
+        path = settings_mod.settings_path(self.runtime.environ)
+        state.ensure_private_dir(path.parent)
+        state.atomic_write(path, strict_json.pretty_file_bytes({"version": 1, "providers": {"kimi": {"enabled": False}}}))
+        with self.assertRaisesRegex(LaunchError, "changed or its route/provider became unavailable"):
+            self.runtime.perform(prepared)
+        self.assertIsNone(self.record_bytes(self.fork_id(prepared)))
+        self.assertFalse(self.live(self.fork_id(prepared)).exists())
+        self.assertEqual((len(self.execs), self.pointer(), self.record_bytes(self.kid)),
+                         (launches, pointer, parent))
+
+
 class ForkCommitTests(ForkCase):
     def test_a_fork_commits_its_own_record_and_scope_and_never_writes_the_parent(self) -> None:
         before = self.parent_state()
         prepared, fingerprint = self.fork_plan()
+        self.assertEqual(prepared.fork_parent, self.pid)
+        self.assertEqual(fingerprint, sessions.fork_fingerprint(self.store.load(self.pid)))
+        self.assertEqual(self.parent_state(), before)  # the preparation writes nothing
         child = self.fork_id(prepared)
-        self.perform_fork(prepared, fingerprint)
+        self.assertNotEqual(child, self.pid)
+        self.runtime.perform(prepared)
         _path, argv, env = self.execs[-1]
         self.assertEqual(argv[1:6], ["--resume", self.parent["runtime_session_id"], "--fork-session",
                                      "--session-id", child])
+        # Every launch of a fork switches Claude Code's system-prompt record off.
+        self.assertEqual(argv[-2:], ["--system-prompt-snapshot", "off"])
         self.assertIn(str(self.live(child) / "settings.json"), argv)
         self.assertNotIn(str(self.live(self.pid) / "settings.json"), argv)
         self.assertEqual(env["CHARMER_MANAGED_ID"], child)
@@ -317,37 +467,21 @@ class ForkGateTests(ForkCase):
         self.assertTrue(refusal.endswith(" — then fork it (a saved choice applies to the fork)"))
 
 
-class _ForkFlowRuntime:
-    """The fork preparation as a seam: a fresh plan made a fork plan (above)."""
-
-    def __init__(self, case: ForkCase):
-        self.case = case
-        self.prepared: list[tuple[str, bool]] = []
-        self.performed: list[Any] = []
-        # Planned before the seam replaces the runtime's prepare (a fresh
-        # prepare writes nothing).
-        self.plan, self.fingerprint = case.fork_plan()
-
-    def prepare(self, target, *, action, passthrough, session_id=None, read_only=False, **_kwargs):
-        self.prepared.append((action, read_only))
-        assert action == "fork" and session_id == self.case.pid
-        return self.plan
-
-    def perform(self, prepared, **_kwargs):
-        self.performed.append(prepared)
-        return 0
-
-
 class ForkFlowTests(ForkCase):
-    def flow(self, double: _ForkFlowRuntime, **kwargs: Any) -> tuple[int, str, str]:
+    """``launch_flow._fork_flow`` driven directly, on the real runtime."""
+
+    def flow(self, **kwargs: Any) -> tuple[int, str, str]:
         out, report, line = io.StringIO(), io.StringIO(), io.StringIO()
-        runtime = self.runtime
-        with mock.patch.object(runtime, "prepare", double.prepare), \
-                mock.patch.object(runtime, "perform", double.perform):
-            code = launch_flow._fork_flow(
-                runtime, self.pid, passthrough=[], interactive=False, confirm=False,
-                input_stream=io.StringIO(), output_stream=out, report_stream=report,
-                exec_stream=line, **{"print_launch": False, **kwargs})
+        prepare = mock.Mock(wraps=self.runtime.prepare)
+        try:
+            with mock.patch.object(self.runtime, "prepare", prepare), mock.patch("sys.stderr", io.StringIO()):
+                code = launch_flow._fork_flow(
+                    self.runtime, self.pid, passthrough=[], interactive=False, confirm=False,
+                    input_stream=io.StringIO(), output_stream=out, report_stream=report,
+                    exec_stream=line, **{"print_launch": False, **kwargs})
+        finally:
+            self.prepared = [(call.kwargs["action"], call.kwargs.get("read_only", False))
+                             for call in prepare.call_args_list]
         return code, report.getvalue(), line.getvalue()
 
     def test_argument_refusals(self) -> None:
@@ -373,29 +507,37 @@ class ForkFlowTests(ForkCase):
 
     def test_the_gate_refuses_before_anything_is_prepared(self) -> None:
         self.write_transcript(self.parent["runtime_session_id"]).unlink()
-        double = _ForkFlowRuntime(self)
+        state_before = self.tree(self.store.root)
         with self.assertRaises(cli.CLIError) as caught:
-            self.flow(double)
+            self.flow()
         self.assertTrue(str(caught.exception).startswith(f"cannot fork session {self.pid[:8]}: no conversation"))
-        self.assertEqual(double.prepared, [])
+        self.assertEqual(self.prepared, [])
+        self.assertEqual(self.tree(self.store.root), state_before)
 
     def test_print_launch_shows_the_fork_argv_and_writes_nothing(self) -> None:
-        double = _ForkFlowRuntime(self)
         state_before = self.tree(self.store.root)
-        code, report, line = self.flow(double, print_launch=True)
+        launches = len(self.execs)
+        code, report, line = self.flow(print_launch=True)
         self.assertEqual(code, 0)
-        self.assertEqual(double.prepared, [("fork", True)])
-        self.assertEqual(double.performed, [])
+        self.assertEqual(self.prepared, [("fork", True)])
+        self.assertEqual(len(self.execs), launches)
         self.assertIn(f"  --resume\n  {self.parent['runtime_session_id']}\n  --fork-session\n  --session-id\n",
                       report)
+        self.assertIn("  --system-prompt-snapshot\n  off\n", report)
         self.assertEqual(line, "")
         self.assertEqual(self.tree(self.store.root), state_before)
 
     def test_the_line_before_exec_names_both_sessions(self) -> None:
-        double = _ForkFlowRuntime(self)
-        code, _report, line = self.flow(double)
+        before = self.parent_state()
+        code, _report, line = self.flow()
         self.assertEqual(code, 0)
-        child = sessions.managed_id(double.performed[0].record)
+        self.assertEqual(self.prepared, [("fork", False)])
+        _path, argv, env = self.execs[-1]
+        child = env["CHARMER_MANAGED_ID"]
+        self.assertEqual(argv[1:6], ["--resume", self.parent["runtime_session_id"], "--fork-session",
+                                     "--session-id", child])
+        self.assertEqual(self.store.load(child)["forked_from"], self.pid)
+        self.assertEqual(self.parent_state(), before)
         self.assertEqual(line, f"charmer: forking session {self.pid[:8]} into new session {child[:8]} "
                                "(profile:balanced); the original is not changed.\n")
 

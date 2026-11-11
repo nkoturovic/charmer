@@ -642,18 +642,10 @@ class RememberedAndResumeTests(CLITestCase):
         )
         self.assertEqual(prepared.record["managed_id"], FIXED_ID)
         self.assertEqual(prepared.record["forked_from"], OTHER_ID)
-
-    def test_fork_prepare_fails_with_adoption_guidance(self) -> None:
-        self.save_session()
-        with self.assertRaisesRegex(cli.CLIError, "sessions link") as raised:
-            self.runtime.prepare(
-                cli.LaunchTarget("record", None, None, False, "Session"),
-                action="fork",
-                passthrough=[],
-                session_id=FIXED_ID,
-            )
-        self.assertIn("fork natively", str(raised.exception))
-        self.assertEqual(self.launches, [])
+        # Every resume of a fork keeps Claude Code's system-prompt record off.
+        argv = list(prepared.result.argv)
+        index = argv.index("--system-prompt-snapshot")
+        self.assertEqual(argv[index + 1], "off")
 
 
 class CompositionCommandTests(CLITestCase):
