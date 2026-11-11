@@ -391,7 +391,8 @@ def acknowledge_seen(state_root: Path | str, managed_id: str, runtime_id: str, g
 
 
 def start_marker(state_root: Path | str, managed_id: str, runtime_id: str, *,
-                 new_process: bool, launch_epoch: int | None = None) -> tuple[NoticeMarker, bytes | None, bool]:
+                 new_process: bool, in_process: bool = False,
+                 launch_epoch: int | None = None) -> tuple[NoticeMarker, bytes | None, bool]:
     """Reset only the seen generation; only a process start replaces start provenance."""
 
     lock = _marker_lock(state_root, managed_id)
@@ -400,7 +401,7 @@ def start_marker(state_root: Path | str, managed_id: str, runtime_id: str, *,
         return marker, raw, False
     try:
         marker, raw = read_marker(state_root, runtime_id)
-        if not new_process and raw is None:
+        if in_process and not new_process and raw is None:
             # An in-process clear/compact can acquire a new runtime id.
             # Carry provenance and queued text from its previous authority;
             # retain the old marker for aliases and rollback readers.

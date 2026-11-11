@@ -438,7 +438,7 @@ def _session_start_v3(
             marker, marker_raw, marker_reset = hooks.start_marker(
                 state_path, stable_id, observed,
                 new_process=source in ("startup", "resume") or (source == "fork" and observed == stable_id),
-                launch_epoch=args.launch_epoch,
+                launch_epoch=args.launch_epoch, in_process=source in ("compact", "clear"),
             )
             if not marker_reset:
                 note("notice marker busy; not acknowledged")

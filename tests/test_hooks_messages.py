@@ -192,6 +192,20 @@ class NoticeMessageTests(_SeamCase):
         self.assertIn("start " + original, hooks.seen_path(self.store.root, self.rid).read_text())
         self.assertIn("carry this notice", self.prompt().get("systemMessage", ""))
 
+    def test_native_fork_does_not_inherit_the_parent_process_marker(self):
+        self.start("startup")
+        self.post("charmer: parent-only notice")
+        observed = "46464646-4646-4646-8646-464646464646"
+        code, _text, err = self.run_main(self.argv("start"), {
+            "hook_event_name": "SessionStart", "source": "fork", "session_id": observed,
+            "cwd": str(self.project)}, runtime=self.runtime)
+        self.assertEqual(code, 0, err)
+        child, _raw = hooks.read_marker(self.store.root, observed)
+        parent, _raw = hooks.read_marker(self.store.root, self.rid)
+        self.assertIsNone(child.start)
+        self.assertFalse(child.message)
+        self.assertIn("parent-only notice", parent.message)
+
     def test_resume_replaces_start_but_preserves_a_pending_message(self):
         old = self.gen(3)
         path = self.marker(old, start=old, message="charmer: resume pending notice")
