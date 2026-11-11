@@ -44,7 +44,7 @@ MODULE = "tests.test_gateway_fable"
 WIRE = "claude-fable-5-2"
 # The Fable 5.2 set (19a0a854, b4e7dbd2, 6db7d4b8) first ships in 8.0.63.
 FIRST_GATEWAY = (8, 0, 63)
-BASELINE = "2.1.321"
+BASELINE = harness.NATIVE_CLIENT_BASELINE
 SIGNATURE = traffic.SIGNATURE
 BINDING_BETA = traffic.BINDING_BETA
 OAUTH_BETA = "oauth-2025-04-20"
