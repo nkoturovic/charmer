@@ -690,6 +690,21 @@ def private_network_audited(gateway: Any) -> bool:
     return isinstance(audits, Mapping) and audits.get(PRIVATE_NETWORK_AUDIT) is True
 
 
+def credential_transport(provider: "ResolvedProvider") -> str | None:
+    """How the key travels to a provider declared on a private network, for
+    show and doctor (None for every other provider): ``bearer over plain
+    HTTP, private network (tailnet)``, ``plain HTTP, private network (lan)``."""
+
+    if provider.network is None:
+        return None
+    plain = provider.origin.startswith("http://")
+    if provider.auth_kind == "none":
+        how = "plain HTTP" if plain else "HTTPS"
+    else:
+        how = f"{provider.auth_kind} over {'plain HTTP' if plain else 'HTTPS'}"
+    return f"{how}, private network ({provider.network})"
+
+
 def network_declaration(document: Any) -> bool:
     """Metadata only: a declaration whose provider block carries ``network``."""
 

@@ -887,6 +887,174 @@ class DiscoverNetworkTests(NetworkCommandCase):
                                       "deadline": 20.0, "max_bytes": 4 * 1024 * 1024}])
 
 
+class DoctorNetworkTests(NetworkCommandCase):
+    """Doctor, launch readiness and the reload check for providers declared
+    on a private network: a TCP connect only, the resolution named."""
+
+    def declare_with_line(self, network: str = "tailnet", base: str = "http://box.example.test:8010/v1") -> None:
+        argv = ["providers", "add", LAN_ID, "--kind", "openai-compatible-lan", "--base-url", base, "--auth", "none",
+                "--family", "boxfam"]
+        code, _out, err = self.command(argv, network=network)
+        self.assertEqual(code, 0, err)
+        path = operator.providers_dir(self.harness.env) / f"{LAN_ID}.json"
+        document = strict_json.loads(path.read_bytes())
+        document["lines"] = line(LAN_KEY, "lanbox-chat-1")
+        path.write_bytes(strict_json.pretty_file_bytes(document))
+
+    def observe(self, *answers: tuple[str, str], state: str = "reachable", reason: str | None = None):
+        from charmer.cli import gateway_facts
+
+        probes: list[str] = []
+
+        def probe(url: str) -> Any:
+            probes.append(url)
+            return gateway_facts.LanReachability(state, "box.example.test", reason, tuple(answers))
+
+        self.runtime.lan_probe = probe
+        return probes
+
+    def test_doctor_names_the_transport_and_the_resolution(self) -> None:
+        from charmer.cli import doctor
+
+        self.declare_with_line()
+        probes = self.observe(("100.88.12.34", "tailnet"))
+        attention: list[str] = []
+        info = doctor._doctor_lan_report(self.runtime, attention, {})
+        self.assertEqual(info, ["provider lanbox: plain HTTP, private network (tailnet); box.example.test resolves to "
+                                "100.88.12.34 (tailnet)"])
+        self.assertEqual(attention, [])
+        self.assertEqual(probes, ["http://box.example.test:8010/v1"])
+
+    def test_doctor_warns_about_an_answer_outside_the_network(self) -> None:
+        from charmer.cli import doctor
+
+        self.declare_with_line()
+        self.observe(("100.88.12.34", "tailnet"), ("203.0.113.9", "public"))
+        attention: list[str] = []
+        doctor._doctor_lan_report(self.runtime, attention, {})
+        self.assertEqual(attention, ["provider lanbox: box.example.test resolves to 203.0.113.9 (public), outside its "
+                                     "network (tailnet): the gateway refuses those connections"])
+
+    def test_only_outside_answers_make_the_provider_unreachable(self) -> None:
+        from charmer.cli import doctor
+
+        self.declare_with_line()
+        self.observe(("203.0.113.9", "public"), state="unreachable", reason="outside")
+        attention: list[str] = []
+        info = doctor._doctor_lan_report(self.runtime, attention, {})
+        self.assertIn("provider lanbox: not reachable from this network: box.example.test resolves only to addresses "
+                      "outside its network — connect to the host's network, or bind another model (network-scoped; "
+                      "its lines are unusable from here)", info)
+
+    def test_probe_connects_only_to_addresses_in_the_network(self) -> None:
+        from charmer.cli import gateway_facts
+
+        tried: list[tuple] = []
+
+        class Sock:
+            def close(self) -> None:
+                pass
+
+        def connect(entry: tuple, _share: float) -> Any:
+            tried.append(entry[4])
+            return Sock()
+
+        found = gateway_facts.probe_lan("http://box.example.test:8010/v1", network="tailnet", gateway_ports=(8317,),
+                                        resolve=_getaddrinfo("203.0.113.9", "100.88.12.34"), connect=connect)
+        self.assertEqual((found.state, found.answers), ("reachable", (("203.0.113.9", "public"),
+                                                                      ("100.88.12.34", "tailnet"))))
+        self.assertEqual([address[0] for address in tried], ["100.88.12.34"])
+        tried.clear()
+        outside = gateway_facts.probe_lan("http://box.example.test:8010/v1", network="lan",
+                                          resolve=_getaddrinfo("100.88.12.34"), connect=connect)
+        self.assertEqual((outside.state, outside.reason), ("unreachable", "outside"))
+        self.assertEqual(tried, [])
+        # Without a network the probe is the LAN kind's, unchanged.
+        plain = gateway_facts.probe_lan("http://box.lan:8010/v1", resolve=_getaddrinfo("203.0.113.9"), connect=connect)
+        self.assertEqual((plain.state, plain.answers), ("reachable", ()))
+
+    def test_readiness_observes_private_network_providers(self) -> None:
+        from charmer import readiness
+
+        keyed = {"transport": {"kind": "direct-openai", "base_url": "http://box.example.test:8010/v1",
+                               "auth": {"kind": "bearer", "secret_ref": "env:BOX_API_KEY"}, "network": "tailnet"}}
+        self.assertTrue(readiness.probes_reachability(keyed))
+        self.assertTrue(readiness.probes_reachability(
+            {"transport": {"kind": "direct-openai", "auth": {"kind": "none"}, "base_url": "http://box.lan"}}))
+        self.assertFalse(readiness.probes_reachability(
+            {"transport": {"kind": "direct-openai", "auth": {"kind": "bearer"}, "base_url": "https://x.example"}}))
+        self.assertFalse(readiness.probes_reachability({"transport": {"kind": "oauth-pool", "pool": "claude"}}))
+
+    def test_restart_pending_names_private_network_providers(self) -> None:
+        from types import SimpleNamespace
+
+        from charmer.cli import gateway_facts
+
+        pending = SimpleNamespace(restart_pending=True)
+        self.assertEqual(gateway_facts.private_network_restart(self.runtime, pending), [])
+        self.declare_with_line()
+        lines = gateway_facts.private_network_restart(self.runtime, pending)
+        self.assertEqual(len(lines), 1)
+        self.assertTrue(lines[0].startswith("private-network providers are served only after the gateway restarts: `"),
+                        lines)
+        self.assertEqual(gateway_facts.private_network_restart(self.runtime, SimpleNamespace(restart_pending=False)), [])
+        self.assertEqual(gateway_facts.private_network_restart(self.runtime, None), [])
+
+    def test_qualify_route_text_names_the_network(self) -> None:
+        from charmer import qualify
+
+        provider = layer_of({KEYED_ID: keyed_declaration()}).providers[KEYED_ID]
+        self.assertEqual(qualify.route_text(KEYED_ID, provider.entry, t2=provider), (
+            f"http://100.88.12.34:8010; auth bearer from {SECRET} (value not shown); private network (tailnet)",
+            "100.88.12.34"))
+        plain = layer_of({KEYED_ID: keyed_declaration("https://api.example.test/v1", network=None)}).providers[KEYED_ID]
+        self.assertEqual(qualify.route_text(KEYED_ID, plain.entry, t2=plain)[0],
+                         f"https://api.example.test; auth bearer from {SECRET} (value not shown)")
+
+
+class ReloadCheckTests(unittest.TestCase):
+    """A gateway without private-network support loads the render, sentinel
+    included, and drops those entries: the reload check says so."""
+
+    def wait(self, served: set[str], private: tuple[str, ...]):
+        from charmer import proxy
+
+        now = [0.0]
+
+        def clock() -> float:
+            return now[0]
+
+        def sleep(seconds: float) -> None:
+            now[0] += seconds
+
+        gateway = {"gateway": {"base_url": "http://127.0.0.1:18317"}}
+        return proxy.await_sentinel(gateway, "fixture-token", "charmer-render-0123abcd",
+                                    models_get=lambda _base, _token: (200, set(served)), clock=clock, sleep=sleep,
+                                    private_aliases=private)
+
+    def test_unserved_private_selectors_need_a_restart(self) -> None:
+        result = self.wait({"charmer-render-0123abcd", "custom-other"}, ("custom-box-chat",))
+        self.assertEqual(result.status, "restart_required")
+        self.assertTrue(result.message.startswith("gateway reloaded without the private-network selector(s) "
+                                                  "custom-box-chat: the running gateway predates them — restart "
+                                                  "required: "), result.message)
+
+    def test_served_or_absent_private_selectors_reload(self) -> None:
+        self.assertEqual(self.wait({"charmer-render-0123abcd", "custom-box-chat"}, ("custom-box-chat",)).status,
+                         "reloaded")
+        self.assertEqual(self.wait({"charmer-render-0123abcd"}, ()).status, "reloaded")
+
+    def test_private_selectors_of_a_document(self) -> None:
+        from charmer import proxy
+
+        document = {"openai-compatibility": [
+            {"name": "box", "private-network": {"base-url": "http://box.example.test:8010/v1", "class": "tailnet"},
+             "models": [{"name": "box-chat-1", "alias": "custom-box-chat"}]},
+            {"name": "lan", "base-url": "http://box.lan/v1", "models": [{"name": "w", "alias": "custom-lan"}]}]}
+        self.assertEqual(proxy.private_network_selectors(document), frozenset({"custom-box-chat"}))
+        self.assertEqual(proxy.private_network_selectors({}), frozenset())
+
+
 def _empty_ledger() -> dict:
     from _layout import FIXTURES_ROOT
     import json

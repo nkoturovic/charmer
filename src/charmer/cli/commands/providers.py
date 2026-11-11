@@ -227,18 +227,7 @@ NETWORK_RISK = {
 }
 
 
-def credential_transport(provider: operator_mod.ResolvedProvider) -> str | None:
-    """How the key travels to a provider declared on a private network
-    (None for every other provider)."""
-
-    if provider.network is None:
-        return None
-    plain = provider.origin.startswith("http://")
-    if provider.auth_kind == "none":
-        how = "plain HTTP" if plain else "HTTPS"
-    else:
-        how = f"{provider.auth_kind} over {'plain HTTP' if plain else 'HTTPS'}"
-    return f"{how}, private network ({provider.network})"
+credential_transport = operator_mod.credential_transport
 
 
 def network_approval(runtime: runtime_mod.Runtime, provider: operator_mod.ResolvedProvider,

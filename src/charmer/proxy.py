@@ -2063,6 +2063,34 @@ def published_identity(home: Path) -> PublishedIdentity:
     return PublishedIdentity(routes, None, served_plan_mod.gateway_label(document))
 
 
+PRIVATE_NETWORK_KEY = "private-network"
+
+
+def private_network_selectors(document: Mapping[str, Any]) -> frozenset[str]:
+    """The selectors of the ``openai-compatibility`` entries a render puts on
+    a private network (the entries a gateway without that support drops)."""
+
+    found: set[str] = set()
+    for section in document.get("openai-compatibility") or ():
+        if not isinstance(section, Mapping) or not isinstance(section.get(PRIVATE_NETWORK_KEY), Mapping):
+            continue
+        for model in section.get("models") or ():
+            if isinstance(model, Mapping) and isinstance(model.get("alias"), str):
+                found.add(model["alias"])
+    return frozenset(found)
+
+
+def published_private_network_selectors(home: Path) -> frozenset[str]:
+    """:func:`private_network_selectors` of the published ``config.yaml``
+    (none when it is missing or not in the rendered form)."""
+
+    try:
+        raw = state.read_private(config_dir(home) / "config.yaml")
+        return private_network_selectors(served_plan_mod.parse_restricted_yaml(raw.decode("utf-8")))
+    except (state.StateError, OSError, served_plan_mod.PlanParseError, UnicodeDecodeError, ValueError, TypeError):
+        return frozenset()
+
+
 def candidate_document(
     home: Path,
     *,
@@ -2289,11 +2317,15 @@ def await_sentinel(
     mode: str = "reload",
     oauth_aliases: Sequence[str] | frozenset[str] = (),
     owner_check: Callable[[str], service.OwnerVerdict] | None = None,
+    private_aliases: Sequence[str] | frozenset[str] = (),
 ) -> ReloadResult:
     """Poll only the loopback registry, with a bounded deadline and test seams.
 
     ``mode="reload"`` (hot reload, config-only init): at most 2 s whatever
-    ``timeout`` says; the sentinel alone is proof. A 401 may be the short
+    ``timeout`` says; the sentinel alone is proof, except that the render's
+    ``private_aliases`` (its private-network selectors, which a gateway
+    without that support drops while still loading the rest) must be served
+    too, otherwise a restart is required. A 401 may be the short
     interval before the new render applies; retry it until the deadline. Only
     connection refusal is informational (``down``); timeouts, resets and
     malformed responses retry within the deadline, then require a restart.
@@ -2315,6 +2347,7 @@ def await_sentinel(
         raise ValueError(f"unknown readiness mode: {mode!r}")
     start = mode == "start"
     required = frozenset(oauth_aliases) - {sentinel}
+    private = frozenset(private_aliases) - {sentinel}
 
     # Recheck before every authenticated poll: a listener can change during
     # reload. Report each unconfirmed-owner warning only once per wait.
@@ -2356,9 +2389,11 @@ def await_sentinel(
             raise  # do not hide test isolation trips in the retry loop
         except Exception:
             status, ids, failed, last = None, set(), True, "failed"
-        if status == 200 and sentinel in ids:
-            if not start:
+        if status == 200 and sentinel in ids and not start:
+            if not private - set(ids):
                 return ReloadResult("reloaded", f"gateway: reloaded (sentinel {sentinel})")
+            last = "no-private"
+        elif status == 200 and sentinel in ids:
             served = sorted(required & ids)
             if served:
                 return ReloadResult(
@@ -2378,6 +2413,12 @@ def await_sentinel(
             f"gateway: not ready {budget:g} s after a (re)start: "
             + _start_missing(last, status, sentinel, required),
         )
+    if last == "no-private" and not failed:
+        missing = sorted(private - set(ids))
+        shown = ", ".join(missing[:3]) + ("…" if len(missing) > 3 else "")
+        return ReloadResult("restart_required", f"gateway reloaded without the private-network selector(s) {shown}: "
+                                                "the running gateway predates them — restart required: "
+                                                + service.hint("restart"))
     if failed:
         return ReloadResult("restart_required", restart_required() + " (models check failed)")
     if status == 401:

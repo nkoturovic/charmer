@@ -1385,6 +1385,25 @@ GATEWAY_NOT_SET_UP = ("Gateway: not set up yet in this home — no port is recor
                       "the packaged port (charmer setup prepares it)")
 
 
+PRIVATE_NETWORK_RESTART = "private-network providers are served only after the gateway restarts: {restart}"
+
+
+def private_network_restart(runtime: runtime_mod.Runtime, drift: Any, backend: Any = None) -> list[str]:
+    """The Attention line while a gateway restart is pending and a provider
+    is declared on a private network (a gateway without that support drops
+    those entries until it restarts)."""
+
+    if drift is None or not getattr(drift, "restart_pending", True):
+        return []
+    try:
+        layer = runtime.operator_snapshot().layer
+    except (cli_errors.CharmerError, OSError, ValueError):
+        return []
+    if not any(provider.network is not None for provider in layer.providers.values()):
+        return []
+    return [PRIVATE_NETWORK_RESTART.format(restart=service.hint_code("restart", backend=backend))]
+
+
 def gateway_runtime_report(runtime: runtime_mod.Runtime) -> tuple[list[str], list[str]]:
     """Doctor's gateway facts: ``(attention, info)``.
 
@@ -1435,6 +1454,7 @@ def gateway_runtime_report(runtime: runtime_mod.Runtime) -> tuple[list[str], lis
         drift = gateway.binary_drift(seen)
         if drift is not None:
             (attention if getattr(drift, "restart_pending", True) else info).append(drift)
+            attention.extend(private_network_restart(runtime, drift, gateway.remedy_backend))
     starts = len(gateway.recent_starts())
     window = int(gateway_lifecycle.CRASH_WINDOW.total_seconds() // 60)
     if starts >= gateway_lifecycle.CRASH_LIMIT and gateway.backend == endpoint_mod.ON_DEMAND:

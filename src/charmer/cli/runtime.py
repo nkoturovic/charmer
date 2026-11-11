@@ -986,6 +986,9 @@ class Runtime:
             gateway, proxy_mod.gateway_api_keys(self.home)[-1], sentinel,
             models_get=None if self.served_models_callback is None else models_get,
             owner_check=self.listener_owner,
+            # A gateway without private-network support loads the render
+            # (sentinel included) but drops those entries: not a reload.
+            private_aliases=proxy_mod.published_private_network_selectors(self.home),
         )
 
     def smoke(self, alias: str) -> operator_mod.SmokeOutcome:
@@ -1319,7 +1322,8 @@ class Runtime:
         served set (one loopback ``/v1/models``; None when the gateway is not
         observable), OAuth credential-record counts (None when the auth
         directory is not observable) and one short LAN probe per keyless LAN
-        provider the ``lineups`` bind (the ``lan_probe`` seam). Never a
+        provider, or provider declared on a private network, the ``lineups``
+        bind (the ``lan_probe`` seam; a TCP connect, never a key). Never a
         provider call, never a write; every failure is an unknown.
         ``lan_observed`` (base URL -> observation), when given, is shared
         with another report of the same refresh (doctor): a URL already
@@ -1351,12 +1355,12 @@ class Runtime:
             bindings = [lineup.lead.binding, *(agent.binding for agent in lineup.agents.values())]
             for binding in bindings:
                 provider = providers.get(binding.provider) or {}
-                if binding.provider in lan or not readiness_mod.is_lan(provider):
+                if binding.provider in lan or not readiness_mod.probes_reachability(provider):
                     continue
                 url = str(provider["transport"].get("base_url", ""))
                 observed = lan_observed.get(url) if lan_observed is not None else None
                 if observed is None:
-                    observed = gateway_facts.lan_reachability(self, url)
+                    observed = gateway_facts.lan_reachability(self, url, provider["transport"].get("network"))
                     if lan_observed is not None:
                         lan_observed[url] = observed
                 lan[binding.provider] = (observed.state, observed.text())
