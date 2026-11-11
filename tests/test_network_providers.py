@@ -1386,6 +1386,152 @@ class ReloadEntryPointTests(_proxy_control_case()):
                                   err.getvalue())
 
 
+class GatedLineKeyTests(NetworkCommandCase):
+    """A declaration a closed gate refuses is never screened against stored
+    values, so no output names its line keys — even admitted or bound ones,
+    where the dependency checks still use them."""
+
+    OTHER = "custom-box-other"
+
+    def gated_state(self, code: str) -> str:
+        """Declare (gate open), admit both lines and bind one in a profile and
+        a named binding; then store a credential equal to one line key and
+        close the gate ``code`` names. Returns the provider id."""
+
+        import json
+
+        from charmer import profile as profile_mod, state
+
+        if code == "network-gated":
+            pid, document = LAN_ID, lan_declaration()
+        else:
+            pid, document = KEYED_ID, keyed_declaration("https://box.example.test:8010/v1", network=None)
+        document["lines"] = {**line(STORED_LINE_KEY, "box-chat-1"), **line(self.OTHER, "box-chat-2")}
+        directory = operator.providers_dir(self.harness.env)
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / f"{pid}.json").write_bytes(raw(document))
+        self.assertIn(STORED_LINE_KEY, self.runtime.lineup_catalog().lines)
+        snapshot = self.runtime.operator_snapshot()
+        schemas = operator.load_schemas(self.runtime.asset_root)
+        ledger = operator.ledger_document(snapshot.ledger)
+        for key in (STORED_LINE_KEY, self.OTHER):
+            entry = snapshot.layer.lines[key]
+            ledger["admissions"][key] = {
+                "digest": entry.definition_digest, "at": "2026-11-11T00:00:00Z", "via": "admit",
+                "diagnostic": {"wire": entry.core_entry["wire_model"],
+                               "fields": snapshot.layer.metadata[key]["field_hashes"]}}
+        # A capture of an earlier line of it (its alias carries the key).
+        ledger["aliases"][f"{STORED_LINE_KEY}-old"] = {
+            "provider": pid, "rd": snapshot.layer.providers[pid].route_digest, "wire": "box-old-1",
+            "proxy_contract": None, "display": "Box old", "context_tokens": 32768,
+            "source": f"operator:{STORED_LINE_KEY}", "since_catalog": 36, "overlay": None}
+        operator.write_ledger(self.harness.env, ledger, schemas)
+        self.runtime.settings_store.update(
+            lambda doc: doc.__setitem__("admitted_lines", [STORED_LINE_KEY, self.OTHER]),
+            catalog=self.runtime.lineup_catalog())
+        lead = next(key for key, entry in self.runtime.lineup_catalog().lines.items()
+                    if "lead" in entry.get("capabilities", ()) and entry["provider"] != pid)
+        self.runtime.profiles.save({
+            "version": 2, "name": "mine", "description": "", "lead": {"model": lead, "effort": "high"},
+            "agents": {"cm-explorer": {"model": STORED_LINE_KEY, "effort": "high"}},
+            "native_agents": {"explore": "native", "general_purpose": "on", "plan": "native"},
+            "workflows": "native"})
+        state.atomic_write(profile_mod.bindings_path(self.runtime.environ), json.dumps(
+            {"version": 1, "bindings": {"fast": {"model": STORED_LINE_KEY, "effort": "high"}}}).encode())
+        state.atomic_write(self.harness.secret_file, f"{SECRET}={STORED_LINE_KEY}\n".encode())
+        audit = operator.PRIVATE_NETWORK_AUDIT if code == "network-gated" else catalog.KEYED_COMPAT_AUDIT
+        self.runtime.catalog.docs["gateway"][catalog.AUDITS_KEY][audit] = False
+        # The same gate on disk, for the paths that load the bundle themselves.
+        gateway_path = self.runtime.asset_root / "catalog" / "gateway.json"
+        gateway = json.loads(gateway_path.read_text())
+        gateway[catalog.AUDITS_KEY][audit] = False
+        gateway_path.write_bytes(strict_json.pretty_file_bytes(gateway))
+        problems = self.runtime.operator_snapshot().layer.problems_by_file[operator.file_label(pid)]
+        self.assertEqual([problem.code for problem in problems], [code])
+        return pid
+
+    def run_everything(self, pid: str, *argvs: list[str], store_free: bool = True) -> list[tuple[str, int, str]]:
+        """Output paths that could name a gated line key."""
+
+        import test_openai_compat_keyed as keyed
+
+        spy = keyed.SpyStore({SECRET: STORED_LINE_KEY})
+        results = []
+        with keyed.spy_store(spy):
+            for argv in argvs:
+                code, out, err = self.harness.op(argv)
+                results.append((" ".join(argv), code, out + err))
+            # No stored-value scan and no read of the credential's name (doctor
+            # still reads the shipped providers' keys for its render check).
+            if store_free:
+                self.assertEqual((spy.count("scan_values"), spy.touched(SECRET)), (0, 0), spy.calls)
+        return results
+
+    def assert_unnamed(self, results: list[tuple[str, int, str]]) -> None:
+        for argv, _code, text in results:
+            with self.subTest(argv=argv):
+                self.assertNotIn(STORED_LINE_KEY, text)
+                self.assertNotIn("dummy-key", text)
+
+    def check_gate(self, code: str) -> None:
+        from charmer import profile as profile_mod
+
+        pid = self.gated_state(code)
+        results = self.run_everything(
+            pid, ["providers", "rm", pid, "--yes"], ["providers", "show", pid], ["providers", "show", pid, "--resolved"],
+            ["providers", "validate"], ["providers", "list"], ["providers", "list", "--json"],
+            ["models", "revoke", self.OTHER, "--yes"])
+        self.assert_unnamed(results)
+        # apply renders: it reads the stored keys of the providers it renders
+        # (none of this one); it still names nothing of it.
+        applied = self.run_everything(pid, ["providers", "apply"], store_free=False)
+        self.assert_unnamed(applied)
+        by = {argv: (status, text) for argv, status, text in results}
+        status, text = by[f"providers rm {pid} --yes"]
+        self.assertNotEqual(status, 0)
+        file = operator.file_label(pid)
+        # Still refused (the checks use the keys); fixed texts only.
+        self.assertIn(f"revoke its 2 admitted line(s), not named while a closed gate refuses {file}: "
+                      f"charmer models revoke KEY for each (the keys are in {file})", text)
+        self.assertIn("charmer profile edit mine (it uses one of its lines)", text)
+        self.assertIn("rebind named binding fast in the profile editor (it uses one of its lines)", text)
+        self.assertTrue((operator.providers_dir(self.harness.env) / f"{pid}.json").exists())
+        # Doctor, once the profile and the named binding are gone: a
+        # profile's own text naming a model is not the declaration's (it
+        # shows whatever the gate), so it is left out of this check.
+        self.runtime.profiles.delete("mine")
+        profile_mod.bindings_path(self.runtime.environ).unlink()
+        doctor = self.run_everything(pid, ["doctor"], ["doctor", "--json"], ["doctor", "-v"])
+        self.assert_unnamed(doctor)
+        # The alias prune's preview (the planner; the fixture has no process table).
+        from charmer import proxy
+
+        environ = self.runtime.gateway_environ()
+        planned = proxy._plan_alias_prune(self.runtime.home, self.runtime.session_store.root, None, environ=environ,
+                                          env=environ, is_process_live=None, pinned=None)
+        self.assertIn(f"kept: 1 captured alias(es) of {file} — not named while a closed gate refuses that "
+                      "declaration", planned.lines)
+        self.assertNotIn(STORED_LINE_KEY, "\n".join(planned.lines))
+        self.assertIn(f"1 admitted line(s) of {file} are not named while a closed gate refuses that declaration",
+                      doctor[2][2])
+        self.assertIn(f"1 captured alias(es) of {file} are not named while a closed gate refuses that declaration",
+                      doctor[2][2])
+
+    def test_admitted_and_bound_lines_of_a_network_gated_declaration_are_never_named(self) -> None:
+        self.check_gate("network-gated")
+
+    def test_admitted_and_bound_lines_of_a_kind_gated_declaration_are_never_named(self) -> None:
+        self.check_gate("kind-gated")
+
+    def test_the_gated_blocker_texts_name_no_key(self) -> None:
+        from charmer.setup import texts as setup_texts
+
+        for kind in ("gated-admitted", "gated-bound-profile", "gated-bound-binding"):
+            for text in setup_texts.BLOCKER[kind]:
+                with self.subTest(kind=kind, text=text):
+                    self.assertNotIn("{key}", text)
+
+
 def _empty_ledger() -> dict:
     from _layout import FIXTURES_ROOT
     import json

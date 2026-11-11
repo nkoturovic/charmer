@@ -2866,10 +2866,27 @@ def _plan_alias_prune(
         )
     current = {base for line in snapshot.layer.lines.values()
                for base in operator_mod.line_aliases(line.core_entry)}
+    # Captures of a declaration a closed gate refuses carry its line keys:
+    # kept and never named (counted per file).
+    import dataclasses
+
+    gated = operator_mod.gated_file_ids(snapshot.layer)
+    hidden: dict[str, int] = {}
+    for capture in captures.values():
+        if capture["provider"] in gated:
+            hidden[capture["provider"]] = hidden.get(capture["provider"], 0) + 1
+    ledger = snapshot.ledger
+    if hidden and ledger is not None:
+        ledger = dataclasses.replace(ledger, aliases={alias: capture for alias, capture in ledger.aliases.items()
+                                                      if capture["provider"] not in gated})
+        wanted_captures = frozenset(wanted_captures & set(ledger.aliases))
+    for pid, count in sorted(hidden.items()):
+        lines.append(f"kept: {count} captured alias(es) of {operator_mod.file_label(pid)} — not named while a "
+                     "closed gate refuses that declaration")
     capture_plan = None
     if captures and (names is None or wanted_captures):
         capture_plan = operator_mod.plan_capture_prune(
-            snapshot.ledger, current, scan.refs, scan.live, wanted_captures or None,
+            ledger, current, scan.refs, scan.live, wanted_captures or None,
         )
     refusals = [p.refusal for p in (continuity_plan, capture_plan) if p is not None and p.refusal]
     if refusals:

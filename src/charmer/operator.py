@@ -106,8 +106,16 @@ KEYED_HTTP_REFUSAL = ("a secret is sent only over https, or over http to a decla
                       "(--network loopback, lan or tailnet)")
 NETWORK_RESTART_PENDING = "private-network providers are served only after the gateway restarts: {restart}"
 # The refusals of a closed trusted gate (metadata only, never screened
-# against stored values): no authored text of the file is shown with them.
+# against stored values): no authored text of the file is shown with them,
+# nor its line keys anywhere else (ledger copies included): fixed texts.
 GATED_CODES = frozenset({"kind-gated", "network-gated"})
+GATED_ADMITTED = ("{count} admitted line(s) of {file} are not named while a closed gate refuses that declaration "
+                  "— revoke each with charmer models revoke KEY (the keys are in {file}), or keep them for a release "
+                  "that serves it")
+GATED_CAPTURES_USED = ("{count} captured alias(es) of {file} are used by {users} and not named while a closed gate "
+                       "refuses that declaration — end those sessions; {remedy}")
+GATED_CAPTURES_UNUSED = ("{count} captured alias(es) of {file} are not named while a closed gate refuses that "
+                         "declaration (no running session uses them)")
 # The only static header the keyed kind accepts (canonical spelling).
 KEYED_HEADER = "X-Client"
 _VISIBLE_ASCII = re.compile(r"^[\x20-\x7e]{1,256}$")
@@ -3420,6 +3428,27 @@ def line_file_ids(read: ProvidersRead | None, layer: OperatorLayer) -> dict[str,
     return found
 
 
+def gated_file_ids(layer: OperatorLayer) -> frozenset[str]:
+    """The declarations a closed trusted gate refuses (``GATED_CODES``).
+
+    That refusal is metadata only: the file is never screened against stored
+    values, so its line keys serve the dependency checks (admissions,
+    bindings, liveness) but never enter a blocker or diagnostic text."""
+
+    prefix = f"{PROVIDERS_DIRNAME}/"
+    return frozenset(label.removeprefix(prefix).removesuffix(".json")
+                     for label, problems in layer.problems_by_file.items()
+                     if any(problem.code in GATED_CODES for problem in problems))
+
+
+def gated_line_keys(read: ProvidersRead | None, layer: OperatorLayer) -> dict[str, str]:
+    """line key -> file id of the lines of :func:`gated_file_ids` (internal
+    only: never shown)."""
+
+    gated = gated_file_ids(layer)
+    return {key: file_id for key, file_id in line_file_ids(read, layer).items() if file_id in gated}
+
+
 def proposed_layer(
     docs: Mapping[str, Any], read: ProvidersRead, changes: Mapping[str, bytes | None], *,
     schemas: OperatorSchemas, ledger: OperatorLedger | None, legacy: Mapping[str, Any] | None = None,
@@ -4198,6 +4227,8 @@ def doctor_findings(
     current_bases = {base for line in layer.lines.values() for base in line_aliases(line.core_entry)}
     catalog_bases = catalog_alias_lines(docs)
     unused_aliases: list[UnusedAlias] = []
+    gated_files = gated_file_ids(layer)
+    gated_captures: dict[str, tuple[int, set[str]]] = {}
     for alias in sorted(captures):
         if alias in current_bases:
             continue
@@ -4205,6 +4236,12 @@ def doctor_findings(
         pid = capture["provider"]
         key = capture["source"].removeprefix("operator:")
         users = holders((alias,))
+        if pid in gated_files:
+            # Captured from a declaration a closed gate now refuses: its
+            # aliases carry its line keys, so they are counted, never named.
+            count, holders_of = gated_captures.get(pid, (0, set()))
+            gated_captures[pid] = (count + 1, holders_of | set(users))
+            continue
         catalog_served = catalog_bases.get(alias, ())
         rendered = bool(catalog_served) or (plan is not None and alias in plan.captures)
         if not users:
@@ -4213,10 +4250,22 @@ def doctor_findings(
             blocks.append(f"alias {alias} (provider {pid} not rendered) is used by {_ids8(users)} — "
                           f"restore {file_label(pid)} or end the session; "
                           f"{sessions_mod.mark_ended_remedy(users)}")
+    for pid, (count, users) in sorted(gated_captures.items()):
+        if users:
+            blocks.append(GATED_CAPTURES_USED.format(count=count, file=file_label(pid), users=_ids8(users),
+                                                     remedy=sessions_mod.mark_ended_remedy(users)))
+        else:
+            info.append(GATED_CAPTURES_UNUSED.format(count=count, file=file_label(pid)))
 
+    gated_keys = gated_line_keys(snapshot.read, layer)
+    gated_admitted: dict[str, int] = {}
     for key in sorted(ledger.admissions if ledger is not None else {}):
         grant = ledger.admissions[key]
         line = layer.lines.get(key)
+        if line is None and key in gated_keys:
+            # A line of a declaration a closed gate refuses: never named.
+            gated_admitted[gated_keys[key]] = gated_admitted.get(gated_keys[key], 0) + 1
+            continue
         if line is None:
             if key not in layer.pending and key not in layer.displaced:
                 attention.append(f"{key} is admitted but no valid declaration serves it (invalid or removed) — fix its "
@@ -4239,6 +4288,8 @@ def doctor_findings(
                 attention.append(f"{key}: {count}/{len(aliases)} aliases served — charmer providers apply")
         if grant.get("via") == "migrate" and not smoke_current(evidence, key, line.definition_digest):
             info.append(f"{key}: migrated admission is unverified (no smoke yet) — charmer models qualify {key}")
+    for file_id, count in sorted(gated_admitted.items()):
+        attention.append(GATED_ADMITTED.format(count=count, file=file_label(file_id)))
 
     try:
         rows = displaced_lines(docs, layer, ledger)
