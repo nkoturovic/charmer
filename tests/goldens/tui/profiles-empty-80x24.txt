@@ -1,0 +1,24 @@
+
+  profiles
+  ─────────────────────────────────────────────────────────────────────────────
+    profile  origin  state  used  notes
+    no profiles — N creates one
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  ─────────────────────────────────────────────────────────────────────────────
+
+
+
+  N new · F fallback only · B bindings · W get started · ? help · Esc back

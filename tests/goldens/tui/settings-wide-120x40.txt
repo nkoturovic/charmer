@@ -37,4 +37,4 @@
 
 
 
-  Enter edit · R reset to default · ? help · Esc back
+  Enter edit · R reset to default · G providers · M models · ? help · Esc back

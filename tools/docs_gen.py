@@ -659,7 +659,7 @@ def region_tasks() -> str:
     from charmer.cli.screens import actions
 
     lines = ["## The launcher's screens", "", "| Key on the card | What it does |", "| --- | --- |"]
-    lines += [f"| {_prose(row.key)} | {_prose(row.does)} |" for row in actions.ACTIONS["card"]]
+    lines += [f"| {_prose(row.key)} | {_prose(row.does)} |" for row in actions.ACTIONS["card"] if not row.silent]
     for obj in sm.OBJECTS:
         ops = [op for op in sm.OPERATIONS if op.object == obj and task_listed(op)]
         if not ops:
@@ -823,6 +823,10 @@ SCREEN_TITLES: dict[str, str] = {
     "providers": "providers (G)", "models": "models (M)", "settings": "settings (O)", "profiles": "profiles (P)",
     "get-started": "get started (W)", "editor": "profile editor (E)",
     "binding-picker": "binding picker (editor → Enter on an agent)", "named-bindings": "named bindings (P → B)",
+    "propagation": "apply a saved profile (editor → save)", "lineup-per-agent": "per-agent edit (S → T → agents)",
+    "provider-picker": "connect a provider (G → N or W → A)", "form": "profile General form (E → General)",
+    "native-form": "native agents and workflows (E → Native)", "routing": "review routing (E → R)",
+    "transition": "transition confirmation", "onboarding-form": "provider and model declaration forms",
 }
 
 
@@ -834,7 +838,7 @@ def region_cheatsheet_keys() -> str:
     for screen, rows in actions.ACTIONS.items():
         if screen not in SCREEN_TITLES:
             raise SystemExit(f"docs_gen: the screen {screen!r} has no title in SCREEN_TITLES")
-        keys = " · ".join(f"**{_prose(row.key)}** {_prose(row.does)}" for row in rows)
+        keys = " · ".join(f"**{_prose(row.key)}** {_prose(row.does)}" for row in rows if not row.silent)
         lines.append(f"| {SCREEN_TITLES[screen]} | {keys} |")
     marks = " ".join(text.SESSIONS_HELP.split("Marks: ", 1)[1].split("\n")[:2]).strip()
     override = text.SETTINGS_TITLE.split("(", 1)[1].rstrip(")")

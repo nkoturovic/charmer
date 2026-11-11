@@ -21,4 +21,4 @@
 
 
 
-  P plan · ? help · Esc close
+  Enter act · P plan · ? help · Esc close

@@ -20,5 +20,5 @@
   admission: not admitted (optional)
   qualification: not run (smoke, efforts, tools, stream) · family: openai (rec…
 
-  Enter admit badge · Q diagnostics · E edit · X remove · V details · ? help
-  Esc back
+  Enter admit badge · A add model · Q diagnostics · E edit · X remove
+  V details · ? help · Esc back

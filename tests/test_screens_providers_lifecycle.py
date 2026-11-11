@@ -1321,7 +1321,7 @@ class ProviderBatchKeybarTests(ProvidersCase):
             self.assertEqual(bindings[-5:], [("F", "key file"), ("O", "orphan keys"), ("D", "list all"),
                                              ("?", "help"), ("Esc", "back")])
             win = self.run_screen(screen, [])
-            self.assertIn("? help", win.frames[0])
+            self.assertRegex(win.frames[0], r"\? (help|\d+ more)")
             self.assertIn("Esc back", win.frames[0])
         screen.facts, screen.rows = [], ()
         self.assertEqual(screen._keybar_bindings()[-5:], bindings[-5:])

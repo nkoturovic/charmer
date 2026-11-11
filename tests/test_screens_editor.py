@@ -569,10 +569,9 @@ class EditorKeyTests(_EditorCase):
     def test_help_modal_shows_the_help_text(self) -> None:
         win, _ = self.run_screen(self.editor(), ["?", ENTER, ESC], height=40, width=100)
         frame = next(f for f in win.frames if "edit profile — help" in f)
-        self.assertIn("↑/↓ move. Enter changes the row", frame)
+        self.assertIn("Enter — change the selected row", frame)
         self.assertIn("◆ marks a per-profile override", frame)
-        self.assertEqual(tui.PROFILE_EDITOR_HELP.splitlines()[0],
-                         "↑/↓ move. Enter changes the row: General (name, description, primary provider,")
+        self.assertEqual(tui.PROFILE_EDITOR_HELP.splitlines()[0], "Enter — change the selected row")
 
     def test_ctrl_s_and_ctrl_o_both_save(self) -> None:
         for key in (CTRL_S, CTRL_O):
@@ -793,8 +792,9 @@ class EditorSaveTests(_EditorCase):
     def test_a_state_marker_error_is_shown_verbatim(self) -> None:
         state = self.edited()
         with mock.patch.object(profile.ProfileStore, "commit", side_effect=sessions.StateMarkerError("marker says no")):
-            win, _ = self.run_screen(self.editor(state, callbacks=self.callbacks()), [CTRL_S, ESC, RIGHT, ENTER])
-        self.assertTrue(any("marker says no" in f for f in win.frames))
+            # Close the complete refusal, then discard the unchanged draft.
+            win, _ = self.run_screen(self.editor(state, callbacks=self.callbacks()), [CTRL_S, ESC, ESC, RIGHT, ENTER])
+        self.assertTrue(any("Action result" in f and "marker says no" in f for f in win.frames))
 
 
 def state_mod_committed(message: str) -> state.CommittedStateError:
@@ -910,8 +910,10 @@ class EditorJsonTests(_EditorCase):
             with self.subTest(needle=needle):
                 screen = self.editor(state, open_in_editor=self.opener(transform),
                                      suspender=lambda _win: contextlib.nullcontext())
-                win, _ = self.run_screen(screen, [CTRL_G, ESC, RIGHT, ENTER])
-                self.assertTrue(any(needle in f for f in win.frames), needle)
+                # The first Esc acknowledges the full refusal; the second
+                # asks to leave the still-dirty profile.
+                win, _ = self.run_screen(screen, [CTRL_G, ESC, ESC, RIGHT, ENTER])
+                self.assertTrue(any("Action result" in f and needle in f for f in win.frames), needle)
                 self.assertEqual(state.document, edited)
 
     def test_unchanged_and_failed_editor_runs(self) -> None:
@@ -1367,7 +1369,9 @@ class PropagationTests(_EditorCase):
         self.assertIn("no lineup-enabled scope yet; applies at next resume", frame)
         self.assertIn("A apply to running · L later (next resume) · ? help · Esc keep sessions as they are", frame)
         narrow = self.frame(screen, width=70)
-        self.assertNotIn('"unknown one"', narrow)
+        self.assertNotIn("project", narrow)
+        self.assertIn("apply now (then /reload-plugins there)", narrow)
+        self.assertIn("no lineup-enabled scope yet; applies at next resume", narrow)
         for line in narrow.splitlines():
             self.assertLessEqual(len(line), 70 - 3 + 2)
 

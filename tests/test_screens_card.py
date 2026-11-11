@@ -29,6 +29,7 @@ from charmer import catalog, cli, profile, sessions, settings, state, tui, views
 import _tui_fixture as fx
 from test_tui import BTAB, DOWN, END, HOME, LEFT, RIGHT, FakeWindow
 import charmer.cli.text as cli_text
+import charmer.cli.screens.launch_sessions as screens_launch_sessions
 import curses as _curses
 import charmer.compiler
 import charmer.custom
@@ -1192,7 +1193,7 @@ class CardKeyTests(_CardCase):
         self.assertIsNone(result)
         first, middle, scrolled = [f for f in win.frames if cli.CARD_HELP_TITLE in f][:3]
         flat = " ".join(" ".join(line.strip(" |").split()) for line in first.splitlines())
-        self.assertIn(cli.QUICK_HELP.splitlines()[0], flat)
+        self.assertIn(screens_launch_sessions.CARD_HELP.splitlines()[0], flat)
         self.assertIn("/model lists only the lead set", middle)
         self.assertIn(cli._ScrollModal.SCROLL_HINT, first)
         self.assertIn("-- workflow guarantees --", scrolled)
@@ -1204,23 +1205,26 @@ class CardKeyTests(_CardCase):
         result, win = self.run_card(self.resume_card(prepared), ["?", END, ESC, ESC])
         self.assertIsNone(result)
         first, scrolled = [f for f in win.frames if cli.CARD_HELP_TITLE in f][:2]
-        self.assertIn("Enter — resume this session with the lineup shown", first)
-        self.assertIn("session's lineup).", first)
-        self.assertNotIn(cli.QUICK_HELP.splitlines()[0], first)
-        self.assertIn("S — sessions: change this session's lineup", first)
+        self.assertIn(screens_launch_sessions.RESUME_HELP.splitlines()[0], _flat(first))
+        self.assertNotIn(screens_launch_sessions.CARD_HELP.splitlines()[0], first)
+        self.assertIn("S — sessions: change this session's lineup (T), follow/pin (F), rename (R), forget (X).", _flat(first))
+        for key in ("E", "P", "D", "G", "M", "O", "W"):
+            self.assertNotIn(f"{key} —", first)
         # The sign-in line names this card's own way back (charmer -r: run it again).
         self.assertNotIn("{sign_in}", "\n".join(win.frames))
         self.assertIn('"Esc, run charmer, G → L, then S to resume": Esc leaves charmer', _flat(first))
         self.assertIn("-- workflow guarantees --", scrolled)
-        # The doctor, update, /model, terms and in-session lines are shared;
-        # only the keys of a fresh launch and the Esc wording differ.
-        tail = cli.QUICK_HELP.splitlines()[cli.QUICK_HELP.splitlines().index(
-            next(line for line in cli.QUICK_HELP.splitlines() if line.startswith("/model:"))):]
-        self.assertEqual(cli.RESUME_QUICK_HELP.splitlines()[-len(tail):], tail)
-        self.assertIn(next(line for line in cli.QUICK_HELP.splitlines() if line.startswith("H — doctor")),
-                      cli.RESUME_QUICK_HELP.splitlines())
-        self.assertIn("Esc — cancel: back without resuming", cli.RESUME_QUICK_HELP)
-        self.assertIn("Esc — quit without launching", cli.QUICK_HELP)
+        # /model, terms and in-session guidance are shared. Only a fresh
+        # card substitutes first-run checks for H while disconnected.
+        card_help = screens_launch_sessions.CARD_HELP.splitlines()
+        resume_help = screens_launch_sessions.RESUME_HELP.splitlines()
+        tail = card_help[card_help.index(next(line for line in card_help if line.startswith("/model:"))):]
+        self.assertEqual(resume_help[-len(tail):], tail)
+        self.assertIn("first-run checks", next(line for line in card_help if line.startswith("H — doctor")))
+        self.assertNotIn("first-run checks", "\n".join(resume_help))
+        self.assertTrue(all("W the gateway's actions" in "\n".join(lines) for lines in (card_help, resume_help)))
+        self.assertIn("Esc — cancel: back without resuming (in a dialog or a text field, Esc cancels it).", resume_help)
+        self.assertIn("Esc — quit without launching (in a dialog or a text field, Esc cancels it).", card_help)
         self.assertEqual(self.runtime.launches, [])
 
     def test_help_wraps_every_line_and_nothing_is_clipped(self) -> None:
@@ -1232,8 +1236,8 @@ class CardKeyTests(_CardCase):
         def body(frame: str) -> str:
             return " ".join(" ".join(line.strip(" |").split()) for line in frame.splitlines())
 
-        model_rule = next(line for line in cli.QUICK_HELP.splitlines() if line.startswith("/model"))
-        self.assertIn(" ".join(cli.QUICK_HELP.splitlines()[0].split()), body(first))
+        model_rule = next(line for line in screens_launch_sessions.CARD_HELP.splitlines() if line.startswith("/model"))
+        self.assertIn(" ".join(screens_launch_sessions.CARD_HELP.splitlines()[0].split()), body(first))
         self.assertIn(" ".join(model_rule.split()), body(middle))
         panel = charmer.tui.workflow_guarantee_panel("native").splitlines()
         self.assertIn(" ".join(panel[-1].split()), body(scrolled))
@@ -1334,8 +1338,9 @@ class CardKeyTests(_CardCase):
             "profile whose lead is that model.",
             cli.QUICK_HELP.splitlines(),
         )
-        self.assertTrue(cli.QUICK_HELP.splitlines()[0].startswith("New here? W — Get started"))
-        self.assertEqual(cli.QUICK_HELP.splitlines()[1], "Enter — launch this profile (a fresh durable session).")
+        self.assertIn("New here? W — Get started: connect a provider (API key or account sign-in) and pick a profile.",
+                      cli.QUICK_HELP.splitlines())
+        self.assertEqual(cli.QUICK_HELP.splitlines()[0], "Enter — launch this profile (a fresh durable session).")
 
     def test_the_quick_help_names_session_verbs_terms_and_update_by_channel(self) -> None:
         from charmer import lineup, lineup_files

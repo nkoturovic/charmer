@@ -1,8 +1,8 @@
 
   saved balanced
   2 sessions follow this profile:
-  ◐ unknown   project        "api design"   apply now (then /reload-plugins …
-  ○ ended     project        "probe fixes"   applies at next resume
+  ◐ unknown   "api design"   apply now (then /reload-plugins there)
+  ○ ended     "probe fixes"   applies at next resume
 
 
 

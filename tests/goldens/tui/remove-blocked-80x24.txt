@@ -20,5 +20,5 @@
 
 
 
-  Enter details · E edit · K replace key · X remove · A add models · T test
-  Space on/off · N new · F key file · O orphan keys · … · ? help · Esc back
+  Enter details · A add models · E edit · K replace key · X remove · T test
+  Space on/off · N new · R refresh · W gateway · ? 3 more · Esc back
