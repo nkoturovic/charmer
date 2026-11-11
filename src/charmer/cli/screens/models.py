@@ -23,6 +23,7 @@ import charmer.cli.onboarding as onboarding
 import charmer.cli.consent as consent
 import charmer.cli.doctor as doctor
 import charmer.cli.gateway_facts as gateway_facts
+import charmer.cli.screens.actions as screen_actions
 import charmer.cli.screens.common as screens_common
 import charmer.cli.screens.providers as screens_providers
 import charmer.cli.text as cli_text
@@ -30,6 +31,9 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     import charmer.cli.runtime as runtime_mod
+
+
+HELP = screen_actions.help_text("models", cli_text.MODELS_HELP)
 
 
 class _ModelsScreen:
@@ -207,12 +211,19 @@ class _ModelsScreen:
         return "plain"
 
     def _keybar(self, model: views.ModelsModel) -> tui.KeyBar:
-        kind = self._row_kind(self.selected_key, model)
-        if self.banner is None and kind == "new":
-            return tui.KeyBar(cli_text.MODELS_KEYBAR_NEW)
-        if self.banner is None and kind == "admitted":
-            return tui.KeyBar(cli_text.MODELS_KEYBAR_ADMITTED)
-        return tui.KeyBar(cli_text.MODELS_KEYBAR)
+        key = self.selected_key
+        ids = {"add", "help", "back"}
+        labels = {}
+        if key is not None:
+            ids.update(("primary", "details"))
+            kind = self._row_kind(key, model)
+            if self.banner is None and kind in ("new", "admitted"):
+                labels["primary"] = "admit badge" if kind == "new" else "revoke badge"
+            if key in self.lifecycle:
+                ids.update(("qualify", "edit"))
+            if key != "__candidates__" and key not in self.runtime.catalog.docs["models-v2"]["models"]:
+                ids.add("remove")
+        return tui.KeyBar(screen_actions.bar("models", ids, labels=labels))
 
     # -- layout ------------------------------------------------------------
 
@@ -239,8 +250,8 @@ class _ModelsScreen:
         retired = max(2, len(model.retired.split("\n")))
         chrome = 3 + len(self._banner_lines(width)) + 1 + 1 + retired + 1
         reserve = self._detail_reserve(model) - 1 + 1  # extra detail lines + the message row
-        bars = [cli_text.MODELS_KEYBAR, cli_text.MODELS_KEYBAR_NEW, cli_text.MODELS_KEYBAR_ADMITTED]
-        bar_rows = max(tui.KeyBar(bar).rows(width) for bar in bars)
+        bar_rows = max(tui.KeyBar(screen_actions.bar("models", labels={"primary": label})).rows(width)
+                       for label in ("inspect", "admit badge", "revoke badge"))
         floor = views.ScreenFloor.compute(
             chrome=chrome,
             list_rows=len(model.keys) + len(model.new_keys),
@@ -321,9 +332,7 @@ class _ModelsScreen:
         for line in model.details.get(key, ()) if key is not None else ():
             tui.safe_add(win, row, 2, views.fit_text((line,), width - 3), palette.attr("normal"))
             row += 1
-        if self.message:
-            tui.safe_add(win, message_row, 2, views.clip(self.message, width - 3),
-                         palette.attr(self.message_role))
+        tui.draw_message(win, self.message, palette, self.message_role, message_row, detail_rows=reserve)
         keybar.draw(win, height - 1, palette)
         win.refresh()
 
@@ -408,6 +417,25 @@ class _ModelsScreen:
         self.index = self.keys.index(key) if key in self.keys else self._first_index()
         verb = "admitted" if kind == "new" else "revoked"
         self._say(f"{verb} {key} — badge only; use and qualification unchanged")
+
+    def _add(self, win: Any) -> None:
+        """Choose any merged provider, then use the existing add-model flow."""
+
+        providers = sorted(self.runtime.lineup_catalog().providers.items())
+        if not providers:
+            self._say("No providers — Esc → G (Providers) → N adds one", "warn")
+            return
+        labels = [f"{views.short_label(provider.get('display', pid))} ({pid})" for pid, provider in providers]
+        index = screens_common._run_choice_list(
+            win, self.palette, "add model — choose a provider", labels,
+            help_title="add model — help", help_text=HELP,
+            footer=screen_actions.bar("models", ("primary", "help", "back"), labels={"primary": "choose"}))
+        if index is None:
+            return
+        current = self.selected_key
+        screens_common.OnboardingActions(self.runtime, win, self.palette).add_models(providers[index][0])
+        self._load()
+        self.index = self.keys.index(current) if current is not None and current in self.keys else self._first_index()
 
     def _admit_operator(self, win: Any, key: str) -> None:
         """Record a badge through the shared local-only admission flow."""
@@ -549,6 +577,8 @@ class _ModelsScreen:
         tui.hide_cursor()
         while True:
             self._draw(win)
+            if tui.message_modal(win, self, detail_rows=self._detail_reserve(self.model(win.getmaxyx()[1]))):
+                continue
             key = tui.read_key(win)
             if key.kind == "resize":
                 continue
@@ -565,7 +595,7 @@ class _ModelsScreen:
                 # §4.8: the selected line's radar text is clipped on screen; the
                 # full text sits in help.
                 radar = self.radar.get(self.selected_key or "")
-                text = cli_text.MODELS_HELP + (f"\n\n{radar}" if radar else "")
+                text = HELP + (f"\n\n{radar}" if radar else "")
                 screens_common._help_modal(win, self.palette, "models — help", text, self._draw)
             elif key.kind == "up" or (key.kind == "char" and key.ch == "k"):
                 self._step(-1)
@@ -575,6 +605,8 @@ class _ModelsScreen:
                 self._edge(last=False)
             elif key.kind == "end":
                 self._edge(last=True)
+            elif key.kind == "char" and key.ch in ("a", "A"):
+                self._add(win)
             elif key.kind == "char" and key.ch in ("v", "V"):
                 self._details(win)
             elif key.kind == "char" and key.ch in ("q", "Q") and self.selected_key in self.lifecycle:

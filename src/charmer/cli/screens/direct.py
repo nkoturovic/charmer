@@ -22,6 +22,7 @@ from typing import Sequence
 import dataclasses
 import textwrap
 import charmer.cli.gateway_facts as gateway_facts
+import charmer.cli.screens.actions as screen_actions
 import charmer.cli.screens.common as screens_common
 import charmer.cli.screens.gateway_actions as screens_gateway
 import charmer.cli.screens.providers as screens_providers
@@ -32,6 +33,9 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     import charmer.cli.runtime as runtime_mod
+
+
+HELP = screen_actions.help_text("direct", cli_text.DIRECT_HELP)
 
 
 def _direct_marks(
@@ -267,20 +271,23 @@ class _DirectScreen:
     # -- layout ------------------------------------------------------------
 
     def _keybar(self) -> tui.KeyBar:
-        return tui.KeyBar(self._bindings())
+        return tui.KeyBar(self._ranked_bindings())
 
     def _bindings(self, *, longest: bool = False) -> tuple[tuple[str, str], ...]:
-        """The bar for the selected row: ← → when its effort is chosen here,
-        W while the gateway is not reachable (``longest``: both, for the floor)."""
+        return tuple(tui.KeyBar(self._ranked_bindings(longest=longest)).bindings)
 
-        base = cli_text.DIRECT_CHOOSE_KEYBAR if self.purpose else cli_text.DIRECT_KEYBAR
-        extra: list[tuple[str, str]] = []
+    def _ranked_bindings(self, *, longest: bool = False) -> tuple[tuple[str, str, int], ...]:
+        """The selected row's actions (``longest`` supplies the layout floor)."""
+
+        ids = {"launch", "help", "back"}
+        if not self.purpose:
+            ids.update(("save", "providers"))
         row = self.rows[self.selected] if self.rows and 0 <= getattr(self, "selected", -1) < len(self.rows) else None
         if longest or (row is not None and row.mode == "gateway" and self._shows_effort() and row.efforts):
-            extra.append(cli_text.DIRECT_EFFORT_BINDING)
+            ids.add("effort")
         if longest or self.served is None:
-            extra.append(cli_text.DIRECT_GATEWAY_BINDING)
-        return (*base[:-2], *extra, *base[-2:])
+            ids.add("gateway")
+        return screen_actions.bar("direct", ids, labels={"launch": "choose"} if self.purpose else None)
 
     def _title(self) -> str:
         return cli_text.DIRECT_CHOOSE_TITLE.format(purpose=self.purpose) if self.purpose else cli_text.DIRECT_TITLE
@@ -358,8 +365,7 @@ class _DirectScreen:
         row_y += 1
         for offset, (line, role) in enumerate(detail[:reserve]):
             tui.safe_add(win, row_y + offset, 2, views.clip(line, width - 3), palette.attr(role))
-        if self.message:
-            tui.safe_add(win, message_row, 2, views.clip(self.message, width - 3), palette.attr(self.message_role))
+        tui.draw_message(win, self.message, palette, self.message_role, message_row, detail_rows=reserve)
         keybar.draw(win, height - 1, palette)
         win.refresh()
 
@@ -503,6 +509,8 @@ class _DirectScreen:
         tui.hide_cursor()
         while True:
             self._draw(win)
+            if tui.message_modal(win, self, detail_rows=self._detail_reserve(win.getmaxyx()[1])):
+                continue
             key = tui.read_key(win)
             if key.kind == "resize":
                 continue
@@ -516,7 +524,7 @@ class _DirectScreen:
                 continue
             self.message = ""
             if key.kind == "char" and key.ch == "?":
-                screens_common._help_modal(win, self.palette, "direct — help", cli_text.DIRECT_HELP, self._draw)
+                screens_common._help_modal(win, self.palette, "direct — help", HELP, self._draw)
             elif key.kind == "char" and key.ch in ("g", "G") and not self.purpose:
                 screens_providers.run_providers_screen(self.runtime, win, self.palette, journal=self.journal)
                 current = self.rows[self.selected].key if self.rows else None

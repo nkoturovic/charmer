@@ -21,4 +21,4 @@
   Compaction trigger percent (process env and the reactive trigger); a profile
   may override it (◆). Applies at the next launch or resume.
 
-  Enter edit · R reset to default · ? help · Esc back
+  Enter edit · R reset to default · G providers · M models · ? help · Esc back

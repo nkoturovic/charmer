@@ -689,7 +689,7 @@ EDITOR_SEED_NAG = "a newer shipped version exists — P → U shows the changes 
 # work yet); L launches all the same, as line mode's "no" to setup does.
 CARD_KEYS_NOT_CONNECTED = (
     ("Enter", "get started"), ("L", "launch anyway"), ("P", "profiles"), ("D", "direct"), ("V", "details"),
-    ("S", "sessions"), ("G", "providers"), ("M", "models"), ("O", "settings"), ("H", "checks"), ("?", "help"),
+    ("S", "sessions"), ("G", "providers"), ("M", "models"), ("O", "settings"), ("H", "doctor"), ("?", "help"),
     ("Esc", ""),
 )
 # The release row's key: a check, never a claim that an update exists (the
@@ -1735,8 +1735,8 @@ def propagation_rows(
     ``states[managed_id]`` is ``_liveness``'s ``live``/``unknown``/``ended``
     (a missing state reads ``unknown``); ``titles[managed_id]`` the record
     title or ``—``.  A pending change wins over the generation-0 row, which
-    wins over the state row.  Below 80 columns the title column is dropped;
-    no row is wider than ``width - 3``.
+    wins over the state row. Below 100 columns the directory is dropped and
+    the title yields space to the instruction; no row is wider than ``width - 3``.
     """
 
     out: list[str] = []
@@ -1755,10 +1755,15 @@ def propagation_rows(
         cwd = PurePath(follower.cwd).name or follower.cwd
         title = titles.get(mid) or "—"
         shown = "—" if title == "—" else f'"{title}"'
-        if width >= 80:
+        if width >= 100:
             text = f"  {mark:<12}{cwd:<14} {shown}   {action}"
         else:
-            text = f"  {mark:<12}{cwd:<14} {action}"
+            # Keep the instruction whole: directory and then title yield
+            # space before the next step does.
+            prefix = f"  {mark:<12}" if width >= 80 else f"  {mark.split()[0]} "
+            title_room = max(0, width - 3 - len(prefix) - len(action) - 3)
+            title = clip(shown, title_room) if title_room else ""
+            text = prefix + (title + "   " if title else "") + action
         out.append(clip(text, max(0, width - 3)))
     return tuple(out)
 
@@ -1987,7 +1992,7 @@ def session_details(
             why = "; ".join(pending.get("reasons") or ()) or "a change that needs a relaunch"
             lines.append(f"pending: {pending_target or 'a recorded change'} — waits because {why}")
             lines.append(f"  it applies at the next resume (Enter, or charmer -r {mid[:8]}); "
-                         "T → keep current lineup discards it")
+                         "T → keep discards it")
         else:
             lines.append("pending: none")
         lines.append("settings drift: " + ("; ".join(drift) + " — applies at the next resume" if drift else "none"))
@@ -2931,7 +2936,7 @@ def provider_kind_choices(*, keyed_audited: bool = True) -> tuple[tuple[str, str
 
 def provider_form_fields(*, kind="anthropic-compatible", keyed_audited: bool = True):
     choices = provider_kind_choices(keyed_audited=keyed_audited)
-    label = "Generation protocol (Left/Right chooses)"
+    label = "Generation protocol (↑↓ chooses)"
     if not keyed_audited:
         label += " " + PROVIDER_KIND_CLOSED_LABEL
     return (
