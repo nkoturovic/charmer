@@ -433,7 +433,7 @@ class KeyedProviderKeyTests(JourneyFixture):
                         mock.patch.object(action, "preview", return_value=True), \
                         mock.patch.object(action, "invoke", return_value=0) as invoke, \
                         mock.patch.object(action, "offer_key"):
-                    action.new_provider(manual_only=True)
+                    action.new_provider()
                 argv = invoke.call_args.args[0]
                 self.assertEqual(argv[argv.index("--kind") + 1], kind)
                 self.assertEqual(argv[argv.index("--auth") + 1], auth)

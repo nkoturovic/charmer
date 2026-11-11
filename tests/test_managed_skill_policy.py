@@ -567,7 +567,7 @@ class SkillPolicyScopeRepairTests(V4Case):
         # Forward (3.0.x scope under the 3.1 launcher): Attention, repair writes 3.1.
         # A 3.0.x scope also has no permissions.defaultMode; repair
         # never adds it to a live scope (the next resume decides).
-        named = set(scope.MANAGED_SKILL_DENIES)
+        named = {*scope.MANAGED_SKILL_DENIES, *scope.MOD_FOLDER_DENIES}
         self.assertEqual(strict_json.loads(released[0])["permissions"]["defaultMode"],
                          scope.PERMISSION_DEFAULT_MODE)
 
@@ -596,6 +596,7 @@ class SkillPolicyScopeRepairTests(V4Case):
         # scope differs and the repair writes the 3.0 bytes back; the 3.1
         # doctor then reads that scope as lazy state again.
         with mock.patch.object(scope, "MANAGED_SKILL_DENIES", ()), \
+                mock.patch.object(scope, "MOD_FOLDER_DENIES", ()), \
                 mock.patch.object(scope, "SKILL_MD_BYTES", previous):
             problems, _attention, _info = self._integrity(mid)
             self.assertTrue(any("scope differs from the record-authoritative compile" in line
@@ -669,7 +670,7 @@ class SkillPolicyScopeRepairTests(V4Case):
         mid = record["managed_id"]
         drift = cli_text.SKILL_POLICY_DRIFT.format(m8=mid[:8], mid=mid)
         live = self.live(mid)
-        named = set(scope.MANAGED_SKILL_DENIES)
+        named = {*scope.MANAGED_SKILL_DENIES, *scope.MOD_FOLDER_DENIES}
         path = live / "settings.json"
         document = strict_json.loads(path.read_bytes())
         document["permissions"]["deny"] = [e for e in document["permissions"]["deny"] if e not in named]
@@ -705,7 +706,7 @@ class SkillPolicyScopeRepairTests(V4Case):
         mid = record["managed_id"]
         live = self.live(mid)
         path = live / "settings.json"
-        named = set(scope.MANAGED_SKILL_DENIES)
+        named = {*scope.MANAGED_SKILL_DENIES, *scope.MOD_FOLDER_DENIES}
         document = strict_json.loads(path.read_bytes())
         document["permissions"] = {"deny": [e for e in document["permissions"]["deny"] if e not in named]}
         state.atomic_write(path, strict_json.canonical_file_bytes(document))

@@ -229,6 +229,9 @@ LAN_PREVIEW = ("{id}: OpenAI-compatible server at {base_url} (no key). Its model
                "release: agents need a reviewed route. Nothing is sent now.")
 NETWORK_PREVIEW = ("{id}: OpenAI-compatible server at {base_url} (no key), private network ({network}): the "
                    "gateway connects only to addresses in that network. Nothing is sent now.")
+# The last line of a private-network route approval (as the command line's).
+NETWORK_SCOPE = ("The key is sent only to this origin, and only to addresses in that network (checked at every "
+                 "connection).")
 KIND_LABELS = {"anthropic-compatible": "Anthropic-compatible, API key",
                "openai-compatible": "OpenAI-compatible, API key",
                "openai-compatible-lan": "server on your network"}
@@ -251,6 +254,7 @@ PICKER_LABELS = {
     "own": "{display} — {kind_label}",
     "other:anthropic-compatible": "Anthropic-compatible endpoint (your vendor, with an API key)",
     "other:openai-compatible": "OpenAI-compatible endpoint (with an API key)",
+    "other:network": "A server on your network — with an API key",
     "other:lan": "Server on your network (OpenAI-compatible, no key)",
     "preset:lan": "{display} server (OpenAI-compatible, no key)",
     "preset": "{display} API key — {kind}",

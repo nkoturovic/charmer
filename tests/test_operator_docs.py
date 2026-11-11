@@ -1403,7 +1403,7 @@ class PageAnchorTests(unittest.TestCase):
                 self.assertNotIn("refreshes the helper shims", text)
                 self.assertIn("release metadata", text)
                 self.assertIn("doctor --json", text)
-                self.assertIn("read-only report", text)
+                self.assertIn("a report that does not write local state", text)
                 self.assertNotIn("never changes anything", text)
 
     def test_the_wsl_guide_shares_doctor_wording(self) -> None:

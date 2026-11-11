@@ -399,8 +399,8 @@ class NetworkCommandCase(unittest.TestCase):
         return _getaddrinfo(*self.answers)(host, port)
 
     def command(self, argv: list[str], text: str = "", *, tty: bool = True, **extra: Any) -> tuple[int, str, str]:
-        """Parse ``argv`` like the CLI, add the arguments the parser does not
-        carry yet (``network``), and run the providers command."""
+        """Parse ``argv`` like the CLI, set ``extra`` arguments (``network``,
+        as ``--network`` sets it), and run the providers command."""
 
         import contextlib
         import io
@@ -422,14 +422,25 @@ class NetworkCommandCase(unittest.TestCase):
     def declaration(self, provider_id: str = KEYED_ID) -> dict:
         return strict_json.loads((operator.providers_dir(self.harness.env) / f"{provider_id}.json").read_bytes())
 
+    def declare_with_line(self, network: str = "tailnet", base: str = "http://box.example.test:8010/v1") -> None:
+        """The keyless LAN kind on ``network`` with one line (LAN_KEY)."""
+
+        argv = ["providers", "add", LAN_ID, "--kind", "openai-compatible-lan", "--base-url", base, "--auth", "none",
+                "--family", "boxfam"]
+        code, _out, err = self.command(argv, network=network)
+        self.assertEqual(code, 0, err)
+        path = operator.providers_dir(self.harness.env) / f"{LAN_ID}.json"
+        document = strict_json.loads(path.read_bytes())
+        document["lines"] = line(LAN_KEY, "lanbox-chat-1")
+        path.write_bytes(strict_json.pretty_file_bytes(document))
+
     def state_bytes(self) -> dict:
         return self.harness.state_bytes()
 
 
-# Keyed plain HTTP is rendered once the renderer's keyed check takes the
-# network; the end-to-end command rows below use HTTPS on a private network,
-# and the plain-HTTP approval text is checked on the resolved provider.
-ADD_KEYED = ["providers", "add", KEYED_ID, "--kind", "openai-compatible", "--base-url",
+# Most end-to-end command rows use HTTPS on a private network; keyed plain
+# HTTP has its own end-to-end row (KeyedPlainHttpTests).
+ADD_KEYED =["providers", "add", KEYED_ID, "--kind", "openai-compatible", "--base-url",
              "https://box.example.test:8010/v1", "--auth", "bearer", "--secret-ref", f"env:{SECRET}",
              "--family", "boxfam"]
 SCOPE_LINE = ("The key is sent only to this origin, and only to addresses in that network (checked at every "
@@ -948,16 +959,6 @@ class DoctorNetworkTests(NetworkCommandCase):
     """Doctor, launch readiness and the reload check for providers declared
     on a private network: a TCP connect only, the resolution named."""
 
-    def declare_with_line(self, network: str = "tailnet", base: str = "http://box.example.test:8010/v1") -> None:
-        argv = ["providers", "add", LAN_ID, "--kind", "openai-compatible-lan", "--base-url", base, "--auth", "none",
-                "--family", "boxfam"]
-        code, _out, err = self.command(argv, network=network)
-        self.assertEqual(code, 0, err)
-        path = operator.providers_dir(self.harness.env) / f"{LAN_ID}.json"
-        document = strict_json.loads(path.read_bytes())
-        document["lines"] = line(LAN_KEY, "lanbox-chat-1")
-        path.write_bytes(strict_json.pretty_file_bytes(document))
-
     def observe(self, *answers: tuple[str, str], state: str = "reachable", reason: str | None = None):
         from charmer.cli import gateway_facts
 
@@ -1251,6 +1252,172 @@ class DoctorNetworkTests(NetworkCommandCase):
                          f"https://api.example.test; auth bearer from {SECRET} (value not shown)")
 
 
+# A dummy key value (no token shape): the leak tests look for it everywhere.
+SENTINEL_KEY = "boxco-dummy-sentinel-key-value"
+PLAIN_ID = "plainbox"
+PLAIN_KEY = "custom-plainbox-chat"
+
+
+def network_plan(files: dict[str, dict], *, docs: dict | None = None,
+                 aliases: dict[str, dict] | None = None) -> operator.RenderPlan:
+    """Validated declarations with approved keyed routes through the real render plan."""
+
+    import test_operator as op_tests
+
+    docs = docs or network_docs()
+    open_docs = network_docs()
+    first = layer_of(files, docs=open_docs)
+    routes = {pid: op_tests._route(provider) for pid, provider in first.providers.items()
+              if provider.auth_kind != "none"}
+    ledger = op_tests._ledger(routes=routes, aliases=aliases or {})
+    return operator.render_plan(docs, layer_of(files, docs=docs, ledger=ledger), ledger)
+
+
+def render_network(plan: operator.RenderPlan) -> Any:
+    from pathlib import Path
+
+    from charmer import render
+
+    return render.render_config(
+        plan.docs["gateway"], plan.docs["providers"]["providers"], plan.docs["models-v2"]["models"],
+        home=Path("/fixture/home"), gateway_tokens=("t" * 64,),
+        resolve_secret=lambda name: SENTINEL_KEY if name == SECRET else f"dummy-{name.lower().replace('_', '-')}",
+        continuity={}, captures=plan.captures, provider_headers=plan.headers, oauth_overlay=plan.overlay,
+        quiet_providers=plan.quiet_providers)
+
+
+def network_files() -> dict[str, dict]:
+    plain = lan_declaration("http://box.lan:8000/v1", network=None)
+    plain["lines"] = line(PLAIN_KEY, "plainbox-chat-1")
+    return {KEYED_ID: keyed_declaration("http://box.example.test:8010/v1", network="lan",
+                                        headers={"X-Client": "charmer"}),
+            LAN_ID: lan_declaration("http://box.example.test:8010/v1", network="tailnet"), PLAIN_ID: plain}
+
+
+def compat_by_name(result: Any) -> dict[str, dict]:
+    from charmer import served_plan
+
+    document = served_plan.parse_restricted_yaml(result.yaml)
+    return {section["name"]: section for section in document["openai-compatibility"]}
+
+
+class NetworkRenderTests(unittest.TestCase):
+    """The gateway's config shape: the ``private-network`` block instead of ``base-url``."""
+
+    def test_a_network_provider_renders_the_block_instead_of_the_base_url(self) -> None:
+        result = render_network(network_plan(network_files()))
+        sections = compat_by_name(result)
+        keyed, lan, plain = sections[KEYED_ID], sections[LAN_ID], sections[PLAIN_ID]
+        self.assertEqual(list(keyed), ["name", "private-network", "api-key-entries", "headers", "models"])
+        self.assertEqual(keyed["private-network"], {"base-url": "http://box.example.test:8010/v1", "class": "lan"})
+        self.assertEqual(keyed["api-key-entries"], [{"api-key": SENTINEL_KEY}])
+        self.assertEqual(list(lan), ["name", "private-network", "models"])
+        self.assertEqual(lan["private-network"], {"base-url": "http://box.example.test:8010/v1", "class": "tailnet"})
+        # Without a network, the 2.4.0 shape.
+        self.assertEqual(list(plain), ["name", "base-url", "models"])
+        self.assertEqual(plain["base-url"], "http://box.lan:8000/v1")
+        private = {model["alias"] for name in (KEYED_ID, LAN_ID) for model in sections[name]["models"]}
+        self.assertTrue(private)
+        self.assertEqual(result.private_aliases, tuple(sorted(private)))
+        self.assertFalse({model["alias"] for model in plain["models"]} & set(result.private_aliases))
+        self.assertLessEqual(set(result.private_aliases), result.served)
+        # The models are rendered exactly as without a network.
+        bare = {KEYED_ID: keyed_declaration("https://box.example.test:8010/v1", network=None,
+                                            headers={"X-Client": "charmer"}),
+                LAN_ID: lan_declaration("http://box.lan:8010/v1", network=None), PLAIN_ID: network_files()[PLAIN_ID]}
+        before = compat_by_name(render_network(network_plan(bare)))
+        for name in (KEYED_ID, LAN_ID):
+            self.assertEqual(sections[name]["models"], before[name]["models"])
+        for field in ("api-key-entries", "headers"):
+            self.assertEqual(sections[KEYED_ID][field], before[KEYED_ID][field])
+
+    def test_the_render_resolves_no_name(self) -> None:
+        import socket
+        from unittest import mock
+
+        plan = network_plan(network_files())
+        refuse = mock.Mock(side_effect=AssertionError("the render resolved a name"))
+        with mock.patch.object(socket, "getaddrinfo", refuse), mock.patch.object(socket, "gethostbyname", refuse), \
+                mock.patch.object(socket, "create_connection", refuse):
+            render_network(plan)
+        refuse.assert_not_called()
+
+    def test_the_served_plan_puts_the_class_into_the_route_identity(self) -> None:
+        from charmer import served_plan
+
+        def routes(files: dict[str, dict]) -> dict:
+            return served_plan.routes_from_document(
+                served_plan.parse_restricted_yaml(render_network(network_plan(files)).yaml), strict=True)
+
+        tailnet = routes(network_files())
+        self.assertEqual(tailnet[LAN_KEY].route, "lanbox http://box.example.test:8010/v1 private network tailnet")
+        self.assertEqual(tailnet[KEY].route, "box http://box.example.test:8010/v1 private network lan")
+        self.assertEqual(tailnet[KEY].auth_header, "bearer")
+        self.assertEqual(tailnet[PLAIN_KEY].route, "plainbox http://box.lan:8000/v1")
+        files = network_files()
+        files[LAN_ID] = lan_declaration("http://box.example.test:8010/v1", network="lan")
+        lan = routes(files)
+        self.assertEqual(lan[LAN_KEY].changed_parts(tailnet[LAN_KEY]), ("route",))
+        self.assertEqual(lan[PLAIN_KEY], tailnet[PLAIN_KEY])
+        self.assertEqual(served_plan.PRIVATE_NETWORK_KEY, __import__("charmer.render").render.PRIVATE_NETWORK_KEY)
+
+
+class GateClosedControlTests(unittest.TestCase):
+    """A closed private-network gate: nothing of the provider is rendered,
+    served, captured or fenced."""
+
+    def test_nothing_is_rendered_or_captured_for_a_gated_provider(self) -> None:
+        files = network_files()
+        first = layer_of(files)
+        capture = {"provider": LAN_ID, "rd": first.providers[LAN_ID].route_digest, "wire": "lanbox-old-1",
+                   "proxy_contract": None, "display": "LAN box old", "context_tokens": 32768,
+                   "source": "operator:custom-lanbox-old", "since_catalog": 36, "overlay": None}
+        aliases = {"custom-lanbox-old": capture}
+        opened = network_plan(files, aliases=aliases)
+        self.assertIn("custom-lanbox-old", opened.captures)
+        open_result = render_network(opened)
+        self.assertIn("custom-lanbox-old", open_result.served)
+        closed = network_plan(files, docs=network_docs(network=False), aliases=aliases)
+        self.assertEqual(set(closed.captures), set())
+        result = render_network(closed)
+        names = set(compat_by_name(result))
+        self.assertEqual(names & {KEYED_ID, LAN_ID}, set())
+        self.assertIn(PLAIN_ID, names)
+        gated = {alias for alias in open_result.served if alias not in result.served}
+        self.assertTrue({"custom-lanbox-old"} <= gated)
+        self.assertEqual(result.private_aliases, ())
+        self.assertNotIn(SENTINEL_KEY, result.yaml)
+
+
+class GateClosedFenceTests(NetworkCommandCase):
+    def fence_models(self) -> set[str]:
+        """The fence of an ad-hoc lineup whose configured workflow default
+        names the provider's line (the one unbound operator selector a fence
+        gains)."""
+
+        import dataclasses
+
+        from charmer import profile, scope
+
+        lcat = self.runtime.lineup_catalog()
+        eff = dataclasses.replace(self.runtime.current_effective(),
+                                  workflow_default_binding={"model": LAN_KEY, "effort": "high"})
+        lead = next(key for key, entry in lcat.lines.items()
+                    if "lead" in entry.get("capabilities", ()) and entry["provider"] != LAN_ID)
+        lineup = profile.resolve(profile.ad_hoc_direct(lead), lcat, effective=eff, ad_hoc=True)
+        return set(scope.compile_fence(lineup, lcat, eff).available_models)
+
+    def test_a_gated_provider_never_reaches_a_compiled_fence(self) -> None:
+        self.declare_with_line()
+        entry = self.runtime.lineup_catalog().lines[LAN_KEY]
+        selectors = {selector for _level, selector, _contract in catalog.line_selectors(dict(entry))}
+        self.assertTrue(selectors & self.fence_models())
+        self.runtime.catalog.docs["gateway"][catalog.AUDITS_KEY][operator.PRIVATE_NETWORK_AUDIT] = False
+        self.assertNotIn(LAN_KEY, self.runtime.lineup_catalog().lines)
+        self.assertFalse(selectors & self.fence_models())
+        self.assertFalse(selectors & set(self.runtime.operator_render_plan().docs["models-v2"]["models"]))
+
+
 class ReloadCheckTests(unittest.TestCase):
     """A gateway without private-network support loads the render, sentinel
     included, and drops those entries: the reload check says so."""
@@ -1384,6 +1551,546 @@ class ReloadEntryPointTests(_proxy_control_case()):
                 if not served:
                     self.assertIn("gateway reloaded without the private-network selector(s) custom-box-chat",
                                   err.getvalue())
+
+
+class NetworkTuiTests(NetworkCommandCase):
+    """The TUI paths of a provider on a private network: G → N and Get
+    started → A (a server on your network with an API key; the keyless
+    server with its network), G → E (another network), Enter (approve).
+    The forms and dialogs are answered in place; each test inspects the
+    declaration that results."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        from unittest import mock
+
+        import charmer.cli.consent as consent
+
+        for name in consent.SESSION_MARKERS:
+            self.runtime.environ.pop(name, None)
+        guard = mock.patch.object(consent, "stdio_ttys", return_value=True)
+        guard.start()
+        self.addCleanup(guard.stop)
+
+    def answered(self, answers: dict[str, str], *, key: str = ""):
+        """Patches: every form answered with its defaults and ``answers``,
+        every view and confirmation accepted (both recorded), the key typed."""
+
+        import contextlib
+        from unittest import mock
+
+        from charmer import tui
+        import charmer.cli.screens.providers as screens_providers
+
+        seen: dict[str, list] = {"forms": [], "views": [], "confirms": []}
+
+        def form(self_form: Any, _win: Any) -> dict[str, str]:
+            defaults = {name: default for name, _label, default, _choices in self_form.fields}
+            seen["forms"].append((self_form.title, self_form.fields, getattr(self_form, "help_text", "")))
+            return {**defaults, **{name: value for name, value in answers.items() if name in defaults}}
+
+        def view(self_view: Any, _win: Any) -> bool:
+            seen["views"].append((self_view.title, list(self_view.lines)))
+            return True
+
+        def confirm(_self: Any, title: str, lines: Any, _buttons: Any) -> bool:
+            seen["confirms"].append((title, list(lines)))
+            return True
+
+        stack = contextlib.ExitStack()
+        stack.enter_context(mock.patch.object(tui.OnboardingForm, "run", autospec=True, side_effect=form))
+        stack.enter_context(mock.patch.object(tui.TextView, "run", autospec=True, side_effect=view))
+        stack.enter_context(mock.patch.object(screens_providers.ConnectActions, "_confirm", autospec=True,
+                                              side_effect=confirm))
+        stack.enter_context(mock.patch.object(screens_providers.ConnectActions, "_ask_key", autospec=True,
+                                              return_value=key))
+        stack.enter_context(mock.patch.object(screens_providers.ConnectActions, "_add_models", autospec=True,
+                                              return_value=None))
+        return stack, seen
+
+    def actions(self) -> Any:
+        from test_tui import FakeWindow
+
+        from charmer import tui
+        import charmer.cli.screens.providers as screens_providers
+
+        return screens_providers.ConnectActions(self.runtime, FakeWindow([]), tui.MONO_PALETTE)
+
+    def entry(self, entry_id: str, *, only: str | None = "other") -> Any:
+        from charmer.setup import providers as layer
+
+        return next(entry for entry in layer.picker_entries(self.runtime, only=only) if entry.id == entry_id)
+
+    def to_entry(self, entry_id: str, *, only: str | None = "other") -> list:
+        """Keys from the picker's first entry down to ``entry_id``."""
+
+        from test_tui import DOWN, HOME
+
+        from charmer import tui
+        import charmer.cli.screens.get_started as get_started
+
+        picker = get_started._ProviderPicker(self.runtime, tui.MONO_PALETTE, only=only)
+        entries = [row.entry.id for row in picker.rows if row.kind == "entry" and row.entry is not None]
+        return [HOME, *([DOWN] * entries.index(entry_id))]
+
+    def providers_screen(self) -> Any:
+        from charmer import tui
+        import charmer.cli.screens.providers as screens_providers
+
+        return screens_providers._ProvidersScreen(self.runtime, palette=tui.MONO_PALETTE, journal=lambda: None)
+
+    def test_the_picker_offers_a_keyed_server_on_your_network_next_to_the_keyless_one(self) -> None:
+        from charmer.setup import providers as layer, texts as setup_texts
+
+        for only in ("other", None):
+            with self.subTest(only=only):
+                ids = [entry.id for entry in layer.picker_entries(self.runtime, only=only)]
+                self.assertIn("other:network", ids)
+                lan = next(index for index, value in enumerate(ids) if value.startswith("other:lan:"))
+                self.assertEqual(ids.index("other:network"), lan - 1)
+        self.assertEqual(self.entry("other:network").label, setup_texts.PICKER_LABELS["other:network"])
+        self.runtime.catalog.docs["gateway"][catalog.AUDITS_KEY][operator.PRIVATE_NETWORK_AUDIT] = False
+        self.assertNotIn("other:network", [entry.id for entry in layer.picker_entries(self.runtime, only="other")])
+
+    def test_n_adds_a_keyed_server_on_the_tailnet(self) -> None:
+        import charmer.cli.text as cli_text
+        from charmer.setup import texts as setup_texts
+
+        from test_tui import FakeWindow
+
+        stack, seen = self.answered({"id": KEYED_ID, "url": "http://box.example.test:8010/v1", "family": "boxfam"},
+                                    key="box-tui-dummy-key")
+        screen = self.providers_screen()
+        with stack:
+            screen.run(FakeWindow(["n", *self.to_entry("other:network"), "\n", "\x1b", "\x1b"]))
+        self.assertTrue(screen.message.startswith(f"Added {KEYED_ID}"), screen.message)
+        title, fields, help_text = seen["forms"][0]
+        self.assertEqual(title, cli_text.ENDPOINT_FORM_TITLE["network"])
+        network = next(field for field in fields if field[0] == "network")
+        self.assertEqual(network[2], "tailnet")
+        self.assertEqual([value for value, _label in network[3]], ["loopback", "lan", "tailnet"])
+        self.assertIn("provider-keys.env", help_text)
+        self.assertIn("a terminal outside Claude Code", help_text)
+        approval = "\n".join(seen["confirms"][0][1])
+        self.assertIn("plain HTTP: the key is encrypted only while the connection runs through your tailnet", approval)
+        self.assertIn("now resolves to: 100.88.12.34 (tailnet)", approval)
+        self.assertTrue(approval.endswith(setup_texts.NETWORK_SCOPE), approval)
+        provider = self.declaration()["provider"]
+        self.assertEqual((provider["network"], provider["base_url"], provider["kind"]),
+                         ("tailnet", "http://box.example.test:8010/v1", operator.KEYED_KIND))
+        self.assertEqual(self.runtime.operator_snapshot().layer.route_status[KEYED_ID], "approved")
+        self.assertNotIn("box-tui-dummy-key", repr(seen))
+
+    def test_get_started_a_adds_a_keyed_server_on_the_lan(self) -> None:
+        from test_tui import FakeWindow
+
+        from charmer import tui
+        import charmer.cli.screens.get_started as get_started
+
+        stack, _seen = self.answered({"id": KEYED_ID, "url": "http://192.168.1.10:8010/v1", "network": "lan",
+                                      "family": "boxfam"}, key="box-tui-dummy-key")
+        screen = get_started._GetStartedScreen(self.runtime, tui.MONO_PALETTE)
+        with stack:
+            screen.run(FakeWindow(["a", *self.to_entry("other:network", only=None), "\n", "\x1b", "\x1b"]))
+        self.assertTrue(screen.message.startswith(f"Added {KEYED_ID}"), screen.message)
+        self.assertEqual(self.declaration()["provider"]["network"], "lan")
+
+    def test_n_adds_a_keyless_server_on_the_tailnet(self) -> None:
+        from charmer.setup import providers as layer, texts as setup_texts
+
+        from test_tui import FakeWindow
+
+        entry = next(item for item in layer.picker_entries(self.runtime, only="other")
+                     if item.kind == "lan" and item.label == setup_texts.PICKER_LABELS["other:lan"])
+        stack, seen = self.answered({"id": LAN_ID, "url": "http://box.example.test:8010/v1", "network": "tailnet"})
+        screen = self.providers_screen()
+        with stack:
+            screen.run(FakeWindow(["n", *self.to_entry(entry.id), "\n", "\x1b", "\x1b"]))
+        self.assertTrue(screen.message.startswith(f"Added {LAN_ID}"), screen.message)
+        _title, fields, help_text = seen["forms"][0]
+        network = next(field for field in fields if field[0] == "network")
+        self.assertEqual(network[2], "none")
+        self.assertIn("provider-keys.env", help_text)
+        preview = "\n".join(seen["views"][0][1])
+        self.assertIn("private network (tailnet): the gateway connects only to addresses in that network", preview)
+        provider = self.declaration(LAN_ID)["provider"]
+        self.assertEqual((provider["network"], provider["kind"]), ("tailnet", operator.LAN_KIND))
+
+    def test_e_edits_the_network_and_the_route_is_approved_again(self) -> None:
+        from unittest import mock
+
+        from test_tui import FakeWindow
+
+        from charmer import tui
+        import charmer.cli.screens.common as screens_common
+        import charmer.cli.screens.providers as screens_providers
+
+        code, _out, err = self.command(ADD_KEYED, "y\n", network="tailnet")
+        self.assertEqual(code, 0, err)
+        seen: dict[str, Any] = {}
+
+        def form(self_form: Any, _win: Any) -> dict[str, str]:
+            seen["fields"] = {name: default for name, _label, default, _choices in self_form.fields}
+            return {**seen["fields"], "network": "lan"}
+
+        screen = screens_providers._ProvidersScreen(self.runtime, palette=tui.MONO_PALETTE, journal=lambda: None)
+        screen.selected = [row.id for row in screen.rows].index(KEYED_ID)
+        with mock.patch.object(tui.OnboardingForm, "run", autospec=True, side_effect=form), \
+                mock.patch.object(screens_common.OnboardingActions, "confirm", return_value=True), \
+                mock.patch.object(screens_common.OnboardingActions, "show"):
+            screen.run(FakeWindow(["e", "\x1b"]))
+        self.assertEqual(seen["fields"]["network"], "tailnet")
+        self.assertEqual(self.declaration()["provider"]["network"], "lan")
+        # Another network is another route: approved again before use.
+        self.assertEqual(self.runtime.operator_snapshot().layer.route_status[KEYED_ID], "changed")
+        self.answers = ("192.168.1.10",)
+        stack, approved = self.answered({})
+        with stack:
+            outcome = self.actions().approve(KEYED_ID)
+        lines = "\n".join(approved["confirms"][0][1])
+        self.assertIn("network: lan (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, fc00::/7) — HTTPS", lines)
+        self.assertIn("now resolves to: 192.168.1.10 (lan)", lines)
+        self.assertTrue(outcome.text.startswith("Approved"), outcome.text)
+        self.assertEqual(self.runtime.operator_snapshot().layer.route_status[KEYED_ID], "approved")
+
+    def test_an_answer_outside_the_network_refuses_in_the_tui_and_writes_nothing(self) -> None:
+        before = self.state_bytes()
+        self.answers = ("203.0.113.9",)
+        stack, seen = self.answered({"id": KEYED_ID, "url": "http://box.example.test:8010/v1", "family": "boxfam"},
+                                    key="box-tui-dummy-key")
+        with stack:
+            outcome = self.actions().connect(self.entry("other:network"))
+        self.assertIn("resolves to 203.0.113.9 (public), outside network tailnet", outcome.text)
+        self.assertEqual(seen["confirms"], [])
+        self.assertEqual(self.state_bytes(), before)
+
+    def test_the_manual_form_forwards_the_network(self) -> None:
+        from unittest import mock
+
+        from test_tui import FakeWindow
+
+        from charmer import tui
+        import charmer.cli.screens.common as screens_common
+
+        invoked: list[list[str]] = []
+        answers = {"id": LAN_ID, "kind": "openai-compatible-lan", "url": "http://box.example.test:8010/v1",
+                   "auth": "none", "network": "tailnet"}
+
+        def form(self_form: Any, _win: Any) -> dict[str, str]:
+            defaults = {name: default for name, _label, default, _choices in self_form.fields}
+            return {**defaults, **{name: value for name, value in answers.items() if name in defaults}}
+
+        actions = screens_common.OnboardingActions(self.runtime, FakeWindow([]), tui.MONO_PALETTE)
+        with mock.patch.object(screens_common._ProviderForm, "run", autospec=True, side_effect=form), \
+                mock.patch.object(actions, "preview", return_value=True), \
+                mock.patch.object(actions, "invoke", side_effect=lambda argv: invoked.append(argv) or 1):
+            actions.new_provider()
+        self.assertEqual(invoked[0][invoked[0].index("--network") + 1], "tailnet")
+        # Without the private-network routes, no network is asked or sent.
+        invoked.clear()
+        self.runtime.catalog.docs["gateway"][catalog.AUDITS_KEY][operator.PRIVATE_NETWORK_AUDIT] = False
+        with mock.patch.object(screens_common._ProviderForm, "run", autospec=True, side_effect=form), \
+                mock.patch.object(actions, "preview", return_value=True), \
+                mock.patch.object(actions, "invoke", side_effect=lambda argv: invoked.append(argv) or 1):
+            actions.new_provider()
+        self.assertNotIn("--network", invoked[0])
+
+    # -- a reviewed OpenAI-compatible preset with an API key ---------------------
+
+    PRESET = "mistral"
+    PRESET_SECRET = "MISTRAL_API_KEY"
+
+    def preset_display(self) -> str:
+        return operator.presets(self.runtime.asset_root)[self.PRESET].display
+
+    def test_n_adds_a_keyed_preset_on_the_tailnet(self) -> None:
+        import charmer.cli.text as cli_text
+        from charmer import views
+        from charmer.setup import texts as setup_texts
+
+        from test_tui import FakeWindow
+
+        stack, seen = self.answered({"id": KEYED_ID, "url": "http://box.example.test:8010/v1", "network": "tailnet"},
+                                    key="box-preset-dummy-key")
+        screen = self.providers_screen()
+        with stack:
+            screen.run(FakeWindow(["n", *self.to_entry(f"preset:{self.PRESET}"), "\n", "\x1b", "\x1b"]))
+        self.assertTrue(screen.message.startswith(f"Added {KEYED_ID}"), screen.message)
+        title, fields, help_text = seen["forms"][0]
+        self.assertEqual(title, cli_text.PRESET_FORM_TITLE.format(display=self.preset_display()))
+        self.assertEqual([field[0] for field in fields], ["id", "url", "network"])
+        self.assertEqual(fields[1][1], views.PRESET_NETWORK_ADDRESS_LABEL)
+        self.assertEqual(fields[2][2], "none", "a preset is on no private network unless chosen")
+        self.assertEqual([value for value, _label in fields[2][3]], ["none", "loopback", "lan", "tailnet"])
+        self.assertIn(cli_text.PRESET_NETWORK_FORM_HELP + "\n" + cli_text.NETWORK_FORM_HELP, help_text)
+        approval = "\n".join(seen["confirms"][0][1])
+        self.assertIn("plain HTTP: the key is encrypted only while the connection runs through your tailnet", approval)
+        self.assertIn("now resolves to: 100.88.12.34 (tailnet)", approval)
+        self.assertTrue(approval.endswith(setup_texts.NETWORK_SCOPE), approval)
+        provider = self.declaration()["provider"]
+        self.assertEqual((provider["network"], provider["base_url"], provider["kind"], provider["auth"]["secret_ref"]),
+                         ("tailnet", "http://box.example.test:8010/v1", operator.KEYED_KIND,
+                          f"env:{self.PRESET_SECRET}"))
+        self.assertEqual(self.runtime.operator_snapshot().layer.route_status[KEYED_ID], "approved")
+        self.assertNotIn("box-preset-dummy-key", repr(seen))
+
+    def test_get_started_a_adds_a_preset_whose_https_address_opts_into_a_network(self) -> None:
+        from test_tui import FakeWindow
+
+        from charmer import tui
+        import charmer.cli.screens.get_started as get_started
+
+        self.answers = ("192.168.1.10",)
+        stack, seen = self.answered({"id": KEYED_ID, "url": "https://box.example.test:8443/v1", "network": "lan"},
+                                    key="box-preset-dummy-key")
+        screen = get_started._GetStartedScreen(self.runtime, tui.MONO_PALETTE)
+        with stack:
+            screen.run(FakeWindow(["a", *self.to_entry(f"preset:{self.PRESET}", only=None), "\n", "\x1b", "\x1b"]))
+        self.assertTrue(screen.message.startswith(f"Added {KEYED_ID}"), screen.message)
+        approval = "\n".join(seen["confirms"][0][1])
+        self.assertIn("network: lan (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, fc00::/7) — HTTPS", approval)
+        self.assertIn("now resolves to: 192.168.1.10 (lan)", approval)
+        provider = self.declaration()["provider"]
+        self.assertEqual((provider["network"], provider["base_url"]), ("lan", "https://box.example.test:8443/v1"))
+        self.assertEqual(self.runtime.operator_snapshot().layer.route_status[KEYED_ID], "approved")
+
+    def test_a_preset_sharing_its_key_keeps_the_network_when_replanned(self) -> None:
+        from unittest import mock
+
+        from test_tui import FakeWindow
+
+        import charmer.cli.screens.providers as screens_providers
+        from charmer import secret_store
+        from charmer.setup import model, providers as layer
+
+        # A shared key stays with one origin: the first instance is the same
+        # server, so the replan without its network would be refused (http).
+        first = layer.plan_add_preset(self.runtime, self.PRESET, "first", "http://box.example.test:8010/v1",
+                                      network="tailnet")
+        layer.apply_add_preset(self.runtime, first, model.Confirmation.given(first), model.Secret("first-dummy-key"))
+        # The preset's key is in use: reuse it (item 1), then replace it (item 2).
+        for provider_id, choice, key in ((KEYED_ID, 1, ""), ("box-two", 2, "second-dummy-key")):
+            with self.subTest(choice=choice):
+                stack, seen = self.answered({"id": provider_id, "url": "http://box.example.test:8010/v1",
+                                             "network": "tailnet"}, key=key)
+                stack.enter_context(mock.patch.object(screens_providers.ConnectActions, "_choose", autospec=True,
+                                                      return_value=choice))
+                screen = self.providers_screen()
+                with stack:
+                    screen.run(FakeWindow(["n", *self.to_entry(f"preset:{self.PRESET}"), "\n", "\x1b", "\x1b"]))
+                self.assertTrue(screen.message.startswith(f"Added {provider_id}"), screen.message)
+                approval = "\n".join(seen["confirms"][0][1])
+                self.assertIn("now resolves to: 100.88.12.34 (tailnet)", approval)
+                provider = self.declaration(provider_id)["provider"]
+                self.assertEqual((provider["network"], provider["base_url"], provider["auth"]["secret_ref"]),
+                                 ("tailnet", "http://box.example.test:8010/v1", f"env:{self.PRESET_SECRET}"))
+                self.assertEqual(self.runtime.operator_snapshot().layer.route_status[provider_id], "approved")
+        self.assertEqual(secret_store.default_store(self.runtime.environ).get(self.PRESET_SECRET), "second-dummy-key")
+
+    def test_with_the_network_routes_closed_a_preset_asks_no_network(self) -> None:
+        from charmer import views
+
+        from test_tui import FakeWindow
+
+        self.runtime.catalog.docs["gateway"][catalog.AUDITS_KEY][operator.PRIVATE_NETWORK_AUDIT] = False
+        stack, seen = self.answered({"id": KEYED_ID, "network": "tailnet"}, key="box-preset-dummy-key")
+        screen = self.providers_screen()
+        with stack:
+            screen.run(FakeWindow(["n", *self.to_entry(f"preset:{self.PRESET}"), "\n", "\x1b", "\x1b"]))
+        self.assertTrue(screen.message.startswith(f"Added {KEYED_ID}"), screen.message)
+        _title, fields, _help = seen["forms"][0]
+        self.assertEqual([field[0] for field in fields], ["id", "url"])
+        self.assertEqual(fields[1][1], views.PRESET_ADDRESS_LABEL)
+        self.assertNotIn("network", self.declaration()["provider"])
+        self.assertEqual(self.lookups, [], "no network, no lookup")
+
+    def test_the_row_detail_names_transport_network_and_key_state(self) -> None:
+        from charmer import tui
+        import charmer.cli.screens.providers as screens_providers
+
+        code, _out, err = self.command(ADD_KEYED, "y\n", network="tailnet")
+        self.assertEqual(code, 0, err)
+        screen = screens_providers._ProvidersScreen(self.runtime, palette=tui.MONO_PALETTE, journal=lambda: None)
+        row = next(row for row in screen._rows(width=200) if row.id == KEYED_ID)
+        self.assertEqual(row.details[0], f"transport: bearer over HTTPS, private network (tailnet) · {SECRET} missing")
+
+
+class NetworkFlagDispatchTests(NetworkCommandCase):
+    """``providers add --network`` and ``providers template --network``
+    through the real entry point."""
+
+    def test_add_with_the_flag_declares_the_network(self) -> None:
+        code, out, err = self.harness.op([*ADD_KEYED, "--network", "tailnet"], "y\n")
+        self.assertEqual(code, 0, out + err)
+        self.assertIn(APPROVAL_TAIL, err)
+        self.assertEqual(self.declaration()["provider"]["network"], "tailnet")
+
+    def test_template_with_the_flag_carries_the_network(self) -> None:
+        code, out, err = self.harness.op(["providers", "template", "--kind", "openai-compatible", "--network", "lan"])
+        self.assertEqual(code, 0, out + err)
+        document = strict_json.loads(out.encode())
+        self.assertEqual(document["provider"]["network"], "lan")
+        self.assertTrue(document["provider"]["base_url"].startswith("http://"), document)
+
+    def test_an_unknown_network_is_a_usage_error(self) -> None:
+        import contextlib
+        import io
+
+        from charmer import cli
+
+        before = self.state_bytes()
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), self.assertRaises(SystemExit) as caught:
+            cli.build_parser().parse_args([*ADD_KEYED, "--network", "wan"])
+        self.assertEqual(caught.exception.code, 2)
+        self.assertIn("--network: invalid choice: 'wan'", err.getvalue())
+        self.assertEqual(self.state_bytes(), before)
+        self.assertIsNone(cli.build_parser().parse_args(ADD_KEYED).network)
+
+    def test_the_help_names_the_flag(self) -> None:
+        from charmer import cli
+
+        parser = cli.build_parser()
+        add = next(action for action in parser._subparsers._group_actions[0].choices["providers"]._subparsers
+                   ._group_actions[0].choices["add"]._actions if "--network" in action.option_strings)
+        self.assertEqual(add.help, "the private network the base URL is on: allows http with a key; the gateway "
+                                   "checks every connection")
+        self.assertEqual(add.choices, ("loopback", "lan", "tailnet"))
+
+
+class CatalogNetworkGateTests(unittest.TestCase):
+    """``catalog.keyed_compat_problem`` (T1 validation, T2 and the render
+    precondition) takes the network: a keyed plain-HTTP base on a declared
+    network passes; a closed private-network gate refuses any network entry."""
+
+    def entry(self, document: dict, *, docs: dict | None = None) -> dict:
+        return layer_of({KEYED_ID: document}, docs=docs or network_docs()).providers[KEYED_ID].entry
+
+    def test_keyed_plain_http_on_a_network_passes_and_a_closed_gate_refuses(self) -> None:
+        provider = self.entry(keyed_declaration("http://box.example.test:8010/v1", network="tailnet"))
+        self.assertEqual(provider["transport"]["network"], "tailnet")
+        self.assertIsNone(catalog.keyed_compat_problem(provider, network_docs()["gateway"]))
+        self.assertEqual(catalog.keyed_compat_problem(provider, network_docs(network=False)["gateway"]),
+                         catalog.PRIVATE_NETWORK_CLOSED)
+        # The keyed gate first.
+        self.assertEqual(catalog.keyed_compat_problem(provider, network_docs(keyed=False, network=False)["gateway"]),
+                         catalog.KEYED_AUDIT_CLOSED)
+        # The base URL is checked with the network, on every path.
+        for base, text in (("http://203.0.113.9:8010/v1", "203.0.113.9 is not on a private network"),
+                           ("http://192.168.1.10:8010/v1", "192.168.1.10 is on the lan network, not tailnet")):
+            outside = copy.deepcopy(provider)
+            outside["transport"]["base_url"] = base
+            self.assertEqual(catalog.keyed_compat_problem(outside, network_docs()["gateway"]),
+                             f"a keyed openai-compatible base URL is refused ({text})")
+        bare = copy.deepcopy(provider)
+        del bare["transport"]["network"]
+        self.assertEqual(catalog.keyed_compat_problem(bare, network_docs()["gateway"]),
+                         "a keyed openai-compatible base URL is refused (a secret is sent only over https)")
+
+    def test_the_keyless_lan_kind_with_a_network_gets_the_same_gate(self) -> None:
+        provider = layer_of({LAN_ID: lan_declaration()}).providers[LAN_ID].entry
+        self.assertIsNone(catalog.keyed_compat_problem(provider, network_docs()["gateway"]))
+        self.assertEqual(catalog.keyed_compat_problem(provider, network_docs(network=False)["gateway"]),
+                         catalog.PRIVATE_NETWORK_CLOSED)
+        plain = layer_of({LAN_ID: lan_declaration("http://box.lan:8010/v1", network=None)}).providers[LAN_ID].entry
+        self.assertIsNone(catalog.keyed_compat_problem(plain, network_docs(keyed=False, network=False)["gateway"]))
+
+    def test_one_accessor(self) -> None:
+        self.assertIs(operator.private_network_audited, catalog.private_network_audited)
+        self.assertEqual((operator.PRIVATE_NETWORK_AUDIT, operator.NETWORK_GATED),
+                         (catalog.PRIVATE_NETWORK_AUDIT, catalog.PRIVATE_NETWORK_CLOSED))
+
+
+class KeyedPlainHttpTests(NetworkCommandCase):
+    """A keyed provider over plain HTTP on a declared network, end to end:
+    declared, approved with the plain-HTTP sentence, rendered as the block."""
+
+    def test_add_approve_and_render(self) -> None:
+        from charmer import proxy, served_plan
+
+        argv = [*ADD_KEYED]
+        argv[argv.index("https://box.example.test:8010/v1")] = "http://box.example.test:8010/v1"
+        code, out, err = self.command(argv, "y\n", network="tailnet")
+        self.assertEqual(code, 0, err)
+        self.assertIn(PLAIN_HTTP_APPROVAL, err)
+        self.assertEqual(self.declaration()["provider"]["base_url"], "http://box.example.test:8010/v1")
+        from charmer import state
+
+        state.atomic_write(self.harness.secret_file, f"{SECRET}={LEAK_KEY}\n".encode())
+        path = operator.providers_dir(self.harness.env) / f"{KEYED_ID}.json"
+        document = strict_json.loads(path.read_bytes())
+        document["lines"] = line()
+        path.write_bytes(strict_json.pretty_file_bytes(document))
+        code, out, err = self.harness.op(["providers", "apply"])
+        self.assertEqual(code, 0, out + err)
+        rendered = served_plan.parse_restricted_yaml((proxy.config_dir(self.runtime.home) / "config.yaml").read_text())
+        section = next(item for item in rendered["openai-compatibility"] if item["name"] == KEYED_ID)
+        self.assertEqual(section["private-network"], {"base-url": "http://box.example.test:8010/v1",
+                                                      "class": "tailnet"})
+        self.assertNotIn("base-url", section)
+        self.assertEqual(section["api-key-entries"], [{"api-key": LEAK_KEY}])
+        self.assertNotIn(LEAK_KEY, out + err)
+
+
+LEAK_KEY = "boxco-dummy-leak-sentinel-value"
+
+
+class NothingLeaksTests(NetworkCommandCase):
+    """A key given for a private-network provider is in the
+    secret store, the file it came from and the rendered config.yaml —
+    nowhere else."""
+
+    def test_the_key_is_only_in_the_store_its_source_file_and_the_rendered_config(self) -> None:
+        import json
+        import os
+        import shutil
+        import tempfile
+        from pathlib import Path
+
+        import charmer.cli.doctor as doctor_mod
+        from charmer import proxy, state
+
+        source_dir = Path(tempfile.mkdtemp(prefix="nettest-key-")).resolve()
+        self.addCleanup(shutil.rmtree, source_dir, True)
+        os.chmod(source_dir, 0o700)
+        source = source_dir / "box.key"
+        state.atomic_write(source, (LEAK_KEY + "\n").encode())
+        outputs: dict[str, str] = {}
+        code, out, err = self.command(ADD_KEYED, "y\n", network="tailnet")
+        self.assertEqual(code, 0, err)
+        outputs["providers add"] = out + err
+        code, out, err = self.command(["providers", "set-key", KEYED_ID, "--secret-file", str(source)], "y\n")
+        self.assertEqual(code, 0, err)
+        outputs["providers set-key"] = out + err
+        path = operator.providers_dir(self.harness.env) / f"{KEYED_ID}.json"
+        document = strict_json.loads(path.read_bytes())
+        document["lines"] = line()
+        path.write_bytes(strict_json.pretty_file_bytes(document))
+        for argv in (["providers", "apply"], ["providers", "show", KEYED_ID], ["providers", "show", KEYED_ID, "--resolved"],
+                     ["providers", "list", "--json"], ["doctor"], ["doctor", "--json"], ["doctor", "-v"]):
+            code, out, err = self.harness.op(argv)
+            outputs[" ".join(argv)] = out + err
+        config = proxy.config_dir(self.runtime.home) / "config.yaml"
+        rendered = config.read_text()
+        self.assertIn(LEAK_KEY, rendered)
+        self.assertIn("private-network:", rendered)
+        # A pending served change: the plan and its doctor fact.
+        document["lines"] = {**line(), **line("custom-box-two", "box-chat-2")}
+        path.write_bytes(strict_json.pretty_file_bytes(document))
+        plan = doctor_mod.pending_served_plan(self.runtime)
+        self.assertIsNotNone(plan)
+        outputs["served plan"] = plan.text() + json.dumps(plan.as_document()) + (plan.doctor_fact() or "")
+        for argv in (["plan"], ["plan", "--json"]):
+            code, out, err = self.harness.op(argv)
+            outputs[" ".join(argv)] = out + err
+        for name, text in outputs.items():
+            with self.subTest(output=name):
+                self.assertNotIn(LEAK_KEY, text)
+        holders = sorted(str(candidate) for base in (self.harness.root, source_dir)
+                         for candidate in base.rglob("*")
+                         if candidate.is_file() and not candidate.is_symlink()
+                         and LEAK_KEY.encode() in candidate.read_bytes())
+        self.assertEqual(holders, sorted({str(self.harness.secret_file), str(source), str(config)}))
 
 
 class GatedLineKeyTests(NetworkCommandCase):

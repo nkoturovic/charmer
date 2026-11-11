@@ -349,7 +349,8 @@ def _check_key_route(
 # result, CLI flag or qualification sets it, and a closed gate never
 # downgrades a keyed route to the keyless LAN kind. The audited shape is the
 # ``cliproxy-openai-compat-v1`` adapter on a ``direct-openai`` transport with
-# HTTPS and bearer auth from one ``env:NAME`` secret; its lines are
+# HTTPS (or plain HTTP to a declared private network, behind its own gate)
+# and bearer auth from one ``env:NAME`` secret; its lines are
 # client-effort lists. The same pure shape check runs on a trusted (T1)
 # catalog provider, a resolved operator (T2) provider and, as a renderer
 # precondition, before any secret is resolved.
@@ -362,6 +363,11 @@ OPENAI_COMPAT_TRANSPORT = "direct-openai"
 KEYED_COMPAT_LEVELS = ("low", "medium", "high", "xhigh", "max")
 KEYED_AUDIT_CLOSED = ("keyed generic openai-compatible routes are unavailable in this build: "
                       "their compatibility audit gate is closed")
+# A provider declared on a private network (``transport.network``: the
+# gateway's dial guard) is served only while ``audits.private_network`` is
+# open; a closed gate refuses it whatever its kind (fixed, value-free text).
+PRIVATE_NETWORK_AUDIT = "private_network"
+PRIVATE_NETWORK_CLOSED = "private-network routes are unavailable in this build"
 # The canonical OpenAI Platform host is refused for the generic kind
 # whatever its path, case or default-port spelling (lexical; no DNS claim).
 OPENAI_PLATFORM_HOST = "api.openai.com"
@@ -380,6 +386,17 @@ def keyed_compat_audited(gateway: Any) -> bool:
 
     audits = gateway.get(AUDITS_KEY) if isinstance(gateway, Mapping) else None
     return isinstance(audits, Mapping) and audits.get(KEYED_COMPAT_AUDIT) is True
+
+
+def private_network_audited(gateway: Any) -> bool:
+    """The single trusted accessor: ``gateway.json`` ``audits.private_network`` is true.
+
+    ``gateway`` is the trusted ``gateway.json`` document (``docs["gateway"]``).
+    Anything but a literal ``true`` is closed.
+    """
+
+    audits = gateway.get(AUDITS_KEY) if isinstance(gateway, Mapping) else None
+    return isinstance(audits, Mapping) and audits.get(PRIVATE_NETWORK_AUDIT) is True
 
 
 def is_keyed_compat(provider: Any) -> bool:
@@ -425,12 +442,23 @@ def keyed_compat_problem(provider: Any, gateway: Any) -> str | None:
     Fixed, value-free texts only (never authored text). Pure: no store, no
     network. ``normalize_endpoint`` stays ``operator`` policy and is imported
     at call time (``operator`` imports this module).
+
+    An OpenAI-compatible entry declared on a private network
+    (``transport.network``), keyed or keyless, is refused on a closed
+    ``audits.private_network`` gate (after the keyed gate); a keyed one's
+    base URL is checked with its network (plain HTTP allowed there).
     """
 
-    if not is_keyed_compat(provider):
-        return None
-    if not keyed_compat_audited(gateway):
+    transport = provider.get("transport") if isinstance(provider, Mapping) else None
+    network = transport.get("network") if isinstance(transport, Mapping) else None
+    keyed = is_keyed_compat(provider)
+    if keyed and not keyed_compat_audited(gateway):
         return KEYED_AUDIT_CLOSED
+    if (network is not None and isinstance(transport, Mapping)
+            and transport.get("kind") == OPENAI_COMPAT_TRANSPORT and not private_network_audited(gateway)):
+        return PRIVATE_NETWORK_CLOSED
+    if not keyed:
+        return None
     if provider.get("adapter") != OPENAI_COMPAT_ADAPTER:
         return f"a keyed direct-openai route uses the {OPENAI_COMPAT_ADAPTER} adapter"
     transport = provider["transport"]
@@ -444,7 +472,7 @@ def keyed_compat_problem(provider: Any, gateway: Any) -> str | None:
 
     try:
         origin, _base = operator_mod.normalize_endpoint(
-            transport.get("base_url"), keyed=True, lan=False,
+            transport.get("base_url"), keyed=True, lan=False, network=network,
             gateway_ports=operator_mod.gateway_ports({"gateway": gateway}),
         )
     except ValueError as exc:

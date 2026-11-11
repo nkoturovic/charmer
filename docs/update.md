@@ -433,8 +433,10 @@ once, and `--back` returns it ([the migration guide](guides/legacy-migration.md)
 Updates keep `current` and `previous` under
 `~/.local/share/charmer/install/` and remove other versions (except
 one a running gateway still executes), and they remove Claude Code copies
-no installed release needs; a copy a running session uses is kept and
-reported.
+no installed release needs. A copy in use (locked by a running session, or
+seen executing in a running process) is kept, and setup and updates name up
+to eight processes seen using it by PID and program name, never their
+arguments; `charmer doctor -v` shows the same detail.
 
 The 2.2.0 updater and installer flush incoming contents before replacing an
 installed version and persist the final version entries before switching

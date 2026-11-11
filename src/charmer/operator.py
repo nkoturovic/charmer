@@ -98,8 +98,8 @@ KEYED_GATE_REMEDY = "use anthropic-compatible, or openai-compatible-lan for a ke
 # refuses the declaration by metadata alone, before any store access. A
 # release without the field refuses it too, so the remedy says what to remove
 # before going back to one.
-PRIVATE_NETWORK_AUDIT = "private_network"
-NETWORK_GATED = "private-network routes are unavailable in this build"
+PRIVATE_NETWORK_AUDIT = catalog.PRIVATE_NETWORK_AUDIT
+NETWORK_GATED = catalog.PRIVATE_NETWORK_CLOSED
 NETWORK_KINDS = frozenset({"openai-compatible", "openai-compatible-lan"})
 NETWORK_KIND_REFUSAL = "network applies to the OpenAI-compatible kinds"
 KEYED_HTTP_REFUSAL = ("a secret is sent only over https, or over http to a declared private network "
@@ -695,15 +695,8 @@ def keyed_declaration(document: Any) -> bool:
     return isinstance(block, Mapping) and block.get("kind") == KEYED_KIND
 
 
-def private_network_audited(gateway: Any) -> bool:
-    """The trusted accessor: ``gateway.json`` ``audits.private_network`` is true.
-
-    ``gateway`` is the trusted ``gateway.json`` document (``docs["gateway"]``).
-    Anything but a literal ``true`` is closed.
-    """
-
-    audits = gateway.get(catalog.AUDITS_KEY) if isinstance(gateway, Mapping) else None
-    return isinstance(audits, Mapping) and audits.get(PRIVATE_NETWORK_AUDIT) is True
+# The single trusted accessor lives with the keyed one.
+private_network_audited = catalog.private_network_audited
 
 
 def credential_transport(provider: "ResolvedProvider") -> str | None:

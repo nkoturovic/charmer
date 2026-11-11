@@ -607,7 +607,18 @@ EDIT_UNREADABLE = "{id}: its declaration cannot be read here ({problem}) — cha
 EDIT_DONE = "{id} saved (the result lists what changed)"
 EDIT_NOT_SAVED = "{id}: nothing changed"
 ENDPOINT_FORM_TITLE = {"anthropic-compatible": "your Anthropic-compatible endpoint",
-                       "openai-compatible": "your OpenAI-compatible endpoint"}
+                       "openai-compatible": "your OpenAI-compatible endpoint",
+                       "network": "your server on a private network"}
+# The forms of a provider on a private network add what the network means,
+# where its key is saved and that credentials need a terminal.
+NETWORK_FORM_HELP = (
+    "Private network: loopback (this computer), lan (your local network) or tailnet (your overlay).\n"
+    "A key may then travel over plain HTTP: the gateway connects only to addresses in that network,\n"
+    "checked at every connection (on a tailnet, this computer's address must be a tailnet one too).\n"
+    "The key is saved in your key file: ~/.config/charmer/secrets/provider-keys.env by default, or the\n"
+    "file you selected for API keys. Preparing the gateway reads it and writes the key into the\n"
+    "gateway's configuration. Saving a key or approving a route needs a terminal outside Claude Code."
+)
 ENDPOINT_FORM_FOOTER = "Nothing is saved before you approve the route and type the key."
 ENDPOINT_FORM_HELP = (
     "Name: a–z, 0–9 and -, starting with a letter.\n"
@@ -630,6 +641,16 @@ PRESET_FORM_HELP = (
     "Address: the preset's by default. Change it only to another address the vendor documents (a\n"
     "workspace or regional endpoint); it must be https:// and is checked like the command line's\n"
     "providers add --preset NAME --base-url URL.\n"
+    "The key's name and the model list come from the vendor's documentation; charmer has not\n"
+    "tested them. You approve where the key is sent before anything is saved."
+)
+# An OpenAI-compatible preset while the private-network routes are open
+# (NETWORK_FORM_HELP follows it).
+PRESET_NETWORK_FORM_HELP = (
+    "Name: a–z, 0–9 and -, starting with a letter; the preset's name is the default.\n"
+    "Address: the preset's by default. Change it only to another address the vendor documents, or\n"
+    "to your own server on a private network; it must be https://, or http:// with a private network\n"
+    "chosen below, and is checked like providers add --preset NAME --base-url URL --network NET.\n"
     "The key's name and the model list come from the vendor's documentation; charmer has not\n"
     "tested them. You approve where the key is sent before anything is saved."
 )
@@ -1046,7 +1067,9 @@ PICKER_DETAIL = {
     "endpoint": "Your vendor's documented endpoint and an API key. You approve where the key is "
                 "sent before anything is saved.",
     "lan": "An OpenAI-compatible server on your network (no key), for example a local model server.",
-    "preset": "{display}'s documented endpoint: the address, the key's name and the model list are filled "
+    "network": "Your own OpenAI-compatible server on a private network, with an API key: plain HTTP is "
+               "allowed there, and the gateway connects only to addresses in the network you choose.",
+    "preset":"{display}'s documented endpoint: the address, the key's name and the model list are filled "
               "in from its documentation (not tested by charmer). You name it, approve where the key "
               "is sent and type the key.",
     "unavailable": "{note}",
