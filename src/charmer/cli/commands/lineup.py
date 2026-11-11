@@ -110,7 +110,7 @@ def _lineup_main(
     2 for a request or option the parser rejects, 1 for a refused or failed
     request. ``--help`` prints the grammar before anything else. An injected
     ``runtime`` is honoured (tests, probes); otherwise the Runtime is built
-    with ``main``'s formula (``show``, ``profiles``, ``review``, ``quota``
+    with ``main``'s formula (``show``, ``profiles``, ``review``, ``quota``, ``fork``
     and a ``fallback --preview`` read; every other request writes).
     """
 
@@ -165,7 +165,7 @@ def _lineup_main(
                 if args.writes:
                     raise
                 marker_newer = True
-            # A request that writes nothing (show, profiles, review, quota, a
+            # A request that writes nothing (show, profiles, review, quota, fork, a
             # fallback --preview) builds the read-only Runtime: no shim
             # refresh, no legacy-file removal, no store directories.
             writes = bool(args.writes) and not (marker_newer or foreign_owner)

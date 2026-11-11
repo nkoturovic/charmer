@@ -195,24 +195,65 @@ def _propagate_saved(
     input_stream: TextIO,
     output_stream: TextIO,
     interactive: bool,
+    apply_live: bool | None = None,
 ) -> None:
-    """§8 saved from the CLI: preview, ask on a terminal, then apply per record lock."""
+    """Preview and re-check under the record locks; a terminal defaults to apply.
+
+    ``apply_live`` is the explicit --apply/--later choice. Without a choice,
+    non-interactive saves never apply, and an unanswered terminal read is
+    Later rather than consent (an entered empty line accepts the default).
+    """
 
     found, unreadable = lineup_mod.followers(runtime, names)
-    if not found and not unreadable:
-        return
-    running = [f for f in found if f.live and not f.has_pending and f.generation >= 1]
-    output_stream.write(
-        f"{len(found)} session(s) follow {', '.join(sorted(set(names)))} "
-        f"({len(running)} running)\n"
-    )
-    apply_live = False
-    if interactive and running:
-        output_stream.write(f"apply to {len(running)} running session(s) now? [y/N] ")
-        output_stream.flush()
-        answer = (input_stream.readline() or "").strip().lower()
-        apply_live = answer in ("y", "yes")
+    running = [f for f in found if lineup_mod.propagation_eligible(f)]
+    if found:
+        output_stream.write(
+            f"{len(found)} session(s) follow {', '.join(sorted(set(names)))} "
+            f"({sum(f.live for f in found)} running)\n"
+        )
+    else:
+        pinned = lineup_mod.pinned_users(runtime, names)
+        output_stream.write(lineup_mod.no_followers_text(names, len(pinned)) + "\n")
+        if not pinned and not unreadable:
+            return
+    if apply_live is None:
+        apply_live = False
+        if interactive and running:
+            output_stream.write(f"apply to {len(running)} running session(s) now? [Y/n] ")
+            output_stream.flush()
+            answer = input_stream.readline()
+            apply_live = bool(answer) and answer.strip().lower() in ("", "y", "yes")
     lineup_mod.on_saved(runtime, names, apply_live=apply_live, out=output_stream)
+
+
+def _profile_set(runtime: runtime_mod.Runtime, args: argparse.Namespace, *, input_stream: TextIO,
+                 output_stream: TextIO, interactive: bool) -> int:
+    """A single compare-and-set edit with the same evaluation and propagation as the editor."""
+
+    name = args.name
+    store = runtime.profiles
+    selection._profile_name_or_composition(runtime, name)
+    expected = store.digest(name)
+    document = store.load(name)
+    lcat = runtime.lineup_catalog()
+    eff = runtime.current_effective()
+    bindings = runtime.bindings.bindings()
+    candidate, _resolved = profile_mod.assign(document, args.assignments, lcat, bindings=bindings, effective=eff)
+    if getattr(args, "preview", False):
+        if store.is_seed(name) and not store.has_user(name):
+            output_stream.write(f"A user copy of shipped profile {name} would be created.\n")
+        _write_lines(output_stream, profile_mod.slot_diff(document, candidate) or ["no changes"])
+        output_stream.write("Preview only; nothing changed.\n")
+        return 0
+    try:
+        store.save(candidate, target=name, expected=expected)
+    except profile_mod.ProfileChangedError:
+        output_stream.write(f"profile {name} changed while you were editing; not saved\n")
+        return 1
+    output_stream.write(f"Saved profile {termtext.visible_text(name)!r}.\n")
+    _propagate_saved(runtime, [name], input_stream=input_stream, output_stream=output_stream,
+                     interactive=interactive, apply_live=getattr(args, "profile_apply", None))
+    return 0
 
 
 def _edit_profile(
@@ -342,6 +383,10 @@ def _profile_subcommand(
                                 interactive=interactive)
     if command == "default":
         return _profile_default(runtime, args, output_stream)
+    if command == "set":
+        # Before install_seeds: preview and refused edits have no write side effects.
+        return _profile_set(runtime, args, input_stream=input_stream, output_stream=output_stream,
+                            interactive=interactive)
     store = runtime.profiles
     if runtime.allow_state_writes:
         store.install_seeds()  # Write-allowed profile commands only
@@ -387,7 +432,7 @@ def _profile_subcommand(
                                  raw=store.raw_bytes(args.name), expected=loaded_digest):
                 return 1
             _propagate_saved(runtime, [args.name], input_stream=input_stream, output_stream=output_stream,
-                             interactive=interactive)
+                             interactive=interactive, apply_live=getattr(args, "profile_apply", None))
             return 0
         if screens_common._curses_ok(bool(getattr(args, "line", False)), input_stream, output_stream):
             # The full-screen editor on a capable terminal;
@@ -410,6 +455,7 @@ def _profile_subcommand(
             input_stream=input_stream,
             output_stream=output_stream,
             interactive=interactive,
+            apply_live=getattr(args, "profile_apply", None),
         )
         return 0
     if command == "rm":
@@ -462,6 +508,7 @@ def _profile_subcommand(
             input_stream=input_stream,
             output_stream=output_stream,
             interactive=interactive,
+            apply_live=getattr(args, "profile_apply", None),
         )
         return 0
     raise cli_errors.CLIError(f"unsupported profile command {command!r}")

@@ -307,6 +307,11 @@ def lineup_golden_files() -> dict[str, bytes]:
             "profile lead-out",
             lambda case: _lead_profile(case, "lead-out", {"model": "grok46", "effort": "high"}),
         ),
+        "profile-split.txt": (
+            "profile mixed",
+            lambda case: _lead_profile(case, "mixed", {"model": "grok46", "effort": "high"},
+                                       agents={"cm-implementer": {"model": "opus55", "effort": "xhigh"}}),
+        ),
         "review-normal.txt": ("review", None),
         "review-high-stakes.txt": ("review high-stakes HEAD~3..HEAD", None),
         "fallback-live.txt": ("fallback anthropic", None),
@@ -622,10 +627,10 @@ class ClassifyTests(LineupCase):
         state.atomic_write(live / "lead-set.json", strict_json.canonical_file_bytes(lead_set))
         self.refence()
         code, out, _ = self.request("profile max")
-        self.assertIn("relaunch needed: lead Fable 5 · 1M selector (claude-fable-5[1m]) is outside "
+        self.assertIn("waits for the next resume: lead Fable 5 · 1M selector (claude-fable-5[1m]) is outside "
                       "this session's lead set (lead class large); a lead outside the set needs a "
                       "relaunch", out)
-        self.assertIn(lineup.LEAD_SWITCH_HINT, out)
+        self.assertIn("next: type /reload-plugins for the agents now", out)
         self.assertEqual(self.store.load(self.mid)["pending"]["profile"], "max")
 
     def test_a_lead_in_the_lead_set_applies_agents_live_and_asks_for_model(self) -> None:
@@ -741,15 +746,16 @@ class Cp04Tests(LineupCase):
         self.assertIn(".claude/agents/cm-implementer.md", self.scope_files())
         self.assertTrue(self.store.load(FIXED)["follow"])
 
-    def test_the_direct_seed_to_unedited_balanced_is_relaunch(self) -> None:
+    def test_the_direct_seed_to_unedited_balanced_splits_agents_from_policy(self) -> None:
         with _fixed_id():
             record = self.launch_fresh(self.profile_target("direct"))
         self.mid, self.rid = FIXED, record["runtime_session_id"]
         self.runtime.environ["CHARMER_MANAGED_ID"] = FIXED
         code, out, _ = self.request("profile balanced")
         self.assertIn("native agents: explore native → replace", out)
-        self.assertIn("Recorded as a pending change", out)
+        self.assertIn("waits for the next resume:", out)
         self.assertEqual(self.store.load(FIXED)["pending"]["kind"], "profile")
+        self.assertEqual(self.store.load(FIXED)["lineup_generation"], 2)
 
 
 # ---------------------------------------------------------------- live apply
@@ -981,7 +987,7 @@ class ShowTests(LineupCase):
         self.runtime.environ["CHARMER_MANAGED_ID"] = self.mid
         self.request("direct")
         code, out, _ = self.request("")
-        self.assertIn("pending relaunch change: native agents:", out)
+        self.assertIn("pending change: pin this session to the recorded lineup (native agents:", out)
         self.assertIn("requested lead: Fable 5 · 1M selector · ultracode (claude-fable-5[1m])", out)
 
     def test_sessions_show_lists_needs_choice_pending_and_lead_target(self) -> None:
@@ -1179,6 +1185,7 @@ class CmVerbTableTests(unittest.TestCase):
         "review": [["review"], ["review", "high-stakes"], ["review", "HEAD~1..HEAD"],
                    ["review", "high-stakes", "main..HEAD"]],
         "quota": [["quota"]],
+        "fork": [["fork"]],
     }
     INVALID = {
         "show": [["show", "x"]],
@@ -1192,6 +1199,7 @@ class CmVerbTableTests(unittest.TestCase):
         "fallback": [["fallback"], ["fallback", "Open AI"], ["fallback", "a", "b"]],
         "review": [["review", "--force"], ["review", "a", "b", "c"], ["review", "high-stakes", "high-stakes"]],
         "quota": [["quota", "all"]],
+        "fork": [["fork", "now"]],
     }
 
     def test_every_verb_has_a_parser_and_fixtures(self) -> None:
