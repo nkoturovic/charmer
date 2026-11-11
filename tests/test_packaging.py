@@ -94,6 +94,7 @@ PATCH_IDS = {
     "cli-proxy-api-context-error-normalization.patch": 27, "cli-proxy-api-log-reduction.patch": 28,
     "cli-proxy-api-tool-call-integrity.patch": 29, "cli-proxy-api-initial-registration.patch": 31,
     "cli-proxy-api-terminal-rejection-reload.patch": 32,
+    "cli-proxy-api-codex-refresh-without-journal.patch": 34, "cli-proxy-api-native-advisor-beta-order.patch": 35,
 }
 
 
@@ -848,13 +849,9 @@ class ManagementAllowlistGateTests(unittest.TestCase):
     )
     # Upstream tests this gate excludes for a diagnosed upstream reason, not a
     # refused surface. Each keeps its record in gateway/upstream-review.json
-    # test_exclusions (8.0.45): a Codex client-catalog test that fails on the
-    # pristine tag, and an advisory fixture that depends on the zstd
+    # test_exclusions (8.0.67): an advisory fixture that depends on the zstd
     # encoder's window choice.
-    RECORDED_EXCLUSIONS = (
-        "TestModelsMultiAgentClientConfigAndReload",
-        "TestCaptureRequestInfoDoesNotDecodeASingleSegmentBomb",
-    )
+    RECORDED_EXCLUSIONS = ("TestCaptureRequestInfoDoesNotDecodeASingleSegmentBomb",)
 
     def _patch_text(self) -> str:
         self.assertTrue(self.PATCH.is_file(), f"{self.PATCH} missing next to the package")

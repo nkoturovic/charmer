@@ -2544,17 +2544,17 @@ if mode == "fail":
         entry = next(entry for entry in policy["dispositions"] if entry["id"] == "GO-2026-5932")
         expected = {
             "id": "GO-2026-5932", "module": "golang.org/x/crypto", "version": "v0.58.0",
-            "class": "component-absent", "advisory_modified": "2026-07-07T22:15:29Z",
-            "advisory_sha256": "6a685f52c906f24f2b6f96eebaade65cbba74ed674e8c54ba0c4f7a9da1c25d3",
+            "class": "component-absent", "advisory_modified": "2026-11-02T22:01:43Z",
+            "advisory_sha256": "825258c0f40cf04f470330488d282311d182956a628099e6bc687c2532e4714e",
             "trace_count": 15,
             "trace_sha256": "4413ed75d58bde5ac0c16b8ecf71c8961d6a06be72d8e73d07317a8e1e1fcf18",
         }
         self.assertEqual({key: entry[key] for key in expected}, expected)
         self.assertEqual(policy["gateway"]["targets"], {
-            "darwin-arm64": "2c8786031f33852ea6396b4c3bdee80170f6c37c8ce8f4ea8d72e97912753ee0",
-            "darwin-x86_64": "d432dfc451e7c5c3e37694fec3cb57042ce3dfe5de9d6170686d1d9388026647",
-            "linux-aarch64": "6b84698ae6e964bd3b96a62bbb930a75879aa03e7b39414fc64f187200270a17",
-            "linux-x86_64": "092bb347b763d00fc58e8b18ba4199b8deadfe68d3dc36793d1c58068af991d6",
+            "darwin-arm64": "2e7ceba247ac5b60acb810b04874431f8cd02162812dd96adae41aa865a38833",
+            "darwin-x86_64": "9b609a3c2e41d0cbb088982753bd37e732dadcd507e3642d0173295361ccd886",
+            "linux-aarch64": "9129cc3c75ab095b66db08eeae4e0eedaf8bd453eb84aafd871e177ca2355063",
+            "linux-x86_64": "a1f7596211f317666450a6965cbfa9c0ce22972a4d0a59efa0ca94ba5d97c9cb",
         })
         for fact in ("golang.org/x/crypto/openpgp", "not imported", "ProtonMail", "component is absent"):
             self.assertIn(fact, entry["reason"])
@@ -4474,6 +4474,22 @@ class SignedVulnerabilityWatchTests(unittest.TestCase):
             self.sign()
             with self.subTest(index=index), self.assertRaises(ValueError):
                 self.download(f"bad-{index}")
+
+    def test_a_replaced_module_is_queried_under_both_identities(self) -> None:
+        manifest = self.download()
+        replaced = {"format": 1, "modules": [{"path": "example.invalid/module", "version": "v1.0.0",
+                                              "replace": {"path": "example.invalid/fork", "version": "v1.0.2"}}]}
+        for name in manifest["assets"]:
+            (self.root / "download" / name).write_bytes(self.archive(name, replaced))
+        self.assertEqual(self.watch.module_queries(self.root / "download", manifest), [
+            {"package": {"ecosystem": "Go", "name": "example.invalid/module"}, "version": "v1.0.0"},
+            {"package": {"ecosystem": "Go", "name": "example.invalid/fork"}, "version": "v1.0.2"}])
+        for bad in ("example.invalid/fork", {"path": "example.invalid/fork"}, {"version": "v1.0.2"}):
+            broken = {"format": 1, "modules": [{**replaced["modules"][0], "replace": bad}]}
+            for name in manifest["assets"]:
+                (self.root / "download" / name).write_bytes(self.archive(name, broken))
+            with self.subTest(replace=bad), self.assertRaises(ValueError):
+                self.watch.module_queries(self.root / "download", manifest)
 
     def test_module_inventory_links_duplicates_and_cross_bundle_skew_refuse(self) -> None:
         manifest = self.download()
