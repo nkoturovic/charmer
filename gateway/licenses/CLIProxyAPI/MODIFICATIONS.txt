@@ -300,7 +300,7 @@ Before the modules are vendored, this patch updates the module requirements:
       added     internal/client/claude/models/models_charmer_test.go
 
 22. cli-proxy-api-output-cap.patch
-    sha256 4daca00e7711fa0d3d949483667ee492c34bd26670291d6b4715eb18bee8a550
+    sha256 aee70e81d033f842dbdf6d538b1c4f6638fbe965986c5c7e2d73b493fab9d81d
       modified  internal/runtime/executor/codex_executor_claude_output_budget_test.go
       modified  internal/runtime/executor/codex_executor_execute.go
       modified  internal/runtime/executor/codex_executor_output_budget_issue7304_test.go
@@ -352,7 +352,7 @@ Before the modules are vendored, this patch updates the module requirements:
       added     sdk/cliproxy/auth/terminal_rejection_reload_test.go
 
 28. cli-proxy-api-codex-refresh-without-journal.patch
-    sha256 53f48b53806db0bc6b2d411a32467dfaa9a365e552de9d6b50e6473ed282d78e
+    sha256 0a112a12b1ef5f7116aca2aee337efa19902faa608da2346e96e4bd72026a3fd
       modified  internal/auth/codex/openai_auth.go
       added     internal/runtime/executor/codex_refresh_without_journal_test.go
 

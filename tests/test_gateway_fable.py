@@ -1,4 +1,4 @@
-"""Claude Fable 5.2 through the candidate gateway (SPEC 080 §1 G item 6).
+"""Claude Fable 5.2 through the candidate gateway.
 
 Offline and host-only: the candidate CLIProxyAPI build runs in its loopback
 namespace against fake upstreams only. The Claude OAuth pool reaches a fixture
@@ -112,10 +112,10 @@ def without(value, *names):
 
 
 def fable_docs():
-    """The shipped catalog with SPEC §1 M item 1 applied in memory: the
+    """The shipped catalog with the Fable 5.2 line applied in memory: the
     ``fable`` line on wire claude-fable-5-2 (selector with ``[1m]``, no
-    registry overlay) and its passthrough route. A no-op once M has moved
-    the shipped line; nothing else is edited."""
+    registry overlay) and its passthrough route. A no-op once the shipped
+    line has moved; nothing else is edited."""
     docs = copy.deepcopy(catalog.load_catalog(SHIPPED_ROOT).docs)
     anthropic = docs["providers"]["providers"]["anthropic"]
     if not any(route["name"] == WIRE for route in anthropic["passthrough_routes"]):

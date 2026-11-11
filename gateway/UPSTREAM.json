@@ -157,7 +157,7 @@
     },
     {
       "basename": "cli-proxy-api-output-cap.patch",
-      "sha256": "4daca00e7711fa0d3d949483667ee492c34bd26670291d6b4715eb18bee8a550",
+      "sha256": "aee70e81d033f842dbdf6d538b1c4f6638fbe965986c5c7e2d73b493fab9d81d",
       "admitted": true
     },
     {
@@ -187,7 +187,7 @@
     },
     {
       "basename": "cli-proxy-api-codex-refresh-without-journal.patch",
-      "sha256": "53f48b53806db0bc6b2d411a32467dfaa9a365e552de9d6b50e6473ed282d78e",
+      "sha256": "0a112a12b1ef5f7116aca2aee337efa19902faa608da2346e96e4bd72026a3fd",
       "admitted": true
     },
     {
@@ -1066,7 +1066,7 @@
       "packages": [
         "./internal/runtime/executor"
       ],
-      "run": "^(TestCodexRefreshWithoutJournalFailureBeforeSendRecovers|TestCodexRefreshWithoutJournalRotatedTokensAreUsedAndSaved|TestCodexRefreshWithoutJournalUnsentExchangeHoldsNothing|TestCodexRefreshWithoutJournalRateLimitAndUnavailableAreRetried|TestCodexRefreshWithoutJournalLeftClaimDoesNotHoldTheGrant|TestCodexRefreshWithoutJournalWritesNoJournalFile)$",
+      "run": "^(TestCodexRefreshWithoutJournalFailureBeforeSendRecovers|TestCodexRefreshWithoutJournalRotatedTokensAreUsedAndSaved|TestCodexRefreshWithoutJournalUnsentExchangeHoldsNothing|TestCodexRefreshWithoutJournalRateLimitAndUnavailableAreRetried|TestCodexRefreshWithoutJournalLeftClaimDoesNotHoldTheGrant|TestCodexRefreshWithoutJournalWritesNoJournalFile|TestCodexRefreshWithoutJournalLostResponseEndsInSignIn)$",
       "platforms": "portable",
       "race": false,
       "count": null,
@@ -1076,7 +1076,8 @@
         "TestCodexRefreshWithoutJournalUnsentExchangeHoldsNothing",
         "TestCodexRefreshWithoutJournalRateLimitAndUnavailableAreRetried",
         "TestCodexRefreshWithoutJournalLeftClaimDoesNotHoldTheGrant",
-        "TestCodexRefreshWithoutJournalWritesNoJournalFile"
+        "TestCodexRefreshWithoutJournalWritesNoJournalFile",
+        "TestCodexRefreshWithoutJournalLostResponseEndsInSignIn"
       ]
     },
     {

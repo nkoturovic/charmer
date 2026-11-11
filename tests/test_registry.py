@@ -113,8 +113,8 @@ class RegistrySnapshotTests(unittest.TestCase):
         # Claude section, with what the launcher reads (presence and meta:
         # display name, window, output, efforts, created), so the fable line
         # needs no registry overlay (its static thinking facts are in the row
-        # above). No generic row covers it: the presence rule runs the frozen
-        # fixture catalog, and the shipped fable line was still 5.1.
+        # above). The generic presence rule runs the frozen fixture catalog;
+        # this row checks the shipped static entry.
         models = json.loads((REGISTRY_SNAPSHOT / "models.json").read_bytes())
         self.assertEqual(sum(entry["id"] == "claude-fable-5-2" for entry in models["claude"]), 1)
         self.assertEqual([section for section, rows in models.items()
