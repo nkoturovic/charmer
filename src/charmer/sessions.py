@@ -660,6 +660,71 @@ def _derived_identity_state(record: dict[str, Any]) -> str:
     return IDENTITY_AUTHORITATIVE
 
 
+# What a fork's preparation reads from its parent, and what its commit
+# re-reads: the authority (runtime id, launch epoch, aliases), the lineup
+# intent (profile, follow, a recorded change, a lead target, the mutation
+# token that every intent change rotates, the applied lineup, the
+# generation), the directory and the repair state. Timestamps, the last
+# hook event and the title are not: an active parent changes them all the
+# time, and the fork does not depend on them.
+_FORK_FINGERPRINT_KEYS = (
+    "version", "managed_id", "runtime_session_id", "runtime_aliases", "launch_epoch",
+    "profile", "follow", "pending", "lead_target", "mutation_token", "applied_hash",
+    "lineup_generation", "cwd", "observed_cwd", "observed_model",
+)
+FORK_TITLE_SUFFIX = " (fork)"
+TITLE_MAX = 80
+
+
+def fork_fingerprint(record: Mapping[str, Any]) -> str:
+    """The digest of everything a fork's preparation relied on (see above).
+
+    The repair state counts as ``repair-needed`` or not (an unverified parent
+    becoming authoritative changes nothing the fork took) plus the pending
+    native forks by id."""
+
+    view: dict[str, Any] = {key: record.get(key) for key in _FORK_FINGERPRINT_KEYS}
+    view["repair_needed"] = record.get("identity_state") == IDENTITY_REPAIR_NEEDED
+    view["pending_forks"] = sorted(
+        str(item.get("session_id")) for item in record.get("pending_forks") or []
+        if isinstance(item, Mapping))
+    return "sha256:" + strict_json.sha256_hex(strict_json.canonical_bytes(view))
+
+
+def fork_title(parent_title: Any) -> str | None:
+    """The fork's title: ``<parent title> (fork)`` within the 80-character
+    title limit (the parent's part is cut); None when the parent has none."""
+
+    if not isinstance(parent_title, str) or not parent_title.strip():
+        return None
+    room = TITLE_MAX - len(FORK_TITLE_SUFFIX)
+    return parent_title.strip()[:room].rstrip() + FORK_TITLE_SUFFIX
+
+
+# A lead prompt the launcher writes for a session (``compiler.lead_prompt_path``):
+# ``lead-prompt-<16 hex digits>-<the managed id>.md`` in the state root.
+_LEAD_PROMPT_RE = re.compile(r"lead-prompt-[0-9a-f]{16}-(?P<id>[0-9a-f-]{36})\.md")
+
+
+def lead_prompt_files(root: Path | str, managed_session_id: str) -> list[Path]:
+    """The lead prompts generated for ``managed_session_id`` (every
+    superseded one included): regular files whose names match the launcher's
+    pattern exactly for this id. Symbolic links and anything else are never
+    listed; no file is opened."""
+
+    if not UUID4.fullmatch(managed_session_id):
+        raise SessionError(f"session_id {managed_session_id!r} is not a UUIDv4")
+    found: list[Path] = []
+    with os.scandir(root) as entries:
+        for entry in entries:
+            match = _LEAD_PROMPT_RE.fullmatch(entry.name)
+            if match is None or match.group("id") != managed_session_id:
+                continue
+            if entry.is_file(follow_symlinks=False):
+                found.append(Path(entry.path))
+    return sorted(found)
+
+
 def drop_resolved_pending_forks(record: dict[str, Any]) -> dict[str, Any] | None:
     """Copy of ``record`` with authority-holding pending forks removed.
 
@@ -2297,7 +2362,17 @@ class SessionStore:
                 and owner is not None
                 and managed_id(owner) == stable_id
             ):
-                return current
+                # A fork start for the record's own runtime: the launcher
+                # started this record as a fork of another session
+                # (``forked_from``) under its planned id. Its first start is
+                # its startup; anything later is a repeated hook.
+                if not (
+                    observed_runtime_id == runtime_session_id(current)
+                    and current.get("forked_from")
+                    and current.get("last_event_source") is None
+                ):
+                    return current
+                source = "startup"
             updated = reconcile_runtime_record(
                 current,
                 observed_runtime_id=observed_runtime_id,
@@ -2647,7 +2722,9 @@ class SessionStore:
         Cleanup order: scope -> both cwd pointers -> the legacy backup
         ``<id>.v3.json`` -> pointer backups naming the id ->
         ``notice/<rid>.seen`` for the runtime id and every alias -> the
-        lineup log -> the record, last.
+        lineup log -> the session's generated lead prompts
+        (:func:`lead_prompt_files`) -> the record, last. A corrupt record
+        removes the same id-named files.
         """
         self._require_writable()
 
@@ -2675,6 +2752,7 @@ class SessionStore:
                 state.remove_private(self.backup_path(stable_id))
                 self._sweep_pointer_backups_for(stable_id)
                 lineup_log.remove(self.root, stable_id)
+                self._remove_lead_prompts(stable_id)
                 return self._forget_unlocked(stable_id), scope_removed
             # Validate/remove generated state first. The record is the final
             # irreversible delete so a scope-safety failure remains repairable.
@@ -2687,10 +2765,22 @@ class SessionStore:
                 + [item["session_id"] for item in current.get("runtime_aliases", [])]
             )
             lineup_log.remove(self.root, stable_id)
+            self._remove_lead_prompts(stable_id)
             removed = self._forget_unlocked(stable_id)
             return removed, scope_removed
         finally:
             lock.release()
+
+    def _remove_lead_prompts(self, stable_id: str) -> int:
+        """Remove the lead prompts generated for ``stable_id`` (caller holds
+        its lifecycle lock). A failure propagates, so the record, which goes
+        last, stays."""
+
+        removed = 0
+        for path in lead_prompt_files(self.root, stable_id):
+            if state.remove_private(path):
+                removed += 1
+        return removed
 
     def _remove_seen_markers(self, runtime_ids: list[str]) -> None:
         notice_dir = self.root / NOTICE_DIR

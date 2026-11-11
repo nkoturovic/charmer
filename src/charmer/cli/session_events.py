@@ -444,8 +444,11 @@ def _session_start_v3(
             if hooks.notice_key("SessionStart", source) == "resume"
             else None
         )
+        # A fork whose session is the record's own id is one the launcher
+        # started with its own record and scope (``charmer -r S --fork``).
         notice, gen = hooks.read_notice(
-            state_path, stable_id, event="SessionStart", source=source, lead=lead
+            state_path, stable_id, event="SessionStart", source=source, lead=lead,
+            own_fork=source == "fork" and observed == stable_id,
         )
     except Exception as exc:  # the notice is best effort; the reconcile still runs
         note(f"no lineup notice: {exc}")

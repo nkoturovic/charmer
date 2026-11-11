@@ -365,6 +365,11 @@ _PREFACES = {
         "This is a native fork that shares the parent session's scope; the lineup below "
         "applies to it and supersedes earlier notices."
     ),
+    "fork-own": (
+        "This session was forked from another charmer session and has its own record and "
+        "scope; the lineup below is current and supersedes every earlier lineup notice in "
+        "this conversation."
+    ),
     "compact": "The conversation was compacted; this notice replaces every earlier lineup notice.",
     "clear": "The conversation was cleared. The lineup below is current.",
     "other": "The lineup below is current; it supersedes every earlier lineup notice.",
@@ -372,17 +377,25 @@ _PREFACES = {
 # No hook observes /reload-plugins, so a notice
 # delivered inside a running process calls the generation *staged* — once
 # after the preface and once more after the lineup. A startup or resume is a
-# fresh process that loaded the agent files at start, so it says nothing.
+# fresh process that loaded the agent files at start, so it says nothing; so
+# is a fork the launcher started as a session of its own.
 _STAGED = "Lineup gen {generation} staged — active after /reload-plugins in this session."
-_PROCESS_START_KEYS = frozenset({"startup", "resume", "resume-no-lead"})
+_PROCESS_START_KEYS = frozenset({"startup", "resume", "resume-no-lead", "fork-own"})
+_DERIVED_KEYS = ("prompt", "resume-no-lead", "other", "fork-own")
 
 
-def notice_key(event: str, source: str | None) -> str:
-    """The preface key for a hook event and SessionStart source."""
+def notice_key(event: str, source: str | None, *, own_fork: bool = False) -> str:
+    """The preface key for a hook event and SessionStart source.
+
+    ``own_fork``: the start is a ``fork`` whose session is the record's own
+    planned id (a fork the launcher started with its own record and scope),
+    not a native fork sharing the parent's scope."""
 
     if event == "UserPromptSubmit":
         return "prompt"
-    if isinstance(source, str) and source in _PREFACES and source not in ("prompt", "resume-no-lead", "other"):
+    if source == "fork" and own_fork:
+        return "fork-own"
+    if isinstance(source, str) and source in _PREFACES and source not in _DERIVED_KEYS:
         return source
     return "other"
 
@@ -394,16 +407,18 @@ def notice_text(
     event: str,
     source: str | None,
     lead: Mapping[str, Any] | None,
+    own_fork: bool = False,
 ) -> str:
     """The lineup notice; pure.
 
     ``lead`` is the recorded lead: the SessionStart hook passes None and
     :func:`read_notice` falls back to ``lead-set.json["lead"]``; the launcher
-    passes the v4 record's ``applied.lead``.
+    passes the v4 record's ``applied.lead``. ``own_fork`` as in
+    :func:`notice_key`.
     """
 
     generation = gen_line.split(" ", 1)[0].strip()
-    key = notice_key(event, source)
+    key = notice_key(event, source, own_fork=own_fork)
     if key == "resume" and not lead:
         key = "resume-no-lead"
     if key == "resume":
@@ -445,8 +460,10 @@ def read_notice(
     event: str,
     source: str | None,
     lead: Mapping[str, Any] | None = None,
+    own_fork: bool = False,
 ) -> tuple[str, str | None]:
-    """``(notice text, gen line or None)`` from the scope files only.
+    """``(notice text, gen line or None)`` from the scope files only (``own_fork``
+    as in :func:`notice_key`).
 
     ``lineup.md`` and ``lineup.gen`` must agree (``sha256(md)[:12]`` is the
     gen hash); a mismatch re-reads the gen once (a live apply writes md, then
@@ -478,7 +495,8 @@ def read_notice(
         except (HookInputError, OSError):
             lead = None
     text = notice_text(
-        md.decode("utf-8", errors="replace"), gen, event=event, source=source, lead=lead
+        md.decode("utf-8", errors="replace"), gen, event=event, source=source, lead=lead,
+        own_fork=own_fork,
     )
     return text, consistent
 
