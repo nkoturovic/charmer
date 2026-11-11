@@ -25,10 +25,13 @@ records through (``PreModelSwitch``/``PostModelSwitch``):
   summarises first is recorded (offline the client compacts on the new model
   when it knows neither window);
 * ``fable-fallback`` (2.1.301): the gateway answers 404 for
-  ``claude-fable-5-1``, asked by id and by the ``best`` alias, with the
-  previous Fable (``claude-fable-5``) inside the fence: behind a gateway the
-  client retries the same model and reports the error, it never moves to the
-  previous Fable.
+  ``claude-fable-5-1`` with the previous Fable (``claude-fable-5``) inside
+  the fence: behind a gateway the client retries the same model and reports
+  the error, it never moves to the previous Fable; ``fable52-fallback`` the
+  same for ``claude-fable-5-2`` with Fable 5.1 inside the fence (2.1.322 names
+  5.1 as its predecessor); ``best-fallback`` the same for whatever the
+  ``best`` alias asks for (``claude-opus-5-5`` from 2.1.322, the current Fable
+  before): every request stays on the model of its first request.
 
 Hermetic like every real-client check; only models, request classes, beta
 presence and counts leave the responder. The output line: ``client check
@@ -58,6 +61,7 @@ PASS_CLASS = "FS-fenced"
 _CONTRACT = RESOURCES_ROOT / "catalog" / "native-contract.json"
 _BETA = "context-1m-2025-08-07"
 _FABLE, _PREVIOUS_FABLE = "claude-fable-5-1", "claude-fable-5"
+_FABLE52 = "claude-fable-5-2"
 _RESPONSE_MODEL = "fence-upstream-substituted"
 # A gateway name the client does not know (200K unless [1m], which adds the beta).
 _BETA_LEAD = "fence-gw-wide"
@@ -97,11 +101,18 @@ def verdict(observed: dict[str, dict[str, Any]]) -> str:
         return "FS-switch-outside"
     if switch["hooks"] != ["PreModelSwitch", "PostModelSwitch"]:
         return "FS-switch-unrecorded"
-    for case in ("fable-fallback", "best-fallback"):
-        if _PREVIOUS_FABLE in models(case):
+    for case, refused in (("fable-fallback", _FABLE), ("fable52-fallback", _FABLE52)):
+        if models(case) - {refused}:
             return "FS-fable-substituted"
-        if models(case) != {_FABLE}:
-            raise _Inconclusive(f"{case}: no request on {_FABLE} ({models(case)})")
+        if models(case) != {refused}:
+            raise _Inconclusive(f"{case}: no request on {refused} ({models(case)})")
+    best = observed["best-fallback"]["rows"]
+    if not best:
+        raise _Inconclusive("best-fallback: no request")
+    if models("best-fallback") != {best[0]["model"]}:
+        return "FS-best-substituted"
+    if len(best) < 2:
+        raise _Inconclusive("best-fallback: the refused model was never asked again")
     return PASS_CLASS
 
 
@@ -123,13 +134,14 @@ class _Provider(probe.FakeAnthropicProvider):
 
 class _Script:
     """One case's answers: ``beta`` refuses a request carrying the beta;
-    ``fable`` refuses ``claude-fable-5-1`` with a 404; ``tokens`` is the
-    usage every answer reports; ``response_model`` names another model."""
+    ``refuse`` names the model refused with a 404 (``"first"``: the model of
+    the case's first request); ``tokens`` is the usage every answer reports;
+    ``response_model`` names another model."""
 
-    def __init__(self, *, refuse_beta: bool = False, refuse_fable: bool = False, tokens: int = 1,
+    def __init__(self, *, refuse_beta: bool = False, refuse: str | None = None, tokens: int = 1,
                  response_model: str | None = None) -> None:
         self.refuse_beta = refuse_beta
-        self.refuse_fable = refuse_fable
+        self.refuse = refuse
         self.tokens = tokens
         self.response_model = response_model
         self.provider: _Provider | None = None
@@ -145,11 +157,13 @@ class _Script:
         hints = dict(context.record.hint_header_values)
         with self.lock:
             self.rows.append({"model": model, "beta": beta, "class": hints.get("x-claude-code-request-class")})
+            if self.refuse == "first":
+                self.refuse = model
         if self.refuse_beta and beta:
             return 400, {"type": "error", "error": {"type": "invalid_request_error",
                                                     "message": f"{_BETA} is not supported for this model"}}
-        if self.refuse_fable and model == _FABLE:
-            return 404, {"type": "error", "error": {"type": "not_found_error", "message": f"model: {_FABLE}"}}
+        if self.refuse is not None and model == self.refuse:
+            return 404, {"type": "error", "error": {"type": "not_found_error", "message": f"model: {model}"}}
         payload = probe._message_payload(
             [{"type": "text", "text": "PROBE-OK"}], model=self.response_model or model, stop_reason="end_turn",
             message_id=f"msg_fence_{context.ordinal:04d}_{uuid.uuid4().hex[:8]}", input_tokens=self.tokens)
@@ -169,7 +183,8 @@ class VerdictTests(unittest.TestCase):
             "switch": {"rows": [row("fence-big"), row("fence-small", kind="auxiliary"), row("fence-small")],
                        "hooks": ["PreModelSwitch", "PostModelSwitch"]},
             "fable-fallback": {"rows": [row(_FABLE), row(_FABLE)]},
-            "best-fallback": {"rows": [row(_FABLE), row(_FABLE)]},
+            "fable52-fallback": {"rows": [row(_FABLE52), row(_FABLE52)]},
+            "best-fallback": {"rows": [row("claude-opus-5-5"), row("claude-opus-5-5")]},
         }
 
     def test_the_class_needs_every_case_on_its_chosen_models(self) -> None:
@@ -187,7 +202,17 @@ class VerdictTests(unittest.TestCase):
                          "FS-switch-unrecorded")
         moved = {"rows": [{"model": _FABLE, "beta": False, "class": "main"},
                           {"model": _PREVIOUS_FABLE, "beta": False, "class": "main"}]}
-        self.assertEqual(verdict({**rows, "best-fallback": moved}), "FS-fable-substituted")
+        self.assertEqual(verdict({**rows, "fable-fallback": moved}), "FS-fable-substituted")
+        moved52 = {"rows": [{"model": _FABLE52, "beta": False, "class": "main"},
+                            {"model": _FABLE, "beta": False, "class": "main"}]}
+        self.assertEqual(verdict({**rows, "fable52-fallback": moved52}), "FS-fable-substituted")
+        self.assertEqual(verdict({**rows, "best-fallback": moved}), "FS-best-substituted")
+        for case, rows_of in (("best-fallback", []), ("best-fallback", [{"model": "x", "beta": False,
+                                                                          "class": "main"}]),
+                              ("fable52-fallback", [{"model": "x", "beta": False, "class": "main"}][:0])):
+            with self.subTest(case=case, rows=len(rows_of)):
+                with self.assertRaises(_Inconclusive):
+                    verdict({**rows, case: {"rows": rows_of}})
         with self.assertRaises(_Inconclusive):
             verdict({**rows, "beta-refused": {"rows": [{"model": _BETA_LEAD, "beta": False, "class": "main"}]}})
 
@@ -304,8 +329,11 @@ class FenceSubstitutionProbe(unittest.TestCase):
                 ("client check one", "client check two", "client check three"))
             observed["switch"] = self._switch()
             fence = [_FABLE, _PREVIOUS_FABLE]
-            observed["fable-fallback"] = self._turns(_FABLE, fence, _Script(refuse_fable=True), ("client check",))
-            observed["best-fallback"] = self._turns("best", ["best", *fence], _Script(refuse_fable=True),
+            observed["fable-fallback"] = self._turns(_FABLE, fence, _Script(refuse=_FABLE), ("client check",))
+            observed["fable52-fallback"] = self._turns(_FABLE52, [_FABLE52, _FABLE], _Script(refuse=_FABLE52),
+                                                       ("client check",))
+            observed["best-fallback"] = self._turns("best", ["best", _FABLE52, *fence, "claude-opus-5-5",
+                                                             "claude-opus-5"], _Script(refuse="first"),
                                                     ("client check",))
             observed_class = verdict(observed)
         except _Inconclusive as exc:
@@ -327,8 +355,8 @@ class FenceSubstitutionProbe(unittest.TestCase):
         detail = (" ".join(f"{case}=[{summary(case)}]" for case in observed)
                   + f" switch-hooks={observed['switch']['hooks']} previous-model-summary="
                   f"{'seen' if previous_summary else 'not seen (compacts on the new model)'}"
-                  f" fable/best returncodes={observed['fable-fallback']['returncodes']}"
-                  f"/{observed['best-fallback']['returncodes']}"
+                  f" fable/fable52/best returncodes={observed['fable-fallback']['returncodes']}"
+                  f"/{observed['fable52-fallback']['returncodes']}/{observed['best-fallback']['returncodes']}"
                   f" client={self.gate.version} sha256={self.trusted.sha256[:12]}")
         type(self).verdict = ("PASS" if observed_class == PASS_CLASS else "FAIL", observed_class, detail)
         self.assertEqual(observed_class, PASS_CLASS, detail)

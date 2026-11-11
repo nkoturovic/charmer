@@ -48,6 +48,7 @@ _LONG_BLOCKED_BASE = frozenset(
         "--session-id",
         "--resume",
         "--fork-session",
+        "--session-began-as-copy",
         "--name",
         "--settings",
         "--disallowedTools",
@@ -73,6 +74,9 @@ _FLAG_OWNERS = {
     "--session-id": "launcher session identity",
     "--resume": "launcher session identity",
     "--fork-session": "launcher session identity",
+    # Claude Code marks a session as a copy with it, which changes what a
+    # print-mode resume continues: a copy is the launcher's to make.
+    "--session-began-as-copy": "launcher session identity",
     "--name": "launcher display metadata",
     "--settings": "trusted settings asset",
     "--disallowedTools": "compiled native-agent policy",
@@ -710,7 +714,14 @@ def generate_session_appendix(
 # So is CLAUDE_CODE_FORK_SUBAGENT (the flag settings turn the fork gate off),
 # CLAUDE_CODE_RETRY_WATCHDOG_SCOPE (the flag settings pin the broad scope) and
 # CLAUDE_CODE_MODEL_CAPABILITIES (the flag settings state the refusal switch
-# per fenced model).
+# per fenced model). Four host switches of Claude Code 2.1.313 and later are
+# cleared too: CLAUDE_CODE_SESSION_BEGAN_AS_COPY (marks the session a copy,
+# which changes what a print-mode resume continues: the launcher's, like
+# --session-began-as-copy), CLAUDE_CODE_HOST_OWNED_CONFIG_DIR (a damaged
+# Claude config file then starts on defaults that a later save writes over),
+# CLAUDE_CODE_PERSONAL_HOOKS_OFF (turns the person's hooks off for a host's
+# repair) and CLAUDE_CODE_DISABLE_NESTED_SESSION_ID (a `claude -p` run inside
+# the session would share its ID and transcript).
 V2_ENV_UNSET = (
     *catalog_mod.CREDENTIAL_ENV_KEYS,
     "ANTHROPIC_DEFAULT_FABLE_MODEL",
@@ -734,6 +745,10 @@ V2_ENV_UNSET = (
     "CLAUDE_CODE_DISABLE_EXPLORE_PLAN_AGENTS",
     "CLAUDE_CODE_DISABLE_WORKFLOWS",
     "CLAUDE_CODE_DISABLE_EXPLORE_INHERIT_CAP",
+    "CLAUDE_CODE_SESSION_BEGAN_AS_COPY",
+    "CLAUDE_CODE_HOST_OWNED_CONFIG_DIR",
+    "CLAUDE_CODE_PERSONAL_HOOKS_OFF",
+    "CLAUDE_CODE_DISABLE_NESTED_SESSION_ID",
 )
 
 # Policy-defeating keys (also in catalog.RESERVED_LEAD_ENV_KEYS).
@@ -1012,6 +1027,9 @@ def compile_lineup_launch(
         # the helper's gateway key to api.anthropic.com) and no cached
         # fast-mode speed on managed requests; reserved against lead.env.
         "CLAUDE_CODE_DISABLE_FAST_MODE": "1",
+        # No background service (agent view, /background, the exit dialog's
+        # background choice, the on-demand daemon); reserved against lead.env.
+        "CLAUDE_CODE_DISABLE_AGENT_VIEW": "1",
     }
     if context.scalar is not None:
         env_set["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] = str(context.scalar)
