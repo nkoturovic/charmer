@@ -8,9 +8,9 @@ measure what the pinned Claude Code does with that argv, end to end:
 - the launch runs in a launcher subprocess that really ``execve``\\ s the
   client (the session's lifecycle lock is held across the exec and dropped
   by it, as in production, so the client's SessionStart hook can take it);
-  this module waits outside. The launch is prepared by a minimal prototype
-  (a fresh launch of the fixture ``balanced`` profile whose argv gains the
-  fork flags and whose record gains ``forked_from``);
+  this module waits outside. The launcher prepares and performs the fork
+  as ``charmer -r SESSION --fork`` does (``Runtime.prepare`` with
+  ``action="fork"``, then ``Runtime.perform``);
 - every run is hermetic: fixture-owned HOME, XDG roots and charmer state,
   the pinned copy hard-linked into the fixture's owned location and
   verified by the launch, the fixture provider bridged into a
@@ -24,13 +24,15 @@ measure what the pinned Claude Code does with that argv, end to end:
   fork's first lead request (history marker, the managed-session sentinel in
   the system prompt), SessionStart on the fork's hooks, no daemon or jobs
   directory, the fork's own-fork notice and its authoritative record; with
-  a parent whose prompt snapshot is established (and the fork's own resume
-  after it), with a compacted parent, with ``--system-prompt-snapshot off``
-  on every launch of the fork, and five fork starts in a row (each start
+  a parent whose prompt snapshot is established (the fork and its own
+  resume send the fork's prompt: every launch of a fork compiles
+  ``--system-prompt-snapshot off``), with a compacted parent, the negative
+  control (that switch taken out again: the fork and its resume send the
+  parent's recorded prompt), and five fork starts in a row (each start
   counted on the fork's hooks);
 - G2 (PTY): an idle parent stays live while the fork runs; both take more
-  turns; both conversation files stay independent (also with the fork's
-  prompt snapshot switched off: which prompt each turn sends);
+  turns; both conversation files stay independent; each turn sends its own
+  session's prompt;
 - G2b: the parent is streaming, or running a tool, when it is forked; the
   fork runs headless (then resumes) or in a PTY;
 - G3 (record): Claude Code's ``/fork`` typed in a charmer session never
@@ -94,7 +96,6 @@ HOLD_TOOL = "FORKPROBE-HOLD-TOOL"
 AGENT_FORK = "FORKPROBE-AGENT-FORK"  # the lead's turn answered with an Agent fork call
 SUMMARY = "FORKPROBE-COMPACT-SUMMARY"
 _TURNS = (HOLD_STREAM, HOLD_TOOL, AGENT_FORK, T1, T2, T3, T4, T5)
-_SNAPSHOT_OFF = ("--system-prompt-snapshot", "off")
 _TOOL_ID = "toolu_forkprobe_hold"
 _AGENT_FORK_ID = "toolu_forkprobe_agent_fork"
 _TOOL_OUTPUT = "FORKTOOL-OUT42"  # printed by the tool, never part of its command
@@ -346,13 +347,12 @@ class _ForkResponder:
             return [dict(row) for row in self.rows]
 
 
-# ------------------------------------------------------- the launch prototype
+# ------------------------------------------------------------- the launcher
 
 # Runs inside the namespace as ``python <this> <spec.json>``: prepares a
-# fresh launch of the fixture ``balanced`` profile, a resume, or a fork (the
-# fresh plan with the fork flags in front of its argv and ``forked_from`` in
-# its record), writes the plan's ids, then performs it with the real
-# ``os.execve``.
+# fresh launch of the fixture ``balanced`` profile, a resume, or a fork
+# (``Runtime.prepare`` with ``action="fork"``), writes the plan's ids, then
+# performs it (``Runtime.perform``) with the real ``os.execve``.
 _LAUNCHER = r'''
 import dataclasses, json, os, sys
 spec = json.load(open(sys.argv[1], encoding="utf-8"))
@@ -377,26 +377,22 @@ runtime._live_prefixes = lambda: frozenset()
 store = runtime.session_store
 plan = {"mode": spec["mode"]}
 try:
-    if spec["mode"] == "resume":
-        record = store.load(spec["session"])
-        target = cli.LaunchTarget("record", None, record.get("profile"), bool(record.get("follow")), "resume")
-        prepared = runtime.prepare(target, action="resume", passthrough=spec["passthrough"],
-                                   session_id=spec["session"])
+    if spec["mode"] in ("resume", "fork"):
+        record = store.load(spec["session"] if spec["mode"] == "resume" else spec["parent"])
+        target = cli.LaunchTarget("record", None, record.get("profile"), bool(record.get("follow")),
+                                  spec["mode"])
+        prepared = runtime.prepare(target, action=spec["mode"], passthrough=spec["passthrough"],
+                                   session_id=sessions.managed_id(record))
     else:
         document = runtime.profiles.load("balanced")
         target = cli.LaunchTarget("profile", document, "balanced", True, "Profile balanced")
         prepared = runtime.prepare(target, action="fresh", passthrough=spec["passthrough"])
-    if spec["mode"] == "fork":
-        parent = store.load(spec["parent"])
+    if spec.get("without_switch"):
+        # The negative control: the compiled system-prompt record switch
+        # taken out of the argv again.
         argv = list(prepared.result.argv)
-        if argv[:1] != ["--session-id"]:
-            raise SystemExit("fork prototype: the fresh plan does not start with --session-id")
-        argv = ["--resume", sessions.runtime_session_id(parent), "--fork-session", *argv]
-        record = {**prepared.record, "forked_from": sessions.managed_id(parent)}
-        prepared = dataclasses.replace(prepared, result=dataclasses.replace(prepared.result, argv=argv),
-                                       record=record)
-    if spec.get("extra_client_args"):
-        argv = [*prepared.result.argv, *spec["extra_client_args"]]
+        at = argv.index("--system-prompt-snapshot")
+        del argv[at:at + 2]
         prepared = dataclasses.replace(prepared, result=dataclasses.replace(prepared.result, argv=argv))
     plan.update(managed_id=sessions.managed_id(prepared.record),
                 runtime_id=sessions.runtime_session_id(prepared.record),
@@ -820,8 +816,8 @@ class ForkLaunchProbe(unittest.TestCase):
     rows: dict[str, dict[str, Any]] = {}
     verdicts: dict[str, str] = {}
     # Every row of the class: the completion record needs all of them.
-    ROWS = ("G1-snapshot", "G1-compacted", "G1-snapshot-off-every-launch", "G1-repeat", "G2-idle",
-            "G2-idle-snapshot-off", "G2b-streaming", "G2b-tool", "G2b-streaming-pty", "G2b-tool-pty",
+    ROWS = ("G1-snapshot", "G1-compacted", "G1-control-without-switch", "G1-repeat", "G2-idle",
+            "G2b-streaming", "G2b-tool", "G2b-streaming-pty", "G2b-tool-pty",
             "G3-builtin-fork")
 
     @classmethod
@@ -886,8 +882,12 @@ class ForkLaunchProbe(unittest.TestCase):
                              f"parent compaction: {compacted.get('error')} {compacted['stderr'][-800:]}")
         return first
 
-    def _g1(self, name: str, *, compact: bool, extra: tuple[str, ...] = (), resume_fork: bool = False,
-            resume_extra: tuple[str, ...] = ()) -> None:
+    def _g1(self, name: str, *, compact: bool, resume_fork: bool = False, control: bool = False) -> None:
+        """One headless fork of a headless parent. ``control``: the compiled
+        system-prompt record switch is taken out of the fork's launch and its
+        resume, which must then send the parent's recorded prompt (the
+        switch is what gives a fork its own)."""
+
         fx = self.fixture
         first = self._parent_headless(compact=compact)
         parent, parent_rt = first["managed_id"], first["runtime_id"]
@@ -895,8 +895,9 @@ class ForkLaunchProbe(unittest.TestCase):
         before = {"transcript": _transcript_facts(parent_file), "record": fx.record_bytes(parent),
                   "scope": fx.scope_digest(parent)}
         started = time.monotonic()
-        fork = fx.headless("fork", T2, parent=parent, extra_client_args=list(extra))
+        fork = fx.headless("fork", T2, parent=parent, without_switch=control)
         child = fork.get("managed_id")
+        prompt_owner = [parent] if control else [child]
         problems: list[str] = []
         if fork.get("rc") != 0:
             problems.append(f"fork exit {fork.get('rc')}: {fork.get('error')}")
@@ -905,6 +906,8 @@ class ForkLaunchProbe(unittest.TestCase):
         argv = fork.get("argv") or []
         if argv[:5] != ["--resume", parent_rt, "--fork-session", "--session-id", child]:
             problems.append("fork argv shape")
+        if ("--system-prompt-snapshot" in argv) == control:
+            problems.append(f"the fork's argv {'still has' if control else 'lacks'} the system-prompt record switch")
         after = {"transcript": _transcript_facts(parent_file), "record": fx.record_bytes(parent),
                  "scope": fx.scope_digest(parent)}
         if after != before:
@@ -918,10 +921,10 @@ class ForkLaunchProbe(unittest.TestCase):
         history = SUMMARY if compact else T1
         if history not in lead.get("messages_markers", ()):
             problems.append(f"the fork's first lead request lacks the parent's {history}")
-        if lead.get("system_sentinels") != [child]:
-            owner = ("parent" if lead.get("system_sentinels") == [parent]
-                     else str(lead.get("system_sentinels")))
-            problems.append(f"the fork's system prompt names {owner}, not the fork")
+        if lead.get("system_sentinels") != prompt_owner:
+            owner = ("parent" if lead.get("system_sentinels") == [parent] else
+                     "fork" if lead.get("system_sentinels") == [child] else str(lead.get("system_sentinels")))
+            problems.append(f"the fork's system prompt names {owner}, not the {'parent' if control else 'fork'}")
         if not lead.get("system_lead_body"):
             problems.append("the fork's system prompt lacks the lead body")
         hooks = [row for row in fx.hook_rows() if row.get("call") == "session-event"
@@ -948,16 +951,21 @@ class ForkLaunchProbe(unittest.TestCase):
         resumed: dict[str, Any] = {}
         if resume_fork and child:
             again_started = time.monotonic()
-            again = fx.headless("resume", T5, session=child, extra_client_args=list(resume_extra))
+            again = fx.headless("resume", T5, session=child, without_switch=control)
             again_lead = self._lead_rows(again_started, T5)
-            resumed = {"rc": again.get("rc"), "error": again.get("error"), "extra_client_args": list(resume_extra),
+            again_argv = again.get("argv") or []
+            resumed = {"rc": again.get("rc"), "error": again.get("error"),
+                       "switch": "--system-prompt-snapshot" in again_argv,
                        "system_sentinels": again_lead[0]["system_sentinels"] if again_lead else None,
                        "child_transcript": _transcript_facts(child_file)}
-            if again.get("rc") != 0 or not again_lead or again_lead[0]["system_sentinels"] != [child]:
-                problems.append("the fork's own resume does not send the fork's prompt")
+            if ("--system-prompt-snapshot" in again_argv) == control:
+                problems.append("the fork's resume argv " + ("still has" if control else "lacks")
+                                + " the system-prompt record switch")
+            if again.get("rc") != 0 or not again_lead or again_lead[0]["system_sentinels"] != prompt_owner:
+                problems.append(f"the fork's own resume does not send the {'parent' if control else 'fork'}'s prompt")
         row = {
             "client": self.version, "parent": parent[:8], "fork": (child or "")[:8],
-            "extra_client_args": list(extra),
+            "control_without_switch": control,
             "parent_transcript": after["transcript"], "parent_unchanged": after == before,
             "parent_hook_events_after_fork": len(parent_hooks),
             "fork_transcript": child_facts,
@@ -985,9 +993,8 @@ class ForkLaunchProbe(unittest.TestCase):
     def test_g1_fork_of_a_compacted_parent(self) -> None:
         self._g1("G1-compacted", compact=True)
 
-    def test_g1_fork_and_its_resume_with_the_prompt_snapshot_switched_off(self) -> None:
-        self._g1("G1-snapshot-off-every-launch", compact=False, extra=_SNAPSHOT_OFF, resume_fork=True,
-                 resume_extra=_SNAPSHOT_OFF)
+    def test_g1_control_a_fork_without_the_switch_sends_the_parents_prompt(self) -> None:
+        self._g1("G1-control-without-switch", compact=False, resume_fork=True, control=True)
 
     FORK_STARTS = 5
 
@@ -1048,10 +1055,7 @@ class ForkLaunchProbe(unittest.TestCase):
     def test_g2_idle_parent_stays_live_while_the_fork_runs(self) -> None:
         self._g2("G2-idle")
 
-    def test_g2_idle_parent_with_the_fork_prompt_snapshot_switched_off(self) -> None:
-        self._g2("G2-idle-snapshot-off", extra=_SNAPSHOT_OFF)
-
-    def _g2(self, name: str, *, extra: tuple[str, ...] = ()) -> None:
+    def _g2(self, name: str) -> None:
         fx = self.fixture
         parent_term, parent_plan = self._start_parent()
         parent, parent_rt = parent_plan["managed_id"], parent_plan["runtime_id"]
@@ -1062,7 +1066,7 @@ class ForkLaunchProbe(unittest.TestCase):
         parent_file = fx.transcript(parent_rt)
         at_fork = parent_file.read_bytes()
         record_at_fork = fx.record_bytes(parent)
-        fork_term, fork_plan_path = fx.terminal("fork", parent=parent, extra_client_args=list(extra))
+        fork_term, fork_plan_path = fx.terminal("fork", parent=parent)
         if not fx.ready(fork_term):
             self.fail(f"fork never reached its prompt: {fx.plan(fork_plan_path).get('error')} "
                       f"{fork_term.text()[-600:]}")
@@ -1101,13 +1105,17 @@ class ForkLaunchProbe(unittest.TestCase):
                      if row["system_sentinels"] == [parent] else str(row["system_sentinels"]), row["system_sha256"])
                     for row in self._lead_rows(0.0, tag)]
 
+        by_turn = {"T1-parent": names(T1), "T2-fork": names(T2), "T3-parent": names(T3), "T4-fork": names(T4)}
+        for turn, sent in by_turn.items():
+            owner = turn.rsplit("-", 1)[1]
+            if not sent or any(entry[0] != owner for entry in sent):
+                problems.append(f"turn {turn} sent {[entry[0] for entry in sent]}, not the {owner}'s prompt")
         self._row(name, {
-            "client": self.version, "parent": parent[:8], "fork": child[:8], "extra_client_args": list(extra),
+            "client": self.version, "parent": parent[:8], "fork": child[:8],
             "parent_transcript": parent_facts, "fork_transcript": child_facts,
             "fork_first_lead": {key: leads[0].get(key) for key in ("messages_markers", "roles", "system_sentinels")}
             if leads else None,
-            "system_prompt_by_turn": {"T1-parent": names(T1), "T2-fork": names(T2), "T3-parent": names(T3),
-                                      "T4-fork": names(T4)},
+            "system_prompt_by_turn": by_turn,
             "parent_record_pending_forks": fx.record(parent).get("pending_forks"),
             "fork_record": {key: record.get(key) for key in ("forked_from", "identity_state", "pending_forks")},
             "exits": [fork_exit, parent_exit], "daemon": fx.daemon_state(),
