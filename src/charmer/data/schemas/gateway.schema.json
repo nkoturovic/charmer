@@ -84,6 +84,14 @@
                 "enabled": { "const": false }
               }
             },
+            "kv-store": {
+              "type": "object",
+              "required": ["disabled"],
+              "additionalProperties": false,
+              "properties": {
+                "disabled": { "const": true }
+              }
+            },
             "commercial-mode": { "type": "boolean" },
             "logging-to-file": { "type": "boolean" },
             "usage-statistics-enabled": { "const": false },
