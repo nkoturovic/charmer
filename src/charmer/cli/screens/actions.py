@@ -237,15 +237,9 @@ ACTIONS: dict[str, tuple[Action, ...]] = {
     ),
     "propagation": _rows(
         "propagation",
-        ("apply", "Enter", "apply the saved profile to running followers (then /reload-plugins there)", None,
-         "apply to running", 1,
-         "Enter (or A) — apply the saved change to the running followers now, then /reload-plugins in each"),
+        ("apply", "A", "apply the saved profile to running followers (then /reload-plugins there)", None, "apply to running", 1),
         ("later", "L", "show what happens at the next resume without applying live", None, "later (next resume)"),
-        _HELP,
-        ("back", "Esc", "later: keep the saved change; running sessions are told at their next prompt", None, "later",
-         2, "Esc — later: the saved change is kept; running sessions are told at their next prompt"),
-        ("apply-letter", "A", "apply the saved profile to running followers (then /reload-plugins there)", None,
-         "", 2, "", None, True),
+        _HELP, ("back", "Esc", "keep sessions as they are", None, "keep sessions as they are"),
     ),
     "get-started": _rows(
         "get-started",
